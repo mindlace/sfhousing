@@ -36,6 +36,14 @@ export function rowName(r: Pick<PaintRow, 'kind' | 'stories'>): string {
   return r.kind === 'erase' || r.stories === null ? 'Erased' : count(r.stories, 'story', 'stories');
 }
 
+/**
+ * "Removed: 8 stories", "Removed: Erased": a Paint row's Remove, announced (and on `/sim` named by
+ * Undo) the same way on both pages.
+ */
+export function removedLabel(r: Pick<PaintRow, 'kind' | 'stories'>): string {
+  return `Removed: ${rowName(r)}`;
+}
+
 /** "3 strokes · 52 lots". */
 export function rowMeta(r: PaintRow): string {
   return `${count(r.strokes, 'stroke', 'strokes')} · ${lotsText(r.lots)}`;

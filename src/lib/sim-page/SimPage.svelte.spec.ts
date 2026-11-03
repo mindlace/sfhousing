@@ -555,10 +555,10 @@ describe('SimPage Paint tab (sim-ux plan 3, Task 3)', () => {
     // The selection and its outline go with the area, not on a later request.
     await expect.poll(overlayIds).not.toContain(OUTLINE);
     await expect
-      .element(page.getByRole('button', { name: 'Undo: Removed: Allowed 6 stories' }))
+      .element(page.getByRole('button', { name: 'Undo: Removed: 6 stories' }))
       .toBeEnabled();
     await expect
-      .element(page.getByRole('status').filter({ hasText: 'Removed: Allowed 6 stories' }))
+      .element(page.getByRole('status').filter({ hasText: 'Removed: 6 stories' }))
       .toBeInTheDocument();
     await page.getByRole('button', { name: /^Undo:/ }).click();
     await expect.element(paintRows().first()).toHaveAttribute('aria-pressed', 'false');
@@ -589,7 +589,7 @@ describe('SimPage Paint tab (sim-ux plan 3, Task 3)', () => {
     await expect.poll(() => paintRows().elements().length).toBe(1);
     await expect.element(paintRows().first()).toHaveAccessibleName(/^8 stories · 2 strokes/);
     await expect
-      .element(page.getByRole('button', { name: 'Undo: Removed: Allowed 4 stories' }))
+      .element(page.getByRole('button', { name: 'Undo: Removed: 4 stories' }))
       .toBeEnabled();
     await page.getByRole('button', { name: /^Undo:/ }).click();
     await expect.poll(() => paintRows().elements().length).toBe(3);

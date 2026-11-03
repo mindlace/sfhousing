@@ -89,6 +89,7 @@
   import { OutlineRequest } from './outline-request';
   import { LidRequest, clampBbox } from './lid-request';
   import { paintedOutlineLayers } from '$lib/paint/outline-layers';
+  import { removedLabel } from '$lib/paint/rows';
   import { SIM_CODEC, simDocProblems, type SimDoc } from './sim-doc';
   import SimNotices from './SimNotices.svelte';
   import { restoreSimDoc, type SimNotice } from './sim-session';
@@ -108,7 +109,6 @@
   import TransitTab from './TransitTab.svelte';
   import PolicySummary from './PolicySummary.svelte';
   import {
-    customChangeLabel,
     customLotStatus,
     ruleLotStatus,
     simPaintRows,
@@ -831,7 +831,7 @@
   function removePaintArea(id: string): void {
     const b = store.policy.custom.find((x) => x.id === id);
     if (!b) return;
-    const label = `Removed: ${customChangeLabel(b)}`;
+    const label = removedLabel({ kind: b.kind, stories: b.kind === 'paint' ? b.stories : null });
     store.apply((p) => removeCustomBrush(p, id), label);
     brush.announce(label, ANNOUNCE_MS);
   }

@@ -15,7 +15,6 @@ import {
   type SimPolicy,
   type ZoningRule
 } from './policy';
-import { ERASE_LABEL, strokeLabel } from './stroke-adapter';
 
 export { count, lotsText, type LotStatus };
 
@@ -94,11 +93,6 @@ export function customSummary(b: CustomBrush, lotsText: string): string {
 export function ruleChangeLabel(r: ZoningRule): string {
   const top = Math.max(...r.bands.map((b) => b.stories));
   return `Allowed up to ${storiesText(top)} near ${stopsTarget(r.stopTypes)}`;
-}
-
-/** The undo label of a custom brush ("Allowed 8 stories"; "Erased custom zoning"). */
-export function customChangeLabel(b: CustomBrush): string {
-  return b.kind === 'paint' ? strokeLabel(b.stories) : ERASE_LABEL;
 }
 
 /**

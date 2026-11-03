@@ -251,12 +251,12 @@ describe('BrushEditor on the dock', () => {
     expect(editor().plan.ops.map((o) => o.id)).toEqual(['a', 'b', 'd']);
     await expect.poll(rowNames).toEqual(['6 stories · 3 strokes · Finding lots…']);
     expect(rowButtons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['false']);
-    await expect.element(announcement()).toHaveTextContent('Removed 8 stories');
+    await expect.element(announcement()).toHaveTextContent('Removed: 8 stories');
 
     key('z');
     expect(loadedIds(w)).toEqual(['a', 'b', 'c', 'd']);
     await expect.poll(() => rowNames().length).toBe(3);
-    await expect.element(announcement()).toHaveTextContent('Undid: Removed 8 stories');
+    await expect.element(announcement()).toHaveTextContent('Undid: Removed: 8 stories');
 
     key('z', true);
     expect(loadedIds(w)).toEqual(['a', 'b', 'd']);

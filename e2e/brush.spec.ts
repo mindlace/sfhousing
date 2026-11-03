@@ -367,7 +367,7 @@ test.describe('brush tool', () => {
       await expect.poll(() => ops(page)).toBe(3);
       await expect.poll(() => rows(page)).toBe(3);
       await expectRowsMatchOps(page);
-      await expect(announcement(page)).toHaveText('Undid: Removed 20 stories');
+      await expect(announcement(page)).toHaveText('Undid: Removed: 20 stories');
       expect(await settledNet(page)).toBe(full);
 
       await page.keyboard.press('Control+Shift+z');

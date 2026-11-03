@@ -6,6 +6,7 @@ import {
   planPaintRows,
   planRowGroups,
   rowMeta,
+  removedLabel,
   rowName,
   type PaintRow
 } from './rows';
@@ -24,6 +25,12 @@ describe('paint rows', () => {
     expect(rowName({ kind: 'paint', stories: 8 })).toBe('8 stories');
     expect(rowName({ kind: 'paint', stories: 1 })).toBe('1 story');
     expect(rowName({ kind: 'erase', stories: null })).toBe('Erased');
+  });
+
+  it('names a removed row the same way on both pages', () => {
+    expect(removedLabel({ kind: 'paint', stories: 8 })).toBe('Removed: 8 stories');
+    expect(removedLabel({ kind: 'paint', stories: 1 })).toBe('Removed: 1 story');
+    expect(removedLabel({ kind: 'erase', stories: null })).toBe('Removed: Erased');
   });
 
   it('describes strokes and lots', () => {

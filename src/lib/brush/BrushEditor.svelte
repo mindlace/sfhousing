@@ -32,7 +32,7 @@
   import { paintedOutlineLayers } from '$lib/paint/outline-layers';
   import PaintTab from '$lib/paint/PaintTab.svelte';
   import PaletteStrip from '$lib/paint/PaletteStrip.svelte';
-  import { planPaintRows, planRowGroups, rowName } from '$lib/paint/rows';
+  import { planPaintRows, planRowGroups, removedLabel } from '$lib/paint/rows';
   import type { Plan } from '$lib/plan';
   import type { Score } from '$lib/scoreboard';
   import NoticePills from '$lib/shell/NoticePills.svelte';
@@ -450,7 +450,7 @@
     const group = groups.find((g) => g.id === id);
     if (!group) return;
     controller?.cancelStroke();
-    const label = `Removed ${rowName(group)}`;
+    const label = removedLabel(group);
     if (!editor.removeOps(group.opIds, label)) return;
     // Not ready: onReady's load sends editor.plan, which already lacks the row.
     if (brush.phase === 'ready') client?.load(editor.plan);
