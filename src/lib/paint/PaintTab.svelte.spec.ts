@@ -69,6 +69,13 @@ describe('PaintTab', () => {
     await expect.element(page.getByRole('slider')).toBeVisible();
   });
 
+  it('draws the brush-size slider in the accent token (light: #a3472c)', async () => {
+    setup({ tool: 'paint' });
+    const slider = page.getByRole('slider');
+    await expect.element(slider).toBeVisible();
+    expect(getComputedStyle(slider.element()).accentColor).toBe('rgb(163, 71, 44)');
+  });
+
   it('chooses a tool and moves between enabled ones with the arrow keys', async () => {
     const { ontool } = setup();
     await radio('Paint').click();

@@ -92,6 +92,11 @@
     background: color-mix(in srgb, var(--bt-fg, currentColor) 10%, transparent);
   }
   .range {
-    accent-color: var(--brush-paint, #b4532f);
+    accent-color: var(--color-accent);
+  }
+  @media (prefers-color-scheme: dark) {
+    .range {
+      accent-color: var(--color-accent-dark);
+    }
   }
 </style>

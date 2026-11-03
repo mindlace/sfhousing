@@ -150,6 +150,14 @@ describe('app accent tokens', () => {
     }
     expect(bad).toEqual([]);
   });
+  it('the brush-size slider takes the accent token, with its dark partner', () => {
+    const src = readFileSync(fromRoot('src/lib/brush/RadiusPopover.svelte'), 'utf8');
+    // `--brush-paint` was set only by the deleted BrushToolbar: nothing defines it now.
+    expect(src).not.toMatch(/--brush-paint/);
+    expect(src).toMatch(/\.range\s*\{\s*accent-color:\s*var\(--color-accent\);/);
+    const dark = /@media \(prefers-color-scheme: dark\)\s*\{([\s\S]*?)\n {2}\}/.exec(src)?.[1] ?? '';
+    expect(dark).toMatch(/\.range\s*\{\s*accent-color:\s*var\(--color-accent-dark\);/);
+  });
   it('no Tailwind blue or blue hex remains in chrome', () => {
     for (const f of SCANNED) {
       const src = readFileSync(fromRoot(f), 'utf8');
