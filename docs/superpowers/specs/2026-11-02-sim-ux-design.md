@@ -100,9 +100,8 @@ One Paint tab component, used by both modes.
   - **"Edit policy"** on `/sim`. It also ends a run (Goal 6).
   - **"Paint"** on `/`.
 - (My call) `/` shows no "vs FZP" delta, because a painted plan has no FZP comparison today.
-- **Open: what the score shows in Set Policy.**
-  - Today the header number is `at.total` at the scrubbed day. Set Policy pins the day to today, so the number is actual completions so far. It doesn't move while you edit the policy, and the "vs FZP" delta there is about 0.
-  - The full timeline is already computed during Set Policy (the "Updating…" pass). A projected figure at a fixed date would therefore cost little and would respond to every edit.
+- **In Set Policy the score shows what it does now:** `at.total` at today, the net homes actually completed since the RHNA baseline. It does not project the policy.
+- (My call) The "vs FZP" delta is hidden in Set Policy, where it is about 0, and appears once a run starts.
 
 ### 6. Run phase: the dock flips to Results
 
