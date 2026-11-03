@@ -11,7 +11,7 @@ const visibility = (page: Page, id: string) =>
   );
 
 const viewButton = (page: Page) => page.getByRole('button', { name: 'View', exact: true });
-/** Opens the View menu (below 1280 px its button waits in the header Menu). */
+/** Opens the View menu (below 1024 px its button waits in the header Menu). */
 const openView = async (page: Page) => (await headerAction(page, 'View')).click();
 
 test('fixture stops load; capacity is on and stops are off by default', async ({ page }) => {

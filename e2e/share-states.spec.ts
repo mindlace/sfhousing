@@ -28,7 +28,7 @@ async function waitSaved(page: Page): Promise<void> {
       }, PLAN_KEY)
     )
     .toBe(1);
-  // Below 1280 px the save indicator waits in the header Menu.
+  // Below 1024 px the save indicator waits in the header Menu.
   await openHeaderMenu(page);
   await expect(page.getByRole('banner').getByText('Saved', { exact: true })).toBeVisible();
 }

@@ -56,7 +56,7 @@ export async function gotoHydrated(page: Page, path: string): Promise<void> {
 
 export const publishOpen = (page: Page): Locator => page.getByTestId('publish-open');
 
-/** Below 1280 px, opens the header's Menu (where the actions live); from 1280 px, does nothing. */
+/** Below 1024 px, opens the header's Menu (where the actions live); from 1024 px, does nothing. */
 export async function openHeaderMenu(page: Page): Promise<void> {
   const menu = page.getByRole('banner').getByRole('button', { name: 'Menu', exact: true });
   if (!(await menu.isVisible())) return;
@@ -65,7 +65,7 @@ export async function openHeaderMenu(page: Page): Promise<void> {
 }
 
 /**
- * A header action button by name, ready to click. Below 1280 px the header's actions live in the
+ * A header action button by name, ready to click. Below 1024 px the header's actions live in the
  * Menu panel, so this opens Menu first when the Menu button shows.
  */
 export async function headerAction(page: Page, name: string | RegExp): Promise<Locator> {
@@ -88,7 +88,7 @@ export async function openPublish(page: Page): Promise<Locator> {
 export async function gotoEditor(page: Page): Promise<void> {
   await page.goto('/');
   await waitForMap(page);
-  // Attached, not visible: below 1280 px it waits in the closed header Menu.
+  // Attached, not visible: below 1024 px it waits in the closed header Menu.
   await expect(publishOpen(page)).toBeAttached();
 }
 

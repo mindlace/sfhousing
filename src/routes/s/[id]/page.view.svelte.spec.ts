@@ -110,7 +110,7 @@ describe('/s/[id] read-only view', () => {
     nav.goto.length = 0;
     vi.stubGlobal('Worker', StubWorker);
     localStorage.removeItem(SIM_KEY);
-    await page.viewport(1280, 800);
+    await page.viewport(1024, 768);
   });
 
   afterEach(() => {

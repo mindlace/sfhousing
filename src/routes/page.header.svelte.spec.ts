@@ -69,7 +69,7 @@ describe('/ header save state', () => {
     expect(box(saved.element()).left).toBeGreaterThanOrEqual(box(title).right);
   });
 
-  for (const width of [1280, 768, 375]) {
+  for (const width of [1280, 1024, 768, 375]) {
     it(`fits with Autosave off and nothing overlaps at ${width}px`, async () => {
       await page.viewport(width, 812);
       vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
@@ -85,9 +85,9 @@ describe('/ header save state', () => {
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
       const row = [
         page.getByRole('link', { name: /SF Housing/ }).element(),
-        ...(width >= 1280 ? [page.getByRole('navigation', { name: 'Modes' }).element()] : []),
+        ...(width >= 1024 ? [page.getByRole('navigation', { name: 'Modes' }).element()] : []),
         chip.element(),
-        (width >= 1280
+        (width >= 1024
           ? page.getByRole('button', { name: /Publish/ })
           : page.getByRole('button', { name: 'Menu' })
         ).element()
