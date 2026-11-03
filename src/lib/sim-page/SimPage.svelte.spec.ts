@@ -97,8 +97,7 @@ async function readySim(width = 1024, over: Over = {}) {
 }
 
 /** Run: the page enters the run at once (it plays once the score is current). */
-async function pressRun(w: (typeof workers)[number]) {
-  void w;
+async function pressRun(_w?: (typeof workers)[number]) {
   await runButton().click();
   await expect.poll(() => fzpDebug().runPhase).toBe('run');
 }
@@ -416,6 +415,8 @@ describe('SimPage protections (Task 10)', () => {
 });
 
 describe('SimPage rule brushes (Task 9)', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   it('fetches the catalog once, when the editing face first shows', async () => {
     await page.viewport(375, 700);
     await setup();
@@ -432,7 +433,8 @@ describe('SimPage rule brushes (Task 9)', () => {
     expect(w.allOf('brushCatalog')).toHaveLength(1);
   });
 
-  it('a form open in the Transit tab is still there after another tab', async () => {
+  it('an open form keeps its edits across a tab change and a run', async () => {
+    vi.stubEnv('VITE_E2E', '1');
     stub.reset();
     await page.viewport(1024, 768);
     await setup();
@@ -447,10 +449,25 @@ describe('SimPage rule brushes (Task 9)', () => {
     await page.getByRole('button', { name: 'Add transit rule' }).click();
     const form = () => page.getByRole('form', { name: 'Add a transit rule' });
     await expect.element(form()).toBeVisible();
+    const metro = () => page.getByRole('checkbox', { name: /^Muni Metro/ });
+    const distance = () => page.getByRole('spinbutton', { name: 'Band 1 distance (m)' });
+    await metro().click();
+    await distance().fill('777');
     await tab('Permits').click();
     await expect.element(form()).not.toBeInTheDocument();
     await tab('Transit').click();
     await expect.element(form()).toBeVisible();
+    await expect.element(metro()).toBeChecked();
+    await expect.element(distance()).toHaveValue(777);
+    // A remount does not take focus from the tab the user pressed.
+    await expect.element(tab('Transit')).toHaveFocus();
+
+    await pressRun(w);
+    expect(form().query()).toBeNull();
+    await editPolicy().click();
+    await expect.element(form()).toBeVisible();
+    await expect.element(metro()).toBeChecked();
+    await expect.element(distance()).toHaveValue(777);
   });
 });
 

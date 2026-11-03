@@ -1,5 +1,6 @@
 <!--
-  The transit rule form. It is seeded once from `initial` (an edit keeps the rule's id) and
+  The transit rule form. It is seeded once from `initial` (an edit keeps the rule's id), or keeps
+  its entries in `draft` (BrushForms' RuleDraft), so a remount shows what the user typed; it
   calls `onsave` with a complete rule; pressing Save with a problem shows the reason beside it
   instead, until the rule would select something and its numbers are in range. A transit rule's
   bands never get taller with distance (partner ruling): compared by distance, whatever order
@@ -9,17 +10,20 @@
   import { onMount, untrack } from 'svelte';
   import { newOpId } from '$lib/brush/ids';
   import { STORIES_MAX, STORIES_MIN } from '$lib/plan/constants';
-  import { STOP_TYPES, type BrushCatalog, type StopType } from '$lib/sim/levers/brushes';
+  import { STOP_TYPES, type BrushCatalog } from '$lib/sim/levers/brushes';
   import { STOP_LABELS, count } from './brush-summary';
-  import { DEFAULT_BANDS, bandProblem, type TransitBand, type ZoningRule } from './policy';
+  import { RuleDraft } from './brush-forms.svelte';
+  import { bandProblem, type TransitBand, type ZoningRule } from './policy';
 
   interface Props {
     catalog: BrushCatalog;
     initial?: ZoningRule;
+    /** The entries, kept by the caller across remounts; a fresh draft from `initial` if absent. */
+    draft?: RuleDraft;
     onsave(r: ZoningRule): void;
     oncancel(): void;
   }
-  let { catalog, initial = undefined, onsave, oncancel }: Props = $props();
+  let { catalog, initial = undefined, draft = undefined, onsave, oncancel }: Props = $props();
 
   const MAX_BANDS = 3;
 
@@ -28,13 +32,14 @@
   const init = untrack(() => initial);
   const title = `${init ? 'Edit' : 'Add'} a transit rule`;
 
-  let stopTypes = $state<StopType[]>(init ? [...init.stopTypes] : []);
-  let bands = $state<{ maxM: number | null; stories: number | null }[]>(
-    (init ? init.bands : DEFAULT_BANDS).map((b) => ({ ...b }))
-  );
+  const d = untrack(() => draft) ?? new RuleDraft(init);
 
   let heading = $state<HTMLHeadingElement>();
-  onMount(() => heading?.focus());
+  // The heading takes focus when the form first opens, not when a tab change remounts it.
+  onMount(() => {
+    if (!d.shown) heading?.focus();
+    d.shown = true;
+  });
 
   const toggle = <T,>(xs: T[], x: T, on: boolean): T[] =>
     on ? (xs.includes(x) ? xs : [...xs, x]) : xs.filter((y) => y !== x);
@@ -50,13 +55,13 @@
   /** The band rule, over the bands whose numbers are complete (`bandProblem`). */
   const bandRule = $derived(
     bandProblem(
-      bands
+      d.bands
         .filter((b) => okMetres(b.maxM) && okStories(b.stories))
         .map((b) => ({ maxM: b.maxM!, stories: b.stories! }))
     )
   );
   const duplicateBands = $derived.by(() => {
-    const ds = bands.map((b) => b.maxM).filter(okMetres);
+    const ds = d.bands.map((b) => b.maxM).filter(okMetres);
     return new Set(ds).size < ds.length;
   });
 
@@ -64,9 +69,9 @@
     const storiesMsg = `Stories must be a whole number from ${STORIES_MIN} to ${STORIES_MAX}.`;
     if (duplicateBands) return DUPLICATE_BANDS;
     if (bandRule === 'taller') return TALLER_BAND;
-    if (stopTypes.length === 0) return 'Choose at least one stop type.';
-    if (bands.some((b) => !okMetres(b.maxM))) return 'Each band needs a distance above 0 m.';
-    if (bands.some((b) => !okStories(b.stories))) return storiesMsg;
+    if (d.stopTypes.length === 0) return 'Choose at least one stop type.';
+    if (d.bands.some((b) => !okMetres(b.maxM))) return 'Each band needs a distance above 0 m.';
+    if (d.bands.some((b) => !okStories(b.stories))) return storiesMsg;
     return null;
   });
 
@@ -74,8 +79,8 @@
     return {
       id: init?.id ?? newOpId(),
       kind: 'transit',
-      stopTypes: STOP_TYPES.filter((t) => stopTypes.includes(t)),
-      bands: bands.map((b): TransitBand => ({ maxM: b.maxM!, stories: b.stories! }))
+      stopTypes: STOP_TYPES.filter((t) => d.stopTypes.includes(t)),
+      bands: d.bands.map((b): TransitBand => ({ maxM: b.maxM!, stories: b.stories! }))
     };
   }
 
@@ -85,9 +90,8 @@
    * follows the fields. A duplicate band distance or a taller outer band is shown as soon as it
    * is entered.
    */
-  let attempted = $state(false);
   const shown = $derived(
-    problem !== null && (attempted || problem === DUPLICATE_BANDS || problem === TALLER_BAND)
+    problem !== null && (d.attempted || problem === DUPLICATE_BANDS || problem === TALLER_BAND)
       ? problem
       : null
   );
@@ -95,7 +99,7 @@
   function onsubmit(e: SubmitEvent): void {
     e.preventDefault();
     if (problem !== null) {
-      attempted = true;
+      d.attempted = true;
       return;
     }
     onsave(build());
@@ -119,8 +123,8 @@
         <input
           type="checkbox"
           class="size-6"
-          checked={stopTypes.includes(t)}
-          onchange={(e) => (stopTypes = toggle(stopTypes, t, e.currentTarget.checked))}
+          checked={d.stopTypes.includes(t)}
+          onchange={(e) => (d.stopTypes = toggle(d.stopTypes, t, e.currentTarget.checked))}
         />
         {STOP_LABELS[t]} · {count(catalog.stops[t], 'stop', 'stops')}
       </label>
@@ -133,7 +137,7 @@
       Each band allows a height on the lots within its distance. The innermost band wins, and an
       outer band is never taller than the band inside it.
     </p>
-    {#each bands as band, i (i)}
+    {#each d.bands as band, i (i)}
       <div class="flex flex-wrap items-end gap-2">
         <label class="flex flex-col">
           <span>Band {i + 1} distance (m)</span>
@@ -154,16 +158,16 @@
           type="button"
           class={smallBtn}
           aria-label="Remove band {i + 1}"
-          disabled={bands.length === 1}
-          onclick={() => (bands = bands.filter((_, j) => j !== i))}>Remove</button
+          disabled={d.bands.length === 1}
+          onclick={() => (d.bands = d.bands.filter((_, j) => j !== i))}>Remove</button
         >
       </div>
     {/each}
     <button
       type="button"
       class="{smallBtn} self-start"
-      disabled={bands.length >= MAX_BANDS}
-      onclick={() => (bands = [...bands, { maxM: null, stories: null }])}>Add a band</button
+      disabled={d.bands.length >= MAX_BANDS}
+      onclick={() => (d.bands = [...d.bands, { maxM: null, stories: null }])}>Add a band</button
     >
   </fieldset>
   <div class="flex flex-wrap items-center gap-2">

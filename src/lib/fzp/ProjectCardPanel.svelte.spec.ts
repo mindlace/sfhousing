@@ -443,7 +443,18 @@ describe('layout (spec §4.3)', () => {
     expect(cs.left).toBe('16px');
     expect(cs.right).toBe('16px');
     expect(cs.bottom).toBe('108px');
-    expect(cs.maxHeight).toMatch(/^(50%|calc\(50%\))$/);
+    // Half the map at most, and never more than the room above it (100px + 1rem here).
+    expect(panel().getBoundingClientRect().height).toBeLessThanOrEqual(350);
     expect(cs.overflowY).toBe('auto');
+  });
+
+  it('below 768 px, with the map inset lifted (the dock sheet), never rises above the map', async () => {
+    await page.viewport(375, 700);
+    // The run's Results peek lifts the controls: 450 px leaves 234 px above the card's room.
+    document.documentElement.style.setProperty('--map-controls-br-block-size', '450px');
+    await setup(project(REAL_ACTUAL));
+    const r = panel().getBoundingClientRect();
+    expect(r.height).toBeLessThanOrEqual(700 - 450 - 16 + 1);
+    expect(r.top).toBeGreaterThanOrEqual(0);
   });
 });

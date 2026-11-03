@@ -112,6 +112,7 @@
       <RuleBrushForm
         {catalog}
         initial={forms.current.initial}
+        draft={forms.current.draft}
         onsave={save}
         oncancel={() => forms.close()}
       />

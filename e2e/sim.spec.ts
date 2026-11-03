@@ -466,10 +466,7 @@ test('a Paint stroke adds a custom brush and Ctrl+Z removes it', async ({ isMobi
   await expect(panel(page).getByRole('button', { name: /^Redo: / })).toBeEnabled();
 });
 
-test('a category protection shows the protections line in the score', async ({
-  isMobile,
-  page
-}) => {
+test('a category protection shows the protections line in the score', async ({ page }) => {
   await gotoSim(page);
   const before = await leverStatus(page);
   await openTab(page, 'Protect');
@@ -481,7 +478,6 @@ test('a category protection shows the protections line in the score', async ({
       return l.status === 'current' && (l.sentRev ?? -1) > (before.sentRev ?? -1);
     })
     .toBe(true);
-  void isMobile;
   const details = await openScore(page);
   await expect(details).toContainText(
     /\d[\d,]* lots? protected: [\d,]+ fewer homes? of zoned capacity/
@@ -855,14 +851,12 @@ const viewButtons = (page: Page): Locator =>
   page.getByRole('banner').getByRole('button', { name: 'View', exact: true, includeHidden: true });
 
 /** Run from Setup, until the run is on (the phone sheet sits above the time bar, never on it). */
-async function pressRun(page: Page, isMobile: boolean): Promise<void> {
-  void isMobile;
+async function pressRun(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Run', exact: true }).click();
   await expect.poll(() => fzp(page, 'runPhase')).toBe('run');
 }
 
 test('Setup shows the height limits and transit; Run hides them; Edit policy brings them back', async ({
-  isMobile,
   page
 }) => {
   await gotoSim(page);
@@ -870,7 +864,7 @@ test('Setup shows the height limits and transit; Run hides them; Edit policy bri
   await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('visible');
   await expect(await headerAction(page, 'View')).toBeVisible();
 
-  await pressRun(page, isMobile);
+  await pressRun(page);
   await expect.poll(() => deckIds(page)).not.toContain(LIMITS_LAYER);
   await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('none');
   await openHeaderMenu(page);
@@ -1017,15 +1011,12 @@ async function expectHeaderFits(page: Page): Promise<number> {
   return score.x + score.width / 2;
 }
 
-test('at 768 px the header fits in Setup and in Run, and the score stays put', async ({
-  isMobile,
-  page
-}) => {
+test('at 768 px the header fits in Setup and in Run, and the score stays put', async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 1024 });
   await gotoSim(page);
   await expect(page.getByRole('banner').getByRole('button', { name: 'View' })).toBeVisible();
   const setupCentre = await expectHeaderFits(page);
-  await pressRun(page, isMobile);
+  await pressRun(page);
   await expect(viewButtons(page)).toHaveCount(0);
   const runCentre = await expectHeaderFits(page);
   expect(Math.abs(runCentre - setupCentre)).toBeLessThanOrEqual(1);

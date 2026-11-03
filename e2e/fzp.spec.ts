@@ -771,6 +771,28 @@ test('axe: the Results face open', async ({ page }) => {
   await expectNoA11yViolations(page);
 });
 
+test('at 375 px in a run, a project card stays below the header while Results peeks', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(!isMobile, 'the phone layout');
+  await gotoFzp(page, '', { run: true });
+  // The run peeks Results above the time bar, which lifts the map's bottom inset.
+  await expect(page.getByTestId('dock-handle')).toHaveText('Results');
+  const c = await openRealCard(page, isMobile);
+  const box = (await c.boundingBox())!;
+  const region = (await page.getByTestId('map-root').boundingBox())!;
+  expect(box.y, 'the card rises above the map').toBeGreaterThanOrEqual(region.y - 0.5);
+  // The header score stays the topmost element at its centre, so it can be pressed.
+  await scoreBar(page).click({ trial: true, timeout: 2_000 });
+  const covered = await scoreBar(page).evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return !(top && el.contains(top));
+  });
+  expect(covered, 'the header score is covered').toBe(false);
+});
+
 test('footer links stay unobscured at 375 px: scrubber, card and score details', async ({
   isMobile,
   page

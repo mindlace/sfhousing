@@ -1,6 +1,10 @@
 <!--
   The project card (spec §4.8): an interactive panel over the map. It renders a `SummaryState` and
   never requests anything itself; FzpMode owns the requests. All text comes from card.ts.
+  Below md it sits above the map's bottom-right controls (`--map-controls-br-block-size`, which
+  includes the map inset: the scrubber and, on /sim, the dock's sheet) and is at most half the
+  map, never taller than the room above it, so it never rises over the header. From md it sits
+  at the top, right of the dock (`--dock-w`).
 -->
 <script lang="ts">
   import type { Day } from '$lib/timelapse/time';
@@ -78,7 +82,7 @@
 {#if state.kind !== 'idle'}
   <section
     aria-labelledby={headingId}
-    class="absolute inset-x-4 bottom-[calc(var(--map-controls-br-block-size,60px)+8px)] z-20 max-h-1/2 overflow-y-auto rounded-lg bg-white p-4 text-sm text-black shadow-lg md:inset-x-auto md:top-4 md:bottom-auto md:left-[calc(var(--dock-w,0px)+1rem)] md:max-h-[calc(100%-2rem-var(--fzp-scrubber-h,0px))] md:w-80"
+    class="absolute inset-x-4 bottom-[calc(var(--map-controls-br-block-size,60px)+8px)] z-20 max-h-[min(50%,calc(100%-var(--map-controls-br-block-size,60px)-1rem))] overflow-y-auto rounded-lg bg-white p-4 text-sm text-black shadow-lg md:inset-x-auto md:top-4 md:bottom-auto md:left-[calc(var(--dock-w,0px)+1rem)] md:max-h-[calc(100%-2rem-var(--fzp-scrubber-h,0px))] md:w-80"
   >
     <div class="flex items-start justify-between gap-2">
       <h2 id={headingId} class="text-base font-semibold">{heading}</h2>
