@@ -51,7 +51,7 @@
   </svg>
 {/snippet}
 
-<div class="flex items-start gap-1 text-ink dark:text-ink-dark">
+<div class="flex flex-wrap items-start gap-1 text-ink dark:text-ink-dark">
   <button
     type="button"
     aria-label={undoName}
@@ -69,12 +69,12 @@
     onclick={() => onredo()}>{@render icon(HISTORY_ICONS.redo)}</button
   >
   {#if !coarse}
-    <details class="ml-auto text-xs">
+    <details class="ml-auto text-xs open:w-full">
       <summary
         class="flex min-h-11 cursor-pointer items-center rounded-md px-2 text-sm text-ink-muted underline hover:bg-surface-raised dark:text-ink-dark-muted dark:hover:bg-surface-dark-raised"
         >Keyboard shortcuts</summary
       >
-      <table class="mt-1 w-full text-left">
+      <table aria-label="Keyboard shortcuts" class="mt-1 w-full text-left">
         <thead>
           <tr><th scope="col" class="py-1 pr-2">Key</th><th scope="col">Action</th></tr>
         </thead>

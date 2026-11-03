@@ -44,4 +44,16 @@ describe('HistoryButtons', () => {
       await expect.element(page.getByText(s.keys, { exact: true })).toBeVisible();
     }
   });
+
+  it('names the shortcuts table, and opened in the 288 px dock it takes the full width below the buttons', async () => {
+    const { container } = await render(HistoryButtons, { props: props() });
+    container.style.width = '288px';
+    await page.getByText('Keyboard shortcuts', { exact: true }).click();
+    const table = page.getByRole('table', { name: 'Keyboard shortcuts' });
+    await expect.element(table).toBeVisible();
+    const t = table.element().getBoundingClientRect();
+    const undo = page.getByRole('button', { name: /^Undo/ }).element().getBoundingClientRect();
+    expect(t.width).toBeGreaterThanOrEqual(280);
+    expect(t.top).toBeGreaterThanOrEqual(undo.bottom);
+  });
 });
