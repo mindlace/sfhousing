@@ -38,6 +38,29 @@ function appendStroke(p: SimPolicy, stroke: Stroke, op: PlanOp, stories: number)
   return { ...p, custom };
 }
 
+/** Two custom brushes are one row when they are the same kind and (paint) the same stories. */
+function sameRow(a: CustomBrush, b: CustomBrush): boolean {
+  return a.kind === 'paint' ? b.kind === 'paint' && a.stories === b.stories : b.kind === 'erase';
+}
+
+/**
+ * The policy without custom brush `id`; the two brushes now adjacent merge when they are the
+ * same kind and (paint) the same stories: the earlier brush's id is kept and its strokes are
+ * followed by the later one's. This is `appendStroke`'s join rule and `/`'s derived row
+ * grouping, so a row means the same on both pages. An unknown `id` returns `p` itself.
+ */
+export function removeCustomBrush(p: SimPolicy, id: string): SimPolicy {
+  const i = p.custom.findIndex((b) => b.id === id);
+  if (i < 0) return p;
+  const custom = p.custom.filter((_, j) => j !== i);
+  const before = custom[i - 1];
+  const after = custom[i];
+  if (before && after && sameRow(before, after)) {
+    custom.splice(i - 1, 2, { ...before, strokes: [...before.strokes, ...after.strokes] });
+  }
+  return { ...p, custom };
+}
+
 export function createStrokeAdapter(deps: {
   store: PolicyStore;
   stories(): number;
@@ -59,7 +82,7 @@ export function createStrokeAdapter(deps: {
         const stories = deps.stories();
         const label = op.kind === 'paint' ? strokeLabel(stories) : ERASE_LABEL;
         store.apply((p) => appendStroke(p, stroke, op, stories), label);
-        // The stroke's result in words (WCAG 4.1.3); the lot count follows in "Custom zoning".
+        // The stroke's result in words (WCAG 4.1.3); the lot count follows in the Paint tab's rows.
         announce(label);
         if (op.kind === 'paint') deps.onpaint?.(stroke, stories);
         return { ok: true };

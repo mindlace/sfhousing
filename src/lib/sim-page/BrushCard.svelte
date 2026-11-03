@@ -1,49 +1,35 @@
 <!--
-  One card in "New zoning rules" or "Custom zoning": a zoning rule (`list="rules"`: Edit and Remove; rules are additive,
-  so their order does not matter) or a custom brush (`list="custom"`: Move up, Move down and
-  Remove; a later brush wins). A one-line summary with the lot count in a polite live region
-  (WCAG 4.1.3), then the buttons, each named with the summary. Every change is a labelled store
-  change, so Undo names and undoes it; a moved card keeps focus on the button pressed.
+  One card in "New zoning rules": a zoning rule with Show on map, Edit and Remove (rules are
+  additive, so their order does not matter). A one-line summary with the lot count in a polite live
+  region (WCAG 4.1.3), then the buttons, each named with the summary. Every change is a labelled
+  store change, so Undo names and undoes it. Painted areas are rows of the Paint tab (PaintTab).
 -->
 <script lang="ts">
-  import { tick } from 'svelte';
-  import {
-    customChangeLabel,
-    customHead,
-    customLotStatus,
-    customSummary,
-    lotsText,
-    ruleChangeLabel,
-    ruleHead,
-    ruleLotStatus,
-    ruleSummary
-  } from './brush-summary';
+  import { lotsText, ruleChangeLabel, ruleHead, ruleLotStatus, ruleSummary } from './brush-summary';
   import type { ZoningRule } from './policy';
   import type { LeverSync, PolicyStore } from './policy-store.svelte';
 
   interface Props {
     store: PolicyStore;
     sync: Pick<LeverSync, 'result' | 'retry'>;
-    list: 'rules' | 'custom';
-    /** The rule's or custom brush's id in `store.policy[list]`. */
+    /** The rule's id in `store.policy.rules`. */
     id: string;
     index: number;
-    /** Opens a rule's form; absent (or the catalog not loaded) leaves Edit disabled. */
+    /** Opens the rule's form; absent (or the catalog not loaded) leaves Edit disabled. */
     onedit?: (r: ZoningRule) => void;
     /** Why Edit is unavailable (the catalog is loading or lacks the rule's data), or null. */
     editUnavailable?: string | null;
     announce?: (msg: string) => void;
     /** After Remove: the list moves focus (this card is gone). */
     onremoved?: (index: number) => void;
-    /** Rules only: this rule is the one shown on the map ("Show on map" is pressed). */
+    /** This rule is the one shown on the map ("Show on map" is pressed). */
     selected?: boolean;
-    /** Rules only: "Show on map" pressed (`on`) or released. */
+    /** "Show on map" pressed (`on`) or released. */
     onselect?: (on: boolean) => void;
   }
   let {
     store,
     sync,
-    list,
     id,
     index,
     onedit = undefined,
@@ -55,54 +41,17 @@
   }: Props = $props();
 
   const uid = $props.id();
-  const rule = $derived(list === 'rules' ? store.policy.rules.find((r) => r.id === id) : undefined);
-  const custom = $derived(
-    list === 'custom' ? store.policy.custom.find((b) => b.id === id) : undefined
-  );
-  const total = $derived(store.policy.custom.length);
+  const rule = $derived(store.policy.rules.find((r) => r.id === id));
   const result = (k: string) => sync.result(k);
-  const status = $derived(
-    rule ? ruleLotStatus(rule, result) : custom ? customLotStatus(custom, result) : null
-  );
+  const status = $derived(rule ? ruleLotStatus(rule, result) : null);
   const lots = $derived(status ? lotsText(status) : '');
-  const head = $derived(rule ? ruleHead(rule) : custom ? customHead(custom) : '');
-  const summary = $derived(
-    rule ? ruleSummary(rule, lots) : custom ? customSummary(custom, lots) : ''
-  );
-  const changeLabel = () =>
-    rule ? ruleChangeLabel(rule) : custom ? customChangeLabel(custom) : '';
-
-  let upBtn = $state<HTMLButtonElement>();
-  let downBtn = $state<HTMLButtonElement>();
-
-  function move(dir: -1 | 1): void {
-    const from = store.policy.custom.findIndex((b) => b.id === id);
-    const to = from + dir;
-    if (from < 0 || to < 0 || to >= store.policy.custom.length) return;
-    const label = `Moved ${dir < 0 ? 'up' : 'down'}: ${changeLabel()}`;
-    store.apply((p) => {
-      const custom = [...p.custom];
-      [custom[from], custom[to]] = [custom[to], custom[from]];
-      return { ...p, custom };
-    }, label);
-    announce?.(label);
-    // The keyed list moves this card's node, which drops focus: put it back, on the other move
-    // button when this one has just become disabled.
-    void tick().then(() => {
-      const want = dir < 0 ? upBtn : downBtn;
-      (want && !want.disabled ? want : dir < 0 ? downBtn : upBtn)?.focus();
-    });
-  }
+  const head = $derived(rule ? ruleHead(rule) : '');
+  const summary = $derived(rule ? ruleSummary(rule, lots) : '');
 
   function remove(): void {
-    const label = `Removed: ${changeLabel()}`;
-    store.apply(
-      (p) =>
-        list === 'rules'
-          ? { ...p, rules: p.rules.filter((r) => r.id !== id) }
-          : { ...p, custom: p.custom.filter((b) => b.id !== id) },
-      label
-    );
+    if (!rule) return;
+    const label = `Removed: ${ruleChangeLabel(rule)}`;
+    store.apply((p) => ({ ...p, rules: p.rules.filter((r) => r.id !== id) }), label);
     announce?.(label);
     onremoved?.(index);
   }
@@ -111,7 +60,8 @@
     'min-h-6 min-w-6 rounded-md px-1 font-semibold underline disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
 </script>
 
-{#if status}
+{#if status && rule}
+  {@const r = rule}
   <li class="flex flex-col gap-1 rounded-md border border-line p-2 dark:border-line-dark">
     <!-- The lot count is its own polite region, kept across states, so a count arriving is
          spoken (WCAG 4.1.3). -->
@@ -126,47 +76,27 @@
           onclick={() => keys.forEach((k) => sync.retry(k))}>Retry</button
         >
       {/if}
-      {#if rule}
-        {@const r = rule}
-        <button
-          type="button"
-          aria-pressed={selected}
-          aria-label="Show on map: {summary}"
-          class="{btn} aria-pressed:bg-accent-tint aria-pressed:text-ink aria-pressed:no-underline dark:aria-pressed:bg-accent-dark/30 dark:aria-pressed:text-ink-dark"
-          onclick={() => onselect?.(!selected)}>Show on map</button
-        >
-        <button
-          type="button"
-          data-brush-edit={id}
-          aria-label="Edit: {summary}"
-          disabled={!onedit || editUnavailable !== null}
-          aria-describedby={editUnavailable ? `${uid}-edit-why` : undefined}
-          class={btn}
-          onclick={() => onedit?.(r)}>Edit</button
-        >
-      {:else}
-        <button
-          bind:this={upBtn}
-          type="button"
-          aria-label="Move up: {summary}"
-          disabled={index === 0}
-          class={btn}
-          onclick={() => move(-1)}>Move up</button
-        >
-        <button
-          bind:this={downBtn}
-          type="button"
-          aria-label="Move down: {summary}"
-          disabled={index >= total - 1}
-          class={btn}
-          onclick={() => move(1)}>Move down</button
-        >
-      {/if}
+      <button
+        type="button"
+        aria-pressed={selected}
+        aria-label="Show on map: {summary}"
+        class="{btn} aria-pressed:bg-accent-tint aria-pressed:text-ink aria-pressed:no-underline dark:aria-pressed:bg-accent-dark/30 dark:aria-pressed:text-ink-dark"
+        onclick={() => onselect?.(!selected)}>Show on map</button
+      >
+      <button
+        type="button"
+        data-brush-edit={id}
+        aria-label="Edit: {summary}"
+        disabled={!onedit || editUnavailable !== null}
+        aria-describedby={editUnavailable ? `${uid}-edit-why` : undefined}
+        class={btn}
+        onclick={() => onedit?.(r)}>Edit</button
+      >
       <button type="button" aria-label="Remove: {summary}" class={btn} onclick={remove}
         >Remove</button
       >
     </div>
-    {#if rule && editUnavailable}
+    {#if editUnavailable}
       <span id="{uid}-edit-why" class="text-ink-muted dark:text-ink-dark-muted"
         >{editUnavailable}</span
       >

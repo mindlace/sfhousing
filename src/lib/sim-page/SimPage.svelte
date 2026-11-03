@@ -14,7 +14,7 @@
   the timing notice when anything moved); there is no stroke controller, no tools, no autosave and
   no Publish, and the dock's one tab is the summary.
   The dock (sim-ux plan 2, Task 4): the policy lives in a `Dock` with the tabs Transit · Paint ·
-  Permits · Protect (`SIM_TABS`), the Undo and Redo row above them, and a Results face (FzpMode's
+  Permits · Protect (`SIM_TABS`), Undo and Redo (`HistoryButtons`) above them, and a Results face (FzpMode's
   `SimResults`). From md it is open on the left of the map by default and folds to a rail; below
   md it is a bottom sheet behind a handle. The header's Policy button opens and folds it; the
   header score flips it to Results and back.
@@ -27,6 +27,8 @@
   (height-lids plan, Task 12) draw in the overlay's `limits` slot: the contours from FzpMode's
   `onheights`, and from z14.5 the glass lids of the view, asked of the worker on each `moveend`
   (LidRequest: latest wins, the bbox clamped around the centre).
+  Selection (sim-ux plan 3, Task 3): one `picked` selection, a rule ("Show on map") or a painted
+  area (a Paint tab row); the selected area's lots are outlined on the map.
   Paint feedback (Task 6): in Setup a Paint stroke, and a saved zoning rule once its revision is
   current, briefly shows the buildings its lots in view could hold (the overlay's feedback slot).
 -->
@@ -63,9 +65,9 @@
   import type { LeverStatus } from './lever-status';
   import { BrushForms } from './brush-forms.svelte';
   import type { Calibration } from '$lib/timelapse/types';
-  import CustomZoningSection from './CustomZoningSection.svelte';
-  import HistoryRow from './HistoryRow.svelte';
-  import { SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
+  import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
+  import PaintTab from '$lib/paint/PaintTab.svelte';
+  import { ERASE_HINT, SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
   import { createOverlayMux } from './overlay-mux';
   import PhoneToolBar from './PhoneToolBar.svelte';
   import {
@@ -87,14 +89,21 @@
   import { SIM_CODEC, simDocProblems, type SimDoc } from './sim-doc';
   import SimNotices from './SimNotices.svelte';
   import { restoreSimDoc, type SimNotice } from './sim-session';
-  import { createStrokeAdapter } from './stroke-adapter';
+  import { limitsViewOf, liveSelection, type DockSelection } from './selection';
+  import { createStrokeAdapter, removeCustomBrush } from './stroke-adapter';
   import { focusHeaderMenu } from '$lib/shell/header-actions.svelte';
   import { LeverSync, PolicyStore } from './policy-store.svelte';
   import { RunPhase } from './run-phase.svelte';
   import PermittingSection from './PermittingSection.svelte';
   import RulesSection from './RulesSection.svelte';
   import PolicySummary from './PolicySummary.svelte';
-  import { customLotStatus, ruleLotStatus, type LotStatus } from './brush-summary';
+  import {
+    customChangeLabel,
+    customLotStatus,
+    ruleLotStatus,
+    simPaintRows,
+    type LotStatus
+  } from './brush-summary';
   import ProtectionsSection from './ProtectionsSection.svelte';
   import { VIEW_TABS, simTabs, tabOrFirst } from './tabs';
 
@@ -433,7 +442,7 @@
     feedbackTrigger.reset();
     feedback?.show(null);
     setTool('move');
-    pickedRule = null;
+    picked = null;
     store.locked = true;
     run.run();
     // The dock flips to Results (a rail or a closed sheet opens on it); focus stays at Run.
@@ -492,8 +501,8 @@
   let lids = $state.raw<HeightLids | null>(null);
   /** `limits-layer`, lazy-loaded on mount (it pulls in deck's layers). */
   let limitsModule = $state.raw<typeof import('$lib/map/height/limits-layer') | null>(null);
-  /** The rule whose "Show on map" was pressed; `selectedRule` is it while it is still in the policy. */
-  let pickedRule = $state.raw<string | null>(null);
+  /** What was picked in the dock (a rule's "Show on map", a painted area's row); `selection` is it while it is still in the policy. */
+  let picked = $state.raw<DockSelection>(null);
   /** The map's view at its latest `moveend` (or when it became ready). */
   let mapView = $state.raw<{
     zoom: number;
@@ -535,28 +544,29 @@
     show: (l) => (lids = l)
   });
 
-  // A rule that leaves the policy (Remove, Undo, a restore) is no longer selected, in the same
-  // render (no frame dims everything for a rule that is gone); the effect forgets it, so a Redo
-  // does not bring the selection back.
-  const selectedRule = $derived(
-    pickedRule !== null && store.policy.rules.some((r) => r.id === pickedRule) ? pickedRule : null
-  );
+  // A rule or painted area that leaves the policy (Remove, Undo, a restore) is no longer selected,
+  // in the same render (no frame dims everything or outlines lots for one that is gone); the
+  // effect forgets it, so a Redo does not bring the selection back.
+  const selection = $derived(liveSelection(picked, store.policy));
   $effect(() => {
-    if (pickedRule !== null && selectedRule === null) pickedRule = null;
+    if (picked !== null && selection === null) picked = null;
   });
+  const selectedRule = $derived(selection?.kind === 'rule' ? selection.id : null);
+  const selectedPaint = $derived(selection?.kind === 'paint' ? selection.id : null);
   /** "Show on map" pressed or released. Showing a rule turns the limits view on, which it needs. */
   function selectRule(id: string | null): void {
-    pickedRule = id;
+    picked = id === null ? null : { kind: 'rule', id };
     if (id !== null && !viewPrefs.heightLimits) setView({ ...viewPrefs, heightLimits: true });
   }
-  /** Plain; with the brush or eraser chosen, paint-set limits stand out; a selected rule wins. */
-  const limitsMode = $derived<LimitsView>(
-    selectedRule !== null
-      ? { kind: 'rule', ruleId: selectedRule }
-      : mode === 'edit' && (tools.tool === 'paint' || tools.tool === 'erase')
-        ? { kind: 'paint' }
-        : { kind: 'plain' }
-  );
+  /** A painted area's row pressed or released. */
+  function selectPaint(id: string | null): void {
+    picked = id === null ? null : { kind: 'paint', id };
+  }
+  /**
+   * Plain; with the brush or eraser chosen, or a painted area selected, paint-set limits stand
+   * out; a selected rule wins.
+   */
+  const limitsMode = $derived<LimitsView>(limitsViewOf(selection, tools.tool, mode));
   const limitsOn = $derived(run.phase === 'setup' && viewPrefs.heightLimits);
 
   // Lids from LIDS_FADE's start: the view's bbox, clamped around the view centre (R14).
@@ -598,13 +608,24 @@
     show: (o) => (outlines = o)
   });
 
+  // The outlines wanted, in order: the selected painted area's lots (an erase area's too), else
+  // the painted lots while Erase is chosen, else none.
   $effect(() => {
+    const area =
+      selectedPaint !== null ? store.policy.custom.find((b) => b.id === selectedPaint) : undefined;
+    if (area) {
+      // Read here, so the effect reruns when the area's lots arrive.
+      const r = sync.result(queryKey(customQuery(area)));
+      // Unanswered (a stroke just joined this area): keep what is drawn.
+      if (!r) return;
+      untrack(() => outlineRequest.want(r.ok ? new Set(r.lots) : null));
+      return;
+    }
     const erasing = mode === 'edit' && tools.tool === 'erase';
     if (!erasing) {
       untrack(() => outlineRequest.want(null));
       return;
     }
-    // Read here, so the effect reruns when a stroke's lots arrive.
     const lots: Lots = (key) => {
       const r = sync.result(key);
       return r?.ok ? r.lots : undefined;
@@ -777,6 +798,21 @@
     if (changed) feedbackTrigger.saved(r.id);
   }
 
+  /** The Paint tab's rows: one per custom brush, in policy order. */
+  const paintRows = $derived(simPaintRows(store.policy, (k) => sync.result(k)));
+
+  /**
+   * A painted area's Remove: one store change Undo names, applied synchronously (PaintTab moves
+   * focus after a single tick). Neighbours of equal kind and height merge, as on `/`.
+   */
+  function removePaintArea(id: string): void {
+    const b = store.policy.custom.find((x) => x.id === id);
+    if (!b) return;
+    const label = `Removed: ${customChangeLabel(b)}`;
+    store.apply((p) => removeCustomBrush(p, id), label);
+    brush.announce(label, ANNOUNCE_MS);
+  }
+
   /** The summary's per-card lot lookup: a rule (`rule:<id>`) or a custom brush (`custom:<id>`). */
   function lotsOf(key: `rule:${string}` | `custom:${string}`): LotStatus {
     const p = store.policy;
@@ -854,7 +890,16 @@
 {/snippet}
 
 {#snippet history()}
-  <HistoryRow {store} onundo={undo} onredo={redo} />
+  <div class="border-b border-line px-4 py-2 dark:border-line-dark">
+    <HistoryButtons
+      canUndo={store.canUndo}
+      canRedo={store.canRedo}
+      undoLabel={store.undoLabel}
+      redoLabel={store.redoLabel}
+      onundo={undo}
+      onredo={redo}
+    />
+  </div>
 {/snippet}
 
 {#snippet tabPanel(id: string)}
@@ -872,12 +917,16 @@
       onselectrule={selectRule}
     />
   {:else if id === 'paint'}
-    <CustomZoningSection
-      {store}
-      {sync}
-      {tools}
+    <PaintTab
+      {brush}
+      tool={tools.tool}
       ontool={setTool}
-      announce={(m) => brush.announce(m, ANNOUNCE_MS)}
+      rows={paintRows}
+      selected={selectedPaint}
+      onselect={selectPaint}
+      onremove={removePaintArea}
+      eraseHint={ERASE_HINT}
+      onretry={(keys) => keys.forEach((k) => sync.retry(k))}
     />
   {:else if id === 'permits'}
     {#if calibration}

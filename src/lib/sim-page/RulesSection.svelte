@@ -91,7 +91,6 @@
         <BrushCard
           {store}
           {sync}
-          list="rules"
           id={r.id}
           index={i}
           onedit={edit}

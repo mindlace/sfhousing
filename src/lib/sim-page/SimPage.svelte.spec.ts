@@ -388,12 +388,13 @@ describe('SimPage strokes (Task 8)', () => {
     ev('pointerup', 80);
     const undo = page.getByRole('button', { name: 'Undo: Allowed 6 stories' });
     await expect.element(undo).toBeEnabled();
-    await expect.element(page.getByText('Finding lots…')).toBeVisible();
+    const row = page.getByRole('button', { name: '6 stories · 1 stroke · Finding lots…' });
+    await expect.element(row).toBeVisible();
     await undo.click();
     await expect
       .element(page.getByRole('status').filter({ hasText: 'Undid: Allowed 6 stories' }))
       .toBeInTheDocument();
-    await expect.element(page.getByText('Finding lots…')).not.toBeInTheDocument();
+    await expect.element(row).not.toBeInTheDocument();
   });
 
   it('B and E pick Paint and Erase; V goes back to Move', async () => {
@@ -409,6 +410,180 @@ describe('SimPage strokes (Task 8)', () => {
     await expect.element(page.getByRole('radio', { name: 'Paint' })).toBeChecked();
     await userEvent.keyboard('v');
     await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
+  });
+});
+
+describe('SimPage Paint tab (sim-ux plan 3, Task 3)', () => {
+  /** The row select buttons ("8 stories · 2 strokes · 52 lots"), not Retry or Remove. */
+  const paintRows = () =>
+    page
+      .getByRole('list', { name: 'Painted areas' })
+      .getByRole('button', { name: /^(\d+ stor(y|ies)|Erased) · / });
+  const overlayIds = () =>
+    ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
+  const brushLots = ['P0', 'P1'];
+
+  /** One stroke across the stub map's canvas with the current tool. */
+  function drawStroke(): void {
+    const canvas = stub.map.getCanvas();
+    const ev = (type: string, x: number) =>
+      canvas.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: 10,
+          pointerId: 1,
+          pointerType: 'mouse',
+          button: type === 'pointermove' ? -1 : 0,
+          isPrimary: true
+        })
+      );
+    ev('pointerdown', 10);
+    for (let x = 20; x <= 80; x += 10) ev('pointermove', x);
+    ev('pointerup', 80);
+  }
+
+  /** Choose Paint on the Paint tab (the tools come on once the scenario is ready). */
+  async function choosePaint() {
+    await tab('Paint').click();
+    const paint = page.getByRole('radio', { name: 'Paint' });
+    await expect.element(paint).toBeEnabled();
+    await paint.click();
+  }
+
+  /** Answers the latest brush query with `lots`. */
+  function answer(w: (typeof workers)[number], lots: string[] = brushLots) {
+    w.emit({
+      type: 'brushLots',
+      reqId: w.lastOf('resolveBrush')!.reqId,
+      result: { ok: true, lots, points: new Float64Array(lots.length * 2) }
+    });
+  }
+
+  /** /sim ready, Paint chosen, one stroke painted and its lots answered. */
+  async function readySimWithPaint() {
+    const { w } = await readySim();
+    await choosePaint();
+    drawStroke();
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(1);
+    answer(w);
+    await expect.element(paintRows().first()).toHaveAccessibleName('6 stories · 1 stroke · 2 lots');
+    return { w };
+  }
+
+  /** Paints strokes at 8, 4 and 8 stories: three painted areas. */
+  async function paintThreeAreas() {
+    const { w } = await readySim();
+    await choosePaint();
+    for (const n of [8, 4, 8]) {
+      await page.getByRole('button', { name: `${n} stories`, exact: true }).click();
+      drawStroke();
+    }
+    await expect.poll(() => paintRows().elements().length).toBe(3);
+    return { w };
+  }
+
+  it('a Paint stroke adds a row to the Paint tab with its stroke and lot counts', async () => {
+    const { w } = await readySim();
+    await choosePaint();
+    drawStroke();
+    const list = page.getByRole('list', { name: 'Painted areas' });
+    await expect
+      .element(list.getByRole('button', { name: '6 stories · 1 stroke · Finding lots…' }))
+      .toBeVisible();
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(1);
+    answer(w);
+    await expect
+      .element(list.getByRole('button', { name: '6 stories · 1 stroke · 2 lots' }))
+      .toBeVisible();
+  });
+
+  it('selecting a painted area asks for its outlines; unselecting drops them', async () => {
+    const { w } = await readySimWithPaint();
+    await page.getByRole('tab', { name: 'Paint' }).click();
+    await paintRows().first().click();
+    await expect.poll(() => w.lastOf('lotOutlines')?.lots).toEqual(brushLots);
+    const c = stub.map.getCenter();
+    const d = 1e-3;
+    w.emit({
+      type: 'lotOutlines',
+      reqId: w.lastOf('lotOutlines')!.reqId,
+      result: {
+        ok: true,
+        lots: brushLots,
+        ringLot: Uint32Array.from([0]),
+        starts: Uint32Array.from([0, 4]),
+        positions: Float64Array.from([
+          c.lng,
+          c.lat,
+          c.lng + d,
+          c.lat,
+          c.lng + d,
+          c.lat + d,
+          c.lng,
+          c.lat + d
+        ]),
+        missing: 0
+      }
+    });
+    await expect.poll(overlayIds).toContain('sim-painted-outline');
+    await paintRows().first().click();
+    await expect.poll(overlayIds).not.toContain('sim-painted-outline');
+  });
+
+  it('Remove on the selected area is one change Undo names; the selection clears', async () => {
+    await readySimWithPaint();
+    await paintRows().first().click();
+    await page.getByRole('button', { name: /^Remove:/ }).click();
+    expect(paintRows().elements()).toHaveLength(0);
+    await expect
+      .element(page.getByRole('button', { name: 'Undo: Removed: Allowed 6 stories' }))
+      .toBeEnabled();
+    await expect
+      .element(page.getByRole('status').filter({ hasText: 'Removed: Allowed 6 stories' }))
+      .toBeInTheDocument();
+    await page.getByRole('button', { name: /^Undo:/ }).click();
+    await expect.element(paintRows().first()).toHaveAttribute('aria-pressed', 'false');
+    expect(page.getByRole('button', { name: /^Remove:/ }).elements()).toHaveLength(0);
+  });
+
+  it('after Remove, focus lands on the row now at its place', async () => {
+    await paintThreeAreas();
+    // Remove the first of the 8 / 4 / 8 rows: the 4-story row takes its place.
+    await paintRows().first().click();
+    await page.getByRole('button', { name: /^Remove:/ }).click();
+    await expect
+      .poll(() => (document.activeElement as HTMLElement | null)?.dataset.paintRow !== undefined)
+      .toBe(true);
+    expect((document.activeElement as HTMLElement).getAttribute('aria-label')).toMatch(
+      /^4 stories/
+    );
+  });
+
+  it('removing the middle of three rows with the outer two at one height leaves one row; Undo restores three', async () => {
+    await paintThreeAreas();
+    await paintRows().nth(1).click();
+    await page.getByRole('button', { name: /^Remove:/ }).click();
+    await expect.poll(() => paintRows().elements().length).toBe(1);
+    await expect.element(paintRows().first()).toHaveAccessibleName(/^8 stories · 2 strokes/);
+    await expect
+      .element(page.getByRole('button', { name: 'Undo: Removed: Allowed 4 stories' }))
+      .toBeEnabled();
+    await page.getByRole('button', { name: /^Undo:/ }).click();
+    await expect.poll(() => paintRows().elements().length).toBe(3);
+    await expect.element(paintRows().nth(1)).toHaveAccessibleName(/^4 stories · 1 stroke/);
+  });
+
+  it('undoing the stroke that made the selected area clears the selection; Redo does not restore it', async () => {
+    await readySimWithPaint();
+    await paintRows().first().click();
+    await expect.element(paintRows().first()).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Undo: Allowed 6 stories' }).click();
+    expect(paintRows().elements()).toHaveLength(0);
+    await page.getByRole('button', { name: 'Redo: Allowed 6 stories' }).click();
+    await expect.element(paintRows().first()).toHaveAttribute('aria-pressed', 'false');
+    expect(page.getByRole('button', { name: /^Remove:/ }).elements()).toHaveLength(0);
   });
 });
 

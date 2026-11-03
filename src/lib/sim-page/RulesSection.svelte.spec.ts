@@ -55,7 +55,7 @@ describe('RulesSection', () => {
     expect(add.element().hasAttribute('data-brush-add')).toBe(true);
   });
 
-  it('has no tools, key or custom list (those are Custom zoning)', async () => {
+  it('has no tools, key or custom list (those are the Paint tab)', async () => {
     setup({ catalog: testCatalog() });
     expect(page.getByRole('radiogroup', { name: 'Brush tool' }).elements()).toHaveLength(0);
     expect(page.getByRole('button', { name: /^Undo/ }).elements()).toHaveLength(0);

@@ -132,7 +132,7 @@ async function openBrushForm(page: Page, title: string): Promise<Locator> {
 const ruleList = (page: Page): Locator =>
   panel(page).getByRole('list', { name: 'New zoning rules' }).getByRole('listitem');
 const customList = (page: Page): Locator =>
-  panel(page).getByRole('list', { name: 'Custom zoning' }).getByRole('listitem');
+  panel(page).getByRole('list', { name: 'Painted areas' }).getByRole('listitem');
 
 /** One stroke across fixture-0's parcel row: a mouse drag on desktop, a finger on the phone. */
 async function strokeOnce(page: Page, isMobile: boolean): Promise<void> {
@@ -457,13 +457,47 @@ test('a Paint stroke adds a custom brush and Ctrl+Z removes it', async ({ isMobi
   // Done goes back to Move and reopens the sheet on Paint.
   if (isMobile) await toolBarDone(page);
   await expect(customList(page)).toHaveCount(1);
-  await expect(customList(page).first()).toContainText(/Allow \d+ stor/);
+  await expect(customList(page).first()).toContainText(/\d+ stor/);
   await closeSheet(page);
 
   await page.keyboard.press('Control+z');
   await openPolicy(page);
   await expect(customList(page)).toHaveCount(0);
   await expect(panel(page).getByRole('button', { name: /^Redo: / })).toBeEnabled();
+});
+
+test('a painted area is selected, outlined and removed from the Paint tab', async ({
+  isMobile,
+  page
+}) => {
+  const OUTLINE_LAYER = 'sim-painted-outline';
+  await gotoSim(page);
+  await openTab(page, 'Paint');
+  const paint = panel(page).getByRole('radio', { name: 'Paint', exact: true });
+  await expect(paint).toBeEnabled();
+  await chooseTool(page, isMobile, () => paint.click());
+  await strokeOnce(page, isMobile);
+  if (isMobile) await toolBarDone(page);
+  await expect(customList(page)).toHaveCount(1);
+
+  // Selecting the row outlines its lots (Move is chosen: nothing else would).
+  const row = customList(page).first().getByRole('button', { pressed: false });
+  await row.first().click();
+  await expect(customList(page).first().getByRole('button', { pressed: true })).toBeVisible();
+  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(OUTLINE_LAYER);
+
+  // Remove is one change: the row and its outline go, and Undo brings the row back unselected.
+  await panel(page)
+    .getByRole('button', { name: /^Remove: / })
+    .click();
+  await expect(customList(page)).toHaveCount(0);
+  await expect.poll(() => deckIds(page)).not.toContain(OUTLINE_LAYER);
+  await panel(page)
+    .getByRole('button', { name: /^Undo: Removed: / })
+    .click();
+  await expect(customList(page)).toHaveCount(1);
+  await expect(customList(page).first().getByRole('button', { pressed: false })).toBeVisible();
+  expect(await deckIds(page)).not.toContain(OUTLINE_LAYER);
 });
 
 test('a category protection shows the protections line in the score', async ({ page }) => {
