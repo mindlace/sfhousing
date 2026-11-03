@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { parseSummary, type LessCarsSummary } from '$lib/data/lesscars/codec';
+import { parseSitesFile, parseSummary, type LessCarsSummary } from '$lib/data/lesscars/codec';
 import { LESSCARS_HORIZON, LESSCARS_START } from '$lib/data/lesscars/schedule';
+import sitesJson from '../../../e2e/fixtures/data/fixture-0/scenarios/lesscars/sites.json';
 import summaryJson from '../../../e2e/fixtures/data/fixture-0/scenarios/lesscars/summary.json';
 import {
   bandText,
   breakdownRows,
   extraChartModel,
+  freedLandSplit,
   finalYear,
   headlineName,
   headlineText,
@@ -16,6 +18,19 @@ import {
 
 const fx = parseSummary(summaryJson);
 const Y = finalYear(fx);
+const fixtureSites = parseSitesFile(sitesJson);
+
+describe('freedLandSplit', () => {
+  it('sums parcel land and the rest, without held sites', () => {
+    expect(freedLandSplit(fixtureSites)).toEqual({
+      parcelM2: expect.closeTo(800, 0),
+      rowM2: expect.closeTo(3684, 0)
+    });
+    const held = structuredClone(fixtureSites);
+    for (const x of held.sites) x.heldBy = 'garage';
+    expect(freedLandSplit(held)).toEqual({ parcelM2: 0, rowM2: 0 });
+  });
+});
 
 const last = <T>(a: T[], v: T): T[] => [...a.slice(0, -1), v];
 const withFinal = (s: LessCarsSummary, v: number): LessCarsSummary => ({

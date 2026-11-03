@@ -348,7 +348,7 @@
 {/snippet}
 
 {#snippet details()}
-  <DetailsPanel {summary} {day} onevidence={() => openEvidence()} />
+  <DetailsPanel {summary} {sites} {day} onevidence={() => openEvidence()} />
 {/snippet}
 
 {#snippet headline()}

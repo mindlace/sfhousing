@@ -208,6 +208,7 @@ export function siteFeatures(
   const times = timesById(f);
   const out: Feature<Polygon, SiteProps>[] = [];
   for (const site of s.sites) {
+    if (site.heldBy) continue; // a garage holds it: drawn as garage land, not freed land
     const from = times.get(site.projectId)?.availableDay;
     if (from == null) continue;
     out.push({

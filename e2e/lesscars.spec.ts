@@ -371,6 +371,29 @@ test.describe('the page on fixture-0', () => {
     expect(sources.reduce((a, b) => a + b, 0)).toBe(shown);
   });
 
+  test('the details say how much freed land came from freeway parcels and from roadway', async ({
+    page
+  }) => {
+    let parcelM2 = 0;
+    let rowM2 = 0;
+    for (const s of sitesFile.sites) {
+      if (s.heldBy) continue;
+      const p = Math.min(s.parcelM2 ?? 0, s.rec.areaM2);
+      parcelM2 += p;
+      rowM2 += s.rec.areaM2 - p;
+    }
+    const ha = (m2: number) => (m2 / 10000).toFixed(1);
+    const want =
+      parcelM2 > 0
+        ? `Freed land: ${ha(parcelM2)} ha of former freeway land and ${ha(rowM2)} ha of former roadway.`
+        : `Freed land: ${ha(rowM2)} ha of former roadway.`;
+    await page.getByTestId('lc-headline').click();
+    await expect(page.getByTestId('lc-panel').getByText(want, { exact: true })).toBeVisible();
+    // the fixture summary has no garageCost, so no garage line
+    expect(summary.garageCost).toBeUndefined();
+    await expect(page.getByText(/take the place of/)).toHaveCount(0);
+  });
+
   test('street states are rendered by day, and revert when scrubbing back', async ({ page }) => {
     const hwy = planFile.plan.projects.find((p) => p.kind === 'highway-truncation')!;
     await frameOn(page, planBBox(planFile));

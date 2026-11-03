@@ -699,6 +699,13 @@ pinned slot as one button; it opens the details (breakdown that adds to the head
 amenities note, map key, evidence). Timeline and Evidence are header actions, in the Menu below
 1024 px.
 
+Under the breakdown the details give the freed-land disclosure from `sites.json`
+(`freedLandSplit`): hectares from freeway-land parcels (`parcelM2`) and from right-of-way (the rest
+of each site's area), to one decimal, held sites excluded; with no parcel land it says only the
+roadway figure. When `summary.garageCost` is present and above 0, a second line gives the homes
+the edge garages' footprints cost. A held site (`heldBy`) is not drawn by `siteFeatures`: it is
+garage land. A dataset without `parcels`, `heldBy` or `garageCost` shows the roadway sentence only.
+
 ### Scrubber markers
 
 `scrubberMarkers` gives SB 79 at `switchDay` and each transit-line opening. `TimeScrubber` (shared

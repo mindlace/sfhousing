@@ -57,6 +57,19 @@ describe('laneState', () => {
   });
 });
 
+describe('siteFeatures', () => {
+  it('a held site is not drawn as freed land', () => {
+    const withHeld = structuredClone(sitesFile);
+    withHeld.sites.find((x) => x.siteId === 'lc:hwy:1')!.heldBy = 'garage';
+    expect(siteFeatures(planFile, sitesFile).features.map((f) => f.properties.siteId)).toContain(
+      'lc:hwy:1'
+    );
+    expect(siteFeatures(planFile, withHeld).features.map((f) => f.properties.siteId)).not.toContain(
+      'lc:hwy:1'
+    );
+  });
+});
+
 describe('streetFeatures', () => {
   it('lists the six states in map-key order', () => {
     expect(STREET_STATES).toEqual(['works', 'transit', 'bike', 'pedestrian', 'removed', 'grade']);

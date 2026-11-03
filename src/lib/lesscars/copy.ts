@@ -32,3 +32,12 @@ export const breakdownCaption = (year: number): string =>
   `Where the extra homes come from, ${year}`;
 
 export const BUILDING_NOTE = 'Thinner and faded while being built';
+
+export function freedLandCopy(parcelHa: string, rowHa: string): string {
+  return Number(parcelHa) > 0
+    ? `Freed land: ${parcelHa} ha of former freeway land and ${rowHa} ha of former roadway.`
+    : `Freed land: ${rowHa} ha of former roadway.`;
+}
+
+export const garageCostCopy = (homes: number): string =>
+  `Edge garages on freed land take the place of ${formatCount(homes)} homes.`;

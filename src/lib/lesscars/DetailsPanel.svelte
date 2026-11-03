@@ -5,28 +5,43 @@
   Map-key swatches carry the non-colour cues (width, dash, double stroke) the map draws.
 -->
 <script lang="ts">
-  import type { LessCarsSummary } from '$lib/data/lesscars/codec';
+  import type { LessCarsSitesFile, LessCarsSummary } from '$lib/data/lesscars/codec';
   import { TOKENS } from '$lib/map/palette';
   import { useSystemTheme } from '$lib/map/system-theme.svelte';
   import { formatCount } from '$lib/scoreboard/format';
   import type { Day } from '$lib/timelapse/time';
-  import { AMENITIES_COPY, BUILDING_NOTE, breakdownCaption, headlineSentence } from './copy';
+  import {
+    AMENITIES_COPY,
+    BUILDING_NOTE,
+    breakdownCaption,
+    freedLandCopy,
+    garageCostCopy,
+    headlineSentence
+  } from './copy';
   import ExtraChart from './ExtraChart.svelte';
   import { LESSCARS_LEGEND } from './legend';
-  import { bandText, breakdownRows, finalHomes, finalYear } from './summary-view';
+  import { bandText, breakdownRows, finalHomes, finalYear, freedLandSplit } from './summary-view';
 
   interface Props {
     summary: LessCarsSummary;
+    sites: LessCarsSitesFile;
     day: Day;
     onevidence: () => void;
   }
-  let { summary, day, onevidence }: Props = $props();
+  let { summary, sites, day, onevidence }: Props = $props();
 
   const theme = useSystemTheme();
   const rows = $derived(breakdownRows(summary));
   const total = $derived(finalHomes(summary));
   const year = $derived(finalYear(summary));
   const scale = $derived(Math.max(1, ...rows.map((r) => Math.abs(r.homes))));
+  const land = $derived(freedLandSplit(sites));
+  const landText = $derived(
+    land.parcelM2 + land.rowM2 > 0
+      ? freedLandCopy((land.parcelM2 / 10000).toFixed(1), (land.rowM2 / 10000).toFixed(1))
+      : null
+  );
+  const garageHomes = $derived((summary.garageCost ?? []).reduce((a, g) => a + g.homes, 0));
   const color = (t: (typeof LESSCARS_LEGEND)[number]['token']) => TOKENS[theme.current][t];
 </script>
 
@@ -66,6 +81,13 @@
       >
     </tfoot>
   </table>
+
+  {#if landText}
+    <p class="text-gray-700 dark:text-gray-300">{landText}</p>
+  {/if}
+  {#if summary.garageCost && garageHomes > 0}
+    <p class="text-gray-700 dark:text-gray-300">{garageCostCopy(garageHomes)}</p>
+  {/if}
 
   <ExtraChart {summary} {day} />
 
