@@ -10,6 +10,7 @@ import {
   CALCULATING,
   RHNA_ID,
   bandLine,
+  builtByTodayText,
   deadlineIndex,
   formatRange,
   homesAdded,
@@ -19,6 +20,7 @@ import {
   planBandLine,
   scoreAt,
   scrubMarkers,
+  sinceText,
   vsFzpText
 } from './score-view';
 import { YEAR_2045, dayFromUtc } from './time';
@@ -264,5 +266,29 @@ describe('vsFzpText', () => {
     expect(vsFzpText(1234)).toBe('vs FZP +1,234');
     expect(vsFzpText(-56)).toBe('vs FZP \u221256');
     expect(vsFzpText(0)).toBe('vs FZP +0');
+  });
+});
+
+describe('the Results headline', () => {
+  const at = scoreAt(TIMELINE_SCORE, 50);
+
+  it('states the total and the data start date', () => {
+    const score = {
+      ...TIMELINE_SCORE,
+      baseline: { ...TIMELINE_SCORE.baseline, since: dayFromUtc(2021, 1, 1) }
+    };
+    expect(sinceText(score, { ...at, total: 8805 })).toBe('8,805 homes added since Jan 2021');
+  });
+
+  it('takes the date from the data', () => {
+    const score = {
+      ...TIMELINE_SCORE,
+      baseline: { ...TIMELINE_SCORE.baseline, since: dayFromUtc(2022, 3, 1) }
+    };
+    expect(sinceText(score, at)).toBe('17,000 homes added since Mar 2022');
+  });
+
+  it('says how much is already built', () => {
+    expect(builtByTodayText({ ...at, actual: 8805 })).toBe('of which 8,805 built by today');
   });
 });

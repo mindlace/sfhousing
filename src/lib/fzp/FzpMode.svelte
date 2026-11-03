@@ -95,7 +95,7 @@
   import type { Day } from '$lib/timelapse/time';
   import { installFzpDebug } from './debug';
   import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
-  import FzpScorePanel from './FzpScorePanel.svelte';
+  import SimResults from './SimResults.svelte';
   import { DEFAULT_SPEED } from './playback';
   import ProjectCardPanel from './ProjectCardPanel.svelte';
   import ProjectTooltip from './ProjectTooltip.svelte';
@@ -146,8 +146,11 @@
     onmapready?: (h: SimMapHandle, map: MapLike) => void;
     /** Every phase change (/sim: the brush tools work once the scenario is ready). */
     onphase?: (p: FzpPhase) => void;
-    /** Rendered inside `.sfh-fzp` (the /sim policy panel). */
-    panel?: Snippet;
+    /**
+     * Rendered inside `.sfh-fzp` (the /sim dock). It is given the Results snippet (`SimResults`
+     * with the scrubbed month's score) for the dock's Results face.
+     */
+    panel?: Snippet<[Snippet]>;
     /** The page's own header actions, before 'Another future' (/sim: "Policy"). */
     actions?: Snippet;
     /** The header's status slot (/sim: the save state); read once, at mount. */
@@ -840,10 +843,8 @@
   {/if}
 {/snippet}
 
-<!-- Not rendered until the dock's Results face takes it (plan 2, Task 3). -->
-<!-- eslint-disable-next-line @typescript-eslint/no-unused-vars -->
-{#snippet scorePanel()}
-  <FzpScorePanel
+{#snippet results()}
+  <SimResults
     {score}
     {at}
     {day}
@@ -1021,7 +1022,7 @@
     {/if}
 
     {#if phase !== 'no-scenario'}
-      {@render panel?.()}
+      {@render panel?.(results)}
     {/if}
 
     {#if calibration && phase !== 'no-scenario'}

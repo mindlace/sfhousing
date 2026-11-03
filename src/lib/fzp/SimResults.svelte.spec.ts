@@ -14,7 +14,7 @@ import {
 import { scoreCopy } from '$lib/sim-page/policy';
 import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import type { LeverCapacity } from '$lib/sim/levers/resolve';
-import FzpScorePanel from './FzpScorePanel.svelte';
+import SimResults from './SimResults.svelte';
 import { scoreAt } from './score-view';
 import { dayFromUtc, monthIndex } from './time';
 
@@ -70,19 +70,26 @@ afterEach(async () => {
   await scheme('light');
 });
 
-describe('badge and intro', () => {
-  it('shows the badge and intro', async () => {
+/** The closed "Sources" disclosure: the details that moved behind it. */
+const sources = () =>
+  document.querySelector('details[data-testid="fzp-sources"]') as HTMLDetailsElement;
+const openSources = () => {
+  sources().open = true;
+};
+
+describe('intro and loading', () => {
+  it('has no badge, and the one-possible-future paragraph is in Sources', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props() });
-    await expect.element(page.getByTestId('fzp-badge')).toHaveTextContent('Simulation');
-    await expect.element(page.getByText(INTRO)).toBeInTheDocument();
+    await render(SimResults, { props: props() });
+    expect(document.querySelector('[data-testid="fzp-badge"]')).toBeNull();
+    const intro = page.getByText(INTRO).element();
+    expect(sources().contains(intro)).toBe(true);
   });
 
-  it('before the first timeline: only the badge, intro and a loading line', async () => {
+  it('before the first timeline: only the intro and a loading line', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props({ score: null }) });
+    await render(SimResults, { props: props({ score: null }) });
     await expect.element(page.getByText('Loading the simulation…').first()).toBeVisible();
-    await expect.element(page.getByText(INTRO)).toBeInTheDocument();
     expect(document.querySelector('[data-testid="fzp-net"]')).toBeNull();
     expect(document.querySelector('svg[role="img"]')).toBeNull();
     expect(document.querySelector('.sfh-fzp-legend')).toBeNull();
@@ -90,17 +97,49 @@ describe('badge and intro', () => {
   });
 });
 
-describe('headline and split', () => {
-  it('shows the total and the three-way split at the scrubbed month', async () => {
+describe('layout', () => {
+  it('orders headline, what the plan added, chart, targets, pipeline, then Sources', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props() });
+    await render(SimResults, { props: props() });
+    const before = (a: Element, b: Element) =>
+      expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const els = [
+      page.getByTestId('fzp-net').element(),
+      page.getByText('What the plan added').element(),
+      document.querySelector('[data-testid="fzp-chart"] svg')!,
+      page.getByRole('meter').first().element(),
+      page.getByTestId('fzp-stages').element(),
+      sources().querySelector('summary')!
+    ];
+    for (let k = 0; k < els.length - 1; k++) before(els[k], els[k + 1]);
+  });
+
+  it('Sources is closed by default and holds where the numbers come from', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: props() });
+    const d = sources();
+    expect(d.open).toBe(false);
+    expect(d.querySelector('summary')!.textContent!.trim()).toBe('Sources');
+    expect(d.textContent).toContain('Where these numbers come from');
+  });
+
+  it('puts the since-date and the built-by-today line under the headline', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: props() });
+    await expect.element(page.getByText('homes added since Jun 2022')).toBeVisible();
+    await expect.element(page.getByText('of which 12,000 built by today')).toBeVisible();
+  });
+});
+
+describe('headline and pipeline', () => {
+  it('shows the total at the scrubbed month and where it comes from', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: props() });
     const i = monthIndex(DAY, TIMELINE_SCORE.months[0], TIMELINE_SCORE.months.length);
     expect(i).toBe(53);
     await expect.element(page.getByTestId('fzp-net')).toHaveTextContent('17,300');
-    await expect.element(page.getByText('net new homes since Jun 30, 2022')).toBeVisible();
     const row = (label: string) =>
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
-    expect(row('Actually completed, to Oct 16, 2026')).toContain('12,000');
     expect(row("Simulated, from today's pipeline")).toContain('3,180');
     expect(row("Simulated, new projects not yet in today's pipeline")).toContain('2,120');
   });
@@ -109,7 +148,7 @@ describe('headline and split', () => {
 describe('bands', () => {
   it('marks both band lines provisional while runs are outstanding, then clears', async () => {
     await page.viewport(1024, 768);
-    const screen = await render(FzpScorePanel, {
+    const screen = await render(SimResults, {
       props: props({ bandRuns: 40, bandRunsTotal: 101 })
     });
     const total = page.getByText(/^In 8 of 10 simulated futures:/);
@@ -135,13 +174,14 @@ describe('bands', () => {
 describe('what the plan added', () => {
   it('shows the plan-effect rows, the band without baseline and the twin paragraph', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props() });
+    await render(SimResults, { props: props() });
     await expect.element(page.getByText('What the plan added')).toBeVisible();
     const row = (label: string) =>
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
     expect(row('Homes completed because of the plan')).toContain('1,290');
     expect(row('Homes approved because of the plan')).toContain('2,185');
     await expect.element(page.getByText('In 8 of 10 futures: 1,240–1,340')).toBeInTheDocument();
+    expect(sources().textContent).toContain('each future is run twice');
     await expect
       .element(
         page.getByText(
@@ -156,7 +196,7 @@ describe('what the plan added', () => {
 
   it('plan effect not yet computed: calculating rows, busy sub-section, twin paragraph kept', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props({ score: TIMELINE_SCORE_R0 }) });
+    await render(SimResults, { props: props({ score: TIMELINE_SCORE_R0 }) });
     const row = (label: string) =>
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
     expect(row('Homes completed because of the plan')).toContain('calculating…');
@@ -164,8 +204,9 @@ describe('what the plan added', () => {
     const section = page.getByText('What the plan added').element().closest('section')!;
     expect(section.getAttribute('aria-busy')).toBe('true');
     await expect.element(page.getByText('Range: calculating…')).toBeInTheDocument();
-    expect(section.textContent).toContain('each future is run twice');
+    expect(sources().textContent).toContain('each future is run twice');
     // the total band is unaffected
+    openSources();
     await expect.element(page.getByText(/^In 8 of 10 simulated futures:/)).toBeVisible();
   });
 });
@@ -174,7 +215,7 @@ describe('score copy (/sim)', () => {
   it('names your policy and the Family Zoning Plan as written for a customised policy', async () => {
     await page.viewport(1024, 768);
     const copy = scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' });
-    await render(FzpScorePanel, { props: props({ copy }) });
+    await render(SimResults, { props: props({ copy }) });
     await expect.element(page.getByText('What your policy added')).toBeVisible();
     await expect.element(page.getByText('What the plan added')).not.toBeInTheDocument();
     await expect
@@ -195,7 +236,7 @@ describe('score copy (/sim)', () => {
 
   it('names the comparison in the added section', async () => {
     await page.viewport(1024, 768);
-    const screen = await render(FzpScorePanel, { props: props({ copy: scoreCopy(null) }) });
+    const screen = await render(SimResults, { props: props({ copy: scoreCopy(null) }) });
     const first = () => page.getByText('What the plan added').element().closest('section')!;
     expect(first().querySelector('p')!.textContent!.trim()).toBe('FZP added 1,290 homes vs no FZP');
     await screen.rerender(props({ copy: scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' }) }));
@@ -210,14 +251,14 @@ describe('score copy (/sim)', () => {
 
   it('keeps the Family Zoning Plan text for the FZP copy', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props({ copy: scoreCopy(null) }) });
+    await render(SimResults, { props: props({ copy: scoreCopy(null) }) });
     await expect.element(page.getByText('What the plan added')).toBeVisible();
     await expect.element(page.getByText(INTRO)).toBeInTheDocument();
   });
 
   it('the default levers get the FZP copy', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props({ copy: scoreCopy(DEFAULT_LEVERS) }) });
+    await render(SimResults, { props: props({ copy: scoreCopy(DEFAULT_LEVERS) }) });
     await expect.element(page.getByText('What the plan added')).toBeVisible();
   });
 });
@@ -227,7 +268,7 @@ describe('protections cost (/sim)', () => {
 
   it('names the protected lots and the zoned capacity they cost', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, {
+    await render(SimResults, {
       props: props({
         capacity: { plan: 900, withoutProtections: 1000, protectedLots: 12 }
       })
@@ -242,7 +283,7 @@ describe('protections cost (/sim)', () => {
 
   it('formats large numbers with formatCount', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, {
+    await render(SimResults, {
       props: props({
         capacity: { plan: 0, withoutProtections: 12345, protectedLots: 1200 }
       })
@@ -254,7 +295,7 @@ describe('protections cost (/sim)', () => {
 
   it('reads in the singular for one lot and one home', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, {
+    await render(SimResults, {
       props: props({
         capacity: { plan: 900, withoutProtections: 901, protectedLots: 1 }
       })
@@ -266,7 +307,7 @@ describe('protections cost (/sim)', () => {
 
   it('shows no line with no protected lots or no capacity', async () => {
     await page.viewport(1024, 768);
-    const r = await render(FzpScorePanel, {
+    const r = await render(SimResults, {
       props: props({
         capacity: { plan: 900, withoutProtections: 900, protectedLots: 0 }
       })
@@ -281,7 +322,7 @@ describe('protections cost (/sim)', () => {
 describe('targets and progress', () => {
   it('renders RHNA then RHNA + buffer, each with its deadline fraction', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props() });
+    await render(SimResults, { props: props() });
     const meters = page.getByRole('meter').elements();
     expect(meters.map((m) => m.getAttribute('aria-label'))).toEqual([
       TIMELINE_SCORE.targets[0].target.label,
@@ -296,7 +337,7 @@ describe('targets and progress', () => {
 
   it('lists the in-progress total and one row per stage, then the stopped line', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props() });
+    await render(SimResults, { props: props() });
     await expect
       .element(page.getByText('Homes in projects still in progress: 210'))
       .toBeInTheDocument();
@@ -320,7 +361,8 @@ describe('targets and progress', () => {
 describe('future line', () => {
   it('representative: marks it and offers no way back', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props({ seed: 7, representative: true }) });
+    await render(SimResults, { props: props({ seed: 7, representative: true }) });
+    openSources();
     await expect.element(page.getByText('This future: #7 (representative)')).toBeVisible();
     expect(document.body.textContent).not.toContain('Back to the representative future');
   });
@@ -328,9 +370,10 @@ describe('future line', () => {
   it('another future: no suffix, and a button back', async () => {
     await page.viewport(1024, 768);
     const onrepresentative = vi.fn();
-    await render(FzpScorePanel, {
+    await render(SimResults, {
       props: props({ seed: 7, representative: false, onrepresentative })
     });
+    openSources();
     await expect.element(page.getByText('This future: #7')).toBeVisible();
     expect(page.getByText('This future: #7').element().textContent).not.toContain('representative');
     await page.getByRole('button', { name: 'Back to the representative future' }).click();
@@ -340,9 +383,10 @@ describe('future line', () => {
   it('the way back is disabled, and inert, while a future cannot be asked for', async () => {
     await page.viewport(1280, 800);
     const onrepresentative = vi.fn();
-    await render(FzpScorePanel, {
+    await render(SimResults, {
       props: props({ seed: 7, representative: false, canReroll: false, onrepresentative })
     });
+    openSources();
     const back = page.getByRole('button', { name: 'Back to the representative future' });
     await expect.element(back).toHaveAttribute('aria-disabled', 'true');
     (back.element() as HTMLElement).click();
@@ -352,7 +396,8 @@ describe('future line', () => {
   it('opens the sources dialog through its callback', async () => {
     await page.viewport(1024, 768);
     const onsources = vi.fn();
-    await render(FzpScorePanel, { props: props({ onsources }) });
+    await render(SimResults, { props: props({ onsources }) });
+    openSources();
     await page.getByRole('button', { name: 'Where these numbers come from' }).click();
     expect(onsources).toHaveBeenCalledOnce();
   });
@@ -361,7 +406,7 @@ describe('future line', () => {
 describe('map key', () => {
   it('has one row per legend entry, verbatim, and the fzp-mode bar-length line', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props() });
+    await render(SimResults, { props: props() });
     const key = document.querySelector('details.sfh-fzp-legend') as HTMLDetailsElement;
     expect(key.open).toBe(true);
     const rows = [...key.querySelectorAll('[data-legend]')];
@@ -378,7 +423,7 @@ describe('map key', () => {
 
   it('injects the token CSS into <head> once', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props() });
+    await render(SimResults, { props: props() });
     const css = timelineTokenCss('.sfh-fzp-legend');
     const styles = [...document.head.querySelectorAll('style')].filter(
       (s) => s.textContent === css
@@ -388,7 +433,7 @@ describe('map key', () => {
 
   it('resolves every legend token under light and dark', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props() });
+    await render(SimResults, { props: props() });
     const read = (id: string, token: string) =>
       getComputedStyle(document.querySelector(`[data-swatch="${id}"]`)!)
         .getPropertyValue(`--map-${token}`)
@@ -413,7 +458,8 @@ describe('map key', () => {
 describe('footnote', () => {
   it('names the data, the build, the as-of date and links Sources, then the phasing sentence', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props() });
+    await render(SimResults, { props: props() });
+    openSources();
     await expect
       .element(page.getByText('Data fixture-0 · built 2026-10-10 · as of Oct 16, 2026 · Sources'))
       .toBeVisible();
@@ -431,7 +477,8 @@ describe('footnote', () => {
 
   it('omits the phasing sentence when there are no master plans', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props({ score: TIMELINE_SCORE_NO_PHASING }) });
+    await render(SimResults, { props: props({ score: TIMELINE_SCORE_NO_PHASING }) });
+    openSources();
     await expect.element(page.getByText(/^Data fixture-0/)).toBeVisible();
     expect(document.body.textContent).not.toContain('Multi-phase projects');
   });
@@ -440,7 +487,7 @@ describe('footnote', () => {
 describe('375 px', () => {
   it('the map key starts closed on a phone', async () => {
     await page.viewport(375, 812);
-    await render(FzpScorePanel, { props: props() });
+    await render(SimResults, { props: props() });
     const key = document.querySelector('details.sfh-fzp-legend') as HTMLDetailsElement;
     expect(key.open).toBe(false);
   });
@@ -456,7 +503,8 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
 
   it('every control in the desktop panel is at least 24x24', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props({ representative: false }) });
+    await render(SimResults, { props: props({ representative: false }) });
+    openSources();
     expectTarget(document.querySelector('.sfh-fzp-legend > summary')!, 'Map key summary');
     expectTarget(
       document.querySelector('[data-testid="fzp-chart"] details > summary')!,
@@ -475,7 +523,8 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
 
   it('summaries and the Sources link carry the 44 px coarse-pointer variant', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props() });
+    await render(SimResults, { props: props() });
+    openSources();
     for (const el of [
       document.querySelector('.sfh-fzp-legend > summary')!,
       document.querySelector('[data-testid="fzp-chart"] details > summary')!,
