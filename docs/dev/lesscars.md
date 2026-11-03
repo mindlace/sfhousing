@@ -350,8 +350,10 @@ The lesscars tests add no measurable time, far under the 60 s threshold, so noth
 `/lesscars` (`src/routes/lesscars/`, plan `docs/superpowers/plans/2026-11-01-lesscars-2-page.md`)
 plays the stored representative future of the plan from `LESSCARS_START` (2028-01-01) to
 `LESSCARS_HORIZON` (2068-12-31). It opens paused at the start; nobody edits anything but the day
-(scrub, play) and the map. The route is reachable by URL only: the header mode link arrives with
-the live plan in Plan 3.
+(scrub, play) and the map. The header has a "Fewer cars" mode link to it (third after Paint and
+Simulate, `aria-current` on the route; in the Menu below 768 px). From md the link text is "cars"
+until xl, with the full "Fewer cars" as its accessible name, and the mode nav is a step smaller and
+tighter, so the `/sim` row fits at 768 and 1024 px.
 
 | Area                                       | Code                                                             |
 | ------------------------------------------ | ---------------------------------------------------------------- |
@@ -472,7 +474,6 @@ Map picking is pointer-only (mouse click, touch tap), as on `/sim` (see "Known g
 - Street geometry stays in `plan.json`; garage parcel positions come from the worker.
 - Plan stops only (`lc:` ids); existing stops are not redrawn and `transit.json` is not fetched.
 - The Masonic underpass is an optional, display-only `displays` entry (Plan 3 adds it).
-- No header mode link until Plan 3.
 - A load failure's Retry calls `invalidateAll()`; a worker crash's Retry restarts the client.
 
 Follow-up: `LessCarsMode` copies `FzpMode`'s map-ready queue, chunk-status tracking and prefetch

@@ -71,6 +71,26 @@ describe('SiteHeader', () => {
         .not.toHaveAttribute('aria-current');
     });
 
+    it('shows Fewer cars at 1024px, pointing at /lesscars and current there', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { routeId: '/lesscars' });
+      const nav = page.getByRole('navigation', { name: 'Modes' });
+      const fewer = nav.getByRole('link', { name: 'Fewer cars' });
+      await expect.element(fewer).toHaveAttribute('href', '/lesscars');
+      await expect.element(fewer).toHaveAttribute('aria-current', 'page');
+      await expect
+        .element(nav.getByRole('link', { name: 'Simulate' }))
+        .not.toHaveAttribute('aria-current');
+    });
+
+    it('puts Fewer cars in the menu at 375px', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { routeId: '/' });
+      await page.getByRole('button', { name: 'Menu' }).click();
+      const nav = page.getByRole('navigation', { name: 'Modes' });
+      await expect.element(nav.getByRole('link', { name: 'Fewer cars' })).toBeVisible();
+    });
+
     it('puts both links in the menu at 375px and marks the current mode', async () => {
       await page.viewport(375, 812);
       render(SiteHeader, { routeId: '/sim' });
@@ -361,7 +381,7 @@ describe('SiteHeader', () => {
         render(SiteHeader, { routeId: '/sim', actions, pinned, status });
         const slot = page.getByTestId('status-slot').element();
         const nav = page.getByRole('navigation', { name: 'Modes' });
-        const simulate = nav.getByRole('link', { name: 'Simulate' }).element();
+        const simulate = nav.getByRole('link', { name: 'Fewer cars' }).element();
         const score = page.getByRole('button', { name: '1,234 homes added' }).element();
         expect(
           simulate.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING

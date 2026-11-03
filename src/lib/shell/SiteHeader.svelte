@@ -27,11 +27,12 @@
   const panelId = `${uid}-menu`;
 
   const onSim = $derived(routeId === '/sim');
+  const onLessCars = $derived(routeId === '/lesscars');
   // The mode links are page navigation, so they stay links with aria-current rather than ARIA tabs.
   // The current one is filled with the accent; the other carries a resting border so it reads as
   // pressable. Both take a 1 px border so their sizes match.
   const link =
-    'inline-flex min-h-6 items-center whitespace-nowrap rounded-md border px-2 no-underline md:max-lg:px-1 pointer-coarse:min-h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent dark:focus-visible:outline-accent-dark';
+    'inline-flex min-h-6 items-center whitespace-nowrap rounded-md border px-2 no-underline md:max-xl:px-1 md:max-lg:px-0.5 pointer-coarse:min-h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent dark:focus-visible:outline-accent-dark';
   const tab = (current: boolean) => [
     link,
     current
@@ -104,12 +105,15 @@
     >Paint</a
   >
   <a href="/sim" class={tab(onSim)} aria-current={onSim ? 'page' : undefined}>Simulate</a>
+  <a href="/lesscars" class={tab(onLessCars)} aria-current={onLessCars ? 'page' : undefined}
+    ><span class="max-xl:sr-only">Fewer </span>cars</a
+  >
 {/snippet}
 
 <header
   bind:this={header}
   class={[
-    'relative flex h-12 items-center justify-between gap-2 border-b bg-white px-4 text-gray-900 dark:border-gray-700 dark:bg-chrome-dark dark:text-gray-100',
+    'relative flex h-12 items-center justify-between gap-2 border-b bg-white px-4 text-gray-900 md:max-lg:px-2 dark:border-gray-700 dark:bg-chrome-dark dark:text-gray-100',
     pinned && 'md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]'
   ]}
 >
@@ -119,12 +123,12 @@
     >
     <nav
       aria-label="Modes"
-      class="flex shrink-0 items-center gap-3 text-sm max-md:hidden md:max-lg:gap-1.5"
+      class="flex shrink-0 items-center gap-3 text-sm max-md:hidden md:max-xl:gap-1 md:max-xl:text-xs md:max-lg:gap-0.5"
     >
       {@render modeLinks()}
     </nav>
     <!-- The status, then the space that pushes the pinned item and the actions right. -->
-    <div class="flex min-w-0 flex-1 items-center md:pl-2 md:max-lg:pl-0" data-header-status>
+    <div class="flex min-w-0 flex-1 items-center md:pl-2 md:max-xl:pl-0" data-header-status>
       {@render status?.()}
     </div>
   </div>
