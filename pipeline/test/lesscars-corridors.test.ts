@@ -374,6 +374,32 @@ describe('resolveCorridor', () => {
     ]);
   });
 
+  it('a [TO|TO] stub past TO whose far end is off TO is excluded (Hyde 7147000)', () => {
+    // DataSF labels the stub past Francisco [FRANCISCO ST | FRANCISCO ST]; it is not a median.
+    const segs: StreetSeg[] = [
+      seg('h-1', 'HYDE ST', [
+        [0, 0],
+        [100, 0]
+      ]),
+      seg(
+        'stub',
+        'HYDE ST',
+        [
+          [100, 0],
+          [118, 4],
+          [135, 0]
+        ],
+        'FRANCISCO ST',
+        'FRANCISCO ST'
+      ),
+      cross('c', 'CHESTNUT ST', 0),
+      cross('f', 'FRANCISCO ST', 100)
+    ];
+    expect(resolveCorridor(segs, sel('HYDE ST', 'CHESTNUT ST', 'FRANCISCO ST')).cnn).toEqual([
+      'h-1'
+    ]);
+  });
+
   it('a node in both FROM and TO is passed over for the shortest positive path', () => {
     const segs = [...grid, cross('ab0', 'AB ST', 0), cross('ab1', 'AB ST', 100)];
     expect(resolveCorridor(segs, sel('MAIN ST', 'A ST', 'AB ST')).cnn).toEqual(['m-ab']);

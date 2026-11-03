@@ -314,8 +314,11 @@ export function resolveCorridor(
     return true;
   };
   // A piece through a divided cross street's median runs from one of its carriageways to the
-  // other: DataSF names that cross street at both ends (f_st = t_st), and its inner vertices
-  // lie between the carriageways, on neither line.
+  // other: DataSF names that cross street at both ends (f_st = t_st), both its endpoints lie on
+  // the cross street's lines, and only its inner vertices lie between the carriageways. The label
+  // alone is not enough: DataSF also writes f_st = t_st on stubs past a crossing (Hyde 7147000
+  // past Francisco), whose far end is off the cross street.
+  const onLines = (p: Pt, lines: Pt[][]) => distToLines(p, lines) <= CORRIDOR.snapM;
   const isMedian = (s: StreetSeg) =>
     s.fSt !== null &&
     s.tSt !== null &&
@@ -323,7 +326,8 @@ export function resolveCorridor(
       (end) =>
         end.name !== null &&
         canonicalStreet(s.fSt!) === end.name &&
-        canonicalStreet(s.tSt!) === end.name
+        canonicalStreet(s.tSt!) === end.name &&
+        s.lines.every((l) => onLines(l[0], end.lines) && onLines(l[l.length - 1], end.lines))
     );
   const inBand = (p: Pt) => distToLines(p, polyline) <= CORRIDOR.bandM;
   cands.forEach((s, i) => {

@@ -186,8 +186,10 @@ node)` when FROM and TO share a node and nothing longer joins them).
    nearest path point is that end and it lies outward along the chord of the path's last `bandM`;
    it is still allowed within `snapM` of the end node or of a line of that end's cross street (for
    `COUNTY LINE`, of a county-line dead end), which is where the other carriageway ends. A
-   candidate whose `f_st` and `t_st` both name an end's cross street (the piece through a divided
-   cross street's median, such as Ocean `9846000`) needs only the band. So the other carriageway
+   candidate whose `f_st` and `t_st` both name an end's cross street and whose endpoints both lie
+   within `snapM` of that street's lines (the piece through a divided cross street's median, such
+   as Ocean `9846000`) needs only the band; the label alone is not enough, since DataSF also writes
+   it on stubs past a crossing (Hyde `7147000` past Francisco). So the other carriageway
    and shared-centreline twins are kept; a short block before FROM, a stub past TO and a fork at
    either end are not (on the locked data: McAllister `8887000`, Church `4009000`, Judah `7686000`,
    Richardson `15173000`), nor is the same name elsewhere.
