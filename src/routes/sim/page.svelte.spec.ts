@@ -106,7 +106,8 @@ describe('/sim page', () => {
     expect(initSeeds(StubWorker.all[1])).toEqual([null]);
   });
 
-  it('remounts for a same-route navigation the load skips, when its URL names another future', async () => {
+  // Skipped until plan 2, Task 3 wires the Results face (HeaderScore does not open details).
+  it.skip('remounts for a same-route navigation the load skips, when its URL names another future', async () => {
     await render(SimPageHost, { props: { data: data(5) } });
     navigated('enter', '?seed=5');
     await expect.poll(() => StubWorker.all.length).toBe(1);

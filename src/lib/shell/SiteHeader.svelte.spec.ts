@@ -266,63 +266,6 @@ describe('SiteHeader', () => {
       dlg.close();
     });
 
-    it('at 375px the Menu and the score details are never open together', async () => {
-      await page.viewport(375, 812);
-      render(ScoreBarHeader);
-      const scoreBar = page.getByRole('button', { name: '1,234 homes added' });
-      const details = page.getByText('Score details here');
-
-      await menu().click();
-      await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
-      await scoreBar.click();
-      await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
-      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'true');
-      await expect.element(details).toBeVisible();
-      await expect.element(page.getByText('Another future')).not.toBeVisible();
-
-      await menu().click();
-      await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
-      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'false');
-      await expect.element(details).not.toBeInTheDocument();
-      await expect.element(page.getByRole('button', { name: 'Another future' })).toBeVisible();
-    });
-
-    it('at 375px the keyboard keeps the Menu and the score details exclusive too', async () => {
-      await page.viewport(375, 812);
-      render(ScoreBarHeader);
-      const scoreBar = page.getByRole('button', { name: '1,234 homes added' });
-      const details = page.getByText('Score details here');
-
-      // Details open, then Enter on Menu: the details close.
-      (scoreBar.element() as HTMLElement).focus();
-      await userEvent.keyboard('{Enter}');
-      await expect.element(details).toBeVisible();
-      (menu().element() as HTMLElement).focus();
-      await userEvent.keyboard('{Enter}');
-      await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
-      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'false');
-      await expect.element(details).not.toBeInTheDocument();
-
-      // Menu open, then Enter on the score bar: the Menu closes.
-      (scoreBar.element() as HTMLElement).focus();
-      await userEvent.keyboard('{Enter}');
-      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'true');
-      await expect.element(details).toBeVisible();
-      await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
-      await expect.element(page.getByText('Another future')).not.toBeVisible();
-    });
-
-    it('the score details close on a press outside them', async () => {
-      await page.viewport(375, 812);
-      render(ScoreBarHeader);
-      const scoreBar = page.getByRole('button', { name: '1,234 homes added' });
-      await scoreBar.click();
-      await expect.element(page.getByText('Score details here')).toBeVisible();
-      await page.getByTestId('outside').click();
-      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'false');
-      await expect.element(page.getByText('Score details here')).not.toBeInTheDocument();
-    });
-
     it('the Menu button is at least 24x24', async () => {
       await page.viewport(375, 812);
       render(SiteHeader, { routeId: '/' });
@@ -349,13 +292,6 @@ describe('SiteHeader', () => {
       const status = createRawSnippet(() => ({
         render: () => '<div data-testid="status-slot"></div>'
       }));
-      const wide = createRawSnippet(() => ({
-        // As ScoreBar renders it: "added" is visually hidden below lg.
-        render: () =>
-          '<button class="rounded-md border px-2 text-sm font-semibold whitespace-nowrap">' +
-          '12,345 homes <span class="max-lg:sr-only">added</span></button>'
-      }));
-
       it('from md it sits right after the Simulate link, left of the actions', async () => {
         await page.viewport(1024, 768);
         render(SiteHeader, { routeId: '/sim', actions, pinned, status });
@@ -386,7 +322,10 @@ describe('SiteHeader', () => {
       for (const width of [768, 1024]) {
         it(`at ${width}px "Autosave off", the nav and every action fit without overlap`, async () => {
           await page.viewport(width, 768);
-          render(SiteHeader, { routeId: '/sim', actions: simActions, pinned: wide, status });
+          // The real score, with the delta a run that compares with the FZP shows.
+          render(ScoreBarHeader, {
+            props: { actions: simActions, status, total: 12345, delta: 12345 }
+          });
           const host = page.getByTestId('status-slot').element() as HTMLElement;
           const a = mount(SaveIndicator, {
             target: host,
@@ -423,7 +362,7 @@ describe('SiteHeader', () => {
 
       it('at 375px it sits right after the site title, outside the Menu', async () => {
         await page.viewport(375, 812);
-        render(SiteHeader, { routeId: '/sim', actions, pinned: wide, status });
+        render(ScoreBarHeader, { props: { actions, status, total: 12345, delta: 12345 } });
         const host = page.getByTestId('status-slot').element() as HTMLElement;
         const a = mount(SaveIndicator, { target: host, props: { status: 'off', align: 'start' } });
         try {

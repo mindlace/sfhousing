@@ -154,3 +154,8 @@ export function homesAdded(at: ScoreAt): string {
 export function homesAddedBy(day: Day, at: ScoreAt): string {
   return `${homesAdded(at)} by ${formatMonthYear(day)}`;
 }
+
+/** The header score's delta: "vs FZP +1,234", "vs FZP −56" (U+2212), "vs FZP +0". */
+export function vsFzpText(n: number): string {
+  return `vs FZP ${n < 0 ? '' : '+'}${formatCount(n)}`;
+}

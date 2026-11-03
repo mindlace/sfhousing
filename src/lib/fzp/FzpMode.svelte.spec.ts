@@ -19,11 +19,14 @@ import { HIDDEN_VIEW, type ViewPrefs } from '$lib/view/prefs';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { fixtureCalibration } from './fixtures/calibration';
 import { REAL_ACTUAL, SIMULATED } from './fixtures/cards';
+import { formatCount } from '$lib/scoreboard/format';
+import { meterValueText } from '$lib/scoreboard/view';
 import { TIMELINE_SCORE } from './fixtures/timeline-score';
 import { FakeScenarioWorker, timelineMsg } from './test/fake-worker';
 import FzpModeHost from './test/FzpModeHost.svelte';
 import { callsOf, stub } from './test/sim-map-stub';
-import { HORIZON, dayFromUtc } from './time';
+import { scoreAt, vsFzpText } from './score-view';
+import { HORIZON, dayFromUtc, monthIndex } from './time';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('./test/FzpSimMapStub.svelte'));
 
@@ -63,6 +66,9 @@ type Over = Partial<{
   onrewind: () => void;
   leversPending: boolean;
   view: ViewPrefs;
+  scoreExpanded: boolean;
+  onscore: () => void;
+  scoreControls: string;
 }>;
 
 function setup(over: Over = {}) {
@@ -116,7 +122,16 @@ async function details() {
   if (b.element().getAttribute('aria-expanded') !== 'true') await b.click();
   return page.getByRole('region', { name: 'Score details' });
 }
-const futureLine = async () => (await details()).getByText(/^This future: #/).first();
+/** The shown future as the Results face states it ("This future: #7 (representative)"). */
+const future = () => {
+  const d = window.__sfhFzp!;
+  return `This future: #${d.seed}${d.representative ? ' (representative)' : ''}`;
+};
+/**
+ * Tests that read the score details. The header score no longer opens them (HeaderScore), and the
+ * dock's Results face is not wired to FzpMode until Task 3 of plan 2, so these wait for it.
+ */
+const itResults = it.skip;
 const card = () => page.getByRole('region', { name: /1234 Mission St|Block 3512|Project details/ });
 
 /** The latest scenario request's rev on the current worker. */
@@ -449,6 +464,13 @@ describe('FzpMode failures and Retry', () => {
 });
 
 describe('FzpMode header score bar', () => {
+  /** A ready session. */
+  async function ready(over: Over = {}) {
+    const s = setup(over);
+    await toReady(s);
+    return s;
+  }
+
   it('renders no scoreboard region; the header pinned slot holds the score bar', async () => {
     const s = setup();
     await expect.element(scoreButton()).toHaveTextContent('Simulating…');
@@ -456,38 +478,92 @@ describe('FzpMode header score bar', () => {
     expect(document.querySelector('[aria-label="Simulation scoreboard"]')).toBeNull();
     await expect.element(scoreButton()).toHaveTextContent(/^[\d,]+ homes added$/);
     await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'false');
-    const board = await details();
-    await expect.element(board.getByTestId('fzp-net')).toBeVisible();
     await expect
       .element(page.getByTestId('header-actions').getByRole('button', { name: 'Another future' }))
       .toBeVisible();
   });
+
+  it('shows the total at the scrubbed day, with the RHNA bar', async () => {
+    await ready();
+    const at = scoreAt(TIMELINE_SCORE, 0);
+    await expect.element(scoreButton()).toHaveTextContent(`${formatCount(at.total)} homes added`);
+    await expect
+      .element(page.getByTestId('header-pinned').getByRole('meter'))
+      .toHaveAttribute('aria-valuetext', meterValueText(at.targets[0].tp));
+  });
+
+  it('aria-expanded follows scoreExpanded, and a click calls onscore', async () => {
+    const onscore = vi.fn();
+    const s = await ready({ onscore, scoreControls: 'dock' });
+    await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'false');
+    await expect.element(scoreButton()).toHaveAttribute('aria-controls', 'dock');
+    await (await s.r).rerender({ scoreExpanded: true });
+    await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'true');
+    await scoreButton().click();
+    expect(onscore).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows no delta in Setup', async () => {
+    await ready({ runPhase: 'setup', levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });
+    expect(page.getByTestId('score-delta').elements()).toEqual([]);
+  });
+
+  it("shows the timeline's plan effect at the day in a run that compares with the FZP", async () => {
+    await ready({ runPhase: 'run', levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });
+    const shownIndex = () =>
+      monthIndex(
+        Number((slider().element() as HTMLInputElement).value),
+        TIMELINE_SCORE.months[0],
+        TIMELINE_SCORE.months.length
+      );
+    const delta = () => vsFzpText(scoreAt(TIMELINE_SCORE, shownIndex()).planCompleted!);
+    await expect.element(page.getByTestId('score-delta')).toHaveTextContent(delta());
+    // Scrub forward: the delta follows the day.
+    await press('{PageUp}');
+    expect(shownIndex()).toBeGreaterThan(0);
+    await expect.element(page.getByTestId('score-delta')).toHaveTextContent(delta());
+  });
+
+  it('shows no delta in a run on the default policy (it compares with the old zoning)', async () => {
+    await ready({ runPhase: 'run', levers: DEFAULT_LEVERS });
+    expect(page.getByTestId('score-delta').elements()).toEqual([]);
+  });
+
+  it('shows no delta without levers (/fzp)', async () => {
+    await ready();
+    expect(page.getByTestId('score-delta').elements()).toEqual([]);
+  });
 });
 
 describe('FzpMode on /sim: header actions and score copy', () => {
-  it('renders the page actions first in the header, and names your policy in the details', async () => {
+  it('renders the page actions first in the header', async () => {
     const actions = createRawSnippet(() => ({
       render: () => '<button type="button">Policy</button>'
     }));
-    // a customised policy: compared with the Family Zoning Plan as written
     const s = setup({ levers: { ...DEFAULT_LEVERS, compare: 'fzp' }, actions });
     await toReady(s);
     const names = [...page.getByTestId('header-actions').element().querySelectorAll('button')].map(
       (b) => b.textContent?.trim()
     );
     expect(names).toEqual(['Policy', 'Another future']);
+  });
+
+  itResults('names your policy in the details of a customised policy', async () => {
+    // a customised policy: compared with the Family Zoning Plan as written
+    const s = setup({ levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });
+    await toReady(s);
     const board = await details();
     await expect.element(board.getByText('What your policy added')).toBeVisible();
   });
 
-  it('keeps the Family Zoning Plan copy without levers (/fzp)', async () => {
+  itResults('keeps the Family Zoning Plan copy without levers (/fzp)', async () => {
     const s = setup();
     await toReady(s);
     const board = await details();
     await expect.element(board.getByText('What the plan added')).toBeVisible();
   });
 
-  it('keeps the Family Zoning Plan copy for the default levers', async () => {
+  itResults('keeps the Family Zoning Plan copy for the default levers', async () => {
     const s = setup({ levers: DEFAULT_LEVERS });
     await toReady(s);
     const board = await details();
@@ -496,13 +572,20 @@ describe('FzpMode on /sim: header actions and score copy', () => {
 });
 
 describe('FzpMode rerolls and the representative flag', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_E2E', '1'); // the debug hook reports the shown future
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("'Another future' keeps the play state", async () => {
     const s = setup();
     await toReady(s, 7);
     await page.getByRole('button', { name: 'Play', exact: true }).click();
     await another().click();
     s.w().emit(timelineMsg(s.w().lastOf('reroll')!.rev, 8));
-    await expect.element(await futureLine()).toHaveTextContent(/^This future: #8$/);
+    await expect.poll(future).toBe('This future: #8');
     await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
   });
 
@@ -531,7 +614,7 @@ describe('FzpMode rerolls and the representative flag', () => {
     await expect.poll(() => s.w()?.lastOf('initScenario')).toBeTruthy();
     await expect.element(another()).toBeDisabled();
     await toReady(s, 7);
-    await expect.element(await futureLine()).toHaveTextContent('This future: #7 (representative)');
+    await expect.poll(future).toBe('This future: #7 (representative)');
     await press('{PageUp}');
     const day = Number((slider().element() as HTMLInputElement).value);
 
@@ -546,7 +629,7 @@ describe('FzpMode rerolls and the representative flag', () => {
 
     const applied = callsOf('applyTimeline').length;
     s.w().emit(timelineMsg(reroll.rev, 4242));
-    await expect.element(await futureLine()).toHaveTextContent(/^This future: #4242$/);
+    await expect.poll(future).toBe('This future: #4242');
     expect(s.onurlseed.mock.calls).toEqual([[4242]]);
     expect(Number((slider().element() as HTMLInputElement).value)).toBe(day);
     await expect.element(another()).toBeEnabled();
@@ -555,48 +638,54 @@ describe('FzpMode rerolls and the representative flag', () => {
     // A late answer to the first scenario rev is stale: dropped.
     s.w().emit(timelineMsg(reroll.rev - 1, 7, { revision: 1 }));
     expect(callsOf('applyTimeline').length).toBe(applied + 1);
-    await expect.element(await futureLine()).toHaveTextContent(/^This future: #4242$/);
+    await expect.poll(future).toBe('This future: #4242');
   });
 
-  it("'Back to the representative future' sends reroll null and clears the URL seed", async () => {
-    const s = setup({ urlSeed: 5 });
-    await toReady(s, 5);
-    await expect.element(await futureLine()).toHaveTextContent(/^This future: #5$/);
-    await (
-      await details()
-    )
-      .getByRole('button', { name: 'Back to the representative future' })
-      .first()
-      .click();
-    const reroll = s.w().lastOf('reroll')!;
-    expect(reroll.seed).toBeNull();
-    s.w().emit(timelineMsg(reroll.rev, 31));
-    await expect.element(await futureLine()).toHaveTextContent('This future: #31 (representative)');
-    expect(s.onurlseed.mock.calls).toEqual([[null]]);
-  });
+  itResults(
+    "'Back to the representative future' sends reroll null and clears the URL seed",
+    async () => {
+      const s = setup({ urlSeed: 5 });
+      await toReady(s, 5);
+      await expect.poll(future).toBe('This future: #5');
+      await (
+        await details()
+      )
+        .getByRole('button', { name: 'Back to the representative future' })
+        .first()
+        .click();
+      const reroll = s.w().lastOf('reroll')!;
+      expect(reroll.seed).toBeNull();
+      s.w().emit(timelineMsg(reroll.rev, 31));
+      await expect.poll(future).toBe('This future: #31 (representative)');
+      expect(s.onurlseed.mock.calls).toEqual([[null]]);
+    }
+  );
 
-  it("'Back to the representative future' is disabled while a reroll is busy or the worker stopped", async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    const s = setup({ urlSeed: 5 });
-    await toReady(s, 5);
-    const board = await details();
-    const back = () =>
-      board.getByRole('button', { name: 'Back to the representative future' }).first();
-    await expect.element(back()).not.toHaveAttribute('aria-disabled');
+  itResults(
+    "'Back to the representative future' is disabled while a reroll is busy or the worker stopped",
+    async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const s = setup({ urlSeed: 5 });
+      await toReady(s, 5);
+      const board = await details();
+      const back = () =>
+        board.getByRole('button', { name: 'Back to the representative future' }).first();
+      await expect.element(back()).not.toHaveAttribute('aria-disabled');
 
-    anotherKeyed();
-    const reroll = s.w().lastOf('reroll')!;
-    await expect.element(back()).toHaveAttribute('aria-disabled', 'true');
-    (back().element() as HTMLElement).click();
-    expect(s.w().allOf('reroll')).toHaveLength(1);
-    s.w().emit(timelineMsg(reroll.rev, 6));
-    await expect.element(back()).not.toHaveAttribute('aria-disabled');
+      anotherKeyed();
+      const reroll = s.w().lastOf('reroll')!;
+      await expect.element(back()).toHaveAttribute('aria-disabled', 'true');
+      (back().element() as HTMLElement).click();
+      expect(s.w().allOf('reroll')).toHaveLength(1);
+      s.w().emit(timelineMsg(reroll.rev, 6));
+      await expect.element(back()).not.toHaveAttribute('aria-disabled');
 
-    s.w().crash();
-    await expect.element(back()).toHaveAttribute('aria-disabled', 'true');
-    (back().element() as HTMLElement).click();
-    expect(s.w().allOf('reroll')).toHaveLength(1);
-  });
+      s.w().crash();
+      await expect.element(back()).toHaveAttribute('aria-disabled', 'true');
+      (back().element() as HTMLElement).click();
+      expect(s.w().allOf('reroll')).toHaveLength(1);
+    }
+  );
 
   it('onResyncNeeded calls client.resync: one reroll per episode, flag kept', async () => {
     const s = setup();
@@ -608,7 +697,7 @@ describe('FzpMode rerolls and the representative flag', () => {
     const r = s.w().lastOf('reroll')!;
     expect(r.seed).toBe(7);
     s.w().emit(timelineMsg(r.rev, 7));
-    await expect.element(await futureLine()).toHaveTextContent('This future: #7 (representative)');
+    await expect.poll(future).toBe('This future: #7 (representative)');
     expect(s.onurlseed).not.toHaveBeenCalled();
   });
 
@@ -621,13 +710,13 @@ describe('FzpMode rerolls and the representative flag', () => {
     await expect.poll(() => s.workers.length).toBe(2);
     await expect.poll(() => s.w().lastOf('initScenario')).toBeTruthy();
     s.w().emit(timelineMsg(lastRev(s.w()), 7));
-    await expect.element(await futureLine()).toHaveTextContent('This future: #7 (representative)');
+    await expect.poll(future).toBe('This future: #7 (representative)');
     await unmount(s);
 
     stub.reset();
     const t = setup({ urlSeed: 5 });
     await toReady(t, 5);
-    await expect.element(await futureLine()).toHaveTextContent(/^This future: #5$/);
+    await expect.poll(future).toBe('This future: #5');
   });
 
   it('a reroll error in ready keeps the shown future and shows a dismissible notice', async () => {
@@ -640,12 +729,10 @@ describe('FzpMode rerolls and the representative flag', () => {
     await expect
       .element(page.getByRole('alert'))
       .toHaveTextContent("Couldn't make another future. Try again.");
-    await expect.element(await futureLine()).toHaveTextContent('This future: #7 (representative)');
+    await expect.poll(future).toBe('This future: #7 (representative)');
     await expect.element(slider()).toBeInTheDocument();
     await expect.element(another()).toBeEnabled();
     expect(err).toHaveBeenCalledTimes(1);
-    // The open score details overlay the top of the map, over the notice: close them first.
-    await scoreButton().click();
     await page.getByRole('button', { name: 'Dismiss' }).click();
     expect(page.getByRole('alert').elements()).toEqual([]);
   });
@@ -801,7 +888,7 @@ describe('FzpMode map, layout and lifecycle', () => {
     expect(page.getByTestId('fzp-sim-map-stub').elements()).toHaveLength(1);
   });
 
-  it('opening the sources dialog pauses playback; opening a card does not', async () => {
+  itResults('opening the sources dialog pauses playback; opening a card does not', async () => {
     const s = setup();
     await toReady(s);
     const play = page.getByRole('button', { name: 'Play', exact: true });
@@ -846,7 +933,6 @@ describe('FzpMode map, layout and lifecycle', () => {
     await expect.poll(() => w.allOf('setLevers').length).toBe(1);
     const root = document.querySelector<HTMLElement>('.sfh-fzp')!;
     const before = root.style.getPropertyValue('--fzp-scrubber-h');
-    const dockTop = document.documentElement.style.getPropertyValue('--fzp-dock-top');
     const insets = map.callsOf('setBottomInset').length;
     const scrubberTop = page.getByTestId('fzp-scrubber').element().getBoundingClientRect().top;
     w.emit({
@@ -864,14 +950,13 @@ describe('FzpMode map, layout and lifecycle', () => {
     const stack = pills.element().getBoundingClientRect();
     expect(stack.top).toBeLessThan(scrubberTop);
     expect(root.style.getPropertyValue('--fzp-scrubber-h')).toBe(before);
-    expect(document.documentElement.style.getPropertyValue('--fzp-dock-top')).toBe(dockTop);
     expect(map.callsOf('setBottomInset').length).toBe(insets);
     expect(page.getByTestId('fzp-scrubber').element().getBoundingClientRect().top).toBe(
       scrubberTop
     );
   });
 
-  it('--fzp-scrubber-h and --fzp-dock-top are the scrubber alone, whatever notices show', async () => {
+  it('--fzp-scrubber-h is the scrubber alone, whatever notices show, and --fzp-dock-top is gone', async () => {
     await page.viewport(1024, 768);
     const s = setup();
     await toReady(s);
@@ -880,9 +965,7 @@ describe('FzpMode map, layout and lifecycle', () => {
     anotherKeyed();
     await expect.element(page.getByText('Making another future…')).toBeVisible();
     expect(root.style.getPropertyValue('--fzp-scrubber-h')).toBe(`${scrubber.offsetHeight}px`);
-    expect(document.documentElement.style.getPropertyValue('--fzp-dock-top')).toBe(
-      `${Math.floor(scrubber.getBoundingClientRect().top)}px`
-    );
+    expect(document.documentElement.style.getPropertyValue('--fzp-dock-top')).toBe('');
   });
 
   it('the loading notice renders in the notice stack', async () => {
@@ -975,7 +1058,7 @@ describe('FzpMode map, layout and lifecycle', () => {
     }
   );
 
-  it('below 768 px the inset is the scrubber alone, with the score details open or not', async () => {
+  it('below 768 px the inset is the scrubber alone', async () => {
     await page.viewport(375, 800);
     const s = setup();
     await toReady(s);
@@ -985,24 +1068,6 @@ describe('FzpMode map, layout and lifecycle', () => {
     const wrapper = scrubber.parentElement as HTMLElement;
     const root = document.querySelector('.sfh-fzp') as HTMLElement;
     expect(wrapper.getBoundingClientRect().bottom).toBe(root.getBoundingClientRect().bottom);
-
-    await details();
-    await expect.poll(() => callsOf('setBottomInset').at(-1)).toEqual([scrubber.offsetHeight]);
-  });
-
-  it('the score details end above the scrubber dock, and --fzp-dock-top leaves on unmount', async () => {
-    await page.viewport(1024, 768);
-    const s = setup();
-    await toReady(s);
-    const board = await details();
-    await expect.element(board).toBeVisible();
-    const scrubber = page.getByTestId('fzp-scrubber').element() as HTMLElement;
-    await expect
-      .poll(() => (board.element() as HTMLElement).getBoundingClientRect().bottom)
-      .toBeLessThanOrEqual(scrubber.getBoundingClientRect().top);
-    expect(document.documentElement.style.getPropertyValue('--fzp-dock-top')).not.toBe('');
-    await unmount(s);
-    expect(document.documentElement.style.getPropertyValue('--fzp-dock-top')).toBe('');
   });
 
   it('unmount terminates the worker and leaves no frame loop pending', async () => {
@@ -1021,6 +1086,13 @@ describe('FzpMode map, layout and lifecycle', () => {
 });
 
 describe('FzpMode levers (/sim)', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_E2E', '1'); // the debug hook reports the shown future
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   /** A distinct lookups pair, so identity checks can tell it from the calibration's. */
   function postedLookups(): LeverLookups {
     const one = () => ({
@@ -1190,13 +1262,26 @@ describe('FzpMode levers (/sim)', () => {
       .not.toBeInTheDocument();
     expect(onlevers.mock.calls.at(-1)![0]).toMatchObject({ kind: 'current', rev });
     // The score stays the last run's, busy, until the new run's timeline arrives.
-    const board = await details();
     await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'true');
-    await expect.element(board).toHaveAttribute('aria-busy', 'true');
     s.w().emit(timelineMsg(rev, 7));
     await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'false');
-    await expect.element(board).toHaveAttribute('aria-busy', 'false');
   });
+
+  itResults(
+    'a failed revision says in the details that the numbers predate the change',
+    async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const s = setup({ levers: DEFAULT_LEVERS });
+      await toReady(s);
+      await (await s.r).rerender({ levers: { ...OTHER } });
+      await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+      s.w().emit({ type: 'error', rev: leverRev(s.w()), code: 'internal', message: 'x' });
+      const board = await details();
+      await expect
+        .element(board.getByText('These numbers are from before your latest policy change.'))
+        .toBeVisible();
+    }
+  );
 
   it('a failed revision shows an alert whose Retry restarts with the latest levers', async () => {
     const onlevers = vi.fn<(st: LeverStatus) => void>();
@@ -1226,12 +1311,6 @@ describe('FzpMode levers (/sim)', () => {
     expect(onlevers.mock.calls.at(-1)![0]).toMatchObject({ kind: 'failed', rev });
     expect(err).toHaveBeenCalledWith('[fzp] worker error', 'internal', 'x');
     await expect.element(page.getByText(/Updating the simulation/)).not.toBeInTheDocument();
-    // The score says its numbers predate the change.
-    const board = await details();
-    const stale = board.getByText('These numbers are from before your latest policy change.');
-    await expect.element(stale).toBeVisible();
-    // The open score details overlay the top of the map, over the notice: close them first.
-    await scoreButton().click();
 
     const inits = s.w().allOf('initScenario').length;
     await alert.getByRole('button', { name: 'Retry', exact: true }).click();
@@ -1254,7 +1333,6 @@ describe('FzpMode levers (/sim)', () => {
     await expect.poll(() => onlevers.mock.calls.at(-1)![0].kind).toBe('current');
     await expect.element(page.getByText(message)).not.toBeInTheDocument();
     expect(region.element().textContent?.trim()).toBe('');
-    await expect.element(stale).not.toBeInTheDocument();
   });
 
   it('failed cells offer Retry, which retries the chunks', async () => {
@@ -1340,7 +1418,7 @@ describe('FzpMode levers (/sim)', () => {
     expect(sent.rev).toBeGreaterThan(reroll.rev);
     // The reroll's answer was not superseded: its future is on show and in the URL.
     expect(s.onurlseed.mock.calls).toEqual([[4242]]);
-    await expect.element(await futureLine()).toHaveTextContent(/^This future: #4242$/);
+    await expect.poll(future).toBe('This future: #4242');
   });
 
   it('a levers change during a reroll is sent after the reroll fails', async () => {

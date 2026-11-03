@@ -18,7 +18,8 @@ import {
   phasingFootnote,
   planBandLine,
   scoreAt,
-  scrubMarkers
+  scrubMarkers,
+  vsFzpText
 } from './score-view';
 import { YEAR_2045, dayFromUtc } from './time';
 
@@ -255,5 +256,13 @@ describe('homesAdded and homesAddedBy', () => {
     expect(homesAddedBy(FIX_ASOF, { ...at, total: 1234 })).toBe(
       '1,234 homes added by October 2026'
     );
+  });
+});
+
+describe('vsFzpText', () => {
+  it('signs the delta: a plus, a true minus (U+2212) and a plus on zero', () => {
+    expect(vsFzpText(1234)).toBe('vs FZP +1,234');
+    expect(vsFzpText(-56)).toBe('vs FZP \u221256');
+    expect(vsFzpText(0)).toBe('vs FZP +0');
   });
 });

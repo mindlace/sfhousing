@@ -1,6 +1,6 @@
 <!--
   The timelapse composition (spec §4.1, §4.2, §4.3, §4.7, §4.8): SimMap, the time scrubber, the
-  header score bar (ScoreBar, pinned in the header, opening FzpScorePanel), the project card and
+  header score (HeaderScore, pinned in the header; it shows and hides the dock's Results), the project card and
   tooltip and the sources dialog, over timelapse-sim's ScenarioClient. Queueing before the map
   handle, chunk statuses and crash Retry mirror BrushEditor.svelte (copied, not imported). /sim
   passes `levers` (plan 3): the session runs the lever engine, and the worker's posted lookups
@@ -94,12 +94,12 @@
   } from '$lib/sim/scenario-client';
   import type { Day } from '$lib/timelapse/time';
   import { installFzpDebug } from './debug';
-  import ScoreBar from '$lib/sim-page/ScoreBar.svelte';
+  import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
   import FzpScorePanel from './FzpScorePanel.svelte';
   import { DEFAULT_SPEED } from './playback';
   import ProjectCardPanel from './ProjectCardPanel.svelte';
   import ProjectTooltip from './ProjectTooltip.svelte';
-  import { scoreAt, scrubMarkers } from './score-view';
+  import { RHNA_ID, homesAddedBy, scoreAt, scrubMarkers } from './score-view';
   import SourcesDialog from './SourcesDialog.svelte';
   import { SummaryRequester, type SummaryState } from './summary-request';
   import { HORIZON, monthIndex, monthStart } from './time';
@@ -181,6 +181,12 @@
      * replaces it, so the page can gate manifest-dependent UI (the View rows) on it.
      */
     onmanifest?: (m: Manifest | null) => void;
+    /** The header score is pressed: the page shows or hides the dock's Results (/sim). */
+    onscore?: () => void;
+    /** The dock shows Results: the header score's `aria-expanded`. */
+    scoreExpanded?: boolean;
+    /** The dock's id: the header score's `aria-controls`. */
+    scoreControls?: string;
   }
 
   let {
@@ -210,7 +216,10 @@
     leversPending = false,
     view = HIDDEN_VIEW,
     onmanifest = undefined,
-    onchunks = undefined
+    onchunks = undefined,
+    onscore = undefined,
+    scoreExpanded = false,
+    scoreControls = undefined
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -301,6 +310,16 @@
   const at = $derived(
     score ? scoreAt(score, monthIndex(day, score.months[0], score.months.length)) : null
   );
+  /**
+   * The header score's "vs FZP" delta: your policy's effect at the day, in a run that compares
+   * with the Family Zoning Plan as written. A default-policy run compares the plan with the old
+   * zoning, so "vs FZP" would mislabel it (the Results face states that comparison).
+   */
+  const scoreDelta = $derived(
+    runPhase === 'run' && copy.compare === 'fzp' && at?.planCompleted != null
+      ? at.planCompleted
+      : null
+  );
   const hasScoreboard = $derived(
     calibration !== null && (phase === 'loading' || phase === 'ready')
   );
@@ -331,8 +350,6 @@
   let asOfChecked = false;
   /** The scrubbed month the open card was last requested for. */
   let cardMonth: Day | null = null;
-  /** FzpMode's root, for the dock's top edge (`--fzp-dock-top`). */
-  let rootEl = $state<HTMLDivElement>();
 
   /**
    * The page's latest scenario request. `representative` is the flag its answer sets (null =
@@ -577,22 +594,6 @@
     handle?.setBottomInset(scrubberH);
   }
 
-  /**
-   * The viewport y of the dock's top edge (the scrubber's), on :root as `--fzp-dock-top`: the
-   * header's score details end above it. Set while FzpMode is mounted. Notices are not part of
-   * the dock (they overlay the map's top from md, and sit above the map in flow below it).
-   */
-  function publishDockTop(): void {
-    if (!rootEl) return;
-    const top = rootEl.getBoundingClientRect().bottom - scrubberH;
-    document.documentElement.style.setProperty('--fzp-dock-top', `${Math.floor(top)}px`);
-  }
-  $effect(() => {
-    void scrubberH;
-    void rootEl;
-    untrack(publishDockTop);
-  });
-
   const events: ScenarioClientEvents = {
     onTimeline(t) {
       if (dead || !client || client.isStale(t)) return;
@@ -790,7 +791,6 @@
     }
 
     applyInset();
-    addEventListener('resize', publishDockTop);
 
     const uninstall = installFzpDebug(() => ({
       phase,
@@ -815,8 +815,6 @@
       dead = true;
       if (client) onclient?.(null);
       uninstall();
-      removeEventListener('resize', publishDockTop);
-      document.documentElement.style.removeProperty('--fzp-dock-top');
       playing = false;
       attachMap(null);
       client?.dispose();
@@ -842,6 +840,8 @@
   {/if}
 {/snippet}
 
+<!-- Not rendered until the dock's Results face takes it (plan 2, Task 3). -->
+<!-- eslint-disable-next-line @typescript-eslint/no-unused-vars -->
 {#snippet scorePanel()}
   <FzpScorePanel
     {score}
@@ -866,15 +866,21 @@
 
 {#snippet scoreBar()}
   {#if hasScoreboard && calibration}
-    <ScoreBar {score} {day} {playing} busy={scoreBusy || leversPending} panel={scorePanel} />
+    <HeaderScore
+      total={at?.total ?? null}
+      target={at?.targets.find((t) => t.tp.target.id === RHNA_ID)?.tp ?? null}
+      delta={scoreDelta}
+      busy={scoreBusy || leversPending}
+      expanded={scoreExpanded}
+      controls={scoreControls ?? ''}
+      onclick={() => onscore?.()}
+      live={at ? homesAddedBy(day, at) : ''}
+      quiet={playing}
+    />
   {/if}
 {/snippet}
 
-<div
-  bind:this={rootEl}
-  class="sfh-fzp relative flex h-full flex-col"
-  style:--fzp-scrubber-h="{scrubberH}px"
->
+<div class="sfh-fzp relative flex h-full flex-col" style:--fzp-scrubber-h="{scrubberH}px">
   <!-- Every notice is a pill in this one stack: an overlay at the map's top from md (it takes no
        space, so nothing moves when one shows), in flow under the header below md. -->
   <NoticePills>
