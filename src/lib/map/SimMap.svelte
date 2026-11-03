@@ -1295,10 +1295,13 @@
   {/if}
   <p class="sr-only" aria-live="polite">{loadingSlow ? 'Loading buildings…' : ''}</p>
 
+  <!-- The failure chips sit at the top centre, below the page's notice pills when they overlay the
+       map (`--notice-pills-bottom`, published by NoticePills from md; see map-interfaces.md). -->
   {#if chunkError && mapState === 'ready'}
     <div
       role="status"
-      class="sim-map-panel absolute top-2 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full pl-4 text-sm"
+      class="sim-map-panel absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full pl-4 text-sm"
+      style:top="calc(var(--notice-pills-bottom, 0px) + 0.5rem)"
     >
       <span>Some parcels didn't load —</span>
       <button
@@ -1312,7 +1315,8 @@
   {#if buildingsFailed && mapState === 'ready'}
     <div
       role="status"
-      class="sim-map-panel absolute top-16 left-1/2 z-10 flex w-max max-w-[calc(100%-32px)] -translate-x-1/2 items-center gap-1 rounded-lg pl-4 text-sm"
+      class="sim-map-panel absolute left-1/2 z-10 flex w-max max-w-[calc(100%-32px)] -translate-x-1/2 items-center gap-1 rounded-lg pl-4 text-sm"
+      style:top="calc(var(--notice-pills-bottom, 0px) + 4rem)"
     >
       <span>Existing buildings couldn't load. Generated buildings still work.</span>
       <button

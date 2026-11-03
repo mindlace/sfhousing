@@ -9,15 +9,12 @@
   row's ops out as one undoable step and sends the worker the new plan. The brush status line, its
   Retry and the page's own notices are pills in one notice stack (`NoticePills`); a stroke's or an
   undo's announcement is screen-reader only, as on /sim, so painting never resizes the map on a
-  phone (where the stack is in flow). The live preview
-  stays after release here, because on `/` it is the plan.
+  phone (where the stack is in flow). The page's header score flips the dock to its Results face
+  (`results`, the scoreboard). The live preview stays after release here, because on `/` it is the
+  plan.
 -->
 <script module lang="ts">
   const MEASURE = import.meta.env.DEV || import.meta.env.VITE_E2E === '1';
-
-  function cssPx(el: Element, name: string): number {
-    return parseFloat(getComputedStyle(el).getPropertyValue(name)) || 0;
-  }
 </script>
 
 <script lang="ts">
@@ -137,7 +134,6 @@
   let manifest = $state.raw<Manifest | null>(untrack(() => initialManifest));
   let crosshair = $state(false);
   let insetPx = $state(0);
-  let frame = $state<HTMLElement>();
 
   /** The page's dock, or (for a page that passes none) one of this component's own. */
   const dock = untrack(() => dockProp) ?? new DockState({ tab: 'paint' });
@@ -171,17 +167,6 @@
    */
   export function retryChunks(): void {
     client?.retryChunks();
-  }
-
-  /**
-   * The scoreboard's mobile sheet height while it is open (brush-tool spec line 148: the shell
-   * calls setBottomInset with the sheet height when it is open). `null` when it closes: the inset
-   * is the dock sheet's again, above the score bar. While a number is set, a media-query change
-   * does not clobber it.
-   */
-  export function setSheetInset(px: number | null): void {
-    sheetInset = px;
-    applyInset();
   }
 
   let client: SimClient | null = null;
@@ -321,18 +306,14 @@
     setChunks({ pending: 0, failed: [] });
   }
 
-  /** The scoreboard sheet's height while it overrides the computed inset (null: no override). */
-  let sheetInset: number | null = null;
-
   /**
    * The map's bottom inset: the dock sheet's height (its handle while closed; 0 from md, where the
-   * dock sits beside the map) plus the bar under it (`--fzp-scrubber-h` here: the score bar, 0
-   * from md), so the map's centre and controls sit above both.
+   * dock sits beside the map), so the map's centre and controls sit above it. Nothing sits under
+   * the sheet on `/` (no time bar; the score is in the header).
    */
   function applyInset(): void {
-    const px = sheetInset ?? sheetH + (frame ? cssPx(frame, '--fzp-scrubber-h') : 0);
-    insetPx = px;
-    handle?.setBottomInset(px);
+    insetPx = sheetH;
+    handle?.setBottomInset(sheetH);
   }
 
   /** SimMap remounted its map (a new manifest): move the controller to the new one. */
@@ -503,9 +484,6 @@
       (e) => console.error('[brush] overlay layers failed to load', e)
     );
 
-    // The score bar under the sheet shows below md only.
-    const mq = matchMedia('(width < 768px)');
-    mq.addEventListener('change', applyInset);
     applyInset();
 
     const uninstall = installBrushDebug(() => ({
@@ -519,7 +497,6 @@
     return () => {
       dead = true;
       uninstall();
-      mq.removeEventListener('change', applyInset);
       controller?.destroy(); // first: it may still send to the client
       controller = null;
       client?.dispose();
@@ -563,13 +540,9 @@
   {/if}
 {/snippet}
 
-<!-- Until the header score replaces it, the score bar sits under the phone sheet: the dock and the
-     palette strip read its height as the bar below them (`--fzp-scrubber-h`, as on /sim). -->
-<div
-  bind:this={frame}
-  class="brush-editor sfh-dock-host relative flex h-full flex-col"
-  style:--fzp-scrubber-h="var(--scorebar-h, 0px)"
->
+<!-- No bar sits under the phone sheet on `/`: the dock and the palette strip read
+     `--fzp-scrubber-h` (/sim's time bar) as 0, so the sheet's handle is at the map's bottom. -->
+<div class="brush-editor sfh-dock-host relative flex h-full flex-col">
   <!-- One notice stack: the brush status line (city data, parcels loading, the zoom hint, a failure
        with its Retry), then the page's own notices. An overlay at the map's top from md; in flow
        under the header below md. -->

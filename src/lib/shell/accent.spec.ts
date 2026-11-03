@@ -48,7 +48,10 @@ const THEMED_FILES = [
   'src/lib/paint/PaletteStrip.svelte',
   'src/lib/fzp/ProjectCardPanel.svelte',
   'src/lib/fzp/ProjectTooltip.svelte',
-  'src/lib/brush/BrushEditor.svelte'
+  'src/lib/brush/BrushEditor.svelte',
+  'src/lib/scoreboard/ScoreboardPanel.svelte',
+  'src/lib/scoreboard/NeighborhoodList.svelte',
+  'src/lib/sharing/NoticeStack.svelte'
 ];
 /** Themed files whose colours come from tokens and custom properties only: no hex at all. */
 const NO_HEX_FILES = [
@@ -136,9 +139,7 @@ describe('app accent tokens', () => {
     // Per quote-free string (a class attribute or a class constant): a gray, white or black
     // utility needs its dark: partner of the same kind (bg, border, text) in the same string.
     const bad: string[] = [];
-    // TargetRow keeps its unthemed branch behind the temporary `themed` prop until a later plan
-    // removes it.
-    for (const f of THEMED_FILES.filter((f) => f !== 'src/lib/scoreboard/TargetRow.svelte')) {
+    for (const f of THEMED_FILES) {
       const src = readFileSync(fromRoot(f), 'utf8');
       for (const m of src.matchAll(/[^"'`]+/g)) {
         const chunk = m[0];

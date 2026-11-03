@@ -106,12 +106,15 @@ describe('/ editor page', () => {
     await expect.poll(() => document.activeElement?.getAttribute('role')).toBe('tab');
   });
 
-  it('renders the scoreboard region with the empty state', async () => {
-    await render(Page, { props: { data: data(), params: {} } });
+  it("the site header's score opens the empty Results face", async () => {
+    render(PaintHeaderHost, { props: { data: data() } });
+    const score = page.getByRole('banner').getByTestId('score-bar');
+    await expect.element(score).toHaveTextContent('0 homes added');
+    await score.click();
+    const results = page.getByRole('region', { name: 'Results' });
     await expect
-      .element(page.getByRole('region', { name: 'Housing scoreboard' }))
-      .toBeInTheDocument();
-    await expect.element(page.getByText('Paint a height on the map to add homes.')).toBeVisible();
+      .element(results.getByText('Paint a height on the map to add homes.'))
+      .toBeVisible();
   });
 
   it('shows the city-data failure with Retry and no map when the manifest failed', async () => {

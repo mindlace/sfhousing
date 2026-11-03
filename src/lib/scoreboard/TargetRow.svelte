@@ -9,18 +9,14 @@
     /** Shared track full-scale (trackMax). */
     max: number;
     primary: boolean;
-    /**
-     * Follow the light and dark surface tokens (the /sim Results face). The default is the light
-     * scoreboard on `/`, whose panel is always white.
-     */
-    themed?: boolean;
   }
-  let { tp, net, max, primary, themed = false }: Props = $props();
-  const TRACK = $derived(themed ? 'bg-gray-200 dark:bg-line-dark' : 'bg-gray-200');
-  const FILL = $derived(themed ? 'bg-accent dark:bg-accent-dark' : 'bg-accent');
-  const TICK = $derived(themed ? 'bg-ink dark:bg-ink-dark' : 'bg-black');
-  const MUTED = $derived(themed ? 'text-ink-muted dark:text-ink-dark-muted' : 'text-gray-700');
-  const BODY = $derived(themed ? 'text-ink dark:text-ink-dark' : 'text-gray-800');
+  let { tp, net, max, primary }: Props = $props();
+  // The light and dark surface tokens: the row sits on the dock's Results face on every page.
+  const TRACK = 'bg-gray-200 dark:bg-line-dark';
+  const FILL = 'bg-accent dark:bg-accent-dark';
+  const TICK = 'bg-ink dark:bg-ink-dark';
+  const MUTED = 'text-ink-muted dark:text-ink-dark-muted';
+  const BODY = 'text-ink dark:text-ink-dark';
   const tick = $derived(tickPercent(max));
 </script>
 

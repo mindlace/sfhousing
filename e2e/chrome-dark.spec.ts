@@ -1,15 +1,20 @@
-// Dark chrome (sim-runs spec §8): the header and the /sim timeline bar take dark variants and stay
-// WCAG AA; light-only panels (the scoreboard) keep the light accent. Both Playwright projects.
+// Dark chrome (sim-runs spec §8, sim-ux spec Goal 9): the header, the /sim timeline bar, the dock
+// and its Results face on both pages, and the notice pills take dark variants and stay WCAG AA.
+// Both Playwright projects.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
+import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { startRun } from './helpers/run';
 import {
   FRAME,
+  PLAN_KEY,
   gotoEditor,
   headerAction,
+  headerNet,
   jumpAndIdle,
+  openResults,
   paintOnce,
   projectToPage,
   seedPlanRow,
@@ -30,15 +35,6 @@ async function gotoSim(page: Page, { run = false }: { run?: boolean } = {}): Pro
   });
   await expect(page.locator('.sfh-fzp-scrubber')).toBeVisible();
   if (run) await startRun(page);
-}
-
-/** Below md the scoreboard is a sheet behind its bar; from md it is already open. */
-async function openScoreboard(page: Page, isMobile: boolean): Promise<Locator> {
-  const region = page.getByRole('region', { name: 'Housing scoreboard' });
-  if (!isMobile) return region;
-  await region.getByRole('button', { name: /net new homes/ }).tap();
-  await expect(page.getByRole('group', { name: 'Scoreboard details' })).toBeVisible();
-  return region;
 }
 
 test('/ header has no axe violations in dark', async ({ page }) => {
@@ -83,14 +79,16 @@ test('the header is dark in dark mode', async ({ page }) => {
   await expect(page.getByRole('banner')).toHaveCSS('background-color', 'rgb(28, 29, 31)');
 });
 
-test('light-only panels keep the light accent in dark mode', async ({ page, isMobile }) => {
+test("/'s Results face follows the dark tokens: the RHNA fill is the dark accent", async ({
+  page
+}) => {
   await gotoEditor(page);
-  const region = await openScoreboard(page, isMobile);
-  // One bar fill per target row: the primary target's (the h-4 meter) is the one under test.
-  // Below md the primary row renders twice (the bar and the open sheet); both share the classes.
-  const fill = region.locator('[data-primary="true"] [data-testid="bar-fill"]').first();
+  // Pressing the header score shows Results (in the dock from md, in the sheet below).
+  const results = await openResults(page);
+  const fill = results.locator('[data-primary="true"] [data-testid="bar-fill"]');
   await expect(fill).toBeAttached();
-  await expect(fill).toHaveCSS('background-color', 'rgb(163, 71, 44)');
+  await expect(fill).toHaveCSS('background-color', 'rgb(224, 149, 90)');
+  await expect(results.getByTestId('score-net')).toHaveCSS('color', 'rgb(232, 228, 220)');
 });
 
 // ---- the policy dock (sim-ux plan 2): tabs, Results, the project card and the notice pills ------
@@ -136,6 +134,32 @@ test("/'s dock on Paint, a painted row selected, has no axe violations in dark",
   await expectNoA11yViolations(page, {
     include: ['[data-testid=dock]', '[data-testid=fzp-notices]']
   });
+});
+
+test("/'s Results face, a plan painted and both disclosures open, has no axe violations in dark", async ({
+  page,
+  isMobile
+}) => {
+  await gotoEditor(page);
+  await paintOnce(page, isMobile);
+  await expect.poll(() => headerNet(page)).toBeGreaterThan(0);
+  const results = await openResults(page);
+  for (const d of await results.locator('details > summary').all()) await d.click();
+  await expect(results.locator('details[open]')).toHaveCount(2);
+  await expectNoA11yViolations(page, { include: ['header', '[data-testid=dock]'] });
+});
+
+test("/'s notice pill (N1) in the one stack has no axe violations in dark", async ({ page }) => {
+  await page.addInitScript((key) => {
+    if (sessionStorage.getItem('sfh-e2e-seeded')) return;
+    sessionStorage.setItem('sfh-e2e-seeded', '1');
+    localStorage.setItem(key, '{not json');
+  }, PLAN_KEY);
+  await gotoEditor(page);
+  const pill = page.getByTestId('fzp-notices').getByTestId('notice');
+  await expect(pill).toHaveText(COPY.n1);
+  await expect(pill).toHaveCSS('background-color', 'rgb(44, 46, 49)');
+  await expectNoA11yViolations(page, { include: ['[data-testid=fzp-notices]'] });
 });
 
 test('at 375px the palette strip has no axe violations in dark, palette open and in Erase', async ({

@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+/// <reference types="@vitest/browser-playwright" />
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page } from 'vitest/browser';
+import { cdp, page } from 'vitest/browser';
 import '../../routes/layout.css';
 import { score } from './accumulator';
 import { building, parcel } from './score-fixtures';
@@ -192,5 +193,40 @@ describe('neighborhood list', () => {
     show(scoreOf({ Mission: 5 }));
     const details = page.getByText('By neighborhood').element().closest('details')!;
     expect(details.open).toBe(false);
+  });
+});
+
+describe('the Results face on the dock (theme tokens)', () => {
+  async function scheme(value: 'light' | 'dark') {
+    await cdp().send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-color-scheme', value }]
+    });
+  }
+  afterEach(async () => {
+    await scheme('light');
+  });
+
+  it('renders no bg-white or text-black, and its text and bars follow the dark tokens', async () => {
+    const { container } = await render(ScoreboardPanel, {
+      props: { score: scoreOf({ Mission: 5, Sunset: 3 }), status: status({ failedChunks: 1 }) }
+    });
+    expect(container.querySelector('.bg-white, .text-black')).toBeNull();
+    await page.getByText('By neighborhood').click();
+    const color = (el: Element) => getComputedStyle(el).color;
+    const net = page.getByTestId('score-net').element();
+    const hoodBar = page.getByTestId('hood-row').first().element().querySelector('[aria-hidden]')!;
+    const hoodTrack = () => getComputedStyle(hoodBar).backgroundColor;
+    await scheme('light');
+    expect(color(net)).toBe('rgb(17, 24, 39)'); // ink
+    const lightTrack = hoodTrack();
+    await scheme('dark');
+    await expect.poll(() => color(net)).toBe('rgb(232, 228, 220)'); // ink-dark
+    expect(hoodTrack()).not.toBe(lightTrack);
+    // Every text in the panel reads on the dark surface: none is still a light-theme gray.
+    for (const el of container.querySelectorAll('p, span, summary, a, button, li')) {
+      expect(['rgb(17, 24, 39)', 'rgb(75, 85, 99)', 'rgb(0, 0, 0)'], el.outerHTML).not.toContain(
+        color(el)
+      );
+    }
   });
 });

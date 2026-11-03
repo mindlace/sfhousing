@@ -32,18 +32,9 @@ afterEach(async () => {
 });
 
 describe('TargetRow themes', () => {
-  it('default: the same in light and dark (the scoreboard on `/` is a white panel)', async () => {
+  it('track, fill, tick and text all change with the scheme (it always follows the tokens)', async () => {
     await page.viewport(1024, 768);
     await render(TargetRow, { props: { tp, net: 400, max: 1, primary: true } });
-    await scheme('light');
-    const light = parts();
-    await scheme('dark');
-    expect(parts()).toEqual(light);
-  });
-
-  it('themed: track, fill, tick and text all change with the scheme', async () => {
-    await page.viewport(1024, 768);
-    await render(TargetRow, { props: { tp, net: 400, max: 1, primary: true, themed: true } });
     await scheme('light');
     const light = parts();
     await scheme('dark');

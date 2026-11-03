@@ -169,7 +169,7 @@
 
     <div class="mt-4">
       {#each at.targets as t, k (t.tp.target.id)}
-        <TargetRow tp={t.tp} net={at.total} {max} primary={k === 0} themed />
+        <TargetRow tp={t.tp} net={at.total} {max} primary={k === 0} />
         <p class="text-sm text-ink-muted dark:text-ink-dark-muted">
           At the deadline ({formatDate(score.targets[k].deadline)}): {formatPercent(t.atDeadline)}
         </p>

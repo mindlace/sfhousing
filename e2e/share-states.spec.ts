@@ -5,6 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   PLAN_KEY,
   gotoEditor,
+  headerNet,
   openHeaderMenu,
   oldVersionText,
   ops,
@@ -122,7 +123,7 @@ test('N6: a share link whose dataset version is gone renders on the current data
   );
   await expect(banner.getByRole('button', { name: 'Open with current data' })).toBeVisible();
   await waitForMap(page);
-  await expect(page.getByTestId('score-net')).not.toHaveText('0');
+  await expect.poll(() => headerNet(page)).toBeGreaterThan(0);
 });
 
 test('a stored plan this app cannot parse is a 500 page with its own copy', async ({

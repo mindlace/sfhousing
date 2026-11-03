@@ -1,3 +1,9 @@
+<script module lang="ts">
+  import { M1_TARGETS, score as computeScore } from '$lib/scoreboard';
+  /** The score before the worker's first diff. */
+  const EMPTY = computeScore([], M1_TARGETS);
+</script>
+
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
@@ -8,8 +14,16 @@
   import type { Editor } from '$lib/brush/editor.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import { DockState } from '$lib/dock/dock-state.svelte';
-  import { frameLatest, type Score, type ScoreStatus } from '$lib/scoreboard';
-  import Scoreboard from '$lib/scoreboard/Scoreboard.svelte';
+  import {
+    announcement,
+    frameLatest,
+    primaryTarget,
+    viewState,
+    type Score,
+    type ScoreStatus
+  } from '$lib/scoreboard';
+  import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
+  import ScoreboardPanel from '$lib/scoreboard/ScoreboardPanel.svelte';
   import { Autosave } from '$lib/sharing/autosave.svelte';
   import { COPY, n3, remixedToast } from '$lib/sharing/copy';
   import NoticeStack from '$lib/sharing/NoticeStack.svelte';
@@ -84,10 +98,11 @@
     autosave.setLastPublished({ id: r.id, hash: r.hash }, editor.plan);
   }
 
-  useHeaderActions(headerActions, { status: saveState });
+  useHeaderActions(headerActions, { pinned: scoreBar, status: saveState });
 
   // The dock (sim-ux plan 5): the Paint tab, open on the left of the map from md (folding to a
-  // rail), a bottom sheet behind its handle below md. The header's Paint button toggles it.
+  // rail), a bottom sheet behind its handle below md. The header's Paint button toggles it; the
+  // header score flips it to its Results face (the scoreboard) and back.
   const wide = new MediaQuery('(min-width: 768px)');
   const uid = $props.id();
   const dockId = `${uid}-dock`;
@@ -100,6 +115,12 @@
   function togglePaint(): void {
     dockFocus = true;
     dock.toggleOpen(wide.current);
+  }
+
+  /** The header score: Results <-> the Paint tab, opening the dock if it is hidden. */
+  function pressScore(): void {
+    dockFocus = true;
+    dock.toggleResults(wide.current);
   }
 
   /** The dock folded by its collapse button or Escape: focus to Paint, or the phone Menu button. */
@@ -117,7 +138,8 @@
     writeViewPrefs(v);
   }
 
-  // Scoreboard wiring (scoreboard spec §4.3/§4.4), separate from the editor/plan concern above.
+  // Score wiring (scoreboard spec §4.3/§4.4), separate from the editor/plan concern above: the
+  // header score and the dock's Results face (sim-ux spec Goal 5, the same as /sim's).
   let brushEditor = $state<ReturnType<typeof BrushEditor>>();
   // Score and its diff's `complete` travel together, coalesced to ≤ 1 commit per frame.
   const latestScore = frameLatest<{ score: Score | null; complete: boolean }>({
@@ -135,8 +157,32 @@
     planDatasetVersion: data.plan.datasetVersion,
     mode: 'max'
   });
+  const shown = $derived(latestScore.current.score ?? EMPTY);
+  const scoreView = $derived(viewState(shown, scoreStatus));
   const systemTheme = useSystemTheme();
 </script>
+
+{#snippet scoreBar()}
+  <!-- A painted plan has no FZP comparison: no "vs FZP" delta (sim-ux spec Goal 5). -->
+  <HeaderScore
+    total={shown.netUnits}
+    target={primaryTarget(shown) ?? null}
+    busy={scoreView.updating}
+    expanded={dock.face === 'results' && dock.visible(wide.current)}
+    controls={dockId}
+    onclick={pressScore}
+    live={announcement(shown)}
+    quiet={scoreView.updating}
+  />
+{/snippet}
+
+{#snippet results()}
+  <ScoreboardPanel score={shown} status={scoreStatus} onretry={() => brushEditor?.retryChunks()} />
+{/snippet}
+
+{#snippet noticeStack()}
+  <NoticeStack {notices} ondismiss={(id) => (notices = notices.filter((n) => n.id !== id))} />
+{/snippet}
 
 {#snippet headerActions()}
   <button
@@ -185,12 +231,7 @@
     {dockId}
     {dockFocus}
     ondockclose={dockClosed}
+    {results}
+    notices={noticeStack}
   />
-  <Scoreboard
-    score={latestScore.current.score}
-    status={scoreStatus}
-    onretry={() => brushEditor?.retryChunks()}
-    onsheetchange={(open, h) => brushEditor?.setSheetInset(open ? h : null)}
-  />
-  <NoticeStack {notices} ondismiss={(id) => (notices = notices.filter((n) => n.id !== id))} />
 </div>

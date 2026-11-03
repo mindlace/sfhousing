@@ -1,5 +1,6 @@
 // Shared helpers for the plan-sharing e2e specs. Editor navigation and the drag helpers are copied
-// from e2e/scoreboard.spec.ts and e2e/brush.spec.ts (those specs keep their own copies).
+// from e2e/scoreboard.spec.ts and e2e/brush.spec.ts (those specs keep their own copies). The score
+// helpers (`headerScore`, `headerNet`, `openResults`, `settledNet`) read `/`'s header score.
 import {
   expect,
   type APIRequestContext,
@@ -209,9 +210,31 @@ export async function paintOnce(page: Page, isMobile: boolean): Promise<void> {
   await expect.poll(() => ops(page)).toBe(1);
 }
 
-/** Waits until the net readout is unchanged across 3 polls >= 100 ms apart; returns its text. */
+/** The header score on `/` and `/p/:id` (and `/sim`): "{n} homes added", the RHNA meter beside. */
+export const headerScore = (page: Page): Locator =>
+  page.getByRole('banner').getByTestId('score-bar');
+
+/** The header score's count, read from its text ("1,234 homes added" → 1234). */
+export async function headerNet(page: Page): Promise<number> {
+  const t = (await headerScore(page).textContent()) ?? '';
+  return Number(t.replace(/homes[\s\S]*$/, '').replace(/[^\d-]/g, ''));
+}
+
+/** The dock's Results face (the scoreboard on `/` and `/p/:id`). */
+export const resultsFace = (page: Page): Locator => page.getByRole('region', { name: 'Results' });
+
+/** Shows the dock's Results face by pressing the header score (when it is not already shown). */
+export async function openResults(page: Page): Promise<Locator> {
+  const score = headerScore(page);
+  if ((await score.getAttribute('aria-expanded')) !== 'true') await score.click();
+  await expect(score).toHaveAttribute('aria-expanded', 'true');
+  await expect(resultsFace(page)).toBeVisible();
+  return resultsFace(page);
+}
+
+/** Waits until the header score is unchanged across 3 polls >= 100 ms apart; returns its text. */
 export async function settledNet(page: Page): Promise<string> {
-  const net = page.getByTestId('score-net');
+  const net = headerScore(page);
   let prev = '';
   let stable = 0;
   await expect

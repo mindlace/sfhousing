@@ -1,5 +1,16 @@
+<!--
+  `/`'s plan-sharing notices (plan-sharing spec §4.5/§4.8: N1 to N3 and the Remix toast), each one
+  pill line (`PILL` in shell/pill). The page passes this as BrushEditor's `notices` snippet, so the
+  pills sit in BrushEditor's one notice stack (`NoticePills`, `fzp-notices`) after the brush status
+  (sim-ux spec Goal 8): an overlay at the map's top from md that moves nothing, in flow under the
+  header below md. It has no stack or placement of its own. One always-mounted polite status region
+  (`display: contents`, so its empty box adds no gap in the stack, not a list): a notice added to it
+  later is announced, which a status node inserted with its text already inside often is not. A
+  toast dismisses itself after 8 s.
+-->
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { PILL, PILL_ACTION } from '$lib/shell/pill';
 
   type Notice = { id: string; text: string; tone?: 'info' | 'toast' };
 
@@ -35,58 +46,16 @@
     for (const t of timers.values()) clearTimeout(t);
     timers.clear();
   });
-
-  // The stack's height on :root as --notice-stack-h, for the brush toolbar: from 768 to 1023 px it
-  // caps its own height to end above the stack (see the placement note below). Removed on unmount.
-  let stackH = $state(0);
-  $effect(() => {
-    const s = document.documentElement.style;
-    s.setProperty('--notice-stack-h', `${stackH}px`);
-    return () => s.removeProperty('--notice-stack-h');
-  });
 </script>
 
-<!--
-  Placement against the W6b layout (e2e/share-notices.spec.ts checks 375, 768, 1024, 1280, 1440):
-  - Below 768 px the brush bar and score bar sit at the bottom, the compact attribution button
-    just above them. The top is free except map-view's failure chips, whose tops sit at 0.5rem
-    (parcels) and 4rem (buildings, about 46 px tall), so the stack starts at 8rem, below both.
-    Below 640 px it keeps 60 px clear on the right (W6b rule).
-  - From 768 px the toolbar (left, 23rem) and the scoreboard panel (right, 20rem) hang from the
-    top with the chips between them; at 768 px the two columns are only 48 px apart. So the stack
-    sits near the bottom: 6rem up clears the attribution strip and, at its usual two-line height,
-    the parcel card (16 px up); 4rem in from the left clears the navigation control; 22rem in
-    from the right keeps it out of the scoreboard column however tall the panel grows. From lg it
-    also starts right of the toolbar column (25rem), so a tall toolbar (keyboard shortcuts open,
-    about 620 px at 1024x768) cannot reach it either.
-    768-1023 px: the two columns leave no room beside the toolbar, so the stack sits under it.
-    The stack publishes its height as --notice-stack-h and the toolbar caps its own height to
-    end 0.5rem above the stack, scrolling inside. The dock that replaced that toolbar does not.
-  Short narrow viewports (below 768 px wide and at most 480 px tall, e.g. a 667x375 landscape
-  phone): the map region is about 290 px with the 112 px of bars and the attribution strip above
-  them, so 8rem down lands on the attribution and the brush bar. The stack moves to 0.5rem from
-  the top. Known limit: a map-view failure chip (top centre) showing at the same time may sit
-  under a notice until it is dismissed; the brush popovers, opened on demand, paint above it.
-  One always-mounted status region (not a list): notices added to it later are announced, which
-  a status node inserted with its text already inside often is not. Empty, it has no height.
--->
-<div
-  role="status"
-  aria-live="polite"
-  data-testid="notice-stack"
-  bind:offsetHeight={stackH}
-  class="notice-stack pointer-events-none absolute top-32 right-[60px] left-4 z-20 flex flex-col gap-2 sm:right-4 md:top-auto md:right-[22rem] md:bottom-24 md:left-16 md:items-center lg:left-[25rem]"
->
+<div role="status" aria-live="polite" data-testid="notice-stack" class="contents">
   {#each notices as n (n.id)}
-    <div
-      data-testid="notice"
-      class="pointer-events-auto flex items-start gap-2 rounded-lg border border-gray-300 bg-white py-1 pr-1 pl-3 text-sm text-gray-900 shadow-lg"
-    >
+    <div data-testid="notice" class="{PILL} max-w-[min(34rem,100%)]!">
       <span class="min-w-0 flex-1 py-1">{n.text}</span>
       <button
         type="button"
         aria-label="Dismiss"
-        class="flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded-md text-gray-700 hover:bg-gray-100 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+        class="{PILL_ACTION} flex shrink-0 items-center justify-center no-underline hover:bg-surface-raised dark:hover:bg-line-dark"
         onclick={() => ondismiss(n.id)}
       >
         <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none">
@@ -96,11 +65,3 @@
     </div>
   {/each}
 </div>
-
-<style>
-  @media (width < 768px) and (height <= 480px) {
-    .notice-stack {
-      top: 0.5rem;
-    }
-  }
-</style>
