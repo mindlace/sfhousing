@@ -6,8 +6,9 @@
   Custom paint and erase strokes (Task 8) reuse `/`'s BrushController through the stroke
   adapter; the overlay layers and the brush ring share SimMap's overlay through the overlay mux.
   Zoning rules (Task 9) read the brush catalog, asked for once when the dock's editing face first
-  shows and again after a session restart if it came back null; their form opens inline in the
-  Transit tab at every width. "Protections" (Task 10) edits the category protections.
+  shows and again after a session restart if it came back null. The Transit tab (sim-ux plan 4,
+  Task 2) lists them as layers, each edited in place when selected, then the locked FZP baseline
+  row. "Protections" (Task 10) edits the category protections.
   Plan 5 (Task 5): the policy autosaves (`sfhousing:sim:v1`) and is restored on mount, reconciled
   with the calibration (Calls 11 and 12). The header gets the save state (its status slot) and Publish. In `mode: 'view'` (the
   read-only /s/<id>, Task 6) the shared policy opens reconciled with the calibration (Call 7, with
@@ -27,8 +28,9 @@
   (height-lids plan, Task 12) draw in the overlay's `limits` slot: the contours from FzpMode's
   `onheights`, and from z14.5 the glass lids of the view, asked of the worker on each `moveend`
   (LidRequest: latest wins, the bbox clamped around the centre).
-  Selection (sim-ux plan 3, Task 3): one `picked` selection, a rule ("Show on map") or a painted
-  area (a Paint tab row); the selected area's lots are outlined on the map.
+  Selection (sim-ux plan 3, Task 3; plan 4, Task 2): one `picked` selection, a transit layer or
+  the FZP baseline (a Transit tab row) or a painted area (a Paint tab row); the selected area's
+  lots are outlined on the map.
   Live preview (sim-ux plan 3, Task 4): in Setup, while a Paint stroke is drawn, the buildings
   its lots nearest the brush ring could hold show under it (StrokePreview, the overlay's feedback
   slot); they fade on release, clear at once on a cancel, and a run clears them.
@@ -65,7 +67,6 @@
   import { PaintFeedback, lotsInView } from './feedback';
   import { installSimDebug } from './debug';
   import { StrokePreview } from './stroke-preview';
-  import { BrushForms } from './brush-forms.svelte';
   import type { Calibration } from '$lib/timelapse/types';
   import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
   import PaintTab from '$lib/paint/PaintTab.svelte';
@@ -94,7 +95,7 @@
   import { LeverSync, PolicyStore } from './policy-store.svelte';
   import { RunPhase } from './run-phase.svelte';
   import PermittingSection from './PermittingSection.svelte';
-  import RulesSection from './RulesSection.svelte';
+  import TransitTab from './TransitTab.svelte';
   import PolicySummary from './PolicySummary.svelte';
   import {
     customChangeLabel,
@@ -517,7 +518,7 @@
   let lids = $state.raw<HeightLids | null>(null);
   /** `limits-layer`, lazy-loaded on mount (it pulls in deck's layers). */
   let limitsModule = $state.raw<typeof import('$lib/map/height/limits-layer') | null>(null);
-  /** What was picked in the dock (a rule's "Show on map", a painted area's row); `selection` is it while it is still in the policy. */
+  /** What was picked in the dock (a Transit or Paint tab row); `selection` is it while it is still in the policy. */
   let picked = $state.raw<DockSelection>(null);
   /** The map's view at its latest `moveend` (or when it became ready). */
   let mapView = $state.raw<{
@@ -567,12 +568,14 @@
   $effect(() => {
     if (picked !== null && selection === null) picked = null;
   });
-  const selectedRule = $derived(selection?.kind === 'rule' ? selection.id : null);
   const selectedPaint = $derived(selection?.kind === 'paint' ? selection.id : null);
-  /** "Show on map" pressed or released. Showing a rule turns the limits view on, which it needs. */
-  function selectRule(id: string | null): void {
-    picked = id === null ? null : { kind: 'rule', id };
-    if (id !== null && !viewPrefs.heightLimits) setView({ ...viewPrefs, heightLimits: true });
+  /**
+   * A Transit tab row (a layer or the FZP baseline) pressed or released. Showing one turns the
+   * limits view on, which it needs.
+   */
+  function selectLayer(sel: DockSelection): void {
+    picked = sel;
+    if (sel !== null && !viewPrefs.heightLimits) setView({ ...viewPrefs, heightLimits: true });
   }
   /** A painted area's row pressed or released. */
   function selectPaint(id: string | null): void {
@@ -580,7 +583,7 @@
   }
   /**
    * Plain; with the brush or eraser chosen, or a painted area selected, paint-set limits stand
-   * out; a selected rule wins.
+   * out; a selected layer (or the FZP baseline) wins.
    */
   const limitsMode = $derived<LimitsView>(limitsViewOf(selection, tools.tool, mode));
   const limitsOn = $derived(run.phase === 'setup' && viewPrefs.heightLimits);
@@ -708,10 +711,8 @@
     );
   }
 
-  // ---- rule brushes (Task 9) ----
+  // ---- transit layers (Task 9; sim-ux plan 4, Task 2) ----
 
-  /** The open rule form, kept while the user moves between tabs (it shows in Transit). */
-  const forms = new BrushForms();
   /** undefined: not asked yet or in flight; null: the session had none to give. */
   let catalog = $state.raw<BrushCatalog | null | undefined>(undefined);
   let catalogWanted = false;
@@ -859,14 +860,13 @@
   {#if id === 'policy'}
     <PolicySummary policy={store.policy} {calibration} {lotsOf} />
   {:else if id === 'transit'}
-    <RulesSection
+    <TransitTab
       {store}
       {sync}
       {catalog}
-      {forms}
+      {selection}
+      onselect={selectLayer}
       announce={(m) => brush.announce(m, ANNOUNCE_MS)}
-      {selectedRule}
-      onselectrule={selectRule}
     />
   {:else if id === 'paint'}
     <PaintTab

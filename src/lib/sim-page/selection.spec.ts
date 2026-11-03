@@ -23,6 +23,11 @@ describe('liveSelection', () => {
     expect(liveSelection(null, policy)).toBeNull();
   });
 
+  it('keeps the FZP baseline: it never leaves the policy', () => {
+    expect(liveSelection({ kind: 'fzp' }, policy)).toEqual({ kind: 'fzp' });
+    expect(liveSelection({ kind: 'fzp' }, DEFAULT_POLICY)).toEqual({ kind: 'fzp' });
+  });
+
   it('does not take a rule id for a painted area or the reverse', () => {
     expect(liveSelection({ kind: 'paint', id: 'r1' }, policy)).toBeNull();
     expect(liveSelection({ kind: 'rule', id: 'b1' }, policy)).toBeNull();
@@ -35,6 +40,11 @@ describe('limitsViewOf', () => {
       kind: 'rule',
       ruleId: 'r1'
     });
+  });
+
+  it('the FZP baseline gives fzp mode, winning over the tool', () => {
+    expect(limitsViewOf({ kind: 'fzp' }, 'move', 'edit')).toEqual({ kind: 'fzp' });
+    expect(limitsViewOf({ kind: 'fzp' }, 'erase', 'edit')).toEqual({ kind: 'fzp' });
   });
 
   it('a painted area, or Paint or Erase in edit, gives paint mode', () => {

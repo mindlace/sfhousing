@@ -116,8 +116,11 @@ async function choosePreset(page: Page): Promise<void> {
   await expect(panel(page).getByTestId('timing-label')).toHaveText(PRESET);
 }
 
-const ruleList = (page: Page): Locator =>
-  panel(page).getByRole('list', { name: 'New zoning rules' }).getByRole('listitem');
+/** The Transit tab's layer rows' select buttons, the FZP baseline row left out. */
+const layerButtons = (page: Page): Locator =>
+  panel(page)
+    .getByRole('list', { name: 'Transit layers' })
+    .locator('[data-layer-row]:not([data-layer-row="fzp"]) > button');
 
 /** The autosaved document, or null. */
 const storedDoc = (page: Page): Promise<Doc | null> =>
@@ -259,11 +262,10 @@ test('autosave survives a reload', async ({ page }) => {
   await gotoSim(page);
   await openTab(page, 'Transit');
   await panel(page).getByRole('button', { name: 'Add transit layer' }).click({ timeout: 20_000 });
-  const form = panel(page).getByRole('form', { name: 'Add a transit rule', exact: true });
-  await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
-  await form.getByRole('button', { name: 'Save rule' }).click();
-  await expect(ruleList(page)).toHaveCount(1);
-  await expect(ruleList(page).first()).toContainText('Near');
+  await expect(layerButtons(page)).toHaveCount(1);
+  await expect(layerButtons(page).first()).toHaveAccessibleName(/^Near .* · [\d,]+ lots?$/, {
+    timeout: 20_000
+  });
 
   await choosePreset(page);
   await panel(page).getByRole('button', { name: 'Save timelines' }).click();
@@ -281,11 +283,12 @@ test('autosave survives a reload', async ({ page }) => {
   // The phase is not persisted: a reload opens in Setup.
   await expect(page.getByTestId('fzp-play-label')).toHaveText('Run');
   await openTab(page, 'Transit');
-  await expect(ruleList(page)).toHaveCount(1);
-  await expect(ruleList(page).first()).toContainText('Near');
-  // The restored rule resolves (C1): the card counts its lots, and the full levers are in force.
-  await expect(ruleList(page).first()).toContainText(/ · [\d,]+ lots? /, { timeout: 20_000 });
-  await expect(ruleList(page).first()).not.toContainText('Finding lots…');
+  await expect(layerButtons(page)).toHaveCount(1);
+  // The restored layer resolves (C1): the row counts its lots, and the full levers are in force.
+  await expect(layerButtons(page).first()).toHaveAccessibleName(/^Near .* · [\d,]+ lots?$/, {
+    timeout: 20_000
+  });
+  await expect(layerButtons(page).first()).not.toContainText('Finding lots…');
   await expect
     .poll(async () => (await leverStatus(page)).status, { timeout: 20_000 })
     .toBe('current');

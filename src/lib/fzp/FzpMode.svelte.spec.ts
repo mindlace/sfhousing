@@ -11,7 +11,6 @@ import type { TimelinePick } from '$lib/map/types';
 import type { LeverLookups } from '$lib/sim/levers/apply';
 import { DEFAULT_LEVERS, type SimLevers } from '$lib/sim/levers/types';
 import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
-import type { LeverStatus } from '$lib/sim-page/lever-status';
 import type { SimPhase } from '$lib/sim-page/run-phase.svelte';
 import { chanceTable, typicalMonths } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
@@ -58,7 +57,6 @@ type Over = Partial<{
   urlSeed: number | null;
   reload: () => Promise<{ manifest: Manifest; calibration: Calibration }>;
   levers: SimLevers;
-  onlevers: (s: LeverStatus) => void;
   onheights: (c: HeightCity) => void;
   actions: Snippet;
   runPhase: SimPhase;
@@ -189,6 +187,7 @@ beforeEach(async () => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe('FzpMode loading and lookups', () => {
@@ -1249,8 +1248,8 @@ describe('FzpMode levers (/sim)', () => {
   });
 
   it('resolving shows the updating notice with done/total; current removes it', async () => {
-    const onlevers = vi.fn<(st: LeverStatus) => void>();
-    const s = setup({ levers: DEFAULT_LEVERS, onlevers });
+    vi.stubEnv('VITE_E2E', '1'); // the debug hook reports the lever status
+    const s = setup({ levers: DEFAULT_LEVERS });
     await toReady(s);
     await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'false');
     await (await s.r).rerender({ levers: { ...OTHER } });
@@ -1261,7 +1260,7 @@ describe('FzpMode levers (/sim)', () => {
       .getByRole('status')
       .getByText('Updating the simulation for your policy… 2 of 5 lots');
     await expect.element(notice).toBeVisible();
-    expect(onlevers.mock.calls.at(-1)![0]).toMatchObject({ kind: 'resolving', done: 2, total: 5 });
+    expect(window.__sfhFzp!.levers).toMatchObject({ status: 'resolving', done: 2, total: 5 });
     await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'true');
     s.w().emit({
       type: 'levers',
@@ -1274,7 +1273,7 @@ describe('FzpMode levers (/sim)', () => {
     await expect
       .element(page.getByText(/Updating the simulation for your policy/))
       .not.toBeInTheDocument();
-    expect(onlevers.mock.calls.at(-1)![0]).toMatchObject({ kind: 'current', rev });
+    expect(window.__sfhFzp!.levers).toMatchObject({ status: 'current', sentRev: rev });
     // The score stays the last run's, busy, until the new run's timeline arrives.
     await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'true');
     s.w().emit(timelineMsg(rev, 7));
@@ -1295,8 +1294,8 @@ describe('FzpMode levers (/sim)', () => {
   });
 
   it('a failed revision shows an alert whose Retry restarts with the latest levers', async () => {
-    const onlevers = vi.fn<(st: LeverStatus) => void>();
-    const s = setup({ levers: DEFAULT_LEVERS, onlevers });
+    vi.stubEnv('VITE_E2E', '1'); // the debug hook reports the lever status
+    const s = setup({ levers: DEFAULT_LEVERS });
     await toReady(s);
     // The alert region is in the accessibility tree before it has anything to say.
     const region = page.getByTestId('fzp-lever-failed');
@@ -1319,7 +1318,7 @@ describe('FzpMode levers (/sim)', () => {
     const alert = page.getByRole('alert').filter({ hasText: message });
     await expect.element(alert).toBeVisible();
     expect(region.element().contains(alert.element())).toBe(true);
-    expect(onlevers.mock.calls.at(-1)![0]).toMatchObject({ kind: 'failed', rev });
+    expect(window.__sfhFzp!.levers).toMatchObject({ status: 'failed', sentRev: rev });
     expect(err).toHaveBeenCalledWith('[fzp] worker error', 'internal', 'x');
     await expect.element(page.getByText(/Updating the simulation/)).not.toBeInTheDocument();
 
@@ -1341,7 +1340,7 @@ describe('FzpMode levers (/sim)', () => {
       unknownLots: 0
     });
     s.w().emit(timelineMsg(init.rev, 7));
-    await expect.poll(() => onlevers.mock.calls.at(-1)![0].kind).toBe('current');
+    await expect.poll(() => window.__sfhFzp!.levers.status).toBe('current');
     await expect.element(page.getByText(message)).not.toBeInTheDocument();
     expect(region.element().textContent?.trim()).toBe('');
   });

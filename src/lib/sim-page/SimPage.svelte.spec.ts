@@ -298,7 +298,7 @@ describe('SimPage dock', () => {
     await expect.element(bar).not.toBeInTheDocument();
   });
 
-  it('a rule form opens inline in the Transit tab at 375 px too', async () => {
+  it('+ Transit layer adds a layer expanded in place in the Transit tab at 375 px too', async () => {
     const { w } = await readySim(375);
     await handle().click();
     await expect.poll(() => w.lastOf('brushCatalog')).toBeTruthy();
@@ -308,14 +308,16 @@ describe('SimPage dock', () => {
       catalog: testCatalog()
     });
     await page.getByRole('button', { name: 'Add transit layer' }).click();
-    const form = page.getByRole('tabpanel', { name: 'Transit' }).getByRole('form', {
-      name: 'Add a transit rule'
-    });
-    await expect.element(form).toBeVisible();
+    const panel = page.getByRole('tabpanel', { name: 'Transit' });
+    const chips = panel.getByRole('group', { name: 'Stop types' });
+    await expect.element(chips).toBeVisible();
+    await expect.element(chips.getByRole('button').first()).toHaveFocus();
     await expect.element(tab('Transit')).toBeVisible(); // the tabs stay: no sub-view
     expect(page.getByRole('button', { name: 'Back', exact: true }).query()).toBeNull();
-    await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect.element(page.getByRole('button', { name: 'Add transit layer' })).toHaveFocus();
+    // No form and no Save: the layer is in the policy already.
+    expect(page.getByRole('form').query()).toBeNull();
+    expect(page.getByRole('button', { name: /^Save/ }).query()).toBeNull();
+    await expect.element(page.getByRole('button', { name: /^Undo/ })).toBeEnabled();
   });
 
   it('at 375 px, opened from the Menu, Escape returns focus to the Menu button', async () => {
@@ -648,7 +650,7 @@ describe('SimPage rule brushes (Task 9)', () => {
     expect(w.allOf('brushCatalog')).toHaveLength(1);
   });
 
-  it('an open form keeps its edits across a tab change and a run', async () => {
+  it('a selected layer stays selected and expanded across a tab change; a run clears it', async () => {
     vi.stubEnv('VITE_E2E', '1');
     stub.reset();
     await page.viewport(1024, 768);
@@ -662,27 +664,26 @@ describe('SimPage rule brushes (Task 9)', () => {
       catalog: testCatalog()
     });
     await page.getByRole('button', { name: 'Add transit layer' }).click();
-    const form = () => page.getByRole('form', { name: 'Add a transit rule' });
-    await expect.element(form()).toBeVisible();
-    const metro = () => page.getByRole('checkbox', { name: /^Muni Metro/ });
-    const distance = () => page.getByRole('spinbutton', { name: 'Band 1 distance (m)' });
-    await metro().click();
+    const chips = () => page.getByRole('group', { name: 'Stop types' });
+    const distance = () =>
+      page.getByRole('group', { name: 'Band 1' }).getByRole('spinbutton', { name: /^Within/ });
+    await expect.element(chips()).toBeVisible();
     await distance().fill('777');
+    await userEvent.keyboard('{Enter}');
     await tab('Permits').click();
-    await expect.element(form()).not.toBeInTheDocument();
+    await expect.element(chips()).not.toBeInTheDocument();
     await tab('Transit').click();
-    await expect.element(form()).toBeVisible();
-    await expect.element(metro()).toBeChecked();
+    await expect.element(chips()).toBeVisible();
     await expect.element(distance()).toHaveValue(777);
     // A remount does not take focus from the tab the user pressed.
     await expect.element(tab('Transit')).toHaveFocus();
 
     await pressRun(w);
-    expect(form().query()).toBeNull();
     await editPolicy().click();
-    await expect.element(form()).toBeVisible();
-    await expect.element(metro()).toBeChecked();
-    await expect.element(distance()).toHaveValue(777);
+    await expect.element(distance()).not.toBeInTheDocument();
+    await expect
+      .element(page.getByRole('button', { name: /^Near regional rail and Muni Metro/ }))
+      .toHaveAttribute('aria-pressed', 'false');
   });
 });
 
@@ -751,11 +752,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     await toReady();
     // one rule card and one custom card, no reset notice
     await expect
-      .poll(
-        () =>
-          page.getByRole('list', { name: 'New zoning rules' }).getByRole('listitem').elements()
-            .length
-      )
+      .poll(() => document.querySelectorAll('[data-layer-row]:not([data-layer-row="fzp"])').length)
       .toBe(1);
     await timingToggle().click();
     await presetPicker().selectOptions(SD);
@@ -942,10 +939,10 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
       const sent = w.lastOf('setLevers')!.levers;
       expect(sent.rules[0].lots.length).toBe(2);
       expect(sent.paint[0].lots.length).toBe(2);
-      // The rule's card in the Transit tab, the custom brush's in Paint.
+      // The rule's row in the Transit tab, the custom brush's in Paint.
       for (const t of ['Transit', 'Paint']) {
         await tab(t).click();
-        await expect.element(page.getByText(/· 2 lots$/)).toBeVisible();
+        await expect.element(page.getByRole('button', { name: /· 2 lots$/ })).toBeVisible();
         expect(page.getByText('Finding lots…').elements()).toHaveLength(0);
       }
       // The next real change still goes through LeverSync, once.
@@ -1401,7 +1398,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
     await expect.poll(() => w.allOf('heightLids').length).toBe(1);
   });
 
-  describe('rule selection (Task 13)', () => {
+  describe('layer selection (Task 13; sim-ux plan 4, Task 2)', () => {
     const RULES_DOC: SimDoc = {
       schema: 2,
       kind: 'sim',
@@ -1413,7 +1410,8 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
         ]
       }
     };
-    const showToggle = () => page.getByRole('button', { name: /^Show on map/ });
+    const layerRow = () => page.getByRole('button', { name: /^Near Muni Metro/ });
+    const fzpRow = () => page.getByRole('button', { name: 'FZP baseline', exact: true });
     async function withRule() {
       stub.reset();
       await page.viewport(1024, 768);
@@ -1428,12 +1426,20 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
       await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
     }
 
-    it('a selected rule sets the layer mode to its id; pressing again clears it', async () => {
+    it('selecting a layer sets the limits mode to its rule; the FZP row sets fzp mode', async () => {
       await withRule();
-      await showToggle().click();
+      await layerRow().click();
+      await expect.element(layerRow()).toHaveAttribute('aria-pressed', 'true');
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
-      await showToggle().click();
+      await layerRow().click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
+      await fzpRow().click();
+      await expect.element(fzpRow()).toHaveAttribute('aria-pressed', 'true');
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'fzp' });
+      // One selection: a layer replaces the baseline.
+      await layerRow().click();
+      await expect.element(fzpRow()).toHaveAttribute('aria-pressed', 'false');
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
     });
 
     it('rule mode wins over the paint tool', async () => {
@@ -1442,22 +1448,51 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
       await page.getByRole('radio', { name: 'Paint' }).click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'paint' });
       await tab('Transit').click();
-      await showToggle().click();
+      await layerRow().click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
     });
 
-    it('removing the selected rule clears the selection, and undo does not bring it back', async () => {
+    it('removing the selected layer clears the selection and Undo does not bring it back', async () => {
       await withRule();
-      await showToggle().click();
+      await layerRow().click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
-      await page.getByRole('button', { name: /^Remove:/ }).click();
+      await page.getByRole('button', { name: 'Remove layer' }).click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
+      await expect
+        .element(
+          page.getByRole('button', {
+            name: 'Undo: Removed: Allowed up to 8 stories near Muni Metro'
+          })
+        )
+        .toBeVisible();
       await page.getByRole('button', { name: /^Undo/ }).click();
-      await expect.element(showToggle()).toHaveAttribute('aria-pressed', 'false');
+      await expect.element(layerRow()).toHaveAttribute('aria-pressed', 'false');
+      expect(page.getByRole('group', { name: 'Stop types' }).query()).toBeNull();
       expect(lastLayer()!.props.mode).toEqual({ kind: 'plain' });
     });
 
-    it('the selected rule leaving through Undo of its add clears the selection', async () => {
+    it('Undo of an edit keeps the layer selected and expanded', async () => {
+      await withRule();
+      await layerRow().click();
+      const more = page.getByRole('group', { name: 'Band 1' }).getByRole('button', {
+        name: 'More stories'
+      });
+      await more.click();
+      await more.click();
+      await expect
+        .element(page.getByRole('button', { name: /^Undo: Edited: Allowed up to 10 stories/ }))
+        .toBeVisible();
+      await page.getByRole('button', { name: /^Undo/ }).click();
+      await expect.element(layerRow()).toHaveAttribute('aria-pressed', 'true');
+      await expect
+        .element(page.getByRole('group', { name: 'Band 1' }))
+        .toHaveTextContent(/8\s*stories/);
+      expect(lastLayer()!.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
+      // One undo took the whole run back: the next undoes nothing (the restore is not a change).
+      await expect.element(page.getByRole('button', { name: /^Undo/ })).toBeDisabled();
+    });
+
+    it('the selected layer leaving through Undo of its add clears the selection', async () => {
       stub.reset();
       await page.viewport(1024, 768);
       await setup();
@@ -1471,43 +1506,46 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
         catalog: testCatalog()
       });
       await page.getByRole('button', { name: 'Add transit layer' }).click();
-      await page.getByRole('checkbox', { name: /^Muni Metro/ }).click();
-      await page.getByRole('button', { name: 'Save rule' }).click();
-      await showToggle().click();
       await expect.poll(() => lastLayer()?.props.mode).toMatchObject({ kind: 'rule' });
       await page.getByRole('button', { name: /^Undo/ }).click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
       await page.getByRole('button', { name: /^Redo/ }).click();
-      await expect.element(showToggle()).toHaveAttribute('aria-pressed', 'false');
+      const added = page.getByRole('button', { name: /^Near regional rail and Muni Metro/ });
+      await expect.element(added).toHaveAttribute('aria-pressed', 'false');
       expect(lastLayer()!.props.mode).toEqual({ kind: 'plain' });
     });
 
-    it('with Zoning height limits off, pressing Show on map turns them on', async () => {
-      stub.reset();
-      await page.viewport(1024, 768);
-      const mem = new MemoryStorage();
-      mem.setItem(
-        SIM_KEY,
-        JSON.stringify({ v: 1, savedAt: 'x', plan: SIM_CODEC.serialize(RULES_DOC) })
-      );
-      mem.setItem(
-        VIEW_KEY,
-        JSON.stringify({ transitStops: false, transitAccess: true, heightLimits: false })
-      );
-      await setup({ storage: () => mem });
-      await toReady();
-      emitHeights(workers.at(-1)!);
-      await new Promise((res) => setTimeout(res, 50));
-      expect(overlayIds()).not.toContain(LIMITS_LAYER_ID);
-      await showToggle().click();
-      await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
-      expect(lastLayer()!.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
-      expect(JSON.parse(mem.getItem(VIEW_KEY)!).heightLimits).toBe(true);
+    it('with Zoning height limits off, selecting a layer or the FZP row turns them on', async () => {
+      for (const row of [layerRow, fzpRow]) {
+        stub.reset();
+        await page.viewport(1024, 768);
+        const mem = new MemoryStorage();
+        mem.setItem(
+          SIM_KEY,
+          JSON.stringify({ v: 1, savedAt: 'x', plan: SIM_CODEC.serialize(RULES_DOC) })
+        );
+        mem.setItem(
+          VIEW_KEY,
+          JSON.stringify({ transitStops: false, transitAccess: true, heightLimits: false })
+        );
+        const r = await setup({ storage: () => mem });
+        await toReady();
+        emitHeights(workers.at(-1)!);
+        await new Promise((res) => setTimeout(res, 50));
+        expect(overlayIds()).not.toContain(LIMITS_LAYER_ID);
+        await row().click();
+        await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+        expect(lastLayer()!.props.mode).toEqual(
+          row === layerRow ? { kind: 'rule', ruleId: 'r1' } : { kind: 'fzp' }
+        );
+        expect(JSON.parse(mem.getItem(VIEW_KEY)!).heightLimits).toBe(true);
+        r.unmount();
+      }
     });
 
     it('Run clears the selection', async () => {
       await withRule();
-      await showToggle().click();
+      await layerRow().click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
       await run().click();
       await editPolicy().click();
@@ -1841,17 +1879,26 @@ describe('SimPage live preview (sim-ux plan 3, Task 4)', () => {
     expect(feedbackIds()).toEqual([]);
   });
 
-  it('saving a transit rule shows no buildings', async () => {
-    const { w } = await readySim();
-    await expect.poll(() => w.lastOf('brushCatalog')).toBeTruthy();
-    w.emit({
-      type: 'brushCatalog',
-      reqId: w.lastOf('brushCatalog')!.reqId,
-      catalog: testCatalog()
-    });
-    await page.getByRole('button', { name: 'Add transit layer' }).click();
-    await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
-    await page.getByRole('button', { name: 'Save rule' }).click();
+  it('an edit sends a new revision and shows no preview buildings', async () => {
+    stub.reset();
+    vi.stubEnv('VITE_E2E', '1');
+    await page.viewport(1024, 768);
+    const mem = new MemoryStorage();
+    const doc: SimDoc = {
+      schema: 2,
+      kind: 'sim',
+      datasetVersion: 'fixture-0',
+      policy: {
+        ...DEFAULT_POLICY,
+        rules: [
+          { id: 'r1', kind: 'transit', stopTypes: ['metro'], bands: [{ maxM: 402, stories: 8 }] }
+        ]
+      }
+    };
+    mem.setItem(SIM_KEY, JSON.stringify({ v: 1, savedAt: 'x', plan: SIM_CODEC.serialize(doc) }));
+    await setup({ storage: () => mem });
+    await toReady();
+    const w = workers.at(-1)!;
     await expect.poll(() => w.allOf('resolveBrush').length).toBeGreaterThan(0);
     const c = stub.map.getCenter();
     for (const q of w.allOf('resolveBrush'))
@@ -1861,6 +1908,16 @@ describe('SimPage live preview (sim-ux plan 3, Task 4)', () => {
         result: { ok: true, lots: ['P0', 'FAR'], points: Float64Array.from([c.lng, c.lat, 0, 0]) }
       });
     await expect.poll(() => w.allOf('setLevers').length, { timeout: 2000 }).toBe(1);
+    leversCurrent(w.lastOf('setLevers')!.rev);
+    await expect.poll(() => fzpDebug().levers.status).toBe('current');
+    // A stories edit needs no new lots: the next revision goes out with the new height.
+    await page.getByRole('button', { name: /^Near Muni Metro/ }).click();
+    await page
+      .getByRole('group', { name: 'Band 1' })
+      .getByRole('button', { name: 'More stories' })
+      .click();
+    await expect.poll(() => w.allOf('setLevers').length, { timeout: 2000 }).toBe(2);
+    expect(w.lastOf('setLevers')!.levers.rules[0].stories).toBe(9);
     leversCurrent(w.lastOf('setLevers')!.rev);
     await expect.poll(() => fzpDebug().levers.status).toBe('current');
     await wait(100);

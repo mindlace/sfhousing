@@ -165,19 +165,25 @@ test('the dock on Permits with a stage open has no axe violations in dark', asyn
   await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
 });
 
-test('the dock with a rule form and a saved rule card has no axe violations in dark', async ({
-  page
-}) => {
+test("a selected layer's expanded editor has no axe violations in dark", async ({ page }) => {
   await gotoSim(page);
   await openTab(page, 'Transit');
   await dock(page).getByRole('button', { name: 'Add transit layer' }).click({ timeout: 20_000 });
-  const form = dock(page).getByRole('form', { name: 'Add a transit rule', exact: true });
-  await expect(form).toBeVisible();
-  await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
-  await form.getByText('ⓘ').click();
+  const chips = dock(page).getByRole('group', { name: 'Stop types' });
+  await expect(chips).toBeVisible();
+  // A chip on, and a bound reached: More on the outer band is aria-disabled.
+  await chips.getByRole('button', { name: /^Muni Rapid bus/ }).click();
+  const outer = dock(page).getByRole('group', { name: 'Band 2' });
+  for (let k = 0; k < 2; k++) await outer.getByRole('button', { name: 'More stories' }).click();
+  await expect(outer.getByRole('button', { name: 'More stories' })).toHaveAttribute(
+    'aria-disabled',
+    'true'
+  );
   await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
-  await form.getByRole('button', { name: 'Save rule' }).click();
-  await expect(dock(page).getByRole('list', { name: 'New zoning rules' })).toBeVisible();
+  // The FZP baseline row selected: the layer folds.
+  const fzp = dock(page).getByRole('button', { name: 'FZP baseline', exact: true });
+  await fzp.click();
+  await expect(fzp).toHaveAttribute('aria-pressed', 'true');
   await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
 });
 
@@ -196,10 +202,7 @@ async function gotoSharedPolicy(page: Page): Promise<void> {
   await gotoSim(page);
   await openTab(page, 'Transit');
   await dock(page).getByRole('button', { name: 'Add transit layer' }).click({ timeout: 20_000 });
-  const form = dock(page).getByRole('form', { name: 'Add a transit rule', exact: true });
-  await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
-  await form.getByRole('button', { name: 'Save rule' }).click();
-  await expect(dock(page).getByRole('list', { name: 'New zoning rules' })).toBeVisible();
+  await expect(dock(page).getByRole('group', { name: 'Stop types' })).toBeVisible();
   const stored = () =>
     page.evaluate((k) => {
       const raw = localStorage.getItem(k);

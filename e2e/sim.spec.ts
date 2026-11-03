@@ -123,20 +123,29 @@ async function closeSheet(page: Page): Promise<void> {
   await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
 }
 
-/**
- * "Add transit layer" once the brush catalog allows it (it is aria-disabled until then, and
- * Playwright waits for it to be enabled); the form opens named `title` exactly.
- */
-async function openBrushForm(page: Page, title: string): Promise<Locator> {
-  await openTab(page, 'Transit');
-  await panel(page).getByRole('button', { name: 'Add transit layer' }).click({ timeout: 20_000 });
-  const form = panel(page).getByRole('form', { name: title, exact: true });
-  await expect(form).toBeVisible();
-  return form;
-}
+/** The Transit tab's layer rows, the FZP baseline row left out. */
+const layerRows = (page: Page): Locator =>
+  panel(page)
+    .getByRole('list', { name: 'Transit layers' })
+    .locator('[data-layer-row]:not([data-layer-row="fzp"])');
+/** A layer row's select button (its name ends in the lot count). */
+const selectButton = (row: Locator): Locator => row.locator(':scope > button');
 
-const ruleList = (page: Page): Locator =>
-  panel(page).getByRole('list', { name: 'New zoning rules' }).getByRole('listitem');
+/**
+ * Opens the Transit tab and presses "+ Transit layer" once the brush catalog allows it (it is
+ * aria-disabled until then, and Playwright waits for it to be enabled), then waits for the new
+ * layer's lot count. Returns its row, selected and expanded.
+ */
+async function addTransitLayer(page: Page): Promise<Locator> {
+  await openTab(page, 'Transit');
+  const n = await layerRows(page).count();
+  await panel(page).getByRole('button', { name: 'Add transit layer' }).click({ timeout: 20_000 });
+  const row = layerRows(page).nth(n);
+  await expect(selectButton(row)).toHaveAttribute('aria-pressed', 'true');
+  await expect(row.getByRole('group', { name: 'Stop types' })).toBeVisible();
+  await expect(selectButton(row)).toHaveAccessibleName(/ · [\d,]+ lots?$/, { timeout: 20_000 });
+  return row;
+}
 const customList = (page: Page): Locator =>
   panel(page).getByRole('list', { name: 'Painted areas' }).getByRole('listitem');
 
@@ -387,17 +396,14 @@ test('the header score flips the dock to Results and back in Setup; in a run it 
 
 // ---- brushes ------------------------------------------------------------------------------------
 
-test('a transit rule resolves its lots and updates the levers', async ({ page }) => {
+test('a transit layer resolves its lots and updates the levers', async ({ page }) => {
   await gotoSim(page);
   const before = await leverStatus(page);
 
-  const form = await openBrushForm(page, 'Add a transit rule');
-  await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
   await watchLeverNotices(page);
-  await form.getByRole('button', { name: 'Save rule' }).click();
-
-  await expect(ruleList(page)).toHaveCount(1);
-  await expect(ruleList(page).first()).toContainText('Near Muni Metro');
+  const row = await addTransitLayer(page);
+  await expect(layerRows(page)).toHaveCount(1);
+  await expect(selectButton(row)).toContainText('Near regional rail and Muni Metro');
 
   // The levers go resolving -> current; the updating notice shows, then clears.
   await expect
@@ -426,14 +432,19 @@ test('a transit rule resolves its lots and updates the levers', async ({ page })
 test('a notice never moves the docked panel or the time bar', async ({ page, isMobile }) => {
   test.skip(isMobile, 'desktop rule; phones push content down by design');
   await gotoSim(page);
+  const row = await addTransitLayer(page);
+  await expect
+    .poll(async () => (await leverStatus(page)).status, { timeout: 20_000 })
+    .toBe('current');
   const before = await leverStatus(page);
-  const form = await openBrushForm(page, 'Add a transit rule');
-  await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
   const panelBox = await dockPanel(page).boundingBox();
   const barBox = await page.getByTestId('fzp-scrubber').boundingBox();
   await watchBoxesWhileUpdating(page);
-  // Saving the rule sends a revision: the "Updating the simulation" pill shows until it is current.
-  await form.getByRole('button', { name: 'Save rule' }).click();
+  // A chip edit sends a revision: the "Updating the simulation" pill shows until it is current.
+  await row
+    .getByRole('group', { name: 'Stop types' })
+    .getByRole('button', { name: /^Muni Rapid bus/ })
+    .click();
   await expect
     .poll(async () => {
       const l = await leverStatus(page);
@@ -673,26 +684,45 @@ test('axe: the dock on Results during a run', async ({ page }) => {
   await expectNoA11yViolations(page);
 });
 
-test('axe: the Transit rule form open', async ({ page }) => {
+test("a selected layer's expanded editor passes axe", async ({ page }) => {
   await gotoSim(page);
-  const form = await openBrushForm(page, 'Add a transit rule');
-  await expect(form.getByRole('group', { name: 'Bands' })).toBeVisible();
+  const row = await addTransitLayer(page);
+  // A bound reached: More on the outer band is aria-disabled at the inner band's height.
+  const outer = row.getByRole('group', { name: 'Band 2' });
+  for (let k = 0; k < 2; k++) await outer.getByRole('button', { name: 'More stories' }).click();
+  await expect(outer.getByRole('button', { name: 'More stories' })).toHaveAttribute(
+    'aria-disabled',
+    'true'
+  );
+  await expectNoA11yViolations(page);
+  // The FZP baseline selected instead: the layer folds, the baseline row is pressed.
+  const fzp = panel(page).getByRole('button', { name: 'FZP baseline', exact: true });
+  await fzp.click();
+  await expect(fzp).toHaveAttribute('aria-pressed', 'true');
+  await expect(row.getByRole('group', { name: 'Stop types' })).toHaveCount(0);
   await expectNoA11yViolations(page);
 });
 
-test('a rule card has a Show on map toggle; pressed, the panel passes axe', async ({ page }) => {
+test('layer edits are one undo step per run; the row stays selected and expanded', async ({
+  page
+}) => {
   await gotoSim(page);
-  const form = await openBrushForm(page, 'Add a transit rule');
-  await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
-  await form.getByRole('button', { name: 'Save rule' }).click();
-  await expect(ruleList(page)).toHaveCount(1);
-  const toggle = ruleList(page)
-    .first()
-    .getByRole('button', { name: /^Show on map/ });
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-  await expectNoA11yViolations(page);
+  const row = await addTransitLayer(page);
+  const inner = row.getByRole('group', { name: 'Band 1' });
+  for (let k = 0; k < 3; k++) await inner.getByRole('button', { name: 'More stories' }).click();
+  await expect(inner).toContainText('9 stories');
+  const undo = panel(page).getByRole('button', { name: /^Undo/ });
+  await expect(undo).toHaveAccessibleName(
+    'Undo: Edited: Allowed up to 9 stories near regional rail and Muni Metro'
+  );
+  await undo.click();
+  await expect(inner).toContainText('6 stories');
+  await expect(selectButton(row)).toHaveAttribute('aria-pressed', 'true');
+  await expect(row.getByRole('group', { name: 'Stop types' })).toBeVisible();
+  // The next undo takes back the layer itself.
+  await expect(undo).toHaveAccessibleName(
+    'Undo: Allowed up to 6 stories near regional rail and Muni Metro'
+  );
 });
 
 /**

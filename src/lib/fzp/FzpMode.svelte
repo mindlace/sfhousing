@@ -79,7 +79,6 @@
     leversMessage,
     leversSent,
     leversSession,
-    type LeverStatus,
     type LeverStatusState
   } from '$lib/sim-page/lever-status';
   import { spawnSimWorker } from '$lib/sim/client';
@@ -127,8 +126,6 @@
      * scenario is live sends `setLevers`.
      */
     levers?: SimLevers;
-    /** Every lever status change (/sim). */
-    onlevers?: (s: LeverStatus) => void;
     /**
      * /sim: a kept lever revision's height regions and contours (one `heights` per rev, before its
      * `current`); a revision below the latest levers sent is dropped.
@@ -209,7 +206,6 @@
     onurlseed = undefined,
     createWorker = spawnSimWorker,
     levers = undefined,
-    onlevers = undefined,
     onheights = undefined,
     onclient = undefined,
     onmapready = undefined,
@@ -374,9 +370,7 @@
 
   function setLeverState(next: LeverStatusState): void {
     if (next === leverState) return;
-    const changed = next.status !== leverState.status;
     leverState = next;
-    if (changed) onlevers?.(next.status);
   }
 
   /**
