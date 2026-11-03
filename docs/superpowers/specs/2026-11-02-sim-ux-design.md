@@ -1,6 +1,6 @@
 # /sim UX: layers, shared paint, run HUD
 
-Status: draft (2026-11-02).
+Status: approved (2026-11-02).
 
 ## Intent
 
@@ -102,6 +102,7 @@ One Paint tab component, used by both modes.
 - (My call) `/` shows no "vs FZP" delta, because a painted plan has no FZP comparison today.
 - **In Set Policy the score shows what it does now:** `at.total` at today, the net homes actually completed since the RHNA baseline. It does not project the policy.
 - (My call) The "vs FZP" delta is hidden in Set Policy, where it is about 0, and appears once a run starts.
+- **Results states the baseline date.** The count starts in January 2021, which is confusing when the score already shows homes on day one. The Results face labels the headline with its start, e.g. "8,805 homes added since Jan 2021", and splits out the already-completed part, e.g. "of which 8,805 built by today". Use the date from the score data, not a hard-coded one.
 
 ### 6. Run phase: the dock flips to Results
 
