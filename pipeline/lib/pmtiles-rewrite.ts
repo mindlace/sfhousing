@@ -4,7 +4,6 @@
 // (pipeline/lib/lesscars/basemap-split.ts, docs/dev/lesscars.md "Basemap ids").
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { gzipSync } from 'node:zlib';
 import { PMTiles, TileType } from 'pmtiles';
 import { run } from './exec';
@@ -42,6 +41,9 @@ export async function rewritePmtiles(a: {
   mkdirSync(a.workDir, { recursive: true });
   const mbtiles = join(a.workDir, 'rewrite.mbtiles');
   rmSync(mbtiles, { force: true });
+  // Loaded here, not at the top: node:sqlite is missing before Node 22.13, and the doctor must
+  // be able to report that (every pipeline command imports this module).
+  const { DatabaseSync } = await import('node:sqlite');
   const db = new DatabaseSync(mbtiles);
   let tiles = 0;
   let changed = 0;
