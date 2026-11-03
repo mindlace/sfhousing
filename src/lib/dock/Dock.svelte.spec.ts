@@ -102,6 +102,21 @@ describe('Dock, desktop', () => {
     expect(onflip).toHaveBeenCalledOnce();
   });
 
+  it('pads the Results region as it pads the tabpanel, so every page draws Results the same', async () => {
+    await page.viewport(1024, 768);
+    const state = new DockState({ tab: 'transit' });
+    await setup(state);
+    const pad = (el: Element) => {
+      const s = getComputedStyle(el);
+      return [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft];
+    };
+    const tabPad = pad(page.getByRole('tabpanel').element());
+    expect(tabPad).toEqual(['16px', '16px', '16px', '16px']);
+    state.face = 'results';
+    flushSync();
+    expect(pad(page.getByTestId('score-details').element())).toEqual(tabPad);
+  });
+
   it('collapsed: a rail with a button per tab plus Results; Permits opens the panel there and focuses its tab', async () => {
     await page.viewport(1024, 768);
     const state = new DockState({ tab: 'transit', open: false });

@@ -29,7 +29,7 @@
   const max = $derived(trackMax(score.targets));
 </script>
 
-<div class="p-4 text-ink dark:text-ink-dark">
+<div class="text-ink dark:text-ink-dark">
   <p
     class="inline-block rounded-full border border-control-line px-2 py-0.5 text-xs font-semibold tracking-wide uppercase dark:border-control-line-dark"
   >

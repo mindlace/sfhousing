@@ -302,7 +302,7 @@
       {@render panel(dock.tab)}
     </div>
   {:else}
-    <div role="region" aria-label="Results" data-testid="score-details">
+    <div role="region" aria-label="Results" data-testid="score-details" class="p-4">
       {@render results?.()}
     </div>
   {/if}
