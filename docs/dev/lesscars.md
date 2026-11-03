@@ -25,8 +25,11 @@ Source map:
 ## The plan format
 
 A plan is JSON (`LessCarsPlan`, schema 1): `id`, `label`, `capacity` rules and `projects`. The
-live plan is `pipeline/enrichment/lesscars/plan.json` (it does not exist yet; plan 3 of the
-lesscars work adds it). The fixture plan is
+live plan is `pipeline/enrichment/lesscars/plan.json`, transcribed from the owner-approved
+`docs/lesscars/plan-v1.md` Appendix A (66 projects, the Masonic display);
+`pipeline/test/lesscars-live-plan.test.ts` holds it to the document: it parses Appendix A's tables
+itself, rebuilds the plan from them and `corridors.resolved.json`, and requires `checkPlan` to be
+empty. A change to the plan goes into plan-v1 first, then into plan.json. The fixture plan is
 `pipeline/test/fixtures/mini/enrichment/lesscars-plan.json`, one project of most kinds on the mini
 city. Every number in a plan is a `Param`, a `value` with a `Provenance` (tier 0 per-record to 4
 invented, label, sources, method), so the page can show its evidence.
@@ -137,7 +140,7 @@ resolve hook and no headless browser. It needs `svelte-kit sync` to have run (`n
 plan file (`LESSCARS_PLAN_JSON`: the fixture plan for `fixture-<n>` versions, the live path
 otherwise), parcels.bin, policy.bin, projects.json, calibration.json and transit.json from the out
 dir, and from DuckDB `src_streets`, `parcels`, `pol_tod` and the scenario tables. No plan file:
-nothing is written, no counts, no manifest key. That is the live build until the live plan lands.
+nothing is written, no counts, no manifest key.
 
 Order: parse, schedule, check (above), carve, sites, regimes, builds, paired runs, write.
 `buildRegimes` runs only after the policy step and the carve, because it reads `pol_tod` and
