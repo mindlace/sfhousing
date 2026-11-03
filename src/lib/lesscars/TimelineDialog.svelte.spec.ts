@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import '../../routes/layout.css';
-import { parsePlanFile } from '$lib/data/lesscars/codec';
-import { LESSCARS_START } from '$lib/data/lesscars/schedule';
+import { LESSCARS_FORMAT, parsePlanFile } from '$lib/data/lesscars/codec';
+import { parseLessCarsPlan } from '$lib/data/lesscars/plan';
+import { LESSCARS_START, schedulePlan } from '$lib/data/lesscars/schedule';
+import livePlanJson from '../../../pipeline/enrichment/lesscars/plan.json';
 import { formatShortMonthYear } from '$lib/fzp/format';
 import planJson from '../../../e2e/fixtures/data/fixture-0/scenarios/lesscars/plan.json';
 import TimelineDialog from './TimelineDialog.svelte';
@@ -21,7 +23,37 @@ async function open(extra: Partial<{ plan: typeof planFile }> = {}) {
   return onevidence;
 }
 
+const livePlan = parseLessCarsPlan(livePlanJson);
+const liveFile: typeof planFile = {
+  format: LESSCARS_FORMAT,
+  datasetVersion: 'live',
+  plan: livePlan,
+  times: [...schedulePlan(livePlan).times.values()],
+  segments: {}
+};
+
 describe('TimelineDialog', () => {
+  it('at 375 px the live plan timeline has no horizontal overflow; 48 parking rows sit in the disclosure', async () => {
+    await page.viewport(375, 812);
+    await open({ plan: liveFile });
+    const dialog = page.getByTestId('lc-timeline').element();
+    expect(dialog.scrollWidth).toBeLessThanOrEqual(dialog.clientWidth);
+    await expect.element(page.getByText('Parking at Geary Blvd becomes homes')).not.toBeVisible();
+    await page.getByText(/^Parking conversions \(48\)/).click();
+    const rows = [...document.querySelectorAll('details tbody tr')];
+    expect(rows).toHaveLength(48);
+    expect(dialog.scrollWidth).toBeLessThanOrEqual(dialog.clientWidth);
+    const longest = rows.reduce((a, b) =>
+      (b.querySelector('th')?.textContent ?? '').length >
+      (a.querySelector('th')?.textContent ?? '').length
+        ? b
+        : a
+    );
+    const label = longest.querySelector('th')!.getBoundingClientRect();
+    expect(label.right).toBeLessThanOrEqual(dialog.getBoundingClientRect().right);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
+  });
+
   it('lists every project with its dates and opens evidence for one', async () => {
     await page.viewport(1024, 768);
     const onevidence = await open();

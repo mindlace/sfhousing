@@ -387,6 +387,22 @@ test.describe('the page on fixture-0', () => {
     await expectNoA11yViolations(page);
   });
 
+  test('dark mode: axe on the page, the details and the timeline', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+    await expectNoA11yViolations(page);
+
+    await page.getByTestId('lc-headline').click();
+    await expect(page.getByRole('region', { name: 'Fewer-cars details' })).toBeVisible();
+    await page.getByText('Map key').click();
+    await expectNoA11yViolations(page);
+    await page.getByTestId('lc-headline').click();
+    await expect(page.getByRole('region', { name: 'Fewer-cars details' })).toBeHidden();
+
+    await (await headerAction(page, 'Timeline')).click();
+    await expect(page.getByRole('dialog', { name: 'Project timeline' })).toBeVisible();
+    await expectNoA11yViolations(page, { include: ['[data-testid=lc-timeline]'], structure: true });
+  });
+
   test('375 px: no horizontal scroll, footer reachable with the details and a card open', async ({
     page,
     isMobile

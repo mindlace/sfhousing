@@ -7,6 +7,7 @@ import '../../routes/layout.css';
 import { parseSummary } from '$lib/data/lesscars/codec';
 import summaryJson from '../../../e2e/fixtures/data/fixture-0/scenarios/lesscars/summary.json';
 import HeadlineBar from './HeadlineBar.svelte';
+import HeadlineHeader from './test/HeadlineHeader.svelte';
 import { headlineName, headlineText } from './summary-view';
 import { headlineNameCopy, headlineCopy } from './copy';
 
@@ -39,6 +40,22 @@ describe('HeadlineBar', () => {
     document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     await expect.element(page.getByText('Details here')).not.toBeInTheDocument();
     await expect.element(page.getByTestId('lc-headline')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('at 375 px a six-digit headline fits beside the Menu', async () => {
+    await page.viewport(375, 812);
+    const big = structuredClone(fx);
+    const last = big.extra.mean.length - 1;
+    big.extra.mean[last] = 123456.4;
+    big.extra.p10[last] = 98000;
+    big.extra.p90[last] = 151000;
+    await render(HeadlineHeader, { props: { summary: big } });
+    const banner = page.getByRole('banner').element();
+    expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
+    await expect
+      .element(page.getByRole('button', { name: /\+123,456 homes by 2068/ }))
+      .toBeVisible();
   });
 
   it.each([-56, 0, 1234])('the accessible name starts with the visible text (n = %i)', (n) => {
