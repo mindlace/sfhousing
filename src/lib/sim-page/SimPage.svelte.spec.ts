@@ -666,7 +666,9 @@ describe('SimPage rule brushes (Task 9)', () => {
     await page.getByRole('button', { name: 'Add transit layer' }).click();
     const chips = () => page.getByRole('group', { name: 'Stop types' });
     const distance = () =>
-      page.getByRole('group', { name: 'Band 1' }).getByRole('spinbutton', { name: /^Within/ });
+      page
+        .getByRole('group', { name: 'Band 1' })
+        .getByRole('spinbutton', { name: 'Within metres, band 1' });
     await expect.element(chips()).toBeVisible();
     await distance().fill('777');
     await userEvent.keyboard('{Enter}');
@@ -1475,7 +1477,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
       await withRule();
       await layerRow().click();
       const more = page.getByRole('group', { name: 'Band 1' }).getByRole('button', {
-        name: 'More stories'
+        name: 'More stories, band 1'
       });
       await more.click();
       await more.click();
@@ -1914,7 +1916,7 @@ describe('SimPage live preview (sim-ux plan 3, Task 4)', () => {
     await page.getByRole('button', { name: /^Near Muni Metro/ }).click();
     await page
       .getByRole('group', { name: 'Band 1' })
-      .getByRole('button', { name: 'More stories' })
+      .getByRole('button', { name: 'More stories, band 1' })
       .click();
     await expect.poll(() => w.allOf('setLevers').length, { timeout: 2000 }).toBe(2);
     expect(w.lastOf('setLevers')!.levers.rules[0].stories).toBe(9);

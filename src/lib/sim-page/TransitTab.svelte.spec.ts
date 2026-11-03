@@ -77,7 +77,8 @@ const selectOf = (id: string) =>
 const selection = () =>
   JSON.parse(document.querySelector('[data-testid="selection"]')!.textContent!) as DockSelection;
 const band = (n: number) => page.getByRole('group', { name: `Band ${n}`, exact: true });
-const more = (n: number) => band(n).getByRole('button', { name: 'More stories' });
+const more = (n: number) =>
+  band(n).getByRole('button', { name: `More stories, band ${n}`, exact: true });
 const chips = () => page.getByRole('group', { name: 'Stop types' });
 
 /** Every rule in the store passes the band rule and has a stop type (Review Focus 5). */
@@ -184,6 +185,36 @@ describe('TransitTab', () => {
     expect(store.policy.rules[0].bands.map((b) => b.stories)).toEqual([7, 4]);
   });
 
+  it('deselecting the row ends a stepper run: a press after reselecting is a new undo step', async () => {
+    const { store } = setup({ rules: [metro], selection: { kind: 'rule', id: 'r1' } });
+    await more(1).click();
+    await selectOf('r1').click(); // deselect
+    expect(selection()).toBeNull();
+    await selectOf('r1').click(); // reselect
+    await more(1).click();
+    expect(store.policy.rules[0].bands[0].stories).toBe(8);
+    store.undo();
+    expect(store.policy.rules[0].bands[0].stories).toBe(7);
+    store.undo();
+    expect(store.policy.rules[0]).toEqual(metro);
+    expect(store.canUndo).toBe(false);
+  });
+
+  it('selecting another row ends a distance run too', async () => {
+    const { store } = setup({ rules: [metro, rail], selection: { kind: 'rule', id: 'r1' } });
+    const commit = async (v: string) => {
+      const input = band(1).getByRole('spinbutton', { name: 'Within metres, band 1' });
+      await input.fill(v);
+      (input.element() as HTMLInputElement).dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    await commit('500');
+    await selectOf('r2').click();
+    await selectOf('r1').click();
+    await commit('600');
+    store.undo();
+    expect(store.policy.rules[0].bands[0].maxM).toBe(500);
+  });
+
   it('a chip and an added band are each one undo step; the row stays expanded and valid', async () => {
     const { store } = setup({ rules: [metro], selection: { kind: 'rule', id: 'r1' } });
     await chips()
@@ -211,7 +242,7 @@ describe('TransitTab', () => {
   it('a distance commit is one step of its own, named by the rule', async () => {
     const { store } = setup({ rules: [metro], selection: { kind: 'rule', id: 'r1' } });
     await more(1).click();
-    const input = band(1).getByRole('spinbutton', { name: /^Within/ });
+    const input = band(1).getByRole('spinbutton', { name: 'Within metres, band 1' });
     await input.fill('500');
     (input.element() as HTMLInputElement).dispatchEvent(new Event('change', { bubbles: true }));
     expect(store.policy.rules[0].bands[0].maxM).toBe(500);

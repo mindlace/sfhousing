@@ -174,11 +174,11 @@ test("a selected layer's expanded editor has no axe violations in dark", async (
   // A chip on, and a bound reached: More on the outer band is aria-disabled.
   await chips.getByRole('button', { name: /^Muni Rapid bus/ }).click();
   const outer = dock(page).getByRole('group', { name: 'Band 2' });
-  for (let k = 0; k < 2; k++) await outer.getByRole('button', { name: 'More stories' }).click();
-  await expect(outer.getByRole('button', { name: 'More stories' })).toHaveAttribute(
-    'aria-disabled',
-    'true'
-  );
+  for (let k = 0; k < 2; k++)
+    await outer.getByRole('button', { name: 'More stories, band 2', exact: true }).click();
+  await expect(
+    outer.getByRole('button', { name: 'More stories, band 2', exact: true })
+  ).toHaveAttribute('aria-disabled', 'true');
   await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
   // The FZP baseline row selected: the layer folds.
   const fzp = dock(page).getByRole('button', { name: 'FZP baseline', exact: true });

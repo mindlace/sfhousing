@@ -8,6 +8,11 @@
   first chip; Remove layer clears the selection and focus moves to the layer now at its place, or
   to "+ Transit layer".
 -->
+<script module lang="ts">
+  /** Coalesce runs, numbered across mounts, so a remounted tab never resumes an old run. */
+  let runs = 0;
+</script>
+
 <script lang="ts">
   import { tick } from 'svelte';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
@@ -55,8 +60,23 @@
     );
   }
 
+  /**
+   * The current coalesce run: renewed on mount and on every selection change (deselecting the
+   * row, selecting another), so a later press on the same band is a new undo step. A different
+   * key is PolicyStore's run boundary.
+   */
+  let run = ++runs;
+  const selKey = $derived(
+    selection === null ? '' : selection.kind === 'fzp' ? 'fzp' : `${selection.kind}:${selection.id}`
+  );
+  $effect.pre(() => {
+    void selKey;
+    run = ++runs;
+  });
+
   function edit(next: ZoningRule, coalesce?: string): void {
-    store.apply((p) => replaceRule(p, next), `Edited: ${ruleChangeLabel(next)}`, coalesce);
+    const key = coalesce === undefined ? undefined : `${coalesce}@${run}`;
+    store.apply((p) => replaceRule(p, next), `Edited: ${ruleChangeLabel(next)}`, key);
   }
 
   function remove(r: ZoningRule, index: number): void {

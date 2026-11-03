@@ -54,9 +54,14 @@ const selectBtn = () => page.getByRole('button', { name: /^Near / });
 const band = (n: number) => page.getByRole('group', { name: `Band ${n}`, exact: true });
 const chips = () => page.getByRole('group', { name: 'Stop types' });
 const chip = (name: RegExp) => chips().getByRole('button', { name });
-const distance = (n: number) => band(n).getByRole('spinbutton', { name: /^Within/ });
-const more = (n: number) => band(n).getByRole('button', { name: 'More stories' });
-const fewer = (n: number) => band(n).getByRole('button', { name: 'Fewer stories' });
+const distance = (n: number) =>
+  band(n).getByRole('spinbutton', { name: `Within metres, band ${n}`, exact: true });
+const more = (n: number) =>
+  band(n).getByRole('button', { name: `More stories, band ${n}`, exact: true });
+const fewer = (n: number) =>
+  band(n).getByRole('button', { name: `Fewer stories, band ${n}`, exact: true });
+const removeBand = (n: number) =>
+  band(n).getByRole('button', { name: `Remove band ${n}`, exact: true });
 
 /** Every rule handed to `onedit` is one the parser and `compileLevers` accept. */
 function expectValid(calls: [ZoningRule, string?][]): void {
@@ -200,6 +205,26 @@ describe('TransitLayerRow', () => {
     expect(onedit).toHaveBeenCalledTimes(calls);
   });
 
+  it('a saved outermost band past the cap renders valid; an edit clamps it to the cap', async () => {
+    const { onedit } = setup({
+      rule: {
+        ...metro,
+        bands: [
+          { maxM: 402, stories: 8 },
+          { maxM: 5000, stories: 4 }
+        ]
+      }
+    });
+    await expect.element(distance(2)).toHaveValue(5000);
+    const input = distance(2).element() as HTMLInputElement;
+    expect(input.checkValidity()).toBe(true);
+    expect(Number(input.max)).toBeGreaterThanOrEqual(5000);
+    await distance(2).fill('4000');
+    await userEvent.keyboard('{Enter}');
+    expect(onedit.mock.calls.at(-1)![0].bands[1].maxM).toBe(3219);
+    await expect.element(distance(2)).toHaveValue(3219);
+  });
+
   it("a distance input's bounds come from its neighbours, not a fixed cap", async () => {
     // A saved rule past the editor's cap: the inner band may go up to just below the outer.
     setup({
@@ -215,11 +240,49 @@ describe('TransitLayerRow', () => {
     await expect.element(distance(1)).toHaveAttribute('min', '1');
   });
 
+  it('names every control of an expanded three-band row uniquely, visible text first', async () => {
+    setup({
+      rule: {
+        ...metro,
+        bands: [
+          { maxM: 402, stories: 8 },
+          { maxM: 805, stories: 6 },
+          { maxM: 1207, stories: 4 }
+        ]
+      }
+    });
+    const names: [string, string][] = [
+      ['button', 'Near Muni Metro · 8 stories · 1,204 lots'],
+      ['button', 'Regional rail (BART, Caltrain) · 12 stops'],
+      ['button', 'Muni Metro · 40 stops'],
+      ['button', 'Muni Rapid bus · 80 stops'],
+      ['button', 'Frequent bus (6+ trips an hour) · 300 stops'],
+      ['button', 'Add Band'],
+      ['button', 'Remove layer']
+    ];
+    for (const n of [1, 2, 3])
+      names.push(
+        ['spinbutton', `Within metres, band ${n}`],
+        ['button', `Fewer stories, band ${n}`],
+        ['button', `More stories, band ${n}`],
+        ['button', `Remove band ${n}`]
+      );
+    for (const [role, name] of names)
+      expect(page.getByRole(role as 'button', { name, exact: true }).elements(), name).toHaveLength(
+        1
+      );
+    // Nothing else: every control of the row is one of these unique names.
+    expect(row().querySelectorAll('button, input')).toHaveLength(names.length);
+  });
+
   it('the last pressed chip is aria-disabled with its reason, and pressing it calls nothing', async () => {
     const { onedit } = setup();
     const last = chip(/^Muni Metro/);
     await expect.element(last).toHaveAttribute('aria-disabled', 'true');
     await expect.element(last).toHaveAccessibleDescription('A layer needs at least one stop type');
+    // The reason is a description only, out of the reading order.
+    const reason = document.getElementById(last.element().getAttribute('aria-describedby')!)!;
+    expect(reason.hidden).toBe(true);
     await last.click({ force: true });
     expect(onedit).not.toHaveBeenCalled();
     await expect.element(last).toHaveAttribute('aria-pressed', 'true');
@@ -232,9 +295,7 @@ describe('TransitLayerRow', () => {
 
   it('+ Band is disabled at three bands; Remove band is disabled with one', async () => {
     const { onedit } = setup({ rule: { ...metro, bands: [{ maxM: 402, stories: 8 }] } });
-    await expect
-      .element(band(1).getByRole('button', { name: 'Remove band' }))
-      .toHaveAttribute('aria-disabled', 'true');
+    await expect.element(removeBand(1)).toHaveAttribute('aria-disabled', 'true');
     const add = page.getByRole('button', { name: 'Add band' });
     await add.click();
     await add.click();
@@ -244,7 +305,7 @@ describe('TransitLayerRow', () => {
     await expect.element(add).toHaveAttribute('aria-disabled', 'true');
     await add.click({ force: true });
     expect(onedit).toHaveBeenCalledTimes(2);
-    await band(2).getByRole('button', { name: 'Remove band' }).click();
+    await removeBand(2).click();
     expect(onedit).toHaveBeenCalledTimes(3);
     expect(onedit.mock.calls[2][1]).toBeUndefined();
     await expect.element(band(3)).not.toBeInTheDocument();
@@ -274,7 +335,7 @@ describe('TransitLayerRow', () => {
     await distance(3).fill('99999');
     await userEvent.keyboard('{Enter}');
     await more(3).click({ force: true });
-    await band(1).getByRole('button', { name: 'Remove band' }).click();
+    await removeBand(1).click();
     await fewer(1).click({ force: true });
     expect(onedit.mock.calls.length).toBeGreaterThan(10);
     expectValid(onedit.mock.calls);

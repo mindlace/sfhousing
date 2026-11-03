@@ -689,11 +689,11 @@ test("a selected layer's expanded editor passes axe", async ({ page }) => {
   const row = await addTransitLayer(page);
   // A bound reached: More on the outer band is aria-disabled at the inner band's height.
   const outer = row.getByRole('group', { name: 'Band 2' });
-  for (let k = 0; k < 2; k++) await outer.getByRole('button', { name: 'More stories' }).click();
-  await expect(outer.getByRole('button', { name: 'More stories' })).toHaveAttribute(
-    'aria-disabled',
-    'true'
-  );
+  for (let k = 0; k < 2; k++)
+    await outer.getByRole('button', { name: 'More stories, band 2', exact: true }).click();
+  await expect(
+    outer.getByRole('button', { name: 'More stories, band 2', exact: true })
+  ).toHaveAttribute('aria-disabled', 'true');
   await expectNoA11yViolations(page);
   // The FZP baseline selected instead: the layer folds, the baseline row is pressed.
   const fzp = panel(page).getByRole('button', { name: 'FZP baseline', exact: true });
@@ -709,7 +709,8 @@ test('layer edits are one undo step per run; the row stays selected and expanded
   await gotoSim(page);
   const row = await addTransitLayer(page);
   const inner = row.getByRole('group', { name: 'Band 1' });
-  for (let k = 0; k < 3; k++) await inner.getByRole('button', { name: 'More stories' }).click();
+  for (let k = 0; k < 3; k++)
+    await inner.getByRole('button', { name: 'More stories, band 1', exact: true }).click();
   await expect(inner).toContainText('9 stories');
   const undo = panel(page).getByRole('button', { name: /^Undo/ });
   await expect(undo).toHaveAccessibleName(

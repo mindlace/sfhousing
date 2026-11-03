@@ -155,7 +155,9 @@
             }}>{chipText(t)}</button
           >
         {/each}
-        <span id="{uid}-last-stop" class="sr-only">A layer needs at least one stop type</span>
+        <!-- hidden: a description only (aria-describedby still reads it), not read in browse
+             mode when no chip is locked. -->
+        <span id="{uid}-last-stop" hidden>A layer needs at least one stop type</span>
       </div>
 
       {#each bands as b, i (i)}
@@ -167,14 +169,16 @@
           class="flex flex-wrap items-center gap-x-3 gap-y-1"
         >
           <span class="flex items-center gap-1">
-            <label for="{uid}-d{i}">Within <span class="sr-only">metres</span></label>
+            <!-- Each control's name starts with its visible text and carries its band, so the
+                 row's names are unique (WCAG 2.5.3; a list of buttons tells the bands apart). -->
+            <label for="{uid}-d{i}">Within <span class="sr-only">metres, band {i + 1}</span></label>
             <input
               id="{uid}-d{i}"
               type="number"
               inputmode="numeric"
               step="1"
-              min={dist.min}
-              max={dist.max}
+              min={Math.min(dist.min, b.maxM)}
+              max={Math.max(dist.max, b.maxM)}
               value={b.maxM}
               class="min-h-11 w-24 rounded-md border border-control-line bg-surface px-2 text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
               onchange={(e) => commitDistance(e.currentTarget, i)}
@@ -187,7 +191,7 @@
           <span class="flex items-center gap-1">
             <button
               type="button"
-              aria-label="Fewer stories"
+              aria-label="Fewer stories, band {i + 1}"
               aria-disabled={b.stories <= st.min ? 'true' : undefined}
               class={control}
               onclick={() => stories(i, -1)}><span aria-hidden="true">−</span></button
@@ -197,7 +201,7 @@
             >
             <button
               type="button"
-              aria-label="More stories"
+              aria-label="More stories, band {i + 1}"
               aria-disabled={b.stories >= st.max ? 'true' : undefined}
               class={control}
               onclick={() => stories(i, 1)}><span aria-hidden="true">+</span></button
@@ -207,7 +211,7 @@
             type="button"
             aria-disabled={bands.length <= 1 ? 'true' : undefined}
             class={link}
-            onclick={() => dropBand(i)}>Remove band</button
+            onclick={() => dropBand(i)}>Remove band <span class="sr-only">{i + 1}</span></button
           >
         </div>
       {/each}
