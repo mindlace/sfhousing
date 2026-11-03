@@ -101,7 +101,9 @@
     complete: latestScore.current.complete,
     datasetVersion: data.manifest?.datasetVersion ?? data.currentDatasetVersion,
     builtAt: data.manifest?.builtAt ?? '',
-    planDatasetVersion: data.plan.datasetVersion,
+    // The header score (in the layout) reads this, and a client navigation away updates `data`
+    // to the next page's before this page unmounts: that data may have no `plan`.
+    planDatasetVersion: data.plan?.datasetVersion ?? data.currentDatasetVersion,
     mode: 'max'
   });
   const shown = $derived(latestScore.current.score ?? EMPTY);
