@@ -656,7 +656,8 @@ Cut points **(drafter's call, from the CNN end points)**:
   connectors (`19281000`, `19371000`, `19372000`, `19373000`) and the Mission St ramps
   (`19212000`, `19213000`), which v1 kept.
 - **I-80 at Rincon Hill.** The Bay Bridge keeps its eastbound entrances `19359000`, `19360000`,
-  `19361000` and westbound exits `19374000`, `19375001`, `19375002`, which reach city streets near
+  `19361000` and its two westbound exits, `19374000` and `19375001`–`19375002` (one ramp in two
+  CNNs), which reach city streets near
   Essex, Harrison, First and Fremont Streets, with the mainline between them (`19364000`,
   `19365000`, `19382000`, `19383000`). I-80 west of the nodes (−122.39344, 37.78446) eastbound and
   (−122.39289, 37.78475) westbound comes down: it serves only trips through SoMa to US-101, which
@@ -691,39 +692,54 @@ a parcel near two segments goes to the nearer. It wrote
 38 s. "FZP yield today" is the candidate's top-fill FZP yield in the dataset's `parcels.bin` when
 it is hostable, else 0. "In band" is the share of its area within 60 m.
 
-**How every candidate of a removed segment was decided (drafter's call).** The rule is loose:
-DataSF's 2023 land use calls many standing businesses beside the freeway VACANT. Each candidate
-was checked against its 2025 assessor roll class, its zoning, the protomaps basemap (OpenStreetMap
-land use and named places at z15, from the dataset's `basemap.pmtiles`), the distance to the
-freeway and whether a street lies between, and named places were looked up. Rules, in order, with
-the named overrides in the tables:
+**How the candidates were decided (drafter's rules, applied by script).** The candidate rule is
+loose: DataSF's 2023 land use calls many standing businesses beside the freeway VACANT. Every
+candidate was decided by the rules below, applied by a script to per-record data: the 2025
+assessor roll class, zoning, the 2023 land use, the distance to the freeway lines and whether a
+street lies between, and the OpenStreetMap land use and named places in the dataset's
+`basemap.pmtiles` (z15). Named places were looked up and given the named reasons in the tables.
+No candidate was checked on satellite imagery except the two garage sites (Garages). The inputs
+are tier 0 records; the thresholds and their order are the drafter's (tier 4), so a decision is
+only as good as the records behind it. Rules, in order:
 
-1. A named park, plaza, community garden, school, hospital, rail yard or Port facility is `out`
-   with its name.
+1. **Never a park, school, rail yard or Port facility.** A candidate is `out` when its land use is
+   OPENSPACE; its zoning includes an open-space district (`OS`, e.g. `YBI-OS`); an OSM park,
+   garden, playground, pitch, dog park, school, college, hospital, railway, pier, cemetery,
+   recreation ground, sports centre, stadium or military polygon covers at least 25% of it, or an
+   OSM pedestrian area covers at least half (treated as public open space); or an OSM place of
+   those kinds, or a station, pool, community centre, library or viewpoint, lies on it. Named
+   places found while checking the largest candidates (the Port piers, the Muni Woods yard, the Caltrain yard and 22nd Street
+   station) are `out` by name. The sweep covers every candidate of every segment, kept or removed.
+   One parcel is kept `in` against it by name: `4091003`, a vacant public slope at the edge of the
+   hospital's OSM outline with no hospital building on it.
 2. Land within 30 m of a **kept** freeway with at least half of it within 60 m of that freeway is
    `out` of the phase: it stays freeway land of the kept segment and is never freed (the table
    names the segment it moves to).
 3. A standing building or business on the roll (classes C, CM, I, IG, IW, IX, O, S, G, FIRG and
-   similar) or a residential roll class is `out`.
+   similar) or a residential roll class is `out`. One exception, flagged in its row: the CHP office
+   lot `3758126` (Open question 2).
 4. A street between the parcel and the freeway makes it city fabric, not frontage: `out`.
 5. Public land (zoned P, or roll VPUB, VG, PLG) within 25 m of the freeway lines is `in`; the
    PLG and P-zoned PL lots under the deck are Caltrans land leased as parking.
 6. A private vacant lot (roll V, VCI, VR, PL) within 15 m with no street between is `in`
-   (against the deck); farther out it is `out`.
+   (against the deck); farther out, or any other roll class, it is `out`.
 
-Satellite imagery was viewed for the two garage sites only (see Garages); every other decision
-rests on the records and the basemap above. **Interim uses under the deck** (the Division Circle
-and Bryant Navigation Centers, the street tree nursery, the California Highway Patrol office, the
-Women's Resource Center) sit on Caltrans land and are not homes, parks or schools, so their lots
-are `in`; the owner may rule otherwise (Open question 2). **Parks under the deck** are `out`
-under the never-free-a-park rule, including the SoMa West Skate Park and Dog Park on two of the
-spec's four stub lots (Open question 1).
+**Interim uses under the deck** (the Division Circle and Bryant Navigation Centers, the street
+tree nursery, the Women's Resource Center, and the CHP office as the rule 3 exception) sit on
+Caltrans land and are not homes, parks or schools, so their lots are `in`; the owner may rule
+otherwise (Open question 2). **Parks under the deck** are `out` under rule 1, including the SoMa
+West Skate Park and Dog Park on two of the spec's four stub lots (Open question 1).
 
-**Kept segments** are `rule` curated: Plan B lists the candidates that pass rules 2 to 6 (rule 1
-applied to every named place the spot check found), plus the parcels moved from removed segments.
-The spot check (the ten largest candidates of each segment and every named place found) is listed;
-it is why rules 3 to 6 are applied to kept segments too, rather than accepting the raw candidates
-(on removed segments 140 of the 266 raw candidates turned out not to be freeway land, besides 11 that belong to a kept freeway).
+**The committed lists.** `pipeline/enrichment/lesscars/freeway-land.draft.json` is the catalog in
+its own format (it passes `parseFreewayLand`) with these decisions filled in: every segment's
+`parcels` (removed: the `in` rows; kept: the candidates that pass the rules, plus the parcels moved
+from removed segments) and its `excluded` rows with reasons (a moved parcel is excluded only in
+the table, not in the file, because the format allows a parcel once). The build does not read it;
+Plan B copies its lists into `freeway-land.json`. Kept segments are `rule` curated: the rules
+replace a hand pass. The tables below show, per kept segment, the ten largest candidates and every
+rule 1 exclusion; the other exclusions, with their reasons, are in the draft file. Applying rules 3
+to 6 to kept segments, not only rule 1, follows from the removed segments, where 140 of the 266 raw
+candidates turned out not to be freeway land, besides 11 that belong to a kept freeway.
 
 **Required rows.** The four stub lots, the owner's example and the four parcels the spec asked
 about are in the tables, decided as follows:
@@ -737,7 +753,7 @@ about are in the tables, decided as follows:
   envelope today). Five are `out`: `4027001` (Benches Garden, a community garden), `4029022` and
   `4029009` (Downtown High School, across Vermont St), and `4090002` and `4140001` (Zuckerberg San
   Francisco General Hospital buildings). Four of the 14 (`4029009`, `4029022`, `4090002`,
-  `4140001`) are not rule candidates (under half in the band) and were added by hand to be decided;
+  `4140001`) are not rule candidates (under half in the band) and were added to the table to be decided;
   10 of the 14 get no envelope today (the spec's recon counted 12; its list was not recorded).
 - **`3179011` and `3179010`** (near Balboa Park, I-280): `out`. They are Balboa Park (land use
   OPENSPACE, 14% in the band) and City College's Ocean campus (CIE, 9% in the band); neither is a
@@ -814,7 +830,7 @@ about are in the tables, decided as follows:
 | `3530042`  | 1,415   | 0.54    | VACANT   | PDR-1-G | 69              | out      | A warehouse property on the 2025 roll (class IW): a standing building or business, not vacant freeway land                                      |
 | `3523013`  | 1,294   | 1.00    | VACANT   | SALI    | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                     |
 | `3530039`  | 1,241   | 1.00    | VACANT   | PDR-1-G | 61              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                     |
-| `3904001`  | 1,126   | 1.00    | VACANT   | PDR-1-G | 65              | out      | 15.8 m from the freeway with other land between: beyond the deck's edge, not frontage                                                           |
+| `3904001`  | 1,126   | 1.00    | VACANT   | PDR-1-G | 65              | out      | 15.8 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                           |
 | `3515021`  | 1,119   | 1.00    | VACANT   | WMUG    | 75              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                     |
 | `3523008`  | 1,100   | 1.00    | VACANT   | SALI    | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                     |
 | `3905002A` | 883     | 1.00    | VACANT   | PDR-1-G | 52              | out      | An industrial property on the 2025 roll (class IG): a standing building or business, not vacant freeway land                                    |
@@ -834,13 +850,13 @@ about are in the tables, decided as follows:
 | `3525056`  | 237     | 1.00    | VACANT   | SALI    | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                     |
 | `3530047`  | 222     | 1.00    | VACANT   | PDR-1-G | 8               | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                      |
 | `3526020`  | 191     | 1.00    | VACANT   | PDR-1-G | 6               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                     |
-| `3531013`  | 183     | 1.00    | VACANT   | PDR-1-G | 7               | out      | 33.4 m from the freeway with other land between: beyond the deck's edge, not frontage                                                           |
+| `3531013`  | 183     | 1.00    | VACANT   | PDR-1-G | 7               | out      | 33.4 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                           |
 | `3522053`  | 182     | 1.00    | VACANT   | RED     | 5               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                     |
 | `3522016`  | 175     | 1.00    | VACANT   | WMUG    | 7               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                     |
-| `3531014`  | 172     | 1.00    | VACANT   | PDR-1-G | 6               | out      | 41 m from the freeway with other land between: beyond the deck's edge, not frontage                                                             |
-| `3522060`  | 171     | 1.00    | VACANT   | WMUG    | 6               | out      | 30.3 m from the freeway with other land between: beyond the deck's edge, not frontage                                                           |
-| `3522061`  | 161     | 1.00    | VACANT   | WMUG    | 6               | out      | 37.3 m from the freeway with other land between: beyond the deck's edge, not frontage                                                           |
-| `3522027`  | 143     | 1.00    | VACANT   | RED     | 4               | out      | 22.9 m from the freeway with other land between: beyond the deck's edge, not frontage                                                           |
+| `3531014`  | 172     | 1.00    | VACANT   | PDR-1-G | 6               | out      | 41 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                             |
+| `3522060`  | 171     | 1.00    | VACANT   | WMUG    | 6               | out      | 30.3 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                           |
+| `3522061`  | 161     | 1.00    | VACANT   | WMUG    | 6               | out      | 37.3 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                           |
+| `3522027`  | 143     | 1.00    | VACANT   | RED     | 4               | out      | 22.9 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                           |
 | `3512010`  | 143     | 1.00    | VACANT   | C-3-G   | 5               | out      | Across Mission St from the freeway: city fabric, not frontage                                                                                   |
 | `3522026`  | 142     | 1.00    | VACANT   | RED     | 4               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                     |
 | `3910006`  | 5       | 1.00    | VACANT   | PDR-1-D | 0               | out      | Across Vermont St from the freeway: city fabric, not frontage                                                                                   |
@@ -893,168 +909,168 @@ about are in the tables, decided as follows:
 | `4279001`  | 687     | 1.00                   | VACANT    | P      | 21              | out      | A fire department property on the 2025 roll (class FIRG): a standing building or business, not vacant freeway land               |
 | `4339002A` | 683     | 0.55                   | VACANT    | PDR-2  | 40              | out      | Across Bay Shore Blvd from the freeway: city fabric, not frontage                                                                |
 | `4339006`  | 578     | 0.58                   | VACANT    | PDR-2  | 33              | out      | Across Bay Shore Blvd from the freeway: city fabric, not frontage                                                                |
-| `4154002`  | 413     | 1.00                   | VACANT    | P      | 0               | out      | Across Vermont St from the freeway: city fabric, not frontage                                                                    |
+| `4154002`  | 413     | 1.00                   | VACANT    | P      | 0               | out      | OSM hospital on 39% of the lot                                                                                                   |
 | `4029009`  | 232     | 0.00 (not a candidate) | VACANT    | P      | 7               | out      | Downtown High School grounds (OSM school on 94%)                                                                                 |
 | `4093114`  | 4       | 1.00                   | VACANT    | RH-2   | 0               | out      | Across Vermont St from the freeway: city fabric, not frontage                                                                    |
-| `4280006D` | 1       | 1.00                   | VACANT    | RH-2   | 0               | out      | 24.7 m from the freeway with other land between: beyond the deck's edge, not frontage                                            |
+| `4280006D` | 1       | 1.00                   | VACANT    | RH-2   | 0               | out      | 24.7 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                            |
 
 **Totals, `us101-james-lick`:** 41 candidates and 5 hand-added rows; **31 in, 11.23 ha, FZP yield removed 1,334** (the sum of today's top-fill yield over the hostable `in` parcels); 15 out.
 
 #### us101-bayshore
 
-| Parcel     | Area m² | In band | Land use | Zoning  | FZP yield today | Decision | Reason                                                                                                                                     |
-| ---------- | ------- | ------- | -------- | ------- | --------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `5533049`  | 28,796  | 1.00    | VACANT   | P/PDR-2 | 318             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5692045`  | 6,894   | 1.00    | VACANT   | P       | 220             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5596044`  | 4,258   | 1.00    | VACANT   | P/PDR-2 | 136             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5596017C` | 3,464   | 1.00    | VACANT   | P       | 110             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5596017A` | 3,400   | 1.00    | VACANT   | P       | 108             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5576017`  | 3,325   | 1.00    | VACANT   | P       | 106             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5691045`  | 3,259   | 1.00    | VACANT   | P       | 104             | in       | Vacant public land against the deck (roll VPUB, zoned P)                                                                                   |
-| `5657050`  | 3,239   | 1.00    | VACANT   | P       | 103             | in       | Vacant public land against the deck (roll VPUB, zoned P)                                                                                   |
-| `5636025`  | 3,213   | 1.00    | VACANT   | P       | 102             | in       | Vacant public land against the deck (roll VPUB, zoned P)                                                                                   |
-| `5596011B` | 2,926   | 1.00    | VACANT   | P       | 93              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5820035`  | 2,868   | 1.00    | VACANT   | P       | 91              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5511011`  | 2,633   | 1.00    | VACANT   | P       | 84              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5596013A` | 2,574   | 1.00    | VACANT   | P       | 82              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5512025`  | 2,535   | 1.00    | VACANT   | P       | 81              | in       | Vacant public land under the deck (roll VG, zoned P)                                                                                       |
-| `5596051`  | 2,120   | 1.00    | VACANT   | P/PDR-2 | 67              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5596046`  | 1,875   | 1.00    | VACANT   | P       | 60              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5596010A` | 1,654   | 1.00    | VACANT   | P       | 52              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5596006`  | 1,247   | 1.00    | VACANT   | P/PDR-2 | 39              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5512024`  | 1,177   | 1.00    | VACANT   | P       | 37              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5819010`  | 1,059   | 1.00    | VACANT   | P       | 33              | in       | Vacant public land against the deck (roll VPUB, zoned P)                                                                                   |
-| `5596012A` | 965     | 1.00    | VACANT   | P       | 30              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5693037`  | 720     | 1.00    | VACANT   | PDR-2   | 23              | in       | Vacant public land against the deck (roll VPUB)                                                                                            |
-| `5607047`  | 715     | 1.00    | VACANT   | P       | 41              | in       | Caltrans land under the deck, used as a parking lot (roll PL)                                                                              |
-| `5693041`  | 647     | 1.00    | VACANT   | PDR-2   | 20              | in       | Vacant public land against the deck (roll VPUB)                                                                                            |
-| `5512027`  | 469     | 1.00    | VACANT   | P       | 15              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5819009`  | 463     | 1.00    | VACANT   | P       | 14              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5512026`  | 424     | 1.00    | VACANT   | P       | 13              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5693038`  | 121     | 1.00    | VACANT   | P/PDR-2 | 3               | in       | Caltrans land against the deck, used as a parking lot (roll PLG)                                                                           |
-| `5596017E` | 91      | 1.00    | VACANT   | P       | 2               | in       | Vacant public land against the deck (roll VPUB, zoned P)                                                                                   |
-| `5693040`  | 53      | 1.00    | VACANT   | P       | 1               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5820034`  | 48      | 1.00    | VACANT   | P       | 0               | in       | Vacant public land against the deck (roll VPUB, zoned P)                                                                                   |
-| `5607043`  | 34      | 1.00    | VACANT   | P       | 0               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                     |
-| `5437002`  | 13,064  | 1.00    | VACANT   | P       | 418             | out      | Beside the kept US-101 (us101-south, CNN 19271002, 0 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south    |
-| `5822031`  | 5,363   | 1.00    | VACANT   | P       | 171             | out      | Beside the kept I-280 (i280-north, CNN 19343000, 0.1 m; 93% within 60 m of it): kept freeway land is never freed; moves to i280-north      |
-| `5438001`  | 5,104   | 0.67    | VACANT   | P       | 163             | out      | Beside the kept US-101 (us101-south, CNN 19271002, 0 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south    |
-| `5372A001` | 4,085   | 1.00    | VACANT   | P       | 130             | out      | Beside the kept US-101 (us101-south, CNN 19247000, 24.4 m; 54% within 60 m of it): kept freeway land is never freed; moves to us101-south  |
-| `5607046`  | 4,045   | 1.00    | VACANT   | P       | 129             | out      | Beside the kept US-101 (us101-south, CNN 19247000, 0 m; 98% within 60 m of it): kept freeway land is never freed; moves to us101-south     |
-| `5734002`  | 2,649   | 0.65    | VACANT   | P       | 84              | out      | Across Alemany Blvd and Putnam St from the freeway: city fabric, not frontage                                                              |
-| `5559002`  | 2,503   | 0.56    | VACANT   | PDR-2   | 147             | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                |
-| `5733A002` | 2,005   | 0.90    | VACANT   | NC-S/P  | 64              | out      | 28.1 m from the freeway with other land between: beyond the deck's edge, not frontage                                                      |
-| `5373001`  | 1,336   | 1.00    | VACANT   | P       | 42              | out      | Beside the kept US-101 (us101-south, CNN 19247000, 0 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south    |
-| `5373003`  | 1,320   | 1.00    | VACANT   | P       | 42              | out      | Beside the kept US-101 (us101-south, CNN 19247000, 0 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south    |
-| `5375028`  | 1,276   | 1.00    | VACANT   | P       | 40              | out      | Beside the kept US-101 (us101-south, CNN 19271001, 0 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south    |
-| `5512028`  | 1,171   | 1.00    | VACANT   | NC-1    | 15              | out      | A service station property on the 2025 roll (class S): a standing building or business, not vacant freeway land                            |
-| `5695021`  | 924     | 1.00    | VACANT   | P       | 29              | out      | Beside the kept US-101 (us101-south, CNN 19247000, 27.3 m; 86% within 60 m of it): kept freeway land is never freed; moves to us101-south  |
-| `5596039`  | 662     | 0.73    | VACANT   | PDR-2   | 21              | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                 |
-| `5596001`  | 645     | 1.00    | VACANT   | PDR-2   | 20              | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                 |
-| `5596012`  | 622     | 0.90    | VACANT   | PDR-2   | 19              | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                 |
-| `5693003A` | 608     | 1.00    | VACANT   | PDR-2   | 19              | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                 |
-| `5596015`  | 460     | 1.00    | VACANT   | PDR-2   | 14              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                |
-| `5596042`  | 456     | 1.00    | VACANT   | PDR-2   | 14              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                |
-| `5596050`  | 366     | 1.00    | VACANT   | PDR-2   | 11              | out      | 26.4 m from the freeway with other land between: beyond the deck's edge, not frontage                                                      |
-| `5573005`  | 335     | 1.00    | VACANT   | PDR-2   | 10              | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                 |
-| `5694001`  | 281     | 1.00    | VACANT   | P       | 8               | out      | Beside the kept US-101 (us101-south, CNN 19247000, 20.7 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south |
-| `5657048`  | 257     | 0.78    | VACANT   | RH-1    | 4               | out      | 32.9 m from the freeway with other land between: beyond the deck's edge, not frontage                                                      |
-| `5557002`  | 163     | 0.94    | VACANT   | RH-1    | 4               | out      | A miscellaneous property on the 2025 roll (class X): a standing building or business, not vacant freeway land                              |
-| `5691024`  | 163     | 0.87    | VACANT   | RH-1    | 4               | out      | 41.3 m from the freeway with other land between: beyond the deck's edge, not frontage                                                      |
-| `5691037`  | 163     | 0.98    | VACANT   | RH-1    | 4               | out      | 39 m from the freeway with other land between: beyond the deck's edge, not frontage                                                        |
-| `5691047`  | 163     | 0.89    | VACANT   | RH-1    | 4               | out      | 40.7 m from the freeway with other land between: beyond the deck's edge, not frontage                                                      |
-| `5691023`  | 161     | 0.83    | VACANT   | RH-1    | 4               | out      | 41.9 m from the freeway with other land between: beyond the deck's edge, not frontage                                                      |
-| `5596052`  | 153     | 1.00    | VACANT   | PDR-2   | 4               | out      | 37.9 m from the freeway with other land between: beyond the deck's edge, not frontage                                                      |
-| `5577002`  | 152     | 1.00    | VACANT   | RH-1    | 4               | out      | Across Holladay Ave from the freeway: city fabric, not frontage                                                                            |
-| `5577004`  | 131     | 1.00    | VACANT   | RH-1    | 4               | out      | Residential parcel on the 2025 roll (class DA)                                                                                             |
-| `5693042`  | 121     | 1.00    | VACANT   | PDR-2   | 3               | out      | 18.8 m from the freeway with other land between: beyond the deck's edge, not frontage                                                      |
-| `5577001`  | 107     | 1.00    | VACANT   | RH-1    | 3               | out      | Across Holladay Ave from the freeway: city fabric, not frontage                                                                            |
-| `5735005`  | 103     | 1.00    | VACANT   | NC-S    | 1               | out      | Across Alemany Blvd and Putnam St from the freeway: city fabric, not frontage                                                              |
-| `5695020`  | 86      | 0.53    | VACANT   | RH-1    | 2               | out      | 52 m from the freeway with other land between: beyond the deck's edge, not frontage                                                        |
-| `5512007A` | 70      | 1.00    | VACANT   | RH-2    | 2               | out      | 33.1 m from the freeway with other land between: beyond the deck's edge, not frontage                                                      |
-| `5533047`  | 52      | 1.00    | VACANT   | PDR-2   | 1               | out      | 29.3 m from the freeway with other land between: beyond the deck's edge, not frontage                                                      |
-| `5372011`  | 45      | 1.00    | VACANT   | P       | 1               | out      | Across Alemany Blvd from the freeway: city fabric, not frontage                                                                            |
+| Parcel     | Area m² | In band | Land use | Zoning  | FZP yield today | Decision | Reason                                                                                                                                                   |
+| ---------- | ------- | ------- | -------- | ------- | --------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `5533049`  | 28,796  | 1.00    | VACANT   | P/PDR-2 | 318             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5692045`  | 6,894   | 1.00    | VACANT   | P       | 220             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5596044`  | 4,258   | 1.00    | VACANT   | P/PDR-2 | 136             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5596017C` | 3,464   | 1.00    | VACANT   | P       | 110             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5596017A` | 3,400   | 1.00    | VACANT   | P       | 108             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5576017`  | 3,325   | 1.00    | VACANT   | P       | 106             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5691045`  | 3,259   | 1.00    | VACANT   | P       | 104             | in       | Vacant public land against the deck (roll VPUB, zoned P)                                                                                                 |
+| `5657050`  | 3,239   | 1.00    | VACANT   | P       | 103             | in       | Vacant public land against the deck (roll VPUB, zoned P)                                                                                                 |
+| `5636025`  | 3,213   | 1.00    | VACANT   | P       | 102             | in       | Vacant public land against the deck (roll VPUB, zoned P)                                                                                                 |
+| `5596011B` | 2,926   | 1.00    | VACANT   | P       | 93              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5820035`  | 2,868   | 1.00    | VACANT   | P       | 91              | in       | Vacant public land between the removed US-101 to I-280 connectors (roll VPUB, zoned P). The garage-alemany site: held by the garage, so it gets no homes |
+| `5511011`  | 2,633   | 1.00    | VACANT   | P       | 84              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5596013A` | 2,574   | 1.00    | VACANT   | P       | 82              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5512025`  | 2,535   | 1.00    | VACANT   | P       | 81              | in       | Vacant public land under the deck (roll VG, zoned P)                                                                                                     |
+| `5596051`  | 2,120   | 1.00    | VACANT   | P/PDR-2 | 67              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5596046`  | 1,875   | 1.00    | VACANT   | P       | 60              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5596010A` | 1,654   | 1.00    | VACANT   | P       | 52              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5596006`  | 1,247   | 1.00    | VACANT   | P/PDR-2 | 39              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5512024`  | 1,177   | 1.00    | VACANT   | P       | 37              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5819010`  | 1,059   | 1.00    | VACANT   | P       | 33              | in       | Vacant public land against the deck (roll VPUB, zoned P)                                                                                                 |
+| `5596012A` | 965     | 1.00    | VACANT   | P       | 30              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5693037`  | 720     | 1.00    | VACANT   | PDR-2   | 23              | in       | Vacant public land against the deck (roll VPUB)                                                                                                          |
+| `5607047`  | 715     | 1.00    | VACANT   | P       | 41              | in       | Caltrans land under the deck, used as a parking lot (roll PL)                                                                                            |
+| `5693041`  | 647     | 1.00    | VACANT   | PDR-2   | 20              | in       | Vacant public land against the deck (roll VPUB)                                                                                                          |
+| `5512027`  | 469     | 1.00    | VACANT   | P       | 15              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5819009`  | 463     | 1.00    | VACANT   | P       | 14              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5512026`  | 424     | 1.00    | VACANT   | P       | 13              | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5693038`  | 121     | 1.00    | VACANT   | P/PDR-2 | 3               | in       | Caltrans land against the deck, used as a parking lot (roll PLG)                                                                                         |
+| `5596017E` | 91      | 1.00    | VACANT   | P       | 2               | in       | Vacant public land against the deck (roll VPUB, zoned P)                                                                                                 |
+| `5693040`  | 53      | 1.00    | VACANT   | P       | 1               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5820034`  | 48      | 1.00    | VACANT   | P       | 0               | in       | Vacant public land against the deck (roll VPUB, zoned P)                                                                                                 |
+| `5607043`  | 34      | 1.00    | VACANT   | P       | 0               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                   |
+| `5437002`  | 13,064  | 1.00    | VACANT   | P       | 418             | out      | Beside the kept US-101 (us101-south, CNN 19271002, 0 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south                  |
+| `5822031`  | 5,363   | 1.00    | VACANT   | P       | 171             | out      | Beside the kept I-280 (i280-north, CNN 19343000, 0.1 m; 93% within 60 m of it): kept freeway land is never freed; moves to i280-north                    |
+| `5438001`  | 5,104   | 0.67    | VACANT   | P       | 163             | out      | Beside the kept US-101 (us101-south, CNN 19271002, 0 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south                  |
+| `5372A001` | 4,085   | 1.00    | VACANT   | P       | 130             | out      | Beside the kept US-101 (us101-south, CNN 19247000, 24.4 m; 54% within 60 m of it): kept freeway land is never freed; moves to us101-south                |
+| `5607046`  | 4,045   | 1.00    | VACANT   | P       | 129             | out      | Beside the kept US-101 (us101-south, CNN 19247000, 0 m; 98% within 60 m of it): kept freeway land is never freed; moves to us101-south                   |
+| `5734002`  | 2,649   | 0.65    | VACANT   | P       | 84              | out      | Across Alemany Blvd and Putnam St from the freeway: city fabric, not frontage                                                                            |
+| `5559002`  | 2,503   | 0.56    | VACANT   | PDR-2   | 147             | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                              |
+| `5733A002` | 2,005   | 0.90    | VACANT   | NC-S/P  | 64              | out      | 28.1 m from the freeway, beyond the 25 m the rules accept for this land: not frontage                                                                    |
+| `5373001`  | 1,336   | 1.00    | VACANT   | P       | 42              | out      | Beside the kept US-101 (us101-south, CNN 19247000, 0 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south                  |
+| `5373003`  | 1,320   | 1.00    | VACANT   | P       | 42              | out      | Beside the kept US-101 (us101-south, CNN 19247000, 0 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south                  |
+| `5375028`  | 1,276   | 1.00    | VACANT   | P       | 40              | out      | Beside the kept US-101 (us101-south, CNN 19271001, 0 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south                  |
+| `5512028`  | 1,171   | 1.00    | VACANT   | NC-1    | 15              | out      | A service station property on the 2025 roll (class S): a standing building or business, not vacant freeway land                                          |
+| `5695021`  | 924     | 1.00    | VACANT   | P       | 29              | out      | Beside the kept US-101 (us101-south, CNN 19247000, 27.3 m; 86% within 60 m of it): kept freeway land is never freed; moves to us101-south                |
+| `5596039`  | 662     | 0.73    | VACANT   | PDR-2   | 21              | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                               |
+| `5596001`  | 645     | 1.00    | VACANT   | PDR-2   | 20              | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                               |
+| `5596012`  | 622     | 0.90    | VACANT   | PDR-2   | 19              | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                               |
+| `5693003A` | 608     | 1.00    | VACANT   | PDR-2   | 19              | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                               |
+| `5596015`  | 460     | 1.00    | VACANT   | PDR-2   | 14              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                              |
+| `5596042`  | 456     | 1.00    | VACANT   | PDR-2   | 14              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                              |
+| `5596050`  | 366     | 1.00    | VACANT   | PDR-2   | 11              | out      | 26.4 m from the freeway, beyond the 25 m the rules accept for this land: not frontage                                                                    |
+| `5573005`  | 335     | 1.00    | VACANT   | PDR-2   | 10              | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                               |
+| `5694001`  | 281     | 1.00    | VACANT   | P       | 8               | out      | Beside the kept US-101 (us101-south, CNN 19247000, 20.7 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south               |
+| `5657048`  | 257     | 0.78    | VACANT   | RH-1    | 4               | out      | 32.9 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                                    |
+| `5557002`  | 163     | 0.94    | VACANT   | RH-1    | 4               | out      | A miscellaneous property on the 2025 roll (class X): a standing building or business, not vacant freeway land                                            |
+| `5691024`  | 163     | 0.87    | VACANT   | RH-1    | 4               | out      | 41.3 m from the freeway, beyond the 25 m the rules accept for this land: not frontage                                                                    |
+| `5691037`  | 163     | 0.98    | VACANT   | RH-1    | 4               | out      | 39 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                                      |
+| `5691047`  | 163     | 0.89    | VACANT   | RH-1    | 4               | out      | 40.7 m from the freeway, beyond the 25 m the rules accept for this land: not frontage                                                                    |
+| `5691023`  | 161     | 0.83    | VACANT   | RH-1    | 4               | out      | 41.9 m from the freeway, beyond the 25 m the rules accept for this land: not frontage                                                                    |
+| `5596052`  | 153     | 1.00    | VACANT   | PDR-2   | 4               | out      | 37.9 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                                    |
+| `5577002`  | 152     | 1.00    | VACANT   | RH-1    | 4               | out      | Across Holladay Ave from the freeway: city fabric, not frontage                                                                                          |
+| `5577004`  | 131     | 1.00    | VACANT   | RH-1    | 4               | out      | Residential parcel on the 2025 roll (class DA)                                                                                                           |
+| `5693042`  | 121     | 1.00    | VACANT   | PDR-2   | 3               | out      | 18.8 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                                    |
+| `5577001`  | 107     | 1.00    | VACANT   | RH-1    | 3               | out      | Across Holladay Ave from the freeway: city fabric, not frontage                                                                                          |
+| `5735005`  | 103     | 1.00    | VACANT   | NC-S    | 1               | out      | Across Alemany Blvd and Putnam St from the freeway: city fabric, not frontage                                                                            |
+| `5695020`  | 86      | 0.53    | VACANT   | RH-1    | 2               | out      | 52 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                                      |
+| `5512007A` | 70      | 1.00    | VACANT   | RH-2    | 2               | out      | 33.1 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                                    |
+| `5533047`  | 52      | 1.00    | VACANT   | PDR-2   | 1               | out      | 29.3 m from the freeway, beyond the 25 m the rules accept for this land: not frontage                                                                    |
+| `5372011`  | 45      | 1.00    | VACANT   | P       | 1               | out      | Across Alemany Blvd from the freeway: city fabric, not frontage                                                                                          |
 
 **Totals, `us101-bayshore`:** 70 candidates; **32 in, 8.73 ha, FZP yield removed 2,188** (the sum of today's top-fill yield over the hostable `in` parcels); 38 out, of which 10 move to a kept segment.
 
 #### i80-soma
 
-| Parcel     | Area m² | In band | Land use | Zoning | FZP yield today | Decision | Reason                                                                                                                                       |
-| ---------- | ------- | ------- | -------- | ------ | --------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `3761062`  | 23,987  | 1.00    | VACANT   | P      | 40              | in       | Caltrans land under the deck (roll VPUB); its interim uses (Bryant Navigation Center, SF street tree nursery, storage) end with the freeway  |
-| `3758126`  | 16,996  | 1.00    | VACANT   | P      | 4               | in       | Caltrans land under the deck (roll VPUB); the California Highway Patrol office on it serves the freeway and moves with it                    |
-| `3762004`  | 12,132  | 1.00    | VACANT   | P      | 388             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                       |
-| `3759040`  | 12,126  | 1.00    | VACANT   | P      | 4               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                       |
-| `3763126`  | 11,548  | 1.00    | VACANT   | P      | 369             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                       |
-| `3758129`  | 8,315   | 1.00    | VACANT   | P      | 4               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                       |
-| `3781007`  | 5,974   | 1.00    | VACANT   | P      | 191             | in       | Caltrans land under the deck, used as a parking lot (roll PLG)                                                                               |
-| `3782002`  | 4,733   | 0.93    | VACANT   | P      | 151             | in       | Caltrans land under the deck, used as a parking lot (roll PLG)                                                                               |
-| `3760116`  | 4,219   | 1.00    | VACANT   | P      | 4               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                       |
-| `3760124`  | 4,033   | 1.00    | VACANT   | P      | 4               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                       |
-| `3782004`  | 3,691   | 1.00    | VACANT   | P      | 118             | in       | Caltrans land under the deck, used as a parking lot (roll PLG)                                                                               |
-| `3760117`  | 3,646   | 1.00    | VACANT   | P      | 4               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                       |
-| `3760120`  | 2,785   | 1.00    | VACANT   | P      | 4               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                       |
-| `3759038`  | 2,444   | 1.00    | VACANT   | P      | 4               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                       |
-| `3780014`  | 1,867   | 1.00    | VACANT   | P      | 59              | in       | Caltrans land under the deck, used as a parking lot (roll PLG)                                                                               |
-| `3758127`  | 1,351   | 1.00    | VACANT   | P      | 4               | in       | Vacant public land against the deck (roll VPUB, zoned P)                                                                                     |
-| `3758128`  | 961     | 1.00    | VACANT   | P      | 4               | in       | Caltrans land under the deck (roll VPUB); the Women's Resource Center on it is an interim use                                                |
-| `3761064`  | 818     | 1.00    | VACANT   | SALI   | 0               | in       | Vacant lot against the deck (roll VR), no street between                                                                                     |
-| `3760002`  | 296     | 1.00    | VACANT   | SALI   | 0               | in       | Vacant lot against the deck (roll PL), no street between                                                                                     |
-| `3760114`  | 256     | 1.00    | VACANT   | SALI   | 0               | in       | Vacant lot against the deck (roll VR), no street between                                                                                     |
-| `3758121`  | 219     | 1.00    | VACANT   | SALI   | 0               | in       | Vacant lot against the deck (roll VR), no street between                                                                                     |
-| `3760123`  | 89      | 1.00    | VACANT   | SALI   | 0               | in       | Vacant lot against the deck (roll VR), no street between                                                                                     |
-| `3761063`  | 8,459   | 1.00    | VACANT   | P      | 4               | out      | Yerba Buena Dog Park (OSM dog park), a named open space under the deck                                                                       |
-| `3764067`  | 4,382   | 0.91    | VACANT   | P      | 215             | out      | Beside the kept I-80 (i80-bay-bridge, CNN 19361000, 7.8 m; 67% within 60 m of it): kept freeway land is never freed; moves to i80-bay-bridge |
-| `3781011`  | 3,970   | 0.91    | VACANT   | UMU    | 127             | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                   |
-| `3757002`  | 3,898   | 0.56    | VACANT   | SALI   | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3761002`  | 3,001   | 1.00    | VACANT   | SALI   | 0               | out      | An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land                                      |
-| `3762149`  | 1,399   | 0.65    | VACANT   | CMUO   | 128             | out      | Across Perry St from the freeway: city fabric, not frontage                                                                                  |
-| `3763015C` | 1,092   | 0.72    | VACANT   | CMUO   | 76              | out      | An office property on the 2025 roll (class OCH): a standing building or business, not vacant freeway land                                    |
-| `3752590`  | 1,056   | 0.83    | VACANT   | MUR    | 72              | out      | Across Harrison St and 5Th St from the freeway: city fabric, not frontage                                                                    |
-| `3776117`  | 930     | 0.82    | VACANT   | CMUO   | 88              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3760055`  | 760     | 1.00    | VACANT   | SALI   | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3763125`  | 691     | 1.00    | VACANT   | CMUO   | 61              | out      | A commercial property on the 2025 roll (class CM): a standing building or business, not vacant freeway land                                  |
-| `3777055`  | 577     | 0.64    | VACANT   | CMUO   | 33              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3762037`  | 575     | 1.00    | VACANT   | CMUO   | 39              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3759002`  | 567     | 1.00    | VACANT   | SALI   | 0               | out      | 16.1 m from the freeway with other land between: beyond the deck's edge, not frontage                                                        |
-| `3762122`  | 543     | 1.00    | VACANT   | CMUO   | 36              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3759045`  | 536     | 1.00    | VACANT   | SALI   | 0               | out      | A government industrial property on the 2025 roll (class IXG): a standing building or business, not vacant freeway land                      |
-| `3760014`  | 510     | 1.00    | VACANT   | SALI   | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3763113`  | 497     | 1.00    | VACANT   | CMUO   | 33              | out      | 35.5 m from the freeway with other land between: beyond the deck's edge, not frontage                                                        |
-| `3760059`  | 494     | 1.00    | VACANT   | SALI   | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3762026`  | 446     | 0.97    | VACANT   | CMUO   | 30              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3755021`  | 409     | 0.81    | VACANT   | WMUG   | 20              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3757007`  | 384     | 0.94    | VACANT   | SALI   | 0               | out      | Across 8Th St and Bryant St from the freeway: city fabric, not frontage                                                                      |
-| `3755014`  | 371     | 0.97    | VACANT   | WMUG   | 14              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3760121`  | 367     | 1.00    | VACANT   | SALI   | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3762014`  | 357     | 0.84    | VACANT   | CMUO   | 14              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3762012`  | 335     | 0.83    | VACANT   | CMUO   | 12              | out      | An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land                                      |
-| `3763078`  | 325     | 1.00    | VACANT   | CMUO   | 12              | out      | Across Perry St from the freeway: city fabric, not frontage                                                                                  |
-| `3760112`  | 315     | 1.00    | VACANT   | SALI   | 0               | out      | 15.6 m from the freeway with other land between: beyond the deck's edge, not frontage                                                        |
-| `3755034`  | 297     | 0.92    | VACANT   | WMUG   | 11              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3755033`  | 297     | 0.57    | VACANT   | WMUG   | 11              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3780034`  | 293     | 1.00    | VACANT   | UMU    | 9               | out      | A garage property on the 2025 roll (class G): a standing building or business, not vacant freeway land                                       |
-| `3760129`  | 279     | 1.00    | VACANT   | SALI   | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3760111`  | 277     | 1.00    | VACANT   | SALI   | 0               | out      | 16.5 m from the freeway with other land between: beyond the deck's edge, not frontage                                                        |
-| `3762049`  | 271     | 1.00    | VACANT   | CMUO   | 10              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3760122`  | 270     | 1.00    | VACANT   | SALI   | 0               | out      | 15.8 m from the freeway with other land between: beyond the deck's edge, not frontage                                                        |
-| `3762055`  | 270     | 1.00    | VACANT   | CMUO   | 10              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3755137`  | 242     | 1.00    | VACANT   | WMUG   | 9               | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                   |
-| `3762016`  | 238     | 0.85    | VACANT   | CMUO   | 9               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3760125`  | 226     | 1.00    | VACANT   | SALI   | 0               | out      | 16.3 m from the freeway with other land between: beyond the deck's edge, not frontage                                                        |
-| `3776118`  | 224     | 1.00    | VACANT   | CMUO   | 8               | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                   |
-| `3763018`  | 220     | 0.76    | VACANT   | CMUO   | 8               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3759001`  | 209     | 1.00    | VACANT   | SALI   | 0               | out      | 24.1 m from the freeway with other land between: beyond the deck's edge, not frontage                                                        |
-| `3762058`  | 196     | 1.00    | VACANT   | CMUO   | 7               | out      | Across Stillman St from the freeway: city fabric, not frontage                                                                               |
-| `3755016`  | 196     | 1.00    | VACANT   | WMUG   | 7               | out      | A commercial property on the 2025 roll (class CM): a standing building or business, not vacant freeway land                                  |
-| `3760020`  | 188     | 0.60    | VACANT   | SALI   | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3763079`  | 174     | 1.00    | VACANT   | CMUO   | 6               | out      | Across Perry St from the freeway: city fabric, not frontage                                                                                  |
-| `3763081`  | 152     | 1.00    | VACANT   | CMUO   | 6               | out      | Across Perry St from the freeway: city fabric, not frontage                                                                                  |
-| `3759041`  | 143     | 1.00    | VACANT   | P      | 5               | out      | Across 7Th St from the freeway: city fabric, not frontage                                                                                    |
-| `3763080`  | 142     | 1.00    | VACANT   | CMUO   | 5               | out      | Across Perry St from the freeway: city fabric, not frontage                                                                                  |
-| `3763080A` | 142     | 1.00    | VACANT   | CMUO   | 5               | out      | Across Perry St from the freeway: city fabric, not frontage                                                                                  |
-| `3780023`  | 139     | 1.00    | VACANT   | UMU    | 4               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                  |
-| `3760126`  | 38      | 1.00    | VACANT   | SALI   | 0               | out      | 16.2 m from the freeway with other land between: beyond the deck's edge, not frontage                                                        |
+| Parcel     | Area m² | In band | Land use | Zoning | FZP yield today | Decision | Reason                                                                                                                                                                                                                                        |
+| ---------- | ------- | ------- | -------- | ------ | --------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `3761062`  | 23,987  | 1.00    | VACANT   | P      | 40              | in       | Caltrans land in the loop of the removed 4th and 5th St ramps (roll VPUB); its interim uses (Bryant Navigation Center, SF street tree nursery, storage) end with the freeway. The garage-rincon site: held by the garage, so it gets no homes |
+| `3758126`  | 16,996  | 1.00    | VACANT   | P      | 4               | in       | Exception to rule 3: Caltrans land under the deck (roll VPUB) whose California Highway Patrol office is a standing state building; drafted in on the assumption that the office moves with the freeway (Open question 2)                      |
+| `3762004`  | 12,132  | 1.00    | VACANT   | P      | 388             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                                                                                                        |
+| `3759040`  | 12,126  | 1.00    | VACANT   | P      | 4               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                                                                                                        |
+| `3763126`  | 11,548  | 1.00    | VACANT   | P      | 369             | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                                                                                                        |
+| `3758129`  | 8,315   | 1.00    | VACANT   | P      | 4               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                                                                                                        |
+| `3781007`  | 5,974   | 1.00    | VACANT   | P      | 191             | in       | Caltrans land under the deck, used as a parking lot (roll PLG)                                                                                                                                                                                |
+| `3782002`  | 4,733   | 0.93    | VACANT   | P      | 151             | in       | Caltrans land under the deck, used as a parking lot (roll PLG)                                                                                                                                                                                |
+| `3760116`  | 4,219   | 1.00    | VACANT   | P      | 4               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                                                                                                        |
+| `3760124`  | 4,033   | 1.00    | VACANT   | P      | 4               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                                                                                                        |
+| `3782004`  | 3,691   | 1.00    | VACANT   | P      | 118             | in       | Caltrans land under the deck, used as a parking lot (roll PLG)                                                                                                                                                                                |
+| `3760117`  | 3,646   | 1.00    | VACANT   | P      | 4               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                                                                                                        |
+| `3760120`  | 2,785   | 1.00    | VACANT   | P      | 4               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                                                                                                        |
+| `3759038`  | 2,444   | 1.00    | VACANT   | P      | 4               | in       | Vacant public land under the deck (roll VPUB, zoned P)                                                                                                                                                                                        |
+| `3780014`  | 1,867   | 1.00    | VACANT   | P      | 59              | in       | Caltrans land under the deck, used as a parking lot (roll PLG)                                                                                                                                                                                |
+| `3758127`  | 1,351   | 1.00    | VACANT   | P      | 4               | in       | Vacant public land against the deck (roll VPUB, zoned P)                                                                                                                                                                                      |
+| `3758128`  | 961     | 1.00    | VACANT   | P      | 4               | in       | Caltrans land under the deck (roll VPUB); the Women's Resource Center on it is an interim use                                                                                                                                                 |
+| `3761064`  | 818     | 1.00    | VACANT   | SALI   | 0               | in       | Vacant lot against the deck (roll VR), no street between                                                                                                                                                                                      |
+| `3760002`  | 296     | 1.00    | VACANT   | SALI   | 0               | in       | Vacant lot against the deck (roll PL), no street between                                                                                                                                                                                      |
+| `3760114`  | 256     | 1.00    | VACANT   | SALI   | 0               | in       | Vacant lot against the deck (roll VR), no street between                                                                                                                                                                                      |
+| `3758121`  | 219     | 1.00    | VACANT   | SALI   | 0               | in       | Vacant lot against the deck (roll VR), no street between                                                                                                                                                                                      |
+| `3760123`  | 89      | 1.00    | VACANT   | SALI   | 0               | in       | Vacant lot against the deck (roll VR), no street between                                                                                                                                                                                      |
+| `3761063`  | 8,459   | 1.00    | VACANT   | P      | 4               | out      | Yerba Buena Dog Park (OSM dog park), a named open space under the deck                                                                                                                                                                        |
+| `3764067`  | 4,382   | 0.91    | VACANT   | P      | 215             | out      | Beside the kept I-80 (i80-bay-bridge, CNN 19361000, 7.8 m; 67% within 60 m of it): kept freeway land is never freed; moves to i80-bay-bridge                                                                                                  |
+| `3781011`  | 3,970   | 0.91    | VACANT   | UMU    | 127             | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                                                                                                                    |
+| `3757002`  | 3,898   | 0.56    | VACANT   | SALI   | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3761002`  | 3,001   | 1.00    | VACANT   | SALI   | 0               | out      | An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land                                                                                                                                       |
+| `3762149`  | 1,399   | 0.65    | VACANT   | CMUO   | 128             | out      | Across Perry St from the freeway: city fabric, not frontage                                                                                                                                                                                   |
+| `3763015C` | 1,092   | 0.72    | VACANT   | CMUO   | 76              | out      | An office property on the 2025 roll (class OCH): a standing building or business, not vacant freeway land                                                                                                                                     |
+| `3752590`  | 1,056   | 0.83    | VACANT   | MUR    | 72              | out      | Across Harrison St and 5Th St from the freeway: city fabric, not frontage                                                                                                                                                                     |
+| `3776117`  | 930     | 0.82    | VACANT   | CMUO   | 88              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3760055`  | 760     | 1.00    | VACANT   | SALI   | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3763125`  | 691     | 1.00    | VACANT   | CMUO   | 61              | out      | A commercial property on the 2025 roll (class CM): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3777055`  | 577     | 0.64    | VACANT   | CMUO   | 33              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3762037`  | 575     | 1.00    | VACANT   | CMUO   | 39              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3759002`  | 567     | 1.00    | VACANT   | SALI   | 0               | out      | 16.1 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                                                                                                                         |
+| `3762122`  | 543     | 1.00    | VACANT   | CMUO   | 36              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3759045`  | 536     | 1.00    | VACANT   | SALI   | 0               | out      | A government industrial property on the 2025 roll (class IXG): a standing building or business, not vacant freeway land                                                                                                                       |
+| `3760014`  | 510     | 1.00    | VACANT   | SALI   | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3763113`  | 497     | 1.00    | VACANT   | CMUO   | 33              | out      | 35.5 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                                                                                                                         |
+| `3760059`  | 494     | 1.00    | VACANT   | SALI   | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3762026`  | 446     | 0.97    | VACANT   | CMUO   | 30              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3755021`  | 409     | 0.81    | VACANT   | WMUG   | 20              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3757007`  | 384     | 0.94    | VACANT   | SALI   | 0               | out      | Across 8Th St and Bryant St from the freeway: city fabric, not frontage                                                                                                                                                                       |
+| `3755014`  | 371     | 0.97    | VACANT   | WMUG   | 14              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3760121`  | 367     | 1.00    | VACANT   | SALI   | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3762014`  | 357     | 0.84    | VACANT   | CMUO   | 14              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3762012`  | 335     | 0.83    | VACANT   | CMUO   | 12              | out      | An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land                                                                                                                                       |
+| `3763078`  | 325     | 1.00    | VACANT   | CMUO   | 12              | out      | Across Perry St from the freeway: city fabric, not frontage                                                                                                                                                                                   |
+| `3760112`  | 315     | 1.00    | VACANT   | SALI   | 0               | out      | 15.6 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                                                                                                                         |
+| `3755034`  | 297     | 0.92    | VACANT   | WMUG   | 11              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3755033`  | 297     | 0.57    | VACANT   | WMUG   | 11              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3780034`  | 293     | 1.00    | VACANT   | UMU    | 9               | out      | A garage property on the 2025 roll (class G): a standing building or business, not vacant freeway land                                                                                                                                        |
+| `3760129`  | 279     | 1.00    | VACANT   | SALI   | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3760111`  | 277     | 1.00    | VACANT   | SALI   | 0               | out      | 16.5 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                                                                                                                         |
+| `3762049`  | 271     | 1.00    | VACANT   | CMUO   | 10              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3760122`  | 270     | 1.00    | VACANT   | SALI   | 0               | out      | 15.8 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                                                                                                                         |
+| `3762055`  | 270     | 1.00    | VACANT   | CMUO   | 10              | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3755137`  | 242     | 1.00    | VACANT   | WMUG   | 9               | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                                                                                                                    |
+| `3762016`  | 238     | 0.85    | VACANT   | CMUO   | 9               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3760125`  | 226     | 1.00    | VACANT   | SALI   | 0               | out      | 16.3 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                                                                                                                         |
+| `3776118`  | 224     | 1.00    | VACANT   | CMUO   | 8               | out      | A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land                                                                                                                                    |
+| `3763018`  | 220     | 0.76    | VACANT   | CMUO   | 8               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3759001`  | 209     | 1.00    | VACANT   | SALI   | 0               | out      | 24.1 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                                                                                                                         |
+| `3762058`  | 196     | 1.00    | VACANT   | CMUO   | 7               | out      | Across Stillman St from the freeway: city fabric, not frontage                                                                                                                                                                                |
+| `3755016`  | 196     | 1.00    | VACANT   | WMUG   | 7               | out      | A commercial property on the 2025 roll (class CM): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3760020`  | 188     | 0.60    | VACANT   | SALI   | 0               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3763079`  | 174     | 1.00    | VACANT   | CMUO   | 6               | out      | Across Perry St from the freeway: city fabric, not frontage                                                                                                                                                                                   |
+| `3763081`  | 152     | 1.00    | VACANT   | CMUO   | 6               | out      | Across Perry St from the freeway: city fabric, not frontage                                                                                                                                                                                   |
+| `3759041`  | 143     | 1.00    | VACANT   | P      | 5               | out      | Across 7Th St from the freeway: city fabric, not frontage                                                                                                                                                                                     |
+| `3763080`  | 142     | 1.00    | VACANT   | CMUO   | 5               | out      | Across Perry St from the freeway: city fabric, not frontage                                                                                                                                                                                   |
+| `3763080A` | 142     | 1.00    | VACANT   | CMUO   | 5               | out      | Across Perry St from the freeway: city fabric, not frontage                                                                                                                                                                                   |
+| `3780023`  | 139     | 1.00    | VACANT   | UMU    | 4               | out      | An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land                                                                                                                                   |
+| `3760126`  | 38      | 1.00    | VACANT   | SALI   | 0               | out      | 16.2 m from the freeway, beyond the 15 m the rules accept for this land: not frontage                                                                                                                                                         |
 
 **Totals, `i80-soma`:** 74 candidates; **22 in, 12.25 ha, FZP yield removed 1,356** (the sum of today's top-fill yield over the hostable `in` parcels); 52 out, of which 1 moves to a kept segment.
 
@@ -1072,8 +1088,9 @@ about are in the tables, decided as follows:
 | `5481010`  | 4,616   | 1.00    | VACANT   | P      | 147             | rule     | Vacant public land under the deck (roll VPUB, zoned P) |
 | `5450001`  | 4,254   | 1.00    | VACANT   | P      | 136             | rule     | Vacant public land under the deck (roll VPUB, zoned P) |
 | `5449001`  | 4,186   | 1.00    | VACANT   | P      | 133             | rule     | Vacant public land under the deck (roll VPUB, zoned P) |
+| `5472001`  | 72      | 1.00    | VACANT   | P      | 2               | out      | OSM garden on 100% of the lot                          |
 
-**Totals, `us101-south` (rule):** 102 candidates; 62 listed, 19.18 ha, FZP yield removed 3,560 (including 9 moved from removed segments: `5607046`, `5437002`, `5438001`, `5373001`, `5695021`, `5372A001`, `5694001`, `5375028`, `5373003`); 49 out by rules 3 to 6.
+**Totals, `us101-south` (rule, committed in `freeway-land.draft.json`):** 102 candidates; 62 listed, 19.18 ha, FZP yield removed 3,560 (including 9 moved from removed segments: `5607046`, `5437002`, `5438001`, `5373001`, `5695021`, `5372A001`, `5694001`, `5375028`, `5373003`); 49 out (1 by rule 1, all listed above; the rest by rules 3 to 6, with reasons in the draft file).
 
 #### i280-south
 
@@ -1089,48 +1106,107 @@ about are in the tables, decided as follows:
 | `7095035`  | 12,542  | 1.00                   | VACANT    | P      | 401             | rule     | Vacant public land under the deck (roll VPUB, zoned P)                                                                              |
 | `7102023`  | 12,422  | 1.00                   | VACANT    | P      | 397             | rule     | Vacant public land under the deck (roll VPUB, zoned P)                                                                              |
 | `5391002`  | 11,222  | 1.00                   | VACANT    | P      | 358             | rule     | Vacant public land under the deck (roll VPUB, zoned P)                                                                              |
+| `7095B002` | 5,928   | 0.50                   | OPENSPACE | P      | 0               | out      | Open space (land use OPENSPACE)                                                                                                     |
+| `3179012`  | 4,099   | 1.00                   | VACANT    | P      | 0               | out      | OSM park on 72% of the lot                                                                                                          |
+| `6949013`  | 3,509   | 1.00                   | VACANT    | P      | 232             | out      | OSM station Balboa Park on the lot                                                                                                  |
+| `6755026`  | 2,993   | 0.92                   | VACANT    | P      | 228             | out      | OSM station Glen Park on the lot                                                                                                    |
+| `7147033`  | 250     | 1.00                   | VACANT    | RH-1   | 4               | out      | OSM pitch on 67% of the lot                                                                                                         |
 | `3179010`  | 232,875 | 0.09 (not a candidate) | CIE       | P      | 10,513          | out      | City College of San Francisco, Ocean campus (land use CIE; OSM college on 84%); 9% in the band, a school: not freeway land          |
 | `3179011`  | 100,346 | 0.14 (not a candidate) | OPENSPACE | P      | 0               | out      | Balboa Park (land use OPENSPACE; OSM park on 96%; Balboa Pool, Ingleside Police Station); 14% in the band, a park: not freeway land |
 
-**Totals, `i280-south` (rule):** 351 candidates; 233 listed, 49.01 ha, FZP yield removed 13,217; 118 out by rules 3 to 6.
+**Totals, `i280-south` (rule, committed in `freeway-land.draft.json`):** 351 candidates; 229 listed, 47.36 ha, FZP yield removed 12,757; 122 out (7 by rule 1, all listed above; the rest by rules 3 to 6, with reasons in the draft file).
 
 #### i280-north
 
-| Parcel    | Area m² | In band | Land use | Zoning | FZP yield today | Decision | Reason                                                                             |
-| --------- | ------- | ------- | -------- | ------ | --------------- | -------- | ---------------------------------------------------------------------------------- |
-| `8701003` | 22,381  | 0.66    | VACANT   | MB-O   | 415             | out      | Caltrain 4th and King rail yard approach (OSM railway on 85%; CP 4th Street)       |
-| `4169002` | 15,692  | 0.69    | VACANT   | P      | 925             | out      | Muni Woods bus division, a working transit yard (roll class IG)                    |
-| `8709015` | 15,372  | 1.00    | VACANT   | MB-RA  | 0               | out      | 0 m from the freeway with other land between: beyond the deck's edge, not frontage |
-| `8727007` | 14,034  | 1.00    | VACANT   | MB-RA  | 0               | rule     | Vacant lot against the deck (roll VCI), no street between                          |
-| `4168011` | 12,735  | 1.00    | VACANT   | P      | 407             | out      | Caltrain 22nd Street station and tracks (OSM railway on 94%)                       |
-| `4291017` | 12,604  | 1.00    | VACANT   | PDR-2  | 744             | rule     | Vacant public land under the deck (roll VPUB)                                      |
-| `8709002` | 10,186  | 0.98    | VACANT   | MB-RA  | 0               | rule     | Vacant public land under the deck (roll VPUB)                                      |
-| `4382003` | 7,907   | 1.00    | VACANT   | PDR-2  | 467             | rule     | Vacant public land under the deck (roll VPUB)                                      |
-| `5823056` | 6,630   | 1.00    | VACANT   | P      | 212             | rule     | Vacant public land under the deck (roll VPUB, zoned P)                             |
-| `5848056` | 6,488   | 1.00    | VACANT   | P      | 207             | rule     | Vacant public land under the deck (roll VPUB, zoned P)                             |
-| `3809002` | 6,087   | 0.92    | VACANT   | MB-RA  | 0               | out      | A mapped park beside I-280 in Mission Bay (OSM park on 60%)                        |
+| Parcel     | Area m² | In band | Land use  | Zoning  | FZP yield today | Decision | Reason                                                                       |
+| ---------- | ------- | ------- | --------- | ------- | --------------- | -------- | ---------------------------------------------------------------------------- |
+| `8701003`  | 22,381  | 0.66    | VACANT    | MB-O    | 415             | out      | Caltrain 4th and King rail yard approach (OSM railway on 85%; CP 4th Street) |
+| `4169002`  | 15,692  | 0.69    | VACANT    | P       | 925             | out      | Muni Woods bus division, a working transit yard (roll class IG)              |
+| `8709015`  | 15,372  | 1.00    | VACANT    | MB-RA   | 0               | out      | OSM pedestrian area on 86% of the lot (treated as public open space)         |
+| `8727007`  | 14,034  | 1.00    | VACANT    | MB-RA   | 0               | out      | OSM pedestrian area on 79% of the lot (treated as public open space)         |
+| `4168011`  | 12,735  | 1.00    | VACANT    | P       | 407             | out      | Caltrain 22nd Street station and tracks (OSM railway on 94%)                 |
+| `4291017`  | 12,604  | 1.00    | VACANT    | PDR-2   | 744             | rule     | Vacant public land under the deck (roll VPUB)                                |
+| `8709002`  | 10,186  | 0.98    | VACANT    | MB-RA   | 0               | rule     | Vacant public land under the deck (roll VPUB)                                |
+| `4382003`  | 7,907   | 1.00    | VACANT    | PDR-2   | 467             | rule     | Vacant public land under the deck (roll VPUB)                                |
+| `5823056`  | 6,630   | 1.00    | VACANT    | P       | 212             | rule     | Vacant public land under the deck (roll VPUB, zoned P)                       |
+| `5848056`  | 6,488   | 1.00    | VACANT    | P       | 207             | rule     | Vacant public land under the deck (roll VPUB, zoned P)                       |
+| `3809002`  | 6,087   | 0.92    | VACANT    | MB-RA   | 0               | out      | OSM park on 100% of the lot                                                  |
+| `8709016`  | 4,999   | 1.00    | VACANT    | MB-RA   | 0               | out      | OSM pedestrian area on 69% of the lot (treated as public open space)         |
+| `4040031`  | 3,731   | 1.00    | VACANT    | P       | 119             | out      | OSM garden Commander Isaiah Nelson Memorial Hanging Gardens on the lot       |
+| `4063001`  | 3,717   | 1.00    | VACANT    | P       | 118             | out      | OSM garden on 33% of the lot                                                 |
+| `4227045`  | 3,698   | 1.00    | VACANT    | PDR-1-G | 181             | out      | OSM dog park on 27% of the lot                                               |
+| `3797009`  | 3,478   | 1.00    | VACANT    | MB-RA   | 0               | out      | OSM pedestrian area on 61% of the lot (treated as public open space)         |
+| `4226011`  | 3,214   | 1.00    | VACANT    | PDR-1-G | 102             | out      | OSM railway on 31% of the lot                                                |
+| `4104020`  | 2,426   | 1.00    | VACANT    | P       | 77              | out      | OSM pedestrian area on 68% of the lot (treated as public open space)         |
+| `4227033`  | 2,352   | 1.00    | VACANT    | PDR-1-G | 115             | out      | OSM pedestrian area on 55% of the lot (treated as public open space)         |
+| `3999011`  | 2,137   | 1.00    | VACANT    | P       | 68              | out      | OSM pedestrian area on 75% of the lot (treated as public open space)         |
+| `4227009`  | 2,100   | 1.00    | VACANT    | PDR-1-G | 103             | out      | OSM park on 62% of the lot                                                   |
+| `3784079`  | 2,039   | 1.00    | VACANT    | P       | 139             | out      | OSM pedestrian area on 66% of the lot (treated as public open space)         |
+| `3999012`  | 1,920   | 1.00    | VACANT    | P       | 61              | out      | OSM pedestrian area on 54% of the lot (treated as public open space)         |
+| `5368033`  | 1,762   | 1.00    | VACANT    | P       | 104             | out      | OSM pedestrian area on 61% of the lot (treated as public open space)         |
+| `8723005`  | 1,751   | 1.00    | VACANT    | MB-RA   | 0               | out      | OSM pedestrian area on 77% of the lot (treated as public open space)         |
+| `3998009`  | 1,723   | 1.00    | VACANT    | UMU     | 84              | out      | OSM pedestrian area on 53% of the lot (treated as public open space)         |
+| `5214001`  | 1,713   | 1.00    | VACANT    | PDR-2   | 54              | out      | OSM pedestrian area on 52% of the lot (treated as public open space)         |
+| `4349004A` | 1,583   | 1.00    | VACANT    | PDR-2   | 50              | out      | OSM pedestrian area on 50% of the lot (treated as public open space)         |
+| `4347B007` | 1,375   | 1.00    | VACANT    | PDR-2   | 92              | out      | OSM pedestrian area on 79% of the lot (treated as public open space)         |
+| `4349013`  | 1,305   | 1.00    | VACANT    | PDR-2   | 76              | out      | OSM pedestrian area on 56% of the lot (treated as public open space)         |
+| `4226007`  | 1,250   | 1.00    | VACANT    | PDR-1-G | 39              | out      | OSM pedestrian area on 80% of the lot (treated as public open space)         |
+| `5351002`  | 929     | 0.77    | VACANT    | P       | 29              | out      | OSM school on 94% of the lot                                                 |
+| `3797008`  | 858     | 1.00    | VACANT    | MB-RA   | 0               | out      | OSM pedestrian area on 90% of the lot (treated as public open space)         |
+| `8726001`  | 799     | 0.86    | VACANT    | MB-RA   | 0               | out      | OSM railway on 56% of the lot                                                |
+| `4168005`  | 780     | 1.00    | VACANT    | P       | 24              | out      | OSM railway on 64% of the lot                                                |
+| `5333037`  | 697     | 1.00    | VACANT    | P       | 41              | out      | OSM pedestrian area on 91% of the lot (treated as public open space)         |
+| `4227013B` | 589     | 1.00    | VACANT    | PDR-1-G | 28              | out      | OSM pedestrian area on 64% of the lot (treated as public open space)         |
+| `5269007`  | 519     | 1.00    | VACANT    | PDR-2   | 35              | out      | OSM pedestrian area on 100% of the lot (treated as public open space)        |
+| `5282031`  | 472     | 1.00    | VACANT    | PDR-2   | 32              | out      | OSM pedestrian area on 100% of the lot (treated as public open space)        |
+| `3999007`  | 465     | 1.00    | VACANT    | UMU     | 14              | out      | OSM park on 98% of the lot                                                   |
+| `8726002`  | 439     | 0.64    | VACANT    | MB-RA   | 0               | out      | OSM railway on 100% of the lot                                               |
+| `8709023`  | 339     | 1.00    | VACANT    | MB-RA   | 0               | out      | OSM railway on 40% of the lot                                                |
+| `5331056`  | 335     | 1.00    | OPENSPACE | P       | 0               | out      | Open space (land use OPENSPACE)                                              |
+| `4227019`  | 310     | 1.00    | VACANT    | PDR-1-G | 12              | out      | OSM pedestrian area on 68% of the lot (treated as public open space)         |
+| `4227008`  | 270     | 1.00    | VACANT    | PDR-1-G | 10              | out      | OSM park on 96% of the lot                                                   |
+| `4227021`  | 269     | 1.00    | VACANT    | PDR-1-G | 10              | out      | OSM pedestrian area on 83% of the lot (treated as public open space)         |
+| `4227020`  | 269     | 1.00    | VACANT    | PDR-1-G | 10              | out      | OSM park on 40% of the lot                                                   |
+| `4227018`  | 260     | 1.00    | VACANT    | PDR-1-G | 10              | out      | OSM park on 27% of the lot                                                   |
+| `4227015`  | 232     | 1.00    | VACANT    | PDR-1-G | 9               | out      | OSM pedestrian area on 79% of the lot (treated as public open space)         |
+| `4227017`  | 232     | 1.00    | VACANT    | PDR-1-G | 9               | out      | OSM pedestrian area on 76% of the lot (treated as public open space)         |
+| `5377054`  | 232     | 1.00    | VACANT    | P       | 9               | out      | OSM pedestrian area on 76% of the lot (treated as public open space)         |
+| `4227016`  | 232     | 1.00    | VACANT    | PDR-1-G | 9               | out      | OSM pedestrian area on 77% of the lot (treated as public open space)         |
+| `5377049`  | 232     | 1.00    | VACANT    | P       | 7               | out      | OSM pedestrian area on 83% of the lot (treated as public open space)         |
+| `3999006`  | 232     | 1.00    | VACANT    | UMU     | 7               | out      | OSM park on 92% of the lot                                                   |
+| `5392033`  | 179     | 1.00    | VACANT    | P       | 5               | out      | OSM pedestrian area on 98% of the lot (treated as public open space)         |
+| `3999005`  | 177     | 1.00    | VACANT    | P       | 5               | out      | OSM park on 48% of the lot                                                   |
+| `3809006`  | 164     | 1.00    | VACANT    | MB-RA   | 0               | out      | OSM park on 67% of the lot                                                   |
+| `5368011`  | 145     | 1.00    | VACANT    | P       | 5               | out      | OSM pedestrian area on 57% of the lot (treated as public open space)         |
+| `4168006`  | 118     | 1.00    | VACANT    | P       | 3               | out      | OSM pedestrian area on 100% of the lot (treated as public open space)        |
+| `5368014`  | 99      | 1.00    | VACANT    | P       | 3               | out      | OSM pedestrian area on 100% of the lot (treated as public open space)        |
+| `3806011`  | 98      | 1.00    | VACANT    | MB-RA   | 0               | out      | OSM park on 100% of the lot                                                  |
+| `5392027`  | 86      | 1.00    | VACANT    | P       | 0               | out      | OSM pedestrian area on 63% of the lot (treated as public open space)         |
 
-**Totals, `i280-north` (rule):** 260 candidates; 187 listed, 23.03 ha, FZP yield removed 8,494 (including 1 moved from removed segments: `5822031`); 72 out by rules 3 to 6 plus the named exclusions above.
+**Totals, `i280-north` (rule, committed in `freeway-land.draft.json`):** 260 candidates; 140 listed, 16.2 ha, FZP yield removed 6,639 (including 1 moved from removed segments: `5822031`); 121 out (57 by rule 1, all listed above; the rest by rules 3 to 6, with reasons in the draft file).
 
 #### i80-bay-bridge
 
 | Parcel     | Area m² | In band | Land use | Zoning                              | FZP yield today | Decision | Reason                                                                                                                  |
 | ---------- | ------- | ------- | -------- | ----------------------------------- | --------------- | -------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `1939018`  | 77,930  | 0.92    | VACANT   | P/YBI-OS/YBI-OS/YBI-PCI/YBI-R       | 0               | rule     | Vacant public land under the deck (roll VPUB, zoned P)                                                                  |
+| `1939018`  | 77,930  | 0.92    | VACANT   | P/YBI-OS/YBI-OS/YBI-PCI/YBI-R       | 0               | out      | Zoned in part YBI-OS (an open-space district)                                                                           |
 | `9900024`  | 12,304  | 0.90    | VACANT   | C-2/C-2                             | 0               | out      | Port of San Francisco pier land south of Pier 24 (roll IXG)                                                             |
-| `1939017`  | 10,862  | 0.67    | VACANT   | P                                   | 0               | rule     | Vacant public land under the deck (roll VPUB, zoned P)                                                                  |
+| `1939017`  | 10,862  | 0.67    | VACANT   | P                                   | 0               | out      | OSM viewpoint Bay Bridge Trail Lookout on the lot                                                                       |
 | `3765715`  | 10,625  | 1.00    | VACANT   | RH DTR/SB-DTR                       | 627             | rule     | Vacant public land under the deck (roll VPUB)                                                                           |
 | `3764064`  | 10,252  | 1.00    | VACANT   | SB-DTR                              | 605             | rule     | Vacant public land under the deck (roll VPUB)                                                                           |
 | `3764066`  | 9,881   | 1.00    | VACANT   | SB-DTR                              | 862             | rule     | Vacant public land under the deck (roll VPUB)                                                                           |
-| `1939175`  | 6,169   | 0.96    | VACANT   | YBI-R/YBI-OS/YBI-PCI                | 0               | rule     | Vacant public land against the deck (roll VG)                                                                           |
+| `1939175`  | 6,169   | 0.96    | VACANT   | YBI-R/YBI-OS/YBI-PCI                | 0               | out      | Zoned in part YBI-OS (an open-space district)                                                                           |
 | `3749052`  | 5,781   | 1.00    | VACANT   | P                                   | 320             | rule     | Vacant public land under the deck (roll VPUB, zoned P)                                                                  |
 | `3767003`  | 5,715   | 1.00    | VACANT   | RH DTR                              | 401             | out      | A government industrial property on the 2025 roll (class IXG): a standing building or business, not vacant freeway land |
-| `1939020`  | 5,037   | 0.76    | VACANT   | YBI-MU/YBI-MU/YBI-OS/YBI-OS/YBI-PCI | 4               | out      | 25.9 m from the freeway with other land between: beyond the deck's edge, not frontage                                   |
-| `3766011`  | 2,807   | 1.00    | VACANT   | P                                   | 231             | out      | Rincon Hill Dog Park (OSM dog park on 66%)                                                                              |
+| `1939020`  | 5,037   | 0.76    | VACANT   | YBI-MU/YBI-MU/YBI-OS/YBI-OS/YBI-PCI | 4               | out      | Zoned in part YBI-OS (an open-space district)                                                                           |
+| `1939016`  | 4,208   | 1.00    | VACANT   | P/YBI-OS/YBI-R                      | 0               | out      | Zoned in part YBI-OS (an open-space district)                                                                           |
 | `9900024H` | 2,960   | 0.91    | VACANT   | C-2                                 | 39              | out      | Pier 24 (Port of San Francisco; OSM pier on 76%)                                                                        |
 | `9900026H` | 2,850   | 0.55    | VACANT   | M-1                                 | 0               | out      | Port pier (OSM pier on 83%)                                                                                             |
+| `3766011`  | 2,807   | 1.00    | VACANT   | P                                   | 231             | out      | Rincon Hill Dog Park (OSM dog park on 66%)                                                                              |
+| `1939015`  | 1,283   | 1.00    | VACANT   | P/YBI-PCI                           | 0               | out      | OSM pedestrian area on 72% of the lot (treated as public open space)                                                    |
+| `3768003`  | 81      | 1.00    | VACANT   | RH DTR                              | 0               | out      | OSM pedestrian area on 70% of the lot (treated as public open space)                                                    |
 
-**Totals, `i80-bay-bridge` (rule):** 36 candidates; 20 listed, 16.45 ha, FZP yield removed 3,748 (including 1 moved from removed segments: `3764067`); 16 out by rules 3 to 6 plus the named exclusions above.
+**Totals, `i80-bay-bridge` (rule, committed in `freeway-land.draft.json`):** 36 candidates; 14 listed, 6.4 ha, FZP yield removed 3,748 (including 1 moved from removed segments: `3764067`); 23 out (11 by rule 1, all listed above; the rest by rules 3 to 6, with reasons in the draft file).
 
 #### us101-presidio
 
@@ -1157,8 +1233,9 @@ segment's table in Freeway land; `freewayLand.excluded` are its `out` rows with 
 They could not start sooner because the `street` capacity of 6 is full in 2036–2037 and 2041–2043
 (parking clearances, `fell-oak-street`, `geary-trench`); the starts fit the cap unchanged (Open
 question 4 gives the faster option). `i80-rincon` is another freeway and may overlap; it starts in
-2039, after the interchange phase has taken down the US-101/I-80 connectors, so I-80 is never left
-feeding a removed interchange.
+2039, while the interchange phase is still under way (2038 to mid-2040). From mid-2040 to mid-2041
+the I-80 deck over SoMa still stands with its US-101 connectors gone, so it carries only the trips
+of its own 4th to 9th St ramps; traffic is not modelled.
 
 #### central-freeway-stub (changed)
 
@@ -1252,31 +1329,40 @@ the K on Ocean Ave (`k-ocean-priority`, open 2036) for the Excelsior and Inglesi
 
 Transit: the Central Subway under 4th St, which crosses beneath this stretch and carries SoMa's
 trips downtown (`central-subway-north-beach`). The ramps that stay at Rincon Hill are listed under
-Freeway segments: three eastbound entrances and two westbound exits, so the Bay Bridge still
-reaches city streets. Clearance 2039 to mid-2041.
+Freeway segments: three eastbound entrances and two westbound exits (`19375001`–`19375002` is one
+ramp in two CNNs), so the Bay Bridge still reaches city streets. Clearance 2039 to mid-2041.
 
 **No overlap on one freeway.** US-101: [2033-01-01, 2035-07-01), [2038-01-01, 2040-07-01),
 [2044-01-01, 2046-07-01), [2047-01-01, 2049-07-01). I-80: [2039-01-01, 2041-07-01).
 
 ### Garages
 
-Both garages stand on interchange land between ramps, off the mainline deck, on land that stays
-beside a **kept** freeway **(drafter's call)**. The spec asks for "recovered" interchange land; at
-both interchanges the loops between ramps that are freed outright are small or lie under the
-mainline (Alemany: `5692045` is 84% within 12 m of mainline centrelines; `5820035` is 2,868 m²),
-while the largest loops border I-280 and the kept Rincon Hill ramps. A garage there costs no homes,
-because that land is never freed (Open question 5). Both parcels hold 0 homes; the plan check
-accepts a garage on freeway land.
+Both garages stand on freeway land of a **removal** phase at their interchange, on loops between
+ramps the phase takes down, off the mainline deck. The spec's garage exception lets a garage name a
+`{ parcel }` of freeway land that is not yet freed: each site is also in its phase's
+`freewayLand.parcels`, the build marks that freed site `heldBy` the garage, it gets no homes, and
+the breakdown reports the homes it would have had at the phase's build start as the garage's cost.
+Both parcels hold 0 homes.
 
-| Garage           | Parcel    | Footprint (parcel area) | Spaces | Where                                                                                                                                                                                          | Today                                                                                                    |
-| ---------------- | --------- | ----------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `garage-alemany` | `5822031` | 5,363 m²                | 850    | the loop between the US-101→I-280 connectors (`19278000`, `19280000`, `19234000`, which come down with `us101-bayshore`) and I-280 southbound (`19343000`, kept); 6% within 12 m of a mainline | a Caltrans storage yard with sheds (satellite, viewed 2026-11-03); zoned P, roll VPUB, FZP top yield 171 |
-| `garage-rincon`  | `3764064` | 10,252 m²               | 1,700  | the green triangle between the Rincon Hill entrances and exits (`19359000`, `19360000`, `19374000`, `19375001`) and the bridge mainline; 19% within 12 m of a mainline                         | dry grass between ramps (satellite, viewed 2026-11-03); zoned SB-DTR, roll VPUB, FZP top yield 605       |
+| Garage           | Parcel    | Footprint (parcel area) | Spaces | Where                                                                                                                                                                       | Today                                                                                                   | Cost in homes                                                |
+| ---------------- | --------- | ----------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `garage-alemany` | `5820035` | 2,868 m²                | 450    | between the US-101→I-280 connectors `19278000` and `19353000`, which `us101-bayshore` takes down; 0% within 12 m of a mainline centreline, 22% within 8 m of a ramp         | zoned P, roll VPUB, vacant public land                                                                  | 91 at today's FZP top fill; reported at the 2050 build start |
+| `garage-rincon`  | `3761062` | 23,987 m²               | 3,950  | the loop of I-80's 4th and 5th St ramps (`19355000`, `19362000`, `19376000`), which `i80-rincon` takes down, at Bryant and 5th St; 36% within 12 m of a mainline centreline | zoned P, roll VPUB; the Bryant Navigation Center, the SF street tree nursery and storage (interim uses) | 40 at today's FZP top fill; reported at the 2042 build start |
 
-Spaces = footprint × 5 levels ÷ 30 m² per space, rounded down to 50 as v1 did (PV-spaces-alemany,
-PV-spaces-rincon, tier 4). `garage-alemany` takes `garage-south`'s 2031 start and 24 months
-(PV-garage) and opens 1 January 2033, before the stub closes; `garage-rincon` starts in 2033 and
-opens 1 January 2035, four years before `i80-rincon`. `garage-north` is unchanged.
+**Why these parcels (drafter's call).** At Alemany the freed loops are `5692045` (6,894 m², but
+84% within 12 m of mainline centrelines, so under the deck rather than off it) and `5820035`; the
+garage takes `5820035`, the one off the deck, so it is small (450 spaces). At Rincon Hill itself
+there is no removed ramp: the cut keeps every Rincon Hill ramp so the Bay Bridge reaches city
+streets, and the loops between them stay freeway land of the kept bridge approach. The nearest
+recovered loop of removed I-80 ramps is `3761062`, about 1 km west of the Rincon Hill ramps; the
+garage takes it. That is a departure from "the Rincon Hill interchange land" (Open question 5).
+
+Spaces = footprint × 5 levels ÷ 30 m² per space, rounded down to 50 as v1 did (2,868 → 478 → 450;
+23,987 → 3,997 → 3,950; PV-spaces-alemany, PV-spaces-rincon, tier 4). `garage-alemany` takes
+`garage-south`'s 2031 start and 24 months (PV-garage) and opens 1 January 2033, before the stub
+closes; `garage-rincon` starts in 2033 and opens 1 January 2035, four years before `i80-rincon`.
+`garage-north` is unchanged. `checkPlan` accepts both: each site is used by one garage and one
+truncation's freeway land, the one pairing `site-reused` allows.
 
 **`garage-south` is retired** (spec): its row is removed and parcel `3901004` is an ordinary lot
 again (it is an `out` row of `us101-interchange`: a private parking lot across Division St).
@@ -1302,16 +1388,16 @@ Tables for Plan B to transcribe into Appendix A and `plan.json`.
 
 ##### garage-alemany, garage-rincon
 
-| Field            | `garage-alemany`                                            | `garage-rincon`                                |
-| ---------------- | ----------------------------------------------------------- | ---------------------------------------------- |
-| `id`             | `garage-alemany`                                            | `garage-rincon`                                |
-| `label`          | Alemany edge garage (US-101 and I-280, Alemany interchange) | Rincon Hill edge garage (Bay Bridge touchdown) |
-| `kind`           | `edge-garage`                                               | `edge-garage`                                  |
-| `startYear`      | 2031                                                        | 2033                                           |
-| `durationMonths` | 24 (PV-garage)                                              | 24 (PV-garage)                                 |
-| `dependsOn`      | `[]`                                                        | `[]`                                           |
-| `site`           | `{ parcel: "5822031" }`                                     | `{ parcel: "3764064" }`                        |
-| `spaces`         | 850 (PV-spaces-alemany)                                     | 1,700 (PV-spaces-rincon)                       |
+| Field            | `garage-alemany`                                                   | `garage-rincon`                                                   |
+| ---------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `id`             | `garage-alemany`                                                   | `garage-rincon`                                                   |
+| `label`          | Alemany edge garage (US-101 and I-280, Alemany interchange)        | Bay Bridge edge garage (the removed I-80 ramps at 4th and 5th St) |
+| `kind`           | `edge-garage`                                                      | `edge-garage`                                                     |
+| `startYear`      | 2031                                                               | 2033                                                              |
+| `durationMonths` | 24 (PV-garage)                                                     | 24 (PV-garage)                                                    |
+| `dependsOn`      | `[]`                                                               | `[]`                                                              |
+| `site`           | `{ parcel: "5820035" }` (also in `us101-bayshore`'s `freewayLand`) | `{ parcel: "3761062" }` (also in `i80-rincon`'s `freewayLand`)    |
+| `spaces`         | 450 (PV-spaces-alemany)                                            | 3,950 (PV-spaces-rincon)                                          |
 
 #### Projects changed
 
@@ -1331,8 +1417,8 @@ Tables for Plan B to transcribe into Appendix A and `plan.json`.
 
 | Id                | `tier` | `label`                 | `sources` | `method`                                                              |
 | ----------------- | ------ | ----------------------- | --------- | --------------------------------------------------------------------- |
-| PV-spaces-alemany | 4      | 850 spaces (invented)   | D2        | 5,363 m² footprint × 5 levels ÷ 30 m² per space, rounded down to 50.  |
-| PV-spaces-rincon  | 4      | 1,700 spaces (invented) | D2        | 10,252 m² footprint × 5 levels ÷ 30 m² per space, rounded down to 50. |
+| PV-spaces-alemany | 4      | 450 spaces (invented)   | D2        | 2,868 m² footprint × 5 levels ÷ 30 m² per space, rounded down to 50.  |
+| PV-spaces-rincon  | 4      | 3,950 spaces (invented) | D2        | 23,987 m² footprint × 5 levels ÷ 30 m² per space, rounded down to 50. |
 
 `PV-spaces-south` (with `garage-south`) and `PV-line-cfwy` (the stub's drawn line) are no longer
 used. PV-hwy, PV-row-cfwy, PV-garage and PV-build are reused unchanged.
@@ -1417,15 +1503,15 @@ continues from a phase end (US-101 south of Alemany; the Bay Bridge approach at 
 
 ### Evidence
 
-| Item                                       | Value                                 | Tier | Source                                                                                                                                                                                                                          |
-| ------------------------------------------ | ------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Phase duration (PV-hwy)                    | 30 months                             | 2    | Central Freeway: demolition began March 2003, Octavia Boulevard opened 9 September 2005 (S10). Applied to every phase; no source for a longer elevated structure was found, so the James Lick and I-80 viaducts may take longer |
-| Freed land without a public builder        | 20+ years                             | 3    | The Octavia parcels: some still vacant in 2023–24 (S11); the initiative builds instead (v1 spec)                                                                                                                                |
-| Frontage band (60 m, at least half within) | candidate rule only                   | 4    | Invented (spec); every removed-segment candidate decided by hand                                                                                                                                                                |
-| Phase boundaries                           | the cut points under Freeway segments | 4    | Invented from the owner's cuts and the CNN end points (tier 0 geometry)                                                                                                                                                         |
-| Garage spaces (PV-spaces-alemany, -rincon) | 850, 1,700                            | 4    | Invented: footprint × 5 ÷ 30 m²                                                                                                                                                                                                 |
-| Freeway land per parcel                    | the Freeway land tables               | 0    | Dataset parcels, DataSF land use 2023, 2025 assessor roll, OSM via the protomaps basemap                                                                                                                                        |
-| Street capacity binding the US-101 starts  | 6 (PV-cap-street)                     | 4    | v1, unchanged                                                                                                                                                                                                                   |
+| Item                                       | Value                                              | Tier | Source                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------ | -------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase duration (PV-hwy)                    | 30 months                                          | 2    | Central Freeway: demolition began March 2003, Octavia Boulevard opened 9 September 2005 (S10). Applied to every phase; no source for a longer elevated structure was found, so the James Lick and I-80 viaducts may take longer                                                                                 |
+| Freed land without a public builder        | 20+ years                                          | 3    | The Octavia parcels: some still vacant in 2023–24 (S11); the initiative builds instead (v1 spec)                                                                                                                                                                                                                |
+| Frontage band (60 m, at least half within) | candidate rule only                                | 4    | Invented (spec); it only proposes candidates                                                                                                                                                                                                                                                                    |
+| Phase boundaries                           | the cut points under Freeway segments              | 4    | Invented from the owner's cuts and the CNN end points (tier 0 geometry)                                                                                                                                                                                                                                         |
+| Garage spaces (PV-spaces-alemany, -rincon) | 450, 3,950                                         | 4    | Invented: footprint × 5 ÷ 30 m²                                                                                                                                                                                                                                                                                 |
+| Freeway land decisions (in / out)          | the Freeway land tables, `freeway-land.draft.json` | 4    | The drafter's rules (Freeway land), applied by script to tier 0 inputs: dataset parcels, DataSF land use 2023, the 2025 assessor roll class, zoning, distance and street-between geometry, and OSM land use and places via the protomaps basemap. Not checked on satellite imagery, except the two garage sites |
+| Street capacity binding the US-101 starts  | 6 (PV-cap-street)                                  | 4    | v1, unchanged                                                                                                                                                                                                                                                                                                   |
 
 ### Open questions for the owner (v1.1)
 
@@ -1435,8 +1521,9 @@ continues from a phase end (US-101 south of Alemany; the Bay Bridge approach at 
    parcels instead of 0.88. If they are interim uses of freeway land that move when the deck comes
    down, they become `in`.
 2. **Interim uses under the deck.** The draft frees the lots of the Division Circle and Bryant
-   Navigation Centers, the SF street tree nursery, the CHP office and the Women's Resource Center
-   (Caltrans land, no homes). Keep them `in`?
+   Navigation Centers, the SF street tree nursery and the Women's Resource Center (Caltrans land,
+   no homes), and, as an exception to its own rule against standing buildings, the CHP office lot
+   `3758126`. Keep them `in`? (The Bryant lot is also the `garage-rincon` site.)
 3. **Corridor transit.** No plan project carries the Peninsula's US-101 trips or the East Bay's
    I-80 trips (Caltrain, BART, AC Transit do today), so each phase waits on in-city transit only.
    Add a regional project (for example the Caltrain Downtown Rail Extension), or accept this?
@@ -1444,9 +1531,14 @@ continues from a phase end (US-101 south of Alemany; the Bay Bridge approach at 
    2044 and 2047 and the last build completes in 2052. Raising `street` to 7 lets James Lick start
    in 2041 and Bayshore in 2044, with the last build mid-2049 (checked with `checkPlan`; 6 does not
    allow it). Keep 6?
-5. **Garages on kept-freeway land.** Both garages stand on interchange loops beside a freeway that
-   stays (I-280; the Rincon Hill ramps), so they cost no homes, rather than on land the removal
-   frees. Is that what "recovered green land" meant?
+5. **`garage-rincon` is not at Rincon Hill (a departure from the owner's decision).** The owner
+   asked for garages on recovered green land of the messy interchanges, including Rincon Hill. The
+   cut keeps every Rincon Hill ramp so the Bay Bridge reaches city streets, so no Rincon Hill land
+   is recovered. The draft puts the garage on the nearest recovered loop, the removed 4th and 5th
+   St ramps of I-80 (`3761062`, about 1 km west, 3,950 spaces, cost 40 homes at today's FZP). The
+   alternatives: a garage on the green between the kept Rincon Hill ramps (`3764064`, 10,252 m²,
+   1,700 spaces, never freed so costing no homes, but not recovered land), or a cut that also
+   removes one Rincon Hill ramp pair to free its loop. Which?
 
 Approved by the owner on ____.
 
