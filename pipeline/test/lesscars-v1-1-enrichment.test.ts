@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { parseBasemapIds } from '../lib/lesscars/basemap-ids';
 import { parseFreewayLand, type FreewaySegment } from '../lib/lesscars/freeway-land';
 import { LESSCARS_BASEMAP_IDS_JSON, LESSCARS_FREEWAY_LAND_JSON } from '../lesscars-config';
-import { table, under, unTick } from './lesscars-doc';
+import { amended, errata, table, under, unTick } from './lesscars-doc';
 
 const ROOT = join(import.meta.dirname, '../..');
 const DOC = readFileSync(join(ROOT, 'docs/lesscars/plan-v1.md'), 'utf8');
@@ -25,22 +25,35 @@ const draft = parseFreewayLand(
 );
 const ids = parseBasemapIds(JSON.parse(readFileSync(LESSCARS_BASEMAP_IDS_JSON.live, 'utf8')));
 
+// The section's errata (dated, after the approval line) move CNNs and parcels between segments;
+// the approved tables stay as approved, so every check below applies the moves to them.
+const ERRATA = errata(SECTION);
+
 const segmentRows = () => table(under(SECTION, '### Freeway segments'));
 const sectionSegments = () => segmentRows().map((r) => unTick(r['Segment id']));
 const landRows = (id: string) => table(under(under(SECTION, '### Freeway land'), `#### ${id}`));
+/** A segment's table rows; a parcel an erratum moves out is `out` with the erratum's reason. */
 const rows = (id: string) =>
-  landRows(id).map((r) => ({
-    parcel: unTick(r['Parcel']),
-    decision: r['Decision'],
-    reason: r['Reason']
-  }));
+  landRows(id).map((r) => {
+    const parcel = unTick(r['Parcel']);
+    const moved = ERRATA.parcels.find((m) => m.id === parcel && m.from === id);
+    return moved
+      ? { parcel, decision: 'out', reason: moved.reason }
+      : { parcel, decision: r['Decision'], reason: r['Reason'] };
+  });
 const sectionCnns = (id: string) =>
-  segmentRows()
-    .find((r) => unTick(r['Segment id']) === id)!
-    ['CNNs'].replace(/^\d+:\s*/, '')
-    .split(/\s+/);
+  amended(
+    segmentRows()
+      .find((r) => unTick(r['Segment id']) === id)!
+      ['CNNs'].replace(/^\d+:\s*/, '')
+      .split(/\s+/),
+    id,
+    ERRATA.cnns
+  );
 const byId = (id: string): FreewaySegment => catalog.segments.find((s) => s.id === id)!;
-const draftSegment = (id: string) => draft.segments.find((s) => s.id === id)!;
+/** A rule segment's draft list with the errata's parcel moves applied. */
+const draftParcels = (id: string) =>
+  amended(draft.segments.find((s) => s.id === id)!.parcels, id, ERRATA.parcels);
 
 const listed = new Set(catalog.segments.flatMap((s) => s.parcels));
 const excludedWithReason = (id: string) =>
@@ -106,7 +119,7 @@ describe('v1.1 enrichment files equal the approved section', () => {
   });
   it('a rule segment equals freeway-land.draft.json, and the spot-check removals are excluded', () => {
     for (const seg of catalog.segments.filter((s) => s.curated === 'rule'))
-      expect(seg.parcels, seg.id).toEqual(draftSegment(seg.id).parcels);
+      expect(seg.parcels, seg.id).toEqual(draftParcels(seg.id));
     for (const id of ['4382003', '4349004', '5232011']) expect(listed.has(id), id).toBe(false);
   });
   it('every segment a phase removes is curated by hand', () => {
@@ -137,5 +150,37 @@ describe('v1.1 enrichment files equal the approved section', () => {
         catalog.segments.some((s) => s.removedBy === p.project),
         p.project
       ).toBe(true);
+  });
+});
+
+describe('the errata from the live check (2026-11-03)', () => {
+  it('move CNN 19222002 to the kept us101-south: the US-101 cut is at the interchange', () => {
+    expect(ERRATA.cnns.map((m) => [m.id, m.from, m.to])).toEqual([
+      ['19222002', 'us101-bayshore', 'us101-south']
+    ]);
+    expect(byId('us101-bayshore').cnn).not.toContain('19222002');
+    expect(byId('us101-south').cnn).toContain('19222002');
+    expect(byId('us101-bayshore').cnn).toHaveLength(13);
+  });
+  it('move six us101-bayshore lots, each `in` in the approved table, to the kept list', () => {
+    expect(ERRATA.parcels).toHaveLength(6);
+    for (const m of ERRATA.parcels) {
+      expect([m.from, m.to], m.id).toEqual(['us101-bayshore', 'us101-south']);
+      expect(landRows(m.from).find((r) => unTick(r['Parcel']) === m.id)?.['Decision'], m.id).toBe(
+        'in'
+      );
+      expect(byId(m.to).parcels, m.id).toContain(m.id);
+      expect(byId(m.from).parcels, m.id).not.toContain(m.id);
+      expect(m.reason, m.id).toMatch(/CNN 19222002/);
+    }
+    expect(byId('us101-bayshore').parcels).toHaveLength(26);
+    expect(byId('us101-south').parcels).toHaveLength(68);
+  });
+  it('name only catalog segments', () => {
+    const segs = new Set(catalog.segments.map((s) => s.id));
+    for (const m of [...ERRATA.cnns, ...ERRATA.parcels]) {
+      expect(segs.has(m.from), m.from).toBe(true);
+      expect(segs.has(m.to), m.to).toBe(true);
+    }
   });
 });

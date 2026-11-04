@@ -34,3 +34,38 @@ export function table(text: string): Record<string, string>[] {
     return Object.fromEntries(head.map((h, i) => [h, c[i] ?? '']));
   });
 }
+
+/** A CNN or parcel an erratum moves from one catalog segment to another. */
+export interface ErratumMove {
+  id: string;
+  from: string;
+  to: string;
+  reason: string;
+}
+
+/**
+ * The moves of the v1.1 section's "Errata from the live check (2026-11-03)": its "CNN moves" and
+ * "Parcel moves" tables. The approved tables above them stay as approved; a test applies these
+ * moves to them (amended) before holding a file to the section.
+ */
+export function errata(section: string): { cnns: ErratumMove[]; parcels: ErratumMove[] } {
+  const text = under(section, '### Errata from the live check (2026-11-03)');
+  const moves = (heading: string, key: string): ErratumMove[] =>
+    table(under(text, heading)).map((r) => ({
+      id: unTick(r[key]),
+      from: unTick(r['From']),
+      to: unTick(r['To']),
+      reason: r['Reason']
+    }));
+  return { cnns: moves('#### CNN moves', 'CNN'), parcels: moves('#### Parcel moves', 'Parcel') };
+}
+
+/** `ids` of catalog segment `segment` with the moves applied: moved out dropped, moved in added, sorted. */
+export function amended(ids: readonly string[], segment: string, moves: ErratumMove[]): string[] {
+  const out = new Set(ids);
+  for (const m of moves) {
+    if (m.from === segment) out.delete(m.id);
+    if (m.to === segment) out.add(m.id);
+  }
+  return [...out].sort();
+}

@@ -18,7 +18,7 @@ import { checkPlan, schedulePlan, yearStart } from '../../src/lib/data/lesscars/
 import type { Provenance } from '../../src/lib/timelapse/types';
 import { parseFreewayLand } from '../lib/lesscars/freeway-land';
 import { LESSCARS_FREEWAY_LAND_JSON, LESSCARS_PLAN_JSON } from '../lesscars-config';
-import { table, under } from './lesscars-doc';
+import { amended, errata, table, under } from './lesscars-doc';
 import { CORRIDORS_RESOLVED_JSON } from '../steps/lesscars-cnns';
 
 const ROOT = join(import.meta.dirname, '../..');
@@ -337,6 +337,7 @@ function appendixParkingRows() {
 // ---- The v1.1 section -----------------------------------------------------------------------------
 
 const V11 = under(DOC, '## v1.1 (2026-11-03): freeway removal and freeway land');
+const V11_ERRATA = errata(V11);
 const v11Fields = (heading: string): Record<string, string> =>
   Object.fromEntries(
     table(under(V11, heading)).map((r) => [unquote(r['Field']), r[Object.keys(r)[1]]])
@@ -361,7 +362,19 @@ function expectedPhase(id: string): PlanProject {
   const f = v11Fields(`#### ${id} ${id === 'central-freeway-stub' ? '(changed)' : '(added)'}`);
   const m = f.build.match(/^`\{ startYear: (\d{4}), durationMonths: (.+) \}`$/);
   if (!m) throw new Error(`${id}: bad build ${f.build}`);
-  const parcels = JSON.parse(f.freewayLand.match(/parcels `(\[.*?\])`/)![1]) as string[];
+  // The section's dated errata move CNNs and parcels between catalog segments; the approved phase
+  // tables stay as approved, so the moves are applied to them here.
+  const seg = segmentOf(id).id;
+  const parcels = amended(
+    JSON.parse(f.freewayLand.match(/parcels `(\[.*?\])`/)![1]) as string[],
+    seg,
+    V11_ERRATA.parcels
+  );
+  const cnns = amended(
+    JSON.parse(f.segments.match(/cnn: (\[.*?\])/)![1]) as string[],
+    seg,
+    V11_ERRATA.cnns
+  );
   return {
     id,
     label: stripMarkdown(f.label),
@@ -369,7 +382,7 @@ function expectedPhase(id: string): PlanProject {
     startYear: Number(f.startYear),
     durationMonths: param(f.durationMonths),
     dependsOn: JSON.parse(unquote(f.dependsOn)) as string[],
-    segments: [{ cnn: JSON.parse(f.segments.match(/cnn: (\[.*?\])/)![1]) as string[] }],
+    segments: [{ cnn: cnns }],
     rowHalfWidthM: param(f.rowHalfWidthM),
     build: { startYear: Number(m[1]), durationMonths: param(m[2]) },
     freewayLand: { parcels, excluded: segmentOf(id).excluded }

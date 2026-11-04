@@ -1678,6 +1678,74 @@ baseline loses on that land while the freeway stands.
 
 Approved by the owner on 2026-11-03.
 
+### Errata from the live check (2026-11-03)
+
+The live check of the first v1.1 build (`2026-11-02-70dfa769`; `docs/dev/lesscars.md`, "v1.1 live
+check") found removed freeway still drawn on `/lesscars` after its removal day, and the US-101 cut
+about 400 m south of the I-280 crossing. The owner's requirement stands: a removed freeway
+disappears from the map on its removal day, while I-280, US-101 south of the Alemany interchange
+and the Bay Bridge approach still draw; the US-101 cut is at the Alemany interchange with I-280.
+The tables above stay as approved. These errata amend them, and the files follow the amended
+tables (`freeway-land.json`, `plan.json`; the transcription tests apply the moves below).
+
+**1. The basemap split takes every freeway road along a removed line.** Two defects had one cause:
+the split moved only listed ids and `highway` features carrying the phase's `ref`. An `I 80`
+feature along US-101 (`35184403218590`, about 1.1 km at z15, along Vermont St from Division St
+south) was never moved and still drew after `us101-interchange` and `us101-james-lick`; the Basemap
+ids table's reason for dropping it ("between the interchange and 8th St ... clipped there by its
+ref") was wrong: it runs along US-101 south of the interchange, and only its northern 120 m lie in
+`i80-rincon`'s corridor.
+And ref-less ramps (`motorway_link`) of every removed stretch stayed, among them the Harrison St
+off-ramp loop (`35184399860900`, CNN `19374000`) and the ramps listed under Basemap ids as "not in
+the candidates". The fix is a rule in the tiles split, not more ids: on every page zoom, every
+freeway road (protomaps `kind` `highway`, or any link) inside a phase's 25 m corridor that runs
+along one of the phase's CNN lines (within 25 m, directions within 45°: `LC.basemapParallelDeg`)
+moves to `roads_lc` with that phase, whatever its `ref`. A road that only crosses the corridor
+stays. A part nearer a kept segment's CNN line than a removed one stays, and a road whose refs
+only kept segments carry (`I 280`, `CA 1`) never moves unless listed, so I-280 keeps the pieces
+where the removed US-101 connectors merge into it. Listed ids still move inside the corridor
+whatever their direction. `basemap-ids.json` is unchanged: no id is added or dropped.
+
+**2. US-101 is cut at the Alemany interchange.** `19222002` (northbound US-101 from the Alemany
+off-ramp at (−122.40375, 37.73009) to (−122.40797, 37.73862)) moves to the kept `us101-south`.
+Northbound US-101 now ends where the removed `19221000` and the removed on-ramp `19200000` meet,
+about 350 m north of the I-280 crossing; southbound still begins at (−122.40672, 37.73497), at the
+crossing. Kept, `19222002` leads to no exit north of the Alemany off-ramp once `19221000` is gone;
+traffic is not modelled, and nothing but freeway land depends on it.
+
+#### CNN moves
+
+| CNN        | From             | To            | Reason                                                                                   |
+| ---------- | ---------------- | ------------- | ---------------------------------------------------------------------------------------- |
+| `19222002` | `us101-bayshore` | `us101-south` | Northbound US-101 through the Alemany interchange: the owner's cut is at the interchange |
+
+**3. Six `us101-bayshore` lots move to the kept list.** With `19222002` kept, rule 2 of Freeway
+land (within 30 m of a kept freeway, at least half within 60 m of it) puts six of the segment's
+`in` lots on the kept `us101-south` list, as for the ten that moved there in the draft. `npm run
+pipeline -- lesscars-freeway-land` over the amended catalog (dataset `2026-11-02-39fbf039`)
+moves no `in` lot's nearest segment; three `out` lots already listed on `us101-south` (`5437002`,
+`5438001`, `5375028`) now have it as their nearest segment, which changes no file. Distances and
+shares are to `19222002`'s CNN line, on parcel outlines in EPSG:7131.
+
+#### Parcel moves
+
+| Parcel    | From             | To            | Area m² | FZP yield today | Reason                                                                                                                                     |
+| --------- | ---------------- | ------------- | ------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `5692045` | `us101-bayshore` | `us101-south` | 6,894   | 220             | Beside the kept US-101 (us101-south, CNN 19222002, 0 m; 73% within 60 m of it): kept freeway land is never freed; moves to us101-south     |
+| `5607047` | `us101-bayshore` | `us101-south` | 715     | 41              | Beside the kept US-101 (us101-south, CNN 19222002, 25.8 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south |
+| `5693041` | `us101-bayshore` | `us101-south` | 647     | 20              | Beside the kept US-101 (us101-south, CNN 19222002, 26.4 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south |
+| `5693038` | `us101-bayshore` | `us101-south` | 121     | 3               | Beside the kept US-101 (us101-south, CNN 19222002, 23.7 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south |
+| `5693040` | `us101-bayshore` | `us101-south` | 53      | 1               | Beside the kept US-101 (us101-south, CNN 19222002, 21.4 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south |
+| `5607043` | `us101-bayshore` | `us101-south` | 34      | 0               | Beside the kept US-101 (us101-south, CNN 19222002, 26.7 m; 100% within 60 m of it): kept freeway land is never freed; moves to us101-south |
+
+**4. Totals amended.** `us101-bayshore`: 14 CNNs → 13; **32 in, 8.73 ha, FZP yield removed 2,188
+→ 26 in, 7.88 ha, 1,903**; its `excluded` list is unchanged. `us101-south`: 28 CNNs → 29; 62
+listed, 19.18 ha, 3,560 FZP homes → 68 listed, 20.02 ha, 3,845. All kept lists: 438 lots, 85.06
+ha, 24,267 FZP homes → 444 lots, 85.91 ha, 24,552. The `us101-bayshore` phase's `segments` and
+`freewayLand.parcels` in `plan.json` follow the amended catalog (13 CNNs, 26 parcels); its dates,
+dependencies and `excluded` rows are unchanged. The freed-land and homes figures of the first v1.1
+build (`docs/dev/lesscars.md`, "v1.1 live build") predate these errata.
+
 ## Appendix A: plan.json fields
 
 `schema: 1`, `id: "lesscars-v1"`, `label: "Fewer cars, v1"`. Field names below are exactly Task 2's.
