@@ -47,6 +47,8 @@ type Pt = [number, number];
 const EARTH_M = 2 * Math.PI * 6_378_137;
 /** Step of the along test inside a corridor, metres (at least one tile unit). */
 const STEP_M = 2;
+/** A kept road may stray nearer a removed line for at most this and keep the stretch, metres. */
+const STRAY_MAX_M = 30;
 type Edge = [number, number, number, number]; // u0, v0, u1, v1
 type Geometry = ReturnType<VectorTileFeatureLike['loadGeometry']>;
 
@@ -169,12 +171,18 @@ interface Along {
   step: number; // tile units
 }
 
+/** A run label: a step a kept line wins (it stays, and counts as the kept side). */
+const KEPT_SIDE = -2;
+/** A run label: a step inside a corridor along no line, removed or kept (it stays). */
+const ALONG_NONE = -3;
+
 /**
  * Relabels a run inside a corridor step by step: a step goes to the phase, among those whose
  * corridor holds it, with the nearest removed line along it, unless a kept freeway line along it
- * is nearer (then -1, it stays). A step along no removed line goes to the first phase listing the
- * feature whose corridor holds it, only when no kept line runs along it; else -1. Vertices are
- * kept, and points are added only where the label changes.
+ * is nearer (then KEPT_SIDE: it stays). A step along no removed line goes to the first phase
+ * listing the feature whose corridor holds it, only when no kept line runs along it (else
+ * KEPT_SIDE when one does, ALONG_NONE when none). Vertices are kept, and points are added only
+ * where the label changes.
  */
 function refineRun(
   pts: Pt[],
@@ -193,8 +201,9 @@ function refineRun(
       if (firstListed < 0 && listed(ph)) firstListed = ph.index;
     }
     const dKeep = alongDist(p, ux, uy, along.keep, along.band, along.cosT);
-    if (best >= 0) return bestD <= dKeep ? best : -1;
-    return dKeep === Infinity ? firstListed : -1;
+    if (best >= 0) return bestD <= dKeep ? best : KEPT_SIDE;
+    if (dKeep < Infinity) return KEPT_SIDE;
+    return firstListed >= 0 ? firstListed : ALONG_NONE;
   };
   const out: { label: number; pts: Pt[] }[] = [];
   for (let i = 1; i < pts.length; i++) {
@@ -217,6 +226,38 @@ function refineRun(
     out.at(-1)!.pts.push(b);
   }
   return out;
+}
+
+/**
+ * A kept road that strays nearer a removed line: a moving run with the kept side on both ends
+ * (a kept road drawn beside a removed one, with a shared ref) becomes the kept side too, when it
+ * is at most `maxLen` long (tile units). A moving run at an end of the line, next to a part
+ * outside the corridor (a merge past the cut), or longer (a removed ramp merged with kept ones
+ * at low zoom) keeps its label.
+ */
+function keepStrays(
+  runs: { label: number; pts: Pt[] }[],
+  maxLen: number
+): { label: number; pts: Pt[] }[] {
+  const length = (pts: Pt[]) =>
+    pts.reduce(
+      (t, p, i) => (i === 0 ? 0 : t + Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1])),
+      0
+    );
+  /** The label of the nearest run before (dir -1) or after (dir 1) i that runs along a line. */
+  const neighbour = (i: number, dir: number) => {
+    for (let j = i + dir; j >= 0 && j < runs.length; j += dir)
+      if (runs[j].label !== ALONG_NONE) return runs[j].label;
+    return undefined;
+  };
+  return runs.map((r, i) =>
+    r.label >= 0 &&
+    neighbour(i, -1) === KEPT_SIDE &&
+    neighbour(i, 1) === KEPT_SIDE &&
+    length(r.pts) <= maxLen
+      ? { ...r, label: KEPT_SIDE }
+      : r
+  );
 }
 
 /** Consecutive runs with one label joined (each run starts where the one before ends). */
@@ -401,13 +442,18 @@ export function splitRoadsTile(
     }
     const outside: { x: number; y: number }[][] = [];
     const byPhase = new Map<number, { x: number; y: number }[][]>();
+    const unlisted = !cands.some(listedIn);
     for (const part of f.loadGeometry()) {
       const line = part.map((p) => [p.x, p.y] as Pt);
       // Corridor runs first (exact cuts at its edges), then each inside run step by step.
-      const runs = runsOf(line, cands).flatMap((r) =>
-        r.label < 0 ? [r] : refineRun(r.pts, cands, listedIn, along)
+      let runs = joined(
+        runsOf(line, cands).flatMap((r) =>
+          r.label < 0 ? [r] : refineRun(r.pts, cands, listedIn, along)
+        )
       );
-      for (const run of joined(runs)) {
+      // A kept road with a shared ref keeps the stretches where it strays nearer a removed line.
+      if (unlisted) runs = joined(keepStrays(runs, STRAY_MAX_M / mPerUnit));
+      for (const run of joined(runs.map((r) => ({ ...r, label: Math.max(r.label, -1) })))) {
         const pts = rounded(run.pts);
         if (pts === null) continue;
         if (run.label < 0) outside.push(pts);

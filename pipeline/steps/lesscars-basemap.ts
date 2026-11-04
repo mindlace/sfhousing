@@ -6,7 +6,7 @@
 // writes the curated basemap-ids.json.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { VectorTile } from '@mapbox/vector-tile';
+import { VectorTile, type VectorTileLayer } from '@mapbox/vector-tile';
 import Pbf from 'pbf';
 import { PMTiles } from 'pmtiles';
 import { LC, LESSCARS_BASEMAP_IDS_JSON, LESSCARS_FREEWAY_LAND_JSON } from '../lesscars-config';
@@ -26,6 +26,7 @@ import {
   splitRoadsTile,
   tileSegs,
   world,
+  type Seg,
   type SplitPhase
 } from '../lib/lesscars/basemap-split';
 import { NodeFileSource } from '../lib/pmtiles-file';
@@ -60,11 +61,21 @@ export interface SplitReport {
   rows: SplitRow[];
   /** Freeway-road metres left in `roads` along a removed line, nearer it than any kept line. */
   leftM: { project: string; z: number; id: number; ref: string | null; m: number }[];
-  /** `roads_lc` metres along a kept line, nearer it than any removed line: a kept piece moved. */
-  keptMovedM: { project: string; z: number; id: number; ref: string | null; m: number }[];
+  /**
+   * Kept coverage lost: per kept segment and zoom, the metres of its CNN lines that a freeway road
+   * in `roads` drew within COVER_M before the split and none does after (a kept road hidden). It
+   * does not use the split rule's comparisons, so a kept road drawn nearer a removed line shows.
+   */
+  keptLostM: { segment: string; z: number; m: number }[];
 }
 
 const CHECK_M = 8;
+/** A kept CNN line point is drawn when a freeway road lies within this, metres (any direction). */
+export const COVER_M = 15;
+/** The --split report fails when a kept segment loses more coverage than this at a zoom, metres. */
+export const KEPT_LOSS_MAX_M = 30;
+/** Sampling step along a kept CNN line for the coverage measure, metres. */
+const COVER_STEP_M = 4;
 const EARTH_M = 2 * Math.PI * 6_378_137;
 const tileXOf = (lng: number, z: number) => Math.floor(((lng + 180) / 360) * 2 ** z);
 const tileYOf = (lat: number, z: number) => {
@@ -75,16 +86,19 @@ const tileYOf = (lat: number, z: number) => {
 /**
  * Runs the tiles split (splitRoadsTile, as `writeBasemap` does) over the raw basemap's tiles near
  * the phases' corridors at BASEMAP_ZOOMS and measures, per phase: the features moved to
- * `roads_lc`; freeway roads left in `roads` along a removed line; and moved pieces along a kept
- * line. Lengths count each segment in the tile holding its midpoint, so tile buffers count once.
+ * `roads_lc`; freeway roads left in `roads` along a removed line; and, per kept segment, the
+ * coverage of its CNN lines the split takes away (`keptLostM`). Lengths count each segment in the
+ * tile holding its midpoint, so tile buffers count once.
  */
 export async function splitReport(a: {
   pmtiles: string;
   phases: SplitPhase[];
-  keep: [number, number][][];
+  /** The kept catalog segments with their CNN lines. */
+  kept: { id: string; lines: [number, number][][] }[];
   keepRefs?: string[];
   checkM?: number;
 }): Promise<SplitReport> {
+  const keepLines = a.kept.flatMap((k) => k.lines);
   const checkM = a.checkM ?? CHECK_M;
   const pm = new PMTiles(new NodeFileSource(a.pmtiles));
   const pts = a.phases.flatMap((p) => p.corridor.flat());
@@ -96,7 +110,7 @@ export async function splitReport(a: {
   ];
   const rows = new Map<string, SplitRow>();
   const left = new Map<string, SplitReport['leftM'][number]>();
-  const keptMoved = new Map<string, SplitReport['keptMovedM'][number]>();
+  const keptLost = new Map<string, SplitReport['keptLostM'][number]>();
   const cosT = Math.cos((LC.basemapParallelDeg * Math.PI) / 180);
   const add = <T extends { m: number }>(m: Map<string, T>, k: string, v: Omit<T, 'm'>, d: number) =>
     m.set(k, { ...(v as T), m: (m.get(k)?.m ?? 0) + d });
@@ -106,8 +120,9 @@ export async function splitReport(a: {
       for (let y = tileYOf(n, z); y <= tileYOf(s, z); y++) {
         const t = await pm.getZxy(z, x, y);
         if (!t) continue;
-        const out = splitRoadsTile(new Uint8Array(t.data), z, x, y, a.phases, clip, {
-          keep: a.keep,
+        const raw = new Uint8Array(t.data);
+        const out = splitRoadsTile(raw, z, x, y, a.phases, clip, {
+          keep: keepLines,
           keepRefs: a.keepRefs ?? []
         });
         if (out === null) continue;
@@ -126,7 +141,51 @@ export async function splitReport(a: {
             band
           );
         const removed = a.phases.map((p) => ({ project: p.projectId, segs: segsOf(p.lines) }));
-        const kept = segsOf(a.keep);
+        const kept = segsOf(keepLines);
+        // Kept coverage: sample each kept segment's lines; a point is drawn when a freeway road
+        // of `roads` lies within COVER_M of it, in any direction (cos threshold 0).
+        const coverBand = COVER_M / mPerUnit;
+        const roadSegs = (layer: VectorTileLayer | undefined) => {
+          const segs: Seg[] = [];
+          for (let i = 0; i < (layer?.length ?? 0); i++) {
+            const f = layer!.feature(i);
+            if (f.type !== 2 || !freewayRoad(f.properties)) continue;
+            for (const part of f.loadGeometry())
+              for (let k = 1; k < part.length; k++) {
+                const [p, q] = [part[k - 1], part[k]];
+                const len = Math.hypot(q.x - p.x, q.y - p.y);
+                if (len > 0)
+                  segs.push({
+                    a: [p.x, p.y],
+                    b: [q.x, q.y],
+                    ux: (q.x - p.x) / len,
+                    uy: (q.y - p.y) / len
+                  });
+              }
+          }
+          return segs;
+        };
+        const before = roadSegs(new VectorTile(new Pbf(raw)).layers.roads);
+        const after = roadSegs(vt.layers.roads);
+        const stepU = COVER_STEP_M / mPerUnit;
+        for (const k of a.kept)
+          for (const sg of segsOf(k.lines)) {
+            const len = Math.hypot(sg.b[0] - sg.a[0], sg.b[1] - sg.a[1]);
+            const steps = Math.max(1, Math.ceil(len / stepU));
+            for (let j = 0; j < steps; j++) {
+              const t = (j + 0.5) / steps;
+              const p: Pt = [sg.a[0] + t * (sg.b[0] - sg.a[0]), sg.a[1] + t * (sg.b[1] - sg.a[1])];
+              if (p[0] < 0 || p[0] >= extent || p[1] < 0 || p[1] >= extent) continue;
+              if (alongDist(p, 1, 0, before, coverBand, 0) === Infinity) continue;
+              if (alongDist(p, 1, 0, after, coverBand, 0) !== Infinity) continue;
+              const key = `${k.id} ${z}`;
+              keptLost.set(key, {
+                segment: k.id,
+                z,
+                m: (keptLost.get(key)?.m ?? 0) + (len / steps) * mPerUnit
+              });
+            }
+          }
         /** The removed line along a piece nearest it (within checkM), and its distance. */
         const nearestRemoved = (mid: Pt, u: Pt) => {
           let best: { project: string | null; d: number } = { project: null, d: Infinity };
@@ -171,9 +230,6 @@ export async function splitReport(a: {
           };
           row.movedM[z] = (row.movedM[z] ?? 0) + m;
           rows.set(key, row);
-          const dKeep = alongDist(mid, u[0], u[1], kept, band, cosT);
-          if (dKeep < nearestRemoved(mid, u).d)
-            add(keptMoved, `${project} ${z} ${id}`, { project, z, id, ref: str(props.ref) }, m);
         });
         visit('roads', (props, id, mid, u, m) => {
           // a road with only kept-only refs (I-280) is a kept freeway, never left behind
@@ -196,7 +252,9 @@ export async function splitReport(a: {
   return {
     rows: [...rows.values()].sort(byId),
     leftM: [...left.values()].sort((x, y) => byId(x, y) || x.z - y.z),
-    keptMovedM: [...keptMoved.values()].sort((x, y) => byId(x, y) || x.z - y.z)
+    keptLostM: [...keptLost.values()].sort((x, y) =>
+      x.segment === y.segment ? x.z - y.z : x.segment < y.segment ? -1 : 1
+    )
   };
 }
 
@@ -247,7 +305,8 @@ export async function lesscarsBasemap(a: {
  * The split report: the phases of basemap-ids.json with their catalog segments' CNN lines and the
  * kept segments' lines, split over `pmtiles` (the raw basemap: a built basemap.pmtiles is already
  * split). Prints, per phase, every feature moved to `roads_lc` (id, kind, ref, metres per zoom),
- * then the freeway roads left along a removed line and the moved pieces along a kept line.
+ * then the freeway roads left along a removed line and the kept coverage each kept segment loses
+ * per zoom. Exits 1 (FAIL lines) when a segment loses more than KEPT_LOSS_MAX_M at a zoom.
  */
 async function split(a: Parameters<typeof lesscarsBasemap>[0]): Promise<number> {
   if (!a.lockPath || !a.rawDir) {
@@ -290,9 +349,11 @@ async function split(a: Parameters<typeof lesscarsBasemap>[0]): Promise<number> 
   } finally {
     db.close();
   }
-  const keep = linesOfSegs(catalog.segments.filter((s) => s.removedBy === null));
+  const kept = catalog.segments
+    .filter((s) => s.removedBy === null)
+    .map((s) => ({ id: s.id, lines: linesOfSegs([s]) }));
   const keepRefs = keptOnlyRefs(catalog.segments);
-  const r = await splitReport({ pmtiles: a.pmtiles, phases, keep, keepRefs });
+  const r = await splitReport({ pmtiles: a.pmtiles, phases, kept, keepRefs });
   console.log(`kept-only refs (never moved unless listed): ${keepRefs.join(', ') || 'none'}`);
   const zs = BASEMAP_ZOOMS.map((z) => `z${z}`).join(' ');
   for (const p of phases) {
@@ -306,15 +367,28 @@ async function split(a: Parameters<typeof lesscarsBasemap>[0]): Promise<number> 
   console.log(`\nfreeway roads left in roads along a removed line (>= 1 m):`);
   for (const x of r.leftM.filter((y) => y.m >= 1))
     console.log(`  ${x.project} z${x.z} ${x.id} ${x.ref ?? '-'} ${Math.round(x.m)} m`);
-  console.log(`\nroads_lc pieces along a kept line (>= 1 m):`);
-  for (const x of r.keptMovedM.filter((y) => y.m >= 1))
-    console.log(`  ${x.project} z${x.z} ${x.id} ${x.ref ?? '-'} ${Math.round(x.m)} m`);
   const keptRef = (ref: string | null) =>
     ref !== null && ref.split(';').some((t) => keepRefs.includes(t.trim()));
   console.log(`\nroads_lc features with a kept-only ref token:`);
   for (const row of r.rows.filter((x) => keptRef(x.ref)))
     console.log(`  ${row.project} ${row.id} ${row.ref}`);
-  return 0;
+  console.log(
+    `\nkept coverage lost (kept CNN line metres drawn within ${COVER_M} m before the split, ` +
+      `not after; limit ${KEPT_LOSS_MAX_M} m per segment and zoom):`
+  );
+  for (const k of kept) {
+    const lost = BASEMAP_ZOOMS.map(
+      (z) => r.keptLostM.find((x) => x.segment === k.id && x.z === z)?.m ?? 0
+    );
+    console.log(
+      `  ${k.id} | ${lost.map((m, i) => `z${BASEMAP_ZOOMS[i]} ${Math.round(m)}`).join(' ')}`
+    );
+  }
+  const over = r.keptLostM.filter((x) => x.m > KEPT_LOSS_MAX_M);
+  for (const x of over)
+    console.log(`FAIL: ${x.segment} loses ${Math.round(x.m)} m of kept coverage at z${x.z}`);
+  console.log(over.length === 0 ? 'kept coverage: ok' : `kept coverage: FAIL (${over.length})`);
+  return over.length === 0 ? 0 : 1;
 }
 
 /** Prettier's JSON layout (the enrichment JSON is prettier-checked). */

@@ -126,12 +126,12 @@ describe('splitReport', () => {
     } finally {
       db.close();
     }
-    const r = await splitReport({ pmtiles: MINI_BASEMAP, phases, keep: [] });
+    const r = await splitReport({ pmtiles: MINI_BASEMAP, phases, kept: [] });
     const row = r.rows.find((x) => x.id === FIXTURE_IDS[0]);
     expect(row).toMatchObject({ project: 'hwy' });
     expect(Object.keys(row!.movedM).map(Number)).toEqual([14, 15]);
     expect(row!.movedM[15]).toBeGreaterThan(10);
-    expect(r.keptMovedM).toEqual([]);
+    expect(r.keptLostM).toEqual([]);
   });
 });
 

@@ -368,6 +368,44 @@ describe('splitRoadsTile: every freeway road along a removed line', () => {
     expect(out.roads[0].geometry).toEqual(keptSide.geometry);
   });
 
+  it('a kept road with a shared ref keeps a short stretch where it strays nearer a removed line', () => {
+    // A kept US 101 carriageway beside a removed one (kept CNN line at v 2012, removed at 2000; a
+    // unit is about 1.9 m here): drawn nearer its own line (v 2009) except for about 10 units
+    // (20 m) where it bends to v 2004, nearer the removed line. The stretch has the kept side on
+    // both ends, so it stays.
+    const keptLine: [number, number][][] = [
+      (
+        [
+          [1000, 2012],
+          [3000, 2012]
+        ] as Uv[]
+      ).map(lngLat)
+    ];
+    const bend = (v0: number, v1: number, to: number): Uv[][] => [
+      [
+        [1200, v0],
+        [1500, v0],
+        [1503, v1],
+        [to, v1],
+        [to + 3, v0],
+        [2800, v0]
+      ]
+    ];
+    expect(
+      run([road(1, 'highway', bend(2009, 2004, 1510), { ref: 'US 101' })], keptLine)
+    ).toBeNull();
+    // A longer stray (300 units, about 570 m) is the removed road, not a stray: it moves.
+    const long = decode(
+      run([road(2, 'highway', bend(2009, 2004, 1800), { ref: 'US 101' })], keptLine)!
+    );
+    expect(lengthOf(long.roads_lc)).toBeCloseTo(297, -1);
+    // A removed carriageway that bends nearer the kept line still moves on its own side.
+    const removed = decode(
+      run([road(3, 'highway', bend(2003, 2008, 1520), { ref: 'US 101' })], keptLine)!
+    );
+    expect(lengthOf(removed.roads_lc)).toBeGreaterThan(1500);
+  });
+
   it('a road whose ref names only kept freeways stays, even nearer a removed line', () => {
     // I-280 where the removed US-101 connectors merge into it at Alemany (35184399703420): the
     // connector's CNN line can lie nearer the drawn I-280 than I-280's own line.

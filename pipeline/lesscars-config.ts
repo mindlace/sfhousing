@@ -33,7 +33,10 @@ export const LC = {
   basemapMinShare: 0.9,
   /** Basemap zooms where a highway feature spans the cut, measured by `lesscars-basemap`. */
   basemapClipZooms: [11, 12, 13, 14, 15] as number[],
-  /** A basemap road runs along a removed or kept line when their directions differ by at most this, degrees. */
+  /**
+   * A basemap road runs along a removed or kept line when their directions differ by at most
+   * this, degrees.
+   */
   basemapParallelDeg: 45,
   /** Freeway land (spec "My call"): a parcel within this of a segment's streets is a candidate, metres. */
   freewayBandM: 60,

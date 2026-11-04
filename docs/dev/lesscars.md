@@ -626,7 +626,11 @@ Recorded as errata in `docs/lesscars/plan-v1.md` ("Errata from the live check (2
   `us101-interchange` (about 970 m at every zoom) and `i80-rincon` (its northern 115 m); the
   Harrison St loop `35184399860900` moves with `i80-rincon` (485 m at z15); the ramps above move
   with their phases. Freeway roads left along a removed line: at most 21 m per feature and zoom,
-  at ramp ends. Moved pieces along a kept line: 3 m. No feature with ref `I 280` or `CA 1` moves.
+  at ramp ends and crossings. Kept coverage lost (kept CNN line metres a freeway road drew within
+  15 m before the split and none after, measured apart from the rule): at most 25 m per segment
+  and zoom (`i80-bay-bridge` at z11, at its shared end with the removed I-80; `us101-south` 11 to
+  15 m near the Alemany cut), under the 30 m limit; I-280 and the Presidio segments lose none.
+  No feature with ref `I 280` or `CA 1` moves.
 - **US-101 is cut at the Alemany interchange:** `19222002` moves to the kept `us101-south` with
   six lots of `us101-bayshore` (285 FZP homes, 0.85 ha). After the split, the removed US-101 of
   `us101-bayshore` starts at lat 37.73497 (the southbound cut at the I-280 crossing) at z11, z13
@@ -758,7 +762,11 @@ the `roads` layer:
   crosses the corridor stays; a listed id moves in that case unless a kept line runs along it. An
   unlisted road whose `ref` tokens are all refs only kept segments carry (`keptOnlyRefs`: `I 280`,
   `CA 1` on the live catalog) is never clipped, so I-280 keeps the pieces where the removed
-  US-101 connectors merge into it;
+  US-101 connectors merge into it. An unlisted road's stretch that would move but has the kept
+  side (a step a kept line wins) on both ends, skipping steps along no line, stays when it is at
+  most 30 m long (`STRAY_MAX_M`): a kept US 101 or I 80 road drawn nearer a removed line for a
+  short way is not hidden. A longer stretch (a removed ramp merged with kept ones at low zoom) or
+  one at the end of the line or next to a part outside the corridor (a merge past the cut) moves;
 - the moved pieces go to source layer `roads_lc`, with the feature's id and properties plus
   `lc_project`;
 - the other pieces stay in `roads` with the same id and properties. A feature is never moved
@@ -782,8 +790,14 @@ It reads the phases of `basemap-ids.json` with their catalog segments' CNN lines
 segments' lines, runs `splitRoadsTile` over the raw locked archive's tiles near the corridors at
 z11 to z15 (a built `basemap.pmtiles` is already split), and prints, per phase, every feature
 moved to `roads_lc` (id, kind, kind_detail, ref, metres per zoom), then the freeway roads left in
-`roads` along a removed line (nearer it than any kept line, within 8 m) and the moved pieces along
-a kept line. Each segment counts once, in the tile holding its midpoint. It takes about 2 s.
+`roads` along a removed line (nearer it than any kept line, within 8 m). Last, per kept catalog
+segment and zoom, the kept coverage lost: each kept segment's CNN lines are sampled every 4 m,
+and a sample is drawn when a freeway road lies within 15 m of it in any direction (`COVER_M`);
+the loss is the metres drawn by the raw tile and not by the split one. This measure does not use
+the rule's own comparisons, so a kept road the rule hides shows here. A segment losing more than
+30 m at a zoom (`KEPT_LOSS_MAX_M`; shared ends with a removed stretch account for up to 25 m)
+prints a `FAIL` line and the command exits 1. Each segment counts once, in the tile holding its
+midpoint. It takes about 2 s.
 
 `plan.json` names the split phases in the optional `basemapHide`
 (`[{ projectId, ids }]`, the phases with lines, in id-list order; absent when there are none).
