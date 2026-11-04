@@ -669,8 +669,12 @@ describe('the live plan (plan-v1 Appendix A plus the v1.1 section)', () => {
   describe('v1.1', () => {
     const byId = (id: string) => projectOf(plan, id);
     const phases = plan.projects.filter(
-      (p): p is Extract<PlanProject, { kind: 'highway-truncation' }> =>
-        p.kind === 'highway-truncation'
+      // the union member's kind is 'highway-truncation' | 'street-removal': extract it, then narrow
+      (
+        p
+      ): p is Extract<PlanProject, { kind: 'highway-truncation' | 'street-removal' }> & {
+        kind: 'highway-truncation';
+      } => p.kind === 'highway-truncation'
     );
     const sched = schedulePlan(plan);
     const t = (id: string) => sched.times.get(id)!;
