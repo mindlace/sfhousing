@@ -1407,7 +1407,10 @@ of that green (`3764056`, `3764064`, `3765714`, `3765715`; Freeway land, `i80-so
 names one parcel. The two large ones are `3764064` and `3765715` (10,625 m²). `3764064` takes the
 garage because about half of it lies under or against the kept Bay Bridge decks and ramps, where a
 parking structure fits better than homes; `3765715` (27% under the kept mainline) is freed for
-homes. The other green parcels stay with the kept bridge: `3766010` (63% within 12 m of the
+homes. **Known overstatement:** `3765715` and `3764056` are freed whole although about 27% and
+28% of them lie under the kept Bay Bridge deck, so the plan overstates their room for homes by up
+to about 210 homes (27% of 627 plus 28% of 136; the engine frees whole parcels only). The other
+green parcels stay with the kept bridge: `3766010` (63% within 12 m of the
 mainline), `3764065` (75% under kept structures), the Rincon Hill Dog Park `3766011` (rule 1) and
 `3764066` west of Rincon St, which holds the ramp's loop but lies mostly under the decks and the
 Sterling St entrance.
@@ -1628,6 +1631,20 @@ mainline, and within 30 m of any kept line (mainline or ramp).
 and are removed (`excluded` in the draft file with the reason above). The lots below the 25 were
 not checked; the Caltrain corridor beside I-280 north is where more such lots are likely. The four
 Rincon Hill parcels are freeway land. Nothing in the check changes the plan beyond the removals.
+
+**Rail-land pass over the 438 kept lots (2026-11-03).** The three removals were rail land, so
+every kept lot was screened for the same fault. Method: for each lot, the distance to the
+Caltrain track lines (the agency's GTFS shapes, tier 0), the share within 15 m of them, and the
+share within 12 m and 30 m of the freeway CNN lines, measured on parcel outlines in EPSG:7131; the
+three removed lots set the signature (little or none of the lot within 12 m of a freeway line,
+with the tracks on or beside it, or a yard). Lots with the tracks within 15 m and the freeway
+within 30 m, and every kept lot with less than 60% within 30 m of a freeway line and tracks
+within 30 m, were looked at on Esri imagery: `4226014`, `4349012`, `4062004`, `5480001` and `5471027`
+are verges, ramp loops and slopes inside or beside the freeway right-of-way, not track, and stay
+`in`. No kept lot has the removed lots' signature, so none is dropped and the kept totals above
+stand. Limits: the tracks come from GTFS shapes, which omit yards and freight spurs; those are
+caught only by rule 1's OSM railway test, so a spur lot below 25% OSM rail and away from the
+freeway lines would pass both. The lots below the 25 were otherwise not checked by eye.
 
 **Kept-list totals, corrected:**
 
