@@ -593,7 +593,7 @@ console or network errors.
   21). There is no `garage-south` or `garage-alemany`.
 - **Errors:** none in the console or the network.
 
-Three map problems were found, all in the tiles split. They are reported to the owner, not fixed:
+Three map problems were found. They were fixed afterwards ("Fixes after the live check", below):
 
 - **Leftover mainline sliver:** a `roads` feature with ref `I 80` (`35184403218590`, about 550 m,
   lng −122.4058 to −122.4049, lat 37.7654 to 37.7704, along Vermont St from Division St to 16th
@@ -613,6 +613,26 @@ Three map problems were found, all in the tiles split. They are reported to the 
   crossing, and the kept freeway starts there, joined to I-280 only by the left-over ramps. There
   is no sliver of the removed mainline. At Rincon Hill the Bay Bridge still ends cleanly at
   Harrison St.
+
+#### Fixes after the live check
+
+Recorded as errata in `docs/lesscars/plan-v1.md` ("Errata from the live check (2026-11-03)"):
+
+- **The split takes every freeway road along a removed line** ("The split: `roads_lc`", below):
+  any `highway` or link feature, whatever its ref, inside a corridor and running along the phase's
+  CNN lines moves; parts nearer a kept segment's line, and roads whose refs only kept segments
+  carry (`I 280`, `CA 1`), stay. `basemap-ids.json` is unchanged. `lesscars-basemap --split` on
+  the locked archive (sha256 `a6a1acc8…`) after the fix: `35184403218590` moves with
+  `us101-interchange` (about 970 m at every zoom) and `i80-rincon` (its northern 115 m); the
+  Harrison St loop `35184399860900` moves with `i80-rincon` (485 m at z15); the ramps above move
+  with their phases. Freeway roads left along a removed line: at most 21 m per feature and zoom,
+  at ramp ends. Moved pieces along a kept line: 3 m. No feature with ref `I 280` or `CA 1` moves.
+- **US-101 is cut at the Alemany interchange:** `19222002` moves to the kept `us101-south` with
+  six lots of `us101-bayshore` (285 FZP homes, 0.85 ha). After the split, the removed US-101 of
+  `us101-bayshore` starts at lat 37.73497 (the southbound cut at the I-280 crossing) at z11, z13
+  and z15, and the kept US-101 reaches lat 37.73862 (the north end of `19222002`).
+
+The figures of "v1.1 live build" above predate these fixes; the next build replaces them.
 
 ## Freeway land
 
@@ -727,14 +747,23 @@ re-encoded (`rewritePmtiles`, `pipeline/lib/pmtiles-rewrite.ts`: an MBTiles file
 the `roads` layer:
 
 - every listed id, at every zoom, whatever its kind, and on `LC.basemapClipZooms` also every
-  unlisted `kind = 'highway'` feature whose `ref` has the phase's `ref` as one of its
-  `;`-separated tokens, is clipped at the corridor: each line is cut where it crosses a corridor
-  edge, and a piece is inside when its midpoint is (tile units);
-- the inside pieces move to source layer `roads_lc`, with the feature's id and properties plus
-  `lc_project` (the phase's project; the first phase whose corridor holds a piece takes it);
-- the outside pieces stay in `roads` with the same id and properties. A feature is never moved
+  unlisted freeway road (`kind = 'highway'`, or any link: `is_link`, whatever its `ref` or none)
+  is clipped at the corridor: each line is cut where it crosses a corridor edge, and a piece is
+  inside when its midpoint is (tile units);
+- each inside piece is then labelled in 2 m steps. A step moves to the phase, among those whose
+  corridor holds it, with the nearest of its CNN lines that the step runs along: within
+  `LC.basemapBandM` and with directions within `LC.basemapParallelDeg` (45°). A step stays when a
+  kept freeway's CNN line it runs along is nearer (the catalog's segments with `removedBy` null,
+  `basemapKeep` from the step), and when it runs along no removed line, so a road that only
+  crosses the corridor stays; a listed id moves in that case unless a kept line runs along it. An
+  unlisted road whose `ref` tokens are all refs only kept segments carry (`keptOnlyRefs`: `I 280`,
+  `CA 1` on the live catalog) is never clipped, so I-280 keeps the pieces where the removed
+  US-101 connectors merge into it;
+- the moved pieces go to source layer `roads_lc`, with the feature's id and properties plus
+  `lc_project`;
+- the other pieces stay in `roads` with the same id and properties. A feature is never moved
   whole, so a low-zoom merge that also covers a kept stretch, or a kept freeway or link that
-  merely crosses the band, keeps its outside part.
+  crosses or continues a removed one, keeps its part.
 
 Other layers and features are re-encoded unchanged; `vector_layers` gains `roads_lc`. Without
 phases (no id list: the live build until Plan B) the archive is copied byte for byte. The count
@@ -742,6 +771,19 @@ phases (no id list: the live build until Plan B) the archive is copied byte for 
 (Mission Street, a stand-in crossing the mini I-80) exists at z14 and z15 only, and two tiles
 change. The rewrite is deterministic (same bytes across builds); the golden does not compare
 `basemap.pmtiles`.
+
+To see what the split does without a build:
+
+```bash
+npm run pipeline -- lesscars-basemap --split [--pmtiles <raw archive>]
+```
+
+It reads the phases of `basemap-ids.json` with their catalog segments' CNN lines and the kept
+segments' lines, runs `splitRoadsTile` over the raw locked archive's tiles near the corridors at
+z11 to z15 (a built `basemap.pmtiles` is already split), and prints, per phase, every feature
+moved to `roads_lc` (id, kind, kind_detail, ref, metres per zoom), then the freeway roads left in
+`roads` along a removed line (nearer it than any kept line, within 8 m) and the moved pieces along
+a kept line. Each segment counts once, in the tile holding its midpoint. It takes about 2 s.
 
 `plan.json` names the split phases in the optional `basemapHide`
 (`[{ projectId, ids }]`, the phases with lines, in id-list order; absent when there are none).
