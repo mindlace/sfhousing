@@ -26,10 +26,15 @@ Source map:
 
 A plan is JSON (`LessCarsPlan`, schema 1): `id`, `label`, `capacity` rules and `projects`. The
 live plan is `pipeline/enrichment/lesscars/plan.json`, transcribed from the owner-approved
-`docs/lesscars/plan-v1.md` Appendix A (64 projects, the Masonic display);
-`pipeline/test/lesscars-live-plan.test.ts` holds it to the document: it parses Appendix A's tables
-itself, rebuilds the plan from them and `corridors.resolved.json`, and requires `checkPlan` to be
-empty. A change to the plan goes into plan-v1 first, then into plan.json. The fixture plan is
+`docs/lesscars/plan-v1.md`: Appendix A plus the v1.1 section (68 projects: v1's 64 less
+`garage-south`, plus `garage-rincon` and the four freeway phases `us101-interchange`,
+`us101-james-lick`, `us101-bayshore` and `i80-rincon`; `central-freeway-stub` is changed; `street`
+capacity is 7; the Masonic display). Each phase's `segments` are the CNNs of its
+`freeway-land.json` segment and its `freewayLand` is that segment's parcels and exclusions.
+`pipeline/test/lesscars-live-plan.test.ts` holds it to the document: it parses the tables of both
+itself (helpers in `pipeline/test/lesscars-doc.ts`), rebuilds the plan from them, the catalog and
+`corridors.resolved.json`, and requires `checkPlan` to be empty. A change to the plan goes into
+plan-v1 first, then into plan.json. The fixture plan is
 `pipeline/test/fixtures/mini/enrichment/lesscars-plan.json`, one project of most kinds on the mini
 city. Every number in a plan is a `Param`, a `value` with a `Provenance` (tier 0 per-record to 4
 invented, label, sources, method), so the page can show its evidence.

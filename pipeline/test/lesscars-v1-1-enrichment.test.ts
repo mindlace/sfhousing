@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { parseBasemapIds } from '../lib/lesscars/basemap-ids';
 import { parseFreewayLand, type FreewaySegment } from '../lib/lesscars/freeway-land';
 import { LESSCARS_BASEMAP_IDS_JSON, LESSCARS_FREEWAY_LAND_JSON } from '../lesscars-config';
+import { table, under, unTick } from './lesscars-doc';
 
 const ROOT = join(import.meta.dirname, '../..');
 const DOC = readFileSync(join(ROOT, 'docs/lesscars/plan-v1.md'), 'utf8');
@@ -23,35 +24,6 @@ const draft = parseFreewayLand(
   )
 );
 const ids = parseBasemapIds(JSON.parse(readFileSync(LESSCARS_BASEMAP_IDS_JSON.live, 'utf8')));
-
-/** The text under a heading, to the next heading of the same or a higher level. */
-function under(text: string, heading: string): string {
-  const level = heading.match(/^#+/)![0].length;
-  const start = text.indexOf(`\n${heading}\n`);
-  if (start < 0) throw new Error(`no heading ${heading}`);
-  const rest = text.slice(start + heading.length + 2);
-  const next = rest.search(new RegExp(`\\n#{1,${level}} `));
-  return next < 0 ? rest : rest.slice(0, next);
-}
-
-const unTick = (s: string) => s.trim().replace(/^`|`$/g, '');
-
-/** The pipe table in `text`, one record per row keyed by the header cells. */
-function table(text: string): Record<string, string>[] {
-  const lines = text.split('\n').filter((l) => l.startsWith('|'));
-  const cells = (l: string) =>
-    l
-      .replace(/^\|/, '')
-      .replace(/\|$/, '')
-      .split('|')
-      .map((c) => c.trim());
-  if (lines.length === 0) return [];
-  const head = cells(lines[0]);
-  return lines.slice(2).map((l) => {
-    const c = cells(l);
-    return Object.fromEntries(head.map((h, i) => [h, c[i] ?? '']));
-  });
-}
 
 const segmentRows = () => table(under(SECTION, '### Freeway segments'));
 const sectionSegments = () => segmentRows().map((r) => unTick(r['Segment id']));
