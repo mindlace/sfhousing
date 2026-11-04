@@ -9,8 +9,49 @@
       "cnn": ["19204001", "19264001"],
       "removedBy": "central-freeway-stub",
       "curated": "hand",
-      "parcels": [],
-      "excluded": []
+      "parcels": ["3502112", "3503002", "3513024", "3513071", "3513074"],
+      "excluded": [
+        {
+          "parcel": "3502134",
+          "reason": "Residential parcel on the 2025 roll (class A5)"
+        },
+        {
+          "parcel": "3502141",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3502145",
+          "reason": "Residential parcel on the 2025 roll (class Z)"
+        },
+        {
+          "parcel": "3503004",
+          "reason": "McCoppin Hub, a public plaza (OSM park on 93% of the lot)"
+        },
+        {
+          "parcel": "3513023",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3532002",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3532039",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3532040",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3532041",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3532069",
+          "reason": "An industrial property on the 2025 roll (class IX): a standing building or business, not vacant freeway land"
+        }
+      ]
     },
     {
       "id": "us101-interchange",
@@ -38,8 +79,193 @@
       ],
       "removedBy": "us101-interchange",
       "curated": "hand",
-      "parcels": [],
-      "excluded": []
+      "parcels": [
+        "3514028",
+        "3515020",
+        "3522074",
+        "3523005",
+        "3526001",
+        "3527002",
+        "3528003",
+        "3528006",
+        "3529048",
+        "3530045",
+        "3531005",
+        "3531043",
+        "3531045",
+        "3905001",
+        "3906001",
+        "3906002",
+        "3907001",
+        "3907004",
+        "3908001",
+        "3908002",
+        "3908003",
+        "3909001",
+        "3909002",
+        "3909003",
+        "3917001",
+        "3918003",
+        "3959001"
+      ],
+      "excluded": [
+        {
+          "parcel": "3512006",
+          "reason": "Across Mission St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3512010",
+          "reason": "Across Mission St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3515019",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3515021",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3522016",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3522026",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3522027",
+          "reason": "22.9 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3522042",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3522053",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3522060",
+          "reason": "30.3 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3522061",
+          "reason": "37.3 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3523008",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3523013",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3525056",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3526018",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3526020",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3526021",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3528011",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3530001",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3530032",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3530039",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3530042",
+          "reason": "A warehouse property on the 2025 roll (class IW): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3530047",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3530050",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3531013",
+          "reason": "33.4 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3531014",
+          "reason": "41 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3531016",
+          "reason": "A commercial property on the 2025 roll (class CM): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3531019",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3782001A",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3901003",
+          "reason": "A private parking lot (roll PL) beside the retired garage-south site, facing the deck across Division St"
+        },
+        {
+          "parcel": "3901004",
+          "reason": "The retired garage-south site: a private parking lot (roll PL) south of Division St, 12.7 m from the deck; it returns to an ordinary lot (spec)"
+        },
+        {
+          "parcel": "3903004",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3904001",
+          "reason": "15.8 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3905002A",
+          "reason": "An industrial property on the 2025 roll (class IG): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3905012",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3906005",
+          "reason": "An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3910005",
+          "reason": "Across Vermont St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3910006",
+          "reason": "Across Vermont St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3935002",
+          "reason": "San Francisco Fire Station 29 (roll class FIRG), across Vermont St"
+        }
+      ]
     },
     {
       "id": "us101-james-lick",
@@ -67,8 +293,101 @@
       ],
       "removedBy": "us101-james-lick",
       "curated": "hand",
-      "parcels": [],
-      "excluded": []
+      "parcels": [
+        "3975001N",
+        "3976029",
+        "4011019",
+        "4026018",
+        "4076022",
+        "4077001",
+        "4090003",
+        "4091002",
+        "4091003",
+        "4093076",
+        "4139001",
+        "4140002",
+        "4157001",
+        "4202001",
+        "4215001",
+        "4261001",
+        "4277006",
+        "4277006A",
+        "4279029",
+        "4279030",
+        "4279033",
+        "4280027",
+        "4329010",
+        "4329011",
+        "4329012",
+        "4339002C",
+        "4339004",
+        "4339009",
+        "5508001",
+        "5509005",
+        "5510010"
+      ],
+      "excluded": [
+        {
+          "parcel": "4012031",
+          "reason": "Fallen Bridge Park, a named open space (land use OPENSPACE; OSM park)"
+        },
+        {
+          "parcel": "4027001",
+          "reason": "Benches Garden, a community garden (OSM park and garden library on the lot)"
+        },
+        {
+          "parcel": "4029009",
+          "reason": "Downtown High School grounds (OSM school on 94%)"
+        },
+        {
+          "parcel": "4029022",
+          "reason": "Downtown High School (SFUSD; OSM school on 97%; roll class EG)"
+        },
+        {
+          "parcel": "4090002",
+          "reason": "Zuckerberg San Francisco General Hospital campus (OSM hospital on 100%; roll class N1G)"
+        },
+        {
+          "parcel": "4093114",
+          "reason": "Across Vermont St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "4140001",
+          "reason": "Zuckerberg San Francisco General Hospital campus (OSM hospital on 100%; roll class OMD, medical office)"
+        },
+        {
+          "parcel": "4154001",
+          "reason": "Zuckerberg San Francisco General Hospital main campus (OSM hospital on 99%; roll class N1G; 7% in the band)"
+        },
+        {
+          "parcel": "4154002",
+          "reason": "OSM hospital on 39% of the lot"
+        },
+        {
+          "parcel": "4277016",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4279001",
+          "reason": "A fire department property on the 2025 roll (class FIRG): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4280006D",
+          "reason": "24.7 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "4339002A",
+          "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "4339006",
+          "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "4339008",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        }
+      ]
     },
     {
       "id": "us101-bayshore",
@@ -93,13 +412,159 @@
       ],
       "removedBy": "us101-bayshore",
       "curated": "hand",
-      "parcels": [],
-      "excluded": []
+      "parcels": [
+        "5511011",
+        "5512024",
+        "5512025",
+        "5512026",
+        "5512027",
+        "5533049",
+        "5576017",
+        "5596006",
+        "5596010A",
+        "5596011B",
+        "5596012A",
+        "5596013A",
+        "5596017A",
+        "5596017C",
+        "5596017E",
+        "5596044",
+        "5596046",
+        "5596051",
+        "5607043",
+        "5607047",
+        "5636025",
+        "5657050",
+        "5691045",
+        "5692045",
+        "5693037",
+        "5693038",
+        "5693040",
+        "5693041",
+        "5819009",
+        "5819010",
+        "5820034",
+        "5820035"
+      ],
+      "excluded": [
+        {
+          "parcel": "5372011",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5512007A",
+          "reason": "33.1 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5512028",
+          "reason": "A service station property on the 2025 roll (class S): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5533047",
+          "reason": "29.3 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5557002",
+          "reason": "A miscellaneous property on the 2025 roll (class X): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5559002",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5573005",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5577001",
+          "reason": "Across Holladay Ave from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5577002",
+          "reason": "Across Holladay Ave from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5577004",
+          "reason": "Residential parcel on the 2025 roll (class DA)"
+        },
+        {
+          "parcel": "5596001",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5596012",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5596015",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5596039",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5596042",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5596050",
+          "reason": "26.4 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5596052",
+          "reason": "37.9 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5657048",
+          "reason": "32.9 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5691023",
+          "reason": "41.9 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5691024",
+          "reason": "41.3 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5691037",
+          "reason": "39 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5691047",
+          "reason": "40.7 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5693003A",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5693042",
+          "reason": "18.8 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5695020",
+          "reason": "52 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5733A002",
+          "reason": "28.1 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5734002",
+          "reason": "Across Alemany Blvd and Putnam St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5735005",
+          "reason": "Across Alemany Blvd and Putnam St from the freeway: city fabric, not frontage"
+        }
+      ]
     },
     {
       "id": "i80-soma",
       "freeway": "I-80",
-      "label": "I-80 over SoMa, the US-101 interchange to the Rincon Hill ramps",
+      "label": "I-80 over SoMa, the US-101 interchange to the Rincon Hill ramps, and the Harrison St off-ramp",
       "ref": "I 80",
       "cnn": [
         "19355000",
@@ -113,12 +578,14 @@
         "19368000",
         "19369000",
         "19370000",
+        "19374000",
         "19376000",
         "19377000",
         "19378000",
         "19379000",
         "19380000",
         "19381000",
+        "19383000",
         "19384000",
         "19385000",
         "19386000",
@@ -127,8 +594,240 @@
       ],
       "removedBy": "i80-rincon",
       "curated": "hand",
-      "parcels": [],
-      "excluded": []
+      "parcels": [
+        "3758121",
+        "3758126",
+        "3758127",
+        "3758128",
+        "3758129",
+        "3759038",
+        "3759040",
+        "3760002",
+        "3760114",
+        "3760116",
+        "3760117",
+        "3760120",
+        "3760123",
+        "3760124",
+        "3761062",
+        "3761064",
+        "3762004",
+        "3763126",
+        "3764056",
+        "3764064",
+        "3765714",
+        "3765715",
+        "3780014",
+        "3781007",
+        "3782002",
+        "3782004"
+      ],
+      "excluded": [
+        {
+          "parcel": "3752590",
+          "reason": "Across Harrison St and 5Th St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3755014",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3755016",
+          "reason": "A commercial property on the 2025 roll (class CM): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3755021",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3755033",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3755034",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3755137",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3757002",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3757007",
+          "reason": "Across 8Th St and Bryant St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3759001",
+          "reason": "24.1 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3759002",
+          "reason": "16.1 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3759041",
+          "reason": "Across 7Th St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3759045",
+          "reason": "A government industrial property on the 2025 roll (class IXG): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3760014",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3760020",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3760055",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3760059",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3760111",
+          "reason": "16.5 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3760112",
+          "reason": "15.6 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3760121",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3760122",
+          "reason": "15.8 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3760125",
+          "reason": "16.3 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3760126",
+          "reason": "16.2 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3760129",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3761002",
+          "reason": "An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3761063",
+          "reason": "Yerba Buena Dog Park (OSM dog park), a named open space under the deck"
+        },
+        {
+          "parcel": "3762012",
+          "reason": "An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3762014",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3762016",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3762026",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3762037",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3762049",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3762055",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3762058",
+          "reason": "Across Stillman St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3762122",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3762149",
+          "reason": "Across Perry St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3763015C",
+          "reason": "An office property on the 2025 roll (class OCH): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3763018",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3763078",
+          "reason": "Across Perry St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3763079",
+          "reason": "Across Perry St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3763080",
+          "reason": "Across Perry St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3763080A",
+          "reason": "Across Perry St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3763081",
+          "reason": "Across Perry St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3763113",
+          "reason": "35.5 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3763125",
+          "reason": "A commercial property on the 2025 roll (class CM): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3776117",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3776118",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3777055",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3780023",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3780034",
+          "reason": "A garage property on the 2025 roll (class G): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3781011",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        }
+      ]
     },
     {
       "id": "us101-south",
@@ -167,8 +866,268 @@
       ],
       "removedBy": null,
       "curated": "rule",
-      "parcels": [],
-      "excluded": []
+      "parcels": [
+        "4991005D",
+        "4991066",
+        "5017018",
+        "5017020",
+        "5017021",
+        "5037001",
+        "5037025",
+        "5065A006",
+        "5067003A",
+        "5073045",
+        "5372A001",
+        "5373001",
+        "5373003",
+        "5375028",
+        "5402071",
+        "5435040",
+        "5435041",
+        "5436014",
+        "5436015",
+        "5437002",
+        "5438001",
+        "5439028",
+        "5439029",
+        "5447055",
+        "5447056",
+        "5448006",
+        "5448007",
+        "5449001",
+        "5450001",
+        "5451019",
+        "5457036",
+        "5458027",
+        "5458028",
+        "5465026",
+        "5466029",
+        "5466043",
+        "5467021",
+        "5470008",
+        "5471027",
+        "5471028",
+        "5472002",
+        "5473014",
+        "5473016",
+        "5474010",
+        "5474042",
+        "5475010A",
+        "5477006",
+        "5477011",
+        "5478008",
+        "5479001",
+        "5479010",
+        "5480001",
+        "5481010",
+        "5482003",
+        "5483003",
+        "5607044",
+        "5607046",
+        "5694001",
+        "5695021",
+        "5821002",
+        "5821003",
+        "5821004"
+      ],
+      "excluded": [
+        {
+          "parcel": "4968021",
+          "reason": "An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4968037",
+          "reason": "Across Jamestown Ave and 3Rd St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "4968038",
+          "reason": "Across 3Rd St and Jamestown Ave from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "4991051",
+          "reason": "30.9 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5016019",
+          "reason": "Across 3Rd St and Meade Ave and Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5017009A",
+          "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5054A009",
+          "reason": "Across Bayview Park Rd and Hester Ave and Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5054AEASF",
+          "reason": "Across Hester Ave from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5402049",
+          "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5402052",
+          "reason": "A service station property on the 2025 roll (class S): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5402068",
+          "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5402070",
+          "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5436012",
+          "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5449024",
+          "reason": "21.1 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5449025",
+          "reason": "21 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5449027",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5465020",
+          "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5465021",
+          "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5467017C",
+          "reason": "Across Paul Ave from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5469001",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5469002",
+          "reason": "Across Jamestown Ave from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5470002",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5471026",
+          "reason": "Across Key Ave from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5472001",
+          "reason": "OSM garden on 100% of the lot"
+        },
+        {
+          "parcel": "5474030",
+          "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5474041",
+          "reason": "An industrial property on the 2025 roll (class IG): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5476018",
+          "reason": "Across Keith St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5476019",
+          "reason": "Across Keith St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5477004",
+          "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5477012",
+          "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5478003",
+          "reason": "19.6 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5478004",
+          "reason": "19.9 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5478005",
+          "reason": "21.6 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5478006",
+          "reason": "23.7 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5478007",
+          "reason": "26 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5695016",
+          "reason": "Across Industrial St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5695017",
+          "reason": "Across Industrial St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5695023",
+          "reason": "Across Industrial St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5881001",
+          "reason": "A service station property on the 2025 roll (class S): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5881002",
+          "reason": "A service station property on the 2025 roll (class S): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5881003",
+          "reason": "A service station property on the 2025 roll (class S): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5881004",
+          "reason": "A service station property on the 2025 roll (class S): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5881021",
+          "reason": "A service station property on the 2025 roll (class S): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5881022",
+          "reason": "A service station property on the 2025 roll (class S): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5924003",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5924004",
+          "reason": "A fire department property on the 2025 roll (class FIRG): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5925031",
+          "reason": "An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "6172036",
+          "reason": "Across San Bruno Ave from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6173007",
+          "reason": "Across San Bruno Ave from the freeway: city fabric, not frontage"
+        }
+      ]
     },
     {
       "id": "i280-south",
@@ -218,8 +1177,735 @@
       ],
       "removedBy": null,
       "curated": "rule",
-      "parcels": [],
-      "excluded": []
+      "parcels": [
+        "3144A001",
+        "3144A002",
+        "3144A022",
+        "3144A023",
+        "3144A024",
+        "3144A027",
+        "3144A028",
+        "3144A036",
+        "3144B001",
+        "3144B002",
+        "3144B027C",
+        "3144B030",
+        "3144B031",
+        "3144B037",
+        "3144B038",
+        "3144B039",
+        "3144C046",
+        "3144C048",
+        "3154040",
+        "3154044",
+        "3154046",
+        "3154052",
+        "3154053",
+        "3154055",
+        "3154058",
+        "3154059",
+        "3154061",
+        "3155039",
+        "3179014",
+        "3182059",
+        "3184038",
+        "5391002",
+        "5834001",
+        "5835066",
+        "5840029",
+        "5840030",
+        "5841028",
+        "5842061",
+        "5842062",
+        "5846001",
+        "5846013",
+        "5846014",
+        "5846016",
+        "5848023",
+        "5852001",
+        "5853028",
+        "5853047",
+        "5856027",
+        "5866044",
+        "5866045",
+        "5867035",
+        "5867036",
+        "5872068",
+        "5872069",
+        "5873031",
+        "5873032",
+        "5899067",
+        "5899068",
+        "6748058",
+        "6750054",
+        "6750055",
+        "6751047",
+        "6751048",
+        "6752062",
+        "6753067",
+        "6754060",
+        "6754A007",
+        "6754A008",
+        "6754B031",
+        "6754B033",
+        "6755024",
+        "6755025",
+        "6777048",
+        "6777A008",
+        "6780052",
+        "6781047",
+        "6782045",
+        "6782046",
+        "6782047",
+        "6783023",
+        "6784033",
+        "6785035",
+        "6786072",
+        "6792024",
+        "6793023",
+        "6793024",
+        "6793026",
+        "6793028",
+        "6948027",
+        "6948028",
+        "6949009",
+        "6973034",
+        "6973037",
+        "6973038",
+        "7026003",
+        "7026011",
+        "7026012",
+        "7026013",
+        "7039004",
+        "7039B003",
+        "7046009A",
+        "7046018",
+        "7046019",
+        "7046020",
+        "7046021",
+        "7046026",
+        "7063007",
+        "7063021",
+        "7063022",
+        "7063023",
+        "7063024",
+        "7063025",
+        "7063030",
+        "7063032",
+        "7063033",
+        "7063034",
+        "7063042",
+        "7063B019",
+        "7095035",
+        "7102023",
+        "7102026",
+        "7102027",
+        "7111026",
+        "7111028",
+        "7126A006",
+        "7126A007",
+        "7126A008",
+        "7140038",
+        "7146035",
+        "7147004",
+        "7147024",
+        "7147024A",
+        "7147035",
+        "7147038",
+        "7147039",
+        "7147043",
+        "7147045",
+        "7147046",
+        "7147047",
+        "7148041",
+        "7148042",
+        "7151029",
+        "7153001",
+        "7153002",
+        "7153003",
+        "7153004",
+        "7153023",
+        "7153024",
+        "7153025",
+        "7153026",
+        "7153027",
+        "7153028",
+        "7153028A",
+        "7153038",
+        "7153038A",
+        "7153039",
+        "7153040",
+        "7153041",
+        "7153042",
+        "7153044",
+        "7153045",
+        "7153046",
+        "7153048",
+        "7153049",
+        "7153050",
+        "7154001",
+        "7154002",
+        "7154003",
+        "7154004",
+        "7154026",
+        "7154027",
+        "7154028",
+        "7154028A",
+        "7154029",
+        "7154029A",
+        "7154030",
+        "7154031",
+        "7154032",
+        "7154033",
+        "7154034",
+        "7154035",
+        "7154036",
+        "7154037",
+        "7154038",
+        "7154039",
+        "7154039A",
+        "7154040",
+        "7155043",
+        "7155046",
+        "7156033",
+        "7156071",
+        "7156079",
+        "7157008",
+        "7158009",
+        "7174041",
+        "7174041A",
+        "7174058",
+        "7176001",
+        "7176013",
+        "7176014",
+        "7176015",
+        "7176016",
+        "7176017",
+        "7176018",
+        "7176019",
+        "7176020",
+        "7176020A",
+        "7176021",
+        "7176022",
+        "7176023",
+        "7176030",
+        "7176031",
+        "7176032",
+        "7177020",
+        "7177021",
+        "7177022",
+        "7177023",
+        "7177024",
+        "7177025",
+        "7177026",
+        "7177027",
+        "7177028",
+        "7177029",
+        "7177030",
+        "7177031",
+        "7177045",
+        "7177046",
+        "7179025",
+        "7179026"
+      ],
+      "excluded": [
+        {
+          "parcel": "3143053",
+          "reason": "Across Circular Ave from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3144B006",
+          "reason": "25.5 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3144B027A",
+          "reason": "29.1 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3144B027B",
+          "reason": "32.7 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3144B036A",
+          "reason": "28.7 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3144B036B",
+          "reason": "A government industrial property on the 2025 roll (class IXG): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3144C004",
+          "reason": "20.4 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3154064",
+          "reason": "26.3 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3179010",
+          "reason": "City College of San Francisco, Ocean campus (land use CIE; OSM college on 84%); 9% in the band, a school: not freeway land"
+        },
+        {
+          "parcel": "3179011",
+          "reason": "Balboa Park (land use OPENSPACE; OSM park on 96%; Balboa Pool, Ingleside Police Station); 14% in the band, a park: not freeway land"
+        },
+        {
+          "parcel": "3179012",
+          "reason": "OSM park on 72% of the lot"
+        },
+        {
+          "parcel": "5801003",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5817004",
+          "reason": "36.8 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5842048",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5846011",
+          "reason": "25.4 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5853044",
+          "reason": "31 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5855001A",
+          "reason": "Across Rickard St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5886058",
+          "reason": "Across Cambridge St and Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5897039",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5898001",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6745042",
+          "reason": "Across Bosworth St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6745048",
+          "reason": "Across Bosworth St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6745053",
+          "reason": "Across Arlington St and Bosworth St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6745057",
+          "reason": "Across Bosworth St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6745065",
+          "reason": "Across Arlington St and Bosworth St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6745066",
+          "reason": "Across Arlington St and Bosworth St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6745067",
+          "reason": "Across Arlington St and Bosworth St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6745068",
+          "reason": "Across Arlington St and Bosworth St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6745069",
+          "reason": "Across Bosworth St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6747016",
+          "reason": "Across San Jose Ave and San Jose Av Off Ramp from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6750056",
+          "reason": "Across Mirando Way from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6753060",
+          "reason": "Across Still St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6753063",
+          "reason": "Across Bosworth St and San Jose Av On Ramp from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "6755026",
+          "reason": "OSM station Glen Park on the lot"
+        },
+        {
+          "parcel": "6756010",
+          "reason": "Residential parcel on the 2025 roll (class A)"
+        },
+        {
+          "parcel": "6768004",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "6793009",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "6949013",
+          "reason": "OSM station Balboa Park on the lot"
+        },
+        {
+          "parcel": "6974026",
+          "reason": "A miscellaneous property on the 2025 roll (class X): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "7046A023",
+          "reason": "35.7 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7046B024",
+          "reason": "51.6 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7063040",
+          "reason": "33 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7063A019",
+          "reason": "41 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7063B002",
+          "reason": "37.8 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7063B003",
+          "reason": "45.4 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7063B020",
+          "reason": "26.4 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7063B021",
+          "reason": "28.6 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7095B002",
+          "reason": "Open space (land use OPENSPACE)"
+        },
+        {
+          "parcel": "7135016",
+          "reason": "Roll class W is neither public nor a vacant class the rules accept (zoning RH-1)"
+        },
+        {
+          "parcel": "7135018",
+          "reason": "31.8 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7135019",
+          "reason": "31.9 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7135040",
+          "reason": "Roll class W is neither public nor a vacant class the rules accept (zoning RH-1)"
+        },
+        {
+          "parcel": "7135042",
+          "reason": "Roll class W is neither public nor a vacant class the rules accept (zoning RH-1)"
+        },
+        {
+          "parcel": "7135043",
+          "reason": "Roll class W is neither public nor a vacant class the rules accept (zoning RH-1)"
+        },
+        {
+          "parcel": "7135044",
+          "reason": "31.5 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7139001",
+          "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "7139003",
+          "reason": "A service station property on the 2025 roll (class S): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "7139009",
+          "reason": "A garage property on the 2025 roll (class G): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "7139011",
+          "reason": "Across San Jose Ave and Sagamore St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7139A001",
+          "reason": "Across Plymouth Ave and San Jose Ave from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7140035A",
+          "reason": "Across De Wolf St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7147033",
+          "reason": "OSM pitch on 67% of the lot"
+        },
+        {
+          "parcel": "7147034",
+          "reason": "25.5 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7147040",
+          "reason": "20.4 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7148017",
+          "reason": "Across Habitat Ter from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7148043",
+          "reason": "29.9 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7148COMA",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7153047",
+          "reason": "25.4 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7153051",
+          "reason": "28.8 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7153054",
+          "reason": "38.9 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7154005",
+          "reason": "32.5 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7154024",
+          "reason": "35.8 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7154025",
+          "reason": "28.3 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7154053",
+          "reason": "32.2 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7154055",
+          "reason": "43.4 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7155019",
+          "reason": "55.6 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7156001A",
+          "reason": "30.4 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7156001B",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156001C",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156034",
+          "reason": "25.5 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7156039",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156041",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156043",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156045",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156047",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156050",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156053",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156055",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156056",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156057",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156058",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156059",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156060",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156069",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156070",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156072",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156074",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7156080",
+          "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7159001",
+          "reason": "Across Regent St and Alemany Blvd and San Jose Ave from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "7174044",
+          "reason": "47.4 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7174049",
+          "reason": "44.1 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7174050",
+          "reason": "43.7 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7174051",
+          "reason": "33.9 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7174054",
+          "reason": "43.7 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7174056",
+          "reason": "33.4 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7174057",
+          "reason": "28.8 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7176005",
+          "reason": "26.7 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7176005A",
+          "reason": "38.6 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7176006",
+          "reason": "34.2 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7176024",
+          "reason": "25.6 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7176026",
+          "reason": "25.5 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7176028",
+          "reason": "25.1 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7176029",
+          "reason": "25.4 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7177013",
+          "reason": "A government industrial property on the 2025 roll (class IXG): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "7177014",
+          "reason": "A government industrial property on the 2025 roll (class IXG): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "7177015",
+          "reason": "A government industrial property on the 2025 roll (class IXG): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "7177036",
+          "reason": "31.9 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7177037",
+          "reason": "37.1 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7177038",
+          "reason": "42.5 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7177043",
+          "reason": "34.4 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7177047",
+          "reason": "29.5 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7177048",
+          "reason": "33.8 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "7178014",
+          "reason": "Residential parcel on the 2025 roll (class DA)"
+        },
+        {
+          "parcel": "7178019",
+          "reason": "Across Niantic Ave from the freeway: city fabric, not frontage"
+        }
+      ]
     },
     {
       "id": "i280-north",
@@ -259,8 +1945,643 @@
       ],
       "removedBy": null,
       "curated": "rule",
-      "parcels": [],
-      "excluded": []
+      "parcels": [
+        "3784001",
+        "3784003",
+        "3784072",
+        "3784075",
+        "3784078",
+        "3784081",
+        "3785018",
+        "3797004",
+        "3797005",
+        "3797006",
+        "3998005",
+        "3998008",
+        "3998013",
+        "3999002",
+        "3999003",
+        "3999004",
+        "4041002",
+        "4041003",
+        "4062004",
+        "4104001",
+        "4104001B",
+        "4104001C",
+        "4104001D",
+        "4104019",
+        "4105005",
+        "4169003",
+        "4226008",
+        "4226012",
+        "4226013",
+        "4226014",
+        "4226015",
+        "4227005",
+        "4227026",
+        "4227027",
+        "4227028",
+        "4227029",
+        "4227030",
+        "4227044",
+        "4291017",
+        "4291018",
+        "4347B005",
+        "4347B006",
+        "4349001",
+        "4349002",
+        "4349002A",
+        "4349003A",
+        "4349003B",
+        "4349012",
+        "4349014",
+        "4382005",
+        "5214004",
+        "5232004",
+        "5232007",
+        "5302051",
+        "5302052",
+        "5315049",
+        "5317002",
+        "5318044",
+        "5332024",
+        "5334053",
+        "5348001",
+        "5350048",
+        "5350049",
+        "5350050",
+        "5368015",
+        "5368016",
+        "5368017",
+        "5368018",
+        "5368027",
+        "5369068",
+        "5374004",
+        "5375010",
+        "5375011",
+        "5375012",
+        "5375013",
+        "5375014",
+        "5375060",
+        "5375062",
+        "5376003",
+        "5376004",
+        "5376010",
+        "5376011",
+        "5376012",
+        "5376013",
+        "5376014",
+        "5376015",
+        "5376016",
+        "5376017",
+        "5376018",
+        "5376019",
+        "5376020",
+        "5376021",
+        "5376022",
+        "5376024",
+        "5376025",
+        "5376044",
+        "5376045",
+        "5376046",
+        "5376047",
+        "5376057",
+        "5376060",
+        "5376063",
+        "5376065",
+        "5376066",
+        "5377047",
+        "5377048",
+        "5377050",
+        "5377051",
+        "5377052",
+        "5377053",
+        "5377055",
+        "5377056",
+        "5377061",
+        "5377066",
+        "5377068",
+        "5378057",
+        "5378058",
+        "5392032A",
+        "5392042",
+        "5392045",
+        "5392046",
+        "5590A014",
+        "5822031",
+        "5823023",
+        "5823056",
+        "5823057",
+        "5848035",
+        "5848039",
+        "5848042",
+        "5848056",
+        "5849001",
+        "5850011",
+        "8703002",
+        "8703003",
+        "8704003",
+        "8709002",
+        "8723002"
+      ],
+      "excluded": [
+        {
+          "parcel": "3784071",
+          "reason": "23.7 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3784076",
+          "reason": "20.5 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "3784079",
+          "reason": "OSM pedestrian area on 66% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "3784082",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3797008",
+          "reason": "OSM pedestrian area on 90% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "3797009",
+          "reason": "OSM pedestrian area on 61% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "3806011",
+          "reason": "OSM park on 100% of the lot"
+        },
+        {
+          "parcel": "3809002",
+          "reason": "OSM park on 100% of the lot"
+        },
+        {
+          "parcel": "3809006",
+          "reason": "OSM park on 67% of the lot"
+        },
+        {
+          "parcel": "3834ROWB",
+          "reason": "Across 7Th St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3948001A",
+          "reason": "Across 7Th St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3948003",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3948003B",
+          "reason": "Across 7Th St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3948003C",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3998009",
+          "reason": "OSM pedestrian area on 53% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "3998018",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3999005",
+          "reason": "OSM park on 48% of the lot"
+        },
+        {
+          "parcel": "3999006",
+          "reason": "OSM park on 92% of the lot"
+        },
+        {
+          "parcel": "3999007",
+          "reason": "OSM park on 98% of the lot"
+        },
+        {
+          "parcel": "3999011",
+          "reason": "OSM pedestrian area on 75% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "3999012",
+          "reason": "OSM pedestrian area on 54% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "3999015",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4040031",
+          "reason": "OSM garden Commander Isaiah Nelson Memorial Hanging Gardens on the lot"
+        },
+        {
+          "parcel": "4040034",
+          "reason": "Roll class ? is neither public nor a vacant class the rules accept (zoning RH-2)"
+        },
+        {
+          "parcel": "4041010",
+          "reason": "A warehouse property on the 2025 roll (class IW): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4063001",
+          "reason": "OSM garden on 33% of the lot"
+        },
+        {
+          "parcel": "4104020",
+          "reason": "OSM pedestrian area on 68% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "4168005",
+          "reason": "OSM railway on 64% of the lot"
+        },
+        {
+          "parcel": "4168006",
+          "reason": "OSM pedestrian area on 100% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "4168011",
+          "reason": "Caltrain 22nd Street station and tracks (OSM railway on 94%)"
+        },
+        {
+          "parcel": "4169002",
+          "reason": "Muni Woods bus division, a working transit yard (roll class IG)"
+        },
+        {
+          "parcel": "4226007",
+          "reason": "OSM pedestrian area on 80% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "4226011",
+          "reason": "OSM railway on 31% of the lot"
+        },
+        {
+          "parcel": "4226018",
+          "reason": "A warehouse property on the 2025 roll (class IW): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4227008",
+          "reason": "OSM park on 96% of the lot"
+        },
+        {
+          "parcel": "4227009",
+          "reason": "OSM park on 62% of the lot"
+        },
+        {
+          "parcel": "4227013B",
+          "reason": "OSM pedestrian area on 64% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "4227015",
+          "reason": "OSM pedestrian area on 79% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "4227016",
+          "reason": "OSM pedestrian area on 77% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "4227017",
+          "reason": "OSM pedestrian area on 76% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "4227018",
+          "reason": "OSM park on 27% of the lot"
+        },
+        {
+          "parcel": "4227019",
+          "reason": "OSM pedestrian area on 68% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "4227020",
+          "reason": "OSM park on 40% of the lot"
+        },
+        {
+          "parcel": "4227021",
+          "reason": "OSM pedestrian area on 83% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "4227033",
+          "reason": "OSM pedestrian area on 55% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "4227045",
+          "reason": "OSM dog park on 27% of the lot"
+        },
+        {
+          "parcel": "4290008",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4290012",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4290014",
+          "reason": "Across Cesar Chavez St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "4292009",
+          "reason": "An industrial property on the 2025 roll (class IG): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4292012",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4293006",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4318011",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4318012",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4318015",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4318017",
+          "reason": "30.1 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "4318018",
+          "reason": "An industrial property on the 2025 roll (class IG): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "4347B007",
+          "reason": "OSM pedestrian area on 79% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "4349004",
+          "reason": "Satellite spot check: the Caltrain tracks and their verges beside I-280, none of it within 12 m of a freeway line; a railway (rule 1), not freeway land"
+        },
+        {
+          "parcel": "4349004A",
+          "reason": "OSM pedestrian area on 50% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "4349013",
+          "reason": "OSM pedestrian area on 56% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "4382003",
+          "reason": "Satellite spot check: a working Muni vehicle storage yard, about half of it under the I-280 deck; a rail yard (rule 1), as the Muni Woods yard"
+        },
+        {
+          "parcel": "5214001",
+          "reason": "OSM pedestrian area on 52% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "5215020",
+          "reason": "Across I-280 N Off Ramp from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5215021",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5228012",
+          "reason": "An industrial property on the 2025 roll (class IG): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5231001",
+          "reason": "Residential parcel on the 2025 roll (class AG)"
+        },
+        {
+          "parcel": "5232011",
+          "reason": "Satellite spot check: a lane beside the Caltrain tracks, only its north end under an I-280 ramp (28% within 30 m of a freeway line): not freeway land"
+        },
+        {
+          "parcel": "5250010",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5269007",
+          "reason": "OSM pedestrian area on 100% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "5282031",
+          "reason": "OSM pedestrian area on 100% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "5318045",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5331056",
+          "reason": "Open space (land use OPENSPACE)"
+        },
+        {
+          "parcel": "5332026",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5333033",
+          "reason": "A warehouse property on the 2025 roll (class IW): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5333033A",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5333037",
+          "reason": "OSM pedestrian area on 91% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "5334020",
+          "reason": "Across Selby St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5334023",
+          "reason": "A miscellaneous property on the 2025 roll (class X): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5334031",
+          "reason": "Residential parcel on the 2025 roll (class D)"
+        },
+        {
+          "parcel": "5334050",
+          "reason": "Across Selby St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5347027",
+          "reason": "22.4 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5350011",
+          "reason": "36.5 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5350012",
+          "reason": "43.9 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5350013",
+          "reason": "51.2 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5350042",
+          "reason": "A warehouse property on the 2025 roll (class IW): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5350059",
+          "reason": "45.2 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5350060",
+          "reason": "21.9 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5351002",
+          "reason": "OSM school on 94% of the lot"
+        },
+        {
+          "parcel": "5368011",
+          "reason": "OSM pedestrian area on 57% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "5368014",
+          "reason": "OSM pedestrian area on 100% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "5368031",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5368033",
+          "reason": "OSM pedestrian area on 61% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "5368034",
+          "reason": "An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5369024",
+          "reason": "Across Elmira St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5369025",
+          "reason": "Across Helena St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5369026",
+          "reason": "Across Helena St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5369030",
+          "reason": "Across Helena St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5369065",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "5369067",
+          "reason": "Across Helena St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5376054",
+          "reason": "30.2 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5376055",
+          "reason": "37.2 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5376056",
+          "reason": "44.1 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5377049",
+          "reason": "OSM pedestrian area on 83% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "5377054",
+          "reason": "OSM pedestrian area on 76% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "5377070",
+          "reason": "41.2 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5377071",
+          "reason": "27.4 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5378001",
+          "reason": "18 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+        },
+        {
+          "parcel": "5392027",
+          "reason": "OSM pedestrian area on 63% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "5392033",
+          "reason": "OSM pedestrian area on 98% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "5402060",
+          "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "5590A016",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "8701003",
+          "reason": "Caltrain 4th and King rail yard approach (OSM railway on 85%; CP 4th Street)"
+        },
+        {
+          "parcel": "8704007",
+          "reason": "Roll class VSP is neither public nor a vacant class the rules accept (zoning MB-RA)"
+        },
+        {
+          "parcel": "8709015",
+          "reason": "OSM pedestrian area on 86% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "8709016",
+          "reason": "OSM pedestrian area on 69% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "8709017",
+          "reason": "An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "8709019",
+          "reason": "A garage property on the 2025 roll (class G): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "8709023",
+          "reason": "OSM railway on 40% of the lot"
+        },
+        {
+          "parcel": "8723005",
+          "reason": "OSM pedestrian area on 77% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "8726001",
+          "reason": "OSM railway on 56% of the lot"
+        },
+        {
+          "parcel": "8726002",
+          "reason": "OSM railway on 100% of the lot"
+        },
+        {
+          "parcel": "8727006",
+          "reason": "Across Mariposa St and Owens St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "8727007",
+          "reason": "OSM pedestrian area on 79% of the lot (treated as public open space)"
+        }
+      ]
     },
     {
       "id": "i80-bay-bridge",
@@ -287,16 +2608,118 @@
         "19361000",
         "19364000",
         "19365000",
-        "19374000",
         "19375001",
         "19375002",
-        "19382000",
-        "19383000"
+        "19382000"
       ],
       "removedBy": null,
       "curated": "rule",
-      "parcels": [],
-      "excluded": []
+      "parcels": [
+        "1939025",
+        "3736007",
+        "3736018",
+        "3749052",
+        "3764058",
+        "3764065",
+        "3764066",
+        "3764067",
+        "3766010",
+        "3769001"
+      ],
+      "excluded": [
+        {
+          "parcel": "1939015",
+          "reason": "OSM pedestrian area on 72% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "1939016",
+          "reason": "Zoned in part YBI-OS (an open-space district)"
+        },
+        {
+          "parcel": "1939017",
+          "reason": "OSM viewpoint Bay Bridge Trail Lookout on the lot"
+        },
+        {
+          "parcel": "1939018",
+          "reason": "Zoned in part YBI-OS (an open-space district)"
+        },
+        {
+          "parcel": "1939020",
+          "reason": "Zoned in part YBI-OS (an open-space district)"
+        },
+        {
+          "parcel": "1939175",
+          "reason": "Zoned in part YBI-OS (an open-space district)"
+        },
+        {
+          "parcel": "3736023",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3736035",
+          "reason": "A hotel property on the 2025 roll (class H1): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3748012",
+          "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3749061",
+          "reason": "Residential parcel on the 2025 roll (class A15)"
+        },
+        {
+          "parcel": "3749504",
+          "reason": "Across Essex St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3749505",
+          "reason": "Residential parcel on the 2025 roll (class A15)"
+        },
+        {
+          "parcel": "3766011",
+          "reason": "Rincon Hill Dog Park (OSM dog park on 66%)"
+        },
+        {
+          "parcel": "3767003",
+          "reason": "A government industrial property on the 2025 roll (class IXG): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3767004",
+          "reason": "A government industrial property on the 2025 roll (class IXG): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3768003",
+          "reason": "OSM pedestrian area on 70% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "3769002",
+          "reason": "A garage property on the 2025 roll (class G): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3774004",
+          "reason": "Across Bryant St from the freeway: city fabric, not frontage"
+        },
+        {
+          "parcel": "3774005",
+          "reason": "An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "3774006",
+          "reason": "An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land"
+        },
+        {
+          "parcel": "9900024",
+          "reason": "Port of San Francisco pier land south of Pier 24 (roll IXG)"
+        },
+        {
+          "parcel": "9900024H",
+          "reason": "Pier 24 (Port of San Francisco; OSM pier on 76%)"
+        },
+        {
+          "parcel": "9900026H",
+          "reason": "Port pier (OSM pier on 83%)"
+        }
+      ]
     },
     {
       "id": "us101-presidio",
