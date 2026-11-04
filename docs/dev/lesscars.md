@@ -485,27 +485,40 @@ invariants passed.
   116,461 against baseline 87,100. v1 was +7,786 (plan 97,840, baseline 90,054).
 - **2068 by source** (largest-remainder rounding, as the page shows it, summing to 29,361): freed
   23,227; parking 6,020; transit-unlocked 114; other 0.
+- **Freed homes basis:** the 23,227 freed homes are built under the plan's freed-land regime: each
+  site takes its neighbours' zoning or SB 79, whichever allows more, as it stands at the phase's
+  build start, at top fill. They are not today's FZP yield on the same parcels, which is 7,935
+  homes on the 39.73 ha of open freed parcels (the catalog's per-segment FZP totals, less the held
+  garage parcel's 605). Per phase, from the steps in `summary.bySource.freed`:
+  `central-freeway-stub` 824; `us101-interchange` 2,664; `i80-rincon` 8,063; `us101-james-lick`
+  7,544; `geary-trench` 1,684; `us101-bayshore` 2,448.
 - **Freed land** (open sites; the held site is aside): 44.09 ha, 39.73 ha from parcels
   (`lesscars.freed_m2.parcels` 397,271 m²) and 4.36 ha from right-of-way
   (`lesscars.freed_m2.row` 43,638 m²). The one held site (`lc:i80-rincon:20`, 10,252 m², held
-  by `garage-rincon`) is not counted. Per phase, from `sites.json` `rec.areaM2` summed:
+  by `garage-rincon`) is not counted. Per phase, from `sites.json` `rec.areaM2` summed. The
+  start is the project's start year (`startYear`); the freed land's homes start at the phase's
+  build start (`build.startYear`, three years later; four for `geary-trench`) and count when
+  they complete:
 
-  | Phase                  | Start | Sites | Total m² | From parcels m² | From ROW m² |
-  | ---------------------- | ----- | ----: | -------: | --------------: | ----------: |
-  | `central-freeway-stub` | 2033  |     5 |    9,301 |           8,775 |         527 |
-  | `us101-interchange`    | 2037  |    28 |   56,885 |          53,324 |       3,561 |
-  | `i80-rincon`           | 2038  |    26 |  138,707 |         135,600 |       3,107 |
-  | `us101-james-lick`     | 2040  |    31 |  115,502 |         112,305 |       3,196 |
-  | `geary-trench`         | 2041  |    40 |   26,411 |               0 |      26,411 |
-  | `us101-bayshore`       | 2043  |    43 |   94,104 |          87,267 |       6,836 |
+  | Phase                  | Project start | Sites | Total m² | From parcels m² | From ROW m² |
+  | ---------------------- | ------------- | ----: | -------: | --------------: | ----------: |
+  | `central-freeway-stub` | 2033          |     5 |    9,301 |           8,775 |         527 |
+  | `us101-interchange`    | 2037          |    28 |   56,885 |          53,324 |       3,561 |
+  | `i80-rincon`           | 2038          |    26 |  138,707 |         135,600 |       3,107 |
+  | `us101-james-lick`     | 2040          |    31 |  115,502 |         112,305 |       3,196 |
+  | `geary-trench`         | 2041          |    40 |   26,411 |               0 |      26,411 |
+  | `us101-bayshore`       | 2043          |    43 |   94,104 |          87,267 |       6,836 |
 
   Every phase frees area. `central-freeway-stub` freed 0 m² in v1; it now frees 9,301 m² through
   its catalog parcels. 121 sites overlap freed parcels (`lesscars.sites.parcels`), 1 is held
   (`lesscars.sites.held`).
 
 - **Garages** in the representative seed (21): `garage-rincon` (parcel 3764064) kept;
-  `garage-north` (parcel 0509009) kept. `summary.garageCost` is `garage-rincon` 982 homes (the
-  homes the held site would have built). Of the 48 reserved parcels, 3 were voided.
+  `garage-north` (parcel 0509009) kept. `summary.garageCost` is `garage-rincon` 982 homes: the
+  held site's freed-site row, the homes it would have built under the freed-land regime at
+  `i80-rincon`'s build start. The 605 in plan-v1's garage section is today's FZP yield on the
+  parcel's own zoning (SB-DTR), so the two do not disagree. Of the 48 reserved parcels, 3 were
+  voided.
 - **Regimes:** `summary.regimeDays` are 2032-01-31, 2034-01-01, 2035-01-01, 2041-01-01 and
   2044-01-01, as in v1.
 - **Report counts:** `lesscars.sites` 174; `lesscars.sites.zero_yield` 16;
@@ -538,6 +551,68 @@ CA-1 is 0 because `ca1-presidio` has no catalog parcels. The lesscars baseline a
 `plan-v1.md` (about lines 1356 and 1376) counts "38" and "52" out rows. Those counts include rows
 that moved to kept segments. The catalog's 28 and 51 are the segment exclusions. `plan-v1.md`
 is not edited.
+
+### v1.1 live check
+
+On 2026-11-03 the pages ran against `2026-11-02-70dfa769` and, for the before numbers,
+`2026-11-02-39fbf039`, both in local R2 (a `VITE_E2E=1` build served by `wrangler dev` with
+`PUBLIC_DATASET_VERSION` passed as `--var`; headless Chromium, 1280 and 375 px). The checks read
+`window.__sfhLessCars` and the rendered map features, and the screenshots were inspected.
+
+`/sim` and FZP (`/fzp` redirects to `/sim`, which opens on the FZP comparison). The Setup
+figures on both datasets and the run on `39fbf039` gave the same numbers on a second load:
+
+| `/sim` headline                          | `39fbf039` | `70dfa769` | Change |
+| ---------------------------------------- | ---------: | ---------: | -----: |
+| At its default (Setup, October 2026)     |      8,709 |      9,101 |   +392 |
+| Run, at the RHNA deadline (January 2031) |     24,679 |     18,148 | −6,531 |
+| Run, at the horizon (December 2066)      |     93,763 |     91,176 | −2,587 |
+| FZP added vs no FZP, December 2066       |      6,352 |      8,337 | +1,985 |
+
+The run's totals fall, the sign the 32,807 homes of removed capacity predict. The Setup headline
+rises by 392, though "built by today" is 8,709 on both and `projects.json` is byte-identical:
+reported to the owner. On `70dfa769`, `/sim` still draws today's US-101, I-80 and I-280 at z11,
+z13 and z15 over the Central Freeway, the Hairball, Alemany and Rincon Hill, with the same 113
+style layers and 5 sources as before (the `__lc` clones draw the moved pieces unfiltered). No
+console or network errors.
+
+`/lesscars` passed these checks, at 1280 and 375 px:
+
+- **Headline and details:** +29,361 homes by 2068, band +28,651 to +29,785. The four parts (freed
+  23,227; parking 6,020; transit-unlocked 114; other 0) add to it. The disclosure reads "39.7 ha
+  of former freeway land and 4.4 ha of former roadway", and the garage line "take the place of
+  982 homes".
+- **Timeline and Evidence:** the timeline has 68 rows, 22 plus "Parking conversions (46)", with
+  the four new removal phases and `garage-rincon`. Evidence shows the new provenances ("Seven
+  street projects at once (invented)", "1,700 spaces (invented)").
+- **Phases:** for each of the five removal phases, the month before its open day its
+  `roads_lc` pieces draw at z11, z13 and z15. From the open day none draws at z11 to z15, labels
+  included, while I-280 and the other freeways still draw. The removed-line overlay and the freed
+  land appear on the open day. Scrubbing back to 2028 restores the freeway.
+- **Garages:** `garage-rincon` and `garage-north` markers appear (both reservations kept, seed
+  21). There is no `garage-south` or `garage-alemany`.
+- **Errors:** none in the console or the network.
+
+Three map problems were found, all in the tiles split. They are reported to the owner, not fixed:
+
+- **Leftover mainline sliver:** a `roads` feature with ref `I 80` (`35184403218590`, about 550 m,
+  lng −122.4058 to −122.4049, lat 37.7654 to 37.7704, along Vermont St from Division St to 16th
+  St) is never split. It still draws after `us101-interchange` and `us101-james-lick` open, at z11
+  to z15. It is not in `basemap-ids.json` for `us101-interchange` and lies outside `i80-rincon`'s
+  corridor.
+- **Ramps left behind:** ref-less `motorway_link` features are neither listed nor clipped (the
+  clip covers only listed ids and `highway` features with the phase's `ref`), so ramps of removed
+  stretches still draw after removal. The Harrison St off-ramp loop (CNN `19374000`) at Rincon
+  Hill is one, beside the `garage-rincon` marker. Others run along I-80 over SoMa (`35184381003890`,
+  `35184381003940`), at the US-101/I-80 interchange near 9th St and Division St (`35184381004080`,
+  `35184381004090`) and around the Hairball and Alemany (`35184381003850`, `35184381003870`,
+  `35184381003930`, `35184381003960`, `35184381004460`). Each has hundreds to thousands of metres
+  within 8 m of the removed CNN lines at z13 and z15.
+- **Alemany cut south of the interchange:** CNN `19222002` of `us101-bayshore` runs to lat 37.7301,
+  near Silver Ave. After the phase opens, US-101 is gone for about 400 m south of the I-280
+  crossing, and the kept freeway starts there, joined to I-280 only by the left-over ramps. There
+  is no sliver of the removed mainline. At Rincon Hill the Bay Bridge still ends cleanly at
+  Harrison St.
 
 ## Freeway land
 
