@@ -471,6 +471,74 @@ Two problems were found. Both are follow-ups, not release blockers:
 - **Duplicate heading:** the timeline disclosure repeats a "Parking conversions" heading under its
   summary.
 
+## v1.1 live build
+
+Built 2026-11-03 on the owner's laptop (Apple M5 Pro, Mac17,9) as `2026-11-02-70dfa769`, from the
+committed lock (unchanged) and the v1.1 plan (68 projects) and freeway-land catalog. All 34
+invariants passed.
+
+- **Time:** the whole build took 2 min 55 s wall clock; `timings.lesscars` was 8,480 ms. 101
+  seeds, representative seed 21. The 30-minute rule did not apply, so the seed count stayed at
+  101 and "Running it" is unchanged.
+- **V35:** `68 projects, 174 sites, 41 year ends`.
+- **Headline at 2068:** mean +29,361 extra homes (p10 28,651, p50 29,455, p90 29,785); plan
+  116,461 against baseline 87,100. v1 was +7,786 (plan 97,840, baseline 90,054).
+- **2068 by source** (largest-remainder rounding, as the page shows it, summing to 29,361): freed
+  23,227; parking 6,020; transit-unlocked 114; other 0.
+- **Freed land** (open sites; the held site is aside): 44.09 ha, 39.73 ha from parcels
+  (`lesscars.freed_m2.parcels` 397,271 m²) and 4.36 ha from right-of-way
+  (`lesscars.freed_m2.row` 43,638 m²). The one held site (`lc:i80-rincon:20`, 10,252 m², held
+  by `garage-rincon`) is not counted. Per phase, from `sites.json` `rec.areaM2` summed:
+
+  | Phase                  | Start | Sites | Total m² | From parcels m² | From ROW m² |
+  | ---------------------- | ----- | ----: | -------: | --------------: | ----------: |
+  | `central-freeway-stub` | 2033  |     5 |    9,301 |           8,775 |         527 |
+  | `us101-interchange`    | 2037  |    28 |   56,885 |          53,324 |       3,561 |
+  | `i80-rincon`           | 2038  |    26 |  138,707 |         135,600 |       3,107 |
+  | `us101-james-lick`     | 2040  |    31 |  115,502 |         112,305 |       3,196 |
+  | `geary-trench`         | 2041  |    40 |   26,411 |               0 |      26,411 |
+  | `us101-bayshore`       | 2043  |    43 |   94,104 |          87,267 |       6,836 |
+
+  Every phase frees area. `central-freeway-stub` freed 0 m² in v1; it now frees 9,301 m² through
+  its catalog parcels. 121 sites overlap freed parcels (`lesscars.sites.parcels`), 1 is held
+  (`lesscars.sites.held`).
+
+- **Garages** in the representative seed (21): `garage-rincon` (parcel 3764064) kept;
+  `garage-north` (parcel 0509009) kept. `summary.garageCost` is `garage-rincon` 982 homes (the
+  homes the held site would have built). Of the 48 reserved parcels, 3 were voided.
+- **Regimes:** `summary.regimeDays` are 2032-01-31, 2034-01-01, 2035-01-01, 2041-01-01 and
+  2044-01-01, as in v1.
+- **Report counts:** `lesscars.sites` 174; `lesscars.sites.zero_yield` 16;
+  `lesscars.sites.zero_gain_parking` 2, the same two conversions as v1 (park-0715015,
+  park-0761065); `lesscars.unlocked_lots` 3,617; `tiles.basemap_split_changed` 26.
+- **Bytes:** `timeline.bin` is 103,444 B, 432,315 B decoded.
+- **Dates:** `asOf` (day 20745), the FZP `calibration.json` (byte-identical) and the transit
+  service dates (Muni 2026-08-25; BART and Caltrain 2026-10-20) are unchanged from
+  `2026-11-02-39fbf039`. The freeway rule leaves the calibration panel alone.
+
+### Change to `/sim` and FZP
+
+The freeway-land catalog is applied in the scenario for every arm, so it changes `/sim`'s and
+FZP's numbers as well as `/lesscars`'. The scenario report says "freeway land makes 559 lots
+unbuildable, 32807 net homes of static capacity":
+
+| Freeway | Net homes of static capacity removed |
+| ------- | -----------------------------------: |
+| I-280   |                               18,333 |
+| US-101  |                                9,370 |
+| I-80    |                                5,104 |
+| CA-1    |                                    0 |
+| Total   |                               32,807 |
+
+CA-1 is 0 because `ca1-presidio` has no catalog parcels. The lesscars baseline at 2068 fell from
+90,054 to 87,100 (-2,954, -3.3%); `parcels.bin` is 2,106,972 B (2,109,207 B in v1).
+
+### Prose counts in plan-v1
+
+`plan-v1.md` (about lines 1356 and 1376) counts "38" and "52" out rows. Those counts include rows
+that moved to kept segments. The catalog's 28 and 51 are the segment exclusions. `plan-v1.md`
+is not edited.
+
 ## Freeway land
 
 The catalog format, its build rule and the V17 and homes checks are in [pipeline.md](pipeline.md)
