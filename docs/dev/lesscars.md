@@ -484,15 +484,16 @@ after the live check (the freeway-road split rule; `19222002` and six lots moved
   101 and "Running it" is unchanged.
 - **V35:** `68 projects, 166 sites, 41 year ends` (174).
 - **Headline at 2068:** mean +29,081 extra homes (p10 28,371, p50 29,175, p90 29,505); plan
-  116,181 against baseline 87,100 (+29,361; plan 116,461). v1 was +7,786 (plan 97,840, baseline
+  116,181 against baseline 87,100 (`70dfa769`: +29,361, plan 116,461; the baseline is unchanged). v1 was +7,786 (plan 97,840, baseline
   90,054).
 - **2068 by source** (largest-remainder rounding, as the page shows it, summing to 29,081): freed
   22,947 (23,227); parking 6,020; transit-unlocked 114; other 0.
 - **Freed homes basis:** the 22,947 freed homes are built under the plan's freed-land regime: each
   site takes its neighbours' zoning or SB 79, whichever allows more, as it stands at the phase's
   build start, at top fill. They are not today's FZP yield on the same parcels, which is 7,650
-  homes on the 38.88 ha of open freed parcels (the catalog's per-segment FZP totals, less the held
-  garage parcel's 605). Per phase, from the steps in `summary.bySource.freed`, each in the year
+  homes on the 38.88 ha of open freed parcels (derived: `70dfa769`'s 7,935, which is the
+  catalog's per-segment FZP totals less the held garage parcel's 605, less the 285 of the six
+  lots moved to `us101-south`; not recomputed on this build). Per phase, from the steps in `summary.bySource.freed`, each in the year
   its phase's builds complete: `central-freeway-stub` 824; `us101-interchange` 2,664; `i80-rincon`
   8,063; `us101-james-lick` 7,544; `geary-trench` 1,684; `us101-bayshore` 2,168 (2,448).
 - **Freed land** (open sites; the held site is aside): 43.18 ha (44.09), 38.88 ha from parcels
@@ -555,7 +556,7 @@ in `70dfa769`.
 
 ### Prose counts in plan-v1
 
-`plan-v1.md` (about lines 1356 and 1376) counts "38" and "52" out rows. Those counts include rows
+`plan-v1.md` (v1.1 section, Phases: the `freewayLand` rows of `us101-bayshore` and `i80-rincon`) counts "38" and "52" out rows. Those counts include rows
 that moved to kept segments. The catalog's 28 and 51 are the segment exclusions. `plan-v1.md`
 is not edited.
 
@@ -581,7 +582,9 @@ The headline is one run, the representative seed (the run whose 2066 total is th
 101). The freeway rule lowers every run's 2066 total (by 1,020 to 4,369 homes), which moves the
 median from seed 15 to seed 43, so the figures at other dates compare two different paths. Seed 43
 schedules 392 pipeline completions in the rest of October 2026, which the Setup bucket counts. The
-2066 drop, −2,587, is the real median shift. The fixes leave the scenario as it was (the six
+2066 drop, −2,587, is the change in the median run's total; on the same seeds the mean change is
+−2,602. The other rows, the FZP-added +1,985 among them, compare two different seeds' paths and
+are not effects of the rule. The fixes leave the scenario as it was (the six
 moved lots are ineligible as kept land too), so `0d40e1e2` gives the same numbers as `70dfa769`.
 On `0d40e1e2`, `/sim` still draws today's US-101, I-80 and I-280 at z11, z13 and z15 over the
 Central Freeway, the Hairball, Alemany and Rincon Hill, with the same 113 style layers and 5
@@ -625,7 +628,7 @@ errors.
 - **Errors:** none in the console or the network.
 
 The first check, on `70dfa769`, found three map problems, fixed below. An unsplit `I 80` piece
-(`35184403218590`, about 550 m along Vermont St) stayed drawn after `us101-interchange` and
+(`35184403218590`, about 1.1 km, 550 m of it seen still drawn along Vermont St) stayed drawn after `us101-interchange` and
 `us101-james-lick` opened. Ref-less ramps of the removed stretches stayed drawn after removal,
 the Harrison St loop among them. The `us101-bayshore` cut ran about 400 m south of the I-280
 crossing, because CNN `19222002` reached Silver Ave.
@@ -642,7 +645,9 @@ Recorded as errata in `docs/lesscars/plan-v1.md` ("Errata from the live check (2
   `us101-interchange` (about 970 m at every zoom) and `i80-rincon` (its northern 115 m); the
   Harrison St loop `35184399860900` moves with `i80-rincon` (485 m at z15); the ramps above move
   with their phases. Freeway roads left along a removed line: at most 21 m per feature and zoom,
-  at ramp ends and crossings. Kept coverage lost (kept CNN line metres a freeway road drew within
+  at ramp ends and crossings. Roads with only kept refs are not counted: at the Alemany merge,
+  45 to 90 m of `I 280` (`35184399703420`) lies within 6 m of the removed connector `19280000` and
+  stays drawn as I-280, as errata 1 intends. Kept coverage lost (kept CNN line metres a freeway road drew within
   15 m before the split and none after, measured apart from the rule): at most 25 m per segment
   and zoom (`i80-bay-bridge` at z11, at its shared end with the removed I-80; `us101-south` 11 to
   15 m near the Alemany cut), under the 30 m limit; I-280 and the Presidio segments lose none.

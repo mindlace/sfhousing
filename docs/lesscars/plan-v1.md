@@ -1746,6 +1746,10 @@ ha, 24,267 FZP homes → 444 lots, 85.91 ha, 24,552. The `us101-bayshore` phase'
 dependencies and `excluded` rows are unchanged. The freed-land and homes figures of the first v1.1
 build (`docs/dev/lesscars.md`, "v1.1 live build") predate these errata.
 
+**5. Out-row counts.** The `excluded` lists hold the segment's own `out` rows: 28 for
+`us101-bayshore` and 51 for `i80-soma`. The 38 and 52 above also count rows that moved to kept
+segments.
+
 ## Appendix A: plan.json fields
 
 `schema: 1`, `id: "lesscars-v1"`, `label: "Fewer cars, v1"`. Field names below are exactly Task 2's.
@@ -1753,6 +1757,9 @@ A Param is written `value (PV-id)`; the provenance table gives its `tier`, `labe
 `method`. Segments written as a street selector (`STREET, FROM → TO`) are resolved by Plan 3 to
 `{ cnn: [...] }` with the Streets query pattern recorded above; the others are given as CNNs or a
 line.
+
+These are v1's rows. The v1.1 section's "Appendix A changes" add, change and remove projects on
+top of them; `plan.json` is the result.
 
 ### Provenances
 
