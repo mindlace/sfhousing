@@ -10,6 +10,28 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-03-lesscars-v1-1-design.md` ("Data and build", "Owner decisions"). The approved section: `docs/lesscars/plan-v1.md` `## v1.1 (2026-11-03): freeway removal and freeway land` (approval line filled in). Plan A: `docs/superpowers/plans/2026-11-03-lesscars-v1-1-a-engine.md`. Release flow: `docs/dev/pipeline.md` ("Release run order", "Lock and datasetVersion"), `docs/dev/deploy.md` ("Promoting a datasetVersion").
 
+## Amendments (2026-11-03, the owner's decisions on the v1.1 section)
+
+The owner approved the v1.1 section on 2026-11-03 with these decisions (section "Owner decisions
+(2026-11-03)"); the tasks below are amended to match:
+
+- **One new garage, not two.** `garage-alemany` is dropped; `garage-rincon` stands on `3764064`
+  (1,700 spaces, PV-spaces-rincon), on the green freed when `i80-rincon` takes down the westbound
+  Harrison St off-ramp. The US-101 phases (the stub included) depend on no garage.
+- **Two CNNs change segment.** `19374000` (the Harrison St off-ramp) and `19383000` (the westbound
+  mainline piece that only feeds it) move from `i80-bay-bridge` to `i80-soma`, so `i80-rincon`'s
+  `segments` list has 24 CNNs. `freeway-land.json` must move them too (it still has the draft
+  partition), and `i80-soma`'s label gains ", and the Harrison St off-ramp".
+- **Parcels move and drop.** `3764056`, `3764064`, `3765714`, `3765715` move from the kept
+  `i80-bay-bridge` list to `i80-soma`'s `in` rows; the stub's `3513071` and `3513074` are `in`;
+  three `i280-north` lots (`4382003`, `4349004`, `5232011`) are `excluded` after the satellite spot
+  check. `freeway-land.draft.json` carries all of it.
+- **`street` capacity 7** (section "Capacity changed", provenance PV-cap-street-7): the phases start
+  2033 (stub), 2037, 2040, 2043 (US-101) and 2038 (`i80-rincon`); the last build completes
+  mid-2048.
+- **Basemap ids:** `i80-rincon` keeps 35184403218600 and drops 35184485600277 (section "Basemap
+  ids").
+
 ## Global Constraints
 
 - **Starts only after the owner has approved the v1.1 section** (its approval line is filled in). No approval line: stop.
@@ -29,7 +51,7 @@
 
 1. **A section table and the file drifting apart.** A parcel moved between segments, an exclusion without its reason, or a phase list that differs from the catalog's segments for that phase. Expected: the transcription tests parse the section's tables and compare them field for field. Test: Task 1 (`freeway-land.json equals the section, segment for segment`), Task 2 (`each phase frees exactly its segments' catalog parcels`).
 2. **Two demolition crews on one freeway.** Phases of the same freeway overlapping in [start, open). Expected: the live-plan test fails naming both. Test: Task 2 (`no two phases of one freeway overlap`).
-3. **A closure before its garage opens.** A phase starting before `garage-alemany` or `garage-rincon` opens. Expected: `checkPlan`'s `starts-before-dependency` and a direct test. Test: Task 2 (`every phase depends on its garage, and the garage opens first`).
+3. **A closure before its garage opens.** `i80-rincon` starting before `garage-rincon` opens. Expected: `checkPlan`'s `starts-before-dependency` and a direct test. Test: Task 2 (`i80-rincon depends on garage-rincon, which opens first; no US-101 phase depends on a garage`).
 4. **A kept freeway disappearing from `/sim`.** After the release, `/sim` and FZP must still draw I-280, US-101 south of Alemany and today's US-101 and I-80. Expected: the live check sees them at z11, z13 and z15. Test: Task 4 Step 2.
 5. **A large, silent change to `/sim`'s numbers.** The rule removes capacity everywhere. Expected: the counts by freeway, `/sim`'s and FZP's headline before and after, recorded in `docs/dev/lesscars.md` and in the feature PR body before release. Test: Task 3 Steps 4-5.
 
@@ -61,7 +83,7 @@
 ### Task 1: Transcribe the catalog and the basemap ids
 
 **Files:**
-- Modify: `pipeline/enrichment/lesscars/freeway-land.json` (fill `parcels`, `excluded`, `curated` from §3 of the section)
+- Modify: `pipeline/enrichment/lesscars/freeway-land.json` (fill `parcels`, `excluded`, `curated` from §3 of the section; move CNNs `19374000` and `19383000` from `i80-bay-bridge` to `i80-soma` and take `i80-soma`'s label from the section's Freeway segments table)
 - Create: `pipeline/enrichment/lesscars/basemap-ids.json` (from §8)
 - Create: `pipeline/test/lesscars-v1-1-enrichment.test.ts`
 
@@ -79,6 +101,16 @@ it('freeway-land.json equals the section, segment for segment', () => {
     expect(seg.excluded, seg.id).toEqual(sectionRows(seg.id).filter((r) => r.Decision === 'out').map((r) => ({ parcel: r.Parcel, reason: r.Reason })));
   }
   expect(catalog.segments.map((s) => s.id)).toEqual(sectionSegments().map((r) => r['Segment id']));
+});
+it('each segment has the CNNs of its Freeway segments row', () => {
+  for (const seg of catalog.segments) expect(seg.cnn, seg.id).toEqual(sectionCnns(seg.id));
+  expect(byId('i80-soma').cnn).toEqual(expect.arrayContaining(['19374000', '19383000']));
+});
+it('a rule segment equals freeway-land.draft.json, and the spot-check removals are excluded', () => {
+  // the section's kept-segment tables show only the largest rows; the draft file is the full list
+  for (const seg of catalog.segments.filter((s) => s.curated === 'rule'))
+    expect(seg.parcels, seg.id).toEqual(draftSegment(seg.id).parcels);
+  for (const id of ['4382003', '4349004', '5232011']) expect(set.has(id), id).toBe(false);
 });
 it('every segment a phase removes is curated by hand', () => {
   for (const s of catalog.segments.filter((x) => x.removedBy)) expect(s.curated, s.id).toBe('hand');
@@ -131,13 +163,14 @@ git commit -m "feat(lesscars): the approved freeway-land catalog and basemap ids
 
 **Interfaces:**
 - Consumes: `parseLessCarsPlan`, `checkPlan`, `schedulePlan` (`src/lib/data/lesscars/`), `freewayLand` (Plan A Task 3), the catalog (Task 1).
-- Produces: `plan.json` with `id` as the section states (keep `lesscars-v1` unless the section changes it), `garage-south` gone, `garage-alemany`, `garage-rincon`, the US-101 phases and `i80-rincon` added, `central-freeway-stub` changed as §6 says.
+- Produces: `plan.json` with `id` as the section states (keep `lesscars-v1` unless the section changes it), `garage-south` gone, `garage-rincon` (site `3764064`), the US-101 phases and `i80-rincon` added, no `garage-alemany`, `central-freeway-stub` changed as §6 says (no garage dependency; five freed parcels), and `street` capacity 7 with PV-cap-street-7 from "Capacity changed".
 
 Transcription rules (each value from the section; anything else is a plan question):
 - Every `Param` takes its provenance row from Appendix A's Provenances table or the section's `Provenances added`, as plan 3 Task 4's rules.
 - Each phase's `segments` are the CNN lists of its segments in `freeway-land.json` (`removedBy` = the phase id), in segment order, or the stub's line if the owner kept it.
 - Each phase's `freewayLand` is `{ parcels: <its segments' catalog parcels, sorted>, excluded: <their exclusions> }`.
 - Garages: `site: { parcel }` and `spaces` as §5.
+- Capacity: each row of "Capacity changed" replaces that kind's `maxConcurrent` and provenance.
 
 - [ ] **Step 1: Extend the failing test**
 
@@ -147,7 +180,9 @@ it('parses and checkPlan on the live plan is empty', () => {
 });
 it('has the approved v1.1 shape', () => {
   expect(plan.projects.map((p) => p.id)).not.toContain('garage-south');
-  expect(ids).toEqual(expect.arrayContaining(['garage-alemany', 'garage-rincon', 'i80-rincon', ...US101_PHASES]));
+  expect(ids).not.toContain('garage-alemany');
+  expect(ids).toEqual(expect.arrayContaining(['garage-rincon', 'i80-rincon', ...US101_PHASES]));
+  expect(plan.capacity.find((c) => c.kind === 'street')?.maxConcurrent).toBe(7);
   expect(plan.projects).toHaveLength(appendixCount() + added().length - removed().length);
 });
 it('each phase frees exactly its segments’ catalog parcels', () => {
@@ -156,9 +191,10 @@ it('each phase frees exactly its segments’ catalog parcels', () => {
 it('no two phases of one freeway overlap', () => {
   for (const [a, b] of pairsOnSameFreeway(phases)) expect(overlap(t(a), t(b)), `${a.id} ${b.id}`).toBe(false);
 });
-it('every phase depends on its garage, and the garage opens first', () => {
-  for (const p of us101Phases) expect(p.dependsOn).toContain('garage-alemany');
+it('i80-rincon depends on garage-rincon, which opens first; no US-101 phase depends on a garage', () => {
+  for (const p of us101Phases) expect(p.dependsOn.filter((d) => byId(d).kind === 'edge-garage'), p.id).toEqual([]);
   expect(byId('i80-rincon').dependsOn).toContain('garage-rincon');
+  expect(byId('garage-rincon').site).toEqual({ parcel: '3764064' });
   for (const p of phases) for (const g of garagesOf(p)) expect(t(g).openDay).toBeLessThanOrEqual(t(p).startDay);
 });
 it('the stub keeps its v1 dates', () => {
@@ -265,7 +301,7 @@ Pass when all hold:
 - The headline equals Task 3's; the details' four parts add to it; the freed-land disclosure's hectares equal Task 3's parcel and right-of-way areas; the garage cost line shows `garageCost`'s total when present.
 - Timeline lists the project count of Task 2; Evidence shows the new provenances.
 - For each phase: before its open day the freeway draws at z11, z13 and z15; from its open day it is gone at every zoom, labels included, while I-280 and US-101 south of Alemany still draw; its removed-line overlay and its freed land (parcels included) appear; scrubbing back restores the freeway.
-- Both new garage markers appear when their reservations were kept (Task 3); no `garage-south` marker.
+- The `garage-rincon` marker appears when its reservation was kept (Task 3); no `garage-south` or `garage-alemany` marker.
 - No console or network errors.
 
 - [ ] **Step 4: Record and commit**
