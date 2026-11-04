@@ -326,7 +326,13 @@ export async function build(
     // and the report gains no key (a live build without an id list reports as before).
     const splitPhases = await splitPhasesOf(db, lesscars.basemapPhases, LC.basemapBandM);
     if (splitPhases.length > 0) {
-      const split = { phases: splitPhases, clipZooms: LC.basemapClipZooms, workDir: work };
+      const split = {
+        phases: splitPhases,
+        keep: lesscars.basemapKeep,
+        keepRefs: lesscars.basemapKeepRefs,
+        clipZooms: LC.basemapClipZooms,
+        workDir: work
+      };
       const r = await report.time('basemap', () => writeBasemap(basemapRaw, outDir, split));
       counts['tiles.basemap_split_changed'] = r.changed;
     } else await writeBasemap(basemapRaw, outDir, null);

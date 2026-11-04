@@ -33,6 +33,8 @@ export const LC = {
   basemapMinShare: 0.9,
   /** Basemap zooms where a highway feature spans the cut, measured by `lesscars-basemap`. */
   basemapClipZooms: [11, 12, 13, 14, 15] as number[],
+  /** A basemap road runs along a removed or kept line when their directions differ by at most this, degrees. */
+  basemapParallelDeg: 45,
   /** Freeway land (spec "My call"): a parcel within this of a segment's streets is a candidate, metres. */
   freewayBandM: 60,
   /** Freeway land (spec): a candidate has at least this share of its area within the band. */
@@ -55,6 +57,10 @@ export const LC_CITE: Record<keyof typeof LC, TieredCite> = {
   basemapMinShare: invented('0.9: a feature this much in band is the removed stretch’s'),
   basemapClipZooms: invented(
     'zooms where a basemap highway merges across a cut, measured (docs/dev/lesscars.md "Basemap ids")'
+  ),
+  basemapParallelDeg: invented(
+    '45°: a basemap road runs along a freeway line, not across it, within this angle ' +
+      '(docs/dev/lesscars.md "The split: roads_lc")'
   ),
   freewayBandM: invented(
     '60 m candidate band for freeway land, the spec’s own call (2026-11-03-lesscars-v1-1-design.md "Freeway land")'

@@ -113,7 +113,14 @@ describe('writeLessCars', () => {
   it('no plan file: nothing written, no manifest key', async () => {
     for (const planPath of [null, join(tmpdir(), 'sfh-no-such-plan.json')]) {
       const r = await writeLessCars(args(planPath));
-      expect(r).toEqual({ written: false, counts: {}, warnings: [], basemapPhases: [] });
+      expect(r).toEqual({
+        written: false,
+        counts: {},
+        warnings: [],
+        basemapPhases: [],
+        basemapKeep: [],
+        basemapKeepRefs: []
+      });
       expect(existsSync(join(outDir, 'scenarios/lesscars'))).toBe(false);
     }
   });
@@ -308,6 +315,28 @@ describe('basemap ids', () => {
       expect.objectContaining({ project: 'hwy', ids: FIXTURE_IDS })
     ]);
     expect(r.basemapPhases[0].lines[0].length).toBeGreaterThanOrEqual(2);
+    expect(r.basemapKeep).toEqual([]);
+  });
+  it('the step returns the CNN lines of the kept catalog segments for the split', async () => {
+    const kept = {
+      ...FIXTURE_FREEWAY_LAND!,
+      segments: [
+        ...FIXTURE_FREEWAY_LAND!.segments,
+        {
+          ...FIXTURE_FREEWAY_LAND!.segments[0],
+          id: 'fx-kept',
+          cnn: ['2000'],
+          removedBy: null,
+          parcels: [],
+          excluded: []
+        }
+      ]
+    };
+    const r = await writeLessCars(args(LESSCARS_PLAN_JSON.fixture, kept, FIXTURE_BASEMAP_IDS));
+    expect(r.basemapKeep.length).toBeGreaterThan(0);
+    expect(r.basemapKeep.every((l) => l.length >= 2)).toBe(true);
+    // the fixture segments carry no ref, so no ref is kept-only
+    expect(r.basemapKeepRefs).toEqual([]);
   });
   it('plan.json names the split phases in basemapHide', async () => {
     await run(FIXTURE_BASEMAP_IDS);

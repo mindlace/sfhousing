@@ -1,10 +1,18 @@
 // splitRoadsTile on synthetic tiles encoded with @maplibre/vt-pbf: every geometry is in tile units
 // (extent 4096) of tile 12/655/1583, and the corridor is a tile-unit rectangle given as [lng, lat].
+import { readFileSync } from 'node:fs';
 import { VectorTile } from '@mapbox/vector-tile';
 import { fromVectorTileJs, type VectorTileFeatureLike } from '@maplibre/vt-pbf';
 import Pbf from 'pbf';
 import { describe, expect, it } from 'vitest';
-import { LC_ROADS_LAYER, splitRoadsTile, type SplitPhase } from '../lib/lesscars/basemap-split';
+import { LESSCARS_FREEWAY_LAND_JSON } from '../lesscars-config';
+import {
+  keptOnlyRefs,
+  LC_ROADS_LAYER,
+  splitRoadsTile,
+  type SplitPhase
+} from '../lib/lesscars/basemap-split';
+import { parseFreewayLand } from '../lib/lesscars/freeway-land';
 
 const EXTENT = 4096;
 const [z, x, y] = [12, 655, 1583];
@@ -103,11 +111,25 @@ const lengthOf = (fs: Feat[]): number =>
       return t;
     }, 0);
 
-function phase(p: { ids?: number[]; ref?: string | null; corridor: [number, number][][] }) {
+/** The removed line the corridor is built around: v 2000, u 1000..3000. */
+const centreLine: [number, number][][] = [
+  (
+    [
+      [1000, 2000],
+      [3000, 2000]
+    ] as Uv[]
+  ).map(lngLat)
+];
+
+function phase(p: {
+  ids?: number[];
+  corridor: [number, number][][];
+  lines?: [number, number][][];
+}) {
   return {
     projectId: 'p1',
     ids: new Set(p.ids ?? []),
-    ref: p.ref ?? null,
+    lines: p.lines ?? centreLine,
     corridor: p.corridor
   } satisfies SplitPhase;
 }
@@ -185,9 +207,7 @@ describe('splitRoadsTile', () => {
   });
 
   it('a merged line is clipped at the corridor: the kept part stays in roads', () => {
-    const out = decode(
-      splitRoadsTile(tile([longHighway]), z, x, y, [phase({ ref: 'US 101', corridor })], true)!
-    );
+    const out = decode(splitRoadsTile(tile([longHighway]), z, x, y, [phase({ corridor })], true)!);
     expect(lengthOf(out.roads_lc)).toBeCloseTo(1000, -1);
     expect(lengthOf(out.roads)).toBeCloseTo(800, -1);
     expect(out.roads[0].id).toBe(longHighway.id);
@@ -197,35 +217,17 @@ describe('splitRoadsTile', () => {
     });
   });
 
-  it('a ref matches by any of its ;-separated tokens', () => {
-    const multi = { ...longHighway, properties: { kind: 'highway', ref: 'I 80;US 101' } };
-    const out = decode(
-      splitRoadsTile(tile([multi]), z, x, y, [phase({ ref: 'US 101', corridor })], true)!
-    );
-    expect(lengthOf(out.roads_lc)).toBeCloseTo(1000, -1);
-    const partial = { ...longHighway, properties: { kind: 'highway', ref: 'US 1010' } };
-    expect(
-      splitRoadsTile(tile([partial]), z, x, y, [phase({ ref: 'US 101', corridor })], true)
-    ).toBeNull();
-  });
-
   it('a crossing freeway with another ref is not clipped', () => {
-    expect(
-      splitRoadsTile(tile([i280Across]), z, x, y, [phase({ ref: 'US 101', corridor })], true)
-    ).toBeNull();
+    expect(splitRoadsTile(tile([i280Across]), z, x, y, [phase({ corridor })], true)).toBeNull();
   });
 
   it('on a zoom that is not a clip zoom nothing unlisted moves', () => {
-    expect(
-      splitRoadsTile(tile([longHighway]), z, x, y, [phase({ ref: 'US 101', corridor })], false)
-    ).toBeNull();
+    expect(splitRoadsTile(tile([longHighway]), z, x, y, [phase({ corridor })], false)).toBeNull();
   });
 
-  it('an unlisted feature of another kind with the ref is not clipped', () => {
+  it('an unlisted street with the ref (not a highway, not a link) is not clipped', () => {
     const major = { ...longHighway, properties: { kind: 'major_road', ref: 'US 101' } };
-    expect(
-      splitRoadsTile(tile([major]), z, x, y, [phase({ ref: 'US 101', corridor })], true)
-    ).toBeNull();
+    expect(splitRoadsTile(tile([major]), z, x, y, [phase({ corridor })], true)).toBeNull();
   });
 
   it('a tile away from every corridor is unchanged (null)', () => {
@@ -289,5 +291,154 @@ describe('splitRoadsTile', () => {
       )!
     );
     expect(out.roads_lc.map((f) => f.properties.lc_project)).toEqual(['p1']);
+  });
+});
+
+// The live check of v1.1 (docs/dev/lesscars.md "v1.1 live check") found removed freeway roads left
+// on the map: an `I 80` mainline piece along US-101 (35184403218590) and ref-less ramps (the
+// Harrison St off-ramp loop). Every freeway road along a removed line moves, whatever its ref;
+// kept freeways keep every piece that is nearer their own line.
+describe('splitRoadsTile: every freeway road along a removed line', () => {
+  const along = (v: number): Uv[][] => [
+    [
+      [1200, v],
+      [2800, v]
+    ]
+  ];
+  const run = (roads: Feat[], keep: [number, number][][] = [], ids: number[] = []) =>
+    splitRoadsTile(tile(roads), z, x, y, [phase({ ids, corridor })], true, { keep });
+
+  it('an unlisted highway with another ref along the line moves (the I 80 sliver)', () => {
+    const sliver = road(35184403218590, 'highway', along(2004), {
+      kind_detail: 'motorway',
+      ref: 'I 80'
+    });
+    const out = decode(run([sliver])!);
+    expect(out.roads).toEqual([]);
+    expect(out.roads_lc.map((f) => [f.id, f.properties.ref, f.properties.lc_project])).toEqual([
+      [sliver.id, 'I 80', 'p1']
+    ]);
+    expect(lengthOf(out.roads_lc)).toBeCloseTo(1600, -1);
+  });
+
+  it('a ref-less ramp along the line moves (the Harrison St loop), at every kind of link', () => {
+    const ramp = road(35184399860900, 'highway', along(1996), {
+      kind_detail: 'motorway_link',
+      is_link: true
+    });
+    // At z13 protomaps can draw a merged ramp as a primary_link major_road (35184381003850).
+    const lowZoomRamp = road(35184381003850, 'major_road', along(2006), {
+      kind_detail: 'primary_link',
+      is_link: true
+    });
+    const out = decode(run([ramp, lowZoomRamp])!);
+    expect(out.roads).toEqual([]);
+    expect(out.roads_lc.map((f) => f.id)).toEqual([ramp.id, lowZoomRamp.id]);
+  });
+
+  it('a ref-less ramp crossing the line stays: it is not the removed road', () => {
+    const across = road(
+      1,
+      'highway',
+      [
+        [
+          [2000, 1910],
+          [2000, 2090]
+        ]
+      ],
+      { kind_detail: 'motorway_link', is_link: true }
+    );
+    expect(run([across])).toBeNull();
+  });
+
+  it('a piece nearer a kept freeway line than the removed one stays', () => {
+    const keptLine: [number, number][][] = [
+      (
+        [
+          [1000, 2012],
+          [3000, 2012]
+        ] as Uv[]
+      ).map(lngLat)
+    ];
+    const removedSide = road(1, 'highway', along(2002), { ref: 'US 101' });
+    const keptSide = road(2, 'highway', along(2010), { ref: 'US 101' });
+    const out = decode(run([removedSide, keptSide], keptLine)!);
+    expect(out.roads.map((f) => f.id)).toEqual([2]);
+    expect(out.roads_lc.map((f) => f.id)).toEqual([1]);
+    expect(out.roads[0].geometry).toEqual(keptSide.geometry);
+  });
+
+  it('a road whose ref names only kept freeways stays, even nearer a removed line', () => {
+    // I-280 where the removed US-101 connectors merge into it at Alemany (35184399703420): the
+    // connector's CNN line can lie nearer the drawn I-280 than I-280's own line.
+    const i280 = road(35184399703420, 'highway', along(2002), { ref: 'I 280' });
+    const both = road(2, 'highway', along(2004), { ref: 'I 280;US 101' });
+    const out = decode(
+      splitRoadsTile(tile([i280, both]), z, x, y, [phase({ corridor })], true, {
+        keepRefs: ['I 280', 'CA 1']
+      })!
+    );
+    expect(out.roads.map((f) => f.id)).toEqual([i280.id]);
+    expect(out.roads_lc.map((f) => f.id)).toEqual([2]);
+    expect(
+      splitRoadsTile(tile([i280]), z, x, y, [phase({ ids: [i280.id], corridor })], true, {
+        keepRefs: ['I 280']
+      })
+    ).not.toBeNull();
+  });
+
+  it('a listed id keeps its pieces nearer a kept line too', () => {
+    const keptLine: [number, number][][] = [
+      (
+        [
+          [1000, 2012],
+          [3000, 2012]
+        ] as Uv[]
+      ).map(lngLat)
+    ];
+    expect(run([road(7, 'highway', along(2010))], keptLine, [7])).toBeNull();
+  });
+
+  it('where a kept freeway continues the removed line, the cut is at their shared end', () => {
+    // The corridor reaches 200 units past the removed line's end, as a buffer's join can.
+    const longCorridor = [
+      (
+        [
+          [1000, 1900],
+          [3200, 1900],
+          [3200, 2100],
+          [1000, 2100],
+          [1000, 1900]
+        ] as Uv[]
+      ).map(lngLat)
+    ];
+    const keptLine: [number, number][][] = [
+      (
+        [
+          [3000, 2000],
+          [4000, 2000]
+        ] as Uv[]
+      ).map(lngLat)
+    ];
+    const out = decode(
+      splitRoadsTile(tile([listedMerge]), z, x, y, [phase({ corridor: longCorridor })], true, {
+        keep: keptLine
+      })!
+    );
+    expect(lengthOf(out.roads_lc)).toBeCloseTo(1000, -1);
+    expect(lengthOf(out.roads)).toBeCloseTo(800, -1);
+  });
+});
+
+describe('keptOnlyRefs', () => {
+  it('names the refs only kept segments carry; the live catalog gives CA 1 and I 280', () => {
+    const seg = (ref: string | null, removedBy: string | null) => ({ ref, removedBy });
+    expect(
+      keptOnlyRefs([seg('US 101', 'p'), seg('US 101', null), seg('I 280', null), seg(null, null)])
+    ).toEqual(['I 280']);
+    const live = parseFreewayLand(
+      JSON.parse(readFileSync(LESSCARS_FREEWAY_LAND_JSON.live, 'utf8'))
+    );
+    expect(keptOnlyRefs(live.segments)).toEqual(['CA 1', 'I 280']);
   });
 });

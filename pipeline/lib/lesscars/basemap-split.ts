@@ -2,8 +2,9 @@
 // protomaps `roads` features of a removed freeway stretch are merged across the cut at the zooms
 // the page shows, so they cannot be hidden by id. The tiles step clips them at the removal
 // corridor (the phase's lines buffered by LC.basemapBandM, flat caps) and moves the parts inside it
-// to source layer `roads_lc`, tagged `lc_project`; the page draws that layer with clones of the
-// road layers and hides a project's features from its open day.
+// that run along a removed line, and nearer it than any kept freeway line, to source layer
+// `roads_lc`, tagged `lc_project`; the page draws that layer with clones of the road layers and
+// hides a project's features from its open day.
 import { VectorTile, type VectorTileFeature, type VectorTileLayer } from '@mapbox/vector-tile';
 import {
   fromVectorTileJs,
@@ -11,33 +12,66 @@ import {
   type VectorTileLayerLike
 } from '@maplibre/vt-pbf';
 import Pbf from 'pbf';
+import { LC } from '../../lesscars-config';
 import type { Duck } from '../duck';
 
 export const LC_ROADS_LAYER = 'roads_lc';
 
 export interface SplitPhase {
   projectId: string;
+  /** Curated ids (basemap-ids.json): moved inside the corridor whatever their kind or direction. */
   ids: ReadonlySet<number>;
-  ref: string | null;
+  /** The removed lines, [lng, lat]: the phase's CNN centrelines. */
+  lines: [number, number][][];
   /** Polygon ring(s), [lng, lat]: the phase's lines buffered by basemapBandM. */
   corridor: [number, number][][];
 }
 
+export interface SplitOptions {
+  /** The kept freeways' lines, [lng, lat]: a part nearer one of them than a removed line stays. */
+  keep?: readonly [number, number][][];
+  /**
+   * Refs only kept freeways carry (e.g. `I 280`): an unlisted road whose every `;`-separated ref
+   * token is one of them stays whole, wherever it runs.
+   */
+  keepRefs?: readonly string[];
+  /** A part within this of a line may run along it, metres (default LC.basemapBandM). */
+  bandM?: number;
+  /** A part runs along a line when their directions differ by at most this, degrees. */
+  parallelDeg?: number;
+}
+
 type Pt = [number, number];
+
+/** Equatorial circumference of the Web Mercator sphere, metres. */
+const EARTH_M = 2 * Math.PI * 6_378_137;
+/** Step of the along test inside a corridor, metres (at least one tile unit). */
+const STEP_M = 2;
 type Edge = [number, number, number, number]; // u0, v0, u1, v1
 type Geometry = ReturnType<VectorTileFeatureLike['loadGeometry']>;
 
 /** Web Mercator [0, 1] world coordinates of a [lng, lat]. */
-function world([lng, lat]: Pt): Pt {
+export function world([lng, lat]: Pt): Pt {
   const r = (lat * Math.PI) / 180;
   return [(lng + 180) / 360, (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2];
 }
 
 interface WorldPhase {
   rings: Pt[][];
+  lines: Pt[][];
   bbox: [number, number, number, number]; // world x0, y0, x1, y1
 }
 const worldCache = new WeakMap<SplitPhase, WorldPhase>();
+const keepCache = new WeakMap<readonly Pt[][], Pt[][]>();
+
+function worldKeep(keep: readonly Pt[][]): Pt[][] {
+  let w = keepCache.get(keep);
+  if (!w) {
+    w = keep.map((l) => l.map(world));
+    keepCache.set(keep, w);
+  }
+  return w;
+}
 
 function worldOf(p: SplitPhase): WorldPhase {
   let w = worldCache.get(p);
@@ -46,6 +80,7 @@ function worldOf(p: SplitPhase): WorldPhase {
     const pts = rings.flat();
     w = {
       rings,
+      lines: p.lines.map((l) => l.map(world)),
       bbox: [
         Math.min(...pts.map((q) => q[0])),
         Math.min(...pts.map((q) => q[1])),
@@ -66,11 +101,133 @@ interface TilePhase {
   cross: Edge[];
   /** Edges whose v span meets the region: the point-in-polygon ray (to +u) may meet any of them. */
   ray: Edge[];
+  /** The removed lines' segments near the tile. */
+  segs: Seg[];
 }
 
-function crossRef(ref: unknown, want: string | null): boolean {
-  if (want === null || typeof ref !== 'string') return false;
-  return ref.split(';').some((t) => t.trim() === want);
+/** A line segment in tile units, with its unit direction. */
+export interface Seg {
+  a: Pt;
+  b: Pt;
+  ux: number;
+  uy: number;
+}
+
+/** The segments of world-coordinate lines within `pad` tile units of the tile's region. */
+export function tileSegs(
+  lines: Pt[][],
+  n: number,
+  x: number,
+  y: number,
+  extent: number,
+  pad: number
+) {
+  const out: Seg[] = [];
+  const [lo, hi] = [-0.5 * extent - pad, 1.5 * extent + pad];
+  for (const l of lines)
+    for (let i = 1; i < l.length; i++) {
+      const a: Pt = [(l[i - 1][0] * n - x) * extent, (l[i - 1][1] * n - y) * extent];
+      const b: Pt = [(l[i][0] * n - x) * extent, (l[i][1] * n - y) * extent];
+      if (Math.max(a[0], b[0]) < lo || Math.min(a[0], b[0]) > hi) continue;
+      if (Math.max(a[1], b[1]) < lo || Math.min(a[1], b[1]) > hi) continue;
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len > 0) out.push({ a, b, ux: (b[0] - a[0]) / len, uy: (b[1] - a[1]) / len });
+    }
+  return out;
+}
+
+/**
+ * Distance from p to the nearest segment within `band` that runs along the unit direction
+ * (ux, uy), either sense (|cos| of the angle at least cosT); Infinity when there is none.
+ */
+export function alongDist(p: Pt, ux: number, uy: number, segs: Seg[], band: number, cosT: number) {
+  let best = Infinity;
+  for (const s of segs) {
+    if (Math.abs(ux * s.ux + uy * s.uy) < cosT) continue;
+    const [ex, ey] = [s.b[0] - s.a[0], s.b[1] - s.a[1]];
+    const t = Math.max(
+      0,
+      Math.min(1, ((p[0] - s.a[0]) * ex + (p[1] - s.a[1]) * ey) / (ex * ex + ey * ey))
+    );
+    const d = Math.hypot(p[0] - (s.a[0] + t * ex), p[1] - (s.a[1] + t * ey));
+    if (d <= band && d < best) best = d;
+  }
+  return best;
+}
+
+/** A basemap freeway road: a motorway (`highway`) or any link (ramp), whatever its ref or none. */
+export function freewayRoad(props: Record<string, unknown>): boolean {
+  const link = props.is_link;
+  return props.kind === 'highway' || link === true || link === 'true' || link === 1;
+}
+
+interface Along {
+  /** The kept freeways' segments near the tile. */
+  keep: Seg[];
+  band: number; // tile units
+  cosT: number;
+  step: number; // tile units
+}
+
+/**
+ * Relabels a run inside a corridor step by step: a step goes to the phase, among those whose
+ * corridor holds it, with the nearest removed line along it, unless a kept freeway line along it
+ * is nearer (then -1, it stays). A step along no removed line goes to the first phase listing the
+ * feature whose corridor holds it, only when no kept line runs along it; else -1. Vertices are
+ * kept, and points are added only where the label changes.
+ */
+function refineRun(
+  pts: Pt[],
+  phases: TilePhase[],
+  listed: (p: TilePhase) => boolean,
+  along: Along
+): { label: number; pts: Pt[] }[] {
+  const labelAt = (p: Pt, ux: number, uy: number): number => {
+    let best = -1;
+    let bestD = Infinity;
+    let firstListed = -1;
+    for (const ph of phases) {
+      if (!inside(p, ph.ray)) continue;
+      const d = alongDist(p, ux, uy, ph.segs, along.band, along.cosT);
+      if (d < bestD) [best, bestD] = [ph.index, d];
+      if (firstListed < 0 && listed(ph)) firstListed = ph.index;
+    }
+    const dKeep = alongDist(p, ux, uy, along.keep, along.band, along.cosT);
+    if (best >= 0) return bestD <= dKeep ? best : -1;
+    return dKeep === Infinity ? firstListed : -1;
+  };
+  const out: { label: number; pts: Pt[] }[] = [];
+  for (let i = 1; i < pts.length; i++) {
+    const [a, b] = [pts[i - 1], pts[i]];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len === 0) continue;
+    const [ux, uy] = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
+    const k = Math.max(1, Math.ceil(len / along.step));
+    const at = (t: number): Pt => [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+    for (let j = 0; j < k; j++) {
+      const label = labelAt(at((j + 0.5) / k), ux, uy);
+      const last = out.at(-1);
+      if (!last) out.push({ label, pts: [a] });
+      else if (last.label !== label) {
+        const cut = at(j / k);
+        last.pts.push(cut);
+        out.push({ label, pts: [cut] });
+      }
+    }
+    out.at(-1)!.pts.push(b);
+  }
+  return out;
+}
+
+/** Consecutive runs with one label joined (each run starts where the one before ends). */
+function joined(runs: { label: number; pts: Pt[] }[]): { label: number; pts: Pt[] }[] {
+  const out: { label: number; pts: Pt[] }[] = [];
+  for (const r of runs) {
+    const last = out.at(-1);
+    if (last && last.label === r.label) last.pts.push(...r.pts.slice(1));
+    else out.push({ label: r.label, pts: [...r.pts] });
+  }
+  return out;
 }
 
 function inside(p: Pt, edges: Edge[]): boolean {
@@ -164,11 +321,15 @@ function layerLike(
 
 /**
  * Moves the parts of the phases' features inside their corridor from `roads` to `roads_lc`
- * (property lc_project): at every zoom, every listed id; on clip zooms also every `highway`
- * feature whose ref has the phase's ref token. A feature is never moved whole: its parts outside
- * the corridor stay in `roads` with its id and properties (a listed id can be a low-zoom merge
- * that also covers a kept stretch). Other layers and features are re-encoded unchanged. null when
- * nothing moved.
+ * (property lc_project): at every zoom, every listed id; on clip zooms also every freeway road (a
+ * `highway` feature or any link, whatever its ref or none) except one whose refs only kept
+ * freeways carry (`keepRefs`). An unlisted part moves only when it runs along a removed line
+ * (within `bandM`, directions within `parallelDeg`), so a road that merely crosses the corridor
+ * stays. Any part nearer a kept freeway line along it (`keep`) than a removed one stays, so a kept
+ * freeway that continues a removed one or runs beside it keeps its pieces. A feature is never
+ * moved whole: its other parts stay in `roads` with its id and
+ * properties (a listed id can be a low-zoom merge that also covers a kept stretch). Other layers
+ * and features are re-encoded unchanged. null when nothing moved.
  */
 export function splitRoadsTile(
   mvt: Uint8Array,
@@ -176,7 +337,8 @@ export function splitRoadsTile(
   x: number,
   y: number,
   phases: readonly SplitPhase[],
-  clip: boolean
+  clip: boolean,
+  opts: SplitOptions = {}
 ): Uint8Array | null {
   const n = 2 ** z;
   // Tiles carry a buffer beyond their bounds: look half a tile around.
@@ -193,6 +355,20 @@ export function splitRoadsTile(
   if (!roads || roads.length === 0) return null;
   const extent = roads.extent;
   const [r0, r1] = [-0.5 * extent, 1.5 * extent];
+  // Web Mercator is conformal: a tile unit has one length in every direction at the tile.
+  const latC = Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + 0.5)) / n)));
+  const mPerUnit = (EARTH_M * Math.cos(latC)) / (n * extent);
+  const band = (opts.bandM ?? LC.basemapBandM) / mPerUnit;
+  const keepRefs = new Set(opts.keepRefs ?? []);
+  const keptRef = (ref: unknown) =>
+    typeof ref === 'string' &&
+    ref.split(';').every((t) => t.trim() !== '' && keepRefs.has(t.trim()));
+  const along: Along = {
+    keep: tileSegs(worldKeep(opts.keep ?? []), n, x, y, extent, band),
+    band,
+    cosT: Math.cos(((opts.parallelDeg ?? LC.basemapParallelDeg) * Math.PI) / 180),
+    step: Math.max(1, STEP_M / mPerUnit)
+  };
   const tilePhases: TilePhase[] = near.map(({ phase, index, w }) => {
     const cross: Edge[] = [];
     const ray: Edge[] = [];
@@ -209,21 +385,16 @@ export function splitRoadsTile(
         ray.push(e);
         if (Math.max(e[0], e[2]) >= r0 && Math.min(e[0], e[2]) <= r1) cross.push(e);
       }
-    return { index, phase, cross, ray };
+    return { index, phase, cross, ray, segs: tileSegs(w.lines, n, x, y, extent, band) };
   });
 
   const kept: VectorTileFeatureLike[] = [];
   const moved: VectorTileFeatureLike[] = [];
   for (let i = 0; i < roads.length; i++) {
     const f: VectorTileFeature = roads.feature(i);
-    const cands =
-      f.type !== 2
-        ? []
-        : tilePhases.filter(
-            (p) =>
-              (f.id !== undefined && p.phase.ids.has(f.id)) ||
-              (clip && f.properties.kind === 'highway' && crossRef(f.properties.ref, p.phase.ref))
-          );
+    const listedIn = (p: TilePhase) => f.id !== undefined && p.phase.ids.has(f.id);
+    const ruled = clip && freewayRoad(f.properties) && !keptRef(f.properties.ref);
+    const cands = f.type !== 2 ? [] : tilePhases.filter((p) => listedIn(p) || ruled);
     if (cands.length === 0) {
       kept.push(f);
       continue;
@@ -232,7 +403,11 @@ export function splitRoadsTile(
     const byPhase = new Map<number, { x: number; y: number }[][]>();
     for (const part of f.loadGeometry()) {
       const line = part.map((p) => [p.x, p.y] as Pt);
-      for (const run of runsOf(line, cands)) {
+      // Corridor runs first (exact cuts at its edges), then each inside run step by step.
+      const runs = runsOf(line, cands).flatMap((r) =>
+        r.label < 0 ? [r] : refineRun(r.pts, cands, listedIn, along)
+      );
+      for (const run of joined(runs)) {
         const pts = rounded(run.pts);
         if (pts === null) continue;
         if (run.label < 0) outside.push(pts);
@@ -259,6 +434,21 @@ export function splitRoadsTile(
   for (let i = 0; i < (prior?.length ?? 0); i++) already.push(prior!.feature(i));
   layers[LC_ROADS_LAYER] = layerLike(LC_ROADS_LAYER, roads.version, extent, [...already, ...moved]);
   return fromVectorTileJs({ layers });
+}
+
+/**
+ * The refs only kept freeway segments carry (a catalog segment with `removedBy` null), sorted:
+ * a basemap road with only these refs is a kept freeway wherever it runs (I-280, CA-1 on the live
+ * catalog; US-101 and I-80 are both kept and removed, so they are not).
+ */
+export function keptOnlyRefs(
+  segments: readonly { ref: string | null; removedBy: string | null }[]
+): string[] {
+  const removed = new Set(segments.filter((s) => s.removedBy !== null).map((s) => s.ref));
+  const kept = segments.filter(
+    (s) => s.removedBy === null && s.ref !== null && !removed.has(s.ref)
+  );
+  return [...new Set(kept.map((s) => s.ref!))].sort();
 }
 
 /** The `roads_lc` entry of the archive's vector_layers. */
@@ -291,7 +481,7 @@ export async function splitPhasesOf(
     const geom = JSON.parse(row.g) as
       { type: 'Polygon'; coordinates: Pt[][] } | { type: 'MultiPolygon'; coordinates: Pt[][][] };
     const corridor = geom.type === 'Polygon' ? geom.coordinates : geom.coordinates.flat();
-    out.push({ projectId: p.project, ids: new Set(p.ids), ref: p.ref, corridor });
+    out.push({ projectId: p.project, ids: new Set(p.ids), lines, corridor });
   }
   return out;
 }
