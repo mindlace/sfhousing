@@ -9,6 +9,7 @@ import {
   TIMELINE_SCORE_R0,
   makeTimelineScore
 } from './fixtures/timeline-score';
+import { formatMonthYear } from './format';
 import { dayFromUtc, monthIndex } from './time';
 
 const W = 300;
@@ -45,7 +46,7 @@ describe('niceCeil', () => {
 });
 
 describe('chartModel', () => {
-  const m = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, W);
+  const m = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, W, 290);
 
   it('has the fixed height and spans asOf to the horizon', () => {
     expect(CHART_H).toBe(140);
@@ -64,33 +65,33 @@ describe('chartModel', () => {
 
   // The 291-month fixture is paired with longer horizons on purpose: only the labels are checked.
   it('labels 2030, 2040, 2050 and 2060 for a 2066 horizon', () => {
-    const long = chartModel(TIMELINE_SCORE, FIX_ASOF, dayFromUtc(2066, 12, 31), W);
+    const long = chartModel(TIMELINE_SCORE, FIX_ASOF, dayFromUtc(2066, 12, 31), W, 290);
     expect(long.xTicks.map((t) => t.label)).toEqual(['2030', '2040', '2050', '2060']);
   });
 
   it('labels every 20 years past a 50-year span', () => {
-    const long = chartModel(TIMELINE_SCORE, FIX_ASOF, dayFromUtc(2100, 12, 31), W);
+    const long = chartModel(TIMELINE_SCORE, FIX_ASOF, dayFromUtc(2100, 12, 31), W, 290);
     expect(long.xTicks.map((t) => t.label)).toEqual(['2040', '2060', '2080', '2100']);
   });
 
   it('sets yMax to niceCeil of the largest drawn value, RHNA included', () => {
     expect(m.yMax).toBe(niceCeil(82069));
     // The baseline (12,000) decides the step: 190,000 alone rounds to 200,000, 202,000 to 500,000.
-    expect(chartModel(climbingTo(190000), FIX_ASOF, FIX_HORIZON, W).yMax).toBe(500000);
+    expect(chartModel(climbingTo(190000), FIX_ASOF, FIX_HORIZON, W, 290).yMax).toBe(500000);
   });
 
   it('includes the band high plus baseline and the references in yMax', () => {
     const band = makeTimelineScore();
     band.band = band.band.map((b, i) => ({ ...b, p90: (195000 * i) / 290 }));
     // 195,000 alone rounds to 200,000; with the baseline it is 207,000, so 500,000
-    expect(chartModel(band, FIX_ASOF, FIX_HORIZON, W).yMax).toBe(500000);
+    expect(chartModel(band, FIX_ASOF, FIX_HORIZON, W, 290).yMax).toBe(500000);
     const ref = makeTimelineScore();
     ref.references[0] = { ...ref.references[0], units: 150000 };
-    expect(chartModel(ref, FIX_ASOF, FIX_HORIZON, W).yMax).toBe(200000);
+    expect(chartModel(ref, FIX_ASOF, FIX_HORIZON, W, 290).yMax).toBe(200000);
   });
 
   it('draws three gridlines labelled with formatCompactCount', () => {
-    const flat = chartModel(TIMELINE_SCORE_R0, FIX_ASOF, FIX_HORIZON, W);
+    const flat = chartModel(TIMELINE_SCORE_R0, FIX_ASOF, FIX_HORIZON, W, 290);
     expect(flat.gridlines).toHaveLength(3);
     expect(flat.gridlines.map((g) => g.label)).toEqual(
       [0, flat.yMax / 2, flat.yMax].map((v) => formatCompactCount(v))
@@ -132,7 +133,7 @@ describe('chartModel', () => {
 
   it('has no band path when the band is empty', () => {
     expect(
-      chartModel({ ...makeTimelineScore(), band: [] }, FIX_ASOF, FIX_HORIZON, W).band
+      chartModel({ ...makeTimelineScore(), band: [] }, FIX_ASOF, FIX_HORIZON, W, 290).band
     ).toBeNull();
   });
 
@@ -155,7 +156,7 @@ describe('chartModel', () => {
 });
 
 describe('references', () => {
-  const m = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, W);
+  const m = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, W, 290);
 
   it('runs from max(from, asOf) to by at the units level', () => {
     const [planning, controller] = m.references;
@@ -170,8 +171,8 @@ describe('references', () => {
   it('starts at from when from is after asOf', () => {
     const s = makeTimelineScore();
     s.references[0] = { ...s.references[0], from: dayFromUtc(2030, 1, 1) };
-    expect(chartModel(s, FIX_ASOF, FIX_HORIZON, W).references[0].x1).toBe(
-      chartModel(s, FIX_ASOF, FIX_HORIZON, W).x(dayFromUtc(2030, 1, 1))
+    expect(chartModel(s, FIX_ASOF, FIX_HORIZON, W, 290).references[0].x1).toBe(
+      chartModel(s, FIX_ASOF, FIX_HORIZON, W, 290).x(dayFromUtc(2030, 1, 1))
     );
   });
 
@@ -179,7 +180,7 @@ describe('references', () => {
     expect(m.references.map((r) => r.color)).toEqual([COLORS.plan, COLORS.plan]);
     const s = makeTimelineScore();
     s.references[0] = { ...s.references[0], measure: 'completedNet' };
-    expect(chartModel(s, FIX_ASOF, FIX_HORIZON, W).references[0].color).toBe(COLORS.total);
+    expect(chartModel(s, FIX_ASOF, FIX_HORIZON, W, 290).references[0].color).toBe(COLORS.total);
   });
 
   it('ends each label with the series to compare with', () => {
@@ -191,7 +192,7 @@ describe('references', () => {
     );
     const s = makeTimelineScore();
     s.references[0] = { ...s.references[0], measure: 'completedNet' };
-    expect(chartModel(s, FIX_ASOF, FIX_HORIZON, W).references[0].label).toMatch(
+    expect(chartModel(s, FIX_ASOF, FIX_HORIZON, W, 290).references[0].label).toMatch(
       /\(compare with: Total net new homes\)$/
     );
   });
@@ -219,7 +220,7 @@ describe('series names and colours', () => {
 
 describe('chart domain extends below zero', () => {
   it('uses the most negative drawn value, here the plan band low', () => {
-    const m = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, W);
+    const m = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, W, 290);
     expect(m.yMin).toBe(-niceCeil(350));
     const zero = m.gridlines.find((g) => g.label === '0');
     expect(zero).toBeDefined();
@@ -233,7 +234,7 @@ describe('chart domain extends below zero', () => {
   it('adds a floor gridline only when it is at least 12 px below the zero line', () => {
     const deep = makeTimelineScore();
     deep.planEffectBand = deep.planEffectBand.map((p) => ({ ...p, p10: p.p10 - 9000 }));
-    const m = chartModel(deep, FIX_ASOF, FIX_HORIZON, W);
+    const m = chartModel(deep, FIX_ASOF, FIX_HORIZON, W, 290);
     expect(m.yMin).toBe(-10000);
     expect(m.gridlines.map((g) => g.label)).toEqual(['−10,000', '0', '50,000', '100K']);
     const [floor, zero] = m.gridlines;
@@ -242,7 +243,7 @@ describe('chart domain extends below zero', () => {
   });
 
   it('suppresses the floor gridline when it would crowd zero', () => {
-    const m = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, W);
+    const m = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, W, 290);
     const zero = m.gridlines.find((g) => g.label === '0')!;
     expect(CHART_H - zero.y).toBeLessThan(12);
     expect(m.gridlines).toHaveLength(3);
@@ -260,14 +261,14 @@ describe('chart domain extends below zero', () => {
       p50: p.p50 + 350,
       p90: p.p90 + 350
     }));
-    const m = chartModel(s, FIX_ASOF, FIX_HORIZON, W);
+    const m = chartModel(s, FIX_ASOF, FIX_HORIZON, W, 290);
     expect(m.yMin).toBe(0);
     expect(m.gridlines.map((g) => g.label)).toEqual(['0', '50,000', '100K']);
   });
 });
 
 describe('chartModel in revision 0', () => {
-  const m = chartModel(TIMELINE_SCORE_R0, FIX_ASOF, FIX_HORIZON, W);
+  const m = chartModel(TIMELINE_SCORE_R0, FIX_ASOF, FIX_HORIZON, W, 290);
 
   it('draws no plan series but keeps the references', () => {
     expect(m.planCompleted).toBeNull();
@@ -283,7 +284,7 @@ describe('chartModel in revision 0', () => {
 });
 
 describe('tableRows', () => {
-  const rows = tableRows(TIMELINE_SCORE, FIX_ASOF);
+  const rows = tableRows(TIMELINE_SCORE, FIX_ASOF, 290);
 
   it('has one row per January, the deadline and the final month, with no duplicates', () => {
     const idx = rows.map((r) => r.index);
@@ -307,7 +308,7 @@ describe('tableRows', () => {
   it('adds a separate deadline row when the deadline is not in January', () => {
     const s = makeTimelineScore();
     s.targets = s.targets.map((t) => ({ ...t, deadline: dayFromUtc(2031, 6, 30) }));
-    const out = tableRows(s, FIX_ASOF);
+    const out = tableRows(s, FIX_ASOF, 290);
     expect(out).toHaveLength(26);
     const at = out.map((r) => r.index);
     expect(at.indexOf(56)).toBe(at.indexOf(51) + 1);
@@ -329,7 +330,7 @@ describe('tableRows', () => {
   });
 
   it('reads "calculating…" for the plan cells in revision 0', () => {
-    for (const r of tableRows(TIMELINE_SCORE_R0, FIX_ASOF)) {
+    for (const r of tableRows(TIMELINE_SCORE_R0, FIX_ASOF, 290)) {
       expect(r.planCompleted).toBe('calculating…');
       expect(r.planEntitled).toBe('calculating…');
       expect(r.planBand).toBe('calculating…');
@@ -338,7 +339,7 @@ describe('tableRows', () => {
   });
 
   it('reads "calculating…" for the band while it is empty', () => {
-    const out = tableRows({ ...makeTimelineScore(), band: [] }, FIX_ASOF);
+    const out = tableRows({ ...makeTimelineScore(), band: [] }, FIX_ASOF, 290);
     expect(out.every((r) => r.band === 'calculating…')).toBe(true);
   });
 });
@@ -347,16 +348,91 @@ describe('chartLabel', () => {
   // Synthetic months: only the first, deadline, 2045 and last entries are read.
   it('summarises the total at the deadline, 2045 and the end', () => {
     const at2045 = monthIndex(dayFromUtc(2045, 6, 30), TIMELINE_SCORE.months[0], 291);
-    expect(chartLabel(TIMELINE_SCORE)).toBe(
-      'Net new homes in this simulation: 17,100 by the RHNA deadline, ' +
+    expect(chartLabel(TIMELINE_SCORE, 290)).toBe(
+      'Net new homes in this simulation so far: 17,100 by the RHNA deadline, ' +
         `${formatCount(12000 + 100 * at2045)} by 2045, ` +
-        `${formatCount(12000 + 29000)} by the end of 2050.`
+        `${formatCount(12000 + 29000)} by December 2050.`
     );
+  });
+
+  it('names the total at reveal and leaves out later milestones', () => {
+    expect(chartLabel(TIMELINE_SCORE, 10)).toBe(
+      `Net new homes in this simulation so far: ${formatCount(12000 + 1000)} by ` +
+        `${formatMonthYear(TIMELINE_SCORE.months[10])}.`
+    );
+    const at2045 = monthIndex(dayFromUtc(2045, 6, 30), TIMELINE_SCORE.months[0], 291);
+    const mid = chartLabel(TIMELINE_SCORE, 60);
+    expect(mid).toContain('17,100 by the RHNA deadline, ');
+    expect(mid).not.toContain('by 2045');
+    expect(
+      mid.endsWith(`${formatCount(12000 + 6000)} by ${formatMonthYear(TIMELINE_SCORE.months[60])}.`)
+    ).toBe(true);
+    expect(chartLabel(TIMELINE_SCORE, at2045)).toContain('by 2045');
   });
 
   it('names the last year of the score', () => {
     const s = makeTimelineScore();
     s.months = [...s.months.slice(0, -1), dayFromUtc(2066, 12, 1)];
-    expect(chartLabel(s)).toContain('by the end of 2066.');
+    expect(chartLabel(s, 290)).toContain('by December 2066.');
+  });
+});
+
+describe('reveal', () => {
+  const count = (path: string) => path.split('L').length;
+
+  it.each([0, 5, 100, 289])('reveal %i draws reveal+1 points', (k) => {
+    const m = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, W, k);
+    expect(count(m.total)).toBe(k + 1);
+    expect(count(m.planCompleted!)).toBe(Math.min(k + 1, TIMELINE_SCORE.planEffect.length));
+    expect(points(m.band!)).toHaveLength(2 * (k + 1));
+  });
+
+  it('keeps the plan series null when the plan effect is empty', () => {
+    const m = chartModel(TIMELINE_SCORE_R0, FIX_ASOF, FIX_HORIZON, W, 5);
+    expect(m.planCompleted).toBeNull();
+    expect(m.planBand).toBeNull();
+    expect(count(m.total)).toBe(6);
+  });
+
+  it('clamps reveal to the month range', () => {
+    expect(count(chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, W, 9999).total)).toBe(291);
+    expect(count(chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, W, -4).total)).toBe(1);
+  });
+
+  it('ignores unrevealed values in the y domain', () => {
+    const s = makeTimelineScore();
+    s.shown = s.shown.map((r, i) => (i === 290 ? { ...r, completedNet: 5_000_000 } : r));
+    const full = chartModel(s, FIX_ASOF, FIX_HORIZON, W, 290);
+    const part = chartModel(s, FIX_ASOF, FIX_HORIZON, W, 2);
+    const revealed = Math.max(
+      ...s.shown.slice(0, 3).map((r) => 12000 + r.completedNet),
+      ...s.band.slice(0, 3).map((b) => 12000 + b.p90)
+    );
+    const refs = s.references.map((r) => r.units);
+    expect(part.yMax).toBe(niceCeil(Math.max(82069, ...refs, revealed)));
+    expect(part.yMax).toBeLessThan(full.yMax);
+  });
+
+  it('takes the negative floor only from revealed values', () => {
+    const s = makeTimelineScore();
+    s.planEffect = s.planEffect.map((p, i) =>
+      i <= 2 ? { ...p, completedNetNew: 1, entitledNew: 1 } : p
+    );
+    s.planEffectBand = s.planEffectBand.map((b, i) =>
+      i <= 2 ? { p10: 1, p50: 1, p90: 2 } : { ...b, p10: -9000 }
+    );
+    expect(chartModel(s, FIX_ASOF, FIX_HORIZON, W, 2).yMin).toBe(0);
+    expect(chartModel(s, FIX_ASOF, FIX_HORIZON, W, 200).yMin).toBeLessThan(0);
+  });
+
+  it('tableRows stops at reveal and ends on it', () => {
+    const rows = tableRows(TIMELINE_SCORE, FIX_ASOF, 40);
+    expect(rows.every((r) => r.index <= 40)).toBe(true);
+    expect(rows[rows.length - 1].index).toBe(40);
+    expect(rows.some((r) => r.index === 51)).toBe(false);
+    expect(rows[rows.length - 1].date).toBe(formatMonthYear(TIMELINE_SCORE.months[40]));
+    const later = tableRows(TIMELINE_SCORE, FIX_ASOF, 60);
+    expect(later.some((r) => r.index === 51 && r.date === 'Jan 31, 2031')).toBe(true);
+    expect(later[later.length - 1].index).toBe(60);
   });
 });

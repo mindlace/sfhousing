@@ -82,6 +82,11 @@ export function niceCeil(v: number): number {
   return 10 * p;
 }
 
+/** The last month index to show, kept inside the run. */
+function clampReveal(reveal: number, n: number): number {
+  return Math.min(Math.max(Math.trunc(reveal) || 0, 0), n - 1);
+}
+
 const num = (n: number) => String(Math.round(n * 100) / 100);
 
 /** The T8 series' values as one drawn series. Empty arrays are not drawn. */
@@ -110,24 +115,31 @@ export function chartModel(
   score: TimelineScore,
   asOf: Day,
   horizon: Day,
-  width: number
+  width: number,
+  reveal: number
 ): ChartModel {
   const n = score.months.length;
+  const upTo = clampReveal(reveal, n) + 1;
   const base = score.baseline.completedNet;
   const x = (day: Day) => ((day - asOf) / (horizon - asOf)) * width;
   // Each value is the state at the end of its month: plot it at the next month's start, and the
   // last at the horizon.
   const xAt = (i: number) => (i + 1 < n ? x(score.months[i + 1]) : x(horizon));
 
-  const total = score.shown.map((s) => base + s.completedNet);
-  const pipeline = score.shown.map((s) => s.completedNetPipeline);
-  const fresh = score.shown.map((s) => s.completedNetNew);
-  const bandLow = score.band.map((b) => base + b.p10);
-  const bandHigh = score.band.map((b) => base + b.p90);
-  const planCompleted = score.planEffect.map((p) => p.completedNetNew);
-  const planEntitled = score.planEffect.map((p) => p.entitledNew);
-  const planLow = score.planEffectBand.map((b) => b.p10);
-  const planHigh = score.planEffectBand.map((b) => b.p90);
+  // Only the months up to `reveal` are drawn; the rest of the run is not yet known to the viewer.
+  const shown = score.shown.slice(0, upTo);
+  const band = score.band.slice(0, upTo);
+  const plan = score.planEffect.slice(0, upTo);
+  const planBand = score.planEffectBand.slice(0, upTo);
+  const total = shown.map((s) => base + s.completedNet);
+  const pipeline = shown.map((s) => s.completedNetPipeline);
+  const fresh = shown.map((s) => s.completedNetNew);
+  const bandLow = band.map((b) => base + b.p10);
+  const bandHigh = band.map((b) => base + b.p90);
+  const planCompleted = plan.map((p) => p.completedNetNew);
+  const planEntitled = plan.map((p) => p.entitledNew);
+  const planLow = planBand.map((b) => b.p10);
+  const planHigh = planBand.map((b) => b.p90);
 
   // Domain: every drawn value, the references and RHNA. It starts at 0 unless a drawn value is
   // negative (early plan effect can be): then it reaches down to -niceCeil. This is a deliberate
@@ -209,10 +221,11 @@ export function chartModel(
 /**
  * The "Show as table" rows: every January after `asOf`'s year, the RHNA deadline's month (dated
  * to the day) and the final month. One row per month index, sorted; the deadline row replaces
- * the month row it falls in.
+ * the month row it falls in. Nothing after month `reveal` is listed, and the last row is `reveal`.
  */
-export function tableRows(score: TimelineScore, asOf: Day): TableRow[] {
+export function tableRows(score: TimelineScore, asOf: Day, reveal: number): TableRow[] {
   const n = score.months.length;
+  const last = clampReveal(reveal, n);
   const base = score.baseline.completedNet;
   const row = (index: number, date: string): TableRow => {
     const s = score.shown[index];
@@ -233,32 +246,36 @@ export function tableRows(score: TimelineScore, asOf: Day): TableRow[] {
   };
 
   const byIndex = new Map<number, TableRow>();
-  const lastYear = utcParts(score.months[n - 1]).y;
+  const lastYear = utcParts(score.months[last]).y;
   for (let year = utcParts(asOf).y + 1; year <= lastYear; year++) {
     const i = monthIndex(dayFromUtc(year, 1, 1), score.months[0], n);
-    byIndex.set(i, row(i, formatMonthYear(score.months[i])));
+    if (i <= last) byIndex.set(i, row(i, formatMonthYear(score.months[i])));
   }
   const rhna = score.targets.find((t) => t.target.id === RHNA_ID);
   if (rhna) {
     const i = deadlineIndex(score, rhna.deadline);
-    byIndex.set(i, row(i, formatDate(rhna.deadline)));
+    if (i <= last) byIndex.set(i, row(i, formatDate(rhna.deadline)));
   }
-  if (!byIndex.has(n - 1)) byIndex.set(n - 1, row(n - 1, formatMonthYear(score.months[n - 1])));
+  if (!byIndex.has(last)) byIndex.set(last, row(last, formatMonthYear(score.months[last])));
   return [...byIndex.values()].sort((a, b) => a.index - b.index);
 }
 
-/** The SVG's `aria-label` (spec §4.6). */
-export function chartLabel(score: TimelineScore): string {
+/** The SVG's `aria-label`: the milestones reached by month `reveal`, then the total at `reveal`. */
+export function chartLabel(score: TimelineScore, reveal: number): string {
   const n = score.months.length;
+  const last = clampReveal(reveal, n);
   const totalAt = (i: number) =>
     formatCount(score.baseline.completedNet + score.shown[i].completedNet);
   const markers = scrubMarkers(score);
   const parts: string[] = [];
   const rhna = score.targets.find((t) => t.target.id === RHNA_ID);
-  if (rhna) parts.push(`${totalAt(deadlineIndex(score, rhna.deadline))} by the RHNA deadline`);
+  if (rhna) {
+    const i = deadlineIndex(score, rhna.deadline);
+    if (i <= last) parts.push(`${totalAt(i)} by the RHNA deadline`);
+  }
   const y2045 = markers[markers.length - 1];
-  parts.push(`${totalAt(monthIndex(y2045.day, score.months[0], n))} by 2045`);
-  const lastYear = utcParts(score.months[n - 1]).y;
-  parts.push(`${totalAt(n - 1)} by the end of ${lastYear}`);
-  return `Net new homes in this simulation: ${parts.join(', ')}.`;
+  const i2045 = monthIndex(y2045.day, score.months[0], n);
+  if (i2045 <= last) parts.push(`${totalAt(i2045)} by 2045`);
+  parts.push(`${totalAt(last)} by ${formatMonthYear(score.months[last])}`);
+  return `Net new homes in this simulation so far: ${parts.join(', ')}.`;
 }

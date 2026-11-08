@@ -165,7 +165,7 @@
       {/if}
     </section>
 
-    <ScoreChart {score} {asOf} {horizon} {day} />
+    <ScoreChart {score} {asOf} {horizon} {day} highWater={horizon} />
 
     <div class="mt-4">
       {#each at.targets as t, k (t.tp.target.id)}
