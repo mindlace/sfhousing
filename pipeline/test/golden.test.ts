@@ -238,9 +238,9 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     n === 3 ? '8711023C' : n === 4 ? '0026T001A' : `35120${String(n).padStart(2, '0')}`;
   const L = (n: number) => row(lotId(n));
 
-  it('holds every parcel, 19 rows (lot 19, 3512019, the freeway land, included)', () => {
-    expect(p.count).toBe(19);
-    expect(counts['scenario.parcels']).toBe(19);
+  it('holds every parcel, 25 rows (lot 19, the freeway land, and lots 20-25 included)', () => {
+    expect(p.count).toBe(25);
+    expect(counts['scenario.parcels']).toBe(25);
   });
 
   it('lot 19 is freeway land: ineligible and unhostable in every run, its removal counted', () => {
@@ -366,6 +366,9 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
 
   it('the RA1 mask: no-row lots 9, 12 and 13 are 95, lots 7 and 19 (no roll floor area) are 64', () => {
     for (const n of [9, 12, 13]) expect(L(n).imputed, `lot ${n}`).toBe(95);
+    for (const id of ['3512020', '3512022', '3512023', '3512024', '3513001'])
+      expect(row(id).imputed, id).toBe(95);
+    expect(row('3512021').imputed, 'lot 21').toBe(64);
     expect(L(7).imputed).toBe(64);
     expect(L(19).imputed, 'lot 19').toBe(64);
     expect(L(11).imputed).toBe(4);
@@ -380,84 +383,87 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       carried: counts['scenario.imputed.carried'],
       floor_area: counts['scenario.imputed.floor_area']
     }).toEqual({
-      year_built: 3,
+      // The no-row counts each gain lots 20 and 22-25 (no roll row).
+      year_built: 8,
       // + lot 15, whose only building (bbay, h=6, in its water part) gives 2 stories (bit 1).
-      existing_stories: 4,
-      improvement_share: 4,
-      existing_units: 4,
-      no_roll: 3,
+      existing_stories: 9,
+      improvement_share: 9,
+      existing_units: 9,
+      no_roll: 8,
       carried: 0,
-      // + vacant lots 15, 17 and 19 (no roll floor area).
-      floor_area: 7
+      // + vacant lots 15, 17, 19 and 21 (no roll floor area).
+      floor_area: 13
     });
   });
 
   it('report.json carries fired/of for every registered sd.* rule, with the golden values', () => {
     // [fired, of] and, for a unit-weighted rule, [units, unitsOf] (spec §6, AC 3 and 14).
     const want: Record<string, [number, number] | [number, number, number, number]> = {
-      // 25 parcel rows, lot 19's included (mini dates only its 3 retired rows and leaves
-      // date_rec_add empty). Lot 19 (3512019) adds a T11 parcel and two roll years throughout.
-      'sd.attrs.active-unknown': [0, 25],
+      // 31 parcel rows, lots 19-25's included (mini dates only its 3 retired rows and leaves
+      // date_rec_add empty). Lot 19 (3512019) adds a T11 parcel and two roll years throughout;
+      // lots 20-25 add six T11 parcels (all hostable while no road-like rule exists), lot 21
+      // (3512021) two roll years, and the P lots 20, 22, 24 and 25 four named-no-cap fires.
+      'sd.attrs.active-unknown': [0, 31],
       'sd.attrs.added-date-cast': [0, 0],
       'sd.attrs.dropped-date-cast': [0, 3],
-      'sd.attrs.latitude-cast': [0, 25],
-      'sd.attrs.longitude-cast': [0, 25],
-      'sd.attrs.no-blklot': [0, 25],
+      'sd.attrs.latitude-cast': [0, 31],
+      'sd.attrs.longitude-cast': [0, 31],
+      'sd.attrs.no-blklot': [0, 31],
       // Lots 12 and 15 match; the stand-in pseudo-lot 3512999 does not.
       'sd.exempt.unmatched': [1, 3],
       'sd.features.median-fallback': [2, 3],
-      'sd.features.no-building': [0, 35],
+      'sd.features.no-building': [0, 37],
       'sd.features.share-median': [2, 28],
       // Lot 15 (0 stories on the roll) takes 2 stories from bbay in both roll years.
-      'sd.features.stories-height': [2, 35],
-      'sd.features.vacant-share': [0, 36],
-      'sd.features.vacant-year-built': [0, 36],
+      'sd.features.stories-height': [2, 37],
+      'sd.features.vacant-share': [0, 38],
+      'sd.features.vacant-year-built': [0, 38],
       'sd.features.year-built-median': [0, 28],
       'sd.height.blank': [0, 8],
-      // Lot 18 has no historic status row.
-      'sd.historic.no-row': [1, 19],
+      // Lots 18 and 20-25 have no historic status row.
+      'sd.historic.no-row': [7, 25],
       // Lot 9, mini's one parcel with no land-use row, has no roll row, so it stays ineligible.
-      'sd.landuse.none-with-units': [0, 19],
+      'sd.landuse.none-with-units': [0, 25],
       // No clipped lot keeps over 95% of its area (lot 15 keeps 80%).
       'sd.parcels.clip-yield-loss': [0, 0],
       // Lot 15 crosses the shoreline, lot 16 lies in the water (45_land.sql).
-      'sd.parcels.land-clip': [1, 19],
+      'sd.parcels.land-clip': [1, 25],
       // Lots 15 to 17 reach beyond the two tile columns of the mini basemap, by design.
-      'sd.parcels.outside-tiles': [3, 19],
-      'sd.parcels.underwater': [1, 19],
-      'sd.roll.floor-area-cast': [0, 39],
-      'sd.roll.floor-area-missing': [11, 39],
-      'sd.roll.improvement-value-cast': [0, 39],
-      'sd.roll.land-value-cast': [0, 39],
-      'sd.roll.no-row': [3, 19],
-      'sd.roll.no-year': [0, 39],
-      'sd.roll.roll-year-cast': [0, 39],
-      'sd.roll.stories-cast': [0, 39],
-      'sd.roll.stories-max': [0, 39],
-      'sd.roll.units-capacity': [3, 35, 5000 + 5000 + 900, 11_052],
-      'sd.roll.units-cast': [0, 39],
-      'sd.roll.units-large': [0, 36],
-      'sd.roll.units-latest-jump': [0, 16],
-      'sd.roll.units-missing': [0, 35],
-      'sd.roll.units-spike': [0, 35, 0, 163],
-      'sd.roll.unmatched': [0, 39, 0, 11_052],
+      'sd.parcels.outside-tiles': [3, 25],
+      'sd.parcels.underwater': [1, 25],
+      'sd.roll.floor-area-cast': [0, 41],
+      'sd.roll.floor-area-missing': [18, 46],
+      'sd.roll.improvement-value-cast': [0, 41],
+      'sd.roll.land-value-cast': [0, 41],
+      'sd.roll.no-row': [8, 25],
+      'sd.roll.no-year': [0, 41],
+      'sd.roll.roll-year-cast': [0, 41],
+      'sd.roll.stories-cast': [0, 41],
+      'sd.roll.stories-max': [0, 41],
+      'sd.roll.units-capacity': [3, 37, 5000 + 5000 + 900, 11_052],
+      'sd.roll.units-cast': [0, 41],
+      'sd.roll.units-large': [0, 38],
+      'sd.roll.units-latest-jump': [0, 17],
+      'sd.roll.units-missing': [0, 37],
+      'sd.roll.units-spike': [0, 37, 0, 163],
+      'sd.roll.unmatched': [0, 41, 0, 11_052],
       'sd.roll.year-built-cast': [0, 31],
       'sd.roll.year-built-range': [1, 31],
-      'sd.roll.year-gap': [1, 36],
+      'sd.roll.year-gap': [1, 38],
       // Every mini lot is within ½ mile of a TOD stop, and every zoning code has a zone class.
       // No MUNI_TIER2_STOP_IDS id is a mini stop: all 438 list ids go unmatched.
       'sd.sb79.tier2-unmatched': [438, 438],
-      'sd.sb79.zone-unlisted': [0, 19],
-      'sd.yield.nonmonotone': [0, 19],
-      'sd.yield.zero-hostable': [3, 14],
-      'sd.zoning.c2-floor-approx': [0, 11],
-      'sd.zoning.generic-nc': [1, 11],
-      'sd.zoning.m1-floor-approx': [0, 11],
-      'sd.zoning.missing': [0, 11],
-      'sd.zoning.named-no-cap': [1, 11],
-      'sd.zoning.rc4-vanness-approx': [0, 11],
-      'sd.zoning.split-code': [0, 11],
-      'sd.zoning.unlisted': [0, 11]
+      'sd.sb79.zone-unlisted': [0, 25],
+      'sd.yield.nonmonotone': [0, 25],
+      'sd.yield.zero-hostable': [3, 20],
+      'sd.zoning.c2-floor-approx': [0, 17],
+      'sd.zoning.generic-nc': [1, 17],
+      'sd.zoning.m1-floor-approx': [0, 17],
+      'sd.zoning.missing': [0, 17],
+      'sd.zoning.named-no-cap': [5, 17],
+      'sd.zoning.rc4-vanness-approx': [0, 17],
+      'sd.zoning.split-code': [0, 17],
+      'sd.zoning.unlisted': [0, 17]
     };
     const sd = QUALITY_RULES.filter((r) => r.owner === 'scenario-data');
     expect(sd.map((r) => r.id)).toEqual(Object.keys(want));
@@ -472,8 +478,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
 
   it('report.json has none of the superseded scenario.* counts (spec §4.10)', () => {
     for (const k of SUPERSEDED_SCENARIO_COUNTS) expect(counts, k).not.toHaveProperty(k);
-    // + lot 19 (3512019), zoned P like lots 7, 9 and 12.
-    expect(counts['scenario.density_cap.rule.unlisted']).toBe(6);
+    // + lot 19 (3512019), zoned P like lots 7, 9 and 12; + the P lots 20, 22, 24 and 25.
+    expect(counts['scenario.density_cap.rule.unlisted']).toBe(10);
   });
 
   it('lot 14: R4 normalised to -R-4, Local Program, envelope 65', () => {

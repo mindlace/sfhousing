@@ -62,7 +62,7 @@ beforeAll(async () => {
 
 describe('scenario yields rebuild from parcels.bin and the chunk record (IA-8)', () => {
   it('every parcel: yield and baseYield equal scenarioYield on scenarioRecordOf', () => {
-    expect(p.count, '19 mini lots, lot 19 (3512019) included').toBe(19);
+    expect(p.count, '25 mini lots, lots 19-25 included').toBe(25);
     for (let i = 0; i < p.count; i++) {
       const id = p.id[i];
       const rec = recById.get(id);

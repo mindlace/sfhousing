@@ -33,11 +33,11 @@ describe('normalise mini fixture', () => {
         )
       ).map((r) => [r.t, r.n])
     );
-    // parcels: 19 lots, lot 2 has 3 rows → 21, + 3 retired + 1 null-id = 25 (attrs likewise);
-    // land use: 20 (lot 19's VACANT row included); height: 8 districts; roll: 18 rows in 2025 +
-    // 19 in 2024 (lot 13 and 3512099 only in 2024, lot 3 not in 2024; lot 19 in both) + 2 in 2023
-    // (lots 3 and 4)
-    expect(counts).toEqual({ p: 25, l: 20, f: 3, n: 3, o: 13, h: 8, a: 25, r: 39 });
+    // parcels: 25 lots, lot 2 has 3 rows → 27, + 3 retired + 1 null-id = 31 (attrs likewise);
+    // land use: 26 (lots 19-25's VACANT rows included); height: 8 districts; overture: 14 (lot
+    // 22's broad); roll: 19 rows in 2025 + 20 in 2024 (lot 13 and 3512099 only in 2024, lot 3 not
+    // in 2024; lots 19 and 21 in both) + 2 in 2023 (lots 3 and 4)
+    expect(counts).toEqual({ p: 31, l: 26, f: 3, n: 3, o: 14, h: 8, a: 31, r: 41 });
     const [ids] = await db.all<{ ok: boolean }>(
       `SELECT bool_and(mapblklot IS NULL OR typeof(mapblklot) = 'VARCHAR') ok FROM src_parcels`
     );
@@ -245,6 +245,34 @@ describe('normalise mini fixture', () => {
         exemptionsCsv: SB79_EXEMPTIONS_CSV.fixture
       })
     ).rejects.toThrow(/datasf-city-lands/);
+  });
+
+  it("mini lots 20 to 25: parcels, VACANT land use, zoning, and lot 21's VPUB roll rows", async () => {
+    const db = await miniDuck();
+    const ids = ['3512020', '3512021', '3512022', '3512023', '3512024', '3513001'];
+    const list = ids.map((id) => `'${id}'`).join(', ');
+    expect(
+      await db.all(`SELECT mapblklot FROM src_parcels WHERE mapblklot IN (${list}) ORDER BY 1`)
+    ).toHaveLength(6);
+    expect(
+      await db.all(
+        `SELECT DISTINCT landuse, resunits FROM src_landuse WHERE mapblklot IN (${list})`
+      )
+    ).toEqual([{ landuse: 'VACANT', resunits: 0 }]);
+    expect(
+      await db.all(
+        `SELECT DISTINCT property_class_code c FROM src_roll WHERE parcel_number = '3512021'`
+      )
+    ).toEqual([{ c: 'VPUB' }]);
+    expect(
+      await db.all(
+        `SELECT mapblklot, zoning_code FROM src_parcel_attrs
+         WHERE mapblklot IN ('3512021', '3512023') ORDER BY 1`
+      )
+    ).toEqual([
+      { mapblklot: '3512021', zoning_code: 'RH-2' },
+      { mapblklot: '3512023', zoning_code: 'RH-1' }
+    ]);
   });
 
   it('historic status: one row per listed apn, 0026T001A verbatim, lot 18 absent', async () => {

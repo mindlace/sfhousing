@@ -208,13 +208,14 @@ export const LIVE_PROFILE: InvariantProfile = {
 /**
  * The mini fixture's known answers (pipeline/test/fixtures/mini/README.md): Σ units
  * 2+6+4+3+1+2+0+12+0+3+3+7+5+40 (+0 on shoreline lots 15-17) +2 (lot 18) +0 (lot 19, freeway
- * land) = 90 exactly, 19 parcels, 17/19 matched land use, 10/11 kept buildings with hs ≠ 3, max parcel height 60 m (lot 14),
+ * land) +0 (lots 20-25, road-like rule) = 90 exactly, 25 parcels, 23/25 matched land use, 11/12 kept buildings with hs ≠ 3, max parcel height 60 m (lot 14),
  * 3 neighborhoods, 8 transit stops, one BART station.
  */
 export const FIXTURE_PROFILE: InvariantProfile = {
   unitsTarget: 90,
   unitsTol: 0,
-  parcelRange: [19, 19],
+  // Lots 1-25 (lots 20-25 are the road-like rule's).
+  parcelRange: [25, 25],
   landUseMatchMin: 0.8,
   heightCoverageMin: 0.5,
   pieceAreaParcelMin: 0.5,
@@ -233,9 +234,9 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   transitHeavyRailStations: ['Fixture Station'],
   // Spec §4.10 V16: every eligible mini parcel has a district (fixture known answer).
   heightJoinMin: 1,
-  // Ruling: 13 of the 15 eligible mini parcels have a 2025 roll row (lots 12 and 13 do not; lot 16
-  // is underwater and lot 19 freeway land, so not eligible).
-  rollJoinMin: 0.8,
+  // Ruling: 14 of the 21 eligible mini parcels have a 2025 roll row (lots 12, 13, 20, 22-25 do not;
+  // lot 21 has its VPUB row; lot 16 is underwater and lot 19 freeway land, so not eligible).
+  rollJoinMin: 14 / 21,
   // Spec §4.10 V18 "fixture exact": Σ 2025 roll units of the mini fixture after the units rules
   // (known answer, spec §4.11): 66, plus lot 3's 5,000 replaced by its LUDB 4 (RA1), plus the 2
   // homes on underwater lot 16 (kept: the land mask makes a lot unbuildable, not empty), plus lot
@@ -253,9 +254,10 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   // Spec §4.10 V30: the mini fixture fires rules on a handful of rows by design, so its shares
   // mean nothing; V30 still requires every rule to report.
   qualityShares: false,
-  // Fixture known answers: every lot but 18 has a historic row (18/19); 2 of the 3 exemption rows
-  // match an active parcel (lots 12 and 15; `3512999` is the unmatched stand-in pseudo-lot).
-  historicJoinMin: 18 / 19,
+  // Fixture known answers: every lot but 18 and 20-25 has a historic row (18/25); 2 of the 3
+  // exemption rows match an active parcel (lots 12 and 15; `3512999` is the unmatched stand-in
+  // pseudo-lot).
+  historicJoinMin: 18 / 25,
   exemptJoinMin: 2 / 3,
   policyMaxBytes: LIVE_PROFILE.policyMaxBytes,
   // Fixture known answers (mini README "Transit"): tier 1 FX-1 (BART) and 70011, 70012 (80
