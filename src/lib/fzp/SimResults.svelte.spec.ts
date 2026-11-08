@@ -15,6 +15,7 @@ import { scoreCopy } from '$lib/sim-page/policy';
 import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import type { LeverCapacity } from '$lib/sim/levers/resolve';
 import SimResults from './SimResults.svelte';
+import { formatPercent } from '$lib/scoreboard';
 import { scoreAt } from './score-view';
 import { dayFromUtc, monthIndex } from './time';
 
@@ -26,6 +27,7 @@ const INTRO =
 type Overrides = Partial<{
   score: typeof TIMELINE_SCORE | null;
   day: number;
+  highWater: number;
   bandRuns: number;
   bandRunsTotal: number;
   seed: number | null;
@@ -43,6 +45,7 @@ const props = (over: Overrides = {}) => {
     day: DAY,
     asOf: FIX_ASOF,
     horizon: FIX_HORIZON,
+    highWater: FIX_HORIZON,
     bandRuns: 101,
     bandRunsTotal: 101,
     seed: 7,
@@ -333,6 +336,27 @@ describe('targets and progress', () => {
       'At the deadline (Jan 31, 2031): 20%',
       'At the deadline (Jan 31, 2031): 18%'
     ]);
+  });
+
+  it('hides the deadline line until the high-water mark reaches the deadline month', async () => {
+    await page.viewport(1024, 768);
+    const before = await render(SimResults, {
+      props: props({ day: dayFromUtc(2030, 6, 1), highWater: dayFromUtc(2030, 12, 31) })
+    });
+    expect(document.body.textContent).not.toContain('At the deadline');
+    await before.unmount();
+
+    await render(SimResults, {
+      props: props({ day: dayFromUtc(2030, 6, 1), highWater: dayFromUtc(2031, 1, 1) })
+    });
+    const at = scoreAt(
+      TIMELINE_SCORE,
+      monthIndex(dayFromUtc(2030, 6, 1), TIMELINE_SCORE.months[0], TIMELINE_SCORE.months.length)
+    );
+    const lines = document.body.textContent!.match(/At the deadline \(Jan 31, 2031\): [^A]*%/g);
+    expect(lines?.map((l) => l.trim())).toEqual(
+      at.targets.map((t) => `At the deadline (Jan 31, 2031): ${formatPercent(t.atDeadline)}`)
+    );
   });
 
   it('lists the in-progress total and one row per stage, then the stopped line', async () => {

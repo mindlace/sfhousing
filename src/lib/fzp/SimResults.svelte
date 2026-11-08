@@ -13,6 +13,7 @@
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { Day } from '$lib/timelapse/time';
   import { formatDate, formatMonthYear } from './format';
+  import { monthIndex } from './time';
   import MapKey from './MapKey.svelte';
   import ScoreChart from './ScoreChart.svelte';
   import {
@@ -20,6 +21,7 @@
     bandLine,
     builtByTodayText,
     inProgressRows,
+    deadlineIndex,
     phasingFootnote,
     planBandLine,
     sinceText
@@ -33,6 +35,8 @@
     day: Day;
     asOf: Day;
     horizon: Day;
+    /** The furthest day reached: the deadline line waits until it reaches the deadline month. */
+    highWater: Day;
     bandRuns: number;
     bandRunsTotal: number;
     seed: number | null;
@@ -56,6 +60,7 @@
     day,
     asOf,
     horizon,
+    highWater,
     bandRuns,
     bandRunsTotal,
     seed,
@@ -98,6 +103,8 @@
     score && at ? sinceText(score, at).slice(formatCount(at.total).length) : ''
   );
   const planPending = $derived(at !== null && at.planCompleted === null);
+  /** The month index of the high-water mark: nothing after it is revealed. */
+  const reveal = $derived(score ? monthIndex(highWater, score.months[0], score.months.length) : -1);
 
   /** The map key opens by default on a wide viewport (the sheet on a phone starts closed). */
   const keyOpen = typeof matchMedia === 'function' && matchMedia(WIDE).matches;
@@ -165,14 +172,16 @@
       {/if}
     </section>
 
-    <ScoreChart {score} {asOf} {horizon} {day} highWater={horizon} />
+    <ScoreChart {score} {asOf} {horizon} {day} {highWater} />
 
     <div class="mt-4">
       {#each at.targets as t, k (t.tp.target.id)}
         <TargetRow tp={t.tp} net={at.total} {max} primary={k === 0} />
-        <p class="text-sm text-ink-muted dark:text-ink-dark-muted">
-          At the deadline ({formatDate(score.targets[k].deadline)}): {formatPercent(t.atDeadline)}
-        </p>
+        {#if reveal >= deadlineIndex(score, score.targets[k].deadline)}
+          <p class="text-sm text-ink-muted dark:text-ink-dark-muted">
+            At the deadline ({formatDate(score.targets[k].deadline)}): {formatPercent(t.atDeadline)}
+          </p>
+        {/if}
       {/each}
     </div>
 

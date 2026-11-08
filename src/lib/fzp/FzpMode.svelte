@@ -97,6 +97,7 @@
   } from '$lib/sim/scenario-client';
   import type { Day } from '$lib/timelapse/time';
   import { installFzpDebug } from './debug';
+  import { HighWater } from './high-water.svelte';
   import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
   import SimResults from './SimResults.svelte';
   import { DEFAULT_SPEED } from './playback';
@@ -268,6 +269,8 @@
   let bandRunsTotal = $state(0);
   let representative = $state(false);
   let day = $state<Day>(untrack(() => initialCalibration?.asOf ?? 0));
+  /** The furthest day reached: the results reveal nothing after it. Reset on entering Setup. */
+  const highWater = new HighWater(untrack(() => day));
   let playing = $state(false);
   let speed = $state<Speed>(DEFAULT_SPEED);
   /** The worker crashed after ready: scrubbing still works; the chip offers Retry. */
@@ -686,7 +689,14 @@
     if (runPhase !== 'run') onrun?.();
   }
 
+  // The mark follows every write to `day` (playback, scrubbing and the Retry path alike).
+  $effect(() => {
+    const d = day;
+    untrack(() => highWater.reach(d));
+  });
+
   // Setup (spec §1): no playback, and the day pinned at asOf, moved as a scrubber jump moves it.
+  // The high-water mark goes back to asOf with it (Edit policy and Today both land here).
   $effect(() => {
     if (runPhase !== 'setup') return;
     const a = asOf;
@@ -698,6 +708,7 @@
         day = a;
         onDay(a);
       }
+      highWater.reset(a);
     });
   });
 
@@ -935,6 +946,7 @@
       seed,
       representative,
       day,
+      highWater: highWater.value,
       asOf,
       horizon: HORIZON,
       playing,
@@ -985,6 +997,7 @@
     {day}
     {asOf}
     horizon={HORIZON}
+    highWater={highWater.value}
     {bandRuns}
     {bandRunsTotal}
     {seed}
