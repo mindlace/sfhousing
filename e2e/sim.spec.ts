@@ -842,6 +842,29 @@ test('the Today marker in a run returns to Setup; Replay at the horizon does not
   await expect(page.getByTestId('fzp-play-label')).toHaveText('Run');
 });
 
+test('scrubbing back keeps the chart and the high-water mark where they were', async ({ page }) => {
+  await gotoSim(page, '/sim', { run: true });
+  const total = scoreDetails(page).locator('[data-testid="fzp-chart"] [data-series="total"]');
+  await slider(page).focus();
+  for (let i = 0; i < 3; i++) await page.keyboard.press('PageUp');
+  const far = await fzp(page, 'day');
+  expect(far).toBeGreaterThan(await fzp(page, 'asOf'));
+  await expect.poll(() => fzp(page, 'highWater')).toBe(far);
+  const drawn = (await total.getAttribute('d'))!;
+  expect(drawn.length).toBeGreaterThan(0);
+
+  await page.keyboard.press('PageDown');
+  await page.keyboard.press('PageDown');
+  await expect.poll(() => fzp(page, 'day')).toBeLessThan(far);
+  expect(await fzp(page, 'highWater')).toBe(far);
+  await expect(total).toHaveAttribute('d', drawn);
+
+  // The partly revealed chart passes axe.
+  await openPolicy(page);
+  await expect(scoreDetails(page)).toBeVisible();
+  await expectNoA11yViolations(page);
+});
+
 test('axe: the dock on Results during a run', async ({ page }) => {
   await gotoSim(page, '/sim', { run: true });
   await openPolicy(page);
