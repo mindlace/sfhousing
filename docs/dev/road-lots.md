@@ -192,22 +192,21 @@ where the freeway-land catalog or the plan names it.
 
 | Lot        | Reason in rebuild | Net homes | Phase                                                                         |
 | ---------- | ----------------- | --------: | ----------------------------------------------------------------------------- |
-| `3758130`  | r3                |         4 | Not in the catalog or the plan; see below                                     |
+| `3758130`  | r3                |         4 | `i80-rincon` (within 15 m of its freed sites; see below)                      |
 | `3761063`  | r3                |         4 | `i80-rincon` (catalog segment `i80-soma`; Yerba Buena Dog Park, listed `out`) |
 | `4339002A` | r7                |        40 | `us101-james-lick` (listed `out`: across Bay Shore Blvd from the freeway)     |
-| `5573023`  | r3                |       125 | Not in the catalog or the plan; see below                                     |
-| `3526017`  | r3                |       217 | Not in the catalog or the plan; see below                                     |
+| `5573023`  | r3                |       125 | `us101-bayshore` (within 15 m of its freed sites; see below)                  |
+| `3526017`  | r3                |       217 | `us101-interchange` (within 15 m of its freed sites; see below)               |
 | `3503004`  | not flagged       |         - | `central-freeway-stub` (McCoppin Hub plaza, listed `out`)                     |
 
 For `3761063`, `4339002A` and `3503004` the phase is read from
 `pipeline/enrichment/lesscars/plan.json` (the `freewayLand.excluded` rows of `i80-rincon`,
 `us101-james-lick` and `central-freeway-stub`). The catalog and plan do not mention `3758130`,
-`5573023` or `3526017`, so the phase could not be determined from the files. By position only
-(unverified): `3758130` (I-80 eastbound near 7th and Bryant) is in the I-80 SoMa area, `3526017`
-(beside the US-101 southbound on-ramp at 13th and Mission) in the Central Freeway area, and
-`5573023` (US-101 northbound at Silver Ave) in the US-101 Bayshore area.
+`5573023` or `3526017`; their phases come from the 2026-11-07 investigation on
+`2026-11-02-0d40e1e2`, which measured each lot as touching or within 15 m of that phase's
+`lc:` sites in `sites.json`.
 
-All six stay unbuildable when their freeway comes down, because a road-like lot is not a candidate
+The five flagged lots stay unbuildable when their freeway comes down, because a road-like lot is not a candidate
 and does not donate neighbour zoning to a freed site. They become buildable only if the owner adds
 them to the freeway-land catalog, which is owner-approved and not changed here.
 
