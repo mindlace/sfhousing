@@ -1,6 +1,7 @@
 // Shared helpers for the plan-sharing e2e specs. Editor navigation and the drag helpers came from
-// e2e/brush.spec.ts, which keeps its own editor navigation and touch drag but strokes with
-// `mouseDrag` from here. The score helpers (`headerScore`, `headerNet`, `openResults`, `settledNet`) read `/`'s header score.
+// e2e/brush.spec.ts, which keeps its own editor navigation but strokes with `mouseDrag` and
+// `touchDrag` from here. The score helpers (`headerScore`, `headerNet`, `openResults`,
+// `settledNet`) read `/`'s header score.
 import {
   expect,
   type APIRequestContext,
@@ -130,12 +131,20 @@ export async function mouseDrag(page: Page, from: LngLat, to: LngLat, steps = 3)
   await page.mouse.up();
 }
 
-// One-finger drag through CDP, so Chromium emits real touch and pointer events.
+/**
+ * A straight one-finger drag through CDP, so Chromium emits real touch and pointer events. As with
+ * `mouseDrag`, few moves: a stroke covers the same parcels however many moves it takes, and each
+ * costs a preview and a software-GL frame; 12 moves took 3 to 6 s of a test at 15 workers. The
+ * brush starts a stroke on the touch's pointerdown and needs no minimum of moves (a touch with none
+ * is a stamp), and in Move MapLibre pans by each move's delta. `midway` runs after move
+ * `floor(steps / 2)` (a second finger mid-stroke, say).
+ */
 export async function touchDrag(
   cdp: CDPSession,
   [x0, y0]: [number, number],
   [x1, y1]: [number, number],
-  steps = 12
+  steps = 3,
+  midway?: () => Promise<void>
 ): Promise<void> {
   await cdp.send('Input.dispatchTouchEvent', {
     type: 'touchStart',
@@ -147,6 +156,7 @@ export async function touchDrag(
       type: 'touchMove',
       touchPoints: [{ x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t, id: 1 }]
     });
+    if (midway && i === Math.floor(steps / 2)) await midway();
   }
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }

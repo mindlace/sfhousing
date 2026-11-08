@@ -2,7 +2,7 @@
 // painted areas, Remove, undo and redo of a removed row, the autosave and Publish after one. Runs
 // against the VITE_E2E build, which exposes window.__sfhBrush (src/lib/brush/debug.ts) and
 // window.__sfhMap (src/lib/map/debug.ts), and shortens the worker's chunk retries to 50/100/200 ms.
-import { expect, test, type CDPSession, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { MSG } from '../src/lib/brush/messages';
 import type { SfhBrushDebug } from '../src/lib/brush/debug';
 import type { Plan } from '../src/lib/plan';
@@ -16,7 +16,8 @@ import {
   publishDialog,
   publishOpen,
   rows,
-  settledNet
+  settledNet,
+  touchDrag
 } from './helpers/sharing';
 
 type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
@@ -120,29 +121,6 @@ async function pickStories(page: Page, n: number): Promise<void> {
   const swatch = page.getByRole('button', { name: `${n} stories`, exact: true });
   await swatch.click();
   await expect(swatch).toHaveAttribute('aria-pressed', 'true');
-}
-
-// One-finger drag through CDP, so Chromium emits real touch and pointer events.
-async function touchDrag(
-  cdp: CDPSession,
-  [x0, y0]: [number, number],
-  [x1, y1]: [number, number],
-  steps = 12,
-  midway?: () => Promise<void>
-): Promise<void> {
-  await cdp.send('Input.dispatchTouchEvent', {
-    type: 'touchStart',
-    touchPoints: [{ x: x0, y: y0, id: 1 }]
-  });
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps;
-    await cdp.send('Input.dispatchTouchEvent', {
-      type: 'touchMove',
-      touchPoints: [{ x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t, id: 1 }]
-    });
-    if (midway && i === Math.floor(steps / 2)) await midway();
-  }
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
 
 async function lastCommitMeasure(page: Page): Promise<number | null> {
@@ -462,7 +440,7 @@ test.describe('brush tool', () => {
 
       // A second touch mid-stroke cancels it: still one op.
       await jumpAndIdle(page, FRAME);
-      await touchDrag(cdp, p, q, 12, async () => {
+      await touchDrag(cdp, p, q, 4, async () => {
         await cdp.send('Input.dispatchTouchEvent', {
           type: 'touchStart',
           touchPoints: [
