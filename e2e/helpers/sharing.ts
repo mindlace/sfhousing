@@ -227,6 +227,45 @@ export async function headerNet(page: Page): Promise<number> {
   return Number(t.replace(/homes[\s\S]*$/, '').replace(/[^\d-]/g, ''));
 }
 
+/**
+ * The header score once it is final for the plan the page holds; returns its text. Final means
+ * not `aria-busy` (every chunk the plan needs is loaded, the worker's `complete`) and above 0 (a
+ * diff of the plan arrived: before the first one the bar reads 0 and is not busy). Needs no map:
+ * the worker scores the plan whether or not the map has loaded. Exact for a plan loaded whole
+ * (`/p/:id`); after a stroke, use `committedNet`.
+ */
+export async function finalNet(page: Page): Promise<string> {
+  let text = '';
+  await expect
+    .poll(
+      async () => {
+        text = await headerScore(page).evaluate((el) =>
+          el.getAttribute('aria-busy') === 'false' ? (el.textContent ?? '').trim() : ''
+        );
+        return Number(text.replace(/homes[\s\S]*$/, '').replace(/[^\d-]/g, ''));
+      },
+      { timeout: 20_000 }
+    )
+    .toBeGreaterThan(0);
+  return text;
+}
+
+/**
+ * The header score after a stroke's commit (call once the editor holds the op). Until the
+ * commit's diff arrives the bar can show the last preview's score, not busy; `lastStats` is set
+ * by that diff, and the header takes its score on the next animation frame (`frameLatest`).
+ */
+export async function committedNet(page: Page): Promise<string> {
+  await page.waitForFunction(() => (window as Win).__sfhBrush?.lastStats != null);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  );
+  return finalNet(page);
+}
+
 /** The dock's Results face (the scoreboard on `/` and `/p/:id`). */
 export const resultsFace = (page: Page): Locator => page.getByRole('region', { name: 'Results' });
 
