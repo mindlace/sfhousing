@@ -215,3 +215,125 @@ them to the freeway-land catalog, which is owner-approved and not changed here.
 The investigation found `1939019` and `1939020`, the Yerba Buena Island right-of-way, with 4 homes
 each. The imagery review calls both `road`. The block `1939` row keeps them anyway, as the spec
 asks, because the island's lots are development parcels.
+
+## Live build
+
+Built 2026-11-08 on the owner's laptop (Apple M5 Pro, Mac17,9) as `2026-11-08-7d2097ac`, with the
+road-like rule and the curated `pipeline/enrichment/road-lots.json` of the imagery review, from the
+committed lock (unchanged). All 34 invariants passed, V17 and V18 included. The comparison version
+is `2026-11-02-0d40e1e2`, the v1.1 live build before the rule; its values follow in brackets.
+
+- **Time:** the phase timings in `report.json` sum to 177.2 s (2 min 57 s); `timings.scenario` was
+  73.1 s and `timings.lesscars` 7.8 s. The build wrote `manifest.json` at 12:18 UTC.
+- **Stop thresholds:** `scenario.road_like.net_removed` is 6,861 (limit 20,000). The /lesscars
+  2068 extra mean is 29,095.78 against 29,080.99 (+0.05%, limit 5%). Both pass.
+- **Warning line:** "scenario: road-like lots make 202 lots unbuildable, 6861 net homes of
+  static capacity (r7 3560, r1n 201, r2s 438, r3 2662, override 0)", followed by "road-like lot(s)
+  5431A010 have homes on the latest roll; they keep them and stay ineligible".
+
+### Counts
+
+| Count                             | Value |
+| --------------------------------- | ----: |
+| `road_like.candidates`            | 3,351 |
+| `road_like.raw`                   |   582 |
+| `road_like.raw.r7`                |   273 |
+| `road_like.raw.r1n`               |   200 |
+| `road_like.raw.r2s`               |   244 |
+| `road_like.raw.r3`                |    76 |
+| `road_like.kept`                  |    89 |
+| `road_like.listed`                |     0 |
+| `road_like.lots` (flagged)        |   493 |
+| `road_like.catalog_excluded`      |   481 |
+| `road_like.city_lands.rows`       | 1,035 |
+| `road_like.city_lands.named_lots` | 2,364 |
+| `road_like.city_lands.unmatched`  |   108 |
+
+The raw rows are the lots the rule flags before the override file; they sum to more than 582
+because a lot can fire several rules. The 582 raw lots less the 89 kept leave the 493 flagged. The
+lots by first firing reason are `road_like.lots.r7` 260, `.r1n` 124, `.r2s` 60, `.r3` 49 and
+`.override` 0. The quality rule `sd.parcels.road-like` fires on 493 of 155,020 parcels.
+
+### Lots and homes removed
+
+| Reason   | Lots flagged | Unhostable lots | Net homes removed | Hectares (unhostable) |
+| -------- | -----------: | --------------: | ----------------: | --------------------: |
+| r7       |          260 |             112 |             3,560 |                  9.10 |
+| r1n      |          124 |              31 |               201 |                  0.56 |
+| r2s      |           60 |              19 |               438 |                  4.44 |
+| r3       |           49 |              40 |             2,662 |                  8.09 |
+| override |            0 |               0 |                 0 |                  0.00 |
+| Total    |          493 |             202 |             6,861 |                 22.18 |
+
+The columns are `scenario.road_like.lots.*`, `scenario.road_like.unhostable.*` and
+`scenario.road_like.net_removed.*`. An unhostable lot is one that would have been hostable without
+the rule. The hectares are the summed `areaM2` of the 202 unhostable lots in `road-lots.csv`
+(221,832 m²). The csv has no hostable column, so they are the flagged lots with net homes above 0;
+their per-reason counts equal the `unhostable` counters (112, 31, 19, 40). The other 291 flagged
+lots have no net homes. All 493 flagged lots cover 51.33 ha.
+`scenario.road_like.with_roll_units` is 1 (`5431A010`, which keeps its roll homes and stays
+ineligible).
+
+### Calibration change
+
+The rule changes the T13 panel's `hostable_base`, so the initiation fit moves. Everything else in
+`calibration.json` is unchanged: `asOf` (day 20745), `schema`, `pathwayForNew`, `phaseGap`,
+`ppaShare`, `revision`, `size`, `streamlinedForLocalProgram` and all `transitions`. The changed
+fields are `initiation.intercept`, the 48 bin coefficients in `initiation.terms`, and
+`initiation.provenance.method` (the basis coefficient in its text). The calibration report has one
+initiation window (2007-01 to 2025-12), so these are its totals; the transition fitting windows
+(report section 2) do not change.
+
+| Measure (`calibration-report.md`)     |        Now |     Before |
+| ------------------------------------- | ---------: | ---------: |
+| hostable parcel-years                 |  2,771,882 |  2,775,539 |
+| exposure, parcel-months               | 32,842,859 | 32,886,359 |
+| parcel-years excluded                 |    151,515 |    147,858 |
+| events (record 720, permit 551)       |      1,271 |      1,271 |
+| intercept                             |   -9.47037 |   -9.49528 |
+| measurement-basis coefficient         |   0.155844 |   0.158139 |
+| `impliedSteadyState`, events per year |    82.0551 |    82.1869 |
+| `fzpPerYear`                          |    77.5169 |    77.5281 |
+| hostable unoccupied parcels           |    145,852 |    146,051 |
+| `fzpRatio`                            |   0.944693 |   0.943313 |
+| FZP over historical mean              |    1.15879 |    1.15896 |
+| hold-out predicted (observed 128)     |    386.767 |    386.941 |
+
+The parcel-years excluded rise in every roll year, by 188 in 2007 (8,060 against 7,872) and 201 in
+2025 (7,989 against 7,788). The event counts are unchanged (1,271, with 236 off the panel and 199
+on covered parcel-months), so the exposure falls by 0.13% and the hazard rises with it: the
+intercept moves by +0.0249 (about 2.5% on the hazard) and `fzpRatio` by +0.0014.
+
+### /lesscars
+
+| 2068             |     Now |  Before |
+| ---------------- | ------: | ------: |
+| mean extra homes | +29,096 | +29,081 |
+| p10              |  28,381 |  28,371 |
+| p50              |  29,184 |  29,175 |
+| p90              |  29,526 |  29,505 |
+| plan             | 116,212 | 116,181 |
+| baseline         |  87,116 |  87,100 |
+
+By source, as the page rounds it (largest remainder, summing to 29,096): freed 22,959 (22,947),
+parking 6,018 (6,020), transit-unlocked 119 (114), other 0.
+
+`lesscars.sites` is 166, as before, and `lesscars.sites.parcels` (115), `.held` (1),
+`.zero_gain_parking` (2) and the freed area (`lesscars.freed_m2.parcels` 388,806 m² and `.row`
+42,951 m²) are unchanged; every site's outline and parcel list in `sites.json` are the same.
+`lesscars.sites.zero_yield` rises from 15 to 17, and the freed homes at 2068 rise by 12 (22,947 to
+22,959). This is the `notNeighboursOf` change (see [lesscars.md](lesscars.md)): road-like lots no
+longer lend their zoning to a freed site, which moves what its neighbours allow. The mean moves by
++15 homes, inside the p10 to p90 band (1,145 wide).
+
+### Bytes and what did not move
+
+`scenarios/fzp/parcels.bin` is 2,106,151 B (2,106,971 B). Equal to `2026-11-02-0d40e1e2`:
+
+- `scenarios/fzp/projects.json` `asOf` is day 20745.
+- `transit.json` is byte-identical (Muni 2026-08-25; BART and Caltrain 2026-10-20).
+- The parcel count is 155,020, in the same 144 chunks.
+- The chunk geometry is equal: in every one of the 144 chunks `count`, `id`, `xy` and `rings`
+  match. Only `datasetVersion` (all chunks), `elig` (72 chunks) and `rl` (78 chunks) differ.
+- `buildings.pmtiles` is byte-identical (16,421,419 B). Its feature count was not counted; equal
+  bytes imply equal features.
