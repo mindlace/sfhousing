@@ -66,6 +66,7 @@ import {
 import { readFreedSites } from '../lib/lesscars/sites';
 import type { BasemapIdsFile } from '../lib/lesscars/basemap-ids';
 import { basemapIdsMissing } from '../lib/lesscars/basemap-roads';
+import { keptOnlyRefs } from '../lib/lesscars/basemap-split';
 import { LESSCARS_FILES, POLICY_BIN } from '../lib/scenario-files';
 import { LC } from '../lesscars-config';
 import type { FreewayLandFile, FreewaySegment } from '../lib/lesscars/freeway-land';
@@ -288,8 +289,16 @@ async function dataProblems(
 }
 
 /** cnn → [lng, lat] lines of every CNN the plan names (src_streets is EPSG:7131). */
-async function segmentLines(db: Duck, plan: LessCarsPlan): Promise<LessCarsPlanFile['segments']> {
-  const cnns = [...new Set(cnnsOf(plan).map((x) => x.cnn))].sort();
+function segmentLines(db: Duck, plan: LessCarsPlan): Promise<LessCarsPlanFile['segments']> {
+  return cnnLines(
+    db,
+    cnnsOf(plan).map((x) => x.cnn)
+  );
+}
+
+/** cnn → [lng, lat] lines of each of `cnnList` in src_streets (EPSG:7131). */
+async function cnnLines(db: Duck, cnnList: string[]): Promise<LessCarsPlanFile['segments']> {
+  const cnns = [...new Set(cnnList)].sort();
   const out: LessCarsPlanFile['segments'] = {};
   if (cnns.length === 0) return out;
   await createTableFromRows(
@@ -422,9 +431,23 @@ export async function writeLessCars(a: {
   warnings: string[];
   /** Each phase of the id list with its project's CNN lines, for the tiles split; [] without. */
   basemapPhases: BasemapPhase[];
+  /**
+   * The CNN lines of the catalog's kept segments (`removedBy` null), [lng, lat], for the tiles
+   * split: a basemap road nearer one of them stays. [] without split phases.
+   */
+  basemapKeep: [number, number][][];
+  /** The refs only kept catalog segments carry (keptOnlyRefs), for the tiles split. */
+  basemapKeepRefs: string[];
 }> {
   if (a.planPath === null || !existsSync(a.planPath))
-    return { written: false, counts: {}, warnings: [], basemapPhases: [] };
+    return {
+      written: false,
+      counts: {},
+      warnings: [],
+      basemapPhases: [],
+      basemapKeep: [],
+      basemapKeepRefs: []
+    };
   const { db, outDir, datasetVersion } = a;
   const warnings: string[] = [];
 
@@ -594,7 +617,21 @@ export async function writeLessCars(a: {
   };
   // Deflate bytes may differ across zlib builds, so fixture reports omit them (as policy.bin's).
   if (!FIXTURE_RE.test(datasetVersion)) counts['lesscars.bytes.timeline'] = body.length;
-  return { written: true, counts, warnings, basemapPhases: basemap.phases };
+  const keptCnns = (a.freewayLand?.segments ?? [])
+    .filter((s) => s.removedBy === null)
+    .flatMap((s) => s.cnn);
+  const basemapKeep =
+    basemap.phases.length > 0 && keptCnns.length > 0
+      ? Object.values(await cnnLines(db, keptCnns)).flat()
+      : [];
+  return {
+    written: true,
+    counts,
+    warnings,
+    basemapPhases: basemap.phases,
+    basemapKeep,
+    basemapKeepRefs: keptOnlyRefs(a.freewayLand?.segments ?? [])
+  };
 }
 
 /** The golden's canonical dump of a written timeline.bin, decoded against its parcels.bin. */

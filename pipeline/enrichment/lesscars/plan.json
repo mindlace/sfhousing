@@ -32,12 +32,12 @@
     },
     {
       "kind": "street",
-      "maxConcurrent": 6,
+      "maxConcurrent": 7,
       "provenance": {
         "tier": 4,
-        "label": "Six street projects at once (invented)",
+        "label": "Seven street projects at once (invented)",
         "sources": [],
-        "method": "Unsourced."
+        "method": "Unsourced. The owner raised v1's six to seven (2026-11-03) so the US-101 removal finishes sooner."
       }
     },
     {
@@ -1073,10 +1073,10 @@
       }
     },
     {
-      "id": "garage-south",
-      "label": "South edge garage (US-101 terminus, Division St)",
+      "id": "garage-rincon",
+      "label": "Bay Bridge edge garage (Rincon Hill, on the removed Harrison St off-ramp)",
       "kind": "edge-garage",
-      "startYear": 2031,
+      "startYear": 2033,
       "durationMonths": {
         "value": 24,
         "provenance": {
@@ -1093,20 +1093,20 @@
       },
       "dependsOn": [],
       "site": {
-        "parcel": "3901004"
+        "parcel": "3764064"
       },
       "spaces": {
-        "value": 750,
+        "value": 1700,
         "provenance": {
           "tier": 4,
-          "label": "750 spaces (invented)",
+          "label": "1,700 spaces (invented)",
           "sources": [
             {
               "label": "DataSF Streets – Active and Retired (3psu-pn9h).",
               "url": "https://data.sf.gov/d/3psu-pn9h"
             }
           ],
-          "method": "4,687 m² footprint × 5 levels ÷ 30 m² per space."
+          "method": "10,252 m² footprint × 5 levels ÷ 30 m² per space, rounded down to 50."
         }
       }
     },
@@ -1400,30 +1400,10 @@
           "method": "Central Freeway: demolition began March 2003, Octavia Boulevard opened 9 September 2005."
         }
       },
-      "dependsOn": ["fulton-brt", "n-judah-priority", "garage-south"],
+      "dependsOn": ["fulton-brt", "n-judah-priority"],
       "segments": [
         {
-          "line": [
-            [-122.419542, 37.770086],
-            [-122.4201, 37.770105],
-            [-122.420816, 37.770145],
-            [-122.4215, 37.770298],
-            [-122.422168, 37.770602],
-            [-122.422814, 37.771135],
-            [-122.423252, 37.77177],
-            [-122.423397, 37.771886]
-          ],
-          "provenance": {
-            "tier": 0,
-            "label": "Central Freeway stub from the Mission St ramps to Market St",
-            "sources": [
-              {
-                "label": "DataSF Streets – Active and Retired (3psu-pn9h).",
-                "url": "https://data.sf.gov/d/3psu-pn9h"
-              }
-            ],
-            "method": "Vertices of Streets CNN 19204001 from the Mission St ramp junction (−122.4194) to the Market St touchdown."
-          }
+          "cnn": ["19204001", "19264001"]
         }
       ],
       "rowHalfWidthM": {
@@ -1451,6 +1431,1000 @@
             "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
+      },
+      "freewayLand": {
+        "parcels": ["3502112", "3503002", "3513024", "3513071", "3513074"],
+        "excluded": [
+          {
+            "parcel": "3502134",
+            "reason": "Residential parcel on the 2025 roll (class A5)"
+          },
+          {
+            "parcel": "3502141",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3502145",
+            "reason": "Residential parcel on the 2025 roll (class Z)"
+          },
+          {
+            "parcel": "3503004",
+            "reason": "McCoppin Hub, a public plaza (OSM park on 93% of the lot)"
+          },
+          {
+            "parcel": "3513023",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3532002",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3532039",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3532040",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3532041",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3532069",
+            "reason": "An industrial property on the 2025 roll (class IX): a standing building or business, not vacant freeway land"
+          }
+        ]
+      }
+    },
+    {
+      "id": "us101-interchange",
+      "label": "US-101/I-80 interchange and the rest of the Central Freeway come down",
+      "kind": "highway-truncation",
+      "startYear": 2037,
+      "durationMonths": {
+        "value": 30,
+        "provenance": {
+          "tier": 2,
+          "label": "30 months to take down an elevated freeway stub",
+          "sources": [
+            {
+              "label": "SF Board of Supervisors, Resolution 94-13 (Central Freeway freeway agreement).",
+              "url": "https://www.sfbos.org/ftp/uploadedfiles/bdsupvrs/resolutions13/r0094-13.pdf"
+            }
+          ],
+          "method": "Central Freeway: demolition began March 2003, Octavia Boulevard opened 9 September 2005."
+        }
+      },
+      "dependsOn": ["fulton-brt", "n-judah-priority", "central-subway-north-beach"],
+      "segments": [
+        {
+          "cnn": [
+            "19189000",
+            "19206000",
+            "19207000",
+            "19208000",
+            "19212000",
+            "19213000",
+            "19217000",
+            "19243000",
+            "19244000",
+            "19258000",
+            "19267001",
+            "19267002",
+            "19269000",
+            "19281000",
+            "19371000",
+            "19372000",
+            "19373000"
+          ]
+        }
+      ],
+      "rowHalfWidthM": {
+        "value": 11,
+        "provenance": {
+          "tier": 4,
+          "label": "11 m either side of the freeway line (invented)",
+          "sources": [],
+          "method": "Half a four-lane deck with shoulders; unsourced."
+        }
+      },
+      "build": {
+        "startYear": 2040,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      },
+      "freewayLand": {
+        "parcels": [
+          "3514028",
+          "3515020",
+          "3522074",
+          "3523005",
+          "3526001",
+          "3527002",
+          "3528003",
+          "3528006",
+          "3529048",
+          "3530045",
+          "3531005",
+          "3531043",
+          "3531045",
+          "3905001",
+          "3906001",
+          "3906002",
+          "3907001",
+          "3907004",
+          "3908001",
+          "3908002",
+          "3908003",
+          "3909001",
+          "3909002",
+          "3909003",
+          "3917001",
+          "3918003",
+          "3959001"
+        ],
+        "excluded": [
+          {
+            "parcel": "3512006",
+            "reason": "Across Mission St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "3512010",
+            "reason": "Across Mission St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "3515019",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3515021",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3522016",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3522026",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3522027",
+            "reason": "22.9 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "3522042",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3522053",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3522060",
+            "reason": "30.3 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "3522061",
+            "reason": "37.3 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "3523008",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3523013",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3525056",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3526018",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3526020",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3526021",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3528011",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3530001",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3530032",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3530039",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3530042",
+            "reason": "A warehouse property on the 2025 roll (class IW): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3530047",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3530050",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3531013",
+            "reason": "33.4 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "3531014",
+            "reason": "41 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "3531016",
+            "reason": "A commercial property on the 2025 roll (class CM): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3531019",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3782001A",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3901003",
+            "reason": "A private parking lot (roll PL) beside the retired garage-south site, facing the deck across Division St"
+          },
+          {
+            "parcel": "3901004",
+            "reason": "The retired garage-south site: a private parking lot (roll PL) south of Division St, 12.7 m from the deck; it returns to an ordinary lot (spec)"
+          },
+          {
+            "parcel": "3903004",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3904001",
+            "reason": "15.8 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "3905002A",
+            "reason": "An industrial property on the 2025 roll (class IG): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3905012",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3906005",
+            "reason": "An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3910005",
+            "reason": "Across Vermont St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "3910006",
+            "reason": "Across Vermont St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "3935002",
+            "reason": "San Francisco Fire Station 29 (roll class FIRG), across Vermont St"
+          }
+        ]
+      }
+    },
+    {
+      "id": "us101-james-lick",
+      "label": "James Lick Freeway and the Hairball come down",
+      "kind": "highway-truncation",
+      "startYear": 2040,
+      "durationMonths": {
+        "value": 30,
+        "provenance": {
+          "tier": 2,
+          "label": "30 months to take down an elevated freeway stub",
+          "sources": [
+            {
+              "label": "SF Board of Supervisors, Resolution 94-13 (Central Freeway freeway agreement).",
+              "url": "https://www.sfbos.org/ftp/uploadedfiles/bdsupvrs/resolutions13/r0094-13.pdf"
+            }
+          ],
+          "method": "Central Freeway: demolition began March 2003, Octavia Boulevard opened 9 September 2005."
+        }
+      },
+      "dependsOn": ["j-church-priority", "central-subway-north-beach"],
+      "segments": [
+        {
+          "cnn": [
+            "19190000",
+            "19195000",
+            "19197000",
+            "19199000",
+            "19203000",
+            "19214000",
+            "19215000",
+            "19218000",
+            "19226000",
+            "19229000",
+            "19232000",
+            "19233000",
+            "19236000",
+            "19237000",
+            "19238000",
+            "19262000",
+            "19265000"
+          ]
+        }
+      ],
+      "rowHalfWidthM": {
+        "value": 11,
+        "provenance": {
+          "tier": 4,
+          "label": "11 m either side of the freeway line (invented)",
+          "sources": [],
+          "method": "Half a four-lane deck with shoulders; unsourced."
+        }
+      },
+      "build": {
+        "startYear": 2043,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      },
+      "freewayLand": {
+        "parcels": [
+          "3975001N",
+          "3976029",
+          "4011019",
+          "4026018",
+          "4076022",
+          "4077001",
+          "4090003",
+          "4091002",
+          "4091003",
+          "4093076",
+          "4139001",
+          "4140002",
+          "4157001",
+          "4202001",
+          "4215001",
+          "4261001",
+          "4277006",
+          "4277006A",
+          "4279029",
+          "4279030",
+          "4279033",
+          "4280027",
+          "4329010",
+          "4329011",
+          "4329012",
+          "4339002C",
+          "4339004",
+          "4339009",
+          "5508001",
+          "5509005",
+          "5510010"
+        ],
+        "excluded": [
+          {
+            "parcel": "4012031",
+            "reason": "Fallen Bridge Park, a named open space (land use OPENSPACE; OSM park)"
+          },
+          {
+            "parcel": "4027001",
+            "reason": "Benches Garden, a community garden (OSM park and garden library on the lot)"
+          },
+          {
+            "parcel": "4029009",
+            "reason": "Downtown High School grounds (OSM school on 94%)"
+          },
+          {
+            "parcel": "4029022",
+            "reason": "Downtown High School (SFUSD; OSM school on 97%; roll class EG)"
+          },
+          {
+            "parcel": "4090002",
+            "reason": "Zuckerberg San Francisco General Hospital campus (OSM hospital on 100%; roll class N1G)"
+          },
+          {
+            "parcel": "4093114",
+            "reason": "Across Vermont St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "4140001",
+            "reason": "Zuckerberg San Francisco General Hospital campus (OSM hospital on 100%; roll class OMD, medical office)"
+          },
+          {
+            "parcel": "4154001",
+            "reason": "Zuckerberg San Francisco General Hospital main campus (OSM hospital on 99%; roll class N1G; 7% in the band)"
+          },
+          {
+            "parcel": "4154002",
+            "reason": "OSM hospital on 39% of the lot"
+          },
+          {
+            "parcel": "4277016",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "4279001",
+            "reason": "A fire department property on the 2025 roll (class FIRG): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "4280006D",
+            "reason": "24.7 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "4339002A",
+            "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "4339006",
+            "reason": "Across Bay Shore Blvd from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "4339008",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          }
+        ]
+      }
+    },
+    {
+      "id": "us101-bayshore",
+      "label": "Bayshore Freeway comes down to the Alemany interchange",
+      "kind": "highway-truncation",
+      "startYear": 2043,
+      "durationMonths": {
+        "value": 30,
+        "provenance": {
+          "tier": 2,
+          "label": "30 months to take down an elevated freeway stub",
+          "sources": [
+            {
+              "label": "SF Board of Supervisors, Resolution 94-13 (Central Freeway freeway agreement).",
+              "url": "https://www.sfbos.org/ftp/uploadedfiles/bdsupvrs/resolutions13/r0094-13.pdf"
+            }
+          ],
+          "method": "Central Freeway: demolition began March 2003, Octavia Boulevard opened 9 September 2005."
+        }
+      },
+      "dependsOn": ["central-subway-north-beach", "k-ocean-priority"],
+      "segments": [
+        {
+          "cnn": [
+            "19191000",
+            "19200000",
+            "19220000",
+            "19221000",
+            "19234000",
+            "19245000",
+            "19246000",
+            "19250000",
+            "19268000",
+            "19270000",
+            "19278000",
+            "19280000",
+            "19353000"
+          ]
+        }
+      ],
+      "rowHalfWidthM": {
+        "value": 11,
+        "provenance": {
+          "tier": 4,
+          "label": "11 m either side of the freeway line (invented)",
+          "sources": [],
+          "method": "Half a four-lane deck with shoulders; unsourced."
+        }
+      },
+      "build": {
+        "startYear": 2046,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      },
+      "freewayLand": {
+        "parcels": [
+          "5511011",
+          "5512024",
+          "5512025",
+          "5512026",
+          "5512027",
+          "5533049",
+          "5576017",
+          "5596006",
+          "5596010A",
+          "5596011B",
+          "5596012A",
+          "5596013A",
+          "5596017A",
+          "5596017C",
+          "5596017E",
+          "5596044",
+          "5596046",
+          "5596051",
+          "5636025",
+          "5657050",
+          "5691045",
+          "5693037",
+          "5819009",
+          "5819010",
+          "5820034",
+          "5820035"
+        ],
+        "excluded": [
+          {
+            "parcel": "5372011",
+            "reason": "Across Alemany Blvd from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "5512007A",
+            "reason": "33.1 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "5512028",
+            "reason": "A service station property on the 2025 roll (class S): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "5533047",
+            "reason": "29.3 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "5557002",
+            "reason": "A miscellaneous property on the 2025 roll (class X): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "5559002",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "5573005",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "5577001",
+            "reason": "Across Holladay Ave from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "5577002",
+            "reason": "Across Holladay Ave from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "5577004",
+            "reason": "Residential parcel on the 2025 roll (class DA)"
+          },
+          {
+            "parcel": "5596001",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "5596012",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "5596015",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "5596039",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "5596042",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "5596050",
+            "reason": "26.4 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "5596052",
+            "reason": "37.9 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "5657048",
+            "reason": "32.9 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "5691023",
+            "reason": "41.9 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "5691024",
+            "reason": "41.3 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "5691037",
+            "reason": "39 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "5691047",
+            "reason": "40.7 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "5693003A",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "5693042",
+            "reason": "18.8 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "5695020",
+            "reason": "52 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "5733A002",
+            "reason": "28.1 m from the freeway, beyond the 25 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "5734002",
+            "reason": "Across Alemany Blvd and Putnam St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "5735005",
+            "reason": "Across Alemany Blvd and Putnam St from the freeway: city fabric, not frontage"
+          }
+        ]
+      }
+    },
+    {
+      "id": "i80-rincon",
+      "label": "I-80 over SoMa comes down; the Bay Bridge ends at Rincon Hill",
+      "kind": "highway-truncation",
+      "startYear": 2038,
+      "durationMonths": {
+        "value": 30,
+        "provenance": {
+          "tier": 2,
+          "label": "30 months to take down an elevated freeway stub",
+          "sources": [
+            {
+              "label": "SF Board of Supervisors, Resolution 94-13 (Central Freeway freeway agreement).",
+              "url": "https://www.sfbos.org/ftp/uploadedfiles/bdsupvrs/resolutions13/r0094-13.pdf"
+            }
+          ],
+          "method": "Central Freeway: demolition began March 2003, Octavia Boulevard opened 9 September 2005."
+        }
+      },
+      "dependsOn": ["garage-rincon", "central-subway-north-beach"],
+      "segments": [
+        {
+          "cnn": [
+            "19355000",
+            "19356000",
+            "19357000",
+            "19358000",
+            "19362000",
+            "19363000",
+            "19366000",
+            "19367000",
+            "19368000",
+            "19369000",
+            "19370000",
+            "19374000",
+            "19376000",
+            "19377000",
+            "19378000",
+            "19379000",
+            "19380000",
+            "19381000",
+            "19383000",
+            "19384000",
+            "19385000",
+            "19386000",
+            "19387000",
+            "19388000"
+          ]
+        }
+      ],
+      "rowHalfWidthM": {
+        "value": 11,
+        "provenance": {
+          "tier": 4,
+          "label": "11 m either side of the freeway line (invented)",
+          "sources": [],
+          "method": "Half a four-lane deck with shoulders; unsourced."
+        }
+      },
+      "build": {
+        "startYear": 2041,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      },
+      "freewayLand": {
+        "parcels": [
+          "3758121",
+          "3758126",
+          "3758127",
+          "3758128",
+          "3758129",
+          "3759038",
+          "3759040",
+          "3760002",
+          "3760114",
+          "3760116",
+          "3760117",
+          "3760120",
+          "3760123",
+          "3760124",
+          "3761062",
+          "3761064",
+          "3762004",
+          "3763126",
+          "3764056",
+          "3764064",
+          "3765714",
+          "3765715",
+          "3780014",
+          "3781007",
+          "3782002",
+          "3782004"
+        ],
+        "excluded": [
+          {
+            "parcel": "3752590",
+            "reason": "Across Harrison St and 5Th St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "3755014",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3755016",
+            "reason": "A commercial property on the 2025 roll (class CM): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3755021",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3755033",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3755034",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3755137",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3757002",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3757007",
+            "reason": "Across 8Th St and Bryant St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "3759001",
+            "reason": "24.1 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "3759002",
+            "reason": "16.1 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "3759041",
+            "reason": "Across 7Th St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "3759045",
+            "reason": "A government industrial property on the 2025 roll (class IXG): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3760014",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3760020",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3760055",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3760059",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3760111",
+            "reason": "16.5 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "3760112",
+            "reason": "15.6 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "3760121",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3760122",
+            "reason": "15.8 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "3760125",
+            "reason": "16.3 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "3760126",
+            "reason": "16.2 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "3760129",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3761002",
+            "reason": "An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3761063",
+            "reason": "Yerba Buena Dog Park (OSM dog park), a named open space under the deck"
+          },
+          {
+            "parcel": "3762012",
+            "reason": "An office property on the 2025 roll (class O): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3762014",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3762016",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3762026",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3762037",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3762049",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3762055",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3762058",
+            "reason": "Across Stillman St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "3762122",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3762149",
+            "reason": "Across Perry St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "3763015C",
+            "reason": "An office property on the 2025 roll (class OCH): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3763018",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3763078",
+            "reason": "Across Perry St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "3763079",
+            "reason": "Across Perry St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "3763080",
+            "reason": "Across Perry St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "3763080A",
+            "reason": "Across Perry St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "3763081",
+            "reason": "Across Perry St from the freeway: city fabric, not frontage"
+          },
+          {
+            "parcel": "3763113",
+            "reason": "35.5 m from the freeway, beyond the 15 m the rules accept for this land: not frontage"
+          },
+          {
+            "parcel": "3763125",
+            "reason": "A commercial property on the 2025 roll (class CM): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3776117",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3776118",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3777055",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3780023",
+            "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3780034",
+            "reason": "A garage property on the 2025 roll (class G): a standing building or business, not vacant freeway land"
+          },
+          {
+            "parcel": "3781011",
+            "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
+          }
+        ]
       }
     },
     {

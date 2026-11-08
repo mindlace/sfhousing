@@ -87,13 +87,21 @@ export async function writeBuildingsTiles(
 /**
  * outDir/basemap.pmtiles from the locked protomaps archive. Without split phases it is copied byte
  * for byte. With them every tile goes through splitRoadsTile (docs/dev/lesscars.md "Basemap ids"):
- * the removed freeway stretches move to source layer `roads_lc`, unlisted highways clipped only on
- * `clipZooms`. Returns the tiles rewritten and how many changed (0, 0 for a copy).
+ * the removed freeway stretches move to source layer `roads_lc`, unlisted freeway roads clipped
+ * only on `clipZooms`; parts nearer a kept freeway line (`keep`) and roads whose refs only kept
+ * freeways carry (`keepRefs`) stay. Returns the tiles
+ * rewritten and how many changed (0, 0 for a copy).
  */
 export async function writeBasemap(
   rawFile: string,
   outDir: string,
-  split: { phases: SplitPhase[]; clipZooms: readonly number[]; workDir: string } | null
+  split: {
+    phases: SplitPhase[];
+    keep?: [number, number][][];
+    keepRefs?: string[];
+    clipZooms: readonly number[];
+    workDir: string;
+  } | null
 ): Promise<{ tiles: number; changed: number }> {
   mkdirSync(outDir, { recursive: true });
   const out = join(outDir, 'basemap.pmtiles');
@@ -102,11 +110,12 @@ export async function writeBasemap(
     return { tiles: 0, changed: 0 };
   }
   const { phases, clipZooms } = split;
+  const opts = { keep: split.keep ?? [], keepRefs: split.keepRefs ?? [] };
   return rewritePmtiles({
     input: rawFile,
     output: out,
     workDir: join(split.workDir, 'basemap-split'),
-    transform: (z, x, y, mvt) => splitRoadsTile(mvt, z, x, y, phases, clipZooms.includes(z)),
+    transform: (z, x, y, mvt) => splitRoadsTile(mvt, z, x, y, phases, clipZooms.includes(z), opts),
     extraLayers: [LC_ROADS_VECTOR_LAYER]
   });
 }

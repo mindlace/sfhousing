@@ -9,7 +9,7 @@
       "cnn": ["19204001", "19264001"],
       "removedBy": "central-freeway-stub",
       "curated": "hand",
-      "parcels": ["3502112", "3503002", "3513024"],
+      "parcels": ["3502112", "3503002", "3513024", "3513071", "3513074"],
       "excluded": [
         { "parcel": "3502134", "reason": "Residential parcel on the 2025 roll (class A5)" },
         {
@@ -24,14 +24,6 @@
         {
           "parcel": "3513023",
           "reason": "A commercial property on the 2025 roll (class C): a standing building or business, not vacant freeway land"
-        },
-        {
-          "parcel": "3513071",
-          "reason": "SoMa West Skate Park (OSM pitch on 39% of the lot), a named open space under the viaduct"
-        },
-        {
-          "parcel": "3513074",
-          "reason": "SoMa West Dog Park (OSM dog park on 22% of the lot), a named open space under the viaduct"
         },
         {
           "parcel": "3532002",
@@ -557,7 +549,7 @@
     {
       "id": "i80-soma",
       "freeway": "I-80",
-      "label": "I-80 over SoMa, the US-101 interchange to the Rincon Hill ramps",
+      "label": "I-80 over SoMa, the US-101 interchange to the Rincon Hill ramps, and the Harrison St off-ramp",
       "ref": "I 80",
       "cnn": [
         "19355000",
@@ -571,12 +563,14 @@
         "19368000",
         "19369000",
         "19370000",
+        "19374000",
         "19376000",
         "19377000",
         "19378000",
         "19379000",
         "19380000",
         "19381000",
+        "19383000",
         "19384000",
         "19385000",
         "19386000",
@@ -604,6 +598,10 @@
         "3761064",
         "3762004",
         "3763126",
+        "3764056",
+        "3764064",
+        "3765714",
+        "3765715",
         "3780014",
         "3781007",
         "3782002",
@@ -1956,15 +1954,12 @@
         "4349002A",
         "4349003A",
         "4349003B",
-        "4349004",
         "4349012",
         "4349014",
-        "4382003",
         "4382005",
         "5214004",
         "5232004",
         "5232007",
-        "5232011",
         "5302051",
         "5302052",
         "5315049",
@@ -2242,12 +2237,20 @@
           "reason": "OSM pedestrian area on 79% of the lot (treated as public open space)"
         },
         {
+          "parcel": "4349004",
+          "reason": "Satellite spot check: the Caltrain tracks and their verges beside I-280, none of it within 12 m of a freeway line; a railway (rule 1), not freeway land"
+        },
+        {
           "parcel": "4349004A",
           "reason": "OSM pedestrian area on 50% of the lot (treated as public open space)"
         },
         {
           "parcel": "4349013",
           "reason": "OSM pedestrian area on 56% of the lot (treated as public open space)"
+        },
+        {
+          "parcel": "4382003",
+          "reason": "Satellite spot check: a working Muni vehicle storage yard, about half of it under the I-280 deck; a rail yard (rule 1), as the Muni Woods yard"
         },
         {
           "parcel": "5214001",
@@ -2266,6 +2269,10 @@
           "reason": "An industrial property on the 2025 roll (class IG): a standing building or business, not vacant freeway land"
         },
         { "parcel": "5231001", "reason": "Residential parcel on the 2025 roll (class AG)" },
+        {
+          "parcel": "5232011",
+          "reason": "Satellite spot check: a lane beside the Caltrain tracks, only its north end under an I-280 ramp (28% within 30 m of a freeway line): not freeway land"
+        },
         {
           "parcel": "5250010",
           "reason": "An industrial property on the 2025 roll (class I): a standing building or business, not vacant freeway land"
@@ -2499,11 +2506,9 @@
         "19361000",
         "19364000",
         "19365000",
-        "19374000",
         "19375001",
         "19375002",
-        "19382000",
-        "19383000"
+        "19382000"
       ],
       "removedBy": null,
       "curated": "rule",
@@ -2512,14 +2517,10 @@
         "3736007",
         "3736018",
         "3749052",
-        "3764056",
         "3764058",
-        "3764064",
         "3764065",
         "3764066",
         "3764067",
-        "3765714",
-        "3765715",
         "3766010",
         "3769001"
       ],

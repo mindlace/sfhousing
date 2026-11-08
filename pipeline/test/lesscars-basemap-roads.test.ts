@@ -11,7 +11,9 @@ import {
   type RoadPiece
 } from '../lib/lesscars/basemap-roads';
 import { parseBasemapIds, readBasemapIds } from '../lib/lesscars/basemap-ids';
-import { lesscarsBasemap } from '../steps/lesscars-basemap';
+import { splitPhasesOf, type SplitPhase } from '../lib/lesscars/basemap-split';
+import { openDuck } from '../lib/duck';
+import { lesscarsBasemap, splitReport } from '../steps/lesscars-basemap';
 import { MINI } from './helpers';
 
 const MINI_BASEMAP = path.join(MINI, 'raw/protomaps-basemap.pmtiles');
@@ -108,6 +110,28 @@ describe('basemap id list format', () => {
     expect(() => parseBasemapIds(bad([1.5]))).toThrow(/integer/);
     expect(() => parseBasemapIds({ ...ok, extra: 1 })).toThrow(/unknown key/);
     expect(() => parseBasemapIds({ ...ok, schema: 2 })).toThrow(/schema/);
+  });
+});
+
+describe('splitReport', () => {
+  it('lists the listed street the mini split moves, by phase and zoom, and nothing left', async () => {
+    const db = await openDuck();
+    let phases: SplitPhase[];
+    try {
+      phases = await splitPhasesOf(
+        db,
+        [{ project: 'hwy', ref: null, ids: FIXTURE_IDS, lines: [MINI_I80_LNGLAT] }],
+        25
+      );
+    } finally {
+      db.close();
+    }
+    const r = await splitReport({ pmtiles: MINI_BASEMAP, phases, kept: [] });
+    const row = r.rows.find((x) => x.id === FIXTURE_IDS[0]);
+    expect(row).toMatchObject({ project: 'hwy' });
+    expect(Object.keys(row!.movedM).map(Number)).toEqual([14, 15]);
+    expect(row!.movedM[15]).toBeGreaterThan(10);
+    expect(r.keptLostM).toEqual([]);
   });
 });
 

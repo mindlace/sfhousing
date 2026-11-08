@@ -108,7 +108,7 @@ describe.skipIf(!hasPmtiles)('basemap [tools]', () => {
     const pm = new PMTiles(new NodeFileSource(join(out, 'basemap.pmtiles')));
     const crossing: [number, number] = [-122.41929, 37.76067];
     // The listed id is in the mini archive at z14 and z15 only (protomaps merges Mission Street
-    // under other ids below z14; the live US-101 phases rely on the ref rule there).
+    // under other ids below z14; the live phases rely on the freeway-road rule there).
     const src = new PMTiles(new NodeFileSource(raw));
     const zooms: number[] = [];
     for (const z of LC.basemapClipZooms) {

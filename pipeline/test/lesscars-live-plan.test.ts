@@ -1,7 +1,8 @@
 // The live /lesscars plan (pipeline/enrichment/lesscars/plan.json) held to the owner-approved
-// document, docs/lesscars/plan-v1.md Appendix A. This file parses the document's tables itself
-// and rebuilds the expected plan from them, so it checks the transcription rather than echoing
-// whatever produced plan.json. CNN lists come from corridors.resolved.json; the geary-trench CNNs
+// document, docs/lesscars/plan-v1.md: Appendix A plus the v1.1 section ("freeway removal and
+// freeway land": Owner decisions, Phases, Garages, Appendix A changes). This file parses the
+// document's tables itself and rebuilds the expected plan from them, so it checks the
+// transcription rather than echoing whatever produced plan.json. CNN lists come from corridors.resolved.json; the geary-trench CNNs
 // and the Masonic display are the Plan 3 Decisions (global.md), restated here.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -13,9 +14,11 @@ import {
   type PlanProject,
   type SegmentRef
 } from '../../src/lib/data/lesscars/plan';
-import { checkPlan, schedulePlan } from '../../src/lib/data/lesscars/schedule';
+import { checkPlan, schedulePlan, yearStart } from '../../src/lib/data/lesscars/schedule';
 import type { Provenance } from '../../src/lib/timelapse/types';
-import { LESSCARS_PLAN_JSON } from '../lesscars-config';
+import { parseFreewayLand } from '../lib/lesscars/freeway-land';
+import { LESSCARS_FREEWAY_LAND_JSON, LESSCARS_PLAN_JSON } from '../lesscars-config';
+import { amended, errata, table, under } from './lesscars-doc';
 import { CORRIDORS_RESOLVED_JSON } from '../steps/lesscars-cnns';
 
 const ROOT = join(import.meta.dirname, '../..');
@@ -30,6 +33,7 @@ interface ResolvedCorridor {
   to: string;
   cnn: string[];
 }
+const catalog = parseFreewayLand(JSON.parse(readFileSync(LESSCARS_FREEWAY_LAND_JSON.live, 'utf8')));
 const resolved: { corridors: ResolvedCorridor[] } = JSON.parse(
   readFileSync(CORRIDORS_RESOLVED_JSON, 'utf8')
 );
@@ -108,24 +112,29 @@ const SOURCES = new Map(
   })
 );
 
-const PROVENANCES = new Map<string, Provenance>(
-  appendixTable('### Provenances').rows.map(([id, tier, label, sources, method]) => [
-    id,
-    {
-      tier: Number(tier) as Provenance['tier'],
-      label: stripMarkdown(label),
-      sources:
-        sources === '—'
-          ? []
-          : sources.split(', ').map((s) => {
-              const src = SOURCES.get(s);
-              if (!src) throw new Error(`${id}: no Appendix B row for ${s}`);
-              return src;
-            }),
-      method: stripMarkdown(method)
-    }
-  ])
-);
+const provenanceRow = ([id, tier, label, sources, method]: string[]): [string, Provenance] => [
+  id,
+  {
+    tier: Number(tier) as Provenance['tier'],
+    label: stripMarkdown(label),
+    sources:
+      sources === '—'
+        ? []
+        : sources.split(', ').map((s) => {
+            const src = SOURCES.get(s);
+            if (!src) throw new Error(`${id}: no Appendix B row for ${s}`);
+            return src;
+          }),
+    method: stripMarkdown(method)
+  }
+];
+
+// Appendix A's rows, then the v1.1 section's "Provenances added" (v1's rows stay valid for the
+// parameters v1.1 leaves unchanged: PV-hwy, PV-row-cfwy, PV-garage, PV-build).
+const PROVENANCES = new Map<string, Provenance>([
+  ...appendixTable('### Provenances').rows.map(provenanceRow),
+  ...tablesUnder('#### Provenances added')[0].rows.map(provenanceRow)
+]);
 
 function pv(id: string): Provenance {
   const p = PROVENANCES.get(id);
@@ -135,9 +144,9 @@ function pv(id: string): Provenance {
 
 /** `108 (PV-subway)` → a Param. */
 function param(text: string): Param {
-  const m = text.match(/^(\d+(?:\.\d+)?) \((PV-[\w-]+)\)$/);
+  const m = text.match(/^(\d[\d,]*(?:\.\d+)?) \((PV-[\w-]+)\)$/);
   if (!m) throw new Error(`not a Param: ${text}`);
-  return { value: Number(m[1]), provenance: pv(m[2]) };
+  return { value: Number(m[1].replace(/,/g, '')), provenance: pv(m[2]) };
 }
 
 const appendixProvenance = (label: string) =>
@@ -325,9 +334,97 @@ function appendixParkingRows() {
   );
 }
 
+// ---- The v1.1 section -----------------------------------------------------------------------------
+
+const V11 = under(DOC, '## v1.1 (2026-11-03): freeway removal and freeway land');
+const V11_ERRATA = errata(V11);
+const v11Fields = (heading: string): Record<string, string> =>
+  Object.fromEntries(
+    table(under(V11, heading)).map((r) => [unquote(r['Field']), r[Object.keys(r)[1]]])
+  );
+/** The ids in a "Projects added" / "Projects removed" table's first column. */
+const idsIn = (heading: string): string[] =>
+  table(under(V11, heading)).map((r) => unquote(Object.values(r)[0]));
+const ADDED = idsIn('#### Projects added');
+const REMOVED = idsIn('#### Projects removed');
+const US101_PHASES = ['us101-interchange', 'us101-james-lick', 'us101-bayshore'];
+const PHASES = ['central-freeway-stub', ...US101_PHASES, 'i80-rincon'];
+
+/** The catalog segment a phase removes; each phase removes exactly one. */
+const segmentOf = (phase: string) => {
+  const segs = catalog.segments.filter((s) => s.removedBy === phase);
+  if (segs.length !== 1) throw new Error(`${phase}: ${segs.length} catalog segments`);
+  return segs[0];
+};
+
+/** A phase's field table in the v1.1 section → its highway-truncation project. */
+function expectedPhase(id: string): PlanProject {
+  const f = v11Fields(`#### ${id} ${id === 'central-freeway-stub' ? '(changed)' : '(added)'}`);
+  const m = f.build.match(/^`\{ startYear: (\d{4}), durationMonths: (.+) \}`$/);
+  if (!m) throw new Error(`${id}: bad build ${f.build}`);
+  // The section's dated errata move CNNs and parcels between catalog segments; the approved phase
+  // tables stay as approved, so the moves are applied to them here.
+  const seg = segmentOf(id).id;
+  const parcels = amended(
+    JSON.parse(f.freewayLand.match(/parcels `(\[.*?\])`/)![1]) as string[],
+    seg,
+    V11_ERRATA.parcels
+  );
+  const cnns = amended(
+    JSON.parse(f.segments.match(/cnn: (\[.*?\])/)![1]) as string[],
+    seg,
+    V11_ERRATA.cnns
+  );
+  return {
+    id,
+    label: stripMarkdown(f.label),
+    kind: 'highway-truncation',
+    startYear: Number(f.startYear),
+    durationMonths: param(f.durationMonths),
+    dependsOn: JSON.parse(unquote(f.dependsOn)) as string[],
+    segments: [{ cnn: cnns }],
+    rowHalfWidthM: param(f.rowHalfWidthM),
+    build: { startYear: Number(m[1]), durationMonths: param(m[2]) },
+    freewayLand: { parcels, excluded: segmentOf(id).excluded }
+  };
+}
+
+function expectedGarageRincon(): PlanProject {
+  const f = v11Fields('##### garage-rincon');
+  return {
+    id: 'garage-rincon',
+    label: stripMarkdown(f.label),
+    kind: 'edge-garage',
+    startYear: Number(f.startYear),
+    durationMonths: param(f.durationMonths),
+    dependsOn: JSON.parse(unquote(f.dependsOn)) as string[],
+    site: { parcel: f.site.match(/parcel: "(\d+)"/)![1] },
+    spaces: param(f.spaces)
+  };
+}
+
+/** "Capacity changed": each row replaces that kind's maxConcurrent and provenance. */
+const CAPACITY_CHANGED = table(under(V11, '#### Capacity changed')).map((r) => ({
+  kind: unquote(r['`kind`']),
+  max: Number(r['v1.1 `maxConcurrent`']),
+  provenance: pv(r['`provenance`'])
+}));
+
+/** Appendix A's projects with the v1.1 changes: garage-south becomes garage-rincon in place, and
+ *  the stub is replaced by the stub and the four phases. */
+function applyV11(named: PlanProject[]): PlanProject[] {
+  return named.flatMap((p) =>
+    REMOVED.includes(p.id)
+      ? [expectedGarageRincon()]
+      : p.id === 'central-freeway-stub'
+        ? PHASES.map(expectedPhase)
+        : [p]
+  );
+}
+
 function expectedPlan(): LessCarsPlan {
-  const named = NAMED_HEADINGS.flatMap((h) => [...projectFields(h.trim()).values()]).map(
-    expectedProject
+  const named = applyV11(
+    NAMED_HEADINGS.flatMap((h) => [...projectFields(h.trim()).values()]).map(expectedProject)
   );
   const parking: PlanProject[] = appendixParkingRows().map((r) => ({
     id: r.id,
@@ -344,11 +441,14 @@ function expectedPlan(): LessCarsPlan {
     schema: 1,
     id: 'lesscars-v1',
     label: 'Fewer cars, v1',
-    capacity: appendixTable('### Capacity').rows.map(([kind, max, prov]) => ({
-      kind: unquote(kind) as 'transit',
-      maxConcurrent: Number(max),
-      provenance: pv(prov)
-    })),
+    capacity: appendixTable('### Capacity').rows.map(([kind, max, prov]) => {
+      const changed = CAPACITY_CHANGED.find((c) => c.kind === unquote(kind));
+      return {
+        kind: unquote(kind) as 'transit',
+        maxConcurrent: changed ? changed.max : Number(max),
+        provenance: changed ? changed.provenance : pv(prov)
+      };
+    }),
     projects: [...named, ...parking],
     displays: [
       {
@@ -402,22 +502,31 @@ const clone = (): LessCarsPlan => structuredClone(plan);
 
 // ---- Tests --------------------------------------------------------------------------------------
 
-describe('the live plan (plan-v1 Appendix A)', () => {
+describe('the live plan (plan-v1 Appendix A plus the v1.1 section)', () => {
   it('parses and checkPlan on the live plan is empty', () => {
     expect(checkPlan(plan, schedulePlan(plan))).toEqual([]);
   });
 
-  it('has the approved shape', () => {
+  it('has the approved v1.1 shape', () => {
+    const ids = plan.projects.map((p) => p.id);
     expect(plan.id).toBe('lesscars-v1');
     expect(plan.label).toBe('Fewer cars, v1');
-    expect(plan.projects).toHaveLength(64);
+    expect(ids).not.toContain('garage-south');
+    expect(ids).not.toContain('garage-alemany');
+    expect(ids).toEqual(expect.arrayContaining(['garage-rincon', 'i80-rincon', ...US101_PHASES]));
+    expect(ADDED).toEqual(['garage-rincon', ...US101_PHASES, 'i80-rincon']);
+    expect(REMOVED).toEqual(['garage-south']);
+    expect(plan.projects).toHaveLength(64 + ADDED.length - REMOVED.length);
     expect(plan.projects.filter((p) => p.kind === 'parking-conversion')).toHaveLength(46);
     expect(plan.capacity.map((c) => [c.kind, c.maxConcurrent])).toEqual([
       ['transit', 4],
-      ['street', 6],
+      ['street', 7],
       ['garage', 2],
       ['housing', 15]
     ]);
+    expect(plan.capacity.find((c) => c.kind === 'street')?.provenance.label).toBe(
+      'Seven street projects at once (invented)'
+    );
   });
 
   it('equals the plan rebuilt from the document, field for field and in order', () => {
@@ -436,7 +545,7 @@ describe('the live plan (plan-v1 Appendix A)', () => {
     }
   });
 
-  it('every provenance equals its Appendix A row (tier, label, sources, method)', () => {
+  it('every provenance equals its row (Appendix A or v1.1; tier, label, sources, method)', () => {
     for (const { path, provenance } of params(plan)) {
       const row = appendixProvenance(provenance.label);
       expect(row, path).toBeDefined();
@@ -498,7 +607,10 @@ describe('the live plan (plan-v1 Appendix A)', () => {
       ...plan.projects
         .filter(
           (p) =>
-            'segments' in p && p.kind !== 'street-removal' && p.segments.every((s) => 'cnn' in s)
+            'segments' in p &&
+            p.kind !== 'street-removal' &&
+            p.kind !== 'highway-truncation' &&
+            p.segments.every((s) => 'cnn' in s)
         )
         .map((p) => p.id),
       ...(plan.displays ?? []).map((d) => d.id)
@@ -552,6 +664,85 @@ describe('the live plan (plan-v1 Appendix A)', () => {
     expect(codes(checkPlan(withClash, schedulePlan(withClash)))).toContain(
       'masonic-station:duplicate-id'
     );
+  });
+
+  describe('v1.1', () => {
+    const byId = (id: string) => projectOf(plan, id);
+    const phases = plan.projects.filter(
+      // the union member's kind is 'highway-truncation' | 'street-removal': extract it, then narrow
+      (
+        p
+      ): p is Extract<PlanProject, { kind: 'highway-truncation' | 'street-removal' }> & {
+        kind: 'highway-truncation';
+      } => p.kind === 'highway-truncation'
+    );
+    const sched = schedulePlan(plan);
+    const t = (id: string) => sched.times.get(id)!;
+    const garagesOf = (id: string) =>
+      byId(id).dependsOn.filter((d) => byId(d).kind === 'edge-garage');
+
+    it('the phases are the stub and four more, in the section order', () => {
+      expect(phases.map((p) => p.id)).toEqual(PHASES);
+    });
+
+    it('each phase removes exactly its catalog segment and frees exactly its catalog parcels', () => {
+      for (const p of phases) {
+        const seg = segmentOf(p.id);
+        expect(p.segments, p.id).toEqual([{ cnn: seg.cnn }]);
+        expect(p.freewayLand?.parcels, p.id).toEqual([...seg.parcels].sort());
+        expect(p.freewayLand?.excluded, p.id).toEqual(seg.excluded);
+      }
+      expect(segmentOf('i80-rincon').cnn).toHaveLength(24);
+      expect(segmentOf('i80-rincon').cnn).toEqual(expect.arrayContaining(['19374000', '19383000']));
+    });
+
+    it('the phases start on the approved dates and the last build completes mid-2048', () => {
+      expect(phases.map((p) => [p.id, p.startYear])).toEqual([
+        ['central-freeway-stub', 2033],
+        ['us101-interchange', 2037],
+        ['us101-james-lick', 2040],
+        ['us101-bayshore', 2043],
+        ['i80-rincon', 2038]
+      ]);
+      const lastBuild = Math.max(...phases.map((p) => t(p.id).build!.completeDay));
+      expect(lastBuild).toBe(Date.UTC(2048, 6, 1) / 86400000);
+    });
+
+    it('no two phases of one freeway overlap', () => {
+      for (const a of phases)
+        for (const b of phases) {
+          if (a.id >= b.id || segmentOf(a.id).freeway !== segmentOf(b.id).freeway) continue;
+          const [ta, tb] = [t(a.id), t(b.id)];
+          expect(ta.startDay < tb.openDay && tb.startDay < ta.openDay, `${a.id} ${b.id}`).toBe(
+            false
+          );
+        }
+    });
+
+    it('i80-rincon depends on garage-rincon, which opens first; no US-101 phase depends on a garage', () => {
+      for (const id of ['central-freeway-stub', ...US101_PHASES])
+        expect(garagesOf(id), id).toEqual([]);
+      expect(byId('central-freeway-stub').dependsOn).toEqual(['fulton-brt', 'n-judah-priority']);
+      expect(byId('i80-rincon').dependsOn).toContain('garage-rincon');
+      expect(byId('garage-rincon')).toMatchObject({
+        site: { parcel: '3764064' },
+        spaces: { value: 1700 }
+      });
+      expect(segmentOf('i80-rincon').parcels).toContain('3764064');
+      for (const p of phases)
+        for (const g of garagesOf(p.id)) expect(t(g).openDay).toBeLessThanOrEqual(t(p.id).startDay);
+    });
+
+    it('the stub keeps its v1 dates', () => {
+      const stub = byId('central-freeway-stub');
+      expect(t('central-freeway-stub').startDay).toBe(yearStart(2033));
+      expect(stub).toMatchObject({
+        startYear: 2033,
+        durationMonths: { value: 30 },
+        build: { startYear: 2036, durationMonths: { value: 30 } },
+        freewayLand: { parcels: ['3502112', '3503002', '3513024', '3513071', '3513074'] }
+      });
+    });
   });
 
   it('no string in plan.json carries Markdown markup', () => {

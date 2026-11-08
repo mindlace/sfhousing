@@ -221,14 +221,23 @@ const steps: Record<string, { help: string; run: Step }> = {
     help: 'inspect or propose the basemap road ids of the /lesscars freeway removals',
     run: async (args) => {
       const v = latestOut();
-      const pmtiles = str(args.flags.pmtiles) ?? (v ? join(OUT, v, 'basemap.pmtiles') : undefined);
+      // --split reads the raw locked archive: a built basemap.pmtiles is already split.
+      const rawBasemap = () => {
+        const f = existsSync(LOCK)
+          ? readLock(LOCK).sources.find((s) => s.id === 'protomaps-basemap')?.files[0]
+          : undefined;
+        return f ? join(RAW, f.sha256) : undefined;
+      };
+      const pmtiles =
+        str(args.flags.pmtiles) ??
+        (args.flags.split ? rawBasemap() : v ? join(OUT, v, 'basemap.pmtiles') : undefined);
       if (!pmtiles || !existsSync(pmtiles)) {
         console.error('no basemap.pmtiles: build a dataset or pass --pmtiles <file>');
         return 1;
       }
       const band = str(args.flags.band);
       return lesscarsBasemap({
-        mode: args.flags.report ? 'report' : 'candidates',
+        mode: args.flags.split ? 'split' : args.flags.report ? 'report' : 'candidates',
         pmtiles,
         lockPath: LOCK,
         rawDir: RAW,

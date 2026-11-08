@@ -234,6 +234,9 @@ the plan document and in `plan.json`. The pipeline check refuses a listed parcel
 1. **Freeway land is unbuildable everywhere while its freeway stands** (owner, 2026-11-03): in
    `/sim`, FZP and both /lesscars runs. The build reports the change to `/sim`'s numbers before
    anything ships.
+2. **Plan review supersedes this spec where they differ** (owner, 2026-11-03): decisions 1-6 of
+   `docs/lesscars/plan-v1.md` v1.1 "Owner decisions" (one garage, `garage-rincon` on 3764064; no
+   garage dependency for US-101; street cap 7; the stub's parks freed) win over this spec.
 
 ## Rulings while planning (2026-11-03)
 
