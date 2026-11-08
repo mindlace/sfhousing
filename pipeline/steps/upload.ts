@@ -3,6 +3,7 @@ import { join, relative, sep } from 'node:path';
 import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
 import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
 import { FONT_STACKS, IMMUTABLE, STAGING_ORIGIN } from '../config';
+import { codePathsDirty } from '../lib/version';
 import { lockSha256, rawPath, type Lock } from '../lib/lock';
 import { contentTypeFor, type R2Target } from '../lib/r2';
 
@@ -24,6 +25,13 @@ export interface UploadArgs {
   concurrency?: number;
   retries?: number;
   log?: (s: string) => void;
+  /**
+   * Repo root for the dirty-tree guard: when set (and not `local`), an upload is refused while
+   * the code-hash paths have uncommitted changes, since the built version would match no commit.
+   */
+  repoRoot?: string;
+  /** Local R2 (fixtures, dev loads): exempt from the dirty-tree guard. */
+  local?: boolean;
   /** Backoff wait; injectable for tests. */
   sleep?: (ms: number) => Promise<void>;
 }
@@ -136,6 +144,15 @@ export async function upload(a: UploadArgs): Promise<number> {
   if (!DATASET_VERSION_RE.test(v)) {
     log(`refusing to upload: invalid dataset version '${v}'`);
     return 1;
+  }
+  if (a.repoRoot !== undefined && !a.local) {
+    const dirty = await codePathsDirty(a.repoRoot);
+    if (dirty.length > 0) {
+      log('refusing to upload: uncommitted changes under the code-hash paths, so this dataset');
+      log('version matches no commit. Commit them, rebuild, then upload:');
+      for (const d of dirty) log(d);
+      return 1;
+    }
   }
   let raw: unknown;
   try {

@@ -186,7 +186,9 @@ const steps: Record<string, { help: string; run: Step }> = {
         // Fixture datasets have no raw archives to publish (and skip the lockSha256 check).
         lock: lockPath ? readLock(lockPath) : { sources: [] },
         rawDir: RAW,
-        target: wranglerTarget({ local: args.flags.local === true })
+        target: wranglerTarget({ local: args.flags.local === true }),
+        repoRoot: ROOT,
+        local: args.flags.local === true
       });
     }
   },

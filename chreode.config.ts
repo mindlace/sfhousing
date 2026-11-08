@@ -11,10 +11,9 @@ export default defineConfig({
     // rule wins.
     { match: ['docs/dev/pipeline.md'], triggers: ['format', 'unit', 'pipeline'] },
     { match: ['CLAUDE.md', 'docs/dev/**'], triggers: ['format', 'unit'] },
-    { match: ['**/*.md'], triggers: ['format'] },
     // The scenario step and the dataset-version code hash read these (the code hash is load-bearing
     // for deploys: both workflows refuse a commit whose dataset is unpublished), so a change here
-    // also runs test:pipeline and the dataset check. Before the src/** rule: the first matching rule wins.
+    // also runs test:pipeline and the dataset check. Before the **/*.md and src/** rules: the first matching rule wins.
     {
       match: [
         'src/lib/generator/**',
@@ -34,6 +33,9 @@ export default defineConfig({
       match: ['pipeline/**'],
       triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline', 'dataset']
     },
+    // Any other markdown is format-only. After the code-hash rules (a .md under pipeline/ or src/lib/data
+    // is in the dataset code hash and needs the dataset step): the first matching rule wins.
+    { match: ['**/*.md'], triggers: ['format'] },
     { match: ['src/**'], triggers: ['lint', 'check', 'unit', 'e2e'] },
     // fixture-0 is generated; pipeline/test/golden.test.ts compares it with the golden, so a
     // change here also runs test:pipeline. Before the e2e/** rule: the first matching rule wins.

@@ -10,16 +10,20 @@ export function manifestUrl(origin: string, v: string, now: number = Date.now())
 export async function datasetServed(
   v: string,
   origin: string,
-  opts: { fetch?: typeof fetch; attempts?: number; delayMs?: number } = {}
+  opts: { fetch?: typeof fetch; attempts?: number; delayMs?: number; timeoutMs?: number } = {}
 ): Promise<Served> {
   const doFetch = opts.fetch ?? fetch;
   const attempts = opts.attempts ?? 3;
   const delayMs = opts.delayMs ?? 5000;
+  const timeoutMs = opts.timeoutMs ?? 15_000;
   let result: Served = 'unreachable';
   for (let i = 0; i < attempts; i++) {
     if (i > 0 && delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
     try {
-      const res = await doFetch(manifestUrl(origin, v), { method: 'HEAD' });
+      const res = await doFetch(manifestUrl(origin, v), {
+        method: 'HEAD',
+        signal: AbortSignal.timeout(timeoutMs)
+      });
       if (res.ok) return 'served';
       if (res.status === 404) return 'missing';
       result = 'unreachable';

@@ -48,6 +48,19 @@ describe('datasetServed', () => {
     expect(await datasetServed(V, O, { fetch: f, delayMs: 0, attempts: 3 })).toBe('unreachable');
     expect(calls.length).toBe(3);
   });
+  it('passes an abort signal and treats a hanging host as unreachable after retrying', async () => {
+    let calls = 0;
+    const hang = ((_u: string | URL | Request, init?: RequestInit) => {
+      calls++;
+      return new Promise<Response>((_res, rej) => {
+        init?.signal?.addEventListener('abort', () => rej(new Error('timeout')));
+      });
+    }) as typeof fetch;
+    expect(await datasetServed(V, O, { fetch: hang, delayMs: 0, attempts: 2, timeoutMs: 10 })).toBe(
+      'unreachable'
+    );
+    expect(calls).toBe(2);
+  });
   it('missingDatasetHelp names build, upload <v> and verify <v> --origin <origin> in order', () => {
     const t = missingDatasetHelp(V, O);
     expect(t.indexOf('pipeline -- build')).toBeGreaterThanOrEqual(0);
