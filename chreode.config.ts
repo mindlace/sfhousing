@@ -34,9 +34,36 @@ export default defineConfig({
     { match: ['e2e/**'], triggers: ['lint', 'check', 'e2e'] },
     // scripts/ specs run in the vitest server project; r2-load-local feeds e2e (data:fixture).
     { match: ['scripts/**'], triggers: ['lint', 'check', 'unit', 'e2e'] },
-    { match: ['.github/workflows/**'], triggers: ['format', 'workflows'] }
-    // Everything else (pipeline/, migrations/, package*.json, root configs, .husky/) matches
-    // no rule and runs every step.
+    { match: ['.github/workflows/**'], triggers: ['format', 'workflows'] },
+    // wrangler.jsonc: dataset pointers and bindings. `wrangler types` (prepare, after the merge)
+    // feeds check; scripts/wrangler-config.spec.ts (unit) parses it. e2e pins
+    // PUBLIC_DATASET_VERSION to fixture-0, so a pointer bump cannot affect it.
+    // chreode.config.ts: this file; check type-checks it.
+    // A binding change, or a config change that should prove itself on every step, uses `-- --full`.
+    { match: ['wrangler.jsonc', 'chreode.config.ts'], triggers: ['format', 'check', 'unit'] },
+    // Read only by the release-please workflow.
+    {
+      match: ['.release-please-manifest.json', 'release-please-config.json'],
+      triggers: ['format']
+    },
+    // Nothing in signoff reads these (the pre-commit hook runs on commit, not in signoff).
+    { match: ['LICENSE', '.husky/**'], triggers: [] },
+    // Prettier and eslint config; eslint.config.js also loads .gitignore as an ignore file.
+    {
+      match: ['.prettierignore', '.prettierrc', '.gitignore', 'eslint.config.js'],
+      triggers: ['lint']
+    },
+    // The headed bench (`npm run bench:map`) and the drizzle-kit configs (db:generate, db:migrate)
+    // are not signoff steps; lint and check still cover the files themselves.
+    {
+      match: ['playwright.bench.config.ts', 'drizzle.config.ts', 'drizzle-cf.config.ts'],
+      triggers: ['lint', 'check']
+    },
+    { match: ['playwright.config.ts'], triggers: ['lint', 'check', 'e2e'] },
+    // The vitest client project.
+    { match: ['vite.config.client-test.ts'], triggers: ['lint', 'check', 'unit'] }
+    // Everything else (pipeline/, migrations/, package*.json, .npmrc, .nvmrc, tsconfig.json,
+    // vite.config.ts, svelte.config.js) matches no rule and runs every step.
   ],
   steps: [
     { label: 'format', run: 'npx prettier --check .', when: ['format'], supersededBy: ['lint'] },
