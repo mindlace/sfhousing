@@ -28,15 +28,16 @@ There is no CI workflow on pull requests: `npm run signoff` is the only check, a
 
 Only a maintainer can sign off a contributor's PR. The maintainer runs `gh pr checkout <n>` then `npm run signoff`. Signoff pushes to the PR's head branch only if the maintainer has push rights to it; otherwise re-open the PR from a branch in this repo and sign that off.
 
-## Promoting a datasetVersion
+## Datasets ship with their code
 
-1. Upload the version to R2 once (the data-pipeline upload command; `manifest.json` goes last).
-2. Bump `PUBLIC_DATASET_VERSION` under `env.staging.vars` in `wrangler.jsonc`, merge, let staging deploy, and verify `/attribution` and the map. A malformed value fails `npm run test:unit` (`scripts/wrangler-config.spec.ts`) and, at runtime, every page returns a 500. Title the PR `chore(data): point staging at dataset <v>`: staging deploys on every push to `main`, so this PR must not open a release.
-3. Bump the top-level `PUBLIC_DATASET_VERSION` (production) in a later PR titled `data: point production at dataset <v>`, then merge the release PR. `data` is a releasable commit type in `release-please-config.json` (a patch bump, listed under "Data" in the changelog), so this PR opens or updates the release PR on its own. Do not title it `chore`: release-please hides `chore` commits, and a release with only hidden commits is never cut.
+Nothing is promoted. The build computes the dataset version `<v>` from the source tree (`treeDatasetVersion`, injected as `__SFH_DATASET_VERSION__` by `scripts/lib/dataset-version-plugin.ts`), so a given commit always asks for the same dataset. `wrangler.jsonc` carries no `PUBLIC_DATASET_VERSION`; `scripts/wrangler-config.spec.ts` requires it absent in both environments.
 
-Versions are immutable and retained indefinitely.
-
-Both deploy workflows end with the step "Smoke: current dataset manifest is served": it reads the deployed environment's `PUBLIC_DATASET_VERSION` (`scripts/dataset-version.ts`) and `curl`s `/data/<version>/manifest.json` on the deployed host. The step fails the deploy job when the configured version's manifest is not in R2. That includes `fixture-0`, which is not uploaded remotely. `scripts/wrangler-config.spec.ts` also requires both deployed vars to be a real `YYYY-MM-DD-<8 hex>` version, so a fixture version cannot be committed for staging or production.
+- **Guard.** Both deploy workflows run the step "Guard: this commit's dataset is published" before `npm run build`. It runs `npx tsx scripts/dataset-version.ts --check <host>` and `curl`s `/data/<v>/manifest.json` on the deployed host (either host serves any published version, so no R2 credentials are needed). If the manifest is missing the job fails without deploying and the running version stays up. The fix is to build and upload the dataset ([pipeline.md](pipeline.md), "Finishing a branch that changes the dataset").
+- **Smoke.** After the deploy, "Smoke: current dataset manifest is served" checks the manifest again and that `/attribution` on the deployed host shows `<v>`.
+- **Releases.** A release tag's tree computes its own `<v>`, so cutting a release is what moves production to a new dataset. `release-please.yml` needs no dataset step.
+- **Rollback** is a code revert. The reverted tree computes the old version, which is still in R2.
+- Versions are immutable and retained forever. There are no `chore(data)` or `data:` pointer PRs any more.
+- A dirty local tree bakes in a version that was never published, so a local `npm run build` of uncommitted pipeline edits is not deployable. `npm run pipeline -- version [--check [<origin>]]` prints the tree's version; with `--check` it exits 1 unless `<origin>` (staging when bare) serves its manifest, and refuses a dirty tree.
 
 ## Secrets and variables
 
@@ -53,7 +54,7 @@ Done:
 - [x] R2 bucket `sfhousing` created.
 - [x] GitHub repo `mindlace/sfhousing` exists.
 - [x] release-please App credentials configured as repository variables.
-- [x] First real dataset uploaded (X1, 2026-10-11): `2026-10-11-697b4599` (918 objects) in R2; `PUBLIC_DATASET_VERSION` bumped to it for production and staging in `wrangler.jsonc`, and the real-version tests in `scripts/wrangler-config.spec.ts` are enabled.
+- [x] First real dataset uploaded (X1, 2026-10-11): `2026-10-11-697b4599` (918 objects) in R2; `PUBLIC_DATASET_VERSION` was bumped to it for production and staging in `wrangler.jsonc` (history: the version is now computed from the tree).
 
 Remaining:
 

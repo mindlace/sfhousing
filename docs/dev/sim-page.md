@@ -129,9 +129,9 @@ Transit stop types (Call 7, `src/lib/sim/levers/brushes.ts`), read from `transit
 
 ## Dataset requirement
 
-`/sim` needs a dataset with `policy.bin`, the first being `MIN_SIM_DATASET = '2026-10-29-0fd62c4d'` (`scripts/wrangler-config.spec.ts`). That test fails `test:unit` if production's or staging's `PUBLIC_DATASET_VERSION` predates it (versions are date-prefixed, so the date orders them). There is no missing-data fallback (Call 16): a dataset without `policy.bin` gets the worker's `scenario-missing` answer, shown as "The simulation data for dataset … is missing or damaged" with Retry.
+`/sim` needs a dataset with `policy.bin`, the first being `MIN_SIM_DATASET = '2026-10-29-0fd62c4d'` (`scripts/dataset-version.spec.ts`). That test fails `test:unit` if the tree's computed dataset version predates it (versions are date-prefixed, so the date orders them). There is no missing-data fallback (Call 16): a dataset without `policy.bin` gets the worker's `scenario-missing` answer, shown as "The simulation data for dataset … is missing or damaged" with Retry.
 
-**Ordering (Task 0B).** Production deploys only on a release, and a release ships whatever is on `main`. So a data bump that `/sim` needs merges to `main`, and is released, **before** the code that needs it merges. Any release that contains the code then also contains the bump, even when the two land in one release. If a later change needs a newer dataset, promote it the same way first ([deploy.md](deploy.md), "Promoting a datasetVersion").
+**Ordering.** Code and dataset ship together: the build computes the dataset version from the tree, and a deploy is refused unless that dataset is published ([deploy.md](deploy.md), "Datasets ship with their code"). A change that needs a newer dataset builds and uploads it before merge ([pipeline.md](pipeline.md), "Finishing a branch that changes the dataset"); there is no separate data bump to order.
 
 ## The debug hook's `levers` field
 
