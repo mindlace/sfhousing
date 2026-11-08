@@ -35,10 +35,12 @@ export default defineConfig({
     // scripts/ specs run in the vitest server project; r2-load-local feeds e2e (data:fixture).
     { match: ['scripts/**'], triggers: ['lint', 'check', 'unit', 'e2e'] },
     { match: ['.github/workflows/**'], triggers: ['format', 'workflows'] },
-    // Dataset pointers and bindings. `wrangler types` (prepare, after the merge) feeds check;
-    // scripts/wrangler-config.spec.ts (unit) parses it. e2e pins PUBLIC_DATASET_VERSION to
-    // fixture-0, so a pointer bump cannot affect it; a binding change should use `-- --full`.
-    { match: ['wrangler.jsonc'], triggers: ['format', 'check', 'unit'] }
+    // wrangler.jsonc: dataset pointers and bindings. `wrangler types` (prepare, after the merge)
+    // feeds check; scripts/wrangler-config.spec.ts (unit) parses it. e2e pins
+    // PUBLIC_DATASET_VERSION to fixture-0, so a pointer bump cannot affect it.
+    // chreode.config.ts: this file; check type-checks it.
+    // A binding change, or a config change that should prove itself on every step, uses `-- --full`.
+    { match: ['wrangler.jsonc', 'chreode.config.ts'], triggers: ['format', 'check', 'unit'] }
     // Everything else (pipeline/, migrations/, package*.json, other root configs, .husky/)
     // matches no rule and runs every step.
   ],
