@@ -1,5 +1,5 @@
 import type { Plugin } from 'vite';
-import { treeDatasetVersion } from '../../pipeline/lib/version';
+import { treeDatasetVersion } from '../../pipeline/lib/version.js';
 
 /**
  * Bakes the tree's dataset version into the build as `__SFH_DATASET_VERSION__` (a Vite `define`).

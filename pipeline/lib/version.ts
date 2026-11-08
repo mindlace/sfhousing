@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
-import { TOOL_VERSIONS } from '../config';
-import { run } from './exec';
-import { canonicalJson, readLock, type Lock } from './lock';
+import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version.js';
+import { TOOL_VERSIONS } from '../config.js';
+import { run } from './exec.js';
+import { canonicalJson, readLock, type Lock } from './lock.js';
 
 const sha256 = (s: string | Buffer) => createHash('sha256').update(s).digest('hex');
 

@@ -1,5 +1,5 @@
-import { FTF_M } from '../src/lib/generator/constants';
-import { BAND_MAX_M } from './sb79-config';
+import { FTF_M } from '../src/lib/generator/constants.js';
+import { BAND_MAX_M } from './sb79-config.js';
 
 export const BBOX = { w: -122.53, s: 37.69, e: -122.34, n: 37.84 } as const;
 export const CELL_SIZE_M = 1000;

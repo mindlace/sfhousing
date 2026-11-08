@@ -1,4 +1,4 @@
-import type { ReplacementTypology, TypologyId } from './types';
+import type { ReplacementTypology, TypologyId } from './types.js';
 
 export const FTF_M = 3.1;
 /** Ground floor of podium, midrise and tower only (OD-7, OQ-2). */
