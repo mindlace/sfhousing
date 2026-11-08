@@ -567,6 +567,24 @@
     {
       "files": [
         {
+          "archiveKey": "sources/81fc3789ed306d0bcb518230d6baf49416f9be1ac1eed2bb4c5e9d4bac4917b0.geojson",
+          "bytes": 3420324,
+          "name": "datasf-city-lands.page-000.geojson",
+          "sha256": "81fc3789ed306d0bcb518230d6baf49416f9be1ac1eed2bb4c5e9d4bac4917b0",
+          "url": "https://data.sf.gov/resource/gtnh-hgvs.geojson?%24select=land_id%2Cland_name%2Cdept_id%2Cdepartment_name%2Ccategory%2Cshape&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/gtnh-hgvs",
+      "id": "datasf-city-lands",
+      "label": "DataSF City Lands",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-11-08T06:05:53.110Z",
+      "rowCount": 1035,
+      "upstreamVersion": "Sat, 07 Nov 2026 18:13:15 GMT"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/d8e4226ec572772ca3658c1536e4ebaed237be67eda67286e3ee5f35a442c951.json",
           "bytes": 1293615,
           "name": "datasf-dev-pipeline.page-000.json",
