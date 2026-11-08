@@ -19,8 +19,8 @@
 // - No rule for fractional units; see UNITS_ROUNDING.
 // - Takes effect 2026-07-01 (§65912.157(n)). SF's Alternative Plan keeps §65912.157 from applying
 //   in SF until the next Housing Element (§65912.161(d); Ord. 082-26 §2(g)).
-import type { ModeId } from '../src/lib/data/transit';
-import type { Cite } from './transit-config';
+import type { ModeId } from '../src/lib/data/transit.js';
+import type { Cite } from './transit-config.js';
 
 export type Sb79Tier = 1 | 2;
 export type TodBand = 1 | 2 | 3; // adjacent, quarter, half

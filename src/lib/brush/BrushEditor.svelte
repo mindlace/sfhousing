@@ -58,7 +58,7 @@
     manifest: Manifest | null;
     manifestError: boolean;
     plan: Plan;
-    /** PUBLIC_DATASET_VERSION (layout data). Part of the I16 contract; plan-sharing (W5) reads
+    /** The layout's `datasetVersion`. Part of the I16 contract; plan-sharing (W5) reads
      *  it for its older-data notice, so nothing here consumes it yet. */
     currentVersion: string;
     readOnly?: boolean;

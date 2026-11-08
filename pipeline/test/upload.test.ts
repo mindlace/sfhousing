@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { lockSha256, type Lock } from '../lib/lock';
 import type { R2Target } from '../lib/r2';
 import { upload } from '../steps/upload';
+import { tempRepo } from './helpers/temp-repo';
 
 function fakeTarget(existing: string[] = [], failKeys: Record<string, number> = {}) {
   const calls: string[] = [];
@@ -104,6 +105,23 @@ const opts = (target: R2Target, extra = {}) => ({
 });
 
 describe('upload', () => {
+  it('refuses a non-local upload from a dirty code tree, before touching the target', async () => {
+    const { dir } = tempRepo();
+    writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 2;\n');
+    const { t, calls } = fakeTarget();
+    const logs: string[] = [];
+    const log = (s: string) => logs.push(s);
+    expect(await upload(opts(t, { repoRoot: dir, log }))).toBe(1);
+    expect(calls).toEqual([]);
+    expect(logs.join('\n')).toContain('pipeline/a.ts');
+  });
+  it('--local is exempt from the dirty-tree guard, and a clean tree uploads', async () => {
+    const { dir } = tempRepo();
+    writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 2;\n');
+    expect(await upload(opts(fakeTarget().t, { repoRoot: dir, local: true }))).toBe(0);
+    const clean = tempRepo();
+    expect(await upload(opts(fakeTarget().t, { repoRoot: clean.dir }))).toBe(0);
+  });
   it('V13: aborts before any put when the version is already published', async () => {
     const { t, calls } = fakeTarget(['data/fixture-7/manifest.json']);
     expect(await upload(opts(t))).toBe(1);
