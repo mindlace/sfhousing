@@ -5,7 +5,13 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DATASET_VERSION_RE } from '../../src/lib/data/manifest';
 import type { Lock } from '../lib/lock';
-import { codeTreeHash, computeDatasetVersion } from '../lib/version';
+import { TOOL_VERSIONS } from '../config';
+import {
+  codePathsDirty,
+  codeTreeHash,
+  computeDatasetVersion,
+  treeDatasetVersion
+} from '../lib/version';
 
 const lock = (): Lock => ({
   sources: [
@@ -47,6 +53,43 @@ const lock = (): Lock => ({
 });
 const tools = { tippecanoe: '2.79.0', pmtiles: '1.31.2' };
 
+/** A throwaway repo with committed pipeline/ and src/lib/ code (never the real repo). */
+function tempRepo(): { dir: string; git: (...a: string[]) => void } {
+  const dir = mkdtempSync(join(tmpdir(), 'sfh-ver-'));
+  const git = (...a: string[]) => {
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], {
+      cwd: dir,
+      stdio: 'ignore'
+    });
+  };
+  git('init', '-q');
+  mkdirSync(join(dir, 'pipeline'), { recursive: true });
+  mkdirSync(join(dir, 'src/lib/data'), { recursive: true });
+  mkdirSync(join(dir, 'src/lib/plan'), { recursive: true });
+  mkdirSync(join(dir, 'src/lib/generator'), { recursive: true });
+  mkdirSync(join(dir, 'src/lib/timelapse'), { recursive: true });
+  mkdirSync(join(dir, 'src/lib/sim/scenario'), { recursive: true });
+  mkdirSync(join(dir, 'src/lib/sim/levers'), { recursive: true });
+  mkdirSync(join(dir, 'src/lib/sim/other'), { recursive: true });
+  mkdirSync(join(dir, 'src/lib/scoreboard'), { recursive: true });
+  writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 1;\n');
+  writeFileSync(join(dir, 'src/lib/data/b.ts'), 'export const b = 2;\n');
+  writeFileSync(join(dir, 'src/lib/plan/geometry.ts'), 'export const g = 3;\n');
+  writeFileSync(join(dir, 'src/lib/plan/other.ts'), 'export const o = 4;\n');
+  writeFileSync(join(dir, 'src/lib/plan/types.ts'), 'export type T = 1;\n');
+  writeFileSync(join(dir, 'src/lib/generator/gen.ts'), 'export const gen = 5;\n');
+  writeFileSync(join(dir, 'src/lib/timelapse/time.ts'), 'export const tl = 6;\n');
+  writeFileSync(join(dir, 'src/lib/sim/scenario/engine.ts'), 'export const e = 7;\n');
+  writeFileSync(join(dir, 'src/lib/sim/levers/apply.ts'), 'export const l = 8;\n');
+  writeFileSync(join(dir, 'src/lib/sim/other/x.ts'), 'export const x = 9;\n');
+  writeFileSync(join(dir, 'src/lib/scoreboard/index.ts'), 'export const sb = 10;\n');
+  git('add', '.');
+  git('commit', '-q', '-m', 'code');
+  return { dir, git };
+}
+const writeLock = (dir: string): void =>
+  writeFileSync(join(dir, 'pipeline/sources.lock.json'), JSON.stringify(lock()));
+
 describe('computeDatasetVersion', () => {
   it('is stable, dated by newest retrievedAt (UTC), and matches DATASET_VERSION_RE', () => {
     const a = computeDatasetVersion({ lock: lock(), codeHash: 'c1', toolVersions: tools });
@@ -87,40 +130,6 @@ describe('codeTreeHash', () => {
     expect(a).toBe(b);
   });
 
-  /** A throwaway repo with committed pipeline/ and src/lib/ code (never the real repo). */
-  function tempRepo(): { dir: string; git: (...a: string[]) => void } {
-    const dir = mkdtempSync(join(tmpdir(), 'sfh-ver-'));
-    const git = (...a: string[]) => {
-      execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], {
-        cwd: dir,
-        stdio: 'ignore'
-      });
-    };
-    git('init', '-q');
-    mkdirSync(join(dir, 'pipeline'), { recursive: true });
-    mkdirSync(join(dir, 'src/lib/data'), { recursive: true });
-    mkdirSync(join(dir, 'src/lib/plan'), { recursive: true });
-    mkdirSync(join(dir, 'src/lib/generator'), { recursive: true });
-    mkdirSync(join(dir, 'src/lib/timelapse'), { recursive: true });
-    mkdirSync(join(dir, 'src/lib/sim/scenario'), { recursive: true });
-    mkdirSync(join(dir, 'src/lib/sim/levers'), { recursive: true });
-    mkdirSync(join(dir, 'src/lib/sim/other'), { recursive: true });
-    mkdirSync(join(dir, 'src/lib/scoreboard'), { recursive: true });
-    writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 1;\n');
-    writeFileSync(join(dir, 'src/lib/data/b.ts'), 'export const b = 2;\n');
-    writeFileSync(join(dir, 'src/lib/plan/geometry.ts'), 'export const g = 3;\n');
-    writeFileSync(join(dir, 'src/lib/plan/other.ts'), 'export const o = 4;\n');
-    writeFileSync(join(dir, 'src/lib/plan/types.ts'), 'export type T = 1;\n');
-    writeFileSync(join(dir, 'src/lib/generator/gen.ts'), 'export const gen = 5;\n');
-    writeFileSync(join(dir, 'src/lib/timelapse/time.ts'), 'export const tl = 6;\n');
-    writeFileSync(join(dir, 'src/lib/sim/scenario/engine.ts'), 'export const e = 7;\n');
-    writeFileSync(join(dir, 'src/lib/sim/levers/apply.ts'), 'export const l = 8;\n');
-    writeFileSync(join(dir, 'src/lib/sim/other/x.ts'), 'export const x = 9;\n');
-    writeFileSync(join(dir, 'src/lib/scoreboard/index.ts'), 'export const sb = 10;\n');
-    git('add', '.');
-    git('commit', '-q', '-m', 'code');
-    return { dir, git };
-  }
   it('is identical whether the lock is untracked or committed', async () => {
     const { dir, git } = tempRepo();
     const before = await codeTreeHash(dir);
@@ -177,5 +186,50 @@ describe('codeTreeHash', () => {
     writeFileSync(join(dir, 'src/lib/sim/other/x.ts'), 'export const x = 10;\n');
     git('commit', '-q', '-am', 'other sim');
     expect(await codeTreeHash(dir)).toBe(clean);
+  });
+});
+
+describe('treeDatasetVersion', () => {
+  it('equals computeDatasetVersion over the repo lock, code hash and TOOL_VERSIONS', async () => {
+    const { dir } = tempRepo();
+    writeLock(dir);
+    expect(await treeDatasetVersion(dir)).toBe(
+      computeDatasetVersion({
+        lock: lock(),
+        codeHash: await codeTreeHash(dir),
+        toolVersions: TOOL_VERSIONS
+      })
+    );
+    expect(await treeDatasetVersion(dir)).toMatch(/^2026-10-10-[0-9a-f]{8}$/);
+  });
+  it('succeeds on a dirty tree and differs from the clean one', async () => {
+    const { dir } = tempRepo();
+    writeLock(dir);
+    const clean = await treeDatasetVersion(dir);
+    writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 2;\n');
+    const dirty = await treeDatasetVersion(dir);
+    expect(dirty).toMatch(DATASET_VERSION_RE);
+    expect(dirty).not.toBe(clean);
+  });
+  it('throws naming the lock when it is missing', async () => {
+    const { dir } = tempRepo();
+    await expect(treeDatasetVersion(dir)).rejects.toThrow(/sources\.lock\.json/);
+  });
+});
+
+describe('codePathsDirty', () => {
+  it('is empty for a clean tree, an untracked lock, and changes outside the code paths', async () => {
+    const { dir } = tempRepo();
+    writeLock(dir);
+    writeFileSync(join(dir, 'README.md'), 'x\n');
+    expect(await codePathsDirty(dir)).toEqual([]);
+  });
+  it('lists a modified code file and an untracked one', async () => {
+    const { dir } = tempRepo();
+    writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 2;\n');
+    writeFileSync(join(dir, 'src/lib/data/new.ts'), 'export {};\n');
+    const lines = await codePathsDirty(dir);
+    expect(lines.some((l) => l.endsWith('pipeline/a.ts'))).toBe(true);
+    expect(lines.some((l) => l.endsWith('src/lib/data/new.ts'))).toBe(true);
   });
 });

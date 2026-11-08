@@ -74,6 +74,8 @@ export const FONT_STACKS = {
 export const FONTS_COMMIT = '028c18f713baecad011301ff7a69acc39bcc2ae7';
 export const BASEMAP_BUILD = '20261009';
 export const R2_BUCKET = 'sfhousing';
+export const STAGING_ORIGIN = 'https://sfhousing-staging.mindlace.net';
+export const PRODUCTION_ORIGIN = 'https://sfhousing.mindlace.net';
 export const IMMUTABLE = 'public, max-age=31536000, immutable';
 
 /** Mutable run-time settings (set by the CLI before steps run). */
