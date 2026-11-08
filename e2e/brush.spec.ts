@@ -12,6 +12,7 @@ import {
   PLAN_KEY,
   chooseTool,
   gotoEditor as gotoEditorWithActions,
+  mouseDrag,
   publishDialog,
   publishOpen,
   rows,
@@ -25,8 +26,8 @@ type LngLat = [number, number];
 const FRAME = { center: [-122.4187, 37.76014] as LngLat, zoom: 18.5, pitch: 0, bearing: 0 };
 const CHUNK = '**/data/fixture-0/parcels/50_25.json';
 
-async function gotoEditor(page: Page, { reload = true }: { reload?: boolean } = {}): Promise<void> {
-  if (reload) await page.goto('/');
+async function gotoEditor(page: Page): Promise<void> {
+  await page.goto('/');
   await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
     timeout: 20_000
   });
@@ -119,15 +120,6 @@ async function pickStories(page: Page, n: number): Promise<void> {
   const swatch = page.getByRole('button', { name: `${n} stories`, exact: true });
   await swatch.click();
   await expect(swatch).toHaveAttribute('aria-pressed', 'true');
-}
-
-async function mouseDrag(page: Page, from: LngLat, to: LngLat, steps = 15): Promise<void> {
-  const [x0, y0] = await projectToPage(page, from);
-  const [x1, y1] = await projectToPage(page, to);
-  await page.mouse.move(x0, y0);
-  await page.mouse.down();
-  await page.mouse.move(x1, y1, { steps });
-  await page.mouse.up();
 }
 
 // One-finger drag through CDP, so Chromium emits real touch and pointer events.
@@ -291,7 +283,8 @@ test.describe('brush tool', () => {
       page
     }) => {
       await gotoEditorWithActions(page);
-      await jumpAndIdle(page, FRAME);
+      // The strokes need the camera, not the tiles: the worker resolves lots city-wide.
+      await page.evaluate((f) => (window as Win).__sfhMap!.map!.jumpTo(f), FRAME);
       await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
       await expect.poll(() => ops(page)).toBe(1);
       await pickStories(page, 8);
@@ -327,7 +320,8 @@ test.describe('brush tool', () => {
         .toBe(1);
       // ...and restores to the same rows.
       await page.reload();
-      await gotoEditor(page, { reload: false });
+      // The restored rows are the editor's, not the map's: wait for the hook alone.
+      await page.waitForFunction(() => !!(window as Win).__sfhBrush);
       await expect.poll(() => ops(page)).toBe(1);
       await expect(rowButtons(page)).toHaveCount(1);
       await expect(rowButtons(page).first()).toHaveAccessibleName(/^8 stories · 1 stroke · /);

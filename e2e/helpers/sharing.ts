@@ -1,6 +1,6 @@
-// Shared helpers for the plan-sharing e2e specs. Editor navigation and the drag helpers are copied
-// from e2e/scoreboard.spec.ts and e2e/brush.spec.ts (those specs keep their own copies). The score
-// helpers (`headerScore`, `headerNet`, `openResults`, `settledNet`) read `/`'s header score.
+// Shared helpers for the plan-sharing e2e specs. Editor navigation and the drag helpers came from
+// e2e/brush.spec.ts, which keeps its own editor navigation and touch drag but strokes with
+// `mouseDrag` from here. The score helpers (`headerScore`, `headerNet`, `openResults`, `settledNet`) read `/`'s header score.
 import {
   expect,
   type APIRequestContext,
