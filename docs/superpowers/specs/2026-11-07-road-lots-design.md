@@ -1,6 +1,6 @@
 # Road-like lots: not candidates for building
 
-Status: draft, 2026-11-07.
+Status: approved by the owner, 2026-11-07. The imagery review before release is the builder's, written up in the build note (owner's decision).
 
 ## Why
 
