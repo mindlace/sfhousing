@@ -566,7 +566,7 @@ is not edited.
 ### v1.1 live check
 
 The pages were checked twice in local R2 (a `VITE_E2E=1` build served by `wrangler dev` with
-`PUBLIC_DATASET_VERSION` passed as `--var`; headless Chromium, 1280 and 375 px), reading
+`PUBLIC_DATASET_VERSION` passed as `--var`, with `--var ENVIRONMENT:development` (the override is ignored without it); headless Chromium, 1280 and 375 px), reading
 `window.__sfhLessCars` and the rendered map features and inspecting the screenshots: on
 2026-11-03 against `2026-11-02-70dfa769`, and on 2026-11-04 against `2026-11-02-0d40e1e2`, after
 the fixes below. The before numbers come from `2026-11-02-39fbf039`.
