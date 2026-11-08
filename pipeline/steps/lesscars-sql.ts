@@ -44,14 +44,20 @@ export function removalsOf(plan: LessCarsPlan): FreedRemoval[] {
   return out;
 }
 
-/** Parcels no freed site takes as its zoning neighbour: every catalog parcel and freed parcel. */
+/**
+ * Parcels no freed site takes as its zoning neighbour: every catalog parcel, freed parcel and
+ * road-like lot (`roadLike`, 55_road_lots.sql: a road lot's zoning says nothing of what the freed
+ * land beside it may hold).
+ */
 export function notNeighboursOf(
   catalog: FreewayLandFile | null,
-  removed: readonly FreedRemoval[]
+  removed: readonly FreedRemoval[],
+  roadLike: Iterable<ParcelId> = []
 ): Set<ParcelId> {
   return new Set([
     ...freewayLandSet(catalog),
-    ...removed.flatMap((r) => r.parcels.map((p) => p.id))
+    ...removed.flatMap((r) => r.parcels.map((p) => p.id)),
+    ...roadLike
   ]);
 }
 

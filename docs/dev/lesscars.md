@@ -267,8 +267,11 @@ allows) holds that parcel's sites (`heldBy` the garage); no ROW piece merges int
 A freed site's zoning is its most permissive neighbour within `neighbourM` (most FZP stories, then
 no density cap over a cap, then the smaller parcel id): before the switch, FZP on that zoning;
 from the switch, the larger of that and SB 79 on the site's own reach to stops. Neighbours are
-never freeway land: catalog parcels and freed parcels are excluded (the zoning is the city's
-around the freeway, not the freeway land's own P zoning).
+never freeway land or road-like lots: catalog parcels, freed parcels and road-like lots (the
+records' `roadLike`, see [pipeline.md](pipeline.md) "Road-like lots") are excluded
+(`notNeighboursOf`; the zoning is the city's around the freeway, not the P zoning of the freeway
+land or of a median or ramp strip beside it). On the mini fixture this drops lots 20 and 22-24
+from the hwy sites' neighbours but changes no site's chosen zoning.
 
 ### Regimes
 

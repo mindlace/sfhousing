@@ -1,9 +1,9 @@
 // Road-like lots: City Lands names that mark a lot as street, ramp or other right of way, and the
 // hand-kept override file that corrects the name rule either way. A listed word matches a whole
 // word only, case-insensitively, on the upper-cased name.
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import type { ParcelId } from '../../src/lib/data/parcel';
+import type { ParcelId, RoadLikeReason } from '../../src/lib/data/parcel';
 import { createTableFromRows, type Duck } from './duck';
 
 export const ROAD_NAME_WORDS: readonly string[] = [
@@ -246,4 +246,170 @@ export async function roadLotProblems(db: Duck): Promise<string[]> {
     .map((r) => r.msg)
     .filter((m): m is string => m !== null)
     .sort();
+}
+
+/** road_lots (55_road_lots.sql) by id, in id order: the reason and the eligibility without it. */
+export async function readRoadLotRows(
+  db: Duck
+): Promise<Map<ParcelId, { reason: RoadLikeReason; eligibleWithout: boolean }>> {
+  const rows = await db.all<{ id: string; reason: RoadLikeReason; eligible_without: boolean }>(
+    'SELECT id, reason, eligible_without FROM road_lots ORDER BY id'
+  );
+  return new Map(
+    rows.map((r) => [r.id, { reason: r.reason, eligibleWithout: r.eligible_without }])
+  );
+}
+
+/** The review list's file name in the build's derived directory (never uploaded). */
+export const ROAD_LOTS_CSV = 'road-lots.csv';
+
+/**
+ * One row of road-lots.csv: a lot the raw rule flags (kept or not), or a `road` row's lot. The
+ * build's DuckDB is gone after the build, so the row carries everything the imagery review needs.
+ * `reason` is null for a kept lot; the rule columns and the measures are road_lot_eval's (false,
+ * 0 or null for a road row's lot outside the evaluated lots). `cover` and `streetShare` are 0
+ * where 55_road_lots.sql did not measure them (a zero-area lot; a lot not bare, or with no public
+ * street within the band). `netHomes`: the static net capacity the rule takes away (for a kept
+ * lot, what it would take away), as `scenario.road_like.net_removed` counts it. `lng`, `lat`: the
+ * chunk record's label point.
+ */
+export interface RoadLotReviewRow {
+  id: ParcelId;
+  reason: RoadLikeReason | null;
+  r7: boolean;
+  r1n: boolean;
+  r2s: boolean;
+  r3: boolean;
+  keptBy: string | null;
+  listed: boolean;
+  landName: string | null;
+  department: string | null;
+  zoning: string | null;
+  rollClass: string | null;
+  cover: number;
+  micR: number | null;
+  streetShare: number;
+  nearestStreet: string | null;
+  nearestM: number | null;
+  areaM2: number;
+  netHomes: number;
+  lng: number;
+  lat: number;
+}
+
+/** A review row without the scenario step's `netHomes` and the record's label point. */
+export type RoadLotReviewBase = Omit<RoadLotReviewRow, 'netHomes' | 'lng' | 'lat'>;
+
+/**
+ * The review list's lots after 55_road_lots.sql, in id order: every lot the raw rule flags and
+ * every `road` row's lot (road_lot_eval.listed, or a road_lots row outside the evaluated lots).
+ */
+export async function readRoadLotReview(db: Duck): Promise<RoadLotReviewBase[]> {
+  const rows = await db.all<{
+    id: string;
+    reason: RoadLikeReason | null;
+    r7: boolean | null;
+    r1n: boolean | null;
+    r2s: boolean | null;
+    r3: boolean | null;
+    kept_by: string | null;
+    listed: boolean | null;
+    land_name: string | null;
+    department: string | null;
+    zoning_code: string | null;
+    roll_class: string | null;
+    cover: number | null;
+    mic_r: number | null;
+    street_share: number | null;
+    nearest_street: string | null;
+    nearest_m: number | null;
+    area_m2: number;
+  }>(
+    `WITH ids AS (
+       SELECT id FROM road_lot_eval WHERE raw OR listed
+       UNION SELECT id FROM road_lots
+     )
+     SELECT i.id, r.reason, e.r7, e.r1n, e.r2s, e.r3, e.kept_by,
+            coalesce(e.listed, r.reason = 'override') AS listed,
+            e.land_name, e.department, e.zoning_code, e.roll_class, e.cover, e.mic_r,
+            e.street_share, e.nearest_street, e.nearest_m, ST_Area(p.geom) AS area_m2
+     FROM ids i
+     JOIN parcels p USING (id)
+     LEFT JOIN road_lot_eval e USING (id)
+     LEFT JOIN road_lots r USING (id)
+     ORDER BY i.id`
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    reason: r.reason,
+    r7: r.r7 ?? false,
+    r1n: r.r1n ?? false,
+    r2s: r.r2s ?? false,
+    r3: r.r3 ?? false,
+    keptBy: r.kept_by,
+    listed: r.listed ?? false,
+    landName: r.land_name,
+    department: r.department,
+    zoning: r.zoning_code,
+    rollClass: r.roll_class,
+    cover: r.cover ?? 0,
+    micR: r.mic_r,
+    streetShare: r.street_share ?? 0,
+    nearestStreet: r.nearest_street,
+    nearestM: r.nearest_m,
+    areaM2: r.area_m2
+  }));
+}
+
+const CSV_COLUMNS: readonly (keyof RoadLotReviewRow)[] = [
+  'id',
+  'reason',
+  'r7',
+  'r1n',
+  'r2s',
+  'r3',
+  'keptBy',
+  'listed',
+  'landName',
+  'department',
+  'zoning',
+  'rollClass',
+  'cover',
+  'micR',
+  'streetShare',
+  'nearestStreet',
+  'nearestM',
+  'areaM2',
+  'netHomes',
+  'lng',
+  'lat'
+];
+
+/** Decimals per number column: 3, but 6 for the label point (3 decimals is about 100 m). */
+const DECIMALS: Partial<Record<keyof RoadLotReviewRow, number>> = { lng: 6, lat: 6 };
+
+function csvCell(v: string | number | boolean | null, decimals: number): string {
+  if (v === null) return '';
+  if (typeof v === 'number') {
+    const f = 10 ** decimals;
+    return String(Math.round(v * f) / f);
+  }
+  const s = String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * Write the review list to `file`: a header row, then the rows by `netHomes` descending, then id.
+ * Numbers are rounded to 3 decimals (the label point to 6), null is an empty cell, and a text cell
+ * holding a comma, quote or line break is quoted (RFC 4180).
+ */
+export function writeRoadLotsCsv(file: string, rows: RoadLotReviewRow[]): void {
+  const sorted = [...rows].sort(
+    (a, b) => b.netHomes - a.netHomes || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  );
+  const lines = [
+    CSV_COLUMNS.join(','),
+    ...sorted.map((r) => CSV_COLUMNS.map((k) => csvCell(r[k], DECIMALS[k] ?? 3)).join(','))
+  ];
+  writeFileSync(file, lines.join('\n') + '\n');
 }

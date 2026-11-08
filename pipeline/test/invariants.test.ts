@@ -424,6 +424,16 @@ describe('invariants', () => {
     expect(v17.ok).toBe(false);
     expect(v17.detail).toMatch(/1 hostable flag\(s\) disagree/);
   });
+  it('V17 fails when a road-like row is eligible in parcels.bin', async () => {
+    // Lot 22 is road-like (r3): its chunk record carries rl, so the scenario rule says ineligible.
+    const d = copy();
+    editScenario(d, (p) => {
+      p.eligible[p.index.get('3512022')!] = 1;
+    });
+    const v17 = await result(d, 'V17');
+    expect(v17.ok).toBe(false);
+    expect(v17.detail).toMatch(/1 eligible flag\(s\) disagree with the chunk record/);
+  });
   it('V17 reads eligibility from flags bit 5: a no-land-use parcel with homes may be hostable', async () => {
     // Lot 9 has no land-use row (chunk `eligible` false). With roll homes it is eligible in the
     // scenario (sd.landuse.none-with-units), so its hostable flags need no chunk eligibility.

@@ -86,6 +86,9 @@ async function synthetic(
     'parcels',
     'parcel_land',
     'parcel_out',
+    // 55_road_lots.sql's outputs, which the scenario step reads (counts, road-lots.csv).
+    'road_lots',
+    'road_lot_eval',
     'src_height_bulk',
     'src_parcel_attrs',
     'src_roll'

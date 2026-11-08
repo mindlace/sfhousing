@@ -32,7 +32,8 @@
 -- - Pieces are numbered k = 1, 2, … per project along the merged lines (line, stretch), then by
 --   centroid x, y.
 -- - Neighbours: parcels (current outline) within lc_neighbour_m of the piece; with none, the
---   nearest parcel (smaller id on a tie). Never a parcel of lc_in_not_neighbour (freeway land).
+--   nearest parcel (smaller id on a tie). Never a parcel of lc_in_not_neighbour (freeway land,
+--   road-like lots).
 -- Freed parcels (lesscars v1.1; input lc_in_parcel (project_id, parcel_id, held_by) and
 -- lc_in_not_neighbour (parcel_id), variables lc_merge_m and lc_overlap_m2): they get no access
 -- strip and are subtracted from the ROW; each polygon part of one is a seed site, and a ROW piece
@@ -349,7 +350,7 @@ JOIN sfh_label('lc_piece_lbl') l ON l.id = s.site_id
 LEFT JOIN lc_piece_parcel pp USING (site_id)
 ORDER BY s.site_id;
 
--- Neighbours: never freeway land (lc_in_not_neighbour: the catalog and every freed parcel).
+-- Neighbours: never lc_in_not_neighbour (the catalog, every freed parcel, road-like lots).
 CREATE OR REPLACE TEMP TABLE lc_nb_parcel AS
 SELECT id, geom FROM parcels WHERE id NOT IN (SELECT parcel_id FROM lc_in_not_neighbour);
 
