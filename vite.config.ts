@@ -4,6 +4,7 @@ import VitestFlakeReporter from '@mindlace/chreode/reporters/vitest';
 import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import { datasetVersionPlugin } from './scripts/lib/dataset-version-plugin.js';
 import { clientTestConfig } from './vite.config.client-test.js';
 
 /** Server specs whose assertions are wall-clock budgets: project perf, not server. */
@@ -27,7 +28,7 @@ const srcLibForSrc: Plugin = {
 };
 
 export default defineConfig({
-  plugins: [tailwindcss(), sveltekit()],
+  plugins: [datasetVersionPlugin(), tailwindcss(), sveltekit()],
   build: {
     // The largest client chunk (~1.1 MB) is the MapLibre GL bundle. The limit sits just above it, so a
     // jump in chunk size past 1.2 MB warns again.

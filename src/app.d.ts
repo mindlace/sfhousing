@@ -1,5 +1,7 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
 declare global {
+  /** The tree's dataset version, defined at build time by datasetVersionPlugin (scripts/lib). */
+  const __SFH_DATASET_VERSION__: string;
   namespace App {
     interface PageState {
       /** Remix hand-off from /p/:id to / (plan-sharing ruling 7). `plan` (serialized) only
