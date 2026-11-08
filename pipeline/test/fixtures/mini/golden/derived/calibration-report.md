@@ -135,7 +135,7 @@ Over 4 completed histories with a construction start and permit rows with a `com
 
 ## 5. Initiation
 
-Mode: fixture. Events 3 (record basis 3, permit basis 0); exposure 141 parcel-months over 25 hostable parcel-years; parcel-years excluded 23; events off the panel 11; events on covered parcel-months 14.
+Mode: fixture. Events 3 (record basis 3, permit basis 0); exposure 141 parcel-months over 25 hostable parcel-years; parcel-years excluded 25; events off the panel 11; events on covered parcel-months 14.
 Histories with no initiation event: no start 0, no permit filing before 2015 0, no parcel 3; event month outside the panel 6.
 
 Parcel-years excluded by roll year:
@@ -143,8 +143,8 @@ Parcel-years excluded by roll year:
 | roll year | excluded |
 |---|---|
 | 2023 | 10 |
-| 2024 | 6 |
-| 2025 | 7 |
+| 2024 | 7 |
+| 2025 | 8 |
 
 Intercept -2.94444; measurement-basis coefficient (not shipped) none; IRLS iterations none; MIN_BIN_EVENTS 1; RIDGE_LAMBDA 1.
 
@@ -266,8 +266,8 @@ Hold-out: none (fixture model).
 | 2024 | 3.25 | 2 |
 | 2025 | 2.6 | 1 |
 
-- impliedSteadyState 2.6 per year; fzpPerYear 1.8 over 3 hostable unoccupied parcels; fzpRatio 0.692308
-- historical mean 0.157895 events per year; FZP ÷ historical 11.4 (band 0.5 to 20, tier 4)
+- impliedSteadyState 2.6 per year; fzpPerYear 2.4 over 4 hostable unoccupied parcels; fzpRatio 0.923077
+- historical mean 0.157895 events per year; FZP ÷ historical 15.2 (band 0.5 to 20, tier 4)
 - extrapolation: 0 parcels (0% of hostable, 0% of FZP expected filings) beyond the at-risk maximum potentialRatio 25, storiesGap 38
 - topEffects (coefficient range): none (no fitted terms)
 - exactly aliased bin indicators (same design rows): existingUnits bin 0 (≥ 0) ≡ rentControlLikely bin 0 (≥ 0); existingUnits bin 1 (≥ 3) ≡ rentControlLikely bin 1 (≥ 1); improvementShare bin 1 (≥ 0.4) ≡ landUseClass bin 2 (≥ 2); potentialRatio bin 2 (≥ 3) ≡ improvementShare bin 0 (≥ 0); yearBuilt bin 0 (≥ 0) ≡ storiesGap bin 0 (≥ -100); yearBuilt bin 1 (≥ 1950) ≡ storiesGap bin 1 (≥ 5)

@@ -47,31 +47,34 @@ describe('live raw layout (<rawDir>/<sha256>, no extension)', () => {
         exemptionsCsv: SB79_EXEMPTIONS_CSV.fixture
       });
       expect(counts).toEqual({
-        // Lot 19 (3512019) adds a parcel, land-use, attrs and historic row and two roll rows.
-        'datasf-parcels': 25,
-        'datasf-landuse-2023': 20,
+        // Lot 19 (3512019) adds a parcel, land-use, attrs and historic row and two roll rows; lots
+        // 20-25 (road-like rule) a parcel, land-use and attrs row each, lot 21 two roll rows and
+        // lot 22 an Overture building.
+        'datasf-parcels': 31,
+        'datasf-landuse-2023': 26,
         'datasf-footprints': 3,
         'datasf-neighborhoods': 3,
         'datasf-height-bulk': 8,
-        'datasf-parcel-attrs': 25,
-        'datasf-assessor-roll': 39,
+        'datasf-parcel-attrs': 31,
+        'datasf-assessor-roll': 41,
         'datasf-streets': 5,
+        'datasf-city-lands': 4,
         'datasf-historic-status': 21,
         'sfbos-sb79-exemptions': 3,
-        'overture-buildings': 13,
+        'overture-buildings': 14,
         'protomaps-basemap': 2
       });
       await loadNormalised(db, norm);
       const [r] = await db.all<{ n: number }>('SELECT count(*) n FROM src_overture');
-      expect(r.n).toBe(13);
+      expect(r.n).toBe(14);
       // Extensionless CSV pages still parse with the header and SODA quoting.
       const [roll] = await db.all<{ n: number; u: number }>(
         `SELECT count(DISTINCT parcel_number) n, sum(number_of_units) u FROM src_roll
          WHERE closed_roll_year = 2025`
       );
       // The raw 2025 units: 66 plus lot 3's 5,000 (spec §4.11 RA1 case, before the units rules)
-      // plus lot 16's 2 and lot 18's 2 (lot 19 adds a row with 0).
-      expect(roll).toEqual({ n: 18, u: 5070 });
+      // plus lot 16's 2 and lot 18's 2 (lots 19 and 21 add a row with 0 each).
+      expect(roll).toEqual({ n: 19, u: 5070 });
     } finally {
       db.close();
     }

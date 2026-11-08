@@ -1,6 +1,7 @@
 // Wire format "sfh-parcels/1" (data-pipeline spec §2). Pure TS, no dependencies:
 // the pipeline writes chunks with it and the worker host reads them.
-import type { ParcelId, ParcelRecord } from './parcel';
+import { ROAD_LIKE_REASONS } from './parcel';
+import type { ParcelId, ParcelRecord, RoadLikeReason } from './parcel';
 
 export const PARCEL_CHUNK_FORMAT = 'sfh-parcels/1';
 
@@ -20,6 +21,8 @@ export interface ParcelChunkV1 {
   elig: (0 | 1)[];
   /** Strictly increasing row indices of underwater records; absent when there are none. */
   uw?: number[];
+  /** Strictly increasing rows of road-like records with their reason; absent when there are none. */
+  rl?: [row: number, reason: RoadLikeReason][];
   rings: number[][];
   xy: number[];
 }
@@ -61,6 +64,10 @@ export function encodeParcelChunk(
   sorted.forEach((r, i) => {
     if (r.underwater) uw.push(i);
   });
+  const rl: [number, RoadLikeReason][] = [];
+  sorted.forEach((r, i) => {
+    if (r.roadLike) rl.push([i, r.roadLike]);
+  });
   const chunk: ParcelChunkV1 = {
     format: PARCEL_CHUNK_FORMAT,
     datasetVersion,
@@ -84,7 +91,8 @@ export function encodeParcelChunk(
         ring.flatMap(([x, y]) => [Math.round(x * 100), Math.round(y * 100)])
       )
     ),
-    ...(uw.length > 0 ? { uw } : {})
+    ...(uw.length > 0 ? { uw } : {}),
+    ...(rl.length > 0 ? { rl } : {})
   };
   return JSON.stringify(chunk);
 }
@@ -145,6 +153,23 @@ export function decodeParcelChunk(json: unknown): ParcelRecord[] {
       prev = v;
     }
   }
+  const roadLike = new Map<number, RoadLikeReason>();
+  if (o.rl !== undefined) {
+    if (!Array.isArray(o.rl)) throw new ChunkFormatError('column rl is not an array');
+    let prev = -1;
+    for (const p of o.rl as unknown[]) {
+      if (!Array.isArray(p) || p.length !== 2) throw new ChunkFormatError('bad rl entry');
+      const [row, reason] = p as [unknown, unknown];
+      if (typeof row !== 'number' || !Number.isInteger(row) || row < 0 || row >= n || row <= prev) {
+        throw new ChunkFormatError(`bad rl row ${String(row)}`);
+      }
+      if (!(ROAD_LIKE_REASONS as readonly unknown[]).includes(reason)) {
+        throw new ChunkFormatError(`unknown rl reason ${String(reason)}`);
+      }
+      roadLike.set(row, reason as RoadLikeReason);
+      prev = row;
+    }
+  }
   const landUse = dict.landUse as string[];
   const neighborhood = dict.neighborhood as string[];
   const out: ParcelRecord[] = [];
@@ -156,6 +181,12 @@ export function decodeParcelChunk(json: unknown): ParcelRecord[] {
     if (elig[i] !== 0 && elig[i] !== 1) throw new ChunkFormatError(`elig not 0/1 at row ${i}`);
     if (underwater.has(i) && elig[i] === 1) {
       throw new ChunkFormatError(`underwater row ${i} is eligible`);
+    }
+    if (roadLike.has(i) && elig[i] === 1) {
+      throw new ChunkFormatError(`road-like row ${i} is eligible`);
+    }
+    if (roadLike.has(i) && underwater.has(i)) {
+      throw new ChunkFormatError(`road-like row ${i} is also underwater`);
     }
     const polygon: [number, number][][] = rings[i].map((count) => {
       const ring: [number, number][] = [];
@@ -173,7 +204,8 @@ export function decodeParcelChunk(json: unknown): ParcelRecord[] {
       landUse: landUse[lu[i]],
       eligible: elig[i] === 1,
       neighborhood: neighborhood[nh[i]],
-      ...(underwater.has(i) ? { underwater: true as const } : {})
+      ...(underwater.has(i) ? { underwater: true as const } : {}),
+      ...(roadLike.has(i) ? { roadLike: roadLike.get(i)! } : {})
     });
   }
   return out;

@@ -100,7 +100,8 @@ describe('writePolicy on the mini fixture', () => {
     expect(pol.historicProtected[row(LOT[13])]).toBe(1);
     expect(historicOf(LOT[3])).toBe('B');
     expect(pol.historicProtected[row(LOT[3])]).toBe(0);
-    expect(counts['policy.historic.none']).toBe(1);
+    // Lot 18, and lots 20-25 (no historic row).
+    expect(counts['policy.historic.none']).toBe(7);
     expect(counts['policy.historic.protected']).toBe(
       counts['policy.historic.A'] + counts['policy.historic.A*']
     );
@@ -182,9 +183,10 @@ describe('writePolicy on the mini fixture', () => {
     expect(statuses).toBe(pol.count);
     expect(counts['policy.s207.applies']).toBe(3);
     expect(counts['policy.s207.exempt']).toBe(2);
+    // The P lot 25 is not-residential, as lot 19 is; the road-like lots 20-24 are not-eligible.
     expect(counts['policy.s207.no-limit']).toBe(7);
     expect(counts['policy.s207.meets-minimum']).toBe(3);
-    expect(counts['policy.s207.not-eligible']).toBe(3);
+    expect(counts['policy.s207.not-eligible']).toBe(8);
     expect(counts['policy.s207.base_ft_mismatch']).toBe(0);
     expect(counts['policy.current.from_s207']).toBe(2);
     expect(counts['policy.current.yield_mismatch']).toBe(0);
@@ -273,10 +275,9 @@ describe('writePolicy on the mini fixture', () => {
 
   it('reports sd.historic.no-row and sd.exempt.unmatched', () => {
     expect(qualityRule('sd.historic.no-row').kind).toBe('missing');
-    expect(buildCounts['quality.sd.historic.no-row.fired']).toBe(1);
-    expect(buildCounts['quality.sd.historic.no-row.of'], '19 lots, lot 19 (3512019) included').toBe(
-      19
-    );
+    // Lot 18 and lots 20-25 have no historic row.
+    expect(buildCounts['quality.sd.historic.no-row.fired']).toBe(7);
+    expect(buildCounts['quality.sd.historic.no-row.of'], '25 lots, lots 19-25 included').toBe(25);
     // The stand-in pseudo-lot 3512999 matches no active parcel.
     expect(buildCounts['quality.sd.exempt.unmatched.fired']).toBe(1);
     expect(buildCounts['quality.sd.exempt.unmatched.of']).toBe(3);

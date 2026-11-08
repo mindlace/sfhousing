@@ -1,8 +1,8 @@
 {
   "format": "sfh-lesscars/1",
   "datasetVersion": "fixture-0",
-  "count": 19,
-  "idsHash": 4215366088,
+  "count": 25,
+  "idsHash": 2136662000,
   "seed": 3,
   "schedules": [
     {
@@ -750,6 +750,95 @@
       "regime": 0
     },
     {
+      "projectId": "sim:3513001:0",
+      "origin": "simulated",
+      "parcelIds": [
+        "3513001"
+      ],
+      "pathway": "streamlined",
+      "entered": {
+        "filed": 20881,
+        "entitled": 21053
+      },
+      "end": {
+        "kind": "exit",
+        "stage": "entitled",
+        "reason": "expired",
+        "day": 23725
+      },
+      "revisions": [
+        {
+          "day": 20881,
+          "units": 8,
+          "stories": 6
+        }
+      ],
+      "existingUnits": 0,
+      "multiPhase": false,
+      "phase": null,
+      "regime": 0
+    },
+    {
+      "projectId": "sim:3513001:1",
+      "origin": "simulated",
+      "parcelIds": [
+        "3513001"
+      ],
+      "pathway": "streamlined",
+      "entered": {
+        "filed": 24636,
+        "entitled": 25021
+      },
+      "end": {
+        "kind": "exit",
+        "stage": "entitled",
+        "reason": "expired",
+        "day": 26878
+      },
+      "revisions": [
+        {
+          "day": 24636,
+          "units": 8,
+          "stories": 6
+        }
+      ],
+      "existingUnits": 0,
+      "multiPhase": false,
+      "phase": null,
+      "regime": 2
+    },
+    {
+      "projectId": "sim:3513001:2",
+      "origin": "simulated",
+      "parcelIds": [
+        "3513001"
+      ],
+      "pathway": "streamlined",
+      "entered": {
+        "filed": 28634,
+        "entitled": 28899,
+        "permitFiled": 28903,
+        "permitIssued": 29314,
+        "construction": 29356,
+        "complete": 30337
+      },
+      "end": {
+        "kind": "complete",
+        "day": 30337
+      },
+      "revisions": [
+        {
+          "day": 28634,
+          "units": 8,
+          "stories": 6
+        }
+      ],
+      "existingUnits": 0,
+      "multiPhase": false,
+      "phase": null,
+      "regime": 2
+    },
+    {
       "projectId": "sim:8711023C:0",
       "origin": "simulated",
       "parcelIds": [
@@ -813,11 +902,11 @@
   ],
   "reservations": [
     {
-      "row": 16,
+      "row": 22,
       "kept": false
     },
     {
-      "row": 18,
+      "row": 24,
       "kept": false
     }
   ]

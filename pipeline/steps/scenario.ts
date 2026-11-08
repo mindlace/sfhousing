@@ -5,7 +5,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { deflateRawSync, inflateRawSync } from 'node:zlib';
-import type { ParcelRecord } from '../../src/lib/data/parcel';
+import { ROAD_LIKE_REASONS, type ParcelRecord } from '../../src/lib/data/parcel';
 import { ringsAreaM2 } from '../../src/lib/data/parcel-chunk';
 import {
   FILL_LEVELS,
@@ -39,6 +39,12 @@ import { recordQuality, recordSqlQuality } from '../lib/quality';
 import type { Report } from '../lib/report';
 import { scenarioEligible } from '../lib/scenario-eligibility';
 import { freewayLandSet, type FreewayLandFile } from '../lib/lesscars/freeway-land';
+import {
+  ROAD_LOTS_CSV,
+  readRoadLotReview,
+  readRoadLotRows,
+  writeRoadLotsCsv
+} from '../lib/road-lots';
 import { PARCELS_BIN } from '../lib/scenario-files';
 import { readClippedOriginals } from './chunks';
 import { runScenarioSql } from './scenario-sql';
@@ -403,6 +409,9 @@ function provenance(capDay: Day, rollYear: number): ScenarioParcels['provenance'
         `the panel on each roll year's homes. Freeway land ` +
         '(pipeline/enrichment/lesscars/freeway-land.json: vacant or public parcels under or ' +
         'fronting a freeway, curated) is ineligible while its freeway stands. ' +
+        'Road-like lots (public lots that are street remnants, medians, slopes or strips ' +
+        'beside freeways; pipeline/sql/55_road_lots.sql, overrides in ' +
+        'pipeline/enrichment/road-lots.json) are never eligible. ' +
         CAP_RULES
     )
   };
@@ -492,6 +501,13 @@ export function readParcelsBin(file: string): ScenarioParcels {
  * scenario-ineligible on T11 (never on the T13 panel), counted in `scenario.freeway_land.*`. A
  * catalog parcel with existing homes throws (freeway land holds none); one not in the records is
  * warned about.
+ *
+ * Road-like lots (road_lots, 55_road_lots.sql; the chunk record's `roadLike`) are ineligible on
+ * T11 and the panel alike, through the record. Counted in `scenario.road_like.*` (always present):
+ * `lots`, `unhostable` (rows the rule turned unhostable) and `net_removed` (over those rows,
+ * max(0, capped FZP full-fill yield − existing homes), as freeway land's), each also by reason,
+ * and `with_roll_units` (road-like rows whose latest roll shows homes; warned about by id). Writes
+ * the review list `<derivedDir>/road-lots.csv` (writeRoadLotsCsv).
  */
 export async function writeScenario(a: {
   db: Duck;
@@ -643,9 +659,38 @@ export async function writeScenario(a: {
     'yield.clamped',
     'yield.nonlp_base_mismatch',
     'freeway_land.lots',
-    'freeway_land.net_removed'
+    'freeway_land.net_removed',
+    'road_like.lots',
+    'road_like.unhostable',
+    'road_like.net_removed',
+    'road_like.with_roll_units',
+    ...ROAD_LIKE_REASONS.flatMap((r) => [
+      `road_like.lots.${r}`,
+      `road_like.unhostable.${r}`,
+      `road_like.net_removed.${r}`
+    ])
   ])
     inc(k, 0);
+  // Road-like lots (55_road_lots.sql): ineligible through the chunk record's `roadLike`.
+  // `eligibleWithout` is the lot's chunk eligibility without the rule, for the counts.
+  const roadLots = await readRoadLotRows(db);
+  const roadLikeRecs = a.records.filter(({ rec }) => rec.roadLike).length;
+  for (const { rec } of a.records) {
+    if ((rec.roadLike ?? null) !== (roadLots.get(rec.id)?.reason ?? null)) {
+      throw new Error(
+        `scenario: parcel ${rec.id} roadLike ${rec.roadLike ?? 'unset'} disagrees with road_lots`
+      );
+    }
+  }
+  if (roadLikeRecs !== roadLots.size) {
+    throw new Error(
+      `scenario: ${roadLots.size} road_lots rows but ${roadLikeRecs} road-like records`
+    );
+  }
+  /** The review list's lots (road-lots.csv), and each one's net homes the rule takes away. */
+  const roadReview = await readRoadLotReview(db);
+  const roadReviewNet = new Map(roadReview.map((r) => [r.id, 0]));
+  const roadWithUnits: string[] = [];
   // Freeway land (lesscars v1.1): catalog parcels are unbuildable while their freeway stands.
   // `net_removed` is the static net capacity the rule takes away: over catalog rows the rule turns
   // unhostable, max(0, FZP full-fill yield − existing homes), the measure of /sim's netCapacity.
@@ -757,6 +802,15 @@ export async function writeScenario(a: {
       }
       inc('freeway_land.lots');
     }
+    const road = roadLots.get(rec.id);
+    if (road) {
+      inc('road_like.lots');
+      inc(`road_like.lots.${road.reason}`);
+      if (existingUnits > 0) {
+        inc('road_like.with_roll_units');
+        roadWithUnits.push(rec.id);
+      }
+    }
     const eligible = scenarioEligible(rec, existingUnits, onFreeway);
     p.eligible[i] = eligible ? 1 : 0;
     if (eligible) inc('eligible');
@@ -845,9 +899,11 @@ export async function writeScenario(a: {
     p.storiesGap.fzp[i] = env.envelopeStories - existingStories;
     p.storiesGap.base[i] = env.baseStories - existingStories;
     if (p.hostable[i]) inc('hostable');
-    // Freeway land: what the row would have hosted without the rule (the hostable test above on
-    // scenarioEligible without the flag), at the capped FZP full-fill yield.
-    if (onFreeway && scenarioEligible(rec, existingUnits) && env.envelopeStories >= 1) {
+    // What the row would host without a rule (the hostable test above, on `eligibleWithout`): null
+    // when it would not be hostable, else its static net capacity at the capped FZP full-fill
+    // yield, max(0, yield − existing homes).
+    const netWithout = (eligibleWithout: boolean): number | null => {
+      if (!eligibleWithout || env.envelopeStories < 1) return null;
       const unruled = scenarioRecordFrom(rec, {
         existingUnits,
         existingFloorAreaM2: floorArea,
@@ -855,10 +911,35 @@ export async function writeScenario(a: {
         eligible: true
       });
       const g = scenarioYield(unruled, fillStories(full, env.envelopeStories), null);
-      if (g > 0) {
-        const net = Math.max(0, capScenarioYield(g, fzpYieldCap, existingUnits) - existingUnits);
+      if (g === 0) return null;
+      return Math.max(0, capScenarioYield(g, fzpYieldCap, existingUnits) - existingUnits);
+    };
+    // Freeway land: scenarioEligible without the flag.
+    if (onFreeway) {
+      const net = netWithout(scenarioEligible(rec, existingUnits));
+      if (net !== null) {
         inc('freeway_land.net_removed', net);
         inc(`freeway_land.net_removed.${freewayOf.get(rec.id)!}`, net);
+      }
+    }
+    // Road-like lots: scenarioEligible on the chunk eligibility without the rule, and no reason.
+    // A kept lot of the review list: what the rule would take away, on its own eligibility.
+    if (roadReviewNet.has(rec.id)) {
+      const net = road
+        ? netWithout(
+            scenarioEligible(
+              { ...rec, eligible: road.eligibleWithout, roadLike: undefined },
+              existingUnits,
+              onFreeway
+            )
+          )
+        : netWithout(eligible);
+      roadReviewNet.set(rec.id, net ?? 0);
+      if (road && net !== null) {
+        inc('road_like.unhostable');
+        inc(`road_like.unhostable.${road.reason}`);
+        inc('road_like.net_removed', net);
+        inc(`road_like.net_removed.${road.reason}`, net);
       }
     }
     // sd.yield.zero-hostable (observation, tier 4): of scenario-eligible parcels with an envelope.
@@ -941,6 +1022,27 @@ export async function writeScenario(a: {
         `(${byFreeway.join(', ')})`
     );
   }
+  const byReason = ROAD_LIKE_REASONS.map((r) => `${r} ${c[`scenario.road_like.net_removed.${r}`]}`);
+  warnings.push(
+    `scenario: road-like lots make ${c['scenario.road_like.unhostable']} lots unbuildable, ` +
+      `${c['scenario.road_like.net_removed']} net homes of static capacity ` +
+      `(${byReason.join(', ')})`
+  );
+  if (roadWithUnits.length > 0) {
+    warnings.push(
+      `scenario: road-like lot(s) ${roadWithUnits.sort(cmp).join(', ')} have homes on the ` +
+        'latest roll; they keep them and stay ineligible'
+    );
+  }
+  writeRoadLotsCsv(
+    join(a.derivedDir, ROAD_LOTS_CSV),
+    roadReview.map((r) => {
+      const rec = recById.get(r.id);
+      if (!rec) throw new Error(`scenario: road-lots review lot ${r.id} has no chunk record`);
+      const [lng, lat] = rec.labelPoint;
+      return { ...r, netHomes: roadReviewNet.get(r.id)!, lng, lat };
+    })
+  );
   c['scenario.parcels'] = n;
   c['scenario.panel.years'] = years;
   c['scenario.panel.base_yield_memo'] = memoSize;

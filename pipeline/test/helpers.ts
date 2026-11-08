@@ -2,7 +2,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { openDuck, type Duck } from '../lib/duck';
+import { readFreewayLandSet } from '../lib/lesscars/freeway-land';
 import { readLock, verifyRaw } from '../lib/lock';
+import { loadRoadLotInputs, readRoadLots, ROAD_LOTS_JSON } from '../lib/road-lots';
+import { LESSCARS_FREEWAY_LAND_JSON } from '../lesscars-config';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
 import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 
@@ -25,24 +28,38 @@ export const SUPERSEDED_SCENARIO_COUNTS = [
 
 let memo: Promise<Duck> | undefined;
 
-/** openDuck + normalise every mini source into a temp norm dir + loadNormalised (memoised per file). */
+/**
+ * openDuck + normalise every mini source into a temp norm dir + loadNormalised, then (unless
+ * `roadLotInputs` is false) the fixture's road-lot inputs: the freeway-land catalog and the
+ * road-lots override file. Not memoised.
+ */
+export async function openMiniDuck(opts: { roadLotInputs?: boolean } = {}): Promise<Duck> {
+  const lock = readLock(path.join(MINI, 'sources.lock.json'));
+  const rawDir = path.join(MINI, 'raw');
+  // Raw files are read by name, but still verified against the lock's sha256 (as `build` does).
+  const bad = await verifyRaw(lock, rawDir, { byName: true });
+  if (bad.length > 0) {
+    throw new Error(`mini fixture out of date (re-run make-fixture.ts): ${bad.join('; ')}`);
+  }
+  const normDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfh-mini-norm-'));
+  const db = await openDuck();
+  await normaliseAll(db, lock, rawDir, normDir, {
+    byName: true,
+    exemptionsCsv: SB79_EXEMPTIONS_CSV.fixture
+  });
+  await loadNormalised(db, normDir);
+  if (opts.roadLotInputs ?? true) {
+    await loadRoadLotInputs(
+      db,
+      readFreewayLandSet(LESSCARS_FREEWAY_LAND_JSON.fixture),
+      readRoadLots(ROAD_LOTS_JSON.fixture)
+    );
+  }
+  return db;
+}
+
+/** openMiniDuck() with the fixture's road-lot inputs, memoised per file. */
 export function miniDuck(): Promise<Duck> {
-  memo ??= (async () => {
-    const lock = readLock(path.join(MINI, 'sources.lock.json'));
-    const rawDir = path.join(MINI, 'raw');
-    // Raw files are read by name, but still verified against the lock's sha256 (as `build` does).
-    const bad = await verifyRaw(lock, rawDir, { byName: true });
-    if (bad.length > 0) {
-      throw new Error(`mini fixture out of date (re-run make-fixture.ts): ${bad.join('; ')}`);
-    }
-    const normDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfh-mini-norm-'));
-    const db = await openDuck();
-    await normaliseAll(db, lock, rawDir, normDir, {
-      byName: true,
-      exemptionsCsv: SB79_EXEMPTIONS_CSV.fixture
-    });
-    await loadNormalised(db, normDir);
-    return db;
-  })();
+  memo ??= openMiniDuck();
   return memo;
 }

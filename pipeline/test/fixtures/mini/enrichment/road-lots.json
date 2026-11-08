@@ -1,0 +1,4 @@
+{
+  "keep": [{ "block": "3513", "reason": "Fixture: a housing site on a strip" }],
+  "road": [{ "parcel": "3512024", "reason": "Fixture: a corporation yard that is road" }]
+}

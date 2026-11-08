@@ -11,7 +11,8 @@ import { densityCap, fzpYieldCapOf } from '../lib/density-caps';
 import type { Duck } from '../lib/duck';
 import { chooseZoning, freedFzpRow, readFreedSites, type FreedSite } from '../lib/lesscars/sites';
 import { LC } from '../lesscars-config';
-import { carveFreedLand, removalsOf } from '../steps/lesscars-sql';
+import { readRoadLotRows } from '../lib/road-lots';
+import { carveFreedLand, notNeighboursOf, removalsOf } from '../steps/lesscars-sql';
 import { carveMini, lesscarsMini, miniLessCarsPlan } from './lesscars-helpers';
 
 let db: Duck;
@@ -197,8 +198,30 @@ describe('carveFreedLand', () => {
     expect(n.map((r) => r.parcel_id)).not.toContain(LOT19);
   });
 
+  it('no freed site takes a road-like lot as its zoning neighbour', async () => {
+    // Lots 20 and 22-24 lie within neighbourM of the hwy sites; lot 22 is 7 m below the band.
+    await recarvePlan();
+    const n = await db.all(
+      `SELECT DISTINCT parcel_id FROM lc_site_neighbour
+       WHERE parcel_id IN ('3512020', '3512021', '3512022', '3512023', '3512024')`
+    );
+    expect(n).toEqual([]);
+    expect(
+      await db.all(
+        `SELECT site_id FROM lc_site s
+         WHERE NOT EXISTS (SELECT 1 FROM lc_site_neighbour n WHERE n.site_id = s.site_id)`
+      )
+    ).toEqual([]);
+  });
+
+  it('notNeighboursOf adds the road-like ids', () => {
+    expect(notNeighboursOf(null, [], ['3512022']).has('3512022')).toBe(true);
+    expect(notNeighboursOf(null, []).size).toBe(0);
+  });
+
   it('lot 19’s site takes its neighbours within neighbourM that are not freeway land', async () => {
     const [site1] = (await readFreedSites(db, capDay)).filter((x) => x.siteId === 'lc:hwy:1');
+    const roadLike = await readRoadLotRows(db);
     const near = await db.all<{ id: string }>(
       `SELECT p.id FROM parcels p, lc_site s
        WHERE s.site_id = 'lc:hwy:1'
@@ -209,7 +232,9 @@ describe('carveFreedLand', () => {
     const got = await db.all<{ parcel_id: string }>(
       `SELECT parcel_id FROM lc_site_neighbour WHERE site_id = 'lc:hwy:1' ORDER BY parcel_id`
     );
-    const want = near.map((r) => r.id).filter((id) => id !== LOT19);
+    // Nor road-like lots (lots 20, 22-24 lie within neighbourM).
+    expect(near.some((r) => roadLike.has(r.id))).toBe(true);
+    const want = near.map((r) => r.id).filter((id) => id !== LOT19 && !roadLike.has(id));
     expect(want.length).toBeGreaterThan(0);
     expect(got.map((r) => r.parcel_id)).toEqual(want);
     expect(want).toContain(site1.zoning.parcelId);

@@ -3,10 +3,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/7ac89ded34d516667a0aeb1a77c40c31b23cace180cea8a5302c767eb9a0c9d3.csv",
-          "bytes": 3335,
+          "archiveKey": "sources/77ff3a8709c5583a0e768b944110b5d7bdff6a6ee47400a36d45f4982917220a.csv",
+          "bytes": 3469,
           "name": "datasf-assessor-roll.page-000.csv",
-          "sha256": "7ac89ded34d516667a0aeb1a77c40c31b23cace180cea8a5302c767eb9a0c9d3",
+          "sha256": "77ff3a8709c5583a0e768b944110b5d7bdff6a6ee47400a36d45f4982917220a",
           "url": "https://fixture.invalid/datasf-assessor-roll.page-000.csv"
         }
       ],
@@ -15,7 +15,25 @@
       "label": "DataSF Assessor Historical Secured Property Tax Rolls",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 39,
+      "rowCount": 41,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/38d2f828a87bcd41952fa1a1653fd9cb5eb2890f79f4c03eaa360f0ad50fce3a.geojson",
+          "bytes": 1431,
+          "name": "datasf-city-lands.page-000.geojson",
+          "sha256": "38d2f828a87bcd41952fa1a1653fd9cb5eb2890f79f4c03eaa360f0ad50fce3a",
+          "url": "https://fixture.invalid/datasf-city-lands.page-000.geojson"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/gtnh-hgvs",
+      "id": "datasf-city-lands",
+      "label": "DataSF City Lands",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 4,
       "upstreamVersion": "fixture"
     },
     {
@@ -111,10 +129,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/3785f4d6416aa1fee7147bd3eebbf57324b6a0e2cb9ac7b96c7ca2538fe80843.geojson",
-          "bytes": 6165,
+          "archiveKey": "sources/16314672563347e436df7f833f16217cd94ba247f129f54361539cac0a7939ea.geojson",
+          "bytes": 7920,
           "name": "datasf-landuse-2023.page-000.geojson",
-          "sha256": "3785f4d6416aa1fee7147bd3eebbf57324b6a0e2cb9ac7b96c7ca2538fe80843",
+          "sha256": "16314672563347e436df7f833f16217cd94ba247f129f54361539cac0a7939ea",
           "url": "https://fixture.invalid/datasf-landuse-2023.page-000.geojson"
         }
       ],
@@ -123,7 +141,7 @@
       "label": "DataSF Land Use 2023",
       "license": "public-domain",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 20,
+      "rowCount": 26,
       "upstreamVersion": "fixture"
     },
     {
@@ -147,10 +165,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/d04cf69c20adabea19cb89047cc37917d65f4d9976873274ec4a3011c88e18ed.csv",
-          "bytes": 1774,
+          "archiveKey": "sources/4e17470c1cf00fd3f80517ee34f22c7a35484d8f6a7d12f7dd563677e047ecc3.csv",
+          "bytes": 2141,
           "name": "datasf-parcel-attrs.page-000.csv",
-          "sha256": "d04cf69c20adabea19cb89047cc37917d65f4d9976873274ec4a3011c88e18ed",
+          "sha256": "4e17470c1cf00fd3f80517ee34f22c7a35484d8f6a7d12f7dd563677e047ecc3",
           "url": "https://fixture.invalid/datasf-parcel-attrs.page-000.csv"
         }
       ],
@@ -159,16 +177,16 @@
       "label": "DataSF Parcels (attributes, active and retired)",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 25,
+      "rowCount": 31,
       "upstreamVersion": "fixture"
     },
     {
       "files": [
         {
-          "archiveKey": "sources/ad459204446594030941644b596795b6defa9afa68da1f328ae34585f61f242f.geojson",
-          "bytes": 8625,
+          "archiveKey": "sources/542098e873c836a8eedbce83acf5ccb9e942938be5e184ef0890a4142f22cc3a.geojson",
+          "bytes": 10632,
           "name": "datasf-parcels.page-000.geojson",
-          "sha256": "ad459204446594030941644b596795b6defa9afa68da1f328ae34585f61f242f",
+          "sha256": "542098e873c836a8eedbce83acf5ccb9e942938be5e184ef0890a4142f22cc3a",
           "url": "https://fixture.invalid/datasf-parcels.page-000.geojson"
         }
       ],
@@ -177,7 +195,7 @@
       "label": "DataSF Parcels (Active and Retired)",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 25,
+      "rowCount": 31,
       "upstreamVersion": "fixture"
     },
     {
@@ -468,10 +486,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/692896ad3065d5ddf2dc834b261114f90483b59691ea71f3c54b5dacbedb9091.geojson",
-          "bytes": 4366,
+          "archiveKey": "sources/92dcf282fa9ce13fda3c34bed2164487853840395c365fa63f3537faf9ab9298.geojson",
+          "bytes": 4690,
           "name": "overture-buildings.page-000.geojson",
-          "sha256": "692896ad3065d5ddf2dc834b261114f90483b59691ea71f3c54b5dacbedb9091",
+          "sha256": "92dcf282fa9ce13fda3c34bed2164487853840395c365fa63f3537faf9ab9298",
           "url": "https://fixture.invalid/overture-buildings.page-000.geojson"
         }
       ],
@@ -480,7 +498,7 @@
       "label": "Overture Maps Buildings",
       "license": "ODbL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 13,
+      "rowCount": 14,
       "upstreamVersion": "fixture"
     },
     {

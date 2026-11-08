@@ -49,8 +49,8 @@ test('decodes scenario parcels in the browser through the shared codec', async (
     };
   }, PARCELS);
 
-  // 19 mini lots, freeway-land lot 19 (3512019) included.
-  expect(decoded.count).toBe(19);
+  // 25 mini lots, freeway-land lot 19 (3512019) and road-like-rule lots 20-25 included.
+  expect(decoded.count).toBe(25);
   expect(decoded.row).toBeGreaterThanOrEqual(0);
   expect(decoded.envelope).toBe(65);
 });

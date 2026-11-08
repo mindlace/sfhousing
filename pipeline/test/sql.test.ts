@@ -22,15 +22,16 @@ describe('10_parcels', () => {
 
   it('emits one record per distinct active non-null mapblklot', async () => {
     const rows = await db.all<{ id: string }>('SELECT id FROM parcels ORDER BY id');
-    expect(rows, '19 mini lots, lot 19 (3512019) included').toHaveLength(19);
+    expect(rows, '25 mini lots, lots 19-25 included').toHaveLength(25);
     expect(rows.map((r) => r.id)).toContain('3512002');
     expect(rows.map((r) => r.id)).not.toContain('3512099');
     const c = await counts();
     expect(c['parcels.null_id_dropped']).toBe(1);
     expect(c['parcels.condo_sublots']).toBe(3);
     expect(c['parcels.condo_geom_mismatch']).toBe(1);
-    expect(c['parcels.distinct_active_ids']).toBe(19);
-    expect(c['parcels.emitted']).toBe(19);
+    // 19 lots + lots 20-25 (road-like rule).
+    expect(c['parcels.distinct_active_ids']).toBe(25);
+    expect(c['parcels.emitted']).toBe(25);
   });
 
   it('does not duplicate counts when re-run on the same DB', async () => {
@@ -111,10 +112,10 @@ describe('20_landuse', () => {
     expect(c['landuse.orphan_dropped_units']).toBe(9);
     expect(c['landuse.orphan_reassigned_units']).toBe(7);
     expect(c['landuse.orphan_rows']).toBe(2);
-    // + lot 19's (3512019) VACANT row.
-    expect(c['landuse.rows']).toBe(20);
+    // + lot 19's (3512019) VACANT row, + lots 20-25's six VACANT rows.
+    expect(c['landuse.rows']).toBe(26);
     expect(c['landuse.duplicate_ids']).toBe(1);
-    expect(c['landuse.matched_parcels'], 'lot 19 (3512019) matched').toBe(17);
+    expect(c['landuse.matched_parcels'], 'lots 19-25 matched').toBe(23);
     expect(c['landuse.no_row_parcels']).toBe(2);
     expect(c['landuse.unknown_values']).toBe(0);
     expect(c['landuse.class.NONE']).toBe(1);
@@ -126,7 +127,7 @@ describe('20_landuse', () => {
     const [r] = await db.all<{ n: number; d: number }>(
       'SELECT count(*) n, count(DISTINCT id) d FROM parcel_landuse'
     );
-    expect(r, '19 mini lots, lot 19 (3512019) included').toEqual({ n: 19, d: 19 });
+    expect(r, '25 mini lots, lots 19-25 included').toEqual({ n: 25, d: 25 });
     expect(await db.all('SELECT * FROM landuse_unknown_values')).toEqual([]);
   });
 
@@ -159,10 +160,11 @@ describe('30–70 buildings, clipping, attributes', () => {
     expect(ids).not.toContain('bunder');
     expect(ids).not.toContain('bmarin');
     const c = await counts();
-    expect(c['buildings.input']).toBe(13);
+    // + lot 22's broad.
+    expect(c['buildings.input']).toBe(14);
     expect(c['buildings.underground_dropped']).toBe(1);
     expect(c['buildings.outside_nb_dropped']).toBe(1);
-    expect(c['buildings.kept']).toBe(11);
+    expect(c['buildings.kept']).toBe(12);
   });
 
   it('clips a spanning building into 2 pieces and keeps the pier without parcelId', async () => {
@@ -210,7 +212,7 @@ describe('30–70 buildings, clipping, attributes', () => {
       ymin: number;
       ymax: number;
     }>('SELECT id, geojson7131, xmin, xmax, ymin, ymax FROM parcel_out');
-    expect(rows, '19 mini lots, lot 19 (3512019) included').toHaveLength(19);
+    expect(rows, '25 mini lots, lots 19-25 included').toHaveLength(25);
     expect(rows.map((r) => r.id)).toEqual(rows.map((r) => r.id).sort());
     expect(JSON.parse(rows[0].geojson7131).type).toMatch(/Polygon/);
     expect(rows[0].xmin).toBeLessThan(rows[0].xmax);
@@ -269,6 +271,11 @@ describe('40/50 edge cases on synthetic sources', () => {
       CREATE TABLE src_overture(id VARCHAR, height DOUBLE, num_floors INTEGER, min_height DOUBLE, is_underground BOOLEAN, datasets VARCHAR[], geom GEOMETRY);
       CREATE TABLE src_land(layer VARCHAR, z INTEGER, x INTEGER, y INTEGER, fid INTEGER, w DOUBLE, s DOUBLE, e DOUBLE, n DOUBLE, geojson VARCHAR);
       CREATE TABLE src_land_tiles(z INTEGER, x INTEGER, y INTEGER, w DOUBLE, s DOUBLE, e DOUBLE, n DOUBLE);
+      -- 55_road_lots.sql reads these; empty here.
+      CREATE TABLE src_parcel_attrs(mapblklot VARCHAR, blklot VARCHAR, active BOOLEAN, zoning_code VARCHAR);
+      CREATE TABLE src_roll(closed_roll_year INTEGER, parcel_number VARCHAR, use_code VARCHAR, property_class_code VARCHAR, property_area DOUBLE);
+      CREATE TABLE src_streets(cnn VARCHAR, streetname VARCHAR, layer VARCHAR, geom GEOMETRY);
+      CREATE TABLE src_city_lands(land_id VARCHAR, land_name VARCHAR, department_name VARCHAR, geom GEOMETRY);
       INSERT INTO src_parcels VALUES ('P1', 'P1', TRUE, 'N', ${rect(X0, Y0, X0 + 1e-4, Y0 + 1e-4)});
       INSERT INTO src_neighborhoods VALUES ('N', ${rect(X0 - 1e-3, Y0 - 1e-3, X0 + 1e-3, Y0 + 1e-3)});
       INSERT INTO src_overture VALUES ('bx', NULL, NULL, ${minHeight}, FALSE, ['osm'], ${rect(X0, Y0, buildingX1, Y0 + 1e-4)});

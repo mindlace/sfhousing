@@ -69,13 +69,32 @@ const lotId = (i: number) => `35120${String(i).padStart(2, '0')}`;
 const LOT_IDS: Record<number, string> = {
   ...Object.fromEntries(Array.from({ length: 19 }, (_, k) => [k + 1, lotId(k + 1)])),
   3: '8711023C',
-  4: '0026T001A'
+  4: '0026T001A',
+  ...Object.fromEntries([20, 21, 22, 23, 24].map((i) => [i, lotId(i)])),
+  25: '3513001'
 };
 const nhoodOf = (i: number) => (i <= 8 ? 'Mission' : 'Noe Valley');
 /** Lot 18: directly behind lot 13 (x[120, 130], y[30, 60]), in Noe Valley. */
 const LOT18 = rect(120, 30, 130, 60);
 /** Lot 19: freeway land beside the fixture I-80 (y = 75), x[-40, 40] y[62, 72], in Mission. */
 const LOT19 = rect(-40, 62, 40, 72);
+/**
+ * Lots 20-25: public strips and yards for the road-like rule, all in Mission (plan "Fixture
+ * layout"). 20 a 5 m strip off Mission St; 21 straddles Mission St (VPUB roll); 22 south of
+ * I-80 with a small building, 7 m below the hwy band (y 60 to 90): outside the 6 m access strip
+ * (lc_access_m) so the freed sites keep their shape, but within 40 m (lc_neighbour_m) of them;
+ * 23 and 24 outlined by City Lands rows (23 stops 7 m short of lot 19, outside its access
+ * strip); 25 a 5 m strip on block 3513 (kept by the override
+ * file).
+ */
+const ROAD_LOTS: Record<number, Ring> = {
+  20: rect(-58, 10, -53, 50),
+  21: rect(-50, -16, -30, 0),
+  22: rect(45, 40, 73, 53),
+  23: rect(-59, 60, -47, 80),
+  24: rect(-58, 84, -40, 100),
+  25: rect(-58, -60, -53, -20)
+};
 
 // ---- shoreline (lots 15-17) ----
 // The basemap extract has z15 earth in tile columns 5240 and 5241 only, so the east edge of 5241
@@ -199,6 +218,15 @@ parcelRows.push({
   nh: 'Mission',
   polys: [[LOT19]]
 });
+for (let i = 20; i <= 25; i++) {
+  parcelRows.push({
+    mapblklot: LOT_IDS[i],
+    blklot: LOT_IDS[i],
+    active: true,
+    nh: 'Mission',
+    polys: [[ROAD_LOTS[i]]]
+  });
+}
 // retired parcels
 parcelRows.push({
   mapblklot: '3512099',
@@ -283,7 +311,13 @@ const ZONING: Record<number, string> = {
   16: 'RH-2',
   17: 'RH-2',
   18: 'RM-1',
-  19: 'P'
+  19: 'P',
+  20: 'P',
+  21: 'RH-2',
+  22: 'P',
+  23: 'RH-1',
+  24: 'P',
+  25: 'P'
 };
 const lotOfId = Object.fromEntries(Object.entries(LOT_IDS).map(([i, id]) => [id, Number(i)]));
 const DROPPED: Record<string, string> = {
@@ -391,6 +425,8 @@ const ROLL: RollSpec[] = [
   rr('3512017', 'MISC/V', null, [0, 0, 0], [100000, 0]),
   rr('3512018', 'MRES/A', '2001', [2, 2, 1600], [300000, 400000]),
   rr('3512019', 'MISC/V', null, [0, 0, 0], [100000, 0]),
+  // Lot 21: public by its roll class only (VPUB), not by zoning or City Lands.
+  rr('3512021', 'MISC/VPUB', null, [0, 0, 0], [0, 0]),
   rr('3512099', 'MRES/A', '1910', [2, 7, 5600], [300000, 200000], { years: [2024] })
 ];
 const roll = ROLL_YEARS.flatMap((year) =>
@@ -443,6 +479,7 @@ const landuse = [
   ...[15, 16, 17].map((i) => lu(LOT_IDS[i], 'VACANT', 0, 0, 0, polygon(SHORE_LOTS[i]))),
   lu(LOT_IDS[18], 'RESIDENT', 2, 1600, 0, polygon(LOT18)),
   lu(LOT_IDS[19], 'VACANT', 0, 0, 0, polygon(LOT19)),
+  ...[20, 21, 22, 23, 24, 25].map((i) => lu(LOT_IDS[i], 'VACANT', 0, 0, 0, polygon(ROAD_LOTS[i]))),
   lu('3512099', 'RESIDENT', 7, 0, 0, polygon(rect(111, 26, 119, 29))),
   lu('3512098', 'RESIDENT', 9, 0, 0, polygon(rect(1, 26, 9, 29)))
 ];
@@ -505,7 +542,9 @@ const overture = [
   ov('bunder', 5, null, ['OpenStreetMap'], polygon(rect(3, 6, 5, 8)), true),
   ov('bmarin', 8, null, ['OpenStreetMap'], polygon(rect(0, 400, 10, 410))),
   ov('besri', 4, null, ['Esri Community Maps'], polygon(rect(57.5, 26, 58.7, 27.2))),
-  ov('bbay', 6, null, ['OpenStreetMap'], polygon(rect(E + 2, 10, E + 8, 20)))
+  ov('bbay', 6, null, ['OpenStreetMap'], polygon(rect(E + 2, 10, E + 8, 20))),
+  // Lot 22: 36 m² on 364 m², cover about 10% (under 0.25, not under 0.05).
+  ov('broad', 4, null, ['OpenStreetMap'], polygon(rect(47, 43, 53, 49)))
 ];
 
 // ---- street centerlines (3psu-pn9h; sim data layers) ----
@@ -524,6 +563,48 @@ const streets = (
     { cnn: s(cnn), streetname, classcode: s(classcode), layer, active: true },
     multiLine([[...a], [...b]])
   )
+);
+
+// ---- city lands (gtnh-hgvs; sim data layers) ----
+// Lots 23 and 24 are outlined by the last two; the median strip and the undedicated
+// street are City Lands only.
+const cityLands = (
+  [
+    [
+      'L0001',
+      'MEDIAN STRIP AT MISSION ST',
+      'DPW',
+      'Public Works',
+      'Street Right of Way',
+      rect(0, -3, 10, 3)
+    ],
+    [
+      'L0002',
+      'UNDEDICATED STREET',
+      'DPW',
+      'Public Works',
+      'Street Right of Way',
+      rect(-58, -100, -50, -90)
+    ],
+    [
+      'L0003',
+      'SLOPE PROTECTION AT FIXTURE AVE',
+      'DPW',
+      'Public Works',
+      'Street Right of Way',
+      rect(-59, 60, -47, 80)
+    ],
+    [
+      'L0004',
+      'FIXTURE CORPORATION YARD',
+      'DPW',
+      'Public Works',
+      'Corporation Yard',
+      rect(-58, 84, -40, 100)
+    ]
+  ] as const
+).map(([land_id, land_name, dept_id, department_name, category, ring]) =>
+  feature({ land_id, land_name, dept_id, department_name, category }, polygon(ring as Ring))
 );
 
 // ---- historic resource status (3tsw-4idn CSV; sim data layers) ----
@@ -713,6 +794,13 @@ const SOURCES = [
     license: DATASF['datasf-streets'].license,
     homepage: DATASF['datasf-streets'].homepage,
     label: DATASF['datasf-streets'].label
+  },
+  {
+    id: 'datasf-city-lands',
+    features: cityLands,
+    license: DATASF['datasf-city-lands'].license,
+    homepage: DATASF['datasf-city-lands'].homepage,
+    label: DATASF['datasf-city-lands'].label
   }
 ];
 const CSV_SOURCES = [

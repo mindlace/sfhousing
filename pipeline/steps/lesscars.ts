@@ -483,7 +483,15 @@ export async function writeLessCars(a: {
   );
   // buildRegimes reads pol_tod (the policy step) and lc_site (the carve): carve first.
   const removed = removalsOf(plan);
-  await carveFreedLand(db, removed, notNeighboursOf(a.freewayLand, removed));
+  await carveFreedLand(
+    db,
+    removed,
+    notNeighboursOf(
+      a.freewayLand,
+      removed,
+      a.records.filter(({ rec }) => rec.roadLike).map(({ rec }) => rec.id)
+    )
+  );
   const sites = await readFreedSites(db, a.capDay);
   const switchDay = Date.parse(LC.switchDay) / DAY_MS;
   const regimes = await buildRegimes({

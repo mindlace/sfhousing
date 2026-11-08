@@ -1,5 +1,7 @@
 -- 60_attributes: per-parcel existing attributes (spec §4.5). Reads parcels, parcel_landuse, pieces,
--- parcel_land. Writes parcel_out and floor_area.rule1..4 counts. Ordered by id.
+-- parcel_land, road_lots. Writes parcel_out and floor_area.rule1..4 counts. Ordered by id.
+-- Road-like lots (55_road_lots) keep their outline, units and buildings but are never eligible;
+-- road_like is the reason code, NULL for every other lot.
 -- Land mask (45_land): geom is the dry part of a clipped lot, so area_m2 is its dry area; an
 -- underwater lot keeps its outline and area but is never eligible. geojson7131_orig carries the
 -- original outline of clipped lots only (NULL otherwise).
@@ -18,7 +20,8 @@ GROUP BY parcel_id;
 
 CREATE OR REPLACE TEMP TABLE a_rule AS
 SELECT p.id, p.geom, p.label_lng, p.label_lat, p.x0, p.y0, p.neighborhood,
-       l.units, l.land_use, l.eligible AND NOT p.underwater AS eligible, p.underwater,
+       l.units, l.land_use, l.eligible AND NOT p.underwater AND r.id IS NULL AS eligible,
+       p.underwater, r.reason AS road_like,
        CASE WHEN k.status = 'clipped' THEN ST_AsGeoJSON(p.geom_orig) END AS geojson7131_orig,
        CASE WHEN l.sqft > 0 THEN l.sqft * 0.09290304
             WHEN coalesce(a.fa2, 0) > 0 THEN a.fa2
@@ -34,14 +37,15 @@ SELECT p.id, p.geom, p.label_lng, p.label_lat, p.x0, p.y0, p.neighborhood,
 FROM parcels p
 JOIN parcel_landuse l USING (id)
 JOIN parcel_land k USING (id)
-LEFT JOIN a_pieces a USING (id);
+LEFT JOIN a_pieces a USING (id)
+LEFT JOIN road_lots r USING (id);
 
 CREATE OR REPLACE TABLE parcel_out AS
 SELECT id, geom, label_lng, label_lat, x0, y0,
        units::INTEGER AS units,
        round(fa, 1)::DOUBLE AS floor_area_m2,
        round(hmax, 1)::DOUBLE AS height_m,
-       land_use, eligible, underwater, neighborhood,
+       land_use, eligible, underwater, road_like, neighborhood,
        fa_rule::INTEGER AS fa_rule,
        xmin, ymin, xmax, ymax,
        ST_AsGeoJSON(geom) AS geojson7131,

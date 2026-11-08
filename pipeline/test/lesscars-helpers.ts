@@ -18,6 +18,7 @@ import { POLICY_BIN } from '../lib/scenario-files';
 import { runSql } from '../lib/sql';
 import { LESSCARS_FREEWAY_LAND_JSON, LESSCARS_PLAN_JSON } from '../lesscars-config';
 import { readFreewayLand } from '../lib/lesscars/freeway-land';
+import { readRoadLotRows } from '../lib/road-lots';
 import { asOfFromLock } from '../project-records/parse';
 import { readParcelRecords, writeNeighborhoods } from '../steps/chunks';
 import { carveFreedLand, notNeighboursOf, removalsOf } from '../steps/lesscars-sql';
@@ -29,6 +30,8 @@ import { MINI, miniDuck } from './helpers';
 export interface LessCarsMini {
   db: Duck;
   outDir: string;
+  /** The scenario step's derived directory (parcel-panel.parquet, road-lots.csv). */
+  derivedDir: string;
   records: { rec: ParcelRecord; cellId: string }[];
   capDay: Day;
   parcels: ScenarioParcels;
@@ -43,11 +46,15 @@ export function miniLessCarsPlan(): LessCarsPlan {
   return parseLessCarsPlan(JSON.parse(readFileSync(LESSCARS_PLAN_JSON.fixture, 'utf8')));
 }
 
-/** Carve the mini plan's freed land with the fixture catalog, as writeLessCars does. */
-export function carveMini(db: Duck): Promise<void> {
+/**
+ * Carve the mini plan's freed land with the fixture catalog and the road-like lots (road_lots, the
+ * records' `roadLike`), as writeLessCars does.
+ */
+export async function carveMini(db: Duck): Promise<void> {
   const removed = removalsOf(miniLessCarsPlan());
   const catalog = readFreewayLand(LESSCARS_FREEWAY_LAND_JSON.fixture);
-  return carveFreedLand(db, removed, notNeighboursOf(catalog, removed));
+  const roadLike = (await readRoadLotRows(db)).keys();
+  return carveFreedLand(db, removed, notNeighboursOf(catalog, removed, roadLike));
 }
 
 let memo: Promise<LessCarsMini> | undefined;
@@ -66,11 +73,12 @@ export function lesscarsMini(): Promise<LessCarsMini> {
     const capDay = asOfFromLock(lock);
     const root = mkdtempSync(join(tmpdir(), 'sfh-lesscars-'));
     const outDir = join(root, 'out');
+    const derivedDir = join(root, 'derived');
     const buildCounts: Record<string, number> = {};
     const scenario = await writeScenario({
       db,
       outDir,
-      derivedDir: join(root, 'derived'),
+      derivedDir,
       datasetVersion: 'fixture-0',
       records,
       capDay,
@@ -100,7 +108,7 @@ export function lesscarsMini(): Promise<LessCarsMini> {
     const policy = readPolicyBin(join(outDir, POLICY_BIN), parcels);
     const transit = decodeTransit(JSON.parse(readFileSync(join(outDir, 'transit.json'), 'utf8')));
     const counts = { ...buildCounts, ...scenario.counts, ...policyStep.counts };
-    return { db, outDir, records, capDay, parcels, policy, transit, counts };
+    return { db, outDir, derivedDir, records, capDay, parcels, policy, transit, counts };
   })();
   return memo;
 }

@@ -1,0 +1,108 @@
+{
+  "keep": [
+    {
+      "block": "1939",
+      "reason": "Treasure Island and Yerba Buena Island development parcels (spec anti-goal)"
+    },
+    {
+      "block": "8953",
+      "reason": "Treasure Island and Yerba Buena Island development parcels (spec anti-goal)"
+    },
+    {
+      "block": "8958",
+      "reason": "Treasure Island and Yerba Buena Island development parcels (spec anti-goal)"
+    },
+    {
+      "parcel": "4382003",
+      "reason": "Muni Islais Creek bus yard beside the I-280 viaduct; imagery 2026-11-08"
+    },
+    {
+      "parcel": "4806015",
+      "reason": "Vacant grassy field by Yosemite Slough; only the name says vacated street; imagery 2026-11-08"
+    },
+    {
+      "parcel": "5269008",
+      "reason": "Strip inside the Wholesale Produce Market (building, parking, truck aisle); imagery 2026-11-08"
+    },
+    {
+      "parcel": "3770002",
+      "reason": "Surface parking lot on The Embarcadero (vacated Main St, Port); imagery 2026-11-08"
+    },
+    {
+      "parcel": "7177048",
+      "reason": "Corner of a paved parking and business yard beside the I-280 buffer; imagery 2026-11-08"
+    },
+    {
+      "parcel": "7000025",
+      "reason": "Fenced, tree-covered remnant behind houses at Shields St, lot-shaped; imagery 2026-11-08"
+    },
+    {
+      "parcel": "6723030",
+      "reason": "Small fenced dirt triangle between houses off San Jose Ave; imagery 2026-11-08"
+    },
+    { "parcel": "5331055", "reason": "Selby Palou Mini Park; imagery 2026-11-08" },
+    { "parcel": "5331057", "reason": "Selby Palou Mini Park; imagery 2026-11-08" },
+    {
+      "parcel": "3714012",
+      "reason": "Lawn and court inside Justin Herman Plaza; imagery 2026-11-08"
+    },
+    {
+      "parcel": "3714013",
+      "reason": "Lawn and court inside Justin Herman Plaza; imagery 2026-11-08"
+    },
+    {
+      "parcel": "4591C102",
+      "reason": "Pocket park with sports courts between buildings; imagery 2026-11-08"
+    },
+    {
+      "parcel": "0916002",
+      "reason": "Palace of Fine Arts building, lagoon and park; imagery 2026-11-08"
+    },
+    { "parcel": "0817067", "reason": "Patricia's Green park; imagery 2026-11-08" },
+    {
+      "parcel": "4343031",
+      "reason": "Unclear: 30 m paved strip used as a private access drive, parking and storage, no public street; precision first; imagery 2026-11-08"
+    },
+    {
+      "parcel": "3767003",
+      "reason": "Unclear: I-80 deck crosses it, but surface parking and sheds lie outside the deck; precision first; imagery 2026-11-08"
+    },
+    {
+      "parcel": "3934001",
+      "reason": "Unclear: about 40% is surface parking beside the I-80/101 deck; precision first; imagery 2026-11-08"
+    },
+    {
+      "parcel": "5851024",
+      "reason": "Unclear: 101/280 interchange infield holding a building and a paved yard; precision first; imagery 2026-11-08"
+    },
+    {
+      "parcel": "4346001",
+      "reason": "Unclear: east half is an open storage yard beside the Cesar Chavez/Evans roadway; precision first; imagery 2026-11-08"
+    },
+    {
+      "parcel": "3739013",
+      "reason": "Unclear: East Clementina ROW strip in tower shadow at Transbay; precision first; imagery 2026-11-08"
+    },
+    {
+      "parcel": "3069021",
+      "reason": "Unclear: wooded remainder behind houses off Portola Dr, no street; precision first; imagery 2026-11-08"
+    },
+    {
+      "parcel": "4110010",
+      "reason": "Unclear: strip of a Pier 70 parking lot on the mapped 21st St line, no roadway built; precision first; imagery 2026-11-08"
+    },
+    {
+      "parcel": "6946061",
+      "reason": "Unclear: wooded corner triangle at Geneva and San Jose beside a building; precision first; imagery 2026-11-08"
+    },
+    {
+      "parcel": "1866018F",
+      "reason": "Unclear: 6 m strip between houses, part yard, part roofed; precision first; imagery 2026-11-08"
+    },
+    {
+      "parcel": "4591D141",
+      "reason": "Unclear: OCII dirt strip along Griffith St, part of a larger vacant site; precision first; imagery 2026-11-08"
+    }
+  ],
+  "road": []
+}

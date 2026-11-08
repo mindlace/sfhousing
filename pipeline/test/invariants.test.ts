@@ -214,8 +214,8 @@ describe('invariants', () => {
     const v8 = r.find((x) => x.id === 'V8')!;
     expect(v8.ok).toBe(false);
     expect(v8.detail).toMatch(/more than one chunk/);
-    // 19 mini lots with lot 19 (3512019).
-    expect(v8.detail).toMatch(/18 distinct ids ≠ V2 19/);
+    // 25 mini lots with lots 19-25.
+    expect(v8.detail).toMatch(/24 distinct ids ≠ V2 25/);
     expect(v8.detail).not.toMatch(/Σ parcelCount/);
   });
   it('V7 fails on an empty polygon', async () => {
@@ -343,8 +343,8 @@ describe('invariants', () => {
     });
     const v15 = await result(d, 'V15');
     expect(v15.ok).toBe(false);
-    // Cell 0 holds 16 lots, lot 19 (3512019) among them.
-    expect(v15.detail).toMatch(/16 id\(s\) whose cell ≠ their chunk's cellId/);
+    // Cell 0 holds 22 lots, lots 19-25 among them.
+    expect(v15.detail).toMatch(/22 id\(s\) whose cell ≠ their chunk's cellId/);
   });
   it('V15 fails when an id is in no chunk', async () => {
     const d = copy();
@@ -370,8 +370,8 @@ describe('invariants', () => {
     writeFileSync(join(d, 'manifest.json'), JSON.stringify(m));
     const v15 = await result(d, 'V15');
     expect(v15.ok).toBe(false);
-    // 19 lots with lot 19 (3512019); the doubled chunk holds 16 of them.
-    expect(v15.detail).toMatch(/35 chunk records ≠ count 19/);
+    // 25 lots with lots 19-25; the doubled chunk holds 22 of them.
+    expect(v15.detail).toMatch(/47 chunk records ≠ count 25/);
   });
   it('V16 fails when too few eligible parcels have a district', async () => {
     const d = copy();
@@ -381,7 +381,8 @@ describe('invariants', () => {
     });
     const v16 = await result(d, 'V16');
     expect(v16.ok).toBe(false);
-    expect(v16.detail).toMatch(/eligible with a district 93\.3% < 100%/);
+    // 15 of 16 (lot 25 eligible; road-like lots 20-24 are not)
+    expect(v16.detail).toMatch(/eligible with a district 93\.8% < 100%/);
   });
   it('V16 fails on a parse failure', async () => {
     expect(await failed(base, { ...counts, 'scenario.height.parse_fail': 1 })).toContain('V16');
@@ -423,6 +424,16 @@ describe('invariants', () => {
     expect(v17.ok).toBe(false);
     expect(v17.detail).toMatch(/1 hostable flag\(s\) disagree/);
   });
+  it('V17 fails when a road-like row is eligible in parcels.bin', async () => {
+    // Lot 22 is road-like (r3): its chunk record carries rl, so the scenario rule says ineligible.
+    const d = copy();
+    editScenario(d, (p) => {
+      p.eligible[p.index.get('3512022')!] = 1;
+    });
+    const v17 = await result(d, 'V17');
+    expect(v17.ok).toBe(false);
+    expect(v17.detail).toMatch(/1 eligible flag\(s\) disagree with the chunk record/);
+  });
   it('V17 reads eligibility from flags bit 5: a no-land-use parcel with homes may be hostable', async () => {
     // Lot 9 has no land-use row (chunk `eligible` false). With roll homes it is eligible in the
     // scenario (sd.landuse.none-with-units), so its hostable flags need no chunk eligibility.
@@ -438,7 +449,7 @@ describe('invariants', () => {
     const v17 = await result(d, 'V17');
     expect(v17).toMatchObject({
       ok: true,
-      detail: expect.stringMatching(/^hostable 12\/16 eligible/)
+      detail: expect.stringMatching(/^hostable 13\/17 eligible/)
     });
   });
   it('V17 fails when the eligible flag disagrees with the chunk record and the T14 rule', async () => {
@@ -505,14 +516,15 @@ describe('invariants', () => {
   });
   it('V17 does not warn when the FZP net total is in band', async () => {
     const v17 = await result(base, 'V17', { ...counts, 'scenario.yield.fzp_net_total': 780000 });
-    expect(v17).toMatchObject({ ok: true, detail: 'hostable 11/15 eligible' });
+    // Lot 25 included; road-like lots 20-24 are not eligible.
+    expect(v17).toMatchObject({ ok: true, detail: 'hostable 12/16 eligible' });
   });
   it('V17 passes with a warning when the FZP net total is far from the cross-check', async () => {
     const v17 = (
       await checkDataset(base, FIXTURE_PROFILE, { counts, reencodeIdentical: true })
     ).find((x) => x.id === 'V17')!;
     expect(v17.ok).toBe(true);
-    expect(v17.detail).toMatch(/warn: FZP net capacity 28 outside/);
+    expect(v17.detail).toMatch(/warn: FZP net capacity 36 outside/);
   });
   it('V18 fails on a missing roll year', async () => {
     expect(
@@ -594,7 +606,7 @@ describe('invariants', () => {
       'scenario.roll.latest_eligible_matched': 11
     });
     expect(v18.ok).toBe(false);
-    expect(v18.detail).toMatch(/eligible with a latest-year roll row 73\.3% < 80%/);
+    expect(v18.detail).toMatch(/eligible with a latest-year roll row 68\.8% < 81\.25%/);
   });
   it('V18 counts hostable_base for every panel roll year, each within 5% of the year before', async () => {
     const keys = Object.keys(counts)
@@ -854,8 +866,8 @@ describe('V30 data-quality registry', () => {
       expect(md, r.id).toMatch(new RegExp(`^\\| \`${r.id.replaceAll('.', '\\.')}\` \\|`, 'm'));
     }
     // The scenario-data SQL rules recorded into the build's counts.
-    // Of: 35 parcel-years, lot 19's two included.
-    expect(md).toMatch(/\| `sd\.roll\.units-capacity` \|.*\| 3 \/ 35 \|/);
+    // Of: 37 parcel-years, lot 19's and lot 21's two each included.
+    expect(md).toMatch(/\| `sd\.roll\.units-capacity` \|.*\| 3 \/ 37 \|/);
     expect(md).not.toContain('| not reported |');
     expect(md).not.toContain('Not reported.');
   });
@@ -935,8 +947,8 @@ describe('V31 policy file', () => {
   it('is OK on the fixture', async () => {
     const r = await v31(base);
     expect(r.ok, r.detail).toBe(true);
-    // Every lot but 18 has a historic row, lot 19 (3512019) included.
-    expect(r.detail).toMatch(/historic 18\/19/);
+    // Every lot but 18 and 20-25 has a historic row, lot 19 (3512019) included.
+    expect(r.detail).toMatch(/historic 18\/25/);
   });
   it('fails with "does not decode" against a parcels.bin with one id changed', async () => {
     const d = copy();
@@ -1170,8 +1182,8 @@ describe('V33 current law (FZP + §207.11)', () => {
   it('is OK on the fixture', async () => {
     const r = await v33(base);
     expect(r.ok, r.detail).toBe(true);
-    // 19 rows with lot 19 (3512019).
-    expect(r.detail).toBe('19 rows match §207.11 over FZP; 3 applies, 2 from §207.11');
+    // 25 rows with lots 19-25.
+    expect(r.detail).toBe('25 rows match §207.11 over FZP; 3 applies, 2 from §207.11');
   });
   it('fails when one row’s currentCap is altered', async () => {
     const s207 = await v33(editPolicyRow(FROM_S207, (p, i) => (p.currentCap[i] += 1)));

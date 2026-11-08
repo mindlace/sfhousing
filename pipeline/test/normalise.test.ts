@@ -33,11 +33,11 @@ describe('normalise mini fixture', () => {
         )
       ).map((r) => [r.t, r.n])
     );
-    // parcels: 19 lots, lot 2 has 3 rows → 21, + 3 retired + 1 null-id = 25 (attrs likewise);
-    // land use: 20 (lot 19's VACANT row included); height: 8 districts; roll: 18 rows in 2025 +
-    // 19 in 2024 (lot 13 and 3512099 only in 2024, lot 3 not in 2024; lot 19 in both) + 2 in 2023
-    // (lots 3 and 4)
-    expect(counts).toEqual({ p: 25, l: 20, f: 3, n: 3, o: 13, h: 8, a: 25, r: 39 });
+    // parcels: 25 lots, lot 2 has 3 rows → 27, + 3 retired + 1 null-id = 31 (attrs likewise);
+    // land use: 26 (lots 19-25's VACANT rows included); height: 8 districts; overture: 14 (lot
+    // 22's broad); roll: 19 rows in 2025 + 20 in 2024 (lot 13 and 3512099 only in 2024, lot 3 not
+    // in 2024; lots 19 and 21 in both) + 2 in 2023 (lots 3 and 4)
+    expect(counts).toEqual({ p: 31, l: 26, f: 3, n: 3, o: 14, h: 8, a: 31, r: 41 });
     const [ids] = await db.all<{ ok: boolean }>(
       `SELECT bool_and(mapblklot IS NULL OR typeof(mapblklot) = 'VARCHAR') ok FROM src_parcels`
     );
@@ -202,6 +202,77 @@ describe('normalise mini fixture', () => {
       (c) => c.column_name
     );
     expect(cols).toEqual(['cnn', 'streetname', 'classcode', 'layer', 'f_st', 't_st', 'geom']);
+  });
+
+  it('city lands: four mini rows in EPSG:7131, names verbatim', async () => {
+    const db = await miniDuck();
+    const rows = await db.all<{ land_name: string }>(
+      'SELECT land_name FROM src_city_lands ORDER BY land_id'
+    );
+    expect(rows.map((r) => r.land_name)).toEqual([
+      'MEDIAN STRIP AT MISSION ST',
+      'UNDEDICATED STREET',
+      'SLOPE PROTECTION AT FIXTURE AVE',
+      'FIXTURE CORPORATION YARD'
+    ]);
+    const cols = (await db.all<{ column_name: string }>('DESCRIBE src_city_lands')).map(
+      (c) => c.column_name
+    );
+    expect(cols).toEqual([
+      'land_id',
+      'land_name',
+      'dept_id',
+      'department_name',
+      'category',
+      'geom'
+    ]);
+    const [g] = await db.all<{ x: number }>('SELECT min(ST_XMin(geom)) x FROM src_city_lands');
+    // Projected metres (EPSG:7131), not degrees.
+    expect(Math.abs(g.x)).toBeGreaterThan(1000);
+    const [h] = await db.all<{ n: number }>(
+      'SELECT count(*) n FROM src_city_lands WHERE NOT ST_IsValid(geom)'
+    );
+    expect(h.n).toBe(0);
+  });
+
+  it('a lock without datasf-city-lands fails normaliseAll', async () => {
+    const lock = readLock(join(MINI, 'sources.lock.json'));
+    lock.sources = lock.sources.filter((s) => s.id !== 'datasf-city-lands');
+    const db = await openDuck();
+    await expect(
+      normaliseAll(db, lock, join(MINI, 'raw'), tmp(), {
+        byName: true,
+        exemptionsCsv: SB79_EXEMPTIONS_CSV.fixture
+      })
+    ).rejects.toThrow(/datasf-city-lands/);
+  });
+
+  it("mini lots 20 to 25: parcels, VACANT land use, zoning, and lot 21's VPUB roll rows", async () => {
+    const db = await miniDuck();
+    const ids = ['3512020', '3512021', '3512022', '3512023', '3512024', '3513001'];
+    const list = ids.map((id) => `'${id}'`).join(', ');
+    expect(
+      await db.all(`SELECT mapblklot FROM src_parcels WHERE mapblklot IN (${list}) ORDER BY 1`)
+    ).toHaveLength(6);
+    expect(
+      await db.all(
+        `SELECT DISTINCT landuse, resunits FROM src_landuse WHERE mapblklot IN (${list})`
+      )
+    ).toEqual([{ landuse: 'VACANT', resunits: 0 }]);
+    expect(
+      await db.all(
+        `SELECT DISTINCT property_class_code c FROM src_roll WHERE parcel_number = '3512021'`
+      )
+    ).toEqual([{ c: 'VPUB' }]);
+    expect(
+      await db.all(
+        `SELECT mapblklot, zoning_code FROM src_parcel_attrs
+         WHERE mapblklot IN ('3512021', '3512023') ORDER BY 1`
+      )
+    ).toEqual([
+      { mapblklot: '3512021', zoning_code: 'RH-2' },
+      { mapblklot: '3512023', zoning_code: 'RH-1' }
+    ]);
   });
 
   it('historic status: one row per listed apn, 0026T001A verbatim, lot 18 absent', async () => {

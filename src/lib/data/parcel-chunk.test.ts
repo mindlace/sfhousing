@@ -219,6 +219,60 @@ describe('parcel chunk codec', () => {
     }
   });
 
+  describe('road-like column', () => {
+    const [a, b] = grid20x20().slice(0, 2);
+    const rlRecs = () => [a, { ...b, eligible: false, roadLike: 'r2s' as const }];
+
+    it('round-trips a road-like record', () => {
+      const out = decodeParcelChunk(encodeParcelChunk('fixture-0', '0_0', rlRecs()));
+      expect(out[1].roadLike).toBe('r2s');
+      expect('roadLike' in out[0]).toBe(false);
+      expect(out).toEqual(rlRecs());
+    });
+
+    it('omits rl when no record is road-like', () => {
+      const c = JSON.parse(encodeParcelChunk('fixture-0', '0_0', [a, b]));
+      expect(c.rl).toBeUndefined();
+      expect('rl' in c).toBe(false);
+    });
+
+    it('decodes a chunk without rl', () => {
+      const out = decodeParcelChunk(encodeParcelChunk('fixture-0', '0_0', [a, b]));
+      expect(out.some((r) => r.roadLike)).toBe(false);
+    });
+
+    const bad = (rl: unknown) => {
+      const c = JSON.parse(encodeParcelChunk('fixture-0', '0_0', rlRecs()));
+      c.rl = rl;
+      if (rl === 'eligible') {
+        c.rl = [[1, 'r3']];
+        c.elig = [0, 1];
+      }
+      if (rl === 'underwater') {
+        c.rl = [[1, 'r3']];
+        c.uw = [1];
+      }
+      return c;
+    };
+    const pairs = [
+      [1, 'r3'],
+      [1, 'r7']
+    ];
+    for (const [name, rl] of [
+      ['not an array', 3],
+      ['bad pair', [[1]]],
+      ['row out of range', [[9, 'r3']]],
+      ['not increasing', pairs],
+      ['unknown reason', [[1, 'r9']]],
+      ['eligible row', 'eligible'],
+      ['also underwater', 'underwater']
+    ] as [string, unknown][]) {
+      it(`rejects a bad rl column: ${name}`, () => {
+        expect(() => decodeParcelChunk(bad(rl))).toThrow(ChunkFormatError);
+      });
+    }
+  });
+
   describe('malformed input throws ChunkFormatError', () => {
     const good = () => JSON.parse(encodeParcelChunk('fixture-0', '0_0', grid20x20().slice(0, 2)));
     const cases: [string, (c: Record<string, unknown>) => unknown][] = [

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
-import type { ParcelId, ParcelRecord } from '../../src/lib/data/parcel';
+import type { ParcelId, ParcelRecord, RoadLikeReason } from '../../src/lib/data/parcel';
 import { encodeParcelChunk, ringsAreaM2 } from '../../src/lib/data/parcel-chunk';
 import type { Duck } from '../lib/duck';
 import type { Report } from '../lib/report';
@@ -28,6 +28,7 @@ interface Row {
   land_use: string;
   eligible: boolean;
   underwater: boolean;
+  road_like: RoadLikeReason | null;
   neighborhood: string;
   xmin: number;
   ymin: number;
@@ -53,7 +54,7 @@ interface ParcelRow {
 async function readParcelRows(db: Duck): Promise<ParcelRow[]> {
   const rows = await db.all<Row>(
     `SELECT id, label_lng, label_lat, x0, y0, units, floor_area_m2, height_m, land_use,
-            eligible, underwater, neighborhood, xmin, ymin, xmax, ymax, geojson7131
+            eligible, underwater, road_like, neighborhood, xmin, ymin, xmax, ymax, geojson7131
      FROM parcel_out ORDER BY id`
   );
   return rows.map((r) => {
@@ -69,7 +70,8 @@ async function readParcelRows(db: Duck): Promise<ParcelRow[]> {
       landUse: r.land_use,
       eligible: r.eligible,
       neighborhood: r.neighborhood,
-      ...(r.underwater ? { underwater: true as const } : {})
+      ...(r.underwater ? { underwater: true as const } : {}),
+      ...(r.road_like !== null ? { roadLike: r.road_like } : {})
     };
     return { rec, cellId: cellIdFor(r.x0, r.y0), bbox: [r.xmin, r.ymin, r.xmax, r.ymax] };
   });
