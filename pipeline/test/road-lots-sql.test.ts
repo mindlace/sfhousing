@@ -211,24 +211,32 @@ describe('55_road_lots on the mini fixture', () => {
         keep: [
           { parcel: '9999999', reason: 'unknown parcel' },
           { block: '9998', reason: 'unknown block' },
-          { parcel: '3512001', reason: 'stale' }
+          { parcel: '3512001', reason: 'stale' },
+          // Lettered blocks are separate blocks: mini's only 0026 lot is 0026T001A, in block 0026T.
+          { block: '0026', reason: 'no block-0026 lot' },
+          { block: '0026T', reason: 'lot 0026T001A is not road-like' }
         ],
         road: [
           { parcel: '3512020', reason: 'already flagged' },
-          { parcel: '3512019', reason: 'catalog' }
+          { parcel: '3512019', reason: 'catalog' },
+          // Lot 16 is underwater: already ineligible, and left out of road_lots.
+          { parcel: '3512016', reason: 'underwater' }
         ]
       };
       await loadRoadLotInputs(db, readFreewayLandSet(LESSCARS_FREEWAY_LAND_JSON.fixture), bad);
       await runSql(db);
       const problems = await roadLotProblems(db);
-      expect(problems).toHaveLength(5);
+      expect(problems).toHaveLength(8);
       expect(problems).toEqual([...problems].sort());
       for (const want of [
         /keep parcel 9999999.*no parcel/,
         /keep block 9998.*no parcel/,
         /keep parcel 3512001.*does not flag/,
         /road parcel 3512020.*already flags/,
-        /road parcel 3512019.*catalog/
+        /road parcel 3512019.*catalog/,
+        /keep block 0026 names no parcel/,
+        /keep block 0026T: the rule does not flag any lot of it/,
+        /road parcel 3512016 is underwater/
       ]) {
         expect(
           problems.some((p) => want.test(p)),
@@ -237,6 +245,25 @@ describe('55_road_lots on the mini fixture', () => {
       }
       // The catalog parcel stays out of road_lots even when listed.
       expect(await inRoadLots('3512019')).toBe(false);
+      expect(await inRoadLots('3512016')).toBe(false);
+    });
+
+    it('a block 0026 keep row does not keep a lot of block 0026T', async () => {
+      // The block a keep row matches is the id's 4 digits and optional capital letter.
+      expect(
+        await db.all(
+          `SELECT regexp_extract('0026T001A', '^[0-9]{4}[A-Z]?') AS t,
+                  regexp_extract('3513001', '^[0-9]{4}[A-Z]?') AS d`
+        )
+      ).toEqual([{ t: '0026T', d: '3513' }]);
+      await loadRoadLotInputs(db, new Set(), {
+        keep: [{ block: '0026', reason: 'block 0026' }],
+        road: []
+      });
+      await runSql(db);
+      // 3513001 is raw again (its block keep row is gone) and nothing keeps it.
+      expect(await evalRow('3513001')).toMatchObject({ raw: true, kept_by: null });
+      expect(await db.all('SELECT id FROM road_lot_eval WHERE kept_by IS NOT NULL')).toEqual([]);
     });
   });
 });

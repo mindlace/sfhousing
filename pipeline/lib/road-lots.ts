@@ -55,6 +55,12 @@ export interface RoadLotsFile {
   road: { parcel: ParcelId; reason: string }[];
 }
 
+/** An SF block: 4 digits and an optional capital letter (`0026` and `0026T` are separate blocks). */
+export const BLOCK_RE = /^[0-9]{4}[A-Z]?$/;
+
+/** The SQL expression for a parcel id's block (BLOCK_RE without the end anchor). */
+export const SQL_BLOCK_OF = (col: string) => `regexp_extract(${col}, '^[0-9]{4}[A-Z]?')`;
+
 export class RoadLotsFormatError extends Error {
   name = 'RoadLotsFormatError';
 }
@@ -105,7 +111,8 @@ export function parseRoadLots(json: unknown): RoadLotsFile {
       return { parcel, reason };
     }
     const block = nonBlank(r.block, `${at}.block`);
-    if (block.length !== 4) fail(`${at}.block`, 'expected 4 characters');
+    if (!BLOCK_RE.test(block))
+      fail(`${at}.block`, 'expected 4 digits and an optional capital letter');
     dup(`keep block ${block}`, at);
     return { block, reason };
   });
@@ -201,8 +208,8 @@ export async function ensureRoadLotInputs(db: Duck): Promise<void> {
 /**
  * The override rows the raw rule contradicts, after 55_road_lots.sql has run, one message per
  * row, sorted: a keep row naming no parcel or block, a keep row the raw rule does not flag
- * (stale), a road row naming no parcel, a road row on a catalog parcel, a road row the raw rule
- * already flags.
+ * (stale), a road row naming no parcel, a road row on an underwater lot (already ineligible, and
+ * dropped from road_lots), a road row on a catalog parcel, a road row the raw rule already flags.
  */
 export async function roadLotProblems(db: Duck): Promise<string[]> {
   const rows = await db.all<{ msg: string }>(
@@ -216,9 +223,9 @@ export async function roadLotProblems(db: Duck): Promise<string[]> {
      FROM rl_keep k WHERE k.parcel IS NOT NULL
      UNION ALL
      SELECT CASE
-              WHEN NOT EXISTS (SELECT 1 FROM parcels p WHERE left(p.id, 4) = k.block)
+              WHEN NOT EXISTS (SELECT 1 FROM parcels p WHERE ${SQL_BLOCK_OF('p.id')} = k.block)
                 THEN 'keep block ' || k.block || ' names no parcel'
-              WHEN NOT EXISTS (SELECT 1 FROM raw WHERE left(raw.id, 4) = k.block)
+              WHEN NOT EXISTS (SELECT 1 FROM raw WHERE ${SQL_BLOCK_OF('raw.id')} = k.block)
                 THEN 'keep block ' || k.block || ': the rule does not flag any lot of it (stale)'
             END
      FROM rl_keep k WHERE k.block IS NOT NULL
@@ -226,6 +233,8 @@ export async function roadLotProblems(db: Duck): Promise<string[]> {
      SELECT CASE
               WHEN NOT EXISTS (SELECT 1 FROM parcels p WHERE p.id = r.parcel)
                 THEN 'road parcel ' || r.parcel || ' names no parcel'
+              WHEN EXISTS (SELECT 1 FROM parcels p WHERE p.id = r.parcel AND p.underwater)
+                THEN 'road parcel ' || r.parcel || ' is underwater (already ineligible)'
               WHEN EXISTS (SELECT 1 FROM rl_catalog c WHERE c.id = r.parcel)
                 THEN 'road parcel ' || r.parcel || ' is freeway-land catalog land'
               WHEN EXISTS (SELECT 1 FROM raw WHERE raw.id = r.parcel)

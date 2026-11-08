@@ -111,6 +111,10 @@ describe('parseRoadLots', () => {
     bad({ keep: [{ parcel: 'A', block: '1234', reason: 'x' }], road: [] });
     bad({ keep: [{ reason: 'x' }], road: [] });
     bad({ keep: [{ block: '123', reason: 'x' }], road: [] });
+    bad({ keep: [{ block: '026', reason: 'x' }], road: [] });
+    bad({ keep: [{ block: '0026TT', reason: 'x' }], road: [] });
+    bad({ keep: [{ block: '0026t', reason: 'x' }], road: [] });
+    bad({ keep: [{ block: 'A026', reason: 'x' }], road: [] });
     bad({
       keep: [
         { parcel: 'A', reason: 'x' },
@@ -126,6 +130,11 @@ describe('parseRoadLots', () => {
       ]
     });
     bad({ keep: [{ parcel: 'A', reason: 'x' }], road: [{ parcel: 'A', reason: 'y' }] });
+  });
+  it('accepts a lettered block (a separate SF block)', () => {
+    expect(parseRoadLots({ keep: [{ block: '0026T', reason: 'x' }], road: [] }).keep).toEqual([
+      { block: '0026T', reason: 'x' }
+    ]);
   });
   it('the live override file parses', () => {
     expect(() => readRoadLots(ROAD_LOTS_JSON.live)).not.toThrow();

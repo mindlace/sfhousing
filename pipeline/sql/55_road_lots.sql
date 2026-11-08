@@ -23,8 +23,8 @@
 --   R3  a FREEWAYS centreline crosses the lot, or the centreline nearest its point on surface (any
 --       layer, within road_nearest_search_m, ties by the smaller cnn) is a FREEWAYS line under
 --       road_freeway_m from that point.
--- road_lots: raw lots no keep row keeps (a parcel row first, then a block row: the first four
--- characters of the id), plus every rl_road lot that is not catalog land and not underwater (it
+-- road_lots: raw lots no keep row keeps (a parcel row first, then a block row: the id's leading
+-- 4 digits and optional capital letter, so 0026 and 0026T are separate blocks), plus every rl_road lot that is not catalog land and not underwater (it
 -- skips the other gates). Reason: override for a road row, else the first of r7, r1n, r2s, r3 that
 -- fires. "At least" shares are inclusive with a 1e-6 tolerance. Every aggregate over geometry or
 -- area is ordered, so the result does not depend on scan order (V12).
@@ -59,20 +59,26 @@ QUALIFY row_number() OVER (
 
 -- City Lands: the row covering the largest share of each lot, when that share is at least
 -- road_city_share_min.
+-- land_id is not unique upstream: row_id numbers the rows in a total order (land_id, then the
+-- geometry, as normalise orders them), so a row is counted by its identity.
 CREATE OR REPLACE TEMP TABLE rl_city AS
-SELECT land_id, land_name, department_name, ST_MakeValid(geom) AS geom
+SELECT row_number() OVER (ORDER BY land_id, ST_AsHEXWKB(geom), land_name, department_name)
+         AS row_id,
+       land_id, land_name, department_name, ST_MakeValid(geom) AS geom
 FROM src_city_lands
 WHERE geom IS NOT NULL;
 
 CREATE OR REPLACE TEMP TABLE rl_city_name AS
-SELECT id, land_id, land_name, department_name, share FROM (
-  SELECT p.id, c.land_id, c.land_name, c.department_name,
+SELECT id, row_id, land_id, land_name, department_name, share FROM (
+  SELECT p.id, c.row_id, c.land_id, c.land_name, c.department_name, c.geom,
          ST_Area(ST_Intersection(p.geom, c.geom)) / ST_Area(p.geom) AS share
   FROM parcels p JOIN rl_city c ON ST_Intersects(p.geom, c.geom)
   WHERE ST_Area(p.geom) > 0
 )
 WHERE share >= getvariable('road_city_share_min') - 1e-6
-QUALIFY row_number() OVER (PARTITION BY id ORDER BY share DESC, land_id) = 1;
+QUALIFY row_number() OVER (
+  PARTITION BY id ORDER BY share DESC, land_id, ST_AsHEXWKB(geom)
+) = 1;
 
 -- Building cover per lot, summed in bid order.
 CREATE OR REPLACE TEMP TABLE rl_cover AS
@@ -115,7 +121,7 @@ SELECT p.id,
        ST_Area(ST_Intersection(
          p.geom,
          ST_Union_Agg(ST_Buffer(s.geom, getvariable('road_street_band_m'))
-                      ORDER BY s.cnn, s.layer, s.streetname)
+                      ORDER BY s.cnn, s.layer, s.streetname, ST_AsHEXWKB(s.geom))
        )) / p.area_m2 AS street_share
 FROM rl_pool p
 JOIN rl_pub_street s ON ST_DWithin(p.geom, s.geom, getvariable('road_street_band_m'))
@@ -135,7 +141,7 @@ FROM (SELECT id, ST_PointOnSurface(geom) AS pt FROM rl_pool) p
 JOIN src_streets s
   ON s.geom IS NOT NULL AND ST_DWithin(p.pt, s.geom, getvariable('road_nearest_search_m'))
 QUALIFY row_number() OVER (
-  PARTITION BY p.id ORDER BY ST_Distance(p.pt, s.geom), s.cnn, s.layer
+  PARTITION BY p.id ORDER BY ST_Distance(p.pt, s.geom), s.cnn, s.layer, ST_AsHEXWKB(s.geom)
 ) = 1;
 
 CREATE OR REPLACE TEMP TABLE rl_rules AS
@@ -166,7 +172,8 @@ SELECT r.id, r.zoning_code, r.roll_class, r.land_name, r.department, r.cover, r.
        r.gates AND NOT r.in_catalog AND (r.r7 OR r.r1n OR r.r2s OR r.r3) AS raw,
        coalesce(
          (SELECT k.reason FROM rl_keep k WHERE k.parcel = r.id ORDER BY k.reason LIMIT 1),
-         (SELECT k.reason FROM rl_keep k WHERE k.block = left(r.id, 4) ORDER BY k.reason LIMIT 1)
+         (SELECT k.reason FROM rl_keep k
+          WHERE k.block = regexp_extract(r.id, '^[0-9]{4}[A-Z]?') ORDER BY k.reason LIMIT 1)
        ) AS kept_by,
        EXISTS (SELECT 1 FROM rl_road d WHERE d.parcel = r.id) AS listed
 FROM rl_rules r
@@ -218,10 +225,13 @@ LEFT JOIN road_lots r ON r.reason = k.reason
 GROUP BY k.reason;
 INSERT INTO report_counts SELECT 'road_like.city_lands.rows', count(*) FROM src_city_lands;
 INSERT INTO report_counts SELECT 'road_like.city_lands.named_lots', count(*) FROM rl_city_name;
--- City Lands rows that name no lot (ignored by the rule).
+-- City Lands rows that name no lot (ignored by the rule), by row identity; a row with no
+-- geometry names none.
 INSERT INTO report_counts
-SELECT 'road_like.city_lands.unmatched', count(*) FROM src_city_lands c
-WHERE NOT EXISTS (SELECT 1 FROM rl_city_name n WHERE n.land_id = c.land_id);
+SELECT 'road_like.city_lands.unmatched',
+       (SELECT count(*) FROM src_city_lands WHERE geom IS NULL)
+       + (SELECT count(*) FROM rl_city c
+          WHERE NOT EXISTS (SELECT 1 FROM rl_city_name n WHERE n.row_id = c.row_id));
 
 -- sd.ts. Idempotent on one database: drop this file's tallies from an earlier run.
 DELETE FROM quality_tally WHERE rule_id = 'sd.parcels.road-like';
