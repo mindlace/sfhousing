@@ -123,22 +123,14 @@ async function pickStories(page: Page, n: number): Promise<void> {
   await expect(swatch).toHaveAttribute('aria-pressed', 'true');
 }
 
-async function lastCommitMeasure(page: Page): Promise<number | null> {
-  return page.evaluate(() => {
-    const e = performance.getEntriesByName('sfh-brush-commit', 'measure');
-    return e.length ? e[e.length - 1].duration : null;
-  });
-}
-
 test.describe('brush tool', () => {
   test.describe('desktop', () => {
     // Desktop mouse painting; the mobile project defaults to Move (covered below).
     // eslint-disable-next-line playwright/no-skipped-test
     test.skip(({ isMobile }) => isMobile, 'chromium project only');
 
-    test('paint: a drag paints 6 stories, map-view shows the buildings, ≤ 150 ms', async ({
-      page
-    }) => {
+    // Its pointer-up-to-commit budget (150 ms) is e2e/perf/brush-commit.perf.spec.ts's.
+    test('paint: a drag paints 6 stories, map-view shows the buildings', async ({ page }) => {
       await gotoEditor(page);
       await jumpAndIdle(page, FRAME);
       await expect(page.getByRole('radio', { name: 'Paint' })).toHaveAttribute(
@@ -152,11 +144,6 @@ test.describe('brush tool', () => {
       await expect(announcement(page)).toHaveText(/^Painted 6 stories on \d+ parcels/);
       expect(await ops(page)).toBe(1);
       await expect.poll(() => generated(page)).toBeGreaterThanOrEqual(1);
-
-      const ms = await lastCommitMeasure(page);
-      test.info().annotations.push({ type: 'sfh-brush-commit', description: `${ms} ms` });
-      expect(ms).not.toBeNull();
-      expect.soft(ms!).toBeLessThanOrEqual(150);
     });
 
     test('undo and redo by keyboard revert and restore the counts', async ({ page }) => {
