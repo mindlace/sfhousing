@@ -114,7 +114,14 @@ export async function projectToPage(page: Page, lngLat: LngLat): Promise<[number
   }, lngLat);
 }
 
-export async function mouseDrag(page: Page, from: LngLat, to: LngLat, steps = 15): Promise<void> {
+/**
+ * A straight mouse stroke `from` → `to`. A stroke covers every parcel within its radius of the
+ * path's segments, so a straight drag covers the same parcels however many moves it takes. Each
+ * move during a stroke costs the page a preview and a software-GL frame (about 100 ms idle, 300 to
+ * 500 ms under a full parallel run), so few steps: 15 made two strokes take 12 s of a 30 s test
+ * under load (#68).
+ */
+export async function mouseDrag(page: Page, from: LngLat, to: LngLat, steps = 3): Promise<void> {
   const [x0, y0] = await projectToPage(page, from);
   const [x1, y1] = await projectToPage(page, to);
   await page.mouse.move(x0, y0);
