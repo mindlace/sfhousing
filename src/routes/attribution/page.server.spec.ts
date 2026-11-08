@@ -14,7 +14,7 @@ const manifest = {
 
 function run(bucket: unknown) {
   return load({
-    platform: { env: { BUCKET: bucket, PUBLIC_DATASET_VERSION: 'fixture-0' } },
+    platform: { env: { BUCKET: bucket } },
     parent: async () => ({ datasetVersion: 'fixture-0' })
   } as never) as Promise<{
     datasetVersion: string;

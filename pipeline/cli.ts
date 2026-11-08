@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { FIXTURE_PROFILE, LIVE_PROFILE } from './config';
+import { FIXTURE_PROFILE, LIVE_PROFILE, STAGING_ORIGIN } from './config';
+import { versionCommand } from './lib/dataset-check';
 import { build, printResults } from './steps/build';
 import {
   CALIBRATION_CHECK_IDS,
@@ -82,6 +83,16 @@ function latestOut(): string | undefined {
 }
 
 const steps: Record<string, { help: string; run: Step }> = {
+  version: {
+    help: 'print the datasetVersion this tree computes [--check [<origin>]: fail unless <origin> serves it]',
+    run: (args) =>
+      versionCommand({
+        repoRoot: ROOT,
+        check: args.flags.check === true ? STAGING_ORIGIN : str(args.flags.check),
+        out: console.log,
+        err: console.error
+      })
+  },
   doctor: {
     help: 'check required tools and DuckDB extensions',
     run: async () => {
@@ -152,7 +163,7 @@ const steps: Record<string, { help: string; run: Step }> = {
       })
   },
   upload: {
-    help: 'publish out/<v>/ to R2, manifest last [--local]; never bumps PUBLIC_DATASET_VERSION',
+    help: 'publish out/<v>/ to R2, manifest last [--local]',
     run: async (args) => {
       const v = args.positional[0];
       if (!v) {
@@ -175,7 +186,9 @@ const steps: Record<string, { help: string; run: Step }> = {
         // Fixture datasets have no raw archives to publish (and skip the lockSha256 check).
         lock: lockPath ? readLock(lockPath) : { sources: [] },
         rawDir: RAW,
-        target: wranglerTarget({ local: args.flags.local === true })
+        target: wranglerTarget({ local: args.flags.local === true }),
+        repoRoot: ROOT,
+        local: args.flags.local === true
       });
     }
   },

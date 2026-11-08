@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { DATASET_VERSION_RE } from '$lib/data/dataset-version';
 
 vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/environment', () => ({ dev: false }));
 
 import { load } from './+layout.server';
 
@@ -14,27 +16,33 @@ function status(fn: () => unknown): number {
 }
 
 describe('root layout load', () => {
-  it('reads versions from platform env', async () => {
+  it('serves the built version', async () => {
+    const result = await load({} as never);
+    expect(result).toEqual({ datasetVersion: __SFH_DATASET_VERSION__, appRelease: 'dev' });
+    expect(__SFH_DATASET_VERSION__).toMatch(DATASET_VERSION_RE);
+  });
+
+  it('ignores the override outside development', async () => {
     const result = await load({
-      platform: { env: { PUBLIC_DATASET_VERSION: 'fixture-0', PUBLIC_APP_RELEASE: 'dev' } }
+      platform: { env: { ENVIRONMENT: 'production', PUBLIC_DATASET_VERSION: 'fixture-0' } }
+    } as never);
+    expect(result).toEqual({ datasetVersion: __SFH_DATASET_VERSION__, appRelease: 'dev' });
+  });
+
+  it('honours the override when ENVIRONMENT is development', async () => {
+    const result = await load({
+      platform: { env: { ENVIRONMENT: 'development', PUBLIC_DATASET_VERSION: 'fixture-0' } }
     } as never);
     expect(result).toEqual({ datasetVersion: 'fixture-0', appRelease: 'dev' });
   });
 
-  it('defaults only appRelease', async () => {
-    const result = await load({
-      platform: { env: { PUBLIC_DATASET_VERSION: '2026-10-10-3fa9c2d1' } }
-    } as never);
-    expect(result).toEqual({ datasetVersion: '2026-10-10-3fa9c2d1', appRelease: 'dev' });
-  });
-
-  it('throws 500 when no dataset version is configured', () => {
-    expect(status(() => load({} as never))).toBe(500);
-  });
-
-  it('throws 500 on an invalid platform dataset version', () => {
+  it('throws 500 on a malformed override in development', () => {
     expect(
-      status(() => load({ platform: { env: { PUBLIC_DATASET_VERSION: 'bogus' } } } as never))
+      status(() =>
+        load({
+          platform: { env: { ENVIRONMENT: 'development', PUBLIC_DATASET_VERSION: 'bogus' } }
+        } as never)
+      )
     ).toBe(500);
   });
 });

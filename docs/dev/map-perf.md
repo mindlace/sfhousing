@@ -67,7 +67,7 @@ display refresh rate, so on a 120 Hz display the p50 is about 8.3 ms. The bar is
 | Apple M5 Pro (same), timeline "drag", after the `__lc` clones                                    | 2026-11-03 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 8.9 ms  | Yes                                          |
 | Apple M5 Pro (same), timeline "playback + limits", after the `__lc` clones                       | 2026-11-03 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.0 ms  | Yes                                          |
 
-Run the bench with both transit layers on (the default View prefs). fixture-0 has only 8 stops, so its transit row measures the layer overhead. The live-network row ran the same bench against a local copy of the production dataset (`npm run data:local -- <version>`, then `npm run data:transit -- <version>`) served with `PUBLIC_DATASET_VERSION` set to that version instead of `fixture-0` (the bench config pins `fixture-0`, so this needs a one-off config override). Re-check against live data when the stop layers change.
+Run the bench with both transit layers on (the default View prefs). fixture-0 has only 8 stops, so its transit row measures the layer overhead. The live-network row ran the same bench against a local copy of the production dataset (`npm run data:local -- <version>`, then `npm run data:transit -- <version>`) served with `PUBLIC_DATASET_VERSION` set to that version instead of `fixture-0` (the override is ignored unless `ENVIRONMENT=development` is also set) (the bench config pins `fixture-0`, so this needs a one-off config override). Re-check against live data when the stop layers change.
 
 Add a row when you run the bench on new hardware or after a change to the rendering path.
 

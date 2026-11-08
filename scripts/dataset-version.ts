@@ -1,23 +1,30 @@
-import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
-import { parseJsonc, type WranglerConfig } from './lib/wrangler-config';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { STAGING_ORIGIN } from '../pipeline/config';
+import { versionCommand } from '../pipeline/lib/dataset-check';
 
-export type DeployEnv = 'production' | 'staging';
+const USAGE = 'usage: dataset-version.ts [--check [<origin>]]';
 
-/** The PUBLIC_DATASET_VERSION a deploy of `env` ships (staging: env.staging.vars, production: vars). */
-export function datasetVersionFor(config: WranglerConfig, env: DeployEnv): string {
-  return env === 'staging'
-    ? config.env.staging.vars.PUBLIC_DATASET_VERSION
-    : config.vars.PUBLIC_DATASET_VERSION;
+export function parseVersionArgs(argv: string[]): { check?: string } | { usage: string } {
+  if (argv.length === 0) return {};
+  if (argv[0] === '--check' && argv.length === 1) return { check: STAGING_ORIGIN };
+  if (argv[0] === '--check' && argv.length === 2 && !argv[1].startsWith('-'))
+    return { check: argv[1] };
+  return { usage: USAGE };
 }
 
-function main(arg: string | undefined): void {
-  if (arg !== 'production' && arg !== 'staging') {
-    throw new Error('usage: dataset-version.ts <production|staging>');
+async function main(argv: string[]): Promise<number> {
+  const parsed = parseVersionArgs(argv);
+  if ('usage' in parsed) {
+    console.error(parsed.usage);
+    return 2;
   }
-  const config = parseJsonc(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
-  process.stdout.write(`${datasetVersionFor(config, arg)}\n`);
+  return versionCommand({
+    repoRoot: fileURLToPath(new URL('..', import.meta.url)),
+    check: parsed.check,
+    out: console.log,
+    err: console.error
+  });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
-  main(process.argv[2]);
+  main(process.argv.slice(2)).then((code) => process.exit(code));

@@ -11,9 +11,9 @@ export default defineConfig({
     // rule wins.
     { match: ['docs/dev/pipeline.md'], triggers: ['format', 'unit', 'pipeline'] },
     { match: ['CLAUDE.md', 'docs/dev/**'], triggers: ['format', 'unit'] },
-    { match: ['**/*.md'], triggers: ['format'] },
-    // The scenario step and the dataset-version code hash read these, so a change here also runs
-    // test:pipeline. Before the src/** rule: the first matching rule wins.
+    // The scenario step and the dataset-version code hash read these (the code hash is load-bearing
+    // for deploys: both workflows refuse a commit whose dataset is unpublished), so a change here
+    // also runs test:pipeline and the dataset check. Before the **/*.md and src/** rules: the first matching rule wins.
     {
       match: [
         'src/lib/generator/**',
@@ -25,8 +25,17 @@ export default defineConfig({
         'src/lib/sim/levers/**',
         'src/lib/scoreboard/**'
       ],
-      triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline']
+      triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline', 'dataset']
     },
+    // The pipeline and the lock feed codeTreeHash/the version, so a change needs its dataset
+    // published on staging (docs/dev/pipeline.md).
+    {
+      match: ['pipeline/**'],
+      triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline', 'dataset']
+    },
+    // Any other markdown is format-only. After the code-hash rules (a .md under pipeline/ or src/lib/data
+    // is in the dataset code hash and needs the dataset step): the first matching rule wins.
+    { match: ['**/*.md'], triggers: ['format'] },
     { match: ['src/**'], triggers: ['lint', 'check', 'unit', 'e2e'] },
     // fixture-0 is generated; pipeline/test/golden.test.ts compares it with the golden, so a
     // change here also runs test:pipeline. Before the e2e/** rule: the first matching rule wins.
@@ -35,9 +44,9 @@ export default defineConfig({
     // scripts/ specs run in the vitest server project; r2-load-local feeds e2e (data:fixture).
     { match: ['scripts/**'], triggers: ['lint', 'check', 'unit', 'e2e'] },
     { match: ['.github/workflows/**'], triggers: ['format', 'workflows'] },
-    // wrangler.jsonc: dataset pointers and bindings. `wrangler types` (prepare, after the merge)
-    // feeds check; scripts/wrangler-config.spec.ts (unit) parses it. e2e pins
-    // PUBLIC_DATASET_VERSION to fixture-0, so a pointer bump cannot affect it.
+    // wrangler.jsonc: bindings and vars (no dataset version: the build computes it).
+    // `wrangler types` (prepare, after the merge) feeds check; scripts/wrangler-config.spec.ts
+    // (unit) parses it and asserts PUBLIC_DATASET_VERSION is absent.
     // chreode.config.ts: this file; check type-checks it.
     // A binding change, or a config change that should prove itself on every step, uses `-- --full`.
     { match: ['wrangler.jsonc', 'chreode.config.ts'], triggers: ['format', 'check', 'unit'] },
@@ -62,10 +71,11 @@ export default defineConfig({
     { match: ['playwright.config.ts'], triggers: ['lint', 'check', 'e2e'] },
     // The vitest client project.
     { match: ['vite.config.client-test.ts'], triggers: ['lint', 'check', 'unit'] }
-    // Everything else (pipeline/, migrations/, package*.json, .npmrc, .nvmrc, tsconfig.json,
-    // vite.config.ts, svelte.config.js) matches no rule and runs every step.
+    // Everything else (migrations/, package*.json, .npmrc, .nvmrc, tsconfig.json,
+    // vite.config.ts, svelte.config.js) matches no rule and runs every step, dataset included.
   ],
   steps: [
+    { label: 'dataset', run: 'npx tsx scripts/dataset-version.ts --check', when: ['dataset'] },
     { label: 'format', run: 'npx prettier --check .', when: ['format'], supersededBy: ['lint'] },
     { label: 'lint', run: 'npm run lint', when: ['lint'] },
     { label: 'check', run: 'npm run check', when: ['check'] },

@@ -1,5 +1,7 @@
-export type Vars = { vars: { PUBLIC_DATASET_VERSION: string } };
-export type WranglerConfig = Vars & { env: { staging: Vars } };
+export type WranglerConfig = {
+  vars: Record<string, string>;
+  env: { staging: { vars: Record<string, string> } };
+};
 
 /** Parses wrangler.jsonc: strips // and block comments outside strings, then trailing commas. */
 export function parseJsonc(text: string): WranglerConfig {

@@ -12,7 +12,7 @@ SF Housing Simulator: a free, open-source web tool for painting zoning and build
 nvm use                 # Node 24 (.nvmrc); engines require node >=22 <26, npm >=11.3.0
 npm install             # also runs `wrangler types --strict-vars=false` and `svelte-kit sync` via prepare
 npx playwright install chromium   # browser for client tests and e2e (the one download beyond npm)
-echo 'PUBLIC_DATASET_VERSION=fixture-0' > .dev.vars   # wrangler.jsonc names the real dataset; dev uses the fixture
+echo 'PUBLIC_DATASET_VERSION=fixture-0' > .dev.vars   # dev override; the build computes the real dataset version
 npm run data:fixture    # load the fixture dataset (fixture-0) into local R2
 # npm run data:transit  # optional: live transit (Muni/BART/Caltrain GTFS) into the local dataset; fixture-0 already has a mini network
 npm run db:migrate      # apply D1 migrations to the local database
@@ -28,10 +28,10 @@ If you see type errors about `worker-configuration`, run `npm run types`.
 Fetch the file when working in the relevant area:
 
 - **Developer workflow (setup, `.dev.vars`, `data:fixture`/`data:local`, migrations, header actions)** — [docs/dev/developing.md](docs/dev/developing.md)
-- **Deployment (environments, release flow, promoting a datasetVersion, bootstrap checklist)** — [docs/dev/deploy.md](docs/dev/deploy.md)
+- **Deployment (environments, release flow, datasets ship with their code, bootstrap checklist)** — [docs/dev/deploy.md](docs/dev/deploy.md)
 - **Data serving (`/data/<version>/*` route contract, key layout, caching, path rules)** — [docs/dev/data-serving.md](docs/dev/data-serving.md)
 - **Testing (Vitest projects, `FakeR2Bucket`, Playwright, fixture dataset)** — [docs/dev/testing.md](docs/dev/testing.md)
-- **Data pipeline (commands, release run order, lock and `datasetVersion`, fixture, invariants, ODbL, partner actions)** — [docs/dev/pipeline.md](docs/dev/pipeline.md)
+- **Data pipeline (commands, finishing a branch that changes the dataset, lock and `datasetVersion`, fixture, invariants, ODbL, partner actions)** — [docs/dev/pipeline.md](docs/dev/pipeline.md)
 - **Accessibility (WCAG 2.2 AA, `expectNoA11yViolations`, per-page checklist)** — [docs/dev/accessibility.md](docs/dev/accessibility.md)
 - **Plan and policy sharing (`/p` plans and `/s` `/sim` policies: API contract, rate limit, autosave, manual takedown)** — [docs/dev/plan-sharing.md](docs/dev/plan-sharing.md)
 - **Map-view interfaces for page and subsystem consumers (`--map-controls-br-*` CSS vars)** — [docs/dev/map-interfaces.md](docs/dev/map-interfaces.md)
@@ -48,35 +48,35 @@ Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link t
 
 ## Commands
 
-| Command                                             | Purpose                                                                                                                                                               |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run dev`                                       | Vite dev server (local D1/R2 via adapter-cloudflare's platform proxy)                                                                                                 |
-| `npm run build`                                     | Production build                                                                                                                                                      |
-| `npm run preview`                                   | Build, then `wrangler dev` on port 4173 with `ENVIRONMENT=development`                                                                                                |
-| `npm run check`                                     | `svelte-kit sync` + `svelte-check`                                                                                                                                    |
-| `npm run lint`                                      | `prettier --check .` + `eslint .`                                                                                                                                     |
-| `npm run lint:workflows`                            | `actionlint` on `.github/workflows/*.yml` (needs actionlint installed)                                                                                                |
-| `npm run format`                                    | `prettier --write .`                                                                                                                                                  |
-| `npm test`                                          | `test:unit` then `test:e2e`                                                                                                                                           |
-| `npm run test:unit`                                 | Vitest, server and client projects                                                                                                                                    |
-| `npm run test:perf`                                 | Wall-clock budgets (perf, client-perf); idle machine only, not in signoff                                                                                             |
-| `npm run test:e2e`                                  | Playwright (starts the preview server, loads the fixture, migrates)                                                                                                   |
-| `npm run bench:map`                                 | Headed GPU map pan benchmark (p50/p95 frame time); see docs/dev/map-perf.md                                                                                           |
-| `npm run db:generate`                               | Generate + classify + flatten a migration from the Drizzle schema                                                                                                     |
-| `npm run db:migrate`                                | Apply migrations to the local D1                                                                                                                                      |
-| `npm run db:migrate:staging` / `db:migrate:prod`    | Apply migrations to remote staging / production D1 (normally done by CI)                                                                                              |
-| `npm run pipeline -- <cmd>`                         | Data pipeline: `doctor`, `fetch`, `build`, `check`, `upload`, `verify`, `fixture`, `quality-doc`, `lesscars-cnns`, `lesscars-freeway-land`, `lesscars-basemap`, `all` |
-| `npm run test:pipeline`                             | Vitest pipeline project (needs tippecanoe, pmtiles)                                                                                                                   |
-| `npm run data:fixture`                              | Load `e2e/fixtures/data/fixture-0` into local R2                                                                                                                      |
-| `npm run data:local -- <version> [--from <origin>]` | Copy a published dataset version into local R2 (default origin production)                                                                                            |
-| `npm run data:transit [-- <version>]`               | Fetch Muni/BART/Caltrain GTFS from the agencies, build transit.json into the local dataset (`.dev.vars` version)                                                      |
-| `npm run signoff`                                   | `chreode signoff`: merge `origin/main`, run the steps the changes need, push, post `chreode/signoff`                                                                  |
-| `npm run branch-protection` / `:dry`                | `chreode protect`: require `chreode/signoff` on `main` (`:dry` previews); run once by a maintainer                                                                    |
-| `npm run types`                                     | Regenerate `worker-configuration.d.ts` (`wrangler types --strict-vars=false`)                                                                                         |
+| Command                                             | Purpose                                                                                                                                                                          |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                                       | Vite dev server (local D1/R2 via adapter-cloudflare's platform proxy)                                                                                                            |
+| `npm run build`                                     | Production build                                                                                                                                                                 |
+| `npm run preview`                                   | Build, then `wrangler dev` on port 4173 with `ENVIRONMENT=development`                                                                                                           |
+| `npm run check`                                     | `svelte-kit sync` + `svelte-check`                                                                                                                                               |
+| `npm run lint`                                      | `prettier --check .` + `eslint .`                                                                                                                                                |
+| `npm run lint:workflows`                            | `actionlint` on `.github/workflows/*.yml` (needs actionlint installed)                                                                                                           |
+| `npm run format`                                    | `prettier --write .`                                                                                                                                                             |
+| `npm test`                                          | `test:unit` then `test:e2e`                                                                                                                                                      |
+| `npm run test:unit`                                 | Vitest, server and client projects                                                                                                                                               |
+| `npm run test:perf`                                 | Wall-clock budgets (perf, client-perf); idle machine only, not in signoff                                                                                                        |
+| `npm run test:e2e`                                  | Playwright (starts the preview server, loads the fixture, migrates)                                                                                                              |
+| `npm run bench:map`                                 | Headed GPU map pan benchmark (p50/p95 frame time); see docs/dev/map-perf.md                                                                                                      |
+| `npm run db:generate`                               | Generate + classify + flatten a migration from the Drizzle schema                                                                                                                |
+| `npm run db:migrate`                                | Apply migrations to the local D1                                                                                                                                                 |
+| `npm run db:migrate:staging` / `db:migrate:prod`    | Apply migrations to remote staging / production D1 (normally done by CI)                                                                                                         |
+| `npm run pipeline -- <cmd>`                         | Data pipeline: `doctor`, `fetch`, `version`, `build`, `check`, `upload`, `verify`, `fixture`, `quality-doc`, `lesscars-cnns`, `lesscars-freeway-land`, `lesscars-basemap`, `all` |
+| `npm run test:pipeline`                             | Vitest pipeline project (needs tippecanoe, pmtiles)                                                                                                                              |
+| `npm run data:fixture`                              | Load `e2e/fixtures/data/fixture-0` into local R2                                                                                                                                 |
+| `npm run data:local -- <version> [--from <origin>]` | Copy a published dataset version into local R2 (default origin production)                                                                                                       |
+| `npm run data:transit [-- <version>]`               | Fetch Muni/BART/Caltrain GTFS from the agencies, build transit.json into the local dataset (`.dev.vars` version)                                                                 |
+| `npm run signoff`                                   | `chreode signoff`: merge `origin/main`, run the steps the changes need, push, post `chreode/signoff`                                                                             |
+| `npm run branch-protection` / `:dry`                | `chreode protect`: require `chreode/signoff` on `main` (`:dry` previews); run once by a maintainer                                                                               |
+| `npm run types`                                     | Regenerate `worker-configuration.d.ts` (`wrangler types --strict-vars=false`)                                                                                                    |
 
 ## Architecture
 
-One Cloudflare Worker (SvelteKit via `@sveltejs/adapter-cloudflare`) with bindings `DB` (D1), `BUCKET` (R2, bucket `sfhousing`, shared by both environments) and `PUBLISH_RL` (rate limit), plus `ASSETS`. The worker does no geo computation at runtime. All geographic data is static and versioned on R2 at key `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` by `src/routes/data/[version]/[...path]/+server.ts`. The var `PUBLIC_DATASET_VERSION` (in `wrangler.jsonc`, per environment) names the current dataset; it is passed to the client as data from the root layout load, never read as a global. Published versions are immutable.
+One Cloudflare Worker (SvelteKit via `@sveltejs/adapter-cloudflare`) with bindings `DB` (D1), `BUCKET` (R2, bucket `sfhousing`, shared by both environments) and `PUBLISH_RL` (rate limit), plus `ASSETS`. The worker does no geo computation at runtime. All geographic data is static and versioned on R2 at key `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` by `src/routes/data/[version]/[...path]/+server.ts`. The build computes the dataset version from the source tree (`treeDatasetVersion`, injected as `__SFH_DATASET_VERSION__`); `PUBLIC_DATASET_VERSION` is a development-only override. The version reaches the client as data from the root layout load, never as a global. Published versions are immutable.
 
 Shell: the root layout renders the skip link, header, `<main>` and footer. Pages put actions in the header with `useHeaderActions(snippet, { pinned?, status? })` from `src/lib/shell/header-actions.svelte.ts`; only the root layout calls `provideHeaderActions()`. `status` is a non-interactive status slot on the left (after the mode links from lg, after the site name below lg, never in the Menu), used for the save state on `/` and `/sim`.
 
@@ -85,6 +85,7 @@ Shell: the root layout renders the skip link, header, `<main>` and footer. Pages
 - All work happens in git worktrees under `.claude/worktrees/`.
 - Conventional Commits.
 - PRs merge only with the `chreode/signoff` commit status. Run `npm run signoff` ([chreode](https://github.com/mindlace/chreode); config in `chreode.config.ts`): it merges `origin/main`, runs only the steps the changes since the last signoff need (a path no rule matches runs everything), pushes, and posts the status; do not `git push` first. `npm run signoff -- --dry-run` prints the plan; `-- --full` runs every step. There is no CI workflow on pull requests; signoff is the only check.
+- A branch that changes the dataset version uploads its dataset before signoff: see [docs/dev/pipeline.md](docs/dev/pipeline.md) (Finishing a branch that changes the dataset).
 - Schema change: edit `src/lib/server/db/schema/` → `npm run db:generate` → `npm run db:migrate`. Never hand-edit migrations.
 - Code style: 2-space indent, single quotes, no trailing commas, 100 columns (Prettier + ESLint).
 - CSP (`kit.csp` in `svelte.config.js`) changes are interface changes: raise them with the owning subsystem rather than widening ad hoc. Map glyphs and sprites are self-hosted under `/data/<version>/`.

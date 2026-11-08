@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
-import { run } from './exec';
-import { canonicalJson, type Lock } from './lock';
+import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version.js';
+import { TOOL_VERSIONS } from '../config.js';
+import { run } from './exec.js';
+import { canonicalJson, readLock, type Lock } from './lock.js';
 
 const sha256 = (s: string | Buffer) => createHash('sha256').update(s).digest('hex');
 
@@ -65,6 +66,12 @@ const NOT_CODE = (f: string): boolean =>
   f.startsWith('pipeline/.cache/') ||
   f.startsWith('pipeline/out/');
 
+/** Porcelain status lines for the code paths (same excludes as the code hash); empty = clean. */
+export async function codePathsDirty(repoRoot: string): Promise<string[]> {
+  const status = await git(repoRoot, ['status', '--porcelain', '--', ...PATHS, ...EXCLUDES]);
+  return status.split('\n').filter((l) => l.trim() !== '');
+}
+
 /**
  * Identifies the pipeline + data-schema code: sha256 of the `git ls-tree -r HEAD` listing
  * (mode, type, blob hash, path) of `pipeline`, `src/lib/data`, `src/lib/generator`,
@@ -80,8 +87,7 @@ export async function codeTreeHash(repoRoot: string): Promise<string> {
     .filter((line) => line !== '' && !NOT_CODE(line.slice(line.indexOf('\t') + 1)))
     .sort();
   let out = sha256(listing.join('\n'));
-  const status = await git(repoRoot, ['status', '--porcelain', '--', ...PATHS, ...EXCLUDES]);
-  if (status.trim() === '') return out;
+  if ((await codePathsDirty(repoRoot)).length === 0) return out;
   const diff = await git(repoRoot, ['diff', 'HEAD', '--', ...PATHS, ...EXCLUDES]);
   out += sha256(diff);
   const untracked = (
@@ -100,4 +106,15 @@ export async function codeTreeHash(repoRoot: string): Promise<string> {
     .sort();
   for (const f of untracked) out += sha256(fs.readFileSync(path.join(repoRoot, f)));
   return out;
+}
+
+/** The datasetVersion this tree computes: repo lock, code hash (dirty trees included), TOOL_VERSIONS. */
+export async function treeDatasetVersion(repoRoot: string): Promise<string> {
+  const lockPath = path.join(repoRoot, 'pipeline/sources.lock.json');
+  if (!fs.existsSync(lockPath)) throw new Error(`no pipeline/sources.lock.json under ${repoRoot}`);
+  return computeDatasetVersion({
+    lock: readLock(lockPath),
+    codeHash: await codeTreeHash(repoRoot),
+    toolVersions: TOOL_VERSIONS
+  });
 }

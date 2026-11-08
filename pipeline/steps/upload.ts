@@ -2,7 +2,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
 import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
-import { FONT_STACKS, IMMUTABLE } from '../config';
+import { FONT_STACKS, IMMUTABLE, STAGING_ORIGIN } from '../config';
+import { codePathsDirty } from '../lib/version';
 import { lockSha256, rawPath, type Lock } from '../lib/lock';
 import { contentTypeFor, type R2Target } from '../lib/r2';
 
@@ -14,7 +15,6 @@ const FIXTURE_RE = /^fixture-\d+$/;
 /** A key segment must match the platform's route contract and must not be a dotfile. */
 const badKey = (key: string): boolean =>
   key.split('/').some((seg) => !SEGMENT_RE.test(seg) || seg.startsWith('.'));
-export const STAGING_ORIGIN = 'https://sfhousing-staging.mindlace.net';
 
 export interface UploadArgs {
   outDir: string;
@@ -25,6 +25,13 @@ export interface UploadArgs {
   concurrency?: number;
   retries?: number;
   log?: (s: string) => void;
+  /**
+   * Repo root for the dirty-tree guard: when set (and not `local`), an upload is refused while
+   * the code-hash paths have uncommitted changes, since the built version would match no commit.
+   */
+  repoRoot?: string;
+  /** Local R2 (fixtures, dev loads): exempt from the dirty-tree guard. */
+  local?: boolean;
   /** Backoff wait; injectable for tests. */
   sleep?: (ms: number) => Promise<void>;
 }
@@ -138,6 +145,15 @@ export async function upload(a: UploadArgs): Promise<number> {
     log(`refusing to upload: invalid dataset version '${v}'`);
     return 1;
   }
+  if (a.repoRoot !== undefined && !a.local) {
+    const dirty = await codePathsDirty(a.repoRoot);
+    if (dirty.length > 0) {
+      log('refusing to upload: uncommitted changes under the code-hash paths, so this dataset');
+      log('version matches no commit. Commit them, rebuild, then upload:');
+      for (const d of dirty) log(d);
+      return 1;
+    }
+  }
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(join(a.outDir, 'manifest.json'), 'utf8'));
@@ -207,7 +223,7 @@ export async function upload(a: UploadArgs): Promise<number> {
     IMMUTABLE
   );
   log(`published ${rels.length + 1} object(s) under data/${v}/`);
-  log(`"PUBLIC_DATASET_VERSION": "${v}"`);
+  log('next: npm run signoff (the dataset step checks staging serves this version)');
   log(`npm run pipeline -- verify ${v} --origin ${STAGING_ORIGIN}`);
   return 0;
 }

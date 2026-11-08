@@ -500,7 +500,7 @@ longer lend their zoning to a freed site, which moves what its neighbours allow.
 
 The pages were checked on 2026-11-08 in local R2, as the v1.1 live check did
 ([lesscars.md](lesscars.md) "v1.1 live check"): a `VITE_E2E=1` build served by `wrangler dev`
-with `PUBLIC_DATASET_VERSION` passed as `--var`, in headless Chromium at 1280 px (and 375 px for
+with `PUBLIC_DATASET_VERSION` passed as `--var` (and `--var ENVIRONMENT:development`, without which the override is ignored), in headless Chromium at 1280 px (and 375 px for
 `/lesscars`), reading `window.__sfhFzp`, `window.__sfhBrush`, `window.__sfhLessCars` and the
 rendered map features, and looking at the screenshots. Before is `2026-11-02-0d40e1e2`, after is
 `2026-11-08-7d2097ac`, both served by the same build of this branch. The page figures were measured on
