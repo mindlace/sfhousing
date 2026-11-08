@@ -337,3 +337,74 @@ longer lend their zoning to a freed site, which moves what its neighbours allow.
   match. Only `datasetVersion` (all chunks), `elig` (72 chunks) and `rl` (78 chunks) differ.
 - `buildings.pmtiles` is byte-identical (16,421,419 B). Its feature count was not counted; equal
   bytes imply equal features.
+
+## Live check
+
+The pages were checked on 2026-11-08 in local R2, as the v1.1 live check did
+([lesscars.md](lesscars.md) "v1.1 live check"): a `VITE_E2E=1` build served by `wrangler dev`
+with `PUBLIC_DATASET_VERSION` passed as `--var`, in headless Chromium at 1280 px (and 375 px for
+`/lesscars`), reading `window.__sfhFzp`, `window.__sfhBrush`, `window.__sfhLessCars` and the
+rendered map features, and looking at the screenshots. Before is `2026-11-02-0d40e1e2`, after is
+`2026-11-08-7d2097ac`, both served by the same build of this branch. The before dataset was
+loaded from its local build output with `scripts/r2-load-local.ts`, because `npm run data:local`
+fetches only the manifest, chunks, tiles, neighbourhoods and transit, not `scenarios/`, so `/sim`
+fails on a missing `calibration.json`.
+
+`/sim` and FZP (`/fzp` redirects to `/sim`, which opens on the FZP comparison). Each figure gave
+the same number on a second load:
+
+| `/sim` headline                          | `0d40e1e2` | `7d2097ac` | Change |
+| ---------------------------------------- | ---------: | ---------: | -----: |
+| At its default (Setup, October 2026)     |      9,101 |      8,709 |   −392 |
+| Run, at the RHNA deadline (January 2031) |     18,148 |     16,915 | −1,233 |
+| Run, at the horizon (December 2066)      |     91,176 |     91,254 |    +78 |
+| FZP added vs no FZP, December 2066       |      8,337 |      7,784 |   −553 |
+
+The before column equals the v1.1 table. The headline is one run, the representative seed (the
+run whose 2066 total is the median of the 101). The rule moves the median from seed 43 to seed 72,
+so the figures at other dates compare two different paths, as in v1.1. Seed 43 schedules 392
+pipeline completions in the rest of October 2026, which the Setup bucket counts; seed 72 does not.
+The rows other than the horizon are not effects of the rule.
+
+**The horizon does not go down.** `scenario.road_like.net_removed` (6,861 homes of static
+capacity) predicts a lower 2066 total; the median rises by 78. Across the 101 runs, the homes
+completed after today at December 2066 move as follows (the band the Results chart draws; the
+headline adds the 8,709 built by today to the median):
+
+| December 2066, 101 runs | `0d40e1e2` | `7d2097ac` | Change |
+| ----------------------- | ---------: | ---------: | -----: |
+| p10                     |     74,260 |     75,223 |   +963 |
+| p50                     |     82,467 |     82,545 |    +78 |
+| p90                     |     88,718 |     88,692 |    −26 |
+| Seed 43                 |     82,467 |     82,712 |   +245 |
+| Seed 72                 |     83,246 |     82,545 |   −701 |
+
+The likely reason is the calibration change above: the rule removes parcel-years from the
+initiation panel but no events, so the fitted hazard per hostable lot rises by about 2.5%, and the
+city-wide start rate (`impliedSteadyState` 82.19 to 82.06 a year) is almost unchanged. The model
+starts projects at a rate, not until capacity runs out, so the removed capacity shows in where
+projects start, not in how many. Same-seed changes go both ways (+245 and −701) and are within the
+spread between runs. This was not changed here; it is for the owner.
+
+**Road-like lots on the map.** Two flagged lots were checked on `/` at 1280 px, on both datasets:
+`4168011` (r3, 407 net homes, under I-280 at Pennsylvania Ave) and `5573023` (r3, 125 net homes,
+the strip beside US-101 at Bayshore Blvd). The chunk records keep their rings and label points
+(`elig` goes from 1 to 0); `/` draws parcels only through painted rows, so a lot's outline is not
+drawn on its own on either dataset. The basemap and the existing buildings around each lot draw
+the same on both (27 and 106 existing-building features in the view). A short Paint stroke at each
+label point, 30 m brush, 6 stories:
+
+- `4168011`: before, 2 parcels painted; after, 1 parcel (the neighbour) and "1 not eligible".
+- `5573023`: before, 1 parcel painted; after, "No eligible parcels under that stroke · 1 not
+  eligible", the row "1 stroke · 0 lots", 0 homes added.
+
+The editor keeps the stroke as an op with 0 lots, as it does for any stroke over ineligible land
+(open space, the Bay), so `__sfhBrush.ops` is 1; no lot takes the paint.
+
+**`/lesscars`** on `7d2097ac`, at 1280 and 375 px: the headline is "+29,096 homes by 2068", band
++28,381 to +29,526, as the build measured. The four parts (freed 22,959; parking 6,018;
+transit-unlocked 119; other 0) add to it. The disclosure still reads "38.9 ha of former freeway
+land and 4.3 ha of former roadway" and "take the place of 982 homes". No horizontal scroll at
+375 px. On `0d40e1e2` the same build shows +29,081 (22,947; 6,020; 114; 0), as in v1.1.
+
+No console errors, page errors, failed requests or HTTP errors on any page, on either dataset.
