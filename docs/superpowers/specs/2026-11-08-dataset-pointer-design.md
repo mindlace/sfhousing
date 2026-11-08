@@ -23,7 +23,7 @@ Wanted (owner's words):
 - `pipeline upload <v>` writes `data/latest.json` as its last step, after `manifest.json` succeeds. A failed upload leaves the pointer untouched. Applies to `--local` as well, so local R2 behaves like remote.
 - New command `pipeline point <v> [--local]` sets the pointer to an already-published version, for rollback or for re-pointing. It refuses unless `data/<v>/manifest.json` exists in the target bucket and parses with `datasetVersion === v`. *(My call: the owner hasn't decided between this and "roll back by re-uploading"; re-uploading an immutable version is refused today, so a command is the only clean path.)*
 - `upload` gets a `--no-point` flag for publishing a version without making it latest. *(My call.)*
-- **Code/data ordering guard.** Today a hand-made PR keeps staging from pointing at a dataset before the pipeline code that built it is on `main`. The pointer removes that PR, so `upload` (and `point`) move the remote pointer only when the working tree is clean and `HEAD` is contained in `origin/main`. Otherwise they publish the version, leave the pointer alone, and print the `pipeline point <v>` command to run after the merge. `--local` is exempt. *(My call: the builder check raised this.)*
+- **Code/data ordering guard.** Today a hand-made PR keeps staging from pointing at a dataset before the pipeline code that built it is on `main`. The pointer removes that PR, so `upload` and `point` move the remote pointer only when **`origin/main`'s committed code and lock hash to `<v>`**: the same `datasetVersion` computation, run over `git ls-tree origin/main` instead of the working tree. This holds across squash merges, where ancestry checks fail. It also refuses a dataset that another pipeline merge has since made stale. If the hashes don't match, `upload` still publishes the version but leaves the pointer alone, and prints the `pipeline point <v>` to run after the merge. `--local` is exempt. *(My call: the builder check raised this.)*
 - `npm run data:fixture` and `npm run data:local` also write the local pointer, so dev without a `.dev.vars` version works the same way.
 - Cache headers on the pointer: `no-store`. It is mutable, unlike everything under `data/<v>/`.
 
@@ -43,7 +43,23 @@ Wanted (owner's words):
 - So the prod version **is recorded in git**: it is in the tagged commit, the release PR diff shows it, and rebuilding a tag deploys the same dataset. `deploy-prod.yml` keeps reading the var from `wrangler.jsonc` and needs no change. *(My call: the owner was asked "git or release notes" and hasn't answered. Git keeps tag rebuilds reproducible.)*
 - The workflow needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` to read R2. The token must have R2 read access.
 
-### 4. Docs
+### 4. Finishing a branch that changes the dataset (owner's rule)
+
+When a worktree branch changes `datasetVersion` (its code-hash paths or its lock differ from what the current pointer was built from), building and uploading the dataset is part of finishing the branch. The sequence is:
+
+1. `npm run signoff`. It merges `origin/main` and pushes, so the code is final.
+2. `npm run pipeline -- build`, from the worktree. It must run after signoff, because the version hashes the committed code and the merge may have changed it.
+3. `npm run pipeline -- upload <v>`. This publishes the data. The guard leaves the pointer alone, since the code isn't on `main` yet.
+4. `npm run pipeline -- verify <v> --origin <staging>`. Staging already serves any published `/data/<v>/`.
+5. Open the PR and squash-merge it.
+6. `npm run pipeline -- point <v>`. The guard now passes, and staging picks up the dataset within a minute.
+7. Remove the worktree.
+
+If `origin/main` gains pipeline changes between steps 1 and 5, `point` refuses, and the loop goes back to step 1.
+
+The builder adds a way to tell whether a branch changes the dataset. My suggestion is `npm run pipeline -- version`, which prints the `<v>` the current tree would build, compared with the pointer. The sequence is documented in `docs/dev/pipeline.md` ("Release run order" is rewritten around it) and linked from `CLAUDE.md` Conventions, so every session finishing a pipeline branch follows it. Builds need the cached sources (`pipeline/.cache`) and tippecanoe and pmtiles locally. A worktree without the cache fetches from the committed lock first.
+
+### 5. Docs
 
 - `docs/dev/deploy.md` "Promoting a datasetVersion" is rewritten: upload → staging has it within a minute → the next release takes it to prod. Rollback goes through `pipeline point`.
 - `docs/dev/pipeline.md` and `docs/dev/data-serving.md` note `data/latest.json` (mutable, `no-store`, outside the `/data/<version>/` route contract).
