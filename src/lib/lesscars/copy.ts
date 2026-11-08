@@ -2,20 +2,22 @@
 // (en-US grouping, U+2212 for negatives).
 import { formatCount } from '$lib/scoreboard/format';
 
-/** `n` is the rounded mean number of extra homes at the last year; `year` its year. */
-export function headlineCopy(n: number, year: number): string {
+/** `n` is the rounded mean number of extra homes at the latest revealed year; `year` its year. */
+export function headlineCopy(n: number, year: number, reached = true): string {
+  if (!reached) return 'No extra homes yet';
   if (n > 0) return `+${formatCount(n)} homes by ${year}`;
   if (n < 0) return `${formatCount(n)} homes by ${year}`;
   return `No extra homes by ${year}`;
 }
 
 /** The button's accessible name: starts with the visible text (WCAG 2.5.3 Label in Name). */
-export function headlineNameCopy(n: number, year: number): string {
-  return `${headlineCopy(n, year)} compared with no plan. Show details`;
+export function headlineNameCopy(n: number, year: number, reached = true): string {
+  return `${headlineCopy(n, year, reached)} compared with no plan. Show details`;
 }
 
 /** The headline as a sentence, for the details panel. */
-export function headlineSentence(n: number, year: number): string {
+export function headlineSentence(n: number, year: number, reached = true): string {
+  if (!reached) return 'The plan has added no homes yet.';
   if (n > 0) return `The plan adds ${formatCount(n)} homes by ${year} compared with no plan.`;
   if (n < 0) return `The plan has ${formatCount(-n)} fewer homes by ${year} than no plan.`;
   return `The plan adds no homes by ${year} compared with no plan.`;

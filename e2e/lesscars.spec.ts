@@ -353,7 +353,9 @@ test.describe('the page on fixture-0', () => {
   });
 
   test('opens paused on the plan start with the headline from summary.json', async ({ page }) => {
-    await expect(page.getByTestId('lc-headline')).toHaveText(headlineText(summary));
+    await expect(page.getByTestId('lc-headline')).toHaveText(
+      headlineText(summary, summary.yearEnds.length - 1)
+    );
     await expect(readout(page)).toHaveText(formatMonthYear(LESSCARS_START));
     expect(await lc(page, 'day')).toBe(LESSCARS_START);
     expect(await lc(page, 'playing')).toBe(false);

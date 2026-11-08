@@ -176,7 +176,7 @@ describe('LessCarsMode', () => {
     const pinned = page.getByTestId('header-pinned');
     await expect
       .element(pinned.getByTestId('lc-headline'))
-      .toHaveTextContent(headlineText(data.summary));
+      .toHaveTextContent(headlineText(data.summary, data.summary.yearEnds.length - 1));
     await page.getByTestId('header-actions').getByRole('button', { name: 'Timeline' }).click();
     await expect.element(page.getByRole('dialog', { name: 'Project timeline' })).toBeVisible();
     await userEvent.keyboard('{Escape}');

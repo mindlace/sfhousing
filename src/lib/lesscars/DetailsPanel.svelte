@@ -20,20 +20,30 @@
   } from './copy';
   import ExtraChart from './ExtraChart.svelte';
   import { LESSCARS_LEGEND } from './legend';
-  import { bandText, breakdownRows, finalHomes, finalYear, freedLandSplit } from './summary-view';
+  import {
+    bandText,
+    breakdownRows,
+    freedLandSplit,
+    homesAt,
+    revealedYearIndex,
+    yearAt
+  } from './summary-view';
 
   interface Props {
     summary: LessCarsSummary;
     sites: LessCarsSitesFile;
     day: Day;
+    /** The furthest day reached; figures show the latest year end at or before it. */
+    highWater: Day;
     onevidence: () => void;
   }
-  let { summary, sites, day, onevidence }: Props = $props();
+  let { summary, sites, day, highWater, onevidence }: Props = $props();
 
   const theme = useSystemTheme();
-  const rows = $derived(breakdownRows(summary));
-  const total = $derived(finalHomes(summary));
-  const year = $derived(finalYear(summary));
+  const idx = $derived(revealedYearIndex(summary, highWater));
+  const rows = $derived(breakdownRows(summary, idx));
+  const total = $derived(homesAt(summary, idx));
+  const year = $derived(yearAt(summary, idx));
   const scale = $derived(Math.max(1, ...rows.map((r) => Math.abs(r.homes))));
   const land = $derived(freedLandSplit(sites));
   // The disclosure belongs to the v1.1 sites file: any site carrying `parcels` (the key is absent
@@ -49,8 +59,10 @@
 </script>
 
 <div class="space-y-3 text-sm" data-testid="lc-panel">
-  <p class="font-semibold">{headlineSentence(total, year)}</p>
-  <p class="text-gray-700 dark:text-gray-300">{bandText(summary)}</p>
+  <p class="font-semibold">{headlineSentence(total, year, idx >= 0)}</p>
+  {#if idx >= 0}
+    <p class="text-gray-700 dark:text-gray-300">{bandText(summary, idx)}</p>
+  {/if}
 
   <table class="w-full border-collapse text-left tabular-nums">
     <caption class="pb-1 text-left text-xs font-semibold text-gray-600 dark:text-gray-400"
@@ -92,7 +104,7 @@
     <p class="text-gray-700 dark:text-gray-300">{garageCostCopy(garageHomes)}</p>
   {/if}
 
-  <ExtraChart {summary} {day} />
+  <ExtraChart {summary} {day} {highWater} />
 
   <p class="text-gray-700 dark:text-gray-300">{AMENITIES_COPY}</p>
 

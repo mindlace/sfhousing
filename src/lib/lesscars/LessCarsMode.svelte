@@ -348,11 +348,17 @@
 {/snippet}
 
 {#snippet details()}
-  <DetailsPanel {summary} {sites} {day} onevidence={() => openEvidence()} />
+  <DetailsPanel
+    {summary}
+    {sites}
+    {day}
+    highWater={LESSCARS_HORIZON}
+    onevidence={() => openEvidence()}
+  />
 {/snippet}
 
 {#snippet headline()}
-  <HeadlineBar {summary} panel={details} />
+  <HeadlineBar {summary} highWater={LESSCARS_HORIZON} panel={details} />
 {/snippet}
 
 <div class="relative h-full" style:--lc-scrubber-h="{scrubberH + noticeH}px">
