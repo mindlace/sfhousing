@@ -19,6 +19,7 @@ import { lockSha256, rawPath, readLock, sortKeys, verifyRaw, type Lock } from '.
 import { landClipSection } from '../lib/land-report';
 import { QUALITY_REPORT_MD, createQualityTables, writeQualityReport } from '../lib/quality';
 import { Report } from '../lib/report';
+import { loadRoadLotInputs, readRoadLots, ROAD_LOTS_JSON, roadLotProblems } from '../lib/road-lots';
 import { runSql } from '../lib/sql';
 import { POLICY_BIN } from '../lib/scenario-files';
 import { codeTreeHash, computeDatasetVersion } from '../lib/version';
@@ -192,7 +193,21 @@ export async function build(
     });
     // T14 (scenario-data spec §4.12): SQL rules insert into these, so they precede the first file.
     await createQualityTables(db);
+    // Freeway land (lesscars v1.1): the live catalog lists its segments with empty parcel lists until
+    // Plan B curates it, so no parcel is marked (a live build still reports zero-valued counts).
+    // 55_road_lots.sql reads it too: catalog land is never road-like.
+    const freewayLand = readFreewayLand(
+      LESSCARS_FREEWAY_LAND_JSON[fixtureMode ? 'fixture' : 'live']
+    );
+    await loadRoadLotInputs(
+      db,
+      freewayLandSet(freewayLand),
+      readRoadLots(ROAD_LOTS_JSON[fixtureMode ? 'fixture' : 'live'])
+    );
     await report.time('sql', () => runSql(db));
+    // The override file is checked against the raw rule's output of this build.
+    const roadProblems = await roadLotProblems(db);
+    if (roadProblems.length > 0) throw new BuildError(`road lots: ${roadProblems.join('; ')}`);
     const chunks = await report.time('chunks', () =>
       writeChunks(db, outDir, datasetVersion, report)
     );
@@ -215,11 +230,6 @@ export async function build(
     const counts: Record<string, number> = {};
     // The scenario and policy steps share the chunk records (same rows, same order).
     const records = await readParcelRecords(db);
-    // Freeway land (lesscars v1.1): the live catalog lists its segments with empty parcel lists until
-    // Plan B curates it, so no parcel is marked (a live build still reports zero-valued counts).
-    const freewayLand = readFreewayLand(
-      LESSCARS_FREEWAY_LAND_JSON[fixtureMode ? 'fixture' : 'live']
-    );
     const scenario = await report.time('scenario', async () =>
       writeScenario({
         db,

@@ -28,6 +28,26 @@ export const SQL_VARS = {
   // Grid cell the mask is cut into, so a lot is intersected with a few small pieces of it, not the
   // whole city. Tier 4, from the 2026-10-19 spike.
   land_cell_m: 250,
+  // 55_road_lots.sql, the road-like lot rule. All tier 4, from the 2026-11-07 investigation of the
+  // live parcels.
+  // Building cover (pieces over lot area) a road-like lot stays under.
+  road_cover_max: 0.25,
+  // Cover a lot stays under for the bare-lot rules R1n and R2s.
+  road_bare_cover_max: 0.05,
+  // R1n: a lot whose largest inscribed circle is under this radius is a strip.
+  road_strip_radius_m: 3.5,
+  // Tolerance of ST_MaximumInscribedCircle for R1n.
+  road_mic_tol_m: 0.05,
+  // R2s: half-width of the band about the public street centrelines.
+  road_street_band_m: 10,
+  // R2s: share of the lot's area within the band, at least.
+  road_street_share_min: 0.8,
+  // R3: a FREEWAYS centreline nearest the lot under this distance.
+  road_freeway_m: 40,
+  // R3: how far the nearest centreline is searched for.
+  road_nearest_search_m: 300,
+  // A City Lands row names a lot when it covers at least this share of the lot's area.
+  road_city_share_min: 0.5,
   // 82_policy.sql pol_tod: ½ mile, 804.672 m, SB 79's outer band (Gov. Code §65912.157(a),
   // tier 1; pipeline/sb79-config.ts).
   tod_half_m: BAND_MAX_M[3]
@@ -234,9 +254,10 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   transitHeavyRailStations: ['Fixture Station'],
   // Spec §4.10 V16: every eligible mini parcel has a district (fixture known answer).
   heightJoinMin: 1,
-  // Ruling: 14 of the 21 eligible mini parcels have a 2025 roll row (lots 12, 13, 20, 22-25 do not;
-  // lot 21 has its VPUB row; lot 16 is underwater and lot 19 freeway land, so not eligible).
-  rollJoinMin: 14 / 21,
+  // Ruling: 13 of the 16 eligible mini parcels have a 2025 roll row (lots 12, 13 and 25 do not;
+  // lot 16 is underwater and lot 19 freeway land, so not eligible; road-like lots 20-24, lot 21's
+  // VPUB row among them, are not eligible either).
+  rollJoinMin: 13 / 16,
   // Spec §4.10 V18 "fixture exact": Σ 2025 roll units of the mini fixture after the units rules
   // (known answer, spec §4.11): 66, plus lot 3's 5,000 replaced by its LUDB 4 (RA1), plus the 2
   // homes on underwater lot 16 (kept: the land mask makes a lot unbuildable, not empty), plus lot

@@ -401,8 +401,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     const want: Record<string, [number, number] | [number, number, number, number]> = {
       // 31 parcel rows, lots 19-25's included (mini dates only its 3 retired rows and leaves
       // date_rec_add empty). Lot 19 (3512019) adds a T11 parcel and two roll years throughout;
-      // lots 20-25 add six T11 parcels (all hostable while no road-like rule exists), lot 21
-      // (3512021) two roll years, and the P lots 20, 22, 24 and 25 four named-no-cap fires.
+      // lots 20-25 add six T11 parcels (only lot 25 hostable: lots 20-24 are road-like), lot 21
+      // (3512021) two roll years, and lot 25 (P) one named-no-cap fire.
       'sd.attrs.active-unknown': [0, 31],
       'sd.attrs.added-date-cast': [0, 0],
       'sd.attrs.dropped-date-cast': [0, 3],
@@ -430,6 +430,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.parcels.land-clip': [1, 25],
       // Lots 15 to 17 reach beyond the two tile columns of the mini basemap, by design.
       'sd.parcels.outside-tiles': [3, 25],
+      // Lots 20-24, one per reason (55_road_lots.sql); lot 25 is kept, lot 19 is catalog land.
+      'sd.parcels.road-like': [5, 25],
       'sd.parcels.underwater': [1, 25],
       'sd.roll.floor-area-cast': [0, 41],
       'sd.roll.floor-area-missing': [18, 46],
@@ -455,15 +457,18 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.sb79.tier2-unmatched': [438, 438],
       'sd.sb79.zone-unlisted': [0, 25],
       'sd.yield.nonmonotone': [0, 25],
-      'sd.yield.zero-hostable': [3, 20],
-      'sd.zoning.c2-floor-approx': [0, 17],
-      'sd.zoning.generic-nc': [1, 17],
-      'sd.zoning.m1-floor-approx': [0, 17],
-      'sd.zoning.missing': [0, 17],
-      'sd.zoning.named-no-cap': [5, 17],
-      'sd.zoning.rc4-vanness-approx': [0, 17],
-      'sd.zoning.split-code': [0, 17],
-      'sd.zoning.unlisted': [0, 17]
+      // Road-like lots 20-24 are not eligible, so not hostable: 5 fewer than without the rule.
+      'sd.yield.zero-hostable': [3, 15],
+      'sd.zoning.c2-floor-approx': [0, 12],
+      'sd.zoning.generic-nc': [1, 12],
+      'sd.zoning.m1-floor-approx': [0, 12],
+      'sd.zoning.missing': [0, 12],
+      // Lot 12's P and lot 25's P (kept by its block row); the road-like P lots 20, 22 and 24 are
+      // no longer hostable.
+      'sd.zoning.named-no-cap': [2, 12],
+      'sd.zoning.rc4-vanness-approx': [0, 12],
+      'sd.zoning.split-code': [0, 12],
+      'sd.zoning.unlisted': [0, 12]
     };
     const sd = QUALITY_RULES.filter((r) => r.owner === 'scenario-data');
     expect(sd.map((r) => r.id)).toEqual(Object.keys(want));

@@ -4,6 +4,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ParcelId } from '../../src/lib/data/parcel';
+import { createTableFromRows, type Duck } from './duck';
 
 export const ROAD_NAME_WORDS: readonly string[] = [
   'RIGHT-OF-WAY',
@@ -136,3 +137,104 @@ export const ROAD_LOTS_JSON = {
   live: path.join(PIPELINE_DIR, 'enrichment/road-lots.json'),
   fixture: path.join(PIPELINE_DIR, 'test/fixtures/mini/enrichment/road-lots.json')
 };
+
+/**
+ * Write the build's inputs to 55_road_lots.sql, replacing any earlier ones: rl_catalog(id) (the
+ * freeway-land catalog parcels, never road-like), rl_keep(parcel, block, reason) (one of parcel
+ * and block set) and rl_road(parcel, reason).
+ */
+export async function loadRoadLotInputs(
+  db: Duck,
+  catalog: ReadonlySet<ParcelId>,
+  overrides: RoadLotsFile
+): Promise<void> {
+  await createTableFromRows(
+    db,
+    'rl_catalog',
+    [['id', 'VARCHAR']],
+    [...catalog].sort().map((id) => [id])
+  );
+  await createTableFromRows(
+    db,
+    'rl_keep',
+    [
+      ['parcel', 'VARCHAR'],
+      ['block', 'VARCHAR'],
+      ['reason', 'VARCHAR']
+    ],
+    overrides.keep.map((k) =>
+      'parcel' in k ? [k.parcel, null, k.reason] : [null, k.block, k.reason]
+    )
+  );
+  await createTableFromRows(
+    db,
+    'rl_road',
+    [
+      ['parcel', 'VARCHAR'],
+      ['reason', 'VARCHAR']
+    ],
+    overrides.road.map((r) => [r.parcel, r.reason])
+  );
+}
+
+/**
+ * Rewrite rl_word(word, pattern) from ROAD_NAME_WORDS, and create rl_catalog, rl_keep and rl_road
+ * empty when absent, so 55_road_lots.sql runs for a caller that loaded no inputs.
+ */
+export async function ensureRoadLotInputs(db: Duck): Promise<void> {
+  await createTableFromRows(
+    db,
+    'rl_word',
+    [
+      ['word', 'VARCHAR'],
+      ['pattern', 'VARCHAR']
+    ],
+    ROAD_NAME_WORDS.map((w) => [w, roadWordPattern(w)])
+  );
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS rl_catalog (id VARCHAR);
+     CREATE TABLE IF NOT EXISTS rl_keep (parcel VARCHAR, block VARCHAR, reason VARCHAR);
+     CREATE TABLE IF NOT EXISTS rl_road (parcel VARCHAR, reason VARCHAR);`
+  );
+}
+
+/**
+ * The override rows the raw rule contradicts, after 55_road_lots.sql has run, one message per
+ * row, sorted: a keep row naming no parcel or block, a keep row the raw rule does not flag
+ * (stale), a road row naming no parcel, a road row on a catalog parcel, a road row the raw rule
+ * already flags.
+ */
+export async function roadLotProblems(db: Duck): Promise<string[]> {
+  const rows = await db.all<{ msg: string }>(
+    `WITH raw AS (SELECT id FROM road_lot_eval WHERE raw)
+     SELECT CASE
+              WHEN NOT EXISTS (SELECT 1 FROM parcels p WHERE p.id = k.parcel)
+                THEN 'keep parcel ' || k.parcel || ' names no parcel'
+              WHEN NOT EXISTS (SELECT 1 FROM raw WHERE raw.id = k.parcel)
+                THEN 'keep parcel ' || k.parcel || ': the rule does not flag it (stale)'
+            END AS msg
+     FROM rl_keep k WHERE k.parcel IS NOT NULL
+     UNION ALL
+     SELECT CASE
+              WHEN NOT EXISTS (SELECT 1 FROM parcels p WHERE left(p.id, 4) = k.block)
+                THEN 'keep block ' || k.block || ' names no parcel'
+              WHEN NOT EXISTS (SELECT 1 FROM raw WHERE left(raw.id, 4) = k.block)
+                THEN 'keep block ' || k.block || ': the rule does not flag any lot of it (stale)'
+            END
+     FROM rl_keep k WHERE k.block IS NOT NULL
+     UNION ALL
+     SELECT CASE
+              WHEN NOT EXISTS (SELECT 1 FROM parcels p WHERE p.id = r.parcel)
+                THEN 'road parcel ' || r.parcel || ' names no parcel'
+              WHEN EXISTS (SELECT 1 FROM rl_catalog c WHERE c.id = r.parcel)
+                THEN 'road parcel ' || r.parcel || ' is freeway-land catalog land'
+              WHEN EXISTS (SELECT 1 FROM raw WHERE raw.id = r.parcel)
+                THEN 'road parcel ' || r.parcel || ': the rule already flags it'
+            END
+     FROM rl_road r`
+  );
+  return rows
+    .map((r) => r.msg)
+    .filter((m): m is string => m !== null)
+    .sort();
+}

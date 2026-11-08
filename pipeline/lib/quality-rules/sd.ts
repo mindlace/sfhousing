@@ -194,6 +194,25 @@ export const SD_RULES: readonly QualityRule[] = [
     ...SHARES,
     unitsWeighted: false
   },
+  // Road-like lots (55_road_lots.sql): public lots that are street remnants, medians, slopes or
+  // strips beside freeways. The thresholds (road_* in config.ts SQL_VARS) are tier 4, from the
+  // 2026-11-07 investigation. Of = every parcel. Default shares.
+  {
+    ...SD,
+    id: 'sd.parcels.road-like',
+    source: 'datasf-parcels',
+    field: 'geom',
+    kind: 'observe',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'Counts lots that are road (street remnants, medians, slopes, strips beside freeways); they stay on the map but cannot be built on',
+    denominator: 'parcels',
+    ...SHARES,
+    unitsWeighted: false
+  },
   // Counts lots not wholly inside the basemap tiles read (45_land.sql, the same lots as
   // land.outside_tiles). Departure from the observe default: warnShare and failShare 0, because a
   // lot outside the tiles read is clipped against missing land, so any firing fails a live build.

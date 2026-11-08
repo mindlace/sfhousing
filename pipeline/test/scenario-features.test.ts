@@ -162,8 +162,8 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
       });
     }
     expect(counts['scenario.panel.feature_mismatch']).toBe(0);
-    // Underwater lot 16 has a 2025 row but is not eligible; lot 21's VPUB row is the 14th.
-    expect(counts['scenario.roll.latest_eligible_matched']).toBe(14);
+    // Underwater lot 16 has a 2025 row but is not eligible; so has road-like lot 21 (VPUB).
+    expect(counts['scenario.roll.latest_eligible_matched']).toBe(13);
   });
 
   it('hostable_base changes by at most 5% between consecutive roll years (no exemptions)', async () => {
@@ -171,15 +171,15 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
     // such as the 2022-11-27 fourplex ordinance cannot flip it. Trivially true on mini (all its
     // roll years follow the ordinance), still asserted; V18 asserts it on every build. Compared
     // over the parcels with a row in both years: mini's panel grows from 2 rows (2023) to 19
-    // (2024) and 17 (2025), which is coverage, not flips. Vacant lots 15, 17, 19 and 21 are
-    // hostable in 2024 and 2025 (lot 19, freeway land, only in the panel); underwater lot 16 never
-    // is.
+    // (2024) and 17 (2025), which is coverage, not flips. Vacant lots 15, 17 and 19 are
+    // hostable in 2024 and 2025 (lot 19, freeway land, only in the panel); underwater lot 16 and
+    // road-like lot 21 never are.
     const rows = await panel();
     const years = [...new Set(rows.map((r) => r.roll_year))].sort();
     expect(years.map((y) => counts[`scenario.panel.hostable_base.${y}`])).toEqual(
       years.map((y) => rows.filter((r) => r.roll_year === y && r.hostable_base).length)
     );
-    expect(years.map((y) => counts[`scenario.panel.hostable_base.${y}`])).toEqual([2, 13, 12]);
+    expect(years.map((y) => counts[`scenario.panel.hostable_base.${y}`])).toEqual([2, 12, 11]);
     const at = new Map(rows.map((r) => [`${r.mapblklot}:${r.roll_year}`, r.hostable_base]));
     for (const y of years.slice(1)) {
       const both = rows.filter((r) => r.roll_year === y && at.has(`${r.mapblklot}:${y - 1}`));

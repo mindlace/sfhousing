@@ -381,7 +381,8 @@ describe('invariants', () => {
     });
     const v16 = await result(d, 'V16');
     expect(v16.ok).toBe(false);
-    expect(v16.detail).toMatch(/eligible with a district 95\.2% < 100%/); // 20 of 21 (lots 20-25 eligible)
+    // 15 of 16 (lot 25 eligible; road-like lots 20-24 are not)
+    expect(v16.detail).toMatch(/eligible with a district 93\.8% < 100%/);
   });
   it('V16 fails on a parse failure', async () => {
     expect(await failed(base, { ...counts, 'scenario.height.parse_fail': 1 })).toContain('V16');
@@ -438,7 +439,7 @@ describe('invariants', () => {
     const v17 = await result(d, 'V17');
     expect(v17).toMatchObject({
       ok: true,
-      detail: expect.stringMatching(/^hostable 18\/22 eligible/)
+      detail: expect.stringMatching(/^hostable 13\/17 eligible/)
     });
   });
   it('V17 fails when the eligible flag disagrees with the chunk record and the T14 rule', async () => {
@@ -505,14 +506,15 @@ describe('invariants', () => {
   });
   it('V17 does not warn when the FZP net total is in band', async () => {
     const v17 = await result(base, 'V17', { ...counts, 'scenario.yield.fzp_net_total': 780000 });
-    expect(v17).toMatchObject({ ok: true, detail: 'hostable 17/21 eligible' }); // lots 20-25 included
+    // Lot 25 included; road-like lots 20-24 are not eligible.
+    expect(v17).toMatchObject({ ok: true, detail: 'hostable 12/16 eligible' });
   });
   it('V17 passes with a warning when the FZP net total is far from the cross-check', async () => {
     const v17 = (
       await checkDataset(base, FIXTURE_PROFILE, { counts, reencodeIdentical: true })
     ).find((x) => x.id === 'V17')!;
     expect(v17.ok).toBe(true);
-    expect(v17.detail).toMatch(/warn: FZP net capacity 75 outside/);
+    expect(v17.detail).toMatch(/warn: FZP net capacity 36 outside/);
   });
   it('V18 fails on a missing roll year', async () => {
     expect(
@@ -594,7 +596,7 @@ describe('invariants', () => {
       'scenario.roll.latest_eligible_matched': 11
     });
     expect(v18.ok).toBe(false);
-    expect(v18.detail).toMatch(/eligible with a latest-year roll row 52\.4% < 66\.6667%/);
+    expect(v18.detail).toMatch(/eligible with a latest-year roll row 68\.8% < 81\.25%/);
   });
   it('V18 counts hostable_base for every panel roll year, each within 5% of the year before', async () => {
     const keys = Object.keys(counts)

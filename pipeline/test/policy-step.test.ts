@@ -183,11 +183,10 @@ describe('writePolicy on the mini fixture', () => {
     expect(statuses).toBe(pol.count);
     expect(counts['policy.s207.applies']).toBe(3);
     expect(counts['policy.s207.exempt']).toBe(2);
-    // + lots 21 (RH-2) and 23 (RH-1) in 40//65-R-4; the P lots 20, 22, 24 and 25 are
-    // not-residential, as lot 19 is.
-    expect(counts['policy.s207.no-limit']).toBe(9);
+    // The P lot 25 is not-residential, as lot 19 is; the road-like lots 20-24 are not-eligible.
+    expect(counts['policy.s207.no-limit']).toBe(7);
     expect(counts['policy.s207.meets-minimum']).toBe(3);
-    expect(counts['policy.s207.not-eligible']).toBe(3);
+    expect(counts['policy.s207.not-eligible']).toBe(8);
     expect(counts['policy.s207.base_ft_mismatch']).toBe(0);
     expect(counts['policy.current.from_s207']).toBe(2);
     expect(counts['policy.current.yield_mismatch']).toBe(0);

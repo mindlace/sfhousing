@@ -421,6 +421,18 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       false
     ],
     [
+      'sd.parcels.road-like',
+      'datasf-parcels',
+      'geom',
+      'observe',
+      'none',
+      4,
+      null,
+      null,
+      'parcels',
+      false
+    ],
+    [
       'sd.parcels.underwater',
       'datasf-parcels',
       'geom',
@@ -1175,7 +1187,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data')
       .map((r) => r.id)
       .filter((id) => !policyRules.includes(id));
-    expect(ids).toHaveLength(48);
+    expect(ids).toHaveLength(49);
     const got = Object.keys(s.quality)
       .filter((k) => k.endsWith('.fired'))
       .map((k) => k.slice('quality.'.length, -'.fired'.length))
@@ -1205,8 +1217,8 @@ describe('the TS-side zoning and yield rules on a synthetic copy of mini', () =>
 
   it('sd.zoning.split-code counts hostable parcels with a split code', async () => {
     const hostable = s.scenarioCounts['scenario.hostable'];
-    // + lots 20-25 (road-like rule; no rule yet, so all hostable).
-    expect(hostable).toBe(17);
+    // + lot 25; road-like lots 20-24 are not eligible, so not hostable.
+    expect(hostable).toBe(12);
     expect(await reported(s, 'sd.zoning.split-code')).toEqual({
       fired: 1,
       of: hostable,
@@ -1217,17 +1229,17 @@ describe('the TS-side zoning and yield rules on a synthetic copy of mini', () =>
   it('sd.zoning.generic-nc counts hostable parcels with a generic NC code', async () => {
     expect(await reported(s, 'sd.zoning.generic-nc')).toEqual({
       fired: 1,
-      of: 17, // + lots 20-25
+      of: 12, // + lot 25
       sample: ['8711023C']
     });
   });
 
   it('sd.yield.zero-hostable and sd.yield.nonmonotone count and change nothing', async () => {
-    // Eligible with an envelope: the 17 hostable parcels (lots 20-25 included) and lots 6, 8 and
-    // 14, whose yields are 0.
+    // Eligible with an envelope: the 12 hostable parcels (lot 25 included, road-like lots 20-24
+    // not) and lots 6, 8 and 14, whose yields are 0.
     expect(await reported(s, 'sd.yield.zero-hostable')).toEqual({
       fired: 3,
-      of: 20,
+      of: 15,
       sample: ['3512006', '3512008', '3512014']
     });
     expect(await reported(s, 'sd.yield.nonmonotone')).toEqual({ fired: 0, of: 25, sample: [] }); // 25 lots
@@ -1440,8 +1452,8 @@ describe('sd.zoning.unlisted and sd.zoning.named-no-cap on a synthetic copy of m
 
   it('an unlisted code fires only sd.zoning.unlisted; the cap stays null', async () => {
     const hostable = s.scenarioCounts['scenario.hostable'];
-    // + lots 20-25 (road-like rule; no rule yet, so all hostable).
-    expect(hostable).toBe(17);
+    // + lot 25; road-like lots 20-24 are not eligible, so not hostable.
+    expect(hostable).toBe(12);
     expect(await reported(s, 'sd.zoning.unlisted')).toEqual({
       fired: 1,
       of: hostable,
@@ -1451,11 +1463,12 @@ describe('sd.zoning.unlisted and sd.zoning.named-no-cap on a synthetic copy of m
   });
 
   it('a spec-named code fires only sd.zoning.named-no-cap; the cap stays null', async () => {
-    // + the P lots among 20-25 (20, 22, 24, 25), hostable while no road-like rule exists.
+    // + the P lot 25 (3513001, kept by its block row); the road-like P lots 20, 22 and 24 are not
+    // hostable.
     expect(await reported(s, 'sd.zoning.named-no-cap')).toEqual({
-      fired: 6,
+      fired: 3,
       of: s.scenarioCounts['scenario.hostable'],
-      sample: ['3512011', '3512013', '3512020', '3512022', '3512024', '3513001']
+      sample: ['3512011', '3512013', '3513001']
     });
     expect((await feature(s, '3512011', 2025)).base_density_cap).toBeNull();
   });
@@ -1642,8 +1655,8 @@ describe('sd.zoning.missing on a synthetic copy of mini', () => {
 
   it('counts hostable parcels with no zoning code (no density cap); changes nothing else', async () => {
     const hostable = s.scenarioCounts['scenario.hostable'];
-    // + lots 20-25 (road-like rule; no rule yet, so all hostable).
-    expect(hostable).toBe(17);
+    // + lot 25; road-like lots 20-24 are not eligible, so not hostable.
+    expect(hostable).toBe(12);
     expect(await reported(s, 'sd.zoning.missing')).toEqual({
       fired: 1,
       of: hostable,
@@ -1982,9 +1995,9 @@ describe('sd.landuse.none-with-units: no land-use record, assessor units (coordi
       of: 25, // 25 lots (20-25 included)
       sample: ['3512001', '3512010']
     });
-    // Mini has 21 eligible chunk records (lots 20-25 included); three lose their land-use row and
-    // two regain eligibility.
-    expect(s.scenarioCounts['scenario.eligible']).toBe(20);
+    // Mini has 16 eligible chunk records (lot 25 included, road-like lots 20-24 not); three lose
+    // their land-use row and two regain eligibility.
+    expect(s.scenarioCounts['scenario.eligible']).toBe(15);
   });
 
   it('every flag reads the scenario eligibility, and the step agrees with itself', () => {

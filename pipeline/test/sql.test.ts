@@ -271,6 +271,11 @@ describe('40/50 edge cases on synthetic sources', () => {
       CREATE TABLE src_overture(id VARCHAR, height DOUBLE, num_floors INTEGER, min_height DOUBLE, is_underground BOOLEAN, datasets VARCHAR[], geom GEOMETRY);
       CREATE TABLE src_land(layer VARCHAR, z INTEGER, x INTEGER, y INTEGER, fid INTEGER, w DOUBLE, s DOUBLE, e DOUBLE, n DOUBLE, geojson VARCHAR);
       CREATE TABLE src_land_tiles(z INTEGER, x INTEGER, y INTEGER, w DOUBLE, s DOUBLE, e DOUBLE, n DOUBLE);
+      -- 55_road_lots.sql reads these; empty here.
+      CREATE TABLE src_parcel_attrs(mapblklot VARCHAR, blklot VARCHAR, active BOOLEAN, zoning_code VARCHAR);
+      CREATE TABLE src_roll(closed_roll_year INTEGER, parcel_number VARCHAR, use_code VARCHAR, property_class_code VARCHAR, property_area DOUBLE);
+      CREATE TABLE src_streets(cnn VARCHAR, streetname VARCHAR, layer VARCHAR, geom GEOMETRY);
+      CREATE TABLE src_city_lands(land_id VARCHAR, land_name VARCHAR, department_name VARCHAR, geom GEOMETRY);
       INSERT INTO src_parcels VALUES ('P1', 'P1', TRUE, 'N', ${rect(X0, Y0, X0 + 1e-4, Y0 + 1e-4)});
       INSERT INTO src_neighborhoods VALUES ('N', ${rect(X0 - 1e-3, Y0 - 1e-3, X0 + 1e-3, Y0 + 1e-3)});
       INSERT INTO src_overture VALUES ('bx', NULL, NULL, ${minHeight}, FALSE, ['osm'], ${rect(X0, Y0, buildingX1, Y0 + 1e-4)});
