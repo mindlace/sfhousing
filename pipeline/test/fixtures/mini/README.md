@@ -103,6 +103,7 @@ Point` x[E−50, E+50] y[-100,100].
 | `src_parcel_attrs`  | 25   | as `src_parcels`                                                                                            |
 | `src_roll`          | 39   | 2025: 18 (lots 1, 2 x3, 3–8, 10, 11, 14–19); 2024: those less 3, + 13 + `3512099` = 19; 2023: lots 3, 4 = 2 |
 | `src_streets`       | 5    | the five centerlines below                                                                                  |
+| `src_city_lands`    | 4    | the four City Lands polygons below                                                                          |
 | `src_historic`      | 21   | lots 1, 2 (3 condo rows), 3–17, 19 = 20, + retired `3512099`                                                |
 | `src_sb79_exempt`   | 3    | `3512012` permanent, unmatched `3512999` permanent, `3512015` temporary                                     |
 
@@ -118,6 +119,17 @@ strings and `active` is `true`, as SODA writes them.
 | 2000 | FIXTURE AVE | 5         | STREETS     | x = 148, y −60 → 28 (ends below lot 18) |
 | 3000 | PAPER ST    | 0         | PAPER_WATER | y = −8, x E−60 → E+60                   |
 | 4000 | I-80        | 1         | FREEWAYS    | y = 75, x 0 → 140                       |
+
+## City Lands
+
+`datasf-city-lands` (gtnh-hgvs, GeoJSON): `shape` is a Polygon in local metres; the other columns are text.
+
+| land_id | land_name                       | category            | outline                 |
+| ------- | ------------------------------- | ------------------- | ----------------------- |
+| L0001   | MEDIAN STRIP AT MISSION ST      | Street Right of Way | x 0..10, y −3..3        |
+| L0002   | UNDEDICATED STREET              | Street Right of Way | x −58..−50, y −100..−90 |
+| L0003   | SLOPE PROTECTION AT FIXTURE AVE | Street Right of Way | x −58..−40, y 60..80    |
+| L0004   | FIXTURE CORPORATION YARD        | Corporation Yard    | x −58..−40, y 84..100   |
 
 ## Historic status
 

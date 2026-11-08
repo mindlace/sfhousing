@@ -204,6 +204,49 @@ describe('normalise mini fixture', () => {
     expect(cols).toEqual(['cnn', 'streetname', 'classcode', 'layer', 'f_st', 't_st', 'geom']);
   });
 
+  it('city lands: four mini rows in EPSG:7131, names verbatim', async () => {
+    const db = await miniDuck();
+    const rows = await db.all<{ land_name: string }>(
+      'SELECT land_name FROM src_city_lands ORDER BY land_id'
+    );
+    expect(rows.map((r) => r.land_name)).toEqual([
+      'MEDIAN STRIP AT MISSION ST',
+      'UNDEDICATED STREET',
+      'SLOPE PROTECTION AT FIXTURE AVE',
+      'FIXTURE CORPORATION YARD'
+    ]);
+    const cols = (await db.all<{ column_name: string }>('DESCRIBE src_city_lands')).map(
+      (c) => c.column_name
+    );
+    expect(cols).toEqual([
+      'land_id',
+      'land_name',
+      'dept_id',
+      'department_name',
+      'category',
+      'geom'
+    ]);
+    const [g] = await db.all<{ x: number }>('SELECT min(ST_XMin(geom)) x FROM src_city_lands');
+    // Projected metres (EPSG:7131), not degrees.
+    expect(Math.abs(g.x)).toBeGreaterThan(1000);
+    const [h] = await db.all<{ n: number }>(
+      'SELECT count(*) n FROM src_city_lands WHERE NOT ST_IsValid(geom)'
+    );
+    expect(h.n).toBe(0);
+  });
+
+  it('a lock without datasf-city-lands fails normaliseAll', async () => {
+    const lock = readLock(join(MINI, 'sources.lock.json'));
+    lock.sources = lock.sources.filter((s) => s.id !== 'datasf-city-lands');
+    const db = await openDuck();
+    await expect(
+      normaliseAll(db, lock, join(MINI, 'raw'), tmp(), {
+        byName: true,
+        exemptionsCsv: SB79_EXEMPTIONS_CSV.fixture
+      })
+    ).rejects.toThrow(/datasf-city-lands/);
+  });
+
   it('historic status: one row per listed apn, 0026T001A verbatim, lot 18 absent', async () => {
     // Every mini lot but 18 has a row (lot 2 by its three condo blklots; lot 19 too), plus retired
     // 3512099.

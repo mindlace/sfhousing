@@ -21,6 +21,7 @@ export type DatasfId =
   | 'datasf-parcel-attrs'
   | 'datasf-assessor-roll'
   | 'datasf-streets'
+  | 'datasf-city-lands'
   | 'datasf-historic-status';
 
 export const DATASF: Record<
@@ -188,6 +189,15 @@ export const DATASF: Record<
     license: 'PDDL-1.0',
     homepage: 'https://data.sf.gov/d/3psu-pn9h',
     label: 'DataSF Streets – Active and Retired (centerlines)'
+  },
+  // Sim data layer: city-owned land, read by the road-like-lot rule (all 1,035 rows, no filter).
+  'datasf-city-lands': {
+    dataset: 'gtnh-hgvs',
+    format: 'geojson',
+    select: 'land_id,land_name,dept_id,department_name,category,shape',
+    license: 'PDDL-1.0',
+    homepage: 'https://data.sf.gov/d/gtnh-hgvs',
+    label: 'DataSF City Lands'
   },
   // Sim data layer: the historic proxy.
   'datasf-historic-status': {

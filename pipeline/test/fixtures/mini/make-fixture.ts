@@ -526,6 +526,48 @@ const streets = (
   )
 );
 
+// ---- city lands (gtnh-hgvs; sim data layers) ----
+// Lots 23 and 24 (a later task) outline the first two; the median strip and the undedicated
+// street are City Lands only.
+const cityLands = (
+  [
+    [
+      'L0001',
+      'MEDIAN STRIP AT MISSION ST',
+      'DPW',
+      'Public Works',
+      'Street Right of Way',
+      rect(0, -3, 10, 3)
+    ],
+    [
+      'L0002',
+      'UNDEDICATED STREET',
+      'DPW',
+      'Public Works',
+      'Street Right of Way',
+      rect(-58, -100, -50, -90)
+    ],
+    [
+      'L0003',
+      'SLOPE PROTECTION AT FIXTURE AVE',
+      'DPW',
+      'Public Works',
+      'Street Right of Way',
+      rect(-58, 60, -40, 80)
+    ],
+    [
+      'L0004',
+      'FIXTURE CORPORATION YARD',
+      'DPW',
+      'Public Works',
+      'Corporation Yard',
+      rect(-58, 84, -40, 100)
+    ]
+  ] as const
+).map(([land_id, land_name, dept_id, department_name, category, ring]) =>
+  feature({ land_id, land_name, dept_id, department_name, category }, polygon(ring as Ring))
+);
+
 // ---- historic resource status (3tsw-4idn CSV; sim data layers) ----
 // Every lot but 18 has a row (lot 19's is C): lot 2 by its condo blklots (one A among two C), lot 13 A*, and the
 // retired 3512099 too.
@@ -713,6 +755,13 @@ const SOURCES = [
     license: DATASF['datasf-streets'].license,
     homepage: DATASF['datasf-streets'].homepage,
     label: DATASF['datasf-streets'].label
+  },
+  {
+    id: 'datasf-city-lands',
+    features: cityLands,
+    license: DATASF['datasf-city-lands'].license,
+    homepage: DATASF['datasf-city-lands'].homepage,
+    label: DATASF['datasf-city-lands'].label
   }
 ];
 const CSV_SOURCES = [

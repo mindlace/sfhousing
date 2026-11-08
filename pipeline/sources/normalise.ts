@@ -20,6 +20,7 @@ export type SourceId =
   | 'datasf-parcel-attrs'
   | 'datasf-assessor-roll'
   | 'datasf-streets'
+  | 'datasf-city-lands'
   | 'datasf-historic-status'
   | 'sfbos-sb79-exemptions'
   | 'overture-buildings'
@@ -34,6 +35,7 @@ export const SOURCE_IDS: SourceId[] = [
   'datasf-parcel-attrs',
   'datasf-assessor-roll',
   'datasf-streets',
+  'datasf-city-lands',
   'datasf-historic-status',
   'sfbos-sb79-exemptions',
   'overture-buildings',
@@ -63,6 +65,7 @@ const TABLES: Record<SourceId, string> = {
   'datasf-parcel-attrs': 'src_parcel_attrs',
   'datasf-assessor-roll': 'src_roll',
   'datasf-streets': 'src_streets',
+  'datasf-city-lands': 'src_city_lands',
   'datasf-historic-status': 'src_historic',
   'sfbos-sb79-exemptions': 'src_sb79_exempt',
   'overture-buildings': 'src_overture',
@@ -267,6 +270,13 @@ async function buildSelect(
         ${txt(cols, 'layer')}, ${txt(cols, 'f_st')}, ${txt(cols, 't_st')},
         ST_Transform(geom, 'EPSG:4326', 'EPSG:7131', always_xy := true) AS geom
         FROM ${p} ORDER BY cnn, ST_AsHEXWKB(geom)`;
+    case 'datasf-city-lands':
+      // City-owned land polygons, all text attributes verbatim (trimmed); geometry made valid in
+      // EPSG:7131. land_id is not unique upstream, so the geometry breaks ties.
+      return `SELECT ${txt(cols, 'land_id')}, ${txt(cols, 'land_name')}, ${txt(cols, 'dept_id')},
+        ${txt(cols, 'department_name')}, ${txt(cols, 'category')},
+        ST_Transform(ST_MakeValid(geom), 'EPSG:4326', 'EPSG:7131', always_xy := true) AS geom
+        FROM ${p} ORDER BY land_id, ST_AsHEXWKB(geom)`;
     case 'datasf-historic-status':
       // Codes stay verbatim (`A*` included); the policy step ranks them.
       return `SELECT ${txt(cols, 'apn', true)}, ${txt(cols, 'ceqacode')},

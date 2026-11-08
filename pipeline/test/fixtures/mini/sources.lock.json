@@ -21,6 +21,24 @@
     {
       "files": [
         {
+          "archiveKey": "sources/9f6bafa022ddaef769207a85ee9f4622e676168f5d8fefd814a2dd788ebb5ecd.geojson",
+          "bytes": 1429,
+          "name": "datasf-city-lands.page-000.geojson",
+          "sha256": "9f6bafa022ddaef769207a85ee9f4622e676168f5d8fefd814a2dd788ebb5ecd",
+          "url": "https://fixture.invalid/datasf-city-lands.page-000.geojson"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/gtnh-hgvs",
+      "id": "datasf-city-lands",
+      "label": "DataSF City Lands",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 4,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/4e9cb920a1222cc45ab7977af25b199ee12f242286b2465a68fe58497966ada1.json",
           "bytes": 3029,
           "name": "datasf-dev-pipeline.page-000.json",

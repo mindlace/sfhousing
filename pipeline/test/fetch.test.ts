@@ -14,6 +14,7 @@ import { fetchBasemap } from '../sources/protomaps';
 import { EXEMPTION_HOMEPAGE, EXEMPTION_TABLES } from '../sb79-config';
 import { fetchSfbosExemptions } from '../sources/sfbos';
 import { FETCH_IDS, restoreRaw } from '../steps/fetch';
+import { AS_OF_SOURCE_IDS } from '../project-records/parse';
 
 function fakeHttp(pageSizes: number[]) {
   const urls: string[] = [];
@@ -539,6 +540,19 @@ describe('policy-layer sources (historic status, SB 79 exemption tables)', () =>
     expect(DATASF['datasf-streets'].select).toBe(
       'cnn,streetname,classcode,layer,active,f_st,t_st,line'
     );
+  });
+
+  it('datasf-city-lands: dataset, select, licence; fetched, not an as-of source', () => {
+    expect(DATASF['datasf-city-lands']).toEqual({
+      dataset: 'gtnh-hgvs',
+      format: 'geojson',
+      select: 'land_id,land_name,dept_id,department_name,category,shape',
+      license: 'PDDL-1.0',
+      homepage: 'https://data.sf.gov/d/gtnh-hgvs',
+      label: 'DataSF City Lands'
+    });
+    expect(FETCH_IDS).toContain('datasf-city-lands');
+    expect(AS_OF_SOURCE_IDS).not.toContain('datasf-city-lands');
   });
 
   it('datasf-historic-status: dataset, select, where and licence', async () => {

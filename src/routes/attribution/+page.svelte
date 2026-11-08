@@ -70,9 +70,10 @@
   {#if hasScenario}
     <li>
       Housing project records (building permits, Planning applications, approvals and completions,
-      the development pipeline), the assessor's secured roll and the Family Zoning Plan height
-      districts from DataSF, under PDDL, CC0 or public domain. The simulation's comparison estimates
-      are cited from SF Planning and the SF Controller's Office.
+      the development pipeline), the assessor's secured roll, the City Lands inventory of city-owned
+      land and the Family Zoning Plan height districts from DataSF, under PDDL, CC0 or public
+      domain. The simulation's comparison estimates are cited from SF Planning and the SF
+      Controller's Office.
     </li>
   {/if}
   {#if hasTransit}
