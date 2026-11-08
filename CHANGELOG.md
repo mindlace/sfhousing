@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.6.0](https://github.com/mindlace/sfhousing/compare/v0.5.0...v0.6.0) (2026-11-08)
+
+
+### Features
+
+* **lesscars:** plan format, engine regimes and paired runs (plan 1 of 3) ([#52](https://github.com/mindlace/sfhousing/issues/52)) ([4e5ff12](https://github.com/mindlace/sfhousing/commit/4e5ff12e00c7844ded972f9daed917e9419aa1ac))
+* **lesscars:** the /lesscars page (plan 2 of 3) ([#58](https://github.com/mindlace/sfhousing/issues/58)) ([8f3fedf](https://github.com/mindlace/sfhousing/commit/8f3fedfaefbbdb4d935150925f4d993a04689699))
+* **lesscars:** v1.1 freeway land engine and draft plan section (plan A of 2) ([#64](https://github.com/mindlace/sfhousing/issues/64)) ([13aea0f](https://github.com/mindlace/sfhousing/commit/13aea0f5ba22349fdf05d8277737920971c8cdc7))
+* **lesscars:** v1.1 freeway removal and freeway land ([#65](https://github.com/mindlace/sfhousing/issues/65)) ([443258c](https://github.com/mindlace/sfhousing/commit/443258c4cb7afea61569f810c63c4d2f081a55b1))
+* **lesscars:** wire the approved v1 plan into the live build (plan 3 of 3) ([#60](https://github.com/mindlace/sfhousing/issues/60)) ([5f69211](https://github.com/mindlace/sfhousing/commit/5f69211669098b32d823d286ff01176555231da4))
+* **pipeline:** road-like lots are not candidates for building ([#67](https://github.com/mindlace/sfhousing/issues/67)) ([cebb78f](https://github.com/mindlace/sfhousing/commit/cebb78f515eeba0c03fdf72b71c3f97ccb32ee90))
+* **sim:** /sim page with zoning layers, brushes and protections ([#41](https://github.com/mindlace/sfhousing/issues/41)) ([20f28f8](https://github.com/mindlace/sfhousing/commit/20f28f83d870a814be76820fc207bd746d62041e))
+* **sim:** docked layers, shared Paint tab and one score across /, /sim and shared plans ([#63](https://github.com/mindlace/sfhousing/issues/63)) ([f7e9372](https://github.com/mindlace/sfhousing/commit/f7e93723e18c1df71627c80dabe67c09c95484af))
+* **sim:** height fog, View menu, eraser outlines, paint feedback and lot limits ([#47](https://github.com/mindlace/sfhousing/issues/47)) ([b77e2e7](https://github.com/mindlace/sfhousing/commit/b77e2e7b34f14dcbd2fb378f44c9c22482c95026))
+* **sim:** height limits as glass lids and contour lines ([#57](https://github.com/mindlace/sfhousing/issues/57)) ([1b65f7a](https://github.com/mindlace/sfhousing/commit/1b65f7a64e1f9cb1e10288c89727a313a231c0be))
+* **sim:** permitting timelines, presets and route shares on /sim ([#43](https://github.com/mindlace/sfhousing/issues/43)) ([c51d6d2](https://github.com/mindlace/sfhousing/commit/c51d6d2388bb485fcee635a6f1deedb967b3d595))
+* **sim:** physical limits, one-hue palette, Paint/Simulate tabs ([#46](https://github.com/mindlace/sfhousing/issues/46)) ([12b073a](https://github.com/mindlace/sfhousing/commit/12b073a0f0c2f79b71f0374b6a672661565eb6e6))
+* **sim:** policy runs — FZP baseline, zoning rules, Setup/Run phases ([#45](https://github.com/mindlace/sfhousing/issues/45)) ([3a90362](https://github.com/mindlace/sfhousing/commit/3a90362f554ec39f4d9bf55d81356a3f49d36f84))
+* **sim:** publish, autosave and share /sim policies ([#44](https://github.com/mindlace/sfhousing/issues/44)) ([b0e9083](https://github.com/mindlace/sfhousing/commit/b0e9083a3ef6a559fac8bf483364679a466656f0))
+* **sim:** transit-only zoning rules; drop street frontage ([#49](https://github.com/mindlace/sfhousing/issues/49)) ([693c837](https://github.com/mindlace/sfhousing/commit/693c83769c8f228c786b8fddc5fa38f4b5ebf69f))
+
+
+### Bug Fixes
+
+* **fzp:** center the Run label in the start button ([#50](https://github.com/mindlace/sfhousing/issues/50)) ([a21b226](https://github.com/mindlace/sfhousing/commit/a21b226311b09c731777bf5ca880360f694c54cb))
+* **fzp:** center the Run label vertically in the start button ([#51](https://github.com/mindlace/sfhousing/issues/51)) ([c036666](https://github.com/mindlace/sfhousing/commit/c036666da9824f076d21717149eb14f5766f5cd0))
+* **sim:** visible lid glass, finer and softer limit edges ([#59](https://github.com/mindlace/sfhousing/issues/59)) ([009d9ac](https://github.com/mindlace/sfhousing/commit/009d9acf8b3fbfdcd5747ec40f1c3d60c1986e6f))
+
+
+### Data
+
+* point production at dataset 2026-11-02-39fbf039 ([#62](https://github.com/mindlace/sfhousing/issues/62)) ([efc0e31](https://github.com/mindlace/sfhousing/commit/efc0e3109b65c046e810870cf6cef484b810590c))
+* point production at dataset 2026-11-08-3b7fa918 ([#72](https://github.com/mindlace/sfhousing/issues/72)) ([73ed0fa](https://github.com/mindlace/sfhousing/commit/73ed0fa1f0123e865c9e359b8b573a0b89e90794))
+* point staging and production at dataset 2026-10-29-14e0eccb ([#48](https://github.com/mindlace/sfhousing/issues/48)) ([b40b11f](https://github.com/mindlace/sfhousing/commit/b40b11f2cf390906e83b23b37b573b208bf3094d))
+
 ## [0.5.0](https://github.com/mindlace/sfhousing/compare/v0.4.1...v0.5.0) (2026-10-30)
 
 
