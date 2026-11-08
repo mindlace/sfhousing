@@ -12,8 +12,9 @@ export default defineConfig({
     { match: ['docs/dev/pipeline.md'], triggers: ['format', 'unit', 'pipeline'] },
     { match: ['CLAUDE.md', 'docs/dev/**'], triggers: ['format', 'unit'] },
     { match: ['**/*.md'], triggers: ['format'] },
-    // The scenario step and the dataset-version code hash read these, so a change here also runs
-    // test:pipeline. Before the src/** rule: the first matching rule wins.
+    // The scenario step and the dataset-version code hash read these (the code hash is load-bearing
+    // for deploys: both workflows refuse a commit whose dataset is unpublished), so a change here
+    // also runs test:pipeline and the dataset check. Before the src/** rule: the first matching rule wins.
     {
       match: [
         'src/lib/generator/**',
@@ -25,7 +26,13 @@ export default defineConfig({
         'src/lib/sim/levers/**',
         'src/lib/scoreboard/**'
       ],
-      triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline']
+      triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline', 'dataset']
+    },
+    // The pipeline and the lock feed codeTreeHash/the version, so a change needs its dataset
+    // published on staging (docs/dev/pipeline.md).
+    {
+      match: ['pipeline/**'],
+      triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline', 'dataset']
     },
     { match: ['src/**'], triggers: ['lint', 'check', 'unit', 'e2e'] },
     // fixture-0 is generated; pipeline/test/golden.test.ts compares it with the golden, so a
@@ -35,10 +42,11 @@ export default defineConfig({
     // scripts/ specs run in the vitest server project; r2-load-local feeds e2e (data:fixture).
     { match: ['scripts/**'], triggers: ['lint', 'check', 'unit', 'e2e'] },
     { match: ['.github/workflows/**'], triggers: ['format', 'workflows'] }
-    // Everything else (pipeline/, migrations/, package*.json, root configs, .husky/) matches
+    // Everything else (migrations/, package*.json, root configs, .husky/) matches
     // no rule and runs every step.
   ],
   steps: [
+    { label: 'dataset', run: 'npx tsx scripts/dataset-version.ts --check', when: ['dataset'] },
     { label: 'format', run: 'npx prettier --check .', when: ['format'], supersededBy: ['lint'] },
     { label: 'lint', run: 'npm run lint', when: ['lint'] },
     { label: 'check', run: 'npm run check', when: ['check'] },

@@ -25,6 +25,11 @@ jobs:
           cache: npm
       - run: npm install -g npm@11.3.0
       - run: npm ci
+      - name: "Guard: this commit's dataset is published"
+        id: dataset
+        run: |
+          V="$(npx tsx scripts/dataset-version.ts --check https://sfhousing-staging.mindlace.net)"
+          echo "v=${V}" >> "$GITHUB_OUTPUT"
       - run: npm run build
       - id: sha
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
@@ -38,7 +43,8 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --env staging --tag ${{ steps.sha.outputs.short }} --var PUBLIC_APP_RELEASE:${{ github.sha }}
-      - name: 'Smoke: current dataset manifest is served'
+      - name: 'Smoke: dataset manifest is served and the build uses it'
         run: |
-          V="$(npx tsx scripts/dataset-version.ts staging)"
+          V="${{ steps.dataset.outputs.v }}"
           curl -fsS -o /dev/null -I --retry 5 --retry-delay 10 --retry-all-errors "https://sfhousing-staging.mindlace.net/data/${V}/manifest.json"
+          curl -fsS --retry 5 --retry-delay 10 --retry-all-errors "https://sfhousing-staging.mindlace.net/attribution" | grep -qF "${V}"
