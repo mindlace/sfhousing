@@ -1119,7 +1119,8 @@ test('Setup shows the height limits and transit; Run hides them; Edit policy bri
   await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('visible');
   await expect(await headerAction(page, 'View')).toBeVisible();
 
-  await pressRun(page);
+  // Paused: a playing run draws a software-GL map frame per tick, and every later step waits on one.
+  await startRun(page);
   await expect.poll(() => deckIds(page)).not.toContain(LIMITS_LAYER);
   await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('none');
   await openHeaderMenu(page);
