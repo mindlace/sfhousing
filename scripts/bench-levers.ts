@@ -165,7 +165,7 @@ async function main(): Promise<number> {
     applyLevers(loaded.fzp, ctx, levers, filled);
     const applyMs = performance.now() - t4;
 
-    // The same needs from the pipeline-built gross table (one unsliced step), when the dataset has one.
+    // The same needs from the pipeline-built gross table (one unsliced step), if any.
     let tableMs: string | null = null;
     if (loaded.gross) {
       const t5 = performance.now();

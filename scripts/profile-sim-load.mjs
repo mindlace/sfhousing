@@ -83,14 +83,21 @@ const INIT = () => {
   };
 };
 
-/** ms from navigation to ready, or null: the first timeline at or after the last init/setLevers. */
+/**
+ * ms from navigation to ready, or null: the first timeline received whose rev is at or after the
+ * highest rev among the initScenario/setLevers messages the page sent.
+ */
 const readyOf = (prof) => {
-  const sent = (prof?.sent ?? []).filter(
-    (s) => s.type === 'initScenario' || s.type === 'setLevers'
+  const revs = (prof?.sent ?? [])
+    .filter(
+      (s) => (s.type === 'initScenario' || s.type === 'setLevers') && typeof s.rev === 'number'
+    )
+    .map((s) => s.rev);
+  if (revs.length === 0) return null;
+  const last = Math.max(...revs);
+  const tl = (prof?.msgs ?? []).find(
+    (m) => m.type === 'timeline' && typeof m.rev === 'number' && m.rev >= last
   );
-  if (sent.length === 0) return null;
-  const last = Math.max(...sent.map((s) => s.t));
-  const tl = (prof?.msgs ?? []).find((m) => m.type === 'timeline' && m.t >= last);
   return tl ? tl.t : null;
 };
 
@@ -144,31 +151,38 @@ const median = (xs) => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
-const version = await datasetVersionOf();
-const id = await publish(version);
-console.log(`dataset ${version}, published policy ${id}`);
-const cases = [
-  ['A', `${origin}/sim`],
-  ['B', `${origin}/sim?seed=72`],
-  ['C', `${origin}/s/${id}`]
-];
-const browser = await chromium.launch({ headless: false, args: ['--window-size=1440,960'] });
+let browser = null;
 let failed = false;
-for (const [label, url] of cases) {
-  const times = [];
-  for (let n = 1; n <= runs; n++) {
-    const r = await load(browser, url, label, n);
-    if (r.errors.length > 0) {
-      failed = true;
-      console.error(`${label} run ${n}: ${r.errors.join('; ')}`);
+try {
+  const version = await datasetVersionOf();
+  const id = await publish(version);
+  console.log(`dataset ${version}, published policy ${id}`);
+  const cases = [
+    ['A', `${origin}/sim`],
+    ['B', `${origin}/sim?seed=72`],
+    ['C', `${origin}/s/${id}`]
+  ];
+  browser = await chromium.launch({ headless: false, args: ['--window-size=1440,960'] });
+  for (const [label, url] of cases) {
+    const times = [];
+    for (let n = 1; n <= runs; n++) {
+      const r = await load(browser, url, label, n);
+      if (r.errors.length > 0) {
+        failed = true;
+        console.error(`${label} run ${n}: ${r.errors.join('; ')}`);
+      }
+      if (r.ready !== null) times.push(r.ready);
     }
-    if (r.ready !== null) times.push(r.ready);
+    console.log(
+      times.length > 0
+        ? `${label} ${Math.round(median(times))}ms (${times.map((t) => Math.round(t)).join(', ')})`
+        : `${label} no ready`
+    );
   }
-  console.log(
-    times.length > 0
-      ? `${label} ${Math.round(median(times))}ms (${times.map((t) => Math.round(t)).join(', ')})`
-      : `${label} no ready`
-  );
+} catch (e) {
+  console.error(e instanceof Error ? e.message : e);
+  failed = true;
+} finally {
+  await browser?.close();
 }
-await browser.close();
 if (failed) process.exit(2);
