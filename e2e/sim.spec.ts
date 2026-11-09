@@ -523,12 +523,14 @@ test('a painted area is selected, outlined and removed from the Paint tab', asyn
   page
 }) => {
   const OUTLINE_LAYER = 'sim-painted-outline';
+  await hideHeightLimits(page);
   await gotoSim(page);
   await openTab(page, 'Paint');
   const paint = panel(page).getByRole('radio', { name: 'Paint', exact: true });
   await expect(paint).toBeEnabled();
   await chooseTool(page, isMobile, () => paint.click());
-  await strokeOnce(page, isMobile);
+  // A painted area, not a drag, is what the row needs (as in the eraser test, #70).
+  await stampOnce(page);
   if (isMobile) await stripDone(page);
   await expect(customList(page)).toHaveCount(1);
 
