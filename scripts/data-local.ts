@@ -2,40 +2,43 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { DATASET_VERSION_RE, ManifestSchema, type Manifest } from '../src/lib/data/manifest';
+import {
+  DATASET_VERSION_RE,
+  GLYPH_RANGES,
+  ManifestSchema,
+  manifestFiles,
+  type Manifest
+} from '../src/lib/data/manifest';
+import { FONT_STACKS } from '../pipeline/config';
 import { dataKey } from '../src/lib/server/data/key';
 import { putLocal } from './r2-put-local';
 
-const SPRITE_SUFFIXES = ['.json', '.png', '@2x.json', '@2x.png'];
+/** Every file of the dataset, with the entries a 404 is tolerated for. */
+function dataFiles(manifest: Manifest, version: string): { rel: string; optional: boolean }[] {
+  const prefix = `/data/${version}/`;
+  const rel = (url: string, optional: boolean): string => {
+    if (!url.startsWith(prefix)) throw new Error(`URL ${url} is outside version ${version}`);
+    const path = url.slice(prefix.length);
+    // Sprite variants (`@2x`) are never checked: the data route would refuse them either way.
+    if (!optional && dataKey(version, path) === null)
+      throw new Error(`URL ${url} is not a servable data path`);
+    return path;
+  };
+  return manifestFiles(manifest, { stacks: Object.values(FONT_STACKS), ranges: GLYPH_RANGES }).map(
+    (f) => ({ rel: rel(f.url, f.optional), optional: f.optional })
+  );
+}
 
 /** Paths (relative to /data/<version>/) a complete local copy of the dataset needs. */
 export function collectDataPaths(manifest: Manifest, version: string): string[] {
-  const prefix = `/data/${version}/`;
-  const rel = (url: string): string => {
-    if (!url.startsWith(prefix)) throw new Error(`URL ${url} is outside version ${version}`);
-    const path = url.slice(prefix.length);
-    if (dataKey(version, path) === null) throw new Error(`URL ${url} is not a servable data path`);
-    return path;
-  };
   const paths = new Set<string>(['manifest.json']);
-  for (const c of manifest.chunks) paths.add(rel(c.url));
-  paths.add(rel(manifest.buildingsTiles));
-  paths.add(rel(manifest.basemapTiles));
-  paths.add(rel(manifest.neighborhoods));
-  if (manifest.transit) paths.add(rel(manifest.transit));
-  for (const s of spriteVariants(manifest, version)) paths.add(s);
+  for (const f of dataFiles(manifest, version)) paths.add(f.rel);
   return [...paths].sort();
 }
 
-function spriteVariants(manifest: Manifest, version: string): string[] {
-  if (!manifest.sprite) return [];
-  const base = manifest.sprite.slice(`/data/${version}/`.length);
-  return SPRITE_SUFFIXES.map((s) => base + s);
-}
-
-/** True for any path derived from `manifest.sprite` (optional: a 404 is tolerated). */
-export function isSpritePath(manifest: Manifest, version: string, rel: string): boolean {
-  return spriteVariants(manifest, version).includes(rel);
+/** True for a path the manifest marks optional (sprite variants): a 404 is tolerated. */
+export function isOptionalPath(manifest: Manifest, version: string, rel: string): boolean {
+  return dataFiles(manifest, version).some((f) => f.optional && f.rel === rel);
 }
 
 async function main(): Promise<void> {
@@ -57,7 +60,7 @@ async function main(): Promise<void> {
   try {
     for (const rel of paths) {
       const res = await fetch(`${base}/data/${version}/${rel}`);
-      if (res.status === 404 && isSpritePath(manifest, version, rel)) continue;
+      if (res.status === 404 && isOptionalPath(manifest, version, rel)) continue;
       if (!res.ok) throw new Error(`fetch ${rel} failed: ${res.status}`);
       const file = join(dir, rel);
       mkdirSync(dirname(file), { recursive: true });
@@ -68,9 +71,6 @@ async function main(): Promise<void> {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-  console.warn(
-    'Warning: glyphs is a {fontstack}/{range}.pbf template; glyph PBFs are not fetched.'
-  );
   console.log(`Loaded ${loaded} object(s) into local R2 under data/${version}/`);
 }
 
