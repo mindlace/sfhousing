@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import golden from './fixtures/manifest.golden.json';
-import { ManifestError, parseManifest } from './manifest';
+import {
+  GLYPH_RANGES,
+  ManifestError,
+  SPRITE_SUFFIXES,
+  manifestFiles,
+  parseManifest
+} from './manifest';
 
 const g = () => structuredClone(golden) as Record<string, unknown>;
 
@@ -178,5 +184,104 @@ describe('parseManifest', () => {
     it('the golden manifest still validates', () => {
       expect(parseManifest(g()).datasetVersion).toBe(v);
     });
+  });
+});
+
+function issuePaths(raw: unknown): string[][] {
+  try {
+    parseManifest(raw);
+  } catch (e) {
+    return (e as ManifestError).issues.map((i) => i.split(': ')[0].split('.'));
+  }
+  return [];
+}
+
+describe('scenarios.fzp.gross', () => {
+  const v = '2026-10-10-3fa9c2d1';
+  const fzp = (gross: string) => ({
+    parcels: `/data/${v}/scenarios/fzp/parcels.bin`,
+    projects: `/data/${v}/scenarios/fzp/projects.json`,
+    calibration: `/data/${v}/scenarios/fzp/calibration.json`,
+    gross
+  });
+
+  it('accepts scenarios.fzp.gross and rejects one outside the version', () => {
+    const ok = `/data/${v}/scenarios/fzp/gross.bin`;
+    expect(parseManifest({ ...g(), scenarios: { fzp: fzp(ok) } }).scenarios?.fzp.gross).toBe(ok);
+    const r = issuePaths({
+      ...g(),
+      scenarios: { fzp: fzp('/data/other/scenarios/fzp/gross.bin') }
+    });
+    expect(r).toEqual([['scenarios', 'fzp', 'gross']]);
+  });
+});
+
+describe('manifestFiles', () => {
+  const v = '2026-10-10-3fa9c2d1';
+  const u = (p: string) => `/data/${v}/${p}`;
+  const full = () =>
+    parseManifest({
+      ...g(),
+      sprite: u('sprite/basemap'),
+      transit: u('transit.json'),
+      scenarios: {
+        fzp: {
+          parcels: u('scenarios/fzp/parcels.bin'),
+          projects: u('scenarios/fzp/projects.json'),
+          calibration: u('scenarios/fzp/calibration.json'),
+          policy: u('scenarios/fzp/policy.bin'),
+          gross: u('scenarios/fzp/gross.bin'),
+          frontage: u('scenarios/fzp/frontage.bin')
+        },
+        lesscars: {
+          plan: u('scenarios/lesscars/plan.json'),
+          sites: u('scenarios/lesscars/sites.json'),
+          summary: u('scenarios/lesscars/summary.json'),
+          timeline: u('scenarios/lesscars/timeline.bin')
+        }
+      }
+    });
+
+  it('every /data/ string in a manifest with every optional field set is a manifestFiles url', () => {
+    const m = full();
+    const urls = new Set(manifestFiles(m).map((f) => f.url));
+    const found: string[] = [];
+    const walk = (x: unknown): void => {
+      if (typeof x === 'string') {
+        if (x.startsWith('/data/')) found.push(x);
+      } else if (Array.isArray(x)) x.forEach(walk);
+      else if (x && typeof x === 'object') Object.values(x).forEach(walk);
+    };
+    walk(m);
+    expect(found.length).toBeGreaterThan(15);
+    for (const s of found) {
+      const covered = urls.has(s) || SPRITE_SUFFIXES.every((x) => urls.has(s + x));
+      expect(covered, s).toBe(true);
+    }
+  });
+
+  it('manifestFiles expands glyphs to stack × range', () => {
+    const files = manifestFiles(full(), { stacks: ['A', 'B'], ranges: GLYPH_RANGES }).filter(
+      (f) => f.key === 'glyphs'
+    );
+    expect(GLYPH_RANGES).toHaveLength(256);
+    expect(files).toHaveLength(512);
+    expect(files[0].url).toBe(u('fonts/A/0-255.pbf'));
+    expect(files[511].url).toBe(u('fonts/B/65280-65535.pbf'));
+  });
+
+  it('only sprite variants are optional', () => {
+    const files = manifestFiles(full());
+    expect(files.filter((f) => f.optional).map((f) => f.url)).toEqual(
+      SPRITE_SUFFIXES.map((s) => u('sprite/basemap') + s)
+    );
+    expect(files.filter((f) => !f.optional && f.key === 'sprite')).toEqual([]);
+    expect(files.find((f) => f.key === 'glyphs')?.url).toBe(u('fonts/{fontstack}/{range}.pbf'));
+    expect(files.some((f) => f.url.endsWith('manifest.json'))).toBe(false);
+  });
+
+  it('a bad glyph template is reported once', () => {
+    const issues = issuePaths({ ...g(), glyphs: '/data/other/fonts/{fontstack}/{range}.pbf' });
+    expect(issues).toEqual([['glyphs']]);
   });
 });

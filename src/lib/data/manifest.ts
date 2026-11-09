@@ -61,6 +61,8 @@ const ManifestBaseSchema = z.object({
         calibration: RootRelativeUrl,
         /** Per-lot policy inputs (sfh-policy/1). Optional: datasets built before it lack it. */
         policy: RootRelativeUrl.optional(),
+        /** Per-lot gross table (pipeline-built, scenarios/fzp/gross.bin). Optional: older datasets lack it. */
+        gross: RootRelativeUrl.optional(),
         /** Older datasets' lot-to-street frontage. Accepted so they still validate; nothing reads it. */
         frontage: RootRelativeUrl.optional()
       }),
@@ -79,29 +81,13 @@ const ManifestBaseSchema = z.object({
 
 export const ManifestSchema = ManifestBaseSchema.superRefine((m, ctx) => {
   const prefix = `/data/${m.datasetVersion}/`;
-  const urls: [string, string | undefined][] = [
-    ['buildingsTiles', m.buildingsTiles],
-    ['basemapTiles', m.basemapTiles],
-    ['glyphs', m.glyphs],
-    ['sprite', m.sprite],
-    ['neighborhoods', m.neighborhoods],
-    ['transit', m.transit],
-    ['scenarios.fzp.parcels', m.scenarios?.fzp.parcels],
-    ['scenarios.fzp.projects', m.scenarios?.fzp.projects],
-    ['scenarios.fzp.calibration', m.scenarios?.fzp.calibration],
-    ['scenarios.fzp.policy', m.scenarios?.fzp.policy],
-    ['scenarios.fzp.frontage', m.scenarios?.fzp.frontage],
-    ['scenarios.lesscars.plan', m.scenarios?.lesscars?.plan],
-    ['scenarios.lesscars.sites', m.scenarios?.lesscars?.sites],
-    ['scenarios.lesscars.summary', m.scenarios?.lesscars?.summary],
-    ['scenarios.lesscars.timeline', m.scenarios?.lesscars?.timeline],
-    ...m.chunks.map((c, i): [string, string] => [`chunks.${i}.url`, c.url])
-  ];
-  for (const [path, u] of urls) {
-    if (u !== undefined && !u.startsWith(prefix)) {
+  const reported = new Set<string>();
+  for (const f of manifestFiles(m)) {
+    if (!f.url.startsWith(prefix) && !reported.has(f.key)) {
+      reported.add(f.key);
       ctx.addIssue({
         code: 'custom',
-        path: path.split('.'),
+        path: f.key.split('.'),
         message: `url must start with ${prefix}`
       });
     }
@@ -124,6 +110,61 @@ export const ManifestSourcesSchema = ManifestBaseSchema.pick({
   scenarios: true
 });
 export type ManifestSources = z.infer<typeof ManifestSourcesSchema>;
+
+export interface ManifestFile {
+  key: string;
+  url: string;
+  optional: boolean;
+}
+export interface GlyphSet {
+  stacks: readonly string[];
+  ranges: readonly string[];
+}
+
+/** Every 256-codepoint glyph range: '0-255' … '65280-65535'. */
+export const GLYPH_RANGES: readonly string[] = Array.from(
+  { length: 256 },
+  (_, i) => `${i * 256}-${i * 256 + 255}`
+);
+export const SPRITE_SUFFIXES = ['.json', '.png', '@2x.json', '@2x.png'] as const;
+
+/** Every file `m` names, in schema order. Without `glyphs` the glyph entry is the template. */
+export function manifestFiles(m: Manifest, glyphs?: GlyphSet): ManifestFile[] {
+  const out: ManifestFile[] = [];
+  const add = (key: string, url: string | undefined, optional = false): void => {
+    if (url !== undefined) out.push({ key, url, optional });
+  };
+  add('buildingsTiles', m.buildingsTiles);
+  add('basemapTiles', m.basemapTiles);
+  if (glyphs) {
+    for (const stack of glyphs.stacks) {
+      for (const range of glyphs.ranges) {
+        add('glyphs', m.glyphs.replace('{fontstack}', stack).replace('{range}', range));
+      }
+    }
+  } else {
+    add('glyphs', m.glyphs);
+  }
+  if (m.sprite !== undefined) {
+    for (const suffix of SPRITE_SUFFIXES) add('sprite', m.sprite + suffix, true);
+  }
+  add('neighborhoods', m.neighborhoods);
+  add('transit', m.transit);
+  const fzp = m.scenarios?.fzp;
+  add('scenarios.fzp.parcels', fzp?.parcels);
+  add('scenarios.fzp.projects', fzp?.projects);
+  add('scenarios.fzp.calibration', fzp?.calibration);
+  add('scenarios.fzp.policy', fzp?.policy);
+  add('scenarios.fzp.gross', fzp?.gross);
+  add('scenarios.fzp.frontage', fzp?.frontage);
+  const lc = m.scenarios?.lesscars;
+  add('scenarios.lesscars.plan', lc?.plan);
+  add('scenarios.lesscars.sites', lc?.sites);
+  add('scenarios.lesscars.summary', lc?.summary);
+  add('scenarios.lesscars.timeline', lc?.timeline);
+  m.chunks.forEach((c, i) => add(`chunks.${i}.url`, c.url));
+  return out;
+}
 
 export class ManifestError extends Error {
   constructor(public issues: string[]) {

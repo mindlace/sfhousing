@@ -100,6 +100,9 @@ export type ScenarioRequest =
       seed: number | null; // null = representative seed
       horizon: Day;
       levers?: SimLevers; // /sim (plan 2); absent = /fzp, which never fetches policy.bin
+      // Only with `levers`: run no revision from them; wait for the first `setLevers`, and post
+      // nothing but `ready`, errors and request answers until it is current (an `/s/<id>` open).
+      awaitLevers?: boolean;
     }
   | { type: 'reroll'; rev: Rev; seed: number | null }
   // A barrier rev like reroll; needs a session initialised with levers. The latest one wins.

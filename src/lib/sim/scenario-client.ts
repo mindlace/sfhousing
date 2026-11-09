@@ -155,12 +155,17 @@ export class ScenarioClient {
     return rev;
   }
 
-  /** `levers` absent = /fzp (no policy.bin, no `levers` responses). */
+  /**
+   * `levers` absent = /fzp (no policy.bin, no `levers` responses). `awaitLevers` (sent only with
+   * levers): the levers lack their brush lots, so the worker runs nothing until the first
+   * `setLevers`.
+   */
   initScenario(
     manifest: Manifest,
     horizon: Day,
     seed: number | null = null,
-    levers?: SimLevers
+    levers?: SimLevers,
+    awaitLevers?: boolean
   ): Rev {
     this.#resyncRev = null;
     // A new scenario has produced no timeline yet; a resync before one would hit an
@@ -172,7 +177,8 @@ export class ScenarioClient {
       scenario: 'fzp',
       seed,
       horizon,
-      ...(levers !== undefined && { levers })
+      ...(levers !== undefined && { levers }),
+      ...(levers !== undefined && awaitLevers === true && { awaitLevers: true })
     });
     this.#sessionRev = rev;
     this.#leversRev = levers === undefined ? null : rev;

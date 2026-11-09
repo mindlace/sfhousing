@@ -484,6 +484,17 @@ describe('ScenarioClient', () => {
       expect(client.leversPending).toBe(false);
     });
 
+    it('initScenario sends awaitLevers only when asked, and only with levers', () => {
+      const { w, client } = setup();
+      const levers = structuredClone(DEFAULT_LEVERS);
+      client.initScenario(MANIFEST, HORIZON, null, levers);
+      client.initScenario(MANIFEST, HORIZON, null, levers, false);
+      client.initScenario(MANIFEST, HORIZON, null, undefined, true);
+      client.initScenario(MANIFEST, HORIZON, null, levers, true);
+      expect(w.posts.map((p) => 'awaitLevers' in p)).toEqual([false, false, false, true]);
+      expect(w.posts[3]).toMatchObject({ type: 'initScenario', levers, awaitLevers: true });
+    });
+
     it('setLevers is a barrier; leversPending holds until its current', () => {
       const onLevers = vi.fn();
       const { w, client } = setup({ onLevers });

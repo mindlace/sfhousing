@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
-import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
+import { FILL_LEVELS, scenarioRecordOf, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { NULL_CAP } from '$lib/data/policy-codec';
 import { miniCity } from '../scenario/fixtures/mini-parcels';
 import { miniPolicy } from '../scenario/fixtures/mini-policy';
 import { needKey, type Need } from './resolve';
-import { createYieldRecompute, type GrossCache } from './recompute';
+import { createTableRecompute, createYieldRecompute, type GrossCache } from './recompute';
+import { grossRowOf, grossTableOf } from '$lib/data/gross-table';
 
 const city = miniCity();
 const policy = miniPolicy(city);
@@ -41,6 +42,21 @@ describe('createYieldRecompute', () => {
       expect(e.yield).toEqual(Array.from(P.yield.subarray(n.row * F, n.row * F + F)));
       expect(e.hostable).toBe(P.hostable[n.row] === 1);
     }
+  });
+
+  it('clamps a gross above 0xFFFF before it reaches a yield', () => {
+    const row = Array.from({ length: P.count }, (_, i) => i).find((i) => P.eligible[i] === 1)!;
+    const need: Need = { row, stories: 4, cap: null };
+    const cache: GrossCache = new Map();
+    const r = createYieldRecompute(
+      P,
+      [need],
+      { record: all, cellLoaded: loaded, now: clock(), grossOf: () => 162_730 },
+      cache
+    );
+    expect(r.step(1e9)).toBe(true);
+    expect(r.result().get(needKey(need))!.yield).toEqual([65535, 65535, 65535, 65535, 65535]);
+    expect(cache.get(`${row}:4`)).toBe(65535);
   });
 
   it('gives the same result map whatever order cells arrive in', () => {
@@ -215,6 +231,63 @@ describe('createYieldRecompute', () => {
       yield: Array.from({ length: F }, () => 0),
       hostable: false
     });
+  });
+});
+
+const miniTable = () =>
+  grossTableOf(
+    'mini',
+    Array.from({ length: P.count }, (_, row) => {
+      const rec = city.records.get(P.id[row] as ParcelId);
+      return grossRowOf(rec && scenarioRecordOf(P, row, rec));
+    })
+  );
+
+describe('createTableRecompute', () => {
+  it('needs no cells and reproduces parcels.bin at the FZP stories and cap', () => {
+    const needs = fzpNeeds();
+    const r = createTableRecompute(P, needs, miniTable(), { now: clock() });
+    expect(r.cellsNeeded()).toEqual([]);
+    expect(r.step(1e9)).toBe(true);
+    expect(r.done).toBe(needs.length);
+    expect(r.missing).toEqual([]);
+    for (const n of needs) {
+      const e = r.result().get(needKey(n))!;
+      expect(e.yield).toEqual(Array.from(P.yield.subarray(n.row * F, n.row * F + F)));
+      expect(e.hostable).toBe(P.hostable[n.row] === 1);
+    }
+  });
+
+  it('honours the budget: one need per step when every need costs the budget', () => {
+    const needs = fzpNeeds().slice(0, 4);
+    const r = createTableRecompute(P, needs, miniTable(), { now: clock() });
+    expect(r.total).toBe(4);
+    expect(r.step(1)).toBe(false);
+    expect(r.done).toBe(1);
+    expect(r.step(1)).toBe(false);
+    expect(r.done).toBe(2);
+    expect(r.step(0)).toBe(false);
+    expect(r.done).toBe(3);
+    expect(r.step(1e9)).toBe(true);
+    expect(r.done).toBe(4);
+  });
+
+  it('a table row above 0xFFFF stays 65535 through capScenarioYield', () => {
+    const row = Array.from({ length: P.count }, (_, i) => i).find((i) => P.eligible[i] === 1)!;
+    const t = grossTableOf(
+      'big',
+      Array.from({ length: P.count }, (_, i) =>
+        i === row ? { first: 1, plateau: 1, values: [65535], clamped: 1 } : grossRowOf(undefined)
+      )
+    );
+    const run = (cap: number | null) => {
+      const n: Need = { row, stories: 4, cap };
+      const r = createTableRecompute(P, [n], t, { now: clock() });
+      r.step(1e9);
+      return r.result().get(needKey(n))!.yield;
+    };
+    expect(run(null)).toEqual([65535, 65535, 65535, 65535, 65535]);
+    expect(run(100)).toEqual([100, 100, 100, 100, 100]);
   });
 });
 

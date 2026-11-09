@@ -1,4 +1,4 @@
-import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
+import { manifestFiles, parseManifest, type Manifest } from '../../src/lib/data/manifest';
 import { FONT_STACKS } from '../config';
 
 export interface VerifyArgs {
@@ -45,21 +45,9 @@ export async function verify(a: VerifyArgs): Promise<{ ok: boolean; failures: st
     }
   };
 
-  const heads = [
-    ...m.chunks.map((c) => c.url),
-    m.neighborhoods,
-    ...(m.transit ? [m.transit] : []),
-    ...(m.scenarios
-      ? [m.scenarios.fzp.parcels, m.scenarios.fzp.projects, m.scenarios.fzp.calibration]
-      : []),
-    ...(m.scenarios?.fzp.policy ? [m.scenarios.fzp.policy] : []),
-    ...(m.scenarios?.lesscars ? Object.values(m.scenarios.lesscars) : []),
-    m.buildingsTiles,
-    m.basemapTiles,
-    ...Object.values(FONT_STACKS).map((s) =>
-      m.glyphs.replace('{fontstack}', s).replace('{range}', '0-255')
-    )
-  ];
+  const heads = manifestFiles(m, { stacks: Object.values(FONT_STACKS), ranges: ['0-255'] })
+    .filter((f) => !f.optional && f.key !== 'scenarios.fzp.frontage')
+    .map((f) => f.url);
   for (const p of heads) await check('HEAD', p, 200);
   for (const p of [m.buildingsTiles, m.basemapTiles]) await check('GET', p, 206, '0-126');
   return { ok: failures.length === 0, failures };

@@ -98,6 +98,7 @@ type RowScenarioRequest =
       seed: number | null;
       horizon: Day;
       levers?: SimLevers; // plan 2 Task 12
+      awaitLevers?: boolean; // gross-table Task 6
     }
   | { type: 'reroll'; rev: Rev; seed: number | null }
   | { type: 'setLevers'; rev: Rev; levers: SimLevers }

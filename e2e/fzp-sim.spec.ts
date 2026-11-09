@@ -19,14 +19,14 @@ const manifest = JSON.parse(readFileSync(MANIFEST_URL, 'utf8')) as {
   chunks: { cellId: string; bbox: [number, number, number, number] }[];
   scenarios: {
     fzp: Record<'parcels' | 'projects' | 'calibration', string> &
-      Partial<Record<'policy' | 'frontage', string>>;
+      Partial<Record<'policy' | 'gross' | 'frontage', string>>;
   };
 };
 const { fzp } = manifest.scenarios;
-// /sim (where /fzp now redirects) reads these four: the timelapse's three and the lever engine's
-// policy.bin. The brush catalog (asked for when the dock's editing face first shows) reads only
+// /sim (where /fzp now redirects) reads these five: the timelapse's three, the lever engine's
+// policy.bin and the optional gross.bin. The brush catalog (asked for when the dock's editing face first shows) reads only
 // transit.json and neighborhoods.geojson, never frontage.bin.
-const SIM_FILES = [fzp.parcels, fzp.projects, fzp.calibration, fzp.policy];
+const SIM_FILES = [fzp.parcels, fzp.projects, fzp.calibration, fzp.policy, fzp.gross!];
 
 const scoreJson = (page: Page, field?: 'shown' | 'band'): Promise<string> =>
   page.evaluate((f) => {
@@ -68,7 +68,9 @@ const FAR_CELL = '10_10';
 const FAR_BBOX: [number, number, number, number] = [-122.555, 37.7, -122.545, 37.71];
 const chunkUrl = (cellId: string): string => `/data/fixture-0/parcels/${cellId}.json`;
 
-test('fetches only the viewport chunks, the scenario files and policy.bin', async ({ page }) => {
+test('fetches only the viewport chunks, the scenario files, policy.bin and gross.bin', async ({
+  page
+}) => {
   await page.route('**/manifest.json', async (route) => {
     const response = await route.fetch();
     const m = (await response.json()) as { chunks: unknown[] };
@@ -113,7 +115,8 @@ test('fetches only the viewport chunks, the scenario files and policy.bin', asyn
   // The viewport's chunk is prefetched after the first timeline.
   await expect.poll(() => [...new Set(chunkRequests())].sort()).toEqual(inView.sort());
   expect(fzp.policy, 'fixture-0 names policy').toBeTruthy();
-  // The same four files whether or not the panel is open; the brush catalog adds none.
+  expect(fzp.gross, 'fixture-0 names gross').toBeTruthy();
+  // The same five files whether or not the panel is open; the brush catalog adds none.
   await expect
     .poll(() => [...new Set(urls.filter((u) => u.includes('/scenarios/')))].sort())
     .toEqual(SIM_FILES.sort());

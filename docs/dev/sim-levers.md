@@ -77,9 +77,16 @@ Every lever field (`newProjects`, `inFlightScale`) is set explicitly, because `a
 
 Requests (`ScenarioRequest`): `initScenario` carries an optional `levers` (absent means `/fzp`, which never fetches `policy.bin`). `setLevers { rev, levers }` is a barrier rev like `reroll`, needs a session initialised with levers, and the latest one wins.
 
+`initScenario.awaitLevers` (optional boolean, valid only with `levers`: otherwise `bad-request` `'awaitLevers needs levers'`, or `'awaitLevers must be a boolean'`) opens a session whose real levers are still being resolved, such as `/s/<id>`, which must resolve its brushes before it can send them. The host loads as usual but runs no revision from the init levers: no city, no recompute, no shown run, no band runs. The first `setLevers`, sent before or after the load finishes, is the session's first revision.
+
+- Until that revision is `current` the host posts only `ready`, `error` and request answers (`brushLots`, `brushCatalog`, `lotAt`, `heightLids`, `lotOutlines`, `parcelSummary`, `previewBuildings`). Nothing goes out at the init rev except `ready`: no `levers`, `heights` or `timeline`, and no `chunks` report before the `setLevers`. After the `setLevers`, its revision posts as any other does: `heights`, then `current`, and on the fallback (no `gross.bin`) `resolving` and the `chunks` reports of the cells it needs.
+- `prefetch` is held: it stores the latest bbox and fetches nothing. The first `current` replays that bbox, and from then on `prefetch` works as usual.
+- A `reroll` while waiting posts nothing; its seed becomes the seed of the first revision's run.
+- `heightLids` waits for limits, which the first revision builds; `lotAt` answers with a null `owner` until then.
+
 Responses (`LeversResponse`, `type: 'levers'`), where `rev` is the `initScenario` or `setLevers` that named the levers:
 
-- `phase: 'resolving'` with `done`, `total`, `failedCells`: touched-lot yields are being recomputed in budgeted slices (`createYieldRecompute`). `failedCells` are needed chunks that failed to load; `retryChunks` re-wants them. Until complete the result is "out of date" (`leversPending`).
+- `phase: 'resolving'` with `done`, `total`, `failedCells`: posted only on the fallback, a dataset whose manifest has no `scenarios.fzp.gross`. Touched-lot yields are being recomputed in budgeted slices (`createYieldRecompute`). `failedCells` are needed chunks that failed to load; `retryChunks` re-wants them. Until complete the result is "out of date" (`leversPending`). With `scenarios.fzp.gross` the session loads `gross.bin` with `policy.bin` (a bad or mismatched table fails the load as `scenario-invalid`) and resolves each revision from it (`createTableRecompute`): the city builds first, then the lookups finish in the next `recompute` job, with no `resolving` post and no chunk fetch: the revision posts `heights`, then `current`.
 - `phase: 'current'` with `lookups` (`{ inFlight, fresh }`, each `{ chance, typicalMonths }`; `fresh === inFlight` when there is no `'new'` timer), `capacity` and `unknownLots`: the levers are in force, before any timeline computed on them. A superseded revision never gets `current`.
 
 Height limits (height-lids plan, Task 8; `src/lib/map/height/`):
@@ -129,6 +136,43 @@ exception"). No lever or op is added; no exit column is editable. Re-measure if 
 calibration changes the disapproved columns.
 
 ## Performance
+
+With `scenarios.fzp.gross` a lever revision fetches no chunk and generates no building: each
+Need's yield is a lookup in the pipeline-built gross table (`src/lib/data/gross-table.ts`), so the
+revision costs its resolve, its city build and the lookups. The table stores gross units per
+story count clamped to `0xFFFF` (`clampGross`), and the fallback recompute applies the same clamp,
+so both paths give the same yields.
+
+Measured on dataset `2026-11-08-d15bdf2d` (2026-11-08, Apple M5 Pro, 15 cores, 24 GB, Node
+v24.2.0) with `npx tsx scripts/bench-levers.ts pipeline/out/<v>`. "Table ms" answers the same needs
+from `gross.bin` with the table recompute (`createTableRecompute`, one unsliced step): the cost a
+revision pays on the table path. The other columns are the fallback's, as described below.
+
+| Brush                                                | Lots    | Resolve ms | resolveEnvelopes ms | Needs (unique) | Cells | Chunk bytes | Recompute ms | scenarioYield ms (est.) | Other ms (est.) | Gross computed | Missing | fillNeeds + applyLevers ms | Table ms |
+| ---------------------------------------------------- | ------- | ---------- | ------------------- | -------------- | ----- | ----------- | ------------ | ----------------------- | --------------- | -------------- | ------- | -------------------------- | -------- |
+| (a) every `RH-1` family lot, rule to 4               | 72,935  | 20         | 14                  | 10             | 4     | 1.1 MB      | 13           | 14                      | 0               | 40             | 0       | 2                          | 0        |
+| (b) `metro` and `rapidBus` within 1,609 m, rule to 8 | 148,798 | 123        | 55                  | 140,204        | 126   | 21.1 MB     | 22,332       | 22,204                  | 128             | 701,020        | 0       | 20                         | 86       |
+| (c) `regionalRail` within 805 m, rule to 8           | 23,258  | 18         | 9                   | 20,187         | 41    | 7.1 MB      | 3,273        | 3,266                   | 7               | 100,935        | 0       | 4                          | 9        |
+
+Brush (b), the largest, costs 86 ms of lookups on the table against 22,332 ms of recompute. As a
+`max(FZP, 4)` rule, brush (a) has 10 needs on this dataset.
+
+Cold loads on the same dataset, a production build (`npm run preview`, the dataset in local R2,
+no `.dev.vars` override), measured with
+`node scripts/profile-sim-load.mjs --origin http://localhost:4173 --runs 3` on an idle machine.
+"Ready" is the first `timeline` the worker posts at or after the last levers revision the page
+sent, in ms from navigation; median of 3 cold loads (each run in brackets):
+
+| Case             | Median ms | Runs ms             | Bar ms |
+| ---------------- | --------- | ------------------- | ------ |
+| A `/sim`         | 933       | 993, 933, 928       | 1,125  |
+| B `/sim?seed=72` | 635       | 638, 635, 617       | 857    |
+| C `/s/<id>`      | 1,044     | 1,044, 1,040, 1,053 | 2,500  |
+
+The A and B bars are 10% over the medians recorded on `2026-11-08-91736640` (1,023 and 779 ms).
+C publishes `scripts/profile-sim-load.policy.json` and opens it.
+
+The rest of this section is about the fallback.
 
 The touched-lot recompute (`src/lib/sim/levers/recompute.ts`) buckets its needs by cell. `step`
 skips a whole bucket while its cell is not loaded (`cellLoaded`), so each need's record is read
