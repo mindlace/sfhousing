@@ -1,5 +1,6 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import type { Worker } from 'node:worker_threads';
 import { join } from 'node:path';
 import { deflateRawSync } from 'node:zlib';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -17,7 +18,7 @@ import { scenarioRecordOf, type ScenarioParcels } from '../../src/lib/data/scena
 import { scenarioYield } from '../../src/lib/data/scenario-yield';
 import { GROSS_BIN, PARCELS_BIN } from '../lib/scenario-files';
 import { checkV36 } from '../steps/check-gross';
-import { readGrossBin, writeGross } from '../steps/gross';
+import { grossRowsOnWorkers, readGrossBin, writeGross } from '../steps/gross';
 import { readParcelsBin } from '../steps/scenario';
 
 const E2E = 'e2e/fixtures/data/fixture-0';
@@ -54,8 +55,10 @@ describe('gross step and V36', () => {
     p = readParcelsBin(join(dirA, PARCELS_BIN));
     countsA = (await writeGross({ outDir: dirA, datasetVersion: m.datasetVersion, workers: 0 }))
       .counts;
-    countsB = (await writeGross({ outDir: dirB, datasetVersion: m.datasetVersion, workers: 2 }))
-      .counts;
+    // Batch 4: 25 rows give 7 batches, interleaved across the workers, the last one short.
+    countsB = (
+      await writeGross({ outDir: dirB, datasetVersion: m.datasetVersion, workers: 2, batch: 4 })
+    ).counts;
     records = new Map();
     for (const f of readdirSync(join(dirA, 'parcels'))) {
       for (const r of decodeParcelChunk(readFileSync(join(dirA, 'parcels', f), 'utf8'))) {
@@ -71,7 +74,7 @@ describe('gross step and V36', () => {
     });
   }, 300_000);
 
-  it('writeGross in-thread and with 2 workers writes the same table', () => {
+  it('writeGross in-thread and with 2 workers (batch 4) writes the same table', () => {
     const a = readGrossBin(join(dirA, GROSS_BIN));
     const b = readGrossBin(join(dirB, GROSS_BIN));
     expect(a).toEqual(b);
@@ -80,6 +83,19 @@ describe('gross step and V36', () => {
     expect(countsA).toEqual(countsB);
     expect(countsA['gross.values']).toBe(a.values.length);
     expect(countsA['gross.values']).toBeGreaterThan(0);
+  });
+
+  it('a failing worker rejects and leaves no worker running', async () => {
+    const exited: boolean[] = [];
+    const onWorker = (w: Worker) => {
+      const k = exited.push(false) - 1;
+      w.once('exit', () => (exited[k] = true));
+    };
+    // Worker 0 throws at once; the others block until terminated.
+    await expect(
+      grossRowsOnWorkers(dirA, p.count, 3, { batch: 4, onWorker, failWorker: 0 })
+    ).rejects.toThrow('gross worker 0: test failure');
+    expect(exited).toEqual([true, true, true]);
   });
 
   it('every row of the written table matches clampGross(scenarioYield) on the decoded chunks', () => {

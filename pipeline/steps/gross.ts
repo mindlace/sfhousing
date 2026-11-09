@@ -19,17 +19,13 @@ import {
 } from '../../src/lib/data/gross-table';
 import type { ParcelId, ParcelRecord } from '../../src/lib/data/parcel';
 import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
-import {
-  decodeScenarioPayload,
-  scenarioRecordOf,
-  type ScenarioParcels
-} from '../../src/lib/data/scenario-codec';
-import { GROSS_BIN, PARCELS_BIN } from '../lib/scenario-files';
+import { scenarioRecordOf, type ScenarioParcels } from '../../src/lib/data/scenario-codec';
+import { GROSS_BIN, PARCELS_BIN, readParcelsBin } from '../lib/scenario-files';
 
 export { GROSS_BIN };
 /** The golden's canonical dump of the decoded gross table. */
 export const GROSS_DUMP = 'scenarios/fzp/gross.decoded.json';
-/** Rows a worker takes from the shared cursor at a time. */
+/** Rows a worker takes from the shared cursor at a time (default). */
 export const GROSS_BATCH = 64;
 
 const FIXTURE_RE = /^fixture-\d+$/;
@@ -40,18 +36,11 @@ export interface GrossInputs {
 }
 
 /**
- * parcels.bin and every chunk record under `outDir/parcels/`. Decodes parcels.bin as the scenario
- * step's `readParcelsBin` does; kept free of that module (and its DuckDB import) so workers load it
- * cheaply.
+ * parcels.bin and every chunk record under `outDir/parcels/` (read from the directory: the build
+ * runs this before it writes the manifest). Imports no DuckDB, so workers load it cheaply.
  */
 export function loadGrossInputs(outDir: string): GrossInputs {
-  const file = join(outDir, PARCELS_BIN);
-  let parcels: ScenarioParcels;
-  try {
-    parcels = decodeScenarioPayload(new Uint8Array(inflateRawSync(readFileSync(file))));
-  } catch (e) {
-    throw new Error(`gross: ${file} does not decode: ${(e as Error).message}`, { cause: e });
-  }
+  const parcels = readParcelsBin(join(outDir, PARCELS_BIN));
   const dir = join(outDir, 'parcels');
   const records = new Map<ParcelId, ParcelRecord>();
   for (const f of readdirSync(dir)
@@ -83,24 +72,56 @@ function workerSource(): string {
   );
 }
 
-async function rowsOnWorkers(outDir: string, count: number, workers: number): Promise<GrossRow[]> {
+/** Test hooks of grossRowsOnWorkers. */
+export interface GrossWorkerOpts {
+  /** Rows per batch; default GROSS_BATCH. */
+  batch?: number;
+  /** Called with each worker as it starts. */
+  onWorker?: (w: Worker) => void;
+  /** Test only: this worker throws at once and the others block until terminated. */
+  failWorker?: number;
+}
+
+/**
+ * The rows of a table of `count` rows, built on `workers` threads that each load `outDir`'s
+ * inputs. When any worker fails, every worker is terminated before the error is rethrown.
+ */
+export async function grossRowsOnWorkers(
+  outDir: string,
+  count: number,
+  workers: number,
+  opts: GrossWorkerOpts = {}
+): Promise<GrossRow[]> {
   const rows: GrossRow[] = new Array(count);
   const cursor = new Int32Array(new SharedArrayBuffer(4));
   const source = workerSource();
-  await Promise.all(
-    Array.from({ length: workers }, () => {
-      const w = new Worker(source, { eval: true, workerData: { outDir, cursor, count } });
-      return new Promise<void>((res, rej) => {
-        w.on('message', (msg: { start: number; rows: GrossRow[] }) => {
-          msg.rows.forEach((r, k) => (rows[msg.start + k] = r));
-        });
-        w.on('error', rej);
-        w.on('exit', (code) =>
-          code === 0 ? res() : rej(new Error(`gross: worker exited with code ${code}`))
-        );
+  const batch = opts.batch ?? GROSS_BATCH;
+  const ws: Worker[] = [];
+  const done = Array.from({ length: workers }, (_, index) => {
+    const w = new Worker(source, {
+      eval: true,
+      workerData: { outDir, cursor, count, batch, index, failWorker: opts.failWorker }
+    });
+    ws.push(w);
+    opts.onWorker?.(w);
+    return new Promise<void>((res, rej) => {
+      w.on('message', (msg: { start: number; rows: GrossRow[] }) => {
+        msg.rows.forEach((r, k) => (rows[msg.start + k] = r));
       });
-    })
-  );
+      w.on('error', rej);
+      w.on('messageerror', rej);
+      w.on('exit', (code) =>
+        code === 0 ? res() : rej(new Error(`gross: worker exited with code ${code}`))
+      );
+    });
+  });
+  try {
+    await Promise.all(done);
+  } catch (e) {
+    // The others would otherwise run through the whole table, each holding the decoded city.
+    await Promise.all(ws.map((w) => w.terminate()));
+    throw e;
+  }
   for (let i = 0; i < count; i++) {
     if (rows[i] === undefined) throw new Error(`gross: no worker built row ${i}`);
   }
@@ -146,13 +167,21 @@ export async function writeGross(a: {
   outDir: string;
   datasetVersion: string;
   workers: number;
+  /** Rows per worker batch; default GROSS_BATCH. */
+  batch?: number;
 }): Promise<{ counts: Record<string, number>; warnings: string[] }> {
-  const inp = loadGrossInputs(a.outDir);
-  const count = inp.parcels.count;
-  const rows =
-    a.workers > 0
-      ? await rowsOnWorkers(a.outDir, count, a.workers)
-      : Array.from({ length: count }, (_, i) => grossRowAt(inp, i));
+  // On the worker path this thread needs only parcels.bin (the count and the ids).
+  let parcels: ScenarioParcels;
+  let rows: GrossRow[];
+  if (a.workers > 0) {
+    parcels = readParcelsBin(join(a.outDir, PARCELS_BIN));
+    rows = await grossRowsOnWorkers(a.outDir, parcels.count, a.workers, { batch: a.batch });
+  } else {
+    const inp = loadGrossInputs(a.outDir);
+    parcels = inp.parcels;
+    rows = Array.from({ length: parcels.count }, (_, i) => grossRowAt(inp, i));
+  }
+  const count = parcels.count;
   const t = grossTableOf(a.datasetVersion, rows);
   const payload = encodeGrossPayload(t);
   const file = join(a.outDir, GROSS_BIN);
@@ -167,7 +196,7 @@ export async function writeGross(a: {
   let plateauMax = 0;
   rows.forEach((r, i) => {
     clamped += r.clamped;
-    if (r.clamped > 0) clampedIds.push(inp.parcels.id[i]);
+    if (r.clamped > 0) clampedIds.push(parcels.id[i]);
     if (r.plateau > plateauMax) plateauMax = r.plateau;
   });
   c['gross.rows'] = count;

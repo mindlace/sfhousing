@@ -2,16 +2,15 @@
 // base-envelope yields of every panel row with the shared generator, writes the T13 parcel panel
 // (`scenario_panel`, parcel-panel.parquet) and lineage (parcel-lineage.parquet) to the derived
 // cache, and assembles, encodes and writes the T11 file `scenarios/fzp/parcels.bin`.
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { deflateRawSync, inflateRawSync } from 'node:zlib';
+import { deflateRawSync } from 'node:zlib';
 import { ROAD_LIKE_REASONS, type ParcelRecord } from '../../src/lib/data/parcel';
 import { ringsAreaM2 } from '../../src/lib/data/parcel-chunk';
 import {
   FILL_LEVELS,
   LAND_USE_CLASSES,
   SCENARIO_FORMAT,
-  decodeScenarioPayload,
   encodeScenarioPayload,
   fillStories,
   scenarioRecordFrom,
@@ -45,11 +44,11 @@ import {
   readRoadLotRows,
   writeRoadLotsCsv
 } from '../lib/road-lots';
-import { PARCELS_BIN } from '../lib/scenario-files';
+import { PARCELS_BIN, readParcelsBin } from '../lib/scenario-files';
 import { readClippedOriginals } from './chunks';
 import { runScenarioSql } from './scenario-sql';
 
-export { PARCELS_BIN };
+export { PARCELS_BIN, readParcelsBin };
 /** The golden's canonical dump of the decoded T11 payload (spec §4.11). */
 export const SCENARIO_DUMP = 'scenarios/fzp/parcels.decoded.json';
 
@@ -475,15 +474,6 @@ export function scenarioDump(p: ScenarioParcels): unknown {
 /** The dump as the golden file stores it. */
 export function formatScenarioDump(p: ScenarioParcels): string {
   return JSON.stringify(scenarioDump(p), null, 2) + '\n';
-}
-
-/** Inflate and decode a written parcels.bin; throws an Error naming the file if it fails. */
-export function readParcelsBin(file: string): ScenarioParcels {
-  try {
-    return decodeScenarioPayload(new Uint8Array(inflateRawSync(readFileSync(file))));
-  } catch (e) {
-    throw new Error(`scenario: ${file} does not decode: ${(e as Error).message}`, { cause: e });
-  }
 }
 
 /**
