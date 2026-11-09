@@ -8,6 +8,8 @@
 // `timeline` message the sim worker posts at or after the last initScenario/setLevers the page
 // sent, in ms from navigation. A Worker wrapper installed before the page runs timestamps the
 // messages both ways. Exit 2 when a load errors or never reaches ready.
+// It publishes a new public policy, so it refuses an origin whose host is not localhost or
+// 127.0.0.1 (exit 2) unless `--allow-remote` is passed.
 import { readFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,7 +28,25 @@ const origin = flag('--origin')?.replace(/\/+$/, '');
 const runs = Number(flag('--runs') ?? 3);
 const trace = args.includes('--trace');
 if (!origin || !Number.isInteger(runs) || runs < 1) {
-  console.error('usage: node scripts/profile-sim-load.mjs --origin <url> [--runs 3] [--trace]');
+  console.error(
+    'usage: node scripts/profile-sim-load.mjs --origin <url> [--runs 3] [--trace] [--allow-remote]'
+  );
+  process.exit(2);
+}
+
+const allowRemote = args.includes('--allow-remote');
+let host = '';
+try {
+  host = new URL(origin).hostname;
+} catch {
+  console.error(`invalid --origin: ${origin}`);
+  process.exit(2);
+}
+if (!allowRemote && host !== 'localhost' && host !== '127.0.0.1') {
+  console.error(
+    `refusing to publish a public policy to ${origin}: host is not localhost or 127.0.0.1. ` +
+      'Pass --allow-remote to do it anyway.'
+  );
   process.exit(2);
 }
 

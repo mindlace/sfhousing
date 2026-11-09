@@ -108,7 +108,7 @@ export function datasetUrl(m: Manifest, u: unknown): string | null {
 }
 
 /**
- * §4.2 step 2: the three FZP file URLs, or null when `scenarios.fzp` is absent or any URL is
+ * §4.2 step 2: the FZP file URLs (three required, `policy` and `gross` optional), or null when `scenarios.fzp` is absent or any URL is
  * missing or not under `/data/<datasetVersion>/` (the host answers `scenario-missing`). The
  * manifest has passed `checkManifestShape`, which does not look at `scenarios`. The optional
  * `policy` URL is null when absent or outside the prefix: /fzp never needs it, so it never makes
@@ -243,7 +243,7 @@ const CANCELLED: LoadFailure = { code: 'internal', message: 'cancelled' };
 class Stopped {}
 
 /**
- * §4.2 steps 4-7. Fetches the three files concurrently (each with `fetchWithRetry`; the first
+ * §4.2 steps 4-7. Fetches the files concurrently (up to five: parcels, projects, calibration, policy, gross; each with `fetchWithRetry`; the first
  * permanent failure ends the load and stops the others), then, once every byte has arrived,
  * decodes and validates them (never retried), builds the FZP input and its `baseZoning` twin,
  * and precomputes both with `deps.warn`. `projects.asOf ≥ horizon` is the caller's check.

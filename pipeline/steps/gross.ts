@@ -10,9 +10,12 @@ import { Worker } from 'node:worker_threads';
 import { deflateRawSync, inflateRawSync } from 'node:zlib';
 import {
   GROSS_MAX,
+  GROSS_STORIES_MAX,
+  clampGross,
   decodeGrossPayload,
   encodeGrossPayload,
   grossRowOf,
+  grossStoryBound,
   grossTableOf,
   type GrossRow,
   type GrossTable
@@ -20,6 +23,7 @@ import {
 import type { ParcelId, ParcelRecord } from '../../src/lib/data/parcel';
 import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
 import { scenarioRecordOf, type ScenarioParcels } from '../../src/lib/data/scenario-codec';
+import { scenarioYield } from '../../src/lib/data/scenario-yield';
 import { GROSS_BIN, PARCELS_BIN, readParcelsBin } from '../lib/scenario-files';
 
 export { GROSS_BIN };
@@ -51,10 +55,34 @@ export function loadGrossInputs(outDir: string): GrossInputs {
   return { parcels, records };
 }
 
-/** Row `i`'s gross row: its scenario record's yields; empty when the chunks lack the record. */
-export function grossRowAt(inp: GrossInputs, i: number): GrossRow {
+/**
+ * Row `i`'s gross row: its scenario record's yields; empty when the chunks lack the record. A row
+ * whose plateau is its story bound (below GROSS_STORIES_MAX) is checked one story further: if the
+ * curve still moves there, the bound cut it short and the build fails. `yieldOf` is a test seam
+ * (in-thread path only); the default is the real `scenarioYield`.
+ */
+export function grossRowAt(
+  inp: GrossInputs,
+  i: number,
+  yieldOf: (rec: ParcelRecord, stories: number) => number = (r, s) => scenarioYield(r, s, null)
+): GrossRow {
   const rec = inp.records.get(inp.parcels.id[i] as ParcelId);
-  return grossRowOf(rec && scenarioRecordOf(inp.parcels, i, rec));
+  const srec = rec && scenarioRecordOf(inp.parcels, i, rec);
+  const row = grossRowOf(srec, yieldOf);
+  if (srec) {
+    const bound = grossStoryBound(srec);
+    if (row.plateau > 0 && row.plateau === bound && bound < GROSS_STORIES_MAX) {
+      const at = row.values[row.values.length - 1];
+      const beyond = clampGross(yieldOf(srec, bound + 1));
+      if (beyond !== at) {
+        throw new Error(
+          `gross: row ${i} (${inp.parcels.id[i]}) changes past its story bound ${bound}: ` +
+            `g(${bound})=${at}, g(${bound + 1})=${beyond}`
+        );
+      }
+    }
+  }
+  return row;
 }
 
 /** The worker bootstrap: workers do not inherit the tsx loader, so register it through its API. */
@@ -169,6 +197,8 @@ export async function writeGross(a: {
   workers: number;
   /** Rows per worker batch; default GROSS_BATCH. */
   batch?: number;
+  /** Test seam, in-thread path only (`workers` 0): replaces the real yield function. */
+  yieldOf?: (rec: ParcelRecord, stories: number) => number;
 }): Promise<{ counts: Record<string, number>; warnings: string[] }> {
   // On the worker path this thread needs only parcels.bin (the count and the ids).
   let parcels: ScenarioParcels;
@@ -179,7 +209,7 @@ export async function writeGross(a: {
   } else {
     const inp = loadGrossInputs(a.outDir);
     parcels = inp.parcels;
-    rows = Array.from({ length: parcels.count }, (_, i) => grossRowAt(inp, i));
+    rows = Array.from({ length: parcels.count }, (_, i) => grossRowAt(inp, i, a.yieldOf));
   }
   const count = parcels.count;
   const t = grossTableOf(a.datasetVersion, rows);

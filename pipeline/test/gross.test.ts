@@ -85,6 +85,21 @@ describe('gross step and V36', () => {
     expect(countsA['gross.values']).toBeGreaterThan(0);
   });
 
+  it('writeGross fails when a curve continues one story past its bound', async () => {
+    const dir = inputs();
+    // Strictly rising with stories: every eligible row is still changing at its bound.
+    await expect(
+      writeGross({
+        outDir: dir,
+        datasetVersion: m.datasetVersion,
+        workers: 0,
+        yieldOf: (_r, s) => s * 10
+      })
+    ).rejects.toThrow(
+      /gross: row \d+ \(\S+\) changes past its story bound \d+: g\(\d+\)=\d+, g\(\d+\)=\d+/
+    );
+  });
+
   it('a failing worker rejects and leaves no worker running', async () => {
     const exited: boolean[] = [];
     const onWorker = (w: Worker) => {
