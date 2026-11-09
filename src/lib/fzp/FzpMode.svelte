@@ -403,6 +403,11 @@
    */
   let latest: {
     rev: number;
+    /**
+     * The highest barrier that answers this request: `rev`, or a `setLevers` sent before its
+     * answer (the worker loads at it, so its timeline answers the init). Above it: a resync.
+     */
+    upTo: number;
     representative: boolean | null;
     writesUrl: boolean;
     answered: boolean;
@@ -431,6 +436,7 @@
     const keep = next !== null && next === seed;
     latest = {
       rev,
+      upTo: rev,
       representative: keep ? null : next === null,
       writesUrl: false,
       answered: false
@@ -441,10 +447,11 @@
 
   /**
    * Sends a new `levers` object once a session was started, before its first timeline too (an
-   * `awaitLevers` session runs nothing until it). Not after a crash, after a failed load or during
-   * a Retry (no session to take it: Retry sends the latest levers with its initScenario). It waits while a reroll is
-   * in flight, so the reroll's answer (and its URL write) is not superseded; the answer calls
-   * this again.
+   * `awaitLevers` session runs nothing until it). Not after a crash, after a failed load or
+   * during a Retry (no session to take it: Retry sends the latest levers with its initScenario).
+   * It waits while a reroll is in flight, so the reroll's answer (and its URL write) is not
+   * superseded; the answer calls this again. Sent before the init's answer, its barrier answers
+   * the init (`latest.upTo`): the worker's first timeline comes at it.
    */
   function syncLevers(): void {
     const l = untrack(() => levers);
@@ -452,6 +459,7 @@
     if (latest === null || phase === 'failed' || retrying || rerollBusy) return;
     sentLevers = l;
     const rev = client.setLevers(l);
+    if (!latest.answered) latest.upTo = rev; // never a reroll's: rerollBusy holds the send
     leversByRev.push({ rev, levers: l });
     setLeverState(leversSent(leverState, rev));
   }
@@ -473,7 +481,7 @@
   function requestReroll(next: number | null): void {
     if (!client || !canReroll) return;
     const rev = client.reroll(next);
-    latest = { rev, representative: next === null, writesUrl: true, answered: false };
+    latest = { rev, upTo: rev, representative: next === null, writesUrl: true, answered: false };
     rerollBusy = true;
     rerollFailed = false;
   }
@@ -760,7 +768,7 @@
       bandRunsTotal = t.bandRunsTotal;
       checkAsOf(t.score);
       const req = latest;
-      const answer = req !== null && !req.answered && t.rev === req.rev;
+      const answer = req !== null && !req.answered && t.rev >= req.rev && t.rev <= req.upTo;
       if (answer) {
         req.answered = true;
         if (req.representative !== null) representative = req.representative;
@@ -768,7 +776,7 @@
         rerollBusy = false;
         rerollFailed = false;
         stopped = false;
-      } else if (req !== null && !req.answered && t.rev > req.rev) {
+      } else if (req !== null && !req.answered && t.rev > req.upTo) {
         // The client's resync superseded the page's request (its answer will be stale): the
         // shown future is the resync's, the seed it already showed, so the URL and the flag stay.
         req.answered = true;

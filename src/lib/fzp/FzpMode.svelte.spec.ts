@@ -1287,6 +1287,56 @@ describe('FzpMode levers (/sim)', () => {
     expect(s.w().allOf('setLevers')).toEqual([]);
   });
 
+  it('a first timeline at a setLevers sent before it answers the init: the representative future', async () => {
+    const s = setup({ levers: DEFAULT_LEVERS, leversIncomplete: true });
+    await expect.poll(() => s.w()?.lastOf('initScenario')).toBeTruthy();
+    const initRev = lastRev(s.w());
+    await (await s.r).rerender({ levers: { ...OTHER }, leversIncomplete: false });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    const rev = leverRev(s.w());
+    expect(rev).toBeGreaterThan(initRev);
+    s.w().emit({ type: 'ready', rev: initRev, datasetVersion: 'fixture-0', chunkCount: 4 });
+    s.w().emit(timelineMsg(rev, 7));
+    await expect.element(slider()).toBeInTheDocument();
+    await expect.poll(future).toBe('This future: #7 (representative)');
+    const board = await details();
+    expect(
+      board.getByRole('button', { name: 'Back to the representative future' }).elements()
+    ).toEqual([]);
+  });
+
+  it('a crash Retry answered at a setLevers sent before its first timeline clears the stop', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await toReady(s, 7);
+    s.w().crash();
+    const stoppedChip = () => page.getByRole('status').getByText('Part of the simulation stopped.');
+    await expect.element(stoppedChip()).toBeVisible();
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect.poll(() => s.workers.length).toBe(2);
+    await expect.poll(() => s.w().lastOf('initScenario')).toBeTruthy();
+    await (await s.r).rerender({ levers: { ...OTHER } });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    s.w().emit(timelineMsg(leverRev(s.w()), 7));
+    await expect.element(stoppedChip()).not.toBeInTheDocument();
+    await expect.element(another()).not.toBeDisabled();
+    await expect.poll(future).toBe('This future: #7 (representative)');
+  });
+
+  it('a timeline above the setLevers sent before it is still a resync: the flag stays', async () => {
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await expect.poll(() => s.w()?.lastOf('initScenario')).toBeTruthy();
+    await (await s.r).rerender({ levers: { ...OTHER } });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    const rev = leverRev(s.w());
+    // A rev the page never sent (as the client's resync would make): not the init's answer.
+    s.w().emit(timelineMsg(rev + 1, 5));
+    await expect.element(slider()).toBeInTheDocument();
+    // The init's answer would have set the representative flag; a resync keeps it unset.
+    await expect.poll(future).toBe('This future: #5');
+    expect(s.onurlseed).not.toHaveBeenCalled();
+  });
+
   it('/fzp sends no levers', async () => {
     const s = setup();
     await expect.poll(() => s.w()?.lastOf('initScenario')).toBeTruthy();

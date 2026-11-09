@@ -2211,6 +2211,7 @@ describe('SimPage map selection (sim-ux plan 4, Task 4)', () => {
 });
 
 describe('SimPage opening a published policy (/s)', () => {
+  afterEach(() => vi.unstubAllEnvs());
   const brushedPolicy = (): SimDoc['policy'] => ({
     ...DEFAULT_POLICY,
     rules: [{ id: 'r', kind: 'transit', stopTypes: ['metro'], bands: [{ maxM: 402, stories: 8 }] }],
@@ -2220,6 +2221,7 @@ describe('SimPage opening a published policy (/s)', () => {
   });
 
   it('/s with brushes: the first initScenario carries awaitLevers, the full levers follow as setLevers', async () => {
+    vi.stubEnv('VITE_E2E', '1');
     stub.reset();
     await page.viewport(1024, 768);
     await setup({ mode: 'view', initialPolicy: brushedPolicy() });
@@ -2244,6 +2246,13 @@ describe('SimPage opening a published policy (/s)', () => {
     expect(sent.rules[0].lots).toHaveLength(2);
     expect(sent.paint[0].lots).toHaveLength(2);
     expect(w.allOf('initScenario')).toHaveLength(1);
+    // The worker loads at the setLevers: its first timeline answers the init, so the shown
+    // future is the representative one.
+    w.emit({ type: 'ready', rev: init.rev, datasetVersion: 'fixture-0', chunkCount: 4 });
+    w.emit(timelineMsg(w.lastOf('setLevers')!.rev, 7));
+    await expect.poll(() => fzpDebug()?.phase).toBe('ready');
+    expect(fzpDebug().representative).toBe(true);
+    expect(fzpDebug().seed).toBe(7);
   });
 
   it('/s without brushes: no awaitLevers', async () => {
