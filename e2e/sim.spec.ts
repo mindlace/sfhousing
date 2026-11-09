@@ -63,6 +63,19 @@ async function gotoSim(
   if (run) await startRun(page);
 }
 
+/**
+ * Turns the zoning height limits off in the saved view prefs (`sfhousing:view`) before the page
+ * loads, for a Paint test that never looks at them. They are on by default and are the costliest
+ * overlay, on startup and again when Paint is chosen (their paint mode): at 15 workers with CPU
+ * load they took about 8 s of a 30 s Paint test, and the tests timed out (#74, #75, #76). Their
+ * own tests leave them on.
+ */
+async function hideHeightLimits(page: Page): Promise<void> {
+  await page.addInitScript(() =>
+    localStorage.setItem('sfhousing:view', JSON.stringify({ heightLimits: false }))
+  );
+}
+
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
 /** The dock's Results face (`data-testid="score-details"`): Run and the header score show it. */
 const scoreDetails = (page: Page): Locator => page.getByRole('region', { name: 'Results' });
@@ -485,6 +498,7 @@ test('a notice never moves the docked panel or the time bar', async ({ page, isM
 });
 
 test('a Paint stroke adds a custom brush and Ctrl+Z removes it', async ({ isMobile, page }) => {
+  await hideHeightLimits(page);
   await gotoSim(page);
   await openTab(page, 'Paint');
   const paint = panel(page).getByRole('radio', { name: 'Paint', exact: true });
