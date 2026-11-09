@@ -168,6 +168,19 @@ async function strokeOnce(page: Page, isMobile: boolean): Promise<void> {
 }
 
 /**
+ * Paints the lots of fixture-0's parcel row with one keyboard stamp (Enter on the focused map, with
+ * Paint chosen) at FRAME's centre. For a test that needs painted lots, not a drag: strokeOnce's
+ * wait for the jump's tiles, its pointer moves (each a live preview and a software-GL frame) and
+ * the preview layer took 9 to 12 s of a 30 s test at 15 workers, the stamp 2 to 5 s (#70). It
+ * needs only the camera, which `jumpTo` sets at once: the worker resolves the lots city-wide.
+ */
+async function stampOnce(page: Page): Promise<void> {
+  await page.evaluate((f) => (window as Win).__sfhMap!.map!.jumpTo(f), FRAME);
+  await page.locator('.maplibregl-canvas').focus();
+  await page.keyboard.press('Enter');
+}
+
+/**
  * Chooses a stroke tool from the open Paint tab. On a phone this folds the sheet to its handle for
  * the palette strip (layout ruling 5).
  */
@@ -1106,7 +1119,8 @@ test('Setup shows the height limits and transit; Run hides them; Edit policy bri
   await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('visible');
   await expect(await headerAction(page, 'View')).toBeVisible();
 
-  await pressRun(page);
+  // Paused: a playing run draws a software-GL map frame per tick, and every later step waits on one.
+  await startRun(page);
   await expect.poll(() => deckIds(page)).not.toContain(LIMITS_LAYER);
   await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('none');
   await openHeaderMenu(page);
@@ -1336,7 +1350,7 @@ test('the eraser outlines painted lots, only while chosen', async ({ isMobile, p
   await openTab(page, 'Paint');
   const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
   await chooseTool(page, isMobile, () => tool('Paint').click());
-  await strokeOnce(page, isMobile);
+  await stampOnce(page);
   if (isMobile) await stripDone(page);
   await expect(customList(page)).toHaveCount(1);
   expect(await deckIds(page)).not.toContain(OUTLINE_LAYER);

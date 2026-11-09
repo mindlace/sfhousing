@@ -29,24 +29,32 @@ const ID = '[1-9A-HJ-NP-Za-km-z]{8}';
 const leverStatus = (page: Page) =>
   page.evaluate(() => (window as FzpWin).__sfhFzp!.levers) as Promise<SfhFzpDebug['levers']>;
 
-/** The page is ready, the map is up and the levers sent with the session are in force. */
-async function waitReady(page: Page): Promise<void> {
+/**
+ * The session is ready (the worker's first timeline) and the levers sent with it are in force.
+ * Needs no map: the worker runs the session whether or not the map has loaded.
+ */
+async function waitSession(page: Page): Promise<void> {
   await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready', undefined, {
     timeout: 20_000
   });
-  await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
-    timeout: 20_000
-  });
-  await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);
   await expect
     .poll(async () => (await leverStatus(page)).status, { timeout: 20_000 })
     .toBe('current');
 }
 
-async function gotoSim(page: Page, path = '/sim'): Promise<void> {
+/** The page is ready, the map is up and the levers sent with the session are in force. */
+async function waitReady(page: Page): Promise<void> {
+  await waitSession(page);
+  await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
+    timeout: 20_000
+  });
+  await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);
+}
+
+async function gotoSim(page: Page, path = '/sim', { map = true } = {}): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(path);
-  await waitReady(page);
+  await (map ? waitReady(page) : waitSession(page));
 }
 
 /** Waits for a lever revision above `before` to be in force. */
@@ -134,7 +142,8 @@ const storedDoc = (page: Page): Promise<Doc | null> =>
  * back from storage once written.
  */
 async function capturePresetDoc(page: Page): Promise<Doc> {
-  await gotoSim(page);
+  // The autosave needs no map (the tests that open the seeded policy wait for theirs).
+  await gotoSim(page, '/sim', { map: false });
   await choosePreset(page);
   await expect
     .poll(async () => (await storedDoc(page))?.policy.timing.current.preset)
@@ -184,8 +193,13 @@ function pageErrors(page: Page): string[] {
 
 // ---- publish, open, Remix -------------------------------------------------------------------------
 
+// A /sim session startup (deck/luma programs, the map, the worker's first timeline) costs 8 to 10 s
+// at 15 workers. Publish, open and Remix in one test started three and overran the 30 s timeout,
+// so Remix is a test of its own. Neither waits for a map: the levers, publishing, the read-only
+// summary, Run and Remix run on the worker and the policy document. The map on /s/<id> is waited
+// for by the axe, timing notice and 768 px tests below; on /sim, by sim.spec.ts.
 test('publish round trip', async ({ page, browser, isMobile }, testInfo) => {
-  await gotoSim(page);
+  await gotoSim(page, '/sim', { map: false });
   await choosePreset(page);
   await closeSheet(page, isMobile);
 
@@ -200,6 +214,8 @@ test('publish round trip', async ({ page, browser, isMobile }, testInfo) => {
   const link = await dialog.getByLabel('Link').inputValue();
   expect(new URL(link).pathname).toMatch(new RegExp(`^/s/${ID}$`));
   await dialog.getByRole('button', { name: 'Done' }).click();
+  // The author is done: closing the page ends its map load, which would compete with the visitor's.
+  await page.close();
 
   // A visitor: a fresh context (empty localStorage, so a default local policy) on this device.
   const {
@@ -223,7 +239,8 @@ test('publish round trip', async ({ page, browser, isMobile }, testInfo) => {
     const res = await visitor.goto(link);
     expect(res?.status()).toBe(200);
     await expect(sharedBanner(visitor)).toContainText('SD permits · Shared policy');
-    await waitReady(visitor);
+    // Hydrated, so openPolicy's click is not lost to SSR markup; Run waits for the session.
+    await expect(visitor.locator('html')).toHaveAttribute('data-hydrated', '');
     const summary = await openPolicy(visitor);
     await expect(summary).toHaveAttribute('aria-label', 'Policy (read-only)');
     await expect(summary).toContainText(PRESET);
@@ -237,23 +254,30 @@ test('publish round trip', async ({ page, browser, isMobile }, testInfo) => {
     await expect(flip).toHaveText('Policy');
     await flip.click();
     await expect(visitor.getByRole('button', { name: 'Run', exact: true })).toBeVisible();
-    await closeSheet(visitor, isMobile);
-
-    // No confirm: the visitor's local policy is the default one.
-    await sharedBanner(visitor).getByRole('button', { name: 'Remix' }).click();
-    await expect(visitor).toHaveURL(new URL('/sim', link).toString());
-    await expect(
-      visitor.getByText("Remixed from SD permits. You're editing your own copy.")
-    ).toBeVisible();
-    await waitReady(visitor);
-    // The /sim header is whole after the client navigation from /s/<id>.
-    await expect(visitor.getByTestId('score-bar')).toBeVisible();
-    await openTiming(visitor);
-    await expect(panel(visitor).getByTestId('timing-label')).toHaveText(PRESET);
     expect(errors).toEqual([]);
   } finally {
     await ctx.close();
   }
+});
+
+test('Remix on /s/<id> opens /sim on a copy of the policy', async ({ page }) => {
+  const id = await seedPolicy(page, { ...(await capturePresetDoc(page)), title: 'SD permits' });
+  // An empty autosave, so a default local policy: Remix asks no confirm.
+  await page.evaluate((k) => localStorage.removeItem(k), SIM_KEY);
+  const errors = pageErrors(page);
+  await page.goto(`/s/${id}`);
+  // Hydrated, so the Remix click is not lost to SSR markup.
+  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+  await sharedBanner(page).getByRole('button', { name: 'Remix' }).click();
+  await expect(page).toHaveURL(/\/sim$/);
+  await expect(
+    page.getByText("Remixed from SD permits. You're editing your own copy.")
+  ).toBeVisible();
+  // The /sim header is whole after the client navigation from /s/<id>.
+  await expect(page.getByTestId('score-bar')).toBeVisible();
+  await openTiming(page);
+  await expect(panel(page).getByTestId('timing-label')).toHaveText(PRESET);
+  expect(errors).toEqual([]);
 });
 
 // ---- autosave ---------------------------------------------------------------------------------------

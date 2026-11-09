@@ -136,6 +136,15 @@ export default defineConfig({
     ]
   },
   stderrAllowlist: [
+    // Under burn-in load, wrangler dev's ProxyWorker (node_modules/wrangler/wrangler-dist/
+    // ProxyWorker.js) retries a GET/HEAD whose internal connection to the UserWorker dropped, and
+    // warns once the retry succeeds. The request still succeeds; a request that fails for good fails
+    // its test. Only the "recovered" line is allowed, not a failure.
+    {
+      pattern:
+        /^\[WebServer\] ▲ \[WARNING\] ProxyWorker: (GET|HEAD) http:\/\/localhost:4173\/\S+ recovered on attempt \d+ after a dropped connection to the UserWorker\s*$/,
+      reason: "wrangler dev's proxy recovered a GET after a dropped local connection under load"
+    },
     // e2e/cache-headers.spec.ts and e2e/pages-a11y.spec.ts request /no-such-page on purpose;
     // wrangler dev logs each 404 to stderr as this three-line block.
     {

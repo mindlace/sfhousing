@@ -3,15 +3,14 @@
 import { expect, test } from '@playwright/test';
 import {
   PLAN_KEY,
+  committedNet,
+  finalNet,
   gotoEditor,
-  headerNet,
   ops,
   paintOnce,
   publishDialog,
   openPublish,
-  publishOpen,
-  settledNet,
-  waitForMap
+  publishOpen
 } from './helpers/sharing';
 
 test('share roundtrip: publish, open in a fresh browser, same score, Remix', async ({
@@ -21,8 +20,7 @@ test('share roundtrip: publish, open in a fresh browser, same score, Remix', asy
 }, testInfo) => {
   await gotoEditor(page);
   await paintOnce(page, isMobile);
-  await expect.poll(() => headerNet(page)).toBeGreaterThan(0);
-  const authorNet = await settledNet(page);
+  const authorNet = await committedNet(page);
 
   const opener = await openPublish(page);
   await expect(opener).toBeEnabled();
@@ -63,9 +61,9 @@ test('share roundtrip: publish, open in a fresh browser, same score, Remix', asy
     await expect(banner).toContainText('Shared plan');
     expect(await visitor.evaluate((k) => localStorage.getItem(k), PLAN_KEY)).toBeNull();
 
-    await waitForMap(visitor);
-    await expect.poll(() => headerNet(visitor)).toBeGreaterThan(0);
-    expect(await settledNet(visitor)).toBe(authorNet);
+    // The score needs only the worker, not the map: under a loaded parallel run each map load
+    // takes 5 to 10 s, and three of them (author, visitor, Remix) overran the 30 s timeout (#69).
+    expect(await finalNet(visitor)).toBe(authorNet);
     // Acceptance 6: viewing a shared plan never writes the visitor's autosave.
     expect(await visitor.evaluate((k) => localStorage.getItem(k), PLAN_KEY)).toBeNull();
 
@@ -75,7 +73,7 @@ test('share roundtrip: publish, open in a fresh browser, same score, Remix', asy
     await expect(
       visitor.getByText("Remixed from Roundtrip. You're editing your own copy.")
     ).toBeVisible();
-    await waitForMap(visitor);
+    // `/` loads the remixed plan in the same onMount that shows the toast: no map wait needed.
     await expect.poll(() => ops(visitor)).toBe(1);
   } finally {
     await ctx.close();
