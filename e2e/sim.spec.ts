@@ -696,13 +696,17 @@ test('clicking inside a painted stroke opens the Paint tab on that area', async 
   isMobile,
   page
 }) => {
+  await hideHeightLimits(page);
   await gotoSim(page);
   const before = (await leverStatus(page)).sentRev;
   await openTab(page, 'Paint');
   const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
   await expect(tool('Paint')).toBeEnabled();
   await chooseTool(page, isMobile, () => tool('Paint').click());
-  await strokeOnce(page, isMobile);
+  // A stamp is a one-point stroke: its circle at FRAME's centre covers LOT_X, and the Paint row
+  // being selected below shows the click landed inside it. A drag's live preview cost 7 to 9 s
+  // under load (#76).
+  await stampOnce(page);
   if (isMobile) await stripDone(page);
   else await tool('Move').click();
   await expect(customList(page)).toHaveCount(1);
