@@ -14,6 +14,7 @@
 // - Every post (with its transfer list) and every warning, in order.
 import { deflateRawSync } from 'node:zlib';
 import type { Manifest } from '$lib/data/manifest';
+import { encodeGrossPayload, readGrossTable, type GrossTable } from '$lib/data/gross-table';
 import { encodePolicyPayload, readPolicyParcels, type PolicyParcels } from '$lib/data/policy-codec';
 import {
   encodeScenarioPayload,
@@ -25,6 +26,7 @@ import type { Day } from '$lib/timelapse/time';
 import type { Rev } from '../../protocol';
 import { miniBin } from '../fixtures/mini-bin';
 import { miniNeighborhoods, miniTransit } from '../fixtures/mini-brushes';
+import { MINI_GROSS_URL, miniGross } from '../fixtures/mini-gross';
 import { MINI_SCENARIO_URLS, MINI_VERSION, miniCity } from '../fixtures/mini-parcels';
 import { miniPolicy } from '../fixtures/mini-policy';
 import { MINI_HORIZON, miniProjectsJson } from '../fixtures/mini-projects';
@@ -63,7 +65,8 @@ export interface ScenarioHarness {
   fetches: FetchRecord[];
   /** Served bodies by URL: `unknown` JSON for `fetch`, `Uint8Array` for `fetchBytes`. */
   bodies: Map<string, unknown>;
-  manifest(): Manifest; // a fresh copy of the mini manifest (with policy.bin under `opts.policy`)
+  /** A fresh copy of the mini manifest (policy.bin under `opts.policy`, gross.bin under `opts.gross`). */
+  manifest(): Manifest;
   /** Sends `initScenario` with the mini manifest (or `over` fields) and returns its rev. */
   init(over?: Partial<Record<string, unknown>>): Rev;
   next(): Rev; // next rev, starting at 1
@@ -102,6 +105,11 @@ export interface ScenarioHarness {
   runAll(): Promise<void>;
 }
 
+/** A gross.bin body (deflate-raw) for `t`. */
+export function grossBinOf(t: GrossTable): Uint8Array {
+  return new Uint8Array(deflateRawSync(encodeGrossPayload(t)));
+}
+
 /** The mini parcels.bin for (optionally) modified T11 columns. */
 export function binOf(edit?: (p: ScenarioParcels) => ScenarioParcels): Uint8Array {
   if (!edit) return miniBin();
@@ -116,6 +124,8 @@ export function makeScenarioHarness(opts?: {
   deps?: Partial<ScenarioHostDeps>;
   /** The manifest names `MINI_POLICY_URL` (served either way). Default false: /fzp's manifest. */
   policy?: boolean;
+  /** The manifest names `MINI_GROSS_URL` (served either way). Default false: the fallback. */
+  gross?: boolean;
 }): ScenarioHarness {
   const city = miniCity();
   const posts: ScenarioResponse[] = [];
@@ -124,6 +134,7 @@ export function makeScenarioHarness(opts?: {
   const fetches: FetchRecord[] = [];
   const bodies = new Map<string, unknown>();
   const policyBin = new Uint8Array(deflateRawSync(encodePolicyPayload(miniPolicy(city))));
+  const grossBin = grossBinOf(miniGross(city));
   const transitJson: unknown = JSON.parse(encodeTransit(miniTransit(city)));
   const neighborhoodsJson = miniNeighborhoods(city);
   const defaults = () => {
@@ -133,6 +144,7 @@ export function makeScenarioHarness(opts?: {
     bodies.set(MINI_SCENARIO_URLS.projects, miniProjectsJson());
     bodies.set(MINI_SCENARIO_URLS.calibration, miniCalibration);
     bodies.set(MINI_POLICY_URL, policyBin);
+    bodies.set(MINI_GROSS_URL, grossBin);
     bodies.set(MINI_TRANSIT_URL, transitJson);
     bodies.set(MINI_NEIGHBORHOODS_URL, neighborhoodsJson);
   };
@@ -169,6 +181,17 @@ export function makeScenarioHarness(opts?: {
   /** policy.bin's decode: tracked by `flush` like parcels.bin's, but neither counted nor held. */
   function decodePolicy(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels> {
     const p = readPolicyParcels(bytes, parcels);
+    const done: Promise<void> = p.then(
+      () => undefined,
+      () => undefined
+    );
+    running.add(done);
+    void done.then(() => running.delete(done));
+    return p;
+  }
+  /** gross.bin's decode: tracked by `flush` like policy.bin's. */
+  function decodeGross(bytes: Uint8Array): Promise<GrossTable> {
+    const p = readGrossTable(bytes);
     const done: Promise<void> = p.then(
       () => undefined,
       () => undefined
@@ -246,6 +269,7 @@ export function makeScenarioHarness(opts?: {
     warn: (msg) => warnings.push(msg),
     decodeParcels,
     decodePolicy,
+    decodeGross,
     ...(opts?.retryDelaysMs ? { retryDelaysMs: opts.retryDelaysMs } : {}),
     ...opts?.deps
   };
@@ -294,8 +318,12 @@ export function makeScenarioHarness(opts?: {
       transit: MINI_TRANSIT_URL,
       scenarios: { ...base.scenarios, fzp: { ...base.scenarios!.fzp, frontage: MINI_FRONTAGE_URL } }
     };
-    if (!opts?.policy) return m;
-    const fzp = { ...m.scenarios!.fzp, policy: MINI_POLICY_URL };
+    if (!opts?.policy && !opts?.gross) return m;
+    const fzp = {
+      ...m.scenarios!.fzp,
+      ...(opts?.policy ? { policy: MINI_POLICY_URL } : {}),
+      ...(opts?.gross ? { gross: MINI_GROSS_URL } : {})
+    };
     return { ...m, scenarios: { ...m.scenarios, fzp } };
   };
 

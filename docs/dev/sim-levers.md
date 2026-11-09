@@ -79,7 +79,7 @@ Requests (`ScenarioRequest`): `initScenario` carries an optional `levers` (absen
 
 Responses (`LeversResponse`, `type: 'levers'`), where `rev` is the `initScenario` or `setLevers` that named the levers:
 
-- `phase: 'resolving'` with `done`, `total`, `failedCells`: touched-lot yields are being recomputed in budgeted slices (`createYieldRecompute`). `failedCells` are needed chunks that failed to load; `retryChunks` re-wants them. Until complete the result is "out of date" (`leversPending`).
+- `phase: 'resolving'` with `done`, `total`, `failedCells`: posted only on the fallback, a dataset whose manifest has no `scenarios.fzp.gross`. Touched-lot yields are being recomputed in budgeted slices (`createYieldRecompute`). `failedCells` are needed chunks that failed to load; `retryChunks` re-wants them. Until complete the result is "out of date" (`leversPending`). With `scenarios.fzp.gross` the session loads `gross.bin` with `policy.bin` (a bad or mismatched table fails the load as `scenario-invalid`) and resolves each revision from it (`createTableRecompute`): the city builds first, then the lookups finish in the next `recompute` job, with no `resolving` post and no chunk fetch: the revision posts `heights`, then `current`.
 - `phase: 'current'` with `lookups` (`{ inFlight, fresh }`, each `{ chance, typicalMonths }`; `fresh === inFlight` when there is no `'new'` timer), `capacity` and `unknownLots`: the levers are in force, before any timeline computed on them. A superseded revision never gets `current`.
 
 Height limits (height-lids plan, Task 8; `src/lib/map/height/`):
@@ -129,6 +129,12 @@ exception"). No lever or op is added; no exit column is editable. Re-measure if 
 calibration changes the disapproved columns.
 
 ## Performance
+
+With `scenarios.fzp.gross` a lever revision fetches no chunk and generates no building: each
+Need's yield is a lookup in the pipeline-built gross table (`src/lib/data/gross-table.ts`), so the
+revision costs its resolve, its city build and the lookups. The table stores gross units per
+story count clamped to `0xFFFF` (`clampGross`), and the fallback recompute applies the same clamp,
+so both paths give the same yields. The rest of this section is about the fallback.
 
 The touched-lot recompute (`src/lib/sim/levers/recompute.ts`) buckets its needs by cell. `step`
 skips a whole bucket while its cell is not loaded (`cellLoaded`), so each need's record is read
