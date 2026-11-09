@@ -68,7 +68,7 @@
     "@mapbox/vector-tile": "^2.0.5",
     "@maplibre/maplibre-gl-style-spec": "26.4.4",
     "@maplibre/vt-pbf": "4.3.2",
-    "@mindlace/chreode": "^0.2.0",
+    "@mindlace/chreode": "^0.4.0",
     "@planafoot/drizzle-cf-migrations": "^1.2.1",
     "@playwright/test": "^1.62.0",
     "@sveltejs/adapter-cloudflare": "^7.2.8",
