@@ -141,7 +141,38 @@ With `scenarios.fzp.gross` a lever revision fetches no chunk and generates no bu
 Need's yield is a lookup in the pipeline-built gross table (`src/lib/data/gross-table.ts`), so the
 revision costs its resolve, its city build and the lookups. The table stores gross units per
 story count clamped to `0xFFFF` (`clampGross`), and the fallback recompute applies the same clamp,
-so both paths give the same yields. The rest of this section is about the fallback.
+so both paths give the same yields.
+
+Measured on dataset `2026-11-08-d15bdf2d` (2026-11-08, Apple M5 Pro, 15 cores, 24 GB, Node
+v24.2.0) with `npx tsx scripts/bench-levers.ts pipeline/out/<v>`. "Table ms" answers the same needs
+from `gross.bin` with the table recompute (`createTableRecompute`, one unsliced step): the cost a
+revision pays on the table path. The other columns are the fallback's, as described below.
+
+| Brush                                                | Lots    | Resolve ms | resolveEnvelopes ms | Needs (unique) | Cells | Chunk bytes | Recompute ms | scenarioYield ms (est.) | Other ms (est.) | Gross computed | Missing | fillNeeds + applyLevers ms | Table ms |
+| ---------------------------------------------------- | ------- | ---------- | ------------------- | -------------- | ----- | ----------- | ------------ | ----------------------- | --------------- | -------------- | ------- | -------------------------- | -------- |
+| (a) every `RH-1` family lot, rule to 4               | 72,935  | 20         | 14                  | 10             | 4     | 1.1 MB      | 13           | 14                      | 0               | 40             | 0       | 2                          | 0        |
+| (b) `metro` and `rapidBus` within 1,609 m, rule to 8 | 148,798 | 123        | 55                  | 140,204        | 126   | 21.1 MB     | 22,332       | 22,204                  | 128             | 701,020        | 0       | 20                         | 86       |
+| (c) `regionalRail` within 805 m, rule to 8           | 23,258  | 18         | 9                   | 20,187         | 41    | 7.1 MB      | 3,273        | 3,266                   | 7               | 100,935        | 0       | 4                          | 9        |
+
+Brush (b), the largest, costs 86 ms of lookups on the table against 22,332 ms of recompute. As a
+`max(FZP, 4)` rule, brush (a) has 10 needs on this dataset.
+
+Cold loads on the same dataset, a production build (`npm run preview`, the dataset in local R2,
+no `.dev.vars` override), measured with
+`node scripts/profile-sim-load.mjs --origin http://localhost:4173 --runs 3` on an idle machine.
+"Ready" is the first `timeline` the worker posts at or after the last levers revision the page
+sent, in ms from navigation; median of 3 cold loads (each run in brackets):
+
+| Case             | Median ms | Runs ms             | Bar ms |
+| ---------------- | --------- | ------------------- | ------ |
+| A `/sim`         | 933       | 993, 933, 928       | 1,125  |
+| B `/sim?seed=72` | 635       | 638, 635, 617       | 857    |
+| C `/s/<id>`      | 1,044     | 1,044, 1,040, 1,053 | 2,500  |
+
+The A and B bars are 10% over the medians recorded on `2026-11-08-91736640` (1,023 and 779 ms).
+C publishes `scripts/profile-sim-load.policy.json` and opens it.
+
+The rest of this section is about the fallback.
 
 The touched-lot recompute (`src/lib/sim/levers/recompute.ts`) buckets its needs by cell. `step`
 skips a whole bucket while its cell is not loaded (`cellLoaded`), so each need's record is read
