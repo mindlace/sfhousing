@@ -9,7 +9,7 @@ import {
   rmSync
 } from 'node:fs';
 import { writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { TOOL_VERSIONS, type InvariantProfile } from '../config';
 import { BuildError } from '../lib/build-error';
@@ -21,7 +21,7 @@ import { QUALITY_REPORT_MD, createQualityTables, writeQualityReport } from '../l
 import { Report } from '../lib/report';
 import { loadRoadLotInputs, readRoadLots, ROAD_LOTS_JSON, roadLotProblems } from '../lib/road-lots';
 import { runSql } from '../lib/sql';
-import { POLICY_BIN } from '../lib/scenario-files';
+import { GROSS_BIN, POLICY_BIN } from '../lib/scenario-files';
 import { codeTreeHash, computeDatasetVersion } from '../lib/version';
 import { asOfFromLock } from '../project-records/parse';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
@@ -39,6 +39,7 @@ import { freewayLandSet, readFreewayLand } from '../lib/lesscars/freeway-land';
 import { writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
+import { writeGross } from './gross';
 import { buildManifest, writeManifest } from './manifest';
 import { writeLessCars } from './lesscars';
 import { writePolicy } from './policy';
@@ -150,7 +151,8 @@ function chunkCounts(chunks: ChunkOut[]): Record<string, number> {
 
 /**
  * Spec §4.2 `build`: verify the lock, normalise, SQL, chunks (+ in-run re-encode), the scenario
- * step (scenarios/fzp/parcels.bin; the T13 panel and lineage into the derived cache), the project
+ * step (scenarios/fzp/parcels.bin; the T13 panel and lineage into the derived cache), the gross
+ * table (scenarios/fzp/gross.bin), the project
  * records (scenarios/fzp/projects.json; histories and permits.parquet into the derived cache),
  * the calibration (scenarios/fzp/calibration.json; calibration-report.md into the derived cache),
  * neighborhoods, transit, the policy step (scenarios/fzp/policy.bin), the T14 quality report
@@ -244,6 +246,16 @@ export async function build(
       })
     );
     report.warnings.push(...scenario.warnings);
+    // The gross table: after the scenario step (it reads parcels.bin and the chunks), in parallel
+    // off fixture builds (the fixture's few rows build faster than workers start).
+    const gross = await report.time('gross', () =>
+      writeGross({
+        outDir,
+        datasetVersion,
+        workers: fixtureMode ? 0 : Math.max(1, availableParallelism() - 1)
+      })
+    );
+    report.warnings.push(...gross.warnings);
     // Project-records spec §4.9: after the scenario step (it reads parcel_lineage and
     // scenario_panel), before the manifest and the invariants.
     const projects = await report.time('projects', () =>
@@ -361,6 +373,7 @@ export async function build(
       transit: true,
       scenarios: SCENARIO_FILES.every((f) => existsSync(join(outDir, 'scenarios/fzp', f))),
       policy: existsSync(join(outDir, POLICY_BIN)),
+      gross: existsSync(join(outDir, GROSS_BIN)),
       lesscars: lesscars.written,
       warn: (w) => report.warnings.push(w)
     });
@@ -374,6 +387,7 @@ export async function build(
       ...chunkCounts(chunks),
       ...transit.counts,
       ...scenario.counts,
+      ...gross.counts,
       ...policy.counts,
       ...lesscars.counts,
       ...Object.fromEntries(overtureContrib.map((o) => [`overture.contrib.${o.dataset}`, o.n])),

@@ -5,6 +5,8 @@
 export const PARCELS_BIN = 'scenarios/fzp/parcels.bin';
 /** sfh-policy/1 per-lot policy inputs, in parcels.bin row order (sim data layers). */
 export const POLICY_BIN = 'scenarios/fzp/policy.bin';
+/** sfh-gross/1 per-lot gross units by story count, in parcels.bin row order (pipeline/steps/gross.ts). */
+export const GROSS_BIN = 'scenarios/fzp/gross.bin';
 /** /lesscars outputs (docs/dev/lesscars.md), relative to the dataset's out dir. */
 export const LESSCARS_FILES = {
   plan: 'scenarios/lesscars/plan.json',
