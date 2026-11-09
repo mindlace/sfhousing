@@ -58,6 +58,11 @@
     "floor_area.rule2": 8,
     "floor_area.rule3": 3,
     "floor_area.rule4": 10,
+    "gross.bytes.payload": 123,
+    "gross.clamped": 0,
+    "gross.plateau_max": 12,
+    "gross.rows": 25,
+    "gross.values": 54,
     "height.max_m": 60,
     "histories.droppedNoDates": 0,
     "histories.ppaLagDays": 75,
@@ -124,7 +129,7 @@
     "link.ppaOnly": 1,
     "link.satellites": 0,
     "link.splitComponents": 1,
-    "manifest.bytes": 6449,
+    "manifest.bytes": 6499,
     "multiphase.descendants.2007.0001PRX": 1,
     "multiphase.descendants.2010.0002PRX": 1,
     "multiphase.descendants.2012-000020PRX": 1,
@@ -625,7 +630,7 @@
       "ok": true
     },
     {
-      "detail": "manifest 6449/64000 B; neighborhoods 709/150000 B",
+      "detail": "manifest 6499/64000 B; neighborhoods 709/150000 B",
       "id": "V11",
       "ok": true
     },
@@ -742,6 +747,11 @@
     {
       "detail": "8 projects, 3 sites, 41 year ends",
       "id": "V35",
+      "ok": true
+    },
+    {
+      "detail": "25 rows decode; re-encode byte-identical; 25 rows equal scenarioYield at s 0..81 and 255",
+      "id": "V36",
       "ok": true
     }
   ],

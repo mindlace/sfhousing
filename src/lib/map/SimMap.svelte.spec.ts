@@ -241,7 +241,11 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     h.setOverlayLayers([new ScatterplotLayer({ id: 'brush-ring', data: [] })]);
     const firstSymbol = map.getStyle().layers.find((l) => l.type === 'symbol')!.id;
     const group = `deck-maplibre-layer-group-before:${firstSymbol}`;
-    await expect.poll(() => map.getLayersOrder().includes(group)).toBe(true);
+    // Deck adds its layer group only while the style reports loaded. If a source is still loading
+    // (tiles, the chunk-status or transit setData that follow load), SimMap re-sends the layers on
+    // the map's next idle, which a loading style always reaches. Wait for that event: a time
+    // budget raced it and lost on a loaded machine (#14).
+    if (!map.getLayersOrder().includes(group)) await map.once('idle');
     const order = map.getLayersOrder();
     // One deck group (no "last" group above the labels), directly beneath the first label.
     expect(order.filter((id) => id.startsWith('deck-'))).toEqual([group]);

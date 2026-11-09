@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
-import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
+import { manifestFiles, parseManifest, type Manifest } from '../../src/lib/data/manifest';
 import { FONT_STACKS, IMMUTABLE, STAGING_ORIGIN } from '../config';
 import { codePathsDirty } from '../lib/version';
 import { lockSha256, rawPath, type Lock } from '../lib/lock';
@@ -110,22 +110,9 @@ export function datasetProblems(outDir: string, v: string, raw: unknown, lock: L
     return problems;
   }
   const prefix = `/data/${v}/`;
-  const urls = [
-    ...m.chunks.map((c) => c.url),
-    m.buildingsTiles,
-    m.basemapTiles,
-    m.neighborhoods,
-    ...(m.transit ? [m.transit] : []),
-    ...(m.scenarios
-      ? [m.scenarios.fzp.parcels, m.scenarios.fzp.projects, m.scenarios.fzp.calibration]
-      : []),
-    ...(m.scenarios?.fzp.policy ? [m.scenarios.fzp.policy] : []),
-    ...(m.scenarios?.lesscars ? Object.values(m.scenarios.lesscars) : []),
-    ...(m.sprite ? [m.sprite] : []),
-    ...Object.values(FONT_STACKS).map((s) =>
-      m.glyphs.replace('{fontstack}', s).replace('{range}', '0-255')
-    )
-  ];
+  const urls = manifestFiles(m, { stacks: Object.values(FONT_STACKS), ranges: ['0-255'] })
+    .filter((f) => !f.optional && f.key !== 'scenarios.fzp.frontage')
+    .map((f) => f.url);
   for (const u of urls) {
     const rel = u.slice(prefix.length);
     if (!u.startsWith(prefix) || !existsSync(join(outDir, rel))) {

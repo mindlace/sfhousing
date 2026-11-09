@@ -1,7 +1,8 @@
 <!--
   Extra homes by year: the mean line, the p10 to p90 band, a zero line when the axis reaches below
   zero, and a vertical marker at the scrubbed year. A plain inline SVG; the model depends on the
-  summary and width, never on the day, so scrubbing moves only the marker.
+  summary, the high-water mark and width, never on the day, so scrubbing moves only the marker.
+  Only year ends up to the high-water mark are drawn; the x axis keeps the full span.
 -->
 <script lang="ts">
   import type { LessCarsSummary } from '$lib/data/lesscars/codec';
@@ -9,13 +10,22 @@
   import { formatCount } from '$lib/scoreboard/format';
   import { CHART_COLORS } from './chart-colors';
   import type { Day } from '$lib/timelapse/time';
-  import { extraChartModel, finalYear, signed, yearIndexAt } from './summary-view';
+  import {
+    extraChartModel,
+    homesAt,
+    revealedYearIndex,
+    signed,
+    yearAt,
+    yearIndexAt
+  } from './summary-view';
 
   interface Props {
     summary: LessCarsSummary;
     day: Day;
+    /** The furthest day reached: year ends after it are not drawn. */
+    highWater: Day;
   }
-  let { summary, day }: Props = $props();
+  let { summary, day, highWater }: Props = $props();
 
   const theme = useSystemTheme();
   const col = $derived(CHART_COLORS[theme.current]);
@@ -25,8 +35,9 @@
   let measured = $state(0);
   const width = $derived(measured > 0 ? measured : FALLBACK_W);
 
-  const m = $derived(extraChartModel(summary));
-  const n = $derived(m.mean.length);
+  const idx = $derived(revealedYearIndex(summary, highWater));
+  const m = $derived(extraChartModel(summary, idx));
+  const n = $derived(m.years.length);
   const x = $derived((i: number) => PAD.l + (n > 1 ? (i / (n - 1)) * (width - PAD.l - PAD.r) : 0));
   const y = $derived(
     (v: number) => PAD.t + ((m.yMax - v) / (m.yMax - m.yMin)) * (H - PAD.t - PAD.b)
@@ -40,7 +51,9 @@
   );
   const nowIndex = $derived(yearIndexAt(summary, day));
   const label = $derived(
-    `Extra homes by year: ${signed(Math.round(m.mean[0]))} in ${m.years[0]}, ${signed(Math.round(m.mean[n - 1]))} by ${finalYear(summary)}`
+    idx < 0
+      ? 'No extra homes yet'
+      : `Extra homes by year: ${signed(homesAt(summary, idx))} by ${yearAt(summary, idx)}`
   );
 </script>
 
@@ -66,8 +79,10 @@
           stroke-dasharray="4 3"
         />
       {/if}
-      <polygon points={band} fill={col.band} fill-opacity="0.18" />
-      <polyline points={line} fill="none" stroke={col.mean} stroke-width="2.5" />
+      {#if idx >= 0}
+        <polygon points={band} fill={col.band} fill-opacity="0.18" />
+        <polyline points={line} fill="none" stroke={col.mean} stroke-width="2.5" />
+      {/if}
       <line
         data-now
         data-year-index={nowIndex}

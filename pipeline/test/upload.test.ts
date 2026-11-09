@@ -1,10 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { lockSha256, type Lock } from '../lib/lock';
 import type { R2Target } from '../lib/r2';
-import { upload } from '../steps/upload';
+import { datasetProblems, upload } from '../steps/upload';
 import { tempRepo } from './helpers/temp-repo';
 
 function fakeTarget(existing: string[] = [], failKeys: Record<string, number> = {}) {
@@ -206,6 +206,15 @@ describe('upload', () => {
     const puts = calls.filter((c) => c.startsWith('put'));
     expect(puts[0]).toBe('put sources/aaa.geojson');
     expect(puts).not.toContain('put sources/bbb.geojson');
+  });
+  it('datasetProblems names a missing gross.bin the manifest lists', () => {
+    const d = outDir();
+    const raw = JSON.parse(readFileSync(join(d, 'manifest.json'), 'utf8'));
+    raw.scenarios.fzp.gross = '/data/fixture-7/scenarios/fzp/gross.bin';
+    const problems = datasetProblems(d, 'fixture-7', raw, lock);
+    expect(problems).toEqual([expect.stringContaining('scenarios/fzp/gross.bin is missing')]);
+    writeFileSync(join(d, 'scenarios', 'fzp', 'gross.bin'), 'x');
+    expect(datasetProblems(d, 'fixture-7', raw, lock)).toEqual([]);
   });
   describe('refuses an unpublishable dataset with zero puts and no V13 probe', () => {
     const refuses = async (o: ReturnType<typeof opts>) => {

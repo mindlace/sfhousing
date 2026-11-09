@@ -1,6 +1,7 @@
 // Scenario loading (spec §4.2 steps 1, 2, 4-7; the loading rows of §4.10): request checks,
-// manifest URLs, the three concurrent fetches with retries, decode and validation, and the two
+// manifest URLs, the concurrent fetches with retries, decode and validation, and the two
 // SimInputs with their precompute. Worker-bundle module: zod-free, DOM-free, $app-free.
+import { grossTableProblem, readGrossTable, type GrossTable } from '$lib/data/gross-table';
 import type { Manifest } from '$lib/data/manifest';
 import { readPolicyParcels, type PolicyParcels } from '$lib/data/policy-codec';
 import { readScenarioParcels, type ScenarioParcels } from '$lib/data/scenario-codec';
@@ -22,14 +23,17 @@ export type FetchBytesLike = (
 
 export type InitRequest = Extract<ScenarioRequest, { type: 'initScenario' }>;
 /**
- * `policy` is null when the manifest has no usable `scenarios.fzp.policy` (only /sim needs it).
- * Older datasets also name `scenarios.fzp.frontage`; nothing reads it.
+ * `policy` is null when the manifest has no usable `scenarios.fzp.policy` (only /sim needs it);
+ * `gross` likewise for `scenarios.fzp.gross` (optional even for /sim: without it lever revisions
+ * fall back to the chunk recompute). Older datasets also name `scenarios.fzp.frontage`; nothing
+ * reads it.
  */
 export type ScenarioUrls = {
   parcels: string;
   projects: string;
   calibration: string;
   policy: string | null;
+  gross: string | null;
 };
 
 export interface Loaded {
@@ -37,6 +41,8 @@ export interface Loaded {
   twin: SimInput; // applyPolicies([baseZoning], fzp)
   projects: ProjectsFile; // as validated: invalid projects already left out
   policy: PolicyParcels | null; // bound to the decoded parcels; null without `opts.policy`
+  /** Bound to the decoded parcels; null without `opts.policy` or without `urls.gross`. */
+  gross: GrossTable | null;
 }
 export interface LoadFailure {
   code: ScenarioErrorCode;
@@ -53,6 +59,8 @@ export interface LoadDeps {
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
   /** The policy.bin decoder; default `readPolicyParcels`. The same kind of seam. */
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
+  /** The gross.bin decoder; default `readGrossTable`. The same kind of seam. */
+  decodeGross?(bytes: Uint8Array): Promise<GrossTable>;
 }
 
 const SEED_END = 4294967296; // 2³², as a literal (ruling A3)
@@ -78,13 +86,18 @@ export function leversProblem(levers: unknown): string | null {
 
 /**
  * §4.2 step 1: null when the request is acceptable, else its first problem (`bad-request`).
- * `levers` (plan 2) is checked only when present.
+ * `levers` (plan 2) is checked only when present; `awaitLevers` must be a boolean, and true only
+ * with `levers`.
  */
 export function validateInitRequest(req: InitRequest): string | null {
   if (req.scenario !== 'fzp') return "scenario must be 'fzp'";
   const seed = seedProblem(req.seed);
   if (seed !== null) return seed;
   if (!Number.isInteger(req.horizon)) return 'horizon must be an integer';
+  if (req.awaitLevers !== undefined && typeof req.awaitLevers !== 'boolean') {
+    return 'awaitLevers must be a boolean';
+  }
+  if (req.awaitLevers && req.levers === undefined) return 'awaitLevers needs levers';
   if (req.levers !== undefined) return leversProblem(req.levers);
   return null;
 }
@@ -95,11 +108,12 @@ export function datasetUrl(m: Manifest, u: unknown): string | null {
 }
 
 /**
- * §4.2 step 2: the three FZP file URLs, or null when `scenarios.fzp` is absent or any URL is
+ * §4.2 step 2: the FZP file URLs (three required, `policy` and `gross` optional), or null when `scenarios.fzp` is absent or any URL is
  * missing or not under `/data/<datasetVersion>/` (the host answers `scenario-missing`). The
  * manifest has passed `checkManifestShape`, which does not look at `scenarios`. The optional
  * `policy` URL is null when absent or outside the prefix: /fzp never needs it, so it never makes
- * the result null. `scenarios.fzp.frontage` (older datasets) is ignored.
+ * the result null; the optional `gross` URL likewise. `scenarios.fzp.frontage` (older datasets)
+ * is ignored.
  */
 export function scenarioUrls(m: Manifest): ScenarioUrls | null {
   const fzp: unknown = (m.scenarios as { fzp?: unknown } | undefined)?.fzp;
@@ -109,7 +123,8 @@ export function scenarioUrls(m: Manifest): ScenarioUrls | null {
   for (const u of Object.values(urls)) if (datasetUrl(m, u) === null) return null;
   return {
     ...(urls as Pick<ScenarioUrls, 'parcels' | 'projects' | 'calibration'>),
-    policy: datasetUrl(m, f.policy)
+    policy: datasetUrl(m, f.policy),
+    gross: datasetUrl(m, f.gross)
   };
 }
 
@@ -228,14 +243,17 @@ const CANCELLED: LoadFailure = { code: 'internal', message: 'cancelled' };
 class Stopped {}
 
 /**
- * §4.2 steps 4-7. Fetches the three files concurrently (each with `fetchWithRetry`; the first
+ * §4.2 steps 4-7. Fetches the files concurrently (up to five: parcels, projects, calibration, policy, gross; each with `fetchWithRetry`; the first
  * permanent failure ends the load and stops the others), then, once every byte has arrived,
  * decodes and validates them (never retried), builds the FZP input and its `baseZoning` twin,
  * and precomputes both with `deps.warn`. `projects.asOf ≥ horizon` is the caller's check.
  *
  * With `opts.policy` (/sim, plan 2) `policy.bin` is a fourth concurrent fetch, decoded after
  * parcels.bin and bound to it: no `urls.policy` gives `scenario-missing` before any fetch, and a
- * decode error gives `scenario-invalid`. Without it the policy URL is never requested.
+ * decode error gives `scenario-invalid`. Without it the policy URL is never requested. With
+ * `opts.policy` and `urls.gross`, `gross.bin` is a fifth concurrent fetch, decoded after
+ * parcels.bin and checked against it (`grossTableProblem`): a decode error or a mismatch gives
+ * `scenario-invalid`. Without `opts.policy` the gross URL is never requested.
  *
  * Once `cancelled()` is true the result is meaningless (a `LoadFailure` the caller ignores), and
  * a load cancelled while waiting on a retry timer the caller cleared never settles. An
@@ -289,12 +307,14 @@ export async function loadScenario(
   let projectsJson: unknown;
   let calibrationJson: unknown;
   let policyBin: ArrayBuffer | null;
+  let grossBin: ArrayBuffer | null;
   try {
-    [bin, projectsJson, calibrationJson, policyBin] = await Promise.all([
+    [bin, projectsJson, calibrationJson, policyBin, grossBin] = await Promise.all([
       bytes(urls.parcels),
       json(urls.projects),
       json(urls.calibration),
-      wantPolicy ? bytes(urls.policy!) : null
+      wantPolicy ? bytes(urls.policy!) : null,
+      wantPolicy && urls.gross !== null ? bytes(urls.gross) : null
     ]);
   } catch (e) {
     failed = true; // the other files stop at their next step
@@ -324,6 +344,18 @@ export async function loadScenario(
       return invalid('policy.bin', messageOf(e));
     }
     if (cancelled()) return CANCELLED;
+  }
+
+  let gross: GrossTable | null = null;
+  if (grossBin !== null) {
+    try {
+      gross = await (deps.decodeGross ?? readGrossTable)(new Uint8Array(grossBin));
+    } catch (e) {
+      return invalid('gross.bin', messageOf(e));
+    }
+    if (cancelled()) return CANCELLED;
+    const problem = grossTableProblem(gross, parcels);
+    if (problem !== null) return invalid('gross.bin', problem);
   }
 
   let calibration: Calibration;
@@ -385,5 +417,5 @@ export async function loadScenario(
   };
   precomputeOf(fzp, warnOnce);
   precomputeOf(twin, warnOnce);
-  return { fzp, twin, projects, policy };
+  return { fzp, twin, projects, policy, gross };
 }

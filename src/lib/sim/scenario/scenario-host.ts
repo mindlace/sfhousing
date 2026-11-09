@@ -37,6 +37,8 @@
 // ones, is posted. A later `setLevers` replaces the pending revision (latest wins); a reroll
 // gives the pending run its rev and seed. At `current` the work takes the plan and twin inputs, a
 // fresh band state and a fresh run. The `LayerCtx` and the yield `GrossCache` are the session's.
+// With `scenarios.fzp.gross` the session also loads gross.bin, and the recompute is a table lookup
+// instead (gross-table Task 5): no `resolving` post and no chunk; the city still builds first.
 //
 // Brushes (plan 3 Task 5). `resolveBrush` and `brushCatalog` are answered only in a session with
 // levers (else `no-session`, catalog null). A request that arrives before the load waits for it;
@@ -54,6 +56,7 @@
 // revision's resolve and city steps. A new `heightLids` answers an older waiting or running one
 // `superseded`; a new city restarts a running lid build on its limits, so an answer never mixes
 // revisions. A session end answers a waiting request `no-session`.
+import type { GrossTable } from '$lib/data/gross-table';
 import type { Manifest } from '$lib/data/manifest';
 import type { PolicyParcels } from '$lib/data/policy-codec';
 import { envelopeOf, scenarioRecordOf, type ScenarioParcels } from '$lib/data/scenario-codec';
@@ -108,7 +111,12 @@ import {
 } from '../levers/brushes';
 import type { LayerCtx } from '../levers/layers';
 import { limitSources, ownerOf, type LimitOwner, type LimitSources } from '../levers/source';
-import { createYieldRecompute, type GrossCache, type YieldRecompute } from '../levers/recompute';
+import {
+  createTableRecompute,
+  createYieldRecompute,
+  type GrossCache,
+  type YieldRecompute
+} from '../levers/recompute';
 import { allNeeds, fillNeeds, resolveEnvelopes, type Resolution } from '../levers/resolve';
 import { parseSimLevers, type SimLevers } from '../levers/types';
 import { chooseProject, projectCard, revisionAt, type CardCtx } from './card';
@@ -171,6 +179,8 @@ export interface ScenarioHostDeps {
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
   /** Test seam: the policy.bin decoder (default `readPolicyParcels`), its inflate likewise. */
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
+  /** Test seam: the gross.bin decoder (default `readGrossTable`), its inflate likewise. */
+  decodeGross?(bytes: Uint8Array): Promise<GrossTable>;
 }
 
 export interface ScenarioHost {
@@ -286,6 +296,9 @@ interface LeverWork {
   base: Loaded; // as loaded: `base.fzp` is the input every lever revision compiles against
   ctx: LayerCtx; // one per session: the after-switch table and the twin memo key on it
   gross: GrossCache; // one per session: kept across lever revisions
+  /** The session's gross table (`scenarios.fzp.gross`): lever revisions look yields up in it
+   *  instead of recomputing them from chunks. Null on the fallback (no table in the manifest). */
+  table: GrossTable | null;
   pending: PendingLevers | null;
   /** 1 on the rows protected under the levers in force (set at `current`); null before. */
   protectedMask: Uint8Array | null;
@@ -373,6 +386,12 @@ interface Session {
   brush: BrushSession | null;
   /** The latest `heightLids` not yet answered (lever sessions only). */
   lidWant: { reqId: number; bbox: [number, number, number, number] } | null;
+  /** From an `awaitLevers` init until the first `setLevers`: no revision, no timeline job. */
+  awaitingLevers: boolean;
+  /** From an `awaitLevers` init until the first `current`: `prefetch` only stores its bbox. */
+  holding: boolean;
+  /** The latest bbox `prefetch` stored while `holding`; replayed at the first `current`. */
+  heldPrefetch: readonly number[] | null;
 }
 
 type InitRequest = Extract<ScenarioRequest, { type: 'initScenario' }>;
@@ -500,7 +519,10 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       levers:
         req.levers === undefined ? null : { rev: req.rev, levers: parseSimLevers(req.levers) },
       brush: req.levers === undefined ? null : { waiting: new Set(), index: null, files: {} },
-      lidWant: null
+      lidWant: null,
+      awaitingLevers: req.awaitLevers === true,
+      holding: req.awaitLevers === true,
+      heldPrefetch: null
     } as Omit<Session, 'chunks'> as Session;
     st.chunks = {
       loader: createChunkLoader(manifest, {
@@ -544,11 +566,16 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     kick(st);
   }
 
-  /** The loader's failed cells: a pending lever revision re-posts `resolving` when they change. */
+  /**
+   * The loader's failed cells: a pending lever revision on the fallback (no gross table) re-posts
+   * `resolving` when they change.
+   */
   function onFailed(st: Session, failed: string[]): void {
     st.chunks.failed = failed;
-    const p = st.work?.levers?.pending;
-    if (!p?.state || p.state.recompute.total === 0) return;
+    const lw = st.work?.levers;
+    const p = lw?.pending;
+    // the table path waits on no chunk, so a failed cell never holds its revision
+    if (!p?.state || p.state.recompute.total === 0 || lw!.table) return;
     const cells = p.state.cells;
     const mine = failed.filter((c) => cells.has(c));
     if (mine.length === p.failed.length && mine.every((c, k) => c === p.failed[k])) return;
@@ -558,6 +585,10 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
 
   /** The viewport's cells, plus the extra cells of the multi-parcel projects anchored there. */
   function prefetch(st: Session, bbox: readonly number[]): void {
+    if (st.holding) {
+      st.heldPrefetch = [...bbox]; // the latest wins; it loads at the first `current`
+      return;
+    }
     const cells = cellsIntersecting(st.manifest, bbox);
     for (const c of cells) st.chunks.wanted.add(c);
     const all = new Set(cells);
@@ -575,7 +606,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         retryDelaysMs,
         warn,
         decodeParcels: deps.decodeParcels,
-        decodePolicy: deps.decodePolicy
+        decodePolicy: deps.decodePolicy,
+        decodeGross: deps.decodeGross
       },
       st.urls,
       () => !live(st),
@@ -635,7 +667,9 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         base: loaded,
         ctx: { parcels: loaded.fzp.parcels, policy: loaded.policy! },
         gross: new Map(),
-        pending: pendingOf(st.levers.rev, st.levers.levers, st.seed),
+        table: loaded.gross,
+        // an awaitLevers session waits for its first setLevers, which creates the revision
+        pending: st.awaitingLevers ? null : pendingOf(st.levers.rev, st.levers.levers, st.seed),
         protectedMask: null,
         limits: null,
         city: null,
@@ -697,6 +731,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     if (bad !== null) return error(req.rev, 'bad-request', bad);
     const levers = parseSimLevers(req.levers); // a fresh copy the host owns
     st.levers = { rev: req.rev, levers };
+    st.awaitingLevers = false; // this is the session's first revision, before or after the load
     const w = st.work;
     if (!w) return;
     const lw = w.levers!;
@@ -762,14 +797,16 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   function nextJob(st: Session, w: Work): Job | null {
     // A pending lever revision's resolve step, then its city, then a wanted lid view on the
     // newest limits, then its recompute: the timeline jobs wait until it is current.
+    // An awaitLevers session runs nothing until its first setLevers (a reroll only sets the seed).
+    if (st.awaitingLevers) return null;
     const lw = w.levers;
     if (lw) {
       const p = lw.pending;
-      if (p && p.state === null) return { kind: 'recompute', run: () => leverStep(w, lw, p) };
+      if (p && p.state === null) return { kind: 'recompute', run: () => leverStep(st, w, lw, p) };
       const c = lw.city;
       if (c) return { kind: 'heights', run: () => cityStep(w, lw, c) };
       if (st.lidWant && lw.limits) return { kind: 'heights', run: () => lidStep(st, w, lw) };
-      if (p) return p.stalled ? null : { kind: 'recompute', run: () => leverStep(w, lw, p) };
+      if (p) return p.stalled ? null : { kind: 'recompute', run: () => leverStep(st, w, lw, p) };
     }
     const run = w.run;
     const band = w.band;
@@ -818,30 +855,37 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   // --- the jobs ---
 
   /**
-   * One step of the pending lever revision: first resolve its envelopes (posting `resolving` and
-   * wanting the needed chunks when it has Needs), then compute ready Needs in what is left of the
-   * slice, then, once all are done, put the levers in force and post `current`.
+   * One step of the pending lever revision: first resolve its envelopes, then compute its Needs in
+   * what is left of the slice, then, once all are done, put the levers in force and post `current`.
+   * With the session's gross table the Needs are table lookups: no `resolving` post, no chunk.
+   * Without it (the fallback) the resolve step posts `resolving` and wants the needed chunks when
+   * it has Needs, and each step computes the ready ones from their records. An awaitLevers
+   * session's first `current` replays the prefetch it held.
    */
-  function leverStep(w: Work, lw: LeverWork, p: PendingLevers): void {
+  function leverStep(st: Session, w: Work, lw: LeverWork, p: PendingLevers): void {
     if (p.state === null) {
       const base = lw.base.fzp;
       const resolution = resolveEnvelopes(lw.ctx, p.levers, base.asOf);
-      const recompute = createYieldRecompute(
-        base.parcels,
-        allNeeds(resolution),
-        {
-          record: (id) => w.chunks.records.get(id),
-          cellLoaded: (cellId) => w.chunks.byCell.has(cellId),
-          now: () => deps.now()
-        },
-        lw.gross
-      );
-      const cells = new Set(recompute.cellsNeeded()); // once per revision
+      const needs = allNeeds(resolution);
+      const now = () => deps.now();
+      const recompute = lw.table
+        ? createTableRecompute(base.parcels, needs, lw.table, { now })
+        : createYieldRecompute(
+            base.parcels,
+            needs,
+            {
+              record: (id) => w.chunks.records.get(id),
+              cellLoaded: (cellId) => w.chunks.byCell.has(cellId),
+              now
+            },
+            lw.gross
+          );
+      const cells = new Set(recompute.cellsNeeded()); // once per revision; always empty on a table
       p.state = { resolution, recompute, cells };
       // The city goes out before the recompute: a revision waiting on chunks (or held by a
       // failed one) still shows its heights as you paint. Its stories are final once resolved.
       lw.city = cityOf(lw, p.rev, p.levers, resolution);
-      if (recompute.total === 0) return;
+      if (recompute.total === 0 || lw.table) return; // the table finishes in the next job
       p.failed = w.chunks.failed.filter((c) => cells.has(c));
       postResolving(p);
       w.chunks.loader.want(cells);
@@ -852,7 +896,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     if (!r.step(Math.max(0, SLICE_PLAN_MS - (deps.now() - w.sliceStart)))) {
       // a step computes at least one ready need, so no progress means all wait on chunks
       if (r.done === before) p.stalled = true;
-      else postResolving(p);
+      else if (!lw.table) postResolving(p);
       return;
     }
     for (const id of r.missing)
@@ -881,6 +925,13 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     w.bandPostDue = false;
     w.massing = { ...w.massing, input: li.plan };
     w.run = newRun(p.runRev, p.seed);
+    if (st.holding) {
+      // an awaitLevers session's first `current`: the viewport it held loads now
+      st.holding = false;
+      const bbox = st.heldPrefetch;
+      st.heldPrefetch = null;
+      if (bbox) prefetch(st, bbox);
+    }
   }
 
   function postResolving(p: PendingLevers): void {

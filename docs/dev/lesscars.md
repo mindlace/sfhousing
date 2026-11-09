@@ -920,10 +920,12 @@ representative seed voids both reservations.
 
 ### Header
 
-The headline (`summary.extra.mean` at 2068, with the p10 to p90 band) sits in the header's
+The headline (`summary.extra.mean` at the furthest year reached, with the p10 to p90 band) sits in the header's
 pinned slot as one button; it opens the details (breakdown that adds to the headline, chart,
 amenities note, map key, evidence). Timeline and Evidence are header actions, in the Menu below
 1024 px.
+
+The future is precomputed, so the page reveals only what the user has reached. `LessCarsMode` feeds a `HighWater(LESSCARS_START)` (`window.__sfhLessCars.highWater`) with the day. The reveal index is the last year end at or before the mark (`-1` when none). The headline reads "+N homes by YYYY" at that year, or exactly "No extra homes yet" before the first year end; the details say "The plan has added no homes yet." and hide the band line at `-1`; `ExtraChart` draws only revealed points. Scrubbing back moves the cursor only, so the headline keeps naming the furthest year. The garage-cost sentence and the freed-land hectares are not capped: they are plan inputs (capacity), not outcomes.
 
 Under the breakdown the details give the freed-land disclosure from `sites.json`
 (`freedLandSplit`): hectares from freeway-land parcels (`parcelM2`) and from right-of-way (the rest

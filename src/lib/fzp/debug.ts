@@ -11,6 +11,8 @@ export interface SfhFzpDebug {
   readonly seed: number | null;
   readonly representative: boolean;
   readonly day: Day;
+  /** The furthest day reached; the results reveal nothing after it. */
+  readonly highWater: Day;
   readonly asOf: Day;
   readonly horizon: Day;
   readonly playing: boolean;
@@ -48,6 +50,9 @@ export function installFzpDebug(get: () => SfhFzpDebug): () => void {
     },
     get day() {
       return get().day;
+    },
+    get highWater() {
+      return get().highWater;
     },
     get asOf() {
       return get().asOf;

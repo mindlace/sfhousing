@@ -174,9 +174,7 @@ describe('LessCarsMode', () => {
   it('puts the headline in the pinned slot and Timeline and Evidence among the actions', async () => {
     setup();
     const pinned = page.getByTestId('header-pinned');
-    await expect
-      .element(pinned.getByTestId('lc-headline'))
-      .toHaveTextContent(headlineText(data.summary));
+    await expect.element(pinned.getByTestId('lc-headline')).toHaveTextContent('No extra homes yet');
     await page.getByTestId('header-actions').getByRole('button', { name: 'Timeline' }).click();
     await expect.element(page.getByRole('dialog', { name: 'Project timeline' })).toBeVisible();
     await userEvent.keyboard('{Escape}');
@@ -298,5 +296,45 @@ describe('LessCarsMode', () => {
     await expect.poll(() => callsOf('setTime').length).toBeGreaterThan(1);
     const last = callsOf('setTime').at(-1)![0] as number;
     expect(last).toBeGreaterThan(LESSCARS_START);
+  });
+
+  it('the headline reveals up to the furthest day reached, and scrubbing back keeps it', async () => {
+    setup();
+    await expect.poll(() => workers[0]?.posts.length).toBe(1);
+    const headline = page.getByTestId('header-pinned').getByTestId('lc-headline');
+    await expect.element(headline).toHaveTextContent('No extra homes yet');
+    const slider = page.getByRole('slider', { name: 'Date in the simulation' });
+    (slider.element() as HTMLElement).focus();
+    await userEvent.keyboard('{End}');
+    const full = headlineText(data.summary, data.summary.yearEnds.length - 1);
+    await expect.element(headline).toHaveTextContent(full);
+    await userEvent.keyboard('{Home}');
+    await expect.poll(() => callsOf('setTime').at(-1)![0] as number).toBe(LESSCARS_START);
+    await expect.element(headline).toHaveTextContent(full);
+  });
+
+  describe('with the e2e debug hook', () => {
+    beforeEach(() => {
+      vi.stubEnv('VITE_E2E', '1');
+    });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('keeps the furthest day when scrubbing back, and the headline names 2039', async () => {
+      setup();
+      await expect.poll(() => workers[0]?.posts.length).toBe(1);
+      const slider = page.getByRole('slider', { name: 'Date in the simulation' });
+      (slider.element() as HTMLElement).focus();
+      for (let i = 0; i < 12; i++) await userEvent.keyboard('{PageUp}');
+      const to2040 = Date.UTC(2040, 0, 1) / 86400000;
+      await expect.poll(() => window.__sfhLessCars?.highWater).toBe(to2040);
+      for (let i = 0; i < 10; i++) await userEvent.keyboard('{PageDown}');
+      await expect.poll(() => window.__sfhLessCars?.day).toBe(Date.UTC(2030, 0, 1) / 86400000);
+      expect(window.__sfhLessCars?.highWater).toBe(to2040);
+      const headline = page.getByTestId('header-pinned').getByTestId('lc-headline');
+      await expect.element(headline).toHaveTextContent(headlineText(data.summary, 11));
+      await expect.element(headline).toHaveTextContent('2039');
+    });
   });
 });

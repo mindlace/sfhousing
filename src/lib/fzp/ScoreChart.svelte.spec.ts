@@ -22,6 +22,7 @@ const props = (over: Record<string, unknown> = {}) => ({
   asOf: FIX_ASOF,
   horizon: FIX_HORIZON,
   day: DAY1,
+  highWater: FIX_HORIZON,
   ...over
 });
 
@@ -35,7 +36,7 @@ describe('ScoreChart', () => {
     await render(ScoreChart, { props: props() });
     expect(document.querySelector('figure svg[role="img"]')).not.toBeNull();
     await expect
-      .element(page.getByRole('img', { name: chartLabel(TIMELINE_SCORE) }))
+      .element(page.getByRole('img', { name: chartLabel(TIMELINE_SCORE, 290) }))
       .toBeInTheDocument();
   });
 
@@ -54,7 +55,7 @@ describe('ScoreChart', () => {
       '8 in 10 futures',
       'Plan effect, 8 in 10 futures'
     ]);
-    const expected = tableRows(TIMELINE_SCORE, FIX_ASOF);
+    const expected = tableRows(TIMELINE_SCORE, FIX_ASOF, 290);
     // The RHNA deadline shares January 2031's month index, so 24 Januaries + the end = 25.
     expect(expected).toHaveLength(25);
     const body = document.querySelectorAll('tbody tr');
@@ -67,11 +68,27 @@ describe('ScoreChart', () => {
   it('moves the cursor line with the day prop', async () => {
     await page.viewport(1024, 768);
     const screen = await render(ScoreChart, { props: props() });
-    const model = () => chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, svgWidth());
+    const model = () => chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, svgWidth(), 290);
     expect(cursorX()).toBeCloseTo(model().x(DAY1), 1);
     await screen.rerender(props({ day: DAY2 }));
     await expect.poll(cursorX).toBeCloseTo(model().x(DAY2), 1);
     expect(model().x(DAY2)).toBeGreaterThan(model().x(DAY1));
+  });
+
+  it('draws only up to the high-water month and keeps the curve when day moves back', async () => {
+    await page.viewport(1024, 768);
+    const mid = dayFromUtc(2035, 6, 15);
+    const totalD = () => document.querySelector('[data-series="total"]')!.getAttribute('d')!;
+    const full = await render(ScoreChart, { props: props({ day: mid, highWater: FIX_HORIZON }) });
+    const fullD = totalD();
+    await full.rerender(props({ day: mid, highWater: mid }));
+    await expect.poll(totalD).not.toBe(fullD);
+    const partial = totalD();
+    expect(partial.length).toBeLessThan(fullD.length);
+    const before = cursorX();
+    await full.rerender(props({ day: DAY1, highWater: mid }));
+    await expect.poll(cursorX).not.toBeCloseTo(before, 1);
+    expect(totalD()).toBe(partial);
   });
 
   it('draws every series, each tagged with data-series', async () => {
@@ -153,7 +170,7 @@ describe('ScoreChart', () => {
     await page.viewport(1024, 768);
     const score = makeTimelineScore();
     await render(ScoreChart, { props: props({ score }) });
-    const model = chartModel(score, FIX_ASOF, FIX_HORIZON, svgWidth());
+    const model = chartModel(score, FIX_ASOF, FIX_HORIZON, svgWidth(), 290);
     expect(model.yMin).toBeLessThan(0);
     const d = document.querySelector('[data-series="planCompleted"]')!.getAttribute('d')!;
     const ys = [...d.matchAll(/ (-?[\d.]+)/g)].map((m) => Number(m[1]));

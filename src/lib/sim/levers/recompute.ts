@@ -8,6 +8,7 @@
  */
 import { envelopeRow, type EnvelopeRow } from '$lib/data/envelope-row';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
+import { clampGross, grossAt, type GrossTable } from '$lib/data/gross-table';
 import { FILL_LEVELS, scenarioRecordOf, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { scenarioYield } from '$lib/data/scenario-yield';
 import { needKey, type Need } from './resolve';
@@ -45,6 +46,8 @@ export function createYieldRecompute(
     record(id: ParcelId): ParcelRecord | undefined;
     cellLoaded(cellId: string): boolean;
     now(): number;
+    /** Test seam; default `scenarioYield(rec, s, null)`. Its result is clamped (`clampGross`). */
+    grossOf?(rec: ParcelRecord, stories: number): number;
   },
   gross: GrossCache
 ): YieldRecompute {
@@ -70,6 +73,7 @@ export function createYieldRecompute(
     hostable: false
   });
 
+  const grossOf = deps.grossOf ?? ((rec: ParcelRecord, s: number) => scenarioYield(rec, s, null));
   const compute = (n: Need, rec: ParcelRecord): EnvelopeRow => {
     const view = scenarioRecordOf(parcels, n.row, rec);
     return envelopeRow({
@@ -80,7 +84,7 @@ export function createYieldRecompute(
       grossAt: (s) => {
         const k = `${n.row}:${s}`;
         let g = gross.get(k);
-        if (g === undefined) gross.set(k, (g = scenarioYield(view, s, null)));
+        if (g === undefined) gross.set(k, (g = clampGross(grossOf(view, s))));
         return g;
       }
     });
@@ -123,6 +127,50 @@ export function createYieldRecompute(
       }
       if (computed > 0) open = open.filter((b) => b.next < b.needs.length);
       return out.size === total;
+    },
+    result: () => out
+  };
+}
+
+/** The same `YieldRecompute` from table lookups: `cellsNeeded()` is always [], `missing` empty. */
+export function createTableRecompute(
+  parcels: ScenarioParcels,
+  needs: readonly Need[],
+  table: GrossTable,
+  deps: { now(): number }
+): YieldRecompute {
+  const unique = new Map<string, Need>();
+  for (const n of needs) unique.set(needKey(n), n);
+  const pending = [...unique];
+  const out = new Map<string, EnvelopeRow>();
+  const missing: ParcelId[] = [];
+  let next = 0;
+  return {
+    total: unique.size,
+    get done() {
+      return out.size;
+    },
+    missing,
+    cellsNeeded: () => [],
+    step(budgetMs) {
+      const start = deps.now();
+      let computed = 0;
+      while (next < pending.length) {
+        if (computed > 0 && deps.now() - start >= budgetMs) break;
+        computed++;
+        const [key, n] = pending[next++];
+        out.set(
+          key,
+          envelopeRow({
+            stories: n.stories,
+            cap: n.cap,
+            eligible: parcels.eligible[n.row] === 1,
+            existingUnits: parcels.existingUnits[n.row],
+            grossAt: (s) => grossAt(table, n.row, s)
+          })
+        );
+      }
+      return out.size === unique.size;
     },
     result: () => out
   };

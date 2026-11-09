@@ -10,6 +10,7 @@
   import { onMount, untrack } from 'svelte';
   import type { FeatureCollection, Point } from 'geojson';
   import { LESSCARS_HORIZON, LESSCARS_START } from '$lib/data/lesscars/schedule';
+  import { HighWater } from '$lib/fzp/high-water.svelte';
   import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import { monthStart } from '$lib/fzp/time';
   import TimeScrubber from '$lib/fzp/TimeScrubber.svelte';
@@ -89,6 +90,12 @@
 
   let phase = $state<'loading' | 'ready' | 'failed'>('loading');
   let day = $state<Day>(LESSCARS_START);
+  const highWater = new HighWater(LESSCARS_START);
+  // The mark follows every write to `day` (playback and scrubbing alike).
+  $effect(() => {
+    const d = day;
+    untrack(() => highWater.reach(d));
+  });
   let playing = $state(false);
   let speed = $state<Speed>(DEFAULT_SPEED);
   let scrubberH = $state(0);
@@ -315,6 +322,7 @@
     const uninstall = installLessCarsDebug(() => ({
       phase,
       day,
+      highWater: highWater.value,
       playing,
       seed,
       revision,
@@ -348,11 +356,17 @@
 {/snippet}
 
 {#snippet details()}
-  <DetailsPanel {summary} {sites} {day} onevidence={() => openEvidence()} />
+  <DetailsPanel
+    {summary}
+    {sites}
+    {day}
+    highWater={highWater.value}
+    onevidence={() => openEvidence()}
+  />
 {/snippet}
 
 {#snippet headline()}
-  <HeadlineBar {summary} panel={details} />
+  <HeadlineBar {summary} highWater={highWater.value} panel={details} />
 {/snippet}
 
 <div class="relative h-full" style:--lc-scrubber-h="{scrubberH + noticeH}px">

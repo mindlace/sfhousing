@@ -5,6 +5,8 @@ import type { Day } from '$lib/timelapse/time';
 export interface SfhLessCarsDebug {
   readonly phase: 'loading' | 'ready' | 'failed';
   readonly day: Day;
+  /** The furthest day reached; the headline, details and chart reveal only up to it. */
+  readonly highWater: Day;
   readonly playing: boolean;
   /** The representative seed, once the worker has loaded the timeline. */
   readonly seed: number | null;
@@ -29,6 +31,9 @@ export function installLessCarsDebug(get: () => SfhLessCarsDebug): () => void {
     },
     get day() {
       return get().day;
+    },
+    get highWater() {
+      return get().highWater;
     },
     get playing() {
       return get().playing;

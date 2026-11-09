@@ -25,24 +25,32 @@ export function signed(n: number): string {
   return r > 0 ? `+${formatCount(r)}` : formatCount(r);
 }
 
-export function finalYear(s: LessCarsSummary): number {
-  return utcParts(s.yearEnds[s.yearEnds.length - 1]).y;
+/** The last year-end index whose date is at or before `highWater`, else -1. */
+export function revealedYearIndex(s: LessCarsSummary, highWater: Day): number {
+  let i = -1;
+  while (i + 1 < s.yearEnds.length && s.yearEnds[i + 1] <= highWater) i++;
+  return i;
 }
 
-/** The headline number: the mean at the last year, rounded (never -0). */
-export function finalHomes(s: LessCarsSummary): number {
-  return Math.round(s.extra.mean[s.extra.mean.length - 1]) + 0;
+/** The calendar year of year end `i` (the first year's when nothing is revealed). */
+export function yearAt(s: LessCarsSummary, i: number): number {
+  return utcParts(s.yearEnds[Math.max(i, 0)]).y;
 }
 
-export const headlineText = (s: LessCarsSummary): string =>
-  headlineCopy(finalHomes(s), finalYear(s));
+/** The headline number at year end `i`: the mean, rounded (never -0); 0 when nothing is revealed. */
+export function homesAt(s: LessCarsSummary, i: number): number {
+  return i < 0 ? 0 : Math.round(s.extra.mean[i]) + 0;
+}
 
-export const headlineName = (s: LessCarsSummary): string =>
-  headlineNameCopy(finalHomes(s), finalYear(s));
+export const headlineText = (s: LessCarsSummary, i: number): string =>
+  headlineCopy(homesAt(s, i), yearAt(s, i), i >= 0);
 
-export function bandText(s: LessCarsSummary): string {
-  const last = s.extra.p10.length - 1;
-  return bandCopy(s.seeds, signed(s.extra.p10[last]), signed(s.extra.p90[last]));
+export const headlineName = (s: LessCarsSummary, i: number): string =>
+  headlineNameCopy(homesAt(s, i), yearAt(s, i), i >= 0);
+
+export function bandText(s: LessCarsSummary, i: number): string {
+  const j = Math.max(i, 0);
+  return bandCopy(s.seeds, signed(i < 0 ? 0 : s.extra.p10[j]), signed(i < 0 ? 0 : s.extra.p90[j]));
 }
 
 /** Largest-remainder rounding: integers, each within 1 of its part, summing to Math.round(total). */
@@ -62,13 +70,16 @@ export function roundedParts(parts: readonly number[], total: number): number[] 
 }
 
 export function breakdownRows(
-  s: LessCarsSummary
+  s: LessCarsSummary,
+  i: number
 ): { source: Source; label: string; homes: number }[] {
-  const last = s.extra.mean.length - 1;
-  const homes = roundedParts(
-    SOURCES.map((k) => s.bySource[k][last]),
-    s.extra.mean[last]
-  );
+  const homes =
+    i < 0
+      ? SOURCES.map(() => 0)
+      : roundedParts(
+          SOURCES.map((k) => s.bySource[k][i]),
+          s.extra.mean[i]
+        );
   return SOURCES.map((source, i) => ({ source, label: SOURCE_LABEL[source], homes: homes[i] }));
 }
 
@@ -87,8 +98,11 @@ export interface ExtraChartModel {
   yMax: number;
 }
 
-export function extraChartModel(s: LessCarsSummary): ExtraChartModel {
-  const { mean, p10, p90 } = s.extra;
+/** The model for year ends 0..i; the y domain comes from that slice (floor 0), years stay whole. */
+export function extraChartModel(s: LessCarsSummary, i: number): ExtraChartModel {
+  const mean = s.extra.mean.slice(0, i + 1);
+  const p10 = s.extra.p10.slice(0, i + 1);
+  const p90 = s.extra.p90.slice(0, i + 1);
   const hi = Math.max(0, ...mean, ...p10, ...p90);
   const lo = Math.min(0, ...mean, ...p10, ...p90);
   return {

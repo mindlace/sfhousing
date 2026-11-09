@@ -147,4 +147,20 @@ describe('buildManifest', () => {
       }
     });
   });
+
+  it('buildManifest names gross.bin only with scenarios and gross', () => {
+    const at = (scenarios: boolean, gross: boolean) =>
+      buildManifest({
+        datasetVersion: 'fixture-3',
+        builtAt: '2026-10-10T00:00:00.000Z',
+        lock: { sources: [] },
+        chunks: [],
+        overtureContrib: [],
+        scenarios,
+        gross
+      });
+    expect(at(true, true).scenarios?.fzp.gross).toBe('/data/fixture-3/scenarios/fzp/gross.bin');
+    expect('gross' in at(true, false).scenarios!.fzp).toBe(false);
+    expect('scenarios' in at(false, true)).toBe(false);
+  });
 });

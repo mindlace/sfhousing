@@ -8,16 +8,19 @@ import {
   breakdownRows,
   extraChartModel,
   freedLandSplit,
-  finalYear,
+  homesAt,
   headlineName,
   headlineText,
+  revealedYearIndex,
   roundedParts,
   signed,
+  yearAt,
   yearIndexAt
 } from './summary-view';
 
 const fx = parseSummary(summaryJson);
-const Y = finalYear(fx);
+const L = fx.yearEnds.length - 1;
+const Y = yearAt(fx, L);
 const fixtureSites = parseSitesFile(sitesJson);
 
 describe('freedLandSplit', () => {
@@ -61,24 +64,24 @@ describe('summary-view', () => {
   it('breakdownRows add to the headline number on the fixture and on a fractional summary', () => {
     for (const s of [fx, fractional(fx, 7)]) {
       const n = Math.round(s.extra.mean.at(-1)!);
-      expect(breakdownRows(s).reduce((a, r) => a + r.homes, 0)).toBe(n);
+      expect(breakdownRows(s, L).reduce((a, r) => a + r.homes, 0)).toBe(n);
     }
   });
   it('headline copy for positive, negative and zero (synthetic values)', () => {
-    expect(headlineText(withFinal(fx, 1234.4))).toBe(`+1,234 homes by ${Y}`);
-    expect(headlineText(withFinal(fx, -56.2))).toBe(`−56 homes by ${Y}`);
-    expect(headlineText(withFinal(fx, 0.3))).toBe(`No extra homes by ${Y}`);
-    expect(headlineText(withFinal(fx, -0.3))).toBe(`No extra homes by ${Y}`);
-    expect(headlineName(withFinal(fx, -56.2))).toBe(
+    expect(headlineText(withFinal(fx, 1234.4), L)).toBe(`+1,234 homes by ${Y}`);
+    expect(headlineText(withFinal(fx, -56.2), L)).toBe(`−56 homes by ${Y}`);
+    expect(headlineText(withFinal(fx, 0.3), L)).toBe(`No extra homes by ${Y}`);
+    expect(headlineText(withFinal(fx, -0.3), L)).toBe(`No extra homes by ${Y}`);
+    expect(headlineName(withFinal(fx, -56.2), L)).toBe(
       `−56 homes by ${Y} compared with no plan. Show details`
     );
-    expect(headlineName(withFinal(fx, 12))).toBe(
+    expect(headlineName(withFinal(fx, 12), L)).toBe(
       `+12 homes by ${Y} compared with no plan. Show details`
     );
   });
   it('bandText names the seed count and signed bounds', () => {
     const [p10, p90] = [fx.extra.p10.at(-1)!, fx.extra.p90.at(-1)!];
-    expect(bandText(fx)).toBe(
+    expect(bandText(fx, L)).toBe(
       `Middle 80% of ${fx.seeds} paired futures: ${signed(p10)} to ${signed(p90)}`
     );
     expect(signed(12)).toBe('+12');
@@ -86,12 +89,44 @@ describe('summary-view', () => {
     expect(signed(0)).toBe('0');
   });
   it('extraChartModel reaches below zero only when a value does', () => {
-    expect(extraChartModel(withP10(fx, 0)).yMin).toBe(0);
-    expect(extraChartModel(withP10(fx, -30)).yMin).toBeLessThan(0);
-    expect(extraChartModel(fx).yMax).toBeGreaterThanOrEqual(Math.max(...fx.extra.p90));
+    expect(extraChartModel(withP10(fx, 0), L).yMin).toBe(0);
+    expect(extraChartModel(withP10(fx, -30), L).yMin).toBeLessThan(0);
+    expect(extraChartModel(fx, L).yMax).toBeGreaterThanOrEqual(Math.max(...fx.extra.p90));
   });
   it('yearIndexAt clamps to the year ends', () => {
     expect(yearIndexAt(fx, LESSCARS_START)).toBe(0);
     expect(yearIndexAt(fx, LESSCARS_HORIZON + 99)).toBe(fx.yearEnds.length - 1);
+  });
+  it('revealedYearIndex is the last year end at or before the high-water mark', () => {
+    expect(revealedYearIndex(fx, fx.yearEnds[0] - 1)).toBe(-1);
+    expect(revealedYearIndex(fx, fx.yearEnds[3])).toBe(3);
+    expect(revealedYearIndex(fx, fx.yearEnds[3] + 1)).toBe(3);
+    expect(revealedYearIndex(fx, LESSCARS_HORIZON + 99)).toBe(L);
+  });
+  it('homesAt and yearAt at -1', () => {
+    expect(homesAt(fx, -1)).toBe(0);
+    expect(yearAt(fx, -1)).toBe(yearAt(fx, 0));
+    expect(homesAt(fx, 3)).toBe(Math.round(fx.extra.mean[3]));
+  });
+  it('extraChartModel(s, 3) slices to four points and takes its y domain from them', () => {
+    const m = extraChartModel(fx, 3);
+    expect([m.mean.length, m.p10.length, m.p90.length]).toEqual([4, 4, 4]);
+    expect(m.years).toHaveLength(fx.yearEnds.length);
+    const hi = Math.max(0, ...fx.extra.mean.slice(0, 4), ...fx.extra.p90.slice(0, 4));
+    expect(m.yMax).toBeGreaterThanOrEqual(hi);
+    const empty = extraChartModel(fx, -1);
+    expect(empty.mean).toEqual([]);
+    expect(empty.yMin).toBe(0);
+  });
+  it('breakdownRows(s, 3) sums to the rounded mean at 3', () => {
+    expect(breakdownRows(fx, 3).reduce((a, r) => a + r.homes, 0)).toBe(
+      Math.round(fx.extra.mean[3])
+    );
+  });
+  it('headline at -1 is "No extra homes yet"; at 3 it names that year', () => {
+    expect(headlineText(fx, -1)).toBe('No extra homes yet');
+    expect(headlineName(fx, -1).startsWith('No extra homes yet')).toBe(true);
+    expect(headlineText(fx, 3)).toContain(String(yearAt(fx, 3)));
+    expect(bandText(fx, 3)).toContain(signed(fx.extra.p10[3]));
   });
 });

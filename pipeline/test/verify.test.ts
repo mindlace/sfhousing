@@ -60,6 +60,14 @@ describe('verify', () => {
     expect(seen).toContain(`HEAD /data/${V}/scenarios/fzp/policy.bin`);
     expect(seen).not.toContain(`HEAD /data/${V}/scenarios/fzp/frontage.bin`);
   });
+  it('verify HEADs gross.bin when the manifest names it', async () => {
+    const withKeys = JSON.parse(golden) as { scenarios: { fzp: Record<string, string> } };
+    withKeys.scenarios.fzp.gross = `/data/${V}/scenarios/fzp/gross.bin`;
+    const { f, seen } = fakeFetch(undefined, JSON.stringify(withKeys));
+    const r = await verify({ datasetVersion: V, origin: 'http://o', fetch: f });
+    expect(r).toEqual({ ok: true, failures: [] });
+    expect(seen).toContain(`HEAD /data/${V}/scenarios/fzp/gross.bin`);
+  });
   it('HEAD-checks the lesscars urls when the manifest names them', async () => {
     const withKeys = JSON.parse(golden) as {
       scenarios: Record<string, Record<string, string>>;

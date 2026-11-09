@@ -63,6 +63,19 @@ async function gotoSim(
   if (run) await startRun(page);
 }
 
+/**
+ * Turns the zoning height limits off in the saved view prefs (`sfhousing:view`) before the page
+ * loads, for a Paint test that never looks at them. They are on by default and are the costliest
+ * overlay, on startup and again when Paint is chosen (their paint mode): at 15 workers with CPU
+ * load they took about 8 s of a 30 s Paint test, and the tests timed out (#74, #75, #76). Their
+ * own tests leave them on.
+ */
+async function hideHeightLimits(page: Page): Promise<void> {
+  await page.addInitScript(() =>
+    localStorage.setItem('sfhousing:view', JSON.stringify({ heightLimits: false }))
+  );
+}
+
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
 /** The dock's Results face (`data-testid="score-details"`): Run and the header score show it. */
 const scoreDetails = (page: Page): Locator => page.getByRole('region', { name: 'Results' });
@@ -165,6 +178,19 @@ async function strokeOnce(page: Page, isMobile: boolean): Promise<void> {
   } else {
     await mouseDrag(page, FROM, TO);
   }
+}
+
+/**
+ * Paints the lots of fixture-0's parcel row with one keyboard stamp (Enter on the focused map, with
+ * Paint chosen) at FRAME's centre. For a test that needs painted lots, not a drag: strokeOnce's
+ * wait for the jump's tiles, its pointer moves (each a live preview and a software-GL frame) and
+ * the preview layer took 9 to 12 s of a 30 s test at 15 workers, the stamp 2 to 5 s (#70). It
+ * needs only the camera, which `jumpTo` sets at once: the worker resolves the lots city-wide.
+ */
+async function stampOnce(page: Page): Promise<void> {
+  await page.evaluate((f) => (window as Win).__sfhMap!.map!.jumpTo(f), FRAME);
+  await page.locator('.maplibregl-canvas').focus();
+  await page.keyboard.press('Enter');
 }
 
 /**
@@ -472,6 +498,7 @@ test('a notice never moves the docked panel or the time bar', async ({ page, isM
 });
 
 test('a Paint stroke adds a custom brush and Ctrl+Z removes it', async ({ isMobile, page }) => {
+  await hideHeightLimits(page);
   await gotoSim(page);
   await openTab(page, 'Paint');
   const paint = panel(page).getByRole('radio', { name: 'Paint', exact: true });
@@ -496,12 +523,14 @@ test('a painted area is selected, outlined and removed from the Paint tab', asyn
   page
 }) => {
   const OUTLINE_LAYER = 'sim-painted-outline';
+  await hideHeightLimits(page);
   await gotoSim(page);
   await openTab(page, 'Paint');
   const paint = panel(page).getByRole('radio', { name: 'Paint', exact: true });
   await expect(paint).toBeEnabled();
   await chooseTool(page, isMobile, () => paint.click());
-  await strokeOnce(page, isMobile);
+  // A painted area, not a drag, is what the row needs (as in the eraser test, #70).
+  await stampOnce(page);
   if (isMobile) await stripDone(page);
   await expect(customList(page)).toHaveCount(1);
 
@@ -667,13 +696,17 @@ test('clicking inside a painted stroke opens the Paint tab on that area', async 
   isMobile,
   page
 }) => {
+  await hideHeightLimits(page);
   await gotoSim(page);
   const before = (await leverStatus(page)).sentRev;
   await openTab(page, 'Paint');
   const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
   await expect(tool('Paint')).toBeEnabled();
   await chooseTool(page, isMobile, () => tool('Paint').click());
-  await strokeOnce(page, isMobile);
+  // A stamp is a one-point stroke: its circle at FRAME's centre covers LOT_X, and the Paint row
+  // being selected below shows the click landed inside it. A drag's live preview cost 7 to 9 s
+  // under load (#76).
+  await stampOnce(page);
   if (isMobile) await stripDone(page);
   else await tool('Move').click();
   await expect(customList(page)).toHaveCount(1);
@@ -840,6 +873,29 @@ test('the Today marker in a run returns to Setup; Replay at the horizon does not
   await expect.poll(() => fzp(page, 'runPhase')).toBe('setup');
   expect(await fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
   await expect(page.getByTestId('fzp-play-label')).toHaveText('Run');
+});
+
+test('scrubbing back keeps the chart and the high-water mark where they were', async ({ page }) => {
+  await gotoSim(page, '/sim', { run: true });
+  const total = scoreDetails(page).locator('[data-testid="fzp-chart"] [data-series="total"]');
+  await slider(page).focus();
+  for (let i = 0; i < 3; i++) await page.keyboard.press('PageUp');
+  const far = await fzp(page, 'day');
+  expect(far).toBeGreaterThan(await fzp(page, 'asOf'));
+  await expect.poll(() => fzp(page, 'highWater')).toBe(far);
+  const drawn = (await total.getAttribute('d'))!;
+  expect(drawn.length).toBeGreaterThan(0);
+
+  await page.keyboard.press('PageDown');
+  await page.keyboard.press('PageDown');
+  await expect.poll(() => fzp(page, 'day')).toBeLessThan(far);
+  expect(await fzp(page, 'highWater')).toBe(far);
+  await expect(total).toHaveAttribute('d', drawn);
+
+  // The partly revealed chart passes axe.
+  await openPolicy(page);
+  await expect(scoreDetails(page)).toBeVisible();
+  await expectNoA11yViolations(page);
 });
 
 test('axe: the dock on Results during a run', async ({ page }) => {
@@ -1106,7 +1162,8 @@ test('Setup shows the height limits and transit; Run hides them; Edit policy bri
   await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('visible');
   await expect(await headerAction(page, 'View')).toBeVisible();
 
-  await pressRun(page);
+  // Paused: a playing run draws a software-GL map frame per tick, and every later step waits on one.
+  await startRun(page);
   await expect.poll(() => deckIds(page)).not.toContain(LIMITS_LAYER);
   await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('none');
   await openHeaderMenu(page);
@@ -1336,7 +1393,7 @@ test('the eraser outlines painted lots, only while chosen', async ({ isMobile, p
   await openTab(page, 'Paint');
   const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
   await chooseTool(page, isMobile, () => tool('Paint').click());
-  await strokeOnce(page, isMobile);
+  await stampOnce(page);
   if (isMobile) await stripDone(page);
   await expect(customList(page)).toHaveCount(1);
   expect(await deckIds(page)).not.toContain(OUTLINE_LAYER);

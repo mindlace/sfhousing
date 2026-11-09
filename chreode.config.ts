@@ -1,4 +1,4 @@
-import { burnInStep, defineConfig } from '@mindlace/chreode';
+import { burnInStep, defineConfig, timingStep } from '@mindlace/chreode';
 
 export default defineConfig({
   rules: [
@@ -74,6 +74,9 @@ export default defineConfig({
     // Everything else (migrations/, package*.json, .npmrc, .nvmrc, tsconfig.json,
     // vite.config.ts, svelte.config.js) matches no rule and runs every step, dataset included.
   ],
+  // A package.json / package-lock.json change that only bumps the version (release-please) runs
+  // prettier alone: neither file feeds the dataset code hash (pipeline/lib/version.ts).
+  versionBumpTriggers: ['format'],
   steps: [
     { label: 'dataset', run: 'npx tsx scripts/dataset-version.ts --check', when: ['dataset'] },
     { label: 'format', run: 'npx prettier --check .', when: ['format'], supersededBy: ['lint'] },
@@ -90,6 +93,9 @@ export default defineConfig({
     },
     // Each Playwright invocation rebuilds the app (webServer), hence the longer ceiling.
     burnInStep({ when: ['unit', 'e2e'], timeoutMs: 20 * 60_000 }),
+    // Fails on timing crutches (fixed waits, raised timeouts/retries, unconditional skips) that the
+    // branch adds to tests. Reads the diff only; runs no tests.
+    timingStep({ when: ['unit', 'e2e', 'pipeline'] }),
     { label: 'lint:workflows', run: 'npm run lint:workflows', when: ['workflows'] }
   ],
   // Retried-then-passed tests become `flake` issues; the third occurrence fails signoff.
@@ -135,7 +141,29 @@ export default defineConfig({
       }
     ]
   },
+  timing: {
+    // Test code and test configs only. The default globs take every file under e2e/ and test/,
+    // which here includes fixture data (pmtiles, pbf, png, json) that would be diffed as text.
+    // Perf and bench tests (*.perf.*, *.bench.*, e2e/bench/**) keep the default exemption.
+    match: [
+      '**/*.{spec,test}.{ts,js}',
+      'e2e/**/*.ts',
+      'pipeline/test/**/*.ts',
+      'playwright.config.ts',
+      'vite.config.ts',
+      'vite.config.client-test.ts'
+    ]
+  },
   stderrAllowlist: [
+    // Under burn-in load, wrangler dev's ProxyWorker (node_modules/wrangler/wrangler-dist/
+    // ProxyWorker.js) retries a GET/HEAD whose internal connection to the UserWorker dropped, and
+    // warns once the retry succeeds. The request still succeeds; a request that fails for good fails
+    // its test. Only the "recovered" line is allowed, not a failure.
+    {
+      pattern:
+        /^\[WebServer\] ▲ \[WARNING\] ProxyWorker: (GET|HEAD) http:\/\/localhost:4173\/\S+ recovered on attempt \d+ after a dropped connection to the UserWorker\s*$/,
+      reason: "wrangler dev's proxy recovered a GET after a dropped local connection under load"
+    },
     // e2e/cache-headers.spec.ts and e2e/pages-a11y.spec.ts request /no-such-page on purpose;
     // wrangler dev logs each 404 to stderr as this three-line block.
     {

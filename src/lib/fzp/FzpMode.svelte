@@ -97,6 +97,7 @@
   } from '$lib/sim/scenario-client';
   import type { Day } from '$lib/timelapse/time';
   import { installFzpDebug } from './debug';
+  import { HighWater } from './high-water.svelte';
   import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
   import SimResults from './SimResults.svelte';
   import { DEFAULT_SPEED } from './playback';
@@ -132,6 +133,8 @@
      * scenario is live sends `setLevers`.
      */
     levers?: SimLevers;
+    /** /sim: `levers` lacks its brush lots; the next initScenario asks the worker to wait. */
+    leversIncomplete?: boolean;
     /**
      * /sim: a kept lever revision's height regions and contours (one `heights` per rev, before its
      * `current`); a revision below the latest levers sent is dropped.
@@ -223,6 +226,7 @@
     onurlseed = undefined,
     createWorker = spawnSimWorker,
     levers = undefined,
+    leversIncomplete = false,
     onheights = undefined,
     onclient = undefined,
     onmapready = undefined,
@@ -268,6 +272,8 @@
   let bandRunsTotal = $state(0);
   let representative = $state(false);
   let day = $state<Day>(untrack(() => initialCalibration?.asOf ?? 0));
+  /** The furthest day reached: the results reveal nothing after it. Reset on entering Setup. */
+  const highWater = new HighWater(untrack(() => day));
   let playing = $state(false);
   let speed = $state<Speed>(DEFAULT_SPEED);
   /** The worker crashed after ready: scrubbing still works; the chip offers Retry. */
@@ -397,6 +403,11 @@
    */
   let latest: {
     rev: number;
+    /**
+     * The highest barrier that answers this request: `rev`, or a `setLevers` sent before its
+     * answer (the worker loads at it, so its timeline answers the init). Above it: a resync.
+     */
+    upTo: number;
     representative: boolean | null;
     writesUrl: boolean;
     answered: boolean;
@@ -414,8 +425,8 @@
    */
   function startScenario({ seed: next }: { seed: number | null }): void {
     if (!client || !manifest) return;
-    const l = untrack(() => levers);
-    const rev = client.initScenario(manifest, HORIZON, next, l);
+    const [l, incomplete] = untrack(() => [levers, leversIncomplete] as const);
+    const rev = client.initScenario(manifest, HORIZON, next, l, incomplete);
     if (l !== undefined) {
       sentLevers = l;
       leversByRev.push({ rev, levers: l });
@@ -425,6 +436,7 @@
     const keep = next !== null && next === seed;
     latest = {
       rev,
+      upTo: rev,
       representative: keep ? null : next === null,
       writesUrl: false,
       answered: false
@@ -434,15 +446,20 @@
   }
 
   /**
-   * Sends a new `levers` object once the scenario is live. It waits while a reroll is in flight,
-   * so the reroll's answer (and its URL write) is not superseded; the answer calls this again.
+   * Sends a new `levers` object once a session was started, before its first timeline too (an
+   * `awaitLevers` session runs nothing until it). Not after a crash, after a failed load or
+   * during a Retry (no session to take it: Retry sends the latest levers with its initScenario).
+   * It waits while a reroll is in flight, so the reroll's answer (and its URL write) is not
+   * superseded; the answer calls this again. Sent before the init's answer, its barrier answers
+   * the init (`latest.upTo`): the worker's first timeline comes at it.
    */
   function syncLevers(): void {
     const l = untrack(() => levers);
     if (l === undefined || l === sentLevers || dead || !client || client.crashed) return;
-    if (!scenarioLive || rerollBusy) return;
+    if (latest === null || phase === 'failed' || retrying || rerollBusy) return;
     sentLevers = l;
     const rev = client.setLevers(l);
+    if (!latest.answered) latest.upTo = rev; // never a reroll's: rerollBusy holds the send
     leversByRev.push({ rev, levers: l });
     setLeverState(leversSent(leverState, rev));
   }
@@ -464,7 +481,7 @@
   function requestReroll(next: number | null): void {
     if (!client || !canReroll) return;
     const rev = client.reroll(next);
-    latest = { rev, representative: next === null, writesUrl: true, answered: false };
+    latest = { rev, upTo: rev, representative: next === null, writesUrl: true, answered: false };
     rerollBusy = true;
     rerollFailed = false;
   }
@@ -686,7 +703,14 @@
     if (runPhase !== 'run') onrun?.();
   }
 
+  // The mark follows every write to `day` (playback, scrubbing and the Retry path alike).
+  $effect(() => {
+    const d = day;
+    untrack(() => highWater.reach(d));
+  });
+
   // Setup (spec §1): no playback, and the day pinned at asOf, moved as a scrubber jump moves it.
+  // The high-water mark goes back to asOf with it (Edit policy and Today both land here).
   $effect(() => {
     if (runPhase !== 'setup') return;
     const a = asOf;
@@ -698,6 +722,7 @@
         day = a;
         onDay(a);
       }
+      highWater.reset(a);
     });
   });
 
@@ -743,7 +768,7 @@
       bandRunsTotal = t.bandRunsTotal;
       checkAsOf(t.score);
       const req = latest;
-      const answer = req !== null && !req.answered && t.rev === req.rev;
+      const answer = req !== null && !req.answered && t.rev >= req.rev && t.rev <= req.upTo;
       if (answer) {
         req.answered = true;
         if (req.representative !== null) representative = req.representative;
@@ -751,7 +776,7 @@
         rerollBusy = false;
         rerollFailed = false;
         stopped = false;
-      } else if (req !== null && !req.answered && t.rev > req.rev) {
+      } else if (req !== null && !req.answered && t.rev > req.upTo) {
         // The client's resync superseded the page's request (its answer will be stale): the
         // shown future is the resync's, the seed it already showed, so the URL and the flag stay.
         req.answered = true;
@@ -935,6 +960,7 @@
       seed,
       representative,
       day,
+      highWater: highWater.value,
       asOf,
       horizon: HORIZON,
       playing,
@@ -985,6 +1011,7 @@
     {day}
     {asOf}
     horizon={HORIZON}
+    highWater={highWater.value}
     {bandRuns}
     {bandRunsTotal}
     {seed}

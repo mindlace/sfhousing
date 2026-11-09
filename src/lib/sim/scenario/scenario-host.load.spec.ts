@@ -9,6 +9,7 @@ import { encodePolicyPayload } from '$lib/data/policy-codec';
 import { miniBin } from './fixtures/mini-bin';
 import { MINI_SCENARIO_URLS, MINI_VERSION, miniCity } from './fixtures/mini-parcels';
 import { miniPolicy } from './fixtures/mini-policy';
+import { DEFAULT_LEVERS } from '../levers/types';
 import {
   MINI_AS_OF,
   MINI_HORIZON,
@@ -119,18 +120,31 @@ describe('validateInitRequest', () => {
     }
     expect(validateInitRequest(req({ scenario: 'x' }))).toBe("scenario must be 'fzp'");
   });
+
+  it('accepts awaitLevers only as a boolean, and true only with levers', () => {
+    const levers = structuredClone(DEFAULT_LEVERS);
+    expect(validateInitRequest(req({ levers, awaitLevers: true }))).toBeNull();
+    expect(validateInitRequest(req({ levers, awaitLevers: false }))).toBeNull();
+    expect(validateInitRequest(req({ awaitLevers: false }))).toBeNull();
+    expect(validateInitRequest(req({ awaitLevers: true }))).toBe('awaitLevers needs levers');
+    for (const awaitLevers of [1, 'true', null]) {
+      expect(validateInitRequest(req({ levers, awaitLevers }))).toBe(
+        'awaitLevers must be a boolean'
+      );
+    }
+  });
 });
 
 describe('scenarioUrls', () => {
   it('returns the three URLs when each is under /data/<v>/', () => {
     const m = makeScenarioHarness().manifest();
-    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null });
+    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null, gross: null });
   });
 
   it('scenarioUrls ignores scenarios.fzp.frontage', () => {
     const m = makeScenarioHarness().manifest();
     expect(m.scenarios!.fzp.frontage).toBe(MINI_FRONTAGE_URL); // an older dataset names it
-    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null });
+    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null, gross: null });
   });
 
   it('is null without scenarios.fzp, or with a missing or outside URL', () => {
@@ -664,7 +678,7 @@ describe('scenario host: reroll before loading, supersession and dispose', () =>
 
 describe('loadScenario: policy.bin (plan 2 Task 10)', () => {
   const POLICY_URL = `/data/${MINI_VERSION}/scenarios/fzp/policy.bin`;
-  const WITH_POLICY: ScenarioUrls = { ...URLS, policy: POLICY_URL };
+  const WITH_POLICY: ScenarioUrls = { ...URLS, policy: POLICY_URL, gross: null };
   const policyBin = () =>
     new Uint8Array(deflateRawSync(encodePolicyPayload(miniPolicy(miniCity()))));
 
@@ -700,7 +714,7 @@ describe('loadScenario: policy.bin (plan 2 Task 10)', () => {
 
   it('scenarioUrls names the policy URL when the manifest has one, else null', () => {
     const m = makeScenarioHarness().manifest();
-    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null });
+    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null, gross: null });
     const fzp = { ...m.scenarios!.fzp, policy: POLICY_URL };
     expect(scenarioUrls({ ...m, scenarios: { fzp } })).toEqual(WITH_POLICY);
     // /fzp never needs policy.bin, so a bad one leaves the other three usable.
@@ -708,9 +722,23 @@ describe('loadScenario: policy.bin (plan 2 Task 10)', () => {
       const bad = { ...fzp, policy: policy as string };
       expect(scenarioUrls({ ...m, scenarios: { fzp: bad } })).toEqual({
         ...URLS,
-        policy: null
+        policy: null,
+        gross: null
       });
     }
+  });
+
+  it('scenarioUrls names the gross URL when the manifest has one, else null', () => {
+    const m = makeScenarioHarness().manifest();
+    const gross = `/data/${MINI_VERSION}/scenarios/fzp/gross.bin`;
+    const fzp = { ...m.scenarios!.fzp, gross };
+    expect(scenarioUrls({ ...m, scenarios: { fzp } })).toEqual({ ...URLS, policy: null, gross });
+    const bad = { ...fzp, gross: '/data/fixture-1/scenarios/fzp/gross.bin' };
+    expect(scenarioUrls({ ...m, scenarios: { fzp: bad } })).toEqual({
+      ...URLS,
+      policy: null,
+      gross: null
+    });
   });
 
   it('with opts.policy, fetches policy.bin once and returns it bound to the parcels', async () => {
@@ -734,7 +762,7 @@ describe('loadScenario: policy.bin (plan 2 Task 10)', () => {
 
   it('gives scenario-missing for opts.policy without scenarios.fzp.policy', async () => {
     const d = direct(files());
-    const r = await loadScenario(d.deps, { ...URLS, policy: null }, () => false, {
+    const r = await loadScenario(d.deps, { ...URLS, policy: null, gross: null }, () => false, {
       policy: true
     });
     expect(r).toEqual({
