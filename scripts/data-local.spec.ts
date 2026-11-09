@@ -104,6 +104,8 @@ describe('isOptionalPath', () => {
     expect(isOptionalPath(m, 'fixture-0', 'assets/atlas.json')).toBe(true);
     expect(isOptionalPath(m, 'fixture-0', 'parcels/0_0.json')).toBe(false);
     expect(isOptionalPath(m, 'fixture-0', 'scenarios/fzp/gross.bin')).toBe(false);
-    expect(isOptionalPath(m, 'fixture-0', 'fonts/NotoSans-Regular/0-255.pbf')).toBe(false);
+    expect(isOptionalPath(m, 'fixture-0', 'fonts/NotoSans-Regular/0-255.pbf')).toBe(true);
+    expect(isOptionalPath(m, 'fixture-0', 'fonts/NotoSans-Italic/65280-65535.pbf')).toBe(true);
+    expect(isOptionalPath(m, 'fixture-0', 'neighborhoods.geojson')).toBe(false);
   });
 });

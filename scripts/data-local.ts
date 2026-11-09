@@ -25,7 +25,7 @@ function dataFiles(manifest: Manifest, version: string): { rel: string; optional
     return path;
   };
   return manifestFiles(manifest, { stacks: Object.values(FONT_STACKS), ranges: GLYPH_RANGES }).map(
-    (f) => ({ rel: rel(f.url, f.optional), optional: f.optional })
+    (f) => ({ rel: rel(f.url, f.optional), optional: f.optional || f.key === 'glyphs' })
   );
 }
 
@@ -36,7 +36,7 @@ export function collectDataPaths(manifest: Manifest, version: string): string[] 
   return [...paths].sort();
 }
 
-/** True for a path the manifest marks optional (sprite variants): a 404 is tolerated. */
+/** True for sprite variants and glyph ranges: a 404 is tolerated (a source may ship only some). */
 export function isOptionalPath(manifest: Manifest, version: string, rel: string): boolean {
   return dataFiles(manifest, version).some((f) => f.optional && f.rel === rel);
 }
@@ -56,11 +56,20 @@ async function main(): Promise<void> {
   const manifest = ManifestSchema.parse(await mres.json());
   const paths = collectDataPaths(manifest, version);
   const dir = mkdtempSync(join(tmpdir(), 'sfhousing-data-'));
+  const optional = new Set(
+    dataFiles(manifest, version)
+      .filter((f) => f.optional)
+      .map((f) => f.rel)
+  );
   let loaded = 0;
+  let skippedGlyphs = 0;
   try {
     for (const rel of paths) {
       const res = await fetch(`${base}/data/${version}/${rel}`);
-      if (res.status === 404 && isOptionalPath(manifest, version, rel)) continue;
+      if (res.status === 404 && optional.has(rel)) {
+        if (rel.startsWith('fonts/')) skippedGlyphs++;
+        continue;
+      }
       if (!res.ok) throw new Error(`fetch ${rel} failed: ${res.status}`);
       const file = join(dir, rel);
       mkdirSync(dirname(file), { recursive: true });
@@ -71,6 +80,8 @@ async function main(): Promise<void> {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+  if (skippedGlyphs > 0)
+    console.log(`Skipped ${skippedGlyphs} glyph range(s) the source does not ship`);
   console.log(`Loaded ${loaded} object(s) into local R2 under data/${version}/`);
 }
 
