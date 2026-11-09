@@ -2,7 +2,7 @@
 // painted areas, Remove, undo and redo of a removed row, the autosave and Publish after one. Runs
 // against the VITE_E2E build, which exposes window.__sfhBrush (src/lib/brush/debug.ts) and
 // window.__sfhMap (src/lib/map/debug.ts), and shortens the worker's chunk retries to 50/100/200 ms.
-import { expect, test, type CDPSession, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { MSG } from '../src/lib/brush/messages';
 import type { SfhBrushDebug } from '../src/lib/brush/debug';
 import type { Plan } from '../src/lib/plan';
@@ -12,10 +12,12 @@ import {
   PLAN_KEY,
   chooseTool,
   gotoEditor as gotoEditorWithActions,
+  mouseDrag,
   publishDialog,
   publishOpen,
   rows,
-  settledNet
+  settledNet,
+  touchDrag
 } from './helpers/sharing';
 
 type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
@@ -25,8 +27,8 @@ type LngLat = [number, number];
 const FRAME = { center: [-122.4187, 37.76014] as LngLat, zoom: 18.5, pitch: 0, bearing: 0 };
 const CHUNK = '**/data/fixture-0/parcels/50_25.json';
 
-async function gotoEditor(page: Page, { reload = true }: { reload?: boolean } = {}): Promise<void> {
-  if (reload) await page.goto('/');
+async function gotoEditor(page: Page): Promise<void> {
+  await page.goto('/');
   await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
     timeout: 20_000
   });
@@ -121,54 +123,14 @@ async function pickStories(page: Page, n: number): Promise<void> {
   await expect(swatch).toHaveAttribute('aria-pressed', 'true');
 }
 
-async function mouseDrag(page: Page, from: LngLat, to: LngLat, steps = 15): Promise<void> {
-  const [x0, y0] = await projectToPage(page, from);
-  const [x1, y1] = await projectToPage(page, to);
-  await page.mouse.move(x0, y0);
-  await page.mouse.down();
-  await page.mouse.move(x1, y1, { steps });
-  await page.mouse.up();
-}
-
-// One-finger drag through CDP, so Chromium emits real touch and pointer events.
-async function touchDrag(
-  cdp: CDPSession,
-  [x0, y0]: [number, number],
-  [x1, y1]: [number, number],
-  steps = 12,
-  midway?: () => Promise<void>
-): Promise<void> {
-  await cdp.send('Input.dispatchTouchEvent', {
-    type: 'touchStart',
-    touchPoints: [{ x: x0, y: y0, id: 1 }]
-  });
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps;
-    await cdp.send('Input.dispatchTouchEvent', {
-      type: 'touchMove',
-      touchPoints: [{ x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t, id: 1 }]
-    });
-    if (midway && i === Math.floor(steps / 2)) await midway();
-  }
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-}
-
-async function lastCommitMeasure(page: Page): Promise<number | null> {
-  return page.evaluate(() => {
-    const e = performance.getEntriesByName('sfh-brush-commit', 'measure');
-    return e.length ? e[e.length - 1].duration : null;
-  });
-}
-
 test.describe('brush tool', () => {
   test.describe('desktop', () => {
     // Desktop mouse painting; the mobile project defaults to Move (covered below).
     // eslint-disable-next-line playwright/no-skipped-test
     test.skip(({ isMobile }) => isMobile, 'chromium project only');
 
-    test('paint: a drag paints 6 stories, map-view shows the buildings, ≤ 150 ms', async ({
-      page
-    }) => {
+    // Its pointer-up-to-commit budget (150 ms) is e2e/perf/brush-commit.perf.spec.ts's.
+    test('paint: a drag paints 6 stories, map-view shows the buildings', async ({ page }) => {
       await gotoEditor(page);
       await jumpAndIdle(page, FRAME);
       await expect(page.getByRole('radio', { name: 'Paint' })).toHaveAttribute(
@@ -182,11 +144,6 @@ test.describe('brush tool', () => {
       await expect(announcement(page)).toHaveText(/^Painted 6 stories on \d+ parcels/);
       expect(await ops(page)).toBe(1);
       await expect.poll(() => generated(page)).toBeGreaterThanOrEqual(1);
-
-      const ms = await lastCommitMeasure(page);
-      test.info().annotations.push({ type: 'sfh-brush-commit', description: `${ms} ms` });
-      expect(ms).not.toBeNull();
-      expect.soft(ms!).toBeLessThanOrEqual(150);
     });
 
     test('undo and redo by keyboard revert and restore the counts', async ({ page }) => {
@@ -291,7 +248,8 @@ test.describe('brush tool', () => {
       page
     }) => {
       await gotoEditorWithActions(page);
-      await jumpAndIdle(page, FRAME);
+      // The strokes need the camera, not the tiles: the worker resolves lots city-wide.
+      await page.evaluate((f) => (window as Win).__sfhMap!.map!.jumpTo(f), FRAME);
       await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
       await expect.poll(() => ops(page)).toBe(1);
       await pickStories(page, 8);
@@ -327,7 +285,8 @@ test.describe('brush tool', () => {
         .toBe(1);
       // ...and restores to the same rows.
       await page.reload();
-      await gotoEditor(page, { reload: false });
+      // The restored rows are the editor's, not the map's: wait for the hook alone.
+      await page.waitForFunction(() => !!(window as Win).__sfhBrush);
       await expect.poll(() => ops(page)).toBe(1);
       await expect(rowButtons(page)).toHaveCount(1);
       await expect(rowButtons(page).first()).toHaveAccessibleName(/^8 stories · 1 stroke · /);
@@ -468,7 +427,7 @@ test.describe('brush tool', () => {
 
       // A second touch mid-stroke cancels it: still one op.
       await jumpAndIdle(page, FRAME);
-      await touchDrag(cdp, p, q, 12, async () => {
+      await touchDrag(cdp, p, q, 4, async () => {
         await cdp.send('Input.dispatchTouchEvent', {
           type: 'touchStart',
           touchPoints: [

@@ -1,6 +1,7 @@
-// Shared helpers for the plan-sharing e2e specs. Editor navigation and the drag helpers are copied
-// from e2e/scoreboard.spec.ts and e2e/brush.spec.ts (those specs keep their own copies). The score
-// helpers (`headerScore`, `headerNet`, `openResults`, `settledNet`) read `/`'s header score.
+// Shared helpers for the plan-sharing e2e specs. Editor navigation and the drag helpers came from
+// e2e/brush.spec.ts, which keeps its own editor navigation but strokes with `mouseDrag` and
+// `touchDrag` from here. The score helpers (`headerScore`, `headerNet`, `openResults`,
+// `settledNet`) read `/`'s header score.
 import {
   expect,
   type APIRequestContext,
@@ -114,7 +115,14 @@ export async function projectToPage(page: Page, lngLat: LngLat): Promise<[number
   }, lngLat);
 }
 
-export async function mouseDrag(page: Page, from: LngLat, to: LngLat, steps = 15): Promise<void> {
+/**
+ * A straight mouse stroke `from` → `to`. A stroke covers every parcel within its radius of the
+ * path's segments, so a straight drag covers the same parcels however many moves it takes. Each
+ * move during a stroke costs the page a preview and a software-GL frame (about 100 ms idle, 300 to
+ * 500 ms under a full parallel run), so few steps: 15 made two strokes take 12 s of a 30 s test
+ * under load (#68).
+ */
+export async function mouseDrag(page: Page, from: LngLat, to: LngLat, steps = 3): Promise<void> {
   const [x0, y0] = await projectToPage(page, from);
   const [x1, y1] = await projectToPage(page, to);
   await page.mouse.move(x0, y0);
@@ -123,12 +131,20 @@ export async function mouseDrag(page: Page, from: LngLat, to: LngLat, steps = 15
   await page.mouse.up();
 }
 
-// One-finger drag through CDP, so Chromium emits real touch and pointer events.
+/**
+ * A straight one-finger drag through CDP, so Chromium emits real touch and pointer events. As with
+ * `mouseDrag`, few moves: a stroke covers the same parcels however many moves it takes, and each
+ * costs a preview and a software-GL frame; 12 moves took 3 to 6 s of a test at 15 workers. The
+ * brush starts a stroke on the touch's pointerdown and needs no minimum of moves (a touch with none
+ * is a stamp), and in Move MapLibre pans by each move's delta. `midway` runs after move
+ * `floor(steps / 2)` (a second finger mid-stroke, say).
+ */
 export async function touchDrag(
   cdp: CDPSession,
   [x0, y0]: [number, number],
   [x1, y1]: [number, number],
-  steps = 12
+  steps = 3,
+  midway?: () => Promise<void>
 ): Promise<void> {
   await cdp.send('Input.dispatchTouchEvent', {
     type: 'touchStart',
@@ -140,6 +156,7 @@ export async function touchDrag(
       type: 'touchMove',
       touchPoints: [{ x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t, id: 1 }]
     });
+    if (midway && i === Math.floor(steps / 2)) await midway();
   }
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
@@ -218,6 +235,45 @@ export const headerScore = (page: Page): Locator =>
 export async function headerNet(page: Page): Promise<number> {
   const t = (await headerScore(page).textContent()) ?? '';
   return Number(t.replace(/homes[\s\S]*$/, '').replace(/[^\d-]/g, ''));
+}
+
+/**
+ * The header score once it is final for the plan the page holds; returns its text. Final means
+ * not `aria-busy` (every chunk the plan needs is loaded, the worker's `complete`) and above 0 (a
+ * diff of the plan arrived: before the first one the bar reads 0 and is not busy). Needs no map:
+ * the worker scores the plan whether or not the map has loaded. Exact for a plan loaded whole
+ * (`/p/:id`); after a stroke, use `committedNet`.
+ */
+export async function finalNet(page: Page): Promise<string> {
+  let text = '';
+  await expect
+    .poll(
+      async () => {
+        text = await headerScore(page).evaluate((el) =>
+          el.getAttribute('aria-busy') === 'false' ? (el.textContent ?? '').trim() : ''
+        );
+        return Number(text.replace(/homes[\s\S]*$/, '').replace(/[^\d-]/g, ''));
+      },
+      { timeout: 20_000 }
+    )
+    .toBeGreaterThan(0);
+  return text;
+}
+
+/**
+ * The header score after a stroke's commit (call once the editor holds the op). Until the
+ * commit's diff arrives the bar can show the last preview's score, not busy; `lastStats` is set
+ * by that diff, and the header takes its score on the next animation frame (`frameLatest`).
+ */
+export async function committedNet(page: Page): Promise<string> {
+  await page.waitForFunction(() => (window as Win).__sfhBrush?.lastStats != null);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  );
+  return finalNet(page);
 }
 
 /** The dock's Results face (the scoreboard on `/` and `/p/:id`). */
