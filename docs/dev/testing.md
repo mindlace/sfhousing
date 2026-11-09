@@ -50,6 +50,8 @@ See [accessibility.md](accessibility.md).
 
 `npm run signoff` runs the local gate with chreode: it merges `origin/main`, runs the checks the changes since the last signoff need (`chreode.config.ts`), pushes, and posts the `chreode/signoff` status that branch protection requires; `npm run signoff -- --dry-run` prints the plan without running it. See [deploy.md](deploy.md).
 
+Signoff's `timing` step (`npx chreode timing-check`) fails when the branch adds a timing crutch to test code: a fixed wait (`waitForTimeout`, `sleep`), a raised timeout or retries above 1, or an unconditional skip. It reads only the branch's added lines, so legacy code never blocks. Fix the test with a readiness signal instead; the only exemptions are perf and bench tests by path and a reviewed `timing.allow` entry (with a `reason`) in `chreode.config.ts`.
+
 ## Flakes
 
 Playwright runs with one retry and the vitest `client` project with `retry: 1`; the `server`
