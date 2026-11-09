@@ -77,6 +77,13 @@ Every lever field (`newProjects`, `inFlightScale`) is set explicitly, because `a
 
 Requests (`ScenarioRequest`): `initScenario` carries an optional `levers` (absent means `/fzp`, which never fetches `policy.bin`). `setLevers { rev, levers }` is a barrier rev like `reroll`, needs a session initialised with levers, and the latest one wins.
 
+`initScenario.awaitLevers` (optional boolean, valid only with `levers`: otherwise `bad-request` `'awaitLevers needs levers'`, or `'awaitLevers must be a boolean'`) opens a session whose real levers are still being resolved, such as `/s/<id>`, which must resolve its brushes before it can send them. The host loads as usual but runs no revision from the init levers: no city, no recompute, no shown run, no band runs. The first `setLevers`, sent before or after the load finishes, is the session's first revision.
+
+- Until that revision is `current` the host posts only `ready`, `error` and request answers (`brushLots`, `brushCatalog`, `lotAt`, `heightLids`, `lotOutlines`, `parcelSummary`, `previewBuildings`). Nothing goes out at the init rev except `ready`: no `levers`, `heights` or `timeline`, and no `chunks` report before the `setLevers`. After the `setLevers`, its revision posts as any other does: `heights`, then `current`, and on the fallback (no `gross.bin`) `resolving` and the `chunks` reports of the cells it needs.
+- `prefetch` is held: it stores the latest bbox and fetches nothing. The first `current` replays that bbox, and from then on `prefetch` works as usual.
+- A `reroll` while waiting posts nothing; its seed becomes the seed of the first revision's run.
+- `heightLids` waits for limits, which the first revision builds; `lotAt` answers with a null `owner` until then.
+
 Responses (`LeversResponse`, `type: 'levers'`), where `rev` is the `initScenario` or `setLevers` that named the levers:
 
 - `phase: 'resolving'` with `done`, `total`, `failedCells`: posted only on the fallback, a dataset whose manifest has no `scenarios.fzp.gross`. Touched-lot yields are being recomputed in budgeted slices (`createYieldRecompute`). `failedCells` are needed chunks that failed to load; `retryChunks` re-wants them. Until complete the result is "out of date" (`leversPending`). With `scenarios.fzp.gross` the session loads `gross.bin` with `policy.bin` (a bad or mismatched table fails the load as `scenario-invalid`) and resolves each revision from it (`createTableRecompute`): the city builds first, then the lookups finish in the next `recompute` job, with no `resolving` post and no chunk fetch: the revision posts `heights`, then `current`.

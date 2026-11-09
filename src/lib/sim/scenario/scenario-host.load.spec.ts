@@ -9,6 +9,7 @@ import { encodePolicyPayload } from '$lib/data/policy-codec';
 import { miniBin } from './fixtures/mini-bin';
 import { MINI_SCENARIO_URLS, MINI_VERSION, miniCity } from './fixtures/mini-parcels';
 import { miniPolicy } from './fixtures/mini-policy';
+import { DEFAULT_LEVERS } from '../levers/types';
 import {
   MINI_AS_OF,
   MINI_HORIZON,
@@ -118,6 +119,19 @@ describe('validateInitRequest', () => {
       expect(validateInitRequest(req({ horizon }))).toBe('horizon must be an integer');
     }
     expect(validateInitRequest(req({ scenario: 'x' }))).toBe("scenario must be 'fzp'");
+  });
+
+  it('accepts awaitLevers only as a boolean, and true only with levers', () => {
+    const levers = structuredClone(DEFAULT_LEVERS);
+    expect(validateInitRequest(req({ levers, awaitLevers: true }))).toBeNull();
+    expect(validateInitRequest(req({ levers, awaitLevers: false }))).toBeNull();
+    expect(validateInitRequest(req({ awaitLevers: false }))).toBeNull();
+    expect(validateInitRequest(req({ awaitLevers: true }))).toBe('awaitLevers needs levers');
+    for (const awaitLevers of [1, 'true', null]) {
+      expect(validateInitRequest(req({ levers, awaitLevers }))).toBe(
+        'awaitLevers must be a boolean'
+      );
+    }
   });
 });
 

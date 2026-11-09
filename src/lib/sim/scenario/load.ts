@@ -86,13 +86,18 @@ export function leversProblem(levers: unknown): string | null {
 
 /**
  * §4.2 step 1: null when the request is acceptable, else its first problem (`bad-request`).
- * `levers` (plan 2) is checked only when present.
+ * `levers` (plan 2) is checked only when present; `awaitLevers` must be a boolean, and true only
+ * with `levers`.
  */
 export function validateInitRequest(req: InitRequest): string | null {
   if (req.scenario !== 'fzp') return "scenario must be 'fzp'";
   const seed = seedProblem(req.seed);
   if (seed !== null) return seed;
   if (!Number.isInteger(req.horizon)) return 'horizon must be an integer';
+  if (req.awaitLevers !== undefined && typeof req.awaitLevers !== 'boolean') {
+    return 'awaitLevers must be a boolean';
+  }
+  if (req.awaitLevers && req.levers === undefined) return 'awaitLevers needs levers';
   if (req.levers !== undefined) return leversProblem(req.levers);
   return null;
 }
