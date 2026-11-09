@@ -38,6 +38,10 @@ Keys with Alt, Ctrl or Meta are left to the browser. Every handled key, a drag o
 
 The page always opens paused, so tests get a stable day without any media emulation. `gotoFzp` emulates `reducedMotion: 'reduce'` only to keep the map's generated-building animation off (`SimMap` reads `prefers-reduced-motion`).
 
+**The high-water mark.** The future is precomputed, so the results show only what the user has reached. `HighWater` (`src/lib/fzp/high-water.svelte.ts`) holds the furthest day reached by playback or scrubbing; scrubbing back moves the cursor only. `FzpMode` feeds it from `day`, resets it to `asOf` whenever `/sim` returns to Setup (Edit policy, jump to Today), and keeps it on a reroll ("Another future"). `window.__sfhFzp.highWater` exposes it in e2e builds. `/lesscars` keeps its own `HighWater(LESSCARS_START)` (`window.__sfhLessCars.highWater`, [lesscars.md](lesscars.md)).
+
+Not capped by the mark (they are plan inputs or navigation, not outcomes): the scrubber's markers, the phasing footnote and the `SourcesDialog`.
+
 ## Layout variables
 
 | Variable                       | Set by                                                                                                                                                                     | Used by                                                                                                                                                                                                                                                                          |
@@ -105,7 +109,7 @@ Map picking is pointer-only (mouse click, touch tap, hover), a gap shared with t
 
 ## The chart's y domain
 
-`ScoreChart` (`chart.ts`) draws every series on one y axis. The domain covers every drawn value, the references and the RHNA target. It starts at 0, **unless a drawn value is negative**: the plan-effect series can be early on. Then the axis reaches down to `-niceCeil(-min)` so the negative part stays inside the plot, and a floor gridline is added when it is clear of the zero line. Spec section 4.6 says "0 to niceCeil"; the extension is deliberate.
+`ScoreChart` (`chart.ts`) draws every series only up to `monthIndex(highWater)`; the table rows stop at the same mark and the "At the deadline" lines stay hidden until the mark reaches the deadline month. Its accessible name is "Net new homes in this simulation so far: ...". The y domain covers the revealed values, so it can grow as the mark advances, with the references and the RHNA target as a floor (so the axis does not jump for them). It starts at 0, **unless a revealed value is negative**: the plan-effect series can be early on. Then the axis reaches down to `-niceCeil(-min)` so the negative part stays inside the plot, and a floor gridline is added when it is clear of the zero line. Spec section 4.6 says "0 to niceCeil"; the extension is deliberate.
 
 ## e2e notes
 

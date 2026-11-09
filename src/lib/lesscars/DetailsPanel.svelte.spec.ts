@@ -10,34 +10,56 @@ import V1_SITES from '$lib/data/lesscars/fixtures/v1/sites.json';
 import summaryJson from '../../../e2e/fixtures/data/fixture-0/scenarios/lesscars/summary.json';
 import { AMENITIES_COPY, BUILDING_NOTE } from './copy';
 import DetailsPanel from './DetailsPanel.svelte';
-import { freedLandCopy } from './copy';
-import { bandText, freedLandSplit, breakdownRows, finalYear } from './summary-view';
+import { freedLandCopy, headlineSentence } from './copy';
+import { bandText, freedLandSplit, breakdownRows, homesAt, yearAt } from './summary-view';
 
 const fx = parseSummary(summaryJson);
 const sites = parseSitesFile(sitesJson);
-const N = Math.round(fx.extra.mean.at(-1)!);
-const Y = finalYear(fx);
+const I = 3;
+const HW = fx.yearEnds[I];
+const N = homesAt(fx, I);
+const Y = yearAt(fx, I);
 
 describe('DetailsPanel', () => {
   it('the breakdown table rows and total match the headline', async () => {
     await page.viewport(1024, 768);
     await render(DetailsPanel, {
-      props: { summary: fx, sites, day: fx.yearEnds[0], onevidence: vi.fn() }
+      props: { summary: fx, sites, day: fx.yearEnds[0], highWater: HW, onevidence: vi.fn() }
     });
     const rows = page
       .getByRole('table', { name: `Where the extra homes come from, ${Y}` })
       .getByRole('row');
-    for (const [k, r] of breakdownRows(fx).entries())
+    for (const [k, r] of breakdownRows(fx, I).entries())
       await expect.element(rows.nth(k + 1)).toHaveTextContent(`${r.label}${formatCount(r.homes)}`);
     await expect.element(rows.last()).toHaveTextContent(`Total${formatCount(N)}`);
-    await expect.element(page.getByText(bandText(fx))).toBeVisible();
+    await expect.element(page.getByText(bandText(fx, I))).toBeVisible();
     await expect.element(page.getByText(AMENITIES_COPY)).toBeVisible();
+    await expect.element(page.getByText(headlineSentence(N, Y))).toBeVisible();
+  });
+
+  it('before any year end is reached the panel says no homes yet', async () => {
+    await page.viewport(1024, 768);
+    await render(DetailsPanel, {
+      props: {
+        summary: fx,
+        sites,
+        day: fx.yearEnds[0],
+        highWater: fx.yearEnds[0] - 1,
+        onevidence: vi.fn()
+      }
+    });
+    await expect.element(page.getByText('The plan has added no homes yet.')).toBeVisible();
+    await expect
+      .element(page.getByRole('table').getByRole('row').last())
+      .toHaveTextContent('Total0');
   });
 
   it('Evidence for every number calls onevidence; the map key lists Removed: now land', async () => {
     await page.viewport(1024, 768);
     const onevidence = vi.fn();
-    await render(DetailsPanel, { props: { summary: fx, sites, day: fx.yearEnds[0], onevidence } });
+    await render(DetailsPanel, {
+      props: { summary: fx, sites, day: fx.yearEnds[0], highWater: HW, onevidence }
+    });
     await page.getByRole('button', { name: 'Evidence for every number' }).click();
     expect(onevidence).toHaveBeenCalledTimes(1);
     await page.getByText('Map key').click();
@@ -49,7 +71,7 @@ describe('DetailsPanel', () => {
     await page.viewport(1024, 768);
     const { parcelM2, rowM2 } = freedLandSplit(sites);
     await render(DetailsPanel, {
-      props: { summary: fx, sites, day: fx.yearEnds[0], onevidence: vi.fn() }
+      props: { summary: fx, sites, day: fx.yearEnds[0], highWater: HW, onevidence: vi.fn() }
     });
     await expect
       .element(
@@ -65,6 +87,7 @@ describe('DetailsPanel', () => {
         summary: fx,
         sites: parseSitesFile(V1_SITES),
         day: fx.yearEnds[0],
+        highWater: HW,
         onevidence: vi.fn()
       }
     });
@@ -75,13 +98,13 @@ describe('DetailsPanel', () => {
   it('shows the garage cost only when summary.garageCost is present', async () => {
     await page.viewport(1024, 768);
     const a = await render(DetailsPanel, {
-      props: { summary: fx, sites, day: fx.yearEnds[0], onevidence: vi.fn() }
+      props: { summary: fx, sites, day: fx.yearEnds[0], highWater: HW, onevidence: vi.fn() }
     });
     await expect.element(page.getByText(/take the place of/)).not.toBeInTheDocument();
     a.unmount();
     const withCost = { ...fx, garageCost: [{ projectId: 'garage', homes: 1234 }] };
     await render(DetailsPanel, {
-      props: { summary: withCost, sites, day: fx.yearEnds[0], onevidence: vi.fn() }
+      props: { summary: withCost, sites, day: fx.yearEnds[0], highWater: HW, onevidence: vi.fn() }
     });
     await expect
       .element(page.getByText('Edge garages on freed land take the place of 1,234 homes.'))

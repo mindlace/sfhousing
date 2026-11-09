@@ -12,6 +12,8 @@ import { headlineName, headlineText } from './summary-view';
 import { headlineNameCopy, headlineCopy } from './copy';
 
 const fx = parseSummary(summaryJson);
+const L = fx.yearEnds.length - 1;
+const HW = fx.yearEnds[L];
 const panel = createRawSnippet(() => ({
   render: () => '<div><p>Details here</p><button type="button">Inside</button></div>'
 }));
@@ -19,10 +21,10 @@ const panel = createRawSnippet(() => ({
 describe('HeadlineBar', () => {
   it('shows the headline and opens the details region by click, closes on Escape with focus back', async () => {
     await page.viewport(1024, 768);
-    await render(HeadlineBar, { props: { summary: fx, panel } });
+    await render(HeadlineBar, { props: { summary: fx, panel, highWater: HW } });
     const btn = page.getByTestId('lc-headline');
-    await expect.element(btn).toHaveTextContent(headlineText(fx));
-    await expect.element(btn).toHaveAccessibleName(headlineName(fx));
+    await expect.element(btn).toHaveTextContent(headlineText(fx, L));
+    await expect.element(btn).toHaveAccessibleName(headlineName(fx, L));
     await expect.element(btn).toHaveAttribute('aria-expanded', 'false');
     await btn.click();
     await expect.element(btn).toHaveAttribute('aria-expanded', 'true');
@@ -34,7 +36,7 @@ describe('HeadlineBar', () => {
 
   it('an outside press closes the details', async () => {
     await page.viewport(1024, 768);
-    await render(HeadlineBar, { props: { summary: fx, panel } });
+    await render(HeadlineBar, { props: { summary: fx, panel, highWater: HW } });
     await page.getByTestId('lc-headline').click();
     await expect.element(page.getByText('Details here')).toBeVisible();
     document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
@@ -49,13 +51,25 @@ describe('HeadlineBar', () => {
     big.extra.mean[last] = 123456.4;
     big.extra.p10[last] = 98000;
     big.extra.p90[last] = 151000;
-    await render(HeadlineHeader, { props: { summary: big } });
+    await render(HeadlineHeader, { props: { summary: big, highWater: HW } });
     const banner = page.getByRole('banner').element();
     expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
     await expect
       .element(page.getByRole('button', { name: /\+123,456 homes by 2068/ }))
       .toBeVisible();
+  });
+
+  it('the text follows the high-water mark', async () => {
+    await page.viewport(1024, 768);
+    const s = await render(HeadlineBar, {
+      props: { summary: fx, panel, highWater: fx.yearEnds[0] - 1 }
+    });
+    const btn = page.getByTestId('lc-headline');
+    await expect.element(btn).toHaveTextContent('No extra homes yet');
+    await s.rerender({ summary: fx, panel, highWater: fx.yearEnds[3] });
+    await expect.element(btn).toHaveTextContent(headlineText(fx, 3));
+    await expect.element(btn).toHaveAccessibleName(headlineName(fx, 3));
   });
 
   it.each([-56, 0, 1234])('the accessible name starts with the visible text (n = %i)', (n) => {

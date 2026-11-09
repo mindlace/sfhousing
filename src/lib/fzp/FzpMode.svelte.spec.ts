@@ -646,6 +646,20 @@ describe('FzpMode rerolls and the representative flag', () => {
     await expect.poll(future).toBe('This future: #4242');
   });
 
+  it('another future keeps the high-water mark', async () => {
+    const s = setup();
+    await toReady(s, 7);
+    await press('{PageUp}');
+    await press('{PageUp}');
+    await press('{PageDown}');
+    const mark = window.__sfhFzp!.highWater;
+    expect(mark).toBeGreaterThan(window.__sfhFzp!.day);
+    await another().click();
+    s.w().emit(timelineMsg(s.w().lastOf('reroll')!.rev, 8));
+    await expect.poll(future).toBe('This future: #8');
+    expect(window.__sfhFzp!.highWater).toBe(mark);
+  });
+
   it("'Back to the representative future' sends reroll null and clears the URL seed", async () => {
     const s = setup({ urlSeed: 5 });
     await toReady(s, 5);
@@ -1643,6 +1657,42 @@ describe('FzpMode Setup and Run (/sim, spec §1)', () => {
     expect(debug().playing).toBe(false);
     s.w().emit(timelineMsg(rev, 7));
     await expect.poll(() => debug().playing).toBe(true);
+  });
+
+  it('Setup pins the mark at asOf', async () => {
+    const s = setup({ runPhase: 'setup', levers: DEFAULT_LEVERS });
+    await toReady(s);
+    expect(debug().highWater).toBe(ASOF);
+  });
+
+  it('the high-water mark follows the furthest day and survives scrubbing back', async () => {
+    const s = setup({ runPhase: 'run', levers: DEFAULT_LEVERS });
+    await toReady(s);
+    await press('{PageUp}');
+    const a = debug().day;
+    expect(a).toBeGreaterThan(ASOF);
+    await press('{PageUp}');
+    const b = debug().day;
+    expect(b).toBeGreaterThan(a);
+    await press('{PageDown}');
+    await expect.poll(() => debug().day).toBe(a);
+    expect(debug().highWater).toBe(b);
+  });
+
+  it('Edit policy resets the high-water mark', async () => {
+    const s = setup({ runPhase: 'run', levers: DEFAULT_LEVERS });
+    await toReady(s);
+    await press('{PageUp}');
+    await expect.poll(() => debug().highWater).toBeGreaterThan(ASOF);
+    await setPhase(s, 'setup');
+    await expect.poll(() => debug().day).toBe(ASOF);
+    expect(debug().highWater).toBe(ASOF);
+    const rev = await sendLevers(s, { ...OTHER });
+    await page.getByRole('button', { name: 'Run' }).click();
+    await setPhase(s, 'run');
+    s.w().emit(timelineMsg(rev, 7));
+    await expect.poll(() => debug().playing).toBe(true);
+    expect(debug().highWater).toBeGreaterThanOrEqual(ASOF);
   });
 
   it('a second press while Run waits does not play the older timeline', async () => {

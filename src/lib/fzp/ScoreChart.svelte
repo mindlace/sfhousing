@@ -1,20 +1,24 @@
 <!--
   The score chart (spec §4.6): a plain inline SVG laid out from `chartModel`. The model depends on
-  the width and the score, never on `day`, so scrubbing moves only the cursor line (O(1)).
+  the width, the score and the high-water day, never on `day`, so scrubbing moves only the cursor
+  line (O(1)).
 -->
 <script lang="ts">
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { Day } from '$lib/timelapse/time';
   import { CHART_H, COLORS, SERIES_NAME, chartLabel, chartModel, tableRows } from './chart';
   import { CALCULATING } from './score-view';
+  import { monthIndex } from './time';
 
   interface Props {
     score: TimelineScore;
     asOf: Day;
     horizon: Day;
     day: Day;
+    /** The furthest day reached; the chart draws nothing after its month. */
+    highWater: Day;
   }
-  let { score, asOf, horizon, day }: Props = $props();
+  let { score, asOf, horizon, day, highWater }: Props = $props();
 
   /** Used until the container reports its width. */
   const FALLBACK_W = 288;
@@ -22,9 +26,10 @@
 
   let measured = $state(0);
   const width = $derived(measured > 0 ? measured : FALLBACK_W);
-  const model = $derived(chartModel(score, asOf, horizon, width));
-  const rows = $derived(tableRows(score, asOf));
-  const label = $derived(chartLabel(score));
+  const reveal = $derived(monthIndex(highWater, score.months[0], score.months.length));
+  const model = $derived(chartModel(score, asOf, horizon, width, reveal));
+  const rows = $derived(tableRows(score, asOf, reveal));
+  const label = $derived(chartLabel(score, reveal));
   const cursorX = $derived(model.x(Math.min(Math.max(day, asOf), horizon)));
 
   type LineKey = 'total' | 'pipeline' | 'fresh' | 'planCompleted' | 'planEntitled';

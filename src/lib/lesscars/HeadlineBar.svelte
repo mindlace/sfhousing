@@ -1,7 +1,8 @@
 <!--
   The /lesscars headline in the header's pinned slot: one button, "+N homes by 2068", that opens
   the details under the header: a popover at the top right from md, a full-width disclosure below
-  md. The text is fixed (the 2068 mean), so there is no live region. The details close on Escape, an
+  md. The text follows the high-water mark (the latest reached year end's mean, "No extra homes
+  yet" before the first), so it changes with playback; there is no live region. The details close on Escape, an
   outside press, or another header overlay; focus returns to the button only when it was inside
   them.
 -->
@@ -9,14 +10,19 @@
   import { tick, type Snippet } from 'svelte';
   import type { LessCarsSummary } from '$lib/data/lesscars/codec';
   import { headerOverlay } from '$lib/shell/header-actions.svelte';
-  import { headlineName, headlineText } from './summary-view';
+  import type { Day } from '$lib/timelapse/time';
+  import { headlineName, headlineText, revealedYearIndex } from './summary-view';
 
   interface Props {
     summary: LessCarsSummary;
+    /** The furthest day reached; the headline shows the latest year end at or before it. */
+    highWater: Day;
     /** The details' contents (the page passes DetailsPanel). */
     panel: Snippet;
   }
-  let { summary, panel }: Props = $props();
+  let { summary, highWater, panel }: Props = $props();
+
+  const idx = $derived(revealedYearIndex(summary, highWater));
 
   const uid = $props.id();
   const detailsId = `${uid}-details`;
@@ -63,11 +69,11 @@
   bind:this={button}
   type="button"
   class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-semibold whitespace-nowrap tabular-nums dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-  aria-label={headlineName(summary)}
+  aria-label={headlineName(summary, idx)}
   aria-expanded={open}
   aria-controls={detailsId}
   data-testid="lc-headline"
-  onclick={toggle}>{headlineText(summary)}</button
+  onclick={toggle}>{headlineText(summary, idx)}</button
 >
 
 {#if open}

@@ -353,13 +353,32 @@ test.describe('the page on fixture-0', () => {
   });
 
   test('opens paused on the plan start with the headline from summary.json', async ({ page }) => {
-    await expect(page.getByTestId('lc-headline')).toHaveText(headlineText(summary));
+    await expect(page.getByTestId('lc-headline')).toHaveText('No extra homes yet');
     await expect(readout(page)).toHaveText(formatMonthYear(LESSCARS_START));
     expect(await lc(page, 'day')).toBe(LESSCARS_START);
     expect(await lc(page, 'playing')).toBe(false);
   });
 
+  test('the headline follows the furthest year reached; scrubbing back leaves it', async ({
+    page
+  }) => {
+    const last = summary.yearEnds.length - 1;
+    await toEnd(page);
+    await expect(page.getByTestId('lc-headline')).toHaveText(headlineText(summary, last));
+    const high = await lc(page, 'highWater');
+    expect(high).toBe(summary.yearEnds[last]);
+
+    await slider(page).focus();
+    await page.keyboard.press('PageDown');
+    await page.keyboard.press('PageDown');
+    await expect.poll(() => lc(page, 'day')).toBeLessThan(high);
+    expect(await lc(page, 'highWater')).toBe(high);
+    await expect(page.getByTestId('lc-headline')).toHaveText(headlineText(summary, last));
+    await expectNoA11yViolations(page);
+  });
+
   test('the details show a breakdown that adds to the headline', async ({ page }) => {
+    await toEnd(page);
     await page.getByTestId('lc-headline').click();
     const table = page.getByRole('table', { name: /Where the extra homes come from/ });
     await expect(table).toBeVisible();
