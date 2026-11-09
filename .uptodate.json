@@ -1,0 +1,5 @@
+{
+  "checks": ["npm run lint", "npm run check", "npm run test:unit"],
+  "attest": "npm run signoff",
+  "needs": ["playwright"]
+}
