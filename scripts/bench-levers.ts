@@ -22,7 +22,11 @@ import {
   type BrushData,
   type BrushQuery
 } from '../src/lib/sim/levers/brushes';
-import { createYieldRecompute, type GrossCache } from '../src/lib/sim/levers/recompute';
+import {
+  createTableRecompute,
+  createYieldRecompute,
+  type GrossCache
+} from '../src/lib/sim/levers/recompute';
 import { allNeeds, fillNeeds, resolveEnvelopes } from '../src/lib/sim/levers/resolve';
 import { DEFAULT_LEVERS, type SimLevers } from '../src/lib/sim/levers/types';
 import { loadScenario, scenarioUrls } from '../src/lib/sim/scenario/load';
@@ -161,6 +165,17 @@ async function main(): Promise<number> {
     applyLevers(loaded.fzp, ctx, levers, filled);
     const applyMs = performance.now() - t4;
 
+    // The same needs from the pipeline-built gross table (one unsliced step), when the dataset has one.
+    let tableMs: string | null = null;
+    if (loaded.gross) {
+      const t5 = performance.now();
+      const tr = createTableRecompute(parcels, needs, loaded.gross, {
+        now: () => performance.now()
+      });
+      if (!tr.step(Infinity)) throw new Error('table recompute did not finish');
+      tableMs = ms(performance.now() - t5);
+    }
+
     return [
       b.name,
       lotRows.length.toLocaleString('en-US'),
@@ -174,7 +189,8 @@ async function main(): Promise<number> {
       ms(Math.max(0, recomputeMs - yieldMs)),
       gross.size.toLocaleString('en-US'),
       recompute.missing.length.toLocaleString('en-US'),
-      ms(applyMs)
+      ms(applyMs),
+      ...(tableMs === null ? [] : [tableMs])
     ];
   };
   // A warm-up pass over every brush first, so each measured brush runs on a warmed-up JIT.
@@ -194,7 +210,8 @@ async function main(): Promise<number> {
     'Other ms (est.)',
     'Gross computed',
     'Missing',
-    'fillNeeds + applyLevers ms'
+    'fillNeeds + applyLevers ms',
+    ...(loaded.gross ? ['Table ms'] : [])
   ];
   console.log(`\n| ${head.join(' | ')} |`);
   console.log(`| ${head.map(() => '---').join(' | ')} |`);
