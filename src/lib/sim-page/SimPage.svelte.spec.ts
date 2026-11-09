@@ -79,13 +79,17 @@ const scoreButton = () => page.getByTestId('score-bar');
 /** `window.__sfhFzp` (installed while `VITE_E2E` is '1', see `readySim`). */
 const fzpDebug = () => window.__sfhFzp!;
 
-/** The scenario answers `ready` and its first timeline: the brush tools come on. */
+/**
+ * The scenario answers `ready` and its first timeline: the brush tools come on. The timeline
+ * answers the latest barrier, as the worker's would: a restored draft's levers go out as
+ * `setLevers` before the first timeline.
+ */
 async function toReady() {
   await expect.poll(() => workers.at(-1)?.lastOf('initScenario')).toBeTruthy();
   const w = workers.at(-1)!;
   const rev = w.lastOf('initScenario')!.rev;
   w.emit({ type: 'ready', rev, datasetVersion: 'fixture-0', chunkCount: 4 });
-  w.emit(timelineMsg(rev, 7));
+  w.emit(timelineMsg(Math.max(rev, w.lastOf('setLevers')?.rev ?? 0), 7));
 }
 
 /** /sim at `width` (1024 by default), ready in Setup, with the debug hook on. */
@@ -2203,5 +2207,62 @@ describe('SimPage map selection (sim-ux plan 4, Task 4)', () => {
     await expect.poll(pressed).toEqual([ruleId]);
     const sheet = document.querySelector<HTMLElement>('.sfh-dock-sheet')!;
     expect(sheet.style.maxHeight).toContain('40dvh');
+  });
+});
+
+describe('SimPage opening a published policy (/s)', () => {
+  const brushedPolicy = (): SimDoc['policy'] => ({
+    ...DEFAULT_POLICY,
+    rules: [{ id: 'r', kind: 'transit', stopTypes: ['metro'], bands: [{ maxM: 402, stories: 8 }] }],
+    custom: [
+      { id: 'a', kind: 'paint', strokes: [{ path: [[-122.4, 37.7]], radiusM: 50 }], stories: 6 }
+    ]
+  });
+
+  it('/s with brushes: the first initScenario carries awaitLevers, the full levers follow as setLevers', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup({ mode: 'view', initialPolicy: brushedPolicy() });
+    await expect.poll(() => workers.at(-1)?.lastOf('initScenario')).toBeTruthy();
+    const w = workers.at(-1)!;
+    const init = w.lastOf('initScenario')!;
+    expect(init.awaitLevers).toBe(true);
+    // The policy without its lot lists: no rule or paint edit yet.
+    expect(init.levers?.rules).toEqual([]);
+    expect(init.levers?.paint).toEqual([]);
+    // The brushes resolve with no timeline (the worker is waiting), and the full levers go out.
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+    w.allOf('resolveBrush').forEach((a, i) =>
+      w.emit({
+        type: 'brushLots',
+        reqId: a.reqId,
+        result: { ok: true, lots: [`P${i}`, `Q${i}`], points: new Float64Array(4) }
+      })
+    );
+    await expect.poll(() => w.allOf('setLevers').length).toBe(1);
+    const sent = w.lastOf('setLevers')!.levers;
+    expect(sent.rules[0].lots).toHaveLength(2);
+    expect(sent.paint[0].lots).toHaveLength(2);
+    expect(w.allOf('initScenario')).toHaveLength(1);
+  });
+
+  it('/s without brushes: no awaitLevers', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
+    await expect.poll(() => workers.at(-1)?.lastOf('initScenario')).toBeTruthy();
+    const init = workers.at(-1)!.lastOf('initScenario')!;
+    expect(init.levers).toBeDefined();
+    expect('awaitLevers' in init).toBe(false);
+  });
+
+  it('plain /sim: no awaitLevers', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await expect.poll(() => workers.at(-1)?.lastOf('initScenario')).toBeTruthy();
+    const init = workers.at(-1)!.lastOf('initScenario')!;
+    expect(init.levers).toBeDefined();
+    expect('awaitLevers' in init).toBe(false);
   });
 });

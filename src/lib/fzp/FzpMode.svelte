@@ -133,6 +133,8 @@
      * scenario is live sends `setLevers`.
      */
     levers?: SimLevers;
+    /** /sim: `levers` lacks its brush lots; the next initScenario asks the worker to wait. */
+    leversIncomplete?: boolean;
     /**
      * /sim: a kept lever revision's height regions and contours (one `heights` per rev, before its
      * `current`); a revision below the latest levers sent is dropped.
@@ -224,6 +226,7 @@
     onurlseed = undefined,
     createWorker = spawnSimWorker,
     levers = undefined,
+    leversIncomplete = false,
     onheights = undefined,
     onclient = undefined,
     onmapready = undefined,
@@ -417,8 +420,8 @@
    */
   function startScenario({ seed: next }: { seed: number | null }): void {
     if (!client || !manifest) return;
-    const l = untrack(() => levers);
-    const rev = client.initScenario(manifest, HORIZON, next, l);
+    const [l, incomplete] = untrack(() => [levers, leversIncomplete] as const);
+    const rev = client.initScenario(manifest, HORIZON, next, l, incomplete);
     if (l !== undefined) {
       sentLevers = l;
       leversByRev.push({ rev, levers: l });
@@ -437,13 +440,16 @@
   }
 
   /**
-   * Sends a new `levers` object once the scenario is live. It waits while a reroll is in flight,
-   * so the reroll's answer (and its URL write) is not superseded; the answer calls this again.
+   * Sends a new `levers` object once a session was started, before its first timeline too (an
+   * `awaitLevers` session runs nothing until it). Not after a crash, after a failed load or during
+   * a Retry (no session to take it: Retry sends the latest levers with its initScenario). It waits while a reroll is
+   * in flight, so the reroll's answer (and its URL write) is not superseded; the answer calls
+   * this again.
    */
   function syncLevers(): void {
     const l = untrack(() => levers);
     if (l === undefined || l === sentLevers || dead || !client || client.crashed) return;
-    if (!scenarioLive || rerollBusy) return;
+    if (latest === null || phase === 'failed' || retrying || rerollBusy) return;
     sentLevers = l;
     const rev = client.setLevers(l);
     leversByRev.push({ rev, levers: l });

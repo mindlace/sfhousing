@@ -333,4 +333,98 @@ describe('LeverSync', () => {
     await vi.advanceTimersByTimeAsync(250);
     expect(h.sent).toHaveLength(1);
   });
+
+  describe('open (a load)', () => {
+    it('open: sends as soon as every query has answered, without the debounce', async () => {
+      const h = harness();
+      h.sync.open(withBrushes(area('RH-1')));
+      h.pending[0].resolve(ok(['a']));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.sent).toHaveLength(1);
+      expect(h.sent[0].rules[0].lots).toEqual(['a']);
+      expect(h.sync.levers).toBe(h.sent[0]);
+    });
+
+    it("open: a failed query sends with that brush's lots empty", async () => {
+      // RH-1 fails, RH-2 finds its lot: the failed brush adds no edit (an edit with no lots is
+      // not emitted), the other is sent.
+      const h = harness((q) =>
+        q.kind === 'transit' && q.maxM === metres('RH-1') ? failed : ok(['b'])
+      );
+      h.sync.open(withBrushes(area('RH-1'), area('RH-2')));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.sent).toHaveLength(1);
+      expect(h.sent[0].rules).toEqual([{ lots: ['b'], stories: 4, source: 'b-RH-2-4' }]);
+      expect(h.sync.result(queryKey(areaQuery('RH-1')))).toBe(failed);
+    });
+
+    it('open: a failed query alone sends no rules', async () => {
+      const h = harness(() => failed);
+      h.sync.open(withBrushes(area('RH-1')));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.sent).toHaveLength(1);
+      expect(h.sent[0].rules).toEqual([]);
+      expect(h.sent[0].compare).toBe('fzp');
+    });
+
+    it('open: a bad-request answer also sends with empty lots', async () => {
+      const h = harness();
+      h.sync.open(withBrushes(area('RH-1')));
+      h.pending[0].resolve({ ok: false, reason: 'bad-request', message: 'x' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.sent).toHaveLength(1);
+      expect(h.sent[0].rules).toEqual([]);
+      expect(h.sync.result(queryKey(areaQuery('RH-1')))).toMatchObject({ reason: 'bad-request' });
+    });
+
+    it('open: a no-session answer parks; resume asks again and the answer is sent at once', async () => {
+      const h = harness();
+      h.sync.open(withBrushes(area('RH-1')));
+      h.pending[0].resolve(noSession);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(h.sent).toEqual([]);
+      expect(h.resolve).toHaveBeenCalledTimes(1);
+      h.sync.resume();
+      expect(h.resolve).toHaveBeenCalledTimes(2);
+      h.pending[1].resolve(ok(['a']));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.sent).toHaveLength(1);
+      expect(h.sent[0].rules[0].lots).toEqual(['a']);
+    });
+
+    it('open: a policy with no brushes sends at once', async () => {
+      const h = harness();
+      h.sync.open(BASE);
+      expect(h.resolve).not.toHaveBeenCalled();
+      expect(h.sent).toEqual([]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.sent).toHaveLength(1);
+      expect(h.sent[0].rules).toEqual([]);
+    });
+
+    it('after the opening send, a failed query on an edit sends nothing', async () => {
+      const h = harness((q) =>
+        q.kind === 'transit' && q.maxM === metres('RH-1') ? ok(['a']) : failed
+      );
+      h.sync.open(withBrushes(area('RH-1')));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.sent).toHaveLength(1);
+      h.sync.update(withBrushes(area('RH-2')));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(h.sent).toHaveLength(1);
+      expect(h.sync.result(queryKey(areaQuery('RH-2')))).toBe(failed);
+    });
+
+    it('an update before the opening send ends the opening: the debounce applies', async () => {
+      const h = harness();
+      h.sync.open(withBrushes(area('RH-1')));
+      h.sync.update(withBrushes(area('RH-2')));
+      h.pending[1].resolve(ok(['two']));
+      await vi.advanceTimersByTimeAsync(249);
+      expect(h.sent).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(h.sent).toHaveLength(1);
+      expect(h.sent[0].rules[0].lots).toEqual(['two']);
+    });
+  });
 });

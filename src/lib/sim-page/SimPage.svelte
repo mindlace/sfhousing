@@ -82,6 +82,7 @@
     compileLevers,
     customQuery,
     paintedLots,
+    queriesOf,
     queryKey,
     type Lots,
     type SimPolicy
@@ -185,6 +186,11 @@
   const initial = untrack(() =>
     opened ? (compileLevers(firstPolicy, () => []) ?? DEFAULT_LEVERS) : DEFAULT_LEVERS
   );
+  /**
+   * `initial` lacks lots the policy's brushes will find: FzpMode asks the worker to wait for the
+   * full levers (`awaitLevers`) rather than run a throwaway revision.
+   */
+  const initialIncomplete = opened !== null && queriesOf(firstPolicy).length > 0;
   const store = new PolicyStore(firstPolicy);
 
   /** The scenario client's brush requests; null before mount, after a crash and after unmount. */
@@ -241,8 +247,9 @@
   }
 
   onMount(() => {
-    // A given policy's brushes are resolved, then its full levers sent (Call 12).
-    if (opened) sync.update(store.policy);
+    // A given policy's brushes are resolved, then its full levers sent (Call 12), with no
+    // debounce: the opening send (`LeverSync.open`).
+    if (opened) sync.open(store.policy);
     if (persistMode === 'off') return;
     restore();
     saving = true;
@@ -1004,6 +1011,7 @@
   {reload}
   {onurlseed}
   {levers}
+  leversIncomplete={initialIncomplete && levers === initial}
   runPhase={run.phase}
   onrun={startRun}
   onrewind={resetRun}

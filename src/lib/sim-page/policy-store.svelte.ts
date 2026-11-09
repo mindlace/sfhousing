@@ -5,6 +5,8 @@
  * all are known, and sends the result 250 ms after the last change (Call 18), so only the latest
  * recipe reaches the worker. A `no-session` answer (no client, a crash, a session that ended) is
  * not a failure: the query waits for `resume`, the page's sign that a new session is live.
+ * `open` is the opening policy (a load): it goes out as soon as every query has answered, with no
+ * debounce, a failed query compiling as no lots, so a load always reaches the worker.
  */
 import type { BrushQuery } from '$lib/sim/levers/brushes';
 import type { SimLevers } from '$lib/sim/levers/types';
@@ -140,6 +142,8 @@ export class LeverSync {
   /** The debounce timer is armed: a recipe is about to be sent. */
   #armed = $state(false);
   #levers = $state.raw<SimLevers | null>(null);
+  /** `open` was called and its policy is not sent yet; an `update` ends it. */
+  #opening = false;
 
   constructor(deps: LeverSyncDeps) {
     this.#deps = deps;
@@ -168,8 +172,19 @@ export class LeverSync {
     return this.#results.get(key);
   }
 
+  /** The opening policy (a load): sends once every query has answered, with no debounce. */
+  open(p: SimPolicy): void {
+    this.#opening = true;
+    this.#request(p);
+  }
+
   /** The recipe changed: ask for its unknown queries, then (re)start the debounce. */
   update(p: SimPolicy): void {
+    this.#opening = false;
+    this.#request(p);
+  }
+
+  #request(p: SimPolicy): void {
     this.#policy = p;
     for (const { key, query } of queriesOf(p)) {
       if (this.#results.has(key) || this.#inFlight.has(key) || this.#parked.has(key)) continue;
@@ -236,7 +251,10 @@ export class LeverSync {
     if (this.#policy && queriesOf(this.#policy).some((q) => q.key === key)) this.#schedule();
   }
 
-  /** Restarts the debounce if every query the latest recipe needs has answered `ok`. */
+  /**
+   * Restarts the debounce if every query the latest recipe needs has answered `ok`. While
+   * opening, any answer will do (a failure compiles as no lots), and the send waits 0 ms.
+   */
   #schedule(): void {
     // Called unbound: the browser's timers throw when called with another `this`.
     const { setTimeout: later, clearTimeout: cancel } = this.#deps;
@@ -245,24 +263,34 @@ export class LeverSync {
     this.#armed = false;
     const p = this.#policy;
     if (!p) return;
-    const ready = queriesOf(p).every(({ key }) => this.#results.get(key)?.ok === true);
+    const opening = this.#opening;
+    const ready = queriesOf(p).every(({ key }) => {
+      const r = this.#results.get(key);
+      return opening ? r !== undefined : r?.ok === true;
+    });
     if (!ready) return;
     this.#armed = true;
-    this.#timer = later(() => {
-      this.#timer = null;
-      this.#armed = false;
-      this.#send();
-    }, this.#debounceMs);
+    this.#timer = later(
+      () => {
+        this.#timer = null;
+        this.#armed = false;
+        this.#send();
+      },
+      opening ? 0 : this.#debounceMs
+    );
   }
 
   #send(): void {
     const p = this.#policy;
     if (!p) return;
+    const opening = this.#opening;
     const levers = compileLevers(p, (key) => {
       const r = this.#results.get(key);
-      return r?.ok ? r.lots : undefined;
+      if (r?.ok) return r.lots;
+      return opening && r !== undefined ? [] : undefined;
     });
     if (levers === null) return; // a query failed or was retried since the timer started
+    this.#opening = false;
     this.#levers = levers;
     this.#deps.send(levers);
   }
