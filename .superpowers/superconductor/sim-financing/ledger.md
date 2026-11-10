@@ -192,4 +192,6 @@
 
 **Commit.** The package is commit `de6d1850` on branch `worktree-sim-financing` (base `2c7711fe`), not pushed; this entry is recorded in the commit that follows it.
 
+**After the handoff commit (2026-11-09).** The partner asked whether the interaction had been addressed. It is specified in the `funding-ui` spec but was never reviewed by the partner: the spec was derived from one scope paragraph of the design and the partner's standing interface preferences. A five-screen mock-up of what the spec describes (the tab as it opens, the Add money choices, a bond with its editor open, state money switched off, the two new results blocks) was put in front of the partner for review. Signoff, PR and merge of this branch are held until the partner has looked; changes from that review amend the `funding-ui` spec (a reappraisal of one spec, not of the model).
+
 **Next.** Conduction starts in a fresh session with `supersonic:superconductor`. No operator was dispatched from the composition session.
