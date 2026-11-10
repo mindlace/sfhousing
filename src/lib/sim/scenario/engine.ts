@@ -27,6 +27,7 @@ import {
   PATHWAYS,
   STAGE_ORDER,
   type Calibration,
+  type Dollars,
   type ExitReason,
   type Pathway,
   type RevisionModel,
@@ -60,6 +61,14 @@ export interface Sink {
    * reservation was kept. Optional: a sink without it ignores reservations.
    */
   reservation?(row: number, kept: boolean): void;
+  /** F10: one event per programme of a project, called in day order; `programme` is null on `in`. */
+  ledger?(e: {
+    day: Day;
+    pool: string;
+    programme: string | null;
+    kind: 'in' | 'commit' | 'release' | 'spend' | 'repay' | 'loss';
+    dollars: Dollars;
+  }): void;
 }
 
 type End = Schedule['end'];

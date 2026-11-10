@@ -8,7 +8,21 @@ import type { PackedCell, TimelineUpdate } from '$lib/map/types';
 import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
-import type { Calibration, ExitReason, Pathway, Provenance, Stage } from '$lib/timelapse/types';
+import type {
+  Calibration,
+  Dollars,
+  ExitReason,
+  LimitStatement,
+  MarketStep,
+  Pathway,
+  Pool,
+  PoolKind,
+  Programme,
+  Provenance,
+  ResolvedTerms,
+  Stage,
+  TierUnits
+} from '$lib/timelapse/types';
 import type { LeverLookups } from '../levers/apply';
 import type { BrushCatalog, BrushQuery } from '../levers/brushes';
 import type { LeverCapacity } from '../levers/resolve';
@@ -52,6 +66,16 @@ interface RowSchedule {
   } | null;
   regime?: number; // lesscars plan 1 Task 4
   inFlight?: true; // plan 4 Task 6 (Call 15)
+  kind?: 'affordable';
+  funding?: {
+    programmes: string[];
+    applied: Day;
+    granted: Dollars;
+    lent: Dollars;
+    guaranteed: Dollars;
+    displaced: number;
+    certain: boolean;
+  };
 }
 type RowSimInput = {
   parcels: ScenarioParcels;
@@ -63,6 +87,14 @@ type RowSimInput = {
   inFlightScale?: StageScale;
   regimes?: { day: Day; parcels: ScenarioParcels }[]; // lesscars plan 1 Task 4
   reservedFrom?: Int32Array;
+  market?: MarketStep[];
+  finance?: {
+    pools: Pool[];
+    programmes: Programme[];
+    off: { pool: string; from: Day; to: Day | null }[];
+    slope: number;
+    terms: ResolvedTerms;
+  };
 };
 type RowSimulate = (input: RowSimInput, seed: number, horizon: Day) => RowSchedule[];
 
@@ -79,6 +111,8 @@ type RowProjectCard = {
   massing: 'matched' | 'approximate' | 'none';
   multiPhase: boolean;
   phase: RowSchedule['phase'];
+  kind?: 'affordable';
+  funding?: { programmes: string[]; certain: boolean };
   localProgram: boolean;
   lookups: 'inFlight' | 'fresh';
   chanceShift: { stage: Stage; months: number } | null;
@@ -202,6 +236,30 @@ interface RowTimelineScore {
     measure: 'planEffect.entitledNew' | 'planEffect.completedNetNew' | 'completedNet';
     provenance: Provenance;
   }[];
+  tiers?: {
+    completed: TierUnits[];
+    baseline: TierUnits;
+    targets: RowTargetProgressAt[];
+  };
+  money?: {
+    pools: {
+      id: string;
+      label: string;
+      kind: PoolKind;
+      received: number[];
+      committed: number[];
+      out: number[];
+      spent: number[];
+      repaid: number[];
+      lost: number[];
+      lostCredit: number[];
+    }[];
+    fundedHomes: number[];
+    displacedHomes: number[];
+    publicSpent: number[];
+    owed: { pool: string; principal: Dollars; repayment: number; nominal: true }[];
+    limits: LimitStatement[];
+  };
 }
 type RowTargetProgressAt = { target: Target; deadline: Day; fraction: number[] };
 

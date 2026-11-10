@@ -10,7 +10,7 @@ import {
   type QualityRuleRef
 } from './projects';
 import type { Day } from './time';
-import type { Pathway, Provenance, Stage } from './types';
+import type { Pathway, Provenance, Stage, TierUnits } from './types';
 
 type Equals<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
@@ -47,6 +47,7 @@ interface RowInFlightProject {
   } | null;
   sources: { dataset: string; id: string; key?: string }[];
   quality: string[];
+  affordableHomes?: number | null;
 }
 type RowQualityRuleRef = {
   id: string;
@@ -57,7 +58,7 @@ type RowQualityRuleRef = {
 type RowProjectsFile = {
   schema: 1;
   asOf: Day;
-  rhnaCompletedNet: { units: number; since: Day; provenance: Provenance };
+  rhnaCompletedNet: { units: number; since: Day; provenance: Provenance; byTier?: TierUnits };
   districtMaxStories?: { stories: number; n: number; provenance: Provenance };
   qualityRules: RowQualityRuleRef[];
   projects: RowInFlightProject[];

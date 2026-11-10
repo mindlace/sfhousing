@@ -8,7 +8,14 @@
  */
 import type { ParcelId } from '../data/parcel';
 import type { Day } from './time';
-import { PATHWAYS, STAGE_ORDER, type Pathway, type Provenance, type Stage } from './types';
+import {
+  PATHWAYS,
+  STAGE_ORDER,
+  type Pathway,
+  type Provenance,
+  type Stage,
+  type TierUnits
+} from './types';
 
 export interface InFlightProject {
   /** 'PRJ:<record_id>', 'BP:<permit>', 'PRJ:<record_id>:BP:<permit>' for split pipeline rows, 'CASE:<case_no>' for PRX rows, 'PPA:<record_id>' for PPA-only; unique */
@@ -63,6 +70,8 @@ export interface InFlightProject {
   }[];
   /** sorted T14 rule ids that changed or estimated a value of this project; [] if none */
   quality: string[];
+  /** F12: the Planning record's proposed affordable homes; null or absent when not recorded */
+  affordableHomes?: number | null;
 }
 
 /** One `qualityRules` entry: a T14 rule named by some project's `quality`. */
@@ -86,6 +95,11 @@ export type ProjectsFile = {
     /** 2022-06-30, RHNA projection period start */
     since: Day;
     provenance: Provenance;
+    /**
+     * F12: net homes completed since `since` by income tier, from the housing-production records;
+     * above moderate is the net total less the income-restricted tiers, so the tiers sum to `units`.
+     */
+    byTier?: TierUnits;
   };
   /**
    * Default story limit for a district without a parcel height or curated `maxStories` (large-site
