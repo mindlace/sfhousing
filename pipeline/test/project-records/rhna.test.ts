@@ -10,13 +10,22 @@ function d(iso: string): number {
 
 const ASOF = d('2026-10-10');
 
-function row(form: string | null, netUnits: number | null, iso: string | null): HousingRow {
+function row(
+  form: string | null,
+  netUnits: number | null,
+  iso: string | null,
+  tiers: HousingRow['tiers'] = null,
+  affordable: number | null = null,
+  bpa: string | null = null
+): HousingRow {
   return {
-    bpa: null,
+    bpa,
     blklot: null,
     form,
     netUnits,
-    firstCompletionDay: iso === null ? null : d(iso)
+    firstCompletionDay: iso === null ? null : d(iso),
+    affordable,
+    tiers
   };
 }
 
@@ -74,7 +83,7 @@ describe('rhnaCompletedNet', () => {
         }
       ],
       method:
-        'Sum of net_units_completed over xdht-4php rows with first_completion_date in [2022-06-30, asOf], forms 1-2 (new construction), 3 and 8 (alterations, net) and 6 (demolitions, negative), the Housing Inventory definition; cross-checked per calendar year against the Housing Inventory Table 2 net change (tier 1).',
+        "Sum of net_units_completed over xdht-4php rows with first_completion_date in [2022-06-30, asOf], forms 1-2 (new construction), 3 and 8 (alterations, net) and 6 (demolitions, negative), the Housing Inventory definition; cross-checked per calendar year against the Housing Inventory Table 2 net change (tier 1). By tier: extremely low plus very low income as very low, low and moderate income as recorded, the rest of each row's net completed homes as above moderate (the source has no above-moderate column; net losses fall there); a row whose tier columns are blank counts its affordable homes as not recorded; Planning estimates some rows' tiers from similar projects (affordable_is_estimate).",
       n: 1,
       window: ['2022-06-30', isoOf(ASOF)]
     });
@@ -137,5 +146,98 @@ describe('checkRhna', () => {
     const r = checkRhna({}, 0, { 2023: 1000 }, tol);
     expect(r.ok).toBe(false);
     expect(r.detail).toContain('2023 0 vs 1000');
+  });
+});
+
+describe('rhnaCompletedNet byTier', () => {
+  const T = (extremelyLow: number, veryLow: number, low: number, moderate: number) => ({
+    extremelyLow,
+    veryLow,
+    low,
+    moderate
+  });
+  const tier = (rows: HousingRow[]) => rhnaCompletedNet(rows, ASOF).value.byTier!;
+  const D = '2024-03-01';
+
+  it('adds known tiers (extremely low into very low) and the rest to above moderate', () => {
+    expect(tier([row('1', 10, D, T(1, 2, 3, 1), 7)])).toEqual({
+      veryLow: 3,
+      low: 3,
+      moderate: 1,
+      aboveModerate: 3,
+      unrecorded: 0
+    });
+  });
+
+  it('scales tiers to n when they exceed it, by largest remainder, with no above moderate', () => {
+    expect(tier([row('1', 3, D, T(0, 2, 2, 0), 4)])).toEqual({
+      veryLow: 2,
+      low: 1,
+      moderate: 0,
+      aboveModerate: 0,
+      unrecorded: 0
+    });
+  });
+
+  it('counts affordable homes of a row with no tiers as not recorded', () => {
+    const b = tier([row('1', 5, D, null, 2)]);
+    expect(b.unrecorded).toBe(2);
+    expect(b.aboveModerate).toBe(3);
+  });
+
+  it('charges a net loss to above moderate whatever its tiers hold', () => {
+    expect(tier([row('6', -1, D)]).aboveModerate).toBe(-1);
+    const b = tier([row('6', -1, D, T(0, 1, 0, 0))]);
+    expect(b.aboveModerate).toBe(-1);
+    expect(b.veryLow).toBe(0);
+  });
+
+  it('adds nothing to a tier for n 0', () => {
+    expect(tier([row('1', 0, D, T(2, 0, 0, 0))])).toEqual({
+      veryLow: 0,
+      low: 0,
+      moderate: 0,
+      aboveModerate: 0,
+      unrecorded: 0
+    });
+  });
+
+  it('known tiers with a null affordable count are used as given', () => {
+    const b = tier([row('1', 4, D, T(0, 1, 0, 0), null)]);
+    expect(b).toMatchObject({ veryLow: 1, aboveModerate: 3, unrecorded: 0 });
+  });
+
+  const mixed = () => [
+    row('1', 10, D, T(1, 2, 3, 1), 7, 'a'),
+    row('1', 3, D, T(0, 2, 2, 0), 4, 'b'),
+    row('1', 5, D, null, 2, 'c'),
+    row('6', -1, D, null, null, 'd'),
+    row('6', -1, D, T(0, 1, 0, 0), 1, 'e'),
+    row('1', 0, D, T(2, 0, 0, 0), 2, 'f'),
+    row('1', 4, D, T(0, 1, 0, 0), null, 'g'),
+    row('1', 6, D, null, null, 'h')
+  ];
+
+  it('sums to units and keeps the tier key order', () => {
+    const { value } = rhnaCompletedNet(mixed(), ASOF);
+    const b = value.byTier!;
+    expect(b.veryLow + b.low + b.moderate + b.aboveModerate + b.unrecorded).toBe(value.units);
+    expect(Object.keys(b)).toEqual(['veryLow', 'low', 'moderate', 'aboveModerate', 'unrecorded']);
+  });
+
+  it('tallies rows counted under rule 2 of counted rows with affordable homes', () => {
+    const r = rhnaCompletedNet(mixed(), ASOF);
+    // Counted rows with n > 0 and affordable homes or a positive tier sum: a, b, c, g.
+    expect(r.tierUnrecorded).toEqual({ fired: 1, of: 4, sample: ['c'] });
+  });
+
+  it('ends the provenance method with the by-tier sentence and stays tier 0', () => {
+    const { value } = rhnaCompletedNet(mixed(), ASOF);
+    expect(
+      value.provenance.method.endsWith(
+        "By tier: extremely low plus very low income as very low, low and moderate income as recorded, the rest of each row's net completed homes as above moderate (the source has no above-moderate column; net losses fall there); a row whose tier columns are blank counts its affordable homes as not recorded; Planning estimates some rows' tiers from similar projects (affordable_is_estimate)."
+      )
+    ).toBe(true);
+    expect(value.provenance.tier).toBe(0);
   });
 });

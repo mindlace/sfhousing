@@ -179,9 +179,22 @@ function scoreOnly(f: ProjectsFile): void {
   f.projects[2].quality = [SCORE_ONLY_QUALITY_ID, FORWARD_CLAMP];
 }
 
+/** A byTier summing to `units`. */
+function byTierOf(units: number): TierUnits {
+  return { veryLow: 1, low: 2, moderate: 3, aboveModerate: units - 6, unrecorded: 0 };
+}
+
 describe('parseProjectsFile accepts', () => {
   it('a valid file, returning the input itself', () => {
     const f = validFile();
+    expect(parseProjectsFile(f)).toBe(f);
+  });
+
+  it('a file with no byTier, and one with a valid byTier', () => {
+    const f = validFile();
+    expect(f.rhnaCompletedNet.byTier).toBeUndefined();
+    expect(parseProjectsFile(f)).toBe(f);
+    f.rhnaCompletedNet.byTier = byTierOf(f.rhnaCompletedNet.units);
     expect(parseProjectsFile(f)).toBe(f);
   });
 
@@ -306,6 +319,23 @@ const cases: Case[] = [
   ['rhna missing', (f) => delete f.rhnaCompletedNet, 'rhnaCompletedNet'],
   ['rhna null', (f) => (f.rhnaCompletedNet = null), 'rhnaCompletedNet'],
   ['rhna units fractional', (f) => (f.rhnaCompletedNet.units = 1.5), 'rhnaCompletedNet.units'],
+  [
+    'byTier off by one',
+    (f) => {
+      f.rhnaCompletedNet.byTier = byTierOf(f.rhnaCompletedNet.units);
+      f.rhnaCompletedNet.byTier.unrecorded += 1;
+    },
+    'rhnaCompletedNet.byTier'
+  ],
+  [
+    'byTier moderate fractional',
+    (f) => {
+      f.rhnaCompletedNet.byTier = byTierOf(f.rhnaCompletedNet.units);
+      f.rhnaCompletedNet.byTier.moderate = 1.5;
+      f.rhnaCompletedNet.byTier.aboveModerate += 1.5;
+    },
+    'rhnaCompletedNet.byTier.moderate'
+  ],
   ['rhna since string', (f) => (f.rhnaCompletedNet.since = 'x'), 'rhnaCompletedNet.since'],
   [
     'rhna provenance missing',

@@ -94,12 +94,12 @@ export type ProjectsFile = {
     units: number;
     /** 2022-06-30, RHNA projection period start */
     since: Day;
-    provenance: Provenance;
     /**
      * F12: net homes completed since `since` by income tier, from the housing-production records;
      * above moderate is the net total less the income-restricted tiers, so the tiers sum to `units`.
      */
     byTier?: TierUnits;
+    provenance: Provenance;
   };
   /**
    * Default story limit for a district without a parcel height or curated `maxStories` (large-site
@@ -418,8 +418,16 @@ export function parseProjectsFile(
   }
 
   const rhna = obj(root.rhnaCompletedNet, 'rhnaCompletedNet');
-  int(rhna.units, 'rhnaCompletedNet.units');
+  const rhnaUnits = int(rhna.units, 'rhnaCompletedNet.units');
   int(rhna.since, 'rhnaCompletedNet.since');
+  if (rhna.byTier !== undefined) {
+    const bt = obj(rhna.byTier, 'rhnaCompletedNet.byTier');
+    let sum = 0;
+    for (const k of ['veryLow', 'low', 'moderate', 'aboveModerate', 'unrecorded']) {
+      sum += int(bt[k], `rhnaCompletedNet.byTier.${k}`);
+    }
+    if (sum !== rhnaUnits) fail('rhnaCompletedNet.byTier', 'must sum to units');
+  }
   checkProvenance(rhna.provenance, 'rhnaCompletedNet.provenance');
 
   if (root.districtMaxStories !== undefined) {

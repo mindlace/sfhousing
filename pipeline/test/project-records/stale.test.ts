@@ -183,7 +183,16 @@ const NO_ASSESSOR: AssessorCtx = {
 };
 
 function housing(over: Partial<HousingRow>): HousingRow {
-  return { bpa: null, blklot: null, form: '1', netUnits: 4, firstCompletionDay: null, ...over };
+  return {
+    bpa: null,
+    blklot: null,
+    form: '1',
+    netUnits: 4,
+    firstCompletionDay: null,
+    affordable: null,
+    tiers: null,
+    ...over
+  };
 }
 
 const resolve = (bs: string[]): ParcelId[] => bs.map((b) => (b === '3512099' ? '3512011' : b));

@@ -236,19 +236,30 @@ export function baseRaw(): Record<ProjectSourceId, RawRow[]> {
         bpa: '202101050007',
         form_no: '2',
         net_units_completed: '3',
-        first_completion_date: ts('2023-05-10')
+        first_completion_date: ts('2023-05-10'),
+        extremely_low_income: '0',
+        very_low_income: '1',
+        low_income: '0',
+        moderate_income: '1',
+        affordable_units: '2'
       },
       {
         bpa: '202201010001',
         form_no: '3',
         net_units_completed: '2',
-        first_completion_date: ts('2024-02-01')
+        first_completion_date: ts('2024-02-01'),
+        extremely_low_income: '',
+        very_low_income: '',
+        low_income: '',
+        moderate_income: '',
+        affordable_units: '1'
       },
       {
         bpa: '202301010001',
         form_no: '6',
         net_units_completed: '-1',
-        first_completion_date: ts('2025-01-15')
+        first_completion_date: ts('2025-01-15'),
+        affordable_units: '0'
       }
     ],
     'datasf-dev-pipeline': [

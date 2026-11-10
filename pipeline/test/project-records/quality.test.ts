@@ -294,6 +294,17 @@ const TABLE: Record<string, Spec> = {
     failShare: 0.5,
     label:
       "Remaining Development Agreement homes reduced by projects filed after Planning's quarterly count"
+  },
+  'pr.rhna.tier-unrecorded': {
+    kind: 'missing',
+    action: 'none',
+    tier: 2,
+    valueTier: null,
+    unitsWeighted: false,
+    warnShare: 0.05,
+    failShare: 0.1,
+    label:
+      'Completed affordable homes whose income tier the records do not give were counted as tier not recorded'
   }
 };
 const IDS = Object.keys(TABLE).sort();

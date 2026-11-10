@@ -290,7 +290,7 @@ describe('deriveProjects: output shape', () => {
     const rule = { valueTier: null, tier: 2, label: 'x', id: 'pr.a.b' } as const;
     const withRule = JSON.parse(serializeProjects({ ...reversed, qualityRules: [rule] }));
     expect(Object.keys(withRule.qualityRules[0])).toEqual(['id', 'label', 'tier', 'valueTier']);
-    expect(Object.keys(top.rhnaCompletedNet)).toEqual(['units', 'since', 'provenance']);
+    expect(Object.keys(top.rhnaCompletedNet)).toEqual(['units', 'since', 'byTier', 'provenance']);
     expect(Object.keys(top.rhnaCompletedNet.provenance)).toEqual([
       'tier',
       'label',

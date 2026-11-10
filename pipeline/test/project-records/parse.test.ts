@@ -276,7 +276,15 @@ describe('parseAll', () => {
     ]);
     expect(p.completions).toEqual([{ permit: 'P1', day: null, kind: null, units: null }]);
     expect(p.housing).toEqual([
-      { bpa: null, blklot: null, form: null, netUnits: null, firstCompletionDay: null }
+      {
+        bpa: null,
+        blklot: null,
+        form: null,
+        netUnits: null,
+        firstCompletionDay: null,
+        affordable: null,
+        tiers: null
+      }
     ]);
     expect(p.pipeline).toEqual([
       {
@@ -299,6 +307,32 @@ describe('parseAll', () => {
       }
     ]);
     expect(p.counts).toEqual({});
+  });
+
+  it('reads the housing-production tier columns, null tiers when any is blank', () => {
+    const base = {
+      extremely_low_income: '1',
+      very_low_income: '2',
+      low_income: '0',
+      moderate_income: '1',
+      affordable_units: '4'
+    };
+    const p = parseAll(
+      raw({
+        'datasf-housing-production': [
+          { bpa: 'A', ...base },
+          { bpa: 'B', ...base, low_income: '' },
+          { bpa: 'C' }
+        ]
+      }),
+      ASOF
+    );
+    const by = (b: string) => p.housing.find((h) => h.bpa === b);
+    expect(by('A')?.tiers).toEqual({ extremelyLow: 1, veryLow: 2, low: 0, moderate: 1 });
+    expect(by('A')?.affordable).toBe(4);
+    expect(by('B')?.tiers).toBeNull();
+    expect(by('B')?.affordable).toBe(4);
+    expect(by('C')).toMatchObject({ tiers: null, affordable: null });
   });
 
   it('maps every raw field', () => {
@@ -490,7 +524,9 @@ describe('parseAll', () => {
       blklot: '3512008',
       form: 'F1',
       netUnits: 24,
-      firstCompletionDay: day(2021, 6, 1)
+      firstCompletionDay: day(2021, 6, 1),
+      affordable: null,
+      tiers: null
     });
     expect(p.pipeline[0]).toEqual({
       idx: 0,

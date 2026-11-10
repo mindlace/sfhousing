@@ -196,6 +196,23 @@ describe('checkV22', () => {
     });
   });
 
+  it('keeps its verdict with a consistent byTier and ends its detail with the sums', () => {
+    const r = checkV22(good.checks, { 2023: 3, 2024: 2, 2025: -1 }, tol);
+    const u = good.checks.file.rhnaCompletedNet.units;
+    expect(r.ok).toBe(true);
+    expect(r.detail.endsWith(`; byTier sums to ${u}, units ${u}`)).toBe(true);
+  });
+
+  it('fails when byTier does not sum to units', () => {
+    const i = inputs((x) => {
+      const f = x.file.rhnaCompletedNet;
+      f.byTier = { veryLow: 0, low: 0, moderate: 0, aboveModerate: f.units - 1, unrecorded: 0 };
+    });
+    const r = checkV22(i, { 2023: 3, 2024: 2, 2025: -1 }, tol);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toContain('byTier sums to');
+  });
+
   it('fails a year outside ±10% and passes on the edge', () => {
     const with2 = (a: number, b: number) =>
       inputs((i) => (i.rhna = { byYear: { 2023: a, 2024: b }, total: a + b }));

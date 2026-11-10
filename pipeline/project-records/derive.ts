@@ -610,6 +610,8 @@ interface TallyInput {
   netting: readonly Netting[];
   /** Ruling SP1: the in-flight PRJ-anchored projects tested and the superseded ids. */
   supersede: { tested: number; superseded: readonly string[] };
+  /** Spec 4.3: rows of `rhnaCompletedNet.byTier` counted as tier not recorded. */
+  rhna: { fired: number; of: number; sample: string[] };
 }
 
 /** Σ of the positive values; null and negative count as 0. */
@@ -839,7 +841,10 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
       unitsOf: positiveSum(netting.map((n) => n.before)),
       sample: netted.map((n) => n.id)
     };
-  }
+  },
+  // Spec 4.3 rule 2: counted housing-production rows with affordable homes; the ones whose tier
+  // columns are blank; their bpa.
+  [PR.rhnaTierUnrecorded]: ({ rhna }) => rhna
 };
 
 function zeroCounts(): Record<string, number> {
@@ -1430,7 +1435,8 @@ export function deriveProjects(
     inFlight: t3,
     noDate,
     netting,
-    supersede: { tested: supersede.tested, superseded: [...supersede.superseded.keys()] }
+    supersede: { tested: supersede.tested, superseded: [...supersede.superseded.keys()] },
+    rhna: rhna.tierUnrecorded
   };
   for (const r of PR_RULES) recordQuality(counts, r.id, PR_TALLIES[r.id as PrRuleId](tallyInput));
 

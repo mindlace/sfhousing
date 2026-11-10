@@ -15,7 +15,8 @@ import type {
   ProjectHistoriesFile,
   ProjectHistory,
   Provenance,
-  Stage
+  Stage,
+  TierUnits
 } from '../../src/lib/timelapse/types';
 import type { MultiphaseEntry, MultiphaseFile } from '../enrichment/schema';
 import { qualityRule } from '../lib/quality';
@@ -244,6 +245,17 @@ function orderProvenance(p: Provenance): Provenance {
   return out;
 }
 
+/** `INCOME_TIERS` order, then `unrecorded`. */
+function orderByTier(b: TierUnits): TierUnits {
+  return {
+    veryLow: b.veryLow,
+    low: b.low,
+    moderate: b.moderate,
+    aboveModerate: b.aboveModerate,
+    unrecorded: b.unrecorded
+  };
+}
+
 /** T3 file order; `districtMaxStories` only when present. */
 export function orderProjectsFile(f: ProjectsFile): ProjectsFile {
   const dm = f.districtMaxStories;
@@ -253,6 +265,9 @@ export function orderProjectsFile(f: ProjectsFile): ProjectsFile {
     rhnaCompletedNet: {
       units: f.rhnaCompletedNet.units,
       since: f.rhnaCompletedNet.since,
+      ...(f.rhnaCompletedNet.byTier === undefined
+        ? {}
+        : { byTier: orderByTier(f.rhnaCompletedNet.byTier) }),
       provenance: orderProvenance(f.rhnaCompletedNet.provenance)
     },
     ...(dm === undefined

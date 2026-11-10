@@ -27,7 +27,8 @@ export const PR = {
   parcelsSharedExisting: 'pr.parcels.shared-existing',
   /** The T3 validator's marker of a score-only master (src/lib/timelapse/projects.ts). */
   multiphaseScoreOnly: SCORE_ONLY_QUALITY_ID,
-  multiphaseDaNetting: 'pr.multiphase.da-netting'
+  multiphaseDaNetting: 'pr.multiphase.da-netting',
+  rhnaTierUnrecorded: 'pr.rhna.tier-unrecorded'
 } as const;
 
 export type PrRuleId = (typeof PR)[keyof typeof PR];
@@ -511,5 +512,22 @@ export const PR_RULES: readonly QualityRule[] = [
     warnShare: 0.1,
     failShare: 0.5,
     unitsWeighted: true
+  },
+  {
+    id: PR.rhnaTierUnrecorded,
+    owner: OWNER,
+    source: 'datasf-housing-production',
+    field: 'byTier',
+    kind: 'missing',
+    action: 'none',
+    tier: 2,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'Completed affordable homes whose income tier the records do not give were counted as tier not recorded',
+    denominator: 'counted housing-production rows with affordable homes',
+    warnShare: 0.05,
+    failShare: 0.1,
+    unitsWeighted: false
   }
 ];
