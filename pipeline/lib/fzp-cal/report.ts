@@ -132,7 +132,7 @@ function netUnits(h: ProjectHistory): number {
 }
 
 /** AJ cumulative incidence at the end of observation (no table, no tail), weighted as given. */
-function ajEnd(spells: Spell[]): { advance: number; exit: number } | null {
+export function ajEnd(spells: Spell[]): { advance: number; exit: number } | null {
   const sw = ajSweep(spells);
   if (sw.d.length === 0) return null;
   let S = 1;

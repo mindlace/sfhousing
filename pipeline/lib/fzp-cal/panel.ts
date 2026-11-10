@@ -126,7 +126,7 @@ export function firstFiledDays(permits: PermitRow[]): Map<string, Day> {
 }
 
 /** F: the earliest raw `entered` day of preApplication, filed and permitFiled. */
-function firstEntered(h: NormHistory): Day | undefined {
+export function firstEntered(h: NormHistory): Day | undefined {
   let f: Day | undefined;
   for (const s of ['preApplication', 'filed', 'permitFiled'] as const) {
     const v = h.src.entered[s];
@@ -136,7 +136,7 @@ function firstEntered(h: NormHistory): Day | undefined {
 }
 
 /** The largest lot, ties to the smaller id (a NaN area counts as the smallest). */
-function primaryParcel(ids: ParcelId[], lotArea: (id: ParcelId) => number): ParcelId {
+export function primaryParcel(ids: ParcelId[], lotArea: (id: ParcelId) => number): ParcelId {
   let best = ids[0];
   let bestArea = lotArea(best);
   if (Number.isNaN(bestArea)) bestArea = -Infinity;
