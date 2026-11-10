@@ -18,6 +18,8 @@ import { ProjectsFormatError, parseProjectsFile, type ProjectsFile } from '$lib/
 import { PATHWAYS, type Calibration, type FeatureId } from '$lib/timelapse/types';
 import { miniBin } from './fixtures/mini-bin';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
+import { miniFunding, miniMarket } from './fixtures/mini-market';
+import { NO_MARKET_WARNING } from './market';
 import {
   MINI_CAPPED_ID,
   MINI_CELLS,
@@ -261,7 +263,25 @@ describe('buildSimInput', () => {
     expect(input.projects).toBe(files.projects.projects);
     expect(input.calibration).toBe(files.calibration);
     expect(input.asOf).toBe(files.projects.asOf);
+    expect(warnings).toEqual([NO_MARKET_WARNING]);
+    expect('market' in input).toBe(false);
+  });
+
+  it("applies today's market as one step at asOf", () => {
+    const files = miniFiles();
+    const market = miniMarket();
+    files.calibration = { ...files.calibration, market };
+    const warnings: string[] = [];
+    const input = buildSimInput(files, (m) => warnings.push(m));
+    expect(input.market).toEqual([{ from: files.projects.asOf, logOdds: market.today.all }]);
     expect(warnings).toEqual([]);
+    files.calibration = {
+      ...files.calibration,
+      baselineFunding: miniFunding()
+    };
+    expect(buildSimInput(files).market).toEqual([
+      { from: files.projects.asOf, logOdds: market.today.all }
+    ]);
   });
 
   it('rejects calibration fill levels that differ from FILL_LEVELS (A2)', () => {
@@ -291,8 +311,8 @@ describe('buildSimInput', () => {
     files.calibration.asOf = files.projects.asOf - 1;
     const warnings: string[] = [];
     const input = buildSimInput(files, (m) => warnings.push(m));
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatch(/asOf/);
+    expect(warnings.filter((w) => /asOf/.test(w))).toHaveLength(1);
+    expect(warnings).toContain(NO_MARKET_WARNING);
     expect(input.asOf).toBe(files.projects.asOf);
   });
 });

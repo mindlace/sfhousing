@@ -5,6 +5,7 @@ import { chanceTable, parseCalibration, typicalMonths } from '$lib/timelapse/mod
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import miniCalibrationJson from '../scenario/fixtures/mini-calibration.json';
 import { miniCity } from '../scenario/fixtures/mini-parcels';
+import { miniMarket } from '../scenario/fixtures/mini-market';
 import { miniPolicy } from '../scenario/fixtures/mini-policy';
 import { MINI_HORIZON, miniProjectsJson } from '../scenario/fixtures/mini-projects';
 import { buildSimInput } from '../scenario/input';
@@ -186,5 +187,18 @@ describe('applyLevers: capacity and unknown lots', () => {
     const out = compile(base, ctx, levers);
     expect(out.unknownLots).toBe(1);
     expect(out.capacity.plan).toBeGreaterThan(0);
+  });
+});
+
+describe('market passes through the levers', () => {
+  it('the twins and the plan keep base.market', () => {
+    const { base: plain, ctx } = setup();
+    const base: SimInput = {
+      ...plain,
+      market: [{ from: plain.asOf, logOdds: miniMarket().today.all }]
+    };
+    expect(twinInput(base, ctx, 'preFzp').market).toBe(base.market);
+    expect(twinInput(base, ctx, 'fzp').market).toBe(base.market);
+    expect(compile(base, ctx, clone()).plan.market).toBe(base.market);
   });
 });

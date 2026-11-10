@@ -17,6 +17,7 @@ import {
   miniProjectsJson
 } from './fixtures/mini-projects';
 import { precomputeOf } from './input';
+import { NO_MARKET_WARNING } from './market';
 import {
   loadScenario,
   scenarioUrls,
@@ -74,9 +75,11 @@ async function expectRecovers(h: ScenarioHarness): Promise<void> {
   expect(h.posts.slice(before).filter((m) => m.type === 'error')).toEqual([]);
 }
 
-/** The load's warnings: the shown run's T11-absence lines (§4.2, scenario-host.spec.ts) left out. */
+/** The load's warnings: the shown run's T11-absence lines (§4.2, scenario-host.spec.ts) and the
+ * no-market line (the harness's mini calibration has no market) left out. */
 const T11_ABSENT = /^parcel \S+ of \S+ is not in parcels\.bin: /;
-const loadWarnings = (h: ScenarioHarness) => h.warnings.filter((w) => !T11_ABSENT.test(w));
+const loadWarnings = (h: ScenarioHarness) =>
+  h.warnings.filter((w) => !T11_ABSENT.test(w) && w !== NO_MARKET_WARNING);
 
 // Every warning goes through the harness's deps.warn: nothing may reach the console.
 let warnSpy: MockInstance<typeof console.warn>;
@@ -231,6 +234,7 @@ describe('scenario host: ready and fetching', () => {
     await expectLoaded(h);
     expect(h.posts.filter((m) => m.type === 'error')).toEqual([]);
     expect(loadWarnings(h)).toEqual([INVALID_WARNING, SKIP_NOTE]);
+    expect(h.warnings.filter((w) => w === NO_MARKET_WARNING)).toHaveLength(1);
   });
 
   it('fetches the JSON files while parcels.bin is still pending', async () => {

@@ -290,12 +290,16 @@ function checkYearEnds(yearEnds: readonly Day[], horizon: Day): void {
     throw new RangeError('lesscars: the last year end is after the horizon');
 }
 
-const planInput = (base: SimInput, regimes: Regimes, reservedFrom: Int32Array): SimInput => ({
+export const planInput = (
+  base: SimInput,
+  regimes: Regimes,
+  reservedFrom: Int32Array
+): SimInput => ({
   ...base,
   regimes: regimes.plan,
   reservedFrom
 });
-const baselineInput = (base: SimInput, regimes: Regimes): SimInput => ({
+export const baselineInput = (base: SimInput, regimes: Regimes): SimInput => ({
   ...base,
   regimes: regimes.baseline
 });

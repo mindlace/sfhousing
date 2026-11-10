@@ -40,7 +40,10 @@ export interface LeverInputs {
   references: TimelineScore['references'];
 }
 
-/** `input` without the lever fields, so nothing is inherited from it. */
+/**
+ * `input` without the lever fields, so nothing is inherited from it. `market` and `finance` are
+ * the world, not the policy: they must survive `bare()` (F17).
+ */
 function bare(input: SimInput): SimInput {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { newProjects, inFlightScale, ...rest } = input;
