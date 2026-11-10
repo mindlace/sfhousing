@@ -13,11 +13,13 @@ import { QUALITY_RULES } from '../../lib/quality';
 import { openDuck } from '../../lib/duck';
 import { calibrate, type CalInput } from '../../lib/fzp-cal/calibrate';
 import { FIXTURE_CAL } from '../../lib/fzp-cal/config';
-import { checkV25, checkV26, checkV27 } from '../../lib/fzp-cal/invariants';
+import { checkV25, checkV26, checkV27, fundingOutcomes } from '../../lib/fzp-cal/invariants';
 import { duckPanelSource } from '../../lib/fzp-cal/panel';
 import { which } from '../../lib/exec';
 import { CALIBRATION_JSON, MARKET_JSON, readPermits, sameRuns } from '../../steps/calibration';
 import { parseMarketFile } from '../../enrichment/market-schema';
+import { parseFundingFile } from '../../enrichment/funding-schema';
+import { MOHCD_RAW } from '../fixtures/mini/projects-raw';
 import { checkDataset, type InvariantResult } from '../../steps/check';
 import { fixture } from '../../steps/fixture';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON } from '../../steps/projects';
@@ -26,6 +28,7 @@ import { PARCELS_BIN, readParcelsBin } from '../../steps/scenario';
 const REPO = join(import.meta.dirname, '../../..');
 const skipTiles = !(await which('tippecanoe'));
 const ids = ['V25', 'V26', 'V27', 'V28', 'V29'];
+const FUNDING_JSON = join(REPO, 'pipeline/test/fixtures/mini/enrichment/funding.json');
 
 describe('calibration invariants on fixture-0', () => {
   const outDir = mkdtempSync(join(tmpdir(), 'sfh-calinv-out-'));
@@ -108,7 +111,10 @@ describe('calibration invariants on fixture-0', () => {
       // Partner ruling (2026-10-18): 8 windowed permitFiled pairs, none carried. The mini
       // split-filed parts (PRJ:2009-000023PRJ:BP:2011020*0023) entered permitFiled in 2011, before
       // the 2015 window, and the filed-zero PRJ:2016-000029PRJ starts at permitFiled (first stage).
-      'sc.revision.carried-excluded': [0, 8]
+      'sc.revision.carried-excluded': [0, 8],
+      // finance-data spec 4.6: the mini MOHCD page's two rows used hold 8 affordable homes, 1
+      // with no income band.
+      'sc.funding.ami-undeclared': [1, 8]
     };
     expect(Object.keys(rules).sort()).toEqual(
       QUALITY_RULES.filter((r) => r.id.startsWith('sc.'))
@@ -211,6 +217,73 @@ describe('calibration invariants on fixture-0', () => {
     expect(checkV25(json, json.length, FILL_LEVELS, asOf, asOf + 1)).toHaveLength(1);
   });
 
+  it('fundingOutcomes holds on the fixture calibration and names the three outcomes', () => {
+    const cal = parseCalibration(JSON.parse(json));
+    expect(fundingOutcomes(cal, false)).toEqual({
+      problems: [],
+      detail:
+        'baselineFunding 8 pools, one programme each; shares 1000000 millionths; affordableRoutes tier 4'
+    });
+    // A live build with the fallback: the method starts `Only `, and the step warned.
+    expect(fundingOutcomes(cal, true)).toEqual({
+      problems: [],
+      detail:
+        'baselineFunding 8 pools, one programme each; shares 1000000 millionths; affordableRoutes fallback, warned'
+    });
+  });
+
+  it('fundingOutcomes fails on a dropped or reordered programme and on a share off by 1e-6', () => {
+    const cal = () => parseCalibration(JSON.parse(json));
+    const dropped = cal();
+    dropped.baselineFunding!.programmes.pop();
+    expect(fundingOutcomes(dropped, false).problems.length).toBeGreaterThan(0);
+    const swapped = cal();
+    const ps = swapped.baselineFunding!.programmes;
+    [ps[0], ps[1]] = [ps[1], ps[0]];
+    expect(fundingOutcomes(swapped, false).problems.length).toBeGreaterThan(0);
+    const off = cal();
+    const g = off.baselineFunding!.programmes[0].instrument as { kind: 'grant'; share: number };
+    g.share += 1e-6;
+    expect(fundingOutcomes(off, false).problems).toEqual([
+      'baselineFunding shares sum to 1000001 millionths, not 1000000'
+    ]);
+  });
+
+  it('fundingOutcomes fails a live build whose tier 4 routes are not the warned fallback', () => {
+    const c = parseCalibration(JSON.parse(json));
+    c.affordableRoutes!.provenance = { ...c.affordableRoutes!.provenance, method: 'Invented' };
+    expect(fundingOutcomes(c, false).problems).toEqual([]);
+    expect(fundingOutcomes(c, true).problems).toHaveLength(1);
+  });
+
+  it('fundingOutcomes is ok without either key', () => {
+    const c = parseCalibration(JSON.parse(json));
+    delete c.affordableRoutes;
+    delete c.baselineFunding;
+    expect(fundingOutcomes(c, true)).toEqual({
+      problems: [],
+      detail: 'no baselineFunding; no affordableRoutes'
+    });
+  });
+
+  it('checkV25 reports the funding outcomes and V25 states them', async () => {
+    const asOf = (JSON.parse(json) as Calibration).asOf;
+    const c = JSON.parse(json) as Calibration;
+    const ps = c.baselineFunding!.programmes;
+    [ps[0], ps[1]] = [ps[1], ps[0]];
+    const text = JSON.stringify(c);
+    const problems = checkV25(text, text.length, FILL_LEVELS, asOf, asOf, false);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(
+      /^baselineFunding programmes \[baseline-city-ocoh, baseline-city-debt,/
+    );
+    const r = (await run(outDir)).find((x) => x.id === 'V25')!;
+    expect(r.ok).toBe(true);
+    expect(r.detail).toContain(
+      'baselineFunding 8 pools, one programme each; shares 1000000 millionths; affordableRoutes tier 4'
+    );
+  });
+
   it('V26 fails when permitOnly.construction is deleted', async () => {
     const d = copy();
     editCal(d, (c) => {
@@ -294,7 +367,9 @@ describe('calibration invariants on fixture-0', () => {
         market: {
           file: parseMarketFile(JSON.parse(readFileSync(MARKET_JSON, 'utf8')), MARKET_JSON),
           path: MARKET_JSON
-        }
+        },
+        funding: parseFundingFile(JSON.parse(readFileSync(FUNDING_JSON, 'utf8')), FUNDING_JSON),
+        mohcd: MOHCD_RAW
       };
       const a = await calibrate(input, FIXTURE_CAL);
       const b = await calibrate(input, FIXTURE_CAL);

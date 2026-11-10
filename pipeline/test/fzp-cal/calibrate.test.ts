@@ -24,9 +24,13 @@ import { marketModel, type MarketInput } from '../../lib/fzp-cal/market';
 import { logistic } from '../../lib/fzp-cal/irls';
 import { datasf } from '../../lib/fzp-cal/provenance';
 import { parseMarketFile } from '../../enrichment/market-schema';
+import { parseFundingFile } from '../../enrichment/funding-schema';
+import { MOHCD_RAW } from '../fixtures/mini/projects-raw';
 import { PANEL_FEATURES, type PanelSource, type PanelYearRow } from '../../lib/fzp-cal/panel';
 import { REPORT_SECTIONS, aliasGroups, marketSection, num } from '../../lib/fzp-cal/report';
 import { SC_RULE_IDS, type PermitRow } from '../../lib/fzp-cal/types';
+import { purgeCensor } from '../../lib/fzp-cal/purge';
+import { buildSpells, normalise, qualifies } from '../../lib/fzp-cal/spells';
 import { isoToDay } from '../../project-records/multiphase';
 import { readParcelsBin } from '../../steps/scenario';
 
@@ -35,6 +39,11 @@ const MARKET_JSON_PATH = join(import.meta.dirname, '../../enrichment/market.json
 const marketFile = parseMarketFile(
   JSON.parse(readFileSync(MARKET_JSON_PATH, 'utf8')),
   'market.json'
+);
+const FUNDING_JSON_PATH = join(import.meta.dirname, '../fixtures/mini/enrichment/funding.json');
+const fundingFile = parseFundingFile(
+  JSON.parse(readFileSync(FUNDING_JSON_PATH, 'utf8')),
+  FUNDING_JSON_PATH
 );
 const AS_OF = d('2026-06-30');
 const FIXTURE_BIN = join(
@@ -144,7 +153,9 @@ beforeAll(async () => {
     inFlight,
     fillLevels: FILL_LEVELS,
     datasetVersion: 'test-0',
-    market: { file: marketFile, path: 'market.json' }
+    market: { file: marketFile, path: 'market.json' },
+    funding: fundingFile,
+    mohcd: MOHCD_RAW
   };
   a = await calibrate(input, FIXTURE_CAL);
   b = await calibrate(input, FIXTURE_CAL);
@@ -164,7 +175,9 @@ describe('calibrate', () => {
       'revision',
       'streamlinedForLocalProgram',
       'phaseGap',
-      'market'
+      'market',
+      'affordableRoutes',
+      'baselineFunding'
     ]);
     expect(a.json).toBe(JSON.stringify(JSON.parse(a.json)));
     // No whitespace between tokens: none outside string literals.
@@ -233,7 +246,14 @@ describe('calibrate', () => {
       'calibration.market.recentUnknown',
       'calibration.market.weightStarts',
       'calibration.market.unbinnedHomes',
-      'calibration.market.unbinnedStories'
+      'calibration.market.unbinnedStories',
+      'calibration.affordable.histories',
+      'calibration.affordable.fallback',
+      'calibration.funding.mohcdRows',
+      'calibration.funding.impliedHomesPerYear',
+      'calibration.funding.observedHomesPerYear',
+      'calibration.siteChoice.affordableOnPanel',
+      'calibration.siteChoice.privateOnPanel'
     ];
     for (const k of want) expect(a.counts, k).toHaveProperty(k);
     for (const p of PATHWAYS) {
@@ -252,9 +272,12 @@ describe('calibrate', () => {
     expect(Object.keys(a.tallies)).toEqual([...SC_RULE_IDS]);
   });
 
-  it('writes the eleven report sections in order, with the window and method counts', () => {
-    expect(REPORT_SECTIONS).toHaveLength(11);
-    expect(REPORT_SECTIONS.at(-1)).toBe("## 11. Today's market");
+  it('writes the thirteen report sections in order, with the window and method counts', () => {
+    expect(REPORT_SECTIONS).toHaveLength(13);
+    expect(REPORT_SECTIONS.slice(-2)).toEqual([
+      '## 12. Publicly funded housing: routes, stages and baseline funding',
+      '## 13. Where publicly funded housing starts'
+    ]);
     const lines = a.reportMd.split('\n');
     expect(lines[0]).toBe('# Calibration report: test-0');
     const at = REPORT_SECTIONS.map((h) => lines.findIndex((l) => l === h || l.startsWith(`${h}:`)));
@@ -303,6 +326,121 @@ describe('calibrate', () => {
     expect(app.features(i).potentialRatio).toBe(parcels.potentialRatio.fzp[i]);
     expect(app.features(i).storiesGap).toBe(parcels.storiesGap.fzp[i]);
     expect(app.features(i).lotAreaM2).toBe(parcels.lotAreaM2[i]);
+  });
+});
+
+const FILL_TIER_SENTENCE =
+  "Grants fill a project's uncovered cost in three tiers: federal, then state, then the City's pools in proportion to their shares; with the whole baseline and nothing added, every grant pays its full share.";
+const SITE_SENTENCE =
+  'A ratio near 1 means funded projects started on lots like those private projects chose (the draw of F9 (d)); well above 1 means they took the likeliest lots; well below 1, lots private projects pass over. No San Francisco estimate of displacement exists.';
+
+/** The report section that starts at `heading`, up to the next `## ` heading. */
+function section(md: string, heading: string): string {
+  const at = md.indexOf(`\n${heading}\n`);
+  if (at < 0) throw new Error(`no section ${heading}`);
+  const next = md.indexOf('\n## ', at + heading.length + 1);
+  return md.slice(at + 1, next < 0 ? undefined : next);
+}
+
+describe('publicly funded housing (finance-data spec 4.4, 4.6-4.9)', () => {
+  it('emits affordableRoutes as the tier 4 fallback with pathwayForNew shares', () => {
+    const r = a.calibration.affordableRoutes!;
+    const f = a.calibration.pathwayForNew;
+    expect(r.provenance.tier).toBe(4);
+    expect([r.discretionary, r.streamlined, r.permitOnly]).toEqual([
+      f.discretionary,
+      f.streamlined,
+      f.permitOnly
+    ]);
+    expect(a.counts['calibration.affordable.fallback']).toBe(1);
+    expect(a.counts['calibration.affordable.histories']).toBe(0);
+  });
+
+  it('emits the fixture baseline funding: minHomes 2, every provenance tier 4', () => {
+    const bf = a.calibration.baselineFunding!;
+    expect(bf.programmes.every((p) => p.minHomes === 2)).toBe(true);
+    expect(bf.provenance.every((p) => p.tier === 4)).toBe(true);
+    expect(bf.check.provenance.tier).toBe(4);
+    expect(a.counts['calibration.funding.mohcdRows']).toBe(2);
+    expect(a.counts['calibration.funding.impliedHomesPerYear']).toBe(20);
+    expect(a.counts['calibration.funding.observedHomesPerYear']).toBe(25);
+  });
+
+  it('tallies the undeclared MOHCD homes', () => {
+    expect(a.tallies['sc.funding.ami-undeclared']).toMatchObject({ fired: 1, of: 8 });
+  });
+
+  it('warns of the routes fallback on a live profile only, once', async () => {
+    expect(a.warnings.filter((w) => w.startsWith('affordableRoutes:'))).toEqual([]);
+    const live = await calibrate(input, { ...FIXTURE_CAL, name: 'live' });
+    expect(live.warnings.filter((w) => w.startsWith('affordableRoutes:'))).toEqual([
+      'affordableRoutes: only 0 100% affordable histories (fewer than 30); the pathway mix of all new projects is used, labelled tier 4'
+    ]);
+    expect(live.reportMd).toContain('affordableRoutes: only 0 100% affordable histories');
+  });
+
+  it('writes sections 12 and 13 after section 11', () => {
+    const md = a.reportMd;
+    const s11 = md.indexOf("\n## 11. Today's market\n");
+    const s12 = md.indexOf(
+      '\n## 12. Publicly funded housing: routes, stages and baseline funding\n'
+    );
+    const s13 = md.indexOf('\n## 13. Where publicly funded housing starts\n');
+    expect(s11).toBeGreaterThan(0);
+    expect(s12).toBeGreaterThan(s11);
+    expect(s13).toBeGreaterThan(s12);
+    const twelve = section(
+      md,
+      '## 12. Publicly funded housing: routes, stages and baseline funding'
+    );
+    expect(twelve).toContain(FILL_TIER_SENTENCE);
+    expect(twelve).toContain('ami_undeclared');
+    expect(twelve).toContain('minHomes');
+    expect(twelve).toContain('fallback');
+    expect(twelve).toContain('| 1, federal | baseline-federal-tax-credits |');
+    expect(twelve).toContain('| 2, state | baseline-state |');
+    expect(twelve).toContain('| 3, City | baseline-city-debt |');
+    expect(twelve).toContain('uncapped');
+    const thirteen = section(md, '## 13. Where publicly funded housing starts');
+    expect(thirteen).toContain(SITE_SENTENCE);
+    expect(md).not.toMatch(/Infinity|NaN|\bnull\b|undefined/);
+  });
+
+  it('indexes the new provenances in section 8', () => {
+    const n = a.calibration.baselineFunding!.provenance.length;
+    expect(a.reportMd).toMatch(/\| affordableRoutes\.provenance \| 4 \|/);
+    for (let i = 0; i < n; i++) {
+      expect(a.reportMd).toContain(`| baselineFunding.provenance[${i}] | 4 |`);
+    }
+    expect(a.reportMd).toContain('| baselineFunding.check.provenance | 4 |');
+  });
+
+  it('joins the stage table on the calibration spells by history id, split-part ids included', async () => {
+    const id = 'PRJ:1:BP:A';
+    // PRJ:H02: permit-only, through permitFiled, permitIssued and construction.
+    const histories = input.histories.map((h, i) =>
+      i === 2 ? { ...h, id, planningProposed: { units: 12, affordable: 12 } } : h
+    );
+    const out = await calibrate({ ...input, histories }, FIXTURE_CAL);
+    expect(out.counts['calibration.affordable.histories']).toBe(1);
+    // The spells calibrate fits on, rebuilt here: the cohort's are those of `id`.
+    const q = histories.filter(qualifies).sort((x, y) => (x.id < y.id ? -1 : 1));
+    const p = purgeCensor(normalise(q, AS_OF).norm, FIXTURE_CAL);
+    const { spells } = buildSpells(p.norm, AS_OF);
+    const mine = spells.filter((s) => s.projectId === id && s.stage !== 'preApplication');
+    expect(mine.length).toBeGreaterThan(0);
+    const twelve = section(
+      out.reportMd,
+      '## 12. Publicly funded housing: routes, stages and baseline funding'
+    );
+    const rows = twelve
+      .split('\n')
+      .filter((l) =>
+        /^\| (filed|entitled|permitFiled|permitIssued|construction) \| 100% affordable \|/.test(l)
+      );
+    expect(rows).toHaveLength(5);
+    const total = rows.reduce((acc, l) => acc + Number(l.split(' | ')[2]), 0);
+    expect(total).toBe(mine.length);
   });
 });
 

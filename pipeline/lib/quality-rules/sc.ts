@@ -3,8 +3,8 @@ import type { QualityRule } from '../quality';
 /**
  * stage-calibration's T14 rules (design row T14; stage-calibration spec §4.4a). Each entry takes
  * its kind's default shares (`warnShare` 0.05 for `kind: 'missing'`, else 0.01; `failShare` 0.10)
- * except `sc.stages.gap-impute`, `sc.revision.ratio-clamp` and `sc.revision.carried-excluded`, whose
- * departures are stated at the entries. The calibration step changes values only in its own memory.
+ * except `sc.stages.gap-impute`, `sc.revision.ratio-clamp`, `sc.revision.carried-excluded` and
+ * `sc.funding.ami-undeclared`, whose departures are stated at the entries. The calibration step changes values only in its own memory.
  */
 export const SC_RULES: readonly QualityRule[] = [
   {
@@ -138,6 +138,28 @@ export const SC_RULES: readonly QualityRule[] = [
     // exclusion of carried-back filing sizes; count reflects project-records' carry, not a defect.
     warnShare: 0.15,
     failShare: 0.25,
+    unitsWeighted: false
+  },
+  {
+    // finance-data spec 4.6, 4.9: the MOHCD rows' `ami_undeclared` homes, counted over the
+    // `mohcd_affordable_units` of the rows the baseline programmes' `tiers` are taken from.
+    id: 'sc.funding.ami-undeclared',
+    owner: 'stage-calibration',
+    source: 'datasf-mohcd-pipeline',
+    field: 'tiers',
+    kind: 'missing',
+    action: 'none',
+    tier: 2,
+    valueTier: null,
+    maskBit: null,
+    label:
+      "Affordable homes with no income band were left out of the baseline programmes' income mix",
+    denominator: 'affordable homes in the rows used',
+    // Departs from the `missing` defaults (finance-data spec 4.9): about 16% of these homes are
+    // undeclared today, almost all in pre-construction projects; a mix from three quarters of the
+    // homes is still the best available.
+    warnShare: 0.25,
+    failShare: 0.5,
     unitsWeighted: false
   }
 ];

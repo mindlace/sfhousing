@@ -12,7 +12,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { parseCalibration } from '../../../src/lib/timelapse/model';
+import { BuildError } from '../../lib/build-error';
 import { openDuck } from '../../lib/duck';
+import { readLock } from '../../lib/lock';
 import { FIXTURE_CAL } from '../../lib/fzp-cal/config';
 import { CalibrationError, SC_RULE_IDS } from '../../lib/fzp-cal/types';
 import {
@@ -26,6 +28,15 @@ import { fixture } from '../../steps/fixture';
 import { PERMITS_PARQUET, PROJECTS_JSON } from '../../steps/projects';
 
 const REPO = join(import.meta.dirname, '../../..');
+const MINI = join(REPO, 'pipeline/test/fixtures/mini');
+const FUNDING_JSON = join(MINI, 'enrichment/funding.json');
+/** The mini fixture's lock, raw pages and funding file, as `build` passes them. */
+const sources = {
+  lock: readLock(join(MINI, 'sources.lock.json')),
+  rawDir: join(MINI, 'raw'),
+  byName: true,
+  fundingPath: FUNDING_JSON
+};
 
 describe('calibration step on fixture-0', () => {
   const outDir = mkdtempSync(join(tmpdir(), 'sfh-cal-out-'));
@@ -135,7 +146,8 @@ describe('calibration step on fixture-0', () => {
           asOf,
           histories: { schema: 1, asOf: asOf - 1, histories: [] },
           cal: FIXTURE_CAL,
-          counts: {}
+          counts: {},
+          ...sources
         })
       ).rejects.toThrow(CalibrationError);
     } finally {
@@ -160,12 +172,66 @@ describe('calibration step on fixture-0', () => {
           asOf: 0,
           cal: FIXTURE_CAL,
           counts: {},
-          marketPath
+          marketPath,
+          ...sources
         })
       ).rejects.toThrow(`market: ${marketPath}: `);
     } finally {
       db.close();
     }
     expect(existsSync(join(tmp, CALIBRATION_JSON))).toBe(false);
+  });
+
+  /** writeCalibration on an empty output directory, with `extra` over the mini sources. */
+  const attempt = async (extra: Partial<typeof sources>) => {
+    const tmp = mkdtempSync(join(tmpdir(), 'sfh-cal-funding-'));
+    const db = await openDuck();
+    try {
+      return await writeCalibration({
+        db,
+        outDir: tmp,
+        derivedDir: tmp,
+        datasetVersion: 'fixture-0',
+        asOf: 0,
+        cal: FIXTURE_CAL,
+        counts: {},
+        ...sources,
+        ...extra
+      }).then(
+        () => null,
+        (e: unknown) => e
+      );
+    } finally {
+      db.close();
+    }
+  };
+
+  it('rejects a lock with no MOHCD pipeline entry', async () => {
+    const lock = {
+      ...sources.lock,
+      sources: sources.lock.sources.filter((s) => s.id !== 'datasf-mohcd-pipeline')
+    };
+    const e = await attempt({ lock });
+    expect(e).toBeInstanceOf(BuildError);
+    expect((e as Error).message).toBe(
+      'lock has no datasf-mohcd-pipeline entry (run fetch --only datasf-mohcd-pipeline)'
+    );
+  });
+
+  it('rejects a funding file with an extra key, or one that is not JSON, naming its path', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'sfh-cal-fundfile-'));
+    const extra = join(tmp, 'funding-extra.json');
+    writeFileSync(
+      extra,
+      JSON.stringify({ ...JSON.parse(readFileSync(FUNDING_JSON, 'utf8')), extra: 1 })
+    );
+    const e = await attempt({ fundingPath: extra });
+    expect(e).toBeInstanceOf(BuildError);
+    expect((e as Error).message).toContain(extra);
+    const broken = join(tmp, 'funding-broken.json');
+    writeFileSync(broken, '{');
+    const f = await attempt({ fundingPath: broken });
+    expect(f).toBeInstanceOf(BuildError);
+    expect((f as Error).message.startsWith(`${broken}: `)).toBe(true);
   });
 });

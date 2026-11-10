@@ -36,7 +36,7 @@ import {
 import { readBasemapIds } from '../lib/lesscars/basemap-ids';
 import { splitPhasesOf } from '../lib/lesscars/basemap-split';
 import { freewayLandSet, readFreewayLand } from '../lib/lesscars/freeway-land';
-import { writeCalibration } from './calibration';
+import { readFundingFile, writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
 import { writeGross } from './gross';
@@ -76,6 +76,11 @@ const DERIVED_ROOT = join(REPO_ROOT, 'pipeline/.cache/derived');
 const MULTIPHASE = {
   live: join(REPO_ROOT, 'pipeline/enrichment/multiphase.json'),
   fixture: join(REPO_ROOT, 'pipeline/test/fixtures/mini/enrichment/multiphase.json')
+};
+/** The hand-transcribed baseline funding (finance-data spec 4.5): live, and the mini fixture's. */
+const FUNDING = {
+  live: join(REPO_ROOT, 'pipeline/enrichment/funding.json'),
+  fixture: join(REPO_ROOT, 'pipeline/test/fixtures/mini/enrichment/funding.json')
 };
 /** Curated imagery verdicts (project-records spec §4.6, Ruling C3): live, and the mini fixture's. */
 const CONSTRUCTION_VERIFIED = {
@@ -178,6 +183,10 @@ export async function build(
       toolVersions: TOOL_VERSIONS
     });
   const fixtureMode = FIXTURE_RE.test(datasetVersion);
+  // funding.json failures come before any step runs (finance-data spec 4.10); the calibration
+  // step reads the same file again.
+  const fundingPath = fixtureMode ? FUNDING.fixture : FUNDING.live;
+  readFundingFile(fundingPath);
   const builtAt = opts.builtAt ?? new Date().toISOString();
   const outDir = join(opts.outRoot, datasetVersion);
   rmSync(outDir, { recursive: true, force: true });
@@ -288,7 +297,11 @@ export async function build(
         asOf,
         histories: { schema: 1, asOf, histories: projects.histories },
         cal: fixtureMode ? FIXTURE_CAL : LIVE_CAL,
-        counts
+        counts,
+        fundingPath,
+        lock,
+        rawDir: opts.rawDir,
+        byName
       })
     );
     report.warnings.push(...calibration.warnings);
