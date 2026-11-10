@@ -9,6 +9,8 @@ import { readFileSync } from 'node:fs';
 import {
   CalibrationFormatError,
   binIndex,
+  checkPool,
+  checkProgramme,
   chanceTable,
   cumulativeIncidence,
   cumulativeTotal,
@@ -20,6 +22,7 @@ import {
   typicalMonths
 } from './model';
 import { MONTH_DAYS, monthsIn } from './time';
+import { validateInstrument } from '../sim/finance/instruments';
 import {
   EXIT_ORDER,
   PATHWAYS,
@@ -913,7 +916,7 @@ describe('parseCalibration', () => {
         const c = withMarket(m);
         expect(parseCalibration(c)).toBe(c);
       }
-      const c = { ...clone(), market: liveMarket(), affordableRoutes: {}, somethingNew: 1 };
+      const c = { ...clone(), market: liveMarket(), somethingNew: 1 };
       expect(parseCalibration(c)).toBe(c);
       expect(parseCalibration(clone()).market).toBeUndefined();
     });
@@ -1074,11 +1077,288 @@ describe('parseCalibration', () => {
     expect(parseCalibration(c)).toBe(c);
   });
 
-  it('AC-7: model.ts imports only ./types, ./time and ./math, and no zod', () => {
+  it('AC-7: model.ts imports only ./types, ./time, ./math and ../sim/finance/{instruments,debt}, and no zod', () => {
     const src = readFileSync(new URL('./model.ts', import.meta.url), 'utf8');
     const specifiers = [...src.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
     expect(specifiers.length).toBeGreaterThan(0);
-    for (const sp of specifiers) expect(sp).toMatch(/^\.\/(types|time|math)$/);
+    for (const sp of specifiers)
+      expect(sp).toMatch(/^(\.\/(types|time|math)|\.\.\/sim\/finance\/(instruments|debt))$/);
     expect(src).not.toContain('zod');
+  });
+});
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+describe('affordableRoutes and baselineFunding', () => {
+  const clone = (): any => structuredClone(cal);
+  const prov = {
+    tier: 4,
+    label: 'x',
+    sources: [{ label: 's', url: 'https://x.org' }],
+    method: 'm'
+  };
+  const asOf = cal.asOf;
+
+  function fallbackRoutes(): any {
+    return {
+      discretionary: 0.6,
+      streamlined: 0.3,
+      permitOnly: 0.1,
+      provenance: prov
+    };
+  }
+
+  function fixtureFunding(): any {
+    const city = [
+      ['city-debt', 'goBond', 1500000],
+      ['city-ocoh', 'dedicatedTax', 1200000],
+      ['city-general-fund', 'generalRevenue', 1000000],
+      ['city-impact-fees', 'dedicatedTax', 1000000],
+      ['city-housing-trust-fund', 'generalRevenue', 800000],
+      ['city-redevelopment', 'dedicatedTax', 500000]
+    ] as const;
+    const pools: any[] = city.map(([id, kind, dollarsPerYear]) => ({
+      id,
+      kind,
+      label: id,
+      inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear }],
+      uncapped: false,
+      debt: id === 'city-debt' ? { rate: 0.06, termYears: 20 } : null,
+      leverage: 1
+    }));
+    pools.push({
+      id: 'state',
+      kind: 'state',
+      label: 'state',
+      inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: 3000000 }],
+      uncapped: false,
+      debt: null,
+      leverage: 1
+    });
+    pools.push({
+      id: 'federal-tax-credits',
+      kind: 'federal',
+      label: 'federal',
+      inflows: [],
+      uncapped: true,
+      debt: null,
+      leverage: 1
+    });
+    const shares = [0.119804, 0.072329, 0.054619, 0.051791, 0.040778, 0.00893, 0.137419, 0.51433];
+    return {
+      pools,
+      programmes: pools.map((p, i) => ({
+        id: `baseline-${p.id}`,
+        label: `${p.label}: grant`,
+        pool: p.id,
+        reach: 'affordable',
+        instrument: { kind: 'grant', share: shares[i] },
+        from: asOf,
+        to: null,
+        minHomes: 2,
+        tiers: { veryLow: 0.428572, low: 0.428571, moderate: 0.142857, aboveModerate: 0 }
+      })),
+      provenance: Array.from({ length: pools.length + 1 }, () => prov),
+      check: { impliedHomesPerYear: 20, observedHomesPerYear: 25, provenance: prov }
+    };
+  }
+
+  function rejection(c: unknown): CalibrationFormatError {
+    try {
+      parseCalibration(c);
+    } catch (e) {
+      expect(e).toBeInstanceOf(CalibrationFormatError);
+      return e as CalibrationFormatError;
+    }
+    throw new Error('expected parseCalibration to throw');
+  }
+
+  it('accepts the small calibration without the keys, with both, and without market', () => {
+    expect(parseCalibration(cal)).toBe(cal);
+    const both = {
+      ...clone(),
+      affordableRoutes: fallbackRoutes(),
+      baselineFunding: fixtureFunding()
+    };
+    expect(parseCalibration(both)).toBe(both);
+    const noMarket = { ...clone(), baselineFunding: fixtureFunding() };
+    expect(noMarket.market).toBeUndefined();
+    expect(parseCalibration(noMarket)).toBe(noMarket);
+  });
+
+  const cases: [string, (c: any) => void, string, string][] = [
+    [
+      'debt on a general-fund pool',
+      (c) => (c.baselineFunding.pools[2].debt = { rate: 0.06, termYears: 20 }),
+      'baselineFunding.pools[2].debt',
+      'expected null debt for kind generalRevenue'
+    ],
+    [
+      'inflow on the federal pool',
+      (c) => (c.baselineFunding.pools[7].inflows = [{ kind: 'once', day: asOf, dollars: 1 }]),
+      'baselineFunding.pools[7].inflows',
+      'expected no inflows on an uncapped pool'
+    ],
+    [
+      'pool id with the u- prefix',
+      (c) => (c.baselineFunding.pools[0].id = 'u-city'),
+      'baselineFunding.pools[0].id',
+      'expected a baseline id not starting u-, got u-city'
+    ],
+    [
+      'pool id off the pattern',
+      (c) => (c.baselineFunding.pools[0].id = 'City-debt'),
+      'baselineFunding.pools[0].id',
+      'expected an id matching ^[a-z0-9][a-z0-9-]{0,39}$, got City-debt'
+    ],
+    [
+      'duplicate pool id',
+      (c) => (c.baselineFunding.pools[1].id = 'city-debt'),
+      'baselineFunding.pools[1].id',
+      'expected a unique id, got city-debt'
+    ],
+    [
+      'goBond without debt',
+      (c) => (c.baselineFunding.pools[0].debt = null),
+      'baselineFunding.pools[0].debt',
+      'expected debt for kind goBond'
+    ],
+    [
+      'programme naming no pool',
+      (c) => (c.baselineFunding.programmes[0].pool = 'nowhere'),
+      'baselineFunding.programmes[0].pool',
+      'expected a pool id, got nowhere'
+    ],
+    [
+      'baseline loan programme',
+      (c) =>
+        (c.baselineFunding.programmes[0].instrument = {
+          kind: 'loan',
+          costShare: 0.5,
+          rate: 0.02,
+          requiredReturn: null
+        }),
+      'baselineFunding.programmes[0].instrument',
+      'expected a grant, got loan'
+    ],
+    [
+      'null tiers on an affordable programme',
+      (c) => (c.baselineFunding.programmes[0].tiers = null),
+      'baselineFunding.programmes[0].tiers',
+      'expected tiers for reach affordable'
+    ],
+    [
+      'tiers summing to 0.9',
+      (c) =>
+        (c.baselineFunding.programmes[0].tiers = {
+          veryLow: 0.4,
+          low: 0.4,
+          moderate: 0.1,
+          aboveModerate: 0
+        }),
+      'baselineFunding.programmes[0].tiers',
+      'expected values summing to 1, got 0.9'
+    ],
+    [
+      'eight provenances',
+      (c) => c.baselineFunding.provenance.pop(),
+      'baselineFunding.provenance',
+      "expected 9 entries (one per pool, then the programmes' tiers and minHomes), got 8"
+    ],
+    [
+      'affordableRoutes summing to 0.9',
+      (c) => (c.affordableRoutes.discretionary = 0.5),
+      'affordableRoutes',
+      'expected values summing to 1, got 0.9'
+    ]
+  ];
+
+  it.each(cases)('rejects %s', (_name, mutate, path, message) => {
+    const c = { ...clone(), affordableRoutes: fallbackRoutes(), baselineFunding: fixtureFunding() };
+    mutate(c);
+    const e = rejection(c);
+    expect(e.path).toBe(path);
+    expect(e.message).toBe(`${path}: ${message}`);
+  });
+
+  describe('checkPool', () => {
+    const bond = (): any => ({
+      id: 'u-bond',
+      kind: 'goBond',
+      label: 'A bond',
+      inflows: [{ kind: 'once', day: asOf, dollars: 5 }],
+      uncapped: false,
+      debt: { rate: 0.05, termYears: 30 },
+      leverage: 1
+    });
+    const msg = (f: () => void): string => {
+      try {
+        f();
+      } catch (e) {
+        return (e as CalibrationFormatError).message;
+      }
+      return 'no throw';
+    };
+
+    it('accepts a u- pool with valid debt', () => {
+      expect(() => checkPool(bond(), 'p')).not.toThrow();
+    });
+
+    it("rejects out-of-bounds debt with validateDebt's text", () => {
+      const a = bond();
+      a.debt.rate = 0.26;
+      expect(msg(() => checkPool(a, 'p'))).toBe(
+        'p.debt: A borrowing rate is above 0% and at most 25%.'
+      );
+      const b = bond();
+      b.debt.termYears = 41;
+      expect(msg(() => checkPool(b, 'p'))).toBe(
+        'p.debt: A borrowing term is a whole number of years from 1 to 40.'
+      );
+    });
+
+    it('rejects leverage other than 1 unless the kind is bank', () => {
+      const a = bond();
+      a.leverage = 2;
+      expect(msg(() => checkPool(a, 'p'))).toBe(
+        'p.leverage: expected 1 unless kind is bank, got 2'
+      );
+      const b = { ...bond(), kind: 'bank', debt: null, leverage: 2 };
+      expect(() => checkPool(b, 'p')).not.toThrow();
+    });
+  });
+
+  describe('checkProgramme', () => {
+    const loan = (): any => ({
+      id: 'u-bond',
+      label: 'Loans',
+      pool: 'a',
+      reach: 'market',
+      instrument: { kind: 'loan', costShare: 0.5, rate: 0.02, requiredReturn: null },
+      from: asOf,
+      to: null,
+      minHomes: 0,
+      tiers: null
+    });
+    const ids = new Set(['a']);
+
+    it('accepts a u- loan with minHomes 0', () => {
+      expect(() => checkProgramme(loan(), 'q', ids)).not.toThrow();
+    });
+
+    it("rejects with validateInstrument's exact text", () => {
+      const p = loan();
+      p.instrument.requiredReturn = 0.3;
+      const want = validateInstrument(p.instrument);
+      expect(want).not.toBeNull();
+      expect(() => checkProgramme(p, 'q', ids)).toThrow(`q.instrument: ${want}`);
+    });
+
+    it('rejects minHomes 10001', () => {
+      const p = loan();
+      p.minHomes = 10001;
+      expect(() => checkProgramme(p, 'q', ids)).toThrow(
+        'q.minHomes: expected a whole number from 0 to 10000, got 10001'
+      );
+    });
   });
 });

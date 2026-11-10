@@ -1,13 +1,17 @@
 /**
  * Calibration model (design doc T12): pure, free of any schema library and worker-safe. Only
- * `./types`, `./time` and `./math` are imported, and `exp`/`log` come from `./math` so results
+ * `./types`, `./time`, `./math` and the finance checks `../sim/finance/{instruments,debt}` (the
+ * one validation every pool and programme validator calls) are imported, and `exp`/`log` come from `./math` so results
  * are bit-reproducible. Per-transition constants are memoised by object identity (`Constants`),
  * so a Transition must not be mutated after its first use here.
  */
 import { exp, log } from './math';
 import { MONTH_DAYS } from './time';
+import { validateDebt } from '../sim/finance/debt';
+import { validateInstrument } from '../sim/finance/instruments';
 import {
   EXIT_ORDER,
+  INCOME_TIERS,
   PATHWAYS,
   STAGE_ORDER,
   pathwayStages,
@@ -15,6 +19,8 @@ import {
   type ExitReason,
   type FeatureId,
   type InitiationModel,
+  type Instrument,
+  type PoolKind,
   type Pathway,
   type Stage,
   type Transition
@@ -837,6 +843,175 @@ function checkMarket(v: unknown): void {
   checkProvenance(x.provenance, 'market.slope.crossChecks.provenance');
 }
 
+export const BASELINE_ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+const POOL_KINDS: readonly PoolKind[] = [
+  'goBond',
+  'cop',
+  'generalRevenue',
+  'dedicatedTax',
+  'state',
+  'federal',
+  'bank'
+];
+
+function checkId(v: unknown, path: string): string {
+  if (typeof v !== 'string' || !BASELINE_ID_RE.test(v)) {
+    fail(path, `expected an id matching ${BASELINE_ID_RE.source}, got ${String(v)}`);
+  }
+  return v;
+}
+
+function checkInflow(v: unknown, path: string): void {
+  const f = record(v, path);
+  if (f.kind === 'once') {
+    integer(f.day, `${path}.day`);
+    if (integer(f.dollars, `${path}.dollars`) < 0) {
+      fail(`${path}.dollars`, `expected a non-negative integer, got ${String(f.dollars)}`);
+    }
+  } else if (f.kind === 'yearly') {
+    const from = integer(f.from, `${path}.from`);
+    if (f.to !== null && integer(f.to, `${path}.to`) < from) {
+      fail(`${path}.to`, `expected null or a day from ${from} on, got ${String(f.to)}`);
+    }
+    if (integer(f.dollarsPerYear, `${path}.dollarsPerYear`) < 0) {
+      fail(
+        `${path}.dollarsPerYear`,
+        `expected a non-negative integer, got ${String(f.dollarsPerYear)}`
+      );
+    }
+  } else {
+    fail(`${path}.kind`, `expected once or yearly, got ${String(f.kind)}`);
+  }
+}
+
+/**
+ * F5: shape, id pattern, kind, label, inflows, uncapped (no inflows), debt exactly for goBond and
+ * cop (validateDebt's bounds), leverage. Not the `u-` prefix: the caller's rule.
+ */
+export function checkPool(v: unknown, path: string): void {
+  const p = record(v, path);
+  checkId(p.id, `${path}.id`);
+  const kind = p.kind as PoolKind;
+  if (!POOL_KINDS.includes(kind)) fail(`${path}.kind`, `expected a pool kind, got ${String(kind)}`);
+  text(p.label, `${path}.label`);
+  const inflows = array(p.inflows, `${path}.inflows`);
+  inflows.forEach((f, i) => checkInflow(f, `${path}.inflows[${i}]`));
+  if (typeof p.uncapped !== 'boolean') fail(`${path}.uncapped`, 'expected a boolean');
+  if (p.uncapped && inflows.length > 0) {
+    fail(`${path}.inflows`, 'expected no inflows on an uncapped pool');
+  }
+  const hasDebt = kind === 'goBond' || kind === 'cop';
+  if (p.debt === null || p.debt === undefined) {
+    if (hasDebt) fail(`${path}.debt`, `expected debt for kind ${kind}`);
+  } else {
+    if (!hasDebt) fail(`${path}.debt`, `expected null debt for kind ${kind}`);
+    const d = record(p.debt, `${path}.debt`);
+    const rate = finite(d.rate, `${path}.debt.rate`);
+    const termYears = finite(d.termYears, `${path}.debt.termYears`);
+    const bad = validateDebt({ rate, termYears });
+    if (bad !== null) fail(`${path}.debt`, bad);
+  }
+  const leverage = finite(p.leverage, `${path}.leverage`);
+  if (!(leverage > 0)) fail(`${path}.leverage`, `expected a number above 0, got ${leverage}`);
+  if (kind !== 'bank' && leverage !== 1) {
+    fail(`${path}.leverage`, `expected 1 unless kind is bank, got ${leverage}`);
+  }
+}
+
+/**
+ * F6: shape, id pattern, pool in `poolIds`, reach, validateInstrument, from/to, minHomes 0..10000,
+ * tiers rule. Not the `u-` prefix and not the grant-only rule: the caller's.
+ */
+export function checkProgramme(v: unknown, path: string, poolIds: ReadonlySet<string>): void {
+  const g = record(v, path);
+  checkId(g.id, `${path}.id`);
+  text(g.label, `${path}.label`);
+  if (typeof g.pool !== 'string' || !poolIds.has(g.pool)) {
+    fail(`${path}.pool`, `expected a pool id, got ${String(g.pool)}`);
+  }
+  if (g.reach !== 'market' && g.reach !== 'affordable') {
+    fail(`${path}.reach`, `expected market or affordable, got ${String(g.reach)}`);
+  }
+  record(g.instrument, `${path}.instrument`);
+  const bad = validateInstrument(g.instrument as Instrument);
+  if (bad !== null) fail(`${path}.instrument`, bad);
+  const from = integer(g.from, `${path}.from`);
+  if (g.to !== null && integer(g.to, `${path}.to`) < from) {
+    fail(`${path}.to`, `expected null or a day from ${from} on, got ${String(g.to)}`);
+  }
+  const m = g.minHomes;
+  if (typeof m !== 'number' || !Number.isInteger(m) || m < 0 || m > 10000) {
+    fail(`${path}.minHomes`, `expected a whole number from 0 to 10000, got ${String(m)}`);
+  }
+  if (g.reach === 'affordable') {
+    if (g.tiers === null || g.tiers === undefined) {
+      fail(`${path}.tiers`, 'expected tiers for reach affordable');
+    }
+    const t = record(g.tiers, `${path}.tiers`);
+    exactKeys(t, `${path}.tiers`, INCOME_TIERS);
+    checkSumsToOne(
+      INCOME_TIERS.map((k) => unit(t[k], `${path}.tiers.${k}`)),
+      `${path}.tiers`
+    );
+  } else if (g.tiers !== null && g.tiers !== undefined) {
+    fail(`${path}.tiers`, 'expected null tiers for reach market');
+  }
+}
+
+/** Spec 4.6: the baseline pools and programmes, one grant programme each, ids never `u-`. */
+function checkBaselineFunding(v: unknown): void {
+  const path = 'baselineFunding';
+  const b = record(v, path);
+  exactKeys(b, path, ['pools', 'programmes', 'provenance', 'check']);
+  const pools = array(b.pools, `${path}.pools`);
+  if (pools.length === 0) fail(`${path}.pools`, 'expected at least one pool');
+  const poolIds = new Set<string>();
+  const noPrefix = (id: unknown, p: string) => {
+    if (typeof id === 'string' && id.startsWith('u-')) {
+      fail(p, `expected a baseline id not starting u-, got ${id}`);
+    }
+  };
+  pools.forEach((pool, i) => {
+    const pp = `${path}.pools[${i}]`;
+    checkPool(pool, pp);
+    const id = (pool as { id: string }).id;
+    noPrefix(id, `${pp}.id`);
+    if (poolIds.has(id)) fail(`${pp}.id`, `expected a unique id, got ${id}`);
+    poolIds.add(id);
+  });
+  const programmes = array(b.programmes, `${path}.programmes`);
+  const programmeIds = new Set<string>();
+  programmes.forEach((prog, i) => {
+    const pp = `${path}.programmes[${i}]`;
+    checkProgramme(prog, pp, poolIds);
+    const g = prog as { id: string; instrument: Instrument };
+    noPrefix(g.id, `${pp}.id`);
+    if (programmeIds.has(g.id)) fail(`${pp}.id`, `expected a unique id, got ${g.id}`);
+    programmeIds.add(g.id);
+    if (g.instrument.kind !== 'grant') {
+      fail(`${pp}.instrument`, `expected a grant, got ${g.instrument.kind}`);
+    }
+  });
+  const prov = array(b.provenance, `${path}.provenance`);
+  if (prov.length !== pools.length + 1) {
+    fail(
+      `${path}.provenance`,
+      `expected ${pools.length + 1} entries (one per pool, then the programmes' tiers and minHomes), got ${prov.length}`
+    );
+  }
+  prov.forEach((p, i) => checkProvenance(p, `${path}.provenance[${i}]`));
+  const c = record(b.check, `${path}.check`);
+  exactKeys(c, `${path}.check`, ['impliedHomesPerYear', 'observedHomesPerYear', 'provenance']);
+  for (const k of ['impliedHomesPerYear', 'observedHomesPerYear'] as const) {
+    const x = c[k];
+    if (typeof x !== 'number' || !Number.isInteger(x) || x < 0) {
+      fail(`${path}.check.${k}`, `expected a non-negative integer, got ${String(x)}`);
+    }
+  }
+  checkProvenance(c.provenance, `${path}.check.provenance`);
+}
+
 /**
  * Validate a parsed `calibration.json` (design doc T12, spec section 4.2). Throws a
  * `CalibrationFormatError` naming the path of the first violation; otherwise returns the same
@@ -857,5 +1032,8 @@ export function parseCalibration(json: unknown): Calibration {
   checkProvenance(c.streamlinedForLocalProgram, 'streamlinedForLocalProgram');
   checkPhaseGap(c.phaseGap);
   if (c.market !== undefined) checkMarket(c.market);
+  if (c.affordableRoutes !== undefined)
+    checkPathwayMap(c.affordableRoutes, 'affordableRoutes', true);
+  if (c.baselineFunding !== undefined) checkBaselineFunding(c.baselineFunding);
   return json as Calibration;
 }
