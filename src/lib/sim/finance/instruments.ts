@@ -211,7 +211,7 @@ export interface BundleFunding {
 }
 
 /** 0 federal, 1 state, 2 the City (`bank`, `dedicatedTax`, `generalRevenue`, `goBond`, `cop`). */
-function tierOf(poolKind: PoolKind): 0 | 1 | 2 {
+export function tierOf(poolKind: PoolKind): 0 | 1 | 2 {
   switch (poolKind) {
     case 'federal':
       return 0;

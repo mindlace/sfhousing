@@ -175,7 +175,8 @@ amounts become whole project `Dollars`. Per-home amounts are never rounded befor
 A project's bundle may mix grants, loans and guarantees from several pools. Each `BundleItem` is
 `{ instrument, poolKind }`. An item's tier is fixed by its pool's kind: `federal` is tier 0,
 `state` tier 1, and `bank`, `dedicatedTax`, `generalRevenue`, `goBond` and `cop` are the City tier
-(2). An unknown `poolKind` throws `RangeError('Unknown pool kind: <kind>')`.
+(2). An unknown `poolKind` throws `RangeError('Unknown pool kind: <kind>')`. `tierOf(poolKind)`
+is exported and gives that tier (0, 1 or 2); the pipeline's baseline funding report uses it.
 
 1. Every item is validated and its terms checked (throws as above).
 2. Let `R = U`, what remains of the uncovered cost. Tiers are priced federal, state, City; an empty

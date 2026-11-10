@@ -32,6 +32,7 @@ export {
   oddsShift,
   projectDollars,
   termsNeeded,
+  tierOf,
   validateInstrument
 } from './instruments';
 export type { BundleFunding, BundleItem, ItemFunding } from './instruments';

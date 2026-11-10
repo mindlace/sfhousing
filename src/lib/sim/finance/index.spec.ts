@@ -26,6 +26,7 @@ const NAMES = [
   'INSTRUMENT_BOUNDS',
   'validateInstrument',
   'fundBundle',
+  'tierOf',
   'projectDollars',
   'AMI_TIER_BOUNDS',
   'tierOfAmi',
