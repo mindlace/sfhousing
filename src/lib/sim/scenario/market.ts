@@ -14,7 +14,8 @@ export function marketSteps(
 
 /**
  * F3: the one rule for the level the engine runs. Release 1: always 'all'. finance-engine changes
- * it to 'private' when `calibration.baselineFunding` is present.
+ * it to 'private' exactly when `buildSimInput` also sets `finance` from the calibration's baseline
+ * funding (F12), else 'all'.
  */
 export function marketLevel(calibration: Calibration): 'all' | 'private' {
   void calibration;

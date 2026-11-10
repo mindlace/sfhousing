@@ -95,11 +95,10 @@ and no hold-out diagnostic. `crossCheck` comes from `market.json` as live; `slop
 equal weights of 0.2 when there are none.
 
 **Expectations from the spec** (build `2026-11-04-bbb2eba1`, calibration report section 5,
-"Plausibility"; these are the spec's readings, not this release's output): `observed.all` = 33 + 40
-
-- 56 = 129; `implied` = 81.6109 + 81.7087 + 82.2016 = 245.521; `today.all` = ln(129 / 245.521) =
-  -0.643571 (a factor of 0.525 on the odds); hold-out expectation 386.399, ln(129 / 386.399) =
-  -1.09706 (report only).
+"Plausibility"; these are the spec's readings, not this release's output): `observed.all` is the sum
+of the three years, 33 + 40 + 56, which is 129; `implied` = 81.6109 + 81.7087 + 82.2016 = 245.521; `today.all` = ln(129 / 245.521) =
+-0.643571 (a factor of 0.525 on the odds); hold-out expectation 386.399, ln(129 / 386.399) =
+-1.09706 (report only).
 
 **Release 1 live values: placeholder.** The live `today.*`, `observed.private`, the cohort counts,
 `slope.perCostShare`, `crossCheck.logOdds` and the outcome of acceptance check 7.3 are filled here
@@ -210,8 +209,9 @@ warning. Fixture mode prints its fixed-levels line and the last two items.
 - **Live warnings** (do not fail): `today.all` outside [ln 0.1, ln 2]; `|today.all -
 crossCheck.logOdds| > 1`; the reproduction check; the hold-out failure.
 
-Counts added to the build: `calibration.market.recentStarts`, `recentPrivate`, `recentAffordable`,
-`recentNoRecord`, `recentUnknown`, `weightStarts`, `unbinnedHomes`, `unbinnedStories`.
+Count keys added to the build's counts (and so to `report.json`; they are not fields of the
+`calibration.market` object): `recentStarts`, `recentPrivate`, `recentAffordable`, `recentNoRecord`,
+`recentUnknown`, `weightStarts`, `unbinnedHomes`, `unbinnedStories`.
 
 ## Hashed code
 

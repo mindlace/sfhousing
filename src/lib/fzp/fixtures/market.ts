@@ -21,7 +21,7 @@ export const LIVE_MARKET: MarketModel = {
     provenance: { tier: 3, label: "The Controller's development model", sources: [], method: 'x' }
   },
   slope: {
-    perCostShare: 0,
+    perCostShare: 1.74,
     provenance: { tier: 3, label: 'x', sources: [], method: 'x' },
     crossChecks: {
       costCoefficient: 0,
