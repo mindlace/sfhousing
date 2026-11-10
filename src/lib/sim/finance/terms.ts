@@ -28,10 +28,6 @@ const TAC_DECK = {
   label: 'Controller, TAC meeting 2 presentation, 2026-02-11, slide 14',
   url: 'https://media.api.sf.gov/documents/TAC_Meeting_2_Presentation_-_2-11-2026.pdf'
 };
-const FDIC = {
-  label: 'FDIC, Quarterly Banking Profile, net charge-off rates by loan category',
-  url: 'https://www.fdic.gov/quarterly-banking-profile'
-};
 
 function deepFreeze<T>(o: T): T {
   if (o && typeof o === 'object' && !Object.isFrozen(o)) {
@@ -72,8 +68,8 @@ export const MARKET_TERMS: MarketTerms = deepFreeze({
       label: 'Construction loan life, in years',
       sources: [
         {
-          label: 'Fitted construction-stage table, dataset 2026-11-08-d15bdf2d (calibration.json)',
-          url: 'https://sfhousing.org/data/2026-11-08-d15bdf2d/calibration.json'
+          label: 'Dataset 2026-11-08-d15bdf2d, scenarios/fzp/calibration.json',
+          url: 'https://sfhousing.mindlace.net/data/2026-11-08-d15bdf2d/scenarios/fzp/calibration.json'
         }
       ],
       method:
@@ -109,11 +105,11 @@ export const MARKET_TERMS: MarketTerms = deepFreeze({
       tier: 4,
       label:
         'Share of what was spent that a funded project loses if it exits after construction began',
-      sources: [FDIC],
+      sources: [],
       method:
         'Invented, as the design rules (OD-F8): a funded project that exits after construction ' +
         'began loses the whole amount spent or out. Found and not used, accessed 2026-11-09: ' +
-        'FDIC net charge-off rates on construction and development loans of 5.40% (2009), ' +
+        'FDIC Quarterly Banking Profile, Table V-A, net charge-off rates on construction and development loans of 5.40% (2009), ' +
         "5.45% (2010) and −0.01% (2019), and the public-bank plans' 2.5% loss allowance, are " +
         'portfolio rates per year, not the loss on one abandoned project.'
     }
