@@ -109,7 +109,8 @@ export const MARKET_TERMS: MarketTerms = deepFreeze({
       method:
         'Invented, as the design rules (OD-F8): a funded project that exits after construction ' +
         'began loses the whole amount spent or out. Found and not used, accessed 2026-11-09: ' +
-        'FDIC Quarterly Banking Profile, Table V-A, net charge-off rates on construction and development loans of 5.40% (2009), ' +
+        'FDIC Quarterly Banking Profile, Table V-A, net charge-off rates on ' +
+        'construction and development loans of 5.40% (2009), ' +
         "5.45% (2010) and −0.01% (2019), and the public-bank plans' 2.5% loss allowance, are " +
         'portfolio rates per year, not the loss on one abandoned project.'
     }
@@ -147,7 +148,7 @@ export const DRAW_UP_FRONT: Sourced<number> = deepFreeze({
     label: 'Share of a construction loan drawn at the start',
     sources: [],
     method:
-      "Tier 4, the partner's assumption, R11: 10% of a construction loan is drawn at the start to get " +
+      "The partner's assumption, R11: 10% of a construction loan is drawn at the start to get " +
       'building under way, and the rest evenly over the construction period. No source for a ' +
       'draw schedule was found.'
   }
@@ -160,9 +161,9 @@ export const AVERAGE_DRAWN: Sourced<number> = deepFreeze({
     label: 'Average share of a construction loan that is out',
     sources: [],
     method:
-      "Tier 4, the partner's assumption, R11: arithmetic on DRAW_UP_FRONT. A loan's and a guarantee's " +
-      'interest saving is counted on this share of the principal over the construction ' +
-      'period. A pool still commits the whole principal at the start.'
+      "The partner's assumption, R11: arithmetic on DRAW_UP_FRONT. A loan's and a " +
+      "guarantee's interest saving is counted on this share of the principal over the " +
+      'construction period. A pool still commits the whole principal at the start.'
   }
 });
 

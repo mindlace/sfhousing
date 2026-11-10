@@ -62,7 +62,7 @@ describe('draw schedule and loan-to-cost', () => {
     expect(AVERAGE_DRAWN.value).toBeCloseTo(0.55, 12);
     for (const c of [DRAW_UP_FRONT, AVERAGE_DRAWN]) {
       expect(c.provenance.tier).toBe(4);
-      expect(c.provenance.method).toContain("the partner's assumption, R11");
+      expect(c.provenance.method).toMatch(/the partner's assumption, R11/i);
     }
   });
 

@@ -170,8 +170,8 @@ export const DISPLACEMENT_RANGE: Sourced<{ low: number; high: number }> = {
     sources: [NBER, SOLTAS],
     method:
       `Low, accessed 2026-11-09: Ferreira, Meyer and Turner, slide 17: "89 LIHTC units ` +
-      `allocated => 87 placed-in-service => 77 ACS multi-family units ... 1 - 77/87 = 11.5% ` +
-      `crowd-out, CI95[-6%, 28%]"; local, the block group. High: Soltas, p. 4: "For every ten ` +
+      `allocated ⇒ 87 placed-in-service ⇒ 77 ACS multi-family units … 1 − 77/87 = 11.5% ` +
+      `crowd-out, CI95[−6%, 28%]"; local, the block group. High: Soltas, p. 4: "For every ten ` +
       `LIHTC units, I find about eight units displace private housing that would have ` +
       `otherwise been built within ten years"; Table 5 (p. 39) gives the model's displacement ` +
       `rate as 0.777 (standard error 0.018). Soltas counts later tax-credit projects on a ` +

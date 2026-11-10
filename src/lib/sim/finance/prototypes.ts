@@ -3,6 +3,14 @@
 import type { Dollars, ProjectKind, Provenance } from '../../timelapse/types';
 import type { Sourced } from './evidence';
 
+function deepFreeze<T>(o: T): T {
+  if (o && typeof o === 'object' && !Object.isFrozen(o)) {
+    Object.freeze(o);
+    for (const v of Object.values(o)) deepFreeze(v);
+  }
+  return o;
+}
+
 export interface Prototype {
   id: 'A' | 'B' | 'C' | 'D' | 'E';
   stories: number;
@@ -69,7 +77,7 @@ export const PROTOTYPES: readonly Prototype[] = Object.freeze([
   prototype('E', 4, 13, 929_700, 353_000)
 ]);
 
-export const PROTOTYPE_BINNING: Sourced<null> = {
+export const PROTOTYPE_BINNING: Sourced<null> = deepFreeze({
   value: null,
   provenance: {
     tier: 4,
@@ -81,7 +89,7 @@ export const PROTOTYPE_BINNING: Sourced<null> = {
       'prototypes and put every project under 25 homes with the 13-home prototype, the only one ' +
       "in the report's 10 to 24 home band."
   }
-};
+});
 
 /** The prototype a project of `stories` and `homes` is priced as. Fractions compare as given. */
 export function prototypeFor(stories: number, homes: number): Prototype {
@@ -95,7 +103,7 @@ export function prototypeFor(stories: number, homes: number): Prototype {
   return PROTOTYPES[3];
 }
 
-export const LAND_PER_HOME: Sourced<Dollars> = {
+export const LAND_PER_HOME: Sourced<Dollars> = deepFreeze({
   value: 65_000,
   provenance: {
     tier: 2,
@@ -107,9 +115,9 @@ export const LAND_PER_HOME: Sourced<Dollars> = {
       'range; the TAC deck (slide 22) lists it as the only entitled sale of 2023 to 2025. ' +
       'Accessed 2026-11-09.'
   }
-};
+});
 
-export const AFFORDABLE: Sourced<{ costPerHome: Dollars; ownPerHome: Dollars }> = {
+export const AFFORDABLE: Sourced<{ costPerHome: Dollars; ownPerHome: Dollars }> = deepFreeze({
   value: { costPerHome: 954_127, ownPerHome: 92_602 },
   provenance: {
     tier: 1,
@@ -120,7 +128,7 @@ export const AFFORDABLE: Sourced<{ costPerHome: Dollars; ownPerHome: Dollars }> 
       '(costPerHome); permanent loans $87,431 plus other $5,171 = $92,602 (ownPerHome; a tier 2 ' +
       'sum of tier 1 values). Accessed 2026-11-09.'
   }
-};
+});
 
 function checkKind(kind: ProjectKind): void {
   if (kind !== 'market' && kind !== 'affordable') {

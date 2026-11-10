@@ -14,7 +14,7 @@ const U = 861525;
 export const BASELINE_BUNDLE: BundleItem[] = [
   { instrument: { kind: 'grant', share: 443108 / U }, poolKind: 'federal' },
   { instrument: { kind: 'grant', share: 118390 / U }, poolKind: 'state' },
-  { instrument: { kind: 'grant', share: 300027 / U }, poolKind: 'goBond' }
+  { instrument: { kind: 'grant', share: 300027 / U }, poolKind: 'generalRevenue' }
 ];
 
 /** The same, with the City money split between two City pools (a test split, not data). */

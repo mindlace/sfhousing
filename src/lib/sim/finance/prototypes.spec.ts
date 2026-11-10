@@ -106,3 +106,13 @@ describe('costs', () => {
     );
   });
 });
+
+describe('frozen constants', () => {
+  it('freezes the sourced constants and their value objects', () => {
+    for (const c of [LAND_PER_HOME, AFFORDABLE, PROTOTYPE_BINNING]) {
+      expect(Object.isFrozen(c)).toBe(true);
+      expect(Object.isFrozen(c.provenance)).toBe(true);
+    }
+    expect(Object.isFrozen(AFFORDABLE.value)).toBe(true);
+  });
+});

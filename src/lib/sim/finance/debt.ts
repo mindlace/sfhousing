@@ -278,7 +278,7 @@ export function limitStatements(borrowing: readonly Borrowing[]): LimitStatement
           '10.62(b)(3)); existing certificates "reach its debt capacity constraint in ' +
           'approximately FY 2028-29" (pp. 105, 107, verified). Reading that as no headroom ' +
           'for added certificates is a tier 2 inference. COP issuance costs ("15 to 20 percent ' +
-          '... closer to 25 percent for a smaller COPs issuance", p. 108) are not modelled: a ' +
+          '… closer to 25 percent for a smaller COPs issuance", p. 108) are not modelled: a ' +
           "COP pool's inflow is taken as the money the City can spend; accessed 2026-11-09."
       }
     });
