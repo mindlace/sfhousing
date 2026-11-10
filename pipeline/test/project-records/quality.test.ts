@@ -1018,11 +1018,18 @@ describe('quality on records', () => {
     expect(r.file.qualityRules).toEqual([]);
   });
 
-  it('T4d quality drops the two rules that act only on T3', () => {
-    expect([...T3_ONLY_QUALITY].sort()).toEqual([PR.multiphaseDaNetting, PR.parcelsSharedExisting]);
+  it('T4d quality drops the three rules that act only on T3', () => {
+    expect([...T3_ONLY_QUALITY].sort()).toEqual(
+      [PR.affordableOverUnits, PR.multiphaseDaNetting, PR.parcelsSharedExisting].sort()
+    );
     expect(
       historyQuality(
-        new Set([PR.parcelsSharedExisting, PR.stagesForwardClamp, PR.multiphaseDaNetting])
+        new Set([
+          PR.parcelsSharedExisting,
+          PR.stagesForwardClamp,
+          PR.multiphaseDaNetting,
+          PR.affordableOverUnits
+        ])
       )
     ).toEqual([PR.stagesForwardClamp]);
     expect(historyQuality(new Set([PR.stagesForwardClamp, PR.dateValidRange]))).toEqual([

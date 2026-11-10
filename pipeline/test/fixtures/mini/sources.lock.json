@@ -111,10 +111,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/c6f020ea5f95e7e0f0689a088e35c04efb5495db4bd0c50da147db55bea35cf7.json",
-          "bytes": 476,
+          "archiveKey": "sources/529c287397c1fcd0f092ea1c0c29c894ed9da34c6046450c5e2845e592034443.json",
+          "bytes": 919,
           "name": "datasf-housing-production.page-000.json",
-          "sha256": "c6f020ea5f95e7e0f0689a088e35c04efb5495db4bd0c50da147db55bea35cf7",
+          "sha256": "529c287397c1fcd0f092ea1c0c29c894ed9da34c6046450c5e2845e592034443",
           "url": "https://fixture.invalid/datasf-housing-production.page-000.json"
         }
       ],
@@ -142,6 +142,24 @@
       "license": "public-domain",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
       "rowCount": 26,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/4bd073817175dbf5d135dce8a03216276c4d988499390569d66d6cb5dcbe708a.json",
+          "bytes": 1480,
+          "name": "datasf-mohcd-pipeline.page-000.json",
+          "sha256": "4bd073817175dbf5d135dce8a03216276c4d988499390569d66d6cb5dcbe708a",
+          "url": "https://fixture.invalid/datasf-mohcd-pipeline.page-000.json"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/aaxw-2cb8",
+      "id": "datasf-mohcd-pipeline",
+      "label": "DataSF MOHCD Affordable Housing Pipeline",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 3,
       "upstreamVersion": "fixture"
     },
     {

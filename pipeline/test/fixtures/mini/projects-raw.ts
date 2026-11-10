@@ -919,19 +919,36 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       bpa: '202101050007',
       form_no: '2',
       net_units_completed: '3',
-      first_completion_date: ts('2023-05-10')
+      first_completion_date: ts('2023-05-10'),
+      // Blank `low_income`: the one in-window row with affordable homes and positive net units,
+      // so it is the row that exercises `pr.rhna.tier-unrecorded`.
+      extremely_low_income: '0',
+      very_low_income: '1',
+      low_income: '',
+      moderate_income: '0',
+      affordable_units: '1'
     },
     {
       bpa: '202201010001',
       form_no: '3',
       net_units_completed: '2',
-      first_completion_date: ts('2024-02-01')
+      first_completion_date: ts('2024-02-01'),
+      extremely_low_income: '0',
+      very_low_income: '0',
+      low_income: '0',
+      moderate_income: '0',
+      affordable_units: '0'
     },
     {
       bpa: '202301010001',
       form_no: '6',
       net_units_completed: '-1',
-      first_completion_date: ts('2025-01-15')
+      first_completion_date: ts('2025-01-15'),
+      extremely_low_income: '0',
+      very_low_income: '0',
+      low_income: '0',
+      moderate_income: '0',
+      affordable_units: '0'
     },
     // M25's completion (Ruling C2 evidence (i)); before the RHNA window, so rhnaCompletedNet and
     // xdhtLagDays are unchanged.
@@ -940,7 +957,12 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       blocklot: '3512011',
       form_no: '2',
       net_units_completed: '4',
-      first_completion_date: ts('2018-03-01')
+      first_completion_date: ts('2018-03-01'),
+      extremely_low_income: '0',
+      very_low_income: '0',
+      low_income: '0',
+      moderate_income: '0',
+      affordable_units: '0'
     }
   ],
   'datasf-dev-pipeline': [
@@ -1210,6 +1232,88 @@ const PANEL_YEAR_BUILT: Record<string, number> = {
   '8711023C|2024': 1920,
   '8711023C|2025': 1920
 };
+
+/**
+ * One aaxw-2cb8 (MOHCD affordable pipeline) page: three invented rows (tier 4) for the finance
+ * data's AMI-band reads. Every band not listed is '0'; numbers are SODA strings.
+ */
+export const MOHCD_RAW: RawRow[] = [
+  {
+    project_id: 'FIXTURE-MOHCD-1',
+    project_name: 'Fixture 1',
+    project_status: 'Construction',
+    general_housing_program: 'MOHCD 100% Affordable (New Development)',
+    project_type: 'New Construction',
+    housing_tenure: 'Rental',
+    total_project_units: '2',
+    mohcd_affordable_units: '2',
+    _20_ami: '0',
+    _30_ami: '1',
+    _40_ami: '0',
+    _50_ami: '0',
+    _55_ami: '0',
+    _60_ami: '1',
+    _80_ami: '0',
+    _90_ami: '0',
+    _100_ami: '0',
+    _105_ami: '0',
+    _110_ami: '0',
+    _120_ami: '0',
+    _130_ami: '0',
+    _150_ami: '0',
+    ami_undeclared: '0'
+  },
+  {
+    project_id: 'FIXTURE-MOHCD-2',
+    project_name: 'Fixture 2',
+    project_status: 'Construction',
+    general_housing_program: 'MOHCD 100% Affordable (New Development)',
+    project_type: 'New Construction',
+    housing_tenure: 'Rental',
+    total_project_units: '6',
+    mohcd_affordable_units: '6',
+    _20_ami: '0',
+    _30_ami: '0',
+    _40_ami: '0',
+    _50_ami: '2',
+    _55_ami: '0',
+    _60_ami: '0',
+    _80_ami: '2',
+    _90_ami: '0',
+    _100_ami: '0',
+    _105_ami: '0',
+    _110_ami: '0',
+    _120_ami: '1',
+    _130_ami: '0',
+    _150_ami: '0',
+    ami_undeclared: '1'
+  },
+  {
+    project_id: 'FIXTURE-MOHCD-3',
+    project_name: 'Fixture 3',
+    project_status: 'Construction',
+    general_housing_program: 'Inclusionary Housing',
+    project_type: 'New Construction',
+    housing_tenure: 'Rental',
+    total_project_units: '10',
+    mohcd_affordable_units: '10',
+    _20_ami: '0',
+    _30_ami: '0',
+    _40_ami: '0',
+    _50_ami: '0',
+    _55_ami: '0',
+    _60_ami: '0',
+    _80_ami: '10',
+    _90_ami: '0',
+    _100_ami: '0',
+    _105_ami: '0',
+    _110_ami: '0',
+    _120_ami: '0',
+    _130_ami: '0',
+    _150_ami: '0',
+    ami_undeclared: '0'
+  }
+];
 
 /**
  * The panel's non-zero `imputed` masks per `<parcel>|<roll year>`; every other panel row (a key of
