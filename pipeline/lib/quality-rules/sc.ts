@@ -4,7 +4,8 @@ import type { QualityRule } from '../quality';
  * stage-calibration's T14 rules (design row T14; stage-calibration spec §4.4a). Each entry takes
  * its kind's default shares (`warnShare` 0.05 for `kind: 'missing'`, else 0.01; `failShare` 0.10)
  * except `sc.stages.gap-impute`, `sc.revision.ratio-clamp`, `sc.revision.carried-excluded` and
- * `sc.funding.ami-undeclared`, whose departures are stated at the entries. The calibration step changes values only in its own memory.
+ * `sc.funding.ami-undeclared`, whose departures are stated at the entries. The calibration step
+ * changes values only in its own memory.
  */
 export const SC_RULES: readonly QualityRule[] = [
   {

@@ -23,7 +23,7 @@ import { firstRecord } from './pathway-mix';
 import { datasf } from './provenance';
 import { roundShares } from './round';
 import type { CalStage, NormHistory, Spell } from './types';
-import { PLANNING_START } from './window';
+import { PANEL_LAST_MONTH, PLANNING_START } from './window';
 
 /** The cohort's floor on the pair's proposed homes (F12). */
 export const COHORT_MIN_HOMES = 10;
@@ -229,9 +229,17 @@ export interface SiteChoiceReport {
   ratio: number | null;
 }
 
-/** The record-basis months of the panel (spec §4.8). */
-const SITE_FIRST = isoToDay('2015-01-01');
-const SITE_LAST = isoToDay('2025-12-31');
+/** The record-basis months of the panel (spec §4.8): `PLANNING_START`'s month to the last. */
+export const SITE_MONTHS: readonly [string, string] = [
+  PLANNING_START.slice(0, 7),
+  PANEL_LAST_MONTH
+];
+const SITE_FIRST = isoToDay(`${SITE_MONTHS[0]}-01`);
+/** The last day of `PANEL_LAST_MONTH`: the day before the next month's first. */
+const SITE_LAST = (() => {
+  const [y, m] = PANEL_LAST_MONTH.split('-').map(Number);
+  return Date.UTC(y, m, 1) / 86_400_000 - 1;
+})();
 
 function median(xs: number[]): number {
   const s = [...xs].sort((a, b) => a - b);
@@ -242,7 +250,7 @@ function median(xs: number[]): number {
 /**
  * Where funded projects start (spec §4.8, OD-F9b): the published model's hazard on the lots
  * where the cohort's projects started, against the lots where private projects started.
- * Starts outside 2015-01..2025-12 are not events; a start with no parcel, no roll year, no
+ * Starts outside `SITE_MONTHS` are not events; a start with no parcel, no roll year, no
  * row or a non-hostable row is off panel.
  */
 export async function siteChoice(

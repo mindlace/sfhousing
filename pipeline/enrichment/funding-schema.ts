@@ -32,6 +32,7 @@ export interface FundingFile {
   };
   /** Exhibit E: local MOHCD multifamily spending by source, FY2024-25 */
   city: {
+    /** 'FYyyyy-yy', two consecutive years (July to June) */
     fiscalYear: string;
     total: number;
     tier: 1;
@@ -81,6 +82,21 @@ function isHttps(s: string): boolean {
   } catch {
     return false;
   }
+}
+
+const FISCAL_YEAR_RE = /^FY(\d{4})-(\d{2})$/;
+
+/** 'FY2024-25' (a July-to-June year) is consecutive: the second year is the first plus one. */
+function isFiscalYear(s: string): boolean {
+  const m = FISCAL_YEAR_RE.exec(s);
+  return m !== null && (Number(m[1]) + 1) % 100 === Number(m[2]);
+}
+
+/** The first and last day of a schema-checked fiscal year: 'FY2024-25' → 2024-07-01..2025-06-30. */
+export function fiscalYearWindow(fiscalYear: string): [string, string] {
+  if (!isFiscalYear(fiscalYear)) throw new BuildError(`not a fiscal year: ${fiscalYear}`);
+  const first = Number(fiscalYear.slice(2, 6));
+  return [`${first}-07-01`, `${first + 1}-06-30`];
 }
 
 const isoDate = z
@@ -144,11 +160,13 @@ export const FundingSchema: z.ZodType<FundingFile> = z
       ),
     city: z
       .strictObject({
-        fiscalYear: text,
+        fiscalYear: z
+          .string()
+          .refine(isFiscalYear, 'fiscalYear must be FYyyyy-yy, two consecutive years'),
         total: dollars,
         tier: z.literal(1),
         cite,
-        sources: z.array(source)
+        sources: z.array(source).min(1, 'city.sources must list at least one source')
       })
       .refine(
         (c) => c.sources.reduce((a, s) => a + s.dollarsPerYear, 0) === c.total,

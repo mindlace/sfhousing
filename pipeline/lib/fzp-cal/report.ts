@@ -19,7 +19,7 @@ import {
   type Stage
 } from '../../../src/lib/timelapse/types';
 import { qualityRule } from '../quality';
-import type { AffordableReport, FundedGroup, SiteGroup } from './affordable';
+import { SITE_MONTHS, type AffordableReport, type FundedGroup, type SiteGroup } from './affordable';
 import { OUTCOMES, ajEnd } from './aalen-johansen';
 import {
   FZP_BAND,
@@ -991,7 +991,7 @@ export function siteChoiceSection(x: ReportInput): string[] {
   return [
     REPORT_SECTIONS[12],
     '',
-    "Each history's start is its first entered day among preApplication, filed and permitFiled, from 2015-01 to 2025-12; its lot is the primary parcel, read on the panel row of the start's roll year. A start whose lot has no row, or a row not hostable under the base zoning, is off panel.",
+    `Each history's start is its first entered day among preApplication, filed and permitFiled, from ${SITE_MONTHS[0]} to ${SITE_MONTHS[1]}; its lot is the primary parcel, read on the panel row of the start's roll year. A start whose lot has no row, or a row not hostable under the base zoning, is off panel.`,
     '',
     ...table(
       [

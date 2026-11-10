@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseFundingFile } from '../../enrichment/funding-schema';
+import { fiscalYearWindow, parseFundingFile } from '../../enrichment/funding-schema';
 
 const LIVE = resolve(__dirname, '../../enrichment/funding.json');
 const FIXTURE = resolve(__dirname, '../fixtures/mini/enrichment/funding.json');
@@ -139,8 +139,39 @@ describe('funding.json', () => {
       (f) => (f.perHome.cite.retrieved = '2026-13-01'),
       'must be a real calendar date'
     ],
-    ['http url', (f) => (f.perHome.cite.url = 'http://example.com/x'), 'must be an https URL']
+    ['http url', (f) => (f.perHome.cite.url = 'http://example.com/x'), 'must be an https URL'],
+    [
+      'fiscalYear 2024-25',
+      (f) => (f.city.fiscalYear = '2024-25'),
+      'fiscalYear must be FYyyyy-yy, two consecutive years'
+    ],
+    [
+      'fiscalYear FY2024-26',
+      (f) => (f.city.fiscalYear = 'FY2024-26'),
+      'fiscalYear must be FYyyyy-yy, two consecutive years'
+    ],
+    [
+      'fiscalYear FY2099-01',
+      (f) => (f.city.fiscalYear = 'FY2099-01'),
+      'fiscalYear must be FYyyyy-yy, two consecutive years'
+    ],
+    [
+      'no city sources',
+      (f) => {
+        f.city.sources = [];
+        f.city.total = 0;
+      },
+      'city.sources must list at least one source'
+    ]
   ];
+
+  it('reads FY1999-00 as consecutive years and windows a fiscal year July to June', () => {
+    expect(fiscalYearWindow('FY2024-25')).toEqual(['2024-07-01', '2025-06-30']);
+    expect(fiscalYearWindow('FY1999-00')).toEqual(['1999-07-01', '2000-06-30']);
+    const f = load(LIVE);
+    f.city.fiscalYear = 'FY1999-00';
+    expect(parseFundingFile(f, 'funding.json').city.fiscalYear).toBe('FY1999-00');
+  });
   it.each(mutations)('rejects %s', (_name, mutate, message) => {
     const f = load(LIVE);
     mutate(f);

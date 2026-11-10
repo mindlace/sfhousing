@@ -2,8 +2,8 @@
  * Calibration model (design doc T12): pure, free of any schema library and worker-safe. Only
  * `./types`, `./time`, `./math` and the finance checks `../sim/finance/{instruments,debt}` (the
  * one validation every pool and programme validator calls) are imported, and `exp`/`log` come
- * from `./math` so results are bit-reproducible. Per-transition constants are memoised by object identity (`Constants`),
- * so a Transition must not be mutated after its first use here.
+ * from `./math` so results are bit-reproducible. Per-transition constants are memoised by object
+ * identity (`Constants`), so a Transition must not be mutated after its first use here.
  */
 import { exp, log } from './math';
 import { MONTH_DAYS } from './time';
@@ -845,15 +845,26 @@ function checkMarket(v: unknown): void {
 
 export const BASELINE_ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
-const POOL_KINDS: readonly PoolKind[] = [
-  'goBond',
-  'cop',
-  'generalRevenue',
-  'dedicatedTax',
-  'state',
-  'federal',
-  'bank'
-];
+/** Every `PoolKind`: a `Record` so a kind added to the type fails to compile until listed here. */
+const POOL_KIND_SET: Record<PoolKind, true> = {
+  goBond: true,
+  cop: true,
+  generalRevenue: true,
+  dedicatedTax: true,
+  state: true,
+  federal: true,
+  bank: true
+};
+const POOL_KINDS = Object.keys(POOL_KIND_SET) as readonly PoolKind[];
+
+/** The keys of each instrument kind (F6), checked before `validateInstrument`. */
+const INSTRUMENT_KEYS: {
+  [K in Instrument['kind']]: readonly (keyof Extract<Instrument, { kind: K }>)[];
+} = {
+  grant: ['kind', 'share'],
+  loan: ['kind', 'costShare', 'rate', 'requiredReturn'],
+  guarantee: ['kind', 'costShare', 'reserve']
+};
 
 function checkId(v: unknown, path: string): string {
   if (typeof v !== 'string' || !BASELINE_ID_RE.test(v)) {
@@ -948,7 +959,10 @@ export function checkProgramme(v: unknown, path: string, poolIds: ReadonlySet<st
   if (g.reach !== 'market' && g.reach !== 'affordable') {
     fail(`${path}.reach`, `expected market or affordable, got ${String(g.reach)}`);
   }
-  record(g.instrument, `${path}.instrument`);
+  const inst = record(g.instrument, `${path}.instrument`);
+  if (inst.kind === 'grant' || inst.kind === 'loan' || inst.kind === 'guarantee') {
+    exactKeys(inst, `${path}.instrument`, INSTRUMENT_KEYS[inst.kind]);
+  }
   const bad = validateInstrument(g.instrument as Instrument);
   if (bad !== null) fail(`${path}.instrument`, bad);
   const from = integer(g.from, `${path}.from`);
@@ -1012,7 +1026,8 @@ function checkBaselineFunding(v: unknown): void {
   if (prov.length !== pools.length + 1) {
     fail(
       `${path}.provenance`,
-      `expected ${pools.length + 1} entries (one per pool, then the programmes' tiers and minHomes), got ${prov.length}`
+      `expected ${pools.length + 1} entries (one per pool, then the programmes' tiers and ` +
+        `minHomes), got ${prov.length}`
     );
   }
   prov.forEach((p, i) => checkProvenance(p, `${path}.provenance[${i}]`));

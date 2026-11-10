@@ -3,7 +3,7 @@
  * homes as pools and grant programmes, from the hand-transcribed `funding.json` (spec 4.5) and the
  * MOHCD affordable pipeline's income bands and sizes. A pure function of its inputs.
  */
-import type { FundingFile } from '../../enrichment/funding-schema';
+import { fiscalYearWindow, type FundingFile } from '../../enrichment/funding-schema';
 import { isoOf, num } from '../../project-records/parse';
 import type { RawRow } from '../../project-records/types';
 import { tierOf } from '../../../src/lib/sim/finance/instruments';
@@ -113,10 +113,10 @@ export interface MohcdMix {
   affordable: number;
 }
 
-/** The income mix and smallest size of the City's own 100% affordable new building. */
 const isUsed = (r: MohcdRow): boolean =>
   r.program === MOHCD_PROGRAM && r.projectType === NEW_CONSTRUCTION;
 
+/** The income mix and smallest size of the City's own 100% affordable new building. */
 export function mohcdMix(rows: MohcdRow[]): MohcdMix {
   const used = rows.filter(isUsed);
   const byBand = {} as Record<AmiBand, number>;
@@ -190,7 +190,10 @@ export function baselineFunding(
 ): {
   baselineFunding: NonNullable<Calibration['baselineFunding']>;
   report: FundingReport;
-  /** sc.funding.ami-undeclared: fired = undeclared homes, of = mohcd_affordable_units of the rows used */
+  /**
+   * sc.funding.ami-undeclared: fired = undeclared homes, of = mohcd_affordable_units of the rows
+   * used
+   */
   tally: RuleTally;
   warnings: string[];
 } {
@@ -289,22 +292,35 @@ export function baselineFunding(
     url: city.cite.url
   };
 
+  const fyWindow = fiscalYearWindow(fy);
+  const percent = (rate: number) => `${(rate * 100).toFixed(1)}%`;
+
   const poolProvenance: Provenance[] = specs.map((s, i) => {
     if (i < city.sources.length) {
       const src = city.sources[i];
+      const debt = src.debt;
+      const debtText =
+        debt === null
+          ? ''
+          : ` Debt terms: rate ${percent(debt.rate)}, ${debt.termYears} years (${debt.cite.page}` +
+            `${debt.cite.quote === undefined ? '' : `: '${debt.cite.quote}'`}), the Analyst's ` +
+            'assumption (tier 2); repayment is nominal.';
       return mark({
         tier: 1,
         label: `${src.label}: ${millions(src.dollarsPerYear)} a year, ${fy} (held level)`,
-        sources: [blaSource],
+        sources:
+          debt === null
+            ? [blaSource]
+            : [blaSource, { label: `${debt.cite.label}, ${debt.cite.page}`, url: debt.cite.url }],
         method:
           `Exhibit E (p. 6): ${money(src.dollarsPerYear)} of the City's ${money(city.total)} ` +
           `multifamily spending in ${fy}. Its slice of the City's ${money(perHome.city)} a home ` +
           `(Exhibit F, p. 7): ${money(perHome.city)} × ${money(src.dollarsPerYear)} ÷ ` +
           `${money(city.total)} = ${money(Math.round(s.perHome))}. ` +
           shareText(i, money(Math.round(s.perHome))) +
-          ` ${inflowText} ${fy} dollars, not adjusted. ${src.note}`,
+          ` ${inflowText} ${fy} dollars, not adjusted. ${src.note}${debtText}`,
         n: 1,
-        window: ['2024-07-01', '2025-06-30']
+        window: fyWindow
       });
     }
     if (s.pool.kind === 'state') {
@@ -330,7 +346,10 @@ export function baselineFunding(
       ],
       method:
         `${file.federal.method} ${shareText(i, money(perHome.federal))} ` +
-        'uncapped: no ceiling binds San Francisco in the 2026 award records.',
+        'uncapped: no ceiling binds San Francisco in the 2026 award records. That claim rests ' +
+        "on the design's evidence digest, not on a source listed here; n and window describe " +
+        `the ${span[0]}–${span[1]} new-construction award rows of the check. ` +
+        `${fy} dollars, not adjusted.`,
       n: newRows.length,
       window: awardWindow
     });

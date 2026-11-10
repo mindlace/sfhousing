@@ -1381,6 +1381,22 @@ describe('affordableRoutes and baselineFunding', () => {
       expect(() => checkProgramme(p, 'q', ids)).toThrow(`q.instrument: ${want}`);
     });
 
+    it('rejects a key another instrument kind owns', () => {
+      const grant = loan();
+      grant.instrument = { kind: 'grant', share: 0.5, costShare: 0.5 };
+      expect(() => checkProgramme(grant, 'q', ids)).toThrow(
+        'q.instrument.costShare: unexpected key'
+      );
+      const guarantee = loan();
+      guarantee.instrument = { kind: 'guarantee', costShare: 0.5, reserve: 0.1, rate: 0.02 };
+      expect(() => checkProgramme(guarantee, 'q', ids)).toThrow(
+        'q.instrument.rate: unexpected key'
+      );
+      const short = loan();
+      delete short.instrument.requiredReturn;
+      expect(() => checkProgramme(short, 'q', ids)).toThrow('q.instrument.requiredReturn: missing');
+    });
+
     it('rejects minHomes 10001', () => {
       const p = loan();
       p.minHomes = 10001;

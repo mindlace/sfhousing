@@ -170,13 +170,23 @@ describe('baselineFunding on the live file', () => {
       expect(bf.provenance[i].label).toBe(
         `${s.label}: $${(s.dollarsPerYear / 1e6).toFixed(1)} million a year, FY2024-25 (held level)`
       );
-      expect(bf.provenance[i].sources).toEqual([
-        {
-          label: `${live.city.cite.label}, p. 6, Exhibit E; p. 7, Exhibit F`,
-          url: live.city.cite.url
-        }
-      ]);
+      const bla = {
+        label: `${live.city.cite.label}, p. 6, Exhibit E; p. 7, Exhibit F`,
+        url: live.city.cite.url
+      };
+      expect(bf.provenance[i].sources).toEqual(
+        s.debt === null
+          ? [bla]
+          : [bla, { label: `${s.debt.cite.label}, ${s.debt.cite.page}`, url: s.debt.cite.url }]
+      );
+      expect(bf.provenance[i].window).toEqual(['2024-07-01', '2025-06-30']);
+      if (s.debt === null) expect(bf.provenance[i].method).not.toContain('Debt terms');
     });
+    const debt = live.city.sources[0].debt!;
+    expect(bf.provenance[0].method).toContain(
+      `Debt terms: rate 6.0%, 20 years (p. 106, Exhibit 40: '${debt.cite.quote}'), the ` +
+        "Analyst's assumption (tier 2); repayment is nominal."
+    );
     expect(bf.provenance[6].tier).toBe(2);
     expect(bf.provenance[6].method).toContain(live.state.method);
     expect(bf.provenance[7].tier).toBe(2);
@@ -184,6 +194,11 @@ describe('baselineFunding on the live file', () => {
     expect(bf.provenance[7].method).toContain(
       'uncapped: no ceiling binds San Francisco in the 2026 award records'
     );
+    expect(bf.provenance[7].method).toContain('FY2024-25 dollars, not adjusted');
+    expect(bf.provenance[7].method).toContain(
+      'n and window describe the 2024–2025 new-construction award rows of the check'
+    );
+    expect(bf.provenance[7].method).toContain("the design's evidence digest");
     const last = bf.provenance[8];
     expect(last.tier).toBe(0);
     expect(last.sources).toEqual([
@@ -289,6 +304,25 @@ describe('the MOHCD income mix', () => {
   it('throws when the qualifying rows have no band-coded home', () => {
     expect(() => mohcdMix(parseMohcdRows([mohcdRow('Z', '10', {})]))).toThrow(
       'funding: no MOHCD 100% affordable new-construction rows with income bands'
+    );
+  });
+});
+
+describe('the City entries', () => {
+  it('take their window from city.fiscalYear', () => {
+    const f: FundingFile = structuredClone(live);
+    f.city.fiscalYear = 'FY2023-24';
+    const prov = baselineFunding(f, PER_BAND, AS_OF, LIVE_CAL).baselineFunding.provenance;
+    for (const i of f.city.sources.keys()) {
+      expect(prov[i].window).toEqual(['2023-07-01', '2024-06-30']);
+    }
+  });
+
+  it('cite the debt page without a quote when the cite has none', () => {
+    const prov = baselineFunding(fixture, MOHCD_RAW, AS_OF, FIXTURE_CAL).baselineFunding.provenance;
+    expect(prov[0].method).toContain(
+      "Debt terms: rate 6.0%, 20 years (Exhibit 40), the Analyst's assumption (tier 2); " +
+        'repayment is nominal.'
     );
   });
 });

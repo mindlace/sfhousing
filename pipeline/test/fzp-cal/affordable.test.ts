@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { startCohort } from '../../lib/affordable-cohort';
 import {
   COHORT_MIN_HOMES,
+  SITE_MONTHS,
   affordableRoutes,
   fundedGroup,
   fundedStages,
@@ -12,6 +13,7 @@ import {
 } from '../../lib/fzp-cal/affordable';
 import type { PanelSource, PanelYearRow } from '../../lib/fzp-cal/panel';
 import type { NormHistory, Spell } from '../../lib/fzp-cal/types';
+import { PANEL_LAST_MONTH, PLANNING_START } from '../../lib/fzp-cal/window';
 import { isoToDay } from '../../project-records/multiphase';
 import { initiationHazard } from '../../../src/lib/timelapse/model';
 import { MONTH_DAYS } from '../../../src/lib/timelapse/time';
@@ -371,6 +373,24 @@ describe('siteChoice', () => {
     });
     expect(s.affordable.onPanel).toBe(1);
     expect(s.ratio).toBeNull();
+  });
+
+  it('counts starts from PLANNING_START to the end of PANEL_LAST_MONTH only', async () => {
+    expect(SITE_MONTHS).toEqual([PLANNING_START.slice(0, 7), PANEL_LAST_MONTH]);
+    const years = [2014, 2015, 2025, 2026];
+    const edge: PanelSource = { years, read: async () => [r('A', 2.5)] };
+    const at = (id: string, iso: string) =>
+      hist(id, flagged, { parcelIds: ['A'], entered: { filed: d(iso) } });
+    const norm = [
+      at('before', '2014-12-31'),
+      at('first', '2015-01-01'),
+      at('last', '2025-12-31'),
+      at('after', '2026-01-01')
+    ];
+    const s = await siteChoice(edge, MODEL, norm, area);
+    expect(s.affordable.histories).toBe(4);
+    expect(s.affordable.onPanel + s.affordable.offPanel).toBe(2);
+    expect(s.affordable.onPanel).toBe(2);
   });
 
   it('takes the median of several hazards and the primary parcel', async () => {

@@ -2,10 +2,9 @@
 // parcels.bin, the histories, permits.parquet, the scenario_panel table, the market enrichment
 // (pipeline/enrichment/market.json), the funding enrichment (pipeline/enrichment/funding.json or
 // the mini fixture's) and the locked MOHCD pipeline rows, runs the pure core twice (V29), records
-// the eight sc.* T14
-// tallies and the calibration.* counts into the build's single counts object, and writes
-// scenarios/fzp/calibration.json and calibration-report.md (the latter to the derived cache, not
-// shipped). No network.
+// the eight sc.* T14 tallies and the calibration.* counts into the build's single counts object,
+// and writes scenarios/fzp/calibration.json and calibration-report.md (the latter to the derived
+// cache, not shipped). No network.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { FILL_LEVELS } from '../../src/lib/data/scenario-codec';
