@@ -186,6 +186,16 @@ describe('asOfFromLock', () => {
     };
     expect(asOfFromLock(lock)).toBe(day(2026, 10, 19));
   });
+  it('fetching datasf-mohcd-pipeline alone does not move asOf', () => {
+    const base = PROJECT_SOURCE_IDS.map((id) => e(id, '2026-10-17T08:00:00.000Z'));
+    const without: Lock = { sources: base };
+    const withMohcd: Lock = {
+      sources: [...base, e('datasf-mohcd-pipeline', '2026-11-10T08:00:00.000Z')]
+    };
+    expect(asOfFromLock(withMohcd)).toBe(asOfFromLock(without));
+    expect(asOfFromLock(withMohcd)).toBe(day(2026, 10, 17));
+    expect([...AS_OF_SOURCE_IDS]).not.toContain('datasf-mohcd-pipeline');
+  });
   it('throws on an empty lock', () => {
     expect(() => asOfFromLock({ sources: [] })).toThrow();
   });
