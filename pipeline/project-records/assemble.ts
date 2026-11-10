@@ -70,7 +70,8 @@ export function cmp(a: string, b: string): number {
  */
 export const T3_ONLY_QUALITY: ReadonlySet<string> = new Set([
   PR.parcelsSharedExisting,
-  PR.multiphaseDaNetting
+  PR.multiphaseDaNetting,
+  PR.affordableOverUnits
 ]);
 
 /**

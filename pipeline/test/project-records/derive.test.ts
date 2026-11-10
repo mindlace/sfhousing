@@ -305,6 +305,11 @@ describe('deriveProjects: affordableHomes', () => {
   it('tallies the capped over the projects with a recorded count', () => {
     const r = withAffordable('40');
     expect(r.file.projects.filter((p) => p.affordableHomes != null)).toHaveLength(1);
+    expect(r.counts['quality.pr.affordable.over-units.fired']).toBe(1);
+    expect(r.counts['quality.pr.affordable.over-units.of']).toBe(1);
+    const under = withAffordable('5');
+    expect(under.counts['quality.pr.affordable.over-units.fired']).toBe(0);
+    expect(under.counts['quality.pr.affordable.over-units.of']).toBe(1);
   });
 });
 
