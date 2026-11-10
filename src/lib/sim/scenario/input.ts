@@ -4,7 +4,7 @@
 import type { ParcelId } from '$lib/data/parcel';
 import { FILL_LEVELS, featureValue, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { exp, log as ln } from '$lib/timelapse/math';
-import { initiationHazard } from '$lib/timelapse/model';
+import { initiationLogit } from '$lib/timelapse/model';
 import type { ProjectsFile } from '$lib/timelapse/projects';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import type { Calibration, FeatureId } from '$lib/timelapse/types';
@@ -75,10 +75,25 @@ export function buildSimInput(
 }
 
 export interface Precompute {
-  /** monthly initiation hazard per parcel; 0 = never initiates */
+  /**
+   * monthly initiation hazard per parcel under `s0`, the market step in force at `asOf` (0 without
+   * a market); 0 = never initiates
+   */
   hazard: Float64Array;
   /** log(1 − hazard[i]) from math.ts */
   log1mh: Float64Array;
+  /**
+   * per later market step m (`from` > `asOf`), log(1 − hazard) under that step's shift; [] when
+   * none
+   */
+  stepLog1mh: Float64Array[];
+  /**
+   * The merged segment list: `days` = regime days ∪ later market days, ascending, equal days
+   * merged; for segment j (0 .. days.length) its regime view (0 = this input's parcels) and its
+   * log1mh array. Without later market steps: days = regime days, view[j] = j, log1mh[j] =
+   * j === 0 ? log1mh : regimes[j − 1].log1mh.
+   */
+  segments: { days: Day[]; view: number[]; log1mh: Float64Array[] };
   /**
    * count × F: per parcel, cumulative renormalised size probabilities over the levels with
    * yield[f] > existingUnits (a level that does not qualify adds nothing); the last qualifying
@@ -87,8 +102,8 @@ export interface Precompute {
   sizeCum: Float32Array;
   parcelIndexOf(id: ParcelId): number; // -1 if absent
   /**
-   * the rows that can initiate (hostable, hazard > 0, log1mh < 0), ascending; with regimes, the
-   * rows that can initiate in any view
+   * the rows that can initiate (hostable, hazard > 0, log1mh < 0 under some market step),
+   * ascending; with regimes, the rows that can initiate in any view
    */
   candidates: Int32Array;
   /** `simEntity` of each candidate's parcel id, index-aligned with `candidates` */
@@ -203,9 +218,9 @@ export function piecewiseMonth(
  * u > u* = 1 − (1 − h)^Tmax = 1 − exp(Tmax · log1mh). The bound is u* widened by a relative
  * 1e-6 plus an absolute 1e-12 (u*·(1 + 1e-6) + 1e-12), far above every rounding error of the
  * exact path's `1 − u`, `log` and division and of u* itself, for any u* above 1e-6; below
- * that no bound is used. With regimes (`bounds` = `regimeMonths(asOf, days)`, `views[j]` the
- * log1mh of view j), the piecewise hazard gives u* = 1 − exp(Σ n_j·l_j), n_j the months of
- * 1..Tmax in segment j, with the same widening.
+ * that no bound is used. With segments (regimes or later market steps: `bounds` =
+ * `regimeMonths(asOf, segments.days)`, `views[j]` the log1mh of segment j), the piecewise hazard
+ * gives u* = 1 − exp(Σ n_j·l_j), n_j the months of 1..Tmax in segment j, with the same widening.
  */
 function skipBounds(
   views: readonly Float64Array[],
@@ -291,7 +306,9 @@ export function sizeCumAgainst(input: SimInput, i: number, existing: number): Fl
  * term feature gets 0 (`initiationHazard` would silently use bin 0), reported in one warning.
  * Features read the `fzp` variant: a `baseZoning` view supplies its base columns there. With
  * `regimes`, `hazard`, `log1mh` and `sizeCum` stay `input.parcels`' and `regimes` holds each
- * view's.
+ * view's. `market` (spec §4.8) adds the shift in force at `asOf` to every logit (`z + 0` is `z`
+ * exactly, so without a market every hazard is `initiationHazard`'s), and each later step gets
+ * its own `stepLog1mh` row set; `segments` merges the regime days and the later market days.
  */
 export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Precompute {
   const hit = memo.get(input);
@@ -303,6 +320,19 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
   const hazard = new Float64Array(n);
   const log1mh = new Float64Array(n);
   const sizeCum = new Float32Array(n * F);
+  // the market step in force at asOf (s0) and the later steps
+  const steps = input.market ?? [];
+  let s0 = 0;
+  let k0 = -1;
+  for (let k = 0; k < steps.length; k++) {
+    if (steps[k].from <= input.asOf) {
+      s0 = steps[k].logOdds;
+      k0 = k;
+    }
+  }
+  const later = steps.slice(k0 + 1);
+  const M = later.length;
+  const stepLog1mh = later.map(() => new Float64Array(n));
   const features = {} as Record<FeatureId, number>;
   let bad = 0;
   let firstBad = '';
@@ -321,7 +351,13 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
         }
         features[t.feature] = v;
       }
-      if (finite && sized) hazard[i] = initiationHazard(model, features);
+      if (finite && sized) {
+        const z = initiationLogit(model, features);
+        hazard[i] = 1 / (1 + exp(-(z + s0)));
+        for (let m = 0; m < M; m++) {
+          stepLog1mh[m][i] = ln(1 - 1 / (1 + exp(-(z + later[m].logOdds))));
+        }
+      }
     }
     log1mh[i] = ln(1 - hazard[i]);
   }
@@ -333,8 +369,12 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
   const regimes = regimeInputsOf(input).map((r) => precomputeOf(r, warn));
   const inRegime = new Uint8Array(regimes.length > 0 ? n : 0);
   for (const g of regimes) for (const i of g.candidates) inRegime[i] = 1;
+  const laterStarts = (i: number) => {
+    for (let m = 0; m < M; m++) if (stepLog1mh[m][i] < 0) return true;
+    return false;
+  };
   const isCandidate = (i: number) =>
-    (p.hostable[i] === 1 && hazard[i] > 0 && log1mh[i] < 0) ||
+    (p.hostable[i] === 1 && ((hazard[i] > 0 && log1mh[i] < 0) || (M > 0 && laterStarts(i)))) ||
     (regimes.length > 0 && inRegime[i] === 1);
   let m = 0;
   for (let i = 0; i < n; i++) if (isCandidate(i)) m++;
@@ -345,15 +385,14 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
     candidates[c] = i;
     entity[c++] = entityOf(p.id, i);
   }
-  const views = [log1mh, ...regimes.map((g) => g.log1mh)];
-  const regimeBounds = regimeMonths(
-    input.asOf,
-    (input.regimes ?? []).map((g) => g.day)
-  );
+  const segments = segmentsOf(input, later, log1mh, stepLog1mh, regimes);
+  const segmentBounds = regimeMonths(input.asOf, segments.days);
   const bounds = new Map<Day, Float64Array>();
   const pre: Precompute = {
     hazard,
     log1mh,
+    stepLog1mh,
+    segments,
     sizeCum,
     parcelIndexOf: (id) => p.index.get(id) ?? -1,
     candidates,
@@ -362,7 +401,7 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
       let b = bounds.get(horizon);
       if (!b) {
         const Tmax = lastInitiationMonth(input.asOf, horizon);
-        b = skipBounds(views, candidates, Tmax, regimeBounds);
+        b = skipBounds(segments.log1mh, candidates, Tmax, segmentBounds);
         bounds.set(horizon, b);
       }
       return b;
@@ -371,4 +410,35 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
   };
   memo.set(input, pre);
   return pre;
+}
+
+/**
+ * The merged segment list (`Precompute.segments`): the regime days and the later market days,
+ * ascending with equal days merged. Segment j starts on `asOf` (j = 0) or `days[j − 1]` and runs
+ * on the regime in force on that day (its view's precompute, which has the same market) at the
+ * market step in force on that day (0 = the step at `asOf`).
+ */
+function segmentsOf(
+  input: SimInput,
+  later: readonly { from: Day }[],
+  log1mh: Float64Array,
+  stepLog1mh: Float64Array[],
+  regimes: Precompute[]
+): Precompute['segments'] {
+  const rd = (input.regimes ?? []).map((g) => g.day);
+  const md = later.map((s) => s.from);
+  const days = [...new Set([...rd, ...md])].sort((a, b) => a - b);
+  const view: number[] = [];
+  const rates: Float64Array[] = [];
+  for (let j = 0; j <= days.length; j++) {
+    const start = j === 0 ? input.asOf : days[j - 1];
+    let v = 0;
+    while (v < rd.length && rd[v] <= start) v++;
+    let step = 0;
+    while (step < md.length && md[step] <= start) step++;
+    const own = v === 0 ? { log1mh, stepLog1mh } : regimes[v - 1];
+    view.push(v);
+    rates.push(step === 0 ? own.log1mh : own.stepLog1mh[step - 1]);
+  }
+  return { days, view, log1mh: rates };
 }
