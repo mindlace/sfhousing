@@ -41,7 +41,8 @@ const T4D_KEYS = [
   'storiesProposed',
   'baseStoriesAtFiling',
   'sources',
-  'quality'
+  'quality',
+  'planningProposed'
 ];
 
 function project(r: DeriveResult, id: string) {

@@ -170,6 +170,9 @@ export interface ProjectHistory {
     key?: string; // field to query, e.g. 'case_no'; absent = the dataset's record-id field
   }[];
   quality: string[]; // sorted T14 rule ids that changed or estimated a value of this history; [] if none
+  /** The primary Planning record's `number_of_units_prop` and `number_affordable_units_prop`;
+   * null when the project has no primary Planning record. Absent (hand-built histories) = null. */
+  planningProposed?: { units: number | null; affordable: number | null } | null;
 }
 
 /** `pipeline/.cache/derived/<datasetVersion>/project-histories.json`; never shipped. */

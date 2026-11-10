@@ -289,7 +289,8 @@ export function orderHistory(h: ProjectHistory): ProjectHistory {
     storiesProposed: h.storiesProposed,
     baseStoriesAtFiling: h.baseStoriesAtFiling,
     sources: h.sources.map(orderSource),
-    quality: [...h.quality]
+    quality: [...h.quality],
+    planningProposed: h.planningProposed ?? null
   };
 }
 

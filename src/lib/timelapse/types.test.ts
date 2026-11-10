@@ -142,6 +142,7 @@ interface RowProjectHistory {
   baseStoriesAtFiling: number | null;
   sources: { dataset: string; id: string; key?: string }[];
   quality: string[];
+  planningProposed?: { units: number | null; affordable: number | null } | null;
 }
 type RowProjectHistoriesFile = { schema: 1; asOf: Day; histories: RowProjectHistory[] };
 

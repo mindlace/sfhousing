@@ -574,7 +574,10 @@ function history(a: Assessed, input: ProjectRecordsInput): ProjectHistory {
     storiesProposed: a.stories.stories,
     baseStoriesAtFiling: baseStoriesAt(a.proj.parcelIds, a.rollYear, input.baseStories),
     sources: withEvidenceSources(sourcesOf(a.proj), a.stale.evidenceBpas),
-    quality: historyQuality(a.quality)
+    quality: historyQuality(a.quality),
+    planningProposed: a.proj.primary
+      ? { units: a.proj.primary.unitsProp, affordable: a.proj.primary.affordableProp }
+      : null
   };
 }
 
