@@ -6,6 +6,8 @@ import type { Pathway, Stage } from '$lib/timelapse/types';
 import { transitionSectionId } from './card';
 import { MEASURE_SERIES, SERIES_NAME } from './chart';
 import { fixtureCalibration, tier3Calibration } from './fixtures/calibration';
+import { liveMarketCalibration } from './fixtures/market';
+import { MARKET_HOLD_SENTENCE, MARKET_INTRO_SENTENCE } from './market-view';
 import { PROJECTS_JSON, PROJECTS_JSON_NO_RULES } from './fixtures/projects';
 import { TIMELINE_SCORE, TIMELINE_SCORE_NO_PHASING } from './fixtures/timeline-score';
 import { EXIT_LABEL, TIER_LABEL, inStageLabel } from './labels';
@@ -444,5 +446,40 @@ describe('loadProjectsFile', () => {
 
   it('has the failure copy', () => {
     expect(QUALITY_LOAD_FAILED).toBe("The list of data checks couldn't be loaded.");
+  });
+});
+
+describe("today's market", () => {
+  const live = liveMarketCalibration();
+  const liveSections = provenanceSections(live, TIMELINE_SCORE);
+
+  it('adds the initiation intro and the src-market section right after it', () => {
+    expect(section('src-initiation', liveSections).intro).toEqual([MARKET_INTRO_SENTENCE]);
+    const ids = liveSections.map((s) => s.id);
+    expect(ids[ids.indexOf('src-initiation') + 1]).toBe('src-market');
+    const m = section('src-market', liveSections);
+    expect(m.heading).toBe("Today's market");
+    expect(m.intro).toEqual([MARKET_HOLD_SENTENCE]);
+    expect(m.tables).toEqual([]);
+    expect(m.entries.map((e) => e.id)).toEqual(['src-market-today']);
+  });
+
+  it('states both levels and the cross-check as lines of one non-research entry', () => {
+    const e = entryOf('src-market-today', liveSections);
+    expect(e.title).toBe("Today's level");
+    expect(e.research).toBe(false);
+    expect(e.lines).toContain(TIER_LABEL[2]);
+    expect(e.lines).toContain('All starts: 52% of the average (log-odds −0.64). In force.');
+    const priv = e.lines.find((l) => l.startsWith('Private starts only: 47% of the average'));
+    expect(priv?.endsWith('Not in force until public funding is modelled.')).toBe(true);
+    expect(e.lines).toContain(
+      "Cross-check, not used: the Controller's development model, on its cost and price indices, puts today's odds at 27% of the 2007 to 2025 average (research or literature, tier 3)."
+    );
+    expect(e.lines).not.toContain(NOT_SF_NOTE);
+  });
+
+  it('adds nothing without a market', () => {
+    expect(section('src-initiation').intro).toEqual([]);
+    expect(sections.some((s) => s.id === 'src-market')).toBe(false);
   });
 });

@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { SOURCE_DATASETS } from '../src/lib/fzp/card';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { monthStart } from '../src/lib/fzp/time';
-import { formatCount } from '../src/lib/scoreboard/format';
+import { formatCount, formatPercent } from '../src/lib/scoreboard/format';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { slider, startRun } from './helpers/run';
 import {
@@ -45,6 +45,9 @@ interface ProjectsFixture {
 }
 interface CalibrationFixture {
   transitions: Record<string, Record<string, unknown>>;
+  market?: {
+    today: { observed: { all: number; private: number }; implied: number };
+  };
 }
 
 const projectsFile = readJson<ProjectsFixture>('scenarios/fzp/projects.json');
@@ -920,6 +923,26 @@ test('axe: the Results face open', async ({ page }) => {
   await gotoFzp(page);
   await openScore(page);
   await expectNoA11yViolations(page);
+});
+
+test("Results' Sources state today's market", async ({ page }) => {
+  const market = calibration.market;
+  expect(market, 'fixture-0 gains calibration.market at the Release 1 regeneration').toBeDefined();
+  const { observed, implied } = market!.today;
+  await gotoFzp(page);
+  const results = await openScore(page);
+  const paragraph = results.getByTestId('fzp-market');
+  await expect(paragraph).toContainText(String(observed.all));
+  await expect(paragraph).toContainText(String(Math.round(implied)));
+  await expect(paragraph).toContainText(formatPercent(observed.all / implied));
+  await expectNoA11yViolations(page);
+
+  await results.getByRole('button', { name: 'Where these numbers come from' }).click();
+  const dialog = sourcesDialog(page);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("Today's market", { exact: true }).first()).toBeVisible();
+  await expect(dialog.getByText('Assumption, not data').first()).toBeVisible();
+  await expectNoA11yViolations(page, { include: 'dialog[open]', structure: true });
 });
 
 test('at 375 px in a run, a project card stays below the header while Results peeks', async ({

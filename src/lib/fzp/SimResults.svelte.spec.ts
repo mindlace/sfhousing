@@ -37,6 +37,7 @@ type Overrides = Partial<{
   onsources: () => void;
   copy: ReturnType<typeof scoreCopy>;
   capacity: LeverCapacity | null;
+  market: string | null;
 }>;
 
 const props = (over: Overrides = {}) => {
@@ -562,5 +563,23 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
     ]) {
       expect(el.classList.contains('pointer-coarse:min-h-11'), el.outerHTML).toBe(true);
     }
+  });
+});
+
+describe('the market paragraph', () => {
+  it('sits right after the first paragraph of Sources', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: props({ market: 'X sentence' }) });
+    openSources();
+    const m = sources().querySelector('[data-testid="fzp-market"]')!;
+    expect(m.textContent).toBe('X sentence');
+    expect(sources().querySelector('p')!.nextElementSibling).toBe(m);
+  });
+
+  it.each([undefined, null])('renders nothing for %s', async (market) => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: props({ market }) });
+    openSources();
+    expect(sources().querySelector('[data-testid="fzp-market"]')).toBeNull();
   });
 });
