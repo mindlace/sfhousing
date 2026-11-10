@@ -19,7 +19,7 @@ import {
   type Stage
 } from '../../../src/lib/timelapse/types';
 import { qualityRule } from '../quality';
-import { OUTCOMES, ajSweep } from './aalen-johansen';
+import { OUTCOMES, ajEnd } from './aalen-johansen';
 import {
   FZP_BAND,
   INITIAL_EDGES,
@@ -129,26 +129,6 @@ function netUnits(h: ProjectHistory): number {
     if (typeof u === 'number' && Number.isFinite(u)) return u - h.existingUnits;
   }
   return 0;
-}
-
-/** AJ cumulative incidence at the end of observation (no table, no tail), weighted as given. */
-export function ajEnd(spells: Spell[]): { advance: number; exit: number } | null {
-  const sw = ajSweep(spells);
-  if (sw.d.length === 0) return null;
-  let S = 1;
-  let advance = 0;
-  let exit = 0;
-  for (let i = 0; i < sw.d.length; i++) {
-    let sum = 0;
-    for (const j of OUTCOMES) {
-      const h = sw.e[j][i] / sw.n[i];
-      if (j === 'advance') advance += S * h;
-      else exit += S * h;
-      sum += h;
-    }
-    S *= 1 - sum;
-  }
-  return { advance, exit };
 }
 
 function header(x: ReportInput): string[] {

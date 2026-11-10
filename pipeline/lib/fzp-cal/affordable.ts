@@ -16,12 +16,11 @@ import {
   type Pathway
 } from '../../../src/lib/timelapse/types';
 import { isAffordableCohort, startCohort } from '../affordable-cohort';
-import { OUTCOMES, ajSweep } from './aalen-johansen';
+import { ajCurve } from './aalen-johansen';
 import type { FundingReport } from './funding';
 import { firstEntered, primaryParcel, type PanelSource, type PanelYearRow } from './panel';
 import { firstRecord } from './pathway-mix';
 import { datasf } from './provenance';
-import { ajEnd } from './report';
 import { roundShares } from './round';
 import type { CalStage, NormHistory, Spell } from './types';
 import { PLANNING_START } from './window';
@@ -106,6 +105,7 @@ export function affordableRoutes(
         tier: 4,
         label: 'Pathway mix of 100% affordable projects (tier 4: the mix of all new projects)',
         sources,
+        // the spec's verbatim wording (§4.4), written for the default threshold of 30
         method: `Only ${n} 100% affordable histories (fewer than 30); the pathway mix of all new projects is used in their place`,
         n,
         window
@@ -142,26 +142,16 @@ const FUNDED_STAGES: readonly CalStage[] = [
 
 /**
  * The smallest event duration at which the advance cumulative incidence reaches half its end
- * value, in months; null with no advance. Same recursion as `ajEnd`. The comparison allows a
- * relative 1e-12 (floating-point tolerance, not a model number).
+ * value, in months, read off the one curve; null with no advance. The comparison allows a
+ * relative 1e-12, a floating-point tolerance and not a model number: a half reached in exact
+ * arithmetic can miss by an ulp (1/3 + (1 − 1/3) × 1/2 is one ulp above 2 × 1/3). The last
+ * value is the end value, so the search always finds an index.
  */
-function medianMonths(spells: Spell[], end: number): number | null {
+function medianMonths(c: { d: number[]; advance: number[] }): number | null {
+  const end = c.advance[c.advance.length - 1];
   if (end <= 0) return null;
-  const sw = ajSweep(spells);
-  const half = end / 2;
-  let S = 1;
-  let advance = 0;
-  for (let i = 0; i < sw.d.length; i++) {
-    let sum = 0;
-    for (const j of OUTCOMES) {
-      const h = sw.e[j][i] / sw.n[i];
-      if (j === 'advance') advance += S * h;
-      sum += h;
-    }
-    S *= 1 - sum;
-    if (advance >= half * (1 - 1e-12)) return sw.d[i] / MONTH_DAYS;
-  }
-  return null;
+  const i = c.advance.findIndex((v) => v >= (end / 2) * (1 - 1e-12));
+  return c.d[i] / MONTH_DAYS;
 }
 
 function stageRow(stage: CalStage, group: FundedGroup, spells: Spell[]): StageRow {
@@ -171,16 +161,17 @@ function stageRow(stage: CalStage, group: FundedGroup, spells: Spell[]): StageRo
     if (s.outcome === 'advance') advances++;
     else if (s.outcome !== 'censored') exits++;
   }
-  const end = ajEnd(spells);
+  const c = ajCurve(spells);
+  const last = c === null ? -1 : c.d.length - 1;
   return {
     stage,
     group,
     spells: spells.length,
     advances,
     exits,
-    eventualAdvance: end?.advance ?? null,
-    eventualExit: end?.exit ?? null,
-    medianMonths: end === null ? null : medianMonths(spells, end.advance)
+    eventualAdvance: c === null ? null : c.advance[last],
+    eventualExit: c === null ? null : c.exit[last],
+    medianMonths: c === null ? null : medianMonths(c)
   };
 }
 
