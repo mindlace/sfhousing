@@ -190,6 +190,117 @@ export function oddsShift(g: Dollars, kind: ProjectKind, p: Prototype, slope: nu
   return (slope * g) / costPerHome(kind, p);
 }
 
+export interface ItemFunding {
+  /** exact dollars per home this item is worth to the project */
+  grantEquivalent: number;
+  /** exact grant dollars per home this item pays (after the cap) */
+  granted: number;
+  /** exact loan principal per home */
+  lent: number;
+  /** exact guaranteed private principal per home */
+  guaranteed: number;
+  /** exact reserve per home held in the pool */
+  reserve: number;
+}
+
+export interface BundleFunding {
+  items: ItemFunding[];
+  grantEquivalent: number;
+  coverage: number;
+  certain: boolean;
+}
+
+/** 0 federal, 1 state, 2 the City (`bank`, `dedicatedTax`, `generalRevenue`, `goBond`, `cop`). */
+function tierOf(poolKind: PoolKind): 0 | 1 | 2 {
+  switch (poolKind) {
+    case 'federal':
+      return 0;
+    case 'state':
+      return 1;
+    case 'bank':
+    case 'dedicatedTax':
+    case 'generalRevenue':
+    case 'goBond':
+    case 'cop':
+      return 2;
+    default:
+      throw new RangeError(`Unknown pool kind: ${String(poolKind)}`);
+  }
+}
+
+/**
+ * Prices a bundle per home in three tiers, federal, state, then the City (spec 4.5, row F8).
+ * Within a tier, loans and guarantees count first at full value; the tier's grants then fit
+ * in what remains of the uncovered cost or are scaled by one fraction to cover exactly it.
+ */
+export function fundBundle(
+  items: readonly BundleItem[],
+  kind: ProjectKind,
+  p: Prototype,
+  terms: MarketTerms | ResolvedTerms
+): BundleFunding {
+  const t = resolved(terms);
+  const tiers = items.map((item) => tierOf(item.poolKind));
+  for (const item of items) checkPriceable(item.instrument, t);
+  if (items.length === 0) return { items: [], grantEquivalent: 0, coverage: 0, certain: false };
+
+  const U = uncoveredPerHome(kind, p);
+  const C = costPerHome(kind, p);
+  const out: ItemFunding[] = items.map(() => ({
+    grantEquivalent: 0,
+    granted: 0,
+    lent: 0,
+    guaranteed: 0,
+    reserve: 0
+  }));
+
+  // First pass: each tier's loan-and-guarantee total L_t and grant total S, in input order.
+  const L = [0, 0, 0];
+  const S = [0, 0, 0];
+  items.forEach(({ instrument: inst }, i) => {
+    const tier = tiers[i];
+    const o = out[i];
+    if (inst.kind === 'grant') {
+      o.granted = inst.share * U;
+      S[tier] += o.granted;
+      return;
+    }
+    o.grantEquivalent = exactGrantEquivalent(inst, kind, p, t);
+    L[tier] += o.grantEquivalent;
+    if (inst.kind === 'loan') {
+      o.lent = inst.costShare * C;
+    } else {
+      o.guaranteed = inst.costShare * C;
+      o.reserve = inst.reserve * o.guaranteed;
+    }
+  });
+
+  // Second pass: price each tier's grants against what remains.
+  let R = U;
+  let total = 0;
+  const factor = [1, 1, 1];
+  for (let tier = 0; tier < 3; tier++) {
+    total += L[tier];
+    R = Math.max(0, R - L[tier]);
+    if (S[tier] <= R) {
+      total += S[tier];
+      R -= S[tier];
+    } else {
+      factor[tier] = R / S[tier];
+      total += R;
+      R = 0;
+    }
+  }
+  items.forEach(({ instrument: inst }, i) => {
+    if (inst.kind !== 'grant') return;
+    out[i].granted *= factor[tiers[i]];
+    out[i].grantEquivalent = out[i].granted;
+  });
+
+  const cov = total / U;
+  return { items: out, grantEquivalent: total, coverage: cov, certain: isCertain(cov) };
+}
+
 /** The one place exact per-home amounts become whole project dollars. */
 export function projectDollars(perHome: number, homes: number): Dollars {
   return Math.round(perHome * homes);
