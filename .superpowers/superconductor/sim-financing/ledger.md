@@ -190,4 +190,6 @@
 
 **Pointers.** Coverage: the design's "Row ownership" and `fidelity-seams.md` leg 1. Traceability: the design's "Traceability" table and `fidelity-seams.md` leg 4. Ground-truth coverage: the design's last section and the survey entries at the top of this ledger.
 
+**Commit.** The package is commit `de6d1850` on branch `worktree-sim-financing` (base `2c7711fe`), not pushed; this entry is recorded in the commit that follows it.
+
 **Next.** Conduction starts in a fresh session with `supersonic:superconductor`. No operator was dispatched from the composition session.
