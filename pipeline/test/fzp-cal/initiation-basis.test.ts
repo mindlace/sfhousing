@@ -318,9 +318,10 @@ describe('fitInitiation', () => {
     expect(model.provenance.window).toEqual(['2007-01-01', '2025-12-31']);
     expect(model.provenance.n).toBe(panel.events.record + panel.events.permit);
     expect(model.provenance.method).toContain(
-      'this is not a market adjustment; basis coefficient = '
+      "it is the average market of the panel years. Today's market is a separate shift, `calibration.market.today`, which the simulation adds to every lot's log-odds; basis coefficient = "
     );
     expect(model.provenance.method).toContain(String(report.basis));
+    expect(model.provenance.method).not.toContain('this is not a market adjustment');
   });
 
   it('publishes the merged edges', () => {

@@ -1,13 +1,15 @@
 // The stage-calibration build step (stage-calibration spec §4.3, §4.10): reads projects.json,
-// parcels.bin, the histories, permits.parquet and the scenario_panel table, runs the pure core
-// twice (V29), records the seven sc.* T14 tallies and the calibration.* counts into the build's
-// single counts object, and writes scenarios/fzp/calibration.json and calibration-report.md (the
-// latter to the derived cache, not shipped). No network.
+// parcels.bin, the histories, permits.parquet, the scenario_panel table and the market enrichment
+// (pipeline/enrichment/market.json), runs the pure core twice (V29), records the seven sc.* T14
+// tallies and the calibration.* counts into the build's single counts object, and writes
+// scenarios/fzp/calibration.json and calibration-report.md (the latter to the derived cache, not
+// shipped). No network.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { FILL_LEVELS } from '../../src/lib/data/scenario-codec';
 import { parseProjectsFile } from '../../src/lib/timelapse/projects';
 import type { Day, ProjectHistoriesFile } from '../../src/lib/timelapse/types';
+import { parseMarketFile } from '../enrichment/market-schema';
 import type { Duck } from '../lib/duck';
 import { calibrate, type CalOutput } from '../lib/fzp-cal/calibrate';
 import { duckPanelSource } from '../lib/fzp-cal/panel';
@@ -24,6 +26,8 @@ import { PARCELS_BIN, readParcelsBin } from './scenario';
 
 export const CALIBRATION_JSON = 'scenarios/fzp/calibration.json';
 export const CALIBRATION_REPORT_MD = 'calibration-report.md';
+/** The Controller market enrichment (market-baseline spec §4.6): live and fixture builds read it. */
+export const MARKET_JSON = resolve(import.meta.dirname, '../enrichment/market.json');
 
 /** The `permits.parquet` columns, in `PermitRow` order. */
 export const PERMIT_ROW_COLUMNS: readonly (keyof PermitRow)[] = [
@@ -102,7 +106,14 @@ export async function writeCalibration(o: {
   histories?: ProjectHistoriesFile;
   cal: CalProfile;
   counts: Record<string, number>;
+  /** defaults to MARKET_JSON */
+  marketPath?: string;
 }): Promise<{ warnings: string[]; checks: InvariantResult[] }> {
+  const marketPath = o.marketPath ?? MARKET_JSON;
+  const market = {
+    file: parseMarketFile(JSON.parse(readFileSync(marketPath, 'utf8')), marketPath),
+    path: marketPath
+  };
   const projects = parseProjectsFile(
     JSON.parse(readFileSync(join(o.outDir, PROJECTS_JSON), 'utf8'))
   );
@@ -125,7 +136,8 @@ export async function writeCalibration(o: {
     parcels,
     inFlight: projects.projects,
     fillLevels: FILL_LEVELS,
-    datasetVersion: o.datasetVersion
+    datasetVersion: o.datasetVersion,
+    market
   };
   const a = await calibrate(input, o.cal);
   const b = await calibrate(input, o.cal);

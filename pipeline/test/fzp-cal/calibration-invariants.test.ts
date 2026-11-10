@@ -16,7 +16,8 @@ import { FIXTURE_CAL } from '../../lib/fzp-cal/config';
 import { checkV25, checkV26, checkV27 } from '../../lib/fzp-cal/invariants';
 import { duckPanelSource } from '../../lib/fzp-cal/panel';
 import { which } from '../../lib/exec';
-import { CALIBRATION_JSON, readPermits, sameRuns } from '../../steps/calibration';
+import { CALIBRATION_JSON, MARKET_JSON, readPermits, sameRuns } from '../../steps/calibration';
+import { parseMarketFile } from '../../enrichment/market-schema';
 import { checkDataset, type InvariantResult } from '../../steps/check';
 import { fixture } from '../../steps/fixture';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON } from '../../steps/projects';
@@ -289,7 +290,11 @@ describe('calibration invariants on fixture-0', () => {
         parcels: readParcelsBin(join(outDir, PARCELS_BIN)),
         inFlight: projects.projects,
         fillLevels: FILL_LEVELS,
-        datasetVersion: 'fixture-0'
+        datasetVersion: 'fixture-0',
+        market: {
+          file: parseMarketFile(JSON.parse(readFileSync(MARKET_JSON, 'utf8')), MARKET_JSON),
+          path: MARKET_JSON
+        }
       };
       const a = await calibrate(input, FIXTURE_CAL);
       const b = await calibrate(input, FIXTURE_CAL);

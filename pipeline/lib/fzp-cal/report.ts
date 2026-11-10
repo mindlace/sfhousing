@@ -1,5 +1,6 @@
 /**
- * `calibration-report.md` (stage-calibration spec §4.10): the ten sections in order, deterministic
+ * `calibration-report.md` (stage-calibration spec §4.10; section 11, market-baseline spec §4.7): the
+ * eleven sections in order, deterministic
  * Markdown with no wall-clock time. Pipeline-internal, never shipped. Every number is printed by
  * `num`, which writes a non-finite value as "none".
  */
@@ -11,6 +12,7 @@ import {
   PATHWAYS,
   STAGE_ORDER,
   type Calibration,
+  type MarketModel,
   type Pathway,
   type ProjectHistory,
   type Provenance,
@@ -24,7 +26,9 @@ import {
   type InitiationReport,
   type InitiationTermReport
 } from './initiation';
+import type { MarketReport } from './market';
 import type { FitCell, InitiationEvents, PanelResult } from './panel';
+import { sig6 } from './tail';
 import type { PurgeExit } from './purge';
 import { REVISION_EDGES } from './revision';
 import { SIZE_EDGES } from './size';
@@ -72,10 +76,12 @@ export interface ReportInput {
   backcast: { ok: boolean; detail: string };
   lpDiag: { filings: number; medianFiledToEntitled: number | null };
   phaseGap: { rung: 1 | 2 | 3; groups: number };
+  /** today's market, the weights and the cross-check (market-baseline spec §4.7) */
+  market: MarketReport;
   warnings: string[];
 }
 
-/** The ten section headings, in order (spec §4.10). */
+/** The eleven section headings, in order (spec §4.10; market-baseline spec §4.7). */
 export const REPORT_SECTIONS = [
   '# Calibration report',
   '## 2. Fitting windows',
@@ -86,7 +92,8 @@ export const REPORT_SECTIONS = [
   '## 7. New projects: pathway mix and ppaShare',
   '## 8. Parameter index',
   '## 9. Method constants',
-  '## 10. Data-quality rules (sc.*) and method counts'
+  '## 10. Data-quality rules (sc.*) and method counts',
+  "## 11. Today's market"
 ] as const;
 
 /** A number for the report: integers as is, others to 6 significant digits, non-finite "none". */
@@ -591,6 +598,14 @@ function provenanceIndex(c: Calibration): [string, Provenance][] {
     ['streamlinedForLocalProgram', c.streamlinedForLocalProgram],
     ['phaseGap.provenance', c.phaseGap.provenance]
   );
+  if (c.market) {
+    out.push(
+      ['market.today.provenance', c.market.today.provenance],
+      ['market.crossCheck.provenance', c.market.crossCheck.provenance],
+      ['market.slope.provenance', c.market.slope.provenance],
+      ['market.slope.crossChecks.provenance', c.market.slope.crossChecks.provenance]
+    );
+  }
   return out;
 }
 
@@ -733,7 +748,117 @@ function rulesSection(x: ReportInput): string[] {
   return out;
 }
 
-/** The calibration report (spec §4.10): ten sections, deterministic. */
+function requireMarket(c: Calibration): MarketModel {
+  if (!c.market) throw new Error('calibration report: calibration.market is missing');
+  return c.market;
+}
+
+/**
+ * Section 11 (market-baseline spec §4.7): today's levels against the published model, the checks,
+ * the public-money weights and the Controller cross-check. In fixture mode, the Mode line and the
+ * weights and cross-check only.
+ */
+export function marketSection(m: MarketModel, r: MarketReport): string[] {
+  const t = m.today;
+  const [y0, y1] = t.years;
+  const span = `${y0}-${y1}`;
+  const [w0, w1] = r.years;
+  const out: string[] = [REPORT_SECTIONS[10], ''];
+  if (r.mode === 'fixture') {
+    out.push(
+      `Mode: fixture (today's levels fixed at ln 0.5 and ln 0.45 from ${num(t.observed.all)} and ${num(t.observed.private)} observed against ${num(t.implied)} implied; tier 4)`,
+      ''
+    );
+  } else {
+    const c = r.cohorts;
+    out.push(
+      '**Recent years**',
+      '',
+      ...table(
+        [
+          'year',
+          'observed',
+          'affordable cohort',
+          'private',
+          'implied (published hazard)',
+          'hold-out predicted'
+        ],
+        r.rows.map((row) => [
+          String(row.year),
+          row.observed,
+          row.affordable,
+          row.private,
+          row.implied,
+          num(row.holdOutPredicted)
+        ])
+      ),
+      '',
+      `- today.all = ${num(t.all)}; today.private = ${num(t.private)}; years ${y0} to ${y1}`,
+      `- observed ${num(t.observed.all)} (private ${num(t.observed.private)}); implied ${num(t.implied)}`,
+      `- the recent starts by cohort: affordable ${num(c.affordable)}, private ${num(c.private)}, no Planning record ${num(c.noRecord)}, counts not recorded ${num(c.unknown)}`,
+      '',
+      `**Reproduction check**: The published model shifted by today.all predicts ${num(r.reproduction)} starts for ${span} against ${num(t.observed.all)} observed.`,
+      ''
+    );
+    const ho = r.holdOut;
+    if (ho === null) out.push('**Hold-out, report only**: none.', '');
+    else if ('error' in ho) {
+      out.push(`**Hold-out, report only**: the hold-out refit failed: ${ho.error}.`, '');
+    } else {
+      out.push(
+        `**Hold-out, report only**: Fitted on ${PANEL_FIRST_MONTH.slice(0, 4)}-${y0 - 1} only, the model predicts ${num(ho.predicted)} starts for ${span}: ln(${num(t.observed.all)} ÷ ${num(ho.predicted)}) = ${num(sig6(ho.logRatio))}. This is evidence of the cycle and is not applied: the published model already contains part of the slowdown (OD-F11).`,
+        ''
+      );
+    }
+  }
+  out.push(
+    '**Public-money weights**',
+    '',
+    ...table(
+      [
+        'prototype',
+        'rule',
+        `private starts ${w0}-${w1}`,
+        'weight',
+        'uncovered per home',
+        'cost per home',
+        'uncovered share'
+      ],
+      r.weights.map((w) => [
+        w.id,
+        w.rule,
+        w.starts,
+        w.weight,
+        w.uncoveredPerHome,
+        w.costPerHome,
+        w.uncoveredShare
+      ])
+    ),
+    '',
+    ...(r.equalWeights
+      ? [`- no private start of ${w0}-${w1} has a prototype: every prototype weighs the same`]
+      : []),
+    `- unbinned private starts ${w0}-${w1}: ${num(r.unbinned.homes)} with homes not recorded; ${num(r.unbinned.stories)} of 25 homes or more with stories not recorded`,
+    `- typicalUncoveredShare = ${num(r.typicalUncoveredShare)}`,
+    `- slope.perCostShare = ${num(m.slope.perCostShare)}`,
+    `- typicalCostOverValue = ${num(r.typicalCostOverValue)}`,
+    `- cross-check slopes (reported, not applied): costCoefficient = ${num(m.slope.crossChecks.costCoefficient)}; priceCoefficient = ${num(m.slope.crossChecks.priceCoefficient)}`,
+    '',
+    "**The Controller's cross-check (reported, not applied)**",
+    '',
+    `crossCheck.logOdds = ${num(m.crossCheck.logOdds)}, from the lagged index means: cost ${num(r.means.costRecent)} (recent) against ${num(r.means.costReference)} (reference); price ${num(r.means.priceRecent)} (recent) against ${num(r.means.priceReference)} (reference). Gap to today.all: today.all − crossCheck.logOdds = ${num(sig6(t.all - m.crossCheck.logOdds))}.`
+  );
+  if (r.mode !== 'fixture') {
+    out.push(
+      '',
+      `**Market warnings**:${r.warnings.length === 0 ? ' none' : ''}`,
+      ...r.warnings.map((w) => `- ${w}`)
+    );
+  }
+  return out;
+}
+
+/** The calibration report (spec §4.10): eleven sections, deterministic. */
 export function calibrationReport(x: ReportInput): string {
   const sections = [
     header(x),
@@ -745,7 +870,8 @@ export function calibrationReport(x: ReportInput): string {
     newProjectsSection(x),
     indexSection(x),
     constantsSection(x),
-    rulesSection(x)
+    rulesSection(x),
+    marketSection(requireMarket(x.calibration), x.market)
   ];
   return sections.map((s) => s.join('\n')).join('\n\n') + '\n';
 }

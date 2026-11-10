@@ -9,6 +9,7 @@ import { featureValue } from '../../../src/lib/data/scenario-codec';
 import { CalibrationFormatError, parseCalibration } from '../../../src/lib/timelapse/model';
 import type { InFlightProject } from '../../../src/lib/timelapse/projects';
 import type { Calibration, Day, FeatureId, ProjectHistory } from '../../../src/lib/timelapse/types';
+import type { MarketFile } from '../../enrichment/market-schema';
 import { isoToDay } from '../../project-records/multiphase';
 import {
   FZP_BAND,
@@ -18,6 +19,7 @@ import {
   fitInitiation,
   type FzpApplication
 } from './initiation';
+import { marketModel } from './market';
 import { aggregatePanel, firstFiledDays, initiationEvents, type PanelSource } from './panel';
 import {
   localProgramDiagnostic,
@@ -52,6 +54,8 @@ export interface CalInput {
   inFlight: InFlightProject[];
   fillLevels: readonly number[];
   datasetVersion: string;
+  /** the parsed `pipeline/enrichment/market.json` and its path (for error messages) */
+  market: { file: MarketFile; path: string };
 }
 
 export interface CalOutput {
@@ -127,6 +131,18 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
   const init = fitInitiation(panel, cal, fzpApplication(parcels, input.inFlight), {
     permitOnlyPre2015: n.method.permitOnlyPre2015
   });
+  // Today's market (market-baseline spec §4.6), from the initiation report and the panel starts.
+  const r = init.report;
+  const mk = marketModel({
+    fixture: cal.fixtureInitiation,
+    impliedPerYear: r.impliedPerYear,
+    observedPerYear: r.observedPerYear,
+    recentCells: r.recentCells,
+    holdOut: r.holdOut,
+    starts: panel.starts,
+    enrichment: input.market,
+    initiationSources: init.model.provenance.sources
+  });
 
   // §4.7, §4.7a, §4.8, §4.9.
   const forNew = pathwayForNew(p.norm, input.inFlight, asOf, cal);
@@ -152,7 +168,8 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     size: size.size,
     revision: rev.revision,
     streamlinedForLocalProgram: localProgram,
-    phaseGap: gaps.phaseGap
+    phaseGap: gaps.phaseGap,
+    market: mk.market
   };
   const json = JSON.stringify(calibration);
   try {
@@ -197,15 +214,16 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     'calibration.purge.windows': p.windows.length
   };
   for (const [k, v] of Object.entries(fit.spellsCount)) counts[k] = v;
+  for (const [k, v] of Object.entries(mk.report.counts)) counts[k] = v;
 
   const warnings = [...fit.warnings];
-  const r = init.report;
   if (r.fzpWarning) {
     const ratio = r.fzpVsHistorical === null ? 'none' : sig(r.fzpVsHistorical);
     warnings.push(
       `initiation: FZP expected filings ${sig(r.fzpPerYear)} per year vs historical mean ${sig(r.historicalMean)} (ratio ${ratio}) outside the [${FZP_BAND[0]}, ${FZP_BAND[1]}] band`
     );
   }
+  warnings.push(...mk.report.warnings);
   const backcast = backcastGate(r);
 
   const reportMd = calibrationReport({
@@ -228,6 +246,7 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     backcast,
     lpDiag,
     phaseGap: { rung: gaps.rung, groups: gaps.groups },
+    market: mk.report,
     warnings
   });
 

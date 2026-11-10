@@ -1,4 +1,5 @@
 // The pure core `calibrate` and its report (stage-calibration spec §4.3–§4.10).
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { FILL_LEVELS, type ScenarioParcels } from '../../../src/lib/data/scenario-codec';
@@ -19,13 +20,22 @@ import {
   type CalOutput
 } from '../../lib/fzp-cal/calibrate';
 import { FIXTURE_CAL } from '../../lib/fzp-cal/config';
+import { marketModel, type MarketInput } from '../../lib/fzp-cal/market';
+import { logistic } from '../../lib/fzp-cal/irls';
+import { datasf } from '../../lib/fzp-cal/provenance';
+import { parseMarketFile } from '../../enrichment/market-schema';
 import { PANEL_FEATURES, type PanelSource, type PanelYearRow } from '../../lib/fzp-cal/panel';
-import { REPORT_SECTIONS, aliasGroups, num } from '../../lib/fzp-cal/report';
+import { REPORT_SECTIONS, aliasGroups, marketSection, num } from '../../lib/fzp-cal/report';
 import { SC_RULE_IDS, type PermitRow } from '../../lib/fzp-cal/types';
 import { isoToDay } from '../../project-records/multiphase';
 import { readParcelsBin } from '../../steps/scenario';
 
 const d = isoToDay;
+const MARKET_JSON_PATH = join(import.meta.dirname, '../../enrichment/market.json');
+const marketFile = parseMarketFile(
+  JSON.parse(readFileSync(MARKET_JSON_PATH, 'utf8')),
+  'market.json'
+);
 const AS_OF = d('2026-06-30');
 const FIXTURE_BIN = join(
   import.meta.dirname,
@@ -133,7 +143,8 @@ beforeAll(async () => {
     parcels,
     inFlight,
     fillLevels: FILL_LEVELS,
-    datasetVersion: 'test-0'
+    datasetVersion: 'test-0',
+    market: { file: marketFile, path: 'market.json' }
   };
   a = await calibrate(input, FIXTURE_CAL);
   b = await calibrate(input, FIXTURE_CAL);
@@ -152,7 +163,8 @@ describe('calibrate', () => {
       'size',
       'revision',
       'streamlinedForLocalProgram',
-      'phaseGap'
+      'phaseGap',
+      'market'
     ]);
     expect(a.json).toBe(JSON.stringify(JSON.parse(a.json)));
     // No whitespace between tokens: none outside string literals.
@@ -164,6 +176,25 @@ describe('calibrate', () => {
       );
     }
     expect(a.calibration.asOf).toBe(AS_OF);
+  });
+
+  it('emits the fixture market after phaseGap, today in F2 order', () => {
+    const today = a.calibration.market!.today;
+    expect(Object.keys(today)).toEqual([
+      'all',
+      'private',
+      'years',
+      'observed',
+      'implied',
+      'provenance'
+    ]);
+    expect(today.all).toBe(-0.693147);
+    expect(today.private).toBe(-0.798508);
+    expect(today.observed).toEqual({ all: 10, private: 9 });
+    expect(today.implied).toBe(20);
+    expect(today.years).toEqual([2023, 2025]);
+    expect(today.provenance.tier).toBe(4);
+    expect(Object.keys(a.calibration.market!)).toEqual(['today', 'crossCheck', 'slope']);
   });
 
   it('is deterministic: two calls give identical json, report, counts and tallies', () => {
@@ -194,7 +225,15 @@ describe('calibrate', () => {
       'calibration.panel.noStart',
       'calibration.panel.noPermit',
       'calibration.panel.outOfRange',
-      'calibration.purge.windows'
+      'calibration.purge.windows',
+      'calibration.market.recentStarts',
+      'calibration.market.recentPrivate',
+      'calibration.market.recentAffordable',
+      'calibration.market.recentNoRecord',
+      'calibration.market.recentUnknown',
+      'calibration.market.weightStarts',
+      'calibration.market.unbinnedHomes',
+      'calibration.market.unbinnedStories'
     ];
     for (const k of want) expect(a.counts, k).toHaveProperty(k);
     for (const p of PATHWAYS) {
@@ -213,7 +252,9 @@ describe('calibrate', () => {
     expect(Object.keys(a.tallies)).toEqual([...SC_RULE_IDS]);
   });
 
-  it('writes the ten report sections in order, with the window and method counts', () => {
+  it('writes the eleven report sections in order, with the window and method counts', () => {
+    expect(REPORT_SECTIONS).toHaveLength(11);
+    expect(REPORT_SECTIONS.at(-1)).toBe("## 11. Today's market");
     const lines = a.reportMd.split('\n');
     expect(lines[0]).toBe('# Calibration report: test-0');
     const at = REPORT_SECTIONS.map((h) => lines.findIndex((l) => l === h || l.startsWith(`${h}:`)));
@@ -228,6 +269,26 @@ describe('calibrate', () => {
     expect(a.reportMd).toMatch(/\| 6 \| [0-9.e-]+ \| [0-9.e-]+ \|/);
     expect(a.reportMd).toContain('transitions.permitOnly.construction.tailProvenance');
     expect(a.reportMd).toContain('Parcel-years excluded by roll year');
+    // Section 11 in fixture mode: the Mode line, then the weights and the cross-check only.
+    expect(lines).toContain("## 11. Today's market");
+    expect(a.reportMd).toContain(
+      "Mode: fixture (today's levels fixed at ln 0.5 and ln 0.45 from 10 and 9 observed against 20 implied; tier 4)"
+    );
+    expect(a.reportMd).toContain('typicalUncoveredShare');
+    const s11 = a.reportMd.slice(a.reportMd.indexOf("## 11. Today's market"));
+    expect(s11).not.toContain('Reproduction check');
+    expect(s11).not.toContain('Hold-out');
+    // Section 8 lists the four market provenances.
+    for (const path of [
+      'market.today.provenance',
+      'market.crossCheck.provenance',
+      'market.slope.provenance',
+      'market.slope.crossChecks.provenance'
+    ]) {
+      expect(a.reportMd).toMatch(
+        new RegExp(`\\| ${path.replaceAll('.', '\\.')} \\| 4 \\| fixture:`)
+      );
+    }
     // C4: the window section lists the partial calendar years (as-of year 2026 is partial).
     expect(a.reportMd).toMatch(
       /Partial calendar years[^\n]*\n\n\| stage \| year \| to \| entries \|[\s\S]*\| 2026 \| 2026-06-30 \|/
@@ -367,5 +428,91 @@ describe('report helpers', () => {
       ['yearBuilt bin 0 (≥ 0)', 'landUseClass bin 1 (≥ 4)'],
       ['yearBuilt bin 1 (≥ 1800)', 'landUseClass bin 0 (≥ 0)']
     ]);
+  });
+});
+
+/** A live market input over 2023-2025 (129 starts), with a given hold-out. */
+function liveMarket(holdOut: MarketInput['holdOut']) {
+  const z = Math.log(1e-4 / (1 - 1e-4));
+  const observed = [40, 43, 46];
+  const impliedPerYear: Record<number, number> = {};
+  const observedPerYear: Record<number, number> = {};
+  for (let y = 2007; y <= 2025; y++) {
+    impliedPerYear[y] = 100;
+    observedPerYear[y] = 7;
+  }
+  const starts: MarketInput['starts'] = [];
+  for (const y of [2021, 2022]) {
+    for (let i = 0; i < 7; i++)
+      starts.push({ year: y, basis: 0, cohort: 'private', homes: 30, stories: 5 });
+  }
+  const recentCells: MarketInput['recentCells'] = [];
+  observed.forEach((n, i) => {
+    const y = 2023 + i;
+    impliedPerYear[y] = 1e6 * logistic(z);
+    observedPerYear[y] = n;
+    recentCells.push({ exposure: 1e6, z });
+    for (let k = 0; k < n; k++) {
+      starts.push({
+        year: y,
+        basis: 0,
+        cohort: k === 0 ? 'affordable' : 'private',
+        homes: 10,
+        stories: 4
+      });
+    }
+  });
+  return marketModel({
+    fixture: false,
+    impliedPerYear,
+    observedPerYear,
+    recentCells,
+    holdOut,
+    starts,
+    enrichment: { file: marketFile, path: 'market.json' },
+    initiationSources: [datasf('planningProjects')]
+  });
+}
+
+describe("report section 11: today's market (live)", () => {
+  it('prints the recent-years table, the levels, the checks, the weights and the cross-check', () => {
+    const mk = liveMarket({
+      fitThrough: 2022,
+      rows: [
+        { year: 2023, observed: 40, predicted: 120 },
+        { year: 2024, observed: 43, predicted: 130 },
+        { year: 2025, observed: 46, predicted: 136.399 }
+      ],
+      observed: 129,
+      predicted: 386.399
+    });
+    const s = marketSection(mk.market, mk.report).join('\n');
+    expect(s.startsWith("## 11. Today's market")).toBe(true);
+    expect(s).toContain(
+      '| year | observed | affordable cohort | private | implied (published hazard) | hold-out predicted |'
+    );
+    expect(s).toContain('| 2025 | 46 | 1 | 45 | 100 | 136.399 |');
+    expect(s).toContain(`today.all = ${mk.market.today.all}`);
+    expect(s).toContain('**Reproduction check**');
+    expect(s).toContain('against 129 observed');
+    expect(s).toContain('**Hold-out, report only**');
+    expect(s).toContain('386.399');
+    expect(s).toContain('-1.09706');
+    expect(s).toContain('(OD-F11)');
+    expect(s).toContain('| prototype | rule | private starts 2021-2025 | weight |');
+    expect(s).toContain('typicalUncoveredShare');
+    expect(s).toContain(`crossCheck.logOdds = ${mk.market.crossCheck.logOdds}`);
+    expect(s).not.toContain('Mode: fixture');
+    expect(s).not.toMatch(/Infinity|NaN|\bnull\b|undefined/);
+    expect(s.split('\n').filter((l) => /^#+ /.test(l))).toEqual(["## 11. Today's market"]);
+  });
+
+  it('prints the hold-out error and none for a missing predicted', () => {
+    const mk = liveMarket({ error: 'singular' });
+    const s = marketSection(mk.market, mk.report).join('\n');
+    expect(s).toContain('singular');
+    expect(s).toContain('| 2023 | 40 | 1 | 39 | 100 | none |');
+    expect(s).toContain('market: the hold-out refit failed: singular');
+    expect(s).not.toMatch(/Infinity|NaN|\bnull\b|undefined/);
   });
 });

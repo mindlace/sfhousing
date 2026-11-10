@@ -5,7 +5,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  readdirSync
+  readdirSync,
+  writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -142,5 +143,29 @@ describe('calibration step on fixture-0', () => {
     }
     expect(existsSync(join(tmp, CALIBRATION_JSON))).toBe(false);
     expect(readdirSync(derivedDir)).toEqual([]);
+  });
+
+  it('reads the market enrichment from marketPath and rejects one that does not parse', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'sfh-cal-market-'));
+    const marketPath = join(tmp, 'market.json');
+    writeFileSync(marketPath, '{}');
+    const db = await openDuck();
+    try {
+      await expect(
+        writeCalibration({
+          db,
+          outDir: tmp,
+          derivedDir: tmp,
+          datasetVersion: 'fixture-0',
+          asOf: 0,
+          cal: FIXTURE_CAL,
+          counts: {},
+          marketPath
+        })
+      ).rejects.toThrow(`market: ${marketPath}: `);
+    } finally {
+      db.close();
+    }
+    expect(existsSync(join(tmp, CALIBRATION_JSON))).toBe(false);
   });
 });
