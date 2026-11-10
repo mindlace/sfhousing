@@ -126,9 +126,11 @@ share is `perHome.<source> ÷ 861,525`, the uncovered cost of an affordable home
 | `city-redevelopment`      | `baseline-city-redevelopment`      | `dedicatedTax`   | 3, City    | 6,000,000      | 0.00893                                                                      |
 
 The pools in `calibration.json` run in the City sources' Exhibit E order, then `state`, then
-`federal-tax-credits`; the table lists them by fill tier. The City pools are tier 1 (the Budget
-Analyst's Exhibit E and F); the state pool and the federal pool are tier 2. Impact fees are classed
-`dedicatedTax` because `PoolKind` has no fee kind; the pool's `note` says it is a fee.
+`federal-tax-credits`; the table lists them by fill tier. The City pools are evidence tier 1 (the
+Budget Analyst's Exhibit E and F); the state pool and the federal pool are evidence tier 2. The City
+entries' `window` is `city.fiscalYear` (`FYyyyy-yy`, two consecutive years; the schema rejects any
+other form) read as July to June. Impact fees are classed `dedicatedTax` because `PoolKind` has no
+fee kind; the pool's `note` says it is a fee.
 
 **Fill tiers.** The tier table above is the order in which `fundBundle` spends the pools: federal,
 then state, then the City's pools pro rata. With the whole baseline on and nothing added, every grant
@@ -136,7 +138,9 @@ pays its full share, so the tiers change no dollar. The arithmetic is in
 [finance-model.md](finance-model.md).
 
 `debt` is set exactly for `goBond` and `cop`: `city-debt` carries rate 0.06 and term 20 years (the
-Analyst's assumption, tier 2). `leverage` is 1 on every pool.
+Analyst's assumption, tier 2). `leverage` is 1 on every pool. A pool with debt has its terms in its
+provenance: the method ends "Debt terms: rate 6.0%, 20 years (p. 106, Exhibit 40: '…'), the
+Analyst's assumption (tier 2); repayment is nominal.", and the debt cite is added to its `sources`.
 
 ### `tiers` and `minHomes` (MOHCD)
 
@@ -159,8 +163,10 @@ goes to the first largest). `ami_undeclared` homes are left out of the mix; `sc.
 counts them. MOHCD's AMI is the City's published AMI table, not the state's income limits (inferred,
 and the provenance says so). `minHomes` is the nearest-rank 10th percentile of `total_project_units`
 over the same rows (sorted index `ceil(0.1 × n) - 1`, rows with 0 or blank homes left out). No
-qualifying row is a `BuildError`: `funding: no MOHCD 100% affordable new-construction rows with
-income bands`. A lock with no `datasf-mohcd-pipeline` entry is a `BuildError` too (`lock has no
+qualifying row with a band-coded home aborts the build with a `CalibrationError`: `funding: no MOHCD
+100% affordable new-construction rows with income bands`. Qualifying rows none of which has
+`total_project_units` above 0 abort it the same way: `funding: no MOHCD row with
+total_project_units above 0`. A lock with no `datasf-mohcd-pipeline` entry is a `BuildError` too (`lock has no
 datasf-mohcd-pipeline entry (run fetch --only datasf-mohcd-pipeline)`).
 
 |                                                                        | veryLow  | low      | moderate | aboveModerate | `minHomes` | MOHCD rows | undeclared homes |
