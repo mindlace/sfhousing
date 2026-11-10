@@ -59,6 +59,7 @@ export function tempRepo(): { dir: string; git: (...a: string[]) => void } {
   mkdirSync(join(dir, 'src/lib/timelapse'), { recursive: true });
   mkdirSync(join(dir, 'src/lib/sim/scenario'), { recursive: true });
   mkdirSync(join(dir, 'src/lib/sim/levers'), { recursive: true });
+  mkdirSync(join(dir, 'src/lib/sim/finance'), { recursive: true });
   mkdirSync(join(dir, 'src/lib/sim/other'), { recursive: true });
   mkdirSync(join(dir, 'src/lib/scoreboard'), { recursive: true });
   writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 1;\n');
@@ -70,6 +71,7 @@ export function tempRepo(): { dir: string; git: (...a: string[]) => void } {
   writeFileSync(join(dir, 'src/lib/timelapse/time.ts'), 'export const tl = 6;\n');
   writeFileSync(join(dir, 'src/lib/sim/scenario/engine.ts'), 'export const e = 7;\n');
   writeFileSync(join(dir, 'src/lib/sim/levers/apply.ts'), 'export const l = 8;\n');
+  writeFileSync(join(dir, 'src/lib/sim/finance/prototypes.ts'), 'export const f = 11;\n');
   writeFileSync(join(dir, 'src/lib/sim/other/x.ts'), 'export const x = 9;\n');
   writeFileSync(join(dir, 'src/lib/scoreboard/index.ts'), 'export const sb = 10;\n');
   git('add', '.');

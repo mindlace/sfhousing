@@ -10,9 +10,8 @@ The module is pure: no clock, no global state, no random draws, no mutation of a
 imports by relative path only (no `$lib`, `svelte`, `zod`, DOM, nothing from `src/lib/sim-page/`,
 no `Intl` or `toLocaleString`; numbers are formatted with `toFixed`), so the worker, the page and
 the data pipeline can all import it. `imports.spec.ts` guards this. The pipeline imports it by path.
-It is not yet in the dataset version: `pipeline/lib/version.ts` does not hash
-`src/lib/sim/finance`. `market-baseline`, the first subsystem whose pipeline code imports it, adds
-the path to `PATHS`; from then on any change here is a dataset change, made at a release.
+It is in the dataset version (`PATHS` in `pipeline/lib/version.ts`), so any change here is a
+dataset change, made at a release.
 
 Everything public is re-exported from `src/lib/sim/finance/index.ts`.
 

@@ -660,6 +660,13 @@ Recorded as errata in `docs/lesscars/plan-v1.md` ("Errata from the live check (2
   `us101-bayshore` starts at lat 37.73497 (the southbound cut at the I-280 crossing) at z11, z13
   and z15, and the kept US-101 reaches lat 37.73862 (the north end of `19222002`).
 
+## Release 1 rebuild: today's market
+
+Placeholder, filled at the Release 1 build on the release branch: the dataset version, and the
+changed headline numbers of the published plan. What is already true: the base input now runs on
+today's market (`SimInput.market`, [market.md](market.md)), and the plan and baseline inputs spread
+it from the base, so both arms run on it.
+
 ## Freeway land
 
 The catalog format, its build rule and the V17 and homes checks are in [pipeline.md](pipeline.md)

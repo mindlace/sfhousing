@@ -43,6 +43,7 @@ Fetch the file when working in the relevant area:
 - **`/lesscars` (plan format, checks, dated regimes and reservations, freed land, paired runs, output files, the page)** — [docs/dev/lesscars.md](docs/dev/lesscars.md)
 - **Road-like lots (imagery review behind `road-lots.json`, lots beside freed sites, live build measurements)** — [docs/dev/road-lots.md](docs/dev/road-lots.md)
 - **Finance model (prototypes, market terms, grant-equivalents, bundles, income tiers, debt and legal limits)** — [docs/dev/finance-model.md](docs/dev/finance-model.md)
+- **Today's market (`calibration.market`, the start-odds shift, `market.json`, `SimInput.market` steps, the affordable-cohort flag)** — [docs/dev/market.md](docs/dev/market.md)
 - **Design, specs and plans** — `docs/superpowers/design/`, `docs/superpowers/specs/`, `docs/superpowers/plans/`
 
 Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link them from this list.

@@ -69,6 +69,8 @@ The speedup is **statistical, not per-row**. The redraw loop is unchanged, so a 
 - `'preFzp'` (default): `baseZoning` on the base calibration.
 - `'fzp'`: the plan of `DEFAULT_LEVERS` (FZP as written: no rules, paint, protections or timers) on the base calibration. It has no `Need`s (`twinInput` throws if it had), and its envelopes and runs are the base FZP input's.
 
+`bare()` and both twins keep `market` (and `finance`): the market is the world, not the policy, so the plan and its twin run on the same market ([market.md](market.md)). `bare()` strips only `newProjects` and `inFlightScale`.
+
 Every lever field (`newProjects`, `inFlightScale`) is set explicitly, because `applyPolicies` copies the whole input. Twins are memoised on (base, ctx, compare), so lever documents that differ elsewhere share one twin (and its precompute). `applyLevers(base, ctx, levers, filled)` takes no horizon: nothing in the engine depends on one.
 
 **References.** The existing `REFERENCES` (`score.ts`) are FZP-versus-pre-FZP estimates on `planEffect.*`, so they are all shown under `compare: 'preFzp'`. Under `compare: 'fzp'` only the `completedNet` ones are kept. RHNA targets come from `targetsOf`, unchanged.
