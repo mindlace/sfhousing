@@ -1,0 +1,423 @@
+{
+  "schema": 1,
+  "perHome": {
+    "total": 954127,
+    "city": 300027,
+    "federal": 443108,
+    "state": 118390,
+    "permanentLoans": 87431,
+    "other": 5171,
+    "tier": 1,
+    "cite": {
+      "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+      "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+      "page": "p. 7, Exhibit F",
+      "retrieved": "2026-11-09"
+    }
+  },
+  "city": {
+    "fiscalYear": "FY2024-25",
+    "total": 234000000,
+    "tier": 1,
+    "cite": {
+      "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+      "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+      "page": "p. 6, Exhibit E",
+      "retrieved": "2026-11-09"
+    },
+    "sources": [
+      {
+        "id": "city-debt",
+        "label": "City: general-obligation bonds and other debt",
+        "kind": "goBond",
+        "dollarsPerYear": 80500000,
+        "debt": {
+          "rate": 0.06,
+          "termYears": 20,
+          "cite": {
+            "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+            "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+            "page": "p. 106, Exhibit 40",
+            "retrieved": "2026-11-09",
+            "quote": "Assuming G.O. bonds are issued at a 6.0 percent interest rate for a 20-year term"
+          }
+        },
+        "note": "General-obligation bonds and other debt, FY2024-25 (p. 43). It includes the 2016 Preservation and Seismic Safety (PASS) bond, which funds preservation, not new building (p. 43), and commercial paper and certificates of participation, with no split given. Future bonds 'will require periodic City authorization and voter approval' (p. 72). Held level (OD-F3).",
+        "cite": {
+          "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+          "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+          "page": "p. 43",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "id": "city-ocoh",
+        "label": "City: Our City, Our Home fund",
+        "kind": "dedicatedTax",
+        "dollarsPerYear": 48600000,
+        "debt": null,
+        "note": "Our City, Our Home Fund, approved by voters in 2018; it funds affordable housing and three service areas for people experiencing homelessness (p. 44). Held level (OD-F3).",
+        "cite": {
+          "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+          "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+          "page": "p. 44",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "id": "city-general-fund",
+        "label": "City: General Fund",
+        "kind": "generalRevenue",
+        "dollarsPerYear": 36700000,
+        "debt": null,
+        "note": "General Fund, from unrestricted tax revenue (p. 44). It includes $14.9 million from the Housing Stability Fund (Proposition I, 2020), spent down by February 2026 (p. 100), and $14.5 million work-ordered from the Department of Homelessness and Supportive Housing for homeless housing (p. 44). Held level (OD-F3).",
+        "cite": {
+          "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+          "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+          "page": "p. 44",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "id": "city-impact-fees",
+        "label": "City: affordable-housing impact fees",
+        "kind": "dedicatedTax",
+        "dollarsPerYear": 34800000,
+        "debt": null,
+        "note": "Affordable-housing impact fees: a fee, not a tax (classed with dedicated revenue because no fee kind exists). FY2024-25 spending was 'spending from prior year fee collections and loan repayments' (p. 44), while fee revenue was $422,048 in FY2024-25 against an $18.0 million average (Exhibit I, p. 9). Held level (OD-F3).",
+        "cite": {
+          "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+          "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+          "page": "p. 44",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "id": "city-housing-trust-fund",
+        "label": "City: Housing Trust Fund",
+        "kind": "generalRevenue",
+        "dollarsPerYear": 27400000,
+        "debt": null,
+        "note": "Housing Trust Fund, a charter baseline approved in 2012 (Proposition C) and running to 2043, about $52 million a year in all, of which $27.4 million went to multifamily housing in FY2024-25 (p. 44). Held level (OD-F3).",
+        "cite": {
+          "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+          "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+          "page": "p. 44",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "id": "city-redevelopment",
+        "label": "City: former Redevelopment Agency housing assets",
+        "kind": "dedicatedTax",
+        "dollarsPerYear": 6000000,
+        "debt": null,
+        "note": "Former Redevelopment Agency housing assets (the Low- and Moderate-Income Housing Asset Fund, p. 44); 'that source has now been spent down' (p. 73). Held level (OD-F3).",
+        "cite": {
+          "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+          "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+          "page": "p. 44",
+          "retrieved": "2026-11-09"
+        }
+      }
+    ]
+  },
+  "state": {
+    "id": "state",
+    "label": "State of California: housing programmes",
+    "dollarsPerYear": 150000000,
+    "tier": 2,
+    "method": "HCD and CalHFA programmes 'have provided more than $1.2 billion in funding for affordable housing in San Francisco since 2018, according to MOHCD staff' (p. 42). Spread over the eight calendar years 2018 to 2025: $150 million a year. 'More than' makes this a lower bound. FY2024-25 dollars, not adjusted.",
+    "cite": {
+      "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+      "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+      "page": "p. 42",
+      "retrieved": "2026-11-09",
+      "quote": "have provided more than $1.2 billion in funding for affordable housing in San Francisco since 2018, according to MOHCD staff"
+    }
+  },
+  "federal": {
+    "id": "federal-tax-credits",
+    "label": "Federal: low-income housing tax credits",
+    "tier": 2,
+    "method": "Federal low-income housing tax credits pay $443,108 of an affordable home (Exhibit F, p. 7). The pool has no ceiling: no ceiling binds San Francisco in the 2026 award records, and none is published for the City.",
+    "cite": {
+      "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+      "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+      "page": "p. 7, Exhibit F",
+      "retrieved": "2026-11-09"
+    }
+  },
+  "awards": {
+    "years": [2024, 2025],
+    "rows": [
+      {
+        "year": 2024,
+        "application": "CA-24-535",
+        "project": "Casa Adelante",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 168,
+        "cite": {
+          "label": "CDLAC 2024 round 1 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/2025-12/05_Qualified_Residential_Rental_Projects_Round_1_Final_List_Of_Awards.pdf",
+          "page": "CA-24-535",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2024,
+        "application": "CA-24-494",
+        "project": "Sutter Street",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 102,
+        "cite": {
+          "label": "CDLAC 2024 round 1 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/2025-12/05_Qualified_Residential_Rental_Projects_Round_1_Final_List_Of_Awards.pdf",
+          "page": "CA-24-494",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2024,
+        "application": "CA-24-490",
+        "project": "Golden Gate Avenue Phase 1 LIHTC",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 55,
+        "cite": {
+          "label": "CDLAC 2024 round 1 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/2025-12/05_Qualified_Residential_Rental_Projects_Round_1_Final_List_Of_Awards.pdf",
+          "page": "CA-24-490",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2024,
+        "application": "24-737",
+        "project": "Larkin Pine Senior Housing",
+        "credit": "4%",
+        "newConstruction": false,
+        "homes": 63,
+        "cite": {
+          "label": "CDLAC 2024 round 2 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/2025-12/04_Qualified_Residential_Rental_Projects_Round_2_Final_List_of_Awards.pdf",
+          "page": "24-737",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2024,
+        "application": "24-670",
+        "project": "Balboa Reservoir - Building E",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 128,
+        "cite": {
+          "label": "CDLAC 2024 round 2 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/2025-12/04_Qualified_Residential_Rental_Projects_Round_2_Final_List_of_Awards.pdf",
+          "page": "24-670",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2024,
+        "application": "24-653",
+        "project": "850 Turk Street",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 92,
+        "cite": {
+          "label": "CDLAC 2024 round 2 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/2025-12/04_Qualified_Residential_Rental_Projects_Round_2_Final_List_of_Awards.pdf",
+          "page": "24-653",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2024,
+        "application": "24-686",
+        "project": "Sunnydale HOPE SF Block 9",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 95,
+        "cite": {
+          "label": "CDLAC 2024 round 2 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/2025-12/04_Qualified_Residential_Rental_Projects_Round_2_Final_List_of_Awards.pdf",
+          "page": "24-686",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2024,
+        "application": "24-719",
+        "project": "Sunnydale HOPE SF Block 7",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 89,
+        "cite": {
+          "label": "CDLAC 2024 round 2 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/2025-12/04_Qualified_Residential_Rental_Projects_Round_2_Final_List_of_Awards.pdf",
+          "page": "24-719",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2024,
+        "application": "24-767",
+        "project": "160 Freelon",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 85,
+        "cite": {
+          "label": "CDLAC 2024 round 2 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/2025-12/04_Qualified_Residential_Rental_Projects_Round_2_Final_List_of_Awards.pdf",
+          "page": "24-767",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2024,
+        "application": "24-745",
+        "project": "300 De Haro",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 425,
+        "cite": {
+          "label": "CDLAC 2024 round 2 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/2025-12/04_Qualified_Residential_Rental_Projects_Round_2_Final_List_of_Awards.pdf",
+          "page": "24-745",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2024,
+        "application": "CA-2024-003",
+        "project": "3300 Mission Street",
+        "credit": "9%",
+        "newConstruction": true,
+        "homes": 35,
+        "cite": {
+          "label": "CTCAC List of Projects, sheet \"San Francisco\"",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/ctcac/List%20of%20Projects_1.xlsx",
+          "page": "CA-2024-003",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2024,
+        "application": "CA-2024-087",
+        "project": "Sierra Madre Apartments",
+        "credit": "9%",
+        "newConstruction": false,
+        "homes": 47,
+        "cite": {
+          "label": "CTCAC List of Projects, sheet \"San Francisco\"",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/ctcac/List%20of%20Projects_1.xlsx",
+          "page": "CA-2024-087",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2025,
+        "application": "25-446",
+        "project": "967 Mission",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 95,
+        "cite": {
+          "label": "CDLAC 2025 round 1 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/2026-03/04_Qualified_Residential_Rental_Projects_Round%20_1_Final_List_of_Awards.pdf",
+          "page": "25-446",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2025,
+        "application": "25-634",
+        "project": "2970 16th Street",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 136,
+        "cite": {
+          "label": "CDLAC 2025 round 2 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/cdlac/04_Qualified_Residential_Rental_Projects_Round_2_Final_List_of_Awards.pdf",
+          "page": "25-634",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2025,
+        "application": "25-600",
+        "project": "Balboa Reservoir - Building A",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 159,
+        "cite": {
+          "label": "CDLAC 2025 round 2 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/cdlac/04_Qualified_Residential_Rental_Projects_Round_2_Final_List_of_Awards.pdf",
+          "page": "25-600",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2025,
+        "application": "25-646",
+        "project": "960 Howard Street",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 202,
+        "cite": {
+          "label": "CDLAC 2025 round 2 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/cdlac/04_Qualified_Residential_Rental_Projects_Round_2_Final_List_of_Awards.pdf",
+          "page": "25-646",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2025,
+        "application": "25-809",
+        "project": "1687 Market Residences",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 94,
+        "cite": {
+          "label": "CDLAC 2025 round 3 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/cdlac/06_QRRP_Round_3_Final_List_of_Awards.pdf",
+          "page": "25-809",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2025,
+        "application": "25-796",
+        "project": "Golden Gate Apartments",
+        "credit": "4%",
+        "newConstruction": false,
+        "homes": 72,
+        "cite": {
+          "label": "CDLAC 2025 round 3 final list of awards",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/cdlac/06_QRRP_Round_3_Final_List_of_Awards.pdf",
+          "page": "25-796",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2025,
+        "application": "CA-2025-097",
+        "project": "125 Mason Street Apartments",
+        "credit": "9%",
+        "newConstruction": false,
+        "homes": 81,
+        "cite": {
+          "label": "CTCAC List of Projects, sheet \"San Francisco\"",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/ctcac/List%20of%20Projects_1.xlsx",
+          "page": "CA-2025-097",
+          "retrieved": "2026-11-09"
+        }
+      }
+    ]
+  },
+  "retiredIds": []
+}
