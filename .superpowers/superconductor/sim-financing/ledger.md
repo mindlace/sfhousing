@@ -176,9 +176,9 @@
 
 **Build order for the conductor.** Release 1 branch: step 0 (from the design's "Dependency order" item 0; it has no spec), `finance-model`, `market-baseline`, `finance-data`; then one golden regeneration, one dataset build and upload, one signoff. Release 2 branch: `finance-engine`, `finance-score`, `finance-levers`, `funding-ui`; then the same once. After any change to the design's rows, run `node .superpowers/superconductor/sim-financing/sync-rows.mjs <design> <specs…>` and then `--check`.
 
-**Settled.** Every ruling R0 to R12 and every open decision OD-F1 to OD-F12, with the one exception below.
+**Settled.** Every ruling R0 to R13 and every open decision OD-F1 to OD-F12.
 
-**Open, for the partner before step 1.** One clause of OD-F10, changed after R12: the City's sources share what is left to cover in proportion to their shares (row F8, `fundBundle`), in place of a fixed order among them. It is applied throughout. If the partner rejects it, `finance-model` section on `fundBundle`, the engine's award examples, the preset descriptions and worked numbers in `finance-levers`, and the page copy in `funding-ui` change.
+**Open for the partner.** Nothing. The one clause that was open at the first handoff commit (the City's sources sharing what is left in proportion, row F8) was ruled afterwards: **R13 (2026-11-09), "proportional sharing is fine"**.
 
 **Known limits and unmeasured claims the conductor should carry.**
 
