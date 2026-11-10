@@ -1217,6 +1217,34 @@ describe('affordableRoutes and baselineFunding', () => {
       'expected a unique id, got city-debt'
     ],
     [
+      'a pool with no debt key',
+      (c) => delete c.baselineFunding.pools[0].debt,
+      'baselineFunding.pools[0].debt',
+      'missing'
+    ],
+    [
+      'an unknown pool key',
+      (c) => (c.baselineFunding.pools[0].extra = 1),
+      'baselineFunding.pools[0].extra',
+      'unexpected key'
+    ],
+    [
+      'a market programme with no tiers key',
+      (c) => {
+        c.baselineFunding.programmes[0].reach = 'market';
+        delete c.baselineFunding.programmes[0].tiers;
+      },
+      'baselineFunding.programmes[0].tiers',
+      'missing'
+    ],
+    [
+      'a stray key on a once inflow',
+      (c) =>
+        (c.baselineFunding.pools[0].inflows = [{ kind: 'once', day: asOf, dollars: 1, extra: 1 }]),
+      'baselineFunding.pools[0].inflows[0].extra',
+      'unexpected key'
+    ],
+    [
       'goBond without debt',
       (c) => (c.baselineFunding.pools[0].debt = null),
       'baselineFunding.pools[0].debt',

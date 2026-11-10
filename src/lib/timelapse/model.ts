@@ -1,8 +1,8 @@
 /**
  * Calibration model (design doc T12): pure, free of any schema library and worker-safe. Only
  * `./types`, `./time`, `./math` and the finance checks `../sim/finance/{instruments,debt}` (the
- * one validation every pool and programme validator calls) are imported, and `exp`/`log` come from `./math` so results
- * are bit-reproducible. Per-transition constants are memoised by object identity (`Constants`),
+ * one validation every pool and programme validator calls) are imported, and `exp`/`log` come
+ * from `./math` so results are bit-reproducible. Per-transition constants are memoised by object identity (`Constants`),
  * so a Transition must not be mutated after its first use here.
  */
 import { exp, log } from './math';
@@ -865,11 +865,13 @@ function checkId(v: unknown, path: string): string {
 function checkInflow(v: unknown, path: string): void {
   const f = record(v, path);
   if (f.kind === 'once') {
+    exactKeys(f, path, ['kind', 'day', 'dollars']);
     integer(f.day, `${path}.day`);
     if (integer(f.dollars, `${path}.dollars`) < 0) {
       fail(`${path}.dollars`, `expected a non-negative integer, got ${String(f.dollars)}`);
     }
   } else if (f.kind === 'yearly') {
+    exactKeys(f, path, ['kind', 'from', 'to', 'dollarsPerYear']);
     const from = integer(f.from, `${path}.from`);
     if (f.to !== null && integer(f.to, `${path}.to`) < from) {
       fail(`${path}.to`, `expected null or a day from ${from} on, got ${String(f.to)}`);
@@ -891,6 +893,7 @@ function checkInflow(v: unknown, path: string): void {
  */
 export function checkPool(v: unknown, path: string): void {
   const p = record(v, path);
+  exactKeys(p, path, ['id', 'kind', 'label', 'inflows', 'uncapped', 'debt', 'leverage']);
   checkId(p.id, `${path}.id`);
   const kind = p.kind as PoolKind;
   if (!POOL_KINDS.includes(kind)) fail(`${path}.kind`, `expected a pool kind, got ${String(kind)}`);
@@ -902,11 +905,12 @@ export function checkPool(v: unknown, path: string): void {
     fail(`${path}.inflows`, 'expected no inflows on an uncapped pool');
   }
   const hasDebt = kind === 'goBond' || kind === 'cop';
-  if (p.debt === null || p.debt === undefined) {
+  if (p.debt === null) {
     if (hasDebt) fail(`${path}.debt`, `expected debt for kind ${kind}`);
   } else {
     if (!hasDebt) fail(`${path}.debt`, `expected null debt for kind ${kind}`);
     const d = record(p.debt, `${path}.debt`);
+    exactKeys(d, `${path}.debt`, ['rate', 'termYears']);
     const rate = finite(d.rate, `${path}.debt.rate`);
     const termYears = finite(d.termYears, `${path}.debt.termYears`);
     const bad = validateDebt({ rate, termYears });
@@ -925,6 +929,17 @@ export function checkPool(v: unknown, path: string): void {
  */
 export function checkProgramme(v: unknown, path: string, poolIds: ReadonlySet<string>): void {
   const g = record(v, path);
+  exactKeys(g, path, [
+    'id',
+    'label',
+    'pool',
+    'reach',
+    'instrument',
+    'from',
+    'to',
+    'minHomes',
+    'tiers'
+  ]);
   checkId(g.id, `${path}.id`);
   text(g.label, `${path}.label`);
   if (typeof g.pool !== 'string' || !poolIds.has(g.pool)) {
@@ -945,7 +960,7 @@ export function checkProgramme(v: unknown, path: string, poolIds: ReadonlySet<st
     fail(`${path}.minHomes`, `expected a whole number from 0 to 10000, got ${String(m)}`);
   }
   if (g.reach === 'affordable') {
-    if (g.tiers === null || g.tiers === undefined) {
+    if (g.tiers === null) {
       fail(`${path}.tiers`, 'expected tiers for reach affordable');
     }
     const t = record(g.tiers, `${path}.tiers`);
@@ -954,7 +969,7 @@ export function checkProgramme(v: unknown, path: string, poolIds: ReadonlySet<st
       INCOME_TIERS.map((k) => unit(t[k], `${path}.tiers.${k}`)),
       `${path}.tiers`
     );
-  } else if (g.tiers !== null && g.tiers !== undefined) {
+  } else if (g.tiers !== null) {
     fail(`${path}.tiers`, 'expected null tiers for reach market');
   }
 }
