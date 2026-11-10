@@ -614,6 +614,22 @@ interface TallyInput {
   rhna: { fired: number; of: number; sample: string[] };
 }
 
+/**
+ * Spec 4.2: min(affordableProp, units) from the primary Planning record; null for a split part, a
+ * multiPhase master, no primary record, or a value that is not a non-negative integer.
+ */
+export function affordableHomesOf(
+  proj: LinkedProject,
+  multiPhase: boolean,
+  units: number
+): { value: number | null; clamped: boolean } {
+  const raw = proj.primary?.affordableProp ?? null;
+  if (isSplitPart(proj.id) || multiPhase || raw === null || !Number.isInteger(raw) || raw < 0) {
+    return { value: null, clamped: false };
+  }
+  return raw > units ? { value: units, clamped: true } : { value: raw, clamped: false };
+}
+
 /** Σ of the positive values; null and negative count as 0. */
 function positiveSum(xs: Iterable<number | null>): number {
   let s = 0;
@@ -844,7 +860,17 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
   },
   // Spec 4.3 rule 2: counted housing-production rows with affordable homes; the ones whose tier
   // columns are blank; their bpa.
-  [PR.rhnaTierUnrecorded]: ({ rhna }) => rhna
+  [PR.rhnaTierUnrecorded]: ({ rhna }) => rhna,
+  // Spec 4.2: in-flight projects with a recorded affordable count; the ones capped at their homes.
+  [PR.affordableOverUnits]: ({ inFlight }) => {
+    const recorded = inFlight.filter((x) => x.p.affordableHomes != null);
+    const capped = recorded.filter((x) => x.a.quality.has(PR.affordableOverUnits));
+    return {
+      fired: capped.length,
+      of: recorded.length,
+      sample: capped.map((x) => x.p.id)
+    };
+  }
 };
 
 function zeroCounts(): Record<string, number> {
@@ -1324,6 +1350,9 @@ export function deriveProjects(
     if (a.pathway === null) counts['projects.pathwayDefaulted']++;
     if (m?.scoreOnly) a.quality.add(PR.multiphaseScoreOnly);
     const { stories, tier } = a.stories;
+    const units = nettedR.get(a.proj.id) ?? (a.units as number);
+    const affordable = affordableHomesOf(a.proj, a.multiPhase, units);
+    if (affordable.clamped) a.quality.add(PR.affordableOverUnits);
     const p: InFlightProject = orderProject({
       id: a.proj.id,
       label: labelOf(a.proj, curated),
@@ -1331,10 +1360,11 @@ export function deriveProjects(
       pathway,
       stage: lastStage(a.entered),
       history: a.entered,
-      units: nettedR.get(a.proj.id) ?? (a.units as number),
+      units,
       existingUnits: m
         ? existingUnitsAt(parcelIds, input.latestRollYear, input.assessorUnits)
         : a.existingLatest,
+      affordableHomes: affordable.value,
       stories,
       storiesTier: tier,
       multiPhase: a.multiPhase,

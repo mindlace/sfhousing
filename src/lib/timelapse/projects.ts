@@ -30,6 +30,8 @@ export interface InFlightProject {
   history: Partial<Record<Stage, Day>>;
   units: number;
   existingUnits: number;
+  /** F12: the Planning record's proposed affordable homes; null or absent when not recorded */
+  affordableHomes?: number | null;
   stories: number | null;
   /** 0 = recorded field, 3 = parsed from description text */
   storiesTier: 0 | 3 | null;
@@ -70,8 +72,6 @@ export interface InFlightProject {
   }[];
   /** sorted T14 rule ids that changed or estimated a value of this project; [] if none */
   quality: string[];
-  /** F12: the Planning record's proposed affordable homes; null or absent when not recorded */
-  affordableHomes?: number | null;
 }
 
 /** One `qualityRules` entry: a T14 rule named by some project's `quality`. */
@@ -355,6 +355,12 @@ function checkProject(
   if (typeof p.multiPhase !== 'boolean') fail(`${path}.multiPhase`, 'must be a boolean');
   if (units - existingUnits < 1 && !p.multiPhase) {
     fail(`${path}.units`, 'must exceed existingUnits unless multiPhase');
+  }
+  if (p.affordableHomes !== undefined && p.affordableHomes !== null) {
+    const a = p.affordableHomes;
+    if (typeof a !== 'number' || !Number.isInteger(a) || a < 0 || a > units) {
+      fail(`${path}.affordableHomes`, 'must be null or an integer in [0, units]');
+    }
   }
 
   if (p.stories !== null) {

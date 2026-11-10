@@ -28,7 +28,8 @@ export const PR = {
   /** The T3 validator's marker of a score-only master (src/lib/timelapse/projects.ts). */
   multiphaseScoreOnly: SCORE_ONLY_QUALITY_ID,
   multiphaseDaNetting: 'pr.multiphase.da-netting',
-  rhnaTierUnrecorded: 'pr.rhna.tier-unrecorded'
+  rhnaTierUnrecorded: 'pr.rhna.tier-unrecorded',
+  affordableOverUnits: 'pr.affordable.over-units'
 } as const;
 
 export type PrRuleId = (typeof PR)[keyof typeof PR];
@@ -527,6 +528,22 @@ export const PR_RULES: readonly QualityRule[] = [
       'Completed affordable homes whose income tier the records do not give were counted as tier not recorded',
     denominator: 'counted housing-production rows with affordable homes',
     warnShare: 0.05,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    id: PR.affordableOverUnits,
+    owner: OWNER,
+    source: 'datasf-planning-projects',
+    field: 'affordableHomes',
+    kind: 'bound',
+    action: 'replace',
+    tier: 2,
+    valueTier: 0,
+    maskBit: null,
+    label: "A project's proposed affordable homes were capped at its homes",
+    denominator: 'in-flight projects with a recorded affordable count',
+    warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false
   }

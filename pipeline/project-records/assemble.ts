@@ -217,6 +217,7 @@ export function orderProject(p: InFlightProject): InFlightProject {
     history: inStageOrder(p.history),
     units: p.units,
     existingUnits: p.existingUnits,
+    ...(p.affordableHomes === undefined ? {} : { affordableHomes: p.affordableHomes }),
     stories: p.stories,
     storiesTier: p.storiesTier,
     multiPhase: p.multiPhase,

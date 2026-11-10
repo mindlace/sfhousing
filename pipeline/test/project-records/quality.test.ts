@@ -305,6 +305,16 @@ const TABLE: Record<string, Spec> = {
     failShare: 0.1,
     label:
       'Completed affordable homes whose income tier the records do not give were counted as tier not recorded'
+  },
+  'pr.affordable.over-units': {
+    kind: 'bound',
+    action: 'replace',
+    tier: 2,
+    valueTier: 0,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label: "A project's proposed affordable homes were capped at its homes"
   }
 };
 const IDS = Object.keys(TABLE).sort();
