@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../generator/seed';
+import { miniCity } from '../sim/scenario/fixtures/mini-parcels';
+import { featureValue } from '../data/scenario-codec';
+import mini from '../sim/scenario/fixtures/mini-calibration.json';
 import small from './fixtures/calibration-small.json';
 import { exp, log } from './math';
 import { readFileSync } from 'node:fs';
@@ -11,6 +14,7 @@ import {
   cumulativeTotal,
   eventualProbabilities,
   initiationHazard,
+  initiationLogit,
   parseCalibration,
   sampleTransition,
   typicalMonths
@@ -68,6 +72,30 @@ describe('initiationHazard', () => {
     };
     const f = { potentialRatio: 6, existingUnits: 12 } as Record<FeatureId, number>;
     expect(initiationHazard(m, f)).toBe(1 / (1 + exp(-(-6 + 1 + -0.75))));
+  });
+});
+
+describe('initiationLogit', () => {
+  it('is the linear predictor of initiationHazard, bit for bit', () => {
+    const f = { potentialRatio: 3 } as Record<FeatureId, number>;
+    expect(initiationLogit(cal.initiation, f)).toBe(-6 + 0.5);
+    expect(1 / (1 + exp(-initiationLogit(cal.initiation, f)))).toBe(
+      initiationHazard(cal.initiation, f)
+    );
+  });
+
+  it('matches initiationHazard on every hostable mini-city row', () => {
+    const m = (mini as unknown as Calibration).initiation;
+    const { parcels: p } = miniCity();
+    let seen = 0;
+    for (let i = 0; i < p.count; i++) {
+      if (p.hostable[i] !== 1) continue;
+      const f = {} as Record<FeatureId, number>;
+      for (const term of m.terms) f[term.feature] = featureValue(p, i, term.feature, 'fzp');
+      expect(1 / (1 + exp(-initiationLogit(m, f)))).toBe(initiationHazard(m, f));
+      seen++;
+    }
+    expect(seen).toBeGreaterThan(0);
   });
 });
 
@@ -830,6 +858,198 @@ describe('parseCalibration', () => {
     const e = rejection(c);
     expect(e.message).toContain(path);
     expect(e.path).toContain(path);
+  });
+
+  describe('market', () => {
+    const src = (extra: object = {}) => ({
+      tier: 2,
+      label: 'x',
+      sources: [{ label: 's', url: 'https://x.org' }],
+      method: 'm',
+      n: 5,
+      window: ['2023-01-01', '2025-12-31'],
+      ...extra
+    });
+    const liveMarket = (): any => ({
+      today: {
+        all: -0.643571,
+        private: Number(log(116 / 245.521).toPrecision(6)),
+        years: [2023, 2025],
+        observed: { all: 129, private: 116 },
+        implied: 245.521,
+        provenance: src()
+      },
+      crossCheck: { logOdds: -0.5, provenance: { ...prov, tier: 3 } },
+      slope: {
+        perCostShare: 1.2,
+        provenance: src(),
+        crossChecks: {
+          costCoefficient: -0.4,
+          priceCoefficient: 0.7,
+          provenance: { ...prov, tier: 3 }
+        }
+      }
+    });
+    const fixtureMarket = (): any => ({
+      today: {
+        all: -0.693147,
+        private: -0.798508,
+        years: [2023, 2025],
+        observed: { all: 10, private: 9 },
+        implied: 20,
+        provenance: prov
+      },
+      crossCheck: { logOdds: 0, provenance: prov },
+      slope: {
+        perCostShare: 1,
+        provenance: prov,
+        crossChecks: { costCoefficient: 0, priceCoefficient: 0, provenance: prov }
+      }
+    });
+    const withMarket = (m: unknown): any => ({ ...clone(), market: m });
+
+    it('accepts live, fixture and absent market, and unknown top-level keys', () => {
+      for (const m of [liveMarket(), fixtureMarket()]) {
+        const c = withMarket(m);
+        expect(parseCalibration(c)).toBe(c);
+      }
+      const c = { ...clone(), market: liveMarket(), affordableRoutes: {}, somethingNew: 1 };
+      expect(parseCalibration(c)).toBe(c);
+      expect(parseCalibration(clone()).market).toBeUndefined();
+    });
+
+    const missing = (path: string[]) => (m: any) => {
+      let o = m;
+      for (const k of path.slice(0, -1)) o = o[k];
+      delete o[path[path.length - 1]];
+    };
+    const extra = (path: string[]) => (m: any) => {
+      let o = m;
+      for (const k of path) o = o[k];
+      o.extra = 1;
+    };
+    const mcases: [string, (m: any) => void, string, string][] = [
+      ['market not an object', (m) => m, 'market', 'expected an object'],
+      ...['today', 'crossCheck', 'slope'].map((k): [string, (m: any) => void, string, string] => [
+        `missing ${k}`,
+        missing([k]),
+        `market.${k}`,
+        'missing'
+      ]),
+      ...(
+        [
+          ['today', 'all'],
+          ['today', 'private'],
+          ['today', 'years'],
+          ['today', 'observed'],
+          ['today', 'implied'],
+          ['today', 'provenance'],
+          ['today', 'observed', 'all'],
+          ['today', 'observed', 'private'],
+          ['crossCheck', 'logOdds'],
+          ['crossCheck', 'provenance'],
+          ['slope', 'perCostShare'],
+          ['slope', 'provenance'],
+          ['slope', 'crossChecks'],
+          ['slope', 'crossChecks', 'costCoefficient'],
+          ['slope', 'crossChecks', 'priceCoefficient'],
+          ['slope', 'crossChecks', 'provenance']
+        ] as string[][]
+      ).map((p): [string, (m: any) => void, string, string] => [
+        `missing ${p.join('.')}`,
+        missing(p),
+        `market.${p.join('.')}`,
+        'missing'
+      ]),
+      ...(
+        [
+          [],
+          ['today'],
+          ['today', 'observed'],
+          ['crossCheck'],
+          ['slope'],
+          ['slope', 'crossChecks']
+        ] as string[][]
+      ).map((p): [string, (m: any) => void, string, string] => [
+        `extra key at ${p.join('.') || 'market'}`,
+        extra(p),
+        `market${p.map((k) => `.${k}`).join('')}.extra`,
+        'unexpected key'
+      ]),
+      [
+        'years gap 1',
+        (m) => (m.today.years = [2023, 2024]),
+        'market.today.years',
+        'expected [first, first + 2], got [2023,2024]'
+      ],
+      [
+        'observed.all 1.5',
+        (m) => (m.today.observed.all = 1.5),
+        'market.today.observed.all',
+        'expected a positive integer, got 1.5'
+      ],
+      [
+        'observed.private 0',
+        (m) => (m.today.observed.private = 0),
+        'market.today.observed.private',
+        'expected a positive integer, got 0'
+      ],
+      [
+        'observed.private 130',
+        (m) => (m.today.observed.private = 130),
+        'market.today.observed.private',
+        'expected at most 129, got 130'
+      ],
+      [
+        'implied 0',
+        (m) => (m.today.implied = 0),
+        'market.today.implied',
+        'expected a positive number, got 0'
+      ],
+      [
+        'all off by 2e-5',
+        (m) => (m.today.all += 2e-5),
+        'market.today.all',
+        `expected ln(observed.all ÷ implied) = ${log(129 / 245.521)}, got ${-0.643571 + 2e-5}`
+      ],
+      [
+        'all NaN',
+        (m) => (m.today.all = NaN),
+        'market.today.all',
+        'expected a number in [-10, 10], got NaN'
+      ],
+      [
+        'all 11',
+        (m) => {
+          m.today.observed = { all: 59874, private: 100 };
+          m.today.implied = 59874 / exp(11);
+          m.today.all = 11;
+        },
+        'market.today.all',
+        'expected a number in [-10, 10], got 11'
+      ],
+      [
+        'perCostShare 0',
+        (m) => (m.slope.perCostShare = 0),
+        'market.slope.perCostShare',
+        'expected a positive number, got 0'
+      ],
+      [
+        'today.provenance.sources []',
+        (m) => (m.today.provenance.sources = []),
+        'market.today.provenance.sources',
+        'expected at least one source'
+      ]
+    ];
+
+    it.each(mcases)('rejects %s', (_name, mutate, path, message) => {
+      let m = liveMarket();
+      if (_name === 'market not an object') m = 42;
+      else mutate(m);
+      const e = rejection(withMarket(m));
+      expect(e.path).toBe(path);
+      expect(e.message).toBe(`${path}: ${message}`);
+    });
   });
 
   it('accepts equal phase gaps (empirical ties)', () => {

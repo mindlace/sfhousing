@@ -385,6 +385,13 @@ export function sampleTransition(
   return { kind: slice.kind, days: Math.min(first + Math.floor(phi * (end - first)), end - 1) };
 }
 
+/** The linear predictor z of `initiationHazard`: intercept plus the binned coefficients. */
+export function initiationLogit(m: InitiationModel, f: Record<FeatureId, number>): number {
+  let z = m.intercept;
+  for (const term of m.terms) z += term.coef[binIndex(term.bins, f[term.feature])];
+  return z;
+}
+
 /**
  * Monthly initiation probability: logistic of the intercept plus the binned coefficients.
  * `f` must hold a finite value for every term's feature; this hot-loop function does not check.
@@ -758,6 +765,78 @@ function checkPhaseGap(v: unknown): void {
   checkProvenance(g.provenance, `${path}.provenance`);
 }
 
+/** Every key in `keys` present (`missing`), then no other (`unexpected key`). */
+function exactKeys(obj: Record<string, unknown>, path: string, keys: readonly string[]): void {
+  for (const k of keys) if (obj[k] === undefined) fail(`${path}.${k}`, 'missing');
+  checkKeys(obj, path, keys);
+}
+
+function positive(v: unknown, path: string): number {
+  if (typeof v !== 'number' || !Number.isFinite(v) || !(v > 0)) {
+    fail(path, `expected a positive number, got ${String(v)}`);
+  }
+  return v;
+}
+
+/** Spec 4.10: the market model. `today.all` and `.private` must reproduce ln(observed / implied). */
+function checkMarket(v: unknown): void {
+  const m = record(v, 'market');
+  exactKeys(m, 'market', ['today', 'crossCheck', 'slope']);
+
+  const t = record(m.today, 'market.today');
+  exactKeys(t, 'market.today', ['all', 'private', 'years', 'observed', 'implied', 'provenance']);
+  const years = t.years;
+  if (
+    !Array.isArray(years) ||
+    years.length !== 2 ||
+    !Number.isInteger(years[0]) ||
+    !Number.isInteger(years[1]) ||
+    years[1] !== years[0] + 2
+  ) {
+    fail('market.today.years', `expected [first, first + 2], got ${JSON.stringify(years)}`);
+  }
+  const o = record(t.observed, 'market.today.observed');
+  exactKeys(o, 'market.today.observed', ['all', 'private']);
+  const obs: Record<'all' | 'private', number> = { all: 0, private: 0 };
+  for (const k of ['all', 'private'] as const) {
+    const x = o[k];
+    if (typeof x !== 'number' || !Number.isInteger(x) || x < 1) {
+      fail(`market.today.observed.${k}`, `expected a positive integer, got ${String(x)}`);
+    }
+    obs[k] = x;
+  }
+  if (obs.private > obs.all) {
+    fail('market.today.observed.private', `expected at most ${obs.all}, got ${obs.private}`);
+  }
+  const implied = positive(t.implied, 'market.today.implied');
+  for (const k of ['all', 'private'] as const) {
+    const x = t[k];
+    if (typeof x !== 'number' || !Number.isFinite(x) || x < -10 || x > 10) {
+      fail(`market.today.${k}`, `expected a number in [-10, 10], got ${String(x)}`);
+    }
+    const want = log(obs[k] / implied);
+    if (!(Math.abs(x - want) <= 1e-5)) {
+      fail(`market.today.${k}`, `expected ln(observed.${k} ÷ implied) = ${want}, got ${x}`);
+    }
+  }
+  checkProvenance(t.provenance, 'market.today.provenance');
+
+  const c = record(m.crossCheck, 'market.crossCheck');
+  exactKeys(c, 'market.crossCheck', ['logOdds', 'provenance']);
+  finite(c.logOdds, 'market.crossCheck.logOdds');
+  checkProvenance(c.provenance, 'market.crossCheck.provenance');
+
+  const s = record(m.slope, 'market.slope');
+  exactKeys(s, 'market.slope', ['perCostShare', 'provenance', 'crossChecks']);
+  positive(s.perCostShare, 'market.slope.perCostShare');
+  checkProvenance(s.provenance, 'market.slope.provenance');
+  const x = record(s.crossChecks, 'market.slope.crossChecks');
+  exactKeys(x, 'market.slope.crossChecks', ['costCoefficient', 'priceCoefficient', 'provenance']);
+  finite(x.costCoefficient, 'market.slope.crossChecks.costCoefficient');
+  finite(x.priceCoefficient, 'market.slope.crossChecks.priceCoefficient');
+  checkProvenance(x.provenance, 'market.slope.crossChecks.provenance');
+}
+
 /**
  * Validate a parsed `calibration.json` (design doc T12, spec section 4.2). Throws a
  * `CalibrationFormatError` naming the path of the first violation; otherwise returns the same
@@ -777,5 +856,6 @@ export function parseCalibration(json: unknown): Calibration {
   if (c.streamlinedForLocalProgram === undefined) fail('streamlinedForLocalProgram', 'missing');
   checkProvenance(c.streamlinedForLocalProgram, 'streamlinedForLocalProgram');
   checkPhaseGap(c.phaseGap);
+  if (c.market !== undefined) checkMarket(c.market);
   return json as Calibration;
 }
