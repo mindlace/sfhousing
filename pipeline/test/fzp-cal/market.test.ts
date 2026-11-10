@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 import type { StartCohort } from '../../lib/affordable-cohort';
 import { parseMarketFile } from '../../enrichment/market-schema';
 import { logistic } from '../../lib/fzp-cal/irls';
-import { marketToday, type MarketInput } from '../../lib/fzp-cal/market';
+import { marketModel, marketToday, type MarketInput } from '../../lib/fzp-cal/market';
+import { PROTOTYPES, type Prototype } from '../../../src/lib/sim/finance/prototypes';
+import type { MarketFile } from '../../enrichment/market-schema';
 import type { PanelStart } from '../../lib/fzp-cal/panel';
 import { datasf } from '../../lib/fzp-cal/provenance';
 import { sig6 } from '../../lib/fzp-cal/tail';
@@ -306,5 +308,275 @@ describe('marketToday: the fixture profile', () => {
     const x = input({}, { fixture: true, holdOut: null });
     x.impliedPerYear[2026] = 5;
     expect(marketToday(x).today.years).toEqual([2024, 2026]);
+  });
+});
+
+function at(
+  year: number,
+  stories: number | null,
+  homes: number | null,
+  cohort: StartCohort = 'private'
+): PanelStart {
+  return { year, basis: 0, cohort, homes, stories };
+}
+
+/** The weights input: every recent start hand-placed, one start before the weight years. */
+function weightInput(over: Partial<MarketInput> = {}): MarketInput {
+  const list = [
+    at(2020, 5, 45),
+    at(2023, 5, 45),
+    at(2023, 8, 130, 'noRecord'),
+    at(2024, 8, 130, 'unknown'),
+    at(2024, null, 13),
+    at(2025, 7, null),
+    at(2025, null, 40),
+    at(2025, 10, 100, 'affordable')
+  ];
+  return input({ observed: [2, 2, 3] }, { starts: list, ...over });
+}
+
+const share = (p: Prototype) => (p.shortfallPerHome + 65_000) / p.costPerHome;
+
+describe('marketModel: the Controller cross-check', () => {
+  it('reads the committed market.json to the spec values', () => {
+    const { market, report } = marketModel(input());
+    expect(market.crossCheck.logOdds).toBe(-1.28933);
+    expect(report.means.costRecent).toBeCloseTo(115.266667, 5);
+    expect(report.means.costReference).toBeCloseTo(101.747368, 5);
+    expect(report.means.priceRecent).toBe(89.5);
+    expect(report.means.priceReference).toBeCloseTo(85.878947, 5);
+    expect(market.slope.crossChecks.costCoefficient).toBe(11.4345);
+  });
+
+  it('labels the cross-check tier 3 with the Controller source', () => {
+    const p = marketModel(input()).market.crossCheck.provenance;
+    expect(p.tier).toBe(3);
+    expect(p.label).toBe(
+      "The Controller's development model on its cost and price indices (tier 3, a cross-check; not used)"
+    );
+    expect(p.sources).toEqual([{ label: marketFile.source.label, url: marketFile.source.url }]);
+    expect(p.method).toContain('chart-read, approximate');
+    expect(p.method).toContain(
+      "the Controller's model is annual, on a lot producing housing; ours is monthly, on a project's first filing; the two shifts are comparable only as odds ratios"
+    );
+    expect(p.method).toContain('2021-2023');
+    expect(p.method).toContain('2005-2023');
+  });
+
+  it('fails when the price periods are not the panel years minus lagYears', () => {
+    const file: MarketFile = structuredClone(marketFile);
+    file.priceIndex.means[0].to = 2019;
+    file.priceIndex.means[1].from = 2020;
+    const x = input({}, { enrichment: { file, path: 'market.json' } });
+    expect(() => marketModel(x)).toThrow(CalibrationError);
+    expect(() => marketModel(x)).toThrow(
+      'market: market.json: price periods 2005-2019, 2020-2023 do not match the panel years minus lagYears (2005-2020, 2021-2023)'
+    );
+  });
+});
+
+describe('marketModel: the weights and the slope', () => {
+  it('weights the binned private starts of the weight years by prototype', () => {
+    const { market, report } = marketModel(weightInput());
+    expect(report.years).toEqual([2021, 2025]);
+    expect(report.weights.map((w) => [w.id, w.starts, w.weight])).toEqual([
+      ['A', 1, 0.25],
+      ['B', 2, 0.5],
+      ['C', 0, 0],
+      ['D', 0, 0],
+      ['E', 1, 0.25]
+    ]);
+    expect(report.weights.map((w) => w.rule)).toEqual([
+      'homes ≥ 25, stories ≤ 6',
+      'homes ≥ 25, stories 7 to 10',
+      'homes ≥ 25, stories 11 to 18',
+      'homes ≥ 25, stories above 18',
+      'homes under 25'
+    ]);
+    expect(report.weights[1]).toMatchObject({
+      uncoveredPerHome: 217_000,
+      costPerHome: 736_700,
+      uncoveredShare: 217_000 / 736_700
+    });
+    expect(report.unbinned).toEqual({ homes: 1, stories: 1 });
+    expect(report.equalWeights).toBe(false);
+    expect(report.typicalUncoveredShare).toBeCloseTo(
+      0.25 * (242000 / 729700) + 0.5 * (217000 / 736700) + 0.25 * (418000 / 929700),
+      12
+    );
+    expect(market.slope.perCostShare).toBe(
+      sig6(-market.today.private / report.typicalUncoveredShare)
+    );
+    const [A, B, , , E] = PROTOTYPES;
+    const value = (p: Prototype) => p.costPerHome / (p.costPerHome - p.shortfallPerHome);
+    expect(report.typicalCostOverValue).toBeCloseTo(
+      0.25 * value(A) + 0.5 * value(B) + 0.25 * value(E),
+      12
+    );
+    expect(market.slope.crossChecks.priceCoefficient).toBe(
+      sig6(0.0143 * 89.5 * report.typicalCostOverValue)
+    );
+    expect(share(A)).toBeCloseTo(242000 / 729700, 12);
+  });
+
+  it('labels the slope tier 2 with counts, sources and the window', () => {
+    const p = marketModel(weightInput()).market.slope.provenance;
+    expect(p.tier).toBe(2);
+    expect(p.label).toBe(
+      "Odds shift for public money: closing a typical private project's uncovered cost returns its odds to the 2007-2025 average (tier 2)"
+    );
+    expect(p.n).toBe(4);
+    expect(p.window).toEqual(['2021-01-01', '2025-12-31']);
+    const urls = p.sources.map((s) => s.url);
+    expect(new Set(urls).size).toBe(urls.length);
+    for (const s of [
+      datasf('planningProjects'),
+      datasf('permits'),
+      ...PROTOTYPES[0].provenance.sources
+    ]) {
+      expect(urls).toContain(s.url);
+    }
+    expect(p.method).toContain('typicalUncoveredShare');
+    expect(p.method).toMatch(/1 start.* homes not recorded/);
+    const c = marketModel(weightInput()).market.slope.crossChecks.provenance;
+    expect(c.tier).toBe(3);
+    expect(c.sources).toEqual([{ label: marketFile.source.label, url: marketFile.source.url }]);
+    expect(c.method).toContain('costCoefficient');
+    expect(c.method).toContain('priceCoefficient');
+  });
+
+  it('fails live when no private start of the weight years has a prototype', () => {
+    const x = input(
+      { observed: [1, 0, 1] },
+      { starts: [at(2023, null, null), at(2025, null, 30)] }
+    );
+    expect(() => marketModel(x)).toThrow(CalibrationError);
+    expect(() => marketModel(x)).toThrow('market: no private start in 2021-2025 has a prototype');
+  });
+
+  it('falls back to equal weights in the fixture when no start is binned', () => {
+    const { market, report } = marketModel(input({}, { fixture: true, holdOut: null, starts: [] }));
+    expect(report.equalWeights).toBe(true);
+    expect(report.weights.map((w) => w.weight)).toEqual([0.2, 0.2, 0.2, 0.2, 0.2]);
+    expect(market.slope.perCostShare).toBe(
+      sig6(-market.today.private / report.typicalUncoveredShare)
+    );
+  });
+
+  it('guards a prototype with no positive value per home', () => {
+    const prototypes = PROTOTYPES.map((p) =>
+      p.id === 'A' ? { ...p, shortfallPerHome: p.costPerHome } : p
+    );
+    const x = weightInput({ prototypes });
+    expect(() => marketModel(x)).toThrow(CalibrationError);
+    expect(() => marketModel(x)).toThrow('market: prototype A has no positive value per home');
+  });
+
+  it('guards a typicalUncoveredShare that is not positive', () => {
+    const prototypes = PROTOTYPES.map((p) => ({ ...p, shortfallPerHome: -65_000 }));
+    const x = weightInput({ prototypes });
+    expect(() => marketModel(x)).toThrow(CalibrationError);
+    expect(() => marketModel(x)).toThrow('market: typicalUncoveredShare 0 is not positive');
+  });
+});
+
+describe('marketModel: the hold-out never reaches market', () => {
+  it('gives the same market for a different hold-out prediction or a failed refit', () => {
+    const good = input();
+    const other = input();
+    other.holdOut = {
+      ...(good.holdOut as Exclude<MarketInput['holdOut'], null | { error: string }>),
+      predicted: 999
+    };
+    const failed = input({}, { holdOut: { error: 'singular' } });
+    const a = marketModel(good).market;
+    for (const x of [other, failed]) {
+      const b = marketModel(x).market;
+      expect(b).toEqual(a);
+      expect(JSON.stringify(b)).toBe(JSON.stringify(a));
+    }
+  });
+});
+
+describe('marketModel: the cross-check gap warning', () => {
+  const GAP =
+    /^market: today\.all -?[\d.]+ differs from the Controller cross-check -1\.28933 by more than 1$/;
+
+  it('warns when today.all is far from the cross-check, after the today warnings', () => {
+    const { report } = marketModel(input({ observed: [100, 100, 100], affordable: [0, 0, 0] }));
+    expect(report.warnings.some((w) => GAP.test(w))).toBe(true);
+    expect(GAP.test(report.warnings.at(-1)!)).toBe(true);
+  });
+
+  it('does not warn near the design level', () => {
+    const { market, report } = marketModel(
+      input({ observed: [52, 53, 53], affordable: [0, 0, 0] })
+    );
+    expect(market.today.all).toBeCloseTo(-0.64, 1);
+    expect(report.warnings.some((w) => GAP.test(w))).toBe(false);
+  });
+
+  it('does not warn in the fixture', () => {
+    const { report } = marketModel(input({}, { fixture: true, holdOut: null }));
+    expect(report.warnings).toEqual([]);
+  });
+});
+
+describe('marketModel: shapes, tiers and counts', () => {
+  it('emits market and slope keys in declaration order with the live tiers', () => {
+    const { market, report } = marketModel(input());
+    expect(report.mode).toBe('fit');
+    expect(Object.keys(market)).toEqual(['today', 'crossCheck', 'slope']);
+    expect(Object.keys(market.slope)).toEqual(['perCostShare', 'provenance', 'crossChecks']);
+    expect(Object.keys(market.slope.crossChecks)).toEqual([
+      'costCoefficient',
+      'priceCoefficient',
+      'provenance'
+    ]);
+    expect(market.today.provenance.tier).toBe(2);
+    expect(market.crossCheck.provenance.tier).toBe(3);
+    expect(market.slope.provenance.tier).toBe(2);
+    expect(market.slope.crossChecks.provenance.tier).toBe(3);
+    for (const p of [market.today.provenance, market.slope.provenance]) {
+      expect(p.n).toBeTypeOf('number');
+      expect(p.window).toHaveLength(2);
+    }
+  });
+
+  it('labels every fixture provenance tier 4 and fixture:, with the live cross-check value', () => {
+    const { market, report } = marketModel(input({}, { fixture: true, holdOut: null }));
+    expect(report.mode).toBe('fixture');
+    expect(market.crossCheck.logOdds).toBe(-1.28933);
+    for (const p of [
+      market.today.provenance,
+      market.crossCheck.provenance,
+      market.slope.provenance,
+      market.slope.crossChecks.provenance
+    ]) {
+      expect(p.tier).toBe(4);
+      expect(p.label).toMatch(/^fixture:/);
+    }
+    expect(market.slope.perCostShare).toBe(
+      sig6(-market.today.private / report.typicalUncoveredShare)
+    );
+  });
+
+  it('counts the panel starts', () => {
+    expect(marketModel(weightInput()).report.counts).toEqual({
+      'calibration.market.recentStarts': 7,
+      'calibration.market.recentPrivate': 6,
+      'calibration.market.recentAffordable': 1,
+      'calibration.market.recentNoRecord': 1,
+      'calibration.market.recentUnknown': 1,
+      'calibration.market.weightStarts': 4,
+      'calibration.market.unbinnedHomes': 1,
+      'calibration.market.unbinnedStories': 1
+    });
+  });
+
+  it('counts the panel starts in the fixture too', () => {
+    const counts = marketModel(weightInput({ fixture: true, holdOut: null })).report.counts;
+    expect(counts['calibration.market.recentStarts']).toBe(7);
+    expect(counts['calibration.market.weightStarts']).toBe(4);
   });
 });
