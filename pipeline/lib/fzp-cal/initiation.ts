@@ -125,6 +125,11 @@ export interface InitiationReport {
   /** Σ published hazard (basis 0) × exposure per year, 2007..2025 */
   impliedPerYear: Record<number, number>;
   /**
+   * the recent years' merged cells (years L − 2 .. L, L = 2025), both bases, z = the published
+   * linear predictor on basis 0 (intercept + Σ coef); fixture: z = the fixed intercept
+   */
+  recentCells: { exposure: number; z: number }[];
+  /**
    * 12 · Σ published hazard over the last panel year's mean monthly at-risk set (its exposure ÷ 12;
    * the panel aggregates do not keep December alone): the annual rate at the end of the pre-FZP era
    */
@@ -245,11 +250,16 @@ const pct = (x: number): string => `${(100 * x).toFixed(2)}%`;
 const fin = (x: number | null): string =>
   x !== null && Number.isFinite(x) ? String(Number(x.toPrecision(6))) : 'none';
 
-/** Hazard of a merged bin tuple under the published model (basis 0). */
-function publishedHazard(model: InitiationModel, bins: number[]): number {
+/** Linear predictor of a merged bin tuple under the published model (basis 0). */
+function publishedLogit(model: InitiationModel, bins: number[]): number {
   let z = model.intercept;
   for (let t = 0; t < model.terms.length; t++) z += model.terms[t].coef[bins[t]];
-  return logistic(z);
+  return z;
+}
+
+/** Hazard of a merged bin tuple under the published model (basis 0). */
+function publishedHazard(model: InitiationModel, bins: number[]): number {
+  return logistic(publishedLogit(model, bins));
 }
 
 /** What the fitted provenance's `method` names besides the panel (spec §4.10). */
@@ -373,6 +383,7 @@ export function fitInitiation(
   const yearRows = new Map<string, BackcastRow>();
   const impliedPerYear: Record<number, number> = {};
   const observedPerYear: Record<number, number> = {};
+  const recentCells: InitiationReport['recentCells'] = [];
   for (let y = FIRST_YEAR; y <= LAST_YEAR; y++) {
     impliedPerYear[y] = 0;
     observedPerYear[y] = 0;
@@ -399,6 +410,9 @@ export function fitInitiation(
     if (year in impliedPerYear) {
       impliedPerYear[year] += cell.exposure * pub(cell);
       observedPerYear[year] += cell.events;
+    }
+    if (year >= LAST_YEAR - 2 && year <= LAST_YEAR) {
+      recentCells.push({ exposure: cell.exposure, z: publishedLogit(model, cell.bins) });
     }
   }
   const backcastRows = [...yearRows.values()].sort((a, b) => a.year - b.year || a.basis - b.basis);
@@ -501,6 +515,7 @@ export function fitInitiation(
     backcast: { byYear: backcastRows, byBasis },
     holdOut,
     impliedPerYear,
+    recentCells,
     impliedSteadyState,
     observedPerYear,
     fzpPerYear,
