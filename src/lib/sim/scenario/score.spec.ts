@@ -498,7 +498,6 @@ describe('score: targets, references, assembly (§4.5)', () => {
   it('REFERENCES are the §4.5 table', () => {
     const PLANNING_URL =
       'https://sfplanning.org/sites/default/files/documents/citywide/fzp_land_use_committee_presentation-111725.pdf';
-    const KQED_URL = 'https://www.kqed.org/news/12062042';
     expect(
       REFERENCES.map(({ id, label, units, from, by, measure }) => ({
         id,
@@ -521,7 +520,7 @@ describe('score: targets, references, assembly (§4.5)', () => {
       {
         id: 'controller-high',
         label:
-          "Controller's Office of Economic Analysis: 14,646 net additional units from the rezoning by 2045, high growth (via press coverage)",
+          "Controller's Office of Economic Analysis: 14,646 net additional units from the rezoning by 2045, high growth",
         units: 14646,
         from: d(2026, 1, 12),
         by: d(2045, 12, 31),
@@ -530,7 +529,7 @@ describe('score: targets, references, assembly (§4.5)', () => {
       {
         id: 'controller-low',
         label:
-          "Controller's Office of Economic Analysis: 8,504 net additional units from the rezoning by 2045, conservative (via press coverage)",
+          "Controller's Office of Economic Analysis: 8,504 net additional units from the rezoning by 2045, conservative",
         units: 8504,
         from: d(2026, 1, 12),
         by: d(2045, 12, 31),
@@ -542,13 +541,18 @@ describe('score: targets, references, assembly (§4.5)', () => {
     expect(REFERENCES[0].provenance.label).toContain('slide 6');
     expect(REFERENCES[0].provenance.label).toContain('2025-11-17');
     for (const r of REFERENCES.slice(1)) {
-      expect(r.provenance.sources.map((s) => s.url)).toEqual([KQED_URL]);
-      expect(r.provenance.label).toContain('via secondary');
-      expect(r.provenance.method).toContain('beyond what existing zoning might produce');
-      expect(r.provenance.method).toContain('over the next 20 years');
-      expect(r.provenance.method).toContain('inferred');
+      expect(r.provenance.sources.map((s) => s.url)).toEqual([
+        'https://newspack-missionlocal.s3.amazonaws.com/mission/wp-content/uploads/2025/10/250700_economic_impact_final.pdf'
+      ]);
+      expect(r.provenance.sources[0].label).toContain('slide 18');
+      expect(r.provenance.label).not.toContain('KQED');
+      expect(r.provenance.method).toContain('slide 18');
+      expect(r.provenance.method).toContain("holds today's market");
       expect(r.provenance.method).toContain('2026-01-12');
       expect(r.provenance.method).toContain('end of 2045');
+      const text = JSON.stringify(r);
+      expect(text).not.toContain('press');
+      expect(text).not.toContain('KQED');
     }
   });
 
