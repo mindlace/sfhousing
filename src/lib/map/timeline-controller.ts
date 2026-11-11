@@ -126,6 +126,8 @@ export class TimelineController {
   private lastRevision = -1;
   private cells = new Map<string, Cell>();
   private queue: Slice[] = [];
+  /** Cells installed since construction (cumulative; the run-switch bench reads it). */
+  private installs = 0;
   private overlay: Layer[] = [];
   private rafHandle: number | null = null;
   private current: Layer[] = [];
@@ -280,6 +282,7 @@ export class TimelineController {
       demolish: { total: this.pump.total, applied: this.pump.applied },
       // Queued slices + a scheduled pump frame. 0 = layers and feature-state have converged.
       pending: this.queue.length + (this.pump.pending ? 1 : 0),
+      installs: this.installs,
       layerIds: this.current.map((l) => l.id)
     };
   }
@@ -346,6 +349,7 @@ export class TimelineController {
     };
     this.buildCellLayers(cell);
     this.cells.set(pack.cellId, cell);
+    this.installs++;
     this.barsDirty = true;
   }
 

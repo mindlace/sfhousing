@@ -1,4 +1,4 @@
-// e2e debug hook for /fzp (spec §4.4): `window.__sfhFzp`, read-only. Compiled in only when
+// e2e debug hook for /fzp (spec §4.4): `window.__sfhFzp`: state getters, plus `selectRank` (the run-switch bench drives it). Compiled in only when
 // VITE_E2E === '1' (like src/lib/map/debug.ts); otherwise a constant-false branch Vite drops.
 import type { LeverStatus } from '$lib/sim-page/lever-status';
 import type { SimPhase } from '$lib/sim-page/run-phase.svelte';
@@ -28,6 +28,23 @@ export interface SfhFzpDebug {
     total: number;
     sentRev: number | null;
   };
+  /** The band's seeds, best first; null until the current levers' band has finished. */
+  readonly ranks: readonly number[] | null;
+  /**
+   * Shows the run at `position` (0 = Best): the representative run (a null seed) at the median
+   * position, else `ranks[position]`. A no-op while `ranks` is null.
+   */
+  selectRank(position: number): void;
+  /** The latest `selectRank`'s `performance.now()` stamps; null before any. */
+  readonly switchTrace: {
+    seed: number | null;
+    rev: number;
+    requestedAt: number;
+    /** The first non-stale timeline at `rev`. */
+    answeredAt: number | null;
+    /** The first timeline at `rev` that is `complete`. */
+    completeAt: number | null;
+  } | null;
 }
 
 declare global {
@@ -74,6 +91,15 @@ export function installFzpDebug(get: () => SfhFzpDebug): () => void {
     },
     get levers() {
       return get().levers;
+    },
+    get ranks() {
+      return get().ranks;
+    },
+    selectRank(position) {
+      get().selectRank(position);
+    },
+    get switchTrace() {
+      return get().switchTrace;
     }
   };
   window.__sfhFzp = hook;

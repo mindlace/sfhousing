@@ -21,7 +21,7 @@ import { REAL_ACTUAL, SIMULATED } from './fixtures/cards';
 import { formatCount } from '$lib/scoreboard/format';
 import { meterValueText } from '$lib/scoreboard/view';
 import { TIMELINE_SCORE } from './fixtures/timeline-score';
-import { FakeScenarioWorker, timelineMsg } from './test/fake-worker';
+import { FakeScenarioWorker, ranksMsg, timelineMsg } from './test/fake-worker';
 import FzpModeHost from './test/FzpModeHost.svelte';
 import { callsOf, stub } from './test/sim-map-stub';
 import { scoreAt, vsFzpText } from './score-view';
@@ -1860,5 +1860,60 @@ describe('FzpMode Setup and Run (/sim, spec §1)', () => {
     expect(debug().runPhase).toBeNull();
     await expect.element(slider()).toBeEnabled();
     await expect.element(playLabel()).toHaveTextContent(/^Play$/);
+  });
+});
+
+describe('FzpMode band ranks', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_E2E', '1');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("keeps the latest band's ranks and drops an older revision's", async () => {
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await toReady(s, 7);
+    const w = s.w();
+    const initRev = lastRev(w);
+    expect(window.__sfhFzp!.ranks).toBeNull();
+    w.emit(ranksMsg(initRev, [3, 1, 2]));
+    await expect.poll(() => window.__sfhFzp!.ranks).toEqual([3, 1, 2]);
+
+    await (await s.r).rerender({ levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });
+    await expect.poll(() => w.allOf('setLevers').length).toBe(1);
+    const rev = w.lastOf('setLevers')!.rev;
+    expect(window.__sfhFzp!.ranks).toBeNull();
+    w.emit(ranksMsg(initRev, [9, 9, 9]));
+    expect(window.__sfhFzp!.ranks).toBeNull();
+    w.emit(ranksMsg(rev, [2, 3, 1]));
+    await expect.poll(() => window.__sfhFzp!.ranks).toEqual([2, 3, 1]);
+  });
+
+  it('selectRank requests the run at that position, null at the median', async () => {
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await toReady(s, 7);
+    const w = s.w();
+    const d = () => window.__sfhFzp!;
+    d().selectRank(0); // no ranks yet: a no-op
+    expect(w.allOf('reroll')).toEqual([]);
+    expect(d().switchTrace).toBeNull();
+
+    w.emit(ranksMsg(lastRev(w), [3, 1, 2]));
+    await expect.poll(() => d().ranks).toEqual([3, 1, 2]);
+    d().selectRank(0);
+    expect(w.lastOf('reroll')).toMatchObject({ seed: 3 });
+    expect(d().switchTrace).toMatchObject({ seed: 3, answeredAt: null, completeAt: null });
+    const rev = lastRev(w);
+    expect(d().switchTrace!.rev).toBe(rev);
+    w.emit(timelineMsg(rev, 3));
+    await expect.poll(() => d().switchTrace!.completeAt).not.toBeNull();
+    expect(d().switchTrace!.answeredAt).not.toBeNull();
+    expect(d().ranks).toEqual([3, 1, 2]); // a reroll keeps the band's order
+
+    d().selectRank(1); // medianRank(3) = 1: the representative run, a null seed
+    expect(w.allOf('reroll')).toHaveLength(2);
+    expect(w.lastOf('reroll')).toMatchObject({ seed: null });
+    expect(d().switchTrace).toMatchObject({ seed: null });
   });
 });

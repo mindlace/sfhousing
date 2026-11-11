@@ -515,6 +515,20 @@ describe('TimelineController time', () => {
 });
 
 describe('TimelineController lookup, snapshot and destroy', () => {
+  it('debugSnapshot().installs counts every installed cell across revisions', () => {
+    const c = controller();
+    c.apply(timelineSmall);
+    for (let i = 0; i < 4; i++) deps.flushFrame();
+    expect(c.debugSnapshot().installs).toBe(timelineSmall.cells.length);
+    c.apply(timelineSmallRev1);
+    for (let i = 0; i < 4; i++) deps.flushFrame();
+    const total = timelineSmall.cells.length + timelineSmallRev1.cells.length;
+    expect(c.debugSnapshot().installs).toBe(total);
+    c.setLookups(timelineLookups); // a re-encode installs nothing
+    for (let i = 0; i < 4; i++) deps.flushFrame();
+    expect(c.debugSnapshot().installs).toBe(total);
+  });
+
   it('resolves a part on either layer to its slot', () => {
     const c = controller();
     c.apply(timelineSmall);

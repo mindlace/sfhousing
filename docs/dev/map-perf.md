@@ -98,6 +98,32 @@ Pump max ops per frame, 2026-10-17 (full sweep; the earlier timeline-only run ga
 
 The first two rows were measured on open packed rings; the "closed rings (after #21)" rows were re-run after the closing vertex landed (every timeline part has one more wall). The closed-ring deltas (pump 48 to 53 ops, drag p95 9.0 to 10.3 ms) are run-to-run spread, not an effect of the extra wall: pump op counts do not depend on wall count, and earlier runs already varied by this much. Other preview servers were running on the machine during the closed-ring run, which adds to the noise. Both pump maxima stay far under the 2,000 feature-state cap.
 
+## Run slider switch
+
+`e2e/bench/run-slider.bench.ts` measures how long `/sim` takes to show another of the band's 101 runs. It opens `/sim`, starts a run, waits for the band's `ranks`, the first run's timeline and an idle install queue, then makes 10 switches per case through the e2e hook (`window.__sfhFzp.selectRank(position)`, position 0 = Best; the median position asks for the representative run). Each switch is one in-page evaluate that stamps `t0`, reads `timelineSnapshot().installs`, calls `selectRank`, and polls every `requestAnimationFrame`:
+
+- `first`: the first frame where a cell has installed (`installs` grew) and the new timeline has answered (`switchTrace.answeredAt`).
+- `full`: the first frame where the run is complete (`switchTrace.completeAt`) and the install queue is empty (`pending === 0`).
+
+Four cases: camera `default` (the page's opening camera) or `zoomed` (downtown, zoom 15.5, pitch 55, as the timeline cases) times move `one tick` (alternate the median and the next position) or `Best↔Worst` (alternate positions 0 and 100). It prints p50/p95 of `first` and `full` with the dataset, renderer and DPR, and asserts the `default` camera's `full` p95 is at most 3000 ms (the spec's ceiling). Later run-slider tasks re-run the same bench.
+
+Run it on a quiet machine, live:
+
+```bash
+npm run data:local -- <production dataset version>   # once; `npx tsx scripts/dataset-version.ts` on main prints it
+SFH_BENCH_DATASET=<version> npm run bench:map -- 'run-slider\.bench'
+```
+
+`SFH_BENCH_DATASET` makes `playwright.bench.config.ts` skip `npm run data:fixture` and serve that version (`PUBLIC_DATASET_VERSION`). Without it the bench runs against fixture-0, which is only a smoke check: its timeline is tiny (the smoke run on 2026-11-10 read about 6 ms `first` and 15 ms `full` in all four cases). Filter with `'run-slider\.bench'`, not `run-slider`: Playwright matches the filter against the whole file path, so inside a worktree named `*run-slider*` the bare word selects every bench file.
+
+### Results
+
+| Machine   | Date      | Dataset | Case     | first p50/p95               | full p50/p95                | Label                 |
+| --------- | --------- | ------- | -------- | --------------------------- | --------------------------- | --------------------- |
+| (pending) | (pending) | live SF | all four | deferred: needs a quiet run | deferred: needs a quiet run | baseline: reroll path |
+
+The live baseline was not taken in the session that wrote the bench: the machine was under heavy load (1-minute load average about 38) when it was written, and it needs the production dataset in local R2 (`data:local`) on a quiet machine. Ballpark expectations, from the pieces and not measured: the worker simulates a run in about 20 ms, cold building generation costs about 25 microseconds per building, and today's whole-city install is about 1 s (4 cells per frame times 256 cells at 60 Hz). So the baseline full switch at the default camera should land around 1 to 3 s, and a viewport-sized install around 0.2 to 0.5 s.
+
 ## CI
 
 CI does not run this bench. Headless Chromium in CI renders with software GL (SwiftShader), so

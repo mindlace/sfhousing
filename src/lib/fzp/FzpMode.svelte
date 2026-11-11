@@ -21,6 +21,7 @@
     PreviewResult
   } from '$lib/sim/scenario/types';
   import type { LeverLookups } from '$lib/sim/levers/apply';
+  import { medianRank } from '$lib/sim/scenario/band';
   import type { ChanceTable } from './card';
 
   type Lookups = { chance: ChanceTable; typicalMonths: ReturnType<typeof typicalMonths> };
@@ -96,7 +97,7 @@
     type ScenarioWorkerInput
   } from '$lib/sim/scenario-client';
   import type { Day } from '$lib/timelapse/time';
-  import { installFzpDebug } from './debug';
+  import { installFzpDebug, type SfhFzpDebug } from './debug';
   import { HighWater } from './high-water.svelte';
   import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
   import SimResults from './SimResults.svelte';
@@ -292,6 +293,15 @@
   let leverLookups = $state.raw<LeverLookups | null>(null);
   /** The rev of the latest non-stale timeline (0 before any). */
   let timelineRev = $state(0);
+  /** The band's seeds, best first, for the current levers; null until its run finishes. */
+  let ranks = $state.raw<number[] | null>(null);
+  /**
+   * The rev of the latest initScenario or setLevers sent: a `ranks` message below it is a stale
+   * band. A reroll does not move it (a kept band's ranks arrive at the old rev, by design).
+   */
+  let ranksFloor = 0;
+  /** The latest selectRank's timing stamps (the e2e bench reads them). */
+  let switchTrace = $state.raw<SfhFzpDebug['switchTrace']>(null);
 
   /**
    * Run was pressed: play as soon as the phase is 'run' and the score is current, for the latest
@@ -427,6 +437,8 @@
     if (!client || !manifest) return;
     const [l, incomplete] = untrack(() => [levers, leversIncomplete] as const);
     const rev = client.initScenario(manifest, HORIZON, next, l, incomplete);
+    ranksFloor = rev;
+    ranks = null;
     if (l !== undefined) {
       sentLevers = l;
       leversByRev.push({ rev, levers: l });
@@ -459,6 +471,8 @@
     if (latest === null || phase === 'failed' || retrying || rerollBusy) return;
     sentLevers = l;
     const rev = client.setLevers(l);
+    ranksFloor = rev;
+    ranks = null;
     if (!latest.answered) latest.upTo = rev; // never a reroll's: rerollBusy holds the send
     leversByRev.push({ rev, levers: l });
     setLeverState(leversSent(leverState, rev));
@@ -484,6 +498,23 @@
     latest = { rev, upTo: rev, representative: next === null, writesUrl: true, answered: false };
     rerollBusy = true;
     rerollFailed = false;
+  }
+
+  /** Shows the run at `position` in the band (0 = Best); the median position is the null seed. */
+  function selectRank(position: number): void {
+    const r = ranks;
+    if (!r || position < 0 || position >= r.length || !canReroll) return;
+    const next = position === medianRank(r.length) ? null : r[position];
+    requestReroll(next);
+    if (latest) {
+      switchTrace = {
+        seed: next,
+        rev: latest.rev,
+        requestedAt: performance.now(),
+        answeredAt: null,
+        completeAt: null
+      };
+    }
   }
 
   function anotherFuture(): void {
@@ -760,6 +791,14 @@
     onTimeline(t) {
       if (dead || !client || client.isStale(t)) return;
       timelineRev = t.rev;
+      if (switchTrace !== null && t.rev === switchTrace.rev && switchTrace.completeAt === null) {
+        const now = performance.now();
+        switchTrace = {
+          ...switchTrace,
+          answeredAt: switchTrace.answeredAt ?? now,
+          completeAt: t.complete ? now : null
+        };
+      }
       applyRender(t.render);
       score = t.score;
       answerLevers(t.rev);
@@ -798,6 +837,10 @@
         leverLookups = m.lookups;
         pushLookups();
       }
+    },
+    onRanks(m) {
+      if (dead) return;
+      if (m.rev >= ranksFloor) ranks = m.seeds;
     },
     onHeights(m) {
       if (dead) return;
@@ -972,7 +1015,10 @@
         done: leverStatus.kind === 'resolving' ? leverStatus.done : 0,
         total: leverStatus.kind === 'resolving' ? leverStatus.total : 0,
         sentRev: leverState.sentRev
-      }
+      },
+      ranks,
+      selectRank,
+      switchTrace
     }));
 
     return () => {

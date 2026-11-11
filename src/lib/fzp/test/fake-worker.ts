@@ -3,6 +3,7 @@
 import type { ScenarioWorkerLike } from '$lib/sim/scenario-client';
 import type {
   ScenarioRequest,
+  RanksResponse,
   ScenarioResponse,
   TimelineResponse,
   TimelineScore,
@@ -72,4 +73,9 @@ export function timelineMsg(
     bandRunsTotal: o.bandRunsTotal ?? 101,
     complete: true
   };
+}
+
+/** A `ranks` answer: the band's seeds, best first, at `rev`. */
+export function ranksMsg(rev: number, seeds: number[]): RanksResponse {
+  return { type: 'ranks', rev, seeds };
 }
