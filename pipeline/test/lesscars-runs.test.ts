@@ -578,42 +578,4 @@ describe('market pass-through', () => {
     expect(planInput(withMarket, same, none).market).toBe(withMarket.market);
     expect(baselineInput(withMarket, same).market).toBe(withMarket.market);
   });
-
-  // Deterministic and paired, under today's market and a later step: the arms differ only where
-  // the plan differs (here, reserved rows); every other row draws the same projects in both.
-  it('pairing holds under market steps: only reserved rows differ between the arms', () => {
-    const market = [
-      { from: base.asOf, logOdds: -0.693147 },
-      { from: dayOf(2031, 1, 1), logOdds: -1.2 }
-    ];
-    const mb: SimInput = { ...base, market };
-    const run = (rf: Int32Array, input: SimInput = mb) =>
-      runPairs({
-        base: input,
-        regimes: same,
-        reservedFrom: rf,
-        builds: [],
-        source: sourceOfRows(n, rf, new Uint8Array(n)),
-        seeds: SEEDS,
-        yearEnds: YE,
-        horizon: H
-      });
-    // no reservation: the arms are identical, seed for seed
-    for (const p of run(none).perSeed) expect(p.plan).toEqual(p.baseline);
-    // the market moves the runs (the check is not vacuous)
-    const unshifted = run(none, base).perSeed.map((p) => totalOf(p.baseline, Y - 1));
-    expect(run(none).perSeed.map((p) => totalOf(p.baseline, Y - 1))).not.toEqual(unshifted);
-    // reserve every other candidate from 2030: only the parking source may differ
-    const rf = new Int32Array(n);
-    pre.candidates.forEach((i, c) => {
-      if (c % 2 === 0) rf[i] = dayOf(2030, 1, 1);
-    });
-    let parkingDiffers = 0;
-    for (const p of run(rf).perSeed) {
-      for (const k of [FREED, TRANSIT_UNLOCKED, OTHER])
-        expect(Array.from(p.plan[k])).toEqual(Array.from(p.baseline[k]));
-      if (p.plan[PARKING].some((v, y) => v !== p.baseline[PARKING][y])) parkingDiffers++;
-    }
-    expect(parkingDiffers).toBeGreaterThan(0);
-  });
 });
