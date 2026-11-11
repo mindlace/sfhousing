@@ -5,6 +5,8 @@
  * Tiers first (spec 4.1): `tierContext` builds a run's `TierCtx` once per loaded input, and
  * `tiersOf` splits one schedule's final units by income tier; `tierSeries` (spec 4.2) sums them
  * by month with the month rules of `addNet`.
+ *
+ * Money (spec 4.4): `poolSeries` turns the engine's ledger into each pool's monthly series.
  */
 import { RHNA_TIER_TARGETS } from '$lib/scoreboard';
 import type { ProjectsFile } from '$lib/timelapse/projects';
@@ -26,9 +28,13 @@ import {
 } from '../finance';
 import { isoOf } from './dates';
 import { monthIndexer } from './score';
-import type { Schedule, SimInput } from './types';
+import type { LedgerEvent } from './money';
+import type { Schedule, SimInput, TimelineScore } from './types';
 
 export type { LedgerEvent } from './money';
+
+/** `TimelineScore.money` (F14). */
+export type Money = NonNullable<TimelineScore['money']>;
 
 /** Exact (unrounded) shares of a funded affordable project's homes, summing to 1 within 1e-9. */
 export type TierShares = Record<IncomeTier | 'unrecorded', number>;
@@ -341,3 +347,88 @@ export const TIER_SOURCES: readonly Provenance[] = [
       'rhnaCompletedNet.provenance, shown beside this entry with the label of tierBaselineLabel.'
   }
 ];
+
+// The delta series of one pool, by event kind and (for spend and loss) instrument.
+const IN = 0;
+const COMMIT = 1;
+const RELEASE = 2;
+const SPEND_GRANT = 3;
+const SPEND_LOAN = 4;
+const REPAY = 5;
+const LOSS_GRANT = 6;
+const LOSS_LOAN = 7;
+const LOSS_GUARANTEE = 8;
+const DELTAS = 9;
+
+/**
+ * Each pool's monthly money series (spec 4.4): one entry per `finance.pools` pool in that order.
+ * An event lands in month `idx(day)`, month 0 before `months[0]`; an event after `horizon` is
+ * dropped. The instrument of an event is that of its programme in `finance.programmes`. An unknown
+ * pool or programme id is a defect: it throws.
+ */
+export function poolSeries(
+  ledger: readonly LedgerEvent[],
+  finance: NonNullable<SimInput['finance']>,
+  months: Day[],
+  horizon: Day
+): Money['pools'] {
+  const n = months.length;
+  const m0 = months[0];
+  const idx = monthIndexer(months, horizon);
+  const poolIx = new Map(finance.pools.map((p, q) => [p.id, q]));
+  const instr = new Map(finance.programmes.map((g) => [g.id, g.instrument.kind]));
+  const delta = finance.pools.map(() => Array.from({ length: DELTAS }, () => new Float64Array(n)));
+  for (const e of ledger) {
+    const q = poolIx.get(e.pool);
+    if (q === undefined) throw new Error(`moneyOf: unknown pool ${e.pool}`);
+    let k: number;
+    if (e.kind === 'in') k = IN;
+    else {
+      const ins = e.programme === null ? undefined : instr.get(e.programme);
+      if (ins === undefined) throw new Error(`moneyOf: unknown programme ${e.programme}`);
+      switch (e.kind) {
+        case 'commit':
+          k = COMMIT;
+          break;
+        case 'release':
+          k = RELEASE;
+          break;
+        case 'spend':
+          k = ins === 'grant' ? SPEND_GRANT : SPEND_LOAN;
+          break;
+        case 'repay':
+          k = REPAY;
+          break;
+        case 'loss':
+          k = ins === 'grant' ? LOSS_GRANT : ins === 'loan' ? LOSS_LOAN : LOSS_GUARANTEE;
+          break;
+      }
+    }
+    if (e.day > horizon) continue;
+    delta[q][k][e.day < m0 ? 0 : idx(e.day)] += e.dollars;
+  }
+  return finance.pools.map((p, q) => {
+    const d = delta[q];
+    const run = new Float64Array(DELTAS);
+    const s = {
+      received: new Array<number>(n),
+      committed: new Array<number>(n),
+      out: new Array<number>(n),
+      spent: new Array<number>(n),
+      repaid: new Array<number>(n),
+      lost: new Array<number>(n),
+      lostCredit: new Array<number>(n)
+    };
+    for (let i = 0; i < n; i++) {
+      for (let k = 0; k < DELTAS; k++) run[k] += d[k][i];
+      s.received[i] = run[IN];
+      s.committed[i] = run[COMMIT] - run[RELEASE] - run[SPEND_GRANT] - run[SPEND_LOAN];
+      s.out[i] = run[SPEND_LOAN] - run[REPAY] - run[LOSS_LOAN];
+      s.spent[i] = run[SPEND_GRANT];
+      s.repaid[i] = run[REPAY];
+      s.lost[i] = run[LOSS_GRANT] + run[LOSS_LOAN] + run[LOSS_GUARANTEE];
+      s.lostCredit[i] = run[LOSS_LOAN] + run[LOSS_GUARANTEE];
+    }
+    return { id: p.id, label: p.label, kind: p.kind, ...s };
+  });
+}

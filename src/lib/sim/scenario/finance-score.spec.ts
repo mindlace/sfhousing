@@ -1,4 +1,5 @@
-// finance-score: homes by income tier for one schedule (spec 4.1; section 6 tests 1-8).
+// finance-score: homes by income tier (spec 4.1-4.3; section 6 tests 1-13) and the per-pool money
+// series (spec 4.4; test 16).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ASSUMED_TENURE, INCLUSIONARY, fundBundle, projectDollars, prototypeFor } from '../finance';
 import { MINI_AS_OF, MINI_HORIZON } from './fixtures/mini-projects';
@@ -6,18 +7,27 @@ import { tinyQueue, tinyStack } from './fixtures/tiny-queue';
 import {
   AFFORDABLE_CASES as A,
   MARKET,
+  MONEY_CASES as MC,
+  MONEY_HORIZON,
+  MONEY_MONTHS,
   PROJECTS,
   T,
   affordable,
   caseCtx,
+  ev,
   pipeline,
-  schedule
+  schedule,
+  type MoneyCase
 } from './fixtures/finance-score-cases';
+import { checkLedger } from './test/finance-harness';
+import { checkMoneyIdentities } from './test/money-identities';
 import type { TierUnits } from '$lib/timelapse/types';
 import { dayOf } from './dates';
 import {
   TIER_SOURCES,
   allocatePhases,
+  poolSeries,
+  type Money,
   splitByShares,
   tierBaselineLabel,
   tierContext,
@@ -333,5 +343,252 @@ describe('tierBaselineOf, tierBaselineLabel, TIER_SOURCES (spec 6 test 13)', () 
     expect(TIER_SOURCES[2].method).toContain(ASSUMED_TENURE.provenance.method);
     expect(TIER_SOURCES[1].method).toContain('tier 4 convention');
     expect(TIER_SOURCES[3].method).toContain('may mean');
+  });
+});
+
+type Series = Omit<Money['pools'][number], 'id' | 'label' | 'kind'>;
+
+/** 12 months, piecewise constant: each `[month, value]` holds from that month on (0 before). */
+function steps(...from: [number, number][]): number[] {
+  const out = new Array<number>(12).fill(0);
+  for (const [m, v] of from) out.fill(v, m);
+  return out;
+}
+
+const ZERO = steps();
+
+/** The whole pool entry: `id`, `label`, `kind` from the case's first pool; unnamed series 0. */
+function entry(c: MoneyCase, s: Partial<Series>): Money['pools'][number] {
+  const p = c.finance.pools[0];
+  return {
+    id: p.id,
+    label: p.label,
+    kind: p.kind,
+    received: ZERO,
+    committed: ZERO,
+    out: ZERO,
+    spent: ZERO,
+    repaid: ZERO,
+    lost: ZERO,
+    lostCredit: ZERO,
+    ...s
+  };
+}
+
+const series = (c: MoneyCase) => poolSeries(c.ledger, c.finance, MONEY_MONTHS, MONEY_HORIZON);
+
+describe('poolSeries (spec 6 test 16)', () => {
+  it('has 12 months on the hand ledgers, and every hand ledger is a valid engine ledger', () => {
+    expect(MONEY_MONTHS).toHaveLength(12);
+    for (const c of Object.values(MC)) {
+      const inHorizon = c.ledger.filter((e) => e.day <= MONEY_HORIZON);
+      checkLedger(inHorizon, c.finance);
+      checkMoneyIdentities({ pools: series(c) }, c.finance.pools, {
+        events: c.ledger,
+        finance: c.finance,
+        months: MONEY_MONTHS,
+        horizon: MONEY_HORIZON
+      });
+    }
+  });
+
+  it('loan lost: out until July, then 450,000 repaid and 150,000 lost (credit)', () => {
+    expect(series(MC.loanLost)).toEqual([
+      entry(MC.loanLost, {
+        received: steps([0, 1_000_000]),
+        committed: [0, 600000, 600000, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        out: [0, 0, 0, 600000, 600000, 600000, 0, 0, 0, 0, 0, 0],
+        repaid: steps([6, 450_000]),
+        lost: steps([6, 150_000]),
+        lostCredit: steps([6, 150_000])
+      })
+    ]);
+  });
+
+  it('grant spent: committed March to May, spent from June', () => {
+    expect(series(MC.grantSpent)).toEqual([
+      entry(MC.grantSpent, {
+        received: steps([0, 1_000_000]),
+        committed: steps([2, 400_000], [5, 0]),
+        spent: steps([5, 400_000])
+      })
+    ]);
+  });
+
+  it('loan repaid: out March to September, repaid from October', () => {
+    expect(series(MC.loanRepaid)).toEqual([
+      entry(MC.loanRepaid, {
+        received: steps([0, 1_000_000]),
+        committed: steps([1, 500_000], [2, 0]),
+        out: steps([2, 500_000], [9, 0]),
+        repaid: steps([9, 500_000])
+      })
+    ]);
+  });
+
+  it('guarantee completed: the reserve held February to August, released in September', () => {
+    expect(series(MC.guaranteeCompleted)).toEqual([
+      entry(MC.guaranteeCompleted, {
+        received: steps([0, 1_000_000]),
+        committed: steps([1, 250_000], [8, 0])
+      })
+    ]);
+  });
+
+  it('guarantee lost on a fully held pool: lostCredit H, and available money exactly 0', () => {
+    const got = series(MC.guaranteeLostFull);
+    expect(got).toEqual([
+      entry(MC.guaranteeLostFull, {
+        received: steps([0, 300_000]),
+        committed: steps([2, 300_000], [4, 0]),
+        lost: steps([4, 300_000]),
+        lostCredit: steps([4, 300_000])
+      })
+    ]);
+    const p = got[0];
+    const avail = p.received.map(
+      (r, i) => r - p.committed[i] - p.spent[i] - p.out[i] - p.lostCredit[i]
+    );
+    expect(avail).toEqual([300_000, 300_000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it('grant lost after construction: spent and lost G, lostCredit 0', () => {
+    expect(series(MC.grantLost)).toEqual([
+      entry(MC.grantLost, {
+        received: steps([0, 1_000_000]),
+        committed: steps([1, 200_000], [2, 0]),
+        spent: steps([2, 200_000]),
+        lost: steps([7, 200_000])
+      })
+    ]);
+  });
+
+  it('released before construction: committed March and April only', () => {
+    expect(series(MC.releaseBefore)).toEqual([
+      entry(MC.releaseBefore, {
+        received: steps([0, 1_000_000]),
+        committed: steps([2, 350_000], [4, 0])
+      })
+    ]);
+  });
+
+  it('a commit while the pool is off is a commit like any other', () => {
+    expect(MC.commitWhileOff.finance.off[0].from).toBeLessThanOrEqual(
+      MC.commitWhileOff.ledger[1].day
+    );
+    expect(series(MC.commitWhileOff)).toEqual([
+      entry(MC.commitWhileOff, {
+        received: steps([0, 1_000_000]),
+        committed: steps([2, 450_000], [5, 0]),
+        spent: steps([5, 450_000])
+      })
+    ]);
+  });
+
+  it('a pool serving a grant and a loan classes each spend and loss by its programme', () => {
+    expect(series(MC.mixed)).toEqual([
+      entry(MC.mixed, {
+        received: steps([0, 2_000_000]),
+        committed: steps([1, 800_000], [2, 0]),
+        spent: steps([2, 300_000]),
+        out: steps([2, 500_000], [5, 0]),
+        lost: steps([5, 800_000]),
+        lostCredit: steps([5, 500_000])
+      })
+    ]);
+  });
+
+  it('an event before months[0] lands in month 0', () => {
+    expect(series(MC.beforeMonths)).toEqual([
+      entry(MC.beforeMonths, { received: steps([0, 100_000], [1, 150_000]) })
+    ]);
+  });
+
+  it('an event after the horizon is dropped', () => {
+    expect(series(MC.afterHorizon)).toEqual([
+      entry(MC.afterHorizon, {
+        received: steps([0, 1_000_000]),
+        committed: steps([11, 100_000])
+      })
+    ]);
+  });
+
+  it('an uncapped pool has received 0 in every month', () => {
+    expect(series(MC.uncapped)).toEqual([
+      entry(MC.uncapped, {
+        committed: steps([1, 700_000], [3, 0]),
+        spent: steps([3, 700_000])
+      })
+    ]);
+  });
+
+  it('one entry per pool in finance.pools order, a pool with no events all 0', () => {
+    const fin = {
+      ...MC.mixed.finance,
+      pools: [{ ...MC.grantSpent.finance.pools[0] }, ...MC.mixed.finance.pools]
+    };
+    const got = poolSeries(MC.mixed.ledger, fin, MONEY_MONTHS, MONEY_HORIZON);
+    expect(got.map((p) => p.id)).toEqual(['p-grant', 'p-mixed']);
+    expect(got[0]).toEqual(entry({ ...MC.grantSpent, ledger: [] }, {}));
+    expect(got[1]).toEqual(series(MC.mixed)[0]);
+  });
+
+  it('throws on an unknown pool or programme', () => {
+    const c = MC.grantSpent;
+    const day = MONEY_MONTHS[1];
+    expect(() =>
+      poolSeries([ev(day, 'nope', null, 'in', 1)], c.finance, MONEY_MONTHS, MONEY_HORIZON)
+    ).toThrow('moneyOf: unknown pool nope');
+    expect(() =>
+      poolSeries([ev(day, 'p-grant', 'zz', 'spend', 1)], c.finance, MONEY_MONTHS, MONEY_HORIZON)
+    ).toThrow('moneyOf: unknown programme zz');
+  });
+});
+
+describe('checkMoneyIdentities catches a broken series', () => {
+  const c = MC.mixed;
+  const good = () => ({ pools: structuredClone(series(c)) });
+
+  it('I1: a cumulative series that falls, a negative stock', () => {
+    const m = good();
+    m.pools[0].spent[7] = 0;
+    expect(() => checkMoneyIdentities(m, c.finance.pools)).toThrow(/I1/);
+    const n = good();
+    n.pools[0].out[3] = -1;
+    expect(() => checkMoneyIdentities(n, c.finance.pools)).toThrow(/I1/);
+  });
+
+  it('I4: available money below 0', () => {
+    const m = good();
+    m.pools[0].committed[0] = 2_000_001;
+    expect(() => checkMoneyIdentities(m, c.finance.pools)).toThrow(/I4/);
+  });
+
+  it('I5: lostCredit above lost, a grant loss above spent', () => {
+    const m = good();
+    m.pools[0].lostCredit = m.pools[0].lostCredit.map((x) => x * 2);
+    expect(() => checkMoneyIdentities(m, c.finance.pools)).toThrow(/I5/);
+  });
+
+  it('I6: an uncapped pool with received', () => {
+    const u = MC.uncapped;
+    const m = { pools: structuredClone(series(u)) };
+    m.pools[0].received[4] = 1;
+    expect(() => checkMoneyIdentities(m, u.finance.pools)).toThrow(/I6/);
+  });
+
+  it('I2 and I3 against the ledger', () => {
+    const led = {
+      events: c.ledger,
+      finance: c.finance,
+      months: MONEY_MONTHS,
+      horizon: MONEY_HORIZON
+    };
+    const m = good();
+    m.pools[0].committed[1] -= 1;
+    expect(() => checkMoneyIdentities(m, c.finance.pools, led)).toThrow(/I2/);
+    const n = good();
+    n.pools[0].repaid = n.pools[0].repaid.map((x, i) => (i >= 5 ? x + 1 : x));
+    expect(() => checkMoneyIdentities(n, c.finance.pools, led)).toThrow(/I3/);
   });
 });

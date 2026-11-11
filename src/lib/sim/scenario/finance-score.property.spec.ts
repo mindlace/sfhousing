@@ -1,5 +1,6 @@
 // finance-score, spec 6 test 9: every `tiersOf` result is non-negative and sums to the final
 // units, over random units, programme sets (the hand-built ones and random ones), weights and tiers.
+// Test 17: the ledger identities I1-I6 on the per-pool money series over seeded valid ledgers.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { INCOME_TIERS, type IncomeTier, type PoolKind } from '$lib/timelapse/types';
@@ -11,7 +12,17 @@ import {
   pipeline,
   schedule
 } from './fixtures/finance-score-cases';
-import { TIER_FIELDS, tierContext, tierSeries, tiersOf, type TierCtx } from './finance-score';
+import {
+  TIER_FIELDS,
+  poolSeries,
+  tierContext,
+  tierSeries,
+  tiersOf,
+  type TierCtx
+} from './finance-score';
+import { ledgerModel } from './fixtures/ledger-model';
+import { checkLedger } from './test/finance-harness';
+import { checkMoneyIdentities } from './test/money-identities';
 import { MINI_AS_OF, MINI_HORIZON } from './fixtures/mini-projects';
 import { monthsOf, shownSeries } from './score';
 import { simulateDetailed } from './simulate';
@@ -183,5 +194,50 @@ describe('tierSeries sums to completedNet (spec 6 test 11)', () => {
       }),
       { seed: 11, numRuns: 200 }
     );
+  });
+});
+
+describe('ledger identities I1-I6 (spec 6 test 17)', () => {
+  it('ledgerModel is a pure function of the seed', () => {
+    expect(ledgerModel(7)).toEqual(ledgerModel(7));
+    expect(ledgerModel(7)).not.toEqual(ledgerModel(8));
+  });
+
+  it('hold on 500 seeded valid ledgers, and the generator covers every case', () => {
+    const seen = { guaranteeLoss: 0, grantLoss: 0, loanLoss: 0, commitWhileOff: 0, bank: 0 };
+    for (let seed = 1; seed <= 500; seed++) {
+      const c = ledgerModel(seed);
+      checkLedger(c.ledger, c.finance);
+      const pools = poolSeries(c.ledger, c.finance, c.months, c.horizon);
+      checkMoneyIdentities({ pools }, c.finance.pools, {
+        events: c.ledger,
+        finance: c.finance,
+        months: c.months,
+        horizon: c.horizon
+      });
+      const instr = new Map(c.finance.programmes.map((g) => [g.id, g.instrument.kind]));
+      if (c.finance.pools.some((p) => p.kind === 'bank')) seen.bank++;
+      for (const e of c.ledger) {
+        if (e.kind === 'loss') {
+          const k = instr.get(e.programme!);
+          if (k === 'guarantee') seen.guaranteeLoss++;
+          else if (k === 'grant') seen.grantLoss++;
+          else seen.loanLoss++;
+        }
+        if (
+          e.kind === 'commit' &&
+          c.finance.off.some(
+            (o) => o.pool === e.pool && o.from <= e.day && (o.to === null || e.day <= o.to)
+          )
+        ) {
+          seen.commitWhileOff++;
+        }
+      }
+    }
+    expect(seen.guaranteeLoss).toBeGreaterThan(0);
+    expect(seen.grantLoss).toBeGreaterThan(0);
+    expect(seen.loanLoss).toBeGreaterThan(0);
+    expect(seen.commitWhileOff).toBeGreaterThan(0);
+    expect(seen.bank).toBeGreaterThan(0);
   });
 });
