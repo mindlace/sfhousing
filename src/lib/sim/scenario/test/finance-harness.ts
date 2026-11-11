@@ -1,6 +1,11 @@
-/** Test harness: the ledger identities E1 to E7 of spec 4.7, checked after every event. */
+/**
+ * Test harness: the ledger identities E1 to E7 of spec 4.7, checked after every event, and
+ * `runCollect`, one engine run with everything it reports.
+ */
 import { expect } from 'vitest';
-import type { SimInput } from '../types';
+import type { Day } from '$lib/timelapse/time';
+import { runEngineWith } from '../engine';
+import type { Schedule, SimInput } from '../types';
 import type { LedgerEvent } from '../money';
 
 type Finance = NonNullable<SimInput['finance']>;
@@ -28,6 +33,7 @@ export function checkLedger(
   const progs = new Map(finance.programmes.map((g) => [g.id, g]));
   const sums = finance.pools.map(zero);
   const perProg = new Map<string, Sums>();
+  const probes = new Map((probe ?? []).map((p) => [p.after, p.available]));
   let prevDay = -Infinity;
   events.forEach((e, n) => {
     const at = `event ${n} (${e.kind} ${e.pool} ${e.programme} ${e.dollars})`;
@@ -85,8 +91,62 @@ export function checkLedger(
     if (!pool.uncapped) {
       const avail = pool.leverage * s.received - committed - s.Sg - outLoan - s.Ll - s.Lh;
       expect(avail, `${at}: E4 available`).toBeGreaterThanOrEqual(-1e-6);
-      const pr = probe?.find((p) => p.after === n);
-      if (pr) expect(pr.available[q], `${at}: E4 engine value`).toBeCloseTo(avail, 6);
+      const pr = probes.get(n);
+      if (pr) expect(pr[q], `${at}: E4 engine value`).toBeCloseTo(avail, 6);
     }
   });
+}
+
+export interface Collected {
+  /** every Schedule, sorted by `projectId` */
+  schedules: Schedule[];
+  /** the `projectId`s in the order the sink received them (funded ones in award order) */
+  order: string[];
+  ledger: LedgerEvent[];
+  /** `sink.reservation` by row; a row reported twice throws */
+  reservations: Map<number, boolean>;
+  /** after each ledger event (by index): every pool's available money as the engine holds it */
+  probes: { after: number; available: number[] }[];
+}
+
+const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** One run of `runEngineWith`, collecting schedules, ledger, reservations and probes. */
+export function runCollect(
+  input: SimInput,
+  seed: number,
+  horizon: Day,
+  opts: { serving?: 'scan' | 'grouped' } = {}
+): Collected {
+  const schedules: Schedule[] = [];
+  const ledger: LedgerEvent[] = [];
+  const reservations = new Map<number, boolean>();
+  const probes: Collected['probes'] = [];
+  runEngineWith(
+    input,
+    seed,
+    horizon,
+    {
+      schedule(s) {
+        schedules.push(s);
+      },
+      master() {},
+      reservation(row, kept) {
+        if (reservations.has(row)) throw new Error(`row ${row} reported twice`);
+        reservations.set(row, kept);
+      },
+      ledger(e) {
+        ledger.push(e);
+      }
+    },
+    {
+      serving: opts.serving,
+      probe(_e, available) {
+        probes.push({ after: ledger.length - 1, available: [...available] });
+      }
+    }
+  );
+  const order = schedules.map((s) => s.projectId);
+  schedules.sort((a, b) => cmp(a.projectId, b.projectId));
+  return { schedules, order, ledger, reservations, probes };
 }

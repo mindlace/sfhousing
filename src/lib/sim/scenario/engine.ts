@@ -21,7 +21,7 @@
 import type { ParcelId } from '$lib/data/parcel';
 import { FILL_LEVELS, fillStories, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { log } from '$lib/timelapse/math';
-import { sampleTransition } from '$lib/timelapse/model';
+import { sampleAdvance, sampleTransition } from '$lib/timelapse/model';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import { MONTH_DAYS, stageMonths, type Day } from '$lib/timelapse/time';
 import type { Transition } from '$lib/timelapse/types';
@@ -37,6 +37,7 @@ import {
 } from '$lib/timelapse/types';
 import type { StageScale } from '../levers/timers';
 import { isoOf } from './dates';
+import { fundedPass } from './funded';
 import { checkFinance } from './funding';
 import {
   piecewiseMonth,
@@ -47,6 +48,7 @@ import {
   type Precompute
 } from './input';
 import { P, drawOn, jobEntity, seedHash, streamOf } from './rng';
+import type { LedgerEvent } from './money';
 import type { Master } from './simulate';
 import type { Schedule, SimInput } from './types';
 
@@ -340,9 +342,9 @@ const SIMULATED = 2;
 /**
  * A project being stepped: its draw stream, the record the steps fill and its revision rule.
  * One per pass, reset for each project (`entered` and `revisions` are always fresh: they go into
- * the Schedule).
+ * the Schedule). @internal exported for the funded pass (`funded.ts`)
  */
-interface Job {
+export interface Job {
   stream: number; // streamOf(sh, entity, k)
   pathway: Pathway;
   /** the transitions and new-project shares it runs on (ruling 3, "Policy start date") */
@@ -353,6 +355,11 @@ interface Job {
   /** never empty: [0] is the initial proposal */
   revisions: Revision[];
   rule: typeof NONE | typeof PIPELINE | typeof SIMULATED;
+  /**
+   * a fully funded project (finance-engine spec 4.9): every stage step advances, on the stage's
+   * time draw (`sampleAdvance`), and it is never revised (rule NONE)
+   */
+  certain: boolean;
   /** pipeline rule */
   yieldCap: number;
   envelope: number;
@@ -365,7 +372,8 @@ interface Job {
   env: number;
 }
 
-const newJob = (run: Run): Job => ({
+/** @internal exported for the funded pass (`funded.ts`) */
+export const newJob = (run: Run): Job => ({
   stream: 0,
   pathway: 'discretionary',
   cal: run.cal,
@@ -373,6 +381,7 @@ const newJob = (run: Run): Job => ({
   entered: {},
   revisions: [],
   rule: NONE,
+  certain: false,
   yieldCap: 0,
   envelope: 0,
   parcels: run.parcels,
@@ -497,7 +506,9 @@ const step = { kind: 'advance' as Kind, day: 0 };
  * entered on day `e`, and its day. The kind is drawn on `P.STAGE` and the time on `P.STAGE_TIME`
  * from the job's unscaled transition, and the job's scale on `s` multiplies the time in stage,
  * fresh or in flight. `inFlight` marks an in-flight project's current stage: it is conditioned on
- * the `asOf + 1 − e` whole days survived (>= 1, as e <= asOf), so its day is after `asOf`.
+ * the `asOf + 1 − e` whole days survived (>= 1, as e <= asOf), so its day is after `asOf`. A
+ * certain job (finance-engine spec 4.9, never in flight) always advances: the time is
+ * `sampleAdvance` on the same time draw, with the same scale, and `P.STAGE` is not read.
  */
 function stageStep(run: Run, job: Job, s: Stage, e: Day, inFlight: boolean): void {
   const t = s === 'complete' ? undefined : job.cal.transitions[job.pathway][s];
@@ -505,6 +516,11 @@ function stageStep(run: Run, job: Job, s: Stage, e: Day, inFlight: boolean): voi
   const idx = STAGE_INDEX[s];
   // A stage the scale does not name, construction (never timed) included, is at 1.
   const x = (job.scale?.[job.pathway] as Partial<Record<Stage, number>> | undefined)?.[s] ?? 1;
+  if (job.certain) {
+    step.kind = 'advance';
+    step.day = e + Math.floor(x * sampleAdvance(t, drawOn(job.stream, P.STAGE_TIME, idx)).days);
+    return;
+  }
   const r = scaledTransition(
     t,
     drawOn(job.stream, P.STAGE, idx),
@@ -665,6 +681,7 @@ function pipelineRow(run: Run, job: Job, p: InFlightProject, rs: RowStatic): Sch
   job.entered = entered;
   job.revisions = [{ day: first, units: p.units, stories: p.stories }];
   job.rule = PIPELINE;
+  job.certain = false;
   job.yieldCap = rs.yieldCap;
   job.envelope = rs.envelope;
   const end = runStages(run, job, p.stage, e, true);
@@ -760,6 +777,7 @@ function masterOf(run: Run, job: Job, p: InFlightProject, rs: RowStatic): Master
   job.entered = entered;
   job.revisions = [{ day: e, units: p.units, stories: p.stories }];
   job.rule = NONE;
+  job.certain = false;
   const end = runStages(run, job, p.stage, e, true, 'entitled');
   if (end.kind === 'reached') return master({ kind: 'entitled', day: end.day });
   if (end.kind === 'complete') throw new Error(`master ${p.id} completed before entitlement`);
@@ -850,6 +868,7 @@ function phaseSchedule(
   job.entered = entered;
   job.revisions = [{ day: F_i, units: ph.units, stories: null }];
   job.rule = PIPELINE;
+  job.certain = false;
   job.yieldCap = pst.yieldCap;
   job.envelope = pst.envelope;
   const end = runStages(run, job, 'permitFiled', F_i, false);
@@ -879,7 +898,15 @@ function phaseSchedule(
 
 /** A new project's pathway from the normalised `pathwayForNew`, in `PATHWAYS` order (§4.4.4). */
 function newPathway(cal: Calibration, stream: number): Pathway {
-  const w = cal.pathwayForNew;
+  return pathwayFrom(cal.pathwayForNew, stream);
+}
+
+/**
+ * A pathway drawn on `drawOn(stream, P.PATHWAY, 0)` from the normalised shares `w`, in `PATHWAYS`
+ * order (`pathwayForNew`, or `affordableRoutes` for a certain affordable project, finance-engine
+ * spec 4.9). @internal exported for the funded pass (`funded.ts`)
+ */
+export function pathwayFrom(w: Record<Pathway, number>, stream: number): Pathway {
   let total = 0;
   for (const p of PATHWAYS) if (w[p] > 0) total += w[p];
   const x = drawOn(stream, P.PATHWAY, 0) * total;
@@ -891,7 +918,7 @@ function newPathway(cal: Calibration, stream: number): Pathway {
     last = p;
     if (x < acc) return p;
   }
-  if (last === null) throw new Error('calibration pathwayForNew has no positive share');
+  if (last === null) throw new Error('pathway shares have no positive share');
   return last; // x at a total that rounded up
 }
 
@@ -939,13 +966,13 @@ function initiationDay(run: Run, stream: number, T: number, r: Day): Day | null 
 
 /**
  * The k-th simulated project on T11 row i, initiated on `day` with `existing` units on the parcel
- * (0 once it has been demolished in the run), on its `(entity, k)` stream: pathway, first stage
- * and size (§4.4.4), then the ordinary stage steps with the simulated revision rule. Null if no
- * size level gains a home. `view`: the regime its initiation month ran on (0 = `run.parcels`, k =
- * `run.regimes[k − 1]`), whose size row, yields, envelope and Local Program it takes (ruling 1: a
- * project keeps the regime of the month it initiated in).
+ * (0 once it has been demolished in the run), on its `(entity, k)` stream: its size (§4.4.4),
+ * then `startSimulated`. Null if no size level gains a home. `view`: the regime its initiation
+ * month ran on (0 = `run.parcels`, k = `run.regimes[k − 1]`), whose size row, yields, envelope and
+ * Local Program it takes (ruling 1: a project keeps the regime of the month it initiated in).
+ * @internal exported for the funded pass (`funded.ts`)
  */
-function simulatedProject(
+export function simulatedProject(
   run: Run,
   job: Job,
   i: number,
@@ -957,14 +984,6 @@ function simulatedProject(
 ): Schedule | null {
   const sw = view > 0 ? run.regimes[view - 1] : null;
   const p = sw ? sw.parcels : run.parcels;
-  const cal = run.newCal;
-  const pathway: Pathway = p.localProgram[i] === 1 ? 'streamlined' : newPathway(cal, stream);
-  const first: Stage =
-    drawOn(stream, P.PPA, 0) < cal.ppaShare[pathway]
-      ? 'preApplication'
-      : pathway === 'permitOnly'
-        ? 'permitFiled'
-        : 'filed';
   // the precomputed row is against T11 existingUnits; a demolished parcel needs its own (rare)
   const own = existing === p.existingUnits[i];
   const cum = own ? (sw ?? run).pre.sizeCum : sizeCumAgainst((sw ?? run).input, i, existing);
@@ -973,19 +992,55 @@ function simulatedProject(
   let f = 0;
   while (f < F && !(u < cum[at + f])) f++;
   if (f === F) return null;
+  return startSimulated(run, job, i, stream, k, day, existing, view, f, null, false);
+}
+
+/**
+ * The simulated project of size level `f` on T11 row i in view `view`, started on `day` (see
+ * `simulatedProject`): pathway (`pathway`, or null to draw it as today: `streamlined` on a Local
+ * Program lot, else from `pathwayForNew`), first stage and the stage steps. A `certain` project
+ * (finance-engine spec 4.9) runs its stage steps with `Job.certain` and no revisions; any other
+ * runs the ordinary steps with the simulated revision rule.
+ * @internal exported for the funded pass (`funded.ts`)
+ */
+export function startSimulated(
+  run: Run,
+  job: Job,
+  i: number,
+  stream: number,
+  k: number,
+  day: Day,
+  existing: number,
+  view: number,
+  f: number,
+  pathway: Pathway | null,
+  certain: boolean
+): Schedule {
+  const sw = view > 0 ? run.regimes[view - 1] : null;
+  const p = sw ? sw.parcels : run.parcels;
+  const cal = run.newCal;
+  const path: Pathway =
+    pathway ?? (p.localProgram[i] === 1 ? 'streamlined' : newPathway(cal, stream));
+  const first: Stage =
+    drawOn(stream, P.PPA, 0) < cal.ppaShare[path]
+      ? 'preApplication'
+      : path === 'permitOnly'
+        ? 'permitFiled'
+        : 'filed';
   const entered: Partial<Record<Stage, Day>> = {};
   entered[first] = day;
   let top = 0;
   for (let g = 0; g < F; g++) top = Math.max(top, p.yield[i * F + g]);
   job.stream = stream;
-  job.pathway = pathway;
+  job.pathway = path;
   job.cal = cal;
   job.scale = run.newScale; // scales every stage's time (paired-draw fix)
   job.entered = entered;
   job.revisions = [
     { day, units: p.yield[i * F + f], stories: fillStories(FILL_LEVELS[f], p.envelopeStories[i]) }
   ];
-  job.rule = SIMULATED;
+  job.rule = certain ? NONE : SIMULATED;
+  job.certain = certain;
   job.parcels = p;
   job.row = i;
   job.existing = existing;
@@ -996,7 +1051,7 @@ function simulatedProject(
     projectId: run.ids ? `sim:${p.id[i]}:${k}` : '',
     origin: 'simulated',
     parcelIds: run.ids ? [p.id[i]] : NO_IDS,
-    pathway,
+    pathway: path,
     entered,
     end,
     revisions: job.revisions,
@@ -1012,8 +1067,9 @@ function simulatedProject(
 /**
  * Whether a row's holders void its reservation from day `d`: one never ends (a completion, an open
  * end or a skipped row: `blocked`) or exited on or after `d`.
+ * @internal exported for the funded pass (`funded.ts`)
  */
-function holdVoids(hold: Hold | undefined, d: Day): boolean {
+export function holdVoids(hold: Hold | undefined, d: Day): boolean {
   return hold !== undefined && (hold.blocked || (hold.lastExit !== null && hold.lastExit >= d));
 }
 
@@ -1090,8 +1146,11 @@ function simulatedPass(run: Run, holds: Holds, sink: Sink): void {
   if (reservedFrom !== null) reservationsOff(run, holds, sink, candidates);
 }
 
-/** Reports the reserved rows that are not candidates: kept unless a holder voids them. */
-function reservationsOff(run: Run, holds: Holds, sink: Sink, candidates: Int32Array): void {
+/**
+ * Reports the reserved rows that are not candidates: kept unless a holder voids them.
+ * @internal exported for the funded pass (`funded.ts`)
+ */
+export function reservationsOff(run: Run, holds: Holds, sink: Sink, candidates: Int32Array): void {
   const rf = run.reservedFrom!;
   let c = 0;
   for (let i = 0; i < rf.length; i++) {
@@ -1101,14 +1160,36 @@ function reservationsOff(run: Run, holds: Holds, sink: Sink, candidates: Int32Ar
   }
 }
 
+/** Options of `runEngineWith` (tests only; `runEngine` passes none). */
+export interface EngineOpts {
+  /** how the line is served: `'scan'` (the definition, spec 4.6) or `'grouped'` (spec 4.17) */
+  serving?: 'scan' | 'grouped';
+  /** after every ledger event: the event and every pool's available money as the engine holds it */
+  probe?: (e: LedgerEvent, available: readonly number[]) => void;
+}
+
 /**
  * Runs the engine for one seed and horizon, handing every Schedule and Master to `sink` in no
- * particular order. Pure: the skipped-rows count is logged by `loadScenario`, not here.
+ * particular order. Pure: the skipped-rows count is logged by `loadScenario`, not here. With
+ * `input.finance` absent the simulated pass is today's (`simulatedPass`); with it, `fundedPass`
+ * (finance-engine spec 4.1).
  */
 export function runEngine(input: SimInput, seed: number, horizon: Day, sink: Sink): void {
+  runEngineWith(input, seed, horizon, sink, {});
+}
+
+/** `runEngine` with test-only options (`EngineOpts`). */
+export function runEngineWith(
+  input: SimInput,
+  seed: number,
+  horizon: Day,
+  sink: Sink,
+  opts: EngineOpts
+): void {
   const run = runOf(input, seed, horizon, sink.ids ?? true);
   const holds: Holds = new Map();
   pipelinePass(run, holds, sink);
   multiPhasePass(run, holds, sink);
-  simulatedPass(run, holds, sink);
+  if (input.finance) fundedPass(run, holds, sink, opts);
+  else simulatedPass(run, holds, sink);
 }
