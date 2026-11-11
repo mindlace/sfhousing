@@ -269,6 +269,111 @@ describe('the per-input shortcuts (spec 4.5 cost note, 4.17 items 1 and 2)', () 
       true
     ]
   ];
+  // A regime from mid-run whose view differs from view 0: some lots gain yields past every
+  // programme's least minHomes only in the regime, and some lots have no hazard in one view but
+  // not the other (hostable 0).
+  const F5 = 5;
+  const view0 = structuredClone(base.parcels);
+  const view1 = structuredClone(base.parcels);
+  for (let i = 0; i < base.parcels.count; i++) {
+    if (i % 3 === 0) {
+      for (let f = 0; f < F5; f++) {
+        view1.yield[i * F5 + f] = Math.min(4000, view1.yield[i * F5 + f] * 12 + 75);
+      }
+    }
+    if (i % 7 === 1) view1.hostable[i] = 0;
+    if (i % 7 === 2) view0.hostable[i] = 0;
+  }
+  const regimeDay = asOf + 1200;
+  const viewed = { parcels: view0, regimes: [{ day: regimeDay, parcels: view1 }] };
+  /** Some lot is eligible only through the regime (no hazard or too few homes in view 0). */
+  const onlyThroughRegime = (inp: SimInput) => {
+    // some lot is eligible only through the regime (no hazard or too few homes in view 0)
+    const pre0 = precomputeOf(inp);
+    const fp = financePreOf(inp);
+    let onlyRegime = 0;
+    pre0.candidates.forEach((i, c) => {
+      let top = 0;
+      for (let f = 0; f < F5; f++) top = Math.max(top, view0.yield[i * F5 + f]);
+      const in0 = pre0.logit[i] !== -Infinity && top >= 70;
+      if (fp.eligible.affordable[c] === 1 && !in0) onlyRegime++;
+    });
+    expect(onlyRegime).toBeGreaterThan(0);
+  };
+  const offCase = (
+    fin: NonNullable<SimInput['finance']>,
+    off: NonNullable<SimInput['finance']>['off']
+  ) => ({ ...fin, off: [...fin.off, ...off] });
+  // [name, input, passed over?, check that the case is not vacuous]
+  const deep: [string, SimInput, boolean, (inp: SimInput, respells: number) => void][] = [
+    [
+      'the bench funding set, a regime view that differs from view 0',
+      withFinance(bench, viewed),
+      true,
+      onlyThroughRegime
+    ],
+    [
+      'the bench baseline, a regime view that differs from view 0',
+      withFinance(benchBaseline(asOf), viewed),
+      true,
+      onlyThroughRegime
+    ],
+    [
+      'miniFinance, a pool every affordable bundle needs off and on again',
+      withFinance(
+        offCase(miniFinance(asOf), [{ pool: 'm-city', from: asOf + 600, to: asOf + 1400 }])
+      ),
+      false,
+      (_inp, respells) => expect(respells).toBeGreaterThan(0)
+    ],
+    [
+      'miniFinance, a pool every affordable bundle needs off for good',
+      withFinance(offCase(miniFinance(asOf), [{ pool: 'm-city', from: asOf + 1800, to: null }])),
+      false,
+      (_inp, respells) => expect(respells).toBeGreaterThan(0)
+    ],
+    [
+      'the bench funding set with the state pool off and on again, and a regime',
+      withFinance(offCase(bench, [{ pool: 'state', from: asOf + 600, to: asOf + 1400 }]), viewed),
+      true,
+      (inp) => {
+        const off = financePreOf(inp).offered.affordable;
+        expect(new Set(off.map((s) => s.join(','))).size).toBeGreaterThan(1);
+      }
+    ],
+    [
+      'the bench baseline with the state pool off for good',
+      withFinance(offCase(benchBaseline(asOf), [{ pool: 'state', from: asOf + 900, to: null }]), {
+        regimes: [{ day: asOf + 300, parcels: view1 }]
+      }),
+      true,
+      (_inp, respells) => expect(respells).toBeGreaterThan(0)
+    ]
+  ];
+  for (const [name, inp, passes, check] of deep) {
+    it(`${name}: seeds 1 to 20 give the same schedules and ledgers with and without them`, () => {
+      let passedOver = 0;
+      let respells = 0;
+      let funded = 0;
+      for (const seed of seeds) {
+        const fast = runCollect(inp, seed, H);
+        passedOver += fundedRunStats().passedOver;
+        respells += fundedRunStats().respells;
+        const slow = runCollect(inp, seed, H, { noShortcuts: true });
+        expect(fast.order, `seed ${seed} order`).toEqual(slow.order);
+        expect(fast.schedules, `seed ${seed} schedules`).toEqual(slow.schedules);
+        expect(fast.ledger, `seed ${seed} ledger`).toEqual(slow.ledger);
+        expect(fast.reservations).toEqual(slow.reservations);
+        funded += fast.schedules.filter((s) => s.funding !== undefined).length;
+      }
+      console.log(
+        `[shortcuts] ${name}: passedOver ${passedOver}, respells ${respells}, funded ${funded}`
+      );
+      expect(funded).toBeGreaterThan(0);
+      if (passes) expect(passedOver).toBeGreaterThan(0);
+      check(inp, respells);
+    }, 300_000);
+  }
   for (const [name, inp, passes] of cases) {
     it(`${name}: seeds 1 to 20 give the same schedules and ledgers with and without them`, () => {
       let passedOver = 0;
