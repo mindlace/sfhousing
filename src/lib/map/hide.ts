@@ -30,7 +30,9 @@ export const MAX_CELLS_PER_SLICE = 4;
  * The timeline's per-frame cell budget while a run swap installs over the old run (run slider
  * spec). Count-based like MAX_CELLS_PER_SLICE: deck tessellates at the next render, not in
  * `install`, so a JS time budget would miss the cost. Provisional: not yet tuned on the live
- * run-switch bench (docs/dev/map-perf.md "Run slider switch"; the run was deferred).
+ * run-switch bench (docs/dev/map-perf.md "Run slider switch"; the run was deferred). At ~4.5 ms
+ * per cell, 16 cells is an estimated 70-80 ms frame, over §4.12's 50 ms long-task budget: an
+ * owner decision once measured.
  */
 export const SWAP_CELLS_PER_SLICE = 16;
 
