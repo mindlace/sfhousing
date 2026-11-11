@@ -7,10 +7,30 @@
  *   band[i]       p10 90i, p50 100i, p90 110i
  *   planEffect[i] completedNetNew 30i - 300, entitledNew 45i - 200
  *   planEffectBand[i]  p10 30i - 350, p50 30i - 300, p90 30i - 250
+ *   tiers.completed[i]  veryLow 5i, low 5i, moderate 5i, aboveModerate 80i, unrecorded 5i (sums to
+ *                       completedNet 100i)
+ *   tiers.baseline      veryLow 1000, low 600, moderate 500, aboveModerate 9500, unrecorded 400
+ *                       (sums to BASELINE 12000)
+ *   tiers.targets       one per RHNA_TIER_TARGETS row, deadline 2031-01-31,
+ *                       fraction[i] = (baseline[t] + completed[i][t]) / units
+ *
+ * TIMELINE_SCORE_MONEY adds `money` (two pools; every other series is 0):
+ *
+ *   u-bond (goBond, 'Added bond')  received[i] 12,000,000 x floor(i / 12 + 1), spent[i] 1,000,000i
+ *   federal (uncapped)             received 0, spent[i] 1,500,000i
+ *   fundedHomes[i] 4i, displacedHomes[i] i, publicSpent[i] 2,500,000i (= sum of spent + lostCredit)
+ *   owed       u-bond, principal P = received[290] = 12,000,000 x 25 = 300,000,000,
+ *              repayment debtService(P, { rate 0.06, termYears 20 }).total, nominal
+ *   limits     limitStatements for that one goBond borrowing of P
+ *
+ * With committed, out, repaid and lost all 0, identity I2 reduces to C = S and I3 to no loans.
+ * received stays at or above spent in every month, so I4 holds for u-bond.
  */
 import { M1_TARGETS } from '$lib/scoreboard';
+import { debtService, limitStatements } from '$lib/sim/finance';
 import type { TimelineScore } from '$lib/sim/protocol';
-import type { Provenance } from '$lib/timelapse/types';
+import { tierTargetsOf } from '$lib/sim/scenario/score';
+import type { Provenance, TierUnits } from '$lib/timelapse/types';
 import { dayFromUtc } from '../time';
 
 export const FIX_ASOF = dayFromUtc(2026, 10, 16);
@@ -46,10 +66,25 @@ const controllerProvenance: Provenance = {
   method: 'Completions the plan is expected to add by 2045.'
 };
 
+const TIER_BASELINE: TierUnits = {
+  veryLow: 1000,
+  low: 600,
+  moderate: 500,
+  aboveModerate: 9500,
+  unrecorded: 400
+};
+
 export function makeTimelineScore(): TimelineScore {
   const idx = Array.from({ length: MONTHS }, (_, i) => i);
   const rhna = M1_TARGETS.find((t) => t.id === 'rhna')!;
   const buffer = M1_TARGETS.find((t) => t.id === 'rhna-buffer')!;
+  const completed: TierUnits[] = idx.map((i) => ({
+    veryLow: 5 * i,
+    low: 5 * i,
+    moderate: 5 * i,
+    aboveModerate: 80 * i,
+    unrecorded: 5 * i
+  }));
   return {
     months: idx.map((i) => dayFromUtc(2026, 10 + i, 1)),
     shown: idx.map((i) => ({
@@ -90,6 +125,7 @@ export function makeTimelineScore(): TimelineScore {
       deadline: DEADLINE,
       fraction: idx.map((i) => (BASELINE + 100 * i) / target.units)
     })),
+    tiers: { completed, baseline: TIER_BASELINE, targets: tierTargetsOf(TIER_BASELINE, completed) },
     references: [
       {
         id: 'planning-entitlements',
@@ -132,3 +168,53 @@ export const TIMELINE_SCORE_NO_PHASING: TimelineScore = {
     unenriched: []
   }
 };
+
+const BOND_DEBT = { rate: 0.06, termYears: 20 };
+
+function makeMoney(): NonNullable<TimelineScore['money']> {
+  const idx = Array.from({ length: MONTHS }, (_, i) => i);
+  const zeros = () => idx.map(() => 0);
+  const principal = 12_000_000 * Math.floor((MONTHS - 1) / 12 + 1);
+  return {
+    pools: [
+      {
+        id: 'u-bond',
+        label: 'Added bond',
+        kind: 'goBond',
+        received: idx.map((i) => 12_000_000 * Math.floor(i / 12 + 1)),
+        committed: zeros(),
+        out: zeros(),
+        spent: idx.map((i) => 1_000_000 * i),
+        repaid: zeros(),
+        lost: zeros(),
+        lostCredit: zeros()
+      },
+      {
+        id: 'federal',
+        label: 'Federal tax credits',
+        kind: 'federal',
+        received: zeros(),
+        committed: zeros(),
+        out: zeros(),
+        spent: idx.map((i) => 1_500_000 * i),
+        repaid: zeros(),
+        lost: zeros(),
+        lostCredit: zeros()
+      }
+    ],
+    fundedHomes: idx.map((i) => 4 * i),
+    displacedHomes: idx,
+    publicSpent: idx.map((i) => 2_500_000 * i),
+    owed: [
+      {
+        pool: 'u-bond',
+        principal,
+        repayment: debtService(principal, BOND_DEBT).total,
+        nominal: true
+      }
+    ],
+    limits: limitStatements([{ pool: 'u-bond', kind: 'goBond', principal, debt: BOND_DEBT }])
+  };
+}
+
+export const TIMELINE_SCORE_MONEY: TimelineScore = { ...makeTimelineScore(), money: makeMoney() };
