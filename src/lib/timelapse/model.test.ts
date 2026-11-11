@@ -6,6 +6,8 @@ import mini from '../sim/scenario/fixtures/mini-calibration.json';
 import small from './fixtures/calibration-small.json';
 import { exp, log } from './math';
 import { readFileSync } from 'node:fs';
+import fc from 'fast-check';
+import { arbTransition } from './test/arbitraries';
 import {
   CalibrationFormatError,
   binIndex,
@@ -18,10 +20,12 @@ import {
   initiationHazard,
   initiationLogit,
   parseCalibration,
+  sampleKind,
+  sampleTime,
   sampleTransition,
   typicalMonths
 } from './model';
-import { MONTH_DAYS, monthsIn } from './time';
+import { MONTH_DAYS, monthsIn, stageDay } from './time';
 import { validateInstrument } from '../sim/finance/instruments';
 import {
   EXIT_ORDER,
@@ -465,6 +469,232 @@ describe('sampleTransition', () => {
 
     it('calling twice with no mutation gives identical results', () => {
       expect(draws(cells).out).toEqual(draws(cells).out);
+    });
+  });
+});
+
+/** `tr` as the small calibration's discretionary.permitFiled, so `parseCalibration` can judge it. */
+function withTransition(tr: Transition): unknown {
+  const c = structuredClone(cal) as Calibration;
+  c.transitions.discretionary.permitFiled = tr;
+  return c;
+}
+
+const CAP_MONTH = Math.floor(16777216 / MONTH_DAYS);
+const BAD_U = [-0.1, 1, NaN, Infinity];
+const BAD_TAU = [-1, NaN, Infinity, 551213];
+
+describe('arbTransition', () => {
+  it('generates transitions that parseCalibration accepts', () => {
+    const samples = fc.sample(arbTransition(), { numRuns: 200, seed: 0x5eed });
+    let tableOnly = 0;
+    let tailOnly = 0;
+    for (const tr of samples) {
+      expect(() => parseCalibration(withTransition(tr))).not.toThrow();
+      for (const r of EXIT_ORDER) {
+        if (tr.exit[r] !== undefined && tr.tail.exit[r] === undefined) tableOnly++;
+        if (tr.exit[r] === undefined && tr.tail.exit[r] !== undefined) tailOnly++;
+      }
+    }
+    expect(tableOnly).toBeGreaterThan(0);
+    expect(tailOnly).toBeGreaterThan(0);
+  });
+});
+
+describe('sampleKind', () => {
+  // F_j(x) at real x, linear between table months, from cumulativeIncidence only.
+  function at(tr: Transition, x: number) {
+    const lo = cumulativeIncidence(tr, Math.floor(x));
+    const hi = cumulativeIncidence(tr, Math.ceil(x));
+    const a = x - Math.floor(x);
+    const exit: Record<string, number> = {};
+    for (const r of Object.keys(lo.exit) as (keyof typeof lo.exit)[]) {
+      exit[r] = lo.exit[r]! + a * (hi.exit[r]! - lo.exit[r]!);
+    }
+    return { advance: lo.advance + a * (hi.advance - lo.advance), exit };
+  }
+
+  it('splits at the eventual advance share at tau = 0', () => {
+    const P = eventualProbabilities(t, 0).advance;
+    expect(sampleKind(t, P - 1e-12, 0)).toBe('advance');
+    expect(sampleKind(t, P + 1e-12, 0)).toBe('expired');
+  });
+
+  it('splits at the conditional advance share at a real-valued tau = 6.4', () => {
+    const inf = eventualProbabilities(t, 0).advance;
+    const f = at(t, 6.4);
+    const C = f.advance + f.exit.expired;
+    const threshold = (inf - f.advance) / (1 - C);
+    expect(sampleKind(t, threshold - 1e-12, 6.4)).toBe('advance');
+    expect(sampleKind(t, threshold + 1e-12, 6.4)).toBe('expired');
+  });
+
+  it('uses the tail shares from K on (memoryless)', () => {
+    for (const tau of [12, 20.5, 140]) {
+      expect(sampleKind(t, 0.05 / 0.06 - 1e-12, tau)).toBe('advance');
+      expect(sampleKind(t, 0.05 / 0.06 + 1e-12, tau)).toBe('expired');
+      expect(sampleKind(t, 0, tau)).toBe('advance');
+      expect(sampleKind(t, 1 - 1e-12, tau)).toBe('expired');
+    }
+  });
+
+  it('never draws a kind with no remaining mass (Review Focus 2)', () => {
+    const flat3 = t.advance.map((_, i) => (i < 2 ? 0.01 * (i + 1) : 0.03));
+    const tt: Transition = {
+      ...t,
+      exit: { withdrawn: flat3 },
+      tail: { advance: 0.05, exit: { expired: 0 } }
+    };
+    expect(() => parseCalibration(withTransition(tt))).not.toThrow();
+    const rng = mulberry32(0x5eed);
+    const seen = new Set<string>();
+    for (let i = 0; i < 10000; i++) seen.add(sampleKind(tt, rng(), 4.5));
+    expect([...seen]).toEqual(['advance']);
+    expect(() => sampleTime(tt, 'withdrawn', 0.5, 4.5)).toThrow(RangeError);
+    expect(() => sampleTime(t, 'cancelled', 0.5, 0)).toThrow(RangeError);
+  });
+
+  it('splits at 0.75 when rho = 1', () => {
+    const tt: Transition = { ...t, tail: { advance: 0.75, exit: { expired: 0.25 } } };
+    for (const u of [0, 0.5, 0.75 - 1e-12]) expect(sampleKind(tt, u, 20)).toBe('advance');
+    for (const u of [0.75 + 1e-12, 0.9, 1 - 1e-12]) expect(sampleKind(tt, u, 20)).toBe('expired');
+  });
+
+  it('rejects u outside [0, 1) and tau outside [0, MAX_EVENT_MONTH - 1)', () => {
+    for (const u of BAD_U) expect(() => sampleKind(t, u, 0)).toThrow(RangeError);
+    for (const tau of BAD_TAU) expect(() => sampleKind(t, 0.5, tau)).toThrow(RangeError);
+  });
+});
+
+describe('sampleTime', () => {
+  it('starts at day 0 for u = 0 on a fresh stage', () => {
+    expect(sampleTime(t, 'advance', 0, 0)).toBe(0);
+  });
+
+  it('property: an integer day, from stageDay(tau), below 2^24, non-decreasing in uTime', () => {
+    const u = fc.double({ min: 0, max: 1, maxExcluded: true, noNaN: true });
+    expect(() =>
+      fc.assert(
+        fc.property(arbTransition(), u, u, u, u, (tr, r, uKind, u1, u2) => {
+          const tau = r * (tr.months + 30);
+          const kind = sampleKind(tr, uKind, tau);
+          const d = sampleTime(tr, kind, u1, tau);
+          if (!Number.isInteger(d) || d < stageDay(tau) || d >= 16777216) return false;
+          const [lo, hi] = u1 <= u2 ? [u1, u2] : [u2, u1];
+          return sampleTime(tr, kind, lo, tau) <= sampleTime(tr, kind, hi, tau);
+        }),
+        { numRuns: 500, seed: 0x5eed }
+      )
+    ).not.toThrow();
+  });
+
+  it('ignores the kind from K on', () => {
+    const rng = mulberry32(0x5eed);
+    let bad = 0;
+    for (const tau of [12, 13.7, 60]) {
+      for (let i = 0; i < 1000; i++) {
+        const u = rng();
+        if (sampleTime(t, 'advance', u, tau) !== sampleTime(t, 'expired', u, tau)) bad++;
+      }
+    }
+    expect(bad).toBe(0);
+  });
+
+  it('stays finite and Float32-exact on a flat tail (Review Focus 3)', () => {
+    const flat: Transition = { ...t, tail: { advance: 1e-20, exit: {} } };
+    for (const tau of [0, 13]) {
+      const d = sampleTime(flat, 'advance', 0.9, tau);
+      expect(Number.isFinite(d)).toBe(true);
+      expect(d).toBeLessThan(16777216);
+      expect(Math.fround(d)).toBe(d);
+      expect(monthsIn(0, d) + 1).toBe(CAP_MONTH);
+    }
+  });
+
+  it('puts every event in the next month when rho = 1', () => {
+    const tt: Transition = { ...t, tail: { advance: 0.75, exit: { expired: 0.25 } } };
+    for (const u of [0, 0.5, 1 - 1e-12]) {
+      expect(monthsIn(0, sampleTime(tt, 'advance', u, 20))).toBe(20);
+      expect(monthsIn(0, sampleTime(tt, 'expired', u, 20))).toBe(20);
+    }
+  });
+
+  it('keeps the tail kind split in the cap month for a very slow tail (rho = 1e-6)', () => {
+    const slow: Transition = { ...t, tail: { advance: 0.8e-6, exit: { expired: 0.2e-6 } } };
+    for (const tau of [0, 12]) {
+      const rng = mulberry32(0x5eed);
+      let atCap = 0;
+      let advance = 0;
+      for (let i = 0; i < 100000; i++) {
+        const kind = sampleKind(slow, rng(), tau);
+        const d = sampleTime(slow, kind, rng(), tau);
+        if (monthsIn(0, d) + 1 !== CAP_MONTH) continue;
+        atCap++;
+        if (kind === 'advance') advance++;
+      }
+      expect(atCap).toBeGreaterThan(10000);
+      expect(Math.abs(advance / atCap - 0.8)).toBeLessThanOrEqual(0.02);
+    }
+  });
+
+  describe('deep in the tail (R8 analogue)', () => {
+    const probe: Transition = { ...t, tail: { advance: 0.2, exit: { expired: 0.05 } } };
+    for (const tau of [120, 140]) {
+      it(`tau = ${tau}: month floor(tau) + 1 holds rho of the events, days spread`, () => {
+        const rng = mulberry32(0x5eed);
+        const N = 100000;
+        let first = 0;
+        const days = new Set<number>();
+        for (let i = 0; i < N; i++) {
+          const d = sampleTime(probe, 'advance', rng(), tau);
+          if (monthsIn(0, d) + 1 === Math.floor(tau) + 1) {
+            first++;
+            days.add(d);
+          }
+        }
+        expect(Math.abs(first / N - 0.25)).toBeLessThanOrEqual(0.01);
+        expect(days.size).toBeGreaterThanOrEqual(25);
+      });
+    }
+  });
+
+  it('rejects u outside [0, 1), tau outside [0, MAX_EVENT_MONTH - 1) and unknown kinds', () => {
+    for (const u of BAD_U) {
+      expect(() => sampleTime(t, 'advance', u, 0)).toThrow(RangeError);
+      expect(() => sampleTime(t, 'advance', u, 20)).toThrow(RangeError);
+    }
+    for (const tau of BAD_TAU) expect(() => sampleTime(t, 'advance', 0.5, tau)).toThrow(RangeError);
+  });
+
+  describe('per-transition constants are memoised, outputs unchanged', () => {
+    const cells: Transition[] = [];
+    for (const c of [cal, mini as unknown as Calibration]) {
+      for (const p of PATHWAYS) {
+        for (const s of pathwayStages(p)) {
+          const tr = (c.transitions[p] as Record<string, Transition | undefined>)[s];
+          if (tr) cells.push(tr);
+        }
+      }
+    }
+    function draws(of: Transition[]) {
+      const rng = mulberry32(0x5eed);
+      const out: [string, number][] = [];
+      for (let i = 0; i < 12000; i++) {
+        const tr = of[i % of.length];
+        const uKind = rng();
+        const uTime = rng();
+        const tau = rng() * (tr.months + 41);
+        const kind = sampleKind(tr, uKind, tau);
+        out.push([kind, sampleTime(tr, kind, uTime, tau)]);
+      }
+      return out;
+    }
+
+    it('a used transition and a structuredClone give identical draws', () => {
+      for (const tr of cells) sampleTime(tr, sampleKind(tr, 0.5, 0), 0.5, 0);
+      const cached = draws(cells);
+      expect(draws(cells.map((tr) => structuredClone(tr)))).toEqual(cached);
+      expect(draws(cells)).toEqual(cached);
     });
   });
 });
