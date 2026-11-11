@@ -52,6 +52,19 @@ describe('watchCardArea', () => {
     stop();
   });
 
+  it("re-measures when the run slider's box resizes", async () => {
+    const map = el(document.body, 'width:400px;height:300px');
+    const slider = el(map, 'width:44px;height:200px');
+    const onchange = vi.fn();
+    const stop = watchCardArea({ map, slider }, onchange);
+    await frames();
+    onchange.mockClear();
+    slider.style.width = '60px';
+    await frames();
+    expect(onchange).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
   it('re-measures when the map resizes', async () => {
     const map = el(document.body, 'width:400px;height:300px');
     const onchange = vi.fn();

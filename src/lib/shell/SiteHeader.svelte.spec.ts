@@ -228,7 +228,7 @@ describe('SiteHeader', () => {
   describe('phone menu', () => {
     const actions = createRawSnippet(() => ({
       render: () =>
-        '<span><button>Another future</button><button aria-expanded="false">View</button></span>'
+        '<span><button>Example</button><button aria-expanded="false">View</button></span>'
     }));
     const pinned = createRawSnippet(() => ({ render: () => '<button>1,234 homes added</button>' }));
     const menu = () => page.getByRole('button', { name: 'Menu' });
@@ -239,7 +239,7 @@ describe('SiteHeader', () => {
       const banner = page.getByRole('banner');
       await expect.element(banner.getByRole('button', { name: '1,234 homes added' })).toBeVisible();
       await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
-      await expect.element(page.getByText('Another future')).not.toBeVisible();
+      await expect.element(page.getByText('Example')).not.toBeVisible();
       // Two copies of the links (header row from lg, menu below lg): neither shows.
       expect(page.getByRole('link', { name: 'Paint' }).elements()).toEqual([]);
       expect(page.getByText('Paint').elements()).toHaveLength(2);
@@ -248,7 +248,7 @@ describe('SiteHeader', () => {
       await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
       const panel = document.getElementById(menu().element().getAttribute('aria-controls')!);
       expect(panel).not.toBeNull();
-      await expect.element(page.getByRole('button', { name: 'Another future' })).toBeVisible();
+      await expect.element(page.getByRole('button', { name: 'Example' })).toBeVisible();
       await expect.element(page.getByRole('link', { name: 'Paint' })).toBeVisible();
       await expect.element(page.getByRole('link', { name: 'Simulate' })).toBeVisible();
       await expect.element(banner.getByRole('button', { name: '1,234 homes added' })).toBeVisible();
@@ -293,7 +293,7 @@ describe('SiteHeader', () => {
       await userEvent.keyboard('{Escape}');
       await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
       await expect.element(menu()).toHaveFocus();
-      await expect.element(page.getByText('Another future')).not.toBeVisible();
+      await expect.element(page.getByText('Example')).not.toBeVisible();
     });
 
     it('choosing a plain button closes the menu; a disclosure inside keeps it open', async () => {
@@ -302,9 +302,9 @@ describe('SiteHeader', () => {
       await menu().click();
       await page.getByRole('button', { name: 'View' }).click();
       await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
-      await page.getByRole('button', { name: 'Another future' }).click();
+      await page.getByRole('button', { name: 'Example' }).click();
       await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
-      await expect.element(page.getByText('Another future')).not.toBeVisible();
+      await expect.element(page.getByText('Example')).not.toBeVisible();
     });
 
     it('a button inside a dialog opened from the menu keeps the menu (and the dialog) open', async () => {
@@ -381,8 +381,7 @@ describe('SiteHeader', () => {
         render: () =>
           `<div class="contents"><button class="${btn}">View</button>` +
           `<button class="${btn}">Policy</button>` +
-          `<button class="${btn} bg-accent text-on-accent">Share link</button>` +
-          `<button class="${btn}">Another future</button></div>`
+          `<button class="${btn} bg-accent text-on-accent">Share link</button></div>`
       }));
       for (const width of [1024, 1280]) {
         it(`at ${width}px "Autosave off", the nav and every action fit without overlap`, async () => {
@@ -411,8 +410,7 @@ describe('SiteHeader', () => {
               page.getByRole('button', { name: '12,345 homes added' }).element(),
               page.getByRole('button', { name: 'View' }).element(),
               page.getByRole('button', { name: 'Policy' }).element(),
-              page.getByRole('button', { name: 'Share link' }).element(),
-              page.getByRole('button', { name: 'Another future' }).element()
+              page.getByRole('button', { name: 'Share link' }).element()
             ];
             for (let i = 1; i < row.length; i++)
               expect(box(row[i]).left, `item ${i} after item ${i - 1}`).toBeGreaterThanOrEqual(
@@ -442,7 +440,7 @@ describe('SiteHeader', () => {
               .toBeVisible();
             await expect.element(page.getByText('Share link')).not.toBeVisible();
             await page.getByRole('button', { name: 'Menu' }).click();
-            for (const name of ['View', 'Policy', 'Share link', 'Another future'])
+            for (const name of ['View', 'Policy', 'Share link'])
               await expect.element(page.getByRole('button', { name })).toBeVisible();
             expect(banner.getBoundingClientRect().height).toBe(48);
             expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
@@ -502,10 +500,10 @@ describe('SiteHeader', () => {
     it('at 1024px there is no Menu; the pinned item sits before the actions', async () => {
       await page.viewport(1024, 768);
       render(SiteHeader, { routeId: '/sim', actions, pinned });
-      await expect.element(page.getByRole('button', { name: 'Another future' })).toBeVisible();
+      await expect.element(page.getByRole('button', { name: 'Example' })).toBeVisible();
       expect(page.getByRole('button', { name: 'Menu' }).elements()).toEqual([]);
       const score = page.getByRole('button', { name: '1,234 homes added' }).element();
-      const other = page.getByRole('button', { name: 'Another future' }).element();
+      const other = page.getByRole('button', { name: 'Example' }).element();
       expect(score.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(score.getBoundingClientRect().right).toBeLessThanOrEqual(
         other.getBoundingClientRect().left

@@ -70,6 +70,7 @@
 
 <script lang="ts">
   import { onMount, untrack, type Snippet } from 'svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import type { Manifest } from '$lib/data/manifest';
   import type { HeightCity } from '$lib/map/height/types';
   import SimMap from '$lib/map/SimMap.svelte';
@@ -106,6 +107,9 @@
   import { cardArea, cardPlacement, type CardArea } from './card-place';
   import ProjectCardPanel from './ProjectCardPanel.svelte';
   import ProjectTooltip from './ProjectTooltip.svelte';
+  import RunSlider from './RunSlider.svelte';
+  import { positionOfShown, requestSeed } from './run-slider';
+  import { RunSwitcher } from './run-switch';
   import { RHNA_ID, homesAddedBy, scoreAt, scrubMarkers } from './score-view';
   import SourcesDialog from './SourcesDialog.svelte';
   import { SummaryRequester, type SummaryState } from './summary-request';
@@ -125,7 +129,10 @@
     urlSeed: number | null;
     /** Retry step 3: reloads the manifest and calibration; rejects on any failure. */
     reload(): Promise<{ manifest: Manifest; calibration: Calibration }>;
-    /** Only on answers to 'Another future' / 'Back to the representative future'. */
+    /**
+     * Only on a settled run switch's answer (the run slider, 'Back to the representative future',
+     * a lever change's return to the representative future): its seed, null for the median.
+     */
     onurlseed?: (seed: number | null) => void;
     /** Tests inject a fake worker. */
     createWorker?: () => ScenarioWorkerInput;
@@ -158,7 +165,7 @@
      * with the scrubbed month's score) for the dock's Results face.
      */
     panel?: Snippet<[Snippet]>;
-    /** The page's own header actions, before 'Another future' (/sim: "Policy"). */
+    /** The page's own header actions (/sim: "Policy"). */
     actions?: Snippet;
     /** The header's status slot (/sim: the save state); read once, at mount. */
     status?: Snippet;
@@ -279,8 +286,14 @@
   let speed = $state<Speed>(DEFAULT_SPEED);
   /** The worker crashed after ready: scrubbing still works; the chip offers Retry. */
   let stopped = $state(false);
-  let rerollBusy = $state(false);
-  let rerollFailed = $state(false);
+  /** The latest run switch failed: the run on show stays, and a dismissible alert says so. */
+  let switchFailed = $state(false);
+  /**
+   * The run slider's selected tick (0 = Best): moved at once on a select (the handle follows the
+   * user), set from the run on show on each settled answer and each `ranks`; null when that run is
+   * not one of the ranked runs, or before the band's order.
+   */
+  let position = $state<number | null>(null);
   let scrubberH = $state(0);
 
   /** The lever revision's status (`off` on /fzp). */
@@ -300,7 +313,7 @@
    * band. A reroll does not move it (a kept band's ranks arrive at the old rev, by design).
    */
   let ranksFloor = 0;
-  /** The latest selectRank's timing stamps (the e2e bench reads them). */
+  /** The latest run switch's timing stamps (the e2e bench reads them). */
   let switchTrace = $state.raw<SfhFzpDebug['switchTrace']>(null);
 
   /**
@@ -326,6 +339,8 @@
   let host = $state<HTMLElement>();
   let mapBox = $state<HTMLElement>();
   let pillsEl = $state<HTMLElement>();
+  /** The run slider's positioned box, while it shows. */
+  let sliderBox = $state<HTMLElement>();
   let tipState = $state.raw<SummaryState>({ kind: 'idle' });
   let tipAt = $state({ x: 0, y: 0 });
   let dialog = $state<ReturnType<typeof SourcesDialog>>();
@@ -378,7 +393,8 @@
   const hasScoreboard = $derived(
     calibration !== null && (phase === 'loading' || phase === 'ready')
   );
-  const canReroll = $derived(phase === 'ready' && !stopped && !rerollBusy);
+  /** A run switch may be asked for (the slider, 'Back to the representative future'). */
+  const canSwitch = $derived(phase === 'ready' && !stopped);
 
   let client: ScenarioClient | null = null;
   /** `client`'s brush requests for `onclient`, one object per client. */
@@ -407,9 +423,8 @@
   let cardMonth: Day | null = null;
 
   /**
-   * The page's latest scenario request. `representative` is the flag its answer sets (null =
-   * keep); `writesUrl` asks for `onurlseed` on the answer. A higher rev is the client's resync,
-   * which changes nothing here.
+   * The page's latest `initScenario`. `representative` is the flag its answer sets (null = keep).
+   * A higher rev is the client's resync or a run switch (`runs`), which this does not answer.
    */
   let latest: {
     rev: number;
@@ -419,9 +434,28 @@
      */
     upTo: number;
     representative: boolean | null;
-    writesUrl: boolean;
     answered: boolean;
   } | null = null;
+
+  /** The rev of the latest switch sent; the in-flight one's while `runs` is not settled. */
+  let switchRev = 0;
+  /**
+   * Run switches (the slider, 'Back to the representative future', a lever change's return to
+   * the median): latest wins, one in flight. Each is a swap reroll, installed over the run on
+   * the map.
+   */
+  const runs = new RunSwitcher((next) => {
+    const rev = client!.reroll(next, { swap: true });
+    switchRev = rev;
+    switchTrace = {
+      seed: next,
+      rev,
+      requestedAt: performance.now(),
+      answeredAt: null,
+      completeAt: null
+    };
+    return rev;
+  });
 
   function setLeverState(next: LeverStatusState): void {
     if (next === leverState) return;
@@ -439,6 +473,9 @@
     const rev = client.initScenario(manifest, HORIZON, next, l, incomplete);
     ranksFloor = rev;
     ranks = null;
+    position = null;
+    runs.reset();
+    switchFailed = false;
     if (l !== undefined) {
       sentLevers = l;
       leversByRev.push({ rev, levers: l });
@@ -450,7 +487,6 @@
       rev,
       upTo: rev,
       representative: keep ? null : next === null,
-      writesUrl: false,
       answered: false
     };
     scenarioLive = false;
@@ -461,21 +497,29 @@
    * Sends a new `levers` object once a session was started, before its first timeline too (an
    * `awaitLevers` session runs nothing until it). Not after a crash, after a failed load or
    * during a Retry (no session to take it: Retry sends the latest levers with its initScenario).
-   * It waits while a reroll is in flight, so the reroll's answer (and its URL write) is not
-   * superseded; the answer calls this again. Sent before the init's answer, its barrier answers
-   * the init (`latest.upTo`): the worker's first timeline comes at it.
+   * It never waits for a run switch. Sent before the init's answer, its barrier answers the init
+   * (`latest.upTo`): the worker's first timeline comes at it. Once the scenario is live, the old
+   * band's order is dropped (rank r is another run under new levers) and the slider goes back to
+   * the median: a switch in flight or a run other than the representative is replaced by the
+   * representative future, whose answer writes the clean URL. Before then (an `awaitLevers`
+   * session) nothing else changes, so a `?seed=` survives.
    */
   function syncLevers(): void {
     const l = untrack(() => levers);
     if (l === undefined || l === sentLevers || dead || !client || client.crashed) return;
-    if (latest === null || phase === 'failed' || retrying || rerollBusy) return;
+    if (latest === null || phase === 'failed' || retrying) return;
     sentLevers = l;
     const rev = client.setLevers(l);
     ranksFloor = rev;
     ranks = null;
-    if (!latest.answered) latest.upTo = rev; // never a reroll's: rerollBusy holds the send
+    if (!latest.answered) latest.upTo = rev;
     leversByRev.push({ rev, levers: l });
     setLeverState(leversSent(leverState, rev));
+    if (!scenarioLive) return;
+    position = null;
+    const back = !representative || !runs.settled;
+    runs.reset();
+    if (back) runs.select(null);
   }
 
   /** A timeline at `rev` answers the latest levers sent at or before it. */
@@ -492,33 +536,30 @@
     untrack(syncLevers);
   });
 
-  function requestReroll(next: number | null, opts?: { swap?: boolean }): void {
-    if (!client || !canReroll) return;
-    const rev = client.reroll(next, opts);
-    latest = { rev, upTo: rev, representative: next === null, writesUrl: true, answered: false };
-    rerollBusy = true;
-    rerollFailed = false;
-  }
-
-  /** Shows the run at `position` in the band (0 = Best); the median position is the null seed. */
-  function selectRank(position: number): void {
+  /**
+   * The run slider's select (and `__sfhFzp.selectRank`): shows the run at tick `p` of the band
+   * (0 = Best); the median tick is the representative future, a null seed. The handle moves at
+   * once; the switch is latest-wins.
+   */
+  function onselect(p: number): void {
     const r = ranks;
-    if (!r || position < 0 || position >= r.length || !canReroll) return;
-    const next = position === medianRank(r.length) ? null : r[position];
-    requestReroll(next, { swap: true }); // installs over the run on the map (Task 6 rewires)
-    if (latest) {
-      switchTrace = {
-        seed: next,
-        rev: latest.rev,
-        requestedAt: performance.now(),
-        answeredAt: null,
-        completeAt: null
-      };
-    }
+    if (!r || !client || !canSwitch || p < 0 || p >= r.length) return;
+    position = p;
+    switchFailed = false;
+    runs.select(requestSeed(r, p));
   }
 
-  function anotherFuture(): void {
-    requestReroll(crypto.getRandomValues(new Uint32Array(1))[0]);
+  /** 'Back to the representative future': the slider's median, or a null seed before ranks. */
+  function backToRepresentative(): void {
+    if (!client || !canSwitch) return;
+    if (ranks) return onselect(medianRank(ranks.length));
+    switchFailed = false;
+    runs.select(null);
+  }
+
+  /** The tick of the run on show, once the band's order is known. */
+  function shownPosition(): number | null {
+    return ranks ? positionOfShown(ranks, seed, representative) : null;
   }
 
   function pushLookups(): void {
@@ -597,7 +638,7 @@
   const cardReq = new SummaryRequester({ ...summaryDeps, onstate: (s) => (cardState = s) });
   const tipReq = new SummaryRequester({ ...summaryDeps, onstate: (s) => (tipState = s) });
 
-  /** The open card asks again for the scrubbed day (month change, reroll, Retry, crash). */
+  /** The open card asks again for the scrubbed day (month change, run switch, Retry, crash). */
   function refreshCard(): void {
     const q = cardReq.query;
     if (!q || cardState.kind === 'idle') return;
@@ -611,8 +652,8 @@
     cardTap = null;
   }
 
-  /** The room for the card now: beside the dock and the zoom controls, over the time bar and the
-   *  attribution, under any showing pill. */
+  /** The room for the card now: beside the dock, the zoom controls and the run slider, over the
+   *  time bar and the attribution, under any showing pill. */
   function measureCardArea(scrubber = scrubberH): void {
     if (!host || !mapBox) return;
     const dock = parseFloat(getComputedStyle(host).getPropertyValue('--dock-w')) || 0;
@@ -621,12 +662,17 @@
     // footprint SimMap publishes on :root, measured from the map's bottom.
     const zoom = mapBox.querySelector('.maplibregl-ctrl-bottom-left')?.getBoundingClientRect();
     const br = parseFloat(document.documentElement.style.getPropertyValue(BR_BLOCK)) || 0;
+    const runBox = sliderBox?.getBoundingClientRect();
     const next = cardArea(
       { left: m.left, top: m.top, width: m.width, height: m.height },
       pillsEl ? pillsEl.getBoundingClientRect() : null,
       dock,
       scrubber,
-      { left: zoom && zoom.width > 0 ? zoom.right - m.left : 0, bottom: br }
+      {
+        left: zoom && zoom.width > 0 ? zoom.right - m.left : 0,
+        bottom: br,
+        right: runBox && runBox.width > 0 ? m.right - runBox.left : 0
+      }
     );
     const was = cardBounds;
     if (
@@ -641,18 +687,29 @@
   }
 
   const cardOpen = $derived(cardState.kind !== 'idle');
+  const wide = new MediaQuery('(min-width: 768px)');
+  /**
+   * The run slider: in a run, once ready; hidden while the phone card sheet is open (below
+   * 768 px the card is a bottom sheet over the map).
+   */
+  const showRunSlider = $derived(
+    runPhase === 'run' && phase === 'ready' && calibration !== null && (wide.current || !cardOpen)
+  );
   // While a card is open its room is followed, by the few things that change it and nothing that
-  // plays (`watchCardArea`); and it follows its building across pans and zooms.
+  // plays (`watchCardArea`); and it follows its building across pans and zooms. The slider
+  // showing or hiding re-runs this.
   $effect(() => {
     if (!cardOpen || !mapBox) return;
     const bar = scrubberH;
+    const slider = sliderBox;
     untrack(() => measureCardArea(bar));
     const stop = watchCardArea(
       {
         map: mapBox,
         pills: pillsEl,
         dock: mapBox.querySelector<HTMLElement>('[data-testid="dock"]'),
-        controls: mapBox.querySelector<HTMLElement>('.maplibregl-ctrl-bottom-left')
+        controls: mapBox.querySelector<HTMLElement>('.maplibregl-ctrl-bottom-left'),
+        slider
       },
       () => measureCardArea()
     );
@@ -811,18 +868,28 @@
       if (answer) {
         req.answered = true;
         if (req.representative !== null) representative = req.representative;
-        if (req.writesUrl) onurlseed?.(req.representative ? null : t.seed);
-        rerollBusy = false;
-        rerollFailed = false;
         stopped = false;
+        if (runs.settled) position = shownPosition();
       } else if (req !== null && !req.answered && t.rev > req.upTo) {
-        // The client's resync superseded the page's request (its answer will be stale): the
-        // shown future is the resync's, the seed it already showed, so the URL and the flag stay.
+        // A later barrier (the client's resync, a switch) superseded the init: its answer will be
+        // stale, and the flag stays.
         req.answered = true;
-        rerollBusy = false;
+      }
+      // A run switch: `pending` is the in-flight switch's rev. A timeline above it is the client's
+      // resync, which showed the run already on show, so the flag and the URL stay.
+      const pending = runs.settled ? null : switchRev;
+      const done = runs.answer(t.rev);
+      const switched = done !== undefined && t.rev === pending;
+      if (switched) {
+        representative = done.seed === null;
+        switchFailed = false;
+      }
+      if (done && runs.settled) {
+        position = shownPosition();
+        if (switched) onurlseed?.(done.seed === null ? null : t.seed);
       }
       if (phase === 'loading') phase = 'ready';
-      else if (answer) refreshCard();
+      else if (answer || done) refreshCard();
       scenarioLive = true;
       if (handle) attachMap(handle.getMap());
       flushPrefetch();
@@ -840,7 +907,9 @@
     },
     onRanks(m) {
       if (dead) return;
-      if (m.rev >= ranksFloor) ranks = m.seeds;
+      if (m.rev < ranksFloor) return;
+      ranks = m.seeds;
+      if (runs.settled) position = shownPosition();
     },
     onHeights(m) {
       if (dead) return;
@@ -857,6 +926,14 @@
     onError(e) {
       if (dead) return;
       setLeverState(leversError(leverState, e.rev, e.code));
+      if (!runs.settled && e.rev === switchRev) {
+        // A failed run switch: the run on show stays (a waiting one goes out).
+        console.error('[fzp] run switch failed', e.code, e.message);
+        runs.fail(e.rev);
+        switchFailed = true;
+        if (runs.settled) position = shownPosition();
+        return;
+      }
       const req = latest;
       if (req !== null && e.rev < req.rev) {
         console.debug('[fzp] stale worker error dropped', e.code, e.rev);
@@ -873,9 +950,7 @@
         if (e.code === 'manifest-invalid') needReload = manifestRejected = true;
         phase = 'failed';
       } else if (phase === 'ready' && !stopped) {
-        // A failed reroll: the shown future stays.
-        rerollBusy = false;
-        rerollFailed = true;
+        // A failed lever Retry: the shown future stays (the lever status says so).
         syncLevers();
       } // a failed crash-Retry keeps the chip and its Retry
     },
@@ -883,8 +958,9 @@
       if (dead) return;
       onclient?.(null);
       latest = null;
-      rerollBusy = false;
-      rerollFailed = false;
+      runs.reset();
+      switchFailed = false;
+      position = shownPosition();
       if (phase === 'ready') {
         stopped = true;
         hideTooltip();
@@ -1017,7 +1093,7 @@
         sentRev: leverState.sentRev
       },
       ranks,
-      selectRank,
+      selectRank: onselect,
       switchTrace
     }));
 
@@ -1037,16 +1113,6 @@
 {#snippet headerActions()}
   {#if phase !== 'no-scenario'}
     {@render actions?.()}
-    <button
-      type="button"
-      title="Show another possible future"
-      disabled={!canReroll}
-      aria-busy={rerollBusy}
-      onclick={anotherFuture}
-      class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:text-gray-700 dark:border-gray-600 dark:disabled:text-gray-400 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-    >
-      Another future
-    </button>
   {/if}
 {/snippet}
 
@@ -1062,10 +1128,10 @@
     {bandRunsTotal}
     {seed}
     {representative}
-    {canReroll}
+    {canSwitch}
     {datasetVersion}
     builtAt={manifest?.builtAt ?? ''}
-    onrepresentative={() => requestReroll(null)}
+    onrepresentative={backToRepresentative}
     onsources={() => dialog?.open()}
     {copy}
     {capacity}
@@ -1135,11 +1201,9 @@
             <span>Part of the simulation stopped.</span>
             <button type="button" class={PILL_ACTION} onclick={() => void retry()}>Retry</button>
           </span>
-        {:else if rerollBusy}
-          <span class="{PILL} pr-4">Making another future…</span>
         {/if}
       </div>
-      <!-- Lever notices (/sim): their own polite region, beside the reroll and crash ones. -->
+      <!-- Lever notices (/sim): their own polite region, beside the crash one. -->
       <div role="status" data-testid="fzp-lever-status" class="contents">
         {#if leverStatus.kind === 'resolving' && !stopped}
           <span class="{PILL} pr-4"
@@ -1169,14 +1233,14 @@
           {/if}
         </div>
       {/if}
-      {#if rerollFailed && !stopped}
+      {#if switchFailed && !stopped}
         <div role="alert" class={PILL}>
-          <span>Couldn't make another future. Try again.</span>
+          <span>Couldn't show that future. Try again.</span>
           <button
             type="button"
             aria-label="Dismiss"
             class={PILL_ACTION}
-            onclick={() => (rerollFailed = false)}>×</button
+            onclick={() => (switchFailed = false)}>×</button
           >
         </div>
       {/if}
@@ -1233,6 +1297,26 @@
             scrubberH = px;
             applyInset();
           }}
+        />
+      </div>
+    {/if}
+
+    {#if showRunSlider}
+      <!-- The run slider (/sim in a run): on the map's right edge, its bottom above the
+           bottom-right controls' footprint, which already includes the scrubber and the phone
+           sheet (docs/dev/map-interfaces.md). Its width is the handle's touch target. -->
+      <div
+        bind:this={sliderBox}
+        data-testid="run-slider-box"
+        class="absolute top-2 right-2 z-20"
+        style:bottom="calc(var(--map-controls-br-block-size, 60px) + 0.5rem)"
+      >
+        <RunSlider
+          {ranks}
+          {position}
+          shownSeed={seed}
+          disabled={!canSwitch || ranks === null}
+          {onselect}
         />
       </div>
     {/if}

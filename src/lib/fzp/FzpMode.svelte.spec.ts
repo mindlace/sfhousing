@@ -105,12 +105,11 @@ async function unmount(s: Setup) {
 type Setup = ReturnType<typeof setup>;
 
 const slider = () => page.getByRole('slider', { name: 'Date in the simulation' });
-const another = () => page.getByRole('button', { name: 'Another future' });
-/**
- * Activates 'Another future' with no pointer press (as the keyboard does), so open score details
- * stay open: a press outside them closes them.
- */
-const anotherKeyed = () => (another().element() as HTMLElement).click();
+/** The run slider (/sim in a run): the band's runs, Best at the top. */
+const runSlider = () => page.getByRole('slider', { name: 'Simulated run' });
+/** A band's seeds, best first: 101 runs, the median (rank 51, position 50) is seed 250. */
+const RANKS = Array.from({ length: 101 }, (_, i) => 200 + i);
+const MEDIAN_SEED = RANKS[50];
 const statusText = () =>
   [...document.querySelectorAll('[data-testid="fzp-status"]')].map((e) => e.textContent?.trim());
 /** The header's score bar (the pinned slot). */
@@ -179,6 +178,34 @@ async function answerLastSummary(w: FakeScenarioWorker, s: ParcelSummary | null)
 async function press(key: string) {
   (slider().element() as HTMLElement).focus();
   await userEvent.keyboard(key);
+}
+
+/** Presses `key` on the run slider. */
+async function pressRun(key: string) {
+  (runSlider().element() as HTMLElement).focus();
+  await userEvent.keyboard(key);
+}
+
+/**
+ * A /sim run on the representative future (seed 250), its band ranked (RANKS) and the run slider
+ * enabled.
+ */
+async function ranked(over: Over = {}, seed = MEDIAN_SEED) {
+  const s = setup({ runPhase: 'run', levers: DEFAULT_LEVERS, ...over });
+  await toReady(s, seed);
+  s.w().emit(ranksMsg(lastRev(s.w()), RANKS));
+  await expect.element(runSlider()).not.toHaveAttribute('aria-disabled');
+  return s;
+}
+
+/** Moves the run slider one tick and fails that switch: the failed-switch alert shows. */
+async function failSwitch(s: Setup) {
+  await pressRun('{ArrowUp}');
+  const r = s.w().lastOf('reroll')!;
+  s.w().emit({ type: 'error', rev: r.rev, code: 'internal', message: 'x' });
+  await expect
+    .element(page.getByRole('alert').filter({ hasText: "Couldn't show that future" }))
+    .toBeVisible();
 }
 
 beforeEach(async () => {
@@ -484,9 +511,6 @@ describe('FzpMode header score bar', () => {
     expect(document.querySelector('[aria-label="Simulation scoreboard"]')).toBeNull();
     await expect.element(scoreButton()).toHaveTextContent(/^[\d,]+ homes added$/);
     await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'false');
-    await expect
-      .element(page.getByTestId('header-actions').getByRole('button', { name: 'Another future' }))
-      .toBeVisible();
   });
 
   it('shows the total at the scrubbed day, with the RHNA bar', async () => {
@@ -551,7 +575,7 @@ describe('FzpMode on /sim: header actions and score copy', () => {
     const names = [...page.getByTestId('header-actions').element().querySelectorAll('button')].map(
       (b) => b.textContent?.trim()
     );
-    expect(names).toEqual(['Policy', 'Another future']);
+    expect(names).toEqual(['Policy']);
   });
 
   it('names your policy in the details of a customised policy', async () => {
@@ -577,7 +601,7 @@ describe('FzpMode on /sim: header actions and score copy', () => {
   });
 });
 
-describe('FzpMode rerolls and the representative flag', () => {
+describe('FzpMode the representative flag', () => {
   beforeEach(() => {
     vi.stubEnv('VITE_E2E', '1'); // the debug hook reports the shown future
   });
@@ -585,83 +609,7 @@ describe('FzpMode rerolls and the representative flag', () => {
     vi.unstubAllEnvs();
   });
 
-  it("'Another future' keeps the play state", async () => {
-    const s = setup();
-    await toReady(s, 7);
-    await page.getByRole('button', { name: 'Play', exact: true }).click();
-    await another().click();
-    s.w().emit(timelineMsg(s.w().lastOf('reroll')!.rev, 8));
-    await expect.poll(future).toBe('This future: #8');
-    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  it('a failed-reroll notice does not come back after a crash Retry', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    const s = setup();
-    await toReady(s, 7);
-    await another().click();
-    s.w().emit({ type: 'error', rev: s.w().lastOf('reroll')!.rev, code: 'internal', message: 'x' });
-    await expect.element(page.getByRole('alert')).toBeVisible();
-    s.w().crash();
-    await page.getByRole('button', { name: 'Retry', exact: true }).click();
-    await expect.poll(() => s.workers.length).toBe(2);
-    await expect.poll(() => s.w().lastOf('initScenario')).toBeTruthy();
-    s.w().emit(timelineMsg(lastRev(s.w()), 7));
-    await expect.poll(() => statusText().filter(Boolean)).toEqual([]);
-    expect(page.getByRole('alert').elements()).toEqual([]);
-  });
-
-  it("'Another future' rerolls, keeps the day, writes the URL, and ignores a stale timeline", async () => {
-    vi.spyOn(crypto, 'getRandomValues').mockImplementation(((a: Uint32Array) => {
-      a[0] = 4242;
-      return a;
-    }) as typeof crypto.getRandomValues);
-    const s = setup();
-    await expect.poll(() => s.w()?.lastOf('initScenario')).toBeTruthy();
-    await expect.element(another()).toBeDisabled();
-    await toReady(s, 7);
-    await expect.poll(future).toBe('This future: #7 (representative)');
-    await press('{PageUp}');
-    const day = Number((slider().element() as HTMLInputElement).value);
-
-    await another().click();
-    const reroll = s.w().lastOf('reroll')!;
-    expect(reroll.seed).toBe(4242);
-    await expect.element(another()).toHaveAttribute('aria-busy', 'true');
-    await expect.element(another()).toBeDisabled();
-    await expect
-      .element(page.getByRole('status').getByText('Making another future…'))
-      .toBeVisible();
-
-    const applied = callsOf('applyTimeline').length;
-    s.w().emit(timelineMsg(reroll.rev, 4242));
-    await expect.poll(future).toBe('This future: #4242');
-    expect(s.onurlseed.mock.calls).toEqual([[4242]]);
-    expect(Number((slider().element() as HTMLInputElement).value)).toBe(day);
-    await expect.element(another()).toBeEnabled();
-    expect(callsOf('applyTimeline').length).toBe(applied + 1);
-
-    // A late answer to the first scenario rev is stale: dropped.
-    s.w().emit(timelineMsg(reroll.rev - 1, 7, { revision: 1 }));
-    expect(callsOf('applyTimeline').length).toBe(applied + 1);
-    await expect.poll(future).toBe('This future: #4242');
-  });
-
-  it('another future keeps the high-water mark', async () => {
-    const s = setup();
-    await toReady(s, 7);
-    await press('{PageUp}');
-    await press('{PageUp}');
-    await press('{PageDown}');
-    const mark = window.__sfhFzp!.highWater;
-    expect(mark).toBeGreaterThan(window.__sfhFzp!.day);
-    await another().click();
-    s.w().emit(timelineMsg(s.w().lastOf('reroll')!.rev, 8));
-    await expect.poll(future).toBe('This future: #8');
-    expect(window.__sfhFzp!.highWater).toBe(mark);
-  });
-
-  it("'Back to the representative future' sends reroll null and clears the URL seed", async () => {
+  it("'Back to the representative future' sends a swap reroll null and clears the URL seed", async () => {
     const s = setup({ urlSeed: 5 });
     await toReady(s, 5);
     await expect.poll(future).toBe('This future: #5');
@@ -672,33 +620,34 @@ describe('FzpMode rerolls and the representative flag', () => {
       .first()
       .click();
     const reroll = s.w().lastOf('reroll')!;
-    expect(reroll.seed).toBeNull();
+    expect(reroll).toMatchObject({ seed: null, swap: true });
     s.w().emit(timelineMsg(reroll.rev, 31));
     await expect.poll(future).toBe('This future: #31 (representative)');
     expect(s.onurlseed.mock.calls).toEqual([[null]]);
   });
 
-  it("'Back to the representative future' is disabled while a reroll is busy or the worker stopped", async () => {
+  it("'Back to the representative future' works during a switch and is disabled once the worker stopped", async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const s = setup({ urlSeed: 5 });
-    await toReady(s, 5);
+    const s = await ranked({ urlSeed: RANKS[10] }, RANKS[10]);
     const board = await details();
     const back = () =>
       board.getByRole('button', { name: 'Back to the representative future' }).first();
     await expect.element(back()).not.toHaveAttribute('aria-disabled');
 
-    anotherKeyed();
-    const reroll = s.w().lastOf('reroll')!;
-    await expect.element(back()).toHaveAttribute('aria-disabled', 'true');
-    (back().element() as HTMLElement).click();
+    await pressRun('{ArrowUp}');
     expect(s.w().allOf('reroll')).toHaveLength(1);
-    s.w().emit(timelineMsg(reroll.rev, 6));
     await expect.element(back()).not.toHaveAttribute('aria-disabled');
+    (back().element() as HTMLElement).click();
+    // Latest wins: it waits for the switch in flight, then goes out.
+    expect(s.w().allOf('reroll')).toHaveLength(1);
+    s.w().emit(timelineMsg(s.w().lastOf('reroll')!.rev, RANKS[9]));
+    await expect.poll(() => s.w().allOf('reroll').length).toBe(2);
+    expect(s.w().lastOf('reroll')).toMatchObject({ seed: null, swap: true });
 
     s.w().crash();
     await expect.element(back()).toHaveAttribute('aria-disabled', 'true');
     (back().element() as HTMLElement).click();
-    expect(s.w().allOf('reroll')).toHaveLength(1);
+    expect(s.w().allOf('reroll')).toHaveLength(2);
   });
 
   it('onResyncNeeded calls client.resync: one reroll per episode, flag kept', async () => {
@@ -710,8 +659,25 @@ describe('FzpMode rerolls and the representative flag', () => {
     expect(s.w().allOf('reroll').length).toBe(before + 1);
     const r = s.w().lastOf('reroll')!;
     expect(r.seed).toBe(7);
+    expect('swap' in r).toBe(false);
     s.w().emit(timelineMsg(r.rev, 7));
     await expect.poll(future).toBe('This future: #7 (representative)');
+    expect(s.onurlseed).not.toHaveBeenCalled();
+  });
+
+  it('a resync that supersedes a switch keeps the shown future, its flag and the URL', async () => {
+    const s = await ranked();
+    await pressRun('{ArrowUp}');
+    const sw = s.w().lastOf('reroll')!;
+    stub.resyncCb!();
+    const r = s.w().lastOf('reroll')!;
+    expect(r.rev).toBeGreaterThan(sw.rev);
+    expect(r.seed).toBe(MEDIAN_SEED);
+    s.w().emit(timelineMsg(r.rev, MEDIAN_SEED));
+    await expect
+      .element(runSlider())
+      .toHaveAttribute('aria-valuetext', `Run ${MEDIAN_SEED}, rank 51 of 101`);
+    await expect.poll(future).toBe(`This future: #${MEDIAN_SEED} (representative)`);
     expect(s.onurlseed).not.toHaveBeenCalled();
   });
 
@@ -732,23 +698,262 @@ describe('FzpMode rerolls and the representative flag', () => {
     await toReady(t, 5);
     await expect.poll(future).toBe('This future: #5');
   });
+});
 
-  it('a reroll error in ready keeps the shown future and shows a dismissible notice', async () => {
-    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const s = setup();
-    await toReady(s, 7);
-    await another().click();
-    const r = s.w().lastOf('reroll')!;
-    s.w().emit({ type: 'error', rev: r.rev, code: 'internal', message: 'x' });
+describe('FzpMode run slider', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_E2E', '1'); // the debug hook reports the shown future
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('there is no random-future button in the header: the slider replaced it', async () => {
+    const s = await ranked();
+    expect(page.getByRole('button', { name: /another future/i }).elements()).toEqual([]);
+    expect(s.w().allOf('reroll')).toEqual([]);
+  });
+
+  it('no run slider in Setup; in a run it shows, disabled, until ranks arrive', async () => {
+    const s = setup({ runPhase: 'setup', levers: DEFAULT_LEVERS });
+    await toReady(s, MEDIAN_SEED);
+    expect(runSlider().elements()).toEqual([]);
+    await (await s.r).rerender({ runPhase: 'run' });
+    await expect.element(runSlider()).toBeVisible();
+    await expect.element(runSlider()).toHaveAttribute('aria-disabled', 'true');
+    await pressRun('{ArrowUp}');
+    expect(s.w().allOf('reroll')).toEqual([]);
+    s.w().emit(ranksMsg(lastRev(s.w()), RANKS));
+    await expect.element(runSlider()).not.toHaveAttribute('aria-disabled');
     await expect
-      .element(page.getByRole('alert'))
-      .toHaveTextContent("Couldn't make another future. Try again.");
-    await expect.poll(future).toBe('This future: #7 (representative)');
-    await expect.element(slider()).toBeInTheDocument();
-    await expect.element(another()).toBeEnabled();
+      .element(runSlider())
+      .toHaveAttribute('aria-valuetext', `Run ${MEDIAN_SEED}, rank 51 of 101`);
+    await (await s.r).rerender({ runPhase: 'setup' });
+    await expect.element(runSlider()).not.toBeInTheDocument();
+  });
+
+  it('a slider move sends one swap reroll; later moves keep only the latest; the answer sends it', async () => {
+    const s = await ranked();
+    await pressRun('{ArrowUp}');
+    await pressRun('{ArrowUp}');
+    await pressRun('{ArrowUp}');
+    // The handle follows the presses at once.
+    await expect
+      .element(runSlider())
+      .toHaveAttribute('aria-valuetext', `Run ${RANKS[47]}, rank 48 of 101`);
+    expect(s.w().allOf('reroll')).toHaveLength(1);
+    const first = s.w().lastOf('reroll')!;
+    expect(first).toMatchObject({ seed: RANKS[49], swap: true });
+    s.w().emit(timelineMsg(first.rev, RANKS[49]));
+    await expect.poll(() => s.w().allOf('reroll').length).toBe(2);
+    expect(s.w().lastOf('reroll')).toMatchObject({ seed: RANKS[47], swap: true });
+    expect(s.onurlseed).not.toHaveBeenCalled();
+  });
+
+  it('an answer updates the headline and Results seed, keeps day, play state and high-water, and writes the URL once settled', async () => {
+    const s = await ranked();
+    await press('{PageUp}');
+    await press('{PageUp}');
+    await press('{PageDown}');
+    const d = window.__sfhFzp!;
+    const day = d.day;
+    const mark = d.highWater;
+    expect(mark).toBeGreaterThan(day);
+
+    await pressRun('{ArrowUp}');
+    await pressRun('{ArrowUp}');
+    const a = s.w().lastOf('reroll')!;
+    const applied = callsOf('applyTimeline').length;
+    s.w().emit(timelineMsg(a.rev, RANKS[49]));
+    await expect.poll(() => s.w().allOf('reroll').length).toBe(2);
+    expect(s.onurlseed).not.toHaveBeenCalled();
+    const b = s.w().lastOf('reroll')!;
+    const other = {
+      ...TIMELINE_SCORE,
+      baseline: { ...TIMELINE_SCORE.baseline, completedNet: 20000 }
+    };
+    s.w().emit(timelineMsg(b.rev, RANKS[48], { score: other }));
+    await expect.poll(future).toBe(`This future: #${RANKS[48]}`);
+    expect(s.onurlseed.mock.calls).toEqual([[RANKS[48]]]);
+    expect(callsOf('applyTimeline').length).toBe(applied + 2);
+    const at = scoreAt(other, monthIndex(day, other.months[0], other.months.length));
+    await expect.element(scoreButton()).toHaveTextContent(`${formatCount(at.total)} homes added`);
+    expect(d.day).toBe(day);
+    expect(d.highWater).toBe(mark);
+    await expect
+      .element(runSlider())
+      .toHaveAttribute('aria-valuetext', `Run ${RANKS[48]}, rank 49 of 101`);
+    // A late timeline at the first switch's rev is stale: dropped.
+    s.w().emit(timelineMsg(a.rev, RANKS[49], { revision: 1 }));
+    expect(callsOf('applyTimeline').length).toBe(applied + 2);
+
+    // Playing: a move keeps playing; the median's answer writes the clean URL.
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
+    d.selectRank(50);
+    const c = s.w().lastOf('reroll')!;
+    expect(c).toMatchObject({ seed: null, swap: true });
+    s.w().emit(timelineMsg(c.rev, MEDIAN_SEED));
+    await expect.poll(future).toBe(`This future: #${MEDIAN_SEED} (representative)`);
+    expect(s.onurlseed.mock.calls).toEqual([[RANKS[48]], [null]]);
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('a lever change sends setLevers at once during a switch, resets to the median and drops the old ranks', async () => {
+    const s = await ranked();
+    await pressRun('{ArrowUp}');
+    const inFlight = s.w().lastOf('reroll')!;
+    await (await s.r).rerender({ levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    const leversAt = s.w().lastOf('setLevers')!.rev;
+    expect(leversAt).toBeGreaterThan(inFlight.rev);
+    // Then the representative future under the new levers: the median.
+    expect(s.w().allOf('reroll')).toHaveLength(2);
+    const back = s.w().lastOf('reroll')!;
+    expect(back).toMatchObject({ seed: null, swap: true });
+    expect(back.rev).toBeGreaterThan(leversAt);
+    await expect.element(runSlider()).toHaveAttribute('aria-disabled', 'true');
+    await expect.element(runSlider()).toHaveAttribute('aria-valuenow', '51');
+
+    s.w().emit(timelineMsg(back.rev, 77));
+    await expect.poll(future).toBe('This future: #77 (representative)');
+    expect(s.onurlseed.mock.calls).toEqual([[null]]);
+    await expect.element(runSlider()).toHaveAttribute('aria-disabled', 'true');
+    // An older band's order is not this policy's.
+    s.w().emit(ranksMsg(inFlight.rev, RANKS));
+    await expect.element(runSlider()).toHaveAttribute('aria-disabled', 'true');
+    const next = RANKS.map((x) => x + 1000);
+    s.w().emit(ranksMsg(leversAt, next));
+    await expect.element(runSlider()).not.toHaveAttribute('aria-disabled');
+    await expect
+      .element(runSlider())
+      .toHaveAttribute('aria-valuetext', `Run ${next[50]}, rank 51 of 101`);
+  });
+
+  it('a lever change on the representative future with nothing in flight sends no reroll', async () => {
+    const s = await ranked();
+    await (await s.r).rerender({ levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    expect(s.w().allOf('reroll')).toEqual([]);
+    await expect.element(runSlider()).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('a crash during a switch leaves nothing in flight; after Retry the slider waits for new ranks', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = await ranked();
+    await pressRun('{ArrowUp}');
+    expect(s.w().allOf('reroll')).toHaveLength(1);
+    s.w().crash();
+    await expect.element(runSlider()).toHaveAttribute('aria-disabled', 'true');
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect.poll(() => s.workers.length).toBe(2);
+    await expect.poll(() => s.w().lastOf('initScenario')).toBeTruthy();
+    s.w().emit(timelineMsg(lastRev(s.w()), MEDIAN_SEED));
+    await expect.element(runSlider()).toHaveAttribute('aria-disabled', 'true');
+    expect(s.w().allOf('reroll')).toEqual([]);
+    s.w().emit(ranksMsg(lastRev(s.w()), RANKS));
+    await expect.element(runSlider()).not.toHaveAttribute('aria-disabled');
+    await pressRun('{ArrowDown}');
+    // Nothing was left in flight: the move goes out at once.
+    expect(s.w().allOf('reroll')).toHaveLength(1);
+    expect(s.w().lastOf('reroll')).toMatchObject({ seed: RANKS[51], swap: true });
+  });
+
+  it('an off-band URL seed shows no selected tick; an in-band seed shows its tick', async () => {
+    const s = await ranked({ urlSeed: 4242 }, 4242);
+    await expect
+      .element(runSlider())
+      .toHaveAttribute('aria-valuetext', 'Run 4242, not one of the 101 ranked runs');
+    await expect.element(runSlider()).toHaveAttribute('aria-valuenow', '51');
+    await unmount(s);
+
+    stub.reset();
+    await ranked({ urlSeed: RANKS[10] }, RANKS[10]);
+    await expect
+      .element(runSlider())
+      .toHaveAttribute('aria-valuetext', `Run ${RANKS[10]}, rank 11 of 101`);
+  });
+
+  it('Back to the representative future moves the slider to the median', async () => {
+    const s = await ranked({ urlSeed: RANKS[10] }, RANKS[10]);
+    await (
+      await details()
+    )
+      .getByRole('button', { name: 'Back to the representative future' })
+      .first()
+      .click();
+    await expect
+      .element(runSlider())
+      .toHaveAttribute('aria-valuetext', `Run ${MEDIAN_SEED}, rank 51 of 101`);
+    const r = s.w().lastOf('reroll')!;
+    expect(r).toMatchObject({ seed: null, swap: true });
+    s.w().emit(timelineMsg(r.rev, MEDIAN_SEED));
+    await expect.poll(future).toBe(`This future: #${MEDIAN_SEED} (representative)`);
+    expect(s.onurlseed.mock.calls).toEqual([[null]]);
+  });
+
+  it('a failed switch shows the alert and the handle returns to the run on show', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = await ranked();
+    await failSwitch(s);
+    await expect
+      .element(page.getByRole('alert').filter({ hasText: "Couldn't show that future" }))
+      .toHaveTextContent("Couldn't show that future. Try again.");
+    await expect
+      .element(runSlider())
+      .toHaveAttribute('aria-valuetext', `Run ${MEDIAN_SEED}, rank 51 of 101`);
+    await expect.poll(future).toBe(`This future: #${MEDIAN_SEED} (representative)`);
+    expect(s.onurlseed).not.toHaveBeenCalled();
     expect(err).toHaveBeenCalledTimes(1);
     await page.getByRole('button', { name: 'Dismiss' }).click();
-    expect(page.getByRole('alert').elements()).toEqual([]);
+    expect(
+      page.getByRole('alert').filter({ hasText: "Couldn't show that future" }).elements()
+    ).toEqual([]);
+    // The next move works.
+    await pressRun('{ArrowDown}');
+    expect(s.w().lastOf('reroll')).toMatchObject({ seed: RANKS[51] });
+  });
+
+  it('a failed-switch notice does not come back after a crash Retry', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = await ranked();
+    await failSwitch(s);
+    s.w().crash();
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect.poll(() => s.workers.length).toBe(2);
+    await expect.poll(() => s.w().lastOf('initScenario')).toBeTruthy();
+    s.w().emit(timelineMsg(lastRev(s.w()), MEDIAN_SEED));
+    await expect.poll(() => statusText().filter(Boolean)).toEqual([]);
+    expect(
+      page.getByRole('alert').filter({ hasText: "Couldn't show that future" }).elements()
+    ).toEqual([]);
+  });
+
+  it('the slider hides while the phone card sheet is open', async () => {
+    await page.viewport(375, 812);
+    await ranked();
+    await expect.element(runSlider()).toBeVisible();
+    pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
+    await expect.element(runSlider()).not.toBeInTheDocument();
+    pick({ projectId: null, kind: 'tap' });
+    await expect.element(runSlider()).toBeVisible();
+  });
+
+  it('on a wide screen the slider stays beside an open card, and the card keeps left of it', async () => {
+    const s = await ranked();
+    const boxEl = page.getByTestId('run-slider-box').element() as HTMLElement;
+    const mapBox = (boxEl.offsetParent as HTMLElement).getBoundingClientRect();
+    pick({ projectId: 'pr-1', parcelId: 'p1', x: 200, y: 200, kind: 'tap' });
+    await answerLastSummary(s.w(), summary(REAL_ACTUAL));
+    await expect.element(card()).toBeVisible();
+    const w = card().element().getBoundingClientRect().width;
+    // Room for the card right of this point on the bare map, but not beside the slider.
+    pick({ projectId: 'pr-1', parcelId: 'p1', x: mapBox.width - w - 26, y: 200, kind: 'tap' });
+    await expect.element(runSlider()).toBeVisible();
+    const box = boxEl.getBoundingClientRect();
+    await expect
+      .poll(() => card().element().getBoundingClientRect().right)
+      .toBeLessThanOrEqual(box.left);
   });
 });
 
@@ -929,14 +1134,13 @@ describe('FzpMode picks and summaries', () => {
     await expect.element(page.getByText('No project on this parcel at this date.')).toBeVisible();
   });
 
-  it('the card re-requests on a reroll answer', async () => {
-    const s = setup();
-    await toReady(s);
+  it('the card re-requests on a run switch answer', async () => {
+    const s = await ranked();
     pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
     await answerLastSummary(s.w(), summary(REAL_ACTUAL));
     const n = s.w().allOf('parcelSummary').length;
-    await another().click();
-    s.w().emit(timelineMsg(s.w().lastOf('reroll')!.rev, 11));
+    await pressRun('{ArrowUp}');
+    s.w().emit(timelineMsg(s.w().lastOf('reroll')!.rev, RANKS[49]));
     await expect.poll(() => s.w().allOf('parcelSummary').length).toBe(n + 1);
   });
 });
@@ -972,7 +1176,7 @@ describe('FzpMode map, layout and lifecycle', () => {
     expect(s.createWorker).not.toHaveBeenCalled();
     expect(slider().elements()).toEqual([]);
     expect(scoreButton().elements()).toEqual([]);
-    expect(another().elements()).toEqual([]);
+    expect(runSlider().elements()).toEqual([]);
     expect(page.getByTestId('fzp-sim-map-stub').elements()).toHaveLength(1);
   });
 
@@ -1046,12 +1250,11 @@ describe('FzpMode map, layout and lifecycle', () => {
 
   it('--fzp-scrubber-h is the scrubber alone, whatever notices show, and --fzp-dock-top is gone', async () => {
     await page.viewport(1024, 768);
-    const s = setup();
-    await toReady(s);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = await ranked();
     const scrubber = page.getByTestId('fzp-scrubber').element() as HTMLElement;
     const root = document.querySelector<HTMLElement>('.sfh-fzp')!;
-    anotherKeyed();
-    await expect.element(page.getByText('Making another future…')).toBeVisible();
+    await failSwitch(s);
     expect(root.style.getPropertyValue('--fzp-scrubber-h')).toBe(`${scrubber.offsetHeight}px`);
     expect(document.documentElement.style.getPropertyValue('--fzp-dock-top')).toBe('');
   });
@@ -1079,13 +1282,12 @@ describe('FzpMode map, layout and lifecycle', () => {
 
   it('the ready-phase notices render in the notice stack', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const s = setup();
-    await toReady(s);
-    anotherKeyed();
+    const s = await ranked();
     const pills = page.getByTestId('fzp-notices');
-    await expect.element(pills.getByText('Making another future…')).toBeVisible();
-    s.w().emit({ type: 'error', rev: s.w().lastOf('reroll')!.rev, code: 'internal', message: 'x' });
-    await expect.element(pills.getByRole('alert')).toBeVisible();
+    await failSwitch(s);
+    await expect
+      .element(pills.getByRole('alert').filter({ hasText: "Couldn't show that future" }))
+      .toBeVisible();
     s.w().crash();
     await expect.element(pills.getByText('Part of the simulation stopped.')).toBeVisible();
   });
@@ -1093,8 +1295,9 @@ describe('FzpMode map, layout and lifecycle', () => {
   it('at 375 px the notices sit in flow above the map: they never cover the card', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     await page.viewport(375, 800);
-    const s = setup();
-    await toReady(s);
+    const s = await ranked();
+    // The failed switch first: the slider hides under the phone card sheet.
+    await failSwitch(s);
     pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
     await answerLastSummary(s.w(), summary(REAL_ACTUAL));
     await expect.element(card()).toBeVisible();
@@ -1110,10 +1313,9 @@ describe('FzpMode map, layout and lifecycle', () => {
       expect(rect(notice()).bottom).toBeLessThanOrEqual(rect(card().element()).top);
     };
 
-    anotherKeyed();
-    await check(() => page.getByText('Making another future…').element());
-    s.w().emit({ type: 'error', rev: s.w().lastOf('reroll')!.rev, code: 'internal', message: 'x' });
-    await check(() => page.getByRole('alert').element());
+    await check(() =>
+      page.getByRole('alert').filter({ hasText: "Couldn't show that future" }).element()
+    );
     s.w().crash();
     await check(() => page.getByText('Part of the simulation stopped.').element());
   });
@@ -1129,12 +1331,11 @@ describe('FzpMode map, layout and lifecycle', () => {
     'at %i px the notice stack overlays the map top and the map takes the whole root',
     async (width) => {
       await page.viewport(width, 800);
-      const s = setup();
-      await toReady(s);
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const s = await ranked();
       const root = document.querySelector('.sfh-fzp') as HTMLElement;
       const region = page.getByTestId('fzp-scrubber').element().closest('.relative') as HTMLElement;
-      anotherKeyed();
-      await expect.element(page.getByText('Making another future…')).toBeVisible();
+      await failSwitch(s);
       const stack = page.getByTestId('fzp-notices').element();
       expect(getComputedStyle(stack).position).toBe('absolute');
       const rr = root.getBoundingClientRect();
@@ -1319,7 +1520,6 @@ describe('FzpMode levers (/sim)', () => {
     await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
     s.w().emit(timelineMsg(leverRev(s.w()), 7));
     await expect.element(stoppedChip()).not.toBeInTheDocument();
-    await expect.element(another()).not.toBeDisabled();
     await expect.poll(future).toBe('This future: #7 (representative)');
   });
 
@@ -1590,62 +1790,16 @@ describe('FzpMode levers (/sim)', () => {
     expect(s.w().lastOf('initScenario')!.levers).toBe(DEFAULT_LEVERS);
   });
 
-  it('a levers change during a reroll waits for its answer, then sends the latest once', async () => {
-    const s = setup({ levers: DEFAULT_LEVERS });
-    await toReady(s, 7);
-    vi.spyOn(crypto, 'getRandomValues').mockImplementation(((a: Uint32Array) => {
-      a[0] = 4242;
-      return a;
-    }) as typeof crypto.getRandomValues);
-    await another().click();
-    const reroll = s.w().lastOf('reroll')!;
-    const r = await s.r;
-    await r.rerender({ levers: { ...OTHER } });
-    const latest: SimLevers = { ...OTHER, localProgramStreamlined: false };
-    await r.rerender({ levers: latest });
-    await new Promise((res) => setTimeout(res, 50));
-    expect(s.w().allOf('setLevers')).toEqual([]);
-
-    s.w().emit(timelineMsg(reroll.rev, 4242));
-    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
-    const sent = s.w().lastOf('setLevers')!;
-    expect(sent.levers).toBe(latest);
-    expect(sent.rev).toBeGreaterThan(reroll.rev);
-    // The reroll's answer was not superseded: its future is on show and in the URL.
-    expect(s.onurlseed.mock.calls).toEqual([[4242]]);
-    await expect.poll(future).toBe('This future: #4242');
-  });
-
-  it('a levers change during a reroll is sent after the reroll fails', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    const s = setup({ levers: DEFAULT_LEVERS });
-    await toReady(s, 7);
-    await another().click();
-    const reroll = s.w().lastOf('reroll')!;
-    const latest: SimLevers = { ...OTHER };
-    await (await s.r).rerender({ levers: latest });
-    await new Promise((res) => setTimeout(res, 50));
-    expect(s.w().allOf('setLevers')).toEqual([]);
-
-    s.w().emit({ type: 'error', rev: reroll.rev, code: 'internal', message: 'x' });
-    await expect
-      .element(page.getByRole('alert').filter({ hasText: "Couldn't make another future" }))
-      .toBeVisible();
-    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
-    expect(s.w().lastOf('setLevers')!.levers).toBe(latest);
-    expect(s.onurlseed).not.toHaveBeenCalled();
-  });
-
-  it('a current at the setLevers rev that arrives after a reroll still pushes its lookups', async () => {
-    const s = setup({ levers: DEFAULT_LEVERS });
-    await toReady(s, 7);
+  it('a current at the setLevers rev that arrives after a run switch still pushes its lookups', async () => {
+    const s = await ranked({}, 7);
     await (await s.r).rerender({ levers: { ...OTHER } });
     await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
     const leversAt = s.w().lastOf('setLevers')!.rev;
-    // The levers' run arrives, then a reroll goes out while their status is still pending.
+    // The levers' run and band arrive, then a switch goes out while their status is pending.
     s.w().emit(timelineMsg(leversAt, 7));
-    await expect.element(another()).toBeEnabled();
-    await another().click();
+    s.w().emit(ranksMsg(leversAt, RANKS));
+    await expect.element(runSlider()).not.toHaveAttribute('aria-disabled');
+    await pressRun('{ArrowUp}');
     const reroll = s.w().lastOf('reroll')!;
     expect(reroll.rev).toBeGreaterThan(leversAt);
 

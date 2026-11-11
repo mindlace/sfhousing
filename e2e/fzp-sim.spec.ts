@@ -1,16 +1,11 @@
 // timelapse-sim spec §6, deferred to the page: what the worker fetches, how fast the first timeline
-// arrives, and that a reroll changes the future but not the band. Runs against the VITE_E2E build
+// arrives, and that a run slider move changes the future but not the band. Runs against the VITE_E2E build
 // (window.__sfhFzp, src/lib/fzp/debug.ts).
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
-import {
-  gotoHydrated,
-  headerAction,
-  jumpAndIdle,
-  openHeaderMenu,
-  type Win
-} from './helpers/sharing';
+import { runSlider, startRun, waitRanked } from './helpers/run';
+import { gotoHydrated, jumpAndIdle, openHeaderMenu, type Win } from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
@@ -143,17 +138,20 @@ test('the first timeline arrives within 3 s of navigation', async ({ page }) => 
   expect(Date.now() - start).toBeLessThan(3_100);
 });
 
-test('a reroll changes the future, not the band', async ({ page }) => {
+test('a run slider move changes the future, not the band', async ({ page }) => {
   await page.goto('/sim');
   await waitReady(page);
   await settled(page);
+  await startRun(page);
+  await waitRanked(page);
   const seed = await seedOf(page);
   const shown = await scoreJson(page, 'shown');
   const band = await scoreJson(page, 'band');
   // `settled` waited for a complete band; an empty one would make the comparison below trivial.
   expect(JSON.parse(band).length).toBeGreaterThan(0);
 
-  await (await headerAction(page, 'Another future')).click();
+  await runSlider(page).focus();
+  await page.keyboard.press('Home');
   await expect.poll(() => seedOf(page)).not.toBe(seed);
   await settled(page);
 

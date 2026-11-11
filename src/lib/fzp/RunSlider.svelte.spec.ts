@@ -61,6 +61,26 @@ describe('RunSlider', () => {
     expect(onselect.mock.calls.map((c) => c[0])).toEqual([0, 100]);
   });
 
+  it('a drag selects the positions under the pointer, and nothing after the release', async () => {
+    const calls: number[] = [];
+    await render(RunSliderHost, {
+      props: { ranks: RANKS, start: 50, record: (p: number) => calls.push(p) }
+    });
+    const inner = page.getByTestId('run-slider-track').element() as HTMLElement;
+    const top = inner.getBoundingClientRect().top + inner.clientTop;
+    const at = (p: number) => top + (p / 100) * inner.clientHeight;
+    const fire = (type: string, p: number) =>
+      inner.dispatchEvent(
+        new PointerEvent(type, { clientY: at(p), pointerId: 1, button: 0, bubbles: true })
+      );
+    fire('pointerdown', 10);
+    fire('pointermove', 20);
+    fire('pointermove', 30);
+    fire('pointerup', 30);
+    fire('pointermove', 40);
+    expect(calls).toEqual([10, 20, 30]);
+  });
+
   it('disabled: aria-disabled, no selection on keys or clicks, handle on the middle tick', async () => {
     const onselect = vi.fn();
     await render(RunSlider, {

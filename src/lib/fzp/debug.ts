@@ -31,11 +31,12 @@ export interface SfhFzpDebug {
   /** The band's seeds, best first; null until the current levers' band has finished. */
   readonly ranks: readonly number[] | null;
   /**
-   * Shows the run at `position` (0 = Best): the representative run (a null seed) at the median
-   * position, else `ranks[position]`. A no-op while `ranks` is null.
+   * The run slider's select: shows the run at `position` (0 = Best), the representative run (a
+   * null seed) at the median position, else `ranks[position]`, through the same latest-wins
+   * switch. A no-op while `ranks` is null or no switch can be asked for.
    */
   selectRank(position: number): void;
-  /** The latest `selectRank`'s `performance.now()` stamps; null before any. */
+  /** The latest run switch's `performance.now()` stamps; null before any. */
   readonly switchTrace: {
     seed: number | null;
     rev: number;

@@ -66,14 +66,14 @@
 </script>
 
 <div
-  class="flex h-full min-h-48 flex-col items-center gap-2 text-xs text-ink select-none dark:text-ink-dark"
+  class="flex h-full flex-col items-center gap-2 text-xs text-ink select-none dark:text-ink-dark"
 >
   <span class="font-semibold">Best</span>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     bind:this={track}
     data-testid="run-slider-track"
-    class="relative min-h-56 w-11 flex-1 touch-none rounded-lg border border-line bg-surface dark:border-line-dark dark:bg-surface-dark"
+    class="relative min-h-24 w-11 flex-1 touch-none rounded-lg border border-line bg-surface dark:border-line-dark dark:bg-surface-dark"
     class:cursor-pointer={!disabled && ranks !== null}
     class:opacity-60={disabled}
     {onpointerdown}
@@ -99,7 +99,7 @@
       aria-valuetext={valueText}
       aria-disabled={disabled ? 'true' : undefined}
       {onkeydown}
-      class="absolute left-1/2 flex min-h-6 min-w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md border border-line bg-surface px-1.5 text-xs font-semibold shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent dark:border-line-dark dark:bg-surface-dark pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+      class="absolute left-1/2 flex min-h-6 min-w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md border border-line bg-surface px-1.5 text-xs font-semibold shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent dark:border-line-dark dark:bg-surface-dark dark:focus-visible:outline-accent-dark pointer-coarse:min-h-11 pointer-coarse:min-w-11"
       style="top: {(handleAt / (n - 1)) * 100}%"
     >
       {#if seed !== null}#{seed}{/if}

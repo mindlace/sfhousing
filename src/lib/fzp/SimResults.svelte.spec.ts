@@ -32,7 +32,7 @@ type Overrides = Partial<{
   bandRunsTotal: number;
   seed: number | null;
   representative: boolean;
-  canReroll: boolean;
+  canSwitch: boolean;
   onrepresentative: () => void;
   onsources: () => void;
   copy: ReturnType<typeof scoreCopy>;
@@ -50,7 +50,7 @@ const props = (over: Overrides = {}) => {
     bandRunsTotal: 101,
     seed: 7,
     representative: true,
-    canReroll: true,
+    canSwitch: true,
     datasetVersion: 'fixture-0',
     builtAt: '2026-10-10T12:00:00Z',
     onrepresentative: vi.fn(),
@@ -391,7 +391,7 @@ describe('future line', () => {
     expect(document.body.textContent).not.toContain('Back to the representative future');
   });
 
-  it('another future: no suffix, and a button back', async () => {
+  it('a run other than the representative: no suffix, and a button back', async () => {
     await page.viewport(1024, 768);
     const onrepresentative = vi.fn();
     await render(SimResults, {
@@ -408,7 +408,7 @@ describe('future line', () => {
     await page.viewport(1280, 800);
     const onrepresentative = vi.fn();
     await render(SimResults, {
-      props: props({ seed: 7, representative: false, canReroll: false, onrepresentative })
+      props: props({ seed: 7, representative: false, canSwitch: false, onrepresentative })
     });
     openSources();
     const back = page.getByRole('button', { name: 'Back to the representative future' });
