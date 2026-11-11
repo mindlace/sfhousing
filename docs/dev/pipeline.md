@@ -294,6 +294,7 @@ Refinements (each a `BuildError`):
 - No current id is in `retiredIds`: "funding id <x> is retired and cannot be reused".
 - `debt` is set exactly when `kind` is `goBond` or `cop`.
 - `awards.years` is non-empty, ascending and unique, and every award row's `year` is in it.
+- `federal.uncapped` (the allocation records behind the federal pool's missing ceiling) has at least one cite, a whole number of `rounds` of 1 or more, and a `window` whose first date is not after its second: "federal.uncapped needs at least one cite, a whole number of rounds and an ordered window".
 
 Cross-check with the model's constants: `perHome.total` must equal `AFFORDABLE.costPerHome` and `perHome.permanentLoans + perHome.other` must equal `AFFORDABLE.ownPerHome` (`src/lib/sim/finance`), or the step throws `funding.json perHome disagrees with AFFORDABLE (src/lib/sim/finance)`. Both transcribe the same exhibit.
 

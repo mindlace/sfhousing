@@ -182,6 +182,35 @@ describe('calibration step on fixture-0', () => {
     expect(existsSync(join(tmp, CALIBRATION_JSON))).toBe(false);
   });
 
+  it('rejects a market.json that is not valid JSON with a CalibrationError naming the path', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'sfh-cal-market-'));
+    const marketPath = join(tmp, 'market.json');
+    writeFileSync(marketPath, '{');
+    const db = await openDuck();
+    let err: unknown;
+    try {
+      err = await writeCalibration({
+        db,
+        outDir: tmp,
+        derivedDir: tmp,
+        datasetVersion: 'fixture-0',
+        asOf: 0,
+        cal: FIXTURE_CAL,
+        counts: {},
+        marketPath,
+        ...sources
+      }).then(
+        () => null,
+        (e: unknown) => e
+      );
+    } finally {
+      db.close();
+    }
+    expect(err).toBeInstanceOf(CalibrationError);
+    expect((err as Error).message.startsWith(`market: ${marketPath}: `)).toBe(true);
+    expect(readdirSync(tmp)).toEqual(['market.json']);
+  });
+
   /** writeCalibration on an empty output directory, with `extra` over the mini sources. */
   const attempt = async (extra: Partial<typeof sources>) => {
     const tmp = mkdtempSync(join(tmpdir(), 'sfh-cal-funding-'));

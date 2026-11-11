@@ -1,7 +1,8 @@
 /**
  * Schema of the hand-transcribed baseline funding `pipeline/enrichment/funding.json`
  * (finance-data spec 4.5): the Budget and Legislative Analyst's per-home and City-source figures,
- * the state and federal pool texts and the CDLAC/CTCAC award rows. Fixture builds read
+ * the state and federal pool texts, the allocation records behind the federal pool's missing
+ * ceiling, and the CDLAC/CTCAC award rows. Fixture builds read
  * `pipeline/test/fixtures/mini/enrichment/funding.json`. Pipeline only (zod).
  */
 import { z } from 'zod';
@@ -48,7 +49,15 @@ export interface FundingFile {
     }[];
   };
   state: { id: string; label: string; dollarsPerYear: number; tier: 2; method: string; cite: Cite };
-  federal: { id: string; label: string; tier: 2; method: string; cite: Cite };
+  federal: {
+    id: string;
+    label: string;
+    tier: 2;
+    method: string;
+    cite: Cite;
+    /** the allocation records behind the pool's missing ceiling (finance-data spec 4.5) */
+    uncapped: { rounds: number; window: [IsoDate, IsoDate]; cites: Cite[] };
+  };
   /** awards whose homes give check.observedHomesPerYear */
   awards: {
     years: number[];
@@ -185,7 +194,12 @@ export const FundingSchema: z.ZodType<FundingFile> = z
       label: text,
       tier: z.literal(2),
       method: text,
-      cite
+      cite,
+      uncapped: z.strictObject({
+        rounds: z.number(),
+        window: z.tuple([isoDate, isoDate]),
+        cites: z.array(cite)
+      })
     }),
     awards: z.strictObject({ years: z.array(year), rows: z.array(award) }),
     retiredIds: z.array(text)
@@ -220,6 +234,20 @@ export const FundingSchema: z.ZodType<FundingFile> = z
         });
       }
     });
+    const u = f.federal.uncapped;
+    if (
+      u.cites.length === 0 ||
+      !Number.isInteger(u.rounds) ||
+      u.rounds < 1 ||
+      u.window[0] > u.window[1]
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['federal', 'uncapped'],
+        message:
+          'federal.uncapped needs at least one cite, a whole number of rounds and an ordered window'
+      });
+    }
     const ys = f.awards.years;
     if (ys.length === 0 || ys.some((y, i) => i > 0 && y <= ys[i - 1])) {
       ctx.addIssue({

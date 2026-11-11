@@ -128,11 +128,54 @@ share is `perHome.<source> ÷ 861,525`, the uncovered cost of an affordable home
 | `city-redevelopment`      | `baseline-city-redevelopment`      | `dedicatedTax`   | 3, City    | 6,000,000      | 0.00893                                         |
 
 The pools in `calibration.json` run in the City sources' Exhibit E order, then `state`, then
-`federal-tax-credits`; the table lists them by fill tier. The City pools are evidence tier 1 (the
-Budget Analyst's Exhibit E and F); the state pool and the federal pool are evidence tier 2. The City
-entries' `window` is `city.fiscalYear` (`FYyyyy-yy`, two consecutive years; the schema rejects any
-other form) read as July to June. Impact fees are classed `dedicatedTax` because `PoolKind` has no
-fee kind; the pool's `note` says it is a fee.
+`federal-tax-credits`; the table lists them by fill tier. Impact fees are classed `dedicatedTax`
+because `PoolKind` has no fee kind; the pool's `note` says it is a fee.
+
+**Every pool entry is evidence tier 2** (ruling R14). An entry of `baselineFunding.provenance` has
+one tier, the tier of the weakest number it states. The dollars behind a share are tier 1 (the
+Budget Analyst's Exhibits E and F), but the share itself is an inference: it applies Exhibit F's
+average over the tax-credit projects of 2024 to each funded home of the run, and a City share also
+rests on a split the report does not give (Exhibit F has one figure for the City, $300,027 a home,
+and the share takes each source to pay in proportion to its FY2024-25 spending in Exhibit E). So a
+City entry's method has two marked parts, in this order: `Recorded (tier 1): ` (this source's
+dollars and the City's total, Exhibit E; the City's dollars a home, Exhibit F), then
+`Inferred (tier 2): ` (the slice and share arithmetic, and the held-level assumption), followed by
+the inflow dates, "FY2024-25 dollars, not adjusted", the source's `note` and, for `city-debt`, the
+debt sentence. No entry is tier 1. A City entry's `window` is `city.fiscalYear` (`FYyyyy-yy`, two
+consecutive years; the schema rejects any other form) read as July to June, and its `n` is 1.
+
+### Why the federal pool has no ceiling
+
+The federal pool is uncapped: the simulation pays its share for any number of funded homes. Its
+provenance entry (label `Federal: low-income housing tax credits: uncapped`, tier 2) lists the
+Exhibit F cite and then the three allocation records in `federal.uncapped.cites`; its `n` is
+`federal.uncapped.rounds` (3) and its `window` is `federal.uncapped.window` (2026-01-01 to
+2026-09-14), so both describe the claim. The records, read in the primary documents on 2026-11-10:
+
+1. CDLAC Exhibit A, _Pool and Set-Aside Recommendation of 2026 State Debt Ceiling_ (updated
+   2026-09-14): California's 2026 bond ceiling for rental housing is $4.83 billion, divided among
+   state-wide pools and six regions, with no San Francisco line. The Bay Area Region used $75.2
+   million of $128.6 million in round 1 and $170.1 million of $181.9 million in round 2.
+2. CTCAC, _Allocation Process for Set Asides and Geographic Regions, Estimated for Calendar Year
+   2026_ (updated 2026-09-02): the 9% credit **does** have a San Francisco share, $2,861,626 of
+   annual federal credit (3.7% of the regions').
+3. CTCAC, _2026 First Round 9% Final Approved Recommendations_ (2026-06-22): no San Francisco project
+   was recommended, and $3,437,486 was left.
+
+Almost all of San Francisco's new-construction tax-credit awards use the 4% credit (the method adds
+a sentence computed from the award rows; live: 14 of the 15 new-construction awards of 2024–2025,
+1,925 of 1,960 homes). Those take a share of the state's bond ceiling, of which San Francisco has no
+share of its own, and money was left in the Bay Area's share after both 2026 bond rounds. So "no
+ceiling binds San Francisco today" is an inference (tier 2) from those three rounds, not a law. Its
+limits, which the method states: the Bay Area's round 2 share was 93% used; San Francisco projects
+also compete in the state-wide pools, at least one of which was fully used; and the records do not
+say which pool paid for any San Francisco award. A policy that funds many more homes than today
+could meet the bond ceiling, and the simulation does not show that.
+
+**What the $443,108 is.** Exhibit F's slice is "Federal", not tax credits alone: the Analyst says
+federal funding "includes the Low-Income Housing Tax Credit" (p. 6) and gives no split. The pool
+keeps its id and label and treats the whole amount as money that follows the project, as the credit
+does; its method says so.
 
 **Fill tiers.** The tier table above is the order in which `fundBundle` spends the pools: federal,
 then state, then the City's pools pro rata. With the whole baseline on and nothing added, every grant
@@ -176,6 +219,20 @@ datasf-mohcd-pipeline entry (run fetch --only datasf-mohcd-pipeline)`).
 | Fixture (tier 4)                          | 0.428572 | 0.428571 | 0.142857 | 0             | 2          | 2          | 1 of 8           |
 | Live (`2026-11-10-3532a348`; as expected) | 0.483439 | 0.433384 | 0.076402 | 0.006775      | 70         | 45         | 1,023 of 6,304   |
 
+**Known limit: small affordable projects below `minHomes`** (ruling R22, accepted by the partner).
+The private-development level `today.private` (row F2; [market.md](market.md)) is measured with
+every affordable-cohort start left out of the observed starts, whatever its size: `startCohort` in
+`pipeline/lib/affordable-cohort.ts` marks a start affordable when its primary Planning record
+proposes at least 95% affordable homes, with no size floor. From Release 2, a run whose
+`buildSimInput` sets `finance` runs at that private level (F3), so affordable starts have to come
+back through the funded `affordable` start. But a month's bundle holds only the programmes whose
+`minHomes` the project's drawn size meets (F9 (b)), and every baseline programme (F12) carries the
+same `minHomes`, 70 homes live and 2 in the fixture. A lot whose drawn size is below it has an empty
+baseline bundle, makes no application, and cannot be funded by the baseline at all. Affordable
+projects smaller than `minHomes` are therefore taken out of the private level and never put back by
+today's funding: the run under-counts them. Only a programme the user adds with a lower `minHomes`
+can reach them.
+
 ### The check and its warning
 
 `check` holds two whole numbers and its provenance (tier 2):
@@ -205,7 +262,8 @@ On a `fixture-<n>` build `funding.json` is the twin
 `pipeline/test/fixtures/mini/enrichment/funding.json`: the live `perHome` (so `AFFORDABLE` agrees),
 the live ids and kinds, City sources of 1,500,000, 1,200,000, 1,000,000, 1,000,000, 800,000 and
 500,000 (total 6,000,000), state 3,000,000, two invented award rows (`FIXTURE-1`, 20 homes in 2024;
-`FIXTURE-2`, 30 homes in 2025), and every `cite.label` beginning "Fixture:". The MOHCD rows come
+`FIXTURE-2`, 30 homes in 2025), an invented `federal.uncapped` (one round, window 2026-01-01 to
+2026-01-01, one cite), and every `cite.label` beginning "Fixture:". The MOHCD rows come
 from the mini raw page. Every provenance entry of `baselineFunding`, and `check.provenance`, is tier
 4, labelled with the prefix `Fixture (tier 4): `. Stored fixture policies therefore name the same
 pool ids as the live site.
@@ -217,8 +275,11 @@ dataset-version hash because it sits under `pipeline/`. The pipeline's other enr
 style is `multiphase.json` ([pipeline.md](pipeline.md#funding-enrichment)).
 
 Contents: `perHome` (Exhibit F, average funding per home), `city` (Exhibit E, six sources with `kind`,
-`dollarsPerYear`, `debt`, `note`, `cite`), `state`, `federal`, `awards` (`years` and `rows`) and
-`retiredIds`. Every number carries a citation with a page.
+`dollarsPerYear`, `debt`, `note`, `cite`), `state`, `federal` (with `uncapped`: `rounds`,
+`window` and `cites`, the allocation records behind the pool's missing ceiling), `awards` (`years`
+and `rows`) and `retiredIds`. Every number carries a citation with a page. The schema rejects a
+`federal.uncapped` with no cite, a `rounds` that is not a whole number of 1 or more, or a `window`
+that runs backwards.
 
 ### Stable ids
 
@@ -254,9 +315,14 @@ When the Budget Analyst, CDLAC or CTCAC publish new figures:
    `BuildError`, because a silent divergence would make the shares wrong.
 3. Update the award rows by the rule below, and `awards.years` (complete calendar years only: a part
    year would understate).
-4. Run `npx prettier --write pipeline/enrichment/funding.json`, then the pipeline funding tests, then
+4. Each year, update `federal.uncapped`: re-read the two committees' allocation tables (CDLAC's
+   Exhibit A for the bond ceiling, CTCAC's credit estimates and each round's final recommendations
+   for the 9% credit), replace the cites, the round count and the window, and rewrite the figures in
+   `federal.method`. Review whether the Bay Area's share of the bond ceiling was used up. If it was,
+   the claim that no ceiling binds San Francisco no longer holds and the design must be reopened.
+5. Run `npx prettier --write pipeline/enrichment/funding.json`, then the pipeline funding tests, then
    rebuild the dataset and read report section 12 (below), especially the check and its warning.
-5. A change here changes the dataset version, so the branch follows "Finishing a branch that changes
+6. A change here changes the dataset version, so the branch follows "Finishing a branch that changes
    the dataset" in [pipeline.md](pipeline.md).
 
 **Award rows.** `awards.rows` is every San Francisco row of the five CDLAC _Qualified Residential

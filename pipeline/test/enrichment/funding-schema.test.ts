@@ -39,6 +39,53 @@ describe('funding.json', () => {
     for (const p of all) expect(typeof p === 'string' && p.length > 0).toBe(true);
   });
 
+  it("carries the federal pool's three allocation records in federal.uncapped", () => {
+    const f = parseFundingFile(load(LIVE), 'funding.json');
+    expect(f.federal.uncapped.rounds).toBe(3);
+    expect(f.federal.uncapped.window).toEqual(['2026-01-01', '2026-09-14']);
+    expect(f.federal.uncapped.cites.map((c) => c.url)).toEqual([
+      'https://www.treasurer.ca.gov/sites/default/files/2026-09/Allocation_by_Round_9-14-2026.pdf',
+      'https://www.treasurer.ca.gov/sites/default/files/2026-03/2026-credit-estimates.pdf',
+      'https://www.treasurer.ca.gov/sites/default/files/ctcac/2026_R1_Final_Recommendations.pdf'
+    ]);
+    expect(f.federal.uncapped.cites.map((c) => [c.label, c.page])).toEqual([
+      [
+        'California Debt Limit Allocation Committee, Exhibit A, "Pool and Set-Aside ' +
+          'Recommendation of 2026 State Debt Ceiling", updated 2026-09-14',
+        'Exhibit A, row Bay Area Region'
+      ],
+      [
+        'California Tax Credit Allocation Committee, "CTCAC Allocation Process for Set Asides ' +
+          'and Geographic Regions, Estimated for Calendar Year 2026", updated 2026-09-02',
+        'p. 1, Step 3, row San Francisco County'
+      ],
+      [
+        'California Tax Credit Allocation Committee, "CTCAC 2026 First Round 9% Final Approved ' +
+          'Recommendations for the Geographic Regions", 2026-06-22',
+        'p. 2, San Francisco County'
+      ]
+    ]);
+    for (const c of f.federal.uncapped.cites) expect(c.retrieved).toBe('2026-11-10');
+    expect(f.federal.method).not.toContain('is published for the City');
+    expect(f.federal.method).toContain("'includes the Low-Income Housing Tax Credit' (p. 6)");
+  });
+
+  it('fixture twin carries an invented federal.uncapped', () => {
+    const fx = parseFundingFile(load(FIXTURE), 'funding.json');
+    expect(fx.federal.uncapped).toEqual({
+      rounds: 1,
+      window: ['2026-01-01', '2026-01-01'],
+      cites: [
+        {
+          label: 'Fixture: invented allocation record (tier 4)',
+          url: 'https://fixture.invalid/funding',
+          page: 'fixture',
+          retrieved: '2026-11-10'
+        }
+      ]
+    });
+  });
+
   it('has the expected award sums', () => {
     const f = parseFundingFile(load(LIVE), 'funding.json');
     const sum = (year: number, newOnly: boolean) =>
@@ -154,6 +201,27 @@ describe('funding.json', () => {
       'fiscalYear FY2099-01',
       (f) => (f.city.fiscalYear = 'FY2099-01'),
       'fiscalYear must be FYyyyy-yy, two consecutive years'
+    ],
+    ['no federal.uncapped', (f) => delete f.federal.uncapped, 'federal.uncapped'],
+    [
+      'federal.uncapped with no cites',
+      (f) => (f.federal.uncapped.cites = []),
+      'federal.uncapped needs at least one cite, a whole number of rounds and an ordered window'
+    ],
+    [
+      'federal.uncapped with 0 rounds',
+      (f) => (f.federal.uncapped.rounds = 0),
+      'federal.uncapped needs at least one cite, a whole number of rounds and an ordered window'
+    ],
+    [
+      'federal.uncapped with 1.5 rounds',
+      (f) => (f.federal.uncapped.rounds = 1.5),
+      'federal.uncapped needs at least one cite, a whole number of rounds and an ordered window'
+    ],
+    [
+      'federal.uncapped with a backwards window',
+      (f) => (f.federal.uncapped.window = ['2026-09-14', '2026-01-01']),
+      'federal.uncapped needs at least one cite, a whole number of rounds and an ordered window'
     ],
     [
       'no city sources',
