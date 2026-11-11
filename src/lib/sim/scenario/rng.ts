@@ -11,7 +11,11 @@ export function fmix32(h: number): number {
   return h >>> 0;
 }
 
-/** Draw purposes (spec 4.4.1). Stage redraws use `stageRedraw(j)`. */
+/**
+ * Draw purposes (spec 4.4.1). A stage step draws its kind on `STAGE` and its time on `STAGE_TIME`
+ * (paired-draw fix). Reserved, never to be reused: 7 and 10 (Release 2), and 17-23 (the retired
+ * in-flight stage redraws).
+ */
 export const P = {
   INIT: 1,
   INIT_DAY: 2,
@@ -21,13 +25,9 @@ export const P = {
   STAGE: 6,
   REV: 8,
   REV_RATIO: 9,
-  PHASE_GAP: 11
+  PHASE_GAP: 11,
+  STAGE_TIME: 12
 } as const;
-
-/** Purpose id for the j-th stage redraw, j in 1..7. */
-export function stageRedraw(j: 1 | 2 | 3 | 4 | 5 | 6 | 7): number {
-  return 16 + j;
-}
 
 /** Entity id of a parcel-keyed draw stream. */
 export function simEntity(parcelId: ParcelId): number {

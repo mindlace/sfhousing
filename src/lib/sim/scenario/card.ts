@@ -6,7 +6,6 @@ import type { GeneratedBuilding } from '$lib/generator';
 import type { InFlightProject, QualityRuleRef } from '$lib/timelapse/projects';
 import { DYING_DAYS, monthsIn, type Day } from '$lib/timelapse/time';
 import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
-import { inFlightMonths } from './engine';
 import { districtOptsFor } from './massing';
 import type { Master } from './simulate';
 import type { Massing, ProjectCard, Schedule, SimInput } from './types';
@@ -112,6 +111,15 @@ function stagesOf(
     if (at !== undefined && at <= day) out.push({ stage, day: at, actual: actual(stage, at) });
   }
   return out;
+}
+
+/**
+ * The months an in-flight project is conditioned on in a stage rescaled by `s`, after `m` real
+ * months in it (ruling 3, "Remaining-time rescale for in-flight stages"). The card's chance shift
+ * only: the engine no longer reads it (paired-draw fix).
+ */
+export function inFlightMonths(m: number, s: number): number {
+  return s === 1 ? m : Math.round(m * s);
 }
 
 /**

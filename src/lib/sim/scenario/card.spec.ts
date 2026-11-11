@@ -9,9 +9,16 @@ import { DYING_DAYS, monthsIn, type Day } from '$lib/timelapse/time';
 import type { Calibration } from '$lib/timelapse/types';
 import type { StageScale } from '../levers/timers';
 import { createLru } from '../lru';
-import { blockLot, chooseProject, firstDay, isVisible, projectCard, type CardCtx } from './card';
+import {
+  blockLot,
+  chooseProject,
+  firstDay,
+  inFlightMonths,
+  isVisible,
+  projectCard,
+  type CardCtx
+} from './card';
 import { dayOf } from './dates';
-import { inFlightMonths } from './engine';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniCity, MINI_LP_ID } from './fixtures/mini-parcels';
 import {
@@ -821,6 +828,12 @@ describe('projectCard: lookups and in-flight chance shift', () => {
   const entitledRow = sched({
     projectId: P.filedPair,
     entered: { filed: E - 400, entitled: E }
+  });
+
+  it('inFlightMonths', () => {
+    expect(inFlightMonths(7, 1)).toBe(7);
+    expect(inFlightMonths(7, 0.5)).toBe(4);
+    expect(inFlightMonths(0, 0.5)).toBe(0);
   });
 
   it('an in-flight row in a rescaled stage shifts by inFlightMonths(m, x) - m', () => {

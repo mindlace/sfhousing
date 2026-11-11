@@ -67,7 +67,8 @@ const isCurrent = (rev: number) => (m: ScenarioResponse) =>
 /**
  * The no-lever run below (seed 1, the whole city prefetched, then a reroll to seed 9) as the host
  * posted it before Task 12, at 8b0d9cb: the post sequence, and a SHA-256 of the timelines'
- * content (`content`, in order).
+ * content (`content`, in order). The hash was re-pinned when the paired-draw fix changed every
+ * stage step's draws (P.STAGE and P.STAGE_TIME); the sequence is unchanged.
  */
 const BASELINE = {
   sequence: [
@@ -83,7 +84,7 @@ const BASELINE = {
     'timeline:2',
     'timeline:2'
   ],
-  timelines: 'e13c7801e55e1579eab7adf64b2186651707309ec7389e1e695bf72c60b3154c'
+  timelines: '4d0a7c1ac9698d0643303886a6eaaef6b9c2648722ab4988241ed9eee89bdd9d'
 };
 
 describe('scenario host without levers (/fzp)', () => {
