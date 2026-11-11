@@ -662,10 +662,20 @@ Recorded as errata in `docs/lesscars/plan-v1.md` ("Errata from the live check (2
 
 ## Release 1 rebuild: today's market
 
-Placeholder, filled at the Release 1 build on the release branch: the dataset version, and the
-changed headline numbers of the published plan. What is already true: the base input now runs on
-today's market (`SimInput.market`, [market.md](market.md)), and the plan and baseline inputs spread
-it from the base, so both arms run on it.
+Built 2026-11-10 as `2026-11-10-3532a348` (Apple M5 Pro), from the committed lock with the
+`datasf-mohcd-pipeline` source added and the unchanged v1.1 plan; every invariant passed, and V35
+reads `68 projects, 166 sites, 41 year ends`. The base input now runs on today's market
+(`SimInput.market`, `today.all` -0.64196, [market.md](market.md)), and the plan and baseline inputs
+spread it from the base, so both arms run on it. Compared with the production dataset
+`2026-11-08-3b7fa918` (in brackets):
+
+- **Headline at 2068:** mean +29,349 extra homes (+29,096); p10 28,912 (28,381), p50 29,428
+  (29,184), p90 29,647 (29,526). 101 seeds, representative seed 55 (91).
+- **Totals at 2068:** plan 94,287 (116,212) against baseline 64,938 (87,116). Both arms build about
+  22,000 fewer homes on today's market; the difference between them barely moves.
+- **2068 by source** (means): freed 22,959 (22,959); parking 6,333 (6,018); transit-unlocked 57 (119);
+  other 0.
+- No year's mean extra is below zero by more than 0.01 home, and p10 never drops below 0.
 
 ## Freeway land
 

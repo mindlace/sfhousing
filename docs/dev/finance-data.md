@@ -17,8 +17,9 @@ Four things are new in the dataset, plus one source and one hand-transcribed fil
 | `datasf-mohcd-pipeline`                     | `pipeline/sources/datasf.ts`                                     | the lock, the manifest and `/attribution` |
 | `pipeline/enrichment/funding.json`          | hand-transcribed; schema `pipeline/enrichment/funding-schema.ts` | read by `build`, never uploaded           |
 
-Values marked "expected" are the design's, from the research queries of 2026-11-09. They are
-"expected; measured at the Release 1 build on the release branch". The fixture values are exact.
+Live values are measured on the Release 1 build, dataset `2026-11-10-3532a348` (2026-11-10). Where
+a measurement differs from the design's expectation (the research queries of 2026-11-09), the
+expectation is kept beside it. The fixture values are exact.
 
 ## `affordableHomes` (in-flight projects)
 
@@ -76,10 +77,11 @@ unrecorded === units`; the message is `rhnaCompletedNet.byTier: must sum to unit
 `byTier` counts completions. The Budget Analyst's Exhibit D counts progress by permits, so it is not
 a check on these numbers; the scoreboard labels tier progress "completed since 30 June 2022 (net)".
 
-|                                                                                         | very low | low   | moderate | above moderate | unrecorded |
-| --------------------------------------------------------------------------------------- | -------- | ----- | -------- | -------------- | ---------- |
-| Fixture (`fixture-0`, units 4)                                                          | 0        | 0     | 0        | 3              | 1          |
-| Live since 2023-01-01 (expected; measured at the Release 1 build on the release branch) | 1,670    | 1,252 | 557      | the remainder  | 0          |
+|                                                                                               | very low | low   | moderate | above moderate | unrecorded |
+| --------------------------------------------------------------------------------------------- | -------- | ----- | -------- | -------------- | ---------- |
+| Fixture (`fixture-0`, units 4)                                                                | 0        | 0     | 0        | 3              | 1          |
+| Live, since 30 Jun 2022 (`2026-11-10-3532a348`, units 8,723)                                  | 2,203    | 1,352 | 559      | 4,609          | 0          |
+| Expected, since 2023-01-01 (the design's research query; a shorter window, so not comparable) | 1,670    | 1,252 | 557      | the remainder  | 0          |
 
 ## The cohort and `calibration.affordableRoutes`
 
@@ -101,8 +103,8 @@ of all new projects is used, labelled tier 4`.
 
 The threshold is a function argument, not in the profile, so the fixture (empty cohort) takes the
 fallback by design, is labelled tier 4, and does not warn. The fixture value is the fallback.
-Live (expected; measured at the Release 1 build on the release branch): about 54 histories, about
-two thirds streamlined. `parseCalibration` validates it with `checkPathwayMap(v, 'affordableRoutes',
+Live (`2026-11-10-3532a348`): 53 histories, tier 0; discretionary 0.301887, streamlined
+0.679245, permitOnly 0.018868 (expected: about 54 histories, about two thirds streamlined). `parseCalibration` validates it with `checkPathwayMap(v, 'affordableRoutes',
 true)`.
 
 ## `calibration.baselineFunding`
@@ -114,16 +116,16 @@ adjusted. Shares are in millionths and sum to exactly 1,000,000 (the programme
 share is `perHome.<source> ÷ 861,525`, the uncovered cost of an affordable home,
 `uncoveredPerHome('affordable')`).
 
-| Pool id                   | Programme id                       | Pool kind        | Fill tier  | Dollars a year | Live share (expected; measured at the Release 1 build on the release branch) |
-| ------------------------- | ---------------------------------- | ---------------- | ---------- | -------------- | ---------------------------------------------------------------------------- |
-| `federal-tax-credits`     | `baseline-federal-tax-credits`     | `federal`        | 1, federal | uncapped       | 0.51433                                                                      |
-| `state`                   | `baseline-state`                   | `state`          | 2, state   | 150,000,000    | 0.137419                                                                     |
-| `city-debt`               | `baseline-city-debt`               | `goBond`         | 3, City    | 80,500,000     | 0.119804                                                                     |
-| `city-ocoh`               | `baseline-city-ocoh`               | `dedicatedTax`   | 3, City    | 48,600,000     | 0.072329                                                                     |
-| `city-general-fund`       | `baseline-city-general-fund`       | `generalRevenue` | 3, City    | 36,700,000     | 0.054619                                                                     |
-| `city-impact-fees`        | `baseline-city-impact-fees`        | `dedicatedTax`   | 3, City    | 34,800,000     | 0.051791                                                                     |
-| `city-housing-trust-fund` | `baseline-city-housing-trust-fund` | `generalRevenue` | 3, City    | 27,400,000     | 0.040778                                                                     |
-| `city-redevelopment`      | `baseline-city-redevelopment`      | `dedicatedTax`   | 3, City    | 6,000,000      | 0.00893                                                                      |
+| Pool id                   | Programme id                       | Pool kind        | Fill tier  | Dollars a year | Live share (`2026-11-10-3532a348`; as expected) |
+| ------------------------- | ---------------------------------- | ---------------- | ---------- | -------------- | ----------------------------------------------- |
+| `federal-tax-credits`     | `baseline-federal-tax-credits`     | `federal`        | 1, federal | uncapped       | 0.51433                                         |
+| `state`                   | `baseline-state`                   | `state`          | 2, state   | 150,000,000    | 0.137419                                        |
+| `city-debt`               | `baseline-city-debt`               | `goBond`         | 3, City    | 80,500,000     | 0.119804                                        |
+| `city-ocoh`               | `baseline-city-ocoh`               | `dedicatedTax`   | 3, City    | 48,600,000     | 0.072329                                        |
+| `city-general-fund`       | `baseline-city-general-fund`       | `generalRevenue` | 3, City    | 36,700,000     | 0.054619                                        |
+| `city-impact-fees`        | `baseline-city-impact-fees`        | `dedicatedTax`   | 3, City    | 34,800,000     | 0.051791                                        |
+| `city-housing-trust-fund` | `baseline-city-housing-trust-fund` | `generalRevenue` | 3, City    | 27,400,000     | 0.040778                                        |
+| `city-redevelopment`      | `baseline-city-redevelopment`      | `dedicatedTax`   | 3, City    | 6,000,000      | 0.00893                                         |
 
 The pools in `calibration.json` run in the City sources' Exhibit E order, then `state`, then
 `federal-tax-credits`; the table lists them by fill tier. The City pools are evidence tier 1 (the
@@ -169,10 +171,10 @@ qualifying row with a band-coded home aborts the build with a `CalibrationError`
 total_project_units above 0`. A lock with no `datasf-mohcd-pipeline` entry is a `BuildError` too (`lock has no
 datasf-mohcd-pipeline entry (run fetch --only datasf-mohcd-pipeline)`).
 
-|                                                                        | veryLow  | low      | moderate | aboveModerate | `minHomes` | MOHCD rows | undeclared homes |
-| ---------------------------------------------------------------------- | -------- | -------- | -------- | ------------- | ---------- | ---------- | ---------------- |
-| Fixture (tier 4)                                                       | 0.428572 | 0.428571 | 0.142857 | 0             | 2          | 2          | 1 of 8           |
-| Live (expected; measured at the Release 1 build on the release branch) | 0.483439 | 0.433384 | 0.076402 | 0.006775      | 70         | 45         | 1,023            |
+|                                           | veryLow  | low      | moderate | aboveModerate | `minHomes` | MOHCD rows | undeclared homes |
+| ----------------------------------------- | -------- | -------- | -------- | ------------- | ---------- | ---------- | ---------------- |
+| Fixture (tier 4)                          | 0.428572 | 0.428571 | 0.142857 | 0             | 2          | 2          | 1 of 8           |
+| Live (`2026-11-10-3532a348`; as expected) | 0.483439 | 0.433384 | 0.076402 | 0.006775      | 70         | 45         | 1,023 of 6,304   |
 
 ### The check and its warning
 
@@ -192,10 +194,10 @@ report. It is never a failure. It means the shares and dollars in `funding.json`
 with the award records: either a source's dollars or the award list was transcribed wrongly, or the
 programme really changed. Re-read the primary sources before trusting a rebuilt baseline.
 
-|                                                                        | implied | observed | warning           |
-| ---------------------------------------------------------------------- | ------- | -------- | ----------------- |
-| Fixture                                                                | 20      | 25       | none              |
-| Live (expected; measured at the Release 1 build on the release branch) | 780     | 980      | none (ratio 0.80) |
+|                                           | implied | observed | warning           |
+| ----------------------------------------- | ------- | -------- | ----------------- |
+| Fixture                                   | 20      | 25       | none              |
+| Live (`2026-11-10-3532a348`; as expected) | 780     | 980      | none (ratio 0.80) |
 
 ### Fixture mode
 

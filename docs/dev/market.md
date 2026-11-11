@@ -100,15 +100,29 @@ of the three years, 33 + 40 + 56, which is 129; `implied` = 81.6109 + 81.7087 + 
 -0.643571 (a factor of 0.525 on the odds); hold-out expectation 386.399, ln(129 / 386.399) =
 -1.09706 (report only).
 
-**Release 1 live values: placeholder.** The live `today.*`, `observed.private`, the cohort counts,
-`slope.perCostShare`, `crossCheck.logOdds` and the outcome of acceptance check 7.3 are filled here
-at the Release 1 build, on the release branch, once the live dataset is built. This subsystem's own
-branch builds no dataset.
+**Release 1 live values** (dataset `2026-11-10-3532a348`, built 2026-11-10; calibration report
+section 11):
 
-**Acceptance 7.3 (to be recorded at the Release 1 build).** `|today.all - (-0.643571)| <= 0.10`
-(tier 4 tolerance), or this page and the release PR state the difference with the per-year table of
-report section 11 and its cause (a source refresh adding events, the road-lots change in
-[road-lots.md](road-lots.md), or another named change). Outcome: placeholder.
+| year | observed | affordable cohort | private | implied (published hazard) | hold-out predicted |
+| ---- | -------- | ----------------- | ------- | -------------------------- | ------------------ |
+| 2023 | 33       | 2                 | 31      | 81.4854                    | 128.113            |
+| 2024 | 40       | 3                 | 37      | 81.5714                    | 128.603            |
+| 2025 | 56       | 4                 | 52      | 82.0688                    | 129.505            |
+
+- `today.all` = ln(129 / 245.126) = -0.64196 (a factor of 0.526 on the odds); `today.private` =
+  -0.714281 (`observed.private` 120 against the same `implied`).
+- The recent starts by cohort: affordable 9, private 114, no Planning record 4, counts not recorded 2.
+- Reproduction check: 129.019 against 129 observed (+0.015%); no market warning.
+- Hold-out (report only): 386.22 predicted, ln(129 / 386.22) = -1.09659.
+- `slope.perCostShare` = 1.65118 (typicalUncoveredShare 0.432588, from 209 binned private starts of
+  2021-2025: A 3, B 15, C 2, D 10, E 179; 10 of 25 homes or more had no stories); cross-check slopes
+  `costCoefficient` 11.4345, `priceCoefficient` 2.01297.
+- `crossCheck.logOdds` = -1.28933; the gap to `today.all` is 0.64737.
+
+**Acceptance 7.3.** `|today.all - (-0.643571)| <= 0.10` (tier 4 tolerance). Outcome: met. The live
+value is -0.64196, 0.00161 from the expectation; observed is 129 as expected, and `implied` is
+245.126 against the spec's 245.521 (each year's implied is about 0.13 lower), so no difference needs
+stating.
 
 ## The enrichment file
 
@@ -198,7 +212,7 @@ warning. Fixture mode prints its fixed-levels line and the last two items.
 - **Reproduction check** (report only): `X = sum exposure x logistic(z + today.all)` over the recent
   years' cells. It is close to `O` but not equal, because `logistic(z + s)` is not exactly
   `e^s x logistic(z)`. A warning fires when `|X - O| > 0.02 x O` (`BACKCAST_TOL`, tier 4); on the
-  spec's build `X` is expected near 129. Live builds only.
+  spec's build `X` is expected near 129 (Release 1 build `2026-11-10-3532a348`: 129.019). Live builds only.
 - **Hold-out diagnostic** (report only, never in `calibration.market`):
   `ln(holdOut.observed / holdOut.predicted)`. If the hold-out refit failed, the report prints the
   error and a warning fires; the build does not fail.
