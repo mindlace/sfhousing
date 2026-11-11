@@ -375,8 +375,8 @@ export function sampleTime(
  * is 1 - f0 rho at `from` (f0 its fraction), and the event is where it reaches R = (1 - f0 rho)
  * (1 - v). Same month when R > 1 - rho; otherwise month m + 1 past K + n0 for the least m >= 1
  * with (1 - rho)^(m+1) < R <= (1 - rho)^m (closed form, then stepped by one as `relativeTail`
- * does). A tail too slow for the cap (or log(1 - rho) = 0) lands in the cap month, at v's
- * position in the mass the search never reached.
+ * does). Every event from the cap month on (a slow tail, or log(1 - rho) = 0) lands in the cap
+ * month, at R's position in the survival s = (1 - rho)^top left at its start.
  */
 function tailDay(K: number, tc: TailConstants, from: number, v: number): number {
   const { rho, logSurvive: L } = tc;
@@ -394,7 +394,10 @@ function tailDay(K: number, tc: TailConstants, from: number, v: number): number 
     while (m < top && pw(m + 1) >= R) m++;
   }
   const s = pw(m);
-  const f = pw(m + 1) < R ? (1 - R / s) / rho : 1 - R / s;
+  // The cap month (m = top) holds all the mass from (1 - rho)^top down, so its position is
+  // 1 - R / s over that whole range (as `relativeTail`'s fallback), never the geometric one: mixing
+  // the two would restart the position inside the month and break monotonicity in v.
+  const f = m < top ? (1 - R / s) / rho : 1 - R / s;
   return monthDay(K + n0 + m, clampFrac(f));
 }
 

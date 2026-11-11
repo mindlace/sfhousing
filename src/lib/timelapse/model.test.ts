@@ -619,6 +619,39 @@ describe('sampleTime', () => {
     }
   });
 
+  it('is non-decreasing in uTime across the cap-month boundary for slow tails', () => {
+    let reached = 0;
+    let bad = 0;
+    for (const rho of [1e-6, 1e-5, 7e-5]) {
+      const slow: Transition = { ...t, tail: { advance: 0.8 * rho, exit: { expired: 0.2 * rho } } };
+      for (const tau of [0, 12, 12.5]) {
+        const day = (u: number) => sampleTime(slow, 'advance', u, tau);
+        const sweep = (from: number, to: number, step: number) => {
+          let prev = day(from);
+          for (let u = from + step; u < to; u += step) {
+            const d = day(u);
+            if (d < prev) bad++;
+            prev = d;
+          }
+        };
+        sweep(0, 1, 1e-4);
+        // The least u whose day is in the cap month, by bisection, then a fine sweep around it.
+        if (monthsIn(0, day(1 - 1e-12)) + 1 !== CAP_MONTH) continue;
+        reached++;
+        let lo = 0;
+        let hi = 1 - 1e-12;
+        for (let i = 0; i < 60; i++) {
+          const mid = (lo + hi) / 2;
+          if (monthsIn(0, day(mid)) + 1 === CAP_MONTH) hi = mid;
+          else lo = mid;
+        }
+        sweep(Math.max(0, hi - 2e-3), Math.min(1 - 1e-12, hi + 2e-3), 1e-7);
+      }
+    }
+    expect(reached).toBeGreaterThanOrEqual(6);
+    expect(bad).toBe(0);
+  });
+
   it('keeps the tail kind split in the cap month for a very slow tail (rho = 1e-6)', () => {
     const slow: Transition = { ...t, tail: { advance: 0.8e-6, exit: { expired: 0.2e-6 } } };
     for (const tau of [0, 12]) {
