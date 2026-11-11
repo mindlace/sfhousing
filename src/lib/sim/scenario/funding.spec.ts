@@ -1,9 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { resolveTerms } from '../finance';
+import { mulberry32 } from '../../generator/seed';
+import { PROTOTYPES, fundBundle, projectDollars, resolveTerms, uncoveredPerHome } from '../finance';
 import type { Calibration, Pool, Programme } from '$lib/timelapse/types';
 import { dayOf } from './dates';
 import { runEngine } from './engine';
-import { PIPELINE_FUNDED, checkFinance, inflowArrivals } from './funding';
+import {
+  PIPELINE_FUNDED,
+  asksOf,
+  available,
+  awardSet,
+  below,
+  checkFinance,
+  coverageLevel,
+  financeIndexOf,
+  inflowArrivals,
+  isOff,
+  isOffered,
+  leaveOut,
+  newPoolState,
+  type FinanceIndex
+} from './funding';
+import { tinyStack } from './fixtures/tiny-queue';
 import { GOLDEN_HORIZON, goldenInput } from './simulate.golden.cases';
 import type { SimInput } from './types';
 
@@ -347,5 +364,342 @@ describe('engine wiring', () => {
       } as never)
     ).toThrow(new RangeError('finance.slope must be a finite number of 0 or more; got -1'));
     expect(calls).toEqual([]);
+  });
+});
+
+describe('coverage levels', () => {
+  it('counts coverage up to 1 and compares with the tolerance', () => {
+    expect(coverageLevel(1 - 5e-10)).toBe(1);
+    expect(coverageLevel(0.5)).toBe(0.5);
+    expect(below(0.5, 0.5 + 5e-10)).toBe(false);
+    expect(below(0.5, 0.5 + 2e-9)).toBe(true);
+  });
+});
+
+describe('isOff and isOffered', () => {
+  const f = financeIndexOf(
+    tinyStack({
+      asOf: A,
+      off: [
+        { pool: 't-state', from: A + 10, to: A + 20 },
+        { pool: 't-state', from: A + 15, to: A + 30 },
+        { pool: 't-city', from: A + 50, to: null }
+      ],
+      cityTo: A + 80
+    })
+  );
+  const state = f.poolOf.get('t-state')!;
+  const city = f.poolOf.get('t-city')!;
+  it('overlapping entries mean their union; to is inclusive; null is forever', () => {
+    expect([9, 10, 20, 25, 30, 31].map((d) => isOff(f, state, A + d))).toEqual([
+      false,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]);
+    expect(isOff(f, city, A + 49)).toBe(false);
+    expect(isOff(f, city, A + 1e9)).toBe(true);
+  });
+  it('a pool with no entry is never off', () => {
+    expect(isOff(f, f.poolOf.get('t-fed')!, A + 15)).toBe(false);
+  });
+  it('a programme is offered when active and its pool is on', () => {
+    const g = f.finance.programmes.findIndex((p) => p.id === 't-city');
+    expect(isOffered(f, g, A - 1)).toBe(false);
+    expect(isOffered(f, g, A)).toBe(true);
+    expect(isOffered(f, g, A + 49)).toBe(true);
+    expect(isOffered(f, g, A + 50)).toBe(false);
+    const s = f.finance.programmes.findIndex((p) => p.id === 't-state');
+    expect(isOffered(f, s, A + 10)).toBe(false);
+    expect(isOffered(f, s, A + 31)).toBe(true);
+  });
+  it('a programme is not offered after its own end', () => {
+    const g = financeIndexOf(tinyStack({ asOf: A, cityTo: A + 5 }));
+    expect(isOffered(g, 2, A + 5)).toBe(true);
+    expect(isOffered(g, 2, A + 6)).toBe(false);
+  });
+});
+
+describe('available', () => {
+  const pool = (over: Partial<Pool>): Pool => ({
+    id: 'x',
+    kind: 'bank',
+    label: 'x',
+    inflows: [],
+    uncapped: false,
+    debt: null,
+    leverage: 0.8,
+    ...over
+  });
+  it('is leverage times received less everything held, spent, out and lost', () => {
+    const s = {
+      received: 1000,
+      committed: 100,
+      spentGrant: 50,
+      outLoan: 200,
+      lostLoan: 10,
+      lostGuarantee: 5
+    };
+    expect(available(pool({}), s)).toBeCloseTo(0.8 * 1000 - 100 - 50 - 200 - 10 - 5, 9);
+    expect(available(pool({ uncapped: true, leverage: 1 }), s)).toBe(Infinity);
+    expect(available(pool({}), newPoolState())).toBe(0);
+  });
+});
+
+describe('the award rule', () => {
+  const U = uncoveredPerHome('affordable', PROTOTYPES[0]);
+  const proto = PROTOTYPES[0].id;
+  const u = 10;
+  const ample = (): Finance => tinyStack({ asOf: A });
+  const bundleOf = (f: FinanceIndex) => f.finance.programmes.map((_, i) => i);
+  const availOf =
+    (f: FinanceIndex, over: Record<string, number>) =>
+    (q: number): number =>
+      over[f.finance.pools[q].id] ?? 1e15;
+  const withShares = (fin: Finance, shares: Record<string, number>): Finance => ({
+    ...fin,
+    programmes: fin.programmes.map((g) =>
+      g.id in shares ? { ...g, instrument: { kind: 'grant', share: shares[g.id] } } : g
+    )
+  });
+  const bondStack = (share: number) =>
+    tinyStack({
+      asOf: A,
+      bond: {
+        share,
+        from: A,
+        inflows: [{ kind: 'yearly', from: A, to: null, dollarsPerYear: 1_000_000_000_000 }]
+      }
+    });
+  const names = (f: FinanceIndex, set: number[]) => set.map((g) => f.finance.programmes[g].id);
+
+  it('a bond in the City tier splits what the tier has left', () => {
+    const f = financeIndexOf(bondStack(0.5));
+    const r = f.price('affordable', bundleOf(f), proto);
+    expect(Math.abs(r.coverage - 1)).toBeLessThan(1e-9);
+    expect(r.items[2].granted).toBeCloseTo(123176.65, 2);
+    expect(r.items[3].granted).toBeCloseTo(176850.35, 2);
+    expect(r.items[2].granted + r.items[3].granted).toBeCloseTo(300027, 2);
+  });
+  it('City short, bond 0.5: the bond covers the City tier alone', () => {
+    const f = financeIndexOf(bondStack(0.5));
+    const B = bundleOf(f);
+    const city = f.poolOf.get('t-city')!;
+    const asks = asksOf(f, 'affordable', B, proto, u);
+    const got = awardSet(
+      B,
+      'affordable',
+      proto,
+      u,
+      availOf(f, { 't-city': asks.get(city)! - 1 }),
+      f
+    );
+    expect(got).not.toBeNull();
+    expect(names(f, got!.set)).toEqual(['t-fed', 't-state', 't-bond-grant']);
+    expect(got!.priced.certain).toBe(true);
+    expect(got!.priced.items[2].granted).toBeCloseTo(300027, 2);
+    expect(
+      Math.abs(got!.asks.get(f.poolOf.get('t-bond')!)! - projectDollars(300027, u))
+    ).toBeLessThanOrEqual(u);
+  });
+  it('City short, bond 0.2: the project waits', () => {
+    const f = financeIndexOf(bondStack(0.2));
+    const B = bundleOf(f);
+    const avail = availOf(f, { 't-city': 0 });
+    expect(awardSet(B, 'affordable', proto, u, avail, f)).toBeNull();
+    const left = leaveOut(B, 'affordable', proto, u, avail, f);
+    expect(names(f, left.set)).toEqual(['t-fed', 't-state', 't-bond-grant']);
+    expect(f.price('affordable', left.set, proto).coverage).toBeCloseTo(
+      (443108 + 118390 + 172305) / 861525,
+      9
+    );
+  });
+  it('bond short: the City grant pays its full share again', () => {
+    const f = financeIndexOf(bondStack(0.5));
+    const got = awardSet(bundleOf(f), 'affordable', proto, u, availOf(f, { 't-bond': 0 }), f);
+    expect(names(f, got!.set)).toEqual(['t-fed', 't-state', 't-city']);
+    expect(got!.priced.certain).toBe(true);
+  });
+  it('an exact fit is awarded; one dollar less leaves the pool', () => {
+    const f = financeIndexOf(bondStack(0.5));
+    const B = bundleOf(f);
+    const asks = asksOf(f, 'affordable', B, proto, u);
+    const exact: Record<string, number> = {};
+    for (const [q, ask] of asks) exact[f.finance.pools[q].id] = ask;
+    expect(awardSet(B, 'affordable', proto, u, availOf(f, exact), f)!.set).toEqual(B);
+    const city = f.poolOf.get('t-city')!;
+    const less = { ...exact, 't-city': asks.get(city)! - 1 };
+    expect(names(f, leaveOut(B, 'affordable', proto, u, availOf(f, less), f).set)).not.toContain(
+      't-city'
+    );
+  });
+  it('a short pool in a later round: cascade across tiers', () => {
+    const fin = withShares(ample(), { 't-fed': 0.5, 't-state': 0.3, 't-city': 0.5 });
+    const f = financeIndexOf(fin);
+    const B = bundleOf(f);
+    const lo = projectDollars(0.2 * U, u);
+    const hi = projectDollars(0.5 * U, u) - 1;
+    const avail = availOf(f, { 't-state': 0, 't-city': Math.floor((lo + hi) / 2) });
+    expect(Math.floor((lo + hi) / 2)).toBeGreaterThanOrEqual(lo);
+    const left = leaveOut(B, 'affordable', proto, u, avail, f);
+    expect(left).toEqual({ set: [0], rounds: 2 });
+    expect(awardSet(B, 'affordable', proto, u, avail, f)).toBeNull();
+  });
+  it('a short pool in a later round: cascade within a tier', () => {
+    const base = withShares(ample(), { 't-city': 0.4 });
+    const city2: Pool = { ...base.pools[2], id: 't-city2' };
+    const fin: Finance = {
+      ...base,
+      pools: [...base.pools, city2],
+      programmes: [...base.programmes, { ...base.programmes[2], id: 't-city2', pool: 't-city2' }]
+    };
+    const f = financeIndexOf(fin);
+    const B = bundleOf(f);
+    const each = 0.174 * U * u;
+    const avail = availOf(f, { 't-city': each * 0.5, 't-city2': each * 1.5 });
+    const left = leaveOut(B, 'affordable', proto, u, avail, f);
+    expect(left).toEqual({ set: [0, 1], rounds: 2 });
+    expect(awardSet(B, 'affordable', proto, u, avail, f)).toBeNull();
+  });
+  const loanStack = (): Finance => {
+    const base = ample();
+    const pool: Pool = {
+      id: 't-loan',
+      kind: 'generalRevenue',
+      label: 'loan',
+      inflows: [],
+      uncapped: false,
+      debt: null,
+      leverage: 1
+    };
+    const prog: Programme = {
+      ...base.programmes[2],
+      id: 't-loan',
+      pool: 't-loan',
+      instrument: { kind: 'loan', costShare: 1, rate: 0, requiredReturn: 0.01 }
+    };
+    return { ...base, pools: [...base.pools, pool], programmes: [...base.programmes, prog] };
+  };
+  it('a loan that is short while coverage is above 1 leaves and the award stands', () => {
+    const f = financeIndexOf(loanStack());
+    const B = bundleOf(f);
+    expect(f.price('affordable', B, proto).coverage).toBeGreaterThan(1);
+    const got = awardSet(B, 'affordable', proto, u, availOf(f, { 't-loan': 0 }), f);
+    expect(names(f, got!.set)).toEqual(['t-fed', 't-state', 't-city']);
+    expect(got!.priced.certain).toBe(true);
+  });
+  it('waits when every capped pool is short', () => {
+    const f = financeIndexOf(ample());
+    const avail = availOf(f, { 't-state': 0, 't-city': 0 });
+    expect(awardSet([1, 2], 'affordable', proto, u, avail, f)).toBeNull();
+  });
+  it('an empty bundle, or a zero-coverage loan on a short pool, is never awarded', () => {
+    const f = financeIndexOf(ample());
+    expect(awardSet([], 'affordable', proto, u, () => 1e15, f)).toBeNull();
+    const base = loanStack();
+    const zero: Finance = {
+      ...base,
+      programmes: base.programmes.map((g) =>
+        g.id === 't-loan'
+          ? { ...g, instrument: { kind: 'loan', costShare: 1, rate: 0.25, requiredReturn: null } }
+          : g
+      )
+    };
+    const fz = financeIndexOf(zero);
+    expect(fz.price('affordable', [3], proto).coverage).toBe(0);
+    expect(awardSet([3], 'affordable', proto, u, availOf(fz, { 't-loan': 0 }), fz)).toBeNull();
+  });
+  it('the price memo returns one result per set, and the affordable kind ignores the prototype', () => {
+    const f = financeIndexOf(ample());
+    expect(f.price('affordable', [0, 1], PROTOTYPES[0].id)).toBe(
+      f.price('affordable', [0, 1], PROTOTYPES[4].id)
+    );
+    expect(financeIndexOf(f.finance)).toBe(f);
+  });
+});
+
+describe('the award rule is monotone (property)', () => {
+  const proto = PROTOTYPES[0].id;
+  const base = tinyStack({
+    asOf: A,
+    bond: {
+      share: 0.3,
+      from: A,
+      inflows: [{ kind: 'yearly', from: A, to: null, dollarsPerYear: 1_000_000_000_000 }]
+    }
+  });
+  const capped = (id: string): Pool => ({
+    id,
+    kind: 'generalRevenue',
+    label: id,
+    inflows: [],
+    uncapped: false,
+    debt: null,
+    leverage: 1
+  });
+  const finance = (costShare: number, rate: number, reserve: number): Finance => ({
+    ...base,
+    terms: resolveTerms(undefined, { guaranteeRateCut: 0.02 }),
+    pools: [...base.pools, capped('t-loan'), capped('t-guar')],
+    programmes: [
+      ...base.programmes,
+      {
+        ...base.programmes[2],
+        id: 't-loan',
+        pool: 't-loan',
+        instrument: { kind: 'loan', costShare, rate, requiredReturn: null }
+      },
+      {
+        ...base.programmes[2],
+        id: 't-guar',
+        pool: 't-guar',
+        instrument: { kind: 'guarantee', costShare, reserve }
+      }
+    ]
+  });
+  it('lower money or a larger size never turns a failure into an award', () => {
+    const rng = mulberry32(0x7a11);
+    let nulls = 0;
+    let awards = 0;
+    for (let n = 0; n < 500; n++) {
+      const fin = finance(0.05 + 0.9 * rng(), 0.1 * rng(), rng());
+      const f = financeIndexOf(fin);
+      const P = fin.programmes.length;
+      const bundle = [...Array(P).keys()].filter(() => rng() < 0.7);
+      const units = 1 + Math.floor(rng() * 200);
+      const hi = fin.pools.map(() => (rng() < 0.2 ? 1e15 : Math.floor(rng() * 2e8)));
+      const lo = hi.map((a) => Math.floor(a * rng()));
+      const hiAvail = (q: number) => hi[q];
+      const loAvail = (q: number) => lo[q];
+      const atHi = awardSet(bundle, 'affordable', proto, units, hiAvail, f);
+      const atLo = awardSet(bundle, 'affordable', proto, units, loAvail, f);
+      if (atHi === null) {
+        nulls++;
+        expect(atLo).toBeNull();
+      } else awards++;
+      const setHi = leaveOut(bundle, 'affordable', proto, units, hiAvail, f).set;
+      const setLo = leaveOut(bundle, 'affordable', proto, units, loAvail, f).set;
+      expect(setLo.every((g) => setHi.includes(g))).toBe(true);
+      const bigger = units + 1 + Math.floor(rng() * 100);
+      if (atHi === null) {
+        expect(awardSet(bundle, 'affordable', proto, bigger, hiAvail, f)).toBeNull();
+      }
+      if (atHi) {
+        const direct = fundBundle(
+          atHi.set.map((g) => ({
+            instrument: fin.programmes[g].instrument,
+            poolKind: fin.pools[f.progPool[g]].kind
+          })),
+          'affordable',
+          PROTOTYPES[0],
+          fin.terms
+        );
+        expect(atHi.priced).toEqual(direct);
+      }
+    }
+    expect(nulls).toBeGreaterThan(20);
+    expect(awards).toBeGreaterThan(20);
   });
 });

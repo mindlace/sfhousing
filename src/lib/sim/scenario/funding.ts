@@ -3,8 +3,18 @@
  * finance input check (spec 4.2). Pure.
  */
 import type { Day } from '$lib/timelapse/time';
-import type { Inflow, Provenance } from '$lib/timelapse/types';
-import { missingTerms, validateInstrument } from '../finance';
+import type { Inflow, Pool, PoolKind, ProjectKind, Provenance } from '$lib/timelapse/types';
+import {
+  CERTAIN_TOLERANCE,
+  PROTOTYPES,
+  fundBundle,
+  isCertain,
+  missingTerms,
+  projectDollars,
+  validateInstrument,
+  type BundleFunding,
+  type PrototypeId
+} from '../finance';
 import { dayOf, isoOf } from './dates';
 import type { SimInput } from './types';
 
@@ -181,4 +191,212 @@ export function checkFinance(input: SimInput): void {
       );
     }
   }
+}
+
+/** The coverage level: coverage counted up to 1, with `isCertain`'s tolerance (spec, Terms). */
+export function coverageLevel(c: number): number {
+  return isCertain(c) ? 1 : c;
+}
+
+/** x is below y when `x < y - CERTAIN_TOLERANCE`. */
+export function below(x: number, y: number): boolean {
+  return x < y - CERTAIN_TOLERANCE;
+}
+
+/** A capped pool's counters, in whole dollars (spec 4.7). */
+export interface PoolState {
+  received: number;
+  committed: number;
+  spentGrant: number;
+  outLoan: number;
+  lostLoan: number;
+  lostGuarantee: number;
+}
+
+export function newPoolState(): PoolState {
+  return {
+    received: 0,
+    committed: 0,
+    spentGrant: 0,
+    outLoan: 0,
+    lostLoan: 0,
+    lostGuarantee: 0
+  };
+}
+
+/** Money a pool can still commit; `Infinity` for an uncapped pool (spec 4.7). */
+export function available(pool: Pool, s: PoolState): number {
+  if (pool.uncapped) return Infinity;
+  return (
+    pool.leverage * s.received -
+    s.committed -
+    s.spentGrant -
+    s.outLoan -
+    s.lostLoan -
+    s.lostGuarantee
+  );
+}
+
+export interface FinanceIndex {
+  finance: Finance;
+  /** pool id to pool index */
+  poolOf: Map<string, number>;
+  /** programme index to pool index */
+  progPool: Int32Array;
+  progPoolKind: PoolKind[];
+  /** 1 for a capped pool, by pool */
+  capped: Uint8Array;
+  /** by pool: the `finance.off` spans, sorted by `from`; a null `to` is Infinity */
+  offSpans: [Day, Day][][];
+  /**
+   * `fundBundle` of the programmes `set` (ascending indices) for a project of `kind`, memoised by
+   * kind, prototype (market only) and set. The result is shared: never mutate it.
+   */
+  price(kind: ProjectKind, set: readonly number[], protoId: PrototypeId): BundleFunding;
+}
+
+const indexes = new WeakMap<Finance, FinanceIndex>();
+
+export function financeIndexOf(finance: Finance): FinanceIndex {
+  const hit = indexes.get(finance);
+  if (hit) return hit;
+  const poolOf = new Map<string, number>();
+  finance.pools.forEach((p, i) => poolOf.set(p.id, i));
+  const progPool = new Int32Array(finance.programmes.length);
+  const progPoolKind: PoolKind[] = [];
+  finance.programmes.forEach((g, i) => {
+    const q = poolOf.get(g.pool)!;
+    progPool[i] = q;
+    progPoolKind.push(finance.pools[q].kind);
+  });
+  const capped = Uint8Array.from(finance.pools, (p) => (p.uncapped ? 0 : 1));
+  const offSpans: [Day, Day][][] = finance.pools.map(() => []);
+  for (const o of finance.off) {
+    offSpans[poolOf.get(o.pool)!].push([o.from, o.to === null ? Infinity : o.to]);
+  }
+  for (const spans of offSpans) spans.sort((a, b) => a[0] - b[0]);
+
+  const memo = new Map<string, BundleFunding>();
+  const protos = new Map<string, (typeof PROTOTYPES)[number]>(PROTOTYPES.map((p) => [p.id, p]));
+  const index: FinanceIndex = {
+    finance,
+    poolOf,
+    progPool,
+    progPoolKind,
+    capped,
+    offSpans,
+    price(kind, set, protoId) {
+      const key = `${kind}|${kind === 'market' ? protoId : ''}|${set.join(',')}`;
+      let r = memo.get(key);
+      if (!r) {
+        r = fundBundle(
+          set.map((g) => ({
+            instrument: finance.programmes[g].instrument,
+            poolKind: progPoolKind[g]
+          })),
+          kind,
+          protos.get(protoId)!,
+          finance.terms
+        );
+        memo.set(key, r);
+      }
+      return r;
+    }
+  };
+  indexes.set(finance, index);
+  return index;
+}
+
+/** Whether `pool` is switched off on day `d`: the union of its `off` spans, `to` inclusive. */
+export function isOff(f: FinanceIndex, pool: number, d: Day): boolean {
+  for (const [from, to] of f.offSpans[pool]) {
+    if (from > d) return false;
+    if (d <= to) return true;
+  }
+  return false;
+}
+
+/** A programme is offered on `d` when it is active and its pool is not off. */
+export function isOffered(f: FinanceIndex, prog: number, d: Day): boolean {
+  const g = f.finance.programmes[prog];
+  return g.from <= d && (g.to === null || d <= g.to) && !isOff(f, f.progPool[prog], d);
+}
+
+export interface Award {
+  set: number[];
+  priced: BundleFunding;
+  /** whole dollars asked of each capped pool, by pool index; a pool asked 0 is absent */
+  asks: Map<number, number>;
+}
+
+/** What the programmes `set` ask of each capped pool for a project of `units` homes (spec 4.6). */
+export function asksOf(
+  f: FinanceIndex,
+  kind: ProjectKind,
+  set: readonly number[],
+  protoId: PrototypeId,
+  units: number
+): Map<number, number> {
+  const priced = f.price(kind, set, protoId);
+  const asks = new Map<number, number>();
+  set.forEach((g, i) => {
+    const q = f.progPool[g];
+    if (!f.capped[q]) return;
+    const it = priced.items[i];
+    const dollars =
+      projectDollars(it.granted, units) +
+      projectDollars(it.lent, units) +
+      projectDollars(it.reserve, units);
+    if (dollars > 0) asks.set(q, (asks.get(q) ?? 0) + dollars);
+  });
+  return asks;
+}
+
+/**
+ * Rounds of leaving out every programme of every short pool (a pool is short when
+ * `avail(pool) < ask`), until none is short or the set is empty. `rounds` counts the rounds that
+ * removed pools. Pools are never added back.
+ */
+export function leaveOut(
+  bundle: readonly number[],
+  kind: ProjectKind,
+  protoId: PrototypeId,
+  units: number,
+  avail: (pool: number) => number,
+  f: FinanceIndex
+): { set: number[]; rounds: number } {
+  let set = bundle.slice();
+  let rounds = 0;
+  while (set.length > 0) {
+    const asks = asksOf(f, kind, set, protoId, units);
+    let short: Set<number> | null = null;
+    for (const [q, ask] of asks) {
+      if (avail(q) < ask) (short ??= new Set()).add(q);
+    }
+    if (!short) break;
+    const gone = short;
+    set = set.filter((g) => !gone.has(f.progPool[g]));
+    rounds++;
+  }
+  return { set, rounds };
+}
+
+/**
+ * The award rule (spec 4.6): leave out short pools, then award iff the set is not empty and its
+ * level is not below the whole bundle's. Null means the application waits.
+ */
+export function awardSet(
+  bundle: readonly number[],
+  kind: ProjectKind,
+  protoId: PrototypeId,
+  units: number,
+  avail: (pool: number) => number,
+  f: FinanceIndex
+): Award | null {
+  const { set } = leaveOut(bundle, kind, protoId, units, avail, f);
+  if (set.length === 0) return null;
+  const whole = f.price(kind, bundle, protoId);
+  const priced = f.price(kind, set, protoId);
+  if (below(coverageLevel(priced.coverage), coverageLevel(whole.coverage))) return null;
+  return { set, priced, asks: asksOf(f, kind, set, protoId, units) };
 }
