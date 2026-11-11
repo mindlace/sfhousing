@@ -72,6 +72,8 @@ Every notice is a pill (`PILL` in `src/lib/shell/pill.ts`) in one stack, `Notice
 | `runPhase`        | `/sim`'s phase, `'setup'` or `'run'`; `null` without `runPhase`                                                                                                    |
 | `levers`          | `/sim`'s lever status: `{ status, done, total, sentRev }`, see [sim-page.md](sim-page.md)                                                                          |
 
+`__sfhFzp.score` now carries `tiers` on every run and `money` on a funded run.
+
 `window.__sfhMap` (`src/lib/map/debug.ts`) gives the MapLibre map. Test helpers: `e2e/helpers/sharing.ts` (`jumpAndIdle`, `projectToPage`, `FRAME`, `headerAction`, `openHeaderMenu`) and `e2e/helpers/a11y.ts`. The specs are `e2e/fzp.spec.ts`, `e2e/fzp-sim.spec.ts` and, for `/sim`'s own controls, `e2e/sim.spec.ts`.
 
 ## /sim props: `view`, `onmanifest`, `onheights`, `onchunks` and `cards`
