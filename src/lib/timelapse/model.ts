@@ -342,6 +342,23 @@ export function sampleTime(
 }
 
 /**
+ * The days from stage entry at which a fresh stage step would advance, given only the time
+ * uniform `u` (no kind draw): `sampleTime(t, 'advance', u, 0)`. A transition whose advance kind
+ * has no mass (all-zero table and tail advance 0, exits only) never advances; it returns the last
+ * event day, `ceil(MAX_EVENT_MONTH * MONTH_DAYS) - 1`. Throws RangeError for u outside [0, 1).
+ */
+export function sampleAdvance(t: Transition, u: number): { days: number } {
+  checkUniform(u, 'u');
+  const c = constantsOf(t);
+  const tc = tailOf(t, c);
+  // The condition under which sampleTime(t, 'advance', u, 0) throws "no mass left" (advance is
+  // kinds[0]); column j starts at 0, so R = inf[0] - 0.
+  const mass = t.months === 0 ? tc.shares[0] > 0 : colsOf(t, c).inf[0] > 0;
+  if (!mass) return { days: Math.ceil(MAX_EVENT_MONTH * MONTH_DAYS) - 1 };
+  return { days: sampleTime(t, 'advance', u, 0) };
+}
+
+/**
  * The tail inverse from `from` >= K months with uniform v (kind-independent). Working relative
  * to month n0 = floor(from - K) past K keeps a large `from` precise: survival relative to K + n0
  * is 1 - f0 rho at `from` (f0 its fraction), and the event is where it reaches R = (1 - f0 rho)

@@ -20,6 +20,7 @@ import {
   initiationHazard,
   initiationLogit,
   parseCalibration,
+  sampleAdvance,
   sampleKind,
   sampleTime,
   sampleTransition,
@@ -576,6 +577,70 @@ describe('sampleTime', () => {
       expect(draws(cells.map((tr) => structuredClone(tr)))).toEqual(cached);
       expect(draws(cells)).toEqual(cached);
     });
+  });
+});
+
+describe('sampleAdvance', () => {
+  const CAP = Math.floor(16777216 / MONTH_DAYS);
+  const capDay = Math.ceil(CAP * MONTH_DAYS) - 1;
+  const noAdvance: Transition = {
+    ...t,
+    months: 12,
+    advance: new Array(12).fill(0),
+    exit: { expired: [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12] },
+    tail: { advance: 0, exit: { expired: 0.01 } }
+  };
+
+  it('matches sampleTime and sampleTransition wherever advance has mass', () => {
+    const rng = mulberry32(0x5eed);
+    let hits = 0;
+    let bad = 0;
+    for (const tr of Object.values(cal.transitions).flatMap((p) => Object.values(p))) {
+      for (let i = 0; i < 10000; i++) {
+        const uKind = rng();
+        const u = rng();
+        const days = sampleAdvance(tr, u).days;
+        if (!Number.isInteger(days)) bad++;
+        let expected: number | undefined;
+        try {
+          expected = sampleTime(tr, 'advance', u, 0);
+        } catch {
+          expected = undefined;
+        }
+        if (expected === undefined) {
+          if (days !== capDay) bad++;
+          continue;
+        }
+        if (days !== expected) bad++;
+        const s = sampleTransition(tr, uKind, u, 0);
+        if (s.kind === 'advance') {
+          hits++;
+          if (s.days !== days) bad++;
+        }
+      }
+    }
+    expect(hits).toBeGreaterThan(1000);
+    expect(bad).toBe(0);
+  });
+
+  it('returns the last event day when advance has no mass', () => {
+    for (const u of [0, 0.999]) {
+      const r = sampleAdvance(noAdvance, u);
+      expect(r).toEqual({ days: capDay });
+      expect(Number.isInteger(r.days)).toBe(true);
+    }
+    const zeroMonths: Transition = { ...noAdvance, months: 0, advance: [], exit: {} };
+    zeroMonths.tail = { advance: 0, exit: { expired: 0.02 } };
+    expect(sampleAdvance(zeroMonths, 0.5)).toEqual({ days: capDay });
+  });
+
+  it('rejects u outside [0, 1)', () => {
+    for (const tr of [t, noAdvance]) {
+      expect(() => sampleAdvance(tr, -0.1)).toThrow(
+        new RangeError('u must be in [0, 1), got -0.1')
+      );
+      expect(() => sampleAdvance(tr, 1)).toThrow(new RangeError('u must be in [0, 1), got 1'));
+    }
   });
 });
 
