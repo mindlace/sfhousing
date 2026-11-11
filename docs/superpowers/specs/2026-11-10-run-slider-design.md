@@ -151,10 +151,17 @@ then shows no selected tick until the user moves it. The handle starts at the mi
 
 ## Verification
 
-- Unit: rank order equals `finals()` order with the tie rule, and the median rank equals
+Owner's rule: **every test that runs in signoff must pass on a heavily loaded machine.** Signoff
+tests assert behaviour and ordering, never wall-clock time. They wait on events or conditions, not
+fixed sleeps, and use generous timeouts. All latency and baseline measurement (switch time,
+install cadence, worker cold-switch cost) goes in the non-signoff suites: `test:perf`
+(perf / client-perf projects) or `bench:map`.
+
+- Unit: rank order is the reverse of `representativeIndex`'s ascending order, and the median rank equals
   `representativeSeed()`. A latest-wins request drops superseded seeds. Demolish diffing gives the
   same feature-state as a full replace.
-- Worker bench: switch to revision 0 for a viewport-sized cell set, cold, within budget.
+- Perf suite (not signoff): worker cold switch to revision 0, and main-thread install cadence for
+  a swap, as baselines.
 - Browser/e2e on the fixture: slider absent in Setup, present in run mode. Disabled until the band
   is ready. Moving it changes the headline and URL `seed` without adding history entries. Keyboard
   operation works. `expectNoA11yViolations` passes.
