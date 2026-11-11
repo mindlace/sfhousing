@@ -15,6 +15,8 @@ Terms used throughout:
 - **Affordable cohort**: projects whose primary Planning record proposes at least 95% affordable homes. **Private start**: any start not in the affordable cohort. The **affordable-cohort flag** is the test that decides it (section 4.1); this spec owns it and `finance-data` reuses it.
 - **Market shift**: a number added to every lot's monthly start log-odds.
 
+**Amended on 2026-11-10 (reappraisal 1, after Release 1):** a `market.json` that is not valid JSON fails with a `CalibrationError` that names the file (section 4.4; "Amendment of 2026-11-10" near the end).
+
 ## 1. Scope
 
 The design's Subsystems row:
@@ -213,7 +215,8 @@ For a $50,000 grant on prototype B (6.8% of $736,700) the three give about +12.6
 - `market: <n> panel starts in <y0>-<y1> do not match <O> initiation events` when the `PanelStart` count of the recent years differs from O.
 - `market: no private start in <y0>-<y1> has a prototype` (weight years) when no start is binned.
 - `market: typicalUncoveredShare <x> is not positive` and `market: prototype <id> has no positive value per home` (cost ≤ shortfall) as guards; with sourced F4 constants neither can fire.
-- `market: <path>: <zod message>` when `market.json` does not parse, and `market: <path>: price periods <periods> do not match the panel years minus lagYears (<expected>)` (section 4.5).
+- `market: <path>: <zod message>` when `market.json` is valid JSON that fails its schema, and `market: <path>: price periods <periods> do not match the panel years minus lagYears (<expected>)` (section 4.5).
+- `market: <path>: <the JSON parser's message>` when `market.json` is not valid JSON (amendment of 2026-11-10). The calibration step reads the file through `readMarketFile(path)` in `pipeline/steps/calibration.ts`, beside `readFundingFile`: it reads the file, parses the text inside a `try`, rethrows a parser error as this `CalibrationError`, and then calls `parseMarketFile`. A file that cannot be read at all (missing, no permission) is not wrapped: Node's error already names the path. Fixture builds read the same file, so the rule holds for them too. The class is `CalibrationError`, not the `BuildError` that `funding.json` uses, so that every failure of this file has one class and one `market: <path>: ` prefix.
 
 **Warnings (live; listed in the report's warnings and the build's).** Neither fails the build:
 
@@ -419,6 +422,7 @@ Every test calls `expect` (`expect.requireAssertions`).
 - `pipeline/test/version.test.ts` (extended): the `it.each` of hashed directories (`version.test.ts:88-105`) gains `['src/lib/sim/finance', 'src/lib/sim/finance/prototypes.ts']` (the temp repository seeds that file), and `does not cover other sim code` still passes.
 - `pipeline/test/lesscars-runs.test.ts` (extended): the base input from `buildSimInput` carries `market`, and the plan and baseline inputs keep the same array.
 - `pipeline/test/golden.test.ts`: unchanged code; it now compares the regenerated goldens.
+- `pipeline/test/fzp-cal/calibration-step.test.ts` (amendment of 2026-11-10): the existing test "reads the market enrichment from marketPath and rejects one that does not parse" keeps its schema case (`{}`) and gains a syntax case: a `market.json` holding `{` is rejected with a `CalibrationError` whose message starts `market: <that path>: `, and nothing is written.
 
 **Server project (Vitest, node)**
 
@@ -522,6 +526,12 @@ None open.
 - The step-0 declarations (`MarketStep`, `MarketModel`, `Calibration.market?`, `SimInput.market?`): settled by "Dependency order" item 0; this spec adds their behaviour, not the declarations.
 - How Release 1 is built and signed off: settled by "Dependency order", "How a release is built" (section 6, "Goldens and fixtures").
 - Row F12 built against but not embedded: settled by "Row ownership" (`market-baseline` consumes F12); the row is embedded in section 2.
+
+## Amendment of 2026-11-10 (reappraisal 1)
+
+Release 1 shipped with one gap between this spec's developer documentation and the code (`.superpowers/superconductor/sim-financing/as-built-r1.md`, section 2, finding 4). `docs/dev/market.md`, "Live failures", lists "an unparseable `market.json`" as a `CalibrationError`. The step called `JSON.parse` before `parseMarketFile`, so a file that is not valid JSON escaped as a bare `SyntaxError` with no path. The build still failed; only the message was poor. The first version of section 4.4 said "does not parse" and did not say which of the two cases it meant.
+
+Section 4.4 now names both cases and gives the reader function, and section 6 gains the test. `docs/dev/market.md` needs no change: its sentence becomes true. The fix is in `pipeline/`, a hashed path, so it was deferred from Release 1 (a rebuild for a message was not worth it) and is built as the design's "Dependency order" item 2a, in Release 2's dataset build. It changes no dataset value.
 
 ## Note on the cited records
 
