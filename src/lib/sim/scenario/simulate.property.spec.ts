@@ -16,7 +16,8 @@ import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniCity } from './fixtures/mini-parcels';
 import { selectRows } from './fixtures/select-rows';
 import { MINI_AS_OF, MINI_HORIZON, miniProjectsJson } from './fixtures/mini-projects';
-import { tinyQueue, tinyStack } from './fixtures/tiny-queue';
+import { benchBaseline } from './fixtures/bench-finance';
+import { tinyQueue } from './fixtures/tiny-queue';
 import { buildSimInput } from './input';
 import { applyPolicies, baseZoning } from './policy';
 import { monthsOf, netOf, shownSeries, type NetSeries } from './score';
@@ -257,14 +258,14 @@ describe('simulateNet equals the score of simulateDetailed (§4.4.7)', () => {
 
 describe('simulateNet equals the score of simulateDetailed on a run with funding', () => {
   const months = monthsOf(MINI_AS_OF, H);
-  // the five-lot city carries tinyStack-style baseline pools (swapped for benchBaseline() in Task 13)
+  // the five-lot city with the bench baseline (spec 4.17); every lot reaches its 70 homes
   const small = (): SimInput => {
-    const q = tinyQueue({ logOdds: [-1, -1, -1, -1, -1] });
-    return { ...q, finance: tinyStack({ asOf: q.asOf }) };
+    const q = tinyQueue({ logOdds: [-1, -1, -1, -1, -1], units: [70, 80, 90, 100, 120] });
+    return { ...q, finance: benchBaseline(q.asOf) };
   };
   const cases: [string, () => SimInput][] = [
     ['finance golden input', financeGoldenInput],
-    ['small city, baseline-shaped funding', small]
+    ['small city, the bench baseline', small]
   ];
   for (const [name, make] of cases) {
     it(`${name}: all three series, every month, seeds 1..50`, () => {

@@ -286,12 +286,18 @@ describe('scanLine and groupedLine agree (property, spec 6)', () => {
         for (const a of live()) if (r() < 0.05) line.remove(a);
         for (const q of capped) money.set(q, avail(q) + Math.floor(r() * CITY_HOME * 60));
       }
-      const n = line.serve(test, (a, w) => {
+      const take = (p: number) => (a: App, w: Award) => {
         for (const [q, d] of w.asks) money.set(q, avail(q) - d);
-        out.push([pass, a.lot, a.key, a.kind, w.set]);
+        out.push([p, a.lot, a.key, a.kind, w.set]);
         for (const x of all) if (x.lot === a.lot) line.remove(x);
-      });
+      };
+      const n = line.serve(test, take(pass));
       expect(n).toBe(out.filter((o) => o[0] === pass).length);
+      // `keep`: the money moved only by the pass's own awards; some applications join, some
+      // leave, and the grouped line keeps the thresholds of the groups no member joined
+      addSome(Math.floor(r() * 6));
+      for (const a of live()) if (r() < 0.05) line.remove(a);
+      line.serve(test, take(pass + 0.5), true);
     }
     return { out, money: [...money], left: line.apps().map((a) => a.key) };
   }

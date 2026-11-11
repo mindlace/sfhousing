@@ -277,6 +277,7 @@ export function financeIndexOf(finance: Finance): FinanceIndex {
   for (const spans of offSpans) spans.sort((a, b) => a[0] - b[0]);
 
   const memo = new Map<string, BundleFunding>();
+  const byArray = new WeakMap<readonly number[], Map<string, BundleFunding>>();
   const protos = new Map<string, (typeof PROTOTYPES)[number]>(PROTOTYPES.map((p) => [p.id, p]));
   const index: FinanceIndex = {
     finance,
@@ -286,6 +287,16 @@ export function financeIndexOf(finance: Finance): FinanceIndex {
     capped,
     offSpans,
     price(kind, set, protoId) {
+      // first by the array itself (the engine passes the same bundle arrays again and again),
+      // then by its contents
+      const sub = kind === 'market' ? protoId : '~affordable';
+      let byArr = byArray.get(set);
+      if (byArr === undefined) {
+        byArr = new Map();
+        byArray.set(set, byArr);
+      }
+      const hit = byArr.get(sub);
+      if (hit !== undefined) return hit;
       const key = `${kind}|${kind === 'market' ? protoId : ''}|${set.join(',')}`;
       let r = memo.get(key);
       if (!r) {
@@ -300,6 +311,7 @@ export function financeIndexOf(finance: Finance): FinanceIndex {
         );
         memo.set(key, r);
       }
+      byArr.set(sub, r);
       return r;
     }
   };
@@ -365,7 +377,8 @@ export function leaveOut(
   avail: (pool: number) => number,
   f: FinanceIndex
 ): { set: number[]; rounds: number } {
-  let set = bundle.slice();
+  // `bundle` itself while nothing is left out (never mutated; the price memo knows the array)
+  let set = bundle as number[];
   let rounds = 0;
   while (set.length > 0) {
     const asks = asksOf(f, kind, set, protoId, units);

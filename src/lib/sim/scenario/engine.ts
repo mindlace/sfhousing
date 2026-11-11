@@ -1165,6 +1165,13 @@ export function reservationsOff(run: Run, holds: Holds, sink: Sink, candidates: 
 export interface EngineOpts {
   /** how the line is served: `'grouped'` (spec 4.17, the default) or `'scan'` (the definition, 4.6) */
   serving?: 'scan' | 'grouped';
+  /**
+   * true: the funded pass computes every candidate's latents in full, without the per-input
+   * shortcuts (spec 4.17 items 1 and 2) and their tables, sorts each day's applications by
+   * comparison and finds every group's threshold again on every serving pass: the test that
+   * these change nothing
+   */
+  noShortcuts?: boolean;
   /** after every ledger event: the event and every pool's available money as the engine holds it */
   probe?: (e: LedgerEvent, available: readonly number[]) => void;
   /**

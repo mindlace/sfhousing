@@ -37,8 +37,13 @@ export interface Line {
   regroup(app: App): void;
   /** the waiting applications in key order */
   apps(): App[];
-  /** one pass; `take` removes the awarded application (and its lot's other one). Returns awards. */
-  serve(test: AwardTest, take: (app: App, a: Award) => void): number;
+  /**
+   * One pass; `take` removes the awarded application (and its lot's other one). Returns awards.
+   * `keep`: no pool's money has changed since the end of the last pass except by its own awards,
+   * so a group's largest passing size found then still holds if the group gained no member and no
+   * member's size changed (the grouped line keeps it; the scan ignores `keep`).
+   */
+  serve(test: AwardTest, take: (app: App, a: Award) => void, keep?: boolean): number;
 }
 
 /** The definition of serving (spec 4.6): one scan in key order. */
@@ -117,6 +122,8 @@ interface Group {
   /** the same leaves for the largest size, -Infinity once removed */
   max: Float64Array;
   cap: number;
+  /** the trees are behind `apps`: rebuilt from the live members before they are next read */
+  dirty: boolean;
   /** the largest passing size against the money now; null when it must be found again */
   H: number | null;
 }
@@ -177,11 +184,13 @@ function firstAtMost(gr: Group, from: number, H: number): number {
  */
 export function groupedLine(poolsOf: (bundle: readonly number[]) => readonly number[]): Line {
   let items: (App | null)[] = [];
-  /** live applications: their group and index in it (-1 while a rebuild is due) */
-  const loc = new Map<App, { gr: Group; i: number }>();
-  /** live applications: their index in `items` */
-  const at = new Map<App, number>();
+  /**
+   * live applications: their group, index in it (-1 while a rebuild is due) and index in `items`
+   */
+  const loc = new Map<App, { gr: Group; i: number; k: number }>();
   const groups = new Map<string, Group>();
+  /** `groups` by bundle array and kind or prototype: skips building the key for a known array */
+  let byBundle = new WeakMap<readonly number[], Map<string, Group>>();
   let dead = 0;
   let last: App | null = null;
   let seq = 0;
@@ -189,6 +198,15 @@ export function groupedLine(poolsOf: (bundle: readonly number[]) => readonly num
   let stale = false;
 
   function groupFor(a: App): Group {
+    const sub = a.kind === 'market' ? a.protoId : '~affordable';
+    let known = byBundle.get(a.bundle);
+    if (known === undefined) {
+      known = new Map();
+      byBundle.set(a.bundle, known);
+    }
+    const hit = known.get(sub);
+    // the key also holds `bundleKey`, which is `bundle.join(',')`: compare it for a known array
+    if (hit !== undefined && hit.g.kind === a.kind) return hit;
     const k = groupKey(a);
     let gr = groups.get(k);
     if (!gr) {
@@ -200,10 +218,12 @@ export function groupedLine(poolsOf: (bundle: readonly number[]) => readonly num
         min: new Float64Array(2).fill(Infinity),
         max: new Float64Array(2).fill(-Infinity),
         cap: 1,
+        dirty: false,
         H: null
       };
       groups.set(k, gr);
     }
+    known.set(sub, gr);
     return gr;
   }
 
@@ -214,27 +234,40 @@ export function groupedLine(poolsOf: (bundle: readonly number[]) => readonly num
     items = next;
     dead = 0;
     groups.clear();
+    byBundle = new WeakMap();
     loc.clear();
-    at.clear();
-    next.forEach((a, k) => at.set(a, k));
-    for (const a of next) {
+    next.forEach((a, k) => {
       const gr = groupFor(a);
-      loc.set(a, { gr, i: gr.apps.length });
+      loc.set(a, { gr, i: gr.apps.length, k });
       gr.apps.push(a);
-    }
+    });
     for (const gr of groups.values()) buildTrees(gr, () => true);
+    // (groups are new here, so none is dirty)
     stale = false;
   }
 
-  function append(gr: Group, a: App): void {
+  function append(gr: Group, a: App, k: number): void {
+    gr.H = null;
     const i = gr.apps.length;
     gr.apps.push(a);
-    loc.set(a, { gr, i });
-    if (i >= gr.cap) buildTrees(gr, (x) => loc.get(x)?.gr === gr);
+    loc.set(a, { gr, i, k });
+    // past the trees' room: grow them once, from the live members, when next read
+    if (gr.dirty || i >= gr.cap) gr.dirty = true;
     else setLeaf(gr, i, a.units, a.units);
   }
 
-  /** The largest whole size from 1 to the group's largest at which the award rule passes now. */
+  /** Brings a dirty group's trees up to date with its live members. */
+  function clean(gr: Group): void {
+    if (!gr.dirty) return;
+    buildTrees(gr, (x) => loc.get(x)?.gr === gr);
+    gr.dirty = false;
+  }
+
+  /**
+   * The largest whole size from 1 to the group's largest at which the award rule passes now. It
+   * is exact on [smallest, largest] of the members then (below the smallest it may say pass), so
+   * it stays right for the group while members only leave.
+   */
   function threshold(gr: Group, test: AwardTest): number {
     const lo0 = gr.min[1];
     const hi0 = gr.max[1];
@@ -265,7 +298,7 @@ export function groupedLine(poolsOf: (bundle: readonly number[]) => readonly num
 
   return {
     get size() {
-      return at.size;
+      return loc.size;
     },
     add(app) {
       if (
@@ -275,24 +308,23 @@ export function groupedLine(poolsOf: (bundle: readonly number[]) => readonly num
         throw new RangeError('line.add: applications must arrive in (applied, key) order');
       app.seq = seq++;
       last = app;
-      at.set(app, items.length);
+      const k = items.length;
       items.push(app);
       if (stale) {
         // placed by the rebuild before the next serve; counted live meanwhile
-        loc.set(app, { gr: groupFor(app), i: -1 });
+        loc.set(app, { gr: groupFor(app), i: -1, k });
         return;
       }
-      append(groupFor(app), app);
+      append(groupFor(app), app, k);
     },
     remove(app) {
-      const k = at.get(app);
-      if (k === undefined) return;
-      const where = loc.get(app)!;
-      at.delete(app);
+      const where = loc.get(app);
+      if (where === undefined) return;
       loc.delete(app);
-      items[k] = null;
+      items[where.k] = null;
       dead++;
-      if (where.i >= 0) setLeaf(where.gr, where.i, Infinity, -Infinity);
+      // a dirty group's trees are rebuilt from its live members
+      if (where.i >= 0 && !where.gr.dirty) setLeaf(where.gr, where.i, Infinity, -Infinity);
     },
     regroup(app) {
       const where = loc.get(app);
@@ -300,20 +332,24 @@ export function groupedLine(poolsOf: (bundle: readonly number[]) => readonly num
       const k = groupKey(app);
       if (k === where.gr.key) {
         // the same group: only the size may have changed
-        if (where.i >= 0) setLeaf(where.gr, where.i, app.units, app.units);
+        if (where.i >= 0 && !where.gr.dirty) setLeaf(where.gr, where.i, app.units, app.units);
+        where.gr.H = null;
         return;
       }
       // another group: it keeps its key, and the groups are rebuilt in key order before serving
-      if (where.i >= 0) setLeaf(where.gr, where.i, Infinity, -Infinity);
-      loc.set(app, { gr: groupFor(app), i: -1 });
+      if (where.i >= 0 && !where.gr.dirty) setLeaf(where.gr, where.i, Infinity, -Infinity);
+      loc.set(app, { gr: groupFor(app), i: -1, k: where.k });
       stale = true;
     },
     apps() {
       return items.filter((a): a is App => a !== null);
     },
-    serve(test, take) {
+    serve(test, take, keep = false) {
       if (stale || dead * 2 > items.length) rebuild();
-      for (const gr of groups.values()) gr.H = null;
+      // H depends only on the award rule and the money, and stays exact for the group's members
+      // as long as none joins and none changes size (removals keep it: see `threshold`)
+      if (!keep) for (const gr of groups.values()) gr.H = null;
+      for (const gr of groups.values()) clean(gr);
       let n = 0;
       /** the `seq` of the last application decided in this pass, as the scan's position */
       let after = -1;

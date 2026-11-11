@@ -116,7 +116,7 @@ export function runCollect(
   input: SimInput,
   seed: number,
   horizon: Day,
-  opts: Pick<EngineOpts, 'serving' | 'lineProbe'> = {}
+  opts: Pick<EngineOpts, 'serving' | 'lineProbe' | 'noShortcuts'> = {}
 ): Collected {
   const schedules: Schedule[] = [];
   const ledger: LedgerEvent[] = [];
@@ -142,6 +142,7 @@ export function runCollect(
     {
       serving: opts.serving,
       lineProbe: opts.lineProbe,
+      noShortcuts: opts.noShortcuts,
       probe(_e, available) {
         probes.push({ after: ledger.length - 1, available: [...available] });
       }

@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import { runOf } from './engine';
+import { benchBaseline, withBenchFunding } from './fixtures/bench-finance';
 import { miniCalibrationWithRoutes, miniFinance } from './fixtures/mini-finance';
 import {
   attemptLatents,
   financePreOf,
+  fundedRunStats,
   latentsWith,
   lineKey,
   respell,
@@ -17,6 +19,7 @@ import { precomputeOf } from './input';
 import { P, drawOn, seedHash, simEntity, streamOf } from './rng';
 import { GOLDEN_HORIZON, goldenInput } from './simulate.golden.cases';
 import { simulate } from './simulate';
+import { runCollect } from './test/finance-harness';
 import type { SimInput } from './types';
 
 const H = GOLDEN_HORIZON;
@@ -233,4 +236,57 @@ describe('lineKey', () => {
     expect(lineKey(P28, P19 - 1, 'affordable')).toBe(P28 * P20 + (P19 - 1) * 2 + 1);
     expect(() => lineKey(10, P19, 'market')).toThrow(RangeError);
   });
+});
+
+describe('the per-input shortcuts (spec 4.5 cost note, 4.17 items 1 and 2)', () => {
+  const later = {
+    market: [
+      { from: asOf, logOdds: 0.4 },
+      { from: asOf + 1500, logOdds: -0.6 }
+    ]
+  };
+  const regime = { regimes: [{ day: asOf + 700, parcels: base.parcels }] };
+  const reserved = {
+    reservedFrom: Int32Array.from({ length: base.parcels.count }, (_, i) =>
+      i % 5 === 0 ? asOf + 900 : 0
+    )
+  };
+  const bench = withBenchFunding(benchBaseline(asOf), asOf);
+  // [name, input, whether some lot is passed over on its draws]
+  const cases: [string, SimInput, boolean][] = [
+    // the certain affordable stack (minHomes 2) reaches nearly every lot: nothing to pass over
+    ['miniFinance', input, false],
+    ['benchBaseline', withFinance(benchBaseline(asOf)), true],
+    ['benchBaseline with the bench funding set', withFinance(bench), true],
+    [
+      'miniFinance with market steps and a regime',
+      withFinance(miniFinance(asOf), { ...later, ...regime }),
+      false
+    ],
+    [
+      'the bench funding set with market steps, a regime and reservations',
+      withFinance(bench, { ...later, ...regime, ...reserved }),
+      true
+    ]
+  ];
+  for (const [name, inp, passes] of cases) {
+    it(`${name}: seeds 1 to 20 give the same schedules and ledgers with and without them`, () => {
+      let passedOver = 0;
+      let schedules = 0;
+      for (const seed of seeds) {
+        const fast = runCollect(inp, seed, H);
+        passedOver += fundedRunStats().passedOver;
+        const slow = runCollect(inp, seed, H, { noShortcuts: true });
+        expect(fundedRunStats().passedOver).toBe(0);
+        expect(fast.order, `seed ${seed} order`).toEqual(slow.order);
+        expect(fast.schedules, `seed ${seed} schedules`).toEqual(slow.schedules);
+        expect(fast.ledger, `seed ${seed} ledger`).toEqual(slow.ledger);
+        expect(fast.reservations).toEqual(slow.reservations);
+        schedules += fast.schedules.length;
+      }
+      expect(schedules).toBeGreaterThan(0);
+      if (passes) expect(passedOver).toBeGreaterThan(0);
+      else expect(passedOver).toBe(0);
+    }, 300_000);
+  }
 });

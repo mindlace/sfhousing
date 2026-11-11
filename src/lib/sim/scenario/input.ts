@@ -272,7 +272,7 @@ export function piecewiseMonth(
  * `regimeMonths(asOf, segments.days)`, `views[j]` the log1mh of segment j), the piecewise hazard
  * gives u* = 1 − exp(Σ n_j·l_j), n_j the months of 1..Tmax in segment j, with the same widening.
  */
-function skipBounds(
+export function skipBounds(
   views: readonly Float64Array[],
   candidates: Int32Array,
   Tmax: number,
