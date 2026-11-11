@@ -149,6 +149,7 @@ type RowScenarioResponse =
   | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
   | { type: 'lotOutlines'; reqId: number; result: RowLotOutlinesResult }
   | { type: 'previewBuildings'; reqId: number; result: RowPreviewResult }
+  | { type: 'ranks'; rev: Rev; seeds: number[] }
   | { type: 'heights'; rev: Rev; city: HeightCity } // height lids Task 8
   | { type: 'heightLids'; reqId: number; result: RowHeightLidsResult }
   | { type: 'lotAt'; reqId: number; result: RowLotAtResult }
