@@ -54,6 +54,14 @@ export function isIdentity(s: StageScale): boolean {
   return PATHWAYS.every((p) => Object.values(s[p]).every((x) => x === 1));
 }
 
+/** Equal factors on every (pathway, stage), an absent entry counting as 1. */
+export function sameScale(a: StageScale, b: StageScale): boolean {
+  return PATHWAYS.every((p) => {
+    const stages = new Set([...Object.keys(a[p]), ...Object.keys(b[p])]) as Set<TimedStage>;
+    return [...stages].every((s) => (a[p][s] ?? 1) === (b[p][s] ?? 1));
+  });
+}
+
 function rescaledProvenance(p: Provenance, s: number): Provenance {
   return { ...p, method: `${p.method}; time-rescaled ×${s} (policy lever)` };
 }

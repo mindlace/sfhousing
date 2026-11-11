@@ -23,6 +23,7 @@ import {
   isIdentity,
   rescaleTransition,
   routeSharesOp,
+  sameScale,
   scaleTable,
   timersOp,
   type StageScale
@@ -233,6 +234,21 @@ describe('scaleTable', () => {
     ];
     expect(isIdentity(scaleTable(unit, 'new'))).toBe(true);
     expect(isIdentity(scaleTable(unit, 'inFlight'))).toBe(true);
+  });
+
+  it('sameScale counts an absent factor as 1 and compares every (pathway, stage)', () => {
+    const ones: StageScale = {
+      discretionary: { filed: 1, entitled: 1 },
+      streamlined: { permitFiled: 1 },
+      permitOnly: {}
+    };
+    expect(sameScale(scaleTable([], 'new'), ones)).toBe(true);
+    expect(sameScale(ones, scaleTable([], 'new'))).toBe(true);
+    expect(sameScale(scaleTable(edits, 'new'), scaleTable(edits, 'new'))).toBe(true);
+    const off: StageScale = { ...ones, streamlined: { permitFiled: 0.5 } };
+    expect(sameScale(ones, off)).toBe(false);
+    expect(sameScale(off, ones)).toBe(false);
+    expect(sameScale(scaleTable(edits, 'new'), scaleTable(edits, 'inFlight'))).toBe(false);
   });
 });
 

@@ -3,10 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
 import { generate, generateForUnits, massedUnits, massingApproximate } from '$lib/generator';
 import type { GeneratedBuilding } from '$lib/generator';
-import { parseCalibration } from '$lib/timelapse/model';
+import { cardStatus } from '$lib/fzp/card';
+import { chanceTable, parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import { DYING_DAYS, monthsIn, type Day } from '$lib/timelapse/time';
 import type { Calibration } from '$lib/timelapse/types';
+import { lookupsOf } from '../levers/apply';
 import type { StageScale } from '../levers/timers';
 import { createLru } from '../lru';
 import {
@@ -868,6 +870,31 @@ describe('projectCard: lookups and in-flight chance shift', () => {
     expect(c.chanceShift).toEqual({ stage: 'preApplication', months: -3 });
     const plain = card(s, { inFlightScale: scale({ preApplication: 0.5 }) }, 'preApplication');
     expect([plain.lookups, plain.chanceShift]).toEqual(['fresh', null]);
+  });
+
+  it("an in-flight card under a timer shows the twin's eventual chance within the grid", () => {
+    // The engine draws an in-flight kind from the unscaled table at tau ≈ m = 7, so the card must
+    // show the unscaled chance at month 7. It reads the rescaled display table at round(7 s),
+    // which is the unscaled curve at round(7 s) / s: at most 0.5 / s months from 7.
+    const want = chanceTable(input.calibration).discretionary.entitled!;
+    let g = 0;
+    for (let k = 5; k <= 9; k++) g = Math.max(g, Math.abs(want[k + 1] - want[k]));
+    expect(g).toBeGreaterThan(0);
+    for (const s of [0.5, 2]) {
+      const plan: SimInput = { ...input, inFlightScale: scale({ entitled: s }) };
+      const lookups = lookupsOf(plan);
+      const c = projectCard(
+        entitledRow,
+        AS_OF,
+        mkCtx({ input: plan, rows: rowsWith('entitled') }).ctx
+      );
+      const status = cardStatus(c, AS_OF, {
+        inFlight: lookups.inFlight.chance,
+        fresh: lookups.fresh.chance
+      });
+      expect(status?.monthsInStage).toBe(7);
+      expect(Math.abs(status!.chance! - want[7])).toBeLessThanOrEqual(g);
+    }
   });
 
   it('a simulated card is fresh and never shifted', () => {

@@ -114,19 +114,22 @@ function stagesOf(
 }
 
 /**
- * The months an in-flight project is conditioned on in a stage rescaled by `s`, after `m` real
- * months in it (ruling 3, "Remaining-time rescale for in-flight stages"). The card's chance shift
- * only: the engine no longer reads it (paired-draw fix).
+ * The rescaled display-table month that matches `m` real months in a stage scaled by `s`: the
+ * table `rescaleTransition(t, s)` holds the unscaled curve at k / s at month k, so month
+ * round(m s) reads it at about m. The card's chance shift only; the engine never reads it.
  */
 export function inFlightMonths(m: number, s: number): number {
   return s === 1 ? m : Math.round(m * s);
 }
 
 /**
- * The chance lookup the engine's in-flight conditioning implies (in-flight rescale): `row`'s
- * current stage at asOf, stepped in flight with scale x ≠ 1, is conditioned on
- * `inFlightMonths(m, x)` months, so the card reads the chance that many months in. A master
- * (`master`) is conditioned only before entitlement, always on the in-flight scale.
+ * The chance shift that keeps the card agreeing with the engine (paired-draw fix). The engine
+ * draws `row`'s kind in its current stage at asOf from the unscaled transition, conditioned on
+ * the m months already survived, and scales only the remaining time by x. The card reads the
+ * cohort's rescaled display table (`lookupsOf`), whose month round(m x) is the unscaled chance
+ * at about m; so the shift is `inFlightMonths(m, x) - m`, and the card shows the twin's eventual
+ * chance within the month grid. A master (`master`) is shifted only before entitlement, always
+ * on the in-flight scale.
  */
 function shiftOf(row: InFlightProject, ctx: CardCtx, master: boolean): ProjectCard['chanceShift'] {
   const stage = row.stage;
