@@ -100,8 +100,11 @@ export type SimInput = {
   districtMaxStories: number | null; // projects.json `districtMaxStories.stories` (large-site massing §4.3, tier 2); null when absent
   // Policy levers (plan 2 ruling 3, "Policy start date = calibration.asOf"). Simulated projects and
   // pipeline rows at preApplication run on `newProjects`; every other row, master and phase on
-  // `calibration`, its current stage's remaining time rescaled by `inFlightScale`. Initiation,
-  // size, revision and phaseGap always read `calibration`.
+  // `calibration`. Both calibrations are unscaled (paired-draw fix): `newProjects.scale` and
+  // `inFlightScale` multiply the time in stage of every stage step of their cohort's jobs, fresh or
+  // in flight (in-flight rows, masters and phases on `inFlightScale`; simulated projects and rows
+  // at preApplication on `newProjects.scale`). Initiation, size, revision and phaseGap always read
+  // `calibration`.
   newProjects?: { calibration: Calibration; scale: StageScale }; // absent = calibration, scale 1
   inFlightScale?: StageScale; // absent = 1
   // Dated regimes (the retired law switch, plan 2 ruling 1, generalised): from `regimes[k].day` the

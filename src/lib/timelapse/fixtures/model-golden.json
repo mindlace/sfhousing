@@ -2,503 +2,503 @@
   "cases": [
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0 m=0",
+      "input": "small discretionary.permitFiled u=0 v=0 tau=0",
       "bits": ["0000000000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.9999999 m=0",
-      "bits": ["40adfe0000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.9999999 v=0.9999999 tau=0",
+      "bits": ["40adfc0000000000", "3ff0000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.6813 m=0",
-      "bits": ["4076700000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.6813 v=0.8429 tau=0",
+      "bits": ["4085100000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.0213 m=0",
-      "bits": ["4018000000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.0213 v=0.2629 tau=0",
+      "bits": ["4052400000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.3613 m=1",
-      "bits": ["406aa00000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.3613 v=0.6829000000000001 tau=1",
+      "bits": ["4076b00000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.7012999999999999 m=1",
-      "bits": ["4074100000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.7012999999999999 v=0.1029 tau=1",
+      "bits": ["404c000000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.0413 m=2",
-      "bits": ["4054c00000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.0413 v=0.5229 tau=2",
+      "bits": ["4072c00000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.38130000000000003 m=2",
-      "bits": ["4066800000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.38130000000000003 v=0.9429 tau=2",
+      "bits": ["4087380000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.7212999999999999 m=5",
-      "bits": ["4082000000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.7212999999999999 v=0.3629 tau=5.5",
+      "bits": ["4072600000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.0613 m=5",
-      "bits": ["4065600000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.0613 v=0.7829 tau=5.5",
+      "bits": ["4080980000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.40130000000000005 m=11",
-      "bits": ["4080a80000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.40130000000000005 v=0.20290000000000002 tau=11",
+      "bits": ["4078300000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.7413 m=11",
-      "bits": ["4084a80000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.7413 v=0.6229 tau=11",
+      "bits": ["4081b80000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.0813 m=12",
-      "bits": ["4079a00000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.0813 v=0.0429 tau=12",
+      "bits": ["4078300000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.4213 m=12",
-      "bits": ["407f100000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.4213 v=0.46290000000000003 tau=12",
+      "bits": ["4080080000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.7613 m=13",
-      "bits": ["4091340000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.7613 v=0.8829 tau=12.25",
+      "bits": ["4096500000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.1013 m=13",
-      "bits": ["4078e00000000000", "3ff0000000000000"]
+      "input": "small discretionary.filed u=0.1013 v=0.3029 tau=12.25",
+      "bits": ["407ca00000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.4413 m=20",
-      "bits": ["408c100000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.4413 v=0.7229 tau=20",
+      "bits": ["4093600000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.7813 m=20",
-      "bits": ["408dd80000000000", "3ff0000000000000"]
+      "input": "small discretionary.filed u=0.7813 v=0.14290000000000003 tau=20",
+      "bits": ["4084300000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.12129999999999999 m=60",
-      "bits": ["409d8c0000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.12129999999999999 v=0.5629000000000001 tau=60",
+      "bits": ["40a1720000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.46130000000000004 m=60",
-      "bits": ["409e780000000000", "3ff0000000000000"]
+      "input": "small discretionary.filed u=0.46130000000000004 v=0.9829 tau=60",
+      "bits": ["40a5d60000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.8013 m=0",
-      "bits": ["4081e00000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.8013 v=0.40290000000000004 tau=0",
+      "bits": ["406a200000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.1413 m=0",
-      "bits": ["4043000000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.1413 v=0.8229 tau=0",
+      "bits": ["4079d00000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.4813 m=0",
-      "bits": ["406f800000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.4813 v=0.2429 tau=0",
+      "bits": ["405f800000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.8212999999999999 m=0",
-      "bits": ["4079e00000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.8212999999999999 v=0.6629 tau=0",
+      "bits": ["4070300000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.1613 m=1",
-      "bits": ["405c400000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.1613 v=0.0829 tau=1",
+      "bits": ["4051c00000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.5013 m=1",
-      "bits": ["4069000000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.5013 v=0.5029 tau=1",
+      "bits": ["4068a00000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.8412999999999999 m=2",
-      "bits": ["4087280000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.8412999999999999 v=0.9229 tau=2",
+      "bits": ["4090f80000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.1813 m=2",
-      "bits": ["405c000000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.1813 v=0.34290000000000004 tau=2",
+      "bits": ["4064200000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.5213 m=5",
-      "bits": ["4075a00000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.8613 m=5",
-      "bits": ["4083900000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.2013 m=11",
-      "bits": ["4078900000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.5413 m=11",
-      "bits": ["4080480000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.8813 m=12",
-      "bits": ["4096240000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.2213 m=12",
-      "bits": ["407a300000000000", "3ff0000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.5613 m=13",
-      "bits": ["4089180000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.9013 m=13",
-      "bits": ["408da00000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.2413 m=20",
-      "bits": ["4087580000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.5812999999999999 m=20",
-      "bits": ["4089a80000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.9213 m=60",
-      "bits": ["40a80c0000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.26130000000000003 m=60",
-      "bits": ["409db40000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.6013 m=0",
-      "bits": ["4073b00000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.9412999999999999 m=0",
-      "bits": ["4085280000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.28130000000000005 m=0",
-      "bits": ["4062e00000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.6213 m=0",
-      "bits": ["406d800000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.9612999999999999 m=1",
-      "bits": ["4095ec0000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.3013 m=1",
-      "bits": ["405e400000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.6413 m=2",
-      "bits": ["4076800000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.9813 m=2",
-      "bits": ["408f880000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.permitFiled u=0.32130000000000003 m=5",
-      "bits": ["406fa00000000000", "4010000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "small discretionary.filed u=0.6613 m=5",
-      "bits": ["4079e00000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.filed u=0 m=0",
-      "bits": ["0000000000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.permitIssued u=0.9999999 m=0",
-      "bits": ["40cca70000000000", "4000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic streamlined.entitled u=0.4749368041237113 m=0",
-      "bits": ["4081680000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic permitOnly.permitFiled u=0.712050206185567 m=0",
-      "bits": ["408e680000000000", "3ff0000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.filed u=0.9491636082474226 m=0",
-      "bits": ["40a8ea0000000000", "3ff0000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.permitIssued u=0.18627701030927835 m=0",
-      "bits": ["4068400000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic streamlined.entitled u=0.423390412371134 m=0",
-      "bits": ["407d700000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic permitOnly.permitFiled u=0.6605038144329897 m=0",
-      "bits": ["4089c00000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.filed u=0.8976172164948454 m=1",
-      "bits": ["40a32e0000000000", "3ff0000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.permitIssued u=0.13473061855670102 m=1",
-      "bits": ["4064400000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic streamlined.entitled u=0.3718440206185567 m=1",
-      "bits": ["4079e00000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic permitOnly.permitFiled u=0.6089574226804123 m=1",
-      "bits": ["4086b80000000000", "4010000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.filed u=0.846070824742268 m=2",
-      "bits": ["40a00a0000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.permitIssued u=0.08318422680412371 m=2",
-      "bits": ["405e800000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic streamlined.entitled u=0.32029762886597934 m=2",
-      "bits": ["4075c00000000000", "4000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic permitOnly.permitFiled u=0.5574110309278351 m=2",
+      "input": "small discretionary.permitFiled u=0.5213 v=0.7629 tau=5.5",
       "bits": ["4084c00000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic discretionary.filed u=0.7945244329896907 m=5",
-      "bits": ["409cec0000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.8613 v=0.1829 tau=5.5",
+      "bits": ["406b000000000000", "3ff0000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic discretionary.permitIssued u=0.031637835051546395 m=5",
-      "bits": ["4064e00000000000", "4000000000000000"]
+      "input": "small discretionary.permitFiled u=0.2013 v=0.6029 tau=11",
+      "bits": ["4086d00000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic streamlined.entitled u=0.26875123711340204 m=5",
-      "bits": ["4079300000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.5413 v=0.0229 tau=11",
+      "bits": ["4075400000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic permitOnly.permitFiled u=0.5058646391752577 m=5",
-      "bits": ["4084e00000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.8813 v=0.4429 tau=12",
+      "bits": ["4084680000000000", "4010000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic discretionary.filed u=0.7429780412371134 m=11",
-      "bits": ["409c780000000000", "3ff0000000000000"]
+      "input": "small discretionary.filed u=0.2213 v=0.8629 tau=12",
+      "bits": ["408a380000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic discretionary.permitIssued u=0.980091443298969 m=11",
-      "bits": ["40ae6e0000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.5613 v=0.28290000000000004 tau=12.25",
+      "bits": ["4080c00000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic streamlined.entitled u=0.21720484536082474 m=11",
-      "bits": ["4081f80000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.9013 v=0.7029 tau=12.25",
+      "bits": ["4084b00000000000", "3ff0000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic permitOnly.permitFiled u=0.4543182474226804 m=11",
-      "bits": ["408a900000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.2413 v=0.1229 tau=20",
+      "bits": ["4085080000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic discretionary.filed u=0.6914316494845361 m=12",
-      "bits": ["4099d40000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.5812999999999999 v=0.5429 tau=20",
+      "bits": ["4088d80000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic discretionary.permitIssued u=0.9285450515463918 m=12",
-      "bits": ["40a5be0000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.9213 v=0.9629 tau=60",
+      "bits": ["40aaee0000000000", "4010000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic streamlined.entitled u=0.1656584536082474 m=12",
-      "bits": ["4081100000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.26130000000000003 v=0.3829 tau=60",
+      "bits": ["409e540000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic permitOnly.permitFiled u=0.4027718556701031 m=12",
-      "bits": ["4088e00000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.filed u=0.6398852577319587 m=13",
-      "bits": ["4097740000000000", "3ff0000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.permitIssued u=0.8769986597938144 m=13",
-      "bits": ["40a20a0000000000", "4000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic streamlined.entitled u=0.1141120618556701 m=13",
-      "bits": ["407fb00000000000", "3ff0000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic permitOnly.permitFiled u=0.35122546391752574 m=13",
-      "bits": ["4088680000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.filed u=0.5883388659793815 m=20",
-      "bits": ["4098680000000000", "4010000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.permitIssued u=0.8254522680412371 m=20",
-      "bits": ["40a1480000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic streamlined.entitled u=0.06256567010309279 m=20",
-      "bits": ["4084e80000000000", "4000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic permitOnly.permitFiled u=0.29967907216494843 m=20",
-      "bits": ["408ce00000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.filed u=0.5367924742268041 m=60",
-      "bits": ["40a4bc0000000000", "3ff0000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.permitIssued u=0.7739058762886598 m=60",
-      "bits": ["40a8c20000000000", "3ff0000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic streamlined.entitled u=0.011019278350515464 m=60",
-      "bits": ["409ccc0000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic permitOnly.permitFiled u=0.24813268041237113 m=60",
-      "bits": ["40a03c0000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.filed u=0.4852460824742268 m=0",
-      "bits": ["4084980000000000", "3ff0000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.permitIssued u=0.7223594845360825 m=0",
-      "bits": ["40913c0000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic streamlined.entitled u=0.9594728865979382 m=0",
-      "bits": ["40a7360000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic permitOnly.permitFiled u=0.1965862886597938 m=0",
-      "bits": ["4066800000000000", "0000000000000000"]
-    },
-    {
-      "fn": "sampleTransition",
-      "input": "synthetic discretionary.filed u=0.4336996907216495 m=0",
+      "input": "small discretionary.permitFiled u=0.6013 v=0.8029000000000001 tau=0",
       "bits": ["4081900000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic discretionary.permitIssued u=0.6708130927835051 m=0",
-      "bits": ["408d880000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.9412999999999999 v=0.2229 tau=0",
+      "bits": ["404e000000000000", "3ff0000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic streamlined.entitled u=0.9079264948453608 m=0",
-      "bits": ["40a1200000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.28130000000000005 v=0.6429 tau=0",
+      "bits": ["4074c00000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic permitOnly.permitFiled u=0.14503989690721647 m=0",
-      "bits": ["4060000000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.6213 v=0.0629 tau=0",
+      "bits": ["4030000000000000", "0000000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic discretionary.filed u=0.38215329896907213 m=1",
-      "bits": ["407f300000000000", "0000000000000000"]
+      "input": "small discretionary.permitFiled u=0.9612999999999999 v=0.4829 tau=1",
+      "bits": ["4071800000000000", "4010000000000000"]
     },
     {
       "fn": "sampleTransition",
-      "input": "synthetic discretionary.permitIssued u=0.6192667010309278 m=1",
-      "bits": ["408a200000000000", "0000000000000000"]
+      "input": "small discretionary.filed u=0.3013 v=0.9029 tau=1",
+      "bits": ["4082500000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "small discretionary.permitFiled u=0.6413 v=0.3229 tau=2",
+      "bits": ["406a200000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "small discretionary.filed u=0.9813 v=0.7429 tau=2",
+      "bits": ["4078100000000000", "3ff0000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "small discretionary.permitFiled u=0.32130000000000003 v=0.1629 tau=5.5",
+      "bits": ["406c200000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "small discretionary.filed u=0.6613 v=0.5829 tau=5.5",
+      "bits": ["4077800000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.filed u=0 v=0 tau=0",
+      "bits": ["0000000000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.permitIssued u=0.9999999 v=0.9999999 tau=0",
+      "bits": ["40ccf18000000000", "4000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic streamlined.entitled u=0.4749368041237113 v=0.6396052577319588 tau=0",
+      "bits": ["408a600000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic permitOnly.permitFiled u=0.712050206185567 v=0.9591928865979382 tau=0",
+      "bits": ["40a6320000000000", "3ff0000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.filed u=0.9491636082474226 v=0.2787805154639175 tau=0",
+      "bits": ["407c400000000000", "4010000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.permitIssued u=0.18627701030927835 v=0.5983681443298969 tau=0",
+      "bits": ["4085f00000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic streamlined.entitled u=0.423390412371134 v=0.9179557731958763 tau=0",
+      "bits": ["40a1780000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic permitOnly.permitFiled u=0.6605038144329897 v=0.23754340206185567 tau=0",
+      "bits": ["4066a00000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.filed u=0.8976172164948454 v=0.5571310309278351 tau=1",
+      "bits": ["408f800000000000", "4010000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.permitIssued u=0.13473061855670102 v=0.8767186597938145 tau=1",
+      "bits": ["409c200000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic streamlined.entitled u=0.3718440206185567 v=0.19630628865979383 tau=1",
+      "bits": ["4067600000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic permitOnly.permitFiled u=0.6089574226804123 v=0.5158939175257732 tau=1",
+      "bits": ["407b000000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.filed u=0.846070824742268 v=0.8354815463917526 tau=2",
+      "bits": ["40a06a0000000000", "4010000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.permitIssued u=0.08318422680412371 v=0.15506917525773198 tau=2",
+      "bits": ["4067800000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic streamlined.entitled u=0.32029762886597934 v=0.4746568041237113 tau=2",
+      "bits": ["4080f00000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic permitOnly.permitFiled u=0.5574110309278351 v=0.7942444329896907 tau=2",
+      "bits": ["4093100000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.filed u=0.7945244329896907 v=0.1138320618556701 tau=5.5",
+      "bits": ["4074700000000000", "4010000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.permitIssued u=0.031637835051546395 v=0.4334196907216495 tau=5.5",
+      "bits": ["4081980000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic streamlined.entitled u=0.26875123711340204 v=0.7530073195876289 tau=5.5",
+      "bits": ["4095e00000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic permitOnly.permitFiled u=0.5058646391752577 v=0.07259494845360824 tau=5.5",
+      "bits": ["4069400000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.filed u=0.7429780412371134 v=0.3921825773195876 tau=11",
+      "bits": ["408b700000000000", "3ff0000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.permitIssued u=0.980091443298969 v=0.7117702061855671 tau=11",
+      "bits": ["4096e00000000000", "4000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic streamlined.entitled u=0.21720484536082474 v=0.03135783505154639 tau=11",
+      "bits": ["4076d00000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic permitOnly.permitFiled u=0.4543182474226804 v=0.35094546391752574 tau=11",
+      "bits": ["4085080000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.filed u=0.6914316494845361 v=0.6705330927835051 tau=12",
+      "bits": ["4098a40000000000", "3ff0000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.permitIssued u=0.9285450515463918 v=0.9901207216494846 tau=12",
+      "bits": ["40b1ec0000000000", "4000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic streamlined.entitled u=0.1656584536082474 v=0.3097083505154639 tau=12",
+      "bits": ["4086500000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic permitOnly.permitFiled u=0.4027718556701031 v=0.6292959793814433 tau=12",
+      "bits": ["4092c40000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.filed u=0.6398852577319587 v=0.9488836082474227 tau=12.25",
+      "bits": ["40ac440000000000", "3ff0000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.permitIssued u=0.8769986597938144 v=0.26847123711340204 tau=12.25",
+      "bits": ["4084980000000000", "4000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic streamlined.entitled u=0.1141120618556701 v=0.5880588659793815 tau=12.25",
+      "bits": ["4092e00000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic permitOnly.permitFiled u=0.35122546391752574 v=0.9076464948453609 tau=12.25",
+      "bits": ["40a2f60000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.filed u=0.5883388659793815 v=0.22723412371134022 tau=20",
+      "bits": ["408bd00000000000", "3ff0000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.permitIssued u=0.8254522680412371 v=0.5468217525773196 tau=20",
+      "bits": ["4094d40000000000", "4000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic streamlined.entitled u=0.06256567010309279 v=0.866409381443299 tau=20",
+      "bits": ["40a38e0000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic permitOnly.permitFiled u=0.29967907216494843 v=0.18599701030927837 tau=20",
+      "bits": ["4088a00000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.filed u=0.5367924742268041 v=0.5055846391752578 tau=60",
+      "bits": ["40a4460000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.permitIssued u=0.7739058762886598 v=0.8251722680412371 tau=60",
+      "bits": ["40aaba0000000000", "3ff0000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic streamlined.entitled u=0.011019278350515464 v=0.1447598969072165 tau=60",
+      "bits": ["409ed40000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic permitOnly.permitFiled u=0.24813268041237113 v=0.4643475257731959 tau=60",
+      "bits": ["40a2860000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.filed u=0.4852460824742268 v=0.7839351546391753 tau=0",
+      "bits": ["4097a80000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.permitIssued u=0.7223594845360825 v=0.10352278350515463 tau=0",
+      "bits": ["405d800000000000", "3ff0000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic streamlined.entitled u=0.9594728865979382 v=0.423110412371134 tau=0",
+      "bits": ["4082a80000000000", "4000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic permitOnly.permitFiled u=0.1965862886597938 v=0.7426980412371135 tau=0",
+      "bits": ["408dc00000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.filed u=0.4336996907216495 v=0.062285670103092786 tau=0",
+      "bits": ["4049800000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.permitIssued u=0.6708130927835051 v=0.38187329896907213 tau=0",
+      "bits": ["4075600000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic streamlined.entitled u=0.9079264948453608 v=0.7014609278350515 tau=0",
+      "bits": ["4093040000000000", "4000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic permitOnly.permitFiled u=0.14503989690721647 v=0.021048556701030927 tau=0",
+      "bits": ["4032000000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.filed u=0.38215329896907213 v=0.3406361855670103 tau=1",
+      "bits": ["4074d00000000000", "0000000000000000"]
+    },
+    {
+      "fn": "sampleTransition",
+      "input": "synthetic discretionary.permitIssued u=0.6192667010309278 v=0.6602238144329897 tau=1",
+      "bits": ["408b480000000000", "0000000000000000"]
     },
     {
       "fn": "initiationHazard",

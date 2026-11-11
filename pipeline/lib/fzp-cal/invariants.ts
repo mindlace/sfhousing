@@ -190,8 +190,8 @@ const eventMonth = (days: number): number => monthsIn(0, days) + 1;
 export const V27_SEED = 0x5eed;
 
 /**
- * V27: for every Transition, `n` draws of `sampleTransition` (m = 0) from `mulberry32(0x5eed)`,
- * re-seeded per cell in `PATHWAYS` x `STAGE_ORDER` order. The empirical cumulative incidence by
+ * V27: for every Transition, `n` draws of `sampleTransition` (tau = 0, the engine's two-uniform
+ * sampler: uKind, then uTime, from one stream) from `mulberry32(0x5eed)`, re-seeded per cell in `PATHWAYS` x `STAGE_ORDER` order. The empirical cumulative incidence by
  * `monthsIn(0, days) + 1`, for advance and every exit reason, is within `tol` of
  * `cumulativeIncidence(t, k)` at k = 1..months, and the empirical eventual shares are within
  * `tol` of `eventualProbabilities(t, 0)`. One problem per failing cell, naming its worst gap.
@@ -228,7 +228,7 @@ function cellDeviation(t: Transition, n: number): { dev: number; where: string }
     beyond[kind] = 0;
   }
   for (let i = 0; i < n; i++) {
-    const d = sampleTransition(t, rng(), 0);
+    const d = sampleTransition(t, rng(), rng(), 0);
     const k = eventMonth(d.days);
     if (k <= t.months) hits[d.kind][k]++;
     else beyond[d.kind]++;

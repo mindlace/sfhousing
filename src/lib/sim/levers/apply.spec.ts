@@ -16,6 +16,7 @@ import type { SimInput } from '../scenario/types';
 import { applyLevers, lookupsOf, twinInput } from './apply';
 import type { LayerCtx } from './layers';
 import { fillNeeds, resolveEnvelopes } from './resolve';
+import { scaleTable, timersOp } from './timers';
 import { DEFAULT_LEVERS, type Compare, type SimLevers } from './types';
 
 const H = MINI_HORIZON;
@@ -162,8 +163,54 @@ describe('lookupsOf', () => {
     const { plan, lookups } = compile(base, ctx, levers);
     expect(lookups.fresh).not.toBe(lookups.inFlight);
     expect(lookups.inFlight.chance).toEqual(chanceTable(base.calibration));
-    expect(lookups.fresh.chance).toEqual(chanceTable(plan.newProjects!.calibration));
+    expect(lookups.fresh.chance).toEqual(
+      chanceTable(
+        timersOp(scaleTable(levers.timers, 'new'))(plan.newProjects!.calibration, plan.parcels).cal
+      )
+    );
     expect(plan.inFlightScale).toBeUndefined(); // a 'new' timer leaves in-flight rows alone
+  });
+
+  it('stacked new and all timers on one stage with route shares', () => {
+    const { base, ctx } = setup();
+    const routeShares = { discretionary: 1, streamlined: 1, permitOnly: 2 };
+    const timers: SimLevers['timers'] = [
+      { pathway: 'discretionary', stage: 'filed', scale: 0.5, reach: 'all' },
+      { pathway: 'discretionary', stage: 'filed', scale: 0.8, reach: 'new' }
+    ];
+    const { plan, lookups } = compile(base, ctx, clone({ timers, routeShares }));
+    expect(lookups.fresh).not.toBe(lookups.inFlight);
+    expect(lookups.inFlight.chance).toEqual(
+      chanceTable(timersOp(scaleTable(timers, 'inFlight'))(base.calibration, plan.parcels).cal)
+    );
+    expect(lookups.fresh.chance).toEqual(
+      chanceTable(
+        timersOp(scaleTable(timers, 'new'))(plan.newProjects!.calibration, plan.parcels).cal
+      )
+    );
+
+    const allOnly = compile(base, ctx, clone({ timers: [timers[0]], routeShares }));
+    expect(allOnly.lookups.fresh).toBe(allOnly.lookups.inFlight);
+  });
+});
+
+describe('applyLevers: timers scale time in the engine', () => {
+  it('the plan runs on the unscaled calibration', () => {
+    const { base, ctx } = setup();
+    const levers = clone({
+      timers: [{ pathway: 'discretionary', stage: 'filed', scale: 0.5, reach: 'all' }],
+      routeShares: { discretionary: 1, streamlined: 1, permitOnly: 2 }
+    });
+    const { plan } = compile(base, ctx, levers);
+    expect(plan.calibration).toBe(base.calibration);
+    expect(plan.newProjects!.calibration.transitions).toBe(base.calibration.transitions);
+    expect(plan.newProjects!.calibration.pathwayForNew).toMatchObject({
+      discretionary: 0.25,
+      streamlined: 0.25,
+      permitOnly: 0.5
+    });
+    expect(plan.newProjects!.scale).toEqual(scaleTable(levers.timers, 'new'));
+    expect(plan.inFlightScale).toEqual(scaleTable(levers.timers, 'inFlight'));
   });
 });
 

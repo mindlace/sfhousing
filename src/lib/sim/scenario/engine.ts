@@ -14,15 +14,17 @@
 // computed once per input (`staticOf` here, `precomputeOf` in input.ts): project entities, T11
 // rows and revision caps, the candidate rows and their entities. A run hoists its seed's mix
 // (`seedHash`) and each project its stream (`streamOf`), so a draw is one mix. Stage steps call
-// T12's `sampleTransition` itself (nothing here re-implements it). The simulated pass rejects
-// most parcels on their first initiation draw against a precomputed bound (`skipAbove`) instead
-// of evaluating the geometric month. None of this changes a value.
+// T12's `sampleTransition` on the unscaled transition (nothing here re-implements it) and scale
+// only the time in stage (`scaledTransition`). The simulated pass
+// rejects most parcels on their first initiation draw against a precomputed bound (`skipAbove`)
+// instead of evaluating the geometric month. None of this changes a value.
 import type { ParcelId } from '$lib/data/parcel';
 import { FILL_LEVELS, fillStories, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { log } from '$lib/timelapse/math';
 import { sampleTransition } from '$lib/timelapse/model';
 import type { InFlightProject } from '$lib/timelapse/projects';
-import { MONTH_DAYS, monthsIn, type Day } from '$lib/timelapse/time';
+import { MONTH_DAYS, stageMonths, type Day } from '$lib/timelapse/time';
+import type { Transition } from '$lib/timelapse/types';
 import {
   PATHWAYS,
   STAGE_ORDER,
@@ -43,7 +45,7 @@ import {
   sizeCumAgainst,
   type Precompute
 } from './input';
-import { P, drawOn, jobEntity, seedHash, stageRedraw, streamOf } from './rng';
+import { P, drawOn, jobEntity, seedHash, streamOf } from './rng';
 import type { Master } from './simulate';
 import type { Schedule, SimInput } from './types';
 
@@ -80,8 +82,6 @@ type Kind = 'advance' | ExitReason;
 const STAGE_INDEX = Object.fromEntries(STAGE_ORDER.map((s, i) => [s, i])) as Record<Stage, number>;
 const CONSTRUCTION = STAGE_INDEX.construction;
 const F = FILL_LEVELS.length;
-/** In-flight redraws after the first attempt (8 attempts in all; tier 4, numerical only). */
-const REDRAWS = 7;
 /** The `parcelIds` of every Schedule a sink without `ids` receives. */
 const NO_IDS: ParcelId[] = [];
 
@@ -217,11 +217,17 @@ interface Run {
   sh: number;
   horizon: Day;
   asOf: Day;
-  /** `input.calibration`: in-flight transitions, and initiation, size, revision and phaseGap */
+  /**
+   * `input.calibration` (unscaled): in-flight transitions, and initiation, size, revision and
+   * phaseGap
+   */
   cal: Calibration;
-  /** `input.inFlightScale`; null = 1 */
+  /** `input.inFlightScale`: time in stage of every stage of in-flight jobs; null = 1 */
   inFlightScale: StageScale | null;
-  /** new projects' calibration (`input.newProjects`, else `cal`), and their scale; null = 1 */
+  /**
+   * new projects' unscaled calibration (`input.newProjects`, else `cal`), and their time-in-stage
+   * scale; null = 1
+   */
   newCal: Calibration;
   newScale: StageScale | null;
   parcels: ScenarioParcels;
@@ -338,7 +344,7 @@ interface Job {
   pathway: Pathway;
   /** the transitions and new-project shares it runs on (ruling 3, "Policy start date") */
   cal: Calibration;
-  /** its in-flight stage's remaining-time scale; null = 1 */
+  /** its time-in-stage scale, applied to every stage step (paired-draw fix); null = 1 */
   scale: StageScale | null;
   entered: Partial<Record<Stage, Day>>;
   /** never empty: [0] is the initial proposal */
@@ -461,54 +467,50 @@ function revise(run: Run, job: Job, n: Stage, day: Day): void {
 }
 
 /**
- * The months an in-flight project is conditioned on in a stage rescaled by `s`, after `m` real
- * months in it (ruling 3, "Remaining-time rescale for in-flight stages").
+ * One stage step on the unscaled transition `t` (paired-draw fix), `survived` whole days already
+ * spent in the stage (0 when fresh): the kind from `uKind` and the time from `uTime`, both
+ * conditioned on tau = `stageMonths(survived)`, and the time in stage past `survived` scaled by
+ * `s`. Returns the kind and the integer days from stage entry, >= `survived`; with s = 1, exactly
+ * `sampleTime`'s day. The scale is applied in days (floor(s * k) is monotone in s for k >= 0), so
+ * the kind never depends on s and the day is monotone in it.
  */
-export function inFlightMonths(m: number, s: number): number {
-  return s === 1 ? m : Math.round(m * s);
+export function scaledTransition(
+  t: Transition,
+  uKind: number,
+  uTime: number,
+  survived: number,
+  s: number
+): { kind: Kind; days: number } {
+  const tau = stageMonths(survived);
+  const { kind, days } = sampleTransition(t, uKind, uTime, tau);
+  return { kind, days: survived + Math.floor(s * (days - survived)) };
 }
 
 /** The outcome of the last `stageStep` (scratch, so a step allocates nothing). */
 const step = { kind: 'advance' as Kind, day: 0 };
 
 /**
- * One stage step (§4.4.2 steps 1-2) into `step`: the outcome of leaving `s`, entered on day `e`,
- * and its day. `inFlight` marks an in-flight project's current stage: it is conditioned on the
- * months already survived, and redrawn (up to 8 attempts) until the day is after `asOf`; if
- * every attempt lands on or before `asOf`, the last outcome is kept at `asOf + 1`. With the job's
- * scale x ≠ 1 on `s`, the draw is conditioned on m' = `inFlightMonths(m, x)` months of the
- * (rescaled) transition and mapped back onto the real m months: the remaining time is rescaled.
+ * One stage step (§4.4.2 steps 1-2, paired-draw fix) into `step`: the outcome of leaving `s`,
+ * entered on day `e`, and its day. The kind is drawn on `P.STAGE` and the time on `P.STAGE_TIME`
+ * from the job's unscaled transition, and the job's scale on `s` multiplies the time in stage,
+ * fresh or in flight. `inFlight` marks an in-flight project's current stage: it is conditioned on
+ * the `asOf + 1 − e` whole days survived (>= 1, as e <= asOf), so its day is after `asOf`.
  */
 function stageStep(run: Run, job: Job, s: Stage, e: Day, inFlight: boolean): void {
   const t = s === 'complete' ? undefined : job.cal.transitions[job.pathway][s];
   if (t === undefined) throw new Error(`calibration has no ${job.pathway} ${s} transition`);
   const idx = STAGE_INDEX[s];
-  if (!inFlight) {
-    const r = sampleTransition(t, drawOn(job.stream, P.STAGE, idx), 0);
-    step.kind = r.kind;
-    step.day = e + Math.floor(r.days);
-    return;
-  }
-  const m = monthsIn(e, run.asOf);
   // A stage the scale does not name, construction (never timed) included, is at 1.
   const x = (job.scale?.[job.pathway] as Partial<Record<Stage, number>> | undefined)?.[s] ?? 1;
-  const m2 = inFlightMonths(m, x);
-  // e − ceil(m'·MONTH_DAYS) + ceil(m·MONTH_DAYS); exactly e with x = 1
-  const from = x === 1 ? e : e - Math.ceil(m2 * MONTH_DAYS) + Math.ceil(m * MONTH_DAYS);
-  let kind: Kind = 'advance';
-  for (let j = 0; j <= REDRAWS; j++) {
-    const purpose = j === 0 ? P.STAGE : stageRedraw(j as 1 | 2 | 3 | 4 | 5 | 6 | 7);
-    const r = sampleTransition(t, drawOn(job.stream, purpose, idx), m2);
-    const day = from + Math.floor(r.days);
-    if (day > run.asOf) {
-      step.kind = r.kind;
-      step.day = day;
-      return;
-    }
-    kind = r.kind;
-  }
-  step.kind = kind;
-  step.day = run.asOf + 1;
+  const r = scaledTransition(
+    t,
+    drawOn(job.stream, P.STAGE, idx),
+    drawOn(job.stream, P.STAGE_TIME, idx),
+    inFlight ? run.asOf + 1 - e : 0,
+    x
+  );
+  step.kind = r.kind;
+  step.day = e + r.days;
 }
 
 /** `runStages` stopped on entering a stage at or past its `stopAt`, on `day`. */
@@ -633,8 +635,8 @@ function isPhased(p: InFlightProject): boolean {
 
 /**
  * One pipeline row (§4.4.3): history days clamped to `asOf`, the current stage entered on its
- * history day (or `asOf`, unconditioned, when absent), stepped from there with the in-flight
- * conditioning. Entity `'j:' + id`, k = 0.
+ * history day (or `asOf` when absent, so conditioned on 1 day survived), stepped from there with
+ * the in-flight conditioning. Entity `'j:' + id`, k = 0.
  */
 function pipelineRow(run: Run, job: Job, p: InFlightProject, rs: RowStatic): Schedule {
   const entered: Partial<Record<Stage, Day>> = {};
@@ -963,7 +965,7 @@ function simulatedProject(
   job.stream = stream;
   job.pathway = pathway;
   job.cal = cal;
-  job.scale = run.newScale; // never read: a simulated project is never in flight
+  job.scale = run.newScale; // scales every stage's time (paired-draw fix)
   job.entered = entered;
   job.revisions = [
     { day, units: p.yield[i * F + f], stories: fillStories(FILL_LEVELS[f], p.envelopeStories[i]) }

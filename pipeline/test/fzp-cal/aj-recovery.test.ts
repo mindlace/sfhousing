@@ -57,7 +57,7 @@ function synthesise(truth: Transition, entry: (u: number) => number): Spell[] {
   const spells: Spell[] = [];
   while (spells.length < N) {
     const e = Math.floor(entry(rand()));
-    const draw = sampleTransition(truth, rand(), 0);
+    const draw = sampleTransition(truth, rand(), rand(), 0);
     const z = e + draw.days;
     const censored = z > AS_OF;
     const end = censored ? AS_OF : z;

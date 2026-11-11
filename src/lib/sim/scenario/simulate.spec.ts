@@ -7,7 +7,7 @@ import {
 } from '$lib/data/scenario-codec';
 import { packTimedCell } from '$lib/map/pack-timed';
 import { log } from '$lib/timelapse/math';
-import { cumulativeIncidence, parseCalibration, sampleTransition } from '$lib/timelapse/model';
+import { cumulativeIncidence, parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile, type InFlightProject } from '$lib/timelapse/projects';
 import { MONTH_DAYS, monthsIn } from '$lib/timelapse/time';
 import {
@@ -26,6 +26,7 @@ import {
   nextStage,
   pushRevision,
   revisionRatio,
+  scaledTransition,
   type Holds
 } from './engine';
 import { miniBin } from './fixtures/mini-bin';
@@ -44,7 +45,7 @@ import {
 } from './fixtures/mini-projects';
 import { scaleTable } from '../levers/timers';
 import { buildSimInput, precomputeOf } from './input';
-import { P, draw, jobEntity, simEntity, stageRedraw } from './rng';
+import { P, draw, jobEntity, simEntity } from './rng';
 import { simulate, simulateDetailed } from './simulate';
 import type { Schedule, SimInput } from './types';
 
@@ -561,51 +562,95 @@ describe('simulate: same-day revisions (IA-4)', () => {
   });
 });
 
-describe('simulate: in-flight redraw (§4.4.2)', () => {
+describe('simulate: in-flight conditioning (§4.4.2)', () => {
   const FP = MINI_PROJECTS.filedPair;
   const FILED = STAGE_ORDER.indexOf('filed');
 
-  it('redraws a first draw that lands on or before asOf and accepts a day after asOf', () => {
+  it('conditions on the exact days survived', () => {
     const inp = miniInput();
     const t = inp.calibration.transitions.discretionary.filed!;
     const e = dayOf(2025, 11, 20);
-    const m = monthsIn(e, AS_OF);
-    expect(m).toBe(10);
+    expect(inp.projects.find((p) => p.id === FP)!.history.filed).toBe(e);
     const ent = jobEntity(FP);
-    const attempt = (seed: number, j: number) =>
-      sampleTransition(
+    let closed = 0;
+    for (let seed = 1; seed <= 200; seed++) {
+      const r = scaledTransition(
         t,
-        draw(seed, ent, 0, j === 0 ? P.STAGE : stageRedraw(j as 1 | 2 | 3 | 4 | 5 | 6 | 7), FILED),
-        m
+        draw(seed, ent, 0, P.STAGE, FILED),
+        draw(seed, ent, 0, P.STAGE_TIME, FILED),
+        AS_OF + 1 - e,
+        1
       );
-    const seed = Array.from({ length: 5000 }, (_, i) => i).find(
-      (s) => e + attempt(s, 0).days <= AS_OF
-    );
-    expect(seed).toBeDefined();
-    let accepted: { kind: string; days: number } | null = null;
-    for (let j = 1; j <= 7 && !accepted; j++) {
-      const r = attempt(seed!, j);
-      if (e + r.days > AS_OF) accepted = r;
+      const day = e + r.days;
+      expect(day, `${seed}`).toBeGreaterThan(AS_OF);
+      const ev = firstEvent(find(simulate(inp, seed, H), FP), 'filed');
+      if (day > H) expect(ev, `${seed}`).toBeNull();
+      else {
+        expect(ev, `${seed}`).toEqual({ kind: r.kind, day });
+        closed++;
+      }
     }
-    expect(accepted).not.toBeNull();
-    const s = find(simulate(inp, seed!, H), FP);
-    const ev = firstEvent(s, 'filed')!;
-    expect(ev.day).toBeGreaterThan(AS_OF);
-    expect(ev).toEqual({ kind: accepted!.kind, day: e + accepted!.days });
+    expect(closed).toBeGreaterThan(0);
   });
 
-  it('falls back to asOf + 1 when all 8 attempts land on or before asOf', () => {
+  it('a stage whose table mass lies before asOf draws from the tail, after asOf', () => {
     const cal = miniCalibration();
     cal.transitions.discretionary.filed = structuredClone(MONTH_ONE);
-    const e = AS_OF - 30; // m = 0, and the whole month-1 mass (days 0..30) is on or before asOf
+    const e = AS_OF - 30; // the whole month-1 mass (days 0..30) is on or before asOf
     expect(monthsIn(e, AS_OF)).toBe(0);
     expect(Math.ceil(MONTH_DAYS) - 1).toBe(30);
     const inp = withProjects(withCalibration(miniInput(), cal), (ps) =>
       ps.map((p) => (p.id === FP ? { ...p, history: { filed: e } } : p))
     );
-    for (const seed of SEEDS) {
-      expect(find(simulate(inp, seed, H), FP).entered.entitled).toBe(AS_OF + 1);
+    const days = SEEDS.map((seed) => find(simulate(inp, seed, H), FP).entered.entitled!);
+    for (const d of days) expect(d).toBeGreaterThan(AS_OF);
+    expect(days.some((d) => d !== AS_OF + 1)).toBe(true);
+  });
+
+  it('a row with no history day for its stage leaves after asOf', () => {
+    const inp = withProjects(miniInput(), (ps) =>
+      ps.map((p) => (p.id === FP ? { ...p, history: {} } : p))
+    );
+    for (let seed = 1; seed <= 50; seed++) {
+      const s = find(simulate(inp, seed, H), FP);
+      expect(s.entered.filed).toBe(AS_OF);
+      const ev = firstEvent(s, 'filed');
+      if (ev !== null) expect(ev.day, `${seed}`).toBeGreaterThan(AS_OF);
+      else expect(s.end.kind).toBe('open');
     }
+  });
+
+  it('scale 10 in a slow tail ends open', () => {
+    const cal = miniCalibration();
+    const t = cal.transitions.discretionary.filed!;
+    t.tail = { advance: 1e-7, exit: {} };
+    const e = AS_OF - 330;
+    const slow = withProjects(withCalibration(miniInput(), cal), (ps) =>
+      ps.map((p) => (p.id === FP ? { ...p, history: { filed: e } } : p))
+    );
+    const scale = scaleTable([], 'new');
+    scale.discretionary.filed = 10;
+    const scaled: SimInput = { ...slow, inFlightScale: scale };
+    let open = 0;
+    let compared = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      const a = find(simulate(slow, seed, H), FP);
+      const b = find(simulate(scaled, seed, H), FP);
+      if (b.end.kind === 'open') {
+        open++;
+        continue;
+      }
+      for (const d of Object.values(b.entered)) {
+        expect(Number.isInteger(d) && d! <= H, `${seed} ${d}`).toBe(true);
+      }
+      expect(Number.isInteger(b.end.day) && b.end.day <= H, `${seed}`).toBe(true);
+      if (a.end.kind !== 'open') {
+        expect(b.end.kind, `${seed}`).toBe(a.end.kind);
+        compared++;
+      }
+    }
+    expect(open).toBeGreaterThan(0);
+    expect(open + compared).toBe(20);
   });
 
   it('20,000 in-flight projects match the incidence conditioned on survival to asOf', () => {

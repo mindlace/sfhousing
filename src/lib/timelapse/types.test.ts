@@ -5,6 +5,8 @@ import {
   cumulativeIncidence,
   initiationHazard,
   parseCalibration,
+  sampleKind,
+  sampleTime,
   sampleTransition,
   typicalMonths
 } from './model';
@@ -149,9 +151,22 @@ type RowProjectHistoriesFile = { schema: 1; asOf: Day; histories: RowProjectHist
 // T12
 type RowSampleTransition = (
   t: RowTransition,
-  u: number,
+  uKind: number,
+  uTime: number,
   monthsElapsed: number
 ) => { kind: 'advance' | RowExitReason; days: number };
+// The paired sampler's two halves (Release 2's interface).
+type RowSampleKind = (
+  t: RowTransition,
+  uKind: number,
+  monthsElapsed: number
+) => 'advance' | RowExitReason;
+type RowSampleTime = (
+  t: RowTransition,
+  kind: 'advance' | RowExitReason,
+  uTime: number,
+  monthsElapsed: number
+) => number;
 type RowCumulativeIncidence = (
   t: RowTransition,
   k: number
@@ -206,9 +221,16 @@ const rowsMatch: Assert<
     : false
 > = true;
 
+const samplerRowsMatch: Assert<
+  Equals<typeof sampleKind, RowSampleKind> extends true
+    ? Equals<typeof sampleTime, RowSampleTime>
+    : false
+> = true;
+
 describe('compile-time row checks', () => {
   it('exported types equal the design-doc rows', () => {
     expect(rowsMatch).toBe(true);
+    expect(samplerRowsMatch).toBe(true);
   });
 });
 

@@ -6,7 +6,7 @@
  * identity (`Constants`), so a Transition must not be mutated after its first use here.
  */
 import { exp, log } from './math';
-import { MONTH_DAYS } from './time';
+import { MONTH_DAYS, monthDay, stageDay } from './time';
 import { validateDebt } from '../sim/finance/debt';
 import { validateInstrument } from '../sim/finance/instruments';
 import {
@@ -82,9 +82,12 @@ type Constants = {
    */
   sums?: number[];
   tail?: TailConstants;
-  /** `tableSlice` boundary j of table month k at bounds[(k - 1) * (kinds.length - 1) + j]. */
-  bounds?: number[];
+  /** Per-kind columns for `sampleKind` and `sampleTime`. */
+  cols?: Columns;
 };
+
+/** Per kind j, aligned with `TailConstants.kinds`: F_j(0..K) and F_j(infinity). */
+type Columns = { F: number[][]; inf: number[] };
 
 type TailConstants = {
   /** rho = `tailRate(t)`. */
@@ -142,32 +145,6 @@ function tailOf(t: Transition, c: Constants): TailConstants {
     c.tail = { rho, logSurvive: log(1 - rho), reasons, kinds, shares, last, acc };
   }
   return c.tail;
-}
-
-/**
- * `tableSlice`'s boundaries: for table month k and j < kinds.length - 1, the sum of F_i(k) for
- * i <= j and F_i(k - 1) for i > j, over `kinds` in order, starting from 0.
- */
-function boundsOf(t: Transition, c: Constants): number[] {
-  if (c.bounds === undefined) {
-    const { kinds } = tailOf(t, c);
-    const at = (kind: Kind, month: number) =>
-      month === 0
-        ? 0
-        : kind === 'advance'
-          ? t.advance[month - 1]
-          : (t.exit[kind]?.[month - 1] ?? 0);
-    const bounds: number[] = [];
-    for (let k = 1; k <= t.months; k++) {
-      for (let j = 0; j < kinds.length - 1; j++) {
-        let hi = 0;
-        for (let i = 0; i < kinds.length; i++) hi += at(kinds[i], i <= j ? k : k - 1);
-        bounds.push(hi);
-      }
-    }
-    c.bounds = bounds;
-  }
-  return c.bounds;
 }
 
 /** C(k), `cumulativeTotal` on a transition's constants: k must be a non-negative integer. */
@@ -233,6 +210,173 @@ export function eventualProbabilities(t: Transition, monthsElapsed: number): Inc
   return { advance: (inf.advance - at.advance) / denom, exit };
 }
 
+/** Per-kind F_j(0..K) and F_j(infinity), aligned with `TailConstants.kinds` (memoised). */
+function colsOf(t: Transition, c: Constants): Columns {
+  if (c.cols === undefined) {
+    const { kinds } = tailOf(t, c);
+    const end = beyondTable(t, c, 1);
+    const F = kinds.map((kind) => {
+      const col = kind === 'advance' ? t.advance : t.exit[kind];
+      const out = [0];
+      for (let k = 1; k <= t.months; k++) out.push(col?.[k - 1] ?? 0);
+      return out;
+    });
+    const inf = kinds.map((kind) => (kind === 'advance' ? end.advance : end.exit[kind]!));
+    c.cols = { F, inf };
+  }
+  return c.cols;
+}
+
+/** F_j at real months n + a (0 <= a < 1, n < K): linear between table months n and n + 1. */
+function columnAt(col: number[], n: number, a: number): number {
+  return a === 0 ? col[n] : col[n] + a * (col[n + 1] - col[n]);
+}
+
+function checkElapsed(tau: number): void {
+  if (!(tau >= 0 && tau < MAX_EVENT_MONTH - 1)) {
+    throw new RangeError(`monthsElapsed must be in [0, ${MAX_EVENT_MONTH - 1}), got ${tau}`);
+  }
+}
+
+function checkUniform(u: number, name: string): void {
+  if (!(u >= 0 && u < 1)) throw new RangeError(`${name} must be in [0, 1), got ${u}`);
+}
+
+/** The largest double below 1. */
+const BELOW_ONE = 1 - Number.EPSILON / 2;
+
+/**
+ * The outcome of one stage step (paired-draw fix, "Sampling one stage step"), from the kind
+ * uniform `uKind` given `monthsElapsed` = tau real months already in the stage: the j, in the
+ * order advance then `EXIT_ORDER`, whose cumulative slice of the remaining masses R_j = F_j(inf)
+ * - F_j(tau) holds uKind * (1 - C(tau)). F_j is linear between table months. From K on, the
+ * slices are the tail shares (memoryless). A kind with no remaining mass is never drawn; the last
+ * kind with mass takes any rounding remainder. Throws RangeError for uKind outside [0, 1) or tau
+ * outside [0, MAX_EVENT_MONTH - 1).
+ */
+export function sampleKind(t: Transition, uKind: number, monthsElapsed: number): Kind {
+  checkElapsed(monthsElapsed);
+  checkUniform(uKind, 'uKind');
+  const c = constantsOf(t);
+  const tc = tailOf(t, c);
+  const { kinds } = tc;
+  if (monthsElapsed >= t.months) {
+    for (let j = 0; j < tc.last; j++) if (uKind < tc.acc[j]) return kinds[j];
+    return kinds[tc.last];
+  }
+  const { F, inf } = colsOf(t, c);
+  const n = Math.floor(monthsElapsed);
+  const a = monthsElapsed - n;
+  let C = 0;
+  for (let j = 0; j < kinds.length; j++) C += columnAt(F[j], n, a);
+  const target = uKind * (1 - C);
+  let cum = 0;
+  let last = 0;
+  for (let j = 0; j < kinds.length; j++) {
+    const R = inf[j] - columnAt(F[j], n, a);
+    if (!(R > 0)) continue;
+    last = j;
+    cum += R;
+    if (target < cum) return kinds[j];
+  }
+  return kinds[last];
+}
+
+/**
+ * The time of one stage step given its kind (paired-draw fix): integer days from stage entry, by
+ * inverting kind j's conditional CDF from tau, G_j(x) = (F_j(x) - F_j(tau)) / R_j, at `uTime`.
+ * F_j is linear within table months, and past K it is F_j(K) + (1 - C(K)) pi_j H(x - K) with H
+ * linear between integer months and H(n) = 1 - (1 - rho)^n, so from K on the time is the same for
+ * every kind (`tailDay`). The result is >= stageDay(tau) and < 2^24 (Float32-exact). Throws
+ * RangeError for uTime outside [0, 1), tau outside [0, MAX_EVENT_MONTH - 1), or a kind that is not
+ * one of the transition's outcomes or has no mass left at tau.
+ */
+export function sampleTime(
+  t: Transition,
+  kind: Kind,
+  uTime: number,
+  monthsElapsed: number
+): number {
+  checkElapsed(monthsElapsed);
+  checkUniform(uTime, 'uTime');
+  const c = constantsOf(t);
+  const tc = tailOf(t, c);
+  const j = tc.kinds.indexOf(kind);
+  if (j < 0) throw new RangeError(`${kind} is not an outcome of this transition`);
+  const K = t.months;
+  const floorDay = stageDay(monthsElapsed);
+  if (monthsElapsed >= K) {
+    if (!(tc.shares[j] > 0)) throw new RangeError(`${kind} has no mass left at ${monthsElapsed}`);
+    return Math.max(tailDay(K, tc, monthsElapsed, uTime), floorDay);
+  }
+  const { F, inf } = colsOf(t, c);
+  const col = F[j];
+  const n = Math.floor(monthsElapsed);
+  const a = monthsElapsed - n;
+  const from = columnAt(col, n, a);
+  const R = inf[j] - from;
+  if (!(R > 0)) throw new RangeError(`${kind} has no mass left at ${monthsElapsed}`);
+  let f = from + uTime * R;
+  const FK = col[K];
+  const mass = (1 - sumsOf(t, c)[K]) * tc.shares[j];
+  if (f >= FK) {
+    if (mass > 0) {
+      const v = Math.min((f - FK) / mass, BELOW_ONE);
+      return Math.max(tailDay(K, tc, K, v), floorDay);
+    }
+    // No tail mass for this kind: its last table mass ends at F_j(K); stay just below it.
+    f = Math.max(FK * (1 - Number.EPSILON), from);
+  }
+  // The least table month k in (n, K] with F_j(k) > f, given F_j(n) <= f < F_j(K).
+  let below = n;
+  let above = K;
+  while (above - below > 1) {
+    const mid = (below + above) >>> 1;
+    if (col[mid] > f) above = mid;
+    else below = mid;
+  }
+  const lo = col[above - 1];
+  let frac = (f - lo) / (col[above] - lo);
+  if (above - 1 === n && frac < a) frac = a;
+  return Math.max(monthDay(above - 1, frac > 0 ? frac : 0), floorDay);
+}
+
+/**
+ * The tail inverse from `from` >= K months with uniform v (kind-independent). Working relative
+ * to month n0 = floor(from - K) past K keeps a large `from` precise: survival relative to K + n0
+ * is 1 - f0 rho at `from` (f0 its fraction), and the event is where it reaches R = (1 - f0 rho)
+ * (1 - v). Same month when R > 1 - rho; otherwise month m + 1 past K + n0 for the least m >= 1
+ * with (1 - rho)^(m+1) < R <= (1 - rho)^m (closed form, then stepped by one). Every event from the cap month on (a slow tail, or
+ * log(1 - rho) = 0) lands in the cap month, at R's position in the survival s = (1 - rho)^top left at its start.
+ */
+function tailDay(K: number, tc: TailConstants, from: number, v: number): number {
+  const { rho, logSurvive: L } = tc;
+  const n0 = Math.floor(from - K);
+  const f0 = from - K - n0;
+  const R = (1 - f0 * rho) * (1 - v);
+  if (R > 1 - rho) return monthDay(K + n0, clampFrac((1 - R) / rho));
+  const top = MAX_EVENT_MONTH - 1 - K - n0;
+  const pw = (m: number) => exp(m * L);
+  let m = top;
+  if (L !== 0) {
+    const q = Math.floor(log(R) / L);
+    m = Number.isFinite(q) ? Math.min(Math.max(q, 1), top) : top;
+    while (m > 1 && pw(m) < R) m--;
+    while (m < top && pw(m + 1) >= R) m++;
+  }
+  const s = pw(m);
+  // The cap month (m = top) holds all the mass from (1 - rho)^top down, so its position is
+  // 1 - R / s over that whole range, never the geometric one: mixing the two would restart the
+  // position inside the month and break monotonicity in v.
+  const f = m < top ? (1 - R / s) / rho : 1 - R / s;
+  return monthDay(K + n0 + m, clampFrac(f));
+}
+
+/** A position within a month, clamped to [0, 1] (NaN to 0); `monthDay` keeps 1 in the month. */
+function clampFrac(f: number): number {
+  return f > 0 ? Math.min(f, 1) : 0;
+}
+
 /**
  * The last event month `sampleTransition` returns: the greatest k with k * MONTH_DAYS <= 2^24,
  * so `days` stays an integer exact in Float32 (`Day`). 551,213 months is about 45,000 years:
@@ -245,27 +389,12 @@ const MAX_EVENT_MONTH = Math.floor(16777216 / MONTH_DAYS);
 /** `chanceTable` arrays cover months in stage 0..240 (K <= 240). */
 const CHANCE_MONTHS = 241;
 
-type Slice = { kind: Kind; lo: number; hi: number };
-type Draw = { k: number; slice: Slice; x: number };
-
-/** The least k in (m, K] with C(k) > c, given C(m) <= c < C(K): binary search. */
-function tableMonth(t: Transition, sums: number[], c: number, m: number): number {
-  let below = m; // invariant: C(below) <= c < C(above)
-  let above = t.months;
-  while (above - below > 1) {
-    const mid = (below + above) >>> 1;
-    if (sums[mid] > c) above = mid;
-    else below = mid;
-  }
-  return above;
-}
-
 /**
  * The least tail month k > K whose C(k) reaches c (strictly above c, or at least c when
  * `inclusive`): the closed form K + ceil(log((1 - c) / (1 - C(K))) / log(1 - rho)), clamped to
  * [K + 1, MAX_EVENT_MONTH], then stepped by one until the test holds at k and fails at k - 1 as
  * `cumulativeTotal` evaluates it (spec §4.2 step 2). Null when no month satisfies that in
- * double precision. `sampleTransition` (m < K) and `typicalMonths` share it.
+ * double precision. `typicalMonths` uses it.
  */
 function tailMonth(t: Transition, cs: Constants, c: number, inclusive: boolean): number | null {
   const K = t.months;
@@ -282,113 +411,25 @@ function tailMonth(t: Transition, cs: Constants, c: number, inclusive: boolean):
 }
 
 /**
- * A tail draw relative to `from` >= K whole months survived (controller ruling R8): by
- * memorylessness, the months still to wait follow G(n) = 1 - (1 - rho)^n whatever `from` is,
- * so this is spec §4.2 in exact arithmetic without forming c = C(m) + (1 - C(m)) * u, which
- * loses every digit once 1 - C(m) nears 1e-16. n = the least n >= 1 with G(n) > v (closed form
- * ceil(log(1 - v) / log(1 - rho)), then stepped by one), k = from + n, and the slice is
- * [G(n - 1), G(n)) split by p_j / rho. If no n up to MAX_EVENT_MONTH qualifies (log(1 - rho) =
- * 0, or a tail too slow for the cap), k is the cap and v is split over the mass the search
- * never reached, [G(top), 1).
- */
-function relativeTail(t: Transition, c: Constants, from: number, v: number): Draw {
-  const tc = tailOf(t, c);
-  const L = tc.logSurvive;
-  const G = (n: number) => (n === 0 ? 0 : 1 - exp(n * L));
-  const top = Math.max(MAX_EVENT_MONTH - from, 1);
-  const q = Math.ceil(log(1 - v) / L);
-  let n = Number.isFinite(q) ? Math.min(Math.max(q, 1), top) : top;
-  while (n > 1 && G(n - 1) > v) n--;
-  while (n < top && G(n) <= v) n++;
-  if (G(n) > v) return { k: from + n, slice: tailSlice(tc, G(n - 1), G(n), v), x: v };
-  return { k: from + top, slice: tailSlice(tc, G(top), 1, v), x: v };
-}
-
-/**
- * The sub-interval of table month k's mass [C(k - 1), C(k)) holding c, split by the increments
- * of F_j in the order advance, then `EXIT_ORDER`. Boundary j sums F_i(k) for i <= j and
- * F_i(k - 1) for i > j in that fixed order (`boundsOf`), so the last boundary is exactly C(k).
- */
-function tableSlice(t: Transition, cs: Constants, k: number, c: number): Slice {
-  const { kinds } = tailOf(t, cs);
-  const sums = sumsOf(t, cs);
-  const bounds = boundsOf(t, cs);
-  const width = kinds.length - 1;
-  const row = (k - 1) * width;
-  let lo = k === 1 ? 0 : sums[k - 1];
-  let j = 0;
-  for (; j < width; j++) {
-    const hi = bounds[row + j];
-    if (c < hi) return { kind: kinds[j], lo, hi };
-    lo = hi;
-  }
-  return { kind: kinds[j], lo, hi: sums[k] };
-}
-
-/**
- * The sub-interval of [lo, hi) holding x, split by the tail proportions p_j / rho in the order
- * advance, then `EXIT_ORDER`. The last kind with a positive share ends exactly at hi.
- */
-function tailSlice(tc: TailConstants, lo: number, hi: number, x: number): Slice {
-  const { kinds, last, acc } = tc;
-  let from = lo;
-  for (let j = 0; j < last; j++) {
-    const to = lo + (hi - lo) * acc[j];
-    if (x < to) return { kind: kinds[j], lo: from, hi: to };
-    from = to;
-  }
-  return { kind: kinds[last], lo: from, hi };
-}
-
-/** The draw for m < K: spec §4.2 steps 1 to 3 literally (1 - C(m) >= 1 - C(K) >= 1e-6). */
-function literalDraw(t: Transition, cs: Constants, u: number, m: number): Draw {
-  const sums = sumsOf(t, cs);
-  const cm = total(t, cs, m);
-  const c = cm + (1 - cm) * u;
-  if (c < sums[t.months]) {
-    const k = tableMonth(t, sums, c, m);
-    return { k, slice: tableSlice(t, cs, k, c), x: c };
-  }
-  const k = tailMonth(t, cs, c, false);
-  if (k !== null) {
-    const slice = tailSlice(tailOf(t, cs), total(t, cs, k - 1), total(t, cs, k), c);
-    return { k, slice, x: c };
-  }
-  // Past the cap (a flat or very slow tail), or c rounded to 1, which needs 1 - u < ~1.1e-10
-  // (below mulberry32's 2^-32 step): draw relative to K at v = (c - C(K)) / (1 - C(K)), the
-  // position within the tail. Only a c that rounded to 1 has lost it, and u stands in.
-  const ck = sums[t.months];
-  return relativeTail(t, cs, t.months, c < 1 ? (c - ck) / (1 - ck) : u);
-}
-
-/**
- * One uniform u in [0, 1) to an outcome and a duration in days from stage entry, given
- * `monthsElapsed` = m whole months already survived (spec §4.2): target c = C(m) + (1 - C(m))u;
- * event month k = the least k > m with C(k) > c; kind = the slice of month k's mass holding c;
- * the day within month k is uniform by c's position in that slice. For m >= K the same mapping
- * is evaluated relative to m by memorylessness (`relativeTail`, ruling R8). monthsIn(0, days) =
- * k - 1 and days >= ceil(m * MONTH_DAYS).
+ * One stage step, the engine's and V27's sampler: `{ kind, days }` with kind = `sampleKind(t,
+ * uKind, monthsElapsed)` and days = `sampleTime(t, kind, uTime, monthsElapsed)`. Two uniforms
+ * in [0, 1) draw the kind and the time apart, so a rescaled table moves a project's time without
+ * changing its kind (paired-draw fix). `monthsElapsed` = tau is the real months already in the
+ * stage (fractional allowed); days are integer days from stage entry, >= stageDay(tau). Throws
+ * RangeError for either uniform outside [0, 1) or tau outside [0, MAX_EVENT_MONTH - 1).
  *
- * The transition's constants (C(1..K), rho, log(1 - rho), the tail shares, the table slice
- * boundaries) are memoised per object on first use (`Constants`): `t` is treated as immutable
- * from then on. Mutating it in place afterwards gives stale results; pass a new object instead.
+ * The transition's constants (C(1..K), rho, log(1 - rho), the tail shares, the per-kind
+ * columns) are memoised per object on first use (`Constants`): `t` is treated as immutable from
+ * then on. Mutating it in place afterwards gives stale results; pass a new object instead.
  */
 export function sampleTransition(
   t: Transition,
-  u: number,
+  uKind: number,
+  uTime: number,
   monthsElapsed: number
 ): { kind: Kind; days: number } {
-  checkMonths(monthsElapsed);
-  if (!(u >= 0 && u < 1)) throw new RangeError(`u must be in [0, 1), got ${u}`);
-  const cs = constantsOf(t);
-  const { k, slice, x } =
-    monthsElapsed < t.months
-      ? literalDraw(t, cs, u, monthsElapsed)
-      : relativeTail(t, cs, monthsElapsed, u);
-  const phi = (x - slice.lo) / (slice.hi - slice.lo);
-  const first = Math.ceil((k - 1) * MONTH_DAYS);
-  const end = Math.ceil(k * MONTH_DAYS);
-  return { kind: slice.kind, days: Math.min(first + Math.floor(phi * (end - first)), end - 1) };
+  const kind = sampleKind(t, uKind, monthsElapsed);
+  return { kind, days: sampleTime(t, kind, uTime, monthsElapsed) };
 }
 
 /** The linear predictor z of `initiationHazard`: intercept plus the binned coefficients. */

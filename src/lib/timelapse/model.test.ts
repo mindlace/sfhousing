@@ -6,6 +6,8 @@ import mini from '../sim/scenario/fixtures/mini-calibration.json';
 import small from './fixtures/calibration-small.json';
 import { exp, log } from './math';
 import { readFileSync } from 'node:fs';
+import fc from 'fast-check';
+import { arbTransition } from './test/arbitraries';
 import {
   CalibrationFormatError,
   binIndex,
@@ -18,10 +20,12 @@ import {
   initiationHazard,
   initiationLogit,
   parseCalibration,
+  sampleKind,
+  sampleTime,
   sampleTransition,
   typicalMonths
 } from './model';
-import { MONTH_DAYS, monthsIn } from './time';
+import { MONTH_DAYS, monthsIn, stageDay } from './time';
 import { validateInstrument } from '../sim/finance/instruments';
 import {
   EXIT_ORDER,
@@ -223,209 +227,54 @@ describe('eventualProbabilities', () => {
 
 describe('sampleTransition', () => {
   const M = MONTH_DAYS;
-  // Least k > m with C(k) > c, by linear scan over cumulativeIncidence (independent of the sampler).
-  function eventMonthByScan(tt: Transition, c: number, m: number): number {
-    const total = (k: number) => {
-      const r = cumulativeIncidence(tt, k);
-      return r.advance + Object.values(r.exit).reduce((a, b) => a + b, 0);
-    };
-    let k = m + 1;
-    while (total(k) <= c) k++;
-    return k;
-  }
 
-  it('u = 0 at month 0 advances in the first month', () => {
-    const r = sampleTransition(t, 0, 0);
+  it('uKind = uTime = 0 at tau = 0 advances in the first month', () => {
+    const r = sampleTransition(t, 0, 0, 0);
     expect(r.kind).toBe('advance');
     expect(r.days).toBeGreaterThanOrEqual(0);
     expect(r.days).toBeLessThanOrEqual(Math.ceil(M) - 1);
   });
 
-  it('u near 1 lands in the tail, split by p_j / rho', () => {
-    const u = 1 - 1e-12;
-    const r = sampleTransition(t, u, 0);
-    const k = monthsIn(0, r.days) + 1;
-    expect(k).toBeGreaterThan(12);
-    const lo = cumulativeTotal(t, k - 1);
-    const hi = cumulativeTotal(t, k);
-    expect(lo).toBeLessThanOrEqual(u);
-    expect(u).toBeLessThan(hi);
-    const advanceTop = lo + (hi - lo) * (0.05 / 0.06);
-    expect(r.kind).toBe(u < advanceTop ? 'advance' : 'expired');
-  });
-
-  it('never places the event before the months already elapsed', () => {
-    for (const u of [0, 0.5, 0.999]) {
-      expect(sampleTransition(t, u, 30).days).toBeGreaterThanOrEqual(Math.ceil(30 * M));
+  it('never places the event before the stage time already elapsed', () => {
+    for (const tau of [0, 30, 30.5]) {
+      for (const uK of [0, 0.5, 0.999]) {
+        for (const uT of [0, 0.5, 0.999]) {
+          expect(sampleTransition(t, uK, uT, tau).days).toBeGreaterThanOrEqual(stageDay(tau));
+        }
+      }
     }
   });
 
-  it('agrees with cumulativeIncidence on the event month for 10,000 random draws', () => {
+  it('is the composition of sampleKind and sampleTime over 10,000 draws', () => {
     const rng = mulberry32(0x5eed);
     for (let i = 0; i < 10000; i++) {
-      const u = rng();
-      const m = Math.floor(rng() * 41);
-      const r = sampleTransition(t, u, m);
-      const cm = cumulativeTotal(t, m);
-      const k = eventMonthByScan(t, cm + (1 - cm) * u, m);
-      expect(monthsIn(0, r.days)).toBe(k - 1);
-      expect(r.days).toBeGreaterThanOrEqual(Math.ceil(m * M));
-      expect(Number.isInteger(r.days)).toBe(true);
-      expect(['advance', 'expired']).toContain(r.kind);
-    }
-  });
-
-  it('splits a table month by the increments of F_j, advance first', () => {
-    // Month 1 holds [0, 0.058333): advance [0, 0.05), then expired [0.05, 0.058333).
-    expect(sampleTransition(t, 0.0499, 0).kind).toBe('advance');
-    expect(sampleTransition(t, 0.0501, 0).kind).toBe('expired');
-    expect(monthsIn(0, sampleTransition(t, 0.0501, 0).days)).toBe(0);
-    // The day within the month is uniform: phi = 0.5 of the advance slice is mid-month.
-    expect(sampleTransition(t, 0.025, 0).days).toBe(Math.floor(0.5 * Math.ceil(M)));
-  });
-
-  it('stays finite when rho = 1 (log(1 - rho) = -Infinity)', () => {
-    const tt: Transition = { ...t, tail: { advance: 0.75, exit: { expired: 0.25 } } };
-    expect(tt.tail.advance + tt.tail.exit.expired!).toBe(1);
-    for (const u of [0.71, 0.9, 1 - 1e-12]) {
-      expect(monthsIn(0, sampleTransition(tt, u, 0).days)).toBe(12);
-    }
-    expect(cumulativeTotal(tt, 20)).toBe(1);
-    for (const u of [0, 0.5, 0.74, 0.76, 1 - 1e-12]) {
-      const r = sampleTransition(tt, u, 20);
-      expect(monthsIn(0, r.days)).toBe(20);
-      expect(r.kind).toBe(u < 0.75 ? 'advance' : 'expired');
-    }
-  });
-
-  it('rejects u outside [0, 1) and non-finite u', () => {
-    for (const u of [-0.1, 1, 1.5, NaN, Infinity, -Infinity]) {
-      expect(() => sampleTransition(t, u, 0)).toThrow(RangeError);
-      expect(() => sampleTransition(t, u, 20)).toThrow(RangeError);
-    }
-  });
-
-  describe('deep in the tail (ruling R8: relative to m by memorylessness)', () => {
-    // Fixture table with tail advance 0.2 / expired 0.05: rho = 0.25, advance share 0.8.
-    const probe: Transition = { ...t, tail: { advance: 0.2, exit: { expired: 0.05 } } };
-    const N = 100000;
-    for (const m of [120, 140]) {
-      it(`m = ${m}: month m+1 has mass rho, kinds split p_j / rho, days spread`, () => {
-        const gap = 1 - cumulativeTotal(probe, m);
-        if (m === 120) expect(gap > 1e-15 && gap < 1e-14).toBe(true);
-        else expect(gap).toBe(0);
-        const rng = mulberry32(0x5eed);
-        let first = 0;
-        let firstAdvance = 0;
-        let fifth = 0;
-        let fifthAdvance = 0;
-        const firstDays = new Set<number>();
-        for (let i = 0; i < N; i++) {
-          const r = sampleTransition(probe, rng(), m);
-          const k = monthsIn(0, r.days) + 1;
-          expect(k).toBeGreaterThan(m);
-          if (k === m + 1) {
-            first++;
-            if (r.kind === 'advance') firstAdvance++;
-            firstDays.add(r.days);
-          } else if (k === m + 5) {
-            fifth++;
-            if (r.kind === 'advance') fifthAdvance++;
-          }
-        }
-        expect(Math.abs(first / N - 0.25)).toBeLessThanOrEqual(0.01);
-        expect(Math.abs(firstAdvance / first - 0.8)).toBeLessThanOrEqual(0.02);
-        expect(Math.abs(fifthAdvance / fifth - 0.8)).toBeLessThanOrEqual(0.02);
-        expect(firstDays.size).toBeGreaterThanOrEqual(25);
+      const uK = rng();
+      const uT = rng();
+      const tau = rng() * 41;
+      const kind = sampleKind(t, uK, tau);
+      expect(sampleTransition(t, uK, uT, tau)).toEqual({
+        kind,
+        days: sampleTime(t, kind, uT, tau)
       });
     }
+  });
 
-    it('agrees with the literal spec §4.2 path for m = 13..20 on the same u', () => {
-      // Reference: c = C(m) + (1 - C(m)) u, k by linear scan of cumulativeTotal, tail slice.
-      function literal(u: number, m: number) {
-        const cm = cumulativeTotal(t, m);
-        const c = cm + (1 - cm) * u;
-        let k = m + 1;
-        while (cumulativeTotal(t, k) <= c) k++;
-        const lo = cumulativeTotal(t, k - 1);
-        const hi = cumulativeTotal(t, k);
-        const top = lo + (hi - lo) * (0.05 / 0.06);
-        const [kind, slo, shi] = c < top ? ['advance', lo, top] : ['expired', top, hi];
-        const phi = (c - (slo as number)) / ((shi as number) - (slo as number));
-        const first = Math.ceil((k - 1) * M);
-        const end = Math.ceil(k * M);
-        return { kind, days: Math.min(first + Math.floor(phi * (end - first)), end - 1) };
+  it('rejects either uniform outside [0, 1) and non-finite', () => {
+    for (const u of [-0.1, 1, 1.5, NaN, Infinity, -Infinity]) {
+      for (const tau of [0, 20]) {
+        expect(() => sampleTransition(t, u, 0.5, tau)).toThrow(RangeError);
+        expect(() => sampleTransition(t, 0.5, u, tau)).toThrow(RangeError);
       }
-      // Verified bit-for-bit: all 16,000 draws give the same kind and the same day.
-      const rng = mulberry32(0x5eed);
-      for (let m = 13; m <= 20; m++) {
-        for (let i = 0; i < 2000; i++) {
-          const u = rng();
-          expect(sampleTransition(t, u, m)).toEqual(literal(u, m));
-        }
-      }
-    });
-  });
-
-  it('stays finite when the tail cannot be resolved in double precision', () => {
-    // rho so small that 1 - rho rounds to 1: C is flat past K, so the event month is capped.
-    const flat: Transition = { ...t, tail: { advance: 1e-20, exit: {} } };
-    for (const m of [0, 13]) {
-      const r = sampleTransition(flat, 0.9, m);
-      expect(r.kind).toBe('advance');
-      expect(monthsIn(0, r.days) + 1).toBe(Math.floor(16777216 / M));
-      expect(r.days).toBeLessThan(16777216);
-      expect(Math.fround(r.days)).toBe(r.days);
-    }
-    // u = 1 - 2^-53 with C(m) > 0 would make the literal c round to exactly 1; still finite.
-    const top = 1 - 1 / 9007199254740992;
-    for (const m of [13, 40]) {
-      const cm = cumulativeTotal(t, m);
-      expect(cm + (1 - cm) * top).toBe(1);
-      const s = sampleTransition(t, top, m);
-      expect(Number.isFinite(s.days)).toBe(true);
-      expect(s.days).toBeLessThan(16777216);
-      expect(s.days).toBeGreaterThanOrEqual(Math.ceil(m * M));
     }
   });
 
-  it('cap-month draws keep the tail kind split for a flat or very slow multi-kind tail', () => {
-    // rho = 1e-6 (advance share 0.8): G(cap) is about 0.42, so many draws land on the cap month.
-    const slow: Transition = { ...t, tail: { advance: 0.8e-6, exit: { expired: 0.2e-6 } } };
-    const cap = Math.floor(16777216 / M);
-    for (const m of [0, 12]) {
-      const rng = mulberry32(0x5eed);
-      let atCap = 0;
-      let advance = 0;
-      for (let i = 0; i < 100000; i++) {
-        const r = sampleTransition(slow, rng(), m);
-        if (monthsIn(0, r.days) + 1 !== cap) continue;
-        atCap++;
-        if (r.kind === 'advance') advance++;
-      }
-      expect(atCap).toBeGreaterThan(10000);
-      expect(Math.abs(advance / atCap - 0.8)).toBeLessThanOrEqual(0.02);
-    }
-  });
-
-  it('maps every month day range back to that month, up to the Float32-exact cap', () => {
-    let bad = 0;
-    const cap = Math.floor(16777216 / M);
-    for (let k = 1; k <= cap; k++) {
-      const first = Math.ceil((k - 1) * M);
-      const last = Math.ceil(k * M) - 1;
-      if (monthsIn(0, first) !== k - 1 || monthsIn(0, last) !== k - 1) bad++;
-    }
-    expect(bad).toBe(0);
-  });
-
-  it('rejects negative and non-integer months elapsed', () => {
-    expect(() => sampleTransition(t, 0.5, -1)).toThrow(RangeError);
-    expect(() => sampleTransition(t, 0.5, 2.5)).toThrow(RangeError);
+  it('rejects a bad months elapsed', () => {
+    expect(() => sampleTransition(t, 0.5, 0.5, -1)).toThrow(RangeError);
+    expect(() => sampleTransition(t, 0.5, 0.5, NaN)).toThrow(RangeError);
   });
 
   describe('per-transition constants are memoised (T12 perf), outputs unchanged', () => {
-    // Several table reasons, a tail-only reason and a zero trailing tail share (tailSlice's last).
+    // Several table reasons, a tail-only reason and a zero trailing tail share.
     const multi: Transition = {
       ...t,
       exit: { withdrawn: t.exit.expired!.map((x) => x / 2), expired: t.exit.expired },
@@ -439,23 +288,25 @@ describe('sampleTransition', () => {
       }
     }
     const N = 12000;
-    // A fixed mulberry32 stream of (u, m) pairs; m runs to K + 40, so many draws have m >= K.
+    // A fixed mulberry32 stream of (uKind, uTime, m) triples; m runs to K + 40, so many draws have m >= K.
     function draws(of: Transition[]) {
       const rng = mulberry32(0x5eed);
       const out: { kind: string; days: number }[] = [];
       let tail = 0;
       for (let i = 0; i < N; i++) {
         const tr = of[i % of.length];
-        const u = rng();
-        const m = Math.floor(rng() * (tr.months + 41));
+        const uK = rng();
+        const uT = rng();
+        // Fractional tau: whole months plus a quarter, so the interpolated paths are memoised too.
+        const m = Math.floor(rng() * (tr.months + 41)) + (i % 4) * 0.25;
         if (m >= tr.months) tail++;
-        out.push(sampleTransition(tr, u, m));
+        out.push(sampleTransition(tr, uK, uT, m));
       }
       return { out, tail };
     }
 
     it('a used transition and a fresh structurally-equal deep copy give identical draws', () => {
-      for (const tr of cells) sampleTransition(tr, 0.5, 0); // first use fills the constants
+      for (const tr of cells) sampleTransition(tr, 0.5, 0.5, 0); // first use fills the constants
       const cached = draws(cells);
       const fresh = draws(cells.map((tr) => structuredClone(tr)));
       expect(cached.tail).toBeGreaterThan(N / 4);
@@ -465,6 +316,265 @@ describe('sampleTransition', () => {
 
     it('calling twice with no mutation gives identical results', () => {
       expect(draws(cells).out).toEqual(draws(cells).out);
+    });
+  });
+});
+
+/** `tr` as the small calibration's discretionary.permitFiled, so `parseCalibration` can judge it. */
+function withTransition(tr: Transition): unknown {
+  const c = structuredClone(cal) as Calibration;
+  c.transitions.discretionary.permitFiled = tr;
+  return c;
+}
+
+const CAP_MONTH = Math.floor(16777216 / MONTH_DAYS);
+const BAD_U = [-0.1, 1, NaN, Infinity];
+const BAD_TAU = [-1, NaN, Infinity, 551213];
+
+describe('arbTransition', () => {
+  it('generates transitions that parseCalibration accepts', () => {
+    const samples = fc.sample(arbTransition(), { numRuns: 200, seed: 0x5eed });
+    let tableOnly = 0;
+    let tailOnly = 0;
+    for (const tr of samples) {
+      expect(() => parseCalibration(withTransition(tr))).not.toThrow();
+      for (const r of EXIT_ORDER) {
+        if (tr.exit[r] !== undefined && tr.tail.exit[r] === undefined) tableOnly++;
+        if (tr.exit[r] === undefined && tr.tail.exit[r] !== undefined) tailOnly++;
+      }
+    }
+    expect(tableOnly).toBeGreaterThan(0);
+    expect(tailOnly).toBeGreaterThan(0);
+  });
+});
+
+describe('sampleKind', () => {
+  // F_j(x) at real x, linear between table months, from cumulativeIncidence only.
+  function at(tr: Transition, x: number) {
+    const lo = cumulativeIncidence(tr, Math.floor(x));
+    const hi = cumulativeIncidence(tr, Math.ceil(x));
+    const a = x - Math.floor(x);
+    const exit: Record<string, number> = {};
+    for (const r of Object.keys(lo.exit) as (keyof typeof lo.exit)[]) {
+      exit[r] = lo.exit[r]! + a * (hi.exit[r]! - lo.exit[r]!);
+    }
+    return { advance: lo.advance + a * (hi.advance - lo.advance), exit };
+  }
+
+  it('splits at the eventual advance share at tau = 0', () => {
+    const P = eventualProbabilities(t, 0).advance;
+    expect(sampleKind(t, P - 1e-12, 0)).toBe('advance');
+    expect(sampleKind(t, P + 1e-12, 0)).toBe('expired');
+  });
+
+  it('splits at the conditional advance share at a real-valued tau = 6.4', () => {
+    const inf = eventualProbabilities(t, 0).advance;
+    const f = at(t, 6.4);
+    const C = f.advance + f.exit.expired;
+    const threshold = (inf - f.advance) / (1 - C);
+    expect(sampleKind(t, threshold - 1e-12, 6.4)).toBe('advance');
+    expect(sampleKind(t, threshold + 1e-12, 6.4)).toBe('expired');
+  });
+
+  it('uses the tail shares from K on (memoryless)', () => {
+    for (const tau of [12, 20.5, 140]) {
+      expect(sampleKind(t, 0.05 / 0.06 - 1e-12, tau)).toBe('advance');
+      expect(sampleKind(t, 0.05 / 0.06 + 1e-12, tau)).toBe('expired');
+      expect(sampleKind(t, 0, tau)).toBe('advance');
+      expect(sampleKind(t, 1 - 1e-12, tau)).toBe('expired');
+    }
+  });
+
+  it('never draws a kind with no remaining mass (Review Focus 2)', () => {
+    const flat3 = t.advance.map((_, i) => (i < 2 ? 0.01 * (i + 1) : 0.03));
+    const tt: Transition = {
+      ...t,
+      exit: { withdrawn: flat3 },
+      tail: { advance: 0.05, exit: { expired: 0 } }
+    };
+    expect(() => parseCalibration(withTransition(tt))).not.toThrow();
+    const rng = mulberry32(0x5eed);
+    const seen = new Set<string>();
+    for (let i = 0; i < 10000; i++) seen.add(sampleKind(tt, rng(), 4.5));
+    expect([...seen]).toEqual(['advance']);
+    expect(() => sampleTime(tt, 'withdrawn', 0.5, 4.5)).toThrow(RangeError);
+    expect(() => sampleTime(t, 'cancelled', 0.5, 0)).toThrow(RangeError);
+  });
+
+  it('splits at 0.75 when rho = 1', () => {
+    const tt: Transition = { ...t, tail: { advance: 0.75, exit: { expired: 0.25 } } };
+    for (const u of [0, 0.5, 0.75 - 1e-12]) expect(sampleKind(tt, u, 20)).toBe('advance');
+    for (const u of [0.75 + 1e-12, 0.9, 1 - 1e-12]) expect(sampleKind(tt, u, 20)).toBe('expired');
+  });
+
+  it('rejects u outside [0, 1) and tau outside [0, MAX_EVENT_MONTH - 1)', () => {
+    for (const u of BAD_U) expect(() => sampleKind(t, u, 0)).toThrow(RangeError);
+    for (const tau of BAD_TAU) expect(() => sampleKind(t, 0.5, tau)).toThrow(RangeError);
+  });
+});
+
+describe('sampleTime', () => {
+  it('starts at day 0 for u = 0 on a fresh stage', () => {
+    expect(sampleTime(t, 'advance', 0, 0)).toBe(0);
+  });
+
+  it('property: an integer day, from stageDay(tau), below 2^24, non-decreasing in uTime', () => {
+    const u = fc.double({ min: 0, max: 1, maxExcluded: true, noNaN: true });
+    expect(() =>
+      fc.assert(
+        fc.property(arbTransition(), u, u, u, u, (tr, r, uKind, u1, u2) => {
+          const tau = r * (tr.months + 30);
+          const kind = sampleKind(tr, uKind, tau);
+          const d = sampleTime(tr, kind, u1, tau);
+          if (!Number.isInteger(d) || d < stageDay(tau) || d >= 16777216) return false;
+          const [lo, hi] = u1 <= u2 ? [u1, u2] : [u2, u1];
+          return sampleTime(tr, kind, lo, tau) <= sampleTime(tr, kind, hi, tau);
+        }),
+        { numRuns: 500, seed: 0x5eed }
+      )
+    ).not.toThrow();
+  });
+
+  it('ignores the kind from K on', () => {
+    const rng = mulberry32(0x5eed);
+    let bad = 0;
+    for (const tau of [12, 13.7, 60]) {
+      for (let i = 0; i < 1000; i++) {
+        const u = rng();
+        if (sampleTime(t, 'advance', u, tau) !== sampleTime(t, 'expired', u, tau)) bad++;
+      }
+    }
+    expect(bad).toBe(0);
+  });
+
+  it('stays finite and Float32-exact on a flat tail (Review Focus 3)', () => {
+    const flat: Transition = { ...t, tail: { advance: 1e-20, exit: {} } };
+    for (const tau of [0, 13]) {
+      const d = sampleTime(flat, 'advance', 0.9, tau);
+      expect(Number.isFinite(d)).toBe(true);
+      expect(d).toBeLessThan(16777216);
+      expect(Math.fround(d)).toBe(d);
+      expect(monthsIn(0, d) + 1).toBe(CAP_MONTH);
+    }
+  });
+
+  it('puts every event in the next month when rho = 1', () => {
+    const tt: Transition = { ...t, tail: { advance: 0.75, exit: { expired: 0.25 } } };
+    for (const u of [0, 0.5, 1 - 1e-12]) {
+      expect(monthsIn(0, sampleTime(tt, 'advance', u, 20))).toBe(20);
+      expect(monthsIn(0, sampleTime(tt, 'expired', u, 20))).toBe(20);
+    }
+  });
+
+  it('is non-decreasing in uTime across the cap-month boundary for slow tails', () => {
+    let reached = 0;
+    let bad = 0;
+    for (const rho of [1e-6, 1e-5, 7e-5]) {
+      const slow: Transition = { ...t, tail: { advance: 0.8 * rho, exit: { expired: 0.2 * rho } } };
+      for (const tau of [0, 12, 12.5]) {
+        const day = (u: number) => sampleTime(slow, 'advance', u, tau);
+        const sweep = (from: number, to: number, step: number) => {
+          let prev = day(from);
+          for (let u = from + step; u < to; u += step) {
+            const d = day(u);
+            if (d < prev) bad++;
+            prev = d;
+          }
+        };
+        sweep(0, 1, 1e-4);
+        // The least u whose day is in the cap month, by bisection, then a fine sweep around it.
+        if (monthsIn(0, day(1 - 1e-12)) + 1 !== CAP_MONTH) continue;
+        reached++;
+        let lo = 0;
+        let hi = 1 - 1e-12;
+        for (let i = 0; i < 60; i++) {
+          const mid = (lo + hi) / 2;
+          if (monthsIn(0, day(mid)) + 1 === CAP_MONTH) hi = mid;
+          else lo = mid;
+        }
+        sweep(Math.max(0, hi - 2e-3), Math.min(1 - 1e-12, hi + 2e-3), 1e-7);
+      }
+    }
+    expect(reached).toBeGreaterThanOrEqual(6);
+    expect(bad).toBe(0);
+  });
+
+  it('keeps the tail kind split in the cap month for a very slow tail (rho = 1e-6)', () => {
+    const slow: Transition = { ...t, tail: { advance: 0.8e-6, exit: { expired: 0.2e-6 } } };
+    for (const tau of [0, 12]) {
+      const rng = mulberry32(0x5eed);
+      let atCap = 0;
+      let advance = 0;
+      for (let i = 0; i < 100000; i++) {
+        const kind = sampleKind(slow, rng(), tau);
+        const d = sampleTime(slow, kind, rng(), tau);
+        if (monthsIn(0, d) + 1 !== CAP_MONTH) continue;
+        atCap++;
+        if (kind === 'advance') advance++;
+      }
+      expect(atCap).toBeGreaterThan(10000);
+      expect(Math.abs(advance / atCap - 0.8)).toBeLessThanOrEqual(0.02);
+    }
+  });
+
+  describe('deep in the tail (R8 analogue)', () => {
+    const probe: Transition = { ...t, tail: { advance: 0.2, exit: { expired: 0.05 } } };
+    for (const tau of [120, 140]) {
+      it(`tau = ${tau}: month floor(tau) + 1 holds rho of the events, days spread`, () => {
+        const rng = mulberry32(0x5eed);
+        const N = 100000;
+        let first = 0;
+        const days = new Set<number>();
+        for (let i = 0; i < N; i++) {
+          const d = sampleTime(probe, 'advance', rng(), tau);
+          if (monthsIn(0, d) + 1 === Math.floor(tau) + 1) {
+            first++;
+            days.add(d);
+          }
+        }
+        expect(Math.abs(first / N - 0.25)).toBeLessThanOrEqual(0.01);
+        expect(days.size).toBeGreaterThanOrEqual(25);
+      });
+    }
+  });
+
+  it('rejects u outside [0, 1), tau outside [0, MAX_EVENT_MONTH - 1) and unknown kinds', () => {
+    for (const u of BAD_U) {
+      expect(() => sampleTime(t, 'advance', u, 0)).toThrow(RangeError);
+      expect(() => sampleTime(t, 'advance', u, 20)).toThrow(RangeError);
+    }
+    for (const tau of BAD_TAU) expect(() => sampleTime(t, 'advance', 0.5, tau)).toThrow(RangeError);
+  });
+
+  describe('per-transition constants are memoised, outputs unchanged', () => {
+    const cells: Transition[] = [];
+    for (const c of [cal, mini as unknown as Calibration]) {
+      for (const p of PATHWAYS) {
+        for (const s of pathwayStages(p)) {
+          const tr = (c.transitions[p] as Record<string, Transition | undefined>)[s];
+          if (tr) cells.push(tr);
+        }
+      }
+    }
+    function draws(of: Transition[]) {
+      const rng = mulberry32(0x5eed);
+      const out: [string, number][] = [];
+      for (let i = 0; i < 12000; i++) {
+        const tr = of[i % of.length];
+        const uKind = rng();
+        const uTime = rng();
+        const tau = rng() * (tr.months + 41);
+        const kind = sampleKind(tr, uKind, tau);
+        out.push([kind, sampleTime(tr, kind, uTime, tau)]);
+      }
+      return out;
+    }
+
+    it('a used transition and a structuredClone give identical draws', () => {
+      for (const tr of cells) sampleTime(tr, sampleKind(tr, 0.5, 0), 0.5, 0);
+      const cached = draws(cells);
+      expect(draws(cells.map((tr) => structuredClone(tr)))).toEqual(cached);
+      expect(draws(cells)).toEqual(cached);
     });
   });
 });

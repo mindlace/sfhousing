@@ -132,8 +132,8 @@ function syntheticCalibration(): Calibration {
   return parseCalibration(cal);
 }
 
-/** Fixed months already survived: before, at and beyond a cell's table end. */
-const MONTHS_ELAPSED = [0, 0, 1, 2, 5, 11, 12, 13, 20, 60];
+/** Fixed months already in the stage, whole and fractional: before, at and beyond a table end. */
+const MONTHS_ELAPSED = [0, 0, 1, 2, 5.5, 11, 12, 12.25, 20, 60];
 
 /** Fixed uniforms in [0, 1): both ends, then a scrambled grid of `mod`ths offset by `off`. */
 function uniform(i: number, step: number, mod: number, off: number): number {
@@ -146,17 +146,18 @@ function sampleCases(
   label: string,
   cal: Calibration,
   cells: Cell[],
-  grid: { step: number; mod: number; off: number }
+  grid: { step: number; mod: number; off: number; step2: number; off2: number }
 ): GoldenCase[] {
   const out: GoldenCase[] = [];
   for (let i = 0; i < 50; i++) {
     const cell = cells[i % cells.length];
     const u = uniform(i, grid.step, grid.mod, grid.off);
-    const m = MONTHS_ELAPSED[Math.floor(i / cells.length) % MONTHS_ELAPSED.length];
-    const r = sampleTransition(cal.transitions[cell.pathway][cell.stage]!, u, m);
+    const v = uniform(i, grid.step2, grid.mod, grid.off2);
+    const tau = MONTHS_ELAPSED[Math.floor(i / cells.length) % MONTHS_ELAPSED.length];
+    const r = sampleTransition(cal.transitions[cell.pathway][cell.stage]!, u, v, tau);
     out.push({
       fn: 'sampleTransition',
-      input: `${label} ${cell.pathway}.${cell.stage} u=${u} m=${m}`,
+      input: `${label} ${cell.pathway}.${cell.stage} u=${u} v=${v} tau=${tau}`,
       bits: [bits(r.days), bits(kindIndex(r.kind))]
     });
   }
@@ -267,8 +268,20 @@ export function modelGoldenCases(): GoldenCase[] {
   const cal = parseCalibration(small);
   const syn = syntheticCalibration();
   return [
-    ...sampleCases('small', cal, SMALL_CELLS, { step: 17, mod: 50, off: 0.0013 }),
-    ...sampleCases('synthetic', syn, syntheticCells(), { step: 23, mod: 97, off: 0.00071 }),
+    ...sampleCases('small', cal, SMALL_CELLS, {
+      step: 17,
+      mod: 50,
+      off: 0.0013,
+      step2: 21,
+      off2: 0.0029
+    }),
+    ...sampleCases('synthetic', syn, syntheticCells(), {
+      step: 23,
+      mod: 97,
+      off: 0.00071,
+      step2: 31,
+      off2: 0.00043
+    }),
     ...smallInitiationCases(cal),
     ...syntheticInitiationCases(syn),
     ...chanceCases('small', cal),
