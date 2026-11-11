@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fixtureCalibration } from './fixtures/calibration';
+import { fixtureCalibrationWithoutMarket } from './fixtures/calibration';
 import { fixtureMarketCalibration, liveMarketCalibration } from './fixtures/market';
 import { marketSentence } from './market-view';
 
@@ -26,6 +26,6 @@ describe('marketSentence', () => {
   });
 
   it('is null without a market', () => {
-    expect(marketSentence(fixtureCalibration(), 'all')).toBeNull();
+    expect(marketSentence(fixtureCalibrationWithoutMarket(), 'all')).toBeNull();
   });
 });

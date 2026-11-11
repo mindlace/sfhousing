@@ -713,7 +713,8 @@ test('the sources dialog lists every parameter and every data check', async ({ p
   const dialog = await openSources(page);
 
   // One entry per calibration parameter: each present transition, the Local Program proxy, and the
-  // six single-parameter models. The baseline, target and reference entries are not parameters.
+  // six single-parameter models, and today's market level (fixture-0 carries calibration.market).
+  // The baseline, target and reference entries are not parameters.
   const expected = [
     ...Object.entries(calibration.transitions).flatMap(([pathway, stages]) =>
       Object.keys(stages)
@@ -726,7 +727,8 @@ test('the sources dialog lists every parameter and every data check', async ({ p
     'src-revision-model',
     'src-pathway-for-new',
     'src-ppa-share',
-    'src-phase-gap'
+    'src-phase-gap',
+    'src-market-today'
   ].sort();
   const ids = await dialog.locator('article[id]').evaluateAll((els) => els.map((el) => el.id));
   const parameters = ids.filter((id) => !/^src-(baseline|target-|reference-)/.test(id)).sort();
