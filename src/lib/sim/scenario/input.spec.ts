@@ -19,7 +19,13 @@ import { PATHWAYS, type Calibration, type FeatureId } from '$lib/timelapse/types
 import { miniBin } from './fixtures/mini-bin';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniFunding, miniMarket } from './fixtures/mini-market';
-import { NO_MARKET_WARNING } from './market';
+import { resolveTerms, MARKET_TERMS } from '$lib/sim/finance';
+import {
+  FUNDING_WITHOUT_MARKET_WARNING,
+  NO_MARKET_WARNING,
+  marketLevel,
+  marketSteps
+} from './market';
 import {
   MINI_CAPPED_ID,
   MINI_CELLS,
@@ -273,7 +279,7 @@ describe('buildSimInput', () => {
     expect('market' in input).toBe(false);
   });
 
-  it("applies today's market as one step at asOf", () => {
+  it("applies today's market as one step at asOf, at the private level with funding", () => {
     const files = miniFiles();
     const market = miniMarket();
     files.calibration = { ...files.calibration, market };
@@ -286,8 +292,54 @@ describe('buildSimInput', () => {
       baselineFunding: miniFunding()
     };
     expect(buildSimInput(files).market).toEqual([
-      { from: files.projects.asOf, logOdds: market.today.all }
+      { from: files.projects.asOf, logOdds: market.today.private }
     ]);
+  });
+
+  describe('the four rows of the market and funding table (spec 4.14)', () => {
+    const rows = [
+      { market: true, funding: true, level: 'private', warnings: [] },
+      { market: true, funding: false, level: 'all', warnings: [] },
+      {
+        market: false,
+        funding: true,
+        level: 'all',
+        warnings: [NO_MARKET_WARNING, FUNDING_WITHOUT_MARKET_WARNING]
+      },
+      { market: false, funding: false, level: 'all', warnings: [NO_MARKET_WARNING] }
+    ] as const;
+    for (const row of rows) {
+      it(`market ${row.market ? 'present' : 'absent'}, funding ${row.funding ? 'present' : 'absent'}`, () => {
+        const files = miniFiles();
+        const m = miniMarket();
+        const funding = miniFunding();
+        files.calibration = {
+          ...files.calibration,
+          ...(row.market ? { market: m } : {}),
+          ...(row.funding ? { baselineFunding: funding } : {})
+        };
+        const warnings: string[] = [];
+        const input = buildSimInput(files, (w) => warnings.push(w));
+        expect(marketLevel(files.calibration)).toBe(row.level);
+        const steps = marketSteps(files.calibration.market, files.projects.asOf, row.level);
+        if (steps.length > 0) expect(input.market).toEqual(steps);
+        else expect('market' in input).toBe(false);
+        if (row.market && row.funding) {
+          expect(input.finance).toEqual({
+            pools: funding.pools,
+            programmes: funding.programmes,
+            off: [],
+            slope: m.slope.perCostShare,
+            terms: resolveTerms(MARKET_TERMS)
+          });
+          expect(input.finance!.pools).not.toBe(funding.pools);
+          expect(input.finance!.programmes).not.toBe(funding.programmes);
+        } else {
+          expect('finance' in input).toBe(false);
+        }
+        expect(warnings).toEqual(row.warnings);
+      });
+    }
   });
 
   it('rejects calibration fill levels that differ from FILL_LEVELS (A2)', () => {

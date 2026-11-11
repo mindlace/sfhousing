@@ -9,7 +9,13 @@ import type { ProjectsFile } from '$lib/timelapse/projects';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import type { Calibration, FeatureId } from '$lib/timelapse/types';
 import { isoOf } from './dates';
-import { marketLevel, marketSteps, NO_MARKET_WARNING } from './market';
+import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
+import {
+  FUNDING_WITHOUT_MARKET_WARNING,
+  marketLevel,
+  marketSteps,
+  NO_MARKET_WARNING
+} from './market';
 import { simEntity } from './rng';
 import type { SimInput } from './types';
 
@@ -62,15 +68,31 @@ export function buildSimInput(
         `${isoOf(projects.asOf)}; the run uses ${isoOf(projects.asOf)}`
     );
   }
-  if (!calibration.market) warn?.(NO_MARKET_WARNING);
+  if (!calibration.market) {
+    warn?.(NO_MARKET_WARNING);
+    if (calibration.baselineFunding) warn?.(FUNDING_WITHOUT_MARKET_WARNING);
+  }
   const market = marketSteps(calibration.market, projects.asOf, marketLevel(calibration));
+  const bf = calibration.baselineFunding;
+  const m = calibration.market;
   return {
     parcels,
     projects: projects.projects,
     calibration,
     asOf: projects.asOf,
     districtMaxStories: projects.districtMaxStories?.stories ?? null,
-    ...(market.length > 0 ? { market } : {})
+    ...(market.length > 0 ? { market } : {}),
+    ...(m && bf
+      ? {
+          finance: {
+            pools: structuredClone(bf.pools),
+            programmes: structuredClone(bf.programmes),
+            off: [],
+            slope: m.slope.perCostShare,
+            terms: resolveTerms(MARKET_TERMS)
+          }
+        }
+      : {})
   };
 }
 

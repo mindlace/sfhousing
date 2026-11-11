@@ -934,9 +934,9 @@ test("Results' Sources state today's market", async ({ page }) => {
   await gotoFzp(page);
   const results = await openScore(page);
   const paragraph = results.getByTestId('fzp-market');
-  await expect(paragraph).toContainText(String(observed.all));
+  await expect(paragraph).toContainText(String(observed.private));
   await expect(paragraph).toContainText(String(Math.round(implied)));
-  await expect(paragraph).toContainText(formatPercent(observed.all / implied));
+  await expect(paragraph).toContainText(formatPercent(observed.private / implied));
   await expectNoA11yViolations(page);
 
   await results.getByRole('button', { name: 'Where these numbers come from' }).click();

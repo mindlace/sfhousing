@@ -10,7 +10,7 @@ import {
   fixtureCalibrationWithoutMarket,
   tier3Calibration
 } from './fixtures/calibration';
-import { liveMarketCalibration } from './fixtures/market';
+import { LIVE_MARKET, liveMarketCalibration } from './fixtures/market';
 import { MARKET_HOLD_SENTENCE, MARKET_INTRO_SENTENCE } from './market-view';
 import { PROJECTS_JSON, PROJECTS_JSON_NO_RULES } from './fixtures/projects';
 import { TIMELINE_SCORE, TIMELINE_SCORE_NO_PHASING } from './fixtures/timeline-score';
@@ -455,6 +455,12 @@ describe('loadProjectsFile', () => {
   });
 });
 
+/** provenance.ts's two-decimal log-odds text, U+2212 for negatives. */
+const coefText = (x: number): string => {
+  const r = Number(x.toFixed(2));
+  return (r < 0 ? '\u2212' : '') + String(Math.abs(r));
+};
+
 describe("today's market", () => {
   const live = liveMarketCalibration();
   const liveSections = provenanceSections(live, TIMELINE_SCORE);
@@ -475,9 +481,15 @@ describe("today's market", () => {
     expect(e.title).toBe("Today's level");
     expect(e.research).toBe(false);
     expect(e.lines).toContain(TIER_LABEL[2]);
-    expect(e.lines).toContain('All starts: 52% of the average (log-odds −0.64). In force.');
-    const priv = e.lines.find((l) => l.startsWith('Private starts only: 47% of the average'));
-    expect(priv?.endsWith('Not in force until public funding is modelled.')).toBe(true);
+    const all = e.lines.find((l) =>
+      l.startsWith('All starts: 52% of the average (log-odds −0.64)')
+    );
+    expect(all?.endsWith('Not in force until public funding is modelled.')).toBe(true);
+    const privText = coefText(LIVE_MARKET.today.private);
+    expect(e.lines).toContain(
+      `Private starts only: 47% of the average (log-odds ${privText}). In force.`
+    );
+    expect(privText).toBe('−0.75');
     expect(e.lines).toContain(
       "Cross-check, not used: the Controller's development model, on its cost and price indices, puts today's odds at 27% of the 2007 to 2025 average (research or literature, tier 3)."
     );
