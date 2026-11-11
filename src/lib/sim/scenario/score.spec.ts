@@ -495,6 +495,22 @@ describe('score: targets, references, assembly (§4.5)', () => {
     expect(targetsOf(10, shown, [one]).map((x) => x.fraction[290])).toEqual([(10 + 113) / 1000]);
   });
 
+  it('REFERENCES keeps its ids, units, dates and measures', () => {
+    expect(REFERENCES.map((r) => r.id)).toEqual([
+      'planning-citywide',
+      'controller-high',
+      'controller-low'
+    ]);
+    expect(REFERENCES.map((r) => r.units)).toEqual([39000, 14646, 8504]);
+    expect(REFERENCES.map((r) => r.from)).toEqual([d(2026, 1, 12), d(2026, 1, 12), d(2026, 1, 12)]);
+    expect(REFERENCES.map((r) => r.by)).toEqual([d(2031, 1, 12), d(2045, 12, 31), d(2045, 12, 31)]);
+    expect(REFERENCES.map((r) => r.measure)).toEqual([
+      'planEffect.entitledNew',
+      'planEffect.completedNetNew',
+      'planEffect.completedNetNew'
+    ]);
+  });
+
   it('REFERENCES are the §4.5 table', () => {
     const PLANNING_URL =
       'https://sfplanning.org/sites/default/files/documents/citywide/fzp_land_use_committee_presentation-111725.pdf';
