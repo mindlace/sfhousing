@@ -42,7 +42,7 @@ import {
   type Award,
   type FinanceIndex
 } from './funding';
-import { scanLine, type App, type AwardTest } from './line';
+import { groupedLine, scanLine, type App, type AwardTest } from './line';
 import { Treasury, type LedgerEvent } from './money';
 import { parcelRankOf, piecewiseMonth, precomputeOf, regimeMonths, sizeCumAgainst } from './input';
 import { P, drawOn, simEntity, streamOf } from './rng';
@@ -597,7 +597,6 @@ export function fundedRunStats(): FundedRunStats {
  */
 export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts): void {
   stats = noStats();
-  if (opts.serving === 'grouped') throw new Error('fundedPass: grouped serving is not built yet');
   const fin = run.input.finance!;
   const fp = financePreOf(run.input);
   const f = fp.index;
@@ -605,7 +604,16 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
   const { candidates, entity } = pre;
   const rank = fp.rank;
   const job = newJob(run);
-  const line = scanLine();
+  // the capped pools of a bundle, for the grouped line's "shares a pool" (spec 4.17 item 5)
+  const poolsOf = (bundle: readonly number[]): number[] => {
+    const qs: number[] = [];
+    for (const g of bundle) {
+      const q = f.progPool[g];
+      if (f.capped[q] && !qs.includes(q)) qs.push(q);
+    }
+    return qs;
+  };
+  const line = (opts.serving ?? 'grouped') === 'grouped' ? groupedLine(poolsOf) : scanLine();
   const cal = new Calendar();
   const lotOf: (Lot | undefined)[] = new Array(parcels.count);
   const firstDay = run.asOf + 1;

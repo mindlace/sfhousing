@@ -1163,7 +1163,7 @@ export function reservationsOff(run: Run, holds: Holds, sink: Sink, candidates: 
 
 /** Options of `runEngineWith` (tests only; `runEngine` passes none). */
 export interface EngineOpts {
-  /** how the line is served: `'scan'` (the definition, spec 4.6) or `'grouped'` (spec 4.17) */
+  /** how the line is served: `'grouped'` (spec 4.17, the default) or `'scan'` (the definition, 4.6) */
   serving?: 'scan' | 'grouped';
   /** after every ledger event: the event and every pool's available money as the engine holds it */
   probe?: (e: LedgerEvent, available: readonly number[]) => void;

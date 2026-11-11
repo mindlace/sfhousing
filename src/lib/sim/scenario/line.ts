@@ -103,3 +103,249 @@ export function scanLine(): Line {
     }
   };
 }
+
+/** One group of the grouped line: applications with one award rule (spec 4.17 item 5). */
+interface Group {
+  key: string;
+  g: { kind: ProjectKind; bundle: readonly number[]; protoId: PrototypeId };
+  /** the capped pools of the bundle */
+  pools: readonly number[];
+  /** members in key order; removed ones stay until the next rebuild */
+  apps: App[];
+  /** leaves `cap + i`: member i's units, +Infinity once removed */
+  min: Float64Array;
+  /** the same leaves for the largest size, -Infinity once removed */
+  max: Float64Array;
+  cap: number;
+  /** the largest passing size against the money now; null when it must be found again */
+  H: number | null;
+}
+
+const groupKey = (a: App): string =>
+  `${a.kind}|${a.kind === 'market' ? a.protoId : ''}|${a.bundleKey}`;
+
+function setLeaf(gr: Group, i: number, lo: number, hi: number): void {
+  let n = gr.cap + i;
+  gr.min[n] = lo;
+  gr.max[n] = hi;
+  for (n >>= 1; n >= 1; n >>= 1) {
+    gr.min[n] = Math.min(gr.min[2 * n], gr.min[2 * n + 1]);
+    gr.max[n] = Math.max(gr.max[2 * n], gr.max[2 * n + 1]);
+  }
+}
+
+function buildTrees(gr: Group, live: (a: App) => boolean): void {
+  let cap = 1;
+  while (cap < Math.max(1, gr.apps.length)) cap *= 2;
+  gr.cap = cap;
+  gr.min = new Float64Array(2 * cap).fill(Infinity);
+  gr.max = new Float64Array(2 * cap).fill(-Infinity);
+  gr.apps.forEach((a, i) => {
+    if (!live(a)) return;
+    gr.min[cap + i] = a.units;
+    gr.max[cap + i] = a.units;
+  });
+  for (let n = cap - 1; n >= 1; n--) {
+    gr.min[n] = Math.min(gr.min[2 * n], gr.min[2 * n + 1]);
+    gr.max[n] = Math.max(gr.max[2 * n], gr.max[2 * n + 1]);
+  }
+}
+
+/** The first member at or after `from` whose units are at most `H`; -1 when none. */
+function firstAtMost(gr: Group, from: number, H: number): number {
+  const go = (n: number, l: number, r: number): number => {
+    if (r <= from || gr.min[n] > H) return -1;
+    if (n >= gr.cap) return l;
+    const m = (l + r) >> 1;
+    const left = go(2 * n, l, m);
+    return left >= 0 ? left : go(2 * n + 1, m, r);
+  };
+  return go(1, 0, gr.cap);
+}
+
+/**
+ * Serving by grouped bisection (spec 4.17 item 5), an implementation of the single scan of
+ * section 4.6. Applications with the same kind, bundle and (market) prototype share a group; in a
+ * group the award rule depends on an application only through its units and is monotone in them,
+ * so "passes" is "units ≤ H". A pass repeatedly takes the earliest application, in key order and
+ * after the last one decided, among the groups' first members at most H; confirms it with the
+ * award rule at its own units (an award the scan would give it); and finds H again for the groups
+ * that share a capped pool with the award. `poolsOf` gives a bundle's capped pools.
+ *
+ * The group of each application is the line's own record (`regroup` is called after the engine
+ * has overwritten the fields), never derived from the application's current fields.
+ */
+export function groupedLine(poolsOf: (bundle: readonly number[]) => readonly number[]): Line {
+  let items: (App | null)[] = [];
+  /** live applications: their group and index in it (-1 while a rebuild is due) */
+  const loc = new Map<App, { gr: Group; i: number }>();
+  /** live applications: their index in `items` */
+  const at = new Map<App, number>();
+  const groups = new Map<string, Group>();
+  let dead = 0;
+  let last: App | null = null;
+  let seq = 0;
+  /** a regroup moved an application between groups: rebuild before the next serve */
+  let stale = false;
+
+  function groupFor(a: App): Group {
+    const k = groupKey(a);
+    let gr = groups.get(k);
+    if (!gr) {
+      gr = {
+        key: k,
+        g: { kind: a.kind, bundle: a.bundle.slice(), protoId: a.protoId },
+        pools: poolsOf(a.bundle),
+        apps: [],
+        min: new Float64Array(2).fill(Infinity),
+        max: new Float64Array(2).fill(-Infinity),
+        cap: 1,
+        H: null
+      };
+      groups.set(k, gr);
+    }
+    return gr;
+  }
+
+  /** Every group again from the line in key order: drops removed entries and empty groups. */
+  function rebuild(): void {
+    const next: App[] = [];
+    for (const a of items) if (a) next.push(a);
+    items = next;
+    dead = 0;
+    groups.clear();
+    loc.clear();
+    at.clear();
+    next.forEach((a, k) => at.set(a, k));
+    for (const a of next) {
+      const gr = groupFor(a);
+      loc.set(a, { gr, i: gr.apps.length });
+      gr.apps.push(a);
+    }
+    for (const gr of groups.values()) buildTrees(gr, () => true);
+    stale = false;
+  }
+
+  function append(gr: Group, a: App): void {
+    const i = gr.apps.length;
+    gr.apps.push(a);
+    loc.set(a, { gr, i });
+    if (i >= gr.cap) buildTrees(gr, (x) => loc.get(x)?.gr === gr);
+    else setLeaf(gr, i, a.units, a.units);
+  }
+
+  /** The largest whole size from 1 to the group's largest at which the award rule passes now. */
+  function threshold(gr: Group, test: AwardTest): number {
+    const lo0 = gr.min[1];
+    const hi0 = gr.max[1];
+    if (lo0 === Infinity) return 0;
+    if (!test(gr.g, lo0)) return lo0 - 1;
+    if (test(gr.g, hi0)) return hi0;
+    let lo = lo0;
+    let hi = hi0;
+    while (hi - lo > 1) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (test(gr.g, mid)) lo = mid;
+      else hi = mid;
+    }
+    return lo;
+  }
+
+  /** The index of the first member of `gr` with `seq` above `after`. */
+  function startAfter(gr: Group, after: number): number {
+    let lo = 0;
+    let hi = gr.apps.length;
+    while (lo < hi) {
+      const m = (lo + hi) >> 1;
+      if (gr.apps[m].seq <= after) lo = m + 1;
+      else hi = m;
+    }
+    return lo;
+  }
+
+  return {
+    get size() {
+      return at.size;
+    },
+    add(app) {
+      if (
+        last &&
+        (app.applied < last.applied || (app.applied === last.applied && app.key < last.key))
+      )
+        throw new RangeError('line.add: applications must arrive in (applied, key) order');
+      app.seq = seq++;
+      last = app;
+      at.set(app, items.length);
+      items.push(app);
+      if (stale) {
+        // placed by the rebuild before the next serve; counted live meanwhile
+        loc.set(app, { gr: groupFor(app), i: -1 });
+        return;
+      }
+      append(groupFor(app), app);
+    },
+    remove(app) {
+      const k = at.get(app);
+      if (k === undefined) return;
+      const where = loc.get(app)!;
+      at.delete(app);
+      loc.delete(app);
+      items[k] = null;
+      dead++;
+      if (where.i >= 0) setLeaf(where.gr, where.i, Infinity, -Infinity);
+    },
+    regroup(app) {
+      const where = loc.get(app);
+      if (!where) return;
+      const k = groupKey(app);
+      if (k === where.gr.key) {
+        // the same group: only the size may have changed
+        if (where.i >= 0) setLeaf(where.gr, where.i, app.units, app.units);
+        return;
+      }
+      // another group: it keeps its key, and the groups are rebuilt in key order before serving
+      if (where.i >= 0) setLeaf(where.gr, where.i, Infinity, -Infinity);
+      loc.set(app, { gr: groupFor(app), i: -1 });
+      stale = true;
+    },
+    apps() {
+      return items.filter((a): a is App => a !== null);
+    },
+    serve(test, take) {
+      if (stale || dead * 2 > items.length) rebuild();
+      for (const gr of groups.values()) gr.H = null;
+      let n = 0;
+      /** the `seq` of the last application decided in this pass, as the scan's position */
+      let after = -1;
+      for (;;) {
+        let best: App | null = null;
+        let bestGr: Group | null = null;
+        for (const gr of groups.values()) {
+          if (gr.min[1] === Infinity) continue;
+          gr.H ??= threshold(gr, test);
+          const i = firstAtMost(gr, startAfter(gr, after), gr.H);
+          if (i < 0) continue;
+          const a = gr.apps[i];
+          if (!best || a.seq < best.seq) {
+            best = a;
+            bestGr = gr;
+          }
+        }
+        if (!best || !bestGr) break;
+        after = best.seq;
+        const award = test(
+          { kind: best.kind, bundle: best.bundle, protoId: best.protoId },
+          best.units
+        );
+        if (!award) continue;
+        take(best, award);
+        n++;
+        const touched = new Set(poolsOf(award.set));
+        for (const gr of groups.values()) {
+          if (gr.H !== null && gr.pools.some((q) => touched.has(q))) gr.H = null;
+        }
+      }
+      return n;
+    }
+  };
+}

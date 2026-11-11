@@ -863,3 +863,68 @@ describe('review focus', () => {
     }
   });
 });
+
+describe('grouped serving gives the single scan’s runs (spec 4.17 item 5, spec 6)', () => {
+  const CITY = 300027;
+  const scarce = { city: [once(asOf, CITY * 30), once(asOf + 700, CITY * 25)] };
+  const inputs: { name: string; input: SimInput }[] = [
+    { name: 'miniFinance', input: mini({ finance: miniFinance(asOf) }) },
+    {
+      name: 'tinyStack, scarce City money, mini city',
+      input: mini({ finance: tinyStack({ asOf, ...scarce }) })
+    },
+    {
+      name: 'tinyStack with a bond, mini city',
+      input: mini({
+        finance: tinyStack({
+          asOf,
+          city: [once(asOf, CITY * 60)],
+          bond: { share: 0.5, from: asOf, inflows: [once(asOf, CITY * 120)] }
+        })
+      })
+    },
+    {
+      name: 'tinyStack re-priced: a programme opening and ending, a pool off and on, a regime',
+      input: mini({
+        finance: tinyStack({
+          asOf,
+          ...scarce,
+          cityTo: asOf + 900,
+          bond: {
+            share: 0.2,
+            from: asOf + 300,
+            to: asOf + 1500,
+            inflows: [once(asOf + 300, CITY * 40)]
+          },
+          off: [{ pool: 't-state', from: asOf + 400, to: asOf + 1100 }]
+        }),
+        regimes: [{ day: asOf + 600, parcels: base.parcels }]
+      })
+    },
+    {
+      name: 'tinyStack on tinyQueue, scarce',
+      input: withFinance(
+        tinyQueue({ logOdds: Array(5).fill(0) }),
+        tinyStack({ asOf, city: [once(asOf, 1_600_000), once(asOf + 800, 4_000_000)] })
+      )
+    }
+  ];
+
+  for (const { name, input } of inputs) {
+    it(`${name}: seeds 1 to 20, the same schedules and ledgers`, () => {
+      let awards = 0;
+      for (const seed of seeds(20)) {
+        const scan = runCollect(input, seed, H, { serving: 'scan' });
+        const grouped = runCollect(input, seed, H, { serving: 'grouped' });
+        expect(grouped.order, `seed ${seed} order`).toEqual(scan.order);
+        expect(grouped.schedules, `seed ${seed} schedules`).toEqual(scan.schedules);
+        expect(grouped.ledger, `seed ${seed} ledger`).toEqual(scan.ledger);
+        expect(grouped.reservations).toEqual(scan.reservations);
+        awards += funded(scan).length;
+        // the default is grouped
+        expect(runCollect(input, seed, H).ledger).toEqual(grouped.ledger);
+      }
+      expect(awards).toBeGreaterThan(0);
+    }, 300_000);
+  }
+});
