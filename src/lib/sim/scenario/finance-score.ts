@@ -3,15 +3,29 @@
  * docs/superpowers/specs/2026-11-09-finance-score-design.md). Pure; worker-safe.
  *
  * Tiers first (spec 4.1): `tierContext` builds a run's `TierCtx` once per loaded input, and
- * `tiersOf` splits one schedule's final units by income tier.
+ * `tiersOf` splits one schedule's final units by income tier; `tierSeries` (spec 4.2) sums them
+ * by month with the month rules of `addNet`.
  */
+import { RHNA_TIER_TARGETS } from '$lib/scoreboard';
+import type { ProjectsFile } from '$lib/timelapse/projects';
+import type { Day } from '$lib/timelapse/time';
 import {
   INCOME_TIERS,
   type IncomeTier,
+  type Provenance,
   type ResolvedTerms,
   type TierUnits
 } from '$lib/timelapse/types';
-import { fundBundle, inclusionaryUnits, prototypeFor, type BundleItem } from '../finance';
+import {
+  ASSUMED_TENURE,
+  INCLUSIONARY,
+  fundBundle,
+  inclusionaryUnits,
+  prototypeFor,
+  type BundleItem
+} from '../finance';
+import { isoOf } from './dates';
+import { monthIndexer } from './score';
 import type { Schedule, SimInput } from './types';
 
 export type { LedgerEvent } from './money';
@@ -199,3 +213,131 @@ export function tiersOf(sc: Schedule, ctx: TierCtx): TierUnits {
   const unrecorded = Math.min(ctx.affordable.get(sc.projectId) ?? 0, u);
   return { veryLow: 0, low: 0, moderate: 0, aboveModerate: u - unrecorded, unrecorded };
 }
+
+/**
+ * The cumulative homes by income tier at the end of each month (spec 4.2), with exactly the month
+ * rules of `addNet` (`score.ts`): at a construction start after `asOf`, `-existingUnits` from
+ * `aboveModerate`; at completion, `tiersOf(sc, ctx)`. Both at `idx(day)`, no clamp. The five
+ * fields of month `i` sum to `shownSeries(...)[i].completedNet`.
+ */
+export function tierSeries(
+  schedules: Schedule[],
+  ctx: TierCtx,
+  asOf: Day,
+  horizon: Day,
+  months: Day[]
+): TierUnits[] {
+  const n = months.length;
+  const idx = monthIndexer(months, horizon);
+  const delta = TIER_FIELDS.map(() => new Int32Array(n));
+  const AM = TIER_FIELDS.indexOf('aboveModerate');
+  for (const sc of schedules) {
+    const c = sc.entered.construction;
+    if (c !== undefined && c > asOf) delta[AM][idx(c)] -= sc.existingUnits;
+    if (sc.end.kind === 'complete') {
+      const t = tiersOf(sc, ctx);
+      const i = idx(sc.end.day);
+      TIER_FIELDS.forEach((f, k) => {
+        delta[k][i] += t[f];
+      });
+    }
+  }
+  const run = TIER_FIELDS.map(() => 0);
+  const out: TierUnits[] = [];
+  for (let i = 0; i < n; i++) {
+    for (let k = 0; k < run.length; k++) run[k] += delta[k][i];
+    out.push({
+      veryLow: run[0],
+      low: run[1],
+      moderate: run[2],
+      aboveModerate: run[3],
+      unrecorded: run[4]
+    });
+  }
+  return out;
+}
+
+/** `rhnaCompletedNet.byTier` as given; all zeros when a projects file has none (spec 4.3). */
+export function tierBaselineOf(rhna: ProjectsFile['rhnaCompletedNet']): TierUnits {
+  return rhna.byTier ?? { veryLow: 0, low: 0, moderate: 0, aboveModerate: 0, unrecorded: 0 };
+}
+
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December'
+];
+
+/** `completed since 30 June 2022 (net)`: the day without a leading zero, the month in English. */
+export function tierBaselineLabel(since: Day): string {
+  const [y, m, d] = isoOf(since).split('-').map(Number);
+  return `completed since ${d} ${MONTH_NAMES[m - 1]} ${y} (net)`;
+}
+
+/**
+ * The sources of "Homes by income level" (spec 4.3), in the spec's order. Entry 6 is constant:
+ * the dataset's own `rhnaCompletedNet.provenance` is run data, shown beside it with
+ * `tierBaselineLabel`.
+ */
+export const TIER_SOURCES: readonly Provenance[] = [
+  {
+    tier: 1,
+    label: 'RHNA 2023-2031 targets by income tier',
+    sources: [{ ...RHNA_TIER_TARGETS[0].source }],
+    method:
+      "San Francisco's allocation by income tier in the Final RHNA Plan 2023-2031, Table 4 " +
+      '(82,069 homes in all); the Budget Analyst, Exhibit D, carries the same split.'
+  },
+  {
+    tier: 2,
+    label: 'Funded affordable homes',
+    sources: [],
+    method:
+      "A funded affordable project's homes are counted in the income tiers of the programmes " +
+      'that pay it, in proportion to what each pays (its grant-equivalent), rounded to whole ' +
+      'homes. If none of them pays anything, the programmes count equally. The proportions are ' +
+      "a rule applied to the programmes' recorded tiers (the MOHCD pipeline); counting " +
+      'the programmes equally when none pays anything is a tier 4 convention.'
+  },
+  {
+    tier: 1,
+    label: 'Private projects',
+    sources: [...INCLUSIONARY.provenance.sources, ...ASSUMED_TENURE.provenance.sources],
+    method: `${INCLUSIONARY.provenance.method} ${ASSUMED_TENURE.provenance.method}`
+  },
+  {
+    tier: 0,
+    label: 'Pipeline projects',
+    sources: [{ label: 'DataSF Planning Projects', url: 'https://data.sf.gov/d/qvu5-m3a2' }],
+    method:
+      'A project already in the pipeline counts the affordable homes its Planning record ' +
+      'proposes, with their income tier not recorded, and the rest as above moderate. The ' +
+      'Planning field is never blank, so a recorded 0 may mean the affordable homes were not ' +
+      'stated rather than that there are none.'
+  },
+  {
+    tier: 2,
+    label: 'Existing homes',
+    sources: [],
+    method:
+      'Homes demolished for a new project are taken off above moderate: the records do not ' +
+      'say whether any were income-restricted.'
+  },
+  {
+    tier: 0,
+    label: 'Homes completed since the start of the RHNA period, by income tier (net)',
+    sources: [],
+    method:
+      "The dataset's rhnaCompletedNet.byTier; its provenance is the dataset's own " +
+      'rhnaCompletedNet.provenance, shown beside this entry with the label of tierBaselineLabel.'
+  }
+];

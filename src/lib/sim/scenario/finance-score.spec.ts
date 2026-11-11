@@ -1,6 +1,6 @@
 // finance-score: homes by income tier for one schedule (spec 4.1; section 6 tests 1-8).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fundBundle, projectDollars, prototypeFor } from '../finance';
+import { ASSUMED_TENURE, INCLUSIONARY, fundBundle, projectDollars, prototypeFor } from '../finance';
 import { MINI_AS_OF, MINI_HORIZON } from './fixtures/mini-projects';
 import { tinyQueue, tinyStack } from './fixtures/tiny-queue';
 import {
@@ -13,9 +13,20 @@ import {
   pipeline,
   schedule
 } from './fixtures/finance-score-cases';
-import { allocatePhases, splitByShares, tierContext, tiersOf } from './finance-score';
+import type { TierUnits } from '$lib/timelapse/types';
+import { dayOf } from './dates';
+import {
+  TIER_SOURCES,
+  allocatePhases,
+  splitByShares,
+  tierBaselineLabel,
+  tierContext,
+  tierSeries,
+  tiersOf
+} from './finance-score';
+import { monthIndexer, monthsOf, shownSeries } from './score';
 import { simulate } from './simulate';
-import type { SimInput } from './types';
+import type { Schedule, SimInput } from './types';
 
 vi.mock('../finance', async (orig) => {
   const m = await orig<typeof import('../finance')>();
@@ -233,5 +244,94 @@ describe('splitByShares', () => {
   it('places unrecorded after above moderate in the tie order', () => {
     expect(splitByShares(1, s(0, 0, 0, 0.5, 0.5))).toEqual(T(0, 0, 0, 1, 0));
     expect(splitByShares(1, s(0.5, 0, 0, 0, 0.5))).toEqual(T(1, 0, 0, 0, 0));
+  });
+});
+
+describe('tierSeries (spec 6 tests 10-11)', () => {
+  const AS_OF = MINI_AS_OF;
+  const months = monthsOf(AS_OF, MINI_HORIZON);
+  const idx = monthIndexer(months, MINI_HORIZON);
+  const at = (series: TierUnits[], d: number) => series[idx(d)];
+  const run = (scs: Schedule[], ctx = caseCtx()) =>
+    tierSeries(scs, ctx, AS_OF, MINI_HORIZON, months);
+  const three = (over: Partial<Schedule> = {}) =>
+    schedule({
+      units: [25],
+      existingUnits: 3,
+      entered: { construction: AS_OF + 40 },
+      end: { kind: 'complete', day: AS_OF + 400 },
+      ...over
+    });
+
+  it('nets existing homes at construction and adds the split at completion (test 10)', () => {
+    const s = run([three()]);
+    expect(s).toHaveLength(months.length);
+    expect(s[idx(AS_OF + 40) - 1]).toEqual(T(0, 0, 0, 0, 0));
+    expect(at(s, AS_OF + 40)).toEqual(T(0, 0, 0, -3, 0));
+    expect(s[idx(AS_OF + 400) - 1]).toEqual(T(0, 0, 0, -3, 0));
+    expect(at(s, AS_OF + 400)).toEqual(T(0, 4, 1, 17, 0));
+    expect(s[s.length - 1]).toEqual(T(0, 4, 1, 17, 0));
+  });
+
+  it('subtracts nothing for a construction on or before asOf (a pipeline row)', () => {
+    const s = run([three({ entered: { construction: AS_OF - 10 } })]);
+    expect(s[0]).toEqual(T(0, 0, 0, 0, 0));
+    expect(s[s.length - 1]).toEqual(T(0, 4, 1, 17 + 3, 0));
+  });
+
+  it('keeps the netting to the horizon for an exit after construction', () => {
+    const s = run([
+      three({ end: { kind: 'exit', day: AS_OF + 100, stage: 'construction', reason: 'withdrawn' } })
+    ]);
+    expect(s[s.length - 1]).toEqual(T(0, 0, 0, -3, 0));
+  });
+
+  it('two demolitions before any completion give aboveModerate -7 (review focus 5)', () => {
+    const a = three({
+      existingUnits: 3,
+      end: { kind: 'exit', day: AS_OF + 100, stage: 'construction', reason: 'withdrawn' }
+    });
+    const b = three({
+      existingUnits: 4,
+      end: { kind: 'exit', day: AS_OF + 100, stage: 'construction', reason: 'withdrawn' }
+    });
+    const s = run([a, b]);
+    expect(s[s.length - 1]).toEqual(T(0, 0, 0, -7, 0));
+  });
+
+  it('agrees with completedNet every month on the hand schedules (test 11)', () => {
+    const ctx = caseCtx([['PRJ:p', 4]]);
+    const scs: Schedule[] = [
+      ...Object.values(MARKET),
+      ...Object.values(A).filter((s) => s !== A.unknown),
+      pipeline('PRJ:p', [10, 7]),
+      three(),
+      three({ existingUnits: 9, entered: { construction: AS_OF + 5 } }),
+      three({ entered: { construction: AS_OF - 10 } }),
+      three({ end: { kind: 'exit', day: AS_OF + 100, stage: 'construction', reason: 'withdrawn' } })
+    ];
+    const tiers = run(scs, ctx);
+    const shown = shownSeries({ schedules: scs, masters: [] }, AS_OF, MINI_HORIZON, months);
+    tiers.forEach((t, i) => expect(sum(t)).toBe(shown[i].completedNet));
+  });
+});
+
+describe('tierBaselineOf, tierBaselineLabel, TIER_SOURCES (spec 6 test 13)', () => {
+  it('labels the baseline', () => {
+    expect(tierBaselineLabel(19173)).toBe('completed since 30 June 2022 (net)');
+    expect(tierBaselineLabel(dayOf(2023, 1, 5))).toBe('completed since 5 January 2023 (net)');
+  });
+
+  it('has the six sources in order', () => {
+    expect(TIER_SOURCES.map((p) => p.tier)).toEqual([1, 2, 1, 0, 2, 0]);
+    expect(TIER_SOURCES[0].sources[0].url).toContain('abag.ca.gov');
+    expect(TIER_SOURCES[2].sources).toEqual([
+      ...INCLUSIONARY.provenance.sources,
+      ...ASSUMED_TENURE.provenance.sources
+    ]);
+    expect(TIER_SOURCES[2].method).toContain(INCLUSIONARY.provenance.method);
+    expect(TIER_SOURCES[2].method).toContain(ASSUMED_TENURE.provenance.method);
+    expect(TIER_SOURCES[1].method).toContain('tier 4 convention');
+    expect(TIER_SOURCES[3].method).toContain('may mean');
   });
 });

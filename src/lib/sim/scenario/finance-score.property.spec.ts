@@ -11,7 +11,12 @@ import {
   pipeline,
   schedule
 } from './fixtures/finance-score-cases';
-import { TIER_FIELDS, tiersOf, type TierCtx } from './finance-score';
+import { TIER_FIELDS, tierContext, tierSeries, tiersOf, type TierCtx } from './finance-score';
+import { MINI_AS_OF, MINI_HORIZON } from './fixtures/mini-projects';
+import { monthsOf, shownSeries } from './score';
+import { simulateDetailed } from './simulate';
+import { financeGoldenInput } from './simulate.finance.golden.cases';
+import { GOLDEN_HORIZON, goldenInput } from './simulate.golden.cases';
 import type { Schedule } from './types';
 
 const unitsArb = fc.integer({ min: 0, max: 2000 });
@@ -112,6 +117,71 @@ describe('tiersOf sums to the final units (spec 6 test 9)', () => {
         expect(TIER_FIELDS.reduce((s, f) => s + r[f], 0)).toBe(u);
       }),
       { seed: 9, numRuns: 500 }
+    );
+  });
+});
+
+describe('tierSeries sums to completedNet (spec 6 test 11)', () => {
+  it('holds on the golden inputs, seeds 1-5', () => {
+    for (const input of [goldenInput(), financeGoldenInput()]) {
+      const months = monthsOf(input.asOf, GOLDEN_HORIZON);
+      const ctx = tierContext(input);
+      for (const seed of [1, 2, 3, 4, 5]) {
+        const run = simulateDetailed(input, seed, GOLDEN_HORIZON);
+        const tiers = tierSeries(run.schedules, ctx, input.asOf, GOLDEN_HORIZON, months);
+        const shown = shownSeries(run, input.asOf, GOLDEN_HORIZON, months);
+        const ok = tiers.every(
+          (t, i) => TIER_FIELDS.reduce((a, f) => a + t[f], 0) === shown[i].completedNet
+        );
+        expect(ok).toBe(true);
+      }
+    }
+  });
+
+  const months = monthsOf(MINI_AS_OF, MINI_HORIZON);
+  const dayArb = fc.integer({ min: MINI_AS_OF - 200, max: MINI_HORIZON - 1 });
+  const schedArb: fc.Arbitrary<Schedule> = fc
+    .record({
+      origin: fc.constantFrom('simulated' as const, 'pipeline' as const),
+      existing: fc.integer({ min: 0, max: 30 }),
+      construction: fc.option(dayArb, { nil: undefined }),
+      completion: fc.integer({ min: MINI_AS_OF, max: MINI_HORIZON }),
+      endKind: fc.constantFrom('complete', 'exit', 'open'),
+      units: fc.array(unitsArb, { minLength: 1, maxLength: 3 })
+    })
+    .map((r) =>
+      schedule({
+        projectId: `sim:prop:${r.existing}`,
+        origin: r.origin,
+        units: r.units,
+        existingUnits: r.existing,
+        entered: r.construction === undefined ? {} : { construction: r.construction },
+        end:
+          r.endKind === 'complete'
+            ? { kind: 'complete', day: r.completion }
+            : r.endKind === 'exit'
+              ? { kind: 'exit', stage: 'construction', reason: 'withdrawn', day: r.completion }
+              : { kind: 'open' }
+      })
+    );
+
+  it('holds on random sets of hand-built schedules', () => {
+    fc.assert(
+      fc.property(fc.array(schedArb, { minLength: 0, maxLength: 8 }), (scs) => {
+        const ctx = caseCtx();
+        const tiers = tierSeries(scs, ctx, MINI_AS_OF, MINI_HORIZON, months);
+        const shown = shownSeries(
+          { schedules: scs, masters: [] },
+          MINI_AS_OF,
+          MINI_HORIZON,
+          months
+        );
+        const ok = tiers.every(
+          (t, i) => TIER_FIELDS.reduce((a, f) => a + t[f], 0) === shown[i].completedNet
+        );
+        expect(ok).toBe(true);
+      }),
+      { seed: 11, numRuns: 200 }
     );
   });
 });

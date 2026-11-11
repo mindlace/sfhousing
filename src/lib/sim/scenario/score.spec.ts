@@ -2,7 +2,7 @@
 // Schedules and Masters with known days give exact per-month deltas for every series; the mini
 // fixture gives the phasing table, the split identity and demolished-once.
 import { describe, expect, it } from 'vitest';
-import { M1_TARGETS } from '$lib/scoreboard';
+import { M1_TARGETS, RHNA_TIER_TARGETS } from '$lib/scoreboard';
 import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import {
@@ -32,11 +32,14 @@ import {
   phasingOf,
   planEffectOf,
   shownSeries,
-  targetsOf
+  targetsOf,
+  tierTargetsOf
 } from './score';
+import { tierBaselineOf } from './finance-score';
 import { simulateDetailed, type Master } from './simulate';
 import type { Schedule, SimInput, TimelineScore } from './types';
 
+const T0 = { veryLow: 0, low: 0, moderate: 0, aboveModerate: 0, unrecorded: 0 };
 const AS_OF = MINI_AS_OF; // 2026-10-16
 const H = MINI_HORIZON; // 2050-12-31
 const MONTHS = monthsOf(AS_OF, H);
@@ -623,6 +626,76 @@ const miniCalibration = (): Calibration =>
 const miniProjects = () => parseProjectsFile(miniProjectsJson(), { onInvalid() {} });
 const miniInput = (cal: Calibration = miniCalibration()): SimInput =>
   buildSimInput({ parcels: miniCity().parcels, projects: miniProjects(), calibration: cal });
+
+describe('score: tiers in the assembled score (finance-score spec 6 test 12)', () => {
+  const shown = shownOf([P1, S2]);
+  const byTier = { veryLow: 100, low: 200, moderate: 300, aboveModerate: 634, unrecorded: 7 };
+  const base = miniProjects().rhnaCompletedNet;
+  const rhna = { ...base, units: 1241, byTier };
+  const completed = shown.map((r) => ({
+    veryLow: 1,
+    low: 2,
+    moderate: 3,
+    aboveModerate: r.completedNet - 11,
+    unrecorded: 5
+  }));
+  const parts = () => ({
+    months: MONTHS,
+    shown,
+    planEffect: [],
+    planEffectBand: [],
+    band: MONTHS.map(() => ({ p10: 1, p50: 2, p90: 3 })),
+    baseline: rhna,
+    phasing: phasingOf(miniProjects().projects, AS_OF)
+  });
+
+  it('adds four tier targets in RHNA_TIER_TARGETS order', () => {
+    const score = assembleScore({ ...parts(), tiers: { completed, baseline: byTier } });
+    const tiers = score.tiers!;
+    expect(tiers.completed).toBe(completed);
+    expect(tiers.baseline).toBe(byTier);
+    expect(tiers.targets.map((t) => t.target.id)).toEqual(RHNA_TIER_TARGETS.map((t) => t.id));
+    expect(tiers.targets).toHaveLength(4);
+    for (const x of tiers.targets) {
+      expect(x.deadline).toBe(d(2031, 1, 31));
+      const t = x.target.tier!;
+      expect(x.fraction).toEqual(completed.map((c) => (byTier[t] + c[t]) / x.target.units));
+    }
+  });
+
+  it('weights to the total less the unrecorded homes', () => {
+    const score = assembleScore({ ...parts(), tiers: { completed, baseline: byTier } });
+    const total = score.targets[0];
+    for (const i of [0, 100, 290, N - 1]) {
+      const weighted = score.tiers!.targets.reduce(
+        (sum, x) => sum + x.fraction[i] * x.target.units,
+        0
+      );
+      expect(Math.abs(weighted - (82069 * total.fraction[i] - 12))).toBeLessThan(1e-6);
+    }
+  });
+
+  it('tierTargetsOf is uncapped and a negative aboveModerate gives a negative fraction', () => {
+    const t = tierTargetsOf(T0, [{ ...T0, aboveModerate: -7 }]);
+    expect(t[3].fraction).toEqual([-7 / 35471]);
+    expect(t[0].fraction).toEqual([0]);
+  });
+
+  it('has no tiers or money key unless passed, and money passes through', () => {
+    const none = assembleScore(parts());
+    expect('tiers' in none).toBe(false);
+    expect('money' in none).toBe(false);
+    const withTiers = assembleScore({ ...parts(), tiers: { completed, baseline: byTier } });
+    expect('money' in withTiers).toBe(false);
+    const money = { pools: [] } as unknown as NonNullable<TimelineScore['money']>;
+    expect(assembleScore({ ...parts(), money }).money).toBe(money);
+  });
+
+  it('tierBaselineOf: all zeros without byTier, the object with it', () => {
+    expect(tierBaselineOf({ ...base, units: 5 })).toEqual(T0);
+    expect(tierBaselineOf(rhna)).toEqual(byTier);
+  });
+});
 
 describe('score: phasing (§4.5, seed-independent)', () => {
   it('counts masters and phases and lists unenriched rows by units, then id', () => {

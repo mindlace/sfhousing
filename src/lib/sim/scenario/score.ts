@@ -2,10 +2,10 @@
 // prefix sums of per-month deltas: every event adds its delta at `idx(day)` (an O(1) table), so
 // the cost is O(events + months), never a per-month scan over the schedules. Pure and worker-safe.
 import type { Target } from '$lib/scoreboard';
-import { M1_TARGETS } from '$lib/scoreboard/targets';
+import { M1_TARGETS, RHNA_TIER_TARGETS } from '$lib/scoreboard/targets';
 import type { InFlightProject, ProjectsFile } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
-import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
+import { STAGE_ORDER, type Stage, type TierUnits } from '$lib/timelapse/types';
 import { addMonths, dayOf, firstOfMonth } from './dates';
 import type { Master } from './simulate';
 import type { Schedule, TargetProgressAt, TimelineScore } from './types';
@@ -305,6 +305,21 @@ export function targetsOf(
   }));
 }
 
+/**
+ * One entry per `RHNA_TIER_TARGETS` row (spec 4.3): `(baseline[t] + completed[i][t]) / units`,
+ * uncapped; `unrecorded` homes belong to no tier's fraction.
+ */
+export function tierTargetsOf(baseline: TierUnits, completed: TierUnits[]): TargetProgressAt[] {
+  return RHNA_TIER_TARGETS.map((target) => {
+    const t = target.tier!;
+    return {
+      target,
+      deadline: RHNA_DEADLINE,
+      fraction: completed.map((c) => (baseline[t] + c[t]) / target.units)
+    };
+  });
+}
+
 const FZP_EFFECTIVE = dayOf(2026, 1, 12);
 // A literal copy of pipeline/enrichment/market.json `source` (src must not read pipeline files);
 // pipeline/test/enrichment/market-json.test.ts pins the equality.
@@ -394,9 +409,13 @@ export function assembleScore(p: {
   phasing: TimelineScore['phasing'];
   targets?: readonly Target[];
   references?: TimelineScore['references'];
+  /** finance-score: the shown run's tier series and baseline; no `tiers` key without it */
+  tiers?: { completed: TierUnits[]; baseline: TierUnits };
+  /** finance-score: the run's money; no `money` key without it */
+  money?: TimelineScore['money'];
 }): TimelineScore {
   const { units, since, provenance } = p.baseline;
-  return {
+  const score: TimelineScore = {
     months: p.months,
     shown: p.shown,
     planEffect: p.planEffect,
@@ -407,4 +426,13 @@ export function assembleScore(p: {
     targets: targetsOf(units, p.shown, p.targets),
     references: p.references ?? REFERENCES
   };
+  if (p.tiers) {
+    score.tiers = {
+      completed: p.tiers.completed,
+      baseline: p.tiers.baseline,
+      targets: tierTargetsOf(p.tiers.baseline, p.tiers.completed)
+    };
+  }
+  if (p.money) score.money = p.money;
+  return score;
 }
