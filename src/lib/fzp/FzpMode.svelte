@@ -87,6 +87,7 @@
     type LeverStatusState
   } from '$lib/sim-page/lever-status';
   import { spawnSimWorker } from '$lib/sim/client';
+  import { marketLevel } from '$lib/sim/scenario/market';
   import type { LimitOwner } from '$lib/sim/levers/source';
   import type { SimLevers } from '$lib/sim/levers/types';
   import type { SimPhase } from '$lib/sim-page/run-phase.svelte';
@@ -100,6 +101,7 @@
   import type { Day } from '$lib/timelapse/time';
   import { installFzpDebug, type SfhFzpDebug } from './debug';
   import { HighWater } from './high-water.svelte';
+  import { marketSentence } from './market-view';
   import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
   import SimResults from './SimResults.svelte';
   import { DEFAULT_SPEED } from './playback';
@@ -1163,6 +1165,7 @@
     {copy}
     {capacity}
     stale={leverFailed}
+    market={calibration ? marketSentence(calibration, marketLevel(calibration)) : null}
   />
 {/snippet}
 

@@ -245,6 +245,7 @@ function simPanel(perCell: number, seed = 0x5eed): PanelResult {
     events,
     eventsOffPanel: 0,
     eventsCovered: 0,
+    starts: [],
     maxAtRisk: { potentialRatio: 4, storiesGap: 4 },
     mask: {
       exposure: [10, 0, 0, 0, 0, 0, 0],
@@ -317,9 +318,10 @@ describe('fitInitiation', () => {
     expect(model.provenance.window).toEqual(['2007-01-01', '2025-12-31']);
     expect(model.provenance.n).toBe(panel.events.record + panel.events.permit);
     expect(model.provenance.method).toContain(
-      'this is not a market adjustment; basis coefficient = '
+      "it is the average market of the panel years. Today's market is a separate shift, `calibration.market.today`, which the simulation adds to every lot's log-odds; basis coefficient = "
     );
     expect(model.provenance.method).toContain(String(report.basis));
+    expect(model.provenance.method).not.toContain('this is not a market adjustment');
   });
 
   it('publishes the merged edges', () => {
@@ -436,6 +438,20 @@ describe('fitInitiation', () => {
     expect(fr.basis).toBeNull();
     expect(fr.events.total).toBe(small.events.record + small.events.permit);
     expect(fr.fzpPerYear).toBeCloseTo(3 * 12 * initiationHazard(fm, FZP_BASE), 9);
+    expect(fr.recentCells.length).toBeGreaterThan(0);
+    for (const c of fr.recentCells) expect(c.z).toBe(fm.intercept);
+  });
+
+  it('recentCells: the 2023-2025 merged cells reproduce the implied starts of those years', () => {
+    const { report: r } = fitInitiation(simPanel(30_000), LIVE_CAL, fzpApp, NO_CTX);
+    expect(r.recentCells.length).toBeGreaterThan(0);
+    let sum = 0;
+    for (const c of r.recentCells) {
+      expect(c.exposure).toBeGreaterThan(0);
+      sum += c.exposure * (1 / (1 + exp(-c.z)));
+    }
+    const implied = r.impliedPerYear[2023] + r.impliedPerYear[2024] + r.impliedPerYear[2025];
+    expect(sum).toBeCloseTo(implied, 9);
   });
 });
 

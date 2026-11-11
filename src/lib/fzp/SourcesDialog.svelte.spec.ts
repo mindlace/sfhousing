@@ -5,6 +5,7 @@ import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { fixtureCalibration } from './fixtures/calibration';
+import { liveMarketCalibration } from './fixtures/market';
 import { PROJECTS_JSON, PROJECTS_JSON_NO_RULES } from './fixtures/projects';
 import { FIX_ASOF, TIMELINE_SCORE, TIMELINE_SCORE_NO_PHASING } from './fixtures/timeline-score';
 import { formatDate } from './format';
@@ -334,5 +335,15 @@ describe('how the records were checked', () => {
     await expect.poll(() => byId('src-quality').textContent).toContain(QUALITY_EMPTY);
     expect(byId('src-quality').querySelector('table')).toBeNull();
     expect(byId('src-quality').textContent).toContain(QUALITY_PARCEL_SENTENCE);
+  });
+});
+
+describe("today's market", () => {
+  it('shows its heading and no research note under it', async () => {
+    await setup({ calibration: liveMarketCalibration() });
+    await openIt();
+    const section = byId('src-market');
+    expect(section.textContent).toContain("Today's market");
+    expect(section.textContent).not.toContain(NOT_SF_NOTE);
   });
 });

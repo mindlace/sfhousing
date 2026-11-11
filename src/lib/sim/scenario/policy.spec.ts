@@ -7,6 +7,7 @@ import { parseProjectsFile } from '$lib/timelapse/projects';
 import { PATHWAYS, type Calibration, type ExitReason, type Stage } from '$lib/timelapse/types';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniCity } from './fixtures/mini-parcels';
+import { miniMarket } from './fixtures/mini-market';
 import { MINI_AS_OF, MINI_HORIZON, miniProjectsJson } from './fixtures/mini-projects';
 import { buildSimInput, precomputeOf } from './input';
 import { applyPolicies, baseZoning, type PolicyOp } from './policy';
@@ -234,5 +235,15 @@ describe('calibration edits alone change outcomes (T9 seam)', () => {
     }
     expect(sim).toBe(0);
     expect(pipeline).toBeGreaterThan(0);
+  });
+});
+
+describe('applyPolicies keeps the market', () => {
+  it('passes input.market through untouched', () => {
+    const files = miniFiles();
+    files.calibration = { ...files.calibration, market: miniMarket() };
+    const input = buildSimInput(files);
+    expect(input.market).toBeDefined();
+    expect(applyPolicies([baseZoning], input).market).toBe(input.market);
   });
 });

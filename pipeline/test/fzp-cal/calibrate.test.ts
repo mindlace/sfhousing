@@ -1,4 +1,5 @@
 // The pure core `calibrate` and its report (stage-calibration spec §4.3–§4.10).
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { FILL_LEVELS, type ScenarioParcels } from '../../../src/lib/data/scenario-codec';
@@ -19,13 +20,31 @@ import {
   type CalOutput
 } from '../../lib/fzp-cal/calibrate';
 import { FIXTURE_CAL } from '../../lib/fzp-cal/config';
+import { marketModel, type MarketInput } from '../../lib/fzp-cal/market';
+import { logistic } from '../../lib/fzp-cal/irls';
+import { datasf } from '../../lib/fzp-cal/provenance';
+import { parseMarketFile } from '../../enrichment/market-schema';
+import { parseFundingFile } from '../../enrichment/funding-schema';
+import { MOHCD_RAW } from '../fixtures/mini/projects-raw';
 import { PANEL_FEATURES, type PanelSource, type PanelYearRow } from '../../lib/fzp-cal/panel';
-import { REPORT_SECTIONS, aliasGroups, num } from '../../lib/fzp-cal/report';
+import { REPORT_SECTIONS, aliasGroups, marketSection, num } from '../../lib/fzp-cal/report';
 import { SC_RULE_IDS, type PermitRow } from '../../lib/fzp-cal/types';
+import { purgeCensor } from '../../lib/fzp-cal/purge';
+import { buildSpells, normalise, qualifies } from '../../lib/fzp-cal/spells';
 import { isoToDay } from '../../project-records/multiphase';
 import { readParcelsBin } from '../../steps/scenario';
 
 const d = isoToDay;
+const MARKET_JSON_PATH = join(import.meta.dirname, '../../enrichment/market.json');
+const marketFile = parseMarketFile(
+  JSON.parse(readFileSync(MARKET_JSON_PATH, 'utf8')),
+  'market.json'
+);
+const FUNDING_JSON_PATH = join(import.meta.dirname, '../fixtures/mini/enrichment/funding.json');
+const fundingFile = parseFundingFile(
+  JSON.parse(readFileSync(FUNDING_JSON_PATH, 'utf8')),
+  FUNDING_JSON_PATH
+);
 const AS_OF = d('2026-06-30');
 const FIXTURE_BIN = join(
   import.meta.dirname,
@@ -133,7 +152,10 @@ beforeAll(async () => {
     parcels,
     inFlight,
     fillLevels: FILL_LEVELS,
-    datasetVersion: 'test-0'
+    datasetVersion: 'test-0',
+    market: { file: marketFile, path: 'market.json' },
+    funding: fundingFile,
+    mohcd: MOHCD_RAW
   };
   a = await calibrate(input, FIXTURE_CAL);
   b = await calibrate(input, FIXTURE_CAL);
@@ -152,7 +174,10 @@ describe('calibrate', () => {
       'size',
       'revision',
       'streamlinedForLocalProgram',
-      'phaseGap'
+      'phaseGap',
+      'market',
+      'affordableRoutes',
+      'baselineFunding'
     ]);
     expect(a.json).toBe(JSON.stringify(JSON.parse(a.json)));
     // No whitespace between tokens: none outside string literals.
@@ -164,6 +189,25 @@ describe('calibrate', () => {
       );
     }
     expect(a.calibration.asOf).toBe(AS_OF);
+  });
+
+  it('emits the fixture market after phaseGap, today in F2 order', () => {
+    const today = a.calibration.market!.today;
+    expect(Object.keys(today)).toEqual([
+      'all',
+      'private',
+      'years',
+      'observed',
+      'implied',
+      'provenance'
+    ]);
+    expect(today.all).toBe(-0.693147);
+    expect(today.private).toBe(-0.798508);
+    expect(today.observed).toEqual({ all: 10, private: 9 });
+    expect(today.implied).toBe(20);
+    expect(today.years).toEqual([2023, 2025]);
+    expect(today.provenance.tier).toBe(4);
+    expect(Object.keys(a.calibration.market!)).toEqual(['today', 'crossCheck', 'slope']);
   });
 
   it('is deterministic: two calls give identical json, report, counts and tallies', () => {
@@ -194,7 +238,22 @@ describe('calibrate', () => {
       'calibration.panel.noStart',
       'calibration.panel.noPermit',
       'calibration.panel.outOfRange',
-      'calibration.purge.windows'
+      'calibration.purge.windows',
+      'calibration.market.recentStarts',
+      'calibration.market.recentPrivate',
+      'calibration.market.recentAffordable',
+      'calibration.market.recentNoRecord',
+      'calibration.market.recentUnknown',
+      'calibration.market.weightStarts',
+      'calibration.market.unbinnedHomes',
+      'calibration.market.unbinnedStories',
+      'calibration.affordable.histories',
+      'calibration.affordable.fallback',
+      'calibration.funding.mohcdRows',
+      'calibration.funding.impliedHomesPerYear',
+      'calibration.funding.observedHomesPerYear',
+      'calibration.siteChoice.affordableOnPanel',
+      'calibration.siteChoice.privateOnPanel'
     ];
     for (const k of want) expect(a.counts, k).toHaveProperty(k);
     for (const p of PATHWAYS) {
@@ -213,7 +272,12 @@ describe('calibrate', () => {
     expect(Object.keys(a.tallies)).toEqual([...SC_RULE_IDS]);
   });
 
-  it('writes the ten report sections in order, with the window and method counts', () => {
+  it('writes the thirteen report sections in order, with the window and method counts', () => {
+    expect(REPORT_SECTIONS).toHaveLength(13);
+    expect(REPORT_SECTIONS.slice(-2)).toEqual([
+      '## 12. Publicly funded housing: routes, stages and baseline funding',
+      '## 13. Where publicly funded housing starts'
+    ]);
     const lines = a.reportMd.split('\n');
     expect(lines[0]).toBe('# Calibration report: test-0');
     const at = REPORT_SECTIONS.map((h) => lines.findIndex((l) => l === h || l.startsWith(`${h}:`)));
@@ -228,6 +292,26 @@ describe('calibrate', () => {
     expect(a.reportMd).toMatch(/\| 6 \| [0-9.e-]+ \| [0-9.e-]+ \|/);
     expect(a.reportMd).toContain('transitions.permitOnly.construction.tailProvenance');
     expect(a.reportMd).toContain('Parcel-years excluded by roll year');
+    // Section 11 in fixture mode: the Mode line, then the weights and the cross-check only.
+    expect(lines).toContain("## 11. Today's market");
+    expect(a.reportMd).toContain(
+      "Mode: fixture (today's levels fixed at ln 0.5 and ln 0.45 from 10 and 9 observed against 20 implied; tier 4)"
+    );
+    expect(a.reportMd).toContain('typicalUncoveredShare');
+    const s11 = a.reportMd.slice(a.reportMd.indexOf("## 11. Today's market"));
+    expect(s11).not.toContain('Reproduction check');
+    expect(s11).not.toContain('Hold-out');
+    // Section 8 lists the four market provenances.
+    for (const path of [
+      'market.today.provenance',
+      'market.crossCheck.provenance',
+      'market.slope.provenance',
+      'market.slope.crossChecks.provenance'
+    ]) {
+      expect(a.reportMd).toMatch(
+        new RegExp(`\\| ${path.replaceAll('.', '\\.')} \\| 4 \\| fixture:`)
+      );
+    }
     // C4: the window section lists the partial calendar years (as-of year 2026 is partial).
     expect(a.reportMd).toMatch(
       /Partial calendar years[^\n]*\n\n\| stage \| year \| to \| entries \|[\s\S]*\| 2026 \| 2026-06-30 \|/
@@ -242,6 +326,121 @@ describe('calibrate', () => {
     expect(app.features(i).potentialRatio).toBe(parcels.potentialRatio.fzp[i]);
     expect(app.features(i).storiesGap).toBe(parcels.storiesGap.fzp[i]);
     expect(app.features(i).lotAreaM2).toBe(parcels.lotAreaM2[i]);
+  });
+});
+
+const FILL_TIER_SENTENCE =
+  "Grants fill a project's uncovered cost in three tiers: federal, then state, then the City's pools in proportion to their shares; with the whole baseline and nothing added, every grant pays its full share.";
+const SITE_SENTENCE =
+  'A ratio near 1 means funded projects started on lots like those private projects chose (the draw of F9 (d)); well above 1 means they took the likeliest lots; well below 1, lots private projects pass over. No San Francisco estimate of displacement exists.';
+
+/** The report section that starts at `heading`, up to the next `## ` heading. */
+function section(md: string, heading: string): string {
+  const at = md.indexOf(`\n${heading}\n`);
+  if (at < 0) throw new Error(`no section ${heading}`);
+  const next = md.indexOf('\n## ', at + heading.length + 1);
+  return md.slice(at + 1, next < 0 ? undefined : next);
+}
+
+describe('publicly funded housing (finance-data spec 4.4, 4.6-4.9)', () => {
+  it('emits affordableRoutes as the tier 4 fallback with pathwayForNew shares', () => {
+    const r = a.calibration.affordableRoutes!;
+    const f = a.calibration.pathwayForNew;
+    expect(r.provenance.tier).toBe(4);
+    expect([r.discretionary, r.streamlined, r.permitOnly]).toEqual([
+      f.discretionary,
+      f.streamlined,
+      f.permitOnly
+    ]);
+    expect(a.counts['calibration.affordable.fallback']).toBe(1);
+    expect(a.counts['calibration.affordable.histories']).toBe(0);
+  });
+
+  it('emits the fixture baseline funding: minHomes 2, every provenance tier 4', () => {
+    const bf = a.calibration.baselineFunding!;
+    expect(bf.programmes.every((p) => p.minHomes === 2)).toBe(true);
+    expect(bf.provenance.every((p) => p.tier === 4)).toBe(true);
+    expect(bf.check.provenance.tier).toBe(4);
+    expect(a.counts['calibration.funding.mohcdRows']).toBe(2);
+    expect(a.counts['calibration.funding.impliedHomesPerYear']).toBe(20);
+    expect(a.counts['calibration.funding.observedHomesPerYear']).toBe(25);
+  });
+
+  it('tallies the undeclared MOHCD homes', () => {
+    expect(a.tallies['sc.funding.ami-undeclared']).toMatchObject({ fired: 1, of: 8 });
+  });
+
+  it('warns of the routes fallback on a live profile only, once', async () => {
+    expect(a.warnings.filter((w) => w.startsWith('affordableRoutes:'))).toEqual([]);
+    const live = await calibrate(input, { ...FIXTURE_CAL, name: 'live' });
+    expect(live.warnings.filter((w) => w.startsWith('affordableRoutes:'))).toEqual([
+      'affordableRoutes: only 0 100% affordable histories (fewer than 30); the pathway mix of all new projects is used, labelled tier 4'
+    ]);
+    expect(live.reportMd).toContain('affordableRoutes: only 0 100% affordable histories');
+  });
+
+  it('writes sections 12 and 13 after section 11', () => {
+    const md = a.reportMd;
+    const s11 = md.indexOf("\n## 11. Today's market\n");
+    const s12 = md.indexOf(
+      '\n## 12. Publicly funded housing: routes, stages and baseline funding\n'
+    );
+    const s13 = md.indexOf('\n## 13. Where publicly funded housing starts\n');
+    expect(s11).toBeGreaterThan(0);
+    expect(s12).toBeGreaterThan(s11);
+    expect(s13).toBeGreaterThan(s12);
+    const twelve = section(
+      md,
+      '## 12. Publicly funded housing: routes, stages and baseline funding'
+    );
+    expect(twelve).toContain(FILL_TIER_SENTENCE);
+    expect(twelve).toContain('ami_undeclared');
+    expect(twelve).toContain('minHomes');
+    expect(twelve).toContain('fallback');
+    expect(twelve).toContain('| 1, federal | baseline-federal-tax-credits |');
+    expect(twelve).toContain('| 2, state | baseline-state |');
+    expect(twelve).toContain('| 3, City | baseline-city-debt |');
+    expect(twelve).toContain('uncapped');
+    const thirteen = section(md, '## 13. Where publicly funded housing starts');
+    expect(thirteen).toContain(SITE_SENTENCE);
+    expect(md).not.toMatch(/Infinity|NaN|\bnull\b|undefined/);
+  });
+
+  it('indexes the new provenances in section 8', () => {
+    const n = a.calibration.baselineFunding!.provenance.length;
+    expect(a.reportMd).toMatch(/\| affordableRoutes\.provenance \| 4 \|/);
+    for (let i = 0; i < n; i++) {
+      expect(a.reportMd).toContain(`| baselineFunding.provenance[${i}] | 4 |`);
+    }
+    expect(a.reportMd).toContain('| baselineFunding.check.provenance | 4 |');
+  });
+
+  it('joins the stage table on the calibration spells by history id, split-part ids included', async () => {
+    const id = 'PRJ:1:BP:A';
+    // PRJ:H02: permit-only, through permitFiled, permitIssued and construction.
+    const histories = input.histories.map((h, i) =>
+      i === 2 ? { ...h, id, planningProposed: { units: 12, affordable: 12 } } : h
+    );
+    const out = await calibrate({ ...input, histories }, FIXTURE_CAL);
+    expect(out.counts['calibration.affordable.histories']).toBe(1);
+    // The spells calibrate fits on, rebuilt here: the cohort's are those of `id`.
+    const q = histories.filter(qualifies).sort((x, y) => (x.id < y.id ? -1 : 1));
+    const p = purgeCensor(normalise(q, AS_OF).norm, FIXTURE_CAL);
+    const { spells } = buildSpells(p.norm, AS_OF);
+    const mine = spells.filter((s) => s.projectId === id && s.stage !== 'preApplication');
+    expect(mine.length).toBeGreaterThan(0);
+    const twelve = section(
+      out.reportMd,
+      '## 12. Publicly funded housing: routes, stages and baseline funding'
+    );
+    const rows = twelve
+      .split('\n')
+      .filter((l) =>
+        /^\| (filed|entitled|permitFiled|permitIssued|construction) \| 100% affordable \|/.test(l)
+      );
+    expect(rows).toHaveLength(5);
+    const total = rows.reduce((acc, l) => acc + Number(l.split(' | ')[2]), 0);
+    expect(total).toBe(mine.length);
   });
 });
 
@@ -367,5 +566,91 @@ describe('report helpers', () => {
       ['yearBuilt bin 0 (≥ 0)', 'landUseClass bin 1 (≥ 4)'],
       ['yearBuilt bin 1 (≥ 1800)', 'landUseClass bin 0 (≥ 0)']
     ]);
+  });
+});
+
+/** A live market input over 2023-2025 (129 starts), with a given hold-out. */
+function liveMarket(holdOut: MarketInput['holdOut']) {
+  const z = Math.log(1e-4 / (1 - 1e-4));
+  const observed = [40, 43, 46];
+  const impliedPerYear: Record<number, number> = {};
+  const observedPerYear: Record<number, number> = {};
+  for (let y = 2007; y <= 2025; y++) {
+    impliedPerYear[y] = 100;
+    observedPerYear[y] = 7;
+  }
+  const starts: MarketInput['starts'] = [];
+  for (const y of [2021, 2022]) {
+    for (let i = 0; i < 7; i++)
+      starts.push({ year: y, basis: 0, cohort: 'private', homes: 30, stories: 5 });
+  }
+  const recentCells: MarketInput['recentCells'] = [];
+  observed.forEach((n, i) => {
+    const y = 2023 + i;
+    impliedPerYear[y] = 1e6 * logistic(z);
+    observedPerYear[y] = n;
+    recentCells.push({ exposure: 1e6, z });
+    for (let k = 0; k < n; k++) {
+      starts.push({
+        year: y,
+        basis: 0,
+        cohort: k === 0 ? 'affordable' : 'private',
+        homes: 10,
+        stories: 4
+      });
+    }
+  });
+  return marketModel({
+    fixture: false,
+    impliedPerYear,
+    observedPerYear,
+    recentCells,
+    holdOut,
+    starts,
+    enrichment: { file: marketFile, path: 'market.json' },
+    initiationSources: [datasf('planningProjects')]
+  });
+}
+
+describe("report section 11: today's market (live)", () => {
+  it('prints the recent-years table, the levels, the checks, the weights and the cross-check', () => {
+    const mk = liveMarket({
+      fitThrough: 2022,
+      rows: [
+        { year: 2023, observed: 40, predicted: 120 },
+        { year: 2024, observed: 43, predicted: 130 },
+        { year: 2025, observed: 46, predicted: 136.399 }
+      ],
+      observed: 129,
+      predicted: 386.399
+    });
+    const s = marketSection(mk.market, mk.report).join('\n');
+    expect(s.startsWith("## 11. Today's market")).toBe(true);
+    expect(s).toContain(
+      '| year | observed | affordable cohort | private | implied (published hazard) | hold-out predicted |'
+    );
+    expect(s).toContain('| 2025 | 46 | 1 | 45 | 100 | 136.399 |');
+    expect(s).toContain(`today.all = ${mk.market.today.all}`);
+    expect(s).toContain('**Reproduction check**');
+    expect(s).toContain('against 129 observed');
+    expect(s).toContain('**Hold-out, report only**');
+    expect(s).toContain('386.399');
+    expect(s).toContain('-1.09706');
+    expect(s).toContain('(OD-F11)');
+    expect(s).toContain('| prototype | rule | private starts 2021-2025 | weight |');
+    expect(s).toContain('typicalUncoveredShare');
+    expect(s).toContain(`crossCheck.logOdds = ${mk.market.crossCheck.logOdds}`);
+    expect(s).not.toContain('Mode: fixture');
+    expect(s).not.toMatch(/Infinity|NaN|\bnull\b|undefined/);
+    expect(s.split('\n').filter((l) => /^#+ /.test(l))).toEqual(["## 11. Today's market"]);
+  });
+
+  it('prints the hold-out error and none for a missing predicted', () => {
+    const mk = liveMarket({ error: 'singular' });
+    const s = marketSection(mk.market, mk.report).join('\n');
+    expect(s).toContain('singular');
+    expect(s).toContain('| 2023 | 40 | 1 | 39 | 100 | none |');
+    expect(s).toContain('market: the hold-out refit failed: singular');
+    expect(s).not.toMatch(/Infinity|NaN|\bnull\b|undefined/);
   });
 });

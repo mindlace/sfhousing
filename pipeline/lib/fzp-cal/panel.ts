@@ -8,7 +8,8 @@ import type { Duck } from '../duck';
 import { isoToDay } from '../../project-records/multiphase';
 import type { ParcelId } from '../../../src/lib/data/parcel';
 import { binIndex } from '../../../src/lib/timelapse/model';
-import type { Day, FeatureId } from '../../../src/lib/timelapse/types';
+import type { Day, FeatureId, ProjectHistory } from '../../../src/lib/timelapse/types';
+import { startCohort, type StartCohort } from '../affordable-cohort';
 import { PLANNING_START } from './window';
 import { CalibrationError, type NormHistory, type PermitRow } from './types';
 
@@ -58,6 +59,33 @@ export type PanelSource = {
   read(rollYear: number): Promise<PanelYearRow[]>;
 };
 
+/** What a counted start keeps besides its year and basis (market-baseline spec §4.2, §4.3). */
+interface StartMeta {
+  cohort: StartCohort;
+  homes: number | null;
+  stories: number | null;
+}
+
+/** One counted panel event (market-baseline spec §4.2). */
+export interface PanelStart {
+  year: number;
+  basis: 0 | 1;
+  cohort: StartCohort;
+  /** gross proposed homes (market-baseline spec §4.3) */
+  homes: number | null;
+  /** `ProjectHistory.storiesProposed` */
+  stories: number | null;
+}
+
+/** First of unitsAt.filed, .permitFiled, .complete that is a positive finite number, else null. */
+export function startHomes(h: ProjectHistory): number | null {
+  for (const s of ['filed', 'permitFiled', 'complete'] as const) {
+    const v = h.unitsAt[s];
+    if (v !== undefined && Number.isFinite(v) && v > 0) return v;
+  }
+  return null;
+}
+
 /**
  * The result of `initiationEvents`. A history lands in at most one exclusion count, checked in
  * this order: `noStart`, then `noPermit`, then `noParcel` (a history with neither a permit
@@ -82,6 +110,8 @@ export interface InitiationEvents {
    * not marked, not a panel event
    */
   eventsCovered: number;
+  /** per placed event, keyed `${parcel}|${month}`: only events written to the timeline */
+  placed: Map<string, StartMeta>;
 }
 
 /** The raw first new-construction permit filing day P per project id (all rows, superseded too). */
@@ -96,7 +126,7 @@ export function firstFiledDays(permits: PermitRow[]): Map<string, Day> {
 }
 
 /** F: the earliest raw `entered` day of preApplication, filed and permitFiled. */
-function firstEntered(h: NormHistory): Day | undefined {
+export function firstEntered(h: NormHistory): Day | undefined {
   let f: Day | undefined;
   for (const s of ['preApplication', 'filed', 'permitFiled'] as const) {
     const v = h.src.entered[s];
@@ -106,7 +136,7 @@ function firstEntered(h: NormHistory): Day | undefined {
 }
 
 /** The largest lot, ties to the smaller id (a NaN area counts as the smallest). */
-function primaryParcel(ids: ParcelId[], lotArea: (id: ParcelId) => number): ParcelId {
+export function primaryParcel(ids: ParcelId[], lotArea: (id: ParcelId) => number): ParcelId {
   let best = ids[0];
   let bestArea = lotArea(best);
   if (Number.isNaN(bestArea)) bestArea = -Infinity;
@@ -138,7 +168,8 @@ export function initiationEvents(
     noParcel: 0,
     noStart: 0,
     outOfRange: 0,
-    eventsCovered: 0
+    eventsCovered: 0,
+    placed: new Map()
   };
   const arr = (p: ParcelId): Int8Array => {
     let t = res.timeline.get(p);
@@ -150,7 +181,7 @@ export function initiationEvents(
   };
 
   const sorted = [...norm].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const events: { parcel: ParcelId; month: number; code: number }[] = [];
+  const events: { parcel: ParcelId; month: number; code: number; meta: StartMeta }[] = [];
   for (const h of sorted) {
     const f = firstEntered(h);
     if (f === undefined) {
@@ -184,12 +215,22 @@ export function initiationEvents(
       if (from <= to) t.fill(COVERED, from, to + 1);
     }
     if (month < 0 || month >= PANEL_MONTHS) res.outOfRange++;
-    else events.push({ parcel: primaryParcel(h.parcelIds, lotArea), month, code });
+    else {
+      const meta: StartMeta = {
+        cohort: startCohort(h.src.planningProposed),
+        homes: startHomes(h.src),
+        stories: h.src.storiesProposed
+      };
+      events.push({ parcel: primaryParcel(h.parcelIds, lotArea), month, code, meta });
+    }
   }
   for (const e of events) {
     const t = arr(e.parcel);
     if (t[e.month] !== 0) res.eventsCovered++;
-    else t[e.month] = e.code;
+    else {
+      t[e.month] = e.code;
+      res.placed.set(`${e.parcel}|${e.month}`, e.meta);
+    }
   }
   return res;
 }
@@ -221,6 +262,8 @@ export interface PanelResult {
   /** timeline events whose parcel-year has no panel row or is not hostable_base */
   eventsOffPanel: number;
   eventsCovered: number;
+  /** one per counted event, in (year, parcel id, month) order; length = events.record + events.permit */
+  starts: PanelStart[];
   /** maxima over at-risk parcel-years; -Infinity if none */
   maxAtRisk: { potentialRatio: number; storiesGap: number };
   /** per mask bit 0..6, at-risk parcel-months / event months whose row has the bit set */
@@ -233,7 +276,7 @@ export interface PanelResult {
  */
 export async function aggregatePanel(
   src: PanelSource,
-  ev: Pick<InitiationEvents, 'timeline' | 'eventsCovered'>,
+  ev: Pick<InitiationEvents, 'timeline' | 'eventsCovered' | 'placed'>,
   edges: Record<FeatureId, number[]>
 ): Promise<PanelResult> {
   for (const f of PANEL_FEATURES) {
@@ -257,6 +300,7 @@ export async function aggregatePanel(
     events: { record: 0, permit: 0 },
     eventsOffPanel: 0,
     eventsCovered: ev.eventsCovered,
+    starts: [],
     maxAtRisk: { potentialRatio: -Infinity, storiesGap: -Infinity },
     mask: {
       exposure: new Array<number>(MASK_BITS).fill(0),
@@ -300,7 +344,17 @@ export async function aggregatePanel(
         const basis =
           v === EVENT_PERMIT ? 1 : v === EVENT_RECORD ? 0 : month < RECORD_MONTH ? 1 : 0;
         exposure[basis]++;
-        if (v > 0) events[basis]++;
+        if (v > 0) {
+          events[basis]++;
+          // rows ascend by mapblklot and months ascend: push order is (year, parcel, month)
+          const meta = ev.placed.get(`${r.mapblklot}|${month}`);
+          if (!meta) {
+            throw new CalibrationError(
+              `panel: event without a start record: ${r.mapblklot} ${month}`
+            );
+          }
+          res.starts.push({ year: y, basis, ...meta });
+        }
       }
       const rowExposure = exposure[0] + exposure[1];
       if (rowExposure === 0) continue;

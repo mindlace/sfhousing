@@ -596,7 +596,7 @@
       "id": "datasf-dev-pipeline",
       "label": "DataSF SF Development Pipeline",
       "license": "CC0-1.0",
-      "retrievedAt": "2026-10-17T18:33:02.652Z",
+      "retrievedAt": "2026-11-10T21:59:48.792Z",
       "rowCount": 1917,
       "upstreamVersion": "Fri, 28 Aug 2026 22:33:26 GMT"
     },
@@ -699,20 +699,20 @@
     {
       "files": [
         {
-          "archiveKey": "sources/74d3bb5ba2077bf67811617c752306b7f533fa90c8c9204a53c62863f2f529f3.json",
-          "bytes": 833737,
+          "archiveKey": "sources/ce3205ab8ad4992889c230b3cbae4c5c7d91f405e1faf74026585f0b5261bd3f.json",
+          "bytes": 1520549,
           "name": "datasf-housing-production.page-000.json",
-          "sha256": "74d3bb5ba2077bf67811617c752306b7f533fa90c8c9204a53c62863f2f529f3",
-          "url": "https://data.sf.gov/resource/xdht-4php.json?%24select=bpa%2Cblocklot%2Cform_no%2Cnet_units_completed%2Cfirst_completion_date&%24order=%3Aid&%24limit=50000&%24offset=0"
+          "sha256": "ce3205ab8ad4992889c230b3cbae4c5c7d91f405e1faf74026585f0b5261bd3f",
+          "url": "https://data.sf.gov/resource/xdht-4php.json?%24select=bpa%2Cblocklot%2Cform_no%2Cnet_units_completed%2Cfirst_completion_date%2Cextremely_low_income%2Cvery_low_income%2Clow_income%2Cmoderate_income%2Caffordable_units&%24order=%3Aid&%24limit=50000&%24offset=0"
         }
       ],
       "homepage": "https://data.sf.gov/d/xdht-4php",
       "id": "datasf-housing-production",
       "label": "DataSF Housing Production",
       "license": "public-domain",
-      "retrievedAt": "2026-10-17T18:33:02.187Z",
-      "rowCount": 6157,
-      "upstreamVersion": "Fri, 16 Oct 2026 05:11:48 GMT"
+      "retrievedAt": "2026-11-10T21:59:48.399Z",
+      "rowCount": 6168,
+      "upstreamVersion": "Fri, 06 Nov 2026 05:04:35 GMT"
     },
     {
       "files": [
@@ -752,6 +752,24 @@
       "retrievedAt": "2026-10-16T17:02:18.063Z",
       "rowCount": 154476,
       "upstreamVersion": "Thu, 04 Apr 2024 15:35:26 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/295f88092668ee3014821fccf711fa561b16522ca5eb6e39c3ecb36e624d89f5.json",
+          "bytes": 94531,
+          "name": "datasf-mohcd-pipeline.page-000.json",
+          "sha256": "295f88092668ee3014821fccf711fa561b16522ca5eb6e39c3ecb36e624d89f5",
+          "url": "https://data.sf.gov/resource/aaxw-2cb8.json?%24select=project_id%2Cproject_name%2Cproject_status%2Cgeneral_housing_program%2Cproject_type%2Chousing_tenure%2Ctotal_project_units%2Cmohcd_affordable_units%2C_20_ami%2C_30_ami%2C_40_ami%2C_50_ami%2C_55_ami%2C_60_ami%2C_80_ami%2C_90_ami%2C_100_ami%2C_105_ami%2C_110_ami%2C_120_ami%2C_130_ami%2C_150_ami%2Cami_undeclared&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/aaxw-2cb8",
+      "id": "datasf-mohcd-pipeline",
+      "label": "DataSF MOHCD Affordable Housing Pipeline",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-11-10T21:59:49.026Z",
+      "rowCount": 190,
+      "upstreamVersion": "Thu, 21 May 2026 20:57:40 GMT"
     },
     {
       "files": [
@@ -866,10 +884,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/de887416a6cbd161541d6f79ed1336027a7c4a28c667cac4764d82b51e1f1e27.json",
-          "bytes": 9520613,
+          "archiveKey": "sources/b7280010f40ed24c656c13dbaeffdbe4e1416b06c21e5950f465a2cab39016b3.json",
+          "bytes": 9544083,
           "name": "datasf-permits-named.page-000.json",
-          "sha256": "de887416a6cbd161541d6f79ed1336027a7c4a28c667cac4764d82b51e1f1e27",
+          "sha256": "b7280010f40ed24c656c13dbaeffdbe4e1416b06c21e5950f465a2cab39016b3",
           "url": "https://data.sf.gov/resource/i98e-djp9.json?%24select=permit_number%2Cpermit_type%2Cblock%2Clot%2Cstreet_number%2Cstreet_name%2Cstreet_suffix%2Cstatus%2Cstatus_date%2Cfiled_date%2Cpermit_creation_date%2Cissued_date%2Cfirst_construction_document_date%2Ccompleted_date%2Clast_permit_activity_date%2Cnumber_of_proposed_stories%2Cexisting_units%2Cproposed_units%2Cestimated_cost%2Crevised_cost%2Csite_permit%2Cprimary_address_flag&%24where=permit_type+in%28%273%27%2C%278%27%29+and+proposed_units+%3E+existing_units&%24order=%3Aid&%24limit=50000&%24offset=0"
         }
       ],
@@ -877,17 +895,17 @@
       "id": "datasf-permits-named",
       "label": "DataSF Building Permits (unit-adding alterations)",
       "license": "PDDL-1.0",
-      "retrievedAt": "2026-10-18T23:09:10.088Z",
-      "rowCount": 17214,
-      "upstreamVersion": "Sun, 18 Oct 2026 12:41:05 GMT"
+      "retrievedAt": "2026-11-10T21:59:30.893Z",
+      "rowCount": 17255,
+      "upstreamVersion": "Tue, 10 Nov 2026 13:36:05 GMT"
     },
     {
       "files": [
         {
-          "archiveKey": "sources/81d52437e401c46a2c2eb5056583261de34d295eb91fcc477f111295f3927580.json",
-          "bytes": 8471243,
+          "archiveKey": "sources/2e289d68f5963a5fc556f903069d4ea4538d0ee77d66e03f7600a2214ec5695e.json",
+          "bytes": 8479618,
           "name": "datasf-permits-newcon.page-000.json",
-          "sha256": "81d52437e401c46a2c2eb5056583261de34d295eb91fcc477f111295f3927580",
+          "sha256": "2e289d68f5963a5fc556f903069d4ea4538d0ee77d66e03f7600a2214ec5695e",
           "url": "https://data.sf.gov/resource/i98e-djp9.json?%24select=permit_number%2Cpermit_type%2Cblock%2Clot%2Cstreet_number%2Cstreet_name%2Cstreet_suffix%2Cstatus%2Cstatus_date%2Cfiled_date%2Cpermit_creation_date%2Cissued_date%2Cfirst_construction_document_date%2Ccompleted_date%2Clast_permit_activity_date%2Cnumber_of_proposed_stories%2Cexisting_units%2Cproposed_units%2Cestimated_cost%2Crevised_cost%2Csite_permit%2Cprimary_address_flag&%24where=permit_type+in%28%271%27%2C%272%27%29&%24order=%3Aid&%24limit=50000&%24offset=0"
         }
       ],
@@ -895,24 +913,24 @@
       "id": "datasf-permits-newcon",
       "label": "DataSF Building Permits (new construction)",
       "license": "PDDL-1.0",
-      "retrievedAt": "2026-10-18T19:41:36.009Z",
-      "rowCount": 15654,
-      "upstreamVersion": "Sun, 18 Oct 2026 12:41:05 GMT"
+      "retrievedAt": "2026-11-10T21:59:28.713Z",
+      "rowCount": 15671,
+      "upstreamVersion": "Tue, 10 Nov 2026 13:36:05 GMT"
     },
     {
       "files": [
         {
-          "archiveKey": "sources/d3708986f1a8d9aba7714db1141363c46a7e72be8fbf83d19bc70809f80ee9df.json",
-          "bytes": 25318169,
+          "archiveKey": "sources/5ebaa33f4fb1727ac4117343153f4ed7042b2f268cf510ce92ed4a7d9b8f12e0.json",
+          "bytes": 25324154,
           "name": "datasf-planning-projects.page-000.json",
-          "sha256": "d3708986f1a8d9aba7714db1141363c46a7e72be8fbf83d19bc70809f80ee9df",
+          "sha256": "5ebaa33f4fb1727ac4117343153f4ed7042b2f268cf510ce92ed4a7d9b8f12e0",
           "url": "https://data.sf.gov/resource/qvu5-m3a2.json?%24select=record_id%2Crecord_status%2Cproject_address%2Cblock%2Clot%2Copen_date%2Cclose_date%2Cbuilding_permits%2Cproject_decision%2Cproject_decision_date%2Cnumber_of_units_prop%2Cnumber_of_units_exist%2Cnumber_affordable_units_prop%2Cnew_construction%2Csb35%2Chousing_sustainability_dist%2Cab2162%2Cdescription&%24order=%3Aid&%24limit=50000&%24offset=0"
         },
         {
-          "archiveKey": "sources/05c4ea10438a5ba834ac41b258b717c6f2f8f425a658533a97df871c624224cf.json",
-          "bytes": 1911408,
+          "archiveKey": "sources/912f6e574d7122b343529be3c247d008886e154dae0b999fcd9ad3e1deca5a84.json",
+          "bytes": 1952748,
           "name": "datasf-planning-projects.page-001.json",
-          "sha256": "05c4ea10438a5ba834ac41b258b717c6f2f8f425a658533a97df871c624224cf",
+          "sha256": "912f6e574d7122b343529be3c247d008886e154dae0b999fcd9ad3e1deca5a84",
           "url": "https://data.sf.gov/resource/qvu5-m3a2.json?%24select=record_id%2Crecord_status%2Cproject_address%2Cblock%2Clot%2Copen_date%2Cclose_date%2Cbuilding_permits%2Cproject_decision%2Cproject_decision_date%2Cnumber_of_units_prop%2Cnumber_of_units_exist%2Cnumber_affordable_units_prop%2Cnew_construction%2Csb35%2Chousing_sustainability_dist%2Cab2162%2Cdescription&%24order=%3Aid&%24limit=50000&%24offset=50000"
         }
       ],
@@ -920,17 +938,17 @@
       "id": "datasf-planning-projects",
       "label": "DataSF Planning Projects",
       "license": "public-domain",
-      "retrievedAt": "2026-10-19T01:34:20.056Z",
-      "rowCount": 54649,
-      "upstreamVersion": "Sun, 18 Oct 2026 06:09:15 GMT"
+      "retrievedAt": "2026-11-10T21:59:43.772Z",
+      "rowCount": 54716,
+      "upstreamVersion": "Tue, 10 Nov 2026 07:09:31 GMT"
     },
     {
       "files": [
         {
-          "archiveKey": "sources/7746e76a49e5a19f9fb967186a93c85f4b484512acd10f9f6c99513c7d683455.json",
-          "bytes": 10145812,
+          "archiveKey": "sources/d49ec4ccb0103460f3894944e2e0364ce66ab997c65c0aadc4609639849f88d0.json",
+          "bytes": 10157464,
           "name": "datasf-planning-records.page-000.json",
-          "sha256": "7746e76a49e5a19f9fb967186a93c85f4b484512acd10f9f6c99513c7d683455",
+          "sha256": "d49ec4ccb0103460f3894944e2e0364ce66ab997c65c0aadc4609639849f88d0",
           "url": "https://data.sf.gov/resource/y673-d69b.json?%24select=record_id%2Crecord_type%2Crecord_status%2Cblock%2Clot%2Cparent_id%2Copen_date%2Cclose_date&%24where=record_type+in%28%27PPA%27%2C%27ENV%27%2C%27CUA%27%2C%27VAR%27%2C%27DNX%27%2C%27ENX%27%2C%27OFA%27%2C%27AHB%27%2C%27PHA%27%2C%27DVA%27%2C%27COA%27%2C%27PTA%27%2C%27MAP%27%2C%27PCA%27%2C%27GPA%27%2C%27CTZ%27%2C%27DRP%27%2C%27DRM%27%29&%24order=%3Aid&%24limit=50000&%24offset=0"
         }
       ],
@@ -938,17 +956,17 @@
       "id": "datasf-planning-records",
       "label": "DataSF Planning Records",
       "license": "public-domain",
-      "retrievedAt": "2026-10-17T18:32:59.596Z",
-      "rowCount": 49727,
-      "upstreamVersion": "Sat, 17 Oct 2026 06:12:05 GMT"
+      "retrievedAt": "2026-11-10T21:59:47.055Z",
+      "rowCount": 49782,
+      "upstreamVersion": "Tue, 10 Nov 2026 07:13:17 GMT"
     },
     {
       "files": [
         {
-          "archiveKey": "sources/7aaebdeb75e3ca8ffe57c05f1377a4cd7b2b7df6698d5a38673942d20da9c2cb.json",
-          "bytes": 2866564,
+          "archiveKey": "sources/e50e4ad3db6f210f52055d0c748ee02d915191b8a848171a0e054d61a186b302.json",
+          "bytes": 2874728,
           "name": "datasf-planning-review.page-000.json",
-          "sha256": "7aaebdeb75e3ca8ffe57c05f1377a4cd7b2b7df6698d5a38673942d20da9c2cb",
+          "sha256": "e50e4ad3db6f210f52055d0c748ee02d915191b8a848171a0e054d61a186b302",
           "url": "https://data.sf.gov/resource/d4jk-jw33.json?%24select=b1_alt_id%2Cstart_event_type%2Cstart_event_date%2Cend_event_type%2Cend_event_date&%24where=project_stage%3D%27accepted+to+approved%27&%24order=%3Aid&%24limit=50000&%24offset=0"
         }
       ],
@@ -956,9 +974,9 @@
       "id": "datasf-planning-review",
       "label": "DataSF Planning Review Time Metrics",
       "license": "PDDL-1.0",
-      "retrievedAt": "2026-10-17T18:33:00.378Z",
-      "rowCount": 16143,
-      "upstreamVersion": "Sat, 17 Oct 2026 14:21:51 GMT"
+      "retrievedAt": "2026-11-10T21:59:47.761Z",
+      "rowCount": 16188,
+      "upstreamVersion": "Tue, 10 Nov 2026 15:19:36 GMT"
     },
     {
       "files": [
@@ -981,10 +999,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/e47d8189511602491133997fdb88e0119a796a843a0f726e4e774a0e76a92051.json",
-          "bytes": 366123,
+          "archiveKey": "sources/36c9122fd1264dd83660d601a3eeeecdf370bb5e340126735cd487ff516e6329.json",
+          "bytes": 368269,
           "name": "datasf-unit-completions.page-000.json",
-          "sha256": "e47d8189511602491133997fdb88e0119a796a843a0f726e4e774a0e76a92051",
+          "sha256": "36c9122fd1264dd83660d601a3eeeecdf370bb5e340126735cd487ff516e6329",
           "url": "https://data.sf.gov/resource/j67f-aayr.json?%24select=building_permit_application%2Cdate_issued%2Cdocument_type%2Cnumber_of_units_certified&%24order=%3Aid&%24limit=50000&%24offset=0"
         }
       ],
@@ -992,9 +1010,9 @@
       "id": "datasf-unit-completions",
       "label": "DataSF Dwelling Unit Completions",
       "license": "PDDL-1.0",
-      "retrievedAt": "2026-10-17T18:33:00.639Z",
-      "rowCount": 2559,
-      "upstreamVersion": "Wed, 14 Oct 2026 16:34:21 GMT"
+      "retrievedAt": "2026-11-10T21:59:48.009Z",
+      "rowCount": 2574,
+      "upstreamVersion": "Tue, 03 Nov 2026 17:42:21 GMT"
     },
     {
       "files": [

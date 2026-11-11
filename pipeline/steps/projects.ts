@@ -19,6 +19,7 @@ import { parseMultiphase, type MultiphaseFile } from '../enrichment/schema';
 import { BuildError } from '../lib/build-error';
 import { openDuck, type Duck } from '../lib/duck';
 import { rawPath, type Lock } from '../lib/lock';
+import type { DatasfId } from '../sources/datasf';
 import {
   deriveProjects,
   serializeHistories,
@@ -61,7 +62,7 @@ export const PERMITS_COLUMNS: readonly [keyof PermitOut, string][] = [
 const sqlStr = (s: string) => `'${s.replaceAll("'", "''")}'`;
 
 /** Every page of a project source, concatenated in lock order; each page is a JSON row array. */
-function readRows(lock: Lock, rawDir: string, byName: boolean, id: ProjectSourceId): RawRow[] {
+export function readRows(lock: Lock, rawDir: string, byName: boolean, id: DatasfId): RawRow[] {
   const entry = lock.sources.find((s) => s.id === id);
   if (!entry) throw new BuildError(`lock has no entry for ${id}`);
   const rows: RawRow[] = [];

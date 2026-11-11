@@ -1,0 +1,183 @@
+{
+  "schema": 1,
+  "perHome": {
+    "total": 954127,
+    "city": 300027,
+    "federal": 443108,
+    "state": 118390,
+    "permanentLoans": 87431,
+    "other": 5171,
+    "tier": 1,
+    "cite": {
+      "label": "Fixture: invented funding (tier 4)",
+      "url": "https://fixture.invalid/funding",
+      "page": "Exhibit F",
+      "retrieved": "2026-11-09"
+    }
+  },
+  "city": {
+    "fiscalYear": "FY2024-25",
+    "total": 6000000,
+    "tier": 1,
+    "cite": {
+      "label": "Fixture: invented funding (tier 4)",
+      "url": "https://fixture.invalid/funding",
+      "page": "Exhibit E",
+      "retrieved": "2026-11-09"
+    },
+    "sources": [
+      {
+        "id": "city-debt",
+        "label": "City: general-obligation bonds and other debt",
+        "kind": "goBond",
+        "dollarsPerYear": 1500000,
+        "debt": {
+          "rate": 0.06,
+          "termYears": 20,
+          "cite": {
+            "label": "Fixture: invented funding (tier 4)",
+            "url": "https://fixture.invalid/funding",
+            "page": "Exhibit 40",
+            "retrieved": "2026-11-09"
+          }
+        },
+        "note": "A fixture amount, invented (tier 4), not a transcription.",
+        "cite": {
+          "label": "Fixture: invented funding (tier 4)",
+          "url": "https://fixture.invalid/funding",
+          "page": "Exhibit E",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "id": "city-ocoh",
+        "label": "City: Our City, Our Home fund",
+        "kind": "dedicatedTax",
+        "dollarsPerYear": 1200000,
+        "debt": null,
+        "note": "A fixture amount, invented (tier 4), not a transcription.",
+        "cite": {
+          "label": "Fixture: invented funding (tier 4)",
+          "url": "https://fixture.invalid/funding",
+          "page": "Exhibit E",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "id": "city-general-fund",
+        "label": "City: General Fund",
+        "kind": "generalRevenue",
+        "dollarsPerYear": 1000000,
+        "debt": null,
+        "note": "A fixture amount, invented (tier 4), not a transcription.",
+        "cite": {
+          "label": "Fixture: invented funding (tier 4)",
+          "url": "https://fixture.invalid/funding",
+          "page": "Exhibit E",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "id": "city-impact-fees",
+        "label": "City: affordable-housing impact fees",
+        "kind": "dedicatedTax",
+        "dollarsPerYear": 1000000,
+        "debt": null,
+        "note": "A fixture amount, invented (tier 4), not a transcription.",
+        "cite": {
+          "label": "Fixture: invented funding (tier 4)",
+          "url": "https://fixture.invalid/funding",
+          "page": "Exhibit E",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "id": "city-housing-trust-fund",
+        "label": "City: Housing Trust Fund",
+        "kind": "generalRevenue",
+        "dollarsPerYear": 800000,
+        "debt": null,
+        "note": "A fixture amount, invented (tier 4), not a transcription.",
+        "cite": {
+          "label": "Fixture: invented funding (tier 4)",
+          "url": "https://fixture.invalid/funding",
+          "page": "Exhibit E",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "id": "city-redevelopment",
+        "label": "City: former Redevelopment Agency housing assets",
+        "kind": "dedicatedTax",
+        "dollarsPerYear": 500000,
+        "debt": null,
+        "note": "A fixture amount, invented (tier 4), not a transcription.",
+        "cite": {
+          "label": "Fixture: invented funding (tier 4)",
+          "url": "https://fixture.invalid/funding",
+          "page": "Exhibit E",
+          "retrieved": "2026-11-09"
+        }
+      }
+    ]
+  },
+  "state": {
+    "id": "state",
+    "label": "State of California: housing programmes",
+    "dollarsPerYear": 3000000,
+    "tier": 2,
+    "method": "A fixture amount, invented (tier 4), not a transcription.",
+    "cite": {
+      "label": "Fixture: invented funding (tier 4)",
+      "url": "https://fixture.invalid/funding",
+      "page": "p. 42",
+      "retrieved": "2026-11-09"
+    }
+  },
+  "federal": {
+    "id": "federal-tax-credits",
+    "label": "Federal: low-income housing tax credits",
+    "tier": 2,
+    "method": "The fixture pool is uncapped; invented (tier 4).",
+    "cite": {
+      "label": "Fixture: invented funding (tier 4)",
+      "url": "https://fixture.invalid/funding",
+      "page": "Exhibit F",
+      "retrieved": "2026-11-09"
+    }
+  },
+  "awards": {
+    "years": [2024, 2025],
+    "rows": [
+      {
+        "year": 2024,
+        "application": "FIXTURE-1",
+        "project": "Fixture award 1",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 20,
+        "cite": {
+          "label": "Fixture: invented funding (tier 4)",
+          "url": "https://fixture.invalid/funding",
+          "page": "FIXTURE-1",
+          "retrieved": "2026-11-09"
+        }
+      },
+      {
+        "year": 2025,
+        "application": "FIXTURE-2",
+        "project": "Fixture award 2",
+        "credit": "4%",
+        "newConstruction": true,
+        "homes": 30,
+        "cite": {
+          "label": "Fixture: invented funding (tier 4)",
+          "url": "https://fixture.invalid/funding",
+          "page": "FIXTURE-2",
+          "retrieved": "2026-11-09"
+        }
+      }
+    ]
+  },
+  "retiredIds": []
+}

@@ -1,5 +1,6 @@
 /**
- * `calibration-report.md` (stage-calibration spec §4.10): the ten sections in order, deterministic
+ * `calibration-report.md` (stage-calibration spec §4.10; section 11, market-baseline spec §4.7;
+ * sections 12 and 13, finance-data spec 4.7 and 4.8): the thirteen sections in order, deterministic
  * Markdown with no wall-clock time. Pipeline-internal, never shipped. Every number is printed by
  * `num`, which writes a non-finite value as "none".
  */
@@ -11,20 +12,24 @@ import {
   PATHWAYS,
   STAGE_ORDER,
   type Calibration,
+  type MarketModel,
   type Pathway,
   type ProjectHistory,
   type Provenance,
   type Stage
 } from '../../../src/lib/timelapse/types';
 import { qualityRule } from '../quality';
-import { OUTCOMES, ajSweep } from './aalen-johansen';
+import { SITE_MONTHS, type AffordableReport, type FundedGroup, type SiteGroup } from './affordable';
+import { OUTCOMES, ajEnd } from './aalen-johansen';
 import {
   FZP_BAND,
   INITIAL_EDGES,
   type InitiationReport,
   type InitiationTermReport
 } from './initiation';
+import type { MarketReport } from './market';
 import type { FitCell, InitiationEvents, PanelResult } from './panel';
+import { sig6 } from './tail';
 import type { PurgeExit } from './purge';
 import { REVISION_EDGES } from './revision';
 import { SIZE_EDGES } from './size';
@@ -46,7 +51,8 @@ import {
   LOCAL_PROGRAM_START,
   PANEL_FIRST_MONTH,
   PANEL_LAST_MONTH,
-  PHASE_GAP_START
+  PHASE_GAP_START,
+  PLANNING_START
 } from './window';
 
 export interface ReportInput {
@@ -72,10 +78,17 @@ export interface ReportInput {
   backcast: { ok: boolean; detail: string };
   lpDiag: { filings: number; medianFiledToEntitled: number | null };
   phaseGap: { rung: 1 | 2 | 3; groups: number };
+  /** today's market, the weights and the cross-check (market-baseline spec §4.7) */
+  market: MarketReport;
+  /** publicly funded housing: routes, stages, baseline funding and site choice (finance-data) */
+  affordable: AffordableReport;
   warnings: string[];
 }
 
-/** The ten section headings, in order (spec §4.10). */
+/**
+ * The thirteen section headings, in order (spec §4.10; market-baseline spec §4.7; finance-data
+ * spec 4.7, 4.8).
+ */
 export const REPORT_SECTIONS = [
   '# Calibration report',
   '## 2. Fitting windows',
@@ -86,7 +99,10 @@ export const REPORT_SECTIONS = [
   '## 7. New projects: pathway mix and ppaShare',
   '## 8. Parameter index',
   '## 9. Method constants',
-  '## 10. Data-quality rules (sc.*) and method counts'
+  '## 10. Data-quality rules (sc.*) and method counts',
+  "## 11. Today's market",
+  '## 12. Publicly funded housing: routes, stages and baseline funding',
+  '## 13. Where publicly funded housing starts'
 ] as const;
 
 /** A number for the report: integers as is, others to 6 significant digits, non-finite "none". */
@@ -122,26 +138,6 @@ function netUnits(h: ProjectHistory): number {
     if (typeof u === 'number' && Number.isFinite(u)) return u - h.existingUnits;
   }
   return 0;
-}
-
-/** AJ cumulative incidence at the end of observation (no table, no tail), weighted as given. */
-function ajEnd(spells: Spell[]): { advance: number; exit: number } | null {
-  const sw = ajSweep(spells);
-  if (sw.d.length === 0) return null;
-  let S = 1;
-  let advance = 0;
-  let exit = 0;
-  for (let i = 0; i < sw.d.length; i++) {
-    let sum = 0;
-    for (const j of OUTCOMES) {
-      const h = sw.e[j][i] / sw.n[i];
-      if (j === 'advance') advance += S * h;
-      else exit += S * h;
-      sum += h;
-    }
-    S *= 1 - sum;
-  }
-  return { advance, exit };
 }
 
 function header(x: ReportInput): string[] {
@@ -332,10 +328,12 @@ function transitionsSection(x: ReportInput): string[] {
         : id === 'sc.revision.carried-excluded'
           ? (carriedByStage[s] ?? 0)
           : (x.perStage[id][s] ?? 0);
+  // The funding rule counts MOHCD homes, which have no stage (finance-data spec 4.9).
+  const stageRules = SC_RULE_IDS.filter((id) => id !== 'sc.funding.ami-undeclared');
   out.push(
     ...table(
-      ['stage', ...SC_RULE_IDS],
-      STAGE_ORDER.map((s) => [s, ...SC_RULE_IDS.map((id) => perStage(id, s))])
+      ['stage', ...stageRules],
+      STAGE_ORDER.map((s) => [s, ...stageRules.map((id) => perStage(id, s))])
     )
   );
   return out;
@@ -591,6 +589,21 @@ function provenanceIndex(c: Calibration): [string, Provenance][] {
     ['streamlinedForLocalProgram', c.streamlinedForLocalProgram],
     ['phaseGap.provenance', c.phaseGap.provenance]
   );
+  if (c.market) {
+    out.push(
+      ['market.today.provenance', c.market.today.provenance],
+      ['market.crossCheck.provenance', c.market.crossCheck.provenance],
+      ['market.slope.provenance', c.market.slope.provenance],
+      ['market.slope.crossChecks.provenance', c.market.slope.crossChecks.provenance]
+    );
+  }
+  if (c.affordableRoutes) out.push(['affordableRoutes.provenance', c.affordableRoutes.provenance]);
+  if (c.baselineFunding) {
+    c.baselineFunding.provenance.forEach((p, i) =>
+      out.push([`baselineFunding.provenance[${i}]`, p])
+    );
+    out.push(['baselineFunding.check.provenance', c.baselineFunding.check.provenance]);
+  }
   return out;
 }
 
@@ -733,7 +746,273 @@ function rulesSection(x: ReportInput): string[] {
   return out;
 }
 
-/** The calibration report (spec §4.10): ten sections, deterministic. */
+function requireMarket(c: Calibration): MarketModel {
+  if (!c.market) throw new Error('calibration report: calibration.market is missing');
+  return c.market;
+}
+
+/**
+ * Section 11 (market-baseline spec §4.7): today's levels against the published model, the checks,
+ * the public-money weights and the Controller cross-check. In fixture mode, the Mode line and the
+ * weights and cross-check only.
+ */
+export function marketSection(m: MarketModel, r: MarketReport): string[] {
+  const t = m.today;
+  const [y0, y1] = t.years;
+  const span = `${y0}-${y1}`;
+  const [w0, w1] = r.years;
+  const out: string[] = [REPORT_SECTIONS[10], ''];
+  if (r.mode === 'fixture') {
+    out.push(
+      `Mode: fixture (today's levels fixed at ln 0.5 and ln 0.45 from ${num(t.observed.all)} and ${num(t.observed.private)} observed against ${num(t.implied)} implied; tier 4)`,
+      ''
+    );
+  } else {
+    const c = r.cohorts;
+    out.push(
+      '**Recent years**',
+      '',
+      ...table(
+        [
+          'year',
+          'observed',
+          'affordable cohort',
+          'private',
+          'implied (published hazard)',
+          'hold-out predicted'
+        ],
+        r.rows.map((row) => [
+          String(row.year),
+          row.observed,
+          row.affordable,
+          row.private,
+          row.implied,
+          num(row.holdOutPredicted)
+        ])
+      ),
+      '',
+      `- today.all = ${num(t.all)}; today.private = ${num(t.private)}; years ${y0} to ${y1}`,
+      `- observed ${num(t.observed.all)} (private ${num(t.observed.private)}); implied ${num(t.implied)}`,
+      `- the recent starts by cohort: affordable ${num(c.affordable)}, private ${num(c.private)}, no Planning record ${num(c.noRecord)}, counts not recorded ${num(c.unknown)}`,
+      '',
+      `**Reproduction check**: The published model shifted by today.all predicts ${num(r.reproduction)} starts for ${span} against ${num(t.observed.all)} observed.`,
+      ''
+    );
+    const ho = r.holdOut;
+    if (ho === null) out.push('**Hold-out, report only**: none.', '');
+    else if ('error' in ho) {
+      out.push(`**Hold-out, report only**: the hold-out refit failed: ${ho.error}.`, '');
+    } else {
+      out.push(
+        `**Hold-out, report only**: Fitted on ${PANEL_FIRST_MONTH.slice(0, 4)}-${y0 - 1} only, the model predicts ${num(ho.predicted)} starts for ${span}: ln(${num(t.observed.all)} ÷ ${num(ho.predicted)}) = ${num(sig6(ho.logRatio))}. This is evidence of the cycle and is not applied: the published model already contains part of the slowdown (OD-F11).`,
+        ''
+      );
+    }
+  }
+  out.push(
+    '**Public-money weights**',
+    '',
+    ...table(
+      [
+        'prototype',
+        'rule',
+        `private starts ${w0}-${w1}`,
+        'weight',
+        'uncovered per home',
+        'cost per home',
+        'uncovered share'
+      ],
+      r.weights.map((w) => [
+        w.id,
+        w.rule,
+        w.starts,
+        w.weight,
+        w.uncoveredPerHome,
+        w.costPerHome,
+        w.uncoveredShare
+      ])
+    ),
+    '',
+    ...(r.equalWeights
+      ? [`- no private start of ${w0}-${w1} has a prototype: every prototype weighs the same`]
+      : []),
+    `- unbinned private starts ${w0}-${w1}: ${num(r.unbinned.homes)} with homes not recorded; ${num(r.unbinned.stories)} of 25 homes or more with stories not recorded`,
+    `- typicalUncoveredShare = ${num(r.typicalUncoveredShare)}`,
+    `- slope.perCostShare = ${num(m.slope.perCostShare)}`,
+    `- typicalCostOverValue = ${num(r.typicalCostOverValue)}`,
+    `- cross-check slopes (reported, not applied): costCoefficient = ${num(m.slope.crossChecks.costCoefficient)}; priceCoefficient = ${num(m.slope.crossChecks.priceCoefficient)}`,
+    '',
+    "**The Controller's cross-check (reported, not applied)**",
+    '',
+    `crossCheck.logOdds = ${num(m.crossCheck.logOdds)}, from the lagged index means: cost ${num(r.means.costRecent)} (recent) against ${num(r.means.costReference)} (reference); price ${num(r.means.priceRecent)} (recent) against ${num(r.means.priceReference)} (reference). Gap to today.all: today.all − crossCheck.logOdds = ${num(sig6(t.all - m.crossCheck.logOdds))}.`
+  );
+  if (r.mode !== 'fixture') {
+    out.push(
+      '',
+      `**Market warnings**:${r.warnings.length === 0 ? ' none' : ''}`,
+      ...r.warnings.map((w) => `- ${w}`)
+    );
+  }
+  return out;
+}
+
+const GROUP_LABEL: Record<FundedGroup, string> = {
+  affordable: '100% affordable',
+  some: 'some affordable',
+  none: 'none'
+};
+const FILL_TIER_LABEL = { 1: '1, federal', 2: '2, state', 3: '3, City' } as const;
+
+/** The fill-tier sentence under the baseline table (finance-data spec 4.7 item 4), verbatim. */
+export const FILL_TIER_SENTENCE =
+  "Grants fill a project's uncovered cost in three tiers: federal, then state, then the City's pools in proportion to their shares; with the whole baseline and nothing added, every grant pays its full share.";
+/** The fixed sentence of section 13 (finance-data spec 4.8), verbatim. */
+export const SITE_CHOICE_SENTENCE =
+  'A ratio near 1 means funded projects started on lots like those private projects chose (the draw of F9 (d)); well above 1 means they took the likeliest lots; well below 1, lots private projects pass over. No San Francisco estimate of displacement exists.';
+
+function requireFunded(c: Calibration): {
+  routes: NonNullable<Calibration['affordableRoutes']>;
+  funding: NonNullable<Calibration['baselineFunding']>;
+} {
+  if (!c.affordableRoutes || !c.baselineFunding) {
+    throw new Error(
+      'calibration report: calibration.affordableRoutes or baselineFunding is missing'
+    );
+  }
+  return { routes: c.affordableRoutes, funding: c.baselineFunding };
+}
+
+/**
+ * Section 12 (finance-data spec 4.7): the routes line, the pathway and stage tables by group, and
+ * the baseline funding with its MOHCD mix and check. Ships nothing beyond `calibration.json`;
+ * every number through `num`.
+ */
+export function fundedSection(x: ReportInput): string[] {
+  const { routes, funding } = requireFunded(x.calibration);
+  const a = x.affordable;
+  const { pathways, rows, leftOut } = a.stages;
+  const f = a.funding;
+  const mix = f.mix;
+  const groups = Object.keys(pathways) as FundedGroup[];
+  const cell = (spells: number, v: number | null) => (spells === 0 ? 'none' : num(v));
+  const routesLine =
+    `- affordableRoutes: discretionary ${num(routes.discretionary)}, streamlined ${num(routes.streamlined)}, ` +
+    `permitOnly ${num(routes.permitOnly)}; tier ${routes.provenance.tier}; n ${num(a.routes.n)}` +
+    (a.routes.fallback ? '; fallback (the pathway mix of all new projects)' : '');
+  const out: string[] = [
+    REPORT_SECTIONS[11],
+    '',
+    routesLine,
+    '',
+    `**Pathways by group** (qualifying histories first recorded ${PLANNING_START} to ${isoOf(x.calibration.asOf)}, with a Planning pair of 10 homes or more and a recorded affordable count)`,
+    '',
+    ...table(
+      ['group', 'discretionary', 'streamlined', 'permitOnly', 'pathway unknown'],
+      groups.map((g) => [
+        GROUP_LABEL[g],
+        pathways[g].discretionary,
+        pathways[g].streamlined,
+        pathways[g].permitOnly,
+        pathways[g].null
+      ])
+    ),
+    '',
+    `Left out of the groups (no Planning pair, blank or fewer than 10 proposed homes, or a blank affordable count): ${num(leftOut)} histories.`,
+    '',
+    '**Stages by group**',
+    '',
+    ...table(
+      [
+        'stage',
+        'group',
+        'spells',
+        'advances',
+        'exits',
+        'eventual advance',
+        'eventual exit',
+        'median months to advance'
+      ],
+      rows.map((r) => [
+        r.stage,
+        GROUP_LABEL[r.group],
+        num(r.spells),
+        cell(r.spells, r.advances),
+        cell(r.spells, r.exits),
+        cell(r.spells, r.eventualAdvance),
+        cell(r.spells, r.eventualExit),
+        cell(r.spells, r.medianMonths)
+      ])
+    ),
+    '',
+    "The transition tables' estimator (Aalen–Johansen with left truncation, censoring and competing exits) on the calibration's own spells, pooled over pathways, without the fallback ladder and tail: the comparison is descriptive.",
+    '',
+    '**Baseline funding**',
+    '',
+    ...table(
+      ['fill tier', 'programme', 'pool', 'kind', 'dollars a year', 'share', 'implied homes a year'],
+      f.rows.map((r) => [
+        FILL_TIER_LABEL[r.fillTier],
+        r.programme,
+        r.pool,
+        r.kind,
+        r.dollarsPerYear === null ? 'uncapped' : num(r.dollarsPerYear),
+        num(r.share),
+        r.dollarsPerYear === null ? 'uncapped' : num(r.impliedHomesPerYear)
+      ])
+    ),
+    '',
+    FILL_TIER_SENTENCE,
+    '',
+    `- tiers: ${Object.entries(mix.tiers)
+      .map(([t, v]) => `${t} ${num(v)}`)
+      .join(', ')}`,
+    `- minHomes: ${num(mix.minHomes)}`,
+    `- MOHCD rows used: ${num(mix.used)}`,
+    `- homes by AMI band: ${Object.entries(mix.byBand)
+      .map(([b, v]) => `${b} ${num(v)}`)
+      .join(', ')}, ami_undeclared ${num(mix.undeclared)}`,
+    `- undeclared homes: ${num(mix.undeclared)} of ${num(mix.affordable)} affordable homes in the rows used (${share(mix.undeclared, mix.affordable)})`,
+    `- check: impliedHomesPerYear ${num(funding.check.impliedHomesPerYear)}; observedHomesPerYear ${num(funding.check.observedHomesPerYear)} (${num(f.awardRows)} award rows)`,
+    `- check warning: ${f.warning ?? 'none'}`
+  ];
+  return out;
+}
+
+function siteRow(label: string, g: SiteGroup): (string | number)[] {
+  return [label, g.histories, g.onPanel, g.offPanel, num(g.meanPerMille), num(g.medianPerMille)];
+}
+
+/**
+ * Section 13 (finance-data spec 4.8, OD-F9b): the published initiation hazard on the lots where
+ * the cohort's projects started, against private starts. Report-only.
+ */
+export function siteChoiceSection(x: ReportInput): string[] {
+  const s = x.affordable.siteChoice;
+  return [
+    REPORT_SECTIONS[12],
+    '',
+    `Each history's start is its first entered day among preApplication, filed and permitFiled, from ${SITE_MONTHS[0]} to ${SITE_MONTHS[1]}; its lot is the primary parcel, read on the panel row of the start's roll year. A start whose lot has no row, or a row not hostable under the base zoning, is off panel.`,
+    '',
+    ...table(
+      [
+        'group',
+        'histories',
+        'starts on the panel',
+        'off panel',
+        'mean monthly hazard × 1000',
+        'median monthly hazard × 1000'
+      ],
+      [siteRow('100% affordable', s.affordable), siteRow('private', s.private)]
+    ),
+    '',
+    `- in neither group (flagged 100% affordable, under 10 homes): ${num(s.neither)}`,
+    `- ratio of means, 100% affordable ÷ private: ${num(s.ratio)}`,
+    '',
+    SITE_CHOICE_SENTENCE
+  ];
+}
+
+/** The calibration report (spec §4.10): thirteen sections, deterministic. */
 export function calibrationReport(x: ReportInput): string {
   const sections = [
     header(x),
@@ -745,7 +1024,10 @@ export function calibrationReport(x: ReportInput): string {
     newProjectsSection(x),
     indexSection(x),
     constantsSection(x),
-    rulesSection(x)
+    rulesSection(x),
+    marketSection(requireMarket(x.calibration), x.market),
+    fundedSection(x),
+    siteChoiceSection(x)
   ];
   return sections.map((s) => s.join('\n')).join('\n\n') + '\n';
 }

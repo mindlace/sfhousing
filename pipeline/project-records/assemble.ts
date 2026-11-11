@@ -15,7 +15,8 @@ import type {
   ProjectHistoriesFile,
   ProjectHistory,
   Provenance,
-  Stage
+  Stage,
+  TierUnits
 } from '../../src/lib/timelapse/types';
 import type { MultiphaseEntry, MultiphaseFile } from '../enrichment/schema';
 import { qualityRule } from '../lib/quality';
@@ -69,7 +70,8 @@ export function cmp(a: string, b: string): number {
  */
 export const T3_ONLY_QUALITY: ReadonlySet<string> = new Set([
   PR.parcelsSharedExisting,
-  PR.multiphaseDaNetting
+  PR.multiphaseDaNetting,
+  PR.affordableOverUnits
 ]);
 
 /**
@@ -216,6 +218,7 @@ export function orderProject(p: InFlightProject): InFlightProject {
     history: inStageOrder(p.history),
     units: p.units,
     existingUnits: p.existingUnits,
+    ...(p.affordableHomes === undefined ? {} : { affordableHomes: p.affordableHomes }),
     stories: p.stories,
     storiesTier: p.storiesTier,
     multiPhase: p.multiPhase,
@@ -244,6 +247,17 @@ function orderProvenance(p: Provenance): Provenance {
   return out;
 }
 
+/** `INCOME_TIERS` order, then `unrecorded`. */
+function orderByTier(b: TierUnits): TierUnits {
+  return {
+    veryLow: b.veryLow,
+    low: b.low,
+    moderate: b.moderate,
+    aboveModerate: b.aboveModerate,
+    unrecorded: b.unrecorded
+  };
+}
+
 /** T3 file order; `districtMaxStories` only when present. */
 export function orderProjectsFile(f: ProjectsFile): ProjectsFile {
   const dm = f.districtMaxStories;
@@ -253,6 +267,9 @@ export function orderProjectsFile(f: ProjectsFile): ProjectsFile {
     rhnaCompletedNet: {
       units: f.rhnaCompletedNet.units,
       since: f.rhnaCompletedNet.since,
+      ...(f.rhnaCompletedNet.byTier === undefined
+        ? {}
+        : { byTier: orderByTier(f.rhnaCompletedNet.byTier) }),
       provenance: orderProvenance(f.rhnaCompletedNet.provenance)
     },
     ...(dm === undefined
@@ -289,7 +306,8 @@ export function orderHistory(h: ProjectHistory): ProjectHistory {
     storiesProposed: h.storiesProposed,
     baseStoriesAtFiling: h.baseStoriesAtFiling,
     sources: h.sources.map(orderSource),
-    quality: [...h.quality]
+    quality: [...h.quality],
+    planningProposed: h.planningProposed ?? null
   };
 }
 

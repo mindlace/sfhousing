@@ -13,11 +13,13 @@ import { assembleSite } from '$lib/generator/assemble';
 import { checkManifestShape } from '$lib/sim/manifest-shape';
 import { exp, log } from '$lib/timelapse/math';
 import { MONTH_DAYS } from '$lib/timelapse/time';
-import { initiationHazard, parseCalibration } from '$lib/timelapse/model';
+import { initiationHazard, initiationLogit, parseCalibration } from '$lib/timelapse/model';
 import { ProjectsFormatError, parseProjectsFile, type ProjectsFile } from '$lib/timelapse/projects';
 import { PATHWAYS, type Calibration, type FeatureId } from '$lib/timelapse/types';
 import { miniBin } from './fixtures/mini-bin';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
+import { miniFunding, miniMarket } from './fixtures/mini-market';
+import { NO_MARKET_WARNING } from './market';
 import {
   MINI_CAPPED_ID,
   MINI_CELLS,
@@ -261,7 +263,25 @@ describe('buildSimInput', () => {
     expect(input.projects).toBe(files.projects.projects);
     expect(input.calibration).toBe(files.calibration);
     expect(input.asOf).toBe(files.projects.asOf);
+    expect(warnings).toEqual([NO_MARKET_WARNING]);
+    expect('market' in input).toBe(false);
+  });
+
+  it("applies today's market as one step at asOf", () => {
+    const files = miniFiles();
+    const market = miniMarket();
+    files.calibration = { ...files.calibration, market };
+    const warnings: string[] = [];
+    const input = buildSimInput(files, (m) => warnings.push(m));
+    expect(input.market).toEqual([{ from: files.projects.asOf, logOdds: market.today.all }]);
     expect(warnings).toEqual([]);
+    files.calibration = {
+      ...files.calibration,
+      baselineFunding: miniFunding()
+    };
+    expect(buildSimInput(files).market).toEqual([
+      { from: files.projects.asOf, logOdds: market.today.all }
+    ]);
   });
 
   it('rejects calibration fill levels that differ from FILL_LEVELS (A2)', () => {
@@ -291,8 +311,8 @@ describe('buildSimInput', () => {
     files.calibration.asOf = files.projects.asOf - 1;
     const warnings: string[] = [];
     const input = buildSimInput(files, (m) => warnings.push(m));
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatch(/asOf/);
+    expect(warnings.filter((w) => /asOf/.test(w))).toHaveLength(1);
+    expect(warnings).toContain(NO_MARKET_WARNING);
     expect(input.asOf).toBe(files.projects.asOf);
   });
 });
@@ -380,6 +400,77 @@ describe('precomputeOf', () => {
     // memoised: no second warning
     precomputeOf(input, (m) => warnings.push(m));
     expect(warnings).toHaveLength(1);
+  });
+});
+
+describe('precomputeOf with a market (spec §4.8)', () => {
+  const featuresOf = (input: ReturnType<typeof buildSimInput>, i: number) => {
+    const f = {} as Record<FeatureId, number>;
+    for (const t of input.calibration.initiation.terms)
+      f[t.feature] = featureValue(input.parcels, i, t.feature, 'fzp');
+    return f;
+  };
+  const withSteps = (steps: { from: number; logOdds: number }[] | undefined) => {
+    const input = buildSimInput(miniFiles());
+    return steps === undefined ? input : { ...input, market: steps };
+  };
+
+  it('market absent or []: every hazard is bit-identical to initiationHazard', () => {
+    for (const input of [withSteps(undefined), withSteps([])]) {
+      const pre = precomputeOf(input);
+      let positive = 0;
+      for (let i = 0; i < input.parcels.count; i++) {
+        if (pre.hazard[i] === 0) continue;
+        positive++;
+        expect(pre.hazard[i]).toBe(
+          initiationHazard(input.calibration.initiation, featuresOf(input, i))
+        );
+      }
+      expect(positive).toBeGreaterThan(30);
+      expect(pre.stepLog1mh).toEqual([]);
+      expect(pre.segments).toEqual({ days: [], view: [0], log1mh: [pre.log1mh] });
+    }
+  });
+
+  it('one step s at asOf: hazard = 1 / (1 + exp(-(z + s)))', () => {
+    const s = -0.7;
+    const input = withSteps([{ from: MINI_AS_OF, logOdds: s }]);
+    const pre = precomputeOf(input);
+    let positive = 0;
+    for (let i = 0; i < input.parcels.count; i++) {
+      if (pre.hazard[i] === 0) continue;
+      positive++;
+      const z = initiationLogit(input.calibration.initiation, featuresOf(input, i));
+      expect(pre.hazard[i]).toBe(1 / (1 + exp(-(z + s))));
+      expect(Object.is(pre.log1mh[i], log(1 - pre.hazard[i]))).toBe(true);
+    }
+    expect(positive).toBeGreaterThan(30);
+    expect(pre.stepLog1mh).toEqual([]);
+  });
+
+  it('candidates are the same under s = -3 and s = 0', () => {
+    const a = precomputeOf(withSteps([{ from: MINI_AS_OF, logOdds: -3 }])).candidates;
+    const b = precomputeOf(withSteps([{ from: MINI_AS_OF, logOdds: 0 }])).candidates;
+    expect(a.length).toBeGreaterThan(30);
+    expect(a).toEqual(b);
+  });
+
+  it('a row whose hazard underflows today stays a candidate when a later step revives it', () => {
+    const later = MINI_AS_OF + 400;
+    const input = withSteps([
+      { from: MINI_AS_OF, logOdds: -800 },
+      { from: later, logOdds: 0 }
+    ]);
+    const pre = precomputeOf(input);
+    expect(pre.hazard.every((h) => h === 0)).toBe(true);
+    const at0 = precomputeOf(withSteps([{ from: MINI_AS_OF, logOdds: 0 }]));
+    expect(pre.candidates).toEqual(at0.candidates);
+    expect(pre.stepLog1mh).toHaveLength(1);
+    expect(pre.stepLog1mh[0]).toEqual(at0.log1mh);
+    expect(pre.segments.days).toEqual([later]);
+    expect(pre.segments.view).toEqual([0, 0]);
+    expect(pre.segments.log1mh[0]).toBe(pre.log1mh);
+    expect(pre.segments.log1mh[1]).toBe(pre.stepLog1mh[0]);
   });
 });
 

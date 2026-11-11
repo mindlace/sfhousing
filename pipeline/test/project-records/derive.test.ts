@@ -3,6 +3,7 @@ import { parseProjectsFile } from '../../../src/lib/timelapse/projects';
 import { STAGE_ORDER } from '../../../src/lib/timelapse/types';
 import type { MultiphaseEntry } from '../../enrichment/schema';
 import {
+  affordableHomesOf,
   deriveProjects,
   districtMaxStories,
   serializeHistories,
@@ -10,7 +11,12 @@ import {
   type DeriveResult
 } from '../../project-records/derive';
 import { checkV23, checkV24 } from '../../project-records/invariants';
-import type { ProjectRecordsInput, ProjectSourceId, RawRow } from '../../project-records/types';
+import type {
+  LinkedProject,
+  ProjectRecordsInput,
+  ProjectSourceId,
+  RawRow
+} from '../../project-records/types';
 import { ASOF, PARCELS, baseInput, baseMultiphase, baseRaw, day, permitRow } from './derive-input';
 
 const T3_KEYS = [
@@ -22,6 +28,7 @@ const T3_KEYS = [
   'history',
   'units',
   'existingUnits',
+  'affordableHomes',
   'stories',
   'storiesTier',
   'multiPhase',
@@ -41,7 +48,8 @@ const T4D_KEYS = [
   'storiesProposed',
   'baseStoriesAtFiling',
   'sources',
-  'quality'
+  'quality',
+  'planningProposed'
 ];
 
 function project(r: DeriveResult, id: string) {
@@ -217,6 +225,94 @@ const LINK_KEYS = [
   'link.pipelineNoIds'
 ];
 
+/** A PRJ-anchored 24-unit project with `prop` as its primary record's affordable count. */
+function withAffordable(prop: string, satellite?: string): DeriveResult {
+  const raw = baseRaw();
+  const prj = raw['datasf-planning-projects'].find((x) => x.record_id === '2019-000001PRJ');
+  if (!prj) throw new Error('no base PRJ');
+  prj.number_affordable_units_prop = prop;
+  if (satellite !== undefined) {
+    raw['datasf-planning-projects'].push({
+      record_id: '2019-000002PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '001',
+      open_date: ts('2018-12-01'),
+      building_permits: '201906010001',
+      number_of_units_prop: '24',
+      number_affordable_units_prop: satellite,
+      new_construction: 'CHECKED'
+    });
+  }
+  return deriveProjects(baseInput(raw));
+}
+
+describe('affordableHomesOf (spec 4.2)', () => {
+  const stub = (id: string, afford: number | null | undefined) =>
+    ({
+      id,
+      primary: afford === undefined ? null : { affordableProp: afford }
+    }) as unknown as LinkedProject;
+
+  it('takes min(affordableProp, units) from the primary record', () => {
+    expect(affordableHomesOf(stub('PRJ:X', 5), false, 24)).toEqual({ value: 5, clamped: false });
+    expect(affordableHomesOf(stub('PRJ:X', 30), false, 24)).toEqual({ value: 24, clamped: true });
+    expect(affordableHomesOf(stub('PRJ:X', 0), false, 24)).toEqual({ value: 0, clamped: false });
+  });
+
+  it('gives null for a split part, a multiPhase master, no primary record or a bad count', () => {
+    const none = { value: null, clamped: false };
+    expect(affordableHomesOf(stub('PRJ:X:BP:P1', 5), false, 24)).toEqual(none);
+    expect(affordableHomesOf(stub('PRJ:X', 5), true, 24)).toEqual(none);
+    expect(affordableHomesOf(stub('PPA:X', undefined), false, 24)).toEqual(none);
+    expect(affordableHomesOf(stub('PRJ:X', null), false, 24)).toEqual(none);
+    expect(affordableHomesOf(stub('PRJ:X', 2.5), false, 24)).toEqual(none);
+    expect(affordableHomesOf(stub('PRJ:X', -1), false, 24)).toEqual(none);
+  });
+});
+
+describe('deriveProjects: affordableHomes', () => {
+  const homes = (r: DeriveResult, id = 'PRJ:2019-000001PRJ') => project(r, id).affordableHomes;
+
+  it('takes the primary record, not a satellite PRJ', () => {
+    expect(homes(withAffordable('5', '40'))).toBe(5);
+  });
+
+  it('caps at the project units, flags it and lists the rule', () => {
+    const r = withAffordable('40');
+    const p = project(r, 'PRJ:2019-000001PRJ');
+    expect(p.affordableHomes).toBe(p.units);
+    expect(p.quality).toContain('pr.affordable.over-units');
+    expect(r.file.qualityRules.map((q) => q.id)).toContain('pr.affordable.over-units');
+  });
+
+  it('keeps 0 and gives null for a non-integer or negative count', () => {
+    expect(homes(withAffordable('0'))).toBe(0);
+    expect(homes(withAffordable('2.5'))).toBeNull();
+    expect(homes(withAffordable('-1'))).toBeNull();
+    expect(project(withAffordable('2.5'), 'PRJ:2019-000001PRJ').quality).not.toContain(
+      'pr.affordable.over-units'
+    );
+  });
+
+  it('is null on a BP project, a pipeline-only project and a master', () => {
+    const r = withAffordable('5');
+    expect(homes(r, 'BP:202403150003')).toBeNull();
+    expect(homes(r, 'CASE:2099-000099PRJ')).toBeNull();
+    expect(homes(r, 'CASE:2010.0002PRX')).toBeNull();
+  });
+
+  it('tallies the capped over the projects with a recorded count', () => {
+    const r = withAffordable('40');
+    expect(r.file.projects.filter((p) => p.affordableHomes != null)).toHaveLength(1);
+    expect(r.counts['quality.pr.affordable.over-units.fired']).toBe(1);
+    expect(r.counts['quality.pr.affordable.over-units.of']).toBe(1);
+    const under = withAffordable('5');
+    expect(under.counts['quality.pr.affordable.over-units.fired']).toBe(0);
+    expect(under.counts['quality.pr.affordable.over-units.of']).toBe(1);
+  });
+});
+
 describe('deriveProjects: output shape', () => {
   const r = deriveProjects(baseInput());
 
@@ -289,7 +385,7 @@ describe('deriveProjects: output shape', () => {
     const rule = { valueTier: null, tier: 2, label: 'x', id: 'pr.a.b' } as const;
     const withRule = JSON.parse(serializeProjects({ ...reversed, qualityRules: [rule] }));
     expect(Object.keys(withRule.qualityRules[0])).toEqual(['id', 'label', 'tier', 'valueTier']);
-    expect(Object.keys(top.rhnaCompletedNet)).toEqual(['units', 'since', 'provenance']);
+    expect(Object.keys(top.rhnaCompletedNet)).toEqual(['units', 'since', 'byTier', 'provenance']);
     expect(Object.keys(top.rhnaCompletedNet.provenance)).toEqual([
       'tier',
       'label',

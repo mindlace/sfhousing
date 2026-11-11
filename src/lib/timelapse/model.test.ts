@@ -1,21 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../generator/seed';
+import { miniCity } from '../sim/scenario/fixtures/mini-parcels';
+import { featureValue } from '../data/scenario-codec';
+import mini from '../sim/scenario/fixtures/mini-calibration.json';
 import small from './fixtures/calibration-small.json';
 import { exp, log } from './math';
 import { readFileSync } from 'node:fs';
 import {
   CalibrationFormatError,
   binIndex,
+  checkPool,
+  checkProgramme,
   chanceTable,
   cumulativeIncidence,
   cumulativeTotal,
   eventualProbabilities,
   initiationHazard,
+  initiationLogit,
   parseCalibration,
   sampleTransition,
   typicalMonths
 } from './model';
 import { MONTH_DAYS, monthsIn } from './time';
+import { validateInstrument } from '../sim/finance/instruments';
 import {
   EXIT_ORDER,
   PATHWAYS,
@@ -68,6 +75,30 @@ describe('initiationHazard', () => {
     };
     const f = { potentialRatio: 6, existingUnits: 12 } as Record<FeatureId, number>;
     expect(initiationHazard(m, f)).toBe(1 / (1 + exp(-(-6 + 1 + -0.75))));
+  });
+});
+
+describe('initiationLogit', () => {
+  it('is the linear predictor of initiationHazard, bit for bit', () => {
+    const f = { potentialRatio: 3 } as Record<FeatureId, number>;
+    expect(initiationLogit(cal.initiation, f)).toBe(-6 + 0.5);
+    expect(1 / (1 + exp(-initiationLogit(cal.initiation, f)))).toBe(
+      initiationHazard(cal.initiation, f)
+    );
+  });
+
+  it('matches initiationHazard on every hostable mini-city row', () => {
+    const m = (mini as unknown as Calibration).initiation;
+    const { parcels: p } = miniCity();
+    let seen = 0;
+    for (let i = 0; i < p.count; i++) {
+      if (p.hostable[i] !== 1) continue;
+      const f = {} as Record<FeatureId, number>;
+      for (const term of m.terms) f[term.feature] = featureValue(p, i, term.feature, 'fzp');
+      expect(1 / (1 + exp(-initiationLogit(m, f)))).toBe(initiationHazard(m, f));
+      seen++;
+    }
+    expect(seen).toBeGreaterThan(0);
   });
 });
 
@@ -832,6 +863,198 @@ describe('parseCalibration', () => {
     expect(e.path).toContain(path);
   });
 
+  describe('market', () => {
+    const src = (extra: object = {}) => ({
+      tier: 2,
+      label: 'x',
+      sources: [{ label: 's', url: 'https://x.org' }],
+      method: 'm',
+      n: 5,
+      window: ['2023-01-01', '2025-12-31'],
+      ...extra
+    });
+    const liveMarket = (): any => ({
+      today: {
+        all: -0.643571,
+        private: Number(log(116 / 245.521).toPrecision(6)),
+        years: [2023, 2025],
+        observed: { all: 129, private: 116 },
+        implied: 245.521,
+        provenance: src()
+      },
+      crossCheck: { logOdds: -0.5, provenance: { ...prov, tier: 3 } },
+      slope: {
+        perCostShare: 1.2,
+        provenance: src(),
+        crossChecks: {
+          costCoefficient: -0.4,
+          priceCoefficient: 0.7,
+          provenance: { ...prov, tier: 3 }
+        }
+      }
+    });
+    const fixtureMarket = (): any => ({
+      today: {
+        all: -0.693147,
+        private: -0.798508,
+        years: [2023, 2025],
+        observed: { all: 10, private: 9 },
+        implied: 20,
+        provenance: prov
+      },
+      crossCheck: { logOdds: 0, provenance: prov },
+      slope: {
+        perCostShare: 1,
+        provenance: prov,
+        crossChecks: { costCoefficient: 0, priceCoefficient: 0, provenance: prov }
+      }
+    });
+    const withMarket = (m: unknown): any => ({ ...clone(), market: m });
+
+    it('accepts live, fixture and absent market, and unknown top-level keys', () => {
+      for (const m of [liveMarket(), fixtureMarket()]) {
+        const c = withMarket(m);
+        expect(parseCalibration(c)).toBe(c);
+      }
+      const c = { ...clone(), market: liveMarket(), somethingNew: 1 };
+      expect(parseCalibration(c)).toBe(c);
+      expect(parseCalibration(clone()).market).toBeUndefined();
+    });
+
+    const missing = (path: string[]) => (m: any) => {
+      let o = m;
+      for (const k of path.slice(0, -1)) o = o[k];
+      delete o[path[path.length - 1]];
+    };
+    const extra = (path: string[]) => (m: any) => {
+      let o = m;
+      for (const k of path) o = o[k];
+      o.extra = 1;
+    };
+    const mcases: [string, (m: any) => void, string, string][] = [
+      ['market not an object', (m) => m, 'market', 'expected an object'],
+      ...['today', 'crossCheck', 'slope'].map((k): [string, (m: any) => void, string, string] => [
+        `missing ${k}`,
+        missing([k]),
+        `market.${k}`,
+        'missing'
+      ]),
+      ...(
+        [
+          ['today', 'all'],
+          ['today', 'private'],
+          ['today', 'years'],
+          ['today', 'observed'],
+          ['today', 'implied'],
+          ['today', 'provenance'],
+          ['today', 'observed', 'all'],
+          ['today', 'observed', 'private'],
+          ['crossCheck', 'logOdds'],
+          ['crossCheck', 'provenance'],
+          ['slope', 'perCostShare'],
+          ['slope', 'provenance'],
+          ['slope', 'crossChecks'],
+          ['slope', 'crossChecks', 'costCoefficient'],
+          ['slope', 'crossChecks', 'priceCoefficient'],
+          ['slope', 'crossChecks', 'provenance']
+        ] as string[][]
+      ).map((p): [string, (m: any) => void, string, string] => [
+        `missing ${p.join('.')}`,
+        missing(p),
+        `market.${p.join('.')}`,
+        'missing'
+      ]),
+      ...(
+        [
+          [],
+          ['today'],
+          ['today', 'observed'],
+          ['crossCheck'],
+          ['slope'],
+          ['slope', 'crossChecks']
+        ] as string[][]
+      ).map((p): [string, (m: any) => void, string, string] => [
+        `extra key at ${p.join('.') || 'market'}`,
+        extra(p),
+        `market${p.map((k) => `.${k}`).join('')}.extra`,
+        'unexpected key'
+      ]),
+      [
+        'years gap 1',
+        (m) => (m.today.years = [2023, 2024]),
+        'market.today.years',
+        'expected [first, first + 2], got [2023,2024]'
+      ],
+      [
+        'observed.all 1.5',
+        (m) => (m.today.observed.all = 1.5),
+        'market.today.observed.all',
+        'expected a positive integer, got 1.5'
+      ],
+      [
+        'observed.private 0',
+        (m) => (m.today.observed.private = 0),
+        'market.today.observed.private',
+        'expected a positive integer, got 0'
+      ],
+      [
+        'observed.private 130',
+        (m) => (m.today.observed.private = 130),
+        'market.today.observed.private',
+        'expected at most 129, got 130'
+      ],
+      [
+        'implied 0',
+        (m) => (m.today.implied = 0),
+        'market.today.implied',
+        'expected a positive number, got 0'
+      ],
+      [
+        'all off by 2e-5',
+        (m) => (m.today.all += 2e-5),
+        'market.today.all',
+        `expected ln(observed.all ÷ implied) = ${log(129 / 245.521)}, got ${-0.643571 + 2e-5}`
+      ],
+      [
+        'all NaN',
+        (m) => (m.today.all = NaN),
+        'market.today.all',
+        'expected a number in [-10, 10], got NaN'
+      ],
+      [
+        'all 11',
+        (m) => {
+          m.today.observed = { all: 59874, private: 100 };
+          m.today.implied = 59874 / exp(11);
+          m.today.all = 11;
+        },
+        'market.today.all',
+        'expected a number in [-10, 10], got 11'
+      ],
+      [
+        'perCostShare 0',
+        (m) => (m.slope.perCostShare = 0),
+        'market.slope.perCostShare',
+        'expected a positive number, got 0'
+      ],
+      [
+        'today.provenance.sources []',
+        (m) => (m.today.provenance.sources = []),
+        'market.today.provenance.sources',
+        'expected at least one source'
+      ]
+    ];
+
+    it.each(mcases)('rejects %s', (_name, mutate, path, message) => {
+      let m = liveMarket();
+      if (_name === 'market not an object') m = 42;
+      else mutate(m);
+      const e = rejection(withMarket(m));
+      expect(e.path).toBe(path);
+      expect(e.message).toBe(`${path}: ${message}`);
+    });
+  });
+
   it('accepts equal phase gaps (empirical ties)', () => {
     const c = clone();
     c.phaseGap.days = [30, 30, 60];
@@ -854,11 +1077,332 @@ describe('parseCalibration', () => {
     expect(parseCalibration(c)).toBe(c);
   });
 
-  it('AC-7: model.ts imports only ./types, ./time and ./math, and no zod', () => {
+  it('AC-7: model.ts imports only ./types, ./time, ./math and ../sim/finance/{instruments,debt}, and no zod', () => {
     const src = readFileSync(new URL('./model.ts', import.meta.url), 'utf8');
     const specifiers = [...src.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
     expect(specifiers.length).toBeGreaterThan(0);
-    for (const sp of specifiers) expect(sp).toMatch(/^\.\/(types|time|math)$/);
+    for (const sp of specifiers)
+      expect(sp).toMatch(/^(\.\/(types|time|math)|\.\.\/sim\/finance\/(instruments|debt))$/);
     expect(src).not.toContain('zod');
+  });
+});
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+describe('affordableRoutes and baselineFunding', () => {
+  const clone = (): any => structuredClone(cal);
+  const prov = {
+    tier: 4,
+    label: 'x',
+    sources: [{ label: 's', url: 'https://x.org' }],
+    method: 'm'
+  };
+  const asOf = cal.asOf;
+
+  function fallbackRoutes(): any {
+    return {
+      discretionary: 0.6,
+      streamlined: 0.3,
+      permitOnly: 0.1,
+      provenance: prov
+    };
+  }
+
+  function fixtureFunding(): any {
+    const city = [
+      ['city-debt', 'goBond', 1500000],
+      ['city-ocoh', 'dedicatedTax', 1200000],
+      ['city-general-fund', 'generalRevenue', 1000000],
+      ['city-impact-fees', 'dedicatedTax', 1000000],
+      ['city-housing-trust-fund', 'generalRevenue', 800000],
+      ['city-redevelopment', 'dedicatedTax', 500000]
+    ] as const;
+    const pools: any[] = city.map(([id, kind, dollarsPerYear]) => ({
+      id,
+      kind,
+      label: id,
+      inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear }],
+      uncapped: false,
+      debt: id === 'city-debt' ? { rate: 0.06, termYears: 20 } : null,
+      leverage: 1
+    }));
+    pools.push({
+      id: 'state',
+      kind: 'state',
+      label: 'state',
+      inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: 3000000 }],
+      uncapped: false,
+      debt: null,
+      leverage: 1
+    });
+    pools.push({
+      id: 'federal-tax-credits',
+      kind: 'federal',
+      label: 'federal',
+      inflows: [],
+      uncapped: true,
+      debt: null,
+      leverage: 1
+    });
+    const shares = [0.119804, 0.072329, 0.054619, 0.051791, 0.040778, 0.00893, 0.137419, 0.51433];
+    return {
+      pools,
+      programmes: pools.map((p, i) => ({
+        id: `baseline-${p.id}`,
+        label: `${p.label}: grant`,
+        pool: p.id,
+        reach: 'affordable',
+        instrument: { kind: 'grant', share: shares[i] },
+        from: asOf,
+        to: null,
+        minHomes: 2,
+        tiers: { veryLow: 0.428572, low: 0.428571, moderate: 0.142857, aboveModerate: 0 }
+      })),
+      provenance: Array.from({ length: pools.length + 1 }, () => prov),
+      check: { impliedHomesPerYear: 20, observedHomesPerYear: 25, provenance: prov }
+    };
+  }
+
+  function rejection(c: unknown): CalibrationFormatError {
+    try {
+      parseCalibration(c);
+    } catch (e) {
+      expect(e).toBeInstanceOf(CalibrationFormatError);
+      return e as CalibrationFormatError;
+    }
+    throw new Error('expected parseCalibration to throw');
+  }
+
+  it('accepts the small calibration without the keys, with both, and without market', () => {
+    expect(parseCalibration(cal)).toBe(cal);
+    const both = {
+      ...clone(),
+      affordableRoutes: fallbackRoutes(),
+      baselineFunding: fixtureFunding()
+    };
+    expect(parseCalibration(both)).toBe(both);
+    const noMarket = { ...clone(), baselineFunding: fixtureFunding() };
+    expect(noMarket.market).toBeUndefined();
+    expect(parseCalibration(noMarket)).toBe(noMarket);
+  });
+
+  const cases: [string, (c: any) => void, string, string][] = [
+    [
+      'debt on a general-fund pool',
+      (c) => (c.baselineFunding.pools[2].debt = { rate: 0.06, termYears: 20 }),
+      'baselineFunding.pools[2].debt',
+      'expected null debt for kind generalRevenue'
+    ],
+    [
+      'inflow on the federal pool',
+      (c) => (c.baselineFunding.pools[7].inflows = [{ kind: 'once', day: asOf, dollars: 1 }]),
+      'baselineFunding.pools[7].inflows',
+      'expected no inflows on an uncapped pool'
+    ],
+    [
+      'pool id with the u- prefix',
+      (c) => (c.baselineFunding.pools[0].id = 'u-city'),
+      'baselineFunding.pools[0].id',
+      'expected a baseline id not starting u-, got u-city'
+    ],
+    [
+      'pool id off the pattern',
+      (c) => (c.baselineFunding.pools[0].id = 'City-debt'),
+      'baselineFunding.pools[0].id',
+      'expected an id matching ^[a-z0-9][a-z0-9-]{0,39}$, got City-debt'
+    ],
+    [
+      'duplicate pool id',
+      (c) => (c.baselineFunding.pools[1].id = 'city-debt'),
+      'baselineFunding.pools[1].id',
+      'expected a unique id, got city-debt'
+    ],
+    [
+      'a pool with no debt key',
+      (c) => delete c.baselineFunding.pools[0].debt,
+      'baselineFunding.pools[0].debt',
+      'missing'
+    ],
+    [
+      'an unknown pool key',
+      (c) => (c.baselineFunding.pools[0].extra = 1),
+      'baselineFunding.pools[0].extra',
+      'unexpected key'
+    ],
+    [
+      'a market programme with no tiers key',
+      (c) => {
+        c.baselineFunding.programmes[0].reach = 'market';
+        delete c.baselineFunding.programmes[0].tiers;
+      },
+      'baselineFunding.programmes[0].tiers',
+      'missing'
+    ],
+    [
+      'a stray key on a once inflow',
+      (c) =>
+        (c.baselineFunding.pools[0].inflows = [{ kind: 'once', day: asOf, dollars: 1, extra: 1 }]),
+      'baselineFunding.pools[0].inflows[0].extra',
+      'unexpected key'
+    ],
+    [
+      'goBond without debt',
+      (c) => (c.baselineFunding.pools[0].debt = null),
+      'baselineFunding.pools[0].debt',
+      'expected debt for kind goBond'
+    ],
+    [
+      'programme naming no pool',
+      (c) => (c.baselineFunding.programmes[0].pool = 'nowhere'),
+      'baselineFunding.programmes[0].pool',
+      'expected a pool id, got nowhere'
+    ],
+    [
+      'baseline loan programme',
+      (c) =>
+        (c.baselineFunding.programmes[0].instrument = {
+          kind: 'loan',
+          costShare: 0.5,
+          rate: 0.02,
+          requiredReturn: null
+        }),
+      'baselineFunding.programmes[0].instrument',
+      'expected a grant, got loan'
+    ],
+    [
+      'null tiers on an affordable programme',
+      (c) => (c.baselineFunding.programmes[0].tiers = null),
+      'baselineFunding.programmes[0].tiers',
+      'expected tiers for reach affordable'
+    ],
+    [
+      'tiers summing to 0.9',
+      (c) =>
+        (c.baselineFunding.programmes[0].tiers = {
+          veryLow: 0.4,
+          low: 0.4,
+          moderate: 0.1,
+          aboveModerate: 0
+        }),
+      'baselineFunding.programmes[0].tiers',
+      'expected values summing to 1, got 0.9'
+    ],
+    [
+      'eight provenances',
+      (c) => c.baselineFunding.provenance.pop(),
+      'baselineFunding.provenance',
+      "expected 9 entries (one per pool, then the programmes' tiers and minHomes), got 8"
+    ],
+    [
+      'affordableRoutes summing to 0.9',
+      (c) => (c.affordableRoutes.discretionary = 0.5),
+      'affordableRoutes',
+      'expected values summing to 1, got 0.9'
+    ]
+  ];
+
+  it.each(cases)('rejects %s', (_name, mutate, path, message) => {
+    const c = { ...clone(), affordableRoutes: fallbackRoutes(), baselineFunding: fixtureFunding() };
+    mutate(c);
+    const e = rejection(c);
+    expect(e.path).toBe(path);
+    expect(e.message).toBe(`${path}: ${message}`);
+  });
+
+  describe('checkPool', () => {
+    const bond = (): any => ({
+      id: 'u-bond',
+      kind: 'goBond',
+      label: 'A bond',
+      inflows: [{ kind: 'once', day: asOf, dollars: 5 }],
+      uncapped: false,
+      debt: { rate: 0.05, termYears: 30 },
+      leverage: 1
+    });
+    const msg = (f: () => void): string => {
+      try {
+        f();
+      } catch (e) {
+        return (e as CalibrationFormatError).message;
+      }
+      return 'no throw';
+    };
+
+    it('accepts a u- pool with valid debt', () => {
+      expect(() => checkPool(bond(), 'p')).not.toThrow();
+    });
+
+    it("rejects out-of-bounds debt with validateDebt's text", () => {
+      const a = bond();
+      a.debt.rate = 0.26;
+      expect(msg(() => checkPool(a, 'p'))).toBe(
+        'p.debt: A borrowing rate is above 0% and at most 25%.'
+      );
+      const b = bond();
+      b.debt.termYears = 41;
+      expect(msg(() => checkPool(b, 'p'))).toBe(
+        'p.debt: A borrowing term is a whole number of years from 1 to 40.'
+      );
+    });
+
+    it('rejects leverage other than 1 unless the kind is bank', () => {
+      const a = bond();
+      a.leverage = 2;
+      expect(msg(() => checkPool(a, 'p'))).toBe(
+        'p.leverage: expected 1 unless kind is bank, got 2'
+      );
+      const b = { ...bond(), kind: 'bank', debt: null, leverage: 2 };
+      expect(() => checkPool(b, 'p')).not.toThrow();
+    });
+  });
+
+  describe('checkProgramme', () => {
+    const loan = (): any => ({
+      id: 'u-bond',
+      label: 'Loans',
+      pool: 'a',
+      reach: 'market',
+      instrument: { kind: 'loan', costShare: 0.5, rate: 0.02, requiredReturn: null },
+      from: asOf,
+      to: null,
+      minHomes: 0,
+      tiers: null
+    });
+    const ids = new Set(['a']);
+
+    it('accepts a u- loan with minHomes 0', () => {
+      expect(() => checkProgramme(loan(), 'q', ids)).not.toThrow();
+    });
+
+    it("rejects with validateInstrument's exact text", () => {
+      const p = loan();
+      p.instrument.requiredReturn = 0.3;
+      const want = validateInstrument(p.instrument);
+      expect(want).not.toBeNull();
+      expect(() => checkProgramme(p, 'q', ids)).toThrow(`q.instrument: ${want}`);
+    });
+
+    it('rejects a key another instrument kind owns', () => {
+      const grant = loan();
+      grant.instrument = { kind: 'grant', share: 0.5, costShare: 0.5 };
+      expect(() => checkProgramme(grant, 'q', ids)).toThrow(
+        'q.instrument.costShare: unexpected key'
+      );
+      const guarantee = loan();
+      guarantee.instrument = { kind: 'guarantee', costShare: 0.5, reserve: 0.1, rate: 0.02 };
+      expect(() => checkProgramme(guarantee, 'q', ids)).toThrow(
+        'q.instrument.rate: unexpected key'
+      );
+      const short = loan();
+      delete short.instrument.requiredReturn;
+      expect(() => checkProgramme(short, 'q', ids)).toThrow('q.instrument.requiredReturn: missing');
+    });
+
+    it('rejects minHomes 10001', () => {
+      const p = loan();
+      p.minHomes = 10001;
+      expect(() => checkProgramme(p, 'q', ids)).toThrow(
+        'q.minHomes: expected a whole number from 0 to 10000, got 10001'
+      );
+    });
   });
 });

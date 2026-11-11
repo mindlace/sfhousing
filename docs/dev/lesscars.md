@@ -660,6 +660,23 @@ Recorded as errata in `docs/lesscars/plan-v1.md` ("Errata from the live check (2
   `us101-bayshore` starts at lat 37.73497 (the southbound cut at the I-280 crossing) at z11, z13
   and z15, and the kept US-101 reaches lat 37.73862 (the north end of `19222002`).
 
+## Release 1 rebuild: today's market
+
+Built 2026-11-10 as `2026-11-10-3532a348` (Apple M5 Pro), from the committed lock with the
+`datasf-mohcd-pipeline` source added and the unchanged v1.1 plan; every invariant passed, and V35
+reads `68 projects, 166 sites, 41 year ends`. The base input now runs on today's market
+(`SimInput.market`, `today.all` -0.64196, [market.md](market.md)), and the plan and baseline inputs
+spread it from the base, so both arms run on it. Compared with the production dataset
+`2026-11-08-3b7fa918` (in brackets):
+
+- **Headline at 2068:** mean +29,349 extra homes (+29,096); p10 28,912 (28,381), p50 29,428
+  (29,184), p90 29,647 (29,526). 101 seeds, representative seed 55 (91).
+- **Totals at 2068:** plan 94,287 (116,212) against baseline 64,938 (87,116). Both arms build about
+  22,000 fewer homes on today's market; the difference between them barely moves.
+- **2068 by source** (means): freed 22,959 (22,959); parking 6,333 (6,018); transit-unlocked 57 (119);
+  other 0.
+- No year's mean extra is below zero by more than 0.01 home, and p10 never drops below 0.
+
 ## Freeway land
 
 The catalog format, its build rule and the V17 and homes checks are in [pipeline.md](pipeline.md)

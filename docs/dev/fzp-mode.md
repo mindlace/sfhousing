@@ -112,6 +112,21 @@ Cohort-aware bars (Call 15). On a run whose input has `newProjects` (every `/sim
 
 Map picking is pointer-only (mouse click, touch tap, hover), a gap shared with the editor's tooltips (see "Known gap" in [map-interfaces.md](map-interfaces.md)). A keyboard user can drive the scrubber, the Results face and the sources dialog, but cannot open a project card. Once a card is open it is a normal region with a Close button, and Escape closes it (unless the sources dialog is open, which takes Escape first).
 
+## Today's market in the Results' sources
+
+When `calibration.market` is present, the Results face's Sources disclosure
+(`data-testid="fzp-sources"`) has a paragraph `data-testid="fzp-market"` directly after its first
+paragraph. `SimResults` takes it as the `market?: string | null` prop (default `null` renders
+nothing); `FzpMode` passes `marketSentence(calibration, marketLevel(calibration))`
+(`src/lib/fzp/market-view.ts`), which is `null` without `calibration.market`. The sentence's
+percent comes from the counts, not from `exp(level)`, so its three numbers agree. It is static text
+in a closed disclosure, with no `aria-live`. Both `/sim` and `/s/<id>` show it.
+
+The sources dialog gets a section `src-market` ("Today's market") after "Where new projects
+start", with the "In force" line following `marketLevel`; without `calibration.market` there is no
+section and no paragraph. `funding-ui` extends both the paragraph and the section in Release 2. The
+e2e reads their numbers from `fixture-0`'s calibration. See [market.md](market.md).
+
 ## The chart's y domain
 
 `ScoreChart` (`chart.ts`) draws every series only up to `monthIndex(highWater)`; the table rows stop at the same mark and the "At the deadline" lines stay hidden until the mark reaches the deadline month. Its accessible name is "Net new homes in this simulation so far: ...". The y domain covers the revealed values, so it can grow as the mark advances, with the references and the RHNA target as a floor (so the axis does not jump for them). It starts at 0, **unless a revealed value is negative**: the plan-effect series can be early on. Then the axis reaches down to `-niceCeil(-min)` so the negative part stays inside the plot, and a floor gridline is added when it is clear of the zero line. Spec section 4.6 says "0 to niceCeil"; the extension is deliberate.

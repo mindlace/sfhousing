@@ -885,6 +885,21 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
   });
 });
 
+describe('mini project records: housing tiers', () => {
+  it('the mini housing rows give byTier', () => {
+    expect(r.file.rhnaCompletedNet.units).toBe(4);
+    expect(r.file.rhnaCompletedNet.byTier).toEqual({
+      veryLow: 0,
+      low: 0,
+      moderate: 0,
+      aboveModerate: 3,
+      unrecorded: 1
+    });
+    expect(r.counts['quality.pr.rhna.tier-unrecorded.fired']).toBe(1);
+    expect(r.counts['quality.pr.rhna.tier-unrecorded.of']).toBe(1);
+  });
+});
+
 describe('mini project records: V20-V24 with the fixture thresholds', () => {
   it('passes V20 on the serialised file', () => {
     const v = checkV20(Buffer.from(serializeProjects(r.file)), {

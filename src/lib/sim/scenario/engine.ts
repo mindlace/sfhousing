@@ -27,12 +27,14 @@ import {
   PATHWAYS,
   STAGE_ORDER,
   type Calibration,
+  type Dollars,
   type ExitReason,
   type Pathway,
   type RevisionModel,
   type Stage
 } from '$lib/timelapse/types';
 import type { StageScale } from '../levers/timers';
+import { isoOf } from './dates';
 import {
   piecewiseMonth,
   precomputeOf,
@@ -60,6 +62,14 @@ export interface Sink {
    * reservation was kept. Optional: a sink without it ignores reservations.
    */
   reservation?(row: number, kept: boolean): void;
+  /** F10: one event per programme of a project, called in day order; `programme` is null on `in`. */
+  ledger?(e: {
+    day: Day;
+    pool: string;
+    programme: string | null;
+    kind: 'in' | 'commit' | 'release' | 'spend' | 'repay' | 'loss';
+    dollars: Dollars;
+  }): void;
 }
 
 type End = Schedule['end'];
@@ -220,8 +230,6 @@ interface Run {
   pre: Precompute;
   /** `input.regimes`, each with its view's input and precompute; [] = none */
   regimes: { day: Day; parcels: ScenarioParcels; input: SimInput; pre: Precompute }[];
-  /** the regime days, ascending */
-  days: Day[];
   /** `input.reservedFrom`; null = none */
   reservedFrom: Int32Array | null;
   st: Static;
@@ -231,13 +239,31 @@ interface Run {
   ids: boolean;
 }
 
-/** Inputs whose `regimes` and `reservedFrom` passed `checkInput`. */
+/** Inputs whose `regimes`, `reservedFrom` and `market` passed `checkInput`. */
 const checked = new WeakSet<SimInput>();
 
-/** Throws a RangeError on bad `regimes` or `reservedFrom` (see `SimInput`); memoised by input. */
+/**
+ * Throws a RangeError on bad `regimes`, `reservedFrom` or `market` (see `SimInput`; spec §4.8);
+ * memoised by input.
+ */
 function checkInput(input: SimInput): void {
   if (checked.has(input)) return;
   const n = input.parcels.count;
+  const steps = input.market ?? [];
+  for (let k = 0; k < steps.length; k++) {
+    if (!Number.isFinite(steps[k].logOdds)) {
+      throw new RangeError(`market: logOdds of step ${k} is not finite`);
+    }
+    if (k > 0 && !(steps[k].from > steps[k - 1].from)) {
+      throw new RangeError(`market: steps must be strictly ascending by from (step ${k})`);
+    }
+  }
+  if (steps.length > 0 && !(steps[0].from <= input.asOf)) {
+    throw new RangeError(
+      `market: the first step must be on or before asOf ` +
+        `(${isoOf(steps[0].from)} > ${isoOf(input.asOf)})`
+    );
+  }
   let prev = input.asOf;
   for (const [k, g] of (input.regimes ?? []).entries()) {
     if (!(g.day > prev)) {
@@ -290,7 +316,6 @@ function runOf(input: SimInput, seed: number, horizon: Day, ids: boolean): Run {
     input,
     pre,
     regimes,
-    days: regimes.map((g) => g.day),
     reservedFrom: input.reservedFrom ?? null,
     st: staticOf(input),
     revisionAt,
@@ -868,10 +893,10 @@ function newPathway(cal: Calibration, stream: number): Pathway {
 /**
  * The k-th initiation month on a parcel at risk from day `r` (§4.4.4 steps 1-2), on the parcel's
  * `(entity, k)` stream: the geometric month `T = max(1, ceil(log(1 − u) / l1))` by inverse CDF,
- * with `l1 = log(1 − h)` < 0. With regimes (`bounds` = `regimeMonths(r, days)`, `rates` each
- * view's log(1 − h)), the piecewise hazard (ruling 1, generalised): `piecewiseMonth(L, bounds,
- * rates)`, L = log(1 − u), 0 = never. Its first segment is the unswitched expression, so draws
- * before the first regime are unchanged.
+ * with `l1 = log(1 − h)` < 0. With segments (regimes or later market steps: `bounds` =
+ * `regimeMonths(r, segments.days)`, `rates` each segment's log(1 − h)), the piecewise hazard
+ * (ruling 1, generalised): `piecewiseMonth(L, bounds, rates)`, L = log(1 − u), 0 = never. Its
+ * first segment is the unswitched expression, so draws before the first boundary are unchanged.
  */
 function initiationMonth(
   stream: number,
@@ -983,7 +1008,8 @@ function holdVoids(hold: Hold | undefined, d: Day): boolean {
  * demolished at the first construction entry of any project on it, and every later project on
  * it has 0 existing units. A parcel no project holds, whose first initiation draw is above its
  * `skipAbove` bound, cannot initiate by the horizon and is passed over on that one draw. With
- * regimes, each initiation month runs on its view (`initiationMonth`, `simulatedProject`).
+ * regimes or later market steps, each initiation month runs on its segment's view and market
+ * step (`initiationMonth`, `simulatedProject`; spec §4.8).
  *
  * A row reserved from day d (`reservedFrom`) keeps its reservation unless a project began on it
  * before d and had not exited before d: a holder that voids it (`holdVoids`), or a simulated
@@ -992,11 +1018,13 @@ function holdVoids(hold: Hold | undefined, d: Day): boolean {
  * Every reserved row, candidate or not, is reported once to `sink.reservation`.
  */
 function simulatedPass(run: Run, holds: Holds, sink: Sink): void {
-  const { parcels, pre, st, regimes, days, reservedFrom } = run;
-  const { candidates, entity, log1mh } = pre;
+  const { parcels, pre, st, reservedFrom } = run;
+  const { candidates, entity, log1mh, segments } = pre;
   const skip = pre.skipAbove(run.horizon);
   const job = newJob(run);
-  const K = regimes.length;
+  // regime days and later market days, merged (spec §4.8); without market steps, the regime days
+  const { days } = segments;
+  const K = days.length;
   const rates = new Array<number>(K + 1);
   for (let c = 0; c < candidates.length; c++) {
     const i = candidates[c];
@@ -1019,10 +1047,7 @@ function simulatedPass(run: Run, holds: Holds, sink: Sink): void {
       if (reserved) sink.reservation?.(i, true);
       continue;
     }
-    if (K > 0) {
-      rates[0] = log1mh[i];
-      for (let j = 0; j < K; j++) rates[j + 1] = regimes[j].pre.log1mh[i];
-    }
+    if (K > 0) for (let j = 0; j <= K; j++) rates[j] = segments.log1mh[j][i];
     for (let k = 0; ; k++) {
       if (k > 0) stream = streamOf(run.sh, entity[c], k);
       const bounds = K > 0 ? regimeMonths(r, days) : null;
@@ -1030,8 +1055,9 @@ function simulatedPass(run: Run, holds: Holds, sink: Sink): void {
       const day = initiationDay(run, stream, T, r);
       if (day === null) break;
       if (d > 0 && day >= d) break;
-      let view = 0;
-      if (bounds !== null) while (view < K && bounds[view] < T) view++;
+      let seg = 0;
+      if (bounds !== null) while (seg < K && bounds[seg] < T) seg++;
+      const view = segments.view[seg];
       const existing = demolished ? 0 : parcels.existingUnits[i];
       const s = simulatedProject(run, job, i, stream, k, day, existing, view);
       if (s === null) break;

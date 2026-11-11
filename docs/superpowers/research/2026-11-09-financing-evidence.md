@@ -121,6 +121,7 @@ Sources: Reinvestment Working Group / HR&A Advisors, *Municipal Finance Corporat
 All **[R]** unless marked.
 
 - **What binds.** San Francisco's 9% credit apportionment is 3.7% of the regional balance (CTCAC Reg. §10315; $2.86M federal a year in 2026); 2026 round 1 had "no recommended projects" in the region. The Bay Area bond pool used $75.2M of $128.6M in 2026 round 1 and $170.1M of $181.9M in round 2 (https://www.treasurer.ca.gov/sites/default/files/2026-09/Allocation_by_Round_9-14-2026.pdf). Statewide, bond demand was 2.58 times the cap in 2021 **[S]**.
+  - **[V] on 2026-11-10** (reappraisal 1), each figure above except the 2021 one: the bond table is the Debt Limit Allocation Committee's Exhibit A, updated 2026-09-14 (Bay Area Region 21%, $367,379,061 a year; QRRP ceiling $4,829,170,308; no San Francisco line); the 9% figures are in the Tax Credit Allocation Committee's 2026 credit estimates, updated 2026-09-02, Step 3 (San Francisco County 3.7%, $2,861,626 annual federal credit, $3,437,486 available in round 1, $0 awarded: https://www.treasurer.ca.gov/sites/default/files/2026-03/2026-credit-estimates.pdf) and its round 1 final recommendations of 2026-06-22 (https://www.treasurer.ca.gov/sites/default/files/ctcac/2026_R1_Final_Recommendations.pdf). The regulation itself was not read.
 - **San Francisco bond and 4% credit awards** (CDLAC award lists; tier 0): 2024 10 projects, 1,302 homes (9 new-construction projects, 1,239 homes), $550.0M of bond cap, $47.3M of annual federal credit; 2025 6 projects, 758 homes (5 / 686), $279.7M, $26.0M; 2026 rounds 1–2 6 projects, 845 homes (5 / 742), $216.7M, $38.9M. Bond cap per home fell from $422k (2024) to $256k (2026).
 - **Equity** (staff reports in the CDLAC binders; tier 0): federal credit price $0.837–$0.914; permanent tax-credit equity $329k–$549k a home in 100% affordable new buildings (31–59% of cost); total cost $819k–$1.20M a home.
 - **Federal changes**: the 9% per-capita amount rose from $3.00 to $3.416 for 2026 (+12%, permanent); the bond test fell from 50% to 25% for bonds issued after 2025-12-31 (P.L. 119-21, 2025-07-04; the statute itself not read). The 21st Century ROAD to Housing Act became law in July 2026; it authorises an innovation fund of $200M a year for FY2027–31 and appropriates nothing. HOME: FY2026 $1,250M nationally; FY2027 President $0, House committee $500M; San Francisco's HOME allocation is $4.25M (2026-27).
@@ -145,7 +146,7 @@ All **[R]**; tier 3 unless marked.
 ## 8. Gaps
 
 - No loss or repayment record for any City loan programme; no loss figure for a single abandoned project.
-- No San Francisco ceiling on federal tax credits or bond allocation.
+- No San Francisco ceiling on bond allocation: the state's ceiling is divided among state-wide pools and regions, and San Francisco is in the Bay Area region. (Corrected on 2026-11-10: the 9% credit does have a San Francisco share, a geographic apportionment of $2,861,626 a year in 2026; see section 6.)
 - No loan terms in the public-bank plans.
 - No San Francisco share of the 2026 state bond.
 - Certification of the three November 2026 measures (Housing Trust Fund, public bank, state bond).

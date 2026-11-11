@@ -92,6 +92,7 @@ function hostableShapePanel(): PanelResult {
     events,
     eventsOffPanel: 0,
     eventsCovered: 0,
+    starts: [],
     maxAtRisk: { potentialRatio: 25, storiesGap: 4 },
     mask: {
       exposure: [0, 0, 0, 0, 0, 0, 0],

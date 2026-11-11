@@ -22,7 +22,8 @@ export type DatasfId =
   | 'datasf-assessor-roll'
   | 'datasf-streets'
   | 'datasf-city-lands'
-  | 'datasf-historic-status';
+  | 'datasf-historic-status'
+  | 'datasf-mohcd-pipeline';
 
 export const DATASF: Record<
   DatasfId,
@@ -135,7 +136,8 @@ export const DATASF: Record<
   'datasf-housing-production': {
     dataset: 'xdht-4php',
     format: 'json',
-    select: 'bpa,blocklot,form_no,net_units_completed,first_completion_date',
+    select:
+      'bpa,blocklot,form_no,net_units_completed,first_completion_date,extremely_low_income,very_low_income,low_income,moderate_income,affordable_units',
     license: 'public-domain',
     homepage: 'https://data.sf.gov/d/xdht-4php',
     label: 'DataSF Housing Production'
@@ -207,6 +209,18 @@ export const DATASF: Record<
     license: 'PDDL-1.0',
     homepage: 'https://data.sf.gov/d/3tsw-4idn',
     label: 'DataSF Historic Resource Status by Parcel'
+  },
+  // Finance data: the MOHCD affordable pipeline (a 2023 snapshot; not an as-of source).
+  'datasf-mohcd-pipeline': {
+    dataset: 'aaxw-2cb8',
+    format: 'json',
+    select:
+      'project_id,project_name,project_status,general_housing_program,project_type,housing_tenure,' +
+      'total_project_units,mohcd_affordable_units,_20_ami,_30_ami,_40_ami,_50_ami,_55_ami,_60_ami,' +
+      '_80_ami,_90_ami,_100_ami,_105_ami,_110_ami,_120_ami,_130_ami,_150_ami,ami_undeclared',
+    license: 'PDDL-1.0',
+    homepage: 'https://data.sf.gov/d/aaxw-2cb8',
+    label: 'DataSF MOHCD Affordable Housing Pipeline'
   }
 };
 

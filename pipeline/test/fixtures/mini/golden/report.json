@@ -8,8 +8,21 @@
     "buildings.kept": 12,
     "buildings.outside_nb_dropped": 1,
     "buildings.underground_dropped": 1,
-    "calibration.bytes": 37750,
+    "calibration.affordable.fallback": 1,
+    "calibration.affordable.histories": 0,
+    "calibration.bytes": 55437,
+    "calibration.funding.impliedHomesPerYear": 20,
+    "calibration.funding.mohcdRows": 2,
+    "calibration.funding.observedHomesPerYear": 25,
     "calibration.histories": 38,
+    "calibration.market.recentAffordable": 0,
+    "calibration.market.recentNoRecord": 1,
+    "calibration.market.recentPrivate": 3,
+    "calibration.market.recentStarts": 3,
+    "calibration.market.recentUnknown": 2,
+    "calibration.market.unbinnedHomes": 0,
+    "calibration.market.unbinnedStories": 1,
+    "calibration.market.weightStarts": 2,
     "calibration.method.permitOnlyPre2015": 5,
     "calibration.method.ppaPooled": 2,
     "calibration.method.sizeOverEnvelope": 0,
@@ -28,6 +41,8 @@
     "calibration.purge.windows": 0,
     "calibration.qualifying": 37,
     "calibration.rung3": 3,
+    "calibration.siteChoice.affordableOnPanel": 0,
+    "calibration.siteChoice.privateOnPanel": 5,
     "calibration.spells.discretionary.construction": 3,
     "calibration.spells.discretionary.entitled": 10,
     "calibration.spells.discretionary.filed": 11,
@@ -104,8 +119,8 @@
     "landuse.orphan_rows": 2,
     "landuse.rows": 26,
     "landuse.unknown_values": 0,
-    "lesscars.bytes.timeline_payload": 4034,
-    "lesscars.extra_2068.mean": 284,
+    "lesscars.bytes.timeline_payload": 4434,
+    "lesscars.extra_2068.mean": 287,
     "lesscars.freed_m2.parcels": 800,
     "lesscars.freed_m2.row": 3684,
     "lesscars.projects": 8,
@@ -129,7 +144,7 @@
     "link.ppaOnly": 1,
     "link.satellites": 0,
     "link.splitComponents": 1,
-    "manifest.bytes": 6499,
+    "manifest.bytes": 6683,
     "multiphase.descendants.2007.0001PRX": 1,
     "multiphase.descendants.2010.0002PRX": 1,
     "multiphase.descendants.2012-000020PRX": 1,
@@ -229,7 +244,7 @@
     "projects.byStage.permitFiled": 4,
     "projects.byStage.permitIssued": 1,
     "projects.byStage.preApplication": 1,
-    "projects.bytes": 9201,
+    "projects.bytes": 10008,
     "projects.districtMaxStories": -1,
     "projects.districtMaxStories.n": 0,
     "projects.excludedAlterationUnits": 0,
@@ -269,6 +284,8 @@
     "projects.stories.null": 12,
     "projects.stories.tier0": 2,
     "projects.stories.tier3": 1,
+    "quality.pr.affordable.over-units.fired": 0,
+    "quality.pr.affordable.over-units.of": 0,
     "quality.pr.date.valid-range.fired": 1,
     "quality.pr.date.valid-range.of": 160,
     "quality.pr.multiphase.da-netting.fired": 1,
@@ -297,6 +314,8 @@
     "quality.pr.pipeline.status-date-linked.unitsOf": 1767,
     "quality.pr.projects.superseded.fired": 1,
     "quality.pr.projects.superseded.of": 11,
+    "quality.pr.rhna.tier-unrecorded.fired": 1,
+    "quality.pr.rhna.tier-unrecorded.of": 1,
     "quality.pr.stages.complete-from-evidence.fired": 1,
     "quality.pr.stages.complete-from-evidence.of": 7,
     "quality.pr.stages.expiry-no-valuation.fired": 1,
@@ -333,6 +352,8 @@
     "quality.sc.exit.last-stage.of": 10,
     "quality.sc.exit.purge-censor.fired": 0,
     "quality.sc.exit.purge-censor.of": 9,
+    "quality.sc.funding.ami-undeclared.fired": 1,
+    "quality.sc.funding.ami-undeclared.of": 8,
     "quality.sc.revision.carried-excluded.fired": 0,
     "quality.sc.revision.carried-excluded.of": 8,
     "quality.sc.revision.ratio-clamp.fired": 0,
@@ -630,7 +651,7 @@
       "ok": true
     },
     {
-      "detail": "manifest 6499/64000 B; neighborhoods 709/150000 B",
+      "detail": "manifest 6683/64000 B; neighborhoods 709/150000 B",
       "id": "V11",
       "ok": true
     },
@@ -675,7 +696,7 @@
       "ok": true
     },
     {
-      "detail": "15 projects, 9201 bytes",
+      "detail": "15 projects, 10008 bytes",
       "id": "V20",
       "ok": true
     },
@@ -685,7 +706,7 @@
       "ok": true
     },
     {
-      "detail": "2023 3 vs 3, 2024 2 vs 2, 2025 -1 vs -1; total 4 vs 4 (all-period 4)",
+      "detail": "2023 3 vs 3, 2024 2 vs 2, 2025 -1 vs -1; total 4 vs 4 (all-period 4); byTier sums to 4, units 4",
       "id": "V22",
       "ok": true
     },
@@ -700,7 +721,7 @@
       "ok": true
     },
     {
-      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 37750 B",
+      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 55437 B; baselineFunding 8 pools, one programme each; shares 1000000 millionths; affordableRoutes tier 4",
       "id": "V25",
       "ok": true
     },
@@ -764,7 +785,7 @@
     "derivedData": "ODbL-1.0",
     "notice": "Derived data files under /data/ that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0."
   },
-  "lockSha256": "f9037c9a8d389e74782d8d488bf2a01aa4323edd1c89480a23154f4cfcd991ac",
+  "lockSha256": "cad5465477b7e722d0da91d0f6252a039bbb2999d17271f3cd008b0165a08925",
   "tilesSkipped": false,
   "toolVersions": {
     "duckdb": "1.5.6",

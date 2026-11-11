@@ -23,6 +23,7 @@ export default defineConfig({
         'src/lib/plan/geometry.ts',
         'src/lib/sim/scenario/**',
         'src/lib/sim/levers/**',
+        'src/lib/sim/finance/**',
         'src/lib/scoreboard/**'
       ],
       triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline', 'dataset']

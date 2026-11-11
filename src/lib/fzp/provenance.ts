@@ -3,7 +3,8 @@
  * `projects.json` into sections of plain strings for `SourcesDialog.svelte`. Transition shares
  * come from `cumulativeIncidence` (tail included); nothing here re-derives them.
  */
-import { formatCount } from '$lib/scoreboard/format';
+import { formatCount, formatPercent } from '$lib/scoreboard/format';
+import { marketLevel } from '$lib/sim/scenario/market';
 import type { TimelineScore } from '$lib/sim/protocol';
 import { cumulativeIncidence } from '$lib/timelapse/model';
 import type { ProjectsFile } from '$lib/timelapse/projects';
@@ -12,6 +13,7 @@ import { PATHWAYS, STAGE_ORDER } from '$lib/timelapse/types';
 import type {
   Calibration,
   FeatureId,
+  MarketModel,
   Pathway,
   Provenance,
   Stage,
@@ -20,6 +22,7 @@ import type {
 import { transitionSectionId, LOCAL_PROGRAM_SECTION_ID } from './card';
 import { MEASURE_SERIES, SERIES_NAME } from './chart';
 import { formatDate } from './format';
+import { MARKET_HOLD_SENTENCE, MARKET_INTRO_SENTENCE, marketShare } from './market-view';
 import { EXIT_LABEL, PATHWAY_LABEL, TIER_LABEL, inStageLabel } from './labels';
 
 export interface ProvEntry {
@@ -213,11 +216,33 @@ function initiationSection(cal: Calibration): ProvSection {
   return {
     id: 'src-initiation',
     heading: 'Where new projects start',
-    intro: [],
+    intro: cal.market ? [MARKET_INTRO_SENTENCE] : [],
     entries: [
       entry('src-initiation-model', 'Chance a parcel starts a project', initiation.provenance)
     ],
     tables: [{ caption: 'What raises or lowers the monthly chance', head, rows }]
+  };
+}
+
+/** Today's market (spec 4.11). Only called with a market model. */
+function marketSection(cal: Calibration, market: MarketModel): ProvSection {
+  const { today, crossCheck } = market;
+  const level = marketLevel(cal);
+  const line = (name: string, k: 'all' | 'private', inForce: string) =>
+    `${name}: ${marketShare(cal, k)} of the average (log-odds ${coefText(today[k])}). ${
+      level === k ? 'In force.' : inForce
+    }`;
+  const after = [
+    line('All starts', 'all', 'Not in force until public funding is modelled.'),
+    line('Private starts only', 'private', 'Not in force until public funding is modelled.'),
+    `Cross-check, not used: the Controller's development model, on its cost and price indices, puts today's odds at ${formatPercent(Math.exp(crossCheck.logOdds))} of the 2007 to 2025 average (research or literature, tier 3).`
+  ];
+  return {
+    id: 'src-market',
+    heading: "Today's market",
+    intro: [MARKET_HOLD_SENTENCE],
+    entries: [entry('src-market-today', "Today's level", today.provenance, { after })],
+    tables: []
   };
 }
 
@@ -394,6 +419,7 @@ export function provenanceSections(cal: Calibration, score: TimelineScore | null
   out.push(
     transitionsSection(cal),
     initiationSection(cal),
+    ...(cal.market ? [marketSection(cal, cal.market)] : []),
     sizeSection(cal),
     revisionSection(cal),
     pathwaySection(cal)

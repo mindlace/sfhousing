@@ -91,6 +91,7 @@ describe('codeTreeHash', () => {
     ['src/lib/plan/types.ts', 'src/lib/plan/types.ts'],
     ['src/lib/sim/scenario', 'src/lib/sim/scenario/engine.ts'],
     ['src/lib/sim/levers', 'src/lib/sim/levers/apply.ts'],
+    ['src/lib/sim/finance', 'src/lib/sim/finance/prototypes.ts'],
     ['src/lib/scoreboard', 'src/lib/scoreboard/index.ts']
   ])('codeTreeHash changes when a file under %s changes', async (_label, file) => {
     const { dir, git } = tempRepo();

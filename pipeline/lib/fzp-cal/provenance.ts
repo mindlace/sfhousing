@@ -11,7 +11,8 @@ export const DATASETS = {
   unitCompletions: 'j67f-aayr',
   housingProduction: 'xdht-4php',
   assessorRoll: 'wv5m-vpq2',
-  devPipeline: '6jgi-cpb4'
+  devPipeline: '6jgi-cpb4',
+  mohcdPipeline: 'aaxw-2cb8'
 } as const;
 
 const LABELS: Record<keyof typeof DATASETS, string> = {
@@ -22,7 +23,8 @@ const LABELS: Record<keyof typeof DATASETS, string> = {
   unitCompletions: 'SF housing unit completions (DataSF j67f-aayr)',
   housingProduction: 'SF housing production (DataSF xdht-4php)',
   assessorRoll: 'SF assessor secured roll (DataSF wv5m-vpq2)',
-  devPipeline: 'SF development pipeline (DataSF 6jgi-cpb4)'
+  devPipeline: 'SF development pipeline (DataSF 6jgi-cpb4)',
+  mohcdPipeline: 'SF MOHCD affordable housing pipeline (DataSF aaxw-2cb8)'
 };
 
 /** A DataSF dataset as a provenance source. */

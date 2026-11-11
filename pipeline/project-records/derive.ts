@@ -574,7 +574,10 @@ function history(a: Assessed, input: ProjectRecordsInput): ProjectHistory {
     storiesProposed: a.stories.stories,
     baseStoriesAtFiling: baseStoriesAt(a.proj.parcelIds, a.rollYear, input.baseStories),
     sources: withEvidenceSources(sourcesOf(a.proj), a.stale.evidenceBpas),
-    quality: historyQuality(a.quality)
+    quality: historyQuality(a.quality),
+    planningProposed: a.proj.primary
+      ? { units: a.proj.primary.unitsProp, affordable: a.proj.primary.affordableProp }
+      : null
   };
 }
 
@@ -607,6 +610,24 @@ interface TallyInput {
   netting: readonly Netting[];
   /** Ruling SP1: the in-flight PRJ-anchored projects tested and the superseded ids. */
   supersede: { tested: number; superseded: readonly string[] };
+  /** Spec 4.3: rows of `rhnaCompletedNet.byTier` counted as tier not recorded. */
+  rhna: { fired: number; of: number; sample: string[] };
+}
+
+/**
+ * Spec 4.2: min(affordableProp, units) from the primary Planning record; null for a split part, a
+ * multiPhase master, no primary record, or a value that is not a non-negative integer.
+ */
+export function affordableHomesOf(
+  proj: LinkedProject,
+  multiPhase: boolean,
+  units: number
+): { value: number | null; clamped: boolean } {
+  const raw = proj.primary?.affordableProp ?? null;
+  if (isSplitPart(proj.id) || multiPhase || raw === null || !Number.isInteger(raw) || raw < 0) {
+    return { value: null, clamped: false };
+  }
+  return raw > units ? { value: units, clamped: true } : { value: raw, clamped: false };
 }
 
 /** Σ of the positive values; null and negative count as 0. */
@@ -835,6 +856,19 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
       units: positiveSum(netted.map((n) => n.before - n.after)),
       unitsOf: positiveSum(netting.map((n) => n.before)),
       sample: netted.map((n) => n.id)
+    };
+  },
+  // Spec 4.3 rule 2: counted housing-production rows with affordable homes; the ones whose tier
+  // columns are blank; their bpa.
+  [PR.rhnaTierUnrecorded]: ({ rhna }) => rhna,
+  // Spec 4.2: in-flight projects with a recorded affordable count; the ones capped at their homes.
+  [PR.affordableOverUnits]: ({ inFlight }) => {
+    const recorded = inFlight.filter((x) => x.p.affordableHomes != null);
+    const capped = recorded.filter((x) => x.a.quality.has(PR.affordableOverUnits));
+    return {
+      fired: capped.length,
+      of: recorded.length,
+      sample: capped.map((x) => x.p.id)
     };
   }
 };
@@ -1316,6 +1350,9 @@ export function deriveProjects(
     if (a.pathway === null) counts['projects.pathwayDefaulted']++;
     if (m?.scoreOnly) a.quality.add(PR.multiphaseScoreOnly);
     const { stories, tier } = a.stories;
+    const units = nettedR.get(a.proj.id) ?? (a.units as number);
+    const affordable = affordableHomesOf(a.proj, a.multiPhase, units);
+    if (affordable.clamped) a.quality.add(PR.affordableOverUnits);
     const p: InFlightProject = orderProject({
       id: a.proj.id,
       label: labelOf(a.proj, curated),
@@ -1323,10 +1360,11 @@ export function deriveProjects(
       pathway,
       stage: lastStage(a.entered),
       history: a.entered,
-      units: nettedR.get(a.proj.id) ?? (a.units as number),
+      units,
       existingUnits: m
         ? existingUnitsAt(parcelIds, input.latestRollYear, input.assessorUnits)
         : a.existingLatest,
+      affordableHomes: affordable.value,
       stories,
       storiesTier: tier,
       multiPhase: a.multiPhase,
@@ -1427,7 +1465,8 @@ export function deriveProjects(
     inFlight: t3,
     noDate,
     netting,
-    supersede: { tested: supersede.tested, superseded: [...supersede.superseded.keys()] }
+    supersede: { tested: supersede.tested, superseded: [...supersede.superseded.keys()] },
+    rhna: rhna.tierUnrecorded
   };
   for (const r of PR_RULES) recordQuality(counts, r.id, PR_TALLIES[r.id as PrRuleId](tallyInput));
 

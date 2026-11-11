@@ -59,6 +59,16 @@ export function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** The four housing-production income columns, or null when any is blank. */
+function housingTiers(r: RawRow): HousingRow['tiers'] {
+  const extremelyLow = num(r.extremely_low_income);
+  const veryLow = num(r.very_low_income);
+  const low = num(r.low_income);
+  const moderate = num(r.moderate_income);
+  if (extremelyLow === null || veryLow === null || low === null || moderate === null) return null;
+  return { extremelyLow, veryLow, low, moderate };
+}
+
 /** Splits a `building_permits` value on commas, semicolons and whitespace. */
 export function splitPermits(v: unknown): string[] {
   if (typeof v !== 'string') return [];
@@ -443,7 +453,9 @@ export function parseAll(raw: Record<ProjectSourceId, RawRow[]>, asOf: Day): Par
       blklot: str(r.blocklot),
       form: str(r.form_no),
       netUnits: num(r.net_units_completed),
-      firstCompletionDay: d.day(r.first_completion_date)
+      firstCompletionDay: d.day(r.first_completion_date),
+      affordable: num(r.affordable_units),
+      tiers: housingTiers(r)
     };
     return d.done(row, row.bpa);
   });

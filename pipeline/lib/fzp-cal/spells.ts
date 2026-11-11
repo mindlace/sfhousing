@@ -75,7 +75,9 @@ export function normalise(
     'sc.exit.last-stage': {},
     'sc.exit.purge-censor': {},
     'sc.revision.ratio-clamp': {},
-    'sc.revision.carried-excluded': {}
+    'sc.revision.carried-excluded': {},
+    // not a stage rule: the MOHCD rows have no stage (the report's per-stage table leaves it out)
+    'sc.funding.ami-undeclared': {}
   };
   const imputed = new Set<string>();
   const method = {

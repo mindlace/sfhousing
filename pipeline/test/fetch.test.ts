@@ -256,7 +256,8 @@ describe('fetchDatasf json sources (spec §4.1)', () => {
     },
     'datasf-housing-production': {
       dataset: 'xdht-4php',
-      select: 'bpa,blocklot,form_no,net_units_completed,first_completion_date',
+      select:
+        'bpa,blocklot,form_no,net_units_completed,first_completion_date,extremely_low_income,very_low_income,low_income,moderate_income,affordable_units',
       license: 'public-domain',
       label: 'DataSF Housing Production'
     },
@@ -567,6 +568,21 @@ describe('policy-layer sources (historic status, SB 79 exemption tables)', () =>
     expect(FETCH_IDS).toEqual(
       expect.arrayContaining(['datasf-historic-status', 'sfbos-sb79-exemptions'])
     );
+  });
+
+  it('datasf-mohcd-pipeline: dataset, select and licence', async () => {
+    expect(DATASF['datasf-mohcd-pipeline']).toEqual({
+      dataset: 'aaxw-2cb8',
+      format: 'json',
+      select:
+        'project_id,project_name,project_status,general_housing_program,project_type,housing_tenure,' +
+        'total_project_units,mohcd_affordable_units,_20_ami,_30_ami,_40_ami,_50_ami,_55_ami,_60_ami,' +
+        '_80_ami,_90_ami,_100_ami,_105_ami,_110_ami,_120_ami,_130_ami,_150_ami,ami_undeclared',
+      license: 'PDDL-1.0',
+      homepage: 'https://data.sf.gov/d/aaxw-2cb8',
+      label: 'DataSF MOHCD Affordable Housing Pipeline'
+    });
+    expect(FETCH_IDS).toContain('datasf-mohcd-pipeline');
   });
 
   it('fetchSfbosExemptions locks one file per Board File attachment', async () => {

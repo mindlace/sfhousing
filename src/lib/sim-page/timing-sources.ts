@@ -2,19 +2,12 @@
 // Calls 7, 8 and 9). Every value carries a `Provenance`; a value that could not be sourced is
 // `{ value: null, reason }`, and the preset or floor that needs it is unavailable. The evidence
 // table, with what was read for each value, is `docs/dev/sim-timers.md` "Evidence".
+import type { Evidence, Sourced, Unsourced } from '../sim/finance/evidence';
 import type { TimedStage } from '$lib/sim/levers/types';
 import { MONTH_DAYS } from '$lib/timelapse/time';
-import type { Pathway, Provenance } from '$lib/timelapse/types';
+import type { Pathway } from '$lib/timelapse/types';
 
-export interface Sourced<T> {
-  value: T;
-  provenance: Provenance;
-}
-export interface Unsourced {
-  value: null;
-  reason: string;
-}
-export type Evidence<T> = Sourced<T> | Unsourced;
+export type { Evidence, Sourced, Unsourced } from '../sim/finance/evidence';
 
 const ACCESSED = 'accessed 2026-10-30';
 

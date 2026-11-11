@@ -84,7 +84,7 @@ const BASELINE = {
     'timeline:2',
     'timeline:2'
   ],
-  timelines: '34e94c230992dc4cc41266cc89cb2da958f8836aeb1dfa6ff4aa938d8fc74bb5'
+  timelines: 'e13c7801e55e1579eab7adf64b2186651707309ec7389e1e695bf72c60b3154c'
 };
 
 describe('scenario host without levers (/fzp)', () => {

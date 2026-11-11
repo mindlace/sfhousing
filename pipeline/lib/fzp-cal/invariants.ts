@@ -42,17 +42,75 @@ export function parseCalibrationText(json: string): { cal: Calibration } | { err
 }
 
 /**
+ * V25's build-side funding checks (finance-data spec 4.10), which `parseCalibration` cannot see:
+ * every pool has exactly one programme `baseline-<pool id>`, in pool order; the shares sum to
+ * 1,000,000 millionths; and a `live` build has `affordableRoutes` at tier 0 or the tier 4 fallback
+ * (method `Only …`), which the calibration step always warns about on a live build. `detail` states
+ * the outcomes; an absent key is ok and says so.
+ */
+export function fundingOutcomes(
+  cal: Calibration,
+  live: boolean
+): { problems: string[]; detail: string } {
+  const problems: string[] = [];
+  const detail: string[] = [];
+  const bf = cal.baselineFunding;
+  if (!bf) detail.push('no baselineFunding');
+  else {
+    const want = bf.pools.map((p) => `baseline-${p.id}`);
+    const got = bf.programmes.map((p) => p.id);
+    const pools = bf.programmes.map((p) => p.pool);
+    if (
+      got.length !== want.length ||
+      got.some((id, i) => id !== want[i] || pools[i] !== bf.pools[i].id)
+    ) {
+      problems.push(
+        `baselineFunding programmes [${got.join(', ')}] are not one baseline-<pool id> per pool in pool order [${want.join(', ')}]`
+      );
+    }
+    const millionths = Math.round(
+      bf.programmes.reduce(
+        (a, p) => a + (p.instrument.kind === 'grant' ? p.instrument.share : 0),
+        0
+      ) * 1e6
+    );
+    if (millionths !== 1e6) {
+      problems.push(`baselineFunding shares sum to ${millionths} millionths, not 1000000`);
+    }
+    detail.push(
+      `baselineFunding ${bf.pools.length} pools, one programme each; shares ${millionths} millionths`
+    );
+  }
+  const ar = cal.affordableRoutes;
+  if (!ar) detail.push('no affordableRoutes');
+  else {
+    const t = ar.provenance.tier;
+    const fallback = t === 4 && ar.provenance.method.startsWith('Only ');
+    if (live && t !== 0 && !fallback) {
+      problems.push(
+        `affordableRoutes is tier ${t} on a live build and not the warned fallback (tier 0, or tier 4 with a method starting "Only ")`
+      );
+    }
+    detail.push(
+      live && fallback ? 'affordableRoutes fallback, warned' : `affordableRoutes tier ${t}`
+    );
+  }
+  return { problems, detail: detail.join('; ') };
+}
+
+/**
  * V25: `json` (the file's text, `fileBytes` its size) parses, `size.fillLevels` equals
  * `fillLevels` element for element (ruling A2: `parseCalibration` checks F only internally),
- * `asOf` equals the T3 (`projectsAsOf`) and T4d (`historiesAsOf`) snapshot days when given, and
- * the file is at most 256 KB.
+ * `asOf` equals the T3 (`projectsAsOf`) and T4d (`historiesAsOf`) snapshot days when given, the
+ * file is at most 256 KB, and `fundingOutcomes(cal, live)` finds no problem.
  */
 export function checkV25(
   json: string,
   fileBytes: number,
   fillLevels: readonly number[],
   projectsAsOf: Day | undefined,
-  historiesAsOf?: Day
+  historiesAsOf?: Day,
+  live = false
 ): string[] {
   const problems: string[] = [];
   if (fileBytes > CALIBRATION_MAX_BYTES) {
@@ -73,6 +131,7 @@ export function checkV25(
   if (historiesAsOf !== undefined && cal.asOf !== historiesAsOf) {
     problems.push(`asOf ${cal.asOf} differs from project histories asOf ${historiesAsOf}`);
   }
+  problems.push(...fundingOutcomes(cal, live).problems);
   return problems;
 }
 

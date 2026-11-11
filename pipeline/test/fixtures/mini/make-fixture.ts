@@ -15,7 +15,7 @@ import { DATASF } from '../../../sources/datasf';
 import { SFBOS_EXEMPTIONS_ID, SFBOS_EXEMPTIONS_LABEL } from '../../../sources/sfbos';
 import { GTFS_FEEDS } from '../../../transit-config';
 import { every, tripTables, type TripSpec } from '../../gtfs-builder';
-import { PROJECT_RAW } from './projects-raw';
+import { MOHCD_RAW, PROJECT_RAW } from './projects-raw';
 
 proj4.defs(
   'EPSG:7131',
@@ -831,13 +831,23 @@ const CSV_SOURCES = [
 ];
 
 // Project-records spec §4.9 Fixture: the seven project sources as SODA JSON row arrays.
-const JSON_SOURCES = PROJECT_SOURCE_IDS.map((id) => ({
-  id,
-  rows: PROJECT_RAW[id],
-  license: DATASF[id].license,
-  homepage: DATASF[id].homepage,
-  label: DATASF[id].label
-}));
+const JSON_SOURCES = [
+  ...PROJECT_SOURCE_IDS.map((id) => ({
+    id,
+    rows: PROJECT_RAW[id],
+    license: DATASF[id].license,
+    homepage: DATASF[id].homepage,
+    label: DATASF[id].label
+  })),
+  // Finance data: the MOHCD affordable pipeline page (not a project source).
+  {
+    id: 'datasf-mohcd-pipeline',
+    rows: MOHCD_RAW,
+    license: DATASF['datasf-mohcd-pipeline'].license,
+    homepage: DATASF['datasf-mohcd-pipeline'].homepage,
+    label: DATASF['datasf-mohcd-pipeline'].label
+  }
+];
 
 const pages = [
   ...SOURCES.map((src) => ({

@@ -162,6 +162,20 @@ No road-like rule runs yet, so every one of lots 20–25 is eligible; the rule's
 | lots 5–12, 14–17 and 19      | C        | C              |
 | lots 18 and 20–25            | no row   |                |
 
+## Housing tiers and MOHCD rows
+
+`datasf-housing-production` carries the four income-tier columns and `affordable_units` on every row (SODA
+strings): the form-2 row (+3, 2023-05-10) has `extremely_low_income` 0, `very_low_income` 1, a blank
+`low_income`, `moderate_income` 0 and `affordable_units` 1, the only in-window row with affordable homes
+and positive net units, so it is the one that exercises `pr.rhna.tier-unrecorded`; the form-3 row (+2), the
+form-6 row (-1) and the M25 row (2018) are all `'0'`. The mini `rhnaCompletedNet.byTier` is veryLow 0, low 0,
+moderate 0, aboveModerate 3, unrecorded 1 (units still 4).
+
+`datasf-mohcd-pipeline` (aaxw-2cb8 JSON, 3 invented rows, tier 4; every unlisted AMI band `'0'`):
+`FIXTURE-MOHCD-1` (MOHCD 100% Affordable, 2 of 2: `_30_ami` 1, `_60_ami` 1), `FIXTURE-MOHCD-2` (same
+programme, 6 of 6: `_50_ami` 2, `_80_ami` 2, `_120_ami` 1, `ami_undeclared` 1) and `FIXTURE-MOHCD-3`
+(Inclusionary Housing, 10 of 10: `_80_ami` 10).
+
 ## Freeway land
 
 `enrichment/lesscars-freeway-land.json` is the fixture freeway-land catalog (`LESSCARS_FREEWAY_LAND_JSON.fixture`,
