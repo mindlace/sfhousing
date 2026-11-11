@@ -16,10 +16,12 @@ import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniCity } from './fixtures/mini-parcels';
 import { selectRows } from './fixtures/select-rows';
 import { MINI_AS_OF, MINI_HORIZON, miniProjectsJson } from './fixtures/mini-projects';
+import { tinyQueue, tinyStack } from './fixtures/tiny-queue';
 import { buildSimInput } from './input';
 import { applyPolicies, baseZoning } from './policy';
 import { monthsOf, netOf, shownSeries, type NetSeries } from './score';
 import { simulateDetailed, simulateNet } from './simulate';
+import { financeGoldenInput } from './simulate.finance.golden.cases';
 import type { Schedule, SimInput } from './types';
 
 const H = MINI_HORIZON;
@@ -251,6 +253,40 @@ describe('simulateNet equals the score of simulateDetailed (§4.4.7)', () => {
     });
     expect(runsDiffer).toBe(true);
   });
+});
+
+describe('simulateNet equals the score of simulateDetailed on a run with funding', () => {
+  const months = monthsOf(MINI_AS_OF, H);
+  // the five-lot city carries tinyStack-style baseline pools (swapped for benchBaseline() in Task 13)
+  const small = (): SimInput => {
+    const q = tinyQueue({ logOdds: [-1, -1, -1, -1, -1] });
+    return { ...q, finance: tinyStack({ asOf: q.asOf }) };
+  };
+  const cases: [string, () => SimInput][] = [
+    ['finance golden input', financeGoldenInput],
+    ['small city, baseline-shaped funding', small]
+  ];
+  for (const [name, make] of cases) {
+    it(`${name}: all three series, every month, seeds 1..50`, () => {
+      const inp = make();
+      const bad: string[] = [];
+      let funded = 0;
+      for (const seed of SEEDS) {
+        const net = simulateNet(inp, seed, H, months);
+        const detailed = simulateDetailed(inp, seed, H);
+        funded += detailed.schedules.filter((x) => x.funding).length;
+        const ref = netOf(shownSeries(detailed, inp.asOf, H, months));
+        for (const k of SERIES) {
+          const a = Array.from(net[k]);
+          const b = Array.from(ref[k]);
+          const i = a.findIndex((v, j) => v !== b[j]);
+          if (i >= 0) bad.push(`seed ${seed} ${k}[${i}]: ${a[i]} vs ${b[i]}`);
+        }
+      }
+      expect(bad).toEqual([]);
+      expect(funded).toBeGreaterThan(0);
+    });
+  }
 });
 
 /** Every Schedule by id. */
