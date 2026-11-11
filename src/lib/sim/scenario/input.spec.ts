@@ -43,7 +43,13 @@ import {
   MINI_PROJECTS,
   miniProjectsJson
 } from './fixtures/mini-projects';
-import { ScenarioInputError, buildSimInput, lastInitiationMonth, precomputeOf } from './input';
+import {
+  ScenarioInputError,
+  buildSimInput,
+  lastInitiationMonth,
+  parcelRankOf,
+  precomputeOf
+} from './input';
 import { P, draw, simEntity } from './rng';
 
 const F = FILL_LEVELS.length;
@@ -543,5 +549,61 @@ describe('the simulated pass shortcuts (precompute)', () => {
     });
     expect(bounded).toBeGreaterThan(20);
     expect(skipped).toBeGreaterThan(100);
+  });
+});
+
+describe('Precompute.logit and parcelRankOf (finance-engine)', () => {
+  const featuresOf = (input: ReturnType<typeof buildSimInput>, i: number) => {
+    const f = {} as Record<FeatureId, number>;
+    for (const t of input.calibration.initiation.terms)
+      f[t.feature] = featureValue(input.parcels, i, t.feature, 'fzp');
+    return f;
+  };
+
+  it('logit is the unshifted linear predictor of every row with a hazard, -Infinity elsewhere', () => {
+    const input = buildSimInput(miniFiles());
+    const pre = precomputeOf(input);
+    expect(pre.logit).toHaveLength(input.parcels.count);
+    let positive = 0;
+    for (let i = 0; i < input.parcels.count; i++) {
+      if (pre.hazard[i] === 0) {
+        expect(pre.logit[i]).toBe(-Infinity);
+        continue;
+      }
+      positive++;
+      expect(pre.logit[i]).toBe(
+        initiationLogit(input.calibration.initiation, featuresOf(input, i))
+      );
+    }
+    expect(positive).toBeGreaterThan(30);
+  });
+
+  it('a market step at asOf moves hazard but not logit', () => {
+    const plain = precomputeOf(buildSimInput(miniFiles()));
+    const shifted = precomputeOf({
+      ...buildSimInput(miniFiles()),
+      market: [{ from: MINI_AS_OF, logOdds: -0.7 }]
+    });
+    expect(shifted.logit).toEqual(plain.logit);
+    expect(shifted.hazard).not.toEqual(plain.hazard);
+  });
+
+  it('each regime view carries its own logit', () => {
+    const base = buildSimInput(miniFiles());
+    const closed = { ...base.parcels, hostable: base.parcels.hostable.slice().fill(0) };
+    const pre = precomputeOf({ ...base, regimes: [{ day: MINI_AS_OF + 400, parcels: closed }] });
+    expect(pre.regimes[0].logit.every((z) => z === -Infinity)).toBe(true);
+    expect(pre.logit).toEqual(precomputeOf(base).logit);
+  });
+
+  it('parcelRankOf ranks rows by parcel id in string order, memoised by the id array', () => {
+    const ids = miniCity().parcels.id;
+    const rank = parcelRankOf(ids);
+    expect(rank).toHaveLength(ids.length);
+    const sorted = [...ids].sort();
+    for (let i = 0; i < ids.length; i++) expect(sorted[rank[i]]).toBe(ids[i]);
+    expect(parcelRankOf(ids)).toBe(rank);
+    const other = ['b', 'a', 'c', 'B'];
+    expect(Array.from(parcelRankOf(other))).toEqual([2, 1, 3, 0]);
   });
 });

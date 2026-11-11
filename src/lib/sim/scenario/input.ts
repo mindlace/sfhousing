@@ -83,6 +83,13 @@ export interface Precompute {
   /** log(1 − hazard[i]) from math.ts */
   log1mh: Float64Array;
   /**
+   * The unshifted initiation linear predictor `z = initiationLogit(model, features)` per row (no
+   * market step added; finance-engine spec 4.4 adds the step itself), −Infinity where the row gets
+   * no hazard (not hostable, a non-finite feature, or no size level gains a home). Per view through
+   * `regimes[v − 1].logit`.
+   */
+  logit: Float64Array;
+  /**
    * per later market step m (`from` > `asOf`), log(1 − hazard) under that step's shift; [] when
    * none
    */
@@ -156,6 +163,27 @@ function entityOf(ids: readonly ParcelId[], i: number): number {
     e.done[i] = 1;
   }
   return e.hash[i];
+}
+
+/** Each row's position among the rows sorted by parcel id (`<`), memoised by the id column. */
+const ranks = new WeakMap<readonly ParcelId[], Uint32Array>();
+
+/**
+ * Each row's rank when the rows are sorted by parcel id with the JavaScript string order (`<`):
+ * the line's third key (finance-engine spec 4.4). Memoised by the id array, so the plan, the twin
+ * and every regime view share one.
+ */
+export function parcelRankOf(ids: readonly ParcelId[]): Uint32Array {
+  let rank = ranks.get(ids);
+  if (!rank) {
+    const order = Array.from(ids.keys()).sort((a, b) =>
+      ids[a] < ids[b] ? -1 : ids[a] > ids[b] ? 1 : a - b
+    );
+    rank = new Uint32Array(ids.length);
+    order.forEach((i, pos) => (rank![i] = pos));
+    ranks.set(ids, rank);
+  }
+  return rank;
 }
 
 /**
@@ -319,6 +347,7 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
   const F = FILL_LEVELS.length;
   const hazard = new Float64Array(n);
   const log1mh = new Float64Array(n);
+  const logit = new Float64Array(n).fill(-Infinity);
   const sizeCum = new Float32Array(n * F);
   // the market step in force at asOf (s0) and the later steps
   const steps = input.market ?? [];
@@ -353,6 +382,7 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
       }
       if (finite && sized) {
         const z = initiationLogit(model, features);
+        logit[i] = z;
         hazard[i] = 1 / (1 + exp(-(z + s0)));
         for (let m = 0; m < M; m++) {
           stepLog1mh[m][i] = ln(1 - 1 / (1 + exp(-(z + later[m].logOdds))));
@@ -391,6 +421,7 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
   const pre: Precompute = {
     hazard,
     log1mh,
+    logit,
     stepLog1mh,
     segments,
     sizeCum,

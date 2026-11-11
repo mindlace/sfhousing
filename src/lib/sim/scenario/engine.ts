@@ -211,8 +211,8 @@ function staticOf(input: SimInput): Static {
   return st;
 }
 
-/** One run's constants. */
-interface Run {
+/** One run's constants. @internal exported for the funded pass (`funded.ts`) */
+export interface Run {
   seed: number;
   /** `seedHash(seed)`: the seed's part of every draw */
   sh: number;
@@ -295,7 +295,8 @@ function checkInput(input: SimInput): void {
   checked.add(input);
 }
 
-function runOf(input: SimInput, seed: number, horizon: Day, ids: boolean): Run {
+/** @internal exported for the funded pass (`funded.ts`) and its tests */
+export function runOf(input: SimInput, seed: number, horizon: Day, ids: boolean): Run {
   checkInput(input);
   if (input.finance) checkFinance(input);
   const pre = precomputeOf(input);
@@ -908,7 +909,19 @@ function initiationMonth(
   bounds: number[] | null,
   rates: number[]
 ): number {
-  const u = drawOn(stream, P.INIT, 0);
+  return ordinaryMonth(drawOn(stream, P.INIT, 0), l1, bounds, rates);
+}
+
+/**
+ * `initiationMonth`'s arithmetic on a given draw `u`.
+ * @internal exported for the funded latents (`funded.ts`), which read the ordinary month here
+ */
+export function ordinaryMonth(
+  u: number,
+  l1: number,
+  bounds: readonly number[] | null,
+  rates: readonly number[]
+): number {
   if (bounds === null) return Math.max(1, Math.ceil(log(1 - u) / l1));
   return piecewiseMonth(log(1 - u), bounds, rates);
 }
