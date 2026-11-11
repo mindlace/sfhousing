@@ -46,8 +46,25 @@ import {
 import { scaleTable } from '../levers/timers';
 import { buildSimInput, precomputeOf } from './input';
 import { P, draw, jobEntity, simEntity } from './rng';
-import { simulate, simulateDetailed } from './simulate';
+import { simulate, simulateDetailed, type Master } from './simulate';
+import { GOLDEN_HORIZON, goldenInput } from './simulate.golden.cases';
+import { financeGoldenInput } from './simulate.finance.golden.cases';
+import { checkLedger, runCollect } from './test/finance-harness';
 import type { Schedule, SimInput } from './types';
+
+// Pass-through spy on the engine: each `runEngine` call's sink is recorded (finance-score test 22).
+const engineHooks = vi.hoisted(() => ({ sinks: [] as { ledger?: unknown }[] }));
+vi.mock('./engine', async (importOriginal) => {
+  const m = await importOriginal<typeof import('./engine')>();
+  return {
+    ...m,
+    runEngine: vi.fn((...a: Parameters<typeof m.runEngine>) => {
+      engineHooks.sinks.push(a[3]);
+      return m.runEngine(...a);
+    })
+  };
+});
+const actualEngine = await vi.importActual<typeof import('./engine')>('./engine');
 
 const AS_OF = MINI_AS_OF;
 const H = MINI_HORIZON;
@@ -1101,5 +1118,43 @@ describe('simulate: in-flight cohort flag (Call 15)', () => {
     expect(flagged).toBeGreaterThan(0);
     expect(ppa).toBeGreaterThan(0);
     expect(phases).toBeGreaterThan(0);
+  });
+});
+
+describe('simulateDetailed: the ledger (finance-score test 22)', () => {
+  const byId = <T>(xs: T[], key: (x: T) => string) =>
+    [...xs].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+
+  it('without finance: ledger [] and no ledger sink is passed to the engine', () => {
+    engineHooks.sinks.length = 0;
+    const input = goldenInput();
+    expect(input.finance).toBeUndefined();
+    const run = simulateDetailed(input, 1, GOLDEN_HORIZON);
+    expect(run.ledger).toEqual([]);
+    expect(engineHooks.sinks).toHaveLength(1);
+    expect(engineHooks.sinks[0].ledger).toBeUndefined();
+    expect('ledger' in engineHooks.sinks[0]).toBe(false);
+  });
+
+  it('with finance: the ledger in arrival order, schedules and masters as the engine reports them', () => {
+    engineHooks.sinks.length = 0;
+    const input = financeGoldenInput();
+    const run = simulateDetailed(input, 1, GOLDEN_HORIZON);
+    expect(engineHooks.sinks).toHaveLength(1);
+    expect(typeof engineHooks.sinks[0].ledger).toBe('function');
+    expect(run.ledger.length).toBeGreaterThan(0);
+    checkLedger(run.ledger, input.finance!);
+    const c = runCollect(financeGoldenInput(), 1, GOLDEN_HORIZON);
+    expect(run.ledger).toEqual(c.ledger);
+    expect(byId(run.schedules, (s) => s.projectId)).toEqual(c.schedules);
+    const masters: Master[] = [];
+    actualEngine.runEngine(financeGoldenInput(), 1, GOLDEN_HORIZON, {
+      schedule() {},
+      master(m) {
+        masters.push(m);
+      },
+      ledger() {}
+    });
+    expect(run.masters).toEqual(byId(masters, (m) => m.masterId));
   });
 });

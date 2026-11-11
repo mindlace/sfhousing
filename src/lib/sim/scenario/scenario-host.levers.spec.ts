@@ -52,7 +52,7 @@ const content = (t: TimelineResponse) => ({
   rev: t.rev,
   seed: t.seed,
   revision: t.render.revision,
-  score: t.score,
+  score: { ...t.score, tiers: undefined }, // finance-score's added `tiers` is outside the pin
   bandRuns: t.bandRuns,
   bandRunsTotal: t.bandRunsTotal,
   complete: t.complete

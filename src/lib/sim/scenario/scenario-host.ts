@@ -90,6 +90,7 @@ import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
 import { decodeTransit } from '$lib/data/transit-codec';
 import type { TransitNetwork } from '$lib/data/transit';
 import type { Day } from '$lib/timelapse/time';
+import type { TierUnits } from '$lib/timelapse/types';
 import { cellsIntersecting, createChunkLoader, type ChunkLoader, type FetchLike } from '../chunks';
 import { packOutlines } from '../outlines';
 import { toLngLat } from '$lib/generator/geo';
@@ -147,6 +148,7 @@ import {
   type NetSeries
 } from './score';
 import { simulateDetailed, simulateNet } from './simulate';
+import { moneyOf, tierBaselineOf, tierContext, tierSeries, type TierCtx } from './finance-score';
 import { PREVIEW_MAX_LOTS } from './preview';
 import type {
   BrushLotsResult,
@@ -262,6 +264,9 @@ interface Run {
   r0: Map<string, TimedPackedCell>;
   card: CardCtx | null; // built on the first parcelSummary
   planEffect: TimelineScore['planEffect'] | null; // null until the twin is done
+  /** finance-score: with the shown run, the same objects on every post */
+  tiers: { completed: TierUnits[]; baseline: TierUnits } | null;
+  money: TimelineScore['money'] | null; // null without a pool
 }
 
 /** A session's chunks: its loader and every ready record. */
@@ -318,6 +323,7 @@ interface LeverWork {
 /** A loaded session's timeline work. */
 interface Work {
   loaded: Loaded;
+  tierCtx: TierCtx; // tierContext(loaded.fzp): set with `loaded`, once per loaded input
   horizon: Day;
   months: Day[]; // one array for every run, so simulateNet's month table is cached
   phasing: TimelineScore['phasing'];
@@ -639,6 +645,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     const asOf = loaded.fzp.asOf;
     st.work = {
       loaded,
+      tierCtx: tierContext(loaded.fzp),
       horizon: st.horizon,
       months: monthsOf(asOf, st.horizon),
       phasing: phasingOf(loaded.fzp.projects, asOf),
@@ -698,7 +705,9 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       geometry: null,
       r0: new Map(),
       card: null,
-      planEffect: null
+      planEffect: null,
+      tiers: null,
+      money: null
     };
   }
 
@@ -919,6 +928,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       unknownLots: li.unknownLots
     });
     w.loaded = { ...lw.base, fzp: li.plan, twin: li.twin };
+    w.tierCtx = tierContext(li.plan);
     w.references = li.references;
     w.band = createBandState(deps.bandRuns ?? BAND_RUNS);
     w.fzpNew = [];
@@ -1103,7 +1113,25 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   function shownRun(w: Work, run: Run): void {
     if (run.requested === null) run.seed = w.band.representativeSeed();
     const detail = simulateDetailed(w.loaded.fzp, run.seed!, w.horizon);
-    run.shown = shownSeries(detail, w.loaded.fzp.asOf, w.horizon, w.months);
+    const asOf = w.loaded.fzp.asOf;
+    run.shown = shownSeries(detail, asOf, w.horizon, w.months);
+    run.tiers = {
+      completed: tierSeries(detail.schedules, w.tierCtx, asOf, w.horizon, w.months),
+      baseline: tierBaselineOf(w.loaded.projects.rhnaCompletedNet)
+    };
+    const f = w.loaded.fzp.finance;
+    run.money =
+      f && f.pools.length > 0
+        ? moneyOf({
+            ledger: detail.ledger,
+            schedules: detail.schedules,
+            finance: f,
+            baseline: w.loaded.twin.finance?.pools ?? [],
+            asOf,
+            horizon: w.horizon,
+            months: w.months
+          })
+        : null;
     run.net = netOf(run.shown);
     run.detail = detail;
   }
@@ -1197,7 +1225,9 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       band: w.band.band(),
       baseline: w.loaded.projects.rhnaCompletedNet,
       phasing: w.phasing,
-      ...(w.references ? { references: w.references } : {})
+      ...(w.references ? { references: w.references } : {}),
+      tiers: run.tiers!,
+      ...(run.money ? { money: run.money } : {})
     });
     post(
       {

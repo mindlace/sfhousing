@@ -1,0 +1,206 @@
+// finance-score test 23 (spec 4.9, 6): the shown run's `tiers` and `money` on every timeline post.
+// Revision 0 carries both (money only with a pool), band-only posts carry the same values, the
+// twin and the band stay on `simulateNet`, and `moneyOf` gets the twin input's pools as baseline.
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { log } from '$lib/timelapse/math';
+import type { Day } from '$lib/timelapse/time';
+import type { Calibration, Provenance } from '$lib/timelapse/types';
+import miniCalibrationJson from './fixtures/mini-calibration.json';
+import { miniCalibrationWithRoutes, miniFinance } from './fixtures/mini-finance';
+import { miniFunding, miniMarket } from './fixtures/mini-market';
+import { MINI_SCENARIO_URLS } from './fixtures/mini-parcels';
+import { makeScenarioHarness, type ScenarioHarness } from './test/host-harness';
+import type { SimInput, TimelineResponse } from './types';
+
+type Call = { fn: 'net' | 'detailed'; twin: boolean; seed: number; input: SimInput };
+
+const hooks = vi.hoisted(() => ({
+  calls: [] as Call[],
+  /** with a finance, replace its pools and programmes by [] (parseCalibration rejects that) */
+  emptyPools: false
+}));
+
+vi.mock('./simulate', async (importOriginal) => {
+  const m = await importOriginal<typeof import('./simulate')>();
+  const record = (fn: Call['fn'], input: SimInput, seed: number) => {
+    const twin = input.parcels.envelopeStories === input.parcels.baseStories;
+    hooks.calls.push({ fn, twin, seed, input });
+  };
+  return {
+    ...m,
+    simulateNet: vi.fn((input: SimInput, seed: number, horizon: Day, months: Day[]) => {
+      record('net', input, seed);
+      return m.simulateNet(input, seed, horizon, months);
+    }),
+    simulateDetailed: vi.fn((input: SimInput, seed: number, horizon: Day) => {
+      record('detailed', input, seed);
+      return m.simulateDetailed(input, seed, horizon);
+    })
+  };
+});
+
+vi.mock('./finance-score', async (importOriginal) => {
+  const m = await importOriginal<typeof import('./finance-score')>();
+  return { ...m, moneyOf: vi.fn(m.moneyOf) };
+});
+
+vi.mock('./input', async (importOriginal) => {
+  const m = await importOriginal<typeof import('./input')>();
+  return {
+    ...m,
+    buildSimInput: vi.fn((...a: Parameters<typeof m.buildSimInput>) => {
+      const input = m.buildSimInput(...a);
+      if (!hooks.emptyPools || !input.finance) return input;
+      return { ...input, finance: { ...input.finance, pools: [], programmes: [] } };
+    })
+  };
+});
+
+const { moneyOf } = await import('./finance-score');
+const moneyOfSpy = vi.mocked(moneyOf);
+
+const N = 17; // lowered band size
+const SEED = 1000; // no band seed, so the shown run is told apart
+
+const SOURCE = { label: 'test fixture', url: 'https://example.org/test-fixture' };
+/** Every provenance without a source gets one (parseCalibration wants at least one). */
+function sourced<T>(v: T): T {
+  if (Array.isArray(v)) return v.map(sourced) as T;
+  if (v && typeof v === 'object') {
+    const o: Record<string, unknown> = Object.fromEntries(
+      Object.entries(v).map(([k, x]) => [k, sourced(x)])
+    );
+    if ('tier' in o && Array.isArray(o.sources) && o.sources.length === 0) o.sources = [SOURCE];
+    return o as T;
+  }
+  return v;
+}
+
+/**
+ * The mini calibration with a market, `affordableRoutes` and a baseline funding of the mini
+ * finance's three pools. Made to pass `parseCalibration`: the baseline keeps only the grant
+ * programmes, `market.today`'s log odds are ln(observed ÷ implied), and every provenance names a
+ * source.
+ */
+function fundedCalibration(): Calibration {
+  const f = miniFinance();
+  const market = sourced(miniMarket());
+  market.today.all = log(market.today.observed.all / market.today.implied);
+  market.today.private = log(market.today.observed.private / market.today.implied);
+  const prov: Provenance = {
+    tier: 4,
+    label: 'test fixture',
+    sources: [SOURCE],
+    method: 'invented for tests'
+  };
+  return {
+    ...(structuredClone(miniCalibrationJson) as unknown as Calibration),
+    market,
+    affordableRoutes: sourced(miniCalibrationWithRoutes().affordableRoutes),
+    baselineFunding: {
+      pools: f.pools,
+      programmes: f.programmes.filter((g) => g.instrument.kind === 'grant'),
+      provenance: [...f.pools.map(() => prov), prov],
+      check: sourced(miniFunding().check)
+    }
+  };
+}
+
+function harness(calibration?: unknown): ScenarioHarness {
+  hooks.calls.length = 0;
+  moneyOfSpy.mockClear();
+  return makeScenarioHarness({
+    deps: { bandRuns: N },
+    ...(calibration ? { bodies: { [MINI_SCENARIO_URLS.calibration]: calibration } } : {})
+  });
+}
+
+const timelines = (h: ScenarioHarness): TimelineResponse[] =>
+  h.posts.filter((m): m is TimelineResponse => m.type === 'timeline');
+
+let warnSpy: MockInstance<typeof console.warn>;
+beforeEach(() => {
+  hooks.emptyPools = false;
+  warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+});
+afterEach(() => {
+  expect(warnSpy.mock.calls).toEqual([]);
+  warnSpy.mockRestore();
+});
+
+describe('scenario host: tiers and money (finance-score test 23)', () => {
+  it('revision 0 carries tiers and money; band-only posts carry the same', async () => {
+    const h = harness(fundedCalibration());
+    h.init({ seed: SEED });
+    await h.runAll();
+    expect(h.errors()).toEqual([]);
+    const ts = timelines(h);
+    expect(ts.length).toBeGreaterThan(1);
+    const r0 = ts[0];
+    expect(r0.render.revision).toBe(0);
+    expect(r0.score.tiers!.targets).toHaveLength(4);
+    expect(r0.score.money!.pools.map((p) => p.id)).toEqual(['m-city', 'm-bank', 'federal']);
+    const later = ts.slice(1);
+    for (const t of later) {
+      expect(t.render.cells).toEqual([]);
+      expect(t.score.tiers).toEqual(r0.score.tiers);
+      expect(t.score.money).toEqual(r0.score.money);
+    }
+    // the tier sums of the last month are the shown run's completedNet
+    const last = r0.score.tiers!.completed.at(-1)!;
+    const sum = last.veryLow + last.low + last.moderate + last.aboveModerate + last.unrecorded;
+    expect(sum).toBe(r0.score.shown.at(-1)!.completedNet);
+  });
+
+  it('only the shown run is detailed; the twin and the band run simulateNet', async () => {
+    const h = harness(fundedCalibration());
+    h.init({ seed: SEED });
+    await h.runAll();
+    const detailed = hooks.calls.filter((c) => c.fn === 'detailed');
+    expect(detailed).toHaveLength(1);
+    expect(detailed[0]).toMatchObject({ twin: false, seed: SEED });
+    const twin = hooks.calls.filter((c) => c.twin);
+    expect(twin.length).toBeGreaterThan(0);
+    for (const c of twin) expect(c.fn).toBe('net');
+    expect(hooks.calls.filter((c) => c.fn === 'net')).toHaveLength(hooks.calls.length - 1);
+  });
+
+  it("moneyOf gets the twin input's pools as baseline, once per run", async () => {
+    const h = harness(fundedCalibration());
+    h.init({ seed: SEED });
+    await h.runAll();
+    const twin = hooks.calls.find((c) => c.twin)!.input;
+    expect(twin.finance!.pools.length).toBe(3);
+    expect(moneyOfSpy).toHaveBeenCalledTimes(1);
+    expect(moneyOfSpy.mock.calls[0][0].baseline).toEqual(twin.finance!.pools);
+  });
+
+  it('without funding: tiers on every post, no money key', async () => {
+    const h = harness();
+    h.init({ seed: SEED });
+    await h.runAll();
+    const ts = timelines(h);
+    expect(ts.length).toBeGreaterThan(1);
+    for (const t of ts) {
+      expect(t.score.tiers!.targets).toHaveLength(4);
+      expect('money' in t.score).toBe(false);
+    }
+    expect(moneyOfSpy).not.toHaveBeenCalled();
+  });
+
+  it('with finance but no pools: tiers, no money key', async () => {
+    hooks.emptyPools = true;
+    const h = harness(fundedCalibration());
+    h.init({ seed: SEED });
+    await h.runAll();
+    const shownInput = hooks.calls.find((c) => c.fn === 'detailed')!.input;
+    expect(shownInput.finance!.pools).toEqual([]);
+    const ts = timelines(h);
+    expect(ts.length).toBeGreaterThan(1);
+    for (const t of ts) {
+      expect(t.score.tiers!.targets).toHaveLength(4);
+      expect('money' in t.score).toBe(false);
+    }
+    expect(moneyOfSpy).not.toHaveBeenCalled();
+  });
+});

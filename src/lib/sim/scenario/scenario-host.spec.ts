@@ -31,6 +31,7 @@ import {
 } from './massing';
 import { assembleScore, monthsOf, netOf, phasingOf, planEffectOf, shownSeries } from './score';
 import { simulateDetailed } from './simulate';
+import { tierBaselineOf, tierContext, tierSeries } from './finance-score';
 import { makeScenarioHarness, type ScenarioHarness } from './test/host-harness';
 import type { ScenarioHostDeps } from './scenario-host';
 import type { Schedule, SimInput, TimelineResponse, TimelineScore } from './types';
@@ -228,13 +229,17 @@ function scoreOf(
   parts: Pick<TimelineScore, 'band' | 'planEffect' | 'planEffectBand'>
 ): TimelineScore {
   const projects = parseProjectsFile(miniProjectsJson(), { onInvalid: () => {} });
-  const { months, shown } = shownRun(fzp, seed);
+  const { months, shown, schedules } = shownRun(fzp, seed);
   return assembleScore({
     months,
     shown,
     ...parts,
     baseline: projects.rhnaCompletedNet,
-    phasing: phasingOf(fzp.projects, fzp.asOf)
+    phasing: phasingOf(fzp.projects, fzp.asOf),
+    tiers: {
+      completed: tierSeries(schedules, tierContext(fzp), fzp.asOf, H, months),
+      baseline: tierBaselineOf(projects.rhnaCompletedNet)
+    }
   });
 }
 
