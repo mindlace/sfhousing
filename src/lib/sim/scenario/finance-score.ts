@@ -325,7 +325,10 @@ export const TIER_SOURCES: readonly Provenance[] = [
       'the programmes equally when none pays anything is a tier 4 convention.'
   },
   {
-    tier: 1,
+    tier: Math.max(
+      INCLUSIONARY.provenance.tier,
+      ASSUMED_TENURE.provenance.tier
+    ) as Provenance['tier'],
     label: 'Private projects',
     sources: [...INCLUSIONARY.provenance.sources, ...ASSUMED_TENURE.provenance.sources],
     method: `${INCLUSIONARY.provenance.method} ${ASSUMED_TENURE.provenance.method}`

@@ -227,7 +227,7 @@ difference is 0, and `limits` is `[]`.
 
 `TIER_SOURCES` (the page's "Homes by income level"), in order: the RHNA tier targets (tier 1); funded
 affordable homes (tier 2; the equal-weight fallback named a tier 4 convention); private projects
-(`INCLUSIONARY` and `ASSUMED_TENURE` provenance from the finance model); pipeline projects (tier
+(`INCLUSIONARY` and `ASSUMED_TENURE` provenance from the finance model; tier 2, the weaker of the two); pipeline projects (tier
 0, the `affordableHomes` convention above); existing homes (tier 2); the baseline. **Builder's
 call:** entry 6 is a constant tier 0 statement, because a constant cannot hold dataset data: the
 dataset's own `rhnaCompletedNet.provenance` and `tierBaselineLabel(since)` are rendered beside it

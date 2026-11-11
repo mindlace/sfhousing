@@ -351,7 +351,7 @@ describe('tierBaselineOf, tierBaselineLabel, TIER_SOURCES (spec 6 test 13)', () 
   });
 
   it('has the six sources in order', () => {
-    expect(TIER_SOURCES.map((p) => p.tier)).toEqual([1, 2, 1, 0, 2, 0]);
+    expect(TIER_SOURCES.map((p) => p.tier)).toEqual([1, 2, 2, 0, 2, 0]);
     expect(TIER_SOURCES[0].sources[0].url).toContain('abag.ca.gov');
     expect(TIER_SOURCES[2].sources).toEqual([
       ...INCLUSIONARY.provenance.sources,
