@@ -20,7 +20,7 @@ function draw(monthsElapsed: number) {
   const kinds: string[] = [];
   const months = new Int32Array(N);
   for (let i = 0; i < N; i++) {
-    const r = sampleTransition(t, rng(), monthsElapsed);
+    const r = sampleTransition(t, rng(), rng(), monthsElapsed);
     kinds.push(r.kind);
     months[i] = monthsIn(0, r.days) + 1;
   }

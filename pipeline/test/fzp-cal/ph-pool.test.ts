@@ -186,7 +186,7 @@ describe('phScale: a pathway with doubled exit hazard since 2015', () => {
         kinds.map((j) => [j, new Array(t.months + 1).fill(0)])
       );
       for (let i = 0; i < N; i++) {
-        const d = sampleTransition(t, rng(), 0);
+        const d = sampleTransition(t, rng(), rng(), 0);
         // event month k: ceil((k - 1) M) <= days < ceil(k M)
         let k = Math.floor(d.days / M) + 1;
         while (k > 1 && d.days < Math.ceil((k - 1) * M)) k--;

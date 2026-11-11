@@ -14,14 +14,14 @@
 // computed once per input (`staticOf` here, `precomputeOf` in input.ts): project entities, T11
 // rows and revision caps, the candidate rows and their entities. A run hoists its seed's mix
 // (`seedHash`) and each project its stream (`streamOf`), so a draw is one mix. Stage steps call
-// T12's `sampleKind` and `sampleTime` themselves on the unscaled transition (nothing here
-// re-implements them) and scale only the time in stage (`scaledTransition`). The simulated pass
+// T12's `sampleTransition` on the unscaled transition (nothing here re-implements it) and scale
+// only the time in stage (`scaledTransition`). The simulated pass
 // rejects most parcels on their first initiation draw against a precomputed bound (`skipAbove`)
 // instead of evaluating the geometric month. None of this changes a value.
 import type { ParcelId } from '$lib/data/parcel';
 import { FILL_LEVELS, fillStories, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { log } from '$lib/timelapse/math';
-import { sampleKind, sampleTime } from '$lib/timelapse/model';
+import { sampleTransition } from '$lib/timelapse/model';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import { MONTH_DAYS, stageMonths, type Day } from '$lib/timelapse/time';
 import type { Transition } from '$lib/timelapse/types';
@@ -482,9 +482,8 @@ export function scaledTransition(
   s: number
 ): { kind: Kind; days: number } {
   const tau = stageMonths(survived);
-  const kind = sampleKind(t, uKind, tau);
-  const d = sampleTime(t, kind, uTime, tau);
-  return { kind, days: survived + Math.floor(s * (d - survived)) };
+  const { kind, days } = sampleTransition(t, uKind, uTime, tau);
+  return { kind, days: survived + Math.floor(s * (days - survived)) };
 }
 
 /** The outcome of the last `stageStep` (scratch, so a step allocates nothing). */

@@ -393,7 +393,7 @@ function walk(
   let s = s0;
   let from = e0;
   for (;;) {
-    const r = sampleTransition(MINI_CAL.transitions[p][s as CalStage]!, rand(), 0);
+    const r = sampleTransition(MINI_CAL.transitions[p][s as CalStage]!, rand(), rand(), 0);
     const day = from + Math.floor(r.days);
     if (day > lastObserved) break;
     if (r.kind !== 'advance') {
