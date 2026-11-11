@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { medianRank } from '$lib/sim/scenario/band';
   import { positionAt, runValueText, stepPosition } from './run-slider';
 
@@ -12,9 +13,11 @@
     disabled: boolean;
     /** Only on a change of position. */
     onselect: (position: number) => void;
+    /** A pointer drag starts (true) or ends (false): a release, a cancel or an unmount. */
+    ondrag?: (active: boolean) => void;
   }
 
-  let { ranks, position, shownSeed, disabled, onselect }: Props = $props();
+  let { ranks, position, shownSeed, disabled, onselect, ondrag }: Props = $props();
 
   const n = $derived(ranks?.length ?? 101);
   const handleAt = $derived(position ?? medianRank(n));
@@ -44,7 +47,12 @@
 
   function onpointerdown(e: PointerEvent) {
     if (disabled || !ranks || e.button !== 0) return;
-    track?.setPointerCapture(e.pointerId);
+    try {
+      track?.setPointerCapture(e.pointerId);
+    } catch {
+      // No active pointer with that id: the drag still follows moves over the track.
+    }
+    if (!captured) ondrag?.(true);
     captured = true;
     choose(fromPointer(e));
   }
@@ -52,9 +60,16 @@
     if (captured) choose(fromPointer(e));
   }
   function onpointerup(e: PointerEvent) {
-    captured = false;
     if (track?.hasPointerCapture(e.pointerId)) track.releasePointerCapture(e.pointerId);
+    endDrag();
   }
+  function endDrag() {
+    if (!captured) return;
+    captured = false;
+    ondrag?.(false);
+  }
+  // An unmount mid-drag (the slider hides) ends the drag too.
+  $effect(() => () => untrack(endDrag));
 
   function onkeydown(e: KeyboardEvent) {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
@@ -65,8 +80,10 @@
   }
 </script>
 
+<!-- The gap is at least half the handle (12 px; 22 px for a coarse pointer), so the handle on an
+     end tick never covers its label. The panel keeps the labels legible over the map. -->
 <div
-  class="flex h-full flex-col items-center gap-2 text-xs text-ink select-none dark:text-ink-dark"
+  class="flex h-full flex-col items-center gap-4 rounded-lg border border-line bg-surface p-2 text-xs text-ink shadow-lg select-none dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:gap-7"
 >
   <span class="font-semibold">Best</span>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -80,6 +97,7 @@
     {onpointermove}
     {onpointerup}
     onpointercancel={onpointerup}
+    onlostpointercapture={endDrag}
   >
     <div
       class="pointer-events-none absolute inset-x-3 inset-y-0 opacity-50"

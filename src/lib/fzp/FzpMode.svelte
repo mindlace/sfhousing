@@ -457,6 +457,27 @@
     return rev;
   });
 
+  /** A pointer drag on the run slider is under way. */
+  let dragging = false;
+  /** The `?seed=` of the last switch answered, until it is written (null: a clean URL). */
+  let urlDue: { seed: number | null } | null = null;
+
+  /**
+   * Writes the URL of the last switch answered once nothing waits behind it and no pointer drag
+   * is under way (spec: "after the drag settles"), so a drag does not call `replaceState` per tick.
+   */
+  function writeUrl(): void {
+    if (!urlDue || !runs.settled || dragging) return;
+    const due = urlDue;
+    urlDue = null;
+    onurlseed?.(due.seed);
+  }
+
+  function ondrag(active: boolean): void {
+    dragging = active;
+    if (!active) writeUrl();
+  }
+
   function setLeverState(next: LeverStatusState): void {
     if (next === leverState) return;
     leverState = next;
@@ -476,6 +497,7 @@
     position = null;
     runs.reset();
     switchFailed = false;
+    if (next !== seed) urlDue = null; // another future than the one a switch showed
     if (l !== undefined) {
       sentLevers = l;
       leversByRev.push({ rev, levers: l });
@@ -517,6 +539,7 @@
     setLeverState(leversSent(leverState, rev));
     if (!scenarioLive) return;
     position = null;
+    switchFailed = false;
     const back = !representative || !runs.settled;
     runs.reset();
     if (back) runs.select(null);
@@ -883,10 +906,11 @@
       if (switched) {
         representative = done.seed === null;
         switchFailed = false;
+        urlDue = { seed: done.seed === null ? null : t.seed };
       }
       if (done && runs.settled) {
         position = shownPosition();
-        if (switched) onurlseed?.(done.seed === null ? null : t.seed);
+        writeUrl();
       }
       if (phase === 'loading') phase = 'ready';
       else if (answer || done) refreshCard();
@@ -910,6 +934,9 @@
       if (m.rev < ranksFloor) return;
       ranks = m.seeds;
       if (runs.settled) position = shownPosition();
+      // Unsettled, a null position means a switch to the representative future (a null seed) is
+      // in flight or waiting: the handle sits on the median, where that switch lands.
+      else if (position === null) position = medianRank(m.seeds.length);
     },
     onHeights(m) {
       if (dead) return;
@@ -1317,6 +1344,7 @@
           shownSeed={seed}
           disabled={!canSwitch || ranks === null}
           {onselect}
+          {ondrag}
         />
       </div>
     {/if}

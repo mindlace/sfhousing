@@ -830,6 +830,73 @@ describe('FzpMode run slider', () => {
       .toHaveAttribute('aria-valuetext', `Run ${next[50]}, rank 51 of 101`);
   });
 
+  it('ranks during the switch back to the median put the handle on the median', async () => {
+    const s = await ranked();
+    await pressRun('{ArrowUp}');
+    await (await s.r).rerender({ levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    const leversAt = s.w().lastOf('setLevers')!.rev;
+    expect(s.w().lastOf('reroll')).toMatchObject({ seed: null, swap: true });
+    // The new band's order arrives before the median's answer.
+    const next = RANKS.map((x) => x + 1000);
+    s.w().emit(ranksMsg(leversAt, next));
+    await expect
+      .element(runSlider())
+      .toHaveAttribute('aria-valuetext', `Run ${next[50]}, rank 51 of 101`);
+    await expect.element(runSlider()).toHaveAttribute('aria-valuenow', '51');
+  });
+
+  it('a lever change clears the failed-switch alert', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = await ranked();
+    await failSwitch(s);
+    await (await s.r).rerender({ levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    await expect
+      .element(page.getByRole('alert').filter({ hasText: "Couldn't show that future" }))
+      .not.toBeInTheDocument();
+  });
+
+  it('a pointer drag writes the URL only once released and settled', async () => {
+    const s = await ranked();
+    const track = page.getByTestId('run-slider-track').element() as HTMLElement;
+    const top = track.getBoundingClientRect().top + track.clientTop;
+    const fire = (type: string, p: number) =>
+      track.dispatchEvent(
+        new PointerEvent(type, {
+          clientY: top + (p / 100) * track.clientHeight,
+          pointerId: 1,
+          button: 0,
+          bubbles: true
+        })
+      );
+    fire('pointerdown', 40);
+    const a = s.w().lastOf('reroll')!;
+    expect(a).toMatchObject({ seed: RANKS[40], swap: true });
+    s.w().emit(timelineMsg(a.rev, RANKS[40]));
+    await expect.poll(future).toBe(`This future: #${RANKS[40]}`);
+    // Settled, but the pointer is still down: no URL write mid-drag.
+    expect(s.onurlseed).not.toHaveBeenCalled();
+    fire('pointermove', 30);
+    const b = s.w().lastOf('reroll')!;
+    expect(b).toMatchObject({ seed: RANKS[30], swap: true });
+    s.w().emit(timelineMsg(b.rev, RANKS[30]));
+    await expect.poll(future).toBe(`This future: #${RANKS[30]}`);
+    expect(s.onurlseed).not.toHaveBeenCalled();
+    fire('pointerup', 30);
+    expect(s.onurlseed.mock.calls).toEqual([[RANKS[30]]]);
+
+    // Released before the answer: the answer writes it.
+    fire('pointerdown', 20);
+    fire('pointerup', 20);
+    const c = s.w().lastOf('reroll')!;
+    expect(c).toMatchObject({ seed: RANKS[20], swap: true });
+    expect(s.onurlseed.mock.calls).toEqual([[RANKS[30]]]);
+    s.w().emit(timelineMsg(c.rev, RANKS[20]));
+    await expect.poll(future).toBe(`This future: #${RANKS[20]}`);
+    expect(s.onurlseed.mock.calls).toEqual([[RANKS[30]], [RANKS[20]]]);
+  });
+
   it('a lever change on the representative future with nothing in flight sends no reroll', async () => {
     const s = await ranked();
     await (await s.r).rerender({ levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });

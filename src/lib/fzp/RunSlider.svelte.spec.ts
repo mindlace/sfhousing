@@ -104,6 +104,31 @@ describe('RunSlider', () => {
     expect(document.body.textContent).not.toContain('#');
   });
 
+  it('the handle never covers the Best or Worst label at the end ticks', async () => {
+    const apart = (a: DOMRect, b: DOMRect) =>
+      a.bottom <= b.top || b.bottom <= a.top || a.right <= b.left || b.right <= a.left;
+    for (const [position, label] of [
+      [0, 'Best'],
+      [100, 'Worst']
+    ] as const) {
+      const r = await render(RunSlider, {
+        props: {
+          ranks: RANKS,
+          position,
+          shownSeed: RANKS[position],
+          disabled: false,
+          onselect: vi.fn()
+        }
+      });
+      const handle = (slider().element() as HTMLElement).getBoundingClientRect();
+      const text = (
+        page.getByText(label, { exact: true }).element() as HTMLElement
+      ).getBoundingClientRect();
+      expect(apart(handle, text), `${label} at position ${position}`).toBe(true);
+      r.unmount();
+    }
+  });
+
   it('the handle is at least 24×24 px', async () => {
     await render(RunSlider, {
       props: {
