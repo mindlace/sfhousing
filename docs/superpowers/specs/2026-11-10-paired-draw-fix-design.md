@@ -67,7 +67,7 @@ API:
 
 ### The project card and chance lookups
 
-A timer no longer changes an in-flight project's eventual completion chance. The card's chance shift (`card.ts` `shiftOf`, which reads the rescaled table at `inFlightMonths(m, x)`) shows no shift for timing-only levers on eventual chances. Within-horizon chances and dates still move. `lookupsFor` and the `card.spec.ts` cases (around lines 829–867) change to match. `inFlightMonths` is deleted if nothing else uses it. My call: the card must agree with the engine.
+A timer no longer changes an in-flight project's eventual completion chance. The card keeps its chance shift from the rescaled display table, which is what makes it show the engine's (unchanged) eventual chance (plan conductor ruling 1). Within-horizon chances and dates still move. `lookupsFor` and the `card.spec.ts` cases (around lines 829–867) change to match. `inFlightMonths` is deleted if nothing else uses it. My call: the card must agree with the engine.
 
 ### What moves (allowed by R17, once)
 
@@ -80,7 +80,7 @@ A timer no longer changes an in-flight project's eventual completion chance. The
 
 ## Acceptance
 
-1. **Marginals unchanged (committed sampler test).** For every transition cell in the small calibration and the fixture calibration, at τ ∈ {0, 6, 6.4, a month past K}, N = 400,000 draws per cell match the table's per-kind conditional cumulative incidence within 0.002 at every month to 36, and match the eventual shares. This also commits the `statistical-correction` 400k check, which today exists only as a one-off. V27 passes on the live build.
+1. **Marginals unchanged (committed sampler test).** For every transition cell in the small calibration and the fixture calibration, at τ ∈ {0, 6, 6.4, a month past K}, N = 400,000 draws per cell match the table's per-kind conditional cumulative incidence within 5·sqrt(F(1 − F)/N) + 1e-4 at every month to 36 (≈0.004 at F = 0.5; a fixed 0.002 would fail on noise across ~23k comparisons), and match the eventual shares. This also commits the `statistical-correction` 400k check, which today exists only as a one-off. V27 passes on the live build.
 2. **Kind never flips; time is monotone (property test).** For random transitions (and every fixture cell), random τ, s ∈ [0.25, 4] and random uniform pairs: the kind is the same for every s. The event time is non-increasing in s for s < 1 and non-decreasing for s > 1, measured against s = 1. Fresh and in-flight paths are both covered.
 3. **Paired runs.** Turn the evidence harness (`r1-pairing-scratch.spec.ts.txt`, archived beside the evidence) into a committed test. Run it on the mini city with default levers (today's market steps on), 40 seeds, every timer cell at 12/23 and at 0.5, with reach both `new` and `all`. Cumulative plan − twin `completedNet` must be ≥ 0 in every month of every seed. An exception is allowed only from a mechanism outside stage sampling, such as a freed lot re-initiating against dated market segments. Any exception is measured, traced to its mechanism with file:line and listed in the PR. None may come from a kind flip.
 4. **Replay.** `simulate-replay.test.ts` is no worse than on main for the same data (it has one known pre-existing failure on live data, ruling R15). If the replay-validation spec has landed first, its conformance mode passes.
