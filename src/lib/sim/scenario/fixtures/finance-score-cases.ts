@@ -18,6 +18,7 @@ import type { BundleItem } from '../../finance';
 import type { TierCtx } from '../finance-score';
 import type { LedgerEvent } from '../money';
 import { monthsOf } from '../score';
+import { MINI_AS_OF } from './mini-projects';
 import type { Schedule, SimInput } from '../types';
 
 /** A `ResolvedTerms` with every term set (test values, not sourced). */
@@ -446,3 +447,33 @@ export const MONEY_CASES = {
     [ev(d(2, 1), 'fed', 'fg', 'commit', 700_000), ev(d(4, 1), 'fed', 'fg', 'spend', 700_000)]
   )
 } satisfies Record<string, MoneyCase>;
+
+// ---- Added borrowing (spec 4.8, test 21): pools on the mini data date, 25 yearly arrivals ----
+
+const GO = { rate: 0.06, termYears: 20 };
+
+/** The baseline `city-debt` pool: `goBond`, 100,000,000 a year from `MINI_AS_OF`, 6% over 20. */
+export const CITY_DEBT: Pool = moneyPool('city-debt', {
+  kind: 'goBond',
+  inflows: [{ kind: 'yearly', from: MINI_AS_OF, to: null, dollarsPerYear: 100_000_000 }],
+  debt: GO
+});
+
+/** A baseline `generalRevenue` pool with a yearly inflow and no debt. */
+export const GENERAL_REVENUE: Pool = moneyPool('general-revenue', {
+  inflows: [{ kind: 'yearly', from: MINI_AS_OF, to: null, dollarsPerYear: 50_000_000 }]
+});
+
+/** An added `goBond` pool: 300,000,000 once, a year after `MINI_AS_OF`, 6% over 20. */
+export const U_BOND: Pool = moneyPool('u-bond', {
+  kind: 'goBond',
+  inflows: [{ kind: 'once', day: MINI_AS_OF + 365, dollars: 300_000_000 }],
+  debt: GO
+});
+
+/** An added `cop` pool: 50,000,000 once on `MINI_AS_OF`, 5% over 20. */
+export const U_COP: Pool = moneyPool('u-cop', {
+  kind: 'cop',
+  inflows: [{ kind: 'once', day: MINI_AS_OF, dollars: 50_000_000 }],
+  debt: { rate: 0.05, termYears: 20 }
+});

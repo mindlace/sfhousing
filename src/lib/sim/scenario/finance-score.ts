@@ -6,7 +6,9 @@
  * `tiersOf` splits one schedule's final units by income tier; `tierSeries` (spec 4.2) sums them
  * by month with the month rules of `addNet`.
  *
- * Money (spec 4.4): `poolSeries` turns the engine's ledger into each pool's monthly series.
+ * Money (spec 4.4-4.8): `poolSeries` turns the engine's ledger into each pool's monthly series;
+ * `moneyOf` adds the funded and displaced homes, the public money spent, the repayment owed and
+ * the legal-limit statements.
  */
 import { RHNA_TIER_TARGETS } from '$lib/scoreboard';
 import type { ProjectsFile } from '$lib/timelapse/projects';
@@ -14,6 +16,7 @@ import type { Day } from '$lib/timelapse/time';
 import {
   INCOME_TIERS,
   type IncomeTier,
+  type Pool,
   type Provenance,
   type ResolvedTerms,
   type TierUnits
@@ -21,12 +24,16 @@ import {
 import {
   ASSUMED_TENURE,
   INCLUSIONARY,
+  debtService,
   fundBundle,
   inclusionaryUnits,
+  limitStatements,
   prototypeFor,
+  type Borrowing,
   type BundleItem
 } from '../finance';
 import { isoOf } from './dates';
+import { inflowArrivals } from './funding';
 import { monthIndexer } from './score';
 import type { LedgerEvent } from './money';
 import type { Schedule, SimInput, TimelineScore } from './types';
@@ -431,4 +438,87 @@ export function poolSeries(
     }
     return { id: p.id, label: p.label, kind: p.kind, ...s };
   });
+}
+
+/** The dollars a pool's inflows bring from `asOf` to `horizon` (spec 4.8's `arrived`). */
+function arrived(pool: Pool, asOf: Day, horizon: Day): number {
+  let sum = 0;
+  for (const inflow of pool.inflows) {
+    const each = inflow.kind === 'once' ? inflow.dollars : inflow.dollarsPerYear;
+    sum += each * inflowArrivals(inflow, asOf, horizon).length;
+  }
+  return sum;
+}
+
+/**
+ * The borrowing the policy adds (spec 4.8): for each `goBond` or `cop` pool of `plan.pools`, in
+ * order, what it receives from `asOf` to `horizon`, less what the same pool in `baseline` receives
+ * (a pool not in `baseline` is added whole; a scaled-down or switched-off one adds nothing). The
+ * inflows already carry the scale and the switch-off (F7, F17), so there is no `off` lookup.
+ */
+export function addedBorrowing(
+  plan: NonNullable<SimInput['finance']>,
+  baseline: readonly Pool[],
+  asOf: Day,
+  horizon: Day
+): Borrowing[] {
+  const base = new Map(baseline.map((p) => [p.id, p]));
+  const out: Borrowing[] = [];
+  for (const pool of plan.pools) {
+    if ((pool.kind !== 'goBond' && pool.kind !== 'cop') || pool.debt === null) continue;
+    const got = arrived(pool, asOf, horizon);
+    const was = base.get(pool.id);
+    const principal = was === undefined ? got : Math.max(0, got - arrived(was, asOf, horizon));
+    if (principal > 0) out.push({ pool: pool.id, kind: pool.kind, principal, debt: pool.debt });
+  }
+  return out;
+}
+
+/**
+ * A funded project's homes and the public money, per month (spec 4.4-4.8). `fundedHomes` and
+ * `displacedHomes` count a schedule with `funding` that completed (never keyed on `origin`) at its
+ * completion month; `publicSpent` is `spent + lostCredit` summed over every pool (never `lost`,
+ * which holds a grant's loss again); `owed` has each debt pool's principal (its last `received`)
+ * and the total of level payments on it; `limits` come from `addedBorrowing`.
+ */
+export function moneyOf(p: {
+  ledger: LedgerEvent[];
+  schedules: Schedule[];
+  finance: NonNullable<SimInput['finance']>;
+  baseline: readonly Pool[];
+  asOf: Day;
+  horizon: Day;
+  months: Day[];
+}): Money {
+  const n = p.months.length;
+  const pools = poolSeries(p.ledger, p.finance, p.months, p.horizon);
+  const idx = monthIndexer(p.months, p.horizon);
+  const funded = new Array<number>(n).fill(0);
+  const displaced = new Array<number>(n).fill(0);
+  for (const sc of p.schedules) {
+    if (sc.funding === undefined || sc.end.kind !== 'complete') continue;
+    const i = idx(sc.end.day);
+    funded[i] += sc.revisions[sc.revisions.length - 1].units - sc.existingUnits;
+    displaced[i] += sc.funding.displaced;
+  }
+  for (let i = 1; i < n; i++) {
+    funded[i] += funded[i - 1];
+    displaced[i] += displaced[i - 1];
+  }
+  const publicSpent = Array.from({ length: n }, (_, i) =>
+    pools.reduce((a, q) => a + q.spent[i] + q.lostCredit[i], 0)
+  );
+  const owed: Money['owed'] = [];
+  p.finance.pools.forEach((pool, q) => {
+    if (pool.debt === null) return;
+    const principal = pools[q].received[n - 1];
+    owed.push({
+      pool: pool.id,
+      principal,
+      repayment: debtService(principal, pool.debt).total,
+      nominal: true
+    });
+  });
+  const limits = limitStatements(addedBorrowing(p.finance, p.baseline, p.asOf, p.horizon));
+  return { pools, fundedHomes: funded, displacedHomes: displaced, publicSpent, owed, limits };
 }

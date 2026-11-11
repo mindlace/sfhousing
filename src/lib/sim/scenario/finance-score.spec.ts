@@ -6,12 +6,17 @@ import { MINI_AS_OF, MINI_HORIZON } from './fixtures/mini-projects';
 import { tinyQueue, tinyStack } from './fixtures/tiny-queue';
 import {
   AFFORDABLE_CASES as A,
+  CITY_DEBT,
+  GENERAL_REVENUE,
   MARKET,
+  MONEY_ASOF,
   MONEY_CASES as MC,
   MONEY_HORIZON,
   MONEY_MONTHS,
   PROJECTS,
   T,
+  U_BOND,
+  U_COP,
   affordable,
   caseCtx,
   ev,
@@ -21,11 +26,14 @@ import {
 } from './fixtures/finance-score-cases';
 import { checkLedger } from './test/finance-harness';
 import { checkMoneyIdentities } from './test/money-identities';
-import type { TierUnits } from '$lib/timelapse/types';
+import type { Pool, TierUnits } from '$lib/timelapse/types';
 import { dayOf } from './dates';
+import { debtService, limitStatements } from '../finance';
 import {
   TIER_SOURCES,
+  addedBorrowing,
   allocatePhases,
+  moneyOf,
   poolSeries,
   type Money,
   splitByShares,
@@ -35,7 +43,11 @@ import {
   tiersOf
 } from './finance-score';
 import { monthIndexer, monthsOf, shownSeries } from './score';
+import { runEngine } from './engine';
 import { simulate } from './simulate';
+import { GOLDEN_HORIZON } from './simulate.golden.cases';
+import { financeGoldenInput } from './simulate.finance.golden.cases';
+import type { LedgerEvent } from './money';
 import type { Schedule, SimInput } from './types';
 
 vi.mock('../finance', async (orig) => {
@@ -590,5 +602,243 @@ describe('checkMoneyIdentities catches a broken series', () => {
     const n = good();
     n.pools[0].repaid = n.pools[0].repaid.map((x, i) => (i >= 5 ? x + 1 : x));
     expect(() => checkMoneyIdentities(n, c.finance.pools, led)).toThrow(/I3/);
+  });
+});
+
+// ---- moneyOf (spec 4.5-4.8; tests 16 totals, 18, 20, 21) ----
+
+type Fin = NonNullable<SimInput['finance']>;
+
+const MONTHS = MONEY_MONTHS;
+
+/** `moneyOf` on a hand case's ledger over the 2027 months. */
+function moneyOn(c: MoneyCase, schedules: Schedule[] = [], baseline: Pool[] = []): Money {
+  return moneyOf({
+    ledger: c.ledger,
+    schedules,
+    finance: c.finance,
+    baseline,
+    asOf: MONEY_ASOF,
+    horizon: MONEY_HORIZON,
+    months: MONTHS
+  });
+}
+
+const MD = (m: number, day: number) => dayOf(2027, m, day);
+
+describe('moneyOf: funded and displaced homes (spec 6 test 18)', () => {
+  const mk = (final: number, existing: number, displaced: number, end: Schedule['end']) => {
+    const s = schedule({ units: [final], existingUnits: existing, end });
+    s.kind = 'affordable';
+    s.funding = { ...affordable(['g'], 1).funding!, displaced };
+    return s;
+  };
+
+  it('counts net homes at completion and the displaced homes of the same schedules', () => {
+    const schedules = [
+      mk(40, 4, 10, { kind: 'complete', day: MD(3, 10) }),
+      mk(20, 0, 0, { kind: 'complete', day: MD(6, 10) }),
+      mk(99, 0, 5, { kind: 'open' }),
+      schedule({ units: [77], end: { kind: 'complete', day: MD(3, 11) } })
+    ];
+    const m = moneyOn(MC.grantSpent, schedules);
+    expect(m.fundedHomes).toEqual([0, 0, 36, 36, 36, 56, 56, 56, 56, 56, 56, 56]);
+    expect(m.displacedHomes).toEqual([0, 0, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10]);
+  });
+
+  it('keys on funding, not origin: a funded pipeline-origin schedule is counted', () => {
+    const s = mk(12, 2, 3, { kind: 'complete', day: MD(2, 5) });
+    s.origin = 'pipeline';
+    const m = moneyOn(MC.grantSpent, [s]);
+    expect(m.fundedHomes[1]).toBe(10);
+    expect(m.displacedHomes[1]).toBe(3);
+  });
+
+  it('an exit is not completed, and no funded schedule gives all zeros', () => {
+    const s = mk(12, 0, 3, { kind: 'exit', day: MD(2, 5) } as Schedule['end']);
+    const m = moneyOn(MC.grantSpent, [s]);
+    expect(m.fundedHomes).toEqual(new Array(12).fill(0));
+    expect(m.displacedHomes).toEqual(new Array(12).fill(0));
+  });
+});
+
+describe('moneyOf: publicSpent (spec 6 test 16, totals)', () => {
+  it('mixed pool: grant spent 300,000 plus loan lost 500,000 is 800,000 in June, not 1,100,000', () => {
+    const m = moneyOn(MC.mixed);
+    expect(m.publicSpent[4]).toBe(300_000);
+    expect(m.publicSpent[5]).toBe(800_000);
+    expect(m.publicSpent[11]).toBe(800_000);
+  });
+
+  it('loan lost: 150,000 from July', () => {
+    const m = moneyOn(MC.loanLost);
+    expect(m.publicSpent.slice(0, 6)).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(m.publicSpent.slice(6)).toEqual(new Array(6).fill(150_000));
+  });
+
+  it('sums over every pool', () => {
+    const a = MC.grantSpent;
+    const b = MC.loanLost;
+    const c: MoneyCase = {
+      finance: {
+        ...a.finance,
+        pools: [...a.finance.pools, ...b.finance.pools],
+        programmes: [...a.finance.programmes, ...b.finance.programmes]
+      },
+      ledger: [...a.ledger, ...b.ledger]
+    };
+    const m = moneyOn(c);
+    expect(m.publicSpent[11]).toBe(400_000 + 150_000);
+    expect(m.pools).toHaveLength(2);
+  });
+});
+
+describe('moneyOf: owed (spec 6 test 20)', () => {
+  const ex40 = (): MoneyCase => ({
+    finance: {
+      ...MC.beforeMonths.finance,
+      pools: [CITY_DEBT, { ...CITY_DEBT, id: 'ex40', inflows: [] }, GENERAL_REVENUE]
+    },
+    ledger: [ev(MD(2, 1), 'ex40', null, 'in', 410_442_573)]
+  });
+
+  it('owes the total of level payments on what was received, in pool order', () => {
+    const m = moneyOn(ex40());
+    expect(m.owed).toEqual([
+      { pool: 'city-debt', principal: 0, repayment: 0, nominal: true },
+      { pool: 'ex40', principal: 410442573, repayment: 715685078, nominal: true }
+    ]);
+  });
+
+  it('a pool with no debt has no entry', () => {
+    const m = moneyOn(MC.grantSpent);
+    expect(m.owed).toEqual([]);
+  });
+
+  it('takes the principal at the last month', () => {
+    const m = moneyOn(ex40());
+    const p = m.pools[1].received.at(-1)!;
+    expect(m.owed[1].repayment).toBe(debtService(p, { rate: 0.06, termYears: 20 }).total);
+  });
+});
+
+describe('addedBorrowing and limits (spec 6 test 21)', () => {
+  const AS = MINI_AS_OF;
+  const HZ = MINI_HORIZON;
+  const baseline = [CITY_DEBT, GENERAL_REVENUE];
+  const plan = (pools: Pool[]): Fin => ({ ...MC.grantSpent.finance, pools });
+  const scaled = (inflows: Pool['inflows']): Pool => ({ ...CITY_DEBT, inflows });
+  const yearly = (from: number, to: number | null, dollarsPerYear: number) =>
+    ({ kind: 'yearly', from, to, dollarsPerYear }) as const;
+  const out = (pools: Pool[]) => addedBorrowing(plan(pools), baseline, AS, HZ);
+
+  it('is empty when the plan equals the baseline', () => {
+    expect(out(baseline)).toEqual([]);
+    expect(limitStatements(out(baseline))).toEqual([]);
+  });
+
+  it('an added goBond states the three go limits and the vote is exceeded', () => {
+    const added = out([...baseline, U_BOND]);
+    expect(added).toEqual([
+      {
+        pool: 'u-bond',
+        kind: 'goBond',
+        principal: 300_000_000,
+        debt: { rate: 0.06, termYears: 20 }
+      }
+    ]);
+    const limits = limitStatements(added);
+    expect(limits.map((l) => l.id)).toEqual(['goRate', 'goCap', 'goVote']);
+    expect(limits.find((l) => l.id === 'goVote')!.exceeded).toBe(true);
+  });
+
+  it('city-debt scaled by 2 from 16 October 2030 adds 2,100,000,000', () => {
+    const p = scaled([
+      yearly(AS, dayOf(2030, 10, 15), 100_000_000),
+      yearly(dayOf(2030, 10, 16), null, 200_000_000)
+    ]);
+    expect(out([p, GENERAL_REVENUE]).map((b) => b.principal)).toEqual([2_100_000_000]);
+  });
+
+  it('scaled by 0.5 throughout adds nothing', () => {
+    expect(out([scaled([yearly(AS, null, 50_000_000)]), GENERAL_REVENUE])).toEqual([]);
+  });
+
+  it('0.5 then 2 adds only the net: 1,900,000,000', () => {
+    const p = scaled([
+      yearly(AS, dayOf(2030, 10, 15), 50_000_000),
+      yearly(dayOf(2030, 10, 16), null, 200_000_000)
+    ]);
+    expect(out([p, GENERAL_REVENUE]).map((b) => b.principal)).toEqual([1_900_000_000]);
+  });
+
+  it('0.5 to 2045 then 2 nets 2,150,000,000 against 2,500,000,000: nothing', () => {
+    const p = scaled([
+      yearly(AS, dayOf(2045, 10, 15), 50_000_000),
+      yearly(dayOf(2045, 10, 16), null, 200_000_000)
+    ]);
+    expect(out([p, GENERAL_REVENUE])).toEqual([]);
+  });
+
+  it('switched off from 16 October 2030 adds nothing (F7 ends the inflows)', () => {
+    const p = scaled([yearly(AS, dayOf(2030, 10, 15), 100_000_000)]);
+    const finance: Fin = {
+      ...plan([p, GENERAL_REVENUE]),
+      off: [{ pool: 'city-debt', from: dayOf(2030, 10, 16), to: null }]
+    };
+    expect(addedBorrowing(finance, baseline, AS, HZ)).toEqual([]);
+  });
+
+  it('an added cop alone states copCap only', () => {
+    const added = out([...baseline, U_COP]);
+    expect(added.map((b) => [b.pool, b.kind, b.principal])).toEqual([['u-cop', 'cop', 50_000_000]]);
+    expect(limitStatements(added).map((l) => l.id)).toEqual(['copCap']);
+  });
+
+  it('ignores a generalRevenue pool even when it grows', () => {
+    const g = { ...GENERAL_REVENUE, inflows: [yearly(AS, null, 90_000_000)] };
+    expect(out([CITY_DEBT, g])).toEqual([]);
+  });
+});
+
+describe('moneyOf on the finance golden input plus u-bond', () => {
+  it('has the same limits in seeds 1 and 2 (they come from the inflows, not the run)', () => {
+    const base = financeGoldenInput();
+    const baseline = base.finance!.pools;
+    const ubond: Pool = {
+      ...U_BOND,
+      inflows: [{ kind: 'once', day: base.asOf + 365, dollars: 300_000_000 }]
+    };
+    const input: SimInput = { ...base, finance: { ...base.finance!, pools: [...baseline, ubond] } };
+    const want = limitStatements([
+      {
+        pool: 'u-bond',
+        kind: 'goBond',
+        principal: 300_000_000,
+        debt: { rate: 0.06, termYears: 20 }
+      }
+    ]);
+    for (const seed of [1, 2]) {
+      const schedules: Schedule[] = [];
+      const ledger: LedgerEvent[] = [];
+      runEngine(input, seed, GOLDEN_HORIZON, {
+        schedule: (s) => schedules.push(s),
+        master() {},
+        ledger: (e) => ledger.push(e)
+      });
+      const months = monthsOf(input.asOf, GOLDEN_HORIZON);
+      const m = moneyOf({
+        ledger,
+        schedules,
+        finance: input.finance!,
+        baseline,
+        asOf: input.asOf,
+        horizon: GOLDEN_HORIZON,
+        months
+      });
+      expect(m.limits).toEqual(want);
+      expect(m.pools).toHaveLength(input.finance!.pools.length);
+      expect(m.fundedHomes).toHaveLength(months.length);
+    }
   });
 });
