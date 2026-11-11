@@ -29,7 +29,8 @@ export const MAX_CELLS_PER_SLICE = 4;
 /**
  * The timeline's per-frame cell budget while a run swap installs over the old run (run slider
  * spec). Count-based like MAX_CELLS_PER_SLICE: deck tessellates at the next render, not in
- * `install`, so a JS time budget would miss the cost. Tuned from the live run-switch bench.
+ * `install`, so a JS time budget would miss the cost. Provisional: not yet tuned on the live
+ * run-switch bench (docs/dev/map-perf.md "Run slider switch"; the run was deferred).
  */
 export const SWAP_CELLS_PER_SLICE = 16;
 

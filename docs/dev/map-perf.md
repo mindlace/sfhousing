@@ -118,14 +118,19 @@ SFH_BENCH_DATASET=<version> npm run bench:map -- 'run-slider\.bench'
 
 ### Results
 
-| Machine   | Date      | Dataset | Case     | first p50/p95               | full p50/p95                | Label                   |
-| --------- | --------- | ------- | -------- | --------------------------- | --------------------------- | ----------------------- |
-| (pending) | (pending) | live SF | all four | deferred: needs a quiet run | deferred: needs a quiet run | baseline: reroll path   |
-| (pending) | (pending) | live SF | all four | deferred: needs a quiet run | deferred: needs a quiet run | after worker + map swap |
+| Machine   | Date      | Dataset | Case     | first p50/p95               | full p50/p95                | Label                                    |
+| --------- | --------- | ------- | -------- | --------------------------- | --------------------------- | ---------------------------------------- |
+| (pending) | (pending) | live SF | all four | deferred: needs a quiet run | deferred: needs a quiet run | baseline: reroll path                    |
+| (pending) | (pending) | live SF | all four | deferred: needs a quiet run | deferred: needs a quiet run | after worker + map swap                  |
+| (pending) | (pending) | live SF | all four | deferred: needs a quiet run | deferred: needs a quiet run | final (swap 16 cells/frame, provisional) |
 
 The live baseline was not taken in the session that wrote the bench: the machine was under heavy load (1-minute load average about 38) when it was written, and it needs the production dataset in local R2 (`data:local`) on a quiet machine. Ballpark expectations, from the pieces and not measured: the worker simulates a run in about 20 ms, cold building generation costs about 25 microseconds per building, and today's whole-city install is about 1 s (4 cells per frame times 256 cells at 60 Hz). So the baseline full switch at the default camera should land around 1 to 3 s, and a viewport-sized install around 0.2 to 0.5 s.
 
 The "after worker + map swap" rows (worker swap reroll and `TimelineController` swap mode, with `selectRank` asking for a swap) were deferred too: the session that added the map swap saw a 1-minute load average of about 4 with another worktree's Vitest run going, and the production dataset was not yet in local R2. Its main-thread companion, `swap install cadence at 30,000 projects (baseline)` in `src/lib/map/timeline.perf.svelte.spec.ts` (`client-perf`; rAF gaps from a swap revision 0 until `pending` is 0, p95 at most 50 ms, never an empty layer list), has no baseline yet either: there, as for every real-map test in that file, the map did not reach `ready` (map sources failed with `e.split is not a function`, an environment fault that also fails `SimMap*.svelte.spec.ts` at the branch base).
+
+The "final" row (the finished branch, `SWAP_CELLS_PER_SLICE = 16`) was deferred as well, on 2026-11-10 (M5 Pro). The machine was never quiet over about 15 minutes: at the start a 1-minute load average of 3.5 with another worktree's Vitest run, then 9 with another session's `test:pipeline`, then 34 with another session's full Playwright e2e sweep. Live dataset note: `npx tsx scripts/dataset-version.ts` on the main checkout printed `2026-11-08-de1aee4b`, which production does not serve (manifest 404); production serves `2026-11-08-3b7fa918`, and that is the version copied into this worktree's local R2 (`npm run data:local -- 2026-11-08-3b7fa918`). Run the bench with `SFH_BENCH_DATASET=2026-11-08-3b7fa918` (or whatever production serves then).
+
+`SWAP_CELLS_PER_SLICE` stays at 16 and is provisional until that run. Ballpark expectations, not measured: the worker answers a swap with revision 0 in about 60 to 75 ms (worker-side baseline, bench city) and completes in about 60 to 290 ms; deck tessellates about 4.5 ms per 1500-parcel cell, so a 16-cell frame costs about 70 to 80 ms. For the whole city (about 256 cells) that is about 16 frames, so `first` should land around 150 to 250 ms and `full` around 1.2 to 1.6 s at the default camera, well inside the 3 s ceiling, with Best↔Worst close to one tick (the swap installs every cell either way). The cost of 16 cells per frame is frame gaps of about 75 ms during a switch, above §4.12's 50 ms. A mixed map mid-switch is allowed by the spec, so if the live numbers show headroom under 3 s, a lower budget (8) trades a slower `full` for smoother frames. If they miss, the spec's order applies: 32, then 64 cells per frame, then cutting per-switch main-thread work.
 
 ## CI
 
