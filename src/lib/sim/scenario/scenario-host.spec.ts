@@ -12,7 +12,7 @@ import { cellsIntersecting } from '$lib/sim/chunks';
 import { createLru } from '$lib/sim/lru';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
-import { bandSeed, quantiles, representativeIndex } from './band';
+import { bandSeed, medianRank, quantiles, rankOrder, representativeIndex } from './band';
 import { chooseProject, projectCard, revisionAt, type CardCtx } from './card';
 import { MINI_CELLS, MINI_CHUNK_URL, MINI_VERSION, miniCity } from './fixtures/mini-parcels';
 import {
@@ -481,8 +481,10 @@ describe('scenario host: reroll', () => {
     h.host.handle({ type: 'reroll', rev: r, seed: null });
     await h.runAll();
     expect(h.errors()).toEqual([]);
-    // the old run is cancelled: nothing more under its rev
-    expect(h.posts.slice(handledAt).some((m) => 'rev' in m && m.rev === rev)).toBe(false);
+    // the old run is cancelled: nothing more under its rev (the band's ranks keep it: kept work)
+    expect(
+      h.posts.slice(handledAt).some((m) => m.type !== 'ranks' && 'rev' in m && m.rev === rev)
+    ).toBe(false);
 
     const inp = inputs();
     const full = bandOf(inp, N);
@@ -521,7 +523,9 @@ describe('scenario host: reroll', () => {
     h.host.handle({ type: 'reroll', rev: r, seed: 7 });
     await h.runAll();
     expect(netCalls((c) => c.twin && c.seed === SEED)).toHaveLength(0);
-    expect(h.posts.slice(handledAt).some((m) => 'rev' in m && m.rev === rev)).toBe(false);
+    expect(
+      h.posts.slice(handledAt).some((m) => m.type !== 'ranks' && 'rev' in m && m.rev === rev)
+    ).toBe(false);
     expect(timelines(h, r).map((t) => t.render.revision)).toEqual([0, 1, 2, 3]);
     expect(timelines(h, r).at(-1)!.bandRuns).toBe(N);
   });
@@ -1361,5 +1365,51 @@ describe('scenario host: parcelSummary', () => {
       project: projectCard(only, day, { ...cardCtx(fzp, run), building: () => ({ footprint: [] }) })
     });
     expect(s.project!.massing).toBe('none');
+  });
+});
+
+describe('scenario host: ranks', () => {
+  const ranksOf = (h: ScenarioHarness) =>
+    h.posts.filter((m): m is Extract<typeof m, { type: 'ranks' }> => m.type === 'ranks');
+
+  it('posts ranks once, after the last FZP band run, at the init rev', async () => {
+    const h = harness();
+    const rev = h.init({ seed: null });
+    await h.runAll();
+    const ranks = ranksOf(h);
+    expect(ranks).toHaveLength(1);
+    expect(ranks[0].rev).toBe(rev);
+    const inp = inputs();
+    const months = monthsOf(inp.fzp.asOf, H);
+    const finals = Array.from({ length: N }, (_, i) => {
+      const r = actual.simulateNet(inp.fzp, bandSeed(i), H, months).completedNet;
+      return r[r.length - 1];
+    });
+    expect(ranks[0].seeds).toEqual(rankOrder(finals).map(bandSeed));
+    const first = timelines(h)[0];
+    expect(ranks[0].seeds[medianRank(N)]).toBe(first.seed);
+    const at = h.posts.indexOf(ranks[0]);
+    const lastFzp = netCalls((c) => !c.twin).at(-1)!;
+    expect(at).toBeGreaterThanOrEqual(lastFzp.posts);
+    expect(at).toBeLessThan(h.posts.indexOf(first));
+  });
+
+  it('with a requested seed, ranks come once every FZP run is set', async () => {
+    const h = harness();
+    h.init({ seed: SEED });
+    await h.runAll();
+    expect(ranksOf(h)).toHaveLength(1);
+    expect(h.posts.indexOf(ranksOf(h)[0])).toBeGreaterThan(
+      h.posts.findIndex((m) => m.type === 'timeline' && m.render.revision === 0)
+    );
+  });
+
+  it('a reroll does not repost ranks', async () => {
+    const h = harness();
+    h.init({ seed: null });
+    await h.runAll();
+    h.host.handle({ type: 'reroll', rev: h.next(), seed: 5 });
+    await h.runAll();
+    expect(ranksOf(h)).toHaveLength(1);
   });
 });

@@ -15,6 +15,7 @@ import type {
   LotAtResult,
   LotOutlinesResult,
   PreviewResult,
+  RanksResponse,
   ScenarioResponse,
   TimelineResponse,
   WorkerRequest
@@ -47,6 +48,8 @@ export interface ScenarioClientEvents {
   onLevers?(l: Extract<ScenarioResponse, { type: 'levers' }>): void;
   /** Every revision's height regions and contours, a superseded revision's included. */
   onHeights?(m: Extract<ScenarioResponse, { type: 'heights' }>): void;
+  /** The band's seeds, best to worst, once per band; the page decides staleness. */
+  onRanks?(r: RanksResponse): void;
   /** Never answered by a resync. */
   onError?(e: ScenarioErrorResponse): void;
   /**
@@ -450,6 +453,9 @@ export class ScenarioClient {
       }
       case 'heights':
         this.#events.onHeights?.(msg);
+        return;
+      case 'ranks':
+        this.#events.onRanks?.(msg);
         return;
       case 'error':
         // Never a resync here (unlike SimClient): resending cannot fix a bad file or request. An

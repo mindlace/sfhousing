@@ -199,7 +199,11 @@ export type ScenarioResponse =
   | { type: 'heights'; rev: Rev; city: HeightCity }
   | { type: 'heightLids'; reqId: number; result: HeightLidsResult }
   | { type: 'lotAt'; reqId: number; result: LotAtResult }
+  // The band's runs ranked best to worst as seeds, once per band (each lever revision has its
+  // own), when its last FZP run is set; `rev` is the revision whose band it ranks.
+  | RanksResponse
   | LeversResponse;
+export type RanksResponse = { type: 'ranks'; rev: Rev; seeds: number[] };
 /**
  * A lever revision's status (plan 2): `rev` is the `initScenario` or `setLevers` that named the
  * levers. `resolving` while touched-lot yields are recomputed (`failedCells`: needed chunks that

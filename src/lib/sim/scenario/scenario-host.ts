@@ -322,6 +322,8 @@ interface Work {
   months: Day[]; // one array for every run, so simulateNet's month table is cached
   phasing: TimelineScore['phasing'];
   band: BandState;
+  /** The revision whose band this is: the init rev, or the lever revision that made it. */
+  bandRev: Rev;
   /** FZP band run i's `completedNetNew`, kept until pair i is done. */
   fzpNew: (Int32Array | undefined)[];
   run: Run;
@@ -643,6 +645,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       months: monthsOf(asOf, st.horizon),
       phasing: phasingOf(loaded.fzp.projects, asOf),
       band: createBandState(deps.bandRuns ?? BAND_RUNS),
+      bandRev: st.rev,
       fzpNew: [],
       run: newRun(st.rev, st.seed),
       chunks: st.chunks,
@@ -921,6 +924,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     w.loaded = { ...lw.base, fzp: li.plan, twin: li.twin };
     w.references = li.references;
     w.band = createBandState(deps.bandRuns ?? BAND_RUNS);
+    w.bandRev = p.rev;
     w.fzpNew = [];
     w.bandPostDue = false;
     w.massing = { ...w.massing, input: li.plan };
@@ -1083,6 +1087,9 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     const r = simulateNet(w.loaded.fzp, bandSeed(i), w.horizon, w.months);
     w.band.setFzp(i, r.completedNet);
     w.fzpNew[i] = r.completedNetNew;
+    if (w.band.fzpCount === w.band.total) {
+      post({ type: 'ranks', rev: w.bandRev, seeds: w.band.rankSeeds() });
+    }
   }
 
   function bandTwin(w: Work, i: number): void {

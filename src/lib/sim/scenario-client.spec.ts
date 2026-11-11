@@ -426,6 +426,14 @@ describe('ScenarioClient', () => {
       expect(onHeights).toHaveBeenCalledWith(m);
     });
 
+    it('forwards ranks to onRanks, stale or not', () => {
+      const onRanks = vi.fn();
+      const { w } = setup({ onRanks });
+      const m = { type: 'ranks' as const, rev: 1, seeds: [2, 1, 3] };
+      w.emit(m);
+      expect(onRanks).toHaveBeenCalledWith(m);
+    });
+
     it('restart and dispose resolve pending brush requests with no-session', async () => {
       const { client } = setup();
       const a = client.resolveBrush(q);

@@ -57,6 +57,23 @@ export function representativeIndex(finals: readonly number[]): number {
   return order[Math.ceil(0.5 * n) - 1];
 }
 
+/**
+ * Band-run indices best to worst: the exact reverse of the ascending order
+ * `(a, b) => finals[a] - finals[b] || a - b`.
+ */
+export function rankOrder(finals: readonly number[]): number[] {
+  const n = finals.length;
+  if (n === 0) throw new RangeError('no runs');
+  const order = Array.from({ length: n }, (_, i) => i);
+  order.sort((a, b) => finals[a] - finals[b] || a - b);
+  return order.reverse();
+}
+
+/** Position in `rankOrder` of the representative run (50 for n = 101). */
+export function medianRank(n: number): number {
+  return n - Math.ceil(0.5 * n);
+}
+
 export type BandState = {
   readonly total: number;
   /** FZP runs set so far. */
@@ -82,6 +99,11 @@ export type BandState = {
    * RangeError unless all `total` FZP runs are set.
    */
   representativeSeed(): number;
+  /**
+   * Seeds of every band run, best to worst: `rankOrder(finals()).map(bandSeed)`. Throws
+   * RangeError unless all `total` FZP runs are set.
+   */
+  rankSeeds(): number[];
 };
 
 /** Mutable accumulator the scenario host drives; quantiles are cached until the next set. */
@@ -144,6 +166,9 @@ export function createBandState(total: number = BAND_RUNS): BandState {
     },
     representativeSeed() {
       return bandSeed(representativeIndex(this.finals()));
+    },
+    rankSeeds() {
+      return rankOrder(this.finals()).map(bandSeed);
     }
   };
 }
