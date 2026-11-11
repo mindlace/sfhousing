@@ -28,3 +28,18 @@ export function tier3Calibration(): Calibration {
   entitled.provenance.tier = 3;
   return copy;
 }
+
+let withoutMarket: Calibration | undefined;
+
+/**
+ * A copy of the fixture calibration with `market` removed: the shape of a dataset built before
+ * today's market (no market term, no market paragraph or section). Never edits the shared object.
+ */
+export function fixtureCalibrationWithoutMarket(): Calibration {
+  if (withoutMarket === undefined) {
+    const copy = structuredClone(fixtureCalibration());
+    delete copy.market;
+    withoutMarket = copy;
+  }
+  return withoutMarket;
+}

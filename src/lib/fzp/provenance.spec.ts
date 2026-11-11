@@ -5,7 +5,11 @@ import { PATHWAYS, STAGE_ORDER } from '$lib/timelapse/types';
 import type { Pathway, Stage } from '$lib/timelapse/types';
 import { transitionSectionId } from './card';
 import { MEASURE_SERIES, SERIES_NAME } from './chart';
-import { fixtureCalibration, tier3Calibration } from './fixtures/calibration';
+import {
+  fixtureCalibration,
+  fixtureCalibrationWithoutMarket,
+  tier3Calibration
+} from './fixtures/calibration';
 import { liveMarketCalibration } from './fixtures/market';
 import { MARKET_HOLD_SENTENCE, MARKET_INTRO_SENTENCE } from './market-view';
 import { PROJECTS_JSON, PROJECTS_JSON_NO_RULES } from './fixtures/projects';
@@ -102,6 +106,7 @@ describe('provenanceSections', () => {
       'src-actual',
       'src-transitions',
       'src-initiation',
+      'src-market',
       'src-size',
       'src-revision',
       'src-pathway',
@@ -352,6 +357,7 @@ describe('provenanceSections', () => {
       'src-how-to-read',
       'src-transitions',
       'src-initiation',
+      'src-market',
       'src-size',
       'src-revision',
       'src-pathway'
@@ -479,7 +485,8 @@ describe("today's market", () => {
   });
 
   it('adds nothing without a market', () => {
-    expect(section('src-initiation').intro).toEqual([]);
-    expect(sections.some((s) => s.id === 'src-market')).toBe(false);
+    const bare = provenanceSections(fixtureCalibrationWithoutMarket(), TIMELINE_SCORE);
+    expect(section('src-initiation', bare).intro).toEqual([]);
+    expect(bare.some((s) => s.id === 'src-market')).toBe(false);
   });
 });
