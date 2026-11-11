@@ -35,6 +35,7 @@ import {
 } from './engine';
 import {
   awardSet,
+  below,
   coverageLevel,
   financeIndexOf,
   isOffered,
@@ -67,6 +68,13 @@ export interface FinancePre {
    * `to + 1`.
    */
   days: Day[];
+  /**
+   * The re-pricing days (spec 4.11), ascending, deduplicated, a subset of `days`: the days after
+   * `asOf` in { programme `from`, `to + 1` } ∪ { `off` `from`, `to + 1` } ∪ regime days. Market
+   * step days are not among them: a step changes no bundle and no size. The horizon cut is the
+   * run's.
+   */
+  repricing: Day[];
   /** per segment: its regime view (0 = `input.parcels`) */
   view: number[];
   /** per segment: the index of the `Precompute.segments` segment it lies in */
@@ -96,17 +104,21 @@ export function financePreOf(input: SimInput): FinancePre {
   const { asOf } = input;
   const segs = precomputeOf(input).segments;
   const all = new Set<Day>();
-  const add = (d: Day) => {
-    if (d > asOf) all.add(d);
+  const re = new Set<Day>();
+  const add = (d: Day, repricing: boolean) => {
+    if (d <= asOf) return;
+    all.add(d);
+    if (repricing) re.add(d);
   };
-  for (const d of segs.days) add(d);
+  for (const d of segs.days) add(d, false);
+  for (const g of input.regimes ?? []) add(g.day, true);
   for (const g of f.programmes) {
-    add(g.from);
-    if (g.to !== null) add(g.to + 1);
+    add(g.from, true);
+    if (g.to !== null) add(g.to + 1, true);
   }
   for (const o of f.off) {
-    add(o.from);
-    if (o.to !== null) add(o.to + 1);
+    add(o.from, true);
+    if (o.to !== null) add(o.to + 1, true);
   }
   const days = [...all].sort((a, b) => a - b);
   const index = financeIndexOf(f);
@@ -136,6 +148,7 @@ export function financePreOf(input: SimInput): FinancePre {
   }
   const fp: FinancePre = {
     days,
+    repricing: [...re].sort((a, b) => a - b),
     view,
     ordSeg,
     m,
@@ -557,13 +570,20 @@ class Calendar {
   }
 }
 
-let stats = { firstDayApplications: 0, awards: 0 };
+/** The counts of one funded run (`fundedRunStats`). */
+export interface FundedRunStats {
+  /** applications made on `asOf + 1`, the first day a latent start can fall on */
+  firstDayApplications: number;
+  awards: number;
+  /** `respell` calls: lapses on re-pricing days (spec 4.11), whether or not a new spell applies */
+  respells: number;
+}
 
-/**
- * The last funded run's counts: applications made on `asOf + 1` (the first day a latent start
- * can fall on) and awards. Module counters, overwritten by every `fundedPass`.
- */
-export function fundedRunStats(): { firstDayApplications: number; awards: number } {
+const noStats = (): FundedRunStats => ({ firstDayApplications: 0, awards: 0, respells: 0 });
+let stats = noStats();
+
+/** The last funded run's counts. Module counters, overwritten by every `fundedPass`. */
+export function fundedRunStats(): FundedRunStats {
   return { ...stats };
 }
 
@@ -573,10 +593,10 @@ export function fundedRunStats(): { firstDayApplications: number; awards: number
  * first attempt with an application on or before its ordinary start parks the lot), then the day
  * loop (spec 4.8) over the parked lots, the line and the pools, then the reservation reports.
  * Every choice is ordered by day, step, line key or parcel rank, never by visit order (spec
- * 4.16). Re-pricing (spec 4.11) is not done here.
+ * 4.16).
  */
 export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts): void {
-  stats = { firstDayApplications: 0, awards: 0 };
+  stats = noStats();
   if (opts.serving === 'grouped') throw new Error('fundedPass: grouped serving is not built yet');
   const fin = run.input.finance!;
   const fp = financePreOf(run.input);
@@ -695,6 +715,52 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
     return { programmes, applied: app.applied, granted, lent, guaranteed, displaced, certain };
   };
 
+  /**
+   * Re-makes a waiting application under the rules of re-pricing day D, whose finance segment is
+   * `seg` (spec 4.11): the view in force on D, the attempt's size draw in it, and B′ the
+   * programmes of its kind offered on D whose `minHomes` it meets. False when it lapses (no size or
+   * a 0 hazard in the view, B′ empty, or `level(B′)` below its level just before D); otherwise it
+   * keeps `applied` and `key`, takes B′, its view, size and prototype, and is regrouped.
+   */
+  const remake = (app: App, seg: number): boolean => {
+    const lot = lotOf[app.lot]!;
+    const view = fp.view[seg];
+    const sz = lot.lat!.size[view];
+    if (sz === null || viewOf(run, view).pre.logit[lot.i] === -Infinity) return false;
+    const bundle = fp.offered[app.kind][seg].filter((g) => fin.programmes[g].minHomes <= sz.units);
+    if (bundle.length === 0) return false;
+    const level = coverageLevel(f.price(app.kind, bundle, sz.protoId).coverage);
+    if (below(level, app.level)) return false;
+    app.bundle = bundle;
+    app.bundleKey = bundle.join(',');
+    app.protoId = sz.protoId;
+    app.units = sz.units;
+    app.level = level;
+    app.view = view;
+    app.f = sz.f;
+    app.stories = sz.stories;
+    line.regroup(app);
+    return true;
+  };
+
+  /**
+   * A lapse on re-pricing day D (spec 4.11): the application leaves the line, and the kind's
+   * latent start is computed again as a new spell from D. A new application (not on or after a
+   * kept reservation day) joins the calendar: on D itself through `today`'s bucket.
+   */
+  const lapse = (app: App, D: Day, todays: Bucket): void => {
+    const lot = lotOf[app.lot]!;
+    line.remove(app);
+    lot.apps = lot.apps.filter((a) => a !== app);
+    stats.respells++;
+    const nl = respell(run, fp, lot.i, lot.lat!, app.kind, D);
+    if (nl === null || (lot.d > 0 && nl.day! >= lot.d)) return;
+    lot.lat![app.kind] = nl;
+    const x = { lot, gen: lot.gen, kind: app.kind };
+    if (nl.day === D) todays.apps.push(x);
+    else cal.at(nl.day!).apps.push(x);
+  };
+
   /** An award on `today` (spec 4.9): the lot leaves every line and its funded project starts. */
   const take = (app: App, a: Award): void => {
     const lot = lotOf[app.lot]!;
@@ -766,7 +832,14 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
     if (isReserved) reserved.push(lot);
   }
 
-  // 2. The day loop (spec 4.8).
+  // 2. The day loop (spec 4.8). Every re-pricing day up to the horizon is a day of the loop.
+  const repricing = new Map<Day, number>();
+  for (const d of fp.repricing) {
+    if (d > run.horizon) break;
+    // its finance segment: the one that starts on d
+    repricing.set(d, fp.days.indexOf(d) + 1);
+    cal.at(d);
+  }
   const live = (x: Entry) => x.lot.parked && x.lot.gen === x.gen;
   const byRank = (x: Entry, y: Entry) => rank[x.lot.i] - rank[y.lot.i];
   while (cal.size > 0) {
@@ -778,6 +851,13 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
     // a kept reservation's day: the lot's waiting applications lapse for good (spec 4.11)
     for (const x of b.res.filter(live).sort(byRank)) {
       leaveLine(x.lot);
+      did = true;
+    }
+    // re-pricing and lapse (spec 4.11), in key order, once per application however many kinds of
+    // change fall on D; serving follows
+    const seg = repricing.get(D);
+    if (seg !== undefined && line.size > 0) {
+      for (const app of line.apps()) if (!remake(app, seg)) lapse(app, D, b);
       did = true;
     }
     const fresh: App[] = [];
@@ -825,7 +905,9 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
       sink.schedule(s);
       if (after(lot, s)) walk(lot);
     }
+    opts.lineProbe?.(D, line.apps());
   }
+  opts.lineProbe?.(run.horizon, line.apps());
 
   // 3. Close: each reserved candidate once, and the reserved rows that are not candidates.
   for (const lot of reserved) sink.reservation?.(lot.i, lot.d > 0);

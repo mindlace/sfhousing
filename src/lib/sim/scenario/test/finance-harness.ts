@@ -4,7 +4,7 @@
  */
 import { expect } from 'vitest';
 import type { Day } from '$lib/timelapse/time';
-import { runEngineWith } from '../engine';
+import { runEngineWith, type EngineOpts } from '../engine';
 import type { Schedule, SimInput } from '../types';
 import type { LedgerEvent } from '../money';
 
@@ -116,7 +116,7 @@ export function runCollect(
   input: SimInput,
   seed: number,
   horizon: Day,
-  opts: { serving?: 'scan' | 'grouped' } = {}
+  opts: Pick<EngineOpts, 'serving' | 'lineProbe'> = {}
 ): Collected {
   const schedules: Schedule[] = [];
   const ledger: LedgerEvent[] = [];
@@ -141,6 +141,7 @@ export function runCollect(
     },
     {
       serving: opts.serving,
+      lineProbe: opts.lineProbe,
       probe(_e, available) {
         probes.push({ after: ledger.length - 1, available: [...available] });
       }

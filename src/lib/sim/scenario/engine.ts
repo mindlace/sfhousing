@@ -39,6 +39,7 @@ import type { StageScale } from '../levers/timers';
 import { isoOf } from './dates';
 import { fundedPass } from './funded';
 import { checkFinance } from './funding';
+import type { App } from './line';
 import {
   piecewiseMonth,
   precomputeOf,
@@ -1166,6 +1167,11 @@ export interface EngineOpts {
   serving?: 'scan' | 'grouped';
   /** after every ledger event: the event and every pool's available money as the engine holds it */
   probe?: (e: LedgerEvent, available: readonly number[]) => void;
+  /**
+   * The waiting line in key order: after each day the funded day loop processes, then once at the
+   * end of the run with the horizon as its day. The applications are live: copy what you keep.
+   */
+  lineProbe?: (day: Day, apps: readonly App[]) => void;
 }
 
 /**
