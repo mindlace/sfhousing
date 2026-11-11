@@ -37,6 +37,7 @@ import {
 } from '$lib/timelapse/types';
 import type { StageScale } from '../levers/timers';
 import { isoOf } from './dates';
+import { checkFinance } from './funding';
 import {
   piecewiseMonth,
   precomputeOf,
@@ -296,6 +297,7 @@ function checkInput(input: SimInput): void {
 
 function runOf(input: SimInput, seed: number, horizon: Day, ids: boolean): Run {
   checkInput(input);
+  if (input.finance) checkFinance(input);
   const pre = precomputeOf(input);
   const regimeInputs = regimeInputsOf(input);
   const regimes = regimeInputs.map((ri, k) => ({
