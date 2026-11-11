@@ -19,7 +19,13 @@ import { checkQuality } from '../lib/quality';
 import { pointStrictlyInside } from '../lib/rings';
 import { parseProjectsFile } from '../../src/lib/timelapse/projects';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
-import { checkV25, checkV26, checkV27, parseCalibrationText } from '../lib/fzp-cal/invariants';
+import {
+  checkV25,
+  checkV26,
+  checkV27,
+  fundingOutcomes,
+  parseCalibrationText
+} from '../lib/fzp-cal/invariants';
 import { scenarioEligible } from '../lib/scenario-eligibility';
 import { checkV20 } from '../project-records/invariants';
 import { CALIBRATION_JSON } from './calibration';
@@ -248,18 +254,20 @@ function checkCalibrationFiles(outDir: string): InvariantResult[] {
     }
   }
 
-  const v25 = checkV25(text, bytes, FILL_LEVELS, projectsAsOf);
+  const live = !isFixtureDataset(outDir);
+  const v25 = checkV25(text, bytes, FILL_LEVELS, projectsAsOf, undefined, live);
+  // V26 reads the cells even when parseCalibration rejects the file (a deleted cell is itself a
+  // parse failure); V27 samples only a file that parses. V25's text states the funding outcomes.
+  const parsed = parseCalibrationText(text);
+  const funding = 'cal' in parsed ? fundingOutcomes(parsed.cal, live).detail : '';
   const out: InvariantResult[] = [
     verdict(
       'V25',
       v25,
-      `parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), ${bytes} B`
+      `parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), ${bytes} B; ${funding}`
     )
   ];
 
-  // V26 reads the cells even when parseCalibration rejects the file (a deleted cell is itself a
-  // parse failure); V27 samples only a file that parses.
-  const parsed = parseCalibrationText(text);
   let raw: Calibration | undefined;
   if ('cal' in parsed) raw = parsed.cal;
   else {

@@ -10,7 +10,7 @@ import {
   type QualityRuleRef
 } from './projects';
 import type { Day } from './time';
-import type { Pathway, Provenance, Stage } from './types';
+import type { Pathway, Provenance, Stage, TierUnits } from './types';
 
 type Equals<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
@@ -47,6 +47,7 @@ interface RowInFlightProject {
   } | null;
   sources: { dataset: string; id: string; key?: string }[];
   quality: string[];
+  affordableHomes?: number | null;
 }
 type RowQualityRuleRef = {
   id: string;
@@ -57,7 +58,7 @@ type RowQualityRuleRef = {
 type RowProjectsFile = {
   schema: 1;
   asOf: Day;
-  rhnaCompletedNet: { units: number; since: Day; provenance: Provenance };
+  rhnaCompletedNet: { units: number; since: Day; provenance: Provenance; byTier?: TierUnits };
   districtMaxStories?: { stories: number; n: number; provenance: Provenance };
   qualityRules: RowQualityRuleRef[];
   projects: RowInFlightProject[];
@@ -178,9 +179,22 @@ function scoreOnly(f: ProjectsFile): void {
   f.projects[2].quality = [SCORE_ONLY_QUALITY_ID, FORWARD_CLAMP];
 }
 
+/** A byTier summing to `units`. */
+function byTierOf(units: number): TierUnits {
+  return { veryLow: 1, low: 2, moderate: 3, aboveModerate: units - 6, unrecorded: 0 };
+}
+
 describe('parseProjectsFile accepts', () => {
   it('a valid file, returning the input itself', () => {
     const f = validFile();
+    expect(parseProjectsFile(f)).toBe(f);
+  });
+
+  it('a file with no byTier, and one with a valid byTier', () => {
+    const f = validFile();
+    expect(f.rhnaCompletedNet.byTier).toBeUndefined();
+    expect(parseProjectsFile(f)).toBe(f);
+    f.rhnaCompletedNet.byTier = byTierOf(f.rhnaCompletedNet.units);
     expect(parseProjectsFile(f)).toBe(f);
   });
 
@@ -283,6 +297,16 @@ describe('parseProjectsFile accepts', () => {
     expect(parseProjectsFile(f)).toBe(f);
   });
 
+  it('affordableHomes absent, null, 0 and equal to units', () => {
+    const f = validFile();
+    expect(f.projects[0].affordableHomes).toBeUndefined();
+    expect(parseProjectsFile(f)).toBe(f);
+    for (const v of [null, 0, f.projects[0].units]) {
+      f.projects[0].affordableHomes = v;
+      expect(parseProjectsFile(f)).toBe(f);
+    }
+  });
+
   it('every PROJECT_ID_RE shape', () => {
     const ok = ['PRJ:a', 'PRJ:a:BP:b', 'BP:b', 'CASE:c', 'PPA:p'];
     expect(ok.map((s) => PROJECT_ID_RE.test(s))).toEqual(ok.map(() => true));
@@ -305,6 +329,23 @@ const cases: Case[] = [
   ['rhna missing', (f) => delete f.rhnaCompletedNet, 'rhnaCompletedNet'],
   ['rhna null', (f) => (f.rhnaCompletedNet = null), 'rhnaCompletedNet'],
   ['rhna units fractional', (f) => (f.rhnaCompletedNet.units = 1.5), 'rhnaCompletedNet.units'],
+  [
+    'byTier off by one',
+    (f) => {
+      f.rhnaCompletedNet.byTier = byTierOf(f.rhnaCompletedNet.units);
+      f.rhnaCompletedNet.byTier.unrecorded += 1;
+    },
+    'rhnaCompletedNet.byTier'
+  ],
+  [
+    'byTier moderate fractional',
+    (f) => {
+      f.rhnaCompletedNet.byTier = byTierOf(f.rhnaCompletedNet.units);
+      f.rhnaCompletedNet.byTier.moderate = 1.5;
+      f.rhnaCompletedNet.byTier.aboveModerate += 1.5;
+    },
+    'rhnaCompletedNet.byTier.moderate'
+  ],
   ['rhna since string', (f) => (f.rhnaCompletedNet.since = 'x'), 'rhnaCompletedNet.since'],
   [
     'rhna provenance missing',
@@ -515,6 +556,17 @@ const cases: Case[] = [
   ['units < existingUnits', (f) => (f.projects[0].existingUnits = 50), `${P}.units`],
   ['existingUnits negative', (f) => (f.projects[0].existingUnits = -1), `${P}.existingUnits`],
   ['existingUnits fractional', (f) => (f.projects[0].existingUnits = 0.5), `${P}.existingUnits`],
+  [
+    'affordableHomes above units',
+    (f) => (f.projects[0].affordableHomes = f.projects[0].units + 1),
+    `${P}.affordableHomes`
+  ],
+  ['affordableHomes negative', (f) => (f.projects[0].affordableHomes = -1), `${P}.affordableHomes`],
+  [
+    'affordableHomes fractional',
+    (f) => (f.projects[0].affordableHomes = 1.5),
+    `${P}.affordableHomes`
+  ],
   ['stories zero', (f) => (f.projects[0].stories = 0), `${P}.stories`],
   ['stories 81', (f) => (f.projects[0].stories = 81), `${P}.stories`],
   ['stories fractional', (f) => (f.projects[0].stories = 2.5), `${P}.stories`],
@@ -774,6 +826,34 @@ const cases: Case[] = [
   ],
   ['second project, deep path', (f) => (f.projects[1].units = 0), 'projects[1].units']
 ];
+
+describe('parseProjectsFile exact messages', () => {
+  const messageOf = (mutate: (f: Loose) => void): string => {
+    const f = validFile();
+    mutate(f);
+    try {
+      parseProjectsFile(f);
+    } catch (e) {
+      return (e as Error).message;
+    }
+    return '';
+  };
+
+  it('byTier off by one', () => {
+    expect(
+      messageOf((f) => {
+        f.rhnaCompletedNet.byTier = byTierOf(f.rhnaCompletedNet.units);
+        f.rhnaCompletedNet.byTier.unrecorded += 1;
+      })
+    ).toBe('projects.json rhnaCompletedNet.byTier: must sum to units');
+  });
+
+  it('affordableHomes above units', () => {
+    expect(messageOf((f) => (f.projects[0].affordableHomes = f.projects[0].units + 1))).toBe(
+      'projects.json projects[0].affordableHomes: must be null or an integer in [0, units]'
+    );
+  });
+});
 
 describe('parseProjectsFile rejects', () => {
   it.each(cases)('%s', (_name, mutate, path) => {

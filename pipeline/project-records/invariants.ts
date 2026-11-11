@@ -129,13 +129,20 @@ export function checkV21(i: V2xInputs, min: number): InvariantResult {
 
 /**
  * V22: `rhnaCompletedNet` against the Housing Inventory. Only years wholly inside the window
- * (keys of `rhna.byYear`) with a `hiNet` entry are compared; with none compared, V22 fails.
+ * (keys of `rhna.byYear`) with a `hiNet` entry are compared; with none compared, V22 fails. A
+ * `byTier` that does not sum to `units` fails it too.
  */
 export function checkV22(
   i: V2xInputs,
   hiNet: Record<number, number>,
   tol: { year: number; total: number }
 ): InvariantResult {
+  const { units, byTier } = i.file.rhnaCompletedNet;
+  const tierSum =
+    byTier === undefined
+      ? units
+      : byTier.veryLow + byTier.low + byTier.moderate + byTier.aboveModerate + byTier.unrecorded;
+  const tail = `; byTier sums to ${tierSum}, units ${units}`;
   const compared: Record<number, number> = {};
   for (const k of Object.keys(hiNet)) {
     if (Object.hasOwn(i.rhna.byYear, k)) compared[Number(k)] = hiNet[Number(k)];
@@ -144,11 +151,11 @@ export function checkV22(
     return {
       id: 'V22',
       ok: false,
-      detail: `no cross-check year compared (records years ${Object.keys(i.rhna.byYear).join(', ') || 'none'}; hiNet years ${Object.keys(hiNet).join(', ') || 'none'})`
+      detail: `no cross-check year compared (records years ${Object.keys(i.rhna.byYear).join(', ') || 'none'}; hiNet years ${Object.keys(hiNet).join(', ') || 'none'})${tail}`
     };
   }
   const r = checkRhna(i.rhna.byYear, i.rhna.total, compared, tol);
-  return { id: 'V22', ok: r.ok, detail: r.detail };
+  return { id: 'V22', ok: r.ok && tierSum === units, detail: `${r.detail}${tail}` };
 }
 
 function firstAndLast(entered: Partial<Record<Stage, Day>>): { first: Day; last: Day } | null {

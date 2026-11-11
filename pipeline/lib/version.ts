@@ -35,7 +35,9 @@ export function computeDatasetVersion(input: {
  * generator, timelapse and plan/types.ts feed the scenario step (yields, the Day type and time
  * helpers, FeatureId). The lesscars step runs the simulation engine, so sim/scenario, sim/levers
  * and scoreboard shape the published data too (whole directories: over-hashing only costs a new
- * version on the next build).
+ * version on the next build). sim/finance is hashed because the calibration step imports the
+ * prototypes for the odds-shift slope and, from Release 2, the /lesscars step runs the baseline
+ * funding through it.
  */
 const PATHS = [
   'pipeline',
@@ -46,6 +48,7 @@ const PATHS = [
   'src/lib/plan/types.ts',
   'src/lib/sim/scenario',
   'src/lib/sim/levers',
+  'src/lib/sim/finance',
   'src/lib/scoreboard'
 ];
 const EXCLUDES = [

@@ -2,7 +2,9 @@
 // start, by the Housing Inventory's definition, with a per-year cross-check against its Table 2.
 import type { Day } from '../../src/lib/timelapse/time';
 import type { ProjectsFile } from '../../src/lib/timelapse/projects';
+import { INCOME_TIERS, type TierUnits } from '../../src/lib/timelapse/types';
 import { isoOf } from './parse';
+import { largestRemainder } from './multiphase';
 import type { HousingRow } from './types';
 
 const DAY_MS = 86_400_000;
@@ -27,8 +29,15 @@ export function rhnaCompletedNet(
   /** Net units per calendar year wholly inside [since, asOf]. */
   byYear: Record<number, number>;
   lagDays: number | null;
+  /**
+   * pr.rhna.tier-unrecorded: counted rows with homes to place (`n > 0`) and affordable homes or a
+   * positive tier sum, and those of them counted under rule 2; sample is their `bpa`.
+   */
+  tierUnrecorded: { fired: number; of: number; sample: string[] };
 } {
   let units = 0;
+  const byTier: TierUnits = { veryLow: 0, low: 0, moderate: 0, aboveModerate: 0, unrecorded: 0 };
+  const tierUnrecorded = { fired: 0, of: 0, sample: [] as string[] };
   let n = 0;
   let latest: Day | null = null;
   const sums = new Map<number, number>();
@@ -41,6 +50,7 @@ export function rhnaCompletedNet(
     if (day < RHNA_SINCE || day > asOf) continue;
     units += r.netUnits;
     n += 1;
+    addTiers(byTier, r, r.netUnits, tierUnrecorded);
     const year = new Date(day * DAY_MS).getUTCFullYear();
     sums.set(year, (sums.get(year) ?? 0) + r.netUnits);
   }
@@ -58,6 +68,13 @@ export function rhnaCompletedNet(
     value: {
       units,
       since: RHNA_SINCE,
+      byTier: {
+        veryLow: byTier.veryLow,
+        low: byTier.low,
+        moderate: byTier.moderate,
+        aboveModerate: byTier.aboveModerate,
+        unrecorded: byTier.unrecorded
+      },
       provenance: {
         tier: 0,
         label: 'Net homes completed since 30 Jun 2022 (actual)',
@@ -72,14 +89,49 @@ export function rhnaCompletedNet(
           }
         ],
         method:
-          'Sum of net_units_completed over xdht-4php rows with first_completion_date in [2022-06-30, asOf], forms 1-2 (new construction), 3 and 8 (alterations, net) and 6 (demolitions, negative), the Housing Inventory definition; cross-checked per calendar year against the Housing Inventory Table 2 net change (tier 1).',
+          "Sum of net_units_completed over xdht-4php rows with first_completion_date in [2022-06-30, asOf], forms 1-2 (new construction), 3 and 8 (alterations, net) and 6 (demolitions, negative), the Housing Inventory definition; cross-checked per calendar year against the Housing Inventory Table 2 net change (tier 1). By tier: extremely low plus very low income as very low, low and moderate income as recorded, the rest of each row's net completed homes as above moderate (the source has no above-moderate column; net losses fall there); a row whose tier columns are blank counts its affordable homes as not recorded; Planning estimates some rows' tiers from similar projects (affordable_is_estimate).",
         n,
         window: ['2022-06-30', isoOf(asOf)]
       }
     },
     byYear,
-    lagDays: latest === null ? null : asOf - latest
+    lagDays: latest === null ? null : asOf - latest,
+    tierUnrecorded
   };
+}
+
+/** Spec 4.3 rules 0-2: adds one counted row's `n` net homes to `into`, in the first rule that applies. */
+function addTiers(
+  into: TierUnits,
+  r: HousingRow,
+  n: number,
+  tally: { fired: number; of: number; sample: string[] }
+): void {
+  if (n <= 0) {
+    into.aboveModerate += n;
+    return;
+  }
+  const t = r.tiers;
+  const affordable = r.affordable ?? 0;
+  const tierSum = t === null ? 0 : t.extremelyLow + t.veryLow + t.low + t.moderate;
+  if (affordable > 0 || tierSum > 0) tally.of += 1;
+  if (t !== null) {
+    const counts = [t.extremelyLow + t.veryLow, t.low, t.moderate, 0];
+    const a = counts[0] + counts[1] + counts[2];
+    const placed = a <= n ? counts : largestRemainder(counts, n);
+    INCOME_TIERS.forEach((k, i) => (into[k] += placed[i]));
+    if (a <= n) into.aboveModerate += n - a;
+    return;
+  }
+  if (affordable > 0) {
+    const u = Math.min(affordable, n);
+    into.unrecorded += u;
+    into.aboveModerate += n - u;
+    tally.fired += 1;
+    if (r.bpa !== null) tally.sample.push(r.bpa);
+    return;
+  }
+  into.aboveModerate += n;
 }
 
 /**

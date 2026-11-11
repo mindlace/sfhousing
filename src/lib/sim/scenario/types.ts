@@ -10,7 +10,21 @@ import type { PackedCell, TimelineUpdate } from '$lib/map/types';
 import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
-import type { Calibration, ExitReason, Pathway, Provenance, Stage } from '$lib/timelapse/types';
+import type {
+  Calibration,
+  Dollars,
+  ExitReason,
+  LimitStatement,
+  MarketStep,
+  Pathway,
+  Pool,
+  PoolKind,
+  Programme,
+  Provenance,
+  ResolvedTerms,
+  Stage,
+  TierUnits
+} from '$lib/timelapse/types';
 import type { LeverLookups } from '../levers/apply';
 import type { BrushCatalog, BrushQuery } from '../levers/brushes';
 import type { LeverCapacity } from '../levers/resolve';
@@ -60,6 +74,23 @@ export interface Schedule {
   // (a pipeline row past preApplication, or a phase), so its map bar reads the in-flight lookups
   // (Call 15). Absent on every other Schedule, so a run without lever timers is unchanged.
   inFlight?: true;
+  /** F10: 'affordable' for a funded affordable start; absent means market. */
+  kind?: 'affordable';
+  /**
+   * F10: only on simulated schedules of a run with `finance`. `programmes` pay the project, in
+   * `finance.programmes` order (a programme pays when its exact amount per home is above 0,
+   * before rounding); `certain` is whether they fully fund it; the dollars are project totals;
+   * `displaced` is the homes of the ordinary start this funded start pre-empted on its lot.
+   */
+  funding?: {
+    programmes: string[];
+    applied: Day;
+    granted: Dollars;
+    lent: Dollars;
+    guaranteed: Dollars;
+    displaced: number;
+    certain: boolean;
+  };
 }
 export type SimInput = {
   parcels: ScenarioParcels; // decoded T11
@@ -86,6 +117,16 @@ export type SimInput = {
   // it; a kept one stops simulated initiations on or after the day (`Sink.reservation` reports
   // each). Same length as `parcels.count`, every non-zero day > asOf. Absent = none.
   reservedFrom?: Int32Array;
+  // F3: the market term. Absent or [] means shift 0.
+  market?: MarketStep[];
+  // F9: public money. Absent means no public money at all.
+  finance?: {
+    pools: Pool[];
+    programmes: Programme[];
+    off: { pool: string; from: Day; to: Day | null }[];
+    slope: number;
+    terms: ResolvedTerms;
+  };
 };
 export type Simulate = (input: SimInput, seed: number, horizon: Day) => Schedule[];
 
@@ -239,6 +280,10 @@ export type ProjectCard = {
   massing: 'matched' | 'approximate' | 'none';
   multiPhase: boolean;
   phase: Schedule['phase'];
+  /** F10: copied from the schedule */
+  kind?: 'affordable';
+  /** F10: copied from the schedule */
+  funding?: { programmes: string[]; certain: boolean };
   localProgram: boolean; // the project's parcel is a Local Program parcel and the project is simulated
   lookups: 'inFlight' | 'fresh'; // the chance table of the calibration it runs on: fresh for a simulated project and a pipeline row at preApplication at asOf (newProjects), else inFlight
   /** Months to add to the real months in `stage` before reading `chance` (in-flight rescale). */
@@ -286,6 +331,32 @@ export interface TimelineScore {
     measure: 'planEffect.entitledNew' | 'planEffect.completedNetNew' | 'completedNet';
     provenance: Provenance;
   }[]; // published estimates, each compared with the matching shown series
+  /** F14: present on every run (once `finance-score` fills it) */
+  tiers?: {
+    completed: TierUnits[]; // cumulative net new homes by tier at the end of month i
+    baseline: TierUnits;
+    targets: TargetProgressAt[]; // one per RHNA_TIER_TARGETS row; fraction[i] = (tier baseline + completed[i]) over its target
+  };
+  /** F14: only on a run with at least one pool; series per month at the month's end */
+  money?: {
+    pools: {
+      id: string;
+      label: string;
+      kind: PoolKind;
+      received: number[];
+      committed: number[]; // amount outstanding
+      out: number[]; // amount outstanding
+      spent: number[];
+      repaid: number[];
+      lost: number[]; // every `loss` event, including grants paid to projects that then dropped out
+      lostCredit: number[]; // the part of `lost` that is loan principal and guarantee reserves
+    }[];
+    fundedHomes: number[];
+    displacedHomes: number[];
+    publicSpent: number[];
+    owed: { pool: string; principal: Dollars; repayment: number; nominal: true }[];
+    limits: LimitStatement[];
+  };
 }
 export type TargetProgressAt = {
   target: Target; // I11

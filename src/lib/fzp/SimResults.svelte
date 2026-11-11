@@ -53,6 +53,8 @@
     capacity?: LeverCapacity | null;
     /** The latest levers failed to apply (/sim): the numbers are from the policy before them. */
     stale?: boolean;
+    /** Today's market, in words (spec 4.11); `null` renders nothing. */
+    market?: string | null;
   }
   let {
     score,
@@ -72,7 +74,8 @@
     onsources,
     copy = scoreCopy(null),
     capacity = null,
-    stale = false
+    stale = false,
+    market = null
   }: Props = $props();
 
   /**
@@ -227,6 +230,11 @@
         in the pipeline today and adds new ones at the rates the city's own records show. It is a
         simulation, not a forecast.
       </p>
+      {#if market}
+        <p class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted" data-testid="fzp-market">
+          {market}
+        </p>
+      {/if}
       <p
         class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted"
         aria-busy={band.busy ? 'true' : undefined}

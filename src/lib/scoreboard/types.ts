@@ -1,12 +1,16 @@
 // Shared seam (I11). Owned by scoreboard. Shapes are fixed by the design's interface table;
 // do not change them. Marking: MC (net units against named targets; overshoot is meaningful).
 
+import type { IncomeTier } from '../timelapse/types';
+
 export interface Target {
   id: string;
   label: string;
   units: number;
   range?: [low: number, high: number] /* M1 never sets; M2 affordability targets are ranges */;
   source: { label: string; url: string };
+  /** F13: the income tier this target counts; absent means all homes */
+  tier?: IncomeTier;
 }
 
 export interface TargetProgress {

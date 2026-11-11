@@ -16,6 +16,9 @@ import {
   pathwayStages,
   type Calibration,
   type ExitReason,
+  type MarketModel,
+  type Pool,
+  type Programme,
   type FeatureId,
   type InitiationModel,
   type Pathway,
@@ -75,6 +78,18 @@ interface RowCalibration {
   revision: RowRevisionModel;
   streamlinedForLocalProgram: RowProvenance;
   phaseGap: { days: number[]; provenance: RowProvenance };
+  market?: MarketModel;
+  affordableRoutes?: Record<RowPathway, number> & { provenance: RowProvenance };
+  baselineFunding?: {
+    pools: Pool[];
+    programmes: Programme[];
+    provenance: RowProvenance[];
+    check: {
+      impliedHomesPerYear: number;
+      observedHomesPerYear: number;
+      provenance: RowProvenance;
+    };
+  };
 }
 
 // T4a
@@ -127,6 +142,7 @@ interface RowProjectHistory {
   baseStoriesAtFiling: number | null;
   sources: { dataset: string; id: string; key?: string }[];
   quality: string[];
+  planningProposed?: { units: number | null; affordable: number | null } | null;
 }
 type RowProjectHistoriesFile = { schema: 1; asOf: Day; histories: RowProjectHistory[] };
 

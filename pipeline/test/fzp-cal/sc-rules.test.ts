@@ -113,11 +113,29 @@ const EXPECTED: Record<ScRuleId, QualityRule> = {
     denominator: 'revision pairs in the window, before the exclusion',
     warnShare: 0.15,
     failShare: 0.25
+  },
+  // finance-data spec 4.9; departs from the `missing` defaults (about 16% undeclared today)
+  'sc.funding.ami-undeclared': {
+    id: 'sc.funding.ami-undeclared',
+    owner: 'stage-calibration',
+    source: 'datasf-mohcd-pipeline',
+    field: 'tiers',
+    kind: 'missing',
+    action: 'none',
+    tier: 2,
+    valueTier: null,
+    maskBit: null,
+    label:
+      "Affordable homes with no income band were left out of the baseline programmes' income mix",
+    denominator: 'affordable homes in the rows used',
+    warnShare: 0.25,
+    failShare: 0.5,
+    unitsWeighted: false
   }
 };
 
 describe('sc.* quality rules', () => {
-  it('SC_RULE_IDS lists the seven ids', () => {
+  it('SC_RULE_IDS lists the eight ids', () => {
     expect([...SC_RULE_IDS].sort()).toEqual(Object.keys(EXPECTED).sort());
   });
 
@@ -129,22 +147,24 @@ describe('sc.* quality rules', () => {
     });
   }
 
-  it('stage-calibration owns exactly the seven rules', () => {
+  it('stage-calibration owns exactly the eight rules', () => {
     const ids = QUALITY_RULES.filter((r) => r.owner === 'stage-calibration')
       .map((r) => r.id)
       .sort();
     expect(ids).toEqual([...SC_RULE_IDS].sort());
   });
 
-  it('has seven rules, one of kind missing, and departs from the kind defaults only at gap-impute, ratio-clamp and carried-excluded', () => {
-    expect(SC_RULES).toHaveLength(7);
+  it('has eight rules, two of kind missing, and departs from the kind defaults only at gap-impute, ratio-clamp, carried-excluded and ami-undeclared', () => {
+    expect(SC_RULES).toHaveLength(8);
     expect(SC_RULES.filter((r) => r.kind === 'missing').map((r) => r.id)).toEqual([
-      'sc.stages.no-fcd-duration'
+      'sc.stages.no-fcd-duration',
+      'sc.funding.ami-undeclared'
     ]);
     expect(kindDefaultDepartures(SC_RULES)).toEqual([
       'sc.stages.gap-impute',
       'sc.revision.ratio-clamp',
-      'sc.revision.carried-excluded'
+      'sc.revision.carried-excluded',
+      'sc.funding.ami-undeclared'
     ]);
   });
 });

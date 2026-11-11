@@ -22,14 +22,18 @@ import { bandSeed, nearestRank, representativeIndex } from '../../src/lib/sim/sc
 import { dayOf } from '../../src/lib/sim/scenario/dates';
 import { runEngine } from '../../src/lib/sim/scenario/engine';
 import { precomputeOf } from '../../src/lib/sim/scenario/input';
+import { buildSimInput } from '../../src/lib/sim/scenario/input';
+import { miniMarket } from '../../src/lib/sim/scenario/fixtures/mini-market';
 import { goldenInput } from '../../src/lib/sim/scenario/simulate.golden.cases';
 import { simulate, simulateDetailed, simulateNet } from '../../src/lib/sim/scenario/simulate';
 import type { Schedule, SimInput } from '../../src/lib/sim/scenario/types';
 import type { Day } from '../../src/lib/timelapse/time';
 import {
+  baselineInput,
   garageCosts,
   initiativeBuilds,
   lesscarsYearEnds,
+  planInput,
   representativeTimeline,
   reservationsOf,
   runPairs,
@@ -559,5 +563,19 @@ describe('lesscars runs', () => {
       expect(asked).toEqual([`lc:hwy:1@${open}`, `lc:hwy:3@${open}`]);
       expect(garageCosts(plan, s, [freed], rows)).toEqual([]);
     });
+  });
+});
+
+describe('market pass-through', () => {
+  it('planInput and baselineInput keep base.market', () => {
+    const g = goldenInput();
+    const withMarket = buildSimInput({
+      parcels: g.parcels,
+      projects: { asOf: g.asOf, projects: g.projects, districtMaxStories: null } as never,
+      calibration: { ...g.calibration, market: miniMarket() }
+    });
+    expect(withMarket.market).toEqual([{ from: g.asOf, logOdds: miniMarket().today.all }]);
+    expect(planInput(withMarket, same, none).market).toBe(withMarket.market);
+    expect(baselineInput(withMarket, same).market).toBe(withMarket.market);
   });
 });

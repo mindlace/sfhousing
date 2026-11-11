@@ -142,6 +142,10 @@ export interface HousingRow {
   form: string | null;
   netUnits: number | null;
   firstCompletionDay: Day | null;
+  /** `affordable_units`; null when blank */
+  affordable: number | null;
+  /** null when any of the four tier columns is blank */
+  tiers: { extremelyLow: number; veryLow: number; low: number; moderate: number } | null;
 }
 
 export interface PipelineRow {

@@ -8,7 +8,14 @@
  */
 import type { ParcelId } from '../data/parcel';
 import type { Day } from './time';
-import { PATHWAYS, STAGE_ORDER, type Pathway, type Provenance, type Stage } from './types';
+import {
+  PATHWAYS,
+  STAGE_ORDER,
+  type Pathway,
+  type Provenance,
+  type Stage,
+  type TierUnits
+} from './types';
 
 export interface InFlightProject {
   /** 'PRJ:<record_id>', 'BP:<permit>', 'PRJ:<record_id>:BP:<permit>' for split pipeline rows, 'CASE:<case_no>' for PRX rows, 'PPA:<record_id>' for PPA-only; unique */
@@ -23,6 +30,8 @@ export interface InFlightProject {
   history: Partial<Record<Stage, Day>>;
   units: number;
   existingUnits: number;
+  /** F12: the Planning record's proposed affordable homes; null or absent when not recorded */
+  affordableHomes?: number | null;
   stories: number | null;
   /** 0 = recorded field, 3 = parsed from description text */
   storiesTier: 0 | 3 | null;
@@ -85,6 +94,11 @@ export type ProjectsFile = {
     units: number;
     /** 2022-06-30, RHNA projection period start */
     since: Day;
+    /**
+     * F12: net homes completed since `since` by income tier, from the housing-production records;
+     * above moderate is the net total less the income-restricted tiers, so the tiers sum to `units`.
+     */
+    byTier?: TierUnits;
     provenance: Provenance;
   };
   /**
@@ -342,6 +356,12 @@ function checkProject(
   if (units - existingUnits < 1 && !p.multiPhase) {
     fail(`${path}.units`, 'must exceed existingUnits unless multiPhase');
   }
+  if (p.affordableHomes !== undefined && p.affordableHomes !== null) {
+    const a = p.affordableHomes;
+    if (typeof a !== 'number' || !Number.isInteger(a) || a < 0 || a > units) {
+      fail(`${path}.affordableHomes`, 'must be null or an integer in [0, units]');
+    }
+  }
 
   if (p.stories !== null) {
     const stories = int(p.stories, `${path}.stories`);
@@ -404,8 +424,16 @@ export function parseProjectsFile(
   }
 
   const rhna = obj(root.rhnaCompletedNet, 'rhnaCompletedNet');
-  int(rhna.units, 'rhnaCompletedNet.units');
+  const rhnaUnits = int(rhna.units, 'rhnaCompletedNet.units');
   int(rhna.since, 'rhnaCompletedNet.since');
+  if (rhna.byTier !== undefined) {
+    const bt = obj(rhna.byTier, 'rhnaCompletedNet.byTier');
+    let sum = 0;
+    for (const k of ['veryLow', 'low', 'moderate', 'aboveModerate', 'unrecorded']) {
+      sum += int(bt[k], `rhnaCompletedNet.byTier.${k}`);
+    }
+    if (sum !== rhnaUnits) fail('rhnaCompletedNet.byTier', 'must sum to units');
+  }
   checkProvenance(rhna.provenance, 'rhnaCompletedNet.provenance');
 
   if (root.districtMaxStories !== undefined) {

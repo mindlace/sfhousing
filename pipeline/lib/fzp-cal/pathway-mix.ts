@@ -20,7 +20,7 @@ import { LOCAL_PROGRAM_START, PLANNING_START, PPA_SERIES_END } from './window';
 const PPA_WINDOW_START = isoToDay(PPA_SERIES_END) + 1;
 
 /** A history's earliest entered day, any stage. */
-function firstRecord(h: NormHistory): Day | null {
+export function firstRecord(h: NormHistory): Day | null {
   let first: Day | null = null;
   for (const day of Object.values(h.eff)) {
     if (day !== undefined && (first === null || day < first)) first = day;

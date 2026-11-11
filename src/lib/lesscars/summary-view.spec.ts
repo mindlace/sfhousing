@@ -44,6 +44,15 @@ const withP10 = (s: LessCarsSummary, v: number): LessCarsSummary => ({
   ...s,
   extra: { ...s.extra, p10: s.extra.p10.map(() => v) }
 });
+const nonNegative = (s: LessCarsSummary): LessCarsSummary => ({
+  ...s,
+  extra: {
+    mean: s.extra.mean.map((v) => Math.max(0, v)),
+    p10: s.extra.p10.map((v) => Math.max(0, v)),
+    p50: s.extra.p50.map((v) => Math.max(0, v)),
+    p90: s.extra.p90.map((v) => Math.max(0, v))
+  }
+});
 /** Fractional means: integer sums over `seeds`, in the last year only. */
 function fractional(s: LessCarsSummary, seeds: number): LessCarsSummary {
   const sums = { freed: 31, parking: -11, transitUnlocked: 17, other: 4 };
@@ -89,8 +98,13 @@ describe('summary-view', () => {
     expect(signed(0)).toBe('0');
   });
   it('extraChartModel reaches below zero only when a value does', () => {
-    expect(extraChartModel(withP10(fx, 0), L).yMin).toBe(0);
-    expect(extraChartModel(withP10(fx, -30), L).yMin).toBeLessThan(0);
+    // every band value at or above zero: the axis starts at zero
+    expect(extraChartModel(nonNegative(fx), L).yMin).toBe(0);
+    expect(extraChartModel(withP10(nonNegative(fx), -30), L).yMin).toBeLessThan(0);
+    // fixture-0 under today's market: paired runs where the plan's reservations block projects the
+    // baseline builds (bySource.parking < 0), so a real negative value reaches below zero
+    expect(Math.min(...fx.extra.mean, ...fx.extra.p10)).toBeLessThan(0);
+    expect(extraChartModel(fx, L).yMin).toBeLessThan(0);
     expect(extraChartModel(fx, L).yMax).toBeGreaterThanOrEqual(Math.max(...fx.extra.p90));
   });
   it('yearIndexAt clamps to the year ends', () => {

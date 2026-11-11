@@ -1,14 +1,20 @@
 // The stage-calibration build step (stage-calibration spec §4.3, §4.10): reads projects.json,
-// parcels.bin, the histories, permits.parquet and the scenario_panel table, runs the pure core
-// twice (V29), records the seven sc.* T14 tallies and the calibration.* counts into the build's
-// single counts object, and writes scenarios/fzp/calibration.json and calibration-report.md (the
-// latter to the derived cache, not shipped). No network.
+// parcels.bin, the histories, permits.parquet, the scenario_panel table, the market enrichment
+// (pipeline/enrichment/market.json), the funding enrichment (pipeline/enrichment/funding.json or
+// the mini fixture's) and the locked MOHCD pipeline rows, runs the pure core twice (V29), records
+// the eight sc.* T14 tallies and the calibration.* counts into the build's single counts object,
+// and writes scenarios/fzp/calibration.json and calibration-report.md (the latter to the derived
+// cache, not shipped). No network.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { FILL_LEVELS } from '../../src/lib/data/scenario-codec';
 import { parseProjectsFile } from '../../src/lib/timelapse/projects';
 import type { Day, ProjectHistoriesFile } from '../../src/lib/timelapse/types';
+import { parseFundingFile, type FundingFile } from '../enrichment/funding-schema';
+import { parseMarketFile } from '../enrichment/market-schema';
+import { BuildError } from '../lib/build-error';
 import type { Duck } from '../lib/duck';
+import type { Lock } from '../lib/lock';
 import { calibrate, type CalOutput } from '../lib/fzp-cal/calibrate';
 import { duckPanelSource } from '../lib/fzp-cal/panel';
 import {
@@ -19,11 +25,13 @@ import {
 } from '../lib/fzp-cal/types';
 import { recordQuality } from '../lib/quality';
 import type { InvariantResult } from './check';
-import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON } from './projects';
+import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, readRows } from './projects';
 import { PARCELS_BIN, readParcelsBin } from './scenario';
 
 export const CALIBRATION_JSON = 'scenarios/fzp/calibration.json';
 export const CALIBRATION_REPORT_MD = 'calibration-report.md';
+/** The Controller market enrichment (market-baseline spec §4.6): live and fixture builds read it. */
+export const MARKET_JSON = resolve(import.meta.dirname, '../enrichment/market.json');
 
 /** The `permits.parquet` columns, in `PermitRow` order. */
 export const PERMIT_ROW_COLUMNS: readonly (keyof PermitRow)[] = [
@@ -79,6 +87,23 @@ export function sameRuns(a: CalOutput, b: CalOutput): string[] {
   return diffs;
 }
 
+/** The MOHCD affordable pipeline source (finance-data spec 4.1): read as rows, not normalised. */
+const MOHCD_SOURCE = 'datasf-mohcd-pipeline';
+
+/**
+ * `funding.json` at `path`, parsed: a JSON syntax error is a `BuildError` naming the path, as the
+ * schema's own failures are (finance-data spec 4.5).
+ */
+export function readFundingFile(path: string): FundingFile {
+  let json: unknown;
+  try {
+    json = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (e) {
+    throw new BuildError(`${path}: ${(e as Error).message}`);
+  }
+  return parseFundingFile(json, path);
+}
+
 async function ensurePanelTable(db: Duck, derivedDir: string): Promise<void> {
   const [t] = await db.all<{ n: number }>(
     "SELECT count(*)::INTEGER AS n FROM information_schema.tables WHERE table_name = 'scenario_panel'"
@@ -102,7 +127,25 @@ export async function writeCalibration(o: {
   histories?: ProjectHistoriesFile;
   cal: CalProfile;
   counts: Record<string, number>;
+  /** defaults to MARKET_JSON */
+  marketPath?: string;
+  /** `pipeline/enrichment/funding.json`, or the mini fixture's on a fixture build */
+  fundingPath: string;
+  /** the build's lock and raw pages, for the MOHCD pipeline rows */
+  lock: Lock;
+  rawDir: string;
+  byName: boolean;
 }): Promise<{ warnings: string[]; checks: InvariantResult[] }> {
+  const marketPath = o.marketPath ?? MARKET_JSON;
+  const market = {
+    file: parseMarketFile(JSON.parse(readFileSync(marketPath, 'utf8')), marketPath),
+    path: marketPath
+  };
+  if (!o.lock.sources.some((s) => s.id === MOHCD_SOURCE)) {
+    throw new BuildError(`lock has no ${MOHCD_SOURCE} entry (run fetch --only ${MOHCD_SOURCE})`);
+  }
+  const mohcd = readRows(o.lock, o.rawDir, o.byName, MOHCD_SOURCE);
+  const funding = readFundingFile(o.fundingPath);
   const projects = parseProjectsFile(
     JSON.parse(readFileSync(join(o.outDir, PROJECTS_JSON), 'utf8'))
   );
@@ -125,7 +168,10 @@ export async function writeCalibration(o: {
     parcels,
     inFlight: projects.projects,
     fillLevels: FILL_LEVELS,
-    datasetVersion: o.datasetVersion
+    datasetVersion: o.datasetVersion,
+    market,
+    funding,
+    mohcd
   };
   const a = await calibrate(input, o.cal);
   const b = await calibrate(input, o.cal);

@@ -195,3 +195,41 @@ export function ajTable(
   for (const r of EXIT_ORDER) exit[r] = out[r];
   return { months, advance: out.advance, exit, S };
 }
+
+/**
+ * The AJ cumulative incidence after each event duration of a cell (no table, no tail), weighted
+ * as given: `advance[i]` and `exit[i]` (all exit reasons summed) after every event at `d[i]`.
+ * Null when the cell has no event. One sweep; `ajEnd` and the report's median read it.
+ */
+export function ajCurve(
+  spells: Spell[]
+): { d: number[]; advance: number[]; exit: number[] } | null {
+  const sw = ajSweep(spells);
+  if (sw.d.length === 0) return null;
+  let S = 1;
+  let advance = 0;
+  let exit = 0;
+  const a: number[] = [];
+  const x: number[] = [];
+  for (let i = 0; i < sw.d.length; i++) {
+    let sum = 0;
+    for (const j of OUTCOMES) {
+      const h = sw.e[j][i] / sw.n[i];
+      if (j === 'advance') advance += S * h;
+      else exit += S * h;
+      sum += h;
+    }
+    S *= 1 - sum;
+    a.push(advance);
+    x.push(exit);
+  }
+  return { d: sw.d, advance: a, exit: x };
+}
+
+/** AJ cumulative incidence at the end of observation (no table, no tail), weighted as given. */
+export function ajEnd(spells: Spell[]): { advance: number; exit: number } | null {
+  const c = ajCurve(spells);
+  if (c === null) return null;
+  const last = c.d.length - 1;
+  return { advance: c.advance[last], exit: c.exit[last] };
+}

@@ -1,15 +1,21 @@
 /**
  * The pure core of the stage-calibration step (stage-calibration spec §4.3–§4.10): every
  * estimator in a fixed order, assembled into `calibration.json` in T4 key order, validated by
- * `parseCalibration`, with its report, the seven `sc.*` tallies (recorded by the step through
+ * `parseCalibration`, with its report, the eight `sc.*` tallies (recorded by the step through
  * `recordQuality`) and the `calibration.*` counts. No I/O: the step reads the files and the panel.
+ * The publicly funded housing (finance-data spec 4.4, 4.6-4.8) follows today's market.
  */
 import type { ScenarioParcels } from '../../../src/lib/data/scenario-codec';
 import { featureValue } from '../../../src/lib/data/scenario-codec';
 import { CalibrationFormatError, parseCalibration } from '../../../src/lib/timelapse/model';
 import type { InFlightProject } from '../../../src/lib/timelapse/projects';
 import type { Calibration, Day, FeatureId, ProjectHistory } from '../../../src/lib/timelapse/types';
+import type { FundingFile } from '../../enrichment/funding-schema';
+import type { MarketFile } from '../../enrichment/market-schema';
 import { isoToDay } from '../../project-records/multiphase';
+import type { RawRow } from '../../project-records/types';
+import { affordableRoutes, fundedStages, routesWarning, siteChoice } from './affordable';
+import { baselineFunding } from './funding';
 import {
   FZP_BAND,
   INITIAL_EDGES,
@@ -18,6 +24,7 @@ import {
   fitInitiation,
   type FzpApplication
 } from './initiation';
+import { marketModel } from './market';
 import { aggregatePanel, firstFiledDays, initiationEvents, type PanelSource } from './panel';
 import {
   localProgramDiagnostic,
@@ -52,6 +59,12 @@ export interface CalInput {
   inFlight: InFlightProject[];
   fillLevels: readonly number[];
   datasetVersion: string;
+  /** the parsed `pipeline/enrichment/market.json` and its path (for error messages) */
+  market: { file: MarketFile; path: string };
+  /** the parsed `pipeline/enrichment/funding.json` (or the mini fixture's) */
+  funding: FundingFile;
+  /** the locked `datasf-mohcd-pipeline` rows, as read (finance-data spec 4.1 "Reading") */
+  mohcd: RawRow[];
 }
 
 export interface CalOutput {
@@ -60,7 +73,7 @@ export interface CalOutput {
   json: string;
   /** `calibration-report.md` */
   reportMd: string;
-  /** the seven `sc.*` rules' counts, for `recordQuality` */
+  /** the eight `sc.*` rules' counts, for `recordQuality` */
   tallies: Tallies;
   /** `calibration.*` report counts only (the step adds `calibration.bytes`) */
   counts: Record<string, number>;
@@ -127,9 +140,27 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
   const init = fitInitiation(panel, cal, fzpApplication(parcels, input.inFlight), {
     permitOnlyPre2015: n.method.permitOnlyPre2015
   });
+  // Today's market (market-baseline spec §4.6), from the initiation report and the panel starts.
+  const r = init.report;
+  const mk = marketModel({
+    fixture: cal.fixtureInitiation,
+    impliedPerYear: r.impliedPerYear,
+    observedPerYear: r.observedPerYear,
+    recentCells: r.recentCells,
+    holdOut: r.holdOut,
+    starts: panel.starts,
+    enrichment: input.market,
+    initiationSources: init.model.provenance.sources
+  });
 
   // §4.7, §4.7a, §4.8, §4.9.
   const forNew = pathwayForNew(p.norm, input.inFlight, asOf, cal);
+  // Publicly funded housing (finance-data spec 4.4, 4.6-4.8). The stage table reads the spells
+  // the transition tables are fitted on, joined on the history id (`Spell.projectId`).
+  const ar = affordableRoutes(p.norm, forNew, asOf);
+  const bf = baselineFunding(input.funding, input.mohcd, asOf, cal);
+  const sites = await siteChoice(input.panel, init.model, p.norm, lotArea);
+  const stages = fundedStages(p.norm, spells, asOf);
   const ppa = ppaShare(p.norm, asOf);
   const lpDiag = localProgramDiagnostic(p.norm, asOf);
   // The provenance window is [PLANNING_START, asOf]: count the spells that end inside it.
@@ -152,7 +183,10 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     size: size.size,
     revision: rev.revision,
     streamlinedForLocalProgram: localProgram,
-    phaseGap: gaps.phaseGap
+    phaseGap: gaps.phaseGap,
+    market: mk.market,
+    affordableRoutes: ar.routes,
+    baselineFunding: bf.baselineFunding
   };
   const json = JSON.stringify(calibration);
   try {
@@ -171,7 +205,8 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     'sc.exit.last-stage': n.tallies['sc.exit.last-stage'],
     'sc.exit.purge-censor': purgeWindowed,
     'sc.revision.ratio-clamp': rev.clamp,
-    'sc.revision.carried-excluded': rev.carried
+    'sc.revision.carried-excluded': rev.carried,
+    'sc.funding.ami-undeclared': bf.tally
   };
 
   const counts: Record<string, number> = {
@@ -194,18 +229,29 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     'calibration.panel.noStart': ev.noStart,
     'calibration.panel.noPermit': ev.noPermit,
     'calibration.panel.outOfRange': ev.outOfRange,
-    'calibration.purge.windows': p.windows.length
+    'calibration.purge.windows': p.windows.length,
+    'calibration.affordable.histories': ar.n,
+    'calibration.affordable.fallback': ar.fallback ? 1 : 0,
+    'calibration.funding.mohcdRows': bf.report.mix.used,
+    'calibration.funding.impliedHomesPerYear': bf.report.check.impliedHomesPerYear,
+    'calibration.funding.observedHomesPerYear': bf.report.check.observedHomesPerYear,
+    'calibration.siteChoice.affordableOnPanel': sites.affordable.onPanel,
+    'calibration.siteChoice.privateOnPanel': sites.private.onPanel
   };
   for (const [k, v] of Object.entries(fit.spellsCount)) counts[k] = v;
+  for (const [k, v] of Object.entries(mk.report.counts)) counts[k] = v;
 
   const warnings = [...fit.warnings];
-  const r = init.report;
   if (r.fzpWarning) {
     const ratio = r.fzpVsHistorical === null ? 'none' : sig(r.fzpVsHistorical);
     warnings.push(
       `initiation: FZP expected filings ${sig(r.fzpPerYear)} per year vs historical mean ${sig(r.historicalMean)} (ratio ${ratio}) outside the [${FZP_BAND[0]}, ${FZP_BAND[1]}] band`
     );
   }
+  warnings.push(...mk.report.warnings);
+  // A fixture build takes the routes fallback by design and does not warn (spec 4.4).
+  if (ar.fallback && cal.name !== 'fixture') warnings.push(routesWarning(ar.n));
+  warnings.push(...bf.warnings);
   const backcast = backcastGate(r);
 
   const reportMd = calibrationReport({
@@ -228,6 +274,13 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     backcast,
     lpDiag,
     phaseGap: { rung: gaps.rung, groups: gaps.groups },
+    market: mk.report,
+    affordable: {
+      routes: { n: ar.n, fallback: ar.fallback },
+      stages,
+      funding: bf.report,
+      siteChoice: sites
+    },
     warnings
   });
 

@@ -306,17 +306,21 @@ export function targetsOf(
 }
 
 const FZP_EFFECTIVE = dayOf(2026, 1, 12);
-const KQED = {
-  label: 'KQED news coverage (verified by fetch, 2025-10-29)',
-  url: 'https://www.kqed.org/news/12062042'
+// A literal copy of pipeline/enrichment/market.json `source` (src must not read pipeline files);
+// pipeline/test/enrichment/market-json.test.ts pins the equality.
+const CONTROLLER_EIR = {
+  label:
+    'SF Controller, Office of Economic Analysis: Family Zoning Plan: Economic Impact Report (Items 250700 and 250701), 2025-10-29, slide 18',
+  url: 'https://newspack-missionlocal.s3.amazonaws.com/mission/wp-content/uploads/2025/10/250700_economic_impact_final.pdf'
 };
 const controllerMethod = (scenario: string) =>
-  `The Controller's Office of Economic Analysis estimate, ${scenario} scenario, as reported by ` +
-  'the press: net additional units from the rezoning "beyond what existing zoning might ' +
-  'produce", "over the next 20 years". The primary report was searched for on sf.gov and on ' +
-  "the web (2026-10-16) and was not found. The dates are inferred: from is the plan's " +
-  'effective date (2026-01-12), by is the end of 2045. Compared with planEffect.completedNetNew ' +
-  '(completions, net units).';
+  "The Controller's Office of Economic Analysis, *Family Zoning Plan: Economic Impact Report*, " +
+  '2025-10-29, slide 18: net additional units from the rezoning beyond existing zoning over 20 ' +
+  `years, ${scenario} scenario. From is the plan's effective date (2026-01-12), by is the end of ` +
+  "2045 (inferred: the report forecasts 2026-2045). Both of the Controller's scenarios assume " +
+  "housing prices grow from 2025 (slides 12 and 15). This simulation holds today's market to the " +
+  'end of the timeline, so its plan effect is expected to fall below both. Compared with ' +
+  'planEffect.completedNetNew (completions, net units).';
 
 /** The published estimates the score compares with (§4.5 "References"). */
 export const REFERENCES: TimelineScore['references'] = [
@@ -347,30 +351,30 @@ export const REFERENCES: TimelineScore['references'] = [
   {
     id: 'controller-high',
     label:
-      "Controller's Office of Economic Analysis: 14,646 net additional units from the rezoning by 2045, high growth (via press coverage)",
+      "Controller's Office of Economic Analysis: 14,646 net additional units from the rezoning by 2045, high growth",
     units: 14646,
     from: FZP_EFFECTIVE,
     by: dayOf(2045, 12, 31),
     measure: 'planEffect.completedNetNew',
     provenance: {
       tier: 1,
-      label: "Controller's Office of Economic Analysis, high growth (tier 1 via secondary: KQED)",
-      sources: [KQED],
+      label: "Controller's Office of Economic Analysis, high growth",
+      sources: [CONTROLLER_EIR],
       method: controllerMethod('high growth')
     }
   },
   {
     id: 'controller-low',
     label:
-      "Controller's Office of Economic Analysis: 8,504 net additional units from the rezoning by 2045, conservative (via press coverage)",
+      "Controller's Office of Economic Analysis: 8,504 net additional units from the rezoning by 2045, conservative",
     units: 8504,
     from: FZP_EFFECTIVE,
     by: dayOf(2045, 12, 31),
     measure: 'planEffect.completedNetNew',
     provenance: {
       tier: 1,
-      label: "Controller's Office of Economic Analysis, conservative (tier 1 via secondary: KQED)",
-      sources: [KQED],
+      label: "Controller's Office of Economic Analysis, conservative",
+      sources: [CONTROLLER_EIR],
       method: controllerMethod('conservative')
     }
   }

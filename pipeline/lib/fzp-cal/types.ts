@@ -14,7 +14,7 @@ import type {
 /** A stage a project can wait in: every stage but the terminal `complete`. */
 export type CalStage = Exclude<Stage, 'complete'>;
 
-/** The seven registered `sc.*` T14 rules (spec §4.4a). */
+/** The eight registered `sc.*` T14 rules (spec §4.4a; finance-data spec 4.9). */
 export type ScRuleId =
   | 'sc.stages.gap-impute'
   | 'sc.stages.no-fcd-duration'
@@ -22,7 +22,8 @@ export type ScRuleId =
   | 'sc.exit.last-stage'
   | 'sc.exit.purge-censor'
   | 'sc.revision.ratio-clamp'
-  | 'sc.revision.carried-excluded';
+  | 'sc.revision.carried-excluded'
+  | 'sc.funding.ami-undeclared';
 
 export const SC_RULE_IDS: readonly ScRuleId[] = [
   'sc.stages.gap-impute',
@@ -31,7 +32,8 @@ export const SC_RULE_IDS: readonly ScRuleId[] = [
   'sc.exit.last-stage',
   'sc.exit.purge-censor',
   'sc.revision.ratio-clamp',
-  'sc.revision.carried-excluded'
+  'sc.revision.carried-excluded',
+  'sc.funding.ami-undeclared'
 ];
 
 /** One rule's count for `recordQuality`: records changed, denominator, affected ids. */
