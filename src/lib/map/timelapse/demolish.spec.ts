@@ -306,3 +306,149 @@ describe('DemolishPump', () => {
     expect(new Set(callbacks).size).toBe(1);
   });
 });
+
+/** n entries on parcels `${prefix}${i}`, days 1000, 1001, … */
+function named(prefix: string, n: number, from = 0): Entry[] {
+  return Array.from({ length: n }, (_, i) => ({ parcelId: `${prefix}${from + i}`, day: 1000 + i }));
+}
+/** Runs frames until the pump has nothing scheduled; returns the frames run. */
+function drain(d: FakePump, pump: DemolishPump, frameOps?: number[]): number {
+  let frames = 0;
+  while (pump.pending) {
+    d.flushFrame();
+    frames++;
+    frameOps?.push(pump.lastFrameOps);
+    if (frames > 1000) throw new Error('pump did not converge');
+  }
+  return frames;
+}
+/** The parcels with an entry at or before `target`. */
+function prefixIds(list: Entry[], target: number): Set<ParcelId> {
+  return new Set(list.filter((e) => e.day <= target).map((e) => e.parcelId));
+}
+const sorted = (xs: Iterable<ParcelId>) => [...xs].sort();
+
+describe('DemolishPump.swap', () => {
+  it('swap reaches the same feature-state as replace', () => {
+    const A = [...named('a', 30), ...named('s', 20)];
+    const B = [...named('b', 25), ...named('s', 20, 10)];
+    const target = 1015;
+    const one = fake();
+    const two = fake();
+    const p1 = new DemolishPump(one);
+    const p2 = new DemolishPump(two);
+    for (const [d, p] of [
+      [one, p1],
+      [two, p2]
+    ] as const) {
+      p.replace(A);
+      p.setTarget(target);
+      drain(d, p);
+    }
+    p1.swap(B);
+    drain(one, p1);
+    p2.replace(B);
+    drain(two, p2);
+    expect(sorted(one.replaced)).toEqual(sorted(two.replaced));
+    expect(sorted(one.replaced)).toEqual(sorted(prefixIds(B, target)));
+    expect(sorted(p1.appliedIds())).toEqual(sorted(p2.appliedIds()));
+    expect(p1.applied).toBe(p2.applied);
+    expect(p1.total).toBe(B.length);
+  });
+
+  it('swap never clears all and touches only parcels whose state changes', () => {
+    const A = [...named('a', 30), ...named('s', 20)];
+    const B = [...named('b', 25), ...named('s', 20, 10)];
+    const target = 1015;
+    const d = fake();
+    const pump = new DemolishPump(d);
+    pump.replace(A);
+    pump.setTarget(target);
+    drain(d, pump);
+    const clears = d.clearAllCount;
+    const calls = () => d.setCalls.flat().length + d.clearCalls.flat().length;
+    const before = calls();
+    pump.swap(B);
+    // The logical state is the new list's prefix at once.
+    expect(sorted(pump.appliedIds())).toEqual(sorted(prefixIds(B, target)));
+    expect(pump.has('b0')).toBe(true);
+    expect(pump.has('a0')).toBe(false);
+    drain(d, pump);
+    expect(d.clearAllCount).toBe(clears);
+    const a = prefixIds(A, target);
+    const b = prefixIds(B, target);
+    const sym = [...a].filter((id) => !b.has(id)).length + [...b].filter((id) => !a.has(id)).length;
+    expect(calls() - before).toBe(sym);
+    expect(sorted(d.replaced)).toEqual(sorted(b));
+  });
+
+  it('swap issues at most SLICE_IDS feature-state calls per frame', () => {
+    const A = named('a', 5000);
+    const B = named('b', 5000);
+    const d = fake();
+    const pump = new DemolishPump(d);
+    pump.replace(A);
+    pump.setTarget(1e9);
+    drain(d, pump);
+    const ops: number[] = [];
+    pump.swap(B);
+    const frames = drain(d, pump, ops);
+    expect(frames).toBe(5); // 10,000 calls at 2,000 a frame
+    for (const n of ops) expect(n).toBeLessThanOrEqual(SLICE_IDS);
+    for (let i = 1; i < d.setCalls.length; i++)
+      expect(d.setCalls[i].length + d.clearCalls[i].length).toBeLessThanOrEqual(SLICE_IDS);
+    expect(sorted(d.replaced)).toEqual(sorted(prefixIds(B, 1e9)));
+    expect(pump.applied).toBe(5000);
+  });
+
+  it('swap during a pending swap diff converges to the last list', () => {
+    const A = named('a', 5000);
+    const B = named('b', 5000);
+    const C = [...named('c', 3000), ...named('a', 1000, 2000), ...named('b', 1000)];
+    const d = fake();
+    const pump = new DemolishPump(d);
+    pump.replace(A);
+    pump.setTarget(1e9);
+    drain(d, pump);
+    pump.swap(B);
+    d.flushFrame();
+    expect(pump.pending).toBe(true);
+    pump.swap(C);
+    drain(d, pump);
+    expect(d.clearAllCount).toBe(1);
+    expect(sorted(d.replaced)).toEqual(sorted(prefixIds(C, 1e9)));
+    expect(sorted(pump.appliedIds())).toEqual(sorted(prefixIds(C, 1e9)));
+  });
+
+  it('replace during a pending swap diff converges to the new list', () => {
+    const d = fake();
+    const pump = new DemolishPump(d);
+    pump.replace(named('a', 5000));
+    pump.setTarget(1e9);
+    drain(d, pump);
+    pump.swap(named('b', 5000));
+    d.flushFrame();
+    pump.replace(named('c', 10));
+    drain(d, pump);
+    expect(sorted(d.replaced)).toEqual(sorted(prefixIds(named('c', 10), 1e9)));
+  });
+
+  it('setTarget during a swap diff converges to the new list at the new target', () => {
+    const A = named('a', 5000);
+    const B = [...named('b', 5000), ...named('a', 500)];
+    const d = fake();
+    const pump = new DemolishPump(d);
+    pump.replace(A);
+    pump.setTarget(1e9);
+    drain(d, pump);
+    pump.swap(B);
+    d.flushFrame();
+    pump.setTarget(1100);
+    drain(d, pump);
+    expect(sorted(d.replaced)).toEqual(sorted(prefixIds(B, 1100)));
+    expect(sorted(pump.appliedIds())).toEqual(sorted(prefixIds(B, 1100)));
+    pump.setTarget(4000);
+    drain(d, pump);
+    expect(sorted(d.replaced)).toEqual(sorted(prefixIds(B, 4000)));
+  });
+});

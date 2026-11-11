@@ -6,7 +6,7 @@ import { makeFakeTimelineDeps, type FakeTimelineDeps } from './test/fake-timelin
 import { DAYS, SLOT, timelineSmall, timelineSmallRev1 } from './fixtures/timeline-small';
 import { timelineLookups } from './fixtures/timeline-lookups';
 import { packTimedCell } from './pack-timed';
-import { MAX_CELLS_PER_SLICE } from './hide';
+import { MAX_CELLS_PER_SLICE, SWAP_CELLS_PER_SLICE } from './hide';
 import { TYPOLOGY_ORDER, type TimedPackedCell, type TimelineUpdate } from './types';
 import type { BarAttrs } from './timelapse/types';
 
@@ -591,5 +591,224 @@ describe('TimelineController lookup, snapshot and destroy', () => {
     c.setTime(DAYS.start);
     deps.flushFrame();
     expect(deps.layerHistory).toHaveLength(emits);
+  });
+});
+
+/** `n` distinct cells `${prefix}NN` sharing the fixture's buffers. */
+function named(prefix: string, n: number): TimedPackedCell[] {
+  return manyCells(n).map((c, i) => ({ ...c, cellId: `${prefix}${String(i).padStart(2, '0')}` }));
+}
+const cellIdsIn = (layers: Layer[]) =>
+  layers.filter((l) => l.id.startsWith('timeline-solid-')).map((l) => l.id.slice(15));
+const onMap = (f: FakeTimelineDeps) => cellIdsIn(f.lastLayers).sort();
+function drain(c: TimelineController): void {
+  for (let i = 0; c.debugSnapshot().pending > 0; i++) {
+    if (i > 1000) throw new Error('controller did not converge');
+    deps.flushFrame();
+  }
+}
+const tlcOf = (id: string) => props(byId(deps, solid(id))).updateTriggers.getTlC;
+
+describe('TimelineController swap', () => {
+  it('a swap revision 0 never empties the layers', () => {
+    const c = controller();
+    c.apply(update(0, { cells: named('o', 8) }));
+    drain(c);
+    const from = deps.layerHistory.length;
+    c.apply(update(0, { cells: named('s', 8), swap: true }));
+    drain(c);
+    const after = deps.layerHistory.slice(from);
+    expect(after.length).toBeGreaterThan(0);
+    for (const layers of after) expect(cellIdsIn(layers).length).toBeGreaterThanOrEqual(8);
+    expect(onMap(deps)).toEqual([...named('o', 8), ...named('s', 8)].map((x) => x.cellId).sort());
+    c.apply(update(1, { complete: true }));
+    drain(c);
+    for (const layers of deps.layerHistory.slice(from))
+      expect(cellIdsIn(layers).length).toBeGreaterThanOrEqual(8);
+    expect(onMap(deps)).toEqual(named('s', 8).map((x) => x.cellId));
+  });
+
+  it('a swap installs SWAP_CELLS_PER_SLICE cells per frame', () => {
+    expect(SWAP_CELLS_PER_SLICE).toBe(16);
+    const c = controller();
+    c.apply(update(0, { cells: named('o', 8) }));
+    drain(c);
+    let last = c.debugSnapshot().installs;
+    const deltas: number[] = [];
+    const step = () => {
+      const now = c.debugSnapshot().installs;
+      deltas.push(now - last);
+      last = now;
+    };
+    c.apply(update(0, { cells: named('s', 40), swap: true, complete: true }));
+    step();
+    while (c.debugSnapshot().pending > 0) {
+      deps.flushFrame();
+      step();
+    }
+    expect(deltas).toEqual([16, 16, 8]);
+    expect(onMap(deps)).toEqual(named('s', 40).map((x) => x.cellId));
+  });
+
+  it('later revisions of a swap run use the swap budget until leftovers go', () => {
+    const c = controller();
+    c.apply(update(0, { cells: named('o', 8) }));
+    drain(c);
+    c.apply(update(0, { cells: named('s', 4), swap: true }));
+    drain(c);
+    const before = c.debugSnapshot().installs;
+    c.apply(update(1, { cells: named('t', 20), complete: true }));
+    expect(c.debugSnapshot().installs - before).toBe(16);
+    drain(c);
+    expect(onMap(deps)).toEqual([...named('s', 4), ...named('t', 20)].map((x) => x.cellId));
+    // The swap has ended: a later revision is back on MAX_CELLS_PER_SLICE.
+    const mid = c.debugSnapshot().installs;
+    c.apply(update(2, { cells: named('u', 9) }));
+    expect(c.debugSnapshot().installs - mid).toBe(MAX_CELLS_PER_SLICE);
+  });
+
+  it('leftover cells go once a complete update has installed', () => {
+    const c = controller();
+    const [a, b, cc, d, e] = named('x', 5);
+    c.apply(update(0, { cells: [a, b, cc] }));
+    drain(c);
+    c.apply(update(0, { cells: [b, d], swap: true, complete: false }));
+    drain(c);
+    expect(onMap(deps)).toEqual([a, b, cc, d].map((x) => x.cellId));
+    c.apply(update(1, { cells: [e], complete: true }));
+    drain(c);
+    expect(onMap(deps)).toEqual([b, d, e].map((x) => x.cellId));
+    expect(c.debugSnapshot().cells).toBe(3);
+    expect(ids(deps)).toContain('timeline-bars');
+  });
+
+  it("a second swap before complete keeps both runs' leftovers until its own complete", () => {
+    const c = controller();
+    const [a, b, cc, d] = named('x', 4);
+    c.apply(update(0, { cells: [a, b] }));
+    drain(c);
+    c.apply(update(0, { cells: [cc], swap: true, complete: false }));
+    drain(c);
+    c.apply(update(0, { cells: [d], swap: true, complete: false }));
+    drain(c);
+    expect(onMap(deps)).toEqual([a, b, cc, d].map((x) => x.cellId));
+    c.apply(update(1, { complete: true })); // band-only, but it completes the run
+    drain(c);
+    expect(onMap(deps)).toEqual([d.cellId]);
+  });
+
+  it("a superseded swap's queued cells never install", () => {
+    const c = controller();
+    c.apply(update(0, { cells: named('o', 8) }));
+    drain(c);
+    c.apply(update(0, { cells: named('s', 40), swap: true, complete: true }));
+    deps.flushFrame();
+    expect(c.debugSnapshot().installs).toBe(8 + 32);
+    const from = deps.layerHistory.length;
+    c.apply(update(0, { cells: named('t', 4), swap: true, complete: true }));
+    drain(c);
+    const late = new Set(
+      named('s', 40)
+        .slice(32)
+        .map((x) => x.cellId)
+    );
+    for (const layers of deps.layerHistory.slice(from))
+      for (const id of cellIdsIn(layers)) expect(late.has(id)).toBe(false);
+    expect(c.debugSnapshot().installs).toBe(8 + 32 + 4);
+    expect(onMap(deps)).toEqual(named('t', 4).map((x) => x.cellId));
+  });
+
+  it('setLookups during a swap re-encodes the cells still on the map, and leftovers still go at complete', () => {
+    const c = controller();
+    c.apply(update(0, { cells: named('o', 8) }));
+    drain(c);
+    c.apply(update(0, { cells: named('s', 40), swap: true }));
+    c.setLookups({ ...timelineLookups });
+    drain(c);
+    const latest = tlcOf('s39'); // installed after setLookups
+    expect(onMap(deps)).toHaveLength(48);
+    for (const id of onMap(deps)) expect(tlcOf(id)).toBe(latest);
+    c.apply(update(1, { complete: true }));
+    drain(c);
+    expect(onMap(deps)).toEqual(named('s', 40).map((x) => x.cellId));
+    for (const id of onMap(deps)) expect(tlcOf(id)).toBe(latest);
+  });
+
+  it('a swap keeps the queued re-encode of cells still on the map', () => {
+    const c = controller();
+    c.apply(update(0, { cells: named('o', 8) }));
+    drain(c);
+    c.setLookups({ ...timelineLookups }); // two re-encode slices queued, none run
+    c.apply(update(0, { cells: named('s', 4), swap: true }));
+    drain(c);
+    const latest = tlcOf('s00');
+    expect(onMap(deps)).toHaveLength(12);
+    for (const id of onMap(deps)) expect(tlcOf(id)).toBe(latest);
+  });
+
+  it('setTheme during a swap rebuilds every cell layer with the new theme', () => {
+    const c = controller();
+    c.apply(update(0, { cells: named('o', 8) }));
+    drain(c);
+    c.apply(update(0, { cells: named('s', 40), swap: true }));
+    c.setTheme('dark');
+    const theme = (l: Layer) => props(l).updateTriggers.getFillColor;
+    const cellLayers = () => deps.lastLayers.filter((l) => TIMELINE_PART_LAYER.test(l.id));
+    expect(cellLayers()).toHaveLength(2 * 24);
+    for (const l of cellLayers()) expect(theme(l)).toBe('dark');
+    drain(c);
+    c.apply(update(1, { complete: true }));
+    drain(c);
+    expect(cellLayers()).toHaveLength(2 * 40);
+    for (const l of cellLayers()) expect(theme(l)).toBe('dark');
+  });
+
+  it('a cell removed during a swap stays until leftovers go', () => {
+    const c = controller();
+    c.apply(update(0, { cells: named('o', 2) }));
+    drain(c);
+    c.apply(update(0, { cells: named('s', 2), swap: true }));
+    drain(c);
+    const from = deps.layerHistory.length;
+    c.apply(update(1, { removedCells: ['s01', 'o00'] }));
+    drain(c);
+    for (const layers of deps.layerHistory.slice(from))
+      expect(cellIdsIn(layers).length).toBeGreaterThanOrEqual(4);
+    c.apply(update(2, { complete: true }));
+    drain(c);
+    expect(onMap(deps)).toEqual(['s00']);
+  });
+
+  it('a plain revision 0 still clears (snapshot)', () => {
+    const c = controller();
+    c.apply(update(0, { cells: named('o', 8) }));
+    drain(c);
+    c.apply(update(0, { cells: named('s', 4), swap: true }));
+    drain(c);
+    expect(onMap(deps)).toHaveLength(12);
+    c.apply(update(0, { cells: named('p', 9) }));
+    expect(onMap(deps)).toEqual(named('p', 4).map((x) => x.cellId)); // MAX_CELLS_PER_SLICE again
+    drain(c);
+    c.apply(update(1, { complete: true }));
+    drain(c);
+    expect(onMap(deps)).toEqual(named('p', 9).map((x) => x.cellId));
+  });
+
+  it('a swap revision 0 diffs the demolish list', () => {
+    const c = controller();
+    c.setTime(DAYS.horizon);
+    c.apply(update(0, { cells: named('o', 2), demolish: timelineSmall.demolish }));
+    drain(c);
+    expect(deps.replaced.size).toBeGreaterThan(0);
+    const before = deps.events.length;
+    const kept = timelineSmall.demolish[0];
+    const next = [kept, { parcelId: 'new-parcel', day: DAYS.start }];
+    c.apply(update(0, { cells: named('s', 2), demolish: next, swap: true, complete: true }));
+    drain(c);
+    const after = deps.events.slice(before);
+    expect(after.some((e) => e[0] === 'clearAllReplaced')).toBe(false);
+    expect(after.some((e) => e[0] === 'setReplaced' && e[1] === kept.parcelId)).toBe(false);
+    expect([...deps.replaced].sort()).toEqual([kept.parcelId, 'new-parcel'].sort());
+    expect(c.debugSnapshot().demolish).toEqual({ total: 2, applied: 2 });
   });
 });

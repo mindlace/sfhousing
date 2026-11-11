@@ -118,11 +118,14 @@ SFH_BENCH_DATASET=<version> npm run bench:map -- 'run-slider\.bench'
 
 ### Results
 
-| Machine   | Date      | Dataset | Case     | first p50/p95               | full p50/p95                | Label                 |
-| --------- | --------- | ------- | -------- | --------------------------- | --------------------------- | --------------------- |
-| (pending) | (pending) | live SF | all four | deferred: needs a quiet run | deferred: needs a quiet run | baseline: reroll path |
+| Machine   | Date      | Dataset | Case     | first p50/p95               | full p50/p95                | Label                   |
+| --------- | --------- | ------- | -------- | --------------------------- | --------------------------- | ----------------------- |
+| (pending) | (pending) | live SF | all four | deferred: needs a quiet run | deferred: needs a quiet run | baseline: reroll path   |
+| (pending) | (pending) | live SF | all four | deferred: needs a quiet run | deferred: needs a quiet run | after worker + map swap |
 
 The live baseline was not taken in the session that wrote the bench: the machine was under heavy load (1-minute load average about 38) when it was written, and it needs the production dataset in local R2 (`data:local`) on a quiet machine. Ballpark expectations, from the pieces and not measured: the worker simulates a run in about 20 ms, cold building generation costs about 25 microseconds per building, and today's whole-city install is about 1 s (4 cells per frame times 256 cells at 60 Hz). So the baseline full switch at the default camera should land around 1 to 3 s, and a viewport-sized install around 0.2 to 0.5 s.
+
+The "after worker + map swap" rows (worker swap reroll and `TimelineController` swap mode, with `selectRank` asking for a swap) were deferred too: the session that added the map swap saw a 1-minute load average of about 4 with another worktree's Vitest run going, and the production dataset was not yet in local R2. Its main-thread companion, `swap install cadence at 30,000 projects (baseline)` in `src/lib/map/timeline.perf.svelte.spec.ts` (`client-perf`; rAF gaps from a swap revision 0 until `pending` is 0, p95 at most 50 ms, never an empty layer list), has no baseline yet either: there, as for every real-map test in that file, the map did not reach `ready` (map sources failed with `e.split is not a function`, an environment fault that also fails `SimMap*.svelte.spec.ts` at the branch base).
 
 ## CI
 

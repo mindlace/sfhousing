@@ -492,9 +492,9 @@
     untrack(syncLevers);
   });
 
-  function requestReroll(next: number | null): void {
+  function requestReroll(next: number | null, opts?: { swap?: boolean }): void {
     if (!client || !canReroll) return;
-    const rev = client.reroll(next);
+    const rev = client.reroll(next, opts);
     latest = { rev, upTo: rev, representative: next === null, writesUrl: true, answered: false };
     rerollBusy = true;
     rerollFailed = false;
@@ -505,7 +505,7 @@
     const r = ranks;
     if (!r || position < 0 || position >= r.length || !canReroll) return;
     const next = position === medianRank(r.length) ? null : r[position];
-    requestReroll(next);
+    requestReroll(next, { swap: true }); // installs over the run on the map (Task 6 rewires)
     if (latest) {
       switchTrace = {
         seed: next,

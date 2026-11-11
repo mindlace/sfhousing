@@ -41,6 +41,8 @@ const FRAME_JS_MS = 0.5;
 const FRAME_JS_MAX_MS = 2;
 /** §6 client budget. */
 const DECLUTTER_MS = 20;
+/** §4.12 frame-gap bar, the one MAX_CELLS_PER_SLICE was sized for (hide.ts). */
+const SWAP_FRAME_GAP_MS = 50;
 /** One 60 fps frame: the synchronous part of `setTimelineLookups` (final review Minor 2). */
 const SET_LOOKUPS_MS = 16;
 
@@ -407,6 +409,37 @@ describe('timeline perf (per-frame JS)', { timeout: 600_000 }, () => {
     } finally {
       for (const r of restore) r();
     }
+  });
+});
+
+describe('timeline perf (run swap)', { timeout: 600_000 }, () => {
+  it('swap install cadence at 30,000 projects (baseline)', async () => {
+    const { h } = await mountReady();
+    await load(h, 30_000);
+    const u = makeSyntheticTimeline(2, 30_000);
+    const gaps: number[] = [];
+    let empty = 0;
+    let frames = 0;
+    let last = performance.now();
+    dbg().applyTimeline({ ...u, revision: 0, swap: true, complete: true });
+    for (;;) {
+      await nextFrame();
+      const now = performance.now();
+      gaps.push(now - last);
+      last = now;
+      frames++;
+      const s = dbg().timelineSnapshot()!;
+      if (s.layerIds.length === 0) empty++;
+      if (s.pending === 0) break;
+      if (frames > 10_000) throw new Error('swap did not converge');
+    }
+    const g = Float64Array.from(gaps);
+    console.info(
+      `[perf] swap install cadence at 30,000 projects (${u.cells.length} cells): ` +
+        `p50 ${median(gaps).toFixed(1)} ms, p95 ${p95(g).toFixed(1)} ms, ${frames} frames`
+    );
+    expect(empty).toBe(0);
+    expect(p95(g)).toBeLessThanOrEqual(SWAP_FRAME_GAP_MS);
   });
 });
 
