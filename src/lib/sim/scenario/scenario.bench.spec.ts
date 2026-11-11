@@ -46,6 +46,7 @@ import { PREVIEW_MAX_LOTS } from './preview';
 import { fnv1a32, generate } from '$lib/generator';
 import { synthParcels } from '$lib/generator/fixtures/synth';
 import { packCell, packTransferables } from '$lib/map/pack';
+import { moneyOf, tierContext, tierSeries } from './finance-score';
 import { monthsOf, shownSeries } from './score';
 import { runCollect } from './test/finance-harness';
 import type { ScenarioResponse, SimInput, TimelineResponse } from './types';
@@ -183,6 +184,29 @@ describe('finance engine budgets (F18, spec 4.17)', () => {
   it('case 3. plus the bench funding set: median ≤ 45 ms', { timeout: TIMEOUT }, () => {
     expect(net(() => funding, 'simulateNet, bench baseline + funding')).toBeLessThanOrEqual(45);
   });
+
+  it(
+    'finance-score: tierSeries + moneyOf add ≤ 15 ms to the shown run',
+    { timeout: TIMEOUT },
+    () => {
+      const detail = simulateDetailed(funding, 1, HORIZON);
+      const ctx = tierContext(funding);
+      const t = timed(3, 9, () => {
+        tierSeries(detail.schedules, ctx, funding.asOf, HORIZON, months);
+        moneyOf({
+          ledger: detail.ledger,
+          schedules: detail.schedules,
+          finance: funding.finance!,
+          baseline: baseline.finance!.pools,
+          asOf: funding.asOf,
+          horizon: HORIZON,
+          months
+        });
+      });
+      console.log(`[perf] finance-score: median ${ms(median(t))} (${t.map((x) => x.toFixed(1))})`);
+      expect(median(t)).toBeLessThanOrEqual(15);
+    }
+  );
 
   it(
     'case 6. fixture check: seed 1 with the bench funding set makes ≥ 10,000 first-day ' +
