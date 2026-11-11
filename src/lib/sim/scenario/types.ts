@@ -104,7 +104,9 @@ export type ScenarioRequest =
       // nothing but `ready`, errors and request answers until it is current (an `/s/<id>` open).
       awaitLevers?: boolean;
     }
-  | { type: 'reroll'; rev: Rev; seed: number | null }
+  // `swap` (the run slider): revision 0 goes out after one packing slice, viewport cells first,
+  // and the page installs it over the cells on the map; the rest follow in later revisions.
+  | { type: 'reroll'; rev: Rev; seed: number | null; swap?: true }
   // A barrier rev like reroll; needs a session initialised with levers. The latest one wins.
   | { type: 'setLevers'; rev: Rev; levers: SimLevers }
   | {

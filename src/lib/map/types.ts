@@ -62,6 +62,8 @@ export interface TimelineUpdate {
   cells: TimedPackedCell[];
   removedCells: string[];
   demolish: { parcelId: ParcelId; day: Day }[]; // complete list in revision 0 (needs no geometry); empty afterwards
+  swap?: true; // revision 0 only: install over the cells on the map instead of clearing them
+  complete?: boolean; // the run has packed every loaded cell (the scenario worker sets it)
 }
 
 /**

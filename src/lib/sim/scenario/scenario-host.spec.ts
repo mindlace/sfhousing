@@ -158,7 +158,13 @@ const timelines = (h: ScenarioHarness, rev?: number): TimelineResponse[] =>
   h.posts.filter(
     (m): m is TimelineResponse => m.type === 'timeline' && (rev === undefined || m.rev === rev)
   );
-const bandOnly = (revision: number) => ({ revision, cells: [], removedCells: [], demolish: [] });
+const bandOnly = (revision: number, complete = true) => ({
+  revision,
+  cells: [],
+  removedCells: [],
+  demolish: [],
+  complete
+});
 
 /** The host's own two inputs, as the engines saw them. */
 function inputs(): { fzp: SimInput; twin: SimInput } {
@@ -265,7 +271,7 @@ describe('scenario host: a seeded init', () => {
       type: 'timeline',
       rev,
       seed: SEED,
-      render: { revision: 0, cells: [], removedCells: [], demolish },
+      render: { revision: 0, cells: [], removedCells: [], demolish, complete: true },
       score: scoreOf(fzp, SEED, { band: [], planEffect: [], planEffectBand: [] }),
       bandRuns: 0,
       bandRunsTotal: N,
@@ -419,7 +425,8 @@ describe('scenario host: reroll', () => {
         revision: 0,
         cells: [],
         removedCells: [],
-        demolish: demolishOf(shownRun(inp.fzp, 5).schedules, inp.fzp)
+        demolish: demolishOf(shownRun(inp.fzp, 5).schedules, inp.fzp),
+        complete: true
       },
       score: scoreOf(inp.fzp, 5, { band: before.score.band, planEffect: [], planEffectBand: [] }),
       bandRuns: N,
@@ -824,7 +831,8 @@ describe('scenario host: geometry', () => {
       revision: 0,
       cells: expected,
       removedCells: [],
-      demolish: demolishOf(schedules, fzp)
+      demolish: demolishOf(schedules, fzp),
+      complete: true
     });
     expect(t0.complete).toBe(true);
     // the slots are exactly the shown run's projects anchored in the cell (no twin, no master)
@@ -867,7 +875,8 @@ describe('scenario host: geometry', () => {
       revision: before.length,
       cells: both,
       removedCells: [],
-      demolish: []
+      demolish: [],
+      complete: true
     });
     expect(later[0].render.cells[0].slotProjectIds).toEqual(
       [...t0.render.cells[0].slotProjectIds, P.crossCell].sort()
@@ -917,13 +926,14 @@ describe('scenario host: geometry', () => {
       revision: withCells[0].render.revision,
       cells: [all[3]],
       removedCells: [],
-      demolish: []
+      demolish: [],
+      complete: true
     });
     const k = tl.indexOf(withCells[0]);
     expect(tl.slice(0, k).every((t) => !t.complete)).toBe(true);
     expect(tl.slice(k).every((t) => t.complete)).toBe(true);
     // the twin's band-only update went out between, with complete still false
-    expect(tl[1].render).toEqual(bandOnly(1));
+    expect(tl[1].render).toEqual(bandOnly(1, false));
     expect(tl[1].complete).toBe(false);
     expect(Math.max(...h.slices)).toBe(1000);
   });
@@ -1411,5 +1421,116 @@ describe('scenario host: ranks', () => {
     h.host.handle({ type: 'reroll', rev: h.next(), seed: 5 });
     await h.runAll();
     expect(ranksOf(h)).toHaveLength(1);
+  });
+});
+
+describe('scenario host: swap reroll', () => {
+  const B = '51_26'; // last in id order: packing it first is the view's doing
+
+  /** Loads every mini cell, then leaves the view on B alone. */
+  function loadAllViewB(h: ScenarioHarness): void {
+    for (const c of MINI_CELLS) prefetch(h, bboxOf(c));
+    prefetch(h, bboxOf(B));
+  }
+
+  const swapReroll = (h: ScenarioHarness, seed: number): number => {
+    const r = h.next();
+    h.host.handle({ type: 'reroll', rev: r, seed, swap: true });
+    return r;
+  };
+
+  it('a swap reroll posts revision 0 with swap set and view cells first', async () => {
+    hooks.packMs = 20; // two cells fit a slice
+    const h = harness();
+    h.init({ seed: SEED });
+    loadAllViewB(h);
+    await h.runAll();
+    const r = swapReroll(h, 5);
+    await h.runAll();
+    expect(h.errors()).toEqual([]);
+    const tl = timelines(h, r);
+    expect(tl[0].render.revision).toBe(0);
+    expect(tl[0].render.swap).toBe(true);
+    expect(tl.slice(1).every((t) => t.render.swap === undefined)).toBe(true);
+    // one packing slice, not the whole city
+    expect(tl[0].render.cells.length).toBeGreaterThan(0);
+    expect(tl[0].render.cells.length).toBeLessThan(MINI_CELLS.length);
+    expect(cellIds(tl[0])[0]).toBe(B);
+    // no cell outside the view comes before the view's cell is posted
+    const order = tl.flatMap(cellIds);
+    expect(order.findIndex((c) => c !== B)).toBeGreaterThan(order.lastIndexOf(B));
+    const { fzp } = inputs();
+    const expected = expectedCells(fzp, shownRun(fzp, 5).schedules, MINI_CELLS);
+    expect(expected.map((c) => c.cellId)).toContain(B);
+    const last = new Map(tl.flatMap((t) => t.render.cells).map((c) => [c.cellId, c]));
+    expect([...last.values()].sort((a, b) => (a.cellId < b.cellId ? -1 : 1))).toEqual(expected);
+    expect(tl.at(-1)!.complete).toBe(true);
+  });
+
+  it("every timeline's render.complete equals its complete", async () => {
+    hooks.packMs = 20;
+    const h = harness();
+    h.init({ seed: SEED });
+    loadAllViewB(h);
+    await h.runAll();
+    swapReroll(h, 5);
+    await h.runAll();
+    h.host.handle({ type: 'reroll', rev: h.next(), seed: 6 });
+    await h.runAll();
+    const tl = timelines(h);
+    expect(tl.some((t) => !t.complete)).toBe(true);
+    expect(tl.some((t) => t.complete)).toBe(true);
+    for (const t of tl) expect(t.render.complete).toBe(t.complete);
+  });
+
+  it('a plain reroll posts revision 0 without swap', async () => {
+    const h = harness();
+    h.init({ seed: SEED });
+    loadAllViewB(h);
+    await h.runAll();
+    const r = h.next();
+    h.host.handle({ type: 'reroll', rev: r, seed: 5 });
+    await h.runAll();
+    expect(timelines(h, r)[0].render.revision).toBe(0);
+    expect(timelines(h).every((t) => !('swap' in t.render))).toBe(true);
+  });
+
+  it('a swap reroll superseded mid-run posts nothing more at the old rev', async () => {
+    hooks.packMs = 20;
+    const h = harness();
+    h.init({ seed: SEED });
+    loadAllViewB(h);
+    await h.runAll();
+    const a = swapReroll(h, 5);
+    await h.step(); // A's shown run
+    expect(hooks.calls.some((c) => c.fn === 'detailed' && c.seed === 5)).toBe(true);
+    const handledAt = h.posts.length;
+    const b = swapReroll(h, 6);
+    await h.runAll();
+    expect(h.errors()).toEqual([]);
+    expect(h.posts.slice(handledAt).some((m) => m.type === 'timeline' && m.rev === a)).toBe(false);
+    const tb = timelines(h, b);
+    expect(tb[0].render).toMatchObject({ revision: 0, swap: true });
+    expect(tb.at(-1)!.complete).toBe(true);
+  });
+
+  it('a cell that becomes ready mid-swap still packs, and the last revision is complete', async () => {
+    hooks.packMs = 20;
+    const late = '50_25';
+    const h = harness();
+    h.hold(MINI_CHUNK_URL(late));
+    h.init({ seed: SEED });
+    loadAllViewB(h);
+    await h.runAll();
+    const r = swapReroll(h, 5);
+    await stepUntil(h, () => timelines(h, r).length > 0);
+    expect(cellIds(timelines(h, r)[0])).not.toContain(late);
+    h.release(MINI_CHUNK_URL(late));
+    await h.runAll();
+    expect(h.errors()).toEqual([]);
+    const tl = timelines(h, r);
+    expect(tl.findIndex((t) => cellIds(t).includes(late))).toBeGreaterThan(0);
+    expect(tl.at(-1)!.complete).toBe(true);
+    expect(tl.at(-1)!.render.complete).toBe(true);
   });
 });

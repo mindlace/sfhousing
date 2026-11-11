@@ -80,6 +80,22 @@ describe('ScenarioClient', () => {
     expect(w.posts[5]).toEqual({ type: 'reroll', rev: 3, seed: null });
   });
 
+  it('reroll with swap posts swap: true; resync does not', () => {
+    const { w, client, rerolls } = setup();
+    client.initScenario(MANIFEST, HORIZON); // 1
+    expect(client.reroll(7, { swap: true })).toBe(2);
+    expect(client.reroll(8, { swap: false })).toBe(3);
+    expect(client.reroll(9)).toBe(4);
+    w.emit(timeline(4, 9));
+    client.resync(); // 5
+    expect(rerolls()).toEqual([
+      { type: 'reroll', rev: 2, seed: 7, swap: true },
+      { type: 'reroll', rev: 3, seed: 8 },
+      { type: 'reroll', rev: 4, seed: 9 },
+      { type: 'reroll', rev: 5, seed: 9 }
+    ]);
+  });
+
   it('initScenario forwards a given seed', () => {
     const { w, client } = setup();
     client.initScenario(MANIFEST, HORIZON, 42);

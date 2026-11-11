@@ -100,7 +100,7 @@ type RowScenarioRequest =
       levers?: SimLevers; // plan 2 Task 12
       awaitLevers?: boolean; // gross-table Task 6
     }
-  | { type: 'reroll'; rev: Rev; seed: number | null }
+  | { type: 'reroll'; rev: Rev; seed: number | null; swap?: true } // run slider Task 3
   | { type: 'setLevers'; rev: Rev; levers: SimLevers }
   | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string }
   | { type: 'resolveBrush'; reqId: number; query: BrushQuery } // plan 3 Task 5

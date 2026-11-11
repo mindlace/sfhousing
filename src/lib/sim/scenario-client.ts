@@ -195,8 +195,9 @@ export class ScenarioClient {
     return rev;
   }
 
-  reroll(seed: number | null): Rev {
-    return this.#sendBarrier({ type: 'reroll', seed });
+  /** `opts.swap` (the run slider): the worker answers revision 0 fast, for install over the map. */
+  reroll(seed: number | null, opts?: { swap?: boolean }): Rev {
+    return this.#sendBarrier({ type: 'reroll', seed, ...(opts?.swap === true && { swap: true }) });
   }
 
   prefetch(bbox: BBox): void {

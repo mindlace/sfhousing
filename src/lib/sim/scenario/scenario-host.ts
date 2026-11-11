@@ -19,10 +19,11 @@
 // shown run's job (simulate and score only) runs in a slice of its own. Other requests are
 // handled between slices. Job priority: (1) the current run's revision 0, after the FZP band
 // runs it needs when its seed is null: the shown run, then in the next slice its geometry
-// set-up, then its geometry packing for up to 2.5 s; (2) its twin, posted as a band-only update
-// with `planEffect`; (3) its later geometry, one revision per packing slice; (4) the band: FZP
-// run then twin per pair, a band-only update every 16 pairs and after the last. Twins run
-// through `simulateNet` only, so no twin Schedule ever exists.
+// set-up, then its geometry packing for up to 2.5 s (a swap reroll's: one packing slice, no cap);
+// (2) its twin, posted as a band-only update with `planEffect`; (3) its later geometry, one
+// revision per packing slice; (4) the band: FZP run then twin per pair, a band-only update every
+// 16 pairs and after the last. Twins run through `simulateNet` only, so no twin Schedule ever
+// exists. Every run packs the latest viewport's cells (`Chunks.view`) before the rest.
 //
 // Geometry (§4.2, §4.7, §4.8). Each session has its own chunk loader, driven only by `prefetch`
 // (the viewport) plus the extra cells of the multi-parcel projects anchored there; chunks report
@@ -253,6 +254,8 @@ interface Run {
   requested: number | null; // as requested (null = representative)
   seed: number | null; // resolved: null until the representative is known
   requestedAt: number; // deps.now() at the request
+  /** A swap reroll's: revision 0 after one packing slice, posted with `render.swap`. */
+  swap: boolean;
   revision: number; // the last posted; -1 before revision 0
   shown: TimelineScore['shown'] | null;
   net: NetSeries | null; // the shown run's, for planEffect
@@ -271,6 +274,8 @@ interface Chunks {
   records: Map<ParcelId, ParcelRecord>;
   /** Every cell `prefetch` has asked for (the viewport's, at any time). */
   wanted: Set<string>;
+  /** The cells of the latest `prefetch` bbox: packing takes them first. */
+  view: Set<string>;
   /** The failed cells of the loader's latest report. */
   failed: string[];
 }
@@ -543,6 +548,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       byCell: new Map(),
       records: new Map(),
       wanted: new Set(),
+      view: new Set(),
       failed: []
     };
     s = st;
@@ -593,6 +599,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     }
     const cells = cellsIntersecting(st.manifest, bbox);
     for (const c of cells) st.chunks.wanted.add(c);
+    st.chunks.view = new Set(cells);
     const all = new Set(cells);
     const g = st.work?.run.geometry;
     if (g) for (const c of g.cellsFor(cells)) all.add(c);
@@ -688,12 +695,13 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     return { rev, levers, runRev: rev, seed, state: null, failed: [], stalled: false };
   }
 
-  function newRun(rev: Rev, seed: number | null): Run {
+  function newRun(rev: Rev, seed: number | null, swap = false): Run {
     return {
       rev,
       requested: seed,
       seed,
       requestedAt: deps.now(),
+      swap,
       revision: -1,
       shown: null,
       net: null,
@@ -712,14 +720,15 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     if (bad !== null) return error(req.rev, 'bad-request', bad);
     const p = st.work.levers?.pending;
     if (p) {
-      // the run that starts once the pending levers are current is this reroll's
+      // the run that starts once the pending levers are current is this reroll's (a plain
+      // snapshot: the levers change the whole map, so there is nothing to install over)
       p.runRev = req.rev;
       p.seed = req.seed;
       return;
     }
     // Replacing the run drops the old seed's geometry and twin work: `nextJob` reads only
     // `w.run`, and a reroll is handled between slices. The band work is the session's.
-    st.work.run = newRun(req.rev, req.seed);
+    st.work.run = newRun(req.rev, req.seed, req.swap === true);
     kick(st);
   }
 
@@ -827,9 +836,11 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       return {
         kind: 'pack',
         run: () => {
-          // the cap may have passed since the last settle: then revision 0 goes as it is
-          if (revision0Pending(run)) packCells(w, run, run.r0, true);
-          settleRevision0(w, run);
+          // A swap's revision 0 is one packing slice, then goes as it is. Otherwise the cap may
+          // have passed since the last settle: then revision 0 goes as it is.
+          if (run.swap) packCells(w, run, run.r0, false);
+          else if (revision0Pending(run)) packCells(w, run, run.r0, true);
+          settleRevision0(w, run, run.swap);
         }
       };
     }
@@ -1135,21 +1146,24 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     settleRevision0(w, run);
   }
 
-  /** Revision 0 waits for packing while a ready anchored cell is unpacked, for up to the cap. */
+  /**
+   * Revision 0 waits for packing while a ready anchored cell is unpacked, for up to the cap; a
+   * swap's waits for its one packing slice (the pack job then posts it, `settleRevision0` forced).
+   */
   function revision0Pending(run: Run): boolean {
     if (run.geometry!.packable().length === 0) return false;
-    return deps.now() - run.requestedAt < REVISION0_CAP_MS;
+    return run.swap || deps.now() - run.requestedAt < REVISION0_CAP_MS;
   }
 
   /**
-   * Packs ready cells into `into` while they fit the slice plan, judged by the estimated cost of
-   * one cell; the first cell always packs (the scheduler judged it fits, or the slice is fresh).
-   * Revision 0 (`capped`) also stops at the cap.
+   * Packs ready cells into `into`, the viewport's first, while they fit the slice plan, judged by
+   * the estimated cost of one cell; the first cell always packs (the scheduler judged it fits, or
+   * the slice is fresh). Revision 0 (`capped`) also stops at the cap.
    */
   function packCells(w: Work, run: Run, into: Map<string, TimedPackedCell>, capped: boolean): void {
     const g = run.geometry!;
     for (let first = true; ; first = false) {
-      const cellId = g.packable()[0];
+      const cellId = g.packable(w.chunks.view)[0];
       if (cellId === undefined) return;
       if (!first) {
         if (deps.now() - w.sliceStart + (w.cost.pack ?? Infinity) > SLICE_PLAN_MS) return;
@@ -1161,9 +1175,9 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     }
   }
 
-  /** Posts revision 0 once no packing is pending for it (or its cap has passed). */
-  function settleRevision0(w: Work, run: Run): void {
-    if (revision0Pending(run)) return;
+  /** Posts revision 0 once no packing is pending for it (or its cap has passed), or `now`. */
+  function settleRevision0(w: Work, run: Run, now = false): void {
+    if (!now && revision0Pending(run)) return;
     const cells = [...run.r0.values()];
     run.r0 = new Map();
     const transfer = cells.flatMap(packTimedTransferables);
@@ -1185,7 +1199,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
 
   /**
    * The run's next revision, with the seed's full score. `planEffect` and `planEffectBand` are
-   * `[]` in revision 0 and until the twin is done (§4.5 "Empty until computed").
+   * `[]` in revision 0 and until the twin is done (§4.5 "Empty until computed"). `render` carries
+   * `complete` too, and a swap run's revision 0 `swap`.
    */
   function postTimeline(
     w: Work,
@@ -1206,16 +1221,18 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       phasing: w.phasing,
       ...(w.references ? { references: w.references } : {})
     });
+    const complete = run.geometry!.complete();
+    const swap = run.swap && run.revision === 0 ? { swap: true as const } : {};
     post(
       {
         type: 'timeline',
         rev: run.rev,
         seed: run.seed!,
-        render: { revision: run.revision, ...render },
+        render: { revision: run.revision, ...render, ...swap, complete },
         score,
         bandRuns: w.band.pairs,
         bandRunsTotal: w.band.total,
-        complete: run.geometry!.complete()
+        complete
       },
       transfer
     );
