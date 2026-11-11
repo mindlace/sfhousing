@@ -15,14 +15,17 @@ import type { ProjectsFile } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import {
   INCOME_TIERS,
+  type Dollars,
   type IncomeTier,
   type Pool,
+  type PoolKind,
   type Provenance,
   type ResolvedTerms,
   type TierUnits
 } from '$lib/timelapse/types';
 import {
   ASSUMED_TENURE,
+  DISPLACEMENT_RANGE,
   INCLUSIONARY,
   debtService,
   fundBundle,
@@ -33,7 +36,7 @@ import {
   type BundleItem
 } from '../finance';
 import { isoOf } from './dates';
-import { inflowArrivals } from './funding';
+import { PIPELINE_FUNDED, inflowArrivals } from './funding';
 import { monthIndexer } from './score';
 import type { LedgerEvent } from './money';
 import type { Schedule, SimInput, TimelineScore } from './types';
@@ -522,3 +525,68 @@ export function moneyOf(p: {
   const limits = limitStatements(addedBorrowing(p.finance, p.baseline, p.asOf, p.horizon));
   return { pools, fundedHomes: funded, displacedHomes: displaced, publicSpent, owed, limits };
 }
+
+/** The pool kinds that are the City's (F5): `state` and `federal` are not. */
+export const CITY_POOL_KINDS: ReadonlySet<PoolKind> = new Set<PoolKind>([
+  'goBond',
+  'cop',
+  'generalRevenue',
+  'dedicatedTax',
+  'bank'
+]);
+
+/** The City's public money gone by month `i`: `spent + lostCredit` over City pools (spec 4.6). */
+export function cityOf(money: Money, i: number): number {
+  let sum = 0;
+  for (const p of money.pools) {
+    if (CITY_POOL_KINDS.has(p.kind)) sum += p.spent[i] + p.lostCredit[i];
+  }
+  return sum;
+}
+
+/**
+ * Public money per home added at month `i`: money gone over funded homes less the private homes
+ * they displaced, to whole dollars. Null when that denominator is 0 or less (spec 4.6).
+ */
+export function perAddedHome(money: Money, i: number, scope: 'all' | 'city'): number | null {
+  const d = money.fundedHomes[i] - money.displacedHomes[i];
+  if (d <= 0) return null;
+  const n = scope === 'all' ? money.publicSpent[i] : cityOf(money, i);
+  return Math.round(n / d);
+}
+
+/** Displaced homes over funded homes at month `i`; null when none are funded. */
+export function displacedShare(money: Money, i: number): number | null {
+  const f = money.fundedHomes[i];
+  return f <= 0 ? null : money.displacedHomes[i] / f;
+}
+
+/** The repayment owed on `received` dollars borrowed, scaled from the entry's ratio (spec 4.7). */
+export function owedAt(o: Money['owed'][number], received: number): Dollars {
+  return o.principal === 0 ? 0 : Math.round((o.repayment * received) / o.principal);
+}
+
+/** The sources of "Money details" (spec 4.6), in the spec's order. */
+export const MONEY_SOURCES: readonly Provenance[] = [
+  PIPELINE_FUNDED,
+  {
+    tier: 2,
+    label: 'Public money per added home',
+    sources: [],
+    method:
+      'Money spent, grants paid and loans and guarantees lost, over the homes funded projects ' +
+      'completed less the private homes they displaced on the same lots, counted when the ' +
+      'funded project completes. Homes displaced by funded projects that dropped out or are ' +
+      'still being built at the end of the run are not counted.'
+  },
+  DISPLACEMENT_RANGE.provenance,
+  {
+    tier: 2,
+    label: 'Repayment owed',
+    sources: [],
+    method:
+      "Level yearly payments at the pool's rate over its term, the method of the Budget " +
+      "Analyst's Exhibit 40 (2026-06-05, p. 106). Nominal dollars: the one figure here not in " +
+      'constant dollars.'
+  }
+];

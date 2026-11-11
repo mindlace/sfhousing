@@ -28,12 +28,18 @@ import { checkLedger } from './test/finance-harness';
 import { checkMoneyIdentities } from './test/money-identities';
 import type { Pool, TierUnits } from '$lib/timelapse/types';
 import { dayOf } from './dates';
-import { debtService, limitStatements } from '../finance';
+import { DISPLACEMENT_RANGE, debtService, limitStatements } from '../finance';
+import { PIPELINE_FUNDED } from './funding';
 import {
+  MONEY_SOURCES,
   TIER_SOURCES,
   addedBorrowing,
   allocatePhases,
+  cityOf,
+  displacedShare,
   moneyOf,
+  owedAt,
+  perAddedHome,
   poolSeries,
   type Money,
   splitByShares,
@@ -840,5 +846,102 @@ describe('moneyOf on the finance golden input plus u-bond', () => {
       expect(m.pools).toHaveLength(input.finance!.pools.length);
       expect(m.fundedHomes).toHaveLength(months.length);
     }
+  });
+});
+
+describe('page helpers (spec 6 tests 19, 20, 13 money half)', () => {
+  const zeros = [0, 0, 0];
+  const poolOf = (id: string, kind: Money['pools'][number]['kind'], over = {}) => ({
+    id,
+    label: id,
+    kind,
+    received: zeros,
+    committed: zeros,
+    out: zeros,
+    spent: zeros,
+    repaid: zeros,
+    lost: zeros,
+    lostCredit: zeros,
+    ...over
+  });
+  const hand = (funded = [0, 0, 4], displaced = [0, 0, 1]): Money => ({
+    pools: [
+      poolOf('c', 'generalRevenue', { spent: [0, 200, 400], lostCredit: [0, 100, 200] }),
+      poolOf('s', 'state', { spent: [0, 600, 1200] }),
+      poolOf('f', 'federal', { spent: zeros })
+    ],
+    fundedHomes: funded,
+    displacedHomes: displaced,
+    publicSpent: [0, 900, 1800],
+    owed: [],
+    limits: []
+  });
+
+  it('cityOf sums City pools; perAddedHome divides by funded less displaced', () => {
+    const m = hand();
+    expect([0, 1, 2].map((i) => cityOf(m, i))).toEqual([0, 300, 600]);
+    expect(perAddedHome(m, 2, 'all')).toBe(600);
+    expect(perAddedHome(m, 2, 'city')).toBe(200);
+  });
+
+  it('is null when no homes are added, and 0 when nothing was spent', () => {
+    expect(perAddedHome(hand(), 1, 'all')).toBeNull();
+    expect(perAddedHome(hand(), 1, 'city')).toBeNull();
+    expect(perAddedHome(hand([0, 2, 2], [0, 3, 0]), 1, 'all')).toBeNull();
+    expect(perAddedHome(hand([2, 2, 2], [0, 0, 0]), 0, 'all')).toBe(0);
+  });
+
+  it('rounds the quotient half up', () => {
+    const m = hand([0, 0, 2], [0, 0, 0]);
+    m.publicSpent[2] = 5;
+    expect(perAddedHome(m, 2, 'all')).toBe(3);
+  });
+
+  it('displacedShare is displaced over funded, null with none funded', () => {
+    expect(displacedShare(hand(), 2)).toBe(0.25);
+    expect(displacedShare(hand(), 0)).toBeNull();
+  });
+
+  it('cityOf on the mixed pool counts the grant once: 800,000 in June', () => {
+    const m = moneyOn({
+      ...MC.mixed,
+      finance: {
+        ...MC.mixed.finance,
+        pools: [{ ...MC.mixed.finance.pools[0], kind: 'generalRevenue' }]
+      }
+    });
+    expect(cityOf(m, 5)).toBe(800_000);
+  });
+
+  it('helpers on a structuredClone equal the originals', () => {
+    const m = hand();
+    const c = structuredClone(m);
+    for (const i of [0, 1, 2]) {
+      expect(cityOf(c, i)).toBe(cityOf(m, i));
+      expect(displacedShare(c, i)).toBe(displacedShare(m, i));
+      expect(perAddedHome(c, i, 'all')).toBe(perAddedHome(m, i, 'all'));
+      expect(perAddedHome(c, i, 'city')).toBe(perAddedHome(m, i, 'city'));
+    }
+  });
+
+  it('owedAt is 0 on no principal and matches debtService on ex40', () => {
+    expect(owedAt({ pool: 'x', principal: 0, repayment: 0, nominal: true }, 0)).toBe(0);
+    const entry = {
+      pool: 'ex40',
+      principal: 410442573,
+      repayment: 715685078,
+      nominal: true as const
+    };
+    const want = debtService(1e8, { rate: 0.06, termYears: 20 }).total;
+    expect(Math.abs(owedAt(entry, 1e8) - want)).toBeLessThanOrEqual(1);
+  });
+
+  it('MONEY_SOURCES: the engine and model objects, and the nominal-dollars note', () => {
+    expect(MONEY_SOURCES).toHaveLength(4);
+    expect(MONEY_SOURCES[0]).toBe(PIPELINE_FUNDED);
+    expect(MONEY_SOURCES[2]).toBe(DISPLACEMENT_RANGE.provenance);
+    expect(MONEY_SOURCES[1].tier).toBe(2);
+    expect(MONEY_SOURCES[3].tier).toBe(2);
+    expect(MONEY_SOURCES[3].method).toContain('Nominal dollars');
   });
 });
