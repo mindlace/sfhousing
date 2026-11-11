@@ -234,7 +234,7 @@ Both are counts of net homes, so `fundedHomes[i] − displacedHomes[i]` is the f
 
 - `pool`: the pool's id.
 - `principal`: `received` at the last month: the bonds issued by the horizon. Money borrowed is owed whether or not it was spent; a bond's inflow is its issue (F5).
-- `repayment`: `debtService(principal, pool.debt).total` (F14; `finance-model` section 4.8), the total of level annual payments, whole dollars as that function rounds them. At 6% over 20 years, $410,442,573 gives 715,685,078 in all, 1.7437 per dollar (tier 2 arithmetic on tier 1 terms; Budget Analyst Exhibit 40, p. 106, verified to the dollar by `finance-model`). Payments that fall after the horizon are included.
+- `repayment`: `debtService(principal, pool.debt).total` (F14; `finance-model` section 4.8), the total of level annual payments, whole dollars as that function rounds them. At 6% over 20 years, $410,442,573 gives 715,685,078 in all, 1.7437 per dollar (tier 2 arithmetic on the Budget Analyst's assumed terms, themselves tier 2, ruling R19; Budget Analyst Exhibit 40, p. 106, verified to the dollar by `finance-model`). Payments that fall after the horizon are included.
 - `nominal: true`: the repayment is the one nominal figure (global constraint "Constant dollars").
 
 `owed` covers every debt pool, the baseline's `city-debt` pool (kind `goBond`, `finance-data` section 4.5) included: money borrowed is owed whoever decided to borrow it. The limit statements, by contrast, measure only what the policy adds (section 4.8).
