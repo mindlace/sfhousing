@@ -45,6 +45,7 @@ Fetch the file when working in the relevant area:
 - **Finance model (prototypes, market terms, grant-equivalents, bundles, income tiers, debt and legal limits)** — [docs/dev/finance-model.md](docs/dev/finance-model.md)
 - **Today's market (`calibration.market`, the start-odds shift, `market.json`, `SimInput.market` steps, the affordable-cohort flag)** — [docs/dev/market.md](docs/dev/market.md)
 - **Finance data (`affordableHomes`, `byTier`, `affordableRoutes`, `baselineFunding`, `funding.json`, the MOHCD source)** — [docs/dev/finance-data.md](docs/dev/finance-data.md)
+- **Funded starts, the funding queue and the pools in the engine (`SimInput.finance`, `off`, latents, the line and its order, the award rule, re-pricing and lapse, the ledger protocol, the card's funding fields, `sampleAdvance`, budgets)** — [docs/dev/finance-engine.md](docs/dev/finance-engine.md)
 - **Design, specs and plans** — `docs/superpowers/design/`, `docs/superpowers/specs/`, `docs/superpowers/plans/`
 
 Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link them from this list.

@@ -677,6 +677,13 @@ spread it from the base, so both arms run on it. Compared with the production da
   other 0.
 - No year's mean extra is below zero by more than 0.01 home, and p10 never drops below 0.
 
+## Release 2: baseline funding
+
+From Release 2 the build step's runs carry the dataset's baseline funding (`SimInput.finance`, set by
+`buildSimInput` from `calibration.baselineFunding`) on the private-starts level, both arms alike, so
+the plan and the baseline run on the same money and the same market ([finance-engine.md](finance-engine.md)).
+Its pools are spent by funded starts that the engine draws beside the ordinary ones.
+
 ## Freeway land
 
 The catalog format, its build rule and the V17 and homes checks are in [pipeline.md](pipeline.md)

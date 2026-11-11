@@ -189,16 +189,16 @@ and baseline inputs all carry `market` unchanged ([sim-levers.md](sim-levers.md)
 
 ## `marketLevel`: the one rule for the level
 
-`marketLevel(calibration)` (`src/lib/sim/scenario/market.ts`) returns `'all'` or `'private'`. It is
-`'all'` in Release 1 for every calibration, including one that already carries `finance-data`'s
-`baselineFunding`, because no funding runs before `finance-engine`. `buildSimInput` calls
+`marketLevel(calibration)` (`src/lib/sim/scenario/market.ts`) returns `'all'` or `'private'`. It
+returns `'private'` exactly when the calibration has both `market` and `baselineFunding` (from
+Release 2; in Release 1 it returned `'all'` for every calibration), which is exactly when
+`buildSimInput` also sets `finance` ([finance-engine.md](finance-engine.md)). `buildSimInput` calls
 `marketSteps(calibration.market, projects.asOf, marketLevel(calibration))` and **omits the key**
 when that is empty, so existing inputs stay deep-equal to today's and `golden-seed1.json` is
 untouched. When `calibration.market` is absent it warns once
 (`calibration.json: no market model; the run uses the 2007-2025 average market`). The page's
 sentence and the dialog's "In force" line call the same function, so the engine and the page cannot
-state different levels. `finance-engine` (Release 2) changes the body to "`'private'` exactly when
-`buildSimInput` also sets `finance`", with no dataset change of this subsystem's.
+state different levels.
 
 ## The report: section 11, "Today's market"
 

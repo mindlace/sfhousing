@@ -71,7 +71,7 @@ One measure is not monotone per month: `completedNet` subtracts a project's exis
 - `'preFzp'` (default): `baseZoning` on the base calibration.
 - `'fzp'`: the plan of `DEFAULT_LEVERS` (FZP as written: no rules, paint, protections or timers) on the base calibration. It has no `Need`s (`twinInput` throws if it had), and its envelopes and runs are the base FZP input's.
 
-`bare()` and both twins keep `market` (and `finance`): the market is the world, not the policy, so the plan and its twin run on the same market ([market.md](market.md)). `bare()` strips only `newProjects` and `inFlightScale`.
+`bare()` and both twins keep `market` (and `finance`): the market is the world, not the policy, so the plan and its twin run on the same market ([market.md](market.md)). `bare()` strips only `newProjects` and `inFlightScale`. `finance` and `market` pass through every `PolicyOp` and `bare()` unchanged; what the engine does with `finance` is in [finance-engine.md](finance-engine.md).
 
 Every lever field (`newProjects`, `inFlightScale`) is set explicitly, because `applyPolicies` copies the whole input. Twins are memoised on (base, ctx, compare), so lever documents that differ elsewhere share one twin (and its precompute). `applyLevers(base, ctx, levers, filled)` takes no horizon: nothing in the engine depends on one.
 
