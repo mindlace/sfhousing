@@ -32,6 +32,8 @@ const ORDER: Record<'spend' | 'repay' | 'loss' | 'release', number> = {
 interface Scheduled {
   project: number;
   order: number;
+  /** tie-break within one order and programme */
+  sub: number;
   prog: number;
   pool: number;
   kind: 'spend' | 'repay' | 'loss' | 'release';
@@ -108,11 +110,17 @@ export class Treasury {
       const P = projectDollars(it.lent, units);
       const H = projectDollars(it.reserve, units);
       const commit = instr === 'grant' ? G : instr === 'loan' ? P : H;
-      const put = (at: Day | null | undefined, kind: Scheduled['kind'], dollars: number): void => {
+      const put = (
+        at: Day | null | undefined,
+        kind: Scheduled['kind'],
+        dollars: number,
+        order = ORDER[kind]
+      ): void => {
         if (at == null || at > this.horizon || dollars === 0) return;
         const e: Scheduled = {
           project,
-          order: ORDER[kind],
+          order,
+          sub: kind === 'loss' ? 1 : 0,
           prog,
           pool,
           kind,
@@ -147,7 +155,9 @@ export class Treasury {
           const Q = projectDollars(it.guaranteed, units);
           put(endDay, 'loss', Math.min(Math.round(lambda * Q), H));
         }
-        put(endDay, 'release', H);
+        // A guarantee's release precedes its loss (conductor ruling, E4 after every event): it
+        // sorts with the loss's order, ahead of it.
+        put(endDay, 'release', H, afterConstruction ? ORDER.loss : undefined);
       }
     });
   }
@@ -157,7 +167,9 @@ export class Treasury {
     const list = this.due.get(day);
     if (!list) return { any: false, returned: false };
     this.due.delete(day);
-    list.sort((x, y) => x.project - y.project || x.order - y.order || x.prog - y.prog);
+    list.sort(
+      (x, y) => x.project - y.project || x.order - y.order || x.prog - y.prog || x.sub - y.sub
+    );
     let returned = false;
     for (const e of list) {
       const st = this.state[e.pool];

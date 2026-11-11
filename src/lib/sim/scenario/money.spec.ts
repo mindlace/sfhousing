@@ -190,8 +190,8 @@ describe('Treasury event table', () => {
         expect(X).toBeGreaterThan(0);
         expect(ev(exitAfter(A + 300))).toEqual([
           base,
-          [300, 'p-guar', 'g-guar', 'loss', X],
-          [300, 'p-guar', 'g-guar', 'release', H]
+          [300, 'p-guar', 'g-guar', 'release', H],
+          [300, 'p-guar', 'g-guar', 'loss', X]
         ]);
         if (lambda === 1) expect(X).toBe(H);
       });
@@ -320,10 +320,51 @@ describe('Treasury order within a day', () => {
       'commit:g-guar',
       'spend:g-grant',
       'loss:g-grant',
-      'loss:g-guar',
-      'release:g-guar'
+      'release:g-guar',
+      'loss:g-guar'
     ]);
     expect(events.every((e) => e.day === A)).toBe(true);
+  });
+});
+
+describe('a guarantee exiting after construction on a fully held pool', () => {
+  it('releases before it loses, and E4 holds after every event', () => {
+    const probeFin = finance();
+    const a0 = awardOf(probeFin, [2]);
+    const H = projectDollars(a0.priced.items[0].reserve, UNITS);
+    expect(H).toBeGreaterThan(0);
+    // the guarantee pool receives exactly the reserve, so its available is 0 once committed
+    const fin = finance();
+    fin.pools[2].inflows = [{ kind: 'once', day: A, dollars: H }];
+    const a = awardOf(fin, [2]);
+    const events: LedgerEvent[] = [];
+    const probes: { after: number; available: number[] }[] = [];
+    const woken = new Set<Day>();
+    const t: Treasury = new Treasury(
+      financeIndexOf(fin),
+      A,
+      HORIZON,
+      1,
+      (e) => {
+        events.push(e);
+        probes.push({ after: events.length - 1, available: [0, 1, 2].map((q) => t.available(q)) });
+      },
+      (d) => woken.add(d)
+    );
+    t.receive(A);
+    t.award(A, a, UNITS, exitAfter(A + 300));
+    expect(t.available(2)).toBe(0);
+    for (const d of [...woken].sort((x, y) => x - y)) {
+      t.receive(d);
+      t.settle(d);
+    }
+    expect(rows(noIn(events))).toEqual([
+      [0, 'p-guar', 'g-guar', 'commit', H],
+      [300, 'p-guar', 'g-guar', 'release', H],
+      [300, 'p-guar', 'g-guar', 'loss', H]
+    ]);
+    expect(t.available(2)).toBe(0);
+    checkLedger(events, fin, probes);
   });
 });
 
@@ -343,11 +384,27 @@ describe('Treasury inflows', () => {
     expect(r.t.state[1].received).toBe(150);
   });
 
-  it('zero-dollar arrivals emit nothing and uncapped pools get none', () => {
+  it('zero-dollar arrivals emit nothing', () => {
     const fin = finance([{ kind: 'once', day: A, dollars: 0 }]);
     const r = run(fin, 1, []);
     expect(r.events).toEqual([]);
     expect(r.t.receive(A + 1)).toBe(false);
+  });
+
+  it('an uncapped pool gets no in event, still has its commits, and passes E6', () => {
+    const fin = finance();
+    fin.pools.push({ ...pool('fed', 'federal', []), uncapped: true });
+    fin.programmes.push(prog('g-fed', 'fed', { kind: 'grant', share: 0.5 }));
+    const a = awardOf(fin, [0, 3]);
+    const r = run(fin, 1, [{ a, s: complete(A + 500) }]);
+    expect(r.events.filter((e) => e.pool === 'fed' && e.kind === 'in')).toEqual([]);
+    const fed = r.events.filter((e) => e.pool === 'fed').map((e) => e.kind);
+    expect(fed).toEqual(['commit', 'spend']);
+    expect(r.t.state[3].received).toBe(0);
+    expect(r.t.available(3)).toBe(Infinity);
+    checkLedger(r.events, fin);
+    const bad: LedgerEvent = { day: A, pool: 'fed', programme: null, kind: 'in', dollars: 5 };
+    expect(() => checkLedger([bad], fin)).toThrow();
   });
 });
 
