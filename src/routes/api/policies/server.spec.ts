@@ -8,7 +8,7 @@ import { manyStrokesText, paintedText, simDoc, tamperedText } from '$lib/server/
 import type { ShareError } from '$lib/sharing/api';
 import { PLAN_ID_RE } from '$lib/sharing/ids';
 import { fundingOnly, maxFunding } from '$lib/sim/levers/fixtures/finance';
-import { DEFAULT_POLICY, serializeSimDoc } from '$lib/sim-page/sim-doc';
+import { DEFAULT_POLICY, SCHEMA2_PUBLISH_MESSAGE, serializeSimDoc } from '$lib/sim-page/sim-doc';
 import { POST as POST_PLAN } from '../plans/+server';
 import { POST } from './+server';
 
@@ -104,7 +104,8 @@ describe('POST /api/policies', () => {
         schema: 2,
         policy: { ...doc.policy, schema: 2, funding: undefined }
       });
-      await expectError(await publish(platform, text), 422, 'unsupported_schema');
+      const body = await expectError(await publish(platform, text), 422, 'unsupported_schema');
+      expect(body.error.message).toBe(SCHEMA2_PUBLISH_MESSAGE);
     });
 
     it('13 pools is 422 invalid_plan at /policy/funding/pools', async () => {
