@@ -35,7 +35,7 @@ import {
   smallProjectsCaveat
 } from './funding-copy';
 import type { FundingDrafts } from './funding-drafts.svelte';
-import { addPresetEdit, isRefused } from './funding-edit';
+import { addPresetEdit, isRefused, newProgramme } from './funding-edit';
 import { fundingPresets, nextFiscal, type FundingPreset } from './funding-presets';
 import { NO_LOAN_RATE } from './funding-sources';
 import { baselineGroups, coverageSteps, programmeSentence } from './funding-view';
@@ -889,6 +889,68 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
     store.redo();
     await expect.poll(sel).toBe('false');
     expect(document.querySelector('[data-prog-row="u-prog-2"] [data-programme-editor]')).toBeNull();
+  });
+
+  it('undo of the programme a loan draft replaces discards the draft (final I1)', async () => {
+    const { store, drafts } = setup(policyWith({ pools: [ownPoolOf('u-pool-1')] }));
+    await page.getByRole('button', { name: /^Pool u-pool-1 ·/ }).click();
+    await page
+      .getByRole('button', { name: addProgrammeName('Pool u-pool-1'), exact: true })
+      .click();
+    await radio('Loan').click();
+    expect(drafts.isOpen).toBe(true);
+    await expect.element(addMoney()).toHaveAttribute('aria-disabled', 'true');
+    store.undo();
+    expect(store.policy.funding.programmes).toHaveLength(0);
+    await expect.poll(() => drafts.isOpen).toBe(false);
+    await expect.element(addMoney()).not.toHaveAttribute('aria-disabled');
+    const add = page.getByRole('button', { name: addProgrammeName('Pool u-pool-1'), exact: true });
+    await expect.element(add).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('undo of the pool a new-programme draft pays from discards the draft (final I1)', async () => {
+    const { store, drafts, calibration } = setup();
+    const pool = ownPoolOf('u-pool-1');
+    store.apply((p) => ({ ...p, funding: { ...p.funding, pools: [pool] } }), 'Added: pool');
+    const { label: _label, ...prog } = newProgramme(pool, calibration.baselineFunding!);
+    void _label;
+    drafts.open({
+      kind: 'programme',
+      prog: {
+        replaces: null,
+        pool: pool.id,
+        prog: { ...prog, instrument: { kind: 'loan', costShare: 0.6, rate: null } }
+      }
+    });
+    await page.getByRole('button', { name: /^Pool u-pool-1 ·/ }).click();
+    await expect.element(page.getByText(DRAFT_LINE)).toBeVisible();
+    await expect.element(addMoney()).toHaveAttribute('aria-disabled', 'true');
+    store.undo();
+    await expect.poll(() => drafts.isOpen).toBe(false);
+    await expect.element(addMoney()).not.toHaveAttribute('aria-disabled');
+    // A redo brings the pool back, not the discarded draft.
+    store.redo();
+    await tick();
+    expect(drafts.isOpen).toBe(false);
+  });
+
+  it('a draft whose place still exists survives an unrelated undo (final I1)', async () => {
+    const { store, drafts } = setup(policyWith({ pools: [ownPoolOf('u-pool-1')] }));
+    await page.getByRole('button', { name: /^Pool u-pool-1 ·/ }).click();
+    await page
+      .getByRole('button', { name: addProgrammeName('Pool u-pool-1'), exact: true })
+      .click();
+    const add = page.getByRole('button', { name: addProgrammeName('Pool u-pool-1'), exact: true });
+    await add.click();
+    expect(store.policy.funding.programmes.map((g) => g.id)).toEqual(['u-prog-1', 'u-prog-2']);
+    (document.querySelector('[data-prog-row="u-prog-1"] button') as HTMLElement).click();
+    await tick();
+    await radio('Loan').click();
+    expect(drafts.draft).toMatchObject({ kind: 'programme', prog: { replaces: 'u-prog-1' } });
+    store.undo();
+    expect(store.policy.funding.programmes.map((g) => g.id)).toEqual(['u-prog-1']);
+    await tick();
+    expect(drafts.isOpen).toBe(true);
   });
 
   it('Sources and tiers lists unavailable presets with reasons and a custom bond rate', async () => {

@@ -77,6 +77,7 @@
     coverageSteps,
     customValues,
     groupOf,
+    poolsOf,
     termRows,
     type BaselineGroup,
     type FundingRowId
@@ -325,6 +326,20 @@
         ? PROGRAMME_LIMIT_DESC
         : null
   );
+  /**
+   * A programme draft is shown only in its pool's list, or in the row of the programme it
+   * replaces. An undo or redo that removes that pool or programme leaves it nowhere, its Discard
+   * unreachable and every add control disabled, so it is discarded (4.6). Not announced: the
+   * live region already says "Undid: …", naming the step that took the draft's place away.
+   * A pool draft names nothing in the store and cannot be stranded this way.
+   */
+  $effect(() => {
+    if (progDraft === null) return;
+    const placed =
+      poolsOf(f, baseline).some((p) => p.id === progDraft.pool) &&
+      (progDraft.replaces === null || f.programmes.some((g) => g.id === progDraft.replaces));
+    if (!placed) drafts.discard();
+  });
   const termInputId = (k: TermKey): string => `${uid}-term-${k}`;
   const terms = $derived(termRows(f, ['grant', 'loan', 'guarantee']));
 
