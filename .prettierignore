@@ -24,3 +24,4 @@ src/lib/data/lesscars/fixtures/v1
 # Owned by release-please: regenerated on every release, never hand-formatted
 CHANGELOG.md
 .release-please-manifest.json
+src/lib/sim-page/fixtures/schema2
