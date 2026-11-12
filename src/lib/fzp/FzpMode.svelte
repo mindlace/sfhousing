@@ -85,7 +85,6 @@
     type LeverStatusState
   } from '$lib/sim-page/lever-status';
   import { spawnSimWorker } from '$lib/sim/client';
-  import { marketLevel } from '$lib/sim/scenario/market';
   import type { LimitOwner } from '$lib/sim/levers/source';
   import type { SimLevers } from '$lib/sim/levers/types';
   import type { SimPhase } from '$lib/sim-page/run-phase.svelte';
@@ -99,7 +98,8 @@
   import type { Day } from '$lib/timelapse/time';
   import { installFzpDebug } from './debug';
   import { HighWater } from './high-water.svelte';
-  import { marketSentence } from './market-view';
+  import { marketText } from './money-view';
+  import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
   import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
   import SimResults from './SimResults.svelte';
   import { DEFAULT_SPEED } from './playback';
@@ -340,6 +340,8 @@
   /** Who the plan effect is for: the Family Zoning Plan on /fzp and under its levers. */
   const copy = $derived(scoreCopy(shownLevers ?? levers ?? null));
   const capacity = $derived(leverStatus.kind === 'current' ? leverStatus.capacity : null);
+  /** The market terms of the levers on show, for the Results' lost-grants line (4.11). */
+  const terms = $derived(resolveTerms(MARKET_TERMS, (shownLevers ?? levers)?.finance.terms ?? {}));
   /**
    * The score on show is from before the latest levers until a timeline at or after their rev
    * arrives (a later reroll's runs on them too); a failed revision leaves the old score standing.
@@ -1026,7 +1028,9 @@
     {copy}
     {capacity}
     stale={leverFailed}
-    market={calibration ? marketSentence(calibration, marketLevel(calibration)) : null}
+    pending={scoreBusy || leversPending}
+    {terms}
+    market={calibration ? marketText(calibration) : null}
   />
 {/snippet}
 

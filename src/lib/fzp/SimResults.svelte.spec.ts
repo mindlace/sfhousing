@@ -18,6 +18,29 @@ import SimResults from './SimResults.svelte';
 import { formatPercent } from '$lib/scoreboard';
 import { scoreAt } from './score-view';
 import { dayFromUtc, monthIndex } from './time';
+import { MONEY_LAST, MONEY_SCORE } from './fixtures/money';
+import { fixtureCalibration } from './fixtures/calibration';
+import { formatDollars, formatMonthYear } from './format';
+import { marketSentence } from './market-view';
+import {
+  affordableLine,
+  allLine,
+  cityLine,
+  fundedLine,
+  marketText,
+  moneyAt,
+  tiersAt
+} from './money-view';
+import { formatCount } from '$lib/scoreboard/format';
+import { resolveTerms } from '$lib/sim/finance';
+import {
+  MONEY_SOURCES,
+  TIER_SOURCES,
+  tierBaselineLabel,
+  type Money
+} from '$lib/sim/scenario/finance-score';
+import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
+import type { ResolvedTerms } from '$lib/timelapse/types';
 
 /** Index 53 of the fixture: 2031-03-15. */
 const DAY = dayFromUtc(2031, 3, 15);
@@ -38,6 +61,9 @@ type Overrides = Partial<{
   copy: ReturnType<typeof scoreCopy>;
   capacity: LeverCapacity | null;
   market: string | null;
+  stale: boolean;
+  pending: boolean;
+  terms: ResolvedTerms;
 }>;
 
 const props = (over: Overrides = {}) => {
@@ -581,5 +607,235 @@ describe('the market paragraph', () => {
     await render(SimResults, { props: props({ market }) });
     openSources();
     expect(sources().querySelector('[data-testid="fzp-market"]')).toBeNull();
+  });
+});
+
+describe('public money and income tiers (funding-ui 4.11)', () => {
+  const money = MONEY_SCORE.money as Money;
+  const tiers = MONEY_SCORE.tiers!;
+  /** The 15th of month `i` of the fixture. */
+  const dayOf = (i: number) => MONEY_SCORE.months[i] + 14;
+  const at = (i: number, over: Overrides = {}) =>
+    props({ score: MONEY_SCORE, day: dayOf(i), highWater: dayOf(i), ...over });
+  const el = (id: string) => document.querySelector(`[data-testid="${id}"]`);
+  const open = async (name: string) => {
+    await page.getByRole('button', { name }).click();
+  };
+  const before = (a: Element, b: Element) =>
+    expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+  it('two blocks in the order of 4.11', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: at(MONEY_LAST) });
+    const els = [
+      page.getByTestId('fzp-net').element(),
+      page.getByText('What the plan added').element(),
+      el('fzp-money')!,
+      document.querySelector('[data-testid="fzp-chart"] svg')!,
+      page.getByRole('meter').first().element(),
+      el('fzp-tiers')!,
+      page.getByTestId('fzp-stages').element(),
+      sources().querySelector('summary')!
+    ];
+    for (let k = 0; k < els.length - 1; k++) before(els[k], els[k + 1]);
+    expect(el('fzp-money')!.querySelector('h2')!.textContent).toBe('Public money');
+    expect(el('fzp-tiers')!.querySelector('h2')!.textContent).toBe('Who the homes are for');
+    before(el('fzp-money-city')!, el('fzp-money-all')!);
+  });
+
+  it("every money and tier figure is the scrubbed month's, limits still show", async () => {
+    await page.viewport(1024, 768);
+    const i = MONEY_LAST - 1;
+    await render(SimResults, { props: at(i) });
+    await open('Money details');
+    await open('Homes by income level');
+    const m = moneyAt(money, i);
+    expect(el('fzp-money-city')!.textContent).toBe(cityLine(m));
+    expect(el('fzp-money-all')!.textContent).toBe(allLine(m, money.publicSpent[i]));
+    expect(el('fzp-money-funded')!.textContent).toBe(fundedLine(m));
+    expect(el('fzp-money-funded')!.textContent).toBe('Funded homes finished: 2. Added homes: 2.');
+    expect(el('fzp-money-lost')).toBeNull();
+    const table = el('fzp-money-sources') as HTMLTableElement;
+    expect(table.caption!.textContent).toBe(
+      `Public money by source, ${formatMonthYear(MONEY_SCORE.months[i])}`
+    );
+    const heads = [...table.tHead!.rows[0].cells].map((c) => c.textContent!.trim());
+    expect(heads).toEqual(['Source', 'Received', 'Spent', 'Lent out']);
+    const bond = [...table.tBodies[0].rows].find((r) => r.cells[0].textContent === 'Added bond')!;
+    expect(bond.cells[3].textContent!.trim()).toBe(formatDollars(2_000_000));
+    const t = tiersAt(tiers, i);
+    expect(el('fzp-tiers-affordable')!.textContent).toBe(affordableLine(t));
+    const tierRows = [...(el('fzp-tiers-table') as HTMLTableElement).tBodies[0].rows];
+    expect(tierRows[0].cells[1].textContent!.trim()).toBe(formatCount(t.rows[0].homes));
+    expect(tierRows[4].cells[1].textContent!.trim()).toBe(formatCount(t.unrecorded));
+    // Not series: the limit statements show whatever the month.
+    expect(el('fzp-money-limits')!.textContent).toContain('Over:');
+    expect(el('fzp-money-limits')!.textContent).toContain('Within:');
+  });
+
+  it('Loans and guarantees lost column', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: at(MONEY_LAST) });
+    await open('Money details');
+    const table = el('fzp-money-sources') as HTMLTableElement;
+    const heads = [...table.tHead!.rows[0].cells].map((c) => c.textContent!.trim());
+    expect(heads).toEqual([
+      'Source',
+      'Received',
+      'Spent',
+      'Lent out',
+      'Repaid',
+      'Loans and guarantees lost'
+    ]);
+    const row = (label: string) =>
+      [...table.tBodies[0].rows].find((r) => r.cells[0].textContent === label)!;
+    // lostCredit, not lost: the City grant lost at the last month is in Spent, not here.
+    expect(row('Added bond').cells[5].textContent!.trim()).toBe(formatDollars(250_000));
+    expect(row('General fund').cells[5].textContent!.trim()).toBe('$0');
+    expect(row('Federal tax credits').cells[1].textContent!.trim()).toBe('no limit');
+    expect(el('fzp-money-lost')!.textContent).toContain(
+      `counted as lost (assumption): ${formatDollars(500_000)}. They are in Spent.`
+    );
+    expect(el('fzp-money-owed')!.textContent).toContain('(not adjusted for inflation)');
+  });
+
+  it('the lost-grants line reads the resolved lossOnExit', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, {
+      props: at(MONEY_LAST, { terms: resolveTerms(undefined, { lossOnExit: 0.5 }) })
+    });
+    await open('Money details');
+    expect(el('fzp-money-lost')!.textContent).toContain('50% counted as lost');
+    expect(el('fzp-money-lost')!.textContent).toContain('custom, not sourced');
+  });
+
+  it('TIER_SOURCES, the dataset baseline provenance and MONEY_SOURCES rendered', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: at(MONEY_LAST) });
+    const tierBox = el('fzp-tiers-sources')!;
+    for (const pv of TIER_SOURCES) expect(tierBox.textContent).toContain(pv.label);
+    const base = MONEY_SCORE.baseline;
+    expect(el('fzp-tiers-baseline')!.textContent).toContain(tierBaselineLabel(base.since));
+    expect(tierBox.textContent).toContain(
+      `${base.provenance.label} (tier ${base.provenance.tier})`
+    );
+    const links = [...tierBox.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+    expect(links).toContain(base.provenance.sources[0].url);
+    // Beside the TIER_SOURCES list: after its last entry, in the same box.
+    const list = tierBox.querySelector('ul')!;
+    before(list, el('fzp-tiers-baseline')!);
+    const moneyBox = el('fzp-money-sources-list')!;
+    for (const pv of MONEY_SOURCES) expect(moneyBox.textContent).toContain(pv.label);
+  });
+
+  it('tier label from tierBaselineLabel', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: at(MONEY_LAST) });
+    const label = tierBaselineLabel(MONEY_SCORE.baseline.since);
+    expect(label).toBe('completed since 30 June 2022 (net)');
+    expect(el('fzp-tiers-label')!.textContent!.replace(/\s+/g, ' ').trim()).toBe(
+      `The Homes column counts homes ${label}, plus those this run completes.`
+    );
+  });
+
+  it('disclosures closed by default', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: at(MONEY_LAST) });
+    for (const name of ['Money details', 'Homes by income level']) {
+      const b = page.getByRole('button', { name }).element();
+      expect(b.getAttribute('aria-expanded')).toBe('false');
+      const panel = document.getElementById(b.getAttribute('aria-controls')!)!;
+      expect(panel.hidden).toBe(true);
+      await open(name);
+      expect(b.getAttribute('aria-expanded')).toBe('true');
+      expect(panel.hidden).toBe(false);
+    }
+  });
+
+  it('captions and th scope=col', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: at(MONEY_LAST) });
+    const tierTable = el('fzp-tiers-table') as HTMLTableElement;
+    expect(tierTable.caption!.textContent).toBe(
+      `Homes by income level against the 2023–2031 targets, ${formatMonthYear(MONEY_SCORE.months[MONEY_LAST])}`
+    );
+    for (const table of [el('fzp-money-sources'), tierTable] as HTMLTableElement[]) {
+      expect(table.caption).not.toBeNull();
+      for (const th of table.tHead!.querySelectorAll('th')) {
+        expect(th.getAttribute('scope')).toBe('col');
+      }
+    }
+    const rows = [...tierTable.tBodies[0].rows].map((r) => r.cells[0].textContent!.trim());
+    expect(rows).toEqual([
+      'Very low',
+      'Low',
+      'Moderate',
+      'Above moderate',
+      'Affordable, income level not recorded'
+    ]);
+    const last = tierTable.tBodies[0].rows[4];
+    expect(last.cells[2].textContent!.trim()).toBe('—');
+    expect(last.cells[2].getAttribute('aria-label')).toBe('none');
+    expect(tierTable.className).toContain('table-fixed');
+  });
+
+  it('pending sets aria-busy on both', async () => {
+    await page.viewport(1024, 768);
+    const screen = await render(SimResults, { props: at(MONEY_LAST) });
+    expect(el('fzp-money')!.getAttribute('aria-busy')).toBeNull();
+    expect(el('fzp-tiers')!.getAttribute('aria-busy')).toBeNull();
+    await screen.rerender(at(MONEY_LAST, { pending: true }));
+    await expect.element(page.getByTestId('fzp-money')).toHaveAttribute('aria-busy', 'true');
+    await expect.element(page.getByTestId('fzp-tiers')).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('stale keeps values under the stale line', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: at(MONEY_LAST, { stale: true }) });
+    const line = page.getByTestId('fzp-score-stale').element();
+    before(line, el('fzp-money-city')!);
+    expect(el('fzp-money-city')!.textContent).toBe(cityLine(moneyAt(money, MONEY_LAST)));
+    expect(el('fzp-money')!.getAttribute('aria-busy')).toBeNull();
+    expect(el('fzp-tiers')).not.toBeNull();
+  });
+
+  it('no blocks without money and tiers', async () => {
+    await page.viewport(1024, 768);
+    const bare = { ...TIMELINE_SCORE };
+    delete bare.tiers;
+    const screen = await render(SimResults, { props: props({ score: bare }) });
+    expect(el('fzp-money')).toBeNull();
+    expect(el('fzp-tiers')).toBeNull();
+    await screen.rerender(props({ score: TIMELINE_SCORE }));
+    await expect.element(page.getByTestId('fzp-tiers')).toBeInTheDocument();
+    expect(el('fzp-money')).toBeNull();
+  });
+
+  it('no limits heading when limits is empty', async () => {
+    await page.viewport(1024, 768);
+    const score = { ...MONEY_SCORE, money: { ...money, limits: [] } };
+    await render(SimResults, {
+      props: props({ score, day: dayOf(MONEY_LAST), highWater: dayOf(MONEY_LAST) })
+    });
+    await open('Money details');
+    expect(el('fzp-money-limits')).toBeNull();
+    expect(document.body.textContent).not.toContain('Limits on the City borrowing');
+  });
+
+  it('market paragraph ends with MARKET_FUNDING_SENTENCE under private, Release 1 text under all', async () => {
+    await page.viewport(1024, 768);
+    const cal = fixtureCalibration();
+    const priv = marketText(cal)!;
+    expect(priv.endsWith(` ${MARKET_FUNDING_SENTENCE}`)).toBe(true);
+    const screen = await render(SimResults, { props: props({ market: priv }) });
+    openSources();
+    expect(el('fzp-market')!.textContent!.trim()).toBe(priv);
+    const all = structuredClone(cal);
+    delete all.baselineFunding;
+    const r1 = marketText(all)!;
+    expect(r1).toBe(marketSentence(all, 'all'));
+    await screen.rerender(props({ market: r1 }));
+    await expect.element(page.getByTestId('fzp-market')).toHaveTextContent(r1);
+    expect(el('fzp-market')!.textContent).not.toContain(MARKET_FUNDING_SENTENCE);
   });
 });
