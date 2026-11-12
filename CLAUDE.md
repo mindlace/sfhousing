@@ -47,7 +47,7 @@ Fetch the file when working in the relevant area:
 - **Finance data (`affordableHomes`, `byTier`, `affordableRoutes`, `baselineFunding`, `funding.json`, the MOHCD source)** — [docs/dev/finance-data.md](docs/dev/finance-data.md)
 - **Funded starts, the funding queue and the pools in the engine (`SimInput.finance`, `off`, latents, the line and its order, the award rule, re-pricing and lapse, the ledger protocol, the card's funding fields, `sampleAdvance`, budgets)** — [docs/dev/finance-engine.md](docs/dev/finance-engine.md)
 - **Funding levers (`FinanceLevers`, `buildFinance`, `off` spans, the twin, the worker's guard, the finance warm task)** — [docs/dev/finance-levers.md](docs/dev/finance-levers.md)
-- **Public money on `/sim` (funding levers and presets, schema 3 loader; the Funding tab, Results money and income rows, card line and notices as `funding-ui` adds them)** — [docs/dev/sim-funding.md](docs/dev/sim-funding.md)
+- **Public money on `/sim` (`FinanceLevers`, schema 3 loader, presets and their sources, Funding tab, Results money and income rows, card line, notices)** — [docs/dev/sim-funding.md](docs/dev/sim-funding.md)
 - **Homes by income tier and public money in the results (`TimelineScore.tiers` and `money`, `tiersOf`, the ledger series and their identities, per added home, limit statements)** — [docs/dev/finance-score.md](docs/dev/finance-score.md)
 - **Design, specs and plans** — `docs/superpowers/design/`, `docs/superpowers/specs/`, `docs/superpowers/plans/`
 
