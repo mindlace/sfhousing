@@ -374,7 +374,7 @@ test('kind redirects: /p/<policy id> lands on /s/<policy id>', async ({ page }) 
 
 // ---- schema-2 policies ------------------------------------------------------------------------------
 
-test('a stored schema-2 policy opens, remixes and republishes as schema 3', async ({ page }) => {
+test('a stored schema-2 policy opens and remixes as schema 3', async ({ page }) => {
   const id = await seedPlanRow(page.request, {
     body: SCHEMA2_TEXT,
     datasetVersion: 'fixture-0',

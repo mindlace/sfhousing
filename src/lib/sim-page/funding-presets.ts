@@ -290,7 +290,7 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
       'A revolving construction-loan fund',
       'A $100 million City fund that lends private builders a tenth of the building cost below the market rate until the building is finished; the saving on each home is small, so it adds only a few private starts, and the loan size is a guess, not from any source.',
       'city',
-      () => needsModel() ?? loanTerms(revolvingLoan),
+      () => loanTerms(revolvingLoan) ?? needsModel(),
       () => {
         const p = pool('revolving-fund', 'generalRevenue', 'Revolving construction-loan fund', [
           { kind: 'once', day: fiscal, dollars: REVOLVING_FUND_SIZE.value }
@@ -327,7 +327,7 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
       'The SF public bank, as planned',
       "The planned public bank's lending to affordable housing over its first five years at its planned rate; each loan saves a project little, so it stretches City money only slightly, and the loan size is a guess, not from any source.",
       'bank',
-      () => needsGrantBase() ?? loanTerms(bankLoan),
+      () => loanTerms(bankLoan) ?? needsGrantBase(),
       () => {
         const p = pool(
           'public-bank',
