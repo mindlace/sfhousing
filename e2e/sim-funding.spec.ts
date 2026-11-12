@@ -79,14 +79,16 @@ const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const leverStatus = (page: Page) =>
   page.evaluate(() => (window as FzpWin).__sfhFzp!.levers) as Promise<SfhFzpDebug['levers']>;
 
-/** The session is ready (the worker's first timeline) and its levers are in force. */
+/**
+ * The session is ready (the worker's first timeline) and its levers are in force. Waits on the
+ * page's own signals (`__sfhFzp.phase`, `__sfhFzp.levers`) for as long as the test allows, as
+ * `waitRanked` in e2e/helpers/run.ts does: no poll budget of its own.
+ */
 async function waitSession(page: Page): Promise<void> {
-  await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready', undefined, {
-    timeout: 20_000
+  await page.waitForFunction(() => {
+    const f = (window as FzpWin).__sfhFzp;
+    return f?.phase === 'ready' && f.levers.status === 'current';
   });
-  await expect
-    .poll(async () => (await leverStatus(page)).status, { timeout: 20_000 })
-    .toBe('current');
 }
 
 /** /sim (or `path`), the session ready. The map is not waited for: no test here reads it. */
@@ -97,17 +99,12 @@ async function gotoSim(page: Page, path = '/sim'): Promise<void> {
   await waitSession(page);
 }
 
-/** Waits for a lever revision above `before` to be in force. */
+/** Waits for a lever revision above `before` to be in force (`__sfhFzp.levers`). */
 async function expectNewRevision(page: Page, before: number | null): Promise<void> {
-  await expect
-    .poll(
-      async () => {
-        const l = await leverStatus(page);
-        return l.status === 'current' && (l.sentRev ?? -1) > (before ?? -1);
-      },
-      { timeout: 20_000 }
-    )
-    .toBe(true);
+  await page.waitForFunction((b) => {
+    const l = (window as FzpWin).__sfhFzp!.levers;
+    return l.status === 'current' && (l.sentRev ?? -1) > b;
+  }, before ?? -1);
 }
 
 const sentRev = async (page: Page): Promise<number | null> => (await leverStatus(page)).sentRev;
@@ -237,9 +234,10 @@ async function expectNoHorizontalScroll(page: Page): Promise<void> {
 
 // ---- 1. the tab -----------------------------------------------------------------------------------
 
-test('1. Funding tab, rows and a11y in every state', async ({ page, isMobile }) => {
-  // Ten axe scans of the whole page: about 8 s idle, each scan a few seconds under a full run.
-  test.setTimeout(60_000);
+// Spec 6 test 1 in four tests, each scanning two or three of its states, so no test carries ten
+// whole-page axe scans (several seconds each under a full run) inside one test's budget.
+
+test('1a. Funding tab and its rows, a11y light and dark', async ({ page }) => {
   await gotoSim(page);
   await openFunding(page);
   const tabs = panel(page).getByRole('tab');
@@ -260,7 +258,11 @@ test('1. Funding tab, rows and a11y in every state', async ({ page, isMobile }) 
   await expectNoA11yViolations(page);
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await expectNoA11yViolations(page);
-  await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
+});
+
+test('1b. a11y with Coverage over time and Sources and tiers open', async ({ page }) => {
+  await gotoSim(page);
+  await openFunding(page);
 
   // "Coverage over time" open.
   const coverage = panel(page).getByRole('button', { name: 'Coverage over time' });
@@ -274,7 +276,11 @@ test('1. Funding tab, rows and a11y in every state', async ({ page, isMobile }) 
   await sources.locator('summary').click();
   await expect(sources).toHaveAttribute('open', '');
   await expectNoA11yViolations(page);
-  await sources.locator('summary').click();
+});
+
+test('1c. a11y with the Add money chooser open and a pool editor expanded', async ({ page }) => {
+  await gotoSim(page);
+  await openFunding(page);
 
   // The "+ Add money" chooser open, then a pool's editor expanded (a preset selects its row).
   await addMoney(page).click();
@@ -282,11 +288,19 @@ test('1. Funding tab, rows and a11y in every state', async ({ page, isMobile }) 
   await expectNoA11yViolations(page);
   const preset = await bondPreset(page);
   await panel(page).getByRole('button', { name: preset.label, exact: true }).click();
-  const pool = preset.pools[0];
-  const row = poolRow(page, pool.id);
+  const row = poolRow(page, preset.pools[0].id);
   await expect(row.locator(':scope > button')).toHaveAttribute('aria-pressed', 'true');
   await expect(row.locator('[data-funding-editor]')).toBeVisible();
   await expectNoA11yViolations(page);
+});
+
+test('1d. a11y with a programme editor as a grant, a loan draft and a loan', async ({
+  page,
+  isMobile
+}) => {
+  await gotoSim(page);
+  await openFunding(page);
+  const preset = await addBond(page);
 
   // A programme editor expanded as a grant, with the income-mix fieldset.
   const prog = progRow(page, preset.programmes[0].id);
@@ -436,16 +450,19 @@ test('6. the programme editor: a loan is a draft until its rate', async ({ page 
   const prog = progRow(page, id);
   await expect(prog.locator(':scope > button')).toHaveAttribute('aria-pressed', 'true');
 
-  // A loan on a bond has no sourced rate: a draft, so nothing reaches the levers.
+  // A loan on a bond has no sourced rate: a draft, so nothing reaches the store or the levers.
+  // The levers are sent from the store, and the Undo name, the autosave and the lever revision all
+  // follow it: with the draft line shown, each still holds the grant's state.
+  const undo = panel(page).getByRole('button', { name: /^Undo/ });
+  const undoName = await undo.getAttribute('aria-label');
   before = await sentRev(page);
   await prog.getByRole('radio', { name: 'Loan', exact: true }).click();
   await expect(prog.getByText(DRAFT_LINE)).toBeVisible();
-  for (let k = 0; k < 5; k++) {
-    await page.waitForTimeout(100);
-    const l = await leverStatus(page);
-    expect(l.sentRev).toBe(before);
-    expect(l.status).toBe('current');
-  }
+  await expect(undo).toHaveAttribute('aria-label', undoName!);
+  expect(await storedFunding(page)).toEqual(f0);
+  const l = await leverStatus(page);
+  expect(l.sentRev).toBe(before);
+  expect(l.status).toBe('current');
 
   // The rate completes it: one revision.
   await commit(prog.getByRole('spinbutton', { name: /^Loan interest rate, %/ }), '4');

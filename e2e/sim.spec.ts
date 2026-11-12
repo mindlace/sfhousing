@@ -835,13 +835,11 @@ test('a run carries homes by tier and, with the baseline funding, money with no 
   await gotoSim(page);
   await openTab(page, 'Protect');
   await page.getByRole('button', { name: 'Run', exact: true }).click();
-  await expect.poll(() => fzp(page, 'runPhase')).toBe('run');
-  await expect
-    .poll(async () => (await fzp(page, 'score'))?.tiers !== undefined, { timeout: 20_000 })
-    .toBe(true);
-  await expect
-    .poll(() => fzp(page, 'day'), { timeout: 20_000 })
-    .toBeGreaterThan(await fzp(page, 'asOf'));
+  // The run's own timeline has answered: in Run, past the present, its score carrying tiers.
+  await page.waitForFunction(() => {
+    const f = (window as FzpWin).__sfhFzp!;
+    return f.runPhase === 'run' && f.day > f.asOf && f.score?.tiers !== undefined;
+  });
   const score = (await fzp(page, 'score'))!;
   const tiers = score.tiers!;
   expect(tiers.targets).toHaveLength(4);
