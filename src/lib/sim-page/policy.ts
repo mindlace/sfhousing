@@ -550,12 +550,14 @@ export function compileLevers(p: SimPolicy, lots: Lots): SimLevers | null {
   const paint = paintEdits(p, lots);
   if (rules === null || paint === null) return null;
   return {
-    schema: 2,
+    schema: 3,
     rules,
     paint,
     protect: { ...p.protect },
     ...compileTiming(p.timing.current),
-    compare: isDefaultPolicy(p) ? 'preFzp' : 'fzp'
+    compare: isDefaultPolicy(p) ? 'preFzp' : 'fzp',
+    // Placeholder: the policy's own funding replaces it (finance-levers Task 4).
+    finance: structuredClone(DEFAULT_LEVERS.finance)
   };
 }
 

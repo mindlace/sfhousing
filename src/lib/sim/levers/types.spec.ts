@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { maxFunding } from './fixtures/finance';
 import { DEFAULT_LEVERS, LeverFormatError, parseSimLevers, type SimLevers } from './types';
 
 function with_(patch: Record<string, unknown>): unknown {
@@ -61,6 +62,31 @@ describe('parseSimLevers', () => {
 
   it('rejects a schema-1 document', () => {
     expect(pathOf({ ...DEFAULT_LEVERS, schema: 1 })).toBe('schema');
+  });
+
+  it('is schema 3 and rejects schema 2 with its message', () => {
+    expect(DEFAULT_LEVERS.schema).toBe(3);
+    expect(() => parseSimLevers({ ...DEFAULT_LEVERS, schema: 2 })).toThrow(
+      new LeverFormatError('schema', 'expected 3, got 2')
+    );
+  });
+
+  it('defaults to empty funding and parses a full one', () => {
+    expect(DEFAULT_LEVERS.finance).toEqual({
+      baselineScale: [],
+      pools: [],
+      programmes: [],
+      terms: {}
+    });
+    const full = { ...structuredClone(DEFAULT_LEVERS), finance: maxFunding() };
+    expect(parseSimLevers(full)).toEqual(full);
+  });
+
+  it('names a bad finance field with its lever path', () => {
+    const f = maxFunding();
+    f.pools[0].id = 'pool-1';
+    expect(pathOf(with_({ finance: f }))).toBe('finance.pools[0].id');
+    expect(pathOf({ ...DEFAULT_LEVERS, finance: undefined })).toBe('finance');
   });
 
   it.each([-1, 256, 2.5])('rejects stories of %s', (stories) => {
