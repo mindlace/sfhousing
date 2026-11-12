@@ -1,12 +1,16 @@
 /**
- * The funding part of the lever document (`FinanceLevers`, spec 2026-11-09 section 4.1): its
- * limits and `parseFinanceLevers`. Worker-safe: hand-written guards, no zod, no DOM. `types.ts`
+ * The funding part of the lever document (`FinanceLevers`, spec 2026-11-09 sections 4.1 and 4.4):
+ * its limits, `parseFinanceLevers`, and `buildFinance`, which compiles it onto the dataset's
+ * baseline funding for the plan. Worker-safe: hand-written guards, no zod, no DOM. `types.ts`
  * and this file import each other at call time only.
  */
-import { MARKET_TERMS, resolveTerms, validateInstrument } from '$lib/sim/finance';
+import { MARKET_TERMS, missingTerms, resolveTerms, validateInstrument } from '$lib/sim/finance';
 import { CalibrationFormatError, checkPool } from '$lib/timelapse/model';
+import { inflowArrivals } from '../scenario/funding';
+import type { SimInput } from '../scenario/types';
 import {
   INCOME_TIERS,
+  type Day,
   type Inflow,
   type Instrument,
   type Pool,
@@ -265,4 +269,144 @@ export function parseFinanceLevers(v: unknown, path: string): FinanceLevers {
   );
 
   return { baselineScale, pools, programmes, terms: parseTerms(r.terms, `${path}.terms`) };
+}
+
+type Finance = NonNullable<SimInput['finance']>;
+type ScaleEntry = FinanceLevers['baselineScale'][number];
+type OffSpan = Finance['off'][number];
+const MS_PER_DAY = 86_400_000;
+
+const isEmpty = (f: FinanceLevers): boolean =>
+  f.baselineScale.length === 0 &&
+  f.pools.length === 0 &&
+  f.programmes.length === 0 &&
+  Object.keys(f.terms).length === 0;
+
+/** True when `a` falls on the UTC month and date of `b` (29 February matches only itself). */
+function sameMonthDay(a: Day, b: Day): boolean {
+  const x = new Date(a * MS_PER_DAY);
+  const y = new Date(b * MS_PER_DAY);
+  return x.getUTCMonth() === y.getUTCMonth() && x.getUTCDate() === y.getUTCDate();
+}
+
+interface Run {
+  lo: Day;
+  /** Inclusive; null for the open last run. */
+  hi: Day | null;
+  scale: number;
+}
+
+/** The runs a pool's sorted entries cut time into from `asOf`; empty runs are left out. */
+function runsOf(entries: readonly ScaleEntry[], asOf: Day): Run[] {
+  const runs: Run[] = [];
+  const push = (lo: Day, hi: Day | null, scale: number) => {
+    const from = Math.max(lo, asOf);
+    if (hi === null || hi >= from) runs.push({ lo: from, hi, scale });
+  };
+  push(asOf, entries[0].from - 1, 1);
+  entries.forEach((e, k) => {
+    const next = entries[k + 1];
+    push(e.from, next === undefined ? null : next.from - 1, e.scale);
+  });
+  return runs;
+}
+
+/** A capped pool's inflows under its runs (spec 4.4 step 5). Arrivals only from `inflowArrivals`. */
+function scaleInflows(inflows: readonly Inflow[], runs: readonly Run[]): Inflow[] {
+  const out: { first: Day; inflow: Inflow }[] = [];
+  const once = (day: Day, dollars: number) => {
+    if (dollars > 0) out.push({ first: day, inflow: { kind: 'once', day, dollars } });
+  };
+  for (const inflow of inflows) {
+    for (const run of runs) {
+      if (run.scale === 0) continue;
+      const days = inflowArrivals(inflow, run.lo, run.hi ?? LAST_DAY);
+      if (days.length === 0) continue;
+      if (inflow.kind === 'once') {
+        once(days[0], Math.round(inflow.dollars * run.scale));
+        continue;
+      }
+      const dollars = Math.round(inflow.dollarsPerYear * run.scale);
+      if (dollars === 0) continue;
+      if (run.hi !== null) {
+        for (const d of days) once(d, dollars);
+        continue;
+      }
+      // The open run: restart the yearly inflow on a true anniversary, so a 29 February inflow
+      // never restarts from a 28 February; any earlier arrival of the run stays a `once`.
+      const a = days.find((d) => sameMonthDay(d, inflow.from));
+      for (const d of days) if (a === undefined || d < a) once(d, dollars);
+      if (a !== undefined)
+        out.push({
+          first: a,
+          inflow: { kind: 'yearly', from: a, to: inflow.to, dollarsPerYear: dollars }
+        });
+    }
+  }
+  return out.sort((x, y) => x.first - y.first).map((x) => x.inflow);
+}
+
+/** One `off` span per maximal stretch of 0-scale entries (spec 4.4 step 5, `to` inclusive). */
+function offSpans(pool: string, entries: readonly ScaleEntry[]): OffSpan[] {
+  const spans: OffSpan[] = [];
+  let from: Day | null = null;
+  for (const e of entries) {
+    if (e.scale === 0) from ??= e.from;
+    else if (from !== null) {
+      spans.push({ pool, from, to: e.from - 1 });
+      from = null;
+    }
+  }
+  if (from !== null) spans.push({ pool, from, to: null });
+  return spans;
+}
+
+/**
+ * The plan's `finance` (spec 2026-11-09 section 4.4, F17): the dataset's baseline `base` under
+ * the levers' baseline scales, then the added pools and programmes, on the resolved terms. Empty
+ * levers return `base` itself; no baseline returns undefined. Throws `LeverFormatError` for a
+ * baseline id the data lacks or a programme needing a term that is not resolved. Never mutates.
+ */
+export function buildFinance(
+  base: SimInput['finance'],
+  f: FinanceLevers,
+  asOf: Day
+): SimInput['finance'] {
+  if (base === undefined) return undefined;
+  if (isEmpty(f)) return base;
+
+  const baseIds = new Set(base.pools.map((p) => p.id));
+  f.baselineScale.forEach((e, i) => {
+    if (!baseIds.has(e.pool))
+      fail(`finance.baselineScale[${i}].pool`, `no baseline pool ${e.pool} in this data`);
+  });
+  f.programmes.forEach((g, i) => {
+    if (!g.pool.startsWith('u-') && !baseIds.has(g.pool))
+      fail(`finance.programmes[${i}].pool`, `no baseline pool ${g.pool} in this data`);
+  });
+
+  const terms = resolveTerms(MARKET_TERMS, f.terms);
+  const needs = (g: Programme, path: string) => {
+    const key = missingTerms(g.instrument, terms)[0];
+    if (key !== undefined) fail(path, `${g.instrument.kind} needs ${key}, which is not sourced`);
+  };
+  base.programmes.forEach((g, i) => needs(g, `base.programmes[${i}].instrument`));
+  f.programmes.forEach((g, i) => needs(g, `finance.programmes[${i}].instrument`));
+
+  const off: OffSpan[] = [...base.off];
+  const pools = base.pools.map((pool) => {
+    const entries = f.baselineScale.filter((e) => e.pool === pool.id);
+    if (entries.length === 0) return pool;
+    off.push(...offSpans(pool.id, entries));
+    if (pool.uncapped) return pool;
+    return { ...pool, inflows: scaleInflows(pool.inflows, runsOf(entries, asOf)) };
+  });
+
+  return {
+    pools: [...pools, ...f.pools],
+    programmes: [...base.programmes, ...f.programmes],
+    off,
+    slope: base.slope,
+    terms
+  };
 }
