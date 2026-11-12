@@ -1,5 +1,5 @@
 import type { Plan } from '$lib/plan';
-import { PLAN_CODEC, type DocCodec } from './doc-codec';
+import { PLAN_CODEC, schemaOfText, type DocCodec } from './doc-codec';
 import {
   getStorage,
   preserveCorrupt,
@@ -15,6 +15,8 @@ export type AutosaveNotice =
 export interface RestoreResult<D = Plan> {
   plan: D;
   notice: AutosaveNotice | null;
+  /** The schema of a document this load upgraded; absent when it was current (or already stored upgraded). */
+  upgradedFrom?: number;
 }
 type LastPublished = { id: string; hash: string };
 
@@ -90,7 +92,10 @@ export class Autosave<D = Plan> {
         this.lastPublished = undefined;
         this.#lastWritten = null;
         this.#write(this.#codec.serialize(plan));
-        return { plan, notice: null };
+        const from = schemaOfText(handoff);
+        return from !== null && from !== this.#codec.schema(h.value)
+          ? { plan, notice: null, upgradedFrom: from }
+          : { plan, notice: null };
       }
     }
 
@@ -113,15 +118,22 @@ export class Autosave<D = Plan> {
       case 'ok': {
         this.lastPublished = read.record.lastPublished;
         const from = this.#codec.datasetVersion(read.plan);
+        const up = read.upgradedFrom === undefined ? {} : { upgradedFrom: read.upgradedFrom };
         if (from === this.#current) {
-          this.#lastWritten = this.#codec.serialize(read.plan);
-          this.status = 'saved';
-          return { plan: read.plan, notice: null };
+          if (read.upgradedFrom !== undefined) {
+            // Written back at once: the upgrade is reported on this load and never again.
+            this.#lastWritten = null;
+            this.#write(this.#codec.serialize(read.plan));
+          } else {
+            this.#lastWritten = this.#codec.serialize(read.plan);
+            this.status = 'saved';
+          }
+          return { plan: read.plan, notice: null, ...up };
         }
         const plan = this.#rebase(read.plan);
         this.#lastWritten = null;
         this.#write(this.#codec.serialize(plan));
-        return { plan, notice: { kind: 'rebased', from, to: this.#current } };
+        return { plan, notice: { kind: 'rebased', from, to: this.#current }, ...up };
       }
       case 'corrupt':
       case 'future': {

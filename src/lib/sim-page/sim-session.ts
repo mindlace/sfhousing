@@ -43,7 +43,7 @@ function autosaveNotice(n: AutosaveNotice | null): SimNotice | null {
  * cannot run then, and the next load reconciles.
  */
 export function restoreSimDoc(
-  r: { plan: SimDoc; notice: AutosaveNotice | null },
+  r: { plan: SimDoc; notice: AutosaveNotice | null; upgradedFrom?: number },
   cal: Calibration | null,
   remixFrom?: string
 ): { doc: SimDoc; notices: SimNotice[] } {

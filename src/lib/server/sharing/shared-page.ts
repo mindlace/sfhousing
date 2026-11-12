@@ -4,7 +4,7 @@ import { error, redirect } from '@sveltejs/kit';
 import type { Plan } from '$lib/plan';
 import { getDb } from '$lib/server/db';
 import { copyFor } from '$lib/sharing/copy';
-import { PLAN_CODEC, type DocCodec } from '$lib/sharing/doc-codec';
+import { PLAN_CODEC, schemaOfText, type DocCodec } from '$lib/sharing/doc-codec';
 import { PLAN_ID_RE } from '$lib/sharing/ids';
 import { CODECS, otherCodec } from './codecs';
 import { findPlanById } from './store';
@@ -23,6 +23,8 @@ export interface SharedDocData<D> {
   createdAt: string;
   currentDatasetVersion: string;
   datasetNotice: DatasetNotice;
+  /** The stored body's schema when loading upgraded it; absent otherwise. The row is not rewritten. */
+  upgradedFrom?: number;
 }
 
 export interface SharedPlanData {
@@ -69,12 +71,14 @@ export async function loadSharedDoc<D>(
     datasetNotice = manifest ? 'remix' : 'gone';
   }
 
+  const from = schemaOfText(row.body);
   return {
     id,
     doc,
     createdAt: row.createdAt.toISOString(),
     currentDatasetVersion: current,
-    datasetNotice
+    datasetNotice,
+    ...(from !== null && from !== codec.schema(doc) ? { upgradedFrom: from } : {})
   };
 }
 

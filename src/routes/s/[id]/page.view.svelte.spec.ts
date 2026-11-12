@@ -217,4 +217,14 @@ describe('/s/[id] read-only view', () => {
     expect(page.getByRole('dialog').elements()).toHaveLength(0);
     expect(nav.goto[0].opts?.state?.sfhSimRemix).toEqual({ from: 'Abcdefg2' });
   });
+
+  it('Remix hands the upgrade over: goto state carries upgradedFrom', async () => {
+    await render(PageHost, { props: { data: { ...data(painted(), null), upgradedFrom: 2 } } });
+    await banner().getByRole('button', { name: 'Remix', exact: true }).click();
+    await expect.poll(() => nav.goto.length).toBe(1);
+    expect(nav.goto[0].url).toBe('/sim');
+    expect(nav.goto[0].opts).toEqual({
+      state: { sfhSimRemix: expect.objectContaining({ upgradedFrom: 2 }) }
+    });
+  });
 });

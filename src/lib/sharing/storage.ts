@@ -1,5 +1,5 @@
 import type { Plan } from '$lib/plan';
-import { PLAN_CODEC, type DocCodec } from './doc-codec';
+import { PLAN_CODEC, schemaOfText, type DocCodec } from './doc-codec';
 
 export const PLAN_KEY = PLAN_CODEC.storageKey;
 export const corruptKey = (iso: string) => PLAN_CODEC.corruptKey(iso);
@@ -23,7 +23,7 @@ export function getStorage(): Storage | null {
 
 export type ReadResult<D = Plan> =
   | { kind: 'missing' }
-  | { kind: 'ok'; record: LocalPlanRecord; plan: D }
+  | { kind: 'ok'; record: LocalPlanRecord; plan: D; upgradedFrom?: number }
   | { kind: 'corrupt'; raw: string }
   | { kind: 'future'; raw: string };
 
@@ -64,6 +64,9 @@ export function readRecord<D = Plan>(
   const record: LocalPlanRecord = { v: 1, savedAt: parsed.savedAt, plan: parsed.plan };
   if (parsed.lastPublished)
     record.lastPublished = { id: parsed.lastPublished.id, hash: parsed.lastPublished.hash };
+  const from = schemaOfText(parsed.plan);
+  if (from !== null && from !== codec.schema(p.value))
+    return { kind: 'ok', record, plan: p.value, upgradedFrom: from };
   return { kind: 'ok', record, plan: p.value };
 }
 

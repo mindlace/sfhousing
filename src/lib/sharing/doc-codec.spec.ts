@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parsePlan, serializePlan, type Result } from '$lib/plan';
 import { Autosave } from './autosave.svelte';
 import { COPY, copyFor, tooLarge } from './copy';
-import { PLAN_CODEC, type DocCodec } from './doc-codec';
+import { PLAN_CODEC, schemaOfText, type DocCodec } from './doc-codec';
 import { MemoryStorage } from './fixtures/memory-storage';
 import { readRecord } from './storage';
 
@@ -87,5 +87,15 @@ describe('Autosave with a custom codec', () => {
     const read = readRecord(s, TEST_CODEC);
     expect(read.kind).toBe('ok');
     if (read.kind === 'ok') expect(read.plan).toEqual({ n: 2, v: 'v1' });
+  });
+});
+
+describe('schemaOfText', () => {
+  it('reads the integer schema of a JSON text, else null', () => {
+    expect(schemaOfText('{"schema":2}')).toBe(2);
+    expect(schemaOfText('nope')).toBeNull();
+    expect(schemaOfText('{"schema":"2"}')).toBeNull();
+    expect(schemaOfText('{"schema":2.5}')).toBeNull();
+    expect(schemaOfText('[2]')).toBeNull();
   });
 });

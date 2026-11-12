@@ -29,7 +29,19 @@ import { LIMITS_LAYER_ID } from '$lib/map/height/limits-layer';
 import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
 import { tinyLimits } from '$lib/map/height/test/fixtures';
 import { clampBbox } from './lid-request';
+import defaultRecord2 from './fixtures/schema2/default-record.json?raw';
 
+const restoreSpy = vi.hoisted(() => vi.fn());
+vi.mock('./sim-session', async (orig) => {
+  const mod = await orig<typeof import('./sim-session')>();
+  return {
+    ...mod,
+    restoreSimDoc: (...args: Parameters<typeof mod.restoreSimDoc>) => {
+      restoreSpy(...args);
+      return mod.restoreSimDoc(...args);
+    }
+  };
+});
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 const workers = vi.hoisted(() => [] as import('$lib/fzp/test/fake-worker').FakeScenarioWorker[]);
 vi.mock('$lib/sim/client', async (orig) => {
@@ -2273,5 +2285,23 @@ describe('SimPage opening a published policy (/s)', () => {
     const init = workers.at(-1)!.lastOf('initScenario')!;
     expect(init.levers).toBeDefined();
     expect('awaitLevers' in init).toBe(false);
+  });
+});
+
+describe('SimPage upgradedFrom', () => {
+  it('edit: a schema-2 record reaches restoreSimDoc as upgradedFrom 2', async () => {
+    restoreSpy.mockClear();
+    const mem = new MemoryStorage();
+    mem.setItem(SIM_KEY, defaultRecord2.trim());
+    await setup({ storage: () => mem });
+    await expect.poll(() => restoreSpy.mock.calls.length).toBeGreaterThan(0);
+    expect(restoreSpy.mock.calls[0][0]).toMatchObject({ upgradedFrom: 2 });
+  });
+
+  it('view: the upgradedFrom prop reaches the call that builds opened', async () => {
+    restoreSpy.mockClear();
+    await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY, upgradedFrom: 2 });
+    await expect.poll(() => restoreSpy.mock.calls.length).toBeGreaterThan(0);
+    expect(restoreSpy.mock.calls[0][0]).toMatchObject({ upgradedFrom: 2 });
   });
 });

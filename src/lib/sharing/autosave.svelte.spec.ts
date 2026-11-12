@@ -3,7 +3,10 @@ import { OPS_MAX, serializePlan, type Plan, type PlanOp } from '$lib/plan';
 import { DEFAULT_POLICY, SIM_CODEC, simDocProblems, type SimDoc } from '$lib/sim-page/sim-doc';
 import { MemoryStorage } from './fixtures/memory-storage';
 import { Autosave } from './autosave.svelte';
+import { schemaOfText } from './doc-codec';
 import { PLAN_KEY, writeRecord } from './storage';
+import defaultRecord from '../sim-page/fixtures/schema2/default-record.json?raw';
+import paintedText from '../sim-page/fixtures/schema2/painted.json?raw';
 
 const op = (id: string): PlanOp => ({ kind: 'erase', radiusM: 5, path: [[-122.41, 37.76]], id });
 const plan = (n: number, over: Partial<Plan> = {}): Plan => ({
@@ -419,5 +422,58 @@ describe('Autosave writable (ruling R4)', () => {
     expect(a.lastPublished).toEqual(lp);
     expect(writes()).toHaveLength(0);
     expect(a.status).toBe('off');
+  });
+});
+
+describe('Autosave upgradedFrom (a schema-2 policy)', () => {
+  const simAutosave = (s: MemoryStorage, currentVersion = 'fixture-0') =>
+    new Autosave<SimDoc>({ currentVersion, codec: SIM_CODEC, storage: () => s, now: () => NOW });
+  const seeded = () => {
+    const s = new MemoryStorage();
+    s.setItem(SIM_CODEC.storageKey, defaultRecord.trim());
+    return s;
+  };
+  const storedText = (s: MemoryStorage) =>
+    JSON.parse(s.getItem(SIM_CODEC.storageKey) as string).plan as string;
+
+  it('reports the upgrade once and writes schema 3 back', () => {
+    const s = seeded();
+    const first = simAutosave(s).restore();
+    expect(first.upgradedFrom).toBe(2);
+    expect(first.notice).toBeNull();
+    expect(schemaOfText(storedText(s))).toBe(3);
+    const second = simAutosave(s).restore();
+    expect(second).not.toHaveProperty('upgradedFrom');
+  });
+
+  it('on another dataset version: rebased notice and upgradedFrom 2', () => {
+    const s = seeded();
+    const r = simAutosave(s, 'fixture-9').restore();
+    expect(r.notice).toEqual({ kind: 'rebased', from: 'fixture-0', to: 'fixture-9' });
+    expect(r.upgradedFrom).toBe(2);
+    expect(schemaOfText(storedText(s))).toBe(3);
+    expect(simAutosave(s, 'fixture-9').restore()).not.toHaveProperty('upgradedFrom');
+  });
+
+  it('the handoff branch reports the upgrade of the handoff text', () => {
+    const s = new MemoryStorage();
+    const r = simAutosave(s).restore(paintedText);
+    expect(r.upgradedFrom).toBe(2);
+    expect(schemaOfText(storedText(s))).toBe(3);
+  });
+
+  it('a current-schema handoff and a plan record never report it', () => {
+    const s = new MemoryStorage();
+    const h = SIM_CODEC.serialize({
+      schema: 3,
+      kind: 'sim',
+      datasetVersion: 'fixture-0',
+      policy: DEFAULT_POLICY
+    });
+    expect(simAutosave(s).restore(h)).not.toHaveProperty('upgradedFrom');
+    const ps = seed(plan(1, { datasetVersion: 'fixture-1' }));
+    expect(
+      new Autosave({ currentVersion: 'fixture-1', storage: () => ps }).restore()
+    ).not.toHaveProperty('upgradedFrom');
   });
 });

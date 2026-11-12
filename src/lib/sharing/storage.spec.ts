@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { SIM_CODEC } from '$lib/sim-page/sim-doc';
 import { serializePlan, type Plan } from '$lib/plan';
 import { MemoryStorage } from './fixtures/memory-storage';
 import {
@@ -107,5 +109,32 @@ describe('preserveCorrupt', () => {
     s.failWrites = true;
     expect(preserveCorrupt(s, '{nope', new Date())).toBe(false);
     expect(s.length).toBe(0);
+  });
+});
+
+describe('readRecord upgradedFrom', () => {
+  const schema2 = (name: string) =>
+    readFileSync(
+      new URL(`../sim-page/fixtures/schema2/${name}.json`, import.meta.url),
+      'utf8'
+    ).trim();
+
+  it('a schema-2 sim record reads ok with upgradedFrom 2', () => {
+    const s = new MemoryStorage();
+    s.setItem(SIM_CODEC.storageKey, schema2('default-record'));
+    const r = readRecord(s, SIM_CODEC);
+    expect(r.kind).toBe('ok');
+    if (r.kind === 'ok') {
+      expect(r.upgradedFrom).toBe(2);
+      expect(r.plan.schema).toBe(3);
+    }
+  });
+
+  it('a current-schema record has no upgradedFrom key', () => {
+    const s = new MemoryStorage();
+    s.setItem(PLAN_KEY, JSON.stringify(record()));
+    const r = readRecord(s);
+    expect(r.kind).toBe('ok');
+    expect(r).not.toHaveProperty('upgradedFrom');
   });
 });

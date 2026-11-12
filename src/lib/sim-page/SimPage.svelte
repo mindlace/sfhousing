@@ -136,7 +136,9 @@
      */
     persist?: 'restore' | 'off';
     /** The Remix hand-off from /s/<id> (`history.state.sfhSimRemix`). */
-    remix?: { from: string; doc?: string };
+    remix?: { from: string; doc?: string; upgradedFrom?: number };
+    /** View: the schema the shared document was upgraded from (`/s/<id>`). */
+    upgradedFrom?: number;
     /** Tests: the autosave's and the view prefs' storage (default `localStorage`). */
     storage?: () => Storage | null;
     /** Tests: Publish's fetch. */
@@ -160,6 +162,7 @@
     title: viewTitle = undefined,
     persist = undefined,
     remix = undefined,
+    upgradedFrom = undefined,
     storage = getStorage,
     fetchFn = undefined,
     leverTimers = undefined
@@ -174,7 +177,8 @@
       ? restoreSimDoc(
           {
             plan: { schema: 3, kind: 'sim', datasetVersion, policy: initialPolicy },
-            notice: null
+            notice: null,
+            upgradedFrom
           },
           calibration
         )
@@ -225,7 +229,11 @@
 
   function restore(): void {
     const r = autosave.restore(remix?.doc);
-    const { doc: d, notices: ns } = restoreSimDoc(r, calibration, remix?.from);
+    const { doc: d, notices: ns } = restoreSimDoc(
+      { ...r, upgradedFrom: r.upgradedFrom ?? remix?.upgradedFrom },
+      calibration,
+      remix?.from
+    );
     notices = ns;
     title = d.title;
     if (canonicalJson(d.policy) !== canonicalJson(store.policy)) {
