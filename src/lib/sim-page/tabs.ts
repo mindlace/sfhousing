@@ -1,22 +1,30 @@
 /**
- * /sim's dock tabs (spec Goal 1): the editing face's Transit · Paint · Permits · Protect, in that
- * order. Plans 3 and 4 replace the Paint and Transit panels; the ids stay.
+ * /sim's dock tabs (spec Goal 1): the editing face's Transit · Paint · Permits · Protect ·
+ * Funding, in that order. Funding is last: money is the newest lever (funding-ui spec 4.3).
  */
 import type { DockTab } from '$lib/dock/Dock.svelte';
 import { DOCK_ICONS } from '$lib/dock/icons';
+import type { Calibration } from '$lib/timelapse/types';
 
-export type SimTabId = 'transit' | 'paint' | 'permits' | 'protect';
+export type SimTabId = 'transit' | 'paint' | 'permits' | 'protect' | 'funding';
 
 export const SIM_TABS: readonly DockTab[] = [
   { id: 'transit', label: 'Transit', icon: DOCK_ICONS.transit },
   { id: 'paint', label: 'Paint', icon: DOCK_ICONS.paint },
   { id: 'permits', label: 'Permits', icon: DOCK_ICONS.permits },
-  { id: 'protect', label: 'Protect', icon: DOCK_ICONS.protect }
+  { id: 'protect', label: 'Protect', icon: DOCK_ICONS.protect },
+  { id: 'funding', label: 'Funding', icon: DOCK_ICONS.funding }
 ] satisfies readonly (DockTab & { id: SimTabId })[];
 
-/** The editing tabs; Permits needs the calibration, so without one it is not offered. */
-export function simTabs(hasCalibration: boolean): readonly DockTab[] {
-  return hasCalibration ? SIM_TABS : SIM_TABS.filter((t) => t.id !== 'permits');
+/**
+ * The editing tabs, with no empty face: Permits needs a calibration; Funding needs one with both
+ * `market` and `baselineFunding`, the condition on which the engine runs money at all.
+ */
+export function simTabs(calibration: Calibration | null): readonly DockTab[] {
+  const funding = calibration?.market !== undefined && calibration.baselineFunding !== undefined;
+  return SIM_TABS.filter(
+    (t) => (t.id !== 'permits' || calibration !== null) && (t.id !== 'funding' || funding)
+  );
 }
 
 /** `tab` if `tabs` offers it, else the first tab's id. */

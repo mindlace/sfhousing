@@ -45,6 +45,9 @@ const basePool = (id: string, kind: PoolKind): Pool => ({
 /** The market fixture calibration with a baseline of City, state and federal affordable grants. */
 export function fundingCalibration(): Calibration {
   const cal = fixtureMarketCalibration();
+  // The page reads the present from `calibration.asOf`: the baseline's inflows and programmes
+  // start on it, as the pipeline's do.
+  cal.asOf = FUND_ASOF;
   cal.baselineFunding = {
     pools: [
       basePool('city-tax', 'dedicatedTax'),

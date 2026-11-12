@@ -1,7 +1,7 @@
 // Every string of the Funding tab, the policy summary and the card line (funding-ui spec 4.1):
 // kind names, coverage sentences, validation messages and the undo labels of table 4.9. Pure.
 import { formatDollars, formatDollarsExact, formatMonthYear } from '$lib/fzp/format';
-import { formatPercent } from '$lib/scoreboard/format';
+import { formatCount, formatPercent } from '$lib/scoreboard/format';
 import type { Day, PoolKind, TermKey } from '$lib/timelapse/types';
 import type { FundingLoadReport } from './funding-reconcile';
 import type { CoverageStep, GroupId } from './funding-view';
@@ -353,3 +353,42 @@ export const smallProjectsCaveat = (minHomes: number): string =>
 /** R24: the first-day bundle of a partly funded project. */
 export const MONTH_OFFER_CAVEAT =
   "A partly funded project keeps the offer it had on the first day of its month, so for up to about a month it can still draw on a source you switched off, or a programme that ended, during that month. Fully funded projects and today's funding as it stands are not affected.";
+
+// --- Announcements and the "Sources and tiers" lines of the tab (4.9, 4.10) ---
+
+/**
+ * The coverage line and its later steps, spoken after an edit that changes it (4.9): "Affordable
+ * homes: fully funded today; from July 2027, 86%."
+ */
+export function coverageSummaryText(steps: readonly CoverageStep[]): string {
+  const later = steps
+    .slice(1)
+    .map(
+      (s) =>
+        `from ${formatMonthYear(s.from)}, ${s.certain ? 'fully funded' : formatPercent(s.coverage)}`
+    );
+  return `${[coverageLineText(steps[0]), ...later].join('; ')}.`;
+}
+
+/** Spoken when a run discards an unfinished pool or programme (4.6). */
+export const DRAFT_DISCARDED = 'An unfinished item was discarded.';
+
+/** The baseline's check line (4.10). */
+export const checkLineText = (implied: number, observed: number): string =>
+  `Today's City money funds about ${formatCount(implied)} affordable homes a year by this ` +
+  `arithmetic; San Francisco's bond and tax-credit awards show about ${formatCount(observed)}.`;
+
+/** An affordable home's cost line (4.10), from `AFFORDABLE`. */
+export const affordableCostText = (cost: number, own: number, tier: number): string =>
+  `Affordable homes' cost: ${formatDollarsExact(cost)} a home, of which ${formatDollarsExact(own)} ` +
+  `is paid by the project's own loans and other income (Budget Analyst, Exhibit F, tier ${tier})`;
+
+/** A preset the page does not offer, with its reason (4.10). */
+export const notOfferedText = (label: string, reason: string): string =>
+  `Not offered yet: ${label}: ${reason}`;
+
+/** A market term with no source (4.10). */
+export const noSourcedValueText = (reason: string): string => `No sourced value: ${reason}`;
+
+/** A dated change's amount out of range (4.5 item 3: 0% to 1,000% of today's amount). */
+export const SCALE_PCT_ERROR = 'Enter a percent from 0 to 1,000.';

@@ -4,7 +4,7 @@
  * is the list of paths of one drawing. Decorative: every button that shows one is named by text.
  */
 export const DOCK_ICONS: Record<
-  'transit' | 'paint' | 'permits' | 'protect' | 'results' | 'policy',
+  'transit' | 'paint' | 'permits' | 'protect' | 'funding' | 'results' | 'policy',
   readonly string[]
 > = {
   // A bus: body, windscreen band, two lights, two feet.
@@ -26,6 +26,8 @@ export const DOCK_ICONS: Record<
   permits: ['M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z', 'M12 7.5V12l3 2'],
   // A shield with a check.
   protect: ['M12 3l7.5 3v6c0 4.2-3.1 7.5-7.5 9-4.4-1.5-7.5-4.8-7.5-9V6z', 'M9 12l2 2 4-4'],
+  // A banknote: the note and its central coin.
+  funding: ['M3 7h18v10H3z', 'M12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z'],
   // Three bars on a baseline.
   results: ['M3 20h18', 'M6 20v-7', 'M12 20V6', 'M18 20v-10'],
   // Three sliders.

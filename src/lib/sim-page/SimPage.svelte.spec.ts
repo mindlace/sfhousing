@@ -132,7 +132,7 @@ describe('SimPage dock', () => {
         .getByRole('tab')
         .elements()
         .map((t) => t.textContent?.trim())
-    ).toEqual(['Transit', 'Paint', 'Permits', 'Protect']);
+    ).toEqual(['Transit', 'Paint', 'Permits', 'Protect', 'Funding']);
     await expect.element(policyButton()).toHaveAttribute('aria-expanded', 'true');
     expect(policyButton().element().getAttribute('aria-controls')).toBe(dockEl()!.id);
     expect(dockEl()!.contains(document.activeElement)).toBe(false);
@@ -141,6 +141,15 @@ describe('SimPage dock', () => {
     await expect.element(page.getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
     await expect.element(page.getByRole('button', { name: 'Add transit layer' })).toBeVisible();
     expect(getComputedStyle(sfhFzp()).getPropertyValue('--dock-w').trim()).toBe('320px');
+  });
+
+  it("the Funding tab shows the coverage line and today's funding", async () => {
+    await readySim();
+    await tab('Funding').click();
+    await expect.element(tab('Funding')).toHaveAttribute('aria-selected', 'true');
+    await expect.element(page.getByText(/^Affordable homes: /)).toBeVisible();
+    await expect.element(page.getByRole('heading', { name: "Today's funding" })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: /^City · / })).toBeVisible();
   });
 
   it('without a calibration the dock has no Permits tab (no empty face)', async () => {

@@ -758,3 +758,19 @@ export function termRows(
     ];
   });
 }
+
+/**
+ * The baseline provenance a group's editor lists (4.5 item 5): the entries the pipeline labels
+ * "{pool label}: …" for the group's pools, then the entries that name no baseline pool (the
+ * income mix and smallest size), which hold for every group.
+ */
+export function groupProvenance(baseline: Baseline, group: GroupId): Provenance[] {
+  const names = (pools: Pool[]) => pools.map((p) => `${p.label}:`);
+  const own = names(baseline.pools.filter((p) => groupOf(p.kind) === group));
+  const all = names(baseline.pools);
+  const has = (pv: Provenance, prefixes: string[]) => prefixes.some((n) => pv.label.includes(n));
+  return [
+    ...baseline.provenance.filter((pv) => has(pv, own)),
+    ...baseline.provenance.filter((pv) => !has(pv, all))
+  ];
+}

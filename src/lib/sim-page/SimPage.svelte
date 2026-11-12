@@ -15,7 +15,7 @@
   with the calibration (Call 7, with the timing notice when anything moved); there is no stroke
   controller, no tools, no autosave and no Publish, and the dock's one tab is the summary.
   The dock (sim-ux plan 2, Task 4): the policy lives in a `Dock` with the tabs Transit · Paint ·
-  Permits · Protect (`SIM_TABS`), Undo and Redo (`HistoryButtons`) above them, and a Results
+  Permits · Protect · Funding (`SIM_TABS`), Undo and Redo (`HistoryButtons`) above them, and a Results
   face (FzpMode's `SimResults`). From md it is open on the left of the map by default and folds to
   a rail; below md it is a bottom sheet behind a handle. The header's Policy button opens and
   folds it; the header score flips it to Results and back.
@@ -111,6 +111,9 @@
   import PolicySummary from './PolicySummary.svelte';
   import { customLotStatus, ruleLotStatus, simPaintRows, type LotStatus } from './brush-summary';
   import ProtectionsSection from './ProtectionsSection.svelte';
+  import FundingTab from './FundingTab.svelte';
+  import { FundingDrafts } from './funding-drafts.svelte';
+  import { DRAFT_DISCARDED } from './funding-copy';
   import { VIEW_TABS, simTabs, tabOrFirst } from './tabs';
 
   interface Props {
@@ -307,9 +310,12 @@
    * scenario FzpMode renders no dock. The view's only tab is the summary (`policy`).
    */
   const dock = new DockState({ tab: untrack(() => mode) === 'view' ? 'policy' : 'transit' });
-  /** The dock's tabs: Permits is offered only with a calibration (no empty face). */
-  const dockTabs = $derived(mode === 'view' ? VIEW_TABS : simTabs(calibration !== null));
-  // A tab that is no longer offered (Permits without a calibration) falls back to the first.
+  /**
+   * The dock's tabs, with no empty face: Permits needs a calibration, Funding one with market and
+   * baseline funding.
+   */
+  const dockTabs = $derived(mode === 'view' ? VIEW_TABS : simTabs(calibration));
+  // A tab that is no longer offered (Permits or Funding without its data) falls back to the first.
   $effect.pre(() => {
     const t = tabOrFirst(dockTabs, dock.tab);
     if (t !== dock.tab) dock.tab = t;
@@ -476,8 +482,18 @@
   // ---- Setup and Run (spec §1) ----
 
   const run = new RunPhase();
+  /**
+   * The Funding tab's unfinished pool or programme: page memory outside the policy store, so
+   * autosave, undo, publish and the worker never see it, and a tab switch keeps it.
+   */
+  const drafts = new FundingDrafts();
 
   function startRun(): void {
+    // A run discards the Funding tab's unfinished item: it was never in the policy (4.6).
+    if (drafts.isOpen) {
+      drafts.discard();
+      brush.announce(DRAFT_DISCARDED, ANNOUNCE_MS);
+    }
     // The live preview is a Setup thing: a run clears it and drops any answer still on its way.
     strokePreview.reset();
     setTool('move');
@@ -974,6 +990,10 @@
     {/if}
   {:else if id === 'protect'}
     <ProtectionsSection {store} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
+  {:else if id === 'funding'}
+    {#if calibration}
+      <FundingTab {store} {calibration} {drafts} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
+    {/if}
   {/if}
 {/snippet}
 
