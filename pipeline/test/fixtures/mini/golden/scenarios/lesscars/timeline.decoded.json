@@ -3,7 +3,7 @@
   "datasetVersion": "fixture-0",
   "count": 25,
   "idsHash": 2136662000,
-  "seed": 4,
+  "seed": 3,
   "schedules": [
     {
       "projectId": "BP:202403150003",
@@ -13,14 +13,13 @@
       ],
       "pathway": "permitOnly",
       "entered": {
-        "permitFiled": 19797,
-        "permitIssued": 21233,
-        "construction": 21306,
-        "complete": 23950
+        "permitFiled": 19797
       },
       "end": {
-        "kind": "complete",
-        "day": 23950
+        "kind": "exit",
+        "stage": "permitFiled",
+        "reason": "withdrawn",
+        "day": 21348
       },
       "revisions": [
         {
@@ -42,13 +41,13 @@
       "pathway": "permitOnly",
       "entered": {
         "permitFiled": 20103,
-        "permitIssued": 22642
+        "permitIssued": 24505,
+        "construction": 24554,
+        "complete": 25466
       },
       "end": {
-        "kind": "exit",
-        "stage": "permitIssued",
-        "reason": "expired",
-        "day": 24962
+        "kind": "complete",
+        "day": 25466
       },
       "revisions": [
         {
@@ -70,13 +69,13 @@
       "pathway": "discretionary",
       "entered": {
         "permitFiled": 21467,
-        "permitIssued": 21947,
-        "construction": 21990,
-        "complete": 22943
+        "permitIssued": 21615,
+        "construction": 21704,
+        "complete": 22749
       },
       "end": {
         "kind": "complete",
-        "day": 22943
+        "day": 22749
       },
       "revisions": [
         {
@@ -103,13 +102,13 @@
       "pathway": "discretionary",
       "entered": {
         "permitFiled": 20878,
-        "permitIssued": 21139
+        "permitIssued": 21351
       },
       "end": {
         "kind": "exit",
         "stage": "permitIssued",
         "reason": "expired",
-        "day": 25546
+        "day": 23364
       },
       "revisions": [
         {
@@ -136,13 +135,13 @@
       "pathway": "discretionary",
       "entered": {
         "permitFiled": 21467,
-        "permitIssued": 22154,
-        "construction": 22188,
-        "complete": 23778
+        "permitIssued": 21804,
+        "construction": 21842,
+        "complete": 23770
       },
       "end": {
         "kind": "complete",
-        "day": 23778
+        "day": 23770
       },
       "revisions": [
         {
@@ -166,13 +165,14 @@
       "parcelIds": [],
       "pathway": "discretionary",
       "entered": {
-        "entitled": 15826
+        "entitled": 15826,
+        "permitFiled": 20807
       },
       "end": {
         "kind": "exit",
-        "stage": "entitled",
-        "reason": "expired",
-        "day": 20759
+        "stage": "permitFiled",
+        "reason": "withdrawn",
+        "day": 20808
       },
       "revisions": [
         {
@@ -200,11 +200,11 @@
         "permitFiled": 18323,
         "permitIssued": 18659,
         "construction": 18750,
-        "complete": 21446
+        "complete": 22167
       },
       "end": {
         "kind": "complete",
-        "day": 21446
+        "day": 22167
       },
       "revisions": [
         {
@@ -232,7 +232,7 @@
         "kind": "exit",
         "stage": "permitIssued",
         "reason": "expired",
-        "day": 21210
+        "day": 23109
       },
       "revisions": [
         {
@@ -256,13 +256,13 @@
         "filed": 18231,
         "entitled": 18932,
         "permitFiled": 18932,
-        "permitIssued": 21173
+        "permitIssued": 21113,
+        "construction": 21183,
+        "complete": 22064
       },
       "end": {
-        "kind": "exit",
-        "stage": "permitIssued",
-        "reason": "expired",
-        "day": 23084
+        "kind": "complete",
+        "day": 22064
       },
       "revisions": [
         {
@@ -284,13 +284,15 @@
       "pathway": "discretionary",
       "entered": {
         "filed": 19144,
-        "entitled": 19417
+        "entitled": 19417,
+        "permitFiled": 21250,
+        "permitIssued": 21671
       },
       "end": {
         "kind": "exit",
-        "stage": "entitled",
+        "stage": "permitIssued",
         "reason": "expired",
-        "day": 21961
+        "day": 24934
       },
       "revisions": [
         {
@@ -312,15 +314,16 @@
       "pathway": "discretionary",
       "entered": {
         "filed": 19754,
-        "entitled": 20920,
-        "permitFiled": 20936,
-        "permitIssued": 21198,
-        "construction": 21276,
-        "complete": 21826
+        "entitled": 20963,
+        "permitFiled": 21079,
+        "permitIssued": 21162,
+        "construction": 21222
       },
       "end": {
-        "kind": "complete",
-        "day": 21826
+        "kind": "exit",
+        "stage": "construction",
+        "reason": "cancelled",
+        "day": 23526
       },
       "revisions": [
         {
@@ -342,13 +345,13 @@
       "pathway": "permitOnly",
       "entered": {
         "permitFiled": 20179,
-        "permitIssued": 20909,
-        "construction": 20947,
-        "complete": 21858
+        "permitIssued": 20928
       },
       "end": {
-        "kind": "complete",
-        "day": 21858
+        "kind": "exit",
+        "stage": "permitIssued",
+        "reason": "expired",
+        "day": 22059
       },
       "revisions": [
         {
@@ -370,15 +373,15 @@
       "pathway": "streamlined",
       "entered": {
         "filed": 20574,
-        "entitled": 20756,
-        "permitFiled": 20853,
-        "permitIssued": 21274,
-        "construction": 21307,
-        "complete": 24112
+        "entitled": 20758,
+        "permitFiled": 20787,
+        "permitIssued": 21251,
+        "construction": 21282,
+        "complete": 21850
       },
       "end": {
         "kind": "complete",
-        "day": 24112
+        "day": 21850
       },
       "revisions": [
         {
@@ -400,15 +403,15 @@
       "pathway": "discretionary",
       "entered": {
         "filed": 20716,
-        "entitled": 20969,
-        "permitFiled": 22009,
-        "permitIssued": 22483,
-        "construction": 22534,
-        "complete": 23095
+        "entitled": 20869,
+        "permitFiled": 24173,
+        "permitIssued": 24352,
+        "construction": 24400,
+        "complete": 25273
       },
       "end": {
         "kind": "complete",
-        "day": 23095
+        "day": 25273
       },
       "revisions": [
         {
@@ -435,7 +438,7 @@
         "kind": "exit",
         "stage": "preApplication",
         "reason": "withdrawn",
-        "day": 20779
+        "day": 20852
       },
       "revisions": [
         {
@@ -457,15 +460,13 @@
       "pathway": "discretionary",
       "entered": {
         "filed": 20666,
-        "entitled": 20834,
-        "permitFiled": 20839,
-        "permitIssued": 20992
+        "entitled": 20952
       },
       "end": {
         "kind": "exit",
-        "stage": "permitIssued",
+        "stage": "entitled",
         "reason": "expired",
-        "day": 23918
+        "day": 22288
       },
       "revisions": [
         {
@@ -479,119 +480,32 @@
       "phase": null
     },
     {
-      "projectId": "sim:3512001:0",
+      "projectId": "sim:0026T001A:0",
       "origin": "simulated",
       "parcelIds": [
-        "3512001"
+        "0026T001A"
       ],
-      "pathway": "streamlined",
+      "pathway": "discretionary",
       "entered": {
-        "filed": 25774,
-        "entitled": 26216
+        "filed": 23527,
+        "entitled": 23811,
+        "permitFiled": 23926,
+        "permitIssued": 24055,
+        "construction": 24134,
+        "complete": 24705
       },
       "end": {
-        "kind": "exit",
-        "stage": "entitled",
-        "reason": "expired",
-        "day": 28713
+        "kind": "complete",
+        "day": 24705
       },
       "revisions": [
         {
-          "day": 25774,
-          "units": 11,
-          "stories": 6
+          "day": 23527,
+          "units": 9,
+          "stories": 4
         }
       ],
-      "existingUnits": 2,
-      "multiPhase": false,
-      "phase": null,
-      "regime": 2
-    },
-    {
-      "projectId": "sim:3512001:1",
-      "origin": "simulated",
-      "parcelIds": [
-        "3512001"
-      ],
-      "pathway": "streamlined",
-      "entered": {
-        "filed": 28797,
-        "entitled": 29034,
-        "permitFiled": 29151,
-        "permitIssued": 29642
-      },
-      "end": {
-        "kind": "exit",
-        "stage": "permitIssued",
-        "reason": "expired",
-        "day": 31566
-      },
-      "revisions": [
-        {
-          "day": 28797,
-          "units": 11,
-          "stories": 6
-        }
-      ],
-      "existingUnits": 2,
-      "multiPhase": false,
-      "phase": null,
-      "regime": 2
-    },
-    {
-      "projectId": "sim:3512001:2",
-      "origin": "simulated",
-      "parcelIds": [
-        "3512001"
-      ],
-      "pathway": "streamlined",
-      "entered": {
-        "filed": 32492,
-        "entitled": 32724
-      },
-      "end": {
-        "kind": "exit",
-        "stage": "entitled",
-        "reason": "expired",
-        "day": 35230
-      },
-      "revisions": [
-        {
-          "day": 32492,
-          "units": 11,
-          "stories": 6
-        }
-      ],
-      "existingUnits": 2,
-      "multiPhase": false,
-      "phase": null,
-      "regime": 2
-    },
-    {
-      "projectId": "sim:3512001:3",
-      "origin": "simulated",
-      "parcelIds": [
-        "3512001"
-      ],
-      "pathway": "streamlined",
-      "entered": {
-        "filed": 35595,
-        "entitled": 35795,
-        "permitFiled": 35890,
-        "permitIssued": 36032,
-        "construction": 36086
-      },
-      "end": {
-        "kind": "open"
-      },
-      "revisions": [
-        {
-          "day": 35595,
-          "units": 11,
-          "stories": 6
-        }
-      ],
-      "existingUnits": 2,
+      "existingUnits": 0,
       "multiPhase": false,
       "phase": null,
       "regime": 2
@@ -604,20 +518,20 @@
       ],
       "pathway": "streamlined",
       "entered": {
-        "filed": 26348,
-        "entitled": 26705,
-        "permitFiled": 26731,
-        "permitIssued": 27349,
-        "construction": 27403,
-        "complete": 28265
+        "filed": 23365,
+        "entitled": 23607,
+        "permitFiled": 23716,
+        "permitIssued": 25168,
+        "construction": 25243,
+        "complete": 26153
       },
       "end": {
         "kind": "complete",
-        "day": 28265
+        "day": 26153
       },
       "revisions": [
         {
-          "day": 26348,
+          "day": 23365,
           "units": 11,
           "stories": 6
         }
@@ -628,27 +542,56 @@
       "regime": 2
     },
     {
+      "projectId": "sim:3512005:0",
+      "origin": "simulated",
+      "parcelIds": [
+        "3512005"
+      ],
+      "pathway": "discretionary",
+      "entered": {
+        "filed": 21349,
+        "entitled": 21864,
+        "permitFiled": 22044,
+        "permitIssued": 22315,
+        "construction": 22349,
+        "complete": 23613
+      },
+      "end": {
+        "kind": "complete",
+        "day": 23613
+      },
+      "revisions": [
+        {
+          "day": 21349,
+          "units": 4,
+          "stories": 6
+        }
+      ],
+      "existingUnits": 1,
+      "multiPhase": false,
+      "phase": null,
+      "regime": 0
+    },
+    {
       "projectId": "sim:3512015:0",
       "origin": "simulated",
       "parcelIds": [
         "3512015"
       ],
-      "pathway": "discretionary",
+      "pathway": "permitOnly",
       "entered": {
-        "filed": 21350,
-        "entitled": 21585,
-        "permitFiled": 22628,
-        "permitIssued": 22876,
-        "construction": 22941,
-        "complete": 25218
+        "permitFiled": 20737,
+        "permitIssued": 20900,
+        "construction": 20935,
+        "complete": 22203
       },
       "end": {
         "kind": "complete",
-        "day": 25218
+        "day": 22203
       },
       "revisions": [
         {
-          "day": 21350,
+          "day": 20737,
           "units": 6,
           "stories": 6
         }
@@ -664,20 +607,20 @@
       "parcelIds": [
         "3512017"
       ],
-      "pathway": "discretionary",
+      "pathway": "permitOnly",
       "entered": {
-        "filed": 22590,
-        "entitled": 22851
+        "permitFiled": 20737,
+        "permitIssued": 20895,
+        "construction": 20949,
+        "complete": 21851
       },
       "end": {
-        "kind": "exit",
-        "stage": "entitled",
-        "reason": "expired",
-        "day": 24542
+        "kind": "complete",
+        "day": 21851
       },
       "revisions": [
         {
-          "day": 22590,
+          "day": 20737,
           "units": 4,
           "stories": 3
         }
@@ -688,56 +631,27 @@
       "regime": 0
     },
     {
-      "projectId": "sim:3512017:1",
-      "origin": "simulated",
-      "parcelIds": [
-        "3512017"
-      ],
-      "pathway": "discretionary",
-      "entered": {
-        "filed": 27595,
-        "entitled": 27833,
-        "permitFiled": 27853,
-        "permitIssued": 27996,
-        "construction": 28044,
-        "complete": 28917
-      },
-      "end": {
-        "kind": "complete",
-        "day": 28917
-      },
-      "revisions": [
-        {
-          "day": 27595,
-          "units": 23,
-          "stories": 6
-        }
-      ],
-      "existingUnits": 0,
-      "multiPhase": false,
-      "phase": null,
-      "regime": 2
-    },
-    {
       "projectId": "sim:3512018:0",
       "origin": "simulated",
       "parcelIds": [
         "3512018"
       ],
-      "pathway": "discretionary",
+      "pathway": "streamlined",
       "entered": {
-        "filed": 20852,
-        "entitled": 21124
+        "filed": 20737,
+        "entitled": 20944,
+        "permitFiled": 21999,
+        "permitIssued": 22924,
+        "construction": 22962,
+        "complete": 23874
       },
       "end": {
-        "kind": "exit",
-        "stage": "entitled",
-        "reason": "expired",
-        "day": 22991
+        "kind": "complete",
+        "day": 23874
       },
       "revisions": [
         {
-          "day": 20852,
+          "day": 20737,
           "units": 4,
           "stories": 40
         }
@@ -748,37 +662,6 @@
       "regime": 0
     },
     {
-      "projectId": "sim:3512018:1",
-      "origin": "simulated",
-      "parcelIds": [
-        "3512018"
-      ],
-      "pathway": "discretionary",
-      "entered": {
-        "filed": 23595,
-        "entitled": 24531,
-        "permitFiled": 24701,
-        "permitIssued": 24900,
-        "construction": 24969,
-        "complete": 25535
-      },
-      "end": {
-        "kind": "complete",
-        "day": 25535
-      },
-      "revisions": [
-        {
-          "day": 23595,
-          "units": 11,
-          "stories": 9
-        }
-      ],
-      "existingUnits": 2,
-      "multiPhase": false,
-      "phase": null,
-      "regime": 2
-    },
-    {
       "projectId": "sim:3513001:0",
       "origin": "simulated",
       "parcelIds": [
@@ -786,20 +669,18 @@
       ],
       "pathway": "streamlined",
       "entered": {
-        "filed": 22139,
-        "entitled": 22728,
-        "permitFiled": 23763,
-        "permitIssued": 23968
+        "filed": 21033,
+        "entitled": 21440
       },
       "end": {
         "kind": "exit",
-        "stage": "permitIssued",
+        "stage": "entitled",
         "reason": "expired",
-        "day": 25399
+        "day": 23393
       },
       "revisions": [
         {
-          "day": 22139,
+          "day": 21033,
           "units": 8,
           "stories": 6
         }
@@ -817,18 +698,20 @@
       ],
       "pathway": "streamlined",
       "entered": {
-        "filed": 25873,
-        "entitled": 26057
+        "filed": 23394,
+        "entitled": 23586,
+        "permitFiled": 23613,
+        "permitIssued": 23732,
+        "construction": 23806,
+        "complete": 24775
       },
       "end": {
-        "kind": "exit",
-        "stage": "entitled",
-        "reason": "expired",
-        "day": 28761
+        "kind": "complete",
+        "day": 24775
       },
       "revisions": [
         {
-          "day": 25873,
+          "day": 23394,
           "units": 8,
           "stories": 6
         }
@@ -839,93 +722,33 @@
       "regime": 2
     },
     {
-      "projectId": "sim:3513001:2",
+      "projectId": "sim:8711023C:0",
       "origin": "simulated",
       "parcelIds": [
-        "3513001"
+        "8711023C"
       ],
-      "pathway": "streamlined",
+      "pathway": "permitOnly",
       "entered": {
-        "filed": 29821,
-        "entitled": 30001
+        "permitFiled": 22060,
+        "permitIssued": 22463,
+        "construction": 22519,
+        "complete": 23416
       },
       "end": {
-        "kind": "exit",
-        "stage": "entitled",
-        "reason": "expired",
-        "day": 31861
+        "kind": "complete",
+        "day": 23416
       },
       "revisions": [
         {
-          "day": 29821,
-          "units": 8,
-          "stories": 6
+          "day": 22060,
+          "units": 9,
+          "stories": 4
         }
       ],
-      "existingUnits": 0,
+      "existingUnits": 4,
       "multiPhase": false,
       "phase": null,
-      "regime": 2
-    },
-    {
-      "projectId": "sim:3513001:3",
-      "origin": "simulated",
-      "parcelIds": [
-        "3513001"
-      ],
-      "pathway": "streamlined",
-      "entered": {
-        "filed": 32256,
-        "entitled": 32421,
-        "permitFiled": 32592,
-        "permitIssued": 32856
-      },
-      "end": {
-        "kind": "exit",
-        "stage": "permitIssued",
-        "reason": "expired",
-        "day": 34011
-      },
-      "revisions": [
-        {
-          "day": 32256,
-          "units": 8,
-          "stories": 6
-        }
-      ],
-      "existingUnits": 0,
-      "multiPhase": false,
-      "phase": null,
-      "regime": 2
-    },
-    {
-      "projectId": "sim:3513001:4",
-      "origin": "simulated",
-      "parcelIds": [
-        "3513001"
-      ],
-      "pathway": "streamlined",
-      "entered": {
-        "filed": 34269,
-        "entitled": 34533,
-        "permitFiled": 34561,
-        "permitIssued": 35673,
-        "construction": 35729
-      },
-      "end": {
-        "kind": "open"
-      },
-      "revisions": [
-        {
-          "day": 34269,
-          "units": 8,
-          "stories": 6
-        }
-      ],
-      "existingUnits": 0,
-      "multiPhase": false,
-      "phase": null,
-      "regime": 2
+      "regime": 0
     }
   ],
   "builds": [

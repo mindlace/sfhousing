@@ -10,7 +10,7 @@
     "buildings.underground_dropped": 1,
     "calibration.affordable.fallback": 1,
     "calibration.affordable.histories": 0,
-    "calibration.bytes": 55437,
+    "calibration.bytes": 57060,
     "calibration.funding.impliedHomesPerYear": 20,
     "calibration.funding.mohcdRows": 2,
     "calibration.funding.observedHomesPerYear": 25,
@@ -119,8 +119,8 @@
     "landuse.orphan_rows": 2,
     "landuse.rows": 26,
     "landuse.unknown_values": 0,
-    "lesscars.bytes.timeline_payload": 4217,
-    "lesscars.extra_2068.mean": 287,
+    "lesscars.bytes.timeline_payload": 3603,
+    "lesscars.extra_2068.mean": 284,
     "lesscars.freed_m2.parcels": 800,
     "lesscars.freed_m2.row": 3684,
     "lesscars.projects": 8,
@@ -721,7 +721,7 @@
       "ok": true
     },
     {
-      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 55437 B; baselineFunding 8 pools, one programme each; shares 1000000 millionths; affordableRoutes tier 4",
+      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 57060 B; baselineFunding 8 pools, one programme each; shares 1000000 millionths; affordableRoutes tier 4",
       "id": "V25",
       "ok": true
     },
