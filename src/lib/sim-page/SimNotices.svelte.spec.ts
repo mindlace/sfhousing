@@ -30,3 +30,21 @@ describe('SimNotices live region', () => {
     expect(seen.at(-1)).toBe(1);
   });
 });
+
+describe('SimNotices funding-dropped', () => {
+  it('Details lists one line per dropped item', async () => {
+    const details = ['Change to a from July 2028: removed (x)', 'Grant: removed (y)'];
+    render(SimNotices, {
+      props: {
+        notices: [
+          { id: 'funding-dropped', text: 'Some changes were removed.', details, tone: 'info' }
+        ],
+        ondismiss: () => {}
+      }
+    });
+    await expect.element(page.getByText('Some changes were removed.')).toBeInTheDocument();
+    await page.getByText('Details').click();
+    for (const line of details) await expect.element(page.getByText(line)).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-testid="sim-notices"] li')).toHaveLength(2);
+  });
+});

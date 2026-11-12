@@ -123,7 +123,7 @@ describe('restoreSimDoc funding report', () => {
     });
   });
 
-  it('replaces the funding only when it changes and adds no funding notice', () => {
+  it('replaces the funding only when it changes and adds only the funding notices the report calls for', () => {
     const f = fundingOnly();
     const d = doc({ policy: { ...DEFAULT_POLICY, funding: f } });
     const { baselineFunding: _b, ...bare } = cal;
@@ -133,9 +133,45 @@ describe('restoreSimDoc funding report', () => {
     expect(r.doc.policy.funding.baselineScale).toEqual([]);
     expect(r.funding.droppedScales).toHaveLength(1);
     expect(r.funding.unusable).toBe(true);
-    const ids = ['corrupt', 'future', 'rebased', 'timing', 'remix'];
-    expect(r.notices.every((n) => ids.includes(n.id))).toBe(true);
+    expect(r.notices.map((n) => n.id)).toEqual(['funding-dropped', 'funding-off']);
     const same = doc();
     expect(restoreSimDoc({ plan: same, notice: null }, cal).doc).toBe(same);
+  });
+
+  it('funding notices sit between the autosave notice and timing, before remix', () => {
+    const d = sdDoc();
+    const tampered: SimDoc = {
+      ...d,
+      policy: {
+        ...d.policy,
+        funding: fundingOnly(),
+        timing: {
+          current: {
+            ...d.policy.timing.current,
+            presetTimers: d.policy.timing.current.presetTimers.map((t) => ({ ...t, scale: 0.3 }))
+          },
+          saved: null
+        }
+      }
+    } as SimDoc;
+    const { baselineFunding: _b, ...bare } = cal;
+    void _b;
+    const r = restoreSimDoc(
+      {
+        plan: tampered,
+        notice: { kind: 'rebased', from: 'fixture-old', to: 'fixture-0' },
+        upgradedFrom: 2
+      },
+      bare as Calibration,
+      'abc'
+    );
+    expect(r.notices.map((n) => n.id)).toEqual([
+      'rebased',
+      'funding-added',
+      'funding-dropped',
+      'funding-off',
+      'timing',
+      'remix'
+    ]);
   });
 });

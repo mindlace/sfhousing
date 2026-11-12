@@ -251,6 +251,16 @@ second application in line is never awarded, never lapses and stays to the horiz
 City programme later lapses it on `to + 1` and redraws it as a new spell on the federal and state
 shares. A later change to this behaviour is deliberate.
 
+### Known limit: a partly covered application keeps its month's first-day bundle (ruling R24)
+
+The bundle of an application is the one active on the first day of its latent month. A switched-off
+span, or a programme `to`, that falls later in that month does not reach the application before
+the next re-pricing day, so for up to about a month a partly covered application can still draw on
+a source switched off, or a programme that ended, during that month. The bound is that month.
+Certain applications (fully covered) and the baseline as it stands are unaffected. The partner
+accepted this as an approximation; it is not to be "fixed" without a ruling. The Funding tab states
+it in its caveats (`MONTH_OFFER_CAVEAT`, `funding-copy.ts`).
+
 ## Re-pricing in place, lapse, reservations, regimes
 
 **Re-pricing days** are the days after `asOf`, up to the horizon, in the set of every programme's

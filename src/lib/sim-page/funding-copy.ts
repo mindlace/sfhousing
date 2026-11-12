@@ -3,7 +3,9 @@
 import { formatDollars, formatDollarsExact, formatMonthYear } from '$lib/fzp/format';
 import { formatPercent } from '$lib/scoreboard/format';
 import type { Day, PoolKind, TermKey } from '$lib/timelapse/types';
+import type { FundingLoadReport } from './funding-reconcile';
 import type { CoverageStep, GroupId } from './funding-view';
+import type { SimNotice } from './sim-session';
 
 const plain = (max: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: max });
 const upTo2 = plain(2);
@@ -301,3 +303,53 @@ export const labelTermCleared = (key: TermKey): string => `Cleared market term: 
 /** Dated change removed, named by group or source. */
 export const labelScaleRemoved = (name: string, from: Day): string =>
   `Removed change: ${name} from ${formatMonthYear(from)}`;
+
+// --- Notices on load (4.15) and the engine's two known limits (R22, R24) ---
+
+/**
+ * The three funding notices, in the order of 4.15. A dropped item always names a pool this
+ * calibration lacks, so pools are named by id.
+ */
+export function fundingNotices(report: FundingLoadReport): SimNotice[] {
+  const out: SimNotice[] = [];
+  if (report.upgradedFrom === 2)
+    out.push({
+      id: 'funding-added',
+      text: "This policy was saved before public money could be added. It opens with today's public funding and nothing added.",
+      tone: 'info'
+    });
+  if (report.droppedScales.length > 0 || report.droppedProgrammes.length > 0) {
+    const lines = [
+      ...report.droppedScales.map(
+        (s) =>
+          `Change to ${s.pool} from ${formatMonthYear(s.from)}: removed (this data has no such source)`
+      ),
+      ...report.droppedProgrammes.map((g) =>
+        g.reason === 'pool'
+          ? `${g.label}: removed (it pays from ${g.pool}, which this data doesn't have)`
+          : `${g.label}: removed (it needs ${g.term === null ? 'a market term' : TERM_NAME[g.term]}, which has no source and no value you typed)`
+      )
+    ];
+    out.push({
+      id: 'funding-dropped',
+      text: "Some changes to public money didn't fit the data this simulation runs on and were removed.",
+      details: [...new Set(lines)],
+      tone: 'info'
+    });
+  }
+  if (report.unusable)
+    out.push({
+      id: 'funding-off',
+      text: "This data can't simulate public money, so your changes to it are kept but not used.",
+      tone: 'info'
+    });
+  return out;
+}
+
+/** R22: shown beside the baseline programmes when their smallest project size is above 0. */
+export const smallProjectsCaveat = (minHomes: number): string =>
+  `Today's funding pays only for affordable projects of ${minHomes} homes or more, so smaller affordable projects get none of it and the simulation counts too few of them. A programme you add for smaller projects can reach them.`;
+
+/** R24: the first-day bundle of a partly funded project. */
+export const MONTH_OFFER_CAVEAT =
+  "A partly funded project keeps the offer it had on the first day of its month, so for up to about a month it can still draw on a source you switched off, or a programme that ended, during that month. Fully funded projects and today's funding as it stands are not affected.";

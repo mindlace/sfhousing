@@ -6,12 +6,21 @@
 import type { AutosaveNotice } from '$lib/sharing/autosave.svelte';
 import { copyFor } from '$lib/sharing/copy';
 import type { Calibration } from '$lib/timelapse/types';
+import { fundingNotices } from './funding-copy';
 import { reconcileFunding, type FundingLoadReport } from './funding-reconcile';
 import { changeText, reconcileTiming } from './reconcile';
 import type { SimDoc } from './sim-doc';
 
 export interface SimNotice {
-  id: 'corrupt' | 'future' | 'rebased' | 'timing' | 'remix';
+  id:
+    | 'corrupt'
+    | 'future'
+    | 'rebased'
+    | 'funding-added'
+    | 'funding-dropped'
+    | 'funding-off'
+    | 'timing'
+    | 'remix';
   text: string;
   /** One line each, behind a "Details" disclosure. */
   details?: string[];
@@ -39,9 +48,10 @@ function autosaveNotice(n: AutosaveNotice | null): SimNotice | null {
 }
 
 /**
- * The document to load and its notices, in order: the autosave's, the timing refit's, then the
- * Remix toast, and the funding load report for funding-ui (no funding notice here). `cal` null (the calibration failed to load) skips the reconcile: the timelines
- * cannot run then, and the next load reconciles.
+ * The document to load and its notices, in order (funding-ui 4.15): the autosave's, the funding
+ * notices built from the load report (added, dropped, off), the timing refit's, then the Remix
+ * toast. The report is returned too. `cal` null (the calibration failed to load) skips the
+ * reconcile: the timelines cannot run then, and the next load reconciles.
  */
 export function restoreSimDoc(
   r: { plan: SimDoc; notice: AutosaveNotice | null; upgradedFrom?: number },
@@ -65,6 +75,9 @@ export function restoreSimDoc(
     if (rf.funding !== doc.policy.funding)
       doc = { ...doc, policy: { ...doc.policy, funding: rf.funding } };
     funding = { upgradedFrom, ...rf.report };
+  }
+  notices.push(...fundingNotices(funding));
+  if (cal !== null) {
     const { timing, changes } = reconcileTiming(doc.policy.timing, cal);
     if (timing !== doc.policy.timing) doc = { ...doc, policy: { ...doc.policy, timing } };
     if (changes.length > 0)
