@@ -98,6 +98,44 @@ Pump max ops per frame, 2026-10-17 (full sweep; the earlier timeline-only run ga
 
 The first two rows were measured on open packed rings; the "closed rings (after #21)" rows were re-run after the closing vertex landed (every timeline part has one more wall). The closed-ring deltas (pump 48 to 53 ops, drag p95 9.0 to 10.3 ms) are run-to-run spread, not an effect of the extra wall: pump op counts do not depend on wall count, and earlier runs already varied by this much. Other preview servers were running on the machine during the closed-ring run, which adds to the noise. Both pump maxima stay far under the 2,000 feature-state cap.
 
+## Run slider switch
+
+`e2e/bench/run-slider.bench.ts` measures how long `/sim` takes to show another of the band's 101 runs. It opens `/sim`, starts a run, waits for the band's `ranks`, the first run's timeline and an idle install queue, then makes 10 switches per case through the e2e hook (`window.__sfhFzp.selectRank(position)`, position 0 = Best; the median position asks for the representative run). Each switch is one in-page evaluate that stamps `t0`, reads `timelineSnapshot().installs`, calls `selectRank`, and polls every `requestAnimationFrame`:
+
+- `first`: the first frame where a cell has installed (`installs` grew) and the new timeline has answered (`switchTrace.answeredAt`).
+- `full`: the first frame where the run is complete (`switchTrace.completeAt`) and the install queue is empty (`pending === 0`).
+
+Four cases: camera `default` (the page's opening camera) or `zoomed` (downtown, zoom 15.5, pitch 55, as the timeline cases) times move `one tick` (alternate the median and the next position) or `Best↔Worst` (alternate positions 0 and 100). It prints p50/p95 of `first` and `full` with the dataset, renderer and DPR, and asserts the `default` camera's `full` p95 is at most 3000 ms (the spec's ceiling). Later run-slider tasks re-run the same bench.
+
+Run it on a quiet machine, live:
+
+```bash
+npm run data:local -- <production dataset version>   # once; see below for finding the version
+SFH_BENCH_DATASET=<version> npm run bench:map -- 'run-slider\.bench'
+```
+
+Use the version production actually serves: the `/data/<version>/` segment in the production `/sim` page's data URLs, for example `curl -s https://sfhousing.mindlace.net/ | grep -oE '20[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9a-f]{8}' | sort -u`, confirmed by `https://sfhousing.mindlace.net/data/<version>/manifest.json` answering 200. `npx tsx scripts/dataset-version.ts` on the main checkout prints the version main's source tree hashes to, which is not always published (on 2026-11-10 it printed `2026-11-08-de1aee4b`, a manifest 404, while production served `2026-11-08-3b7fa918`). The live bench for this section uses `2026-11-08-3b7fa918`. Record numbers from the 2022 MacBook Air (M2) class reference machine named above for the spec's pass bar; label numbers from any other machine as such.
+
+`SFH_BENCH_DATASET` makes `playwright.bench.config.ts` skip `npm run data:fixture` and serve that version (`PUBLIC_DATASET_VERSION`). Without it the bench runs against fixture-0, which is only a smoke check: its timeline is tiny (the smoke run on 2026-11-10 read about 6 ms `first` and 15 ms `full` in all four cases). Filter with `'run-slider\.bench'`, not `run-slider`: Playwright matches the filter against the whole file path, so inside a worktree named `*run-slider*` the bare word selects every bench file.
+
+### Results
+
+| Machine   | Date      | Dataset | Case     | first p50/p95               | full p50/p95                | Label                                    |
+| --------- | --------- | ------- | -------- | --------------------------- | --------------------------- | ---------------------------------------- |
+| (pending) | (pending) | live SF | all four | deferred: needs a quiet run | deferred: needs a quiet run | baseline: reroll path                    |
+| (pending) | (pending) | live SF | all four | deferred: needs a quiet run | deferred: needs a quiet run | after worker + map swap                  |
+| (pending) | (pending) | live SF | all four | deferred: needs a quiet run | deferred: needs a quiet run | final (swap 16 cells/frame, provisional) |
+
+The live baseline was not taken in the session that wrote the bench: the machine was under heavy load (1-minute load average about 38) when it was written, and it needs the production dataset in local R2 (`data:local`) on a quiet machine. Ballpark expectations, from the pieces and not measured: the worker simulates a run in about 20 ms, cold building generation costs about 25 microseconds per building, and today's whole-city install is about 1 s (4 cells per frame times 256 cells at 60 Hz). So the baseline full switch at the default camera should land around 1 to 3 s, and a viewport-sized install around 0.2 to 0.5 s.
+
+The "after worker + map swap" rows (worker swap reroll and `TimelineController` swap mode, with `selectRank` asking for a swap) were deferred too: the session that added the map swap saw a 1-minute load average of about 4 with another worktree's Vitest run going, and the production dataset was not yet in local R2. Its main-thread companion, `swap install cadence at 30,000 projects (baseline)` in `src/lib/map/timeline.perf.svelte.spec.ts` (`client-perf`; rAF gaps from a swap revision 0 until `pending` is 0, p95 at most 50 ms, never an empty layer list), has no baseline yet either: there, as for every real-map test in that file, the map did not reach `ready` (map sources failed with `e.split is not a function`, an environment fault that also fails `SimMap*.svelte.spec.ts` at the branch base).
+
+The "final" row (the finished branch, `SWAP_CELLS_PER_SLICE = 16`) was deferred as well, on 2026-11-10 (M5 Pro). The machine was never quiet over about 15 minutes: at the start a 1-minute load average of 3.5 with another worktree's Vitest run, then 9 with another session's `test:pipeline`, then 34 with another session's full Playwright e2e sweep. Live dataset note: `npx tsx scripts/dataset-version.ts` on the main checkout printed `2026-11-08-de1aee4b`, which production does not serve (manifest 404); production serves `2026-11-08-3b7fa918`, and that is the version copied into this worktree's local R2 (`npm run data:local -- 2026-11-08-3b7fa918`). Run the bench with `SFH_BENCH_DATASET=2026-11-08-3b7fa918` (or whatever production serves then).
+
+`SWAP_CELLS_PER_SLICE` stays at 16 and is provisional until that run. Ballpark expectations, not measured on the map: the worker answers a swap with revision 0 in about 60 to 75 ms and completes in about 60 to 290 ms (measured by `src/lib/sim/scenario/scenario.bench.spec.ts` on the bench city at a 1-minute load of about 2.5, when the worker swap landed); deck tessellates about 4.5 ms per 1500-parcel cell (C5), so a 16-cell frame costs an estimated 70 to 80 ms. For the whole city (about 256 cells) that is about 16 frames, so `first` should land around 130 to 160 ms (revision 0 plus one frame) and `full` around 1.2 to 1.6 s at the default camera, inside the 3 s ceiling, with Best↔Worst close to one tick (the swap installs every cell either way).
+
+Estimated cost of the provisional default: each 16-cell frame is a long task of about 70 to 80 ms, which breaks §4.12's "no longtask > 50 ms" budget (C5; `docs/superpowers/specs/2026-10-10-map-view-design.md`), and the swap cadence test in `src/lib/map/timeline.perf.svelte.spec.ts` (p95 rAF gap at most 50 ms) has no baseline to confirm or refute it. Keeping 16 therefore needs an explicit owner decision once the live numbers exist: either accept long tasks during a switch or lower the budget (about 10 cells keeps a frame near 45 ms; the total tessellation is unchanged, so by the same estimate `full` moves only slightly, to about 1.3 to 1.7 s). If the live numbers miss 3 s, the spec's order applies: 32, then 64 cells per frame, then cutting per-switch main-thread work.
+
 ## CI
 
 CI does not run this bench. Headless Chromium in CI renders with software GL (SwiftShader), so

@@ -148,7 +148,9 @@ export type ScenarioRequest =
       // nothing but `ready`, errors and request answers until it is current (an `/s/<id>` open).
       awaitLevers?: boolean;
     }
-  | { type: 'reroll'; rev: Rev; seed: number | null }
+  // `swap` (the run slider): revision 0 goes out after one packing slice, viewport cells first,
+  // and the page installs it over the cells on the map; the rest follow in later revisions.
+  | { type: 'reroll'; rev: Rev; seed: number | null; swap?: true }
   // A barrier rev like reroll; needs a session initialised with levers. The latest one wins.
   | { type: 'setLevers'; rev: Rev; levers: SimLevers }
   | {
@@ -243,7 +245,11 @@ export type ScenarioResponse =
   | { type: 'heights'; rev: Rev; city: HeightCity }
   | { type: 'heightLids'; reqId: number; result: HeightLidsResult }
   | { type: 'lotAt'; reqId: number; result: LotAtResult }
+  // The band's runs ranked best to worst as seeds, once per band (each lever revision has its
+  // own), when its last FZP run is set; `rev` is the revision whose band it ranks.
+  | RanksResponse
   | LeversResponse;
+export type RanksResponse = { type: 'ranks'; rev: Rev; seeds: number[] };
 /**
  * A lever revision's status (plan 2): `rev` is the `initScenario` or `setLevers` that named the
  * levers. `resolving` while touched-lot yields are recomputed (`failedCells`: needed chunks that

@@ -600,6 +600,68 @@ describe('scenario host budgets (spec §4.11)', () => {
       expect(grown).toBeLessThanOrEqual(300);
     }
   );
+
+  // The run slider (run slider Task 3): a swap reroll's revision 0 is one packing slice, viewport
+  // cells first, so it should take about the same time whatever the run. Best ↔ Worst are the
+  // two ends of the band's rank order. The ceilings are loose; the printed numbers are the
+  // baseline.
+  it('swap reroll → revision 0, Best ↔ Worst, cold (baseline)', { timeout: TIMEOUT }, async () => {
+    if (!rig.posted.some((p) => p.msg.type === 'ready')) {
+      // run alone (`-t swap`): the session and the whole city the tests above leave behind
+      rig.handle({
+        type: 'initScenario',
+        rev: 1,
+        manifest: city.manifest,
+        scenario: 'fzp',
+        seed: null,
+        horizon: HORIZON
+      });
+      rig.handle({ type: 'prefetch', bbox: [...SYNTH_BBOX] });
+    }
+    const ranks = await rig.until('ranks', () => {
+      const m = rig.posted.find((p) => p.msg.type === 'ranks')?.msg;
+      return m?.type === 'ranks' ? m : undefined;
+    });
+    expect(ranks.seeds).toHaveLength(BAND_RUNS);
+    const ends = [ranks.seeds[0], ranks.seeds.at(-1)!];
+    await rig.until('every chunk', () =>
+      rig.posted.some(
+        ({ msg }) => msg.type === 'chunks' && msg.pending === 0 && msg.failed.length === 0
+      )
+    );
+    await rig.idle();
+    const from = performance.now();
+    const rev0: number[] = [];
+    const full: number[] = [];
+    const cells0: number[] = [];
+    for (let k = 0; k < 10; k++) {
+      const rev = 5 + k;
+      const seed = ends[k % 2];
+      const t0 = rig.handle({ type: 'reroll', rev, seed, swap: true });
+      const first = await rig.until(`swap ${rev} revision 0`, () => rig.timelines(rev)[0]);
+      expect(first.msg.seed).toBe(seed);
+      expect(first.msg.render.swap).toBe(true);
+      const done = await rig.until(
+        `swap ${rev} complete`,
+        () => rig.timelines(rev).find((p) => p.msg.complete),
+        120_000
+      );
+      await rig.idle();
+      rev0.push(first.at - t0);
+      full.push(done.at - t0);
+      cells0.push(first.msg.render.cells.length);
+    }
+    const worst = rig.longest(from);
+    const max = (xs: number[]) => Math.max(...xs);
+    console.log(
+      `[perf] swap reroll Best ${ends[0]} ↔ Worst ${ends[1]} ×10 → revision 0: ` +
+        `p50 ${ms(median(rev0))}, max ${ms(max(rev0))} (${rev0.map((x) => x.toFixed(0))}); ` +
+        `complete: p50 ${ms(median(full))}, max ${ms(max(full))}; ` +
+        `revision-0 cells ${cells0.join(', ')}; longest macrotask ${taskLabel(worst)}`
+    );
+    expect(max(rev0)).toBeLessThanOrEqual(1000);
+    expect(dur(worst)).toBeLessThanOrEqual(50);
+  });
 });
 
 // F18 host cases 4 and 5 (finance-engine spec 4.17). Operator ruling R-P3, now met: the cases run

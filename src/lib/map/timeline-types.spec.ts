@@ -33,6 +33,8 @@ interface RowTimelineUpdate {
   cells: TimedPackedCell[];
   removedCells: string[];
   demolish: { parcelId: ParcelId; day: Day }[]; // complete list in revision 0; empty afterwards
+  swap?: true; // revision 0 only: install over the cells on the map (run slider Task 3)
+  complete?: boolean; // the run has packed every loaded cell
 }
 
 type RowApplyTimeline = (u: TimelineUpdate) => void;

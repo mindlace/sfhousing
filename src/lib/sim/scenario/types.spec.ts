@@ -134,7 +134,7 @@ type RowScenarioRequest =
       levers?: SimLevers; // plan 2 Task 12
       awaitLevers?: boolean; // gross-table Task 6
     }
-  | { type: 'reroll'; rev: Rev; seed: number | null }
+  | { type: 'reroll'; rev: Rev; seed: number | null; swap?: true } // run slider Task 3
   | { type: 'setLevers'; rev: Rev; levers: SimLevers }
   | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string }
   | { type: 'resolveBrush'; reqId: number; query: BrushQuery } // plan 3 Task 5
@@ -183,6 +183,7 @@ type RowScenarioResponse =
   | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
   | { type: 'lotOutlines'; reqId: number; result: RowLotOutlinesResult }
   | { type: 'previewBuildings'; reqId: number; result: RowPreviewResult }
+  | { type: 'ranks'; rev: Rev; seeds: number[] }
   | { type: 'heights'; rev: Rev; city: HeightCity } // height lids Task 8
   | { type: 'heightLids'; reqId: number; result: RowHeightLidsResult }
   | { type: 'lotAt'; reqId: number; result: RowLotAtResult }

@@ -32,7 +32,10 @@ export default defineConfig({
   build: {
     // The largest client chunk (~1.1 MB) is the MapLibre GL bundle. The limit sits just above it, so a
     // jump in chunk size past 1.2 MB warns again.
-    chunkSizeWarningLimit: 1200
+    chunkSizeWarningLimit: 1200,
+    // Rolldown's bundlerTimings report fires whenever plugins take most of a slow build, which a
+    // loaded machine guarantees; signoff fails on its stderr lines although nothing is wrong.
+    rolldownOptions: { checks: { bundlerTimings: false } }
   },
   test: {
     expect: { requireAssertions: true },

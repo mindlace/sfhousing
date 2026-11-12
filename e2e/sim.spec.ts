@@ -8,7 +8,7 @@ import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { SfhSimDebug } from '../src/lib/sim-page/debug';
 import { formatCount } from '../src/lib/scoreboard/format';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { slider, startRun } from './helpers/run';
+import { runSlider, slider, startRun, waitRanked } from './helpers/run';
 import {
   FRAME,
   FROM,
@@ -756,21 +756,25 @@ async function expectAddressFuture(page: Page): Promise<void> {
   expect(await fzp(page, 'phase')).toBe('ready');
 }
 
-test('Back after a reroll', async ({ page }) => {
+test('Back after a run slider move', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/fzp?seed=5');
   await expect(page).toHaveURL(/\/sim\?seed=5$/);
   await waitReady(page);
   await expectAddressFuture(page);
 
-  await (await headerAction(page, 'Another future')).click();
-  await expect(page).toHaveURL((u) => /^\/sim$/.test(u.pathname) && !/\bseed=5$/.test(u.search));
-  await expect(page).toHaveURL(/\/sim\?seed=\d+$/);
-  const seed = Number(new URL(page.url()).searchParams.get('seed'));
+  await startRun(page);
+  await waitRanked(page);
+  const ranks = (await fzp(page, 'ranks'))!;
+  // Best, or Worst when Best is the run on show.
+  const [key, seed] = ranks[0] === 5 ? ['End', ranks[100]] : ['Home', ranks[0]];
+  await runSlider(page).focus();
+  await page.keyboard.press(key);
+  await expect(page).toHaveURL(new RegExp(`/sim\\?seed=${seed}$`));
   await expectAddressFuture(page);
 
   // Leave by a client navigation: Back is then SvelteKit's popstate onto the URL it stored before
-  // the reroll's replaceState (?seed=5), while the address bar names the rerolled seed.
+  // the move's replaceState (?seed=5), while the address bar names the moved seed.
   await openHeaderMenu(page);
   await page.getByRole('banner').getByRole('link', { name: 'Simulate', exact: true }).click();
   await expect(page).toHaveURL(/\/sim$/);
@@ -1394,7 +1398,7 @@ for (const width of [768]) {
     await expect(dockPanel(page)).toBeVisible();
     await expectHeaderFits(page);
     await openHeaderMenu(page);
-    for (const name of ['View', 'Policy', /^(Publish|Share link)/, 'Another future'])
+    for (const name of ['View', 'Policy', /^(Publish|Share link)/])
       await expect(
         banner.getByRole('button', { name, exact: typeof name === 'string' })
       ).toBeVisible();

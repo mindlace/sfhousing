@@ -14,7 +14,7 @@
     delta?: number | null;
   }
   const defaultActions = createRawSnippet(() => ({
-    render: () => '<button>Another future</button>'
+    render: () => '<button>Example</button>'
   }));
   let {
     actions = defaultActions,
