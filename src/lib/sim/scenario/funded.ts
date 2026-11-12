@@ -1308,9 +1308,11 @@ const lotPool = new WeakMap<Precompute, Map<number, LotTable>>();
  * else (a nested or interleaved pass) a fresh one. Only what a pass reads before it writes is
  * reset: `lk` (the eager phase starts every lot at attempt 0) and `lapps` (cleared on release).
  * Every other field of a lot is written before it is read: `lr`, `ld`, `lfresh` and
- * `ldemolished` before its walk, its latents in the walk, `lparked`, `lgen` and the parked
- * attempt's fields before its first calendar entry, and entries live only in their pass's
- * calendar.
+ * `ldemolished` before its walk, its latents in the walk, `lgen` and the parked attempt's
+ * fields before its first calendar entry, and entries live only in their pass's calendar.
+ * `lparked` is the exception: a stale value from the pooled table can be read, but it is
+ * harmless, because every read is paired with the `lgen[c] === cal.gen(x)` check and `lgen` is
+ * written before the lot's first entry.
  */
 function claimLots(pre: Precompute, N: number, V: number): LotTable {
   let byV = lotPool.get(pre);

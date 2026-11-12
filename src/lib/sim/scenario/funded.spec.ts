@@ -692,7 +692,6 @@ describe('the typed walk (perf Task 3)', () => {
       const n = checkRecords(inp, seeds);
       for (const key of Object.keys(total) as (keyof Counts)[]) total[key] += n[key];
     }
-    console.log('[records]', JSON.stringify(total));
     expect(total.apps).toBeGreaterThan(0);
     expect(total.later).toBeGreaterThan(0);
     expect(total.demolished).toBeGreaterThan(0);
