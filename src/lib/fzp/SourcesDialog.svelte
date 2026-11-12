@@ -26,7 +26,8 @@
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { ProjectsFile } from '$lib/timelapse/projects';
   import type { Day } from '$lib/timelapse/time';
-  import type { Calibration } from '$lib/timelapse/types';
+  import type { Calibration, ResolvedTerms } from '$lib/timelapse/types';
+  import { resolveTerms } from '$lib/sim/finance';
   import { TIER_LABEL } from './labels';
   import {
     NOT_SF_NOTE,
@@ -50,10 +51,19 @@
     asOf: Day;
     fetchFn?: typeof fetch;
     onopen?: () => void;
+    /** The shown levers' resolved market terms, for "Public money" (4.12); sourced by default. */
+    terms?: ResolvedTerms;
   }
   // `asOf` is deliberately not read: the calibration carries the same date.
   // eslint-disable-next-line svelte/no-unused-props
-  let { calibration, score, projectsUrl, fetchFn, onopen }: Props = $props();
+  let {
+    calibration,
+    score,
+    projectsUrl,
+    fetchFn,
+    onopen,
+    terms = resolveTerms()
+  }: Props = $props();
 
   type Quality =
     | { kind: 'loading' }
@@ -61,7 +71,7 @@
     | { kind: 'ready'; rows: ReturnType<typeof qualityRows> };
 
   const headingId = $props.id();
-  const sections = $derived(provenanceSections(calibration, score));
+  const sections = $derived(provenanceSections(calibration, score, terms));
 
   let dialog = $state<HTMLDialogElement | null>(null);
   let quality = $state<Quality>({ kind: 'loading' });

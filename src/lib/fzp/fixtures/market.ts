@@ -22,10 +22,17 @@ export const LIVE_MARKET: MarketModel = {
   },
   slope: {
     perCostShare: 1.74,
-    provenance: { tier: 3, label: 'x', sources: [], method: 'x' },
+    provenance: {
+      tier: 2,
+      label: "Odds shift for public money, from today's private level",
+      sources: [
+        { label: 'SF Planning projects (DataSF qvu5-m3a2)', url: 'https://data.sf.gov/d/qvu5-m3a2' }
+      ],
+      method: 'x'
+    },
     crossChecks: {
-      costCoefficient: 0,
-      priceCoefficient: 0,
+      costCoefficient: -1.234,
+      priceCoefficient: 2.5,
       provenance: { tier: 3, label: 'x', sources: [], method: 'x' }
     }
   }
