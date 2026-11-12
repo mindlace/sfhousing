@@ -1,12 +1,12 @@
 // Plan 2 Task 8: the engine's per-project calibration (ruling 3, "Policy start date") and the
-// in-flight remaining-time rescale (ruling 3, "Remaining-time rescale for in-flight stages").
+// time-in-stage scale (paired-draw fix: the engine samples the unscaled transition and scales the
+// time in stage of every step by the cohort's scale).
 import { describe, expect, it } from 'vitest';
-import { sampleTransition } from '$lib/timelapse/model';
-import { MONTH_DAYS, monthsIn, type Day } from '$lib/timelapse/time';
-import { STAGE_ORDER, type Calibration, type Pathway, type Stage } from '$lib/timelapse/types';
-import { routeSharesOp, scaleTable, timersOp, type StageScale } from '../levers/timers';
-import { inFlightMonths, isSkipped, nextStage } from './engine';
-import { P, drawOn, jobEntity, seedHash, stageRedraw, streamOf } from './rng';
+import { type Day } from '$lib/timelapse/time';
+import { STAGE_ORDER, type Pathway, type Stage } from '$lib/timelapse/types';
+import { routeSharesOp, scaleTable, type StageScale } from '../levers/timers';
+import { isSkipped, nextStage, scaledTransition } from './engine';
+import { P, drawOn, jobEntity, seedHash, streamOf } from './rng';
 import golden from './fixtures/golden-seed1.json';
 import { GOLDEN_HORIZON, goldenInput } from './simulate.golden.cases';
 import { simulateDetailed } from './simulate';
@@ -19,10 +19,6 @@ function scaleOf(pathway: Pathway, stage: keyof StageScale[Pathway], s: number):
   const out = scaleTable([], 'new');
   out[pathway][stage] = s;
   return out;
-}
-
-function timed(cal: Calibration, input: SimInput, scale: StageScale): Calibration {
-  return timersOp(scale)(cal, input.parcels).cal;
 }
 
 const byId = (ss: Schedule[]) => new Map(ss.map((s) => [s.projectId, s]));
@@ -70,7 +66,7 @@ describe('engine levers: newProjects', () => {
   const scale = scaleOf('discretionary', 'filed', 0.5);
   const input: SimInput = {
     ...base,
-    newProjects: { calibration: timed(base.calibration, base, scale), scale }
+    newProjects: { calibration: base.calibration, scale }
   };
   const stageOf = new Map(base.projects.map((p) => [p.id, p.stage]));
 
@@ -156,80 +152,66 @@ describe('engine levers: newProjects', () => {
 });
 
 describe('engine levers: in-flight remaining time', () => {
-  it('inFlightMonths', () => {
-    expect(inFlightMonths(7, 1)).toBe(7);
-    expect(inFlightMonths(7, 0.5)).toBe(4);
-    expect(inFlightMonths(0, 0.5)).toBe(0);
-  });
-
   const base = goldenInput();
   const stage = 'permitFiled';
   const rows = base.projects
     .filter((p) => p.pathway === 'permitOnly' && p.stage === stage && !isSkipped(p))
     .map((p) => p.id);
-  const withScale = (s: number): SimInput => {
-    const scale = scaleOf('permitOnly', stage, s);
-    return { ...base, calibration: timed(base.calibration, base, scale), inFlightScale: scale };
-  };
+  const withScale = (s: number): SimInput => ({
+    ...base,
+    inFlightScale: scaleOf('permitOnly', stage, s)
+  });
 
-  // The redraw loop is unchanged (ruling 3), so a rescaled first draw that lands on or before
-  // asOf is redrawn independently and can land later than the base draw. That happens only when
-  // the base leaves within the redraw window just after asOf (measured over seeds 1-2000: every
-  // later leave had a base leave <= asOf + 47 days). Outside a 1/s-month window the rescale never
-  // makes a row leave later, and the remaining time shrinks with s.
-  it('scale 0.5 makes in-flight rows leave their stage no later, seeds 1-20', () => {
+  // The kind and the time are drawn apart (P.STAGE, P.STAGE_TIME), so the scale moves only the
+  // time: every row leaves no later, and every row ends the same way.
+  it('scale 0.5: every in-flight row leaves no later, with the same outcome, seeds 1-20', () => {
     expect(rows.length).toBeGreaterThan(1);
-    const s = 0.5;
-    const input = withScale(s);
-    const window = base.asOf + Math.ceil(MONTH_DAYS / s);
+    const input = withScale(0.5);
     const was: number[] = [];
     const now: number[] = [];
-    let outside = 0;
+    let earlier = 0;
     for (const seed of seeds(20)) {
       const a0 = byId(simulateDetailed(base, seed, H).schedules);
       const b0 = byId(simulateDetailed(input, seed, H).schedules);
       for (const id of rows) {
-        const a = leaveDay(a0.get(id)!, stage);
-        const b = leaveDay(b0.get(id)!, stage);
+        const sa = a0.get(id)!;
+        const sb = b0.get(id)!;
+        const a = leaveDay(sa, stage);
+        const b = leaveDay(sb, stage);
         expect(b, `${seed} ${id}`).toBeGreaterThan(base.asOf);
-        if (a > window) {
-          expect(b, `${seed} ${id}`).toBeLessThanOrEqual(a);
-          outside++;
-        }
+        expect(b, `${seed} ${id}`).toBeLessThanOrEqual(a);
+        if (b < a) earlier++;
+        const endOf = (x: Schedule) =>
+          x.end.kind === 'exit'
+            ? { kind: x.end.kind, stage: x.end.stage, reason: x.end.reason }
+            : { kind: x.end.kind };
+        expect(endOf(sb), `${seed} ${id}`).toEqual(endOf(sa));
         was.push(a - base.asOf);
         now.push(b - base.asOf);
       }
     }
-    expect(outside).toBeGreaterThan(20);
-    expect(now.filter((d, i) => d <= was[i]).length).toBeGreaterThanOrEqual(0.9 * was.length);
+    expect(earlier).toBeGreaterThanOrEqual(20);
     expect(median(now)).toBeLessThanOrEqual(0.75 * median(was));
   });
 
-  // Pins ruling 3's mapping: condition the rescaled transition on m' = round(m·s) months, then
-  // shift the draw back onto the real m months (not "condition on m": that ages the row to m/s).
-  it('samples the rescaled stage on m′ months and maps the day back, seeds 1-20', () => {
+  it('the in-flight step is scaledTransition on P.STAGE, P.STAGE_TIME and asOf + 1 − e', () => {
     const s = 0.5;
     const input = withScale(s);
-    const t = input.calibration.transitions.permitOnly[stage]!;
+    const t = base.calibration.transitions.permitOnly[stage]!;
     const idx = STAGE_ORDER.indexOf(stage);
     for (const seed of seeds(20)) {
       const got = byId(simulateDetailed(input, seed, H).schedules);
       for (const id of rows) {
         const e = base.projects.find((p) => p.id === id)!.history[stage] ?? base.asOf;
-        const m = monthsIn(e, base.asOf);
-        const m2 = inFlightMonths(m, s);
         const stream = streamOf(seedHash(seed), jobEntity(id), 0);
-        let want: Day = base.asOf + 1;
-        for (let j = 0; j <= 7; j++) {
-          const purpose = j === 0 ? P.STAGE : stageRedraw(j as 1 | 2 | 3 | 4 | 5 | 6 | 7);
-          const r = sampleTransition(t, drawOn(stream, purpose, idx), m2);
-          const day =
-            e + Math.floor(r.days) - Math.ceil(m2 * MONTH_DAYS) + Math.ceil(m * MONTH_DAYS);
-          if (day > base.asOf) {
-            want = day;
-            break;
-          }
-        }
+        const r = scaledTransition(
+          t,
+          drawOn(stream, P.STAGE, idx),
+          drawOn(stream, P.STAGE_TIME, idx),
+          base.asOf + 1 - e,
+          s
+        );
+        const want: Day = e + r.days;
         expect(leaveDay(got.get(id)!, stage), `${seed} ${id}`).toBe(want > H ? Infinity : want);
       }
     }

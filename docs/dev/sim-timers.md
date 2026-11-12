@@ -9,6 +9,9 @@ the preset or floor that needs it is unavailable (plan Calls 7 and 8). The UI is
 
 ## The timing model
 
+- **A timer scales each project's time in a stage, never its outcome**: the engine draws whether
+  a project advances or stops from the unscaled tables and multiplies only its time in stage by
+  the scale. See [Timers scale time, never outcomes](sim-levers.md#timers-scale-time-never-outcomes).
 - **Width is the typical (median) duration** of leaving the stage by any outcome (`typicalMonths`),
   not the mean the spec's wording suggests (Call 1). The UI says "typical".
 - **A duration edit is stored as a scale** (`TimerEdit`, Call 2, as ruled): custom months `m` on a

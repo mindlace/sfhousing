@@ -1,10 +1,14 @@
 /**
  * Compiles a filled lever `Resolution` into the plan's and the twin's `SimInput`s (plan 2 Task
- * 10), and the stage lookups each cohort reads. The plan runs on the resolved envelopes, its
- * in-flight rows on the `'all'` timers and its new projects on every timer plus the route shares
- * (ruling 3, "Policy start date"). The twin is pre-FZP zoning or FZP as written, never the
- * plan's timers, and every lever field (`newProjects`, `inFlightScale`) is set explicitly,
- * because `applyPolicies` copies the whole input. Worker-safe and pure.
+ * 10), and the stage lookups each cohort reads. The plan runs on the resolved envelopes and the
+ * unscaled calibration: timers reach the engine only as scales (`inFlightScale` for in-flight
+ * rows, the `'all'` timers; `newProjects.scale` for new projects, every timer), and the engine
+ * multiplies each stage's time by them, so a timer never changes an outcome (paired-draw fix).
+ * New projects also take the route shares (ruling 3, "Policy start date"). The lookups are the
+ * display view: the rescaled tables (`timersOp`), which agree with the engine within the month
+ * grid. The twin is pre-FZP zoning or FZP as written, never the plan's timers, and every lever
+ * field (`newProjects`, `inFlightScale`) is set explicitly, because `applyPolicies` copies the
+ * whole input. Worker-safe and pure.
  */
 import { chanceTable, typicalMonths } from '$lib/timelapse/model';
 import { applyPolicies, baseZoning } from '../scenario/policy';
@@ -18,7 +22,14 @@ import {
   type LeverCapacity,
   type Resolution
 } from './resolve';
-import { isIdentity, routeSharesOp, scaleTable, timersOp } from './timers';
+import {
+  isIdentity,
+  routeSharesOp,
+  sameScale,
+  scaleTable,
+  timersOp,
+  type StageScale
+} from './timers';
 import { DEFAULT_LEVERS, type Compare, type SimLevers } from './types';
 import { envelopeOp, localProgramColumn } from './view';
 
@@ -54,18 +65,13 @@ function bare(input: SimInput): SimInput {
 function planOf(base: SimInput, ctx: LayerCtx, levers: SimLevers, filled: Resolution): SimInput {
   const lp = localProgramColumn(ctx, levers);
   const inFlight = scaleTable(levers.timers, 'inFlight');
-  const fresh = scaleTable(levers.timers, 'new');
-  const plan = bare(applyPolicies([envelopeOp(filled.plan.table, lp), timersOp(inFlight)], base));
-  // Without a 'new' timer both cohorts have the same scales, so new projects reuse the plan's
-  // rescaled transitions (and `lookupsOf` shares one set). Otherwise every edit applies to the
-  // base calibration once: rescaling the in-flight calibration again would double the 'all' ones.
-  const shares = routeSharesOp(levers.routeShares);
-  const newCal = levers.timers.some((t) => t.reach === 'new')
-    ? applyPolicies([timersOp(fresh), shares], base).calibration
-    : applyPolicies([shares], plan).calibration;
+  // No `timersOp`: the engine scales time itself, on the unscaled transitions. Rescaling the
+  // calibration as well would apply every timer twice.
+  const plan = bare(applyPolicies([envelopeOp(filled.plan.table, lp)], base));
+  const newCal = applyPolicies([routeSharesOp(levers.routeShares)], plan).calibration;
   return {
     ...plan,
-    newProjects: { calibration: newCal, scale: fresh },
+    newProjects: { calibration: newCal, scale: scaleTable(levers.timers, 'new') },
     ...(isIdentity(inFlight) ? {} : { inFlightScale: inFlight })
   };
 }
@@ -103,11 +109,25 @@ function lookupsFor(cal: SimInput['calibration']): Lookups {
   return { chance: chanceTable(cal), typicalMonths: typicalMonths(cal) };
 }
 
-/** The stage lookups of the plan's in-flight rows and of its new projects. */
+const IDENTITY: StageScale = { discretionary: {}, streamlined: {}, permitOnly: {} };
+
+/**
+ * The stage lookups of the plan's in-flight rows and of its new projects: the display view of the
+ * engine's scaled time, each cohort's calibration rescaled by its own scale (`timersOp`). The
+ * engine never reads them. New projects share the in-flight set when they run on the same
+ * transitions with the same scale.
+ */
 export function lookupsOf(plan: SimInput): LeverLookups {
-  const inFlight = lookupsFor(plan.calibration);
-  const newCal = plan.newProjects?.calibration ?? plan.calibration;
-  const fresh = newCal.transitions === plan.calibration.transitions ? inFlight : lookupsFor(newCal);
+  const inFlightScale = plan.inFlightScale ?? IDENTITY;
+  const inFlight = lookupsFor(timersOp(inFlightScale)(plan.calibration, plan.parcels).cal);
+  const np = plan.newProjects;
+  const shared =
+    np === undefined ||
+    (np.calibration.transitions === plan.calibration.transitions &&
+      sameScale(np.scale, inFlightScale));
+  const fresh = shared
+    ? inFlight
+    : lookupsFor(timersOp(np.scale)(np.calibration, plan.parcels).cal);
   return { inFlight, fresh };
 }
 

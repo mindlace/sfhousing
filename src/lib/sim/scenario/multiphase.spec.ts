@@ -4,7 +4,7 @@
 // planned asOf + 45) and the entitled single-phase master (P = 1).
 import { describe, expect, it } from 'vitest';
 import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
-import { parseCalibration, sampleTransition } from '$lib/timelapse/model';
+import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile, type InFlightProject } from '$lib/timelapse/projects';
 import {
   PATHWAYS,
@@ -22,6 +22,7 @@ import {
   MINI_PROJECTS,
   miniProjectsJson
 } from './fixtures/mini-projects';
+import { scaledTransition } from './engine';
 import { buildSimInput } from './input';
 import { applyPolicies, baseZoning } from './policy';
 import { P, draw, jobEntity } from './rng';
@@ -455,17 +456,18 @@ describe('multi-phase masters (§4.4.3a)', () => {
       expect(ps).toHaveLength(3);
       if (new Set(ps.map((s) => s.end.kind)).size > 1) mixed++;
       for (const s of ps) {
-        // the first step from permitFiled: one fresh draw on the phase's own entity
+        // the first step from permitFiled: one fresh paired draw on the phase's own entity
         const t = inp.calibration.transitions[s.pathway].permitFiled!;
-        const u = draw(
-          seed,
-          jobEntity(s.projectId),
+        const ent = jobEntity(s.projectId);
+        const i = STAGE_ORDER.indexOf('permitFiled');
+        const r = scaledTransition(
+          t,
+          draw(seed, ent, 0, P.STAGE, i),
+          draw(seed, ent, 0, P.STAGE_TIME, i),
           0,
-          P.STAGE,
-          STAGE_ORDER.indexOf('permitFiled')
+          1
         );
-        const r = sampleTransition(t, u, 0);
-        const day = s.entered.permitFiled! + Math.floor(r.days);
+        const day = s.entered.permitFiled! + r.days;
         if (day > H) expect(s.end).toEqual({ kind: 'open' });
         else if (r.kind === 'advance') expect(s.entered.permitIssued).toBe(day);
         else expect(s.end).toEqual({ kind: 'exit', stage: 'permitFiled', reason: r.kind, day });

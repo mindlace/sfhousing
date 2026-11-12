@@ -1,15 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  draw,
-  drawOn,
-  fmix32,
-  jobEntity,
-  P,
-  seedHash,
-  simEntity,
-  stageRedraw,
-  streamOf
-} from './rng';
+import { draw, drawOn, fmix32, jobEntity, P, seedHash, simEntity, streamOf } from './rng';
 
 describe('counter-based draws', () => {
   it('derives entity ids from FNV-1a', () => {
@@ -34,11 +24,15 @@ describe('counter-based draws', () => {
     }
   });
 
-  it('keeps purpose ids and stage redraws distinct', () => {
+  it('keeps purpose ids distinct', () => {
+    expect(P.STAGE).toBe(6);
+    expect(P.STAGE_TIME).toBe(12);
     expect(P.INIT).toBe(1);
     expect(P.PHASE_GAP).toBe(11);
-    expect(stageRedraw(1)).toBe(17);
-    expect(stageRedraw(7)).toBe(23);
+    const ids: number[] = Object.values(P);
+    expect(new Set(ids).size).toBe(ids.length);
+    // 7 and 10 are reserved for Release 2; 17..23 were the retired stage redraws
+    for (const id of ids) expect(id === 7 || id === 10 || (id >= 17 && id <= 23)).toBe(false);
   });
 
   it('stays strictly inside (0, 1)', () => {
