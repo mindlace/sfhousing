@@ -119,7 +119,7 @@ import {
   type YieldRecompute
 } from '../levers/recompute';
 import { allNeeds, fillNeeds, resolveEnvelopes, type Resolution } from '../levers/resolve';
-import { parseSimLevers, type SimLevers } from '../levers/types';
+import { LeverFormatError, parseSimLevers, type SimLevers } from '../levers/types';
 import { chooseProject, projectCard, revisionAt, type CardCtx } from './card';
 import { createGeometry, type Geometry } from './geometry';
 import { lotAtPoint } from './lot-at';
@@ -305,6 +305,8 @@ interface LeverWork {
    *  instead of recomputing them from chunks. Null on the fallback (no table in the manifest). */
   table: GrossTable | null;
   pending: PendingLevers | null;
+  /** A revision has become current. Until then (a first revision that failed) nothing runs. */
+  inForce: boolean;
   /** 1 on the rows protected under the levers in force (set at `current`); null before. */
   protectedMask: Uint8Array | null;
   /** The latest complete city: its rev, the per-lot stories and sources it was built on, its model. */
@@ -677,6 +679,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         table: loaded.gross,
         // an awaitLevers session waits for its first setLevers, which creates the revision
         pending: st.awaitingLevers ? null : pendingOf(st.levers.rev, st.levers.levers, st.seed),
+        inForce: false,
         protectedMask: null,
         limits: null,
         city: null,
@@ -816,6 +819,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       if (c) return { kind: 'heights', run: () => cityStep(w, lw, c) };
       if (st.lidWant && lw.limits) return { kind: 'heights', run: () => lidStep(st, w, lw) };
       if (p) return p.stalled ? null : { kind: 'recompute', run: () => leverStep(st, w, lw, p) };
+      // a session whose first revision failed runs nothing until a revision is current
+      if (!lw.inForce) return null;
     }
     const run = w.run;
     const band = w.band;
@@ -914,8 +919,17 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         `lever recompute: no record for lot ${id} in its loaded cell; its yield is 0`
       );
     const filled = fillNeeds(p.state.resolution, r.result());
-    const li = applyLevers(lw.base.fzp, lw.ctx, p.levers, filled);
+    let li: ReturnType<typeof applyLevers>;
+    try {
+      li = applyLevers(lw.base.fzp, lw.ctx, p.levers, filled);
+    } catch (e) {
+      if (!(e instanceof LeverFormatError)) throw e; // the kick catch ends the session
+      // levers the data cannot carry (a baseline pool it lacks): the previous revision stays
+      lw.pending = null;
+      return error(p.rev, 'bad-request', 'levers ' + e.message);
+    }
     lw.pending = null;
+    lw.inForce = true;
     const mask = new Uint8Array(lw.base.fzp.parcels.count);
     for (const row of filled.protectedRows) mask[row] = 1;
     lw.protectedMask = mask;
