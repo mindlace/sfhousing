@@ -357,8 +357,8 @@ and `loss` on grants, loans and guarantees (the programme's instrument says whic
 | E2     | I2              | `C = R + Sg + Sl + committed`: guarantee reserves are committed and released, never spent.                                                                                            |
 | E3     | I3              | `Sl = outLoan + P + Ll`: every lent dollar is outstanding, repaid or lost.                                                                                                            |
 | E4     | I4              | For a capped pool, `leverage × received − committed − Sg − outLoan − Ll − Lh ≥ 0`, equal to the engine's value after every event.                                                     |
-| E5     | I6              | `Lg ≤ Sg`; and `Lh` over one project's guarantee never exceeds its reserve.                                                                                                           |
-| E6     | I5              | An uncapped pool has no `in` event.                                                                                                                                                   |
+| E5     | I5              | `Lg ≤ Sg`; and `Lh` over one project's guarantee never exceeds its reserve.                                                                                                           |
+| E6     | I6              | An uncapped pool has no `in` event.                                                                                                                                                   |
 | E7     | none            | Per project and programme: Σ `commit` = Σ `release` + Σ `spend` + still committed; a loan that ended has `spend` = `repay` + `loss`; a guarantee that ended has `release` = `commit`. |
 
 `test/finance-harness.ts` (`checkLedger`, `runCollect`) asserts these after every event, with the
