@@ -135,7 +135,7 @@ provenance with the Controller's cost and price coefficients as cross-check line
 The e2e reads their numbers from `fixture-0`'s calibration. See [market.md](market.md).
 
 `provenanceSections(calibration, score, terms)` and `SourcesDialog`'s `terms` prop take the shown
-levers' `ResolvedTerms` (FzpMode: `resolveTerms(MARKET_TERMS, levers.finance.terms)`). With both
+levers' `ResolvedTerms` (FzpMode: `resolveTerms(MARKET_TERMS, (shownLevers ?? levers).finance.terms)`). With both
 `market` and `baselineFunding` the dialog has a section `src-money` ("Public money") after
 `src-market`: the baseline's provenance, how fully funded affordable projects are approved, the
 prototypes and land, the loan and guarantee terms (unsourced ones as "No sourced value", typed ones
@@ -156,7 +156,7 @@ read the scrubbed month (`at.monthIndex`, never past the high-water mark). Its p
 - `terms`: the shown levers' resolved market terms, for the lost-grants line (`lossOnExit`).
 - `uncapped`: the ids of pools whose `Pool.uncapped` is true, which read "no limit" under Received.
   FzpMode derives it with `uncappedPoolIds(calibration.baselineFunding.pools,
-levers.finance.pools)` (`money-view.ts`), because the run's money series carries no flag.
+(shownLevers ?? levers).finance.pools)` (`money-view.ts`), because the run's money series carries no flag.
 
 The rows and their wording are in [sim-funding.md](sim-funding.md) ("Results, card and summary").
 
