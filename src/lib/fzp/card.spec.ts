@@ -2,14 +2,18 @@ import { describe, expect, it } from 'vitest';
 import type { ProjectCard } from '$lib/sim/protocol';
 import { chanceTable } from '$lib/timelapse/model';
 import { monthsIn } from '$lib/timelapse/time';
-import type { Stage } from '$lib/timelapse/types';
+import type { Pool, Programme, Stage } from '$lib/timelapse/types';
+import { fundingName } from '$lib/sim-page/funding-view';
+import { FUND_ASOF, fundingCalibration, policyWith } from '$lib/sim-page/test/funding';
 import {
   LOCAL_PROGRAM_SECTION_ID,
   SIMULATED_DISCLAIMER,
   SOURCE_DATASETS,
   chanceLine,
+  cardFunding,
   chanceProvenance,
   cardStatus,
+  fundingLine,
   dataNotes,
   massingNote,
   phaseLine,
@@ -21,12 +25,15 @@ import {
   timelineRows,
   transitionSectionId,
   type CardChance,
+  type CardFunding,
   type ChanceTable
 } from './card';
 import {
   APPROXIMATE,
   EXITED,
   FIX_ASOF,
+  FUNDED_AFFORDABLE,
+  FUNDED_PARTLY,
   NO_QUALITY,
   NULL_STORIES,
   PHASE_ESTIMATED,
@@ -592,5 +599,105 @@ describe('sourceLinks', () => {
       'Development pipeline 2007.0001PRX: DataSF record (JSON)',
       'Building permit 201801010001: DataSF record (JSON)'
     ]);
+  });
+});
+
+describe('the "Funded by" line (funding-ui 4.13)', () => {
+  const baseline = fundingCalibration().baselineFunding!;
+  const grantOn = (id: string, pool: string): Programme => ({
+    id,
+    label: `${id} stored label`,
+    pool,
+    reach: 'affordable',
+    instrument: { kind: 'grant', share: 0.1 },
+    from: FUND_ASOF,
+    to: null,
+    minHomes: 20,
+    tiers: { veryLow: 0.52, low: 0.31, moderate: 0.17, aboveModerate: 0 }
+  });
+  const addedPool = (id: string, label: string): Pool => ({
+    id,
+    kind: 'goBond',
+    label,
+    inflows: [{ kind: 'once', day: FUND_ASOF, dollars: 100_000_000 }],
+    uncapped: false,
+    debt: { rate: 0.06, termYears: 20 },
+    leverage: 1
+  });
+  const levers = policyWith({
+    pools: [
+      addedPool('u-pool-1', 'City bond, 2028'),
+      addedPool('u-pool-2', 'Housing bond B'),
+      addedPool('u-pool-3', 'Housing bond C')
+    ],
+    programmes: [
+      grantOn('u-prog-1', 'city-gf'),
+      grantOn('u-prog-2', 'u-pool-1'),
+      grantOn('u-prog-3', 'u-pool-2'),
+      grantOn('u-prog-4', 'u-pool-3')
+    ]
+  }).funding;
+  const card = (programmes: string[], certain: boolean): CardFunding => ({
+    kind: 'affordable',
+    programmes,
+    certain
+  });
+
+  it('cardFunding is null on a pipeline card and without funding', () => {
+    expect(cardFunding(REAL_ACTUAL)).toBeNull();
+    expect(cardFunding(SIMULATED)).toBeNull();
+    expect(cardFunding(FUNDED_AFFORDABLE)).toEqual({
+      kind: 'affordable',
+      programmes: ['city-tax-grant', 'city-gf-grant', 'state-grant', 'federal-grant'],
+      certain: true
+    });
+    expect(cardFunding(FUNDED_PARTLY)).toEqual({
+      kind: 'market',
+      programmes: ['u-prog-1'],
+      certain: false
+    });
+  });
+
+  it('fundingLine joins names and says whether the project is fully funded', () => {
+    expect(fundingLine(['A'], true)).toBe('Funded by: A · fully funded');
+    expect(fundingLine(['A', 'B'], false)).toBe('Funded by: A and B · partly funded');
+    expect(fundingLine(['A', 'B', 'C'], true)).toBe('Funded by: A, B and C · fully funded');
+    expect(fundingLine(['A', 'B', 'C', 'D', 'E'], true)).toBe(
+      'Funded by: A, B, C and 2 more · fully funded'
+    );
+    expect(fundingLine([], false)).toBe('Funded by: public money · partly funded');
+  });
+
+  it('fundingName collapses City pools, names added pools, and more than three', () => {
+    const name = fundingName(levers, baseline);
+    // Two baseline City pools are one "the City"; each baseline group has its own name.
+    expect(name(cardFunding(FUNDED_AFFORDABLE)!)).toBe(
+      'Funded by: the City, the state and federal tax credits · fully funded'
+    );
+    // A user programme on a baseline City pool is still "the City".
+    expect(name(card(['u-prog-1', 'city-tax-grant'], false))).toBe(
+      'Funded by: the City · partly funded'
+    );
+    // A programme on an added pool is named by the pool, never by its stored label.
+    expect(name(card(['u-prog-2'], true))).toBe('Funded by: City bond, 2028 · fully funded');
+    expect(
+      name(card(['city-tax-grant', 'u-prog-2', 'u-prog-3', 'u-prog-4', 'federal-grant'], true))
+    ).toBe('Funded by: the City, City bond, 2028, Housing bond B and 2 more · fully funded');
+  });
+
+  it('unresolvable ids are skipped', () => {
+    const name = fundingName(levers, baseline);
+    // An id from an older policy is left out; the resolvable one is still named.
+    expect(name(card(['u-old-9', 'u-prog-2'], false))).toBe(
+      'Funded by: City bond, 2028 · partly funded'
+    );
+    // With none resolvable the line reads "public money".
+    expect(name(card(['u-old-9', 'u-old-10'], true))).toBe(
+      'Funded by: public money · fully funded'
+    );
+    // Without a baseline, baseline ids do not resolve either.
+    expect(fundingName(levers, undefined)(card(['city-tax-grant'], true))).toBe(
+      'Funded by: public money · fully funded'
+    );
   });
 });

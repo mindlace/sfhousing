@@ -21,7 +21,7 @@
     PreviewResult
   } from '$lib/sim/scenario/types';
   import type { LeverLookups } from '$lib/sim/levers/apply';
-  import type { ChanceTable } from './card';
+  import type { CardFunding, ChanceTable } from './card';
 
   type Lookups = { chance: ChanceTable; typicalMonths: ReturnType<typeof typicalMonths> };
   type MapLike = NonNullable<ReturnType<SimMapHandle['getMap']>>;
@@ -105,6 +105,7 @@
   import { DEFAULT_SPEED } from './playback';
   import { BR_BLOCK, watchCardArea } from './card-area-watch';
   import { cardArea, cardPlacement, type CardArea } from './card-place';
+  import { cardFunding } from './card';
   import ProjectCardPanel from './ProjectCardPanel.svelte';
   import ProjectTooltip from './ProjectTooltip.svelte';
   import { RHNA_ID, homesAddedBy, scoreAt, scrubMarkers } from './score-view';
@@ -214,6 +215,11 @@
      * (/sim: a layer's name, "Painted 8 stories"); null shows no line (FZP, a removed layer).
      */
     ownerName?: (owner: LimitOwner, parcelId: ParcelId) => string | null;
+    /**
+     * The card's "Funded by" line (funding-ui 4.13) for a simulated card that carries `funding`
+     * (/sim and /s/<id>: the policy's programmes and the baseline's); absent shows no line.
+     */
+    fundingName?: (f: CardFunding) => string | null;
   }
 
   let {
@@ -249,7 +255,8 @@
     scoreControls = undefined,
     bottomExtra = 0,
     cards = true,
-    ownerName = undefined
+    ownerName = undefined,
+    fundingName = undefined
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -663,6 +670,11 @@
     const owner = cardState.kind === 'project' ? cardState.limits?.owner : undefined;
     return owner && cardTap && ownerName ? ownerName(owner, cardTap.parcelId) : null;
   });
+
+  const cardFunded = $derived(
+    cardState.kind === 'project' && fundingName ? cardFunding(cardState.card) : null
+  );
+  const cardFundedBy = $derived(cardFunded && fundingName ? fundingName(cardFunded) : null);
 
   function hideTooltip(): void {
     tipReq.reset();
@@ -1178,6 +1190,8 @@
         onsource={(id) => dialog?.open(id)}
         anchor={cardAnchor}
         allowedBy={cardAllowedBy}
+        fundedBy={cardFundedBy}
+        affordable={cardFunded?.kind === 'affordable'}
         onsize={(s) => (cardSize = s)}
       />
       <ProjectTooltip state={tipState} {day} x={tipAt.x} y={tipAt.y} />

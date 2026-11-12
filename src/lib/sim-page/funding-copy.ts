@@ -428,3 +428,46 @@ export const drawAssumptionText = (upFront: number, averageDrawn: number): strin
 
 /** A draft programme that has no sentence yet (a new one whose rate is empty). */
 export const NEW_PROGRAMME = 'new programme';
+
+// --- The read-only summary's "Public money" section (4.14) ---
+
+/** After an evidence value holding a custom value, in a summary row (4.14 item 6). */
+export const CUSTOM_MARK = ' (custom, not sourced)';
+/** A custom income mix, appended to a programme's sentence in the summary. */
+export const CUSTOM_MIX_CLAUSE = `; income mix${CUSTOM_MARK}`;
+export const AS_TODAY = "Today's funding: as today";
+export const NO_MONEY_ADDED = 'No money added';
+/** The summary's name for a baseline group's dated change (4.14 item 1). */
+export const SUMMARY_GROUP_NAME: Record<GroupId, string> = {
+  city: 'City money',
+  state: 'State money',
+  federal: 'Federal tax credits'
+};
+
+/**
+ * A dated change as a summary row: "State money: switched off from July 2027", "City money:
+ * 200% of today's from July 2029", "{name}: switched back on from …" on the uncapped pool.
+ */
+export function summaryScaleText(
+  name: string,
+  from: Day,
+  scale: number,
+  uncapped: boolean,
+  backOn: boolean
+): string {
+  const when = formatMonthYear(from);
+  if (scale === 0) return `${name}: switched off from ${when}`;
+  if (uncapped) return `${name}: switched back on from ${when}`;
+  return `${name}: ${backOn ? 'switched back on, ' : ''}${ratePercent(scale)} of today's from ${when}`;
+}
+
+/** "Guarantee rate cut: 0.5 points (custom, not sourced)" (4.14 item 5), in each term's unit. */
+export function typedTermSummary(key: TermKey, value: number): string {
+  const v =
+    key === 'guaranteeRateCut'
+      ? `${upTo6.format(Math.round(value * 100 * 1e6) / 1e6)} points`
+      : key === 'constructionYears'
+        ? `${upTo6.format(value)} years`
+        : ratePercent(value);
+  return `${termTitle(key)}: ${v}${CUSTOM_MARK}`;
+}

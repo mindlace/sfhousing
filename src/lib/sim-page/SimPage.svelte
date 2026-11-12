@@ -114,6 +114,7 @@
   import FundingTab from './FundingTab.svelte';
   import { FundingDrafts } from './funding-drafts.svelte';
   import { DRAFT_DISCARDED } from './funding-copy';
+  import { fundingName } from './funding-view';
   import { VIEW_TABS, simTabs, tabOrFirst } from './tabs';
 
   interface Props {
@@ -1056,6 +1057,7 @@
   onmanifest={(m) => (mapManifest = m)}
   cards={run.phase === 'run'}
   ownerName={(o, id) => ownerLabel(o, id, store.policy, foundLots)}
+  fundingName={(c) => fundingName(store.policy.funding, calibration?.baselineFunding)(c)}
   {actions}
   status={mode === 'edit' ? saveState : undefined}
   notices={sessionNotices}

@@ -6,11 +6,16 @@ import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { chanceTable } from '$lib/timelapse/model';
 import type { ProjectCard } from '$lib/sim/protocol';
-import { CHANCE_EXPLANATION, SIMULATED_DISCLAIMER, cardStatus } from './card';
+import { CHANCE_EXPLANATION, SIMULATED_DISCLAIMER, cardFunding, cardStatus } from './card';
+import type { Pool, Programme } from '$lib/timelapse/types';
+import { fundingName } from '$lib/sim-page/funding-view';
+import { FUND_ASOF, fundingCalibration, policyWith } from '$lib/sim-page/test/funding';
 import {
   APPROXIMATE,
   EXITED,
   FIX_ASOF,
+  FUNDED_AFFORDABLE,
+  FUNDED_PARTLY,
   NO_QUALITY,
   PHASE_ESTIMATED,
   REAL_ACTUAL,
@@ -525,5 +530,134 @@ describe('layout (spec §4.3)', () => {
     const r = panel().getBoundingClientRect();
     expect(r.height).toBeLessThanOrEqual(700 - 450 - 16 + 1);
     expect(r.top).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('funded by (funding-ui 4.13)', () => {
+  const fcal = fundingCalibration();
+  const baseline = fcal.baselineFunding!;
+  const during = { day: FIX_ASOF + 1200 };
+  const bond = (id: string, label: string): Pool => ({
+    id,
+    kind: 'goBond',
+    label,
+    inflows: [{ kind: 'once', day: FUND_ASOF, dollars: 100_000_000 }],
+    uncapped: false,
+    debt: { rate: 0.06, termYears: 20 },
+    leverage: 1
+  });
+  const grant = (id: string, pool: string): Programme => ({
+    id,
+    label: `${id} stored label`,
+    pool,
+    reach: 'affordable',
+    instrument: { kind: 'grant', share: 0.1 },
+    from: FUND_ASOF,
+    to: null,
+    minHomes: 20,
+    tiers: { veryLow: 0.52, low: 0.31, moderate: 0.17, aboveModerate: 0 }
+  });
+  /** What FzpMode passes: the page's `fundingName` over the card's funding. */
+  const fundedBy = (card: ProjectCard, f = policyWith({}).funding) =>
+    fundingName(f, baseline)(cardFunding(card)!);
+  const line = () => page.getByTestId('card-funded-by');
+
+  it('line text', async () => {
+    await page.viewport(1280, 800);
+    await setup(project(FUNDED_AFFORDABLE), {
+      ...during,
+      allowedBy: 'Near Muni Metro',
+      fundedBy: fundedBy(FUNDED_AFFORDABLE),
+      affordable: true
+    });
+    await expect
+      .element(line())
+      .toHaveTextContent('Funded by: the City, the state and federal tax credits · fully funded');
+    // After the "Allowed by" line.
+    const allowed = page.getByTestId('card-allowed-by').element();
+    expect(allowed.compareDocumentPosition(line().element())).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+  });
+
+  it('a user programme on a baseline City pool reads the City', async () => {
+    await page.viewport(1280, 800);
+    const f = policyWith({ programmes: [grant('u-prog-1', 'city-gf')] }).funding;
+    await setup(project(FUNDED_PARTLY), { ...during, fundedBy: fundedBy(FUNDED_PARTLY, f) });
+    await expect.element(line()).toHaveTextContent('Funded by: the City · partly funded');
+  });
+
+  it('and 2 more', async () => {
+    await page.viewport(1280, 800);
+    const f = policyWith({
+      pools: [bond('u-pool-1', 'Bond A'), bond('u-pool-2', 'Bond B'), bond('u-pool-3', 'Bond C')],
+      programmes: [
+        grant('u-prog-1', 'u-pool-1'),
+        grant('u-prog-2', 'u-pool-2'),
+        grant('u-prog-3', 'u-pool-3')
+      ]
+    }).funding;
+    const card: ProjectCard = {
+      ...FUNDED_AFFORDABLE,
+      funding: {
+        programmes: ['u-prog-1', 'u-prog-2', 'city-tax-grant', 'u-prog-3', 'state-grant'],
+        certain: true
+      }
+    };
+    await setup(project(card), { ...during, fundedBy: fundedBy(card, f) });
+    await expect
+      .element(line())
+      .toHaveTextContent('Funded by: Bond A, Bond B, the City and 2 more · fully funded');
+  });
+
+  it('fully funded and partly funded', async () => {
+    await page.viewport(1280, 800);
+    const partly: ProjectCard = {
+      ...FUNDED_AFFORDABLE,
+      funding: { programmes: ['state-grant'], certain: false }
+    };
+    const first = await setup(project(partly), { ...during, fundedBy: fundedBy(partly) });
+    await expect.element(line()).toHaveTextContent('Funded by: the state · partly funded');
+    first.view.unmount();
+    await setup(project(FUNDED_AFFORDABLE), {
+      ...during,
+      fundedBy: fundedBy(FUNDED_AFFORDABLE)
+    });
+    await expect.element(line()).toHaveTextContent(/· fully funded$/);
+  });
+
+  it('100% affordable homes.', async () => {
+    await page.viewport(1280, 800);
+    const first = await setup(project(FUNDED_AFFORDABLE), {
+      ...during,
+      fundedBy: fundedBy(FUNDED_AFFORDABLE),
+      affordable: true
+    });
+    const affordable = page.getByText('100% affordable homes.', { exact: true });
+    await expect.element(affordable).toBeVisible();
+    expect(line().element().compareDocumentPosition(affordable.element())).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+    first.view.unmount();
+    // A funded market start has no such line.
+    await setup(project(FUNDED_PARTLY), { ...during, fundedBy: 'Funded by: the City' });
+    await expect.element(line()).toBeVisible();
+    expect(page.getByText('100% affordable homes.').elements()).toHaveLength(0);
+  });
+
+  it('no line on a pipeline card or without funding', async () => {
+    await page.viewport(1280, 800);
+    // A pipeline card is taken as funded already, whatever the caller passes.
+    const first = await setup(project(REAL_ACTUAL), {
+      fundedBy: 'Funded by: the City · fully funded'
+    });
+    await expect.element(page.getByTestId('card-badge')).toBeVisible();
+    expect(document.querySelector('[data-testid="card-funded-by"]')).toBeNull();
+    first.view.unmount();
+    // An unfunded simulated card: no funding, no line.
+    await setup(project(SIMULATED), { ...during, fundedBy: null });
+    await expect.element(page.getByTestId('card-badge')).toBeVisible();
+    expect(document.querySelector('[data-testid="card-funded-by"]')).toBeNull();
+    expect(cardFunding(SIMULATED)).toBeNull();
   });
 });

@@ -3,13 +3,19 @@
   on, in words, as rows on the dock's surface. One row per new zoning rule and per custom brush
   (each with its lots), the protections (hard choices stay visible), and the timelines' label. The
   route shares and every stage that differs from observed sit behind one disclosure, closed by
-  default (compact UI, details on demand). No controls change the policy. Colours are tokens.
+  default (compact UI, details on demand). No controls change the policy. Colours are tokens. "Public money" (funding-ui 4.14) comes last:
+  the coverage line on top when the calibration has `baselineFunding`, then `summaryRows` as plain
+  list items.
 -->
 <script lang="ts">
   import { PATHWAYS, type Calibration, type Pathway } from '$lib/timelapse/types';
   import { count, customSummary, lotsText, ruleSummary, type LotStatus } from './brush-summary';
   import type { SimPolicy } from './policy';
   import { OBSERVED_TIMING, routeView, shownRouteShares, timingLabel } from './timing';
+  import { HORIZON } from '$lib/fzp/time';
+  import { coverageLineText } from './funding-copy';
+  import { fundingPresets } from './funding-presets';
+  import { coverageSteps, summaryRows } from './funding-view';
 
   interface Props {
     policy: SimPolicy;
@@ -50,6 +56,21 @@
   });
 
   const current = $derived(policy.timing.current);
+
+  /** The coverage line (4.5) at the present, computed as the Funding tab computes it. */
+  const coverageLine = $derived.by(() => {
+    const baseline = calibration?.baselineFunding;
+    if (!calibration || !baseline) return null;
+    const steps = coverageSteps(policy.funding, baseline, calibration.asOf, HORIZON);
+    return steps.length > 0 ? coverageLineText(steps[0]) : null;
+  });
+  const moneyRows = $derived(
+    summaryRows(
+      policy.funding,
+      calibration?.baselineFunding,
+      calibration ? fundingPresets(calibration) : []
+    )
+  );
 
   /** The shares (when not observed) and each stage whose months differ from observed. */
   const timingLines = $derived.by(() => {
@@ -123,5 +144,22 @@
         {/each}
       </ul>
     {/if}
+  </section>
+
+  <section class="flex flex-col gap-1" aria-labelledby="{uid}-money">
+    <h3 id="{uid}-money" class="font-semibold">Public money</h3>
+    {#if coverageLine}
+      <p class="font-semibold">{coverageLine}</p>
+    {/if}
+    <ul class="flex flex-col gap-1">
+      {#each moneyRows as r, i (i)}
+        <li
+          class="{ROW}{r.indent ? ' ml-4' : ''}{r.muted ? ` ${MUTED}` : ''}"
+          data-indent={r.indent}
+        >
+          {r.text}
+        </li>
+      {/each}
+    </ul>
   </section>
 </div>

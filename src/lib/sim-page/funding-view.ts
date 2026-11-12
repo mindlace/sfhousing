@@ -47,7 +47,21 @@ import {
   type Provenance,
   type TermKey
 } from '$lib/timelapse/types';
-import { GROUP_NAME, GUARANTEE_NEEDS_TERM, TERM_NAME, ratePercent } from './funding-copy';
+import {
+  AS_TODAY,
+  CUSTOM_MARK,
+  CUSTOM_MIX_CLAUSE,
+  GROUP_NAME,
+  GROUP_OWNER,
+  GUARANTEE_NEEDS_TERM,
+  NO_MONEY_ADDED,
+  SUMMARY_GROUP_NAME,
+  TERM_NAME,
+  ratePercent,
+  summaryScaleText,
+  typedTermSummary
+} from './funding-copy';
+import { fundingLine, type CardFunding } from '$lib/fzp/card';
 import {
   valueSource,
   type FundingPreset,
@@ -303,6 +317,10 @@ export interface ScaleLine {
   name: string;
   from: Day;
   scale: number;
+  /** Every pool of the line is uncapped: any scale above 0 is "switched back on". */
+  uncapped: boolean;
+  /** Every pool of the line was switched off the day before (scale 0). */
+  backOn: boolean;
   text: string;
 }
 
@@ -318,7 +336,7 @@ export function scaleLines(f: FinanceLevers, baseline: Baseline, group: GroupId)
   const byId = new Map(pools.map((p) => [p.id, p]));
   const entries = f.baselineScale.filter((e) => order.has(e.pool));
   const used = new Set<(typeof entries)[number]>();
-  const raw: Omit<ScaleLine, 'text'>[] = [];
+  const raw: Omit<ScaleLine, 'text' | 'uncapped' | 'backOn'>[] = [];
   if (group === 'city') {
     for (const e of entries) {
       if (used.has(e)) continue;
@@ -357,7 +375,7 @@ export function scaleLines(f: FinanceLevers, baseline: Baseline, group: GroupId)
     else if (uncapped) text = `${when}: switched back on`;
     else
       text = `${when}: ${prevZero ? 'switched back on, ' : ''}${pctOfScale(l.scale)} of today's amount`;
-    return { ...l, text };
+    return { ...l, uncapped, backOn: prevZero, text };
   });
 }
 
@@ -398,52 +416,79 @@ const INSTRUMENT_NAME: Record<Instrument['kind'], string> = {
   guarantee: 'Loan guarantee'
 };
 
-function instrumentTerms(inst: Instrument): string {
+type Mark = (field: ProgrammeField) => string;
+
+function instrumentTerms(inst: Instrument, m: Mark): string {
   switch (inst.kind) {
     case 'grant':
-      return `${formatPercent(inst.share)} of the uncovered cost`;
+      return `${formatPercent(inst.share)}${m('instrument.share')} of the uncovered cost`;
     case 'loan':
       return (
-        `${ratePercent(inst.costShare)} of the building cost at ${ratePercent(inst.rate)}` +
+        `${ratePercent(inst.costShare)}${m('instrument.costShare')} of the building cost at ` +
+        `${ratePercent(inst.rate)}${m('instrument.rate')}` +
         (inst.requiredReturn === null
           ? ''
-          : `, accepting a ${ratePercent(inst.requiredReturn)} return`)
+          : `, accepting a ${ratePercent(inst.requiredReturn)}${m('instrument.requiredReturn')} return`)
       );
     case 'guarantee':
-      return `${ratePercent(inst.costShare)} of the building cost, ${ratePercent(inst.reserve)} reserve`;
+      return (
+        `${ratePercent(inst.costShare)}${m('instrument.costShare')} of the building cost, ` +
+        `${ratePercent(inst.reserve)} reserve`
+      );
   }
 }
 
 /**
  * "{Instrument} to {reach} of {minHomes} homes or more{, from Month Year}{ until Month Year}:
  * {terms}" (4.8). The `from` clause is left out when it equals the pool's first inflow day.
+ * `custom` (the summary, 4.14 item 6) names the evidence fields holding custom values: each
+ * shown value among them is followed by "(custom, not sourced)", and a custom income mix adds
+ * "; income mix (custom, not sourced)".
  */
-export function programmeSentence(g: Programme, pool: Pool): string {
+export function programmeSentence(
+  g: Programme,
+  pool: Pool,
+  custom: ReadonlySet<ProgrammeField> = new Set()
+): string {
+  const m: Mark = (field) => (custom.has(field) ? CUSTOM_MARK : '');
   const reach = g.reach === 'affordable' ? 'affordable homes' : 'private projects';
-  const from = g.from === firstInflowDay(pool) ? '' : `, from ${formatMonthYear(g.from)}`;
-  const until = g.to === null ? '' : ` until ${formatMonthYear(g.to)}`;
+  const from =
+    g.from === firstInflowDay(pool) ? '' : `, from ${formatMonthYear(g.from)}${m('from')}`;
+  const until = g.to === null ? '' : ` until ${formatMonthYear(g.to)}${m('to')}`;
   return (
     `${INSTRUMENT_NAME[g.instrument.kind]} to ${reach} of ${formatCount(g.minHomes)} homes or ` +
-    `more${from}${until}: ${instrumentTerms(g.instrument)}`
+    `more${m('minHomes')}${from}${until}: ${instrumentTerms(g.instrument, m)}` +
+    (custom.has('tiers') ? CUSTOM_MIX_CLAUSE : '')
   );
 }
 
-function inflowPhrase(x: Pool['inflows'][number]): string {
-  if (x.kind === 'once') return `${formatDollars(x.dollars)} in ${formatMonthYear(x.day)}`;
-  const until = x.to === null ? '' : ` until ${formatMonthYear(x.to)}`;
-  return `${formatDollars(x.dollarsPerYear)} a year from ${formatMonthYear(x.from)}${until}`;
+function inflowPhrase(x: Pool['inflows'][number], m: (key: string) => string = () => ''): string {
+  if (x.kind === 'once')
+    return `${formatDollars(x.dollars)}${m('dollars')} in ${formatMonthYear(x.day)}${m('day')}`;
+  const until = x.to === null ? '' : ` until ${formatMonthYear(x.to)}${m('to')}`;
+  return (
+    `${formatDollars(x.dollarsPerYear)}${m('dollarsPerYear')} a year from ` +
+    `${formatMonthYear(x.from)}${m('from')}${until}`
+  );
 }
 
-/** "$300 million in July 2028; repaid at 6% over 20 years" (4.14 item 3). */
-export function poolMoneySentence(pool: Pool): string {
+/**
+ * "$300 million in July 2028; repaid at 6% over 20 years" (4.14 item 3). `custom` names the
+ * evidence fields holding custom values; each is followed by "(custom, not sourced)".
+ */
+export function poolMoneySentence(pool: Pool, custom: ReadonlySet<PoolField> = new Set()): string {
+  const m = (field: PoolField) => (custom.has(field) ? CUSTOM_MARK : '');
   const money =
     pool.uncapped && pool.inflows.length === 0
       ? 'no limit'
-      : pool.inflows.map(inflowPhrase).join(', ');
+      : pool.inflows
+          .map((x, k) => inflowPhrase(x, (key) => m(`inflows[${k}].${key}` as PoolField)))
+          .join(', ');
   const debt =
     pool.debt === null
       ? ''
-      : `; repaid at ${ratePercent(pool.debt.rate)} over ${pool.debt.termYears} years`;
+      : `; repaid at ${ratePercent(pool.debt.rate)}${m('debt.rate')} over ` +
+        `${pool.debt.termYears} years${m('debt.termYears')}`;
   return `${money}${debt}`;
 }
 
@@ -742,6 +787,64 @@ export function tiersSource(
   return { kind: 'custom' };
 }
 
+/**
+ * The evidence fields of an added pool now holding a custom value (4.10): on a preset-made pool,
+ * every money-in row's amount and dates; a bond's rate and years; a bank's lending per dollar.
+ */
+function poolCustomFields(p: Pool, presets: FundingPreset[]): Set<PoolField> {
+  const fields: PoolField[] = [];
+  if (isPresetMade(p.id, presets)) {
+    p.inflows.forEach((x, k) => {
+      const keys =
+        x.kind === 'once'
+          ? (['dollars', 'day'] as const)
+          : x.to === null
+            ? (['dollarsPerYear', 'from'] as const)
+            : (['dollarsPerYear', 'from', 'to'] as const);
+      for (const key of keys) fields.push(`inflows[${k}].${key}` as PoolField);
+    });
+  }
+  if (p.debt !== null && (p.kind === 'goBond' || p.kind === 'cop'))
+    fields.push('debt.rate', 'debt.termYears');
+  if (p.kind === 'bank') fields.push('leverage');
+  return new Set(fields.filter((f) => fieldSource(p, f, presets, p.kind).kind === 'custom'));
+}
+
+/**
+ * The evidence fields of an added programme now holding a custom value (4.10): on a preset-made
+ * programme its numbers, dates, smallest project and income mix; on a hand-made one a loan's rate
+ * and the income mix. Without a baseline a hand-made programme's mix cannot be compared, so it
+ * is not marked.
+ */
+function programmeCustomFields(
+  g: Programme,
+  poolKind: PoolKind,
+  baseline: Baseline | undefined,
+  presets: FundingPreset[]
+): Set<ProgrammeField> {
+  const made = isPresetMade(g.id, presets);
+  const inst = g.instrument;
+  const fields: ProgrammeField[] = [];
+  if (made) fields.push(inst.kind === 'grant' ? 'instrument.share' : 'instrument.costShare');
+  if (inst.kind === 'loan') fields.push('instrument.rate');
+  if (made) {
+    if (inst.kind === 'loan' && inst.requiredReturn !== null)
+      fields.push('instrument.requiredReturn');
+    fields.push('from');
+    if (g.to !== null) fields.push('to');
+    fields.push('minHomes');
+  }
+  const out = new Set(fields.filter((f) => fieldSource(g, f, presets, poolKind).kind === 'custom'));
+  const tiers =
+    baseline !== undefined
+      ? tiersSource(g, baseline, presets)
+      : g.tiers === null
+        ? { kind: 'choice' as const }
+        : fieldSource(g, 'tiers', presets, poolKind);
+  if (tiers.kind === 'custom') out.add('tiers');
+  return out;
+}
+
 /** Words for a field in "{name}: {field} is your value" (4.10), from tables 4.7 and 4.8. */
 const POOL_FIELD_WORD = {
   dollars: 'amount',
@@ -765,15 +868,11 @@ export function customValues(
   presets: FundingPreset[]
 ): { name: string; field: string }[] {
   const out: { name: string; field: string }[] = [];
-  const isCustom = (
-    item: Pool | Programme,
-    field: PoolField | ProgrammeField,
-    kind: PoolKind
-  ): boolean => fieldSource(item, field, presets, kind).kind === 'custom';
   for (const p of f.pools) {
     const made = isPresetMade(p.id, presets);
+    const custom = poolCustomFields(p, presets);
     const add = (field: PoolField, word: string): void => {
-      if (isCustom(p, field, p.kind)) out.push({ name: p.label, field: word });
+      if (custom.has(field)) out.push({ name: p.label, field: word });
     };
     if (made) {
       p.inflows.forEach((x, k) => {
@@ -798,8 +897,9 @@ export function customValues(
     const pool = pools.find((x) => x.id === g.pool);
     if (pool === undefined) continue;
     const name = programmeSentence(g, pool);
+    const custom = programmeCustomFields(g, pool.kind, baseline, presets);
     const add = (field: ProgrammeField, word: string): void => {
-      if (isCustom(g, field, pool.kind)) out.push({ name, field: word });
+      if (custom.has(field)) out.push({ name, field: word });
     };
     const inst = g.instrument;
     if (isPresetMade(g.id, presets)) {
@@ -820,8 +920,7 @@ export function customValues(
       if (g.to !== null) add('to', 'until');
       add('minHomes', 'projects of at least, homes');
     }
-    if (tiersSource(g, baseline, presets).kind === 'custom')
-      out.push({ name, field: 'income mix' });
+    if (custom.has('tiers')) out.push({ name, field: 'income mix' });
   }
   return out;
 }
@@ -881,4 +980,101 @@ export function groupProvenance(baseline: Baseline, group: GroupId): Provenance[
     ...baseline.provenance.filter((pv) => has(pv, own)),
     ...baseline.provenance.filter((pv) => !has(pv, all))
   ];
+}
+
+/** A row of the read-only summary's "Public money" section (4.14). */
+export interface SummaryRow {
+  text: string;
+  /** A programme under its added pool. */
+  indent: boolean;
+  muted: boolean;
+}
+
+const row = (text: string, indent = false, muted = false): SummaryRow => ({ text, indent, muted });
+
+/**
+ * The "Public money" rows of the read-only summary (4.14 items 1-6, in order): today's funding
+ * ("as today", or one row per dated change, a City-group change once), added programmes on
+ * baseline pools, added pools each followed by its programmes (indented), "No money added", then
+ * typed market terms. Evidence values holding custom values carry "(custom, not sourced)".
+ * Without a baseline (no calibration) a dated change is named by its pool id.
+ */
+export function summaryRows(
+  f: FinanceLevers,
+  baseline: Baseline | undefined,
+  presets: FundingPreset[]
+): SummaryRow[] {
+  const rows: SummaryRow[] = [];
+  if (f.baselineScale.length === 0) rows.push(row(AS_TODAY));
+  else if (baseline === undefined) {
+    for (const e of [...f.baselineScale].sort((a, b) => a.from - b.from)) {
+      const backOn = entryAt(f, e.pool, e.from - 1)?.scale === 0;
+      rows.push(row(summaryScaleText(e.pool, e.from, e.scale, false, backOn)));
+    }
+  } else {
+    const lines = GROUPS.flatMap((group) =>
+      scaleLines(f, baseline, group).map((l) => ({
+        ...l,
+        // A single-pool group's change reads as the group; a City pool's own change by its label.
+        name: group === 'city' ? l.name : SUMMARY_GROUP_NAME[group]
+      }))
+    ).sort((a, b) => a.from - b.from);
+    for (const l of lines)
+      rows.push(row(summaryScaleText(l.name, l.from, l.scale, l.uncapped, l.backOn)));
+  }
+
+  const basePools = new Map((baseline?.pools ?? []).map((p) => [p.id, p]));
+  for (const g of f.programmes) {
+    const pool = basePools.get(g.pool);
+    if (pool === undefined) continue;
+    const custom = programmeCustomFields(g, pool.kind, baseline, presets);
+    rows.push(
+      row(`Added to ${GROUP_OWNER[groupOf(pool.kind)]}: ${programmeSentence(g, pool, custom)}`)
+    );
+  }
+  for (const p of f.pools) {
+    rows.push(row(`${p.label}: ${poolMoneySentence(p, poolCustomFields(p, presets))}`));
+    for (const g of f.programmes) {
+      if (g.pool !== p.id) continue;
+      const custom = programmeCustomFields(g, p.kind, baseline, presets);
+      rows.push(row(programmeSentence(g, p, custom), true));
+    }
+  }
+  if (f.pools.length === 0 && f.programmes.length === 0)
+    rows.push(row(NO_MONEY_ADDED, false, true));
+
+  for (const key of TERM_KEYS) {
+    const v = f.terms[key];
+    if (v !== undefined && v !== null) rows.push(row(typedTermSummary(key, v)));
+  }
+  return rows;
+}
+
+/**
+ * The card's "Funded by" line (4.13): each programme id resolved against `f.programmes`, then the
+ * baseline's; a programme on a baseline pool is named by its group ("the City", "the state",
+ * "federal tax credits"), one on an added pool by that pool's name. Ids that no longer resolve
+ * are left out; distinct names in order, joined by `fundingLine`.
+ */
+export function fundingName(
+  f: FinanceLevers,
+  baseline: Baseline | undefined
+): (c: CardFunding) => string | null {
+  // Later entries win: an id in `f.programmes` is resolved there before the baseline.
+  const programmes = new Map(
+    [...(baseline?.programmes ?? []), ...f.programmes].map((g) => [g.id, g])
+  );
+  const basePools = new Map((baseline?.pools ?? []).map((p) => [p.id, p]));
+  const added = new Map(f.pools.map((p) => [p.id, p]));
+  return (c) => {
+    const names: string[] = [];
+    for (const id of c.programmes) {
+      const g = programmes.get(id);
+      if (g === undefined) continue;
+      const base = basePools.get(g.pool);
+      const name = base !== undefined ? GROUP_OWNER[groupOf(base.kind)] : added.get(g.pool)?.label;
+      if (name !== undefined && !names.includes(name)) names.push(name);
+    }
+    return fundingLine(names, c.certain);
+  };
 }

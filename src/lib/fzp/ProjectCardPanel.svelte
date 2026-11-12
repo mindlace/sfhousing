@@ -45,6 +45,13 @@
     anchor?: { left: number; top: number; maxHeight?: number } | null;
     /** The layer that set the lot's limit, shown as "Allowed by: …"; null or absent: no line. */
     allowedBy?: string | null;
+    /**
+     * The "Funded by" line (funding-ui 4.13), from FzpMode's `fundingName`; shown on a simulated
+     * card that carries `funding` only. Null or absent: no line.
+     */
+    fundedBy?: string | null;
+    /** A funded 100% affordable start (`card.kind`): "100% affordable homes." after the line. */
+    affordable?: boolean;
     /** The card's box, whenever it changes (placement measures it). */
     onsize?: (size: { w: number; h: number }) => void;
     /** A dialog section id from `chanceProvenance` (the "How is this estimated?" list). */
@@ -60,6 +67,8 @@
     onsource,
     anchor = null,
     allowedBy = null,
+    fundedBy = null,
+    affordable = false,
     onsize = undefined
   }: Props = $props();
 
@@ -161,6 +170,13 @@
       <p class="mt-1">{sizeLine(card, day, marked)}</p>
       {#if allowedBy}
         <p class="mt-1" data-testid="card-allowed-by">Allowed by: {allowedBy}</p>
+      {/if}
+      <!-- Pipeline projects are taken as funded already (F9 (l)): never a line. -->
+      {#if fundedBy && card.origin === 'simulated' && card.funding}
+        <p class="mt-1" data-testid="card-funded-by">{fundedBy}</p>
+        {#if affordable}
+          <p class="mt-1">100% affordable homes.</p>
+        {/if}
       {/if}
       {#each revisionLines(card, day, asOf) as line, i (i)}
         <p class="text-ink-muted dark:text-ink-dark-muted">{line}</p>
