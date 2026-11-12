@@ -639,6 +639,27 @@ export function setProgrammeEdit(
   return { change, label: labelProgrammeNumberChanged(s), coalesce: key };
 }
 
+/** Moves an added programme to another pool ("Pays from", 4.5 item 4): "Changed: {sentence}". */
+export function setProgrammePoolEdit(
+  p: SimPolicy,
+  baseline: Baseline | undefined,
+  id: string,
+  pool: string
+): FundingEdit {
+  const cur = p.funding.programmes.find((x) => x.id === id);
+  const s = cur === undefined ? id : sentence(p.funding, baseline, { ...cur, pool });
+  return {
+    change: (q) =>
+      withFunding(q, (f) => {
+        const i = f.programmes.findIndex((x) => x.id === id);
+        if (i < 0) return null;
+        const g = relabel(f, baseline, { ...f.programmes[i], pool });
+        return { ...f, programmes: f.programmes.map((x, j) => (j === i ? g : x)) };
+      }),
+    label: labelProgrammeKindChanged(s)
+  };
+}
+
 /**
  * Sets one income tier to `pct` whole percent; the others take the rest in proportion to their
  * current values (evenly when they are all 0), by largest remainder with ties to the earlier
@@ -673,6 +694,47 @@ export function rescaleTiers(
 
 /** Tier 4 UI default: a new programme's grant, the City's share of today's home (4.8). */
 const NEW_GRANT_SHARE = 0.35;
+
+/** Tier 4 UI starting points of 4.8: a loan's or guarantee's 60% of cost, 10% reserve, 5.25%. */
+export const NEW_COST_SHARE = 0.6;
+export const NEW_RESERVE = 0.1;
+export const NEW_REQUIRED_RETURN = 0.0525;
+/** A private programme's smallest project: the inclusionary threshold (4.8). */
+export const PRIVATE_MIN_HOMES = 10;
+
+/**
+ * The instrument a programme starts with when its "As" changes to `kind` (4.8): a grant at 35%;
+ * a loan of 60% of cost at `POOL_KIND_DEFAULTS[poolKind].loanRate` (rate null while that is
+ * `Unsourced`: a draft), no lower return; a guarantee of 60% with a 10% reserve.
+ */
+export function instrumentStart(
+  kind: Instrument['kind'],
+  poolKind: PoolKind
+): Instrument | LoanWithoutRate {
+  switch (kind) {
+    case 'grant':
+      return { kind: 'grant', share: NEW_GRANT_SHARE };
+    case 'loan':
+      return {
+        kind: 'loan',
+        costShare: NEW_COST_SHARE,
+        rate: POOL_KIND_DEFAULTS[poolKind].loanRate.value,
+        requiredReturn: null
+      } as Instrument | LoanWithoutRate;
+    case 'guarantee':
+      return { kind: 'guarantee', costShare: NEW_COST_SHARE, reserve: NEW_RESERVE };
+  }
+}
+
+/** The smallest project a reach starts with: the baseline programmes' for affordable, 10 private. */
+export function minHomesStart(reach: Programme['reach'], baseline: Baseline | undefined): number {
+  if (reach === 'market') return PRIVATE_MIN_HOMES;
+  return baseline?.programmes.find((g) => g.reach === 'affordable')?.minHomes ?? 0;
+}
+
+/** The baseline programmes' income mix (F12), for a new or a re-reached programme. */
+export const startTiers = (baseline: Baseline | undefined): Record<IncomeTier, number> =>
+  baselineTiers(baseline);
 
 /**
  * A new programme on `pool` (4.8): a grant to affordable homes at 35% of the uncovered cost,
@@ -808,7 +870,7 @@ export type PoolDraft = {
   leverage: number | null;
 };
 
-type LoanWithoutRate = Omit<Extract<Instrument, { kind: 'loan' }>, 'rate'> & { rate: null };
+export type LoanWithoutRate = Omit<Extract<Instrument, { kind: 'loan' }>, 'rate'> & { rate: null };
 
 /** An unfinished programme, or a stored one (`replaces`) whose new instrument needs a value. */
 export type ProgrammeDraft = {

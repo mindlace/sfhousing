@@ -52,6 +52,7 @@ import {
   programmeSentence,
   scaleLines,
   termRows,
+  tiersSource,
   tiersText
 } from './funding-view';
 
@@ -599,5 +600,22 @@ describe('fix round 1', () => {
     expect(sourcedLine('Bond interest rate and term', 2)).toBe(
       'From Bond interest rate and term (tier 2)'
     );
+  });
+});
+
+describe('tiersSource (4.8 income mix)', () => {
+  const baseline = fundingCalibration().baselineFunding!;
+  const g = BOND_POLICY.funding.programmes[0];
+
+  it("is the baseline's source while the mix equals its tiers, else custom", () => {
+    expect(tiersSource(g, baseline, [])).toEqual({
+      kind: 'sourced',
+      provenance: baseline.provenance.at(-1)
+    });
+    const mixed = { ...g, tiers: { veryLow: 0.6, low: 0.26, moderate: 0.14, aboveModerate: 0 } };
+    expect(tiersSource(mixed, baseline, [])).toEqual({ kind: 'custom' });
+    expect(tiersSource({ ...g, reach: 'market', tiers: null }, baseline, [])).toEqual({
+      kind: 'choice'
+    });
   });
 });

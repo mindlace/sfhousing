@@ -406,3 +406,25 @@ export const noSourcedValueText = (reason: string): string => `No sourced value:
 
 /** A dated change's amount out of range (4.5 item 3: 0% to 1,000% of today's amount). */
 export const SCALE_PCT_ERROR = 'Enter a percent from 0 to 1,000.';
+
+// --- Programmes and market terms (4.8, 4.8a, 4.10) ---
+
+/** A term name as the start of a sentence: "Guarantee rate cut". */
+export const termTitle = (key: TermKey): string =>
+  TERM_NAME[key].charAt(0).toUpperCase() + TERM_NAME[key].slice(1);
+
+/** A typed market term in a preview or in "Sources and tiers" (4.8, 4.10). */
+export const typedTermText = (key: TermKey): string =>
+  `${termTitle(key)}: your value (custom, not sourced)`;
+
+/** An evidence field holding a custom value, in "Sources and tiers" (4.10). */
+export const customValueText = (name: string, field: string): string =>
+  `${name}: ${field} is your value (custom, not sourced)`;
+
+/** The draw assumption of ruling R11 (4.8), its numbers from the constants. */
+export const drawAssumptionText = (upFront: number, averageDrawn: number): string =>
+  `Assumption (tier 4): ${ratePercent(upFront)} of the loan drawn at the start, the rest evenly ` +
+  `over construction, so ${ratePercent(averageDrawn)} is out on average.`;
+
+/** A draft programme that has no sentence yet (a new one whose rate is empty). */
+export const NEW_PROGRAMME = 'new programme';

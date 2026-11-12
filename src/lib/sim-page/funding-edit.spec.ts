@@ -26,9 +26,11 @@ import {
   completeDraft,
   fieldText,
   generatedName,
+  instrumentStart,
   isRefused,
   isUnchanged,
   limitProblem,
+  minHomesStart,
   newOwnPool,
   newProgramme,
   parseAmountMillions,
@@ -51,6 +53,7 @@ import {
   setKindEdit,
   setLeverageEdit,
   setProgrammeEdit,
+  setProgrammePoolEdit,
   setTermEdit,
   updatePoolDraft,
   type Draft,
@@ -679,5 +682,49 @@ describe('addScaleEdit no-op (spec 4.9)', () => {
     expect(again.change(once)).toBe(once);
     const single = edit(addScaleEdit(once, baseline, { pool: 'city-gf' }, july(2027), 0));
     expect(single.change(once)).toBe(once);
+  });
+});
+
+describe('programme starts and Pays from (4.5 item 4, 4.8)', () => {
+  const baseline = fundingCalibration().baselineFunding!;
+
+  it('instrumentStart: grant 35%, loan 60% at the kind rate or empty, guarantee 60% and 10%', () => {
+    expect(instrumentStart('grant', 'goBond')).toEqual({ kind: 'grant', share: 0.35 });
+    expect(instrumentStart('loan', 'bank')).toEqual({
+      kind: 'loan',
+      costShare: 0.6,
+      rate: 0.0613,
+      requiredReturn: null
+    });
+    expect(instrumentStart('loan', 'generalRevenue')).toEqual({
+      kind: 'loan',
+      costShare: 0.6,
+      rate: null,
+      requiredReturn: null
+    });
+    expect(instrumentStart('guarantee', 'state')).toEqual({
+      kind: 'guarantee',
+      costShare: 0.6,
+      reserve: 0.1
+    });
+  });
+
+  it('minHomesStart: the baseline size for affordable homes, 10 for private projects', () => {
+    expect(minHomesStart('affordable', baseline)).toBe(20);
+    expect(minHomesStart('market', baseline)).toBe(10);
+  });
+
+  it('setProgrammePoolEdit moves a programme to another pool in one labelled change', () => {
+    const p = policyWith({
+      programmes: [{ ...newProgramme(baseline.pools[0], baseline), id: 'u-prog-1' }]
+    });
+    const e = setProgrammePoolEdit(p, baseline, 'u-prog-1', 'city-gf');
+    const next = e.change(p);
+    expect(next.funding.programmes[0].pool).toBe('city-gf');
+    expect(e.label).toMatch(/^Changed: Grant to affordable homes of 20 homes or more/);
+    expect(e.coalesce).toBeUndefined();
+    expect(() => parseFinanceLevers(next.funding, 'funding')).not.toThrow();
+    // The same pool again is no change.
+    expect(setProgrammePoolEdit(next, baseline, 'u-prog-1', 'city-gf').change(next)).toBe(next);
   });
 });

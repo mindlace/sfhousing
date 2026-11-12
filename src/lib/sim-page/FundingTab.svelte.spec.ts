@@ -16,9 +16,17 @@ import {
   CUSTOM_LINE,
   DRAFT_LINE,
   DRAFT_OPEN_DESC,
+  GUARANTEE_DISABLED_DESC,
+  INCOME_MIX_DESC,
   MONTH_OFFER_CAVEAT,
   PAST_LINE,
   POOL_LIMIT_DESC,
+  PROGRAMME_LIMIT_DESC,
+  RATE_CUT_DESC,
+  RATE_CUT_ERROR,
+  TERM_IN_USE_DESC,
+  YOUR_MIX_LINE,
+  YOUR_VALUE_LINE,
   addProgrammeName,
   coverageSummaryText,
   limitAlert,
@@ -28,6 +36,7 @@ import {
 import type { FundingDrafts } from './funding-drafts.svelte';
 import { addPresetEdit, isRefused } from './funding-edit';
 import { fundingPresets, nextFiscal, type FundingPreset } from './funding-presets';
+import { NO_LOAN_RATE } from './funding-sources';
 import { baselineGroups, coverageSteps } from './funding-view';
 import type { SimPolicy } from './policy';
 import type { PolicyStore } from './policy-store.svelte';
@@ -635,5 +644,174 @@ describe('FundingTab: adding money (4.6, 4.7)', () => {
     await expect.element(page.getByText(PAST_LINE).first()).toBeVisible();
     // Only the first row of money in is before the start.
     expect(row1.textContent!.split(PAST_LINE)).toHaveLength(2);
+  });
+});
+
+const progRow = (name: RegExp) => page.getByRole('button', { name });
+const radio = (name: string) => page.getByRole('radio', { name, exact: true });
+
+describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
+  it('+ What it pays for under the City group shows Pays from', async () => {
+    const { store } = setup();
+    await row(/^City ·/).click();
+    await page.getByRole('button', { name: addProgrammeName('City'), exact: true }).click();
+    // A grant has every field: it is added at once, on the first City pool in dataset order.
+    expect(store.undoLabel).toMatch(/^Added: Grant to affordable homes of 20 homes or more/);
+    const g = store.policy.funding.programmes[0];
+    expect(g).toMatchObject({ id: 'u-prog-1', pool: 'city-tax', reach: 'affordable' });
+    expect(g.instrument).toEqual({ kind: 'grant', share: 0.35 });
+    const paysFrom = page.getByRole('combobox', { name: /^Pays from/ });
+    await expect.element(paysFrom).toHaveFocus();
+    const options = [...(paysFrom.element() as unknown as HTMLSelectElement).options].map(
+      (o) => o.text
+    );
+    expect(options).toEqual(['city-tax', 'city-gf']);
+    await paysFrom.selectOptions('city-gf');
+    expect(store.policy.funding.programmes[0].pool).toBe('city-gf');
+    expect(store.undoLabel).toMatch(/^Changed: Grant to affordable homes/);
+    // The added programme is a nested row with "Added" before its sentence.
+    await expect.element(progRow(/^Added Grant to affordable homes/)).toBeVisible();
+  });
+
+  it('a loan on a generalRevenue pool starts with an empty rate and its Unsourced reason', async () => {
+    const { store, drafts } = setup(policyWith({ pools: [ownPoolOf('u-pool-1')] }));
+    await page.getByRole('button', { name: /^Pool u-pool-1 ·/ }).click();
+    await page
+      .getByRole('button', { name: addProgrammeName('Pool u-pool-1'), exact: true })
+      .click();
+    expect(store.policy.funding.programmes).toHaveLength(1);
+    await expect.element(page.getByRole('group', { name: /^For/ })).toBeVisible();
+    await expect.element(page.getByRole('radio', { name: /^Affordable homes/ })).toHaveFocus();
+    const before = store.policy;
+    await radio('Loan').click();
+    // A loan on a kind with no sourced rate is a draft: nothing reaches the store.
+    expect(store.policy).toBe(before);
+    expect(drafts.isOpen).toBe(true);
+    await expect.element(page.getByText(DRAFT_LINE)).toBeVisible();
+    await expect.element(addMoney()).toHaveAttribute('aria-disabled', 'true');
+    const rate = page.getByRole('spinbutton', { name: /^Loan interest rate, %/ });
+    await expect.element(rate).toHaveValue(null);
+    await expect.element(rate).toHaveAccessibleDescription(NO_LOAN_RATE);
+    const add = page.getByRole('button', { name: addProgrammeName('Pool u-pool-1'), exact: true });
+    await expect.element(add).toHaveAttribute('aria-disabled', 'true');
+    await expect.element(add).toHaveAccessibleDescription(DRAFT_OPEN_DESC);
+    await rate.fill('4');
+    await userEvent.keyboard('{Enter}');
+    expect(drafts.isOpen).toBe(false);
+    expect(store.undoLabel).toBe(
+      'Changed: Loan to affordable homes of 20 homes or more: 60% of the building cost at 4%'
+    );
+    expect(store.policy.funding.programmes[0]).toMatchObject({
+      id: 'u-prog-1',
+      instrument: { kind: 'loan', costShare: 0.6, rate: 0.04, requiredReturn: null }
+    });
+    await expect.element(rate).toHaveValue(4);
+    await expect.element(rate).toHaveFocus();
+  });
+
+  it('guarantee option aria-disabled until a rate cut is typed, then enabled; Clear aria-disabled while the guarantee exists', async () => {
+    const { store } = setup(BOND_POLICY);
+    await page.getByRole('button', { name: /^City bond, 2028 ·/ }).click();
+    await progRow(/^Grant to affordable homes/).click();
+    const guarantee = radio('Loan guarantee');
+    await expect.element(guarantee).toHaveAttribute('aria-disabled', 'true');
+    await expect.element(guarantee).toHaveAccessibleDescription(GUARANTEE_DISABLED_DESC);
+    (guarantee.element() as HTMLElement).click();
+    await tick();
+    expect(store.policy.funding.programmes[0].instrument.kind).toBe('grant');
+    await expect.element(guarantee).not.toBeChecked();
+    await page.getByRole('button', { name: 'Go to Market terms you set' }).click();
+    const cut = page.getByRole('spinbutton', { name: /^Guarantee rate cut, percentage points/ });
+    await expect.element(cut).toHaveFocus();
+    await expect.element(cut).toHaveAccessibleDescription(RATE_CUT_DESC);
+    await cut.fill('9');
+    await userEvent.keyboard('{Enter}');
+    await expect.element(cut).toHaveAttribute('aria-invalid', 'true');
+    expect(errorOf(cut.element())!.textContent?.trim()).toBe(RATE_CUT_ERROR);
+    expect(store.policy.funding.terms).toEqual({});
+    await cut.fill('0.5');
+    await userEvent.keyboard('{Enter}');
+    expect(store.policy.funding.terms).toEqual({ guaranteeRateCut: 0.005 });
+    expect(store.undoLabel).toBe('Market term: guarantee rate cut 0.5 points');
+    await expect.element(cut).not.toHaveAttribute('aria-invalid', 'true');
+    await expect.element(page.getByText(YOUR_VALUE_LINE, { exact: true })).toBeVisible();
+    await expect.element(guarantee).not.toHaveAttribute('aria-disabled', 'true');
+    await guarantee.click();
+    expect(store.policy.funding.programmes[0].instrument).toEqual({
+      kind: 'guarantee',
+      costShare: 0.6,
+      reserve: 0.1
+    });
+    expect(store.undoLabel).toBe(
+      'Changed: Loan guarantee to affordable homes of 20 homes or more: 60% of the building ' +
+        'cost, 10% reserve'
+    );
+    // The preview lists the typed term as custom.
+    await expect
+      .element(page.getByText('Guarantee rate cut: your value (custom, not sourced)').first())
+      .toBeVisible();
+    const clear = page.getByRole('button', { name: 'Clear guarantee rate cut' });
+    await expect.element(clear).toHaveAttribute('aria-disabled', 'true');
+    await expect.element(clear).toHaveAccessibleDescription(TERM_IN_USE_DESC);
+    (clear.element() as HTMLElement).click();
+    await tick();
+    expect(store.policy.funding.terms).toEqual({ guaranteeRateCut: 0.005 });
+  });
+
+  it('income mix edit rescales the others and labels Changed income mix', async () => {
+    const { store } = setup(BOND_POLICY);
+    await page.getByRole('button', { name: /^City bond, 2028 ·/ }).click();
+    await progRow(/^Grant to affordable homes/).click();
+    const mix = page.getByRole('group', { name: 'Who the homes are for' });
+    await expect.element(mix).toHaveAccessibleDescription(new RegExp(`^${esc(INCOME_MIX_DESC)}`));
+    const mixLine = () =>
+      mix.element().parentElement!.querySelector('[data-source-line]')?.textContent?.trim();
+    // Equal to the baseline's mix: the baseline's source line.
+    expect(mixLine()).toBe('From Tiers and minimum homes (tier 1)');
+    const veryLow = page.getByRole('spinbutton', { name: /^Very low income, %/ });
+    await expect.element(veryLow).toHaveValue(52);
+    await veryLow.fill('60');
+    await userEvent.keyboard('{Enter}');
+    expect(store.policy.funding.programmes[0].tiers).toEqual({
+      veryLow: 0.6,
+      low: 0.26,
+      moderate: 0.14,
+      aboveModerate: 0
+    });
+    expect(store.undoLabel).toBe(
+      'Changed income mix: Grant to affordable homes of 20 homes or more: 35% of the uncovered cost'
+    );
+    await expect.element(page.getByRole('spinbutton', { name: /^Low income, %/ })).toHaveValue(26);
+    await expect.poll(mixLine).toBe(YOUR_MIX_LINE);
+  });
+
+  it('+ What it pays for is aria-disabled at 24 programmes in the policy', async () => {
+    const g = BOND_POLICY.funding.programmes[0];
+    const programmes = Array.from({ length: 24 }, (_, i) => ({ ...g, id: `u-prog-${i + 1}` }));
+    const { store } = setup(policyWith({ pools: BOND_POLICY.funding.pools, programmes }));
+    await row(/^City ·/).click();
+    const add = page.getByRole('button', { name: addProgrammeName('City'), exact: true });
+    await expect.element(add).toHaveAttribute('aria-disabled', 'true');
+    await expect.element(add).toHaveAccessibleDescription(PROGRAMME_LIMIT_DESC);
+    (add.element() as HTMLElement).click();
+    await tick();
+    expect(store.policy.funding.programmes).toHaveLength(24);
+  });
+
+  it('Sources and tiers lists unavailable presets with reasons and a custom bond rate', async () => {
+    const bond = structuredClone(BOND_POLICY);
+    bond.funding.pools[0].debt = { rate: 0.05, termYears: 20 };
+    bond.funding.terms = { guaranteeRateCut: 0.005 };
+    const { calibration } = setup(bond);
+    const details = document.querySelector('details')!;
+    await page.getByText('Sources and tiers').click();
+    expect(details.open).toBe(true);
+    const text = details.textContent!;
+    expect(text).toContain('City bond, 2028: interest rate is your value (custom, not sourced)');
+    expect(text).not.toContain('City bond, 2028: years to repay is your value');
+    expect(text).toContain('Guarantee rate cut: your value (custom, not sourced)');
+    const held = fundingPresets(calibration).filter((p) => !p.available);
+    expect(held.length).toBeGreaterThan(0);
+    for (const p of held) expect(text).toContain(`Not offered yet: ${p.label}: ${p.reason}`);
   });
 });

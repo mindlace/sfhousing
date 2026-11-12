@@ -4,9 +4,9 @@
   the fields of table 4.7 in order (Name, Kind of money, one block per row of money in with its
   Once / Every year radios, amount, When or From, and Until for a yearly row, "+ Money in", then a
   bond's rate and years to repay or a bank's lending per dollar), each field's source line,
-  the pool preview, "Remove {name}" and "What it pays for" (its "+ What it pays for" is wired by
-  Task 7). A draft (`id` null) is always open, with the "Not added yet" line and "Discard {name}",
-  and reports every change through `ondraft` instead of `onedit`.
+  the pool preview, "Remove {name}" and "What it pays for" (ProgrammeList: the programme rows
+  and "+ What it pays for"). A draft (`id` null) is always open, with the "Not added yet" line
+  and "Discard {name}", and reports every change through `ondraft` instead of `onedit`.
 
   Every field commits on `change` (and Enter in a text or number input). A value that fails its
   check is not applied: the field keeps the typed text, gets aria-invalid, and its always-present
@@ -68,6 +68,8 @@
   import { POOL_KIND_DEFAULTS } from './funding-sources';
   import { fieldSource, poolPreview, programmeSentence } from './funding-view';
   import type { SimPolicy } from './policy';
+  import type { ProgrammeHost } from './ProgrammeEditor.svelte';
+  import ProgrammeList from './ProgrammeList.svelte';
   import SourceList from './SourceList.svelte';
 
   interface Props {
@@ -88,6 +90,8 @@
     /** A draft's next state; `field` is the `data-field` of the control that committed it. */
     ondraft?: (d: PoolDraft, field: string) => void;
     ondiscard?: () => void;
+    /** The programme rows' context (4.8); absent on the draft pool, which has no programmes. */
+    host?: ProgrammeHost;
   }
 
   let {
@@ -102,7 +106,8 @@
     onselect,
     onedit,
     ondraft = undefined,
-    ondiscard = undefined
+    ondiscard = undefined,
+    host = undefined
   }: Props = $props();
 
   const uid = $props.id();
@@ -860,22 +865,20 @@
           >
         </div>
 
-        <section class="flex flex-col gap-1">
-          <h4 class="font-semibold">What it pays for</h4>
-          {#if programmes.length > 0}
-            <ul class="flex flex-col gap-1">
-              {#each programmes as g (g.id)}
-                <li>{programmeSentence(g, stored)}</li>
-              {/each}
-            </ul>
-          {/if}
-          <div>
-            <!-- Wired by Task 7 (the programme editor). -->
-            <button type="button" class={link} aria-label={addProgrammeName(name)}
-              ><span aria-hidden="true">+</span> What it pays for</button
-            >
-          </div>
-        </section>
+        {#if host !== undefined}
+          <section class="flex flex-col gap-1">
+            <h4 class="font-semibold">What it pays for</h4>
+            <ProgrammeList
+              pools={[stored]}
+              addPool={stored}
+              poolChoices={null}
+              addName={addProgrammeName(name)}
+              {policy}
+              {host}
+              {onedit}
+            />
+          </section>
+        {/if}
       {:else}
         <div>
           <button type="button" data-field="discard" class={link} onclick={() => ondiscard?.()}

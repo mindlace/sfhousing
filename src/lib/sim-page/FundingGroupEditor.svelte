@@ -8,8 +8,9 @@
      "Amount, % of today's", or the federal group's Switched off / Switched back on), with Apply
      change and Cancel. aria-disabled with its reason when the entries would pass 24; checked
      again on Apply, so nothing over the limit reaches the store.
-  4. "What it pays for": the baseline programmes, read-only, then the added ones on the group's
-     pools, then "+ What it pays for" (wired in Task 7).
+  4. "What it pays for": the baseline programmes, read-only, then (ProgrammeList) the added ones
+     on the group's pools as nested rows with their editors, then "+ What it pays for" ("Pays
+     from" on the City group).
   5. The group's sources (SourceList).
   Every edit goes to `onedit`; the tab applies it, labels it and announces it.
 -->
@@ -45,6 +46,8 @@
     type BaselineGroup
   } from './funding-view';
   import type { SimPolicy } from './policy';
+  import type { ProgrammeHost } from './ProgrammeEditor.svelte';
+  import ProgrammeList from './ProgrammeList.svelte';
   import SourceList from './SourceList.svelte';
 
   interface Props {
@@ -53,9 +56,11 @@
     baseline: Baseline;
     asOf: Day;
     onedit: (e: FundingEdit | Refused) => void;
+    /** The programme rows' context (4.8). */
+    host: ProgrammeHost;
   }
 
-  let { group, policy, baseline, asOf, onedit }: Props = $props();
+  let { group, policy, baseline, asOf, onedit, host }: Props = $props();
 
   const uid = $props.id();
   let root = $state<HTMLDivElement>();
@@ -64,7 +69,6 @@
   const isCity = $derived(group.group === 'city');
   const lines = $derived(scaleLines(f, baseline, group.group));
   const poolById = $derived(new Map(group.pools.map((p) => [p.id, p])));
-  const added = $derived(f.programmes.filter((g) => poolById.has(g.pool)));
 
   const MONTHS = Array.from({ length: 12 }, (_, i) =>
     new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(
@@ -359,18 +363,17 @@
           </li>
         {/if}
       {/each}
-      {#each added as g (g.id)}
-        {@const pool = poolById.get(g.pool)}
-        {#if pool}
-          <li><span class="font-medium">Added</span> {programmeSentence(g, pool)}</li>
-        {/if}
-      {/each}
     </ul>
-    <div>
-      <button type="button" class={link} aria-label={addProgrammeName(group.name)}
-        ><span aria-hidden="true">+</span> What it pays for</button
-      >
-    </div>
+    <ProgrammeList
+      pools={group.pools}
+      addPool={group.pools[0]}
+      poolChoices={isCity ? group.pools : null}
+      addName={addProgrammeName(group.name)}
+      added
+      {policy}
+      {host}
+      {onedit}
+    />
   </section>
 
   <section class="flex flex-col gap-1 text-xs {muted}">

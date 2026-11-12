@@ -1,7 +1,14 @@
 // The funding notices on load (funding-ui spec 4.15) and the R22 and R24 caveats.
 import { describe, expect, it } from 'vitest';
 import { dayOf } from '$lib/sim/scenario/dates';
-import { MONTH_OFFER_CAVEAT, fundingNotices, smallProjectsCaveat } from './funding-copy';
+import {
+  MONTH_OFFER_CAVEAT,
+  customValueText,
+  drawAssumptionText,
+  fundingNotices,
+  smallProjectsCaveat,
+  typedTermText
+} from './funding-copy';
 import type { FundingLoadReport } from './funding-reconcile';
 
 const empty: FundingLoadReport = {
@@ -103,6 +110,21 @@ describe('fundingNotices', () => {
     );
     expect(MONTH_OFFER_CAVEAT).toBe(
       "A partly funded project keeps the offer it had on the first day of its month, so for up to about a month it can still draw on a source you switched off, or a programme that ended, during that month. Fully funded projects and today's funding as it stands are not affected."
+    );
+  });
+});
+
+describe('programme and term copy (4.8, 4.10)', () => {
+  it('words typed terms, custom values and the draw assumption', () => {
+    expect(typedTermText('guaranteeRateCut')).toBe(
+      'Guarantee rate cut: your value (custom, not sourced)'
+    );
+    expect(customValueText('City bond, 2028', 'interest rate')).toBe(
+      'City bond, 2028: interest rate is your value (custom, not sourced)'
+    );
+    expect(drawAssumptionText(0.1, 0.55)).toBe(
+      'Assumption (tier 4): 10% of the loan drawn at the start, the rest evenly over ' +
+        'construction, so 55% is out on average.'
     );
   });
 });

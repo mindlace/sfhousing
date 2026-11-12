@@ -20,8 +20,14 @@
   import { tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { HORIZON } from '$lib/fzp/time';
-  import { AFFORDABLE, AVERAGE_DRAWN, DRAW_UP_FRONT, MARKET_TERMS } from '$lib/sim/finance';
-  import type { Calibration, TermKey } from '$lib/timelapse/types';
+  import {
+    AFFORDABLE,
+    AVERAGE_DRAWN,
+    DRAW_UP_FRONT,
+    MARKET_TERMS,
+    resolveTerms
+  } from '$lib/sim/finance';
+  import type { Calibration, Pool, TermKey } from '$lib/timelapse/types';
   import {
     COVERAGE_OFF_SHORT_SENTENCE,
     COVERAGE_PRIVATE_SENTENCE,
@@ -33,6 +39,7 @@
     NOTHING_ADDED,
     NO_LIMIT,
     POOL_LIMIT_DESC,
+    PROGRAMME_LIMIT_DESC,
     SWITCHED_OFF,
     TERM_NAME,
     affordableCostText,
@@ -40,13 +47,15 @@
     coverageLineText,
     coverageStepText,
     coverageSummaryText,
+    customValueText,
     groupChangesText,
     groupLendsText,
     groupPaysText,
     noSourcedValueText,
     notOfferedText,
     perYearText,
-    smallProjectsCaveat
+    smallProjectsCaveat,
+    typedTermText
   } from './funding-copy';
   import type { FundingDrafts } from './funding-drafts.svelte';
   import {
@@ -54,8 +63,10 @@
     completeDraft,
     isRefused,
     newOwnPool,
+    newProgramme,
     type FundingEdit,
     type PoolDraft,
+    type ProgrammeDraft,
     type Refused
   } from './funding-edit';
   import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
@@ -64,13 +75,20 @@
     baselineGroups,
     coverageSizeMixed,
     coverageSteps,
+    fieldSource,
     groupOf,
+    poolsOf,
+    programmeSentence,
+    termRows,
+    tiersSource,
     type BaselineGroup,
     type FundingRowId
   } from './funding-view';
   import AddMoney from './AddMoney.svelte';
   import FundingGroupEditor from './FundingGroupEditor.svelte';
   import FundingPoolRow from './FundingPoolRow.svelte';
+  import MarketTerms from './MarketTerms.svelte';
+  import type { ProgrammeHost } from './ProgrammeEditor.svelte';
   import type { PolicyStore } from './policy-store.svelte';
   import SourceList from './SourceList.svelte';
 
@@ -295,6 +313,92 @@
     });
   }
 
+  // ---- programmes and market terms (4.8, 4.8a) ----
+
+  const slope = $derived(calibration.market?.slope.perCostShare ?? null);
+  const progDraft = $derived(drafts.draft?.kind === 'programme' ? drafts.draft.prog : null);
+  /** Programmes in the policy, with a new programme's draft (4.6: a draft counts). */
+  const progCount = $derived(
+    f.programmes.length + (progDraft !== null && progDraft.replaces === null ? 1 : 0)
+  );
+  const progAddDisabled = $derived(
+    drafts.isOpen
+      ? DRAFT_OPEN_DESC
+      : progCount >= FINANCE_LIMITS.programmes
+        ? PROGRAMME_LIMIT_DESC
+        : null
+  );
+  const termInputId = (k: TermKey): string => `${uid}-term-${k}`;
+  const terms = $derived(termRows(f, ['grant', 'loan', 'guarantee']));
+
+  /** Focuses `field` in a programme row after the next render. */
+  async function focusProg(key: string, field: string): Promise<void> {
+    await tick();
+    rowsEl?.querySelector<HTMLElement>(`[data-prog-row="${key}"] [data-field="${field}"]`)?.focus();
+  }
+
+  /**
+   * A draft programme's next state: kept while incomplete; added (or, for a stored programme's
+   * new instrument, changed) in one store change once complete, focus staying in the field just
+   * committed (4.6). A draft that completes to the stored programme unchanged is closed.
+   */
+  function onprogdraft(d: ProgrammeDraft, field: string): string | null {
+    if (!baseline) return null;
+    const next = { kind: 'programme' as const, prog: d };
+    const e = completeDraft(next, store.policy, baseline);
+    if (e === null) {
+      const inst = d.prog.instrument;
+      const open = d.replaces === null || (inst.kind === 'loan' && inst.rate === null);
+      if (open) drafts.open(next);
+      else drafts.discard();
+      return null;
+    }
+    const had = new Set(f.programmes.map((g) => g.id));
+    drafts.discard();
+    onedit(e);
+    const key =
+      d.replaces ?? store.policy.funding.programmes.find((g) => !had.has(g.id))?.id ?? null;
+    if (key !== null) void focusProg(key, field);
+    return key;
+  }
+
+  /** "+ What it pays for": a new programme on `pool`, added at once when every field has a value. */
+  function onaddprog(pool: Pool): string | null {
+    if (!baseline || progAddDisabled !== null) return null;
+    const { label: _label, ...prog } = newProgramme(pool, baseline);
+    void _label;
+    const d: ProgrammeDraft = { replaces: null, pool: pool.id, prog };
+    const e = completeDraft({ kind: 'programme', prog: d }, store.policy, baseline);
+    if (e === null) {
+      drafts.open({ kind: 'programme', prog: d });
+      return 'draft';
+    }
+    const had = new Set(f.programmes.map((g) => g.id));
+    onedit(e);
+    return store.policy.funding.programmes.find((g) => !had.has(g.id))?.id ?? null;
+  }
+
+  function ongoterms(): void {
+    void tick().then(() => document.getElementById(termInputId('guaranteeRateCut'))?.focus());
+  }
+
+  const host = $derived<ProgrammeHost | undefined>(
+    baseline
+      ? {
+          baseline,
+          asOf,
+          slope,
+          presets,
+          draft: progDraft,
+          addDisabled: progAddDisabled,
+          onadd: onaddprog,
+          ondraft: onprogdraft,
+          ondiscard: () => drafts.discard(),
+          ongoterms
+        }
+      : undefined
+  );
+
   // ---- sources and tiers ----
 
   /** Presets with an item in the policy (ids `u-<presetId>-<n>`). */
@@ -303,6 +407,36 @@
       [...f.pools, ...f.programmes].some((x) => new RegExp(`^u-${p.id}-\\d+$`).test(x.id))
     )
   );
+  /** Every evidence field holding a custom value (4.10), as "{name}: {field} is your value …". */
+  const customValues = $derived.by((): string[] => {
+    const out: string[] = [];
+    const custom = (s: { kind: string }) => s.kind === 'custom';
+    for (const p of f.pools) {
+      if (p.debt !== null && (p.kind === 'goBond' || p.kind === 'cop')) {
+        if (custom(fieldSource(p, 'debt.rate', presets, p.kind)))
+          out.push(customValueText(p.label, 'interest rate'));
+        if (custom(fieldSource(p, 'debt.termYears', presets, p.kind)))
+          out.push(customValueText(p.label, 'years to repay'));
+      }
+      if (p.kind === 'bank' && custom(fieldSource(p, 'leverage', presets, p.kind)))
+        out.push(customValueText(p.label, 'lending per dollar'));
+    }
+    if (!baseline) return out;
+    const pools = poolsOf(f, baseline);
+    for (const g of f.programmes) {
+      const pool = pools.find((x) => x.id === g.pool);
+      if (pool === undefined) continue;
+      const name = programmeSentence(g, pool);
+      if (
+        g.instrument.kind === 'loan' &&
+        custom(fieldSource(g, 'instrument.rate', presets, pool.kind))
+      )
+        out.push(customValueText(name, 'loan interest rate'));
+      if (custom(tiersSource(g, baseline, presets))) out.push(customValueText(name, 'income mix'));
+    }
+    return out;
+  });
+  const typedTerms = $derived(resolveTerms(MARKET_TERMS, f.terms).custom);
   const unsourcedTerms = (Object.keys(MARKET_TERMS) as TermKey[]).flatMap((k) => {
     const e = MARKET_TERMS[k];
     return e.value === null && 'reason' in e ? [{ key: k, reason: e.reason }] : [];
@@ -381,7 +515,14 @@
                    status, so it is spoken (WCAG 4.1.3). -->
               <span role="status" class="sr-only">{g.name}: {groupAmount(g)}; {groupPays(g)}</span>
               {#if on}
-                <FundingGroupEditor group={g} policy={store.policy} {baseline} {asOf} {onedit} />
+                <FundingGroupEditor
+                  group={g}
+                  policy={store.policy}
+                  {baseline}
+                  {asOf}
+                  {onedit}
+                  host={host!}
+                />
               {/if}
             </li>
           {/each}
@@ -407,6 +548,7 @@
                 autoName={autoNamed.has(pool.id)}
                 onselect={() => select(on ? null : { kind: 'pool', id: pool.id })}
                 onedit={(e) => poolEdit(i, pool.id, e)}
+                {host}
               />
             {/each}
             {#if poolDraft !== null}
@@ -436,6 +578,8 @@
           bind:open={addOpen}
         />
       </section>
+
+      <MarketTerms rows={terms} policy={store.policy} {onedit} inputId={termInputId} />
     </div>
 
     <p role="alert" class="text-red-800 dark:text-red-300 {alertText ? '' : 'sr-only'}">
@@ -457,6 +601,12 @@
         {#each addedPresets as p (p.id)}
           <p>{p.label}:</p>
           <SourceList items={p.provenance} />
+        {/each}
+        {#each customValues as line, i (i)}
+          <p>{line}</p>
+        {/each}
+        {#each typedTerms as k (k)}
+          <p>{typedTermText(k)}</p>
         {/each}
         <p>{COVERAGE_RULE_SENTENCE}</p>
         <p>

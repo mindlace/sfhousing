@@ -718,6 +718,27 @@ export function fieldSource(
   return { kind: 'choice' };
 }
 
+/**
+ * Where a programme's income mix comes from (4.8): on a preset-made programme, `valueSource` as for
+ * its other fields; on a hand-made one, the baseline programmes' source while the mix equals their
+ * tiers, else custom. `choice` for a programme with no mix (private reach).
+ */
+export function tiersSource(
+  g: Programme,
+  baseline: Baseline,
+  presets: FundingPreset[]
+): FieldSource {
+  if (g.tiers === null) return { kind: 'choice' };
+  const s = fieldSource(g, 'tiers', presets, 'generalRevenue');
+  if (s.kind !== 'choice') return s;
+  const base = baseline.programmes.find((x) => x.reach === 'affordable')?.tiers;
+  const prov = baseline.provenance.at(-1);
+  const t = g.tiers;
+  if (base && prov && INCOME_TIERS.every((k) => Math.abs(base[k] - t[k]) < 1e-9))
+    return { kind: 'sourced', provenance: prov };
+  return { kind: 'custom' };
+}
+
 const TERM_KEYS = Object.keys(MARKET_TERMS) as TermKey[];
 
 /** One instrument of each kind, shaped so `termsNeeded` lists every term that kind can read. */
