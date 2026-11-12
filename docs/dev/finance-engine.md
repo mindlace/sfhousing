@@ -542,8 +542,10 @@ float composite key; the grouped line.
 and segment, so a run does no `exp` or `log` for them. They are `Float64Array`, not the design's
 `Float32Array`, because Float32 rounds the rates and changed outputs, and exactness is mandatory.
 Each entry's (bundle, level) is an index into the segment's few distinct values, a `Uint8Array`
-(255 = not filled) promoted to `Uint16Array` once a segment has 255 values. On the bench city with
-the bench funding set they take about 16 MB per input.
+(255 = not filled) promoted to `Uint16Array` once a segment has 255 values, and to `Uint32Array`
+once it has 65,535. Memory on the bench city with the bench funding set: the tables went from
+19.63 MB to 15.95 MB per input (Uint8 indexes; the Float64 values are kept). The typed lot table of
+a pass (below) is pooled per input at about 18.5 MB.
 
 **The warm** (`financeWarm(input, horizon)`, perf Task 1): one pass over the candidates fills the
 skip rates of both kinds and the tables together, one `segValue` per (lot, kind, segment, level
@@ -619,32 +621,52 @@ bench funding set (case 5).
 7. Reported, not a budget: case 3 with an `off` entry for the bench baseline's `state` pool from
    `asOf + 1,826`.
 
-Cases 4 and 5 now run with `benchFundingLevers(asOf)` on the plan (`levers.finance`, ids prefixed
+Cases 4 and 5 run with `benchFundingLevers(asOf)` on the plan (`levers.finance`, ids prefixed
 `u-`) and the unscaled bench baseline on the twin (ruling R-P3, met by `finance-levers`; see
-[finance-levers.md](finance-levers.md), "The bench levers"). Ballpark on a loaded machine (load 3 to
-5): case 4's band pairs take about 4.3 s for 101 (budget 9 s); case 5's longest macrotask is about
-165 to 180 ms against the 50 ms budget, a miss to be re-measured on a quiet machine before the
-budgets are re-set. The figures in the table below predate this change (bench baseline on the plan).
+[finance-levers.md](finance-levers.md), "The bench levers"). Case 5's window starts at the first
+band task, not at the warm: the warm runs in load-phase tasks of its own beforehand.
 
-**Measured medians. These are BALLPARK, measured on a busy machine** (load 2.3 to 8.6 on 15 cores,
-other agents running); two runs each:
+**Measured medians after the perf round (perf Tasks 1 to 3).** BALLPARK: the machine was shared
+(load 3.1 to 6.1 at the start of each run, other agents running), so rely on the ratio. Two
+interleaved runs per side, base `736be467` against the branch head, same bench spec on both:
 
-| Case                                         | Measured                                         | Budget         | Proposal (median + 20%) |
-| -------------------------------------------- | ------------------------------------------------ | -------------- | ----------------------- |
-| 1. Finance absent, `simulateNet`             | 10.6 and 12.3 ms                                 | 15 ms          | none; passes            |
-| 2. Bench baseline                            | 36.9 and 38.9 ms                                 | 30 ms          | about 44 ms             |
-| 3. Plus `benchFunding()`                     | 98.5 and 108.1 ms                                | 45 ms          | about 118 ms            |
-| 4. Host, 101 band pairs after revision 0     | 2.2 to 2.7 s                                     | 9 s            | none; passes            |
-| 5. Host, longest macrotask                   | 128.7 to 140.7 ms (cold input); 44 to 47 ms warm | 50 ms          | about 157 ms            |
-| 6. First-day applications, awards (seed 1)   | 61,239 and 231                                   | 10,000 and 100 | none; passes            |
-| 7. Reported: `state` off from `asOf + 1,826` | 155.6 and 188.7 ms                               | none           | about 187 ms, if wanted |
+| Case                                         | Base (`736be467`)              | Head             | B/A  | Budget         | Proposal (median + 20%) |
+| -------------------------------------------- | ------------------------------ | ---------------- | ---- | -------------- | ----------------------- |
+| 1. Finance absent, `simulateNet`             | 10.6 to 12.3 ms                | 11.4 ms          | -    | 15 ms          | none; passes            |
+| 2. Bench baseline                            | 35.4 and 34.6 ms               | 26.6 and 27.8 ms | 0.77 | 30 ms          | none; passes now        |
+| 3. Plus `benchFunding()`                     | 98.4 and 99.0 ms               | 61.1 and 62.3 ms | 0.62 | 45 ms          | about 74 ms             |
+| 4. Host, 101 band pairs after revision 0     | 4.04 and 4.08 s                | 2.68 and 2.75 s  | 0.66 | 9 s            | none; passes            |
+| 5. Host, longest macrotask                   | 134.8 and 137.6 ms             | 80.0 and 82.1 ms | 0.60 | 50 ms          | about 98 ms             |
+| 6. First-day applications, awards (seed 1)   | 61,239 and 231                 | unchanged        | -    | 10,000 and 100 | none; passes            |
+| 7. Reported: `state` off from `asOf + 1,826` | 155.6 and 188.7 ms (older run) | about 100 ms     | -    | none           | about 120 ms, if wanted |
 
-Cases 2, 3 and 5 miss their budgets. Case 5 is high because the first band run on a cold input
-builds the per-input skip rates, eligibility and tables; steady state is about one run per slice
-at the bound. The F18 budgets are the conductor's to re-set after a quiet-machine run at Release 2,
-step 6 (`npm run test:perf` on an idle machine). Until then `npm run test:perf` fails on cases 2, 3
-and 5. The figures above are the evidence to re-set them from; no model rule changes to meet a
-budget.
+Cases 3 and 5 still miss their budgets; `npm run test:perf` fails on them until the conductor
+re-sets them. This is spec fallback 2: the proposals above are the measured median plus 20%
+(case 3: about 74 ms from 61.7 ms; case 5: about 98 ms from 81 ms), to be confirmed on a quiet
+machine (load below 2) before they are written into `scenario.bench.spec.ts`. No budget number was
+edited in the perf round. Case 5's longest task at head is the shown run's task (about 80 ms with
+the bench funding), then the first band tasks (80 to 95 ms under load); a quiet-machine run may
+come in lower. The one full `npm run test:perf` run at the end of the round (load 7 to 18, so
+inflated) gave case 3 at 65.2 ms and case 5 at 105.0 ms.
+
+**Time to revision 0** (`rev0:` cases, perf Task R0). Added to `scenario.bench.spec.ts`:
+`rev0: unfunded`, `rev0: funded baseline` and `rev0: bench funding`. Each sends `initScenario`
+with a null seed and times the host to its first revision 0, with the split load, warm, FZP band,
+shown run and geometry. They report only; no budget is set. The first visible result waits on all
+101 FZP band runs, because the representative seed needs all 101 finals, and the order (bands
+first, then the representative seed) is fixed by `timelapse-sim-design.md:585`, so it cannot be
+reordered without changing outputs. Ballpark medians, base to head: unfunded 1,685 to 1,697 ms
+(unchanged: the round touches only the funded path); funded baseline 4,584 to 3,453 ms (x0.75);
+bench funding 10,919 to 7,038 ms (x0.64). The FZP band phase is 69%, 81% and 87% of head's time
+respectively; load is about 450 to 515 ms in all three. The final A/B pass agrees: bench funding
+11.3 to 7.3 s, funded baseline 4.4 to 3.4 s, unfunded 1.7 to 1.7 s.
+
+**Task 4 (cancelled): resumable runs.** The plan's Task 4 would turn `fundedPass`, `runEngineWith`
+and `simulateNet` into generators (`fundedSteps`, `engineSteps`, `STEP_CANDIDATES`) so the host
+advances a run across macrotask slices instead of running it whole. It is the known route to
+case 5 at or under 50 ms (the longest task becomes one step, not one run) should the need appear.
+It changes the host's job model, so the conductor ruled it out of this round (case 5 route (b)):
+case 5 takes spec fallback 2 instead.
 
 **Case 7 shows 0 respells with this fixture.** The design expected that switching `state` off
 lapses the whole certain line at once. With `benchFunding()` stacked on the baseline, `bench-afford`
@@ -711,3 +733,19 @@ is covered by `engine-finance-repricing.spec.ts` (Node only).
 - **Ruling R-P3.** The host bench cases 4 and 5 ran with the bench baseline on plan and twin until
   `finance-levers` landed; they now run the bench funding on the plan as `levers.finance`
   (`benchFundingLevers`), with the twin on the unscaled baseline.
+- **Perf round, Task 1: one warm pass, in chunks.** The skip rates and tables are filled in one pass
+  per input (`financeWarm`, `WARM_CHUNK` 16,384 candidates), because `skipRatesOf` had defeated the
+  price memo (about 440 ms cold before). Table indexes are `Uint8Array`, promoted to `Uint16Array`
+  and then `Uint32Array`; values stay `Float64Array` (Float32 changes outputs).
+- **Perf round, Task 2: line places on the application, and a non-allocating award probe.** `App`
+  carries its place in the line, and `awardPasses` answers `awardSet(...) !== null` without
+  allocating.
+- **Perf round, Task 3: the typed walk.** Lots are typed records, calendar entries are packed
+  integers, and `keyDay` stays a 64-bit float (an Int32 `keyDay` wrapped past 2^31 under tiny
+  hazards and changed outputs; found in review). The lot table is pooled per precompute and view
+  count. `claimLots` resets only what a pass reads before it writes; a stale `lparked` can be read
+  but is harmless, because every read is paired with the `lgen === cal.gen` check.
+- **Perf round, Task 4: cancelled.** Resumable runs are recorded above as the known route to
+  case 5; case 3 and case 5 take fallback 2 (conductor ruling).
+- **Perf round, Task R0: time to revision 0.** Measured, not changed: the order is fixed by
+  `timelapse-sim-design.md:585`, and no budget is set.
