@@ -119,8 +119,9 @@ export const NOTHING_ADDED = 'Nothing added yet.';
 export const SCALE_AMOUNT_DESC = '0% switches the source off: its programmes leave every offer.';
 export const scaleLimitDesc = (n: number): string =>
   `A policy can hold 24 dated changes; this one needs ${n}. Remove one first.`;
-export const removeChangeName = (from: Day): string =>
-  `Remove change from ${formatMonthYear(from)}`;
+/** A dated change's "Remove" name; a City line adds the name of the money it changes. */
+export const removeChangeName = (from: Day, name: string | null = null): string =>
+  `Remove change from ${formatMonthYear(from)}${name === null ? '' : `, ${name}`}`;
 /** "+ What it pays for"'s name: it starts with the visible label (WCAG 2.5.3). */
 export const addProgrammeName = (name: string): string =>
   `What it pays for: add a programme to ${name}`;

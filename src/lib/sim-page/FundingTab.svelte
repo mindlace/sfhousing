@@ -72,6 +72,7 @@
   import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
   import { fundingPresets, pastItems, type FundingPreset } from './funding-presets';
   import {
+    addedPresets,
     baselineGroups,
     coverageSizeMixed,
     coverageSteps,
@@ -416,12 +417,8 @@
 
   // ---- sources and tiers ----
 
-  /** Presets with an item in the policy (ids `u-<presetId>-<n>`). */
-  const addedPresets = $derived(
-    presets.filter((p) =>
-      [...f.pools, ...f.programmes].some((x) => new RegExp(`^u-${p.id}-\\d+$`).test(x.id))
-    )
-  );
+  /** Presets in the policy with provenance to list (a dated-change preset today has none). */
+  const presetSources = $derived(addedPresets(f, presets).filter((p) => p.provenance.length > 0));
   /** Every evidence field holding a custom value (4.10), as "{name}: {field} is your value …". */
   const customLines = $derived(
     baseline ? customValues(f, baseline, presets).map((c) => customValueText(c.name, c.field)) : []
@@ -588,7 +585,7 @@
           {checkLineText(baseline.check.impliedHomesPerYear, baseline.check.observedHomesPerYear)}
         </p>
         <SourceList items={[baseline.check.provenance]} />
-        {#each addedPresets as p (p.id)}
+        {#each presetSources as p (p.id)}
           <p>{p.label}:</p>
           <SourceList items={p.provenance} />
         {/each}

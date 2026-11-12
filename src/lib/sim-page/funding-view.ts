@@ -855,6 +855,28 @@ const POOL_FIELD_WORD = {
 } as const;
 
 /**
+ * The presets with something in the policy, in `presets` order (4.10 "each added preset's
+ * provenance"): one that added a pool or programme (ids `u-<presetId>-<n>`), or one that only adds
+ * dated changes while every change it adds is in `f.baselineScale` as it added it (a change
+ * edited to another amount is the user's own).
+ */
+export function addedPresets(f: FinanceLevers, presets: FundingPreset[]): FundingPreset[] {
+  const ids = [...f.pools, ...f.programmes].map((x) => x.id);
+  return presets.filter((p) => {
+    const made = new RegExp(`^u-${p.id}-\\d+$`);
+    if (ids.some((id) => made.test(id))) return true;
+    return (
+      p.pools.length === 0 &&
+      p.programmes.length === 0 &&
+      p.baselineScale.length > 0 &&
+      p.baselineScale.every((n) =>
+        f.baselineScale.some((e) => e.pool === n.pool && e.from === n.from && e.scale === n.scale)
+      )
+    );
+  });
+}
+
+/**
  * Every evidence field of an added item now holding a custom value (4.10), as `{ name, field }`
  * in document order: on a preset-made item, every field `valueSource` covers that the item holds
  * (each money-in row's amount and dates, debt, lending per dollar; a programme's numbers, dates,

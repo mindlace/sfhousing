@@ -38,6 +38,7 @@ import {
   sourcedLine
 } from './funding-copy';
 import {
+  addedPresets,
   baselineGroups,
   bundleOn,
   customValues,
@@ -642,5 +643,30 @@ describe('customValues (4.10)', () => {
       name: programmeSentence(g, pool),
       field: 'loan, % of the building cost'
     });
+  });
+});
+
+describe('addedPresets (4.10, final M3)', () => {
+  const presets = fundingPresets(fundingCalibration());
+  const scaleOnly = presets.find((p) => p.id === 'state-off')!;
+  const withPool = presets.find((p) => p.available && p.pools.length > 0)!;
+
+  it('finds a preset by its pool or programme id', () => {
+    const f = addPreset(policyWith({}).funding, withPool);
+    expect(addedPresets(f, presets).map((p) => p.id)).toContain(withPool.id);
+  });
+
+  it('finds a preset that only adds dated changes, while every change is as it added it', () => {
+    expect(scaleOnly.pools).toHaveLength(0);
+    expect(scaleOnly.baselineScale.length).toBeGreaterThan(0);
+    const f = addPreset(policyWith({}).funding, scaleOnly);
+    expect(addedPresets(f, presets).map((p) => p.id)).toEqual([scaleOnly.id]);
+    // The change edited to another amount is the user's, not the preset's.
+    const edited = {
+      ...f,
+      baselineScale: f.baselineScale.map((e) => ({ ...e, scale: e.scale + 0.5 }))
+    };
+    expect(addedPresets(edited, presets)).toEqual([]);
+    expect(addedPresets(policyWith({}).funding, presets)).toEqual([]);
   });
 });

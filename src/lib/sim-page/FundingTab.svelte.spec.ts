@@ -29,8 +29,10 @@ import {
   YOUR_MIX_LINE,
   YOUR_VALUE_LINE,
   addProgrammeName,
+  clearTermName,
   coverageSummaryText,
   limitAlert,
+  removeChangeName,
   scaleLimitDesc,
   smallProjectsCaveat
 } from './funding-copy';
@@ -115,7 +117,8 @@ describe('FundingTab', () => {
     await expect.element(row(/^City ·/)).toHaveTextContent(`Changes from July ${YEAR}`);
     await row(/^City ·/).click();
     const removes = page.getByRole('button', {
-      name: new RegExp(`^Remove change from July ${YEAR}`)
+      name: removeChangeName(JULY, 'City money'),
+      exact: true
     });
     expect(removes.elements()).toHaveLength(1);
     const lines = document.querySelectorAll('[data-scale-line]');
@@ -526,6 +529,31 @@ describe('FundingTab: adding money (4.6, 4.7)', () => {
     expect(label()).toBe('My bond');
   });
 
+  it('the draft pool row is no toggle: no aria-pressed control (final M5)', async () => {
+    setup();
+    await addMoney().click();
+    await ownPool().click();
+    const draftRow = document.querySelector('[data-funding-row="draft"]')!;
+    expect(draftRow).not.toBeNull();
+    expect(draftRow.querySelectorAll('[aria-pressed]')).toHaveLength(0);
+  });
+
+  it('Sources and tiers lists an added preset under its label (final M3)', async () => {
+    const { store, calibration } = setup();
+    const presets = fundingPresets(calibration);
+    const sourced = presets.find((p) => p.available && p.provenance.length > 0)!;
+    const scaleOnly = presetById('state-off');
+    applyPreset(store, sourced);
+    applyPreset(store, scaleOnly);
+    await page.getByText('Sources and tiers').click();
+    const text = document.querySelector('details')!.textContent!;
+    expect(text).toContain(`${sourced.label}:`);
+    expect(text).toContain(sourced.provenance[0].label);
+    // A dated-change preset carries no provenance today: no empty heading for it.
+    expect(scaleOnly.provenance).toEqual([]);
+    expect(text).not.toContain(`${scaleOnly.label}:`);
+  });
+
   it('a dated-change preset selects its group and focuses the new change', async () => {
     const { store } = setup();
     const preset = presetById('state-off');
@@ -751,7 +779,11 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
     await expect
       .element(page.getByText('Guarantee rate cut: your value (custom, not sourced)').first())
       .toBeVisible();
-    const clear = page.getByRole('button', { name: 'Clear guarantee rate cut' });
+    const clear = page.getByRole('button', {
+      name: clearTermName('guaranteeRateCut'),
+      exact: true
+    });
+    expect(clearTermName('guaranteeRateCut')).toBe('Clear guarantee rate cut');
     await expect.element(clear).toHaveAttribute('aria-disabled', 'true');
     await expect.element(clear).toHaveAccessibleDescription(TERM_IN_USE_DESC);
     (clear.element() as HTMLElement).click();
@@ -919,7 +951,10 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
       prog: {
         replaces: null,
         pool: pool.id,
-        prog: { ...prog, instrument: { kind: 'loan', costShare: 0.6, rate: null } }
+        prog: {
+          ...prog,
+          instrument: { kind: 'loan', costShare: 0.6, rate: null, requiredReturn: null }
+        }
       }
     });
     await page.getByRole('button', { name: /^Pool u-pool-1 ·/ }).click();

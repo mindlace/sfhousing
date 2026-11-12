@@ -19,6 +19,7 @@
     TERM_IN_USE_DESC,
     USE_SOURCED,
     YOUR_VALUE_LINE,
+    clearTermName,
     customLine,
     ratePercent,
     termTitle
@@ -160,8 +161,8 @@
               class={link}
               aria-disabled={locked ? 'true' : undefined}
               aria-describedby={locked ? `${uid}-${r.key}-lock` : undefined}
-              onclick={() => clear(r, locked)}
-              >Clear<span class="sr-only"> {termTitle(r.key).toLowerCase()}</span></button
+              aria-label={clearTermName(r.key)}
+              onclick={() => clear(r, locked)}>Clear</button
             >
             {#if locked}
               <p id="{uid}-{r.key}-lock" class={muted}>{TERM_IN_USE_DESC}</p>

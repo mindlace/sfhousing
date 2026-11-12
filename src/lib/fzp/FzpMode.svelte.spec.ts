@@ -17,7 +17,8 @@ import type { Calibration } from '$lib/timelapse/types';
 import { HIDDEN_VIEW, type ViewPrefs } from '$lib/view/prefs';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { fixtureCalibration } from './fixtures/calibration';
-import { REAL_ACTUAL, SIMULATED } from './fixtures/cards';
+import { FUNDED_AFFORDABLE, FUNDED_PARTLY, REAL_ACTUAL, SIMULATED } from './fixtures/cards';
+import { cardFunding, type CardFunding } from './card';
 import { formatCount } from '$lib/scoreboard/format';
 import { meterValueText } from '$lib/scoreboard/view';
 import { TIMELINE_SCORE } from './fixtures/timeline-score';
@@ -71,6 +72,7 @@ type Over = Partial<{
   scoreControls: string;
   bottomExtra: number;
   cards: boolean;
+  fundingName: (f: CardFunding) => string | null;
 }>;
 
 function setup(over: Over = {}) {
@@ -928,6 +930,36 @@ describe('FzpMode picks and summaries', () => {
     await expect.poll(() => s.w().lastSummary()!.day).toBe(ASOF);
     await answerLastSummary(s.w(), summary());
     await expect.element(page.getByText('No project on this parcel at this date.')).toBeVisible();
+  });
+
+  it("passes the page's funding name and the affordable flag to the card (final M2)", async () => {
+    const fundingName = vi.fn((f: CardFunding) => `Funded by: ${f.programmes.length} · test`);
+    const s = setup({ fundingName });
+    await toReady(s);
+    await press('{PageUp}');
+    await press('{PageUp}');
+    pick({ projectId: 'sim-5', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
+    await answerLastSummary(s.w(), summary(FUNDED_AFFORDABLE));
+    const line = page.getByTestId('card-funded-by');
+    await expect.element(line).toHaveTextContent('Funded by: 4 · test');
+    expect(fundingName).toHaveBeenLastCalledWith(cardFunding(FUNDED_AFFORDABLE));
+    await expect.element(page.getByText('100% affordable homes.')).toBeVisible();
+    // A market start: the line, without the affordable sentence.
+    await press('{ArrowRight}');
+    await answerLastSummary(s.w(), summary(FUNDED_PARTLY));
+    await expect.element(line).toHaveTextContent('Funded by: 1 · test');
+    expect(page.getByText('100% affordable homes.').elements()).toHaveLength(0);
+  });
+
+  it('no funding name (/fzp): no Funded by line on a funded card (final M2)', async () => {
+    const s = setup();
+    await toReady(s);
+    await press('{PageUp}');
+    await press('{PageUp}');
+    pick({ projectId: 'sim-5', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
+    await answerLastSummary(s.w(), summary(FUNDED_AFFORDABLE));
+    await expect.element(page.getByTestId('card-badge')).toHaveTextContent('Simulated project');
+    expect(page.getByTestId('card-funded-by').elements()).toHaveLength(0);
   });
 
   it('the card re-requests on a reroll answer', async () => {

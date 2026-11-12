@@ -16,7 +16,6 @@
 -->
 <script lang="ts">
   import { tick } from 'svelte';
-  import { formatMonthYear } from '$lib/fzp/format';
   import { dayOf, firstOfMonth } from '$lib/sim/scenario/dates';
   import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
   import type { Day, Pool } from '$lib/timelapse/types';
@@ -27,6 +26,7 @@
     baselineProgrammeText,
     dateRangeError,
     perYearText,
+    removeChangeName,
     scaleLimitDesc
   } from './funding-copy';
   import {
@@ -334,10 +334,12 @@
               >{#if isCity}<span class="font-medium">{l.name}</span>:
               {/if}{l.text}</span
             >
-            <button type="button" data-scale-remove class={link} onclick={() => remove(i)}
-              >Remove<span class="sr-only"
-                >{` change from ${formatMonthYear(l.from)}`}{isCity ? `, ${l.name}` : ''}</span
-              ></button
+            <button
+              type="button"
+              data-scale-remove
+              class={link}
+              aria-label={removeChangeName(l.from, isCity ? l.name : null)}
+              onclick={() => remove(i)}>Remove</button
             >
           </li>
         {/each}
