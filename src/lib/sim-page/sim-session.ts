@@ -6,6 +6,7 @@
 import type { AutosaveNotice } from '$lib/sharing/autosave.svelte';
 import { copyFor } from '$lib/sharing/copy';
 import type { Calibration } from '$lib/timelapse/types';
+import { reconcileFunding, type FundingLoadReport } from './funding-reconcile';
 import { changeText, reconcileTiming } from './reconcile';
 import type { SimDoc } from './sim-doc';
 
@@ -39,20 +40,31 @@ function autosaveNotice(n: AutosaveNotice | null): SimNotice | null {
 
 /**
  * The document to load and its notices, in order: the autosave's, the timing refit's, then the
- * Remix toast. `cal` null (the calibration failed to load) skips the reconcile: the timelines
+ * Remix toast, and the funding load report for funding-ui (no funding notice here). `cal` null (the calibration failed to load) skips the reconcile: the timelines
  * cannot run then, and the next load reconciles.
  */
 export function restoreSimDoc(
   r: { plan: SimDoc; notice: AutosaveNotice | null; upgradedFrom?: number },
   cal: Calibration | null,
   remixFrom?: string
-): { doc: SimDoc; notices: SimNotice[] } {
+): { doc: SimDoc; notices: SimNotice[]; funding: FundingLoadReport } {
   const notices: SimNotice[] = [];
   const first = autosaveNotice(r.notice);
   if (first) notices.push(first);
 
   let doc = r.plan;
+  const upgradedFrom = r.upgradedFrom === 2 ? 2 : null;
+  let funding: FundingLoadReport = {
+    upgradedFrom,
+    droppedScales: [],
+    droppedProgrammes: [],
+    unusable: false
+  };
   if (cal !== null) {
+    const rf = reconcileFunding(doc.policy.funding, cal);
+    if (rf.funding !== doc.policy.funding)
+      doc = { ...doc, policy: { ...doc.policy, funding: rf.funding } };
+    funding = { upgradedFrom, ...rf.report };
     const { timing, changes } = reconcileTiming(doc.policy.timing, cal);
     if (timing !== doc.policy.timing) doc = { ...doc, policy: { ...doc.policy, timing } };
     if (changes.length > 0)
@@ -67,5 +79,5 @@ export function restoreSimDoc(
 
   if (remixFrom !== undefined)
     notices.push({ id: 'remix', text: SIM.remixedToast(remixFrom), tone: 'toast' });
-  return { doc, notices };
+  return { doc, notices, funding };
 }
