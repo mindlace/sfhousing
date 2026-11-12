@@ -559,6 +559,14 @@ live one (about 1.75), so the bench errs heavy. `benchBaseline` adds values beyo
 - the City pool kinds follow the `funding.json` ids (`dedicatedTax` or `generalRevenue`);
 - `terms` is `resolveTerms(MARKET_TERMS)`.
 
+**The warm task.** The host builds each input's `financePreOf` (and its `marketSkip` and
+`affordableSkip` for the horizon) in a load-phase macrotask of its own, job kind `'warm'`, before
+revision 0 on a cold input and after each lever `current`, so the cold cost no longer lands in the
+first band task. The warm task itself can still exceed 50 ms (the cold precompute is roughly 85 to
+140 ms); splitting `financePreOf` would be this subsystem's change. `tablesOf(fp)` is still built in
+the first funded run's task. Details: [finance-levers.md](finance-levers.md), "The finance warm
+task".
+
 **Budgets** (design F18, tier 4): with `finance` absent the existing budgets hold unchanged; with
 the baseline alone `simulateNet` median ≤ 30 ms; with the bench funding set added ≤ 45 ms, and all
 101 band pairs ≤ 9 s after revision 0; the existing longest-macrotask bound of 50 ms holds with the
@@ -576,8 +584,12 @@ bench funding set (case 5).
 7. Reported, not a budget: case 3 with an `off` entry for the bench baseline's `state` pool from
    `asOf + 1,826`.
 
-Cases 4 and 5 run on this branch with the bench baseline on both plan and twin (ruling R-P3);
-rerun them with `benchFunding()` on the plan once `finance-levers` has landed.
+Cases 4 and 5 now run with `benchFundingLevers(asOf)` on the plan (`levers.finance`, ids prefixed
+`u-`) and the unscaled bench baseline on the twin (ruling R-P3, met by `finance-levers`; see
+[finance-levers.md](finance-levers.md), "The bench levers"). Ballpark on a loaded machine (load 3 to
+5): case 4's band pairs take about 4.3 s for 101 (budget 9 s); case 5's longest macrotask is about
+165 to 180 ms against the 50 ms budget, a miss to be re-measured on a quiet machine before the
+budgets are re-set. The figures in the table below predate this change (bench baseline on the plan).
 
 **Measured medians. These are BALLPARK, measured on a busy machine** (load 2.3 to 8.6 on 15 cores,
 other agents running); two runs each:
@@ -661,5 +673,6 @@ is covered by `engine-finance-repricing.spec.ts` (Node only).
 - **`affordableSkip` is an addition** to the design's per-input bound, exact on the same argument;
   without it `bench-afford` (`minHomes` 0) would compute an affordable latent for every candidate on
   every run.
-- **Ruling R-P3.** The host bench cases 4 and 5 run with the bench baseline on plan and twin until
-  `finance-levers` lands.
+- **Ruling R-P3.** The host bench cases 4 and 5 ran with the bench baseline on plan and twin until
+  `finance-levers` landed; they now run the bench funding on the plan as `levers.finance`
+  (`benchFundingLevers`), with the twin on the unscaled baseline.

@@ -4,7 +4,7 @@ The engine behind `/sim` (plan 2 of 5; FZP-only since the sim runs plan 1, Task 
 
 ## The lever document
 
-`SimLevers` (schema 2, `types.ts`) is a sibling of the editor's `Plan`, not new `PlanOp`s: levers are mostly static configuration, and rules and paint name lots by `ParcelId`, so the document survives row reordering. `parseSimLevers` validates it (hand-written guards; `LeverFormatError` names the first bad field). A schema-1 document fails on `schema`; the schema-1 fields (`stock`, `assumeAlternativePlanKept`, `user`) are unknown keys.
+`SimLevers` (schema 3, `types.ts`) is a sibling of the editor's `Plan`, not new `PlanOp`s: levers are mostly static configuration, and rules and paint name lots by `ParcelId`, so the document survives row reordering. `parseSimLevers` validates it (hand-written guards; `LeverFormatError` names the first bad field). A schema-1 or schema-2 document fails on `schema` (`expected 3, got 2`); lever documents are never stored, and the page and worker ship in one bundle, so no lever loader exists. The schema-1 fields (`stock`, `assumeAlternativePlanKept`, `user`) are unknown keys.
 
 | Field                     | Default (`DEFAULT_LEVERS`)        | Meaning                                                                   |
 | ------------------------- | --------------------------------- | ------------------------------------------------------------------------- |
@@ -15,10 +15,22 @@ The engine behind `/sim` (plan 2 of 5; FZP-only since the sim runs plan 1, Task 
 | `routeShares`             | `null` (observed `pathwayForNew`) | Pathway shares for new projects, normalised                               |
 | `localProgramStreamlined` | `true`                            | Local Program lots forced onto streamlined                                |
 | `compare`                 | `'preFzp'`                        | Twin: `'preFzp'` zoning, or `'fzp'` (FZP as written)                      |
+| `finance`                 | empty `FinanceLevers`             | Funding levers: baseline scale, added pools and programmes, typed terms   |
 
 Stories are integers from 0 to 255 (one byte in the packed columns). `DEFAULT_LEVERS` is FZP as written compared with pre-FZP zoning: under it `/sim` reproduces `/fzp`. Construction and completion are locked: no timer edits them. There is no stock blend, no current law and no law switch: the plan always starts from FZP as written (`fzpYieldCap`) for the whole window.
 
-The page's `SimPolicy` (`src/lib/sim-page/policy.ts`, schema 2) compiles to these levers in `compileLevers`: its zoning rules become `rules` (a transit rule one edit per band), its custom paint becomes `paint` in stroke order (an erase removing earlier paint), its category protections `protect`, and `compare` is `'preFzp'` for the default policy and `'fzp'` for any other ([sim-page.md](sim-page.md), "The recipe and its compile rules").
+The page's `SimPolicy` (`src/lib/sim-page/policy.ts`, schema 3) compiles to these levers in `compileLevers`: its zoning rules become `rules` (a transit rule one edit per band), its custom paint becomes `paint` in stroke order (an erase removing earlier paint), its category protections `protect`, its `funding` is copied into `finance`, and `compare` is `'preFzp'` for the default policy and `'fzp'` for any other ([sim-page.md](sim-page.md), "The recipe and its compile rules").
+
+## Funding levers
+
+`SimLevers.finance` is a `FinanceLevers` (`{ baselineScale, pools, programmes, terms }`, `finance.ts`). The full rules are in [finance-levers.md](finance-levers.md); in brief:
+
+- **Parse.** `parseFinanceLevers` throws `LeverFormatError` on the first bad field. Pool checks are shared with the dataset through `checkPool` (`src/lib/timelapse/model.ts`); an added programme is checked by `validateInstrument` and its own rules, not `checkProgramme`. Limits: 12 added pools, 12 inflows a pool, 24 added programmes, 24 scale entries (`FINANCE_LIMITS`).
+- **Ids.** Every id matches `^[a-z0-9][a-z0-9-]{0,39}$`; an added pool or programme id starts `u-`, a baseline id never does, so a scale entry names a baseline pool and a programme's `u-` pool must be an added one.
+- **Typed `terms`** are any of the five market terms, each bounded by `resolveTerms`' input range (the parser calls it with that key alone). A term an instrument needs but nothing sources is not a parse error: it is dropped on load, refused on publish, and guarded in `buildFinance`.
+- **`buildFinance(base, f, asOf)`**, called by `planOf`: no model returns undefined; empty levers return `base` itself; the id check against the baseline; resolved terms and the missing-term guard; scaling with `inflowArrivals` windows (a capped pool's inflows rebuilt per run, never before `asOf`); one `off` span per stretch of scale-0 entries; then baseline pools, added pools, programmes and spans in order.
+- **The twin and `bare()`.** `market` and `finance` pass through `applyPolicies` and `bare()`; both twins run the unscaled baseline on the sourced terms, so typed terms and scales reach the plan only.
+- **The worker.** A baseline-id failure in `leverStep` is a `bad-request` (`levers <path>: <message>`) on that revision's rev; the previous revision stays in force.
 
 ## Resolution order
 

@@ -47,6 +47,18 @@ src/lib/sim/scenario/fixtures/build-finance-golden.ts`), never from CI: a change
   medians are in [finance-engine.md](finance-engine.md); cases 2, 3 and 5 miss their budgets on a
   busy machine until the conductor re-sets them after a quiet run.
 
+## Stored schema-2 policies
+
+`src/lib/sim-page/fixtures/schema2/` holds byte copies of stored schema-2 `/sim` documents taken from
+the code as it was before the schema-3 change: `painted.json` (the text of `paintedText()` in
+`src/lib/server/test/sim-docs.ts`), `profile.json` (the old `scripts/profile-sim-load.policy.json`),
+`tampered.json` (`tamperedText()`) and `default-record.json` (a localStorage record `{ v: 1, savedAt,
+plan }` whose `plan` is the schema-2 default policy). They are committed verbatim and listed in
+`.prettierignore`, so their bytes stay as stored: never reformat or regenerate them. `sim-doc.spec.ts`
+loads each in `'reconcile'` as schema 3 with default funding; the autosave, storage, shared-page and
+`SimPage` specs and `e2e/sim-share.spec.ts` use them for the upgrade paths ([plan-sharing.md](plan-sharing.md),
+"Policies (`/sim`)").
+
 ## FakeR2Bucket
 
 `src/lib/server/test/fake-r2.ts` is an in-memory `R2Bucket` subset (`get` with `range`/`onlyIf` as `Headers`, `head`, `put`) for route tests. Options model both known R2 behaviours:
