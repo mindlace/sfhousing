@@ -3,7 +3,14 @@ import { PROTOTYPES } from '../finance/prototypes';
 import { tinyStack } from './fixtures/tiny-queue';
 import { awardSet, financeIndexOf, type Award } from './funding';
 import type { SimInput } from './types';
-import { groupedLine, scanLine, type App, type AwardTest, type Line } from './line';
+import {
+  groupedLine,
+  scanLine,
+  type App,
+  type AwardProbe,
+  type AwardTest,
+  type Line
+} from './line';
 
 const PER_HOME = 100;
 
@@ -26,6 +33,9 @@ function app(lot: number, applied: number, key: number, over: Partial<App> = {})
     stories: 5,
     keyDay: applied,
     seq: 0,
+    lgr: null,
+    lgi: -1,
+    lk: -1,
     ...over
   };
 }
@@ -151,6 +161,24 @@ for (const [name, makeLine] of IMPLS) {
 }
 
 describe('groupedLine keeps its own record of each application’s group', () => {
+  it('size counts live applications after remove and regroup', () => {
+    const line = groupedLine((b) => b);
+    const xs = [1, 2, 3, 4, 5].map((i) => app(i, 1, i, { bundle: [0], bundleKey: '0' }));
+    xs.forEach((x) => line.add(x));
+    line.remove(xs[0]);
+    line.remove(xs[3]);
+    // a removed application removed again changes nothing
+    line.remove(xs[0]);
+    Object.assign(xs[2], { bundle: [1], bundleKey: '1' });
+    line.regroup(xs[2]);
+    expect(line.size).toBe(3);
+    // the rebuild before serving keeps the count
+    const { taken } = run(line, new Map([[0, 0]]));
+    expect(taken).toEqual([]);
+    expect(line.size).toBe(3);
+    expect(line.apps().map((x) => x.lot)).toEqual([2, 3, 5]);
+  });
+
   it('regroup after the fields are overwritten moves the application to its new group', () => {
     const line = groupedLine((b) => b);
     const a = app(1, 1, 1, { bundle: [0], bundleKey: '0' });
@@ -238,13 +266,14 @@ describe('scanLine and groupedLine agree (property, spec 6)', () => {
   }
 
   /** Runs the same operations on one line; returns every award with its set and pass. */
-  function play(seed: number, makeLine: () => Line) {
+  function play(seed: number, makeLine: () => Line, probe = false) {
     const r = rng(seed);
     const line = makeLine();
     const money = new Map<number, number>();
     for (const q of capped) money.set(q, Math.floor(r() * CITY_HOME * 120));
     const avail = (q: number) => money.get(q) ?? 0;
     const test: AwardTest = (g, units) => awardSet(g.bundle, g.kind, g.protoId, units, avail, f);
+    const passes: AwardProbe | undefined = probe ? (g, u) => test(g, u) !== null : undefined;
     const all: App[] = [];
     const out: [number, number, number, string, number[]][] = [];
     let applied = 0;
@@ -291,13 +320,13 @@ describe('scanLine and groupedLine agree (property, spec 6)', () => {
         out.push([p, a.lot, a.key, a.kind, w.set]);
         for (const x of all) if (x.lot === a.lot) line.remove(x);
       };
-      const n = line.serve(test, take(pass));
+      const n = line.serve(test, take(pass), false, passes);
       expect(n).toBe(out.filter((o) => o[0] === pass).length);
       // `keep`: the money moved only by the pass's own awards; some applications join, some
       // leave, and the grouped line keeps the thresholds of the groups no member joined
       addSome(Math.floor(r() * 6));
       for (const a of live()) if (r() < 0.05) line.remove(a);
-      line.serve(test, take(pass + 0.5), true);
+      line.serve(test, take(pass + 0.5), true, passes);
     }
     return { out, money: [...money], left: line.apps().map((a) => a.key) };
   }
@@ -309,6 +338,9 @@ describe('scanLine and groupedLine agree (property, spec 6)', () => {
       const scan = play(seed, scanLine);
       const grouped = play(seed, () => groupedLine(poolsOf));
       expect(grouped, `seed ${seed}`).toEqual(scan);
+      // the same with the serving probe
+      const probed = play(seed, () => groupedLine(poolsOf), true);
+      expect(probed, `seed ${seed} (probe)`).toEqual(scan);
       awards += scan.out.length;
       waiting += scan.left.length;
     }

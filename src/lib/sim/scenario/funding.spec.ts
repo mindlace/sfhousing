@@ -8,6 +8,7 @@ import {
   PIPELINE_FUNDED,
   asksOf,
   available,
+  awardPasses,
   awardSet,
   below,
   checkFinance,
@@ -20,6 +21,7 @@ import {
   newPoolState,
   type FinanceIndex
 } from './funding';
+import { benchBaseline, withBenchFunding } from './fixtures/bench-finance';
 import { tinyStack } from './fixtures/tiny-queue';
 import { GOLDEN_HORIZON, goldenInput } from './simulate.golden.cases';
 import type { SimInput } from './types';
@@ -701,5 +703,50 @@ describe('the award rule is monotone (property)', () => {
     }
     expect(nulls).toBeGreaterThan(20);
     expect(awards).toBeGreaterThan(20);
+  });
+});
+
+describe('awardPasses', () => {
+  it('awardPasses agrees with awardSet on random bundles and money', () => {
+    const fin = withBenchFunding(benchBaseline(A), A);
+    const f = financeIndexOf(fin);
+    const byKind = (kind: 'market' | 'affordable') =>
+      fin.programmes.map((g, i) => (g.reach === kind ? i : -1)).filter((i) => i >= 0);
+    const reach = { market: byKind('market'), affordable: byKind('affordable') };
+    // the engine passes the same bundle arrays again and again: keep some to reuse
+    const kept: { market: number[][]; affordable: number[][] } = { market: [], affordable: [] };
+    const rng = mulberry32(0xa3a7d);
+    let passes = 0;
+    let fails = 0;
+    let leftOut = 0;
+    for (let n = 0; n < 2000; n++) {
+      const kind = rng() < 0.5 ? 'market' : 'affordable';
+      const protoId = PROTOTYPES[Math.floor(rng() * PROTOTYPES.length)].id;
+      let bundle: number[];
+      if (kept[kind].length > 0 && rng() < 0.4) {
+        bundle = kept[kind][Math.floor(rng() * kept[kind].length)];
+      } else {
+        bundle = reach[kind].filter(() => rng() < 0.6);
+        if (bundle.length === 0) bundle = [reach[kind][Math.floor(rng() * reach[kind].length)]];
+        kept[kind].push(bundle);
+      }
+      const units = 1 + Math.floor(rng() * 400);
+      const asks = asksOf(f, kind, bundle, protoId, units);
+      const money = fin.pools.map((_, q) => {
+        const ask = asks.get(q) ?? Math.floor(rng() * 1e8);
+        const r = rng();
+        // sometimes exactly the ask, sometimes 0, else 0 to 2x the ask
+        return r < 0.1 ? ask : r < 0.15 ? 0 : Math.floor(2 * ask * rng());
+      });
+      const avail = (q: number) => money[q];
+      const want = awardSet(bundle, kind, protoId, units, avail, f) !== null;
+      expect(awardPasses(bundle, kind, protoId, units, avail, f), `case ${n}`).toBe(want);
+      if (want) passes++;
+      else fails++;
+      if (leaveOut(bundle, kind, protoId, units, avail, f).rounds > 0) leftOut++;
+    }
+    expect(passes).toBeGreaterThan(200);
+    expect(fails).toBeGreaterThan(200);
+    expect(leftOut).toBeGreaterThan(200);
   });
 });

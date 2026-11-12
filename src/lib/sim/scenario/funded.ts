@@ -34,6 +34,7 @@ import {
   type Sink
 } from './engine';
 import {
+  awardPasses,
   awardSet,
   below,
   coverageLevel,
@@ -42,7 +43,7 @@ import {
   type Award,
   type FinanceIndex
 } from './funding';
-import { groupedLine, scanLine, type App, type AwardTest } from './line';
+import { groupedLine, scanLine, type App, type AwardProbe, type AwardTest } from './line';
 import { Treasury, type LedgerEvent } from './money';
 import {
   lastInitiationMonth,
@@ -1054,7 +1055,8 @@ function bundleKeyOf(bundle: readonly number[]): string {
  * Sorts one day's new applications by line key, in place. The keys are distinct whole numbers
  * below 2^53 whose low 20 bits are the slot `rank × 2 + kind bit` (`lineKey`), so the keys are
  * sorted as numbers and each is mapped back through its slot (`bySlot`, all empty between calls);
- * on a repeated slot it falls back to a comparison sort. The order is the same either way.
+ * on a repeated slot it falls back to a comparison sort. The order is the same either way. The
+ * slot is found by subtraction, not `%` (exact: whole numbers below 2^53, a power-of-two scale).
  */
 function sortByKey(apps: App[], bySlot: (App | undefined)[]): void {
   const n = apps.length;
@@ -1065,9 +1067,9 @@ function sortByKey(apps: App[], bySlot: (App | undefined)[]): void {
   const keys = new Float64Array(n);
   for (let k = 0; k < n; k++) {
     const a = apps[k];
-    const slot = a.key % KEY_DAY_SCALE;
+    const slot = slotOf(a);
     if (bySlot[slot] !== undefined) {
-      for (let m = 0; m < k; m++) bySlot[apps[m].key % KEY_DAY_SCALE] = undefined;
+      for (let m = 0; m < k; m++) bySlot[slotOf(apps[m])] = undefined;
       apps.sort((x, y) => x.key - y.key);
       return;
     }
@@ -1076,11 +1078,16 @@ function sortByKey(apps: App[], bySlot: (App | undefined)[]): void {
   }
   keys.sort();
   for (let k = 0; k < n; k++) {
-    const slot = keys[k] % KEY_DAY_SCALE;
+    const key = keys[k];
+    // the key's own day: `key / KEY_DAY_SCALE` is exact, its floor is `min(keyDay, NEVER)`
+    const slot = key - Math.floor(key / KEY_DAY_SCALE) * KEY_DAY_SCALE;
     apps[k] = bySlot[slot]!;
     bySlot[slot] = undefined;
   }
 }
+
+/** An application's slot, `rank × 2 + kind bit`: its key less its key day's part (`lineKey`). */
+const slotOf = (a: App): number => a.key - Math.min(a.keyDay, NEVER_KEY_DAY) * KEY_DAY_SCALE;
 
 /** One parked or walking lot of the funded pass (spec 4.5). */
 interface Lot {
@@ -1256,6 +1263,8 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
   );
   const avail = (q: number) => tr.available(q);
   const test: AwardTest = (g, units) => awardSet(g.bundle, g.kind, g.protoId, units, avail, f);
+  const passes: AwardProbe = (g, units) =>
+    awardPasses(g.bundle, g.kind, g.protoId, units, avail, f);
 
   const leaveLine = (lot: Lot) => {
     for (const a of lot.apps) line.remove(a);
@@ -1531,7 +1540,10 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
         f: lt.f,
         stories: lt.stories,
         keyDay: lt.keyDay,
-        seq: 0
+        seq: 0,
+        lgr: null,
+        lgi: -1,
+        lk: -1
       };
       x.lot.apps.push(app);
       fresh.push(app);
@@ -1546,7 +1558,7 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
     if (did) {
       let r: { any: boolean; returned: boolean };
       do {
-        line.serve(test, take, shortcuts && !moneyChanged);
+        line.serve(test, take, shortcuts && !moneyChanged, passes);
         moneyChanged = false;
         r = tr.settle(D);
         if (r.any) moneyChanged = true;
