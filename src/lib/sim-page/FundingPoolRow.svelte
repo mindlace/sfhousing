@@ -177,6 +177,36 @@
   const textOf = (key: string, value: unknown, text: string): string =>
     pendingOf(key, value)?.text ?? text;
 
+  /** The stored value a field's error is held against (`pending` keys). */
+  function currentOf(key: string): unknown {
+    const [field, k] = key.split('-');
+    const x = k === undefined ? undefined : rows[Number(k)];
+    switch (field) {
+      case 'name':
+        return name;
+      case 'amount':
+        return x === undefined ? undefined : rowAmount(x);
+      case 'date':
+        return x === undefined ? undefined : rowDay(x);
+      case 'until':
+        return x === undefined ? undefined : rowTo(x);
+      case 'rate':
+        return pool.debt?.rate;
+      case 'years':
+        return pool.debt?.termYears;
+      case 'leverage':
+        return pool.leverage;
+      default:
+        return undefined;
+    }
+  }
+
+  // An undo or redo that rewrites a field drops its error for good, so a later change back to
+  // the value it was typed over does not bring the stale text and message back (4.7).
+  $effect.pre(() => {
+    for (const [key, p] of Object.entries(pending)) if (currentOf(key) !== p.stored) clear(key);
+  });
+
   function fail(key: string, text: string, error: string, value: unknown): void {
     pending[key] = { text, error, stored: value };
   }
@@ -239,7 +269,7 @@
     const x = rows[k];
     if (x.kind === next) return;
     if (stored !== null) {
-      onedit(setInflowKindEdit(policy, id!, k, next));
+      onedit(setInflowKindEdit(policy, id!, k, next, regen));
       return;
     }
     const day = rowDay(x);
@@ -355,14 +385,14 @@
   function addRow(): void {
     if (rows.length >= FINANCE_LIMITS.inflowsPerPool) return;
     const n = rows.length;
-    if (stored !== null) onedit(addInflowEdit(policy, id!));
+    if (stored !== null) onedit(addInflowEdit(policy, id!, regen));
     else draftWith({ inflows: [...rows, { ...rows[n - 1] }] }, `once-${n}`);
     void focusField(`once-${n}`);
   }
 
   function removeRow(k: number): void {
     if (rows.length <= 1) return;
-    if (stored !== null) onedit(removeInflowEdit(policy, id!, k));
+    if (stored !== null) onedit(removeInflowEdit(policy, id!, k, regen));
     else draftWith({ inflows: rows.filter((_, j) => j !== k) }, 'add-inflow');
     // The row now at its place, else "+ Money in" (4.9).
     void focusField(`once-${k}`, 'add-inflow');
@@ -429,10 +459,23 @@
     return s.kind === 'sourced' ? sourcedLine(s.provenance.label, s.provenance.tier) : CUSTOM_LINE;
   }
 
-  /** An evidence field's line: its source, or "your value" beside the sourced default. */
+  /** Made by a preset: its id is `u-<presetId>-<n>` for a preset on the page. */
+  const presetMade = $derived(
+    id !== null &&
+      presets.some((p) => {
+        const prefix = `u-${p.id}-`;
+        return id.startsWith(prefix) && /^\d+$/.test(id.slice(prefix.length));
+      })
+  );
+
+  /**
+   * An evidence field's line: its source; on a preset-made pool otherwise "Custom, not sourced."
+   * (4.7, whatever its kind); on a hand-made pool "your value" beside the sourced default.
+   */
   function evidenceLine(field: 'debt.rate' | 'debt.termYears' | 'leverage'): string {
     const s = fieldSource(asPool, field, presets, kind);
     if (s.kind === 'sourced') return sourcedLine(s.provenance.label, s.provenance.tier);
+    if (presetMade) return CUSTOM_LINE;
     const d = POOL_KIND_DEFAULTS[kind];
     if (field === 'leverage') {
       const e = d.leverage;
@@ -565,15 +608,17 @@
                   checked={x.kind === value}
                   onchange={() => commitRowKind(k, value)}
                 />
-                {text}<span class="sr-only">, row {n}</span>
+                <span>{text}<span class="sr-only">, row {n}</span></span>
               </label>
             {/each}
           </fieldset>
 
           <div class="flex flex-col gap-0.5">
             <label class="flex flex-wrap items-center gap-1">
-              Amount, $ million{x.kind === 'yearly' ? ' a year' : ''}<span class="sr-only"
-                >, row {n}</span
+              <span
+                >Amount, $ million{x.kind === 'yearly' ? ' a year' : ''}<span class="sr-only"
+                  >, row {n}</span
+                ></span
               >
               <input
                 type="number"
@@ -601,7 +646,7 @@
             <fieldset class="flex flex-wrap items-center gap-2">
               <legend class="font-semibold">{legend}</legend>
               <label class="flex items-center gap-1">
-                Month<span class="sr-only">, {legend}, row {n}</span>
+                <span>Month<span class="sr-only">, {legend}, row {n}</span></span>
                 <select
                   data-field="month-{k}"
                   class={input}
@@ -616,7 +661,7 @@
                 </select>
               </label>
               <label class="flex items-center gap-1">
-                Year<span class="sr-only">, {legend}, row {n}</span>
+                <span>Year<span class="sr-only">, {legend}, row {n}</span></span>
                 <input
                   type="number"
                   inputmode="numeric"
@@ -649,11 +694,11 @@
                     aria-describedby="{uid}-until-{k}-err"
                     onchange={(e) => commitEnds(k, e.currentTarget.checked)}
                   />
-                  Ends<span class="sr-only">, row {n}</span>
+                  <span>Ends<span class="sr-only">, row {n}</span></span>
                 </label>
                 {#if to !== null}
                   <label class="flex items-center gap-1">
-                    Month<span class="sr-only">, Until, row {n}</span>
+                    <span>Month<span class="sr-only">, Until, row {n}</span></span>
                     <select
                       data-field="until-month-{k}"
                       class={input}
@@ -668,7 +713,7 @@
                     </select>
                   </label>
                   <label class="flex items-center gap-1">
-                    Year<span class="sr-only">, Until, row {n}</span>
+                    <span>Year<span class="sr-only">, Until, row {n}</span></span>
                     <input
                       type="number"
                       inputmode="numeric"

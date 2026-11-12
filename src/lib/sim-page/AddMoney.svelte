@@ -64,7 +64,6 @@
   <button
     type="button"
     data-funding-add
-    data-draft-open={disabledReason !== null ? 'true' : undefined}
     aria-expanded={open}
     aria-controls="{uid}-chooser"
     aria-disabled={off ? 'true' : undefined}

@@ -250,6 +250,9 @@ export function generatedName(kind: PoolKind, firstDay: Day): string {
 const regenerated = (x: Pool): Pool =>
   x.inflows.length === 0 ? x : { ...x, label: generatedName(x.kind, firstDayOf(x.inflows)) };
 
+/** `x`, its name regenerated when `regenName`. */
+const named = (x: Pool, regenName: boolean): Pool => (regenName ? regenerated(x) : x);
+
 const LABEL_CHARS = FINANCE_LIMITS.labelChars;
 
 /** A generated label within the parser's 80 characters. */
@@ -408,22 +411,32 @@ export function setInflowAmountEdit(
   };
 }
 
-/** Turns row `k` (from 0) into a single payment or a yearly one, keeping its date and amount. */
+/**
+ * Turns row `k` (from 0) into a single payment or a yearly one, keeping its date and amount.
+ * `regenName` regenerates the name from the first inflow's year (4.9).
+ */
 export function setInflowKindEdit(
   p: SimPolicy,
   id: string,
   k: number,
-  kind: 'once' | 'yearly'
+  kind: 'once' | 'yearly',
+  regenName = false
 ): FundingEdit {
   return {
     change: (q) =>
       withFunding(q, (f) =>
-        mapInflow(f, id, k, (x): Inflow => {
-          if (x.kind === kind) return x;
-          return x.kind === 'once'
-            ? { kind: 'yearly', from: x.day, to: null, dollarsPerYear: x.dollars }
-            : { kind: 'once', day: x.from, dollars: x.dollarsPerYear };
-        })
+        mapInflow(
+          f,
+          id,
+          k,
+          (x): Inflow => {
+            if (x.kind === kind) return x;
+            return x.kind === 'once'
+              ? { kind: 'yearly', from: x.day, to: null, dollarsPerYear: x.dollars }
+              : { kind: 'once', day: x.from, dollars: x.dollarsPerYear };
+          },
+          regenName
+        )
       ),
     label: labelInflowKindChanged(poolName(p, id), k + 1, kind)
   };
@@ -462,8 +475,8 @@ export function setInflowDateEdit(
   };
 }
 
-/** "+ Money in": a copy of the last row; refused at 12 rows (F7). */
-export function addInflowEdit(p: SimPolicy, id: string): FundingEdit | Refused {
+/** "+ Money in": a copy of the last row; refused at 12 rows (F7). `regenName` as above. */
+export function addInflowEdit(p: SimPolicy, id: string, regenName = false): FundingEdit | Refused {
   const cur = p.funding.pools.find((x) => x.id === id);
   if (cur !== undefined && cur.inflows.length >= FINANCE_LIMITS.inflowsPerPool)
     return { refused: INFLOW_LIMIT_DESC };
@@ -473,15 +486,23 @@ export function addInflowEdit(p: SimPolicy, id: string): FundingEdit | Refused {
         mapPool(f, id, (x) =>
           x.inflows.length === 0
             ? null
-            : { ...x, inflows: [...x.inflows, { ...x.inflows[x.inflows.length - 1] }] }
+            : named(
+                { ...x, inflows: [...x.inflows, { ...x.inflows[x.inflows.length - 1] }] },
+                regenName
+              )
         )
       ),
     label: labelInflowAdded(poolName(p, id))
   };
 }
 
-/** Removes row `k` (from 0); refused on a pool's only row. */
-export function removeInflowEdit(p: SimPolicy, id: string, k: number): FundingEdit | Refused {
+/** Removes row `k` (from 0); refused on a pool's only row. `regenName` as above. */
+export function removeInflowEdit(
+  p: SimPolicy,
+  id: string,
+  k: number,
+  regenName = false
+): FundingEdit | Refused {
   const cur = p.funding.pools.find((x) => x.id === id);
   if (cur !== undefined && cur.inflows.length <= 1) return { refused: INFLOW_MIN_DESC };
   return {
@@ -490,7 +511,7 @@ export function removeInflowEdit(p: SimPolicy, id: string, k: number): FundingEd
         mapPool(f, id, (x) =>
           x.inflows.length <= 1 || k >= x.inflows.length
             ? null
-            : { ...x, inflows: x.inflows.filter((_, j) => j !== k) }
+            : named({ ...x, inflows: x.inflows.filter((_, j) => j !== k) }, regenName)
         )
       ),
     label: labelInflowRemoved(poolName(p, id), k + 1)

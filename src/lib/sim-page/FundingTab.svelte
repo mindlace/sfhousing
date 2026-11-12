@@ -188,6 +188,10 @@
   let addOpen = $state(false);
   /** A refused preset's text, in the chooser's alert line. */
   let addAlert = $state('');
+  // The alert belongs to the open chooser: closing it clears the text.
+  $effect.pre(() => {
+    if (!addOpen) addAlert = '';
+  });
 
   const poolDraft = $derived(drafts.draft?.kind === 'pool' ? drafts.draft.pool : null);
   const addDisabled = $derived(

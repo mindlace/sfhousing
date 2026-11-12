@@ -21,6 +21,7 @@ import {
   POOL_LIMIT_DESC,
   addProgrammeName,
   coverageSummaryText,
+  limitAlert,
   scaleLimitDesc,
   smallProjectsCaveat
 } from './funding-copy';
@@ -445,6 +446,109 @@ describe('FundingTab: adding money (4.6, 4.7)', () => {
     await expect.element(amount).toHaveValue(36.7);
     await expect.element(amount).not.toHaveAttribute('aria-invalid', 'true');
     expect(alert.textContent?.trim()).toBe('');
+    // Redo brings back the value the error was typed over, but not the error or its text.
+    store.redo();
+    await expect.element(amount).toHaveValue(5);
+    await expect.element(amount).not.toHaveAttribute('aria-invalid', 'true');
+    expect(alert.textContent?.trim()).toBe('');
+  });
+
+  it('a preset-made bond rate changed by hand reads Custom, not sourced.', async () => {
+    const { store } = setup();
+    applyPreset(store, presetById('housing-bond'));
+    const pool = store.policy.funding.pools[0];
+    await page.getByRole('button', { name: new RegExp(`^${esc(pool.label)} ·`) }).click();
+    const rate = page.getByRole('spinbutton', { name: /^Interest rate, %/ });
+    await rate.fill('5');
+    await userEvent.keyboard('{Enter}');
+    expect(store.policy.funding.pools[0].debt?.rate).toBe(0.05);
+    const rateLine = () =>
+      rate.element().closest('label')!.parentElement!.querySelector('[data-source-line]')
+        ?.textContent;
+    await expect.poll(rateLine).toBe(CUSTOM_LINE);
+    // The hand-made form ("Your value … Sourced: …") is not used on a preset-made pool.
+    const editor = document.querySelector('[data-funding-editor]')!;
+    expect(editor.textContent).not.toContain('Your value (custom, not sourced). Sourced:');
+    expect(editor.textContent).toContain('From Bond interest rate and term (tier 2)');
+  });
+
+  it('a generated name follows kind, first year and money-in rows until edited', async () => {
+    const { store } = setup();
+    await addMoney().click();
+    await ownPool().click();
+    await amountInput().fill('60');
+    await userEvent.keyboard('{Enter}');
+    const label = () => store.policy.funding.pools[0].label;
+    expect(label()).toBe(`City general fund, ${YEAR}`);
+    // Kind (M5).
+    await kindSelect().selectOptions('goBond');
+    expect(label()).toBe(`City bond, ${YEAR}`);
+    // First year (M5).
+    const year0 = page.getByRole('spinbutton', { name: /^Year\s?, From, row 1/ });
+    await year0.fill(String(YEAR + 2));
+    await userEvent.keyboard('{Enter}');
+    expect(label()).toBe(`City bond, ${YEAR + 2}`);
+    // A new row copies the last: the first year, and the name, stay.
+    await page.getByRole('button', { name: /^Add money in/ }).click();
+    expect(store.policy.funding.pools[0].inflows).toHaveLength(2);
+    expect(label()).toBe(`City bond, ${YEAR + 2}`);
+    // Row 1 earlier, then removed: the name follows row 2's year.
+    const year1 = page.getByRole('spinbutton', { name: /^Year\s?, From, row 1/ });
+    await year1.fill(String(YEAR));
+    await userEvent.keyboard('{Enter}');
+    expect(label()).toBe(`City bond, ${YEAR}`);
+    await page.getByRole('button', { name: 'Remove money in, row 1', exact: true }).click();
+    expect(store.policy.funding.pools[0].inflows).toHaveLength(1);
+    expect(label()).toBe(`City bond, ${YEAR + 2}`);
+    expect(store.undoLabel).toMatch(/^Removed money in: /);
+    // Once / every year keeps the generated name.
+    await page.getByRole('radio', { name: /^Once\s?, row 1/ }).click();
+    expect(store.policy.funding.pools[0].inflows[0].kind).toBe('once');
+    expect(label()).toBe(`City bond, ${YEAR + 2}`);
+    // Once the user edits the name, it is kept.
+    const name = page.getByRole('textbox', { name: /^Name/ });
+    await name.fill('My bond');
+    await userEvent.keyboard('{Enter}');
+    expect(label()).toBe('My bond');
+    await kindSelect().selectOptions('cop');
+    expect(label()).toBe('My bond');
+    await page.getByRole('button', { name: /^Add money in/ }).click();
+    expect(label()).toBe('My bond');
+  });
+
+  it('a dated-change preset selects its group and focuses the new change', async () => {
+    const { store } = setup();
+    const preset = presetById('state-off');
+    expect(preset.pools).toHaveLength(0);
+    await addMoney().click();
+    await page.getByRole('button', { name: preset.label, exact: true }).click();
+    expect(store.undoLabel).toBe(`Added: ${preset.label}`);
+    await expect.element(row(/^State ·/)).toHaveAttribute('aria-pressed', 'true');
+    const from = preset.baselineScale[0].from;
+    await expect
+      .poll(() => (document.activeElement as HTMLElement | null)?.dataset.scaleFrom)
+      .toBe(String(from));
+    expect(document.activeElement?.hasAttribute('data-scale-line')).toBe(true);
+  });
+
+  it('the chooser alert clears when the chooser closes', async () => {
+    const baselineScale: FinanceLevers['baselineScale'] = [];
+    for (let i = 0; i < 12; i++)
+      baselineScale.push({ pool: 'federal', from: dayOf(YEAR + i, 7, 1), scale: i % 2 });
+    for (let i = 0; i < 12; i++)
+      baselineScale.push({ pool: 'city-tax', from: dayOf(YEAR + i, 7, 1), scale: 0.5 });
+    const { store } = setup(policyWith({ baselineScale }));
+    const before = store.policy;
+    const preset = presetById('state-off');
+    await addMoney().click();
+    await page.getByRole('button', { name: preset.label, exact: true }).click();
+    expect(store.policy).toBe(before);
+    const chooser = document.getElementById(addMoney().element().getAttribute('aria-controls')!)!;
+    const alert = () => chooser.parentElement!.querySelector('[role="alert"]')!.textContent?.trim();
+    expect(alert()).toBe(limitAlert('baselineScale'));
+    await addMoney().click();
+    await expect.element(addMoney()).toHaveAttribute('aria-expanded', 'false');
+    await expect.poll(alert).toBe('');
   });
 
   it('Add money aria-disabled at 12 pools', async () => {
