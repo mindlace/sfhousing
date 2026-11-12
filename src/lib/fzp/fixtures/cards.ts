@@ -221,3 +221,22 @@ export const WITH_QUALITY = pipeline({
 });
 
 export const NO_QUALITY = pipeline({ projectId: 'pr-12', quality: [] });
+
+/**
+ * A funded 100% affordable start (F10): paid by today's City, state and federal grants of the
+ * funding fixture (`src/lib/sim-page/test/funding.ts`), fully funded.
+ */
+export const FUNDED_AFFORDABLE = simulated({
+  projectId: 'sim-5',
+  kind: 'affordable',
+  funding: {
+    programmes: ['city-tax-grant', 'city-gf-grant', 'state-grant', 'federal-grant'],
+    certain: true
+  }
+});
+
+/** A market start partly funded by one added programme, `u-prog-1`. */
+export const FUNDED_PARTLY = simulated({
+  projectId: 'sim-6',
+  funding: { programmes: ['u-prog-1'], certain: false }
+});

@@ -15,10 +15,10 @@
   with the calibration (Call 7, with the timing notice when anything moved); there is no stroke
   controller, no tools, no autosave and no Publish, and the dock's one tab is the summary.
   The dock (sim-ux plan 2, Task 4): the policy lives in a `Dock` with the tabs Transit · Paint ·
-  Permits · Protect (`SIM_TABS`), Undo and Redo (`HistoryButtons`) above them, and a Results
-  face (FzpMode's `SimResults`). From md it is open on the left of the map by default and folds to
-  a rail; below md it is a bottom sheet behind a handle. The header's Policy button opens and
-  folds it; the header score flips it to Results and back.
+  Permits · Protect · Funding (`SIM_TABS`), Undo and Redo (`HistoryButtons`) above them, and a
+  Results face (FzpMode's `SimResults`). From md it is open on the left of the map by default and
+  folds to a rail; below md it is a bottom sheet behind a handle. The header's Policy button opens
+  and folds it; the header score flips it to Results and back.
   Setup and Run (spec §1, sim-runs Task 7): the page opens in Setup (never persisted). Run (the
   scrubber's button) sets the tool to Move, locks the store, plays and flips the dock to Results
   (a phone sheet peeks); a run offers Results only, until "Edit policy" ("Policy" in the
@@ -111,6 +111,10 @@
   import PolicySummary from './PolicySummary.svelte';
   import { customLotStatus, ruleLotStatus, simPaintRows, type LotStatus } from './brush-summary';
   import ProtectionsSection from './ProtectionsSection.svelte';
+  import FundingTab from './FundingTab.svelte';
+  import { FundingDrafts } from './funding-drafts.svelte';
+  import { DRAFT_DISCARDED } from './funding-copy';
+  import { fundingName } from './funding-view';
   import { VIEW_TABS, simTabs, tabOrFirst } from './tabs';
 
   interface Props {
@@ -136,7 +140,9 @@
      */
     persist?: 'restore' | 'off';
     /** The Remix hand-off from /s/<id> (`history.state.sfhSimRemix`). */
-    remix?: { from: string; doc?: string };
+    remix?: { from: string; doc?: string; upgradedFrom?: number };
+    /** View: the schema the shared document was upgraded from (`/s/<id>`). */
+    upgradedFrom?: number;
     /** Tests: the autosave's and the view prefs' storage (default `localStorage`). */
     storage?: () => Storage | null;
     /** Tests: Publish's fetch. */
@@ -160,6 +166,7 @@
     title: viewTitle = undefined,
     persist = undefined,
     remix = undefined,
+    upgradedFrom = undefined,
     storage = getStorage,
     fetchFn = undefined,
     leverTimers = undefined
@@ -173,8 +180,9 @@
     initialPolicy
       ? restoreSimDoc(
           {
-            plan: { schema: 2, kind: 'sim', datasetVersion, policy: initialPolicy },
-            notice: null
+            plan: { schema: 3, kind: 'sim', datasetVersion, policy: initialPolicy },
+            notice: null,
+            upgradedFrom
           },
           calibration
         )
@@ -216,8 +224,8 @@
   let title = $state<string | undefined>(untrack(() => viewTitle));
   const doc = $derived<SimDoc>(
     title === undefined
-      ? { schema: 2, kind: 'sim', datasetVersion, policy: store.policy }
-      : { schema: 2, kind: 'sim', datasetVersion, title, policy: store.policy }
+      ? { schema: 3, kind: 'sim', datasetVersion, policy: store.policy }
+      : { schema: 3, kind: 'sim', datasetVersion, title, policy: store.policy }
   );
   let notices = $state<SimNotice[]>(untrack(() => opened?.notices ?? []));
   /** Autosave writes once this is set: after the restore. */
@@ -225,7 +233,11 @@
 
   function restore(): void {
     const r = autosave.restore(remix?.doc);
-    const { doc: d, notices: ns } = restoreSimDoc(r, calibration, remix?.from);
+    const { doc: d, notices: ns } = restoreSimDoc(
+      { ...r, upgradedFrom: r.upgradedFrom ?? remix?.upgradedFrom },
+      calibration,
+      remix?.from
+    );
     notices = ns;
     title = d.title;
     if (canonicalJson(d.policy) !== canonicalJson(store.policy)) {
@@ -299,9 +311,12 @@
    * scenario FzpMode renders no dock. The view's only tab is the summary (`policy`).
    */
   const dock = new DockState({ tab: untrack(() => mode) === 'view' ? 'policy' : 'transit' });
-  /** The dock's tabs: Permits is offered only with a calibration (no empty face). */
-  const dockTabs = $derived(mode === 'view' ? VIEW_TABS : simTabs(calibration !== null));
-  // A tab that is no longer offered (Permits without a calibration) falls back to the first.
+  /**
+   * The dock's tabs, with no empty face: Permits needs a calibration, Funding one with market and
+   * baseline funding.
+   */
+  const dockTabs = $derived(mode === 'view' ? VIEW_TABS : simTabs(calibration));
+  // A tab that is no longer offered (Permits or Funding without its data) falls back to the first.
   $effect.pre(() => {
     const t = tabOrFirst(dockTabs, dock.tab);
     if (t !== dock.tab) dock.tab = t;
@@ -468,8 +483,18 @@
   // ---- Setup and Run (spec §1) ----
 
   const run = new RunPhase();
+  /**
+   * The Funding tab's unfinished pool or programme: page memory outside the policy store, so
+   * autosave, undo, publish and the worker never see it, and a tab switch keeps it.
+   */
+  const drafts = new FundingDrafts();
 
   function startRun(): void {
+    // A run discards the Funding tab's unfinished item: it was never in the policy (4.6).
+    if (drafts.isOpen) {
+      drafts.discard();
+      brush.announce(DRAFT_DISCARDED, ANNOUNCE_MS);
+    }
     // The live preview is a Setup thing: a run clears it and drops any answer still on its way.
     strokePreview.reset();
     setTool('move');
@@ -966,6 +991,10 @@
     {/if}
   {:else if id === 'protect'}
     <ProtectionsSection {store} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
+  {:else if id === 'funding'}
+    {#if calibration}
+      <FundingTab {store} {calibration} {drafts} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
+    {/if}
   {/if}
 {/snippet}
 
@@ -1028,6 +1057,7 @@
   onmanifest={(m) => (mapManifest = m)}
   cards={run.phase === 'run'}
   ownerName={(o, id) => ownerLabel(o, id, store.policy, foundLots)}
+  fundingName={(c) => fundingName(store.policy.funding, calibration?.baselineFunding)(c)}
   {actions}
   status={mode === 'edit' ? saveState : undefined}
   notices={sessionNotices}

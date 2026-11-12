@@ -4,6 +4,7 @@
 // accessibility and layout checks on the read-only view. Runs against the VITE_E2E build on
 // fixture-0. Seeded documents are captured from the app's own autosave, never hand-written, so
 // they follow the SimDoc shape.
+import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
@@ -20,6 +21,11 @@ type Doc = {
   [k: string]: unknown;
 };
 
+/** A whole stored schema-2 policy document (src/lib/sim-page/fixtures/schema2/painted.json). */
+const SCHEMA2_TEXT = readFileSync(
+  new URL('../src/lib/sim-page/fixtures/schema2/painted.json', import.meta.url),
+  'utf8'
+);
 const PRESET = "Permits at San Diego's pace";
 const TIMING_NOTICE = 'Some permitting timelines were re-fit to the data this simulation runs on.';
 const ID = '[1-9A-HJ-NP-Za-km-z]{8}';
@@ -123,6 +129,10 @@ async function choosePreset(page: Page): Promise<void> {
   await expectNewRevision(page, before);
   await expect(panel(page).getByTestId('timing-label')).toHaveText(PRESET);
 }
+
+/** The Paint tab's painted-area rows (the custom brushes). */
+const customList = (page: Page): Locator =>
+  panel(page).getByRole('list', { name: 'Painted areas' }).getByRole('listitem');
 
 /** The Transit tab's layer rows' select buttons, the FZP baseline row left out. */
 const layerButtons = (page: Page): Locator =>
@@ -360,6 +370,66 @@ test('kind redirects: /p/<policy id> lands on /s/<policy id>', async ({ page }) 
   await page.goto(`/p/${id}`);
   await expect(page).toHaveURL(new RegExp(`/s/${id}$`));
   await expect(sharedBanner(page)).toBeVisible();
+});
+
+// ---- schema-2 policies ------------------------------------------------------------------------------
+
+test('a stored schema-2 policy opens and remixes as schema 3', async ({ page }) => {
+  const id = await seedPlanRow(page.request, {
+    body: SCHEMA2_TEXT,
+    datasetVersion: 'fixture-0',
+    kind: 'sim'
+  });
+  const errors = pageErrors(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const res = await page.goto(`/s/${id}`);
+  expect(res?.status()).toBe(200);
+  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+  const summary = await openPolicy(page);
+  await expect(summary).toHaveAttribute('aria-label', 'Policy (read-only)');
+  await expect(
+    summary.getByRole('region', { name: 'Painted areas' }).getByRole('listitem')
+  ).toHaveCount(1);
+  await expectNoA11yViolations(page);
+
+  // An empty autosave, so a default local policy: Remix asks no confirm.
+  await sharedBanner(page).getByRole('button', { name: 'Remix' }).click();
+  await expect(page).toHaveURL(/\/sim$/);
+  await expect(page.getByText(/^Remixed from .*\. You're editing your own copy\.$/)).toBeVisible();
+  await openTab(page, 'Paint');
+  await expect(customList(page)).toHaveCount(1);
+  await expect.poll(async () => (await storedDoc(page))?.schema).toBe(3);
+  expect(errors).toEqual([]);
+});
+
+test('a schema-2 autosave record opens and is stored back as schema 3', async ({
+  page,
+  isMobile
+}) => {
+  await page.addInitScript(
+    ([k, plan]) => {
+      if (localStorage.getItem(k) === null)
+        localStorage.setItem(k, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), plan }));
+    },
+    [SIM_KEY, SCHEMA2_TEXT] as const
+  );
+  await gotoSim(page, '/sim', { map: false });
+  await openTab(page, 'Paint');
+  await expect(customList(page)).toHaveCount(1);
+  await expect.poll(async () => (await storedDoc(page))?.schema).toBe(3);
+
+  await closeSheet(page, isMobile);
+  const opener = await openPublish(page);
+  await expect(opener).toBeEnabled();
+  await opener.click();
+  const dialog = page.getByRole('dialog', { name: /Publish this policy|Published/ });
+  await dialog.getByRole('button', { name: 'Publish' }).click();
+  await expect(dialog.getByRole('heading', { name: 'Published' })).toBeVisible();
+  const link = await dialog.getByLabel('Link').inputValue();
+  const newId = new URL(link).pathname.split('/').pop();
+  const res = await page.request.get(`/api/policies/${newId}`);
+  expect(res.status()).toBe(200);
+  expect(await res.text()).toContain('"schema":3');
 });
 
 // ---- /fzp and storage ------------------------------------------------------------------------------

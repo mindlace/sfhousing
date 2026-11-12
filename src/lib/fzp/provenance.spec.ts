@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MARKET_TERMS, AVERAGE_DRAWN, DRAW_UP_FRONT, resolveTerms } from '$lib/sim/finance';
+import { MONEY_SOURCES } from '$lib/sim/scenario/finance-score';
+import { PIPELINE_FUNDED } from '$lib/sim/scenario/funding';
 import { cumulativeIncidence } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import { PATHWAYS, STAGE_ORDER } from '$lib/timelapse/types';
@@ -10,14 +13,17 @@ import {
   fixtureCalibrationWithoutMarket,
   tier3Calibration
 } from './fixtures/calibration';
-import { liveMarketCalibration } from './fixtures/market';
+import { LIVE_MARKET, liveMarketCalibration } from './fixtures/market';
 import { MARKET_HOLD_SENTENCE, MARKET_INTRO_SENTENCE } from './market-view';
 import { PROJECTS_JSON, PROJECTS_JSON_NO_RULES } from './fixtures/projects';
 import { TIMELINE_SCORE, TIMELINE_SCORE_NO_PHASING } from './fixtures/timeline-score';
 import { EXIT_LABEL, TIER_LABEL, inStageLabel } from './labels';
 import {
+  MONEY_ORDER_SENTENCE,
   NOT_SF_NOTE,
+  PARTIAL_MONEY_SENTENCE,
   PERMIT_WINDOW_SENTENCE,
+  lossSentence,
   PHASE_GAP_SENTENCE,
   QUALITY_LOAD_FAILED,
   loadProjectsFile,
@@ -28,6 +34,19 @@ import {
   type ProvEntry,
   type ProvSection
 } from './provenance';
+
+/** `marketLevel` as built unless a test forces a level (spec 6: the level is stubbed). */
+const forced = vi.hoisted(() => ({ level: null as 'all' | 'private' | null }));
+vi.mock('$lib/sim/scenario/market', async (importOriginal) => {
+  const real = await importOriginal<typeof import('$lib/sim/scenario/market')>();
+  return {
+    ...real,
+    marketLevel: (c: Parameters<typeof real.marketLevel>[0]) => forced.level ?? real.marketLevel(c)
+  };
+});
+afterEach(() => {
+  forced.level = null;
+});
 
 const cal = fixtureCalibration();
 const sections = provenanceSections(cal, TIMELINE_SCORE);
@@ -107,6 +126,7 @@ describe('provenanceSections', () => {
       'src-transitions',
       'src-initiation',
       'src-market',
+      'src-money',
       'src-size',
       'src-revision',
       'src-pathway',
@@ -358,6 +378,7 @@ describe('provenanceSections', () => {
       'src-transitions',
       'src-initiation',
       'src-market',
+      'src-money',
       'src-size',
       'src-revision',
       'src-pathway'
@@ -455,6 +476,12 @@ describe('loadProjectsFile', () => {
   });
 });
 
+/** provenance.ts's two-decimal log-odds text, U+2212 for negatives. */
+const coefText = (x: number): string => {
+  const r = Number(x.toFixed(2));
+  return (r < 0 ? '\u2212' : '') + String(Math.abs(r));
+};
+
 describe("today's market", () => {
   const live = liveMarketCalibration();
   const liveSections = provenanceSections(live, TIMELINE_SCORE);
@@ -467,7 +494,7 @@ describe("today's market", () => {
     expect(m.heading).toBe("Today's market");
     expect(m.intro).toEqual([MARKET_HOLD_SENTENCE]);
     expect(m.tables).toEqual([]);
-    expect(m.entries.map((e) => e.id)).toEqual(['src-market-today']);
+    expect(m.entries.map((e) => e.id)).toEqual(['src-market-today', 'src-market-slope']);
   });
 
   it('states both levels and the cross-check as lines of one non-research entry', () => {
@@ -475,9 +502,19 @@ describe("today's market", () => {
     expect(e.title).toBe("Today's level");
     expect(e.research).toBe(false);
     expect(e.lines).toContain(TIER_LABEL[2]);
-    expect(e.lines).toContain('All starts: 52% of the average (log-odds −0.64). In force.');
-    const priv = e.lines.find((l) => l.startsWith('Private starts only: 47% of the average'));
-    expect(priv?.endsWith('Not in force until public funding is modelled.')).toBe(true);
+    const all = e.lines.find((l) =>
+      l.startsWith('All starts: 52% of the average (log-odds −0.64)')
+    );
+    expect(
+      all?.endsWith(
+        "Not in force: today's public funding is modelled, so private starts run at their own level."
+      )
+    ).toBe(true);
+    const privText = coefText(LIVE_MARKET.today.private);
+    expect(e.lines).toContain(
+      `Private starts only: 47% of the average (log-odds ${privText}). In force.`
+    );
+    expect(privText).toBe('−0.75');
     expect(e.lines).toContain(
       "Cross-check, not used: the Controller's development model, on its cost and price indices, puts today's odds at 27% of the 2007 to 2025 average (research or literature, tier 3)."
     );
@@ -488,5 +525,157 @@ describe("today's market", () => {
     const bare = provenanceSections(fixtureCalibrationWithoutMarket(), TIMELINE_SCORE);
     expect(section('src-initiation', bare).intro).toEqual([]);
     expect(bare.some((s) => s.id === 'src-market')).toBe(false);
+  });
+});
+
+describe("today's market, Release 2 (funding-ui 4.12)", () => {
+  const live = liveMarketCalibration();
+  const ALL_OFF =
+    "Not in force: today's public funding is modelled, so private starts run at their own level.";
+  const PRIVATE_OFF =
+    'Not in force: this data has no public funding, so every start runs at one level.';
+
+  it('private: src-market has the Release 2 all-starts line and the slope entry with cross-checks as after lines', () => {
+    const list = provenanceSections(live, TIMELINE_SCORE);
+    const today = entryOf('src-market-today', list);
+    expect(today.lines).toContain(
+      `All starts: 52% of the average (log-odds ${coefText(LIVE_MARKET.today.all)}). ${ALL_OFF}`
+    );
+    expect(today.lines).toContain(
+      `Private starts only: 47% of the average (log-odds ${coefText(LIVE_MARKET.today.private)}). In force.`
+    );
+    const slope = entryOf('src-market-slope', list);
+    expect(slope.title).toBe("How strongly money moves a private project's odds");
+    expect(slope.prov).toBe(live.market!.slope.provenance);
+    expect(slope.research).toBe(false);
+    expect(slope.lines.slice(-2)).toEqual([
+      "Closing a typical private project's whole uncovered cost returns its odds to the 2007 to 2025 average.",
+      "Cross-checks, not used: the Controller's cost coefficient gives −1.23, its price coefficient 2.5, as a log-odds shift per 100% of construction cost (research or literature, tier 3)."
+    ]);
+    const m = section('src-market', list);
+    for (const e of m.entries) expect(e.title).not.toContain('Cross-check');
+    expect(textOf(m)).not.toContain(NOT_SF_NOTE);
+    expect(list.filter((s) => s.id.startsWith('src-market'))).toHaveLength(1);
+  });
+
+  it('all with baselineFunding stubbed off: Release 1 section with the R-P5 private line and no slope entry', () => {
+    forced.level = 'all';
+    expect(live.baselineFunding).toBeDefined();
+    const list = provenanceSections(live, TIMELINE_SCORE);
+    expect(list.filter((s) => s.id.startsWith('src-market'))).toHaveLength(1);
+    const m = section('src-market', list);
+    expect(m.heading).toBe("Today's market");
+    expect(m.intro).toEqual([MARKET_HOLD_SENTENCE]);
+    expect(m.entries.map((e) => e.id)).toEqual(['src-market-today']);
+    const today = m.entries[0];
+    expect(today.lines.slice(-3)).toEqual([
+      `All starts: 52% of the average (log-odds ${coefText(LIVE_MARKET.today.all)}). In force.`,
+      `Private starts only: 47% of the average (log-odds ${coefText(LIVE_MARKET.today.private)}). ${PRIVATE_OFF}`,
+      "Cross-check, not used: the Controller's development model, on its cost and price indices, puts today's odds at 27% of the 2007 to 2025 average (research or literature, tier 3)."
+    ]);
+  });
+});
+
+/** A sourced term's provenance; a test reading an unsourced one fails. */
+const provOf = (t: (typeof MARKET_TERMS)[keyof typeof MARKET_TERMS]) => {
+  if (!('provenance' in t)) throw new Error('unsourced term');
+  return t.provenance;
+};
+
+describe('Public money (funding-ui 4.12)', () => {
+  const live = liveMarketCalibration();
+  const money = (terms = resolveTerms(), c = live) =>
+    section('src-money', provenanceSections(c, TIMELINE_SCORE, terms));
+
+  it('src-money present with market and baselineFunding, absent without', () => {
+    const ids = provenanceSections(live, TIMELINE_SCORE).map((s) => s.id);
+    expect(ids[ids.indexOf('src-market') + 1]).toBe('src-money');
+    expect(money().heading).toBe('Public money');
+    const noFunding = structuredClone(live);
+    delete noFunding.baselineFunding;
+    expect(provenanceSections(noFunding, TIMELINE_SCORE).some((s) => s.id === 'src-money')).toBe(
+      false
+    );
+    expect(
+      provenanceSections(fixtureCalibrationWithoutMarket(), TIMELINE_SCORE).some(
+        (s) => s.id === 'src-money'
+      )
+    ).toBe(false);
+  });
+
+  it('src-money contains PIPELINE_FUNDED, the R11 assumption, the tier sentence and a typed term as custom', () => {
+    const s = money(resolveTerms(undefined, { constructionRate: 0.07 }));
+    const text = textOf(s);
+    // PIPELINE_FUNDED in the engine's own words, first of MONEY_SOURCES.
+    const pipeline = entryOf('src-money-pipeline', [s]);
+    expect(pipeline.prov).toBe(PIPELINE_FUNDED);
+    expect(pipeline.lines).toContain(PIPELINE_FUNDED.method);
+    for (const p of MONEY_SOURCES) expect(s.entries.some((e) => e.prov === p)).toBe(true);
+    // R11.
+    expect(DRAW_UP_FRONT.value).toBe(0.1);
+    expect(AVERAGE_DRAWN.value).toBe(0.55);
+    expect(text).toContain(
+      "Assumption: 10% of a construction loan drawn at the start, the rest evenly over construction, so a loan's or a guarantee's saving is counted on 55% of it."
+    );
+    // The fixed sentences.
+    expect(MONEY_ORDER_SENTENCE).toBe(
+      "Federal and state money count first. The City's sources share what is left, each in proportion to its share."
+    );
+    expect(PARTIAL_MONEY_SENTENCE).toBe(
+      'Only a fully funded project is kept from stopping; partial money changes the chance of starting, not of finishing (ruling R8).'
+    );
+    expect(s.intro.slice(0, 3)).toEqual([
+      MONEY_ORDER_SENTENCE,
+      lossSentence(1),
+      PARTIAL_MONEY_SENTENCE
+    ]);
+    // A typed term is listed as custom and its sourced entry is not shown.
+    expect(s.intro).toContain('Construction loan rate: your value (custom, not sourced)');
+    expect(s.entries.some((e) => e.id === 'src-money-term-constructionRate')).toBe(false);
+    expect(s.entries.some((e) => e.prov === provOf(MARKET_TERMS.constructionRate))).toBe(false);
+    // An unsourced term, untyped, by its reason.
+    const g = MARKET_TERMS.guaranteeRateCut;
+    expect('reason' in g).toBe(true);
+    if ('reason' in g) expect(s.intro).toContain(`No sourced value: ${g.reason}`);
+    // Untyped sourced terms keep their entries.
+    expect(s.entries.some((e) => e.prov === provOf(MARKET_TERMS.requiredReturn))).toBe(true);
+    // The other sources of 4.12.
+    for (const p of live.baselineFunding!.provenance) {
+      expect(s.entries.some((e) => e.prov === p)).toBe(true);
+    }
+    expect(s.entries.some((e) => e.prov === live.affordableRoutes!.provenance)).toBe(true);
+    expect(text).toContain('How fully funded affordable projects are approved');
+    expect(text.some((l) => l.startsWith('What private buildings are short'))).toBe(true);
+    expect(text.some((l) => l.startsWith('Loan and guarantee terms'))).toBe(true);
+  });
+
+  it('a typed guarantee rate cut replaces its no-sourced-value line', () => {
+    const s = money(resolveTerms(undefined, { guaranteeRateCut: 0.01 }));
+    expect(s.intro).toContain('Guarantee rate cut: your value (custom, not sourced)');
+    expect(s.intro.some((l) => l.startsWith('No sourced value'))).toBe(false);
+  });
+
+  it('src-money tier 3 and 4 entries are research', () => {
+    const s = money();
+    expect(s.entries.length).toBeGreaterThan(10);
+    for (const e of s.entries) expect(e.research, e.id).toBe(e.prov.tier >= 3);
+    expect(entryOf('src-money-pipeline', [s]).research).toBe(true);
+    expect(entryOf('src-money-displacement', [s]).research).toBe(true);
+    expect(s.entries.some((e) => e.prov.tier < 3 && !e.research)).toBe(true);
+    expect(new Set(s.entries.map((e) => e.id)).size).toBe(s.entries.length);
+  });
+
+  it('loss sentence says everything at 1 and 50% at 0.5', () => {
+    expect(lossSentence(1)).toBe(
+      'If a funded project stops after construction starts, everything spent or lent on it is counted as lost (assumption, tier 4): no record gives the loss on one abandoned project.'
+    );
+    expect(lossSentence(0.5)).toBe(
+      'If a funded project stops after construction starts, 50% spent or lent on it is counted as lost (assumption, tier 4): no record gives the loss on one abandoned project.'
+    );
+    expect(money().intro).toContain(lossSentence(1));
+    expect(money(resolveTerms(undefined, { lossOnExit: 0.5 })).intro).toContain(lossSentence(0.5));
+    expect(money(resolveTerms(undefined, { lossOnExit: 0.5 })).intro).toContain(
+      'Loss on exit: your value (custom, not sourced)'
+    );
   });
 });

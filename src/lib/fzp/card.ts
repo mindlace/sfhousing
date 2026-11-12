@@ -326,3 +326,32 @@ export function sourceLinks(sources: ProjectCard['sources']): { text: string; hr
     };
   });
 }
+
+/** What a simulated card's "Funded by" line reads from (funding-ui 4.13, F10). */
+export type CardFunding = { kind: 'market' | 'affordable'; programmes: string[]; certain: boolean };
+
+/**
+ * The card's funding, or null on a pipeline card (taken as funded already, F9 (l)) and on a
+ * simulated card no programme pays.
+ */
+export function cardFunding(card: ProjectCard): CardFunding | null {
+  if (card.origin !== 'simulated' || card.funding === undefined) return null;
+  return {
+    kind: card.kind === 'affordable' ? 'affordable' : 'market',
+    programmes: [...card.funding.programmes],
+    certain: card.funding.certain
+  };
+}
+
+/**
+ * "Funded by: A, B and C · fully funded"; more than three names read "A, B, C and {n} more";
+ * none read "public money". " · partly funded" when the programmes do not fully fund it.
+ */
+export function fundingLine(names: string[], certain: boolean): string {
+  let who: string;
+  if (names.length === 0) who = 'public money';
+  else if (names.length === 1) who = names[0];
+  else if (names.length <= 3) who = `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+  else who = `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`;
+  return `Funded by: ${who} · ${certain ? 'fully funded' : 'partly funded'}`;
+}

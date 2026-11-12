@@ -790,7 +790,7 @@ test('Back after a run slider move', async ({ page }) => {
 
 // ---- accessibility and layout -------------------------------------------------------------------
 
-for (const name of ['Transit', 'Paint', 'Protect']) {
+for (const name of ['Transit', 'Paint', 'Protect', 'Funding']) {
   test(`axe: the dock open on ${name}`, async ({ page }) => {
     await gotoSim(page);
     await openTab(page, name);
@@ -827,6 +827,27 @@ test('Run flips the dock to Results and Edit policy returns to the present', asy
     panel(page).getByRole('checkbox', { name: 'Rent-controlled buildings (likely)' })
   ).toBeEnabled();
   await expect(slider(page)).toBeDisabled();
+});
+
+test('a run carries homes by tier and, with the baseline funding, money with no limits', async ({
+  page
+}) => {
+  await gotoSim(page);
+  await openTab(page, 'Protect');
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  // The run's own timeline has answered: in Run, past the present, its score carrying tiers.
+  await page.waitForFunction(() => {
+    const f = (window as FzpWin).__sfhFzp!;
+    return f.runPhase === 'run' && f.day > f.asOf && f.score?.tiers !== undefined;
+  });
+  const score = (await fzp(page, 'score'))!;
+  const tiers = score.tiers!;
+  expect(tiers.targets).toHaveLength(4);
+  const last = tiers.completed.at(-1)!;
+  const sum = last.veryLow + last.low + last.moderate + last.aboveModerate + last.unrecorded;
+  expect(sum).toBe(score.shown.at(-1)!.completedNet);
+  expect(score.money!.pools.length).toBeGreaterThan(0);
+  expect(score.money!.limits).toEqual([]);
 });
 
 test('at 375 px in a run the sheet peeks Results, and the scrubber and footer links stay unobscured', async ({

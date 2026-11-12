@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestD1, testPlatform, type TestD1 } from '$lib/server/test/d1';
 import { FakeR2Bucket } from '$lib/server/test/fake-r2';
@@ -32,6 +33,26 @@ describe('loadSharedDoc', () => {
     const data = await loadSharedDoc(SIM_CODEC, { id: 'Abcdefg2', platform, current: 'fixture-0' });
     expect(data.doc.kind).toBe('sim');
     expect(data.datasetNotice).toBe('none');
+  });
+
+  it('a stored schema-2 body loads with upgradedFrom 2; a schema-3 body has no key', async () => {
+    const stored = readFileSync(
+      new URL('../../sim-page/fixtures/schema2/painted.json', import.meta.url),
+      'utf8'
+    );
+    const platform = await seedRow('sim', 'Abcdefg2', stored);
+    const data = await loadSharedDoc(SIM_CODEC, { id: 'Abcdefg2', platform, current: 'fixture-0' });
+    expect(data.upgradedFrom).toBe(2);
+    expect(data.doc.schema).toBe(3);
+
+    const body = SIM_CODEC.serialize(data.doc);
+    const platform3 = await seedRow('sim', 'Bcdefgh3', body);
+    const data3 = await loadSharedDoc(SIM_CODEC, {
+      id: 'Bcdefgh3',
+      platform: platform3,
+      current: 'fixture-0'
+    });
+    expect(data3).not.toHaveProperty('upgradedFrom');
   });
 
   it('kind mismatch redirects 308 to the other page, both ways', async () => {

@@ -11,7 +11,7 @@ import { FILL_LEVELS } from '../../src/lib/data/scenario-codec';
 import { parseProjectsFile } from '../../src/lib/timelapse/projects';
 import type { Day, ProjectHistoriesFile } from '../../src/lib/timelapse/types';
 import { parseFundingFile, type FundingFile } from '../enrichment/funding-schema';
-import { parseMarketFile } from '../enrichment/market-schema';
+import { parseMarketFile, type MarketFile } from '../enrichment/market-schema';
 import { BuildError } from '../lib/build-error';
 import type { Duck } from '../lib/duck';
 import type { Lock } from '../lib/lock';
@@ -104,6 +104,22 @@ export function readFundingFile(path: string): FundingFile {
   return parseFundingFile(json, path);
 }
 
+/**
+ * `market.json` at `path`, parsed: a JSON syntax error is a `CalibrationError` with the
+ * `market: <path>: ` prefix that the schema's own failures carry (market-baseline spec 4.4,
+ * amendment of 2026-11-10). A file that cannot be read is not wrapped: Node's error names it.
+ */
+export function readMarketFile(path: string): MarketFile {
+  const text = readFileSync(path, 'utf8');
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (e) {
+    throw new CalibrationError(`market: ${path}: ${(e as Error).message}`);
+  }
+  return parseMarketFile(json, path);
+}
+
 async function ensurePanelTable(db: Duck, derivedDir: string): Promise<void> {
   const [t] = await db.all<{ n: number }>(
     "SELECT count(*)::INTEGER AS n FROM information_schema.tables WHERE table_name = 'scenario_panel'"
@@ -138,7 +154,7 @@ export async function writeCalibration(o: {
 }): Promise<{ warnings: string[]; checks: InvariantResult[] }> {
   const marketPath = o.marketPath ?? MARKET_JSON;
   const market = {
-    file: parseMarketFile(JSON.parse(readFileSync(marketPath, 'utf8')), marketPath),
+    file: readMarketFile(marketPath),
     path: marketPath
   };
   if (!o.lock.sources.some((s) => s.id === MOHCD_SOURCE)) {

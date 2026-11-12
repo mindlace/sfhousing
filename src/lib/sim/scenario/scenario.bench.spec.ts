@@ -22,14 +22,27 @@ import type { Day } from '$lib/timelapse/time';
 import type { FetchLike } from '../chunks';
 import { BAND_RUNS } from './band';
 import { dayOf } from './dates';
+import { DEFAULT_LEVERS } from '../levers/types';
 import {
+  benchBaseline,
+  benchBaselineFunding,
+  benchFundingLevers,
+  benchMarket,
+  benchRoutes,
+  withBenchFunding
+} from './fixtures/bench-finance';
+import {
+  SYNTH_AS_OF,
   SYNTH_BBOX,
   SYNTH_MASTERS,
   SYNTH_PARCELS,
+  SYNTH_POLICY_URL,
   SYNTH_PROJECTS,
   synthCity,
+  synthPolicy,
   type SynthCity
 } from './fixtures/synth-city';
+import { fundedRunStats } from './funded';
 import { buildSimInput } from './input';
 import type { FetchBytesLike } from './load';
 import { SLICE_MS, createScenarioHost, type ScenarioHost } from './scenario-host';
@@ -37,21 +50,30 @@ import { PREVIEW_MAX_LOTS } from './preview';
 import { fnv1a32, generate } from '$lib/generator';
 import { synthParcels } from '$lib/generator/fixtures/synth';
 import { packCell, packTransferables } from '$lib/map/pack';
+import { moneyOf, tierContext, tierSeries } from './finance-score';
 import { monthsOf, shownSeries } from './score';
+import { runCollect } from './test/finance-harness';
 import type { ScenarioResponse, SimInput, TimelineResponse } from './types';
 
 // Pass-through counters, so a macrotask can be told to hold the shown run.
-const probe = vi.hoisted(() => ({ detailed: 0, net: 0 }));
+const probe = vi.hoisted(() => ({
+  detailed: 0,
+  net: 0,
+  /** The pool ids of the first run's `finance` since the last reset (null: no run yet). */
+  pools: null as string[] | null
+}));
 vi.mock('./simulate', async (importOriginal) => {
   const m = await importOriginal<typeof import('./simulate')>();
   return {
     ...m,
     simulateNet: (...a: Parameters<typeof m.simulateNet>) => {
       probe.net++;
+      probe.pools ??= a[0].finance?.pools.map((p) => p.id) ?? [];
       return m.simulateNet(...a);
     },
     simulateDetailed: (...a: Parameters<typeof m.simulateDetailed>) => {
       probe.detailed++;
+      probe.pools ??= a[0].finance?.pools.map((p) => p.id) ?? [];
       return m.simulateDetailed(...a);
     }
   };
@@ -144,6 +166,99 @@ describe('scenario engine budgets (spec §4.11)', () => {
   });
 });
 
+// F18 (finance-engine spec 4.17): the bench baseline and the bench funding set on the bench city.
+// Case 1 is the describe above (finance absent, budgets unchanged).
+describe('finance engine budgets (F18, spec 4.17)', () => {
+  let baseline: SimInput;
+  let funding: SimInput;
+  let months: Day[];
+
+  beforeAll(() => {
+    const base = inputOf(city);
+    const calibration = { ...base.calibration, affordableRoutes: benchRoutes() };
+    // `market: []`: the ordinary starts stay at about 8,000, so the increment is the funding alone
+    baseline = { ...base, calibration, market: [], finance: benchBaseline(base.asOf) };
+    funding = { ...baseline, finance: withBenchFunding(baseline.finance!, base.asOf) };
+    months = monthsOf(base.asOf, HORIZON);
+  });
+
+  const net = (inp: () => SimInput, label: string) => {
+    const t = timed(3, 21, (seed) => simulateNet(inp(), seed, HORIZON, months));
+    console.log(`[perf] ${label}: median ${ms(median(t))} (${t.map((x) => x.toFixed(1))})`);
+    return median(t);
+  };
+
+  it('case 2. simulateNet with the bench baseline: median ≤ 30 ms', { timeout: TIMEOUT }, () => {
+    expect(net(() => baseline, 'simulateNet, bench baseline')).toBeLessThanOrEqual(30);
+  });
+
+  it('case 3. plus the bench funding set: median ≤ 45 ms', { timeout: TIMEOUT }, () => {
+    expect(net(() => funding, 'simulateNet, bench baseline + funding')).toBeLessThanOrEqual(45);
+  });
+
+  it(
+    'finance-score: tierSeries + moneyOf add ≤ 15 ms to the shown run',
+    { timeout: TIMEOUT },
+    () => {
+      const detail = simulateDetailed(funding, 1, HORIZON);
+      const ctx = tierContext(funding);
+      const t = timed(3, 9, () => {
+        tierSeries(detail.schedules, ctx, funding.asOf, HORIZON, months);
+        moneyOf({
+          ledger: detail.ledger,
+          schedules: detail.schedules,
+          finance: funding.finance!,
+          baseline: baseline.finance!.pools,
+          asOf: funding.asOf,
+          horizon: HORIZON,
+          months
+        });
+      });
+      console.log(`[perf] finance-score: median ${ms(median(t))} (${t.map((x) => x.toFixed(1))})`);
+      expect(median(t)).toBeLessThanOrEqual(15);
+    }
+  );
+
+  it(
+    'case 6. fixture check: seed 1 with the bench funding set makes ≥ 10,000 first-day ' +
+      'applications and ≥ 100 awards, and the shortcuts change nothing',
+    { timeout: TIMEOUT },
+    () => {
+      simulateNet(funding, 1, HORIZON, months);
+      const stats = fundedRunStats();
+      console.log(`[perf] fixture check, seed 1: ${JSON.stringify(stats)}`);
+      expect(stats.firstDayApplications).toBeGreaterThanOrEqual(10_000);
+      expect(stats.awards).toBeGreaterThanOrEqual(100);
+      // spec 4.17 items 1 and 2 are exact: the same run without them, on the bench city
+      const fast = runCollect(funding, 1, HORIZON);
+      const slow = runCollect(funding, 1, HORIZON, { noShortcuts: true });
+      expect(fast.order).toEqual(slow.order);
+      expect(fast.schedules).toEqual(slow.schedules);
+      expect(fast.ledger).toEqual(slow.ledger);
+    }
+  );
+
+  it(
+    'case 7. reported: plus the state pool off from asOf + 1,826 on (no budget)',
+    { timeout: TIMEOUT },
+    () => {
+      const off: SimInput = {
+        ...funding,
+        finance: {
+          ...funding.finance!,
+          off: [{ pool: 'state', from: funding.asOf + 1826, to: null }]
+        }
+      };
+      const m = net(() => off, 'simulateNet, bench funding + state off (case 7, reported)');
+      // `respells` counts the lapses: the bench funding set's `bench-afford` grant stays in every
+      // affordable bundle and lifts it back to certain without `state`, so few or none lapse
+      simulateNet(off, 1, HORIZON, months);
+      console.log(`[perf] case 7, seed 1: ${JSON.stringify(fundedRunStats())}`);
+      expect(m).toBeGreaterThan(0);
+    }
+  );
+});
+
 interface Posted {
   msg: ScenarioResponse;
   at: number;
@@ -185,11 +300,14 @@ class Rig {
       deliver(
         url === city.files.bin
           ? { ok: true, status: 200, arrayBuffer: async () => city.bin.slice().buffer }
-          : { ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) }
+          : url === SYNTH_POLICY_URL
+            ? { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) }
+            : { ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) }
       );
     this.host = createScenarioHost({
       fetch,
       fetchBytes,
+      decodePolicy: async () => synthPolicy(city),
       post: (msg) => this.posted.push({ msg, at: performance.now() }),
       setTimeout: (fn, ms) => globalThis.setTimeout(() => this.task('timer', fn), ms),
       clearTimeout: (h) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>),
@@ -544,6 +662,99 @@ describe('scenario host budgets (spec §4.11)', () => {
     expect(max(rev0)).toBeLessThanOrEqual(1000);
     expect(dur(worst)).toBeLessThanOrEqual(50);
   });
+});
+
+// F18 host cases 4 and 5 (finance-engine spec 4.17). Operator ruling R-P3, now met: the cases run
+// the bench funding on the plan, through `levers.finance` (`benchFundingLevers`: `u-bench-bond`,
+// `u-bench-fund` and three programmes), with `compare: 'fzp'` so the twin stays on the FZP
+// baseline. The bench calibration's `baselineFunding`, `affordableRoutes` and a market model with
+// `today.private` 0 and `slope.perCostShare` 3.0 are the baseline under both. The host serves a
+// `policy.bin` (decoded to `synthPolicy`: FZP as written) because levers need it.
+describe('scenario host budgets with the bench funding as levers (F18 cases 4 and 5)', () => {
+  let rig: Rig;
+  let rev0At = 0;
+  let firstBandTask = 0;
+  let manifest: typeof city.manifest;
+
+  beforeAll(() => {
+    const calibration = {
+      ...structuredClone(city.calibration),
+      affordableRoutes: benchRoutes(),
+      baselineFunding: benchBaselineFunding(SYNTH_AS_OF),
+      market: benchMarket()
+    };
+    const json = new Map(city.files.json);
+    json.set(city.manifest.scenarios!.fzp.calibration, calibration);
+    rig = new Rig({ ...city, calibration, files: { ...city.files, json } });
+    manifest = {
+      ...city.manifest,
+      scenarios: { fzp: { ...city.manifest.scenarios!.fzp, policy: SYNTH_POLICY_URL } }
+    };
+  });
+
+  afterAll(() => {
+    rig?.host.dispose();
+    rig?.unhook();
+  });
+
+  it('case 4. all 101 band pairs ≤ 9 s after revision 0', { timeout: TIMEOUT }, async () => {
+    probe.pools = null;
+    const initAt = rig.handle({
+      type: 'initScenario',
+      rev: 1,
+      manifest,
+      scenario: 'fzp',
+      seed: null,
+      horizon: HORIZON,
+      levers: {
+        ...structuredClone(DEFAULT_LEVERS),
+        finance: benchFundingLevers(SYNTH_AS_OF),
+        compare: 'fzp'
+      }
+    });
+    const first = await rig.until('revision 0', () => rig.timelines(1)[0], 120_000);
+    // Not timed: the lever revision went current, and the plan ran with the bench funding on it.
+    const lv = rig.posted.map((p) => p.msg).filter((m) => m.type === 'levers' && m.rev === 1);
+    expect(lv.at(-1)).toMatchObject({ phase: 'current' });
+    expect((probe.pools as string[] | null)?.slice(-2)).toEqual(['u-bench-bond', 'u-bench-fund']);
+    rev0At = first.at;
+    firstBandTask = rig.tasks.find((t) => t.net)?.start ?? Infinity;
+    console.log(`[perf] funded host: initScenario(null) → revision 0: ${ms(first.at - initAt)}`);
+    const done = await rig.until(
+      'every pair',
+      () => rig.timelines(1).find((p) => p.msg.bandRuns === BAND_RUNS),
+      120_000
+    );
+    const t = done.at - rev0At;
+    console.log(`[perf] funded host: ${BAND_RUNS} band pairs: ${ms(t)} after revision 0`);
+    expect(done.msg.bandRunsTotal).toBe(BAND_RUNS);
+    expect(t).toBeLessThanOrEqual(9000);
+  });
+
+  it(
+    'case 5. longest macrotask ≤ 50 ms during band and twin work',
+    { timeout: TIMEOUT },
+    async () => {
+      await rig.idle();
+      const worst = rig.longest(firstBandTask);
+      const runs = rig.tasks.filter((t) => t.start >= firstBandTask && t.net).length;
+      console.log(
+        `[perf] funded host: longest band/twin macrotask: ${taskLabel(worst)}; ${runs} band/twin ` +
+          `tasks; longest loose ${ms(rig.longestLoose(firstBandTask))}`
+      );
+      const net = rig.tasks.filter((t) => t.start >= firstBandTask && t.net);
+      const top = net
+        .map((t, n) => [n, dur(t)] as const)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6);
+      console.log(
+        `[perf] funded host: longest band/twin tasks (index among ${net.length}: ms): ` +
+          top.map(([n, d]) => `${n}: ${d.toFixed(1)}`).join(', ')
+      );
+      expect(runs).toBeGreaterThan(40);
+      expect(dur(worst)).toBeLessThanOrEqual(50);
+    }
+  );
 });
 
 // Paint feedback (map overlays plan 2, Task 6): `previewBuildings` answers in one synchronous

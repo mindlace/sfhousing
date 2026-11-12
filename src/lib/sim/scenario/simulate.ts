@@ -3,7 +3,8 @@
 // deterministic: the same input, seed and horizon give the same output.
 import type { Day } from '$lib/timelapse/time';
 import type { ExitReason, Pathway, Stage } from '$lib/timelapse/types';
-import { runEngine } from './engine';
+import { runEngine, type Sink } from './engine';
+import type { LedgerEvent } from './money';
 import { addNet, monthIndexer, type NetAcc, type NetSeries } from './score';
 import type { Schedule, SimInput, Simulate } from './types';
 
@@ -17,29 +18,38 @@ export interface Master { // a multi-phase row with `phases`; never drawn, never
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
- * Every Schedule (pipeline first, phases included, then simulated; each sorted by `projectId`)
- * and every Master (sorted by `masterId`) of one run.
+ * Every Schedule (pipeline first, phases included, then simulated; each sorted by `projectId`),
+ * every Master (sorted by `masterId`) and, with `input.finance`, every ledger event in arrival
+ * order (finance-score spec 4.9; the one ledger collector). Without `finance` no ledger sink is
+ * passed and `ledger` is `[]`, so such a run is untouched.
  */
 export function simulateDetailed(
   input: SimInput,
   seed: number,
   horizon: Day
-): { schedules: Schedule[]; masters: Master[] } {
+): { schedules: Schedule[]; masters: Master[]; ledger: LedgerEvent[] } {
   const pipeline: Schedule[] = [];
   const simulated: Schedule[] = [];
   const masters: Master[] = [];
-  runEngine(input, seed, horizon, {
+  const ledger: LedgerEvent[] = [];
+  const sink: Sink = {
     schedule(s) {
       (s.origin === 'pipeline' ? pipeline : simulated).push(s);
     },
     master(m) {
       masters.push(m);
     }
-  });
+  };
+  if (input.finance) {
+    sink.ledger = (e) => {
+      ledger.push(e);
+    };
+  }
+  runEngine(input, seed, horizon, sink);
   pipeline.sort((a, b) => cmp(a.projectId, b.projectId));
   simulated.sort((a, b) => cmp(a.projectId, b.projectId));
   masters.sort((a, b) => cmp(a.masterId, b.masterId));
-  return { schedules: [...pipeline, ...simulated], masters };
+  return { schedules: [...pipeline, ...simulated], masters, ledger };
 }
 
 /** T5: `simulateDetailed(input, seed, horizon).schedules`. */

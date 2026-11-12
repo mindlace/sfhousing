@@ -144,6 +144,18 @@
       "url": "https://fixture.invalid/funding",
       "page": "Exhibit F",
       "retrieved": "2026-11-09"
+    },
+    "uncapped": {
+      "rounds": 1,
+      "window": ["2026-01-01", "2026-01-01"],
+      "cites": [
+        {
+          "label": "Fixture: invented allocation record (tier 4)",
+          "url": "https://fixture.invalid/funding",
+          "page": "fixture",
+          "retrieved": "2026-11-10"
+        }
+      ]
     }
   },
   "awards": {

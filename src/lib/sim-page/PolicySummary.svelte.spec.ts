@@ -10,6 +10,14 @@ import { DEFAULT_BANDS, type CustomBrush, type SimPolicy, type ZoningRule } from
 import PolicySummary from './PolicySummary.svelte';
 import { DEFAULT_POLICY } from './sim-doc';
 import { OBSERVED_TIMING, setStageMonths } from './timing';
+import { dayOf } from '$lib/sim/scenario/dates';
+import {
+  BOND_POLICY,
+  FUND_ASOF,
+  TERM_POLICY,
+  fundingCalibration,
+  policyWith
+} from './test/funding';
 
 const calibration = fixtureCalibration();
 const FINDING: LotStatus = { kind: 'finding' };
@@ -62,7 +70,7 @@ describe('PolicySummary', () => {
     // No zoning layers or comparison line any more.
     expect(page.getByText(/zoning layers|Compared with/i).elements()).toHaveLength(0);
     expect(page.getByText('Family Zoning Plan map').elements()).toHaveLength(0);
-    // Nothing differs from observed: no disclosure to open.
+    // Nothing differs from observed: no disclosure to open (the Public money section has none).
     expect(page.getByRole('button').elements()).toHaveLength(0);
   });
 
@@ -129,5 +137,144 @@ describe('PolicySummary', () => {
       expect(page.getByText(/1,204 lots/).elements()).toHaveLength(2);
       expect(page.getByText(/Finding lots|Couldn't find lots/).elements()).toHaveLength(0);
     });
+  });
+});
+
+describe('PolicySummary: Public money (funding-ui 4.14)', () => {
+  const fcal = fundingCalibration();
+  const JULY_2027 = dayOf(2027, 7, 1);
+  const region = () => page.getByRole('region', { name: 'Public money' });
+  const rows = () =>
+    [...region().element().querySelectorAll('li')].map((li) => li.textContent?.trim());
+
+  it('As today', async () => {
+    render(PolicySummary, { policy: DEFAULT_POLICY, calibration: fcal, lotsOf: () => FINDING });
+    await expect.element(region()).toBeVisible();
+    // The coverage line sits on top when the calibration has baselineFunding.
+    await expect.element(region().getByText('Affordable homes: fully funded today')).toBeVisible();
+    expect(rows()[0]).toBe("Today's funding: as today");
+    // The section comes after "Permitting timelines".
+    const headings = [...document.querySelectorAll('h3')].map((h) => h.textContent);
+    expect(headings.slice(-2)).toEqual(['Permitting timelines', 'Public money']);
+    // Read-only: no controls in the section.
+    expect(region().getByRole('button').elements()).toHaveLength(0);
+  });
+
+  it('dated change row reads switched off at scale 0 on a capped pool', async () => {
+    const policy = policyWith({ baselineScale: [{ pool: 'state', from: JULY_2027, scale: 0 }] });
+    render(PolicySummary, { policy, calibration: fcal, lotsOf: () => FINDING });
+    await expect.element(region()).toBeVisible();
+    expect(rows()[0]).toBe('State money: switched off from July 2027');
+    expect(rows()).not.toContain("Today's funding: as today");
+  });
+
+  it('a City-group change is one row, worded as a share of today', async () => {
+    const JULY_2029 = dayOf(2029, 7, 1);
+    const policy = policyWith({
+      baselineScale: [
+        { pool: 'city-gf', from: JULY_2029, scale: 2 },
+        { pool: 'city-tax', from: JULY_2029, scale: 2 }
+      ]
+    });
+    render(PolicySummary, { policy, calibration: fcal, lotsOf: () => FINDING });
+    await expect.element(region()).toBeVisible();
+    expect(rows().filter((r) => r?.startsWith('City money'))).toEqual([
+      "City money: 200% of today's from July 2029"
+    ]);
+  });
+
+  it('pool and its programme rows', async () => {
+    render(PolicySummary, { policy: BOND_POLICY, calibration: fcal, lotsOf: () => FINDING });
+    const pool = region().getByText(
+      'City bond, 2028: $300 million in July 2028; repaid at 6% over 20 years',
+      { exact: true }
+    );
+    await expect.element(pool).toBeVisible();
+    const programme = region().getByText(
+      'Grant to affordable homes of 20 homes or more: 35% of the uncovered cost',
+      { exact: true }
+    );
+    await expect.element(programme).toBeVisible();
+    // The programme row is indented under its pool, and comes right after it.
+    expect(programme.element().getAttribute('data-indent')).toBe('true');
+    expect(pool.element().getAttribute('data-indent')).toBe('false');
+    expect(pool.element().nextElementSibling).toBe(programme.element());
+    expect(region().getByText('No money added').elements()).toHaveLength(0);
+  });
+
+  it('added programme on a baseline pool reads Added to the City', async () => {
+    const policy = policyWith({
+      programmes: [
+        {
+          id: 'u-prog-1',
+          label: 'stale stored label',
+          pool: 'city-tax',
+          reach: 'affordable',
+          instrument: { kind: 'grant', share: 0.1 },
+          from: FUND_ASOF,
+          to: null,
+          minHomes: 20,
+          tiers: { veryLow: 0.52, low: 0.31, moderate: 0.17, aboveModerate: 0 }
+        }
+      ]
+    });
+    render(PolicySummary, { policy, calibration: fcal, lotsOf: () => FINDING });
+    await expect
+      .element(
+        region().getByText(
+          'Added to the City: Grant to affordable homes of 20 homes or more: 10% of the uncovered cost',
+          { exact: true }
+        )
+      )
+      .toBeVisible();
+    // The stored label is never shown: the sentence is computed live.
+    expect(
+      region()
+        .getByText(/stale stored label/)
+        .elements()
+    ).toHaveLength(0);
+    expect(region().getByText('No money added').elements()).toHaveLength(0);
+  });
+
+  it('typed term row', async () => {
+    render(PolicySummary, { policy: TERM_POLICY, calibration: fcal, lotsOf: () => FINDING });
+    await expect
+      .element(
+        region().getByText('Guarantee rate cut: 0.5 points (custom, not sourced)', { exact: true })
+      )
+      .toBeVisible();
+  });
+
+  it('(custom, not sourced) on an edited bond rate', async () => {
+    const policy = structuredClone(BOND_POLICY);
+    policy.funding.pools[0].debt = { rate: 0.07, termYears: 20 };
+    render(PolicySummary, { policy, calibration: fcal, lotsOf: () => FINDING });
+    await expect
+      .element(
+        region().getByText(
+          'City bond, 2028: $300 million in July 2028; repaid at 7% (custom, not sourced) over 20 years',
+          { exact: true }
+        )
+      )
+      .toBeVisible();
+  });
+
+  it('No money added', async () => {
+    render(PolicySummary, { policy: DEFAULT_POLICY, calibration: fcal, lotsOf: () => FINDING });
+    const none = region().getByText('No money added', { exact: true });
+    await expect.element(none).toBeVisible();
+    expect(none.element().className).toContain('text-ink-muted');
+  });
+
+  it('with a null calibration the section shows the rows only', async () => {
+    render(PolicySummary, { policy: BOND_POLICY, calibration: null, lotsOf: () => FINDING });
+    await expect
+      .element(region().getByText(/^City bond, 2028: \$300 million in July 2028/))
+      .toBeVisible();
+    expect(
+      region()
+        .getByText(/^Affordable homes:/)
+        .elements()
+    ).toHaveLength(0);
   });
 });

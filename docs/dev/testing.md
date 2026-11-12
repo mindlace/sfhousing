@@ -21,6 +21,44 @@ GPU specs for deck layers (`*.gpu.svelte.spec.ts`, client project, real WebGL in
 
 Single test: `npx vitest --run --project server path/to/file.spec.ts` (or `--project client`, `perf`, `client-perf`).
 
+## Finance engine tests
+
+The engine's funded starts ([finance-engine.md](finance-engine.md)) have their own golden, fixtures
+and bench cases.
+
+- **Finance golden.** `src/lib/sim/scenario/fixtures/golden-finance-seed1.json` holds the schedules
+  and ledger of the mini city with `miniCalibrationWithRoutes()` and `miniFinance()` for seeds 1 and
+  4 (horizon 2050-12-31), checked in Node (`simulate.finance.golden.test.ts`) and in the browser
+  (`simulate.finance.golden.svelte.spec.ts`). Its builder is
+  `fixtures/build-finance-golden.ts`, run deliberately (`env -C <worktree> node_modules/.bin/tsx
+src/lib/sim/scenario/fixtures/build-finance-golden.ts`), never from CI: a changed file is an engine
+  change to review. It does not replace `golden-seed1.json`, which has no `finance` and locks "no
+  public money means no change".
+- **Fixtures.** `fixtures/mini-finance.ts` (`miniFinance()`, `miniCalibrationWithRoutes()`: two
+  capped pools, one uncapped, a certain affordable stack, a market loan, a market guarantee, one
+  `off` span) and `fixtures/tiny-queue.ts` (`tinyQueue()`, a five-lot city with hand-set hazards and
+  yields for exact queue cases; `tinyStack()`, a baseline-shaped affordable stack with an optional
+  bond). All values are test values, not data. `test/finance-harness.ts` checks the ledger
+  identities after every event (`checkLedger`) and collects a run (`runCollect`).
+- **Bench cases.** `scenario.bench.spec.ts`, run by `npm run test:perf` on an idle machine:
+  `simulateNet` with the bench baseline and with `benchFunding()`, the host's 101 band pairs and
+  longest macrotask, a fixture check of the first-day applications and awards, and a reported case
+  with `state` off. The fixtures are `fixtures/bench-finance.ts`. The budgets and the measured
+  medians are in [finance-engine.md](finance-engine.md); cases 2, 3 and 5 miss their budgets on a
+  busy machine until the conductor re-sets them after a quiet run.
+
+## Stored schema-2 policies
+
+`src/lib/sim-page/fixtures/schema2/` holds byte copies of stored schema-2 `/sim` documents taken from
+the code as it was before the schema-3 change: `painted.json` (the text of `paintedText()` in
+`src/lib/server/test/sim-docs.ts`), `profile.json` (the old `scripts/profile-sim-load.policy.json`),
+`tampered.json` (`tamperedText()`) and `default-record.json` (a localStorage record `{ v: 1, savedAt,
+plan }` whose `plan` is the schema-2 default policy). They are committed verbatim and listed in
+`.prettierignore`, so their bytes stay as stored: never reformat or regenerate them. `sim-doc.spec.ts`
+loads each in `'reconcile'` as schema 3 with default funding; the autosave, storage, shared-page and
+`SimPage` specs and `e2e/sim-share.spec.ts` use them for the upgrade paths ([plan-sharing.md](plan-sharing.md),
+"Policies (`/sim`)").
+
 ## FakeR2Bucket
 
 `src/lib/server/test/fake-r2.ts` is an in-memory `R2Bucket` subset (`get` with `range`/`onlyIf` as `Headers`, `head`, `put`) for route tests. Options model both known R2 behaviours:

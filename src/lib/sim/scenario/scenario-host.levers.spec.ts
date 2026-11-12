@@ -7,12 +7,52 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import type { ParcelId } from '$lib/data/parcel';
 import { decodeParcelChunk, encodeParcelChunk } from '$lib/data/parcel-chunk';
 import { allNeeds, resolveEnvelopes } from '../levers/resolve';
+import { fundingOnly } from '../levers/fixtures/finance';
 import { DEFAULT_LEVERS, type SimLevers } from '../levers/types';
-import { MINI_CHUNK_URL, MINI_VERSION, miniCity } from './fixtures/mini-parcels';
+import {
+  MINI_CHUNK_URL,
+  MINI_SCENARIO_URLS,
+  MINI_VERSION,
+  miniCity
+} from './fixtures/mini-parcels';
 import { miniPolicy } from './fixtures/mini-policy';
 import { MINI_AS_OF } from './fixtures/mini-projects';
+import { fundedCalibration } from './test/funded-calibration';
 import { MINI_POLICY_URL, makeScenarioHarness, type ScenarioHarness } from './test/host-harness';
-import type { ScenarioResponse, TimelineResponse } from './types';
+import type { ScenarioResponse, SimInput, TimelineResponse } from './types';
+
+/** `financePreOf` and simulate calls, each with the harness step (timer callback) it ran in. */
+const hooks = vi.hoisted(() => ({
+  events: [] as { fn: 'pre' | 'sim'; step: number; input: SimInput }[],
+  step: 0
+}));
+
+vi.mock('./funded', async (importOriginal) => {
+  const m = await importOriginal<typeof import('./funded')>();
+  return {
+    ...m,
+    financePreOf: vi.fn((input: SimInput) => {
+      hooks.events.push({ fn: 'pre', step: hooks.step, input });
+      return m.financePreOf(input);
+    })
+  };
+});
+
+vi.mock('./simulate', async (importOriginal) => {
+  const m = await importOriginal<typeof import('./simulate')>();
+  const record = (input: SimInput) => hooks.events.push({ fn: 'sim', step: hooks.step, input });
+  return {
+    ...m,
+    simulateNet: vi.fn((...a: Parameters<typeof m.simulateNet>) => {
+      record(a[0]);
+      return m.simulateNet(...a);
+    }),
+    simulateDetailed: vi.fn((...a: Parameters<typeof m.simulateDetailed>) => {
+      record(a[0]);
+      return m.simulateDetailed(...a);
+    })
+  };
+});
 
 type LeversPost = Extract<ScenarioResponse, { type: 'levers' }>;
 
@@ -52,7 +92,7 @@ const content = (t: TimelineResponse) => ({
   rev: t.rev,
   seed: t.seed,
   revision: t.render.revision,
-  score: t.score,
+  score: { ...t.score, tiers: undefined }, // finance-score's added `tiers` is outside the pin
   bandRuns: t.bandRuns,
   bandRunsTotal: t.bandRunsTotal,
   complete: t.complete
@@ -305,6 +345,161 @@ describe('scenario host with levers', () => {
     const warned = h.warnings.filter((m) => m.includes(LOT_A));
     expect(warned).toHaveLength(1);
     expect(warned[0]).toMatch(/no record/);
+  });
+});
+
+// finance-levers spec 4.4 "The worker": a lever revision naming a baseline pool the data lacks.
+describe('scenario host with funding levers', () => {
+  const funded = () =>
+    makeScenarioHarness({
+      deps: { bandRuns: N },
+      policy: true,
+      bodies: { [MINI_SCENARIO_URLS.calibration]: fundedCalibration() }
+    });
+  /** `base` with a scale on a baseline pool the mini data does not have. */
+  const badBaseline = (base: SimLevers = DEFAULT_LEVERS): SimLevers => {
+    const l = structuredClone(base);
+    l.finance.baselineScale = [{ pool: 'nope', from: MINI_AS_OF, scale: 2 }];
+    return l;
+  };
+  /**
+   * What a run's inputs and seed decide, apart from which cells were loaded when (packing) and
+   * how much of the band was done (a reroll keeps the session's band): its last timeline's score.
+   */
+  const outcome = (ts: TimelineResponse[]) => {
+    const last = content(ts.at(-1)!);
+    return { score: last.score, bandRuns: last.bandRuns, done: last.complete };
+  };
+
+  it('setLevers with a bad finance field is bad-request naming the path', async () => {
+    const h = funded();
+    h.init({ levers: structuredClone(DEFAULT_LEVERS) });
+    await h.runAll();
+    const levers = structuredClone(DEFAULT_LEVERS);
+    levers.finance = fundingOnly();
+    levers.finance.pools[0].id = 'bad';
+    const rev = h.next();
+    h.host.handle({ type: 'setLevers', rev, levers });
+    expect(h.errors()).toEqual([
+      {
+        type: 'error',
+        rev,
+        code: 'bad-request',
+        message: 'levers finance.pools[0].id: expected an id starting u-'
+      }
+    ]);
+  });
+
+  it('a revision naming a missing baseline pool posts bad-request on its rev and keeps the previous revision', async () => {
+    const h = funded();
+    const a = h.init({ levers: structuredClone(DEFAULT_LEVERS) });
+    await h.runAll();
+    expect(indexOf(h, isCurrent(a))).toBeGreaterThan(0);
+    const before = outcome(timelines(h));
+    expect(before.done).toBe(true);
+
+    const from = h.posts.length;
+    const b = h.next();
+    h.host.handle({ type: 'setLevers', rev: b, levers: badBaseline(raised([LOT_A], 20)) });
+    await h.runAll();
+    expect(h.errors()).toEqual([
+      {
+        type: 'error',
+        rev: b,
+        code: 'bad-request',
+        message: 'levers finance.baselineScale[0].pool: no baseline pool nope in this data'
+      }
+    ]);
+    expect(indexOf(h, isCurrent(b))).toBe(-1);
+    // B's resolve step loaded its chunks; A's run, still in force, may pack them
+    expect(timelines(h, from).every((t) => t.rev === a)).toBe(true);
+
+    // the next run is on A's inputs: a reroll to A's seed gives A's scores again
+    const r = h.next();
+    const afterB = h.posts.length;
+    h.host.handle({ type: 'reroll', rev: r, seed: 1 });
+    await h.runAll();
+    const again = timelines(h, afterB);
+    expect(again.length).toBeGreaterThan(0);
+    expect(again.every((t) => t.rev === r)).toBe(true);
+    expect(outcome(again)).toEqual(before);
+
+    const c = h.next();
+    const beforeC = h.posts.length;
+    h.host.handle({ type: 'setLevers', rev: c, levers: raised([LOT_A], 20) });
+    await h.runAll();
+    expect(h.errors()).toHaveLength(1);
+    const current = indexOf(h, isCurrent(c));
+    expect(current).toBeGreaterThan(beforeC);
+    expect(indexOf(h, (m) => m.type === 'timeline' && m.rev === c)).toBeGreaterThan(current);
+  });
+
+  it('a failing first revision runs nothing until the next setLevers', async () => {
+    const h = funded();
+    hooks.events.length = 0;
+    const first = h.init({ levers: badBaseline() });
+    await h.runAll();
+    expect(hooks.events).toEqual([]); // nothing ran, not even a finance warm-up
+    expect(h.errors()).toEqual([
+      {
+        type: 'error',
+        rev: first,
+        code: 'bad-request',
+        message: 'levers finance.baselineScale[0].pool: no baseline pool nope in this data'
+      }
+    ]);
+    expect(timelines(h)).toEqual([]);
+    expect(indexOf(h, isCurrent(first))).toBe(-1);
+
+    const rev = h.next();
+    h.host.handle({ type: 'setLevers', rev, levers: structuredClone(DEFAULT_LEVERS) });
+    await h.runAll();
+    expect(h.errors()).toHaveLength(1);
+    const current = indexOf(h, isCurrent(rev));
+    expect(current).toBeGreaterThan(0);
+    const ts = timelines(h);
+    expect(ts.length).toBeGreaterThan(0);
+    expect(ts.every((t) => t.rev === rev)).toBe(true);
+    expect(indexOf(h, (m) => m.type === 'timeline')).toBeGreaterThan(current);
+  });
+
+  it('after current, the new plan input is warmed in a task before its first run', async () => {
+    const h = funded();
+    h.init({ levers: structuredClone(DEFAULT_LEVERS) });
+    await h.runAll();
+    hooks.events.length = 0;
+    const rev = h.next();
+    h.host.handle({ type: 'setLevers', rev, levers: raised([LOT_A], 20) });
+    let currentStep = -1;
+    for (hooks.step = 1; await h.step(); hooks.step++) {
+      if (currentStep < 0 && indexOf(h, isCurrent(rev)) >= 0) currentStep = hooks.step;
+    }
+    expect(h.errors()).toEqual([]);
+    expect(currentStep).toBeGreaterThan(0);
+    const sims = hooks.events.filter((e) => e.fn === 'sim');
+    const plan = sims[0].input; // the new revision's first run is on its plan input
+    expect(plan.finance).toBeDefined();
+    const firstRun = sims.find((e) => e.input === plan)!;
+    const pre = hooks.events.find((e) => e.fn === 'pre' && e.input === plan)!;
+    expect(pre).toBeDefined();
+    expect(pre.step).toBeGreaterThan(currentStep);
+    expect(sims.filter((e) => e.step === pre.step)).toEqual([]);
+    expect(pre.step).toBeLessThan(firstRun.step);
+  });
+
+  it('LeversResponse shape unchanged', async () => {
+    const h = funded();
+    const rev = h.init({ levers: structuredClone(DEFAULT_LEVERS) });
+    await h.runAll();
+    const current = h.posts[indexOf(h, isCurrent(rev))];
+    expect(Object.keys(current).sort()).toEqual([
+      'capacity',
+      'lookups',
+      'phase',
+      'rev',
+      'type',
+      'unknownLots'
+    ]);
   });
 });
 

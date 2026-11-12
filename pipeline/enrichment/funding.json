@@ -140,12 +140,36 @@
     "id": "federal-tax-credits",
     "label": "Federal: low-income housing tax credits",
     "tier": 2,
-    "method": "Federal low-income housing tax credits pay $443,108 of an affordable home (Exhibit F, p. 7). The pool has no ceiling: no ceiling binds San Francisco in the 2026 award records, and none is published for the City.",
+    "method": "Federal funding pays $443,108 of an affordable home (Exhibit F, p. 7). The Analyst says it 'includes the Low-Income Housing Tax Credit' (p. 6) and gives no split; this pool treats all of it as tax credits, which follow the project. The pool has no ceiling, an inference (tier 2) from the 2026 allocation rounds awarded by 14 September 2026. Awards with the 4% credit take a share of California's bond ceiling for rental housing, $4.83 billion in 2026. That ceiling is divided among state-wide pools and six regions, and San Francisco has no share of its own. The Bay Area region used $75.2 million of $128.6 million in round 1 and $170.1 million of $181.9 million in round 2. The 9% credit has a San Francisco share of $2,861,626 a year; no San Francisco project was recommended in round 1, and $3,437,486 was left. Limits: San Francisco projects also compete in state-wide pools, some of which were fully used, and the records do not say which pool paid for a San Francisco award. The simulation pays this share for any number of funded homes. A policy that funds many more homes than today could meet the bond ceiling, and the simulation does not show that.",
     "cite": {
       "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
       "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
       "page": "p. 7, Exhibit F",
       "retrieved": "2026-11-09"
+    },
+    "uncapped": {
+      "rounds": 3,
+      "window": ["2026-01-01", "2026-09-14"],
+      "cites": [
+        {
+          "label": "California Debt Limit Allocation Committee, Exhibit A, \"Pool and Set-Aside Recommendation of 2026 State Debt Ceiling\", updated 2026-09-14",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/2026-09/Allocation_by_Round_9-14-2026.pdf",
+          "page": "Exhibit A, row Bay Area Region",
+          "retrieved": "2026-11-10"
+        },
+        {
+          "label": "California Tax Credit Allocation Committee, \"CTCAC Allocation Process for Set Asides and Geographic Regions, Estimated for Calendar Year 2026\", updated 2026-09-02",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/2026-03/2026-credit-estimates.pdf",
+          "page": "p. 1, Step 3, row San Francisco County",
+          "retrieved": "2026-11-10"
+        },
+        {
+          "label": "California Tax Credit Allocation Committee, \"CTCAC 2026 First Round 9% Final Approved Recommendations for the Geographic Regions\", 2026-06-22",
+          "url": "https://www.treasurer.ca.gov/sites/default/files/ctcac/2026_R1_Final_Recommendations.pdf",
+          "page": "p. 2, San Francisco County",
+          "retrieved": "2026-11-10"
+        }
+      ]
     }
   },
   "awards": {

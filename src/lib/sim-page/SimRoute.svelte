@@ -19,10 +19,19 @@
     /** View: the shared document's policy. */
     initialPolicy?: SimPolicy;
     /** Edit: the Remix hand-off from /s/<id>. */
-    remix?: { from: string; doc?: string };
+    remix?: { from: string; doc?: string; upgradedFrom?: number };
+    /** View: the schema the shared document was upgraded from. */
+    upgradedFrom?: number;
   }
 
-  let { data, mode, persist, initialPolicy = undefined, remix = undefined }: Props = $props();
+  let {
+    data,
+    mode,
+    persist,
+    initialPolicy = undefined,
+    remix = undefined,
+    upgradedFrom = undefined
+  }: Props = $props();
 
   /**
    * The seed SimPage mounts with: the load's, unless after a navigation the address bar named
@@ -80,6 +89,7 @@
         {persist}
         {initialPolicy}
         {remix}
+        {upgradedFrom}
         {urlSeed}
         reload={() => reloadScenario(data.datasetVersion)}
         onurlseed={writeSeed}

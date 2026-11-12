@@ -17,10 +17,12 @@ import type { Calibration } from '$lib/timelapse/types';
 import { HIDDEN_VIEW, type ViewPrefs } from '$lib/view/prefs';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { fixtureCalibration } from './fixtures/calibration';
-import { REAL_ACTUAL, SIMULATED } from './fixtures/cards';
+import { FUNDED_AFFORDABLE, FUNDED_PARTLY, REAL_ACTUAL, SIMULATED } from './fixtures/cards';
+import { cardFunding, type CardFunding } from './card';
 import { formatCount } from '$lib/scoreboard/format';
 import { meterValueText } from '$lib/scoreboard/view';
 import { TIMELINE_SCORE } from './fixtures/timeline-score';
+import { makeMoneyScore } from './fixtures/money';
 import { FakeScenarioWorker, ranksMsg, timelineMsg } from './test/fake-worker';
 import FzpModeHost from './test/FzpModeHost.svelte';
 import { callsOf, stub } from './test/sim-map-stub';
@@ -70,6 +72,7 @@ type Over = Partial<{
   scoreControls: string;
   bottomExtra: number;
   cards: boolean;
+  fundingName: (f: CardFunding) => string | null;
 }>;
 
 function setup(over: Over = {}) {
@@ -1201,6 +1204,36 @@ describe('FzpMode picks and summaries', () => {
     await expect.element(page.getByText('No project on this parcel at this date.')).toBeVisible();
   });
 
+  it("passes the page's funding name and the affordable flag to the card (final M2)", async () => {
+    const fundingName = vi.fn((f: CardFunding) => `Funded by: ${f.programmes.length} · test`);
+    const s = setup({ fundingName });
+    await toReady(s);
+    await press('{PageUp}');
+    await press('{PageUp}');
+    pick({ projectId: 'sim-5', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
+    await answerLastSummary(s.w(), summary(FUNDED_AFFORDABLE));
+    const line = page.getByTestId('card-funded-by');
+    await expect.element(line).toHaveTextContent('Funded by: 4 · test');
+    expect(fundingName).toHaveBeenLastCalledWith(cardFunding(FUNDED_AFFORDABLE));
+    await expect.element(page.getByText('100% affordable homes.')).toBeVisible();
+    // A market start: the line, without the affordable sentence.
+    await press('{ArrowRight}');
+    await answerLastSummary(s.w(), summary(FUNDED_PARTLY));
+    await expect.element(line).toHaveTextContent('Funded by: 1 · test');
+    expect(page.getByText('100% affordable homes.').elements()).toHaveLength(0);
+  });
+
+  it('no funding name (/fzp): no Funded by line on a funded card (final M2)', async () => {
+    const s = setup();
+    await toReady(s);
+    await press('{PageUp}');
+    await press('{PageUp}');
+    pick({ projectId: 'sim-5', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
+    await answerLastSummary(s.w(), summary(FUNDED_AFFORDABLE));
+    await expect.element(page.getByTestId('card-badge')).toHaveTextContent('Simulated project');
+    expect(page.getByTestId('card-funded-by').elements()).toHaveLength(0);
+  });
+
   it('the card re-requests on a run switch answer', async () => {
     const s = await ranked();
     pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
@@ -1265,6 +1298,51 @@ describe('FzpMode map, layout and lifecycle', () => {
     ).click();
     await expect.element(page.getByRole('dialog')).toBeVisible();
     await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('passes Results the uncapped pools (baseline and levers) and the dialog the shown terms', async () => {
+    // The baseline's uncapped pool is fixture-0's federal-tax-credits; the levers add another.
+    const added = {
+      id: 'u-bond',
+      kind: 'goBond' as const,
+      label: 'Added bond',
+      inflows: [],
+      uncapped: true,
+      debt: { rate: 0.06, termYears: 20 },
+      leverage: 1
+    };
+    const levers: SimLevers = {
+      ...DEFAULT_LEVERS,
+      finance: { ...DEFAULT_LEVERS.finance, pools: [added], terms: { lossOnExit: 0.5 } }
+    };
+    const score = makeMoneyScore();
+    for (const p of score.money!.pools) if (p.id === 'federal') p.id = 'federal-tax-credits';
+    const s = setup({ levers });
+    await expect.poll(() => s.w()?.lastOf('initScenario')).toBeTruthy();
+    const rev = lastRev(s.w());
+    s.w().emit({ type: 'ready', rev, datasetVersion: 'fixture-0', chunkCount: 4 });
+    s.w().emit(timelineMsg(rev, 7, { score }));
+    await expect.element(slider()).toBeInTheDocument();
+    const region = await details();
+    await region.getByRole('button', { name: 'Money details' }).click();
+    const table = document.querySelector('[data-testid="fzp-money-sources"]') as HTMLTableElement;
+    const received = (label: string) =>
+      [...table.tBodies[0].rows]
+        .find((r) => r.cells[0].textContent === label)!
+        .cells[1].textContent!.trim();
+    expect(received('Federal tax credits')).toBe('no limit');
+    expect(received('Added bond')).toBe('no limit');
+    expect(received('State housing programmes')).not.toBe('no limit');
+    (
+      region
+        .getByRole('button', { name: 'Where these numbers come from' })
+        .first()
+        .element() as HTMLElement
+    ).click();
+    await expect.element(page.getByRole('dialog')).toBeVisible();
+    const money = document.getElementById('src-money')!;
+    expect(money.textContent).toContain('50% spent or lent on it is counted as lost');
+    expect(money.textContent).toContain('Loss on exit: your value (custom, not sourced)');
   });
 
   it('sets the map inset from the scrubber and --fzp-scrubber-h on its root', async () => {

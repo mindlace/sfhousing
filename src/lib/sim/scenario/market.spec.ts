@@ -28,15 +28,11 @@ describe('marketSteps', () => {
 });
 
 describe('marketLevel', () => {
-  it("is 'all' with and without a market, and with baselineFunding present", () => {
+  it("is 'private' with a market and a baselineFunding, else 'all'", () => {
     expect(marketLevel(cal())).toBe('all');
     expect(marketLevel({ ...cal(), market: miniMarket() })).toBe('all');
-    // finance-engine changes this last case to 'private'
-    const withFunding = {
-      ...cal(),
-      market: miniMarket(),
-      baselineFunding: miniFunding()
-    };
-    expect(marketLevel(withFunding)).toBe('all');
+    expect(marketLevel({ ...cal(), baselineFunding: miniFunding() })).toBe('all');
+    const both = { ...cal(), market: miniMarket(), baselineFunding: miniFunding() };
+    expect(marketLevel(both)).toBe('private');
   });
 });

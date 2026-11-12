@@ -29,7 +29,20 @@ import { LIMITS_LAYER_ID } from '$lib/map/height/limits-layer';
 import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
 import { tinyLimits } from '$lib/map/height/test/fixtures';
 import { clampBbox } from './lid-request';
+import defaultRecord2 from './fixtures/schema2/default-record.json?raw';
+import { DRAFT_DISCARDED, DRAFT_LINE } from './funding-copy';
 
+const restoreSpy = vi.hoisted(() => vi.fn());
+vi.mock('./sim-session', async (orig) => {
+  const mod = await orig<typeof import('./sim-session')>();
+  return {
+    ...mod,
+    restoreSimDoc: (...args: Parameters<typeof mod.restoreSimDoc>) => {
+      restoreSpy(...args);
+      return mod.restoreSimDoc(...args);
+    }
+  };
+});
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 const workers = vi.hoisted(() => [] as import('$lib/fzp/test/fake-worker').FakeScenarioWorker[]);
 vi.mock('$lib/sim/client', async (orig) => {
@@ -120,7 +133,7 @@ describe('SimPage dock', () => {
         .getByRole('tab')
         .elements()
         .map((t) => t.textContent?.trim())
-    ).toEqual(['Transit', 'Paint', 'Permits', 'Protect']);
+    ).toEqual(['Transit', 'Paint', 'Permits', 'Protect', 'Funding']);
     await expect.element(policyButton()).toHaveAttribute('aria-expanded', 'true');
     expect(policyButton().element().getAttribute('aria-controls')).toBe(dockEl()!.id);
     expect(dockEl()!.contains(document.activeElement)).toBe(false);
@@ -129,6 +142,36 @@ describe('SimPage dock', () => {
     await expect.element(page.getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
     await expect.element(page.getByRole('button', { name: 'Add transit layer' })).toBeVisible();
     expect(getComputedStyle(sfhFzp()).getPropertyValue('--dock-w').trim()).toBe('320px');
+  });
+
+  it("the Funding tab shows the coverage line and today's funding", async () => {
+    await readySim();
+    await tab('Funding').click();
+    await expect.element(tab('Funding')).toHaveAttribute('aria-selected', 'true');
+    await expect.element(page.getByText(/^Affordable homes: /)).toBeVisible();
+    await expect.element(page.getByRole('heading', { name: "Today's funding" })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: /^City · / })).toBeVisible();
+  });
+
+  it('a run discards an open funding draft and says so (4.6)', async () => {
+    const { w } = await readySim();
+    await tab('Funding').click();
+    await page.getByRole('button', { name: 'Add money', exact: true }).click();
+    await page.getByRole('button', { name: 'Your own pool', exact: true }).click();
+    await expect.element(page.getByText(DRAFT_LINE)).toBeVisible();
+    await pressRun(w);
+    const status = () =>
+      [...document.querySelectorAll('p[role="status"][aria-live="polite"]')]
+        .map((p) => p.textContent ?? '')
+        .join(' ');
+    await expect.poll(status).toContain(DRAFT_DISCARDED);
+    await editPolicy().click();
+    await expect.element(tab('Funding')).toHaveAttribute('aria-selected', 'true');
+    await expect.element(page.getByText('Nothing added yet.')).toBeVisible();
+    expect(page.getByText(DRAFT_LINE).elements()).toHaveLength(0);
+    await expect
+      .element(page.getByRole('button', { name: 'Add money', exact: true }))
+      .not.toHaveAttribute('aria-disabled', 'true');
   });
 
   it('without a calibration the dock has no Permits tab (no empty face)', async () => {
@@ -708,7 +751,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
   }
 
   const docWith = (current = resolvePreset('benchmarkPermits', calibration)): SimDoc => ({
-    schema: 2,
+    schema: 3,
     kind: 'sim',
     datasetVersion: 'fixture-0',
     policy: { ...DEFAULT_POLICY, timing: { current, saved: null } }
@@ -903,7 +946,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
   // C1: a restored policy goes through LeverSync, so its rules and custom brushes resolve and the
   // full levers (with their lots) are sent, without waiting for an edit.
   const brushed = (): SimDoc => ({
-    schema: 2,
+    schema: 3,
     kind: 'sim',
     datasetVersion: 'fixture-0',
     policy: {
@@ -1406,7 +1449,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
 
   describe('layer selection (Task 13; sim-ux plan 4, Task 2)', () => {
     const RULES_DOC: SimDoc = {
-      schema: 2,
+      schema: 3,
       kind: 'sim',
       datasetVersion: 'fixture-0',
       policy: {
@@ -1891,7 +1934,7 @@ describe('SimPage live preview (sim-ux plan 3, Task 4)', () => {
     await page.viewport(1024, 768);
     const mem = new MemoryStorage();
     const doc: SimDoc = {
-      schema: 2,
+      schema: 3,
       kind: 'sim',
       datasetVersion: 'fixture-0',
       policy: {
@@ -1946,7 +1989,7 @@ describe('SimPage map selection (sim-ux plan 4, Task 4)', () => {
   const ruleId = 'r1';
   const paintId = 'b1';
   const DOC: SimDoc = {
-    schema: 2,
+    schema: 3,
     kind: 'sim',
     datasetVersion: 'fixture-0',
     policy: {
@@ -2273,5 +2316,23 @@ describe('SimPage opening a published policy (/s)', () => {
     const init = workers.at(-1)!.lastOf('initScenario')!;
     expect(init.levers).toBeDefined();
     expect('awaitLevers' in init).toBe(false);
+  });
+});
+
+describe('SimPage upgradedFrom', () => {
+  it('edit: a schema-2 record reaches restoreSimDoc as upgradedFrom 2', async () => {
+    restoreSpy.mockClear();
+    const mem = new MemoryStorage();
+    mem.setItem(SIM_KEY, defaultRecord2.trim());
+    await setup({ storage: () => mem });
+    await expect.poll(() => restoreSpy.mock.calls.length).toBeGreaterThan(0);
+    expect(restoreSpy.mock.calls[0][0]).toMatchObject({ upgradedFrom: 2 });
+  });
+
+  it('view: the upgradedFrom prop reaches the call that builds opened', async () => {
+    restoreSpy.mockClear();
+    await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY, upgradedFrom: 2 });
+    await expect.poll(() => restoreSpy.mock.calls.length).toBeGreaterThan(0);
+    expect(restoreSpy.mock.calls[0][0]).toMatchObject({ upgradedFrom: 2 });
   });
 });

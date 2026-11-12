@@ -9,7 +9,13 @@ import type { ProjectsFile } from '$lib/timelapse/projects';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import type { Calibration, FeatureId } from '$lib/timelapse/types';
 import { isoOf } from './dates';
-import { marketLevel, marketSteps, NO_MARKET_WARNING } from './market';
+import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
+import {
+  FUNDING_WITHOUT_MARKET_WARNING,
+  marketLevel,
+  marketSteps,
+  NO_MARKET_WARNING
+} from './market';
 import { simEntity } from './rng';
 import type { SimInput } from './types';
 
@@ -62,15 +68,31 @@ export function buildSimInput(
         `${isoOf(projects.asOf)}; the run uses ${isoOf(projects.asOf)}`
     );
   }
-  if (!calibration.market) warn?.(NO_MARKET_WARNING);
+  if (!calibration.market) {
+    warn?.(NO_MARKET_WARNING);
+    if (calibration.baselineFunding) warn?.(FUNDING_WITHOUT_MARKET_WARNING);
+  }
   const market = marketSteps(calibration.market, projects.asOf, marketLevel(calibration));
+  const bf = calibration.baselineFunding;
+  const m = calibration.market;
   return {
     parcels,
     projects: projects.projects,
     calibration,
     asOf: projects.asOf,
     districtMaxStories: projects.districtMaxStories?.stories ?? null,
-    ...(market.length > 0 ? { market } : {})
+    ...(market.length > 0 ? { market } : {}),
+    ...(m && bf
+      ? {
+          finance: {
+            pools: structuredClone(bf.pools),
+            programmes: structuredClone(bf.programmes),
+            off: [],
+            slope: m.slope.perCostShare,
+            terms: resolveTerms(MARKET_TERMS)
+          }
+        }
+      : {})
   };
 }
 
@@ -82,6 +104,13 @@ export interface Precompute {
   hazard: Float64Array;
   /** log(1 − hazard[i]) from math.ts */
   log1mh: Float64Array;
+  /**
+   * The unshifted initiation linear predictor `z = initiationLogit(model, features)` per row (no
+   * market step added; finance-engine spec 4.4 adds the step itself), −Infinity where the row gets
+   * no hazard (not hostable, a non-finite feature, or no size level gains a home). Per view through
+   * `regimes[v − 1].logit`.
+   */
+  logit: Float64Array;
   /**
    * per later market step m (`from` > `asOf`), log(1 − hazard) under that step's shift; [] when
    * none
@@ -158,6 +187,27 @@ function entityOf(ids: readonly ParcelId[], i: number): number {
   return e.hash[i];
 }
 
+/** Each row's position among the rows sorted by parcel id (`<`), memoised by the id column. */
+const ranks = new WeakMap<readonly ParcelId[], Uint32Array>();
+
+/**
+ * Each row's rank when the rows are sorted by parcel id with the JavaScript string order (`<`):
+ * the line's third key (finance-engine spec 4.4). Memoised by the id array, so the plan, the twin
+ * and every regime view share one.
+ */
+export function parcelRankOf(ids: readonly ParcelId[]): Uint32Array {
+  let rank = ranks.get(ids);
+  if (!rank) {
+    const order = Array.from(ids.keys()).sort((a, b) =>
+      ids[a] < ids[b] ? -1 : ids[a] > ids[b] ? 1 : a - b
+    );
+    rank = new Uint32Array(ids.length);
+    order.forEach((i, pos) => (rank![i] = pos));
+    ranks.set(ids, rank);
+  }
+  return rank;
+}
+
 /**
  * The last geometric month T whose earliest initiation day from `asOf` (v → 0 in §4.4.4 step 2,
  * `asOf + 1 + floor((T − 1) × MONTH_DAYS)`, as the engine evaluates it) is on or before the
@@ -222,7 +272,7 @@ export function piecewiseMonth(
  * `regimeMonths(asOf, segments.days)`, `views[j]` the log1mh of segment j), the piecewise hazard
  * gives u* = 1 − exp(Σ n_j·l_j), n_j the months of 1..Tmax in segment j, with the same widening.
  */
-function skipBounds(
+export function skipBounds(
   views: readonly Float64Array[],
   candidates: Int32Array,
   Tmax: number,
@@ -319,6 +369,7 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
   const F = FILL_LEVELS.length;
   const hazard = new Float64Array(n);
   const log1mh = new Float64Array(n);
+  const logit = new Float64Array(n).fill(-Infinity);
   const sizeCum = new Float32Array(n * F);
   // the market step in force at asOf (s0) and the later steps
   const steps = input.market ?? [];
@@ -353,6 +404,7 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
       }
       if (finite && sized) {
         const z = initiationLogit(model, features);
+        logit[i] = z;
         hazard[i] = 1 / (1 + exp(-(z + s0)));
         for (let m = 0; m < M; m++) {
           stepLog1mh[m][i] = ln(1 - 1 / (1 + exp(-(z + later[m].logOdds))));
@@ -391,6 +443,7 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
   const pre: Precompute = {
     hazard,
     log1mh,
+    logit,
     stepLog1mh,
     segments,
     sizeCum,

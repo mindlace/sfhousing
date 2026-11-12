@@ -7,13 +7,14 @@ import type { Calibration } from '$lib/timelapse/types';
 import fixture0CalibrationJson from '../../../e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json';
 import { DEFAULT_POLICY, type SimDoc } from './sim-doc';
 import { TIMING_NOTICE_TEXT, restoreSimDoc } from './sim-session';
+import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { resolvePreset } from './timing';
 
 const cal: Calibration = parseCalibration(structuredClone(fixture0CalibrationJson) as unknown);
 const sim = copyFor('sim');
 
 const doc = (over: Partial<SimDoc> = {}): SimDoc => ({
-  schema: 2,
+  schema: 3,
   kind: 'sim',
   datasetVersion: 'fixture-0',
   policy: DEFAULT_POLICY,
@@ -98,5 +99,79 @@ describe('restoreSimDoc', () => {
     const r = restoreSimDoc({ plan: d, notice: { kind: 'corrupt' } }, null);
     expect(r.doc).toBe(d);
     expect(r.notices.map((n) => n.id)).toEqual(['corrupt']);
+  });
+});
+
+describe('restoreSimDoc funding report', () => {
+  it('copies upgradedFrom, and null when absent', () => {
+    expect(restoreSimDoc({ plan: doc(), notice: null, upgradedFrom: 2 }, cal).funding).toEqual({
+      upgradedFrom: 2,
+      droppedScales: [],
+      droppedProgrammes: [],
+      unusable: false
+    });
+    expect(restoreSimDoc({ plan: doc(), notice: null }, cal).funding.upgradedFrom).toBeNull();
+  });
+
+  it('with no calibration the report is empty and not unusable', () => {
+    const r = restoreSimDoc({ plan: doc(), notice: null, upgradedFrom: 2 }, null);
+    expect(r.funding).toEqual({
+      upgradedFrom: 2,
+      droppedScales: [],
+      droppedProgrammes: [],
+      unusable: false
+    });
+  });
+
+  it('replaces the funding only when it changes and adds only the funding notices the report calls for', () => {
+    const f = fundingOnly();
+    const d = doc({ policy: { ...DEFAULT_POLICY, funding: f } });
+    const { baselineFunding: _b, ...bare } = cal;
+    void _b;
+    const r = restoreSimDoc({ plan: d, notice: null }, bare as Calibration);
+    // no baselineFunding: the state scale drops, the rest is kept but unusable
+    expect(r.doc.policy.funding.baselineScale).toEqual([]);
+    expect(r.funding.droppedScales).toHaveLength(1);
+    expect(r.funding.unusable).toBe(true);
+    expect(r.notices.map((n) => n.id)).toEqual(['funding-dropped', 'funding-off']);
+    const same = doc();
+    expect(restoreSimDoc({ plan: same, notice: null }, cal).doc).toBe(same);
+  });
+
+  it('funding notices sit between the autosave notice and timing, before remix', () => {
+    const d = sdDoc();
+    const tampered: SimDoc = {
+      ...d,
+      policy: {
+        ...d.policy,
+        funding: fundingOnly(),
+        timing: {
+          current: {
+            ...d.policy.timing.current,
+            presetTimers: d.policy.timing.current.presetTimers.map((t) => ({ ...t, scale: 0.3 }))
+          },
+          saved: null
+        }
+      }
+    } as SimDoc;
+    const { baselineFunding: _b, ...bare } = cal;
+    void _b;
+    const r = restoreSimDoc(
+      {
+        plan: tampered,
+        notice: { kind: 'rebased', from: 'fixture-old', to: 'fixture-0' },
+        upgradedFrom: 2
+      },
+      bare as Calibration,
+      'abc'
+    );
+    expect(r.notices.map((n) => n.id)).toEqual([
+      'rebased',
+      'funding-added',
+      'funding-dropped',
+      'funding-off',
+      'timing',
+      'remix'
+    ]);
   });
 });

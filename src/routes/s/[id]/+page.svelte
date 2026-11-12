@@ -38,7 +38,13 @@
       SIM_CODEC
     );
     const from = data.doc.title ?? data.id;
-    void goto('/sim', { state: { sfhSimRemix: stored ? { from } : { from, doc: planText } } });
+    void goto('/sim', {
+      state: {
+        sfhSimRemix: stored
+          ? { from, upgradedFrom: data.upgradedFrom }
+          : { from, doc: planText, upgradedFrom: data.upgradedFrom }
+      }
+    });
   }
 </script>
 
@@ -63,6 +69,12 @@
     onremix={remix}
   />
   <div class="relative min-h-0 flex-1">
-    <SimRoute {data} mode="view" persist="off" initialPolicy={data.doc.policy} />
+    <SimRoute
+      {data}
+      mode="view"
+      persist="off"
+      initialPolicy={data.doc.policy}
+      upgradedFrom={data.upgradedFrom}
+    />
   </div>
 </div>

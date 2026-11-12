@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LEVERS, parseSimLevers, type TimerEdit } from '$lib/sim/levers/types';
+import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { CALCULATING } from '$lib/fzp/copy';
 import { PolicyStore } from './policy-store.svelte';
 import { OBSERVED_TIMING, type TimingSet } from './timing';
@@ -651,5 +652,69 @@ describe('parseSimPolicy preset layer modes', () => {
       expect(() => parseSimPolicy(p)).toThrow(PolicyFormatError);
       expect(() => parseSimPolicy(p, lenient)).toThrow(PolicyFormatError);
     }
+  });
+});
+
+describe('policy funding (schema 3)', () => {
+  const asJson = (p: SimPolicy) => JSON.parse(JSON.stringify(p));
+
+  it('DEFAULT_POLICY.funding is empty, has terms, and is its own object', () => {
+    expect(DEFAULT_POLICY.schema).toBe(3);
+    expect(DEFAULT_POLICY.funding).toEqual({
+      baselineScale: [],
+      pools: [],
+      programmes: [],
+      terms: {}
+    });
+    expect(DEFAULT_POLICY.funding).not.toBe(DEFAULT_LEVERS.finance);
+  });
+
+  it('parses funding and re-paths a funding error to funding.…', () => {
+    const p = { ...DEFAULT_POLICY, funding: fundingOnly() };
+    expect(parseSimPolicy(asJson(p))).toEqual(p);
+    const bad = asJson(p);
+    bad.funding.pools[0].id = 'Bad Id';
+    expect(() => parseSimPolicy(bad)).toThrow(/^funding\.pools\[0\]\.id/);
+    expect(() => parseSimPolicy({ ...asJson(DEFAULT_POLICY), funding: undefined })).toThrow(
+      /expected an object/
+    );
+  });
+
+  it('schema2: upgrade upgrades a schema-2 policy; without it schema 2 fails', () => {
+    const old = { ...asJson(DEFAULT_POLICY), schema: 2 };
+    delete old.funding;
+    const up = parseSimPolicy(old, { schema2: 'upgrade' });
+    expect(up.schema).toBe(3);
+    expect(up.funding).toEqual(DEFAULT_POLICY.funding);
+    expect(up.funding).not.toBe(DEFAULT_POLICY.funding);
+    expect(() => parseSimPolicy(old)).toThrow(/schema: expected 3, got 2/);
+    expect(() =>
+      parseSimPolicy({ ...old, funding: DEFAULT_POLICY.funding }, { schema2: 'upgrade' })
+    ).toThrow(/funding: unknown key/);
+    expect(() => parseSimPolicy(asJson(DEFAULT_POLICY), { schema2: 'upgrade' })).toThrow(
+      /schema: expected 2, got 3/
+    );
+  });
+
+  it('isDefaultPolicy is false for each of one scale, one pool, one programme, one typed term', () => {
+    const f = fundingOnly();
+    const variants = [
+      { ...f, pools: [], programmes: [], baselineScale: f.baselineScale },
+      { ...DEFAULT_POLICY.funding, pools: f.pools },
+      { ...DEFAULT_POLICY.funding, programmes: f.programmes },
+      { ...DEFAULT_POLICY.funding, terms: { lossOnExit: 0.1 } }
+    ];
+    for (const funding of variants)
+      expect(isDefaultPolicy({ ...DEFAULT_POLICY, funding })).toBe(false);
+  });
+
+  it('compileLevers copies funding deeply and compares with FZP for a funding-only policy', () => {
+    const p = { ...DEFAULT_POLICY, funding: fundingOnly() };
+    const l = compileLevers(p, () => [])!;
+    expect(l.finance).toEqual(p.funding);
+    expect(l.finance).not.toBe(p.funding);
+    expect(l.finance.pools).not.toBe(p.funding.pools);
+    expect(l.compare).toBe('fzp');
+    expect(compileLevers(DEFAULT_POLICY, () => [])!.finance).not.toBe(DEFAULT_POLICY.funding);
   });
 });

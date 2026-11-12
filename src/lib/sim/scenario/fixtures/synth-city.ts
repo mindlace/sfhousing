@@ -8,9 +8,11 @@
 // floor-area rule, not the generator's: the bench measures cost, and the card's matched /
 // approximate verdict is not on its path.
 import { deflateRawSync } from 'node:zlib';
+import { idsHash } from '$lib/data/column-file';
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelRecord } from '$lib/data/parcel';
 import { encodeParcelChunk } from '$lib/data/parcel-chunk';
+import { NULL_CAP, S207_STATUSES, type PolicyParcels } from '$lib/data/policy-codec';
 import {
   FILL_LEVELS,
   decodeScenarioPayload,
@@ -49,6 +51,8 @@ const URLS = {
   projects: `/data/${SYNTH_VERSION}/scenarios/fzp/projects.json`,
   calibration: `/data/${SYNTH_VERSION}/scenarios/fzp/calibration.json`
 };
+/** Where the bench host serves `policy.bin` (the rig answers it with `synthPolicy`). */
+export const SYNTH_POLICY_URL = `/data/${SYNTH_VERSION}/scenarios/fzp/policy.bin`;
 
 export interface SynthCity {
   /** Decoded T11, exactly as the host decodes `bin`. */
@@ -419,4 +423,54 @@ export function synthCity(): SynthCity {
     bin: new Uint8Array(bin),
     files: { bin: URLS.parcels, json }
   };
+}
+
+const policyProv = (label: string): Provenance => prov(label);
+
+/**
+ * The bench city's policy columns, as `miniPolicy` builds the mini city's: FZP as written, no
+ * SB 79, no §207.11, no historic or exempt lots, current law the envelope. Fixture values only.
+ */
+export function synthPolicy(city: SynthCity): PolicyParcels {
+  const p = city.parcels;
+  const n = p.count;
+  const F = p.fillLevels.length;
+  const out: PolicyParcels = {
+    format: 'sfh-policy/1',
+    datasetVersion: p.datasetVersion,
+    count: n,
+    idsHash: idsHash(p.id),
+    fillLevels: [...p.fillLevels],
+    currentLawRule: 'fzp+s207.11',
+    tierSource: 'mtc',
+    useDistricts: [''],
+    provenance: {
+      useDistrict: policyProv('Use districts'),
+      historic: policyProv('Historic status'),
+      exemptions: policyProv('Exemptions'),
+      sb79: policyProv('SB 79'),
+      currentLaw: policyProv('Current law')
+    },
+    useDistrict: new Uint16Array(n),
+    historic: new Uint8Array(n),
+    fzpYieldCap: Uint16Array.from(p.baseCap, (c, i) => (p.localProgram[i] ? NULL_CAP : c)),
+    todTier: new Uint8Array(n),
+    todBand: new Uint8Array(n),
+    sb79Status: new Uint8Array(n),
+    sb79Stories: new Uint8Array(n),
+    sb79Cap: new Uint16Array(n).fill(NULL_CAP),
+    sb79Yield: new Uint16Array(n * F),
+    s207Status: new Uint8Array(n).fill(S207_STATUSES.indexOf('outside')),
+    currentStories: Uint8Array.from(p.envelopeStories),
+    currentCap: new Uint16Array(n),
+    currentYield: Uint16Array.from(p.yield),
+    hostableSb79: new Uint8Array(n),
+    hostableCurrent: Uint8Array.from(p.hostable),
+    currentFromS207: new Uint8Array(n),
+    exemptPermanent: new Uint8Array(n),
+    exemptTemporary: new Uint8Array(n),
+    historicProtected: new Uint8Array(n)
+  };
+  out.currentCap.set(out.fzpYieldCap);
+  return out;
 }

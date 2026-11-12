@@ -13,7 +13,10 @@ import { applyPolicies, baseZoning } from '../scenario/policy';
 import { REFERENCES, monthsOf } from '../scenario/score';
 import { simulateDetailed, simulateNet } from '../scenario/simulate';
 import type { SimInput } from '../scenario/types';
+import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
 import { applyLevers, lookupsOf, twinInput } from './apply';
+import { buildFinance } from './finance';
+import { baselineFixture, fundingOnly } from './fixtures/finance';
 import type { LayerCtx } from './layers';
 import { fillNeeds, resolveEnvelopes } from './resolve';
 import { scaleTable, timersOp } from './timers';
@@ -247,5 +250,83 @@ describe('market passes through the levers', () => {
     expect(twinInput(base, ctx, 'preFzp').market).toBe(base.market);
     expect(twinInput(base, ctx, 'fzp').market).toBe(base.market);
     expect(compile(base, ctx, clone()).plan.market).toBe(base.market);
+  });
+});
+
+describe('finance passes through the levers (F17)', () => {
+  function funded(): { base: SimInput; ctx: LayerCtx } {
+    const { base: plain, ctx } = setup();
+    const base: SimInput = {
+      ...plain,
+      market: [{ from: plain.asOf, logOdds: miniMarket().today.all }],
+      finance: baselineFixture(plain.asOf).finance
+    };
+    return { base, ctx };
+  }
+
+  it("plan.finance is buildFinance's", () => {
+    const { base, ctx } = funded();
+    const levers = clone({ finance: fundingOnly() });
+    const { plan } = compile(base, ctx, levers);
+    expect(plan.finance).toEqual(buildFinance(base.finance, levers.finance, base.asOf));
+    expect(plan.finance).not.toBe(base.finance);
+    expect(plan.finance!.pools.map((p) => p.id)).toContain('u-pool-1');
+  });
+
+  it('bare() keeps market and finance by identity through baseZoning and planOf, timers set', () => {
+    const { base, ctx } = funded();
+    const timers: SimLevers['timers'] = [
+      { pathway: 'discretionary', stage: 'filed', scale: 0.5, reach: 'all' },
+      { pathway: 'discretionary', stage: 'filed', scale: 0.7, reach: 'new' }
+    ];
+    for (const compare of ['preFzp', 'fzp'] as const) {
+      const out = compile(base, ctx, clone({ compare, timers }));
+      expect(out.plan.inFlightScale).toBeDefined();
+      expect(out.plan.market).toBe(base.market);
+      expect(out.plan.finance).toBe(base.finance);
+      expect(out.twin.market).toBe(base.market);
+      expect(out.twin.finance).toBe(base.finance);
+    }
+  });
+
+  it('both twins carry base.finance by identity, also when the levers type a term', () => {
+    const { base, ctx } = funded();
+    const terms = { lossOnExit: 0.5 };
+    for (const compare of ['preFzp', 'fzp'] as const) {
+      const out = compile(
+        base,
+        ctx,
+        clone({ compare, finance: { ...DEFAULT_LEVERS.finance, terms } })
+      );
+      expect(out.twin.finance).toBe(base.finance);
+      expect(out.twin.finance!.off).toEqual([]);
+      expect(out.twin.finance!.terms).toEqual(resolveTerms(MARKET_TERMS));
+      expect(out.plan.finance!.terms).toEqual(resolveTerms(MARKET_TERMS, terms));
+      expect(out.plan.finance!.terms.custom).toEqual(['lossOnExit']);
+    }
+  });
+
+  it('twinInput is the same object for documents differing only in finance', () => {
+    const { base, ctx } = funded();
+    for (const compare of ['preFzp', 'fzp'] as const) {
+      const a = compile(base, ctx, clone({ compare }));
+      const b = compile(base, ctx, clone({ compare, finance: fundingOnly() }));
+      expect(b.twin).toBe(a.twin);
+      expect(b.plan.finance).not.toBe(a.plan.finance);
+    }
+  });
+
+  it('with no finance in the base and DEFAULT_LEVERS, plan and twin are as before', () => {
+    const { base, ctx } = setup();
+    expect(base.finance).toBeUndefined();
+    for (const compare of ['preFzp', 'fzp'] as const) {
+      const out = compile(base, ctx, clone({ compare }));
+      expect('finance' in out.plan).toBe(false);
+      expect('finance' in out.twin).toBe(false);
+      // with finance set to undefined in the plan, the run is still the base's
+      const withLevers = compile(base, ctx, clone({ compare, finance: fundingOnly() }));
+      expect('finance' in withLevers.plan).toBe(false);
+      expect(withLevers.plan).toStrictEqual(out.plan);
+    }
   });
 });

@@ -72,7 +72,7 @@ const tampered = (): SimPolicy => ({
 });
 
 function data(policy: SimPolicy = painted(), title: string | null = 'SD permits') {
-  const doc: SimDoc = { schema: 2, kind: 'sim', datasetVersion: 'fixture-0', policy };
+  const doc: SimDoc = { schema: 3, kind: 'sim', datasetVersion: 'fixture-0', policy };
   if (title !== null) doc.title = title;
   return {
     id: 'Abcdefg2',
@@ -188,7 +188,7 @@ describe('/s/[id] read-only view', () => {
 
   it('Remix confirms over a non-default local policy', async () => {
     const local: SimDoc = {
-      schema: 2,
+      schema: 3,
       kind: 'sim',
       datasetVersion: 'fixture-0',
       policy: painted()
@@ -219,5 +219,15 @@ describe('/s/[id] read-only view', () => {
     await expect.poll(() => nav.goto.length).toBe(1);
     expect(page.getByRole('dialog').elements()).toHaveLength(0);
     expect(nav.goto[0].opts?.state?.sfhSimRemix).toEqual({ from: 'Abcdefg2' });
+  });
+
+  it('Remix hands the upgrade over: goto state carries upgradedFrom', async () => {
+    await render(PageHost, { props: { data: { ...data(painted(), null), upgradedFrom: 2 } } });
+    await banner().getByRole('button', { name: 'Remix', exact: true }).click();
+    await expect.poll(() => nav.goto.length).toBe(1);
+    expect(nav.goto[0].url).toBe('/sim');
+    expect(nav.goto[0].opts).toEqual({
+      state: { sfhSimRemix: expect.objectContaining({ upgradedFrom: 2 }) }
+    });
   });
 });

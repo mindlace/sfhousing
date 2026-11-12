@@ -22,6 +22,7 @@ import {
 } from './card';
 import { dayOf } from './dates';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
+import { miniCalibrationWithRoutes, miniFinance } from './fixtures/mini-finance';
 import { miniCity, MINI_LP_ID } from './fixtures/mini-parcels';
 import {
   MINI_AS_OF,
@@ -1072,5 +1073,76 @@ describe('projectCard on a real run', () => {
     const ent = card.stages.find((x) => x.stage === 'entitled')!;
     expect(ent.day).toBe(ms.get(P.entitled3)!.entered.entitled);
     expect(ent.actual).toBe(false);
+  });
+});
+
+describe('projectCard: kind and funding (finance-engine spec 4.12, section 6 test 9)', () => {
+  const fin: SimInput = {
+    ...input,
+    calibration: miniCalibrationWithRoutes(),
+    finance: miniFinance(AS_OF)
+  };
+  // seed 4: both certain affordable and partly covered market funded starts
+  const run = simulateDetailed(fin, 4, MINI_HORIZON);
+  const { ctx } = mkCtx({
+    input: fin,
+    masters: new Map(run.masters.map((m) => [m.masterId, m]))
+  });
+  const cardOf = (s: Schedule) => projectCard(s, s.revisions[0].day, ctx);
+
+  it('a certain affordable funded schedule: kind affordable, its programmes, certain', () => {
+    const s = run.schedules.find((x) => x.kind === 'affordable' && x.funding?.certain === true);
+    expect(s).toBeDefined();
+    const c = cardOf(s!);
+    expect(c.kind).toBe('affordable');
+    expect(c.funding).toEqual({ programmes: s!.funding!.programmes, certain: true });
+    expect(c.funding!.programmes).not.toBe(s!.funding!.programmes);
+  });
+
+  it('a partly covered market funded schedule: no kind, certain false', () => {
+    const s = run.schedules.find((x) => x.funding !== undefined && x.kind === undefined);
+    expect(s).toBeDefined();
+    expect(s!.funding!.certain).toBe(false);
+    const c = cardOf(s!);
+    expect('kind' in c).toBe(false);
+    expect(c.funding).toEqual({ programmes: s!.funding!.programmes, certain: false });
+  });
+
+  it('an ordinary start and every pipeline card have neither field', () => {
+    const ordinary = run.schedules.filter((x) => x.origin === 'simulated' && !x.funding);
+    const pipeline = run.schedules.filter((x) => x.origin === 'pipeline');
+    expect(ordinary.length).toBeGreaterThan(0);
+    expect(pipeline.length).toBeGreaterThan(0);
+    for (const s of [...ordinary, ...pipeline]) {
+      const day = s.revisions[0]?.day ?? firstDay(s);
+      const c = projectCard(s, day, ctx);
+      expect('kind' in c).toBe(false);
+      expect('funding' in c).toBe(false);
+    }
+  });
+
+  it('copies certain from the schedule whatever ctx.input.finance holds', () => {
+    const s = sched({
+      projectId: 'sim:3512008:0',
+      origin: 'simulated',
+      parcelIds: ['3512008'],
+      entered: { filed: AS_OF + 3 },
+      kind: 'affordable',
+      funding: {
+        programmes: ['nowhere'],
+        applied: AS_OF + 1,
+        granted: 1,
+        lent: 0,
+        guaranteed: 0,
+        displaced: 0,
+        certain: true
+      }
+    });
+    for (const inp of [input, fin]) {
+      const { ctx: c2 } = mkCtx({ input: inp });
+      const c = projectCard(s, AS_OF + 5, c2);
+      expect(c.kind).toBe('affordable');
+      expect(c.funding).toEqual({ programmes: ['nowhere'], certain: true });
+    }
   });
 });

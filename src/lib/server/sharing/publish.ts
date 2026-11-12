@@ -7,6 +7,7 @@ import { serverMessage } from '$lib/sharing/copy';
 import type { DocCodec } from '$lib/sharing/doc-codec';
 import { sha256Hex } from '$lib/sharing/hash';
 import { newPlanId } from '$lib/sharing/ids';
+import { SCHEMA2_PUBLISH_MESSAGE } from '$lib/sim-page/sim-doc';
 import { enforceRate } from './rate-limit';
 import { readCapped } from './read-body';
 import { json, shareError } from './respond';
@@ -80,7 +81,13 @@ export async function handlePublish(
     const parsed = codec.parse(read.text);
     if (!parsed.ok) {
       const { status, code, details } = errorForParse(parsed.errors);
-      return shareError(status, code, { ...(details ? { details } : {}), kind });
+      // A schema-2 policy's message stands as written (F15); other codes keep their copy.
+      const older = parsed.errors[0]?.message === SCHEMA2_PUBLISH_MESSAGE;
+      return shareError(status, code, {
+        ...(details ? { details } : {}),
+        ...(older ? { message: SCHEMA2_PUBLISH_MESSAGE } : {}),
+        kind
+      });
     }
     const doc = parsed.value;
 

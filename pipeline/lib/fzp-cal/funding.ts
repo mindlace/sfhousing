@@ -171,7 +171,8 @@ export interface FundingReport {
 
 const halfUp = (x: number): number => Math.floor(x + 0.5);
 /** Whole dollars with thousands separators, without Intl (deterministic across runtimes). */
-const money = (d: number): string => `$${String(Math.round(d)).replace(/\B(?=(\d{3})+$)/g, ',')}`;
+const count = (n: number): string => String(Math.round(n)).replace(/\B(?=(\d{3})+$)/g, ',');
+const money = (d: number): string => `$${count(d)}`;
 const millions = (d: number): string => `$${(d / 1e6).toFixed(1)} million`;
 
 /** One baseline pool before it is emitted: what the shares, check and provenance need. */
@@ -277,6 +278,12 @@ export function baselineFunding(
   const observedHomesPerYear = halfUp(newRows.reduce((a, r) => a + r.homes, 0) / years.length);
   const warning = fundingWarning(impliedHomesPerYear, observedHomesPerYear, span);
   const awardWindow: [string, string] = [`${span[0]}-01-01`, `${span[1]}-12-31`];
+  const fourPercent = newRows.filter((r) => r.credit === '4%');
+  const homesOf = (rows: typeof newRows) => count(rows.reduce((a, r) => a + r.homes, 0));
+  const awardText =
+    `Of the ${newRows.length} new-construction awards of ${span[0]}–${span[1]}, ` +
+    `${fourPercent.length} used the 4% credit (${homesOf(fourPercent)} of ${homesOf(newRows)} ` +
+    'homes).';
 
   const fixture = profile.name === 'fixture';
   const mark = (p: Provenance): Provenance =>
@@ -306,19 +313,22 @@ export function baselineFunding(
             `${debt.cite.quote === undefined ? '' : `: '${debt.cite.quote}'`}), the Analyst's ` +
             'assumption (tier 2); repayment is nominal.';
       return mark({
-        tier: 1,
+        tier: 2,
         label: `${src.label}: ${millions(src.dollarsPerYear)} a year, ${fy} (held level)`,
         sources:
           debt === null
             ? [blaSource]
             : [blaSource, { label: `${debt.cite.label}, ${debt.cite.page}`, url: debt.cite.url }],
         method:
-          `Exhibit E (p. 6): ${money(src.dollarsPerYear)} of the City's ${money(city.total)} ` +
-          `multifamily spending in ${fy}. Its slice of the City's ${money(perHome.city)} a home ` +
-          `(Exhibit F, p. 7): ${money(perHome.city)} × ${money(src.dollarsPerYear)} ÷ ` +
-          `${money(city.total)} = ${money(Math.round(s.perHome))}. ` +
+          `Recorded (tier 1): Exhibit E (p. 6): ${money(src.dollarsPerYear)} of the City's ` +
+          `${money(city.total)} multifamily spending in ${fy}; Exhibit F (p. 7): the City pays ` +
+          `${money(perHome.city)} of an affordable home. Inferred (tier 2): Exhibit F gives one ` +
+          'figure for the City and no split by source. This source is taken to pay in proportion ' +
+          `to its ${fy} spending: ${money(perHome.city)} × ${money(src.dollarsPerYear)} ÷ ` +
+          `${money(city.total)} = ${money(Math.round(s.perHome))} a home. ` +
           shareText(i, money(Math.round(s.perHome))) +
-          ` ${inflowText} ${fy} dollars, not adjusted. ${src.note}${debtText}`,
+          ' The amount is held level from the first inflow, with no end (an assumption, not a ' +
+          `forecast). ${inflowText} ${fy} dollars, not adjusted. ${src.note}${debtText}`,
         n: 1,
         window: fyWindow
       });
@@ -335,23 +345,19 @@ export function baselineFunding(
         window: ['2018-01-01', '2025-12-31']
       });
     }
+    const { uncapped } = file.federal;
     return mark({
       tier: 2,
       label: `${file.federal.label}: uncapped`,
-      sources: [
-        {
-          label: `${file.federal.cite.label}, ${file.federal.cite.page}`,
-          url: file.federal.cite.url
-        }
-      ],
+      sources: [file.federal.cite, ...uncapped.cites].map((c) => ({
+        label: `${c.label}, ${c.page}`,
+        url: c.url
+      })),
       method:
-        `${file.federal.method} ${shareText(i, money(perHome.federal))} ` +
-        'uncapped: no ceiling binds San Francisco in the 2026 award records. That claim rests ' +
-        "on the design's evidence digest, not on a source listed here; n and window describe " +
-        `the ${span[0]}–${span[1]} new-construction award rows of the check. ` +
+        `${file.federal.method} ${awardText} ${shareText(i, money(perHome.federal))} ` +
         `${fy} dollars, not adjusted.`,
-      n: newRows.length,
-      window: awardWindow
+      n: uncapped.rounds,
+      window: [uncapped.window[0], uncapped.window[1]]
     });
   });
 

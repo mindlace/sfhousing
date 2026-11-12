@@ -9,7 +9,7 @@ declare global {
       sfhRemix?: { from: string; plan?: string };
       /** Remix hand-off from /s/:id to /sim (plan 5). `doc` (serialized) only when the
        *  localStorage write failed. Cleared by /sim after the toast. */
-      sfhSimRemix?: { from: string; doc?: string };
+      sfhSimRemix?: { from: string; doc?: string; upgradedFrom?: number };
     }
     interface Platform {
       env: Env;

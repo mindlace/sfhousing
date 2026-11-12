@@ -252,6 +252,11 @@ export function projectCard(s: Schedule, day: Day, ctx: CardCtx): ProjectCard {
     revisions: s.revisions.filter((r) => r.day <= day).map((r) => ({ ...r })),
     end: s.end.kind !== 'open' && s.end.day <= day ? { ...s.end } : null,
     sources: (row?.sources ?? []).map((x) => ({ ...x })),
-    quality
+    quality,
+    // F10: copied from the schedule, never priced (finance-engine spec 4.12)
+    ...(s.kind === 'affordable' ? { kind: 'affordable' as const } : {}),
+    ...(s.funding
+      ? { funding: { programmes: [...s.funding.programmes], certain: s.funding.certain } }
+      : {})
   };
 }

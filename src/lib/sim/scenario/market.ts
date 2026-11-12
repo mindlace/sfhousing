@@ -13,14 +13,17 @@ export function marketSteps(
 }
 
 /**
- * F3: the one rule for the level the engine runs. Release 1: always 'all'. finance-engine changes
- * it to 'private' exactly when `buildSimInput` also sets `finance` from the calibration's baseline
- * funding (F12), else 'all'.
+ * F3: the one rule for the level the engine runs: 'private' exactly when `buildSimInput` also sets
+ * `finance` from the calibration's baseline funding (F12), else 'all'.
  */
 export function marketLevel(calibration: Calibration): 'all' | 'private' {
-  void calibration;
-  return 'all';
+  return calibration.market !== undefined && calibration.baselineFunding !== undefined
+    ? 'private'
+    : 'all';
 }
 
 export const NO_MARKET_WARNING =
   'calibration.json: no market model; the run uses the 2007-2025 average market';
+
+export const FUNDING_WITHOUT_MARKET_WARNING =
+  'calibration.json: baselineFunding without a market model; the run has no funding';

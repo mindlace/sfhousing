@@ -22,7 +22,7 @@
   } from '$lib/sim/scenario/types';
   import type { LeverLookups } from '$lib/sim/levers/apply';
   import { medianRank } from '$lib/sim/scenario/band';
-  import type { ChanceTable } from './card';
+  import type { CardFunding, ChanceTable } from './card';
 
   type Lookups = { chance: ChanceTable; typicalMonths: ReturnType<typeof typicalMonths> };
   type MapLike = NonNullable<ReturnType<SimMapHandle['getMap']>>;
@@ -87,7 +87,6 @@
     type LeverStatusState
   } from '$lib/sim-page/lever-status';
   import { spawnSimWorker } from '$lib/sim/client';
-  import { marketLevel } from '$lib/sim/scenario/market';
   import type { LimitOwner } from '$lib/sim/levers/source';
   import type { SimLevers } from '$lib/sim/levers/types';
   import type { SimPhase } from '$lib/sim-page/run-phase.svelte';
@@ -101,12 +100,14 @@
   import type { Day } from '$lib/timelapse/time';
   import { installFzpDebug, type SfhFzpDebug } from './debug';
   import { HighWater } from './high-water.svelte';
-  import { marketSentence } from './market-view';
+  import { marketText, uncappedPoolIds } from './money-view';
+  import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
   import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
   import SimResults from './SimResults.svelte';
   import { DEFAULT_SPEED } from './playback';
   import { BR_BLOCK, watchCardArea } from './card-area-watch';
   import { cardArea, cardPlacement, type CardArea } from './card-place';
+  import { cardFunding } from './card';
   import ProjectCardPanel from './ProjectCardPanel.svelte';
   import ProjectTooltip from './ProjectTooltip.svelte';
   import RunSlider from './RunSlider.svelte';
@@ -222,6 +223,11 @@
      * (/sim: a layer's name, "Painted 8 stories"); null shows no line (FZP, a removed layer).
      */
     ownerName?: (owner: LimitOwner, parcelId: ParcelId) => string | null;
+    /**
+     * The card's "Funded by" line (funding-ui 4.13) for a simulated card that carries `funding`
+     * (/sim and /s/<id>: the policy's programmes and the baseline's); absent shows no line.
+     */
+    fundingName?: (f: CardFunding) => string | null;
   }
 
   let {
@@ -257,7 +263,8 @@
     scoreControls = undefined,
     bottomExtra = 0,
     cards = true,
-    ownerName = undefined
+    ownerName = undefined,
+    fundingName = undefined
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -365,6 +372,12 @@
   /** Who the plan effect is for: the Family Zoning Plan on /fzp and under its levers. */
   const copy = $derived(scoreCopy(shownLevers ?? levers ?? null));
   const capacity = $derived(leverStatus.kind === 'current' ? leverStatus.capacity : null);
+  /** The market terms of the levers on show, for the Results' lost-grants line (4.11). */
+  const terms = $derived(resolveTerms(MARKET_TERMS, (shownLevers ?? levers)?.finance.terms ?? {}));
+  /** The pools that can always pay (`Pool.uncapped`), baseline and added: "no limit" (4.11). */
+  const uncapped = $derived(
+    uncappedPoolIds(calibration?.baselineFunding?.pools, (shownLevers ?? levers)?.finance.pools)
+  );
   /**
    * The score on show is from before the latest levers until a timeline at or after their rev
    * arrives (a later reroll's runs on them too); a failed revision leaves the old score standing.
@@ -769,6 +782,11 @@
     return owner && cardTap && ownerName ? ownerName(owner, cardTap.parcelId) : null;
   });
 
+  const cardFunded = $derived(
+    cardState.kind === 'project' && fundingName ? cardFunding(cardState.card) : null
+  );
+  const cardFundedBy = $derived(cardFunded && fundingName ? fundingName(cardFunded) : null);
+
   function hideTooltip(): void {
     tipReq.reset();
   }
@@ -1165,7 +1183,10 @@
     {copy}
     {capacity}
     stale={leverFailed}
-    market={calibration ? marketSentence(calibration, marketLevel(calibration)) : null}
+    pending={scoreBusy || leversPending}
+    {terms}
+    {uncapped}
+    market={calibration ? marketText(calibration) : null}
   />
 {/snippet}
 
@@ -1306,6 +1327,8 @@
         onsource={(id) => dialog?.open(id)}
         anchor={cardAnchor}
         allowedBy={cardAllowedBy}
+        fundedBy={cardFundedBy}
+        affordable={cardFunded?.kind === 'affordable'}
         onsize={(s) => (cardSize = s)}
       />
       <ProjectTooltip state={tipState} {day} x={tipAt.x} y={tipAt.y} />
@@ -1363,6 +1386,7 @@
         {score}
         projectsUrl={manifest?.scenarios?.fzp.projects ?? null}
         {asOf}
+        {terms}
         onopen={() => (playing = false)}
       />
     {/if}

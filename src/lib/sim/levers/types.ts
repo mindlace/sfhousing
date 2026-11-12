@@ -4,7 +4,16 @@
  * across row reorderings. Worker-safe: hand-written guards, no zod, no DOM.
  */
 import type { ParcelId } from '$lib/data/parcel';
-import { PATHWAYS, type Pathway, type Stage } from '$lib/timelapse/types';
+import type { Day } from '$lib/timelapse/time';
+import {
+  PATHWAYS,
+  type Pathway,
+  type Pool,
+  type Programme,
+  type Stage,
+  type TermKey
+} from '$lib/timelapse/types';
+import { parseFinanceLevers } from './finance';
 
 /** Construction and completion are locked: no lever edits them. */
 export type TimedStage = Exclude<Stage, 'complete' | 'construction'>;
@@ -42,12 +51,24 @@ export type Compare = 'preFzp' | 'fzp';
 export const COMPARES = ['preFzp', 'fzp'] as const satisfies readonly Compare[];
 
 /**
- * Schema 2: FZP as written, plus additive rules and custom paint (spec 2026-10-31, section 3).
+ * The user's funding changes (spec 2026-11-09, F7): a scale on the baseline pools' inflows, added
+ * pools and programmes, and typed market terms. Empty means the baseline as the dataset gives it.
+ */
+export interface FinanceLevers {
+  baselineScale: { pool: string; from: Day; scale: number }[];
+  pools: Pool[];
+  programmes: Programme[];
+  terms: Partial<Record<TermKey, number>>;
+}
+
+/**
+ * Schema 3: FZP as written, plus additive rules and custom paint (spec 2026-10-31, section 3),
+ * and funding (spec 2026-11-09). Schema 2 had no `finance`.
  * `rules` give each lot `max(FZP, N)`, uncapped where they raise, whatever their order; `paint`
  * then sets `N` uncapped, in document order (a later stroke wins).
  */
 export interface SimLevers {
-  schema: 2;
+  schema: 3;
   rules: StoryEdit[];
   paint: StoryEdit[];
   protect: Protections;
@@ -55,6 +76,7 @@ export interface SimLevers {
   routeShares: Record<Pathway, number> | null; // null = observed pathwayForNew
   localProgramStreamlined: boolean;
   compare: Compare;
+  finance: FinanceLevers;
 }
 
 /** Numerical bounds only (plan 2 ruling 3): at 0.05 every table keeps C(K') <= 1 - 1e-6. Tier 4. */
@@ -65,14 +87,15 @@ export const MAX_SCALE = 10;
 const MAX_STORIES = 255;
 
 export const DEFAULT_LEVERS: SimLevers = {
-  schema: 2,
+  schema: 3,
   rules: [],
   paint: [],
   protect: { rentControl: false, historic: false, newerThanYears: null },
   timers: [],
   routeShares: null,
   localProgramStreamlined: true,
-  compare: 'preFzp'
+  compare: 'preFzp',
+  finance: { baselineScale: [], pools: [], programmes: [], terms: {} }
 };
 
 export class LeverFormatError extends Error {
@@ -92,7 +115,7 @@ function join(base: string, key: string): string {
   return base === '' ? key : `${base}.${key}`;
 }
 
-function record(
+export function record(
   v: unknown,
   path: string,
   keys: readonly string[],
@@ -107,7 +130,7 @@ function record(
   return r;
 }
 
-function array(v: unknown, path: string): unknown[] {
+export function array(v: unknown, path: string): unknown[] {
   if (!Array.isArray(v)) fail(path, 'expected an array');
   return v;
 }
@@ -205,17 +228,19 @@ export function parseSimLevers(json: unknown): SimLevers {
     'timers',
     'routeShares',
     'localProgramStreamlined',
-    'compare'
+    'compare',
+    'finance'
   ]);
-  if (r.schema !== 2) fail('schema', `expected 2, got ${String(r.schema)}`);
+  if (r.schema !== 3) fail('schema', `expected 3, got ${String(r.schema)}`);
   return {
-    schema: 2,
+    schema: 3,
     rules: array(r.rules, 'rules').map((x, i) => parseStoryEdit(x, `rules[${i}]`)),
     paint: array(r.paint, 'paint').map((x, i) => parseStoryEdit(x, `paint[${i}]`)),
     protect: parseProtections(r.protect),
     timers: array(r.timers, 'timers').map((x, i) => parseTimer(x, `timers[${i}]`)),
     routeShares: parseRouteShares(r.routeShares),
     localProgramStreamlined: bool(r.localProgramStreamlined, 'localProgramStreamlined'),
-    compare: oneOf(r.compare, 'compare', COMPARES)
+    compare: oneOf(r.compare, 'compare', COMPARES),
+    finance: parseFinanceLevers(r.finance, 'finance')
   };
 }

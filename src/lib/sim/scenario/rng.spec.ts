@@ -29,10 +29,18 @@ describe('counter-based draws', () => {
     expect(P.STAGE_TIME).toBe(12);
     expect(P.INIT).toBe(1);
     expect(P.PHASE_GAP).toBe(11);
+    expect(P.INIT_AFFORDABLE).toBe(7);
+    expect(P.INIT_DAY_AFFORDABLE).toBe(10);
+    expect(P.INIT_DAY).toBe(2);
+    expect(P.PATHWAY).toBe(3);
+    expect(P.PPA).toBe(4);
+    expect(P.SIZE).toBe(5);
+    expect(P.REV).toBe(8);
+    expect(P.REV_RATIO).toBe(9);
     const ids: number[] = Object.values(P);
     expect(new Set(ids).size).toBe(ids.length);
-    // 7 and 10 are reserved for Release 2; 17..23 were the retired stage redraws
-    for (const id of ids) expect(id === 7 || id === 10 || (id >= 17 && id <= 23)).toBe(false);
+    // 17..23 were the retired stage redraws
+    for (const id of ids) expect(id >= 17 && id <= 23).toBe(false);
   });
 
   it('stays strictly inside (0, 1)', () => {

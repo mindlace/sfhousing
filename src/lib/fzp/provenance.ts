@@ -4,7 +4,23 @@
  * come from `cumulativeIncidence` (tail included); nothing here re-derives them.
  */
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
+import {
+  AVERAGE_DRAWN,
+  DISPLACEMENT_RANGE,
+  DRAW_UP_FRONT,
+  LAND_PER_HOME,
+  MARKET_TERMS,
+  PROTOTYPES,
+  PROTOTYPE_BINNING,
+  TYPED_TERM_RANGES,
+  resolveTerms,
+  type ResolvedTerms,
+  type TermKey
+} from '$lib/sim/finance';
+import { MONEY_SOURCES } from '$lib/sim/scenario/finance-score';
+import { PIPELINE_FUNDED } from '$lib/sim/scenario/funding';
 import { marketLevel } from '$lib/sim/scenario/market';
+import { noSourcedValueText, termTitle, typedTermText } from '$lib/sim-page/funding-copy';
 import type { TimelineScore } from '$lib/sim/protocol';
 import { cumulativeIncidence } from '$lib/timelapse/model';
 import type { ProjectsFile } from '$lib/timelapse/projects';
@@ -21,7 +37,7 @@ import type {
 } from '$lib/timelapse/types';
 import { transitionSectionId, LOCAL_PROGRAM_SECTION_ID } from './card';
 import { MEASURE_SERIES, SERIES_NAME } from './chart';
-import { formatDate } from './format';
+import { formatDate, formatSourcePercent } from './format';
 import { MARKET_HOLD_SENTENCE, MARKET_INTRO_SENTENCE, marketShare } from './market-view';
 import { EXIT_LABEL, PATHWAY_LABEL, TIER_LABEL, inStageLabel } from './labels';
 
@@ -85,6 +101,20 @@ export const QUALITY_PARCEL_SENTENCE =
 export const QUALITY_LOAD_FAILED = "The list of data checks couldn't be loaded.";
 
 export const NOT_SF_NOTE = 'Not from San Francisco records.';
+
+/** Public money, fixed sentence (4.12; F8, OD-F10). */
+export const MONEY_ORDER_SENTENCE =
+  "Federal and state money count first. The City's sources share what is left, each in proportion to its share.";
+
+/** Public money, fixed sentence (4.12; ruling R8). */
+export const PARTIAL_MONEY_SENTENCE =
+  'Only a fully funded project is kept from stopping; partial money changes the chance of starting, not of finishing (ruling R8).';
+
+/** Public money, the loss sentence (4.12, OD-F8), worded from the resolved `lossOnExit`. */
+export const lossSentence = (lossOnExit: number): string =>
+  `If a funded project stops after construction starts, ${
+    lossOnExit >= 1 ? 'everything' : formatPercent(lossOnExit)
+  } spent or lent on it is counted as lost (assumption, tier 4): no record gives the loss on one abandoned project.`;
 
 const SHARE_MONTHS = [12, 24, 60] as const;
 const PERMIT_STAGES: readonly Stage[] = ['permitFiled', 'permitIssued', 'construction'];
@@ -224,24 +254,142 @@ function initiationSection(cal: Calibration): ProvSection {
   };
 }
 
-/** Today's market (spec 4.11). Only called with a market model. */
+/**
+ * Today's market (market-baseline 4.11, extended by funding-ui 4.12). Only called with a market
+ * model. The "In force" lines and the slope entry follow `marketLevel`, never a level of its own.
+ */
 function marketSection(cal: Calibration, market: MarketModel): ProvSection {
-  const { today, crossCheck } = market;
+  const { today, crossCheck, slope } = market;
   const level = marketLevel(cal);
   const line = (name: string, k: 'all' | 'private', inForce: string) =>
     `${name}: ${marketShare(cal, k)} of the average (log-odds ${coefText(today[k])}). ${
       level === k ? 'In force.' : inForce
     }`;
   const after = [
-    line('All starts', 'all', 'Not in force until public funding is modelled.'),
-    line('Private starts only', 'private', 'Not in force until public funding is modelled.'),
+    line(
+      'All starts',
+      'all',
+      "Not in force: today's public funding is modelled, so private starts run at their own level."
+    ),
+    // R-P5: as built, 'all' runs only when the data has no baseline funding (market.ts).
+    line(
+      'Private starts only',
+      'private',
+      'Not in force: this data has no public funding, so every start runs at one level.'
+    ),
     `Cross-check, not used: the Controller's development model, on its cost and price indices, puts today's odds at ${formatPercent(Math.exp(crossCheck.logOdds))} of the 2007 to 2025 average (research or literature, tier 3).`
   ];
+  const entries = [entry('src-market-today', "Today's level", today.provenance, { after })];
+  if (level === 'private') {
+    const { costCoefficient, priceCoefficient } = slope.crossChecks;
+    entries.push(
+      entry(
+        'src-market-slope',
+        "How strongly money moves a private project's odds",
+        slope.provenance,
+        {
+          after: [
+            "Closing a typical private project's whole uncovered cost returns its odds to the 2007 to 2025 average.",
+            `Cross-checks, not used: the Controller's cost coefficient gives ${coefText(costCoefficient)}, its price coefficient ${coefText(priceCoefficient)}, as a log-odds shift per 100% of construction cost (research or literature, tier 3).`
+          ]
+        }
+      )
+    );
+  }
   return {
     id: 'src-market',
     heading: "Today's market",
     intro: [MARKET_HOLD_SENTENCE],
-    entries: [entry('src-market-today', "Today's level", today.provenance, { after })],
+    entries,
+    tables: []
+  };
+}
+
+const TERM_KEYS = Object.keys(TYPED_TERM_RANGES) as TermKey[];
+
+/** MONEY_SOURCES entries the dialog names by what they are, not by their label. */
+const MONEY_SOURCE_ENTRY = new Map<Provenance, { id: string; title: string }>([
+  [PIPELINE_FUNDED, { id: 'src-money-pipeline', title: 'Projects already in the pipeline' }],
+  [
+    DISPLACEMENT_RANGE.provenance,
+    { id: 'src-money-displacement', title: 'Private homes funded projects take the place of' }
+  ]
+]);
+
+/**
+ * Public money (funding-ui 4.12): the sources of today's funding and of the finance model, with
+ * the three fixed sentences. Only with a market model and baseline funding. A typed term (in
+ * `terms.custom`) is listed as custom in place of its sourced entry; an unsourced term by its
+ * reason. `MONEY_SOURCES` already holds `DISPLACEMENT_RANGE`'s provenance, so it appears once.
+ */
+function moneySection(cal: Calibration, terms: ResolvedTerms): ProvSection | null {
+  const funding = cal.baselineFunding;
+  if (!cal.market || !funding) return null;
+  const entries: ProvEntry[] = funding.provenance.map((p, i) =>
+    entry(
+      `src-money-baseline-${i}`,
+      `Today's funding: ${funding.pools[i]?.label ?? 'income levels and sizes'}`,
+      p
+    )
+  );
+  if (cal.affordableRoutes) {
+    entries.push(
+      entry(
+        'src-money-routes',
+        'How fully funded affordable projects are approved',
+        cal.affordableRoutes.provenance
+      )
+    );
+  }
+  const short = 'What private buildings are short';
+  for (const p of PROTOTYPES) {
+    entries.push(entry(`src-money-prototype-${p.id}`, `${short}: prototype ${p.id}`, p.provenance));
+  }
+  entries.push(
+    entry(
+      'src-money-binning',
+      `${short}: which prototype a project is priced as`,
+      PROTOTYPE_BINNING.provenance
+    ),
+    entry('src-money-land', `${short}: land`, LAND_PER_HOME.provenance)
+  );
+  const termLines: string[] = [];
+  for (const key of TERM_KEYS) {
+    const term = MARKET_TERMS[key];
+    if (terms.custom.includes(key)) termLines.push(typedTermText(key));
+    else if ('reason' in term) termLines.push(noSourcedValueText(term.reason));
+    else {
+      entries.push(
+        entry(
+          `src-money-term-${key}`,
+          `Loan and guarantee terms: ${termTitle(key)}`,
+          term.provenance
+        )
+      );
+    }
+  }
+  entries.push(
+    entry('src-money-draw', 'How a construction loan is drawn', DRAW_UP_FRONT.provenance, {
+      after: [
+        `Assumption: ${formatSourcePercent(DRAW_UP_FRONT.value)} of a construction loan drawn at the start, the rest evenly over construction, so a loan's or a guarantee's saving is counted on ${formatSourcePercent(AVERAGE_DRAWN.value)} of it.`
+      ]
+    }),
+    entry('src-money-drawn', 'Average share of a loan that is out', AVERAGE_DRAWN.provenance)
+  );
+  MONEY_SOURCES.forEach((p, i) => {
+    const named = MONEY_SOURCE_ENTRY.get(p);
+    entries.push(entry(named?.id ?? `src-money-source-${i}`, named?.title ?? p.label, p));
+  });
+  return {
+    id: 'src-money',
+    heading: 'Public money',
+    intro: [
+      MONEY_ORDER_SENTENCE,
+      lossSentence(terms.lossOnExit ?? 1),
+      PARTIAL_MONEY_SENTENCE,
+      ...termLines
+    ],
+    entries,
     tables: []
   };
 }
@@ -382,9 +530,16 @@ function multiphaseSection(cal: Calibration, phasing: TimelineScore['phasing']):
 /**
  * Sections 1-9 of the dialog, in spec order. Section 9 only when the score has multi-phase
  * projects; sections 2 and 8 only once a score exists. Section 10 is rendered separately
- * (`qualityRows`). Simulated counts start on the calibration's `asOf`.
+ * (`qualityRows`). Simulated counts start on the calibration's `asOf`. `terms` are the shown
+ * levers' resolved market terms: Public money lists the typed ones and words its loss sentence
+ * from `lossOnExit`.
  */
-export function provenanceSections(cal: Calibration, score: TimelineScore | null): ProvSection[] {
+export function provenanceSections(
+  cal: Calibration,
+  score: TimelineScore | null,
+  terms: ResolvedTerms = resolveTerms()
+): ProvSection[] {
+  const money = moneySection(cal, terms);
   const out: ProvSection[] = [
     {
       id: 'src-how-to-read',
@@ -420,6 +575,7 @@ export function provenanceSections(cal: Calibration, score: TimelineScore | null
     transitionsSection(cal),
     initiationSection(cal),
     ...(cal.market ? [marketSection(cal, cal.market)] : []),
+    ...(money ? [money] : []),
     sizeSection(cal),
     revisionSection(cal),
     pathwaySection(cal)

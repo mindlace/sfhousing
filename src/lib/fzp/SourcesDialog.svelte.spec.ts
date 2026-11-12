@@ -6,6 +6,8 @@ import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { fixtureCalibration } from './fixtures/calibration';
 import { liveMarketCalibration } from './fixtures/market';
+import { resolveTerms } from '$lib/sim/finance';
+import { PIPELINE_FUNDED } from '$lib/sim/scenario/funding';
 import { PROJECTS_JSON, PROJECTS_JSON_NO_RULES } from './fixtures/projects';
 import { FIX_ASOF, TIMELINE_SCORE, TIMELINE_SCORE_NO_PHASING } from './fixtures/timeline-score';
 import { formatDate } from './format';
@@ -345,5 +347,52 @@ describe("today's market", () => {
     const section = byId('src-market');
     expect(section.textContent).toContain("Today's market");
     expect(section.textContent).not.toContain(NOT_SF_NOTE);
+  });
+
+  it('extended src-market and src-money render with links', async () => {
+    const live = liveMarketCalibration();
+    const terms = resolveTerms(undefined, { lossOnExit: 0.5, constructionRate: 0.07 });
+    await setup({ calibration: live, terms });
+    await openIt();
+    const slope = byId('src-market-slope');
+    expect(slope.textContent).toContain("How strongly money moves a private project's odds");
+    expect(slope.textContent).toContain(
+      "Cross-checks, not used: the Controller's cost coefficient"
+    );
+    expect(slope.textContent).not.toContain(NOT_SF_NOTE);
+    const slopeSrc = live.market!.slope.provenance.sources[0];
+    expect(
+      [...slope.querySelectorAll('a')]
+        .find((a) => a.textContent?.includes(slopeSrc.label))
+        ?.getAttribute('href')
+    ).toBe(slopeSrc.url);
+    expect(byId('src-market').textContent).toContain(
+      "Not in force: today's public funding is modelled, so private starts run at their own level."
+    );
+
+    const money = byId('src-money');
+    expect(money.querySelector('h3')?.textContent).toBe('Public money');
+    expect(money.textContent).toContain(
+      'If a funded project stops after construction starts, 50% spent or lent on it'
+    );
+    expect(money.textContent).toContain('Construction loan rate: your value (custom, not sourced)');
+    expect(money.textContent).toContain('Loss on exit: your value (custom, not sourced)');
+    const pipeline = byId('src-money-pipeline');
+    expect(pipeline.textContent).toContain(PIPELINE_FUNDED.label);
+    expect(pipeline.textContent).toContain(NOT_SF_NOTE);
+    // Every src-money entry's sources are links.
+    const expected = provenanceSections(live, TIMELINE_SCORE, terms).find(
+      (s) => s.id === 'src-money'
+    )!;
+    let links = 0;
+    for (const e of expected.entries) {
+      const el = byId(e.id);
+      for (const src of e.prov.sources) {
+        const a = [...el.querySelectorAll('a')].find((x) => x.textContent?.includes(src.label));
+        expect(a?.getAttribute('href'), e.id).toBe(src.url);
+        links++;
+      }
+    }
+    expect(links).toBeGreaterThan(5);
   });
 });

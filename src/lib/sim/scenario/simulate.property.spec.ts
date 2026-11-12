@@ -2,7 +2,6 @@
 // AC 1), and the fast path: `simulateNet` must equal the score of `simulateDetailed` exactly
 // (§4.4.7) on every month of all three net series.
 import { describe, expect, it } from 'vitest';
-import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile, type InFlightProject } from '$lib/timelapse/projects';
 import {
@@ -15,15 +14,18 @@ import {
 import { dayOf } from './dates';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniCity } from './fixtures/mini-parcels';
+import { selectRows } from './fixtures/select-rows';
 import { MINI_AS_OF, MINI_HORIZON, miniProjectsJson } from './fixtures/mini-projects';
+import { benchBaseline } from './fixtures/bench-finance';
+import { tinyQueue } from './fixtures/tiny-queue';
 import { buildSimInput } from './input';
 import { applyPolicies, baseZoning } from './policy';
 import { monthsOf, netOf, shownSeries, type NetSeries } from './score';
 import { simulateDetailed, simulateNet } from './simulate';
+import { financeGoldenInput } from './simulate.finance.golden.cases';
 import type { Schedule, SimInput } from './types';
 
 const H = MINI_HORIZON;
-const F = FILL_LEVELS.length;
 const SEEDS = Array.from({ length: 50 }, (_, i) => i + 1);
 
 const miniCalibration = (): Calibration =>
@@ -254,87 +256,42 @@ describe('simulateNet equals the score of simulateDetailed (§4.4.7)', () => {
   });
 });
 
+describe('simulateNet equals the score of simulateDetailed on a run with funding', () => {
+  const months = monthsOf(MINI_AS_OF, H);
+  // the five-lot city with the bench baseline (spec 4.17); every lot reaches its 70 homes
+  const small = (): SimInput => {
+    const q = tinyQueue({ logOdds: [-1, -1, -1, -1, -1], units: [70, 80, 90, 100, 120] });
+    return { ...q, finance: benchBaseline(q.asOf) };
+  };
+  const cases: [string, () => SimInput][] = [
+    ['finance golden input', financeGoldenInput],
+    ['small city, the bench baseline', small]
+  ];
+  for (const [name, make] of cases) {
+    it(`${name}: all three series, every month, seeds 1..50`, () => {
+      const inp = make();
+      const bad: string[] = [];
+      let funded = 0;
+      for (const seed of SEEDS) {
+        const net = simulateNet(inp, seed, H, months);
+        const detailed = simulateDetailed(inp, seed, H);
+        funded += detailed.schedules.filter((x) => x.funding).length;
+        const ref = netOf(shownSeries(detailed, inp.asOf, H, months));
+        for (const k of SERIES) {
+          const a = Array.from(net[k]);
+          const b = Array.from(ref[k]);
+          const i = a.findIndex((v, j) => v !== b[j]);
+          if (i >= 0) bad.push(`seed ${seed} ${k}[${i}]: ${a[i]} vs ${b[i]}`);
+        }
+      }
+      expect(bad).toEqual([]);
+      expect(funded).toBeGreaterThan(0);
+    });
+  }
+});
+
 /** Every Schedule by id. */
 const byId = (ss: Schedule[]) => new Map(ss.map((s) => [s.projectId, s]));
-
-/**
- * A copy of `p` with rows `rows` of the source (in that order) and the given ids: duplicating a
- * row under a new id adds a parcel. Every column is selected by row; `cells` collapses to the
- * single cell `cellOf` names per output row (the engine never reads cells).
- */
-function selectRows(
-  p: ScenarioParcels,
-  rows: number[],
-  ids: string[],
-  cellOf: (j: number) => string
-): ScenarioParcels {
-  const n = rows.length;
-  const pick = <
-    T extends Float64Array | Float32Array | Uint8Array | Uint16Array | Uint32Array | Int16Array
-  >(
-    col: T,
-    stride: number
-  ): T => {
-    const out = new (col.constructor as new (n: number) => T)(n * stride);
-    for (let j = 0; j < n; j++)
-      out.set(col.subarray(rows[j] * stride, (rows[j] + 1) * stride), j * stride);
-    return out;
-  };
-  const cellIds = [...new Set(rows.map((_, j) => cellOf(j)))];
-  const cell = new Uint16Array(n);
-  for (let j = 0; j < n; j++) cell[j] = cellIds.indexOf(cellOf(j));
-  const cells = cellIds.map((cellId, c) => {
-    const start = cell.indexOf(c);
-    return { cellId, start, count: cell.filter((x) => x === c).length };
-  });
-  const out: ScenarioParcels = {
-    ...p,
-    count: n,
-    cells,
-    id: ids,
-    index: new Map(ids.map((id, j) => [id, j])),
-    labelPoint: pick(p.labelPoint, 2),
-    cell,
-    district: pick(p.district, 1),
-    envelopeStories: pick(p.envelopeStories, 1),
-    baseStories: pick(p.baseStories, 1),
-    localProgram: pick(p.localProgram, 1),
-    hostable: pick(p.hostable, 1),
-    eligible: pick(p.eligible, 1),
-    split: pick(p.split, 1),
-    imputed: pick(p.imputed, 1),
-    baseCap: pick(p.baseCap, 1),
-    existingUnits: pick(p.existingUnits, 1),
-    existingFloorAreaM2: pick(p.existingFloorAreaM2, 1),
-    existingStories: pick(p.existingStories, 1),
-    lotAreaM2: pick(p.lotAreaM2, 1),
-    yearBuilt: pick(p.yearBuilt, 1),
-    improvementShare: pick(p.improvementShare, 1),
-    rentControlLikely: pick(p.rentControlLikely, 1),
-    landUseClass: pick(p.landUseClass, 1),
-    hostableBase: pick(p.hostableBase, 1),
-    baseYield: pick(p.baseYield, F),
-    yield: pick(p.yield, F),
-    potentialRatio: { fzp: pick(p.potentialRatio.fzp, 1), base: pick(p.potentialRatio.base, 1) },
-    storiesGap: { fzp: pick(p.storiesGap.fzp, 1), base: pick(p.storiesGap.base, 1) }
-  };
-  // a column added to ScenarioParcels later and not listed above would keep the source's length
-  // through `...p` and misalign every row: make that loud
-  const columns = (o: object, at: string): [string, ArrayBufferView & { length: number }][] =>
-    Object.entries(o).flatMap(([k, v]) =>
-      ArrayBuffer.isView(v)
-        ? [[`${at}${k}`, v as ArrayBufferView & { length: number }]]
-        : v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Map)
-          ? columns(v, `${at}${k}.`)
-          : []
-    );
-  const src = new Map(columns(p, ''));
-  for (const [k, col] of columns(out, '')) {
-    const stride = src.get(k)!.length / p.count;
-    if (col.length !== n * stride) throw new Error(`selectRows: column ${k} was not selected`);
-  }
-  return out;
-}
 
 describe('unrelated input changes never alter another schedule (AC 1)', () => {
   // A high hazard, so most hostable parcels carry simulated projects the changes could disturb.

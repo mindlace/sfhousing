@@ -15,6 +15,7 @@ import {
   LeverFormatError,
   parseSimLevers,
   type Compare,
+  type FinanceLevers,
   type SimLevers,
   type StoryEdit,
   type TimerEdit
@@ -55,7 +56,7 @@ export interface CategoryProtections {
 }
 
 export interface SimPolicy {
-  schema: 2;
+  schema: 3;
   /** New zoning rules, in list order. */
   rules: ZoningRule[];
   /** Custom painting, in stroke order: a later brush wins. */
@@ -63,6 +64,8 @@ export interface SimPolicy {
   protect: CategoryProtections;
   /** The permitting timing set and its saved snapshot (`timing.ts`). */
   timing: SimTiming;
+  /** The user's funding levers: baseline scale, added pools and programmes, typed terms. */
+  funding: FinanceLevers;
 }
 
 /**
@@ -107,11 +110,12 @@ function fail(path: string, message: string): never {
 
 /** The page's starting policy: FZP as written, no rules or painting, no protections, observed timing. */
 export const DEFAULT_POLICY: SimPolicy = {
-  schema: 2,
+  schema: 3,
   rules: [],
   custom: [],
   protect: { rentControl: false, historic: false, newerThanYears: null },
-  timing: { current: structuredClone(OBSERVED_TIMING.current), saved: null }
+  timing: { current: structuredClone(OBSERVED_TIMING.current), saved: null },
+  funding: structuredClone(DEFAULT_LEVERS.finance)
 };
 
 /** The policy without its saved timing snapshot. */
@@ -232,7 +236,7 @@ function parseCustom(v: unknown, path: string): CustomBrush {
 }
 
 /** One lever field through the lever parser's full check, re-pathed under `path`. */
-function viaLevers<K extends 'timers' | 'routeShares'>(
+function viaLevers<K extends 'timers' | 'routeShares' | 'finance'>(
   field: K,
   v: unknown,
   path: string
@@ -386,11 +390,17 @@ function parseTiming(v: unknown, mode: PresetLayerMode): SimTiming {
  */
 export function parseSimPolicy(
   json: unknown,
-  opts: { presetLayer?: PresetLayerMode } = {}
+  opts: { presetLayer?: PresetLayerMode; schema2?: 'upgrade' } = {}
 ): SimPolicy {
   const mode = opts.presetLayer ?? 'strict';
-  const r = rec(json, '', ['schema', 'rules', 'custom', 'protect', 'timing']);
-  if (r.schema !== 2) fail('schema', `expected 2, got ${String(r.schema)}`);
+  const upgrade = opts.schema2 === 'upgrade';
+  const want = upgrade ? 2 : 3;
+  const keys = ['schema', 'rules', 'custom', 'protect', 'timing'];
+  // The schema is checked before the keys, so a document of the other schema names the schema.
+  const seen = (json as { schema?: unknown } | null)?.schema;
+  if (typeof json === 'object' && json !== null && !Array.isArray(json) && seen !== want)
+    fail('schema', `expected ${want}, got ${String(seen)}`);
+  const r = rec(json, '', upgrade ? keys : [...keys, 'funding']);
   const pr = rec(r.protect, 'protect', ['rentControl', 'historic', 'newerThanYears']);
   const n = pr.newerThanYears;
   if (n !== null && (typeof n !== 'number' || !Number.isFinite(n) || n <= 0))
@@ -414,7 +424,7 @@ export function parseSimPolicy(
   rules.forEach((x) => once('rules')(x.rule, x.i));
   custom.forEach(once('custom'));
   return {
-    schema: 2,
+    schema: 3,
     rules: rules.map((x) => x.rule),
     custom,
     protect: {
@@ -422,7 +432,10 @@ export function parseSimPolicy(
       historic: bool(pr.historic, 'protect.historic'),
       newerThanYears: n
     },
-    timing
+    timing,
+    funding: upgrade
+      ? structuredClone(DEFAULT_POLICY.funding)
+      : viaLevers('finance', r.funding, 'funding')
   };
 }
 
@@ -550,12 +563,13 @@ export function compileLevers(p: SimPolicy, lots: Lots): SimLevers | null {
   const paint = paintEdits(p, lots);
   if (rules === null || paint === null) return null;
   return {
-    schema: 2,
+    schema: 3,
     rules,
     paint,
     protect: { ...p.protect },
     ...compileTiming(p.timing.current),
-    compare: isDefaultPolicy(p) ? 'preFzp' : 'fzp'
+    compare: isDefaultPolicy(p) ? 'preFzp' : 'fzp',
+    finance: structuredClone(p.funding)
   };
 }
 

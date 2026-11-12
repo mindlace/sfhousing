@@ -164,7 +164,21 @@ describe('baselineFunding on the live file', () => {
   it('repeats each City note and the state and federal methods in the provenance', () => {
     expect(bf.provenance).toHaveLength(bf.pools.length + 1);
     live.city.sources.forEach((s, i) => {
-      expect(bf.provenance[i].tier).toBe(1);
+      expect(bf.provenance[i].tier).toBe(2);
+      const method = bf.provenance[i].method;
+      const recorded = method.indexOf('Recorded (tier 1): ');
+      const inferred = method.indexOf(
+        'Inferred (tier 2): Exhibit F gives one figure for the City and no split by source. ' +
+          'This source is taken to pay in proportion to its FY2024-25 spending: '
+      );
+      expect(recorded).toBe(0);
+      expect(inferred).toBeGreaterThan(recorded);
+      const held =
+        'The amount is held level from the first inflow, with no end (an assumption, not a ' +
+        'forecast).';
+      expect(method.indexOf(held)).toBeGreaterThan(inferred);
+      expect(method.indexOf('First inflow on asOf')).toBeGreaterThan(method.indexOf(held));
+      expect(method.indexOf(s.note)).toBeGreaterThan(method.indexOf(held));
       expect(bf.provenance[i].method).toContain(s.note);
       expect(bf.provenance[i].method).toContain('FY2024-25 dollars, not adjusted');
       expect(bf.provenance[i].label).toBe(
@@ -183,22 +197,41 @@ describe('baselineFunding on the live file', () => {
       if (s.debt === null) expect(bf.provenance[i].method).not.toContain('Debt terms');
     });
     const debt = live.city.sources[0].debt!;
-    expect(bf.provenance[0].method).toContain(
-      `Debt terms: rate 6.0%, 20 years (p. 106, Exhibit 40: '${debt.cite.quote}'), the ` +
-        "Analyst's assumption (tier 2); repayment is nominal."
-    );
+    expect(
+      bf.provenance[0].method.endsWith(
+        `Debt terms: rate 6.0%, 20 years (p. 106, Exhibit 40: '${debt.cite.quote}'), the ` +
+          "Analyst's assumption (tier 2); repayment is nominal."
+      )
+    ).toBe(true);
     expect(bf.provenance[6].tier).toBe(2);
     expect(bf.provenance[6].method).toContain(live.state.method);
-    expect(bf.provenance[7].tier).toBe(2);
-    expect(bf.provenance[7].method).toContain(live.federal.method);
-    expect(bf.provenance[7].method).toContain(
-      'uncapped: no ceiling binds San Francisco in the 2026 award records'
-    );
-    expect(bf.provenance[7].method).toContain('FY2024-25 dollars, not adjusted');
-    expect(bf.provenance[7].method).toContain(
-      'n and window describe the 2024–2025 new-construction award rows of the check'
-    );
-    expect(bf.provenance[7].method).toContain("the design's evidence digest");
+    const federal = bf.provenance[7];
+    expect(federal.tier).toBe(2);
+    expect(federal.label).toBe('Federal: low-income housing tax credits: uncapped');
+    expect(federal.method.startsWith(live.federal.method)).toBe(true);
+    const award =
+      'Of the 15 new-construction awards of 2024–2025, 14 used the 4% credit (1,925 of 1,960 ' +
+      'homes).';
+    expect(federal.method).toContain(`${live.federal.method} ${award} Share: `);
+    expect(federal.method.endsWith('FY2024-25 dollars, not adjusted.')).toBe(true);
+    expect(federal.method).not.toContain('evidence digest');
+    expect(federal.sources).toEqual([
+      {
+        label: `${live.federal.cite.label}, ${live.federal.cite.page}`,
+        url: live.federal.cite.url
+      },
+      ...live.federal.uncapped.cites.map((c) => ({ label: `${c.label}, ${c.page}`, url: c.url }))
+    ]);
+    expect(federal.sources).toHaveLength(4);
+    expect(federal.n).toBe(live.federal.uncapped.rounds);
+    expect(federal.n).toBe(3);
+    expect(federal.window).toEqual(live.federal.uncapped.window);
+    expect(federal.window).toEqual(['2026-01-01', '2026-09-14']);
+    for (const p of bf.provenance.slice(0, 8)) expect(p.tier).toBe(2);
+    expect(bf.provenance.some((p) => p.tier === 1)).toBe(false);
+    for (const p of [...bf.provenance, bf.check.provenance]) {
+      expect(p.method).not.toMatch(/rests on .*not on a source listed/);
+    }
     const last = bf.provenance[8];
     expect(last.tier).toBe(0);
     expect(last.sources).toEqual([
@@ -349,6 +382,25 @@ describe('baselineFunding in a fixture build', () => {
       expect(p.tier).toBe(4);
       expect(p.label).toMatch(/^Fixture \(tier 4\): /);
     }
+  });
+
+  it("takes the federal entry's n, window and sources from federal.uncapped", () => {
+    const federal = bf.provenance[7];
+    expect(federal.n).toBe(1);
+    expect(federal.window).toEqual(['2026-01-01', '2026-01-01']);
+    expect(federal.sources).toEqual([
+      {
+        label: 'Fixture: invented funding (tier 4), Exhibit F',
+        url: 'https://fixture.invalid/funding'
+      },
+      {
+        label: 'Fixture: invented allocation record (tier 4), fixture',
+        url: 'https://fixture.invalid/funding'
+      }
+    ]);
+    expect(
+      federal.method.startsWith('The fixture pool is uncapped; invented (tier 4). Of the 2 ')
+    ).toBe(true);
   });
 
   it('has the funding shape funding-ui needs', () => {

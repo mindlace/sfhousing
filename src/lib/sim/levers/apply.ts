@@ -14,6 +14,7 @@ import { chanceTable, typicalMonths } from '$lib/timelapse/model';
 import { applyPolicies, baseZoning } from '../scenario/policy';
 import { REFERENCES } from '../scenario/score';
 import type { SimInput, TimelineScore } from '../scenario/types';
+import { buildFinance } from './finance';
 import type { LayerCtx } from './layers';
 import {
   allNeeds,
@@ -69,10 +70,13 @@ function planOf(base: SimInput, ctx: LayerCtx, levers: SimLevers, filled: Resolu
   // calibration as well would apply every timer twice.
   const plan = bare(applyPolicies([envelopeOp(filled.plan.table, lp)], base));
   const newCal = applyPolicies([routeSharesOp(levers.routeShares)], plan).calibration;
+  // No baseline finance leaves the key out, so a run without public money is as before (F9).
+  const finance = buildFinance(base.finance, levers.finance, base.asOf);
   return {
     ...plan,
     newProjects: { calibration: newCal, scale: scaleTable(levers.timers, 'new') },
-    ...(isIdentity(inFlight) ? {} : { inFlightScale: inFlight })
+    ...(isIdentity(inFlight) ? {} : { inFlightScale: inFlight }),
+    ...(finance === undefined ? {} : { finance })
   };
 }
 

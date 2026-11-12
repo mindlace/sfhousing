@@ -15,6 +15,9 @@
   import { formatDate, formatMonthYear } from './format';
   import { monthIndex } from './time';
   import MapKey from './MapKey.svelte';
+  import MoneyResults from './MoneyResults.svelte';
+  import { resolveTerms } from '$lib/sim/finance';
+  import type { ResolvedTerms } from '$lib/timelapse/types';
   import ScoreChart from './ScoreChart.svelte';
   import {
     CALCULATING,
@@ -55,6 +58,12 @@
     stale?: boolean;
     /** Today's market, in words (spec 4.11); `null` renders nothing. */
     market?: string | null;
+    /** A revision is pending (/sim): the money and tier blocks carry aria-busy (4.11). */
+    pending?: boolean;
+    /** The resolved market terms of the shown levers: the lost-grants line reads `lossOnExit`. */
+    terms?: ResolvedTerms;
+    /** Ids of the pools whose `Pool.uncapped` is true (baseline and levers): "no limit" (4.11). */
+    uncapped?: ReadonlySet<string>;
   }
   let {
     score,
@@ -75,7 +84,10 @@
     copy = scoreCopy(null),
     capacity = null,
     stale = false,
-    market = null
+    market = null,
+    pending = false,
+    terms = resolveTerms(),
+    uncapped = new Set()
   }: Props = $props();
 
   /**
@@ -175,6 +187,16 @@
       {/if}
     </section>
 
+    <MoneyResults
+      {score}
+      i={at.monthIndex}
+      at={score.months[at.monthIndex]}
+      {terms}
+      {pending}
+      {uncapped}
+      part="money"
+    />
+
     <ScoreChart {score} {asOf} {horizon} {day} {highWater} />
 
     <div class="mt-4">
@@ -187,6 +209,15 @@
         {/if}
       {/each}
     </div>
+
+    <MoneyResults
+      {score}
+      i={at.monthIndex}
+      at={score.months[at.monthIndex]}
+      {terms}
+      {pending}
+      part="tiers"
+    />
 
     <dl class="mt-4 space-y-1 text-sm">
       <div class="flex justify-between gap-3">

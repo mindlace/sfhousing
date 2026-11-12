@@ -101,10 +101,9 @@ describe('summary-view', () => {
     // every band value at or above zero: the axis starts at zero
     expect(extraChartModel(nonNegative(fx), L).yMin).toBe(0);
     expect(extraChartModel(withP10(nonNegative(fx), -30), L).yMin).toBeLessThan(0);
-    // fixture-0 under today's market: paired runs where the plan's reservations block projects the
-    // baseline builds (bySource.parking < 0), so a real negative value reaches below zero
-    expect(Math.min(...fx.extra.mean, ...fx.extra.p10)).toBeLessThan(0);
-    expect(extraChartModel(fx, L).yMin).toBeLessThan(0);
+    // fixture-0 has no negative mean or p10, so its axis does not go below zero
+    expect(Math.min(...fx.extra.mean, ...fx.extra.p10)).toBeGreaterThanOrEqual(0);
+    expect(extraChartModel(fx, L).yMin).toBe(0);
     expect(extraChartModel(fx, L).yMax).toBeGreaterThanOrEqual(Math.max(...fx.extra.p90));
   });
   it('yearIndexAt clamps to the year ends', () => {

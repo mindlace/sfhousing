@@ -324,7 +324,13 @@ Each future's extra homes are split by source (spec "Goals" 2):
 - **other**: the rest, so the parts add to the whole.
 
 A market schedule counts to the source of its first parcel (smallest id); a parcel parcels.bin
-lacks counts as other. The summary's means are integer sums over seeds divided by the seed count,
+lacks counts as other. Before Release 2, other was 0 at every year. From Release 2 it can be
+non-zero. With the baseline funding, every lot competes for one shared pool treasury and one
+waiting line (`src/lib/sim/scenario/funded.ts`, the `Treasury` and the line). The plan arm's
+reservations and regimes change which lots apply and when, so funded affordable awards move onto
+ordinary lots that neither a reservation nor a transit unlock touches
+(`sourceOfRows` and `sourceOf` in `pipeline/lib/lesscars/runs.ts`). Those homes count as other.
+On `2026-11-10-fdc69172`, other is 411 at 2068 (see "Release 2: baseline funding"). The summary's means are integer sums over seeds divided by the seed count,
 so the four sources add to the total exactly; the band is the nearest-rank p10, p50 and p90 of the
 per-seed differences. The representative seed is the pair whose 2068 difference is the median;
 its plan arm is the stored timeline.
@@ -427,7 +433,8 @@ Built 2026-11-02 on the owner's laptop (Apple Silicon Mac) as `2026-11-02-39fbf0
 - **Headline at 2068:** mean +7,786 extra homes (p10 7,062, p50 7,883, p90 8,211); plan 97,840
   against baseline 90,054.
 - **2068 by source** (largest-remainder rounding, as the page shows it, summing to 7,786): freed
-  1,684; parking 5,988; transit-unlocked 114; other 0.
+  1,684; parking 5,988; transit-unlocked 114; other 0 (0 on every build before Release 2; 411 on
+  `2026-11-10-fdc69172`, see "Release 2: baseline funding").
 - **Regimes:** `summary.regimeDays` are 2032-01-31, 2034-01-01, 2035-01-01, 2041-01-01 and
   2044-01-01.
 - **Report counts:** `lesscars.sites` 40; `lesscars.sites.zero_yield` 3;
@@ -490,7 +497,8 @@ after the live check (the freeway-road split rule; `19222002` and six lots moved
   116,181 against baseline 87,100 (`70dfa769`: +29,361, plan 116,461; the baseline is unchanged). v1 was +7,786 (plan 97,840, baseline
   90,054).
 - **2068 by source** (largest-remainder rounding, as the page shows it, summing to 29,081): freed
-  22,947 (23,227); parking 6,020; transit-unlocked 114; other 0.
+  22,947 (23,227); parking 6,020; transit-unlocked 114; other 0 (this build; Release 2's
+  `2026-11-10-fdc69172` has other 411).
 - **Freed homes basis:** the 22,947 freed homes are built under the plan's freed-land regime: each
   site takes its neighbours' zoning or SB 79, whichever allows more, as it stands at the phase's
   build start, at top fill. They are not today's FZP yield on the same parcels, which is 7,650
@@ -597,7 +605,7 @@ errors.
 `/lesscars` on `0d40e1e2` passed these checks, at 1280 and 375 px:
 
 - **Headline and details:** +29,081 homes by 2068, band +28,371 to +29,505. The four parts (freed
-  22,947; parking 6,020; transit-unlocked 114; other 0) add to it. The disclosure reads "38.9 ha
+  22,947; parking 6,020; transit-unlocked 114; other 0 on this build, 411 from Release 2) add to it. The disclosure reads "38.9 ha
   of former freeway land and 4.3 ha of former roadway", and the garage line "take the place of
   982 homes".
 - **Timeline and Evidence:** the timeline has 68 rows, 22 plus "Parking conversions (46)", with
@@ -674,8 +682,29 @@ spread it from the base, so both arms run on it. Compared with the production da
 - **Totals at 2068:** plan 94,287 (116,212) against baseline 64,938 (87,116). Both arms build about
   22,000 fewer homes on today's market; the difference between them barely moves.
 - **2068 by source** (means): freed 22,959 (22,959); parking 6,333 (6,018); transit-unlocked 57 (119);
-  other 0.
+  other 0 (411 from Release 2, below).
 - No year's mean extra is below zero by more than 0.01 home, and p10 never drops below 0.
+
+## Release 2: baseline funding
+
+From Release 2 the build step's runs carry the dataset's baseline funding (`SimInput.finance`, set by
+`buildSimInput` from `calibration.baselineFunding`) on the private-starts level, both arms alike, so
+the plan and the baseline run on the same money and the same market ([finance-engine.md](finance-engine.md)).
+Its pools are spent by funded starts that the engine draws beside the ordinary ones.
+
+Built 2026-11-12 as `2026-11-10-fdc69172` (Apple M5 Pro), from the archive (`fetch --restore`)
+with the unchanged v1.1 plan. Every invariant passed, and V35 reads `68 projects, 166 sites, 41 year
+ends`. `timings.lesscars` was 9,886 ms. The figures in brackets are Release 1's
+`2026-11-10-3532a348`:
+
+- **Headline at 2068:** mean +29,241 extra homes (+29,349); p10 28,724 (28,912), p50 29,212
+  (29,428), p90 29,916 (29,647). 101 seeds, representative seed 75 (55).
+- **Totals at 2068:** plan 119,399 (94,287) against baseline 90,158 (64,938). Both arms build
+  about 25,200 more homes on the baseline funding, and the difference between them barely moves.
+- **2068 by source** (means): freed 22,959 (22,959); parking 5,814 (6,333); transit-unlocked 57
+  (57); other 411 (0). Other is now non-zero because the arms share one pool treasury and one line
+  (see "Paired runs and attribution").
+- The lowest yearly mean extra is −0.03 home, and p10 never drops below 0.
 
 ## Freeway land
 

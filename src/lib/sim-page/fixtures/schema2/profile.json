@@ -1,0 +1,49 @@
+{
+  "schema": 2,
+  "kind": "sim",
+  "datasetVersion": "2026-11-08-91736640",
+  "title": "Profile policy",
+  "policy": {
+    "schema": 2,
+    "rules": [
+      {
+        "id": "r1",
+        "kind": "transit",
+        "stopTypes": ["regionalRail", "metro"],
+        "bands": [
+          { "maxM": 402, "stories": 8 },
+          { "maxM": 805, "stories": 5 }
+        ]
+      }
+    ],
+    "custom": [
+      {
+        "id": "c1",
+        "kind": "paint",
+        "strokes": [
+          {
+            "path": [
+              [-122.4194, 37.7599],
+              [-122.415, 37.762],
+              [-122.41, 37.764]
+            ],
+            "radiusM": 150
+          }
+        ],
+        "stories": 10
+      }
+    ],
+    "protect": { "rentControl": true, "historic": true, "newerThanYears": null },
+    "timing": {
+      "current": {
+        "preset": "observed",
+        "presetTimers": [],
+        "presetRouteShares": null,
+        "edits": [],
+        "routeShares": null,
+        "localProgramStreamlined": true
+      },
+      "saved": null
+    }
+  }
+}

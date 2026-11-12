@@ -75,6 +75,8 @@ Every notice is a pill (`PILL` in `src/lib/shell/pill.ts`) in one stack, `Notice
 | `selectRank(p)`   | the run slider's select: shows the run at tick `p` (0 = Best; the median tick is the representative future), through the same latest-wins switch                   |
 | `switchTrace`     | the latest run switch's `performance.now()` stamps (`requestedAt`, `answeredAt`, `completeAt`); `null` before any                                                  |
 
+`__sfhFzp.score` now carries `tiers` on every run and `money` on a funded run.
+
 `window.__sfhMap` (`src/lib/map/debug.ts`) gives the MapLibre map. Test helpers: `e2e/helpers/sharing.ts` (`jumpAndIdle`, `projectToPage`, `FRAME`, `headerAction`, `openHeaderMenu`) and `e2e/helpers/a11y.ts`. The specs are `e2e/fzp.spec.ts`, `e2e/fzp-sim.spec.ts` and, for `/sim`'s own controls, `e2e/sim.spec.ts`.
 
 ## /sim props: `view`, `onmanifest`, `onheights`, `onchunks` and `cards`
@@ -95,6 +97,7 @@ Every notice is a pill (`PILL` in `src/lib/shell/pill.ts`) in one stack, `Notice
 - **Summaries are latest-wins** (`summary-request.ts`). One `SummaryRequester` per surface (card, tooltip): at most one request in flight and one queued behind it, and only the latest query's answer reaches the UI. While a card is on show, a request for the same parcel and project keeps it on show until the answer replaces it (no flash of "loading" on every month). A `not-loaded` answer is retried on each worker `chunks` message.
 - **Card placement** (sim-ux plan 4, Task 5). From md the card opens beside the clicked building, not in a fixed spot; below md it stays the bottom sheet above. FzpMode keeps the tap's `{ x, y, lngLat, parcelId }` (`TimelinePick`'s `x`/`y` are map-container px; `lngLat` is `map.unproject` of them) and the card's measured box (`ProjectCardPanel`'s `onsize`, a `ResizeObserver` on the card), and hands `ProjectCardPanel` an `anchor` `{ left, top, maxHeight }` from `cardPlacement(anchor, size, area)` (`card-place.ts`): right of the point by 16 px, or left of it when that overflows the area's right edge, vertically centred on it, clamped 8 px inside the area (the left and top edges win for a card taller than the area). The area is `cardArea(map, pills, dockW, scrubberH, controls)`: its left is `--dock-w` (read from the `.sfh-fzp` host's computed style, where `Dock` declares it in px) or, when it reaches further, the right edge of MapLibre's bottom-left controls (zoom and compass, `controls.left`); its right is the run slider's left edge while the slider shows (`controls.right`, px from the map's right edge, measured from `data-testid="run-slider-box"`), else the map's right edge; its bottom is above the time bar (`--fzp-scrubber-h`) or the bottom-right controls' footprint (`--map-controls-br-block-size` on `:root`, read from its inline value, `controls.bottom`), whichever stands higher, so a tall card never covers the attribution links (WCAG 2.4.11); and its top is the bottom of the notice-pill stack while a pill shows (`NoticePills` binds its element; from md the stack overlays the map's top, so a card never covers a pill; below md it is in flow above the map and a card is a sheet anyway). While a card is open `watchCardArea` (`card-area-watch.ts`) re-measures the area, once per frame, on only these: a `ResizeObserver` on the map box, the pill stack, the bottom-left controls and the run slider's box (a pill appearing takes the stack's height from 0), a child-list `MutationObserver` on the dock element alone (its panel and rail swap; `--dock-w` follows), and a style-attribute observer on `:root` that reacts only to the footprint's inline values changing. Nothing in the map's subtree is observed, so the scrubber's readout during playback and tooltip text cost nothing here. The card also follows its building: while open, FzpMode listens to the map's `move`, and once per frame reprojects the stored `lngLat` (`map.project`) into a new anchor point and places the card again, clamped as usual when the building leaves the area; the card is never closed by a pan or zoom, and the listener goes with the card. The anchor reaches the card as `--card-left`, `--card-top` and `--card-max-h` custom properties that only the `md:` classes read, so a phone sheet ignores it; with no anchor (null) the card keeps the fixed spot right of the dock. Closing the card forgets the tap.
 - **"Allowed by"** (`ownerName`). With the `ownerName` prop FzpMode shows `Allowed by: {name}` (`data-testid="card-allowed-by"`) after the card's size line, from the `limits.owner` that `parcelSummary` carries (`SummaryState` `project` has `limits?: LotLimits`) and the tap's parcel. `/sim` passes `ownerLabel(owner, lot, policy, lots)` (`sim-page/selection.ts`): "Near Muni Metro" (`layerName`) for a rule still in the policy, "Painted 8 stories" for paint (`paintBrushOf`, `rowName`), and null for FZP, a rule that has left the policy or paint it cannot place (the worker's limits can be a revision behind), so then there is no line. `/fzp` has no lever session, so no owner and no line.
+- **"Funded by"** (`fundingName`, funding-ui 4.13). With the `fundingName?: (f: CardFunding) => string | null` prop FzpMode shows the line from `fundingName(cardFunding(card))` (`data-testid="card-funded-by"`, `ProjectCardPanel`'s `fundedBy`) after "Allowed by", on a simulated card that carries `funding`, and "100% affordable homes." on an affordable start. `/sim` and `/s/<id>` pass it from `SimPage` (`fundingName` in `sim-page/funding-view.ts`); `/fzp` does not, so no line. Wording in [sim-funding.md](sim-funding.md).
 - **Map side of a switch** (`TimelineController`, `src/lib/map/timeline-controller.ts`). A swap's revision 0 installs the new run over the old one, so the map never blanks; a mixed map mid-switch is expected. It cancels the frame and drops queued install slices (a superseded run's cells never install), keeps queued re-encodes of cells still on the map, and keeps every installed cell and the bars. Those cells join a `leftover` set (carried across consecutive swaps); installing a cell takes it out. While a swap is in progress, from its revision 0 until its leftovers go, slices hold `SWAP_CELLS_PER_SLICE` (16, `src/lib/map/hide.ts`) cells instead of `MAX_CELLS_PER_SLICE` (4), and a removed cell becomes a leftover instead of leaving at once, so no emit has fewer cell layers than before the swap. Once an update with `complete: true` has run all its slices (a band-only one counts), every leftover is removed in that frame. A plain revision 0 (`resync`, `initScenario`, a lever revision) still clears everything, leftovers included. The demolish list goes through `DemolishPump.swap` (`src/lib/map/timelapse/demolish.ts`): its logical state (`has`, `appliedIds`) is the new list at the current day at once, and feature-state follows by a diff, `setReplaced` for parcels newly hidden and `clearReplaced` for ones no longer hidden, at most `SLICE_IDS` calls a frame and never `clearAllReplaced`. The demolish diff applies in the first frames of a swap while the new cells install 16 a frame, so mid-switch a parcel the new run demolishes can show an empty lot until its cell installs, and a parcel the new run no longer demolishes can briefly show its existing building overlapping the old run's leftover cell; both clear at `complete`.
 - **Card refresh:** the open card asks again when the scrubbed month changes, when a run switch or crash Retry answers, and when the worker crashes (then it reads "Details unavailable" until Retry).
 
@@ -117,15 +120,50 @@ Map picking is pointer-only (mouse click, touch tap, hover), a gap shared with t
 When `calibration.market` is present, the Results face's Sources disclosure
 (`data-testid="fzp-sources"`) has a paragraph `data-testid="fzp-market"` directly after its first
 paragraph. `SimResults` takes it as the `market?: string | null` prop (default `null` renders
-nothing); `FzpMode` passes `marketSentence(calibration, marketLevel(calibration))`
-(`src/lib/fzp/market-view.ts`), which is `null` without `calibration.market`. The sentence's
+nothing); `FzpMode` passes `marketText(calibration)` (`src/lib/fzp/money-view.ts`):
+`marketSentence(calibration, marketLevel(calibration))` (`src/lib/fzp/market-view.ts`), `null`
+without `calibration.market`, with `MARKET_FUNDING_SENTENCE` (`sim-page/funding-copy.ts`)
+appended when the level is `'private'` (Release 2: the run includes today's public funding, so
+nothing is counted twice). The level always comes from `marketLevel`; the page never picks one. The sentence's
 percent comes from the counts, not from `exp(level)`, so its three numbers agree. It is static text
 in a closed disclosure, with no `aria-live`. Both `/sim` and `/s/<id>` show it.
 
 The sources dialog gets a section `src-market` ("Today's market") after "Where new projects
 start", with the "In force" line following `marketLevel`; without `calibration.market` there is no
-section and no paragraph. `funding-ui` extends both the paragraph and the section in Release 2. The
-e2e reads their numbers from `fixture-0`'s calibration. See [market.md](market.md).
+section and no paragraph. In Release 2 (`funding-ui` 4.12) the "Today's level" entry's line for
+the level not in force reads "Not in force: today's public funding is modelled, so private starts
+run at their own level." (all starts) or, when `marketLevel` is `'all'` (data without
+`baselineFunding`), "Not in force: this data has no public funding, so every start runs at one
+level." (private starts; ruling R-P5 rewords the Release 1 text). At the private level a second
+entry, `src-market-slope` ("How strongly money moves a private project's odds"), gives the slope's
+provenance with the Controller's cost and price coefficients as cross-check lines, not entries.
+The e2e reads their numbers from `fixture-0`'s calibration. See [market.md](market.md).
+
+`provenanceSections(calibration, score, terms)` and `SourcesDialog`'s `terms` prop take the shown
+levers' `ResolvedTerms` (FzpMode: `resolveTerms(MARKET_TERMS, (shownLevers ?? levers).finance.terms)`). With both
+`market` and `baselineFunding` the dialog has a section `src-money` ("Public money") after
+`src-market`: the baseline's provenance, how fully funded affordable projects are approved, the
+prototypes and land, the loan and guarantee terms (unsourced ones as "No sourced value", typed ones
+as "your value (custom, not sourced)"), the draw assumption, the displacement range and
+`finance-score`'s `MONEY_SOURCES` (first `PIPELINE_FUNDED`), then three fixed sentences (the
+pricing rule, the loss on exit worded from `terms.lossOnExit`, and ruling R8).
+
+## Public money and income tiers in Results
+
+`SimResults` renders `MoneyResults.svelte` twice: `part="money"` ("Public money",
+`data-testid="fzp-money"`, after "What … added", only with `score.money`) and `part="tiers"` ("Who
+the homes are for", `data-testid="fzp-tiers"`, after the RHNA rows, only with `score.tiers`). Both
+read the scrubbed month (`at.monthIndex`, never past the high-water mark). Its props:
+
+- `pending` (FzpMode: `scoreBusy || leversPending`): both blocks carry `aria-busy="true"`, with no
+  visible text (the header score is the busy sign). A failed revision (`stale`) keeps the old
+  numbers under the existing stale line instead.
+- `terms`: the shown levers' resolved market terms, for the lost-grants line (`lossOnExit`).
+- `uncapped`: the ids of pools whose `Pool.uncapped` is true, which read "no limit" under Received.
+  FzpMode derives it with `uncappedPoolIds(calibration.baselineFunding.pools,
+(shownLevers ?? levers).finance.pools)` (`money-view.ts`), because the run's money series carries no flag.
+
+The rows and their wording are in [sim-funding.md](sim-funding.md) ("Results, card and summary").
 
 ## The chart's y domain
 
@@ -139,4 +177,5 @@ e2e reads their numbers from `fixture-0`'s calibration. See [market.md](market.m
 - fixture-0's two parcel chunks are neighbouring cells about 700 m apart, so they cannot show over-fetching by themselves. `e2e/fzp-sim.spec.ts` adds a third, far-away chunk to the manifest the page loads (route on `manifest.json`, reached by client navigation as below), asserts it is not requested while the viewport is elsewhere, then pans to it and asserts it is.
 - The score details are the dock's Results face, one region ("Results", `data-testid="score-details"`); the header score (`data-testid="score-bar"`) flips the dock to it, and a run shows it. Its Sources disclosure (`data-testid="fzp-sources"`) holds "Back to the representative future" and "Where these numbers come from": open it first. Below 1024 px the header's links and actions ("Policy") wait in the Menu: use `headerAction` / `openHeaderMenu` (`e2e/helpers/sharing.ts`). The phone sheet is not modal; its handle (`data-testid="dock-handle"`) opens and folds it, and opening the Menu folds it.
 - A first load of `/sim` takes the manifest from the server's render, so `page.route` on `manifest.json` has no effect there. To test a dataset without scenarios, navigate to `/sim` from `/about` (a page that loads no manifest) with the route in place.
-- Axe and the footer check: `expectNoA11yViolations` runs with the card open (in `e2e/sim.spec.ts` also with the "Allowed by" line, light and dark), with the sources dialog open (scoped to the dialog, `structure: true`), with the Results face open and, in `e2e/sim.spec.ts`, with the dock open on each tab, on Results during a run, and with a selected transit layer's editor expanded. At 375 px the footer links must stay unobscured with the scrubber, the card, the Results face (a run's peek included) and the phone palette strip showing.
+- Axe and the footer check: `expectNoA11yViolations` runs with the card open (in `e2e/sim.spec.ts` also with the "Allowed by" line, light and dark), with the sources dialog open (scoped to the dialog, `structure: true`), with the Results face open and, in `e2e/sim.spec.ts`, with the dock open on each tab (Funding included), on Results during a run, and with a selected transit layer's editor expanded. At 375 px the footer links must stay unobscured with the scrubber, the card, the Results face (a run's peek included) and the phone palette strip showing.
+- `e2e/sim-funding.spec.ts` covers the Funding tab, the Results money and tier blocks, the market paragraph and `src-money`, the published summary and the funding notices ([sim-funding.md](sim-funding.md), "The e2e").

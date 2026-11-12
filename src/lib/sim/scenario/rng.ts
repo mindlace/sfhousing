@@ -13,8 +13,8 @@ export function fmix32(h: number): number {
 
 /**
  * Draw purposes (spec 4.4.1). A stage step draws its kind on `STAGE` and its time on `STAGE_TIME`
- * (paired-draw fix). Reserved, never to be reused: 7 and 10 (Release 2), and 17-23 (the retired
- * in-flight stage redraws).
+ * (paired-draw fix). 17-23 are the retired in-flight stage redraws and are never reused; 7 and 10
+ * are the affordable latent's (`INIT_AFFORDABLE`, `INIT_DAY_AFFORDABLE`).
  */
 export const P = {
   INIT: 1,
@@ -23,8 +23,10 @@ export const P = {
   PPA: 4,
   SIZE: 5,
   STAGE: 6,
+  INIT_AFFORDABLE: 7,
   REV: 8,
   REV_RATIO: 9,
+  INIT_DAY_AFFORDABLE: 10,
   PHASE_GAP: 11,
   STAGE_TIME: 12
 } as const;

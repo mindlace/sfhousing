@@ -2,6 +2,18 @@ import { emptyPlan, parsePlan, rebasePlan, serializePlan, type Plan, type Result
 import { planPath } from './api';
 import { withTitle } from './title';
 
+/** The integer `schema` of a JSON text, or null (not JSON, no such key, not an integer). */
+export function schemaOfText(text: string): number | null {
+  try {
+    const v: unknown = JSON.parse(text);
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) return null;
+    const s = (v as Record<string, unknown>).schema;
+    return typeof s === 'number' && Number.isInteger(s) ? s : null;
+  } catch {
+    return null;
+  }
+}
+
 export type DocKind = 'plan' | 'sim';
 
 /**
