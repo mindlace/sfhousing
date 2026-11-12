@@ -151,7 +151,7 @@ import {
   type NetSeries
 } from './score';
 import { simulateDetailed, simulateNet } from './simulate';
-import { financePreOf } from './funded';
+import { WARM_CHUNK, financeWarm, type FinanceWarm } from './funded';
 import { moneyOf, tierBaselineOf, tierContext, tierSeries, type TierCtx } from './finance-score';
 import { PREVIEW_MAX_LOTS } from './preview';
 import type {
@@ -161,7 +161,6 @@ import type {
   ScenarioErrorCode,
   ScenarioRequest,
   ScenarioResponse,
-  SimInput,
   TimelineScore
 } from './types';
 
@@ -191,6 +190,8 @@ export interface ScenarioHostDeps {
   /** Warm each loaded input's finance precompute in a task of its own before the timeline jobs
    *  (default true). Off is the test seam that shows warming changes no output. */
   warmFinance?: boolean;
+  /** Candidates per finance warm step (default `WARM_CHUNK`). */
+  warmChunk?: number;
 }
 
 export interface ScenarioHost {
@@ -361,8 +362,11 @@ interface Work {
   references: TimelineScore['references'] | undefined;
   /** Null for /fzp. */
   levers: LeverWork | null;
-  /** Loaded inputs with a finance whose precompute is still to warm, one per 'warm' slice. */
-  warm: SimInput[];
+  /**
+   * The warms (`financeWarm`) of the loaded inputs with a finance still to finish, in order: each
+   * 'warm' slice steps the first by `deps.warmChunk` candidates, and drops it once it is done.
+   */
+  warm: FinanceWarm[];
 }
 
 /** The optional brush files and what each decodes to. */
@@ -689,7 +693,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       references: undefined,
       levers: null,
       // a lever session's inputs are its revisions': warmed at each `current`
-      warm: st.levers ? [] : warmOf(loaded)
+      warm: st.levers ? [] : warmOf(loaded, st.horizon)
     };
     if (st.levers) {
       // The run above never runs: the lever revision's own run replaces it at `current`.
@@ -712,20 +716,21 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     kick(st);
   }
 
-  /** The distinct inputs of `loaded` with a finance, unless warming is off. */
-  function warmOf(loaded: Pick<Loaded, 'fzp' | 'twin'>): SimInput[] {
+  /** The warms of the distinct inputs of `loaded` with a finance, unless warming is off. */
+  function warmOf(loaded: Pick<Loaded, 'fzp' | 'twin'>, horizon: Day): FinanceWarm[] {
     if (deps.warmFinance === false) return [];
-    return [...new Set([loaded.fzp, loaded.twin])].filter((i) => i.finance !== undefined);
+    return [...new Set([loaded.fzp, loaded.twin])]
+      .filter((i) => i.finance !== undefined)
+      .map((i) => financeWarm(i, horizon));
   }
 
   /**
-   * Builds one input's finance precompute and its skip bounds for the session's horizon (memoised
-   * on the input), so the first run on it does not pay for them inside its own task.
+   * One chunk of the first input's finance warm (its precompute, then its skip rates and tables,
+   * then its skip bounds for the session's horizon; memoised on the input), so the first run on
+   * it does not pay for them inside its own task.
    */
   function warmStep(w: Work): void {
-    const fp = financePreOf(w.warm.shift()!);
-    fp.marketSkip(w.horizon);
-    fp.affordableSkip(w.horizon);
+    if (w.warm[0].step(deps.warmChunk ?? WARM_CHUNK)) w.warm.shift();
   }
 
   function pendingOf(rev: Rev, levers: SimLevers, seed: number | null): PendingLevers {
@@ -987,7 +992,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       unknownLots: li.unknownLots
     });
     w.loaded = { ...lw.base, fzp: li.plan, twin: li.twin };
-    w.warm = warmOf(w.loaded);
+    w.warm = warmOf(w.loaded, w.horizon);
     w.tierCtx = tierContext(li.plan);
     w.references = li.references;
     w.band = createBandState(deps.bandRuns ?? BAND_RUNS);

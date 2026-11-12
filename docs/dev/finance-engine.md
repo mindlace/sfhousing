@@ -541,7 +541,21 @@ float composite key; the grouped line.
 **Fallback 1** (design 4.17): per-input tables of the segment values per eligible lot, size level
 and segment, so a run does no `exp` or `log` for them. They are `Float64Array`, not the design's
 `Float32Array`, because Float32 rounds the rates and changed outputs, and exactness is mandatory.
-On the bench city with the bench funding set they take about 20 MB per input.
+Each entry's (bundle, level) is an index into the segment's few distinct values, a `Uint8Array`
+(255 = not filled) promoted to `Uint16Array` once a segment has 255 values. On the bench city with
+the bench funding set they take about 16 MB per input.
+
+**The warm** (`financeWarm(input, horizon)`, perf Task 1): one pass over the candidates fills the
+skip rates of both kinds and the tables together, one `segValue` per (lot, kind, segment, level
+with homes) on the canonical bundle, and then the skip bounds for the horizon. It is resumable
+between candidates: `step(maxCandidates)` does the next chunk and returns true once everything is
+built; the step that first builds `financePreOf` does only that. The pass is per input, so a
+second horizon only adds its bounds. `marketSkip`, `affordableSkip` and the run's tables finish an
+unfinished warm synchronously, so a run with no warm (pipeline, lesscars, tests) or a part-done one
+gives the same output. A run still fills, lazily, an entry the warm skips (a level with 0 homes).
+On the bench funding input the whole warm is about 190 ms in a bundle (250 ms under vitest), in
+chunks of `WARM_CHUNK` (16,384 candidates, about 23 ms bundled); before, `marketSkip` and
+`affordableSkip` alone took about 460 ms and the tables filled lazily inside runs.
 
 **The bench funding set** (`benchFunding(asOf)` in `fixtures/bench-finance.ts`; tier 4 values made up
 to load the engine, not data): two pools, three programmes, one of them certain.
@@ -569,13 +583,10 @@ live one (about 1.75), so the bench errs heavy. `benchBaseline` adds values beyo
 - the City pool kinds follow the `funding.json` ids (`dedicatedTax` or `generalRevenue`);
 - `terms` is `resolveTerms(MARKET_TERMS)`.
 
-**The warm task.** The host builds each input's `financePreOf` (and its `marketSkip` and
-`affordableSkip` for the horizon) in a load-phase macrotask of its own, job kind `'warm'`, before
-revision 0 on a cold input and after each lever `current`, so the cold cost no longer lands in the
-first band task. The warm task itself can still exceed 50 ms (the cold precompute is roughly 85 to
-140 ms); splitting `financePreOf` would be this subsystem's change. `tablesOf(fp)` is still built in
-the first funded run's task. Details: [finance-levers.md](finance-levers.md), "The finance warm
-task".
+**The warm task.** The host steps each input's `financeWarm` for the horizon in load-phase
+macrotasks of their own, job kind `'warm'`, one chunk per task, before revision 0 on a cold input
+and after each lever `current`, so the cold cost (precompute, skip rates and tables) no longer
+lands in a band task. Details: [finance-levers.md](finance-levers.md), "The finance warm task".
 
 **Budgets** (design F18, tier 4): with `finance` absent the existing budgets hold unchanged; with
 the baseline alone `simulateNet` median ≤ 30 ms; with the bench funding set added ≤ 45 ms, and all

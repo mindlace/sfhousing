@@ -9,8 +9,8 @@ import { makeScenarioHarness, type ScenarioHarness } from './test/host-harness';
 import type { SimInput, TimelineResponse } from './types';
 
 type Call = { fn: 'net' | 'detailed'; twin: boolean; seed: number; input: SimInput };
-/** A `financePreOf` or simulate call and the harness step (timer callback) it ran in. */
-type Event = { fn: 'pre' | 'net' | 'detailed'; step: number; input: SimInput };
+/** A finance warm step or simulate call and the harness step (timer callback) it ran in. */
+type Event = { fn: 'warm' | 'net' | 'detailed'; step: number; input: SimInput };
 
 const hooks = vi.hoisted(() => ({
   calls: [] as Call[],
@@ -44,9 +44,14 @@ vi.mock('./funded', async (importOriginal) => {
   const m = await importOriginal<typeof import('./funded')>();
   return {
     ...m,
-    financePreOf: vi.fn((input: SimInput) => {
-      hooks.events.push({ fn: 'pre', step: hooks.step, input });
-      return m.financePreOf(input);
+    financeWarm: vi.fn((input: SimInput, horizon: Day) => {
+      const warm = m.financeWarm(input, horizon);
+      return {
+        step(maxCandidates: number) {
+          hooks.events.push({ fn: 'warm', step: hooks.step, input });
+          return warm.step(maxCandidates);
+        }
+      };
     })
   };
 });
@@ -74,13 +79,21 @@ const moneyOfSpy = vi.mocked(moneyOf);
 const N = 17; // lowered band size
 const SEED = 1000; // no band seed, so the shown run is told apart
 
-function harness(calibration?: unknown, warmFinance?: boolean): ScenarioHarness {
+function harness(
+  calibration?: unknown,
+  warmFinance?: boolean,
+  warmChunk?: number
+): ScenarioHarness {
   hooks.calls.length = 0;
   hooks.events.length = 0;
   hooks.step = 0;
   moneyOfSpy.mockClear();
   return makeScenarioHarness({
-    deps: { bandRuns: N, ...(warmFinance === undefined ? {} : { warmFinance }) },
+    deps: {
+      bandRuns: N,
+      ...(warmFinance === undefined ? {} : { warmFinance }),
+      ...(warmChunk === undefined ? {} : { warmChunk })
+    },
     ...(calibration ? { bodies: { [MINI_SCENARIO_URLS.calibration]: calibration } } : {})
   });
 }
@@ -184,21 +197,25 @@ async function stepAll(h: ScenarioHarness): Promise<void> {
 }
 
 describe('scenario host: the finance precompute is warmed (finance-levers I2)', () => {
-  it('the finance precompute is warmed in its own task before the first band task', async () => {
-    const h = harness(fundedCalibration());
+  it('the finance precompute is warmed in tasks of its own before the first band task', async () => {
+    const h = harness(fundedCalibration(), undefined, 1);
     h.init({ seed: null }); // the FZP band runs come first
     await stepAll(h);
     expect(h.errors()).toEqual([]);
-    const sims = hooks.events.filter((e) => e.fn !== 'pre');
+    const sims = hooks.events.filter((e) => e.fn !== 'warm');
     const firstNet = sims.find((e) => e.fn === 'net')!;
     expect(firstNet.input.parcels.envelopeStories).not.toBe(firstNet.input.parcels.baseStories);
     const inputs = [...new Set(sims.map((e) => e.input))];
     expect(inputs).toHaveLength(2); // the FZP input and its twin
     for (const input of inputs) {
-      const pre = hooks.events.find((e) => e.fn === 'pre' && e.input === input)!;
-      expect(pre).toBeDefined();
-      expect(sims.filter((e) => e.step === pre.step)).toEqual([]);
-      expect(pre.step).toBeLessThan(firstNet.step);
+      const warms = hooks.events.filter((e) => e.fn === 'warm' && e.input === input);
+      // one candidate per step: several warm tasks per input, one step per task
+      expect(new Set(warms.map((e) => e.step)).size).toBe(warms.length);
+      expect(warms.length).toBeGreaterThan(1);
+      for (const warm of warms) {
+        expect(sims.filter((e) => e.step === warm.step)).toEqual([]);
+        expect(warm.step).toBeLessThan(firstNet.step);
+      }
     }
   });
 

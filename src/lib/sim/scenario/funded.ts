@@ -182,20 +182,10 @@ export function financePreOf(input: SimInput): FinancePre {
     market: eligibleOf(views, pre.candidates, f.programmes, 'market'),
     affordable: eligibleOf(views, pre.candidates, f.programmes, 'affordable')
   };
-  const bounds = regimeMonths(asOf, days);
-  const skips = (kind: ProjectKind) => {
-    let rates: { rates: Float64Array[]; certain: Uint8Array } | null = null;
-    const byHorizon = new Map<Day, Float64Array>();
-    return (horizon: Day): Float64Array => {
-      let b = byHorizon.get(horizon);
-      if (!b) {
-        rates ??= skipRatesOf(input, fp, views, pre, kind);
-        b = skipBounds(rates.rates, pre.candidates, lastInitiationMonth(asOf, horizon), bounds);
-        for (let c = 0; c < b.length; c++) if (rates.certain[c] === 1) b[c] = Infinity;
-        byHorizon.set(horizon, b);
-      }
-      return b;
-    };
+  // the skip bounds of a horizon finish the input's warm first (`financeWarm`)
+  const skips = (kind: ProjectKind) => (horizon: Day) => {
+    financeWarm(input, horizon).step(Infinity);
+    return fused.get(fp)!.bounds.get(horizon)![kind];
   };
   const fp: FinancePre = {
     days,
@@ -212,6 +202,16 @@ export function financePreOf(input: SimInput): FinancePre {
     affordableSkip: skips('affordable')
   };
   pres.set(input, fp);
+  fused.set(fp, {
+    input,
+    views,
+    pre,
+    next: 0,
+    rates: null,
+    certain: null,
+    tabs: null,
+    bounds: new Map()
+  });
   return fp;
 }
 
@@ -252,68 +252,6 @@ function eligibleOf(
     }
   }
   return out;
-}
-
-/**
- * The per-segment rates of `FinancePre.marketSkip` or `affordableSkip`, by row (candidates only),
- * and the candidates some certain bundle of the kind reaches. Each rate is at or below the kind's
- * rate in that segment for every size the lot can draw, so the bound it gives is safe.
- */
-function skipRatesOf(
-  input: SimInput,
-  fp: FinancePre,
-  views: readonly View[],
-  pre: Precompute,
-  kind: ProjectKind
-): { rates: Float64Array[]; certain: Uint8Array } {
-  const fin = input.finance!;
-  const { slope } = fin;
-  const n = input.parcels.count;
-  const { candidates } = pre;
-  const market = kind === 'market';
-  const elig = fp.eligible[kind];
-  const rates = fp.view.map(() => new Float64Array(n));
-  const certain = new Uint8Array(candidates.length);
-  for (let c = 0; c < candidates.length; c++) {
-    const i = candidates[c];
-    for (let j = 0; j < fp.view.length; j++) {
-      const w = views[fp.view[j]];
-      const z = w.pre.logit[i];
-      // the market kind's rate is never above the ordinary one; the affordable kind's is 0 where
-      // the view has no size or no hazard (the affordable bound is read only for eligible lots)
-      let best = market ? pre.segments.log1mh[fp.ordSeg[j]][i] : 0;
-      if (elig[c] === 1 && z !== -Infinity) {
-        for (let f = 0; f < F; f++) {
-          const units = w.parcels.yield[i * F + f];
-          if (!(units > 0)) continue;
-          const stories = fillStories(FILL_LEVELS[f], w.parcels.envelopeStories[i]);
-          const p = prototypeFor(stories, units);
-          const x0 = market
-            ? z + fp.m[j]
-            : z +
-              fp.m[j] -
-              (slope * (uncoveredPerHome('affordable', p) - uncoveredPerHome('market', p))) /
-                costPerHome('affordable', p);
-          const bundle = fp.offered[kind][j].filter((g) => fin.programmes[g].minHomes <= units);
-          let rate: number;
-          if (bundle.length === 0) {
-            rate = market ? best : log(1 - logistic(x0));
-          } else {
-            const priced = fp.index.price(kind, bundle, p.id);
-            if (priced.certain) {
-              certain[c] = 1;
-              rate = -Infinity;
-            } else {
-              rate = log(1 - logistic(x0 + oddsShift(priced.grantEquivalent, kind, p, slope)));
-            }
-          }
-          if (rate < best) best = rate;
-        }
-      }
-      rates[j][i] = best === -Infinity ? 0 : best;
-    }
-  }
-  return { rates, certain };
 }
 
 /** The lot's size in one view: level, homes, stories and prototype. */
@@ -391,6 +329,11 @@ function sizeIn(run: Run, v: number, i: number, existing: number, uS: number): L
   let f = 0;
   while (f < F && !(uS < cum[at + f])) f++;
   if (f === F) return null;
+  return sizeAt(p, i, f);
+}
+
+/** The size of row i at level f of a parcels table, built once (`sizeMemo`). */
+function sizeAt(p: SimInput['parcels'], i: number, f: number): LatentSize {
   let memo = sizeMemo.get(p);
   if (memo === undefined) {
     memo = new Array(p.count * F);
@@ -513,49 +456,255 @@ function segValue(
 }
 
 /**
- * Per kind, the seed-independent values of `segValue` per eligible lot, size level and segment,
- * filled as runs first need them (spec 4.17 fallback 1, kept in 64-bit floats so that a run reads
- * exactly what it would compute): a run does no `exp`, `log` or pricing for an entry already
- * filled. Indexed `slot * F + f`, `slot` the lot's place among the kind's eligible candidates.
+ * Per kind, the seed-independent values of `segValue` per eligible lot, size level and segment
+ * (spec 4.17 fallback 1, kept in 64-bit floats so that a run reads exactly what it would compute):
+ * a run does no `exp`, `log` or pricing for an entry already filled. The input's warm
+ * (`financeWarm`) fills every entry whose level has homes; a run fills any other it needs. Indexed
+ * `slot * F + f`, `slot` the lot's place among the kind's eligible candidates.
  */
 interface KindTables {
   /** by candidate: its slot, or −1 when not eligible */
   slot: Int32Array;
-  /** per segment: the rate and unshifted rate; NaN until filled */
+  /** per segment: the rate and unshifted rate; read only where `at` is filled */
   rate: Float64Array[];
   ref: Float64Array[];
-  /** per segment: the index of the entry's (bundle, level) in `values[j]`, −1 until filled */
-  at: Int32Array[];
-  values: { bundle: number[]; level: number; key: string }[][];
-  /** per segment: `values[j]` by `key` */
-  byKey: Map<string, number>[];
+  /**
+   * per segment: the index of the entry's (bundle, level) in `values[j]`, `none[j]` until filled.
+   * A `Uint8Array` (none 255) until the segment has 255 values, then promoted to a `Uint16Array`
+   * (none 65,535), then to a `Uint32Array`.
+   */
+  at: (Uint8Array | Uint16Array | Uint32Array)[];
+  none: number[];
+  values: { bundle: number[]; level: number }[][];
+  /** per segment: `values[j]` by bundle (the canonical `bundleOf` array), then level */
+  index: Map<readonly number[], Map<number, number>>[];
 }
 
-const tables = new WeakMap<FinancePre, Record<ProjectKind, KindTables>>();
-
-function tablesOf(fp: FinancePre): Record<ProjectKind, KindTables> {
-  let t = tables.get(fp);
-  if (!t) {
-    const make = (kind: ProjectKind): KindTables => {
-      const elig = fp.eligible[kind];
-      const slot = new Int32Array(elig.length).fill(-1);
-      let n = 0;
-      for (let c = 0; c < elig.length; c++) if (elig[c] === 1) slot[c] = n++;
-      const segs = fp.view.length;
-      const per = (fill: () => Float64Array) => Array.from({ length: segs }, fill);
-      return {
-        slot,
-        rate: per(() => new Float64Array(n * F).fill(NaN)),
-        ref: per(() => new Float64Array(kind === 'market' ? 0 : n * F).fill(NaN)),
-        at: Array.from({ length: segs }, () => new Int32Array(n * F).fill(-1)),
-        values: Array.from({ length: segs }, () => []),
-        byKey: Array.from({ length: segs }, () => new Map())
-      };
+function tablesFor(fp: FinancePre): Record<ProjectKind, KindTables> {
+  const make = (kind: ProjectKind): KindTables => {
+    const elig = fp.eligible[kind];
+    const slot = new Int32Array(elig.length).fill(-1);
+    let n = 0;
+    for (let c = 0; c < elig.length; c++) if (elig[c] === 1) slot[c] = n++;
+    const per = <T>(fill: () => T) => Array.from({ length: fp.view.length }, fill);
+    return {
+      slot,
+      rate: per(() => new Float64Array(n * F)),
+      ref: per(() => new Float64Array(kind === 'market' ? 0 : n * F)),
+      at: per(() => new Uint8Array(n * F).fill(255)),
+      none: per(() => 255),
+      values: per(() => []),
+      index: per(() => new Map())
     };
-    t = { market: make('market'), affordable: make('affordable') };
-    tables.set(fp, t);
+  };
+  return { market: make('market'), affordable: make('affordable') };
+}
+
+/** Segment j's index of (bundle, level) in `t.values[j]`, added (and `at` promoted) when new. */
+function valueAt(t: KindTables, j: number, bundle: number[], level: number): number {
+  let byLevel = t.index[j].get(bundle);
+  if (byLevel === undefined) {
+    byLevel = new Map();
+    t.index[j].set(bundle, byLevel);
   }
-  return t;
+  let at = byLevel.get(level);
+  if (at === undefined) {
+    at = t.values[j].length;
+    if (at >= t.none[j]) {
+      const old = t.at[j];
+      const none = t.none[j];
+      const wide = none === 255 ? new Uint16Array(old.length) : new Uint32Array(old.length);
+      const wideNone = none === 255 ? 65_535 : 4_294_967_295;
+      for (let x = 0; x < old.length; x++) wide[x] = old[x] === none ? wideNone : old[x];
+      t.at[j] = wide;
+      t.none[j] = wideNone;
+    }
+    t.values[j].push({ bundle, level });
+    byLevel.set(level, at);
+  }
+  return at;
+}
+
+/** Fills one table entry from its `segValue` (a no-op when it is filled). */
+function fillEntry(t: KindTables, j: number, x: number, sv: SegValue, market: boolean): void {
+  if (t.at[j][x] !== t.none[j]) return;
+  const at = valueAt(t, j, sv.bundle, sv.level);
+  t.at[j][x] = at;
+  t.rate[j][x] = sv.rate;
+  if (!market) t.ref[j][x] = sv.ref;
+}
+
+/**
+ * The warm of one input (perf Task 1): one pass over its candidates that fills, per kind, the
+ * per-segment skip rates (`FinancePre.marketSkip`, `affordableSkip`) and the tables together,
+ * resumable between candidates. `bounds` holds the skip bounds per horizon once the pass is done.
+ */
+interface Fused {
+  input: SimInput;
+  views: View[];
+  pre: Precompute;
+  /** the next candidate of the pass */
+  next: number;
+  /**
+   * per kind and segment, by row (candidates only): the least rate of the kind over the lot's
+   * levels, at or below the kind's rate in that segment for every size the lot can draw (the
+   * market kind's starts at the ordinary rate, the affordable kind's at 0); 0 where it is −∞
+   */
+  rates: Record<ProjectKind, Float64Array[]> | null;
+  /** per kind, by candidate: 1 when some certain bundle of the kind reaches the lot */
+  certain: Record<ProjectKind, Uint8Array> | null;
+  tabs: Record<ProjectKind, KindTables> | null;
+  bounds: Map<Day, Record<ProjectKind, Float64Array>>;
+}
+
+const fused = new WeakMap<FinancePre, Fused>();
+
+/**
+ * Does candidates `s.next` to `s.next + max − 1` of the fused pass; true once every candidate is
+ * done. Per candidate, kind and segment, each level with homes in the segment's view (when the lot
+ * is eligible and has a hazard there) takes one `segValue` on the canonical bundle: its entry goes
+ * into the tables and its rate into the segment's skip rate.
+ */
+function advance(fp: FinancePre, s: Fused, max: number): boolean {
+  const { pre, views } = s;
+  const { candidates } = pre;
+  if (s.tabs === null) {
+    const n = s.input.parcels.count;
+    s.rates = {
+      market: fp.view.map(() => new Float64Array(n)),
+      affordable: fp.view.map(() => new Float64Array(n))
+    };
+    s.certain = {
+      market: new Uint8Array(candidates.length),
+      affordable: new Uint8Array(candidates.length)
+    };
+    s.tabs = tablesFor(fp);
+  }
+  const end = Math.min(candidates.length, s.next + max);
+  const fin = s.input.finance!;
+  const J = fp.view.length;
+  for (let c = s.next; c < end; c++) {
+    const i = candidates[c];
+    for (const kind of KINDS) {
+      const market = kind === 'market';
+      const t = s.tabs[kind];
+      const rates = s.rates![kind];
+      const slot = t.slot[c];
+      for (let j = 0; j < J; j++) {
+        const ord = market ? pre.segments.log1mh[fp.ordSeg[j]][i] : 0;
+        let best = ord;
+        const w = views[fp.view[j]];
+        const z = w.pre.logit[i];
+        // the market kind's rate is never above the ordinary one; the affordable kind's is 0 where
+        // the view has no size or no hazard (the affordable bound is read only for eligible lots)
+        if (slot >= 0 && z !== -Infinity) {
+          const p = w.parcels;
+          for (let f = 0; f < F; f++) {
+            const units = p.yield[i * F + f];
+            if (!(units > 0)) continue;
+            const sz = sizeAt(p, i, f);
+            const sv = segValue(fp, fin, kind, j, z, sz, ord);
+            fillEntry(t, j, slot * F + f, sv, market);
+            if (sv.rate === -Infinity && fp.index.price(kind, sv.bundle, sz.protoId).certain) {
+              s.certain![kind][c] = 1;
+            }
+            if (sv.rate < best) best = sv.rate;
+          }
+        }
+        rates[j][i] = best === -Infinity ? 0 : best;
+      }
+    }
+  }
+  s.next = end;
+  return end === candidates.length;
+}
+
+/** Candidates per host warm step: 2 × 16,384 × about 0.7 µs ≈ 23 ms on a quiet machine. */
+export const WARM_CHUNK = 16_384;
+
+export interface FinanceWarm {
+  /**
+   * Does the next `maxCandidates` candidates of the fused pass (both kinds); true once everything,
+   * bounds for `horizon` included, is built.
+   */
+  step(maxCandidates: number): boolean;
+}
+
+const warms = new WeakMap<SimInput, Map<Day, FinanceWarm>>();
+
+/**
+ * The warm of `input`'s finance precompute for `horizon` (perf Task 1), memoised per input and
+ * horizon: `financePreOf`, then the fused pass that fills the skip rates and the tables, then the
+ * skip bounds for `horizon`. The pass progresses per input, so a second horizon only adds its
+ * bounds. A step that builds `financePreOf` does nothing else (unless `maxCandidates` is
+ * infinite). `marketSkip`, `affordableSkip` and the run's tables finish a warm not yet done.
+ */
+export function financeWarm(input: SimInput, horizon: Day): FinanceWarm {
+  let byHorizon = warms.get(input);
+  if (byHorizon === undefined) {
+    byHorizon = new Map();
+    warms.set(input, byHorizon);
+  }
+  const hit = byHorizon.get(horizon);
+  if (hit) return hit;
+  let fp: FinancePre | null = null;
+  const warm: FinanceWarm = {
+    step(maxCandidates) {
+      if (fp === null) {
+        const built = pres.has(input);
+        fp = financePreOf(input);
+        if (!built && maxCandidates !== Infinity) return false;
+      }
+      const s = fused.get(fp)!;
+      if (s.bounds.has(horizon)) return true;
+      if (!advance(fp, s, maxCandidates)) return false;
+      const months = regimeMonths(input.asOf, fp.days);
+      const last = lastInitiationMonth(input.asOf, horizon);
+      const boundOf = (kind: ProjectKind) => {
+        const b = skipBounds(s.rates![kind], s.pre.candidates, last, months);
+        const certain = s.certain![kind];
+        for (let c = 0; c < b.length; c++) if (certain[c] === 1) b[c] = Infinity;
+        return b;
+      };
+      s.bounds.set(horizon, { market: boundOf('market'), affordable: boundOf('affordable') });
+      return true;
+    }
+  };
+  byHorizon.set(horizon, warm);
+  return warm;
+}
+
+/** The tables of the input's finance, its warm's pass finished first. */
+function tablesOf(fp: FinancePre): Record<ProjectKind, KindTables> {
+  const s = fused.get(fp)!;
+  advance(fp, s, Infinity);
+  return s.tabs!;
+}
+
+/**
+ * One table entry as filled so far: kind κ, segment j, candidate c, level f; null when the lot is
+ * not eligible for κ or the entry is not filled. `ref` is the ordinary rate for `market`.
+ * @internal exported for the warm's tests
+ */
+export function tableEntry(
+  fp: FinancePre,
+  kind: ProjectKind,
+  j: number,
+  c: number,
+  f: number
+): { rate: number; ref: number; bundle: number[]; level: number } | null {
+  const s = fused.get(fp);
+  if (!s || s.tabs === null) return null;
+  const t = s.tabs[kind];
+  const slot = t.slot[c];
+  if (slot < 0) return null;
+  const x = slot * F + f;
+  const at = t.at[j][x];
+  if (at === t.none[j]) return null;
+  const v = t.values[j][at];
+  const ref =
+    kind === 'market' ? s.pre.segments.log1mh[fp.ordSeg[j]][s.pre.candidates[c]] : t.ref[j][x];
+  return { rate: t.rate[j][x], ref, bundle: v.bundle, level: v.level };
 }
 
 /** Scratch arrays of `kindLatent` (it is not re-entrant), sized for K + 1 segments. */
@@ -620,23 +769,12 @@ function kindLatent(
     } else {
       const t = tab!;
       const x = slot * F + sz.f;
-      let at = t.at[j][x];
-      if (at < 0) {
-        const sv = segValue(fp, fin, kind, j, z, sz, ord[j]);
-        const key = sv.bundle.join(',') + '|' + sv.level;
-        const hit = t.byKey[j].get(key);
-        if (hit === undefined) {
-          at = t.values[j].length;
-          t.values[j].push({ bundle: sv.bundle, level: sv.level, key });
-          t.byKey[j].set(key, at);
-        } else at = hit;
-        t.at[j][x] = at;
-        t.rate[j][x] = sv.rate;
-        if (!market) t.ref[j][x] = sv.ref;
-      }
+      // an entry the warm did not fill (a level with no homes) is filled here
+      if (t.at[j][x] === t.none[j])
+        fillEntry(t, j, x, segValue(fp, fin, kind, j, z, sz, ord[j]), market);
       rates[j] = t.rate[j][x];
       ref[j] = market ? ord[j] : t.ref[j][x];
-      const val = t.values[j][at];
+      const val = t.values[j][t.at[j][x]];
       bundles[j] = val.bundle;
       levels[j] = val.level;
     }
