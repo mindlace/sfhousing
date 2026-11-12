@@ -3,8 +3,9 @@
   - the coverage line and the "Coverage over time" disclosure (status: above every control);
   - "Today's funding": the baseline groups as select buttons (aria-pressed), each expanding its
     FundingGroupEditor in place under it;
-  - "Money you add": the added pools as select buttons, or "Nothing added yet.", then
-    "+ Add money" (Task 6 wires the chooser and the pool editor);
+  - "Money you add": the added pools (FundingPoolRow, each expanding its editor in place), the
+    open draft pool after them, or "Nothing added yet.", then "+ Add money" (AddMoney: the
+    presets and "Your own pool");
   - the closed "Sources and tiers" details.
   Every edit is one labelled store change, its coalesce key suffixed with the run number (a run
   ends when the selection changes or the tab remounts), announced with the new coverage summary
@@ -17,8 +18,8 @@
 
 <script lang="ts">
   import { tick } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { HORIZON } from '$lib/fzp/time';
-  import { formatDollars } from '$lib/fzp/format';
   import { AFFORDABLE, AVERAGE_DRAWN, DRAW_UP_FRONT, MARKET_TERMS } from '$lib/sim/finance';
   import type { Calibration, TermKey } from '$lib/timelapse/types';
   import {
@@ -27,9 +28,11 @@
     COVERAGE_RULE_SENTENCE,
     COVERAGE_RUN_SENTENCE,
     COVERAGE_SIZE_SENTENCE,
+    DRAFT_OPEN_DESC,
     MONTH_OFFER_CAVEAT,
     NOTHING_ADDED,
     NO_LIMIT,
+    POOL_LIMIT_DESC,
     SWITCHED_OFF,
     TERM_NAME,
     affordableCostText,
@@ -46,19 +49,28 @@
     smallProjectsCaveat
   } from './funding-copy';
   import type { FundingDrafts } from './funding-drafts.svelte';
-  import { isRefused, type FundingEdit, type Refused } from './funding-edit';
-  import { fundingPresets } from './funding-presets';
+  import {
+    addPresetEdit,
+    completeDraft,
+    isRefused,
+    newOwnPool,
+    type FundingEdit,
+    type PoolDraft,
+    type Refused
+  } from './funding-edit';
+  import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
+  import { fundingPresets, pastItems, type FundingPreset } from './funding-presets';
   import {
     baselineGroups,
     coverageSizeMixed,
     coverageSteps,
-    poolPreview,
-    poolsOf,
-    programmeSentence,
+    groupOf,
     type BaselineGroup,
     type FundingRowId
   } from './funding-view';
+  import AddMoney from './AddMoney.svelte';
   import FundingGroupEditor from './FundingGroupEditor.svelte';
+  import FundingPoolRow from './FundingPoolRow.svelte';
   import type { PolicyStore } from './policy-store.svelte';
   import SourceList from './SourceList.svelte';
 
@@ -171,19 +183,113 @@
     );
   }
 
-  function poolAmount(pool: (typeof f.pools)[number]): string {
-    const p = poolPreview(pool, asOf);
-    return p.perYear !== null ? perYearText(p.perYear) : formatDollars(p.once);
+  // ---- adding money (4.6) ----
+
+  let addOpen = $state(false);
+  /** A refused preset's text, in the chooser's alert line. */
+  let addAlert = $state('');
+
+  const poolDraft = $derived(drafts.draft?.kind === 'pool' ? drafts.draft.pool : null);
+  const addDisabled = $derived(
+    drafts.isOpen
+      ? DRAFT_OPEN_DESC
+      : f.pools.length >= FINANCE_LIMITS.pools
+        ? POOL_LIMIT_DESC
+        : null
+  );
+  const past = $derived(pastItems(f, asOf));
+  const pastOf = (id: string) => ({
+    pool: past.pools.includes(id),
+    inflows: past.inflows.filter((x) => x.pool === id).map((x) => x.index)
+  });
+  /** Pools whose name the page generated and the user never edited (page memory, 4.9). */
+  const autoNamed = new SvelteSet<string>();
+
+  const rowEl = (key: string): HTMLElement | null =>
+    rowsEl?.querySelector<HTMLElement>(`[data-funding-row="${key}"]`) ?? null;
+  const addButton = (): HTMLElement | null =>
+    rowsEl?.querySelector<HTMLElement>('[data-funding-add]') ?? null;
+
+  /** Focuses `field` in a row after the next render. */
+  async function focusIn(key: string, field: string): Promise<void> {
+    await tick();
+    rowEl(key)?.querySelector<HTMLElement>(`[data-field="${field}"]`)?.focus();
   }
 
-  const allPools = $derived(poolsOf(f, baseline));
-  const poolSentences = (id: string): string[] =>
-    f.programmes
-      .filter((g) => g.pool === id)
-      .flatMap((g) => {
-        const pool = allPools.find((p) => p.id === g.pool);
-        return pool ? [programmeSentence(g, pool)] : [];
-      });
+  function onpreset(p: FundingPreset): void {
+    const e = addPresetEdit(store.policy, p);
+    if (isRefused(e)) {
+      addAlert = e.refused;
+      return;
+    }
+    addAlert = '';
+    const had = new Set(f.pools.map((x) => x.id));
+    onedit(e);
+    addOpen = false;
+    const added = store.policy.funding.pools.find((x) => !had.has(x.id));
+    if (added !== undefined) {
+      select({ kind: 'pool', id: added.id });
+      void focusIn(`pool:${added.id}`, 'kind');
+      return;
+    }
+    // Only dated changes: select the affected group and focus its new change (4.6).
+    const entry = p.baselineScale[0];
+    const target = baseline?.pools.find((x) => x.id === entry?.pool);
+    if (entry === undefined || target === undefined) return;
+    const group = groupOf(target.kind);
+    select({ kind: 'baselineGroup', group });
+    void tick().then(() =>
+      rowEl(`group:${group}`)
+        ?.querySelector<HTMLElement>(`[data-scale-line][data-scale-from="${entry.from}"]`)
+        ?.focus()
+    );
+  }
+
+  function onownpool(): void {
+    addAlert = '';
+    addOpen = false;
+    drafts.open({ kind: 'pool', pool: newOwnPool(asOf) });
+    void focusIn('draft', 'kind');
+  }
+
+  /**
+   * A draft's next state: kept as a draft while incomplete, else added in one store change and
+   * shown as its row, focus staying in the field just committed (4.6).
+   */
+  function ondraft(d: PoolDraft, field: string): void {
+    if (drafts.draft?.kind !== 'pool') return;
+    const next = { kind: 'pool' as const, pool: d };
+    const e = completeDraft(next, store.policy, baseline);
+    if (e === null) {
+      drafts.open(next);
+      return;
+    }
+    const had = new Set(f.pools.map((x) => x.id));
+    drafts.discard();
+    onedit(e);
+    const added = store.policy.funding.pools.find((x) => !had.has(x.id));
+    if (added === undefined) return;
+    if (!d.labelEdited) autoNamed.add(added.id);
+    select({ kind: 'pool', id: added.id });
+    void focusIn(`pool:${added.id}`, field);
+  }
+
+  function ondiscard(): void {
+    drafts.discard();
+    void tick().then(() => addButton()?.focus());
+  }
+
+  /** A pool row's edit; after its removal, focus the row now at its index, else Add money. */
+  function poolEdit(i: number, id: string, e: FundingEdit | Refused): void {
+    onedit(e);
+    if (store.policy.funding.pools.some((x) => x.id === id)) return;
+    void tick().then(() => {
+      const next = store.policy.funding.pools[i];
+      const el =
+        next === undefined ? null : rowEl(`pool:${next.id}`)?.querySelector<HTMLElement>('button');
+      (el ?? addButton())?.focus();
+    });
+  }
 
   // ---- sources and tiers ----
 
@@ -280,45 +386,51 @@
 
       <section class="flex flex-col gap-2">
         <h3 class="font-semibold">Money you add</h3>
-        {#if f.pools.length === 0}
+        {#if f.pools.length === 0 && poolDraft === null}
           <p class={muted}>{NOTHING_ADDED}</p>
         {:else}
           <ul class="flex flex-col gap-2">
-            {#each f.pools as pool (pool.id)}
+            {#each f.pools as pool, i (pool.id)}
               {@const on = selected?.kind === 'pool' && selected.id === pool.id}
-              <li data-funding-row="pool:{pool.id}" class={rowClass(on)}>
-                <button
-                  type="button"
-                  aria-pressed={on}
-                  class={rowButton}
-                  onclick={() => select(on ? null : { kind: 'pool', id: pool.id })}
-                >
-                  <span class="font-semibold">{pool.label} · {poolAmount(pool)}</span>
-                  {#each poolSentences(pool.id) as line, k (k)}
-                    <span class={muted}>{line}</span>
-                  {/each}
-                </button>
-                {#if on}
-                  <!-- Task 6 replaces this with the pool editor (FundingPoolRow). -->
-                  <div data-funding-editor class="flex flex-col gap-1 px-1 pt-1 pb-2">
-                    {#each poolPreview(pool, asOf).lines as line, k (k)}
-                      <p>{line}</p>
-                    {/each}
-                  </div>
-                {/if}
-              </li>
+              <FundingPoolRow
+                {pool}
+                id={pool.id}
+                selected={on}
+                policy={store.policy}
+                {presets}
+                past={pastOf(pool.id)}
+                {asOf}
+                autoName={autoNamed.has(pool.id)}
+                onselect={() => select(on ? null : { kind: 'pool', id: pool.id })}
+                onedit={(e) => poolEdit(i, pool.id, e)}
+              />
             {/each}
+            {#if poolDraft !== null}
+              <!-- The draft in the place the pool will take (4.6). -->
+              <FundingPoolRow
+                pool={poolDraft}
+                id={null}
+                selected={true}
+                policy={store.policy}
+                {presets}
+                past={{ pool: false, inflows: [] }}
+                {asOf}
+                onselect={() => {}}
+                {onedit}
+                {ondraft}
+                {ondiscard}
+              />
+            {/if}
           </ul>
         {/if}
-        <div>
-          <button
-            type="button"
-            data-funding-add
-            data-draft-open={drafts.isOpen ? 'true' : undefined}
-            class="min-h-11 rounded-md border border-control-line bg-surface px-3 font-medium text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised"
-            ><span aria-hidden="true">+</span> Add money</button
-          >
-        </div>
+        <AddMoney
+          {presets}
+          disabledReason={addDisabled}
+          alert={addAlert}
+          {onpreset}
+          {onownpool}
+          bind:open={addOpen}
+        />
       </section>
     </div>
 

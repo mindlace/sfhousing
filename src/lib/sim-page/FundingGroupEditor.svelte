@@ -319,7 +319,13 @@
     {#if lines.length > 0}
       <ul class="flex flex-col gap-1">
         {#each lines as l, i (`${l.pools.join(',')}@${l.from}`)}
-          <li data-scale-line class="flex flex-wrap items-center gap-x-2">
+          <!-- Focusable from script: a dated-change preset focuses its new line (4.6). -->
+          <li
+            data-scale-line
+            data-scale-from={l.from}
+            tabindex="-1"
+            class="flex flex-wrap items-center gap-x-2"
+          >
             <span
               >{#if isCity}<span class="font-medium">{l.name}</span>:
               {/if}{l.text}</span

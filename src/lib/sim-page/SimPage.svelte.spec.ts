@@ -30,6 +30,7 @@ import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
 import { tinyLimits } from '$lib/map/height/test/fixtures';
 import { clampBbox } from './lid-request';
 import defaultRecord2 from './fixtures/schema2/default-record.json?raw';
+import { DRAFT_DISCARDED, DRAFT_LINE } from './funding-copy';
 
 const restoreSpy = vi.hoisted(() => vi.fn());
 vi.mock('./sim-session', async (orig) => {
@@ -150,6 +151,27 @@ describe('SimPage dock', () => {
     await expect.element(page.getByText(/^Affordable homes: /)).toBeVisible();
     await expect.element(page.getByRole('heading', { name: "Today's funding" })).toBeVisible();
     await expect.element(page.getByRole('button', { name: /^City · / })).toBeVisible();
+  });
+
+  it('a run discards an open funding draft and says so (4.6)', async () => {
+    const { w } = await readySim();
+    await tab('Funding').click();
+    await page.getByRole('button', { name: 'Add money', exact: true }).click();
+    await page.getByRole('button', { name: 'Your own pool', exact: true }).click();
+    await expect.element(page.getByText(DRAFT_LINE)).toBeVisible();
+    await pressRun(w);
+    const status = () =>
+      [...document.querySelectorAll('p[role="status"][aria-live="polite"]')]
+        .map((p) => p.textContent ?? '')
+        .join(' ');
+    await expect.poll(status).toContain(DRAFT_DISCARDED);
+    await editPolicy().click();
+    await expect.element(tab('Funding')).toHaveAttribute('aria-selected', 'true');
+    await expect.element(page.getByText('Nothing added yet.')).toBeVisible();
+    expect(page.getByText(DRAFT_LINE).elements()).toHaveLength(0);
+    await expect
+      .element(page.getByRole('button', { name: 'Add money', exact: true }))
+      .not.toHaveAttribute('aria-disabled', 'true');
   });
 
   it('without a calibration the dock has no Permits tab (no empty face)', async () => {
