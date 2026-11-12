@@ -10,13 +10,17 @@ import { miniCalibrationWithRoutes, miniFinance } from './fixtures/mini-finance'
 import {
   WARM_CHUNK,
   attemptLatents,
+  drawsOf,
   financePreOf,
   financeWarm,
   fundedRunStats,
+  kindLatentInto,
   latentsWith,
+  newKindOut,
   lineKey,
   respell,
   tableEntry,
+  tablesOf,
   type AttemptLatents,
   type KindLatent
 } from './funded';
@@ -508,4 +512,39 @@ describe('the finance warm (perf Task 1)', () => {
     expect(entries).toBeGreaterThanOrEqual(values.size);
     expect(values.size).toBeGreaterThan(255);
   });
+});
+
+describe('the typed walk (perf Task 3)', () => {
+  it('kindLatentInto and kindLatent agree', () => {
+    const inp = withFinance(bench);
+    const fp = financePreOf(inp);
+    const pc = precomputeOf(inp);
+    const tabs = tablesOf(fp);
+    const out = newKindOut();
+    let compared = 0;
+    let applying = 0;
+    for (const seed of [1, 2, 3]) {
+      const run = runOf(inp, seed, H, true);
+      pc.candidates.forEach((i, c) => {
+        const e = inp.parcels.existingUnits[i];
+        const d = drawsOf(streamOf(run.sh, pc.entity[c], 0));
+        const lat = latentsWith(run, fp, i, asOf, e, d);
+        for (const kind of ['market', 'affordable'] as const) {
+          const want = lat[kind];
+          if (want === null) continue;
+          const [u, v] = kind === 'market' ? [d.uO, d.vO] : [d.uA, d.vA];
+          // the tables only hold the lots eligible for the kind; any other takes the direct path
+          const tab = fp.eligible[kind][c] === 1 ? tabs[kind] : null;
+          kindLatentInto(out, run, fp, i, lat.size, kind, asOf, u, v, lat.TO, c, tab);
+          expect({ ...out }).toEqual(want);
+          kindLatentInto(out, run, fp, i, lat.size, kind, asOf, u, v, lat.TO, -1, null);
+          expect({ ...out }).toEqual(want);
+          compared++;
+          if (want.day !== null) applying++;
+        }
+      });
+    }
+    expect(compared).toBeGreaterThan(0);
+    expect(applying).toBeGreaterThan(0);
+  }, 300_000);
 });

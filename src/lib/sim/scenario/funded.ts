@@ -356,21 +356,42 @@ function sizeAt(p: SimInput['parcels'], i: number, f: number): LatentSize {
  */
 const sizeMemo = new WeakMap<SimInput['parcels'], (LatentSize | undefined)[]>();
 
-/** Today's ordinary month on the `Precompute.segments` grid from risk start r (0 = never). */
-function ordinaryT(run: Run, i: number, r: Day, uO: number): { T: number; view: number } {
+/** The view of the last `ordinaryMonthOf` (module scratch: read it right after the call). */
+let ordView = 0;
+
+/**
+ * Today's ordinary month on the `Precompute.segments` grid from risk start r (0 = never); its view
+ * goes to `ordView`.
+ */
+function ordinaryMonthOf(run: Run, i: number, r: Day, uO: number): number {
   const { segments, log1mh } = run.pre;
   const K = segments.days.length;
+  ordView = 0;
   if (K === 0) {
     // the engine reaches this only on candidates, whose log1mh is below 0
-    if (!(log1mh[i] < 0)) return { T: 0, view: 0 };
-    return { T: ordinaryMonth(uO, log1mh[i], null, []), view: 0 };
+    if (!(log1mh[i] < 0)) return 0;
+    return ordinaryMonth(uO, log1mh[i], null, []);
   }
   const bounds = regimeMonths(r, segments.days);
   const rates = segments.log1mh.map((a) => a[i]);
   const T = ordinaryMonth(uO, log1mh[i], bounds, rates);
   let seg = 0;
   while (seg < K && bounds[seg] < T) seg++;
-  return { T, view: segments.view[seg] };
+  ordView = segments.view[seg];
+  return T;
+}
+
+/** Today's ordinary month on the `Precompute.segments` grid from risk start r (0 = never). */
+function ordinaryT(run: Run, i: number, r: Day, uO: number): { T: number; view: number } {
+  const T = ordinaryMonthOf(run, i, r, uO);
+  return { T, view: ordView };
+}
+
+/** The ordinary start's day from r for month T on draw vO; null when never or after the horizon. */
+function ordinaryDay(run: Run, r: Day, T: number, vO: number): Day | null {
+  if (T === 0) return null;
+  const day = r + 1 + Math.floor((T - 1 + vO) * MONTH_DAYS);
+  return day <= run.horizon ? day : null;
 }
 
 const EMPTY: number[] = [];
@@ -463,7 +484,7 @@ function segValue(
  * (`financeWarm`) fills every entry whose level has homes; a run fills any other it needs. Indexed
  * `slot * F + f`, `slot` the lot's place among the kind's eligible candidates.
  */
-interface KindTables {
+export interface KindTables {
   /** by candidate: its slot, or −1 when not eligible */
   slot: Int32Array;
   /** per segment: the rate and unshifted rate; read only where `at` is filled */
@@ -675,8 +696,11 @@ export function financeWarm(input: SimInput, horizon: Day): FinanceWarm {
   return warm;
 }
 
-/** The tables of the input's finance, its warm's pass finished first. */
-function tablesOf(fp: FinancePre): Record<ProjectKind, KindTables> {
+/**
+ * The tables of the input's finance, its warm's pass finished first.
+ * @internal exported for the kernel's test
+ */
+export function tablesOf(fp: FinancePre): Record<ProjectKind, KindTables> {
   const s = fused.get(fp)!;
   advance(fp, s, Infinity);
   return s.tabs!;
@@ -718,12 +742,35 @@ let scratch = {
 };
 
 /**
- * One kind's latent for the spell from risk start r on draws (u, v), with `TO` the ordinary month
- * of that spell (spec 4.4 with the builder's calls: the market rate is
- * `min(ordinary, shifted)`, exactly the ordinary rate where the bundle is empty). With `c` (the
- * lot's candidate index) and the pass's tables, the segment values come from the tables.
+ * A reusable, mutable `KindLatent` record (perf Task 3): `kindLatentInto` writes it in place.
+ * `bundle` holds the canonical array (`bundleOf`, or the shared empty one when T = 0), never a copy.
  */
-function kindLatent(
+export type KindOut = KindLatent;
+
+/** A fresh `KindOut`. */
+export function newKindOut(): KindOut {
+  return {
+    kind: 'market',
+    T: 0,
+    day: null,
+    keyDay: NEVER_KEY_DAY,
+    view: 0,
+    f: -1,
+    units: 0,
+    stories: 0,
+    protoId: 'E',
+    bundle: EMPTY,
+    level: 0
+  };
+}
+
+/**
+ * One kind's latent, as `kindLatent` returns it, written into `out`. The one kernel: `kindLatent`
+ * (the object path) and the funded pass's typed walk compute the same numbers through it.
+ * @internal exported for the kernel's test
+ */
+export function kindLatentInto(
+  out: KindOut,
   run: Run,
   fp: FinancePre,
   i: number,
@@ -733,9 +780,9 @@ function kindLatent(
   u: number,
   v: number,
   TO: number,
-  c = -1,
-  tab: KindTables | null = null
-): KindLatent {
+  c: number,
+  tab: KindTables | null
+): void {
   const fin = run.input.finance!;
   const K = fp.days.length;
   const bounds = K === 0 ? EMPTY : regimeMonths(r, fp.days);
@@ -811,18 +858,55 @@ function kindLatent(
     if (d <= run.horizon) day = d;
   }
   const Tref = market ? TO : piecewiseMonth(L, bounds, ref);
+  out.kind = kind;
+  out.T = T;
+  out.day = day;
+  out.keyDay = Tref === 0 ? NEVER_KEY_DAY : startOf(r, Tref);
+  out.view = view;
+  out.f = sz ? sz.f : -1;
+  out.units = sz ? sz.units : 0;
+  out.stories = sz ? sz.stories : 0;
+  out.protoId = sz ? sz.protoId : 'E';
+  out.bundle = T === 0 ? EMPTY : bundles[seg];
+  out.level = T === 0 ? 0 : levels[seg];
+}
+
+/** The object path's record of `kindLatentInto` (`noShortcuts`, `latentsOf`, `respell`). */
+const objOut = newKindOut();
+
+/**
+ * One kind's latent for the spell from risk start r on draws (u, v), with `TO` the ordinary month
+ * of that spell (spec 4.4 with the builder's calls: the market rate is
+ * `min(ordinary, shifted)`, exactly the ordinary rate where the bundle is empty). With `c` (the
+ * lot's candidate index) and the pass's tables, the segment values come from the tables.
+ */
+function kindLatent(
+  run: Run,
+  fp: FinancePre,
+  i: number,
+  size: readonly (LatentSize | null)[],
+  kind: ProjectKind,
+  r: Day,
+  u: number,
+  v: number,
+  TO: number,
+  c = -1,
+  tab: KindTables | null = null
+): KindLatent {
+  const o = objOut;
+  kindLatentInto(o, run, fp, i, size, kind, r, u, v, TO, c, tab);
   return {
-    kind,
-    T,
-    day,
-    keyDay: Tref === 0 ? NEVER_KEY_DAY : startOf(r, Tref),
-    view,
-    f: sz ? sz.f : -1,
-    units: sz ? sz.units : 0,
-    stories: sz ? sz.stories : 0,
-    protoId: sz ? sz.protoId : 'E',
-    bundle: T === 0 ? [] : bundles[seg],
-    level: T === 0 ? 0 : levels[seg]
+    kind: o.kind,
+    T: o.T,
+    day: o.day,
+    keyDay: o.keyDay,
+    view: o.view,
+    f: o.f,
+    units: o.units,
+    stories: o.stories,
+    protoId: o.protoId,
+    bundle: o.T === 0 ? [] : o.bundle,
+    level: o.level
   };
 }
 
@@ -842,21 +926,14 @@ function ordinaryOf(
   uO: number,
   vO: number
 ): { T: number; O: Day | null; view: number } {
-  const o = ordinaryT(run, i, r, uO);
-  let O: Day | null = null;
-  if (o.T !== 0) {
-    const day = r + 1 + Math.floor((o.T - 1 + vO) * MONTH_DAYS);
-    if (day <= run.horizon) O = day;
-  }
-  return { T: o.T, O, view: o.view };
+  const T = ordinaryMonthOf(run, i, r, uO);
+  return { T, O: ordinaryDay(run, r, T, vO), view: ordView };
 }
-
-const NO_SIZES: (LatentSize | null)[] = [];
 
 /**
  * Whether attempt 0 of candidate c, at risk from `asOf` and not held, is passed over on its draws:
  * `uO` above `marketSkip` and, when the lot is eligible for a reached affordable kind, `uA` above
- * `affordableSkip` (exactly when `quickLatents` returns null for it).
+ * `affordableSkip` (exactly when the pass's `quick` gives no latents for it).
  */
 function passesOver(
   fp: FinancePre,
@@ -868,63 +945,6 @@ function passesOver(
   if (!(drawOn(stream, P.INIT, 0) > skipM[c])) return false;
   if (fp.eligible.affordable[c] === 0 || !fp.reached.includes('affordable')) return true;
   return drawOn(stream, P.INIT_AFFORDABLE, 0) > skipA[c];
-}
-
-/**
- * The latents of attempt k of a lot as the funded pass needs them, with the per-input shortcuts
- * (spec 4.5 cost note, 4.17 items 1 and 2); null when the lot is passed over on its draws. A kind
- * the lot is not eligible for (`FinancePre.eligible`) gets no latent (null): every bundle of it
- * is empty, so it never applies. On attempt 0 of a lot at risk from `asOf` and not held
- * (`fresh`), a `uO` above `marketSkip` means neither the ordinary start nor the market funded
- * start falls by the horizon (`TO` 0, `O` null, no market latent), and a `uA` above
- * `affordableSkip` the same for the affordable latent. Every draw that takes a computation takes
- * the exact one, so the pass's schedules and ledger are those of `latentsOf` (the `noShortcuts`
- * test). `size` is [] when no kind latent is computed (it is then never read).
- */
-function quickLatents(
-  run: Run,
-  fp: FinancePre,
-  c: number,
-  i: number,
-  r: Day,
-  existing: number,
-  stream: number,
-  fresh: boolean,
-  skipM: Float64Array,
-  skipA: Float64Array,
-  tabs: Record<ProjectKind, KindTables>
-): AttemptLatents | null {
-  const uO = drawOn(stream, P.INIT, 0);
-  const wantM = fp.eligible.market[c] === 1 && fp.reached.includes('market');
-  let wantA = fp.eligible.affordable[c] === 1 && fp.reached.includes('affordable');
-  const skipO = fresh && uO > skipM[c];
-  let uA = 0;
-  if (wantA) {
-    uA = drawOn(stream, P.INIT_AFFORDABLE, 0);
-    if (fresh && uA > skipA[c]) wantA = false;
-  }
-  if (skipO && !wantA) return null;
-  const doM = wantM && !skipO;
-  const vO = skipO ? 0 : drawOn(stream, P.INIT_DAY, 0);
-  const vA = wantA ? drawOn(stream, P.INIT_DAY_AFFORDABLE, 0) : 0;
-  const uS = doM || wantA ? drawOn(stream, P.SIZE, 0) : 0;
-  const o = skipO ? { T: 0, O: null, view: 0 } : ordinaryOf(run, i, r, uO, vO);
-  const size = doM || wantA ? sizesOf(run, i, existing, uS) : NO_SIZES;
-  return {
-    uO,
-    vO,
-    uA,
-    vA,
-    uS,
-    TO: o.T,
-    O: o.O,
-    Oview: o.view,
-    size,
-    market: doM ? kindLatent(run, fp, i, size, 'market', r, uO, vO, o.T, c, tabs.market) : null,
-    affordable: wantA
-      ? kindLatent(run, fp, i, size, 'affordable', r, uA, vA, o.T, c, tabs.affordable)
-      : null
-  };
 }
 
 /**
@@ -1089,59 +1109,45 @@ function sortByKey(apps: App[], bySlot: (App | undefined)[]): void {
 /** An application's slot, `rank × 2 + kind bit`: its key less its key day's part (`lineKey`). */
 const slotOf = (a: App): number => a.key - Math.min(a.keyDay, NEVER_KEY_DAY) * KEY_DAY_SCALE;
 
-/** One parked or walking lot of the funded pass (spec 4.5). */
-interface Lot {
-  /** its index in `Precompute.candidates` */
-  c: number;
-  /** its T11 row */
-  i: number;
-  /** not held: at risk from `asOf`, so attempt 0 may take the one-draw skips */
-  fresh: boolean;
-  /** the attempt */
-  k: number;
-  /** the attempt's risk start */
-  r: Day;
-  demolished: boolean;
-  /** the reservation day while it is kept; 0 = none or voided */
-  d: Day;
-  /** the parked attempt: its stream, existing units, latents and ordinary day (reservation cut) */
-  stream: number;
-  e: number;
-  lat: AttemptLatents | null;
-  O: Day | null;
-  /** the calendar entries of the parked attempt carry `gen`; any other entry is stale */
-  gen: number;
-  parked: boolean;
-  /** its applications in the line */
-  apps: App[];
-}
+/** A day that is none: no ordinary start, no application, no reservation (perf Task 3). */
+const NO_DAY = -2_147_483_648;
 
-interface Entry {
-  lot: Lot;
-  gen: number;
-}
+/** Calendar entry tags (`c * 4 + tag`): applications of each kind, ordinary start, reservation. */
+const TAG_MARKET = 0;
+const TAG_AFFORDABLE = 1;
+const TAG_ORDINARY = 2;
+const TAG_RESERVATION = 3;
 
-/** What the day loop does on one day (spec 4.8): reservations, applications, ordinary starts. */
-interface Bucket {
-  res: Entry[];
-  apps: (Entry & { kind: ProjectKind })[];
-  ords: Entry[];
-}
-
-/** The loop's calendar: a min-heap of days, each day once, with its bucket. */
+/**
+ * The loop's calendar (spec 4.8): a min-heap of days, each day once, with its bucket. A bucket is
+ * a list of entries `c * 4 + tag` (the lot's candidate index and what it does that day: tag 0 a
+ * market application, 1 an affordable one, 2 an ordinary start, 3 a reservation day) with the
+ * `gen` of the parked attempt that made it; an entry whose `gen` is not the lot's is stale. The
+ * entries live in typed arrays, chained per bucket in the order they were added.
+ */
 class Calendar {
   private readonly heap: Day[] = [];
-  private readonly buckets = new Map<Day, Bucket>();
+  private readonly ids = new Map<Day, number>();
+  private readonly head: number[] = [];
+  private readonly tail: number[] = [];
+  /** per entry: its code, its gen and the next entry of its bucket (−1 = none) */
+  code = new Int32Array(4096);
+  gen = new Int32Array(4096);
+  next = new Int32Array(4096);
+  private n = 0;
 
   get size(): number {
     return this.heap.length;
   }
 
-  at(day: Day): Bucket {
-    let b = this.buckets.get(day);
-    if (!b) {
-      b = { res: [], apps: [], ords: [] };
-      this.buckets.set(day, b);
+  /** The bucket of `day`, made (and the day put in the heap) when it has none. */
+  at(day: Day): number {
+    let b = this.ids.get(day);
+    if (b === undefined) {
+      b = this.head.length;
+      this.head.push(-1);
+      this.tail.push(-1);
+      this.ids.set(day, b);
       const h = this.heap;
       h.push(day);
       for (let n = h.length - 1; n > 0;) {
@@ -1154,8 +1160,41 @@ class Calendar {
     return b;
   }
 
-  /** The earliest day and its bucket, removed. */
-  pop(): [Day, Bucket] {
+  /** Adds an entry at the end of bucket b (also a popped bucket, while its day is processed). */
+  append(b: number, code: number, gen: number): void {
+    const x = this.n++;
+    if (x === this.code.length) {
+      const grow = (a: Int32Array) => {
+        const w = new Int32Array(a.length * 2);
+        w.set(a);
+        return w;
+      };
+      this.code = grow(this.code);
+      this.gen = grow(this.gen);
+      this.next = grow(this.next);
+    }
+    this.code[x] = code;
+    this.gen[x] = gen;
+    this.next[x] = -1;
+    if (this.tail[b] < 0) this.head[b] = x;
+    else this.next[this.tail[b]] = x;
+    this.tail[b] = x;
+  }
+
+  push(day: Day, code: number, gen: number): void {
+    this.append(this.at(day), code, gen);
+  }
+
+  /** The first entry of bucket b (−1 = none); `next` chains the rest. */
+  first(b: number): number {
+    return this.head[b];
+  }
+
+  /** the bucket of the day `pop` last returned */
+  popped = -1;
+
+  /** The earliest day, removed; its bucket goes to `popped`. */
+  pop(): Day {
     const h = this.heap;
     const day = h[0];
     const last = h.pop()!;
@@ -1172,10 +1211,23 @@ class Calendar {
         n = m;
       }
     }
-    const bucket = this.buckets.get(day)!;
-    this.buckets.delete(day);
-    return [day, bucket];
+    this.popped = this.ids.get(day)!;
+    this.ids.delete(day);
+    return day;
   }
+}
+
+/** Candidate index by row (−1 = not a candidate), per precompute. */
+const candidateOf = new WeakMap<Precompute, Int32Array>();
+function candidateIndex(pre: Precompute, rows: number): Int32Array {
+  let m = candidateOf.get(pre);
+  if (m === undefined) {
+    m = new Int32Array(rows).fill(-1);
+    const { candidates } = pre;
+    for (let c = 0; c < candidates.length; c++) m[candidates[c]] = c;
+    candidateOf.set(pre, m);
+  }
+  return m;
 }
 
 /** The counts of one funded run (`fundedRunStats`). */
@@ -1209,6 +1261,12 @@ export function fundedRunStats(): FundedRunStats {
  * loop (spec 4.8) over the parked lots, the line and the pools, then the reservation reports.
  * Every choice is ordered by day, step, line key or parcel rank, never by visit order (spec
  * 4.16).
+ *
+ * The lots are records in typed arrays indexed by candidate c (perf Task 3), not objects; the
+ * calendar's entries are `c * 4 + tag`. The parked attempt's latents are kept as the fields the
+ * pass reads: the ordinary day and view, the size per view, and per kind the application day,
+ * `keyDay`, view, bundle and level. With the shortcuts they are computed in place
+ * (`kindLatentInto`); with `noShortcuts` they are copied from `latentsOf`'s objects.
  */
 export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts): void {
   stats = noStats();
@@ -1234,7 +1292,7 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
   const skipA = shortcuts ? fp.affordableSkip(run.horizon) : new Float64Array(0);
   const tabs = shortcuts ? tablesOf(fp) : null;
   const cal = new Calendar();
-  const lotOf: (Lot | undefined)[] = new Array(parcels.count);
+  const cOf = candidateIndex(pre, parcels.count);
   const firstDay = run.asOf + 1;
   /** the day being processed; money events dated on it are settled by the serving loop */
   let today = -Infinity;
@@ -1266,85 +1324,206 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
   const passes: AwardProbe = (g, units) =>
     awardPasses(g.bundle, g.kind, g.protoId, units, avail, f);
 
-  const leaveLine = (lot: Lot) => {
-    for (const a of lot.apps) line.remove(a);
-    lot.apps = [];
-    lot.parked = false;
+  // The lot table, by candidate c (spec 4.5): a lot is walked from attempt `lk[c]` at risk from
+  // `lr[c]`; `ld[c]` is its reservation day while kept (0 = none or voided).
+  const N = candidates.length;
+  const V = 1 + run.regimes.length;
+  const lk = new Int32Array(N);
+  const lr = new Int32Array(N);
+  const ld = new Int32Array(N);
+  /** not held: at risk from `asOf`, so attempt 0 may take the one-draw skips */
+  const lfresh = new Uint8Array(N);
+  const ldemolished = new Uint8Array(N);
+  const lparked = new Uint8Array(N);
+  /** the calendar entries of the parked attempt carry `lgen`; any other entry is stale */
+  const lgen = new Int32Array(N);
+  // the walked (then parked) attempt: its stream, existing units, ordinary day after the
+  // reservation cut (NO_DAY = none), ordinary view and size per view (`c * V + view`)
+  const lstream = new Float64Array(N);
+  const le = new Float64Array(N);
+  const lO = new Int32Array(N);
+  const lOview = new Int32Array(N);
+  const lsize: (LatentSize | null)[] = new Array<LatentSize | null>(N * V).fill(null);
+  // per kind (`c * 2 + kind bit`): the latent's application day (NO_DAY = none), keyDay, view,
+  // bundle and level; the rest is read only where the day is not NO_DAY
+  const kday = new Int32Array(2 * N);
+  const kkey = new Int32Array(2 * N);
+  const kview = new Int32Array(2 * N);
+  const klevel = new Float64Array(2 * N);
+  const kbundle: number[][] = new Array<number[]>(2 * N).fill(EMPTY);
+  /** its applications in the line, in the order they were made: at most one per kind */
+  const lapps: (App | null)[] = new Array<App | null>(2 * N).fill(null);
+  const reachM = fp.reached.includes('market');
+  const reachA = fp.reached.includes('affordable');
+  const eligM = fp.eligible.market;
+  const eligA = fp.eligible.affordable;
+  const sizeBuf: (LatentSize | null)[] = new Array<LatentSize | null>(V).fill(null);
+  const out = newKindOut();
+
+  /** Keeps one kind's latent (null = none) as the lot's record. */
+  const keep = (c: number, bit: number, x: KindLatent | null): void => {
+    const at = c * 2 + bit;
+    if (x === null || x.day === null) {
+      kday[at] = NO_DAY;
+      return;
+    }
+    kday[at] = x.day;
+    kkey[at] = x.keyDay;
+    kview[at] = x.view;
+    klevel[at] = x.level;
+    kbundle[at] = x.bundle;
+  };
+
+  /**
+   * The latents of attempt k of lot c as the pass needs them, with the per-input shortcuts (spec
+   * 4.5 cost note, 4.17 items 1 and 2), into the lot's record; false when the lot is passed over
+   * on its draws. A kind the lot is not eligible for (`FinancePre.eligible`) gets no latent: every
+   * bundle of it is empty, so it never applies. On attempt 0 of a lot at risk from `asOf` and not
+   * held (`fresh`), a `uO` above `marketSkip` means neither the ordinary start nor the market
+   * funded start falls by the horizon (`TO` 0, no ordinary day, no market latent), and a `uA`
+   * above `affordableSkip` the same for the affordable latent. Every draw that takes a computation
+   * takes the exact one, so the pass's schedules and ledger are those of `latentsOf` (the
+   * `noShortcuts` test). The sizes are kept only when a kind latent is computed (they are read only
+   * then). Returns the ordinary day before the reservation cut (NO_DAY = none).
+   */
+  const quick = (c: number, i: number, r: Day, e: number, stream: number, fresh: boolean) => {
+    const uO = drawOn(stream, P.INIT, 0);
+    const wantM = eligM[c] === 1 && reachM;
+    let wantA = eligA[c] === 1 && reachA;
+    const skipO = fresh && uO > skipM[c];
+    let uA = 0;
+    if (wantA) {
+      uA = drawOn(stream, P.INIT_AFFORDABLE, 0);
+      if (fresh && uA > skipA[c]) wantA = false;
+    }
+    if (skipO && !wantA) return null;
+    const doM = wantM && !skipO;
+    const vO = skipO ? 0 : drawOn(stream, P.INIT_DAY, 0);
+    const vA = wantA ? drawOn(stream, P.INIT_DAY_AFFORDABLE, 0) : 0;
+    const uS = doM || wantA ? drawOn(stream, P.SIZE, 0) : 0;
+    let TO = 0;
+    let O: Day = NO_DAY;
+    lOview[c] = 0;
+    if (!skipO) {
+      TO = ordinaryMonthOf(run, i, r, uO);
+      lOview[c] = ordView;
+      O = ordinaryDay(run, r, TO, vO) ?? NO_DAY;
+    }
+    if (doM || wantA) {
+      for (let v = 0; v < V; v++) {
+        const sz = sizeIn(run, v, i, e, uS);
+        sizeBuf[v] = sz;
+        lsize[c * V + v] = sz;
+      }
+    }
+    if (doM) {
+      kindLatentInto(out, run, fp, i, sizeBuf, 'market', r, uO, vO, TO, c, tabs!.market);
+      keep(c, 0, out);
+    } else kday[c * 2] = NO_DAY;
+    if (wantA) {
+      kindLatentInto(out, run, fp, i, sizeBuf, 'affordable', r, uA, vA, TO, c, tabs!.affordable);
+      keep(c, 1, out);
+    } else kday[c * 2 + 1] = NO_DAY;
+    return O;
+  };
+
+  /** `latentsOf`'s objects into the lot's record (`noShortcuts`); the ordinary day as `quick`. */
+  const slow = (c: number, i: number, r: Day, e: number, stream: number): Day => {
+    const lat = latentsOf(run, fp, i, r, e, stream);
+    lOview[c] = lat.Oview;
+    for (let v = 0; v < V; v++) lsize[c * V + v] = lat.size[v];
+    keep(c, 0, lat.market);
+    keep(c, 1, lat.affordable);
+    return lat.O ?? NO_DAY;
+  };
+
+  const addApp = (c: number, app: App): void => {
+    if (lapps[c * 2] === null) lapps[c * 2] = app;
+    else if (lapps[c * 2 + 1] === null) lapps[c * 2 + 1] = app;
+    else throw new Error('fundedPass: a lot with three applications');
+  };
+
+  const dropApp = (c: number, app: App): void => {
+    if (lapps[c * 2] === app) {
+      lapps[c * 2] = lapps[c * 2 + 1];
+      lapps[c * 2 + 1] = null;
+    } else if (lapps[c * 2 + 1] === app) lapps[c * 2 + 1] = null;
+  };
+
+  const leaveLine = (c: number) => {
+    const a = lapps[c * 2];
+    const b = lapps[c * 2 + 1];
+    if (a !== null) line.remove(a);
+    if (b !== null) line.remove(b);
+    lapps[c * 2] = null;
+    lapps[c * 2 + 1] = null;
+    lparked[c] = 0;
   };
 
   /** After a project started on the lot: true when it exited and attempt k + 1 is to be walked. */
-  const after = (lot: Lot, s: Schedule): boolean => {
-    if (lot.d > 0 && (s.end.kind !== 'exit' || s.end.day >= lot.d)) lot.d = 0;
-    if (s.entered.construction !== undefined) lot.demolished = true;
+  const after = (c: number, s: Schedule): boolean => {
+    if (ld[c] > 0 && (s.end.kind !== 'exit' || s.end.day >= ld[c])) ld[c] = 0;
+    if (s.entered.construction !== undefined) ldemolished[c] = 1;
     if (s.end.kind !== 'exit') return false;
-    lot.r = s.end.day;
-    lot.k++;
+    lr[c] = s.end.day;
+    lk[c]++;
     return true;
   };
 
   /**
-   * Walks the lot's attempts from `lot.k` (spec 4.5): an attempt whose ordinary start comes
+   * Walks the lot's attempts from `lk[c]` (spec 4.5): an attempt whose ordinary start comes
    * before every application runs as today; the first other one parks the lot in the calendar.
+   * The lot is never parked while it is walked, so its record holds no live attempt.
    */
-  const walk = (lot: Lot): void => {
+  const walk = (c: number): void => {
+    const i = candidates[c];
     for (;;) {
-      const stream = streamOf(run.sh, entity[lot.c], lot.k);
-      const e = lot.demolished ? 0 : parcels.existingUnits[lot.i];
-      let lat: AttemptLatents;
+      const k = lk[c];
+      const stream = streamOf(run.sh, entity[c], k);
+      const e = ldemolished[c] === 1 ? 0 : parcels.existingUnits[i];
+      let O: Day;
       if (shortcuts) {
-        const q = quickLatents(
-          run,
-          fp,
-          lot.c,
-          lot.i,
-          lot.r,
-          e,
-          stream,
-          lot.fresh && lot.k === 0,
-          skipM,
-          skipA,
-          tabs!
-        );
+        const q = quick(c, i, lr[c], e, stream, lfresh[c] === 1 && k === 0);
         if (q === null) {
           stats.passedOver++;
           return;
         }
-        lat = q;
-      } else lat = latentsOf(run, fp, lot.i, lot.r, e, stream);
-      const d = lot.d;
-      let O = lat.O;
-      if (O !== null && d > 0 && O >= d) O = null;
-      let A: Day | null = null;
-      const kinds: ProjectKind[] = [];
-      for (const kind of KINDS) {
-        const day = lat[kind]?.day ?? null;
-        if (day === null || (d > 0 && day >= d)) continue;
-        kinds.push(kind);
-        if (A === null || day < A) A = day;
+        O = q;
+      } else O = slow(c, i, lr[c], e, stream);
+      const d = ld[c];
+      if (O !== NO_DAY && d > 0 && O >= d) O = NO_DAY;
+      let A: Day = NO_DAY;
+      let applies = 0;
+      for (let bit = 0; bit < 2; bit++) {
+        const day = kday[c * 2 + bit];
+        if (day === NO_DAY || (d > 0 && day >= d)) continue;
+        applies |= 1 << bit;
+        if (A === NO_DAY || day < A) A = day;
       }
-      if (A === null || (O !== null && A > O)) {
-        if (O === null) return;
-        const s = simulatedProject(run, job, lot.i, stream, lot.k, O, e, lat.Oview);
+      if (A === NO_DAY || (O !== NO_DAY && A > O)) {
+        if (O === NO_DAY) return;
+        const s = simulatedProject(run, job, i, stream, k, O, e, lOview[c]);
         if (s === null) return;
         sink.schedule(s);
-        if (!after(lot, s)) return;
+        if (!after(c, s)) return;
         continue;
       }
-      lot.stream = stream;
-      lot.e = e;
-      lot.lat = lat;
-      lot.O = O;
-      lot.parked = true;
-      const gen = ++lot.gen;
-      for (const kind of kinds) cal.at(lat[kind]!.day!).apps.push({ lot, gen, kind });
-      if (O !== null) cal.at(O).ords.push({ lot, gen });
-      if (d > 0 && d <= run.horizon) cal.at(d).res.push({ lot, gen });
+      lstream[c] = stream;
+      le[c] = e;
+      lO[c] = O;
+      lparked[c] = 1;
+      const gen = ++lgen[c];
+      for (let bit = 0; bit < 2; bit++) {
+        if ((applies & (1 << bit)) !== 0) cal.push(kday[c * 2 + bit], c * 4 + bit, gen);
+      }
+      if (O !== NO_DAY) cal.push(O, c * 4 + TAG_ORDINARY, gen);
+      if (d > 0 && d <= run.horizon) cal.push(d, c * 4 + TAG_RESERVATION, gen);
       return;
     }
   };
 
   /** The funding fields of an award (spec 4.12). */
-  const fundingOf = (lot: Lot, app: App, a: Award, certain: boolean): Schedule['funding'] => {
+  const fundingOf = (c: number, app: App, a: Award, certain: boolean): Schedule['funding'] => {
     const programmes: string[] = [];
     let granted = 0;
     let lent = 0;
@@ -1357,9 +1536,9 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
       guaranteed += projectDollars(it.guaranteed, app.units);
     });
     let displaced = 0;
-    if (lot.O !== null) {
-      const sz = lot.lat!.size[lot.lat!.Oview];
-      if (sz !== null) displaced = sz.units - lot.e;
+    if (lO[c] !== NO_DAY) {
+      const sz = lsize[c * V + lOview[c]];
+      if (sz !== null) displaced = sz.units - le[c];
     }
     return { programmes, applied: app.applied, granted, lent, guaranteed, displaced, certain };
   };
@@ -1372,10 +1551,10 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
    * keeps `applied` and `key`, takes B′, its view, size and prototype, and is regrouped.
    */
   const remake = (app: App, seg: number): boolean => {
-    const lot = lotOf[app.lot]!;
+    const c = cOf[app.lot];
     const view = fp.view[seg];
-    const sz = lot.lat!.size[view];
-    if (sz === null || viewOf(run, view).pre.logit[lot.i] === -Infinity) return false;
+    const sz = lsize[c * V + view];
+    if (sz === null || viewOf(run, view).pre.logit[app.lot] === -Infinity) return false;
     const bundle = bundleOf(fp, fin, app.kind, seg, sz.units);
     if (bundle.length === 0) return false;
     const level = coverageLevel(f.price(app.kind, bundle, sz.protoId).coverage);
@@ -1394,58 +1573,69 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
 
   /**
    * A lapse on re-pricing day D (spec 4.11): the application leaves the line, and the kind's
-   * latent start is computed again as a new spell from D. A new application (not on or after a
-   * kept reservation day) joins the calendar: on D itself through `today`'s bucket.
+   * latent start is computed again as a new spell from D (`respell`, on the attempt's draws and
+   * sizes). A new application (not on or after a kept reservation day) joins the calendar: on D
+   * itself through today's bucket.
    */
-  const lapse = (app: App, D: Day, todays: Bucket): void => {
-    const lot = lotOf[app.lot]!;
+  const lapse = (app: App, D: Day, todays: number): void => {
+    const c = cOf[app.lot];
     line.remove(app);
-    lot.apps = lot.apps.filter((a) => a !== app);
+    dropApp(c, app);
     stats.respells++;
-    const nl = respell(run, fp, lot.i, lot.lat!, app.kind, D, lot.c, tabs?.[app.kind] ?? null);
-    if (nl === null || (lot.d > 0 && nl.day! >= lot.d)) return;
-    lot.lat![app.kind] = nl;
-    const x = { lot, gen: lot.gen, kind: app.kind };
-    if (nl.day === D) todays.apps.push(x);
-    else cal.at(nl.day!).apps.push(x);
+    const lat: AttemptLatents = {
+      ...drawsOf(lstream[c]),
+      TO: 0,
+      O: null,
+      Oview: lOview[c],
+      size: lsize.slice(c * V, c * V + V),
+      market: null,
+      affordable: null
+    };
+    const nl = respell(run, fp, app.lot, lat, app.kind, D, c, tabs?.[app.kind] ?? null);
+    if (nl === null || (ld[c] > 0 && nl.day! >= ld[c])) return;
+    const bit = app.kind === 'affordable' ? 1 : 0;
+    keep(c, bit, nl);
+    if (nl.day === D) cal.append(todays, c * 4 + bit, lgen[c]);
+    else cal.push(nl.day!, c * 4 + bit, lgen[c]);
   };
 
   /** An award on `today` (spec 4.9): the lot leaves every line and its funded project starts. */
   const take = (app: App, a: Award): void => {
-    const lot = lotOf[app.lot]!;
-    leaveLine(lot);
+    const c = cOf[app.lot];
+    const i = app.lot;
+    leaveLine(c);
     const certain = coverageLevel(a.priced.coverage) === 1;
     const view = app.view;
     const vp = view > 0 ? run.regimes[view - 1].parcels : parcels;
     let pathway: Pathway | null = null;
-    if (vp.localProgram[lot.i] === 1) pathway = 'streamlined';
+    if (vp.localProgram[i] === 1) pathway = 'streamlined';
     else if (certain && app.kind === 'affordable') {
-      pathway = pathwayFrom(run.newCal.affordableRoutes!, lot.stream);
+      pathway = pathwayFrom(run.newCal.affordableRoutes!, lstream[c]);
     }
     const s = startSimulated(
       run,
       job,
-      lot.i,
-      lot.stream,
-      lot.k,
+      i,
+      lstream[c],
+      lk[c],
       today,
-      lot.e,
+      le[c],
       view,
       app.f,
       pathway,
       certain
     );
     if (app.kind === 'affordable') s.kind = 'affordable';
-    s.funding = fundingOf(lot, app, a, certain);
+    s.funding = fundingOf(c, app, a, certain);
     tr.award(today, a, app.units, s);
     stats.awards++;
     sink.schedule(s);
-    if (after(lot, s)) walk(lot);
+    if (after(c, s)) walk(c);
   };
 
   // 1. The eager phase (spec 4.5): holds and reservations exactly as `simulatedPass`.
-  const reserved: Lot[] = [];
-  for (let c = 0; c < candidates.length; c++) {
+  const reserved: number[] = [];
+  for (let c = 0; c < N; c++) {
     const i = candidates[c];
     let r = run.asOf;
     let demolished = false;
@@ -1469,25 +1659,12 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
       stats.passedOver++;
       continue;
     }
-    const lot: Lot = {
-      c,
-      i,
-      fresh: st.held[i] !== 1,
-      k: 0,
-      r,
-      demolished,
-      d,
-      stream: 0,
-      e: 0,
-      lat: null,
-      O: null,
-      gen: 0,
-      parked: false,
-      apps: []
-    };
-    lotOf[i] = lot;
-    walk(lot);
-    if (isReserved) reserved.push(lot);
+    lfresh[c] = st.held[i] !== 1 ? 1 : 0;
+    lr[c] = r;
+    ldemolished[c] = demolished ? 1 : 0;
+    ld[c] = d;
+    walk(c);
+    if (isReserved) reserved.push(c);
   }
 
   // 2. The day loop (spec 4.8). Every re-pricing day up to the horizon is a day of the loop.
@@ -1501,18 +1678,28 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
   const bySlot: (App | undefined)[] = shortcuts ? new Array(2 * parcels.count) : [];
   /** money moved outside a serving pass since the last one: no group keeps its threshold */
   let moneyChanged = true;
-  const live = (x: Entry) => x.lot.parked && x.lot.gen === x.gen;
-  const byRank = (x: Entry, y: Entry) => rank[x.lot.i] - rank[y.lot.i];
+  const byRank = (x: number, y: number) => rank[candidates[x]] - rank[candidates[y]];
+  /** The lots of bucket b's live entries with tag `tag`, in rank order. */
+  const liveByRank = (b: number, tag: number): number[] => {
+    const cs: number[] = [];
+    for (let x = cal.first(b); x >= 0; x = cal.next[x]) {
+      const code = cal.code[x];
+      const c = code >> 2;
+      if ((code & 3) === tag && lparked[c] === 1 && lgen[c] === cal.gen[x]) cs.push(c);
+    }
+    return cs.length > 1 ? cs.sort(byRank) : cs;
+  };
   while (cal.size > 0) {
-    const [D, b] = cal.pop();
+    const D = cal.pop();
+    const b = cal.popped;
     if (D > run.horizon) break;
     today = D;
     let did = tr.receive(D);
     if (tr.settle(D).any) did = true;
     if (did) moneyChanged = true;
     // a kept reservation's day: the lot's waiting applications lapse for good (spec 4.11)
-    for (const x of b.res.filter(live).sort(byRank)) {
-      leaveLine(x.lot);
+    for (const c of liveByRank(b, TAG_RESERVATION)) {
+      leaveLine(c);
       did = true;
     }
     // re-pricing and lapse (spec 4.11), in key order, once per application however many kinds of
@@ -1523,29 +1710,39 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
       did = true;
     }
     const fresh: App[] = [];
-    for (const x of b.apps) {
-      if (!live(x)) continue;
-      const lt = x.lot.lat![x.kind]!;
+    for (let x = cal.first(b); x >= 0; x = cal.next[x]) {
+      const code = cal.code[x];
+      const bit = code & 3;
+      if (bit > TAG_AFFORDABLE) continue;
+      const c = code >> 2;
+      if (lparked[c] !== 1 || lgen[c] !== cal.gen[x]) continue;
+      const i = candidates[c];
+      const at = c * 2 + bit;
+      const kind: ProjectKind = bit === TAG_MARKET ? 'market' : 'affordable';
+      const view = kview[at];
+      const sz = lsize[c * V + view]!;
+      const bundle = kbundle[at];
+      const keyDay = kkey[at];
       const app: App = {
-        lot: x.lot.i,
-        kind: x.kind,
+        lot: i,
+        kind,
         applied: D,
-        key: lineKey(lt.keyDay, rank[x.lot.i], x.kind),
-        bundle: lt.bundle,
-        bundleKey: bundleKeyOf(lt.bundle),
-        protoId: lt.protoId,
-        units: lt.units,
-        level: lt.level,
-        view: lt.view,
-        f: lt.f,
-        stories: lt.stories,
-        keyDay: lt.keyDay,
+        key: lineKey(keyDay, rank[i], kind),
+        bundle,
+        bundleKey: bundleKeyOf(bundle),
+        protoId: sz.protoId,
+        units: sz.units,
+        level: klevel[at],
+        view,
+        f: sz.f,
+        stories: sz.stories,
+        keyDay,
         seq: 0,
         lgr: null,
         lgi: -1,
         lk: -1
       };
-      x.lot.apps.push(app);
+      addApp(c, app);
       fresh.push(app);
     }
     if (shortcuts) sortByKey(fresh, bySlot);
@@ -1565,19 +1762,18 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
       } while (r.returned);
     }
     // ordinary starts of parked lots that have not started (spec 4.8 step 6)
-    for (const x of b.ords.filter(live).sort(byRank)) {
-      const lot = x.lot;
-      leaveLine(lot);
-      const s = simulatedProject(run, job, lot.i, lot.stream, lot.k, D, lot.e, lot.lat!.Oview);
+    for (const c of liveByRank(b, TAG_ORDINARY)) {
+      leaveLine(c);
+      const s = simulatedProject(run, job, candidates[c], lstream[c], lk[c], D, le[c], lOview[c]);
       if (s === null) continue;
       sink.schedule(s);
-      if (after(lot, s)) walk(lot);
+      if (after(c, s)) walk(c);
     }
     opts.lineProbe?.(D, line.apps());
   }
   opts.lineProbe?.(run.horizon, line.apps());
 
   // 3. Close: each reserved candidate once, and the reserved rows that are not candidates.
-  for (const lot of reserved) sink.reservation?.(lot.i, lot.d > 0);
+  for (const c of reserved) sink.reservation?.(candidates[c], ld[c] > 0);
   if (reservedFrom !== null) reservationsOff(run, holds, sink, candidates);
 }

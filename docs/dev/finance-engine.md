@@ -557,6 +557,17 @@ On the bench funding input the whole warm is about 190 ms in a bundle (250 ms un
 chunks of `WARM_CHUNK` (16,384 candidates, about 23 ms bundled); before, `marketSkip` and
 `affordableSkip` alone took about 460 ms and the tables filled lazily inside runs.
 
+**The typed walk** (perf Task 3): `fundedPass` keeps its lots as records in typed arrays indexed
+by candidate (attempt, risk start, reservation day, parked flag and `gen`, the parked attempt's
+stream, ordinary day and view, size per view, and per kind the application day, `keyDay`, view,
+bundle and level), not objects, and its calendar entries as `c * 4 + tag` in typed arrays chained
+per day. A lot's applications are found through the `App`s' `lot` row (at most one per kind). One
+kernel, `kindLatentInto`, writes a kind's latent into a reusable record; `kindLatent` (the object
+path: `latentsOf`, `respell`, `noShortcuts`) copies it into a `KindLatent`. With the shortcuts the
+walk computes the latents in place; with `noShortcuts` it copies `latentsOf`'s objects into the
+records, so the on/off tests compare the two paths. Case 3 went from about 72 to 60 ms under vitest
+(interleaved, ballpark load).
+
 **The bench funding set** (`benchFunding(asOf)` in `fixtures/bench-finance.ts`; tier 4 values made up
 to load the engine, not data): two pools, three programmes, one of them certain.
 
