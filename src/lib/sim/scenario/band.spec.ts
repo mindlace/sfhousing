@@ -3,8 +3,10 @@ import {
   BAND_RUNS,
   bandSeed,
   createBandState,
+  medianRank,
   nearestRank,
   quantiles,
+  rankOrder,
   representativeIndex
 } from './band';
 
@@ -231,5 +233,36 @@ describe('createBandState', () => {
     const s = createBandState(3);
     expect(() => s.setFzp(3, Int32Array.of(1))).toThrow(RangeError);
     expect(() => s.setPair(-1, Int32Array.of(1))).toThrow(RangeError);
+  });
+});
+
+/** `n` integers from a small LCG in [0, 20), so ties occur. */
+function seededFinals(n: number): number[] {
+  let x = 12345;
+  return Array.from({ length: n }, () => {
+    x = (x * 1103515245 + 12345) % 2147483648;
+    return (x >> 8) % 20;
+  });
+}
+
+describe('rank order', () => {
+  it('rankOrder is the exact reverse of the ascending order, ties by index', () => {
+    expect(rankOrder([5, 9, 5, 1, 9])).toEqual([4, 1, 2, 0, 3]);
+  });
+  it('the median rank is the representative run, ties included', () => {
+    for (const f of [[7], [3, 3, 3], [2, 9, 2, 9, 5, 5, 1], seededFinals(101), seededFinals(17)])
+      expect(rankOrder(f)[medianRank(f.length)]).toBe(representativeIndex(f));
+  });
+  it('medianRank(101) is 50', () => expect(medianRank(BAND_RUNS)).toBe(50));
+  it('rankOrder throws on no runs', () => {
+    expect(() => rankOrder([])).toThrow(RangeError);
+  });
+  it('rankSeeds throws until every FZP run is set, then is rankOrder through bandSeed', () => {
+    const b = createBandState(3);
+    b.setFzp(0, Int32Array.of(1, 4));
+    b.setFzp(1, Int32Array.of(1, 9));
+    expect(() => b.rankSeeds()).toThrow(RangeError);
+    b.setFzp(2, Int32Array.of(1, 4));
+    expect(b.rankSeeds()).toEqual([2, 3, 1]);
   });
 });

@@ -9,14 +9,13 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { SOURCE_DATASETS } from '../src/lib/fzp/card';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
-import { monthStart } from '../src/lib/fzp/time';
+import { monthIndex, monthStart } from '../src/lib/fzp/time';
 import { formatCount, formatPercent } from '../src/lib/scoreboard/format';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { slider, startRun } from './helpers/run';
+import { runSlider, slider, startRun } from './helpers/run';
 import {
   FRAME,
   gotoHydrated,
-  headerAction,
   jumpAndIdle,
   openHeaderMenu,
   projectToPage,
@@ -86,8 +85,6 @@ const SHIPYARD = projectById('CASE:2007.0001PRX');
 const readout = (page: Page): Locator => page.getByTestId('fzp-readout-label');
 /** The header score bar: "{n} homes added" at the scrubbed day. */
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
-/** "Another future", made visible first (below 1024 px it waits in the header Menu). */
-const anotherFuture = (page: Page): Promise<Locator> => headerAction(page, 'Another future');
 /** The dock's Results face (`data-testid="score-details"`), which the header score flips to. */
 const scoreDetails = (page: Page): Locator => page.getByRole('region', { name: 'Results' });
 /**
@@ -123,11 +120,18 @@ const scoreJson = (page: Page, field?: 'shown' | 'band'): Promise<string> =>
     return JSON.stringify(f ? s?.[f] : s);
   }, field);
 
-/** Waits for the page to reach `ready` with the map up. */
-async function waitReady(page: Page): Promise<void> {
-  await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready', undefined, {
-    timeout: 20_000
-  });
+/** Waits for the page to reach `ready` with the map up; with `ranked`, the band's order too. */
+async function waitReady(page: Page, { ranked = false }: { ranked?: boolean } = {}): Promise<void> {
+  await page.waitForFunction(
+    (r) => {
+      const f = (window as FzpWin).__sfhFzp;
+      return f?.phase === 'ready' && (!r || f.ranks !== null);
+    },
+    ranked,
+    {
+      timeout: 20_000
+    }
+  );
   await waitForMapOnly(page);
 }
 
@@ -142,7 +146,7 @@ async function waitForMapOnly(page: Page): Promise<void> {
 const FZP_PATH = '/sim';
 /** The address bar on the timelapse's representative future. */
 const FZP_URL = /\/sim$/;
-/** The address bar on the timelapse after a reroll to `seed` (any seed when omitted). */
+/** The address bar on the timelapse after a run slider move to `seed` (any seed when omitted). */
 const seedUrl = (seed?: number): RegExp => new RegExp(`/sim\\?seed=${seed ?? '\\d+'}$`);
 
 /**
@@ -306,41 +310,113 @@ test('the day stays at asOf, in Setup with the scrubber disabled, until Run is p
   await expect.poll(() => fzp(page, 'day'), { timeout: 5_000 }).toBeGreaterThan(asOf);
 });
 
-// ---- reroll -------------------------------------------------------------------------------------
-
-test('Another future writes ?seed=N, keeps the day, and the URL seed reproduces the future', async ({
-  page
-}) => {
-  await gotoFzp(page, '', { run: true });
-  const first = await fzp(page, 'seed');
-  expect(await fzp(page, 'representative')).toBe(true);
-
-  await slider(page).focus();
-  await page.keyboard.press('PageUp');
-  await page.keyboard.press('PageUp');
-  const day = await fzp(page, 'day');
-  expect(day).toBeGreaterThan(await fzp(page, 'asOf'));
-
-  await (await anotherFuture(page)).click();
-  await expect(page).toHaveURL(seedUrl());
-  const seed = Number(new URL(page.url()).searchParams.get('seed'));
-  await expect.poll(() => fzp(page, 'seed')).toBe(seed);
-  expect(seed).not.toBe(first);
-  expect(await fzp(page, 'representative')).toBe(false);
-  expect(await fzp(page, 'day')).toBe(day);
-
-  const shown = await scoreJson(page, 'shown');
-  await page.reload();
-  await waitReady(page);
-  expect(await fzp(page, 'seed')).toBe(seed);
-  expect(await scoreJson(page, 'shown')).toBe(shown);
-});
+// ---- run slider ---------------------------------------------------------------------------------
 
 /** The address bar's seed: a number, or null for the representative future. */
 const addressSeed = (page: Page): number | null => {
   const raw = new URL(page.url()).searchParams.get('seed');
   return raw === null ? null : Number(raw);
 };
+
+/** The run in a run: ready, the band ranked, the slider enabled. */
+async function gotoRanked(page: Page, search = ''): Promise<number[]> {
+  await gotoFzp(page, search, { run: true });
+  await waitReady(page, { ranked: true });
+  await expect(runSlider(page)).not.toHaveAttribute('aria-disabled', 'true');
+  return (await fzp(page, 'ranks'))!.slice();
+}
+
+/** Presses `key` on the run slider and waits for the address bar to show the run at `seed`. */
+async function slideTo(page: Page, key: string, seed: number | null): Promise<void> {
+  await runSlider(page).focus();
+  await page.keyboard.press(key);
+  await expectSettledOn(page, seed);
+}
+
+/** Waits until the page shows the run at `seed` (null: the representative) and the URL says so. */
+async function expectSettledOn(page: Page, seed: number | null): Promise<void> {
+  await expect(page).toHaveURL(seed === null ? FZP_URL : seedUrl(seed));
+  if (seed === null) await expect.poll(() => fzp(page, 'representative')).toBe(true);
+  else await expect.poll(() => fzp(page, 'seed')).toBe(seed);
+}
+
+/** The header score's total at the scrubbed day, from the score on show. */
+async function headlineTotal(page: Page): Promise<string> {
+  const [score, day] = [await fzp(page, 'score'), await fzp(page, 'day')];
+  const i = monthIndex(day, score!.months[0], score!.months.length);
+  return `${formatCount(score!.baseline.completedNet + score!.shown[i].completedNet)} homes added`;
+}
+
+test('run slider: absent in Setup, present and enabled in a run', async ({ page }) => {
+  await gotoFzp(page);
+  await expect(runSlider(page)).toHaveCount(0);
+  await startRun(page);
+  await expect(runSlider(page)).toBeVisible();
+  await waitReady(page, { ranked: true });
+  await expect(runSlider(page)).not.toHaveAttribute('aria-disabled', 'true');
+  await expect(runSlider(page)).toHaveAttribute('aria-valuetext', /, rank 51 of 101$/);
+});
+
+test('End and Home move the headline and ?seed, adding no history entries', async ({ page }) => {
+  const ranks = await gotoRanked(page);
+  const entries = await page.evaluate(() => history.length);
+
+  await slideTo(page, 'End', ranks[100]);
+  expect(await fzp(page, 'seed')).toBe(ranks[100]);
+  await expect
+    .poll(async () => (await scoreBar(page).textContent())?.trim())
+    .toBe(await headlineTotal(page));
+  const last = async () => (await fzp(page, 'score'))!.shown.at(-1)!.completedNet;
+  const worst = await last();
+
+  await slideTo(page, 'Home', ranks[0]);
+  await expect.poll(last).toBeGreaterThanOrEqual(worst);
+
+  // Back to the middle: the representative future, a clean URL.
+  await runSlider(page).focus();
+  for (let i = 0; i < 50; i++) await page.keyboard.press('ArrowDown');
+  await expectSettledOn(page, null);
+  expect(await page.evaluate(() => history.length)).toBe(entries);
+});
+
+test('keyboard: arrows, Page keys, Home and End', async ({ page }) => {
+  const ranks = await gotoRanked(page);
+  const text = (p: number) => `Run ${ranks[p]}, rank ${p + 1} of 101`;
+  const steps: [string, number][] = [
+    ['ArrowUp', 49],
+    ['ArrowRight', 48],
+    ['ArrowDown', 49],
+    ['ArrowLeft', 50],
+    ['PageUp', 40],
+    ['PageDown', 50],
+    ['Home', 0],
+    ['End', 100]
+  ];
+  await runSlider(page).focus();
+  for (const [key, p] of steps) {
+    await page.keyboard.press(key);
+    await expect(runSlider(page), key).toHaveAttribute('aria-valuetext', text(p));
+  }
+});
+
+test('the URL seed of a slider move reproduces the future', async ({ page }) => {
+  const ranks = await gotoRanked(page);
+  await slider(page).focus();
+  await page.keyboard.press('PageUp');
+  await page.keyboard.press('PageUp');
+  const day = await fzp(page, 'day');
+  expect(day).toBeGreaterThan(await fzp(page, 'asOf'));
+
+  await slideTo(page, 'Home', ranks[0]);
+  expect(await fzp(page, 'representative')).toBe(false);
+  expect(await fzp(page, 'day')).toBe(day);
+
+  const shown = await scoreJson(page, 'shown');
+  await page.reload();
+  await waitReady(page);
+  expect(await fzp(page, 'seed')).toBe(ranks[0]);
+  expect(await scoreJson(page, 'shown')).toBe(shown);
+});
 
 /**
  * Waits until the page shows the future the address bar names: that seed and not representative,
@@ -358,21 +434,17 @@ async function expectAddressFuture(page: Page, representative?: number | null): 
   expect(await fzp(page, 'phase')).toBe('ready');
 }
 
-/** Another future: waits for the ?seed=N answer and returns N. */
-async function reroll(page: Page): Promise<number> {
-  await (await anotherFuture(page)).click();
-  await expect(page).toHaveURL(seedUrl());
-  const seed = addressSeed(page)!;
-  await expect.poll(() => fzp(page, 'seed')).toBe(seed);
-  return seed;
+/** Moves the run slider to Best: waits for the ?seed=N answer and returns N. */
+async function toBest(page: Page): Promise<number> {
+  const ranks = await gotoRanked(page);
+  await slideTo(page, 'Home', ranks[0]);
+  return ranks[0];
 }
 
-test('after Another future, the header Simulate link, Back and Forward each show the URL future', async ({
+test('after a slider move, the header Simulate link, Back and Forward each show the URL future', async ({
   page
 }) => {
-  await gotoFzp(page);
-  expect(await fzp(page, 'representative')).toBe(true);
-  const seed = await reroll(page);
+  const seed = await toBest(page);
 
   // The Simulate link is /sim (a new load): its representative future.
   await (await headerLink(page, 'Simulate')).click();
@@ -380,8 +452,8 @@ test('after Another future, the header Simulate link, Back and Forward each show
   await expectAddressFuture(page);
   await waitReady(page);
 
-  // Back to the rerolled entry: SvelteKit navigates to the URL it stored before replaceState
-  // (/sim?seed=N before the reroll), but the address bar reads the rerolled seed, and the page must show #N.
+  // Back to the moved entry: SvelteKit navigates to the URL it stored before replaceState
+  // (/sim before the move), but the address bar reads the moved seed, and the page must show #N.
   await page.goBack();
   await expect(page).toHaveURL(seedUrl(seed));
   await expectAddressFuture(page);
@@ -390,16 +462,18 @@ test('after Another future, the header Simulate link, Back and Forward each show
   await expectAddressFuture(page);
 });
 
-test('Back from another route onto a rerolled timelapse shows the rerolled future', async ({
-  page
-}) => {
-  await gotoFzp(page);
-  const seed = await reroll(page);
+test('Back from another route onto a moved timelapse shows the moved future', async ({ page }) => {
+  const seed = await toBest(page);
   await (await headerLink(page, 'Paint')).click();
   await expect(page).toHaveURL(/\/$/);
   await page.goBack();
   await expect(page).toHaveURL(seedUrl(seed));
   await expectAddressFuture(page);
+});
+
+test('axe: the run slider', async ({ page }) => {
+  await gotoRanked(page);
+  await expectNoA11yViolations(page);
 });
 
 test('Back onto the timelapse after the way back from ?seed=N shows the representative future', async ({
@@ -834,9 +908,11 @@ test('axe: the crash chip', async ({ page }) => {
   await expectNoA11yViolations(page);
 });
 
-test('axe: a failed reroll, whose notice clears the card', async ({ isMobile, page }) => {
-  // A reroll makes no request, so no route can fail it. Instead the page's own reroll request is
-  // given a seed the worker rejects (bad-request), and the real error path runs.
+/**
+ * A run switch makes no request, so no route can fail it. Instead the page's own switch (a
+ * `reroll`) is given a seed the worker rejects (bad-request), and the real error path runs.
+ */
+async function rejectSwitches(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const post = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function (this: Worker, msg: unknown, ...rest: never[]) {
@@ -844,14 +920,30 @@ test('axe: a failed reroll, whose notice clears the card', async ({ isMobile, pa
       return post.call(this, m?.type === 'reroll' ? { ...m, seed: -1 } : msg, ...rest);
     } as typeof Worker.prototype.postMessage;
   });
+}
+
+/** Moves the run slider one tick, whose switch fails: returns the failed-switch alert. */
+async function failSwitch(page: Page): Promise<Locator> {
+  await runSlider(page).focus();
+  await page.keyboard.press('ArrowUp');
+  const alert = page.getByRole('alert').filter({ hasText: "Couldn't show that future" });
+  await expect(alert).toHaveText(/Couldn't show that future\. Try again\./);
+  return alert;
+}
+
+test('axe: a failed switch, whose notice clears the card', async ({ isMobile, page }) => {
+  await rejectSwitches(page);
   await gotoFzp(page, '', { run: true });
+  await waitReady(page, { ranked: true });
   const c = await openRealCard(page, isMobile);
-  await (await anotherFuture(page)).click();
-  const alert = page.getByRole('alert').filter({ hasText: "Couldn't make another future" });
-  await expect(alert).toHaveText(/Couldn't make another future\. Try again\./);
-  // A refused reroll leaves the policy in force: no lever failure alert.
+  // On a phone the slider hides under the open card's sheet: the debug hook takes its path.
+  await page.evaluate(() => (window as FzpWin).__sfhFzp!.selectRank(49));
+  const alert = page.getByRole('alert').filter({ hasText: "Couldn't show that future" });
+  await expect(alert).toHaveText(/Couldn't show that future\. Try again\./);
+  // A refused switch leaves the policy in force: no lever failure alert.
   await expect(page.getByTestId('fzp-lever-failed')).toHaveText('');
   expect(await fzp(page, 'representative')).toBe(true);
+  await expect(runSlider(page)).toHaveCount(isMobile ? 0 : 1);
   await expectNoA11yViolations(page);
 
   const overlap = async (): Promise<string[]> => {
@@ -882,27 +974,20 @@ test('a notice is a pill at the top: it moves nothing on desktop and pushes the 
   isMobile,
   page
 }) => {
-  // The page's own reroll request is given a seed the worker rejects, so the failed-reroll notice
-  // shows and stays (the same route as the axe test above).
-  await page.addInitScript(() => {
-    const post = Worker.prototype.postMessage;
-    Worker.prototype.postMessage = function (this: Worker, msg: unknown, ...rest: never[]) {
-      const m = msg as { type?: string };
-      return post.call(this, m?.type === 'reroll' ? { ...m, seed: -1 } : msg, ...rest);
-    } as typeof Worker.prototype.postMessage;
-  });
-  await gotoFzp(page);
+  // The page's own switch is given a seed the worker rejects, so the failed-switch notice shows
+  // and stays (the same route as the axe test above).
+  await rejectSwitches(page);
+  await gotoFzp(page, '', { run: true });
+  await waitReady(page, { ranked: true });
   const mapRoot = page.getByTestId('map-root');
   const bar = page.getByTestId('fzp-scrubber');
   const barBefore = (await bar.boundingBox())!;
   const mapBefore = (await mapRoot.boundingBox())!;
   const header = (await page.getByRole('banner').boundingBox())!;
 
-  await (await anotherFuture(page)).click();
-  const alert = page.getByRole('alert').filter({ hasText: "Couldn't make another future" });
-  await expect(alert).toBeVisible();
+  await failSwitch(page);
   const stack = page.getByTestId('fzp-notices');
-  await expect(stack).toContainText("Couldn't make another future");
+  await expect(stack).toContainText("Couldn't show that future");
   const box = (await stack.boundingBox())!;
 
   if (isMobile) {

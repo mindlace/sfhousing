@@ -1,7 +1,7 @@
 /// <reference types="@vitest/browser-playwright" />
 // /s/[id] (plan 5, Task 6): a published policy, read-only. The banner names it and offers Remix;
-// the header has only Policy and Another future; the dock's one tab is the summary; a document whose
-// timelines no longer fit the calibration opens refit with the timing notice. A fake Worker
+// the header has only Policy; the dock's one tab is the summary; a document whose timelines no
+// longer fit the calibration opens refit with the timing notice. A fake Worker
 // stands in for the scenario worker; the SimMap stub records its props.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
@@ -131,8 +131,11 @@ describe('/s/[id] read-only view', () => {
   it('has no Publish, no save state and no brush tools', async () => {
     await render(PageHost, { props: { data: data() } });
     await toReady();
-    await expect.element(page.getByRole('button', { name: 'Another future' })).toBeVisible();
+    await expect
+      .element(page.getByRole('banner').getByRole('button', { name: 'Policy', exact: true }))
+      .toBeVisible();
     await expect.element(page.getByRole('region', { name: 'Policy (read-only)' })).toBeVisible();
+    expect(page.getByRole('button', { name: /another future/i }).elements()).toHaveLength(0);
     expect(page.getByRole('button', { name: /Publish|Share link/ }).elements()).toHaveLength(0);
     expect(page.getByText('Saved').elements()).toHaveLength(0);
     expect(page.getByRole('button', { name: 'Add a rule' }).elements()).toHaveLength(0);

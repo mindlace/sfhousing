@@ -6,12 +6,11 @@ import { readFileSync } from 'node:fs';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { startRun } from './helpers/run';
+import { runSlider, startRun, waitRanked } from './helpers/run';
 import {
   FRAME,
   PLAN_KEY,
   gotoEditor,
-  headerAction,
   headerNet,
   jumpAndIdle,
   openResults,
@@ -324,7 +323,7 @@ test('an open project card has no axe violations in dark', async ({ isMobile, pa
 });
 
 test('the pill stack showing a notice has no axe violations in dark', async ({ page }) => {
-  // The page's own reroll request is given a seed the worker rejects, so the failed-reroll notice
+  // The page's own run switch is given a seed the worker rejects, so the failed-switch notice
   // shows and stays.
   await page.addInitScript(() => {
     const post = Worker.prototype.postMessage;
@@ -333,9 +332,11 @@ test('the pill stack showing a notice has no axe violations in dark', async ({ p
       return post.call(this, m?.type === 'reroll' ? { ...m, seed: -1 } : msg, ...rest);
     } as typeof Worker.prototype.postMessage;
   });
-  await gotoSim(page);
-  await (await headerAction(page, 'Another future')).click();
-  const alert = page.getByRole('alert').filter({ hasText: "Couldn't make another future" });
+  await gotoSim(page, { run: true });
+  await waitRanked(page);
+  await runSlider(page).focus();
+  await page.keyboard.press('ArrowUp');
+  const alert = page.getByRole('alert').filter({ hasText: "Couldn't show that future" });
   await expect(alert).toBeVisible();
   await expectNoA11yViolations(page, { include: ['[data-testid=fzp-notices]'] });
 });

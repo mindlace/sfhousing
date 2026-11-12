@@ -7,7 +7,7 @@ import type { SolidPolygonLayer } from '@deck.gl/layers';
 import type { ParcelId } from '$lib/data/parcel';
 import type { TypologyId } from '$lib/generator';
 import type { Day } from '$lib/timelapse/time';
-import { MAX_CELLS_PER_SLICE } from './hide';
+import { MAX_CELLS_PER_SLICE, SWAP_CELLS_PER_SLICE } from './hide';
 import { TOKENS, hexToRgba, type RGBA } from './palette';
 import { registerCellBounds } from './cull';
 import { appearanceColor } from './appearance';
@@ -102,6 +102,8 @@ interface Slice {
   removed: string[];
   /** Installed cells to re-encode with the current lookups (`setLookups`). */
   reencode: string[];
+  /** The last slice of a `complete` update: once it has run, the swap's leftovers go. */
+  complete?: true;
 }
 
 const RESERVED = /^(generated|rising|timeline)-/;
@@ -126,6 +128,8 @@ export class TimelineController {
   private lastRevision = -1;
   private cells = new Map<string, Cell>();
   private queue: Slice[] = [];
+  /** Cells installed since construction (cumulative; the run-switch bench reads it). */
+  private installs = 0;
   private overlay: Layer[] = [];
   private rafHandle: number | null = null;
   private current: Layer[] = [];
@@ -142,6 +146,13 @@ export class TimelineController {
   /** Cells changed since the bars were last built. */
   private barsDirty = false;
   private warnedNoLookups = false;
+  /**
+   * Cells of earlier runs a swap has not yet installed over. They stay on the map until an
+   * update with `complete: true` has installed, then go in that frame. Carried across swaps.
+   */
+  private leftover = new Set<string>();
+  /** From a swap's revision 0 until its leftovers go: slices use SWAP_CELLS_PER_SLICE. */
+  private swapping = false;
 
   /**
    * `labelBeforeId`: the basemap's first label layer. Every layer this controller emits carries
@@ -175,16 +186,17 @@ export class TimelineController {
       return;
     }
     for (const c of u.cells) validateTimedCell(c);
-    if (u.revision === 0) return this.snapshot(u);
+    if (u.revision === 0) return u.swap ? this.swap(u) : this.snapshot(u);
     this.lastRevision = u.revision;
     if (u.demolish.length > 0)
       console.error(
         `[map] timeline revision ${u.revision}: demolish must be empty after revision 0; ` +
           `${u.demolish.length} entries ignored`
       );
-    if (u.cells.length === 0 && u.removedCells.length === 0) return; // band-only
+    const slices = this.plan(u);
+    if (slices.length === 0) return; // band-only
     const idle = this.queue.length === 0;
-    this.queue.push(...planTimelineSlices(u));
+    this.queue.push(...slices);
     if (idle) this.runSlice(this.queue.shift()!);
     this.schedule();
   }
@@ -280,6 +292,7 @@ export class TimelineController {
       demolish: { total: this.pump.total, applied: this.pump.applied },
       // Queued slices + a scheduled pump frame. 0 = layers and feature-state have converged.
       pending: this.queue.length + (this.pump.pending ? 1 : 0),
+      installs: this.installs,
       layerIds: this.current.map((l) => l.id)
     };
   }
@@ -290,6 +303,7 @@ export class TimelineController {
     this.pump.destroy();
     this.queue = [];
     this.cells.clear();
+    this.leftover.clear();
     this.bars = [];
     this.barsLayer = null;
     this.current = [];
@@ -302,19 +316,66 @@ export class TimelineController {
     this.cancelFrame();
     this.queue = [];
     this.cells.clear();
+    this.leftover.clear();
+    this.swapping = false;
     this.bars = [];
     this.barsLayer = null;
     this.barsDirty = true;
     this.pump.replace(u.demolish);
     this.lastRevision = 0;
-    const slices = planTimelineSlices(u);
+    const slices = this.plan(u);
     this.queue = slices.length > 0 ? slices : [{ cells: [], removed: [], reencode: [] }];
     this.runSlice(this.queue.shift()!);
     this.schedule();
   }
 
+  /**
+   * A swap's revision 0: install the new run over the one on the map, which never blanks. Queued
+   * installs are dropped (a superseded run's cells never install); queued re-encodes of cells
+   * still on the map are kept, after the new run's slices. Every installed cell and the bars
+   * stay; the cells become leftovers until a `complete` update has installed. The demolish list
+   * converges by a diff.
+   */
+  private swap(u: TimelineUpdate): void {
+    this.cancelFrame();
+    const reencode: string[] = [];
+    for (const s of this.queue)
+      for (const id of s.reencode) if (this.cells.has(id)) reencode.push(id);
+    for (const id of this.cells.keys()) this.leftover.add(id);
+    this.swapping = true;
+    this.pump.swap(u.demolish);
+    this.lastRevision = 0;
+    const slices = this.plan(u);
+    for (let i = 0; i < reencode.length; i += MAX_CELLS_PER_SLICE)
+      slices.push({ cells: [], removed: [], reencode: reencode.slice(i, i + MAX_CELLS_PER_SLICE) });
+    this.queue = slices.length > 0 ? slices : [{ cells: [], removed: [], reencode: [] }];
+    this.runSlice(this.queue.shift()!);
+    this.schedule();
+  }
+
+  /**
+   * The update's slices at the current budget. A `complete` update during a swap ends with a
+   * slice marked `complete` (an empty one if the update is band-only).
+   */
+  private plan(u: TimelineUpdate): Slice[] {
+    const slices = planTimelineSlices(
+      u,
+      this.swapping ? SWAP_CELLS_PER_SLICE : MAX_CELLS_PER_SLICE
+    );
+    if (u.complete && this.swapping) {
+      if (slices.length === 0) slices.push({ cells: [], removed: [], reencode: [] });
+      slices[slices.length - 1].complete = true;
+    }
+    return slices;
+  }
+
   private runSlice(slice: Slice): void {
-    for (const id of slice.removed) if (this.cells.delete(id)) this.barsDirty = true;
+    for (const id of slice.removed) {
+      // During a swap a removed cell stays as a leftover, so the map never thins mid-switch.
+      if (this.swapping) {
+        if (this.cells.has(id)) this.leftover.add(id);
+      } else if (this.cells.delete(id)) this.barsDirty = true;
+    }
     for (const pack of slice.cells) this.install(pack);
     for (const id of slice.reencode) {
       const cell = this.cells.get(id);
@@ -322,6 +383,11 @@ export class TimelineController {
       if (!cell || cell.encodedWith === this.lookups) continue;
       this.encode(cell);
       this.buildCellLayers(cell);
+    }
+    if (slice.complete) {
+      for (const id of this.leftover) if (this.cells.delete(id)) this.barsDirty = true;
+      this.leftover.clear();
+      this.swapping = false;
     }
     // Bars are rebuilt once per update, when its last slice has installed.
     if (this.queue.length === 0 && this.barsDirty) this.rebuildBars();
@@ -346,6 +412,8 @@ export class TimelineController {
     };
     this.buildCellLayers(cell);
     this.cells.set(pack.cellId, cell);
+    this.leftover.delete(pack.cellId);
+    this.installs++;
     this.barsDirty = true;
   }
 
@@ -440,16 +508,16 @@ export class TimelineController {
   }
 }
 
-/** At most MAX_CELLS_PER_SLICE cells + removed cells per slice, in update order (§4.1). */
-function planTimelineSlices(u: TimelineUpdate): Slice[] {
+/** At most `per` cells + removed cells per slice, in update order (§4.1). */
+function planTimelineSlices(u: TimelineUpdate, per: number): Slice[] {
   const units: [TimedPackedCell | null, string | null][] = [
     ...u.cells.map((c): [TimedPackedCell, null] => [c, null]),
     ...u.removedCells.map((id): [null, string] => [null, id])
   ];
   const out: Slice[] = [];
-  for (let i = 0; i < units.length; i += MAX_CELLS_PER_SLICE) {
+  for (let i = 0; i < units.length; i += per) {
     const slice: Slice = { cells: [], removed: [], reencode: [] };
-    for (const [c, id] of units.slice(i, i + MAX_CELLS_PER_SLICE)) {
+    for (const [c, id] of units.slice(i, i + per)) {
       if (c) slice.cells.push(c);
       else slice.removed.push(id!);
     }

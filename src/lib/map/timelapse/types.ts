@@ -79,6 +79,8 @@ export interface TimelineSnapshot {
   day: number;
   demolish: { total: number; applied: number };
   pending: number;
+  /** Cells installed since construction, cumulative, never reset. */
+  installs: number;
   layerIds: string[];
 }
 

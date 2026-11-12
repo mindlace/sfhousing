@@ -10,23 +10,24 @@ export interface CardArea {
  * bottom-left controls (`controls.left`: zoom and compass, px from the map's left edge), above the
  * time bar (`scrubberH`) and the bottom-right controls (`controls.bottom`: the footprint
  * `--map-controls-br-block-size`, px from the map's bottom, which includes the inset and the
- * attribution band; whichever is higher wins), and below the notice-pill stack when it overlays
- * the map's top (from md; a pill may be showing). The stack's `height` is 0 when no pill shows,
- * and below md it sits in flow above the map, so its bottom is not past the map's top: both leave
- * the top at 0.
+ * attribution band; whichever is higher wins), left of the run slider (`controls.right`: px
+ * from the map's right edge to the slider's left edge; 0 or absent when it is not shown), and
+ * below the notice-pill stack when it overlays the map's top (from md; a pill may be showing).
+ * The stack's `height` is 0 when no pill shows, and below md it sits in flow above the map, so
+ * its bottom is not past the map's top: both leave the top at 0.
  */
 export function cardArea(
   map: { left: number; top: number; width: number; height: number },
   pills: { top: number; bottom: number; height: number } | null,
   dockW: number,
   scrubberH: number,
-  controls: { left?: number; bottom?: number } = {}
+  controls: { left?: number; bottom?: number; right?: number } = {}
 ): CardArea {
   const pillsBottom = pills && pills.height > 0 ? pills.bottom - map.top : 0;
   return {
     left: Math.max(dockW, controls.left ?? 0),
     top: Math.max(0, pillsBottom),
-    right: map.width,
+    right: map.width - (controls.right ?? 0),
     bottom: map.height - Math.max(scrubberH, controls.bottom ?? 0)
   };
 }

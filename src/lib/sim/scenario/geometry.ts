@@ -32,8 +32,11 @@ export interface Geometry {
    * the anchor cells waiting on it.
    */
   onRecords(cellId: string, recs: readonly ParcelRecord[]): void;
-  /** Ready anchor cells with new or newly complete projects, by cell id. */
-  packable(): string[];
+  /**
+   * Ready anchor cells with new or newly complete projects: those in `first` (the viewport's)
+   * first, then the rest, each group by cell id.
+   */
+  packable(first?: ReadonlySet<string>): string[];
   /** Every project anchored in `cellId` whose cells are all ready: the cell in full. */
   pack(cellId: string): TimedPackedCell;
   /** T6: no ready anchored cell is waiting to be packed. */
@@ -192,7 +195,11 @@ export function createGeometry(o: GeometryOptions): Geometry {
       ready.add(cellId);
       for (const anchor of dependents.get(cellId) ?? []) recheck(anchor);
     },
-    packable: () => [...pending].sort(cmp),
+    packable(first) {
+      const all = [...pending].sort(cmp);
+      if (!first || first.size === 0) return all;
+      return [...all.filter((c) => first.has(c)), ...all.filter((c) => !first.has(c))];
+    },
     pack(cellId) {
       const projects = readyProjects(cellId);
       const items: TimedPackInput[] = [];

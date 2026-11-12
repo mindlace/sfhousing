@@ -24,3 +24,12 @@ export async function startRun(page: Page): Promise<void> {
     return f.runPhase === 'run' && !f.playing;
   });
 }
+
+/** The run slider (in a run): the band's runs, Best at the top. */
+export const runSlider = (page: Page): Locator =>
+  page.getByRole('slider', { name: 'Simulated run' });
+
+/** Waits for the band's order (`__sfhFzp.ranks`): the run slider is enabled from then on. */
+export async function waitRanked(page: Page): Promise<void> {
+  await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.ranks != null);
+}

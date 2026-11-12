@@ -67,6 +67,15 @@ describe('cardArea', () => {
     expect(cardArea(map, null, 320, 80, { left: 200 }).left).toBe(320);
   });
 
+  it('ends left of the run slider (controls.right: px from the map right edge to its left)', () => {
+    expect(cardArea(map, null, 320, 80, { right: 60 }).right).toBe(1280 - 60);
+    expect(cardArea(map, null, 320, 80, {}).right).toBe(1280);
+    // A click beside the slider flips the card to the anchor's left, clear of it.
+    const area = cardArea(map, null, 320, 80, { right: 60 });
+    const { left } = cardPlacement({ x: 1000, y: 300 }, { w: 200, h: 100 }, area);
+    expect(left + 200).toBeLessThanOrEqual(1280 - 60);
+  });
+
   it('keeps a tall card off the attribution band', () => {
     const area = cardArea(map, null, 320, 80, { bottom: 112 });
     const top = cardPlacement({ x: 800, y: 690 }, { w: 320, h: 400 }, area).top;
