@@ -72,7 +72,7 @@ const tampered = (): SimPolicy => ({
 });
 
 function data(policy: SimPolicy = painted(), title: string | null = 'SD permits') {
-  const doc: SimDoc = { schema: 2, kind: 'sim', datasetVersion: 'fixture-0', policy };
+  const doc: SimDoc = { schema: 3, kind: 'sim', datasetVersion: 'fixture-0', policy };
   if (title !== null) doc.title = title;
   return {
     id: 'Abcdefg2',
@@ -185,7 +185,7 @@ describe('/s/[id] read-only view', () => {
 
   it('Remix confirms over a non-default local policy', async () => {
     const local: SimDoc = {
-      schema: 2,
+      schema: 3,
       kind: 'sim',
       datasetVersion: 'fixture-0',
       policy: painted()

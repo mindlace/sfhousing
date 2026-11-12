@@ -52,6 +52,8 @@ export async function handleE2eSeed(
   const inserted = await insertPlan(db, {
     id,
     kind,
+    // A seeded schema-2 body is recorded as 3 (the loader upgrades it); harmless, because the
+    // upgrade detection reads the body, not this column.
     schema: parsed.ok ? codec.schema(parsed.value) : 1,
     datasetVersion: version,
     body,

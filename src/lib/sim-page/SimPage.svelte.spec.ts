@@ -708,7 +708,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
   }
 
   const docWith = (current = resolvePreset('benchmarkPermits', calibration)): SimDoc => ({
-    schema: 2,
+    schema: 3,
     kind: 'sim',
     datasetVersion: 'fixture-0',
     policy: { ...DEFAULT_POLICY, timing: { current, saved: null } }
@@ -903,7 +903,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
   // C1: a restored policy goes through LeverSync, so its rules and custom brushes resolve and the
   // full levers (with their lots) are sent, without waiting for an edit.
   const brushed = (): SimDoc => ({
-    schema: 2,
+    schema: 3,
     kind: 'sim',
     datasetVersion: 'fixture-0',
     policy: {
@@ -1406,7 +1406,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
 
   describe('layer selection (Task 13; sim-ux plan 4, Task 2)', () => {
     const RULES_DOC: SimDoc = {
-      schema: 2,
+      schema: 3,
       kind: 'sim',
       datasetVersion: 'fixture-0',
       policy: {
@@ -1891,7 +1891,7 @@ describe('SimPage live preview (sim-ux plan 3, Task 4)', () => {
     await page.viewport(1024, 768);
     const mem = new MemoryStorage();
     const doc: SimDoc = {
-      schema: 2,
+      schema: 3,
       kind: 'sim',
       datasetVersion: 'fixture-0',
       policy: {
@@ -1946,7 +1946,7 @@ describe('SimPage map selection (sim-ux plan 4, Task 4)', () => {
   const ruleId = 'r1';
   const paintId = 'b1';
   const DOC: SimDoc = {
-    schema: 2,
+    schema: 3,
     kind: 'sim',
     datasetVersion: 'fixture-0',
     policy: {

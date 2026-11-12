@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { FUTURE_SCHEMA_MESSAGE } from '$lib/plan';
+import { fundingOnly, maxFunding } from '$lib/sim/levers/fixtures/finance';
 import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
 import { readRecord } from '$lib/sharing/storage';
 import {
   DEFAULT_POLICY,
+  SCHEMA2_PUBLISH_MESSAGE,
   SIM_CODEC,
+  simDocProblems,
   SIM_KEY,
   isDefaultPolicy,
   parseSimDoc,
@@ -16,7 +20,7 @@ import type { TimingSet } from './timing';
 
 const V = 'fixture-0';
 const doc = (policy: SimPolicy = DEFAULT_POLICY, extra: Partial<SimDoc> = {}): SimDoc => ({
-  schema: 2,
+  schema: 3,
   kind: 'sim',
   datasetVersion: V,
   policy,
@@ -165,12 +169,12 @@ describe('SIM_CODEC', () => {
     expect(SIM_CODEC.empty('fixture-2')).toEqual(
       doc(DEFAULT_POLICY, { datasetVersion: 'fixture-2' })
     );
-    expect(SIM_CODEC.schema(doc())).toBe(2);
+    expect(SIM_CODEC.schema(doc())).toBe(3);
   });
 
   it('round-trips schema 2 and counts rules plus custom brushes as ops', () => {
     const d: SimDoc = {
-      schema: 2,
+      schema: 3,
       kind: 'sim',
       datasetVersion: 'fixture-0',
       policy: {
@@ -242,16 +246,16 @@ describe('limits', () => {
     const big = Array.from({ length: 100 }, (_, i) => freehand(`b${i}`, [stroke(2000)]));
     expect(codesOf(raw(withBrushes(big)))).toEqual(['too-large']);
   });
-  it('schema 3: future-schema, in both modes', () => {
+  it('schema 4: future-schema, in both modes', () => {
     for (const mode of ['strict', 'reconcile'] as const) {
-      const r = parseSimDoc(raw(DEFAULT_POLICY, { schema: 3 }), mode);
+      const r = parseSimDoc(raw(DEFAULT_POLICY, { schema: 4 }), mode);
       expect(r.ok).toBe(false);
       if (!r.ok) {
         expect(r.errors[0].code).toBe('future-schema');
         expect(r.errors[0].message).toBe(FUTURE_SCHEMA_MESSAGE);
       }
     }
-    expect(SIM_CODEC.load(raw(DEFAULT_POLICY, { schema: 3 }))).toMatchObject({ ok: false });
+    expect(SIM_CODEC.load(raw(DEFAULT_POLICY, { schema: 4 }))).toMatchObject({ ok: false });
   });
   it("kind 'plan' or a missing schema: unknown-schema", () => {
     expect(codesOf(raw(DEFAULT_POLICY, { kind: 'plan' }))).toEqual(['unknown-schema']);
@@ -288,5 +292,140 @@ describe('lenient parse', () => {
   it('still applies the size limits', () => {
     const p = withBrushes([freehand('a', [stroke(2001)])]);
     expect(parseSimDoc(raw(p), 'reconcile').ok).toBe(false);
+  });
+});
+
+describe('schema 3 documents and the schema-2 loader', () => {
+  const stored = (name: string) =>
+    readFileSync(new URL(`./fixtures/schema2/${name}`, import.meta.url), 'utf8');
+  const withoutKeys = (p: object, ...keys: string[]) => {
+    const o = { ...p } as Record<string, unknown>;
+    for (const k of keys) delete o[k];
+    return o;
+  };
+
+  const texts: [string, string][] = [
+    ['painted.json', stored('painted.json')],
+    ['profile.json', stored('profile.json')],
+    ['tampered.json', stored('tampered.json')],
+    ['default-record.json (plan)', JSON.parse(stored('default-record.json')).plan]
+  ];
+
+  it.each(texts)('%s loads in reconcile as schema 3 with default funding', (_n, text) => {
+    const r = parseSimDoc(text, 'reconcile');
+    if (!r.ok) throw new Error(JSON.stringify(r.errors));
+    expect(r.value.schema).toBe(3);
+    expect(r.value.policy.schema).toBe(3);
+    expect(r.value.policy.funding).toEqual(DEFAULT_POLICY.funding);
+    expect(r.value.policy.funding).not.toBe(DEFAULT_POLICY.funding);
+    const storedPolicy = JSON.parse(text).policy;
+    // Reconcile keeps the stored fields except the preset layer it re-derives (tampered.json),
+    // so compare the parts reconcile leaves alone.
+    expect(withoutKeys(r.value.policy, 'schema', 'funding', 'timing')).toEqual(
+      withoutKeys(storedPolicy, 'schema', 'timing')
+    );
+  });
+
+  it.each(texts)('%s in strict is unknown-schema with the publish message', (_n, text) => {
+    expect(parseSimDoc(text, 'strict')).toEqual({
+      ok: false,
+      errors: [{ path: '/schema', code: 'unknown-schema', message: SCHEMA2_PUBLISH_MESSAGE }]
+    });
+  });
+
+  it('a schema-2 document whose policy has funding is bad-field at /policy/funding', () => {
+    const d = JSON.parse(stored('painted.json'));
+    d.policy.funding = DEFAULT_POLICY.funding;
+    const r = parseSimDoc(JSON.stringify(d), 'reconcile');
+    expect(r).toMatchObject({
+      ok: false,
+      errors: [{ path: '/policy/funding', code: 'bad-field', message: 'funding: unknown key' }]
+    });
+  });
+
+  it('a schema-3 document whose policy is schema 2 is bad-field at /policy/schema', () => {
+    const d = JSON.parse(serializeSimDoc(doc()));
+    d.policy.schema = 2;
+    for (const mode of ['strict', 'reconcile'] as const)
+      expect(parseSimDoc(JSON.stringify(d), mode)).toMatchObject({
+        ok: false,
+        errors: [
+          { path: '/policy/schema', code: 'bad-field', message: 'schema: expected 3, got 2' }
+        ]
+      });
+  });
+
+  it('schema 4 is future-schema in both modes', () => {
+    const d = { ...JSON.parse(serializeSimDoc(doc())), schema: 4 };
+    for (const mode of ['strict', 'reconcile'] as const)
+      expect(parseSimDoc(JSON.stringify(d), mode)).toMatchObject({
+        ok: false,
+        errors: [{ path: '/schema', code: 'future-schema' }]
+      });
+  });
+
+  it('serialize then load round-trips funding', () => {
+    const d = doc({ ...DEFAULT_POLICY, funding: fundingOnly() });
+    const r = parseSimDoc(serializeSimDoc(d), 'reconcile');
+    expect(r).toEqual({ ok: true, value: d });
+  });
+
+  it('a funding error has a full pointer; a term out of range too, in both modes', () => {
+    const d = JSON.parse(serializeSimDoc(doc({ ...DEFAULT_POLICY, funding: fundingOnly() })));
+    d.policy.funding.pools[0].id = 'Bad Id';
+    expect(parseSimDoc(JSON.stringify(d), 'strict')).toMatchObject({
+      ok: false,
+      errors: [{ path: '/policy/funding/pools/0/id', code: 'bad-field' }]
+    });
+    const t = JSON.parse(serializeSimDoc(doc()));
+    t.policy.funding.terms = { lossOnExit: 5 };
+    for (const mode of ['strict', 'reconcile'] as const)
+      expect(parseSimDoc(JSON.stringify(t), mode)).toMatchObject({
+        ok: false,
+        errors: [{ path: '/policy/funding/terms/lossOnExit', code: 'bad-field' }]
+      });
+  });
+
+  it('a guarantee without a typed cut is bad-field in strict and parses in reconcile', () => {
+    const f = fundingOnly();
+    f.programmes[0].instrument = { kind: 'guarantee', costShare: 0.6, reserve: 0.1 };
+    const text = serializeSimDoc(doc({ ...DEFAULT_POLICY, funding: f }));
+    expect(parseSimDoc(text, 'strict')).toEqual({
+      ok: false,
+      errors: [
+        {
+          path: '/policy/funding/programmes/0/instrument',
+          code: 'bad-field',
+          message: 'guarantee needs guaranteeRateCut, which is not sourced'
+        }
+      ]
+    });
+    expect(parseSimDoc(text, 'reconcile').ok).toBe(true);
+    f.terms = { guaranteeRateCut: 0.01 };
+    expect(parseSimDoc(serializeSimDoc(doc({ ...DEFAULT_POLICY, funding: f })), 'strict').ok).toBe(
+      true
+    );
+  });
+
+  it('opCount counts funding', () => {
+    const p: SimPolicy = {
+      ...withBrushes([freehand('a', [stroke()])]),
+      rules: [
+        { id: 't', kind: 'transit', stopTypes: ['metro'], bands: [{ maxM: 402, stories: 6 }] }
+      ],
+      funding: fundingOnly()
+    };
+    expect(SIM_CODEC.opCount(doc(p))).toBe(5);
+    expect(
+      SIM_CODEC.opCount(
+        doc({ ...DEFAULT_POLICY, funding: { ...fundingOnly(), terms: { lossOnExit: 0.1 } } })
+      )
+    ).toBe(4);
+  });
+
+  it('maxFunding with no strokes passes the limits and serialises under 32,768 bytes', () => {
+    const d = doc({ ...DEFAULT_POLICY, funding: maxFunding() });
+    expect(simDocProblems(d)).toEqual([]);
+    expect(new TextEncoder().encode(serializeSimDoc(d)).byteLength).toBeLessThan(32_768);
   });
 });

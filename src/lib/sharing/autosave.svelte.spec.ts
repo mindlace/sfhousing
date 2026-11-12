@@ -322,7 +322,7 @@ describe('Autosave writable (ruling R4)', () => {
   // A SimDoc over OPS_MAX strokes fails simDocProblems; the lenient load would read it back as
   // corrupt, so writing it would lose the policy on reload.
   const simDoc = (strokes: number): SimDoc => ({
-    schema: 2,
+    schema: 3,
     kind: 'sim',
     datasetVersion: 'fixture-0',
     policy: {

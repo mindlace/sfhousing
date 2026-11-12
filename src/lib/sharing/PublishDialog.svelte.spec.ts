@@ -167,7 +167,7 @@ describe('PublishButton + PublishDialog', () => {
   it('the unchanged default sim policy: Publish is disabled, even with a saved timing set', async () => {
     const saved = { label: 'Mine', set: OBSERVED_TIMING.current };
     const doc: SimDoc = {
-      schema: 2,
+      schema: 3,
       kind: 'sim',
       datasetVersion: 'fixture-0',
       policy: { ...DEFAULT_POLICY, timing: { ...DEFAULT_POLICY.timing, saved } }
@@ -187,7 +187,7 @@ describe('PublishButton + PublishDialog', () => {
   it('a sim policy posts the publishable form (snapshot stripped) to /api/policies', async () => {
     const saved = { label: "Permits at San Diego's pace", set: OBSERVED_TIMING.current };
     const doc: SimDoc = {
-      schema: 2,
+      schema: 3,
       kind: 'sim',
       datasetVersion: 'fixture-0',
       policy: {

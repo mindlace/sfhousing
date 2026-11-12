@@ -7,7 +7,7 @@ export const simDoc = (
   policy: SimPolicy = DEFAULT_POLICY,
   extra: Partial<SimDoc> = {}
 ): SimDoc => ({
-  schema: 2,
+  schema: 3,
   kind: 'sim',
   datasetVersion: 'fixture-0',
   policy,

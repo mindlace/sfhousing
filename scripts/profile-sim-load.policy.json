@@ -1,10 +1,10 @@
 {
-  "schema": 2,
+  "schema": 3,
   "kind": "sim",
   "datasetVersion": "2026-11-08-91736640",
   "title": "Profile policy",
   "policy": {
-    "schema": 2,
+    "schema": 3,
     "rules": [
       {
         "id": "r1",
@@ -44,6 +44,7 @@
         "localProgramStreamlined": true
       },
       "saved": null
-    }
+    },
+    "funding": { "baselineScale": [], "pools": [], "programmes": [], "terms": {} }
   }
 }

@@ -7,7 +7,8 @@ import { FakeRateLimiter } from '$lib/server/test/fake-rate-limiter';
 import { manyStrokesText, paintedText, simDoc, tamperedText } from '$lib/server/test/sim-docs';
 import type { ShareError } from '$lib/sharing/api';
 import { PLAN_ID_RE } from '$lib/sharing/ids';
-import { serializeSimDoc } from '$lib/sim-page/sim-doc';
+import { fundingOnly, maxFunding } from '$lib/sim/levers/fixtures/finance';
+import { DEFAULT_POLICY, serializeSimDoc } from '$lib/sim-page/sim-doc';
 import { POST as POST_PLAN } from '../plans/+server';
 import { POST } from './+server';
 
@@ -69,7 +70,7 @@ describe('POST /api/policies', () => {
     const [row] = rows(t);
     expect(row.kind).toBe('sim');
     expect(row.id).toBe(id);
-    expect(row.schema).toBe(2);
+    expect(row.schema).toBe(3);
     expect(row.op_count).toBe(1);
   });
 
@@ -80,6 +81,61 @@ describe('POST /api/policies', () => {
     expect(again.status).toBe(200);
     expect(((await again.json()) as { id: string }).id).toBe(first.id);
     expect(rows(t)).toHaveLength(1);
+  });
+
+  describe('funding (schema 3)', () => {
+    const withFunding = (funding: unknown) =>
+      JSON.stringify({ ...simDoc(), policy: { ...DEFAULT_POLICY, funding } });
+    const paths = (body: ShareError) => body.error.details?.map((d) => d.path);
+
+    it('a funding-only policy is 201 with a schema 3 row', async () => {
+      const { t, platform } = setup();
+      const res = await publish(platform, withFunding(fundingOnly()));
+      expect(res.status).toBe(201);
+      expect(rows(t)[0].schema).toBe(3);
+      expect(rows(t)[0].op_count).toBe(3);
+    });
+
+    it('a schema-2 body is 422 unsupported_schema', async () => {
+      const { platform } = setup();
+      const doc = JSON.parse(paintedText());
+      const text = JSON.stringify({
+        ...doc,
+        schema: 2,
+        policy: { ...doc.policy, schema: 2, funding: undefined }
+      });
+      await expectError(await publish(platform, text), 422, 'unsupported_schema');
+    });
+
+    it('13 pools is 422 invalid_plan at /policy/funding/pools', async () => {
+      const { platform } = setup();
+      const f = maxFunding();
+      const pool = f.pools[0];
+      const funding = { ...f, pools: [...f.pools, { ...pool, id: 'u-pool-13' }] };
+      const body = await expectError(
+        await publish(platform, withFunding(funding)),
+        422,
+        'invalid_plan'
+      );
+      expect(paths(body)).toEqual(['/policy/funding/pools']);
+    });
+
+    it('13 inflows in a pool is 422 invalid_plan at /policy/funding/pools/0/inflows', async () => {
+      const { platform } = setup();
+      const f = fundingOnly();
+      const inflow = f.pools[0].inflows[0];
+      f.pools[0].inflows = Array.from({ length: 13 }, () => ({ ...inflow }));
+      const body = await expectError(await publish(platform, withFunding(f)), 422, 'invalid_plan');
+      expect(paths(body)).toEqual(['/policy/funding/pools/0/inflows']);
+    });
+
+    it('a guarantee without a typed cut is 422 invalid_plan at the instrument', async () => {
+      const { platform } = setup();
+      const f = fundingOnly();
+      f.programmes[0].instrument = { kind: 'guarantee', costShare: 0.6, reserve: 0.1 };
+      const body = await expectError(await publish(platform, withFunding(f)), 422, 'invalid_plan');
+      expect(paths(body)).toEqual(['/policy/funding/programmes/0/instrument']);
+    });
   });
 
   it('the default policy gets 422 empty_plan', async () => {

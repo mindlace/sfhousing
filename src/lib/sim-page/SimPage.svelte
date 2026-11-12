@@ -173,7 +173,7 @@
     initialPolicy
       ? restoreSimDoc(
           {
-            plan: { schema: 2, kind: 'sim', datasetVersion, policy: initialPolicy },
+            plan: { schema: 3, kind: 'sim', datasetVersion, policy: initialPolicy },
             notice: null
           },
           calibration
@@ -216,8 +216,8 @@
   let title = $state<string | undefined>(untrack(() => viewTitle));
   const doc = $derived<SimDoc>(
     title === undefined
-      ? { schema: 2, kind: 'sim', datasetVersion, policy: store.policy }
-      : { schema: 2, kind: 'sim', datasetVersion, title, policy: store.policy }
+      ? { schema: 3, kind: 'sim', datasetVersion, policy: store.policy }
+      : { schema: 3, kind: 'sim', datasetVersion, title, policy: store.policy }
   );
   let notices = $state<SimNotice[]>(untrack(() => opened?.notices ?? []));
   /** Autosave writes once this is set: after the restore. */

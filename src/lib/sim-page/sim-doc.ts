@@ -4,6 +4,7 @@
  * Pure TS (the server validates published documents with it): no Svelte, no DOM.
  */
 import { DATASET_VERSION_RE } from '$lib/data/dataset-version';
+import { MARKET_TERMS, missingTerms, resolveTerms } from '$lib/sim/finance';
 import {
   FUTURE_SCHEMA_MESSAGE,
   MAX_PLAN_BYTES,
@@ -33,12 +34,15 @@ import {
 
 export { DEFAULT_POLICY, isDefaultPolicy };
 
-export const SIM_DOC_SCHEMA = 2;
+export const SIM_DOC_SCHEMA = 3;
+/** The API error for a published schema-2 document: the server never upgrades one (F15). */
+export const SCHEMA2_PUBLISH_MESSAGE =
+  'This policy was made by an older version of the site. Reload the page, then publish it.';
 /** The autosave key for the /sim policy. */
 export const SIM_KEY = 'sfhousing:sim:v1';
 
 export interface SimDoc {
-  schema: 2;
+  schema: 3;
   kind: 'sim';
   datasetVersion: string;
   title?: string;
@@ -115,7 +119,7 @@ function pointer(policyPath: string): string {
 
 /**
  * Parse a stored (`'reconcile'`, lenient: the preset layer is re-derived later) or published
- * (`'strict'`) document. A schema above 2 is `future-schema` in both modes. A stored street
+ * (`'strict'`) document. A schema above 3 is `future-schema` in both modes. A stored street
  * rule (retired) is dropped silently in `'reconcile'` and is a `bad-field` in `'strict'`.
  */
 export function parseSimDoc(text: string, mode: 'strict' | 'reconcile'): Result<SimDoc> {
@@ -130,7 +134,10 @@ export function parseSimDoc(text: string, mode: 'strict' | 'reconcile'): Result<
   const r = json as Record<string, unknown>;
   if (typeof r.schema === 'number' && Number.isInteger(r.schema) && r.schema > SIM_DOC_SCHEMA)
     return fail('/schema', 'future-schema', FUTURE_SCHEMA_MESSAGE);
-  if (r.schema !== SIM_DOC_SCHEMA)
+  const schema2 = r.schema === 2;
+  if (schema2 && mode === 'strict')
+    return fail('/schema', 'unknown-schema', SCHEMA2_PUBLISH_MESSAGE);
+  if (r.schema !== SIM_DOC_SCHEMA && !schema2)
     return fail('/schema', 'unknown-schema', 'The policy has an unknown schema version.');
   if (r.kind !== 'sim') return fail('/kind', 'unknown-schema', 'This is not a policy document.');
 
@@ -148,14 +155,27 @@ export function parseSimDoc(text: string, mode: 'strict' | 'reconcile'): Result<
   let policy: SimPolicy;
   try {
     policy = parseSimPolicy(r.policy, {
-      presetLayer: mode === 'strict' ? 'strict' : 'reconcile'
+      presetLayer: mode === 'strict' ? 'strict' : 'reconcile',
+      ...(schema2 ? { schema2: 'upgrade' as const } : {})
     });
   } catch (e) {
     if (e instanceof PolicyFormatError)
       return fail(`/policy${pointer(e.path)}`, 'bad-field', e.message);
     throw e;
   }
-  const d: SimDoc = { schema: 2, kind: 'sim', datasetVersion: r.datasetVersion, policy };
+  if (mode === 'strict') {
+    const terms = resolveTerms(MARKET_TERMS, policy.funding.terms);
+    for (const [i, g] of policy.funding.programmes.entries()) {
+      const key = missingTerms(g.instrument, terms)[0];
+      if (key !== undefined)
+        return fail(
+          `/policy/funding/programmes/${i}/instrument`,
+          'bad-field',
+          `${g.instrument.kind} needs ${key}, which is not sourced`
+        );
+    }
+  }
+  const d: SimDoc = { schema: 3, kind: 'sim', datasetVersion: r.datasetVersion, policy };
   if (title !== undefined) d.title = title;
   const problems = simDocProblems(d);
   return problems.length > 0 ? { ok: false, errors: problems } : { ok: true, value: d };
@@ -189,9 +209,19 @@ export const SIM_CODEC: DocCodec<SimDoc> = {
   schema: (d) => d.schema,
   datasetVersion: (d) => d.datasetVersion,
   rebase: (d, version) => ({ ...d, datasetVersion: version }),
-  empty: (version) => ({ schema: 2, kind: 'sim', datasetVersion: version, policy: DEFAULT_POLICY }),
+  empty: (version) => ({ schema: 3, kind: 'sim', datasetVersion: version, policy: DEFAULT_POLICY }),
   isEmpty: (d) => isDefaultPolicy(d.policy),
-  opCount: (d) => d.policy.rules.length + d.policy.custom.length,
+  opCount: (d) => {
+    const f = d.policy.funding;
+    return (
+      d.policy.rules.length +
+      d.policy.custom.length +
+      f.baselineScale.length +
+      f.pools.length +
+      f.programmes.length +
+      Object.keys(f.terms).length
+    );
+  },
   title: (d) => d.title,
   withTitle: (d, t) => {
     const { title: _old, ...rest } = d;
