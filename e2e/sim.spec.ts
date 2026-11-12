@@ -786,7 +786,7 @@ test('Back after a reroll', async ({ page }) => {
 
 // ---- accessibility and layout -------------------------------------------------------------------
 
-for (const name of ['Transit', 'Paint', 'Protect']) {
+for (const name of ['Transit', 'Paint', 'Protect', 'Funding']) {
   test(`axe: the dock open on ${name}`, async ({ page }) => {
     await gotoSim(page);
     await openTab(page, name);
