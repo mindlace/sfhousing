@@ -23,12 +23,13 @@
     cityLine,
     displacementLine,
     fundedLine,
-    isUncapped,
     limitLines,
     lostGrantsLine,
     moneyAt,
     owedLines,
-    tiersAt
+    tiersAt,
+    TIERS_FUNDED_SENTENCE,
+    TIERS_UNRECORDED_SENTENCE
   } from './money-view';
 
   interface Props {
@@ -41,8 +42,10 @@
     /** A revision is pending: both blocks carry aria-busy. */
     pending: boolean;
     part: 'money' | 'tiers';
+    /** Ids of the pools whose `Pool.uncapped` is true: Received reads "no limit" (4.11). */
+    uncapped?: ReadonlySet<string>;
   }
-  let { score, i, at, terms, pending, part }: Props = $props();
+  let { score, i, at, terms, pending, part, uncapped = new Set() }: Props = $props();
 
   const uid = $props.id();
   let detailsOpen = $state(false);
@@ -50,14 +53,13 @@
 
   const money = $derived(score.money ?? null);
   const m = $derived(money ? moneyAt(money, i) : null);
-  const columns = $derived(m ? bySourceColumns(m) : []);
+  const columns = $derived(m ? bySourceColumns(m, uncapped) : []);
   const lossOnExit = $derived(terms.lossOnExit ?? 1);
   const lostLine = $derived(m ? lostGrantsLine(m, lossOnExit) : null);
   const lossCustom = $derived(terms.custom.includes('lossOnExit'));
   const owed = $derived(money ? owedLines(money, i) : []);
   const limits = $derived(money ? limitLines(money.limits) : []);
   const city = $derived(m ? cityLine(m) : null);
-  const uncapped = $derived(new Set(money?.pools.filter(isUncapped).map((p) => p.id) ?? []));
 
   const tiers = $derived(score.tiers ?? null);
   const t = $derived(tiers ? tiersAt(tiers, i) : null);
@@ -103,12 +105,12 @@
           </tr>
         </thead>
         <tbody>
-          {#each m.pools as p, k (p.id)}
+          {#each m.pools as p (p.id)}
             <tr class="border-b border-line dark:border-line-dark">
               <th scope="row" class="py-1 pr-2 align-top font-normal break-words">{p.label}</th>
               {#each columns as c (c)}
                 <td class="py-1 pr-2 align-top break-words tabular-nums">
-                  {#if c === 'received' && uncapped.has(money.pools[k].id)}
+                  {#if c === 'received' && uncapped.has(p.id)}
                     no limit
                   {:else}
                     {formatDollars(p[c])}
@@ -225,15 +227,8 @@
         The Homes column counts homes {tierBaselineLabel(score.baseline.since)}, plus those this run
         completes.
       </p>
-      <p>
-        A fully funded affordable project's homes are counted in the income levels of the programmes
-        that pay it, in proportion to what each pays.
-      </p>
-      <p>
-        Homes in real projects whose records give no income level are counted here and never guessed
-        into a level. Private projects of 10 homes or more count their on-site affordable homes at
-        the legal rate, assuming they build them on site (tier 2).
-      </p>
+      <p data-testid="fzp-tiers-funded">{TIERS_FUNDED_SENTENCE}</p>
+      <p data-testid="fzp-tiers-unrecorded">{TIERS_UNRECORDED_SENTENCE}</p>
       <div class={muted} data-testid="fzp-tiers-sources">
         <SourceList items={TIER_SOURCES} />
         <!-- TIER_SOURCES' last entry is a fixed statement; the dataset's own provenance is here. -->

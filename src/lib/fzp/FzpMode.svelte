@@ -98,7 +98,7 @@
   import type { Day } from '$lib/timelapse/time';
   import { installFzpDebug } from './debug';
   import { HighWater } from './high-water.svelte';
-  import { marketText } from './money-view';
+  import { marketText, uncappedPoolIds } from './money-view';
   import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
   import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
   import SimResults from './SimResults.svelte';
@@ -342,6 +342,10 @@
   const capacity = $derived(leverStatus.kind === 'current' ? leverStatus.capacity : null);
   /** The market terms of the levers on show, for the Results' lost-grants line (4.11). */
   const terms = $derived(resolveTerms(MARKET_TERMS, (shownLevers ?? levers)?.finance.terms ?? {}));
+  /** The pools that can always pay (`Pool.uncapped`), baseline and added: "no limit" (4.11). */
+  const uncapped = $derived(
+    uncappedPoolIds(calibration?.baselineFunding?.pools, (shownLevers ?? levers)?.finance.pools)
+  );
   /**
    * The score on show is from before the latest levers until a timeline at or after their rev
    * arrives (a later reroll's runs on them too); a failed revision leaves the old score standing.
@@ -1030,6 +1034,7 @@
     stale={leverFailed}
     pending={scoreBusy || leversPending}
     {terms}
+    {uncapped}
     market={calibration ? marketText(calibration) : null}
   />
 {/snippet}
@@ -1209,6 +1214,7 @@
         {score}
         projectsUrl={manifest?.scenarios?.fzp.projects ?? null}
         {asOf}
+        {terms}
         onopen={() => (playing = false)}
       />
     {/if}

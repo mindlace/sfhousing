@@ -23,6 +23,7 @@ import {
   type Dollars,
   type IncomeTier,
   type LimitStatement,
+  type Pool,
   type PoolKind,
   type Provenance
 } from '$lib/timelapse/types';
@@ -186,19 +187,40 @@ export const COLUMN_NAME: Record<SourceColumn, string> = {
   lostCredit: 'Loans and guarantees lost'
 };
 
-/** The "By source" columns at the month, a column whose every value is 0 dropped. */
-export function bySourceColumns(m: MoneyAt): SourceColumn[] {
-  return COLUMNS.filter((c) => m.pools.some((p) => p[c] !== 0));
+/**
+ * The "By source" columns at the month, a column whose every value is 0 dropped, except that
+ * Received stays while a pool of the run is uncapped: its cell reads "no limit" (4.11).
+ */
+export function bySourceColumns(
+  m: MoneyAt,
+  uncapped: ReadonlySet<string> = new Set()
+): SourceColumn[] {
+  const anyUncapped = m.pools.some((p) => uncapped.has(p.id));
+  return COLUMNS.filter(
+    (c) => (c === 'received' && anyUncapped) || m.pools.some((p) => p[c] !== 0)
+  );
 }
 
 /**
- * A pool that can always pay: `received` is 0 in every month of an uncapped pool (F14, I6) and
- * only the federal tax-credit pool is uncapped. A classification over the whole series, not a
- * value read past the mark.
+ * The ids of the pools that can always pay, read from `Pool.uncapped` (F5): pass the calibration's
+ * baseline pools and the shown levers' added pools. The run's money series carries no flag.
  */
-export function isUncapped(pool: Money['pools'][number]): boolean {
-  return pool.kind === 'federal' && pool.received.every((x) => x === 0);
+export function uncappedPoolIds(...lists: (readonly Pool[] | undefined)[]): ReadonlySet<string> {
+  return new Set(
+    lists
+      .flatMap((l) => l ?? [])
+      .filter((p) => p.uncapped)
+      .map((p) => p.id)
+  );
 }
+
+/** "Homes by income level", F13 and OD-F10: funded homes go to the paying programmes' levels. */
+export const TIERS_FUNDED_SENTENCE =
+  "A fully funded affordable project's homes are counted in the income levels of the programmes that pay it, in proportion to what each pays.";
+
+/** "Homes by income level", F13: unrecorded levels are never guessed; inclusionary homes. */
+export const TIERS_UNRECORDED_SENTENCE =
+  'Homes in real projects whose records give no income level are counted here and never guessed into a level. Private projects of 10 homes or more count their on-site affordable homes at the legal rate, assuming they build them on site (tier 2).';
 
 /** "Affordable homes so far: {n}": very low, low, moderate and not recorded. */
 export function affordableLine(t: TiersAt): string {

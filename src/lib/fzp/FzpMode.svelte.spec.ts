@@ -21,6 +21,7 @@ import { REAL_ACTUAL, SIMULATED } from './fixtures/cards';
 import { formatCount } from '$lib/scoreboard/format';
 import { meterValueText } from '$lib/scoreboard/view';
 import { TIMELINE_SCORE } from './fixtures/timeline-score';
+import { makeMoneyScore } from './fixtures/money';
 import { FakeScenarioWorker, timelineMsg } from './test/fake-worker';
 import FzpModeHost from './test/FzpModeHost.svelte';
 import { callsOf, stub } from './test/sim-map-stub';
@@ -994,6 +995,51 @@ describe('FzpMode map, layout and lifecycle', () => {
     ).click();
     await expect.element(page.getByRole('dialog')).toBeVisible();
     await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('passes Results the uncapped pools (baseline and levers) and the dialog the shown terms', async () => {
+    // The baseline's uncapped pool is fixture-0's federal-tax-credits; the levers add another.
+    const added = {
+      id: 'u-bond',
+      kind: 'goBond' as const,
+      label: 'Added bond',
+      inflows: [],
+      uncapped: true,
+      debt: { rate: 0.06, termYears: 20 },
+      leverage: 1
+    };
+    const levers: SimLevers = {
+      ...DEFAULT_LEVERS,
+      finance: { ...DEFAULT_LEVERS.finance, pools: [added], terms: { lossOnExit: 0.5 } }
+    };
+    const score = makeMoneyScore();
+    for (const p of score.money!.pools) if (p.id === 'federal') p.id = 'federal-tax-credits';
+    const s = setup({ levers });
+    await expect.poll(() => s.w()?.lastOf('initScenario')).toBeTruthy();
+    const rev = lastRev(s.w());
+    s.w().emit({ type: 'ready', rev, datasetVersion: 'fixture-0', chunkCount: 4 });
+    s.w().emit(timelineMsg(rev, 7, { score }));
+    await expect.element(slider()).toBeInTheDocument();
+    const region = await details();
+    await region.getByRole('button', { name: 'Money details' }).click();
+    const table = document.querySelector('[data-testid="fzp-money-sources"]') as HTMLTableElement;
+    const received = (label: string) =>
+      [...table.tBodies[0].rows]
+        .find((r) => r.cells[0].textContent === label)!
+        .cells[1].textContent!.trim();
+    expect(received('Federal tax credits')).toBe('no limit');
+    expect(received('Added bond')).toBe('no limit');
+    expect(received('State housing programmes')).not.toBe('no limit');
+    (
+      region
+        .getByRole('button', { name: 'Where these numbers come from' })
+        .first()
+        .element() as HTMLElement
+    ).click();
+    await expect.element(page.getByRole('dialog')).toBeVisible();
+    const money = document.getElementById('src-money')!;
+    expect(money.textContent).toContain('50% spent or lent on it is counted as lost');
+    expect(money.textContent).toContain('Loss on exit: your value (custom, not sourced)');
   });
 
   it('sets the map inset from the scrubber and --fzp-scrubber-h on its root', async () => {

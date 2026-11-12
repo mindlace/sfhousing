@@ -64,6 +64,7 @@ type Overrides = Partial<{
   stale: boolean;
   pending: boolean;
   terms: ResolvedTerms;
+  uncapped: ReadonlySet<string>;
 }>;
 
 const props = (over: Overrides = {}) => {
@@ -675,7 +676,7 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
 
   it('Loans and guarantees lost column', async () => {
     await page.viewport(1024, 768);
-    await render(SimResults, { props: at(MONEY_LAST) });
+    await render(SimResults, { props: at(MONEY_LAST, { uncapped: new Set(['federal']) }) });
     await open('Money details');
     const table = el('fzp-money-sources') as HTMLTableElement;
     const heads = [...table.tHead!.rows[0].cells].map((c) => c.textContent!.trim());
@@ -697,6 +698,42 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
       `counted as lost (assumption): ${formatDollars(500_000)}. They are in Spent.`
     );
     expect(el('fzp-money-owed')!.textContent).toContain('(not adjusted for inflation)');
+  });
+
+  it('"no limit" follows the uncapped prop (Pool.uncapped), not the pool kind', async () => {
+    await page.viewport(1024, 768);
+    const view = await render(SimResults, { props: at(MONEY_LAST) });
+    await open('Money details');
+    const received = (label: string) => {
+      const table = el('fzp-money-sources') as HTMLTableElement;
+      const r = [...table.tBodies[0].rows].find((x) => x.cells[0].textContent === label)!;
+      return r.cells[1].textContent!.trim();
+    };
+    // Without the set, the federal pool shows its received amount like any other.
+    expect(received('Federal tax credits')).toBe('$0');
+    expect(document.body.textContent).not.toContain('no limit');
+    await view.rerender(at(MONEY_LAST, { uncapped: new Set(['state']) }));
+    expect(received('State housing programmes')).toBe('no limit');
+    expect(received('Federal tax credits')).toBe('$0');
+  });
+
+  it('the two F13 sentences under Homes by income level', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: at(MONEY_LAST) });
+    await open('Homes by income level');
+    const text = el('fzp-tiers')!.textContent!.replace(/\s+/g, ' ');
+    expect(text).toContain(
+      "A fully funded affordable project's homes are counted in the income levels of the programmes that pay it, in proportion to what each pays."
+    );
+    expect(text).toContain(
+      'Homes in real projects whose records give no income level are counted here and never guessed into a level. Private projects of 10 homes or more count their on-site affordable homes at the legal rate, assuming they build them on site (tier 2).'
+    );
+    const label = el('fzp-tiers-label')!;
+    const funded = el('fzp-tiers-funded')!;
+    const unrecorded = el('fzp-tiers-unrecorded')!;
+    before(label, funded);
+    before(funded, unrecorded);
+    before(unrecorded, el('fzp-tiers-sources')!);
   });
 
   it('the lost-grants line reads the resolved lossOnExit', async () => {

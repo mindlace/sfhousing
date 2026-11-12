@@ -26,8 +26,12 @@ import {
   marketText,
   moneyAt,
   owedLines,
-  tiersAt
+  tiersAt,
+  TIERS_FUNDED_SENTENCE,
+  TIERS_UNRECORDED_SENTENCE,
+  uncappedPoolIds
 } from './money-view';
+import type { Pool } from '$lib/timelapse/types';
 
 const money = MONEY_SCORE.money as Money;
 const tiers = MONEY_SCORE.tiers!;
@@ -195,6 +199,48 @@ describe('row texts', () => {
       'repaid',
       'lostCredit'
     ]);
+  });
+
+  it('by-source columns keep Received when a pool is uncapped, even at 0 everywhere', () => {
+    const m = moneyAt(money, 0);
+    const none = { ...m, pools: m.pools.map((p) => ({ ...p, received: 0 })) };
+    expect(bySourceColumns(none)).not.toContain('received');
+    expect(bySourceColumns(none, new Set(['federal']))).toContain('received');
+    // An uncapped id that is not among the run's pools keeps nothing.
+    expect(bySourceColumns(none, new Set(['elsewhere']))).not.toContain('received');
+  });
+
+  it('uncapped pool ids come from Pool.uncapped, baseline and levers, never from the kind', () => {
+    const pool = (id: string, kind: Pool['kind'], uncapped: boolean): Pool => ({
+      id,
+      kind,
+      label: id,
+      inflows: [],
+      uncapped,
+      debt: null,
+      leverage: 1
+    });
+    const baseline = fixtureCalibration().baselineFunding!.pools;
+    expect([...uncappedPoolIds(baseline)]).toEqual(
+      baseline.filter((p) => p.uncapped).map((p) => p.id)
+    );
+    expect([...uncappedPoolIds(baseline)]).toEqual(['federal-tax-credits']);
+    const ids = uncappedPoolIds(
+      [pool('fed', 'federal', false), pool('a', 'state', true)],
+      undefined,
+      [pool('b', 'goBond', true), pool('c', 'cop', false)]
+    );
+    expect([...ids].sort()).toEqual(['a', 'b']);
+    expect(uncappedPoolIds().size).toBe(0);
+  });
+
+  it('the two F13 tier sentences', () => {
+    expect(TIERS_FUNDED_SENTENCE).toBe(
+      "A fully funded affordable project's homes are counted in the income levels of the programmes that pay it, in proportion to what each pays."
+    );
+    expect(TIERS_UNRECORDED_SENTENCE).toBe(
+      'Homes in real projects whose records give no income level are counted here and never guessed into a level. Private projects of 10 homes or more count their on-site affordable homes at the legal rate, assuming they build them on site (tier 2).'
+    );
   });
 
   it('affordable line', () => {

@@ -62,6 +62,8 @@
     pending?: boolean;
     /** The resolved market terms of the shown levers: the lost-grants line reads `lossOnExit`. */
     terms?: ResolvedTerms;
+    /** Ids of the pools whose `Pool.uncapped` is true (baseline and levers): "no limit" (4.11). */
+    uncapped?: ReadonlySet<string>;
   }
   let {
     score,
@@ -84,7 +86,8 @@
     stale = false,
     market = null,
     pending = false,
-    terms = resolveTerms()
+    terms = resolveTerms(),
+    uncapped = new Set()
   }: Props = $props();
 
   /**
@@ -190,6 +193,7 @@
       at={score.months[at.monthIndex]}
       {terms}
       {pending}
+      {uncapped}
       part="money"
     />
 
