@@ -66,8 +66,9 @@ const oneDecimal = decimals(1);
 const twoDecimals = decimals(2);
 
 /**
- * Money totals: to the nearest thousand below a million, then millions to one decimal, then
- * billions to two. The unit is chosen on the rounded value, so 999,500 is "$1 million".
+ * Money totals: to the nearest thousand below a million, then millions and billions to three
+ * significant figures with trailing zeros dropped. The unit is chosen on the rounded value, so
+ * 999,500 is "$1 million" and 999,600,000 is "$1 billion".
  */
 export function formatDollars(n: number): string {
   const a = Math.abs(n);
@@ -76,11 +77,11 @@ export function formatDollars(n: number): string {
   if (thousands < 1_000_000) {
     text = `$${wholeNumber.format(thousands)}`;
   } else {
-    const millions = Math.round(a / 100_000) / 10;
+    const r = Number(a.toPrecision(3));
     text =
-      millions < 1000
-        ? `$${oneDecimal.format(millions)} million`
-        : `$${twoDecimals.format(Math.round(a / 10_000_000) / 100)} billion`;
+      r >= 1e9
+        ? `$${twoDecimals.format(r / 1e9)} billion`
+        : `$${twoDecimals.format(r / 1e6)} million`;
   }
   return n < 0 && text !== '$0' ? `${MINUS}${text}` : text;
 }

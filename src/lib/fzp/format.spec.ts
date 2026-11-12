@@ -73,6 +73,9 @@ describe('money and odds formats', () => {
     [26_155_367, '$26.2 million'],
     [999_999_999, '$1 billion'],
     [1_250_000_000, '$1.25 billion'],
+    [123_456_789, '$123 million'],
+    [999_600_000, '$1 billion'],
+    [12_345_678_901, '$12.3 billion'],
     [-412_499, '\u2212$412,000']
   ])('formatDollars(%d) is %s', (n, s) => expect(formatDollars(n)).toBe(s));
 
