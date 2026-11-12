@@ -1131,10 +1131,11 @@ class Calendar {
   private readonly head: number[] = [];
   private readonly tail: number[] = [];
   /** per entry: its code, its gen and the next entry of its bucket (−1 = none) */
-  code = new Int32Array(4096);
-  gen = new Int32Array(4096);
-  next = new Int32Array(4096);
+  private codes = new Int32Array(4096);
+  private gens = new Int32Array(4096);
+  private nexts = new Int32Array(4096);
   private n = 0;
+  private last = -1;
 
   get size(): number {
     return this.heap.length;
@@ -1163,21 +1164,21 @@ class Calendar {
   /** Adds an entry at the end of bucket b (also a popped bucket, while its day is processed). */
   append(b: number, code: number, gen: number): void {
     const x = this.n++;
-    if (x === this.code.length) {
+    if (x === this.codes.length) {
       const grow = (a: Int32Array) => {
         const w = new Int32Array(a.length * 2);
         w.set(a);
         return w;
       };
-      this.code = grow(this.code);
-      this.gen = grow(this.gen);
-      this.next = grow(this.next);
+      this.codes = grow(this.codes);
+      this.gens = grow(this.gens);
+      this.nexts = grow(this.nexts);
     }
-    this.code[x] = code;
-    this.gen[x] = gen;
-    this.next[x] = -1;
+    this.codes[x] = code;
+    this.gens[x] = gen;
+    this.nexts[x] = -1;
     if (this.tail[b] < 0) this.head[b] = x;
-    else this.next[this.tail[b]] = x;
+    else this.nexts[this.tail[b]] = x;
     this.tail[b] = x;
   }
 
@@ -1190,8 +1191,25 @@ class Calendar {
     return this.head[b];
   }
 
-  /** the bucket of the day `pop` last returned */
-  popped = -1;
+  /** The entry after x in its bucket (−1 = none). */
+  next(x: number): number {
+    return this.nexts[x];
+  }
+
+  /** Entry x's code, `c * 4 + tag`. */
+  code(x: number): number {
+    return this.codes[x];
+  }
+
+  /** Entry x's `gen`. */
+  gen(x: number): number {
+    return this.gens[x];
+  }
+
+  /** The bucket of the day `pop` last returned. */
+  get popped(): number {
+    return this.last;
+  }
 
   /** The earliest day, removed; its bucket goes to `popped`. */
   pop(): Day {
@@ -1211,10 +1229,109 @@ class Calendar {
         n = m;
       }
     }
-    this.popped = this.ids.get(day)!;
+    this.last = this.ids.get(day)!;
     this.ids.delete(day);
     return day;
   }
+}
+
+/**
+ * The funded pass's lot records (perf Task 3), by candidate c; per kind at `c * 2 + kind bit`;
+ * sizes at `c * V + view`. Days and `keyDay` are 64-bit floats, so they hold exactly what the
+ * object path holds (a `keyDay` can be far past 2^31 for a lot with a tiny hazard).
+ */
+interface LotTable {
+  inUse: boolean;
+  /** the attempt being walked or parked */
+  lk: Int32Array;
+  /** its risk start */
+  lr: Float64Array;
+  /** the reservation day while it is kept; 0 = none or voided */
+  ld: Float64Array;
+  /** not held: at risk from `asOf`, so attempt 0 may take the one-draw skips */
+  lfresh: Uint8Array;
+  ldemolished: Uint8Array;
+  lparked: Uint8Array;
+  /** the calendar entries of the parked attempt carry `lgen`; any other entry is stale */
+  lgen: Int32Array;
+  /**
+   * the walked (then parked) attempt: its stream, existing units, ordinary day after the
+   * reservation cut (NO_DAY = none), ordinary view and size per view
+   */
+  lstream: Float64Array;
+  le: Float64Array;
+  lO: Float64Array;
+  lOview: Int32Array;
+  lsize: (LatentSize | null)[];
+  /**
+   * per kind: the latent's application day (NO_DAY = none), keyDay, view, bundle and level; the
+   * rest is read only where the day is not NO_DAY
+   */
+  kday: Float64Array;
+  kkey: Float64Array;
+  kview: Int32Array;
+  klevel: Float64Array;
+  kbundle: number[][];
+  /** its applications in the line, in the order they were made: at most one per kind */
+  lapps: (App | null)[];
+}
+
+function newLotTable(N: number, V: number): LotTable {
+  return {
+    inUse: false,
+    lk: new Int32Array(N),
+    lr: new Float64Array(N),
+    ld: new Float64Array(N),
+    lfresh: new Uint8Array(N),
+    ldemolished: new Uint8Array(N),
+    lparked: new Uint8Array(N),
+    lgen: new Int32Array(N),
+    lstream: new Float64Array(N),
+    le: new Float64Array(N),
+    lO: new Float64Array(N),
+    lOview: new Int32Array(N),
+    lsize: new Array<LatentSize | null>(N * V).fill(null),
+    kday: new Float64Array(2 * N),
+    kkey: new Float64Array(2 * N),
+    kview: new Int32Array(2 * N),
+    klevel: new Float64Array(2 * N),
+    kbundle: new Array<number[]>(2 * N).fill(EMPTY),
+    lapps: new Array<App | null>(2 * N).fill(null)
+  };
+}
+
+/** One reusable lot table per precompute and view count (`claimLots`). */
+const lotPool = new WeakMap<Precompute, Map<number, LotTable>>();
+
+/**
+ * A lot table for a pass over `pre`'s N candidates and V views: the pooled one when it is free,
+ * else (a nested or interleaved pass) a fresh one. Only what a pass reads before it writes is
+ * reset: `lk` (the eager phase starts every lot at attempt 0) and `lapps` (cleared on release).
+ * Every other field of a lot is written before it is read: `lr`, `ld`, `lfresh` and
+ * `ldemolished` before its walk, its latents in the walk, `lparked`, `lgen` and the parked
+ * attempt's fields before its first calendar entry, and entries live only in their pass's
+ * calendar.
+ */
+function claimLots(pre: Precompute, N: number, V: number): LotTable {
+  let byV = lotPool.get(pre);
+  if (byV === undefined) {
+    byV = new Map();
+    lotPool.set(pre, byV);
+  }
+  let t = byV.get(V);
+  if (t === undefined) {
+    t = newLotTable(N, V);
+    byV.set(V, t);
+  } else if (t.inUse) {
+    t = newLotTable(N, V);
+  } else t.lk.fill(0);
+  t.inUse = true;
+  return t;
+}
+
+function releaseLots(t: LotTable): void {
+  t.lapps.fill(null);
+  t.inUse = false;
 }
 
 /** Candidate index by row (−1 = not a candidate), per precompute. */
@@ -1269,6 +1386,16 @@ export function fundedRunStats(): FundedRunStats {
  * (`kindLatentInto`); with `noShortcuts` they are copied from `latentsOf`'s objects.
  */
 export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts): void {
+  const lots = claimLots(run.pre, run.pre.candidates.length, 1 + run.regimes.length);
+  try {
+    passOn(run, holds, sink, opts, lots);
+  } finally {
+    releaseLots(lots);
+  }
+}
+
+/** `fundedPass` on a claimed lot table. */
+function passOn(run: Run, holds: Holds, sink: Sink, opts: EngineOpts, lots: LotTable): void {
   stats = noStats();
   const fin = run.input.finance!;
   const fp = financePreOf(run.input);
@@ -1324,35 +1451,30 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
   const passes: AwardProbe = (g, units) =>
     awardPasses(g.bundle, g.kind, g.protoId, units, avail, f);
 
-  // The lot table, by candidate c (spec 4.5): a lot is walked from attempt `lk[c]` at risk from
-  // `lr[c]`; `ld[c]` is its reservation day while kept (0 = none or voided).
+  // The lot table (`LotTable`), by candidate c (spec 4.5): a lot is walked from attempt `lk[c]` at
+  // risk from `lr[c]`; `ld[c]` is its reservation day while kept (0 = none or voided).
   const N = candidates.length;
   const V = 1 + run.regimes.length;
-  const lk = new Int32Array(N);
-  const lr = new Int32Array(N);
-  const ld = new Int32Array(N);
-  /** not held: at risk from `asOf`, so attempt 0 may take the one-draw skips */
-  const lfresh = new Uint8Array(N);
-  const ldemolished = new Uint8Array(N);
-  const lparked = new Uint8Array(N);
-  /** the calendar entries of the parked attempt carry `lgen`; any other entry is stale */
-  const lgen = new Int32Array(N);
-  // the walked (then parked) attempt: its stream, existing units, ordinary day after the
-  // reservation cut (NO_DAY = none), ordinary view and size per view (`c * V + view`)
-  const lstream = new Float64Array(N);
-  const le = new Float64Array(N);
-  const lO = new Int32Array(N);
-  const lOview = new Int32Array(N);
-  const lsize: (LatentSize | null)[] = new Array<LatentSize | null>(N * V).fill(null);
-  // per kind (`c * 2 + kind bit`): the latent's application day (NO_DAY = none), keyDay, view,
-  // bundle and level; the rest is read only where the day is not NO_DAY
-  const kday = new Int32Array(2 * N);
-  const kkey = new Int32Array(2 * N);
-  const kview = new Int32Array(2 * N);
-  const klevel = new Float64Array(2 * N);
-  const kbundle: number[][] = new Array<number[]>(2 * N).fill(EMPTY);
-  /** its applications in the line, in the order they were made: at most one per kind */
-  const lapps: (App | null)[] = new Array<App | null>(2 * N).fill(null);
+  const {
+    lk,
+    lr,
+    ld,
+    lfresh,
+    ldemolished,
+    lparked,
+    lgen,
+    lstream,
+    le,
+    lO,
+    lOview,
+    lsize,
+    kday,
+    kkey,
+    kview,
+    klevel,
+    kbundle,
+    lapps
+  } = lots;
   const reachM = fp.reached.includes('market');
   const reachA = fp.reached.includes('affordable');
   const eligM = fp.eligible.market;
@@ -1386,7 +1508,14 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
    * `noShortcuts` test). The sizes are kept only when a kind latent is computed (they are read only
    * then). Returns the ordinary day before the reservation cut (NO_DAY = none).
    */
-  const quick = (c: number, i: number, r: Day, e: number, stream: number, fresh: boolean) => {
+  const quick = (
+    c: number,
+    i: number,
+    r: Day,
+    e: number,
+    stream: number,
+    fresh: boolean
+  ): Day | null => {
     const uO = drawOn(stream, P.INIT, 0);
     const wantM = eligM[c] === 1 && reachM;
     let wantA = eligA[c] === 1 && reachA;
@@ -1682,10 +1811,10 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
   /** The lots of bucket b's live entries with tag `tag`, in rank order. */
   const liveByRank = (b: number, tag: number): number[] => {
     const cs: number[] = [];
-    for (let x = cal.first(b); x >= 0; x = cal.next[x]) {
-      const code = cal.code[x];
+    for (let x = cal.first(b); x >= 0; x = cal.next(x)) {
+      const code = cal.code(x);
       const c = code >> 2;
-      if ((code & 3) === tag && lparked[c] === 1 && lgen[c] === cal.gen[x]) cs.push(c);
+      if ((code & 3) === tag && lparked[c] === 1 && lgen[c] === cal.gen(x)) cs.push(c);
     }
     return cs.length > 1 ? cs.sort(byRank) : cs;
   };
@@ -1710,12 +1839,12 @@ export function fundedPass(run: Run, holds: Holds, sink: Sink, opts: EngineOpts)
       did = true;
     }
     const fresh: App[] = [];
-    for (let x = cal.first(b); x >= 0; x = cal.next[x]) {
-      const code = cal.code[x];
+    for (let x = cal.first(b); x >= 0; x = cal.next(x)) {
+      const code = cal.code(x);
       const bit = code & 3;
       if (bit > TAG_AFFORDABLE) continue;
       const c = code >> 2;
-      if (lparked[c] !== 1 || lgen[c] !== cal.gen[x]) continue;
+      if (lparked[c] !== 1 || lgen[c] !== cal.gen(x)) continue;
       const i = candidates[c];
       const at = c * 2 + bit;
       const kind: ProjectKind = bit === TAG_MARKET ? 'market' : 'affordable';

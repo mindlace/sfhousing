@@ -565,7 +565,10 @@ per day. A lot's applications are found through the `App`s' `lot` row (at most o
 kernel, `kindLatentInto`, writes a kind's latent into a reusable record; `kindLatent` (the object
 path: `latentsOf`, `respell`, `noShortcuts`) copies it into a `KindLatent`. With the shortcuts the
 walk computes the latents in place; with `noShortcuts` it copies `latentsOf`'s objects into the
-records, so the on/off tests compare the two paths. Case 3 went from about 72 to 60 ms under vitest
+records, so the on/off tests compare the two paths. Days and `keyDay` are 64-bit floats: a lot with
+a tiny hazard can have a `keyDay` far past 2^31, and the line keeps it exactly (`lineKey` caps it).
+The table (about 18.5 MB on the bench city) is pooled per precompute and view count and claimed
+per pass; a nested or interleaved pass gets a fresh one. Case 3 went from about 72 to 60 ms under vitest
 (interleaved, ballpark load).
 
 **The bench funding set** (`benchFunding(asOf)` in `fixtures/bench-finance.ts`; tier 4 values made up

@@ -25,6 +25,7 @@ import {
   type KindLatent
 } from './funded';
 import { coverageLevel } from './funding';
+import type { App } from './line';
 import { precomputeOf } from './input';
 import { P, drawOn, seedHash, simEntity, streamOf } from './rng';
 import { GOLDEN_HORIZON, goldenInput } from './simulate.golden.cases';
@@ -546,5 +547,156 @@ describe('the typed walk (perf Task 3)', () => {
     }
     expect(compared).toBeGreaterThan(0);
     expect(applying).toBeGreaterThan(0);
+  }, 300_000);
+
+  /** What the line holds about one application when it first appears (before any re-pricing). */
+  type Seen = Pick<
+    App,
+    | 'lot'
+    | 'kind'
+    | 'applied'
+    | 'key'
+    | 'keyDay'
+    | 'bundle'
+    | 'protoId'
+    | 'units'
+    | 'level'
+    | 'view'
+    | 'f'
+    | 'stories'
+  >;
+  interface Counts {
+    apps: number;
+    later: number;
+    demolished: number;
+    respelled: number;
+    reserved: number;
+    wide: number;
+  }
+
+  /**
+   * Every application the line shows on the day it is made, against the object model: the
+   * latents of its attempt (`attemptLatents` at the attempt's k, risk start and existing homes,
+   * found from the run's schedules), or the `respell` of a re-pricing day up to its day. Rows some
+   * in-flight project holds are skipped (their risk start comes from the holds).
+   */
+  function checkRecords(inp: SimInput, runSeeds: number[]): Counts {
+    const fp = financePreOf(inp);
+    const pc = precomputeOf(inp);
+    const n: Counts = { apps: 0, later: 0, demolished: 0, respelled: 0, reserved: 0, wide: 0 };
+    for (const seed of runSeeds) {
+      const seen = new Set<App>();
+      const fresh: Seen[] = [];
+      const got = runCollect(inp, seed, H, {
+        lineProbe: (D, apps) => {
+          for (const a of apps) {
+            if (seen.has(a)) continue;
+            seen.add(a);
+            if (a.applied !== D) continue;
+            const { lot, kind, applied, key, keyDay, bundle, protoId, units, level, view, f } = a;
+            fresh.push({
+              lot,
+              kind,
+              applied,
+              key,
+              keyDay,
+              bundle,
+              protoId,
+              units,
+              level,
+              view,
+              f,
+              stories: a.stories
+            });
+          }
+        }
+      });
+      const byRow = new Map<number, { exit: Day; built: boolean }[]>();
+      for (const sc of got.schedules) {
+        if (sc.origin !== 'simulated' || sc.end.kind !== 'exit') continue;
+        const i = inp.parcels.index.get(sc.parcelIds[0])!;
+        const list = byRow.get(i) ?? [];
+        list.push({ exit: sc.end.day, built: sc.entered.construction !== undefined });
+        byRow.set(i, list);
+      }
+      const run = runOf(inp, seed, H, true);
+      for (const a of fresh) {
+        if (held.has(a.lot)) continue;
+        const before = (byRow.get(a.lot) ?? []).filter((x) => x.exit < a.applied);
+        const k = before.length;
+        const r = k === 0 ? asOf : Math.max(...before.map((x) => x.exit));
+        const e = before.some((x) => x.built) ? 0 : inp.parcels.existingUnits[a.lot];
+        const lat = attemptLatents(inp, seed, H, a.lot, k, r, e);
+        const options: KindLatent[] = [];
+        const own = lat[a.kind];
+        if (own !== null) options.push(own);
+        for (const D of fp.repricing) {
+          if (D > a.applied) break;
+          const nl = respell(run, fp, a.lot, lat, a.kind, D);
+          if (nl !== null) options.push(nl);
+        }
+        const want = options.find((x) => x.day === a.applied && x.keyDay === a.keyDay);
+        expect(want, `seed ${seed} row ${a.lot} ${a.kind} on ${a.applied}`).toBeDefined();
+        expect(a).toEqual({
+          lot: a.lot,
+          kind: a.kind,
+          applied: want!.day,
+          key: lineKey(want!.keyDay, fp.rank[a.lot], a.kind),
+          keyDay: want!.keyDay,
+          bundle: want!.bundle,
+          protoId: want!.protoId,
+          units: want!.units,
+          level: want!.level,
+          view: want!.view,
+          f: want!.f,
+          stories: want!.stories
+        });
+        n.apps++;
+        if (k > 0) n.later++;
+        if (e === 0 && inp.parcels.existingUnits[a.lot] > 0) n.demolished++;
+        if (want !== own) n.respelled++;
+        if ((inp.reservedFrom?.[a.lot] ?? 0) > 0) n.reserved++;
+        if (a.keyDay > 2_147_483_648) n.wide++;
+      }
+      expect(pc.candidates.length).toBeGreaterThan(0);
+    }
+    return n;
+  }
+
+  for (const logOdds of [-15, -25]) {
+    it(`a market step of ${logOdds}: keyDay past 2^31 is kept exactly`, () => {
+      const inp = withFinance(bench, { market: [{ from: asOf - 1, logOdds }] });
+      const n = checkRecords(inp, [1, 2, 3, 4, 5]);
+      expect(n.wide).toBeGreaterThan(0);
+      for (const seed of [1, 2]) {
+        const fast = runCollect(inp, seed, H);
+        const slow = runCollect(inp, seed, H, { noShortcuts: true });
+        expect(fast.schedules).toEqual(slow.schedules);
+        expect(fast.ledger).toEqual(slow.ledger);
+      }
+    }, 300_000);
+  }
+
+  it('the lot records hold the object model’s latents (regimes, off spans, reservations)', () => {
+    const reservedFrom = new Int32Array(base.parcels.count);
+    for (let i = 0; i < reservedFrom.length; i += 3) reservedFrom[i] = asOf + 1000 + 37 * i;
+    const inputs: SimInput[] = [
+      ...deep.map(([, inp]) => inp),
+      withFinance(
+        offCase(miniFinance(asOf), [{ pool: 'm-city', from: asOf + 600, to: asOf + 1400 }]),
+        { reservedFrom }
+      )
+    ];
+    const total: Counts = { apps: 0, later: 0, demolished: 0, respelled: 0, reserved: 0, wide: 0 };
+    for (const inp of inputs) {
+      const n = checkRecords(inp, seeds);
+      for (const key of Object.keys(total) as (keyof Counts)[]) total[key] += n[key];
+    }
+    console.log('[records]', JSON.stringify(total));
+    expect(total.apps).toBeGreaterThan(0);
+    expect(total.later).toBeGreaterThan(0);
+    expect(total.demolished).toBeGreaterThan(0);
+    expect(total.respelled).toBeGreaterThan(0);
+    expect(total.reserved).toBeGreaterThan(0);
   }, 300_000);
 });
