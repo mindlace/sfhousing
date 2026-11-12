@@ -48,6 +48,7 @@ interface CalibrationFixture {
   market?: {
     today: { observed: { all: number; private: number }; implied: number };
   };
+  baselineFunding?: unknown;
 }
 
 const projectsFile = readJson<ProjectsFixture>('scenarios/fzp/projects.json');
@@ -713,8 +714,10 @@ test('the sources dialog lists every parameter and every data check', async ({ p
   const dialog = await openSources(page);
 
   // One entry per calibration parameter: each present transition, the Local Program proxy, and the
-  // six single-parameter models, and today's market level (fixture-0 carries calibration.market).
-  // The baseline, target and reference entries are not parameters.
+  // six single-parameter models, today's market level (fixture-0 carries calibration.market) and,
+  // when the market level is 'private' (market and baseline funding both present), the market slope.
+  // The baseline, target and reference entries and the public-money entries (finance constants and
+  // baseline funding provenance) are not calibration parameters.
   const expected = [
     ...Object.entries(calibration.transitions).flatMap(([pathway, stages]) =>
       Object.keys(stages)
@@ -728,10 +731,13 @@ test('the sources dialog lists every parameter and every data check', async ({ p
     'src-pathway-for-new',
     'src-ppa-share',
     'src-phase-gap',
-    'src-market-today'
+    'src-market-today',
+    ...(calibration.market && calibration.baselineFunding ? ['src-market-slope'] : [])
   ].sort();
   const ids = await dialog.locator('article[id]').evaluateAll((els) => els.map((el) => el.id));
-  const parameters = ids.filter((id) => !/^src-(baseline|target-|reference-)/.test(id)).sort();
+  const parameters = ids
+    .filter((id) => !/^src-(baseline|target-|reference-|money-)/.test(id))
+    .sort();
   expect(parameters).toEqual(expected);
 
   // Section 10: one row per rule in projects.json, in file order, once the file has loaded.
