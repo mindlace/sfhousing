@@ -4,12 +4,14 @@ import { describe, expect, it } from 'vitest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { dayOf } from '$lib/sim/scenario/dates';
 import {
+  addProgrammeName,
   affordableCostText,
+  baselineProgrammeText,
   checkLineText,
   coverageSummaryText,
   notOfferedText
 } from './funding-copy';
-import { groupProvenance, type CoverageStep } from './funding-view';
+import { groupProvenance, tiersText, type CoverageStep } from './funding-view';
 
 const step = (from: number, coverage: number, certain: boolean): CoverageStep => ({
   from,
@@ -59,5 +61,22 @@ describe('groupProvenance', () => {
     expect(labels('city')).toHaveLength(7);
     expect(labels('city').every((l) => !l.includes('State of California'))).toBe(true);
     expect(labels('federal')[0]).toContain('Federal: low-income housing tax credits');
+  });
+});
+
+describe('group editor copy', () => {
+  it('a baseline programme line in the 4.5 item 4 wording', () => {
+    const tiers = tiersText({ veryLow: 0.52, low: 0.31, moderate: 0.17, aboveModerate: 0 });
+    expect(baselineProgrammeText(20, 0.348251, tiers)).toBe(
+      'Grants to affordable homes of 20 or more: 34% of the uncovered cost ' +
+        '(52% very low, 31% low, 17% moderate)'
+    );
+    expect(baselineProgrammeText(2, 0.072329, null)).toBe(
+      'Grants to affordable homes of 2 or more: 7.2% of the uncovered cost'
+    );
+  });
+
+  it('+ What it pays for is named starting with its visible label', () => {
+    expect(addProgrammeName('City')).toBe('What it pays for: add a programme to City');
   });
 });

@@ -2,6 +2,7 @@
 // The Funding tab (funding-ui spec 4.4, 4.5, 4.9, 4.10, 4.16): the coverage line and its
 // disclosure, today's funding rows and the group editor with dated changes, "Money you add"
 // when empty, and the selection clearing on an undo that removes the selected row.
+import { tick } from 'svelte';
 import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
@@ -12,6 +13,7 @@ import { dayOf } from '$lib/sim/scenario/dates';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import {
   MONTH_OFFER_CAVEAT,
+  addProgrammeName,
   coverageSummaryText,
   scaleLimitDesc,
   smallProjectsCaveat
@@ -110,7 +112,7 @@ describe('FundingTab', () => {
     await expect.element(add).toHaveAccessibleDescription(scaleLimitDesc(2));
     // Playwright will not click an aria-disabled control; a user's click still reaches it.
     (add.element() as HTMLElement).click();
-    await Promise.resolve();
+    await tick();
     expect(page.getByRole('button', { name: 'Apply change' }).elements()).toHaveLength(0);
   });
 
@@ -189,5 +191,49 @@ describe('FundingTab', () => {
     await expect.element(page.getByText('Nothing added yet.')).toBeVisible();
     expect(document.querySelector('[data-funding-editor]')).toBeNull();
     expect(document.querySelectorAll('[aria-pressed="true"]')).toHaveLength(0);
+    // Redo brings the pool back, but not its selection (the vanished row was forgotten).
+    store.redo();
+    await expect.element(r).toBeVisible();
+    await expect.element(r).toHaveAttribute('aria-pressed', 'false');
+    expect(document.querySelector('[data-funding-editor]')).toBeNull();
+    expect(document.querySelectorAll('[aria-pressed="true"]')).toHaveLength(0);
+  });
+
+  it('re-applying the same dated change is no store change and no announcement', async () => {
+    const { store } = setup();
+    await row(/^State ·/).click();
+    for (let k = 0; k < 2; k++) {
+      await page.getByRole('button', { name: 'Change from a date', exact: true }).click();
+      await page.getByRole('button', { name: 'Apply change' }).click();
+    }
+    expect(announced()).toHaveLength(1);
+    store.undo();
+    expect(store.canUndo).toBe(false);
+  });
+
+  it('Coverage over time lists only the dates the bundle changes', async () => {
+    setup();
+    const disclosure = page.getByRole('button', { name: 'Coverage over time' });
+    await disclosure.click();
+    const region = document.getElementById(disclosure.element().getAttribute('aria-controls')!)!;
+    // No change dates on the default policy: today's step is the coverage line, not a list item.
+    expect(region.querySelectorAll('li')).toHaveLength(0);
+    expect(region.textContent).not.toMatch(/^From /m);
+  });
+
+  it('the group editor words baseline programmes per 4.5 and names + What it pays for', async () => {
+    setup();
+    await row(/^City ·/).click();
+    await expect
+      .element(
+        page.getByText(
+          'Grants to affordable homes of 20 or more: 20% of the uncovered cost ' +
+            '(52% very low, 31% low, 17% moderate)'
+        )
+      )
+      .toBeVisible();
+    const add = page.getByRole('button', { name: addProgrammeName('City'), exact: true });
+    await expect.element(add).toBeVisible();
+    expect(add.element().textContent).toContain('What it pays for');
   });
 });

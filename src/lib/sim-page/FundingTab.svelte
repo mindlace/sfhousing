@@ -113,6 +113,11 @@
     const g = picked.group;
     return groups.some((x) => x.group === g) ? picked : null;
   });
+  // The effect forgets a row that left the policy, so a Redo does not bring its selection back
+  // (SimPage's rule for layers and painted areas).
+  $effect(() => {
+    if (picked !== null && selected === null) picked = null;
+  });
   const rowKey = (r: FundingRowId | null): string =>
     r === null ? '' : r.kind === 'pool' ? `pool:${r.id}` : `group:${r.group}`;
   const selKey = $derived(rowKey(selected));
@@ -220,11 +225,14 @@
         >Coverage over time <span aria-hidden="true">{coverageOpen ? '−' : '+'}</span></button
       >
       <div id="{uid}-coverage" hidden={!coverageOpen} class="flex flex-col gap-1">
-        <ul class="flex flex-col gap-1">
-          {#each steps as s, i (s.from)}
-            <li>{coverageStepText(s, sized[i])}</li>
-          {/each}
-        </ul>
+        <!-- One line per date the bundle changes; today is the coverage line above. -->
+        {#if steps.length > 1}
+          <ul class="flex flex-col gap-1">
+            {#each steps.slice(1) as s, i (s.from)}
+              <li>{coverageStepText(s, sized[i + 1])}</li>
+            {/each}
+          </ul>
+        {/if}
         <p>{COVERAGE_RUN_SENTENCE}</p>
         <p>{COVERAGE_RULE_SENTENCE}</p>
         <p>{COVERAGE_OFF_SHORT_SENTENCE}</p>

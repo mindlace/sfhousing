@@ -669,3 +669,15 @@ describe('funding edits', () => {
     expect(q.funding.programmes[0].label.endsWith('…')).toBe(true);
   });
 });
+
+describe('addScaleEdit no-op (spec 4.9)', () => {
+  it('re-applying an identical dated change returns the same policy object', () => {
+    const p0 = policyWith({});
+    const once = edit(addScaleEdit(p0, baseline, { group: 'city' }, july(2027), 0)).change(p0);
+    expect(once).not.toBe(p0);
+    const again = edit(addScaleEdit(once, baseline, { group: 'city' }, july(2027), 0));
+    expect(again.change(once)).toBe(once);
+    const single = edit(addScaleEdit(once, baseline, { pool: 'city-gf' }, july(2027), 0));
+    expect(single.change(once)).toBe(once);
+  });
+});

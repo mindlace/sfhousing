@@ -121,7 +121,21 @@ export const scaleLimitDesc = (n: number): string =>
   `A policy can hold 24 dated changes; this one needs ${n}. Remove one first.`;
 export const removeChangeName = (from: Day): string =>
   `Remove change from ${formatMonthYear(from)}`;
-export const addProgrammeName = (name: string): string => `Add a programme to ${name}`;
+/** "+ What it pays for"'s name: it starts with the visible label (WCAG 2.5.3). */
+export const addProgrammeName = (name: string): string =>
+  `What it pays for: add a programme to ${name}`;
+
+/**
+ * A baseline grant in its group's editor (4.5 item 4): "Grants to affordable homes of {minHomes}
+ * or more: {pct} of the uncovered cost ({tiers})"; `tiers` is `tiersText` of its mix, or null.
+ */
+export const baselineProgrammeText = (
+  minHomes: number,
+  share: number,
+  tiers: string | null
+): string =>
+  `Grants to affordable homes of ${formatCount(minHomes)} or more: ${formatPercent(share)} of ` +
+  `the uncovered cost${tiers ? ` (${tiers})` : ''}`;
 
 // --- Adding money and drafts (4.6) ---
 

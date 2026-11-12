@@ -15,10 +15,10 @@
   with the calibration (Call 7, with the timing notice when anything moved); there is no stroke
   controller, no tools, no autosave and no Publish, and the dock's one tab is the summary.
   The dock (sim-ux plan 2, Task 4): the policy lives in a `Dock` with the tabs Transit · Paint ·
-  Permits · Protect · Funding (`SIM_TABS`), Undo and Redo (`HistoryButtons`) above them, and a Results
-  face (FzpMode's `SimResults`). From md it is open on the left of the map by default and folds to
-  a rail; below md it is a bottom sheet behind a handle. The header's Policy button opens and
-  folds it; the header score flips it to Results and back.
+  Permits · Protect · Funding (`SIM_TABS`), Undo and Redo (`HistoryButtons`) above them, and a
+  Results face (FzpMode's `SimResults`). From md it is open on the left of the map by default and
+  folds to a rail; below md it is a bottom sheet behind a handle. The header's Policy button opens
+  and folds it; the header score flips it to Results and back.
   Setup and Run (spec §1, sim-runs Task 7): the page opens in Setup (never persisted). Run (the
   scrubber's button) sets the tool to Move, locks the store, plays and flips the dock to Results
   (a phone sheet peeks); a run offers Results only, until "Edit policy" ("Policy" in the

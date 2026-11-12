@@ -23,6 +23,7 @@
     SCALE_AMOUNT_DESC,
     SCALE_PCT_ERROR,
     addProgrammeName,
+    baselineProgrammeText,
     dateRangeError,
     perYearText,
     scaleLimitDesc
@@ -341,7 +342,15 @@
       {#each group.programmes as g (g.id)}
         {@const pool = poolById.get(g.pool)}
         {#if pool}
-          <li>{programmeSentence(g, pool)}{g.tiers ? ` (${tiersText(g.tiers)})` : ''}</li>
+          <li>
+            {g.instrument.kind === 'grant'
+              ? baselineProgrammeText(
+                  g.minHomes,
+                  g.instrument.share,
+                  g.tiers ? tiersText(g.tiers) : null
+                )
+              : programmeSentence(g, pool)}
+          </li>
         {/if}
       {/each}
       {#each added as g (g.id)}
