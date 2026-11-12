@@ -311,7 +311,7 @@ export function addPoolEdit(pool: Omit<Pool, 'id'>): FundingEdit {
     change: (q) =>
       withFunding(q, (f) => ({
         ...f,
-        pools: [...f.pools, { id: nextAddedId(f, 'pool'), ...structuredClone(pool) }]
+        pools: [...f.pools, { ...structuredClone(pool), id: nextAddedId(f, 'pool') }]
       })),
     label: labelOwnPoolAdded()
   };
@@ -705,7 +705,13 @@ export function addScaleEdit(
   const needs = pools.length - replaced;
   if (f.baselineScale.length + needs > FINANCE_LIMITS.baselineScale)
     return { refused: scaleLimitDesc(needs) };
-  const name = 'group' in target ? GROUP_NAME[target.group] : pools[0].label;
+  // The name `scaleLines` gives the entry: the City group's pools move as one "City money".
+  const name =
+    'group' in target && target.group === 'city'
+      ? 'City money'
+      : pools.length === 1
+        ? pools[0].label
+        : GROUP_NAME[(target as { group: GroupId }).group];
   return {
     change: (q) =>
       withFunding(q, (g) => ({

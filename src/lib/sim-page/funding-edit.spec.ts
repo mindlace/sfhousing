@@ -7,7 +7,7 @@ import { dayOf } from '$lib/sim/scenario/dates';
 import type { Pool, Programme } from '$lib/timelapse/types';
 import { fundingPresets, nextFiscal } from './funding-presets';
 import { POOL_KIND_DEFAULTS } from './funding-sources';
-import { scaleLines, type Baseline } from './funding-view';
+import { programmeSentence, scaleLines, type Baseline } from './funding-view';
 import type { SimPolicy } from './policy';
 import {
   BOND_POLICY,
@@ -171,12 +171,12 @@ describe('funding edits', () => {
       ],
       [
         addScaleEdit(p, baseline, { group: 'state' }, july(2027), 0),
-        "Today's funding: State switched off from July 2027",
+        "Today's funding: state switched off from July 2027",
         undefined
       ],
       [
         addScaleEdit(p, baseline, { group: 'federal' }, july(2027), 1),
-        "Today's funding: Federal tax credits switched back on from July 2027",
+        "Today's funding: federal switched back on from July 2027",
         undefined
       ],
       [
@@ -428,7 +428,7 @@ describe('funding edits', () => {
   it('City-group change writes one entry per City pool and removes as one', () => {
     const p0 = policyWith({});
     const e = edit(addScaleEdit(p0, baseline, { group: 'city' }, july(2029), 0));
-    expect(e.label).toBe("Today's funding: City switched off from July 2029");
+    expect(e.label).toBe("Today's funding: City money switched off from July 2029");
     const p = run(e, p0);
     expect(p.funding.baselineScale).toEqual([
       { pool: 'city-gf', from: july(2029), scale: 0 },
@@ -631,5 +631,41 @@ describe('funding edits', () => {
       refused:
         'A guarantee in this policy is valued with this rate cut. Change or remove the guarantee first.'
     });
+  });
+
+  it('addPoolEdit: the generated id wins over an id in the input', () => {
+    const p = run(addPoolEdit({ ...POOL, id: 'u-pool-99' } as Omit<Pool, 'id'>), policyWith({}));
+    expect(p.funding.pools.map((x) => x.id)).toEqual(['u-pool-1']);
+  });
+
+  it('the add and remove labels of a dated change name the same source', () => {
+    const p0 = policyWith({});
+    for (const group of ['city', 'state', 'federal'] as const) {
+      const e = edit(addScaleEdit(p0, baseline, { group }, july(2027), 0));
+      const p = run(e, p0);
+      const lines = scaleLines(p.funding, baseline, group);
+      const name = (e.label as string).replace("Today's funding: ", '').split(' switched off')[0];
+      expect(lines.length).toBeGreaterThan(0);
+      expect(removeScaleEdit(lines[0]).label).toBe(`Removed change: ${name} from July 2027`);
+    }
+  });
+
+  it('a label longer than 80 characters is truncated in the stored programme only', () => {
+    const withPool = run(addPoolEdit(POOL), TERM_POLICY);
+    const pool = withPool.funding.pools[0];
+    const guarantee: Omit<Programme, 'id'> = {
+      ...newProgramme(pool, baseline),
+      reach: 'market',
+      tiers: null,
+      minHomes: 10,
+      from: july(2029),
+      to: july(2033),
+      instrument: { kind: 'guarantee', costShare: 0.6, reserve: 0.1 }
+    };
+    expect(programmeSentence({ ...guarantee, id: '' }, pool).length).toBeGreaterThan(80);
+    const q = run(addProgrammeEdit(withPool, baseline, guarantee), withPool);
+    expect(q.funding.programmes).toHaveLength(1);
+    expect(q.funding.programmes[0].label.length).toBeLessThanOrEqual(80);
+    expect(q.funding.programmes[0].label.endsWith('…')).toBe(true);
   });
 });
