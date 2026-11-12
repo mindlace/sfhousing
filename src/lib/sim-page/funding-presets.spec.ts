@@ -30,7 +30,8 @@ import {
   PUBLIC_BANK_HOUSING,
   REVOLVING_FUND_SIZE
 } from './funding-sources';
-import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
+import { FINANCE_LIMITS, buildFinance, parseFinanceLevers } from '$lib/sim/levers/finance';
+import { DEFAULT_POLICY, parseSimDoc } from './sim-doc';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import type { Pool, Programme } from '$lib/timelapse/types';
 
@@ -417,6 +418,22 @@ describe('unavailable presets', () => {
       stub.unsourced = false;
     }
   });
+
+  it('rule 2 comes before rule 4: with no market and an unsourced term the term reason shows', () => {
+    const { market: _m, ...noMarket } = cal;
+    stub.unsourced = true;
+    try {
+      const list = fundingPresets(noMarket as Calibration);
+      for (const id of ['revolving-fund', 'public-bank']) {
+        expect(list.find((x) => x.id === id)).toMatchObject({
+          available: false,
+          reason: 'The market terms this loan is valued against are not sourced: constructionRate'
+        });
+      }
+    } finally {
+      stub.unsourced = false;
+    }
+  });
 });
 
 describe('POOL_KIND_DEFAULTS', () => {
@@ -711,4 +728,40 @@ describe('pastItems', () => {
   it('is empty for no funding', () => {
     expect(pastItems(empty(), asOf)).toEqual({ pools: [], programmes: [], inflows: [] });
   });
+});
+
+describe('presets through the lever parser, the policy document and buildFinance', () => {
+  const availableIds = fundingPresets(cal)
+    .filter((p) => p.available)
+    .map((p) => p.id);
+  const base = baselineFixture(FIXTURE_AS_OF).finance;
+  const starts: [string, () => FinanceLevers][] = [
+    ['empty', empty],
+    ['on top of fundingOnly', fundingOnly]
+  ];
+
+  it('has available presets to cover', () => {
+    expect(availableIds.length).toBeGreaterThan(0);
+  });
+
+  for (const id of availableIds) {
+    for (const [name, start] of starts) {
+      for (const times of [1, 2]) {
+        it(`${id} added ${times} time(s) ${name}`, () => {
+          let f = start();
+          for (let i = 0; i < times; i++) f = addPreset(f, get(id));
+          expect(parseFinanceLevers(structuredClone(f), 'finance')).toEqual(f);
+          const text = JSON.stringify({
+            schema: 3,
+            kind: 'sim',
+            datasetVersion: 'fixture-0',
+            policy: { ...DEFAULT_POLICY, funding: f }
+          });
+          const r = parseSimDoc(text, 'strict');
+          expect(r.ok).toBe(true);
+          expect(() => buildFinance(base, f, FIXTURE_AS_OF)).not.toThrow();
+        });
+      }
+    }
+  }
 });
