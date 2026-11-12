@@ -2,6 +2,7 @@
 // number here is a tier 4 bench value, chosen to load the engine (the sources the spec names for
 // some of them only say where the magnitudes come from). Browser-safe: no `node:` imports.
 import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
+import type { FinanceLevers } from '$lib/sim/levers/types';
 import type { Day } from '$lib/timelapse/time';
 import type {
   Calibration,
@@ -254,5 +255,21 @@ export function withBenchFunding(finance: Finance, asOf: Day): Finance {
     ...finance,
     pools: [...finance.pools, ...add.pools],
     programmes: [...finance.programmes, ...add.programmes]
+  };
+}
+
+/**
+ * `benchFunding` as `levers.finance` (finance-levers R-P3): every pool and programme id prefixed
+ * `u-` (the lever parser wants added ids to start so; programme `pool` references follow), no
+ * baseline scale and no terms. `benchFunding` itself keeps its ids for the other cases and the
+ * engine specs.
+ */
+export function benchFundingLevers(asOf: Day): FinanceLevers {
+  const { pools, programmes } = benchFunding(asOf);
+  return {
+    baselineScale: [],
+    pools: pools.map((p) => ({ ...p, id: `u-${p.id}` })),
+    programmes: programmes.map((g) => ({ ...g, id: `u-${g.id}`, pool: `u-${g.pool}` })),
+    terms: {}
   };
 }

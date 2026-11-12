@@ -22,9 +22,11 @@ import type { Day } from '$lib/timelapse/time';
 import type { FetchLike } from '../chunks';
 import { BAND_RUNS } from './band';
 import { dayOf } from './dates';
+import { DEFAULT_LEVERS } from '../levers/types';
 import {
   benchBaseline,
   benchBaselineFunding,
+  benchFundingLevers,
   benchMarket,
   benchRoutes,
   withBenchFunding
@@ -34,8 +36,10 @@ import {
   SYNTH_BBOX,
   SYNTH_MASTERS,
   SYNTH_PARCELS,
+  SYNTH_POLICY_URL,
   SYNTH_PROJECTS,
   synthCity,
+  synthPolicy,
   type SynthCity
 } from './fixtures/synth-city';
 import { fundedRunStats } from './funded';
@@ -52,17 +56,24 @@ import { runCollect } from './test/finance-harness';
 import type { ScenarioResponse, SimInput, TimelineResponse } from './types';
 
 // Pass-through counters, so a macrotask can be told to hold the shown run.
-const probe = vi.hoisted(() => ({ detailed: 0, net: 0 }));
+const probe = vi.hoisted(() => ({
+  detailed: 0,
+  net: 0,
+  /** The pool ids of the first run's `finance` since the last reset (null: no run yet). */
+  pools: null as string[] | null
+}));
 vi.mock('./simulate', async (importOriginal) => {
   const m = await importOriginal<typeof import('./simulate')>();
   return {
     ...m,
     simulateNet: (...a: Parameters<typeof m.simulateNet>) => {
       probe.net++;
+      probe.pools ??= a[0].finance?.pools.map((p) => p.id) ?? [];
       return m.simulateNet(...a);
     },
     simulateDetailed: (...a: Parameters<typeof m.simulateDetailed>) => {
       probe.detailed++;
+      probe.pools ??= a[0].finance?.pools.map((p) => p.id) ?? [];
       return m.simulateDetailed(...a);
     }
   };
@@ -289,11 +300,14 @@ class Rig {
       deliver(
         url === city.files.bin
           ? { ok: true, status: 200, arrayBuffer: async () => city.bin.slice().buffer }
-          : { ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) }
+          : url === SYNTH_POLICY_URL
+            ? { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) }
+            : { ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) }
       );
     this.host = createScenarioHost({
       fetch,
       fetchBytes,
+      decodePolicy: async () => synthPolicy(city),
       post: (msg) => this.posted.push({ msg, at: performance.now() }),
       setTimeout: (fn, ms) => globalThis.setTimeout(() => this.task('timer', fn), ms),
       clearTimeout: (h) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>),
@@ -588,15 +602,17 @@ describe('scenario host budgets (spec §4.11)', () => {
   );
 });
 
-// F18 host cases 4 and 5 (finance-engine spec 4.17). Operator ruling R-P3: until finance-levers
-// can put the bench funding set on the plan through the host, both run with plan and twin on the
-// bench baseline, through the bench calibration's `baselineFunding`, `affordableRoutes` and a
-// market model with `today.private` 0 and `slope.perCostShare` 3.0. They are rerun with
-// `benchFunding()` on the plan once finance-levers lands.
-describe('scenario host budgets with the bench baseline (F18 cases 4 and 5)', () => {
+// F18 host cases 4 and 5 (finance-engine spec 4.17). Operator ruling R-P3, now met: the cases run
+// the bench funding on the plan, through `levers.finance` (`benchFundingLevers`: `u-bench-bond`,
+// `u-bench-fund` and three programmes), with `compare: 'fzp'` so the twin stays on the FZP
+// baseline. The bench calibration's `baselineFunding`, `affordableRoutes` and a market model with
+// `today.private` 0 and `slope.perCostShare` 3.0 are the baseline under both. The host serves a
+// `policy.bin` (decoded to `synthPolicy`: FZP as written) because levers need it.
+describe('scenario host budgets with the bench funding as levers (F18 cases 4 and 5)', () => {
   let rig: Rig;
   let rev0At = 0;
   let firstBandTask = 0;
+  let manifest: typeof city.manifest;
 
   beforeAll(() => {
     const calibration = {
@@ -608,6 +624,10 @@ describe('scenario host budgets with the bench baseline (F18 cases 4 and 5)', ()
     const json = new Map(city.files.json);
     json.set(city.manifest.scenarios!.fzp.calibration, calibration);
     rig = new Rig({ ...city, calibration, files: { ...city.files, json } });
+    manifest = {
+      ...city.manifest,
+      scenarios: { fzp: { ...city.manifest.scenarios!.fzp, policy: SYNTH_POLICY_URL } }
+    };
   });
 
   afterAll(() => {
@@ -616,15 +636,25 @@ describe('scenario host budgets with the bench baseline (F18 cases 4 and 5)', ()
   });
 
   it('case 4. all 101 band pairs ≤ 9 s after revision 0', { timeout: TIMEOUT }, async () => {
+    probe.pools = null;
     const initAt = rig.handle({
       type: 'initScenario',
       rev: 1,
-      manifest: city.manifest,
+      manifest,
       scenario: 'fzp',
       seed: null,
-      horizon: HORIZON
+      horizon: HORIZON,
+      levers: {
+        ...structuredClone(DEFAULT_LEVERS),
+        finance: benchFundingLevers(SYNTH_AS_OF),
+        compare: 'fzp'
+      }
     });
     const first = await rig.until('revision 0', () => rig.timelines(1)[0], 120_000);
+    // Not timed: the lever revision went current, and the plan ran with the bench funding on it.
+    const lv = rig.posted.map((p) => p.msg).filter((m) => m.type === 'levers' && m.rev === 1);
+    expect(lv.at(-1)).toMatchObject({ phase: 'current' });
+    expect((probe.pools as string[] | null)?.slice(-2)).toEqual(['u-bench-bond', 'u-bench-fund']);
     rev0At = first.at;
     firstBandTask = rig.tasks.find((t) => t.net)?.start ?? Infinity;
     console.log(`[perf] funded host: initScenario(null) → revision 0: ${ms(first.at - initAt)}`);
