@@ -178,7 +178,11 @@ export const clearTermName = (key: TermKey): string => `Clear ${TERM_NAME[key]}`
 
 // --- Source lines (4.7, 4.8a) ---
 
-export const sourcedLine = (label: string, tier: number): string => `From ${label} (tier ${tier})`;
+/** "From {label} (tier {n})"; a tier 3 source says it is a consultant's projection (4.7). */
+export const sourcedLine = (label: string, tier: number): string =>
+  tier === 3
+    ? `From ${label} (tier 3: a consultant's projection, not San Francisco records)`
+    : `From ${label} (tier ${tier})`;
 export const customLine = (value: string, label: string): string =>
   `Your value (custom, not sourced). Sourced: ${value} from ${label}.`;
 export const CUSTOM_LINE = 'Custom, not sourced.';

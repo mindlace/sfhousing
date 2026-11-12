@@ -34,7 +34,8 @@ import {
   coverageLineText,
   coverageStepText,
   labelAmountChanged,
-  labelScaleApplied
+  labelScaleApplied,
+  sourcedLine
 } from './funding-copy';
 import {
   baselineGroups,
@@ -555,6 +556,48 @@ describe('sentences', () => {
     );
     expect(labelScaleApplied('State', D27, 0, false)).toBe(
       "Today's funding: State switched off from July 2027"
+    );
+  });
+});
+
+describe('fix round 1', () => {
+  it('a grant that fits in full gets no reduction line, whatever its rounding', () => {
+    const share = [0.13, 0.12, 0.11, 0.1, 0.09, 0.08, 0.07].find((s) => {
+      const frac = (s * U) % 1;
+      return frac > 0 && frac < 0.5;
+    })!;
+    expect(share).toBeDefined();
+    const g = grantOn('u-prog-1', 'federal', share);
+    const f = policyWith({ programmes: [g] }).funding;
+    const fed = baseline.pools.find((p) => p.id === 'federal')!;
+    const pv = programmePreview(g, fed, f, baseline, asOf, SLOPE_FIXTURE);
+    const priced = price(f, [...baseline.programmes, g]);
+    expect(priced.items.at(-1)!.granted).toBe(share * U);
+    const text = pv.lines.join(' ');
+    expect(text).not.toContain('Its tier covers more than is left');
+    expect(text).not.toContain('share what is left');
+  });
+
+  it('pool preview continues the list with "and {n} more"', () => {
+    const pool: Pool = {
+      ...BOND_POLICY.funding.pools[0],
+      inflows: [2028, 2029, 2030, 2031, 2032].map((y) => ({
+        kind: 'once' as const,
+        day: dayOf(y, 7, 1),
+        dollars: 10_000_000
+      }))
+    };
+    const lines = poolPreview(pool, asOf).lines;
+    expect(lines[2]).toBe('Brings in $10 million in July 2030, and 2 more.');
+    expect(lines.some((l) => l.startsWith('And '))).toBe(false);
+  });
+
+  it("a tier 3 source line says it is a consultant's projection", () => {
+    expect(sourcedLine('Bank lending', 3)).toBe(
+      "From Bank lending (tier 3: a consultant's projection, not San Francisco records)"
+    );
+    expect(sourcedLine('Bond interest rate and term', 2)).toBe(
+      'From Bond interest rate and term (tier 2)'
     );
   });
 });

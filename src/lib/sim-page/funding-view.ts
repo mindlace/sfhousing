@@ -18,6 +18,7 @@ import {
   oddsShift,
   resolveTerms,
   termsNeeded,
+  uncoveredPerHome,
   type BundleFunding,
   type BundleItem
 } from '$lib/sim/finance';
@@ -468,7 +469,9 @@ export function poolPreview(
   const repayment = ds === null ? null : { perYear: ds.annual, total: ds.total };
   const lendingCap = pool.kind === 'bank' ? Math.round(pool.leverage * received) : null;
   const lines = pool.inflows.slice(0, 3).map((x) => `Brings in ${inflowPhrase(x)}.`);
-  if (pool.inflows.length > 3) lines.push(`And ${pool.inflows.length - 3} more.`);
+  if (pool.inflows.length > 3) {
+    lines[2] = `${lines[2].slice(0, -1)}, and ${pool.inflows.length - 3} more.`;
+  }
   if (repayment !== null && pool.debt !== null) {
     lines.push(
       `Repaying it costs about ${formatDollars(repayment.perYear)} a year for ` +
@@ -583,7 +586,9 @@ export function programmePreview(
         if (inst.kind === 'loan') {
           lines.push(`It lends ${formatDollarsExact(lentInBundle)} a home, repaid at completion.`);
         }
-        if (inBundle < perHome && inst.kind === 'grant') {
+        // Compare exact amounts, with half a dollar of slack, so rounding never reads as a cut.
+        const alone = inst.kind === 'grant' ? inst.share * uncoveredPerHome('affordable', p) : 0;
+        if (inst.kind === 'grant' && priced.funding.items[i].grantEquivalent < alone - 0.5) {
           lines.push(
             groupOf(pool.kind) === 'city'
               ? "Federal and state money count first, and the City's sources share what is " +
@@ -670,7 +675,9 @@ const isPresetMade = (id: string, presets: FundingPreset[]): boolean =>
  * Where a field's value comes from (4.7): on a preset-made item, `valueSource`; on a hand-made
  * item, an evidence field (debt rate and term, lending per dollar, a loan's rate) is sourced
  * while it equals a `Sourced` `POOL_KIND_DEFAULTS[poolKind]` entry, else custom; every other
- * field of a hand-made item is a choice.
+ * field of a hand-made item is a choice. A hand-made programme's `tiers` also returns `choice`
+ * here: spec 4.8 makes the income mix evidence while it equals the baseline tiers, and the caller
+ * (the programme editor) makes that comparison, since this function has no baseline.
  */
 export function fieldSource(
   item: Pool | Programme,
