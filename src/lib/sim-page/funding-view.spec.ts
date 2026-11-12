@@ -40,6 +40,7 @@ import {
 import {
   baselineGroups,
   bundleOn,
+  customValues,
   coverageSizeMixed,
   coverageSteps,
   fieldSource,
@@ -616,6 +617,30 @@ describe('tiersSource (4.8 income mix)', () => {
     expect(tiersSource(mixed, baseline, [])).toEqual({ kind: 'custom' });
     expect(tiersSource({ ...g, reach: 'market', tiers: null }, baseline, [])).toEqual({
       kind: 'choice'
+    });
+  });
+});
+
+describe('customValues (4.10)', () => {
+  const baseline = fundingCalibration().baselineFunding!;
+  const presets = fundingPresets(fundingCalibration());
+
+  it('lists a preset-made loan share custom from the start, and a hand-made bond rate', () => {
+    const fund = presets.find((p) => p.id === 'revolving-fund')!;
+    const f = addPreset(BOND_POLICY.funding, fund);
+    f.pools[0] = { ...f.pools[0], debt: { rate: 0.05, termYears: 20 } };
+    const out = customValues(f, baseline, presets);
+    expect(out).toContainEqual({ name: 'City bond, 2028', field: 'interest rate' });
+    expect(out).not.toContainEqual({ name: 'City bond, 2028', field: 'years to repay' });
+    // A hand-made pool's money-in rows are choice fields: never listed.
+    expect(out.some((x) => x.name === 'City bond, 2028' && x.field.startsWith('amount'))).toBe(
+      false
+    );
+    const g = f.programmes.find((x) => x.id.startsWith('u-revolving-fund-'))!;
+    const pool = f.pools.find((x) => x.id === g.pool)!;
+    expect(out).toContainEqual({
+      name: programmeSentence(g, pool),
+      field: 'loan, % of the building cost'
     });
   });
 });

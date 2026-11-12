@@ -8,7 +8,7 @@
   now at its index, else "+ What it pays for"; after a discard, the programme's row or the button.
 -->
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import type { Pool } from '$lib/timelapse/types';
   import type { FundingEdit, Refused } from './funding-edit';
   import type { SimPolicy } from './policy';
@@ -51,6 +51,20 @@
   const poolOf = (id: string): Pool => pools.find((p) => p.id === id) ?? addPool;
 
   let picked = $state<string | null>(null);
+  /**
+   * The selected programme, while it still exists: an undo that removes it clears the selection
+   * in the same render, and the effect forgets it, so a redo does not bring it back (SimPage's
+   * rule for layers).
+   */
+  const selected = $derived(picked !== null && progs.some((g) => g.id === picked) ? picked : null);
+  $effect(() => {
+    if (picked !== null && selected === null) picked = null;
+  });
+  // A selection change ends the tab's coalesce run, so a later edit is its own undo step (4.9).
+  $effect.pre(() => {
+    void selected;
+    untrack(() => host.onpick());
+  });
 
   const rowOf = (key: string): HTMLElement | null =>
     root?.querySelector<HTMLElement>(`[data-prog-row="${key}"]`) ?? null;
@@ -123,9 +137,9 @@
           asOf={host.asOf}
           slope={host.slope}
           presets={host.presets}
-          selected={picked === g.id}
+          selected={selected === g.id}
           {added}
-          onselect={() => (picked = picked === g.id ? null : g.id)}
+          onselect={() => (picked = selected === g.id ? null : g.id)}
           onedit={(e) => edit(i, g.id, e)}
           {ondraft}
           ondiscard={() => discard(g.id)}

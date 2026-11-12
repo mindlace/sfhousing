@@ -75,12 +75,9 @@
     baselineGroups,
     coverageSizeMixed,
     coverageSteps,
-    fieldSource,
+    customValues,
     groupOf,
-    poolsOf,
-    programmeSentence,
     termRows,
-    tiersSource,
     type BaselineGroup,
     type FundingRowId
   } from './funding-view';
@@ -394,7 +391,10 @@
           onadd: onaddprog,
           ondraft: onprogdraft,
           ondiscard: () => drafts.discard(),
-          ongoterms
+          ongoterms,
+          onpick: () => {
+            run = ++runs;
+          }
         }
       : undefined
   );
@@ -408,34 +408,9 @@
     )
   );
   /** Every evidence field holding a custom value (4.10), as "{name}: {field} is your value …". */
-  const customValues = $derived.by((): string[] => {
-    const out: string[] = [];
-    const custom = (s: { kind: string }) => s.kind === 'custom';
-    for (const p of f.pools) {
-      if (p.debt !== null && (p.kind === 'goBond' || p.kind === 'cop')) {
-        if (custom(fieldSource(p, 'debt.rate', presets, p.kind)))
-          out.push(customValueText(p.label, 'interest rate'));
-        if (custom(fieldSource(p, 'debt.termYears', presets, p.kind)))
-          out.push(customValueText(p.label, 'years to repay'));
-      }
-      if (p.kind === 'bank' && custom(fieldSource(p, 'leverage', presets, p.kind)))
-        out.push(customValueText(p.label, 'lending per dollar'));
-    }
-    if (!baseline) return out;
-    const pools = poolsOf(f, baseline);
-    for (const g of f.programmes) {
-      const pool = pools.find((x) => x.id === g.pool);
-      if (pool === undefined) continue;
-      const name = programmeSentence(g, pool);
-      if (
-        g.instrument.kind === 'loan' &&
-        custom(fieldSource(g, 'instrument.rate', presets, pool.kind))
-      )
-        out.push(customValueText(name, 'loan interest rate'));
-      if (custom(tiersSource(g, baseline, presets))) out.push(customValueText(name, 'income mix'));
-    }
-    return out;
-  });
+  const customLines = $derived(
+    baseline ? customValues(f, baseline, presets).map((c) => customValueText(c.name, c.field)) : []
+  );
   const typedTerms = $derived(resolveTerms(MARKET_TERMS, f.terms).custom);
   const unsourcedTerms = (Object.keys(MARKET_TERMS) as TermKey[]).flatMap((k) => {
     const e = MARKET_TERMS[k];
@@ -602,7 +577,7 @@
           <p>{p.label}:</p>
           <SourceList items={p.provenance} />
         {/each}
-        {#each customValues as line, i (i)}
+        {#each customLines as line, i (i)}
           <p>{line}</p>
         {/each}
         {#each typedTerms as k (k)}

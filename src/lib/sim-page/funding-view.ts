@@ -732,11 +732,98 @@ export function tiersSource(
   const s = fieldSource(g, 'tiers', presets, 'generalRevenue');
   if (s.kind !== 'choice') return s;
   const base = baseline.programmes.find((x) => x.reach === 'affordable')?.tiers;
+  // The income mix's provenance is the baseline's last entry: the pipeline emits
+  // `[...poolProvenance, mixProvenance]` (pipeline/lib/fzp-cal/funding.ts, `baselineFunding`), and
+  // `fundingPresets` reads the same entry for the presets' `minHomes` and `tiers`.
   const prov = baseline.provenance.at(-1);
   const t = g.tiers;
   if (base && prov && INCOME_TIERS.every((k) => Math.abs(base[k] - t[k]) < 1e-9))
     return { kind: 'sourced', provenance: prov };
   return { kind: 'custom' };
+}
+
+/** Words for a field in "{name}: {field} is your value" (4.10), from tables 4.7 and 4.8. */
+const POOL_FIELD_WORD = {
+  dollars: 'amount',
+  dollarsPerYear: 'amount',
+  day: 'when',
+  from: 'from',
+  to: 'until'
+} as const;
+
+/**
+ * Every evidence field of an added item now holding a custom value (4.10), as `{ name, field }`
+ * in document order: on a preset-made item, every field `valueSource` covers that the item holds
+ * (each money-in row's amount and dates, debt, lending per dollar; a programme's numbers, dates,
+ * smallest project and income mix) whose `fieldSource` is custom; on a hand-made item, the
+ * evidence fields only (a bond's rate and years, a bank's lending per dollar, a loan's rate, the
+ * income mix), never its choice fields.
+ */
+export function customValues(
+  f: FinanceLevers,
+  baseline: Baseline,
+  presets: FundingPreset[]
+): { name: string; field: string }[] {
+  const out: { name: string; field: string }[] = [];
+  const isCustom = (
+    item: Pool | Programme,
+    field: PoolField | ProgrammeField,
+    kind: PoolKind
+  ): boolean => fieldSource(item, field, presets, kind).kind === 'custom';
+  for (const p of f.pools) {
+    const made = isPresetMade(p.id, presets);
+    const add = (field: PoolField, word: string): void => {
+      if (isCustom(p, field, p.kind)) out.push({ name: p.label, field: word });
+    };
+    if (made) {
+      p.inflows.forEach((x, k) => {
+        const keys =
+          x.kind === 'once'
+            ? (['dollars', 'day'] as const)
+            : x.to === null
+              ? (['dollarsPerYear', 'from'] as const)
+              : (['dollarsPerYear', 'from', 'to'] as const);
+        for (const key of keys)
+          add(`inflows[${k}].${key}` as PoolField, `${POOL_FIELD_WORD[key]}, row ${k + 1}`);
+      });
+    }
+    if (p.debt !== null && (p.kind === 'goBond' || p.kind === 'cop')) {
+      add('debt.rate', 'interest rate');
+      add('debt.termYears', 'years to repay');
+    }
+    if (p.kind === 'bank') add('leverage', 'dollars lent per dollar received');
+  }
+  const pools = poolsOf(f, baseline);
+  for (const g of f.programmes) {
+    const pool = pools.find((x) => x.id === g.pool);
+    if (pool === undefined) continue;
+    const name = programmeSentence(g, pool);
+    const add = (field: ProgrammeField, word: string): void => {
+      if (isCustom(g, field, pool.kind)) out.push({ name, field: word });
+    };
+    const inst = g.instrument;
+    if (isPresetMade(g.id, presets)) {
+      if (inst.kind === 'grant') add('instrument.share', 'grant, % of the uncovered cost');
+      else
+        add(
+          'instrument.costShare',
+          inst.kind === 'loan'
+            ? 'loan, % of the building cost'
+            : 'guaranteed loan, % of the building cost'
+        );
+    }
+    if (inst.kind === 'loan') add('instrument.rate', 'loan interest rate');
+    if (isPresetMade(g.id, presets)) {
+      if (inst.kind === 'loan' && inst.requiredReturn !== null)
+        add('instrument.requiredReturn', 'lender accepts a lower return');
+      add('from', 'from');
+      if (g.to !== null) add('to', 'until');
+      add('minHomes', 'projects of at least, homes');
+    }
+    if (tiersSource(g, baseline, presets).kind === 'custom')
+      out.push({ name, field: 'income mix' });
+  }
+  return out;
 }
 
 const TERM_KEYS = Object.keys(MARKET_TERMS) as TermKey[];

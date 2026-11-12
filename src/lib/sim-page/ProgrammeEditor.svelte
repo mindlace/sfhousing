@@ -37,6 +37,8 @@
     ondiscard: () => void;
     /** Moves focus to the guarantee rate cut under "Market terms you set" (4.8a). */
     ongoterms: () => void;
+    /** A programme row's selection changed: the tab ends its coalesce run (4.9). */
+    onpick: () => void;
   }
 </script>
 
@@ -867,7 +869,11 @@
         </div>
       {/if}
 
-      {#if preview !== null}
+      {#if preview !== null && preview.needsTerm !== null}
+        <!-- A loaded programme whose term resolves to null cannot be priced: an alert, and the
+             coverage line leaves it out (4.8a). -->
+        <p role="alert" class="text-red-800 dark:text-red-300">{preview.lines.join(' ')}</p>
+      {:else if preview !== null}
         <div class="flex flex-col gap-0.5 {muted}">
           <p>{preview.lines.join(' ')}</p>
           {#each typedTerms as k (k)}

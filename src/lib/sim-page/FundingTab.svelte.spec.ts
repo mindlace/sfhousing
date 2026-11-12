@@ -17,6 +17,7 @@ import {
   DRAFT_LINE,
   DRAFT_OPEN_DESC,
   GUARANTEE_DISABLED_DESC,
+  GUARANTEE_NEEDS_TERM,
   INCOME_MIX_DESC,
   MONTH_OFFER_CAVEAT,
   PAST_LINE,
@@ -37,7 +38,7 @@ import type { FundingDrafts } from './funding-drafts.svelte';
 import { addPresetEdit, isRefused } from './funding-edit';
 import { fundingPresets, nextFiscal, type FundingPreset } from './funding-presets';
 import { NO_LOAN_RATE } from './funding-sources';
-import { baselineGroups, coverageSteps } from './funding-view';
+import { baselineGroups, coverageSteps, programmeSentence } from './funding-view';
 import type { SimPolicy } from './policy';
 import type { PolicyStore } from './policy-store.svelte';
 import { BOND_POLICY, FUND_ASOF, fundingCalibration, policyWith } from './test/funding';
@@ -796,6 +797,77 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
     (add.element() as HTMLElement).click();
     await tick();
     expect(store.policy.funding.programmes).toHaveLength(24);
+  });
+
+  it('Sources and tiers lists a preset loan whose share is custom from the start (I1)', async () => {
+    const { store } = setup();
+    applyPreset(store, presetById('revolving-fund'));
+    const f = store.policy.funding;
+    const g = f.programmes[0];
+    expect(g.instrument.kind).toBe('loan');
+    const sentence = programmeSentence(
+      g,
+      f.pools.find((x) => x.id === g.pool)!
+    );
+    await page.getByText('Sources and tiers').click();
+    const text = document.querySelector('details')!.textContent!;
+    expect(text).toContain(
+      `${sentence}: loan, % of the building cost is your value (custom, not sourced)`
+    );
+  });
+
+  it('a programme selection change ends the coalesce run (M1)', async () => {
+    const a = { ...BOND_POLICY.funding.programmes[0], id: 'u-prog-1' };
+    const b = { ...a, id: 'u-prog-2', instrument: { kind: 'grant' as const, share: 0.2 } };
+    const { store } = setup(policyWith({ pools: BOND_POLICY.funding.pools, programmes: [a, b] }));
+    await page.getByRole('button', { name: /^City bond, 2028 ·/ }).click();
+    const pick = async (id: string) => {
+      (document.querySelector(`[data-prog-row="${id}"] button`) as HTMLElement).click();
+      await tick();
+    };
+    const share = () => page.getByRole('spinbutton', { name: /^Grant, % of the uncovered cost/ });
+    await pick('u-prog-1');
+    await share().fill('40');
+    await userEvent.keyboard('{Enter}');
+    await pick('u-prog-2');
+    await pick('u-prog-1');
+    await share().fill('45');
+    await userEvent.keyboard('{Enter}');
+    expect(store.policy.funding.programmes[0].instrument).toEqual({ kind: 'grant', share: 0.45 });
+    store.undo();
+    expect(store.policy.funding.programmes[0].instrument).toEqual({ kind: 'grant', share: 0.4 });
+    expect(store.canUndo).toBe(true);
+    store.undo();
+    expect(store.canUndo).toBe(false);
+  });
+
+  it('a loaded guarantee with no rate cut shows its alert on the row (M2)', async () => {
+    const g = {
+      ...BOND_POLICY.funding.programmes[0],
+      instrument: { kind: 'guarantee' as const, costShare: 0.6, reserve: 0.1 }
+    };
+    setup(policyWith({ pools: BOND_POLICY.funding.pools, programmes: [g] }));
+    await page.getByRole('button', { name: /^City bond, 2028 ·/ }).click();
+    await progRow(/^Loan guarantee to/).click();
+    const row = document.querySelector('[data-prog-row="u-prog-1"]')!;
+    const alerts = [...row.querySelectorAll('[role="alert"]')].map((x) => x.textContent?.trim());
+    expect(alerts).toContain(GUARANTEE_NEEDS_TERM);
+  });
+
+  it('undo of the selected programme clears its selection; redo keeps it cleared (M6)', async () => {
+    const { store } = setup(BOND_POLICY);
+    await page.getByRole('button', { name: /^City bond, 2028 ·/ }).click();
+    await page
+      .getByRole('button', { name: addProgrammeName('City bond, 2028'), exact: true })
+      .click();
+    const sel = () =>
+      document.querySelector('[data-prog-row="u-prog-2"] button')?.getAttribute('aria-pressed');
+    await expect.poll(sel).toBe('true');
+    store.undo();
+    await expect.poll(sel).toBeUndefined();
+    store.redo();
+    await expect.poll(sel).toBe('false');
+    expect(document.querySelector('[data-prog-row="u-prog-2"] [data-programme-editor]')).toBeNull();
   });
 
   it('Sources and tiers lists unavailable presets with reasons and a custom bond rate', async () => {
