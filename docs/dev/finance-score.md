@@ -213,12 +213,12 @@ authorisation and the Charter cap are totals: a scale of 0.5 until 2029 and 2 af
 the net. An entry is emitted only when the principal is above 0. It is computed from the policy's
 input and not from the ledger, so the statements are the same in every seed.
 
-**Builder's call, escalated.** `addedBorrowing` has no `off` lookup: it follows the spec's letter
-and relies on the levers (F7) scaling a switched-off pool's inflows to 0 over its span. The engine
-itself drops an arrival on an off day. If a lever ever emits an `off` entry without zeroing the
-inflows, `limits` would state borrowing the run never receives while `owed` (from the ledger)
-would not. This was escalated to the owner of the levers package; if it needs closing, `arrived`
-skips arrivals inside `off` spans (one line, identical when F7 zeroes them).
+**Off days are skipped, as the engine does.** For a pool of `plan.pools`, `addedBorrowing` drops
+every arrival on a day inside that pool's `plan.off` spans (`to` inclusive, null no end,
+overlapping spans their union, the engine's `isOff` rule, which needs a whole `FinanceIndex` the
+score's partial plans do not always have). The baseline pools have no off spans of
+their own, so their arrivals all count. `limits` therefore agree with `owed` (from the ledger)
+whatever F7 does to the inflows: the result is identical when F7 zeroes them.
 
 **The default policy states no limit:** `plan.finance` equals the twin's, every baseline
 difference is 0, and `limits` is `[]`.

@@ -447,11 +447,12 @@ export function poolSeries(
 }
 
 /** The dollars a pool's inflows bring from `asOf` to `horizon` (spec 4.8's `arrived`). */
-function arrived(pool: Pool, asOf: Day, horizon: Day): number {
+function arrived(pool: Pool, asOf: Day, horizon: Day, off?: (day: Day) => boolean): number {
   let sum = 0;
   for (const inflow of pool.inflows) {
     const each = inflow.kind === 'once' ? inflow.dollars : inflow.dollarsPerYear;
-    sum += each * inflowArrivals(inflow, asOf, horizon).length;
+    const days = inflowArrivals(inflow, asOf, horizon);
+    sum += each * (off ? days.filter((d) => !off(d)).length : days.length);
   }
   return sum;
 }
@@ -459,8 +460,10 @@ function arrived(pool: Pool, asOf: Day, horizon: Day): number {
 /**
  * The borrowing the policy adds (spec 4.8): for each `goBond` or `cop` pool of `plan.pools`, in
  * order, what it receives from `asOf` to `horizon`, less what the same pool in `baseline` receives
- * (a pool not in `baseline` is added whole; a scaled-down or switched-off one adds nothing). The
- * inflows already carry the scale and the switch-off (F7, F17), so there is no `off` lookup.
+ * (a pool not in `baseline` is added whole; a scaled-down or switched-off one adds nothing). A plan
+ * pool's arrivals on days inside its `plan.off` spans are skipped, as the engine drops them, so
+ * `limits` agrees with `owed` whether or not F7 zeroes the inflows. The baseline pools have no off
+ * spans of their own.
  */
 export function addedBorrowing(
   plan: NonNullable<SimInput['finance']>,
@@ -472,7 +475,10 @@ export function addedBorrowing(
   const out: Borrowing[] = [];
   for (const pool of plan.pools) {
     if ((pool.kind !== 'goBond' && pool.kind !== 'cop') || pool.debt === null) continue;
-    const got = arrived(pool, asOf, horizon);
+    const spans = plan.off.filter((o) => o.pool === pool.id);
+    const got = arrived(pool, asOf, horizon, (d) =>
+      spans.some((o) => o.from <= d && (o.to === null || d <= o.to))
+    );
     const was = base.get(pool.id);
     const principal = was === undefined ? got : Math.max(0, got - arrived(was, asOf, horizon));
     if (principal > 0) out.push({ pool: pool.id, kind: pool.kind, principal, debt: pool.debt });

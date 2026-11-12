@@ -795,6 +795,30 @@ describe('addedBorrowing and limits (spec 6 test 21)', () => {
     expect(addedBorrowing(finance, baseline, AS, HZ)).toEqual([]);
   });
 
+  it('an unscaled switched-off baseline pool matches the zeroed case, limits included', () => {
+    const p = scaled([yearly(AS, null, 100_000_000)]);
+    const finance: Fin = {
+      ...plan([p, GENERAL_REVENUE]),
+      off: [{ pool: 'city-debt', from: dayOf(2030, 10, 16), to: null }]
+    };
+    const added = addedBorrowing(finance, baseline, AS, HZ);
+    expect(added).toEqual([]);
+    expect(limitStatements(added)).toEqual([]);
+  });
+
+  it('an added u-bond whose once inflow falls in an off span adds nothing', () => {
+    const day = dayOf(2031, 3, 1);
+    const bond: Pool = { ...U_BOND, inflows: [{ kind: 'once', day, dollars: 300_000_000 }] };
+    const finance: Fin = {
+      ...plan([...baseline, bond]),
+      off: [
+        { pool: 'u-bond', from: day - 10, to: day - 5 },
+        { pool: 'u-bond', from: day - 8, to: day }
+      ]
+    };
+    expect(addedBorrowing(finance, baseline, AS, HZ)).toEqual([]);
+  });
+
   it('an added cop alone states copCap only', () => {
     const added = out([...baseline, U_COP]);
     expect(added.map((b) => [b.pool, b.kind, b.principal])).toEqual([['u-cop', 'cop', 50_000_000]]);
