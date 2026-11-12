@@ -1,7 +1,8 @@
 // The funding preset list (finance-levers spec 2026-11-09 section 4.7, F16). Page code: presets
 // shape only a policy. Every number a preset presents as a fact is a named `Sourced` constant in
 // `funding-sources.ts`; this module only places them. Presets carry placeholder ids
-// `u-<presetId>-1`; `addPreset` assigns real ones.
+// `u-<presetId>-1`; `addPreset` assigns real ones. `valueSource` says where a stored value of a
+// preset-made item comes from; `pastItems` finds what lies before the simulation starts.
 import {
   MARKET_TERMS,
   PROTOTYPES,
@@ -9,7 +10,9 @@ import {
   resolveTerms,
   uncoveredPerHome
 } from '$lib/sim/finance';
+import { FINANCE_LIMITS, LAST_DAY } from '$lib/sim/levers/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
+import { inflowArrivals } from '$lib/sim/scenario/funding';
 import { dayOf } from '$lib/sim/scenario/dates';
 import type {
   Calibration,
@@ -21,6 +24,7 @@ import type {
   Provenance
 } from '$lib/timelapse/types';
 import {
+  type Evidence,
   BOND_PRINCIPAL,
   CITY_GRANT_SHARE_PROVENANCE,
   CITY_PER_HOME,
@@ -108,6 +112,10 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
   const statePool = bf?.pools.find((p) => p.kind === 'state');
   const federalPool = bf?.pools.find((p) => p.kind === 'federal');
   const terms = resolveTerms(MARKET_TERMS);
+  /** The baseline programmes' `minHomes` and `tiers` provenance: the last entry (finance-data F12). */
+  const baseProv = bf?.provenance.at(-1);
+  const withBase = (list: Provenance[]): Provenance[] =>
+    baseProv === undefined ? list : [...list, baseProv];
 
   const mk = (
     id: string,
@@ -189,7 +197,7 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
           programmes: [
             programme(id, programmeLabel, p.id, cityGrant(firstArrival(inflows), base!))
           ],
-          provenance: [CITY_GRANT_SHARE_PROVENANCE, ...provenance]
+          provenance: withBase([CITY_GRANT_SHARE_PROVENANCE, ...provenance])
         };
       },
       keepContent
@@ -230,7 +238,9 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
     );
   };
 
-  const stateYearly = statePool?.inflows.find((f) => f.kind === 'yearly');
+  const stateYearly = statePool?.inflows.find(
+    (f): f is Extract<Inflow, { kind: 'yearly' }> => f.kind === 'yearly'
+  );
   const goBondDebt = POOL_KIND_DEFAULTS.goBond.debt;
 
   return [
@@ -342,13 +352,13 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
               { ...shared, instrument: { ...bankLoan } }
             )
           ],
-          provenance: [
+          provenance: withBase([
             PUBLIC_BANK_HOUSING.provenance,
             ...(bank.leverage?.value !== null && bank.leverage ? [bank.leverage.provenance] : []),
             ...(bank.loanRate.value !== null ? [bank.loanRate.provenance] : []),
             PUBLIC_BANK_COST_SHARE.provenance,
             NEXT_FISCAL_START_PROVENANCE
-          ]
+          ])
         };
       }
     ),
@@ -396,7 +406,7 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
             kind: 'yearly',
             from,
             to: null,
-            dollarsPerYear: stateYearly!.kind === 'yearly' ? stateYearly!.dollarsPerYear : 0
+            dollarsPerYear: stateYearly!.dollarsPerYear
           }
         ]);
         return {
@@ -410,11 +420,11 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
               cityGrant(from, base!)
             )
           ],
-          provenance: [
+          provenance: withBase([
             CITY_GRANT_SHARE_PROVENANCE,
             FEDERAL_SUPPORT_AMOUNT_PROVENANCE,
             FEDERAL_SUPPORT_START_PROVENANCE
-          ]
+          ])
         };
       }
     ),
@@ -435,4 +445,180 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
       'There is no regional measure yet.'
     )
   ];
+}
+
+/** The least positive n with neither `u-<presetId>-<n>` a pool id nor a programme id in `f`. */
+export function nextAddedId(f: FinanceLevers, presetId: string): string {
+  const used = new Set([...f.pools.map((p) => p.id), ...f.programmes.map((g) => g.id)]);
+  let n = 1;
+  while (used.has(`u-${presetId}-${n}`)) n++;
+  return `u-${presetId}-${n}`;
+}
+
+/**
+ * Adds a preset's scales, pools and programmes with fresh ids (one `n` shared by its pool and
+ * programme), a scale entry replacing one on the same pool and day, and keeps `baselineScale`
+ * sorted. Throws `RangeError` past a `FINANCE_LIMITS` bound.
+ */
+export function addPreset(f: FinanceLevers, p: FundingPreset): FinanceLevers {
+  const id = nextAddedId(f, p.id);
+  const idOf = new Map(p.pools.map((x) => [x.id, id]));
+  const pools = [...f.pools, ...p.pools.map((x) => ({ ...structuredClone(x), id }))];
+  const programmes = [
+    ...f.programmes,
+    ...p.programmes.map((g) => ({ ...structuredClone(g), id, pool: idOf.get(g.pool) ?? g.pool }))
+  ];
+  const baselineScale = [
+    ...f.baselineScale.filter(
+      (e) => !p.baselineScale.some((n) => n.pool === e.pool && n.from === e.from)
+    ),
+    ...p.baselineScale.map((e) => ({ ...e }))
+  ].sort((a, b) => (a.pool < b.pool ? -1 : a.pool > b.pool ? 1 : a.from - b.from));
+  if (pools.length > FINANCE_LIMITS.pools)
+    throw new RangeError(`at most ${FINANCE_LIMITS.pools} pools`);
+  if (programmes.length > FINANCE_LIMITS.programmes)
+    throw new RangeError(`at most ${FINANCE_LIMITS.programmes} programmes`);
+  if (baselineScale.length > FINANCE_LIMITS.baselineScale)
+    throw new RangeError(`at most ${FINANCE_LIMITS.baselineScale} scale entries`);
+  return { ...f, baselineScale, pools, programmes };
+}
+
+type InflowKey = 'day' | 'from' | 'to' | 'dollars' | 'dollarsPerYear';
+export type PoolField =
+  'debt.rate' | 'debt.termYears' | 'leverage' | `inflows[${number}].${InflowKey}`;
+export type ProgrammeField =
+  | 'instrument.share'
+  | 'instrument.costShare'
+  | 'instrument.rate'
+  | 'instrument.requiredReturn'
+  | 'from'
+  | 'to'
+  | 'minHomes'
+  | 'tiers';
+
+const INFLOW_PATH = /^inflows\[(\d+)\]\.(\w+)$/;
+
+/** The value at a field path of a pool or programme; undefined where the item has no such path. */
+function valueAt(item: Pool | Programme, field: string): unknown {
+  const inflow = INFLOW_PATH.exec(field);
+  if (inflow) {
+    if (!('inflows' in item)) return undefined;
+    return (item.inflows[Number(inflow[1])] as unknown as Record<string, unknown> | undefined)?.[
+      inflow[2]
+    ];
+  }
+  const o = item as unknown as Record<string, unknown>;
+  if (field.startsWith('debt.')) {
+    return 'inflows' in item
+      ? (item.debt as Record<string, unknown> | null)?.[field.slice(5)]
+      : undefined;
+  }
+  if (field.startsWith('instrument.')) {
+    return 'instrument' in item
+      ? (item.instrument as unknown as Record<string, unknown>)[field.slice(11)]
+      : undefined;
+  }
+  if (field === 'leverage') return 'inflows' in item ? item.leverage : undefined;
+  if (['from', 'to', 'minHomes', 'tiers'].includes(field))
+    return 'instrument' in item ? o[field] : undefined;
+  return undefined;
+}
+
+const sameValue = (a: unknown, b: unknown): boolean => {
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return a === b;
+  const x = a as Record<string, unknown>;
+  const y = b as Record<string, unknown>;
+  const keys = Object.keys(x);
+  return keys.length === Object.keys(y).length && keys.every((k) => x[k] === y[k]);
+};
+
+const evidenceProv = (e: Evidence<unknown> | null): Provenance | null =>
+  e !== null && 'provenance' in e ? e.provenance : null;
+
+/** The provenance the field table of spec section 4.7 gives a preset's field, or null. */
+function tableSource(
+  presetId: string,
+  preset: FundingPreset,
+  item: Pool | Programme,
+  field: string
+): Provenance | null {
+  const isPool = 'inflows' in item;
+  const inflow = INFLOW_PATH.exec(field);
+  const key = inflow?.[2];
+  const cityGrantPreset = preset.programmes.some(
+    (g) => g.instrument.kind === 'grant' && g.reach === 'affordable'
+  );
+  if (!isPool) {
+    if (field === 'instrument.share' && cityGrantPreset) return CITY_GRANT_SHARE_PROVENANCE;
+    if (
+      (field === 'minHomes' || field === 'tiers') &&
+      (cityGrantPreset || presetId === 'public-bank')
+    )
+      return preset.provenance.at(-1) ?? null;
+    if (field === 'instrument.rate' && presetId === 'public-bank')
+      return evidenceProv(POOL_KIND_DEFAULTS.bank.loanRate);
+    return null;
+  }
+  switch (presetId) {
+    case 'housing-bond':
+      if (field === 'inflows[0].dollars') return BOND_PRINCIPAL.provenance;
+      if (field === 'debt.rate' || field === 'debt.termYears')
+        return evidenceProv(POOL_KIND_DEFAULTS.goBond.debt);
+      return null;
+    case 'general-revenue':
+      return field === 'inflows[0].dollarsPerYear' ? GENERAL_FUND_FY25.provenance : null;
+    case 'htf-2026':
+      return inflow ? PROP_C_SCHEDULE.provenance : null;
+    case 'revolving-fund':
+      return field === 'inflows[0].dollars' ? REVOLVING_FUND_SIZE.provenance : null;
+    case 'public-bank':
+      if (inflow && key === 'dollars') return PUBLIC_BANK_HOUSING.provenance;
+      if (field === 'leverage') return evidenceProv(POOL_KIND_DEFAULTS.bank.leverage);
+      return null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Where a stored value of a preset-made pool or programme comes from: the field's provenance when
+ * the id is `u-<presetId>-<n>` for a preset in `presets`, the spec's field table gives it a source
+ * and the value still equals what the preset builds now; else `'custom'`.
+ */
+export function valueSource(
+  item: Pool | Programme,
+  field: PoolField | ProgrammeField,
+  presets: FundingPreset[]
+): Provenance | 'custom' {
+  const preset = presets.find((p) => {
+    const prefix = `u-${p.id}-`;
+    return item.id.startsWith(prefix) && /^\d+$/.test(item.id.slice(prefix.length));
+  });
+  if (preset === undefined) return 'custom';
+  const built = ('inflows' in item ? preset.pools : preset.programmes)[0];
+  if (built === undefined) return 'custom';
+  const source = tableSource(preset.id, preset, item, field);
+  if (source === null) return 'custom';
+  const stored = valueAt(item, field);
+  const now = valueAt(built, field);
+  return now !== undefined && sameValue(stored, now) ? source : 'custom';
+}
+
+/**
+ * What lies before the simulation starts (spec 4.6): pools none of whose inflows arrive on or
+ * after `asOf`, programmes whose `to` is before it, and inflows with no arrival on or after it,
+ * each list in document order.
+ */
+export function pastItems(
+  f: FinanceLevers,
+  asOf: Day
+): { pools: string[]; programmes: string[]; inflows: { pool: string; index: number }[] } {
+  const past = (x: Inflow): boolean => inflowArrivals(x, asOf, LAST_DAY).length === 0;
+  return {
+    pools: f.pools.filter((p) => p.inflows.every(past)).map((p) => p.id),
+    programmes: f.programmes.filter((g) => g.to !== null && g.to < asOf).map((g) => g.id),
+    inflows: f.pools.flatMap((p) =>
+      p.inflows.flatMap((x, index) => (past(x) ? [{ pool: p.id, index }] : []))
+    )
+  };
 }

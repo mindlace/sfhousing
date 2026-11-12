@@ -2,8 +2,7 @@
 // (finance-levers spec 2026-11-09 section 4.7). Every number a preset presents as a fact is a
 // `Sourced` constant here, with its tier and where it was read; a number the user is left to
 // choose is a starting value at tier 4, labelled "custom, not sourced". `funding-presets.ts` reads
-// these by name, and `valueSource` (Task 8) reads the same names to say where a stored value came
-// from.
+// these by name, and `valueSource` reads the same names to say where a stored value came from.
 import { dayOf } from '$lib/sim/scenario/dates';
 import type { Dollars, Inflow, PoolKind, Provenance } from '$lib/timelapse/types';
 import type { Evidence, Sourced } from './timing-sources';

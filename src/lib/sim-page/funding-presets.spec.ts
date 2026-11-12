@@ -1,7 +1,7 @@
 // The preset list and its sources (finance-levers spec section 4.7): the list, each available
 // preset's content, each unavailable reason, rule 2 with an unsourced term, POOL_KIND_DEFAULTS.
 import { describe, expect, it, vi } from 'vitest';
-import { baselineFixture, FIXTURE_AS_OF } from '$lib/sim/levers/fixtures/finance';
+import { baselineFixture, FIXTURE_AS_OF, fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { LAST_DAY } from '$lib/sim/levers/finance';
 import { dayOf } from '$lib/sim/scenario/dates';
 import { inflowArrivals } from '$lib/sim/scenario/funding';
@@ -9,8 +9,30 @@ import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.jso
 import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration, PoolKind } from '$lib/timelapse/types';
-import { fundingPresets, cityGrant, nextCalendar, nextFiscal } from './funding-presets';
-import { CITY_PER_HOME, POOL_KIND_DEFAULTS } from './funding-sources';
+import {
+  addPreset,
+  cityGrant,
+  fundingPresets,
+  nextAddedId,
+  nextCalendar,
+  nextFiscal,
+  pastItems,
+  valueSource
+} from './funding-presets';
+import {
+  BOND_PRINCIPAL,
+  CITY_GRANT_SHARE_PROVENANCE,
+  CITY_PER_HOME,
+  GENERAL_FUND_FY25,
+  POOL_KIND_DEFAULTS,
+  type Sourced,
+  PROP_C_SCHEDULE,
+  PUBLIC_BANK_HOUSING,
+  REVOLVING_FUND_SIZE
+} from './funding-sources';
+import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
+import type { FinanceLevers } from '$lib/sim/levers/types';
+import type { Pool, Programme } from '$lib/timelapse/types';
 
 const stub = vi.hoisted(() => ({ unsourced: false }));
 vi.mock('$lib/sim/finance', async (orig) => {
@@ -436,5 +458,257 @@ describe('POOL_KIND_DEFAULTS', () => {
           'No source gives the rate a public loan programme funded from this kind of money charges in San Francisco; a rate you type is custom, not sourced.'
       });
     }
+  });
+});
+
+const empty = (): FinanceLevers => ({ baselineScale: [], pools: [], programmes: [], terms: {} });
+const ALL = (): ReturnType<typeof fundingPresets> => fundingPresets(cal);
+
+describe('addPreset and nextAddedId', () => {
+  it('adds a preset twice with unique ids and a shared n', () => {
+    const p = get('housing-bond');
+    const f = addPreset(addPreset(empty(), p), p);
+    expect(f.pools.map((x) => x.id)).toEqual(['u-housing-bond-1', 'u-housing-bond-2']);
+    expect(f.programmes.map((x) => x.id)).toEqual(['u-housing-bond-1', 'u-housing-bond-2']);
+    expect(f.programmes.map((x) => x.pool)).toEqual(['u-housing-bond-1', 'u-housing-bond-2']);
+  });
+
+  it('replaces a same-day scale entry and keeps baselineScale sorted', () => {
+    const off = get('state-off');
+    const day = off.baselineScale[0].from;
+    const start: FinanceLevers = {
+      ...empty(),
+      baselineScale: [
+        { pool: 'federal', from: day, scale: 3 },
+        { pool: 'state', from: day, scale: 5 },
+        { pool: 'state', from: day + 100, scale: 2 }
+      ]
+    };
+    const f = addPreset(start, off);
+    expect(f.baselineScale).toEqual([
+      { pool: 'federal', from: day, scale: 3 },
+      { pool: 'state', from: day, scale: 0 },
+      { pool: 'state', from: day + 100, scale: 2 }
+    ]);
+    const g = addPreset(addPreset(empty(), get('state-double')), off);
+    expect(g.baselineScale).toEqual([{ pool: 'state', from: day, scale: 0 }]);
+  });
+
+  it('sorts a new entry into place', () => {
+    const f = addPreset(
+      { ...empty(), baselineScale: [{ pool: 'state', from: 1, scale: 2 }] },
+      get('federal-credits-off')
+    );
+    expect(f.baselineScale.map((x) => x.pool)).toEqual(['federal', 'state']);
+  });
+
+  it('throws a RangeError past a limit', () => {
+    const p = get('housing-bond');
+    let f = empty();
+    for (let i = 0; i < FINANCE_LIMITS.pools; i++) f = addPreset(f, p);
+    expect(f.pools).toHaveLength(12);
+    expect(() => addPreset(f, p)).toThrow(RangeError);
+  });
+
+  it('finds the least free n in both pools and programmes (review focus 5)', () => {
+    const p = get('housing-bond');
+    let f = addPreset(addPreset(empty(), p), p);
+    f = { ...f, pools: f.pools.filter((x) => x.id !== 'u-housing-bond-1') };
+    expect(nextAddedId(f, 'housing-bond')).toBe('u-housing-bond-3');
+    expect(nextAddedId(empty(), 'state-off')).toBe('u-state-off-1');
+  });
+});
+
+describe('valueSource', () => {
+  const presets = ALL();
+  const made = (id: string) =>
+    addPreset(
+      empty(),
+      presets.find((x) => x.id === id)!
+    );
+  const poolOf = (id: string): Pool => made(id).pools[0];
+  const progOf = (id: string): Programme => made(id).programmes[0];
+  const prov = (id: string) => presets.find((x) => x.id === id)!.provenance;
+
+  it('labels the housing-bond fields', () => {
+    const pl = poolOf('housing-bond');
+    expect(valueSource(pl, 'inflows[0].dollars', presets)).toEqual(BOND_PRINCIPAL.provenance);
+    const debt = POOL_KIND_DEFAULTS.goBond.debt as Sourced<unknown>;
+    expect(valueSource(pl, 'debt.rate', presets)).toEqual(debt.provenance);
+    expect(valueSource(pl, 'debt.termYears', presets)).toEqual(debt.provenance);
+    const edited = { ...pl, inflows: [{ kind: 'once' as const, day: jul(2027), dollars: 1 }] };
+    expect(valueSource(edited, 'inflows[0].dollars', presets)).toBe('custom');
+    expect(valueSource({ ...pl, debt: { rate: 0.07, termYears: 20 } }, 'debt.rate', presets)).toBe(
+      'custom'
+    );
+    expect(valueSource(pl, 'inflows[0].day', presets)).toBe('custom');
+  });
+
+  it('labels general-revenue and revolving-fund amounts', () => {
+    expect(valueSource(poolOf('general-revenue'), 'inflows[0].dollarsPerYear', presets)).toEqual(
+      GENERAL_FUND_FY25.provenance
+    );
+    expect(valueSource(poolOf('revolving-fund'), 'inflows[0].dollars', presets)).toEqual(
+      REVOLVING_FUND_SIZE.provenance
+    );
+    expect(valueSource(poolOf('general-revenue'), 'inflows[0].from', presets)).toBe('custom');
+    expect(valueSource(poolOf('general-revenue'), 'inflows[0].to', presets)).toBe('custom');
+  });
+
+  it('labels the htf-2026 inflows, which are held back but still map', () => {
+    const pl = poolOf('htf-2026');
+    for (let k = 0; k < 6; k++) {
+      expect(valueSource(pl, `inflows[${k}].dollars`, presets)).toEqual(PROP_C_SCHEDULE.provenance);
+      expect(valueSource(pl, `inflows[${k}].day`, presets)).toEqual(PROP_C_SCHEDULE.provenance);
+    }
+    for (const key of ['dollarsPerYear', 'from', 'to'] as const)
+      expect(valueSource(pl, `inflows[6].${key}`, presets)).toEqual(PROP_C_SCHEDULE.provenance);
+    const moved = structuredClone(pl);
+    (moved.inflows[6] as { to: number }).to += 1;
+    expect(valueSource(moved, 'inflows[6].to', presets)).toBe('custom');
+  });
+
+  it('labels the public bank', () => {
+    const pl = poolOf('public-bank');
+    for (let k = 0; k < 5; k++)
+      expect(valueSource(pl, `inflows[${k}].dollars`, presets)).toEqual(
+        PUBLIC_BANK_HOUSING.provenance
+      );
+    expect(valueSource(pl, 'leverage', presets)).toEqual(
+      (POOL_KIND_DEFAULTS.bank.leverage as Sourced<unknown>).provenance
+    );
+    expect(valueSource({ ...pl, leverage: 1 }, 'leverage', presets)).toBe('custom');
+    const pr = progOf('public-bank');
+    expect(valueSource(pr, 'instrument.rate', presets)).toEqual(
+      (POOL_KIND_DEFAULTS.bank.loanRate as Sourced<unknown>).provenance
+    );
+    expect(valueSource(pl, 'inflows[0].day', presets)).toBe('custom');
+    expect(valueSource(pr, 'instrument.costShare', presets)).toBe('custom');
+    expect(valueSource(pr, 'instrument.requiredReturn', presets)).toBe('custom');
+    expect(valueSource(pr, 'minHomes', presets)).toEqual(prov('public-bank').at(-1));
+    expect(valueSource(pr, 'tiers', presets)).toEqual(prov('public-bank').at(-1));
+    expect(valueSource({ ...pr, minHomes: 99 }, 'minHomes', presets)).toBe('custom');
+  });
+
+  it('labels the City grant share, minHomes and tiers, and notices an edit key by key', () => {
+    for (const id of ['housing-bond', 'general-revenue', 'htf-2026', 'federal-support']) {
+      const pr = progOf(id);
+      expect(valueSource(pr, 'instrument.share', presets)).toEqual(CITY_GRANT_SHARE_PROVENANCE);
+      expect(valueSource(pr, 'minHomes', presets)).toEqual(prov(id).at(-1));
+      expect(valueSource(pr, 'tiers', presets)).toEqual(prov(id).at(-1));
+      expect(
+        valueSource(
+          { ...pr, instrument: { kind: 'grant', share: 0.3 } },
+          'instrument.share',
+          presets
+        )
+      ).toBe('custom');
+      expect(valueSource({ ...pr, tiers: { ...pr.tiers!, low: 0.4 } }, 'tiers', presets)).toBe(
+        'custom'
+      );
+      expect(valueSource({ ...pr, tiers: null }, 'tiers', presets)).toBe('custom');
+    }
+  });
+
+  it('is custom from the start for dates, open ends, the federal amount and loan choices', () => {
+    for (const id of ['housing-bond', 'general-revenue', 'federal-support']) {
+      expect(valueSource(progOf(id), 'from', presets)).toBe('custom');
+      expect(valueSource(progOf(id), 'to', presets)).toBe('custom');
+    }
+    expect(valueSource(poolOf('federal-support'), 'inflows[0].dollarsPerYear', presets)).toBe(
+      'custom'
+    );
+    expect(valueSource(poolOf('federal-support'), 'inflows[0].from', presets)).toBe('custom');
+    expect(valueSource(poolOf('federal-support'), 'inflows[0].to', presets)).toBe('custom');
+    const rv = progOf('revolving-fund');
+    for (const f of ['instrument.costShare', 'instrument.rate', 'minHomes', 'tiers'] as const)
+      expect(valueSource(rv, f, presets)).toBe('custom');
+    expect(valueSource(rv, 'instrument.requiredReturn', presets)).toBe('custom');
+  });
+
+  it('is custom for hand-made items, unknown presets and a pool read as a programme field', () => {
+    const f = fundingOnly();
+    expect(valueSource(f.pools[0], 'leverage', presets)).toBe('custom');
+    expect(valueSource(f.programmes[0], 'minHomes', presets)).toBe('custom');
+    const pl = poolOf('housing-bond');
+    expect(
+      valueSource(
+        pl,
+        'inflows[0].dollars',
+        presets.filter((x) => x.id !== 'housing-bond')
+      )
+    ).toBe('custom');
+    expect(valueSource(pl, 'minHomes', presets)).toBe('custom');
+    expect(valueSource({ ...pl, id: 'u-housing-bond-x' }, 'inflows[0].dollars', presets)).toBe(
+      'custom'
+    );
+  });
+
+  it('matches hyphenated preset ids', () => {
+    const f = addPreset(
+      addPreset(addPreset(empty(), get('federal-credits-off')), get('housing-bond')),
+      get('housing-bond')
+    );
+    const third = addPreset(addPreset(f, get('housing-bond')), get('housing-bond'));
+    const pl = third.pools[3];
+    expect(pl.id).toBe('u-housing-bond-4');
+    expect(valueSource(pl, 'inflows[0].dollars', presets)).toEqual(BOND_PRINCIPAL.provenance);
+    const odd = { ...poolOf('federal-support'), id: 'u-federal-credits-off-3' };
+    expect(valueSource(odd, 'inflows[0].dollarsPerYear', presets)).toBe('custom');
+  });
+});
+
+describe('pastItems', () => {
+  const asOf = FIXTURE_AS_OF;
+  const mkPool = (id: string, inflows: Pool['inflows']): Pool => ({
+    id,
+    kind: 'generalRevenue',
+    label: id,
+    inflows,
+    uncapped: false,
+    debt: null,
+    leverage: 1
+  });
+  const mkProg = (id: string, to: number | null): Programme => ({
+    id,
+    label: id,
+    pool: 'u-pool-1',
+    reach: 'affordable',
+    instrument: { kind: 'grant', share: 0.1 },
+    from: asOf - 500,
+    to,
+    minHomes: 0,
+    tiers: null
+  });
+
+  it('lists past pools, programmes and inflows in document order', () => {
+    const f: FinanceLevers = {
+      ...empty(),
+      pools: [
+        mkPool('u-pool-1', [{ kind: 'once', day: asOf - 10, dollars: 5 }]),
+        mkPool('u-pool-2', [{ kind: 'once', day: asOf + 10, dollars: 5 }]),
+        mkPool('u-pool-3', [
+          { kind: 'once', day: asOf - 20, dollars: 5 },
+          { kind: 'once', day: asOf + 20, dollars: 5 }
+        ]),
+        mkPool('u-pool-4', [
+          { kind: 'yearly', from: asOf - 900, to: asOf - 400, dollarsPerYear: 1 }
+        ])
+      ],
+      programmes: [mkProg('u-prog-1', asOf - 1), mkProg('u-prog-2', asOf), mkProg('u-prog-3', null)]
+    };
+    expect(pastItems(f, asOf)).toEqual({
+      pools: ['u-pool-1', 'u-pool-4'],
+      programmes: ['u-prog-1'],
+      inflows: [
+        { pool: 'u-pool-1', index: 0 },
+        { pool: 'u-pool-3', index: 0 },
+        { pool: 'u-pool-4', index: 0 }
+      ]
+    });
+  });
+
+  it('is empty for no funding', () => {
+    expect(pastItems(empty(), asOf)).toEqual({ pools: [], programmes: [], inflows: [] });
   });
 });
