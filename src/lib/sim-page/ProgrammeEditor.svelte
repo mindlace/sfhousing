@@ -854,7 +854,7 @@
                   inputmode="numeric"
                   step="any"
                   data-field="prog-tier-{k}"
-                  class="{input} w-20"
+                  class="{input} w-24"
                   value={textOf(`tier-${k}`, tiers[k], fieldText(tiers[k], 'fraction'))}
                   aria-invalid={err ? 'true' : undefined}
                   aria-describedby="{uid}-tier-{k}-err"

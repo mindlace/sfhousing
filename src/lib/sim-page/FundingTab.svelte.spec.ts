@@ -786,6 +786,27 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
     await expect.poll(mixLine).toBe(YOUR_MIX_LINE);
   });
 
+  it('a six-decimal share and income mix fit their fields without clipping', async () => {
+    // The data's tiers are rounded to millionths (roundShares), so a field shows "42.8572".
+    const g = {
+      ...BOND_POLICY.funding.programmes[0],
+      instrument: { kind: 'grant' as const, share: 0.348251 },
+      tiers: { veryLow: 0.428572, low: 0.428571, moderate: 0.142857, aboveModerate: 0 }
+    };
+    setup(policyWith({ pools: BOND_POLICY.funding.pools, programmes: [g] }));
+    await page.getByRole('button', { name: /^City bond, 2028 ·/ }).click();
+    await progRow(/^Grant to affordable homes/).click();
+    const veryLow = page.getByRole('spinbutton', { name: /^Very low income, %/ });
+    await expect.element(veryLow).toHaveValue(42.8572);
+    const editor = document.querySelector('[data-programme-editor]')!;
+    const fields = [...editor.querySelectorAll<HTMLInputElement>('input[type="number"]')];
+    expect(fields.length).toBeGreaterThanOrEqual(5);
+    const clipped = fields
+      .filter((f) => f.scrollWidth > f.clientWidth)
+      .map((f) => `${f.dataset.field}: ${f.value}`);
+    expect(clipped).toEqual([]);
+  });
+
   it('+ What it pays for is aria-disabled at 24 programmes in the policy', async () => {
     const g = BOND_POLICY.funding.programmes[0];
     const programmes = Array.from({ length: 24 }, (_, i) => ({ ...g, id: `u-prog-${i + 1}` }));
