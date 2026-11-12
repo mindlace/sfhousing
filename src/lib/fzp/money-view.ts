@@ -216,7 +216,7 @@ export function uncappedPoolIds(...lists: (readonly Pool[] | undefined)[]): Read
 
 /** "Homes by income level", F13 and OD-F10: funded homes go to the paying programmes' levels. */
 export const TIERS_FUNDED_SENTENCE =
-  "A fully funded affordable project's homes are counted in the income levels of the programmes that pay it, in proportion to what each pays.";
+  "A funded affordable project's homes are counted in the income levels of the programmes that pay it, in proportion to what each pays.";
 
 /** "Homes by income level", F13: unrecorded levels are never guessed; inclusionary homes. */
 export const TIERS_UNRECORDED_SENTENCE =

@@ -236,7 +236,7 @@ describe('row texts', () => {
 
   it('the two F13 tier sentences', () => {
     expect(TIERS_FUNDED_SENTENCE).toBe(
-      "A fully funded affordable project's homes are counted in the income levels of the programmes that pay it, in proportion to what each pays."
+      "A funded affordable project's homes are counted in the income levels of the programmes that pay it, in proportion to what each pays."
     );
     expect(TIERS_UNRECORDED_SENTENCE).toBe(
       'Homes in real projects whose records give no income level are counted here and never guessed into a level. Private projects of 10 homes or more count their on-site affordable homes at the legal rate, assuming they build them on site (tier 2).'

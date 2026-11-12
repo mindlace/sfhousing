@@ -723,7 +723,7 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
     await open('Homes by income level');
     const text = el('fzp-tiers')!.textContent!.replace(/\s+/g, ' ');
     expect(text).toContain(
-      "A fully funded affordable project's homes are counted in the income levels of the programmes that pay it, in proportion to what each pays."
+      "A funded affordable project's homes are counted in the income levels of the programmes that pay it, in proportion to what each pays."
     );
     expect(text).toContain(
       'Homes in real projects whose records give no income level are counted here and never guessed into a level. Private projects of 10 homes or more count their on-site affordable homes at the legal rate, assuming they build them on site (tier 2).'
