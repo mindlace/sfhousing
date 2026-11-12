@@ -17,12 +17,14 @@
 // largest of its last few measured costs) fits in 45 ms, 5 ms short of the 50 ms slice so that
 // a job over its estimate still ends within it; the first job of a slice always runs, and the
 // shown run's job (simulate and score only) runs in a slice of its own. Other requests are
-// handled between slices. Job priority: (1) the current run's revision 0, after the FZP band
-// runs it needs when its seed is null: the shown run, then in the next slice its geometry
-// set-up, then its geometry packing for up to 2.5 s; (2) its twin, posted as a band-only update
-// with `planEffect`; (3) its later geometry, one revision per packing slice; (4) the band: FZP
-// run then twin per pair, a band-only update every 16 pairs and after the last. Twins run
-// through `simulateNet` only, so no twin Schedule ever exists.
+// handled between slices. Job priority: (0) once per loaded input with a finance (at the load on
+// /fzp, at each `current` on /sim), its finance precompute, each in a slice of its own, so the
+// first run on the input does not pay for it in its task; (1) the current run's revision 0, after
+// the FZP band runs it needs when its seed is null: the shown run, then in the next slice its
+// geometry set-up, then its geometry packing for up to 2.5 s; (2) its twin, posted as a
+// band-only update with `planEffect`; (3) its later geometry, one revision per packing slice;
+// (4) the band: FZP run then twin per pair, a band-only update every 16 pairs and after the last.
+// Twins run through `simulateNet` only, so no twin Schedule ever exists.
 //
 // Geometry (§4.2, §4.7, §4.8). Each session has its own chunk loader, driven only by `prefetch`
 // (the viewport) plus the extra cells of the multi-parcel projects anchored there; chunks report
@@ -148,6 +150,7 @@ import {
   type NetSeries
 } from './score';
 import { simulateDetailed, simulateNet } from './simulate';
+import { financePreOf } from './funded';
 import { moneyOf, tierBaselineOf, tierContext, tierSeries, type TierCtx } from './finance-score';
 import { PREVIEW_MAX_LOTS } from './preview';
 import type {
@@ -157,6 +160,7 @@ import type {
   ScenarioErrorCode,
   ScenarioRequest,
   ScenarioResponse,
+  SimInput,
   TimelineScore
 } from './types';
 
@@ -183,6 +187,9 @@ export interface ScenarioHostDeps {
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
   /** Test seam: the gross.bin decoder (default `readGrossTable`), its inflate likewise. */
   decodeGross?(bytes: Uint8Array): Promise<GrossTable>;
+  /** Warm each loaded input's finance precompute in a task of its own before the timeline jobs
+   *  (default true). Off is the test seam that shows warming changes no output. */
+  warmFinance?: boolean;
 }
 
 export interface ScenarioHost {
@@ -347,6 +354,8 @@ interface Work {
   references: TimelineScore['references'] | undefined;
   /** Null for /fzp. */
   levers: LeverWork | null;
+  /** Loaded inputs with a finance whose precompute is still to warm, one per 'warm' slice. */
+  warm: SimInput[];
 }
 
 /** The optional brush files and what each decodes to. */
@@ -371,7 +380,7 @@ interface BrushSession {
   files: { [K in BrushFile]?: Promise<BrushFiles[K] | null> };
 }
 
-type JobKind = 'recompute' | 'heights' | 'net' | 'shown' | 'geometry' | 'pack' | 'post';
+type JobKind = 'recompute' | 'heights' | 'warm' | 'net' | 'shown' | 'geometry' | 'pack' | 'post';
 type Job = { kind: JobKind; run(): void };
 
 /** The per-init state. */
@@ -668,7 +677,9 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       costs: {},
       bandPostDue: false,
       references: undefined,
-      levers: null
+      levers: null,
+      // a lever session's inputs are its revisions': warmed at each `current`
+      warm: st.levers ? [] : warmOf(loaded)
     };
     if (st.levers) {
       // The run above never runs: the lever revision's own run replaces it at `current`.
@@ -689,6 +700,22 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     // the brush requests that waited for the load
     if (st.brush) for (const w of [...st.brush.waiting]) startBrush(st, w);
     kick(st);
+  }
+
+  /** The distinct inputs of `loaded` with a finance, unless warming is off. */
+  function warmOf(loaded: Pick<Loaded, 'fzp' | 'twin'>): SimInput[] {
+    if (deps.warmFinance === false) return [];
+    return [...new Set([loaded.fzp, loaded.twin])].filter((i) => i.finance !== undefined);
+  }
+
+  /**
+   * Builds one input's finance precompute and its skip bounds for the session's horizon (memoised
+   * on the input), so the first run on it does not pay for them inside its own task.
+   */
+  function warmStep(w: Work): void {
+    const fp = financePreOf(w.warm.shift()!);
+    fp.marketSkip(w.horizon);
+    fp.affordableSkip(w.horizon);
   }
 
   function pendingOf(rev: Rev, levers: SimLevers, seed: number | null): PendingLevers {
@@ -785,7 +812,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
    * for a fresh slice). The first job always runs, so a job longer than a slice gets one of its
    * own. The shown run (simulate and score) always has a slice to itself: it starts a fresh
    * slice and ends it, so no geometry or band job adds to its macrotask; its geometry set-up
-   * (`shownGeometry`) opens the next slice.
+   * (`shownGeometry`) opens the next slice. Each finance warm-up ('warm') likewise.
    */
   function slice(st: Session, w: Work): void {
     const start = deps.now();
@@ -794,15 +821,17 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       if (!live(st)) return;
       const job = nextJob(st, w);
       if (job === null) return; // idle until a reroll or a chunk kicks again
+      // the shown run and each finance warm-up have a slice of their own
+      const own = job.kind === 'shown' || job.kind === 'warm';
       if (!first) {
-        if (job.kind === 'shown') return kick(st); // the shown run has a slice of its own
+        if (own) return kick(st);
         const est = w.cost[job.kind];
         if (est === undefined || deps.now() - start + est > SLICE_PLAN_MS) return kick(st);
       }
       const t0 = deps.now();
       job.run();
       if (job.kind !== 'pack') measure(w, job.kind, deps.now() - t0); // packCells: per cell
-      if (job.kind === 'shown') return kick(st);
+      if (own) return kick(st);
     }
   }
 
@@ -822,6 +851,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       // a session whose first revision failed runs nothing until a revision is current
       if (!lw.inForce) return null;
     }
+    // the precompute of each input the runs below will use, ahead of all of them
+    if (w.warm.length > 0) return { kind: 'warm', run: () => warmStep(w) };
     const run = w.run;
     const band = w.band;
     if (run.revision < 0) {
@@ -942,6 +973,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       unknownLots: li.unknownLots
     });
     w.loaded = { ...lw.base, fzp: li.plan, twin: li.twin };
+    w.warm = warmOf(w.loaded);
     w.tierCtx = tierContext(li.plan);
     w.references = li.references;
     w.band = createBandState(deps.bandRuns ?? BAND_RUNS);

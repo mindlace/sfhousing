@@ -19,7 +19,40 @@ import { miniPolicy } from './fixtures/mini-policy';
 import { MINI_AS_OF } from './fixtures/mini-projects';
 import { fundedCalibration } from './test/funded-calibration';
 import { MINI_POLICY_URL, makeScenarioHarness, type ScenarioHarness } from './test/host-harness';
-import type { ScenarioResponse, TimelineResponse } from './types';
+import type { ScenarioResponse, SimInput, TimelineResponse } from './types';
+
+/** `financePreOf` and simulate calls, each with the harness step (timer callback) it ran in. */
+const hooks = vi.hoisted(() => ({
+  events: [] as { fn: 'pre' | 'sim'; step: number; input: SimInput }[],
+  step: 0
+}));
+
+vi.mock('./funded', async (importOriginal) => {
+  const m = await importOriginal<typeof import('./funded')>();
+  return {
+    ...m,
+    financePreOf: vi.fn((input: SimInput) => {
+      hooks.events.push({ fn: 'pre', step: hooks.step, input });
+      return m.financePreOf(input);
+    })
+  };
+});
+
+vi.mock('./simulate', async (importOriginal) => {
+  const m = await importOriginal<typeof import('./simulate')>();
+  const record = (input: SimInput) => hooks.events.push({ fn: 'sim', step: hooks.step, input });
+  return {
+    ...m,
+    simulateNet: vi.fn((...a: Parameters<typeof m.simulateNet>) => {
+      record(a[0]);
+      return m.simulateNet(...a);
+    }),
+    simulateDetailed: vi.fn((...a: Parameters<typeof m.simulateDetailed>) => {
+      record(a[0]);
+      return m.simulateDetailed(...a);
+    })
+  };
+});
 
 type LeversPost = Extract<ScenarioResponse, { type: 'levers' }>;
 
@@ -401,8 +434,10 @@ describe('scenario host with funding levers', () => {
 
   it('a failing first revision runs nothing until the next setLevers', async () => {
     const h = funded();
+    hooks.events.length = 0;
     const first = h.init({ levers: badBaseline() });
     await h.runAll();
+    expect(hooks.events).toEqual([]); // nothing ran, not even a finance warm-up
     expect(h.errors()).toEqual([
       {
         type: 'error',
@@ -424,6 +459,30 @@ describe('scenario host with funding levers', () => {
     expect(ts.length).toBeGreaterThan(0);
     expect(ts.every((t) => t.rev === rev)).toBe(true);
     expect(indexOf(h, (m) => m.type === 'timeline')).toBeGreaterThan(current);
+  });
+
+  it('after current, the new plan input is warmed in a task before its first run', async () => {
+    const h = funded();
+    h.init({ levers: structuredClone(DEFAULT_LEVERS) });
+    await h.runAll();
+    hooks.events.length = 0;
+    const rev = h.next();
+    h.host.handle({ type: 'setLevers', rev, levers: raised([LOT_A], 20) });
+    let currentStep = -1;
+    for (hooks.step = 1; await h.step(); hooks.step++) {
+      if (currentStep < 0 && indexOf(h, isCurrent(rev)) >= 0) currentStep = hooks.step;
+    }
+    expect(h.errors()).toEqual([]);
+    expect(currentStep).toBeGreaterThan(0);
+    const sims = hooks.events.filter((e) => e.fn === 'sim');
+    const plan = sims[0].input; // the new revision's first run is on its plan input
+    expect(plan.finance).toBeDefined();
+    const firstRun = sims.find((e) => e.input === plan)!;
+    const pre = hooks.events.find((e) => e.fn === 'pre' && e.input === plan)!;
+    expect(pre).toBeDefined();
+    expect(pre.step).toBeGreaterThan(currentStep);
+    expect(sims.filter((e) => e.step === pre.step)).toEqual([]);
+    expect(pre.step).toBeLessThan(firstRun.step);
   });
 
   it('LeversResponse shape unchanged', async () => {
