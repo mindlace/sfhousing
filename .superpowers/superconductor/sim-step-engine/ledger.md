@@ -199,12 +199,16 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 ## Adjudications
 - 2026-11-13 wave-1 [defect-class: shared-type-home]: world-core and policy-timeline run side by side and each needs the other's types (S3; S4 to S6), and no spec says which file declares them → decomposition choice, conductor's: a step-0 leaf commits type-only declarations to the integration branch before wave 1, `src/lib/sim/world/statics.ts` (S3 `Statics`) and `src/lib/sim/world/policy/frame.ts` (S4 to S6 `ZoningView`, `PolicyFrame`, `FinanceFrame`, `PolicyTimeline`), word for word from section 8. world-core adds `staticsOf` to the first; policy-timeline adds `firstDifference` and the compiler beside the second. Neither operator edits the other's declarations.
 
+- 2026-11-13 policy-timeline [defect-class: worktree-pin]: operator could not create its worktree (subagents are pinned to the conductor's worktree) → conductor created `.claude/worktrees/step-policy-timeline` on `step-engine/policy-timeline` from the main checkout; operator enters by path. world-core made its own nested worktree at `.claude/worktrees/sim-step-engine/.claude/worktrees/step-world-core` (branch `step-engine/world-core`). For later waves: create each operator's worktree before dispatch and name its path in the assignment.
+
 ## Waves
 - gate wave 1 2026-11-13 08:55: VERDICT OK* (seven_day 27% of 60% reserve, headroom 33; five_hour NO DATA). Calibration from sim-financing: about 1 point a spec, a floor (smallest specs, integer resolution). Partner's instruction was "enter sim-step-engine and execute": wave 1 admitted.
 - wave 1: start seven_day 27% @ 2026-11-13 09:05 | exclusive: yes so far
 
 ## Frame-defect tally
 - shared-type-home: 1 — instances: 2026-11-13 wave 1, S3 to S6 had no named file.
+
+- worktree-pin: 1 — instances: 2026-11-13 policy-timeline (harness, not design).
 
 ## Integration
 - step 0 (flattened leaf, sonnet, agentId a3f4fe8bd4065c821): c0bd4864 on superconductor/sim-step-engine, type-only `statics.ts` and `policy/frame.ts`; check, eslint, prettier clean. Not a spec; excluded from calibration.
