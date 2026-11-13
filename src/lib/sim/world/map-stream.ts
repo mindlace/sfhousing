@@ -6,7 +6,9 @@
 //   warned once and ignored, and a row with no T11 parcel gets no cell (as geometry.ts:96-121).
 // - A cell is packed whole, from `scheduleAt(world, statics, row, lastDay)` of every project in it,
 //   once every cell of every one of its projects is ready (rule 6); otherwise it keeps its place.
-// - One massing per revision, memoised by the revision's content (rule 11).
+// - One massing per revision, memoised by the revision's content (rule 11). The memo is also the
+//   state that slices a cell across flushes: `flush` may stop between projects of a cell, and the
+//   cell is sent whole once every massing it needs is in the memo.
 // - Demolitions (rule 8, T13): a T11 lot and the earliest day a project entered construction on
 //   it. Revision 0 carries every one known; later updates those new or changed since the last.
 //   An update goes out when a cell is packed or a demolition is pending.
@@ -140,16 +142,10 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
     return true;
   };
 
-  /** The memoised massing of revision `k` (rule 11): keyed by the revision's content. */
-  function massingOf(s: Schedule, k: number): Massing {
+  /** The memo key of revision `k` (rule 11): the revision's content. */
+  function massingKey(s: Schedule, k: number): string {
     const r = s.revisions[k];
-    const key = `${s.projectId}|${k}|${r.day}|${r.units}|${r.stories}`;
-    let m = massings.get(key);
-    if (m === undefined) {
-      m = massingFor(s, k, deps.massing);
-      massings.set(key, m);
-    }
-    return m;
+    return `${s.projectId}|${k}|${r.day}|${r.units}|${r.stories}`;
   }
 
   /**
@@ -174,8 +170,19 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
     }
   }
 
-  /** The cell whole at `day`, or null when it holds no project with a loaded record. */
-  function pack(world: World, statics: Statics, cell: string, day: number): TimedPackedCell | null {
+  /**
+   * The cell's pack items at `day`, one project at a time, its massings from the memo. Before a
+   * project with a revision not in the memo, `mayWork()` is asked; on false the cell is left
+   * unfinished (null) and the massings done so far stay in the memo for the next call.
+   */
+  function itemsOf(
+    world: World,
+    statics: Statics,
+    cell: string,
+    day: number,
+    mayWork: () => boolean,
+    worked: () => void
+  ): TimedPackInput[] | null {
     const items: TimedPackInput[] = [];
     for (const row of rowsIn.get(cell) ?? []) {
       const schedule = scheduleAt(world, statics, row, day);
@@ -191,13 +198,25 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
         deps.warnOnce(`records:${id}`, `no chunk record for any parcel of ${id}; not drawn`);
         continue;
       }
-      items.push({
-        schedule,
-        massings: schedule.revisions.map((_, k) => massingOf(schedule, k)),
-        pickParcelId: footprintParcel(recs).id
-      });
+      let cold = false;
+      const ms: Massing[] = [];
+      for (let k = 0; k < schedule.revisions.length; k++) {
+        const key = massingKey(schedule, k);
+        let m = massings.get(key);
+        if (m === undefined) {
+          if (!cold) {
+            if (!mayWork()) return null;
+            cold = true;
+          }
+          m = massingFor(schedule, k, deps.massing);
+          massings.set(key, m);
+        }
+        ms.push(m);
+      }
+      if (cold) worked();
+      items.push({ schedule, massings: ms, pickParcelId: footprintParcel(recs).id });
     }
-    return items.length === 0 ? null : packSafely(cell, items);
+    return items;
   }
 
   return {
@@ -217,16 +236,27 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
     flush(world, statics, budgetMs) {
       const day = monthLastDay(statics.asOf, world.month);
       const cells: TimedPackedCell[] = [];
-      // at least one ready cell per call, so a flush always makes progress
+      // Work is one project's massings or one cell's pack. The first piece of a call goes ahead
+      // unasked, so a flush always makes progress; every later one only while budget is left.
+      // A cell is packed only once all its massings are in the memo; until then it keeps its
+      // place in the queue, and its warmed massings carry over to the next call.
       const start = now();
-      let packed = 0;
+      let worked = false;
+      let spent = false;
+      const mayWork = () => {
+        if (worked && now() - start >= budgetMs) spent = true;
+        return !spent;
+      };
+      const didWork = () => {
+        worked = true;
+      };
       for (const cell of dirty.keys()) {
         if (!packable(cell)) continue;
-        if (packed > 0 && now() - start >= budgetMs) break;
+        const items = itemsOf(world, statics, cell, day, mayWork, didWork);
+        if (items === null || !mayWork()) break;
         dirty.delete(cell);
-        packed++;
-        const c = pack(world, statics, cell, day);
-        if (c !== null) cells.push(c);
+        worked = true;
+        if (items.length > 0) cells.push(packSafely(cell, items));
       }
       if (cells.length === 0 && newDemolitions.size === 0) return null;
       // revision 0 carries every demolition known; later updates those new or changed since

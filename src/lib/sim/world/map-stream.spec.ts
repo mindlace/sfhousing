@@ -294,6 +294,117 @@ describe('map-stream: onEvent and flush', () => {
     expect(stream.flush(world, bench.statics, 0)).toBeNull();
   });
 
+  it('a cold cell is warmed across flushes and sent whole once', () => {
+    const world = runWorld(bench.statics, bench.timeline, SEED, 60);
+    const schedules = schedulesNow(world, bench.statics);
+    const byCell = new Map<string, number[]>();
+    schedules.forEach((s, row) => {
+      const a = s && anchorOf(bench.input, s);
+      if (!a) return;
+      (byCell.get(a) ?? byCell.set(a, []).get(a)!).push(row);
+    });
+    const hit = [...byCell].find(([, rs]) => rs.length >= 3);
+    expect(hit).toBeDefined();
+    const [cell, rows] = hit!;
+
+    // the cell packed in one unbounded flush, for comparison
+    const whole = createMapStream(streamDeps(bench.input, bench.records), WINDOW);
+    for (const r of rows) whole.onEvent(touch(r), world, bench.statics);
+    const want = whole.flush(world, bench.statics, Infinity)!.cells;
+    expect(want.map((c) => c.cellId)).toEqual([cell]);
+    expect(want[0].slotProjectIds.length).toBeGreaterThanOrEqual(3);
+
+    // a clock 10 ms per reading; each reading notes the massing work done before it
+    let t = 0;
+    let readings: { t: number; calls: number }[] = [];
+    const deps = streamDeps(bench.input, bench.records, {
+      now: () => {
+        t += 10;
+        readings.push({ t, calls: deps.massingCalls() });
+        return t;
+      }
+    });
+    const stream = createMapStream(deps, WINDOW);
+    for (const r of rows) stream.onEvent(touch(r), world, bench.statics);
+    const BUDGET = 15;
+    const sent: TimedPackedCell[] = [];
+    let nulls = 0;
+    for (let i = 0; i < 1000; i++) {
+      readings = [];
+      const before = deps.massingCalls();
+      const u = stream.flush(world, bench.statics, BUDGET);
+      const after = deps.massingCalls();
+      // no massing work once a reading shows the budget spent
+      const over = readings.find((r) => r.t - readings[0].t >= BUDGET);
+      if (over) expect(after).toBe(over.calls);
+      if (u === null) {
+        if (after === before) break;
+        nulls++;
+        continue;
+      }
+      sent.push(...u.cells);
+    }
+    expect(nulls).toBeGreaterThan(0);
+    expect(sent).toHaveLength(1);
+    expect(sent).toEqual(want);
+  });
+
+  it('sliced equals unsliced', () => {
+    const MONTHS = 120;
+    const a = started(bench);
+    const updatesA = [
+      a.stream.flush(a.world, bench.statics, Infinity)!,
+      ...fill({
+        world: a.world,
+        statics: bench.statics,
+        timeline: bench.timeline,
+        seed: SEED,
+        stream: a.stream,
+        sink: a.sink,
+        due: a.due,
+        through: MONTHS
+      })
+    ];
+
+    let t = 0;
+    const b = started(bench, { now: () => (t += 10) });
+    const updatesB: TimelineUpdate[] = [];
+    let flushes = 0;
+    // flush with no budget until a call packs nothing and does no massing work
+    const drain = () => {
+      for (;;) {
+        const before = b.deps.massingCalls();
+        const u = b.stream.flush(b.world, bench.statics, 0);
+        flushes++;
+        if (u !== null) updatesB.push(u);
+        else if (b.deps.massingCalls() === before) return;
+      }
+    };
+    drain();
+    while (b.world.month < MONTHS) {
+      step(b.world, b.due, bench.statics, bench.timeline, SEED, b.sink);
+      drain();
+    }
+    expect(flushes).toBeGreaterThan(updatesA.length);
+
+    const fold = (us: TimelineUpdate[]) => {
+      const cells = new Map<string, TimedPackedCell>();
+      const demolish = new Map<ParcelId, number>();
+      for (const u of us) {
+        for (const c of u.cells) cells.set(c.cellId, c);
+        for (const d of u.demolish) demolish.set(d.parcelId, d.day);
+      }
+      const sorted = <V>(m: Map<string, V>) => [...m].sort(([x], [y]) => (x < y ? -1 : 1));
+      return { cells: sorted(cells), demolish: sorted(demolish) };
+    };
+    const fa = fold(updatesA);
+    const fb = fold(updatesB);
+    expect(fa.cells.length).toBeGreaterThan(0);
+    expect(fb.cells.map(([id]) => id)).toEqual(fa.cells.map(([id]) => id));
+    fa.cells.forEach(([, c], i) => expect(fb.cells[i][1]).toEqual(c));
+    expect(fb.demolish).toEqual(fa.demolish);
+  });
+
   it('a cell needing an unloaded chunk waits and keeps its place', () => {
     // a project of the dataset date whose T11 parcels span two cells
     const probe = runWorld(bench.statics, bench.timeline, SEED, 0);
@@ -335,12 +446,15 @@ describe('map-stream: onEvent and flush', () => {
     // the chunk arrives; month 2 dirties more cells behind the waiting ones
     loaded = true;
     step(test.world, test.due, bench.statics, bench.timeline, SEED, test.sink);
-    const one = test.stream.flush(test.world, bench.statics, 0)!;
-    expect(one.cells.map((c) => c.cellId)).toEqual([waiting[0]]);
+    // with no budget a cold cell is warmed a project per call: flush until the first cell goes
+    const one: TimedPackedCell[] = [];
+    for (let i = 0; i < 1000 && one.length === 0; i++)
+      one.push(...(test.stream.flush(test.world, bench.statics, 0)?.cells ?? []));
+    expect(one.map((c) => c.cellId)).toEqual([waiting[0]]);
     const rest = test.stream.flush(test.world, bench.statics, Infinity)!;
     const restIds = rest.cells.map((c) => c.cellId);
     expect(restIds.slice(0, waiting.length - 1)).toEqual(waiting.slice(1));
-    const whole = [...one.cells, ...rest.cells].find((c) => c.cellId === anchor)!;
+    const whole = [...one, ...rest.cells].find((c) => c.cellId === anchor)!;
     expect(whole.slotProjectIds).toContain(multi.projectId);
   });
 
