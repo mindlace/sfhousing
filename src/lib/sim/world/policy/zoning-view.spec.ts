@@ -8,7 +8,13 @@ import { MINI_HORIZON as H } from '$lib/sim/scenario/fixtures/mini-projects';
 import { precomputeOf, type Precompute } from '$lib/sim/scenario/input';
 import type { ZoningLevers } from './combine';
 import type { ZoningView } from './frame';
-import { fakeClock, fakeRows, fakeYields, miniCompileCtx } from './test/compile-fixtures';
+import {
+  cellYields,
+  fakeClock,
+  fakeRows,
+  fakeYields,
+  miniCompileCtx
+} from './test/compile-fixtures';
 import { createViewJob, touchedRows, viewDigest, type ViewJob } from './zoning-view';
 
 const NONE: ZoningLevers = {
@@ -176,6 +182,25 @@ describe('createViewJob: slicing', () => {
     expectSameColumns(sliced.view.parcels, one.view.parcels);
     expect(preData(sliced.view.pre)).toEqual(preData(one.view.pre));
     expect(sliced.info).toEqual(one.info);
+  });
+
+  it('waits on cells without progress, then finishes and reports the missing lots', () => {
+    const clock = fakeClock();
+    const ctx = miniCompileCtx({ clock });
+    const yields = cellYields(clock, { missing: ['2999A013'] });
+    const job = createViewJob(ctx.input, ctx.layers, yields, clock.now, PAINTED, 'plan');
+    expect(job.step(5)).toBe(false);
+    const cells = job.cellsNeeded();
+    expect(cells.length).toBeGreaterThan(0);
+    const steps = yields.steps;
+    expect(job.step(5)).toBe(false);
+    expect(yields.steps).toBe(steps + 1);
+    expect(job.done).toBe(0);
+    expect(job.missing()).toEqual([]);
+    for (const c of cells) yields.loaded.add(c);
+    expect(job.step(Infinity)).toBe(true);
+    expect(job.cellsNeeded()).toEqual([]);
+    expect(job.missing()).toEqual(['2999A013']);
   });
 
   it('result() before the view is built throws', () => {

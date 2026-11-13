@@ -2,11 +2,14 @@
  * One zoning state's `ZoningView`, built as a sliced job with today's code (policy-timeline spec,
  * rules 18 and 20): `resolveEnvelopes`, the yield recompute of its Needs, `fillNeeds` and
  * `applyLevers`, then `precomputeOf`, in the order `leverStep` runs them
- * (`scenario/scenario-host.ts`). Each unit finishes before the budget is checked. Today's
+ * (`scenario/scenario-host.ts`). Each unit finishes before the budget is checked, so a call can
+ * run past its budget by one whole unit: one recompute step, or a whole `applyLevers` or
+ * `precomputeOf` (about 45 ms on the live city; accepted by conductor ruling Q7(a)). Today's
  * `precomputeOf` and recompute step sit behind their own seams (`precomputeView`,
  * `recomputeStep`), so a finer-sliced version can replace either without touching the compiler.
  * Worker-safe.
  */
+import type { ParcelId } from '$lib/data/parcel';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import { applyLevers, twinInput } from '$lib/sim/levers/apply';
 import { stockTable, type LayerCtx } from '$lib/sim/levers/layers';
@@ -35,13 +38,18 @@ export interface YieldSource {
 }
 
 export interface ViewJob {
-  /** At most about `budgetMs` plus one unit of work; true when the view is built. */
+  /**
+   * Runs at least one unit, then more while budget is left; true when the view is built. A unit
+   * starts with any budget left and runs whole, so a call may overrun by one unit (see above).
+   */
   step(budgetMs: number): boolean;
   /** Needs computed and needed, as `resolving` reports them (0 of 0 before the envelopes resolve). */
   readonly done: number;
   readonly total: number;
   /** Cells of pending needs that are not loaded yet. */
   cellsNeeded(): string[];
+  /** Lots whose loaded cell had no record (`YieldRecompute.missing`): their yield is 0. */
+  missing(): readonly ParcelId[];
   /** After `step` returned true. */
   result(): { view: ZoningView; info: ViewInfo };
 }
@@ -68,7 +76,7 @@ function noZoning(z: ZoningLevers): boolean {
   );
 }
 
-type Unit = 'resolve' | 'recompute' | 'apply' | 'precompute' | 'done';
+type Unit = 'twin' | 'resolve' | 'recompute' | 'apply' | 'precompute' | 'done';
 
 /**
  * The job building the view of zoning `z` on `base`. `'plan'`: FZP with `z` resolved on it.
@@ -87,20 +95,26 @@ export function createViewJob(
     throw new LeverFormatError('base', "zoning levers need base 'plan'");
 
   const levers: SimLevers = { ...DEFAULT_LEVERS, ...z, compare: 'preFzp' };
-  let unit: Unit = base === 'preFzp' ? 'precompute' : 'resolve';
+  let unit: Unit = base === 'preFzp' ? 'twin' : 'resolve';
   let resolution: Resolution | null = null;
   let recompute: YieldRecompute | null = null;
-  let plan: SimInput | null = base === 'preFzp' ? twinInput(input, layers, 'preFzp') : null;
+  let plan: SimInput | null = null;
   let info: ViewInfo | null = null;
-  if (base === 'preFzp') {
-    const c = netCapacity(stockTable(layers, 'base'), input.parcels);
-    info = { capacity: { plan: c, withoutProtections: c, protectedLots: 0 }, unknownLots: 0 };
-  }
   let view: ZoningView | null = null;
 
   /** Runs the next unit; false when it could not finish (budget spent or waiting on cells). */
   function run(remaining: number): boolean {
     switch (unit) {
+      case 'twin': {
+        plan = twinInput(input, layers, 'preFzp');
+        // A new definition (today never computes a pre-plan capacity): the base table's net
+        // capacity with nothing protected. Only a comparison compile reaches it, and it is not
+        // today's number, so it is not meant to be shown.
+        const c = netCapacity(stockTable(layers, 'base'), input.parcels);
+        info = { capacity: { plan: c, withoutProtections: c, protectedLots: 0 }, unknownLots: 0 };
+        unit = 'precompute';
+        return true;
+      }
       case 'resolve': {
         resolution = resolveEnvelopes(layers, levers, input.asOf);
         recompute = yields.recompute(input.parcels, allNeeds(resolution));
@@ -152,6 +166,9 @@ export function createViewJob(
     },
     cellsNeeded() {
       return unit === 'recompute' ? recompute!.cellsNeeded() : [];
+    },
+    missing() {
+      return recompute === null || unit === 'recompute' ? [] : recompute.missing;
     },
     result() {
       if (view === null) throw new Error('createViewJob: result() before the view is built');

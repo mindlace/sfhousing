@@ -1,6 +1,7 @@
 // Compile contexts and fake yields on the mini city for the policy compiler's specs. Test values,
 // not data.
 import type { EnvelopeRow } from '$lib/data/envelope-row';
+import type { ParcelId } from '$lib/data/parcel';
 import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
 import type { LayerCtx } from '$lib/sim/levers/layers';
 import type { YieldRecompute } from '$lib/sim/levers/recompute';
@@ -79,6 +80,65 @@ export function fakeYields(clock: FakeClock = fakeClock()): YieldSource {
     },
     failedCells: () => []
   };
+}
+
+/** A `YieldSource` whose needs wait on their lot's cell, with a count of `step` calls. */
+export interface CellYields extends YieldSource {
+  /** Cells whose chunks have arrived; the test adds to it. */
+  loaded: Set<string>;
+  /** `YieldRecompute.step` calls over every recompute made. */
+  steps: number;
+}
+
+/**
+ * As `fakeYields`, but a need is computed only once its lot's cell is in `loaded` (as
+ * `createYieldRecompute` visits only loaded cells), so with none loaded `step` makes no progress.
+ * `failedCells()` reports `failed`; each finished recompute with needs reports `missing` as its
+ * lots without a record.
+ */
+export function cellYields(
+  clock: FakeClock,
+  opts: { failed?: string[]; missing?: ParcelId[] } = {}
+): CellYields {
+  const src: CellYields = {
+    loaded: new Set(),
+    steps: 0,
+    recompute(parcels: ScenarioParcels, needs: readonly Need[]): YieldRecompute {
+      const cellOf = (n: Need) => parcels.cells[parcels.cell[n.row]].cellId;
+      const unique = new Map<string, Need>();
+      for (const n of needs) unique.set(needKey(n), n);
+      const out = new Map<string, EnvelopeRow>();
+      const pending = () => [...unique].filter(([k]) => !out.has(k));
+      return {
+        total: unique.size,
+        get done() {
+          return out.size;
+        },
+        get missing() {
+          return unique.size > 0 && out.size === unique.size ? (opts.missing ?? []) : [];
+        },
+        cellsNeeded: () => [
+          ...new Set(pending().flatMap(([, n]) => (src.loaded.has(cellOf(n)) ? [] : [cellOf(n)])))
+        ],
+        step(budgetMs) {
+          src.steps++;
+          const start = clock.now();
+          let computed = 0;
+          for (const [key, n] of pending()) {
+            if (computed > 0 && clock.now() - start >= budgetMs) break;
+            if (!src.loaded.has(cellOf(n))) continue;
+            out.set(key, fakeRow(n));
+            clock.t += 1;
+            computed++;
+          }
+          return out.size === unique.size;
+        },
+        result: () => out
+      };
+    },
+    failedCells: () => opts.failed ?? []
+  };
+  return src;
 }
 
 /** The mini city's input and layers (as `levers/apply.spec.ts` sets them up). */
