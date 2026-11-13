@@ -80,13 +80,17 @@ function clocksOf(ctx: StepCtx, lot: number, line: FundLine | null): (KindClock 
 /**
  * Rule 5: the model month of the earliest application day of a kind not already waiting, or 0.
  * A kind whose spell is spent (its pass fell in a lot-month with nothing on offer) has no day. A
- * day in a month before `ctx.month` can no longer be applied on and is passed over, so it never
- * hides the other kind. Pure: reads the world, never writes it.
+ * day in a model month whose `apply` has already run (`line.appliedThrough`) is lost, and is
+ * passed over so it never hides the other kind; reading that from the world (not from `ctx.month`)
+ * gives every path (carried due list, replan, `planDue` rebuild) the same answer. Pure: reads the
+ * world, never writes it.
  */
 export function planLotMonth(ctx: StepCtx, lot: number): number {
+  const line = lineOf(ctx.world);
+  const through = line === null ? 0 : line.appliedThrough;
   let best = 0;
-  for (const c of clocksOf(ctx, lot, lineOf(ctx.world))) {
-    if (c === null || c.day === null || c.month < ctx.month) continue;
+  for (const c of clocksOf(ctx, lot, line)) {
+    if (c === null || c.day === null || c.month <= through) continue;
     if (best === 0 || c.month < best) best = c.month;
   }
   return best;
@@ -119,7 +123,7 @@ export function joinLine(line: FundLine, month: number, apps: Application[]): vo
  * System 4: each kind whose day falls in `ctx.month` and is not waiting joins the line; the month's
  * new rows are appended in key order after every waiting row (rule 9). Each records (rule 6) the
  * lot, the kind, the day, the key day and key, the bundle's programme ids, the size, the level and
- * the month whose view gave the size.
+ * the month whose view gave the size. Records `ctx.month` as `line.appliedThrough`.
  */
 export function applyLots(ctx: StepCtx, lots: Int32Array): void {
   const { line } = fundOf(ctx.world);
@@ -145,6 +149,7 @@ export function applyLots(ctx: StepCtx, lots: Int32Array): void {
     }
   }
   joinLine(line, ctx.month, apps);
+  line.appliedThrough = ctx.month;
 }
 
 /** Rule 8: marks both of the lot's waiting applications `gone`. */

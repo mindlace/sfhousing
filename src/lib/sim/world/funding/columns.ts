@@ -28,6 +28,8 @@ export interface FundLine extends LineColumns {
   viewMonth: Int32Array;
   /** 1 = removed this step, dropped by `compactLine`. */
   gone: Uint8Array;
+  /** The last model month whose `apply` ran (0 = none): a day in it or before can no longer apply. */
+  appliedThrough: number;
   spellN: number;
   spellLot: Int32Array;
   spellKind: Uint8Array;
@@ -131,6 +133,7 @@ function emptyLine(): FundLine {
     level: new Float64Array(0),
     viewMonth: new Int32Array(0),
     gone: new Uint8Array(0),
+    appliedThrough: 0,
     spellN: 0,
     spellLot: new Int32Array(0),
     spellKind: new Uint8Array(0),

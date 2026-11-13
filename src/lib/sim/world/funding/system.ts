@@ -5,7 +5,10 @@ import { ORIGIN_SIM, type FundingSystem, type StepCtx, type World } from '../typ
 import { applyLots, leaveLine, planLotMonth } from './apply';
 import { compactLine, fundOf, initFunding } from './columns';
 
-/** Gives the world its funding columns when a timeline first offers money after month 1. */
+/**
+ * Gives the world its funding columns when a timeline first offers money after month 1. The core
+ * calls no hook in a month whose frame has `finance` null, so `ctx.frame.finance` is set here.
+ */
 function ensure(ctx: StepCtx): World {
   const world = ctx.world;
   if (!('gone' in world.line))

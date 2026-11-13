@@ -104,6 +104,22 @@ function application(lot: number, kind: number, keyDay: number): Application {
   };
 }
 
+const CODE: Record<ProjectKind, number> = { market: KIND_MARKET, affordable: KIND_AFFORDABLE };
+
+/** A free lot of `world` whose two kinds apply in different months under `t`, earlier first. */
+function twoMonths(world: World, seed: number, t: PolicyTimeline) {
+  const sh = seedHash(seed);
+  for (const lot of freeLots(world)) {
+    const spells = spellsOf(ctxOf(world, seed, 1, t), lot);
+    const mk = kindClock(statics, t, 1, sh, spells.market, 'market');
+    const af = kindClock(statics, t, 1, sh, spells.affordable, 'affordable');
+    if (mk.day === null || af.day === null || mk.month === af.month) continue;
+    const [first, second] = mk.month < af.month ? [mk, af] : [af, mk];
+    return { lot, first, second };
+  }
+  return null;
+}
+
 /** Lots of rank 2, 4 and 6 (rank is a permutation of the lot rows). */
 function lotOfRank(rank: number): number {
   const lot = statics.rank.indexOf(rank);
@@ -229,7 +245,6 @@ describe('the funding line', () => {
         const rows = rowsOf(world).filter((r) => r.month === m);
         if (rows.length === 0) continue;
         const c = ctx();
-        const ids = c.frame.finance!.programmes.map((g) => g.id);
         for (const r of rows) {
           const kind: ProjectKind = r.kind === KIND_AFFORDABLE ? 'affordable' : 'market';
           expect(r.applied).toBeGreaterThanOrEqual(c.firstDay);
@@ -242,6 +257,8 @@ describe('the funding line', () => {
           expect(k.day).toBe(r.applied);
           expect(k.month).toBe(m);
           expect(r.keyDay).toBe(k.keyDay);
+          // Bundle indices are into the frame of the month whose view gave the size.
+          const ids = timeline.frameAt(r.viewMonth).finance!.programmes.map((g) => g.id);
           expect(r.bundle).toBe(k.bundle.map((g) => ids[g]).join(','));
           expect(r.bundle.length).toBeGreaterThan(0);
           expect([r.f, r.units, r.stories, r.level, r.viewMonth]).toEqual([
@@ -379,22 +396,84 @@ describe('the funding line', () => {
   });
 
   it('rows marked gone by leaveLine do not count as waiting', () => {
-    const world = withFunding(createFundingSystem()).createWorld(statics, timeline, 1, NOWHERE);
+    const t = oneMoneyTimeline(input, { ...miniFinance(input.asOf), off: [] });
+    const seed = 1;
+    const world = withFunding(createFundingSystem()).createWorld(statics, t, seed, NOWHERE);
     const { line } = fundOf(world);
-    let lot = -1;
-    let m = 0;
-    for (const l of freeLots(world)) {
-      m = planLotMonth(ctxOf(world, 1, 1), l);
-      if (m > 0) {
-        lot = l;
-        break;
-      }
-    }
-    expect(lot).toBeGreaterThanOrEqual(0);
-    applyLots(ctxOf(world, 1, m), Int32Array.of(lot));
-    const after = planLotMonth(ctxOf(world, 1, m), lot);
-    expect(after).not.toBe(m);
+    const pair = twoMonths(world, seed, t);
+    expect(pair).not.toBeNull();
+    const { lot, first, second } = pair!;
+    // The earlier kind waits (joined by hand, so no month counts as applied).
+    joinLine(line, first.month, [application(lot, CODE[first.kind], first.keyDay)]);
+    expect(planLotMonth(ctxOf(world, seed, first.month, t), lot)).toBe(second.month);
     leaveLine(line, lot);
-    expect(planLotMonth(ctxOf(world, 1, m), lot)).toBe(m);
+    expect(planLotMonth(ctxOf(world, seed, first.month, t), lot)).toBe(first.month);
+  });
+
+  it('a kind whose day fell in a month already applied is lost but never hides the other kind', () => {
+    // A lot left out of month m1's `apply` (as one freed after system 4 is) with one kind's day in
+    // m1 and the other's in m2 > m1 + 1: the core's own replan after apply, a replan in month
+    // m1 + 1 and a `planDue` rebuild from the world after m1 all give m2, and by m2 only the later
+    // kind has applied.
+    const t = oneMoneyTimeline(input, { ...miniFinance(input.asOf), off: [] });
+    let found = 0;
+    for (let seed = 1; seed <= 20 && found < 3; seed++) {
+      const sys = createFundingSystem();
+      const probe = withFunding(sys).createWorld(statics, t, seed, NOWHERE);
+      const pair = twoMonths(probe, seed, t);
+      if (pair === null || pair.second.month <= pair.first.month + 1) continue;
+      const { lot, first, second } = pair;
+      let month = 0;
+      let applied = false;
+      let carried = -1;
+      const spy: FundingSystem = {
+        ...sys,
+        apply(c, lots) {
+          month = c.month;
+          applied = true;
+          sys.apply(c, c.month === first.month ? lots.filter((l) => l !== lot) : lots);
+        },
+        moneyIn(c) {
+          applied = false;
+          sys.moneyIn(c);
+        },
+        planLot(c, l) {
+          const m = sys.planLot(c, l);
+          if (l === lot && applied && month === first.month) carried = m;
+          return m;
+        }
+      };
+      const core = withFunding(spy);
+      const world = core.createWorld(statics, t, seed, NOWHERE);
+      const due = core.planDue(world, statics, t, seed, second.month + 12);
+      for (let m = 1; m <= first.month; m++) core.step(world, due, statics, t, seed, NOWHERE);
+      const i = lotRow(world.lots, lot);
+      if (i >= 0 && world.lots.state[i] !== LOT_FREE) continue; // started ordinarily first
+      expect(rowsOf(world).filter((r) => r.lot === lot)).toEqual([]);
+      expect(fundOf(world).line.appliedThrough).toBe(first.month);
+      const replanned = sys.planLot(ctxOf(world, seed, first.month + 1, t), lot);
+      let rebuilt = -1;
+      const rebuildSpy: FundingSystem = {
+        ...sys,
+        planLot(c, l) {
+          const m = sys.planLot(c, l);
+          if (l === lot) rebuilt = m;
+          return m;
+        }
+      };
+      withFunding(rebuildSpy).planDue(structuredClone(world), statics, t, seed, second.month + 12);
+      expect([carried, replanned, rebuilt]).toEqual([second.month, second.month, second.month]);
+      for (let m = first.month + 1; m <= second.month; m++)
+        core.step(world, due, statics, t, seed, NOWHERE);
+      const j = lotRow(world.lots, lot);
+      if (j >= 0 && world.lots.state[j] !== LOT_FREE) continue;
+      expect(
+        rowsOf(world)
+          .filter((r) => r.lot === lot)
+          .map((r) => r.kind)
+      ).toEqual([CODE[second.kind]]);
+      found++;
+    }
+    expect(found).toBeGreaterThanOrEqual(1);
   });
 });
