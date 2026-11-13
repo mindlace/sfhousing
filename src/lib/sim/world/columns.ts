@@ -189,6 +189,24 @@ export function pushRev(
   p.revLast[row] = at;
 }
 
+/** Appends `units` displaced homes on `day` to `row`'s entries in the displacement side table. */
+export function pushDisplacement(p: ProjectColumns, row: number, day: Day, units: number): void {
+  grow(p, DISP_COLUMNS, p.dispN + 1);
+  const at = p.dispN++;
+  p.dispRow[at] = row;
+  p.dispDay[at] = day;
+  p.dispUnits[at] = units;
+}
+
+/** The homes displaced by `row` on or before `upTo`. */
+export function displacedOf(p: ProjectColumns, row: number, upTo: Day): number {
+  let sum = 0;
+  for (let at = 0; at < p.dispN; at++) {
+    if (p.dispRow[at] === row && p.dispDay[at] <= upTo) sum += p.dispUnits[at];
+  }
+  return sum;
+}
+
 function sameStories(a: number, b: number): boolean {
   return a === b || (Number.isNaN(a) && Number.isNaN(b));
 }

@@ -9,6 +9,7 @@ import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import { PATHWAYS, STAGE_ORDER, type Stage } from '$lib/timelapse/types';
 import { addProject, pushRev } from './columns';
+import { demolish, heldLots, holdEnd, passToPhases, startEnd } from './holds';
 import { monthOfDay } from './months';
 import type { PolicyFrame, PolicyTimeline, ZoningView } from './policy/frame';
 import { enterStage, reviseOnEntry } from './stage';
@@ -22,6 +23,7 @@ import {
   ORIGIN_MASTER,
   ORIGIN_PHASE,
   ORIGIN_PIPELINE,
+  ORIGIN_SIM,
   RULE_NONE,
   RULE_PIPELINE,
   type StepSink,
@@ -35,6 +37,7 @@ const PRE_APPLICATION = SI.preApplication;
 const ENTITLED = SI.entitled;
 const PERMIT_FILED = SI.permitFiled;
 const COMPLETE = SI.complete;
+const CONSTRUCTION = SI.construction;
 const PLANNING: readonly Stage[] = ['preApplication', 'filed', 'entitled'];
 
 /** Revision caps of a project on some view rows (today's `Caps`). */
@@ -155,6 +158,8 @@ export interface Sys3 {
   out: StepSink;
   /** Month 1's rows and caps: pipeline rows, masters and phases take them from there. */
   rs: RowStatics;
+  /** Lots freed by an end while following rows, in the order freed; the caller plans them. */
+  freed: number[];
 }
 
 /** The day a row filed: the stage after preApplication on its pathway, else the dataset date. */
@@ -293,6 +298,13 @@ function endRow(x: Sys3, row: number, kind: number, day: Day, stage: number): vo
   p.endStage[row] = stage;
   const how = kind === END_COMPLETE ? 'complete' : kind === END_EXIT ? 'exit' : 'entitled';
   x.out.event({ kind: 'end', row, day, how });
+  // Rule 9: the row's holds end with it.
+  const exitDay = kind === END_EXIT ? day : null;
+  const origin = p.origin[row];
+  if (origin === ORIGIN_SIM) startEnd(x.w, row, exitDay, x.freed);
+  else if (origin === ORIGIN_MASTER && kind === END_ENTITLED) {
+    passToPhases(x.w, x.rs, row, x.statics.asOf);
+  } else holdEnd(x.w, heldLots(x.w, x.rs, row), exitDay, x.freed);
 }
 
 /**
@@ -434,6 +446,7 @@ function leaveStage(x: Sys3, row: number): void {
   }
   p.entered[row * S + n] = day;
   x.out.event({ kind: 'enter', row, day, stage: STAGE_ORDER[n] });
+  if (n === CONSTRUCTION) demolish(x.w, heldLots(x.w, x.rs, row), x.statics.asOf);
   if (n === COMPLETE) {
     p.stage[row] = n;
     endRow(x, row, END_COMPLETE, day, n);
