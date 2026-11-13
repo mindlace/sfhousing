@@ -188,8 +188,8 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 - The Task tools are not available in this session: no task spine. This ledger and each operator's SDD ledger are the progress surface.
 
 ## Specs
-- world-core: docs/superpowers/specs/2026-11-13-world-core-design.md — status: pending (wave 1)
-- policy-timeline: docs/superpowers/specs/2026-11-13-policy-timeline-design.md — status: pending (wave 1)
+- world-core: docs/superpowers/specs/2026-11-13-world-core-design.md — status: dispatched 2026-11-13 (wave 1; agentId abd71128d1197fd1b; base c0bd4864; tier: dispatched at opus — rationale: eight interface rows, greenfield engine, seed-for-seed referee)
+- policy-timeline: docs/superpowers/specs/2026-11-13-policy-timeline-design.md — status: dispatched 2026-11-13 (wave 1; agentId aaad7d6b5ac406e2c; base c0bd4864; tier: dispatched at opus — rationale: five interface rows, new schema, compiler reusing the lever recompute)
 - world-funding: docs/superpowers/specs/2026-11-13-world-funding-design.md — status: pending (wave 2; needs world-core)
 - ensemble-runner: docs/superpowers/specs/2026-11-13-ensemble-runner-design.md — status: pending (wave 3; needs waves 1, 2)
 - world-score: docs/superpowers/specs/2026-11-13-world-score-design.md — status: pending (wave 4; design section 7 puts it after the runner)
@@ -201,8 +201,10 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 
 ## Waves
 - gate wave 1 2026-11-13 08:55: VERDICT OK* (seven_day 27% of 60% reserve, headroom 33; five_hour NO DATA). Calibration from sim-financing: about 1 point a spec, a floor (smallest specs, integer resolution). Partner's instruction was "enter sim-step-engine and execute": wave 1 admitted.
+- wave 1: start seven_day 27% @ 2026-11-13 09:05 | exclusive: yes so far
 
 ## Frame-defect tally
 - shared-type-home: 1 — instances: 2026-11-13 wave 1, S3 to S6 had no named file.
 
 ## Integration
+- step 0 (flattened leaf, sonnet, agentId a3f4fe8bd4065c821): c0bd4864 on superconductor/sim-step-engine, type-only `statics.ts` and `policy/frame.ts`; check, eslint, prettier clean. Not a spec; excluded from calibration.
