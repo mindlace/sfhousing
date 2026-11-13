@@ -1,12 +1,21 @@
 import type { ParcelId } from '$lib/data/parcel';
 import type { Precompute } from '$lib/sim/scenario/input';
-import { lastInitiationMonth, piecewiseMonth, skipBounds } from '$lib/sim/scenario/input';
-import { P, drawOn, simEntity, streamOf } from '$lib/sim/scenario/rng';
-import { exp, log } from '$lib/timelapse/math';
-import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
-import { monthFirstDay, monthLastDay, monthOfDay } from './months';
+import * as inputModule from '$lib/sim/scenario/input';
+import * as rngModule from '$lib/sim/scenario/rng';
+import * as mathModule from '$lib/timelapse/math';
+import * as timeModule from '$lib/timelapse/time';
+import type { Day } from '$lib/timelapse/time';
+import * as monthsModule from './months';
 import type { PolicyTimeline, ZoningView } from './policy/frame';
 import type { Statics } from './statics';
+
+// Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
+// use of an imported name is a getter call (docs/dev/world-core.md, Cost).
+const { lastInitiationMonth, piecewiseMonth, skipBounds } = inputModule;
+const { P, drawOn, simEntity, streamOf } = rngModule;
+const { exp, log } = mathModule;
+const { MONTH_DAYS } = timeModule;
+const { monthFirstDay, monthLastDay, monthOfDay } = monthsModule;
 
 const rateMemo = new WeakMap<Precompute, Map<number, Float64Array>>();
 

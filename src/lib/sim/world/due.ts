@@ -1,17 +1,19 @@
-import { seedHash } from '$lib/sim/scenario/rng';
-import { monthFirstDay, monthLastDay } from './months';
-import { dueMonthOf } from './pipeline';
+import * as rngModule from '$lib/sim/scenario/rng';
+import * as monthsModule from './months';
+import * as pipelineModule from './pipeline';
 import type { PolicyTimeline } from './policy/frame';
-import { initDraw, ordinaryStart, skipBound, startRates } from './rates';
+import * as ratesModule from './rates';
 import type { Statics } from './statics';
-import {
-  LOT_FREE,
-  type Due,
-  type FundingSystem,
-  type StepCtx,
-  type StepSink,
-  type World
-} from './types';
+import * as typesModule from './types';
+import type { Due, FundingSystem, StepCtx, StepSink, World } from './types';
+
+// Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
+// use of an imported name is a getter call (docs/dev/world-core.md, Cost).
+const { seedHash } = rngModule;
+const { monthFirstDay, monthLastDay } = monthsModule;
+const { dueMonthOf } = pipelineModule;
+const { initDraw, ordinaryStart, skipBound, startRates } = ratesModule;
+const { LOT_FREE } = typesModule;
 
 const FIRST_BUCKET = 64;
 
@@ -36,7 +38,7 @@ export class DueList implements Due {
   /** Month each lot is due in, by lot; 0 = none. */
   private lotMonth: Int32Array;
   /** Month each project is due in, by row; 0 = none. */
-  private rowMonth = new Int32Array(0);
+  private rowMonth: Int32Array = new Int32Array(0);
   /** Entities put in each month (stale ones included), and how many. */
   private readonly buckets: (Int32Array | undefined)[] = [];
   private readonly sizes: number[] = [];

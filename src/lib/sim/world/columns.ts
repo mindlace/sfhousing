@@ -1,15 +1,13 @@
-import { FILL_LEVELS } from '$lib/data/scenario-codec';
+import * as scenarioCodecModule from '$lib/data/scenario-codec';
 import type { Schedule } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
-import {
-  END_ALIVE,
-  NO_DAY,
-  NO_STOP,
-  LOT_FREE,
-  type LotColumns,
-  type ProjectColumns,
-  type World
-} from './types';
+import * as typesModule from './types';
+import type { LotColumns, ProjectColumns, World } from './types';
+
+// Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
+// use of an imported name is a getter call (docs/dev/world-core.md, Cost).
+const { FILL_LEVELS } = scenarioCodecModule;
+const { END_ALIVE, NO_DAY, NO_STOP, LOT_FREE } = typesModule;
 
 type Typed = Int32Array | Uint32Array | Uint8Array | Float64Array;
 

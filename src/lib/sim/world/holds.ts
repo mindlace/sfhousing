@@ -2,21 +2,20 @@
 // lot, funded.ts:1595-1602): a lot is free only when every project holding it has dropped out; it
 // is blocked for good when a holder completes, is skipped or never ends; once a project has
 // entered construction on it, its existing homes count as 0.
-import { isSkipped } from '$lib/sim/scenario/engine';
+import * as engineModule from '$lib/sim/scenario/engine';
 import type { Day } from '$lib/timelapse/time';
-import { ensureLot, lotRow } from './columns';
+import * as columnsModule from './columns';
 import type { RowStatics } from './pipeline';
 import type { Statics } from './statics';
-import {
-  LOT_DONE,
-  LOT_FREE,
-  LOT_HELD,
-  ORIGIN_MASTER,
-  ORIGIN_PHASE,
-  ORIGIN_PIPELINE,
-  ORIGIN_SIM,
-  type World
-} from './types';
+import * as typesModule from './types';
+import type { World } from './types';
+
+// Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
+// use of an imported name is a getter call (docs/dev/world-core.md, Cost).
+const { isSkipped } = engineModule;
+const { ensureLot, lotRow } = columnsModule;
+const { LOT_DONE, LOT_FREE, LOT_HELD, ORIGIN_MASTER, ORIGIN_PHASE, ORIGIN_PIPELINE, ORIGIN_SIM } =
+  typesModule;
 
 /** The lots `row` holds: its own (pipeline), its phase's, a master's `all`, a start's one lot. */
 export function heldLots(w: World, rs: RowStatics, row: number): Int32Array {

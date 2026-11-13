@@ -2,38 +2,52 @@
 // Without a funding system in force the step runs systems 1 (policy, when the frame changes: rules
 // 7 and 12), 3 (stages due), 4 (lots whose ordinary start falls this month are set aside) and 6
 // (they start). `withFunding(f)` adds the calls into `f` in the months whose frame has `finance`.
-import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
-import { pathwayFrom } from '$lib/sim/scenario/engine';
-import { sizeCumAgainst } from '$lib/sim/scenario/input';
-import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
+import * as scenarioCodecModule from '$lib/data/scenario-codec';
+import * as engineModule from '$lib/sim/scenario/engine';
+import * as inputModule from '$lib/sim/scenario/input';
+import * as rngModule from '$lib/sim/scenario/rng';
 import type { Day } from '$lib/timelapse/time';
-import { PATHWAYS, STAGE_ORDER, type Pathway, type Stage } from '$lib/timelapse/types';
-import { addProject, emptyWorld, ensureLot, lotRow, pushDisplacement, pushRev } from './columns';
-import { createHolds } from './holds';
-import { DueList, eachFreeLot, planDueWith, plannedMonth, type planDue } from './due';
-import { enterStage, reanchor, rowSpeed } from './stage';
-import { monthFirstDay, monthLastDay } from './months';
-import { createProjects, dueMonthOf, followProject, rowStaticsOf, type Sys3 } from './pipeline';
+import * as timelapseTypesModule from '$lib/timelapse/types';
+import type { Pathway, Stage } from '$lib/timelapse/types';
+import * as columnsModule from './columns';
+import * as holdsModule from './holds';
+import * as dueModule from './due';
+import type { planDue } from './due';
+import * as stageModule from './stage';
+import * as monthsModule from './months';
+import * as pipelineModule from './pipeline';
+import type { Sys3 } from './pipeline';
 import type { PolicyFrame, PolicyTimeline } from './policy/frame';
-import { initDraw, lotEntity, ordinaryStart, skipBound, type OrdinaryStart } from './rates';
+import * as ratesModule from './rates';
+import type { OrdinaryStart } from './rates';
 import type { Statics } from './statics';
-import {
-  END_ALIVE,
-  LOT_DONE,
-  LOT_FREE,
-  LOT_LIVE,
-  NO_DAY,
-  ORIGIN_SIM,
-  RULE_NONE,
-  RULE_SIM,
-  type Due,
-  type FundedStart,
-  type FundingSystem,
-  type StepCtx,
-  type StepSink,
-  type World,
-  type WorldEvent
+import * as typesModule from './types';
+import type {
+  Due,
+  FundedStart,
+  FundingSystem,
+  StepCtx,
+  StepSink,
+  World,
+  WorldEvent
 } from './types';
+
+// Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
+// use of an imported name is a getter call (docs/dev/world-core.md, Cost).
+const { FILL_LEVELS, fillStories } = scenarioCodecModule;
+const { pathwayFrom } = engineModule;
+const { sizeCumAgainst } = inputModule;
+const { P, drawOn, seedHash, streamOf } = rngModule;
+const { PATHWAYS, STAGE_ORDER } = timelapseTypesModule;
+const { addProject, emptyWorld, ensureLot, lotRow, pushDisplacement, pushRev } = columnsModule;
+const { createHolds } = holdsModule;
+const { DueList, eachFreeLot, planDueWith, plannedMonth } = dueModule;
+const { enterStage, reanchor, rowSpeed } = stageModule;
+const { monthFirstDay, monthLastDay } = monthsModule;
+const { createProjects, dueMonthOf, followProject, rowStaticsOf } = pipelineModule;
+const { initDraw, lotEntity, ordinaryStart, skipBound } = ratesModule;
+const { END_ALIVE, LOT_DONE, LOT_FREE, LOT_LIVE, NO_DAY, ORIGIN_SIM, RULE_NONE, RULE_SIM } =
+  typesModule;
 
 const F = FILL_LEVELS.length;
 const S = STAGE_ORDER.length;
