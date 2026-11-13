@@ -66,12 +66,27 @@ export function spellsOf(ctx: StepCtx, lot: number): { market: Spell; affordable
   return { market: spell(KIND_MARKET), affordable: spell(KIND_AFFORDABLE) };
 }
 
-/** Each kind's clock read through `ctx.month`, null for a kind already waiting. */
-function clocksOf(ctx: StepCtx, lot: number, line: FundLine | null): (KindClock | null)[] {
+/** The waiting (not `gone`) applications of `line` as `lot * 2 + kind` (kind codes are 0 and 1). */
+function waitingSet(line: FundLine): Set<number> {
+  const out = new Set<number>();
+  for (let i = 0; i < line.n; i++) if (line.gone[i] === 0) out.add(line.lot[i] * 2 + line.kind[i]);
+  return out;
+}
+
+/**
+ * Each kind's clock read through `ctx.month`, null for a kind already waiting. `held` is
+ * `waitingSet(line)` when the caller asks for many lots of one unchanged line.
+ */
+function clocksOf(
+  ctx: StepCtx,
+  lot: number,
+  line: FundLine | null,
+  held: Set<number> | null = null
+): (KindClock | null)[] {
   const spells = spellsOf(ctx, lot);
   const sh = seedHash(ctx.seed);
   return KINDS.map((kind) =>
-    waiting(line, lot, CODE[kind])
+    (held === null ? waiting(line, lot, CODE[kind]) : held.has(lot * 2 + CODE[kind]))
       ? null
       : kindClock(ctx.statics, ctx.timeline, ctx.month, sh, spells[kind], kind)
   );
@@ -129,8 +144,10 @@ export function applyLots(ctx: StepCtx, lots: Int32Array): void {
   const { line } = fundOf(ctx.world);
   const rank = ctx.statics.rank;
   const apps: Application[] = [];
+  // The line does not change until `joinLine` below: one index of its waiting rows serves all lots.
+  const held = waitingSet(line);
   for (const lot of lots) {
-    for (const c of clocksOf(ctx, lot, line)) {
+    for (const c of clocksOf(ctx, lot, line, held)) {
       if (c === null || c.day === null || c.month !== ctx.month) continue;
       const ids = ctx.timeline.frameAt(c.viewMonth).finance!.programmes;
       apps.push({
