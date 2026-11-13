@@ -28,6 +28,7 @@ import {
 } from './combine';
 import type { PolicyFrame, PolicyTimeline, ZoningView } from './frame';
 import { digest128, frameIdOf, serialOf, VIEWS, type ViewInfo } from './intern';
+import { attachAttribution, createAttribution, type Attribution } from './limits';
 import { createMoneyTrack } from './money';
 import {
   createViewJob,
@@ -185,6 +186,8 @@ export function compileTimeline(
   const missing = new Set<ParcelId>();
   const shared = new Map<number, Shared>();
   const touchedMemo = new Map<string, Int32Array>();
+  // One per zoning state in force; each frame object this compile hands out points at one.
+  const attributions = new Map<string, Attribution>();
 
   const frames: PolicyFrame[] = [];
   const changes: number[] = [];
@@ -302,6 +305,8 @@ export function compileTimeline(
       };
       shared.set(id, sh);
     }
+    // A fresh object per month of this compile, never shared with another compile: limit
+    // attribution is keyed on it (content-equal frames of two documents can differ in owners).
     const frame: PolicyFrame = {
       id,
       view: sh.view,
@@ -312,6 +317,11 @@ export function compileTimeline(
       market: mk,
       finance: fin?.frame ?? null
     };
+    const zk = activeKey(f.zoning);
+    let att = attributions.get(zk);
+    if (att === undefined)
+      attributions.set(zk, (att = createAttribution(layers, asOf, f.zoning, lots)));
+    attachAttribution(frame, att);
     const prev = frames[m - 2];
     if (prev !== undefined && prev.id !== id) {
       changes.push(m);
