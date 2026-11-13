@@ -5,13 +5,22 @@ import { cellAnchorParcel, footprintParcel } from '$lib/sim/scenario/massing';
 import type { Schedule, SimInput } from '$lib/sim/scenario/types';
 import { STAGE_ORDER } from '$lib/timelapse/types';
 import { createMapStream, MASSING_CAP } from './map-stream';
-import { monthLastDay, planDue, scheduleAt, staticsOf, step, type Statics, type World } from '.';
+import {
+  createWorld,
+  monthLastDay,
+  planDue,
+  scheduleAt,
+  staticsOf,
+  step,
+  type Statics,
+  type World
+} from '.';
 import type { PolicyTimeline } from './policy/frame';
 import { benchInput, fixtureInput } from './test/cities.node';
 import { benchRecords, fixtureRecords } from './test/map-stream-cities.node';
 import { streamDeps } from './test/map-stream-deps';
-import { fill, startStream, type StreamSink } from './test/map-stream-run';
-import { Recorder, runWorld } from './test/run';
+import { fill, startStream, StreamSink } from './test/map-stream-run';
+import { Recorder, SEEDS, readAll, runWorld } from './test/run';
 import { frameOf, oneFrame } from './test/timeline';
 import { ORIGIN_SIM, type Due } from './types';
 
@@ -55,6 +64,10 @@ function schedulesNow(world: World, statics: Statics): (Schedule | null)[] {
   const day = lastDayOf(world, statics);
   return Array.from({ length: world.projects.n }, (_, row) => scheduleAt(world, statics, row, day));
 }
+
+/** The row's parcel ids as read at the end of the world's month ([] for a master). */
+const parcelIdsOfRow = (world: World, statics: Statics, row: number): ParcelId[] =>
+  scheduleAt(world, statics, row, lastDayOf(world, statics))?.parcelIds ?? [];
 
 /** The latest packed version of every cell sent so far. */
 function lastSent(updates: TimelineUpdate[]): Map<string, TimedPackedCell> {
@@ -405,6 +418,143 @@ describe('map-stream: onEvent and flush', () => {
       through: 24
     });
     expect(updates.reduce((n, u) => n + u.cells.length, 0)).toBeGreaterThan(0);
+  });
+
+  it('a construction month carries the lot in demolish once', () => {
+    const rec = new Recorder();
+    const pre = runWorld(bench.statics, bench.timeline, SEED, 120, rec);
+    const firstOn = new Map<string, number>(); // lot → month of its first construction
+    for (const e of rec.events) {
+      if (e.kind !== 'enter' || e.stage !== 'construction') continue;
+      for (const id of parcelIdsOfRow(pre, bench.statics, e.row))
+        if (!firstOn.has(id)) firstOn.set(id, e.month);
+    }
+    // a sim row entering construction after month 1, the first on its lot, the only one that month
+    const hit = rec.events.find((e) => {
+      if (e.kind !== 'enter' || e.stage !== 'construction' || e.month < 2) return false;
+      if (pre.projects.origin[e.row] !== ORIGIN_SIM) return false;
+      const lot = bench.statics.parcelId[pre.projects.src[e.row]];
+      return bench.input.parcels.index.has(lot) && firstOn.get(lot) === e.month;
+    });
+    expect(hit).toBeDefined();
+    const { row, month: c, day } = hit!;
+    const lot = bench.statics.parcelId[pre.projects.src[row]];
+
+    const { world, sink, stream, due } = started(bench);
+    const run = {
+      world,
+      statics: bench.statics,
+      timeline: bench.timeline,
+      seed: SEED,
+      stream,
+      sink
+    };
+    const before = [
+      stream.flush(world, bench.statics, Infinity)!,
+      ...fill({ ...run, due, through: c - 1 })
+    ];
+    const at = fill({ ...run, due, through: c });
+    const after = fill({ ...run, due, through: c + 24 });
+    const on = (us: TimelineUpdate[]) =>
+      us.flatMap((u) => u.demolish.filter((d) => d.parcelId === lot));
+    expect(on(before)).toEqual([]);
+    expect(on(at)).toEqual([{ parcelId: lot, day }]);
+    expect(on(after)).toEqual([]);
+  });
+
+  it('revision 0 carries every demolition known so far', () => {
+    const deps = streamDeps(bench.input, bench.records);
+    const stream = createMapStream(deps, WINDOW);
+    const sink = new StreamSink(stream, bench.statics);
+    const world = createWorld(bench.statics, bench.timeline, SEED, sink);
+    const due = planDue(world, bench.statics, bench.timeline, SEED, 60);
+    for (let m = 1; m <= 60; m++) step(world, due, bench.statics, bench.timeline, SEED, sink);
+    sink.attach(world);
+    const u = stream.flush(world, bench.statics, Infinity)!;
+    expect(u.revision).toBe(0);
+
+    const want = new Map<ParcelId, number>();
+    for (const s of readAll(world, bench.statics, lastDayOf(world, bench.statics)).schedules) {
+      const c = s.entered.construction;
+      if (c === undefined) continue;
+      for (const id of s.parcelIds) {
+        if (!bench.input.parcels.index.has(id)) continue;
+        const d = want.get(id);
+        if (d === undefined || c < d) want.set(id, c);
+      }
+    }
+    expect(want.size).toBeGreaterThan(0);
+    const sortedWant = [...want.keys()]
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+      .map((parcelId) => ({ parcelId, day: want.get(parcelId)! }));
+    expect(u.demolish).toEqual(sortedWant);
+    expect(stream.flush(world, bench.statics, Infinity)).toBeNull();
+  });
+
+  it('two projects on one lot: the earliest construction day only', () => {
+    const MONTHS = 240;
+    let found: { seed: number; lot: ParcelId; day: number; through: number } | null = null;
+    for (const seed of SEEDS) {
+      const rec = new Recorder();
+      const w = runWorld(bench.statics, bench.timeline, seed, MONTHS, rec);
+      const on = new Map<ParcelId, { rows: Set<number>; day: number; month: number }>();
+      for (const e of rec.events) {
+        if (e.kind !== 'enter' || e.stage !== 'construction') continue;
+        for (const id of parcelIdsOfRow(w, bench.statics, e.row)) {
+          if (!bench.input.parcels.index.has(id)) continue;
+          const x =
+            on.get(id) ?? on.set(id, { rows: new Set(), day: e.day, month: e.month }).get(id)!;
+          x.rows.add(e.row);
+          if (x.rows.size === 2) {
+            found = { seed, lot: id, day: Math.min(x.day, e.day), through: e.month + 1 };
+            break;
+          }
+        }
+        if (found) break;
+      }
+      if (found) break;
+    }
+    expect(found).not.toBeNull();
+    const { seed, lot, day, through } = found!;
+    const deps = streamDeps(bench.input, bench.records);
+    const stream = createMapStream(deps, WINDOW);
+    const { world, sink } = startStream(bench.statics, bench.timeline, seed, stream);
+    const due = planDue(world, bench.statics, bench.timeline, seed, WINDOW);
+    const updates = [stream.flush(world, bench.statics, Infinity)!];
+    updates.push(
+      ...fill({
+        world,
+        statics: bench.statics,
+        timeline: bench.timeline,
+        seed,
+        stream,
+        sink,
+        due,
+        through
+      })
+    );
+    const sent = updates.flatMap((u) => u.demolish.filter((d) => d.parcelId === lot));
+    expect(sent).toEqual([{ parcelId: lot, day }]);
+  });
+
+  it('an update goes out when only demolitions are pending', () => {
+    const probe = runWorld(bench.statics, bench.timeline, SEED, 0);
+    const row = schedulesNow(probe, bench.statics).findIndex(
+      (s) => s !== null && anchorOf(bench.input, s) !== null
+    );
+    const s = scheduleAt(probe, bench.statics, row, lastDayOf(probe, bench.statics))!;
+    const waiting = new Set(cellsOf(bench.input, s));
+    const lot = s.parcelIds.find((id) => bench.input.parcels.index.has(id))!;
+    // the row's cells never load, so the event dirties a cell that cannot pack
+    const { world, stream } = started(bench, { ready: (c) => !waiting.has(c) });
+    stream.flush(world, bench.statics, Infinity);
+    expect(stream.flush(world, bench.statics, Infinity)).toBeNull();
+    stream.onEvent({ kind: 'enter', row, day: -1, stage: 'construction' }, world, bench.statics);
+    const u = stream.flush(world, bench.statics, Infinity)!;
+    expect(u).not.toBeNull();
+    expect(u.cells).toEqual([]);
+    expect(u.demolish).toContainEqual({ parcelId: lot, day: -1 });
+    expect(stream.flush(world, bench.statics, Infinity)).toBeNull();
   });
 
   it('rewind and snapshot are not built yet', () => {

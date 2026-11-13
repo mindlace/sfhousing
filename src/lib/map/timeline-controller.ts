@@ -188,11 +188,7 @@ export class TimelineController {
     for (const c of u.cells) validateTimedCell(c);
     if (u.revision === 0) return u.swap ? this.swap(u) : this.snapshot(u);
     this.lastRevision = u.revision;
-    if (u.demolish.length > 0)
-      console.error(
-        `[map] timeline revision ${u.revision}: demolish must be empty after revision 0; ` +
-          `${u.demolish.length} entries ignored`
-      );
+    if (u.restore?.length || u.demolish.length) this.pump.amend(u.demolish, u.restore ?? []);
     const slices = this.plan(u);
     if (slices.length === 0) return; // band-only
     const idle = this.queue.length === 0;

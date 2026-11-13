@@ -7,6 +7,9 @@
 // - A cell is packed whole, from `scheduleAt(world, statics, row, lastDay)` of every project in it,
 //   once every cell of every one of its projects is ready (rule 6); otherwise it keeps its place.
 // - One massing per revision, memoised by the revision's content (rule 11).
+// - Demolitions (rule 8, T13): a T11 lot and the earliest day a project entered construction on
+//   it. Revision 0 carries every one known; later updates those new or changed since the last.
+//   An update goes out when a cell is packed or a demolition is pending.
 //
 // Worker-safe, under the determinism lint rule (no transcendental Math).
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
@@ -63,6 +66,9 @@ interface Placed {
 
 const NOWHERE: Placed = { ids: [], cells: [] };
 
+/** `ParcelId` order, as geometry.ts sorts the demolish list. */
+const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
 export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapStream {
   const P = deps.massing.input.parcels;
   const now = deps.now ?? (() => performance.now());
@@ -74,6 +80,10 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
   const rowsIn = new Map<string, Set<number>>();
   /** Dirty anchor cells in first-dirtied order (re-dirtying keeps the place). */
   const dirty = new Map<string, true>();
+  /** T11 lot → the earliest day a project entered construction on it (rule 8, T13). */
+  const demolitions = new Map<ParcelId, number>();
+  /** Lots whose earliest construction day is new or changed since the last update. */
+  const newDemolitions = new Set<ParcelId>();
   let revision = 0;
 
   const cellOf = (id: ParcelId): string => P.cells[P.cell[P.index.get(id)!]].cellId;
@@ -194,6 +204,14 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
     onEvent(e, world, statics) {
       const at = place(world, statics, e.row);
       if (at.cells.length > 0) dirty.set(at.cells[0], true);
+      if (e.kind === 'enter' && e.stage === 'construction') {
+        for (const id of at.ids) {
+          const d = demolitions.get(id);
+          if (d !== undefined && d <= e.day) continue;
+          demolitions.set(id, e.day);
+          newDemolitions.add(id);
+        }
+      }
     },
 
     flush(world, statics, budgetMs) {
@@ -210,7 +228,14 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
         const c = pack(world, statics, cell, day);
         if (c !== null) cells.push(c);
       }
-      if (cells.length === 0) return null;
+      if (cells.length === 0 && newDemolitions.size === 0) return null;
+      // revision 0 carries every demolition known; later updates those new or changed since
+      const lots = revision === 0 ? [...demolitions.keys()] : [...newDemolitions];
+      newDemolitions.clear();
+      const demolish = lots.sort(cmp).map((parcelId) => ({
+        parcelId,
+        day: demolitions.get(parcelId)!
+      }));
       let complete = false;
       if (world.month >= windowMonths) {
         complete = true;
@@ -221,7 +246,7 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
           }
         }
       }
-      return { revision: revision++, cells, removedCells: [], demolish: [], complete };
+      return { revision: revision++, cells, removedCells: [], demolish, complete };
     },
 
     rewind() {
