@@ -607,15 +607,17 @@ lands in a band task. Details: [finance-levers.md](finance-levers.md), "The fina
 **Budgets** (design F18, tier 4): with `finance` absent the existing budgets hold unchanged; with
 the baseline alone `simulateNet` median ≤ 30 ms; with the bench funding set added ≤ 45 ms, and all
 101 band pairs ≤ 9 s after revision 0; the existing longest-macrotask bound of 50 ms holds with the
-bench funding set (case 5).
+bench funding set (case 5). Cases 3 and 5 missed those, so they take spec fallback 2: case 3 is
+now ≤ 83 ms and case 5 ≤ 121 ms, and the three `rev0:` cases have budgets of their own (see
+"Cold-boot budgets (spec fallback 2)" below).
 
 **Bench cases** (`scenario.bench.spec.ts`, run by `npm run test:perf`, not by signoff):
 
 1. Every existing budget with `finance` absent.
 2. `simulateNet` with the bench baseline, median ≤ 30 ms.
-3. `simulateNet` with the bench baseline plus `benchFunding()`, median ≤ 45 ms.
+3. `simulateNet` with the bench baseline plus `benchFunding()`, median ≤ 83 ms (fallback 2).
 4. The host: all 101 band pairs ≤ 9 s after revision 0.
-5. The host: longest macrotask ≤ 50 ms during band and twin work.
+5. The host: longest macrotask ≤ 121 ms during band and twin work (fallback 2).
 6. A fixture check (counts, not time): seed 1 makes at least 10,000 first-day applications and at
    least 100 awards; it also checks that the shortcuts change nothing on the bench city.
 7. Reported, not a budget: case 3 with an `off` entry for the bench baseline's `state` pool from
@@ -640,21 +642,30 @@ interleaved runs per side, base `736be467` against the branch head, same bench s
 | 6. First-day applications, awards (seed 1)   | 61,239 and 231                 | unchanged        | -    | 10,000 and 100 | none; passes            |
 | 7. Reported: `state` off from `asOf + 1,826` | 155.6 and 188.7 ms (older run) | about 100 ms     | -    | none           | about 120 ms, if wanted |
 
-**Budgets pending (spec fallback 2).** Cases 3 and 5 still miss their budgets, so
-`npm run test:perf` fails on them until they are re-set. The conductor's ruling sets the case 3
-and case 5 budgets, and gives the three `rev0:` cases budgets of their own, by
-`ceil(quiet median × 1.25)` ms, but only from a cold-boot measurement (a freshly booted, otherwise
-idle machine), which has not been taken. The medians in the table above are ballpark, and the
-"median + 20%" proposals in it are superseded by that formula. No budget number in
-`scenario.bench.spec.ts` has been edited. Case 5's longest task at head is the shown run's task (about 80 ms with
-the bench funding), then the first band tasks (80 to 95 ms under load); a quiet-machine run may
-come in lower. The one full `npm run test:perf` run at the end of the round (load 7 to 18, so
-inflated) gave case 3 at 65.2 ms and case 5 at 105.0 ms.
+**Cold-boot budgets (spec fallback 2).** The medians in the table above are ballpark, and the
+"median + 20%" proposals in it are superseded. Measured 2026-11-12, cold boot, 15 logical cores:
+three full `npm run test:perf` runs in a row on `main` at `592234c3`, nothing else running (CPU 92
+to 98% idle before each run). The conductor's ruling sets each budget to
+`ceil(median × 1.25)`, rounded up to a whole ms for cases 3 and 5 and to the next 10 ms for the
+`rev0:` cases:
+
+| Case                       | Run 1      | Run 2      | Run 3      | Median     | Budget    |
+| -------------------------- | ---------- | ---------- | ---------- | ---------- | --------- |
+| 3. Plus `benchFunding()`   | 68.5 ms    | 65.6 ms    | 66.0 ms    | 66.0 ms    | 83 ms     |
+| 5. Host, longest macrotask | 95.5 ms    | 108.0 ms   | 96.1 ms    | 96.1 ms    | 121 ms    |
+| `rev0: unfunded`           | 1,848.7 ms | 1,863.0 ms | 1,964.2 ms | 1,863.0 ms | 2,330 ms  |
+| `rev0: funded baseline`    | 3,805.8 ms | 3,851.3 ms | 3,948.7 ms | 3,851.3 ms | 4,820 ms  |
+| `rev0: bench funding`      | 8,101.4 ms | 8,031.2 ms | 8,201.1 ms | 8,101.4 ms | 10,130 ms |
+
+Case 5's longest task was a band task in runs 1 and 3 and the shown run's task in run 2. Cases 2
+and 4 keep their budgets. Case 2 read 30.3, 28.0 and 27.5 ms (median 28.0 ms): its margin against
+30 ms is small, and run 1, the first after the boot, read 30.3 ms and failed. Case 4 read 3,140.9,
+3,133.0 and 3,146.8 ms against 9 s.
 
 **Time to revision 0** (`rev0:` cases, perf Task R0). Added to `scenario.bench.spec.ts`:
 `rev0: unfunded`, `rev0: funded baseline` and `rev0: bench funding`. Each sends `initScenario`
 with a null seed and times the host to its first revision 0, with the split load, warm, FZP band,
-shown run and geometry. They report only; no budget is set. The first visible result waits on all
+shown run and geometry. Their budgets are in the cold-boot table above. The first visible result waits on all
 101 FZP band runs, because the representative seed needs all 101 finals, and the order (bands
 first, then the representative seed) is fixed by `timelapse-sim-design.md:585`, so it cannot be
 reordered without changing outputs. Ballpark medians, base to head: unfunded 1,685 to 1,697 ms
@@ -668,7 +679,10 @@ revision 0 with its host alive, after a full collection (`gc`, exposed at runtim
 the growth over the same reading taken before the host was made. One run, 2026-11-12, load 1.9 to
 2.1, under vitest (the bench city and the test runner are in the same heap): unfunded 98 MB (24 MB
 for the host); funded baseline 128 MB (51 MB); bench funding 154 MB (77 MB). All are well under
-the 300 MB heap budget.
+the 300 MB heap budget. The host's share is the figure of record. In the three cold-boot runs of
+the full suite (2026-11-12, above), the medians were: host's share 21, 54 and 76 MB, whole process
+255, 288 and 310 MB, against 98, 128 and 154 MB in the earlier run. The difference in the
+whole-process figure was not examined.
 
 **Task 4 (cancelled): resumable runs.** The plan's Task 4 would turn `fundedPass`, `runEngineWith`
 and `simulateNet` into generators (`fundedSteps`, `engineSteps`, `STEP_CANDIDATES`) so the host
@@ -755,6 +769,7 @@ is covered by `engine-finance-repricing.spec.ts` (Node only).
   count. `claimLots` resets only what a pass reads before it writes; a stale `lparked` can be read
   but is harmless, because every read is paired with the `lgen === cal.gen` check.
 - **Perf round, Task 4: cancelled.** Resumable runs are recorded above as the known route to
-  case 5; case 3 and case 5 take fallback 2 (conductor ruling).
+  case 5; case 3 and case 5 take fallback 2 (conductor ruling), with budgets from the cold-boot
+  measurement.
 - **Perf round, Task R0: time to revision 0.** Measured, not changed: the order is fixed by
-  `timelapse-sim-design.md:585`, and no budget is set.
+  `timelapse-sim-design.md:585`. The budgets come from the cold-boot measurement (fallback 2).
