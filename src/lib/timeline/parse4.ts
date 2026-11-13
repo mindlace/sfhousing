@@ -289,6 +289,10 @@ function parsePolicy(
     }
     spans.push({ from, to, what });
   });
+  if (spans.length === 0 && where.tag === 'fund' && where.pool.startsWith('u-')) {
+    if (ids.pools.has(where.pool)) fail(j(j(path, 'where'), 'pool'), 'duplicate id');
+    ids.pools.add(where.pool);
+  }
   return { id, label, preset, on, where, spans };
 }
 
@@ -308,6 +312,13 @@ function checkFundSpan(
         j(j(path, 'where'), 'pool'),
         'expected a baseline pool id for a fund with no added pool'
       );
+    what.programmes.forEach((g, k) => {
+      if (g.pool !== where.pool)
+        fail(
+          `${j(wp, 'programmes')}[${k}].pool`,
+          `expected ${where.pool}, the pool of ${j(path, 'where')}`
+        );
+    });
   } else if (poolId !== where.pool) {
     fail(j(wp, 'pool.id'), `expected ${where.pool}, the pool of ${j(path, 'where')}`);
   }

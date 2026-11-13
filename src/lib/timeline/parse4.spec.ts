@@ -276,6 +276,34 @@ describe('rule 3: ids and label', () => {
       'kinds.money[0].spans[1].what.pool.id'
     );
   });
+  it('a fund with no added pool draws every programme on its where.pool', () => {
+    const w = {
+      tag: 'fund',
+      pool: null,
+      programmes: [progOf('u-prog-1', 'city-a'), progOf('u-prog-2', 'city-b')]
+    };
+    rejects(
+      doc([], [], [pol('f', { tag: 'fund', pool: 'city-a' }, [open(w)])]),
+      'kinds.money[0].spans[0].what.programmes[1].pool'
+    );
+  });
+  it('a fund with no spans still registers its added pool id', () => {
+    const empty = (id: string, pool: string) => pol(id, { tag: 'fund', pool }, []);
+    rejects(
+      doc([], [], [empty('f1', 'u-pool-1'), empty('f2', 'u-pool-1')]),
+      'kinds.money[1].where.pool',
+      'duplicate id'
+    );
+    rejects(
+      doc([], [], [empty('f1', 'u-pool-1'), fund('f2', 'u-pool-1')]),
+      'kinds.money[1].spans[0].what.pool.id',
+      'duplicate id'
+    );
+    const many = Array.from({ length: FINANCE_LIMITS.pools + 1 }, (_, i) =>
+      empty(`f${i}`, `u-pool-${i}`)
+    );
+    rejects(doc([], [], many), 'kinds.money', 'pools');
+  });
   it('ties a fund policy to its pool', () => {
     rejects(
       doc([], [], [pol('f', { tag: 'fund', pool: 'u-pool-2' }, [open(fundW('u-pool-1'))])]),
