@@ -241,9 +241,15 @@ export function eachFreeLot(
     const i = lot < rowOf.length ? rowOf[lot] - 1 : -1;
     if (i >= 0) {
       if (l.state[i] === LOT_FREE) visit(lot, l.r[i], l.k[i], false, false);
-    } else if (rateRows.some((a) => a[lot] < 0)) visit(lot, statics.asOf, 0, true, false);
+    } else if (anyBelowZero(rateRows, lot)) visit(lot, statics.asOf, 0, true, false);
     else if (all) visit(lot, statics.asOf, 0, true, true);
   }
+}
+
+/** True when some row of `rows` is below 0 at `lot`. */
+function anyBelowZero(rows: Float64Array[], lot: number): boolean {
+  for (let j = 0; j < rows.length; j++) if (rows[j][lot] < 0) return true;
+  return false;
 }
 
 /**
