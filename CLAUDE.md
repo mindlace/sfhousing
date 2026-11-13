@@ -38,6 +38,7 @@ Fetch the file when working in the relevant area:
 - **Map performance (`npm run bench:map`, pass bar, results, CI note)** — [docs/dev/map-perf.md](docs/dev/map-perf.md)
 - **FZP timelapse `FzpMode` (`/fzp` redirects to `/sim`; scrubber contract, layout variables, `window.__sfhFzp`, request flow, T9 lookups seam, known gaps)** — [docs/dev/fzp-mode.md](docs/dev/fzp-mode.md)
 - **Policy levers engine (`SimLevers`, resolution order, law switch, timer reach, `setLevers` protocol)** — [docs/dev/sim-levers.md](docs/dev/sim-levers.md)
+- **Map feed from a stepped world (`MapStream`, events to `TimelineUpdate`, rewind, snapshot, `restore`)** — [docs/dev/map-stream.md](docs/dev/map-stream.md)
 - **`/sim` page (policy recipe, brushes, lever status, dataset requirement)** — [docs/dev/sim-page.md](docs/dev/sim-page.md)
 - **Permitting timers on `/sim` (presets, floors, evidence, timeline UI)** — [docs/dev/sim-timers.md](docs/dev/sim-timers.md)
 - **Public money on `/sim` (`FinanceLevers`, schema 3 loader, presets and their sources, Funding tab, Results money and income rows, card line, notices)** — [docs/dev/sim-funding.md](docs/dev/sim-funding.md)
