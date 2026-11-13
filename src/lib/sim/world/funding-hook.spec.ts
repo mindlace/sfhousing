@@ -44,11 +44,13 @@ type Hook = keyof FundingSystem;
 
 /** A `FundingSystem` that logs each call (and each event its sink is sent) and does nothing else. */
 class Stub implements FundingSystem {
-  log: { month: number; name: string }[] = [];
+  log: { month: number; name: string; row?: number }[] = [];
   month = 0;
   onServe: (ctx: StepCtx) => void = () => {};
   onShadow: (ctx: StepCtx) => void = () => {};
   onPlanLot: (ctx: StepCtx, lot: number) => number = () => 0;
+  onEvent: (ctx: StepCtx, e: WorldEvent) => void = () => {};
+  ctxs: StepCtx[] = [];
   applied: { month: number; lots: number[] }[] = [];
   private note(name: string) {
     this.log.push({ month: this.month, name });
@@ -64,8 +66,10 @@ class Stub implements FundingSystem {
     this.month = ctx.month;
     this.note('moneyIn');
   }
-  onProjectEvent(_ctx: StepCtx, e: WorldEvent): void {
-    this.note(`onProjectEvent:${e.kind}`);
+  onProjectEvent(ctx: StepCtx, e: WorldEvent): void {
+    this.log.push({ month: this.month, name: `onProjectEvent:${e.kind}`, row: e.row });
+    this.ctxs.push(ctx);
+    this.onEvent(ctx, e);
   }
   apply(ctx: StepCtx, lots: Int32Array): void {
     this.note('apply');
@@ -73,6 +77,7 @@ class Stub implements FundingSystem {
   }
   serve(ctx: StepCtx): void {
     this.note('serve');
+    this.ctxs.push(ctx);
     this.onServe(ctx);
   }
   shadow(ctx: StepCtx): void {
@@ -84,10 +89,43 @@ class Stub implements FundingSystem {
     return this.onPlanLot(ctx, lot);
   }
   names(month: number, drop: Hook[] = ['planLot']): string[] {
-    return this.log
-      .filter((c) => c.month === month && !drop.includes(c.name as Hook))
-      .map((c) => c.name);
+    return this.entries(month, drop).map((c) => c.name);
   }
+  entries(month: number, drop: Hook[] = ['planLot']) {
+    return this.log.filter((c) => c.month === month && !drop.includes(c.name as Hook));
+  }
+}
+
+/**
+ * Checks one month's calls against rule 16 as amended: `[policyChanged]`, `moneyIn`, each system 3
+ * event followed by `onProjectEvent` for it, `apply`, `serve`, then each event of systems 5 and 6
+ * followed by `onProjectEvent` for it except the `'start'` of a row in `funded` (started by the
+ * funding system itself), `shadow`. Returns how many events of systems 3 and 5-6 were passed.
+ */
+function checkMonth(stub: Stub, m: number, changed: boolean, funded: Set<number>) {
+  const items = stub.entries(m);
+  const name = (i: number) => items[i]?.name;
+  let i = 0;
+  if (changed) expect(name(i++)).toBe('policyChanged');
+  expect(name(i++), `month ${m}`).toBe('moneyIn');
+  let sys3 = 0;
+  while (name(i)?.startsWith('ev:')) {
+    expect(items[i + 1]).toEqual({ ...items[i], name: `onProjectEvent:${name(i)!.slice(3)}` });
+    i += 2;
+    sys3++;
+  }
+  expect(name(i++)).toBe('apply');
+  expect(name(i++)).toBe('serve');
+  let later = 0;
+  while (name(i)?.startsWith('ev:')) {
+    const ev = items[i++];
+    if (ev.name === 'ev:start' && funded.has(ev.row!)) continue;
+    expect(items[i++], `month ${m}`).toEqual({ ...ev, name: `onProjectEvent:${ev.name.slice(3)}` });
+    later++;
+  }
+  expect(name(i++)).toBe('shadow');
+  expect(i, `month ${m}: ${items.map((c) => c.name).join(' ')}`).toBe(items.length);
+  return { sys3, later };
 }
 
 /** A recorder whose events also land in the stub's log, in order with the hook calls. */
@@ -98,7 +136,7 @@ class Both extends Recorder {
   override event(e: WorldEvent): void {
     super.event(e);
     this.stub.month = this.month;
-    this.stub.log.push({ month: this.month, name: `ev:${e.kind}` });
+    this.stub.log.push({ month: this.month, name: `ev:${e.kind}`, row: e.row });
   }
 }
 
@@ -179,30 +217,87 @@ describe('withFunding', () => {
     let sys3 = 0;
     let sys6 = 0;
     for (let m = 1; m <= T; m++) {
-      const items = stub.names(m);
-      let i = 0;
-      if (m === 13) expect(items[i++]).toBe('policyChanged');
-      expect(items[i++], `month ${m}`).toBe('moneyIn');
-      while (items[i]?.startsWith('ev:')) {
-        expect(items[i + 1]).toBe(`onProjectEvent:${items[i].slice(3)}`);
-        i += 2;
-        sys3++;
-      }
-      expect(items[i++]).toBe('apply');
-      expect(items[i++]).toBe('serve');
-      while (items[i]?.startsWith('ev:')) {
-        const k = items[i++];
-        if (k === 'ev:start') {
-          expect(items[i++]).toBe('onProjectEvent:start');
-          sys6++;
-        }
-      }
-      expect(items[i++]).toBe('shadow');
-      expect(i, `month ${m}: ${items.join(' ')}`).toBe(items.length);
+      const n = checkMonth(stub, m, m === 13, new Set());
+      sys3 += n.sys3;
+      sys6 += n.later;
     }
     expect(stub.log.filter((c) => c.name === 'policyChanged').map((c) => c.month)).toEqual([13]);
     expect(sys3).toBeGreaterThan(0);
     expect(sys6).toBeGreaterThan(0);
+  });
+
+  it("passes stage events of starts made in systems 5 and 6, but not an award's own start", () => {
+    // Short stages, so starts leave their first stage in the month they begin.
+    const fast = { ...funded, id: 8, speed: everyStage(0.05) };
+    const stub = new Stub();
+    const awarded = new Set<number>();
+    stub.onServe = (ctx) => {
+      const lot = byRank.find((l) => isFree(ctx.world, l) && topLevel(ctx.frame, l) >= 0);
+      if (lot !== undefined)
+        awarded.add(ctx.startProject(lot, ctx.firstDay, fundedStart(ctx, lot, false)));
+    };
+    const T = 60;
+    const out = new Both(stub);
+    run(stub, oneFrame(fast), T, out);
+    for (let m = 1; m <= T; m++) checkMonth(stub, m, false, awarded);
+    // Non-degeneracy: a row started in its month (award or ordinary) that also leaves its first
+    // stage in that month, and so sends more than its start and first enter there.
+    const sameMonth = (row: number) => {
+      const start = out.events.find((e) => e.row === row && e.kind === 'start')!;
+      return out.events.filter((e) => e.row === row && e.month === start.month).length;
+    };
+    const passed = (row: number) =>
+      stub.log
+        .filter((c) => c.row === row && c.name.startsWith('onProjectEvent'))
+        .map((c) => c.name);
+    const awardChain = [...awarded].filter((row) => sameMonth(row) > 2);
+    expect(awardChain.length).toBeGreaterThan(0);
+    for (const row of awarded) expect(passed(row)).not.toContain('onProjectEvent:start');
+    const ordinary = out.events
+      .filter((e) => e.kind === 'start' && e.month > 0 && !awarded.has(e.row))
+      .map((e) => e.row);
+    expect(ordinary.filter((row) => sameMonth(row) > 2).length).toBeGreaterThan(0);
+    for (const row of ordinary) expect(passed(row)[0]).toBe('onProjectEvent:start');
+  });
+
+  it('hands the hooks a StepCtx and nothing more', () => {
+    const stub = new Stub();
+    stub.onServe = (ctx) => {
+      const lot = byRank.find((l) => isFree(ctx.world, l) && topLevel(ctx.frame, l) >= 0);
+      if (lot !== undefined) ctx.startProject(lot, ctx.firstDay, fundedStart(ctx, lot, false));
+    };
+    run(stub, oneFrame(funded), 12);
+    const keys = [
+      'due',
+      'displace',
+      'firstDay',
+      'frame',
+      'lastDay',
+      'month',
+      'out',
+      'seed',
+      'startProject',
+      'statics',
+      'timeline',
+      'world'
+    ].sort();
+    expect(stub.ctxs.length).toBeGreaterThan(12);
+    for (const ctx of stub.ctxs) expect(Object.keys(ctx).sort()).toEqual(keys);
+  });
+
+  it('refuses a start from onProjectEvent during system 3', () => {
+    const stub = new Stub();
+    let tried = 0;
+    stub.onEvent = (ctx, e) => {
+      if (tried > 0 || e.kind !== 'enter') return;
+      tried++;
+      const lot = byRank.find((l) => isFree(ctx.world, l) && topLevel(ctx.frame, l) >= 0)!;
+      expect(() => ctx.startProject(lot, ctx.firstDay, fundedStart(ctx, lot, true))).toThrow(
+        /system 3/
+      );
+    };
+    run(stub, oneFrame(funded), 24);
+    expect(tried).toBe(1);
   });
 
   it('calls no hook without a FundingSystem or when the frame has no finance', () => {
@@ -221,6 +316,7 @@ describe('withFunding', () => {
   });
 
   it('a certain funded start advances on sampleAdvance with no revision', () => {
+    const slow = { ...funded, id: 7, speed: everyStage(0.8) };
     const stub = new Stub();
     const rows: number[] = [];
     stub.onServe = (ctx) => {
@@ -235,7 +331,7 @@ describe('withFunding', () => {
         n++;
       }
     };
-    const { w, events } = run(stub, oneFrame(funded), LONG);
+    const { w, events } = run(stub, oneFrame(slow), LONG);
     expect(rows.length).toBe(12);
     const day = events.at(-1)!.day;
     let pairs = 0;
@@ -257,7 +353,7 @@ describe('withFunding', () => {
         const st = seen[j] as Exclude<Stage, 'complete'>;
         const t = funded.newCalibration.transitions[s.pathway][st]!;
         const days = sampleAdvance(t, drawOn(stream, P.STAGE_TIME, STAGE_ORDER.indexOf(st))).days;
-        expect(s.entered[seen[j + 1]]! - s.entered[st]!).toBe(Math.floor(days));
+        expect(s.entered[seen[j + 1]]! - s.entered[st]!).toBe(Math.floor(0.8 * days));
         pairs++;
       }
       expect(s.revisions.length).toBe(1);
@@ -343,6 +439,20 @@ describe('funded planning', () => {
       { month: 7, lots: [dead] },
       { month: 9, lots: [late] }
     ]);
+  });
+
+  it('drops a zero-rate lot planned only by planLot when the money stops, carried or rebuilt', () => {
+    const rates = startRates(funded.view, funded.market);
+    const dead = byRank.find((l) => rates[l] === 0)!;
+    expect(dead).toBeDefined();
+    const t = changingAt(5, funded, { ...unfunded, id: 9 }, new Int32Array(0));
+    const plain = run(null, oneFrame(unfunded), 24).events;
+    for (const rebuild of [undefined, 3]) {
+      const stub = new Stub();
+      stub.onPlanLot = (ctx, lot) => (lot === dead && ctx.month <= 7 ? 7 : 0);
+      expect(run(stub, t, 24, new Recorder(), rebuild).events).toEqual(plain);
+      expect(stub.applied.every((a) => a.lots.length === 0)).toBe(true);
+    }
   });
 
   it('drops a planned application when the money stops, without falling out of step', () => {

@@ -71,8 +71,10 @@ export function step(
  *   `f.onProjectEvent` after it is sent; (4) the due free lots (those taken, and those system 3
  *   freed) for which `f.planLot` gives this month go to `f.apply` in rank order, those whose
  *   ordinary start falls this month are set aside, and the rest are planned again after `apply`;
- *   (5) `f.serve`; (6) each lot set aside that no project started on this month starts, each
- *   `'start'` of this system passed to `f.onProjectEvent` after it is sent; (7) `f.shadow`.
+ *   (5) `f.serve`; (6) each lot set aside that no project started on this month starts; every
+ *   event of systems 5 and 6 (chains included) is passed to `f.onProjectEvent` after it is sent,
+ *   except the `'start'` of a project `f` itself started; (7) `f.shadow`. Hooks get a plain
+ *   `StepCtx`.
  * - `planDue` plans each free lot at `plannedMonth(ordinary month, f.planLot(ctx, lot), month)`,
  *   `ctx` being `planCtx`'s (month `world.month + 1`, a sink that drops events, `startProject` and
  *   `displace` that throw).
@@ -160,6 +162,10 @@ interface Step extends StepCtx {
   started: Set<number>;
   /** True once this month has been taken from the due list (system 3 on). */
   taken: boolean;
+  /** True while system 3 follows the stages due: `startProject` throws. */
+  following: boolean;
+  /** The `StepCtx` the hooks are handed (S12), and nothing more. */
+  pub: StepCtx;
   /** Puts a row at the month it is next due, if any. */
   put(row: number): void;
   /** The month a free lot whose ordinary month is `ord` (0 = none) is put at, asking `planLot`. */
@@ -217,7 +223,11 @@ function stepCtx(
   };
 
   const planLot = (lot: number, ord: number): number =>
-    plannedMonth(ord, fund === null ? 0 : fund.planLot(ctx, lot), ctx.taken ? month + 1 : month);
+    plannedMonth(
+      ord,
+      fund === null ? 0 : fund.planLot(ctx.pub, lot),
+      ctx.taken ? month + 1 : month
+    );
 
   /**
    * Plans the lots freed from position `from` of `x.freed` on, inside a chain (rule 14): a start
@@ -350,7 +360,9 @@ function stepCtx(
     li = lotRow(l, lot);
     l.state[li] = LOT_LIVE;
     l.project[li] = row;
-    x.out.event({ kind: 'start', row, day });
+    // An award's own start is not passed back to the funding system that made it (rule 16 as
+    // amended); every later event of the row goes through `x.out`.
+    (funded === null ? x.out : out).event({ kind: 'start', row, day });
     x.out.event({ kind: 'enter', row, day, stage: first });
     // Stage draws and speeds come from the step's frame (rules 10 and 11).
     enterStage(world, row, SI[first], day, 0, frame);
@@ -377,11 +389,16 @@ function stepCtx(
     fund,
     started,
     taken: false,
+    following: false,
+    pub: null as unknown as StepCtx,
     put,
     planLot,
     planFreed,
     startOrdinary: (lot, s) => startRow(lot, s.day, s, null),
     startProject(lot, day, funded) {
+      if (ctx.following) {
+        throw new Error('startProject: no project can start while system 3 follows the stages');
+      }
       if (funded !== null) return startRow(lot, day, null, funded);
       const s = startOf(world, statics, timeline, month, sh, lot);
       if (s === null || s.day !== day) {
@@ -400,6 +417,21 @@ function stepCtx(
       pushDisplacement(p, row, day, units);
       out.event({ kind: 'displaced', row, lot, day, units });
     }
+  };
+  // What the hooks get: exactly a `StepCtx`, with nothing of the core's own state behind it.
+  ctx.pub = {
+    world,
+    due,
+    statics,
+    timeline,
+    frame,
+    month,
+    seed,
+    out,
+    firstDay,
+    lastDay,
+    startProject: (lot, day, funded) => ctx.startProject(lot, day, funded),
+    displace: (row, lot, day, units) => ctx.displace(row, lot, day, units)
   };
   return ctx;
 }
@@ -426,7 +458,7 @@ function stepCtx(
  * so the row is stepped by system 3 below).
  */
 function policyChanged(ctx: Step): void {
-  const { world, list: due, statics, timeline, frame, month, x, hook, fund } = ctx;
+  const { world, list: due, statics, timeline, frame, month, x, hook } = ctx;
   const before = timeline.frameAt(Math.max(1, month - 1));
   let bound: Float64Array | null = null;
   const replan = (lot: number, r: Day, k: number, rowless: boolean, never: boolean) => {
@@ -447,7 +479,9 @@ function policyChanged(ctx: Step): void {
   const money = hook !== null && (frame.finance !== null || before.finance !== null);
   if (touched === null || money || frame.market !== before.market) {
     if (due instanceof DueList) bound = skipBound(statics, timeline, month, due.through);
-    eachFreeLot(world, statics, timeline, month, replan, fund !== null);
+    // With money in force now or last month every free lot is visited, zero-rate lots included:
+    // a lot only `planLot` put on the list must be dropped when the money stops.
+    eachFreeLot(world, statics, timeline, month, replan, money);
   } else {
     const l = world.lots;
     for (const lot of touched) {
@@ -467,17 +501,12 @@ function policyChanged(ctx: Step): void {
   }
 }
 
-/** A sink that sends to `out`, then passes the events `pass` accepts to `onProjectEvent`. */
-function tee(
-  out: StepSink,
-  fund: FundingSystem,
-  ctx: StepCtx,
-  pass: (e: WorldEvent) => boolean
-): StepSink {
+/** A sink that sends each event to `out`, then passes it to `onProjectEvent`. */
+function tee(out: StepSink, fund: FundingSystem, ctx: StepCtx): StepSink {
   return {
-    event(e) {
+    event(e: WorldEvent) {
       out.event(e);
-      if (pass(e)) fund.onProjectEvent(ctx, e);
+      fund.onProjectEvent(ctx, e);
     }
   };
 }
@@ -496,21 +525,23 @@ function stepWith(
   if (ready < month) throw new RangeError(`step: month ${month} is past readyThrough ${ready}`);
   const frame = timeline.frameAt(month);
   const ctx = stepCtx(hook, world, due, statics, timeline, seed, out, month, frame);
-  const { x, put, fund } = ctx;
+  const { x, put, fund, pub } = ctx;
   // System 1: policy (rules 7 and 12), then the funding system's.
   if (frame.id !== world.frame) {
     policyChanged(ctx);
-    fund?.policyChanged(ctx);
+    fund?.policyChanged(pub);
   }
   // System 2: money in.
-  fund?.moneyIn(ctx);
+  fund?.moneyIn(pub);
   const entities = due.take(month);
   ctx.taken = true;
   // System 3: projects (entity -1 - row) in ascending row order, the reverse of `take`'s order.
   let lotsFrom = 0;
   while (lotsFrom < entities.length && entities[lotsFrom] < 0) lotsFrom++;
-  if (fund !== null) x.out = tee(out, fund, ctx, () => true);
+  if (fund !== null) x.out = tee(out, fund, pub);
+  ctx.following = true;
   for (let i = lotsFrom - 1; i >= 0; i--) followProject(x, -1 - entities[i], ctx.lastDay, put);
+  ctx.following = false;
   x.out = out;
   // System 4: the lots due this month and those system 3 freed, in rank order (rule 2). A lot met
   // twice means the due list is out of step.
@@ -544,20 +575,23 @@ function stepWith(
       later.push(lot);
       laterOrd.push(ord);
     }
-    if (fund !== null && fund.planLot(ctx, lot) === month) applying.push(lot);
+    if (fund !== null && fund.planLot(pub, lot) === month) applying.push(lot);
   }
-  fund?.apply(ctx, Int32Array.from(applying));
+  fund?.apply(pub, Int32Array.from(applying));
   // The rest are planned again after `apply`; an application now counts from next month on.
   for (let j = 0; j < later.length; j++) {
     if (!isFree(world, later[j])) continue;
     const m = ctx.planLot(later[j], laterOrd[j]);
     if (m > 0) due.put(later[j], m);
   }
+  // Systems 5 and 6 (rule 16 as amended): every event of a start made here and of its chain to the
+  // month's end is passed to `onProjectEvent`, except an award's own `'start'` (`startRow` sends
+  // that one past the tee).
+  if (fund !== null) x.out = tee(out, fund, pub);
   // System 5: the funding system serves its line.
-  fund?.serve(ctx);
+  fund?.serve(pub);
   // System 6: each lot set aside starts (rule 2 order), its chain followed to the month's end
   // (rule 14), unless a start was made on it this month.
-  if (fund !== null) x.out = tee(out, fund, ctx, (e) => e.kind === 'start');
   for (const lot of aside) {
     if (ctx.started.has(lot)) continue;
     if (!isFree(world, lot)) throw new Error('due list out of step');
@@ -567,7 +601,7 @@ function stepWith(
   }
   x.out = out;
   // System 7: the funding system's shadow starts.
-  fund?.shadow(ctx);
+  fund?.shadow(pub);
   world.month = month;
   world.frame = frame.id;
 }
