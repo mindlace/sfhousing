@@ -150,4 +150,10 @@ export interface CardDeps {
     underwater?: true;
     existingUnits: number;
   } | null;
+  /**
+   * The stories the lot can build under `allowed`, for the lot-limits line of an eligible,
+   * unprotected lot: the host's generate call (`simKey` memo) on the lot's record, else
+   * `lotBuildableStories(polygon, allowed, existingUnits)`. The card has no polygon or generator.
+   */
+  buildable(parcelId: ParcelId, allowed: number, existingUnits: number): number;
 }

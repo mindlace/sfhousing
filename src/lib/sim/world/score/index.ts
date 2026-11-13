@@ -1,3 +1,4 @@
+export { cardAt } from './card';
 export { chunkOf } from './chunk';
 export { scoreStaticsOf } from './statics';
 export { BAND_Z, chunksBefore, viewOf } from './view';
