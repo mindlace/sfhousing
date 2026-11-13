@@ -1,3 +1,4 @@
+export { chunkOf } from './chunk';
 export { scoreStaticsOf } from './statics';
 export type {
   CardDeps,
