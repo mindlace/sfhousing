@@ -218,6 +218,7 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
   - Carry to wave 2: the operator's local live dataset predates baseline funding; world-funding's live referee needs 2026-11-10-6ee5a23d (`npm run data:local`).
 - 2026-11-13 policy-timeline [defect-class: spec-contradiction]: a schema 4 document saved on one dataset has spans that no longer fall on month edges of a later dataset; rule 4 rejects, "Reconciling" never rejects → `reconcilePolicy4(doc, cal, asOf)` snaps spans to the new dataset's months on opening (clamp to month 1, drop empty, trim overlaps, report each); strict publish keeps the checks (OD-8, OD-10). User-visible: a shared policy's dates can move by up to a month when the dataset date moves; to the partner at the wave boundary.
 - 2026-11-13 partner: the machine is otherwise idle; the load operators see is each other. Timing is re-run at wave boundaries with one operator active. Wave 1 counts as exclusive.
+- 2026-11-13 policy-timeline [defect-class: missing-ctx-dependency]: today's `leverStep` logs lots with no yield record; S13 gave the compiler no way to report the count → S13 amended: `TimelineCompile` gains `missingLots(): number`; design and the two quoting specs rebuilt. Operator status at the time: tasks 1 to 9 and 13 complete, 10 in review.
 
 ## Waves
 - gate wave 1 2026-11-13 08:55: VERDICT OK* (seven_day 27% of 60% reserve, headroom 33; five_hour NO DATA). Calibration from sim-financing: about 1 point a spec, a floor (smallest specs, integer resolution). Partner's instruction was "enter sim-step-engine and execute": wave 1 admitted.
@@ -225,7 +226,7 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 
 ## Frame-defect tally
 - shared-type-home: 3 — instances: 2026-11-13 wave 1, S3 to S6 had no named file; 2026-11-13 Q6 month arithmetic; 2026-11-13 Q8 the dev doc. TRIPWIRE reached: the package names no home for anything two specs share. Settled for wave 1; before each later wave the conductor names shared files in the assignment, and the aggregate goes to the partner at the wave boundary as a candidate composer note.
-- missing-ctx-dependency: 1 — instances: 2026-11-13 Q2 (S13 `CompileCtx`).
+- missing-ctx-dependency: 2 — instances: 2026-11-13 Q2 (S13 `CompileCtx` yields); 2026-11-13 S13 `missingLots`. Both: what the old host does around the recompute was not carried into S13.
 - spec-contradiction: 2 — instances: 2026-11-13 Q1 (upgrade table against the default document); 2026-11-13 stored spans against a later dataset date.
 - row-gloss: 3 — instances: 2026-11-13 policy-timeline Q4 (S4 Local Program); world-core Q1 (S4 `speedNew` and masters); world-core Q2 (S4 "before" at equality). TRIPWIRE reached, all three on row S4: its prose is looser than section 3.4 and the code. No type changed; each was ruled from 3.4 and OD-2. To the partner: S4's wording wants a composer pass (M row).
 - slice-bar: 1 — instances: 2026-11-13 policy-timeline compile (recompute step 93 ms under load).
