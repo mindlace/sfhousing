@@ -4,7 +4,7 @@ import type { Day } from '$lib/timelapse/time';
 import type { PolicyFrame, PolicyTimeline, ZoningView } from './policy/frame';
 import type { Statics } from './statics';
 
-/** The code constants of the columns (plan Task 3). */
+/** The code constants of the columns (spec S1). */
 export const NO_DAY = -0x80000000;
 export const ORIGIN_PIPELINE = 0;
 export const ORIGIN_PHASE = 1;
@@ -111,12 +111,14 @@ export interface ProjectColumns {
   /** Ids joined with ','. */
   programmes: string[];
   revLast: Int32Array;
-  revN: Int32Array;
+  /** Rows used in the revision side table (like `n`). */
+  revN: number;
   revDay: Int32Array;
   revUnits: Int32Array;
   revStories: Float64Array;
   revPrev: Int32Array;
-  dispN: Int32Array;
+  /** Rows used in the displacement side table (like `n`). */
+  dispN: number;
   dispRow: Int32Array;
   dispDay: Int32Array;
   dispUnits: Int32Array;
