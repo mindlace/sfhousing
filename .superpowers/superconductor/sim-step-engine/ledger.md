@@ -200,13 +200,23 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 - 2026-11-13 wave-1 [defect-class: shared-type-home]: world-core and policy-timeline run side by side and each needs the other's types (S3; S4 to S6), and no spec says which file declares them → decomposition choice, conductor's: a step-0 leaf commits type-only declarations to the integration branch before wave 1, `src/lib/sim/world/statics.ts` (S3 `Statics`) and `src/lib/sim/world/policy/frame.ts` (S4 to S6 `ZoningView`, `PolicyFrame`, `FinanceFrame`, `PolicyTimeline`), word for word from section 8. world-core adds `staticsOf` to the first; policy-timeline adds `firstDifference` and the compiler beside the second. Neither operator edits the other's declarations.
 
 - 2026-11-13 policy-timeline [defect-class: worktree-pin]: operator could not create its worktree (subagents are pinned to the conductor's worktree) → conductor created `.claude/worktrees/step-policy-timeline` on `step-engine/policy-timeline` from the main checkout; operator enters by path. world-core made its own nested worktree at `.claude/worktrees/sim-step-engine/.claude/worktrees/step-world-core` (branch `step-engine/world-core`). Second round the same day: a pinned operator cannot enter a worktree outside the conductor's either, so the outer one was removed and re-added nested at `.claude/worktrees/sim-step-engine/.claude/worktrees/step-policy-timeline`. For later waves: create each operator's worktree nested under the conductor's worktree before dispatch and name its path in the assignment.
+- 2026-11-13 policy-timeline round 1 (questions file: `.claude/worktrees/step-policy-timeline/.superpowers/sdd/policy-timeline/questions-1.md`, plan of 15 tasks):
+  - Q2 [defect-class: missing-ctx-dependency]: S13 `CompileCtx` gave the compiler no source of lot yields (today private to `leverStep`, `scenario-host.ts:929-946`, verified by the conductor) → S13 (D row) amended: `CompileCtx` gains `yields: YieldSource` and `now?`; design doc and the two specs that quote S13 (policy-timeline, ensemble-runner) rebuilt. ensemble-runner is not yet dispatched and will read the amended row.
+  - Q1 [defect-class: spec-contradiction]: the schema 3 upgrade table always made a permitting policy from `timing.current`, so the default document would not be "nothing in force" → skip it when it equals the observed set (design 3.4: what holds with no policy is not in the document; S13 comparison rule).
+  - Q4 [defect-class: row-gloss]: S4's gloss puts the Local Program switch in `newCalibration`; in code it is `parcels.localProgram` → stays in the zoning view; no type changes; world-core rule 8 and section 11 already read it from the view. The gloss in S4 (M row) is loose wording to report to the partner at the wave boundary, not changed here.
+  - Q6 [defect-class: shared-type-home]: model-month arithmetic needed by both wave-1 specs → world-core owns `src/lib/sim/world/months.ts` (`monthFirstDay`, `monthLastDay`, `monthOfDay`, each `(asOf, …)`); policy-timeline writes the same file at the same path for now and world-core's copy wins at the merge.
+  - Q8 [defect-class: shared-type-home]: both would create `docs/dev/step-engine.md` → each spec writes its own doc named for its slug (`docs/dev/policy-timeline.md`, `docs/dev/world-core.md`) with its own CLAUDE.md line; the conductor unions the CLAUDE.md list at the merge.
+  - Q3 (carry to Release B dispatch): `/s` loading has no `asOf`; `parsePolicy4(json, { asOf: null })` skips alignment checks and `createSimCodec4(ds)` takes the dataset; timeline-ui decides who opens `/s` documents. Q5, Q7 noted; Q7 is answered by its Task 1 measurement.
 
 ## Waves
 - gate wave 1 2026-11-13 08:55: VERDICT OK* (seven_day 27% of 60% reserve, headroom 33; five_hour NO DATA). Calibration from sim-financing: about 1 point a spec, a floor (smallest specs, integer resolution). Partner's instruction was "enter sim-step-engine and execute": wave 1 admitted.
 - wave 1: start seven_day 27% @ 2026-11-13 09:05 | exclusive: yes so far
 
 ## Frame-defect tally
-- shared-type-home: 1 — instances: 2026-11-13 wave 1, S3 to S6 had no named file.
+- shared-type-home: 3 — instances: 2026-11-13 wave 1, S3 to S6 had no named file; 2026-11-13 Q6 month arithmetic; 2026-11-13 Q8 the dev doc. TRIPWIRE reached: the package names no home for anything two specs share. Settled for wave 1; before each later wave the conductor names shared files in the assignment, and the aggregate goes to the partner at the wave boundary as a candidate composer note.
+- missing-ctx-dependency: 1 — instances: 2026-11-13 Q2 (S13 `CompileCtx`).
+- spec-contradiction: 1 — instances: 2026-11-13 Q1 (upgrade table against the default document).
+- row-gloss: 1 — instances: 2026-11-13 Q4 (S4 Local Program).
 
 - worktree-pin: 2 — instances: 2026-11-13 policy-timeline, twice (create refused; enter-outside refused). Harness, not design; settled by nesting.
 
