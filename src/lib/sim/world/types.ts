@@ -219,7 +219,9 @@ export interface FundingSystem {
   /**
    * Just after it is sent: each event of system 3, and each event of systems 5 and 6 (a start and
    * its chain to the month's end), except the `'start'` of a project this funding system started
-   * itself. It must not call `startProject` during system 3 (it throws there).
+   * itself through `ctx.startProject`, with a `FundedStart` or with null; a start the core makes
+   * in that start's chain (a lot freed and started again) is passed. It must not call
+   * `startProject` during system 3 (it throws there).
    */
   onProjectEvent(ctx: StepCtx, e: WorldEvent): void;
   /** System 4, every month, with the due free lots whose `planLot` is this month, in rank order. */

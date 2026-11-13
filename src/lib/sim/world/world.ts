@@ -73,8 +73,8 @@ export function step(
  *   ordinary start falls this month are set aside, and the rest are planned again after `apply`;
  *   (5) `f.serve`; (6) each lot set aside that no project started on this month starts; every
  *   event of systems 5 and 6 (chains included) is passed to `f.onProjectEvent` after it is sent,
- *   except the `'start'` of a project `f` itself started; (7) `f.shadow`. Hooks get a plain
- *   `StepCtx`.
+ *   except the `'start'` of a project `f` itself started through `ctx.startProject` (funded or
+ *   not); (7) `f.shadow`. Hooks get a plain `StepCtx`.
  * - `planDue` plans each free lot at `plannedMonth(ordinary month, f.planLot(ctx, lot), month)`,
  *   `ctx` being `planCtx`'s (month `world.month + 1`, a sink that drops events, `startProject` and
  *   `displace` that throw).
@@ -172,7 +172,7 @@ interface Step extends StepCtx {
   planLot(lot: number, ord: number): number;
   /** Plans every lot in `x.freed` from position `from` on, then forgets them (rule 14). */
   planFreed(from: number): void;
-  /** Starts a free lot on its ordinary start `s`, which falls in this month. */
+  /** Starts a free lot on its ordinary start `s`, which falls in this month (system 6). */
   startOrdinary(lot: number, s: OrdinaryStart): number;
 }
 
@@ -241,7 +241,7 @@ function stepCtx(
       if (s !== null && s.month < month)
         throw new Error(`lot ${lot} freed in month ${month} starts in ${s.month}`);
       if (s !== null && s.month === month) {
-        startRow(lot, s.day, s, null);
+        startRow(lot, s.day, s, null, false);
         continue;
       }
       const m = planLot(lot, s === null ? 0 : s.month);
@@ -249,11 +249,16 @@ function stepCtx(
     }
   };
 
+  /**
+   * Makes the row of a start on `lot`. `byHook` is true for a start the funding system made through
+   * its `StepCtx`: its `'start'` is not passed back to `onProjectEvent` (rule 16 as amended).
+   */
   const startRow = (
     lot: number,
     day: Day,
     ordinary: OrdinaryStart | null,
-    funded: FundedStart | null
+    funded: FundedStart | null,
+    byHook: boolean
   ): number => {
     const l = world.lots;
     const i0 = lotRow(l, lot);
@@ -360,9 +365,9 @@ function stepCtx(
     li = lotRow(l, lot);
     l.state[li] = LOT_LIVE;
     l.project[li] = row;
-    // An award's own start is not passed back to the funding system that made it (rule 16 as
-    // amended); every later event of the row goes through `x.out`.
-    (funded === null ? x.out : out).event({ kind: 'start', row, day });
+    // A start the funding system made itself (an award, or an ordinary start it chose to make) is
+    // not passed back to it (rule 16 as amended); every later event of the row goes through `x.out`.
+    (byHook ? out : x.out).event({ kind: 'start', row, day });
     x.out.event({ kind: 'enter', row, day, stage: first });
     // Stage draws and speeds come from the step's frame (rules 10 and 11).
     enterStage(world, row, SI[first], day, 0, frame);
@@ -394,17 +399,17 @@ function stepCtx(
     put,
     planLot,
     planFreed,
-    startOrdinary: (lot, s) => startRow(lot, s.day, s, null),
+    startOrdinary: (lot, s) => startRow(lot, s.day, s, null, false),
     startProject(lot, day, funded) {
       if (ctx.following) {
         throw new Error('startProject: no project can start while system 3 follows the stages');
       }
-      if (funded !== null) return startRow(lot, day, null, funded);
+      if (funded !== null) return startRow(lot, day, null, funded, true);
       const s = startOf(world, statics, timeline, month, sh, lot);
       if (s === null || s.day !== day) {
         throw new Error(`startProject: day ${day} is not lot ${lot}'s ordinary start`);
       }
-      return startRow(lot, day, s, null);
+      return startRow(lot, day, s, null, true);
     },
     displace(row, lot, day, units) {
       const p = world.projects;
@@ -585,8 +590,8 @@ function stepWith(
     if (m > 0) due.put(later[j], m);
   }
   // Systems 5 and 6 (rule 16 as amended): every event of a start made here and of its chain to the
-  // month's end is passed to `onProjectEvent`, except an award's own `'start'` (`startRow` sends
-  // that one past the tee).
+  // month's end is passed to `onProjectEvent`, except the `'start'` of a start the funding system
+  // made through its `StepCtx` (`startRow` sends that one past the tee).
   if (fund !== null) x.out = tee(out, fund, pub);
   // System 5: the funding system serves its line.
   fund?.serve(pub);

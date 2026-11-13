@@ -192,14 +192,14 @@ function fundedStart(ctx: StepCtx, lot: number, certain: boolean): FundedStart {
   };
 }
 
-/** The lot and month of an ordinary start in the unfunded run, in month >= `from`. */
-function ordinaryStartFrom(from: number): { lot: number; month: number } {
+/** The lot, month and day of an ordinary start in the unfunded run, in month >= `from`. */
+function ordinaryStartFrom(from: number): { lot: number; month: number; day: number } {
   const { w, events } = run(null, oneFrame(unfunded), LONG);
   const e = events.find(
     (e) => e.kind === 'start' && e.month >= from && w.projects.origin[e.row] === 3
   );
   if (!e) throw new Error('no ordinary start');
-  return { lot: w.projects.src[e.row], month: e.month };
+  return { lot: w.projects.src[e.row], month: e.month, day: e.day };
 }
 
 describe('withFunding', () => {
@@ -258,6 +258,31 @@ describe('withFunding', () => {
       .map((e) => e.row);
     expect(ordinary.filter((row) => sameMonth(row) > 2).length).toBeGreaterThan(0);
     for (const row of ordinary) expect(passed(row)[0]).toBe('onProjectEvent:start');
+  });
+
+  it("does not pass back the start of an ordinary start the hook made in serve, but its chain's events", () => {
+    const target = ordinaryStartFrom(2);
+    const stub = new Stub();
+    let row = -1;
+    stub.onServe = (ctx) => {
+      if (ctx.month !== target.month) return;
+      row = ctx.startProject(target.lot, target.day, null);
+    };
+    const out = new Both(stub);
+    run(stub, oneFrame(funded), target.month, out);
+    expect(row).toBeGreaterThanOrEqual(0);
+    const own = new Set([row]);
+    for (let m = 1; m <= target.month; m++) checkMonth(stub, m, false, own);
+    const passed = stub.log
+      .filter((c) => c.row === row && c.name.startsWith('onProjectEvent'))
+      .map((c) => c.name);
+    expect(passed).not.toContain('onProjectEvent:start');
+    expect(passed[0]).toBe('onProjectEvent:enter');
+    // The same project as the unfunded run's, started once.
+    const starts = out.events.filter((e) => e.kind === 'start' && e.month === target.month);
+    expect(starts.filter((e) => e.row === row)).toEqual([
+      { kind: 'start', row, day: target.day, month: target.month }
+    ]);
   });
 
   it('hands the hooks a StepCtx and nothing more', () => {
