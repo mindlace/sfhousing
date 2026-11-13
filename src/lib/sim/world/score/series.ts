@@ -24,8 +24,13 @@ const FRESH = 1;
 const ENTITLED_NEW = 2;
 const EXITED = 3;
 const STAGE0 = 4;
+/** World 1's extras (rule 2): homes completed by funded projects, homes in 'displaced' events. */
+const FUNDED = STAGE0 + NL;
+const DISPLACED = FUNDED + 1;
 /** Fields per month. */
-export const SERIES_FIELDS = STAGE0 + NL;
+export const SERIES_FIELDS = DISPLACED + 1;
+/** `WorldSeriesData.version` of this layout. */
+const VERSION = 2;
 
 /** No row state yet (no `'start'` seen). */
 const UNKNOWN = -2;
@@ -36,7 +41,7 @@ const FIRST_CAPACITY = 64;
 function emptyData(s: ScoreStatics): WorldSeriesData {
   const n = s.lastIndex + 1;
   return {
-    version: 1,
+    version: VERSION,
     stepped: 0,
     final: -1,
     summed: -1,
@@ -98,6 +103,21 @@ function phaseUnits(statics: Statics, w: World, row: number): number[] {
   return (statics.projects[w.projects.src[row]].phases ?? []).map((ph) => ph.units);
 }
 
+/** World 1's cumulative funded and displaced homes, which `WorldSeries` has no channel for (Q5). */
+export interface Extras {
+  /** Cumulative homes by final calendar month `from..through`. */
+  homes(from: number, through: number): { funded: number; displaced: number }[];
+}
+
+const EXTRAS = new WeakMap<WorldSeries, Extras>();
+
+/** The extras of a series from `createWorldSeries`; for sibling files only, not `index.ts`. */
+export function extrasOf(series: WorldSeries): Extras {
+  const x = EXTRAS.get(series);
+  if (x === undefined) throw new Error('world-score: not a series of createWorldSeries');
+  return x;
+}
+
 const describeEvent = (e: WorldEvent): string =>
   `'${e.kind}'${e.kind === 'end' ? ` '${e.how}'` : e.kind === 'enter' ? ` '${e.stage}'` : ''}` +
   ` on day ${e.day}`;
@@ -110,7 +130,8 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
   let d: WorldSeriesData;
   if (from === undefined) d = emptyData(s);
   else {
-    if (from.version !== 1) throw new Error(`world-score: saved series version ${from.version}`);
+    if (from.version !== VERSION)
+      throw new Error(`world-score: saved series version ${from.version}`);
     if (from.delta.length !== SERIES_FIELDS * (s.lastIndex + 1)) {
       throw new Error('world-score: saved series does not match these statics');
     }
@@ -239,10 +260,13 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     current = e;
     const row = e.row;
     const p = w.projects;
-    if (e.kind === 'displaced') {
-      throw new Error('world-score: displaced before the world-funding merge');
-    }
     if (e.kind === 'award') return;
+    if (e.kind === 'displaced') {
+      // Rule 2: the event's own month, whether or not the funded project has completed.
+      known(row);
+      on(DISPLACED, e.day, e.units);
+      return;
+    }
     const origin = p.origin[row];
     if (e.kind === 'start') {
       ensureRow(d, row);
@@ -292,8 +316,11 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
       case 'end': {
         closeRow(row, e.day, d.units[row]);
         d.stage[row] = NONE;
-        if (e.how === 'complete') on(net, e.day, d.units[row]);
-        else if (e.how === 'exit') {
+        if (e.how === 'complete') {
+          on(net, e.day, d.units[row]);
+          // Read from the row, never from event order: the 'award' follows the start chain.
+          if (p.funded[row] === 1) on(FUNDED, e.day, d.units[row] - p.existing[row]);
+        } else if (e.how === 'exit') {
           if (e.day > s.asOf) on(EXITED, e.day, d.units[row]);
         } else throw new Error(`world-score: row ${row} ends 'entitled' but is not a master`);
         return;
@@ -339,7 +366,16 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     };
   }
 
-  return {
+  function checkRange(from: number, through: number): void {
+    if (!(Number.isInteger(from) && Number.isInteger(through))) {
+      throw new RangeError(`world-score: rows(${from}, ${through}) needs whole months`);
+    }
+    if (!(0 <= from && from <= through && through <= d.final)) {
+      throw new RangeError(`world-score: rows(${from}, ${through}) outside 0..${d.final}`);
+    }
+  }
+
+  const series: WorldSeries = {
     add,
     stepped(month: number): void {
       if (month !== d.stepped + 1) {
@@ -350,12 +386,7 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     },
     finalThrough: () => d.final,
     rows(from: number, through: number): MonthRow[] {
-      if (!(Number.isInteger(from) && Number.isInteger(through))) {
-        throw new RangeError(`world-score: rows(${from}, ${through}) needs whole months`);
-      }
-      if (!(0 <= from && from <= through && through <= d.final)) {
-        throw new RangeError(`world-score: rows(${from}, ${through}) outside 0..${d.final}`);
-      }
+      checkRange(from, through);
       sumThrough(through);
       const out: MonthRow[] = [];
       for (let i = from; i <= through; i++) out.push(rowAt(i));
@@ -363,4 +394,17 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     },
     data: () => copyData(d)
   };
+  EXTRAS.set(series, {
+    homes(from: number, through: number) {
+      checkRange(from, through);
+      sumThrough(through);
+      const out: { funded: number; displaced: number }[] = [];
+      for (let i = from; i <= through; i++) {
+        const at = i * SERIES_FIELDS;
+        out.push({ funded: d.sum[at + FUNDED], displaced: d.sum[at + DISPLACED] });
+      }
+      return out;
+    }
+  });
+  return series;
 }

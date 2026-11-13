@@ -115,10 +115,10 @@ describe('chunkOf', () => {
     expect(c.tiers).toBeNull();
   });
 
-  it('a feed throws until the world-funding merge', () => {
+  it('a feed with a world 1 that is not a WorldSeries of createWorldSeries throws', () => {
     const plan = [world([1])];
     expect(() => chunkOf(plan, plan, {} as MoneyFeed, 0, 0)).toThrow(
-      'world-score: money before the world-funding merge'
+      'world-score: not a series of createWorldSeries'
     );
   });
 });

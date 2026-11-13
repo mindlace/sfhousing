@@ -1,3 +1,5 @@
+import { moneyRowsOf } from './money';
+import { extrasOf } from './series';
 import type { MoneyFeed, MonthRow, PlanRow, SeriesChunk, WorldSeries } from './types';
 
 /** Mean and sample sd (W - 1) of `values`; sd is 0 for one world. */
@@ -69,7 +71,8 @@ export function chunkOf(
       }
     }
   }
-  if (money !== null) throw new Error('world-score: money before the world-funding merge');
+  // World 1's money (rule 9); read first, so a series without extras throws before any work.
+  const moneyRows = money === null ? null : moneyRowsOf(money, extrasOf(plan[0]), from, through);
 
   const w = plan.length;
   const planRows = plan.map((s) => s.rows(from, through));
@@ -97,5 +100,5 @@ export function chunkOf(
       sd: { entitledNew: e.sd, completedNetNew: c.sd }
     });
   }
-  return { from, mean, sd, shown: planRows[0], planEffect, money: null, tiers: null };
+  return { from, mean, sd, shown: planRows[0], planEffect, money: moneyRows, tiers: null };
 }

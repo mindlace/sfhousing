@@ -54,10 +54,11 @@ export interface SeriesChunk {
 /**
  * One world's series as plain data that `structuredClone` copies. Per-row columns are indexed by
  * the world's project row and grow as rows start; per-month arrays hold `SERIES_FIELDS` entries
- * per calendar month (pipeline, new, entitledNew, exited, then `inProgress` in LIVE order).
+ * per calendar month (pipeline, new, entitledNew, exited, `inProgress` in LIVE order, then world 1's
+ * funded and displaced homes).
  */
 export interface WorldSeriesData {
-  version: 1;
+  version: 2;
   /** The last model month passed to `stepped`; 0 before any. */
   stepped: number;
   /** `finalThrough()`. */
