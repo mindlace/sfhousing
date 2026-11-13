@@ -131,8 +131,8 @@ const allLots = new WeakMap<Statics, Int32Array>();
  * `c <= month` from lot-month `lastInitiationMonth(asOf, monthFirstDay(c) - 1) + 1` (the segments
  * `ordinaryStart` walks), with `Tmax = lastInitiationMonth(asOf, monthLastDay(through))`: a draw
  * above it passes its threshold after lot-month `Tmax`, which begins after `through` ends.
- * Infinity where nothing is skipped. Memoised per (timeline, statics, `month`, `through`); reads
- * frames up to `month` only.
+ * Infinity where nothing is skipped. Memoised per (timeline, statics, last change `<= month`,
+ * `through`); reads frames up to `month` only.
  */
 export function skipBound(
   statics: Statics,
@@ -150,16 +150,21 @@ export function skipBound(
     memo = new Map();
     byStatics.set(statics, memo);
   }
-  const key = `${month}:${through}`;
-  let out = memo.get(key);
-  if (out) return out;
   const asOf = statics.asOf;
-  const f1 = timeline.frameAt(1);
-  const views: Float64Array[] = [startRates(f1.view, f1.market)];
-  const bounds: number[] = [];
+  const changes: number[] = [];
   for (const c of timeline.changes()) {
     if (c <= 1) continue;
     if (c > month) break;
+    changes.push(c);
+  }
+  // The bound reads only the changes up to `month`: every month from the last of them on shares it.
+  const key = `${changes.length > 0 ? changes[changes.length - 1] : 1}:${through}`;
+  let out = memo.get(key);
+  if (out) return out;
+  const f1 = timeline.frameAt(1);
+  const views: Float64Array[] = [startRates(f1.view, f1.market)];
+  const bounds: number[] = [];
+  for (const c of changes) {
     const f = timeline.frameAt(c);
     bounds.push(lastInitiationMonth(asOf, monthFirstDay(asOf, c) - 1));
     views.push(startRates(f.view, f.market));

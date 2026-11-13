@@ -51,14 +51,19 @@ type RowColumn = { length: number; [i: number]: unknown };
 const isRowColumn = (v: unknown): v is RowColumn =>
   Array.isArray(v) || (ArrayBuffer.isView(v) && !(v instanceof DataView));
 
+/** The lookup tables of `ScenarioParcels`: indexed by something other than the lot row. */
+const LOOKUPS = new Set(['cells', 'districts', 'fillLevels', 'provenance']);
+
 /**
- * `parcels` with row i taken from row `perm[i]`: every per-row column (length a multiple of
- * `count`, its stride `length / count`) permuted, nested ones too, and `index` rebuilt. `cells`
+ * `parcels` with row i taken from row `perm[i]`: every per-row column (every array but the lookup
+ * tables, its stride `length / count`) permuted, nested ones too, and `index` rebuilt. `cells`
  * (row ranges for the map) is left alone; the engine does not read it.
  */
 function permuted(parcels: ScenarioParcels, perm: Int32Array): ScenarioParcels {
   const n = parcels.count;
-  const col = (v: RowColumn): RowColumn => {
+  const col = (key: string, v: RowColumn): RowColumn => {
+    if (v.length % n !== 0)
+      throw new Error(`permuted: ${key} has ${v.length} entries for ${n} rows`);
     const stride = v.length / n;
     const out = (
       Array.isArray(v)
@@ -72,7 +77,7 @@ function permuted(parcels: ScenarioParcels, perm: Int32Array): ScenarioParcels {
   const walk = (o: Record<string, unknown>): Record<string, unknown> => {
     const out: Record<string, unknown> = {};
     for (const [key, v] of Object.entries(o)) {
-      if (isRowColumn(v) && v.length > 0 && v.length % n === 0) out[key] = col(v);
+      if (isRowColumn(v) && !LOOKUPS.has(key)) out[key] = col(key, v);
       else if (
         (key === 'potentialRatio' || key === 'storiesGap') &&
         v !== null &&
