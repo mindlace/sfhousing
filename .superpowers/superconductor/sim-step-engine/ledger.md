@@ -178,3 +178,31 @@
   - Known risks named for the conductor: the funded tolerance test may miss (T3 moves starts from ordinary to funded within a month); the 300 MB bound with copies every 60 months is an estimate; the funded path's cost is unmeasured.
 - Package committed: `abd0017d` on branch `worktree-sim-step-engine` (27 files; not pushed). The committed specs equal a fresh build from `specs-src/` and the design doc. Composition ends here; conduction starts in a fresh session with supersonic:superconductor, from this ledger and the design doc.
 - Primary reads planned (orchestrator, because the design restructures them): `rng.ts`, `types.ts`, `simulate.ts`, `timelapse/{math,model}.ts`, `engine.ts`, `funded.ts`, `line.ts`, `money.ts`, `funding.ts`, `band.ts`, `score.ts`, `input.ts`, the scheduler in `scenario-host.ts`, `map/pack-timed.ts`, `levers/{apply,timers}.ts`.
+
+# Superconductor ledger — design: docs/superpowers/design/2026-11-12-2305-sim-step-engine.md
+
+Conduction started 2026-11-13 (fresh session; everything above is the composer's record). Integration branch `superconductor/sim-step-engine`, created from 739d9856 in the worktree `.claude/worktrees/sim-step-engine`.
+
+## Intake
+- 2026-11-13 package accepted at 739d9856: design doc approved, sections 1 to 12, traceability (section 11), interface rows S1 to S17 marked M or D, seven specs with rows and constraints embedded, fidelity checks and re-check recorded as run. Noted, not bounced: the coverage table is in the composer's ledger (C1 negative-space diff), not in the design doc.
+- The Task tools are not available in this session: no task spine. This ledger and each operator's SDD ledger are the progress surface.
+
+## Specs
+- world-core: docs/superpowers/specs/2026-11-13-world-core-design.md — status: pending (wave 1)
+- policy-timeline: docs/superpowers/specs/2026-11-13-policy-timeline-design.md — status: pending (wave 1)
+- world-funding: docs/superpowers/specs/2026-11-13-world-funding-design.md — status: pending (wave 2; needs world-core)
+- ensemble-runner: docs/superpowers/specs/2026-11-13-ensemble-runner-design.md — status: pending (wave 3; needs waves 1, 2)
+- world-score: docs/superpowers/specs/2026-11-13-world-score-design.md — status: pending (wave 4; design section 7 puts it after the runner)
+- map-stream: docs/superpowers/specs/2026-11-13-map-stream-design.md — status: pending (wave 4)
+- timeline-ui: docs/superpowers/specs/2026-11-13-timeline-ui-design.md — status: pending (wave 5)
+
+## Adjudications
+- 2026-11-13 wave-1 [defect-class: shared-type-home]: world-core and policy-timeline run side by side and each needs the other's types (S3; S4 to S6), and no spec says which file declares them → decomposition choice, conductor's: a step-0 leaf commits type-only declarations to the integration branch before wave 1, `src/lib/sim/world/statics.ts` (S3 `Statics`) and `src/lib/sim/world/policy/frame.ts` (S4 to S6 `ZoningView`, `PolicyFrame`, `FinanceFrame`, `PolicyTimeline`), word for word from section 8. world-core adds `staticsOf` to the first; policy-timeline adds `firstDifference` and the compiler beside the second. Neither operator edits the other's declarations.
+
+## Waves
+- gate wave 1 2026-11-13 08:55: VERDICT OK* (seven_day 27% of 60% reserve, headroom 33; five_hour NO DATA). Calibration from sim-financing: about 1 point a spec, a floor (smallest specs, integer resolution). Partner's instruction was "enter sim-step-engine and execute": wave 1 admitted.
+
+## Frame-defect tally
+- shared-type-home: 1 — instances: 2026-11-13 wave 1, S3 to S6 had no named file.
+
+## Integration
