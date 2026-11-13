@@ -1,0 +1,224 @@
+<style>
+  .t2 { --z: #5b8def; --p: #c9822b; --f: #3aa675; --w: #8e8e93; --lab: 168px; font-size: 13px; }
+  .t2 .bar { display: flex; align-items: baseline; gap: 14px; padding: 10px 14px; flex-wrap: wrap; }
+  .t2 .head { font-size: 20px; font-weight: 600; color: var(--text-primary); }
+  .t2 .sub, .t2 .status { color: var(--text-secondary); }
+  .t2 .top { display: grid; grid-template-columns: 1fr 300px; border-block: 1px solid var(--border); }
+  .t2 .map { min-height: 250px; display: flex; align-items: center; justify-content: center;
+    background: var(--bg-tertiary); color: var(--text-secondary); text-align: center; padding: 12px; }
+  .t2 .insp { border-left: 1px solid var(--border); padding: 12px 14px; background: var(--bg-secondary); }
+  .t2 .insp h4 { margin: 0 0 2px; font-size: 15px; color: var(--text-primary); }
+  .t2 .insp .k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--text-secondary); margin: 12px 0 4px; }
+  .t2 .insp .row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0;
+    color: var(--text-primary); border-bottom: 1px solid var(--border); }
+  .t2 .insp .row span:last-child { color: var(--text-secondary); }
+  .t2 .insp .add { color: var(--accent); padding-top: 6px; }
+  .t2 .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px;
+    background: var(--p); color: #fff; }
+  .t2 .grid { display: grid; grid-template-columns: var(--lab) 1fr; }
+  .t2 .lab { padding: 0 10px; height: 100%; display: flex; align-items: center; gap: 6px;
+    color: var(--text-primary); border-bottom: 1px solid var(--border); white-space: nowrap;
+    overflow: hidden; }
+  .t2 .lab.kind { font-weight: 600; }
+  .t2 .lab.child { padding-left: 28px; color: var(--text-primary); font-weight: 400; }
+  .t2 .lab .n { margin-left: auto; color: var(--text-secondary); font-weight: 400; font-size: 11px; }
+  .t2 .lab .tw { color: var(--text-secondary); width: 10px; display: inline-block; }
+  .t2 .lane { position: relative; height: 30px; border-bottom: 1px solid var(--border);
+    background: repeating-linear-gradient(90deg, transparent 0 calc(12.5% - 1px), var(--border) calc(12.5% - 1px) 12.5%); }
+  .t2 .global .lab, .t2 .global .lane { background-color: var(--bg-tertiary); }
+  .t2 .ruler { position: relative; height: 30px; border-bottom: 1px solid var(--border); }
+  .t2 .ruler span { position: absolute; top: 3px; transform: translateX(-50%); font-size: 11px;
+    color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .t2 .fill { position: absolute; left: 0; right: 0; bottom: 2px; height: 5px; border-radius: 3px;
+    background: var(--bg-tertiary); }
+  .t2 .fill i { position: absolute; left: 0; top: 0; bottom: 0; width: 52.5%; border-radius: 3px;
+    background: var(--text-tertiary); }
+  .t2 .fill b { position: absolute; left: 0; top: 0; bottom: 0; width: 12.5%; border-radius: 3px;
+    background: var(--error); }
+  .t2 .clip { position: absolute; top: 5px; height: 20px; border-radius: 4px; padding: 0 6px;
+    line-height: 20px; font-size: 11px; color: #fff; white-space: nowrap; overflow: hidden;
+    box-sizing: border-box; }
+  .t2 .z { background: var(--z); } .t2 .p { background: var(--p); } .t2 .f { background: var(--f); }
+  .t2 .w { background: var(--w); }
+  .t2 .open { border-radius: 4px 0 0 4px;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent); }
+  .t2 .off { opacity: 0.35; background-image: repeating-linear-gradient(135deg, transparent 0 4px, rgba(255,255,255,0.5) 4px 6px); }
+  .t2 .sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .t2 .mini { position: absolute; height: 5px; border-radius: 2px; }
+  .t2 .over { position: relative; }
+  .t2 .playhead { position: absolute; top: 0; bottom: 0; left: calc(var(--lab) + (100% - var(--lab)) * 0.125);
+    width: 2px; background: var(--error); z-index: 3; }
+  .t2 .unfilled { position: absolute; top: 30px; bottom: 0; right: 0; width: calc((100% - var(--lab)) * 0.475);
+    background: var(--bg-primary); opacity: 0.55; z-index: 2; pointer-events: none; }
+  .t2 svg { display: block; width: 100%; height: 100%; }
+  .t2 .phone { width: 300px; border: 1px solid var(--border); border-radius: 22px; overflow: hidden;
+    background: var(--bg-secondary); --lab: 92px; }
+  .t2 .phone .map { min-height: 150px; }
+  .t2 .sheet { border-top: 1px solid var(--border); padding: 10px 12px; }
+  .t2 .cols { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+  .t2 ul.src { margin: 6px 0 0; padding-left: 18px; color: var(--text-secondary); }
+  .t2 ul.src li { margin: 3px 0; }
+</style>
+
+<h2>The timeline, second pass: one row per kind, each kind opens</h2>
+<p class="subtitle">
+  Zoning and Public money are closed here; Permitting is open with one policy selected. Numbers are
+  made up. Below it: the same thing on a phone, and what was borrowed from which tool.
+</p>
+
+<div class="section t2">
+  <div class="mockup">
+    <div class="mockup-header">/sim, desktop</div>
+    <div class="mockup-body" style="padding:0">
+      <div class="bar">
+        <span class="head">148,000 new homes by 2066</span>
+        <span class="sub">likely 139,000 to 156,000, if nothing else changes</span>
+        <span class="status">· forecast filled to 2047</span>
+      </div>
+      <div class="top">
+        <div class="map">map: the city in March 2031<br />one possible city under these policies</div>
+        <div class="insp">
+          <h4>Faster permit review</h4>
+          <span class="pill">Permitting</span> <span class="sub">on</span>
+          <div class="k">When and how much</div>
+          <div class="row"><span>2029 to 2035</span><span>30% faster</span></div>
+          <div class="row"><span>2035 onward</span><span>50% faster</span></div>
+          <div class="add">+ change it from the playhead (2031)</div>
+          <div class="k">Who it reaches</div>
+          <div class="row"><span>Route</span><span>discretionary</span></div>
+          <div class="row"><span>Stage</span><span>review after filing</span></div>
+          <div class="row"><span>Projects</span><span>all, from the start date</span></div>
+          <div class="k">What this assumes ▸</div>
+        </div>
+      </div>
+      <div class="over">
+        <div class="playhead"></div>
+        <div class="unfilled"></div>
+        <div class="grid">
+          <div class="lab"></div>
+          <div class="ruler">
+            <span style="left:0%;transform:none">2026</span><span style="left:12.5%">2031</span><span style="left:25%">2036</span>
+            <span style="left:37.5%">2041</span><span style="left:50%">2046</span><span style="left:62.5%">2051</span>
+            <span style="left:75%">2056</span><span style="left:87.5%">2061</span><span style="left:100%;transform:translateX(-100%)">2066</span>
+            <div class="fill"><i></i><b></b></div>
+          </div>
+        </div>
+        <div class="grid global">
+          <div class="lab">Homes completed</div>
+          <div class="lane" style="height:70px">
+            <svg viewBox="0 0 800 70" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M0,66 L100,58 L200,46 L300,36 L420,25 L420,36 L300,45 L200,53 L100,61 Z" fill="var(--z)" opacity="0.25"/>
+              <path d="M0,66 L100,59.5 L200,49.5 L300,40.5 L420,30.5" fill="none" stroke="var(--z)" stroke-width="2"/>
+              <line x1="100" y1="0" x2="100" y2="70" stroke="var(--text-secondary)" stroke-dasharray="3 3"/>
+            </svg>
+          </div>
+          <div class="lab">🔒 Market</div>
+          <div class="lane">
+            <div class="clip w" style="left:0;width:10%;border-radius:4px 0 0 4px">today's</div>
+            <div class="clip w open" style="left:10%;width:90%;border-radius:0;border-left:2px solid rgba(255,255,255,0.85)">long-run average</div>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="lab kind"><span class="tw">▸</span>Zoning<span class="n">3</span></div>
+          <div class="lane">
+            <div class="mini z" style="left:0;width:100%;top:6px"></div>
+            <div class="mini z" style="left:12.5%;width:87.5%;top:13px"></div>
+            <div class="mini z" style="left:0;width:100%;top:20px"></div>
+          </div>
+
+          <div class="lab kind"><span class="tw">▾</span>Permitting<span class="n">2</span></div>
+          <div class="lane">
+            <div class="mini p" style="left:0;width:100%;top:9px"></div>
+            <div class="mini p" style="left:7.5%;width:92.5%;top:17px"></div>
+          </div>
+          <div class="lab child">SB 423 streamlining</div>
+          <div class="lane"><div class="clip p open" style="left:0;width:100%">in force</div></div>
+          <div class="lab child">Faster permit review</div>
+          <div class="lane">
+            <div class="clip p sel" style="left:7.5%;width:15%;border-radius:4px 0 0 4px">30% faster</div>
+            <div class="clip p open sel" style="left:22.5%;width:77.5%;border-radius:0;border-left:2px solid rgba(255,255,255,0.85)">50% faster</div>
+          </div>
+          <div class="lab child" style="color:var(--accent)">+ add a policy</div>
+          <div class="lane"></div>
+
+          <div class="lab kind"><span class="tw">▸</span>Public money<span class="n">4</span></div>
+          <div class="lane">
+            <div class="mini f" style="left:0;width:100%;top:4px"></div>
+            <div class="mini f" style="left:5%;width:15%;top:10px"></div>
+            <div class="mini f" style="left:17.5%;width:42.5%;top:16px"></div>
+            <div class="mini f off" style="left:30%;width:25%;top:22px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section t2">
+  <div class="cols">
+    <div>
+      <h3>On a phone</h3>
+      <div class="phone">
+        <div class="bar" style="padding:8px 12px">
+          <span class="head" style="font-size:16px">148,000 by 2066</span>
+          <span class="status">· filled to 2047</span>
+        </div>
+        <div class="map" style="border-block:1px solid var(--border)">map, March 2031</div>
+        <div class="over">
+          <div class="playhead"></div>
+          <div class="grid">
+            <div class="lab"></div>
+            <div class="ruler">
+              <span style="left:0%;transform:none">2026</span><span style="left:50%">2046</span>
+              <span style="left:100%;transform:translateX(-100%)">2066</span>
+              <div class="fill"><i></i><b></b></div>
+            </div>
+            <div class="lab kind">Zoning</div>
+            <div class="lane">
+              <div class="mini z" style="left:0;width:100%;top:6px"></div>
+              <div class="mini z" style="left:12.5%;width:87.5%;top:13px"></div>
+              <div class="mini z" style="left:0;width:100%;top:20px"></div>
+            </div>
+            <div class="lab kind">Permits</div>
+            <div class="lane">
+              <div class="mini p" style="left:0;width:100%;top:9px"></div>
+              <div class="mini p" style="left:7.5%;width:92.5%;top:17px;outline:2px solid var(--accent)"></div>
+            </div>
+            <div class="lab kind">Money</div>
+            <div class="lane">
+              <div class="mini f" style="left:0;width:100%;top:4px"></div>
+              <div class="mini f" style="left:5%;width:15%;top:10px"></div>
+              <div class="mini f" style="left:17.5%;width:42.5%;top:16px"></div>
+              <div class="mini f off" style="left:30%;width:25%;top:22px"></div>
+            </div>
+          </div>
+        </div>
+        <div class="sheet insp" style="border-left:0">
+          <h4>Faster permit review</h4>
+          <div class="row"><span>2029 to 2035</span><span>30% faster</span></div>
+          <div class="row"><span>2035 onward</span><span>50% faster</span></div>
+          <div class="add">Edit ▸</div>
+        </div>
+      </div>
+      <p class="subtitle" style="max-width:300px;margin-top:8px">
+        Kinds stay closed. Tapping a kind lists its policies in the sheet; tapping one opens its
+        editor full screen. Results sit behind the headline.
+      </p>
+    </div>
+    <div style="flex:1;min-width:280px">
+      <h3>What is borrowed</h3>
+      <ul class="src">
+        <li><b>A closed kind still shows what is inside.</b> Logic's track stacks and Ableton's group tracks draw a miniature of the child clips on the closed row.</li>
+        <li><b>The filled-forecast bar sits on the ruler.</b> Premiere's render bar and every streaming player put computed-versus-not on the time ruler: grey for filled, red for played. The rows past it are only dimmed.</li>
+        <li><b>The world sits in its own band under the ruler.</b> Logic's global tracks (tempo, signature, markers) are set apart from the tracks you edit. Results and market conditions go there, with a lock.</li>
+        <li><b>Selecting a policy opens its editor beside the timeline.</b> Resolve and Final Cut use a side inspector; Ableton a bottom panel. The timeline never leaves the screen.</li>
+        <li><b>A change in strength is a step inside the bar.</b> Ableton and Logic draw automation on the clip; a policy that changes is one bar with a visible break, not two policies.</li>
+        <li><b>Off is dimmed, not removed.</b> Final Cut dims disabled clips in place (the hatched bar under Public money).</li>
+        <li><b>Open-ended bars fade out to the right;</b> bars with an end date have a square end.</li>
+        <li><b>Not borrowed:</b> nesting that opens in a separate timeline (Premiere's nested sequences); editors ask for it to open in place.</li>
+      </ul>
+    </div>
+  </div>
+</div>

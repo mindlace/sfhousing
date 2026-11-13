@@ -1,0 +1,129 @@
+# ensemble-runner: many worlds, filled ahead of the viewer
+
+Part of the step-engine package. Design: [2026-11-12-2305-sim-step-engine.md](../design/2026-11-12-2305-sim-step-engine.md), approved 2026-11-13. Release B. Depends on `world-core`, `world-funding`, `policy-timeline`; built beside `world-score` and `map-stream`, which it calls.
+
+## Purpose
+
+Today the worker runs 101 whole futures for one policy, then a shown run, and starts all of it again when a lever changes. This subsystem is the worker side of the new `/sim`: it advances 48 worlds, and 48 more under the comparison, one month at a time ahead of the viewer, posts what is final as it goes, and after an edit resumes from the edit's month.
+
+## Scope
+
+- The worker host for the timeline: opening, policy edits, slicing, posting.
+- Advancing both ensembles in step, feeding each world's events to its `WorldSeries` (`world-score`) and world 1's to the `MapStream` (`map-stream`).
+- Kept copies and resuming after an edit.
+- The page-side client for the new messages.
+
+Not in scope: what a series row contains or how the band is formed (`world-score`); geometry and packing (`map-stream`); compiling policies (`policy-timeline`); the page (`timeline-ui`).
+
+The host lives in `src/lib/sim/world/host.ts`, the messages in `src/lib/sim/timeline-protocol.ts`, the client in `src/lib/sim/timeline-client.ts`. `src/lib/sim/router.ts`, `protocol.ts` and `worker.ts` are not hashed and may change. `scenario/types.ts` is hashed and does not change: the new messages and their error codes are new types.
+
+## Interfaces
+
+**S14** (decomposition choice; owner `ensemble-runner`). Worker messages, defined in a new `src/lib/sim/timeline-protocol.ts` with their own error codes (today's `ScenarioErrorCode` values plus `'timeline'`). New, to the worker: `{ type: 'openTimeline'; rev: number; manifest: Manifest; policy: SimPolicy4; lots: Record<string, ParcelId[]>; worlds: number; months: number }`, `{ type: 'setPolicy'; rev: number; policy: SimPolicy4; lots: Record<string, ParcelId[]> }`, `{ type: 'viewMonth'; month: number }` (the model month the playhead is in) and `{ type: 'resyncMap' }`. `lots` holds the lots of each brush query the document needs (`queriesOf4`), by query key, resolved by the page through today's `resolveBrush`. New, from the worker: `{ type: 'compiling'; rev: number; done: number; total: number; failedCells: string[] }`, `{ type: 'compiled'; rev: number; capacity: LeverCapacity; unknownLots: number; statics: ScoreStatics }`, `{ type: 'filled'; rev: number; through: number; series: SeriesChunk }` (`through` is the last final calendar-month index; `series.from` is the first index carried), `{ type: 'refill'; rev: number; from: number }` (every calendar month from index `from` on is withdrawn until filled again), `{ type: 'cells'; render: TimelineUpdate }` and `{ type: 'lookups'; month: number; lookups: LeverLookups }`. `rev` is the page's count of policy edits; the worker drops work for an older `rev`, and the client drops `compiling`, `compiled`, `filled` and `refill` with an older `rev`. `cells` and `lookups` carry no `rev` and are never dropped: the map's revision numbers are their own sequence. `resyncMap` is answered by a `cells` whose update is revision 0 with every cell and the whole demolish list. `lookups` is posted on open and whenever the last `viewMonth` moves into a frame whose permitting differs, as a new object each time; it is what the map's bars read. A document the compiler rejects is answered with `error` code `bad-request` at its `rev`, and the previous timeline keeps filling. These replace `initScenario`, `reroll`, `setLevers`, `timeline`, `ranks` and `levers` on `/sim`. Every other message of today's protocol (`parcelSummary`, `resolveBrush`, `brushCatalog`, `lotOutlines`, `previewBuildings`, `heightLids`, `lotAt`, `prefetch`, `retryChunks`, `ready`, `chunks`, `heights`, `error`) keeps its shape. `parcelSummary` is answered from world 1 as it stands on the requested day, and its `ParcelSummary` gains `lookups?: Lookups`, the stage tables of the frame in force that day for that project. `heights`, `heightLids`, `lotAt` and `previewBuildings` answer for the zoning in force in the last `viewMonth` received (month 1 before any); `heights` is posted again when that zoning changes. `openTimeline` is routed and checked as `initScenario` is today and, like it, disposes the editor host's state.
+
+**S16** (decomposition choice; owner `ensemble-runner`). Resuming after an edit: the runner keeps a `structuredClone` of each world, and of each `WorldSeries`' `data()`, after every 60th model month (0, 60, 120, …), resumes from the last copy at or before the month before the edit, steps quietly from there to the month before the edit (those months are unchanged and are not withdrawn or posted again), and rebuilds the due list with `planDue`. World 1's ledger is cut back to its length at that copy. No copy is thinned. The worker's heap, with both ensembles filled and every copy kept, stays under 300 MB over today's loaded dataset.
+
+Used, owned elsewhere:
+
+**S2** (model commitment; owner `world-core`). `function createWorld(statics: Statics, timeline: PolicyTimeline, seed: number, out: StepSink): World` makes the world at month 0 under `timeline.frameAt(1)` and sends the events already true at the dataset date. `function step(world: World, due: Due, statics: Statics, timeline: PolicyTimeline, seed: number, out: StepSink): void` advances `world` in place by one model month (to `world.month + 1`), running the systems of section 3.3 in that order over the entities due that month. Both are pure in their arguments and take no end date. `step` reads `timeline` only for months up to the one it is stepping: the past is known, the future is not.
+
+**S6** (model commitment; owner `policy-timeline`). `interface PolicyTimeline { frameAt(month: number): PolicyFrame; changes(): number[]; touched(month: number): Int32Array | null; readyThrough(): number }`. `frameAt` is synchronous for 1 <= month <= `readyThrough()`. `changes()` lists, ascending, the months whose frame id differs from the month before. `touched(month)` gives, for a month in `changes()`, the lot rows whose row of the zoning view differs from the month before (empty when the zoning did not change; null when every lot may differ). `function firstDifference(a: PolicyTimeline, b: PolicyTimeline): number | null` is the first month at which the two give frames with different ids or different `finance.arrivals`, or null.
+
+**S11** (decomposition choice; owner `world-core`). `interface Due { take(month: number): Int32Array; put(entity: number, month: number): void; drop(entity: number): void }` and `function planDue(world: World, statics: Statics, timeline: PolicyTimeline, seed: number, through: number): Due`, which works out from scratch what is due in months `world.month + 1 .. through`, reading `timeline` for months up to `world.month + 1` only. An entity is a lot (its row in `Statics.parcelId`) or a project (`-1 - row`). `take` returns that month's entities in ascending order and forgets them. An entity due after `through` is planned when the runner extends the window.
+
+**S13** (decomposition choice; owner `policy-timeline`). `function compileTimeline(doc: SimPolicy4, lots: Record<string, ParcelId[]>, ctx: CompileCtx, base: 'plan' | 'preFzp'): TimelineCompile`, `interface TimelineCompile { step(budgetMs: number): boolean; progress(): { done: number; total: number; failedCells: string[] }; result(): PolicyTimeline; capacity(): LeverCapacity; unknownLots(): number }`. `step` does at most about `budgetMs` of work and returns true when every frame is compiled; `result()` may be called once the first frame is ready and its `readyThrough()` grows as `step` is called. `capacity()` and `unknownLots()` are those of the frame in force in the last month of the window and are valid once `step` has returned true. `function comparisonOf(doc: SimPolicy4): { doc: SimPolicy4; base: 'plan' | 'preFzp' }` gives what the comparison ensemble runs: for a document with no policy in force in any month, the same document on the zoning before the plan (`base: 'preFzp'`, today's `twinInput(…, 'preFzp')`); for any other, the default document on the plan (today's rule, `sim-page/policy.ts:571`, `levers/apply.ts:91-110`). `interface CompileCtx { input: SimInput; layers: LayerCtx; windowMonths: number }` is the worker's loaded dataset. `function lookupsAt(frame: PolicyFrame): LeverLookups` gives the stage tables the map's bars and the cards read for that frame, computed as today's `lookupsOf` computes them, with `speed` for rows in flight and `speed` times every `speedNew` for new projects.
+
+**S15** (decomposition choice; owner `world-score`). `interface SeriesChunk { from: number; mean: MonthRow[]; sd: MonthRow[]; shown: MonthRow[]; planEffect: { mean: PlanRow; sd: PlanRow }[]; money: MoneyRow[] | null; tiers: TierUnits[] | null }`: one entry per calendar month from index `from`. `MonthRow` has today's `TimelineScore['shown'][number]` fields; `shown` is world 1 ("this city"). `PlanRow` is `{ entitledNew: number; completedNetNew: number }`. `MoneyRow` is one month's entry of every series in today's `TimelineScore['money']`. `interface WorldSeries { add(e: WorldEvent, world: World, statics: Statics): void; stepped(month: number): void; finalThrough(): number; rows(from: number, through: number): MonthRow[]; data(): WorldSeriesData }`, one per world, which the runner feeds (`stepped` after each step, with the model month just stepped); `WorldSeriesData` is plain data that `structuredClone` copies. `function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): WorldSeries`. `function chunkOf(plan: WorldSeries[], twin: WorldSeries[], money: MoneyFeed | null, from: number, through: number): SeriesChunk`. `interface MoneyFeed { ledger: LedgerEvent[]; finance: FinanceFrame; world: World; statics: Statics }` is world 1's. `function scoreStaticsOf(input: SimInput, timeline: PolicyTimeline, base: 'plan' | 'preFzp', windowMonths: number): ScoreStatics`, called once the plan timeline is fully compiled. `function viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineView` builds what the page reads. `function cardAt(world: World, statics: Statics, frame: PolicyFrame, deps: CardDeps, parcelId: ParcelId, day: Day, projectId?: string): { summary: ParcelSummary; lookups: Lookups | null }`, which the runner calls to answer `parcelSummary` from world 1.
+
+**S17** (decomposition choice; owner `map-stream`). `interface MapStream { onEvent(e: WorldEvent, world: World, statics: Statics): void; flush(world: World, statics: Statics, budgetMs: number): TimelineUpdate | null; rewind(world: World, statics: Statics): void; snapshot(world: World, statics: Statics): TimelineUpdate }` for world 1 only, made by `function createMapStream(deps: MapStreamDeps, windowMonths: number): MapStream`. `flush` returns today's `TimelineUpdate` (`map/types.ts`) holding, whole, every cell in which a project changed since the last flush, or null when nothing changed. `rewind` is called with world 1 as restored after an edit; the next flushes replace or remove every cell that differs. `snapshot` returns a revision 0 holding every cell and the whole demolish list, and restarts the revision count. After revision 0, `TimelineUpdate.demolish` carries the demolitions newly known, and a new optional field `restore?: ParcelId[]` names lots whose demolition no longer holds; `map-stream` changes the map's timeline controller to apply both (today it ignores `demolish` after revision 0).
+
+Constants exported from the client: `WORLDS = 48` and `WINDOW_MONTHS = 480`. The client sends them in `openTimeline`; nothing else in the package states those numbers.
+
+## Rules
+
+### The dataset and the old host
+
+1. The new host needs what `createScenarioHost` already builds and keeps to itself: the loaded manifest and chunks, the base `SimInput`, the lever context (`LayerCtx`), geometry, and the handlers for `parcelSummary`, `resolveBrush`, `brushCatalog`, `lotOutlines`, `previewBuildings`, `heightLids`, `lotAt`, `prefetch` and `retryChunks`. This is the one place the package may change a hashed file (global constraints). The builder moves or exports those parts of `scenario-host.ts` so both hosts use one copy, changes no behaviour of the old host, and proves it: every existing test of the old host and every golden passes unchanged. The branch then follows the dataset-change procedure.
+2. `/lesscars` and the old messages keep working. `/sim` stops sending `initScenario`, `reroll` and `setLevers` only when `timeline-ui` switches it. `openTimeline` is routed as `initScenario` is: it disposes the editor host's state, and shared requests go to the host of the latest init.
+
+### Opening
+
+3. On `openTimeline`: load the dataset as today, post `ready`, `chunks` and `heights` as today; build `Statics` (`staticsOf`); start two compiles, `compileTimeline(policy, lots, ctx, 'plan')` and, for `c = comparisonOf(policy)`, `compileTimeline(c.doc, lots, ctx, c.base)`, posting `compiling` from `progress()`. When month 1's frame of each exists, create worlds 1..`worlds` for each (seeds 1..`worlds`) with `withFunding(createFundingSystem())`, one `WorldSeries` per world, the `MapStream` for world 1 of the plan ensemble, and begin filling. When the plan compile has finished, post `compiled` with `scoreStaticsOf(…)`. Post `lookups` for month 1 as soon as its frame exists.
+4. First task: measure, on the live city when a local copy is present (else the bench city, marked so): creating 96 worlds; the heap after a full fill with every copy kept; and the time from `openTimeline` to the first `cells` and to the first `filled`. Report to the conductor. If 96 worlds take over 1.5 s to create, `planDue` runs through 60 months first and is extended as filling approaches. If the heap passes S16's bound, stop and report: the spacing of copies is a table row, not the builder's to change.
+
+### Filling
+
+5. One unit of work is one world advanced one model month. A slice does units until 45 ms have passed, then yields (`setTimeout`), as today's host does. No unit may itself exceed 50 ms; a month in which the policy changes is the worst case and is measured.
+6. Order: month by month; inside a month every world of the plan ensemble, then every world of the comparison ensemble. So every world is within one month of every other.
+7. Each world's `StepSink.event` feeds that world's `WorldSeries`, and `stepped(month)` follows each step. World 1 of the plan ensemble also feeds the `MapStream` and passes a `ledger` sink, kept for the money series. Other worlds pass no `ledger`.
+8. A calendar month is final when every world of both ensembles has stepped through the model month holding its last day. After each model month, if new calendar months became final, post `filled` with `chunkOf(…)` for them. At most one `filled` per slice.
+9. The runner calls `MapStream.flush(world1, statics, 20)` at most four times a second, between slices, and posts each non-null result as `cells` as it is. Updates are never merged: each carries the stream's next revision number. When filling ends it calls `flush` until it returns null.
+10. Filling stops at model month `months`. The world and the step know nothing of that number.
+11. When the next month's frame is not compiled yet (`readyThrough()`), the slice calls the compile's `step(20)` instead of stepping.
+
+### Edits
+
+12. On `setPolicy`: filling stops. Compile the new document and its comparison (a `LeverFormatError` posts `error` `bad-request` at that `rev`, and filling resumes under the previous timelines). A `setPolicy` that arrives during a compile replaces it; nothing is posted for the superseded `rev`.
+13. For each ensemble, once the new timeline is ready through the last month stepped (or through its end), find `m = firstDifference(old, new)`. If `m` is null or beyond the last month stepped, the ensemble keeps its worlds and carries on under the new timeline.
+14. Otherwise: restore every world of that ensemble, and its `WorldSeries`, from the last kept copy at or before month m - 1 (S16); rebuild each due list with `planDue`; cut world 1's ledger back to its length at that copy (plan ensemble only); step every world quietly to month m - 1, feeding the series and the ledger but posting nothing (those months are unchanged); post `refill` with the index of the first calendar month not final at month m - 1; call `MapStream.rewind` with world 1 as it then stands (plan ensemble only); then fill on from month m. Months before the edit are not withdrawn and not posted again.
+15. Copies are taken after months 0, 60, 120 and so on, for every world of both ensembles, with the length of world 1's ledger at that moment. Copies later than a restore point are discarded on restore.
+16. If one ensemble restores and the other does not, the other waits at its month until the first catches up; `filled` is posted only for months final in both.
+17. `filled` and `refill` after an edit carry the new `rev`, including for an ensemble that kept its worlds.
+
+### Lookups and the map
+
+18. `parcelSummary` is answered with `cardAt` on world 1 of the plan ensemble as it stands, the requested day, and the frame of the model month holding that day. A request for a day past the last month stepped is answered for the last day stepped. The other lookups are answered by the shared handlers of rule 1, for the zoning of the frame at the last `viewMonth`.
+19. `lookups` carries `lookupsAt(frame)` (`policy-timeline`) for the frame at the last `viewMonth`, as a new object, whenever that frame's calibrations or scales differ from those last posted.
+20. `resyncMap`: `MapStream.rewind` is not used; the runner posts `MapStream.snapshot(world1, statics)` as `cells`.
+
+### Failure
+
+21. Any throw inside a unit posts `error` at the current `rev` with code `'timeline'` and stops filling until the next `setPolicy` or `openTimeline`. Chunk failures are reported through `compiling.failedCells` and `chunks`, and `retryChunks` works as today.
+
+## The client
+
+22. `TimelineClient` wraps the worker like `ScenarioClient` does: `open(manifest, policy, lots)`, `setPolicy(policy, lots): Rev`, `viewMonth(month)`, `resyncMap()`, the lookups of today's client unchanged, and callbacks `onFilled`, `onRefill`, `onCells`, `onLookups`, `onCompiling`, `onCompiled`, `onError`, `onChunks`, `onHeights`, `onCrash`. It drops `compiling`, `compiled`, `filled` and `refill` whose `rev` is older than the last `setPolicy` it sent, and never drops `cells` or `lookups`. `restart(worker)` re-opens with the last policy, as today's client does after a crash.
+
+## Tests that must pass
+
+Assert, in signoff, with the fixture dataset and fake timers, as today's host tests do:
+
+- Open: `ready`, `compiled`, `lookups`, then `filled` messages whose months are contiguous from 0 and end at `ScoreStatics.lastIndex`.
+- The series posted equal what stepping the same 96 worlds in a plain loop gives.
+- An edit dated after the fill point: no `refill`; later months reflect the new policy.
+- An edit dated at month 100 after filling to 300: one `refill`, whose `from` is the first calendar month not final at month 99; no month before it is posted again; the final series, money included, equal a fresh open with the edited policy.
+- An edit that changes only a label, or adds a policy that is off: no `refill`, no change.
+- Two `setPolicy` in a row: only the second is reflected; nothing is posted for the first after the second arrives; every `cells` update still applies in order on a fake map controller (no revision gap).
+- `resyncMap` is answered with a revision 0 holding every cell.
+- A document the compiler rejects: `bad-request`, and the previous timeline's months keep arriving.
+- A comparison that does not change keeps its worlds (rule 16).
+- `viewMonth` into a frame with different zoning posts `heights` again; into one with different permitting posts `lookups`.
+- The old host's tests and goldens pass unchanged (rule 1).
+
+`test:perf` (print; assert the bar only there): no slice over 50 ms on the bench city; whole-window fill on the live city when present against 480 × 9 ms; first `cells` and first `filled` within 3 s of `openTimeline` (today's first-paint bar); the heap bound of S16, checked after a full fill and again after 20 edits that each add a zoning policy.
+
+Docs: a "The worker" section in `docs/dev/sim-timeline.md` (created by `timeline-ui`; if this lands first, create the file with this section).
+
+## Left to the builder
+
+- How `scenario-host.ts` is split or exported (rule 1), within its limits.
+- How copies are stored.
+- The shape of the host's internal queue.
+
+Decided here, not left: the unit and order of work (rules 5 and 6), when a month is final and posted (rule 8), how often `cells` is posted (rule 9), that filling stops during a compile (rule 12), what an edit restores and reposts (rules 13 to 17), and where copies are taken (rule 15).
+
+## Global constraints
+
+- The calibration file, the dataset and the pipeline do not change. No file under the folders hashed into the dataset version (`pipeline`, `src/lib/data`, `src/lib/generator`, `src/lib/timelapse`, `src/lib/plan/{geometry,types}.ts`, `src/lib/sim/{scenario,levers,finance}`, `src/lib/scoreboard`) is added, changed or removed in Release A. In Release B the one exception is `src/lib/sim/scenario/scenario-host.ts`, which `ensemble-runner` may change or move so that the new host can use the dataset it loads, without changing any result of the old engine; that branch then follows "Finishing a branch that changes the dataset" in `docs/dev/pipeline.md`. New code imports from the hashed folders. A builder who finds any other change necessary stops and reports.
+- The step and everything it calls may read the policy of the month being stepped and of earlier months, never of a later one.
+- Agreement with today's engine (OD-2). Without public money and under one frame: for every seed tested, `scheduleAt` and `masterAt` over every row at the horizon day equal `simulateDetailed`'s schedules and masters, and each world's calendar-month series equals `shownSeries`. With public money, over seeds 1 to 200 on the bench city and on the live city with baseline funding, at years 5, 10, 20 and 40: the mean of completed net homes within 1% of today's mean, its standard deviation within 15% of today's, and the mean number of awards and of funded homes within 3%. The ledger identities hold after every step in every world. A miss is reported with its numbers; no rule is changed to meet it.
+- `exp` and `log` only from `src/lib/timelapse/math.ts`. `Math.exp`, `Math.log`, `Math.pow`, `Math.log1p`, `Math.expm1` and the `**` operator are never used under `src/lib/sim/world/`, and the determinism ESLint rule's `files` gains `src/lib/sim/world/**` (`world-core` adds it; `eslint.config.js` is not hashed).
+- The same inputs give the same world, in Node and in the browser.
+- No slice of worker work longer than 50 ms.
+- `step`, the world and every function they call take no horizon, read no end date and keep nothing laid out to one. Only the runner and the page hold the window.
+- One month for every world of both ensembles, scoring included, on the live city: at most 9 ms on the reference machine. (Playback at its fastest covers 36 months a second; the forecast must fill at least three times faster.) The spike measured 0.31 ms for 48 worlds without public money; the funded path is unmeasured, and `world-funding` measures it first.
+- No user setting may decide directly how much gets built (levers spec anti-goal, kept).
+- A lever that changes only timing never changes any project's outcome, and moves its days in one direction (paired-draw fix, kept). This holds exactly without public money. With public money a timer can still change which applications are awarded and when, because releases and repayments fall on stage days; that is an effect of the money and is not to be "fixed".
+- Tests that run in signoff assert behaviour and order, never wall-clock time. Every timing bar lives in `test:perf`.
+- WCAG 2.2 AA for the timeline, including keyboard control of every bar.
+- Explanation waits for interest (OD-12). At rest the page shows numbers, short labels and controls. Sentences that explain a number, a caveat or a method appear only when the reader points at, focuses or taps the thing they explain. What appears on pointing also appears on keyboard focus and on tap, stays while pointed at, and can be dismissed (WCAG 1.4.13). An explanation is itself short: it says what the reader cannot infer and stops (partner, 2026-11-13: "A forecast if nothing changes" is sufficiently unambiguous; "if you can infer it don't belabor it"). No new standing paragraph is added to `/sim`, and the specs for `timeline-ui` and `world-score` list each text they carry over from today's page with where it goes.

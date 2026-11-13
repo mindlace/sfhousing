@@ -1,0 +1,540 @@
+// THROWAWAY SPIKE harness (untracked). SPIKE_PART=A|B|C|D, SPIKE_LIVE=<dir of live2>.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { parseCalibration } from '$lib/timelapse/model';
+import { parseProjectsFile } from '$lib/timelapse/projects';
+import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
+import { EXIT_ORDER, PATHWAYS, STAGE_ORDER, type Stage } from '$lib/timelapse/types';
+import { HORIZON } from '$lib/fzp/time';
+import { parseManifest } from '$lib/data/manifest';
+import { synthCity } from '$lib/sim/scenario/fixtures/synth-city';
+import { buildSimInput } from '$lib/sim/scenario/input';
+import { loadScenario, scenarioUrls } from '$lib/sim/scenario/load';
+import { monthsOf } from '$lib/sim/scenario/score';
+import { pushRevision } from '$lib/sim/scenario/engine';
+import { simulateDetailed, simulateNet } from '$lib/sim/scenario/simulate';
+import type { Schedule, SimInput } from '$lib/sim/scenario/types';
+import type { StageScale } from '$lib/sim/levers/timers';
+import {
+  E_ALIVE,
+  E_COMPLETE,
+  E_ENTITLED,
+  E_EXIT,
+  L_FREE,
+  NS,
+  O_MASTER,
+  O_PHASE,
+  O_SIM,
+  WAITING,
+  advanceSharedClock,
+  newWorld,
+  projectId,
+  staticsOf,
+  step,
+  type EventKind,
+  type LotMode,
+  type Opts,
+  type PolicyFrame,
+  type Statics,
+  type StepSink,
+  type World
+} from './world';
+
+const PART = process.env.SPIKE_PART ?? 'A';
+const LIVE = process.env.SPIKE_LIVE!;
+const MODE = (process.env.SPIKE_MODE ?? 'exact') as LotMode;
+
+async function liveInput(dir: string): Promise<SimInput> {
+  const manifest = parseManifest(JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')));
+  const prefix = `/data/${manifest.datasetVersion}/`;
+  const pathOf = (url: string) => join(dir, url.slice(prefix.length));
+  const urls = scenarioUrls(manifest)!;
+  const bytes = (url: string) => {
+    const b = readFileSync(pathOf(url));
+    return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
+  };
+  const loaded = await loadScenario(
+    {
+      fetch: async (url: string) => ({
+        ok: true,
+        status: 200,
+        json: async () => JSON.parse(readFileSync(pathOf(url), 'utf8'))
+      }),
+      fetchBytes: async (url: string) => ({
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => bytes(url)
+      }),
+      setTimeout: (fn: () => void, t: number) => setTimeout(fn, t),
+      retryDelaysMs: [],
+      warn: () => {}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any,
+    urls,
+    () => false
+  );
+  if (!('fzp' in loaded)) throw new Error(`load failed: ${JSON.stringify(loaded)}`);
+  return loaded.fzp;
+}
+
+function benchInput(): SimInput {
+  const city = synthCity();
+  const base = buildSimInput({
+    parcels: city.parcels,
+    projects: parseProjectsFile(structuredClone(city.projects)),
+    calibration: parseCalibration(structuredClone(city.calibration))
+  });
+  const { finance: _f, ...nofin } = base;
+  void _f;
+  return nofin;
+}
+
+async function inputs(): Promise<Record<string, SimInput>> {
+  const out: Record<string, SimInput> = {};
+  const l2 = await liveInput(LIVE);
+  const { finance: _f, ...nofin } = l2;
+  void _f;
+  out['live'] = nofin;
+  out['live-nomarket'] = { ...nofin, market: [] };
+  // a later market step, so the piecewise hazard is exercised (not in production today)
+  const m0 = nofin.market ?? [{ from: nofin.asOf, logOdds: 0 }];
+  out['live-step'] = {
+    ...nofin,
+    market: [...m0, { from: nofin.asOf + 3653, logOdds: m0[m0.length - 1].logOdds + 0.4 }]
+  };
+  out['bench'] = benchInput();
+  return out;
+}
+
+/** the harness's choice: run whole months until the one holding HORIZON; cut at HORIZON */
+const monthsTo = (st: Statics) => {
+  let m = 1;
+  while (st.asOf + Math.floor(m * MONTH_DAYS) < HORIZON) m++;
+  return m;
+};
+const CUT = HORIZON;
+
+const FRAME0: PolicyFrame = { id: 0, newScale: null, inFlightScale: null };
+
+// ---------------------------------------------------------------- recorder
+
+interface Rec {
+  revisions: Schedule['revisions'];
+}
+class Recorder implements StepSink {
+  recs = new Map<number, Rec>();
+  log: { p: number; kind: EventKind; stage: number; day: Day; units: number }[] | null = null;
+  event(p: number, kind: EventKind, stage: number, day: Day, units: number, stories: number) {
+    this.log?.push({ p, kind, stage, day, units });
+    if (kind === 'start') {
+      this.recs.set(p, {
+        revisions: [{ day, units, stories: Number.isNaN(stories) ? null : stories }]
+      });
+    } else if (kind === 'revise') {
+      pushRevision(this.recs.get(p)!.revisions, day, units, Number.isNaN(stories) ? null : stories);
+    }
+  }
+}
+
+function runWorld(st: Statics, seed: number, sink: StepSink | null, opts: Opts, frameAt?: (m: number) => PolicyFrame) {
+  const w = newWorld(st, seed, frameAt ? frameAt(1) : FRAME0, opts, sink);
+  for (let m = 1; m <= monthsTo(st); m++) step(w, st, frameAt ? frameAt(m) : FRAME0, seed, sink, opts);
+  return w;
+}
+
+function schedulesOf(st: Statics, w: World, rec: Recorder): Map<string, Schedule> {
+  const P_ = w.projects;
+  const out = new Map<string, Schedule>();
+  for (let p = 0; p < P_.n; p++) {
+    const o = P_.origin[p];
+    if (o === O_MASTER) continue;
+    if (o === O_PHASE && P_.stage[p] === WAITING) continue; // not filed when the run stopped
+    const entered: Partial<Record<Stage, Day>> = {};
+    let firstDay = Infinity;
+    for (let s = 0; s < NS; s++) {
+      const d = P_.entered[p * NS + s];
+      if (d >= 0) firstDay = Math.min(firstDay, d);
+      if (d >= 0 && d <= CUT) entered[STAGE_ORDER[s]] = d;
+    }
+    if (firstDay > CUT) continue; // began after the cut
+    let end: Schedule['end'];
+    if (P_.endKind[p] === E_ALIVE || P_.endDay[p] > CUT) end = { kind: 'open' };
+    else if (P_.endKind[p] === E_COMPLETE) end = { kind: 'complete', day: P_.endDay[p] };
+    else
+      end = {
+        kind: 'exit',
+        stage: STAGE_ORDER[P_.endStage[p]],
+        reason: EXIT_ORDER[P_.leaveKind[p] - 1],
+        day: P_.endDay[p]
+      };
+    const row = st.input.projects[P_.src[p]];
+    const existing =
+      o === O_SIM
+        ? P_.existing[p]
+        : o === O_PHASE
+          ? st.rows[P_.src[p]].phased!.phases[P_.sub[p] - 1].existing
+          : row.existingUnits;
+    out.set(projectId(st, w, p), {
+      projectId: projectId(st, w, p),
+      origin: o === O_SIM ? 'simulated' : 'pipeline',
+      parcelIds: [],
+      pathway: PATHWAYS[P_.pathway[p]],
+      entered,
+      end,
+      revisions: rec.recs.get(p)!.revisions.filter((r) => r.day <= CUT),
+      existingUnits: existing,
+      multiPhase: false,
+      phase: null
+    });
+  }
+  return out;
+}
+
+function mastersOf(st: Statics, w: World) {
+  const P_ = w.projects;
+  const out = new Map<string, unknown>();
+  const filed = new Map<string, (Day | null)[]>();
+  for (let p = 0; p < P_.n; p++) {
+    if (P_.origin[p] !== O_PHASE) continue;
+    const id = st.input.projects[P_.src[p]].id;
+    const arr = filed.get(id) ?? [];
+    const fd = P_.entered[p * NS + 3];
+    arr[P_.sub[p] - 1] = P_.stage[p] === WAITING || fd < 0 || fd > CUT ? null : fd;
+    filed.set(id, arr);
+  }
+  for (let p = 0; p < P_.n; p++) {
+    if (P_.origin[p] !== O_MASTER) continue;
+    const id = st.input.projects[P_.src[p]].id;
+    const entered: Partial<Record<Stage, Day>> = {};
+    for (let s = 0; s < NS; s++) {
+      const d = P_.entered[p * NS + s];
+      if (d >= 0 && d <= CUT) entered[STAGE_ORDER[s]] = d;
+    }
+    const end =
+      P_.endDay[p] > CUT
+        ? { kind: 'open' }
+        : P_.endKind[p] === E_ENTITLED
+        ? { kind: 'entitled', day: P_.endDay[p] }
+        : P_.endKind[p] === E_EXIT
+          ? {
+              kind: 'exit',
+              stage: STAGE_ORDER[P_.endStage[p]],
+              reason: EXIT_ORDER[P_.leaveKind[p] - 1],
+              day: P_.endDay[p]
+            }
+          : { kind: 'open' };
+    const n = (st.input.projects[P_.src[p]].phases ?? []).length;
+    const pf = filed.get(id) ?? [];
+    out.set(id, { entered, end, phaseFiled: Array.from({ length: n }, (_, j) => pf[j] ?? null) });
+  }
+  return out;
+}
+
+function diffSchedule(a: Schedule, b: Schedule): string[] {
+  const d: string[] = [];
+  if (a.pathway !== b.pathway) d.push('pathway');
+  for (const s of STAGE_ORDER) if (a.entered[s] !== b.entered[s]) d.push(`entered.${s}`);
+  if (JSON.stringify(a.end) !== JSON.stringify(b.end)) d.push(`end.${a.end.kind}/${b.end.kind}`);
+  if (JSON.stringify(a.revisions) !== JSON.stringify(b.revisions)) d.push('revisions');
+  if (a.existingUnits !== b.existingUnits) d.push('existingUnits');
+  return d;
+}
+
+interface Tally {
+  projects: number;
+  identical: number;
+  missingInSpike: number;
+  extraInSpike: number;
+  classes: Map<string, { n: number; example: string }>;
+  masters: number;
+  mastersIdentical: number;
+}
+
+function compare(input: SimInput, st: Statics, seed: number, opts: Opts, t: Tally) {
+  const old = simulateDetailed(input, seed, HORIZON);
+  const rec = new Recorder();
+  const w = runWorld(st, seed, rec, opts);
+  const mine = schedulesOf(st, w, rec);
+  const seen = new Set<string>();
+  const note = (k: string, ex: string) => {
+    const c = t.classes.get(k);
+    if (c) c.n++;
+    else t.classes.set(k, { n: 1, example: ex });
+  };
+  for (const s of old.schedules) {
+    t.projects++;
+    seen.add(s.projectId);
+    const m = mine.get(s.projectId);
+    if (!m) {
+      t.missingInSpike++;
+      note(`missing:${s.origin}`, `seed ${seed} ${s.projectId} ${JSON.stringify(s.end)}`);
+      continue;
+    }
+    const d = diffSchedule(s, m);
+    if (d.length === 0) t.identical++;
+    else
+      note(
+        d.join(','),
+        `seed ${seed} ${s.projectId} old ${JSON.stringify({ e: s.entered, end: s.end, r: s.revisions })} new ${JSON.stringify({ e: m.entered, end: m.end, r: m.revisions })}`
+      );
+  }
+  for (const [id, m] of mine) {
+    if (!seen.has(id)) {
+      t.extraInSpike++;
+      note(`extra:${m.origin}`, `seed ${seed} ${id} ${JSON.stringify(m.entered)} ${JSON.stringify(m.end)}`);
+    }
+  }
+  const mm = mastersOf(st, w);
+  for (const m of old.masters) {
+    t.masters++;
+    const o = { entered: m.entered, end: m.end, phaseFiled: m.phaseFiled };
+    const x = mm.get(m.masterId);
+    if (JSON.stringify(o) === JSON.stringify(x)) t.mastersIdentical++;
+    else note('master', `seed ${seed} ${m.masterId} old ${JSON.stringify(o)} new ${JSON.stringify(x)}`);
+  }
+}
+
+function newTally(): Tally {
+  return {
+    projects: 0,
+    identical: 0,
+    missingInSpike: 0,
+    extraInSpike: 0,
+    classes: new Map(),
+    masters: 0,
+    mastersIdentical: 0
+  };
+}
+
+function report(name: string, t: Tally) {
+  console.log(
+    `[A] ${name}: projects ${t.projects} identical ${t.identical} missing ${t.missingInSpike} extra ${t.extraInSpike} masters ${t.masters}/${t.mastersIdentical}`
+  );
+  for (const [k, v] of t.classes) console.log(`   ${k}: ${v.n}  e.g. ${v.example.slice(0, 600)}`);
+}
+
+const median = (xs: number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)];
+};
+
+describe('world spike', () => {
+  it('runs', { timeout: 3_600_000 }, async () => {
+    const all = await inputs();
+    if (PART === 'A') {
+      const cfgs: [string, number][] = [
+        ['live', 20],
+        ['live-nomarket', 5],
+        ['live-step', 5],
+        ['bench', 5]
+      ];
+      for (const [name, n] of cfgs) {
+        const input = all[name];
+        const st = staticsOf(input);
+        console.log(`[A] ${name}: candidates ${st.C} rows ${input.projects.length} months ${monthsTo(st)} segDays ${st.segDays.length}`);
+        const t = newTally();
+        for (let seed = 1; seed <= n; seed++) compare(input, st, seed, { mode: MODE }, t);
+        report(`${name} mode=${MODE} seeds 1..${n}`, t);
+        expect(t.projects).toBeGreaterThan(0);
+      }
+      // timers from asOf: the old engine with newProjects.scale / inFlightScale vs the spike frame
+      const live = all['live'];
+      const sc: StageScale = {
+        discretionary: { filed: 0.5, entitled: 0.7 },
+        streamlined: { permitFiled: 0.6 },
+        permitOnly: { permitIssued: 1.3 }
+      };
+      const timed: SimInput = {
+        ...live,
+        newProjects: { calibration: live.calibration, scale: sc },
+        inFlightScale: sc
+      };
+      const st = staticsOf(timed);
+      const t = newTally();
+      const fr: PolicyFrame = { id: 0, newScale: sc, inFlightScale: sc };
+      for (let seed = 1; seed <= 5; seed++) {
+        const old = simulateDetailed(timed, seed, HORIZON);
+        const rec = new Recorder();
+        const w = runWorld(st, seed, rec, { mode: MODE }, () => fr);
+        const mine = schedulesOf(st, w, rec);
+        for (const s of old.schedules) {
+          t.projects++;
+          const m = mine.get(s.projectId);
+          if (m && diffSchedule(s, m).length === 0) t.identical++;
+          else
+            t.classes.set(String(m ? diffSchedule(s, m) : 'missing'), {
+              n: (t.classes.get(String(m ? diffSchedule(s, m) : 'missing'))?.n ?? 0) + 1,
+              example: s.projectId
+            });
+        }
+        t.extraInSpike += mine.size - old.schedules.length;
+      }
+      report('live timers-from-asOf seeds 1..5', t);
+    }
+
+    if (PART === 'B') {
+      for (const name of (process.env.SPIKE_BCITIES ?? 'live,bench').split(',')) {
+        const input = all[name];
+        const st = staticsOf(input);
+        const months = monthsOf(input.asOf, HORIZON);
+        // the old engine, per run
+        const oldNet: number[] = [];
+        const oldDet: number[] = [];
+        for (let seed = 1; seed <= 15; seed++) {
+          let t0 = performance.now();
+          simulateNet(input, seed, HORIZON, months);
+          oldNet.push(performance.now() - t0);
+          t0 = performance.now();
+          simulateDetailed(input, seed, HORIZON);
+          oldDet.push(performance.now() - t0);
+        }
+        console.log(`[B] ${name} old: simulateNet ${median(oldNet).toFixed(2)} ms, simulateDetailed ${median(oldDet).toFixed(2)} ms (median of 15, after warm-up in loop)`);
+        for (const mode of (process.env.SPIKE_BMODES ?? 'exact,clock,lazy').split(',') as LotMode[]) {
+          // one world, whole run and per step
+          const whole: number[] = [];
+          const perStep: number[] = [];
+          for (let seed = 1; seed <= 10; seed++) {
+            const t0 = performance.now();
+            const w = newWorld(st, seed, FRAME0, { mode }, null);
+            for (let m = 1; m <= monthsTo(st); m++) {
+              const a = performance.now();
+              step(w, st, FRAME0, seed, null, { mode });
+              if (seed > 2) perStep.push(performance.now() - a);
+            }
+            whole.push(performance.now() - t0);
+          }
+          console.log(`[B] ${name} spike ${mode}: one world to horizon ${median(whole.slice(2)).toFixed(2)} ms; one step median ${(median(perStep) * 1000).toFixed(1)} us, p90 ${(perStep.sort((a, b) => a - b)[Math.floor(perStep.length * 0.9)] * 1000).toFixed(1)} us`);
+          // 48 worlds in lockstep
+          const W = 48;
+          for (const shared of mode === 'clock' ? [false, true] : [false]) {
+            const clock = shared ? new Float64Array(st.C) : null;
+            const opts: Opts = { mode, sharedClock: clock };
+            const ws = Array.from({ length: W }, (_, i) => newWorld(st, i + 1, FRAME0, opts, null));
+            const monthMs: number[] = [];
+            const t0 = performance.now();
+            for (let m = 1; m <= monthsTo(st); m++) {
+              const a = performance.now();
+              if (clock) advanceSharedClock(st, clock, m);
+              for (let i = 0; i < W; i++) step(ws[i], st, FRAME0, i + 1, null, opts);
+              monthMs.push(performance.now() - a);
+            }
+            const total = performance.now() - t0;
+            const firstYear = median(monthMs.slice(0, 12));
+            console.log(`[B] ${name} spike ${mode}${shared ? ' S10-shared' : ''}: 48 worlds lockstep: one month median ${median(monthMs).toFixed(2)} ms (first year ${firstYear.toFixed(2)}, max ${Math.max(...monthMs).toFixed(2)}), whole run ${total.toFixed(0)} ms`);
+            // sanity: the shared clock gives the same worlds as the per-world clock
+            if (shared) {
+              const ref = runWorld(st, 3, null, { mode });
+              expect(ws[2].projects.n).toBe(ref.projects.n);
+              expect(Array.from(ws[2].projects.endDay.subarray(0, ref.projects.n))).toEqual(
+                Array.from(ref.projects.endDay.subarray(0, ref.projects.n))
+              );
+            }
+          }
+        }
+        // the scan: how many lots are free, per step, at a few dates
+        const w = newWorld(st, 1, FRAME0, { mode: 'exact' }, null);
+        for (let m = 1; m <= monthsTo(st); m++) {
+          step(w, st, FRAME0, 1, null, { mode: 'exact' });
+          if (m === 1 || m === 240 || m === monthsTo(st)) {
+            let free = 0;
+            for (let c = 0; c < st.C; c++) if (w.lots.state[c] === L_FREE) free++;
+            console.log(`[B] ${name} month ${m}: free lots ${free} of ${st.C}, live projects ${w.nLive}, project rows ${w.projects.n}`);
+          }
+        }
+      }
+      expect(true).toBe(true);
+    }
+
+    if (PART === 'C') {
+      const input = all['live'];
+      const st = staticsOf(input);
+      for (const seed of [1, 2, 3]) {
+        const t0 = performance.now();
+        const w = newWorld(st, seed, FRAME0, { mode: 'lazy' }, null);
+        console.log(`[C] seed ${seed} newWorld (lazy, plans every lot) ${(performance.now() - t0).toFixed(1)} ms; heap ${w.hn} entries, ${((w.hk.byteLength + w.hv.byteLength) / 1024).toFixed(0)} KiB`);
+        const at = new Map<number, string>();
+        for (let m = 1; m <= monthsTo(st); m++) {
+          step(w, st, FRAME0, seed, null, { mode: 'lazy' });
+          const day = input.asOf + Math.floor(m * MONTH_DAYS);
+          const year = new Date(day * 86400000).getUTCFullYear();
+          const mark = m === 1 ? 2026 : [2046, 2066].find((y) => y === year && !at.has(y));
+          if (mark && !at.has(mark)) {
+            let firstAttempt = 0;
+            let kGt0 = 0;
+            for (let c = 0; c < st.C; c++) {
+              if (w.lots.k[c] === 0 && w.lots.r[c] === st.asOf && w.lots.state[c] === L_FREE) firstAttempt++;
+              if (w.lots.k[c] > 0) kGt0++;
+            }
+            console.log(`[C] seed ${seed} m ${m}: lots on attempt > 0: ${kGt0}; heap ${w.hn}`);
+            const lotBytes = w.lots.bytes();
+            const projBytes = w.projects.bytes();
+            at.set(
+              mark,
+              `${mark} (m ${m}): lots ${st.C} = ${(lotBytes / 1024).toFixed(0)} KiB (${(lotBytes / st.C).toFixed(0)} B/lot; free on attempt 0 from asOf: ${firstAttempt}); projects ${w.projects.n} rows (${w.nLive} live) = ${(projBytes / 1024).toFixed(0)} KiB (${(projBytes / Math.max(1, w.projects.n)).toFixed(0)} B/row); live list ${(w.live.byteLength / 1024).toFixed(0)} KiB`
+            );
+          }
+        }
+        for (const v of at.values()) console.log(`[C] seed ${seed} ${v}`);
+      }
+      expect(true).toBe(true);
+    }
+
+    if (PART === 'D') {
+      const input = all['live'];
+      const st = staticsOf(input);
+      const sc: StageScale = { discretionary: { filed: 0.5 }, streamlined: {}, permitOnly: {} };
+      const M = 120;
+      const fAfter: PolicyFrame = { id: 1, newScale: sc, inFlightScale: sc };
+      const tot = { before: 0, beforeSame: 0, common: 0, kindSame: 0, kindChanged: 0, endedBoth: 0, later: 0, earlier: 0, same: 0, newProjects: 0, goneProjects: 0, openToEnded: 0, endedToOpen: 0 };
+      for (let seed = 1; seed <= 20; seed++) {
+        const r0 = new Recorder();
+        r0.log = [];
+        const w0 = runWorld(st, seed, r0, { mode: 'exact' });
+        const r1 = new Recorder();
+        r1.log = [];
+        const w1 = runWorld(st, seed, r1, { mode: (process.env.SPIKE_DMODE ?? 'exact') as LotMode }, (m) => (m >= M ? fAfter : FRAME0));
+        const cut = st.asOf + Math.floor((M - 1) * MONTH_DAYS); // last day of month M - 1
+        const key = (w: World, e: { p: number; kind: EventKind; stage: number; day: Day; units: number }) =>
+          `${projectId(st, w, e.p)}|${e.kind}|${e.stage}|${e.day}|${e.units}`;
+        const b0 = r0.log.filter((e) => e.day <= cut).map((e) => key(w0, e)).sort();
+        const b1 = r1.log.filter((e) => e.day <= cut).map((e) => key(w1, e)).sort();
+        tot.before += b0.length;
+        if (JSON.stringify(b0) === JSON.stringify(b1)) tot.beforeSame += b0.length;
+        const s0 = schedulesOf(st, w0, r0);
+        const s1 = schedulesOf(st, w1, r1);
+        for (const [id, a] of s0) {
+          const b = s1.get(id);
+          if (!b) {
+            tot.goneProjects++;
+            continue;
+          }
+          tot.common++;
+          const kindOf = (s: Schedule) => (s.end.kind === 'exit' ? `exit:${s.end.stage}:${s.end.reason}` : s.end.kind);
+          if (a.end.kind !== 'open' && b.end.kind !== 'open') {
+            tot.endedBoth++;
+            if (kindOf(a) === kindOf(b)) tot.kindSame++;
+            else tot.kindChanged++;
+          }
+          if (a.end.kind === 'open' && b.end.kind !== 'open') tot.openToEnded++;
+          if (a.end.kind !== 'open' && b.end.kind === 'open') tot.endedToOpen++;
+          // every stage day: earlier or the same?
+          let dir = 0;
+          for (const s of STAGE_ORDER) {
+            const x = a.entered[s];
+            const y = b.entered[s];
+            if (x === undefined || y === undefined) continue;
+            if (y > x) dir = Math.max(dir, 2);
+            else if (y < x) dir = Math.max(dir, 1);
+          }
+          if (dir === 2) tot.later++;
+          else if (dir === 1) tot.earlier++;
+          else tot.same++;
+        }
+        for (const id of s1.keys()) if (!s0.has(id)) tot.newProjects++;
+      }
+      console.log(`[D] ${JSON.stringify(tot)}`);
+      expect(tot.before).toBeGreaterThan(0);
+    }
+  });
+});
