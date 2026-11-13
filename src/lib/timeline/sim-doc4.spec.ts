@@ -17,7 +17,7 @@ import { DEFAULT_POLICY4, nothingInForce, type Effect, type Policy } from './pol
 import type { SimPolicy4 } from './policy4';
 import { reconcilePolicy4 } from './reconcile4';
 import { upgradePolicy } from './upgrade';
-import { monthFirstDay } from '$lib/sim/world/months';
+import { monthFirstDay, monthLastDay, monthOfDay } from '$lib/sim/world/months';
 import {
   SIM_DOC4_SCHEMA,
   SIM_KEY4,
@@ -247,7 +247,7 @@ describe('openSimDoc4', () => {
     const r = openSimDoc4(text3(p), ds);
     if (!r.ok) throw new Error(JSON.stringify(r.errors));
     expect(r.value.upgradedFrom).toBe(3);
-    const want = reconcilePolicy4(upgradePolicy(p, AS_OF), cal);
+    const want = reconcilePolicy4(upgradePolicy(p, AS_OF), cal, AS_OF);
     expect(r.value.doc.policy).toEqual(want.doc);
     expect(r.value.report).toEqual(want.report);
     expect(r.value.doc.schema).toBe(4);
@@ -265,7 +265,37 @@ describe('openSimDoc4', () => {
     const r = openSimDoc4(raw4(doc4()), ds);
     if (!r.ok) throw new Error(JSON.stringify(r.errors));
     expect(r.value.upgradedFrom).toBeUndefined();
-    expect(r.value.doc.policy).toEqual(reconcilePolicy4(doc4().policy, cal).doc);
+    expect(r.value.doc.policy).toEqual(reconcilePolicy4(doc4().policy, cal, AS_OF).doc);
+  });
+
+  it('opens a schema 4 body saved on an earlier dataset, re-aligned, and strict refuses it', () => {
+    const early = AS_OF - 400;
+    const p = painted4(3);
+    p.kinds.zoning[0].spans = [
+      {
+        from: monthFirstDay(early, 1),
+        to: monthLastDay(early, 6),
+        what: p.kinds.zoning[0].spans[0].what
+      },
+      { from: monthFirstDay(early, 25), to: null, what: p.kinds.zoning[0].spans[0].what }
+    ];
+    const body = raw4(doc4(p));
+    const r = openSimDoc4(body, ds);
+    if (!r.ok) throw new Error(JSON.stringify(r.errors));
+    const spans = r.value.doc.policy.kinds.zoning[0].spans;
+    expect(spans).toHaveLength(1);
+    expect(spans[0].from).toBe(
+      monthFirstDay(AS_OF, monthOfDay(AS_OF, p.kinds.zoning[0].spans[1].from))
+    );
+    expect(r.value.report.spans.map((x) => [x.index, x.change])).toEqual([
+      [1, 'moved'],
+      [0, 'dropped']
+    ]);
+    const strict = parseSimDoc4(body, AS_OF);
+    expect(strict).toMatchObject({
+      ok: false,
+      errors: [{ path: '/policy/kinds/zoning/0/spans/0/from' }]
+    });
   });
 
   it('drops a programme on an unknown pool and reports it', () => {

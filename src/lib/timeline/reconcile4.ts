@@ -1,14 +1,17 @@
 /**
  * Reconcile a stored schema 4 document with the dataset it is opened on (policy-timeline spec,
  * "Reconciling"): permitting presets are re-fitted, and scale entries and programmes the data
- * cannot honour are dropped and reported in today's report shapes. It never rejects a document and
+ * cannot honour are dropped and reported in today's report shapes, and spans saved on an earlier
+ * dataset are re-aligned to the model months of `asOf`. It never rejects a document and
  * returns the same object when nothing changes (the house rule, funding-reconcile.ts), so the
- * compiler can treat "reconciled" as `reconcilePolicy4(doc, cal).doc === doc`. Pure TS.
+ * compiler can treat "reconciled" as `reconcilePolicy4(doc, cal, asOf).doc === doc`. Pure TS.
  */
 import { MARKET_TERMS, TYPED_TERM_RANGES, missingTerms, resolveTerms } from '$lib/sim/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import { reconcileFunding, type FundingLoadReport } from '$lib/sim-page/funding-reconcile';
 import { reconcileTiming, type TimingChange } from '$lib/sim-page/reconcile';
+import { monthFirstDay, monthLastDay, monthOfDay } from '$lib/sim/world/months';
+import type { Day } from '$lib/timelapse/time';
 import type { Calibration, TermKey } from '$lib/timelapse/types';
 import type { Effect, Policy, SimPolicy4, Span } from './policy4';
 
@@ -17,6 +20,17 @@ export interface Policy4Report {
   timing: { policy: string; change: TimingChange }[];
   /** Today's shape, summed over the document. */
   funding: Omit<FundingLoadReport, 'upgradedFrom'>;
+  /**
+   * Spans re-aligned to the dataset's model months. `index` is the span's place in the stored
+   * policy; `now` is null when it was dropped.
+   */
+  spans: {
+    policy: string;
+    index: number;
+    change: 'moved' | 'trimmed' | 'dropped';
+    was: { from: Day; to: Day | null };
+    now: { from: Day; to: Day | null } | null;
+  }[];
 }
 
 /** Every term typed at its range's lower bound, so the pool checks never trip on an unsourced one. */
@@ -26,6 +40,57 @@ const ALL_TYPED = Object.fromEntries(
 
 const same = <T>(a: readonly T[], b: readonly T[]) =>
   a.length === b.length && a.every((x, i) => x === b[i]);
+
+/**
+ * Snap a policy's spans to the model months of `asOf`: `from` to the first day of its month
+ * (clamped to month 1), `to` to the last day of its month. A span wholly before month 1 or emptied
+ * by the snap is dropped; where snapping makes consecutive spans overlap, the earlier one ends the
+ * day before the later one begins (dropped when that empties it). Nothing is merged, and days
+ * inside a `what` are not touched. Returns `p` itself when no span changes.
+ */
+function snapSpans(p: Policy, asOf: Day, out: Policy4Report['spans']): Policy {
+  type Cur = { index: number; span: Span; from: Day; to: Day | null; change: 'moved' | 'trimmed' };
+  const report = (c: Cur, change: 'moved' | 'trimmed' | 'dropped', now: boolean) => ({
+    policy: p.id,
+    index: c.index,
+    change,
+    was: { from: c.span.from, to: c.span.to },
+    now: now ? { from: c.from, to: c.to } : null
+  });
+  const kept: Cur[] = [];
+  const dropped: Policy4Report['spans'] = [];
+  p.spans.forEach((span, index) => {
+    const from = monthFirstDay(asOf, Math.max(1, monthOfDay(asOf, span.from)));
+    let to: Day | null = null;
+    if (span.to !== null) {
+      const m = monthOfDay(asOf, span.to);
+      to = m === 0 ? -Infinity : monthLastDay(asOf, m);
+    }
+    const cur: Cur = { index, span, from, to, change: 'moved' };
+    if (to !== null && to < from) {
+      dropped.push(report(cur, 'dropped', false));
+      return;
+    }
+    while (kept.length > 0) {
+      const top = kept[kept.length - 1];
+      if (top.to !== null && top.to < from) break;
+      top.to = from - 1;
+      top.change = 'trimmed';
+      if (top.to >= top.from) break;
+      kept.pop();
+      dropped.push(report(top, 'dropped', false));
+    }
+    kept.push(cur);
+  });
+  const changed = kept.filter((c) => c.from !== c.span.from || c.to !== c.span.to);
+  if (changed.length === 0 && dropped.length === 0) return p;
+  for (const c of changed) out.push(report(c, c.change, true));
+  out.push(...dropped);
+  const spans = kept.map((c) =>
+    c.from === c.span.from && c.to === c.span.to ? c.span : { ...c.span, from: c.from, to: c.to }
+  );
+  return { ...p, spans };
+}
 
 function withWhat(s: Span, what: Effect): Span {
   return what === s.what ? s : { ...s, what };
@@ -188,7 +253,8 @@ function dropGapped(
 
 export function reconcilePolicy4(
   doc: SimPolicy4,
-  cal: Calibration
+  cal: Calibration,
+  asOf: Day
 ): { doc: SimPolicy4; report: Policy4Report } {
   const timing: Policy4Report['timing'] = [];
   const funding: Policy4Report['funding'] = {
@@ -197,11 +263,17 @@ export function reconcilePolicy4(
     unusable: false
   };
 
-  const permitting = doc.kinds.permitting.map((p) => reconcilePermitting(p, cal, timing));
+  const snapped: Policy4Report['spans'] = [];
+  const snap = (ps: Policy[]) => ps.map((p) => snapSpans(p, asOf, snapped));
+  const zoning = snap(doc.kinds.zoning);
+  const permittingIn = snap(doc.kinds.permitting);
+  const moneyIn = snap(doc.kinds.money);
 
-  let money = doc.kinds.money.map((p) => reconcileMoneyPools(p, cal, funding));
+  const permitting = permittingIn.map((p) => reconcilePermitting(p, cal, timing));
+
+  let money = moneyIn.map((p) => reconcileMoneyPools(p, cal, funding));
   // Term gaps are found on the document the pool drops left.
-  const gaps = programmeTermGaps({ ...doc, kinds: { ...doc.kinds, money } });
+  const gaps = programmeTermGaps({ ...doc, kinds: { ...doc.kinds, zoning, permitting, money } });
   if (gaps.length > 0) money = dropGapped(money, gaps, funding);
   // A programme met in several spans is reported once per id and reason, a scale once per pool and day.
   funding.droppedProgrammes = funding.droppedProgrammes.filter(
@@ -215,9 +287,13 @@ export function reconcilePolicy4(
     (cal.market === undefined || cal.baselineFunding === undefined) &&
     money.some((p) => p.spans.some((s) => hasMoney(s.what)));
 
-  const report = { timing, funding };
-  if (same(permitting, doc.kinds.permitting) && same(money, doc.kinds.money)) {
+  const report = { timing, funding, spans: snapped };
+  if (
+    same(zoning, doc.kinds.zoning) &&
+    same(permitting, doc.kinds.permitting) &&
+    same(money, doc.kinds.money)
+  ) {
     return { doc, report };
   }
-  return { doc: { ...doc, kinds: { ...doc.kinds, permitting, money } }, report };
+  return { doc: { ...doc, kinds: { zoning, permitting, money } }, report };
 }

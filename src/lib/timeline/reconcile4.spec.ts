@@ -3,9 +3,11 @@ import { baselineFixture, fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { OBSERVED_TIMING, resolvePreset, type TimingSet } from '$lib/sim-page/timing';
 import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
 import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
+import { monthFirstDay, monthLastDay, monthOfDay } from '$lib/sim/world/months';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration, Programme } from '$lib/timelapse/types';
 import { DEFAULT_POLICY4, type Effect, type Policy, type SimPolicy4 } from './policy4';
+import { parsePolicy4 } from './parse4';
 import { programmeTermGaps, reconcilePolicy4 } from './reconcile4';
 
 const miniCal = parseCalibration(structuredClone(miniCalibrationJson) as unknown);
@@ -14,6 +16,12 @@ const cal: Calibration = {
   market: miniMarket(),
   baselineFunding: baselineFixture().baselineFunding
 };
+
+const A = 0;
+const T1 = monthFirstDay(A, 1);
+const E1 = monthLastDay(A, 1);
+const T2 = monthFirstDay(A, 2);
+const E2 = monthLastDay(A, 2);
 
 const F = fundingOnly();
 const pool = F.pools[0];
@@ -37,7 +45,7 @@ const money = (...m: Policy[]): SimPolicy4 => ({
   schema: 4,
   kinds: { zoning: [], permitting: [], money: m }
 });
-const fundPool = (programmes: Programme[], ranges: [number, number | null][] = [[1000, null]]) =>
+const fundPool = (programmes: Programme[], ranges: [number, number | null][] = [[T1, null]]) =>
   pol(
     'fund-u-pool-1',
     { tag: 'fund', pool: 'u-pool-1' },
@@ -45,7 +53,7 @@ const fundPool = (programmes: Programme[], ranges: [number, number | null][] = [
   );
 const fundBaseline = (poolId: string, programmes: Programme[]) =>
   pol(`fund-${poolId}`, { tag: 'fund', pool: poolId }, [
-    span(1000, null, { tag: 'fund', pool: null, programmes })
+    span(T1, null, { tag: 'fund', pool: null, programmes })
   ]);
 const termsPolicy = (id: string, from: number, to: number | null, cut: number) =>
   pol(id, { tag: 'terms' }, [span(from, to, { tag: 'terms', terms: { guaranteeRateCut: cut } })]);
@@ -56,7 +64,7 @@ const permitting = (set: TimingSet, id = 'timing', on = true, preset: string | n
   pol(
     id,
     { tag: 'routes' },
-    [span(1000, 1999, { tag: 'timing', set }), span(2000, null, { tag: 'timing', set })],
+    [span(T1, E1, { tag: 'timing', set }), span(T2, null, { tag: 'timing', set })],
     {
       on,
       preset
@@ -68,10 +76,10 @@ function fixtures(): Record<string, SimPolicy4> {
     empty: DEFAULT_POLICY4,
     money: money(
       pol('baseline', { tag: 'baseline' }, [
-        span(1000, null, { tag: 'scales', entries: F.baselineScale })
+        span(T1, null, { tag: 'scales', entries: F.baselineScale })
       ]),
       fundPool([grant]),
-      termsPolicy('terms', 1000, null, 0.01),
+      termsPolicy('terms', T1, null, 0.01),
       fundBaseline('state', [guarantee('g-state', 'state')])
     ),
     permitting: {
@@ -93,11 +101,11 @@ describe('reconcilePolicy4 money', () => {
     const g = { ...grant, id: 'p-x', label: 'X', pool: 'nope' };
     const d = money(
       pol('fund-nope', { tag: 'fund', pool: 'nope' }, [
-        span(1000, 1999, { tag: 'fund', pool: null, programmes: [g] }),
-        span(2000, null, { tag: 'fund', pool: null, programmes: [g] })
+        span(T1, E1, { tag: 'fund', pool: null, programmes: [g] }),
+        span(T2, null, { tag: 'fund', pool: null, programmes: [g] })
       ])
     );
-    const r = reconcilePolicy4(d, cal);
+    const r = reconcilePolicy4(d, cal, A);
     expect(r.report.funding.droppedProgrammes).toEqual([
       { id: 'p-x', label: 'X', pool: 'nope', reason: 'pool', term: null }
     ]);
@@ -113,11 +121,11 @@ describe('reconcilePolicy4 money', () => {
     ];
     const d = money(
       pol('baseline', { tag: 'baseline' }, [
-        span(1000, 1999, { tag: 'scales', entries }),
-        span(2000, null, { tag: 'scales', entries })
+        span(T1, E1, { tag: 'scales', entries }),
+        span(T2, null, { tag: 'scales', entries })
       ])
     );
-    const r = reconcilePolicy4(d, cal);
+    const r = reconcilePolicy4(d, cal, A);
     expect(r.report.funding.droppedScales).toEqual([{ pool: 'nope', from: 1600 }]);
     for (const s of r.doc.kinds.money[0].spans) {
       expect(s.what.tag === 'scales' && s.what.entries.map((e) => e.pool)).toEqual(['state']);
@@ -125,7 +133,7 @@ describe('reconcilePolicy4 money', () => {
   });
 
   it('drops a guarantee with no typed cut, and keeps it when an on terms policy types it', () => {
-    const bare = reconcilePolicy4(money(fundPool([guarantee('u-g')])), cal);
+    const bare = reconcilePolicy4(money(fundPool([guarantee('u-g')])), cal, A);
     expect(bare.report.funding.droppedProgrammes).toEqual([
       {
         id: 'u-g',
@@ -135,8 +143,8 @@ describe('reconcilePolicy4 money', () => {
         term: 'guaranteeRateCut'
       }
     ]);
-    const d = money(fundPool([guarantee('u-g')]), termsPolicy('t', 500, null, 0.01));
-    const kept = reconcilePolicy4(d, cal);
+    const d = money(fundPool([guarantee('u-g')]), termsPolicy('t', T1, null, 0.01));
+    const kept = reconcilePolicy4(d, cal, A);
     expect(kept.doc).toBe(d);
     expect(kept.report.funding.droppedProgrammes).toEqual([]);
   });
@@ -145,11 +153,11 @@ describe('reconcilePolicy4 money', () => {
     const f = fundPool(
       [guarantee('u-g')],
       [
-        [1000, 1999],
-        [2000, 2999]
+        [T1, E1],
+        [T2, E2]
       ]
     );
-    const ends = money(f, termsPolicy('t', 500, 1999, 0.01));
+    const ends = money(f, termsPolicy('t', T1, E1, 0.01));
     expect(programmeTermGaps(ends)).toEqual([
       {
         path: 'kinds.money[0].spans[1].what.programmes[0]',
@@ -157,25 +165,25 @@ describe('reconcilePolicy4 money', () => {
         term: 'guaranteeRateCut'
       }
     ]);
-    const r = reconcilePolicy4(ends, cal);
+    const r = reconcilePolicy4(ends, cal, A);
     expect(r.report.funding.droppedProgrammes.map((d) => d.reason)).toEqual(['term']);
     expect(programmeTermGaps(r.doc)).toEqual([]);
 
-    const off = money(f, { ...termsPolicy('t', 500, null, 0.01), on: false });
+    const off = money(f, { ...termsPolicy('t', T1, null, 0.01), on: false });
     expect(programmeTermGaps(off)).toHaveLength(2);
   });
 
   it('checks an off fund policy against the on terms policies', () => {
     const off = { ...fundPool([guarantee('u-g')]), on: false };
-    const r = reconcilePolicy4(money(off), cal);
+    const r = reconcilePolicy4(money(off), cal, A);
     expect(r.report.funding.droppedProgrammes).toHaveLength(1);
   });
 
   it('lets the lower policy win a key typed twice', () => {
     const d = money(
       fundPool([guarantee('u-g')]),
-      pol('t1', { tag: 'terms' }, [span(1000, null, { tag: 'terms', terms: {} })]),
-      termsPolicy('t2', 1000, null, 0.02)
+      pol('t1', { tag: 'terms' }, [span(T1, null, { tag: 'terms', terms: {} })]),
+      termsPolicy('t2', T1, null, 0.02)
     );
     expect(programmeTermGaps(d)).toEqual([]);
   });
@@ -185,17 +193,17 @@ describe('reconcilePolicy4 money', () => {
     void _b;
     const d = money(
       pol('baseline', { tag: 'baseline' }, [
-        span(1000, null, { tag: 'scales', entries: [{ pool: 'nope', from: 1, scale: 2 }] })
+        span(T1, null, { tag: 'scales', entries: [{ pool: 'nope', from: 1, scale: 2 }] })
       ]),
       fundPool([grant]),
       fundBaseline('state', [{ ...grant, id: 'p-s', pool: 'state' }])
     );
-    const r = reconcilePolicy4(d, rest as Calibration);
+    const r = reconcilePolicy4(d, rest as Calibration, A);
     expect(r.report.funding.droppedScales).toEqual([{ pool: 'nope', from: 1 }]);
     expect(r.report.funding.droppedProgrammes.map((x) => x.id)).toEqual(['p-s']);
     expect(r.report.funding.unusable).toBe(true);
-    expect(reconcilePolicy4(r.doc, rest as Calibration).doc).toBe(r.doc);
-    expect(reconcilePolicy4(DEFAULT_POLICY4, rest as Calibration).report.funding.unusable).toBe(
+    expect(reconcilePolicy4(r.doc, rest as Calibration, A).doc).toBe(r.doc);
+    expect(reconcilePolicy4(DEFAULT_POLICY4, rest as Calibration, A).report.funding.unusable).toBe(
       false
     );
   });
@@ -205,11 +213,11 @@ describe('reconcilePolicy4 money', () => {
     void _b;
     const d = money(
       pol('baseline', { tag: 'baseline' }, [
-        span(1000, null, { tag: 'scales', entries: [{ pool: 'nope', from: 1, scale: 2 }] })
+        span(T1, null, { tag: 'scales', entries: [{ pool: 'nope', from: 1, scale: 2 }] })
       ]),
       fundBaseline('state', [{ ...grant, id: 'p-s', pool: 'state' }])
     );
-    const r = reconcilePolicy4(d, rest as Calibration);
+    const r = reconcilePolicy4(d, rest as Calibration, A);
     expect(r.report.funding.droppedScales).toHaveLength(1);
     expect(r.report.funding.unusable).toBe(false);
   });
@@ -226,7 +234,7 @@ describe('reconcilePolicy4 permitting', () => {
       ...DEFAULT_POLICY4,
       kinds: { ...DEFAULT_POLICY4.kinds, permitting: [permitting(stale)] }
     };
-    const r = reconcilePolicy4(d, cal);
+    const r = reconcilePolicy4(d, cal, A);
     expect(r.report.timing).toHaveLength(2);
     for (const t of r.report.timing) {
       expect(t.policy).toBe('timing');
@@ -248,7 +256,7 @@ describe('reconcilePolicy4 permitting', () => {
       ...DEFAULT_POLICY4,
       kinds: { ...DEFAULT_POLICY4.kinds, permitting: [permitting(stale, 't', false)] }
     };
-    const r = reconcilePolicy4(d, cal);
+    const r = reconcilePolicy4(d, cal, A);
     expect(r.report.timing.every((t) => t.change.set === 'saved')).toBe(true);
     expect(r.report.timing.length).toBeGreaterThan(0);
   });
@@ -261,7 +269,7 @@ describe('reconcilePolicy4 permitting', () => {
       ...DEFAULT_POLICY4,
       kinds: { ...DEFAULT_POLICY4.kinds, permitting: [permitting(set)] }
     };
-    const r = reconcilePolicy4(d, cal);
+    const r = reconcilePolicy4(d, cal, A);
     expect(r.report.timing.map((t) => t.change.kind)).toEqual([
       'preset-unavailable',
       'preset-unavailable'
@@ -276,11 +284,12 @@ describe('reconcilePolicy4 permitting', () => {
 describe('reconcilePolicy4 identity', () => {
   it('returns an already-reconciled document as the same object, with an empty report', () => {
     for (const [name, d] of Object.entries(fixtures())) {
-      const r = reconcilePolicy4(d, cal);
+      const r = reconcilePolicy4(d, cal, A);
       expect(r.doc, name).toBe(d);
       expect(r.report, name).toEqual({
         timing: [],
-        funding: { droppedScales: [], droppedProgrammes: [], unusable: false }
+        funding: { droppedScales: [], droppedProgrammes: [], unusable: false },
+        spans: []
       });
     }
   });
@@ -305,27 +314,133 @@ describe('reconcilePolicy4 identity', () => {
           fundBaseline('nope', [g]),
           fundPool([guarantee('u-g'), grant]),
           pol('baseline', { tag: 'baseline' }, [
-            span(1000, null, { tag: 'scales', entries: [{ pool: 'nope', from: 1, scale: 2 }] })
+            span(T1, null, { tag: 'scales', entries: [{ pool: 'nope', from: 1, scale: 2 }] })
           ])
         ]
       }
     };
     for (const d of [...Object.values(fixtures()), dirty]) {
-      const once = reconcilePolicy4(d, cal);
-      const twice = reconcilePolicy4(once.doc, cal);
+      const once = reconcilePolicy4(d, cal, A);
+      const twice = reconcilePolicy4(once.doc, cal, A);
       expect(twice.doc).toBe(once.doc);
       expect(twice.report).toEqual({
         timing: [],
-        funding: { droppedScales: [], droppedProgrammes: [], unusable: false }
+        funding: { droppedScales: [], droppedProgrammes: [], unusable: false },
+        spans: []
       });
     }
-    expect(reconcilePolicy4(dirty, cal).doc).not.toBe(dirty);
+    expect(reconcilePolicy4(dirty, cal, A).doc).not.toBe(dirty);
   });
 
   it('does not mutate its input', () => {
     const d = fixtures().money;
     const before = JSON.stringify(d);
-    reconcilePolicy4(d, cal);
+    reconcilePolicy4(d, cal, A);
     expect(JSON.stringify(d)).toBe(before);
+  });
+});
+
+describe('reconcilePolicy4 span alignment', () => {
+  const SAVED = 11000;
+  const OPENED = SAVED + 400;
+  const zoning = (p: Policy): SimPolicy4 => ({
+    schema: 4,
+    kinds: { zoning: [p], permitting: [], money: [] }
+  });
+  const upzone: Effect = { tag: 'brushes', brushes: [] };
+  const saved = (m1: number, m2: number | null) => ({
+    from: monthFirstDay(SAVED, m1),
+    to: m2 === null ? null : monthLastDay(SAVED, m2)
+  });
+
+  it('snaps spans saved on an earlier dataset to the opening dataset', () => {
+    // months 1-6, 7-18 and 25-open of the saved dataset; 400 days is about 13 months
+    const a = saved(1, 6);
+    const b = saved(7, 18) as { from: number; to: number };
+    const c = saved(25, null);
+    const d = zoning(
+      pol('z', { tag: 'painted' }, [
+        { ...a, what: upzone },
+        { ...b, what: { tag: 'brushes', brushes: [] } },
+        { ...c, what: upzone }
+      ])
+    );
+    const r = reconcilePolicy4(d, cal, OPENED);
+    const out = r.doc.kinds.zoning[0].spans;
+    // the first is wholly before month 1 and dropped; the second straddles and clamps to month 1
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatchObject({ from: monthFirstDay(OPENED, 1) });
+    expect(out[0].to).toBe(monthLastDay(OPENED, monthOfDay(OPENED, b.to)));
+    expect(out[1].from).toBe(monthFirstDay(OPENED, monthOfDay(OPENED, c.from)));
+    expect(out[1].to).toBeNull();
+    expect(r.report.spans).toEqual([
+      { policy: 'z', index: 1, change: 'moved', was: b, now: { from: out[0].from, to: out[0].to } },
+      { policy: 'z', index: 2, change: 'moved', was: c, now: { from: out[1].from, to: null } },
+      { policy: 'z', index: 0, change: 'dropped', was: a, now: null }
+    ]);
+    expect(() => parsePolicy4(r.doc, { asOf: OPENED })).not.toThrow();
+    expect(reconcilePolicy4(r.doc, cal, OPENED).doc).toBe(r.doc);
+  });
+
+  it('trims the earlier span where snapping makes two overlap, and drops one it empties', () => {
+    // two spans inside the saved dataset's month 20 collapse into one month of the opening one
+    const first = monthFirstDay(OPENED, 7);
+    const a = { from: first + 1, to: first + 5 };
+    const b = { from: first + 6, to: first + 20 };
+    const d = zoning(
+      pol('z', { tag: 'painted' }, [
+        { ...a, what: upzone },
+        { ...b, what: upzone }
+      ])
+    );
+    const r = reconcilePolicy4(d, cal, OPENED);
+    const m = monthOfDay(OPENED, a.from);
+    const same = monthOfDay(OPENED, b.from) === m;
+    expect(same).toBe(true);
+    // the earlier span is emptied: dropped, the later one moved
+    expect(r.doc.kinds.zoning[0].spans).toHaveLength(1);
+    expect(r.report.spans.map((x) => [x.index, x.change])).toEqual([
+      [1, 'moved'],
+      [0, 'dropped']
+    ]);
+
+    // two spans in different saved months that overlap after snapping: the earlier is trimmed
+    const x = { from: monthFirstDay(SAVED, 20), to: monthLastDay(SAVED, 21) };
+    const y = { from: monthFirstDay(SAVED, 22), to: null };
+    const t = reconcilePolicy4(
+      zoning(
+        pol('z', { tag: 'painted' }, [
+          { ...x, what: upzone },
+          { ...y, what: upzone }
+        ])
+      ),
+      cal,
+      OPENED
+    );
+    const ys = t.doc.kinds.zoning[0].spans;
+    expect(ys).toHaveLength(2);
+    expect(ys[0].to).toBe(ys[1].from - 1);
+    expect(t.report.spans.find((e) => e.index === 0)?.change).toBe('trimmed');
+  });
+
+  it('merges nothing and leaves dates inside a what alone', () => {
+    const entries = [{ pool: 'state', from: 12345, scale: 2 }];
+    const g = { ...grant, id: 'p-s', pool: 'state' };
+    const d = money(
+      pol('baseline', { tag: 'baseline' }, [
+        { ...saved(20, 22), what: { tag: 'scales', entries } },
+        { ...saved(23, null), what: { tag: 'scales', entries } }
+      ]),
+      fundBaseline('state', [g])
+    );
+    const spans = (x: SimPolicy4) => x.kinds.money[0].spans;
+    const r = reconcilePolicy4(d, cal, OPENED);
+    expect(spans(r.doc)).toHaveLength(2);
+    for (const s of spans(r.doc)) {
+      expect(s.what.tag === 'scales' && s.what.entries).toEqual(entries);
+    }
+    // snapping may trim the first (it ends the day before the second begins), but drops nothing
+    expect(r.report.spans.map((e) => e.change)).not.toContain('dropped');
+    expect(spans(r.doc)[0].to).toBe(spans(r.doc)[1].from - 1);
   });
 });

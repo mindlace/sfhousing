@@ -203,8 +203,9 @@ export function parseSimDoc4(text: string, asOf: Day | null): Result<SimDoc4> {
 
 /**
  * Open a stored or shared document of schema 2, 3 or 4 as a reconciled schema 4 one. A schema 2
- * or 3 body goes through today's loader, then `upgradePolicy`; every body then through
- * `reconcilePolicy4` against the dataset.
+ * or 3 body goes through today's loader, then `upgradePolicy`; a schema 4 body is
+ * parsed without the month alignment (it may have been saved on an earlier dataset); every body
+ * then goes through `reconcilePolicy4`, which re-aligns its spans to the dataset.
  */
 export function openSimDoc4(
   text: string,
@@ -230,11 +231,11 @@ export function openSimDoc4(
       return fail('/schema', 'future-schema', FUTURE_SCHEMA_MESSAGE);
     if (s !== SIM_DOC4_SCHEMA)
       return fail('/schema', 'unknown-schema', 'The policy has an unknown schema version.');
-    const p = parseDoc4(o.value, ds.asOf, 'reconcile');
+    const p = parseDoc4(o.value, null, 'reconcile');
     if (!p.ok) return p;
     doc = p.value;
   }
-  const rec = reconcilePolicy4(doc.policy, ds.calibration);
+  const rec = reconcilePolicy4(doc.policy, ds.calibration, ds.asOf);
   const out = { doc: { ...doc, policy: rec.doc }, report: rec.report };
   return { ok: true, value: upgradedFrom === undefined ? out : { ...out, upgradedFrom } };
 }

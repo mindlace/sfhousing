@@ -159,14 +159,15 @@ export function compileTimeline(
   const W = ctx.windowMonths;
   if (!Number.isInteger(W) || W < 1)
     throw new RangeError(`compileTimeline: windowMonths ${W} is not a whole number of months`);
-  if (reconcilePolicy4(doc, input.calibration).doc !== doc)
+  // Before the reconciled check: an unaligned span is named by its own path.
+  checkSpans(doc, input.asOf);
+  if (reconcilePolicy4(doc, input.calibration, input.asOf).doc !== doc)
     fail('policy', 'expected a reconciled document');
   // Implied by the check above (reconcile drops every gap it finds); kept so the guard is exactly
   // the set of programmes and stretches `programmeTermGaps` checks. `buildFinance` then checks
   // only the programmes in force in a month, with that month's terms: a subset of it.
   const gap = programmeTermGaps(doc)[0];
   if (gap !== undefined) fail(gap.path, `needs ${gap.term}, which is not sourced`);
-  checkSpans(doc, input.asOf);
 
   const now = ctx.now ?? (() => performance.now());
   const asOf = input.asOf;

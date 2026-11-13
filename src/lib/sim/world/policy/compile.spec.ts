@@ -77,7 +77,7 @@ const RATE_CUT = policy('terms', { tag: 'terms' }, [
 
 /** The document reconciled with the mini calibration (it re-fits timing preset layers). */
 const reconciled = (doc: SimPolicy4) =>
-  reconcilePolicy4(doc, miniCompileCtx().input.calibration).doc;
+  reconcilePolicy4(doc, miniCompileCtx().input.calibration, miniCompileCtx().input.asOf).doc;
 
 function compiled(doc: SimPolicy4, ctx: CompileCtx, base: 'plan' | 'preFzp' = 'plan') {
   const c = compileTimeline(doc, LOTS, ctx, base);
@@ -192,7 +192,7 @@ describe('compileTimeline: touched (rule 20)', () => {
   it('for an added paint policy is exactly the rows whose view row changed', () => {
     const ctx = ctx60({ finance: true });
     const doc = miniDoc(painted('p', [[13, null, 7]]), RATE_CUT, fund(20));
-    expect(reconcilePolicy4(doc, ctx.input.calibration).doc).toBe(doc);
+    expect(reconcilePolicy4(doc, ctx.input.calibration, ctx.input.asOf).doc).toBe(doc);
     const { t } = compiled(doc, ctx);
     expect(t.changes()).toEqual([13, 20]);
     const want = scanRows(t.frameAt(12).view, t.frameAt(13).view);
@@ -301,7 +301,7 @@ describe('compileTimeline: checks', () => {
     const err = errorOf(() => compileTimeline(doc, LOTS, ctx, 'plan'));
     expect(err).toBeInstanceOf(LeverFormatError);
     expect((err as LeverFormatError).path).toBe('policy');
-    const ok = reconcilePolicy4(doc, ctx.input.calibration).doc;
+    const ok = reconcilePolicy4(doc, ctx.input.calibration, ctx.input.asOf).doc;
     expect(ok).not.toBe(doc);
     compiled(ok, ctx);
   });
