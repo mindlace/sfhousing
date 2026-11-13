@@ -3,7 +3,7 @@
 // schedules, under one frame and no public money.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
-import type { Demolition, TimedPackedCell } from '$lib/map/types';
+import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
 import { createGeometry, type Geometry } from '$lib/sim/scenario/geometry';
 import { simulateDetailed } from '$lib/sim/scenario/simulate';
 import type { Schedule, SimInput } from '$lib/sim/scenario/types';
@@ -120,7 +120,7 @@ function suite(name: string, load: () => Promise<{ input: SimInput; records: Par
     });
 
     it("the demolitions sent equal today's revision 0 list", () => {
-      const folded: Demolition[] = [...r.demolished.keys()]
+      const folded: TimelineUpdate['demolish'] = [...r.demolished.keys()]
         .sort(cmp)
         .map((parcelId) => ({ parcelId, day: r.demolished.get(parcelId)! }));
       expect(folded.length).toBeGreaterThan(0);
