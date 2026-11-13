@@ -80,7 +80,11 @@ export function enterStage(
   p.leave[row] = p.anchor[row] + Math.floor(speed * (p.length[row] - survived));
 }
 
-/** A speed change on day `c`: carries the used length at the old speed and re-plans the leave (rule 12). */
+/**
+ * A speed change on day `c`: carries the used length at the old speed and re-plans the leave
+ * (rule 12). Call it only when `speed` differs from the row's speed: `used` is a float, and
+ * re-anchoring at an unchanged speed can move the leave by a day.
+ */
 export function reanchor(w: World, row: number, c: Day, speed: number): void {
   const p = w.projects;
   p.used[row] += (c - p.anchor[row]) / p.speed[row];

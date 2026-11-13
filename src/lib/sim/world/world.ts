@@ -9,13 +9,15 @@ import type { Day } from '$lib/timelapse/time';
 import { PATHWAYS, STAGE_ORDER, type Pathway, type Stage } from '$lib/timelapse/types';
 import { addProject, emptyWorld, ensureLot, lotRow, pushDisplacement, pushRev } from './columns';
 import { createHolds } from './holds';
-import { enterStage } from './stage';
+import { eachFreeLot } from './due';
+import { enterStage, reanchor, rowSpeed } from './stage';
 import { monthFirstDay, monthLastDay } from './months';
 import { createProjects, dueMonthOf, followProject, rowStaticsOf, type Sys3 } from './pipeline';
 import type { PolicyFrame, PolicyTimeline } from './policy/frame';
 import { lotEntity, ordinaryStart, type OrdinaryStart } from './rates';
 import type { Statics } from './statics';
 import {
+  END_ALIVE,
   LOT_DONE,
   LOT_FREE,
   LOT_LIVE,
@@ -270,6 +272,53 @@ function stepCtx(
   };
 }
 
+/**
+ * System 1, when the frame differs from last month's.
+ *
+ * Rule 7: the free lots among `touched(month)`, or every free lot when that is null or the market
+ * moved, are planned again at their ordinary start read through this month's frame (none when
+ * null). `take(month)` has not run yet, so every entity still on the due list is due in this month
+ * or later: the lots due in a month before this one were taken and started in that month's step
+ * (or are no longer free). Rule 6 keeps every lot-month that began before this month on the frame
+ * it ran on, so a lot's new plan can never fall before this month; a plan that did would mean the
+ * due list was out of step, and it throws.
+ *
+ * Rule 12: every live row whose speed under the new frame differs is re-anchored on the month's
+ * first day and put at the month of its new leave (this month when the carried end lands in it,
+ * so the row is stepped by system 3 below).
+ */
+function policyChanged(ctx: Step): void {
+  const { world, due, statics, timeline, frame, month, x } = ctx;
+  const replan = (lot: number, r: Day, k: number) => {
+    due.drop(lot);
+    const s = ordinaryStart(statics, timeline, month, x.sh, lot, r, k);
+    if (s === null) return;
+    if (s.month < month)
+      throw new Error(`lot ${lot} replanned in month ${month} starts in ${s.month}`);
+    due.put(lot, s.month);
+  };
+  const touched = timeline.touched(month);
+  if (touched === null || frame.market !== timeline.frameAt(Math.max(1, month - 1)).market) {
+    eachFreeLot(world, statics, timeline, month, replan);
+  } else {
+    const l = world.lots;
+    for (const lot of touched) {
+      const i = lotRow(l, lot);
+      if (i < 0) replan(lot, statics.asOf, 0);
+      else if (l.state[i] === LOT_FREE) replan(lot, l.r[i], l.k[i]);
+    }
+  }
+  const p = world.projects;
+  for (let row = 0; row < p.n; row++) {
+    if (p.endKind[row] !== END_ALIVE) continue;
+    const speed = rowSpeed(world, row, frame);
+    if (speed === p.speed[row]) continue;
+    reanchor(world, row, ctx.firstDay, speed);
+    due.drop(-1 - row);
+    ctx.put(row);
+  }
+}
+
 /** Advances `world` in place by one model month (S2). */
 export function step(
   world: World,
@@ -285,6 +334,8 @@ export function step(
   const frame = timeline.frameAt(month);
   const ctx = stepCtx(world, due, statics, timeline, seed, out, month, frame);
   const { x, put } = ctx;
+  // System 1: policy (rules 7 and 12).
+  if (frame.id !== world.frame) policyChanged(ctx);
   const entities = due.take(month);
   // System 3: projects (entity -1 - row) in ascending row order, the reverse of `take`'s order.
   let lotsFrom = 0;

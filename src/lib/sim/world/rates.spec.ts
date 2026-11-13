@@ -11,7 +11,7 @@ import type { SimInput } from '$lib/sim/scenario/types';
 import { log } from '$lib/timelapse/math';
 import { MONTH_DAYS } from '$lib/timelapse/time';
 import { monthFirstDay, monthLastDay, monthOfDay } from './months';
-import type { PolicyTimeline, ZoningView } from './policy/frame';
+import type { PolicyFrame, PolicyTimeline, ZoningView } from './policy/frame';
 import { lotEntity, ordinaryStart, startRates } from './rates';
 import { staticsOf, type Statics } from './statics';
 import { benchInput } from './test/cities.node';
@@ -137,6 +137,64 @@ describe.each(cities)('the ordinary clock on the %s city', (_name, inputOf) => {
     }
   });
 
+  it('an empty segment between two changes in a row: unmerged bounds, and A, B, A is one frame', () => {
+    const input = inputOf();
+    const pre = precomputeOf(input);
+    const statics = staticsOf(input);
+    const asOf = input.asOf;
+    const s0 = marketAt(input, asOf);
+    // A free day r and a change month c with no lot-month starting in model month c.
+    let r = -1;
+    let c = -1;
+    for (let d = asOf; d < asOf + 400 && r < 0; d++) {
+      for (let m = monthOfDay(asOf, d + 1) + 1; m < 40; m++) {
+        const b0 = lastInitiationMonth(d, monthFirstDay(asOf, m) - 1);
+        if (b0 === lastInitiationMonth(d, monthFirstDay(asOf, m + 1) - 1)) {
+          r = d;
+          c = m;
+          break;
+        }
+      }
+    }
+    expect(r).toBeGreaterThanOrEqual(asOf);
+    const fa = frameOf(input);
+    const fb = frameOf(input, { id: 1, market: s0 + 0.4 });
+    const fc = frameOf(input, { id: 2, market: s0 + 0.8 });
+    const steps = (b: PolicyFrame, d: PolicyFrame): PolicyTimeline => ({
+      frameAt: (m) => (m > c ? d : m === c ? b : fa),
+      changes: () => [c, c + 1],
+      touched: () => null,
+      readyThrough: () => Number.MAX_SAFE_INTEGER
+    });
+    const abc = steps(fb, fc);
+    const aba = steps(fb, { ...fa, id: 3 });
+    const rates = [fa, fb, fc].map((g) => startRates(g.view, g.market));
+    const bounds = regimeMonths(r, [monthFirstDay(asOf, c), monthFirstDay(asOf, c + 1)]);
+    expect(bounds[0]).toBe(bounds[1]);
+    const sh = seedHash(1);
+    let planned = 0;
+    for (let j = 0; j < pre.candidates.length; j++) {
+      const i = pre.candidates[j];
+      const stream = streamOf(sh, pre.entity[j], 0);
+      const T = piecewiseMonth(log(1 - drawOn(stream, P.INIT, 0)), bounds, [
+        rates[0][i],
+        rates[1][i],
+        rates[2][i]
+      ]);
+      const got = ordinaryStart(statics, abc, c + 5, sh, i, r, 0);
+      if (T === 0) expect(got).toBeNull();
+      else {
+        planned++;
+        const day = r + 1 + Math.floor((T - 1 + drawOn(stream, P.INIT_DAY, 0)) * MONTH_DAYS);
+        expect(got?.day).toBe(day);
+      }
+      expect(ordinaryStart(statics, aba, c + 5, sh, i, r, 0)).toEqual(
+        ordinaryStart(statics, oneFrame(fa), c + 5, sh, i, r, 0)
+      );
+    }
+    expect(planned).toBeGreaterThan(0);
+  });
+
   it('reads no frame past `month`', () => {
     const input = inputOf();
     const pre = precomputeOf(input);
@@ -199,7 +257,8 @@ describe('zero and infinite rates across segments', () => {
     const none = changingAt(5, f, { ...f, id: 1 }, null);
     expect(ordinaryStart(statics, none, 8, seedHash(1), 0, asOf, 0)).toBeNull();
     const got = ordinaryStart(statics, t, 8, seedHash(1), 2, asOf, 0);
-    expect(got === null || !Number.isNaN(got.day + got.month + got.frameMonth)).toBe(true);
+    expect(got).not.toBeNull();
+    expect(Number.isFinite(got!.day + got!.month + got!.frameMonth)).toBe(true);
   });
 
   it('bounds follow lastInitiationMonth from the day the lot became free', () => {

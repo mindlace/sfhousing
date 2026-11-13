@@ -75,7 +75,9 @@ export interface OrdinaryStart {
  * `monthOfDay(r + 1) < c <= month` from lot-month `lastInitiationMonth(r, monthFirstDay(c) - 1) + 1`,
  * the last continuing without end. Empty segments are dropped and equal neighbouring rates
  * merged before `piecewiseMonth`, so a change that leaves the lot's rate alone gives exactly the
- * plan it had. Null when the threshold is never passed. Never reads a frame above `month`.
+ * plan it had. Null when the threshold is never passed; in particular a lot whose rate is 0 under
+ * every frame it reads is never planned (rule 6), where today's `ordinaryMonth` would fall back
+ * to month 1. Never reads a frame above `month`.
  */
 export function ordinaryStart(
   statics: Statics,

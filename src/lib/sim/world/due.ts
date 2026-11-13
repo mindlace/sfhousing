@@ -76,6 +76,32 @@ export function planDue(
   return due;
 }
 
+/**
+ * Calls `visit(lot, r, k)` for every free lot in ascending lot order: a lot with no row (free
+ * since the dataset date on attempt 0) and a row in `LOT_FREE` (its own `r` and `k`). A lot with
+ * no row is left out when every frame from month 1 through `month` gives it a zero start rate: it
+ * has lived through all of them and never starts. Reads frames up to `month` only.
+ */
+export function eachFreeLot(
+  world: World,
+  statics: Statics,
+  timeline: PolicyTimeline,
+  month: number,
+  visit: (lot: number, r: number, k: number) => void
+): void {
+  const rates = [timeline.frameAt(1)];
+  for (const c of timeline.changes()) if (c > 1 && c <= month) rates.push(timeline.frameAt(c));
+  const rateRows = rates.map((f) => startRates(f.view, f.market));
+  const l = world.lots;
+  let next = 0;
+  for (let lot = 0; lot < statics.parcelId.length; lot++) {
+    if (next < l.n && l.lot[next] === lot) {
+      const i = next++;
+      if (l.state[i] === LOT_FREE) visit(lot, l.r[i], l.k[i]);
+    } else if (rateRows.some((a) => a[lot] < 0)) visit(lot, statics.asOf, 0);
+  }
+}
+
 /** Puts every free lot at the month of its ordinary start (rules 5 and 6). */
 function planLots(
   world: World,
@@ -86,27 +112,12 @@ function planLots(
 ): void {
   const month = world.month + 1;
   const sh = seedHash(seed);
-  // A lot with no row has lived through every frame from month 1: no chance in any of them
-  // means it never starts.
-  const rates = [timeline.frameAt(1)];
-  for (const c of timeline.changes()) if (c > 1 && c <= month) rates.push(timeline.frameAt(c));
-  const rateRows = rates.map((f) => startRates(f.view, f.market));
-  const l = world.lots;
-  let next = 0;
-  for (let lot = 0; lot < statics.parcelId.length; lot++) {
-    let r = statics.asOf;
-    let k = 0;
-    if (next < l.n && l.lot[next] === lot) {
-      const i = next++;
-      if (l.state[i] !== LOT_FREE) continue;
-      r = l.r[i];
-      k = l.k[i];
-    } else if (!rateRows.some((a) => a[lot] < 0)) continue;
+  eachFreeLot(world, statics, timeline, month, (lot, r, k) => {
     const s = ordinaryStart(statics, timeline, month, sh, lot, r, k);
-    if (s === null) continue;
+    if (s === null) return;
     if (s.month <= world.month) {
       throw new Error(`planDue: lot ${lot} starts in month ${s.month}, already stepped`);
     }
     due.put(lot, s.month);
-  }
+  });
 }
