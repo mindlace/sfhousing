@@ -253,6 +253,13 @@ describe('revisions', () => {
     }
   });
 
+  it('throws on a row with no base revision entry', () => {
+    const f = withRevision(1, [0.5, 2], [1]);
+    const bare = rowOn(0, streams[0]);
+    bare.w.projects.rule[bare.row] = RULE_PIPELINE;
+    expect(() => reviseOnEntry(bare.w, bare.row, stage, 400, f)).toThrow(/base revision/);
+  });
+
   it('none from construction on, none for RULE_NONE, none without an entry for the stage', () => {
     const f = withRevision(1, [0.5, 2], [1]);
     const none = rowOn(0, streams[0]);

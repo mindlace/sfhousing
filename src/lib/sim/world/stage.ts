@@ -114,14 +114,15 @@ export function reviseOnEntry(
 ): boolean {
   const p = w.projects;
   if (stage >= CONSTRUCTION || p.rule[row] === RULE_NONE) return false;
+  const last = p.revLast[row];
+  if (last < 0) throw new Error(`reviseOnEntry: row ${row} has no base revision entry`);
   const at = revisionAtOf(frame.calibration)[stage];
   if (at === undefined) return false;
   const stream = p.stream[row];
   if (!(drawOn(stream, P.REV, stage) < at.probability)) return false;
   const ratio = revisionRatio(at.ratio, drawOn(stream, P.REV_RATIO, stage));
-  const last = p.revLast[row];
-  const units = last >= 0 ? p.revUnits[last] : p.units[row];
-  const lastStories = last >= 0 ? p.revStories[last] : p.stories[row];
+  const units = p.revUnits[last];
+  const lastStories = p.revStories[last];
   let next: number;
   let stories: number | null;
   if (p.rule[row] === RULE_PIPELINE) {

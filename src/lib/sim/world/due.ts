@@ -1,4 +1,7 @@
-import type { Due } from './types';
+import { dueMonthOf } from './pipeline';
+import type { PolicyTimeline } from './policy/frame';
+import type { Statics } from './statics';
+import type { Due, World } from './types';
 
 /**
  * What is due in which model month (S11). Not part of the world: it holds a map and may be
@@ -43,4 +46,30 @@ export class DueList implements Due {
   drop(entity: number): void {
     this.month.delete(entity);
   }
+}
+
+/**
+ * What is due in months `world.month + 1 .. through`, worked out from the world alone (S11). For
+ * now projects only: each live row at the month of its stage end, each master at the month of its
+ * next phase filing.
+ */
+export function planDue(
+  world: World,
+  statics: Statics,
+  timeline: PolicyTimeline,
+  seed: number,
+  through: number
+): DueList {
+  void timeline;
+  void seed;
+  const due = new DueList(through);
+  const p = world.projects;
+  for (let row = 0; row < p.n; row++) {
+    const m = dueMonthOf(world, statics.asOf, row);
+    if (m === 0) continue;
+    if (m <= world.month)
+      throw new Error(`planDue: row ${row} is due in month ${m}, already stepped`);
+    due.put(-1 - row, m);
+  }
+  return due;
 }
