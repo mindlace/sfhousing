@@ -11,7 +11,16 @@
 //   cell is sent whole once every massing it needs is in the memo.
 // - Demolitions (rule 8, T13): a T11 lot and the earliest day a project entered construction on
 //   it. Revision 0 carries every one known; later updates those new or changed since the last.
-//   An update goes out when a cell is packed or a demolition is pending.
+//   A lot can be sent in `demolish` more than once (an earlier day found later); the map's pump
+//   keeps every entry and the earliest governs, so the stream never assumes one entry per lot.
+// - `rewind` (rule 9): per row the stream keeps the key (entered, end, revisions) of the schedule
+//   it last sent, and per cell whether it was ever sent. A row gone from the restored world, or
+//   whose schedule now differs, dirties its cell. A dirty cell left with no project goes into
+//   `removedCells` if it was sent, and is dropped silently if not. Demolitions are recomputed
+//   from the restored world and diffed against those sent: a lot lost or whose day changed goes
+//   into `restore` (taking back every pump entry), and then, if it still has a day, into
+//   `demolish` with that day; both may travel in one update (restore is applied first).
+// - An update goes out when a cell is packed or removed, or a demolition or restore is pending.
 //
 // Worker-safe, under the determinism lint rule (no transcendental Math).
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
@@ -25,6 +34,7 @@ import {
   type MassingCtx
 } from '$lib/sim/scenario/massing';
 import type { Massing, Schedule } from '$lib/sim/scenario/types';
+import { STAGE_ORDER } from '$lib/timelapse/types';
 import { monthLastDay } from './months';
 import { scheduleAt } from './read';
 import type { Statics } from './statics';
@@ -85,9 +95,17 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
   /** Dirty anchor cells in first-dirtied order (re-dirtying keeps the place). */
   const dirty = new Map<string, true>();
   /** T11 lot → the earliest day a project entered construction on it (rule 8, T13). */
-  const demolitions = new Map<ParcelId, number>();
+  let demolitions = new Map<ParcelId, number>();
   /** Lots whose earliest construction day is new or changed since the last update. */
   const newDemolitions = new Set<ParcelId>();
+  /** T11 lot → the earliest day the map holds for it (what has been sent, less restores). */
+  const sentDemolitions = new Map<ParcelId, number>();
+  /** Lots whose demolition no longer holds after a rewind, not yet sent in `restore`. */
+  const restores = new Set<ParcelId>();
+  /** Row → the key of the schedule last packed and sent for it (rule 9). */
+  const sentKeys = new Map<number, string>();
+  /** Cells the map holds: sent in `cells` and not since in `removedCells`. */
+  const sentCells = new Set<string>();
   let revision = 0;
 
   const cellOf = (id: ParcelId): string => P.cells[P.cell[P.index.get(id)!]].cellId;
@@ -150,6 +168,18 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
     return `${s.projectId}|${k}|${r.day}|${r.units}|${r.stories}`;
   }
 
+  /** What a packed slot shows of a row (rule 9): its stage days, end and revisions; '-' for none. */
+  function scheduleKey(s: Schedule | null): string {
+    if (s === null) return '-';
+    let k = '';
+    for (const stage of STAGE_ORDER) k += `${s.entered[stage] ?? ''},`;
+    const e = s.end;
+    k +=
+      e.kind === 'open' ? '|open' : e.kind === 'complete' ? `|c${e.day}` : `|x${e.day}${e.stage}`;
+    for (const r of s.revisions) k += `|${r.day}:${r.units}:${r.stories}`;
+    return k;
+  }
+
   /**
    * `packTimedCell` over the cell's items, leaving out (and warning once about) an item that will
    * not pack, so one bad lot never costs its whole cell (as geometry.ts:166-182).
@@ -175,7 +205,8 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
   /**
    * The cell's pack items at `day`, one project at a time, its massings from the memo. Before a
    * project with a revision not in the memo, `mayWork()` is asked; on false the cell is left
-   * unfinished (null) and the massings done so far stay in the memo for the next call.
+   * unfinished (null) and the massings done so far stay in the memo for the next call. `keys`
+   * gets each row's schedule key, for `sentKeys` once the cell is sent.
    */
   function itemsOf(
     world: World,
@@ -183,11 +214,13 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
     cell: string,
     day: number,
     mayWork: () => boolean,
-    worked: () => void
+    worked: () => void,
+    keys: [number, string][]
   ): TimedPackInput[] | null {
     const items: TimedPackInput[] = [];
     for (const row of rowsIn.get(cell) ?? []) {
       const schedule = scheduleAt(world, statics, row, day);
+      keys.push([row, scheduleKey(schedule)]);
       if (schedule === null) continue;
       const recs: ParcelRecord[] = [];
       for (const id of placed[row].ids) {
@@ -254,22 +287,37 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
         worked = true;
         warmed++;
       };
+      const removedCells: string[] = [];
       for (const cell of dirty.keys()) {
         if (!packable(cell)) continue;
         if (!mayWork()) break;
         const before = warmed;
-        const items = itemsOf(world, statics, cell, day, mayWork, didWork);
+        const keys: [number, string][] = [];
+        const items = itemsOf(world, statics, cell, day, mayWork, didWork, keys);
         if (items === null) break;
         // a cell warmed in this call packs only while budget is left
         if (warmed > before && items.length > 0 && !mayWork()) break;
         dirty.delete(cell);
+        for (const [row, key] of keys) sentKeys.set(row, key);
         // a cell with nothing to pack is not work: a null flush with no massing work then means
-        // no packable dirty cell is left
-        if (items.length === 0) continue;
+        // no packable dirty cell is left. One the map holds is removed (rule 9); one it never
+        // had is dropped.
+        if (items.length === 0) {
+          if (sentCells.delete(cell)) removedCells.push(cell);
+          continue;
+        }
         worked = true;
         cells.push(packSafely(cell, items));
+        sentCells.add(cell);
       }
-      if (cells.length === 0 && newDemolitions.size === 0) return null;
+      if (
+        cells.length === 0 &&
+        removedCells.length === 0 &&
+        newDemolitions.size === 0 &&
+        restores.size === 0
+      ) {
+        return null;
+      }
       // revision 0 carries every demolition known; later updates those new or changed since
       const lots = revision === 0 ? [...demolitions.keys()] : [...newDemolitions];
       newDemolitions.clear();
@@ -277,6 +325,14 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
         parcelId,
         day: demolitions.get(parcelId)!
       }));
+      // revision 0 replaces the map's list: nothing to take back
+      const restore = revision === 0 ? [] : [...restores].sort(cmp);
+      restores.clear();
+      if (revision === 0) sentDemolitions.clear();
+      for (const d of demolish) {
+        const held = sentDemolitions.get(d.parcelId);
+        if (held === undefined || d.day < held) sentDemolitions.set(d.parcelId, d.day);
+      }
       let complete = false;
       if (world.month >= windowMonths) {
         complete = true;
@@ -287,11 +343,53 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
           }
         }
       }
-      return { revision: revision++, cells, removedCells: [], demolish, complete };
+      const u: TimelineUpdate = { revision: revision++, cells, removedCells, demolish, complete };
+      if (restore.length > 0) u.restore = restore;
+      return u;
     },
 
-    rewind() {
-      throw new Error('map-stream: not built yet');
+    rewind(world, statics) {
+      const n = world.projects.n;
+      const day = monthLastDay(statics.asOf, world.month);
+      // rows past the restored world's end are gone: their cells are dirty and they leave the
+      // stream (a later row of that index is a new project, placed afresh)
+      for (let row = n; row < placed.length; row++) {
+        const at = placed[row];
+        sentKeys.delete(row);
+        if (at === undefined || at.cells.length === 0) continue;
+        const home = at.cells[0];
+        dirty.set(home, true);
+        const rows = rowsIn.get(home)!;
+        rows.delete(row);
+        if (rows.size === 0) rowsIn.delete(home);
+      }
+      placed.length = Math.min(placed.length, n);
+      for (const row of [...sentKeys.keys()]) if (row >= n) sentKeys.delete(row);
+      // a row whose schedule differs from the one sent (stage days or end unknown again)
+      for (const [row, key] of sentKeys) {
+        if (scheduleKey(scheduleAt(world, statics, row, day)) === key) continue;
+        const at = placed[row];
+        if (at !== undefined && at.cells.length > 0) dirty.set(at.cells[0], true);
+      }
+      // demolitions of the restored world, diffed against those the map holds
+      const now = new Map<ParcelId, number>();
+      for (let row = 0; row < n; row++) {
+        const s = scheduleAt(world, statics, row, day);
+        const c = s?.entered.construction;
+        if (c === undefined) continue;
+        for (const id of place(world, statics, row).ids) {
+          const d = now.get(id);
+          if (d === undefined || c < d) now.set(id, c);
+        }
+      }
+      for (const [lot, held] of sentDemolitions) {
+        if (now.get(lot) === held) continue;
+        restores.add(lot);
+        sentDemolitions.delete(lot);
+      }
+      newDemolitions.clear();
+      for (const [lot, d] of now) if (sentDemolitions.get(lot) !== d) newDemolitions.add(lot);
+      demolitions = now;
     },
 
     snapshot() {

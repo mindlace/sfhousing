@@ -674,9 +674,8 @@ describe('map-stream: onEvent and flush', () => {
     expect(stream.flush(world, bench.statics, Infinity)).toBeNull();
   });
 
-  it('rewind and snapshot are not built yet', () => {
+  it('snapshot is not built yet', () => {
     const { world, stream } = started(bench);
-    expect(() => stream.rewind(world, bench.statics)).toThrow('map-stream: not built yet');
     expect(() => stream.snapshot(world, bench.statics)).toThrow('map-stream: not built yet');
   });
 });

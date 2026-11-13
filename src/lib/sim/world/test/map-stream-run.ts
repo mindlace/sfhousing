@@ -45,6 +45,28 @@ export function startStream(
 }
 
 /**
+ * A copy of `saved` as world 1 after an edit: `stream.rewind(copy, statics)`, then a due list for
+ * `timeline` through `through`. The copy's events reach `stream` through the returned sink.
+ */
+export function rewindTo(
+  saved: World,
+  o: {
+    statics: Statics;
+    timeline: PolicyTimeline;
+    seed: number;
+    stream: MapStream;
+    through: number;
+  }
+): { world: World; due: Due; sink: StreamSink } {
+  const world = structuredClone(saved);
+  o.stream.rewind(world, o.statics);
+  const sink = new StreamSink(o.stream, o.statics);
+  sink.attach(world);
+  const due = planDue(world, o.statics, o.timeline, o.seed, o.through);
+  return { world, due, sink };
+}
+
+/**
  * Steps `world` through month `through`, flushing every `flushEvery` months (default 1) and after
  * the last, with `budgetMs` (default Infinity). Returns the non-null updates, each of whose cells
  * has passed `validateTimedCell`. The due list is `due`, else `planDue(…, through)`.
