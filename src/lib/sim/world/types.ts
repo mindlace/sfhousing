@@ -208,8 +208,10 @@ export interface StepCtx {
    * two and before any later event of its chain. The chain may append further rows (a lot freed
    * and started again), so `n` can end above row + 1. With -1, no row is made.
    *
-   * Called from `serve`, the chain's stage events reach `onProjectEvent` synchronously, before
-   * the call returns. Called from another hook, they reach only `out` (rule 16 as amended).
+   * Called from `serve`, or from `onProjectEvent` during systems 5 and 6, the chain's stage events
+   * reach `onProjectEvent` synchronously (re-entrantly in the second case) before the call
+   * returns. Called from `policyChanged`, `moneyIn`, `apply` or `shadow`, they reach only `out`
+   * (rule 16 as amended).
    */
   startProject(lot: number, day: Day, funded: FundedStart | null): number;
   /**
@@ -232,7 +234,7 @@ export interface FundingSystem {
   moneyIn(ctx: StepCtx): void;
   /**
    * Just after it is sent: each event of system 3, and each event of systems 5 and 6 (a start and
-   * its chain to the month's end), except the `'start'` of a project this funding system started
+   * its chain to the month's end; not `'displaced'`, which goes to `out` only), except the `'start'` of a project this funding system started
    * itself through `ctx.startProject`, with a `FundedStart` or with null; a start the core makes
    * in that start's chain (a lot freed and started again) is passed. It must not call
    * `startProject` during system 3 (it throws there).
