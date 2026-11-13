@@ -192,8 +192,9 @@ describe('finance engine budgets (F18, spec 4.17)', () => {
     expect(net(() => baseline, 'simulateNet, bench baseline')).toBeLessThanOrEqual(30);
   });
 
-  it('case 3. plus the bench funding set: median ≤ 45 ms', { timeout: TIMEOUT }, () => {
-    expect(net(() => funding, 'simulateNet, bench baseline + funding')).toBeLessThanOrEqual(45);
+  // Spec fallback 2: ceil(cold-boot median × 1.25); see docs/dev/finance-engine.md.
+  it('case 3. plus the bench funding set: median ≤ 83 ms', { timeout: TIMEOUT }, () => {
+    expect(net(() => funding, 'simulateNet, bench baseline + funding')).toBeLessThanOrEqual(83);
   });
 
   it(
@@ -731,8 +732,9 @@ describe('scenario host budgets with the bench funding as levers (F18 cases 4 an
     expect(t).toBeLessThanOrEqual(9000);
   });
 
+  // Spec fallback 2: ceil(cold-boot median × 1.25); see docs/dev/finance-engine.md.
   it(
-    'case 5. longest macrotask ≤ 50 ms during band and twin work',
+    'case 5. longest macrotask ≤ 121 ms during band and twin work',
     { timeout: TIMEOUT },
     async () => {
       await rig.idle();
@@ -752,7 +754,7 @@ describe('scenario host budgets with the bench funding as levers (F18 cases 4 an
           top.map(([n, d]) => `${n}: ${d.toFixed(1)}`).join(', ')
       );
       expect(runs).toBeGreaterThan(40);
-      expect(dur(worst)).toBeLessThanOrEqual(50);
+      expect(dur(worst)).toBeLessThanOrEqual(121);
     }
   );
 });
@@ -762,8 +764,9 @@ describe('scenario host budgets with the bench funding as levers (F18 cases 4 an
 // representative needs them), the shown run and geometry before the first `timeline`. Three
 // inputs: (a) the bench city as is (no market, no baseline funding), default levers; (b) the bench
 // calibration (market, `baselineFunding`, `affordableRoutes`), default levers; (c) (b) with the
-// bench funding on the plan, the lever rig of case 4. Each case has its own host. No budgets yet:
-// the logged numbers are the evidence a budget is set from. The split, from the posts and tasks
+// bench funding on the plan, the lever rig of case 4. Each case has its own host. Budgets (spec
+// fallback 2): ceil(cold-boot median × 1.25), rounded up to 10 ms; see docs/dev/finance-engine.md.
+// The heap is reported, with no budget. The split, from the posts and tasks
 // the rig records: load (to `levers/current`), warm (to the first band task), FZP band (to the
 // `ranks` post), shown run (to the end of the shown-run task), geometry (to revision 0).
 describe('time to revision 0 with levers and a null seed (rev0)', () => {
@@ -777,7 +780,8 @@ describe('time to revision 0 with levers and a null seed (rev0)', () => {
   async function rev0(
     name: string,
     calibration: SynthCity['calibration'] | null,
-    finance: (typeof DEFAULT_LEVERS)['finance'] | null
+    finance: (typeof DEFAULT_LEVERS)['finance'] | null,
+    budget: number
   ): Promise<void> {
     let c = city;
     if (calibration) {
@@ -845,22 +849,23 @@ describe('time to revision 0 with levers and a null seed (rev0)', () => {
         ]);
       expect(t).toBeGreaterThan(0);
       expect(Number.isFinite(t)).toBe(true);
+      expect(t).toBeLessThanOrEqual(budget);
     } finally {
       rig.host.dispose();
       rig.unhook();
     }
   }
 
-  it('rev0: unfunded', { timeout: TIMEOUT }, async () => {
-    await rev0('unfunded', null, null);
+  it('rev0: unfunded, ≤ 2,330 ms', { timeout: TIMEOUT }, async () => {
+    await rev0('unfunded', null, null, 2330);
   });
 
-  it('rev0: funded baseline', { timeout: TIMEOUT }, async () => {
-    await rev0('funded baseline', benchCalibration(), null);
+  it('rev0: funded baseline, ≤ 4,820 ms', { timeout: TIMEOUT }, async () => {
+    await rev0('funded baseline', benchCalibration(), null, 4820);
   });
 
-  it('rev0: bench funding', { timeout: TIMEOUT }, async () => {
-    await rev0('bench funding', benchCalibration(), benchFundingLevers(SYNTH_AS_OF));
+  it('rev0: bench funding, ≤ 10,130 ms', { timeout: TIMEOUT }, async () => {
+    await rev0('bench funding', benchCalibration(), benchFundingLevers(SYNTH_AS_OF), 10130);
   });
 });
 
