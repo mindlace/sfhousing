@@ -52,7 +52,7 @@ Defined here:
 
 10. `viewOf` joins chunks in order. `band[i]` is `mean.completedNet ± 1.2816 × sd.completedNet`; `planEffectBand` likewise on the differences. The page adds `baseline.completedNet` where today's page does (the headline, the band's label, the targets); the view's series do not include it, as today's `shown` does not.
 11. Targets use `mean.completedNet` (`targetsOf`, unchanged); tier targets use world 1's tiers, so on one screen the tier rows describe this city and the total row the average. `timeline-ui` labels them so.
-12. Money in the view: `owed` and `perAddedHome` are today's quantities read as of `filledThrough` in place of "the end of the run"; `perAddedHome` uses the plan effect's mean. `limits` are `ScoreStatics.limits`: `scoreStaticsOf` computes `limitStatements(addedBorrowing(…))` from the timeline's pools and every arrival in the window, not from the ledger, so they are the same in every world and do not change as the forecast fills (null without finance).
+12. Money in the view: `owed` and `perAddedHome` are today's quantities read as of `filledThrough` in place of "the end of the run"; `perAddedHome` keeps today's denominator, world 1's `fundedHomes - displacedHomes` at that month, and does not use the plan effect (partner, 2026-11-13). `limits` are `ScoreStatics.limits`: `scoreStaticsOf` computes `limitStatements(addedBorrowing(…))` from the timeline's pools and every arrival in the window, not from the ledger, so they are the same in every world and do not change as the forecast fills (null without finance).
 13. A `refill` from index k (the page drops chunks from k on) leaves the view at `filledThrough = k - 1`; refilled chunks then extend it.
 
 ### The card
