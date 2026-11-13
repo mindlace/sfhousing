@@ -74,6 +74,8 @@ const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapStream {
   const P = deps.massing.input.parcels;
   const now = deps.now ?? (() => performance.now());
+  // A cell needing more massings than the cap would evict its own and never finish under a finite
+  // budget; no cell comes near 60,000.
   const massings = createLru<string, Massing>(deps.massingCap ?? MASSING_CAP);
 
   /** Per row, computed on its first event; `NOWHERE` for a master or a row without T11 parcel. */
@@ -247,16 +249,25 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
         if (worked && now() - start >= budgetMs) spent = true;
         return !spent;
       };
+      let warmed = 0;
       const didWork = () => {
         worked = true;
+        warmed++;
       };
       for (const cell of dirty.keys()) {
         if (!packable(cell)) continue;
+        if (!mayWork()) break;
+        const before = warmed;
         const items = itemsOf(world, statics, cell, day, mayWork, didWork);
-        if (items === null || !mayWork()) break;
+        if (items === null) break;
+        // a cell warmed in this call packs only while budget is left
+        if (warmed > before && items.length > 0 && !mayWork()) break;
         dirty.delete(cell);
+        // a cell with nothing to pack is not work: a null flush with no massing work then means
+        // no packable dirty cell is left
+        if (items.length === 0) continue;
         worked = true;
-        if (items.length > 0) cells.push(packSafely(cell, items));
+        cells.push(packSafely(cell, items));
       }
       if (cells.length === 0 && newDemolitions.size === 0) return null;
       // revision 0 carries every demolition known; later updates those new or changed since

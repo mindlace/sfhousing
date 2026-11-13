@@ -370,6 +370,7 @@ describe('map-stream: onEvent and flush', () => {
     const b = started(bench, { now: () => (t += 10) });
     const updatesB: TimelineUpdate[] = [];
     let flushes = 0;
+    let midCell = 0; // null flushes that did massing work: stopped inside a cell
     // flush with no budget until a call packs nothing and does no massing work
     const drain = () => {
       for (;;) {
@@ -378,6 +379,7 @@ describe('map-stream: onEvent and flush', () => {
         flushes++;
         if (u !== null) updatesB.push(u);
         else if (b.deps.massingCalls() === before) return;
+        else midCell++;
       }
     };
     drain();
@@ -386,6 +388,7 @@ describe('map-stream: onEvent and flush', () => {
       drain();
     }
     expect(flushes).toBeGreaterThan(updatesA.length);
+    expect(midCell).toBeGreaterThan(0);
 
     const fold = (us: TimelineUpdate[]) => {
       const cells = new Map<string, TimedPackedCell>();
