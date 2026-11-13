@@ -287,6 +287,25 @@ From the spec's Global constraints, verbatim:
   git commit -m "feat(map): demolitions added and restored after revision 0; map-stream sends them"
   ```
 
+### Task 3b: Slicing inside a cell (`main` 2026-11-13, [slice-bar] option (b))
+
+Measurement 1 (`.superpowers/sdd/map-stream/measurement-1.md`): on the live city one cold cell costs about 630 to 670 ms in one flush, against the 50 ms slice limit. Ruling: `flush` may stop between projects inside a cell; the cell's massing work is done ahead across flushes and the cell is sent only when all of it is ready, whole (rule 4). No signature in S17 or `MapStreamDeps` changes (if one would, stop and report the exact delta to the operator). No hashed-file change.
+
+**Files:**
+- Modify: `src/lib/sim/world/map-stream.ts`
+- Test: `src/lib/sim/world/map-stream.spec.ts`
+
+**Design (made here):** the massing memo is the carried state. In `flush`, for each packable dirty cell in queue order, warm its projects one at a time: for every row in the cell with a non-null schedule, `massingOf(schedule, k)` for each revision `k` not yet in the memo; between projects, if at least one project's massing work has been done in this call and `now() - start >= budgetMs`, stop: the cell stays dirty in its place (it was not packed), and the update returns the cells packed so far (null if none, as before). When every project of the cell is warm, pack it (memo hits only) and remove it from the queue. Progress guarantee changes from "at least one cell per flush" to "at least one project's massing work per flush" (a cell already warm still packs in a call that has done nothing else). The memo LRU may evict a warmed entry before the cell packs only past `MASSING_CAP` entries; that is correct (it is recomputed), only slower.
+
+- [ ] **Step 1: Failing tests** in `map-stream.spec.ts`:
+  - `a cold cell is warmed across flushes and sent whole once`: a fake `now` that advances 10 ms per call, `budgetMs = 15`, one dirty cell with at least three projects (bench, search seeds/months; assert found): the first flushes return null (or other cells) while `massingCalls()` rises, the cell appears exactly once, whole (all its slots), and no flush did more than one project's massing work after the budget ran out (count `massingFor` calls between successive `now()` readings via the deps' counter).
+  - `sliced equals unsliced` (`main`'s condition): two streams on the same world run (bench, seed 1, through month 120): one flushed every month with `Infinity`, one with a fake clock and `budgetMs = 0` flushed until null after every month; fold each stream's updates (`last` cell per id, demolitions folded); the folded cells are `toEqual`, cell for cell, and the demolitions equal.
+  - The existing `the budget packs oldest first and keeps the rest` test still passes, adjusted only if its counts depended on whole-cell progress (say so in the report if changed).
+- [ ] **Step 2: Run, expect FAIL** (L1): `npx vitest --run --project server src/lib/sim/world/map-stream.spec.ts`.
+- [ ] **Step 3: Implement** per the design.
+- [ ] **Step 4: Run, expect PASS** (L1): `npx vitest --run --project server src/lib/sim/world/map-stream` then `npx eslint src/lib/sim/world/map-stream.ts` and `npm run check`.
+- [ ] **Step 5: Commit** `feat(map-stream): flush warms a cell's massings across calls and sends it whole`.
+
 ### Task 4: Signoff equality with today's packing
 
 **Files:**
@@ -300,6 +319,7 @@ From the spec's Global constraints, verbatim:
   - `the world agrees with simulateDetailed at H' (precondition)`: `readAll(world, statics, H').schedules` equals `old.schedules`. A failure here is world-core's, reported to `main` with the seed and first differing project, not fixed here.
   - `the cells last sent equal packTimedCell over simulateDetailed's schedules`: `[...last.keys()].sort()` equals `[...g.anchoredCells()].sort()`, and for each cell `expect(last.get(c)).toEqual(g.pack(c))` (typed arrays compared element-wise by `toEqual`; NaN equals NaN).
   - `the demolitions sent equal today's revision 0 list`: folded map as a sorted list equals `g.demolish()`.
+  - Live, only if cheap (`main` 2026-11-13: the live project count, 1,926 in 40 years unfunded, is unverified): under `describe.skipIf(!process.env.SFH_WORLD_LIVE)` with `liveInput`/`dirRecords` on `2026-11-10-6ee5a23d`, the same three assertions. "Cheap" means the case reuses the `describe.each` body with a third row and its `beforeAll` fits the default hook timeout; if not, do not build it and say so in the report (the operator carries it to `main`). Run it once with `SFH_WORLD_LIVE=.superpowers/sdd/map-stream/live/2026-11-10-6ee5a23d` and report the live projects count beside `old.schedules.length`.
 
 - [ ] **Step 2: Run** (L1): `npx vitest --run --project server src/lib/sim/world/map-stream.equality.spec.ts`. Expected PASS once Tasks 1 and 3 are right; a failure is a packer difference to fix in `map-stream.ts`. If the bench `beforeAll` exceeds the default hook timeout, flush every 60 months instead (the assertion reads only the last cells); never raise the timeout.
 
@@ -393,7 +413,7 @@ From the spec's Global constraints, verbatim:
 **Files:**
 - Test: `src/lib/sim/world/map-stream.perf.spec.ts`
 
-- [ ] **Step 1: Write the perf spec:** bench city, seed 1, one frame, `windowMonths = 480`, real `now`, flush after every month with `budgetMs = 20`, then until null; `expect(worst).toBeLessThanOrEqual(30)` with the month and cell count in the message; also prints worst, p95 and total. A fixture check first: the run sent at least 1,000 cells (so the bar is not met by an empty city). A second case times one `snapshot` at month 480 and prints it with no assertion (Open question 6), on the bench city and, under `describe.skipIf(!liveDir)` with `SFH_WORLD_LIVE`, on the live city 2026-11-10-6ee5a23d; the operator sends the live number to `main` (owed from Task 2's report).
+- [ ] **Step 1: Write the perf spec:** bench city, seed 1, one frame, `windowMonths = 480`, real `now`, flush after every month with `budgetMs = 20`, then until null; `expect(worst).toBeLessThanOrEqual(30)` with the month and cell count in the message; also prints worst, p95 and total. A fixture check first: the run sent at least 1,000 cells (so the bar is not met by an empty city). A second case times one `snapshot` at month 480 and prints it with no assertion (Open question 6), on the bench city and, under `describe.skipIf(!liveDir)` with `SFH_WORLD_LIVE`, on the live city 2026-11-10-6ee5a23d; the operator sends the live number to `main` (owed from Task 2's report). Print both cold (fresh deps, empty memo) and warm (deps reused from the fill) snapshot times. A third case (`main` 2026-11-13, [slice-bar] (b)), under the same live `skipIf`: the live city filled to 480 with `budgetMs = 20` and real `now`, printing the longest single flush, its month, and the longest single project's `massingFor` time (the unsplittable unit; time it in the case by calling `massingFor` over every revision of each row's schedule at month 480 with a fresh `streamDeps` (cold generator memo), one project at a time; no change to `map-stream.ts`), with no assertion on the live numbers.
 
 - [ ] **Step 2: Run under L2:** `npx vitest --run --project perf src/lib/sim/world/map-stream.perf.spec.ts`. Expected PASS; a miss is reported with its numbers (one cell larger than the budget is the likely cause: report the cell and its project count, do not change the bar).
 
