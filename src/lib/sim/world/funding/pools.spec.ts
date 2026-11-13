@@ -7,6 +7,7 @@ import { Treasury, type LedgerEvent } from '$lib/sim/scenario/money';
 import type { Schedule, SimInput } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
 import { STAGE_ORDER } from '$lib/timelapse/types';
+import { addProject } from '../columns';
 import { monthFirstDay, monthLastDay } from '../months';
 import type { PolicyFrame, PolicyTimeline } from '../policy/frame';
 import { staticsOf, type Statics } from '../statics';
@@ -358,6 +359,43 @@ describe('pools, arrivals and money events', () => {
     const pools = fundOf(before.world).pools;
     expect(statesOf(pools)).toEqual(treasuryStates(todayBefore.state));
     for (let q = 0; q < pools.n; q++) expect(pools.committed[q]).toBe(0);
+  });
+
+  it("an end's ledger names the ending row's pools and programmes when a later row's money rows follow", () => {
+    const events: LedgerEvent[] = [];
+    const out: StepSink = { event() {}, ledger: (e) => events.push(e) };
+    const world = withFunding(createFundingSystem()).createWorld(statics, timeline, 1, NOWHERE);
+    const p = world.projects;
+    const first = p.n - 1;
+    const second = addProject(p);
+    p.entered[first * 7 + CONSTRUCTION] = NO_DAY;
+    const c2 = ctxOf(world, AWARD_MONTH, out);
+    const fm = frameMoney(timeline, c2.frame);
+    commitAward(c2, fm, first, dayIn(AWARD_MONTH, 4), AWARD, UNITS);
+    // The second award: the guarantee alone, so the rows that move down after the first ends
+    // belong to another pool and programme than most of the first's.
+    const only: Award = {
+      set: [3],
+      priced: { ...AWARD.priced, items: [AWARD.priced.items[3]] },
+      asks: new Map()
+    };
+    commitAward(c2, fm, second, dayIn(AWARD_MONTH, 5), only, UNITS);
+    const committed = events.length;
+    const E = dayIn(END_MONTH, 9);
+    moneyOnEvent(ctxOf(world, END_MONTH, out), { kind: 'end', row: first, day: E, how: 'exit' });
+    const released = events.slice(committed);
+    expect(released.map((e) => [e.pool, e.programme, e.kind, e.dollars])).toEqual(
+      events
+        .slice(0, 4)
+        .map((e) => [e.pool, e.programme, 'release', e.dollars] as [string, string, string, number])
+    );
+    // The world's counters agree: the guarantee of the second row is still committed.
+    const { pools } = fundOf(world);
+    const H = Math.round(21_000.1 * UNITS);
+    expect(pools.committed[poolRowOf(pools, 'm-city')]).toBe(H);
+    expect(pools.committed[poolRowOf(pools, 'm-bank')]).toBe(0);
+    expect(pools.committed[poolRowOf(pools, 'federal')]).toBe(0);
+    expect(moneyRowsOf(pools, second)).toEqual([0, 1]);
   });
 
   it('nothing reads pools[q].inflows', () => {

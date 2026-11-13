@@ -100,12 +100,16 @@ export function commitAward(
   });
 }
 
-/** One money event of a project, before it is applied (`money.ts:33-42`). */
+/**
+ * One money event of a project, before it is applied (`money.ts:33-42`). Its pool and programme
+ * ids are read when it is made: an `'end'` drops the row's money rows before the ledger is written.
+ */
 interface Made {
   order: number;
   sub: number;
   prog: number;
-  m: number;
+  pool: string;
+  programme: string;
   kind: Later;
   dollars: number;
 }
@@ -130,7 +134,8 @@ export function moneyOnEvent(ctx: StepCtx, e: WorldEvent): void {
         order,
         sub: kind === 'loss' ? 1 : 0,
         prog: fm.prog.get(pools.mProg[m]) ?? -1,
-        m,
+        pool: pools.mPool[m],
+        programme: pools.mProg[m],
         kind,
         dollars
       });
@@ -179,8 +184,8 @@ export function moneyOnEvent(ctx: StepCtx, e: WorldEvent): void {
     for (const x of made)
       ledger({
         day: e.day,
-        pool: pools.mPool[x.m],
-        programme: pools.mProg[x.m],
+        pool: x.pool,
+        programme: x.programme,
         kind: x.kind,
         dollars: x.dollars
       } satisfies LedgerEvent);
