@@ -15,10 +15,12 @@ or a plain array; `structuredClone(world)` is a full copy. Model month m covers 
 `monthFirstDay`, `monthLastDay`, `monthOfDay`).
 
 - **`lots`** (`LotColumns`): a row only for a lot that has left its starting state (a pipeline
-  project holds it, a project started on it, or it was freed). `lot` is the statics row, kept
-  ascending; `lotRow` binary-searches it and `ensureLot` inserts in place, so lot row indices move:
-  never keep one across an `ensureLot` or `addProject` (arrays also reallocate on growth). A lot
-  with no row is free since the dataset date on attempt 0.
+  project holds it, a project started on it, or it was freed). Rows are appended in the order lots
+  first leave their starting state and never move; `lot` is the row's statics row. `rowOf` is
+  indexed by lot, not by row: the lot's row + 1, 0 for none (lots past its length have none), so
+  `lotRow` and `ensureLot` are O(1). Within a system lots are still handled in `statics.rank` order,
+  never in row order. The columns reallocate on growth: read them through `world.lots` after an
+  `ensureLot`. A lot with no row is free since the dataset date on attempt 0.
 - **`projects`** (`ProjectColumns`): one row per pipeline project, master, phase and start. A row
   never moves; `row` in every event indexes it. A phase gets its row when it files. Revisions and
   displaced homes live in side tables (`revN`, `dispN` are their row counts, like `n`).
@@ -90,18 +92,21 @@ when this month's frame or last month's has `finance`. The whole-city replan is 
 ## The due list
 
 `Due { take, put, drop }`; the implementation is `DueList` (`due.ts`). An entity is a lot (its
-statics row) or a project (`-1 - row`); `take(m)` returns ascending and forgets. The due list is not
-part of the world.
+statics row) or a project (`-1 - row`); `take(m)` returns ascending and forgets; `put` refuses a
+month before 1. The due list is not part of the world. `DueList` keeps each entity's month in a
+typed array (lots by lot, projects by row; 0 = none) and each month's entities in a growable
+`Int32Array` bucket. Moving or dropping an entity leaves its old bucket entry behind; `take` keeps
+only the entries still due that month.
 
 - `planDue(world, statics, timeline, seed, through)` works out from scratch what is due in months
   `world.month + 1 .. through`, reading frames up to `world.month + 1`. Nothing is put past
   `through`: when the runner extends the window it calls `planDue` again. A carried list and one
   rebuilt at any month give the same events (rule 20).
-- **Skip shortcut.** A lot with no row whose `INIT` draw is above `skipBound(statics, timeline,
-month, through)` starts after `through` and is not planned. Used by `planDue`, and by system 1's
-  whole-city replan only when the due list is a `DueList` (it knows its `through`). `skipBound` is
-  memoised per (timeline, statics, last change `<= month`, `through`). `planDueWith(…, { skip })`
-  turns it off for tests.
+- **Skip shortcut.** A lot with no row whose `INIT` draw is above
+  `skipBound(statics, timeline, month, through)` starts after `through` and is not planned. Used by
+  `planDue`, and by system 1's whole-city replan only when the due list is a `DueList` (it knows
+  its `through`). `skipBound` is memoised per (timeline, statics, last change `<= month`,
+  `through`). `planDueWith(…, { skip })` turns it off for tests.
 
 ## Readers
 
@@ -171,13 +176,29 @@ All colocated in `src/lib/sim/world/`. Server project (signoff) unless noted.
 
 ## Cost
 
-`world.bench.spec.ts`, perf project (`npx vitest --run --project perf
-src/lib/sim/world/world.bench.spec.ts`; idle machine). Bar: 48 worlds stepping one month on the
-bench city without money, median at most 3 ms (months 25 to 120, a market change at month 72
-printed apart). It also prints the one-frame median and, with a live city, `createWorld` plus
-`planDue` through month 480 for one world (no bar).
+`world.bench.spec.ts`, perf project
+(`npx vitest --run --project perf src/lib/sim/world/world.bench.spec.ts`; take the measurement
+lock). Bar: 48 worlds stepping one month on the bench city without money, median at most 3 ms over
+months 25 to 120. The timeline has a market change at month 72; that month replans every free lot
+of every world and is printed apart. The asserted median excludes it by design: the bar is for an
+ordinary month. The bench also prints the one-frame median and, with a live city, `createWorld`
+plus `planDue` through month 480 for one world and one live month for 48 worlds (no bars).
 
-Measured 2026-11-13, idle M-series (load about 1.5): median 7.8 ms, p90 9.3 ms; one frame median
-6.7 ms; the market-change month 604 ms (every free lot of 48 worlds replanned). The bar misses. The
-largest single cost is `ensureLot`'s in-place insert (about a fifth of step time); the rest is
-spread over the due list's maps, stage entry and the step's per-month setup.
+Measured 2026-11-13, quiet (measurement lock held), two runs each:
+
+| Case                                     | Before (Task 13)   | After (Task 14)     |
+| ---------------------------------------- | ------------------ | ------------------- |
+| Bar case, median / p90                   | 8.3–8.4 / 9.4–9.7  | 2.6 / 2.9–3.3 ms    |
+| One frame, median / p90                  | 7.2–7.4 / 7.8–8.6  | 2.1–2.2 / 2.6–2.7   |
+| Market-change month 72 (48 worlds)       | 650–654 ms         | 254–257 ms          |
+| Live `createWorld` + `planDue` to 480    | 6.0–6.2 ms         | 2.6 ms              |
+| Live, 48 worlds, one month, median / p90 | (not printed then) | 0.35 / 0.43–0.45 ms |
+
+The live rows use dataset 2026-11-10-6ee5a23d. The bar case bundled with esbuild and run in plain
+Node gives a median of 2.50 ms (p90 3.0 ms, month 72 252 ms): the tests now pay almost nothing for
+the Vite module runner. That runner turns every use of an imported name into a getter call, which
+cost about a third of a month's step; each hot module of the folder (`world.ts`, `pipeline.ts`,
+`stage.ts`, `rates.ts`, `due.ts`, `holds.ts`, `columns.ts`, `months.ts`) imports modules as
+namespaces and binds the names it uses once, at the top. Keep that pattern when adding a value
+import to them. The change month is the whole-city replan of rule 7: every free lot's `INIT` draw is
+checked against the skip bound, and the ordinary clock is read for the lots that pass.
