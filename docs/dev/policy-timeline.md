@@ -101,7 +101,9 @@ Slicing: a unit (a recompute step, `applyLevers`, `precomputeOf`) runs whole, so
 
 ## Tests
 
-`parse4`, `policy4`, `upgrade`, `reconcile4`, `sim-doc4` specs under `src/lib/timeline/`; `combine`, `money`, `intern`, `zoning-view`, `compile`, `compare` specs under `src/lib/sim/world/policy/`, with fixtures in `policy/test/`. They assert behaviour, not time. The agreement test (schema 3 documents, upgraded and compiled, against today's `applyLevers(compileLevers(p))`) is a separate spec in `policy/`.
+`parse4`, `policy4`, `upgrade`, `reconcile4`, `sim-doc4` specs under `src/lib/timeline/`; `combine`, `money`, `intern`, `zoning-view`, `compile`, `compare` specs under `src/lib/sim/world/policy/`, with fixtures in `policy/test/`. They assert behaviour, not time. The agreement test (schema 3 documents, upgraded and compiled, against today's `applyLevers(compileLevers(p))`) is `src/lib/sim/world/policy/roundtrip.spec.ts`.
+
+The slice bar is `src/lib/sim/world/policy/compile.perf.spec.ts` (project perf, `npm run test:perf`, not signoff). On the bench city (`synthCity`, bench funding) a painted policy of 500 lots from month 1, a transit rule over 2,000 lots from month 61 and the bench funding compile over 480 months; every `step(20)` call is timed and the longest must be 50 ms or less (asserted), with a fixture check that more than one zoning state was built. A second case compiles one metro rule on a live dataset when `SFH_LIVE_DATASET` names a local copy of one (it skips with a logged reason otherwise) and reports the longest slice; it asserts only that the compile completes. `scripts/measure-policy-compile.ts <datasetDir>|--bench` prints the two edits below with `compileTimeline`.
 
 ## Measured cost of a compile
 
@@ -114,11 +116,24 @@ Live city (dataset 2026-11-08-3b7fa918, 155,020 parcels), Apple M5 Pro, medians 
 
 An edit dated after month 1 reuses the default view for the earlier months (first frame 0). Almost all of the rule's time is the recompute (~4.25 s); resolving lots ~52 ms, `resolveEnvelopes` 14 ms, `precomputeOf` ~45 ms, row diff ~3 ms. The money loop is ~1.2 ms for 480 months.
 
+### Measured again with `compileTimeline`
+
+Same live dataset (2026-11-08-3b7fa918, 155,020 parcels, no gross table, no funding), medians of 5 after a warm-up, `scripts/measure-policy-compile.ts`. Load 2.7 to 3.6 (this operator's runs and another's): **ballpark**. Edit from month 1; lot resolution (55 ms for the metro rule) is included.
+
+| Edit from month 1                                     | First frame | All frames | Longest `step(20)` |
+| ----------------------------------------------------- | ----------- | ---------- | ------------------ |
+| One added metro rule (6 stories at 402 m, 4 at 805 m) | ~4.7 s      | ~4.7 s     | ~97 to 99 ms       |
+| 500 painted lots to 8 stories                         | ~132 ms     | ~132 ms    | ~50 to 60 ms       |
+
+An edit's first frame is also its last: month 1 is the one frame that changes. Against Task 1's numbers (4.4 s, 120 ms; recompute step 93 ms and 20 ms) the compiler adds about 6 to 10 percent, which is the machine's load as much as the code.
+
+On the bench city (`--bench`, no funding; scenario A is two nested bands over 40,000 and 20,000 lots): metro-like edit about 740 ms to the first and last frame, longest slice 35 to 54 ms; 500 painted lots about 68 ms, longest slice 44 to 49 ms. The perf spec's three-policy case (painted from month 1, transit from month 61, bench funding) finished in about 300 ms; its longest call was 43 to 61 ms over seven runs at load 2 to 2.7 (most under 50): ballpark, borderline, and the bar is unchanged.
+
 ### Known slice-bar risks
 
-The 50 ms slice bar is not met by two units, both on the live city (ballpark, load 1.8 to 2.0):
+The 50 ms slice bar is not reliably met by two units (a slice runs a unit whole, and a call that begins with budget left can run `applyLevers` and `precomputeOf` back to back):
 
-- `precomputeOf(plan)` is ~43 to 45 ms, uninterrupted; a state that needs its twin as well is ~86 ms. It sits behind the seam `precomputeView` in `zoning-view.ts`.
-- The recompute's largest `step(20)` is ~93 ms for the metro rule (20 ms for painted lots): it works a whole cell bucket at a time. It sits behind `recomputeStep`.
+- `precomputeOf(plan)` is ~43 to 45 ms on the live city, uninterrupted; on the bench city a slice ending a view's build runs 43 to 60 ms. A state that needs its twin as well is ~86 ms. It sits behind the seam `precomputeView` in `zoning-view.ts`.
+- The recompute's largest `step(20)` is ~97 ms for the live metro rule and ~50 to 60 ms for painted lots: it works a whole cell bucket at a time. It sits behind `recomputeStep`.
 
-A finer-sliced version can replace either seam without touching the compiler. ensemble-runner re-measures both on a quiet machine.
+The live case reports these and does not assert them. A finer-sliced version can replace either seam without touching the compiler. ensemble-runner re-measures both on a quiet machine.
