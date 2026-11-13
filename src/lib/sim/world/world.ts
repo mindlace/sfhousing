@@ -566,16 +566,20 @@ function stepWith(
   const rank = statics.rank;
   lots.sort((a, b) => rank[a] - rank[b]);
   const aside: number[] = [];
+  const asideStart: { s: OrdinaryStart; r: Day; k: number }[] = [];
   const applying: number[] = [];
   const later: number[] = [];
   const laterOrd: number[] = [];
   for (const lot of lots) {
     if (!isFree(world, lot)) throw new Error(`due list out of step: lot ${lot} is not free`);
-    const s = startOf(world, statics, timeline, month, x.sh, lot);
+    const { r, k } = freeSince(world, statics, lot);
+    const s = ordinaryStart(statics, timeline, month, x.sh, lot, r, k);
     if (s !== null && s.month < month) throw new Error('due list out of step');
     const ord = s === null ? 0 : s.month;
-    if (ord === month) aside.push(lot);
-    else {
+    if (ord === month) {
+      aside.push(lot);
+      asideStart.push({ s: s!, r, k });
+    } else {
       if (fund === null && takenLots.has(lot)) throw new Error('due list out of step');
       later.push(lot);
       laterOrd.push(ord);
@@ -597,10 +601,15 @@ function stepWith(
   fund?.serve(pub);
   // System 6: each lot set aside starts (rule 2 order), its chain followed to the month's end
   // (rule 14), unless a start was made on it this month.
-  for (const lot of aside) {
+  // A lot's ordinary start depends only on its attempt and the day it became free: when those are
+  // the ones system 4 read, its start is the one worked out there.
+  for (let j = 0; j < aside.length; j++) {
+    const lot = aside[j];
     if (ctx.started.has(lot)) continue;
     if (!isFree(world, lot)) throw new Error('due list out of step');
-    const s = startOf(world, statics, timeline, month, x.sh, lot);
+    const { r, k } = freeSince(world, statics, lot);
+    const a = asideStart[j];
+    const s = r === a.r && k === a.k ? a.s : startOf(world, statics, timeline, month, x.sh, lot);
     if (s === null || s.month !== month) throw new Error('due list out of step');
     ctx.startOrdinary(lot, s);
   }

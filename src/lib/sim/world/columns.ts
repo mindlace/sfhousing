@@ -132,11 +132,18 @@ export function emptyWorld(frameId: number): World {
   };
 }
 
+// The typed columns, named once: every row column of one table has the same row capacity, so one
+// column's length says whether the table must grow.
+const PROJECT_ROW_COLUMNS = typedNames(
+  emptyProjects(),
+  (k) => REV_COLUMNS.includes(k) || DISP_COLUMNS.includes(k)
+);
+const LOT_COLUMNS = typedNames(emptyLots(), () => false);
+
 /** Appends a project row with its defaults and returns its index. */
 export function addProject(p: ProjectColumns): number {
   const row = p.n;
-  const rowColumns = typedNames(p, (k) => REV_COLUMNS.includes(k) || DISP_COLUMNS.includes(k));
-  grow(p, rowColumns, row + 1);
+  if (p.origin.length <= row) grow(p, PROJECT_ROW_COLUMNS, row + 1);
   p.n = row + 1;
   p.entered.fill(NO_DAY, row * ENTERED_STRIDE, (row + 1) * ENTERED_STRIDE);
   p.stories[row] = NaN;
@@ -247,10 +254,11 @@ export function ensureLot(l: LotColumns, lot: number, asOf: Day): number {
     if (v < lot) lo = mid + 1;
     else hi = mid;
   }
-  const names = typedNames(l, () => false);
-  grow(l, names, l.n + 1);
-  const cols = l as unknown as Record<string, Typed>;
-  for (const name of names) cols[name].copyWithin(lo + 1, lo, l.n);
+  if (l.lot.length <= l.n) grow(l, LOT_COLUMNS, l.n + 1);
+  if (lo < l.n) {
+    const cols = l as unknown as Record<string, Typed>;
+    for (const name of LOT_COLUMNS) cols[name].copyWithin(lo + 1, lo, l.n);
+  }
   l.n++;
   l.lot[lo] = lot;
   l.state[lo] = LOT_FREE;
