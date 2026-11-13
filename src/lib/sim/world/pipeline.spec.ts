@@ -36,7 +36,8 @@ describe('phases', () => {
   };
   const firstPhase = (seed: number) => {
     const filed = filings.get(seed) ?? runOf(seed).filed;
-    return filed[0].kind === 'phaseFiled' ? filed[0].phase : 0;
+    const first = filed[0];
+    return first !== undefined && first.kind === 'phaseFiled' ? first.phase : 0;
   };
 
   it.each(SEEDS)('seed %i: phases file in day order when a plan date comes first', (seed) => {
