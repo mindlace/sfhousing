@@ -54,6 +54,7 @@ function emptyLots(): LotColumns {
   return {
     n: 0,
     lot: new Int32Array(0),
+    rowOf: new Int32Array(0),
     state: new Uint8Array(0),
     k: new Int32Array(0),
     r: new Int32Array(0),
@@ -138,7 +139,7 @@ const PROJECT_ROW_COLUMNS = typedNames(
   emptyProjects(),
   (k) => REV_COLUMNS.includes(k) || DISP_COLUMNS.includes(k)
 );
-const LOT_COLUMNS = typedNames(emptyLots(), () => false);
+const LOT_COLUMNS = typedNames(emptyLots(), (k) => k === 'rowOf');
 
 /** Appends a project row with its defaults and returns its index. */
 export function addProject(p: ProjectColumns): number {
@@ -231,43 +232,34 @@ export function revisionsOf(p: ProjectColumns, row: number, upTo: Day): Schedule
 
 /** The row of `lot`, or -1 when the lot has not left its starting state. */
 export function lotRow(l: LotColumns, lot: number): number {
-  let lo = 0;
-  let hi = l.n - 1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >>> 1;
-    const v = l.lot[mid];
-    if (v === lot) return mid;
-    if (v < lot) lo = mid + 1;
-    else hi = mid - 1;
-  }
-  return -1;
+  return lot < l.rowOf.length ? l.rowOf[lot] - 1 : -1;
 }
 
-/** The row of `lot`, inserting one (free, attempt 0, free since `asOf`) in order when absent. */
+/**
+ * The row of `lot`, appending one (free, attempt 0, free since `asOf`) when absent. Rows never
+ * move.
+ */
 export function ensureLot(l: LotColumns, lot: number, asOf: Day): number {
-  let lo = 0;
-  let hi = l.n;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    const v = l.lot[mid];
-    if (v === lot) return mid;
-    if (v < lot) lo = mid + 1;
-    else hi = mid;
+  if (lot < l.rowOf.length) {
+    const found = l.rowOf[lot];
+    if (found > 0) return found - 1;
+  } else {
+    let cap = Math.max(FIRST_CAPACITY, l.rowOf.length * 2);
+    while (cap <= lot) cap *= 2;
+    l.rowOf = grown(l.rowOf, cap) as Int32Array;
   }
-  if (l.lot.length <= l.n) grow(l, LOT_COLUMNS, l.n + 1);
-  if (lo < l.n) {
-    const cols = l as unknown as Record<string, Typed>;
-    for (const name of LOT_COLUMNS) cols[name].copyWithin(lo + 1, lo, l.n);
-  }
-  l.n++;
-  l.lot[lo] = lot;
-  l.state[lo] = LOT_FREE;
-  l.k[lo] = 0;
-  l.r[lo] = asOf;
-  l.holders[lo] = 0;
-  l.lastExit[lo] = asOf;
-  l.blocked[lo] = 0;
-  l.demolished[lo] = 0;
-  l.project[lo] = -1;
-  return lo;
+  const row = l.n;
+  if (l.lot.length <= row) grow(l, LOT_COLUMNS, row + 1);
+  l.rowOf[lot] = row + 1;
+  l.n = row + 1;
+  l.lot[row] = lot;
+  l.state[row] = LOT_FREE;
+  l.k[row] = 0;
+  l.r[row] = asOf;
+  l.holders[row] = 0;
+  l.lastExit[row] = asOf;
+  l.blocked[row] = 0;
+  l.demolished[row] = 0;
+  l.project[row] = -1;
+  return row;
 }

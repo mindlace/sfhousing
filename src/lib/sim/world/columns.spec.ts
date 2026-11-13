@@ -13,17 +13,26 @@ function shuffled(n: number): number[] {
   return a;
 }
 
-it('keeps lot rows ascending and their columns with them', () => {
+it('appends lot rows, never moves one, and finds each by lot', () => {
   const w = emptyWorld(0);
+  const rowOf = new Map<number, number>();
   for (const lot of shuffled(1000)) {
     // Take the row first: growing replaces the arrays, so `w.lots.k` must be read afterwards.
     const row = ensureLot(w.lots, lot * 7, 100);
+    // A new lot gets the next row.
+    expect(row).toBe(rowOf.size);
+    rowOf.set(lot * 7, row);
     w.lots.k[row] = lot;
   }
   expect(w.lots.n).toBe(1000);
-  for (let i = 1; i < w.lots.n; i++) expect(w.lots.lot[i]).toBeGreaterThan(w.lots.lot[i - 1]);
+  for (const [lot, row] of rowOf) {
+    expect(w.lots.lot[row]).toBe(lot);
+    expect(lotRow(w.lots, lot)).toBe(row);
+  }
   for (let lot = 0; lot < 1000; lot++) expect(w.lots.k[lotRow(w.lots, lot * 7)]).toBe(lot);
+  // A lot with no row, below and past the highest lot that has one.
   expect(lotRow(w.lots, 3)).toBe(-1);
+  expect(lotRow(w.lots, 1_000_000)).toBe(-1);
 });
 
 it('gives a new lot row its defaults and is idempotent', () => {

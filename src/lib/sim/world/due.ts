@@ -13,48 +13,113 @@ import {
   type World
 } from './types';
 
+const FIRST_BUCKET = 16;
+
+/** `a` grown to at least `n` entries (doubling), the new ones 0. */
+function atLeast(a: Int32Array, n: number): Int32Array {
+  let cap = Math.max(FIRST_BUCKET, a.length * 2);
+  while (cap < n) cap *= 2;
+  const next = new Int32Array(cap);
+  next.set(a);
+  return next;
+}
+
 /**
- * What is due in which model month (S11). Not part of the world: it holds a map and may be
- * rebuilt at any time by `planDue`. An entity is due in at most one month; nothing is kept past
- * `through`.
+ * What is due in which model month (S11). Not part of the world: it may be rebuilt at any time by
+ * `planDue`. An entity is due in at most one month; nothing is kept past `through`.
+ *
+ * Each entity's month is kept in a typed array (lots by lot, projects by row; 0 = not due), and
+ * each month's entities in a growable bucket. Moving or dropping an entity leaves its old bucket
+ * entry behind; `take` keeps only the entries whose entity is still due in that month.
  */
 export class DueList implements Due {
-  private readonly month = new Map<number, number>();
-  private readonly buckets = new Map<number, number[]>();
+  /** Month each lot is due in, by lot; 0 = none. */
+  private lotMonth: Int32Array;
+  /** Month each project is due in, by row; 0 = none. */
+  private rowMonth = new Int32Array(0);
+  /** Entities put in each month (stale ones included), and how many. */
+  private readonly buckets: (Int32Array | undefined)[] = [];
+  private readonly sizes: number[] = [];
 
-  constructor(readonly through: number) {}
+  /** `lots`: how many lots to make room for at once (they grow as needed). */
+  constructor(
+    readonly through: number,
+    lots = 0
+  ) {
+    this.lotMonth = new Int32Array(lots);
+  }
+
+  private monthOf(entity: number): number {
+    if (entity >= 0) return entity < this.lotMonth.length ? this.lotMonth[entity] : 0;
+    const row = -1 - entity;
+    return row < this.rowMonth.length ? this.rowMonth[row] : 0;
+  }
+
+  private setMonth(entity: number, month: number): void {
+    if (entity >= 0) {
+      if (entity >= this.lotMonth.length) {
+        if (month === 0) return;
+        this.lotMonth = atLeast(this.lotMonth, entity + 1);
+      }
+      this.lotMonth[entity] = month;
+    } else {
+      const row = -1 - entity;
+      if (row >= this.rowMonth.length) {
+        if (month === 0) return;
+        this.rowMonth = atLeast(this.rowMonth, row + 1);
+      }
+      this.rowMonth[row] = month;
+    }
+  }
 
   /** Entities due in `month`, ascending; they are forgotten. */
   take(month: number): Int32Array {
-    const bucket = this.buckets.get(month);
-    if (!bucket) return new Int32Array(0);
-    this.buckets.delete(month);
-    const live: number[] = [];
-    for (const e of bucket) if (this.month.get(e) === month) live.push(e);
-    live.sort((a, b) => a - b);
-    const out: number[] = [];
-    for (let i = 0; i < live.length; i++) {
-      if (i > 0 && live[i] === live[i - 1]) continue;
-      out.push(live[i]);
-      this.month.delete(live[i]);
+    const bucket = this.buckets[month];
+    if (bucket === undefined) return new Int32Array(0);
+    const size = this.sizes[month];
+    this.buckets[month] = undefined;
+    this.sizes[month] = 0;
+    const out = new Int32Array(size);
+    let n = 0;
+    for (let i = 0; i < size; i++) {
+      const e = bucket[i];
+      // Forgetting the entity at its first entry also passes over any repeat of it.
+      if (this.monthOf(e) !== month) continue;
+      out[n++] = e;
+      this.setMonth(e, 0);
     }
-    return Int32Array.from(out);
+    return (n === size ? out : out.slice(0, n)).sort();
   }
 
-  /** Makes `entity` due in `month`, replacing any earlier month; nothing after `through`. */
+  /**
+   * Makes `entity` due in `month` (a model month, 1 or later), replacing any earlier month; nothing
+   * after `through`.
+   */
   put(entity: number, month: number): void {
     if (month > this.through) {
-      this.month.delete(entity);
+      this.setMonth(entity, 0);
       return;
     }
-    this.month.set(entity, month);
-    const bucket = this.buckets.get(month);
-    if (bucket) bucket.push(entity);
-    else this.buckets.set(month, [entity]);
+    if (!(month >= 1) || !Number.isInteger(month)) {
+      throw new RangeError(`DueList.put: month ${month} is not a model month`);
+    }
+    this.setMonth(entity, month);
+    let bucket = this.buckets[month];
+    let size = this.sizes[month] ?? 0;
+    if (bucket === undefined) {
+      bucket = new Int32Array(FIRST_BUCKET);
+      this.buckets[month] = bucket;
+      size = 0;
+    } else if (size === bucket.length) {
+      bucket = atLeast(bucket, size + 1);
+      this.buckets[month] = bucket;
+    }
+    bucket[size] = entity;
+    this.sizes[month] = size + 1;
   }
 
   drop(entity: number): void {
-    this.month.delete(entity);
+    this.setMonth(entity, 0);
   }
 }
 
@@ -90,7 +155,7 @@ export function planDueWith(
   through: number,
   opts: { skip: boolean; funding?: FundingSystem | null }
 ): DueList {
-  const due = new DueList(through);
+  const due = new DueList(through, statics.parcelId.length);
   const p = world.projects;
   for (let row = 0; row < p.n; row++) {
     const m = dueMonthOf(world, statics.asOf, row);
@@ -171,10 +236,10 @@ export function eachFreeLot(
   for (const c of timeline.changes()) if (c > 1 && c <= month) rates.push(timeline.frameAt(c));
   const rateRows = rates.map((f) => startRates(f.view, f.market));
   const l = world.lots;
-  let next = 0;
+  const rowOf = l.rowOf;
   for (let lot = 0; lot < statics.parcelId.length; lot++) {
-    if (next < l.n && l.lot[next] === lot) {
-      const i = next++;
+    const i = lot < rowOf.length ? rowOf[lot] - 1 : -1;
+    if (i >= 0) {
       if (l.state[i] === LOT_FREE) visit(lot, l.r[i], l.k[i], false, false);
     } else if (rateRows.some((a) => a[lot] < 0)) visit(lot, statics.asOf, 0, true, false);
     else if (all) visit(lot, statics.asOf, 0, true, true);

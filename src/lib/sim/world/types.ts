@@ -36,11 +36,16 @@ export interface PoolColumns {
   [column: string]: Column | number;
 }
 
-/** One row per lot that has left its starting state (S1, rule 4). */
+/**
+ * One row per lot that has left its starting state (S1, rule 4). Rows are appended and never move;
+ * `rowOf` finds a lot's row.
+ */
 export interface LotColumns {
   n: number;
-  /** Statics row, ascending. */
+  /** Statics row. */
   lot: Int32Array;
+  /** By lot (not by row): its row + 1, 0 when it has none. Lots past its length have none. */
+  rowOf: Int32Array;
   /** `LOT_*`. */
   state: Uint8Array;
   /** Attempt. */
