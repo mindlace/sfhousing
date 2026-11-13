@@ -557,7 +557,7 @@ unfinished warm synchronously, so a run with no warm (pipeline, lesscars, tests)
 gives the same output. A run still fills, lazily, an entry the warm skips (a level with 0 homes).
 On the bench funding input the whole warm is about 190 ms in a bundle (250 ms under vitest), in
 chunks of `WARM_CHUNK` (16,384 candidates, about 23 ms bundled); before, `marketSkip` and
-`affordableSkip` alone took about 460 ms and the tables filled lazily inside runs.
+`affordableSkip` took about 440 ms together (the warm task, measured in the perf profile) and the tables filled lazily inside runs.
 
 **The typed walk** (perf Task 3): `fundedPass` keeps its lots as records in typed arrays indexed
 by candidate (attempt, risk start, reservation day, parked flag and `gen`, the parked attempt's
@@ -640,11 +640,13 @@ interleaved runs per side, base `736be467` against the branch head, same bench s
 | 6. First-day applications, awards (seed 1)   | 61,239 and 231                 | unchanged        | -    | 10,000 and 100 | none; passes            |
 | 7. Reported: `state` off from `asOf + 1,826` | 155.6 and 188.7 ms (older run) | about 100 ms     | -    | none           | about 120 ms, if wanted |
 
-Cases 3 and 5 still miss their budgets; `npm run test:perf` fails on them until the conductor
-re-sets them. This is spec fallback 2: the proposals above are the measured median plus 20%
-(case 3: about 74 ms from 61.7 ms; case 5: about 98 ms from 81 ms), to be confirmed on a quiet
-machine (load below 2) before they are written into `scenario.bench.spec.ts`. No budget number was
-edited in the perf round. Case 5's longest task at head is the shown run's task (about 80 ms with
+**Budgets pending (spec fallback 2).** Cases 3 and 5 still miss their budgets, so
+`npm run test:perf` fails on them until they are re-set. The conductor's ruling sets the case 3
+and case 5 budgets, and gives the three `rev0:` cases budgets of their own, by
+`ceil(quiet median × 1.25)` ms, but only from a cold-boot measurement (a freshly booted, otherwise
+idle machine), which has not been taken. The medians in the table above are ballpark, and the
+"median + 20%" proposals in it are superseded by that formula. No budget number in
+`scenario.bench.spec.ts` has been edited. Case 5's longest task at head is the shown run's task (about 80 ms with
 the bench funding), then the first band tasks (80 to 95 ms under load); a quiet-machine run may
 come in lower. The one full `npm run test:perf` run at the end of the round (load 7 to 18, so
 inflated) gave case 3 at 65.2 ms and case 5 at 105.0 ms.
@@ -660,6 +662,13 @@ reordered without changing outputs. Ballpark medians, base to head: unfunded 1,6
 bench funding 10,919 to 7,038 ms (x0.64). The FZP band phase is 69%, 81% and 87% of head's time
 respectively; load is about 450 to 515 ms in all three. The final A/B pass agrees: bench funding
 11.3 to 7.3 s, funded baseline 4.4 to 3.4 s, unfunded 1.7 to 1.7 s.
+
+**Heap at revision 0** (reported, no budget). Each `rev0:` case logs the used JS heap at
+revision 0 with its host alive, after a full collection (`gc`, exposed at runtime by `gcOf`), and
+the growth over the same reading taken before the host was made. One run, 2026-11-12, load 1.9 to
+2.1, under vitest (the bench city and the test runner are in the same heap): unfunded 98 MB (24 MB
+for the host); funded baseline 128 MB (51 MB); bench funding 154 MB (77 MB). All are well under
+the 300 MB heap budget.
 
 **Task 4 (cancelled): resumable runs.** The plan's Task 4 would turn `fundedPass`, `runEngineWith`
 and `simulateNet` into generators (`fundedSteps`, `engineSteps`, `STEP_CANDIDATES`) so the host

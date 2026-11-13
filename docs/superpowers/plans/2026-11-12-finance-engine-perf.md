@@ -143,7 +143,9 @@ After Tasks 1 and 2, about 56 ms a run remains (prototype profile): walk 16 ms (
 - [ ] **Step 5: Time it** (cases 2 and 3), and apply the stop rule.
 - [ ] **Step 6: Commit:** `perf(sim): walk the funded pass on typed lot records`.
 
-### Task 4: Resumable runs in the host (case 5)
+### Task 4: Resumable runs in the host (case 5) (CANCELLED)
+
+**Cancelled by the conductor's ruling (case 5 route (b)).** Resumable runs change the host's job model, so they are out of this round: case 5 takes spec fallback 2 (its budget re-set from a measured median) instead. The task is kept below as the known route to case 5 at or under 50 ms, should the need appear. None of its steps were done.
 
 Case 5's long tasks are single funded runs: 161 ms for the first, then about 118 ms each, against 50 ms. Even at Task 3's best estimate a funded band run stays above about 45 ms in the host, and the shown run's task also counts toward case 5. Expected gain: the longest band, twin or shown macrotask ≤ 50 ms whatever the per-run cost; case 4 within +5%.
 
@@ -173,6 +175,12 @@ Case 5's long tasks are single funded runs: 161 ms for the first, then about 118
 - [ ] **Step 4: Run the tests and the exactness guards** (Task 2 Step 4's list plus every `scenario-host*.spec.ts`). Expected: PASS, goldens unchanged.
 - [ ] **Step 5: Time it** (cases 2, 3, 4 and 5, plus the whole perf file once, so the unfunded host budgets show no regression).
 - [ ] **Step 6: Commit:** `perf(sim): resume funded runs across host slices`.
+
+### Task R0: Time to revision 0 (added during the round)
+
+The first visible result on `/sim` (revision 0 after `initScenario` with levers and a null seed) waits on all 101 FZP band runs, so the round measures it. In `src/lib/sim/scenario/scenario.bench.spec.ts`, add three reported cases with a host each: `rev0: unfunded` (the bench city as is, default levers), `rev0: funded baseline` (the bench calibration: market, `baselineFunding`, `affordableRoutes`; default levers) and `rev0: bench funding` (the same with the bench funding on the plan, case 4's lever rig). Each logs the time to revision 0 and its split (load, warm, FZP band, shown run, geometry). No budget at first; the logged numbers are the evidence a budget is set from (fallback 2). The order (bands first, then the representative seed) is fixed by `timelapse-sim-design.md:585` and is not changed.
+
+- [x] **Commit:** `test(sim): time the host to revision 0 unfunded, funded and with the bench funding`.
 
 ### Task 5: Full suites, docs and the dataset note
 
