@@ -291,7 +291,7 @@ function compileAll(p: SimPolicy): PolicyTimeline {
   });
   const c = compileTimeline(doc, LOTS, CTX, 'plan');
   expect(c.step(Infinity)).toBe(true);
-  expect(c.missingLots()).toEqual([]);
+  expect(c.missingLots()).toBe(0);
   return c.result();
 }
 

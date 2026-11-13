@@ -173,7 +173,7 @@ export function zoningKeyOf(z: ZoningLevers): string {
 export interface Permitting {
   /** Every `all` timer in force, multiplied and clamped per route and stage. */
   speed: StageScale;
-  /** Each policy's `new` timers from the start of its span in force; by `from`, then list order. */
+  /** One entry per `new` timer from the start of its span in force; by `from`, then list order. */
   speedNew: { from: Day; scale: StageScale }[];
   /** From the lowest policy in force that sets them; null = observed. */
   routeShares: Record<Pathway, number> | null;
@@ -191,9 +191,9 @@ export function permittingOf(f: InForce): Permitting {
       throw new LeverFormatError(`policy ${a.policy.id}`, `not a permitting policy`);
     const c = compileTiming(whatOf(a, 'timing').set);
     all.push(...c.timers.filter((t) => t.reach === 'all'));
-    const fresh = c.timers.filter((t) => t.reach === 'new');
-    if (fresh.length > 0) {
-      const scale = scaleTable(fresh, 'new');
+    for (const t of c.timers) {
+      if (t.reach !== 'new') continue;
+      const scale = scaleTable([t], 'new');
       if (!isIdentity(scale)) speedNew.push({ from: a.span.from, scale });
     }
     if (c.routeShares !== null) routeShares = c.routeShares; // a lower policy overrides

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { parseFinanceLevers } from '$lib/sim/levers/finance';
-import { LeverFormatError, MIN_SCALE, type StoryEdit } from '$lib/sim/levers/types';
+import { scaleTable } from '$lib/sim/levers/timers';
+import { compileTiming } from '$lib/sim-page/timing';
+import { LeverFormatError, MAX_SCALE, MIN_SCALE, type StoryEdit } from '$lib/sim/levers/types';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
 import { monthFirstDay } from '../months';
@@ -228,6 +230,25 @@ describe('rule 13: permitting timers', () => {
       [monthFirstDay(AS_OF, 2), 0.5],
       [monthFirstDay(AS_OF, 2), 0.6]
     ]);
+  });
+
+  it('emits one speedNew entry per new timer; their clamped product is the set’s scaleTable', () => {
+    const t = (scale: number) => ({
+      pathway: 'permitOnly' as const,
+      stage: 'permitFiled' as const,
+      scale,
+      reach: 'new' as const
+    });
+    const set = timingSet({ presetTimers: [t(0.1), t(0.1)] });
+    const doc = miniDoc(timingPolicy('two', set));
+    const p = permittingOf(inForceAt(doc, DAY1));
+    expect(p.speedNew.map((e) => e.scale.permitOnly.permitFiled)).toEqual([0.1, 0.1]);
+    const product = p.speedNew.reduce((x, e) => x * (e.scale.permitOnly.permitFiled ?? 1), 1);
+    const folded = scaleTable(
+      compileTiming(set).timers.filter((x) => x.reach === 'new'),
+      'new'
+    );
+    expect(Math.min(MAX_SCALE, Math.max(MIN_SCALE, product))).toBe(folded.permitOnly.permitFiled);
   });
 
   it('keeps each set’s floors as it carries them (no re-resolve)', () => {

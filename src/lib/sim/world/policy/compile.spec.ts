@@ -461,11 +461,11 @@ describe('compileTimeline: waiting on cells', () => {
     expect(new Set(c.progress().failedCells)).toEqual(cells);
 
     for (const cell of cells) yields.loaded.add(cell);
-    expect(c.missingLots()).toEqual([]);
+    expect(c.missingLots()).toBe(0);
     expect(c.step(Infinity)).toBe(true);
     expect(c.result().readyThrough()).toBe(W);
     expect(c.progress().failedCells).toEqual([]);
-    expect(c.missingLots()).toEqual(['3512005']);
+    expect(c.missingLots()).toBe(1);
 
     const { t } = compiled(doc, ctx);
     expect(idsOf(c.result())).toEqual(idsOf(t));

@@ -81,6 +81,9 @@ function addedDefs(doc: SimPolicy4): {
 /**
  * The definition of an id whose policy is not in force on `day`: that of the last span begun by
  * then while the policy is on (the last one in force), else the first span's (builder's call).
+ * For an id whose policy is not yet in force, the entry carries its first span's definition as a
+ * placeholder that S5 forces: it lies outside the frame identity and is never offered, so nothing
+ * reads it as in force.
  */
 function restingDef<T>(a: Added<T>, day: Day): T {
   let def = a.spans[0].def;

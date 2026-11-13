@@ -160,7 +160,7 @@ function reconcileMoneyPools(
 /**
  * The programmes (in any fund policy, on or off) that have a stretch of their policy's spans in
  * which a term they need is neither sourced nor typed by an `on` terms policy in force then. Where
- * two policies type one key, the lower in the list wins (rule 11's order, as the compiler merges).
+ * two policies type one key, only whether the term is typed matters here, not which policy's value.
  * One entry per programme per span, naming the first missing term; `path` is the programme's
  * place in the document.
  */

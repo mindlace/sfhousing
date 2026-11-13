@@ -67,7 +67,7 @@ export interface TimelineCompile {
    * The lots whose zoning changed and that have no yield record (yield 0, as today); the runner
    * logs them. An S13 amendment approved by the conductor.
    */
-  missingLots(): readonly ParcelId[];
+  missingLots(): number;
 }
 
 /** The content digest of each view, computed once (it hashes every column). */
@@ -391,6 +391,6 @@ export function compileTimeline(
     },
     capacity: () => complete().capacity,
     unknownLots: () => complete().unknownLots,
-    missingLots: () => [...missing]
+    missingLots: () => missing.size
   };
 }
