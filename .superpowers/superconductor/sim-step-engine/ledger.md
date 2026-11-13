@@ -207,6 +207,18 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
   - Q6 [defect-class: shared-type-home]: model-month arithmetic needed by both wave-1 specs → world-core owns `src/lib/sim/world/months.ts` (`monthFirstDay`, `monthLastDay`, `monthOfDay`, each `(asOf, …)`); policy-timeline writes the same file at the same path for now and world-core's copy wins at the merge.
   - Q8 [defect-class: shared-type-home]: both would create `docs/dev/step-engine.md` → each spec writes its own doc named for its slug (`docs/dev/policy-timeline.md`, `docs/dev/world-core.md`) with its own CLAUDE.md line; the conductor unions the CLAUDE.md list at the merge.
   - Q3 (carry to Release B dispatch): `/s` loading has no `asOf`; `parsePolicy4(json, { asOf: null })` skips alignment checks and `createSimCodec4(ds)` takes the dataset; timeline-ui decides who opens `/s` documents. Q5, Q7 noted; Q7 is answered by its Task 1 measurement.
+- 2026-11-13 world-core round 1 (plan `docs/superpowers/plans/2026-11-13-world-core.md` @2a2d2f27 on `step-engine/world-core`, "Open questions" 1 to 7); every recommendation accepted:
+  - Q1 [defect-class: row-gloss]: `speedNew` and masters or phases → they count as filed before the dataset date; `speedNew` reaches simulated starts and pipeline rows at preApplication only (3.4, S4, OD-2).
+  - Q2 [defect-class: row-gloss]: S4 "`from` is before the day the project filed" → applies when filing day >= `from` (3.4 "not yet filed when the span begins"). S4 wording loose at equality; report to the partner.
+  - Q3 [defect-class: spec-ambiguity]: rule 8 "the frame" → route shares, `localProgram` and size from the frame of the model month holding the lot-month's first day; stage draws and speeds from the step's frame (3.2, 3.4).
+  - Q4 [defect-class: spec-ambiguity]: `Schedule.inFlight` and `regime` depend on the old input's shape → `scheduleAt` always sets `inFlight` on calibration rows, never `regime`; the referee normalises.
+  - Q5 to Q7: no objection (`scheduleAt` null for masters; `funding` only on funded rows; `LineColumns`/`PoolColumns` open for world-funding to narrow — to be quoted in world-funding's assignment).
+- 2026-11-13 policy-timeline Task 1 measurement (report: nested worktree `.superpowers/sdd/2026-11-13-policy-timeline/measure-compile.md`; live dataset 2026-11-08-3b7fa918, load about 2, ballpark): one added metro transit rule (39,202 needs) about 4.4 s to first and all frames, 4.25 s of it the chunk recompute; 500 painted lots about 120 ms; an edit dated month 241 reuses the default view for the first frame; money loop for 480 months about 1.2 ms. `precomputeOf` one pass 43 to 45 ms; largest single `createYieldRecompute` step 93 ms.
+  - [defect-class: slice-bar]: the 50 ms slice constraint against unsliceable hashed calls → option (a): accept as rule 19's "one lot-cell" allowance, each call behind a seam, a `test:perf` case reporting the longest compile slice, no hashed-file change, no duplication now; ensemble-runner re-measures on a quiet machine; a real miss goes to the partner with a finer-sliced copy in new code as the in-frame remedy.
+  - Carry to wave 2: the operator's local live dataset predates baseline funding; world-funding's live referee needs 2026-11-10-6ee5a23d (`npm run data:local`).
+- 2026-11-13 policy-timeline [defect-class: spec-contradiction]: a schema 4 document saved on one dataset has spans that no longer fall on month edges of a later dataset; rule 4 rejects, "Reconciling" never rejects → `reconcilePolicy4(doc, cal, asOf)` snaps spans to the new dataset's months on opening (clamp to month 1, drop empty, trim overlaps, report each); strict publish keeps the checks (OD-8, OD-10). User-visible: a shared policy's dates can move by up to a month when the dataset date moves; to the partner at the wave boundary.
+- 2026-11-13 partner: the machine is otherwise idle; the load operators see is each other. Timing is re-run at wave boundaries with one operator active. Wave 1 counts as exclusive.
+- 2026-11-13 policy-timeline [defect-class: missing-ctx-dependency]: today's `leverStep` logs lots with no yield record; S13 gave the compiler no way to report the count → S13 amended: `TimelineCompile` gains `missingLots(): number`; design and the two quoting specs rebuilt. Operator status at the time: tasks 1 to 9 and 13 complete, 10 in review.
 
 ## Waves
 - gate wave 1 2026-11-13 08:55: VERDICT OK* (seven_day 27% of 60% reserve, headroom 33; five_hour NO DATA). Calibration from sim-financing: about 1 point a spec, a floor (smallest specs, integer resolution). Partner's instruction was "enter sim-step-engine and execute": wave 1 admitted.
@@ -214,9 +226,11 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 
 ## Frame-defect tally
 - shared-type-home: 3 — instances: 2026-11-13 wave 1, S3 to S6 had no named file; 2026-11-13 Q6 month arithmetic; 2026-11-13 Q8 the dev doc. TRIPWIRE reached: the package names no home for anything two specs share. Settled for wave 1; before each later wave the conductor names shared files in the assignment, and the aggregate goes to the partner at the wave boundary as a candidate composer note.
-- missing-ctx-dependency: 1 — instances: 2026-11-13 Q2 (S13 `CompileCtx`).
-- spec-contradiction: 1 — instances: 2026-11-13 Q1 (upgrade table against the default document).
-- row-gloss: 1 — instances: 2026-11-13 Q4 (S4 Local Program).
+- missing-ctx-dependency: 2 — instances: 2026-11-13 Q2 (S13 `CompileCtx` yields); 2026-11-13 S13 `missingLots`. Both: what the old host does around the recompute was not carried into S13.
+- spec-contradiction: 2 — instances: 2026-11-13 Q1 (upgrade table against the default document); 2026-11-13 stored spans against a later dataset date.
+- row-gloss: 3 — instances: 2026-11-13 policy-timeline Q4 (S4 Local Program); world-core Q1 (S4 `speedNew` and masters); world-core Q2 (S4 "before" at equality). TRIPWIRE reached, all three on row S4: its prose is looser than section 3.4 and the code. No type changed; each was ruled from 3.4 and OD-2. To the partner: S4's wording wants a composer pass (M row).
+- slice-bar: 1 — instances: 2026-11-13 policy-timeline compile (recompute step 93 ms under load).
+- spec-ambiguity: 2 — instances: 2026-11-13 world-core Q3, Q4.
 
 - worktree-pin: 2 — instances: 2026-11-13 policy-timeline, twice (create refused; enter-outside refused). Harness, not design; settled by nesting.
 
