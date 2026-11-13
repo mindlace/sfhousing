@@ -225,6 +225,7 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
   - to ensemble-runner's assignment: pass the same calibration and asOf to `openSimDoc4` and `compileTimeline`; `missingLots()` is a count (ids would be an S13 amendment); frame levers carry no per-lot rule attribution (`StoryEdit.source`), so `limitSources` and cards would attribute rule-raised lots to ''.
   - to timeline-ui's assignment: use `openSimDoc4` (codec.load drops the report); `opCount` counts spans; `migrateSimAutosave` returns 'none' on a failed write; the attribution gap above.
   - noted: `speedNew` is one entry per `new` timer, each clamped (differs from today's clamp of the product only for two opposite `new` timers beyond [0.05, 10]); an id before its policy is in force carries its first span's definition, unoffered.
+- 2026-11-13 world-core [defect-class: spec-ambiguity]: S12 and rule 16 did not say whether stage events of a chain that follows a start made in systems 5 or 6 reach `onProjectEvent`; world-core built it without → widened: those stage events are passed (world-funding rule 13 makes every money event there; without it a project awarded and entering construction in one month would never spend). The funded `'start'` itself is not echoed. world-core rule 16 amended in `specs-src` and rebuilt. Other S12 readings accepted and carried to world-funding's assignment: a `planLot` answer for a month whose apply already ran counts as 0; due lots that neither start nor apply are replanned after apply; `startProject` throws unless the lot has no row or is free, returns -1 when no size level gains a home; programme ids empty or containing ',' throw (report: world-core worktree `.superpowers/sdd/2026-11-13-world-core/task-11-report.md`). Operator status: tasks 1 to 10 complete, 2 left.
 
 ## Waves
 - gate wave 1 2026-11-13 08:55: VERDICT OK* (seven_day 27% of 60% reserve, headroom 33; five_hour NO DATA). Calibration from sim-financing: about 1 point a spec, a floor (smallest specs, integer resolution). Partner's instruction was "enter sim-step-engine and execute": wave 1 admitted.
@@ -236,7 +237,7 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 - spec-contradiction: 2 — instances: 2026-11-13 Q1 (upgrade table against the default document); 2026-11-13 stored spans against a later dataset date.
 - row-gloss: 3 — instances: 2026-11-13 policy-timeline Q4 (S4 Local Program); world-core Q1 (S4 `speedNew` and masters); world-core Q2 (S4 "before" at equality). TRIPWIRE reached, all three on row S4: its prose is looser than section 3.4 and the code. No type changed; each was ruled from 3.4 and OD-2. To the partner: S4's wording wants a composer pass (M row).
 - slice-bar: 1 — instances: 2026-11-13 policy-timeline compile (recompute step 93 ms under load).
-- spec-ambiguity: 2 — instances: 2026-11-13 world-core Q3, Q4.
+- spec-ambiguity: 3 — instances: 2026-11-13 world-core Q3, Q4; S12 chain events. TRIPWIRE reached; the three are unrelated readings (which frame, reader field shape, hook call list), each settled from the design text. Reported to the partner; no composer bounce proposed.
 
 - worktree-pin: 2 — instances: 2026-11-13 policy-timeline, twice (create refused; enter-outside refused). Harness, not design; settled by nesting.
 
