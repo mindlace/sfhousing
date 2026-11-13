@@ -213,6 +213,9 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
   - Q3 [defect-class: spec-ambiguity]: rule 8 "the frame" → route shares, `localProgram` and size from the frame of the model month holding the lot-month's first day; stage draws and speeds from the step's frame (3.2, 3.4).
   - Q4 [defect-class: spec-ambiguity]: `Schedule.inFlight` and `regime` depend on the old input's shape → `scheduleAt` always sets `inFlight` on calibration rows, never `regime`; the referee normalises.
   - Q5 to Q7: no objection (`scheduleAt` null for masters; `funding` only on funded rows; `LineColumns`/`PoolColumns` open for world-funding to narrow — to be quoted in world-funding's assignment).
+- 2026-11-13 policy-timeline Task 1 measurement (report: nested worktree `.superpowers/sdd/2026-11-13-policy-timeline/measure-compile.md`; live dataset 2026-11-08-3b7fa918, load about 2, ballpark): one added metro transit rule (39,202 needs) about 4.4 s to first and all frames, 4.25 s of it the chunk recompute; 500 painted lots about 120 ms; an edit dated month 241 reuses the default view for the first frame; money loop for 480 months about 1.2 ms. `precomputeOf` one pass 43 to 45 ms; largest single `createYieldRecompute` step 93 ms.
+  - [defect-class: slice-bar]: the 50 ms slice constraint against unsliceable hashed calls → option (a): accept as rule 19's "one lot-cell" allowance, each call behind a seam, a `test:perf` case reporting the longest compile slice, no hashed-file change, no duplication now; ensemble-runner re-measures on a quiet machine; a real miss goes to the partner with a finer-sliced copy in new code as the in-frame remedy.
+  - Carry to wave 2: the operator's local live dataset predates baseline funding; world-funding's live referee needs 2026-11-10-6ee5a23d (`npm run data:local`).
 
 ## Waves
 - gate wave 1 2026-11-13 08:55: VERDICT OK* (seven_day 27% of 60% reserve, headroom 33; five_hour NO DATA). Calibration from sim-financing: about 1 point a spec, a floor (smallest specs, integer resolution). Partner's instruction was "enter sim-step-engine and execute": wave 1 admitted.
@@ -223,6 +226,7 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 - missing-ctx-dependency: 1 — instances: 2026-11-13 Q2 (S13 `CompileCtx`).
 - spec-contradiction: 1 — instances: 2026-11-13 Q1 (upgrade table against the default document).
 - row-gloss: 3 — instances: 2026-11-13 policy-timeline Q4 (S4 Local Program); world-core Q1 (S4 `speedNew` and masters); world-core Q2 (S4 "before" at equality). TRIPWIRE reached, all three on row S4: its prose is looser than section 3.4 and the code. No type changed; each was ruled from 3.4 and OD-2. To the partner: S4's wording wants a composer pass (M row).
+- slice-bar: 1 — instances: 2026-11-13 policy-timeline compile (recompute step 93 ms under load).
 - spec-ambiguity: 2 — instances: 2026-11-13 world-core Q3, Q4.
 
 - worktree-pin: 2 — instances: 2026-11-13 policy-timeline, twice (create refused; enter-outside refused). Harness, not design; settled by nesting.
