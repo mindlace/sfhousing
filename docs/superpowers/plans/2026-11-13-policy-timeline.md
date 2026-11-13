@@ -56,7 +56,7 @@ Commands: server specs `npx vitest run --project server <path>`; perf `npx vites
 | File | Responsibility |
 | --- | --- |
 | `src/lib/sim-page/policy.ts` (modify: `195`, `219`, `268`) | export `parseRule`, `parseCustom`, `parseTimingSet` |
-| `src/lib/timeline/months.ts` | model-month day arithmetic |
+| `src/lib/sim/world/months.ts` | model-month day arithmetic |
 | `src/lib/timeline/policy4.ts` | S10 types, `DEFAULT_POLICY4`, `queriesOf4`, `spanAt`, `nothingInForce` |
 | `src/lib/timeline/parse4.ts` | `parsePolicy4` (rules 1, 3, 4, 5) |
 | `src/lib/timeline/upgrade.ts` | `upgradePolicy` (the table, rules 1, 2, T6) |
@@ -101,8 +101,8 @@ Code this plan relies on (base c0bd4864): `SimPolicy` `sim-page/policy.ts:58-69`
 
 **Files:**
 - Modify: `src/lib/sim-page/policy.ts:195,219,268` (add `export`)
-- Create: `src/lib/timeline/months.ts`, `src/lib/timeline/policy4.ts`
-- Test: `src/lib/timeline/months.spec.ts`, `src/lib/timeline/policy4.spec.ts`
+- Create: `src/lib/sim/world/months.ts`, `src/lib/timeline/policy4.ts`
+- Test: `src/lib/sim/world/months.spec.ts`, `src/lib/timeline/policy4.spec.ts`
 
 **Interfaces:**
 - Produces (`months.ts`): `monthFirstDay(asOf: Day, m: number): Day` = `asOf + Math.floor((m - 1) * MONTH_DAYS) + 1`; `monthLastDay(asOf: Day, m: number): Day` = `asOf + Math.floor(m * MONTH_DAYS)`; `monthOfDay(asOf: Day, day: Day): number` (the m with first ≤ day ≤ last; `day <= asOf` gives 0).
@@ -130,7 +130,7 @@ export function nothingInForce(doc: SimPolicy4): boolean; // rule 9: no `on` pol
 ```
 
 - [ ] **Step 1: Write the failing tests.** `months.spec.ts`: for `asOf = dayOf(2026, 3, 15)`, months 1, 2, 12, 13, 480: `monthFirstDay(m + 1) === monthLastDay(m) + 1`; month 1 first is `asOf + 1`; `monthOfDay` inverts both ends of every month 1..480; `monthOfDay(asOf, asOf) === 0`. `policy4.spec.ts`: `queriesOf4` of a document holding a transit policy (two spans, different bands) and a painted policy equals, as a set of keys, `queriesOf` of a schema 3 policy with the same rules and brushes, each key `queryKey` of its query, no duplicates; `spanAt` returns null for `on: false`, the covering span by `from`/`to` (null `to` open), null between spans; `nothingInForce(DEFAULT_POLICY4)` true, true for a doc whose only policies are off or have no spans, false once one `on` policy has a span.
-- [ ] **Step 2: Run** `npx vitest run --project server src/lib/timeline` — FAIL (modules missing).
+- [ ] **Step 2: Run** `npx vitest run --project server src/lib/timeline src/lib/sim/world/months.spec.ts` — FAIL (modules missing). **Conductor ruling Q6:** `months.ts` lives at `src/lib/sim/world/months.ts` (world-core owns it; we create the same file with exactly `monthFirstDay(asOf, m)`, `monthLastDay(asOf, m)`, `monthOfDay(asOf, day)`; at the merge world-core's copy wins, so keep it minimal and exactly per design 3.3). Its spec is `src/lib/sim/world/months.spec.ts` (determinism ban applies there). **Ruling Q1:** the default upgrades to nothing in force.
 - [ ] **Step 3: Implement.** `queriesOf4` walks every policy (on or off) and every span, using `ruleQueries` for `bands` (build the `ZoningRule` from `where.stopTypes` and `what.bands`) and `customQuery` for each brush, deduplicated by `queryKey` like `queriesOf` (`policy.ts:478-487`). Builder's call: off policies' queries are listed too, so switching a policy on needs no new brush round trip. No Svelte, no DOM in `src/lib/timeline/`.
 - [ ] **Step 4: Run** the specs and `npm run check` — PASS.
 - [ ] **Step 5: Commit** `feat(timeline): schema 4 policy types and model-month arithmetic`.
@@ -322,7 +322,7 @@ Decisions (builder's calls, each one line):
 
 ### Task 9: One zoning state's view, in slices (rules 18, 20)
 
-**Blocked on Open question Q2** (how the compiler gets yields for `Need`s); build with the recommended `YieldSource` unless the conductor rules otherwise.
+**Q2 granted by the conductor; S13 amended:** `interface CompileCtx { input: SimInput; layers: LayerCtx; windowMonths: number; yields: YieldSource; now?: () => number }` and `interface YieldSource { recompute(parcels: ScenarioParcels, needs: Needs): YieldRecompute; failedCells(): readonly string[] }`, where `Needs` is whatever `allNeeds` returns today (use the real exported type name) and `YieldRecompute` is today's from `levers/recompute.ts`; `now` defaults to `performance.now`. Use exactly these shapes.
 
 **Files:**
 - Create: `src/lib/sim/world/policy/zoning-view.ts`
@@ -501,7 +501,7 @@ export function migrateSimAutosave(storage: Storage, ds: OpenDataset): 'none' | 
 - Create or modify: `docs/dev/step-engine.md` ("Policies with dates" section)
 - Modify: `docs/dev/sim-levers.md` (one pointer line), `CLAUDE.md` (scoped-docs list, only if `step-engine.md` was created here)
 
-- [ ] **Step 1:** If `docs/dev/step-engine.md` exists on the branch, add the section; else create it holding only `# Step engine` and the section, and add one line to CLAUDE.md's scoped list: `- **Step engine: policies with dates (schema 4 document, compiling to frames, frame ids, the comparison)** — [docs/dev/step-engine.md](docs/dev/step-engine.md)` (`scripts/docs-index.spec.ts` requires every `docs/dev/*.md` to be linked). Note in the commit body that `world-core` may create the same file in parallel and the merge keeps both sections.
+- [ ] **Step 1 (conductor ruling Q8 supersedes the spec's file name):** do NOT create or touch `docs/dev/step-engine.md`. Create `docs/dev/policy-timeline.md` (`# Policies with dates`) and add one line to CLAUDE.md's scoped list: `- **Policies with dates (schema 4 document, compiling to frames, frame ids, the comparison)** — [docs/dev/policy-timeline.md](docs/dev/policy-timeline.md)` (`scripts/docs-index.spec.ts` requires every `docs/dev/*.md` to be linked). The conductor unions the CLAUDE.md list at the merge. Below, read `step-engine.md#policies-with-dates` as `policy-timeline.md`.
 - [ ] **Step 2:** The section says, tersely: the document (kinds, policy, span, the pairs table, rules 3 to 6), opening and reconciling, how policies in force combine (rules 10 to 15), what a frame's identity covers and the interning (Task 8's decisions), slicing and `CompileCtx.yields`, `touched`, `firstDifference`, `comparisonOf`, the codec and that it is not switched on, the test files, and Task 1's numbers. `sim-levers.md` gains under "The lever document": `Dated policies (schema 4) compile to these levers month by month: see [step-engine.md](step-engine.md#policies-with-dates).`
 - [ ] **Step 3: Run** `npx vitest run --project server scripts/docs-index.spec.ts` and `npx prettier --check docs CLAUDE.md` — PASS.
 - [ ] **Step 4: Commit** `docs: policies with dates`.
@@ -571,6 +571,6 @@ export function migrateSimAutosave(storage: Storage, ds: OpenDataset): 'none' | 
 - **Q3. Parsing needs the dataset date; the server has none.** Rule 4's month checks need `asOf`, and opening a schema 3 document (rule 2 spans, rule 25's reconcile) needs `asOf` and the calibration, but `DocCodec.load` takes only text and `loadSharedDoc` parses on the server without the dataset (`server/sharing/shared-page.ts:65`). Built here: `parsePolicy4(…, { asOf: null })` skips only the alignment checks, and `createSimCodec4(ds)` takes the dataset. For Release B, `timeline-ui` must choose: the server fetches `projects.json`/`calibration.json` from R2 to open and check documents, or `/s` ships the stored text and the client opens it. Recommendation: the latter, with the server's publish check run with `asOf: null` plus the compiler's re-check.
 - **Q4. The Local Program switch lives in the zoning view, not in `newCalibration`** (S4 wording vs code). S4 and rule 14 put the switch in `newCalibration`, but `Calibration` has no such field: today it is the `parcels.localProgram` column (`levers/view.ts:17-21`, `apply.ts:67`). Built here: the switch is part of the zoning state and the view's `localProgram` column, as today; `newCalibration` carries the route shares. No shape changes; the S4 sentence is wrong in one clause. `world-core` should read the switch from `view.parcels.localProgram`.
 - **Q5. `base: 'preFzp'` with zoning policies in force.** `resolveEnvelopes` always starts from the FZP table (`resolve.ts:76`); `comparisonOf` only asks for `'preFzp'` when nothing is in force. Built here: `LeverFormatError` at `base`. Supporting it means resolving on a layer context whose FZP slots hold the base columns; say if wanted.
-- **Q6. Month arithmetic has two owners.** `world-core` rule 1 defines model months too; this plan puts `monthFirstDay`/`monthLastDay`/`monthOfDay` in `src/lib/timeline/months.ts` (the parser needs them page-side). Recommendation: `world-core` imports these rather than defining its own.
+- **Q6. Month arithmetic has two owners.** `world-core` rule 1 defines model months too; this plan puts `monthFirstDay`/`monthLastDay`/`monthOfDay` in `src/lib/sim/world/months.ts` (the parser needs them page-side). Recommendation: `world-core` imports these rather than defining its own.
 - **Q7. `precomputeOf` is one unsliceable pass over every lot** (`scenario/input.ts:363`), and the view needs it (S4 `ZoningView.pre`). If Task 1 measures it, `resolveEnvelopes` or `applyLevers` above about 40 ms on the live city, rule 19 and the 50 ms slice bar cannot both hold without a sliced precompute in a hashed file. Task 1 reports; the conductor decides.
 - **Q8. `docs/dev/step-engine.md`** may be created by `world-core` in parallel; Task 14 creates it only if absent, and the merge must keep both sections and one CLAUDE.md line.
