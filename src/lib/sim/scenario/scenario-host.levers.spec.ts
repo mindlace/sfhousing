@@ -21,9 +21,9 @@ import { fundedCalibration } from './test/funded-calibration';
 import { MINI_POLICY_URL, makeScenarioHarness, type ScenarioHarness } from './test/host-harness';
 import type { ScenarioResponse, SimInput, TimelineResponse } from './types';
 
-/** `financePreOf` and simulate calls, each with the harness step (timer callback) it ran in. */
+/** Finance warm steps and simulate calls, each with the harness step (timer callback) it ran in. */
 const hooks = vi.hoisted(() => ({
-  events: [] as { fn: 'pre' | 'sim'; step: number; input: SimInput }[],
+  events: [] as { fn: 'warm' | 'sim'; step: number; input: SimInput }[],
   step: 0
 }));
 
@@ -31,9 +31,14 @@ vi.mock('./funded', async (importOriginal) => {
   const m = await importOriginal<typeof import('./funded')>();
   return {
     ...m,
-    financePreOf: vi.fn((input: SimInput) => {
-      hooks.events.push({ fn: 'pre', step: hooks.step, input });
-      return m.financePreOf(input);
+    financeWarm: vi.fn((input: SimInput, horizon: number) => {
+      const warm = m.financeWarm(input, horizon);
+      return {
+        step(maxCandidates: number) {
+          hooks.events.push({ fn: 'warm', step: hooks.step, input });
+          return warm.step(maxCandidates);
+        }
+      };
     })
   };
 });
@@ -480,11 +485,13 @@ describe('scenario host with funding levers', () => {
     const plan = sims[0].input; // the new revision's first run is on its plan input
     expect(plan.finance).toBeDefined();
     const firstRun = sims.find((e) => e.input === plan)!;
-    const pre = hooks.events.find((e) => e.fn === 'pre' && e.input === plan)!;
-    expect(pre).toBeDefined();
-    expect(pre.step).toBeGreaterThan(currentStep);
-    expect(sims.filter((e) => e.step === pre.step)).toEqual([]);
-    expect(pre.step).toBeLessThan(firstRun.step);
+    const warms = hooks.events.filter((e) => e.fn === 'warm' && e.input === plan);
+    expect(warms.length).toBeGreaterThan(0);
+    for (const warm of warms) {
+      expect(warm.step).toBeGreaterThan(currentStep);
+      expect(sims.filter((e) => e.step === warm.step)).toEqual([]);
+      expect(warm.step).toBeLessThan(firstRun.step);
+    }
   });
 
   it('LeversResponse shape unchanged', async () => {

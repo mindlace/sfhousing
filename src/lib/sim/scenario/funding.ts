@@ -413,3 +413,90 @@ export function awardSet(
   if (below(coverageLevel(priced.coverage), coverageLevel(whole.coverage))) return null;
   return { set, priced, asks: asksOf(f, kind, set, protoId, units) };
 }
+
+/** `awardPasses` scratch, by pool: the summed ask, and a short pool's mark (all 0 between calls). */
+let passAsk = new Float64Array(16);
+let passShort = new Uint8Array(16);
+/** The kept subsets of a bundle array, by the bit mask of kept positions (bundles never mutate). */
+const subsets = new WeakMap<readonly number[], Map<number, number[]>>();
+
+/** The members of `bundle` at the positions set in `mask`; one array per (bundle, mask). */
+function subsetOf(bundle: readonly number[], mask: number): number[] {
+  let byMask = subsets.get(bundle);
+  if (byMask === undefined) {
+    byMask = new Map();
+    subsets.set(bundle, byMask);
+  }
+  let set = byMask.get(mask);
+  if (set === undefined) {
+    set = bundle.filter((_, i) => (mask & (1 << i)) !== 0);
+    byMask.set(mask, set);
+  }
+  return set;
+}
+
+/**
+ * Exactly `awardSet(...) !== null`, without building the award: the serving probe of the grouped
+ * line's bisection. Each round sums a pool's ask over the set in the order `asksOf` does (so the
+ * sums are the same doubles), and the left-out sets are memoised by the bundle array and the kept
+ * positions, so a call allocates nothing once its sets are known.
+ */
+export function awardPasses(
+  bundle: readonly number[],
+  kind: ProjectKind,
+  protoId: PrototypeId,
+  units: number,
+  avail: (pool: number) => number,
+  f: FinanceIndex
+): boolean {
+  const n = bundle.length;
+  // the kept positions are a 31-bit mask
+  if (n > 30) return awardSet(bundle, kind, protoId, units, avail, f) !== null;
+  if (n === 0) return false;
+  const P = f.capped.length;
+  if (passAsk.length < P) {
+    passAsk = new Float64Array(P);
+    passShort = new Uint8Array(P);
+  }
+  const full = (1 << n) - 1;
+  let mask = full;
+  let set = bundle;
+  for (;;) {
+    const priced = f.price(kind, set, protoId);
+    // sum each capped pool's positive asks, in set order
+    for (let j = 0; j < set.length; j++) {
+      const q = f.progPool[set[j]];
+      if (!f.capped[q]) continue;
+      const it = priced.items[j];
+      const dollars =
+        projectDollars(it.granted, units) +
+        projectDollars(it.lent, units) +
+        projectDollars(it.reserve, units);
+      if (dollars > 0) passAsk[q] += dollars;
+    }
+    // mark the short pools (a pool asked nothing is never short), clearing the sums
+    let anyShort = false;
+    for (let j = 0; j < set.length; j++) {
+      const q = f.progPool[set[j]];
+      const ask = passAsk[q];
+      if (ask === 0) continue;
+      passAsk[q] = 0;
+      if (avail(q) < ask) {
+        passShort[q] = 1;
+        anyShort = true;
+      }
+    }
+    if (!anyShort) break;
+    // leave out every programme of a short pool, then clear the marks
+    for (let i = 0; i < n; i++) {
+      if ((mask & (1 << i)) !== 0 && passShort[f.progPool[bundle[i]]] === 1) mask &= ~(1 << i);
+    }
+    for (let i = 0; i < n; i++) passShort[f.progPool[bundle[i]]] = 0;
+    if (mask === 0) return false;
+    set = subsetOf(bundle, mask);
+  }
+  if (mask === full) return true;
+  const whole = f.price(kind, bundle, protoId);
+  const priced = f.price(kind, set, protoId);
+  return !below(coverageLevel(priced.coverage), coverageLevel(whole.coverage));
+}

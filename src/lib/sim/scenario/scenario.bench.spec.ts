@@ -757,6 +757,113 @@ describe('scenario host budgets with the bench funding as levers (F18 cases 4 an
   );
 });
 
+// Time to revision 0 on /sim (finance-engine perf round, Task R0): `initScenario` with levers and a
+// null seed, so the host runs the lever recompute, the warm job, all 101 FZP band runs (the
+// representative needs them), the shown run and geometry before the first `timeline`. Three
+// inputs: (a) the bench city as is (no market, no baseline funding), default levers; (b) the bench
+// calibration (market, `baselineFunding`, `affordableRoutes`), default levers; (c) (b) with the
+// bench funding on the plan, the lever rig of case 4. Each case has its own host. No budgets yet:
+// the logged numbers are the evidence a budget is set from. The split, from the posts and tasks
+// the rig records: load (to `levers/current`), warm (to the first band task), FZP band (to the
+// `ranks` post), shown run (to the end of the shown-run task), geometry (to revision 0).
+describe('time to revision 0 with levers and a null seed (rev0)', () => {
+  const benchCalibration = () => ({
+    ...structuredClone(city.calibration),
+    affordableRoutes: benchRoutes(),
+    baselineFunding: benchBaselineFunding(SYNTH_AS_OF),
+    market: benchMarket()
+  });
+
+  async function rev0(
+    name: string,
+    calibration: SynthCity['calibration'] | null,
+    finance: (typeof DEFAULT_LEVERS)['finance'] | null
+  ): Promise<void> {
+    let c = city;
+    if (calibration) {
+      const json = new Map(city.files.json);
+      json.set(city.manifest.scenarios!.fzp.calibration, calibration);
+      c = { ...city, calibration, files: { ...city.files, json } };
+    }
+    // Heap (reported, no budget): used JS heap after a full collection, before the host exists
+    // and at revision 0 with the host alive. Both reads are outside the timed window.
+    const gc = gcOf();
+    gc?.();
+    const heapBefore = process.memoryUsage().heapUsed;
+    const rig = new Rig(c);
+    try {
+      const manifest = {
+        ...city.manifest,
+        scenarios: { fzp: { ...city.manifest.scenarios!.fzp, policy: SYNTH_POLICY_URL } }
+      };
+      const levers = finance
+        ? { ...structuredClone(DEFAULT_LEVERS), finance, compare: 'fzp' as const }
+        : structuredClone(DEFAULT_LEVERS);
+      probe.pools = null;
+      const initAt = rig.handle({
+        type: 'initScenario',
+        rev: 1,
+        manifest,
+        scenario: 'fzp',
+        seed: null,
+        horizon: HORIZON,
+        levers
+      });
+      const first = await rig.until('revision 0', () => rig.timelines(1)[0], 120_000);
+      const at = (type: ScenarioResponse['type'], phase?: string) =>
+        rig.posted.find(
+          (p) =>
+            p.msg.type === type &&
+            (phase === undefined || (p.msg as { phase?: string }).phase === phase)
+        )?.at ?? NaN;
+      const currentAt = at('levers', 'current');
+      const ranks = rig.posted.find((p) => p.msg.type === 'ranks');
+      const ranksAt = ranks?.at ?? NaN;
+      const firstBand = rig.tasks.find((t) => t.net)?.start ?? NaN;
+      const shown = rig.shownTask(initAt);
+      const shownEnd = shown?.end ?? NaN;
+      const t = first.at - initAt;
+      console.log(
+        `[perf] rev0: ${name}: initScenario(null) → revision 0: ${ms(t)} ` +
+          `(load ${ms(currentAt - initAt)}; warm ${ms(firstBand - currentAt)}; ` +
+          `FZP band ${ms(ranksAt - firstBand)}; shown run ${ms(shownEnd - ranksAt)} ` +
+          `(task ${ms(dur(shown))}); geometry ${ms(first.at - shownEnd)})`
+      );
+      gc?.();
+      const heap = process.memoryUsage().heapUsed;
+      console.log(
+        `[perf] rev0: ${name}: heap at revision 0: ${(heap / MB).toFixed(0)} MB, ` +
+          `${((heap - heapBefore) / MB).toFixed(0)} MB above before the host (gc ${gc ? 'on' : 'unavailable'})`
+      );
+      expect(first.msg.render.revision).toBe(0);
+      expect(first.msg.score.band).toHaveLength(first.msg.score.months.length);
+      expect(ranks?.msg.type === 'ranks' && ranks.msg.seeds).toHaveLength(BAND_RUNS);
+      if (finance)
+        expect((probe.pools as string[] | null)?.slice(-2)).toEqual([
+          'u-bench-bond',
+          'u-bench-fund'
+        ]);
+      expect(t).toBeGreaterThan(0);
+      expect(Number.isFinite(t)).toBe(true);
+    } finally {
+      rig.host.dispose();
+      rig.unhook();
+    }
+  }
+
+  it('rev0: unfunded', { timeout: TIMEOUT }, async () => {
+    await rev0('unfunded', null, null);
+  });
+
+  it('rev0: funded baseline', { timeout: TIMEOUT }, async () => {
+    await rev0('funded baseline', benchCalibration(), null);
+  });
+
+  it('rev0: bench funding', { timeout: TIMEOUT }, async () => {
+    await rev0('bench funding', benchCalibration(), benchFundingLevers(SYNTH_AS_OF));
+  });
+});
+
 // Paint feedback (map overlays plan 2, Task 6): `previewBuildings` answers in one synchronous
 // handler, so its work for a full request (PREVIEW_MAX_LOTS lots, a cold memo) must fit a slice.
 // The handler is these generate calls plus one packCell (the rest is Map lookups).

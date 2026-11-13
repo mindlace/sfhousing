@@ -1,20 +1,31 @@
 // finance-engine Task 5: the funded latent starts of one attempt (spec 4.4).
 import { describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
+import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
+import { prototypeFor } from '$lib/sim/finance';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import { runOf } from './engine';
 import { benchBaseline, withBenchFunding } from './fixtures/bench-finance';
 import { miniCalibrationWithRoutes, miniFinance } from './fixtures/mini-finance';
 import {
+  WARM_CHUNK,
   attemptLatents,
+  drawsOf,
   financePreOf,
+  financeWarm,
   fundedRunStats,
+  kindLatentInto,
   latentsWith,
+  newKindOut,
   lineKey,
   respell,
+  tableEntry,
+  tablesOf,
   type AttemptLatents,
   type KindLatent
 } from './funded';
+import { coverageLevel } from './funding';
+import type { App } from './line';
 import { precomputeOf } from './input';
 import { P, drawOn, seedHash, simEntity, streamOf } from './rng';
 import { GOLDEN_HORIZON, goldenInput } from './simulate.golden.cases';
@@ -238,118 +249,119 @@ describe('lineKey', () => {
   });
 });
 
-describe('the per-input shortcuts (spec 4.5 cost note, 4.17 items 1 and 2)', () => {
-  const later = {
-    market: [
-      { from: asOf, logOdds: 0.4 },
-      { from: asOf + 1500, logOdds: -0.6 }
-    ]
-  };
-  const regime = { regimes: [{ day: asOf + 700, parcels: base.parcels }] };
-  const reserved = {
-    reservedFrom: Int32Array.from({ length: base.parcels.count }, (_, i) =>
-      i % 5 === 0 ? asOf + 900 : 0
-    )
-  };
-  const bench = withBenchFunding(benchBaseline(asOf), asOf);
-  // [name, input, whether some lot is passed over on its draws]
-  const cases: [string, SimInput, boolean][] = [
-    // the certain affordable stack (minHomes 2) reaches nearly every lot: nothing to pass over
-    ['miniFinance', input, false],
-    ['benchBaseline', withFinance(benchBaseline(asOf)), true],
-    ['benchBaseline with the bench funding set', withFinance(bench), true],
-    [
-      'miniFinance with market steps and a regime',
-      withFinance(miniFinance(asOf), { ...later, ...regime }),
-      false
-    ],
-    [
-      'the bench funding set with market steps, a regime and reservations',
-      withFinance(bench, { ...later, ...regime, ...reserved }),
-      true
-    ]
-  ];
-  // A regime from mid-run whose view differs from view 0: some lots gain yields past every
-  // programme's least minHomes only in the regime, and some lots have no hazard in one view but
-  // not the other (hostable 0).
-  const F5 = 5;
-  const view0 = structuredClone(base.parcels);
-  const view1 = structuredClone(base.parcels);
-  for (let i = 0; i < base.parcels.count; i++) {
-    if (i % 3 === 0) {
-      for (let f = 0; f < F5; f++) {
-        view1.yield[i * F5 + f] = Math.min(4000, view1.yield[i * F5 + f] * 12 + 75);
-      }
+// The inputs of the per-input shortcut tests, shared with the finance warm's tests.
+const later = {
+  market: [
+    { from: asOf, logOdds: 0.4 },
+    { from: asOf + 1500, logOdds: -0.6 }
+  ]
+};
+const regime = { regimes: [{ day: asOf + 700, parcels: base.parcels }] };
+const reserved = {
+  reservedFrom: Int32Array.from({ length: base.parcels.count }, (_, i) =>
+    i % 5 === 0 ? asOf + 900 : 0
+  )
+};
+const bench = withBenchFunding(benchBaseline(asOf), asOf);
+// [name, input, whether some lot is passed over on its draws]
+const cases: [string, SimInput, boolean][] = [
+  // the certain affordable stack (minHomes 2) reaches nearly every lot: nothing to pass over
+  ['miniFinance', input, false],
+  ['benchBaseline', withFinance(benchBaseline(asOf)), true],
+  ['benchBaseline with the bench funding set', withFinance(bench), true],
+  [
+    'miniFinance with market steps and a regime',
+    withFinance(miniFinance(asOf), { ...later, ...regime }),
+    false
+  ],
+  [
+    'the bench funding set with market steps, a regime and reservations',
+    withFinance(bench, { ...later, ...regime, ...reserved }),
+    true
+  ]
+];
+// A regime from mid-run whose view differs from view 0: some lots gain yields past every
+// programme's least minHomes only in the regime, and some lots have no hazard in one view but
+// not the other (hostable 0).
+const F5 = 5;
+const view0 = structuredClone(base.parcels);
+const view1 = structuredClone(base.parcels);
+for (let i = 0; i < base.parcels.count; i++) {
+  if (i % 3 === 0) {
+    for (let f = 0; f < F5; f++) {
+      view1.yield[i * F5 + f] = Math.min(4000, view1.yield[i * F5 + f] * 12 + 75);
     }
-    if (i % 7 === 1) view1.hostable[i] = 0;
-    if (i % 7 === 2) view0.hostable[i] = 0;
   }
-  const regimeDay = asOf + 1200;
-  const viewed = { parcels: view0, regimes: [{ day: regimeDay, parcels: view1 }] };
-  /** Some lot is eligible only through the regime (no hazard or too few homes in view 0). */
-  const onlyThroughRegime = (inp: SimInput) => {
-    // some lot is eligible only through the regime (no hazard or too few homes in view 0)
-    const pre0 = precomputeOf(inp);
-    const fp = financePreOf(inp);
-    let onlyRegime = 0;
-    pre0.candidates.forEach((i, c) => {
-      let top = 0;
-      for (let f = 0; f < F5; f++) top = Math.max(top, view0.yield[i * F5 + f]);
-      const in0 = pre0.logit[i] !== -Infinity && top >= 70;
-      if (fp.eligible.affordable[c] === 1 && !in0) onlyRegime++;
-    });
-    expect(onlyRegime).toBeGreaterThan(0);
-  };
-  const offCase = (
-    fin: NonNullable<SimInput['finance']>,
-    off: NonNullable<SimInput['finance']>['off']
-  ) => ({ ...fin, off: [...fin.off, ...off] });
-  // [name, input, passed over?, check that the case is not vacuous]
-  const deep: [string, SimInput, boolean, (inp: SimInput, respells: number) => void][] = [
-    [
-      'the bench funding set, a regime view that differs from view 0',
-      withFinance(bench, viewed),
-      true,
-      onlyThroughRegime
-    ],
-    [
-      'the bench baseline, a regime view that differs from view 0',
-      withFinance(benchBaseline(asOf), viewed),
-      true,
-      onlyThroughRegime
-    ],
-    [
-      'miniFinance, a pool every affordable bundle needs off and on again',
-      withFinance(
-        offCase(miniFinance(asOf), [{ pool: 'm-city', from: asOf + 600, to: asOf + 1400 }])
-      ),
-      false,
-      (_inp, respells) => expect(respells).toBeGreaterThan(0)
-    ],
-    [
-      'miniFinance, a pool every affordable bundle needs off for good',
-      withFinance(offCase(miniFinance(asOf), [{ pool: 'm-city', from: asOf + 1800, to: null }])),
-      false,
-      (_inp, respells) => expect(respells).toBeGreaterThan(0)
-    ],
-    [
-      'the bench funding set with the state pool off and on again, and a regime',
-      withFinance(offCase(bench, [{ pool: 'state', from: asOf + 600, to: asOf + 1400 }]), viewed),
-      true,
-      (inp) => {
-        const off = financePreOf(inp).offered.affordable;
-        expect(new Set(off.map((s) => s.join(','))).size).toBeGreaterThan(1);
-      }
-    ],
-    [
-      'the bench baseline with the state pool off for good',
-      withFinance(offCase(benchBaseline(asOf), [{ pool: 'state', from: asOf + 900, to: null }]), {
-        regimes: [{ day: asOf + 300, parcels: view1 }]
-      }),
-      true,
-      (_inp, respells) => expect(respells).toBeGreaterThan(0)
-    ]
-  ];
+  if (i % 7 === 1) view1.hostable[i] = 0;
+  if (i % 7 === 2) view0.hostable[i] = 0;
+}
+const regimeDay = asOf + 1200;
+const viewed = { parcels: view0, regimes: [{ day: regimeDay, parcels: view1 }] };
+/** Some lot is eligible only through the regime (no hazard or too few homes in view 0). */
+const onlyThroughRegime = (inp: SimInput) => {
+  // some lot is eligible only through the regime (no hazard or too few homes in view 0)
+  const pre0 = precomputeOf(inp);
+  const fp = financePreOf(inp);
+  let onlyRegime = 0;
+  pre0.candidates.forEach((i, c) => {
+    let top = 0;
+    for (let f = 0; f < F5; f++) top = Math.max(top, view0.yield[i * F5 + f]);
+    const in0 = pre0.logit[i] !== -Infinity && top >= 70;
+    if (fp.eligible.affordable[c] === 1 && !in0) onlyRegime++;
+  });
+  expect(onlyRegime).toBeGreaterThan(0);
+};
+const offCase = (
+  fin: NonNullable<SimInput['finance']>,
+  off: NonNullable<SimInput['finance']>['off']
+) => ({ ...fin, off: [...fin.off, ...off] });
+// [name, input, passed over?, check that the case is not vacuous]
+const deep: [string, SimInput, boolean, (inp: SimInput, respells: number) => void][] = [
+  [
+    'the bench funding set, a regime view that differs from view 0',
+    withFinance(bench, viewed),
+    true,
+    onlyThroughRegime
+  ],
+  [
+    'the bench baseline, a regime view that differs from view 0',
+    withFinance(benchBaseline(asOf), viewed),
+    true,
+    onlyThroughRegime
+  ],
+  [
+    'miniFinance, a pool every affordable bundle needs off and on again',
+    withFinance(
+      offCase(miniFinance(asOf), [{ pool: 'm-city', from: asOf + 600, to: asOf + 1400 }])
+    ),
+    false,
+    (_inp, respells) => expect(respells).toBeGreaterThan(0)
+  ],
+  [
+    'miniFinance, a pool every affordable bundle needs off for good',
+    withFinance(offCase(miniFinance(asOf), [{ pool: 'm-city', from: asOf + 1800, to: null }])),
+    false,
+    (_inp, respells) => expect(respells).toBeGreaterThan(0)
+  ],
+  [
+    'the bench funding set with the state pool off and on again, and a regime',
+    withFinance(offCase(bench, [{ pool: 'state', from: asOf + 600, to: asOf + 1400 }]), viewed),
+    true,
+    (inp) => {
+      const off = financePreOf(inp).offered.affordable;
+      expect(new Set(off.map((s) => s.join(','))).size).toBeGreaterThan(1);
+    }
+  ],
+  [
+    'the bench baseline with the state pool off for good',
+    withFinance(offCase(benchBaseline(asOf), [{ pool: 'state', from: asOf + 900, to: null }]), {
+      regimes: [{ day: asOf + 300, parcels: view1 }]
+    }),
+    true,
+    (_inp, respells) => expect(respells).toBeGreaterThan(0)
+  ]
+];
+describe('the per-input shortcuts (spec 4.5 cost note, 4.17 items 1 and 2)', () => {
   for (const [name, inp, passes, check] of deep) {
     it(`${name}: seeds 1 to 20 give the same schedules and ledgers with and without them`, () => {
       let passedOver = 0;
@@ -394,4 +406,296 @@ describe('the per-input shortcuts (spec 4.5 cost note, 4.17 items 1 and 2)', () 
       else expect(passedOver).toBe(0);
     }, 300_000);
   }
+});
+
+describe('the finance warm (perf Task 1)', () => {
+  const all: [string, SimInput][] = [
+    ...cases.map(([name, inp]): [string, SimInput] => [name, inp]),
+    ...deep.map(([name, inp]): [string, SimInput] => [name, inp])
+  ];
+  /** A fresh copy of `inp` (the warm and the tables are memoised per input), warmed one candidate
+   *  per step. */
+  const warmedCopy = (inp: SimInput): SimInput => {
+    const w = structuredClone(inp);
+    const warm = financeWarm(w, H);
+    while (!warm.step(1));
+    return w;
+  };
+
+  it('financeWarm steps in chunks and finishes', () => {
+    const inp = structuredClone(withFinance(withBenchFunding(benchBaseline(asOf), asOf)));
+    const n = precomputeOf(inp).candidates.length;
+    expect(n).toBeGreaterThan(3);
+    const warm = financeWarm(inp, H);
+    expect(financeWarm(inp, H)).toBe(warm);
+    let steps = 0;
+    while (!warm.step(1)) steps++;
+    // at most one step builds the precompute; then one candidate per step
+    expect(steps).toBeGreaterThanOrEqual(n - 1);
+    expect(steps).toBeLessThanOrEqual(n);
+    expect(warm.step(1)).toBe(true);
+    expect(warm.step(WARM_CHUNK)).toBe(true);
+    // a second horizon only adds its bounds
+    expect(financeWarm(inp, H - 400).step(1)).toBe(true);
+  });
+
+  for (const [name, inp] of all) {
+    it(`${name}: the warmed skip bounds equal the unwarmed ones`, () => {
+      const warmed = financePreOf(warmedCopy(inp));
+      const cold = financePreOf(structuredClone(inp));
+      expect(Array.from(warmed.marketSkip(H))).toEqual(Array.from(cold.marketSkip(H)));
+      expect(Array.from(warmed.affordableSkip(H))).toEqual(Array.from(cold.affordableSkip(H)));
+    });
+
+    it(`${name}: warmed and unwarmed runs are identical`, () => {
+      const warmed = warmedCopy(inp);
+      const cold = structuredClone(inp);
+      for (let seed = 1; seed <= 5; seed++) {
+        expect(runCollect(warmed, seed, H), `seed ${seed}`).toEqual(runCollect(cold, seed, H));
+      }
+    }, 300_000);
+  }
+
+  it('a run completes an unfinished warm and gives the same output', () => {
+    for (const [name, inp] of all) {
+      const part = structuredClone(inp);
+      expect(financeWarm(part, H).step(3)).toBe(false);
+      const full = warmedCopy(inp);
+      for (const seed of [1, 2]) {
+        expect(runCollect(part, seed, H), `${name} seed ${seed}`).toEqual(
+          runCollect(full, seed, H)
+        );
+      }
+    }
+  }, 300_000);
+
+  it('a segment with 300 values keeps every index', () => {
+    const F5 = 5;
+    // one market programme per minHomes 1 to 300 on one pool, and lots whose yields span 1 to 300
+    const fin = miniFinance(asOf);
+    const loan = fin.programmes.find((g) => g.reach === 'market')!;
+    fin.programmes = Array.from({ length: 300 }, (_, k) => ({
+      ...loan,
+      id: `loan-${k + 1}`,
+      minHomes: k + 1
+    }));
+    fin.off = [];
+    const parcels = structuredClone(base.parcels);
+    let next = 0;
+    for (let i = 0; i < parcels.count; i++) {
+      for (let f = 0; f < F5; f++) parcels.yield[i * F5 + f] = 1 + (next++ % 300);
+    }
+    const inp = withFinance(fin, { parcels });
+    const fp = financePreOf(inp);
+    expect(fp.days).toEqual([]);
+    const warm = financeWarm(inp, H);
+    while (!warm.step(WARM_CHUNK));
+    const pc = precomputeOf(inp);
+    const values = new Set<string>();
+    let entries = 0;
+    pc.candidates.forEach((i, c) => {
+      if (fp.eligible.market[c] === 0 || pc.logit[i] === -Infinity) return;
+      for (let f = 0; f < F5; f++) {
+        const units = parcels.yield[i * F5 + f];
+        const e = tableEntry(fp, 'market', 0, c, f);
+        if (!(units > 0)) continue;
+        expect(e).not.toBeNull();
+        const want = fp.offered.market[0].filter((g) => fin.programmes[g].minHomes <= units);
+        expect(e!.bundle).toEqual(want);
+        const stories = fillStories(FILL_LEVELS[f], parcels.envelopeStories[i]);
+        const proto = prototypeFor(stories, units).id;
+        const priced = fp.index.price('market', want, proto);
+        expect(e!.level).toBe(coverageLevel(priced.coverage));
+        values.add(`${e!.bundle.join(',')}|${e!.level}`);
+        entries++;
+      }
+    });
+    expect(entries).toBeGreaterThanOrEqual(values.size);
+    expect(values.size).toBeGreaterThan(255);
+  });
+});
+
+describe('the typed walk (perf Task 3)', () => {
+  it('kindLatentInto and kindLatent agree', () => {
+    const inp = withFinance(bench);
+    const fp = financePreOf(inp);
+    const pc = precomputeOf(inp);
+    const tabs = tablesOf(fp);
+    const out = newKindOut();
+    let compared = 0;
+    let applying = 0;
+    for (const seed of [1, 2, 3]) {
+      const run = runOf(inp, seed, H, true);
+      pc.candidates.forEach((i, c) => {
+        const e = inp.parcels.existingUnits[i];
+        const d = drawsOf(streamOf(run.sh, pc.entity[c], 0));
+        const lat = latentsWith(run, fp, i, asOf, e, d);
+        for (const kind of ['market', 'affordable'] as const) {
+          const want = lat[kind];
+          if (want === null) continue;
+          const [u, v] = kind === 'market' ? [d.uO, d.vO] : [d.uA, d.vA];
+          // the tables only hold the lots eligible for the kind; any other takes the direct path
+          const tab = fp.eligible[kind][c] === 1 ? tabs[kind] : null;
+          kindLatentInto(out, run, fp, i, lat.size, kind, asOf, u, v, lat.TO, c, tab);
+          expect({ ...out }).toEqual(want);
+          kindLatentInto(out, run, fp, i, lat.size, kind, asOf, u, v, lat.TO, -1, null);
+          expect({ ...out }).toEqual(want);
+          compared++;
+          if (want.day !== null) applying++;
+        }
+      });
+    }
+    expect(compared).toBeGreaterThan(0);
+    expect(applying).toBeGreaterThan(0);
+  }, 300_000);
+
+  /** What the line holds about one application when it first appears (before any re-pricing). */
+  type Seen = Pick<
+    App,
+    | 'lot'
+    | 'kind'
+    | 'applied'
+    | 'key'
+    | 'keyDay'
+    | 'bundle'
+    | 'protoId'
+    | 'units'
+    | 'level'
+    | 'view'
+    | 'f'
+    | 'stories'
+  >;
+  interface Counts {
+    apps: number;
+    later: number;
+    demolished: number;
+    respelled: number;
+    reserved: number;
+    wide: number;
+  }
+
+  /**
+   * Every application the line shows on the day it is made, against the object model: the
+   * latents of its attempt (`attemptLatents` at the attempt's k, risk start and existing homes,
+   * found from the run's schedules), or the `respell` of a re-pricing day up to its day. Rows some
+   * in-flight project holds are skipped (their risk start comes from the holds).
+   */
+  function checkRecords(inp: SimInput, runSeeds: number[]): Counts {
+    const fp = financePreOf(inp);
+    const pc = precomputeOf(inp);
+    const n: Counts = { apps: 0, later: 0, demolished: 0, respelled: 0, reserved: 0, wide: 0 };
+    for (const seed of runSeeds) {
+      const seen = new Set<App>();
+      const fresh: Seen[] = [];
+      const got = runCollect(inp, seed, H, {
+        lineProbe: (D, apps) => {
+          for (const a of apps) {
+            if (seen.has(a)) continue;
+            seen.add(a);
+            if (a.applied !== D) continue;
+            const { lot, kind, applied, key, keyDay, bundle, protoId, units, level, view, f } = a;
+            fresh.push({
+              lot,
+              kind,
+              applied,
+              key,
+              keyDay,
+              bundle,
+              protoId,
+              units,
+              level,
+              view,
+              f,
+              stories: a.stories
+            });
+          }
+        }
+      });
+      const byRow = new Map<number, { exit: Day; built: boolean }[]>();
+      for (const sc of got.schedules) {
+        if (sc.origin !== 'simulated' || sc.end.kind !== 'exit') continue;
+        const i = inp.parcels.index.get(sc.parcelIds[0])!;
+        const list = byRow.get(i) ?? [];
+        list.push({ exit: sc.end.day, built: sc.entered.construction !== undefined });
+        byRow.set(i, list);
+      }
+      const run = runOf(inp, seed, H, true);
+      for (const a of fresh) {
+        if (held.has(a.lot)) continue;
+        const before = (byRow.get(a.lot) ?? []).filter((x) => x.exit < a.applied);
+        const k = before.length;
+        const r = k === 0 ? asOf : Math.max(...before.map((x) => x.exit));
+        const e = before.some((x) => x.built) ? 0 : inp.parcels.existingUnits[a.lot];
+        const lat = attemptLatents(inp, seed, H, a.lot, k, r, e);
+        const options: KindLatent[] = [];
+        const own = lat[a.kind];
+        if (own !== null) options.push(own);
+        for (const D of fp.repricing) {
+          if (D > a.applied) break;
+          const nl = respell(run, fp, a.lot, lat, a.kind, D);
+          if (nl !== null) options.push(nl);
+        }
+        const want = options.find((x) => x.day === a.applied && x.keyDay === a.keyDay);
+        expect(want, `seed ${seed} row ${a.lot} ${a.kind} on ${a.applied}`).toBeDefined();
+        expect(a).toEqual({
+          lot: a.lot,
+          kind: a.kind,
+          applied: want!.day,
+          key: lineKey(want!.keyDay, fp.rank[a.lot], a.kind),
+          keyDay: want!.keyDay,
+          bundle: want!.bundle,
+          protoId: want!.protoId,
+          units: want!.units,
+          level: want!.level,
+          view: want!.view,
+          f: want!.f,
+          stories: want!.stories
+        });
+        n.apps++;
+        if (k > 0) n.later++;
+        if (e === 0 && inp.parcels.existingUnits[a.lot] > 0) n.demolished++;
+        if (want !== own) n.respelled++;
+        if ((inp.reservedFrom?.[a.lot] ?? 0) > 0) n.reserved++;
+        if (a.keyDay > 2_147_483_648) n.wide++;
+      }
+      expect(pc.candidates.length).toBeGreaterThan(0);
+    }
+    return n;
+  }
+
+  for (const logOdds of [-15, -25]) {
+    it(`a market step of ${logOdds}: keyDay past 2^31 is kept exactly`, () => {
+      const inp = withFinance(bench, { market: [{ from: asOf - 1, logOdds }] });
+      const n = checkRecords(inp, [1, 2, 3, 4, 5]);
+      expect(n.wide).toBeGreaterThan(0);
+      for (const seed of [1, 2]) {
+        const fast = runCollect(inp, seed, H);
+        const slow = runCollect(inp, seed, H, { noShortcuts: true });
+        expect(fast.schedules).toEqual(slow.schedules);
+        expect(fast.ledger).toEqual(slow.ledger);
+      }
+    }, 300_000);
+  }
+
+  it('the lot records hold the object model’s latents (regimes, off spans, reservations)', () => {
+    const reservedFrom = new Int32Array(base.parcels.count);
+    for (let i = 0; i < reservedFrom.length; i += 3) reservedFrom[i] = asOf + 1000 + 37 * i;
+    const inputs: SimInput[] = [
+      ...deep.map(([, inp]) => inp),
+      withFinance(
+        offCase(miniFinance(asOf), [{ pool: 'm-city', from: asOf + 600, to: asOf + 1400 }]),
+        { reservedFrom }
+      )
+    ];
+    const total: Counts = { apps: 0, later: 0, demolished: 0, respelled: 0, reserved: 0, wide: 0 };
+    for (const inp of inputs) {
+      const n = checkRecords(inp, seeds);
+      for (const key of Object.keys(total) as (keyof Counts)[]) total[key] += n[key];
+    }
+    expect(total.apps).toBeGreaterThan(0);
+    expect(total.later).toBeGreaterThan(0);
+    expect(total.demolished).toBeGreaterThan(0);
+    expect(total.respelled).toBeGreaterThan(0);
+    expect(total.reserved).toBeGreaterThan(0);
+  }, 300_000);
 });
