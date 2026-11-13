@@ -51,9 +51,35 @@ export interface SeriesChunk {
   tiers: TierUnits[] | null;
 }
 
-/** Plain data that `structuredClone` copies; the series task fills it in. */
+/**
+ * One world's series as plain data that `structuredClone` copies. Per-row columns are indexed by
+ * the world's project row and grow as rows start; per-month arrays hold `SERIES_FIELDS` entries
+ * per calendar month (pipeline, new, entitledNew, exited, then `inProgress` in LIVE order).
+ */
 export interface WorldSeriesData {
   version: 1;
+  /** The last model month passed to `stepped`; 0 before any. */
+  stepped: number;
+  /** `finalThrough()`. */
+  final: number;
+  /** The last month whose prefix sums are in `sum`, -1 when none. */
+  summed: number;
+  /** One past the highest row started. */
+  rows: number;
+  /** LIVE index of the open span, -1 none, -2 not started. */
+  stage: Int8Array;
+  /** Start day of the open span. */
+  since: Int32Array;
+  /** Current units (0 for a master). */
+  units: Int32Array;
+  /** A simulated row's entitled day after the dataset date, else `NO_DAY`. */
+  entitled: Int32Array;
+  /** A master's units of phases not yet filed. */
+  pending: Int32Array;
+  /** Per-month deltas. */
+  delta: Int32Array;
+  /** Per-month prefix sums through `summed`. */
+  sum: Int32Array;
 }
 
 /** One world's series by calendar month, fed by the runner. */

@@ -1,0 +1,327 @@
+// One world's calendar-month series from its events (world-score rules 1, 3 and 5). Each event
+// files the deltas `shownSeries` (scenario/score.ts) files for the same schedule part, so the prefix
+// sums equal `shownSeries` month for month. The series keeps every per-row fact that changes in its
+// own state, because `createWorld` sends events before the world exists.
+import { monthIndexer } from '$lib/sim/scenario/score';
+import type { Day } from '$lib/timelapse/time';
+import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
+import type { Statics } from '../statics';
+import { NO_DAY, ORIGIN_MASTER, ORIGIN_SIM, type World, type WorldEvent } from '../types';
+import { finalTable, horizonOf } from './statics';
+import type { MonthRow, ScoreStatics, WorldSeries, WorldSeriesData } from './types';
+
+type Live = Exclude<Stage, 'complete'>;
+
+/** The stages a project can be in progress at, in `STAGE_ORDER` (score.ts `LIVE`). */
+const LIVE = STAGE_ORDER.filter((s): s is Live => s !== 'complete');
+const NL = LIVE.length;
+const ENTITLED = LIVE.indexOf('entitled');
+const CONSTRUCTION = LIVE.indexOf('construction');
+
+/** Per-month fields of `WorldSeriesData.delta` and `.sum`; the `inProgress` stages follow. */
+const PIPELINE = 0;
+const FRESH = 1;
+const ENTITLED_NEW = 2;
+const EXITED = 3;
+const STAGE0 = 4;
+/** Fields per month. */
+export const SERIES_FIELDS = STAGE0 + NL;
+
+/** No row state yet (no `'start'` seen). */
+const UNKNOWN = -2;
+/** Started, in no LIVE stage. */
+const NONE = -1;
+const FIRST_CAPACITY = 64;
+
+function emptyData(s: ScoreStatics): WorldSeriesData {
+  const n = s.lastIndex + 1;
+  return {
+    version: 1,
+    stepped: 0,
+    final: -1,
+    summed: -1,
+    rows: 0,
+    stage: new Int8Array(0),
+    since: new Int32Array(0),
+    units: new Int32Array(0),
+    entitled: new Int32Array(0),
+    pending: new Int32Array(0),
+    delta: new Int32Array(SERIES_FIELDS * n),
+    sum: new Int32Array(SERIES_FIELDS * n)
+  };
+}
+
+type RowColumn = 'stage' | 'since' | 'units' | 'entitled' | 'pending';
+const ROW_COLUMNS: RowColumn[] = ['stage', 'since', 'units', 'entitled', 'pending'];
+
+/** Grows the per-row columns to hold row `row`; new rows are `UNKNOWN`. */
+function ensureRow(d: WorldSeriesData, row: number): void {
+  const cap = d.stage.length;
+  if (row < cap) return;
+  let next = Math.max(FIRST_CAPACITY, cap * 2);
+  while (next <= row) next *= 2;
+  for (const name of ROW_COLUMNS) {
+    const a = d[name];
+    const grown = new (a.constructor as new (n: number) => typeof a)(next);
+    grown.set(a as never);
+    d[name] = grown as never;
+  }
+  d.stage.fill(UNKNOWN, cap);
+}
+
+/** The units of a row's first revision: `revPrev` walked from `revLast` to the root. */
+function firstUnits(w: World, row: number): number {
+  const p = w.projects;
+  let at = p.revLast[row];
+  if (at < 0) throw new Error(`world-score: row ${row} started without a revision`);
+  while (p.revPrev[at] >= 0) at = p.revPrev[at];
+  return p.revUnits[at];
+}
+
+function phaseUnits(statics: Statics, w: World, row: number): number[] {
+  return (statics.projects[w.projects.src[row]].phases ?? []).map((ph) => ph.units);
+}
+
+const describeEvent = (e: WorldEvent): string =>
+  `'${e.kind}'${e.kind === 'end' ? ` '${e.how}'` : e.kind === 'enter' ? ` '${e.stage}'` : ''}` +
+  ` on day ${e.day}`;
+
+/**
+ * One world's series. `from` restores a saved state (Task 3); without it the series starts empty
+ * at model month 0.
+ */
+export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): WorldSeries {
+  if (from !== undefined) throw new Error('world-score: restore lands with data() (Task 3)');
+  const d = emptyData(s);
+  const H: Day = horizonOf(s);
+  const m0 = s.months[0];
+  const idx = monthIndexer(s.months, H);
+  const table = finalTable(s);
+  const last = s.lastIndex;
+  /** The event being filed, for the guard's message. */
+  let current: WorldEvent | null = null;
+
+  const monthOf = (day: Day): number => (day < m0 ? 0 : idx(day));
+
+  /** Adds `v` to field `f` of calendar month `i`; a final month throws. */
+  function bump(f: number, i: number, v: number): void {
+    if (i <= d.final) {
+      const e = current;
+      throw new Error(
+        `world-score: row ${e ? e.row : '?'} event ${e ? describeEvent(e) : '?'} files into ` +
+          `month ${i}, final through ${d.final}`
+      );
+    }
+    d.delta[i * SERIES_FIELDS + f] += v;
+  }
+
+  /** A dated delta: nothing after the horizon. */
+  function on(f: number, day: Day, v: number): void {
+    if (day <= H) bump(f, monthOf(day), v);
+  }
+
+  /** Opens stage `st` at `a` with `u` (`addSpan`'s +). */
+  function open(st: number, a: Day, u: number): void {
+    if (a <= H) bump(STAGE0 + st, monthOf(a), u);
+  }
+
+  /** Closes stage `st`, opened at `a`, at `b` with `u` (`addSpan`'s −, or undoes the open). */
+  function close(st: number, a: Day, b: Day, u: number): void {
+    if (a < b) {
+      if (b <= H) bump(STAGE0 + st, monthOf(b), -u);
+    } else if (a <= H) bump(STAGE0 + st, monthOf(a), -u);
+  }
+
+  /** Ends the row's open span at `day`, if any, with `u`. */
+  function closeRow(row: number, day: Day, u: number): void {
+    const st = d.stage[row];
+    if (st >= 0) close(st, d.since[row], day, u);
+  }
+
+  /** Moves `u` from the row's open span into stage `st` from `day`. */
+  function move(row: number, st: number, day: Day, u: number): void {
+    closeRow(row, day, u);
+    d.stage[row] = st;
+    d.since[row] = day;
+    open(st, day, u);
+  }
+
+  function known(row: number): void {
+    if (row >= d.stage.length || d.stage[row] === UNKNOWN) {
+      throw new Error(`world-score: row ${row} has no 'start' before ${describeEvent(current!)}`);
+    }
+  }
+
+  function addMasterEvent(e: WorldEvent, w: World, statics: Statics): void {
+    const row = e.row;
+    switch (e.kind) {
+      case 'enter': {
+        const st = LIVE.indexOf(e.stage as Live);
+        if (st < 0 || st > ENTITLED) {
+          throw new Error(`world-score: master ${row} enters '${e.stage}'`);
+        }
+        move(row, st, e.day, d.pending[row]);
+        return;
+      }
+      case 'end':
+        if (e.how === 'entitled') {
+          if (d.stage[row] !== ENTITLED) move(row, ENTITLED, e.day, d.pending[row]);
+        } else if (e.how === 'exit') {
+          closeRow(row, e.day, d.pending[row]);
+          d.stage[row] = NONE;
+          if (e.day > s.asOf) {
+            let total = 0;
+            for (const u of phaseUnits(statics, w, row)) total += u;
+            on(EXITED, e.day, total);
+          }
+        } else throw new Error(`world-score: master ${row} completes`);
+        return;
+      case 'phaseFiled': {
+        const u = phaseUnits(statics, w, row)[e.phase - 1];
+        if (u === undefined) throw new Error(`world-score: master ${row} has no phase ${e.phase}`);
+        if (u > d.pending[row]) {
+          throw new Error(`world-score: master ${row} phase ${e.phase} filed twice`);
+        }
+        const st = d.stage[row];
+        if (st >= 0) close(st, d.since[row], e.day, u);
+        d.pending[row] -= u;
+        return;
+      }
+      case 'revise':
+        // A master's phases keep their own units (`addMaster` reads `phaseUnits` only).
+        return;
+      default:
+        throw new Error(`world-score: master ${row} gets ${describeEvent(e)}`);
+    }
+  }
+
+  function add(e: WorldEvent, w: World, statics: Statics): void {
+    current = e;
+    const row = e.row;
+    const p = w.projects;
+    if (e.kind === 'displaced') {
+      throw new Error('world-score: displaced before the world-funding merge');
+    }
+    if (e.kind === 'award') return;
+    const origin = p.origin[row];
+    if (e.kind === 'start') {
+      ensureRow(d, row);
+      if (row >= d.rows) d.rows = row + 1;
+      d.stage[row] = NONE;
+      d.since[row] = NO_DAY;
+      d.entitled[row] = NO_DAY;
+      if (origin === ORIGIN_MASTER) {
+        let total = 0;
+        for (const u of phaseUnits(statics, w, row)) total += u;
+        d.pending[row] = total;
+        d.units[row] = 0;
+      } else d.units[row] = firstUnits(w, row);
+      return;
+    }
+    known(row);
+    if (origin === ORIGIN_MASTER) {
+      addMasterEvent(e, w, statics);
+      return;
+    }
+    const net = origin === ORIGIN_SIM ? FRESH : PIPELINE;
+    switch (e.kind) {
+      case 'enter': {
+        if (e.stage === 'complete') return;
+        const st = LIVE.indexOf(e.stage);
+        move(row, st, e.day, d.units[row]);
+        if (e.day > s.asOf) {
+          if (st === ENTITLED && origin === ORIGIN_SIM) {
+            d.entitled[row] = e.day;
+            on(ENTITLED_NEW, e.day, d.units[row] - p.existing[row]);
+          } else if (st === CONSTRUCTION) on(net, e.day, -p.existing[row]);
+        }
+        return;
+      }
+      case 'revise': {
+        const st = d.stage[row];
+        if (st >= 0) {
+          close(st, d.since[row], e.day, d.units[row]);
+          d.since[row] = e.day;
+          open(st, e.day, e.units);
+        }
+        if (e.day === d.entitled[row]) on(ENTITLED_NEW, e.day, e.units - d.units[row]);
+        d.units[row] = e.units;
+        return;
+      }
+      case 'end': {
+        closeRow(row, e.day, d.units[row]);
+        d.stage[row] = NONE;
+        if (e.how === 'complete') on(net, e.day, d.units[row]);
+        else if (e.how === 'exit') {
+          if (e.day > s.asOf) on(EXITED, e.day, d.units[row]);
+        } else throw new Error(`world-score: row ${row} ends 'entitled' but is not a master`);
+        return;
+      }
+      default:
+        throw new Error(`world-score: row ${row} gets ${describeEvent(e)}`);
+    }
+  }
+
+  /** The largest i with `table[i] <= m`, capped at `last`, or -1. */
+  function finalAt(m: number): number {
+    let f = d.final;
+    while (f < last && table[f + 1] <= m) f++;
+    return f;
+  }
+  d.final = finalAt(d.stepped);
+
+  /** Prefix sums through `through` (a final month). */
+  function sumThrough(through: number): void {
+    for (let i = d.summed + 1; i <= through; i++) {
+      const at = i * SERIES_FIELDS;
+      const prev = at - SERIES_FIELDS;
+      for (let f = 0; f < SERIES_FIELDS; f++) {
+        d.sum[at + f] = (i > 0 ? d.sum[prev + f] : 0) + d.delta[at + f];
+      }
+    }
+    if (through > d.summed) d.summed = through;
+  }
+
+  function rowAt(i: number): MonthRow {
+    const at = i * SERIES_FIELDS;
+    const inProgress = {} as MonthRow['inProgress'];
+    for (let st = 0; st < NL; st++) inProgress[LIVE[st]] = d.sum[at + STAGE0 + st];
+    const pipeline = d.sum[at + PIPELINE];
+    const fresh = d.sum[at + FRESH];
+    return {
+      completedNet: pipeline + fresh,
+      completedNetPipeline: pipeline,
+      completedNetNew: fresh,
+      entitledNew: d.sum[at + ENTITLED_NEW],
+      inProgress,
+      exitedUnits: d.sum[at + EXITED]
+    };
+  }
+
+  return {
+    add,
+    stepped(month: number): void {
+      if (month !== d.stepped + 1) {
+        throw new Error(`world-score: stepped(${month}) after month ${d.stepped}`);
+      }
+      d.stepped = month;
+      d.final = finalAt(month);
+    },
+    finalThrough: () => d.final,
+    rows(from: number, through: number): MonthRow[] {
+      if (!(Number.isInteger(from) && Number.isInteger(through))) {
+        throw new RangeError(`world-score: rows(${from}, ${through}) needs whole months`);
+      }
+      if (!(0 <= from && from <= through && through <= d.final)) {
+        throw new RangeError(`world-score: rows(${from}, ${through}) outside 0..${d.final}`);
+      }
+      sumThrough(through);
+      const out: MonthRow[] = [];
+      for (let i = from; i <= through; i++) out.push(rowAt(i));
+      return out;
+    },
+    data(): WorldSeriesData {
+      throw new Error('world-score: data() lands in Task 3');
+    }
+  };
+}
