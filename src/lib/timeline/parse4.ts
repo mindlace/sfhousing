@@ -208,7 +208,11 @@ function parseEffect(v: unknown, path: string, where: Selector, mode: PresetLaye
   }
 }
 
-function checkSpanDays(
+/**
+ * Rule 4's checks of one span at `path`, against the span before it in its policy (`prev`).
+ * `asOf` null skips the month alignment. Throws `PolicyFormatError` naming `from` or `to`.
+ */
+export function checkSpanDays(
   s: { from: Day; to: Day | null },
   path: string,
   prev: { from: Day; to: Day | null } | null,

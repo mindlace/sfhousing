@@ -9,12 +9,13 @@ import type { LeverCapacity } from '$lib/sim/levers/resolve';
 import { routeSharesOp, type StageScale } from '$lib/sim/levers/timers';
 import { LeverFormatError, type FinanceLevers } from '$lib/sim/levers/types';
 import type { SimInput } from '$lib/sim/scenario/types';
-import { canonicalJson } from '$lib/sim-page/policy';
+import { canonicalJson, PolicyFormatError } from '$lib/sim-page/policy';
+import { checkSpanDays } from '$lib/timeline/parse4';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
 import { programmeTermGaps, reconcilePolicy4 } from '$lib/timeline/reconcile4';
 import type { Day } from '$lib/timelapse/time';
 import type { Calibration, Pathway } from '$lib/timelapse/types';
-import { monthFirstDay, monthLastDay, monthOfDay } from '../months';
+import { monthFirstDay } from '../months';
 import {
   inForceAt,
   moneyLeversOf,
@@ -49,7 +50,11 @@ export interface CompileCtx {
 }
 
 export interface TimelineCompile {
-  /** At most about `budgetMs` plus one unit of work; true when every frame of the window exists. */
+  /**
+   * At most about `budgetMs` plus one unit of work; true when every frame of the window exists.
+   * Throws `LeverFormatError` when a month's policies cannot be compiled: a zoning policy in force
+   * under `base: 'preFzp'`, or a brush query with no entry in `lots`.
+   */
   step(budgetMs: number): boolean;
   /** Needs computed and needed over this compile's view jobs; failed cells those jobs need. */
   progress(): { done: number; total: number; failedCells: string[] };
@@ -59,8 +64,8 @@ export interface TimelineCompile {
   capacity(): LeverCapacity;
   unknownLots(): number;
   /**
-   * Lots whose yield was computed as 0 because their loaded cell had no record
-   * (`YieldRecompute.missing`, which `leverStep` logs today); the runner logs them. Beyond S13.
+   * The lots whose zoning changed and that have no yield record (yield 0, as today); the runner
+   * logs them. An S13 amendment approved by the conductor.
    */
   missingLots(): readonly ParcelId[];
 }
@@ -90,26 +95,18 @@ function fail(path: string, message: string): never {
   throw new LeverFormatError(path, message);
 }
 
-/** Rule 4's span checks, as `parsePolicy4` makes them with the dataset date `asOf`. */
+/** Rule 4's span checks: `parsePolicy4`'s own, with the dataset date `asOf`. */
 function checkSpans(doc: SimPolicy4, asOf: Day): void {
-  for (const kind of ['zoning', 'permitting', 'money'] as const) {
-    doc.kinds[kind].forEach((p, i) => {
-      p.spans.forEach((s, j) => {
-        const path = `kinds.${kind}[${i}].spans[${j}]`;
-        if (s.to !== null && s.to < s.from) fail(`${path}.to`, 'expected a day on or after from');
-        if (s.from <= asOf) fail(`${path}.from`, 'expected a day after the dataset date');
-        if (monthFirstDay(asOf, monthOfDay(asOf, s.from)) !== s.from)
-          fail(`${path}.from`, 'expected the first day of a model month');
-        if (s.to !== null && monthLastDay(asOf, monthOfDay(asOf, s.to)) !== s.to)
-          fail(`${path}.to`, 'expected the last day of a model month');
-        if (j > 0) {
-          const prev = p.spans[j - 1];
-          if (prev.to === null) fail(`${path}.from`, 'expected no span after one with no end');
-          if (s.from < prev.from) fail(`${path}.from`, 'expected spans in ascending order');
-          if (s.from <= prev.to) fail(`${path}.from`, 'expected spans that do not overlap');
-        }
-      });
-    });
+  try {
+    for (const kind of ['zoning', 'permitting', 'money'] as const)
+      doc.kinds[kind].forEach((p, i) =>
+        p.spans.forEach((s, j) =>
+          checkSpanDays(s, `kinds.${kind}[${i}].spans[${j}]`, j > 0 ? p.spans[j - 1] : null, asOf)
+        )
+      );
+  } catch (e) {
+    if (e instanceof PolicyFormatError) fail(e.path, e.message.slice(e.path.length + 2));
+    throw e;
   }
 }
 
@@ -182,7 +179,8 @@ export function compileTimeline(
   const newCals = new Map<string, Calibration>();
   const held = new Map<string, { view: ZoningView; info: ViewInfo }>();
   const jobs = new Map<string, ViewJob>();
-  const allJobs: ViewJob[] = [];
+  // Finished jobs are dropped (with their recompute maps); only their counts are kept.
+  const finished = { done: 0, total: 0 };
   const missing = new Set<ParcelId>();
   const shared = new Map<number, Shared>();
   const touchedMemo = new Map<string, Int32Array>();
@@ -242,7 +240,6 @@ export function compileTimeline(
     if (job === undefined) {
       job = createViewJob(input, layers, yields, now, st.zoning, base);
       jobs.set(k, job);
-      allJobs.push(job);
     }
     return job;
   }
@@ -261,6 +258,8 @@ export function compileTimeline(
     VIEWS.put(k, view, r.info);
     setInfo(view, k, r.info);
     held.set(k, { view, info: r.info });
+    finished.done += job.done;
+    finished.total += job.total;
     jobs.delete(k);
   }
 
@@ -375,10 +374,10 @@ export function compileTimeline(
       return true;
     },
     progress() {
-      let done = 0;
-      let total = 0;
+      let done = finished.done;
+      let total = finished.total;
       const cells = new Set<string>();
-      for (const j of allJobs) {
+      for (const j of jobs.values()) {
         done += j.done;
         total += j.total;
         for (const c of j.cellsNeeded()) cells.add(c);
