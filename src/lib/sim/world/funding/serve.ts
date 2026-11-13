@@ -8,7 +8,7 @@ import type { Day } from '$lib/timelapse/time';
 import type { Pathway, ProjectKind } from '$lib/timelapse/types';
 import { lotRow } from '../columns';
 import { lotEntity } from '../rates';
-import type { FundedStart, StepCtx } from '../types';
+import { LOT_FREE, type FundedStart, type StepCtx } from '../types';
 import { leaveLine } from './apply';
 import { KIND_AFFORDABLE, fundOf, poolRowOf, type FundLine, type FundPools } from './columns';
 import { frameMoney, type FrameMoney } from './frame-money';
@@ -33,6 +33,13 @@ export function serveLine(ctx: StepCtx): void {
   const n = line.n;
   for (let i = 0; i < n; i++) {
     if (line.gone[i] === 1) continue;
+    // Rule 8: a lot no longer free left the line when its ordinary clock fired, also when that
+    // start gained no home (the core marks it done and sends no 'start'). Same test as startRow's.
+    const li = lotRow(ctx.world.lots, line.lot[i]);
+    if (li >= 0 && ctx.world.lots.state[li] !== LOT_FREE) {
+      leaveLine(line, line.lot[i]);
+      continue;
+    }
     // Null when an id is no longer offered: the row waits (Task 9 remakes such rows).
     const bundle = fm.bundleIds(line.bundle[i]);
     if (bundle === null) continue;

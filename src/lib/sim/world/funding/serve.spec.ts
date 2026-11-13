@@ -11,13 +11,14 @@ import { seedHash, streamOf } from '$lib/sim/scenario/rng';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
 import { PATHWAYS, type Pathway, type ProjectKind } from '$lib/timelapse/types';
-import { addProject } from '../columns';
+import { addProject, ensureLot } from '../columns';
 import { monthFirstDay, monthLastDay } from '../months';
 import type { PolicyTimeline } from '../policy/frame';
 import { lotEntity } from '../rates';
 import { staticsOf } from '../statics';
 import { runWorld } from '../test/run';
 import {
+  LOT_DONE,
   ORIGIN_SIM,
   type FundedStart,
   type StepCtx,
@@ -437,6 +438,52 @@ describe('serveLine', () => {
       [a, h.ctx.firstDay],
       [b, day(2, 8)]
     ]);
+  });
+
+  it('a lot whose ordinary start gained no home leaves the line at serving: no award, no money', () => {
+    const w = freshWorld();
+    const { line, pools } = fundOf(w);
+    const [a, b] = LOTS;
+    joinLine(line, 2, [
+      app(a, 'market', day(2, 1), 'm-bank-loan'),
+      app(a, 'affordable', day(2, 2), AFF),
+      app(b, 'affordable', day(2, 3), AFF)
+    ]);
+    pools.received[poolRowOf(pools, 'm-city')] = 1e12;
+    pools.received[poolRowOf(pools, 'm-bank')] = 1e12;
+    // Month 2's system 6: lot a's ordinary start gains no home, as startRow makes it
+    // (world.ts:311-314): the lot is done, no row, no 'start'. Its rows stay on the line.
+    const li = ensureLot(w.lots, a, statics.asOf);
+    w.lots.state[li] = LOT_DONE;
+    const rows = w.projects.n;
+    expect(Array.from(line.gone.subarray(0, 3))).toEqual([0, 0, 0]);
+    // Month 3: a's applications would pass, but a is not free.
+    const before = structuredClone(pools);
+    const h = harness(w, 3);
+    const sys = createFundingSystem();
+    expect(() => sys.serve(h.ctx)).not.toThrow();
+    expect(h.starts().map((s) => s.lot)).toEqual([b]);
+    expect(Array.from(line.gone.subarray(0, 3))).toEqual([1, 1, 1]);
+    const bRow = h.starts()[0].row;
+    expect(bRow).toBe(rows);
+    // Only b's award moved money; nothing names lot a.
+    const awards = h.log.flatMap((l) =>
+      l.what === 'event' && l.e.kind === 'award' ? [l.e.row] : []
+    );
+    expect(awards).toEqual([bRow]);
+    const ask = askOf(line, 2, 'm-city', 3);
+    const q = poolRowOf(pools, 'm-city');
+    expect(pools.committed[q] - before.committed[q]).toBe(ask);
+    expect(pools.committed[poolRowOf(pools, 'm-bank')]).toBe(
+      before.committed[poolRowOf(pools, 'm-bank')]
+    );
+    expect(Array.from(pools.mRow.subarray(0, pools.mN)).every((r) => r === bRow)).toBe(true);
+    expect(
+      h.log
+        .filter((l) => l.what === 'ledger')
+        .every((l) => l.what === 'ledger' && l.e.kind === 'commit')
+    ).toBe(true);
+    expect(h.log.filter((l) => l.what === 'ledger')).toHaveLength(2);
   });
 
   it('a funded startProject never returns -1; serve throws if the row is not the predicted one', () => {
