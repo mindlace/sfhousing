@@ -309,6 +309,8 @@ Stop here and report to `main`. Tasks 8-14 need world-funding (`createFundingSys
 
 ## Task 9: Money rows and displaced homes (rules 2, 9)
 
+> **Ordering (main, from world-funding's plan):** a project's ledger `'award'` arrives AFTER the stage events of the chain `startProject` begins (`startProject` is synchronous). Tasks 9-12 read an award by its project row, never by its position relative to stage events.
+
 **Files:**
 - Create: `src/lib/sim/world/score/money.ts`
 - Modify: `series.ts` (`'displaced'` filing, `fundedHomes`, private extras), `chunk.ts` (money branch)
