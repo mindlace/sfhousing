@@ -5,7 +5,7 @@ import type { StageScale } from '$lib/sim/levers/timers';
 import { precomputeOf } from '$lib/sim/scenario/input';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
-import { PATHWAYS, type Calibration, type MarketStep } from '$lib/timelapse/types';
+import { PATHWAYS, STAGE_ORDER, type Calibration, type MarketStep } from '$lib/timelapse/types';
 import type { FinanceFrame, PolicyFrame, PolicyTimeline, ZoningView } from '../policy/frame';
 
 export const IDENTITY: StageScale = { discretionary: {}, streamlined: {}, permitOnly: {} };
@@ -124,6 +124,16 @@ export function oldInputOf(base: SimInput, o: OldOpts = {}): SimInput {
     ...(o.market ? { market: o.market } : {}),
     ...(o.regimes ? { regimes: o.regimes } : {})
   };
+}
+
+/** Every timed stage of every route scaled by `v`. */
+export function everyStage(v: number): StageScale {
+  const out = { discretionary: {}, streamlined: {}, permitOnly: {} } as Record<
+    string,
+    Record<string, number>
+  >;
+  for (const p of PATHWAYS) for (const s of STAGE_ORDER) if (s !== 'complete') out[p][s] = v;
+  return out as unknown as StageScale;
 }
 
 const F = FILL_LEVELS.length;

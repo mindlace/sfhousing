@@ -4,12 +4,11 @@
 // a month's last day; a re-anchored stage that ends in the change month.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { FILL_LEVELS } from '$lib/data/scenario-codec';
-import type { StageScale } from '$lib/sim/levers/timers';
 import { precomputeOf } from '$lib/sim/scenario/input';
 import { seedHash } from '$lib/sim/scenario/rng';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
-import { PATHWAYS, STAGE_ORDER, type Stage } from '$lib/timelapse/types';
+import type { Stage } from '$lib/timelapse/types';
 import { emptyWorld, ensureLot, lotRow } from './columns';
 import { DueList, planDue } from './due';
 import { monthFirstDay, monthLastDay, monthOfDay } from './months';
@@ -22,6 +21,7 @@ import { benchInput } from './test/cities.node';
 import { Recorder, SEEDS, horizonMonth, runWorld } from './test/run';
 import {
   changingAt,
+  everyStage,
   frameOf,
   limited,
   marketAt,
@@ -41,16 +41,6 @@ const PROPERTY_SEEDS = [1, 2, 3, 4, 5];
 type NoRow = (WorldEvent extends infer E ? (E extends unknown ? Omit<E, 'row'> : never) : never) & {
   month: number;
 };
-
-/** Every timed stage of every route scaled by `v`. */
-function everyStage(v: number): StageScale {
-  const out = { discretionary: {}, streamlined: {}, permitOnly: {} } as Record<
-    string,
-    Record<string, number>
-  >;
-  for (const p of PATHWAYS) for (const s of STAGE_ORDER) if (s !== 'complete') out[p][s] = v;
-  return out as unknown as StageScale;
-}
 
 /** Each row's project id, read through the readers. */
 function idsOf(w: World, statics: Statics): string[] {
@@ -127,6 +117,15 @@ describe('a frame change in mid-run, bench city', () => {
         // Everything before the change is identical, rows included.
         const before = (r: Run) => r.rec.events.filter((e) => e.month < M);
         expect(before(b)).toEqual(before(a));
+        // From the change on, every event (stage ends and starts alike) is dated in the month
+        // that sent it.
+        let dated = 0;
+        for (const e of b.rec.events) {
+          if (e.month < M) continue;
+          expect(monthOfDay(input.asOf, e.day), `${e.kind} row ${e.row}`).toBe(e.month);
+          dated++;
+        }
+        expect(dated).toBeGreaterThan(0);
         let compared = 0;
         let moved = 0;
         for (const [id, evA] of a.events) {

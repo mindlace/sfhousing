@@ -1,6 +1,6 @@
-// The world at the dataset date and the month step (spec S2, rules 14, 16-18). Without a funding
-// system the step runs systems 3 (stages due), 4 (lots whose ordinary start falls this month are
-// set aside) and 6 (they start).
+// The world at the dataset date and the month step (spec S2, rules 14, 16-19). Without a funding
+// system the step runs systems 1 (policy, when the frame changes: rules 7 and 12), 3 (stages
+// due), 4 (lots whose ordinary start falls this month are set aside) and 6 (they start).
 import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
 import { pathwayFrom } from '$lib/sim/scenario/engine';
 import { sizeCumAgainst } from '$lib/sim/scenario/input';
@@ -9,12 +9,12 @@ import type { Day } from '$lib/timelapse/time';
 import { PATHWAYS, STAGE_ORDER, type Pathway, type Stage } from '$lib/timelapse/types';
 import { addProject, emptyWorld, ensureLot, lotRow, pushDisplacement, pushRev } from './columns';
 import { createHolds } from './holds';
-import { eachFreeLot } from './due';
+import { DueList, eachFreeLot } from './due';
 import { enterStage, reanchor, rowSpeed } from './stage';
 import { monthFirstDay, monthLastDay } from './months';
 import { createProjects, dueMonthOf, followProject, rowStaticsOf, type Sys3 } from './pipeline';
 import type { PolicyFrame, PolicyTimeline } from './policy/frame';
-import { lotEntity, ordinaryStart, type OrdinaryStart } from './rates';
+import { initDraw, lotEntity, ordinaryStart, skipBound, type OrdinaryStart } from './rates';
 import type { Statics } from './statics';
 import {
   END_ALIVE,
@@ -283,14 +283,20 @@ function stepCtx(
  * it ran on, so a lot's new plan can never fall before this month; a plan that did would mean the
  * due list was out of step, and it throws.
  *
+ * The whole-city replan uses the skip shortcut when `due` is a `DueList` (it knows its `through`):
+ * a lot with no row whose `INIT` draw is above its `skipBound` starts after `through`, so it is
+ * dropped and not put.
+ *
  * Rule 12: every live row whose speed under the new frame differs is re-anchored on the month's
  * first day and put at the month of its new leave (this month when the carried end lands in it,
  * so the row is stepped by system 3 below).
  */
 function policyChanged(ctx: Step): void {
   const { world, due, statics, timeline, frame, month, x } = ctx;
-  const replan = (lot: number, r: Day, k: number) => {
+  let bound: Float64Array | null = null;
+  const replan = (lot: number, r: Day, k: number, rowless: boolean) => {
     due.drop(lot);
+    if (bound !== null && rowless && initDraw(statics, x.sh, lot, 0) > bound[lot]) return;
     const s = ordinaryStart(statics, timeline, month, x.sh, lot, r, k);
     if (s === null) return;
     if (s.month < month)
@@ -299,13 +305,14 @@ function policyChanged(ctx: Step): void {
   };
   const touched = timeline.touched(month);
   if (touched === null || frame.market !== timeline.frameAt(Math.max(1, month - 1)).market) {
+    if (due instanceof DueList) bound = skipBound(statics, timeline, month, due.through);
     eachFreeLot(world, statics, timeline, month, replan);
   } else {
     const l = world.lots;
     for (const lot of touched) {
       const i = lotRow(l, lot);
-      if (i < 0) replan(lot, statics.asOf, 0);
-      else if (l.state[i] === LOT_FREE) replan(lot, l.r[i], l.k[i]);
+      if (i < 0) replan(lot, statics.asOf, 0, true);
+      else if (l.state[i] === LOT_FREE) replan(lot, l.r[i], l.k[i], false);
     }
   }
   const p = world.projects;

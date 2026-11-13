@@ -1,10 +1,10 @@
 import type { ParcelId } from '$lib/data/parcel';
 import type { Precompute } from '$lib/sim/scenario/input';
-import { lastInitiationMonth, piecewiseMonth } from '$lib/sim/scenario/input';
+import { lastInitiationMonth, piecewiseMonth, skipBounds } from '$lib/sim/scenario/input';
 import { P, drawOn, simEntity, streamOf } from '$lib/sim/scenario/rng';
 import { exp, log } from '$lib/timelapse/math';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
-import { monthFirstDay, monthOfDay } from './months';
+import { monthFirstDay, monthLastDay, monthOfDay } from './months';
 import type { PolicyTimeline, ZoningView } from './policy/frame';
 import type { Statics } from './statics';
 
@@ -119,4 +119,63 @@ export function ordinaryStart(
   const lotMonthStart = r + 1 + Math.floor((T - 1) * MONTH_DAYS);
   const day = r + 1 + Math.floor((T - 1 + drawOn(stream, P.INIT_DAY, 0)) * MONTH_DAYS);
   return { day, month: monthOfDay(asOf, day), frameMonth: monthOfDay(asOf, lotMonthStart) };
+}
+
+const skipMemo = new WeakMap<PolicyTimeline, WeakMap<Statics, Map<string, Float64Array>>>();
+const allLots = new WeakMap<Statics, Int32Array>();
+
+/**
+ * The skip shortcut (Decisions): per statics row, a bound on the `INIT` draw of a lot free since
+ * the dataset date on attempt 0 above which its ordinary start, read through `month`, falls after
+ * month `through`. It is `skipBounds` over the start rates of month 1's frame and of each change
+ * `c <= month` from lot-month `lastInitiationMonth(asOf, monthFirstDay(c) - 1) + 1` (the segments
+ * `ordinaryStart` walks), with `Tmax = lastInitiationMonth(asOf, monthLastDay(through))`: a draw
+ * above it passes its threshold after lot-month `Tmax`, which begins after `through` ends.
+ * Infinity where nothing is skipped. Memoised per (timeline, statics, `month`, `through`); reads
+ * frames up to `month` only.
+ */
+export function skipBound(
+  statics: Statics,
+  timeline: PolicyTimeline,
+  month: number,
+  through: number
+): Float64Array {
+  let byStatics = skipMemo.get(timeline);
+  if (!byStatics) {
+    byStatics = new WeakMap();
+    skipMemo.set(timeline, byStatics);
+  }
+  let memo = byStatics.get(statics);
+  if (!memo) {
+    memo = new Map();
+    byStatics.set(statics, memo);
+  }
+  const key = `${month}:${through}`;
+  let out = memo.get(key);
+  if (out) return out;
+  const asOf = statics.asOf;
+  const f1 = timeline.frameAt(1);
+  const views: Float64Array[] = [startRates(f1.view, f1.market)];
+  const bounds: number[] = [];
+  for (const c of timeline.changes()) {
+    if (c <= 1) continue;
+    if (c > month) break;
+    const f = timeline.frameAt(c);
+    bounds.push(lastInitiationMonth(asOf, monthFirstDay(asOf, c) - 1));
+    views.push(startRates(f.view, f.market));
+  }
+  let lots = allLots.get(statics);
+  if (!lots) {
+    lots = Int32Array.from({ length: statics.parcelId.length }, (_, i) => i);
+    allLots.set(statics, lots);
+  }
+  const Tmax = lastInitiationMonth(asOf, monthLastDay(asOf, through));
+  out = skipBounds(views, lots, Tmax, bounds);
+  memo.set(key, out);
+  return out;
+}
+
+/** The `INIT` draw of `lot` on attempt `k`: what `ordinaryStart` compares with its threshold. */
+export function initDraw(statics: Statics, sh: number, lot: number, k: number): number {
+  return drawOn(streamOf(sh, lotEntity(statics, lot), k), P.INIT, 0);
 }
