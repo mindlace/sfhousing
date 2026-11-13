@@ -9,7 +9,7 @@ Money, tiers and the funded card fields are not built yet: they wait for world-f
 | Where                                | What                                                                                        |
 | ------------------------------------ | ------------------------------------------------------------------------------------------- |
 | `src/lib/sim/world/score/types.ts`   | `WorldSeries`, `WorldSeriesData`, `SeriesChunk`, `ScoreStatics`, `TimelineView`, `CardDeps` |
-| `src/lib/sim/world/score/series.ts`  | `createWorldSeries(statics, from?)`; imported from `./series` (not in `index.ts`)           |
+| `src/lib/sim/world/score/series.ts`  | `createWorldSeries(statics, from?)`                                                         |
 | `src/lib/sim/world/score/statics.ts` | `scoreStaticsOf`, `horizonOf`, `finalTable`                                                 |
 | `src/lib/sim/world/score/chunk.ts`   | `chunkOf(plan, twin, money, from, through)`                                                 |
 | `src/lib/sim/world/score/view.ts`    | `viewOf`, `chunksBefore`, `BAND_Z`                                                          |
