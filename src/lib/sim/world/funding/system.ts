@@ -1,9 +1,10 @@
-// The funding system world-core's hook calls (spec S12). This task fills `create`, `planLot`,
-// `apply`, the ordinary-start side of `onProjectEvent` and the line's compaction; the money,
-// serving, policy and shadow systems come with their own tasks.
+// The funding system world-core's hook calls (spec S12). Filled so far: `create`, `planLot`,
+// `apply`, `moneyIn`, `onProjectEvent` (ordinary starts and money events) and the line's
+// compaction; the serving, policy and shadow systems come with their own tasks.
 import { ORIGIN_SIM, type FundingSystem, type StepCtx, type World } from '../types';
 import { applyLots, leaveLine, planLotMonth } from './apply';
 import { compactLine, fundOf, initFunding } from './columns';
+import { moneyIn, moneyOnEvent } from './pools';
 
 /**
  * Gives the world its funding columns when a timeline first offers money after month 1. The core
@@ -32,12 +33,18 @@ export function createFundingSystem(): FundingSystem {
     },
     moneyIn(ctx) {
       ensure(ctx);
+      moneyIn(ctx);
     },
     onProjectEvent(ctx, e) {
+      ensure(ctx);
+      // Rule 13: a funded row's money moves at its own events.
+      if (e.kind !== 'start') {
+        moneyOnEvent(ctx, e);
+        return;
+      }
       // Rule 8: a lot's ordinary start takes both its applications off the line. Only identity
       // columns are read: the row's stage columns are not written yet at its `'start'`.
-      if (e.kind !== 'start') return;
-      const p = ensure(ctx).projects;
+      const p = ctx.world.projects;
       if (p.origin[e.row] !== ORIGIN_SIM) return;
       leaveLine(fundOf(ctx.world).line, p.src[e.row]);
     },

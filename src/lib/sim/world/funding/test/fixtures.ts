@@ -1,4 +1,10 @@
 // Fixtures for the world-funding tests: the mini city with public money, and its money as frames.
+import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
+import {
+  benchBaselineFunding,
+  benchMarket,
+  benchRoutes
+} from '$lib/sim/scenario/fixtures/bench-finance';
 import { miniCalibrationWithRoutes, miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
 import { financeIndexOf, inflowArrivals, isOff, isOffered } from '$lib/sim/scenario/funding';
 import type { SimInput } from '$lib/sim/scenario/types';
@@ -24,6 +30,32 @@ export function fundedMini(finance?: Finance): SimInput {
     ...base,
     calibration: miniCalibrationWithRoutes(),
     finance: finance ?? miniFinance(base.asOf)
+  };
+}
+
+/**
+ * The bench city with the bench baseline as money (as `compile.perf.spec.ts` builds the bench
+ * calibration): `benchRoutes`, `benchBaselineFunding(asOf)` as `baselineFunding` and the
+ * `finance`, `benchMarket` and no market steps. `base` is `benchInput()` (Node only, so passed in).
+ */
+export function benchFunded(base: SimInput): SimInput {
+  const baseline = benchBaselineFunding(base.asOf);
+  return {
+    ...base,
+    calibration: {
+      ...base.calibration,
+      affordableRoutes: benchRoutes(),
+      baselineFunding: baseline,
+      market: benchMarket()
+    },
+    market: [],
+    finance: {
+      pools: baseline.pools,
+      programmes: baseline.programmes,
+      off: [],
+      slope: 3,
+      terms: resolveTerms(MARKET_TERMS)
+    }
   };
 }
 
