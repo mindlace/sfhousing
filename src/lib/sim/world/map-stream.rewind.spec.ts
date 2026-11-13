@@ -133,6 +133,16 @@ function anchorOfRow(world: World, row: number): string | null {
   return a === null ? null : cellOf(a);
 }
 
+/** The anchor cells of every row of `world`. */
+function anchorsOf(world: World): Set<string> {
+  const out = new Set<string>();
+  for (let row = 0; row < world.projects.n; row++) {
+    const a = anchorOfRow(world, row);
+    if (a !== null) out.add(a);
+  }
+  return out;
+}
+
 const projectIdOf = (world: World, row: number) =>
   scheduleAt(world, statics, row, lastDayOf(world))!.projectId;
 
@@ -232,6 +242,26 @@ function drain(run: Run): TimelineUpdate[] {
     u = run.stream.flush(run.world, statics, Infinity);
   }
   return out;
+}
+
+/**
+ * A seed and a cell whose projects in a fill to 120 under `timeline` all began after month `at`,
+ * and which no project of a run of `stop` through 120 holds.
+ */
+function emptiedCell(at: number, stop: PolicyTimeline): { seed: number; cell: string } {
+  for (const seed of SEEDS) {
+    const w1 = runWorld(statics, timeline, seed, 120);
+    const n = runWorld(statics, timeline, seed, at).projects.n;
+    const w2 = runWorld(statics, stop, seed, 120);
+    const cells = new Set<string>();
+    for (let row = n; row < w1.projects.n; row++) {
+      const a = anchorOfRow(w1, row);
+      if (a !== null) cells.add(a);
+    }
+    for (let row = 0; row < w2.projects.n; row++) cells.delete(anchorOfRow(w2, row) ?? '');
+    if (cells.size > 0) return { seed, cell: [...cells][0] };
+  }
+  throw new Error('no emptied cell');
 }
 
 interface Construction {
@@ -345,24 +375,7 @@ describe('map-stream: rewind (rule 9)', () => {
     // the refill without starts holds
     const AT = 60;
     const stop = changingAt(AT + 1, base, NO_STARTS, null);
-    let found: { seed: number; cell: string } | null = null;
-    for (const seed of SEEDS) {
-      const w1 = runWorld(statics, timeline, seed, 120);
-      const n = runWorld(statics, timeline, seed, AT).projects.n;
-      const w2 = runWorld(statics, stop, seed, 120);
-      const cells = new Set<string>();
-      for (let row = n; row < w1.projects.n; row++) {
-        const a = anchorOfRow(w1, row);
-        if (a !== null) cells.add(a);
-      }
-      for (let row = 0; row < w2.projects.n; row++) cells.delete(anchorOfRow(w2, row) ?? '');
-      if (cells.size > 0) {
-        found = { seed, cell: [...cells][0] };
-        break;
-      }
-    }
-    expect(found).not.toBeNull();
-    const { seed, cell } = found!;
+    const { seed, cell } = emptiedCell(AT, stop);
     const { run, saved, updates } = firstFill({ seed, save: AT, through: 120 });
     expect(foldCells(updates).has(cell)).toBe(true);
     const re = rewound(saved, run.stream, stop, 120, seed);
@@ -613,7 +626,7 @@ describe('map-stream: rewind (rule 9)', () => {
     const busy = changingAt(61, base, frameOf(input, { id: 1, market: 2 }), null);
     // a cell whose projects in the first fill all began after month 60 and which holds a
     // different project 12 months into the refill
-    let found: { seed: number; cell: string; added: string; first: Set<string> } | null = null;
+    let found: { seed: number; cell: string; added: string } | null = null;
     let want: string[] = [];
     for (const seed of SEEDS) {
       const w1 = runWorld(statics, timeline, seed, 120);
@@ -632,7 +645,7 @@ describe('map-stream: rewind (rule 9)', () => {
         const first = new Set(rows.map((r) => projectIdOf(w1, r)));
         const added = projectIdOf(w2, row);
         if (first.has(added)) continue;
-        found = { seed, cell: a, added, first };
+        found = { seed, cell: a, added };
         want = [];
         for (let r = 0; r < w2.projects.n; r++)
           if (anchorOfRow(w2, r) === a) want.push(projectIdOf(w2, r));
@@ -640,7 +653,7 @@ describe('map-stream: rewind (rule 9)', () => {
       if (found) break;
     }
     expect(found).not.toBeNull();
-    const { seed, cell, added, first } = found!;
+    const { seed, cell, added } = found!;
     const { run, saved, updates } = firstFill({ seed, save: 60, through: 120 });
     expect(foldCells(updates).has(cell)).toBe(true);
     const re = rewound(saved, run.stream, busy, 72, seed);
@@ -654,8 +667,8 @@ describe('map-stream: rewind (rule 9)', () => {
     // project restarted on its lot comes back under its id)
     expect(packed!.slotProjectIds).toContain(added);
     expect([...packed!.slotProjectIds].sort()).toEqual(want.sort());
-    for (const id of first)
-      if (!want.includes(id)) expect(packed!.slotProjectIds).not.toContain(id);
+    // and each slot's schedule is the refill's (a reused id carries no stale schedule)
+    expect(packed).toEqual(freshSnapshot(re.world).cells.find((c) => c.cellId === cell));
   });
 
   it('the restore and the new day of one lot travel in one update', () => {
@@ -707,6 +720,31 @@ function freshSnapshot(world: World): TimelineUpdate {
   return fresh.snapshot(structuredClone(world), statics);
 }
 
+/**
+ * Feeds `fake` and checks each update against it first: every cell valid, and every removed cell
+ * and restored lot one the map holds (a stale "sent" record would name one it does not).
+ */
+function strictFeeder(fake: FakeController): (us: TimelineUpdate[]) => void {
+  return (us) => {
+    for (const u of us) {
+      for (const c of u.cells) validateTimedCell(c);
+      if (u.revision !== 0) {
+        for (const id of u.removedCells) expect(fake.cells.has(id)).toBe(true);
+        for (const id of u.restore ?? []) expect(fake.demolished.has(id)).toBe(true);
+      }
+      fake.apply(u);
+    }
+  };
+}
+
+/** `fake` holds what a fresh stream's snapshot of `world` holds. */
+function expectFreshState(fake: FakeController, world: World): void {
+  const want = new FakeController();
+  want.apply(freshSnapshot(world));
+  expect(fake.cells).toEqual(want.cells);
+  expect(fake.demolished).toEqual(want.demolished);
+}
+
 /** Same cell ids, each cell equal, same demolish list. */
 function expectSameSnapshot(a: TimelineUpdate, b: TimelineUpdate): void {
   const ids = (u: TimelineUpdate) => u.cells.map((c) => c.cellId).sort();
@@ -750,7 +788,20 @@ describe('map-stream: snapshot and revisions (rules 7, 10)', () => {
   it('snapshot leaves a cell waiting on chunks dirty; it is sent once ready', () => {
     const { run } = firstFill({ save: 30, through: 60 });
     const all = freshSnapshot(run.world);
-    const waiting = all.cells[0].cellId;
+    // a cell into which no project anchored elsewhere spans, so holding it back blocks no other
+    const spannedInto = new Set<string>();
+    for (let row = 0; row < run.world.projects.n; row++) {
+      const home = anchorOfRow(run.world, row);
+      if (home === null) continue;
+      for (const id of scheduleAt(run.world, statics, row, lastDayOf(run.world))!.parcelIds) {
+        if (!input.parcels.index.has(id)) continue;
+        const c = cellOf(id);
+        if (c !== home) spannedInto.add(c);
+      }
+    }
+    const held = all.cells.find((c) => !spannedInto.has(c.cellId));
+    expect(held).toBeDefined();
+    const waiting = held!.cellId;
     let ready = false;
     const sdeps = streamDeps(input, records, { ready: (c) => ready || c !== waiting });
     const stream = createMapStream(sdeps, WINDOW);
@@ -763,7 +814,7 @@ describe('map-stream: snapshot and revisions (rules 7, 10)', () => {
     const u = stream.flush(world, statics, Infinity)!;
     expect(u.revision).toBe(1);
     expect(u.cells.map((c) => c.cellId)).toEqual([waiting]);
-    expect(u.cells[0]).toEqual(all.cells[0]);
+    expect(u.cells[0]).toEqual(held);
     expect(u.demolish).toEqual([]);
   });
 
@@ -792,6 +843,70 @@ describe('map-stream: snapshot and revisions (rules 7, 10)', () => {
     want.apply(freshSnapshot(re.world));
     expect(fake.cells).toEqual(want.cells);
     expect(fake.demolished).toEqual(want.demolished);
+  });
+
+  it('a rewind after a snapshot diffs against what the snapshot sent', () => {
+    const fake = new FakeController();
+    const feed = strictFeeder(fake);
+    const { run, saved, updates } = firstFill({ save: 60, through: 120 });
+    feed(updates);
+    feed([run.stream.snapshot(run.world, statics)]);
+    const re = rewound(saved, run.stream, changingAt(61, base, NO_STARTS, null), 120);
+    const refill = [...drain(re), ...fill({ ...re, through: 120 })];
+    expect(refill[0].revision).toBe(1);
+    // the rewind takes back demolitions the snapshot sent
+    expect(refill.flatMap((u) => u.restore ?? []).length).toBeGreaterThan(0);
+    feed(refill);
+    expectFreshState(fake, re.world);
+  });
+
+  it('a snapshot taken right after a rewind supersedes its pending removals and restores', () => {
+    const fake = new FakeController();
+    const feed = strictFeeder(fake);
+    const stop = changingAt(41, base, NO_STARTS, null);
+    const { run, saved, updates } = firstFill({ save: 40, through: 120 });
+    feed(updates);
+    // the rewind leaves restores (and dirty cells) pending; the snapshot answers before a flush
+    const re = rewound(saved, run.stream, stop, 120);
+    const snap = re.stream.snapshot(re.world, statics);
+    expect(snap.restore).toBeUndefined();
+    expect(snap.removedCells).toEqual([]);
+    feed([snap]);
+    expectFreshState(fake, re.world);
+    feed([...drain(re), ...fill({ ...re, through: 120 })]);
+    // a second rewind diffs against the snapshot's state, not the first fill's: nothing it takes
+    // back is missing from the map (checked by the feeder)
+    const re2 = rewound(saved, run.stream, stop, 120);
+    feed([...drain(re2), ...fill({ ...re2, through: 120 })]);
+    expectFreshState(fake, re2.world);
+  });
+
+  it('a cell emptied before a snapshot and dirtied again unsent is not removed (fixture-0)', () => {
+    use(fixture);
+    const AT = 60;
+    const stop = changingAt(AT + 1, base, NO_STARTS, null);
+    const { seed, cell } = emptiedCell(AT, stop);
+    const fake = new FakeController();
+    const feed = strictFeeder(fake);
+    const { run, saved, updates } = firstFill({ seed, save: AT, through: 120 });
+    feed(updates);
+    expect(fake.cells.has(cell)).toBe(true);
+    // the rewind leaves the cell's removal pending; the snapshot answers first, without it
+    const re = rewound(saved, run.stream, stop, 120, seed);
+    const snap = re.stream.snapshot(re.world, statics);
+    expect(snap.cells.map((c) => c.cellId)).not.toContain(cell);
+    feed([snap]);
+    expect(fake.cells.has(cell)).toBe(false);
+    // projects come back into the cell, unflushed, and a rewind takes them away again: the map
+    // never held the cell since the snapshot, so it is dropped, not removed (the feeder checks)
+    const back = rewound(saved, run.stream, timeline, 120, seed);
+    while (back.world.month < 120) step(back.world, back.due, statics, timeline, seed, back.sink);
+    expect(anchorsOf(back.world).has(cell)).toBe(true);
+    const re2 = rewound(saved, run.stream, stop, 120, seed);
+    const after = [...drain(re2), ...fill({ ...re2, through: 120 })];
+    expect(after.flatMap((u) => u.removedCells)).not.toContain(cell);
+    feed(after);
+    expectFreshState(fake, re2.world);
   });
 
   it('the fake controller refuses an update out of order', () => {
@@ -824,11 +939,50 @@ describe('map-stream: snapshot and revisions (rules 7, 10)', () => {
     for (const u of before) expect(u.complete).toBe(false);
     // the last cell change is before windowMonths; from here on nothing changes
     expect(fill({ ...run, through: windowMonths - 1 })).toEqual([]);
-    const after = fill({ ...run, through: windowMonths + 4 });
+    const after = fill({ ...run, through: windowMonths + 1 });
+    const saved = structuredClone(world);
+    after.push(...fill({ ...run, through: windowMonths + 4 }));
     expect(after).toHaveLength(1);
     expect(after[0]).toMatchObject({ cells: [], removedCells: [], demolish: [], complete: true });
     expect(after[0].revision).toBe(before.length);
     expect(stream.flush(world, statics, Infinity)).toBeNull();
+
+    // a rewind to a month past windowMonths with nothing changed re-arms it: a host draining
+    // until complete after the rewind gets exactly one
+    const re = rewound(saved, stream, still, windowMonths + 4);
+    const again = [...drain(re), ...fill({ ...re, through: windowMonths + 4 })];
+    expect(again).toHaveLength(1);
+    expect(again[0]).toMatchObject({ cells: [], removedCells: [], demolish: [], complete: true });
+    expect(again[0].revision).toBe(before.length + 1);
+  });
+
+  it('no complete update while a cell is part-warm under a tiny budget', () => {
+    // a clock 10 ms per reading and a 1 ms budget: a flush does one piece of work, so cells of
+    // several projects are warmed over several calls, some of which return null
+    let t = 0;
+    const stream = createMapStream(streamDeps(input, records, { now: () => (t += 10) }), 1);
+    const { world, sink } = startStream(statics, timeline, SEED, stream);
+    const due = planDue(world, statics, timeline, SEED, 1);
+    step(world, due, statics, timeline, SEED, sink);
+    expect(world.month).toBe(1);
+    const seen: TimelineUpdate[] = [];
+    let nulls = 0;
+    for (let i = 0; ; i++) {
+      if (i > 100_000) throw new Error('no complete update');
+      const u = stream.flush(world, statics, 1);
+      if (u === null) {
+        nulls++;
+        continue;
+      }
+      for (const c of u.cells) validateTimedCell(c);
+      seen.push(u);
+      if (u.complete) break;
+    }
+    expect(nulls).toBeGreaterThan(0);
+    for (const u of seen.slice(0, -1)) expect(u.complete).toBe(false);
+    // complete came only once every cell was sent: nothing is left, and the map is whole
+    expect(stream.flush(world, statics, Infinity)).toBeNull();
+    expect(foldCells(seen)).toEqual(new Map(freshSnapshot(world).cells.map((c) => [c.cellId, c])));
   });
 
   it('a snapshot at or past windowMonths with no ready dirty cell carries complete', () => {
