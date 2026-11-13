@@ -5,7 +5,7 @@
  * returns the same object when nothing changes (the house rule, funding-reconcile.ts), so the
  * compiler can treat "reconciled" as `reconcilePolicy4(doc, cal).doc === doc`. Pure TS.
  */
-import { MARKET_TERMS, missingTerms, resolveTerms } from '$lib/sim/finance';
+import { MARKET_TERMS, TYPED_TERM_RANGES, missingTerms, resolveTerms } from '$lib/sim/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import { reconcileFunding, type FundingLoadReport } from '$lib/sim-page/funding-reconcile';
 import { reconcileTiming, type TimingChange } from '$lib/sim-page/reconcile';
@@ -19,20 +19,29 @@ export interface Policy4Report {
   funding: Omit<FundingLoadReport, 'upgradedFrom'>;
 }
 
-/** Valid values for every term, so the pool checks never trip on an unsourced one. */
-const ALL_TYPED: Record<TermKey, number> = {
-  constructionRate: 0.05,
-  constructionYears: 2,
-  requiredReturn: 0.1,
-  guaranteeRateCut: 0.01,
-  lossOnExit: 0.5
-};
+/** Every term typed at its range's lower bound, so the pool checks never trip on an unsourced one. */
+const ALL_TYPED = Object.fromEntries(
+  (Object.keys(TYPED_TERM_RANGES) as TermKey[]).map((k) => [k, TYPED_TERM_RANGES[k][0]])
+) as Record<TermKey, number>;
 
 const same = <T>(a: readonly T[], b: readonly T[]) =>
   a.length === b.length && a.every((x, i) => x === b[i]);
 
 function withWhat(s: Span, what: Effect): Span {
   return what === s.what ? s : { ...s, what };
+}
+
+function hasMoney(w: Effect): boolean {
+  switch (w.tag) {
+    case 'scales':
+      return w.entries.length > 0;
+    case 'fund':
+      return w.pool !== null || w.programmes.length > 0;
+    case 'terms':
+      return Object.keys(w.terms).length > 0;
+    default:
+      return false;
+  }
 }
 
 function reconcilePermitting(p: Policy, cal: Calibration, timing: Policy4Report['timing']): Policy {
@@ -190,21 +199,21 @@ export function reconcilePolicy4(
 
   const permitting = doc.kinds.permitting.map((p) => reconcilePermitting(p, cal, timing));
 
-  let money = doc.kinds.money;
-  if (cal.baselineFunding === undefined) {
-    // The data cannot run money: kept, not used, nothing dropped.
-    funding.unusable = money.some((p) => p.spans.length > 0);
-  } else {
-    money = money.map((p) => reconcileMoneyPools(p, cal, funding));
-    // Term gaps are found on the document the pool drops left.
-    const gaps = programmeTermGaps({ ...doc, kinds: { ...doc.kinds, money } });
-    if (gaps.length > 0) money = dropGapped(money, gaps, funding);
-    if (cal.market === undefined) funding.unusable = money.some((p) => p.spans.length > 0);
-  }
-  // A programme met in several spans is reported once per id and reason.
+  let money = doc.kinds.money.map((p) => reconcileMoneyPools(p, cal, funding));
+  // Term gaps are found on the document the pool drops left.
+  const gaps = programmeTermGaps({ ...doc, kinds: { ...doc.kinds, money } });
+  if (gaps.length > 0) money = dropGapped(money, gaps, funding);
+  // A programme met in several spans is reported once per id and reason, a scale once per pool and day.
   funding.droppedProgrammes = funding.droppedProgrammes.filter(
     (d, i, all) => all.findIndex((e) => e.id === d.id && e.reason === d.reason) === i
   );
+  funding.droppedScales = funding.droppedScales.filter(
+    (d, i, all) => all.findIndex((e) => e.pool === d.pool && e.from === d.from) === i
+  );
+  // As reconcileFunding: the data cannot run money and some money is left after the drops.
+  funding.unusable =
+    (cal.market === undefined || cal.baselineFunding === undefined) &&
+    money.some((p) => p.spans.some((s) => hasMoney(s.what)));
 
   const report = { timing, funding };
   if (same(permitting, doc.kinds.permitting) && same(money, doc.kinds.money)) {

@@ -118,10 +118,7 @@ describe('reconcilePolicy4 money', () => {
       ])
     );
     const r = reconcilePolicy4(d, cal);
-    expect(r.report.funding.droppedScales).toEqual([
-      { pool: 'nope', from: 1600 },
-      { pool: 'nope', from: 1600 }
-    ]);
+    expect(r.report.funding.droppedScales).toEqual([{ pool: 'nope', from: 1600 }]);
     for (const s of r.doc.kinds.money[0].spans) {
       expect(s.what.tag === 'scales' && s.what.entries.map((e) => e.pool)).toEqual(['state']);
     }
@@ -183,21 +180,38 @@ describe('reconcilePolicy4 money', () => {
     expect(programmeTermGaps(d)).toEqual([]);
   });
 
-  it('keeps everything and is unusable when the data has no baselineFunding', () => {
+  it('drops as today and is unusable when the data has no baselineFunding', () => {
     const { baselineFunding: _b, ...rest } = cal;
     void _b;
     const d = money(
       pol('baseline', { tag: 'baseline' }, [
         span(1000, null, { tag: 'scales', entries: [{ pool: 'nope', from: 1, scale: 2 }] })
       ]),
-      fundPool([guarantee('u-g')])
+      fundPool([grant]),
+      fundBaseline('state', [{ ...grant, id: 'p-s', pool: 'state' }])
     );
     const r = reconcilePolicy4(d, rest as Calibration);
-    expect(r.doc).toBe(d);
-    expect(r.report.funding).toEqual({ droppedScales: [], droppedProgrammes: [], unusable: true });
+    expect(r.report.funding.droppedScales).toEqual([{ pool: 'nope', from: 1 }]);
+    expect(r.report.funding.droppedProgrammes.map((x) => x.id)).toEqual(['p-s']);
+    expect(r.report.funding.unusable).toBe(true);
+    expect(reconcilePolicy4(r.doc, rest as Calibration).doc).toBe(r.doc);
     expect(reconcilePolicy4(DEFAULT_POLICY4, rest as Calibration).report.funding.unusable).toBe(
       false
     );
+  });
+
+  it('is not unusable when the drops left every money policy empty', () => {
+    const { baselineFunding: _b, ...rest } = cal;
+    void _b;
+    const d = money(
+      pol('baseline', { tag: 'baseline' }, [
+        span(1000, null, { tag: 'scales', entries: [{ pool: 'nope', from: 1, scale: 2 }] })
+      ]),
+      fundBaseline('state', [{ ...grant, id: 'p-s', pool: 'state' }])
+    );
+    const r = reconcilePolicy4(d, rest as Calibration);
+    expect(r.report.funding.droppedScales).toHaveLength(1);
+    expect(r.report.funding.unusable).toBe(false);
   });
 });
 
