@@ -13,7 +13,7 @@ import {
   type World
 } from './types';
 
-const FIRST_BUCKET = 16;
+const FIRST_BUCKET = 64;
 
 /** `a` grown to at least `n` entries (doubling), the new ones 0. */
 function atLeast(a: Int32Array, n: number): Int32Array {

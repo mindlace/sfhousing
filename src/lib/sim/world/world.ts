@@ -143,6 +143,18 @@ function startOf(
   return ordinaryStart(statics, timeline, month, sh, lot, r, k);
 }
 
+/** True when `a[from..]`, ascending, holds `v`. */
+function sortedHas(a: Int32Array, from: number, v: number): boolean {
+  let lo = from;
+  let hi = a.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (a[mid] < v) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo < a.length && a[lo] === v;
+}
+
 /** True when the lot has no row or its row is `LOT_FREE`. */
 function isFree(w: World, lot: number): boolean {
   const i = lotRow(w.lots, lot);
@@ -551,18 +563,21 @@ function stepWith(
   // System 4: the lots due this month and those system 3 freed, in rank order (rule 2). A lot met
   // twice means the due list is out of step.
   const lots: number[] = [];
-  const takenLots = new Set<number>();
-  for (let i = lotsFrom; i < entities.length; i++) {
-    lots.push(entities[i]);
-    takenLots.add(entities[i]);
+  for (let i = lotsFrom; i < entities.length; i++) lots.push(entities[i]);
+  // The lots system 3 freed (usually none); a lot met twice means the due list is out of step.
+  // `entities` is ascending, so a taken lot is found by binary search.
+  let freed: Set<number> | null = null;
+  if (x.freed.length > 0) {
+    freed = new Set<number>();
+    for (const lot of x.freed) {
+      if (freed.has(lot) || sortedHas(entities, lotsFrom, lot)) {
+        throw new Error(`due list out of step: lot ${lot} met twice`);
+      }
+      freed.add(lot);
+      lots.push(lot);
+    }
+    x.freed.length = 0;
   }
-  const seen = new Set(takenLots);
-  for (const lot of x.freed) {
-    if (seen.has(lot)) throw new Error(`due list out of step: lot ${lot} met twice`);
-    seen.add(lot);
-    lots.push(lot);
-  }
-  x.freed.length = 0;
   const rank = statics.rank;
   lots.sort((a, b) => rank[a] - rank[b]);
   const aside: number[] = [];
@@ -570,9 +585,15 @@ function stepWith(
   const applying: number[] = [];
   const later: number[] = [];
   const laterOrd: number[] = [];
+  const asOf = statics.asOf;
   for (const lot of lots) {
-    if (!isFree(world, lot)) throw new Error(`due list out of step: lot ${lot} is not free`);
-    const { r, k } = freeSince(world, statics, lot);
+    const l = world.lots;
+    const i = lotRow(l, lot);
+    if (i >= 0 && l.state[i] !== LOT_FREE) {
+      throw new Error(`due list out of step: lot ${lot} is not free`);
+    }
+    const r = i < 0 ? asOf : l.r[i];
+    const k = i < 0 ? 0 : l.k[i];
     const s = ordinaryStart(statics, timeline, month, x.sh, lot, r, k);
     if (s !== null && s.month < month) throw new Error('due list out of step');
     const ord = s === null ? 0 : s.month;
@@ -580,7 +601,8 @@ function stepWith(
       aside.push(lot);
       asideStart.push({ s: s!, r, k });
     } else {
-      if (fund === null && takenLots.has(lot)) throw new Error('due list out of step');
+      // Unfunded, a lot taken this month is due only in the month of its ordinary start.
+      if (fund === null && !freed?.has(lot)) throw new Error('due list out of step');
       later.push(lot);
       laterOrd.push(ord);
     }
@@ -606,8 +628,11 @@ function stepWith(
   for (let j = 0; j < aside.length; j++) {
     const lot = aside[j];
     if (ctx.started.has(lot)) continue;
-    if (!isFree(world, lot)) throw new Error('due list out of step');
-    const { r, k } = freeSince(world, statics, lot);
+    const l = world.lots;
+    const i = lotRow(l, lot);
+    if (i >= 0 && l.state[i] !== LOT_FREE) throw new Error('due list out of step');
+    const r = i < 0 ? asOf : l.r[i];
+    const k = i < 0 ? 0 : l.k[i];
     const a = asideStart[j];
     const s = r === a.r && k === a.k ? a.s : startOf(world, statics, timeline, month, x.sh, lot);
     if (s === null || s.month !== month) throw new Error('due list out of step');

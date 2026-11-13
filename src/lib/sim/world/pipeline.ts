@@ -39,6 +39,10 @@ const PERMIT_FILED = SI.permitFiled;
 const COMPLETE = SI.complete;
 const CONSTRUCTION = SI.construction;
 const PLANNING: readonly Stage[] = ['preApplication', 'filed', 'entitled'];
+/** `SI[nextStage(PATHWAYS[pw], STAGE_ORDER[s])]` at `pw * S + s`; -1 after the last stage. */
+const NEXT = Int8Array.from({ length: PATHWAYS.length * S }, (_, i) =>
+  i % S === COMPLETE ? -1 : SI[nextStage(PATHWAYS[Math.floor(i / S)], STAGE_ORDER[i % S])]
+);
 
 /** Revision caps of a project on some view rows (today's `Caps`). */
 interface Caps {
@@ -431,8 +435,9 @@ function leaveStage(x: Sys3, row: number): void {
     endRow(x, row, END_EXIT, day, s);
     return;
   }
-  const pathway = PATHWAYS[p.pathway[row]];
-  const n = SI[nextStage(pathway, STAGE_ORDER[s])];
+  let n = NEXT[p.pathway[row] * S + s];
+  // Past the last stage: today's `nextStage` throws.
+  if (n < 0) n = SI[nextStage(PATHWAYS[p.pathway[row]], STAGE_ORDER[s])];
   const stop = p.stopAt[row];
   if (n >= stop) {
     if (n === stop) {

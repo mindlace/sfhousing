@@ -188,7 +188,7 @@ export function pushRev(
       return;
     }
   }
-  grow(p, REV_COLUMNS, p.revN + 1);
+  if (p.revDay.length <= p.revN) grow(p, REV_COLUMNS, p.revN + 1);
   const at = p.revN++;
   p.revDay[at] = day;
   p.revUnits[at] = units;
@@ -199,7 +199,7 @@ export function pushRev(
 
 /** Appends `units` displaced homes on `day` to `row`'s entries in the displacement side table. */
 export function pushDisplacement(p: ProjectColumns, row: number, day: Day, units: number): void {
-  grow(p, DISP_COLUMNS, p.dispN + 1);
+  if (p.dispRow.length <= p.dispN) grow(p, DISP_COLUMNS, p.dispN + 1);
   const at = p.dispN++;
   p.dispRow[at] = row;
   p.dispDay[at] = day;
