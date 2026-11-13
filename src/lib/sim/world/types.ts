@@ -172,8 +172,15 @@ export interface FundedStart {
   pathway: Pathway | null;
 }
 
+/** What a hook is handed during a step (S12). `frame` is `timeline.frameAt(month)`. */
 export interface StepCtx {
   world: World;
+  /**
+   * The due list. Inside a step only the core takes from it (`take` throws), and once the month
+   * has been taken (system 3 on) nothing can be put in it or in an earlier month (`put` throws).
+   * Putting a free lot at a month no later than the one it is due in is safe: when that month is
+   * taken the core plans the lot again.
+   */
   due: Due;
   statics: Statics;
   timeline: PolicyTimeline;
@@ -183,19 +190,45 @@ export interface StepCtx {
   out: StepSink;
   firstDay: Day;
   lastDay: Day;
+  /**
+   * Begins a project on `lot` (rule 17) and returns its row. Throws unless the lot has no row or
+   * is `LOT_FREE`. With `funded` null, `day` must be the lot's ordinary start; returns -1 when no
+   * size level gains a home (the lot becomes `LOT_DONE` and no row is made). With `funded`, `day`
+   * must fall in this month and no programme id may be empty or hold ',' (ids are stored joined
+   * with ','); a funded start always makes a row.
+   */
   startProject(lot: number, day: Day, funded: FundedStart | null): number;
+  /**
+   * Adds `units` displaced homes on `day` to funded row `row`, a start on `lot`, and sends
+   * `'displaced'`. Throws unless `row` is a funded start on `lot` and `day` falls in this month.
+   */
   displace(row: number, lot: number, day: Day, units: number): void;
 }
 
-/** The hook `world-funding` plugs into `world-core` (S12). */
+/**
+ * The hook `world-funding` plugs into `world-core` (S12); see `withFunding` in `world.ts` for when
+ * each is called. None is called in a month whose frame has `finance` null.
+ */
 export interface FundingSystem {
+  /** At the end of `createWorld`, with `frameAt(1)`. */
   create(world: World, statics: Statics, frame: PolicyFrame): void;
+  /** System 1, after the core's own replanning, when the frame id differs from last month's. */
   policyChanged(ctx: StepCtx): void;
+  /** System 2. */
   moneyIn(ctx: StepCtx): void;
+  /** Each event of system 3 and each `'start'` of system 6, just after it is sent. */
   onProjectEvent(ctx: StepCtx, e: WorldEvent): void;
+  /** System 4, every month, with the due free lots whose `planLot` is this month, in rank order. */
   apply(ctx: StepCtx, lots: Int32Array): void;
+  /** System 5. */
   serve(ctx: StepCtx): void;
+  /** System 7. */
   shadow(ctx: StepCtx): void;
-  /** The first model month in which the lot will apply, or 0. */
+  /**
+   * The first model month in which the lot will apply, or 0. Asked whenever the core plans a free
+   * lot in a funded month (and in system 4 for each due lot); the lot is put at the earlier of
+   * this and its ordinary start. An answer before the first month in which the lot can still apply
+   * (`ctx.month` before system 4 has run, `ctx.month + 1` after) counts as 0.
+   */
   planLot(ctx: StepCtx, lot: number): number;
 }
