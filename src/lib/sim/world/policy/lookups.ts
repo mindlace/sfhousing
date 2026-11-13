@@ -7,8 +7,11 @@ import type { PolicyFrame } from './frame';
 
 const ROUTES = ['discretionary', 'streamlined', 'permitOnly'] as const;
 
-/** `speed` times every `speedNew` scale, per route and stage, clamped to `[MIN_SCALE, MAX_SCALE]`. */
-function newScale(frame: PolicyFrame): StageScale {
+/**
+ * A new project's stage scale in `frame`: `speed` times every `speedNew` scale, per route and
+ * stage, clamped to `[MIN_SCALE, MAX_SCALE]` (today's `newProjects.scale`).
+ */
+export function newScale(frame: PolicyFrame): StageScale {
   const out: StageScale = { discretionary: {}, streamlined: {}, permitOnly: {} };
   for (const r of ROUTES) {
     const stages = new Set<TimedStage>(Object.keys(frame.speed[r]) as TimedStage[]);
