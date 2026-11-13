@@ -1,4 +1,9 @@
-import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
+import * as timeModule from '$lib/timelapse/time';
+import type { Day } from '$lib/timelapse/time';
+
+// Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
+// use of an imported name is a getter call (docs/dev/world-core.md, Cost).
+const { MONTH_DAYS } = timeModule;
 
 /** First day of model month m (m >= 1): `asOf + floor((m - 1) * MONTH_DAYS) + 1`. */
 export function monthFirstDay(asOf: Day, m: number): Day {

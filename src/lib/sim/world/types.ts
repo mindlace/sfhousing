@@ -36,11 +36,16 @@ export interface PoolColumns {
   [column: string]: Column | number;
 }
 
-/** One row per lot that has left its starting state (S1, rule 4). */
+/**
+ * One row per lot that has left its starting state (S1, rule 4). Rows are appended and never move;
+ * `rowOf` finds a lot's row.
+ */
 export interface LotColumns {
   n: number;
-  /** Statics row, ascending. */
+  /** Statics row. */
   lot: Int32Array;
+  /** By lot (not by row): its row + 1, 0 when it has none. Lots past its length have none. */
+  rowOf: Int32Array;
   /** `LOT_*`. */
   state: Uint8Array;
   /** Attempt. */
@@ -196,6 +201,17 @@ export interface StepCtx {
    * size level gains a home (the lot becomes `LOT_DONE` and no row is made). With `funded`, `day`
    * must fall in this month and no programme id may be empty or hold ',' (ids are stored joined
    * with ','); a funded start always makes a row.
+   *
+   * The row returned is `world.projects.n` as read just before the call. Its identity, size and
+   * funding columns are set before its `'start'` and first `'enter'` are sent; its stage columns
+   * (`stage`, `outcome`, `length`, `used`, `anchor`, `speed`, `leave`) are set just after those
+   * two and before any later event of its chain. The chain may append further rows (a lot freed
+   * and started again), so `n` can end above row + 1. With -1, no row is made.
+   *
+   * Called from `serve`, or from `onProjectEvent` during systems 5 and 6, the chain's stage events
+   * reach `onProjectEvent` synchronously (re-entrantly in the second case) before the call
+   * returns. Called from `policyChanged`, `moneyIn`, `apply` or `shadow`, they reach only `out`
+   * (rule 16 as amended).
    */
   startProject(lot: number, day: Day, funded: FundedStart | null): number;
   /**
@@ -218,7 +234,7 @@ export interface FundingSystem {
   moneyIn(ctx: StepCtx): void;
   /**
    * Just after it is sent: each event of system 3, and each event of systems 5 and 6 (a start and
-   * its chain to the month's end), except the `'start'` of a project this funding system started
+   * its chain to the month's end; not `'displaced'`, which goes to `out` only), except the `'start'` of a project this funding system started
    * itself through `ctx.startProject`, with a `FundedStart` or with null; a start the core makes
    * in that start's chain (a lot freed and started again) is passed. It must not call
    * `startProject` during system 3 (it throws there).

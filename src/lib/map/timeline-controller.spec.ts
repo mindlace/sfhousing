@@ -187,20 +187,69 @@ describe('TimelineController ordering', () => {
     expect(c.debugSnapshot().revision).toBe(0);
   });
 
-  it('ignores a non-empty demolish list after revision 0, with one console.error', () => {
+  it('applies demolish after revision 0 like revision-0 entries', () => {
     const c = controller();
     c.apply(timelineSmall);
     c.apply({
       ...timelineSmallRev1,
       demolish: [{ parcelId: SLOT.b.parcelId, day: DAYS.start }]
     });
-    expect(error).toHaveBeenCalledTimes(1);
     expect(c.debugSnapshot().revision).toBe(1);
-    expect(ids(deps)).not.toContain(solid(B));
-    expect(c.debugSnapshot().demolish.total).toBe(timelineSmall.demolish.length);
+    expect(c.debugSnapshot().demolish.total).toBe(timelineSmall.demolish.length + 1);
     c.setTime(DAYS.horizon);
     deps.flushFrame();
-    expect(deps.replaced.has(SLOT.b.parcelId)).toBe(false);
+    expect(deps.replaced.has(SLOT.b.parcelId)).toBe(true);
+    expect(c.demolished.has(SLOT.b.parcelId)).toBe(true);
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it('restore shows the existing building again on every day', () => {
+    const lot = SLOT.c.parcelId;
+    expect(timelineSmall.demolish.some((e) => e.parcelId === lot)).toBe(true);
+    const c = controller();
+    c.apply(timelineSmall);
+    c.setTime(DAYS.horizon);
+    deps.flushFrame();
+    expect(deps.replaced.has(lot)).toBe(true);
+    c.apply({ ...timelineSmallRev1, restore: [lot] });
+    deps.flushFrame();
+    expect(deps.replaced.has(lot)).toBe(false);
+    for (const day of [DAYS.start, DAYS.horizon]) {
+      c.setTime(day);
+      deps.flushFrame();
+      expect(deps.replaced.has(lot)).toBe(false);
+      expect(c.demolished.has(lot)).toBe(false);
+    }
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it('an update with no restore and empty demolish leaves the pump as it was', () => {
+    const c = controller();
+    c.apply(timelineSmall);
+    c.setTime(DAYS.horizon);
+    deps.flushFrame();
+    const before = { demolish: c.debugSnapshot().demolish, replaced: [...deps.replaced] };
+    const events = deps.events.filter((e) => e[0] !== 'setLayers').length;
+    c.apply(timelineSmallRev1);
+    while (deps.pendingFrames() > 0) deps.flushFrame();
+    expect(c.debugSnapshot().demolish).toEqual(before.demolish);
+    expect([...deps.replaced]).toEqual(before.replaced);
+    expect(deps.events.filter((e) => e[0] !== 'setLayers')).toHaveLength(events);
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it('a revision gap with demolish changes nothing and asks for resync', () => {
+    const c = controller();
+    c.apply(timelineSmall);
+    c.apply({
+      ...timelineSmallRev1,
+      revision: 2,
+      demolish: [{ parcelId: SLOT.b.parcelId, day: DAYS.start }],
+      restore: [SLOT.c.parcelId]
+    });
+    expect(deps.resyncCount).toBe(1);
+    expect(c.debugSnapshot().revision).toBe(0);
+    expect(c.debugSnapshot().demolish.total).toBe(timelineSmall.demolish.length);
   });
 
   it('ignores an unknown removed cell and emits no layers for a cell with zero parts', () => {

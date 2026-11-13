@@ -1,21 +1,28 @@
-import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
-import { MAX_SCALE, MIN_SCALE } from '$lib/sim/levers/types';
-import { P, drawOn } from '$lib/sim/scenario/rng';
-import { revisionRatio } from '$lib/sim/scenario/engine';
-import { sampleAdvance, sampleTransition } from '$lib/timelapse/model';
-import { stageMonths, type Day } from '$lib/timelapse/time';
-import {
-  EXIT_ORDER,
-  PATHWAYS,
-  STAGE_ORDER,
-  type Calibration,
-  type Pathway,
-  type RevisionModel,
-  type Stage
-} from '$lib/timelapse/types';
-import { pushRev } from './columns';
+import * as scenarioCodecModule from '$lib/data/scenario-codec';
+import * as leversTypesModule from '$lib/sim/levers/types';
+import * as rngModule from '$lib/sim/scenario/rng';
+import * as engineModule from '$lib/sim/scenario/engine';
+import * as modelModule from '$lib/timelapse/model';
+import * as timeModule from '$lib/timelapse/time';
+import type { Day } from '$lib/timelapse/time';
+import * as timelapseTypesModule from '$lib/timelapse/types';
+import type { Calibration, Pathway, RevisionModel, Stage } from '$lib/timelapse/types';
+import * as columnsModule from './columns';
 import type { PolicyFrame } from './policy/frame';
-import { NO_DAY, RULE_NONE, RULE_PIPELINE, type World } from './types';
+import * as typesModule from './types';
+import type { World } from './types';
+
+// Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
+// use of an imported name is a getter call (docs/dev/world-core.md, Cost).
+const { FILL_LEVELS, fillStories } = scenarioCodecModule;
+const { MAX_SCALE, MIN_SCALE } = leversTypesModule;
+const { P, drawOn } = rngModule;
+const { revisionRatio } = engineModule;
+const { sampleAdvance, sampleTransition } = modelModule;
+const { stageMonths } = timeModule;
+const { EXIT_ORDER, PATHWAYS, STAGE_ORDER } = timelapseTypesModule;
+const { pushRev } = columnsModule;
+const { NO_DAY, RULE_NONE, RULE_PIPELINE } = typesModule;
 
 type Scale = Partial<Record<Stage, number>>;
 const F = FILL_LEVELS.length;

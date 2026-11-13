@@ -1,12 +1,21 @@
 import type { ParcelId } from '$lib/data/parcel';
 import type { Precompute } from '$lib/sim/scenario/input';
-import { lastInitiationMonth, piecewiseMonth, skipBounds } from '$lib/sim/scenario/input';
-import { P, drawOn, simEntity, streamOf } from '$lib/sim/scenario/rng';
-import { exp, log } from '$lib/timelapse/math';
-import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
-import { monthFirstDay, monthLastDay, monthOfDay } from './months';
+import * as inputModule from '$lib/sim/scenario/input';
+import * as rngModule from '$lib/sim/scenario/rng';
+import * as mathModule from '$lib/timelapse/math';
+import * as timeModule from '$lib/timelapse/time';
+import type { Day } from '$lib/timelapse/time';
+import * as monthsModule from './months';
 import type { PolicyTimeline, ZoningView } from './policy/frame';
 import type { Statics } from './statics';
+
+// Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
+// use of an imported name is a getter call (docs/dev/world-core.md, Cost).
+const { lastInitiationMonth, piecewiseMonth, skipBounds } = inputModule;
+const { P, drawOn, simEntity, streamOf } = rngModule;
+const { exp, log } = mathModule;
+const { MONTH_DAYS } = timeModule;
+const { monthFirstDay, monthLastDay, monthOfDay } = monthsModule;
 
 const rateMemo = new WeakMap<Precompute, Map<number, Float64Array>>();
 
@@ -131,8 +140,8 @@ const allLots = new WeakMap<Statics, Int32Array>();
  * `c <= month` from lot-month `lastInitiationMonth(asOf, monthFirstDay(c) - 1) + 1` (the segments
  * `ordinaryStart` walks), with `Tmax = lastInitiationMonth(asOf, monthLastDay(through))`: a draw
  * above it passes its threshold after lot-month `Tmax`, which begins after `through` ends.
- * Infinity where nothing is skipped. Memoised per (timeline, statics, `month`, `through`); reads
- * frames up to `month` only.
+ * Infinity where nothing is skipped. Memoised per (timeline, statics, last change `<= month`,
+ * `through`); reads frames up to `month` only.
  */
 export function skipBound(
   statics: Statics,
@@ -150,16 +159,21 @@ export function skipBound(
     memo = new Map();
     byStatics.set(statics, memo);
   }
-  const key = `${month}:${through}`;
-  let out = memo.get(key);
-  if (out) return out;
   const asOf = statics.asOf;
-  const f1 = timeline.frameAt(1);
-  const views: Float64Array[] = [startRates(f1.view, f1.market)];
-  const bounds: number[] = [];
+  const changes: number[] = [];
   for (const c of timeline.changes()) {
     if (c <= 1) continue;
     if (c > month) break;
+    changes.push(c);
+  }
+  // The bound reads only the changes up to `month`: every month from the last of them on shares it.
+  const key = `${changes.length > 0 ? changes[changes.length - 1] : 1}:${through}`;
+  let out = memo.get(key);
+  if (out) return out;
+  const f1 = timeline.frameAt(1);
+  const views: Float64Array[] = [startRates(f1.view, f1.market)];
+  const bounds: number[] = [];
+  for (const c of changes) {
     const f = timeline.frameAt(c);
     bounds.push(lastInitiationMonth(asOf, monthFirstDay(asOf, c) - 1));
     views.push(startRates(f.view, f.market));
