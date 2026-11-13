@@ -101,4 +101,25 @@ describe.skipIf(liveDir() === null)('live city', () => {
     );
     expect(ms).toBeGreaterThan(0);
   });
+
+  it('48 worlds, one month, one frame, live city: printed', async () => {
+    const input = await liveInput(liveDir()!);
+    const statics = staticsOf(input);
+    const t = oneFrame(frameOf(input));
+    const worlds = Array.from({ length: WORLDS }, (_, i) =>
+      createWorld(statics, t, i + 1, NOWHERE)
+    );
+    const dues = worlds.map((w, i) => planDue(w, statics, t, i + 1, THROUGH));
+    const samples: number[] = [];
+    for (let m = 1; m <= LAST; m++) {
+      const t0 = performance.now();
+      for (let i = 0; i < WORLDS; i++) step(worlds[i], dues[i], statics, t, i + 1, NOWHERE);
+      if (m > WARM) samples.push(performance.now() - t0);
+    }
+    console.log(
+      `world bench, live city, ${WORLDS} worlds, one month (months ${WARM + 1}..${LAST}): ` +
+        `median ${quantile(samples, 0.5).toFixed(3)} ms, p90 ${quantile(samples, 0.9).toFixed(3)} ms`
+    );
+    expect(samples).toHaveLength(LAST - WARM);
+  });
 });
