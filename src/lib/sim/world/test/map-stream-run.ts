@@ -1,6 +1,8 @@
 // Test support: a world feeding a `MapStream`, stepped and flushed month by month. Browser-safe.
-import type { TimelineUpdate } from '$lib/map/types';
+import type { ParcelId } from '$lib/data/parcel';
+import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
 import { validateTimedCell } from '$lib/map/timelapse/encode';
+import type { Day } from '$lib/timelapse/time';
 import { planDue } from '../due';
 import type { MapStream } from '../map-stream';
 import type { PolicyTimeline } from '../policy/frame';
@@ -98,4 +100,34 @@ export function fill(o: {
     out.push(u);
   }
   return out;
+}
+
+/**
+ * Accepts revision 0 at any time, else only last + 1; throws otherwise. Folds cells, removals,
+ * demolish and restore into `cells` and `demolished` (parcel → day), as the map does: revision 0
+ * replaces both; later, `restore` drops a lot before `demolish` adds, and the earliest day wins.
+ */
+export class FakeController {
+  cells = new Map<string, TimedPackedCell>();
+  demolished = new Map<ParcelId, Day>();
+  revision = -1;
+
+  apply(u: TimelineUpdate): void {
+    if (u.revision !== 0 && (this.revision < 0 || u.revision !== this.revision + 1)) {
+      throw new Error(`FakeController: revision ${u.revision} after ${this.revision}`);
+    }
+    this.revision = u.revision;
+    if (u.revision === 0) {
+      this.cells.clear();
+      this.demolished.clear();
+    } else {
+      for (const id of u.restore ?? []) this.demolished.delete(id);
+    }
+    for (const c of u.cells) this.cells.set(c.cellId, c);
+    for (const id of u.removedCells) this.cells.delete(id);
+    for (const d of u.demolish) {
+      const held = this.demolished.get(d.parcelId);
+      if (held === undefined || d.day < held) this.demolished.set(d.parcelId, d.day);
+    }
+  }
 }

@@ -5,6 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
 import { FILL_LEVELS } from '$lib/data/scenario-codec';
 import { makeFakeTimelineDeps, type FakeTimelineDeps } from '$lib/map/test/fake-timeline-deps';
+import { validateTimedCell } from '$lib/map/timelapse/encode';
 import { TimelineController } from '$lib/map/timeline-controller';
 import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
 import { precomputeOf } from '$lib/sim/scenario/input';
@@ -27,7 +28,13 @@ import { startRates } from './rates';
 import { benchInput, fixtureInput } from './test/cities.node';
 import { benchRecords, fixtureRecords } from './test/map-stream-cities.node';
 import { streamDeps } from './test/map-stream-deps';
-import { fill, rewindTo, startStream, type StreamSink } from './test/map-stream-run';
+import {
+  FakeController,
+  fill,
+  rewindTo,
+  startStream,
+  type StreamSink
+} from './test/map-stream-run';
 import { Recorder, runWorld, SEEDS } from './test/run';
 import { changingAt, everyStage, frameOf, oneFrame } from './test/timeline';
 import { ORIGIN_SIM, type Due } from './types';
@@ -475,6 +482,7 @@ describe('map-stream: rewind (rule 9)', () => {
       expect(x.slotProjectIds).not.toContain(projectId);
     expect(named(refill, lot).restore.length).toBe(1);
     expect(named(refill, lot).demolish).toEqual([]);
+    expect(foldDemolitions([...updates, ...refill]).has(lot)).toBe(false);
     const ctl = controllerOf([...updates, ...refill]);
     const last = lastDayOf(re.world);
     for (let d = day - 1; d <= last; d += 97) expect(hiddenOn(ctl, lot, d)).toBe(false);
@@ -605,7 +613,8 @@ describe('map-stream: rewind (rule 9)', () => {
     const busy = changingAt(61, base, frameOf(input, { id: 1, market: 2 }), null);
     // a cell whose projects in the first fill all began after month 60 and which holds a
     // different project 12 months into the refill
-    let found: { seed: number; cell: string } | null = null;
+    let found: { seed: number; cell: string; added: string; first: Set<string> } | null = null;
+    let want: string[] = [];
     for (const seed of SEEDS) {
       const w1 = runWorld(statics, timeline, seed, 120);
       const n60 = runWorld(statics, timeline, seed, 60).projects.n;
@@ -620,20 +629,33 @@ describe('map-stream: rewind (rule 9)', () => {
         if (a === null) continue;
         const rows = firstRows.get(a);
         if (!rows || rows.some((r) => r < n60)) continue;
-        const ids = new Set(rows.map((r) => projectIdOf(w1, r)));
-        if (!ids.has(projectIdOf(w2, row))) found = { seed, cell: a };
+        const first = new Set(rows.map((r) => projectIdOf(w1, r)));
+        const added = projectIdOf(w2, row);
+        if (first.has(added)) continue;
+        found = { seed, cell: a, added, first };
+        want = [];
+        for (let r = 0; r < w2.projects.n; r++)
+          if (anchorOfRow(w2, r) === a) want.push(projectIdOf(w2, r));
       }
       if (found) break;
     }
     expect(found).not.toBeNull();
-    const { seed, cell } = found!;
+    const { seed, cell, added, first } = found!;
     const { run, saved, updates } = firstFill({ seed, save: 60, through: 120 });
     expect(foldCells(updates).has(cell)).toBe(true);
     const re = rewound(saved, run.stream, busy, 72, seed);
     const refill = fill({ ...re, through: 72, flushEvery: 12 });
     expect(refill).toHaveLength(1);
-    expect(refill[0].cells.map((c) => c.cellId)).toContain(cell);
     expect(refill[0].removedCells).not.toContain(cell);
+    const packed = refill[0].cells.find((c) => c.cellId === cell);
+    expect(packed).toBeDefined();
+    // the cell holds the refill's projects only: the new one in, every first-fill project the
+    // refill did not bring back out (a sim id names its lot and start count, so a first-fill
+    // project restarted on its lot comes back under its id)
+    expect(packed!.slotProjectIds).toContain(added);
+    expect([...packed!.slotProjectIds].sort()).toEqual(want.sort());
+    for (const id of first)
+      if (!want.includes(id)) expect(packed!.slotProjectIds).not.toContain(id);
   });
 
   it('the restore and the new day of one lot travel in one update', () => {
@@ -676,5 +698,147 @@ describe('map-stream: rewind (rule 9)', () => {
       expect(hiddenOn(ctl, lot, next.day - 1)).toBe(false);
       expect(hiddenOn(ctl, lot, next.day)).toBe(true);
     }
+  });
+});
+
+/** A new stream's `snapshot` of a copy of `world`. */
+function freshSnapshot(world: World): TimelineUpdate {
+  const fresh = createMapStream(streamDeps(input, records), WINDOW);
+  return fresh.snapshot(structuredClone(world), statics);
+}
+
+/** Same cell ids, each cell equal, same demolish list. */
+function expectSameSnapshot(a: TimelineUpdate, b: TimelineUpdate): void {
+  const ids = (u: TimelineUpdate) => u.cells.map((c) => c.cellId).sort();
+  expect(ids(a)).toEqual(ids(b));
+  const byId = new Map(b.cells.map((c) => [c.cellId, c]));
+  for (const c of a.cells) expect(c).toEqual(byId.get(c.cellId));
+  expect(a.demolish).toEqual(b.demolish);
+}
+
+describe('map-stream: snapshot and revisions (rules 7, 10)', () => {
+  it("snapshot after a plain fill equals a fresh stream's cells", () => {
+    const { run } = firstFill({ save: 60, through: 120 });
+    const s = run.stream.snapshot(run.world, statics);
+    expect(s.revision).toBe(0);
+    expect(s.cells.length).toBeGreaterThan(0);
+    expect(s.demolish.length).toBeGreaterThan(0);
+    for (const c of s.cells) validateTimedCell(c);
+    expectSameSnapshot(s, freshSnapshot(run.world));
+  });
+
+  it("snapshot after a rewind and refill equals a fresh stream's cells", () => {
+    const { run, saved } = firstFill({ save: 60, through: 120 });
+    const re = rewound(saved, run.stream, changingAt(61, base, NO_STARTS, null), 120);
+    drain(re);
+    fill({ ...re, through: 120 });
+    const s = re.stream.snapshot(re.world, statics);
+    expect(s.revision).toBe(0);
+    expect(s.restore).toBeUndefined();
+    expect(s.removedCells).toEqual([]);
+    expectSameSnapshot(s, freshSnapshot(re.world));
+  });
+
+  it('snapshot restarts the count', () => {
+    const { run } = firstFill({ save: 30, through: 60 });
+    expect(run.stream.snapshot(run.world, statics).revision).toBe(0);
+    const next = fill({ ...run, through: 72 });
+    expect(next.length).toBeGreaterThan(0);
+    expect(next.map((u) => u.revision)).toEqual(next.map((_, i) => i + 1));
+  });
+
+  it('snapshot leaves a cell waiting on chunks dirty; it is sent once ready', () => {
+    const { run } = firstFill({ save: 30, through: 60 });
+    const all = freshSnapshot(run.world);
+    const waiting = all.cells[0].cellId;
+    let ready = false;
+    const sdeps = streamDeps(input, records, { ready: (c) => ready || c !== waiting });
+    const stream = createMapStream(sdeps, WINDOW);
+    const world = structuredClone(run.world);
+    const s = stream.snapshot(world, statics);
+    expect(s.cells.map((c) => c.cellId)).not.toContain(waiting);
+    expect(s.cells.length).toBeGreaterThan(0);
+    expect(stream.flush(world, statics, Infinity)).toBeNull();
+    ready = true;
+    const u = stream.flush(world, statics, Infinity)!;
+    expect(u.revision).toBe(1);
+    expect(u.cells.map((c) => c.cellId)).toEqual([waiting]);
+    expect(u.cells[0]).toEqual(all.cells[0]);
+    expect(u.demolish).toEqual([]);
+  });
+
+  it('every update is accepted in order by a controller that needs last plus one', () => {
+    const fake = new FakeController();
+    const seen: TimelineUpdate[] = [];
+    const feed = (us: TimelineUpdate[]) => {
+      for (const u of us) {
+        // every update passes validateTimedCell (spec test 7)
+        for (const c of u.cells) validateTimedCell(c);
+        fake.apply(u);
+        seen.push(u);
+      }
+    };
+    const { run, saved, updates } = firstFill({ save: 60, through: 120 });
+    feed(updates);
+    const re = rewound(saved, run.stream, changingAt(61, base, NO_STARTS, null), 132);
+    feed(drain(re));
+    feed(fill({ ...re, through: 120 }));
+    feed([re.stream.snapshot(re.world, statics)]);
+    feed(fill({ ...re, through: 132 }));
+    expect(seen.filter((u) => u.revision === 0)).toHaveLength(2);
+    expect(seen.at(-1)!.revision).toBeGreaterThan(0);
+
+    const want = new FakeController();
+    want.apply(freshSnapshot(re.world));
+    expect(fake.cells).toEqual(want.cells);
+    expect(fake.demolished).toEqual(want.demolished);
+  });
+
+  it('the fake controller refuses an update out of order', () => {
+    const fake = new FakeController();
+    const u: TimelineUpdate = { revision: 0, cells: [], removedCells: [], demolish: [] };
+    fake.apply(u);
+    expect(() => fake.apply({ ...u, revision: 2 })).toThrow();
+    fake.apply({ ...u, revision: 1 });
+    expect(fake.revision).toBe(1);
+  });
+
+  it('a stream stepped past windowMonths with nothing changing gets exactly one complete update (fixture-0)', () => {
+    use(fixture);
+    // no starts from month 1: once the pipeline is through, nothing happens
+    const still = oneFrame(NO_STARTS);
+    const rec = new Recorder();
+    runWorld(statics, still, SEED, 240, rec);
+    const last = Math.max(...rec.events.map((e) => e.month));
+    expect(last).toBeLessThan(230);
+    const windowMonths = last + 3;
+    const stream = createMapStream(streamDeps(input, records), windowMonths);
+    const { world, sink } = startStream(statics, still, SEED, stream);
+    const due = planDue(world, statics, still, SEED, windowMonths + 4);
+    const run = { world, statics, timeline: still, seed: SEED, stream, sink, due };
+    const before = [
+      stream.flush(world, statics, Infinity)!,
+      ...fill({ ...run, through: last + 1 })
+    ];
+    expect(before.length).toBeGreaterThan(0);
+    for (const u of before) expect(u.complete).toBe(false);
+    // the last cell change is before windowMonths; from here on nothing changes
+    expect(fill({ ...run, through: windowMonths - 1 })).toEqual([]);
+    const after = fill({ ...run, through: windowMonths + 4 });
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ cells: [], removedCells: [], demolish: [], complete: true });
+    expect(after[0].revision).toBe(before.length);
+    expect(stream.flush(world, statics, Infinity)).toBeNull();
+  });
+
+  it('a snapshot at or past windowMonths with no ready dirty cell carries complete', () => {
+    const windowMonths = 24;
+    const stream = createMapStream(streamDeps(input, records), windowMonths);
+    const { world, sink } = startStream(statics, timeline, SEED, stream);
+    const due = planDue(world, statics, timeline, SEED, windowMonths);
+    fill({ world, statics, timeline, seed: SEED, stream, sink, due, through: windowMonths - 1 });
+    expect(stream.snapshot(world, statics).complete).toBe(false);
+    fill({ world, statics, timeline, seed: SEED, stream, sink, due, through: windowMonths });
+    expect(stream.snapshot(world, statics).complete).toBe(true);
   });
 });

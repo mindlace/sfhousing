@@ -21,6 +21,14 @@
 //   into `restore` (taking back every pump entry), and then, if it still has a day, into
 //   `demolish` with that day; both may travel in one update (restore is applied first).
 // - An update goes out when a cell is packed or removed, or a demolition or restore is pending.
+//   `complete` (rule 7, ruled: no *ready* dirty cell) is computed on every update; once the world
+//   has stepped month `windowMonths` with no ready dirty cell left, one update says so even with
+//   nothing else in it (a finite-budget flush can return null while a cell is part-warmed, so a
+//   host drains until `complete`). It is sent once; a rewind or an update without it re-arms it.
+// - `snapshot` (rule 10): every ready cell with a project, packed with no budget, as revision 0
+//   with the whole demolish list computed from the world (so a fresh stream answers alike). The
+//   sent bookkeeping (`sentKeys`, `sentCells`, `sentDemolitions`) becomes what it sent; pending
+//   removals, restores and demolitions are superseded. Cells waiting on chunks stay dirty.
 //
 // Worker-safe, under the determinism lint rule (no transcendental Math).
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
@@ -107,6 +115,8 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
   /** Cells the map holds: sent in `cells` and not since in `removedCells`. */
   const sentCells = new Set<string>();
   let revision = 0;
+  /** The last update sent said `complete` and nothing has re-armed it since. */
+  let completeSent = false;
 
   const cellOf = (id: ParcelId): string => P.cells[P.cell[P.index.get(id)!]].cellId;
 
@@ -254,6 +264,27 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
     return items;
   }
 
+  /** Rule 7 (ruled): month `windowMonths` stepped and no ready dirty cell. */
+  function isComplete(world: World): boolean {
+    if (world.month < windowMonths) return false;
+    for (const cell of dirty.keys()) if (packable(cell)) return false;
+    return true;
+  }
+
+  /** T11 lot → the earliest day a project of `world` entered construction on it, at `day`. */
+  function demolitionsOf(world: World, statics: Statics, day: number): Map<ParcelId, number> {
+    const out = new Map<ParcelId, number>();
+    for (let row = 0; row < world.projects.n; row++) {
+      const c = scheduleAt(world, statics, row, day)?.entered.construction;
+      if (c === undefined) continue;
+      for (const id of place(world, statics, row).ids) {
+        const d = out.get(id);
+        if (d === undefined || c < d) out.set(id, c);
+      }
+    }
+    return out;
+  }
+
   return {
     onEvent(e, world, statics) {
       const at = place(world, statics, e.row);
@@ -310,11 +341,13 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
         cells.push(packSafely(cell, items));
         sentCells.add(cell);
       }
+      const complete = isComplete(world);
       if (
         cells.length === 0 &&
         removedCells.length === 0 &&
         newDemolitions.size === 0 &&
-        restores.size === 0
+        restores.size === 0 &&
+        (!complete || completeSent)
       ) {
         return null;
       }
@@ -333,16 +366,7 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
         const held = sentDemolitions.get(d.parcelId);
         if (held === undefined || d.day < held) sentDemolitions.set(d.parcelId, d.day);
       }
-      let complete = false;
-      if (world.month >= windowMonths) {
-        complete = true;
-        for (const cell of dirty.keys()) {
-          if (packable(cell)) {
-            complete = false;
-            break;
-          }
-        }
-      }
+      completeSent = complete;
       const u: TimelineUpdate = { revision: revision++, cells, removedCells, demolish, complete };
       if (restore.length > 0) u.restore = restore;
       return u;
@@ -372,16 +396,7 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
         if (at !== undefined && at.cells.length > 0) dirty.set(at.cells[0], true);
       }
       // demolitions of the restored world, diffed against those the map holds
-      const now = new Map<ParcelId, number>();
-      for (let row = 0; row < n; row++) {
-        const s = scheduleAt(world, statics, row, day);
-        const c = s?.entered.construction;
-        if (c === undefined) continue;
-        for (const id of place(world, statics, row).ids) {
-          const d = now.get(id);
-          if (d === undefined || c < d) now.set(id, c);
-        }
-      }
+      const now = demolitionsOf(world, statics, day);
       for (const [lot, held] of sentDemolitions) {
         if (now.get(lot) === held) continue;
         restores.add(lot);
@@ -390,10 +405,57 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
       newDemolitions.clear();
       for (const [lot, d] of now) if (sentDemolitions.get(lot) !== d) newDemolitions.add(lot);
       demolitions = now;
+      completeSent = false;
     },
 
-    snapshot() {
-      throw new Error('map-stream: not built yet');
+    snapshot(world, statics) {
+      const day = monthLastDay(statics.asOf, world.month);
+      // every row placed: a fresh stream has seen no event
+      for (let row = 0; row < world.projects.n; row++) place(world, statics, row);
+      sentKeys.clear();
+      sentCells.clear();
+      const cells: TimedPackedCell[] = [];
+      const waiting = new Set<string>();
+      for (const cell of [...rowsIn.keys()].sort(cmp)) {
+        if (!packable(cell)) {
+          waiting.add(cell);
+          continue;
+        }
+        // unbudgeted: every massing the cell needs is made now
+        const keys: [number, string][] = [];
+        const items = itemsOf(
+          world,
+          statics,
+          cell,
+          day,
+          () => true,
+          () => {},
+          keys
+        )!;
+        for (const [row, key] of keys) sentKeys.set(row, key);
+        if (items.length === 0) continue;
+        cells.push(packSafely(cell, items));
+        sentCells.add(cell);
+      }
+      // revision 0 replaces the map: only the cells waiting on chunks are left to send, those
+      // already queued keeping their place
+      const queued = [...dirty.keys()].filter((c) => waiting.has(c));
+      dirty.clear();
+      for (const c of queued) dirty.set(c, true);
+      for (const c of waiting) dirty.set(c, true);
+      demolitions = demolitionsOf(world, statics, day);
+      newDemolitions.clear();
+      restores.clear();
+      sentDemolitions.clear();
+      for (const [lot, d] of demolitions) sentDemolitions.set(lot, d);
+      const demolish = [...demolitions.keys()].sort(cmp).map((parcelId) => ({
+        parcelId,
+        day: demolitions.get(parcelId)!
+      }));
+      const complete = isComplete(world);
+      completeSent = complete;
+      revision = 1;
+      return { revision: 0, cells, removedCells: [], demolish, complete };
     }
   };
 }

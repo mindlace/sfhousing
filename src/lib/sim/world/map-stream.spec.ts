@@ -673,9 +673,4 @@ describe('map-stream: onEvent and flush', () => {
     expect(u.demolish).toContainEqual({ parcelId: lot, day: -1 });
     expect(stream.flush(world, bench.statics, Infinity)).toBeNull();
   });
-
-  it('snapshot is not built yet', () => {
-    const { world, stream } = started(bench);
-    expect(() => stream.snapshot(world, bench.statics)).toThrow('map-stream: not built yet');
-  });
 });
