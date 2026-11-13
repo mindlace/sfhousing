@@ -3,7 +3,8 @@
 // compaction; the policy and shadow systems come with their own tasks.
 import { ORIGIN_SIM, type FundingSystem, type StepCtx, type World } from '../types';
 import { applyLots, leaveLine, planLotMonth } from './apply';
-import { compactLine, fundOf, initFunding } from './columns';
+import { fundOf, initFunding } from './columns';
+import { compact } from './line-index';
 import { moneyIn, moneyOnEvent } from './pools';
 import { serveLine } from './serve';
 
@@ -59,7 +60,7 @@ export function createFundingSystem(): FundingSystem {
     },
     shadow(ctx) {
       // System 7 runs last in every funded month: no `gone` row survives the step.
-      compactLine(fundOf(ensure(ctx)).line);
+      compact(fundOf(ensure(ctx)).line);
     },
     planLot(ctx, lot) {
       return planLotMonth(ctx, lot);

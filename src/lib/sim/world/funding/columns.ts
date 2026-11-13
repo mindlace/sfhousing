@@ -28,6 +28,16 @@ export interface FundLine extends LineColumns {
   viewMonth: Int32Array;
   /** 1 = removed this step, dropped by `compactLine`. */
   gone: Uint8Array;
+  /** A row's number in the order rows were added: ascending along the line, kept by compaction. */
+  seq: Float64Array;
+  /** The `seq` the next added row takes. */
+  nextSeq: number;
+  /**
+   * Bumped by every change to the line's rows (`addLineRow`, `leaveLine`, `joinLine`,
+   * `compactLine`, and any later writer of a row's columns, such as Task 9's remake): the caches in
+   * `line-index.ts` are rebuilt when it differs from theirs.
+   */
+  version: number;
   /** The last model month whose `apply` ran (0 = none): a day in it or before can no longer apply. */
   appliedThrough: number;
   spellN: number;
@@ -75,7 +85,7 @@ type Col = Int32Array | Uint8Array | Float64Array | string[];
 
 const LINE_ROWS = [
   'lot', 'kind', 'month', 'applied', 'keyDay', 'key', 'bundle', 'f', 'units', 'stories', 'level',
-  'viewMonth', 'gone'
+  'viewMonth', 'gone', 'seq'
 ]; // prettier-ignore
 const SPELLS = ['spellLot', 'spellKind', 'spellK', 'spellR'];
 const SHADOWS = ['shadowLot', 'shadowRow', 'shadowK', 'shadowR', 'shadowExisting', 'shadowMonth'];
@@ -133,6 +143,9 @@ function emptyLine(): FundLine {
     level: new Float64Array(0),
     viewMonth: new Int32Array(0),
     gone: new Uint8Array(0),
+    seq: new Float64Array(0),
+    nextSeq: 0,
+    version: 0,
     appliedThrough: 0,
     spellN: 0,
     spellLot: new Int32Array(0),
@@ -218,18 +231,26 @@ export function addLineRow(line: FundLine): number {
   line.level[row] = 0;
   line.viewMonth[row] = 0;
   line.gone[row] = 0;
+  line.seq[row] = line.nextSeq++;
+  line.version++;
   return row;
 }
 
-/** Drops the rows marked `gone`, keeping the order of the rest. */
+/** Drops the rows marked `gone`, keeping the order of the rest; each run of kept rows moves at once. */
 export function compactLine(line: FundLine): void {
-  let w = 0;
-  for (let r = 0; r < line.n; r++) {
-    if (line.gone[r] === 1) continue;
-    if (w !== r) moveRows(line, LINE_ROWS, r, r + 1, w);
-    w++;
+  const n = line.n;
+  let w = line.gone.subarray(0, n).indexOf(1);
+  if (w < 0) return;
+  let r = w;
+  while (r < n) {
+    while (r < n && line.gone[r] === 1) r++;
+    const from = r;
+    while (r < n && line.gone[r] === 0) r++;
+    if (r > from) moveRows(line, LINE_ROWS, from, r, w);
+    w += r - from;
   }
   line.n = w;
+  line.version++;
 }
 
 /** Appends a money row (zeroed) and returns its index. */

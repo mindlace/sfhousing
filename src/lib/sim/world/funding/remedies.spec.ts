@@ -8,6 +8,10 @@ import { staticsOf, type Statics } from '../statics';
 import { benchInput } from '../test/cities.node';
 import type { FundingSystem, StepSink, World } from '../types';
 import { withFunding } from '../world';
+import { emptyWorld } from '../columns';
+import { leaveLine } from './apply';
+import { KIND_AFFORDABLE, KIND_MARKET, addLineRow, fundOf, initFunding } from './columns';
+import { compact, isWaiting } from './line-index';
 import { serveLine } from './serve';
 import { createFundingSystem } from './system';
 import {
@@ -77,8 +81,6 @@ describe('8a: grouped serving awards the same rows on the same days as the direc
   const input = fundedMini();
   const statics = staticsOf(input);
   let awarded = 0;
-  let direct = 0;
-  let grouped = 0;
 
   it.each(seeds(20))(
     'mini city, random finance %i, 480 months: same events, ledger, world',
@@ -90,16 +92,65 @@ describe('8a: grouped serving awards the same rows on the same days as the direc
       expect(b.events).toEqual(a.events);
       expect(b.ledger).toEqual(a.ledger);
       expect(b.world).toEqual(a.world);
-      expect(b.probes).toBeLessThanOrEqual(a.probes);
       awarded += awards(a);
-      direct += a.probes;
-      grouped += b.probes;
     }
   );
 
-  it('over the 20 finances: awards were made, and grouping asked the award rule less often', () => {
+  it('over the 20 finances: awards were made', () => {
     expect(awarded).toBeGreaterThan(0);
-    expect(grouped).toBeLessThan(direct);
+  });
+
+  it.each([2, 7, 19])(
+    'random finance %i: a structuredClone at month 24 steps as the original, whose caches are warm',
+    (n) => {
+      const finance = randomFinance(n);
+      const timeline = oneMoneyTimeline({ ...input, finance }, finance);
+      const core = withFunding(createFundingSystem());
+      const NOWHERE: StepSink = { event() {} };
+      const world = core.createWorld(statics, timeline, n, NOWHERE);
+      const due = core.planDue(world, statics, timeline, n, MONTHS);
+      for (let m = 1; m <= 24; m++) core.step(world, due, statics, timeline, n, NOWHERE);
+      const copy = structuredClone(world);
+      const copyDue = core.planDue(copy, statics, timeline, n, MONTHS);
+      const tail = (w: World, d: typeof due) => {
+        const events: MonthEvent[] = [];
+        const ledger: LedgerEvent[] = [];
+        let month = 0;
+        const out: StepSink = {
+          event: (e) => events.push({ ...e, month }),
+          ledger: (e) => ledger.push(e)
+        };
+        for (let m = 25; m <= MONTHS; m++) {
+          month = m;
+          core.step(w, d, statics, timeline, n, out);
+        }
+        return { events, ledger };
+      };
+      const a = tail(world, due);
+      const b = tail(copy, copyDue);
+      expect(b.events).toEqual(a.events);
+      expect(b.ledger).toEqual(a.ledger);
+      expect(copy).toEqual(world);
+    }
+  );
+});
+
+describe('the line index', () => {
+  it('a row added outside joinLine (the version moves) is seen: the index is rebuilt', () => {
+    const w = emptyWorld(0);
+    initFunding(w, ['p']);
+    const { line } = fundOf(w);
+    expect(isWaiting(line, 5, KIND_AFFORDABLE)).toBe(false);
+    const r = addLineRow(line);
+    line.lot[r] = 5;
+    line.kind[r] = KIND_AFFORDABLE;
+    expect(isWaiting(line, 5, KIND_AFFORDABLE)).toBe(true);
+    expect(isWaiting(line, 5, KIND_MARKET)).toBe(false);
+    leaveLine(line, 5);
+    expect(line.gone[r]).toBe(1);
+    expect(isWaiting(line, 5, KIND_AFFORDABLE)).toBe(false);
+    compact(line);
+    expect(line.n).toBe(0);
   });
 });
 

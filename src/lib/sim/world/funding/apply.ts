@@ -15,6 +15,7 @@ import {
   spellOf,
   type FundLine
 } from './columns';
+import { beforeChange, isWaiting, leaveRows, noteAdded } from './line-index';
 
 const KINDS: readonly ProjectKind[] = ['market', 'affordable'];
 const CODE: Record<ProjectKind, number> = { market: KIND_MARKET, affordable: KIND_AFFORDABLE };
@@ -42,11 +43,7 @@ function lineOf(world: World): FundLine | null {
 
 /** True when `lot` holds a waiting (not `gone`) application of kind code `kind`. */
 function waiting(line: FundLine | null, lot: number, kind: number): boolean {
-  if (line === null) return false;
-  for (let i = 0; i < line.n; i++) {
-    if (line.lot[i] === lot && line.kind[i] === kind && line.gone[i] === 0) return true;
-  }
-  return false;
+  return line !== null && isWaiting(line, lot, kind);
 }
 
 /** The attempt of free lot `lot` and each kind's spell start (a respelled one from `spellOf`). */
@@ -66,27 +63,12 @@ export function spellsOf(ctx: StepCtx, lot: number): { market: Spell; affordable
   return { market: spell(KIND_MARKET), affordable: spell(KIND_AFFORDABLE) };
 }
 
-/** The waiting (not `gone`) applications of `line` as `lot * 2 + kind` (kind codes are 0 and 1). */
-function waitingSet(line: FundLine): Set<number> {
-  const out = new Set<number>();
-  for (let i = 0; i < line.n; i++) if (line.gone[i] === 0) out.add(line.lot[i] * 2 + line.kind[i]);
-  return out;
-}
-
-/**
- * Each kind's clock read through `ctx.month`, null for a kind already waiting. `held` is
- * `waitingSet(line)` when the caller asks for many lots of one unchanged line.
- */
-function clocksOf(
-  ctx: StepCtx,
-  lot: number,
-  line: FundLine | null,
-  held: Set<number> | null = null
-): (KindClock | null)[] {
+/** Each kind's clock read through `ctx.month`, null for a kind already waiting. */
+function clocksOf(ctx: StepCtx, lot: number, line: FundLine | null): (KindClock | null)[] {
   const spells = spellsOf(ctx, lot);
   const sh = seedHash(ctx.seed);
   return KINDS.map((kind) =>
-    (held === null ? waiting(line, lot, CODE[kind]) : held.has(lot * 2 + CODE[kind]))
+    waiting(line, lot, CODE[kind])
       ? null
       : kindClock(ctx.statics, ctx.timeline, ctx.month, sh, spells[kind], kind)
   );
@@ -117,6 +99,8 @@ export function planLotMonth(ctx: StepCtx, lot: number): number {
  */
 export function joinLine(line: FundLine, month: number, apps: Application[]): void {
   const sorted = [...apps].sort((a, b) => a.key - b.key);
+  const before = beforeChange(line);
+  const from = line.n;
   for (const a of sorted) {
     const i = addLineRow(line);
     line.lot[i] = a.lot;
@@ -132,6 +116,7 @@ export function joinLine(line: FundLine, month: number, apps: Application[]): vo
     line.level[i] = a.level;
     line.viewMonth[i] = a.viewMonth;
   }
+  noteAdded(line, before, from, line.n);
 }
 
 /**
@@ -144,10 +129,8 @@ export function applyLots(ctx: StepCtx, lots: Int32Array): void {
   const { line } = fundOf(ctx.world);
   const rank = ctx.statics.rank;
   const apps: Application[] = [];
-  // The line does not change until `joinLine` below: one index of its waiting rows serves all lots.
-  const held = waitingSet(line);
   for (const lot of lots) {
-    for (const c of clocksOf(ctx, lot, line, held)) {
+    for (const c of clocksOf(ctx, lot, line)) {
       if (c === null || c.day === null || c.month !== ctx.month) continue;
       const ids = ctx.timeline.frameAt(c.viewMonth).finance!.programmes;
       apps.push({
@@ -169,7 +152,7 @@ export function applyLots(ctx: StepCtx, lots: Int32Array): void {
   line.appliedThrough = ctx.month;
 }
 
-/** Rule 8: marks both of the lot's waiting applications `gone`. */
+/** Rule 8: marks both of the lot's waiting applications `gone` (through the line's index). */
 export function leaveLine(line: FundLine, lot: number): void {
-  for (let i = 0; i < line.n; i++) if (line.lot[i] === lot) line.gone[i] = 1;
+  leaveRows(line, lot);
 }
