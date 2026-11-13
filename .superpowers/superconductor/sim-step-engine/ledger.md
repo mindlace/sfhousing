@@ -230,6 +230,8 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 ## Waves
 - gate wave 1 2026-11-13 08:55: VERDICT OK* (seven_day 27% of 60% reserve, headroom 33; five_hour NO DATA). Calibration from sim-financing: about 1 point a spec, a floor (smallest specs, integer resolution). Partner's instruction was "enter sim-step-engine and execute": wave 1 admitted.
 - wave 1: start seven_day 27% @ 2026-11-13 09:05 | exclusive: yes so far
+- 2026-11-13 12:35 partner: "Can we get the funding hook integrated so that world-funding can start?" → world-core told to land the `onProjectEvent` widening first and name a "hook ready" sha; the conductor merges that sha and dispatches world-funding from it; world-core's last tasks merge later. S12 is frozen for a consumer from that sha.
+- gate wave 2 2026-11-13 12:35: VERDICT OK* (seven_day 31% of 60%, headroom 29; five_hour NO DATA). Wave 1 so far: 27% to 31% with one spec complete and one at 10 of 12 tasks, so about 2 points a spec. world-funding admitted by the partner's request.
 
 ## Frame-defect tally
 - shared-type-home: 3 — instances: 2026-11-13 wave 1, S3 to S6 had no named file; 2026-11-13 Q6 month arithmetic; 2026-11-13 Q8 the dev doc. TRIPWIRE reached: the package names no home for anything two specs share. Settled for wave 1; before each later wave the conductor names shared files in the assignment, and the aggregate goes to the partner at the wave boundary as a candidate composer note.
