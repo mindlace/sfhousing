@@ -195,8 +195,22 @@ describe('pools, arrivals and money events', () => {
       expect(pools.received[q]).toBe(fl.dollarsPerYear);
       expect(pools.moneyDay[q]).toBe(bench.asOf);
       expect(pools.moneyMonth[q]).toBe(1);
-      expect(availableOf(pools, q, p)).toBe(fl.dollarsPerYear);
+      // Month 1's serving (Task 6) commits some of it: what is left is the inflow less the
+      // month's commits, plus its releases and repayments, less guarantee losses.
+      let moved = 0;
+      for (const e of ledger) {
+        if (e.pool !== p.id) continue;
+        if (e.kind === 'commit') moved -= e.dollars;
+        else if (e.kind === 'release' || e.kind === 'repay') moved += e.dollars;
+        else if (e.kind === 'loss') {
+          const g = money.programmes.find((x) => x.id === e.programme)!;
+          if (g.instrument.kind === 'guarantee') moved -= e.dollars;
+        }
+      }
+      expect(availableOf(pools, q, p)).toBe(p.leverage * fl.dollarsPerYear + moved);
     }
+    // Serving ran in month 1: something was committed.
+    expect(ledger.some((e) => e.kind === 'commit')).toBe(true);
     expect(capped).toBe(7);
     const ins = ledger.filter((e) => e.kind === 'in');
     expect(ins).toEqual(
