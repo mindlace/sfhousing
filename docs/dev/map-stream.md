@@ -30,9 +30,9 @@ One massing per project revision, keyed by the revision's content, so never stal
 
 The slicing unit is one project's massing work: a cell's massings are spread over several flushes and the cell is sent only whole. So with a finite budget `flush` can return null while a cell is part-done. Drain with an `Infinity` budget, or until an update has `complete: true`; never until null.
 
-Exactly one update has `complete: true` once `world.month >= windowMonths` and no ready dirty cell is left (a cell waiting on chunks does not block it). A rewind re-arms it.
+Every update sent while `world.month >= windowMonths` and no ready dirty cell is left carries `complete: true` (a cell waiting on chunks does not block it). When nothing else is pending, one update with no cells is sent just to say so, once; a rewind or a later update with `complete: false` re-arms that.
 
-On the live city one project costs up to about 635 ms cold (`CASE:2007.0946PRX:phase:3`), past the 50 ms slice limit. Open item for `ensemble-runner`, for example warming massings ahead of time.
+Open items for `ensemble-runner`, both past the 50 ms slice limit on the live city: one project's massing costs up to about 635 ms cold (`CASE:2007.0946PRX:phase:3`), for example warm massings ahead of time; `snapshot` is unbudgeted and costs about 1,165 ms cold, so answer `resyncMap` in slices or from a warm memo.
 
 ## Numbers
 
