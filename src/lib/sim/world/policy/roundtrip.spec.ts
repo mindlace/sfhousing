@@ -30,7 +30,7 @@ import { PRESETS, resolvePreset, setStageMonths, type TimingSet } from '$lib/sim
 import { reconcilePolicy4 } from '$lib/timeline/reconcile4';
 import { upgradePolicy } from '$lib/timeline/upgrade';
 import type { Day } from '$lib/timelapse/time';
-import type { Pathway, Programme } from '$lib/timelapse/types';
+import type { Pathway, Pool, Programme } from '$lib/timelapse/types';
 import { monthFirstDay, monthLastDay, monthOfDay } from '../months';
 import { compileTimeline, type CompileCtx } from './compile';
 import { firstDifference } from './compare';
@@ -158,6 +158,26 @@ const cityGrant: Programme = {
   tiers: { veryLow: 0.4, low: 0.4, moderate: 0.2, aboveModerate: 0 }
 };
 
+/**
+ * An added pool whose money arrives inside the window (`fundingOnly()`'s inflow is dated before
+ * the mini city's asOf): once on the last day of month 1 (asOf + 30) and the first day of month 2
+ * (asOf + 31), and yearly from asOf + 60. With a programme on it.
+ */
+const latePool: Pool = {
+  id: 'u-pool-late',
+  kind: 'generalRevenue',
+  label: 'Late pool',
+  inflows: [
+    { kind: 'once', day: ASOF + 30, dollars: 300_000 },
+    { kind: 'once', day: ASOF + 31, dollars: 310_000 },
+    { kind: 'yearly', from: ASOF + 60, to: null, dollarsPerYear: 2_000_000 }
+  ],
+  uncapped: false,
+  debt: null,
+  leverage: 1
+};
+const lateGrant: Programme = { ...cityGrant, id: 'u-late-grant', pool: 'u-pool-late', from: ASOF };
+
 interface Case {
   name: string;
   p: SimPolicy;
@@ -211,10 +231,10 @@ const CASES: Case[] = [
     money: true,
     p: doc3({
       funding: {
-        ...fundingOnly(),
         // fundingOnly's scale names a pool the mini finance lacks; the scales case covers scales
         baselineScale: [],
-        programmes: [...fundingOnly().programmes, cityGrant],
+        pools: [...fundingOnly().pools, latePool],
+        programmes: [...fundingOnly().programmes, lateGrant, cityGrant],
         terms: { ...RATE_CUT }
       }
     })
@@ -244,8 +264,8 @@ const CASES: Case[] = [
           { pool: 'm-bank', from: ASOF + 200, scale: 0 },
           { pool: 'm-city', from: ASOF - 30, scale: 1.5 }
         ],
-        pools: fundingOnly().pools,
-        programmes: [...fundingOnly().programmes, cityGrant],
+        pools: [...fundingOnly().pools, latePool],
+        programmes: [...fundingOnly().programmes, lateGrant, cityGrant],
         terms: { ...RATE_CUT, constructionRate: 0.07 }
       }
     })
@@ -341,7 +361,14 @@ describe('round trip: dated policies reproduce today’s levers', () => {
       const n = f.baselineScale.length + f.pools.length + f.programmes.length;
       if (c.money) {
         expect(n + Object.keys(f.terms).length, c.name).toBeGreaterThan(0);
-        expect(today(c.p).plan.finance, c.name).not.toBe(CTX.input.finance);
+        const fin = today(c.p).plan.finance!;
+        expect(fin, c.name).not.toBe(CTX.input.finance);
+        // what the levers add really reaches today's finance
+        const ids = (xs: { id: string }[]) => xs.map((x) => x.id);
+        for (const pool of f.pools) expect(ids(fin.pools), c.name).toContain(pool.id);
+        for (const g of f.programmes) expect(ids(fin.programmes), c.name).toContain(g.id);
+        for (const [k, v] of Object.entries(f.terms))
+          expect(fin.terms[k as keyof typeof fin.terms], `${c.name} ${k}`).toBe(v);
       }
     }
     // zoning and timing cases change what they claim to
@@ -357,6 +384,11 @@ describe('round trip: dated policies reproduce today’s levers', () => {
     }
     const shares = CASES.find((x) => x.name === 'custom route shares')!;
     expect(today(shares.p).plan.newProjects!.calibration).not.toEqual(plain.calibration);
+    const added = CASES.find((x) => x.name.startsWith('fundingOnly'))!.p.funding;
+    expect(added.pools.map((x) => x.id)).toEqual(['u-pool-1', 'u-pool-late']);
+    expect(added.programmes.map((x) => x.id)).toEqual(['u-prog-1', 'u-late-grant', 'u-city-grant']);
+    const typed = CASES.find((x) => x.name === 'typed terms')!.p.funding.terms;
+    expect(Object.keys(typed).length).toBe(4);
     const scales = CASES.find((c) => c.name === 'baseline scales')!.p.funding.baselineScale;
     expect(scales.some((e) => e.from < ASOF)).toBe(true);
     expect(scales.some((e) => e.scale === 0)).toBe(true);
@@ -379,6 +411,7 @@ describe('round trip: dated policies reproduce today’s levers', () => {
       const progIds = fin.programmes.map((g) => g.id);
       const arrivals = arrivalsByMonth(fin, poolIds);
       let total = 0;
+      let addedArrivals = 0;
       const wantChanges: number[] = [];
       let prevOffered: string | null = null;
 
@@ -390,9 +423,11 @@ describe('round trip: dated policies reproduce today’s levers', () => {
           expect(preData(f.view.pre)).toEqual(wantPre);
         }
         expect(f.calibration).toBe(plan.calibration);
+        expect(f.newCalibration, `newCalibration, month ${m}`).toEqual(
+          plan.newProjects!.calibration
+        );
         if (!seenIds.has(f.id)) {
           seenIds.add(f.id);
-          expect(f.newCalibration).toEqual(plan.newProjects!.calibration);
           expect(lookupsAt(f)).toEqual(li.lookups);
         }
         expect(sameScale(f.speed, wantInFlight), `speed, month ${m}`).toBe(true);
@@ -417,6 +452,7 @@ describe('round trip: dated policies reproduce today’s levers', () => {
         }));
         expect(got, `arrivals, month ${m}`).toEqual(arrivals.get(m));
         total += got.length;
+        addedArrivals += got.filter((a) => a.pool.startsWith('u-')).length;
 
         // Frames change only where today's offered set does (market and policies are constant).
         const key = offered.join('');
@@ -424,10 +460,31 @@ describe('round trip: dated policies reproduce today’s levers', () => {
         prevOffered = key;
       }
       expect(total).toBeGreaterThan(0);
+      // an added pool's money arrives in the window, as today's `inflowArrivals` gives it
+      if (c.p.funding.pools.length > 0) expect(addedArrivals).toBeGreaterThan(0);
       expect(t.changes()).toEqual(wantChanges);
       expect(firstDifference(t, compileAll(c.p))).toBeNull();
     });
   }
+
+  it('months are anchored on the day after asOf, independent of ../months', () => {
+    // rule 4, design 3.3: month 1 begins the day after asOf; month 2 at asOf + floor(30.436875) + 1
+    expect(monthFirstDay(ASOF, 1)).toBe(ASOF + 1);
+    expect(monthFirstDay(ASOF, 2)).toBe(ASOF + 31);
+    const c = CASES.find((x) => x.name.startsWith('fundingOnly'))!;
+    const t = compileAll(c.p);
+    const late = (m: number) => {
+      const ff = t.frameAt(m).finance!;
+      return ff.arrivals.filter((a) => ff.pools[a.pool].id === 'u-pool-late').map((a) => a.day);
+    };
+    expect(late(1)).toEqual([ASOF + 30]);
+    // month 2 runs to asOf + floor(2 × 30.436875) = asOf + 60
+    expect(late(2)).toEqual([ASOF + 31, ASOF + 60]);
+    expect(late(3)).toEqual([]);
+    // the policy is in force from month 1: its programme is offered on ASOF + 1
+    const ff = t.frameAt(1).finance!;
+    expect(ff.offered[ff.programmes.findIndex((g) => g.id === 'u-late-grant')]).toBe(1);
+  });
 
   it('the default and the zoning-only documents give one frame on a dataset without dated money', () => {
     const fin = miniFinance(ASOF);
