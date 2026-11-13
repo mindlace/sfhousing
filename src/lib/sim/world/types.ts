@@ -202,9 +202,11 @@ export interface StepCtx {
    * must fall in this month and no programme id may be empty or hold ',' (ids are stored joined
    * with ','); a funded start always makes a row.
    *
-   * The row returned is `world.projects.n` as read just before the call, and it is complete
-   * before any event of its chain is sent. The chain may append further rows (a lot freed and
-   * started again), so `n` can end above row + 1. With -1, no row is made.
+   * The row returned is `world.projects.n` as read just before the call. Its identity, size and
+   * funding columns are set before its `'start'` and first `'enter'` are sent; its stage columns
+   * (`stage`, `outcome`, `length`, `used`, `anchor`, `speed`, `leave`) are set just after those
+   * two and before any later event of its chain. The chain may append further rows (a lot freed
+   * and started again), so `n` can end above row + 1. With -1, no row is made.
    *
    * Called from `serve`, the chain's stage events reach `onProjectEvent` synchronously, before
    * the call returns. Called from another hook, they reach only `out` (rule 16 as amended).
