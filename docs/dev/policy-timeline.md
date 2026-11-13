@@ -6,15 +6,15 @@ Release A builds all of this and switches none of it on: `/api/policies`, `/s/[i
 
 ## Files
 
-| Where                            | What                                                                                                              |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `src/lib/timeline/policy4.ts`    | Types, `DEFAULT_POLICY4`, `queriesOf4`, `spanAt`, `nothingInForce`                                                |
-| `src/lib/timeline/parse4.ts`     | `parsePolicy4`, `checkSpanDays`                                                                                   |
-| `src/lib/timeline/upgrade.ts`    | `upgradePolicy(p, asOf)`: schema 3 to 4                                                                           |
-| `src/lib/timeline/reconcile4.ts` | `reconcilePolicy4(doc, cal, asOf)`, `Policy4Report`                                                               |
-| `src/lib/timeline/sim-doc4.ts`   | `SimDoc4`, `parseSimDoc4`, `openSimDoc4`, `createSimCodec4`, `migrateSimAutosave`                                 |
-| `src/lib/sim/world/months.ts`    | `monthFirstDay`, `monthLastDay`, `monthOfDay` (world-core owns it)                                                |
-| `src/lib/sim/world/policy/`      | `combine`, `money`, `zoning-view`, `intern`, `compile`, `compare`, `lookups`; `frame.ts` (S4 to S6 types, frozen) |
+| Where                            | What                                                                                                                        |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/timeline/policy4.ts`    | Types, `DEFAULT_POLICY4`, `queriesOf4`, `spanAt`, `nothingInForce`                                                          |
+| `src/lib/timeline/parse4.ts`     | `parsePolicy4`, `checkSpanDays`                                                                                             |
+| `src/lib/timeline/upgrade.ts`    | `upgradePolicy(p, asOf)`: schema 3 to 4                                                                                     |
+| `src/lib/timeline/reconcile4.ts` | `reconcilePolicy4(doc, cal, asOf)`, `Policy4Report`                                                                         |
+| `src/lib/timeline/sim-doc4.ts`   | `SimDoc4`, `parseSimDoc4`, `openSimDoc4`, `createSimCodec4`, `migrateSimAutosave`                                           |
+| `src/lib/sim/world/months.ts`    | `monthFirstDay`, `monthLastDay`, `monthOfDay` (world-core owns it)                                                          |
+| `src/lib/sim/world/policy/`      | `combine`, `money`, `zoning-view`, `intern`, `compile`, `compare`, `lookups`, `limits`; `frame.ts` (S4 to S6 types, frozen) |
 
 All pure TypeScript, worker-safe. Under `src/lib/sim/world/` no `Math.exp`, `log`, `pow`, `log1p`, `expm1` or `**`. No hashed file changed.
 
@@ -65,7 +65,13 @@ It never rejects a document. A document already aligned and clean comes back as 
 - 14: route shares come from the lowest policy in the list that sets them, else observed. The Local Program is streamlined unless some policy in force says otherwise. Route shares go into `newCalibration` (`routeSharesOp`); the Local Program switch lives in the zoning view (`view.parcels.localProgram`), not in `newCalibration`.
 - 15: money (`money.ts`). `FinanceFrame.pools` and `programmes` hold one entry per id over the whole document (baseline first, then added in document order, policies off included so the arrays never shift), each with the definition in force that month. `offered[g]` is 1 when programme g is in force on the first day and its pool is not scaled to 0 that day. `arrivals` are the month's dated inflows after scaling, month 1 also holding those dated on `asOf`. `finance` is null when the calibration lacks `market` or `baselineFunding`; money policies then do nothing.
 
-`lookupsAt(frame)` (`lookups.ts`) gives the stage tables for a frame as `lookupsOf` does: `speed` for rows in flight, `speed` times every `speedNew` for new projects, clamped. Memoised by frame id (8 entries).
+`lookupsAt(frame)` (`lookups.ts`) gives the stage tables for a frame as `lookupsOf` does: `speed` for rows in flight, `speed` times every `speedNew` for new projects, clamped (`newScale(frame)`, exported: today's `newProjects.scale`). Memoised by frame id (8 entries).
+
+### Who sets a lot's limit
+
+`limitsAt(frame, row)` and `limitsOf(frame, parcelId)` (`limits.ts`) give `{ owner, protected }` for a lot in a compiled frame, as today's `limitSources` + `ownerOf` give it over the zoning in force: a rule strictly above FZP (the first maximum in list order) is `{ kind: 'rule', ruleId, policy }` (a transit policy is one rule, `ruleId === policy`); else paint, `{ kind: 'paint', policy }` naming the painted policy that wins the lot (rule 11, the lower in the list); else `{ kind: 'fzp' }`. A protected lot reads `{ kind: 'fzp' }` with `protected: true`. `limitsOf` gives null for a parcel with no row; an out-of-range row or a frame no compile handed out throws `RangeError`.
+
+The attribution is keyed on the frame object (a `WeakMap` filled by `compileTimeline`), not on the frame id: two documents can compile to content-equal frames (same id, same interned view) whose limits are set by different policies, for example one transit rule under two ids. Each compile hands out its own frame objects; months sharing a zoning state share one attribution, computed on the first call. So callers always pass `timeline.frameAt(month)` of the timeline in use, never a frame held from an older timeline: a kept world resumed on a new timeline reads the new timeline's frames. Nor does a change of owner alone appear in `changes()`.
 
 ## Compiling
 
