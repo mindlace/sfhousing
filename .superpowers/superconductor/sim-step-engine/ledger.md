@@ -189,7 +189,7 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 
 ## Specs
 - world-core: docs/superpowers/specs/2026-11-13-world-core-design.md — status: dispatched 2026-11-13 (wave 1; agentId abd71128d1197fd1b; base c0bd4864; tier: dispatched at opus — rationale: eight interface rows, greenfield engine, seed-for-seed referee)
-- policy-timeline: docs/superpowers/specs/2026-11-13-policy-timeline-design.md — status: dispatched 2026-11-13 (wave 1; agentId aaad7d6b5ac406e2c; base c0bd4864; tier: dispatched at opus — rationale: five interface rows, new schema, compiler reusing the lever recompute)
+- policy-timeline: docs/superpowers/specs/2026-11-13-policy-timeline-design.md — status: complete 2026-11-13 (branch `step-engine/policy-timeline` c3e24113..c814eea8, 32 commits; SDD ledger nested worktree `.superpowers/sdd/2026-11-13-policy-timeline/progress.md`, final review `final-review.md`; wave 1; agentId aaad7d6b5ac406e2c; base c0bd4864; tier: dispatched at opus — rationale: five interface rows, new schema, compiler reusing the lever recompute)
 - world-funding: docs/superpowers/specs/2026-11-13-world-funding-design.md — status: pending (wave 2; needs world-core)
 - ensemble-runner: docs/superpowers/specs/2026-11-13-ensemble-runner-design.md — status: pending (wave 3; needs waves 1, 2)
 - world-score: docs/superpowers/specs/2026-11-13-world-score-design.md — status: pending (wave 4; design section 7 puts it after the runner)
@@ -219,6 +219,12 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 - 2026-11-13 policy-timeline [defect-class: spec-contradiction]: a schema 4 document saved on one dataset has spans that no longer fall on month edges of a later dataset; rule 4 rejects, "Reconciling" never rejects → `reconcilePolicy4(doc, cal, asOf)` snaps spans to the new dataset's months on opening (clamp to month 1, drop empty, trim overlaps, report each); strict publish keeps the checks (OD-8, OD-10). User-visible: a shared policy's dates can move by up to a month when the dataset date moves; to the partner at the wave boundary.
 - 2026-11-13 partner: the machine is otherwise idle; the load operators see is each other. Timing is re-run at wave boundaries with one operator active. Wave 1 counts as exclusive.
 - 2026-11-13 policy-timeline [defect-class: missing-ctx-dependency]: today's `leverStep` logs lots with no yield record; S13 gave the compiler no way to report the count → S13 amended: `TimelineCompile` gains `missingLots(): number`; design and the two quoting specs rebuilt. Operator status at the time: tasks 1 to 9 and 13 complete, 10 in review.
+- 2026-11-13 policy-timeline complete. Operator's summary: unit 394 files / 6123 pass, check clean, no hashed file changed, final Opus branch review clean after one fix. Deferred, carried forward:
+  - to the quiet re-measure: compile slices (bench step 43 to 61 ms, live metro rule longest slice about 97 ms; seams `precomputeView`, `recomputeStep`); compile wait metro rule about 4.7 s, 500 painted lots about 132 ms.
+  - to the world-core merge: `months.ts` and `months.spec.ts` conflict, take world-core's; union the CLAUDE.md doc lines.
+  - to ensemble-runner's assignment: pass the same calibration and asOf to `openSimDoc4` and `compileTimeline`; `missingLots()` is a count (ids would be an S13 amendment); frame levers carry no per-lot rule attribution (`StoryEdit.source`), so `limitSources` and cards would attribute rule-raised lots to ''.
+  - to timeline-ui's assignment: use `openSimDoc4` (codec.load drops the report); `opCount` counts spans; `migrateSimAutosave` returns 'none' on a failed write; the attribution gap above.
+  - noted: `speedNew` is one entry per `new` timer, each clamped (differs from today's clamp of the product only for two opposite `new` timers beyond [0.05, 10]); an id before its policy is in force carries its first span's definition, unoffered.
 
 ## Waves
 - gate wave 1 2026-11-13 08:55: VERDICT OK* (seven_day 27% of 60% reserve, headroom 33; five_hour NO DATA). Calibration from sim-financing: about 1 point a spec, a floor (smallest specs, integer resolution). Partner's instruction was "enter sim-step-engine and execute": wave 1 admitted.
@@ -236,3 +242,4 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 
 ## Integration
 - step 0 (flattened leaf, sonnet, agentId a3f4fe8bd4065c821): c0bd4864 on superconductor/sim-step-engine, type-only `statics.ts` and `policy/frame.ts`; check, eslint, prettier clean. Not a spec; excluded from calibration.
+- merged policy-timeline into superconductor/sim-step-engine @ eb942b9a, no conflict, no hashed file in the diff; check and unit suite running.
