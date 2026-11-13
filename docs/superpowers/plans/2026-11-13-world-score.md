@@ -345,7 +345,7 @@ Stop here and report to `main`. Tasks 8-14 need world-funding (`createFundingSys
 
 **Files:** Modify `statics.ts`, `view.ts`, `money.ts`. Test: `src/lib/sim/world/score/limits.spec.ts`.
 
-- [ ] **Step 1: Read Q7's answer** (`perAddedHome`'s denominator). The spec says it "uses the plan effect's mean". Today's `perAddedHome` divides by `fundedHomes - displacedHomes` (`finance-score.ts:560-565`).
+- [ ] **Step 1: Q7 is ruled** (main, 2026-11-13; rule 12 amended at b6c16c04): `perAddedHome` keeps today's meaning, public money gone (`publicSpent`, or the City pools' share for `'city'`) over world 1's `fundedHomes - displacedHomes`, read at `filledThrough`; a denominator of 0 or less gives null. The plan effect is not the denominator. Add `it('perAddedHome divides by world 1's funded minus displaced homes at filledThrough')`.
 - [ ] **Step 2: Failing tests:**
   - `it('limits at filledThrough 10 equal limits at lastIndex')`: `viewOf(chunks through 10).money.limits` `toEqual(viewOf(all).money.limits)`, both `toEqual(statics.limits)`.
   - `it('limits are equal for two seeds')`: ScoreStatics are seed-free, and two runners with world 1 = seed 1 vs seed 2 give the same `limits`.
