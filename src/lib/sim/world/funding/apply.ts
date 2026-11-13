@@ -5,8 +5,10 @@ import { seedHash, streamOf } from '$lib/sim/scenario/rng';
 import type { ProjectKind } from '$lib/timelapse/types';
 import { lotRow } from '../columns';
 import { lotEntity } from '../rates';
+import { monthOfDay } from '../months';
 import { NO_DAY, type StepCtx, type World } from '../types';
 import { kindClock, type KindClock, type Spell } from './clocks';
+import { frameMoney } from './frame-money';
 import {
   KIND_AFFORDABLE,
   KIND_MARKET,
@@ -63,12 +65,36 @@ export function spellsOf(ctx: StepCtx, lot: number): { market: Spell; affordable
   return { market: spell(KIND_MARKET), affordable: spell(KIND_AFFORDABLE) };
 }
 
-/** Each kind's clock read through `ctx.month`, null for a kind already waiting. */
+/**
+ * Whether any frame `kindClock` reads for a spell free since `r`, through `month`, offers a
+ * programme of `kind`: the frame of the spell's first month and each change after it through
+ * `month`. When none does, every lot-month's bundle is empty and the clock has no day (rule 5).
+ */
+function offersAny(ctx: StepCtx, r: number, kind: ProjectKind): boolean {
+  const { timeline, month } = ctx;
+  const first = Math.min(monthOfDay(ctx.statics.asOf, r + 1), month);
+  const offers = (m: number): boolean => {
+    const g = timeline.frameAt(m);
+    return g.finance !== null && frameMoney(timeline, g).offered[kind].length > 0;
+  };
+  if (offers(first)) return true;
+  for (const c of timeline.changes()) {
+    if (c <= first) continue;
+    if (c > month) break;
+    if (offers(c)) return true;
+  }
+  return false;
+}
+
+/**
+ * Each kind's clock read through `ctx.month`, null for a kind already waiting or one no frame it
+ * reads offers (its clock would have no day): callers read only a clock's day.
+ */
 function clocksOf(ctx: StepCtx, lot: number, line: FundLine | null): (KindClock | null)[] {
   const spells = spellsOf(ctx, lot);
   const sh = seedHash(ctx.seed);
   return KINDS.map((kind) =>
-    waiting(line, lot, CODE[kind])
+    waiting(line, lot, CODE[kind]) || !offersAny(ctx, spells[kind].r, kind)
       ? null
       : kindClock(ctx.statics, ctx.timeline, ctx.month, sh, spells[kind], kind)
   );
