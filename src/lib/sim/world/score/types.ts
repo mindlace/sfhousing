@@ -76,6 +76,8 @@ export interface WorldSeriesData {
   entitled: Int32Array;
   /** A master's units of phases not yet filed. */
   pending: Int32Array;
+  /** A master's filed phases, bit `phase - 1` of each (a phase files once). */
+  filed: Int32Array;
   /** Per-month deltas. */
   delta: Int32Array;
   /** Per-month prefix sums through `summed`. */

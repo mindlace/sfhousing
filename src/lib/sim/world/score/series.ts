@@ -46,13 +46,29 @@ function emptyData(s: ScoreStatics): WorldSeriesData {
     units: new Int32Array(0),
     entitled: new Int32Array(0),
     pending: new Int32Array(0),
+    filed: new Int32Array(0),
     delta: new Int32Array(SERIES_FIELDS * n),
     sum: new Int32Array(SERIES_FIELDS * n)
   };
 }
 
-type RowColumn = 'stage' | 'since' | 'units' | 'entitled' | 'pending';
-const ROW_COLUMNS: RowColumn[] = ['stage', 'since', 'units', 'entitled', 'pending'];
+type RowColumn = 'stage' | 'since' | 'units' | 'entitled' | 'pending' | 'filed';
+const ROW_COLUMNS: RowColumn[] = ['stage', 'since', 'units', 'entitled', 'pending', 'filed'];
+
+/** A copy of saved data that shares no array with it. */
+function copyData(from: WorldSeriesData): WorldSeriesData {
+  return {
+    ...from,
+    stage: from.stage.slice(),
+    since: from.since.slice(),
+    units: from.units.slice(),
+    entitled: from.entitled.slice(),
+    pending: from.pending.slice(),
+    filed: from.filed.slice(),
+    delta: from.delta.slice(),
+    sum: from.sum.slice()
+  };
+}
 
 /** Grows the per-row columns to hold row `row`; new rows are `UNKNOWN`. */
 function ensureRow(d: WorldSeriesData, row: number): void {
@@ -87,12 +103,19 @@ const describeEvent = (e: WorldEvent): string =>
   ` on day ${e.day}`;
 
 /**
- * One world's series. `from` restores a saved state (Task 3); without it the series starts empty
- * at model month 0.
+ * One world's series. `from` restores a saved state (copied, never shared); without it the series
+ * starts empty at model month 0.
  */
 export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): WorldSeries {
-  if (from !== undefined) throw new Error('world-score: restore lands with data() (Task 3)');
-  const d = emptyData(s);
+  let d: WorldSeriesData;
+  if (from === undefined) d = emptyData(s);
+  else {
+    if (from.version !== 1) throw new Error(`world-score: saved series version ${from.version}`);
+    if (from.delta.length !== SERIES_FIELDS * (s.lastIndex + 1)) {
+      throw new Error('world-score: saved series does not match these statics');
+    }
+    d = copyData(from);
+  }
   const H: Day = horizonOf(s);
   const m0 = s.months[0];
   const idx = monthIndexer(s.months, H);
@@ -100,6 +123,12 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
   const last = s.lastIndex;
   /** The event being filed, for the guard's message. */
   let current: WorldEvent | null = null;
+  /**
+   * The event's deltas, applied once all of them are checked, so an event that throws files
+   * nothing (its per-row state may still have moved; a series that threw is not used again).
+   */
+  const at: number[] = [];
+  const by: number[] = [];
 
   const monthOf = (day: Day): number => (day < m0 ? 0 : idx(day));
 
@@ -112,7 +141,8 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
           `month ${i}, final through ${d.final}`
       );
     }
-    d.delta[i * SERIES_FIELDS + f] += v;
+    at.push(i * SERIES_FIELDS + f);
+    by.push(v);
   }
 
   /** A dated delta: nothing after the horizon. */
@@ -179,9 +209,12 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
       case 'phaseFiled': {
         const u = phaseUnits(statics, w, row)[e.phase - 1];
         if (u === undefined) throw new Error(`world-score: master ${row} has no phase ${e.phase}`);
-        if (u > d.pending[row]) {
+        if (e.phase > 31) throw new Error(`world-score: master ${row} has phase ${e.phase}`);
+        const bit = 1 << (e.phase - 1);
+        if (d.filed[row] & bit) {
           throw new Error(`world-score: master ${row} phase ${e.phase} filed twice`);
         }
+        d.filed[row] |= bit;
         const st = d.stage[row];
         if (st >= 0) close(st, d.since[row], e.day, u);
         d.pending[row] -= u;
@@ -196,6 +229,13 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
   }
 
   function add(e: WorldEvent, w: World, statics: Statics): void {
+    at.length = 0;
+    by.length = 0;
+    fileEvent(e, w, statics);
+    for (let k = 0; k < at.length; k++) d.delta[at[k]] += by[k];
+  }
+
+  function fileEvent(e: WorldEvent, w: World, statics: Statics): void {
     current = e;
     const row = e.row;
     const p = w.projects;
@@ -210,6 +250,7 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
       d.stage[row] = NONE;
       d.since[row] = NO_DAY;
       d.entitled[row] = NO_DAY;
+      d.filed[row] = 0;
       if (origin === ORIGIN_MASTER) {
         let total = 0;
         for (const u of phaseUnits(statics, w, row)) total += u;
@@ -320,8 +361,6 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
       for (let i = from; i <= through; i++) out.push(rowAt(i));
       return out;
     },
-    data(): WorldSeriesData {
-      throw new Error('world-score: data() lands in Task 3');
-    }
+    data: () => copyData(d)
   };
 }
