@@ -12,7 +12,7 @@ import { log } from '$lib/timelapse/math';
 import { MONTH_DAYS } from '$lib/timelapse/time';
 import { monthFirstDay, monthLastDay, monthOfDay } from './months';
 import type { PolicyFrame, PolicyTimeline, ZoningView } from './policy/frame';
-import { lotEntity, ordinaryStart, startRates } from './rates';
+import { lotEntity, ordinaryStart, skipBound, startRates } from './rates';
 import { staticsOf, type Statics } from './statics';
 import { benchInput } from './test/cities.node';
 import { miniInput } from './test/mini';
@@ -266,5 +266,22 @@ describe('zero and infinite rates across segments', () => {
     const got = ordinaryStart(statics, t, 8, seedHash(1), 0, r, 0);
     const T = lastInitiationMonth(r, monthFirstDay(asOf, 5) - 1) + 1;
     expect(got!.frameMonth).toBe(monthOfDay(asOf, r + 1 + Math.floor((T - 1) * MONTH_DAYS)));
+  });
+});
+
+describe('skipBound memo', () => {
+  it('is shared by every month between two frame changes (keyed on the last change)', () => {
+    const input = benchInput();
+    const statics = staticsOf(input);
+    const f = frameOf(input);
+    const t = changingAt(10, f, frameOf(input, { id: 1, market: f.market + 1 }), null);
+    const before = skipBound(statics, t, 3, 40);
+    expect(skipBound(statics, t, 1, 40)).toBe(before);
+    expect(skipBound(statics, t, 9, 40)).toBe(before);
+    const after = skipBound(statics, t, 10, 40);
+    expect(after).not.toBe(before);
+    expect(skipBound(statics, t, 25, 40)).toBe(after);
+    expect(skipBound(statics, t, 25, 41)).not.toBe(after);
+    expect(Array.from(after)).not.toEqual(Array.from(before));
   });
 });

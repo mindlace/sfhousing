@@ -2,38 +2,52 @@
 // Without a funding system in force the step runs systems 1 (policy, when the frame changes: rules
 // 7 and 12), 3 (stages due), 4 (lots whose ordinary start falls this month are set aside) and 6
 // (they start). `withFunding(f)` adds the calls into `f` in the months whose frame has `finance`.
-import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
-import { pathwayFrom } from '$lib/sim/scenario/engine';
-import { sizeCumAgainst } from '$lib/sim/scenario/input';
-import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
+import * as scenarioCodecModule from '$lib/data/scenario-codec';
+import * as engineModule from '$lib/sim/scenario/engine';
+import * as inputModule from '$lib/sim/scenario/input';
+import * as rngModule from '$lib/sim/scenario/rng';
 import type { Day } from '$lib/timelapse/time';
-import { PATHWAYS, STAGE_ORDER, type Pathway, type Stage } from '$lib/timelapse/types';
-import { addProject, emptyWorld, ensureLot, lotRow, pushDisplacement, pushRev } from './columns';
-import { createHolds } from './holds';
-import { DueList, eachFreeLot, planDueWith, plannedMonth, type planDue } from './due';
-import { enterStage, reanchor, rowSpeed } from './stage';
-import { monthFirstDay, monthLastDay } from './months';
-import { createProjects, dueMonthOf, followProject, rowStaticsOf, type Sys3 } from './pipeline';
+import * as timelapseTypesModule from '$lib/timelapse/types';
+import type { Pathway, Stage } from '$lib/timelapse/types';
+import * as columnsModule from './columns';
+import * as holdsModule from './holds';
+import * as dueModule from './due';
+import type { planDue } from './due';
+import * as stageModule from './stage';
+import * as monthsModule from './months';
+import * as pipelineModule from './pipeline';
+import type { Sys3 } from './pipeline';
 import type { PolicyFrame, PolicyTimeline } from './policy/frame';
-import { initDraw, lotEntity, ordinaryStart, skipBound, type OrdinaryStart } from './rates';
+import * as ratesModule from './rates';
+import type { OrdinaryStart } from './rates';
 import type { Statics } from './statics';
-import {
-  END_ALIVE,
-  LOT_DONE,
-  LOT_FREE,
-  LOT_LIVE,
-  NO_DAY,
-  ORIGIN_SIM,
-  RULE_NONE,
-  RULE_SIM,
-  type Due,
-  type FundedStart,
-  type FundingSystem,
-  type StepCtx,
-  type StepSink,
-  type World,
-  type WorldEvent
+import * as typesModule from './types';
+import type {
+  Due,
+  FundedStart,
+  FundingSystem,
+  StepCtx,
+  StepSink,
+  World,
+  WorldEvent
 } from './types';
+
+// Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
+// use of an imported name is a getter call (docs/dev/world-core.md, Cost).
+const { FILL_LEVELS, fillStories } = scenarioCodecModule;
+const { pathwayFrom } = engineModule;
+const { sizeCumAgainst } = inputModule;
+const { P, drawOn, seedHash, streamOf } = rngModule;
+const { PATHWAYS, STAGE_ORDER } = timelapseTypesModule;
+const { addProject, emptyWorld, ensureLot, lotRow, pushDisplacement, pushRev } = columnsModule;
+const { createHolds } = holdsModule;
+const { DueList, eachFreeLot, planDueWith, plannedMonth } = dueModule;
+const { enterStage, reanchor, rowSpeed } = stageModule;
+const { monthFirstDay, monthLastDay } = monthsModule;
+const { createProjects, dueMonthOf, followProject, rowStaticsOf } = pipelineModule;
+const { initDraw, lotEntity, ordinaryStart, skipBound } = ratesModule;
+const { END_ALIVE, LOT_DONE, LOT_FREE, LOT_LIVE, NO_DAY, ORIGIN_SIM, RULE_NONE, RULE_SIM } =
+  typesModule;
 
 const F = FILL_LEVELS.length;
 const S = STAGE_ORDER.length;
@@ -141,6 +155,18 @@ function startOf(
 ): OrdinaryStart | null {
   const { r, k } = freeSince(w, statics, lot);
   return ordinaryStart(statics, timeline, month, sh, lot, r, k);
+}
+
+/** True when `a[from..]`, ascending, holds `v`. */
+function sortedHas(a: Int32Array, from: number, v: number): boolean {
+  let lo = from;
+  let hi = a.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (a[mid] < v) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo < a.length && a[lo] === v;
 }
 
 /** True when the lot has no row or its row is `LOT_FREE`. */
@@ -551,32 +577,46 @@ function stepWith(
   // System 4: the lots due this month and those system 3 freed, in rank order (rule 2). A lot met
   // twice means the due list is out of step.
   const lots: number[] = [];
-  const takenLots = new Set<number>();
-  for (let i = lotsFrom; i < entities.length; i++) {
-    lots.push(entities[i]);
-    takenLots.add(entities[i]);
+  for (let i = lotsFrom; i < entities.length; i++) lots.push(entities[i]);
+  // The lots system 3 freed (usually none); a lot met twice means the due list is out of step.
+  // `entities` is ascending, so a taken lot is found by binary search.
+  let freed: Set<number> | null = null;
+  if (x.freed.length > 0) {
+    freed = new Set<number>();
+    for (const lot of x.freed) {
+      if (freed.has(lot) || sortedHas(entities, lotsFrom, lot)) {
+        throw new Error(`due list out of step: lot ${lot} met twice`);
+      }
+      freed.add(lot);
+      lots.push(lot);
+    }
+    x.freed.length = 0;
   }
-  const seen = new Set(takenLots);
-  for (const lot of x.freed) {
-    if (seen.has(lot)) throw new Error(`due list out of step: lot ${lot} met twice`);
-    seen.add(lot);
-    lots.push(lot);
-  }
-  x.freed.length = 0;
   const rank = statics.rank;
   lots.sort((a, b) => rank[a] - rank[b]);
   const aside: number[] = [];
+  const asideStart: { s: OrdinaryStart; r: Day; k: number }[] = [];
   const applying: number[] = [];
   const later: number[] = [];
   const laterOrd: number[] = [];
+  const asOf = statics.asOf;
   for (const lot of lots) {
-    if (!isFree(world, lot)) throw new Error(`due list out of step: lot ${lot} is not free`);
-    const s = startOf(world, statics, timeline, month, x.sh, lot);
+    const l = world.lots;
+    const i = lotRow(l, lot);
+    if (i >= 0 && l.state[i] !== LOT_FREE) {
+      throw new Error(`due list out of step: lot ${lot} is not free`);
+    }
+    const r = i < 0 ? asOf : l.r[i];
+    const k = i < 0 ? 0 : l.k[i];
+    const s = ordinaryStart(statics, timeline, month, x.sh, lot, r, k);
     if (s !== null && s.month < month) throw new Error('due list out of step');
     const ord = s === null ? 0 : s.month;
-    if (ord === month) aside.push(lot);
-    else {
-      if (fund === null && takenLots.has(lot)) throw new Error('due list out of step');
+    if (ord === month) {
+      aside.push(lot);
+      asideStart.push({ s: s!, r, k });
+    } else {
+      // Unfunded, a lot taken this month is due only in the month of its ordinary start.
+      if (fund === null && !freed?.has(lot)) throw new Error('due list out of step');
       later.push(lot);
       laterOrd.push(ord);
     }
@@ -597,10 +637,18 @@ function stepWith(
   fund?.serve(pub);
   // System 6: each lot set aside starts (rule 2 order), its chain followed to the month's end
   // (rule 14), unless a start was made on it this month.
-  for (const lot of aside) {
+  // A lot's ordinary start depends only on its attempt and the day it became free: when those are
+  // the ones system 4 read, its start is the one worked out there.
+  for (let j = 0; j < aside.length; j++) {
+    const lot = aside[j];
     if (ctx.started.has(lot)) continue;
-    if (!isFree(world, lot)) throw new Error('due list out of step');
-    const s = startOf(world, statics, timeline, month, x.sh, lot);
+    const l = world.lots;
+    const i = lotRow(l, lot);
+    if (i >= 0 && l.state[i] !== LOT_FREE) throw new Error('due list out of step');
+    const r = i < 0 ? asOf : l.r[i];
+    const k = i < 0 ? 0 : l.k[i];
+    const a = asideStart[j];
+    const s = r === a.r && k === a.k ? a.s : startOf(world, statics, timeline, month, x.sh, lot);
     if (s === null || s.month !== month) throw new Error('due list out of step');
     ctx.startOrdinary(lot, s);
   }

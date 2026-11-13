@@ -2,19 +2,34 @@
 // `phaseFiledDay` and `phaseSchedule`, scenario/engine.ts:661-898): made at the dataset date,
 // followed through their stages month by month, and phases filed as their days come.
 import type { ParcelId } from '$lib/data/parcel';
-import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
-import { isSkipped, nextStage } from '$lib/sim/scenario/engine';
-import { P, drawOn, jobEntity, streamOf } from '$lib/sim/scenario/rng';
+import * as scenarioCodecModule from '$lib/data/scenario-codec';
+import type { ScenarioParcels } from '$lib/data/scenario-codec';
+import * as engineModule from '$lib/sim/scenario/engine';
+import * as rngModule from '$lib/sim/scenario/rng';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
-import { PATHWAYS, STAGE_ORDER, type Stage } from '$lib/timelapse/types';
-import { addProject, pushRev } from './columns';
-import { demolish, heldLots, holdEnd, passToPhases, startEnd } from './holds';
-import { monthOfDay } from './months';
+import * as timelapseTypesModule from '$lib/timelapse/types';
+import type { Stage } from '$lib/timelapse/types';
+import * as columnsModule from './columns';
+import * as holdsModule from './holds';
+import * as monthsModule from './months';
 import type { PolicyFrame, PolicyTimeline, ZoningView } from './policy/frame';
-import { enterStage, reviseOnEntry } from './stage';
+import * as stageModule from './stage';
 import type { Statics } from './statics';
-import {
+import * as typesModule from './types';
+import type { StepSink, World } from './types';
+
+// Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
+// use of an imported name is a getter call (docs/dev/world-core.md, Cost).
+const { FILL_LEVELS } = scenarioCodecModule;
+const { isSkipped, nextStage } = engineModule;
+const { P, drawOn, jobEntity, streamOf } = rngModule;
+const { PATHWAYS, STAGE_ORDER } = timelapseTypesModule;
+const { addProject, pushRev } = columnsModule;
+const { demolish, heldLots, holdEnd, passToPhases, startEnd } = holdsModule;
+const { monthOfDay } = monthsModule;
+const { enterStage, reviseOnEntry } = stageModule;
+const {
   END_ALIVE,
   END_COMPLETE,
   END_ENTITLED,
@@ -25,10 +40,8 @@ import {
   ORIGIN_PIPELINE,
   ORIGIN_SIM,
   RULE_NONE,
-  RULE_PIPELINE,
-  type StepSink,
-  type World
-} from './types';
+  RULE_PIPELINE
+} = typesModule;
 
 const F = FILL_LEVELS.length;
 const S = STAGE_ORDER.length;
@@ -39,6 +52,10 @@ const PERMIT_FILED = SI.permitFiled;
 const COMPLETE = SI.complete;
 const CONSTRUCTION = SI.construction;
 const PLANNING: readonly Stage[] = ['preApplication', 'filed', 'entitled'];
+/** `SI[nextStage(PATHWAYS[pw], STAGE_ORDER[s])]` at `pw * S + s`; -1 after the last stage. */
+const NEXT = Int8Array.from({ length: PATHWAYS.length * S }, (_, i) =>
+  i % S === COMPLETE ? -1 : SI[nextStage(PATHWAYS[Math.floor(i / S)], STAGE_ORDER[i % S])]
+);
 
 /** Revision caps of a project on some view rows (today's `Caps`). */
 interface Caps {
@@ -431,8 +448,9 @@ function leaveStage(x: Sys3, row: number): void {
     endRow(x, row, END_EXIT, day, s);
     return;
   }
-  const pathway = PATHWAYS[p.pathway[row]];
-  const n = SI[nextStage(pathway, STAGE_ORDER[s])];
+  let n = NEXT[p.pathway[row] * S + s];
+  // Past the last stage: today's `nextStage` throws.
+  if (n < 0) n = SI[nextStage(PATHWAYS[p.pathway[row]], STAGE_ORDER[s])];
   const stop = p.stopAt[row];
   if (n >= stop) {
     if (n === stop) {

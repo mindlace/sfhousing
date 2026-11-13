@@ -1,15 +1,13 @@
-import { FILL_LEVELS } from '$lib/data/scenario-codec';
+import * as scenarioCodecModule from '$lib/data/scenario-codec';
 import type { Schedule } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
-import {
-  END_ALIVE,
-  NO_DAY,
-  NO_STOP,
-  LOT_FREE,
-  type LotColumns,
-  type ProjectColumns,
-  type World
-} from './types';
+import * as typesModule from './types';
+import type { LotColumns, ProjectColumns, World } from './types';
+
+// Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
+// use of an imported name is a getter call (docs/dev/world-core.md, Cost).
+const { FILL_LEVELS } = scenarioCodecModule;
+const { END_ALIVE, NO_DAY, NO_STOP, LOT_FREE } = typesModule;
 
 type Typed = Int32Array | Uint32Array | Uint8Array | Float64Array;
 
@@ -54,6 +52,7 @@ function emptyLots(): LotColumns {
   return {
     n: 0,
     lot: new Int32Array(0),
+    rowOf: new Int32Array(0),
     state: new Uint8Array(0),
     k: new Int32Array(0),
     r: new Int32Array(0),
@@ -132,11 +131,18 @@ export function emptyWorld(frameId: number): World {
   };
 }
 
+// The typed columns, named once: every row column of one table has the same row capacity, so one
+// column's length says whether the table must grow.
+const PROJECT_ROW_COLUMNS = typedNames(
+  emptyProjects(),
+  (k) => REV_COLUMNS.includes(k) || DISP_COLUMNS.includes(k)
+);
+const LOT_COLUMNS = typedNames(emptyLots(), (k) => k === 'rowOf');
+
 /** Appends a project row with its defaults and returns its index. */
 export function addProject(p: ProjectColumns): number {
   const row = p.n;
-  const rowColumns = typedNames(p, (k) => REV_COLUMNS.includes(k) || DISP_COLUMNS.includes(k));
-  grow(p, rowColumns, row + 1);
+  if (p.origin.length <= row) grow(p, PROJECT_ROW_COLUMNS, row + 1);
   p.n = row + 1;
   p.entered.fill(NO_DAY, row * ENTERED_STRIDE, (row + 1) * ENTERED_STRIDE);
   p.stories[row] = NaN;
@@ -180,7 +186,7 @@ export function pushRev(
       return;
     }
   }
-  grow(p, REV_COLUMNS, p.revN + 1);
+  if (p.revDay.length <= p.revN) grow(p, REV_COLUMNS, p.revN + 1);
   const at = p.revN++;
   p.revDay[at] = day;
   p.revUnits[at] = units;
@@ -191,7 +197,7 @@ export function pushRev(
 
 /** Appends `units` displaced homes on `day` to `row`'s entries in the displacement side table. */
 export function pushDisplacement(p: ProjectColumns, row: number, day: Day, units: number): void {
-  grow(p, DISP_COLUMNS, p.dispN + 1);
+  if (p.dispRow.length <= p.dispN) grow(p, DISP_COLUMNS, p.dispN + 1);
   const at = p.dispN++;
   p.dispRow[at] = row;
   p.dispDay[at] = day;
@@ -224,42 +230,34 @@ export function revisionsOf(p: ProjectColumns, row: number, upTo: Day): Schedule
 
 /** The row of `lot`, or -1 when the lot has not left its starting state. */
 export function lotRow(l: LotColumns, lot: number): number {
-  let lo = 0;
-  let hi = l.n - 1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >>> 1;
-    const v = l.lot[mid];
-    if (v === lot) return mid;
-    if (v < lot) lo = mid + 1;
-    else hi = mid - 1;
-  }
-  return -1;
+  return lot < l.rowOf.length ? l.rowOf[lot] - 1 : -1;
 }
 
-/** The row of `lot`, inserting one (free, attempt 0, free since `asOf`) in order when absent. */
+/**
+ * The row of `lot`, appending one (free, attempt 0, free since `asOf`) when absent. Rows never
+ * move.
+ */
 export function ensureLot(l: LotColumns, lot: number, asOf: Day): number {
-  let lo = 0;
-  let hi = l.n;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    const v = l.lot[mid];
-    if (v === lot) return mid;
-    if (v < lot) lo = mid + 1;
-    else hi = mid;
+  if (lot < l.rowOf.length) {
+    const found = l.rowOf[lot];
+    if (found > 0) return found - 1;
+  } else {
+    let cap = Math.max(FIRST_CAPACITY, l.rowOf.length * 2);
+    while (cap <= lot) cap *= 2;
+    l.rowOf = grown(l.rowOf, cap) as Int32Array;
   }
-  const names = typedNames(l, () => false);
-  grow(l, names, l.n + 1);
-  const cols = l as unknown as Record<string, Typed>;
-  for (const name of names) cols[name].copyWithin(lo + 1, lo, l.n);
-  l.n++;
-  l.lot[lo] = lot;
-  l.state[lo] = LOT_FREE;
-  l.k[lo] = 0;
-  l.r[lo] = asOf;
-  l.holders[lo] = 0;
-  l.lastExit[lo] = asOf;
-  l.blocked[lo] = 0;
-  l.demolished[lo] = 0;
-  l.project[lo] = -1;
-  return lo;
+  const row = l.n;
+  if (l.lot.length <= row) grow(l, LOT_COLUMNS, row + 1);
+  l.rowOf[lot] = row + 1;
+  l.n = row + 1;
+  l.lot[row] = lot;
+  l.state[row] = LOT_FREE;
+  l.k[row] = 0;
+  l.r[row] = asOf;
+  l.holders[row] = 0;
+  l.lastExit[row] = asOf;
+  l.blocked[row] = 0;
+  l.demolished[row] = 0;
+  l.project[row] = -1;
+  return row;
 }
