@@ -785,6 +785,11 @@ describe('time to revision 0 with levers and a null seed (rev0)', () => {
       json.set(city.manifest.scenarios!.fzp.calibration, calibration);
       c = { ...city, calibration, files: { ...city.files, json } };
     }
+    // Heap (reported, no budget): used JS heap after a full collection, before the host exists
+    // and at revision 0 with the host alive. Both reads are outside the timed window.
+    const gc = gcOf();
+    gc?.();
+    const heapBefore = process.memoryUsage().heapUsed;
     const rig = new Rig(c);
     try {
       const manifest = {
@@ -823,6 +828,12 @@ describe('time to revision 0 with levers and a null seed (rev0)', () => {
           `(load ${ms(currentAt - initAt)}; warm ${ms(firstBand - currentAt)}; ` +
           `FZP band ${ms(ranksAt - firstBand)}; shown run ${ms(shownEnd - ranksAt)} ` +
           `(task ${ms(dur(shown))}); geometry ${ms(first.at - shownEnd)})`
+      );
+      gc?.();
+      const heap = process.memoryUsage().heapUsed;
+      console.log(
+        `[perf] rev0: ${name}: heap at revision 0: ${(heap / MB).toFixed(0)} MB, ` +
+          `${((heap - heapBefore) / MB).toFixed(0)} MB above before the host (gc ${gc ? 'on' : 'unavailable'})`
       );
       expect(first.msg.render.revision).toBe(0);
       expect(first.msg.score.band).toHaveLength(first.msg.score.months.length);
