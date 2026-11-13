@@ -251,4 +251,4 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 ## Integration
 - step 0 (flattened leaf, sonnet, agentId a3f4fe8bd4065c821): c0bd4864 on superconductor/sim-step-engine, type-only `statics.ts` and `policy/frame.ts`; check, eslint, prettier clean. Not a spec; excluded from calibration.
 - merged policy-timeline into superconductor/sim-step-engine @ eb942b9a, no conflict, no hashed file in the diff; check 0 errors, unit 394 files / 6123 pass, dataset version unchanged (2026-11-10-6ee5a23d).
-- merged world-core hook-ready 8a4397bd into superconductor/sim-step-engine @ 946a379a; add/add conflict on `months.ts` and `months.spec.ts` resolved with world-core's copies (same exports); check, lint and unit suite running.
+- merged world-core hook-ready 8a4397bd into superconductor/sim-step-engine @ 946a379a; add/add conflict on `months.ts` and `months.spec.ts` resolved with world-core's copies (same exports); check 0 errors, lint 0 errors (82 warnings, not compared with main), unit 413 files / 6647 pass, 5 skipped (live block).
