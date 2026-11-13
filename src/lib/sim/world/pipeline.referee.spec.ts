@@ -25,10 +25,19 @@ describe.each(cities)('pipeline referee on the %s city', (name, load) => {
     statics = staticsOf(input);
   });
 
-  // What the referee runs below have read, for the non-degeneracy check after them (each run
-  // steps the whole city, so they are not run twice).
-  const seen = { phases: 0, entitled: 0, exit: 0, complete: 0, open: 0, revised: 0 };
-  const tally = (schedules: Schedule[], masters: Master[]) => {
+  // What each referee run below has read, by run: kept from whichever test ran it first (each run
+  // steps the whole city), so the non-degeneracy check holds on its own when run alone or shuffled.
+  type Seen = {
+    phases: number;
+    entitled: number;
+    exit: number;
+    complete: number;
+    open: number;
+    revised: number;
+  };
+  const tallies = new Map<string, Seen>();
+  const tally = (key: string, schedules: Schedule[], masters: Master[]): void => {
+    const seen: Seen = { phases: 0, entitled: 0, exit: 0, complete: 0, open: 0, revised: 0 };
     for (const s of schedules) {
       if (s.origin !== 'pipeline') continue;
       if (s.phase !== null) seen.phases++;
@@ -36,29 +45,35 @@ describe.each(cities)('pipeline referee on the %s city', (name, load) => {
       if (s.revisions.length > 1) seen.revised++;
     }
     for (const m of masters) if (m.end.kind === 'entitled') seen.entitled++;
+    tallies.set(key, seen);
+  };
+
+  // A near horizon in mid-month: rows still open, and events later in that month hidden. Every
+  // schedule, ordinary starts included (their readers hide what falls after the day too).
+  const near = (asOf: number) => asOf + 1000;
+
+  /** The world of one referee run read at its day, tallied under `key`. */
+  const mineOf = (seed: number, atNear: boolean) => {
+    const day = atNear ? near(input.asOf) : HORIZON;
+    const through = atNear ? monthOfDay(input.asOf, day) : horizonMonth(input.asOf);
+    const w = runWorld(statics, oneFrame(frameOf(input)), seed, through);
+    const mine = readAll(w, statics, day);
+    tally(`${seed}:${atNear}`, mine.schedules, mine.masters);
+    return { day, mine };
   };
 
   it.each(SEEDS)(`${name} seed %i: pipeline schedules and masters equal today’s`, (seed) => {
     const old = simulateDetailed(oldInputOf(input), seed, HORIZON);
-    const w = runWorld(statics, oneFrame(frameOf(input)), seed, horizonMonth(input.asOf));
-    const mine = readAll(w, statics, HORIZON);
-    tally(mine.schedules, mine.masters);
+    const { mine } = mineOf(seed, false);
     expect(mine.schedules.filter((s) => s.origin === 'pipeline')).toEqual(
       old.schedules.filter((s) => s.origin === 'pipeline')
     );
     expect(mine.masters).toEqual(old.masters);
   });
 
-  // A near horizon in mid-month: rows still open, and events later in that month hidden. Every
-  // schedule, ordinary starts included (their readers hide what falls after the day too).
-  const near = (asOf: number) => asOf + 1000;
-
   it.each(SEEDS)(`${name} seed %i: the same at a near horizon`, (seed) => {
-    const day = near(input.asOf);
+    const { day, mine } = mineOf(seed, true);
     const old = simulateDetailed(oldInputOf(input), seed, day);
-    const w = runWorld(statics, oneFrame(frameOf(input)), seed, monthOfDay(input.asOf, day));
-    const mine = readAll(w, statics, day);
-    tally(mine.schedules, mine.masters);
     expect(mine.schedules).toEqual(old.schedules);
     expect(mine.masters).toEqual(old.masters);
   });
@@ -67,7 +82,19 @@ describe.each(cities)('pipeline referee on the %s city', (name, load) => {
     // The fixture's calibration revises nothing (every `revision.at` probability is 0).
     const revises = input.calibration.revision.at.some((a) => a.probability > 0);
     expect(revises).toBe(name === 'bench');
-    if (!revises) delete (seen as Partial<typeof seen>).revised;
+    const seen: Partial<Seen> = { phases: 0, entitled: 0, exit: 0, complete: 0, open: 0 };
+    if (revises) seen.revised = 0;
+    const done = () => Object.values(seen).every((v) => v! > 0);
+    // The referee's own runs, seed by seed, until every case has been seen.
+    for (const seed of SEEDS) {
+      for (const atNear of [false, true]) {
+        const key = `${seed}:${atNear}`;
+        if (!tallies.has(key)) mineOf(seed, atNear);
+        const t = tallies.get(key)!;
+        for (const k of Object.keys(seen) as (keyof Seen)[]) seen[k]! += t[k];
+      }
+      if (done()) break;
+    }
     for (const [k, v] of Object.entries(seen)) expect(v, k).toBeGreaterThan(0);
   });
 

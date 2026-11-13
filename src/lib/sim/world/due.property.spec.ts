@@ -11,7 +11,7 @@ import { lotEntity, ordinaryStart, skipBound } from './rates';
 import { staticsOf, type Statics } from './statics';
 import { benchInput } from './test/cities.node';
 import { Recorder, horizonMonth, runWorld } from './test/run';
-import { changingAt, everyStage, frameOf, limited, marketAt } from './test/timeline';
+import { changingAt, everyStage, frameOf, limited, marketAt, oneFrame } from './test/timeline';
 import type { Due, StepSink, World } from './types';
 import { createWorld, step } from './world';
 
@@ -114,6 +114,38 @@ describe('the due list, bench city with a frame change at month 121', () => {
     };
     expect(run(seed, { plan }).events).toEqual(run(seed).events);
   });
+
+  it.each([1, 2])(
+    'planDue with and without the skip shortcut gives the same due lists (seed %i)',
+    (seed) => {
+      // Under the timeline with a change at month m and under one frame (no replan to mask a
+      // difference), at worlds stepped to months 0, 60 and 150, each planned through 60, 200 and
+      // the horizon where that lies ahead.
+      let compared = 0;
+      for (const timeline of [t, oneFrame(frameOf(input))]) {
+        const w = createWorld(statics, timeline, seed, NOWHERE);
+        const due = planDue(w, statics, timeline, seed, H);
+        for (const at of [0, 60, 150]) {
+          while (w.month < at) step(w, due, statics, timeline, seed, NOWHERE);
+          for (const through of [60, 200, H]) {
+            if (through <= at) continue;
+            const on = planDueWith(structuredClone(w), statics, timeline, seed, through, {
+              skip: true
+            });
+            const off = planDueWith(structuredClone(w), statics, timeline, seed, through, {
+              skip: false
+            });
+            for (let m = at + 1; m <= through; m++) {
+              const a = on.take(m);
+              expect(a, `month ${at}, through ${through}, take(${m})`).toEqual(off.take(m));
+              compared += a.length;
+            }
+          }
+        }
+      }
+      expect(compared).toBeGreaterThan(0);
+    }
+  );
 
   it.each(SEEDS)('the skip bound passes only lots that start past through (seed %i)', (seed) => {
     const sh = seedHash(seed);

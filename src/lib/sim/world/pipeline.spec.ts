@@ -24,18 +24,28 @@ describe('phases', () => {
   const input = outOfOrder();
   const statics = staticsOf(input);
 
-  // One test per seed (each steps the whole bench city); the last checks some seed swapped.
-  let swapped = 0;
-  it.each(SEEDS)('seed %i: phases file in day order when a plan date comes first', (seed) => {
+  // Each seed's phase filings, kept from whichever test ran the seed first (each run steps the
+  // whole bench city), so each test holds on its own when run alone or shuffled.
+  const filings = new Map<number, Recorder['events']>();
+  const runOf = (seed: number) => {
     const rec = new Recorder();
     const w = runWorld(statics, oneFrame(frameOf(input)), seed, horizonMonth(input.asOf), rec);
     const filed = rec.events.filter((e) => e.kind === 'phaseFiled');
+    filings.set(seed, filed);
+    return { w, filed };
+  };
+  const firstPhase = (seed: number) => {
+    const filed = filings.get(seed) ?? runOf(seed).filed;
+    return filed[0].kind === 'phaseFiled' ? filed[0].phase : 0;
+  };
+
+  it.each(SEEDS)('seed %i: phases file in day order when a plan date comes first', (seed) => {
+    const { w, filed } = runOf(seed);
     expect(filed.length).toBe(input.projects[0].phases!.length);
     for (let i = 1; i < filed.length; i++) {
       expect(filed[i].day).toBeGreaterThanOrEqual(filed[i - 1].day);
     }
     for (const e of filed) expect(monthOfDay(input.asOf, e.day)).toBe(e.month);
-    if (filed[0].kind === 'phaseFiled' && filed[0].phase !== 1) swapped++;
     const old = simulateDetailed(oldInputOf(input), seed, HORIZON);
     expect(readAll(w, statics, HORIZON)).toEqual({
       schedules: old.schedules,
@@ -44,7 +54,7 @@ describe('phases', () => {
   });
 
   it('some seed files a later phase first', () => {
-    expect(swapped).toBeGreaterThan(0);
+    expect(SEEDS.some((seed) => firstPhase(seed) > 1)).toBe(true);
   });
 
   it('rowStaticsOf is memoised per statics and view', () => {
