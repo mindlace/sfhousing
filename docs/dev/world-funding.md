@@ -227,7 +227,7 @@ after every step. It takes about 4 minutes, so it will run only behind an env sw
 fills local R2 only, not a directory).
 
 Signoff keeps `referee-ledger.spec.ts` (above). The record of the held referee's run of 2026-11-13
-(synthCity; live `2026-11-10-6ee5a23d`); "r" is |new − old| / old:
+(synthCity; live `2026-11-10-6ee5a23d`; after the award-day fix); "r" is |new − old| / old:
 
 | Case                | Year | net new  | net sd  | net old  | old sd  | mean r | sd r  | awards new | awards old | aw r  | funded new | funded old | fu r  |
 | ------------------- | ---- | -------- | ------- | -------- | ------- | ------ | ----- | ---------- | ---------- | ----- | ---------- | ---------- | ----- |
@@ -235,26 +235,27 @@ Signoff keeps `referee-ledger.spec.ts` (above). The record of the held referee's
 |                     | 10   | 196535.8 | 7447.0  | 196536.0 | 7446.9  | 0.0000 | 0.000 | 39.97      | 39.93      | 0.001 | 7770.2     | 7770.3     | 0.000 |
 |                     | 20   | 411972.3 | 11924.0 | 411982.1 | 11921.5 | 0.0000 | 0.000 | 78.14      | 78.09      | 0.001 | 15572.0    | 15572.5    | 0.000 |
 |                     | 40   | 814565.0 | 16162.0 | 814567.7 | 16160.2 | 0.0000 | 0.000 | 153.99     | 153.94     | 0.000 | 31171.7    | 31171.4    | 0.000 |
-| synthCity bench set | 5    | 85558.1  | 3957.2  | 85580.1  | 3911.1  | 0.0003 | 0.012 | 85.91      | 67.33      | 0.276 | 6877.3     | 6726.0     | 0.022 |
-|                     | 10   | 197841.5 | 7496.3  | 197834.0 | 7495.6  | 0.0000 | 0.000 | 128.02     | 108.34     | 0.182 | 10856.9    | 10673.5    | 0.017 |
-|                     | 20   | 414891.2 | 11959.3 | 414870.3 | 11970.0 | 0.0001 | 0.001 | 216.58     | 198.96     | 0.089 | 20628.9    | 20445.6    | 0.009 |
-|                     | 40   | 820498.6 | 16258.5 | 820542.3 | 16246.2 | 0.0001 | 0.001 | 388.70     | 375.16     | 0.036 | 40183.3    | 40005.0    | 0.004 |
+| synthCity bench set | 5    | 85558.6  | 3956.9  | 85580.1  | 3911.1  | 0.0003 | 0.012 | 85.84      | 67.33      | 0.275 | 6877.2     | 6726.0     | 0.022 |
+|                     | 10   | 197840.4 | 7495.8  | 197834.0 | 7495.6  | 0.0000 | 0.000 | 128.05     | 108.34     | 0.182 | 10857.4    | 10673.5    | 0.017 |
+|                     | 20   | 414895.8 | 11959.7 | 414870.3 | 11970.0 | 0.0001 | 0.001 | 216.75     | 198.96     | 0.089 | 20631.9    | 20445.6    | 0.009 |
+|                     | 40   | 820518.8 | 16248.9 | 820542.3 | 16246.2 | 0.0000 | 0.000 | 388.43     | 375.16     | 0.035 | 40184.5    | 40005.0    | 0.004 |
 | live baseline       | 5    | 16552.0  | 3898.5  | 16552.0  | 3898.5  | 0.0000 | 0.000 | 25.39      | 25.38      | 0.001 | 4651.6     | 4651.3     | 0.000 |
 |                     | 10   | 36143.7  | 5364.8  | 36144.8  | 5364.6  | 0.0000 | 0.000 | 41.52      | 41.52      | 0.000 | 7772.0     | 7772.1     | 0.000 |
 |                     | 20   | 58564.9  | 5311.7  | 58569.4  | 5310.2  | 0.0001 | 0.000 | 81.67      | 81.68      | 0.000 | 15570.3    | 15570.4    | 0.000 |
 |                     | 40   | 86256.8  | 6061.7  | 86267.9  | 6073.8  | 0.0001 | 0.002 | 160.97     | 160.95     | 0.000 | 31167.6    | 31168.1    | 0.000 |
 
-T3 (funded here, ordinary there in the same month): synthCity baseline 8, bench set 2911, live 1.
+T3 (funded here, ordinary there in the same month): synthCity baseline 8, bench set 2908, live 1.
 synthCity baseline and live pass every tolerance. **The bench set misses mean awards** at every
-year (0.276, 0.182, 0.089, 0.036 against 0.03); net homes and funded homes pass. The extra awards
+year (0.275, 0.182, 0.089, 0.035 against 0.03); net homes and funded homes pass. The extra awards
 are small uncertain ones (`u-bench-afford` alone, `u-bench-loan`). The miss is with the partner; no
 rule was changed to meet it.
 
-Investigation of 2026-11-13 (synthCity, bench set, seeds 1 to 200): T3 does not explain the miss.
-Counting T3's 2911 awards as ordinary still leaves awards 0.066 off at year 5 and 0.051 at year 10.
-Every seed diverges in month 1, day 1, and the cause is R5: the month-1 scan serves in key order,
-so small `u-bench-loan` and `u-bench-afford` applications dated later in the month drain
-`u-bench-fund` before a large day-1 certain application is tested. Today's engine serves by day.
+Investigation of 2026-11-13 (synthCity, bench set, seeds 1 to 200, run before the award-day fix):
+T3 does not explain the miss. Counting T3's 2911 awards as ordinary still leaves awards 0.066 off
+at year 5 and 0.051 at year 10. Every seed diverges in month 1, day 1, and the cause is R5: the
+month-1 scan serves in key order, so small `u-bench-loan` and `u-bench-afford` applications dated
+later in the month drain `u-bench-fund` before a large day-1 certain application is tested. Today's
+engine serves by day.
 
 ## Known differences from today
 
