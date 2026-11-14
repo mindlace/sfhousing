@@ -19,6 +19,7 @@ import { miniCompileCtx } from '../policy/test/compile-fixtures';
 import { miniDoc, span } from '../policy/test/fixtures';
 import { masterAt, scheduleAt } from '../read';
 import { staticsOf, type Statics } from '../statics';
+import { fundedMini, oneMoneyTimeline, runFunded } from '../funding/test/fixtures';
 import { fixtureInput } from '../test/cities.node';
 import { horizonMonth, runWorld } from '../test/run';
 import { frameOf, oneFrame } from '../test/timeline';
@@ -308,4 +309,42 @@ describe('cardAt: the lot-limits line from the frame', () => {
     // and back: nothing about the earlier frame was kept
     expect(cardAt(world, statics, t.frameAt(3), deps, id, asOf).summary.limits).toEqual(at3);
   });
+});
+
+describe('cardAt: funded fields from a funded world', () => {
+  const input = fundedMini();
+  const statics = staticsOf(input);
+  const timeline = oneMoneyTimeline(input, input.finance!);
+  const frame = timeline.frameAt(1);
+  const deps = depsOf(false);
+  const { world } = runFunded(statics, timeline, 1, horizonMonth(input.asOf));
+  const p = world.projects;
+  const fundedRows: number[] = [];
+  for (let r = 0; r < p.n; r++)
+    if (p.origin[r] !== ORIGIN_MASTER && p.funded[r] === 1) fundedRows.push(r);
+  const late = Number.MAX_SAFE_INTEGER;
+
+  function cardOf(row: number) {
+    const s = scheduleAt(world, statics, row, late)!;
+    return cardAt(world, statics, frame, deps, s.parcelIds[0], late, s.projectId).summary.project!;
+  }
+
+  it('funding.programmes are programme ids', () => {
+    expect(fundedRows.length).toBeGreaterThan(0);
+    for (const r of fundedRows) {
+      const want = p.programmes[r] === '' ? [] : p.programmes[r].split(',');
+      expect(cardOf(r).funding?.programmes).toEqual(want);
+    }
+  });
+
+  it('an affordable funded project carries kind affordable', () => {
+    const rows = fundedRows.filter((r) => p.kind[r] === 1);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) expect(cardOf(r).kind).toBe('affordable');
+    for (const r of fundedRows.filter((x) => p.kind[x] === 0))
+      expect(cardOf(r).kind).toBeUndefined();
+  });
+
+  // waits for world-funding shadows sha
+  it.todo('funding.displaced is 0 before the displaced event and the shadow’s homes from its day');
 });
