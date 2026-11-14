@@ -89,6 +89,18 @@ const T_START = { at: 0 };
 const stage = (msg: string) =>
   console.info(`[apply-cost] +${((performance.now() - T_START.at) / 1000).toFixed(1)}s ${msg}`);
 
+/**
+ * Demolitions in one update with a demolish list: a refill's newly known lots reaching
+ * construction (a test value; the generator's whole list, 15% of 500 projects a cell, would make
+ * the pump's backlog, not the apply, the thing timed). The list is reset to the base's (revision 0)
+ * before the series, so it holds at most RUNS * DEMOLISH_PER_UPDATE ids.
+ */
+const DEMOLISH_PER_UPDATE = 200;
+
+/** Wall-clock bound of the whole test: a stuck wait fails it, it does not hang. */
+const TOTAL_MS = 300_000;
+const DEADLINE = { at: 0 };
+
 /** Wall-clock bound of one wait. */
 const WAIT_MS = 60_000;
 
@@ -98,6 +110,8 @@ async function waitFor<T>(what: string, read: () => T, ok: (v: T) => boolean): P
   for (;;) {
     const v = read();
     if (ok(v)) return;
+    if (performance.now() > DEADLINE.at)
+      throw new Error(`total ${TOTAL_MS / 1000} s bound passed waiting for ${what}`);
     if (performance.now() - t0 > WAIT_MS)
       throw new Error(
         `timed out after ${WAIT_MS / 1000} s waiting for ${what}; last snapshot ${JSON.stringify(v)}`
@@ -138,6 +152,7 @@ async function applyTimed(h: SimMapHandle, u: TimelineUpdate): Promise<number> {
 describe('apply cost (real map, playback running)', { timeout: 900_000 }, () => {
   it('times one fill update of 22 and of 121 cells until pending is 0', async () => {
     T_START.at = performance.now();
+    DEADLINE.at = T_START.at + TOTAL_MS;
     const h = await mountReady();
     stage('map ready');
     h.setTime(SYNTHETIC_START);
@@ -163,15 +178,26 @@ describe('apply cost (real map, playback running)', { timeout: 900_000 }, () => 
         );
         stage(`k=${k}: base installed in ${(performance.now() - b0).toFixed(0)} ms`);
         // Two series: install only (no demolish list), then with the generator's demolish list
-        // (fresh parcel ids each run, so the pump always has new entries). The synthetic parcels
+        // (DEMOLISH_PER_UPDATE lots, fresh parcel ids each run). The synthetic parcels
         // are not on the fixture map, so the pump's feature-state calls hit no feature.
         for (const withDemolish of [false, true]) {
+          if (withDemolish) {
+            // Back to the base: its revision 0 replaces the pump's list, so nothing carries over.
+            h.applyTimeline({ ...a, demolish: [] });
+            await waitFor(
+              `base ${k} reinstalled and pending 0`,
+              () => dbg().timelineSnapshot(),
+              (sn) => sn !== null && sn.revision === 0 && sn.cells === k && sn.pending === 0
+            );
+          }
           const ms: number[] = [];
           for (let r = 0; r < RUNS; r++) {
             const next = r % 2 === 0 ? b : a;
             const revision = dbg().timelineSnapshot()!.revision + 1;
             const demolish = withDemolish
-              ? next.demolish.map((d) => ({ ...d, parcelId: `${d.parcelId}-${k}-${revision}` }))
+              ? next.demolish
+                  .slice(0, DEMOLISH_PER_UPDATE)
+                  .map((d) => ({ ...d, parcelId: `${d.parcelId}-${k}-${revision}` }))
               : [];
             ms.push(await applyTimed(h, { ...next, revision, demolish }));
           }
