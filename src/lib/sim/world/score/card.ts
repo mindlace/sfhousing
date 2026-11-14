@@ -120,7 +120,8 @@ export function cardAt(
   };
 
   // The lot-limits line, as the host's: an eligible lot with plan stories; owner and protection
-  // from the frame's attribution (a protected lot reads FZP, nothing buildable).
+  // from the frame's attribution (a protected lot reads FZP, nothing buildable); a null from
+  // `deps.buildable` (nothing the lot can build) stays null, as the host's.
   if (i !== undefined && rec.eligible && summary.envelope) {
     const allowed = summary.envelope.maxStories;
     const fl = limitsOf(frame, parcelId);

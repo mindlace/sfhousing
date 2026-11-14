@@ -295,6 +295,26 @@ describe('cardAt: the lot-limits line from the frame', () => {
     });
   });
 
+  it('deps answering null (nothing buildable) pass null through; the rest of limits is unchanged', () => {
+    // The host answers null where neither the generator nor `lotBuildableStories` can build
+    // (no usable site polygon); the card keeps that null, as today's `parcelSummary` does.
+    const t = compiled(paintedPolicy('p'), protectPolicy('rc', 'rentControl'));
+    const world = createWorld(statics, t, 1, { event() {} });
+    const frame = t.frameAt(1);
+    const parcels = frame.view.parcels;
+    const none: CardDeps = { ...deps, buildable: () => null };
+    let checked = 0;
+    for (const [parcelId, i] of parcels.index) {
+      if (parcels.envelopeStories[i] === 0) continue;
+      const some = cardAt(world, statics, frame, deps, parcelId, asOf).summary.limits!;
+      const got = cardAt(world, statics, frame, none, parcelId, asOf).summary.limits!;
+      expect(got, parcelId).toEqual({ ...some, buildable: null });
+      expect(got).toHaveProperty('buildable', null);
+      if (!some.protected) checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
   it('a painted policy from month 4: the card follows the frame passed in', () => {
     const t = compiled(paintedPolicy('p', 4));
     expect(t.frameAt(3)).not.toBe(t.frameAt(4));
