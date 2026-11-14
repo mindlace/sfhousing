@@ -90,11 +90,36 @@ export function lidarTilesOf(
   return out;
 }
 
+/** tile.json as sfh_lidar.rasterize writes it (`_meta`). */
 interface TileMeta {
+  tx: number;
+  ty: number;
+  sizeM: number;
+  res: number;
+  groundRes: number;
+  nx: number;
+  ny: number;
+  gnx: number;
+  gny: number;
   points: number;
-  sizeM?: number;
-  res?: number;
-  groundRes?: number;
+}
+
+/** Parse a tile.json; a missing or wrong key is an error, never a default. */
+export function parseTileMeta(text: string, tx: number, ty: number): TileMeta {
+  const m = JSON.parse(text) as Record<string, unknown>;
+  const where = `tile ${tx}_${ty} tile.json`;
+  for (const k of ['tx', 'ty', 'sizeM', 'res', 'groundRes', 'nx', 'ny', 'gnx', 'gny', 'points']) {
+    if (typeof m[k] !== 'number') throw new Error(`${where}: missing numeric '${k}'`);
+  }
+  const t = m as unknown as TileMeta;
+  if (t.tx !== tx || t.ty !== ty) throw new Error(`${where}: is for ${t.tx}_${t.ty}`);
+  const want = { sizeM: BOXES.tileSizeM, res: BOXES.rasterResM, groundRes: BOXES.groundResM };
+  for (const [k, v] of Object.entries(want)) {
+    if (t[k as keyof typeof want] !== v) {
+      throw new Error(`${where}: ${k} ${t[k as keyof typeof want]} is not ${v}`);
+    }
+  }
+  return t;
 }
 
 function i16(file: string): Int16Array {
@@ -178,17 +203,27 @@ export async function fetchLidar(
     if (!existsSync(metaFile)) {
       throw new Error(`rasterize wrote no tile ${tx}_${ty} under ${workDir}`);
     }
-    const meta = JSON.parse(readFileSync(metaFile, 'utf8')) as TileMeta;
+    const meta = parseTileMeta(readFileSync(metaFile, 'utf8'), tx, ty);
     if (!(meta.points > 0)) continue;
+    const hagCm = i16(join(dir, 'hag.i16'));
+    const groundCm = i16(join(dir, 'ground.i16'));
+    const veg = new Uint8Array(readFileSync(join(dir, 'veg.u8')));
+    if (
+      hagCm.length !== meta.nx * meta.ny ||
+      veg.length !== hagCm.length ||
+      groundCm.length !== meta.gnx * meta.gny
+    ) {
+      throw new Error(`tile ${tx}_${ty}: array sizes do not match tile.json`);
+    }
     const bytes = encodeLidarTile({
       tx,
       ty,
-      sizeM: meta.sizeM ?? BOXES.tileSizeM,
-      res: meta.res ?? BOXES.rasterResM,
-      groundRes: meta.groundRes ?? BOXES.groundResM,
-      hagCm: i16(join(dir, 'hag.i16')),
-      groundCm: i16(join(dir, 'ground.i16')),
-      veg: new Uint8Array(readFileSync(join(dir, 'veg.u8')))
+      sizeM: meta.sizeM,
+      res: meta.res,
+      groundRes: meta.groundRes,
+      hagCm,
+      groundCm,
+      veg
     });
     const tmp = join(workDir, `.${tx}_${ty}.sfhl.tmp`);
     writeFileSync(tmp, bytes);

@@ -18,10 +18,26 @@ import {
 import { decodeLidarTile } from '../lib/lidar/tile';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'sfh-lidar-'));
-const SMALL = { size: 4, res: 1 };
+/** Array sizes the fake writes: tiny, and declared in tile.json as the rasterizer does. */
+const N = 4;
+const GN = 2;
+/** tile.json in the rasterizer's `_meta` shape (sfh_lidar/rasterize.py). */
+const meta = (tx: number, ty: number, points: number, over: object = {}) => ({
+  tx,
+  ty,
+  sizeM: 500,
+  res: 0.25,
+  groundRes: 1,
+  nx: N,
+  ny: N,
+  gnx: GN,
+  gny: GN,
+  points,
+  ...over
+});
 
 /** A fake rasterizer: tiles 0_0 (points 10) and 1_0 (points 0) under the --out dir it is given. */
-function fakeRun(code = 0) {
+function fakeRun(code = 0, over: object = {}) {
   const calls: string[][] = [];
   const run = async (_cmd: string, args: string[]): Promise<RunResult> => {
     calls.push(args);
@@ -29,7 +45,7 @@ function fakeRun(code = 0) {
     const out = args[args.indexOf('--out') + 1];
     if (args.includes('--dry-run'))
       return { stdout: 'tile 0_0 nodes 1 points 10', stderr: '', code };
-    const n = SMALL.size * SMALL.size;
+    const n = N * N;
     for (const [name, points] of [
       ['0_0', 10],
       ['1_0', 0]
@@ -40,13 +56,11 @@ function fakeRun(code = 0) {
         const hag = Buffer.alloc(n * 2);
         for (let i = 0; i < n; i++) hag.writeInt16LE(i * 10, i * 2);
         writeFileSync(join(d, 'hag.i16'), hag);
-        writeFileSync(join(d, 'ground.i16'), Buffer.alloc(n * 2, 1));
+        writeFileSync(join(d, 'ground.i16'), Buffer.alloc(GN * GN * 2, 1));
         writeFileSync(join(d, 'veg.u8'), Buffer.alloc(n, 1));
       }
-      writeFileSync(
-        join(d, 'tile.json'),
-        JSON.stringify({ points, sizeM: SMALL.size, res: SMALL.res, groundRes: SMALL.res })
-      );
+      const [tx, ty] = name.split('_').map(Number);
+      writeFileSync(join(d, 'tile.json'), JSON.stringify(meta(tx, ty, points, over)));
     }
     return { stdout: '', stderr: '', code };
   };
@@ -76,6 +90,15 @@ describe('fetchLidar', () => {
     expect(lidarUpstreamVersion()).toBe(entry!.upstreamVersion);
     expect(entry!.license).toBe('public-domain');
     expect(entry!.rowCount).toBe(1);
+  });
+
+  it.each([
+    ['a missing key', { groundRes: undefined }, /missing numeric 'groundRes'/],
+    ['a different resolution', { res: 0.5 }, /res 0.5 is not 0.25/],
+    ['array sizes that disagree', { nx: 5 }, /array sizes do not match/]
+  ])('rejects tile.json with %s', async (_n, over, re) => {
+    const { run } = fakeRun(0, over);
+    await expect(fetchLidar(tmp(), { tiles: TILES, workDir: tmp() }, { run })).rejects.toThrow(re);
   });
 
   it('passes the BOXES raster parameters', async () => {
