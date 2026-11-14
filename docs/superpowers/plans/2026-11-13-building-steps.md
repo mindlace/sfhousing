@@ -4,7 +4,10 @@
 
 **Goal:** Existing buildings render from z14 as a few boxes per building (base, false-front strips, steps) derived from footprint-registered 2023 LiDAR, and from OSM building parts where they exist, while every model input stays byte-identical.
 
-**Architecture:** A fetch-time Python tool (uv-pinned, laspy) turns the USGS EPT cloud into 500 m raster tiles (height above ground, ground, vegetation) that are locked and archived like any raw source. Inside `build`, a new TypeScript step reads `buildings`, Overture building parts and the rasters, registers footprint clusters to the LiDAR, derives render-only boxes into `render_boxes` (never `pieces`), clips them to parcels with a 50_clip-style SQL file, and the tiles step writes them at z14–15 beside today's single boxes at z12–13 in the same `buildings` layer.
+**Architecture:** Three stages, each with its own inputs:
+1. **LiDAR fetch.** A fetch-time Python tool (uv-pinned, laspy) turns the USGS EPT cloud into 500 m raster tiles (height above ground, ground, vegetation). The tiles are locked in their own `pipeline/lidar.lock.json` and archived to R2.
+2. **`npm run pipeline -- boxes`.** A separate TypeScript command, run only when boxes must change. It reads the tiles, the locked Overture buildings and parts, and the parcels and streets it needs. It registers footprint clusters to the LiDAR, derives per-building boxes and roof records, and writes a compact parquet artifact `building-boxes`. The artifact is locked in `sources.lock.json` like any source, together with the hashes of the inputs and code it came from.
+3. **`build`.** Build never touches LiDAR. When the lock has the artifact, build composes the render-only table `render_boxes` (never `pieces`), clips it to parcels with a 50_clip-style SQL file, and the tiles step writes the boxes at z14–15 beside today's single boxes at z12–13 in the same `buildings` layer. Without the artifact, build output is today's.
 
 **Tech Stack:** TypeScript (tsx, Vitest pipeline project), DuckDB spatial, clipper2-ts 2.0.1 (already a dependency), tippecanoe 2.79.0, pmtiles 1.31.2, Python 3.14 under uv (numpy 2.5.4, scipy 1.18.1, laspy 2.7.0, lazrs 0.8.2, pyproj 3.8.0, pytest) for the LiDAR fetch only, Playwright for the review script.
 
@@ -13,6 +16,9 @@
 ## Global Constraints
 
 - Model inputs never move: `30_buildings`, `40_heights`, `50_clip`, `55_road_lots`, `60_attributes`, `70_export`, `81_scenario_features` and `SQL_FILES` (`pipeline/lib/sql.ts:7-18`) are unchanged; `pieces`, `parcel_out`, the chunks, `parcels.bin`, `policy.bin`, `gross.bin`, `projects.json` and `calibration.json` stay byte-identical. Boxes live in a render-only table beside `pieces`.
+- `build` never reads the LiDAR tiles, never needs Python and never derives boxes. It consumes only the locked `building-boxes` artifact. A lock without the artifact builds today's single boxes: `buildings.pmtiles` and its tippecanoe input are byte-identical to main's.
+- The LiDAR tiles are listed only in `pipeline/lidar.lock.json`, never in `sources.lock.json`. So `fetch --restore` and `build` never download or verify them. Only `fetch --restore --lidar` and `boxes` need them.
+- `build` fails loudly when the artifact's recorded `overture-buildings` or `overture-building-parts` hash differs from the current lock (stale boxes would sit on the wrong footprints). The message names `npm run pipeline -- boxes`.
 - Footprints and parcels never move. Registration shifts only where the LiDAR is sampled.
 - No LiDAR-derived box pokes outside its building footprint. Only `part` boxes may (parts are curated; Sutro's legs).
 - One MapLibre `fill-extrusion` layer (`existing-buildings`), source-layer `buildings`, `promoteId: { buildings: 'parcelId' }`, unchanged in `src/lib/map/style.ts:217-243`. z12–13 carry today's single boxes with today's four properties only (`parcelId`, `heightM`, `baseM`, `hs`), so `z12BuildingsMax` (`pipeline/config.ts:177`, 2.0e6 B) holds; z14+ carry the new boxes with `src`, `groundM`, `groundMinM` added.
@@ -25,19 +31,28 @@
 
 ## Review Focus
 
-1. **Parts from another Overture release than the footprints** (a refresh of one source without the other): `building_id` would silently miss its buildings. Expect the build to stop with a message naming both releases. Test in Task 4.
+1. **Inputs out of step.** Two cases: Overture refreshed without re-running `boxes`, or parts from another Overture release than the footprints. Either way the boxes or parts would silently land on the wrong footprints or miss their buildings. Expect `build` to stop with a message that names the fix (`npm run pipeline -- boxes`, or refetching both with `--release`). Tests in Task 4 (releases) and Task 10 (stale artifact).
 2. **A building or cluster that straddles two raster tiles**: its window must read as one seamless raster, not a nodata seam that triggers a fallback or a fake edge. Test in Task 5.
-3. **A dense z14 tile over tippecanoe's 400 KB limit**: `--drop-smallest-as-needed` silently deletes small buildings downtown. Expect the drop to be detected and V37 to fail. Test in Task 10.
+3. **A dense z14 tile over tippecanoe's 400 KB limit**: `--drop-smallest-as-needed` silently deletes small buildings downtown. Expect the drop to be detected and V37 to fail. Test in Task 11.
 4. **Unusual footprints: holed (courtyard), MultiPolygon, elevated (`base_m` > 0, skybridges and canopies)**: boxes stay inside the footprint, holes stay open, and an elevated building keeps its single box. Test in Task 7.
-5. **A rebuilt parcel at z16 with several boxes**: the `replaced` feature-state must hide every one of them (base, front, step, part), not just one. Tested by the shared-`parcelId` assertion in Task 10 and by the existing `e2e/map.spec.ts` replaced checks at z16–17, which Task 10 re-runs.
+5. **A rebuilt parcel at z16 with several boxes**: the `replaced` feature-state must hide every one of them (base, front, step, part), not just one. Tested by the shared-`parcelId` assertion in Task 11 and by the existing `e2e/map.spec.ts` replaced checks at z16–17, which Task 11 re-runs.
 
 ## Decisions (builder's calls made here)
 
 - **LiDAR tooling: Python under uv, fetch time only.** The spike's working reader is laspy + lazrs + pyproj (`scripts/ept.py`), not PDAL, and PDAL is not installed; uv pins Python and wheels in one `uv.lock` with one install (`brew install uv`). Build, fixture and `test:pipeline` never need Python.
-- **Derived artifact: raster tiles, locked as source `usgs-lidar-sf`.** The raster does not depend on footprints or thresholds, so a footprint refresh or a tuning round never refetches LiDAR. Format `sfhl/1`: 500 m tiles in EPSG:7131, height above ground (Int16 cm, 0.25 m), ground (Int16 cm, 1 m), vegetation (one bit per 0.25 m cell). 0.25 m is the resolution the spike's edge fit was validated on.
-- **Derivation in TypeScript inside `build`.** Registration, roof, false-front and step derivation run as a build step on clipper2-ts and plain typed arrays, so they are tested in Vitest on synthetic rasters. The codebase is TS + DuckDB.
-- **`usgs-lidar-sf` is not in the default `fetch` list.** A 2023 flight never changes and fetching takes hours. Only `fetch --only usgs-lidar-sf` fetches it.
-- **Optional sources.** A lock without `usgs-lidar-sf` builds with every building on `src: 'box'`; a lock without `overture-building-parts` gives an empty `src_overture_parts`. The same pattern as `datasf-streets` (`pipeline/sources/normalise.ts:49-56`).
+- **Two derived artifacts.**
+  - **LiDAR raster tiles (`usgs-lidar-sf`), in `pipeline/lidar.lock.json`.** Format `sfhl/1`: 500 m tiles in EPSG:7131, height above ground (Int16 cm, 0.25 m), ground (Int16 cm, 1 m), vegetation (one bit per 0.25 m cell). 0.25 m is the resolution the spike's edge fit was validated on. The tiles do not depend on footprints or thresholds, so a tuning round never refetches LiDAR. A separate lock keeps the 1–3 GB of tiles out of every `fetch --restore` and `build`. `upload` archives the tiles; `fetch --restore --lidar` restores them.
+  - **The `building-boxes` artifact, in `sources.lock.json`.** Three files: `boxes.parquet` (LiDAR and part boxes, WKB in EPSG:7131; a full-footprint base box stores no geometry), `roofs.parquet` (one roof record per building) and `inputs.json`. Each recorded input is a full sha256 hash. The lock entry's `upstreamVersion` carries 12-hex prefixes of the same hashes, so the stale check needs only the lock, not the raw cache.
+- **Derivation in TypeScript, in the `boxes` command.** Registration, roof, false-front and step derivation run on clipper2-ts and plain typed arrays, so they are tested in Vitest on synthetic rasters. Build only composes, clips and tiles. The codebase is TS + DuckDB.
+- **Recorded inputs and what they gate.** The artifact records:
+  - `overture-buildings` and `overture-building-parts`, which gate: a mismatch is a `BuildError`;
+  - `usgs-lidar-sf` (from the LiDAR lock), `datasf-parcels`, `datasf-streets` and `datasf-neighborhoods`, which only warn: they move clustering, fronts or the kept set, never the footprints a box sits on;
+  - the BOXES config hash (`sha256(canonicalJson(BOXES))`) and the boxes code hash, which also only warn, on live builds.
+  A fixture build skips the code and config warnings so the golden `report.json` stays stable. A test that re-derives the mini artifact catches drift there instead.
+- **Boxes code stays under `pipeline/`, inside the dataset-version hash.** Its own hash, `boxesCodeHash` over `BOXES_CODE_PATHS`, is recorded in the artifact as well. The rule "everything under `pipeline/` is hashed" needs no exclusion list. A misfiled exclusion could let code that `build` reads change without a version change, and `upload` would then refuse the rebuilt version (V13) while staging served the old bytes. The cost: a boxes-only code edit needs a dataset upload. That is already the convention for any pipeline edit, and in the tuning loop such an edit comes with a new artifact anyway. `pipeline/lidar.lock.json` is hashed for the same reason; it changes about once.
+- **The stale-artifact check lives in `build` and `doctor`, not `version`.** `doctor` gets a required `boxes-lock` check, so a machine sees the problem before a long build. `version` (`scripts/dataset-version.ts`) stays a light hash printer for CI and chreode. A tree with a stale artifact cannot build, so it can never publish, and signoff's `dataset` step already fails for it.
+- **`usgs-lidar-sf` is not in the default `fetch` list.** A 2023 flight never changes and fetching takes hours. Only `fetch --only usgs-lidar-sf` fetches it, writing `pipeline/lidar.lock.json`.
+- **Optional sources.** A lock without `building-boxes` builds today's boxes. A lock without `overture-building-parts` gives an empty `src_overture_parts`. The same pattern as `datasf-streets` (`pipeline/sources/normalise.ts:49-56`). `boxes` without a LiDAR lock still runs: every building falls back (`no_lidar`), and only parts get boxes.
 - **Cluster "split at streets" = same assessor block.** Two footprints join when they lie within 1.5 m of each other and their main parcels share a block (`SQL_BLOCK_OF`, `pipeline/lib/road-lots.ts:62`). Assessor blocks are bounded by streets, and the data is already in `pieces`.
 - **Street-facing faces from `src_streets`.** A face is street-facing when a public centreline (the R2s layer exclusions in `docs/dev/pipeline.md` Road-like lots) lies within 30 m along its outward side (cosine ≥ 0.7). The lock already has `datasf-streets`.
 - **Main roof = lowest roof level covering ≥ 25% of the interior** (see Spec ambiguities). False-front rise and step gap are measured against the base box's rendered top.
@@ -46,7 +61,8 @@
 - **Trees:** LiDAR vegetation classes 3–5 when present, plus the spike's multi-return share (> 0.35 of first returns from multi-return pulses, HAG > 1 m), plus a roughness filter in the step search. No street-tree source: it adds a source, and phantom steps are judged in review.
 - **DataSF footprint cross-check: not built.** Revisit only if a review round shows a high fallback share.
 - **No style change by `src`** (YAGNI; the spec makes it optional).
-- **No `/attribution` change.** The page already credits OpenStreetMap under ODbL and Overture (`src/routes/attribution/+page.svelte:55-63`), which covers OSM-derived parts. It lists every manifest source (`:33-46`), so `overture-building-parts` and `usgs-lidar-sf` appear without code.
+- **No `/attribution` change.** The page already credits OpenStreetMap under ODbL and Overture (`src/routes/attribution/+page.svelte:55-63`), which covers OSM-derived parts. It lists every manifest source (`:33-46`), so `overture-building-parts` and `building-boxes` (labelled `Building boxes (USGS 3DEP LiDAR 2023 and Overture)`, licence `ODbL-1.0` because it derives from Overture) appear without code. That label is where the USGS credit shows.
+- **Fallback buildings carry no geometry in the artifact.** `build` draws their single box from its own `buildings` table (`height_m` from `40_heights.sql`). The artifact therefore does not depend on DataSF heights, and missing or extra bids are harmless.
 
 ## Spec ambiguities resolved here
 
@@ -60,7 +76,7 @@
 
 ## Open questions
 
-- **R2 and restore volume.** The raster archive is estimated at 1–3 GB of `sources/` objects (Task 12 measures it). `fetch --restore` in every fresh worktree downloads it before a build can run. Recommendation: accept. The alternative, a footprint-masked raster, ties the artifact to one Overture release.
+None.
 
 ## File Structure
 
@@ -70,11 +86,14 @@
 | `pipeline/lib/lidar/tile.ts` (new) | `sfhl/1` tile codec, tile grid, tile file names |
 | `pipeline/lib/lidar/python.ts` (new) | `uvRun` helper: pinned project, venv under `.cache`, no bytecode |
 | `pipeline/lidar-raster/` (new uv project) | `pyproject.toml`, `uv.lock`, `sfh_lidar/{ept,rasterize}.py`, `tests/test_rasterize.py` |
-| `pipeline/sources/lidar.ts` (new) | `fetchLidar`: runs the rasterizer, encodes tiles, writes the lock entry; `lidarTilesOf` |
+| `pipeline/sources/lidar.ts` (new) | `fetchLidar`: runs the rasterizer, encodes tiles, returns the LiDAR lock entry; `lidarTilesOf` |
+| `pipeline/lidar.lock.json` (new, committed) | the LiDAR tiles' lock, apart from `sources.lock.json` |
 | `pipeline/sources/overture.ts` | `fetchOvertureParts`, `overtureReleaseProblem` |
 | `pipeline/sources/normalise.ts` | `overture-building-parts` → `src_overture_parts` (optional) |
-| `pipeline/steps/fetch.ts`, `pipeline/cli.ts` | new ids and flags, default list without LiDAR |
-| `pipeline/steps/doctor.ts` | `uv` and `lidar-python` checks |
+| `pipeline/steps/fetch.ts`, `pipeline/cli.ts` | new ids and flags, default list without LiDAR, `--restore --lidar`, the `boxes` command |
+| `pipeline/steps/upload.ts` | also archives the LiDAR lock's tiles |
+| `pipeline/steps/doctor.ts` | optional `uv` and `lidar-python` checks; required `boxes-lock` check |
+| `pipeline/lib/version.ts` | `treeHash` refactor, `BOXES_CODE_PATHS`, `boxesCodeHash` |
 | `pipeline/lib/lidar/mosaic.ts` (new) | lazy tile cache; `window(bbox)` → `RasterWindow` |
 | `pipeline/lib/lidar/raster.ts` (new) | cell mask, bilinear, gaussian, gradient, 4-connected labels |
 | `pipeline/lib/lidar/geom.ts` (new) | clipper2-ts wrappers: inset, union, intersect, difference, area, cell runs → polygons |
@@ -83,11 +102,13 @@
 | `pipeline/lib/lidar/streets.ts` (new) | `StreetIndex` for street-facing faces |
 | `pipeline/lib/lidar/derive.ts` (new) | per-building ground reference, roof form, fronts, steps, fallbacks |
 | `pipeline/lib/lidar/parts.ts` (new) | counted parts, part boxes, roof tiers, uncovered area |
-| `pipeline/steps/boxes.ts` (new) | build step: orchestration, `render_boxes`, `building_roofs`, counts, derived files |
-| `pipeline/sql/76_render_clip.sql` (new, not in `SQL_FILES`) | clip `render_boxes` to parcels → `render_pieces`, `render_export` |
-| `pipeline/steps/build.ts`, `tiles.ts`, `check.ts` | wire the step, zoom split, V37 |
+| `pipeline/lib/lidar/artifact.ts` (new) | `building-boxes` lock entry: recorded inputs, `boxesLockProblem`, stale warnings, parquet write/load, counts |
+| `pipeline/steps/boxes.ts` (new) | the `boxes` command: derivation (`bx_boxes`, `bx_roofs`) and writing and locking the artifact |
+| `pipeline/steps/render-boxes.ts` (new) | build step: load the artifact, compose `render_boxes`, clip, counts, derived files |
+| `pipeline/sql/76_render_boxes.sql` (new, not in `SQL_FILES`) | compose `render_boxes` with today's box for fallbacks; clip to parcels → `render_pieces`, `render_export` |
+| `pipeline/steps/build.ts`, `tiles.ts`, `check.ts` | stale check, wire the step, zoom split, V37 |
 | `pipeline/test/lidar-synth.ts` (new) | synthetic scenes → `LidarTile` / `RasterWindow` for tests and the mini fixture |
-| `pipeline/test/fixtures/mini/make-fixture.ts`, `README.md` | parts and synthetic LiDAR tiles |
+| `pipeline/test/fixtures/mini/make-fixture.ts`, `README.md`, `lidar.lock.json` | parts, synthetic LiDAR tiles, the mini LiDAR lock; the mini `building-boxes` artifact comes from `boxes --fixture` |
 | `scripts/building-review.ts` (+ `.spec.ts`) (new) | before/after street-level captures and stats page |
 | `docs/dev/building-boxes.md` (new), `docs/dev/pipeline.md`, `CLAUDE.md`, `docs/dev/map-perf.md` | docs |
 
@@ -105,7 +126,7 @@ export interface Bbox7131 { x0: number; y0: number; x1: number; y1: number }
 
 ### Task 0: Record the base dataset version
 
-- [ ] **Step 1:** Run `npm run pipeline -- version` in the worktree before any pipeline change and note the printed `<v>` in the PR draft notes as `base`. It is main's version, used as a fallback "before" if staging is unreachable in Task 13. No commit.
+- [ ] **Step 1:** Run `npm run pipeline -- version` in the worktree before any pipeline change and note the printed `<v>` in the PR draft notes as `base`. It is main's version, used as a fallback "before" if staging is unreachable in Task 14. No commit.
 
 ### Task 1: `BOXES` config, the `sfhl/1` tile codec, synthetic scenes
 
@@ -209,7 +230,7 @@ Algorithm (ported from `scripts/ept.py` and `fitlib.hag_raster`): read the EPT n
 
 **Files:**
 - Create: `pipeline/sources/lidar.ts`, `pipeline/test/lidar-source.test.ts`
-- Modify: `pipeline/steps/fetch.ts:18-25,27-37,93-124`, `pipeline/cli.ts` (fetch flags `--tiles`, `--jobs`, `--dry-run`), `docs/dev/pipeline.md` (Requirements, Commands table row for `fetch`, the Lock section's source list)
+- Modify: `pipeline/steps/fetch.ts:18-25,27-37,80-131`, `pipeline/cli.ts` (fetch flags `--tiles`, `--jobs`, `--dry-run`, `--lidar`), `pipeline/steps/upload.ts:125-190` (archive the LiDAR lock's files), `pipeline/test/upload.test.ts`, `docs/dev/pipeline.md` (Requirements, the Commands table row for `fetch`, the Lock section)
 
 **Interfaces:**
 - Consumes: `uvRun` (Task 2), `encodeLidarTile`, `lidarTileName`, `tilesForBbox` (Task 1), `storeFile` (`pipeline/lib/raw.ts`), `LockEntry` (`pipeline/lib/lock.ts:14-23`).
@@ -226,11 +247,20 @@ Algorithm (ported from `scripts/ept.py` and `fitlib.hag_raster`): read the EPT n
     opts: { tiles?: [number, number][]; jobs?: number; dryRun?: boolean; workDir?: string },
     deps?: { run: typeof run; db?: Duck }
   ): Promise<LockEntry | null>; // null on --dry-run
-  /** "tx_ty" -> raw file path of each locked tile; empty map when the lock has no LIDAR_ID. */
-  export function lidarTilesOf(lock: Lock, rawDir: string, byName: boolean): Map<string, string>;
+  /** <repo>/pipeline/lidar.lock.json; the mini fixture's is pipeline/test/fixtures/mini/lidar.lock.json. */
+  export const LIDAR_LOCK = { live: string, fixture: string };
+  /** The LiDAR lock, or null when the file is absent. */
+  export function readLidarLock(path: string): Lock | null;
+  /** "tx_ty" -> raw file path of each locked tile; empty map for a null lock or one without LIDAR_ID. */
+  export function lidarTilesOf(lidarLock: Lock | null, rawDir: string, byName: boolean): Map<string, string>;
   ```
-  Lock entry: `id: 'usgs-lidar-sf'`; one file per tile with points, named `lidarTileName(tx, ty)` and sorted by name; `rowCount` = number of tiles; `license: 'public-domain'`; `label: 'USGS 3DEP LiDAR, San Francisco 2023'`; `homepage: 'https://www.usgs.gov/3d-elevation-program'`; `upstreamVersion: lidarUpstreamVersion()`. The default work dir is `pipeline/.cache/lidar-work/<upstreamVersion hash8>/` (resumable) and the default EPT node cache is `pipeline/.cache/ept/`.
-  `fetch.ts`: `FETCH_IDS` gains `'overture-building-parts'` (Task 4) and `LIDAR_ID`; a new `DEFAULT_FETCH_IDS` = `FETCH_IDS` minus `LIDAR_ID`, used when `--only` is absent.
+  Lock entry, written to `LIDAR_LOCK.live` with `writeLock` and never to `sources.lock.json`:
+  - `id: 'usgs-lidar-sf'`, `upstreamVersion: lidarUpstreamVersion()`;
+  - one file per tile with points, named `lidarTileName(tx, ty)` and sorted by name; `rowCount` = number of tiles;
+  - `license: 'public-domain'`, `label: 'USGS 3DEP LiDAR, San Francisco 2023'`, `homepage: 'https://www.usgs.gov/3d-elevation-program'`.
+  The default work dir is `pipeline/.cache/lidar-work/<upstreamVersion hash8>/` (resumable) and the default EPT node cache is `pipeline/.cache/ept/`.
+  `fetch.ts`: `FETCH_IDS` gains `'overture-building-parts'` (Task 4) and `LIDAR_ID`. A new `DEFAULT_FETCH_IDS` (`FETCH_IDS` minus `LIDAR_ID`) applies when `--only` is absent. `fetch --restore --lidar` runs `restoreRaw` (`fetch.ts:43-77`) on the LiDAR lock; plain `--restore` never reads it.
+  `upload.ts`: after the main lock's archives, every file of the LiDAR lock (when the file exists) is archived the same way: skipped when R2 has the key, uploaded from the raw cache when present. A tile that is in neither place refuses the upload with nothing sent: `usgs-lidar-sf: <name> is neither archived nor in the raw cache`. Fixture versions archive nothing, as today.
 
 - [ ] **Step 1: Write the failing tests.** A fake `run` writes stub raw arrays for tiles `0_0` (points 10) and `1_0` (points 0) into the `--out` dir it is given:
   - `fetchLidar encodes tiles with points into lock files`: one file `usgs-lidar-sf/0_0.sfhl`; its sha256 equals `sha256File` of the stored raw; `upstreamVersion` equals `'CA_SanFrancisco_1_B23 sfhl/1 res=0.25 ground=1 tile=500 pad=20 veg=0.35'`; `license` `'public-domain'`; `rowCount` 1.
@@ -238,18 +268,25 @@ Algorithm (ported from `scripts/ept.py` and `fitlib.hag_raster`): read the EPT n
   - `a nonzero exit throws with the rasterizer's stderr` (`toThrow(/rasterize/)`).
   - `--dry-run returns null and writes nothing`.
   - `default fetch excludes the LiDAR` (`DEFAULT_FETCH_IDS` lacks `usgs-lidar-sf`; `FETCH_IDS` has it).
-  - `lidarTilesOf maps tile keys to raw paths`, by sha and by name; an empty map without the entry.
-  - In `pipeline/test/manifest.test.ts`, `the manifest lists usgs-lidar-sf as public-domain`: `buildManifest` on a lock with the entry has `{ id: 'usgs-lidar-sf', license: 'public-domain' }` in `sources`. `/attribution` lists manifest sources (`src/routes/attribution/+page.svelte:33-46`), so no page change is needed.
-- [ ] **Step 2:** Run `npx vitest --run --project pipeline pipeline/test/lidar-source.test.ts pipeline/test/manifest.test.ts pipeline/test/fetch.test.ts`. Expected: FAIL.
-- [ ] **Step 3:** Implement `lidar.ts` and the fetch/cli wiring. `--only usgs-lidar-sf` dispatches to `fetchLidar` with the parsed flags.
+  - `the LiDAR goes to its own lock`: `fetchAll({ only: 'usgs-lidar-sf', lidarLockPath, lockPath })` with the fake writes the entry to `lidarLockPath` and leaves `lockPath` byte-identical.
+  - `plain restore never touches the tiles; --lidar restores them`: with a fake R2 target, `fetchAll({ restore: true })` requests no `.sfhl` key, and `fetchAll({ restore: true, lidar: true })` restores the LiDAR lock's files.
+  - `lidarTilesOf maps tile keys to raw paths`, by sha and by name; an empty map for a null lock.
+  - In `upload.test.ts`: `upload archives the LiDAR lock's tiles` (a tile absent from the fake R2 and present locally is put; one already in R2 is skipped), and `upload refuses a tile in neither place` (nothing put, the message names the tile).
+- [ ] **Step 2:** Run `npx vitest --run --project pipeline pipeline/test/lidar-source.test.ts pipeline/test/fetch.test.ts pipeline/test/upload.test.ts`. Expected: FAIL.
+- [ ] **Step 3:** Implement `lidar.ts`, the fetch/restore/cli wiring and the upload change. `--only usgs-lidar-sf` dispatches to `fetchLidar` with the parsed flags.
 - [ ] **Step 4:** Run the step 2 command again. Expected: PASS.
-- [ ] **Step 5:** Update `docs/dev/pipeline.md`. Requirements: `uv` (`brew install uv`), needed only for `fetch --only usgs-lidar-sf`. Commands: the `fetch` row notes `--only usgs-lidar-sf [--tiles a_b,…] [--jobs n] [--dry-run]` and that the default fetch skips it. Add a short paragraph on the source (format `sfhl/1`, cache dirs, not an as-of source).
+- [ ] **Step 5:** Update `docs/dev/pipeline.md`:
+  - Requirements: `uv` (`brew install uv`), needed only for `fetch --only usgs-lidar-sf`.
+  - Commands: the `fetch` row notes `--only usgs-lidar-sf [--tiles a_b,…] [--jobs n] [--dry-run]`, that the default fetch skips it, and `--restore --lidar`.
+  - Lock: `pipeline/lidar.lock.json` holds only the tiles. `fetch --restore` and `build` never read it; `upload` archives its files.
+  - A short paragraph on the source: format `sfhl/1`, the cache dirs, not an as-of source.
 - [ ] **Step 6: Commit** `feat(pipeline): add the usgs-lidar-sf raster source`.
 
 ### Task 4: Overture building parts and the mini fixture's parts and LiDAR
 
 **Files:**
 - Modify: `pipeline/sources/overture.ts:27-63`, `pipeline/sources/normalise.ts:14-73,174-186,285-291`, `pipeline/steps/fetch.ts:101-119`, `pipeline/steps/build.ts:172-190`, `pipeline/test/fixtures/mini/make-fixture.ts:512-551,770-790,898-1001`, `pipeline/test/fixtures/mini/README.md`
+- Create: `pipeline/test/fixtures/mini/lidar.lock.json` (generated)
 - Regenerate: `pipeline/test/fixtures/mini/raw/*`, `sources.lock.json`, `golden/`, `e2e/fixtures/data/fixture-0/`
 - Test: `pipeline/test/overture-parts.test.ts`, `pipeline/test/normalise.test.ts`
 
@@ -287,11 +324,17 @@ Algorithm (ported from `scripts/ept.py` and `fitlib.hag_raster`): read the EPT n
   - `overtureReleaseProblem`: matching releases → `null`; buildings `2026-09-23.1` and parts `2026-10-21.0` → the message naming both; no parts entry → `null`.
   - `build refuses mismatched releases`: `build()` on a copy of the mini lock whose parts `upstreamVersion` differs rejects with `BuildError` matching `/release/`.
 - [ ] **Step 2:** Run `npx vitest --run --project pipeline pipeline/test/overture-parts.test.ts pipeline/test/normalise.test.ts`. Expected: FAIL.
-- [ ] **Step 3:** Implement the source, normalise, fetch and build check. Extend `make-fixture.ts`: parts features, an entry for `overture-building-parts`, and LiDAR tiles written with `encodeLidarTile(synthTile(...))` under `raw/usgs-lidar-sf/` with a `binaryEntry` for `usgs-lidar-sf` (upstreamVersion `lidarUpstreamVersion()`). Update the README.
+- [ ] **Step 3:** Implement the source, normalise, fetch and build check. Extend `make-fixture.ts`:
+  - parts features and an `overture-building-parts` entry in the mini `sources.lock.json`;
+  - LiDAR tiles written with `encodeLidarTile(synthTile(...))` under `raw/usgs-lidar-sf/`, with a `binaryEntry` for `usgs-lidar-sf` (upstreamVersion `lidarUpstreamVersion()`) written to `pipeline/test/fixtures/mini/lidar.lock.json`, never to the mini `sources.lock.json`;
+  - `make-fixture.ts` writes the mini `sources.lock.json` from scratch, so it drops any `building-boxes` entry. When it drops one, it prints `run npm run pipeline -- boxes --fixture, then fixture --update-golden` (Task 9 adds that command).
+  Update the README.
 - [ ] **Step 4:** Run `npx tsx pipeline/test/fixtures/mini/make-fixture.ts`, then `npm run pipeline -- fixture --update-golden`. Expected: the fixture builds with every invariant OK.
-- [ ] **Step 5:** Run `git diff --stat pipeline/test/fixtures/mini/golden e2e/fixtures/data/fixture-0`. Expected: only `manifest.json` (two new `sources`) and `report.json` (new source row counts) change. `parcels/`, `scenarios/` and the derived goldens are unchanged. Nothing reads the new inputs yet, so any other change is a bug.
+- [ ] **Step 5:** Run `git diff --stat pipeline/test/fixtures/mini/golden e2e/fixtures/data/fixture-0`. Expected: only `manifest.json` (one new source, `overture-building-parts`) and `report.json` change. `parcels/`, `scenarios/` and the derived goldens are unchanged. Nothing reads the new inputs yet, so any other change is a bug.
 - [ ] **Step 6:** Run `npm run test:pipeline`. Expected: PASS.
 - [ ] **Step 7: Commit** `feat(pipeline): add Overture building parts and the mini fixture's LiDAR`.
+
+  Note: the mini fixture has no `building-boxes` artifact until Task 9, so fixture builds still draw today's boxes.
 
 ### Task 5: Raster mosaic, windows and raster primitives
 
@@ -316,7 +359,7 @@ Algorithm (ported from `scripts/ept.py` and `fitlib.hag_raster`): read the EPT n
     /** Cells snapped to the global 0.25 m grid; null when no tile intersects b. */
     window(b: Bbox7131): RasterWindow | null;
   }
-  /** Lazy file-backed mosaic; BuildError when a tile header's sizeM/res/groundRes differ from BOXES. null when tiles is empty. */
+  /** Lazy file-backed mosaic over lidarTilesOf(...); Error when a tile header's sizeM/res/groundRes differ from BOXES. null when tiles is empty. */
   export function openLidarMosaic(tiles: Map<string, string>): LidarMosaic | null;
   // raster.ts
   export function cellMask(w: RasterWindow, shape: MultiPoly, dx?: number, dy?: number): Uint8Array; // centre-in, even-odd
@@ -340,7 +383,7 @@ Algorithm (ported from `scripts/ept.py` and `fitlib.hag_raster`): read the EPT n
 - [ ] **Step 1: Write the failing tests:**
   - `a window across a tile seam equals the single-raster scene` (Review Focus 2): one scene's 10 m box straddles x = 500. `window()` over two `synthTile` tiles equals `synthWindow` of the same bbox cell for cell, with no NaN on the seam.
   - `a missing tile reads NaN`, and `a window touching no tile is null`.
-  - `openLidarMosaic rejects a tile at res 0.5` (`BuildError`, `/res/`).
+  - `openLidarMosaic rejects a tile at res 0.5` (`toThrow(/res/)`).
   - `cellMask honours holes and multipolygons`: the courtyard ring (outer x[51,59] y[5,25], hole x[54,56] y[12,18]) masks 8·20 − 2·6 = 148 m² ± 1 cell row; a two-part MultiPolygon masks the sum.
   - `cellMask with a shift samples the shifted place`: the scene shifted (+1.0, −0.3); the mean hag under the mask at d = (1.0, −0.3) is 10 ± 0.05, and at d = 0 it is below 9.
   - `label4 counts components` (two blobs touching diagonally → 2).
@@ -530,103 +573,238 @@ fronts    = faces = runs of consecutive exterior edges turning < frontFaceAngleD
 - [ ] **Step 4:** Run the test. Expected: PASS.
 - [ ] **Step 5: Commit** `feat(pipeline): render mapped building parts with roof tiers`.
 
-### Task 9: The boxes build step and the render clip
+### Task 9: The `boxes` command and its locked artifact
 
 **Files:**
-- Create: `pipeline/steps/boxes.ts`, `pipeline/sql/76_render_clip.sql`
-- Modify: `pipeline/config.ts:12-54` (add `render_min_piece_m2: 0.25` to `SQL_VARS`, with a comment), `pipeline/steps/build.ts:218-226,356-358,397-411`
-- Test: `pipeline/test/boxes-step.test.ts`
+- Create: `pipeline/lib/lidar/artifact.ts`, `pipeline/steps/boxes.ts`
+- Modify: `pipeline/lib/version.ts:79-112` (extract `treeHash(repoRoot, paths, excludes)` from `codeTreeHash`, which keeps its output byte for byte; add `BOXES_CODE_PATHS` and `boxesCodeHash`), `pipeline/cli.ts` (command `boxes [--fixture]`), `pipeline/steps/doctor.ts` (required `boxes-lock` check), `pipeline/test/fixtures/mini/README.md` (the fixture regeneration sequence)
+- Regenerate: `pipeline/test/fixtures/mini/raw/building-boxes/*`, `pipeline/test/fixtures/mini/sources.lock.json`, `golden/manifest.json`, `e2e/fixtures/data/fixture-0/manifest.json`
+- Test: `pipeline/test/boxes-command.test.ts`, `pipeline/test/version.test.ts`, `pipeline/test/doctor.test.ts`, `pipeline/test/manifest.test.ts`
 
 **Interfaces:**
-- Consumes: Tasks 3–8 (`lidarTilesOf`, `openLidarMosaic`, `clusterBuildings`, `registerCluster`, `StreetIndex`, `deriveBoxes`, `countedParts`, `partBoxes`, `uncoveredArea`, `partCoverage`); `runSqlFile` (`pipeline/lib/duck.ts`).
+- Consumes:
+  - Tasks 3–8: `readLidarLock`, `lidarTilesOf`, `LIDAR_LOCK`, `openLidarMosaic`, `clusterBuildings`, `registerCluster`, `StreetIndex`, `deriveBoxes`, `countedParts`, `partBoxes`, `uncoveredArea`, `partCoverage`, `overtureReleaseProblem`;
+  - `normaliseAll`, `loadNormalised` (`pipeline/sources/normalise.ts`);
+  - `runSql(db, '50_clip.sql')` (`pipeline/lib/sql.ts:28`, which stops after 50_clip and leaves the model SQL untouched);
+  - `verifyRaw`, `writeLock`, `canonicalJson` (`pipeline/lib/lock.ts`); `storeFile` (`pipeline/lib/raw.ts`).
 - Produces:
   ```ts
-  export const BUILDING_ROOFS_PARQUET = 'building-roofs.parquet';
-  export const RENDER_PIECES_PARQUET = 'render-pieces.parquet';
-  export async function writeRenderBoxes(a: {
-    db: Duck; lidar: LidarMosaic | null; derivedDir: string; workDir: string; report: Report;
-  }): Promise<{ counts: Record<string, number>; warnings: string[] }>;
+  // artifact.ts
+  export const BOXES_ID = 'building-boxes';
+  export const BOXES_FILES = {
+    boxes: 'building-boxes/boxes.parquet', roofs: 'building-boxes/roofs.parquet', inputs: 'building-boxes/inputs.json'
+  } as const;
+  export const BOXES_GATED = ['overture-buildings', 'overture-building-parts'] as const;
+  export const BOXES_RECORDED = [...BOXES_GATED, 'usgs-lidar-sf', 'datasf-parcels', 'datasf-streets', 'datasf-neighborhoods'] as const;
+  export interface BoxesInputs { schema: 1; code: string; config: string; sources: Record<string, string> } // full sha256 hex; '' = source absent
+  export function entryHash(e: LockEntry | undefined): string; // sha256 of the entry's file sha256s joined by ','; '' when absent
+  export function configHash(): string; // sha256(canonicalJson(BOXES))
+  export function boxesInputsOf(lock: Lock, lidarLock: Lock | null, code: string): BoxesInputs;
+  /** 'boxes/1 code=<12> config=<12> overture-buildings=<12> overture-building-parts=<12> usgs-lidar-sf=<12> datasf-parcels=<12> datasf-streets=<12> datasf-neighborhoods=<12>' ('-' when absent). */
+  export function boxesUpstreamVersion(i: BoxesInputs): string;
+  export function parseBoxesUpstreamVersion(s: string): { code: string; config: string; sources: Record<string, string> };
+  /** null without a building-boxes entry or when every BOXES_GATED prefix matches the lock; else
+   *  `building-boxes were derived from overture-buildings <a>, the lock has <b>: run npm run pipeline -- boxes` (one clause per gated source). Lock-only: needs no raw files. */
+  export function boxesLockProblem(lock: Lock): string | null;
+  /** One warning per differing non-gated source, code or config, each ending `: run npm run pipeline -- boxes to refresh`. */
+  export function boxesStaleWarnings(lock: Lock, lidarLock: Lock | null, code: string): string[];
+  export function boxesFilesOf(lock: Lock, rawDir: string, byName: boolean): { boxes: string; roofs: string } | null;
+  /** The boxes.* counts (Task 10's list) from tables bx_boxes and bx_roofs. */
+  export function boxesCounts(db: Duck): Promise<Record<string, number>>;
+  // steps/boxes.ts
+  /** Reads buildings, pieces, src_overture_parts, src_streets of a db where runSql(db, '50_clip.sql') ran; leaves bx_boxes and bx_roofs. */
+  export async function deriveBuildingBoxes(a: { db: Duck; lidar: LidarMosaic | null; workDir: string }): Promise<void>;
+  export async function boxesCommand(o: {
+    lockPath: string; lidarLockPath: string; rawDir: string; byName: boolean; repoRoot: string; now?: Date
+  }): Promise<number>;
+  // version.ts
+  export const BOXES_CODE_PATHS = ['pipeline/lib/lidar', 'pipeline/steps/boxes.ts', 'pipeline/boxes-config.ts', 'pipeline/project-records/union-find.ts'];
+  export function boxesCodeHash(repoRoot: string): Promise<string>; // treeHash over BOXES_CODE_PATHS, uncommitted changes included
   ```
-  Tables:
-  - `render_boxes(bid, k, src, base_m, height_m, hs, ground_m, ground_min_m, geom)`, EPSG:7131, ordered by bid, k.
-  - `building_roofs(bid, roof, eave_m, ridge_m, ridge_deg, ground_m, ground_min_m, shift_dx, shift_dy, shift_source, reg_score, reg_ratio, reg_sharp_x, reg_sharp_y, reg_flagged, cluster_id, fallback, n_front, n_step, steps_capped, n_parts, parts_coverage, lng, lat)`. `lng`/`lat` are the 4326 point on surface of the footprint.
-  - `76_render_clip.sql` mirrors `50_clip.sql:6-39` on `render_boxes`, with `render_min_piece_m2` in place of `min_piece_m2`. It writes `render_pieces(bid, k, src, parcel_id, geom, area_m2, base_m, height_m, hs, ground_m, ground_min_m)` ordered by bid, k, parcel_id NULLS LAST, and `render_export(parcel_id, bid, k, src, height_m, base_m, hs, ground_m, ground_min_m, geojson4326)` ordered by parcel_id NULLS LAST, bid, k. It does not use `70_export.sql`, which stays as it is.
-  - Derived files under `derivedDir`: `building-roofs.parquet` and `render-pieces.parquet` (no geometry). Build-internal, never uploaded.
-  - Counts (all present, 0 when empty):
-    - buildings by outcome: `boxes.buildings`, `boxes.buildings.{lidar,box,parts}`, `boxes.fallback.{no_lidar,new_building,unreliable,elevated}`;
-    - boxes by source: `boxes.src.{box,base,front,step,part}`;
-    - roof form: `boxes.roof.{flat,pitched,unknown}`;
-    - fronts and steps: `boxes.front.buildings`, `boxes.step.buildings`, `boxes.step.capped`, `boxes.step.max_per_building`;
-    - registration: `boxes.reg.clusters`, `boxes.reg.{fit,frame_nad83,frame_wgs84,none}`, `boxes.reg.flagged`, `boxes.reg.ratio_p50`, `boxes.reg.ratio_p90`, `boxes.reg.shift_p50_m`, `boxes.reg.shift_p90_m`;
-    - parts: `boxes.parts.buildings`, `boxes.parts.count`, `boxes.parts.coverage_p50`, `boxes.parts.uncovered_dropped`;
-    - checks: `boxes.outside_footprint` (non-`part` boxes whose area outside `ST_Buffer(footprint, 0.01)` exceeds 0.01 m²), `boxes.missing_buildings` (buildings with no `render_boxes` row);
-    - clip: `render.pieces`, `render.outside_parcels`.
-    Shares and percentiles are rounded to 3 decimals so the fixture report stays byte-stable.
+  Artifact tables:
+  - `bx_boxes` → `boxes.parquet`: `bid VARCHAR, k INTEGER, src VARCHAR ('base'|'front'|'step'|'part'), base_m DOUBLE, height_m DOUBLE, geom BLOB` (WKB, EPSG:7131; NULL = the building's full footprint, used for an unrestricted `base`), ordered by bid, k. Fallback buildings have no rows: `build` draws their box.
+  - `bx_roofs` → `roofs.parquet`: one row per kept building. Columns: `bid, roof, eave_m, ridge_m, ridge_deg, ground_m, ground_min_m, shift_dx, shift_dy, shift_source, reg_score, reg_ratio, reg_sharp_x, reg_sharp_y, reg_flagged, cluster_id, fallback, n_front, n_step, steps_capped, n_parts, parts_coverage, uncovered_dropped, lng, lat` (`lng`/`lat` = the 4326 point on surface of the footprint).
+  - `inputs.json` = `canonicalJson(BoxesInputs)` + newline.
+  - Parquet written with `SET threads = 1` and `ORDER BY`, so rerunning on the same inputs gives the same bytes.
+  Lock entry, replacing any previous one in `sources.lock.json`:
+  - `id: 'building-boxes'`, `files` the three above, `upstreamVersion: boxesUpstreamVersion(inputs)`;
+  - `retrievedAt`: the derivation time;
+  - `rowCount`: the `bx_roofs` rows;
+  - `license: 'ODbL-1.0'`, `label: 'Building boxes (USGS 3DEP LiDAR 2023 and Overture)'`, `homepage: 'https://www.usgs.gov/3d-elevation-program'`.
+  Live, the files go to `rawDir` by sha (`storeFile`); with `--fixture`, they go by name into `pipeline/test/fixtures/mini/raw/building-boxes/`, and the lock and LiDAR lock are the mini ones. `upload` archives the artifact through the existing main-lock path.
 
-Order inside the step: read `buildings` (ST_AsGeoJSON, ordered by bid), the counted and uncounted `src_overture_parts` of kept buildings (transformed to 7131 as `30_buildings.sql:10-12` does), and the public `src_streets`. Compute clusters. For each cluster in order of its smallest bid, take one window over the members' bbox + `regSearchM` + 2 m and register. For each building: with counted parts, emit `partBoxes` and `deriveBoxes` restricted to `uncoveredArea` (a fallback there counts `uncovered_dropped` and emits nothing); otherwise emit `deriveBoxes`. Write NDJSON to `workDir`, load it with `read_json`, and convert geometry with `ST_GeomFromGeoJSON`. Then run the clip SQL and the counts. Build wiring: after `roadLotProblems` (`build.ts:220-221`), `const lidar = openLidarMosaic(lidarTilesOf(lock, opts.rawDir, byName))`; then `report.time('boxes', () => writeRenderBoxes(...))`; merge its counts into `counts` and its warnings into `report.warnings`. It runs with and without `--skip-tiles`.
+`boxesCommand` order:
+1. Read both locks.
+2. `verifyRaw` the main lock minus `building-boxes`, and the LiDAR lock. A missing file exits 1 with a hint: `run npm run pipeline -- fetch --restore`, plus `--lidar` when a tile is missing.
+3. Check `overtureReleaseProblem`.
+4. Normalise and load into a fresh DuckDB, then `runSql(db, '50_clip.sql')`.
+5. `openLidarMosaic(lidarTilesOf(...))`, then `deriveBuildingBoxes`.
+6. Write the parquets and `inputs.json`, store them, write the lock entry.
+7. Print the `boxesCounts` summary and the artifact's total bytes.
+`deriveBuildingBoxes` order:
+1. Read `buildings` (`ST_AsGeoJSON`, ordered by bid), the `src_overture_parts` of kept buildings (to 7131 as `30_buildings.sql:10-12` does) and the public `src_streets`.
+2. Compute clusters.
+3. For each cluster in order of its smallest bid, take one window over the members' bbox + `regSearchM` + 2 m and register.
+4. For each building: with counted parts, emit `partBoxes` plus `deriveBoxes` restricted to `uncoveredArea` (a fallback there sets `uncovered_dropped` and emits nothing); otherwise emit `deriveBoxes`, whose `box` fallback becomes a `bx_roofs` row with `fallback` set and no `bx_boxes` row.
+5. Write NDJSON to `workDir` and load it with `read_json`.
+Heights are clamped to `BOXES.heightRangeM` and rounded to 0.1.
 
-- [ ] **Step 1: Write the failing tests** (mini fixture via `openMiniDuck`, then `runSql`):
-  - `model tables are untouched`: before and after `writeRenderBoxes`, these fingerprints are equal: `SELECT md5(string_agg(concat_ws('|', bid, parcel_id, ST_AsHEXWKB(geom), area_m2, height_m, base_m, hs), ';' ORDER BY bid, parcel_id NULLS LAST)) FROM pieces`, the same over `parcel_out` (every column but geom as text, plus `geojson7131`), and over `buildings_export`.
-  - `the mini buildings get their boxes`: `b01` has one `base`, heightM 12 ± 0.2, `shift_source` `'fit'` with dx 1.0 ± 0.1 and dy −0.3 ± 0.1. `b02` has a `front` at heightM 16.5 ± 0.2. `b03` falls back `new_building`. `b04` has no `step` (the tree). `b13` is `pitched`, ridgeM 10 ± 0.3. `bbay` falls back `no_lidar` with a single `box` at its `height_m` 6. `b10` has a `part` box over x[95,100] plus LiDAR boxes inside x[100,105], including a `step` at 26 ± 0.3. `b14` has 8 `part` boxes (podium, tower block, 5 tiers, leg) and no LiDAR box, and its `ground_min_m` < `ground_m` − 0.2 (the slope).
-  - `p14leg lands on lot 14`: its `render_pieces` row has parcel_id `3512014` (the spec's Sutro check, in miniature).
-  - `checks are zero`: `boxes.outside_footprint` 0, `boxes.missing_buildings` 0, `boxes.step.max_per_building` ≤ 4.
-  - `without LiDAR every building is today's box`: on a mini lock copy without `usgs-lidar-sf`, every non-part building is `src` `'box'`, and `render_export` minus parts equals `buildings_export` row for row (parcel_id, bid, height_m, base_m, hs, geojson4326). The fallback is exactly today's map.
-  - `derived files`: `building-roofs.parquet` has one row per kept building (12) and `render-pieces.parquet` one row per `render_pieces` row.
-  - `deterministic`: two runs give byte-identical `render_export` fingerprints.
-- [ ] **Step 2:** Run `npx vitest --run --project pipeline pipeline/test/boxes-step.test.ts`. Expected: FAIL.
-- [ ] **Step 3:** Implement the step, the SQL file and the build wiring.
-- [ ] **Step 4:** Run the test. Expected: PASS. Then run `npm run test:pipeline`. Expected: PASS except `golden.test.ts`: `report.json` gains the `boxes.*` and `render.*` counts. Task 10 regenerates the golden.
-- [ ] **Step 5: Commit** `feat(pipeline): derive render-only building boxes in the build`.
+- [ ] **Step 1: Write the failing tests** in `boxes-command.test.ts`. Derivation cases run `deriveBuildingBoxes` on the mini fixture (via `openMiniDuck`, `runSql(db, '50_clip.sql')`, and the mini LiDAR lock):
+  - `the mini buildings get their boxes`:
+    - `b01` has one `base` with NULL geom, height_m 12 ± 0.2, `shift_source` `'fit'` with dx 1.0 ± 0.1 and dy −0.3 ± 0.1;
+    - `b02` has a `front` at 16.5 ± 0.2;
+    - `b03` falls back `new_building`, `b04` has no `step` (the tree), `b13` is `pitched` with ridge_m 10 ± 0.3;
+    - `bbay` falls back `no_lidar` with no `bx_boxes` row;
+    - `b10` has a `part` over x[95,100] plus LiDAR boxes inside x[100,105], including a `step` at 26 ± 0.3;
+    - `b14` has 8 `part` rows (podium, tower block, 5 tiers, leg), no LiDAR box, and `ground_min_m` < `ground_m` − 0.2 (the slope).
+  - `bx_roofs has one row per kept building` (12).
+  - `without a LiDAR lock every building falls back`: `deriveBuildingBoxes` with `lidar: null` gives `fallback` `'no_lidar'` everywhere except the part-covered `b14`. `bx_boxes` then holds only `part` rows.
+  - `deterministic`: two runs give equal `bx_boxes` and `bx_roofs` rows (ordered fingerprint).
+  - `recorded inputs`: on the mini lock, `boxesInputsOf(...).sources['overture-buildings']` equals `entryHash` of that entry, and `usgs-lidar-sf` that of the mini LiDAR lock's. `parseBoxesUpstreamVersion(boxesUpstreamVersion(i))` round-trips the 12-hex prefixes, with `'-'` for an absent parts entry.
+  - `boxesLockProblem`: `null` without the entry and when consistent. With the `overture-buildings` sha changed in a lock copy, the message contains both prefixes and `npm run pipeline -- boxes`. The same holds for parts.
+  - `boxesStaleWarnings`: `[]` when everything matches; one warning each for a changed `datasf-streets`, a changed code hash and a changed config hash, each ending `run npm run pipeline -- boxes to refresh`.
+  - `boxesCommand on a copy of the mini fixture` (tmp dir, by name): exit 0; the copy's lock gains a `building-boxes` entry whose files exist with matching sha256 and whose `rowCount` is 12; rerunning leaves the lock byte-identical except `retrievedAt`.
+  - `boxesCommand without the LiDAR tiles` (tiles deleted from the copy): exit 1, and the stderr names `fetch --restore --lidar`.
+  - `the committed mini artifact is current`: rows of the committed `raw/building-boxes/*.parquet` equal a fresh `deriveBuildingBoxes`. On failure the message says `run npm run pipeline -- boxes --fixture`. The golden test is how fixture drift is caught here.
+  - In `version.test.ts`, `codeTreeHash is unchanged by the refactor` (equal to the pre-refactor value at the test's fixed repo state) and `boxesCodeHash changes with an uncommitted edit under pipeline/lib/lidar and not with one under pipeline/sql`.
+  - In `doctor.test.ts`, `boxes-lock`: `ok` without a lock or entry; a required failure carrying the `boxesLockProblem` message when stale.
+  - In `manifest.test.ts`, `the manifest lists building-boxes`: `{ id: 'building-boxes', license: 'ODbL-1.0', label: 'Building boxes (USGS 3DEP LiDAR 2023 and Overture)' }` in `sources`.
+- [ ] **Step 2:** Run `npx vitest --run --project pipeline pipeline/test/boxes-command.test.ts pipeline/test/version.test.ts pipeline/test/doctor.test.ts pipeline/test/manifest.test.ts`. Expected: FAIL.
+- [ ] **Step 3:** Implement `artifact.ts`, `boxes.ts`, the version refactor, the CLI command and the doctor check.
+- [ ] **Step 4:** Generate the mini artifact: `npm run pipeline -- boxes --fixture`, then `npm run pipeline -- fixture --update-golden`. Expected: `boxes` prints its counts with `boxes.outside_footprint 0`. The golden diff is `manifest.json` (one new source, `building-boxes`) and `report.json` only; `build` does not read the artifact until Task 10.
+- [ ] **Step 5:** Run the step 2 command, then `npm run test:pipeline`. Expected: PASS.
+- [ ] **Step 6:** Document the regeneration sequence in the mini README: `make-fixture.ts` → `pipeline -- boxes --fixture` → `pipeline -- fixture --update-golden`.
+- [ ] **Step 7: Commit** `feat(pipeline): add the boxes command and its locked building-boxes artifact`.
 
-### Task 10: Tiles zoom split, V37, the fixture and docs
+### Task 10: `build` consumes the artifact
 
 **Files:**
-- Modify: `pipeline/steps/tiles.ts:14-85`, `pipeline/steps/check.ts` (add V37 after V36), `pipeline/steps/build.ts:356-358` (pass the drop count into `counts`), `pipeline/test/tiles.test.ts:36-66`, `pipeline/test/invariants.test.ts`
+- Create: `pipeline/steps/render-boxes.ts`, `pipeline/sql/76_render_boxes.sql`
+- Modify: `pipeline/config.ts:12-54` (add `render_min_piece_m2: 0.25` to `SQL_VARS`, with a comment), `pipeline/steps/build.ts:172-190` (stale check before normalising), `:218-226` (the step after `roadLotProblems`), `:397-411` (merge counts)
+- Test: `pipeline/test/render-boxes.test.ts`
+
+**Interfaces:**
+- Consumes:
+  - `boxesLockProblem`, `boxesStaleWarnings`, `boxesFilesOf`, `boxesCounts` (Task 9);
+  - `boxesCodeHash` (Task 9); `readLidarLock`, `LIDAR_LOCK` (Task 3);
+  - `runSqlFile` (`pipeline/lib/duck.ts`).
+- Produces:
+  ```ts
+  export const BUILDING_ROOFS_PARQUET = 'building-roofs.parquet'; // copy of the artifact's roofs, for review
+  export const RENDER_PIECES_PARQUET = 'render-pieces.parquet';
+  export async function writeRenderBoxes(a: {
+    db: Duck; files: { boxes: string; roofs: string } | null; derivedDir: string;
+  }): Promise<{ written: boolean; counts: Record<string, number> }>; // written false (and nothing created) when files is null
+  ```
+  `76_render_boxes.sql` (run by `writeRenderBoxes` after it loads `bx_boxes`/`bx_roofs` with `ST_GeomFromWKB`; not in `SQL_FILES`):
+  - `render_boxes(bid, k, src, base_m, height_m, hs, ground_m, ground_min_m, geom)` (EPSG:7131, ordered by bid, k). It is the union of:
+    - (a) the artifact rows of bids in `buildings`, with NULL geom → the building's footprint, `hs` from `buildings`, and ground from `bx_roofs`;
+    - (b) one `src = 'box'` row (k 0) for every building with no (a) row, carrying `buildings.base_m`/`height_m`/`hs`/`geom` (today's box) and its `bx_roofs` ground when present.
+  - The clip mirrors `50_clip.sql:6-39` with `render_min_piece_m2` in place of `min_piece_m2`, giving `render_pieces(bid, k, src, parcel_id, geom, area_m2, base_m, height_m, hs, ground_m, ground_min_m)` (ordered by bid, k, parcel_id NULLS LAST).
+  - `render_export(parcel_id, bid, k, src, height_m, base_m, hs, ground_m, ground_min_m, geojson4326)` is ordered by parcel_id NULLS LAST, bid, k. `70_export.sql` stays as it is.
+  Counts: `boxesCounts` (all present, 0 when empty):
+  - buildings: `boxes.buildings`, `boxes.buildings.{lidar,box,parts}`, `boxes.fallback.{no_lidar,new_building,unreliable,elevated}`;
+  - boxes: `boxes.src.{box,base,front,step,part}`;
+  - roof: `boxes.roof.{flat,pitched,unknown}`;
+  - fronts and steps: `boxes.front.buildings`, `boxes.step.buildings`, `boxes.step.capped`, `boxes.step.max_per_building`;
+  - registration: `boxes.reg.clusters`, `boxes.reg.{fit,frame_nad83,frame_wgs84,none}`, `boxes.reg.flagged`, `boxes.reg.ratio_p50`, `boxes.reg.ratio_p90`, `boxes.reg.shift_p50_m`, `boxes.reg.shift_p90_m`;
+  - parts: `boxes.parts.buildings`, `boxes.parts.count`, `boxes.parts.coverage_p50`, `boxes.parts.uncovered_dropped`.
+  Build-side counts:
+  - `boxes.outside_footprint`: non-`part` render boxes whose area outside `ST_Buffer(footprint, 0.01)` exceeds 0.01 m²;
+  - `boxes.missing_buildings`: buildings with no `render_boxes` row;
+  - `boxes.artifact_unknown_bids`: artifact bids not in `buildings`, ignored;
+  - `render.pieces`, `render.outside_parcels`.
+  Shares and percentiles are rounded to 3 decimals. `build.ts`:
+  - before normalising, throw `new BuildError(boxesLockProblem(lock))` when non-null;
+  - off fixture builds, push `boxesStaleWarnings(lock, readLidarLock(LIDAR_LOCK.live), await boxesCodeHash(REPO_ROOT))` into `report.warnings`;
+  - after `roadLotProblems`, run `report.time('render-boxes', () => writeRenderBoxes({ db, files: boxesFilesOf(lock, opts.rawDir, byName), derivedDir }))` and keep `written` for the tiles step (Task 11).
+
+- [ ] **Step 1: Write the failing tests** (mini fixture with its committed artifact, `runSql`, then `writeRenderBoxes`):
+  - `model tables are untouched`: before and after `writeRenderBoxes`, three fingerprints are equal:
+    - `pieces`: `SELECT md5(string_agg(concat_ws('|', bid, parcel_id, ST_AsHEXWKB(geom), area_m2, height_m, base_m, hs), ';' ORDER BY bid, parcel_id NULLS LAST)) FROM pieces`;
+    - `parcel_out`: the same, over every column but geom as text, plus `geojson7131`;
+    - `buildings_export`: the same.
+  - `composition`:
+    - `b01`'s `base` covers its footprint (area within 0.01 m²);
+    - `bbay` has one `box` at height_m 6 with ground NULL; `b03` has one `box` at its `buildings.height_m`;
+    - `p14leg`'s `render_pieces` row has parcel_id `3512014` (the spec's Sutro check, in miniature);
+    - `boxes.outside_footprint` 0, `boxes.missing_buildings` 0, `boxes.step.max_per_building` ≤ 4.
+  - `without an artifact nothing is created`: `files: null` → `written` false, and no `render_boxes`, `render_export` or `bx_*` tables exist.
+  - `a stale artifact stops the build` (Review Focus 1): copy the mini fixture to a tmp dir and add one feature to its `overture-buildings` raw file. Update that lock entry's `sha256`/`bytes`, so `verifyRaw` (`build.ts:174`) passes but the artifact's record no longer matches. `build()` on the copy then rejects with `BuildError` matching `/npm run pipeline -- boxes/`. This happens before normalising: no step output in `out/<v>`.
+  - `derived files`: `building-roofs.parquet` has 12 rows; `render-pieces.parquet` has one row per `render_pieces` row.
+  - `deterministic`: two runs give equal `render_export` fingerprints.
+- [ ] **Step 2:** Run `npx vitest --run --project pipeline pipeline/test/render-boxes.test.ts`. Expected: FAIL.
+- [ ] **Step 3:** Implement the step, the SQL file and the build wiring.
+- [ ] **Step 4:** Run the test. Expected: PASS. Then run `npm run test:pipeline`. Expected: PASS except `golden.test.ts`, because `report.json` gains the `boxes.*` and `render.*` counts. Task 11 regenerates the golden.
+- [ ] **Step 5: Commit** `feat(pipeline): build render boxes from the locked artifact`.
+
+### Task 11: Tiles zoom split, V37, the fixture and docs
+
+**Files:**
+- Modify: `pipeline/steps/tiles.ts:14-85`, `pipeline/steps/check.ts` (add V37 after V36), `pipeline/steps/build.ts:356-358` (pass `written` and the drop count), `pipeline/test/tiles.test.ts:36-66`, `pipeline/test/invariants.test.ts`
 - Create: `docs/dev/building-boxes.md`
-- Modify: `CLAUDE.md` (Scoped reference docs: link `building-boxes.md`), `docs/dev/pipeline.md` (Where things land: the two derived parquets; Invariants: V37; Fixture: the parts and LiDAR tiles; the build step list)
+- Modify: `CLAUDE.md` (Scoped reference docs: link `building-boxes.md`), `docs/dev/pipeline.md` (Commands: `boxes`; Lock: the `building-boxes` entry and its recorded inputs; Finishing a branch that changes the dataset: an Overture refresh needs `boxes` before `build`; Where things land: the two derived parquets; Invariants: V37; Fixture: the regeneration sequence)
 - Regenerate: `pipeline/test/fixtures/mini/golden/`, `e2e/fixtures/data/fixture-0/`
 
 **Interfaces:**
-- Consumes: `render_export`, `buildings_export` (Task 9, `70_export.sql:4-8`).
+- Consumes: `render_export` (Task 10), `buildings_export` (`70_export.sql:4-8`).
 - Produces:
   ```ts
   export async function writeBuildingsTiles(
-    db: Duck, outDir: string, workDir: string, opts?: { maxTileBytes?: number } // default 400000
-  ): Promise<{ dropsAtSplit: number }>; // tippecanoe stderr reports of dropped/kept-smallest features at z ≥ BOXES.splitZoom
+    db: Duck, outDir: string, workDir: string,
+    opts?: { split?: boolean; maxTileBytes?: number } // split default false; maxTileBytes default 400000
+  ): Promise<{ dropsAtSplit: number }>; // tippecanoe stderr reports of dropped/kept-smallest features at z ≥ BOXES.splitZoom; 0 without split
   ```
-  `buildings.geojsonseq` holds the `buildings_export` features with `"tippecanoe": {"minzoom": 12, "maxzoom": 13}` and today's four properties only. Then come the `render_export` features with `"tippecanoe": {"minzoom": 14, "maxzoom": 15}` and properties `parcelId` (when not null), `heightM`, `baseM`, `hs`, `src`, `groundM` and `groundMinM` (each omitted when null). Add `-y src -y groundM -y groundMinM -T src:string -T groundM:float -T groundMinM:float`. The other flags are as in `tiles.ts:44-77`. Counts: `tiles.buildings.drops_z14plus`, plus `tiles.buildings.bytes` (file size; live only, since tippecanoe bytes vary by platform).
-  V37 "render boxes" passes iff `boxes.outside_footprint` = 0, `boxes.missing_buildings` = 0, `boxes.step.max_per_building` ≤ `BOXES.stepCap`, and, unless tiles were skipped, `tiles.buildings.drops_z14plus` = 0. Detail: `src box/base/front/step/part <n>/<n>/<n>/<n>/<n>; fallback <share>; reg fit <share>`.
+  - **Without `split`:** today's code path exactly: the same `buildings.geojsonseq` bytes and the same tippecanoe arguments as `tiles.ts:28-78`.
+  - **With `split`:** the `buildings_export` features carry `"tippecanoe": {"minzoom": 12, "maxzoom": 13}` and today's four properties only. Then come the `render_export` features with `"tippecanoe": {"minzoom": 14, "maxzoom": 15}` and properties `parcelId` (when not null), `heightM`, `baseM`, `hs`, `src`, `groundM` and `groundMinM` (each omitted when null). Add `-y src -y groundM -y groundMinM -T src:string -T groundM:float -T groundMinM:float`.
+  - Counts: `tiles.buildings.drops_z14plus`, plus `tiles.buildings.bytes` (file size; live only, since tippecanoe bytes vary by platform).
+  V37 "render boxes":
+  - Without an artifact: OK, detail `no boxes artifact`.
+  - Otherwise it passes iff `boxes.outside_footprint` = 0, `boxes.missing_buildings` = 0, `boxes.step.max_per_building` ≤ `BOXES.stepCap`, and, unless tiles were skipped, `tiles.buildings.drops_z14plus` = 0.
+  - Detail: `src box/base/front/step/part <n>/<n>/<n>/<n>/<n>; fallback <share>; reg fit <share>`.
 
 - [ ] **Step 1: Write the failing tests:**
-  - In `tiles.test.ts`, `z12-13 keep today's boxes`: every feature of the z13 tile over lot 14 has property keys ⊆ {`parcelId`, `heightM`, `baseM`, `hs`}, and the `heightM` set of its features with `parcelId` `3512014` is {60}.
-  - `z14+ carry the new boxes`: in the z15 tile over lot 14, the features with `parcelId` `3512014` have `src` values = {`part`} and 8 distinct (heightM, baseM) pairs (podium, tower block, 5 tiers, leg). The features with `parcelId` `3512001` have `src` `base` and `groundM` 20 ± 0.1. The `bbay` features (`parcelId` `3512015`) have `src` `box`.
+  - In `tiles.test.ts`, `without an artifact the tiles input is today's`: on a mini lock copy without `building-boxes`, `writeBuildingsTiles(db, out, out)` writes a `buildings.geojsonseq` byte-identical to today's formula over `buildings_export` (computed in the test as `tiles.ts:31-38` does). The spawned tippecanoe argv (captured through an injected `run`) equals today's list.
+  - `z12-13 keep today's boxes`: every feature of the z13 tile over lot 14 has property keys ⊆ {`parcelId`, `heightM`, `baseM`, `hs`}, and the `heightM` set of its features with `parcelId` `3512014` is {60}.
+  - `z14+ carry the new boxes`: in the z15 tile over lot 14, the features with `parcelId` `3512014` have `src` values = {`part`} and 8 distinct (heightM, baseM) pairs. The features with `parcelId` `3512001` have `src` `base` and `groundM` 20 ± 0.1. The `bbay` features (`parcelId` `3512015`) have `src` `box`.
   - `every z14+ feature of a parcel carries its parcelId` (Review Focus 5): in the z15 tile over lot 10, every feature intersecting lot 10 has `parcelId` `3512010`. The `replaced` feature-state (keyed by `promoteId`) therefore hides them all.
-  - `drop detection works` (Review Focus 3): `writeBuildingsTiles(db, out, out, { maxTileBytes: 200 })` returns `dropsAtSplit > 0`, and the default returns 0 on the mini fixture.
-  - In `invariants.test.ts`, `V37 fails on a box outside its footprint, on a missing building, on 5 steps and on z14+ drops`, and `V37 passes on the fixture build`.
+  - `drop detection works` (Review Focus 3): `writeBuildingsTiles(db, out, out, { split: true, maxTileBytes: 200 })` returns `dropsAtSplit > 0`, and the default returns 0 on the mini fixture.
+  - In `invariants.test.ts`: `V37 is OK without an artifact`; `V37 fails on a box outside its footprint, on a missing building, on 5 steps and on z14+ drops`; `V37 passes on the fixture build`.
 - [ ] **Step 2:** Run `npx vitest --run --project pipeline pipeline/test/tiles.test.ts pipeline/test/invariants.test.ts`. Expected: FAIL.
-- [ ] **Step 3:** Implement the tiles change, V37 and the build plumbing.
+- [ ] **Step 3:** Implement the tiles change, V37 and the build plumbing: `split: renderBoxes.written`.
 - [ ] **Step 4:** Run `npm run pipeline -- fixture --update-golden`, then `git diff --stat pipeline/test/fixtures/mini/golden`. Expected: only `report.json` changes, with the new counts and V37 OK. Any change under `parcels/`, `scenarios/`, `derived/`, `neighborhoods.geojson` or `transit.json` means a model input moved: stop and fix.
 - [ ] **Step 5:** Run `npm run test:pipeline`. Expected: PASS.
-- [ ] **Step 6:** Run `npm run test:e2e -- --project=chromium --project=mobile`. Expected: PASS, including `e2e/map.spec.ts` (the z13 goldens at `e2e/map.spec.ts:694-699` are unchanged because z13 is unchanged, and the replaced checks at z16–17 cover the multi-box parcel 3512014) and `e2e/timelapse-render.spec.ts`. A z13 golden diff means the zoom split leaked: investigate, never regenerate.
+- [ ] **Step 6:** Run `npm run test:e2e -- --project=chromium --project=mobile`. Expected: PASS, including:
+  - `e2e/map.spec.ts`: the z13 goldens at `:694-699` are unchanged because z13 is unchanged, and the replaced checks at z16–17 cover the multi-box parcel 3512014;
+  - `e2e/timelapse-render.spec.ts`.
+  A z13 golden diff means the zoom split leaked: investigate, never regenerate.
 - [ ] **Step 7:** Write `docs/dev/building-boxes.md`:
-  - the subsystem: source → registration → derivation → render clip → tiles;
+  - the three stages (LiDAR fetch → `boxes` → `build`), and what each reads and locks;
   - every `BOXES` value with what it controls;
   - the `src` values and fallbacks;
+  - the artifact's files and recorded inputs, which inputs gate and which warn, and why boxes code stays in the version hash;
   - the derived files and how to query them (DuckDB `read_parquet`);
   - the counts and V37;
-  - how to tune a threshold (edit `BOXES` → build → the review script, Task 11);
   - the record of the spike's frames.
-  Link it from `CLAUDE.md`, then update `pipeline.md` as listed under Files. Run `npm run lint` and `npx vitest --run --project server scripts/docs-index.spec.ts`. Expected: PASS.
+  Then the **tuning loop**:
+  1. Once per machine: `npm run pipeline -- fetch --restore` and `npm run pipeline -- fetch --restore --lidar`.
+  2. Edit `BOXES` in `pipeline/boxes-config.ts`.
+  3. Run `npm run pipeline -- boxes`. The `building-boxes` entry in `sources.lock.json` changes.
+  4. Commit the config and the lock.
+  5. Run `npm run pipeline -- build`, then the review script (Task 12).
+  6. Run `npm run pipeline -- upload <v>`, then `npm run signoff`, open the PR and merge. Staging deploys; the owner reviews there.
+  Also: after any Overture refresh, run `boxes` before `build` (build refuses otherwise).
+  Link the page from `CLAUDE.md`, then update `pipeline.md` as listed under Files. Run `npm run lint` and `npx vitest --run --project server scripts/docs-index.spec.ts`. Expected: PASS.
 - [ ] **Step 8: Commit** `feat(pipeline): tile building boxes from z14 and check them (V37)`.
 
-### Task 11: The review script
+### Task 12: The review script
 
 **Files:**
 - Create: `scripts/building-review.ts`, `scripts/building-review.spec.ts`
 - Modify: `docs/dev/building-boxes.md` (a "Review a round" section)
 
 **Interfaces:**
-- Consumes: `building-roofs.parquet` (Task 9), `pipeline/out/<v>/report.json`, a VITE_E2E preview build, and `window.__sfhMap.map` (`src/lib/map/debug.ts:17-18`).
+- Consumes: `pipeline/.cache/derived/<v>/building-roofs.parquet` (Task 10), `pipeline/out/<v>/report.json`, a VITE_E2E preview build, and `window.__sfhMap.map` (`src/lib/map/debug.ts:17-18`).
 - Produces:
   ```ts
   export interface ReviewView { id: string; name: string; center: [number, number]; zoom: number; pitch: number; bearing: number }
@@ -665,23 +843,50 @@ Order inside the step: read `buildings` (ST_AsGeoJSON, ordered by bid), the coun
 - [ ] **Step 4:** Run the spec. Expected: PASS. Smoke-run it on fixtures: `npx tsx scripts/building-review.ts --before fixture-0 --after fixture-0 --out <scratch>/review-smoke`. Expected: 10 view pairs written (fixture views mostly show empty map; this checks plumbing only) and the server stopped (`lsof -ti :4174` empty).
 - [ ] **Step 5: Commit** `feat(scripts): add the building review capture script`.
 
-### Task 12: Live LiDAR, parts, build and measurements
+### Task 13: Live LiDAR, parts, the first `boxes` run, build and measurements
 
-Long-running operator task. Run everything in the foreground or wait on it; do not hand back while a command runs.
+This is the "see it work once" run. It is a long-running operator task: run everything in the foreground or wait on it, and do not hand back while a command runs.
 
-- [ ] **Step 1:** Run `npm run pipeline -- doctor`. Expected: all OK.
-- [ ] **Step 2:** Run `npm run pipeline -- fetch --only usgs-lidar-sf --dry-run`. Record the tile count, node count and total points in `docs/dev/building-boxes.md`. Then run `npm run pipeline -- fetch --only usgs-lidar-sf --jobs 16`. It takes hours and resumes on rerun. Expected: `usgs-lidar-sf: <n> file(s)`, and the lock gains the entry. Record the tile count, total `bytes` and wall time.
+- [ ] **Step 1:** Run `npm run pipeline -- doctor`. Expected: all required checks OK. `uv` and `lidar-python` must be OK here too, because this task fetches LiDAR.
+- [ ] **Step 2: Fetch the LiDAR.**
+  1. Run `npm run pipeline -- fetch --only usgs-lidar-sf --dry-run`. Record the tile count, node count and total points in `docs/dev/building-boxes.md`.
+  2. Run `npm run pipeline -- fetch --only usgs-lidar-sf --jobs 16`. It takes hours and resumes on rerun. Expected: `usgs-lidar-sf: <n> file(s)`; `pipeline/lidar.lock.json` is written and `pipeline/sources.lock.json` is unchanged (`git diff --quiet pipeline/sources.lock.json`).
+  3. Record the tile count, the total `bytes` and the wall time.
 - [ ] **Step 3:** Run `npm run pipeline -- fetch --only overture-building-parts --release 2026-09-23.1`. That is the locked buildings release (`pipeline/sources.lock.json`, `overture-buildings` `upstreamVersion`), so footprints do not change. Expected: the `overture-building-parts` entry with that `upstreamVersion`.
-- [ ] **Step 4:** Commit `pipeline/sources.lock.json`: `chore(pipeline): lock USGS LiDAR rasters and Overture building parts`.
-- [ ] **Step 5:** Run `git merge origin/main`, then `npm run pipeline -- build`. Expected: every invariant OK, V37 included, and V11's z12 bytes equal to main's within 1%. Record `timings.boxes` and `timings.tiles`. If `timings.boxes` exceeds 15 minutes, move cluster batches onto worker threads the way `pipeline/steps/gross.ts:194` / `gross-worker.ts` do (`availableParallelism() - 1`, single-threaded on fixture builds), add a test that worker and single-thread outputs are byte-identical, and rebuild.
-- [ ] **Step 6: Measure parts first** (spec "Measure first"). Query `pipeline/.cache/derived/<v>/building-roofs.parquet` with DuckDB: buildings with `n_parts > 0`, the share with `parts_coverage < 0.5`, and the `parts_coverage` p10/p50/p90. Find Sutro's bid as the nearest building to (-122.4528, 37.7552). Check in `render-pieces.parquet` that ≥ 90% of its `part` pieces have its parcel id, and record the result. Write all numbers into `docs/dev/building-boxes.md` "Live build".
-- [ ] **Step 7:** Record the review stats from `report.json`: share by `src`, the registration distribution and fallback share, step and front building counts, `tiles.buildings.bytes` against main's. Commit the docs: `docs: building boxes live build measurements`.
+- [ ] **Step 4:** Run `git merge origin/main` (if it changes `overture-buildings` in the lock, refetch the parts with the new release). Then run `npm run pipeline -- boxes`. Expected: the counts summary with `boxes.outside_footprint 0`, and a `building-boxes` entry in `sources.lock.json`. Record the wall time and the artifact's total bytes (the sum of the entry's `bytes`: this is what `fetch --restore` adds for everyone). If `boxes` takes over 60 minutes, move cluster batches onto worker threads (single-threaded on `--fixture`), the way `pipeline/steps/gross.ts:194` / `gross-worker.ts` use `availableParallelism() - 1`. Add a test that worker and single-thread artifacts have equal rows, then rerun.
+- [ ] **Step 5:** Commit `pipeline/lidar.lock.json` and `pipeline/sources.lock.json`: `chore(pipeline): lock LiDAR rasters, building parts and the first building-boxes artifact`.
+- [ ] **Step 6:** Run `npm run pipeline -- build`. Expected:
+  - every invariant OK, V37 included, and no `boxes:` warnings in `report.json`;
+  - V11's z12 bytes equal to main's within 1%;
+  - `timings.render-boxes` in seconds, not minutes.
+  Record `timings.render-boxes` and `timings.tiles`.
+- [ ] **Step 7: Check that restore stays small.** `jq '.sources[] | select(.id == "usgs-lidar-sf")' pipeline/sources.lock.json` prints nothing. Record the artifact bytes from Step 4 as the whole addition to `fetch --restore`.
+- [ ] **Step 8: Measure parts first** (spec "Measure first"). Query `pipeline/.cache/derived/<v>/building-roofs.parquet` with DuckDB:
+  - buildings with `n_parts > 0`;
+  - the share of those with `parts_coverage < 0.5`;
+  - the `parts_coverage` p10/p50/p90.
+  Find Sutro's bid as the nearest building to (-122.4528, 37.7552), then check in `render-pieces.parquet` that ≥ 90% of its `part` pieces carry its parcel id; record the result. Write all numbers into `docs/dev/building-boxes.md` "Live build".
+- [ ] **Step 9:** Record the review stats from `report.json`:
+  - share by `src`;
+  - the registration distribution and the fallback share;
+  - step and front building counts;
+  - `tiles.buildings.bytes` against main's.
+  Commit the docs: `docs: building boxes live build measurements`.
 
-### Task 13: First round on staging
+### Task 14: First round on staging
 
-- [ ] **Step 1:** Run `npm run pipeline -- upload <v>`, then `npm run pipeline -- verify <v> --origin https://sfhousing-staging.mindlace.net`. Expected: verify OK.
-- [ ] **Step 2: Before/after review.** Get `before` from `curl -s https://sfhousing-staging.mindlace.net/attribution` (`Dataset version <code>…</code>`; fall back to Task 0's `base`). Run `npm run data:local -- <before> --from https://sfhousing-staging.mindlace.net` and `npm run data:local -- <v> --from https://sfhousing-staging.mindlace.net`. Then run `npx tsx scripts/building-review.ts --before <before> --after <v>`. Open `index.html` and inspect every view and the sample, not the counts. Note phantom steps found in the sample and any anti-goal seen (a box outside its footprint, a cut-off facade, a phantom penthouse, confetti, a staircased pitched roof). Do not tune in this round; list them for the owner.
+- [ ] **Step 1:** Run `npm run pipeline -- upload <v>`. On this first upload it also archives the LiDAR tiles, which takes a while. Then run `npm run pipeline -- verify <v> --origin https://sfhousing-staging.mindlace.net`. Expected: verify OK.
+- [ ] **Step 2: Before/after review.**
+  1. Get `before` from `curl -s https://sfhousing-staging.mindlace.net/attribution` (`Dataset version <code>…</code>`); fall back to Task 0's `base`.
+  2. Run `npm run data:local -- <before> --from https://sfhousing-staging.mindlace.net` and `npm run data:local -- <v> --from https://sfhousing-staging.mindlace.net`.
+  3. Run `npx tsx scripts/building-review.ts --before <before> --after <v>`.
+  4. Open `index.html` and inspect every view and the sample, not the counts. Note phantom steps found in the sample and any anti-goal seen: a box outside its footprint, a cut-off facade, a phantom penthouse, confetti, a staircased pitched roof.
+  Do not tune in this round; list the findings for the owner.
 - [ ] **Step 3: Bench.** On a quiet machine run `SFH_BENCH_DATASET=<before> npm run bench:map`, then `SFH_BENCH_DATASET=<v> npm run bench:map` (`docs/dev/map-perf.md`; kill a stale :4173 first). Expected: p95 ≤ 16.7 ms on both. Add both rows to the Results table in `docs/dev/map-perf.md`. If the machine is busy, record ballpark numbers marked as such and keep going.
-- [ ] **Step 4:** Commit `docs: building steps round 1 bench`. Then run `npm run signoff`. Expected: every step passes, `dataset` included. If `origin/main` moved, signoff's merge changes `<v>`: go back to Task 12 step 5.
-- [ ] **Step 5:** Open the PR with `gh pr create --body-file <scratch>/pr-body.md`. The body holds the stats table, the bench rows, the review findings and the path of the review page (publish the review page as a private Artifact and link it). No attribution lines. Squash-merge after the signoff status is green.
-- [ ] **Step 6:** Watch `deploy-staging.yml` succeed (`gh run list --workflow deploy-staging.yml --limit 1`). Then confirm that `https://sfhousing-staging.mindlace.net/attribution` shows `<v>` and that `/` at zoom 16 renders the new boxes downtown. Hand back to the owner for review on staging. Production moves only when the owner merges the release PR, and tuning rounds after this are owner-driven iterations, not plan tasks.
+- [ ] **Step 4:** Commit `docs: building steps round 1 bench`. Then run `npm run signoff`. Expected: every step passes, `dataset` included. If `origin/main` moved, signoff's merge changes `<v>`: go back to Task 13 step 6 (and to step 4 first if the merge changed `overture-buildings`; `build` will say so).
+- [ ] **Step 5:** Open the PR with `gh pr create --body-file <scratch>/pr-body.md`. The body holds:
+  - the stats table and the bench rows;
+  - the review findings and the review page (publish it as a private Artifact and link it);
+  - the tuning loop from `docs/dev/building-boxes.md`.
+  No attribution lines. Squash-merge after the signoff status is green.
+- [ ] **Step 6:** Watch `deploy-staging.yml` succeed (`gh run list --workflow deploy-staging.yml --limit 1`). Then confirm that `https://sfhousing-staging.mindlace.net/attribution` shows `<v>` and that `/` at zoom 16 renders the new boxes downtown. Hand back to the owner for review on staging. Production moves only when the owner merges the release PR. Tuning rounds after this follow the documented loop and are owner-driven iterations, not plan tasks.
