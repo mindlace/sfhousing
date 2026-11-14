@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.7.0](https://github.com/mindlace/sfhousing/compare/v0.6.0...v0.7.0) (2026-11-14)
+
+
+### Features
+
+* datasets ship with their code (build-time dataset version) ([#78](https://github.com/mindlace/sfhousing/issues/78)) ([28a9e07](https://github.com/mindlace/sfhousing/commit/28a9e07104ab3df0dd0706ee290f8347ade87c16))
+* pipeline gross table makes /s load in ~1 s ([#87](https://github.com/mindlace/sfhousing/issues/87)) ([2c7711f](https://github.com/mindlace/sfhousing/commit/2c7711fe39b29ebbc095d9e6297cb0357cbb1335))
+* reveal sim and lesscars outcomes only up to the furthest day reached ([#86](https://github.com/mindlace/sfhousing/issues/86)) ([72b1180](https://github.com/mindlace/sfhousing/commit/72b11806c94d2a697d19de34201a02d09e5123f1))
+* sim-financing Release 1 — today's market, finance model and finance data ([#89](https://github.com/mindlace/sfhousing/issues/89)) ([8a0dbe8](https://github.com/mindlace/sfhousing/commit/8a0dbe89b7e5b42024c2bef2a9d9ad85e929e63a))
+* sim-financing Release 2 — public money in the simulation ([#100](https://github.com/mindlace/sfhousing/issues/100)) ([736be46](https://github.com/mindlace/sfhousing/commit/736be467a6cf7c46c79bfbb530239d9e6ca99513))
+* **sim:** pair draws so timing levers never flip outcomes ([#97](https://github.com/mindlace/sfhousing/issues/97)) ([7b6e7c3](https://github.com/mindlace/sfhousing/commit/7b6e7c3c22f45eb59a6efa1ddd11f11197a8de07))
+* **sim:** run slider to show the best, worst and any run of the band ([#99](https://github.com/mindlace/sfhousing/issues/99)) ([7f6616d](https://github.com/mindlace/sfhousing/commit/7f6616d023cc70df7ded08b06513273652bcb860))
+* **sim:** step engine Release A (month-step world, dated policy, funding, results, map stream) ([#106](https://github.com/mindlace/sfhousing/issues/106)) ([d3003a9](https://github.com/mindlace/sfhousing/commit/d3003a9a1b4851fea2f9fca79210396c8d7d243b))
+* **sim:** step-engine worker host, protocol and client (release B, part 1) ([#107](https://github.com/mindlace/sfhousing/issues/107)) ([306cba0](https://github.com/mindlace/sfhousing/commit/306cba0130c5bd95cbc83330deebbfeec9d0cb8a))
+
+
+### Performance Improvements
+
+* **sim:** faster funded engine (warm, line, typed records) ([#101](https://github.com/mindlace/sfhousing/issues/101)) ([f17d4b1](https://github.com/mindlace/sfhousing/commit/f17d4b1b7e4357da23fa52b899e4e8ac71bfd93e))
+
 ## [0.6.0](https://github.com/mindlace/sfhousing/compare/v0.5.0...v0.6.0) (2026-11-08)
 
 
