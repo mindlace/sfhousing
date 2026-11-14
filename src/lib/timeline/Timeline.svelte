@@ -170,7 +170,8 @@
   }
 
   function onwindowkeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && sheeting) {
+    // An Escape the editor (over the sheet) took closes the editor only; focus goes back to its bar.
+    if (e.key === 'Escape' && sheeting && !e.defaultPrevented) {
       e.stopPropagation();
       closeSheet();
     }

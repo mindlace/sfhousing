@@ -93,6 +93,13 @@
     }
     delete pending[r.key];
     onedit(setTermEdit(r.key, v.value));
+    // A first value re-creates the field (it leaves its explanation): focus stays in it, unless it
+    // has moved on (a Tab's commit).
+    void tick().then(() => {
+      const a = document.activeElement;
+      if (a !== null && a !== document.body) return;
+      document.getElementById(inputId(r.key))?.focus();
+    });
   }
 
   function clear(r: Row, locked: boolean): void {

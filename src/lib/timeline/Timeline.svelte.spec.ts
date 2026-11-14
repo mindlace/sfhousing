@@ -337,6 +337,21 @@ describe('Timeline rows', () => {
     await userEvent.keyboard('{Escape}');
     expect(document.querySelector('[role=dialog]')).toBeNull();
   });
+  it('on a phone an Escape the editor took (default prevented) leaves the sheet open', async () => {
+    await setup();
+    await page.viewport(390, 800);
+    await kindButton('Permitting').click();
+    const sheet = page.getByRole('dialog', { name: 'Permitting' });
+    await expect.element(sheet).toBeVisible();
+    // The editor's own Escape handler runs first and prevents the default.
+    const taken = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    taken.preventDefault();
+    document.body.dispatchEvent(taken);
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    expect(document.querySelector('[role=dialog]')).not.toBeNull();
+    await userEvent.keyboard('{Escape}');
+    expect(document.querySelector('[role=dialog]')).toBeNull();
+  });
   it('draws the hatch beneath the bars and keeps every bar text at 4.5:1', async () => {
     await setup({ filledEnd: asOf + Math.floor((windowEnd - asOf) / 8) });
     await kindButton('Permitting').click();
