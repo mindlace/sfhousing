@@ -564,6 +564,8 @@ describe('TimelineMode', () => {
   });
 
   it("a crash before the first fill says the simulation couldn't load", async () => {
+    // The client logs each crash; silenced here so signoff's stderr check stays clean.
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     setup();
     await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
     w().crash();
@@ -577,6 +579,7 @@ describe('TimelineMode', () => {
     await expect.poll(() => debug().filledThrough).toBe(LAST);
     w().crash();
     await expect.element(notices).toHaveTextContent('Part of the simulation stopped.');
+    expect(err).toHaveBeenCalledWith('[sim] worker crashed', expect.anything());
   });
 
   it("on a phone the inspector sheet ends where the mode's box ends, above what follows it", async () => {
