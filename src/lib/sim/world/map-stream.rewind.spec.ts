@@ -370,7 +370,7 @@ describe('map-stream: rewind (rule 9)', () => {
     expect(held.size).toBeGreaterThan(0);
 
     // no cell of the map after the refill holds one of them (one expect over every cell and
-    // project, not one per pair: 256 cells x ~1,600 projects was ~2.3 s of `expect` alone)
+    // project, not one per pair: 256 cells x ~1,600 projects was ~2.3 s on the bench city of `expect` alone)
     const stale: string[] = [];
     for (const [id, c] of foldCells([...updates, ...refill]))
       for (const p of c.slotProjectIds) if (gone.has(p)) stale.push(`${id}:${p}`);

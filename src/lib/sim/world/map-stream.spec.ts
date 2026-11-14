@@ -359,7 +359,7 @@ describe('map-stream: onEvent and flush', () => {
 
   it('sliced equals unsliced', () => {
     // 60 months: every budget-0 flush is one piece of work, so the sliced run costs a flush call
-    // per massing; the precondition asserts below still hold (thousands of mid-cell stops)
+    // per massing; the precondition asserts below still hold on the bench city (mid-cell stops occur)
     const MONTHS = 60;
     const a = started(bench);
     const updatesA = [
