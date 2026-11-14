@@ -99,7 +99,7 @@ Approaches considered, and which one was picked:
 - **LiDAR (new source):** USGS 3DEP `CA_SanFrancisco_1_B23` (2023), Entwine Point Tile at
   `https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_SanFrancisco_1_B23/ept.json`.
   - Its source tiles are EPSG:7131: NAD83(2011) / SF CS13, with NAVD88 (Geoid18) heights.
-  - The EPT advertises EPSG:3857, but PDAL's NAD83(2011)→WGS84 step is a null shift. So the numbers
+  - The EPT advertises EPSG:3857, but PROJ's NAD83(2011)→WGS84 step (used by PDAL and pyproj) is a null shift. So the numbers
     are NAD83, and converting back to 7131 is exact. The pipeline's own 4326→7131 step is the same
     null operation, so all sources share "NAD83 numerics".
   - Derive once:
@@ -282,7 +282,7 @@ Inspect the rendered result, not just counts. Report:
 
 ## Left to the builder
 
-- LiDAR tooling (the spike used PDAL via Python), raster resolution, the plane-fit method and the
+- LiDAR tooling (the spike used Python with laspy, lazrs and pyproj), raster resolution, the plane-fit method and the
   clustering of interior levels.
 - Exact thresholds (margin, false-front band and rise, step area, step gap, step cap), tuned on the
   review areas.
