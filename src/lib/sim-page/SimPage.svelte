@@ -13,7 +13,9 @@
   notices. View (`/s/<id>`): the shared text, opened read-only.
   The map (rule 19): with Paint or Erase a stroke goes into the selected painted policy's selected
   span (the span lens); with no painted policy selected a new one is added from the playhead's
-  month, holding the stroke, as one change, and selected. With Move a tap on a project opens its
+  month, holding the stroke, as one change, and selected. A stroke tool is always on show: in the
+  painted policy's editor, else (from md) as "Stop painting" in the header, below md the palette
+  strip. With Move a tap on a project opens its
   card; a tap on a lot with none (TimelineMode's `onmiss`, then the map's `click`) asks the worker
   which policy sets the lot's limit and selects it. Height limits, lids, outlines and the paint
   preview are as before; the worker answers them for the last view month.
@@ -21,7 +23,6 @@
 <script lang="ts">
   import { onMount, tick, untrack, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
-  import { BROWSER } from 'esm-env';
   import { replaceState } from '$app/navigation';
   import { BrushController, type ControllerMap } from '$lib/brush/BrushController.svelte';
   import { ANNOUNCE_MS } from '$lib/brush/messages';
@@ -273,7 +274,7 @@
 
   // In the browser with the calibration known, the document opens here, before TimelineMode
   // mounts, so the session's first `policy` is the opened one.
-  if (BROWSER) untrack(openDoc);
+  if (typeof window !== 'undefined') untrack(openDoc);
 
   // Every change after the open goes to PolicySync (debounced, rule 16).
   $effect(() => {
@@ -426,15 +427,19 @@
       const c = cal;
       if (!c) return;
       const added: { ref: SpanRef | null } = { ref: null };
-      store.apply((d) => {
-        const r = addPolicy(
-          d,
-          { kind: 'zoning', what: 'paint' },
-          { w: { asOf: c.asOf, months: WINDOW_MONTHS }, month: viewMonthOf(c.asOf, day), cal: c }
-        );
-        added.ref = r.ref;
-        return writeBack(r.doc, r.ref, change(project(r.doc, r.ref)));
-      }, label);
+      store.apply(
+        (d) => {
+          const r = addPolicy(
+            d,
+            { kind: 'zoning', what: 'paint' },
+            { w: { asOf: c.asOf, months: WINDOW_MONTHS }, month: viewMonthOf(c.asOf, day), cal: c }
+          );
+          added.ref = r.ref;
+          return writeBack(r.doc, r.ref, change(project(r.doc, r.ref)));
+        },
+        label,
+        coalesce
+      );
       if (added.ref !== null) select(added.ref);
     },
     undo: () => store.undo(),
@@ -527,6 +532,14 @@
     if (t !== 'move' && !wide.current) void tick().then(() => paletteStrip?.focus());
   }
 
+  /**
+   * From md, Paint or Erase with the painted policy's tools out of view (closed, another
+   * selection, Results): the header offers the way back to Move. Below md the palette strip does.
+   */
+  const toolOff = $derived(
+    !readonly && wide.current && tools.tool !== 'move' && !(paintRef !== null && face === 'editor')
+  );
+
   // The controller's own tool keys set brush.tool: keep the /sim tool in step.
   $effect(() => {
     const bt = brush.tool;
@@ -551,6 +564,10 @@
   const selectedArea = $derived(
     paintArea !== null && paintLens.policy.custom.some((b) => b.id === paintArea) ? paintArea : null
   );
+  // An area that leaves the span (Remove, Undo) is forgotten, so a Redo does not bring it back.
+  $effect(() => {
+    if (paintArea !== null && selectedArea === null) paintArea = null;
+  });
   const paintRows = $derived(simPaintRows(paintLens.policy, (k) => sync.result(k)));
 
   /** A painted area's Remove: one change Undo names (neighbours of one kind and height merge). */
@@ -661,6 +678,8 @@
   interface ClickMap {
     on(ev: 'click', fn: (e: MapClick) => void): void;
     off(ev: 'click', fn: (e: MapClick) => void): void;
+    on(ev: 'mousedown' | 'touchstart', fn: () => void): void;
+    off(ev: 'mousedown' | 'touchstart', fn: () => void): void;
   }
   let clickMap: ClickMap | null = null;
   /** The latest selecting click's number: only its answer counts. */
@@ -675,9 +694,22 @@
 
   function watchClicks(map: ClickMap): void {
     if (map === clickMap) return;
-    clickMap?.off('click', onMapClick);
+    unwatchClicks();
     clickMap = map;
     map.on('click', onMapClick);
+    // A new press starts a new tap: a miss whose click never came (a drag) is forgotten.
+    map.on('mousedown', forgetMiss);
+    map.on('touchstart', forgetMiss);
+  }
+
+  function unwatchClicks(): void {
+    clickMap?.off('click', onMapClick);
+    clickMap?.off('mousedown', forgetMiss);
+    clickMap?.off('touchstart', forgetMiss);
+  }
+
+  function forgetMiss(): void {
+    missPending = false;
   }
 
   function onMiss(): void {
@@ -889,7 +921,7 @@
       strokePreview.reset();
       viewMap?.off('moveend', readView);
       viewMap = null;
-      clickMap?.off('click', onMapClick);
+      unwatchClicks();
       clickMap = null;
       controller?.destroy();
       controller = null;
@@ -901,6 +933,14 @@
 
 {#snippet actions()}
   <ViewMenu view={viewPrefs} theme={systemTheme.current} rows={viewRows} onchange={setView} />
+  {#if toolOff}
+    <button
+      type="button"
+      class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+      onclick={() => setTool('move')}
+      >{tools.tool === 'erase' ? 'Stop erasing' : 'Stop painting'}</button
+    >
+  {/if}
   {#if !readonly}
     <HistoryButtons
       canUndo={store.canUndo}

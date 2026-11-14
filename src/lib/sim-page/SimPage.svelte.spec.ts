@@ -4,15 +4,22 @@
 // through the store, reverts a rejected edit, publishes schema 4, and in view mode edits nothing.
 // The real TimelineMode, session and client run over a fake timeline worker; SimMap is a stub.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ComponentProps } from 'svelte';
+import { tick, type ComponentProps } from 'svelte';
 import { render } from 'vitest-browser-svelte';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
+import { BrushController } from '$lib/brush/BrushController.svelte';
 import { parseManifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { REAL_ACTUAL } from '$lib/fzp/fixtures/cards';
 import { dayFromUtc, utcParts } from '$lib/fzp/time';
-import { stub } from '$lib/fzp/test/sim-map-stub';
+import { FakeMap, callsOf, stub } from '$lib/fzp/test/sim-map-stub';
+import { LIMITS_LAYER_ID } from '$lib/map/height/limits-layer';
+import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
+import { tinyLimits } from '$lib/map/height/test/fixtures';
+import type { PackedCell } from '$lib/map/types';
+import { OUTLINE_LAYER_ID } from '$lib/paint/outline-layers';
+import { copyFor } from '$lib/sharing/copy';
 import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
 import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import type { LimitOwner } from '$lib/sim/levers/source';
@@ -35,7 +42,11 @@ import {
 } from '$lib/timeline/test/fake-timeline-worker';
 import { statics as baseStatics } from '$lib/timeline/test/fixtures';
 import { formatMonthYear } from '$lib/fzp/format';
+import { DEFAULT_VIEW, VIEW_KEY } from '$lib/view/prefs';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
+import { replaceStateCalls } from '../../test-stubs/app/navigation';
+import './debug';
+import { clampBbox } from './lid-request';
 import { DEFAULT_POLICY, SIM_CODEC, SIM_KEY, type SimDoc } from './sim-doc';
 import type SimPage from './SimPage.svelte';
 import SimPageHost from './test/SimPageHost.svelte';
@@ -513,5 +524,768 @@ describe('SimPage publish and view', () => {
     await expect.element(viewButton()).toBeVisible();
     await userEvent.click(viewButton());
     await expect.element(page.getByRole('checkbox', { name: /height limits/i })).toBeVisible();
+  });
+});
+
+// ---- ported from the schema 3 page: map tools, overlays, persistence (kept by rule 41) ----
+
+/** A tick and two animation frames: what an answer or a state change started has run. */
+const frames = async () => {
+  await tick();
+  await new Promise((r) => requestAnimationFrame(() => r(null)));
+  await new Promise((r) => requestAnimationFrame(() => r(null)));
+};
+const sunset: Policy = { ...painted, id: 'sunset', label: 'Sunset paint' };
+const transit: Policy = {
+  id: 'near-bart',
+  label: 'Taller near BART',
+  preset: null,
+  on: true,
+  where: { tag: 'transit', stopTypes: ['metro'] },
+  spans: [{ from: M(2), to: null, what: { tag: 'bands', bands: [{ maxM: 400, stories: 8 }] } }]
+};
+const openZoning = () =>
+  page
+    .getByTestId('tl-kind-zoning')
+    .getByRole('button', { name: /^Zoning/ })
+    .click();
+const ev = (type: string, x: number, pointerId = 1) =>
+  stub.map.getCanvas().dispatchEvent(
+    new PointerEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      clientX: x,
+      clientY: 10,
+      pointerId,
+      pointerType: 'mouse',
+      button: type === 'pointermove' ? -1 : 0,
+      isPrimary: true
+    })
+  );
+/** Pointer down and moves to `to`: a stroke in progress. */
+function drag(from: number, to: number, pointerId = 1): void {
+  ev('pointerdown', from, pointerId);
+  for (let x = from + 10; x <= to; x += 10) ev('pointermove', x, pointerId);
+}
+const toolKey = async (key: 'b' | 'e' | 'v') => {
+  (document.activeElement as HTMLElement | null)?.blur();
+  await userEvent.keyboard(key);
+};
+
+describe('SimPage map overlays', () => {
+  const viewButton = () => header().getByRole('button', { name: 'View', exact: true });
+  type LimitsLayerLike = {
+    id: string;
+    props: { city: unknown; lids: unknown; mode: unknown; theme: string };
+  };
+  const overlays = () => (callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as LimitsLayerLike[];
+  const overlayIds = () => overlays().map((l) => l.id);
+  const lastLayer = () => overlays().find((l) => l.id === LIMITS_LAYER_ID);
+  /** The worker posts the zoning in force at the last view month. */
+  function emitHeights() {
+    const { city } = tinyLimits();
+    emit({ type: 'heights', rev: 1, city: { ...city, rev: 1 } });
+  }
+  function moveTo(zoom: number) {
+    stub.map.zoom = zoom;
+    stub.map.fire('moveend');
+  }
+  async function scheme(value: 'light' | 'dark') {
+    await cdp().send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-color-scheme', value }]
+    });
+  }
+  function answerLids() {
+    const { lids } = tinyLimits();
+    emit({
+      type: 'heightLids',
+      reqId: w().lastOf('heightLids')!.reqId,
+      result: { ok: true, lids, missing: 0 }
+    });
+    return lids;
+  }
+
+  it('the limits layer draws plain, at the default view', async () => {
+    await opened();
+    expect(stub.props.view).toEqual(DEFAULT_VIEW);
+    emitHeights();
+    await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+    expect(lastLayer()!.props).toMatchObject({ lids: null, mode: { kind: 'plain' } });
+  });
+
+  it('at zoom ≥ 14.5 the page asks heightLids for the view; below, it asks nothing', async () => {
+    await opened();
+    emitHeights();
+    await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+    moveTo(14);
+    const centre = { lng: -122.44, lat: 37.76 };
+    stub.map.getCenter = () => centre;
+    moveTo(14.5);
+    // One question: the z14 view asked none.
+    await expect.poll(() => w().all('heightLids').length).toBe(1);
+    const asked = w().lastOf('heightLids')!.bbox;
+    expect(asked).toEqual(clampBbox(stub.map.bounds, LID_MAX_SPAN_M, [centre.lng, centre.lat]));
+    const lids = answerLids();
+    await expect.poll(() => lastLayer()?.props.lids).toBe(lids);
+    // Zoomed out again: the lids go, the contours stay.
+    moveTo(13);
+    await expect.poll(() => lastLayer()?.props.lids).toBeNull();
+    expect(lastLayer()!.props.city).not.toBeNull();
+    expect(w().all('heightLids')).toHaveLength(1);
+  });
+
+  it('a theme change or a tool change rebuilds the layer without a new heightLids', async () => {
+    await opened();
+    emitHeights();
+    moveTo(15);
+    await expect.poll(() => w().all('heightLids').length).toBe(1);
+    const lids = answerLids();
+    await expect.poll(() => lastLayer()?.props.lids).toBe(lids);
+    try {
+      await scheme('dark');
+      await expect.poll(() => lastLayer()?.props.theme).toBe('dark');
+      await toolKey('b');
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'paint' });
+      await toolKey('v');
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
+      expect(lastLayer()!.props.lids).toBe(lids);
+      expect(w().all('heightLids')).toHaveLength(1);
+    } finally {
+      await scheme('light');
+    }
+  });
+
+  it('no-session drops the lids, keeps the contours and asks again on the next client', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await opened();
+    const first = w();
+    emitHeights();
+    moveTo(15);
+    await expect.poll(() => first.all('heightLids').length).toBe(1);
+    const lids = answerLids();
+    await expect.poll(() => lastLayer()?.props.lids).toBe(lids);
+    stub.map.bounds = [-122.44, 37.75, -122.43, 37.76];
+    moveTo(15);
+    await expect.poll(() => first.all('heightLids').length).toBe(2);
+    first.crash();
+    await expect.poll(() => lastLayer()?.props.lids).toBeNull();
+    expect(lastLayer()!.props.city).not.toBeNull();
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect.poll(() => w()).not.toBe(first);
+    await expect.poll(() => w().all('heightLids').length).toBe(1);
+  });
+
+  it('a stored heightLimits: false draws nothing until turned on', async () => {
+    const mem = new MemoryStorage();
+    mem.setItem(
+      VIEW_KEY,
+      JSON.stringify({ transitStops: false, transitAccess: true, heightLimits: false })
+    );
+    await opened({ storage: () => mem });
+    emitHeights();
+    moveTo(15);
+    await frames();
+    expect(overlayIds()).not.toContain(LIMITS_LAYER_ID);
+    expect(w().all('heightLids')).toHaveLength(0);
+    await viewButton().click();
+    await page.getByRole('checkbox', { name: 'Zoning height limits' }).click();
+    await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+    await expect.poll(() => w().all('heightLids').length).toBe(1);
+  });
+
+  it('selecting a transit policy sets rule mode on its id; the plan row sets fzp mode', async () => {
+    await opened({ storage: () => seeded(doc4(zoning(transit))) });
+    emitHeights();
+    await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+    await openZoning();
+    await page.getByTestId('tl-bar').first().click();
+    await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'near-bart' });
+    // Rule mode wins over a stroke tool.
+    await toolKey('b');
+    await frames();
+    expect(lastLayer()!.props.mode).toEqual({ kind: 'rule', ruleId: 'near-bart' });
+    await toolKey('v');
+    await page
+      .getByRole('button', { name: 'Family Zoning Plan, as adopted, whole window' })
+      .click();
+    await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'fzp' });
+    await inspector().getByRole('button', { name: 'Close editor' }).click();
+    await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
+  });
+
+  it('with Zoning height limits off, selecting a transit policy or the plan turns them on', async () => {
+    for (const which of ['policy', 'plan'] as const) {
+      stub.reset();
+      const mem = seeded(doc4(zoning(transit)));
+      mem.setItem(
+        VIEW_KEY,
+        JSON.stringify({ transitStops: false, transitAccess: true, heightLimits: false })
+      );
+      const r = await opened({ storage: () => mem });
+      emitHeights();
+      await frames();
+      expect(overlayIds()).not.toContain(LIMITS_LAYER_ID);
+      await openZoning();
+      if (which === 'policy') await page.getByTestId('tl-bar').first().click();
+      else
+        await page
+          .getByRole('button', { name: 'Family Zoning Plan, as adopted, whole window' })
+          .click();
+      await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+      expect(lastLayer()!.props.mode).toEqual(
+        which === 'policy' ? { kind: 'rule', ruleId: 'near-bart' } : { kind: 'fzp' }
+      );
+      expect(JSON.parse(mem.getItem(VIEW_KEY)!).heightLimits).toBe(true);
+      await r.unmount();
+    }
+  });
+
+  it('without transit the menu has only the height-limits row', async () => {
+    await opened({ manifest: { ...manifest, transit: undefined } });
+    await viewButton().click();
+    expect(page.getByRole('checkbox').elements()).toHaveLength(1);
+    await expect
+      .element(page.getByRole('checkbox', { name: 'Zoning height limits' }))
+      .toBeChecked();
+  });
+
+  it('the rows follow the manifest the map renders: a Retry after a failed load brings transit', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    setup({ manifest: null, manifestError: true });
+    const retry = page.getByRole('button', { name: 'Retry', exact: true });
+    await expect.element(retry).toBeVisible();
+    await viewButton().click();
+    const rows = () =>
+      page.getByRole('group', { name: 'Map layers' }).getByRole('checkbox').elements();
+    expect(rows()).toHaveLength(1);
+    await viewButton().click();
+    await retry.click();
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    await viewButton().click();
+    await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).toBeVisible();
+    expect(rows()).toHaveLength(3);
+  });
+
+  it('the prefs are read from and written to the page storage', async () => {
+    const mem = new MemoryStorage();
+    mem.setItem(VIEW_KEY, JSON.stringify({ transitStops: true, transitAccess: true }));
+    await opened({ storage: () => mem });
+    await expect
+      .poll(() => stub.props.view)
+      .toEqual({ transitStops: true, transitAccess: true, heightLimits: true });
+    await viewButton().click();
+    await page.getByRole('checkbox', { name: 'Zoning height limits' }).click();
+    await expect
+      .poll(() => JSON.parse(mem.getItem(VIEW_KEY) ?? '{}'))
+      .toEqual({ transitStops: true, transitAccess: true, heightLimits: false });
+  });
+});
+
+describe('SimPage tools', () => {
+  it('B and E pick Paint and Erase; V goes back to Move', async () => {
+    await opened({ storage: () => seeded(doc4(zoning(painted))) });
+    await openZoning();
+    await page.getByTestId('tl-bar').first().click();
+    await expect.element(inspector().getByRole('radio', { name: 'Move' })).toBeChecked();
+    await toolKey('e');
+    await expect.element(inspector().getByRole('radio', { name: 'Erase' })).toBeChecked();
+    await toolKey('b');
+    await expect.element(inspector().getByRole('radio', { name: 'Paint' })).toBeChecked();
+    await toolKey('v');
+    await expect.element(inspector().getByRole('radio', { name: 'Move' })).toBeChecked();
+  });
+
+  // Rule 19: with a stroke tool a tap strokes, so the tool must stay visible to turn off. From md
+  // the painted policy's editor holds the tools; with it out of view (closed, another selection,
+  // Results) the header offers "Stop painting" / "Stop erasing". Below md the palette strip does.
+  it('on desktop a stroke tool with its editor closed shows in the header and turns off there', async () => {
+    await opened({ storage: () => seeded(doc4(zoning(painted))) });
+    const stop = () => header().getByRole('button', { name: /^Stop (painting|erasing)$/ });
+    await openZoning();
+    await page.getByTestId('tl-bar').first().click();
+    await inspector().getByRole('radio', { name: 'Paint' }).click();
+    // The editor's own tools are on show: no second control.
+    expect(stop().elements()).toHaveLength(0);
+    await inspector().getByRole('button', { name: 'Close editor' }).click();
+    await expect.element(stop()).toHaveTextContent('Stop painting');
+    expect(stub.props.tapCards).toBe(false);
+    await toolKey('e');
+    await expect.element(stop()).toHaveTextContent('Stop erasing');
+    await stop().click();
+    await expect.element(stop()).not.toBeInTheDocument();
+    await expect.poll(() => stub.props.tapCards).toBe(true);
+    // A tap on a building opens its card again.
+    stub.props.timelinePick!({ projectId: 'pr-1', parcelId: 'p1', x: 40, y: 40, kind: 'tap' });
+    await expect.poll(() => w().all('parcelSummary')).toHaveLength(1);
+  });
+
+  it('closing a pool draft puts focus on the Public money "+"', async () => {
+    await opened();
+    const add = page.getByRole('button', { name: 'Add Public money policy' });
+    await add.click();
+    await page.getByRole('button', { name: 'Your own pool' }).click();
+    await expect.element(inspectorTitle()).toHaveTextContent('Your own pool');
+    await inspector().getByRole('button', { name: 'Close editor' }).click();
+    await expect.element(inspector()).not.toBeInTheDocument();
+    await expect.poll(() => document.activeElement).toBe(add.element());
+  });
+});
+
+describe('SimPage live preview', () => {
+  const preview = () => window.__sfhSim?.preview;
+  const feedbackIds = () =>
+    ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[])
+      .map((l) => l.id)
+      .filter((id) => id.startsWith('sim-feedback-'));
+  function more(from: number, to: number, pointerId = 1): void {
+    for (let x = from; x <= to; x += 10) ev('pointermove', x, pointerId);
+  }
+  function pack(): PackedCell {
+    const c = stub.map.getCenter();
+    const d = 1e-4;
+    const ring = [c.lng, c.lat, c.lng, c.lat + d, c.lng + d, c.lat + d, c.lng + d, c.lat];
+    return {
+      cellId: 'preview',
+      parcelIds: ['P0'],
+      parcelMeta: Uint32Array.from([4, 1, 3, 0]),
+      partCount: 1,
+      startIndices: Uint32Array.from([0, 5]),
+      positions: Float64Array.from([...ring, c.lng, c.lat]),
+      partTopM: Float32Array.from([10]),
+      partSlot: Uint32Array.from([0]),
+      partAppearance: Uint8Array.from([0]),
+      partTypology: Uint8Array.from([0])
+    };
+  }
+  /** Answers the `n`th (1-based) resolveBrush: P0 at the centre, FAR out of view. */
+  function answerLots(n: number): void {
+    const c = stub.map.getCenter();
+    emit({
+      type: 'brushLots',
+      reqId: w().all('resolveBrush')[n - 1].reqId,
+      result: { ok: true, lots: ['P0', 'FAR'], points: Float64Array.from([c.lng, c.lat, 0, 0]) }
+    });
+  }
+  function answerBuildings(n: number): void {
+    emit({
+      type: 'previewBuildings',
+      reqId: w().all('previewBuildings')[n - 1].reqId,
+      result: { ok: true, pack: pack(), built: 1, missing: 0 }
+    });
+  }
+  /** /sim open with `key`'s tool (B Paint, E Erase) and nothing selected. */
+  async function readyToPaint(key: 'b' | 'e' = 'b') {
+    await opened();
+    await toolKey(key);
+    await expect.poll(() => callsOf('setPanEnabled').at(-1)?.[0]).toBe(false);
+  }
+  async function liveStroke() {
+    drag(10, 40);
+    await expect.poll(() => w().all('resolveBrush').length).toBe(1);
+    answerLots(1);
+    await expect.poll(() => w().all('previewBuildings').length).toBe(1);
+    answerBuildings(1);
+    await expect.poll(preview).toBe('live');
+  }
+  const motion = (value: 'reduce' | 'no-preference') =>
+    cdp().send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-reduced-motion', value }]
+    });
+
+  afterEach(async () => {
+    await motion('reduce');
+  });
+
+  it('a Paint drag asks previewBuildings mid-stroke and fades on release', async () => {
+    await motion('no-preference');
+    await readyToPaint();
+    expect(preview()).toBe('none');
+    drag(10, 40);
+    await expect.poll(() => w().all('resolveBrush').length).toBe(1);
+    expect(w().lastOf('resolveBrush')!.query).toMatchObject({ kind: 'freehand' });
+    answerLots(1);
+    await expect.poll(() => w().all('previewBuildings').length).toBe(1);
+    expect(w().lastOf('previewBuildings')).toMatchObject({ lots: ['P0'], stories: 6 });
+    answerBuildings(1);
+    await expect.poll(preview).toBe('live');
+    expect(feedbackIds()).toEqual(['sim-feedback-1']);
+    more(50, 80);
+    await expect.poll(() => w().all('resolveBrush').length).toBe(2);
+    ev('pointerup', 80);
+    expect(preview()).toBe('fading');
+  });
+
+  it('release before an answer arrives: the late answer is dropped', async () => {
+    await motion('no-preference');
+    await readyToPaint();
+    await liveStroke();
+    more(50, 80);
+    await expect.poll(() => w().all('resolveBrush').length).toBe(2);
+    answerLots(2);
+    await expect.poll(() => w().all('previewBuildings').length).toBe(2);
+    ev('pointerup', 80);
+    expect(preview()).toBe('fading');
+    answerBuildings(2);
+    await frames();
+    expect(preview()).not.toBe('live');
+    expect(feedbackIds()).not.toContain('sim-feedback-2');
+  });
+
+  it('Escape mid-stroke clears the buildings at once; the cancelled preview is answered', async () => {
+    const done = vi.spyOn(BrushController.prototype, 'previewDone');
+    await readyToPaint();
+    await liveStroke();
+    expect(done).toHaveBeenCalledTimes(1);
+    more(50, 80);
+    await expect.poll(() => w().all('resolveBrush').length).toBe(2);
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+    answerLots(2);
+    await expect.poll(() => done.mock.calls.length).toBe(2);
+    expect(w().all('previewBuildings')).toHaveLength(1);
+    expect(preview()).toBe('none');
+    ev('pointerup', 80);
+    drag(10, 40, 2);
+    await expect.poll(() => w().all('resolveBrush').length).toBe(3);
+    ev('pointerup', 40, 2);
+  });
+
+  it('a new map mid-stroke clears the live buildings and drops the answers still on their way', async () => {
+    await readyToPaint();
+    await liveStroke();
+    more(50, 80);
+    await expect.poll(() => w().all('resolveBrush').length).toBe(2);
+    stub.map = new FakeMap();
+    stub.fireReady();
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+    answerLots(2);
+    await frames();
+    expect(w().all('previewBuildings')).toHaveLength(1);
+    expect(preview()).toBe('none');
+  });
+
+  it('an Erase drag shows no buildings, and each of its previews is answered', async () => {
+    const done = vi.spyOn(BrushController.prototype, 'previewDone');
+    await readyToPaint('e');
+    drag(10, 40);
+    await expect.poll(() => done.mock.calls.length).toBe(1);
+    more(50, 80);
+    await expect.poll(() => done.mock.calls.length).toBe(2);
+    expect(w().all('resolveBrush')).toHaveLength(0);
+    expect(w().all('previewBuildings')).toHaveLength(0);
+    expect(preview()).toBe('none');
+    ev('pointerup', 80);
+    await frames();
+    expect(w().all('previewBuildings')).toHaveLength(0);
+    expect(feedbackIds()).toEqual([]);
+  });
+
+  it('under reduced motion a release clears the buildings at once', async () => {
+    await readyToPaint();
+    await liveStroke();
+    ev('pointerup', 40);
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+  });
+});
+
+describe('SimPage painted areas', () => {
+  const brushLots = ['P0', 'P1'];
+  const withArea: Policy = {
+    ...painted,
+    spans: [
+      {
+        from: M(2),
+        to: null,
+        what: {
+          tag: 'brushes',
+          brushes: [
+            {
+              id: 'b1',
+              kind: 'paint',
+              strokes: [{ path: [[-122.42, 37.76]], radiusM: 50 }],
+              stories: 6
+            }
+          ]
+        }
+      }
+    ]
+  };
+  const overlayIds = () =>
+    ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
+  const areaRows = () =>
+    page
+      .getByRole('list', { name: 'Painted areas' })
+      .getByRole('button', { name: /^(\d+ stor(y|ies)|Erased) · / });
+  function answerOutlines() {
+    const req = w().lastOf('lotOutlines')!;
+    const c = stub.map.getCenter();
+    const d = 1e-3;
+    emit({
+      type: 'lotOutlines',
+      reqId: req.reqId,
+      result: {
+        ok: true,
+        lots: req.lots,
+        ringLot: Uint32Array.from([0]),
+        starts: Uint32Array.from([0, 4]),
+        positions: Float64Array.from([
+          c.lng,
+          c.lat,
+          c.lng + d,
+          c.lat,
+          c.lng + d,
+          c.lat + d,
+          c.lng,
+          c.lat + d
+        ]),
+        missing: 0
+      }
+    });
+  }
+  /** The painted policy open in the editor, its area's lots found. */
+  async function withPaintedArea() {
+    await opened({ storage: () => seeded(doc4(zoning(withArea))) });
+    await expect.poll(() => w().all('resolveBrush').length).toBe(1);
+    emit({
+      type: 'brushLots',
+      reqId: w().lastOf('resolveBrush')!.reqId,
+      result: { ok: true, lots: brushLots, points: new Float64Array(4) }
+    });
+    await openZoning();
+    await page.getByTestId('tl-bar').first().click();
+    await expect.element(areaRows().first()).toHaveAccessibleName('6 stories · 1 stroke · 2 lots');
+  }
+
+  it('selecting a painted area asks for its outlines; unselecting drops them', async () => {
+    await withPaintedArea();
+    await areaRows().first().click();
+    await expect.poll(() => w().lastOf('lotOutlines')?.lots).toEqual(brushLots);
+    answerOutlines();
+    await expect.poll(overlayIds).toContain(OUTLINE_LAYER_ID);
+    await areaRows().first().click();
+    await expect.poll(overlayIds).not.toContain(OUTLINE_LAYER_ID);
+  });
+
+  it('Erase with no area picked outlines the span’s painted lots', async () => {
+    await withPaintedArea();
+    await inspector().getByRole('radio', { name: 'Erase' }).click();
+    await expect.poll(() => w().lastOf('lotOutlines')?.lots).toEqual(brushLots);
+  });
+
+  it('Remove on the selected area is one change Undo names; the selection and outline go', async () => {
+    await withPaintedArea();
+    await areaRows().first().click();
+    await expect.poll(() => w().lastOf('lotOutlines')?.lots).toEqual(brushLots);
+    answerOutlines();
+    await expect.poll(overlayIds).toContain(OUTLINE_LAYER_ID);
+    const asked = w().all('lotOutlines').length;
+    await page.getByRole('button', { name: /^Remove:/ }).click();
+    expect(areaRows().elements()).toHaveLength(0);
+    await expect.poll(overlayIds).not.toContain(OUTLINE_LAYER_ID);
+    await expect.element(undoButton()).toHaveAccessibleName('Undo: Removed: 6 stories');
+    await undoButton().click();
+    await expect.element(areaRows().first()).toHaveAttribute('aria-pressed', 'false');
+    await frames();
+    expect(overlayIds()).not.toContain(OUTLINE_LAYER_ID);
+    expect(w().all('lotOutlines')).toHaveLength(asked);
+  });
+});
+
+describe('SimPage map selection guards', () => {
+  const X = { lng: -122.42, lat: 37.76 };
+  function tapLot(): void {
+    stub.props.timelinePick!({ projectId: null, kind: 'tap' });
+    stub.map.fire('click', { lngLat: X });
+  }
+  function answer(policy: string | null, n?: number): void {
+    const all = w().all('lotAt');
+    const req = n === undefined ? all.at(-1)! : all[n - 1];
+    const owner = policy === null ? { kind: 'fzp' } : { kind: 'paint', policy };
+    emit({
+      type: 'lotAt',
+      reqId: req.reqId,
+      result: { ok: true, parcelId: 'X', owner: owner as unknown as LimitOwner }
+    });
+  }
+  async function ready() {
+    await opened({ storage: () => seeded(doc4(zoning(painted, sunset))) });
+    await expect.poll(() => stub.props.timelinePick).toBeTruthy();
+  }
+
+  it('only the latest click answer counts', async () => {
+    await ready();
+    tapLot();
+    tapLot();
+    expect(w().all('lotAt')).toHaveLength(2);
+    answer('sunset', 2);
+    await expect.element(inspectorTitle()).toHaveTextContent('Sunset paint');
+    answer('mission', 1);
+    await frames();
+    await expect.element(inspectorTitle()).toHaveTextContent('Sunset paint');
+    // An older answer arriving before the latest one is dropped too.
+    tapLot();
+    tapLot();
+    answer('mission', 3);
+    await frames();
+    await expect.element(inspectorTitle()).toHaveTextContent('Sunset paint');
+    answer('mission', 4);
+    await expect.element(inspectorTitle()).toHaveTextContent('Mission paint');
+  });
+
+  it('a no-session answer changes nothing', async () => {
+    await ready();
+    tapLot();
+    answer('mission');
+    await expect.element(inspectorTitle()).toHaveTextContent('Mission paint');
+    tapLot();
+    emit({
+      type: 'lotAt',
+      reqId: w().lastOf('lotAt')!.reqId,
+      result: { ok: false, reason: 'no-session', message: 'x' }
+    });
+    await frames();
+    await expect.element(inspectorTitle()).toHaveTextContent('Mission paint');
+  });
+
+  it('the plan selects its fixed row; no lot clears the selection', async () => {
+    await ready();
+    tapLot();
+    answer(null);
+    await expect.element(inspectorTitle()).toHaveTextContent('Family Zoning Plan, as adopted');
+    tapLot();
+    emit({
+      type: 'lotAt',
+      reqId: w().lastOf('lotAt')!.reqId,
+      result: { ok: true, parcelId: null, owner: null }
+    });
+    await expect.element(inspector()).not.toBeInTheDocument();
+  });
+
+  it('a miss whose click never came is forgotten at the next press', async () => {
+    await ready();
+    stub.props.timelinePick!({ projectId: null, kind: 'tap' });
+    // The next tap lands on a building: its press, its card, its click.
+    stub.map.fire('mousedown');
+    stub.props.timelinePick!({ projectId: 'pr-1', parcelId: 'p1', x: 40, y: 40, kind: 'tap' });
+    stub.map.fire('click', { lngLat: X });
+    await expect.poll(() => w().all('parcelSummary')).toHaveLength(1);
+    expect(w().all('lotAt')).toHaveLength(0);
+  });
+
+  it('a stroke tool selects nothing on a tap', async () => {
+    await ready();
+    await toolKey('b');
+    await expect.poll(() => stub.props.tapCards).toBe(false);
+    stub.props.timelinePick!({ projectId: null, kind: 'tap' });
+    stub.map.fire('click', { lngLat: X });
+    await toolKey('v');
+    tapLot();
+    // Only the Move tap asked.
+    await expect.poll(() => w().all('lotAt')).toHaveLength(1);
+  });
+
+  it('the listener goes with a replaced map and on unmount', async () => {
+    const r = await opened();
+    const old = stub.map;
+    await expect.poll(() => old.listenerCount('click')).toBe(1);
+    stub.map = new FakeMap();
+    stub.fireReady();
+    expect(old.listenerCount('click')).toBe(0);
+    expect(old.listenerCount('mousedown')).toBe(0);
+    expect(stub.map.listenerCount('click')).toBe(1);
+    await r.unmount();
+    expect(stub.map.listenerCount('click')).toBe(0);
+  });
+});
+
+describe('SimPage autosave and publish', () => {
+  const SIM = copyFor('sim');
+  const publish = () => page.getByTestId('publish-open');
+  const addHistoric = async () => {
+    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: 'Protect historic buildings' }).click();
+  };
+
+  it('quota errors show Autosave off and recover', async () => {
+    const mem = new MemoryStorage();
+    await opened({ storage: () => mem });
+    await expect.element(header().getByText('Saved')).toBeVisible();
+    mem.failWrites = true;
+    await addHistoric();
+    await expect.element(header().getByRole('button', { name: 'Autosave off' })).toBeVisible();
+    mem.failWrites = false;
+    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: 'Protect rent-controlled buildings' }).click();
+    await expect.element(header().getByText('Saved')).toBeVisible();
+    expect(storedDoc(mem).policy.kinds.zoning).toHaveLength(2);
+  });
+
+  it('a corrupt record is kept and the page starts on the default', async () => {
+    const mem = new MemoryStorage();
+    mem.setItem(SIM_KEY4, '{nope');
+    await opened({ storage: () => mem });
+    await expect.element(notices().getByText(SIM.n1)).toBeVisible();
+    const kept = mem.keys().filter((k) => k.startsWith('sfhousing:sim:corrupt:'));
+    expect(kept).toHaveLength(1);
+    expect(mem.getItem(kept[0])).toBe('{nope');
+    expect(w().lastOf('openTimeline')!.policy).toEqual(zoning());
+    await expect.element(publish()).toBeDisabled();
+  });
+
+  it('the save state sits in the header status slot, apart from the actions', async () => {
+    await page.viewport(375, 700);
+    await opened();
+    await expect.element(header().getByText('Saved')).toBeVisible();
+    // Publish waits in the closed Menu with the other actions.
+    expect(publish().element().checkVisibility()).toBe(false);
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await expect.element(publish()).toBeVisible();
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
+  });
+
+  it('a remix hand-off loads the document, toasts once and clears the history state', async () => {
+    replaceStateCalls.length = 0;
+    const mem = new MemoryStorage();
+    await opened({
+      storage: () => mem,
+      remix: { from: 'SD permits', doc: serializeSimDoc4(doc4(zoning(historic), 'SD permits')) }
+    });
+    await expect
+      .element(notices().getByText("Remixed from SD permits. You're editing your own copy."))
+      .toBeVisible();
+    expect(w().lastOf('openTimeline')!.policy).toEqual(zoning(historic));
+    expect(replaceStateCalls).toEqual([{ url: '', state: {} }]);
+    expect(storedDoc(mem).title).toBe('SD permits');
+  });
+
+  it('Share link after publish, Publish again after an edit', async () => {
+    const fetchFn = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ id: 'AbCdEfGh' }), {
+          status: 201,
+          headers: { 'content-type': 'application/json' }
+        })
+    );
+    const mem = new MemoryStorage();
+    await opened({ storage: () => mem, fetchFn: fetchFn as unknown as typeof fetch });
+    await addHistoric();
+    await publish().click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabelText('Title').fill('Historic');
+    await dialog.getByRole('button', { name: 'Publish', exact: true }).click();
+    await expect
+      .element(dialog.getByLabelText('Link'))
+      .toHaveValue(`${location.origin}/s/AbCdEfGh`);
+    await dialog.getByRole('button', { name: 'Done' }).click();
+    await expect.element(publish()).toHaveTextContent('Share link');
+    const rec = JSON.parse(mem.getItem(SIM_KEY4)!);
+    expect(rec.lastPublished.id).toBe('AbCdEfGh');
+    expect(JSON.parse(rec.plan).title).toBe('Historic');
+    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: 'Protect rent-controlled buildings' }).click();
+    await expect.element(publish()).toHaveTextContent('Publish');
   });
 });

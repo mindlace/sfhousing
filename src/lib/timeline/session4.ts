@@ -98,6 +98,15 @@ function reportNotices(
   return out;
 }
 
+/** The raw item under `key`, or null (missing, or storage throws). */
+function rawItem(storage: Storage, key: string): string | null {
+  try {
+    return storage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 /** The `plan` text of the record under `key`, or null (missing, unreadable, storage throws). */
 function planText(storage: Storage, key: string): string | null {
   try {
@@ -124,15 +133,23 @@ export function restoreSim4(
 ): { doc: SimDoc4; notices: SimNotice4[] } {
   // The text the restore will load from storage: the v2 record's, or the v1 one it migrates.
   let stored: string | null = null;
+  /** A v1 text the migration could not write: it opens as a hand-off instead. */
+  let unmigrated: string | undefined;
+  /** A v1 record that could not be read: kept where it is, and said so (N1). */
+  let lost = false;
   if (storage) {
     stored = planText(storage, SIM_KEY4);
     if (stored === null) {
       const v1 = planText(storage, SIM_KEY);
+      const had = rawItem(storage, SIM_KEY) !== null;
       if (migrateSimAutosave(storage, ds) === 'migrated') stored = v1;
+      else if (v1 !== null && openSimDoc4(v1, ds).ok) unmigrated = v1;
+      else lost = had;
     }
   }
-  const r = autosave.restore(remix?.doc);
-  const handoff = remix?.doc !== undefined ? openSimDoc4(remix.doc, ds) : null;
+  const handoffText = remix?.doc ?? unmigrated;
+  const r = autosave.restore(handoffText);
+  const handoff = handoffText !== undefined ? openSimDoc4(handoffText, ds) : null;
   const fresh = r.notice?.kind === 'corrupt' || r.notice?.kind === 'future';
   const opened =
     handoff?.ok === true ? handoff : !fresh && stored !== null ? openSimDoc4(stored, ds) : null;
@@ -141,7 +158,7 @@ export function restoreSim4(
     (opened?.ok ? opened.value.upgradedFrom : undefined) ?? r.upgradedFrom ?? remix?.upgradedFrom;
 
   const notices: SimNotice4[] = [];
-  const first = autosaveNotice(r.notice);
+  const first = autosaveNotice(r.notice ?? (lost ? { kind: 'corrupt' } : null));
   if (first) notices.push(first);
   notices.push(...reportNotices(report, upgradedFrom, r.plan.policy, ds));
   if (remix !== undefined)

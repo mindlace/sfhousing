@@ -66,8 +66,6 @@ export function removeCustomBrush(p: SimPolicy, id: string): SimPolicy {
 
 export function createStrokeAdapter(deps: {
   store: StrokeStore;
-  /** True while edits are refused (the old page's run lock); absent: never. */
-  locked?: () => boolean;
   stories(): number;
   announce(msg: string): void;
   /** The live preview; absent: no previews (the view mode has no controller anyway). */
@@ -77,11 +75,8 @@ export function createStrokeAdapter(deps: {
   let rev = 0;
   return {
     editor: {
-      // During a run the page is locked: the controller refuses strokes, undo and redo, so
-      // nothing is announced that did not happen.
-      get readOnly() {
-        return deps.locked?.() ?? false;
-      },
+      // /sim has no run lock (rule 14): the editor always takes strokes.
+      readOnly: false,
       commit(op) {
         const stroke: Stroke = { path: op.path.map((q) => [q[0], q[1]]), radiusM: op.radiusM };
         const stories = deps.stories();

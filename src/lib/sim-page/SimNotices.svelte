@@ -3,7 +3,7 @@
   in the policy wording), funding, the timelines refit, moved dates, "upgraded", and the Remix
   toast. Each is one pill line (compact UI, `PILL`
   in shell/pill): a "Details" disclosure holds a list, a link goes where the notice says. Rendered
-  in FzpMode's notice stack (`NoticePills`): an overlay at the map's top from md that moves
+  in TimelineMode's notice stack (`NoticePills`): an overlay at the map's top from md that moves
   nothing, in flow under the header below md. One always-mounted polite status region
   (`display: contents`, so its empty box adds no gap in the stack): a notice
   added later is announced, and the empty region stays in the accessibility tree. The region

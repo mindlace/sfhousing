@@ -173,6 +173,34 @@ describe('restoreSim4', () => {
     expect(notices.map((n) => n.id)).toEqual(['dates-moved', 'remix']);
   });
 
+  it('a v1 record the migration could not write still opens, from its text', () => {
+    const mem = new MemoryStorage();
+    const old: SimDoc = {
+      schema: 3,
+      kind: 'sim',
+      datasetVersion: 'fixture-0',
+      policy: { ...DEFAULT_POLICY, protect: { ...DEFAULT_POLICY.protect, historic: true } }
+    };
+    mem.setItem(SIM_KEY, record(SIM_CODEC.serialize(old)));
+    mem.failWrites = true;
+    const a = autosaveOf(mem);
+    const { doc, notices } = restoreSim4(mem, a, ds);
+    expect(doc.policy.kinds.zoning.map((p) => p.where)).toEqual([
+      { tag: 'category', category: 'historic' }
+    ]);
+    expect(notices.map((n) => n.id)).toEqual(['upgraded']);
+    expect(a.status).toBe('off');
+  });
+
+  it('an unreadable v1 record opens the default with the corrupt notice, and is kept', () => {
+    const mem = new MemoryStorage();
+    mem.setItem(SIM_KEY, '{nope');
+    const { doc, notices } = restoreSim4(mem, autosaveOf(mem), ds);
+    expect(doc.policy.kinds).toEqual({ zoning: [], permitting: [], money: [] });
+    expect(notices).toEqual([{ id: 'corrupt', text: SIM.n1, tone: 'info' }]);
+    expect(mem.getItem(SIM_KEY)).toBe('{nope');
+  });
+
   it('with no storage, the default document and no notices', () => {
     const { doc, notices } = restoreSim4(null, autosaveOf(new MemoryStorage()), ds);
     expect(doc.policy.kinds).toEqual({ zoning: [], permitting: [], money: [] });
