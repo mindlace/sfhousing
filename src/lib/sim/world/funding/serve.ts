@@ -57,9 +57,7 @@ export function serveLine(ctx: StepCtx, opts: ServeOpts = {}): void {
     const n = line.n;
     for (let i = 0; i < n; i++) {
       if (line.gone[i] === 1) continue;
-      // Null when an id is no longer offered: the row waits (Task 9 remakes such rows).
-      const bundle = fm.bundleIds(line.bundle[i]);
-      if (bundle === null) continue;
+      const bundle = offeredBundle(fm, line, i);
       const kind = kindOf(line, i);
       const units = line.units[i];
       const protoId = prototypeFor(line.stories[i], units).id;
@@ -70,19 +68,17 @@ export function serveLine(ctx: StepCtx, opts: ServeOpts = {}): void {
   }
 
   const idx = lineIndex(line);
-  /** Each group's H for the pools as they stand (-Infinity: its bundle is not offered). */
+  /** Each group's H for the pools as they stand. */
   const hs = new Map<Group, number>();
   const hOf = (g: Group): number => {
     let h = hs.get(g);
     if (h === undefined) {
       const bundle = fm.bundleIds(g.bundle);
+      if (bundle === null) throw notOffered(g.bundle);
       const kind: ProjectKind = g.kind === KIND_AFFORDABLE ? 'affordable' : 'market';
       // Affordable pricing ignores the prototype (`funding.ts` price): any id serves.
       const protoId = g.protoId ?? ANY_PROTO;
-      h =
-        bundle === null
-          ? -Infinity
-          : threshold(g, (u) => awardPasses(bundle, kind, protoId, u, avail, fm.index));
+      h = threshold(g, (u) => awardPasses(bundle, kind, protoId, u, avail, fm.index));
       hs.set(g, h);
     }
     return h;
@@ -107,11 +103,27 @@ export function serveLine(ctx: StepCtx, opts: ServeOpts = {}): void {
     const i = rowOfSeq(line, bestSeq);
     if (i < 0 || line.gone[i] === 1)
       throw new Error(`serveLine: the line index names row seq ${bestSeq}, not waiting`);
-    const bundle = fm.bundleIds(line.bundle[i])!;
+    const bundle = offeredBundle(fm, line, i);
     const protoId = prototypeFor(line.stories[i], line.units[i]).id;
     if (!awardPasses(bundle, kindOf(line, i), protoId, line.units[i], avail, fm.index)) continue;
     if (serveRow(ctx, fm, line, i, bundle, protoId, avail, rowOf)) hs.clear();
   }
+}
+
+/**
+ * The error for a waiting row whose bundle names a programme the frame does not offer. Never
+ * legitimate: `policyChanged` re-makes every waiting row when the money changes (rule 17), and an
+ * application joins under the frame of its month (`applyLots`).
+ */
+function notOffered(bundle: string): Error {
+  return new Error(`serveLine: the frame does not offer every programme of bundle '${bundle}'`);
+}
+
+/** Row `i`'s bundle as programme indices of the frame; throws when it names one not offered. */
+function offeredBundle(fm: FrameMoney, line: FundLine, i: number): number[] {
+  const bundle = fm.bundleIds(line.bundle[i]);
+  if (bundle === null) throw notOffered(line.bundle[i]);
+  return bundle;
 }
 
 /** A prototype id for groups whose pricing ignores it (affordable). */

@@ -19,12 +19,13 @@ import { frameIdOf } from '../policy/intern';
 import { lotEntity } from '../rates';
 import { staticsOf, type Statics } from '../statics';
 import { IDENTITY } from '../test/timeline';
-import type { FundingSystem, StepSink } from '../types';
+import type { FundingSystem, StepCtx, StepSink } from '../types';
 import { withFunding } from '../world';
-import { spellsOf } from './apply';
+import { joinLine, spellsOf } from './apply';
 import { kindClock } from './clocks';
 import { KIND_AFFORDABLE, fundOf, spellOf, type FundLine } from './columns';
 import { frameMoney, sameMoney } from './frame-money';
+import { serveLine } from './serve';
 import { createFundingSystem } from './system';
 import {
   MONEY_MONTHS,
@@ -616,4 +617,58 @@ describe('an application whose lot-month began before a change of money', () => 
     expect(stale).toBeGreaterThan(0);
     expect(lapsed).toBeGreaterThan(0);
   });
+});
+
+describe('serve finds only applications the frame offers', () => {
+  const input = fundedMini();
+  const s = staticsOf(input);
+  const t = oneMoneyTimeline(input, miniFinance(input.asOf));
+
+  it.each([true, false])(
+    'grouped %s: a waiting row naming a programme the frame does not offer throws',
+    (grouped) => {
+      const world = withFunding(createFundingSystem()).createWorld(s, t, 1, { event() {} });
+      const lot = 5;
+      joinLine(fundOf(world).line, 1, [
+        {
+          lot,
+          kind: KIND_AFFORDABLE,
+          applied: s.asOf + 1,
+          keyDay: s.asOf + 1,
+          key: lineKey(s.asOf + 1, s.rank[lot], 'affordable'),
+          bundle: 'no-such-programme',
+          f: 0,
+          units: 5,
+          stories: 4,
+          level: 1,
+          viewMonth: 1
+        }
+      ]);
+      const ctx: StepCtx = {
+        world,
+        due: {
+          take() {
+            throw new Error('no take');
+          },
+          put() {},
+          drop() {}
+        },
+        statics: s,
+        timeline: t,
+        frame: t.frameAt(2),
+        month: 2,
+        seed: 1,
+        out: { event() {} },
+        firstDay: monthFirstDay(s.asOf, 2),
+        lastDay: monthLastDay(s.asOf, 2),
+        startProject() {
+          throw new Error('no starts here');
+        },
+        displace() {
+          throw new Error('no displacement here');
+        }
+      };
+      expect(() => serveLine(ctx, { grouped })).toThrow(/does not offer/);
+    }
+  );
 });
