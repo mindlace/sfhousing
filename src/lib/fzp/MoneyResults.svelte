@@ -14,6 +14,7 @@
   import type { Day } from '$lib/timelapse/time';
   import type { ResolvedTerms } from '$lib/timelapse/types';
   import { formatDollars, formatMonthYear } from './format';
+  import { utcParts } from './time';
   import {
     COLUMN_NAME,
     TIER_NAME,
@@ -61,7 +62,9 @@
   const lossCustom = $derived(terms.custom.includes('lossOnExit'));
   const owed = $derived(money ? owedLines(money, i) : []);
   const limits = $derived(money ? limitLines(money.limits) : []);
-  const city = $derived(m ? cityLine(m) : null);
+  /** The year the per-home figures are read at, when that is not the shown month. */
+  const by = $derived(m && m.figureIndex !== i ? utcParts(score.months[m.figureIndex]).y : null);
+  const city = $derived(m ? cityLine(m, by) : null);
 
   const tiers = $derived(score.tiers ?? null);
   const t = $derived(tiers ? tiersAt(tiers, i) : null);
@@ -80,12 +83,14 @@
     aria-busy={busy}
     data-testid="fzp-money"
   >
-    {#if scope}<p class={muted} data-testid="fzp-scope">{scope}</p>{/if}
-    <h2 id="{uid}-money-h" class="font-semibold">Public money</h2>
+    <h2 id="{uid}-money-h" class="font-semibold">
+      {#if scope}<span class="block font-normal {muted}" data-testid="fzp-scope">{scope}</span
+        >{/if}Public money
+    </h2>
     {#if city}
       <p class="mt-1 tabular-nums" data-testid="fzp-money-city">{city}</p>
     {/if}
-    <p class="tabular-nums" data-testid="fzp-money-all">{allLine(m, money.publicSpent[i])}</p>
+    <p class="tabular-nums" data-testid="fzp-money-all">{allLine(m, money.publicSpent[i], by)}</p>
     <button
       type="button"
       class="mt-1 {button}"
@@ -141,7 +146,7 @@
         is high early in a run and falls as projects finish.
       </p>
       <div data-testid="fzp-money-displaced">
-        <p>{displacementLine(money, i)}</p>
+        <p>{displacementLine(money, i, by)}</p>
         <div class={muted}><SourceList items={[DISPLACEMENT_RANGE.provenance]} /></div>
       </div>
       {#each owed as line, k (k)}
@@ -182,8 +187,10 @@
     aria-busy={busy}
     data-testid="fzp-tiers"
   >
-    {#if scope}<p class={muted} data-testid="fzp-scope">{scope}</p>{/if}
-    <h2 id="{uid}-tiers-h" class="font-semibold">Who the homes are for</h2>
+    <h2 id="{uid}-tiers-h" class="font-semibold">
+      {#if scope}<span class="block font-normal {muted}" data-testid="fzp-scope">{scope}</span
+        >{/if}Who the homes are for
+    </h2>
     <p class="mt-1 tabular-nums" data-testid="fzp-tiers-affordable">{affordableLine(t)}</p>
     <button
       type="button"

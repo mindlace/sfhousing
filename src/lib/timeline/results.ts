@@ -10,15 +10,32 @@ import type { TierUnits } from '$lib/timelapse/types';
 /** The simulated cities average to fractions; the page shows whole homes. */
 const whole = Math.round;
 
+/** Whole numbers that sum to `total` (largest remainder), in the order given. */
+function apportion(values: number[], total: number): number[] {
+  const floors = values.map(Math.floor);
+  let left = total - floors.reduce((a, b) => a + b, 0);
+  const order = values
+    .map((v, i) => ({ i, r: v - Math.floor(v) }))
+    .sort((a, b) => b.r - a.r || a.i - b.i);
+  for (const { i } of order) {
+    if (left <= 0) break;
+    floors[i]++;
+    left--;
+  }
+  return floors;
+}
+
 function wholeRow(r: MonthRow): MonthRow {
+  const net = whole(r.completedNet);
+  const [pipeline, fresh] = apportion([r.completedNetPipeline, r.completedNetNew], net);
   const inProgress = { ...r.inProgress };
   for (const k of Object.keys(inProgress) as (keyof typeof inProgress)[]) {
     inProgress[k] = whole(inProgress[k]);
   }
   return {
-    completedNet: whole(r.completedNet),
-    completedNetPipeline: whole(r.completedNetPipeline),
-    completedNetNew: whole(r.completedNetNew),
+    completedNet: net,
+    completedNetPipeline: pipeline,
+    completedNetNew: fresh,
     entitledNew: whole(r.entitledNew),
     inProgress,
     exitedUnits: whole(r.exitedUnits)

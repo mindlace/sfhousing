@@ -40,6 +40,33 @@ describe('headerOf', () => {
   });
 });
 
+describe('fractional means', () => {
+  function fractional(): TimelineView {
+    const v = whole();
+    const mean = v.mean.map((m, i) => ({
+      ...m,
+      completedNet: 10.4 + i,
+      completedNetPipeline: 5.4 + i / 2,
+      completedNetNew: 5.4 + i / 2
+    }));
+    return { ...v, mean };
+  }
+
+  it('rounds the headline and the header to whole homes', () => {
+    const v = fractional();
+    expect(headerOf(v).total).toBe(v.baseline.completedNet + 33);
+    expect(resultsAt(v, null, 0).at.total).toBe(v.baseline.completedNet + 10);
+  });
+
+  it('the pipeline and new parts add up to the rounded total', () => {
+    const v = fractional();
+    for (let i = 0; i < 24; i++) {
+      const { at } = resultsAt(v, null, i);
+      expect(at.pipeline + at.fresh).toBe(at.total - at.actual);
+    }
+  });
+});
+
 describe('scoreOfView and resultsAt', () => {
   it('resultsAt gives the average basis and This city', () => {
     const v = whole();

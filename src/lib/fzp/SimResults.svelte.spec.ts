@@ -44,6 +44,7 @@ import type { ResolvedTerms } from '$lib/timelapse/types';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from '$lib/timeline/chunk-log';
 import { resultsAt, scoreOfView } from '$lib/timeline/results';
 import { chunk, statics } from '$lib/timeline/test/fixtures';
+import { tierTargetsOf } from '$lib/sim/scenario/score';
 import type { TimelineView } from '$lib/sim/world/score/types';
 
 /** Index 53 of the fixture: 2031-03-15. */
@@ -584,8 +585,8 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
       sources().querySelector('summary')!
     ];
     for (let k = 0; k < els.length - 1; k++) before(els[k], els[k + 1]);
-    expect(el('fzp-money')!.querySelector('h2')!.textContent).toBe('Public money');
-    expect(el('fzp-tiers')!.querySelector('h2')!.textContent).toBe('Who the homes are for');
+    expect(el('fzp-money')!.querySelector('h2')!.textContent).toMatch(/Public money$/);
+    expect(el('fzp-tiers')!.querySelector('h2')!.textContent).toMatch(/Who the homes are for$/);
     before(el('fzp-money-city')!, el('fzp-money-all')!);
   });
 
@@ -866,6 +867,12 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
     expect(document.querySelector('[data-testid="fzp-sources"]')).not.toBeNull();
     const scopes = [...document.querySelectorAll('[data-testid="fzp-scope"]')];
     expect(scopes.map((e) => e.textContent)).toEqual(['In this city']);
+    expect(
+      document.querySelector('[data-testid="fzp-chart"] details > summary')!.textContent
+    ).toContain('Show as table');
+    expect(document.querySelector('[data-testid="fzp-chart"]')!.textContent).toContain(
+      'Plan effect (completed)'
+    );
     expect(document.querySelector('[data-testid="fzp-money"]')).not.toBeNull();
   });
 
@@ -880,7 +887,55 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
     expect(page.getByTestId('fzp-money-all').element().textContent).toContain('$123,456');
     expect(page.getByTestId('fzp-money-city').element().textContent).toContain('$654,321');
     expect(page.getByTestId('fzp-money-displaced').element().textContent).toContain(
-      '(50% of funded homes)'
+      '(50% of funded homes by '
     );
+  });
+
+  it('labels the per-home figures and the share with the year they are read at', async () => {
+    await page.viewport(1024, 768);
+    const v = view();
+    const withSentinel: TimelineView = {
+      ...v,
+      money: { ...v.money!, perAddedHome: { all: 123456, city: 654321 }, displacedShare: 0.5 }
+    };
+    await render(SimResults, { props: feed(withSentinel) });
+    const year = new Date(v.months[v.filledThrough] * 86400000).getUTCFullYear();
+    expect(page.getByTestId('fzp-money-all').element().textContent).toContain(
+      `per added home by ${year}`
+    );
+    expect(page.getByTestId('fzp-money-city').element().textContent).toContain(
+      `per added home by ${year}`
+    );
+    expect(page.getByTestId('fzp-money-displaced').element().textContent).toContain(
+      `(50% of funded homes by ${year})`
+    );
+  });
+
+  it('renders the tier block headed In this city when a tier baseline is given', async () => {
+    await page.viewport(1024, 768);
+    const v = view();
+    const baseline = { veryLow: 100, low: 100, moderate: 100, aboveModerate: 700, unrecorded: 0 };
+    const tiers = v.mean.map((_, i) => ({
+      veryLow: i,
+      low: i,
+      moderate: i,
+      aboveModerate: i,
+      unrecorded: 0
+    }));
+    const withTiers: TimelineView = { ...v, tiers, tierTargets: tierTargetsOf(baseline, tiers) };
+    const score = scoreOfView(withTiers, baseline);
+    const r = resultsAt(withTiers, baseline, IDX);
+    await render(SimResults, {
+      props: { ...feed(withTiers), score, at: r.at, city: r.city }
+    });
+    const scopes = [...document.querySelectorAll('[data-testid="fzp-scope"]')];
+    expect(scopes.map((e) => e.textContent)).toEqual(['In this city', 'In this city']);
+    const h2s = [
+      ...document.querySelectorAll('[data-testid="fzp-money"] h2, [data-testid="fzp-tiers"] h2')
+    ];
+    expect(h2s.map((h) => h.textContent)).toEqual([
+      'In this cityPublic money',
+      'In this cityWho the homes are for'
+    ]);
   });
 });

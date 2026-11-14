@@ -36,6 +36,8 @@ export interface MoneyAt {
   citySpent: Dollars;
   perAddedHome: Dollars | null;
   cityPerAddedHome: Dollars | null;
+  /** The month index the two per-home figures are read at. */
+  figureIndex: number;
   fundedHomes: number;
   displacedHomes: number;
   pools: {
@@ -59,15 +61,43 @@ export interface TiersAt {
 
 type Tiers = NonNullable<TimelineScore['tiers']>;
 
+/**
+ * The per-home dollars and the displaced share for month `i`, and the month index they are read at.
+ * A stepped view's money carries them at its filled end only (`atIndex`); a scored run's are its
+ * own series at `i`. Never divided here for a view.
+ */
+export function moneyFigureAt(
+  money: Money,
+  i: number
+): {
+  perAddedHome: { all: Dollars | null; city: Dollars | null };
+  displacedShare: number | null;
+  atIndex: number;
+} {
+  if ('perAddedHome' in money && 'displacedShare' in money) {
+    const v = money as MoneyView;
+    return {
+      perAddedHome: v.perAddedHome,
+      displacedShare: v.displacedShare,
+      atIndex: money.fundedHomes.length - 1
+    };
+  }
+  return {
+    perAddedHome: { all: perAddedHome(money, i, 'all'), city: perAddedHome(money, i, 'city') },
+    displacedShare: displacedShare(money, i),
+    atIndex: i
+  };
+}
+
 /** The money series at month `i`. */
 export function moneyAt(money: Money, i: number): MoneyAt {
-  // A stepped view's money carries its own per-home figures (at its filled end): read, not divided.
-  const own = 'perAddedHome' in money ? (money as MoneyView).perAddedHome : null;
+  const fig = moneyFigureAt(money, i);
   return {
     spent: money.publicSpent[i],
     citySpent: cityOf(money, i),
-    perAddedHome: own ? own.all : perAddedHome(money, i, 'all'),
-    cityPerAddedHome: own ? own.city : perAddedHome(money, i, 'city'),
+    perAddedHome: fig.perAddedHome.all,
+    cityPerAddedHome: fig.perAddedHome.city,
+    figureIndex: fig.atIndex,
     fundedHomes: money.fundedHomes[i],
     displacedHomes: money.displacedHomes[i],
     pools: money.pools.map((p) => ({
@@ -106,18 +136,20 @@ export const TIER_NAME: Record<IncomeTier, string> = {
   aboveModerate: 'Above moderate'
 };
 
-const perHome = (x: Dollars | null): string =>
-  x === null ? 'no homes added yet' : `${formatDollarsExact(x)} per added home`;
+const perHome = (x: Dollars | null, by: number | null): string =>
+  x === null
+    ? 'no homes added yet'
+    : `${formatDollarsExact(x)} per added home${by === null ? '' : ` by ${by}`}`;
 
 /** The City's line, or null when no pool is the City's. */
-export function cityLine(m: MoneyAt): string | null {
+export function cityLine(m: MoneyAt, by: number | null = null): string | null {
   if (!m.pools.some((p) => CITY_POOL_KINDS.has(p.kind))) return null;
-  return `City money: ${perHome(m.cityPerAddedHome)} · ${formatDollars(m.citySpent)} spent so far`;
+  return `City money: ${perHome(m.cityPerAddedHome, by)} · ${formatDollars(m.citySpent)} spent so far`;
 }
 
 /** All public money's line; `publicSpent` is `money.publicSpent[i]`, as F14 defines it. */
-export function allLine(m: MoneyAt, publicSpent: number): string {
-  return `All public money: ${perHome(m.perAddedHome)} · ${formatDollars(publicSpent)} spent so far`;
+export function allLine(m: MoneyAt, publicSpent: number, by: number | null = null): string {
+  return `All public money: ${perHome(m.perAddedHome, by)} · ${formatDollars(publicSpent)} spent so far`;
 }
 
 /**
@@ -138,10 +170,13 @@ export function fundedLine(m: MoneyAt): string {
 }
 
 /** The displaced homes beside the published range; the share is `displacedShare`. */
-export function displacementLine(money: Money, i: number): string {
+export function displacementLine(money: Money, i: number, by: number | null = null): string {
   const share =
     'displacedShare' in money ? (money as MoneyView).displacedShare : displacedShare(money, i);
-  const pct = share === null ? '' : ` (${formatPercent(share)} of funded homes)`;
+  const pct =
+    share === null
+      ? ''
+      : ` (${formatPercent(share)} of funded homes${by === null ? '' : ` by ${by}`})`;
   const { low, high } = DISPLACEMENT_RANGE.value;
   const tier = DISPLACEMENT_RANGE.provenance.tier;
   return (

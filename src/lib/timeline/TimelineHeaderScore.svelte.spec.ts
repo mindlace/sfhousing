@@ -34,8 +34,8 @@ describe('TimelineHeaderScore', () => {
   it('reads "{n} homes by {year}" and carries the year in name and description', async () => {
     await page.viewport(1024, 768);
     await render(TimelineHeaderScore, { props: props() });
-    await expect.element(bar()).toHaveTextContent('12,345 homes by 2047');
-    await expect.element(bar()).toHaveAccessibleName('12,345 homes by 2047');
+    await expect.element(bar()).toHaveTextContent('12,345 homes added by 2047');
+    await expect.element(bar()).toHaveAccessibleName('12,345 homes added by 2047');
     await expect.element(bar()).toHaveAccessibleDescription(`${vsFzpText(1234)} by 2047`);
     await expect.element(page.getByTestId('score-delta')).toHaveTextContent(vsFzpText(1234));
     await expect
@@ -43,12 +43,12 @@ describe('TimelineHeaderScore', () => {
       .toHaveAttribute('aria-valuetext', '15% of RHNA 2023–2031');
   });
 
-  it('reads calculating until filled, hiding the delta and the meter', async () => {
+  it('reads calculating until filled, hiding the delta; the meter shows once its target is filled', async () => {
     await page.viewport(1024, 768);
     await render(TimelineHeaderScore, { props: props({ total: null, delta: null }) });
     await expect.element(bar()).toHaveTextContent('calculating…');
     expect(page.getByTestId('score-delta').elements()).toEqual([]);
-    expect(page.getByRole('meter').elements()).toEqual([]);
+    expect(page.getByRole('meter').elements()).toHaveLength(1);
     expect(bar().element().getAttribute('aria-describedby')).toBeNull();
   });
 
@@ -57,8 +57,9 @@ describe('TimelineHeaderScore', () => {
     const s = await render(TimelineHeaderScore, { props: props({ provisional: true }) });
     await expect.element(bar()).toHaveTextContent('calculating…');
     expect(page.getByTestId('score-delta').elements()).toEqual([]);
+    expect(page.getByRole('meter').elements()).toEqual([]);
     await s.rerender(props({ provisional: false }));
-    await expect.element(bar()).toHaveTextContent('12,345 homes by 2047');
+    await expect.element(bar()).toHaveTextContent('12,345 homes added by 2047');
   });
 
   it('dims when stale, reports its state and calls onclick', async () => {

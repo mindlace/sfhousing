@@ -87,7 +87,10 @@
     data-testid="score-bar"
     {onclick}
   >
-    {#if !calculating && total !== null}{formatCount(total)} homes by {year}{:else}{CALCULATING}{/if}
+    {#if !calculating && total !== null}{formatCount(total)} homes&#32;<span class="max-lg:sr-only"
+        >added</span
+      >
+      by {year}{:else}{CALCULATING}{/if}
   </button>
   {#if !calculating && delta !== null}
     <span
@@ -96,7 +99,7 @@
       data-testid="score-delta">{vsFzpText(delta)}<span class="sr-only"> by {year}</span></span
     >
   {/if}
-  {#if !calculating && target}
+  {#if !provisional && target}
     <span
       role="meter"
       aria-label={target.target.label}
