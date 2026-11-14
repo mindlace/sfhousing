@@ -119,6 +119,32 @@ After any Overture refresh (`fetch` of `overture-buildings`), run `boxes` before
 
 `npx tsx scripts/building-review.ts --before <v> --after <v> [--out <dir>] [--sample 20] [--roofs <parquet>]` builds once with `VITE_E2E=1`, serves each version with `wrangler dev` on port 4174 (stopped on exit and on error) and captures the map canvas alone (1280x800, DPR 2) for the ten review areas and for a seeded sample of step and false-front buildings from `building-roofs.parquet`. Both versions must be in local R2 (`npm run data:local -- <before> --from <staging>`; `npm run pipeline -- upload <after> --local`). It writes `index.html` (before | after pairs, the sample with a phantom-step checkbox column, the stats) and `stats.json` to `pipeline/.cache/review/<after>/` (gitignored). Nudge a view's centre in `REVIEW_VIEWS` when its named buildings are out of frame.
 
+## Live build
+
+The first city run, 2026-11-14, on one machine (15 cores). The build is dataset `2026-11-14-0135312a`, on Overture `2026-09-23.1`.
+
+**LiDAR fetch.** `fetch --only usgs-lidar-sf --dry-run` covers BBOX with 1,190 tiles. 1,056 of them touch EPT nodes over their padded area. Together they read 319,021 distinct nodes and 13,081,261,467 points, almost the whole EPT (13,088,433,078 points). Summed per tile, the padding counts shared nodes twice: 437,186 nodes and 17.9 billion points. The full fetch with `--jobs 16` took 68.5 minutes. It started from the spike's node cache, which held 3.4% of the points. It downloaded about 57 GB of EPT nodes (`pipeline/.cache/ept`, 59 GB in all). It wrote 648 tiles with points, 2,334,955,420 bytes in all (`pipeline/lidar.lock.json`). The rasterizer's work dir is 7.6 GB.
+
+**Parts and boxes.** `overture-building-parts` at `2026-09-23.1` has 1,647 rows (345 KB). `boxes` took 54 minutes (3,240 s) on a busy machine, single-threaded, under the 60-minute bar for worker threads. The artifact is 21,507,477 bytes: `boxes.parquet` 11,887,785, `roofs.parquet` 9,618,995 and `inputs.json` 697. That is the whole addition to `fetch --restore`, since the LiDAR tiles stay out of `sources.lock.json`.
+
+**Build.** `render-boxes` took 11.5 s and `tiles` 28.2 s (the whole build 4.4 minutes). Every invariant passes:
+
+- V11's z12 buildings bytes are 783,877, equal to main's (`2026-11-10-6ee5a23d`).
+- V37: `src box/base/front/step/part 1365/161301/38903/15405/994; fallback 0.8%; reg fit 89.3%`, and no z14+ tile drops.
+- `buildings.pmtiles` is 27,140,298 bytes, against main's 16,421,419 (+65%).
+- Without a limit, the 52 z14 tiles measure p50 194 KB and at most 680 KB, with 13 over 400 KB. The 169 z15 tiles reach at most 209 KB.
+
+**Counts.** There are 162,733 buildings: 161,301 with LiDAR boxes, 1,365 drawn as today's box and 210 with parts. Fallback buildings are 0.84% (1,371): 976 `new_building`, 374 `unreliable`, 12 `elevated` and 9 `no_lidar`. Six parts buildings dropped an uncovered area. By rendered box, `src` is base 74.0%, front 17.9%, step 7.1%, box 0.6% and part 0.5% (217,968 boxes; 450,346 pieces after the parcel clip). Steps are on 12,823 buildings (15,405 boxes; 214 capped at 4). Fronts are on 29,930 buildings (38,903 boxes). Roofs are 137,210 flat, 24,091 pitched and 1,432 unknown.
+
+**Registration.** 33,671 clusters have LiDAR:
+
+- outcomes: `fit` 89.3% (30,059), `frame-wgs84` 5.5% (1,842), `frame-nad83` 2.9% (961), `zero` 2.4% (803), `none` 6;
+- 10.7% are flagged (ambiguous fits that fell back to a frame, zero or none);
+- fitted shifts: p10 0.23 m, p50 0.65 m, p90 1.81 m, max 4.06 m (a corner of the ±3 m window);
+- over all clusters with a shift: p50 0.65 m, p90 1.76 m; `reg_ratio` p50 0.626, p90 0.846.
+
+**Parts first.** 210 buildings have counted parts. 70 of them (33.3%) have `parts_coverage` under 0.5. Coverage is p10 0.185, p50 0.730 and p90 1.0. Sutro Tower is bid `c5cbfced-fe3d-43ce-9d7a-63302127f0f9`: its footprint holds the point (-122.4528, 37.7552), with 34 parts and coverage 0.993. All 34 of its `part` pieces (100%) carry parcel `2724003`, and its top is 298 m. Its uncovered sliver fell back `unreliable` and is dropped. The building whose point-on-surface is nearest that point is a different, 14 m² shed (`f13e7d30-…`). So find landmarks by footprint distance, not by `lng`/`lat`.
+
 ## The spike's frames
 
 The registration design comes from a spike on 2026-11-13 (462 detached buildings and 3 rowhouse blocks; scripts, `models.json` and figures in `docs/superpowers/design/2026-11-13-offset-spike/`):
