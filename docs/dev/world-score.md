@@ -86,11 +86,11 @@ World 1's answer to `parcelSummary`: the lot's record, envelope and limits under
 
 `CardDeps` the host builds:
 
-| Field                                         | What                                                                                                            |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `qualityRules`, `building`, `logOnce`         | as today's `CardCtx`                                                                                            |
-| `record(parcelId)`                            | neighborhood, land use, eligible, underwater, existing units; `null` throws, so check it first                  |
-| `buildable(parcelId, allowed, existingUnits)` | stories the lot can build under `allowed`: the host's generate call (`simKey` memo), else `lotBuildableStories` |
+| Field                                         | What                                                                                                                                                                               |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `qualityRules`, `building`, `logOnce`         | as today's `CardCtx`                                                                                                                                                               |
+| `record(parcelId)`                            | neighborhood, land use, eligible, underwater, existing units; `null` throws, so check it first                                                                                     |
+| `buildable(parcelId, allowed, existingUnits)` | stories the lot can build under `allowed`: the host's generate call (`simKey` memo), else `lotBuildableStories`; `null` where neither builds, passed through to `limits.buildable` |
 
 The lot-limits line comes from `limitsOf(frame, parcelId)` (owner and protection from the frame's attribution; a protected lot reads FZP with nothing buildable). So `frame` must be `timeline.frameAt(max(1, monthOfDay(asOf, day)))` of a compiled timeline: a hand-built frame throws for an eligible lot. The `SimInput` the card reads is memoised per statics and per frame object, with `newScale` from `policy/lookups`.
 

@@ -186,7 +186,9 @@ export interface CardDeps {
   /**
    * The stories the lot can build under `allowed`, for the lot-limits line of an eligible,
    * unprotected lot: the host's generate call (`simKey` memo) on the lot's record, else
-   * `lotBuildableStories(polygon, allowed, existingUnits)`. The card has no polygon or generator.
+   * `lotBuildableStories(polygon, allowed, existingUnits)`. Null where neither builds (no usable
+   * site polygon, `allowed` under 1), as today's `LotLimits.buildable`; the card passes it through.
+   * The card has no polygon or generator.
    */
-  buildable(parcelId: ParcelId, allowed: number, existingUnits: number): number;
+  buildable(parcelId: ParcelId, allowed: number, existingUnits: number): number | null;
 }
