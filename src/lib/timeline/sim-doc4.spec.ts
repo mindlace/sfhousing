@@ -23,6 +23,7 @@ import {
   SIM_DOC4_SCHEMA,
   SIM_KEY4,
   createSimCodec4,
+  loadSimDoc4,
   migrateSimAutosave,
   openSimDoc4,
   parseSimDoc4,
@@ -319,6 +320,117 @@ describe('openSimDoc4', () => {
     });
     expect(openSimDoc4('nope', ds)).toMatchObject({ ok: false });
     expect(openSimDoc4(JSON.stringify({ schema: 1 }), ds)).toMatchObject({ ok: false });
+  });
+});
+
+describe('loadSimDoc4', () => {
+  /** A body saved on an earlier dataset: its spans are off this dataset's months. */
+  const earlyBody = () => {
+    const early = AS_OF - 400;
+    const p = painted4(3);
+    p.kinds.zoning[0].spans = [
+      {
+        from: monthFirstDay(early, 1),
+        to: monthLastDay(early, 6),
+        what: p.kinds.zoning[0].spans[0].what
+      },
+      { from: monthFirstDay(early, 25), to: null, what: p.kinds.zoning[0].spans[0].what }
+    ];
+    return doc4(p, { title: '  Mine  ' });
+  };
+
+  it('loads a good document as stored, unaligned; openSimDoc4 is it reconciled', () => {
+    for (const d of [doc4(), earlyBody()]) {
+      const text = raw4(d);
+      const r = loadSimDoc4(text);
+      if (!r.ok) throw new Error(JSON.stringify(r.errors));
+      expect(r.value.policy).toEqual(d.policy);
+      // no term gap here, so the strict parse without a dataset date reads the same document
+      expect(parseSimDoc4(text, null)).toEqual(r);
+      const o = openSimDoc4(text, ds);
+      if (!o.ok) throw new Error(JSON.stringify(o.errors));
+      expect(o.value.doc).toEqual({
+        ...r.value,
+        policy: reconcilePolicy4(r.value.policy, cal, AS_OF).doc
+      });
+    }
+    expect(loadSimDoc4(raw4(earlyBody()))).toMatchObject({ ok: true, value: { title: 'Mine' } });
+  });
+
+  it('accepts a programme term gap, as openSimDoc4 does and strict publish does not', () => {
+    const prog: Programme = { ...F.programmes[0], pool: 'u-pool-1' };
+    const gap = { ...prog, instrument: { kind: 'guarantee', costShare: 0.5, reserve: 0.1 } };
+    const money = pol(
+      'fund-u-pool-1',
+      { tag: 'fund', pool: 'u-pool-1' },
+      { tag: 'fund', pool: F.pools[0], programmes: [gap as Programme] }
+    );
+    const text = raw4(doc4({ schema: 4, kinds: { zoning: [], permitting: [], money: [money] } }));
+    expect(loadSimDoc4(text).ok).toBe(true);
+    expect(openSimDoc4(text, ds).ok).toBe(true);
+    expect(parseSimDoc4(text, null).ok).toBe(false);
+  });
+
+  it('fails a bad envelope exactly as openSimDoc4', () => {
+    const bodies = [
+      'nope',
+      '[]',
+      JSON.stringify({ schema: 1 }),
+      JSON.stringify({ ...doc4(), schema: 5 }),
+      raw4({ ...doc4(), kind: 'plan' as 'sim' }),
+      raw4(doc4(undefined, { datasetVersion: '!' })),
+      raw4(doc4(undefined, { title: 'x'.repeat(500) })),
+      JSON.stringify({ ...doc4(), title: 7 })
+    ];
+    for (const text of bodies) {
+      const r = loadSimDoc4(text);
+      expect(r.ok).toBe(false);
+      expect(r).toEqual(openSimDoc4(text, ds));
+    }
+  });
+
+  it('fails a bad policy at its pointer exactly as openSimDoc4', () => {
+    const bad = JSON.parse(raw4(doc4(painted4(2))));
+    bad.policy.kinds.zoning[0].spans.push({ ...bad.policy.kinds.zoning[0].spans[0], from: 'x' });
+    bad.policy.kinds.zoning[0].spans[0].to = FROM + 40;
+    const text = JSON.stringify(bad);
+    const r = loadSimDoc4(text);
+    expect(r).toMatchObject({
+      ok: false,
+      errors: [{ path: '/policy/kinds/zoning/0/spans/1/from', code: 'bad-field' }]
+    });
+    expect(r).toEqual(openSimDoc4(text, ds));
+  });
+
+  it('fails the stroke limits exactly as openSimDoc4', () => {
+    const many = painted4(1);
+    const m = many.kinds.zoning[0].spans[0].what;
+    if (m.tag !== 'brushes') throw new Error('fixture');
+    m.brushes[0].strokes = Array.from({ length: OPS_MAX + 1 }, () => stroke(1));
+    const wide = painted4(2);
+    const w = wide.kinds.zoning[0].spans[0].what;
+    if (w.tag !== 'brushes') throw new Error('fixture');
+    w.brushes[0].strokes[0].radiusM = 1;
+    const cases: [SimPolicy4, string][] = [
+      [many, 'too-many-ops'],
+      [wide, 'out-of-bounds']
+    ];
+    for (const [policy, code] of cases) {
+      const text = raw4(doc4(policy));
+      const r = loadSimDoc4(text);
+      expect(r).toMatchObject({ ok: false, errors: [{ code }] });
+      expect(r).toEqual(openSimDoc4(text, ds));
+    }
+  });
+
+  it('refuses schema 2 and 3 bodies, which need a dataset to open', () => {
+    for (const text of [text3(), stored('painted.json')]) {
+      expect(loadSimDoc4(text)).toMatchObject({
+        ok: false,
+        errors: [{ path: '/schema', code: 'unknown-schema' }]
+      });
+      expect(openSimDoc4(text, ds).ok).toBe(true);
+    }
   });
 });
 

@@ -1,7 +1,8 @@
 /**
- * The schema 4 /sim policy document (policy-timeline spec rules 25, 26): the codec and the
- * autosave key migration. Built and tested but used nowhere yet: `SIM_CODEC`, the server and the
- * page still read schema 3 under `sfhousing:sim:v1`. Pure TS: no Svelte, no DOM.
+ * The schema 4 /sim policy document (policy-timeline spec rules 25, 26): the strict parse that
+ * publish uses, the lenient dataset-free load of a stored body, opening (upgrade and reconcile on
+ * a dataset), the canonical serialization, the codec and the autosave key migration. Pure TS: no
+ * Svelte, no DOM.
  */
 import { DATASET_VERSION_RE } from '$lib/data/dataset-version';
 import {
@@ -199,6 +200,27 @@ export function parseSimDoc4(text: string, asOf: Day | null): Result<SimDoc4> {
   if (s !== SIM_DOC4_SCHEMA)
     return fail('/schema', 'unknown-schema', 'The policy has an unknown schema version.');
   return parseDoc4(r, asOf, 'strict');
+}
+
+/**
+ * Lenient, dataset-free load of a stored schema 4 body: the envelope, the title, the policy
+ * without the month alignment or the programme term check, and the stroke and size limits, as
+ * `openSimDoc4` reads a schema 4 body before reconciling it. Nothing is upgraded or reconciled. A
+ * schema 2 or 3 body is `unknown-schema` (opening one needs a dataset: `openSimDoc4`), a newer one
+ * `future-schema`; a caller that accepts 2 or 3 branches on `schema` before calling. For a holder
+ * of stored rows with no dataset, such as the server.
+ */
+export function loadSimDoc4(text: string): Result<SimDoc4> {
+  const o = jsonObject(text);
+  if (!o.ok) return o;
+  const s = schemaOf(o.value);
+  if (s !== null && s > SIM_DOC4_SCHEMA)
+    return fail('/schema', 'future-schema', FUTURE_SCHEMA_MESSAGE);
+  if (s === 2 || s === 3)
+    return fail('/schema', 'unknown-schema', 'A schema 2 or 3 policy needs its dataset to open.');
+  if (s !== SIM_DOC4_SCHEMA)
+    return fail('/schema', 'unknown-schema', 'The policy has an unknown schema version.');
+  return parseDoc4(o.value, null, 'reconcile');
 }
 
 /**
