@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { Database } from '$lib/server/db';
 import { simIndex, user, type SimMemberRole } from '$lib/server/db/schema';
-import { getUsers } from '$lib/server/user-store/user';
+import { getUsers, survivorId } from '$lib/server/user-store/user';
 import {
   addSimRole,
   foldManagedSimCount,
@@ -242,13 +242,20 @@ export async function removeMembership(
   userId: string,
   opts?: { actorUserId?: string }
 ): Promise<{ empty: boolean; members: SimMemberFold[] }> {
+  // The fold lists survivors only, and the revoke reaches the whole principal union: resolve
+  // both ids to their survivors first, so a fused id names the same member to the guard, the
+  // self-removal rule and the revoke.
+  const target = (await survivorId(db, userId)) ?? userId;
+  const actor = opts?.actorUserId
+    ? ((await survivorId(db, opts.actorUserId)) ?? opts.actorUserId)
+    : undefined;
   const members = await foldSimMembers(db, simId);
-  if (opts?.actorUserId && opts.actorUserId !== userId) {
-    const target = members.find((m) => m.userId === userId);
-    if (target?.role === 'manager')
+  if (actor && actor !== target) {
+    const member = members.find((m) => m.userId === target);
+    if (member?.role === 'manager')
       throw new Error('cannot remove another manager; they must leave the sim themselves');
   }
-  await revokeSimRoles(db, simId, userId);
+  await revokeSimRoles(db, simId, target);
   const { empty } = await reconcileSimManagement(db, simId);
   return { empty, members };
 }

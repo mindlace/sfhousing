@@ -248,6 +248,62 @@ describe('a member whose grants sit on a fused identity', () => {
     expect(await getRole({ db, simId, userId: 'owner1' })).toBe('manager');
   });
 
+  describe('removal by a fused identity id', () => {
+    // owner1 and surv manage the sim; ed edits. pseudo is fused into surv, edi into ed.
+    async function seedFusedRoster() {
+      const { db } = freshDb();
+      for (const id of ['owner1', 'surv', 'pseudo', 'ed', 'edi']) {
+        await seedUser(db, { id, email: `${id}@test.com` });
+      }
+      const { simId } = await createSim({ db, title: 'Q', managerId: 'owner1' });
+      await addMemberById({ db, simId, userId: 'surv', role: 'manager' });
+      await addMemberById({ db, simId, userId: 'pseudo', role: 'editor' });
+      await addMemberById({ db, simId, userId: 'ed', role: 'editor' });
+      await addMemberById({ db, simId, userId: 'edi', role: 'viewer' });
+      await handleAccountLink({
+        db,
+        isUpgrade: false,
+        pseudonymousUserId: 'pseudo-live',
+        newUserId: 'surv-live'
+      });
+      await handleAccountLink({
+        db,
+        isUpgrade: false,
+        pseudonymousUserId: 'edi-live',
+        newUserId: 'ed-live'
+      });
+      return { db, simId };
+    }
+
+    it('refuses a manager passing a co-manager’s fused id, as for the survivor id', async () => {
+      const { db, simId } = await seedFusedRoster();
+      await expect(
+        removeSimMember({ db, simId, userId: 'surv', actorUserId: 'owner1' })
+      ).rejects.toThrow('cannot remove another manager');
+      await expect(
+        removeSimMember({ db, simId, userId: 'pseudo', actorUserId: 'owner1' })
+      ).rejects.toThrow('cannot remove another manager');
+      expect(await getRole({ db, simId, userId: 'surv' })).toBe('manager');
+    });
+
+    it('removes an editor named by a fused id', async () => {
+      const { db, simId } = await seedFusedRoster();
+      const result = await removeSimMember({ db, simId, userId: 'edi', actorUserId: 'owner1' });
+      expect(result).toEqual({ deleted: false });
+      expect(await getRole({ db, simId, userId: 'ed' })).toBeNull();
+      expect(await getRole({ db, simId, userId: 'surv' })).toBe('manager');
+      expect(await getRole({ db, simId, userId: 'owner1' })).toBe('manager');
+    });
+
+    it('treats a member passing their own fused id as self-removal', async () => {
+      const { db, simId } = await seedFusedRoster();
+      const result = await removeSimMember({ db, simId, userId: 'pseudo', actorUserId: 'surv' });
+      expect(result).toEqual({ deleted: false });
+      expect(await getRole({ db, simId, userId: 'surv' })).toBeNull();
+      expect(await getRole({ db, simId, userId: 'owner1' })).toBe('manager');
+    });
+  });
+
   it('is promoted as successor and can then be demoted', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'owner1', email: 'm@test.com' });
