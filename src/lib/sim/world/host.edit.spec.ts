@@ -119,24 +119,42 @@ function withZoning(doc: SimPolicy4, ...ps: Policy[]): SimPolicy4 {
 
 // --- the runner, driven by a fake clock ---
 
-function makeRunner(tickMs = 0.1) {
+/** `compileClock`: the compiles read the runner's clock too (the shared dataset's reads 0). */
+function makeRunner(tickMs = 0.1, compileClock = false) {
   const clock = fakeClock();
   const posts: Msg[] = [];
   /** Per post: the plan ensemble's quiet flag and world 1's month when it was posted. */
   const at: { quiet: boolean; month: number }[] = [];
+  /** Per task: the plan ensemble quiet before and after it, and the world-months it stepped. */
+  const tasks: { quietBefore: boolean; quiet: boolean; steps: number; planMax: number }[] = [];
+  const stepped = () => {
+    const { plan, comp } = runner.ensembles();
+    let n = 0;
+    for (const e of [plan, comp]) for (const w of e?.worlds ?? []) n += w.month;
+    return n;
+  };
   const now = () => {
     clock.tick(tickMs);
     return clock.now();
   };
   const runner: Runner = createRunner({
-    dataset: ds,
+    dataset: compileClock ? { ...ds, ctx: (m) => ({ ...ds.ctx(m), now }) } : ds,
     post(msg) {
       posts.push(msg);
       const e = runner.ensembles().plan;
       at.push({ quiet: e?.quiet ?? false, month: e?.worlds[0]?.month ?? -1 });
     },
     now,
-    later: (fn, ms) => clock.setTimeout(fn, ms),
+    later: (fn, ms) =>
+      clock.setTimeout(() => {
+        const quietBefore = runner.ensembles().plan?.quiet ?? false;
+        const before = stepped();
+        fn();
+        const p = runner.ensembles().plan;
+        const quiet = p?.quiet ?? false;
+        const planMax = Math.max(-1, ...(p?.worlds ?? []).map((w) => w.month));
+        tasks.push({ quietBefore, quiet, steps: stepped() - before, planMax });
+      }, ms),
     warn: () => {},
     logOnce: () => {}
   });
@@ -154,7 +172,7 @@ function makeRunner(tickMs = 0.1) {
     return (plan?.month ?? -1) >= m && (comp?.month ?? -1) >= m;
   };
   const errors = () => of('error');
-  return { clock, runner, posts, at, of, run, full, both, errors };
+  return { clock, runner, posts, at, tasks, of, run, full, both, errors };
 }
 
 /** Trims a chunk to the months before `n`, or null when it starts at or after `n`. */
@@ -364,7 +382,7 @@ describe('edits', () => {
     r.runner.dispose();
   });
 
-  it('an edit at month 1 restores the month-0 copy and refills from 0', async () => {
+  it('an edit at month 1 re-creates the worlds and refills from 0', async () => {
     const r = makeRunner();
     r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
     await r.run(r.both(60));
@@ -397,6 +415,65 @@ describe('edits', () => {
     expect(r.at[i]).toEqual({ quiet: false, month: 99 });
     await r.run(r.full(2));
     expect(r.errors()).toEqual([]);
+    r.runner.dispose();
+  });
+
+  it('the rewind after a quiet re-step is a task of its own, before any loud step', async () => {
+    const r = makeRunner(1);
+    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    await r.run(r.both(120));
+    r.runner.setPolicy(2, withZoning(baseDoc(), protect(100, 200)), {});
+    const from = r.tasks.length;
+    await r.run(r.full(2));
+    expect(r.errors()).toEqual([]);
+    const k = r.tasks.findIndex((t, i) => i >= from && t.quietBefore && !t.quiet);
+    expect(k).toBeGreaterThan(from);
+    // the quiet re-step's last slice stops with every plan world at 99; the next task (the rewind)
+    // steps nothing
+    expect(r.tasks[k + 1].steps).toBe(0);
+    expect(r.tasks[k].planMax).toBe(99);
+    expect(r.of('refill')).toHaveLength(1);
+    r.runner.dispose();
+  });
+
+  it('a query missing from lots for a later month is rejected at once; the timelines in use keep filling', async () => {
+    const r = makeRunner();
+    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    await r.run(r.both(60));
+    const plan = r.runner.ensembles().plan!;
+    const w1 = plan.worlds[0];
+    const n = r.posts.length;
+    // the compiler would throw only at month 121, after an acceptance at month 60
+    r.runner.setPolicy(2, withZoning(baseDoc(), painted(121)), {});
+    expect(r.posts.slice(n)).toEqual([
+      expect.objectContaining({ type: 'error', rev: 2, code: 'bad-request' })
+    ]);
+    expect(r.runner.internals().pending).toBeNull();
+    await r.run(r.full(1));
+    expect(r.errors()).toHaveLength(1);
+    expect(r.posts.slice(n + 1).filter((m) => 'rev' in m && m.rev === 2)).toEqual([]);
+    expect(plan.worlds[0]).toBe(w1);
+    expect(viewFrom(r.posts)).toEqual(await fresh(baseDoc()));
+    r.runner.dispose();
+  });
+
+  it('a second setPolicy after the first edit posted compiling but before its acceptance: nothing more at the first rev', async () => {
+    // 1 ms per clock read: a compile step assembles about 20 frames, so an edit at fill month
+    // 120 takes several slices to be ready
+    const r = makeRunner(1, true);
+    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    await r.run(r.both(120));
+    r.runner.setPolicy(2, withZoning(baseDoc(), protect(100, 197)), {});
+    await r.run(() => r.of('compiling').some((c) => c.rev === 2));
+    expect(r.runner.internals().pending).not.toBeNull();
+    expect(r.runner.rev).toBe(1);
+    const second = withZoning(baseDoc(), protect(30, 43));
+    const at = r.posts.length;
+    r.runner.setPolicy(3, second, {});
+    await r.run(r.full(3));
+    expect(r.errors()).toEqual([]);
+    expect(r.posts.slice(at).filter((m) => 'rev' in m && m.rev !== 3)).toEqual([]);
+    expect(viewFrom(r.posts)).toEqual(await fresh(second));
     r.runner.dispose();
   });
 

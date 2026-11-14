@@ -287,8 +287,12 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
         st.opening = { ...st.opening, rev, policy: req.policy, lots: req.lots };
       return;
     }
-    // the runner's rev becomes this one only when it accepts the edit (rule 12)
+    // M5: as before the load, an edit older than the latest one taken is ignored
+    if (rev < st.rev) return;
+    // the runner's rev becomes this one only when it accepts the edit (rule 12); `st.rev` is the
+    // latest rev the session has taken
     st.runner.setPolicy(rev, req.policy, req.lots);
+    st.rev = rev;
   }
 
   // --- shared requests ---

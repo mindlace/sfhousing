@@ -26,11 +26,14 @@
 // complete): then, at once, for each recompiled side, the gate closes (`setStatics(null)`, D2),
 // and `m = firstDifference(old, new)` keeps the ensemble (null or past `steppedThrough`) or
 // restores it from its copy. The `rev` becomes the edit's, so every later post carries it (rule
-// 17). The ensemble with the lower month steps first and the other waits (rules 6, 16). When no
-// ensemble re-steps quietly any more: the plan's map stream is rewound (if the plan restored),
-// one `refill` goes out from the first calendar month not final at min(m) - 1, the posted mark
-// drops to just before it, and a `resyncMap` that came during the re-step is answered. No
-// `filled` goes out between the acceptance and that `refill`.
+// 17). The ensemble with the lower month steps first and the other waits (rules 6, 16). When the
+// plan's quiet re-step ends, its slice stops; the next task (a map task, like a flush, D6) rewinds
+// the plan's map stream and answers a `resyncMap` that came during the re-step. When no ensemble
+// re-steps quietly and no rewind waits, one `refill` goes out from the first calendar month not
+// final at min(m) - 1 and the posted mark drops to just before it. No `filled` goes out between
+// the acceptance and that `refill`. Map flushes go on while an edit compiles (world 1 waits).
+// `setPolicy` rejects at once a document whose queries (`queriesOf4`, its own or its
+// comparison's) are not all in `lots`.
 //
 // After a throw (rule 21) the next accepted edit recompiles both sides and re-creates every
 // world: a world whose step threw is not trusted.
@@ -44,7 +47,7 @@ import { SLICE_PLAN_MS } from '$lib/sim/scenario/scenario-host';
 import type { TimelineErrorCode, TimelineResponse } from '$lib/sim/timeline-protocol';
 import type { Day } from '$lib/timelapse/time';
 import { canonicalJson } from '$lib/sim-page/policy';
-import type { SimPolicy4 } from '$lib/timeline/policy4';
+import { queriesOf4, type SimPolicy4 } from '$lib/timeline/policy4';
 import { createMapStream, type MapStream } from '../map-stream';
 import { monthLastDay, monthOfDay } from '../months';
 import { comparisonOf, firstDifference } from '../policy/compare';
@@ -163,6 +166,12 @@ interface Edit {
 const keyOf = (c: { doc: SimPolicy4; base: 'plan' | 'preFzp' }) =>
   canonicalJson({ doc: c.doc, base: c.base });
 
+/** Throws `LeverFormatError` for the first query of `doc` (`queriesOf4`) with no entry in `lots`. */
+function missingQuery(doc: SimPolicy4, lots: Record<string, ParcelId[]>): void {
+  for (const { key } of queriesOf4(doc))
+    if (!Object.hasOwn(lots, key)) throw new LeverFormatError('lots', `no lots for query ${key}`);
+}
+
 interface Unit {
   kind: Kind;
   side: Side | null;
@@ -232,7 +241,8 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   function fail(e: unknown, code: TimelineErrorCode = 'timeline', at: Rev = rev): void {
     failed = true;
-    broken = true;
+    // M2: a rejected document leaves every world as it was
+    if (code === 'timeline') broken = true;
     post({ type: 'error', rev: at, code, message: String(e) });
   }
 
@@ -414,26 +424,36 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
+  /** The plan re-steps quietly (a restore re-creating the worlds is quiet until the last exists). */
+  const planQuiet = () => plan?.ensemble?.quiet ?? false;
+
   /**
-   * After an acceptance and after every unit: once the plan's quiet re-step is over, rewind its
-   * map stream and answer a waiting `resyncMap`; once no ensemble re-steps quietly, post the
-   * `refill` (rule 14).
+   * The rewind of the plan's map stream (rule 14) or a waiting `resyncMap` answer (B7) can run:
+   * the plan's quiet re-step is over. Each runs as a task of its own, like a flush (D6, I1).
    */
-  function settle(): void {
-    const pe = plan?.ensemble ?? null;
-    // a restore re-creating the worlds is quiet until the last exists
-    const planQuiet = pe !== null && pe.quiet;
-    if (rewindDue && pe !== null && !planQuiet) {
+  const mapTaskDue = () =>
+    (rewindDue || resyncDue) && (plan?.ensemble ?? null) !== null && !planQuiet();
+
+  function mapTask(): void {
+    if (rewindDue) {
       rewindDue = false;
-      stream!.rewind(pe.worlds[0], ds.statics);
+      stream!.rewind(plan!.ensemble!.worlds[0], ds.statics);
       dirty = true;
       complete = false;
     }
-    if (resyncDue && !rewindDue && !planQuiet) {
+    if (resyncDue) {
       resyncDue = false;
       answerResync();
     }
-    if (refillAt !== null && !rewindDue && !(comp?.ensemble?.quiet ?? false) && !planQuiet) {
+    settle();
+  }
+
+  /**
+   * After an acceptance, a unit or a map task: once no ensemble re-steps quietly and the plan's
+   * stream is rewound, post the `refill` (rule 14).
+   */
+  function settle(): void {
+    if (refillAt !== null && !rewindDue && !(comp?.ensemble?.quiet ?? false) && !planQuiet()) {
       const at = refillAt - 1;
       const from = final === null ? 0 : firstAfter(final, at);
       refillAt = null;
@@ -607,7 +627,8 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   /** A flush would have something to say, whenever it is due. */
   function streamWants(): boolean {
-    if (edit !== null || rewindDue) return false;
+    // M1: an edit compiling leaves world 1 as it is; only a rewind not yet run blocks the stream
+    if (rewindDue) return false;
     if (stream === null || world1() === undefined || plan!.ensemble!.quiet) return false;
     return dirty || (ended() && !complete);
   }
@@ -678,10 +699,12 @@ export function createRunner(deps: RunnerDeps): Runner {
       const t0 = deps.now();
       run(u);
       measure(u.kind, deps.now() - t0);
-      // before the next unit: a quiet re-step that just ended is rewound before a loud step
-      if (refillAt !== null || rewindDue || resyncDue) settle();
+      if (refillAt !== null) settle();
+      // a quiet re-step that just ended: its rewind is the next task, before any loud step (I1)
+      if (mapTaskDue()) break;
     }
-    afterSlice();
+    // a warm-only slice changes nothing posted; during an edit it must not post at the old rev
+    if (!warmOnly || edit === null) afterSlice();
   }
 
   /** A slice of an edit's compiles (rule 12): nothing steps; the edit may be accepted in it. */
@@ -708,12 +731,13 @@ export function createRunner(deps: RunnerDeps): Runner {
     pending = false;
     if (disposed || (failed && edit === null)) return;
     try {
-      if (edit !== null) editSlice();
+      if (mapTaskDue()) mapTask();
       else if (flushDue()) {
         // D12: warm before the flush, in slices of their own; then the flush, a task of its own
         if (warm.size > 0) slice(true);
         else flush();
-      } else slice(false);
+      } else if (edit !== null) editSlice();
+      else slice(false);
     } catch (e) {
       // an edit's compile that throws other than `LeverFormatError`: at the edit's rev (D11)
       const ed = edit;
@@ -733,13 +757,12 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   /** The next task: a slice when there is work, else a flush when one will be due. */
   function schedule(): void {
+    if (mapTaskDue() || flushDue()) return kick();
     if (edit !== null) {
       // a stalled edit compile waits for `chunkArrived`
-      if (editWork() !== null) kick();
-      return;
-    }
-    if (failed) return;
-    if (pick() !== null || flushDue()) return kick();
+      if (editWork() !== null) return kick();
+    } else if (failed) return;
+    else if (pick() !== null) return kick();
     if (streamWants()) kick(Math.max(0, lastFlushAt + FLUSH_EVERY_MS - deps.now()));
   }
 
@@ -811,10 +834,15 @@ export function createRunner(deps: RunnerDeps): Runner {
         rev = r;
         return start(policy, lots);
       }
-      const c = comparisonOf(policy);
-      const compKey = keyOf(c);
       let ed: Edit;
       try {
+        // M4: inside the try, so a throw is answered at this rev
+        const c = comparisonOf(policy);
+        const compKey = keyOf(c);
+        // every query either document needs is in `lots` (S14): else rejected now, not at the
+        // month that first needs it, after the old timelines are gone (the late path stays)
+        missingQuery(policy, lots);
+        missingQuery(c.doc, lots);
         const compiling = (base: 'plan' | 'preFzp', doc: SimPolicy4): Compiling => ({
           base,
           compile: compileTimeline(doc, lots, ctx!, base),
