@@ -213,21 +213,27 @@ All in `src/lib/sim/world/funding/`. Server project (signoff) unless noted.
   `env -C <worktree> node_modules/.bin/tsx src/lib/sim/world/funding/fixtures/build-funded-golden.ts`.
 - **Ledger identities in signoff** `referee-ledger.spec.ts`: E1 to E7 after every step to month
   480, seeds 1 to 3, on synthCity (baseline money and the bench set) and fixture-0 (baseline).
+- **Tolerance referee** `tolerance.referee.spec.ts`: behind `SFH_WORLD_FUNDING_REFEREE=1` (below).
 - **Perf** `funded-month.perf.spec.ts` (above).
 
 ## Tolerance referee
 
-The full referee is **held**: it is not on the branch yet. It waits on the partner's ruling on the
-bench-set awards miss (below). When it lands, `tolerance.referee.spec.ts` will run both engines over
-seeds 1 to 200 to month 480 and compare, at years 5, 10, 20 and 40, the mean of completed net homes
-(1%), its standard deviation (15%) and the mean awards and funded homes (3%), with E1 to E7 checked
-after every step. It takes about 4 minutes, so it will run only behind an env switch
-(`SFH_WORLD_FUNDING_REFEREE=1`), never in signoff. The live case will need a dataset directory
-(`SFH_WORLD_LIVE`, a directory with `manifest.json` and `scenarios/fzp/*`; `npm run data:local`
-fills local R2 only, not a directory).
+`tolerance.referee.spec.ts` runs both engines over seeds 1 to 200 to month 480 and compares, at
+years 5, 10, 20 and 40, the mean of completed net homes (1%), its standard deviation (15%) and the
+mean awards and funded homes (3%), with E1 to E7 checked after every step. About 4 minutes, so it
+runs only with the switch on, never in signoff (which runs `referee-ledger.spec.ts`, above):
 
-Signoff keeps `referee-ledger.spec.ts` (above). The record of the held referee's run of 2026-11-13
-(synthCity; live `2026-11-10-6ee5a23d`; after the award-day fix); "r" is |new − old| / old:
+```
+SFH_WORLD_FUNDING_REFEREE=1 SFH_WORLD_LIVE=<dataset dir> npx vitest --run --project server src/lib/sim/world/funding/tolerance.referee.spec.ts
+```
+
+The live case needs `SFH_WORLD_LIVE` (a directory with `manifest.json` and `scenarios/fzp/*`;
+`npm run data:local` fills local R2 only, not a directory). synthCity baseline and live are held to
+all four tolerances. For the bench funding set, awards are printed and held only to within 0.03 of
+their recorded ratios (below); net homes, net sd and funded homes are held to the tolerances.
+
+Run of 2026-11-13 (synthCity; live `2026-11-10-6ee5a23d`; after the award-day fix); "r" is
+|new − old| / old:
 
 | Case                | Year | net new  | net sd  | net old  | old sd  | mean r | sd r  | awards new | awards old | aw r  | funded new | funded old | fu r  |
 | ------------------- | ---- | -------- | ------- | -------- | ------- | ------ | ----- | ---------- | ---------- | ----- | ---------- | ---------- | ----- |
@@ -245,24 +251,29 @@ Signoff keeps `referee-ledger.spec.ts` (above). The record of the held referee's
 |                     | 40   | 86256.8  | 6061.7  | 86267.9  | 6073.8  | 0.0001 | 0.002 | 160.97     | 160.95     | 0.000 | 31167.6    | 31168.1    | 0.000 |
 
 T3 (funded here, ordinary there in the same month): synthCity baseline 8, bench set 2908, live 1.
-synthCity baseline and live pass every tolerance. **The bench set misses mean awards** at every
-year (0.275, 0.182, 0.089, 0.035 against 0.03); net homes and funded homes pass. The extra awards
-are small uncertain ones (`u-bench-afford` alone, `u-bench-loan`). The miss is with the partner; no
-rule was changed to meet it.
 
-Investigation of 2026-11-13 (synthCity, bench set, seeds 1 to 200, run before the award-day fix):
-T3 does not explain the miss. Counting T3's 2911 awards as ordinary still leaves awards 0.066 off
-at year 5 and 0.051 at year 10. Every seed diverges in month 1, day 1, and the cause is R5: the
-month-1 scan serves in key order, so small `u-bench-loan` and `u-bench-afford` applications dated
-later in the month drain `u-bench-fund` before a large day-1 certain application is tested. Today's
-engine serves by day.
+### Awards differ from today's engine with the bench set
+
+The line is served once a month in month-then-key order (rule 9, R5); today's engine serves by
+application day. With the bench funding set (synthCity) the mean awards differ by r = 0.275, 0.182,
+0.089 and 0.035 at years 5, 10, 20 and 40; net homes and funded homes agree within tolerance. So
+homes agree, but award counts and which projects get money do not.
+
+Seed 1: lot 9132112 (111 homes) is awarded on day 1 by today's engine, but waits to month 12 here,
+because small same-month applications ahead of it by key take 49.28 M of the 50 M `u-bench-fund`.
+Lot 9136935 is funded instead.
+
+Kept by the partner's ruling (2026-11-13): real funders consider applications in batches
+(competitive rounds, ranked), so serving a month's applications together is closer to practice than
+first-come by day; day-order parity with today's engine is not a goal. The difference shows
+whenever a capped fund opens to many lots in one month.
 
 ## Known differences from today
 
 - **T3**: within one month the world may fund a lot that today's engine starts ordinarily (or the
   reverse), because the ordinary start and serving are ordered by system, not by day.
 - **R5**: two applications of one month are served in key order, not by day, so their order can
-  differ from today's.
+  differ from today's (see "Awards differ from today's engine with the bench set").
 - **A month's first-day bundle**: the offer is read on the first day of the month (S5 `offered`);
   today's engine reads each day.
 - **Replan cost**: every free lot's `planLot` runs in a frame-change month (see Cost).

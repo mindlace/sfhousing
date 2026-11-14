@@ -10,6 +10,7 @@
 - `flush(world, statics, budgetMs)` between steps: packs dirty cells, oldest first, until about `budgetMs` has passed. Returns one update, or null when nothing changed.
 - `rewind(world, statics)` after restoring world 1.
 - `snapshot(world, statics)` for `resyncMap`.
+- `cellsFor(wanted)`: a pure query for the cells outside `wanted` of multi-parcel projects anchored in it. Call it after each non-null `flush` and on a viewport change, and add the result to the chunk loader's wants; an anchor cell waits until those chunks are ready.
 
 ## Rules
 

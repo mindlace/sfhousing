@@ -2,7 +2,7 @@
 // files the deltas `shownSeries` (scenario/score.ts) files for the same schedule part, so the
 // prefix sums equal `shownSeries` month for month. The series keeps every per-row fact that
 // changes in its own state, because `createWorld` sends events before the world exists.
-import { TIER_FIELDS, tiersOf } from '$lib/sim/scenario/finance-score';
+import { TIER_FIELDS, tiersOf, type TierCtx } from '$lib/sim/scenario/finance-score';
 import type { Day } from '$lib/timelapse/time';
 import { STAGE_ORDER, type Stage, type TierUnits } from '$lib/timelapse/types';
 import { monthOfDay } from '../months';
@@ -50,14 +50,26 @@ const TIER_AM = TIER0 + TIER_FIELDS.indexOf('aboveModerate');
 /** Fields per month. */
 export const SERIES_FIELDS = TIER0 + TIER_FIELDS.length;
 /** `WorldSeriesData.version` of this layout. */
-const VERSION = 4;
+const VERSION = 5;
 
 /** No row state yet (no `'start'` seen). */
 const UNKNOWN = -2;
 /** Started, in no LIVE stage. */
 const NONE = -1;
+/**
+ * `award` of a funded row that completed before its `'award'` arrived (world-funding sends it after
+ * the chain `startProject` began, so a project that passes every stage in its award step completes
+ * first): its tiers are filed by the definitions of its completion's model month until the award
+ * day is known.
+ */
+const AWAITING = NO_DAY + 1;
+/** `award` of such a row still without its `'award'` when its step was stepped (`unawarded`). */
+const UNAWARDED = NO_DAY + 2;
 const FIRST_CAPACITY = 64;
-/** More deltas than one event files (a completion: its span, net, funded and five tiers). */
+/**
+ * More deltas than one event files (a completion: its span, net, funded and five tiers; an award
+ * after its completion: five tiers out and five in).
+ */
 const MAX_DELTAS = 16;
 
 function emptyData(s: ScoreStatics): WorldSeriesData {
@@ -68,6 +80,7 @@ function emptyData(s: ScoreStatics): WorldSeriesData {
     final: -1,
     summed: -1,
     rows: 0,
+    unawarded: 0,
     stage: new Int8Array(0),
     since: new Int32Array(0),
     units: new Int32Array(0),
@@ -154,6 +167,11 @@ export interface Extras {
   ): { funded: number; displaced: number; displacedCompleted: number }[];
   /** Cumulative homes by income tier, final months `from..through`; throws without finance. */
   tiers(from: number, through: number): TierUnits[];
+  /**
+   * Funded rows that completed and whose step was stepped without their `'award'` (a feed bug):
+   * their tiers stay filed by their completion month's programme definitions.
+   */
+  unawarded(): number;
 }
 
 const EXTRAS = new WeakMap<WorldSeries, Extras>();
@@ -230,6 +248,9 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
   const at = new Int32Array(MAX_DELTAS);
   const by = new Int32Array(MAX_DELTAS);
   let n = 0;
+  /** Rows set `AWAITING` since the last `stepped` (a restore finds them again). */
+  const awaiting: number[] = [];
+  for (let row = 0; row < d.rows; row++) if (d.award[row] === AWAITING) awaiting.push(row);
 
   /** The calendar month of `day`, a day no later than the horizon. */
   // Callers must check `day <= H` first: no bounds check here (hot path).
@@ -286,34 +307,44 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     }
   }
 
+  /** The programme definitions in force in the model month of `day` (design 3.4). */
+  function ctxOn(row: number, day: Day): TierCtx {
+    const ctx = tierTable!.byMonth[Math.max(1, monthOfDay(asOf, day))];
+    if (!ctx) throw new Error(`world-score: row ${row} awarded on day ${day} without finance`);
+    return ctx;
+  }
+
   /**
-   * A completed row's homes by income tier at its month (rule 2, `tierSeries`): `tiersOf` of its
-   * schedule on the completion day, a funded row's by the programme definitions in force in the
-   * month of its award (design 3.4).
+   * The programme definitions a completed row's tiers are filed by: the base ones, a funded row's
+   * those in force in the month of its award, or, while its award is still to come (`AWAITING`,
+   * `UNAWARDED`), in the month of its completion `done`.
    */
-  function fileTiers(e: WorldEvent, w: World, statics: Statics): void {
-    if (tierTable === null || e.day > H) return;
-    const row = e.row;
-    let ctx = tierTable.base;
-    if (w.projects.funded[row] === 1) {
-      const award = d.award[row];
-      if (award === NO_DAY) {
-        throw new Error(
-          `world-score: funded row ${row} completes on day ${e.day} without an 'award'`
-        );
-      }
-      const at = tierTable.byMonth[Math.max(1, monthOfDay(s.asOf, award))];
-      if (!at) throw new Error(`world-score: row ${row} awarded on day ${award} without finance`);
-      ctx = at;
-    }
-    const sc = scheduleAt(w, statics, row, e.day);
+  function ctxOf(row: number, w: World, done: Day): TierCtx {
+    if (w.projects.funded[row] !== 1) return tierTable!.base;
+    const award = d.award[row];
+    return ctxOn(row, award === AWAITING || award === UNAWARDED ? done : award);
+  }
+
+  /**
+   * A completed row's homes by income tier at its completion day `day` (rule 2, `tierSeries`):
+   * `tiersOf` of its schedule on that day under `ctx`, times `sign`, in the completion's month.
+   */
+  function fileTiers(
+    row: number,
+    day: Day,
+    ctx: TierCtx,
+    sign: number,
+    w: World,
+    statics: Statics
+  ): void {
+    const sc = scheduleAt(w, statics, row, day);
     const revs = sc?.revisions;
     if (!sc || revs![revs!.length - 1].units !== d.units[row]) {
-      throw new Error(`world-score: row ${row}'s schedule on day ${e.day} is not the one filed`);
+      throw new Error(`world-score: row ${row}'s schedule on day ${day} is not the one filed`);
     }
     const t = tiersOf(sc, ctx);
-    const i = monthOf(e.day);
-    for (let k = 0; k < TIER_KEYS.length; k++) bump(TIER0 + k, i, t[TIER_KEYS[k]]);
+    const i = monthOf(day);
+    for (let k = 0; k < TIER_KEYS.length; k++) bump(TIER0 + k, i, sign * t[TIER_KEYS[k]]);
   }
 
   function addMasterEvent(e: WorldEvent, w: World, statics: Statics): void {
@@ -385,7 +416,7 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
       case 'start':
         return fileStart(e, w, statics);
       case 'award':
-        return fileAward(e);
+        return fileAward(e, w, statics);
       case 'displaced':
         return fileDisplaced(e);
       default:
@@ -393,11 +424,28 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     }
   }
 
-  function fileAward(e: Of<'award'>): void {
+  function fileAward(e: Of<'award'>, w: World, statics: Statics): void {
     const row = e.row;
     known(row);
-    if (d.award[row] !== NO_DAY) throw new Error(`world-score: row ${row} awarded twice`);
-    d.award[row] = e.day;
+    const was = d.award[row];
+    if (was === NO_DAY) {
+      d.award[row] = e.day;
+      return;
+    }
+    if (was !== AWAITING && was !== UNAWARDED) {
+      throw new Error(`world-score: row ${row} awarded twice`);
+    }
+    // Completed first: its tiers went in by its completion month's definitions. Within one step
+    // the award month is the completion's, so this re-files only for an award of a later step.
+    const done = d.done[row];
+    const day = e.day;
+    d.award[row] = day;
+    if (tierTable === null || done > H) return;
+    const filed = ctxOn(row, done);
+    const ctx = ctxOn(row, day);
+    if (ctx === filed) return;
+    fileTiers(row, done, filed, -1, w, statics);
+    fileTiers(row, done, ctx, 1, w, statics);
   }
 
   function fileDisplaced(e: Of<'displaced'>): void {
@@ -498,8 +546,12 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
         // Rule 12: its displaced homes so far pair with its funded homes, at completion.
         d.done[row] = day;
         on(DISPLACED_DONE, day, d.disp[row]);
+        if (d.award[row] === NO_DAY) {
+          d.award[row] = AWAITING;
+          awaiting.push(row);
+        }
       }
-      fileTiers(e, w, statics);
+      if (tierTable !== null && day <= H) fileTiers(row, day, ctxOf(row, w, day), 1, w, statics);
     } else if (how === 'exit') {
       if (day > asOf) on(EXITED, day, units);
     } else throw new Error(`world-score: row ${row} ends 'entitled' but is not a master`);
@@ -557,6 +609,15 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
         throw new Error(`world-score: stepped(${month}) after month ${d.stepped}`);
       }
       d.stepped = month;
+      // An award comes in its start's step: a row still awaiting one is a feed bug, counted.
+      for (let k = 0; k < awaiting.length; k++) {
+        const row = awaiting[k];
+        if (d.award[row] === AWAITING) {
+          d.award[row] = UNAWARDED;
+          d.unawarded++;
+        }
+      }
+      awaiting.length = 0;
       d.final = finalAt(month);
     },
     finalThrough: () => d.final,
@@ -600,7 +661,8 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
         });
       }
       return out;
-    }
+    },
+    unawarded: () => d.unawarded
   });
   return series;
 }

@@ -76,6 +76,16 @@ export interface MapStream {
   flush(world: World, statics: Statics, budgetMs: number): TimelineUpdate | null;
   rewind(world: World, statics: Statics): void;
   snapshot(world: World, statics: Statics): TimelineUpdate;
+  /**
+   * The cells, outside `cellIds`, of every project the stream holds that is anchored in one of
+   * `cellIds`: the chunks the host must load so those anchor cells can be sent (as
+   * `Geometry.cellsFor`). A pure query: it packs nothing, marks nothing dirty, needs no budget.
+   * Unknown cells and cells with no anchored project add nothing. Projects come to exist as the
+   * world steps, so the host asks again after each non-null `flush` (and on a viewport change)
+   * with its wanted cells; once the extra chunk is ready (`deps.cellReady`), the next `flush`
+   * sends the anchor cell whole.
+   */
+  cellsFor(cellIds: Iterable<string>): Set<string>;
 }
 
 /** Where a row sits on the map: its anchor cell and every cell of its T11 parcels (anchor first). */
@@ -406,6 +416,17 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
       for (const [lot, d] of now) if (sentDemolitions.get(lot) !== d) newDemolitions.add(lot);
       demolitions = now;
       completeSent = false;
+    },
+
+    cellsFor(cellIds) {
+      const want = new Set(cellIds);
+      const out = new Set<string>();
+      for (const home of want) {
+        for (const row of rowsIn.get(home) ?? []) {
+          for (const c of placed[row].cells) if (!want.has(c)) out.add(c);
+        }
+      }
+      return out;
     },
 
     snapshot(world, statics) {
