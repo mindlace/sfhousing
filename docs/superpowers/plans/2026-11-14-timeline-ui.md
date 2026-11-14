@@ -174,6 +174,7 @@ Model: sonnet.
 
 **Files:**
 - Create: `src/lib/timeline/fill.ts`
+- Modify: `src/lib/timeline/test/fixtures.ts` (add the `cut` helper; Task 1's file)
 - Test: `src/lib/timeline/fill.spec.ts`
 
 **Interfaces:**
@@ -184,7 +185,7 @@ Model: sonnet.
   export interface EditState {
     /** The view as it was when the first unsettled edit was made; null when no edit is in play. */
     held: TimelineView | null;
-    /** True from an edit until its rev is settled (a `refill` or `compiled` at or after it, or its `bad-request`). */
+    /** True from an edit R until a `refill` with rev >= R arrives (or its `bad-request`). `compiled` never settles (it precedes the refill; main Q-A). */
     pending: boolean;
     /** True from an edit until the forecast is whole again (`filledThrough === lastIndex` after settling). */
     sinceWhole: boolean;
@@ -198,7 +199,9 @@ Model: sonnet.
   export function fillStatusText(current: TimelineView | null): string; // 'Forecast filled to 2047' | ''
   ```
 
-Rules: `stale` at month index i is `pending || current === null || current.filledThrough < i` once an edit is in play (`held !== null`); otherwise false. While stale, `shownAt` gives `held` (rule 31: the numbers before the change, dimmed). Play (rule 25) is unavailable while `sinceWhole` and not `stoppedByError`; with no edit Play is available (inside the filled part, rule 24). `fillStatusText` is `''` when `filledThrough === lastIndex` or the view is null, else `Forecast filled to ${year of months[filledThrough]}` (UTC year, `utcParts` from `src/lib/fzp/time.ts:17`).
+Settle rule (main Q-A, S14 amended: every accepted `setPolicy` gets exactly one `refill { rev, from }` at that rev, `compiled(R)` before `refill(R)`, a kept edit's `from` is the first index not yet posted): stale from edit R until a `refill` with rev >= R has arrived AND `filledThrough >= the playhead's index`. A superseded edit may get no refill if a refill at rev >= R follows. The session (Task 12) calls `settled` only on such a `refill`, never on `compiled` or `filled`.
+
+Rules: `stale` at month index i is `pending || current === null || current.filledThrough < i` once an edit is in play (`held !== null`); otherwise false. While stale, `shownAt` gives `held` (rule 31: the numbers before the change, dimmed). Play (rule 25) is unavailable while `sinceWhole` and not `stoppedByError`; with no edit Play is available (inside the filled part, rule 24). `fillStatusText` is `''` when `filledThrough === lastIndex` or the view is null, else `Forecast filled to ${year of months[filledThrough]}` (UTC year, `utcParts` from `src/lib/fzp/time.ts:15`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -209,6 +212,16 @@ it('held view until the refill passes the playhead', () => {
   s = settled(s);
   expect(shownAt(s, cut(whole, 20), 30)).toEqual({ view: whole, stale: true });
   expect(shownAt(s, cut(whole, 30), 30)).toEqual({ view: cut(whole, 30), stale: false });
+});
+it('compiled arriving before the refill does not settle: still stale', () => {
+  const s = edited(NO_EDIT, whole);               // a `compiled` calls nothing here
+  expect(shownAt(s, cut(whole, 99), 5).stale).toBe(true);
+});
+it('a superseded edit settles at the later rev refill and keeps the first held view', () => {
+  let s = edited(edited(NO_EDIT, whole), cut(whole, 40));
+  expect(s.held).toBe(whole);
+  s = settled(s);                                  // the refill at the later rev
+  expect(shownAt(s, cut(whole, 99), 5)).toEqual({ view: cut(whole, 99), stale: false });
 });
 it('an edit after the playhead ends staleness at settle', () => {
   const s = settled(edited(NO_EDIT, whole));
@@ -245,7 +258,7 @@ Model: sonnet.
 - Test: `src/lib/timeline/playhead.spec.ts`
 
 **Interfaces:**
-- Consumes: `monthOfDay` (`src/lib/sim/world/months.ts:19`); `monthIndex`, `nextMonth`, `prevMonth`, `shiftYear`, `dayFromUtc`, `utcParts` (`src/lib/fzp/time.ts`); `advance`, `SPEED_DAYS` (`src/lib/fzp/playback.ts:24`). All imported, none edited.
+- Consumes: `monthOfDay` (`src/lib/sim/world/months.ts:19`); `monthIndex`, `nextMonth`, `prevMonth`, `shiftYear`, `dayFromUtc`, `utcParts` (`src/lib/fzp/time.ts`); `advance`, `SPEED_DAYS` (`src/lib/fzp/playback.ts:26`). All imported, none edited.
 - Produces:
   ```ts
   /** Calendar month index of `day` in `months` (clamped to [0, months.length - 1]). */
@@ -265,7 +278,7 @@ Model: sonnet.
   }
   ```
 
-Decided here: the playhead's `end` is `filledEndDay(...)` of the current view (rule 23 "End to the filled mark"; rule 24 "stops at the filled mark"). A key, drag or marker cannot move it past `end`; a refill that withdraws months under it does not move it (rule 25). Keys: ArrowLeft/ArrowDown a month back, ArrowRight/ArrowUp a month on, PageDown/PageUp a year, Home `asOf`, End `end`; modifier keys ignored (as `TimeScrubber.svelte:126-133`).
+Decided here: the playhead's `end` is `filledEndDay(...)` of the current view (rule 23 "End to the filled mark"; rule 24 "stops at the filled mark"). A key, drag or marker cannot move it past `end`; a refill that withdraws months under it does not move it (rule 25). Keys: ArrowLeft/ArrowDown a month back, ArrowRight/ArrowUp a month on, PageDown/PageUp a year, Home `asOf`, End `end`; modifier keys ignored: `keyTarget` takes only `key`, so `Playhead` filters Alt/Ctrl/Meta before calling it (as `TimeScrubber.svelte:122`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -367,7 +380,7 @@ Model: opus.
 - Test: `src/lib/timeline/add.spec.ts`, `src/lib/timeline/lens.spec.ts`
 
 **Interfaces:**
-- Consumes: Task 4 (`SpanRef`, `Window`, `policyOf`); `upgradePolicy` (`src/lib/timeline/upgrade.ts:12`); `DEFAULT_POLICY`, `SimPolicy` (`src/lib/sim-page/policy.ts`); `newLayer` (`src/lib/sim-page/transit-edit.ts:26`); `resolvePreset`, `PRESETS`, `OBSERVED_TIMING` (`src/lib/sim-page/timing.ts:298`); `fundingPresets`, `addPreset` (`src/lib/sim-page/funding-presets.ts:106,463`); `simTabs` condition (`src/lib/sim-page/tabs.ts:23`: money exists exactly when `cal.market && cal.baselineFunding`, rule 8).
+- Consumes: Task 4 (`SpanRef`, `Window`, `policyOf`); `upgradePolicy` (`src/lib/timeline/upgrade.ts:12`); `DEFAULT_POLICY`, `SimPolicy` (`src/lib/sim-page/policy.ts`); `newLayer` (`src/lib/sim-page/transit-edit.ts:26`); `resolvePreset`, `PRESETS`, `OBSERVED_TIMING` (`src/lib/sim-page/timing.ts:298`); `fundingPresets`, `addPreset` (`src/lib/sim-page/funding-presets.ts:106,463`); the money condition, restated in `add.ts` as `cal.market !== undefined && cal.baselineFunding !== undefined` (rule 8; do not import `tabs.ts`, Task 17 deletes it).
 - Produces:
   ```ts
   // add.ts
@@ -393,7 +406,9 @@ Model: opus.
 
 Approach (decided here): **today's "add" logic is reused through schema 3.** `addPolicy` builds a schema 3 `SimPolicy` from `DEFAULT_POLICY` with today's action applied (a `newLayer()` rule; an empty painted area; the protection switched on, `newerThanYears` today's default; `resolvePreset(id, cal)` as `timing.current`; `addPreset(funding, preset)`, a new own pool as `FundingTab` opens one, a baseline scale entry, a terms entry), runs `upgradePolicy(p3, asOf)`, takes the policies it gives for the chosen kind, renames ids clear of the document's ids (and pool and programme ids, policy-timeline "Ids are unique across the document"), sets every span to `{ from: monthFirstDay(asOf, month), to: null }`, appends them to the kind's list, and returns the first as `ref` (rule 12: starts on the playhead's month, no end, selected). `addChoices` lists today's tabs' offers per kind; `money` is offered only when the calibration has `market` and `baselineFunding`.
 
-`project(doc, ref)` is `DEFAULT_POLICY` holding only that span's effect, by selector tag: `transit` → `rules: [{ id: policy.id, kind: 'transit', stopTypes, bands }]`; `painted` → `custom: brushes`; `category` → `protect[category] = true` (`newerThanYears` from `years`); `routes` → `timing: { current: set, saved: null }`; `baseline` → `funding.baselineScale`; `fund` → `funding.pools: pool ? [pool] : []`, `funding.programmes`; `terms` → `funding.terms`. `writeBack` reads the same fields back into that span's `what` (and `where.stopTypes` for transit); every other field of the projection is ignored. A transit projection whose `rules` is empty, or a category projection switched off, sets the policy `on: false` (the editor's own switch maps to the policy's switch). `spanLens(...).apply(c, label, k)` is `store.apply(d => writeBack(d, ref, c(project(d, ref))), label, k)`; `undo`/`redo` delegate. With `ref()` null, `policy` is `DEFAULT_POLICY` and `apply` is a no-op.
+`project(doc, ref)` is `DEFAULT_POLICY` holding only that span's effect, by selector tag: `transit` → `rules: [{ id: policy.id, kind: 'transit', stopTypes, bands }]`; `painted` → `custom: brushes`; `category` → `protect[category] = policy.on` (never a constant true: an off policy must not project as on; `newerThanYears` from `years`); `routes` → `timing: { current: set, saved: null }`; `baseline` → `funding.baselineScale`; `fund` → `funding.pools: pool ? [pool] : []`, `funding.programmes`; `terms` → `funding.terms`. `writeBack` reads the same fields back into that span's `what` (and `where.stopTypes` for transit); every other field of the projection is ignored. A transit projection whose `rules` is empty, or a category projection switched off, sets the policy `on: false` (the editor's own switch maps to the policy's switch). `spanLens(...).apply(c, label, k)` is `store.apply(d => writeBack(d, ref, c(project(d, ref))), label, k)`; `undo`/`redo` delegate. With `ref()` null, `policy` is `DEFAULT_POLICY` and `apply` is a no-op.
+
+Rule (OQ-2, ruling replaced by main): no write-to-every-span rule. `writeBack` for a `fund` span keeps `pool.debt` (rate, term) of the existing span as it is: the offer's terms are immutable once the policy is in the document (the Inspector shows them read-only, Task 10; only truncating or removing the policy changes them). A new fund policy sets its terms while it is being added (`addPolicy`). Amount, kind and label stay editable in place.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -412,6 +427,7 @@ it('ids stay unique across the document when adding the same preset twice', () =
 it('project then writeBack of an unchanged projection is the same document', () => {
   for (const ref of everyRef(richDoc)) expect(writeBack(richDoc, ref, project(richDoc, ref))).toEqual(richDoc);
 });
+it('writeBack on a fund span ignores a changed pool.debt and keeps amount, kind and label edits', () => { ... });
 it('an editor change through the lens lands in that span only', () => {
   const store = new PolicyStore(twoSpanDoc); // Task 6 makes PolicyStore generic; until then a minimal in-test store
   const lens = spanLens(store, () => ({ kind: 'zoning', id: 'r1', span: 1 }));
@@ -435,7 +451,7 @@ Model: sonnet.
 **Files:**
 - Modify: `src/lib/sim-page/policy-store.svelte.ts` (whole file: `PolicyStore` generic; `undoTo`)
 - Create: `src/lib/timeline/policy-sync.svelte.ts`
-- Modify (type and props only, behaviour unchanged): `src/lib/sim-page/{TransitTab.svelte:27-28,PermittingSection.svelte:28,RouteTimeline.svelte:27,ProtectionsSection.svelte:12,FundingTab.svelte:95,stroke-adapter.ts:68}`
+- Modify (type and props only, behaviour unchanged): `src/lib/sim-page/{TransitTab.svelte:27-28,PermittingSection.svelte:28,RouteTimeline.svelte:27,ProtectionsSection.svelte:12,FundingTab.svelte:95,stroke-adapter.ts:68-81,test/TransitTabHost.svelte:7,13}`
 - Test: `src/lib/sim-page/policy-store.svelte.spec.ts` (extend), `src/lib/timeline/policy-sync.svelte.spec.ts`, `src/lib/sim-page/ProtectionsSection.svelte.spec.ts`, `src/lib/sim-page/PermittingSection.svelte.spec.ts`, `src/lib/sim-page/FundingTab.svelte.spec.ts` (extend)
 
 **Interfaces:**
@@ -461,11 +477,12 @@ Model: sonnet.
   Editor props added (defaults keep today's behaviour exactly):
   - `ProtectionsSection`: `store: EditStore`, `only?: 'rentControl' | 'historic' | 'newerThan'` (renders that one row).
   - `PermittingSection`: `store: EditStore`, `snapshot?: boolean` (default true; false hides Save and "Revert to saved": schema 4 carries a saved set as its own off policy, `upgrade.ts:79-91`, and each policy has on/off and undo). Builder's call: the reason is in the parenthesis.
-  - `FundingTab`: `store: EditStore`, `only?: { tag: 'baseline' } | { tag: 'fund'; pool: string } | { tag: 'terms' }` (only those rows; no "Add money"), `priceDay?: Day` (default `calibration.asOf`): the coverage figure and a programme's cost per home are priced on it (rule 10). Thread `priceDay` to `ProgrammeEditor` where it prices.
+  - `FundingTab`: `store: EditStore`, `only?: { tag: 'baseline' } | { tag: 'fund'; pool: string } | { tag: 'terms' }` (only those rows; no "Add money"), `termsReadOnly?: boolean` (default false; Task 10 sets it for an existing fund policy: rate and term render as text, `TERMS_HINT` behind a tap), `priceDay?: Day` (default `calibration.asOf`): the coverage figure and a programme's cost per home are priced on it (rule 10). Thread `priceDay` to `ProgrammeEditor` where it prices.
   - `TransitTab`, `RouteTimeline`: `store: EditStore`; `TransitTab.sync: Pick<PolicySync, 'result' | 'retry'>`.
-  - `createStrokeAdapter({ store: StrokeStore, ... })`.
+  - `createStrokeAdapter({ store: StrokeStore, locked?: () => boolean, ... })`: `stroke-adapter.ts:79-81` reads the injected getter instead of `store.locked` (`StrokeStore` has no `locked`), so the build stays green; Task 14 passes none.
+  - `test/TransitTabHost.svelte` is retyped from `LeverSync` to `PolicySync`.
 
-Mechanism: `PolicySync` mirrors `LeverSync` (`policy-store.svelte.ts:178-297`): same parking on `no-session`, `resume` generations, `retry`, failures standing until retried; it produces `lots` instead of compiled levers. `LeverSync` stays until Task 17 deletes it with the old page.
+Mechanism: `PolicySync` mirrors `LeverSync` (`policy-store.svelte.ts:112-297`; a deliberate duplication, with a one-line "why" comment: `LeverSync` stays until Task 17 and compiles schema 3 levers): same parking on `no-session`, `resume` generations, `retry`, failures standing until retried; it produces `lots` instead of compiled levers. `LeverSync` stays until Task 17 deletes it with the old page (`TransitTabHost.svelte` no longer types it).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -522,8 +539,10 @@ Model: sonnet.
   export const COVERAGE_OFF_SHORT_SENTENCE4: string; // funding-copy.ts:92-95, same change
   export const CHANGE_NOT_APPLIED = "That change couldn't be applied.";
   export const UPDATING = 'Updating';
+  export const TERMS_HINT = 'End this and add a new one to change terms.'; // behind a tap in the read-only terms (Task 10)
+  export const STALE_NOTE = 'From before your latest change.'; // behind UPDATING (rule 31, Task 13)
   ```
-  Builder's call: further `*4` constants for any other `funding-copy.ts` text that says "a run", named after the original with `4` appended, each imported by the component that renders it instead of the original (the originals stay: `/lesscars` imports `funding-copy.ts`).
+  Builder's call: further `*4` constants for any other `funding-copy.ts` text that says "a run", named after the original with `4` appended, each imported by the component that renders it instead of the original (the originals stay: `/lesscars` imports `funding-copy.ts`). Every forced duplicate (`*4` sentences) carries a one-line "why" comment (the hashed/closure rule forbids editing the original).
 
 Behaviour (rule 37, WCAG 1.4.13): opens on pointer enter, focus and tap; stays while the pointer is over the target or the explanation; closes on Escape, on blur (focus leaving both) and on a second tap; from md a popover beside the target, below md an inline line under it. The text is rendered only while open; the target gets `aria-describedby` to it while open and `aria-expanded` when `as: 'button'`.
 
@@ -570,7 +589,7 @@ Model: sonnet.
 Rules:
 - Playhead is `role="slider"`, `aria-label="Date in the simulation"`, `aria-valuemin`/`max` the window's day range, `aria-valuetext` the month and year; keys per Task 3; a key, a drag or a marker jump pauses (rule 23). The readout has a fixed width: every label of `monthYearLabels` stacked in one grid cell, `tabular-nums` (as `TimeScrubber.svelte:1-8`). Play, Pause, Faster and "back to today" as today's scrubber; Play `aria-disabled` with its reason when `!playable`. Playback advances with `advance(clock, dt, speed, end)`; at `end` before the window's end it idles with `playing` still true and resumes by itself when `end` grows; at the window's end `playing` becomes false (rule 24). Nothing plays on mount.
 - Ruler: years from the dataset date's year to forty years on, the filled bar from the start to `filledEnd`, the hatched unfilled part, the "RHNA deadline" and "2045" jump markers (rule 3).
-- ChartRow is a `<figure>` with an accessible name and a one-sentence `figcaption` summary; average line, band area, a thinner "this city" line, the state target as a dashed marker at its deadline; the part after `index` drawn lighter; nothing past `filledThrough`; strokes ≥ 3:1 and told apart by dash as well as colour (rule 4). Hover or focus of a month shows that month's three numbers (rule 28; a focusable overlay with Left/Right inside the figure).
+- ChartRow is a `<figure>` with an accessible name and a one-sentence `figcaption` summary that points to the Results table (rule 4's text alternative); average line, band area, a thinner "this city" line, the state target as a dashed marker at its deadline; the part after `index` drawn lighter; nothing past `filledThrough`; strokes ≥ 3:1 and told apart by dash as well as colour (rule 4). Hover or focus of a month shows that month's three numbers (rule 28; a focusable overlay with Left/Right inside the figure).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -604,7 +623,7 @@ Model: sonnet.
 - Test: `src/lib/timeline/Timeline.svelte.spec.ts`
 
 **Interfaces:**
-- Consumes: Task 4 (`SpanRef`, `barKey`, `moveEdge`, `moveSpan`, `spanMonths`); Task 8 (`Ruler`, `Playhead`, `ChartRow`); `marketLevel` (`src/lib/fzp/market-view.ts`) for the "Market conditions" row.
+- Consumes: Task 4 (`SpanRef`, `barKey`, `moveEdge`, `moveSpan`, `spanMonths`); Task 8 (`Ruler`, `Playhead`, `ChartRow`); `marketLevel` (`src/lib/sim/scenario/market.ts:19`) for the "Market conditions" row.
 - Produces:
   ```ts
   // Timeline.svelte
@@ -615,6 +634,7 @@ Model: sonnet.
     onadd(kind: PolicyKind): void; // "+" (the menu is the page's, Task 10)
     playhead: Snippet; ruler: Snippet; chart: Snippet; // Task 8 parts, composed by TimelineMode
     playheadMonth: number; // for barKey
+    filledEnd: Day; // each row is hatched past it (spec rule 3)
   }
   ```
 
@@ -632,6 +652,7 @@ it("a bar's keys produce the expected document", async () => {
 });
 it('every bar is reachable by Tab and operable by Enter', async () => { ... });
 it('readonly renders no + and ignores bar keys', async () => { ... });
+it('hatches every row past filledEnd and moves the hatch when filledEnd grows', async () => { ... });
 ```
 
 - [ ] **Step 2: Run** `npx vitest run --project client src/lib/timeline/Timeline.svelte.spec.ts` — FAIL.
@@ -666,7 +687,7 @@ Model: opus.
   // AddMenu.svelte: { kind: PolicyKind; calibration; doc: SimPolicy4; onpick(choice: AddChoice): void }
   ```
 
-Rules: When (rule 10, 11): the spans, each with a from month and a to month or "no end" (month and year selects snapped to model months), Add span, Split at the playhead month, Remove span (disabled on the only span). What: the editor for the selector through `spanLens(store, () => selected)` — transit → `TransitLayerRow` (its Remove removes the policy), painted → the page's `paint` snippet, category → `ProtectionsSection only={category}`, routes → `PermittingSection snapshot={false}`, baseline/fund/terms → `FundingTab only=... priceDay={playheadDay}`. On/off switch, Remove, "Move up"/"Move down" (rule 13). "+" opens `AddMenu`; a pick runs `addPolicy` at the playhead month, applies it as one store change labelled "Added: {label}", announces it and selects the new span (rule 12). Selecting another policy or closing discards an open funding draft and announces `DRAFT_DISCARDED` (rule 15). Read-only (rule 17): When as text, What as `PolicySummary` of `project(doc, ref)`; no control that edits. Fixed rows show what they are, read-only. Debt terms on a fund policy with several spans: OQ-2 (Task 20); this task edits the selected span only.
+Rules: When (rule 10, 11): the spans, each with a from month and a to month or "no end" (month and year selects snapped to model months), Add span, Split at the playhead month, Remove span (disabled on the only span). What: the editor for the selector through `spanLens(store, () => selected)` — transit → `TransitLayerRow` (its Remove removes the policy), painted → the page's `paint` snippet, category → `ProtectionsSection only={category}`, routes → `PermittingSection snapshot={false}`, baseline/fund/terms → `FundingTab only=... priceDay={playheadDay}`. On/off switch, Remove, "Move up"/"Move down" (rule 13). "+" opens `AddMenu`; a pick runs `addPolicy` at the playhead month, applies it as one store change labelled "Added: {label}", announces it and selects the new span (rule 12). Selecting another policy or closing discards an open funding draft and announces `DRAFT_DISCARDED` (rule 15). Read-only (rule 17): When as text, What as `PolicySummary` of `project(doc, ref)`; no control that edits. Fixed rows show what they are, read-only. Debt terms (rate and term) on an existing fund policy (already in the document) are shown read-only: `FundingTab only={{ tag: 'fund', pool }}` gets a `termsReadOnly` prop (default false; a new fund, while it is being added, sets its terms) that renders `FundingPoolRow`'s debt fields as text; `TERMS_HINT` sits behind a tap, no sentence at rest. To change terms the user ends the policy (truncates its last span or removes it) and adds a new one, with controls that already exist; no new control. Amount, kind and label stay editable in place; do not widen the read-only rule. Everything else edits the selected span only.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -676,6 +697,7 @@ it('switches a policy off, removes it and reorders it; undo and redo across thos
   // after each: store.policy equals the spans.ts op; undo x3 → original; redo x3 → final
 });
 it('edits the selected span only through the hosted editor', async () => { ... });
+it('an existing fund policy shows its debt terms read-only', async () => { /* no editable rate or term; TERMS_HINT behind a tap; amount, kind and label still editable; a fund being added sets its terms */ });
 it('the month fields set from and to, snapped', async () => { ... });
 it('discards an unfinished funding draft when another policy is selected, and says so', async () => { ... });
 it('read-only renders no editable control', async () => {
@@ -698,7 +720,7 @@ Model: sonnet.
 
 **Files:**
 - Create: `src/lib/timeline/results.ts`, `src/lib/timeline/TimelineHeaderScore.svelte`
-- Modify: `src/lib/fzp/SimResults.svelte:33-91` (props), `src/lib/fzp/MoneyResults.svelte`, `src/lib/fzp/ScoreChart.svelte` (only what rule 26 needs here; rule 38 moves are Task 16)
+- Modify: `src/lib/fzp/SimResults.svelte:33-91` (props), `src/lib/fzp/MoneyResults.svelte`, `src/lib/fzp/ScoreChart.svelte` (only what rule 26 needs here; rule 38 moves are Task 16), `src/lib/fzp/FzpMode.svelte` (its `<SimResults>` call only; deleted in Task 17)
 - Test: `src/lib/timeline/results.spec.ts`, `src/lib/timeline/TimelineHeaderScore.svelte.spec.ts`, `src/lib/fzp/SimResults.svelte.spec.ts` (rewrite the cases that used seeds, ranks, high water)
 
 **Interfaces:**
@@ -712,8 +734,8 @@ Model: sonnet.
   /** Rule 27. total is null until filledThrough === lastIndex; delta only when compare === 'plan'; target null until filled to its deadline. */
   export function headerOf(view: TimelineView | null): { total: number | null; year: number; delta: number | null; target: TargetProgress | null };
   ```
-  `SimResults` props become: `score, at, city, day, asOf, filledEnd, datasetVersion, builtAt, onsources, copy, capacity, stale, market, pending, terms, uncapped` (removed: `horizon, highWater, bandRuns, bandRunsTotal, seed, representative, canSwitch, onrepresentative`). `bandLine`/`planBandLine` called with `provisional = false` (rule 38: no "(still calculating)"). Money and tier blocks headed "In this city". `ScoreChart` gets `highWater = filledEnd` (draws nothing past the mark).
-  `TimelineHeaderScore` props: `{ total: number | null; year: number; target: TargetProgress | null; delta: number | null; busy: boolean; stale: boolean; expanded: boolean; controls: string; onclick(): void; live: string; quiet: boolean }`; same markup and `data-testid`s as `src/lib/scoreboard/HeaderScore.svelte` (`score-bar`, `score-delta`, `score-live`), the count reading "{n} homes by {year}" and today's "calculating" text (`CALCULATING`, `score-view.ts:19`) while `total` is null; `stale` dims it.
+  `SimResults` props become: `score, at, city, day, asOf, horizon /* window end, kept: ScoreChart.svelte:21 destructures it */, filledEnd, datasetVersion, builtAt, onsources, copy, capacity, stale, market, pending, terms, uncapped` (removed: `highWater, bandRuns, bandRunsTotal, seed, representative, canSwitch, onrepresentative`). `bandLine`/`planBandLine` called with `provisional = false` (rule 38: no "(still calculating)"). Money and tier blocks headed "In this city". `ScoreChart` gets `highWater = filledEnd` (draws nothing past the mark).
+  `TimelineHeaderScore` (a forced duplicate of the hashed `HeaderScore`: one-line "why" comment) props: `{ total: number | null; year: number; target: TargetProgress | null; delta: number | null; busy: boolean; stale: boolean; expanded: boolean; controls: string; onclick(): void; live: string; quiet: boolean }`; same markup and `data-testid`s as `src/lib/scoreboard/HeaderScore.svelte` (`score-bar`, `score-delta`, `score-live`), the count reading "{n} homes by {year}"; its accessible name and description carry "by {year}" (rule 27); and today's "calculating" text (`CALCULATING`, `score-view.ts:19`) while `total` is null; `stale` dims it.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -762,7 +784,8 @@ Model: opus.
     | { id: 'error'; text: "The simulation couldn't load." | 'Part of the simulation stopped.'; retry: 'open' } // rule 35
     | { id: 'crash'; retry: 'restart' };            // rule 36
   export interface SessionDeps {
-    client: Pick<TimelineClient, 'open' | 'setPolicy' | 'viewMonth' | 'resyncMap' | 'retryChunks' | 'restart'>;
+    /** The session builds its own client: `createClient(createWorker(), this.events)`; the default is `new TimelineClient`. Also serves crash restart (no construction cycle). */
+    createClient?(worker: ScenarioWorkerInput, events: TimelineClientEvents): Pick<TimelineClient, 'open' | 'setPolicy' | 'viewMonth' | 'resyncMap' | 'retryChunks' | 'restart'>;
     manifest: Manifest; calibration: Calibration;
     /** The store: rule 34 undoes to the last accepted document. */
     undoTo(p: SimPolicy4): void;
@@ -771,9 +794,12 @@ Model: opus.
   }
   export class TimelineSession {
     constructor(deps: SessionDeps);
-    readonly events: TimelineClientEvents; // passed to `new TimelineClient(worker, session.events)`
     readonly view: TimelineView | null;     // current
     readonly statics: ScoreStatics | null;
+    readonly capacity: Capacity | null;      // from the last `compiled` (timeline-protocol.ts:94-100), for SimResults
+    readonly unknownLots: number;            // likewise
+    /** True from a provisional open until the full document's `compiled` has been delivered and its window is whole (OQ-3). */
+    readonly provisional: boolean;
     readonly notices: readonly SessionNotice[];
     readonly phase: 'loading' | 'ready' | 'failed';
     readonly stoppedByError: boolean;
@@ -799,8 +825,8 @@ Model: opus.
 
 Rules (decided here):
 - Every document sent is `reconcilePolicy4(p, cal, cal.asOf).doc` (R-3); if that is not `p` the session `console.warn`s once (Task 4's ops guarantee alignment; a warning is a bug to fix).
-- **Provisional open** (see OQ-3): `open(policy, null)` sends `client.open(manifest, provisionalOf(policy), {})` where `provisionalOf` removes every zoning policy with a brush or transit query (`queriesOf4` non-empty for it); the first `send` after it is part of opening: it does not count as an edit (no Play block, no held view), and a `bad-request` at the provisional rev is silent. `open(policy, lots)` with lots sends the document as is.
-- Arrival order (R-1): `onCompiled` → `logCompiled`; `onFilled` → `logFilled`; `onRefill` → `logRefill`; never compare revs to order them. A rev is settled when a `refill` or `compiled` at rev ≥ it arrives, or its `bad-request`. The accepted document is the one sent at the highest settled-accepted rev.
+- **Provisional open** (see OQ-3): `open(policy, null)` sends `client.open(manifest, provisionalOf(policy), {})` where `provisionalOf` removes every zoning policy with a brush or transit query (`queriesOf4` non-empty for it); the first `send` after it is part of opening: it does not count as an edit (no Play block, no held view), and a `bad-request` at the provisional rev is silent. `open(policy, lots)` with lots sends the document as is. If the dataset is already loaded and the lots resolve before the first open, one `openTimeline` with the full document is sent and nothing is stripped (`provisional` stays false). Between the provisional open and the end of provisional state (the `compiled` of the full document's rev delivered AND its window whole, `filledThrough === lastIndex`) the headline stays "calculating" (`headerOf` gets null) and `shown(i)` reports `stale: true`; Play availability follows the rule above.
+- Arrival order (R-1): `onCompiled` → `logCompiled`; `onFilled` → `logFilled`; `onRefill` → `logRefill`; never compare revs to order them. An edit at rev R is settled (Task 2's `settled`) only by a `refill` at rev ≥ R, or its `bad-request`; never by `compiled` or `filled` (main Q-A: `compiled(R)` arrives before `refill(R)`, and a kept edit's refill has `from` = the first index not yet posted). Stale ends when that refill has arrived and `filledThrough` ≥ the playhead's index. The accepted document is the one sent at the highest settled-accepted rev.
 - `onCompiling` with `failedCells.length > 0` → `failed-cells` notice (Retry `client.retryChunks()`, rule 33); the progress itself is not shown.
 - `onError` `bad-request` at the latest sent rev (not provisional): `not-applied` notice and `undoTo(accepted)` (rule 34). Any other code: `error` notice, "The simulation couldn't load." before the first `filled`, else "Part of the simulation stopped."; `stoppedByError` true; Retry calls `client.open(manifest, current, lastLots)` (rule 35).
 - `onCrash` → `crash` notice; Retry `client.restart(createWorker())`, then `send` the current pair if it differs from the last sent (rule 36).
@@ -829,6 +855,26 @@ it('an error shows Retry and Retry sends openTimeline with the current document'
 it('a crash restarts the worker and re-opens', () => { ... });
 it('viewMonth is sent when the playhead changes month, at most four a second', () => { ... });
 it('resync calls resyncMap', () => { expect(worker.lastOf('resyncMap')).toBeDefined(); });
+it('a provisional open stays calculating and stale until the full document fills', () => {
+  session.open(withPaint, null); emit(compiled(1)); emit(filled(1, 0, 20));
+  session.send(withPaint, lots); emit(compiled(2));
+  expect([session.provisional, session.shown(5).stale]).toEqual([true, true]);
+  emit(refill(2, 0)); emit(filled(2, 0, LAST + 1));
+  expect([session.provisional, session.shown(5).stale]).toEqual([false, false]);
+});
+it('opens once with the full document when lots resolve first', () => {
+  session.open(withPaint, lots);
+  expect(worker.all('openTimeline')).toHaveLength(1);
+  expect(worker.lastOf('openTimeline')!.policy).toEqual(withPaint);
+});
+it('compiled before refill does not end staleness; the refill and a covering filled do (main Q-A)', () => {
+  session.playhead(dayOf(15)); session.edited(); session.send(doc2, {});
+  emit(compiled(2)); expect(session.shown(15).stale).toBe(true);
+  emit(refill(2, 10)); expect(session.shown(15).stale).toBe(true);
+  emit(filled(2, 10, 6)); expect(session.shown(15).stale).toBe(false);
+  // the real-host e2e of this ordering waits on the ensemble-runner sha main supplies
+});
+it('exposes capacity and unknownLots from the last compiled', () => { ... });
 it('opens provisionally, then sends the full document', () => {
   session.open(withPaint, null);
   expect(queriesOf4(worker.lastOf('openTimeline')!.policy)).toEqual([]);
@@ -856,7 +902,7 @@ Model: opus.
 - Test: `src/lib/timeline/TimelineMode.svelte.spec.ts`, `src/lib/timeline/owner.spec.ts`
 
 **Interfaces:**
-- Consumes: Tasks 8, 9, 11, 12; `SimMap` via the stub (`src/lib/fzp/test/FzpSimMapStub.svelte`, `sim-map-stub.ts`, kept); `ProjectCardPanel`, `ProjectTooltip`, `SourcesDialog`, `SummaryRequester`, card placement helpers (as `FzpMode.svelte:678-790`); `NoticePills`, `PILL`, `PILL_ACTION`; `useHeaderActions` (`src/lib/shell/header-actions.svelte.ts`); `spawnSimWorker` (`src/lib/sim/client`); `limitsOf` owner shape `PolicyLimitOwner` (`src/lib/sim/world/policy/limits.ts:25-31`).
+- Consumes: Tasks 8, 9, 11, 12; `SimMap` via the stub (`src/lib/fzp/test/FzpSimMapStub.svelte`, `sim-map-stub.ts`, kept); `ProjectCardPanel`, `ProjectTooltip`, `SourcesDialog`, `SummaryRequester`, card placement helpers (as `FzpMode.svelte:678-790`); `session.capacity` and `session.unknownLots` go to `SimResults`; `NoticePills`, `PILL`, `PILL_ACTION`; `useHeaderActions` (`src/lib/shell/header-actions.svelte.ts`); `spawnSimWorker` (`src/lib/sim/client`); `limitsOf` owner shape `PolicyLimitOwner` (`src/lib/sim/world/policy/limits.ts:24`).
 - Produces:
   ```ts
   // TimelineMode.svelte props (spec "Defined here"): FzpMode's data props and
@@ -880,14 +926,14 @@ Model: opus.
   }
   export interface TimelineClientApi { resolveBrush; brushCatalog; lotOutlines; previewBuildings; heightLids; lotAt; retryChunks } // as SimClientApi, FzpMode.svelte:31-42
   // owner.ts
-  export function policyOfOwner(o: LimitOwner): string | null; // reads PolicyLimitOwner.policy
+  export function policyOfOwner(o: LimitOwner): string | null; // reads PolicyLimitOwner.policy; needs a cast from LimitOwner (levers/source.ts:62)
   export function ownerName4(o: LimitOwner, doc: SimPolicy4): string | null; // the policy's label; null for fzp or a policy gone
   export function fundingName4(doc: SimPolicy4, baseline: Baseline | undefined): (c: CardFunding) => string | null; // fundingName (funding-view.ts:1081) over the union of the document's money policies
   // fzp/debug.ts SfhFzpDebug
   { phase; day; asOf; playing; speed; filledThrough: number; lastIndex: number; policy: SimPolicy4; stale: boolean; refills: readonly number[]; mean(): number[] }
   ```
 
-Rules: Load states before the worker are FzpMode's (rule 30): `noScenario` renders the map and today's message, no timeline, no worker. On mount (not `no-scenario`) the session opens with `policy` and `lots`; the timeline rows and the inspector render only after mount (SSR carries the shell and the loading status; builder's call so the page's synchronous restore, Task 14, is what the first open sends). A new `policy` object after open calls `session.edited()` and pauses playback (rule 25); a new non-null `lots` calls `session.send(policy, lots)`. The playhead starts at `asOf`, paused (rule 24); `onday` → `session.playhead`, `handle.setTime`, the card's month check. `onResyncNeeded` → `session.resync()` (rule 22). `onLookups` → `handle.setTimelineLookups` (one map lookups object per posted `LeverLookups`, as `FzpMode.svelte:57-67`) (rule 20). Cards are always on; a tap that hits a project opens its card (rule 19) and `onmiss` is called for a miss tap. The card asks again on a month change and on `oncardrefresh`; it is dimmed while stale; on an error or crash it shows today's "Details unavailable" (rules 21, 35). Map, Results, card and header are dimmed while `shown(i).stale`; the status slot renders the page's `status` snippet then `UPDATING` while stale, else `fillStatusText`; one polite live region, updated at most once a second, reserving the width of its longest text (rules 31, 32). Notices: the session's notices as pills with their Retry; the page's `notices` snippet first. Header: `TimelineHeaderScore` from `headerOf(shown(lastIndex).view)`; its `live` is `homesAddedBy(day, at)` at the playhead month, `quiet` while playing (rule 27). The Results snippet passed to `inspector` is `SimResults` over `scoreOfView` / `resultsAt` at the playhead month (rule 26). Desktop: the inspector is a side panel leaving the timeline visible; phone: a sheet (rule 1).
+Rules: Load states before the worker are FzpMode's (rule 30): `noScenario` renders the map and today's message, no timeline, no worker. On mount (not `no-scenario`) the session opens with `policy` and `lots`; the timeline rows and the inspector render only after mount (SSR carries the shell and the loading status; builder's call so the page's synchronous restore, Task 14, is what the first open sends). A new `policy` object after open calls `session.edited()` and pauses playback (rule 25); a new non-null `lots` calls `session.send(policy, lots)`. The playhead starts at `asOf`, paused (rule 24); `onday` → `session.playhead`, `handle.setTime`, the card's month check. `onResyncNeeded` → `session.resync()` (rule 22). `onLookups` → `handle.setTimelineLookups` (one map lookups object per posted `LeverLookups`, as `FzpMode.svelte:57-67`) (rule 20). Cards are always on; a tap that hits a project opens its card (rule 19) and `onmiss` is called for a miss tap. The card asks again on a month change and on `oncardrefresh`; it is dimmed while stale; on an error or crash it shows today's "Details unavailable" (rules 21, 35). Map, Results, card and header are dimmed while `shown(i).stale`; the status slot renders the page's `status` snippet then `UPDATING` while stale (wrapped in `Explain` with `STALE_NOTE`, rule 31), else `fillStatusText`; one polite live region, updated at most once a second, reserving the width of its longest text (rules 31, 32). Notices: the session's notices as pills with their Retry; the page's `notices` snippet first. Header: `TimelineHeaderScore` from `headerOf(session.provisional ? null : shown(lastIndex).view)` (OQ-3: "calculating" while provisional); its `live` is `homesAddedBy(day, at)` at the playhead month, `quiet` while playing (rule 27). The Results snippet passed to `inspector` is `SimResults` over `scoreOfView` / `resultsAt` at the playhead month (rule 26). Desktop: the inspector is a side panel leaving the timeline visible; phone: a sheet (rule 1).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -898,6 +944,8 @@ it('an edit pauses playback and Play is unavailable until filledThrough === last
 it('sends viewMonth when the playhead enters another month', async () => { ... });
 it('onResyncNeeded calls resyncMap', async () => { /* stub handle fires the resync callback */ });
 it('the status slot says Updating while stale, then Forecast filled to …, then nothing', async () => { ... });
+it('rows are hatched past the filled end and the hatch moves after a refill', async () => { ... });
+it('a provisional open keeps the header calculating until the full document fills', async () => { ... });
 it('the header shows calculating, then baseline plus the average at lastIndex', async () => { ... });
 it('an open card is dimmed while stale and asks again once the refill covers its day', async () => { ... });
 it('a miss tap calls onmiss and opens no card', async () => { ... });
@@ -909,6 +957,8 @@ it('ownerName4 names the policy that sets a lot; fzp and a removed policy give n
 - [ ] **Step 4: Run** — PASS.
 - [ ] **Step 5: Commit** `feat(timeline): TimelineMode composition`.
 
+Note: `npm run check` errors confined to `e2e/**` (helpers and specs still using `startRun`/`runSlider`/`waitRanked` and `__sfhFzp.ranks`) are expected until Task 17; any error outside `e2e/**` is real.
+
 ---
 
 ### Task 14: `/sim` page switchover
@@ -916,7 +966,7 @@ it('ownerName4 names the policy that sets a lot; fzp and a removed policy give n
 Model: opus.
 
 **Files:**
-- Modify: `src/lib/sim-page/SimPage.svelte` (whole file), `src/lib/sim-page/selection.ts` (schema 4: select by policy id), `src/lib/sim-page/stroke-adapter.ts:81` (drop `store.locked`), `src/lib/sim-page/policy-store.svelte.ts` (remove `locked`, `policy-store.svelte.ts:27,62,89,101`), `src/lib/sim-page/SimNotices.svelte` (accept `SimNotice4`)
+- Modify: `src/lib/sim-page/SimPage.svelte` (whole file), `src/lib/sim-page/selection.ts` (schema 4: select by policy id), `src/lib/sim-page/policy-store.svelte.ts` (remove `locked`, `policy-store.svelte.ts:27,62,89,101`), `src/lib/sim-page/SimNotices.svelte` (accept `SimNotice4`)
 - Create: `src/lib/timeline/session4.ts`
 - Test: `src/lib/sim-page/SimPage.svelte.spec.ts` (rewrite), `src/lib/timeline/session4.spec.ts`, `src/lib/sim-page/test/SimPageHost.svelte`
 
@@ -964,6 +1014,8 @@ it('session4: notices in order: autosave, funding, timing, upgraded, remix', () 
 - [ ] **Step 4: Run** the same commands and `npm run check` — PASS.
 - [ ] **Step 5: Commit** `feat(sim): one-screen timeline replaces setup and run`.
 
+Note: `npm run check` errors confined to `e2e/**` (helpers and specs still using `startRun`/`runSlider`/`waitRanked` and `__sfhFzp.ranks`) are expected until Task 17; any error outside `e2e/**` is real.
+
 ---
 
 ### Task 15: Routes, `/s/<id>` and `/api/policies`
@@ -973,6 +1025,7 @@ Model: opus.
 **Files:**
 - Create: `src/lib/timeline/server-codec.ts`
 - Modify: `src/lib/server/sharing/codecs.ts:4-8`, `src/routes/s/[id]/+page.server.ts:2,9`, `src/routes/s/[id]/+page.ts`, `src/routes/s/[id]/+page.svelte:11,26-38`, `src/routes/sim/+page.ts`, `src/lib/sim-page/SimRoute.svelte` (whole file), `src/lib/sim-page/load.ts:20-26` (drop the seed from the page data types), `src/lib/server/test/sim-docs.ts`
+- Modify (specs of other importers of `codecs.ts`/`sim-docs.ts`, main Q-B): `src/lib/timeline/sim-doc4.spec.ts` (ONLY the assertion at :422-426, flipped to the schema 4 codec, and that test renamed; nothing else in policy-timeline files), `src/lib/server/sharing/shared-page.spec.ts`, `src/lib/server/sharing/e2e-seed.spec.ts`, `src/routes/api/policies/[id]/server.spec.ts`
 - Test: `src/lib/timeline/server-codec.spec.ts`, `src/routes/api/policies/server.spec.ts`, `src/routes/s/[id]/page.server.spec.ts`, `src/routes/s/[id]/page.spec.ts`, `src/routes/s/[id]/page.view.svelte.spec.ts`, `src/routes/sim/page.spec.ts`, `src/routes/sim/page.svelte.spec.ts`
 
 **Interfaces:**
@@ -990,6 +1043,7 @@ Decided here (R-4: who opens `/s` documents): the server validates and the page 
 
 ```ts
 it('publish accepts schema 4 and rejects 2 and 3 as unknown-schema', async () => { ... });
+it('sim-doc4.spec: CODECS.sim is the schema 4 codec (the :422-426 guard, flipped)', () => { ... });
 it('a stored schema 3 row loads on the server as text and opens upgraded on the page', async () => { ... });
 it('a stored schema 4 row from an earlier dataset loads unaligned and opens reconciled', async () => { ... });
 it('/s shows the shared timeline read-only', async () => { ... });
@@ -997,10 +1051,12 @@ it('Remix stores the opened document under sfhousing:sim:v2', async () => { ... 
 it('?seed= is removed from the URL and changes nothing', async () => { ... });
 ```
 
-- [ ] **Step 2: Run** `npx vitest run --project server src/lib/timeline/server-codec.spec.ts src/routes/api/policies/server.spec.ts src/routes/s/[id]/page.server.spec.ts src/routes/s/[id]/page.spec.ts src/routes/sim/page.spec.ts` and `npx vitest run --project client src/routes/s/[id]/page.view.svelte.spec.ts src/routes/sim/page.svelte.spec.ts` — FAIL.
+- [ ] **Step 2: Run** `npx vitest run --project server src/lib/timeline/server-codec.spec.ts src/lib/timeline/sim-doc4.spec.ts src/lib/server/sharing/shared-page.spec.ts src/lib/server/sharing/e2e-seed.spec.ts src/routes/api/policies/server.spec.ts 'src/routes/api/policies/[id]/server.spec.ts' 'src/routes/s/[id]/page.server.spec.ts' 'src/routes/s/[id]/page.spec.ts' src/routes/sim/page.spec.ts` and `npx vitest run --project client 'src/routes/s/[id]/page.view.svelte.spec.ts' src/routes/sim/page.svelte.spec.ts` (quote every `[id]` path: zsh) — FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** the same commands and `npm run check` — PASS.
 - [ ] **Step 5: Commit** `feat(sim): schema 4 for /sim, /s and /api/policies`.
+
+Note: `npm run check` errors confined to `e2e/**` (helpers and specs still using `startRun`/`runSlider`/`waitRanked` and `__sfhFzp.ranks`) are expected until Task 17; any error outside `e2e/**` is real.
 
 ---
 
@@ -1037,6 +1093,8 @@ it('shows no text of 12 words or more at rest outside a notice, a dialog or an o
 - [ ] **Step 4: Run** it and the modified components' specs (`npx vitest run --project client src/lib/sim-page/PermittingSection.svelte.spec.ts src/lib/sim-page/FundingTab.svelte.spec.ts src/lib/fzp/ScoreChart.svelte.spec.ts src/lib/fzp/SimResults.svelte.spec.ts src/lib/fzp/SourcesDialog.svelte.spec.ts`) — PASS.
 - [ ] **Step 5: Commit** `feat(sim): explanations wait for interest`.
 
+Note: `npm run check` errors confined to `e2e/**` (helpers and specs still using `startRun`/`runSlider`/`waitRanked` and `__sfhFzp.ranks`) are expected until Task 17; any error outside `e2e/**` is real.
+
 ---
 
 ### Task 17: Deletions and the e2e hook
@@ -1044,8 +1102,10 @@ it('shows no text of 12 words or more at rest outside a notice, a dialog or an o
 Model: sonnet.
 
 **Files:**
-- Delete (rule 41): `src/lib/fzp/{FzpMode.svelte,FzpMode.svelte.spec.ts,RunSlider.svelte,RunSlider.svelte.spec.ts,RunSliderHost.test.svelte,run-slider.ts,run-slider.spec.ts,run-switch.ts,run-switch.spec.ts,seed.ts,seed.spec.ts}`, `src/lib/fzp/test/{FzpModeHost.svelte,fake-worker.ts}`, `src/lib/sim-page/{run-phase.svelte.ts,run-phase.svelte.spec.ts,lever-status.ts,lever-status.spec.ts,tabs.ts}`, `LeverSync` from `policy-store.svelte.ts` (and its spec cases), `e2e/bench/run-slider.bench.ts`. Before deleting each, `rg` for importers: delete only when nothing but the deleted set imports it; keep untouched any file `/lesscars` imports (`TimeScrubber.svelte`, `high-water.svelte.ts` stay).
+- Delete (rule 41; Task 18's port is folded in here): `src/lib/fzp/{FzpMode.svelte,FzpMode.svelte.spec.ts,RunSlider.svelte,RunSlider.svelte.spec.ts,RunSliderHost.test.svelte,run-slider.ts,run-slider.spec.ts,run-switch.ts,run-switch.spec.ts,seed.ts,seed.spec.ts}`, `src/lib/fzp/test/{FzpModeHost.svelte,fake-worker.ts}`, `src/lib/sim-page/{run-phase.svelte.ts,run-phase.svelte.spec.ts,lever-status.ts,lever-status.spec.ts,tabs.ts,tabs.spec.ts}`, `LeverSync` from `policy-store.svelte.ts` (and its spec cases), `e2e/bench/run-slider.bench.ts`. Before deleting each, `rg` for importers: delete only when nothing but the deleted set imports it; keep untouched any file `/lesscars` imports (`TimeScrubber.svelte`, `high-water.svelte.ts` stay).
+- Modify: `src/lib/shell/accent.spec.ts` (`THEMED_FILES`: remove `src/lib/fzp/FzpMode.svelte`, :32; append the new themed timeline components)
 - Modify: `e2e/helpers/run.ts` (whole file: no ranks, no Run; helpers below)
+- Modify (port, was Task 18): `e2e/sim.spec.ts`, `e2e/fzp.spec.ts`, `e2e/fzp-sim.spec.ts`, `e2e/sim-share.spec.ts`, `e2e/sim-funding.spec.ts`, `e2e/chrome-dark.spec.ts`, `e2e/pages-a11y.spec.ts` (and any other spec that `rg -l "/sim|/s/|__sfhFzp" e2e` lists)
 - Test: `npm run check`, `npm run lint`, `npm run test:unit`
 
 **Interfaces:**
@@ -1058,25 +1118,17 @@ Model: sonnet.
   export async function addPolicy(page: Page, kind: string, choice: string): Promise<void>;
   ```
 
-- [ ] **Step 1: Delete and grep.** `rg -n "FzpMode|RunSlider|run-slider|run-switch|fzp/seed|run-phase|lever-status|LeverSync|sim-page/tabs" src e2e scripts` must print nothing but docs.
+- [ ] **Step 1: Delete and grep.** Grep import specifiers only: `rg -n "from '[^']*(FzpMode|RunSlider|run-slider|run-switch|fzp/seed|run-phase|lever-status|sim-page/tabs)'" src e2e scripts` must print nothing, and `rg -nw "LeverSync" src e2e scripts` shows no use outside comments (comments in /lesscars-closure files are not uses; a missed stray import is caught by `npm run check`).
 - [ ] **Step 2: Rewrite `e2e/helpers/run.ts`** (no raised timeouts: wait on the hook with `page.waitForFunction`).
-- [ ] **Step 3: Run** `npm run check`, `npm run lint`, `npm run test:unit` — PASS.
-- [ ] **Step 4: Commit** `chore(sim): remove the run phases, run slider and seed`.
+- [ ] **Step 3 (port, was Task 18):** a test of a removed feature (Run, Setup, the run slider, `?seed=`, a locked store, the high-water mark, autoplay) is deleted, not ported; every other test is ported to the timeline with the helpers above. Schema 2 fixtures (`src/lib/sim-page/fixtures/schema2/`, never reformatted) now open as schema 4 with the "upgraded" notice. No `waitForTimeout`, no raised timeouts or retries.
+- [ ] **Step 4: Run** `npm run check` (e2e included, now fully clean), `npm run lint`, `npm run test:unit`, then `npx playwright test e2e/sim.spec.ts e2e/fzp.spec.ts e2e/fzp-sim.spec.ts e2e/sim-share.spec.ts e2e/sim-funding.spec.ts e2e/chrome-dark.spec.ts e2e/pages-a11y.spec.ts --project=chromium --project=mobile` — PASS.
+- [ ] **Step 5: Commit** `chore(sim): remove the run phases, run slider and seed` and `test(e2e): sim specs on the timeline`.
 
 ---
 
-### Task 18: Existing e2e on the new screen
+### Task 18: folded into Task 17
 
-Model: sonnet.
-
-**Files:**
-- Modify: `e2e/sim.spec.ts`, `e2e/fzp.spec.ts`, `e2e/fzp-sim.spec.ts`, `e2e/sim-share.spec.ts`, `e2e/sim-funding.spec.ts`, `e2e/chrome-dark.spec.ts`, `e2e/pages-a11y.spec.ts` (and any other spec that `rg -l "/sim|/s/|__sfhFzp" e2e` lists)
-
-Rules: a test of a removed feature (Run, Setup, the run slider, `?seed=`, a locked store, the high-water mark, autoplay) is deleted, not ported; every other test is ported to the timeline (helpers from Task 17). Schema 2 fixtures (`src/lib/sim-page/fixtures/schema2/`, never reformatted) now open as schema 4 with the "upgraded" notice. No `waitForTimeout`, no raised timeouts or retries.
-
-- [ ] **Step 1: Port.**
-- [ ] **Step 2: Run** `npx playwright test e2e/sim.spec.ts e2e/fzp.spec.ts e2e/fzp-sim.spec.ts e2e/sim-share.spec.ts e2e/sim-funding.spec.ts e2e/chrome-dark.spec.ts e2e/pages-a11y.spec.ts --project=chromium --project=mobile` — PASS.
-- [ ] **Step 3: Commit** `test(e2e): sim specs on the timeline`.
+Numbering is kept. The e2e port lives in Task 17 (`npm run check` includes `e2e/**`, whose helpers depend on the deleted hooks).
 
 ---
 
@@ -1109,18 +1161,18 @@ test('every bar is reachable and operable by keyboard; focus returns to the bar 
 
 ---
 
-### Task 20: Rulings-dependent follow-ups
+### Task 20: Notice for moved spans
 
-Model: sonnet. **Blocked by OQ-2 and OQ-4**; do only what main rules.
+Model: sonnet. OQ-2 is superseded by Task 10's read-only rule; only OQ-4 remains here.
 
 **Files:**
-- Modify: `src/lib/timeline/lens.ts` (OQ-2), `src/lib/timeline/session4.ts` (OQ-4)
-- Test: `src/lib/timeline/lens.spec.ts`, `src/lib/timeline/session4.spec.ts`
+- Modify: `src/lib/timeline/session4.ts` (OQ-4)
+- Test: `src/lib/timeline/session4.spec.ts`
 
-- [ ] **Step 1 (OQ-2, if ruled as recommended): write the failing test** `it('a debt-terms edit on one span of a fund policy applies to every span')` — after `lens.apply` changing `pool.debt.rate`, every span's `pool.debt` is equal.
-- [ ] **Step 2 (OQ-4, if ruled as recommended): write the failing test** `it('a dropped or trimmed span gives one info notice with details')`.
-- [ ] **Step 3: Run** `npx vitest run --project server src/lib/timeline/lens.spec.ts src/lib/timeline/session4.spec.ts` — FAIL; implement; run — PASS.
-- [ ] **Step 4: Commit** `feat(timeline): <what was ruled>`.
+- [ ] **Step 1: superseded by the read-only rule in Task 10** (OQ-2, ruling replaced by main: no every-span write).
+- [ ] **Step 2 (OQ-4, ruled by main): write the failing test** `it('moved, trimmed or dropped spans give one info notice, with the per-change lines behind a tap')`: `restoreSim4` / `openShared` return exactly one info notice "Some policy dates moved to fit this data." through the existing notice mechanism (`SimNotice4`, `SimNotices`; no new component); the per-change lines (one per `Policy4Report.spans` entry) sit behind a tap and are not in the DOM at rest.
+- [ ] **Step 3: Run** `npx vitest run --project server src/lib/timeline/session4.spec.ts` — FAIL; implement; run — PASS.
+- [ ] **Step 4: Commit** `feat(timeline): one notice for policy dates moved to fit the data`.
 
 ---
 
@@ -1129,7 +1181,7 @@ Model: sonnet. **Blocked by OQ-2 and OQ-4**; do only what main rules.
 Model: sonnet.
 
 **Files:**
-- Create: `docs/dev/timeline-ui.md` (the timeline, the document on the page, the worker messages as the page uses them, the session's rules, the decisions marked "Decided here" and "builder's call" in this plan, known limits from ruling 8)
+- Create: `docs/dev/timeline-ui.md` (the timeline, the document on the page, the worker messages as the page uses them, the session's rules, the decisions marked "Decided here" and "builder's call" in this plan, known limits from ruling 8; and the line: the limit: a hand-edited /s link can still carry two sets of terms on one pool id; the statements are then priced on month W's terms. Also list the edits in place on an offer: amount, kind, label; debt terms are read-only)
 - Modify: `CLAUDE.md` (scoped-doc line for `timeline-ui.md`; update the `fzp-mode.md` and `sim-page.md` lines), `docs/dev/sim-page.md`, `docs/dev/fzp-mode.md`, `docs/dev/sim-timers.md` (Save and Revert on `/sim`, the timeline UI), `docs/dev/sim-funding.md` (Funding tab hosted per policy, drafts discard rule, "a run" wording), `docs/dev/map-perf.md` (run-slider bench removed; the new bench of Task 22)
 
 - [ ] **Step 1: Write and update.** Terse; each section says what a reader cannot infer from the code.
@@ -1151,19 +1203,21 @@ What each measures (R-5; numbers reported, no new bar):
 
 - [ ] **Step 1: Write both files.**
 - [ ] **Step 2 (operator, lock held):** `npm run test:perf -- src/lib/timeline/apply-cost.perf.svelte.spec.ts` (or `npx vitest run --project client-perf src/lib/timeline/apply-cost.perf.svelte.spec.ts`), then `npm run data:local -- 2026-11-10-6ee5a23d` and `SFH_BENCH_DATASET=2026-11-10-6ee5a23d npm run bench:map -- e2e/bench/sim-timeline.bench.ts`, and `npm run bench:map -- e2e/bench/sim-timeline.bench.ts` on fixture-0.
-- [ ] **Step 3:** Record the numbers in `docs/dev/timeline-ui.md` (machine, date, load, lock held) and `docs/dev/map-perf.md`; report any ENOENT on `parcels/42_21.json`.
+- [ ] **Step 3:** Record the numbers in `docs/dev/timeline-ui.md` (machine, date, load, lock held) and `docs/dev/map-perf.md`; report any ENOENT on `parcels/42_21.json`. Also record the cost of the provisional open's extra refill on the live city (time to first results and to a whole window, restoring a document with painted or transit policies); if first results exceed 3 s, the operator messages main (OQ-3).
 - [ ] **Step 4: Commit** `perf(timeline): apply cost and bench:map with the timeline docked`.
 
 ---
 
 ## Open questions for main
 
-- **OQ-1 (R-7, retiring the old host on `/sim`).** After Task 14 nothing on `/sim` sends `initScenario`, `reroll`, `setLevers`; `FzpMode` and `ScenarioClient`'s only page user go. The router (`src/lib/sim/router.ts`) and `worker.ts` still route scenario messages to `scenario-host.ts` (hashed). Removing that route is an ensemble-runner file change. **Recommendation:** leave the router and worker as they are in this branch; schedule removal of the scenario route with the `/lesscars` cut-over (OD-7), when `scenario-host.ts` can go too. `scenario-client.ts` stays (its types are imported by `timeline-client.ts:21` and `lookup-requests.ts`). Blocks nothing.
-- **OQ-2 (ruling 9, verified).** A schema 4 document **can** give one pool id different debt terms in two spans: `parse4.ts:341` checks only that every span names the same pool id, and `FundingPoolRow` edits `pool.debt` (`FundingPoolRow.svelte:199-201,407`) of the span the inspector hosts; Split (rule 10) copies the span. world-score then prices all the pool's borrowing on month W's terms (`world-score.md:73`). **Recommendation:** a debt-terms edit on a fund policy applies to every span of that policy (one `writeBack` rule in `lens.ts`), so the document can never express what the engine cannot price. Blocks Task 20 step 1.
-- **OQ-3 (opening a document whose brush queries are unresolved).** The worker resolves brushes only after its dataset loads (`host.ts:258-261`), so `openTimeline` can never carry the lots of a restored document with painted or transit policies; an open with missing lots fails late (`combine.ts:106-107`), as `'timeline'` (`runner.ts:1021-1024`). **Plan (Task 12):** open with the document minus its query-needing zoning policies, then `setPolicy` the full document once its lots resolve; the provisional open costs a partial fill and one refill. **Recommendation:** accept this for now; ensemble-runner may later add an "await lots" open. Blocks nothing.
-- **OQ-4 (spans moved on open).** `Policy4Report.spans` (moved, trimmed, dropped) has no notice in the spec (rule 40 names "today's notices and the 'upgraded' notice"). A dropped span silently changes what a shared policy does. **Recommendation:** one info notice "Some policy dates moved to fit this data." with one detail line per change. Blocks Task 20 step 2.
-- **OQ-5 (rule 11 "its nearer edge").** The spec does not say nearer to what. **Plan (Task 4):** the edge nearer the playhead's month (ties and open ends: the start), so either edge is reachable by keys alone after moving the playhead; the month fields in the editor reach both directly. **Recommendation:** confirm. Blocks nothing (one function, `nearerEdge`).
-- **OQ-6 (`/lesscars` import closure).** `/lesscars` reaches `src/lib/sim-page/funding-copy.ts`, `sim-session.ts`, `sim-doc.ts`, `policy.ts` and `src/lib/fzp/provenance.ts` through `src/lib/fzp/provenance.ts → funding-copy.ts → sim-session.ts → sim-doc.ts`. Rule 38 rewords texts held there. **Plan:** none of them is edited; new wording lives in `src/lib/timeline/copy.ts` and the `/sim` components import it (Tasks 7, 16). **Recommendation:** keep it so; if main prefers in-place string edits in those files (no `/lesscars` behaviour depends on them), Task 16 shrinks. Blocks nothing.
+- **OQ-1 (R-7, retiring the old host on `/sim`).** After Task 14 nothing on `/sim` sends `initScenario`, `reroll`, `setLevers`; `FzpMode` and `ScenarioClient`'s only page user go. The router (`src/lib/sim/router.ts`) and `worker.ts` still route scenario messages to `scenario-host.ts` (hashed). Removing that route is an ensemble-runner file change. **Ruled (main, 2026-11-14): accepted.** Leave the router and worker as they are in this branch; schedule removal of the scenario route with the `/lesscars` cut-over (OD-7), when `scenario-host.ts` can go too. `scenario-client.ts` stays (its types are imported by `timeline-client.ts:21` and `lookup-requests.ts`). Blocks nothing.
+- **OQ-2 (ruling 9, verified).** A schema 4 document **can** give one pool id different debt terms in two spans: `parse4.ts:341` checks only that every span names the same pool id, and `FundingPoolRow` edits `pool.debt` (`FundingPoolRow.svelte:199-201,407`) of the span the inspector hosts; Split (rule 10) copies the span. world-score then prices all the pool's borrowing on month W's terms (`world-score.md:73`). **Ruled (main, 2026-11-14): replaced.** Offers of money are immutable except by truncation or removal: on an existing fund policy the debt terms (rate, term) are read-only in the editor (Task 10; hint `TERMS_HINT` behind a tap); to change them the user ends the policy and adds a new one with existing controls. Amount, kind and label stay editable in place. A hand-edited /s link can still carry two sets of terms on one pool id; statements are then priced on month W's terms (dev doc, Task 21).
+- **OQ-3 (opening a document whose brush queries are unresolved).** The worker resolves brushes only after its dataset loads (`host.ts:258-261`), so `openTimeline` can never carry the lots of a restored document with painted or transit policies; an open with missing lots fails late (`combine.ts:106-107`), as `'timeline'` (`runner.ts:1021-1024`). **Plan (Task 12):** open with the document minus its query-needing zoning policies, then `setPolicy` the full document once its lots resolve; the provisional open costs a partial fill and one refill. **Ruled (main, 2026-11-14): accepted, with a condition.** Between the stripped open and the full document's `compiled`, the headline stays "calculating" and results stay stale until that `compiled` has been delivered and the window fills (Task 12 tests); if the dataset is loaded and lots resolve before the first open, one open with the full document, no strip; Task 22 records the extra refill's cost, and if first results exceed 3 s the operator messages main.
+- **OQ-4 (spans moved on open).** `Policy4Report.spans` (moved, trimmed, dropped) has no notice in the spec (rule 40 names "today's notices and the 'upgraded' notice"). A dropped span silently changes what a shared policy does. **Ruled (main, 2026-11-14): accepted.** One info notice "Some policy dates moved to fit this data." through the existing notice mechanism (no new component); per-change lines behind a tap, not at rest (Task 20 step 2).
+- **OQ-5 (rule 11 "its nearer edge").** The spec does not say nearer to what. **Plan (Task 4):** the edge nearer the playhead's month (ties and open ends: the start), so either edge is reachable by keys alone after moving the playhead; the month fields in the editor reach both directly. **Ruled (main, 2026-11-14): accepted.**
+- **OQ-6 (`/lesscars` import closure).** `/lesscars` reaches `src/lib/sim-page/funding-copy.ts`, `sim-session.ts`, `sim-doc.ts`, `policy.ts` and `src/lib/fzp/provenance.ts` through `src/lib/fzp/provenance.ts → funding-copy.ts → sim-session.ts → sim-doc.ts`. Rule 38 rewords texts held there. **Plan:** none of them is edited; new wording lives in `src/lib/timeline/copy.ts` and the `/sim` components import it (Tasks 7, 16). **Ruled (main, 2026-11-14): accepted.** Keep it so; if main prefers in-place string edits in those files (no `/lesscars` behaviour depends on them), Task 16 shrinks. Blocks nothing.
+- **OQ-7 (F1, stale settle signal).** **Ruled (main Q-A):** S14 is amended by ensemble-runner: every accepted `setPolicy` gets exactly one `refill { rev, from }` at that rev (a kept edit: `from` = first index not yet posted, the window length when whole); a rejected one gets `bad-request` and no refill; `compiled(R)` precedes `refill(R)`; no `filled(R)` before `refill(R)`. Page rule (Tasks 2, 12): stale from edit R until a `refill` with rev >= R has arrived and `filledThrough` >= the playhead's index. Rejected: rule 34. Task 2 builds against the fake worker; the real-host e2e waits on the ensemble-runner sha main will supply.
+- **OQ-8 (F2, sim-doc4.spec guard).** **Ruled (main Q-B):** Task 15 may flip `src/lib/timeline/sim-doc4.spec.ts:422-426` to the schema 4 codec and rename that test; nothing else in policy-timeline files.
 
 ## Spec and code contradictions found
 
