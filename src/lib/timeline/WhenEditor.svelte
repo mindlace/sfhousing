@@ -1,5 +1,6 @@
 <!--
-  When (rules 10, 11): a policy's spans, each "from {month year} to {month year | no end}". The
+  When (rules 10, 11): a policy's spans, each "{start date} to {end date | no end}" (`spanEdgeText`,
+  the end inclusive). The
   selected span gets month and year selects for its start and end ("No end" is the end year's
   first option); a choice snaps to the model month whose first (or last) day falls in, or next
   after, the chosen calendar month, clamped by the neighbours and the window. Add span (from the
@@ -8,11 +9,11 @@
 -->
 <script lang="ts">
   import { tick } from 'svelte';
-  import { formatMonthYear } from '$lib/fzp/format';
   import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
   import { monthFirstDay, monthLastDay } from '$lib/sim/world/months';
   import type { Day } from '$lib/timelapse/time';
   import type { PolicyKind, SimPolicy4, Span } from './policy4';
+  import { spanEdgeText } from './rows';
   import {
     addSpan,
     policyOf,
@@ -76,14 +77,18 @@
     return Array.from({ length: b - a + 1 }, (_, i) => a + i);
   });
 
+  const edgeText = (s: Span) => {
+    const t = spanEdgeText(s, asOf);
+    return { fromText: t.from, toText: t.to };
+  };
+
   /** The months shown: the span's own, snapped as spanMonths reads them. */
   const shown = (s: Span) => {
     const m = spanMonths(s, asOf);
     return {
       from: ym(monthFirstDay(asOf, m.from)),
       to: m.to === null ? null : ym(monthLastDay(asOf, m.to)),
-      fromText: formatMonthYear(monthFirstDay(asOf, m.from)),
-      toText: m.to === null ? 'no end' : formatMonthYear(monthLastDay(asOf, m.to))
+      ...edgeText(s)
     };
   };
   const view = $derived(cur ? shown(cur) : null);

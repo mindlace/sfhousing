@@ -23,7 +23,7 @@ Developer notes for `src/lib/timeline/` and `src/lib/sim-page/SimPage.svelte`. S
 - **A closed kind** shows one thin bar per policy; open (in place from md, a sheet below md) it shows a row per policy with a bar per span. The fixed rows ("Family Zoning Plan, as adopted", "Permitting times, as observed", "City funding today", "Market conditions") are selectable and read-only. Their refs have `span: -1` (`FIXED_SPAN`, `rows.ts`), an index no policy has, so a document policy named `fixed` cannot alias one.
 - **The playhead** is a slider named "Date in the simulation". Left/Down and Right/Up move a month, Page Down/Up a year, Home goes to the dataset date, End to the filled mark; Alt, Ctrl and Meta keys are ignored. A key, a drag or a marker jump pauses playback. Nothing plays on open; playback stops at the filled mark and resumes when it moves on.
 - **A bar** moves by drag or, focused, by arrows: the edge nearer the playhead's month (ties and an open end: the start) by a month, with Shift by a year, with Alt the whole span (`spans.ts`). The month fields in the inspector reach both edges.
-- **A new policy** starts on the model month the playhead is in, with no end. The model's months start on the first of a calendar month, so with the playhead on 1 Jan 2031 a new policy's bar may read "December 2030" (the model month 1 Jan 2031 falls in is the one starting 1 Dec 2030).
+- **A new policy** starts on the model month the playhead is in, with no end. Model months start near the dataset date's day of the month, not on the 1st, so a span's edges read as dates (`formatEdge`, "10 Dec 2030"), written in one place (`spanEdgeText` in `rows.ts`, used by the When list and the bars' names). A start is its first model month's first day; an end is inclusive, its last model month's last day.
 - **The header score** is `TimelineHeaderScore` (`src/lib/scoreboard/HeaderScore.svelte` is hashed and untouched). Its number is `baseline.completedNet + mean.completedNet` at `lastIndex`, "calculating" until the window is filled; the RHNA meter reads the average at the target's deadline month once filled that far.
 - **Rule 32, as amended (a55d50ea).** The fill state ("Forecast filled to 2047", or "Updating" while stale) shows in the header's status slot from 2xl. Below 2xl the slot is too narrow, so it is a line under the header bar (`data-testid="tl-status-line"`, min height always kept, so nothing moves). One `role="status"` live region (`tl-status-live`) speaks at every width, at most one change a second (`statusMs`, a test seam). Status is never placed among the buttons.
 - **Explanations** (`Explain.svelte`) wait for hover, focus or tap; texts are in `copy.ts`. The `*4` sentences there duplicate `funding-copy.ts` texts that say "a run": `/lesscars` imports the original, so it is not edited.
@@ -46,6 +46,7 @@ Developer notes for `src/lib/timeline/` and `src/lib/sim-page/SimPage.svelte`. S
 - **The carry-6 restart.** If the full document stands rejected after a provisional open, the stripped document stays what the forecast shows. A crash restart or the rule 35 Retry then re-opens and immediately sends a `setPolicy` of the stripped pair, keeps `provisional`, and posts the full document again only after the user's next edit. Never undo to the stripped document: that would drop the user's brushes.
 - **A restart** re-opens with the last pair posted to the client.
 - **The card** asks again after an edit once a `filled` covers its day, and whenever the playhead's month changes.
+- **A failed brush query.** When PolicySync settles an edit with a failed query (`failed`, lots null), the session drops the unsent edit (`dropUnsent`): no stale, and the forecast stays the last sent document's. A "Couldn't find lots" notice with Retry asks the failed queries again.
 
 ## Commit path and load notices
 
@@ -67,6 +68,7 @@ Developer notes for `src/lib/timeline/` and `src/lib/sim-page/SimPage.svelte`. S
 - **The restart rev.** `TimelineClient.restart` returns no rev, so the session assumes the client's next rev.
 - **Debt terms.** A hand-edited /s link can still carry two sets of terms on one pool id (`parse4` checks only that every span names the same pool); world-score then prices the statements on month W's terms.
 - **The painted restore.** A restore with painted or transit policies reaches the full document's first results at 3.66 s on the live city, against 1.83 s for an empty document. The worker resolves brushes only after its dataset loads, so the page opens the stripped document and then sends the full one, which costs a recompile. Accepted by main.
+- **Calendar playhead, model-month spans.** The playhead counts calendar months while spans snap to model months, so a policy added at "January 2031" starts on 10 Dec 2030 (live data).
 - **The engine's limits** (ruling 8), listed with their numbers in [ensemble-runner.md](ensemble-runner.md): worker memory about +394 MB with no copies and +526 MB with the month-0 copy (live city); the longest worker compile step about 52.6 ms; one cold massing of about 636 ms; planning with rich public money over the per-slice bar. The page shows no state for them.
 
 ## For the composer
@@ -75,6 +77,7 @@ The places the page works around the worker (`src/lib/timeline/session.svelte.ts
 
 - The early-edit classification: `early: !this.#sawCompile` at `:447`, handled at `:546-552` (`#earlyRejected`, `#stop()`), undone by `#fillWentOn` when an older-rev post arrives. A marker on the worker's `bad-request` for an edit sent before the load would remove it.
 - The restart rev: `this.#rev += 1` at `:467-469`. A rev returned by `TimelineClient.restart` would remove it.
+- Calendar playhead, model-month spans: the playhead counts calendar months while spans snap to model months, so a policy added at "January 2031" starts on 10 Dec 2030 (live data).
 - The "await lots" open: `provisionalOf` and the stripped open (`session.svelte.ts`, `open` and `#openWith`), then the full document as the next `setPolicy`. A worker that could take brush queries before its dataset loads, or an `openTimeline` that awaits lots, would remove the recompile (the painted restore above).
 
 ## Measurements

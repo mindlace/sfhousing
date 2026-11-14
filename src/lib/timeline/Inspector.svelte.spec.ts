@@ -19,7 +19,7 @@ import { addPolicy } from './add';
 import { TERMS_HINT } from './copy';
 import { PRESET_PER_POLICY } from './lens';
 import type { Policy, SimPolicy4 } from './policy4';
-import { FIXED_LABEL } from './rows';
+import { FIXED_LABEL, formatEdge } from './rows';
 import { movePolicy, removePolicy, setOn, type SpanRef, type TimelineWindow } from './spans';
 import { upgradePolicy } from './upgrade';
 import InspectorHost from './test/InspectorHost.svelte';
@@ -130,6 +130,23 @@ describe('Inspector', () => {
     await expect
       .element(page.getByRole('heading', { level: 2, name: added.label }))
       .toBeInTheDocument();
+    // The start date of the model month the playhead maps to (I2 ruling).
+    await expect
+      .element(page.getByRole('button', { name: `${formatEdge(first(13))} to no end` }))
+      .toBeInTheDocument();
+  });
+
+  it("at 320 px a span's dates fit their line, untruncated", async () => {
+    await page.viewport(320, 700);
+    setup({ initial: { kind: 'zoning', id: 'z2', span: 0 } });
+    const text = `${formatEdge(first(1))} to ${formatEdge(last(24))}`;
+    const span = page.getByRole('button', { name: text });
+    await expect.element(span).toBeVisible();
+    const el = span.element() as HTMLElement;
+    expect(el.textContent).toBe(text);
+    expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth);
+    expect(el.getBoundingClientRect().right).toBeLessThanOrEqual(320);
+    expect(getComputedStyle(el).textOverflow).not.toBe('ellipsis');
   });
 
   it('switches a policy off, removes it and reorders it; undo and redo across those', async () => {

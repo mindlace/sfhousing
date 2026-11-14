@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
-import { formatMonthYear } from '$lib/fzp/format';
+import { formatEdge } from './rows';
 import { baselineFixture } from '$lib/sim/levers/fixtures/finance';
 import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
 import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
@@ -218,7 +218,7 @@ describe('Timeline rows', () => {
   it("a bar's keys produce the expected document", async () => {
     const { onedit } = await setup({ playheadMonth: 1 });
     await kindButton('Permitting').click();
-    const name = `Faster permit review, ${formatMonthYear(first(24))} to ${formatMonthYear(last(71))}`;
+    const name = `Faster permit review, ${formatEdge(first(24))} to ${formatEdge(last(71))}`;
     (page.getByRole('button', { name }).element() as HTMLElement).focus();
     await userEvent.keyboard('{Shift>}{ArrowRight}{/Shift}');
     expect(onedit).toHaveBeenCalledTimes(1);

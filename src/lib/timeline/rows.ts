@@ -2,7 +2,6 @@
  * Pure helpers for the timeline's rows (timeline-ui spec, rules 5 to 8): the fixed rows' refs, the
  * short setting a bar carries, the label a bar announces, and the hatch's position. No Svelte, no DOM.
  */
-import { formatMonthYear } from '$lib/fzp/format';
 import type { Calibration } from '$lib/timelapse/types';
 import type { Day } from '$lib/timelapse/time';
 import { monthFirstDay, monthLastDay } from '$lib/sim/world/months';
@@ -128,10 +127,39 @@ export function barBox(s: Span, asOf: Day, windowEnd: Day): { left: number; widt
   return { left, width: Math.max(right - left, 0.4) };
 }
 
-/** "{label}, {from month} to {to month | no end}". */
-export function barLabel(label: string, s: Span, asOf: Day): string {
+const edgeFormat = new Intl.DateTimeFormat('en-US', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC'
+});
+
+/**
+ * A span edge's date, "10 Dec 2030": day, short month, year (the page's en-US names, read in UTC).
+ * Spans snap to model months, which start on the dataset date's day, not on the 1st, so an edge
+ * reads as a date, never as a calendar month (main's I2 ruling).
+ */
+export function formatEdge(day: Day): string {
+  const p = Object.fromEntries(
+    edgeFormat.formatToParts(new Date(day * 86_400_000)).map((x) => [x.type, x.value])
+  );
+  return `${p.day} ${p.month} ${p.year}`;
+}
+
+/**
+ * A span's edges as text, the one place they are written: the start date of its first model month,
+ * and the last day of its last one (the end is inclusive), or "no end".
+ */
+export function spanEdgeText(s: Span, asOf: Day): { from: string; to: string } {
   const m = spanMonths(s, asOf);
-  const from = formatMonthYear(monthFirstDay(asOf, m.from));
-  const to = m.to === null ? 'no end' : formatMonthYear(monthLastDay(asOf, m.to));
+  return {
+    from: formatEdge(monthFirstDay(asOf, m.from)),
+    to: m.to === null ? 'no end' : formatEdge(monthLastDay(asOf, m.to))
+  };
+}
+
+/** "{label}, {from date} to {to date | no end}". */
+export function barLabel(label: string, s: Span, asOf: Day): string {
+  const { from, to } = spanEdgeText(s, asOf);
   return `${label}, ${from} to ${to}`;
 }

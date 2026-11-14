@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { dayFromUtc } from '$lib/fzp/time';
 import { monthFirstDay, monthLastDay } from '$lib/sim/world/months';
 import {
   barBox,
@@ -6,9 +7,11 @@ import {
   compactDollars,
   dayPct,
   fixedRef,
+  formatEdge,
   isFixedRef,
   marketRef,
-  settingOf
+  settingOf,
+  spanEdgeText
 } from './rows';
 
 const asOf = 20000;
@@ -48,7 +51,33 @@ describe('rows helpers', () => {
       to: null,
       what: { tag: 'protect' as const, years: null }
     };
-    expect(barLabel('Keep it', s, asOf)).toMatch(/^Keep it, \w+ \d{4} to no end$/);
+    expect(barLabel('Keep it', s, asOf)).toBe(
+      `Keep it, ${formatEdge(monthFirstDay(asOf, 3))} to no end`
+    );
+  });
+
+  it('formats an edge as day, short month, year', () => {
+    expect(formatEdge(dayFromUtc(2030, 12, 10))).toBe('10 Dec 2030');
+    expect(formatEdge(dayFromUtc(2031, 1, 1))).toBe('1 Jan 2031');
+  });
+
+  // Main's I2 ruling: an edge reads its model month's start date (an end, inclusive, its last day).
+  it.each([
+    [1, 2, '1 Feb 2026', '2 Mar 2026'],
+    [10, 13, '11 Jan 2027', '9 Feb 2027'],
+    [31, 2, '3 Mar 2026', '1 Apr 2026']
+  ])('dataset day %i: model month %i starts %s', (d, m, start, end) => {
+    const a = dayFromUtc(2026, 1, d);
+    expect(monthFirstDay(a, m)).toBe(dayFromUtc(2026, 1, d) + Math.floor((m - 1) * 30.436875) + 1);
+    const s = {
+      from: monthFirstDay(a, m),
+      to: monthLastDay(a, m),
+      what: { tag: 'protect' as const, years: null }
+    };
+    expect(spanEdgeText(s, a)).toEqual({ from: start, to: end });
+    expect(spanEdgeText(s, a).from).toBe(formatEdge(monthFirstDay(a, m)));
+    expect(spanEdgeText({ ...s, to: null }, a).to).toBe('no end');
+    expect(barLabel('P', s, a)).toBe(`P, ${start} to ${end}`);
   });
 
   it('tells a fixed ref from a policy span by its span index', () => {
