@@ -3,22 +3,32 @@
 // sums equal `shownSeries` month for month. The series keeps every per-row fact that changes in its
 // own state, because `createWorld` sends events before the world exists.
 import { TIER_FIELDS, tiersOf } from '$lib/sim/scenario/finance-score';
-import { monthIndexer } from '$lib/sim/scenario/score';
 import type { Day } from '$lib/timelapse/time';
 import { STAGE_ORDER, type Stage, type TierUnits } from '$lib/timelapse/types';
 import { monthOfDay } from '../months';
 import { scheduleAt } from '../read';
 import type { Statics } from '../statics';
-import { NO_DAY, ORIGIN_MASTER, ORIGIN_SIM, type World, type WorldEvent } from '../types';
+import * as core from '../types';
+import type { World, WorldEvent } from '../types';
 import { finalTable, horizonOf, tierTableFor } from './statics';
 import type { MonthRow, ScoreStatics, WorldSeries, WorldSeriesData } from './types';
 
 type Live = Exclude<Stage, 'complete'>;
 
+// Imported constants read once: a bound import can be a getter per read (Vite's SSR modules).
+const NO_DAY = core.NO_DAY;
+const ORIGIN_MASTER = core.ORIGIN_MASTER;
+const ORIGIN_SIM = core.ORIGIN_SIM;
+const TIER_KEYS = TIER_FIELDS;
+
 /** The stages a project can be in progress at, in `STAGE_ORDER` (score.ts `LIVE`). */
 const LIVE = STAGE_ORDER.filter((s): s is Live => s !== 'complete');
 const NL = LIVE.length;
 const ENTITLED = LIVE.indexOf('entitled');
+/** `LIVE.indexOf(stage)`, -1 for `'complete'`, by key. */
+const LIVE_INDEX = Object.fromEntries(
+  STAGE_ORDER.map((s) => [s, LIVE.indexOf(s as Live)])
+) as Record<Stage, number>;
 const CONSTRUCTION = LIVE.indexOf('construction');
 
 /** Per-month fields of `WorldSeriesData.delta` and `.sum`; the `inProgress` stages follow. */
@@ -43,6 +53,8 @@ const UNKNOWN = -2;
 /** Started, in no LIVE stage. */
 const NONE = -1;
 const FIRST_CAPACITY = 64;
+/** More deltas than one event files (a completion: its span, net, funded and five tiers). */
+const MAX_DELTAS = 16;
 
 function emptyData(s: ScoreStatics): WorldSeriesData {
   const n = s.lastIndex + 1;
@@ -140,37 +152,68 @@ const describeEvent = (e: WorldEvent): string =>
   `'${e.kind}'${e.kind === 'end' ? ` '${e.how}'` : e.kind === 'enter' ? ` '${e.stage}'` : ''}` +
   ` on day ${e.day}`;
 
+interface Tables {
+  /** The horizon. */
+  H: Day;
+  /** The first day of calendar month 0. */
+  m0: Day;
+  /** `monthIndexer(s.months, H)`'s table: `[day - m0]` is the calendar month of `day`. */
+  monthTable: Uint16Array;
+  /** `finalTable(s)`. */
+  table: Int32Array;
+}
+
+/** One set of tables per statics, shared by all its series (one copy stays in cache). */
+const TABLES = new WeakMap<ScoreStatics, Tables>();
+
+function tablesOf(s: ScoreStatics): Tables {
+  let t = TABLES.get(s);
+  if (t === undefined) {
+    const H = horizonOf(s);
+    const m0 = s.months[0];
+    const monthTable = new Uint16Array(H - m0 + 1);
+    for (let i = 0; i < s.months.length; i++) {
+      const to = i + 1 < s.months.length ? s.months[i + 1] : H + 1;
+      monthTable.fill(i, s.months[i] - m0, to - m0);
+    }
+    t = { H, m0, monthTable, table: finalTable(s) };
+    TABLES.set(s, t);
+  }
+  return t;
+}
+
+/** A checked copy of saved data. */
+function restored(s: ScoreStatics, from: WorldSeriesData): WorldSeriesData {
+  if (from.version !== VERSION)
+    throw new Error(`world-score: saved series version ${from.version}`);
+  if (from.delta.length !== SERIES_FIELDS * (s.lastIndex + 1)) {
+    throw new Error('world-score: saved series does not match these statics');
+  }
+  return copyData(from);
+}
+
 /**
  * One world's series. `from` restores a saved state (copied, never shared); without it the series
  * starts empty at model month 0.
  */
 export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): WorldSeries {
-  let d: WorldSeriesData;
-  if (from === undefined) d = emptyData(s);
-  else {
-    if (from.version !== VERSION)
-      throw new Error(`world-score: saved series version ${from.version}`);
-    if (from.delta.length !== SERIES_FIELDS * (s.lastIndex + 1)) {
-      throw new Error('world-score: saved series does not match these statics');
-    }
-    d = copyData(from);
-  }
+  const d = from === undefined ? emptyData(s) : restored(s, from);
   const tierTable = tierTableFor(s);
-  const H: Day = horizonOf(s);
-  const m0 = s.months[0];
-  const idx = monthIndexer(s.months, H);
-  const table = finalTable(s);
+  const { H, m0, monthTable, table } = tablesOf(s);
+  const asOf = s.asOf;
   const last = s.lastIndex;
   /** The event being filed, for the guard's message. */
   let current: WorldEvent | null = null;
   /**
-   * The event's deltas, applied once all of them are checked, so an event that throws files
-   * nothing (its per-row state may still have moved; a series that threw is not used again).
+   * The event's deltas (`n` of them), applied once all of them are checked, so an event that throws
+   * files nothing (its per-row state may still have moved; a series that threw is not used again).
    */
-  const at: number[] = [];
-  const by: number[] = [];
+  const at = new Int32Array(MAX_DELTAS);
+  const by = new Int32Array(MAX_DELTAS);
+  let n = 0;
 
-  const monthOf = (day: Day): number => (day < m0 ? 0 : idx(day));
+  /** The calendar month of `day`, a day no later than the horizon. */
+  const monthOf = (day: Day): number => (day < m0 ? 0 : monthTable[day - m0]);
 
   /** Adds `v` to field `f` of calendar month `i`; a final month throws. */
   function bump(f: number, i: number, v: number): void {
@@ -181,8 +224,9 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
           `month ${i}, final through ${d.final}`
       );
     }
-    at.push(i * SERIES_FIELDS + f);
-    by.push(v);
+    if (n === MAX_DELTAS) throw new Error('world-score: an event files too many deltas');
+    at[n] = i * SERIES_FIELDS + f;
+    by[n++] = v;
   }
 
   /** A dated delta: nothing after the horizon. */
@@ -249,7 +293,7 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     }
     const t = tiersOf(sc, ctx);
     const i = monthOf(e.day);
-    for (let k = 0; k < TIER_FIELDS.length; k++) bump(TIER0 + k, i, t[TIER_FIELDS[k]]);
+    for (let k = 0; k < TIER_KEYS.length; k++) bump(TIER0 + k, i, t[TIER_KEYS[k]]);
   }
 
   function addMasterEvent(e: WorldEvent, w: World, statics: Statics): void {
@@ -269,7 +313,7 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
         } else if (e.how === 'exit') {
           closeRow(row, e.day, d.pending[row]);
           d.stage[row] = NONE;
-          if (e.day > s.asOf) {
+          if (e.day > asOf) {
             let total = 0;
             for (const u of phaseUnits(statics, w, row)) total += u;
             on(EXITED, e.day, total);
@@ -299,94 +343,132 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
   }
 
   function add(e: WorldEvent, w: World, statics: Statics): void {
-    at.length = 0;
-    by.length = 0;
+    n = 0;
     fileEvent(e, w, statics);
-    for (let k = 0; k < at.length; k++) d.delta[at[k]] += by[k];
+    const delta = d.delta;
+    for (let k = 0; k < n; k++) delta[at[k]] += by[k];
   }
 
+  type Of<K extends WorldEvent['kind']> = Extract<WorldEvent, { kind: K }>;
+
+  // One function per kind, each reading its own event's fields: a field read shared by every
+  // kind sees every event shape and is a slow (megamorphic) load; `kind` is read once.
   function fileEvent(e: WorldEvent, w: World, statics: Statics): void {
     current = e;
-    const row = e.row;
-    const p = w.projects;
-    if (e.kind === 'award') {
-      known(row);
-      if (d.award[row] !== NO_DAY) throw new Error(`world-score: row ${row} awarded twice`);
-      d.award[row] = e.day;
-      return;
-    }
-    if (e.kind === 'displaced') {
-      // Rule 2: the event's own month, whether or not the funded project has completed.
-      known(row);
-      on(DISPLACED, e.day, e.units);
-      return;
-    }
-    const origin = p.origin[row];
-    if (e.kind === 'start') {
-      ensureRow(d, row);
-      if (row >= d.rows) d.rows = row + 1;
-      d.stage[row] = NONE;
-      d.since[row] = NO_DAY;
-      d.entitled[row] = NO_DAY;
-      d.filed[row] = 0;
-      d.award[row] = NO_DAY;
-      if (origin === ORIGIN_MASTER) {
-        let total = 0;
-        for (const u of phaseUnits(statics, w, row)) total += u;
-        d.pending[row] = total;
-        d.units[row] = 0;
-      } else d.units[row] = firstUnits(w, row);
-      return;
-    }
-    known(row);
-    if (origin === ORIGIN_MASTER) {
-      addMasterEvent(e, w, statics);
-      return;
-    }
-    const net = origin === ORIGIN_SIM ? FRESH : PIPELINE;
     switch (e.kind) {
-      case 'enter': {
-        if (e.stage === 'complete') return;
-        const st = LIVE.indexOf(e.stage);
-        move(row, st, e.day, d.units[row]);
-        if (e.day > s.asOf) {
-          if (st === ENTITLED && origin === ORIGIN_SIM) {
-            d.entitled[row] = e.day;
-            on(ENTITLED_NEW, e.day, d.units[row] - p.existing[row]);
-          } else if (st === CONSTRUCTION) {
-            on(net, e.day, -p.existing[row]);
-            if (tierTable !== null) on(TIER_AM, e.day, -p.existing[row]);
-          }
-        }
-        return;
-      }
-      case 'revise': {
-        const st = d.stage[row];
-        if (st >= 0) {
-          close(st, d.since[row], e.day, d.units[row]);
-          d.since[row] = e.day;
-          open(st, e.day, e.units);
-        }
-        if (e.day === d.entitled[row]) on(ENTITLED_NEW, e.day, e.units - d.units[row]);
-        d.units[row] = e.units;
-        return;
-      }
-      case 'end': {
-        closeRow(row, e.day, d.units[row]);
-        d.stage[row] = NONE;
-        if (e.how === 'complete') {
-          on(net, e.day, d.units[row]);
-          // Read from the row, never from event order: the 'award' follows the start chain.
-          if (p.funded[row] === 1) on(FUNDED, e.day, d.units[row] - p.existing[row]);
-          fileTiers(e, w, statics);
-        } else if (e.how === 'exit') {
-          if (e.day > s.asOf) on(EXITED, e.day, d.units[row]);
-        } else throw new Error(`world-score: row ${row} ends 'entitled' but is not a master`);
-        return;
-      }
+      case 'enter':
+        return fileEnter(e, w, statics);
+      case 'end':
+        return fileEnd(e, w, statics);
+      case 'revise':
+        return fileRevise(e, w, statics);
+      case 'start':
+        return fileStart(e, w, statics);
+      case 'award':
+        return fileAward(e);
+      case 'displaced':
+        return fileDisplaced(e);
       default:
-        throw new Error(`world-score: row ${row} gets ${describeEvent(e)}`);
+        return fileOther(e, w, statics);
     }
+  }
+
+  function fileAward(e: Of<'award'>): void {
+    const row = e.row;
+    known(row);
+    if (d.award[row] !== NO_DAY) throw new Error(`world-score: row ${row} awarded twice`);
+    d.award[row] = e.day;
+  }
+
+  function fileDisplaced(e: Of<'displaced'>): void {
+    // Rule 2: the event's own month, whether or not the funded project has completed.
+    known(e.row);
+    on(DISPLACED, e.day, e.units);
+  }
+
+  function fileStart(e: Of<'start'>, w: World, statics: Statics): void {
+    const row = e.row;
+    ensureRow(d, row);
+    if (row >= d.rows) d.rows = row + 1;
+    d.stage[row] = NONE;
+    d.since[row] = NO_DAY;
+    d.entitled[row] = NO_DAY;
+    d.filed[row] = 0;
+    d.award[row] = NO_DAY;
+    if (w.projects.origin[row] === ORIGIN_MASTER) {
+      let total = 0;
+      for (const u of phaseUnits(statics, w, row)) total += u;
+      d.pending[row] = total;
+      d.units[row] = 0;
+    } else d.units[row] = firstUnits(w, row);
+  }
+
+  /** Any other kind: a master's (`'phaseFiled'`), else an error. */
+  function fileOther(e: WorldEvent, w: World, statics: Statics): void {
+    const row = e.row;
+    known(row);
+    if (w.projects.origin[row] === ORIGIN_MASTER) addMasterEvent(e, w, statics);
+    else throw new Error(`world-score: row ${row} gets ${describeEvent(e)}`);
+  }
+
+  function fileEnter(e: Of<'enter'>, w: World, statics: Statics): void {
+    const row = e.row;
+    known(row);
+    const p = w.projects;
+    const origin = p.origin[row];
+    if (origin === ORIGIN_MASTER) return addMasterEvent(e, w, statics);
+    const st = LIVE_INDEX[e.stage];
+    if (st < 0) return; // 'complete': the 'end' files it
+    const day = e.day;
+    const units = d.units[row];
+    move(row, st, day, units);
+    if (day > asOf) {
+      if (st === ENTITLED && origin === ORIGIN_SIM) {
+        d.entitled[row] = day;
+        on(ENTITLED_NEW, day, units - p.existing[row]);
+      } else if (st === CONSTRUCTION) {
+        on(origin === ORIGIN_SIM ? FRESH : PIPELINE, day, -p.existing[row]);
+        if (tierTable !== null) on(TIER_AM, day, -p.existing[row]);
+      }
+    }
+  }
+
+  function fileRevise(e: Of<'revise'>, w: World, statics: Statics): void {
+    const row = e.row;
+    known(row);
+    if (w.projects.origin[row] === ORIGIN_MASTER) return addMasterEvent(e, w, statics);
+    const day = e.day;
+    const units = e.units;
+    const was = d.units[row];
+    const st = d.stage[row];
+    if (st >= 0) {
+      close(st, d.since[row], day, was);
+      d.since[row] = day;
+      open(st, day, units);
+    }
+    if (day === d.entitled[row]) on(ENTITLED_NEW, day, units - was);
+    d.units[row] = units;
+  }
+
+  function fileEnd(e: Of<'end'>, w: World, statics: Statics): void {
+    const row = e.row;
+    known(row);
+    const p = w.projects;
+    const origin = p.origin[row];
+    if (origin === ORIGIN_MASTER) return addMasterEvent(e, w, statics);
+    const day = e.day;
+    const how = e.how;
+    const units = d.units[row];
+    closeRow(row, day, units);
+    d.stage[row] = NONE;
+    if (how === 'complete') {
+      on(origin === ORIGIN_SIM ? FRESH : PIPELINE, day, units);
+      // Read from the row, never from event order: the 'award' follows the start chain.
+      if (p.funded[row] === 1) on(FUNDED, day, units - p.existing[row]);
+      fileTiers(e, w, statics);
+    } else if (how === 'exit') {
+      if (day > asOf) on(EXITED, day, units);
+    } else throw new Error(`world-score: row ${row} ends 'entitled' but is not a master`);
   }
 
   /** The largest i with `table[i] <= m`, capped at `last`, or -1. */
