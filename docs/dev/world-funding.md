@@ -60,7 +60,9 @@ writing**, or the index goes stale silently (a write without a bump is not detec
 - **Clocks over frames** (rules 2 to 4): `kindClock` evaluates a kind's total over the frames the
   lot has lived through since its spell began, then the current frame continuing, as world-core's
   `ordinaryStart` does (segments merged as `rates.ts` merges them). Recomputed on demand, never
-  stored. A kind none of the frames it reads offers has no clock (`clocksOf` skips it).
+  stored. A kind none of the frames it reads can fund has no clock (`fundableAny`): in each
+  frame the kind is not offered, its chance is nil, or the lot's largest size is below the least
+  `minHomes` offered.
 - **Spent spells** (rule 5): a total that passes in a lot-month whose bundle is empty spends the
   spell; planning again never makes it apply later. `appliedThrough`: a kind whose day falls in a
   month whose `apply` already ran is lost (it counts as 0), without hiding the other kind.
@@ -138,7 +140,7 @@ Bench city = `synthCity` with the bench finance; live = `2026-11-10-6ee5a23d`.
 - Whole-city replan, eligibility-gated, direct: **11.1 ms** synthCity, **3.5 ms** live; ungated
   upper bound (both kinds on every candidate) **49.6 ms** and **43.0 ms**.
 
-Full report: `.superpowers/sdd/world-funding/rule1-measurement.md` (worktree history).
+The numbers above are the record of this measurement.
 
 ## Cost
 
@@ -153,11 +155,11 @@ to month 120, then months 121 to 240 timed one `step` at a time per world (the w
 and funding). Bar: **mean at most 90 µs per world-month** (the 9 ms constraint is a sum over 96
 worlds). It also prints each hook's share and the whole-city replan month, unasserted.
 
-Task 8 (hooks only, months 2 to 120, quiet, lock held), after grouped serving, the line index and
-the lazy guard: serve mean 9.1 to 13.0 µs, apply 3.9 to 9.6, planLot 50.4 to 57.7 (about 48 calls
-a month), their sum 65.0 to 79.0 (p90 88.0 to 102.4); compaction 50 to 100 µs outside the sum.
-Month 1: serve 0.16 to 1.4 ms, apply 28 to 34 ms, planLot 26 to 32 ms. Before grouping, the direct
-serve was about 21 ms per month.
+Task 8 (synthCity, bench baseline money; hooks only, months 2 to 120, quiet, lock held), after
+grouped serving, the line index and the lazy guard: serve mean 9.1 to 13.0 µs, apply 3.9 to 9.6,
+planLot 50.4 to 57.7 (about 48 calls a month), their sum 65.0 to 79.0 (p90 88.0 to 102.4);
+compaction 50 to 100 µs outside the sum. Month 1: serve 0.16 to 1.4 ms, apply 28 to 34 ms, planLot
+26 to 32 ms. Before grouping, the direct serve was about 21 ms per month.
 
 Task 12, 2026-11-13, synthCity, quiet (lock held):
 
@@ -215,20 +217,17 @@ All in `src/lib/sim/world/funding/`. Server project (signoff) unless noted.
 
 ## Tolerance referee
 
-`tolerance.referee.spec.ts` runs both engines over seeds 1 to 200 to month 480 and compares, at
-years 5, 10, 20 and 40, the mean of completed net homes (1%), its standard deviation (15%) and the
-mean awards and funded homes (3%); the world checks E1 to E7 after every step. It takes about 4
-minutes, so it runs only behind an env switch (`SFH_WORLD_FUNDING_REFEREE=1`), never in signoff;
-the live case needs a dataset directory (`SFH_WORLD_LIVE`, a directory with `manifest.json` and
-`scenarios/fzp/*`; `npm run data:local` fills local R2 only, not a directory):
+The full referee is **held**: it is not on the branch yet. It waits on the partner's ruling on the
+bench-set awards miss (below). When it lands, `tolerance.referee.spec.ts` will run both engines over
+seeds 1 to 200 to month 480 and compare, at years 5, 10, 20 and 40, the mean of completed net homes
+(1%), its standard deviation (15%) and the mean awards and funded homes (3%), with E1 to E7 checked
+after every step. It takes about 4 minutes, so it will run only behind an env switch
+(`SFH_WORLD_FUNDING_REFEREE=1`), never in signoff. The live case will need a dataset directory
+(`SFH_WORLD_LIVE`, a directory with `manifest.json` and `scenarios/fzp/*`; `npm run data:local`
+fills local R2 only, not a directory).
 
-```
-SFH_WORLD_FUNDING_REFEREE=1 SFH_WORLD_LIVE=<dataset dir> \
-  npx vitest --run --project server src/lib/sim/world/funding/tolerance.referee.spec.ts
-```
-
-Signoff keeps `referee-ledger.spec.ts` (above). Results of 2026-11-13 (synthCity; live
-`2026-11-10-6ee5a23d`); "r" is |new − old| / old:
+Signoff keeps `referee-ledger.spec.ts` (above). The record of the held referee's run of 2026-11-13
+(synthCity; live `2026-11-10-6ee5a23d`); "r" is |new − old| / old:
 
 | Case                | Year | net new  | net sd  | net old  | old sd  | mean r | sd r  | awards new | awards old | aw r  | funded new | funded old | fu r  |
 | ------------------- | ---- | -------- | ------- | -------- | ------- | ------ | ----- | ---------- | ---------- | ----- | ---------- | ---------- | ----- |
@@ -248,8 +247,14 @@ Signoff keeps `referee-ledger.spec.ts` (above). Results of 2026-11-13 (synthCity
 T3 (funded here, ordinary there in the same month): synthCity baseline 8, bench set 2911, live 1.
 synthCity baseline and live pass every tolerance. **The bench set misses mean awards** at every
 year (0.276, 0.182, 0.089, 0.036 against 0.03); net homes and funded homes pass. The extra awards
-are small uncertain ones (`u-bench-afford` alone, `u-bench-loan`) on lots today's engine starts
-ordinarily in the same month. The miss is with the partner; no rule was changed to meet it.
+are small uncertain ones (`u-bench-afford` alone, `u-bench-loan`). The miss is with the partner; no
+rule was changed to meet it.
+
+Investigation of 2026-11-13 (synthCity, bench set, seeds 1 to 200): T3 does not explain the miss.
+Counting T3's 2911 awards as ordinary still leaves awards 0.066 off at year 5 and 0.051 at year 10.
+Every seed diverges in month 1, day 1, and the cause is R5: the month-1 scan serves in key order,
+so small `u-bench-loan` and `u-bench-afford` applications dated later in the month drain
+`u-bench-fund` before a large day-1 certain application is tested. Today's engine serves by day.
 
 ## Known differences from today
 
