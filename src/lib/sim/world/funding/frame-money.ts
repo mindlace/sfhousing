@@ -143,6 +143,11 @@ export function frameMoney(timeline: PolicyTimeline, frame: PolicyFrame): FrameM
   return fm;
 }
 
+/** The frames whose money is memoised for `timeline` (test and measurement use). */
+export function frameMoneySize(timeline: PolicyTimeline): number {
+  return memo.get(timeline)?.size ?? 0;
+}
+
 /** Whether two frames carry the same money identity (rule 17): arrivals apart, the same offers, pools, terms and slope. */
 export function sameMoney(a: PolicyFrame, b: PolicyFrame, timeline: PolicyTimeline): boolean {
   if (a.finance === null || b.finance === null) return a.finance === b.finance;
