@@ -18,6 +18,7 @@ import { lesscarsFreewayLand } from './steps/lesscars-freeway-land';
 import { upload } from './steps/upload';
 import { verify } from './steps/verify';
 import { readLock } from './lib/lock';
+import { LIDAR_LOCK, parseTiles, readLidarLock } from './sources/lidar';
 import { readFreewayLandSet } from './lib/lesscars/freeway-land';
 import { LESSCARS_FREEWAY_LAND_JSON } from './lesscars-config';
 import { replaceQualityDocSection } from './lib/quality';
@@ -145,15 +146,33 @@ const steps: Record<string, { help: string; run: Step }> = {
       })
   },
   fetch: {
-    help: 'fetch live sources into .cache/raw and write the lock [--only <id,...>] [--release <rel>] [--basemap-date YYYYMMDD] | --restore [--local]',
-    run: async (args) =>
-      fetchAll({
+    help: 'fetch live sources into .cache/raw and write the lock [--only <id,...>] [--release <rel>] [--basemap-date YYYYMMDD] | --restore [--lidar] [--local]; --only usgs-lidar-sf [--tiles a_b,...] [--jobs n] [--dry-run] (needs uv; locks pipeline/lidar.lock.json)',
+    run: async (args) => {
+      const tiles = str(args.flags.tiles);
+      const jobs = str(args.flags.jobs);
+      let parsed: [number, number][] | undefined;
+      try {
+        parsed = tiles ? parseTiles(tiles) : undefined;
+      } catch (e) {
+        console.error((e as Error).message);
+        return 2;
+      }
+      if (jobs !== undefined && !/^[1-9]\d*$/.test(jobs)) {
+        console.error('--jobs wants a positive integer');
+        return 2;
+      }
+      return fetchAll({
+        tiles: parsed,
+        jobs: jobs ? Number(jobs) : undefined,
+        dryRun: args.flags['dry-run'] === true,
+        lidar: args.flags.lidar === true,
         only: str(args.flags.only),
         release: str(args.flags.release),
         basemapDate: str(args.flags['basemap-date']),
         restore: args.flags.restore === true,
         local: args.flags.local === true
-      })
+      });
+    }
   },
   upload: {
     help: 'publish out/<v>/ to R2, manifest last [--local]',
@@ -178,6 +197,8 @@ const steps: Record<string, { help: string; run: Step }> = {
         datasetVersion: v,
         // Fixture datasets have no raw archives to publish (and skip the lockSha256 check).
         lock: lockPath ? readLock(lockPath) : { sources: [] },
+        // Fixture versions archive nothing, the LiDAR tiles included.
+        lidarLock: lockPath ? readLidarLock(LIDAR_LOCK.live) : null,
         rawDir: RAW,
         target: wranglerTarget({ local: args.flags.local === true }),
         repoRoot: ROOT,

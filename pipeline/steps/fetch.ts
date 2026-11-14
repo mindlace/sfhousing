@@ -7,6 +7,8 @@ import { wranglerTarget, type R2Target } from '../lib/r2';
 import { DATASF, fetchDatasf, type DatasfId } from '../sources/datasf';
 import { fetchOverture } from '../sources/overture';
 import { fetchGtfs } from '../sources/gtfs';
+import { LIDAR_ID, LIDAR_LOCK, fetchLidar, writeLidarLock, type LidarOpts } from '../sources/lidar';
+import { run as realRun } from '../lib/exec';
 import { fetchBasemap, fetchFonts } from '../sources/protomaps';
 import { SFBOS_EXEMPTIONS_ID, fetchSfbosExemptions } from '../sources/sfbos';
 import { GTFS_IDS, type GtfsLockId } from '../transit-config';
@@ -15,14 +17,20 @@ const ROOT = resolve(import.meta.dirname, '../..');
 export const LOCK_PATH = join(ROOT, 'pipeline/sources.lock.json');
 export const RAW_DIR = join(ROOT, 'pipeline/.cache/raw');
 
+export const LIDAR_LOCK_PATH = LIDAR_LOCK.live;
+
 export const FETCH_IDS = [
   ...(Object.keys(DATASF) as DatasfId[]),
   'overture-buildings',
   'protomaps-basemap',
   'protomaps-fonts',
   ...GTFS_IDS,
-  SFBOS_EXEMPTIONS_ID
+  SFBOS_EXEMPTIONS_ID,
+  LIDAR_ID
 ] as const;
+
+/** What a plain `fetch` refreshes: the LiDAR is a slow, explicit fetch (`--only usgs-lidar-sf`). */
+export const DEFAULT_FETCH_IDS: readonly string[] = FETCH_IDS.filter((i) => i !== LIDAR_ID);
 
 export interface FetchOpts {
   only?: string;
@@ -30,7 +38,16 @@ export interface FetchOpts {
   basemapDate?: string;
   restore?: boolean;
   local?: boolean;
+  /** `--restore --lidar`: restore the LiDAR lock's tiles instead of the main lock's files. */
+  lidar?: boolean;
+  /** usgs-lidar-sf: tiles to rasterize (default the city's), parallel jobs, report only. */
+  tiles?: [number, number][];
+  jobs?: number;
+  dryRun?: boolean;
+  /** Injected rasterizer runner (and work dir) for tests. */
+  lidarDeps?: { run: typeof realRun; workDir?: string };
   lockPath?: string;
+  lidarLockPath?: string;
   rawDir?: string;
   http?: Http;
   r2?: R2Target;
@@ -79,18 +96,21 @@ export async function restoreRaw(
 /** Fetch live sources into the raw cache and rewrite the lock; returns a process exit code. */
 export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
   const lockPath = opts.lockPath ?? LOCK_PATH;
+  const lidarLockPath = opts.lidarLockPath ?? LIDAR_LOCK_PATH;
   const rawDir = opts.rawDir ?? RAW_DIR;
   if (opts.restore) {
-    if (!existsSync(lockPath)) {
-      console.error(`no ${lockPath} to restore from`);
+    // Plain --restore never reads the LiDAR lock; --lidar reads only it.
+    const from = opts.lidar ? lidarLockPath : lockPath;
+    if (!existsSync(from)) {
+      console.error(`no ${from} to restore from`);
       return 1;
     }
     const r2 = opts.r2 ?? wranglerTarget({ local: opts.local ?? false });
-    const { restored, present } = await restoreRaw(readLock(lockPath), rawDir, r2);
+    const { restored, present } = await restoreRaw(readLock(from), rawDir, r2);
     console.log(`restore: ${restored} downloaded, ${present} already present`);
     return 0;
   }
-  const ids: readonly string[] = opts.only ? opts.only.split(',') : FETCH_IDS;
+  const ids: readonly string[] = opts.only ? opts.only.split(',') : DEFAULT_FETCH_IDS;
   const unknown = ids.filter((i) => !(FETCH_IDS as readonly string[]).includes(i));
   if (unknown.length > 0) {
     console.error(`unknown source(s): ${unknown.join(', ')} (known: ${FETCH_IDS.join(', ')})`);
@@ -102,6 +122,25 @@ export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
     const t0 = Date.now();
     console.log(`fetch ${id} ...`);
     let entry: LockEntry;
+    if (id === LIDAR_ID) {
+      const lo: LidarOpts = {
+        tiles: opts.tiles,
+        jobs: opts.jobs,
+        dryRun: opts.dryRun,
+        workDir: opts.lidarDeps?.workDir
+      };
+      const e = await fetchLidar(
+        rawDir,
+        lo,
+        opts.lidarDeps ? { run: opts.lidarDeps.run } : undefined
+      );
+      if (e) {
+        writeLidarLock(lidarLockPath, e);
+        console.log(`  ${id}: ${e.files.length} tile(s), ${e.upstreamVersion}`);
+        console.log(`wrote ${lidarLockPath}`);
+      }
+      continue;
+    }
     if (id in DATASF) entry = await fetchDatasf(id as DatasfId, rawDir, http);
     else if (id === 'overture-buildings') {
       const db = await openDuck({ httpfs: true });
@@ -122,6 +161,7 @@ export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
     );
     fetched.push(entry);
   }
+  if (fetched.length === 0) return 0;
   // Entries not refetched under --only are kept.
   const kept = existsSync(lockPath)
     ? readLock(lockPath).sources.filter((s) => !fetched.some((f) => f.id === s.id))
