@@ -1,16 +1,64 @@
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { TOOL_VERSIONS } from '../config';
 import { openDuck } from '../lib/duck';
 import { run as realRun, which as realWhich } from '../lib/exec';
+import { BOXES_ID, boxesLockProblem } from '../lib/lidar/artifact';
+import { LIDAR_PROJECT, LIDAR_VENV, uvRun } from '../lib/lidar/python';
+import { readLock } from '../lib/lock';
+
+const LIVE_LOCK = join(resolve(import.meta.dirname, '../..'), 'pipeline/sources.lock.json');
+
+const LIDAR_IMPORTS = 'import laspy, lazrs, numpy, scipy, pyproj';
+
+/** The command that installs the rasterizer's pinned Python into LIDAR_VENV. */
+export function lidarSyncHint(): string {
+  const env = `UV_PROJECT_ENVIRONMENT=${LIDAR_VENV}`;
+  return `${env} uv sync --project ${LIDAR_PROJECT} --frozen (needs network once)`;
+}
 
 export interface DoctorCheck {
   name: string;
   ok: boolean;
+  /** Needed only by an optional command (fetch --only usgs-lidar-sf): a failure is a warning. */
+  optional?: boolean;
   found?: string;
   hint?: string;
 }
 
+/** Print one line per check; exit 1 only when a required check failed. */
+export function reportDoctor(checks: DoctorCheck[], out: (line: string) => void): number {
+  for (const c of checks) {
+    const detail = c.ok ? (c.found ?? '') : `${c.found ? `${c.found} ` : ''}-> ${c.hint ?? ''}`;
+    const tag = c.ok ? 'OK  ' : c.optional ? 'WARN' : 'FAIL';
+    out(`${tag} ${c.name}${detail ? `  ${detail}` : ''}`);
+  }
+  return checks.every((c) => c.ok || c.optional) ? 0 : 1;
+}
+
+/**
+ * Required: a building-boxes artifact in the lock must match its gated sources (`build` would
+ * stop on it). OK without a lock or without the entry.
+ */
+export function boxesLockCheck(lockPath: string): DoctorCheck {
+  if (!existsSync(lockPath)) return { name: 'boxes-lock', ok: true, found: 'no lock' };
+  const lock = readLock(lockPath);
+  if (!lock.sources.some((s) => s.id === BOXES_ID))
+    return { name: 'boxes-lock', ok: true, found: `no ${BOXES_ID} entry` };
+  const problem = boxesLockProblem(lock);
+  return problem
+    ? { name: 'boxes-lock', ok: false, found: `stale ${BOXES_ID}`, hint: problem }
+    : { name: 'boxes-lock', ok: true, found: `${BOXES_ID} current` };
+}
+
 export async function doctor(
-  deps: { run: typeof realRun; which: typeof realWhich; nodeVersion?: string } = {
+  deps: {
+    run: typeof realRun;
+    which: typeof realWhich;
+    nodeVersion?: string;
+    /** The main lock (default pipeline/sources.lock.json). */
+    lockPath?: string;
+  } = {
     run: realRun,
     which: realWhich
   }
@@ -97,6 +145,34 @@ export async function doctor(
         hint: 'npm install (needs network once to INSTALL DuckDB extensions)'
       });
     }
+  }
+
+  checks.push(boxesLockCheck(deps.lockPath ?? LIVE_LOCK));
+
+  // The LiDAR rasterizer (fetch --only usgs-lidar-sf) runs in a pinned uv project. Nothing else
+  // needs Python, so both checks are optional.
+  if (!(await which('uv'))) {
+    checks.push({
+      name: 'uv',
+      ok: false,
+      optional: true,
+      hint: 'brew install uv (only for fetch --only usgs-lidar-sf)'
+    });
+  } else {
+    const v = await run('uv', ['--version']);
+    checks.push({ name: 'uv', ok: true, optional: true, found: v.stdout.trim() || undefined });
+    const probe = await uvRun(['python', '-c', LIDAR_IMPORTS], {}, { run });
+    const ok = probe.code === 0;
+    checks.push({
+      name: 'lidar-python',
+      ok,
+      optional: true,
+      found: ok
+        ? 'laspy lazrs numpy scipy pyproj'
+        : probe.stderr.trim().split('\n').at(-1) || undefined,
+      // Absolute paths: uv resolves a relative UV_PROJECT_ENVIRONMENT against the project root.
+      hint: ok ? undefined : lidarSyncHint()
+    });
   }
 
   return checks;

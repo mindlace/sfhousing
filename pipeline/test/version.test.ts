@@ -1,9 +1,11 @@
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DATASET_VERSION_RE } from '../../src/lib/data/manifest';
 import { TOOL_VERSIONS } from '../config';
 import {
+  BOXES_CODE_PATHS,
+  boxesCodeHash,
   codePathsDirty,
   codeTreeHash,
   computeDatasetVersion,
@@ -110,6 +112,58 @@ describe('codeTreeHash', () => {
     writeFileSync(join(dir, 'src/lib/sim/other/x.ts'), 'export const x = 10;\n');
     git('commit', '-q', '-am', 'other sim');
     expect(await codeTreeHash(dir)).toBe(clean);
+  });
+});
+
+describe('treeHash refactor', () => {
+  it('codeTreeHash is unchanged by the refactor', async () => {
+    // Values computed with the pre-refactor codeTreeHash on this fixed temp repo state.
+    const { dir } = tempRepo();
+    expect(await codeTreeHash(dir)).toBe(
+      '80e040f68e7c955600718bf2b975a1c0d6c62b3e100caedfdfe3e4da0df90dc5'
+    );
+    writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 2;\n');
+    writeFileSync(join(dir, 'pipeline/new.ts'), 'export const n = 1;\n');
+    writeFileSync(join(dir, 'pipeline/sources.lock.json'), '{}\n');
+    expect(await codeTreeHash(dir)).toBe(
+      '80e040f68e7c955600718bf2b975a1c0d6c62b3e100caedfdfe3e4da0df90dc5' +
+        '33c7af423bbd34db2bd634dbdc009ffe7e642a922904ccaba46f44f58f2f53f2' +
+        'e22445c7c5ef7b19b64996dfd7c78b39a0f9436fb265185ae056d4f7b93f51a2'
+    );
+  });
+});
+
+describe('boxesCodeHash', () => {
+  it('covers the derivation modules the boxes command runs', () => {
+    expect(BOXES_CODE_PATHS).toEqual([
+      'pipeline/lib/lidar',
+      'pipeline/steps/boxes.ts',
+      'pipeline/boxes-config.ts',
+      'pipeline/project-records/union-find.ts',
+      'pipeline/lib/road-lots.ts',
+      'pipeline/geom.ts'
+    ]);
+  });
+
+  it('changes with an uncommitted edit under pipeline/lib/lidar and not with one under pipeline/sql', async () => {
+    const { dir, git } = tempRepo();
+    mkdirSync(join(dir, 'pipeline/lib/lidar'), { recursive: true });
+    mkdirSync(join(dir, 'pipeline/sql'), { recursive: true });
+    writeFileSync(join(dir, 'pipeline/lib/lidar/derive.ts'), 'export const d = 1;\n');
+    writeFileSync(join(dir, 'pipeline/sql/50_clip.sql'), 'SELECT 1;\n');
+    git('add', '.');
+    git('commit', '-q', '-m', 'boxes');
+    const clean = await boxesCodeHash(dir);
+    expect(clean).toMatch(/^[0-9a-f]{64}$/);
+    writeFileSync(join(dir, 'pipeline/sql/50_clip.sql'), 'SELECT 2;\n');
+    expect(await boxesCodeHash(dir)).toBe(clean);
+    writeFileSync(join(dir, 'pipeline/lib/lidar/derive.ts'), 'export const d = 2;\n');
+    const dirty = await boxesCodeHash(dir);
+    expect(dirty).toMatch(/^[0-9a-f]{64}$/);
+    expect(dirty).not.toBe(clean);
+    writeFileSync(join(dir, 'pipeline/lib/lidar/derive.ts'), 'export const d = 1;\n');
+    writeFileSync(join(dir, 'pipeline/lib/lidar/new.ts'), 'export const n = 1;\n');
+    expect(await boxesCodeHash(dir)).not.toBe(clean);
   });
 });
 

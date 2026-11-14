@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
 import { manifestFiles, parseManifest, type Manifest } from '../../src/lib/data/manifest';
@@ -20,6 +21,12 @@ export interface UploadArgs {
   outDir: string;
   datasetVersion: string;
   lock: Lock;
+  /**
+   * The LiDAR lock (pipeline/lidar.lock.json), or null/absent. Its tiles are archived like the
+   * main lock's files, but guarded by one marker key (see `lidarMarkerKey`) instead of a probe per
+   * tile: `R2Target.exists` downloads the object, and the tiles total gigabytes.
+   */
+  lidarLock?: Lock | null;
   rawDir: string;
   target: R2Target;
   concurrency?: number;
@@ -34,6 +41,11 @@ export interface UploadArgs {
   local?: boolean;
   /** Backoff wait; injectable for tests. */
   sleep?: (ms: number) => Promise<void>;
+}
+
+/** Written after every tile of a LiDAR lock is archived; its presence skips all tile uploads. */
+export function lidarMarkerKey(lidarLock: Lock): string {
+  return `sources/lidar-lock-${lockSha256(lidarLock)}.json`;
 }
 
 function walk(dir: string): string[] {
@@ -164,7 +176,9 @@ export async function upload(a: UploadArgs): Promise<number> {
     .filter((r) => r !== MANIFEST);
   const bad = [
     ...rels.filter(badKey),
-    ...a.lock.sources.flatMap((e) => e.files.map((f) => f.archiveKey)).filter(badKey)
+    ...[...a.lock.sources, ...(a.lidarLock?.sources ?? [])]
+      .flatMap((e) => e.files.map((f) => f.archiveKey))
+      .filter(badKey)
   ];
   if (bad.length > 0) {
     for (const k of bad) log(`refusing to upload: invalid key segment in '${k}'`);
@@ -177,11 +191,63 @@ export async function upload(a: UploadArgs): Promise<number> {
     return 1;
   }
 
+  // LiDAR tiles: no per-tile probe. Without the marker, a tile absent from the raw cache is
+  // probed (it must already be archived); anything else refuses with nothing sent.
+  const lidar = a.lidarLock ?? null;
+  const marker = lidar ? lidarMarkerKey(lidar) : null;
+  const lidarMarked = marker !== null && (await a.target.exists(marker));
+  const lidarTodo: { id: string; name: string; archiveKey: string; src: string }[] = [];
+  if (lidar && !lidarMarked) {
+    const missing: string[] = [];
+    for (const entry of lidar.sources) {
+      for (const f of entry.files) {
+        const src = rawPath(a.rawDir, f);
+        if (existsSync(src))
+          lidarTodo.push({ id: entry.id, name: f.name, archiveKey: f.archiveKey, src });
+        else if (!(await a.target.exists(f.archiveKey))) missing.push(`${entry.id}: ${f.name}`);
+      }
+    }
+    if (missing.length > 0) {
+      for (const m of missing)
+        log(`refusing to upload: ${m} is neither archived nor in the raw cache`);
+      return 1;
+    }
+  }
+
   for (const entry of a.lock.sources) {
     for (const f of entry.files) {
       if (await a.target.exists(f.archiveKey)) continue;
       log(`archive ${f.archiveKey}`);
       await a.target.put(f.archiveKey, rawPath(a.rawDir, f), 'application/octet-stream', PRIVATE);
+    }
+  }
+
+  if (lidar && marker && !lidarMarked) {
+    const putArchive = async (t: (typeof lidarTodo)[number]) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await a.target.put(t.archiveKey, t.src, 'application/octet-stream', PRIVATE);
+          return;
+        } catch (e) {
+          if (attempt >= retries) throw e;
+          await sleep(200 * 2 ** attempt);
+        }
+      }
+    };
+    log(`archive ${lidarTodo.length} LiDAR tile(s)`);
+    const failed = await pool(lidarTodo, a.concurrency ?? 8, putArchive);
+    if (failed.length > 0) {
+      for (const f of failed) log(`failed: ${f.item.archiveKey}: ${(f.error as Error).message}`);
+      log(`${failed.length} LiDAR tile(s) failed; no marker, nothing else uploaded`);
+      return 1;
+    }
+    const dir = mkdtempSync(join(tmpdir(), 'sfh-lidar-marker-'));
+    try {
+      const file = join(dir, 'marker.json');
+      writeFileSync(file, JSON.stringify({ lockSha256: lockSha256(lidar) }));
+      await a.target.put(marker, file, 'application/json', PRIVATE);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   }
 

@@ -51,10 +51,26 @@ const PATHS = [
   'src/lib/sim/finance',
   'src/lib/scoreboard'
 ];
-const EXCLUDES = [
-  ':(exclude)pipeline/sources.lock.json',
-  ':(exclude)pipeline/.cache',
-  ':(exclude)pipeline/out'
+/** Inputs and outputs under `pipeline`, not code: never part of the code hash. */
+const EXCLUDE_PATHS = ['pipeline/sources.lock.json', 'pipeline/.cache', 'pipeline/out'];
+const exclusions = (excludes: string[]): string[] => excludes.map((e) => `:(exclude)${e}`);
+const EXCLUDES = exclusions(EXCLUDE_PATHS);
+
+/**
+ * The derivation code of the `boxes` command, recorded in the building-boxes artifact (its stale
+ * check warns when this hash moves): every module steps/boxes.ts runs to turn footprints, parts
+ * and LiDAR tiles into boxes. That is lib/lidar, the thresholds, the cluster union-find, the
+ * block expression (road-lots.ts `SQL_BLOCK_OF`) and the polygon helpers. Not covered: the
+ * inputs the artifact records by their own hashes (sources, tiles) and the model's shared code
+ * (normalisation, the SQL through 50_clip, the DuckDB, lock and raw-cache helpers).
+ */
+export const BOXES_CODE_PATHS = [
+  'pipeline/lib/lidar',
+  'pipeline/steps/boxes.ts',
+  'pipeline/boxes-config.ts',
+  'pipeline/project-records/union-find.ts',
+  'pipeline/lib/road-lots.ts',
+  'pipeline/geom.ts'
 ];
 
 async function git(root: string, args: string[]): Promise<string> {
@@ -63,35 +79,36 @@ async function git(root: string, args: string[]): Promise<string> {
   return r.stdout;
 }
 
-/** Paths that are inputs or outputs, not code: never part of the code hash. */
-const NOT_CODE = (f: string): boolean =>
-  f === 'pipeline/sources.lock.json' ||
-  f.startsWith('pipeline/.cache/') ||
-  f.startsWith('pipeline/out/');
-
-/** Porcelain status lines for the code paths (same excludes as the code hash); empty = clean. */
-export async function codePathsDirty(repoRoot: string): Promise<string[]> {
-  const status = await git(repoRoot, ['status', '--porcelain', '--', ...PATHS, ...EXCLUDES]);
+async function dirtyLines(repoRoot: string, paths: string[], specs: string[]): Promise<string[]> {
+  const status = await git(repoRoot, ['status', '--porcelain', '--', ...paths, ...specs]);
   return status.split('\n').filter((l) => l.trim() !== '');
 }
 
+/** Porcelain status lines for the code paths (same excludes as the code hash); empty = clean. */
+export async function codePathsDirty(repoRoot: string): Promise<string[]> {
+  return dirtyLines(repoRoot, PATHS, EXCLUDES);
+}
+
 /**
- * Identifies the pipeline + data-schema code: sha256 of the `git ls-tree -r HEAD` listing
- * (mode, type, blob hash, path) of `pipeline`, `src/lib/data`, `src/lib/generator`,
- * `src/lib/timelapse`, `src/lib/plan/geometry.ts` and `src/lib/plan/types.ts`, minus pipeline/sources.lock.json, .cache and out. The lock is hashed separately by
- * computeDatasetVersion, so committing it does not change the version (spec AC-5, AC-7).
- * When those paths have uncommitted changes (same excludes), the sha256 of `git diff HEAD`
- * and of each untracked file is appended, so uncommitted code produces a different
- * datasetVersion than the committed tree.
+ * sha256 of the `git ls-tree -r HEAD` listing (mode, type, blob hash, path) of `paths`, minus
+ * `excludes` (each a path and everything under it). When those paths have uncommitted changes
+ * (same excludes), the sha256 of `git diff HEAD` and of each untracked file is appended, so
+ * uncommitted code hashes differently from the committed tree.
  */
-export async function codeTreeHash(repoRoot: string): Promise<string> {
-  const listing = (await git(repoRoot, ['ls-tree', '-r', '-z', 'HEAD', '--', ...PATHS]))
+export async function treeHash(
+  repoRoot: string,
+  paths: string[],
+  excludes: string[]
+): Promise<string> {
+  const notCode = (f: string): boolean => excludes.some((e) => f === e || f.startsWith(`${e}/`));
+  const specs = exclusions(excludes);
+  const listing = (await git(repoRoot, ['ls-tree', '-r', '-z', 'HEAD', '--', ...paths]))
     .split('\0')
-    .filter((line) => line !== '' && !NOT_CODE(line.slice(line.indexOf('\t') + 1)))
+    .filter((line) => line !== '' && !notCode(line.slice(line.indexOf('\t') + 1)))
     .sort();
   let out = sha256(listing.join('\n'));
-  if ((await codePathsDirty(repoRoot)).length === 0) return out;
-  const diff = await git(repoRoot, ['diff', 'HEAD', '--', ...PATHS, ...EXCLUDES]);
+  if ((await dirtyLines(repoRoot, paths, specs)).length === 0) return out;
+  const diff = await git(repoRoot, ['diff', 'HEAD', '--', ...paths, ...specs]);
   out += sha256(diff);
   const untracked = (
     await git(repoRoot, [
@@ -100,8 +117,8 @@ export async function codeTreeHash(repoRoot: string): Promise<string> {
       '--exclude-standard',
       '-z',
       '--',
-      ...PATHS,
-      ...EXCLUDES
+      ...paths,
+      ...specs
     ])
   )
     .split('\0')
@@ -109,6 +126,24 @@ export async function codeTreeHash(repoRoot: string): Promise<string> {
     .sort();
   for (const f of untracked) out += sha256(fs.readFileSync(path.join(repoRoot, f)));
   return out;
+}
+
+/**
+ * Identifies the pipeline + data-schema code: the `treeHash` of PATHS minus
+ * pipeline/sources.lock.json, .cache and out. The lock is hashed separately by
+ * computeDatasetVersion, so committing it does not change the version (spec AC-5, AC-7).
+ * Uncommitted code produces a different datasetVersion than the committed tree.
+ */
+export async function codeTreeHash(repoRoot: string): Promise<string> {
+  return treeHash(repoRoot, PATHS, EXCLUDE_PATHS);
+}
+
+/**
+ * The boxes derivation code: a full sha256 hex of the `treeHash` of BOXES_CODE_PATHS,
+ * uncommitted changes included (ruling F5). Recorded in the building-boxes artifact.
+ */
+export async function boxesCodeHash(repoRoot: string): Promise<string> {
+  return sha256(await treeHash(repoRoot, BOXES_CODE_PATHS, []));
 }
 
 /** The datasetVersion this tree computes: repo lock, code hash (dirty trees included), TOOL_VERSIONS. */
