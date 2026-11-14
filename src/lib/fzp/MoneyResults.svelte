@@ -14,7 +14,6 @@
   import type { Day } from '$lib/timelapse/time';
   import type { ResolvedTerms } from '$lib/timelapse/types';
   import { formatDollars, formatMonthYear } from './format';
-  import { utcParts } from './time';
   import {
     COLUMN_NAME,
     TIER_NAME,
@@ -23,6 +22,7 @@
     bySourceColumns,
     cityLine,
     displacementLine,
+    figureYear,
     fundedLine,
     limitLines,
     lostGrantsLine,
@@ -63,7 +63,7 @@
   const owed = $derived(money ? owedLines(money, i) : []);
   const limits = $derived(money ? limitLines(money.limits) : []);
   /** The year the per-home figures are read at, when that is not the shown month. */
-  const by = $derived(m && m.figureIndex !== i ? utcParts(score.months[m.figureIndex]).y : null);
+  const by = $derived(m ? figureYear(m.figureIndex, i, score.months) : null);
   const city = $derived(m ? cityLine(m, by) : null);
 
   const tiers = $derived(score.tiers ?? null);
@@ -146,7 +146,7 @@
         is high early in a run and falls as projects finish.
       </p>
       <div data-testid="fzp-money-displaced">
-        <p>{displacementLine(money, i, by)}</p>
+        <p>{displacementLine(money, i, score.months)}</p>
         <div class={muted}><SourceList items={[DISPLACEMENT_RANGE.provenance]} /></div>
       </div>
       {#each owed as line, k (k)}

@@ -14,6 +14,7 @@ import {
   perAddedHome,
   type Money
 } from '$lib/sim/scenario/finance-score';
+import type { Day } from '$lib/timelapse/time';
 import type { TimelineScore } from '$lib/sim/protocol';
 import type { MoneyView } from '$lib/sim/world/score/types';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
@@ -28,6 +29,7 @@ import {
   type PoolKind,
   type Provenance
 } from '$lib/timelapse/types';
+import { utcParts } from './time';
 import { formatDollars, formatDollarsExact, formatSourcePercent } from './format';
 import { marketSentence } from './market-view';
 
@@ -169,10 +171,16 @@ export function fundedLine(m: MoneyAt): string {
   return `Funded homes finished: ${formatCount(m.fundedHomes)}. Added homes: ${formatCount(m.fundedHomes - m.displacedHomes)}.`;
 }
 
-/** The displaced homes beside the published range; the share is `displacedShare`. */
-export function displacementLine(money: Money, i: number, by: number | null = null): string {
-  const share =
-    'displacedShare' in money ? (money as MoneyView).displacedShare : displacedShare(money, i);
+/** The year a figure read at `atIndex` is labelled with, or null when it is the shown month's. */
+export function figureYear(atIndex: number, i: number, months: readonly Day[]): number | null {
+  return atIndex === i ? null : utcParts(months[atIndex]).y;
+}
+
+/** The displaced homes beside the published range; the share comes from `moneyFigureAt`. */
+export function displacementLine(money: Money, i: number, months: readonly Day[] = []): string {
+  const fig = moneyFigureAt(money, i);
+  const by = figureYear(fig.atIndex, i, months);
+  const share = fig.displacedShare;
   const pct =
     share === null
       ? ''
