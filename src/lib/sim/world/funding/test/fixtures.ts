@@ -1,18 +1,20 @@
 // Fixtures for the world-funding tests: the mini city with public money, and its money as frames.
 import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
+import { buildFinance } from '$lib/sim/levers/finance';
 import {
   benchBaselineFunding,
+  benchFundingLevers,
   benchMarket,
   benchRoutes
 } from '$lib/sim/scenario/fixtures/bench-finance';
 import { miniCalibrationWithRoutes, miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
 import { financeIndexOf, inflowArrivals, isOff, isOffered } from '$lib/sim/scenario/funding';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { Schedule, SimInput } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, PoolKind, Programme } from '$lib/timelapse/types';
-import type { SimPolicy4 } from '$lib/timeline/policy4';
-import { monthFirstDay, monthLastDay } from '../../months';
+import { DEFAULT_POLICY4, type SimPolicy4 } from '$lib/timeline/policy4';
+import { monthFirstDay, monthLastDay, monthOfDay } from '../../months';
 import { inForceAt, moneyLeversOf } from '../../policy/combine';
 import type { FinanceFrame, PolicyFrame, PolicyTimeline } from '../../policy/frame';
 import { createMoneyTrack } from '../../policy/money';
@@ -47,7 +49,7 @@ export function fundedMini(finance?: Finance): SimInput {
  * calibration): `benchRoutes`, `benchBaselineFunding(asOf)` as `baselineFunding` and the
  * `finance`, `benchMarket` and no market steps. `base` is `benchInput()` (Node only, so passed in).
  */
-export function benchFunded(base: SimInput): SimInput {
+export function benchMoney(base: SimInput): SimInput {
   const baseline = benchBaselineFunding(base.asOf);
   return {
     ...base,
@@ -66,6 +68,134 @@ export function benchFunded(base: SimInput): SimInput {
       terms: resolveTerms(MARKET_TERMS)
     }
   };
+}
+
+/**
+ * The bench funding set (`benchFundingLevers`, `u-` ids) as a schema 4 document: one `fund` policy
+ * per added pool with that pool's programmes (in their order), in force from `asOf` with no end.
+ */
+export function benchDoc(asOf: Day): SimPolicy4 {
+  const levers = benchFundingLevers(asOf);
+  return {
+    schema: 4,
+    kinds: {
+      zoning: [],
+      permitting: [],
+      money: levers.pools.map((pool) => ({
+        id: `fund-${pool.id}`,
+        label: pool.id,
+        preset: null,
+        on: true,
+        where: { tag: 'fund' as const, pool: pool.id },
+        spans: [
+          {
+            from: asOf,
+            to: null,
+            what: {
+              tag: 'fund' as const,
+              pool: structuredClone(pool),
+              programmes: structuredClone(levers.programmes.filter((g) => g.pool === pool.id))
+            }
+          }
+        ]
+      }))
+    }
+  };
+}
+
+/** `benchMoney(base)` with no money document (`'baseline'`) or with `benchDoc` (`'bench'`). */
+export function benchSet(
+  base: SimInput,
+  set: 'baseline' | 'bench'
+): { input: SimInput; doc: SimPolicy4 } {
+  const input = benchMoney(base);
+  return { input, doc: set === 'bench' ? benchDoc(input.asOf) : DEFAULT_POLICY4 };
+}
+
+/**
+ * A city loaded without `finance` (`test/cities.node.ts`) with it re-added from its calibration
+ * as `buildSimInput` adds it (`scenario/input.ts:85-93`); unchanged without a market or baseline.
+ */
+export function withBaselineMoney(base: SimInput): SimInput {
+  const m = base.calibration.market;
+  const bf = base.calibration.baselineFunding;
+  if (!m || !bf) return base;
+  return {
+    ...base,
+    finance: {
+      pools: structuredClone(bf.pools),
+      programmes: structuredClone(bf.programmes),
+      off: [],
+      slope: m.slope.perCostShare,
+      terms: resolveTerms(MARKET_TERMS)
+    }
+  };
+}
+
+/**
+ * Today's engine's money for `input` under `doc` held constant: the levers in force on month 1's
+ * first day built on `input.finance` (`buildFinance`), as the world's money track builds them.
+ */
+export function oldFinanceOf(input: SimInput, doc: SimPolicy4): SimInput['finance'] {
+  return buildFinance(
+    input.finance,
+    moneyLeversOf(inForceAt(doc, monthFirstDay(input.asOf, 1))),
+    input.asOf
+  );
+}
+
+/** What the tolerance test compares on a day. */
+export interface Metrics {
+  net: number;
+  awards: number;
+  fundedHomes: number;
+}
+
+/**
+ * By `day`: completed net homes (−existing at a construction start after `asOf`, + final units
+ * at completion, as `score.ts` `addNet` counts them, pipeline and simulated together), awards
+ * (funded schedules whose first revision is on or before `day`) and funded homes (their first
+ * revision's units).
+ */
+export function metricsAt(schedules: readonly Schedule[], asOf: Day, day: Day): Metrics {
+  let net = 0;
+  let awards = 0;
+  let fundedHomes = 0;
+  for (const sc of schedules) {
+    const c = sc.entered.construction;
+    if (c !== undefined && c > asOf && c <= day) net -= sc.existingUnits;
+    if (sc.end.kind === 'complete' && sc.end.day <= day)
+      net += sc.revisions[sc.revisions.length - 1].units;
+    if (sc.funding !== undefined && sc.revisions[0].day <= day) {
+      awards++;
+      fundedHomes += sc.revisions[0].units;
+    }
+  }
+  return { net, awards, fundedHomes };
+}
+
+/**
+ * T3: the funded schedules of `mine` whose `projectId` is an ordinary (unfunded) start in `old`
+ * whose first revision falls in the same model month.
+ */
+export function sameMonthOrdinary(
+  mine: readonly Schedule[],
+  old: readonly Schedule[],
+  asOf: Day
+): number {
+  const ordinary = new Map<string, Schedule>();
+  for (const s of old)
+    if (s.origin === 'simulated' && s.funding === undefined) ordinary.set(s.projectId, s);
+  let n = 0;
+  for (const s of mine) {
+    if (s.funding === undefined) continue;
+    const o = ordinary.get(s.projectId);
+    const sameMonth =
+      o !== undefined &&
+      monthOfDay(asOf, o.revisions[0].day) === monthOfDay(asOf, s.revisions[0].day);
+    if (sameMonth) n++;
+  }
+  return n;
 }
 
 /**

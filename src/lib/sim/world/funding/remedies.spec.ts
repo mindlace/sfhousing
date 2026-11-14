@@ -15,7 +15,7 @@ import { compact, isWaiting } from './line-index';
 import { serveLine } from './serve';
 import { createFundingSystem } from './system';
 import {
-  benchFunded,
+  benchMoney,
   fundedMini,
   oneMoneyTimeline,
   randomFinance,
@@ -155,7 +155,7 @@ describe('the line index', () => {
 });
 
 describe('8a on the bench city (synthCity, bench baseline money)', () => {
-  const bench = benchFunded(benchInput());
+  const bench = benchMoney(benchInput());
   const bs = staticsOf(bench);
   const bt = oneMoneyTimeline(bench, bench.finance!);
   const M = 12;
