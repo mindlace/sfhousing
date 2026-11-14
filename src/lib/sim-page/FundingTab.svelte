@@ -18,6 +18,13 @@
 
 <script lang="ts">
   import { tick } from 'svelte';
+  import {
+    COVERAGE_CHANCE_NOTE,
+    COVERAGE_OFF_SHORT_SENTENCE4,
+    COVERAGE_RUN_SENTENCE4,
+    coverageShortLine
+  } from '$lib/timeline/copy';
+  import Explain from '$lib/timeline/Explain.svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { HORIZON } from '$lib/fzp/time';
   import {
@@ -29,10 +36,8 @@
   } from '$lib/sim/finance';
   import type { Calibration, Day, Pool, TermKey } from '$lib/timelapse/types';
   import {
-    COVERAGE_OFF_SHORT_SENTENCE,
     COVERAGE_PRIVATE_SENTENCE,
     COVERAGE_RULE_SENTENCE,
-    COVERAGE_RUN_SENTENCE,
     COVERAGE_SIZE_SENTENCE,
     DRAFT_OPEN_DESC,
     MONTH_OFFER_CAVEAT,
@@ -45,7 +50,6 @@
     TERM_NAME,
     affordableCostText,
     checkLineText,
-    coverageLineText,
     coverageStepText,
     coverageSummaryText,
     customValueText,
@@ -477,7 +481,13 @@
   {#if baseline && steps.length > 0}
     <!-- Status of the policy, not a control: above every button (owner's rule). -->
     <div class="flex flex-col items-start gap-1">
-      <p class="font-semibold">{coverageLineText(steps[0])}</p>
+      <p class="font-semibold">
+        {#if steps[0].certain}
+          {coverageShortLine(steps[0])}
+        {:else}
+          <Explain text={COVERAGE_CHANCE_NOTE}>{coverageShortLine(steps[0])}</Explain>
+        {/if}
+      </p>
       <button
         type="button"
         aria-expanded={coverageOpen}
@@ -495,9 +505,9 @@
             {/each}
           </ul>
         {/if}
-        <p>{COVERAGE_RUN_SENTENCE}</p>
+        <p>{COVERAGE_RUN_SENTENCE4}</p>
         <p>{COVERAGE_RULE_SENTENCE}</p>
-        <p>{COVERAGE_OFF_SHORT_SENTENCE}</p>
+        <p>{COVERAGE_OFF_SHORT_SENTENCE4}</p>
         {#if sized.some((x) => x)}
           <p>{COVERAGE_SIZE_SENTENCE}</p>
         {/if}

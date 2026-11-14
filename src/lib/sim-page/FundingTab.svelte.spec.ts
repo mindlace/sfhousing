@@ -9,6 +9,7 @@ import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { formatDollarsExact } from '$lib/fzp/format';
 import { HORIZON } from '$lib/fzp/time';
+import { coverageShortLine } from '$lib/timeline/copy';
 import { dayOf } from '$lib/sim/scenario/dates';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import {
@@ -30,7 +31,6 @@ import {
   YOUR_VALUE_LINE,
   addProgrammeName,
   clearTermName,
-  coverageLineText,
   coverageSummaryText,
   limitAlert,
   removeChangeName,
@@ -1023,7 +1023,7 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
     });
     const cal = fundingCalibration();
     const line = (day: number) =>
-      coverageLineText(coverageSteps(policy.funding, cal.baselineFunding!, day, HORIZON)[0]);
+      coverageShortLine(coverageSteps(policy.funding, cal.baselineFunding!, day, HORIZON)[0]);
     expect(line(JULY)).not.toBe(line(FUND_ASOF));
     setup(policy, { priceDay: JULY });
     await expect.element(page.getByText(line(JULY), { exact: true })).toBeVisible();
@@ -1077,7 +1077,7 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
 
   it('shows the coverage line for every only tag', async () => {
     const cal = fundingCalibration();
-    const line = coverageLineText(
+    const line = coverageShortLine(
       coverageSteps(BOND_POLICY.funding, cal.baselineFunding!, FUND_ASOF, HORIZON)[0]
     );
     setup(BOND_POLICY, { only: { tag: 'fund', pool: 'u-pool-1' } });

@@ -140,7 +140,7 @@
       <p class={muted}>
         Per added home counts the money spent so far, including on homes still being built, against
         the homes funded projects have finished, less the private homes they took the place of. It
-        is high early in a run and falls as projects finish.
+        is high early in the forecast and falls as projects finish.
       </p>
       <div data-testid="fzp-money-displaced">
         <p>{displacementLine(money, i)}</p>

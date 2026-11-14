@@ -12,6 +12,7 @@ import {
   TIMELINE_SCORE_R0
 } from './fixtures/timeline-score';
 import { scoreCopy } from '$lib/sim-page/policy';
+import { FORECAST_NOTE, TWIN_NOTE, marketBody } from '$lib/timeline/copy';
 import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import type { LeverCapacity } from '$lib/sim/levers/resolve';
 import SimResults from './SimResults.svelte';
@@ -49,8 +50,7 @@ import type { TimelineView } from '$lib/sim/world/score/types';
 
 /** Index 53 of the fixture: 2031-03-15. */
 const DAY = dayFromUtc(2031, 3, 15);
-const INTRO =
-  "One possible future for San Francisco under the Family Zoning Plan. It starts from every real project in the pipeline today and adds new ones at the rates the city's own records show. It is a simulation, not a forecast.";
+const INTRO = FORECAST_NOTE;
 
 type Overrides = Partial<{
   score: typeof TIMELINE_SCORE | null;
@@ -104,7 +104,7 @@ const openSources = () => {
 };
 
 describe('intro and loading', () => {
-  it('has no badge, and the one-possible-future paragraph is in Sources', async () => {
+  it('has no badge, and the forecast note is in Sources', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props() });
     expect(document.querySelector('[data-testid="fzp-badge"]')).toBeNull();
@@ -196,20 +196,16 @@ describe('what the plan added', () => {
     expect(row('Homes completed because of the plan')).toContain('1,290');
     expect(row('Homes approved because of the plan')).toContain('2,185');
     await expect.element(page.getByText('In 8 of 10 futures: 1,240–1,340')).toBeInTheDocument();
-    expect(sources().textContent).toContain('each future is run twice');
-    await expect
-      .element(
-        page.getByText(
-          "To see what the plan itself does, each future is run twice: once with the Family Zoning Plan, and once as the same city simulated under the old zoning, with the same luck. The difference between the two is the plan's effect. Some homes would have been built anyway; they are not counted here."
-        )
-      )
-      .toBeInTheDocument();
+    expect(sources().textContent).not.toContain('run twice');
+    await expect.element(page.getByText(TWIN_NOTE)).not.toBeInTheDocument();
+    await page.getByRole('button', { name: 'What the plan added' }).click();
+    await expect.element(page.getByText(TWIN_NOTE)).toBeVisible();
     expect(
       page.getByText('What the plan added').element().closest('section')!.getAttribute('aria-busy')
     ).toBeNull();
   });
 
-  it('plan effect not yet computed: calculating rows, busy sub-section, twin paragraph kept', async () => {
+  it('plan effect not yet computed: calculating rows, busy sub-section', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props({ score: TIMELINE_SCORE_R0 }) });
     const row = (label: string) =>
@@ -219,7 +215,6 @@ describe('what the plan added', () => {
     const section = page.getByText('What the plan added').element().closest('section')!;
     expect(section.getAttribute('aria-busy')).toBe('true');
     await expect.element(page.getByText('Range: calculating…')).toBeInTheDocument();
-    expect(sources().textContent).toContain('each future is run twice');
     // the total band is unaffected
     openSources();
     await expect.element(page.getByText(/^In 8 of 10 simulated futures:/)).toBeVisible();
@@ -233,20 +228,13 @@ describe('score copy (/sim)', () => {
     await render(SimResults, { props: props({ copy }) });
     await expect.element(page.getByText('What your policy added')).toBeVisible();
     await expect.element(page.getByText('What the plan added')).not.toBeInTheDocument();
-    await expect
-      .element(page.getByText(/^One possible future for San Francisco under your policy\./))
-      .toBeInTheDocument();
+    await expect.element(page.getByText(FORECAST_NOTE)).toBeInTheDocument();
     const row = (label: string) =>
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
     expect(row('Homes completed because of your policy')).toContain('1,290');
     expect(row('Homes approved because of your policy')).toContain('2,185');
-    await expect
-      .element(
-        page.getByText(
-          "To see what your policy itself does, each future is run twice: once with your policy, and once as the same city simulated under the Family Zoning Plan as written, with the same luck. The difference between the two is your policy's effect. Some homes would have been built anyway; they are not counted here."
-        )
-      )
-      .toBeInTheDocument();
+    await page.getByRole('button', { name: 'What your policy added' }).click();
+    await expect.element(page.getByText(TWIN_NOTE)).toBeVisible();
   });
 
   it('names the comparison in the added section', async () => {
@@ -812,13 +800,13 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
     expect(priv.endsWith(` ${MARKET_FUNDING_SENTENCE}`)).toBe(true);
     const screen = await render(SimResults, { props: props({ market: priv }) });
     openSources();
-    expect(el('fzp-market')!.textContent!.trim()).toBe(priv);
+    expect(el('fzp-market')!.textContent!.trim()).toBe(marketBody(priv));
     const all = structuredClone(cal);
     delete all.baselineFunding;
     const r1 = marketText(all)!;
     expect(r1).toBe(marketSentence(all, 'all'));
     await screen.rerender(props({ market: r1 }));
-    await expect.element(page.getByTestId('fzp-market')).toHaveTextContent(r1);
+    await expect.element(page.getByTestId('fzp-market')).toHaveTextContent(marketBody(r1));
     expect(el('fzp-market')!.textContent).not.toContain(MARKET_FUNDING_SENTENCE);
   });
 });

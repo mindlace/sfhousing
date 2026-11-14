@@ -67,9 +67,13 @@
       'a[href], button, input, select, textarea, [tabindex]'
     );
     if (!el) return;
-    if (open) el.setAttribute('aria-describedby', textId);
-    else el.removeAttribute('aria-describedby');
-    return () => el.removeAttribute('aria-describedby');
+    // Added to what the child already points at (an error line, say), never replacing it.
+    const own = el.getAttribute('aria-describedby');
+    if (open) el.setAttribute('aria-describedby', own ? `${own} ${textId}` : textId);
+    return () => {
+      if (own) el.setAttribute('aria-describedby', own);
+      else el.removeAttribute('aria-describedby');
+    };
   });
 </script>
 
@@ -103,6 +107,7 @@
     <span
       id={textId}
       role="tooltip"
+      data-explain-open
       class="mt-1 text-sm text-ink-muted md:absolute md:top-0 md:left-full md:z-30 md:mt-0 md:ml-1 md:w-max md:max-w-[min(14rem,calc(100vw-2rem))] md:rounded md:border md:border-line md:bg-surface md:px-2 md:py-1 md:text-ink md:shadow-md"
     >
       {text}

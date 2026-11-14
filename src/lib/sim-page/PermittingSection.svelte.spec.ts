@@ -150,6 +150,7 @@ describe('PermittingSection', () => {
 
   it('shows the Local Program line', async () => {
     setup();
+    await page.getByRole('button', { name: 'Local Program lots streamlined' }).click();
     await expect
       .element(
         page.getByText('Family Zoning Plan Local Program lots use the streamlined route.', {

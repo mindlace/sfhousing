@@ -122,7 +122,6 @@
     Preset
     <select
       class="min-h-6 rounded-md border border-control-line bg-surface px-1 font-normal text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
-      aria-describedby="{uid}-preset-desc"
       disabled={presetLocked !== null}
       value={current.preset}
       onchange={(e) => choosePreset(e.currentTarget.value as PresetId)}
@@ -137,8 +136,10 @@
       <Explain text={presetLocked}>Preset fixed</Explain>
     </span>
   {/if}
-  <p id="{uid}-preset-desc" class="text-xs text-ink-muted dark:text-ink-dark-muted">
-    {preset.summary} Evidence tier {tier}.
+  <p class="text-xs text-ink-muted dark:text-ink-dark-muted">
+    <Explain text="{preset.summary} Evidence tier {tier}." label="About {preset.name}"
+      >{preset.name}</Explain
+    >
   </p>
 
   <p class="font-semibold" data-testid="timing-label">{label}</p>
@@ -184,8 +185,11 @@
   {/each}
 
   <p>
-    Family Zoning Plan Local Program lots {current.localProgramStreamlined ? 'use' : 'do not use'} the
-    streamlined route.
+    <Explain
+      text="Family Zoning Plan Local Program lots {current.localProgramStreamlined
+        ? 'use'
+        : 'do not use'} the streamlined route.">Local Program lots streamlined</Explain
+    >: {current.localProgramStreamlined ? 'yes' : 'no'}
   </p>
 
   <details class="text-xs text-ink-muted dark:text-ink-dark-muted">

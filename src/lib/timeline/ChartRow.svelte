@@ -105,6 +105,7 @@
     focusAt = next;
   }
 
+  const uid = $props.id();
   const CAPTION =
     'Average of the simulated cities with their range, this city and the state target; the Results table has the numbers.';
 
@@ -116,7 +117,11 @@
   ] as const;
 </script>
 
-<figure class="sfh-chart-row m-0" aria-label="Net new homes by month">
+<figure
+  class="sfh-chart-row m-0"
+  aria-label="Net new homes by month"
+  aria-describedby="{uid}-caption"
+>
   <div class="plot relative">
     <svg
       viewBox="0 0 {W} {H}"
@@ -260,7 +265,7 @@
       </li>
     {/each}
   </ul>
-  <figcaption class="sr-only">{CAPTION}</figcaption>
+  <figcaption id="{uid}-caption" hidden>{CAPTION}</figcaption>
 </figure>
 
 <style>
