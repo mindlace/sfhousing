@@ -1,5 +1,11 @@
 // Test support: hand-built score statics and series chunks (test values, not data). Browser-safe.
-import type { MonthRow, MoneyRow, ScoreStatics, SeriesChunk } from '$lib/sim/world/score/types';
+import type {
+  MonthRow,
+  MoneyRow,
+  ScoreStatics,
+  SeriesChunk,
+  TimelineView
+} from '$lib/sim/world/score/types';
 import type { PoolKind } from '$lib/timelapse/types';
 
 /** Score statics with `lastIndex + 1` months (default 23); with `finance`, empty limits and debts. */
@@ -97,5 +103,22 @@ export function chunk(
         }))
       : null,
     tiers: null
+  };
+}
+
+/** The view trimmed to months 0 to `n` (`filledThrough` n): a forecast still filling. */
+export function cut(view: TimelineView, n: number): TimelineView {
+  const k = n + 1;
+  return {
+    ...view,
+    filledThrough: n,
+    mean: view.mean.slice(0, k),
+    band: view.band.slice(0, k),
+    shown: view.shown.slice(0, k),
+    planEffect: view.planEffect.slice(0, k),
+    planEffectBand: view.planEffectBand.slice(0, k),
+    targets: view.targets.slice(0, k),
+    tierTargets: view.tierTargets?.slice(0, k) ?? null,
+    tiers: view.tiers?.slice(0, k) ?? null
   };
 }
