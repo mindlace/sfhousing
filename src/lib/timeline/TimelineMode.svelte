@@ -281,9 +281,17 @@
   const shown = $derived(session ? session.shown(index) : { view: null, stale: false });
   /** The numbers on show are from before the latest change (rule 31). */
   const stale = $derived(shown.stale);
-  /** The filled mark: the playhead stops there (rule 24). */
+  /**
+   * The filled mark: the playhead stops there (rule 24). Filled to the last month, it is the
+   * window's end (that month's calendar end and the window's model-month end differ by days), so
+   * End, Replay and the end of playback reach it.
+   */
   const filledEnd = $derived(
-    current ? filledEndDay(current.months, current.filledThrough, asOf) : asOf
+    !current
+      ? asOf
+      : current.filledThrough >= current.lastIndex
+        ? windowEnd
+        : Math.min(filledEndDay(current.months, current.filledThrough, asOf), windowEnd)
   );
   const playable = $derived(session ? session.playAvailable() : false);
   const tierBaseline = $derived(statics?.tierBaseline ?? null);

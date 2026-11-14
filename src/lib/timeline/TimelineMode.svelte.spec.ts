@@ -229,6 +229,16 @@ describe('TimelineMode', () => {
     expect(debug().policy).toEqual(mk(protect(5)));
   });
 
+  it('filled to lastIndex, End reaches the window end: Play reads Replay, no hatch remains', async () => {
+    await opened();
+    await expect.element(slider()).toHaveAttribute('aria-valuemax', String(windowEnd));
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{End}');
+    await expect.poll(() => debug().day).toBe(windowEnd);
+    await expect.element(page.getByTestId('tl-play-label')).toHaveTextContent('Replay');
+    expect(document.querySelectorAll('[data-testid=tl-hatch]')).toHaveLength(0);
+  });
+
   it('sends viewMonth when the playhead enters another month', async () => {
     await opened();
     await expect
@@ -286,11 +296,12 @@ describe('TimelineMode', () => {
   });
 
   it('rows are hatched past the filled end and the hatch moves after a refill', async () => {
-    const s = await opened();
+    // Filled short of the last month (filled to it, no hatch remains: the test above).
+    const s = await opened(LAST - 1);
     const hatches = () => [...document.querySelectorAll<HTMLElement>('[data-testid=tl-hatch]')];
     const at = (through: number) => dayPct(filledEndDay(MONTHS, through, asOf), asOf, windowEnd);
     await expect.poll(() => hatches().length).toBeGreaterThan(2);
-    for (const h of hatches()) expect(parseFloat(h.style.left)).toBeCloseTo(at(LAST), 1);
+    for (const h of hatches()) expect(parseFloat(h.style.left)).toBeCloseTo(at(LAST - 1), 1);
 
     s.setPolicy(mk(protect(5)));
     s.setLots({});

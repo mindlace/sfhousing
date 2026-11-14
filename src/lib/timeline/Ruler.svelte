@@ -39,7 +39,7 @@
   <div class="years relative">
     {#each years as t (t.y)}
       <span
-        class="year absolute text-xs text-ink-muted tabular-nums"
+        class="year absolute text-xs text-ink-muted tabular-nums dark:text-ink-dark-muted"
         class:first={t.x === 0}
         style:left="{t.x}%">{t.y}</span
       >

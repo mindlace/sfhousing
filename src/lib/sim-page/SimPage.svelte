@@ -691,10 +691,11 @@
   interface ClickMap {
     on(ev: 'click', fn: (e: MapClick) => void): void;
     off(ev: 'click', fn: (e: MapClick) => void): void;
-    on(ev: 'mousedown' | 'touchstart', fn: () => void): void;
-    off(ev: 'mousedown' | 'touchstart', fn: () => void): void;
+    getCanvas(): HTMLElement;
   }
   let clickMap: ClickMap | null = null;
+  /** The canvas whose presses forget a miss. */
+  let pressCanvas: HTMLElement | null = null;
   /** The latest selecting click's number: only its answer counts. */
   let clickSeq = 0;
   /**
@@ -710,15 +711,16 @@
     unwatchClicks();
     clickMap = map;
     map.on('click', onMapClick);
-    // A new press starts a new tap: a miss whose click never came (a drag) is forgotten.
-    map.on('mousedown', forgetMiss);
-    map.on('touchstart', forgetMiss);
+    // A new press starts a new tap: a miss whose click never came (a drag) is forgotten. A pointer
+    // press, once per tap: a touch tap's mousedown comes after its miss, so it cannot be the press.
+    pressCanvas = map.getCanvas();
+    pressCanvas.addEventListener('pointerdown', forgetMiss);
   }
 
   function unwatchClicks(): void {
     clickMap?.off('click', onMapClick);
-    clickMap?.off('mousedown', forgetMiss);
-    clickMap?.off('touchstart', forgetMiss);
+    pressCanvas?.removeEventListener('pointerdown', forgetMiss);
+    pressCanvas = null;
   }
 
   function forgetMiss(): void {

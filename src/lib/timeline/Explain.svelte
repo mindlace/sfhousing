@@ -108,7 +108,7 @@
       id={textId}
       role="tooltip"
       data-explain-open
-      class="mt-1 text-sm text-ink-muted md:absolute md:top-0 md:left-full md:z-30 md:mt-0 md:ml-1 md:w-max md:max-w-[min(14rem,calc(100vw-2rem))] md:rounded md:border md:border-line md:bg-surface md:px-2 md:py-1 md:text-ink md:shadow-md"
+      class="mt-1 text-sm text-ink-muted md:absolute md:top-0 md:left-full md:z-30 md:mt-0 md:ml-1 md:w-max md:max-w-[min(14rem,calc(100vw-2rem))] md:rounded md:border md:border-line md:bg-surface md:px-2 md:py-1 md:text-ink md:shadow-md dark:text-ink-dark-muted md:dark:border-line-dark md:dark:bg-surface-dark md:dark:text-ink-dark"
     >
       {text}
     </span>

@@ -101,6 +101,19 @@ describe('ChartRow', () => {
     await expect.element(page.getByTestId('chart-readout')).toHaveTextContent(/8 in 10 1,0/);
   });
 
+  it("each legend explanation keeps a 24 px target clear of the chart's slider (WCAG 2.5.8)", async () => {
+    await render(ChartRow, { props: { view: fullView(), index: 0, target: null } });
+    const slider = page.getByRole('slider', { name: 'Month in the chart' }).element();
+    const s = slider.getBoundingClientRect();
+    const buttons = [...document.querySelectorAll<HTMLElement>('.legend button')];
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const b of buttons) {
+      const r = b.getBoundingClientRect();
+      // The 24 px circle around the target's centre stays below the slider.
+      expect(r.top + r.height / 2 - 12, b.textContent!).toBeGreaterThanOrEqual(s.bottom);
+    }
+  });
+
   it('draws no marks and no overlay without a view', async () => {
     await render(ChartRow, { props: { view: null, index: 0, target: null } });
     await expect.element(page.getByTestId('chart-avg')).not.toBeInTheDocument();

@@ -226,7 +226,7 @@
       ></div>
       {#if active !== null}
         <p
-          class="readout pointer-events-none absolute top-0 m-0 rounded border border-line bg-surface px-2 py-1 text-xs whitespace-nowrap text-ink tabular-nums shadow-md"
+          class="readout pointer-events-none absolute top-0 m-0 rounded border border-line bg-surface px-2 py-1 text-xs whitespace-nowrap text-ink tabular-nums shadow-md dark:text-ink-dark"
           style:left="{(x(active) / W) * 100}%"
           class:flip={active > lastIndex / 2}
           data-testid="chart-readout"
@@ -236,9 +236,13 @@
       {/if}
     {/if}
   </div>
-  <ul class="legend m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-xs text-ink">
+  <!-- Each item is 24 px tall and the list clears the chart by 4 px, so a 16 px explanation
+       button keeps its 24 px target (WCAG 2.5.8) clear of the chart's slider above it. -->
+  <ul
+    class="legend m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 pt-1 text-xs text-ink dark:text-ink-dark"
+  >
     {#each LEGEND as l (l.name)}
-      <li class="flex items-center gap-1.5">
+      <li class="flex min-h-6 items-center gap-1.5">
         <svg width="22" height="10" aria-hidden="true">
           <line
             x1="1"

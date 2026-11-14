@@ -153,7 +153,7 @@
   }
 </script>
 
-<div class="sfh-playhead text-ink">
+<div class="sfh-playhead text-ink dark:text-ink-dark">
   <div class="flex flex-col gap-1 md:flex-row md:items-center md:gap-4">
     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
       <button

@@ -29,7 +29,6 @@ const SCANNED = [
 const THEMED_FILES = [
   'src/lib/shell/NoticePills.svelte',
   'src/lib/sim-page/SimNotices.svelte',
-  'src/lib/fzp/FzpMode.svelte',
   'src/lib/fzp/SimResults.svelte',
   'src/lib/fzp/ScoreChart.svelte',
   'src/lib/fzp/MapKey.svelte',
@@ -51,7 +50,23 @@ const THEMED_FILES = [
   'src/lib/brush/BrushEditor.svelte',
   'src/lib/scoreboard/ScoreboardPanel.svelte',
   'src/lib/scoreboard/NeighborhoodList.svelte',
-  'src/lib/sharing/NoticeStack.svelte'
+  'src/lib/sharing/NoticeStack.svelte',
+  'src/lib/timeline/AddMenu.svelte',
+  'src/lib/timeline/ChartRow.svelte',
+  'src/lib/timeline/Explain.svelte',
+  'src/lib/timeline/FixedRow.svelte',
+  'src/lib/timeline/Inspector.svelte',
+  'src/lib/timeline/KindRow.svelte',
+  'src/lib/timeline/Lane.svelte',
+  'src/lib/timeline/Playhead.svelte',
+  'src/lib/timeline/PolicyRow.svelte',
+  'src/lib/timeline/Ruler.svelte',
+  'src/lib/timeline/SpanBar.svelte',
+  'src/lib/timeline/Timeline.svelte',
+  'src/lib/timeline/TimelineHeaderScore.svelte',
+  'src/lib/timeline/TimelineMode.svelte',
+  'src/lib/timeline/WhatEditor.svelte',
+  'src/lib/timeline/WhenEditor.svelte'
 ];
 /** Themed files whose colours come from tokens and custom properties only: no hex at all. */
 const NO_HEX_FILES = [
@@ -145,6 +160,22 @@ describe('app accent tokens', () => {
         const chunk = m[0];
         for (const u of chunk.matchAll(/(?<![\w:-])(bg|border|text)-(?:gray-\d+|white|black)\b/g)) {
           if (!chunk.includes(`dark:${u[1]}-`)) bad.push(`${f}: ${u[0]}`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+  it('themed files pair every ink utility with its dark partner', () => {
+    // Per quote-free string, as above: `text-ink` (or `text-ink-muted`) needs `dark:text-ink-dark`
+    // (or `dark:text-ink-dark-muted`) in the same string, or the text stays light ink on the dark
+    // surface.
+    const bad: string[] = [];
+    for (const f of THEMED_FILES) {
+      const src = readFileSync(fromRoot(f), 'utf8');
+      for (const m of src.matchAll(/[^"'`]+/g)) {
+        const chunk = m[0];
+        for (const u of chunk.matchAll(/(?<![\w:-])text-ink(-muted)?(?![\w-])/g)) {
+          if (!chunk.includes(`dark:text-ink-dark${u[1] ?? ''}`)) bad.push(`${f}: ${u[0]}`);
         }
       }
     }

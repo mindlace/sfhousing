@@ -1226,10 +1226,27 @@ describe('SimPage map selection guards', () => {
     await expect.element(inspector()).not.toBeInTheDocument();
   });
 
+  /** A press on the map's canvas (a pointer down, mouse or touch). */
+  const press = (pointerType: string) =>
+    stub.map.getCanvas().dispatchEvent(new PointerEvent('pointerdown', { pointerType }));
+
+  it('a touch tap on a lot selects: the mouse events a tap sends after it keep the miss', async () => {
+    await ready();
+    // A tap's events in order: its press, the miss (SimMap picks on the pointer's release), then
+    // the mousedown and click the browser sends for a tap.
+    press('touch');
+    stub.map.fire('touchstart');
+    stub.props.timelinePick!({ projectId: null, kind: 'tap' });
+    stub.map.fire('mousedown');
+    stub.map.fire('click', { lngLat: X });
+    await expect.poll(() => w().all('lotAt')).toHaveLength(1);
+  });
+
   it('a miss whose click never came is forgotten at the next press', async () => {
     await ready();
     stub.props.timelinePick!({ projectId: null, kind: 'tap' });
     // The next tap lands on a building: its press, its card, its click.
+    press('mouse');
     stub.map.fire('mousedown');
     stub.props.timelinePick!({ projectId: 'pr-1', parcelId: 'p1', x: 40, y: 40, kind: 'tap' });
     stub.map.fire('click', { lngLat: X });
