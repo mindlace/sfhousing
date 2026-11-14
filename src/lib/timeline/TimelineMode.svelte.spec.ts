@@ -1,0 +1,380 @@
+// TimelineMode composition (timeline-ui rules 1, 18-36): the real TimelineSession and
+// TimelineClient over a fake worker, a recording SimMap stub, and the header slots from a host.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { render } from 'vitest-browser-svelte';
+import { page, userEvent } from 'vitest/browser';
+import '../../routes/layout.css';
+import { parseManifest, type Manifest } from '$lib/data/manifest';
+import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
+import { REAL_ACTUAL } from '$lib/fzp/fixtures/cards';
+import { CALCULATING } from '$lib/fzp/score-view';
+import { dayFromUtc, utcParts } from '$lib/fzp/time';
+import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
+import { formatCount } from '$lib/scoreboard/format';
+import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
+import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
+import { monthFirstDay, monthLastDay } from '$lib/sim/world/months';
+import { viewOf } from '$lib/sim/world/score/view';
+import type { ScoreStatics } from '$lib/sim/world/score/types';
+import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
+import type { Day } from '$lib/timelapse/time';
+import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
+import { UPDATING } from './copy';
+import { fillStatusText } from './fill';
+import { filledEndDay } from './playhead';
+import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
+import { headerOf } from './results';
+import { dayPct } from './rows';
+import type { Lots } from './session.svelte';
+import { FakeTimelineWorker, compiledMsg, filledMsg, refillMsg } from './test/fake-timeline-worker';
+import { chunk, statics as baseStatics } from './test/fixtures';
+import TimelineModeHost from './test/TimelineModeHost.svelte';
+
+vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
+
+const manifest: Manifest = parseManifest(manifestJson);
+const cal = fixtureCalibration();
+const asOf = cal.asOf;
+const LAST = 23;
+const { y, m } = utcParts(asOf);
+const MONTHS: Day[] = Array.from({ length: LAST + 1 }, (_, i) => dayFromUtc(y, m + i, 1));
+const STATICS: ScoreStatics = { ...baseStatics({ lastIndex: LAST }), asOf, months: MONTHS };
+const windowEnd = monthLastDay(asOf, WINDOW_MONTHS);
+
+const protect = (years: number): Policy => ({
+  id: 'a',
+  label: 'Protect',
+  preset: null,
+  on: true,
+  where: { tag: 'category', category: 'newerThan' },
+  spans: [{ from: monthFirstDay(asOf, 2), to: null, what: { tag: 'protect', years } }]
+});
+const painted: Policy = {
+  id: 'paint',
+  label: 'Mission paint',
+  preset: null,
+  on: true,
+  where: { tag: 'painted' },
+  spans: [
+    {
+      from: monthFirstDay(asOf, 2),
+      to: null,
+      what: {
+        tag: 'brushes',
+        brushes: [
+          {
+            id: 'b1',
+            kind: 'paint',
+            strokes: [{ path: [[-122.4, 37.7]], radiusM: 50 }],
+            stories: 5
+          }
+        ]
+      }
+    }
+  ]
+};
+const mk = (...zoning: Policy[]): SimPolicy4 => ({
+  schema: 4,
+  kinds: { zoning, permitting: [], money: [] }
+});
+const withPaint = mk(painted);
+const paintLots: Lots = Object.fromEntries(queriesOf4(withPaint).map((q) => [q.key, ['p1']]));
+
+type Over = Partial<{
+  noScenario: boolean;
+  initialPolicy: SimPolicy4;
+  initialLots: Lots | null;
+  onmiss: () => void;
+}>;
+
+let workers: FakeTimelineWorker[];
+const w = () => workers[workers.length - 1];
+const emit = (r: TimelineHostResponse) => w().emit(r);
+
+function setup(over: Over = {}) {
+  const ctl: { setPolicy?: (p: SimPolicy4) => void; setLots?: (l: Lots | null) => void } = {};
+  const createWorker = vi.fn(() => {
+    const f = new FakeTimelineWorker();
+    workers.push(f);
+    return f;
+  });
+  const r = render(TimelineModeHost, {
+    props: {
+      manifest,
+      manifestError: false,
+      calibration: cal,
+      calibrationError: false,
+      noScenario: over.noScenario ?? false,
+      datasetVersion: 'fixture-0',
+      reload: async () => ({ manifest, calibration: cal }),
+      createWorker,
+      initialPolicy: over.initialPolicy ?? DEFAULT_POLICY4,
+      initialLots: over.initialLots === undefined ? {} : over.initialLots,
+      ctl,
+      statusMs: 0,
+      ...(over.onmiss ? { onmiss: over.onmiss } : {})
+    }
+  });
+  return {
+    r,
+    createWorker,
+    setPolicy: (p: SimPolicy4) => ctl.setPolicy!(p),
+    setLots: (l: Lots | null) => ctl.setLots!(l)
+  };
+}
+
+/** Opened, compiled and filled through `through` at rev 1. */
+async function opened(through = LAST, over: Over = {}) {
+  const s = setup(over);
+  await expect.poll(() => workers.length).toBe(1);
+  await expect.poll(() => w().lastOf('openTimeline')).toBeTruthy();
+  emit(compiledMsg(1, STATICS));
+  emit(filledMsg(1, 0, through + 1));
+  return s;
+}
+
+const debug = () => window.__sfhFzp!;
+const playButton = () => page.getByTestId('tl-play');
+const scoreBar = () => page.getByTestId('score-bar');
+const statusSlot = () => page.getByTestId('tl-status').getByRole('status');
+const slider = () => page.getByRole('slider', { name: 'Date in the simulation' });
+
+function summary(project?: ProjectCard): ParcelSummary {
+  return {
+    parcelId: 'p1',
+    neighborhood: 'Mission',
+    landUse: 'residential',
+    eligible: true,
+    existingUnits: 2,
+    envelope: null,
+    generated: null,
+    ...(project && { project })
+  };
+}
+
+beforeEach(async () => {
+  workers = [];
+  stub.reset();
+  vi.stubEnv('VITE_E2E', '1');
+  await page.viewport(1280, 900);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
+
+describe('TimelineMode', () => {
+  it('renders map, then timeline; no worker and no timeline without a scenario', async () => {
+    const none = setup({ noScenario: true });
+    await expect.element(page.getByTestId('fzp-sim-map-stub')).toBeInTheDocument();
+    await expect.element(page.getByTestId('fzp-status')).toHaveTextContent("isn't available");
+    expect(document.querySelector('[data-testid=tl-dock]')).toBeNull();
+    expect(none.createWorker).not.toHaveBeenCalled();
+    expect(debug().phase).toBe('no-scenario');
+    (await none.r).unmount();
+
+    setup();
+    await expect.element(page.getByTestId('fzp-sim-map-stub')).toBeInTheDocument();
+    await expect.element(page.getByTestId('tl-dock')).toBeInTheDocument();
+    await expect.element(page.getByTestId('tl-timeline')).toBeInTheDocument();
+    expect(workers).toHaveLength(1);
+    expect(w().lastOf('openTimeline')?.policy).toEqual(DEFAULT_POLICY4);
+    await expect.element(page.getByTestId('fzp-status')).toHaveTextContent('Loading');
+  });
+
+  it('nothing plays on open; the playhead is at the dataset date', async () => {
+    await opened();
+    await expect.element(slider()).toBeInTheDocument();
+    expect(debug().day).toBe(asOf);
+    expect(debug().playing).toBe(false);
+    expect(debug().filledThrough).toBe(LAST);
+    await expect.element(playButton()).toHaveAttribute('aria-disabled', 'false');
+    expect(debug().playing).toBe(false);
+    expect(callsOf('setTime').at(-1)).toEqual([asOf]);
+  });
+
+  it('an edit pauses playback and Play is unavailable until filledThrough === lastIndex', async () => {
+    const s = await opened();
+    await expect.element(playButton()).toHaveAttribute('aria-disabled', 'false');
+    await playButton().click();
+    await expect.poll(() => debug().playing).toBe(true);
+
+    s.setPolicy(mk(protect(5)));
+    await expect.poll(() => debug().playing).toBe(false);
+    await expect.element(playButton()).toHaveAttribute('aria-disabled', 'true');
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 5));
+    emit(filledMsg(2, 5, 10));
+    await expect.poll(() => debug().filledThrough).toBe(14);
+    await expect.element(playButton()).toHaveAttribute('aria-disabled', 'true');
+    emit(filledMsg(2, 15, LAST - 14));
+    await expect.element(playButton()).toHaveAttribute('aria-disabled', 'false');
+    expect(debug().policy).toEqual(mk(protect(5)));
+  });
+
+  it('sends viewMonth when the playhead enters another month', async () => {
+    await opened();
+    await expect
+      .poll(() =>
+        w()
+          .all('viewMonth')
+          .map((v) => v.month)
+      )
+      .toEqual([1]);
+    (slider().element() as HTMLElement).focus();
+    // Model months start on the dataset date's day: two calendar steps reach model month 2.
+    await userEvent.keyboard('{ArrowRight}{ArrowRight}');
+    await expect
+      .poll(() =>
+        w()
+          .all('viewMonth')
+          .map((v) => v.month)
+      )
+      .toEqual([1, 2]);
+    expect(callsOf('setTime').at(-1)?.[0]).toBe(debug().day);
+  });
+
+  it('onResyncNeeded calls resyncMap', async () => {
+    await opened();
+    await expect.poll(() => stub.resyncCb).not.toBeNull();
+    expect(w().all('resyncMap')).toHaveLength(0);
+    stub.resyncCb!();
+    expect(w().all('resyncMap')).toHaveLength(1);
+  });
+
+  it('the status slot says Updating while stale, then Forecast filled to …, then nothing', async () => {
+    const s = await opened(5);
+    const partly = fillStatusText(viewOf([chunk(0, 6)], STATICS));
+    expect(partly).toMatch(/^Forecast filled to \d{4}$/);
+    await expect.element(statusSlot()).toHaveTextContent(partly);
+    emit(filledMsg(1, 6, LAST - 5));
+    await expect.poll(() => statusSlot().element().textContent?.trim()).toBe('');
+
+    s.setPolicy(mk(protect(5)));
+    await expect.element(statusSlot()).toHaveTextContent(UPDATING);
+    // The explanation waits behind the status (rule 31, F12).
+    await expect.element(statusSlot().getByRole('button', { name: UPDATING })).toBeInTheDocument();
+    expect(debug().stale).toBe(true);
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 3));
+    const refilling = fillStatusText(viewOf([chunk(0, 3)], STATICS));
+    await expect.element(statusSlot()).toHaveTextContent(refilling);
+    expect(debug().stale).toBe(false);
+    emit(filledMsg(2, 3, LAST - 2));
+    await expect.poll(() => statusSlot().element().textContent?.trim()).toBe('');
+  });
+
+  it('rows are hatched past the filled end and the hatch moves after a refill', async () => {
+    const s = await opened();
+    const hatches = () => [...document.querySelectorAll<HTMLElement>('[data-testid=tl-hatch]')];
+    const at = (through: number) => dayPct(filledEndDay(MONTHS, through, asOf), asOf, windowEnd);
+    await expect.poll(() => hatches().length).toBeGreaterThan(2);
+    for (const h of hatches()) expect(parseFloat(h.style.left)).toBeCloseTo(at(LAST), 1);
+
+    s.setPolicy(mk(protect(5)));
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 10));
+    // The unfilled part moves back to the refill point.
+    await expect.poll(() => parseFloat(hatches()[0].style.left)).toBeCloseTo(at(9), 1);
+    for (const h of hatches()) expect(parseFloat(h.style.left)).toBeCloseTo(at(9), 1);
+    emit(filledMsg(2, 10, 4));
+    await expect.poll(() => parseFloat(hatches()[0].style.left)).toBeCloseTo(at(13), 1);
+  });
+
+  it('a provisional open keeps the header calculating until the full document fills', async () => {
+    const s = setup({ initialPolicy: withPaint, initialLots: null });
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    // The open went out without the brushes (OQ-3).
+    expect(w().lastOf('openTimeline')!.policy.kinds.zoning).toHaveLength(0);
+    emit(compiledMsg(1, STATICS));
+    emit(filledMsg(1, 0, LAST + 1));
+    await expect.element(scoreBar()).toHaveTextContent(CALCULATING);
+    expect(debug().stale).toBe(true);
+
+    s.setLots(paintLots);
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    expect(w().lastOf('setPolicy')!.policy).toEqual(withPaint);
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 2));
+    await expect.element(scoreBar()).toHaveTextContent(CALCULATING);
+    emit(filledMsg(2, 2, LAST - 1));
+    const total = headerOf(viewOf([chunk(0, LAST + 1)], STATICS)).total!;
+    await expect.element(scoreBar()).toHaveTextContent(formatCount(total));
+    expect(debug().stale).toBe(false);
+  });
+
+  it('the header shows calculating, then baseline plus the average at lastIndex', async () => {
+    await opened(10);
+    await expect.element(scoreBar()).toHaveTextContent(CALCULATING);
+    emit(filledMsg(1, 11, LAST - 10));
+    const view = viewOf([chunk(0, LAST + 1)], STATICS);
+    const total = view.baseline.completedNet + Math.round(view.mean[LAST].completedNet);
+    expect(headerOf(view).total).toBe(total);
+    await expect.element(scoreBar()).toHaveTextContent(`${formatCount(total)} homes`);
+    await expect.element(scoreBar()).toHaveTextContent(`by ${utcParts(MONTHS[LAST]).y}`);
+  });
+
+  it('an open card is dimmed while stale and asks again once the refill covers its day', async () => {
+    const s = await opened();
+    await expect.poll(() => stub.props.timelinePick).toBeTruthy();
+    stub.props.timelinePick!({ projectId: 'pr-1', parcelId: 'p1', x: 40, y: 40, kind: 'tap' });
+    await expect.poll(() => w().all('parcelSummary')).toHaveLength(1);
+    const req = w().lastOf('parcelSummary')!;
+    w().emit({ type: 'parcelSummary', reqId: req.reqId, summary: summary(REAL_ACTUAL) });
+    const card = page.getByTestId('tl-card');
+    await expect.element(card.getByRole('heading')).toBeInTheDocument();
+    expect(card.element().hasAttribute('data-stale')).toBe(false);
+
+    s.setPolicy(mk(protect(5)));
+    await expect.element(card).toHaveAttribute('data-stale', 'true');
+    expect(getComputedStyle(card.element().querySelector('section')!).opacity).toBe('0.6');
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 0));
+    // Nothing covers the card's month yet: no new question.
+    await expect.poll(() => debug().filledThrough).toBe(-1);
+    expect(w().all('parcelSummary')).toHaveLength(1);
+    emit(filledMsg(2, 0, 3));
+    await expect.poll(() => w().all('parcelSummary')).toHaveLength(2);
+    expect(w().lastOf('parcelSummary')).toMatchObject({ parcelId: 'p1', day: asOf });
+    await expect.poll(() => card.element().hasAttribute('data-stale')).toBe(false);
+  });
+
+  it('a miss tap calls onmiss and opens no card', async () => {
+    const onmiss = vi.fn();
+    await opened(LAST, { onmiss });
+    await expect.poll(() => stub.props.timelinePick).toBeTruthy();
+    stub.props.timelinePick!({ projectId: null, kind: 'tap' });
+    expect(onmiss).toHaveBeenCalledTimes(1);
+    expect(w().all('parcelSummary')).toHaveLength(0);
+    expect(page.getByTestId('tl-card').element().querySelector('section')).toBeNull();
+    // A hover miss is not a tap.
+    stub.props.timelinePick!({ projectId: null, kind: 'hover' });
+    expect(onmiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('on a phone the playhead and chart stay above an open kind sheet', async () => {
+    await page.viewport(390, 760);
+    await opened();
+    await expect.element(slider()).toBeInTheDocument();
+    await page.getByRole('button', { name: /^Permitting/ }).click();
+    const sheet = page.getByRole('dialog', { name: 'Permitting' });
+    await expect.element(sheet).toBeVisible();
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const top = sheet.element().getBoundingClientRect().top;
+    const s = slider().element().getBoundingClientRect();
+    const chart = page.getByRole('figure').element().getBoundingClientRect();
+    expect(s.top).toBeGreaterThanOrEqual(0);
+    expect(s.bottom).toBeLessThanOrEqual(top + 0.5);
+    expect(chart.top).toBeGreaterThanOrEqual(0);
+    expect(chart.bottom).toBeLessThanOrEqual(top + 0.5);
+  });
+});

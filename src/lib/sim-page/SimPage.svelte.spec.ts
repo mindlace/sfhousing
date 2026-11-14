@@ -31,6 +31,7 @@ import { tinyLimits } from '$lib/map/height/test/fixtures';
 import { clampBbox } from './lid-request';
 import defaultRecord2 from './fixtures/schema2/default-record.json?raw';
 import { DRAFT_DISCARDED, DRAFT_LINE } from './funding-copy';
+import { legacyFzpDebug } from '$lib/fzp/debug-legacy';
 
 const restoreSpy = vi.hoisted(() => vi.fn());
 vi.mock('./sim-session', async (orig) => {
@@ -89,8 +90,8 @@ const editPolicy = () => page.getByRole('button', { name: 'Edit policy', exact: 
 const handle = () => page.getByTestId('dock-handle');
 const runButton = () => page.getByRole('button', { name: 'Run', exact: true });
 const scoreButton = () => page.getByTestId('score-bar');
-/** `window.__sfhFzp` (installed while `VITE_E2E` is '1', see `readySim`). */
-const fzpDebug = () => window.__sfhFzp!;
+/** `window.__sfhFzp`, old shape (installed while `VITE_E2E` is '1', see `readySim`). */
+const fzpDebug = () => legacyFzpDebug()!;
 
 /**
  * The scenario answers `ready` and its first timeline: the brush tools come on. The timeline
@@ -1031,7 +1032,7 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
       await toReady();
       await tab('Protect').click();
       await run().click();
-      const fzp = () => window.__sfhFzp!;
+      const fzp = () => legacyFzpDebug()!;
       await expect.poll(() => fzp().playing).toBe(true);
       expect(rentControl().query()).toBeNull(); // a run shows Results, not the tabs
       const slider = page.getByRole('slider', { name: 'Date in the simulation' });

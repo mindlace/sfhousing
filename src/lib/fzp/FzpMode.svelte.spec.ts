@@ -28,6 +28,7 @@ import FzpModeHost from './test/FzpModeHost.svelte';
 import { callsOf, stub } from './test/sim-map-stub';
 import { scoreAt, vsFzpText } from './score-view';
 import { HORIZON, dayFromUtc, monthIndex } from './time';
+import { legacyFzpDebug } from './debug-legacy';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('./test/FzpSimMapStub.svelte'));
 
@@ -136,7 +137,7 @@ async function details() {
 }
 /** The shown future as the Results face states it ("This future: #7 (representative)"). */
 const future = () => {
-  const d = window.__sfhFzp!;
+  const d = legacyFzpDebug()!;
   return `This future: #${d.seed}${d.representative ? ' (representative)' : ''}`;
 };
 const card = () => page.getByRole('region', { name: /1234 Mission St|Block 3512|Project details/ });
@@ -717,7 +718,7 @@ describe('FzpMode run slider', () => {
     await press('{PageUp}');
     await press('{PageUp}');
     await press('{PageDown}');
-    const d = window.__sfhFzp!;
+    const d = legacyFzpDebug()!;
     const day = d.day;
     const mark = d.highWater;
     expect(mark).toBeGreaterThan(day);
@@ -1731,7 +1732,7 @@ describe('FzpMode levers (/sim)', () => {
       .getByRole('status')
       .getByText('Updating the simulation for your policy… 2 of 5 lots');
     await expect.element(notice).toBeVisible();
-    expect(window.__sfhFzp!.levers).toMatchObject({ status: 'resolving', done: 2, total: 5 });
+    expect(legacyFzpDebug()!.levers).toMatchObject({ status: 'resolving', done: 2, total: 5 });
     await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'true');
     s.w().emit({
       type: 'levers',
@@ -1744,7 +1745,7 @@ describe('FzpMode levers (/sim)', () => {
     await expect
       .element(page.getByText(/Updating the simulation for your policy/))
       .not.toBeInTheDocument();
-    expect(window.__sfhFzp!.levers).toMatchObject({ status: 'current', sentRev: rev });
+    expect(legacyFzpDebug()!.levers).toMatchObject({ status: 'current', sentRev: rev });
     // The score stays the last run's, busy, until the new run's timeline arrives.
     await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'true');
     s.w().emit(timelineMsg(rev, 7));
@@ -1789,7 +1790,7 @@ describe('FzpMode levers (/sim)', () => {
     const alert = page.getByRole('alert').filter({ hasText: message });
     await expect.element(alert).toBeVisible();
     expect(region.element().contains(alert.element())).toBe(true);
-    expect(window.__sfhFzp!.levers).toMatchObject({ status: 'failed', sentRev: rev });
+    expect(legacyFzpDebug()!.levers).toMatchObject({ status: 'failed', sentRev: rev });
     expect(err).toHaveBeenCalledWith('[fzp] worker error', 'internal', 'x');
     await expect.element(page.getByText(/Updating the simulation/)).not.toBeInTheDocument();
 
@@ -1811,7 +1812,7 @@ describe('FzpMode levers (/sim)', () => {
       unknownLots: 0
     });
     s.w().emit(timelineMsg(init.rev, 7));
-    await expect.poll(() => window.__sfhFzp!.levers.status).toBe('current');
+    await expect.poll(() => legacyFzpDebug()!.levers.status).toBe('current');
     await expect.element(page.getByText(message)).not.toBeInTheDocument();
     expect(region.element().textContent?.trim()).toBe('');
   });
@@ -1840,7 +1841,7 @@ describe('FzpMode levers (/sim)', () => {
     const rev = leverRev(s.w());
     s.w().emit({ type: 'levers', rev, phase: 'resolving', done: 1, total: 4, failedCells: [] });
     await expect
-      .poll(() => window.__sfhFzp?.levers)
+      .poll(() => legacyFzpDebug()?.levers)
       .toEqual({ status: 'resolving', done: 1, total: 4, sentRev: rev });
     vi.unstubAllEnvs();
   });
@@ -1909,7 +1910,7 @@ describe('FzpMode levers (/sim)', () => {
 
 describe('FzpMode Setup and Run (/sim, spec §1)', () => {
   const OTHER: SimLevers = { ...DEFAULT_LEVERS, compare: 'fzp' };
-  const debug = () => window.__sfhFzp!;
+  const debug = () => legacyFzpDebug()!;
   const playLabel = () => page.getByTestId('fzp-play-label');
   const setPhase = async (s: Setup, runPhase: SimPhase) => (await s.r).rerender({ runPhase });
   /** Sends a new levers object and returns the rev its setLevers went out on. */
@@ -2116,25 +2117,25 @@ describe('FzpMode band ranks', () => {
     await toReady(s, 7);
     const w = s.w();
     const initRev = lastRev(w);
-    expect(window.__sfhFzp!.ranks).toBeNull();
+    expect(legacyFzpDebug()!.ranks).toBeNull();
     w.emit(ranksMsg(initRev, [3, 1, 2]));
-    await expect.poll(() => window.__sfhFzp!.ranks).toEqual([3, 1, 2]);
+    await expect.poll(() => legacyFzpDebug()!.ranks).toEqual([3, 1, 2]);
 
     await (await s.r).rerender({ levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });
     await expect.poll(() => w.allOf('setLevers').length).toBe(1);
     const rev = w.lastOf('setLevers')!.rev;
-    expect(window.__sfhFzp!.ranks).toBeNull();
+    expect(legacyFzpDebug()!.ranks).toBeNull();
     w.emit(ranksMsg(initRev, [9, 9, 9]));
-    expect(window.__sfhFzp!.ranks).toBeNull();
+    expect(legacyFzpDebug()!.ranks).toBeNull();
     w.emit(ranksMsg(rev, [2, 3, 1]));
-    await expect.poll(() => window.__sfhFzp!.ranks).toEqual([2, 3, 1]);
+    await expect.poll(() => legacyFzpDebug()!.ranks).toEqual([2, 3, 1]);
   });
 
   it('selectRank requests the run at that position, null at the median', async () => {
     const s = setup({ levers: DEFAULT_LEVERS });
     await toReady(s, 7);
     const w = s.w();
-    const d = () => window.__sfhFzp!;
+    const d = () => legacyFzpDebug()!;
     d().selectRank(0); // no ranks yet: a no-op
     expect(w.allOf('reroll')).toEqual([]);
     expect(d().switchTrace).toBeNull();

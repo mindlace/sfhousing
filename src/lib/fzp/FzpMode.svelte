@@ -98,7 +98,7 @@
     type ScenarioWorkerInput
   } from '$lib/sim/scenario-client';
   import type { Day } from '$lib/timelapse/time';
-  import { installFzpDebug, type SfhFzpDebug } from './debug';
+  import { installLegacyFzpDebug, type LegacyFzpDebug } from './debug-legacy';
   import { HighWater } from './high-water.svelte';
   import { marketText, uncappedPoolIds } from './money-view';
   import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
@@ -321,7 +321,7 @@
    */
   let ranksFloor = 0;
   /** The latest run switch's timing stamps (the e2e bench reads them). */
-  let switchTrace = $state.raw<SfhFzpDebug['switchTrace']>(null);
+  let switchTrace = $state.raw<LegacyFzpDebug['switchTrace']>(null);
 
   /**
    * Run was pressed: play as soon as the phase is 'run' and the score is current, for the latest
@@ -1109,7 +1109,7 @@
 
     applyInset();
 
-    const uninstall = installFzpDebug(() => ({
+    const uninstall = installLegacyFzpDebug(() => ({
       phase,
       seed,
       representative,
