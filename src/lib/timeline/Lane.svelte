@@ -1,7 +1,7 @@
 <!--
   One row's lane (rules 2, 3, 6): the window's width, with the part past the filled mark hatched.
-  `filledPct` is the filled mark's place across the window; the hatch is drawn over the content and
-  never takes the pointer.
+  `filledPct` is the filled mark's place across the window; the hatch is drawn beneath the content (bars
+  keep their own contrast) and never takes the pointer.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';

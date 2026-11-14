@@ -171,7 +171,7 @@
     border: 0;
     font-size: 11px;
     line-height: 20px;
-    color: #fff;
+    color: var(--on-k, #fff);
     text-align: left;
     white-space: nowrap;
     overflow: hidden;

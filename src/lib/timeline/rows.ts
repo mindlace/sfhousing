@@ -14,20 +14,24 @@ import { spanMonths } from './spans';
  * A fixed row's selection, carried as a `SpanRef` (Timeline's `selected` and `onselect` stay
  * `SpanRef | null`). Contract for the inspector:
  * - `id` is `FIXED_ID` for a kind's fixed row ("Family Zoning Plan, as adopted", "Permitting times,
- *   as observed", "City funding today"; `kind` is that kind, `span` 0) and `MARKET_ID` for "Market
- *   conditions" (`{ kind: 'money', id: MARKET_ID, span: 0 }`).
+ *   as observed", "City funding today"; `kind` is that kind) and `MARKET_ID` for "Market conditions"
+ *   (`{ kind: 'money', id: MARKET_ID }`). Both have `span` FIXED_SPAN (-1), an index no policy has.
  * - The market ref's `kind` is always 'money', even when the Public money kind is absent (no
  *   market and baseline funding): "The world" row is always drawn, so it can still be selected.
- * - These ids are reserved: no policy may carry them. Test `isFixedRef(ref)` before any policy
- *   lookup; a fixed ref names no policy, span or edit, and its view is read-only.
+ * - `isFixedRef(ref)` is true only for `span === FIXED_SPAN` and one of the two ids, so a document
+ *   policy that happens to be named 'fixed' or 'fixed-market' (spans 0 and up) is never taken for a
+ *   fixed row. Test it before any policy lookup; a fixed ref names no policy, span or edit, and its
+ *   view is read-only.
  */
 export const FIXED_ID = 'fixed';
 export const MARKET_ID = 'fixed-market';
 
-export const fixedRef = (kind: PolicyKind): SpanRef => ({ kind, id: FIXED_ID, span: 0 });
-export const marketRef = (): SpanRef => ({ kind: 'money', id: MARKET_ID, span: 0 });
+export const FIXED_SPAN = -1;
+
+export const fixedRef = (kind: PolicyKind): SpanRef => ({ kind, id: FIXED_ID, span: FIXED_SPAN });
+export const marketRef = (): SpanRef => ({ kind: 'money', id: MARKET_ID, span: FIXED_SPAN });
 export const isFixedRef = (r: SpanRef | null): boolean =>
-  r !== null && (r.id === FIXED_ID || r.id === MARKET_ID);
+  r !== null && r.span === FIXED_SPAN && (r.id === FIXED_ID || r.id === MARKET_ID);
 
 export const KIND_LABEL: Record<PolicyKind, string> = {
   zoning: 'Zoning',

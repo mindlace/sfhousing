@@ -21,6 +21,7 @@
     hasMoney,
     KIND_LABEL,
     MARKET_LABEL,
+    isFixedRef,
     marketRef,
     marketText,
     MARKET_ID
@@ -67,7 +68,9 @@
   const kinds = $derived<PolicyKind[]>(
     hasMoney(calibration) ? ['zoning', 'permitting', 'money'] : ['zoning', 'permitting']
   );
-  const marketSelected = $derived(selected?.id === MARKET_ID);
+  const marketSelected = $derived(
+    selected !== null && isFixedRef(selected) && selected.id === MARKET_ID
+  );
 
   // Open kinds from md; below md one kind at a time opens as a sheet.
   let opened = $state<Record<PolicyKind, boolean>>({
@@ -271,6 +274,7 @@
     --k-permitting: #8f5a12;
     --k-money: #1f7a55;
     --k-world: #5f5f66;
+    --on-k: #ffffff;
     color: var(--color-ink);
   }
   @media (min-width: 768px) {
@@ -304,6 +308,7 @@
     bottom: 0;
     z-index: 20;
     overflow-y: auto;
+    overscroll-behavior: contain;
     border-top: 1px solid var(--color-line);
     border-radius: 16px 16px 0 0;
     background: var(--color-surface);
@@ -332,6 +337,12 @@
   @media (prefers-color-scheme: dark) {
     .tl {
       color: var(--color-ink-dark);
+      /* Fills reach 3:1 on the dark surface and its raised tone; the text on them 4.5:1. */
+      --k-zoning: #7aa2f0;
+      --k-permitting: #d9a24e;
+      --k-money: #4fb98a;
+      --k-world: #a0a0a8;
+      --on-k: #1c1d1f;
     }
     .lab {
       border-bottom-color: var(--color-line-dark);

@@ -196,7 +196,7 @@ describe('Timeline rows', () => {
     );
     expect(world.textContent).not.toMatch(/, (private|all)$/);
     await page.getByRole('button', { name: /^Permitting times, as observed/ }).click();
-    expect(onselect).toHaveBeenCalledWith({ kind: 'permitting', id: 'fixed', span: 0 });
+    expect(onselect).toHaveBeenCalledWith({ kind: 'permitting', id: 'fixed', span: -1 });
     const firstRow = document.querySelector(
       '[data-testid=tl-kind-permitting] [data-testid=tl-fixed]'
     );
@@ -431,5 +431,68 @@ describe('Timeline rows', () => {
     window.scrollTo(0, document.documentElement.scrollHeight);
     await check();
     spacer.remove();
+  });
+  it('does not take a policy named fixed for a fixed row', async () => {
+    const named: SimPolicy4 = {
+      ...doc,
+      kinds: { ...doc.kinds, permitting: [{ ...permitting, id: 'fixed', label: 'Fixed review' }] }
+    };
+    await setup({ policy: named, selected: { kind: 'permitting', id: 'fixed', span: 0 } });
+    await kindButton('Permitting').click();
+    const bars = barsOf('permitting');
+    expect(bars[0].getAttribute('aria-pressed')).toBe('true');
+    const fixed = document.querySelector(
+      '[data-testid=tl-kind-permitting] [data-testid=tl-fixed] button'
+    )!;
+    expect(fixed.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('keeps dark-mode bar fills at 3:1 and bar text at 4.5:1', () => {
+    // The dark media rules, read from the stylesheet (the test page is light).
+    const vars = new Map<string, string>();
+    const walk = (rules: CSSRuleList, dark: boolean) => {
+      for (const r of rules) {
+        if (r instanceof CSSMediaRule) walk(r.cssRules, dark || r.conditionText.includes('dark'));
+        else if (
+          dark &&
+          r instanceof CSSStyleRule &&
+          /(^|\s)\.tl[.\s{]|^\.tl$/.test(r.selectorText)
+        ) {
+          for (const n of r.style)
+            if (n.startsWith('--')) vars.set(n, r.style.getPropertyValue(n).trim());
+        }
+      }
+    };
+    for (const sheet of document.styleSheets) {
+      try {
+        walk(sheet.cssRules, false);
+      } catch {
+        // A cross-origin sheet.
+      }
+    }
+    const root = getComputedStyle(document.documentElement);
+    const surface = root.getPropertyValue('--color-surface-dark').trim();
+    const raised = root.getPropertyValue('--color-surface-dark-raised').trim();
+    const hex = (c: string) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+    const lum = (c: string) => {
+      const [r, g, b] = hex(c).map((v) => {
+        const x = v / 255;
+        return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (a: string, b: string) => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    const on = vars.get('--on-k')!;
+    expect(on).toMatch(/^#/);
+    for (const k of ['zoning', 'permitting', 'money', 'world']) {
+      const fill = vars.get(`--k-${k}`)!;
+      expect(fill, k).toMatch(/^#/);
+      expect(ratio(fill, surface), `${k} fill`).toBeGreaterThanOrEqual(3);
+      expect(ratio(fill, raised), `${k} ring`).toBeGreaterThanOrEqual(3);
+      expect(ratio(on, fill), `${k} text`).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });

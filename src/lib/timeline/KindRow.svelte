@@ -9,7 +9,7 @@
   import Lane from './Lane.svelte';
   import PolicyRow from './PolicyRow.svelte';
   import type { PolicyKind, Policy, SimPolicy4 } from './policy4';
-  import { barBox, FIXED_LABEL, fixedRef, KIND_LABEL } from './rows';
+  import { barBox, FIXED_ID, FIXED_LABEL, fixedRef, isFixedRef, KIND_LABEL } from './rows';
   import type { SpanRef } from './spans';
 
   interface Props {
@@ -53,7 +53,7 @@
   const countId = $props.id();
   const step = $derived(Math.min(7, 24 / Math.max(policies.length, 1)));
   const fixedSelected = $derived(
-    selected?.kind === kind && selected.id === 'fixed' && selected.span === 0
+    selected !== null && isFixedRef(selected) && selected.id === FIXED_ID && selected.kind === kind
   );
 </script>
 

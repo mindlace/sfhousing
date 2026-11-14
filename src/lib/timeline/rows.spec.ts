@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { monthFirstDay, monthLastDay } from '$lib/sim/world/months';
-import { barBox, barLabel, compactDollars, dayPct, settingOf } from './rows';
+import {
+  barBox,
+  barLabel,
+  compactDollars,
+  dayPct,
+  fixedRef,
+  isFixedRef,
+  marketRef,
+  settingOf
+} from './rows';
 
 const asOf = 20000;
 
@@ -40,5 +49,14 @@ describe('rows helpers', () => {
       what: { tag: 'protect' as const, years: null }
     };
     expect(barLabel('Keep it', s, asOf)).toMatch(/^Keep it, \w+ \d{4} to no end$/);
+  });
+
+  it('tells a fixed ref from a policy span by its span index', () => {
+    expect(isFixedRef(fixedRef('zoning'))).toBe(true);
+    expect(isFixedRef(marketRef())).toBe(true);
+    expect(fixedRef('zoning').span).toBe(-1);
+    expect(isFixedRef({ kind: 'zoning', id: 'fixed', span: 0 })).toBe(false);
+    expect(isFixedRef({ kind: 'money', id: 'fixed-market', span: 0 })).toBe(false);
+    expect(isFixedRef(null)).toBe(false);
   });
 });
