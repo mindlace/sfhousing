@@ -82,9 +82,19 @@ function use(c: City): void {
   NO_STARTS = frameOf(input, { id: 1, market: -1000 });
 }
 
+// One step per hook, each well inside the default hook timeout under load: the bench input and its
+// records are a city build each, and the warm-up is the generator's cold cost.
+let benchIn: SimInput;
+beforeAll(() => {
+  benchIn = benchInput();
+});
+beforeAll(() => {
+  bench = cityOf(benchIn, benchRecords());
+});
 beforeAll(async () => {
-  bench = cityOf(benchInput(), benchRecords());
   fixture = cityOf(await fixtureInput(), fixtureRecords());
+});
+beforeAll(() => {
   warmGenMemo(bench.input, bench.records, bench.statics, oneFrame(bench.base), SEED, 120);
 });
 
