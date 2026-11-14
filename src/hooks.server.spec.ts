@@ -84,6 +84,8 @@ describe('sessionHandle', () => {
     const e = event('/data/fixture-0/manifest.json', { cookie: 'better-auth.session_token=t' });
     await sessionHandle({ event: e, resolve: ok });
     expect(getAuth).not.toHaveBeenCalled();
+    expect(resolveSessionUser).not.toHaveBeenCalled();
+    expect(resolveCapabilities).not.toHaveBeenCalled();
     expect(e.locals).toEqual(PUBLIC_LOCALS);
   });
 

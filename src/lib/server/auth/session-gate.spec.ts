@@ -92,4 +92,18 @@ describe('shouldResolveSession', () => {
       )
     ).toBe(false);
   });
+
+  it('is false under a percent-encoded /data/, which routes to the same handler', () => {
+    for (const path of ['/%64ata/fixture-0/manifest.json', '/d%61ta/fixture-0/x.json']) {
+      expect(shouldResolveSession(url(path), headers('better-auth.session_token=t')), path).toBe(
+        false
+      );
+    }
+  });
+
+  it('falls back to the raw path when it does not decode', () => {
+    expect(shouldResolveSession(url('/%E0%A4%A/x'), headers('better-auth.session_token=t'))).toBe(
+      true
+    );
+  });
 });

@@ -17,8 +17,9 @@ function setPublicLocals(locals: App.Locals) {
  * Resolves the Better-Auth session into `locals`, only when a session cookie is present or
  * the route needs a session (`shouldResolveSession`). Every other request, and everything
  * under `/data/`, gets the public locals without Better-Auth being constructed, so a
- * signed-out visitor gets no cookie and a missing `BETTER_AUTH_SECRET` breaks only the
- * auth routes.
+ * signed-out visitor gets no cookie. A missing `BETTER_AUTH_SECRET` therefore spares a
+ * signed-out visitor's public pages but fails every request that resolves a session: any
+ * request with a session cookie, and every session route.
  */
 export const sessionHandle: Handle = async ({ event, resolve }) => {
   if (!shouldResolveSession(event.url, event.request.headers)) {

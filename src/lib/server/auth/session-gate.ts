@@ -43,9 +43,19 @@ export function routeNeedsSession(pathname: string): boolean {
   return SESSION_ROUTE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-/** Resolve the session for this request: never under `/data/`; otherwise when a session
- *  cookie is present or the route needs one. */
+/** The pathname as the router sees it: percent-decoded (`/%64ata/` routes to `/data/`).
+ *  A path that does not decode is left as it is. */
+function routedPath(pathname: string): string {
+  try {
+    return decodeURI(pathname);
+  } catch {
+    return pathname;
+  }
+}
+
+/** Resolve the session for this request: never under `/data/` (decoded); otherwise when a
+ *  session cookie is present or the route needs one. */
 export function shouldResolveSession(url: URL, headers: Headers): boolean {
-  if (url.pathname.startsWith('/data/')) return false;
+  if (routedPath(url.pathname).startsWith('/data/')) return false;
   return hasSessionCookie(headers.get('cookie')) || routeNeedsSession(url.pathname);
 }

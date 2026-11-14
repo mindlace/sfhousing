@@ -1,7 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
-import { listRecipientPendingInvites } from '$lib/server/invites/control-plane';
 import { clearPendingSim, readPendingSim } from '$lib/server/onboarding/pending-sim';
 import { listSimsForUser } from '$lib/server/sims/sim-index';
 import { simQuotaExceeded } from '$lib/server/sims/sim-quota';
@@ -29,12 +28,8 @@ export const load: PageServerLoad = async (event) => {
 
   const sims = await listSimsForUser({ db, userId: locals.user.id });
   sims.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
-  const invitations = await listRecipientPendingInvites({
-    db,
-    userId: locals.user.id,
-    email: locals.user.email,
-    emailVerified: locals.user.emailVerified
-  });
+  // The /sims layout already read them (each read scans every pending invite).
+  const { recipientInvites: invitations } = await event.parent();
   return { sims, invitations };
 };
 

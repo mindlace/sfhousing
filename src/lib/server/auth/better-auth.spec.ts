@@ -66,6 +66,12 @@ describe('verifyAuthSecret', () => {
   it('rejects short secrets', () => {
     expect(() => verifyAuthSecret('a'.repeat(31))).toThrow();
   });
+  it('rejects a missing secret with the operator message, not a TypeError', () => {
+    const message = /BETTER_AUTH_SECRET is missing, too short/;
+    expect(() => verifyAuthSecret(undefined)).toThrow(message);
+    expect(() => verifyAuthSecret('')).toThrow(message);
+    expect(() => verifyAuthSecret('a'.repeat(31))).toThrow(message);
+  });
   it('accepts a 32+ char non-placeholder', () => {
     expect(() => verifyAuthSecret('a'.repeat(32))).not.toThrow();
   });
@@ -256,6 +262,8 @@ describe('change-email mail records', () => {
   });
 
   test('records nothing outside an e2e build', async () => {
+    // Pinned off: a shell that exports VITE_E2E=1 must not flip this case.
+    vi.stubEnv('VITE_E2E', '');
     mockConsole();
     const auth = getAuth(e2ePlatform(), 'https://example.com');
     await auth.options.emailVerification!.sendVerificationEmail!({

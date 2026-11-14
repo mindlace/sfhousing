@@ -8,6 +8,7 @@ vi.mock('$lib/server/onboarding/pseudonymous-mint', () => ({ mintPseudonymousSes
 import { createInvite } from '$lib/server/invites/control-plane';
 import { createSim } from '$lib/server/sims/sims';
 import { actions, load } from './+page.server';
+import { load as layoutLoad } from './+layout.server';
 
 const opened: Array<() => void> = [];
 afterEach(() => {
@@ -37,10 +38,14 @@ function setup(
     set: (n: string, v: string) => void store.set(n, v),
     delete: (n: string) => void store.delete(n)
   };
+  const platform = makePlatform(t.shim);
+  const locals = { user: opts.user ?? null };
   const event = (title?: string) =>
     ({
-      platform: makePlatform(t.shim),
-      locals: { user: opts.user ?? null },
+      platform,
+      locals,
+      // The page reads the invitations from the /sims layout's load.
+      parent: () => layoutLoad({ platform, locals } as never),
       cookies,
       request: new Request('http://localhost/sims', {
         method: 'POST',
@@ -133,6 +138,15 @@ describe('/sims load', () => {
     expect(res.invitations).toEqual([
       { id: expect.any(String), simId, simTitle: 'Garden', inviterHandle: 'mara' }
     ]);
+  });
+
+  it("takes the invitations from the layout's load instead of reading them again", async () => {
+    const { event } = setup({ user: { id: 'u1', pseudonymous: false } });
+    const fromLayout = [{ id: 'i1', simId: 's1', simTitle: 'Garden', inviterHandle: 'mara' }];
+    const e = event() as unknown as Record<string, unknown>;
+    e.parent = async () => ({ recipientInvites: fromLayout });
+    const res = (await load(e as never)) as { invitations: unknown };
+    expect(res.invitations).toBe(fromLayout);
   });
 
   it('resumes a pending sim: creates it, clears the stash, redirects', async () => {

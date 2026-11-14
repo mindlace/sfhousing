@@ -37,8 +37,8 @@ const BAD_SECRETS = new Set([
   'change-me-32-bytes-min'
 ]);
 
-export function verifyAuthSecret(secret: string) {
-  if (BAD_SECRETS.has(secret) || secret.length < 32) {
+export function verifyAuthSecret(secret: string | undefined) {
+  if (!secret || BAD_SECRETS.has(secret) || secret.length < 32) {
     throw new Error(
       'BETTER_AUTH_SECRET is missing, too short (<32 chars), or a known placeholder. Generate one with: openssl rand -hex 32'
     );
@@ -174,7 +174,8 @@ export function getAuth(
            * sign-in action. Do not "fix" this into unconditional sending.
            *
            * KNOWN, ACCEPTED (not fixed here): better-auth creates the verification row BEFORE
-           * invoking this callback (password.mjs:63-70), so a refused address still accrues one
+           * invoking this callback (`requestPasswordReset` in better-auth 1.7.23's
+           * `dist/api/routes/password.mjs`), so a refused address still accrues one
            * unusable reset token per request. The token is inert — a refused address can never
            * receive the link — but the rows do accumulate. Fixing it needs an upstream change or
            * a pre-route hook; deliberately out of scope for this change.

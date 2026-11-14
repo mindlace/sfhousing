@@ -35,4 +35,12 @@ describe('refuseUnlessSameOriginJson', () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: SIMS_COPY.crossOrigin });
   });
+
+  it('answers 403 for the string Origin "null" (an opaque origin)', () => {
+    expect(check({ 'content-type': 'application/json', origin: 'null' })!.status).toBe(403);
+  });
+
+  it('allows an upper-case JSON content type from the same Origin', () => {
+    expect(check({ 'content-type': 'APPLICATION/JSON', origin: 'http://localhost' })).toBeNull();
+  });
 });

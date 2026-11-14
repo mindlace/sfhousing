@@ -5,7 +5,7 @@ export function normalizeHandle(raw: string): string {
   return raw.trim().normalize('NFC').toLowerCase(); // toLowerCase, NOT toLocaleLowerCase
 }
 
-/** Reserved labels (this module owns the list; profile.ts imports it). */
+/** Reserved labels (this module owns the list; profile.ts reaches it through validateHandle). */
 export const RESERVED = new Set([
   'api',
   'mcp',
