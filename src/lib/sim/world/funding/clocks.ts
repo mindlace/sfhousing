@@ -202,6 +202,20 @@ function segOn(
   return { ord, rate: market ? Math.min(ord, x) : x, ref, bundle, level, size };
 }
 
+/** One numeric field of each segment, in order. */
+function fieldOf(segs: readonly Seg[], key: 'ord' | 'rate' | 'ref'): number[] {
+  const out: number[] = new Array(segs.length);
+  for (let j = 0; j < segs.length; j++) out[j] = segs[j][key];
+  return out;
+}
+
+/** The segment holding lot-month `t`: the first `j` with `bounds[j] >= t` (or the last). */
+function segOf(bounds: readonly number[], t: number): number {
+  let j = 0;
+  while (j < bounds.length && bounds[j] < t) j++;
+  return j;
+}
+
 /**
  * One kind's funded clock for `spell`, read through model month `month` (rule 4): lot-month T of
  * the spell runs on the frame of the model month holding its first day, as `ordinaryStart` lays
@@ -236,34 +250,25 @@ export function kindClock(
   }
   const K = bounds.length;
   const uS = drawOn(stream, P.SIZE, 0);
-  const segs = months.map((m) => segOn(timeline, timeline.frameAt(m), statics, spell, kind, uS));
+  const segs: Seg[] = new Array(months.length);
+  for (let j = 0; j < months.length; j++)
+    segs[j] = segOn(timeline, timeline.frameAt(months[j]), statics, spell, kind, uS);
 
   const uO = drawOn(stream, P.INIT, 0);
   const LO = log(1 - uO);
-  const [ob, or] = merged(
-    bounds,
-    segs.map((s) => s.ord)
-  );
+  const [ob, or] = merged(bounds, fieldOf(segs, 'ord'));
   // The ordinary lot-month, as `ordinaryStart` computes it (only the market reads it).
   const TO = market ? piecewiseMonth(LO, ob, or) : 0;
 
   const L = market ? LO : log(1 - drawOn(stream, P.INIT_AFFORDABLE, 0));
   const v = drawOn(stream, market ? P.INIT_DAY : P.INIT_DAY_AFFORDABLE, 0);
-  const [rb, rr] = merged(
-    bounds,
-    segs.map((s) => s.rate)
-  );
+  const [rb, rr] = merged(bounds, fieldOf(segs, 'rate'));
   let T = piecewiseMonth(L, rb, rr);
-  const segOf = (t: number) => {
-    let j = 0;
-    while (j < K && bounds[j] < t) j++;
-    return j;
-  };
   if (market && TO !== 0) {
     if (T === 0 || T > TO) T = TO;
     else if (T < TO) {
       let shifted = false;
-      for (let j = 0, a = 0; j <= segOf(T); j++) {
+      for (let j = 0, a = 0, jT = segOf(bounds, T); j <= jT; j++) {
         const end = j < K ? bounds[j] : Infinity;
         if (end > a && segs[j].rate < segs[j].ord) shifted = true;
         a = Math.max(a, end);
@@ -275,10 +280,7 @@ export function kindClock(
   let Tref: number;
   if (market) Tref = TO;
   else {
-    const [fb, fr] = merged(
-      bounds,
-      segs.map((s) => s.ref)
-    );
+    const [fb, fr] = merged(bounds, fieldOf(segs, 'ref'));
     Tref = piecewiseMonth(L, fb, fr);
   }
   const keyDay = Tref === 0 ? NEVER_KEY_DAY : startOf(r, Tref);
@@ -300,7 +302,7 @@ export function kindClock(
       certain: false
     };
   }
-  const j = segOf(T);
+  const j = segOf(bounds, T);
   const s = segs[j];
   const certain = s.rate === -Infinity && s.bundle.length > 0;
   let day: Day | null = null;
