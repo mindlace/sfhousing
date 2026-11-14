@@ -16,7 +16,9 @@ import { copyFor } from '$lib/sharing/copy';
 import { readRecord, writeRecord } from '$lib/sharing/storage';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { monthFirstDay } from '$lib/sim/world/months';
+import { tampered4Text } from '$lib/server/test/sim-docs';
 import { SIM_KEY } from '$lib/sim-page/sim-doc';
+import { TIMING_NOTICE_TEXT } from '$lib/sim-page/sim-session';
 import { DEFAULT_POLICY4, type Policy, type SimPolicy4 } from '$lib/timeline/policy4';
 import { SIM_SERVER_CODEC4 } from '$lib/timeline/server-codec';
 import { SIM_KEY4, serializeSimDoc4, type SimDoc4 } from '$lib/timeline/sim-doc4';
@@ -175,6 +177,17 @@ describe('/s/[id] read-only view', () => {
     await expect
       .element(notices().getByText(/saved before public money could be added/))
       .toBeVisible();
+  });
+
+  it('a tampered link opens refit, with the timing notice', async () => {
+    const data = await dataFor(tampered4Text());
+    await render(PageHost, { props: { data } });
+    await expect.element(notices().getByText(TIMING_NOTICE_TEXT)).toBeVisible();
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    // The worker runs the reconciled set, not the tampered scale.
+    const [timing] = w().lastOf('openTimeline')!.policy.kinds.permitting;
+    const what = timing.spans[0].what;
+    expect(what.tag === 'timing' && what.set.presetTimers.every((t) => t.scale !== 0.2)).toBe(true);
   });
 
   it('Remix stores the opened document under sfhousing:sim:v2', async () => {

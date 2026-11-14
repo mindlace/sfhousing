@@ -70,6 +70,7 @@ function shared4(d: { datasetVersion: string; title?: string; policy: SimPolicy4
   return { ...doc, text: serializeSimDoc4(doc) };
 }
 
+// Copies sim-doc4.ts's private `parseDoc4(r, null, 'reconcile')`; pinned by the spec's parity test.
 /** Lenient load of a stored schema 4 body: the envelope, the policy unaligned, the limits. */
 function load4(r: Record<string, unknown>, text: string): Result<SharedSim> {
   if (r.kind !== 'sim') return fail('/kind', 'unknown-schema', 'This is not a policy document.');
