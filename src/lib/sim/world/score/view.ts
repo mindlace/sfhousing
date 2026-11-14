@@ -31,7 +31,8 @@ function bandOf(m: PlanRow, sd: PlanRow): { lo: PlanRow; hi: PlanRow } {
  * its series cut there, `owed` on each debt pool's `received` that month, and `limits` the
  * statics' (the same in every world, fixed as the forecast fills). `perAddedHome` and
  * `displacedShare` are today's, read that month over a money whose displaced homes are those of
- * completed funded projects (`displacedHomesCompleted`), paired with `fundedHomes`.
+ * completed funded projects (`displacedHomesCompleted`), paired with `fundedHomes`; the `ByMonth`
+ * series give the same figures read at each month, the last entry the scalar.
  */
 function moneyViewOf(rows: MoneyRow[], statics: ScoreStatics): MoneyView {
   const limits = statics.limits;
@@ -87,14 +88,21 @@ function moneyViewOf(rows: MoneyRow[], statics: ScoreStatics): MoneyView {
   };
   const displacedHomesCompleted = rows.map((r) => r.displacedHomesCompleted);
   const paired: Money = { ...money, displacedHomes: displacedHomesCompleted };
+  const all: (number | null)[] = [];
+  const city: (number | null)[] = [];
+  const share: (number | null)[] = [];
+  for (let i = 0; i <= last; i++) {
+    all.push(perAddedHome(paired, i, 'all'));
+    city.push(perAddedHome(paired, i, 'city'));
+    share.push(displacedShare(paired, i));
+  }
   return {
     ...money,
     displacedHomesCompleted,
-    perAddedHome: {
-      all: perAddedHome(paired, last, 'all'),
-      city: perAddedHome(paired, last, 'city')
-    },
-    displacedShare: displacedShare(paired, last)
+    perAddedHome: { all: all[last], city: city[last] },
+    displacedShare: share[last],
+    perAddedHomeByMonth: { all, city },
+    displacedShareByMonth: share
   };
 }
 

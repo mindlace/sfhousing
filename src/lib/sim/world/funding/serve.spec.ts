@@ -634,10 +634,12 @@ describe('serveLine', () => {
 });
 
 describe('rule 10 on the bench city', () => {
+  // Built once at collection, outside the test's time budget (as compaction.spec does).
+  const { input: bench, doc } = benchFunded('bench');
+  const st = staticsOf(bench);
+  const t = moneyTimeline(bench, doc);
+
   it('synthCity bench funding set, seed 2: the award made on money returned in month 219 waits for month 220', () => {
-    const { input: bench, doc } = benchFunded('bench');
-    const st = staticsOf(bench);
-    const t = moneyTimeline(bench, doc);
     const { world, events } = runFunded(st, t, 2, 220, { ledger: false });
     const awards = (m: number): number[] =>
       events

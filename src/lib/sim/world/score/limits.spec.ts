@@ -352,14 +352,29 @@ describe('the money view at filledThrough (rule 12)', () => {
       horizon,
       months: monthsOf(INPUT.asOf, horizon)
     });
-    const extra = ['displacedHomesCompleted', 'displacedShare', 'perAddedHome'];
+    const extra = [
+      'displacedHomesCompleted',
+      'displacedShare',
+      'displacedShareByMonth',
+      'perAddedHome',
+      'perAddedHomeByMonth'
+    ];
     expect(Object.keys(v.money!).sort()).toEqual([...Object.keys(today), ...extra].sort());
     // `displacedHomes` counts each 'displaced' event in its own month (rule 2), not at the funded
     // project's completion as `moneyOf` does: money.spec.ts checks it against the events. Rule
     // 12's term, those of completed funded projects, is `moneyOf`'s at `filledThrough`.
-    const { displacedHomesCompleted, displacedShare: _s, perAddedHome: _p, ...rest } = v.money!;
+    const {
+      displacedHomesCompleted,
+      displacedShare: _s,
+      perAddedHome: _p,
+      displacedShareByMonth: _sm,
+      perAddedHomeByMonth: _pm,
+      ...rest
+    } = v.money!;
     void _s;
     void _p;
+    void _sm;
+    void _pm;
     const strip = (m: typeof today) => ({ ...m, limits: [], displacedHomes: [] });
     expect(strip(rest)).toEqual(strip(today));
     expect(displacedHomesCompleted).toHaveLength(ft + 1);
