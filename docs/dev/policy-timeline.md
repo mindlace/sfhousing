@@ -12,7 +12,7 @@ Release A builds all of this and switches none of it on: `/api/policies`, `/s/[i
 | `src/lib/timeline/parse4.ts`     | `parsePolicy4`, `checkSpanDays`                                                                                             |
 | `src/lib/timeline/upgrade.ts`    | `upgradePolicy(p, asOf)`: schema 3 to 4                                                                                     |
 | `src/lib/timeline/reconcile4.ts` | `reconcilePolicy4(doc, cal, asOf)`, `Policy4Report`                                                                         |
-| `src/lib/timeline/sim-doc4.ts`   | `SimDoc4`, `parseSimDoc4`, `openSimDoc4`, `createSimCodec4`, `migrateSimAutosave`                                           |
+| `src/lib/timeline/sim-doc4.ts`   | `SimDoc4`, `parseSimDoc4`, `loadSimDoc4`, `openSimDoc4`, `createSimCodec4`, `migrateSimAutosave`                            |
 | `src/lib/sim/world/months.ts`    | `monthFirstDay`, `monthLastDay`, `monthOfDay` (world-core owns it)                                                          |
 | `src/lib/sim/world/policy/`      | `combine`, `money`, `zoning-view`, `intern`, `compile`, `compare`, `lookups`, `limits`; `frame.ts` (S4 to S6 types, frozen) |
 
@@ -107,7 +107,9 @@ Slicing: a unit (a recompute step, `applyLevers`, `precomputeOf`) runs whole, so
 
 ## Saving and sharing
 
-`SimDoc4 = { schema: 4, kind: 'sim', datasetVersion, title?, policy }` (`sim-doc4.ts`). `parseSimDoc4` (strict) takes schema 4 only: 2 and 3 are `unknown-schema`, newer is `future-schema`. `openSimDoc4(text, { asOf, calibration })` opens 2, 3 or 4 as a reconciled schema 4 document, with `upgradedFrom` and the `Policy4Report`. `createSimCodec4` is the `DocCodec`; `SIM_KEY4` is `sfhousing:sim:v2`, and `migrateSimAutosave` copies a v1 autosave to v2 as an upgraded document, leaving v1 alone and never touching an existing v2. The D1 table does not change. Nothing calls these yet.
+`SimDoc4 = { schema: 4, kind: 'sim', datasetVersion, title?, policy }` (`sim-doc4.ts`). `parseSimDoc4` (strict) takes schema 4 only: 2 and 3 are `unknown-schema`, newer is `future-schema`. `openSimDoc4(text, { asOf, calibration })` opens 2, 3 or 4 as a reconciled schema 4 document, with `upgradedFrom` and the `Policy4Report`. `createSimCodec4` is the `DocCodec`; `SIM_KEY4` is `sfhousing:sim:v2`, and `migrateSimAutosave` copies a v1 autosave to v2 as an upgraded document, leaving v1 alone and never touching an existing v2. The D1 table does not change.
+
+`loadSimDoc4(text)` is the lenient, dataset-free load of a stored schema 4 body (envelope, title, policy unaligned and without the term check, stroke and size limits; nothing upgraded or reconciled; 2 and 3 are `unknown-schema`): use it where there is no dataset, such as the server's `/api/policies` row load, and `openSimDoc4` where there is one.
 
 ## Tests
 
