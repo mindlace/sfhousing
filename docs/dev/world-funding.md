@@ -258,6 +258,30 @@ With the bench set (rich money: most lots fundable for both kinds) the memo has 
 `StepCtx.through` bound (the planning proposal) is what would cut them further; it is a change to
 world-core's hook, not taken here.
 
+### Memory per world
+
+What funding keeps outside a world is per **timeline object**: the rowless memo and `frameMoney`
+(`WeakMap`s keyed on the `PolicyTimeline`). The line index is per world (keyed on its line), the
+size table per view. So a host shares one timeline object across the worlds of an ensemble and one
+funding system may serve them all; a timeline wrapped per world gets its own caches (on live about
+1.3 MB per world, most of it outside funding).
+
+Live `2026-11-10-6ee5a23d`, `DEFAULT_POLICY4` compiled (no change in 480 months), worlds stepped to
+month 480 on one timeline, heap plus array buffers after a forced GC, per world: 4.25 to 4.50 MB
+before the memo and after it alike (1, 8 and 48 worlds; world 2.2 MB of typed arrays, due list
+0.6 MB). The memo adds 155,020 bytes per timeline, nothing per world.
+
+A rise from +428 MB to +701 MB in ensemble-runner's measurement (96 worlds, no copies kept) was not
+the memo: the script's last dropped copy (`structuredClone` of every world at month 480) stayed
+reachable from a dead local in the measuring function, depending on how V8 compiled it. Both builds
+give either figure from run to run; with the copy taken in a function of its own both give
++427.5 to +427.7 MB every run.
+
+`retained.spec.ts` guards it: six worlds on one timeline, each with its own funding system, leave
+the memo's tables and `frameMoney`'s frames as the first world left them, within a table of a byte
+per lot per (first month, last change read); a world and its due list hold the same typed-array
+bytes with the memo on and off.
+
 ## Tests
 
 All in `src/lib/sim/world/funding/`. Server project (signoff) unless noted.
@@ -265,7 +289,8 @@ All in `src/lib/sim/world/funding/`. Server project (signoff) unless noted.
 - **Units**: `columns`, `clocks`, `frame-money` (`sameMoney` agrees with `policy/money.ts`),
   `apply`, `serve` (line order, award day, the done-lot guard), `pools` (rule 12, money events),
   `policy` (rules 5, 17 to 19, off pools, raised arrivals), `shadow`, `compaction`, `eligibility`,
-  `memo` (the rowless memo and `bundleOf`: results as recorded, memo on and off; above).
+  `memo` (the rowless memo and `bundleOf`: results as recorded, memo on and off; above),
+  `retained` (caches outside the world per timeline, not per world; above).
 - **End to end** `funded.spec.ts`: E1 to E7 after every step on 200 random finances (mini city),
   rule 21, rule 14, rule 16, `structuredClone`, a permuted lot table, the money series I1 to I6.
 - **Remedies** `remedies.spec.ts`: grouped serving equals the direct scan (events, ledger, world),
