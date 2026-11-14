@@ -74,9 +74,36 @@ describe('POST /api/account/email/verify', () => {
     expect(body.emailError).toBeTruthy();
   });
 
-  it('400 when already registered (not pseudonymous)', async () => {
+  it('sends a failed link back to /account, where the page says so', async () => {
+    await POST(evt({ email: 'a@b.com' }));
+    expect(signInMagicLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ errorCallbackURL: '/account?link=failed' })
+      })
+    );
+  });
+
+  it('confirms a registered, unconfirmed address: the link goes to that address only', async () => {
     const res = await POST(
-      evt({ email: 'a@b.com' }, { id: 'u1', handle: 'ada', pseudonymous: false })
+      evt(
+        { email: 'someone-else@b.com' },
+        { id: 'u1', handle: 'ada', pseudonymous: false, emailVerified: false, email: 'ada@x.com' }
+      )
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Record<string, unknown>).email).toBe('ada@x.com');
+    expect(signInMagicLink).toHaveBeenCalledTimes(1);
+    expect(signInMagicLink).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ email: 'ada@x.com' }) })
+    );
+  });
+
+  it('400 when already registered with a confirmed email', async () => {
+    const res = await POST(
+      evt(
+        { email: 'a@b.com' },
+        { id: 'u1', handle: 'ada', pseudonymous: false, emailVerified: true, email: 'ada@x.com' }
+      )
     );
     expect(res.status).toBe(400);
     const body = (await res.json()) as Record<string, unknown>;

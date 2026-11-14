@@ -355,7 +355,7 @@ describe('PasswordSection', () => {
       await screen.getByRole('button', { name: ACCOUNT_COPY.passwordSet }).click();
       await screen.getByLabelText(ACCOUNT_COPY.passwordLabel).fill(goodPassword);
       await screen.getByRole('button', { name: ACCOUNT_COPY.save }).click();
-      await expect.element(screen.getByText(ACCOUNT_COPY.passwordNetworkError)).toBeInTheDocument();
+      await expect.element(screen.getByText(ACCOUNT_COPY.networkError)).toBeInTheDocument();
     } finally {
       window.removeEventListener('unhandledrejection', onUnhandledRejection);
     }
@@ -375,7 +375,7 @@ describe('PasswordSection', () => {
         hasEmail: true
       });
       await screen.getByRole('button', { name: ACCOUNT_COPY.remove }).click();
-      await expect.element(screen.getByText(ACCOUNT_COPY.passwordNetworkError)).toBeInTheDocument();
+      await expect.element(screen.getByText(ACCOUNT_COPY.networkError)).toBeInTheDocument();
     } finally {
       window.removeEventListener('unhandledrejection', onUnhandledRejection);
     }

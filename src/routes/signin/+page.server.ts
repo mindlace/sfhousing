@@ -26,10 +26,15 @@ export const load: PageServerLoad = async (event) => {
   if (locals.user) {
     throw redirect(303, safeReturnTo(url.searchParams.get('returnTo')));
   }
+  const methods = enabledAuthMethods(event);
+  // A magic link that failed (expired, used) comes back marked by sendLink's errorCallbackURL;
+  // any other ?error is Google's, and says something only while Google is on.
+  const linkError = url.searchParams.get('link') === 'failed';
   return {
     // ?signup=1 flips the page to Sign-up: email-only, no passkey.
     signup: url.searchParams.has('signup'),
-    googleError: url.searchParams.has('error'),
+    linkError,
+    googleError: !linkError && methods.has('google') && url.searchParams.has('error'),
     // A sim title stashed by startSim's known-device redirect: resumed once auth
     // completes, or handed to the start-fresh escape hatch below.
     pendingSim: readPendingSim(cookies),
@@ -40,7 +45,7 @@ export const load: PageServerLoad = async (event) => {
     // user lands here to prove the new password.
     reset: url.searchParams.has('reset'),
     // The sign-in methods switched on for this request; the page renders only those.
-    methods: [...enabledAuthMethods(event)]
+    methods: [...methods]
   };
 };
 
@@ -93,9 +98,16 @@ export const actions: Actions = {
               }
             : undefined
         });
+        const returnTo = safeReturnTo(url.searchParams.get('returnTo'));
+        const keep = returnTo === '/' ? '' : `&returnTo=${encodeURIComponent(returnTo)}`;
         await auth.api.signInMagicLink({
           headers: request.headers,
-          body: { email, callbackURL: safeReturnTo(url.searchParams.get('returnTo')) }
+          body: {
+            email,
+            callbackURL: returnTo,
+            // An expired or used link lands back here, where the page says so.
+            errorCallbackURL: `/signin?link=failed${keep}`
+          }
         });
         // The link is sent: the stash has served its purpose, same one-shot
         // treatment as the pending-sim cookie.

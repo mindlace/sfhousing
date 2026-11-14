@@ -13,6 +13,7 @@ export const AUTH_COPY = {
   passkeyWaiting: 'Waiting for your passkey…',
   passkeyFailed: "Passkey sign-in didn't go through. Try again.",
   googleError: "Google sign-in didn't go through. Try again.",
+  linkFailed: 'That link has expired or was used. Send a new one.',
   passkeyButton: 'Sign in with a passkey',
   googleButton: 'Continue with Google',
   chooseOne: 'Choose one:',

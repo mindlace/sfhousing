@@ -3,11 +3,13 @@
   right) the pinned item and the actions. Below lg: the site name, the status, the pinned item
   and a hamburger Menu button whose panel (under the header) holds the mode links and the
   actions. The account entry (Sign in, or @handle) follows the actions in the same group; Sign in
-  shows only while a sign-in method is in effect (`signInAvailable`). The status and the actions render once at every width: from lg the panel is
-  `display: contents`, so the actions sit in the header row.
+  shows only while a sign-in method is in effect (`signInAvailable`). The status and the actions
+  render once at every width: from lg the panel is `display: contents`, so the actions sit in the
+  header row.
 -->
 <script lang="ts">
   import { onMount, tick, type Snippet } from 'svelte';
+  import { AUTH_COPY } from '$lib/account/copy';
   import { headerOverlay } from './header-actions.svelte';
 
   let {
@@ -177,8 +179,9 @@
         <a
           href={user ? '/account' : '/signin'}
           class={[tab(false), 'max-w-40 text-sm']}
+          title={user ? `@${user.handle}` : undefined}
           data-header-account
-          ><span class="truncate">{user ? `@${user.handle}` : 'Sign in'}</span></a
+          ><span class="truncate">{user ? `@${user.handle}` : AUTH_COPY.signIn}</span></a
         >
       {/if}
     </div>

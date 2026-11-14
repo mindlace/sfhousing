@@ -43,9 +43,11 @@
     hasPassword &&
       (!hasLink || (!passwordCollapsed && (toggledPassword || (!signingUp && !!form?.error))))
   );
-  // The identifier form serves the link, password and passkey; with none of them on (no mail
-  // provider and nothing else listed) it is not rendered at all.
-  const showForm = $derived(hasLink || (!signingUp && (hasPasskey || hasPassword)));
+  // The identifier form posts to the link or the password action, so it renders only while one
+  // of them is on: Enter in its field must never post to an action that answers 404. A passkey
+  // needs no identifier, so with passkey alone the button stands without a form.
+  const showForm = $derived(hasLink || (!signingUp && hasPassword));
+  const passkeyAlone = $derived(!showForm && !signingUp && hasPasskey);
   const formAction = $derived(hasLink ? `?/sendLink${keep}` : `?/signInPassword${keep}`);
 
   async function passkeySignIn() {
@@ -80,7 +82,9 @@
   }
 
   // One status region serves confirmation, progress, and non-field errors.
-  const statusIsError = $derived(passkeyFailed || (!!data.googleError && busy === null));
+  const statusIsError = $derived(
+    passkeyFailed || ((!!data.googleError || !!data.linkError) && busy === null)
+  );
   const statusText = $derived(
     form?.sent
       ? AUTH_COPY.emailSent
@@ -92,9 +96,11 @@
             ? AUTH_COPY.passkeyWaiting
             : passkeyFailed
               ? AUTH_COPY.passkeyFailed
-              : data.googleError
-                ? AUTH_COPY.googleError
-                : ''
+              : data.linkError
+                ? AUTH_COPY.linkFailed
+                : data.googleError
+                  ? AUTH_COPY.googleError
+                  : ''
   );
 
   const btn = 'rounded border border-current px-4 py-2 font-medium disabled:opacity-60';
@@ -129,6 +135,17 @@
         onclick={googleSignIn}
       >
         {AUTH_COPY.googleButton}
+      </button>
+    {/if}
+    {#if passkeyAlone}
+      <button
+        type="button"
+        class={btn}
+        disabled={busy !== null}
+        aria-busy={busy === 'passkey' ? 'true' : undefined}
+        onclick={passkeySignIn}
+      >
+        {AUTH_COPY.passkeyButton}
       </button>
     {/if}
     {#if data.reset && hasPassword}

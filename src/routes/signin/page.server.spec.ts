@@ -215,6 +215,29 @@ describe('signin load', () => {
     ]);
   });
 
+  it('flags a failed magic link, and not as a Google error', async () => {
+    const res = await load(
+      makeLoadEvent('https://app.test/signin?returnTo=%2Fsims&link=failed&error=INVALID_TOKEN')
+    );
+    expect(res).toMatchObject({ linkError: true, googleError: false });
+  });
+
+  it('shows no Google error while Google is off, whatever ?error says', async () => {
+    const res = await load(makeLoadEvent('https://app.test/signin?error=signup_disabled'));
+    expect(res).toMatchObject({ linkError: false, googleError: false });
+  });
+
+  it('flags a Google error when Google is on', async () => {
+    const res = await load(
+      makeLoadEvent('https://app.test/signin?error=signup_disabled', {
+        AUTH_METHODS: 'google',
+        GOOGLE_CLIENT_ID: 'id',
+        GOOGLE_CLIENT_SECRET: 'secret'
+      })
+    );
+    expect(res).toMatchObject({ linkError: false, googleError: true });
+  });
+
   it('redirects a signed-in user to a safe returnTo', async () => {
     const event = makeLoadEvent('https://app.test/signin?returnTo=/sims') as unknown as {
       locals: { user: unknown };
@@ -310,6 +333,19 @@ describe('signin sendLink action', () => {
     );
     expect(signInMagicLink).toHaveBeenCalledWith(
       expect.objectContaining({ body: expect.objectContaining({ callbackURL: '/sims' }) })
+    );
+  });
+
+  it('sends a failed link back to /signin, keeping returnTo, so the page can say so', async () => {
+    await actions.sendLink(
+      makeEvent({ identifier: 'x@y.com' }, {}, 'https://app.test/signin?returnTo=%2Fsims')
+    );
+    expect(signInMagicLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          errorCallbackURL: '/signin?link=failed&returnTo=%2Fsims'
+        })
+      })
     );
   });
 

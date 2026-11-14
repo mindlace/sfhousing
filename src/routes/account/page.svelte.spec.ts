@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { ACCOUNT_COPY } from '$lib/account/account-copy';
+import { AUTH_COPY } from '$lib/account/copy';
 import { gotoCalls } from '../../test-stubs/app/navigation';
 import Page from './+page.svelte';
 
@@ -28,6 +29,7 @@ function props(over: Record<string, unknown> = {}) {
       methods: ['magic-link'],
       hasPasskey: false,
       hasOAuthAccount: false,
+      linkError: false,
       ...over
     }
   } as unknown as Props;
@@ -112,5 +114,48 @@ describe('/account page', () => {
     await screen.getByLabelText(ACCOUNT_COPY.deleteConfirmLabel).fill('ada');
     await screen.getByRole('button', { name: ACCOUNT_COPY.deletePermanently }).click();
     await vi.waitFor(() => expect(gotoCalls.map((c) => c.url)).toContain('/'));
+  });
+
+  it('offers Sign out: a form posting to the signOut action', async () => {
+    const screen = await render(Page, props());
+    const button = screen.getByRole('button', { name: ACCOUNT_COPY.signOut });
+    await expect.element(button).toBeInTheDocument();
+    const form = button.element().closest('form')!;
+    expect(form.getAttribute('method')?.toUpperCase()).toBe('POST');
+    expect(form.getAttribute('action')).toBe('?/signOut');
+  });
+
+  it('renders no Sign-in section for a pseudonymous user when no method is in effect', async () => {
+    const screen = await render(
+      Page,
+      props({
+        user: { ...registered, email: '', pseudonymous: true },
+        methods: []
+      })
+    );
+    await expect
+      .element(screen.getByRole('heading', { name: ACCOUNT_COPY.profileHeading }))
+      .toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: ACCOUNT_COPY.authHeading, level: 2 }).elements()
+    ).toHaveLength(0);
+  });
+
+  it('keeps the Sign-in section for a registered user even with no method in effect', async () => {
+    const screen = await render(Page, props({ methods: [] }));
+    await expect
+      .element(screen.getByRole('heading', { name: ACCOUNT_COPY.authHeading, level: 2 }))
+      .toBeInTheDocument();
+  });
+
+  it('a confirm link that came back failed shows one line under the heading', async () => {
+    const screen = await render(Page, props({ linkError: true }));
+    const status = screen.getByTestId('account-status');
+    await expect.element(status).toHaveTextContent(AUTH_COPY.linkFailed);
+    const h1 = screen.getByRole('heading', { level: 1 }).element();
+    expect(!!(h1.compareDocumentPosition(status.element()) & 4)).toBe(true);
+    for (const b of screen.container.querySelectorAll('button')) {
+      expect(!!(status.element().compareDocumentPosition(b) & 4)).toBe(true);
+    }
   });
 });

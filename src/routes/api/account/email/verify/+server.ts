@@ -14,12 +14,15 @@ export const POST: RequestHandler = async (event) => {
   const refused = refuseUnlessSameOriginJson(event);
   if (refused) return refused;
   const { locals, request, platform } = event;
-  if (!locals.user) return json({ error: 'not signed in' }, { status: 401 });
-  if (!locals.user.pseudonymous) {
+  if (!locals.user) return json({ error: ACCOUNT_COPY.signinRequired }, { status: 401 });
+  // A pseudonymous user adds an address; a registered one with an unconfirmed address (a cold
+  // join from an emailed invite) confirms that address, and only that one.
+  const confirmingOwn = !locals.user.pseudonymous && !locals.user.emailVerified;
+  if (!locals.user.pseudonymous && !confirmingOwn) {
     return json({ emailError: ACCOUNT_COPY.emailAlreadySet }, { status: 400 });
   }
   const body = (await request.json().catch(() => null)) as { email?: string } | null;
-  const email = String(body?.email ?? '')
+  const email = (confirmingOwn ? locals.user.email : String(body?.email ?? ''))
     .trim()
     .toLowerCase();
   if (!isValidEmail(email)) {
@@ -50,7 +53,8 @@ export const POST: RequestHandler = async (event) => {
     });
     await auth.api.signInMagicLink({
       headers: request.headers,
-      body: { email, callbackURL: '/' }
+      // An expired or used link lands on /account, where the page says so.
+      body: { email, callbackURL: '/', errorCallbackURL: '/account?link=failed' }
     });
     return json({ emailSent: true, email, devLink });
   }

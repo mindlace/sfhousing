@@ -6,6 +6,7 @@ import {
   emailChangeSent,
   emailConfirmed,
   emailSentTo,
+  emailUnconfirmed,
   removePasskeyNamed
 } from '$lib/account/account-copy';
 
@@ -206,6 +207,68 @@ describe('AuthenticationPane', () => {
     expect(status.element().getAttribute('data-tone')).toBe('info');
   });
 
+  it('a failed passkey add shows the copy line, never the server message', async () => {
+    passkey.addPasskey.mockResolvedValueOnce({ error: { message: 'raw server text' } } as never);
+    const screen = await render(AuthenticationPane, {
+      user: registered,
+      hasGoogle: true,
+      ...pwProps
+    });
+    await screen.getByRole('button', { name: ACCOUNT_COPY.passkeyAdd }).click();
+    const status = screen.getByTestId('passkey-status');
+    await expect.element(status).toHaveTextContent(ACCOUNT_COPY.passkeyAddError);
+    expect(screen.container.textContent).not.toContain('raw server text');
+  });
+
+  describe('a registered account whose email is not confirmed', () => {
+    const unconfirmed = { ...registered, emailVerified: false };
+
+    it('says the address is not confirmed, never that it is', async () => {
+      const screen = await render(AuthenticationPane, {
+        user: unconfirmed,
+        hasGoogle: false,
+        ...pwProps
+      });
+      await expect.element(screen.getByText(emailUnconfirmed('ada@x.com'))).toBeInTheDocument();
+      expect(screen.container.textContent).not.toContain(emailConfirmed('ada@x.com'));
+    });
+
+    it('sends a confirm link to that address and says so in the mounted status', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ emailSent: true, email: 'ada@x.com' }), { status: 200 })
+      );
+      const screen = await render(AuthenticationPane, {
+        user: unconfirmed,
+        hasGoogle: false,
+        ...pwProps
+      });
+      const status = screen.getByTestId('email-status');
+      await expect.element(status).toBeInTheDocument();
+      await screen.getByTestId('confirm-email').click();
+      await expect.element(status).toHaveTextContent(emailSentTo('ada@x.com'));
+      const init = vi.mocked(globalThis.fetch).mock.calls[0][1] as RequestInit;
+      expect(JSON.parse(String(init.body))).toEqual({ email: 'ada@x.com' });
+      // The status sits under the heading, before the section's buttons.
+      const heading = screen.getByRole('heading', { name: ACCOUNT_COPY.emailHeading }).element();
+      expect(!!(heading.compareDocumentPosition(status.element()) & 4)).toBe(true);
+      for (const b of heading.closest('section')!.querySelectorAll('button')) {
+        expect(!!(status.element().compareDocumentPosition(b) & 4)).toBe(true);
+      }
+    });
+
+    it('offers no confirm link while no sign-in method is in effect', async () => {
+      const screen = await render(AuthenticationPane, {
+        user: unconfirmed,
+        hasGoogle: false,
+        methods: [],
+        hasPassword: false,
+        canRemovePassword: false
+      });
+      await expect.element(screen.getByText(emailUnconfirmed('ada@x.com'))).toBeInTheDocument();
+      expect(screen.getByTestId('confirm-email').elements()).toHaveLength(0);
+    });
+  });
+
   it('pseudonymous user sees the add-email prompt, not the change-email flow', async () => {
     const screen = await render(AuthenticationPane, {
       user: pseudonymous,
@@ -239,6 +302,24 @@ describe('AuthenticationPane', () => {
       })
     );
     await expect.element(screen.getByText(emailSentTo('new@x.com'))).toBeInTheDocument();
+  });
+
+  it('pseudonymous user: the sent line arrives in a status mounted before it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ emailSent: true, email: 'new@x.com' }), { status: 200 })
+    );
+    const screen = await render(AuthenticationPane, {
+      user: pseudonymous,
+      hasGoogle: false,
+      ...pwProps
+    });
+    const status = screen.getByTestId('email-status');
+    await expect.element(status).toBeInTheDocument();
+    const node = status.element();
+    await screen.getByLabelText(ACCOUNT_COPY.emailLabel).fill('new@x.com');
+    await screen.getByRole('button', { name: ACCOUNT_COPY.sendLink }).click();
+    await expect.element(status).toHaveTextContent(emailSentTo('new@x.com'));
+    expect(screen.getByTestId('email-status').element()).toBe(node);
   });
 
   it('pseudonymous user sees a dev-link anchor when the endpoint returns one', async () => {

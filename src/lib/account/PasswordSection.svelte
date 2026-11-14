@@ -146,7 +146,7 @@
       // A network-level rejection is not an `!res.ok`: unhandled, it becomes an
       // unhandled promise rejection and, for a user setting their ONLY recovery
       // credential, silently leaves `error` empty with no feedback at all.
-      fail(null, ACCOUNT_COPY.passwordNetworkError);
+      fail(null, ACCOUNT_COPY.networkError);
     } finally {
       saving = false;
     }
@@ -179,7 +179,7 @@
       }
     } catch {
       // See the matching catch in save().
-      fail(null, ACCOUNT_COPY.passwordNetworkError);
+      fail(null, ACCOUNT_COPY.networkError);
     }
   }
 </script>

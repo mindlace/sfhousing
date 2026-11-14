@@ -49,7 +49,7 @@
       const body = (await res.json().catch(() => null)) as { deleteError?: string } | null;
       deleteError = body?.deleteError ?? ACCOUNT_COPY.handleMismatch;
     } catch {
-      deleteError = ACCOUNT_COPY.passwordNetworkError;
+      deleteError = ACCOUNT_COPY.networkError;
     }
     deleting = false;
   }

@@ -62,6 +62,14 @@ describe('SiteHeader', () => {
       await expect.element(link).toHaveAttribute('href', '/account');
     });
 
+    it('carries the full handle as a title, since a long one is truncated', async () => {
+      await page.viewport(1024, 768);
+      const handle = 'a-very-long-handle-that-will-not-fit-in-the-header';
+      render(SiteHeader, { user: { handle } });
+      const link = page.getByRole('banner').getByRole('link', { name: `@${handle}` });
+      await expect.element(link).toHaveAttribute('title', `@${handle}`);
+    });
+
     it('at 375px waits in the Menu until it opens, then sits in the panel', async () => {
       await page.viewport(375, 812);
       render(SiteHeader, { user: null });

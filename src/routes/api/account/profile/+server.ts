@@ -10,7 +10,7 @@ export const PATCH: RequestHandler = async (event) => {
   const refused = refuseUnlessSameOriginJson(event);
   if (refused) return refused;
   const { locals, request, platform, getClientAddress } = event;
-  if (!locals.user) return json({ error: 'not signed in' }, { status: 401 });
+  if (!locals.user) return json({ error: ACCOUNT_COPY.signinRequired }, { status: 401 });
   const ip = getClientAddress();
   if (
     !(await enforceRate(

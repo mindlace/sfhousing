@@ -25,6 +25,7 @@ function props(data: Record<string, unknown> = {}, form: Record<string, unknown>
     data: {
       signup: false,
       googleError: false,
+      linkError: false,
       pendingSim: null,
       pendingIdentifier: null,
       reset: false,
@@ -351,4 +352,28 @@ test('with password but no magic link: the password field shows and posts to sig
   expect(screen.getByTestId('password-cancel').elements()).toHaveLength(0);
   const form = screen.container.querySelector('#identifier')!.closest('form')!;
   expect(form.getAttribute('action')).toMatch(/^\?\/signInPassword/);
+});
+
+test('a failed magic link shows one line in the status under the heading', async () => {
+  const screen = await render(Page, props({ methods: ['magic-link'], linkError: true }));
+  const status = screen.getByTestId('form-status');
+  await expect.element(status).toHaveTextContent(AUTH_COPY.linkFailed);
+  await expect.element(status).toHaveAttribute('data-tone', 'error');
+  expect(status.element().textContent).not.toContain(AUTH_COPY.googleError);
+});
+
+test('with passkey only and no link: no form posts to a method that is off', async () => {
+  const screen = await render(Page, props({ methods: ['passkey'] }));
+  await expect
+    .element(screen.getByRole('button', { name: AUTH_COPY.passkeyButton }))
+    .toBeInTheDocument();
+  // Enter in a field would submit its form to the form's action: there must be none here
+  // that answers 404 (signInPassword with password off, sendLink with no mail).
+  for (const form of screen.container.querySelectorAll('form')) {
+    const action = form.getAttribute('action') ?? '';
+    expect(action).not.toMatch(/signInPassword|sendLink/);
+    for (const b of form.querySelectorAll('[formaction]')) {
+      expect(b.getAttribute('formaction')).not.toMatch(/signInPassword|sendLink/);
+    }
+  }
 });

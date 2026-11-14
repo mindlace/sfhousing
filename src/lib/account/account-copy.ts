@@ -2,6 +2,7 @@
 export const ACCOUNT_COPY = {
   pageTitle: 'Account',
   heading: 'Account',
+  signOut: 'Sign out',
   loading: 'Loading…',
   loadFailed: "Couldn't load this. Reload to try again.",
   save: 'Save',
@@ -53,7 +54,7 @@ export const ACCOUNT_COPY = {
   passwordCurrentWrong: "That current password isn't right.",
   passwordLastFactor: 'This is your only way in. Add a passkey or confirm an email first.',
   passwordAddRecoveryNudge: 'Add a passkey or confirm an email as a way back in.',
-  passwordNetworkError: "Couldn't reach the server. Check your connection.",
+  networkError: "Couldn't reach the server. Check your connection.",
 
   googleHeading: 'Google',
   googleConnected: 'Google connected.',
@@ -77,6 +78,7 @@ export const ACCOUNT_COPY = {
 export const passwordSignInAs = (handle: string): string => `You sign in as @${handle}.`;
 export const emailSentTo = (email: string): string => `Link sent to ${email}. Open it to confirm.`;
 export const emailConfirmed = (email: string): string => `${email} is confirmed.`;
+export const emailUnconfirmed = (email: string): string => `${email} isn't confirmed.`;
 export const emailChangeSent = (current: string, next: string): string =>
   `Check ${current} to approve the change to ${next}. A link then goes to the new address.`;
 export const removePasskeyNamed = (name: string): string => `Remove passkey ${name}`;
