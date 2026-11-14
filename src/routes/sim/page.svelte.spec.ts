@@ -60,6 +60,7 @@ function data(seed: number | null, o: { seedInvalid?: boolean } = {}) {
     datasetVersion: 'fixture-0',
     appRelease: 'dev',
     user: null,
+    signInAvailable: true,
     manifest: parseManifest(manifestJson),
     manifestError: false,
     calibration: fixtureCalibration(),

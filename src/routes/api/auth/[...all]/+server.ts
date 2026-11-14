@@ -27,6 +27,20 @@ const REQUEST_PASSWORD_RESET = '/api/auth/request-password-reset';
  * unlimited auth-mutating endpoint should not stand.
  */
 const RESET_PASSWORD = '/api/auth/reset-password';
+/** The always-on paths that send mail to an address in the body: the sign-in link, the
+ *  verification mail, and the email change (its `newEmail`). Each is limited like the
+ *  reset request, on the AUTH_LINK_RL budget the `/signin` form and the account email
+ *  routes already spend. */
+const MAGIC_LINK = '/api/auth/sign-in/magic-link';
+const SEND_VERIFICATION_EMAIL = '/api/auth/send-verification-email';
+const CHANGE_EMAIL = '/api/auth/change-email';
+/** Paths limited on AUTH_LINK_RL by IP and by the address they mail. */
+const LINK_PATHS: ReadonlySet<string> = new Set([
+  REQUEST_PASSWORD_RESET,
+  MAGIC_LINK,
+  SEND_VERIFICATION_EMAIL,
+  CHANGE_EMAIL
+]);
 
 const notFound = () => new Response('Not found', { status: 404 });
 const tooMany = () =>
@@ -35,13 +49,17 @@ const tooMany = () =>
     headers: { 'content-type': 'application/json' }
   });
 
-/** Best-effort read of the `email` field from a JSON body, on a CLONE so the original
- *  request body stays intact for Better-Auth. A malformed/absent body simply yields
- *  undefined — the per-IP dimension still applies. */
-async function readEmail(request: Request): Promise<string | undefined> {
+/** Best-effort read of an address field (`email`, or `newEmail` for an email change) from a
+ *  JSON body, on a CLONE so the original request body stays intact for Better-Auth. A
+ *  malformed/absent body simply yields undefined — the per-IP dimension still applies. */
+async function readEmail(
+  request: Request,
+  field: 'email' | 'newEmail' = 'email'
+): Promise<string | undefined> {
   try {
-    const body = (await request.clone().json()) as { email?: unknown };
-    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const body = (await request.clone().json()) as Record<string, unknown>;
+    const value = body[field];
+    const email = typeof value === 'string' ? value.trim().toLowerCase() : '';
     return email || undefined;
   } catch {
     return undefined;
@@ -63,7 +81,7 @@ const handler: RequestHandler = async (event) => {
 
   if (request.method === 'POST' && path === '/api/auth/sign-in/anonymous') return notFound();
 
-  if (request.method === 'POST' && (path === SIGN_IN_EMAIL || path === REQUEST_PASSWORD_RESET)) {
+  if (request.method === 'POST' && (path === SIGN_IN_EMAIL || LINK_PATHS.has(path))) {
     const isSignIn = path === SIGN_IN_EMAIL;
     // Reuse the limiter that already governs the equivalent form action, so the raw
     // endpoint and the form share ONE budget rather than granting a second allowance.
@@ -77,7 +95,7 @@ const handler: RequestHandler = async (event) => {
     const underIpLimit = await enforceRate(limiter, `${ipLabel}:${ip}`, platform!.env, {
       critical: true
     });
-    const email = await readEmail(request);
+    const email = await readEmail(request, path === CHANGE_EMAIL ? 'newEmail' : 'email');
     // Exceeding either is a VISIBLE 429. That leaks nothing: the bucket is keyed on what
     // the caller TYPED, and trips after N attempts whether or not the address exists — so
     // it is not an enumeration oracle. The silent refusal that DOES matter for enumeration

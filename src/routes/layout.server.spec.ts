@@ -24,7 +24,8 @@ describe('root layout load', () => {
     expect(result).toEqual({
       datasetVersion: __SFH_DATASET_VERSION__,
       appRelease: 'dev',
-      user: null
+      user: null,
+      signInAvailable: false
     });
     expect(__SFH_DATASET_VERSION__).toMatch(DATASET_VERSION_RE);
   });
@@ -36,7 +37,8 @@ describe('root layout load', () => {
     expect(result).toEqual({
       datasetVersion: __SFH_DATASET_VERSION__,
       appRelease: 'dev',
-      user: null
+      user: null,
+      signInAvailable: false
     });
   });
 
@@ -44,18 +46,57 @@ describe('root layout load', () => {
     const result = await load({
       platform: { env: { ENVIRONMENT: 'development', PUBLIC_DATASET_VERSION: 'fixture-0' } }
     } as never);
-    expect(result).toEqual({ datasetVersion: 'fixture-0', appRelease: 'dev', user: null });
+    expect(result).toEqual({
+      datasetVersion: 'fixture-0',
+      appRelease: 'dev',
+      user: null,
+      signInAvailable: false
+    });
   });
 
   it('passes the signed-in user through from locals', async () => {
     const user = { id: 'ident-1', email: 'alice@example.com', handle: 'alice' };
     const result = await load({ locals: { user } } as never);
-    expect(result).toEqual({ datasetVersion: __SFH_DATASET_VERSION__, appRelease: 'dev', user });
+    expect(result).toEqual({
+      datasetVersion: __SFH_DATASET_VERSION__,
+      appRelease: 'dev',
+      user,
+      signInAvailable: false
+    });
   });
 
   it('serves user: null to a signed-out visitor', async () => {
     const result = await load({ locals: { user: null } } as never);
     expect(result).toMatchObject({ user: null });
+  });
+
+  describe('signInAvailable', () => {
+    it('is true while mail can be delivered (magic link in effect)', async () => {
+      const set = vi.fn();
+      const result = await load({
+        platform: { env: { SES_ACCESS_KEY_ID: 'key-id', SES_SECRET_ACCESS_KEY: 'secret' } },
+        locals: { user: null },
+        cookies: { get: () => undefined, set }
+      } as never);
+      expect(result).toMatchObject({ signInAvailable: true });
+      expect(set).not.toHaveBeenCalled();
+    });
+
+    it('is false with no mail provider and no other method', async () => {
+      const result = await load({
+        platform: { env: { AUTH_METHODS: 'magic-link' } },
+        locals: { user: null }
+      } as never);
+      expect(result).toMatchObject({ signInAvailable: false });
+    });
+
+    it('is true with no mail provider when another method is listed', async () => {
+      const result = await load({
+        platform: { env: { AUTH_METHODS: 'password' } },
+        locals: { user: null }
+      } as never);
+      expect(result).toMatchObject({ signInAvailable: true });
+    });
   });
 
   describe('known-device refresh', () => {

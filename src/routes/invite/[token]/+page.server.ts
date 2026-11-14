@@ -1,8 +1,9 @@
 import type { PageServerLoad, Actions } from './$types';
-import { fail, redirect, isRedirect } from '@sveltejs/kit';
+import { fail, redirect, isHttpError, isRedirect } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { getDb } from '$lib/server/db';
 import { getAuth } from '$lib/server/auth/better-auth';
+import { requireMethod } from '$lib/server/auth/require-method';
 import { user } from '$lib/server/db/schema';
 import { findInviteByToken, acceptInviteByToken } from '$lib/server/invites/control-plane';
 import { onSimRosterChanged } from '$lib/server/sims/roster-hook';
@@ -51,7 +52,7 @@ export const actions: Actions = {
     }
   },
 
-  // Cold-accept for a signed-OUT recipient . The bearer token in the
+  // Cold-accept for a signed-OUT recipient. The bearer token in the
   // URL proves control of the INVITED inbox.
   join: async (event) => {
     const form = await event.request.formData();
@@ -75,6 +76,8 @@ export const actions: Actions = {
     // in an e2e env (isE2eEnv) and stays undefined everywhere else.
     const wantDevLink = isE2eEnv(event.platform!);
     const sendMagicLink = async (linkEmail: string): Promise<string | undefined> => {
+      // 404 while magic link is off (no mail provider): the link would reach no one.
+      requireMethod(event, 'magic-link');
       let devLink: string | undefined;
       const auth = getAuth(event.platform!, event.url.origin, {
         captureMagicLink: wantDevLink
@@ -171,7 +174,7 @@ export const actions: Actions = {
         }
       }
     } catch (e) {
-      if (isRedirect(e)) throw e;
+      if (isRedirect(e) || isHttpError(e)) throw e;
       return fail(400, { error: e instanceof Error ? e.message : MEMBERS_COPY.joinFailed });
     }
   }

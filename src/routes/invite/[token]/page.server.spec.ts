@@ -76,7 +76,9 @@ const mintMock = vi.mocked(mintPseudonymousSession);
 const reseedMock = vi.mocked(reseedHandleFromSim);
 const recordUserVersionMock = vi.mocked(recordUserVersion);
 
-const platform = { env: {} } as unknown as App.Platform;
+/** SES keys: a mail provider is configured, so magic link is in effect. */
+const MAIL = { SES_ACCESS_KEY_ID: 'key-id', SES_SECRET_ACCESS_KEY: 'secret' };
+const platform = { env: MAIL } as unknown as App.Platform;
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -386,6 +388,41 @@ describe('invite token landing — join action (cold-accept)', () => {
     );
   });
 
+  it('answers 404 and sends no link (A2 and C) when no mail provider is configured', async () => {
+    for (const decision of [
+      { kind: 'signin' as const, strongFactor: false, userId: 'u9' },
+      { kind: 'verify' as const, email: 'other@test.com' }
+    ]) {
+      classifyMock.mockResolvedValue(decision);
+      const event = joinEvent({ email: 'other@test.com' });
+      (event as { platform: App.Platform }).platform = { env: {} } as App.Platform;
+      let caught: unknown;
+      try {
+        await actions.join(event);
+      } catch (e) {
+        caught = e;
+      }
+      expect((caught as { status: number }).status).toBe(404);
+    }
+    expect(signInMagicLinkMock).not.toHaveBeenCalled();
+  });
+
+  it('still mints from a handle invite when no mail provider is configured', async () => {
+    classifyMock.mockResolvedValue({ kind: 'mint', pseudonymous: true });
+    mintMock.mockResolvedValue({ ok: true, user: { id: 'p1' } } as never);
+    acceptMock.mockResolvedValue({ simId: 'q1' } as never);
+    const event = joinEvent({ email: '', fresh: '1' });
+    (event as { platform: App.Platform }).platform = { env: {} } as App.Platform;
+    let caught: unknown;
+    try {
+      await actions.join(event);
+    } catch (e) {
+      caught = e;
+    }
+    expect(isRedirect(caught)).toBe(true);
+    expect((caught as { location: string }).location).toBe('/sims/q1');
+  });
+
   it('returns the captured dev-link in an e2e env for the signin (A2) branch', async () => {
     // The verify URL is captured synchronously from sendMagicLink, in the same request.
     // Only an e2e env arms the capture sink: VITE_E2E=1 and ENVIRONMENT=development.
@@ -398,7 +435,7 @@ describe('invite token landing — join action (cold-accept)', () => {
     const event = {
       params: { token: 'tok' },
       platform: e2ePlatform,
-      cookies: {} as never,
+      cookies: { get: () => undefined } as never,
       url: new URL('https://app.test/invite/tok'),
       request: { formData: async () => fd, headers: new Headers() }
     } as unknown as Parameters<typeof actions.join>[0];

@@ -83,7 +83,14 @@ vi.mock('$lib/server/auth/better-auth', () => ({
 
 import { actions, load } from './+page.server';
 
-function makeEvent(form: Record<string, string>, envExtra: Record<string, unknown> = {}) {
+/** SES keys: a mail provider is configured, so magic link is in effect. */
+const MAIL = { SES_ACCESS_KEY_ID: 'key-id', SES_SECRET_ACCESS_KEY: 'secret' };
+
+function makeEvent(
+  form: Record<string, string>,
+  envExtra: Record<string, unknown> = {},
+  url = 'https://app.test/signin'
+) {
   const fd = new FormData();
   for (const [k, v] of Object.entries(form)) fd.set(k, v);
   const request = new Request('https://app.test/signin', {
@@ -94,8 +101,8 @@ function makeEvent(form: Record<string, string>, envExtra: Record<string, unknow
   return {
     request,
     locals: { user: null },
-    platform: { env: { AUTH_LINK_RL: undefined, ...envExtra } },
-    url: new URL('https://app.test/signin'),
+    platform: { env: { AUTH_LINK_RL: undefined, ...MAIL, ...envExtra } },
+    url: new URL(url),
     cookies: { get: vi.fn(), set: vi.fn(), delete: vi.fn() }
   } as never;
 }
@@ -127,7 +134,7 @@ beforeEach(() => {
 function makeLoadEvent(url: string, envExtra: Record<string, unknown> = {}) {
   return {
     locals: { user: null },
-    platform: { env: { ...envExtra } },
+    platform: { env: { ...MAIL, ...envExtra } },
     url: new URL(url),
     cookies: { get: vi.fn(), set: vi.fn(), delete: vi.fn() }
   } as never;
@@ -141,7 +148,7 @@ function makeStartFreshEvent(envExtra: Record<string, unknown> = {}) {
       headers: { 'CF-Connecting-IP': '1.2.3.4' }
     }),
     locals: { user: null },
-    platform: { env: { ...envExtra } },
+    platform: { env: { ...MAIL, ...envExtra } },
     url: new URL('https://app.test/signin')
   } as never;
 }
@@ -182,6 +189,14 @@ describe('signin load', () => {
   it('returns only magic-link under the default methods', async () => {
     const res = await load(makeLoadEvent('https://app.test/signin'));
     expect(res).toMatchObject({ methods: ['magic-link'] });
+  });
+
+  it('returns no method when no mail provider is configured', async () => {
+    const res = await load({
+      ...(makeLoadEvent('https://app.test/signin') as object),
+      platform: { env: {} }
+    } as never);
+    expect(res).toMatchObject({ methods: [] });
   });
 
   it('returns the switched-on methods', async () => {
@@ -273,6 +288,42 @@ describe('signin sendLink action', () => {
   it('never returns the link outside an e2e env', async () => {
     const res = await actions.sendLink(makeEvent({ identifier: 'guest@test.com' }));
     expect(res).toEqual({ sent: true });
+  });
+
+  it('answers 404 and sends nothing when no mail provider is configured', async () => {
+    const event = makeEvent({ identifier: 'x@y.com' });
+    (event as { platform: App.Platform }).platform = { env: {} } as App.Platform;
+    let caught: unknown;
+    try {
+      await actions.sendLink(event);
+    } catch (e) {
+      caught = e;
+    }
+    expect((caught as { status: number }).status).toBe(404);
+    expect(enforceRate).not.toHaveBeenCalled();
+    expect(signInMagicLink).not.toHaveBeenCalled();
+  });
+
+  it('carries a safe returnTo into the link as its callbackURL', async () => {
+    await actions.sendLink(
+      makeEvent({ identifier: 'x@y.com' }, {}, 'https://app.test/signin?returnTo=%2Fsims')
+    );
+    expect(signInMagicLink).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ callbackURL: '/sims' }) })
+    );
+  });
+
+  it('replaces an off-site returnTo with / in the callbackURL', async () => {
+    await actions.sendLink(
+      makeEvent(
+        { identifier: 'x@y.com' },
+        {},
+        'https://app.test/signin?returnTo=https%3A%2F%2Fevil.example%2F'
+      )
+    );
+    expect(signInMagicLink).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ callbackURL: '/' }) })
+    );
   });
 
   it('does NOT send and returns the neutral flag when the per-email limit is exceeded', async () => {
@@ -428,6 +479,34 @@ describe('signin signInPassword action', () => {
     expect(signInEmail).toHaveBeenCalledWith(
       expect.objectContaining({ body: expect.objectContaining({ email: 'ada@example.com' }) })
     );
+  });
+
+  async function passwordRedirect(returnTo: string): Promise<string> {
+    resolveHandleToEmail.mockResolvedValue('ada@example.com');
+    signInEmail.mockResolvedValue({});
+    let caught: unknown;
+    try {
+      await actions.signInPassword(
+        makeEvent(
+          { identifier: 'ada-blue', password: 'correct horse battery staple' },
+          { AUTH_METHODS: 'password' },
+          `https://app.test/signin?returnTo=${encodeURIComponent(returnTo)}`
+        )
+      );
+    } catch (e) {
+      caught = e;
+    }
+    expect(isRedirect(caught)).toBe(true);
+    return (caught as { location: string }).location;
+  }
+
+  it('redirects to a safe returnTo after signing in', async () => {
+    expect(await passwordRedirect('/sims')).toBe('/sims');
+  });
+
+  it('redirects to / instead of an off-site returnTo', async () => {
+    expect(await passwordRedirect('https://evil.example/')).toBe('/');
+    expect(await passwordRedirect('//evil.example/')).toBe('/');
   });
 });
 

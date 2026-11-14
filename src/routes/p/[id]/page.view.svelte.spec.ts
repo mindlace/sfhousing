@@ -34,7 +34,8 @@ function data(m: Manifest = manifest, plan: Plan = emptyPlan('fixture-0')) {
     manifestError: false,
     datasetVersion: 'fixture-0',
     appRelease: 'dev',
-    user: null
+    user: null,
+    signInAvailable: true
   };
 }
 

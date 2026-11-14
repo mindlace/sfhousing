@@ -7,9 +7,17 @@ import {
   parseAuthMethods
 } from './methods';
 
+/** SES keys: a mail provider is configured, so magic link can be in effect. */
+const MAIL = { SES_ACCESS_KEY_ID: 'key-id', SES_SECRET_ACCESS_KEY: 'secret' };
+
 /** A platform with only env vars (no DB is touched by `enabledAuthMethods`). */
-function platform(env: Record<string, unknown>): App.Platform {
+function bare(env: Record<string, unknown>): App.Platform {
   return makePlatform(undefined as unknown as D1Database, env);
+}
+
+/** A platform with a mail provider configured, plus `env`. */
+function platform(env: Record<string, unknown>): App.Platform {
+  return bare({ ...MAIL, ...env });
 }
 
 function cookies(value: string | undefined) {
@@ -56,8 +64,42 @@ describe('enabledAuthMethods', () => {
     expect([...methods].sort()).toEqual(['google', 'magic-link']);
   });
 
-  it('gives magic link only with no platform', () => {
-    expect([...enabledAuthMethods({})]).toEqual(['magic-link']);
+  it('gives magic link only with a mail provider and no AUTH_METHODS', () => {
+    expect([...enabledAuthMethods({ platform: platform({}) })]).toEqual(['magic-link']);
+  });
+
+  it('keeps magic link with Resend configured', () => {
+    const methods = enabledAuthMethods({
+      platform: bare({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'k' })
+    });
+    expect([...methods]).toEqual(['magic-link']);
+  });
+
+  it('drops magic link when no mail provider is configured', () => {
+    expect([...enabledAuthMethods({ platform: bare({ AUTH_METHODS: 'magic-link' }) })]).toEqual([]);
+  });
+
+  it('gives nothing with no platform (no mail provider)', () => {
+    expect([...enabledAuthMethods({})]).toEqual([]);
+  });
+
+  it('keeps the other listed methods when no mail provider is configured', () => {
+    const methods = enabledAuthMethods({ platform: bare({ AUTH_METHODS: 'password' }) });
+    expect([...methods]).toEqual(['password']);
+  });
+
+  it('drops magic link without a mail provider in development outside an e2e build', () => {
+    const methods = enabledAuthMethods({ platform: bare({ ENVIRONMENT: 'development' }) });
+    expect([...methods]).toEqual([]);
+  });
+
+  it('keeps magic link without a mail provider in an e2e build (the mail sink stands in)', () => {
+    vi.stubEnv('VITE_E2E', '1');
+    const methods = enabledAuthMethods({
+      platform: bare({ AUTH_METHODS: 'magic-link', ENVIRONMENT: 'development' }),
+      cookies: cookies(undefined)
+    });
+    expect([...methods]).toEqual(['magic-link']);
   });
 
   it('ignores the e2e cookie outside an e2e build', () => {
@@ -162,10 +204,21 @@ describe('methodForAuthPath', () => {
     expect(methodForAuthPath('/api/auth/get-session/')).toBeNull();
   });
 
+  it('maps every path that sends mail to magic link', () => {
+    for (const p of [
+      '/sign-in/magic-link',
+      '/send-verification-email',
+      '/change-email',
+      '/verify-email'
+    ]) {
+      expect(methodForAuthPath(`/api/auth${p}`)).toBe('magic-link');
+      expect(methodForAuthPath(`/api/auth${p}/`)).toBe('magic-link');
+    }
+  });
+
   it('leaves the always-on paths and foreign paths unmapped', () => {
     for (const p of [
       '/api/auth/sign-in/anonymous',
-      '/api/auth/sign-in/magic-link',
       '/api/auth/magic-link/verify',
       '/api/auth/sign-out',
       '/api/auth/passkey',

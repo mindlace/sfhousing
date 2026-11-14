@@ -23,6 +23,11 @@ const ALL_ON = {
   GOOGLE_CLIENT_SECRET: 'gsecret'
 };
 
+/** SES keys: a mail provider is configured, so magic link is in effect. */
+const MAIL = { SES_ACCESS_KEY_ID: 'key-id', SES_SECRET_ACCESS_KEY: 'secret' };
+/** Overrides MAIL: no mail provider, so magic link is not in effect. */
+const NO_MAIL = { SES_ACCESS_KEY_ID: undefined, SES_SECRET_ACCESS_KEY: undefined };
+
 let AUTH_PASSWORD_RL: FakeRateLimiter;
 let AUTH_LINK_RL: FakeRateLimiter;
 
@@ -39,7 +44,9 @@ function authEvent(
         ? {}
         : { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
     }),
-    platform: { env: { ENVIRONMENT: 'production', AUTH_PASSWORD_RL, AUTH_LINK_RL, ...env } },
+    platform: {
+      env: { ENVIRONMENT: 'production', AUTH_PASSWORD_RL, AUTH_LINK_RL, ...MAIL, ...env }
+    },
     cookies: { get: () => undefined },
     url: new URL(`http://x${path}`)
   } as unknown as Parameters<typeof POST>[0];
@@ -209,6 +216,57 @@ describe('raw password-reset rate limiting', () => {
 });
 
 /**
+ * The always-on paths that send mail share AUTH_LINK_RL with the `/signin` form and the
+ * account email routes, so posting to Better-Auth directly gets no second allowance.
+ */
+describe('raw mail-sending rate limiting', () => {
+  const MAGIC = '/api/auth/sign-in/magic-link';
+  const VERIFY = '/api/auth/send-verification-email';
+  const CHANGE = '/api/auth/change-email';
+
+  it.each([
+    [MAGIC, { email: 'A@b.test' }],
+    [VERIFY, { email: 'A@b.test' }],
+    [CHANGE, { newEmail: 'A@b.test' }]
+  ])('limits %s on AUTH_LINK_RL by IP and by email, critical', async (path, body) => {
+    await POST(authEvent('POST', path, body));
+    expect(passwordKeys()).toHaveLength(0);
+    expect(linkKeys()).toHaveLength(2);
+    expect(linkKeys().some((k) => k.startsWith('auth_link_ip:'))).toBe(true);
+    expect(linkKeys()).toContain('auth_link_email:a@b.test');
+    expect(enforceRate).toHaveBeenCalledWith(
+      AUTH_LINK_RL,
+      'auth_link_email:a@b.test',
+      expect.anything(),
+      expect.objectContaining({ critical: true })
+    );
+    expect(authHandler).toHaveBeenCalled();
+  });
+
+  it.each([MAGIC, VERIFY, CHANGE])('429s %s WITHOUT reaching Better-Auth', async (path) => {
+    AUTH_LINK_RL = new FakeRateLimiter({ allow: 0 });
+    const res = await POST(authEvent('POST', path, { email: 'a@b.test', newEmail: 'a@b.test' }));
+    expect(res.status).toBe(TOO_MANY);
+    expect(authFor).not.toHaveBeenCalled();
+  });
+
+  it('limits by IP alone when the body carries no email', async () => {
+    await POST(authEvent('POST', MAGIC, {}));
+    expect(linkKeys()).toHaveLength(1);
+    expect(linkKeys()[0]).toMatch(/^auth_link_ip:/);
+  });
+
+  it('fails closed in production when the AUTH_LINK_RL binding is missing', async () => {
+    mockConsole('error');
+    const e = authEvent('POST', MAGIC, { email: 'a@b.test' });
+    (e.platform!.env as unknown as Record<string, unknown>).AUTH_LINK_RL = undefined;
+    const res = await POST(e);
+    expect(res.status).toBe(TOO_MANY);
+    expect(authFor).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * `POST /api/auth/reset-password` is the submit half (`{ token, newPassword }`, no email),
  * so only the per-IP dimension applies — and it shares the AUTH_PASSWORD_RL budget with
  * password sign-in rather than getting a second allowance.
@@ -325,9 +383,12 @@ describe('disabled sign-in methods', () => {
     await expect404('POST', '/api/auth/sign-in/social', { AUTH_METHODS: 'google' });
   });
 
-  it('keeps the always-on magic-link paths open', async () => {
+  it('keeps the magic-link and session paths open while mail can be delivered', async () => {
     for (const path of [
       '/api/auth/sign-in/magic-link',
+      '/api/auth/send-verification-email',
+      '/api/auth/change-email',
+      '/api/auth/verify-email',
       '/api/auth/magic-link/verify',
       '/api/auth/get-session',
       '/api/auth/sign-out'
@@ -335,6 +396,31 @@ describe('disabled sign-in methods', () => {
       const res = await POST(authEvent('POST', path, {}, DEFAULTS));
       expect(res.status, path).toBe(200);
     }
-    expect(authHandler).toHaveBeenCalledTimes(4);
+    expect(authHandler).toHaveBeenCalledTimes(7);
+  });
+
+  it('closes every path that sends mail when no mail provider is configured', async () => {
+    for (const path of [
+      '/api/auth/sign-in/magic-link',
+      '/api/auth/send-verification-email',
+      '/api/auth/change-email',
+      '/api/auth/verify-email'
+    ]) {
+      await expect404('POST', path, NO_MAIL);
+      await expect404('GET', path, NO_MAIL);
+    }
+    expect(limiterCalls()).toBe(0);
+    expect(authFor).not.toHaveBeenCalled();
+  });
+
+  it('keeps the session paths and the link verify open with no mail provider', async () => {
+    for (const path of [
+      '/api/auth/magic-link/verify',
+      '/api/auth/get-session',
+      '/api/auth/sign-out'
+    ]) {
+      const res = await POST(authEvent('POST', path, {}, NO_MAIL));
+      expect(res.status, path).toBe(200);
+    }
   });
 });

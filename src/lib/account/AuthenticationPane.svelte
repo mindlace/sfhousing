@@ -41,6 +41,9 @@
     onAccountChanged
   }: Props = $props();
 
+  // Magic link is in effect only while mail can be delivered; without it nothing here may
+  // send mail (adding or changing an email).
+  const withMail = $derived(methods.includes('magic-link'));
   const withPassword = $derived(methods.includes('password'));
   const withPasskey = $derived(methods.includes('passkey'));
   const withGoogle = $derived(methods.includes('google'));
@@ -163,89 +166,93 @@
 </script>
 
 <div class="flex flex-col gap-6">
-  <section class="flex flex-col gap-2">
-    <h3 class="font-semibold">{ACCOUNT_COPY.emailHeading}</h3>
-    {#if user.pseudonymous}
-      {#if emailSent}
-        <FormStatus testid="email-status" focus message={emailSentTo(sentTo)} />
-        {#if devLink}
-          <a class="underline" data-testid="dev-link" href={devLink} data-sveltekit-reload
-            >{ACCOUNT_COPY.devLink}</a
-          >
-        {/if}
-        <form onsubmit={sendVerify}>
-          <button type="submit" class="{BARE} self-start">{ACCOUNT_COPY.resendLink}</button>
-        </form>
-      {:else}
-        <p class={HINT}>{ACCOUNT_COPY.emailAddPrompt}</p>
-        <form class="flex flex-col gap-2" onsubmit={sendVerify}>
-          <label for="email" class={LABEL}>{ACCOUNT_COPY.emailLabel}</label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            class={INPUT}
-            bind:value={emailValue}
-            autocomplete="email"
-            autocapitalize="none"
-            autocorrect="off"
-            spellcheck="false"
-            aria-invalid={emailError ? 'true' : undefined}
-            aria-describedby={emailError ? 'email-error' : undefined}
-          />
-          {#if emailError}
-            <FieldError id="email-error" forId="email" message={emailError} />
+  {#if withMail || !user.pseudonymous}
+    <section class="flex flex-col gap-2">
+      <h3 class="font-semibold">{ACCOUNT_COPY.emailHeading}</h3>
+      {#if user.pseudonymous}
+        {#if emailSent}
+          <FormStatus testid="email-status" focus message={emailSentTo(sentTo)} />
+          {#if devLink}
+            <a class="underline" data-testid="dev-link" href={devLink} data-sveltekit-reload
+              >{ACCOUNT_COPY.devLink}</a
+            >
           {/if}
-          <button type="submit" class="{BTN} self-start">{ACCOUNT_COPY.sendLink}</button>
-        </form>
-      {/if}
-    {:else}
-      <FormStatus
-        testid="email-status"
-        focus
-        message={changeSent ? emailChangeSent(user.email, sentTo) : ''}
-      />
-      {#if !changeSent}
-        <p>{emailConfirmed(user.email)}</p>
-        {#if !showChange}
-          <button type="button" class="{BARE} self-start" onclick={() => (showChange = true)}>
-            {ACCOUNT_COPY.changeEmail}
-          </button>
+          <form onsubmit={sendVerify}>
+            <button type="submit" class="{BARE} self-start">{ACCOUNT_COPY.resendLink}</button>
+          </form>
         {:else}
-          <form class="flex flex-col gap-2" onsubmit={sendChange}>
-            <label for="newEmail" class={LABEL}>{ACCOUNT_COPY.newEmailLabel}</label>
+          <p class={HINT}>{ACCOUNT_COPY.emailAddPrompt}</p>
+          <form class="flex flex-col gap-2" onsubmit={sendVerify}>
+            <label for="email" class={LABEL}>{ACCOUNT_COPY.emailLabel}</label>
             <input
-              id="newEmail"
+              id="email"
               name="email"
               type="email"
               class={INPUT}
-              bind:value={newEmailValue}
+              bind:value={emailValue}
               autocomplete="email"
               autocapitalize="none"
               autocorrect="off"
               spellcheck="false"
-              aria-invalid={changeError ? 'true' : undefined}
-              aria-describedby={changeError ? 'newEmail-error' : undefined}
+              aria-invalid={emailError ? 'true' : undefined}
+              aria-describedby={emailError ? 'email-error' : undefined}
             />
-            {#if changeError}
-              <FieldError id="newEmail-error" forId="newEmail" message={changeError} />
+            {#if emailError}
+              <FieldError id="email-error" forId="email" message={emailError} />
             {/if}
-            <div class="flex items-center gap-3">
-              <button type="button" class={BARE} onclick={() => (showChange = false)}>
-                {ACCOUNT_COPY.cancel}
-              </button>
-              <button
-                type="submit"
-                class={BTN}
-                disabled={sendingChange}
-                aria-busy={sendingChange ? 'true' : undefined}>{ACCOUNT_COPY.sendLink}</button
-              >
-            </div>
+            <button type="submit" class="{BTN} self-start">{ACCOUNT_COPY.sendLink}</button>
           </form>
         {/if}
+      {:else}
+        <FormStatus
+          testid="email-status"
+          focus
+          message={changeSent ? emailChangeSent(user.email, sentTo) : ''}
+        />
+        {#if !changeSent}
+          <p>{emailConfirmed(user.email)}</p>
+          {#if !withMail}
+            <!-- No mail provider: changing the address would send a link that reaches no one. -->
+          {:else if !showChange}
+            <button type="button" class="{BARE} self-start" onclick={() => (showChange = true)}>
+              {ACCOUNT_COPY.changeEmail}
+            </button>
+          {:else}
+            <form class="flex flex-col gap-2" onsubmit={sendChange}>
+              <label for="newEmail" class={LABEL}>{ACCOUNT_COPY.newEmailLabel}</label>
+              <input
+                id="newEmail"
+                name="email"
+                type="email"
+                class={INPUT}
+                bind:value={newEmailValue}
+                autocomplete="email"
+                autocapitalize="none"
+                autocorrect="off"
+                spellcheck="false"
+                aria-invalid={changeError ? 'true' : undefined}
+                aria-describedby={changeError ? 'newEmail-error' : undefined}
+              />
+              {#if changeError}
+                <FieldError id="newEmail-error" forId="newEmail" message={changeError} />
+              {/if}
+              <div class="flex items-center gap-3">
+                <button type="button" class={BARE} onclick={() => (showChange = false)}>
+                  {ACCOUNT_COPY.cancel}
+                </button>
+                <button
+                  type="submit"
+                  class={BTN}
+                  disabled={sendingChange}
+                  aria-busy={sendingChange ? 'true' : undefined}>{ACCOUNT_COPY.sendLink}</button
+                >
+              </div>
+            </form>
+          {/if}
+        {/if}
       {/if}
-    {/if}
-  </section>
+    </section>
+  {/if}
 
   {#if withPassword}
     <PasswordSection

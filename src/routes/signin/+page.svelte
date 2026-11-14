@@ -16,6 +16,8 @@
   const keep = returnTo === '/' ? '' : `&returnTo=${encodeURIComponent(returnTo)}`;
   // Arrived with ?signup=1: email only, no passkey, no handle.
   const signingUp = $derived(!!data.signup);
+  // Magic link is in effect only while mail can be delivered (the server decides).
+  const hasLink = $derived(data.methods.includes('magic-link'));
   const hasPassword = $derived(data.methods.includes('password'));
   const hasPasskey = $derived(data.methods.includes('passkey'));
   const hasGoogle = $derived(data.methods.includes('google'));
@@ -36,9 +38,15 @@
   let toggledPassword = $state(false);
   let passwordCollapsed = $state(false);
   let passwordValue = $state('');
+  // With no link to fall back on, password is the form's only submit, so it is always open.
   const usingPassword = $derived(
-    hasPassword && !passwordCollapsed && (toggledPassword || (!signingUp && !!form?.error))
+    hasPassword &&
+      (!hasLink || (!passwordCollapsed && (toggledPassword || (!signingUp && !!form?.error))))
   );
+  // The identifier form serves the link, password and passkey; with none of them on (no mail
+  // provider and nothing else listed) it is not rendered at all.
+  const showForm = $derived(hasLink || (!signingUp && (hasPasskey || hasPassword)));
+  const formAction = $derived(hasLink ? `?/sendLink${keep}` : `?/signInPassword${keep}`);
 
   async function passkeySignIn() {
     busy = 'passkey';
@@ -126,119 +134,125 @@
     {#if data.reset && hasPassword}
       <p data-testid="reset-done">{AUTH_COPY.passwordResetDone}</p>
     {/if}
-    <form
-      method="POST"
-      action={`?/sendLink${keep}`}
-      class="flex flex-col gap-3"
-      use:enhance={({ action }) => {
-        // One form, two submits (formaction). Track which one is in flight so the
-        // password button gets aria-busy and the "Sending…" link status does not fire.
-        busy = action.search.startsWith('?/signInPassword') ? 'password' : 'link';
-        return async ({ update }) => {
-          busy = null;
-          await update();
-        };
-      }}
-    >
-      <!-- The identifier is required by every method, so it leads. -->
-      <label for="identifier" class="font-medium"
-        >{signingUp ? AUTH_COPY.emailLabel : AUTH_COPY.identifierLabel}</label
+    {#if showForm}
+      <form
+        method="POST"
+        action={formAction}
+        class="flex flex-col gap-3"
+        use:enhance={({ action }) => {
+          // One form, two submits (formaction). Track which one is in flight so the
+          // password button gets aria-busy and the "Sending…" link status does not fire.
+          busy = action.search.startsWith('?/signInPassword') ? 'password' : 'link';
+          return async ({ update }) => {
+            busy = null;
+            await update();
+          };
+        }}
       >
-      <!-- A signInPassword failure never flags #password, only #identifier, deliberately,
+        <!-- The identifier is required by every method, so it leads. -->
+        <label for="identifier" class="font-medium"
+          >{signingUp ? AUTH_COPY.emailLabel : AUTH_COPY.identifierLabel}</label
+        >
+        <!-- A signInPassword failure never flags #password, only #identifier, deliberately,
            even though the identifier is not always the one that was wrong. Flagging the
            password field on a bad password would itself signal "the handle was fine",
            which is exactly the enumeration signal the generic error is meant to deny. -->
-      <input
-        id="identifier"
-        name="identifier"
-        value={data.pendingIdentifier ?? ''}
-        class={input}
-        autocomplete={signingUp ? 'email' : 'username'}
-        placeholder={signingUp ? AUTH_COPY.emailPlaceholder : AUTH_COPY.identifierPlaceholder}
-        aria-invalid={form?.error ? 'true' : undefined}
-        aria-describedby={form?.error ? 'identifier-error' : undefined}
-        required
-      />
-      {#if form?.error}
-        <FieldError id="identifier-error" forId="identifier" message={form.error} />
-      {/if}
-
-      {#if !signingUp && (hasPasskey || hasPassword)}
-        <p class="font-medium">{AUTH_COPY.chooseOne}</p>
-        {#if hasPasskey}
-          <button
-            type="button"
-            class={btn}
-            disabled={busy !== null}
-            aria-busy={busy === 'passkey' ? 'true' : undefined}
-            onclick={passkeySignIn}
-          >
-            {AUTH_COPY.passkeyButton}
-          </button>
+        <input
+          id="identifier"
+          name="identifier"
+          value={data.pendingIdentifier ?? ''}
+          class={input}
+          autocomplete={signingUp ? 'email' : 'username'}
+          placeholder={signingUp ? AUTH_COPY.emailPlaceholder : AUTH_COPY.identifierPlaceholder}
+          aria-invalid={form?.error ? 'true' : undefined}
+          aria-describedby={form?.error ? 'identifier-error' : undefined}
+          required
+        />
+        {#if form?.error}
+          <FieldError id="identifier-error" forId="identifier" message={form.error} />
         {/if}
-        <!-- Sign-in only: there is no password SIGN-UP path in this product, so offering
+
+        {#if !signingUp && (hasPasskey || hasPassword)}
+          <p class="font-medium">{AUTH_COPY.chooseOne}</p>
+          {#if hasPasskey}
+            <button
+              type="button"
+              class={btn}
+              disabled={busy !== null}
+              aria-busy={busy === 'passkey' ? 'true' : undefined}
+              onclick={passkeySignIn}
+            >
+              {AUTH_COPY.passkeyButton}
+            </button>
+          {/if}
+          <!-- Sign-in only: there is no password SIGN-UP path in this product, so offering
              it in ?signup=1 mode would be a dead end. -->
-        {#if hasPassword}
-          {#if usingPassword}
-            <label for="password" class="font-medium">{AUTH_COPY.passwordLabel}</label>
-            <input
-              id="password"
-              name="password"
-              class={input}
-              type="password"
-              autocomplete="current-password"
-              bind:value={passwordValue}
-              required
-            />
-            <div class="flex flex-wrap items-center gap-3">
-              <button
-                type="submit"
-                formaction={`?/signInPassword${keep}`}
-                class={btn}
-                data-testid="password-submit"
-                disabled={busy !== null}
-                aria-busy={busy === 'password' ? 'true' : undefined}
-                >{AUTH_COPY.passwordSubmit}</button
-              >
+          {#if hasPassword}
+            {#if usingPassword}
+              <label for="password" class="font-medium">{AUTH_COPY.passwordLabel}</label>
+              <input
+                id="password"
+                name="password"
+                class={input}
+                type="password"
+                autocomplete="current-password"
+                bind:value={passwordValue}
+                required
+              />
+              <div class="flex flex-wrap items-center gap-3">
+                <button
+                  type="submit"
+                  formaction={`?/signInPassword${keep}`}
+                  class={btn}
+                  data-testid="password-submit"
+                  disabled={busy !== null}
+                  aria-busy={busy === 'password' ? 'true' : undefined}
+                  >{AUTH_COPY.passwordSubmit}</button
+                >
+                {#if hasLink}
+                  <button
+                    type="button"
+                    class={bare}
+                    data-testid="password-cancel"
+                    onclick={() => {
+                      toggledPassword = false;
+                      passwordCollapsed = true;
+                      passwordValue = '';
+                    }}
+                  >
+                    {AUTH_COPY.cancel}
+                  </button>
+                {/if}
+                <a class={bare} data-testid="forgot-password" href="/forgot-password"
+                  >{AUTH_COPY.forgotPassword}</a
+                >
+              </div>
+            {:else}
               <button
                 type="button"
                 class={bare}
-                data-testid="password-cancel"
                 onclick={() => {
-                  toggledPassword = false;
-                  passwordCollapsed = true;
-                  passwordValue = '';
+                  toggledPassword = true;
+                  passwordCollapsed = false;
                 }}
               >
-                {AUTH_COPY.cancel}
+                {AUTH_COPY.usePassword}
               </button>
-              <a class={bare} data-testid="forgot-password" href="/forgot-password"
-                >{AUTH_COPY.forgotPassword}</a
-              >
-            </div>
-          {:else}
-            <button
-              type="button"
-              class={bare}
-              onclick={() => {
-                toggledPassword = true;
-                passwordCollapsed = false;
-              }}
-            >
-              {AUTH_COPY.usePassword}
-            </button>
+            {/if}
           {/if}
         {/if}
-      {/if}
-      <button
-        type="submit"
-        formaction={`?/sendLink${keep}`}
-        class={btn}
-        data-testid="sendlink-submit"
-        disabled={busy !== null}
-        aria-busy={busy === 'link' ? 'true' : undefined}>{AUTH_COPY.emailMeLink}</button
-      >
-    </form>
+        {#if hasLink}
+          <button
+            type="submit"
+            formaction={`?/sendLink${keep}`}
+            class={btn}
+            data-testid="sendlink-submit"
+            disabled={busy !== null}
+            aria-busy={busy === 'link' ? 'true' : undefined}>{AUTH_COPY.emailMeLink}</button
+          >
+        {/if}
+      </form>
+    {/if}
   {/if}
 
   <!-- Signed out is the only way to reach this page (load redirects a signed-in user

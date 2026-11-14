@@ -23,10 +23,13 @@ const user = {
   pseudonymous: false
 };
 
+/** SES keys: a mail provider is configured, so magic link is in effect. */
+const MAIL = { SES_ACCESS_KEY_ID: 'key-id', SES_SECRET_ACCESS_KEY: 'secret' };
+
 function evt(over: Record<string, unknown> = {}, authMethods?: string) {
   return {
     locals: { user, session: { id: 's1', userId: 'u1-live' } },
-    platform: { env: { AUTH_METHODS: authMethods } },
+    platform: { env: { ...MAIL, AUTH_METHODS: authMethods } },
     cookies: { get: () => undefined },
     ...over
   } as unknown as Parameters<typeof load>[0];
@@ -71,6 +74,11 @@ describe('/account load', () => {
   it('offers only magic-link by default', async () => {
     const data = (await load(evt())) as { methods: string[] };
     expect(data.methods).toEqual(['magic-link']);
+  });
+
+  it('offers no method when no mail provider is configured', async () => {
+    const data = (await load(evt({ platform: { env: {} } }))) as { methods: string[] };
+    expect(data.methods).toEqual([]);
   });
 
   it('lists a method AUTH_METHODS switches on', async () => {

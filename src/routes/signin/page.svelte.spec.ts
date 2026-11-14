@@ -335,3 +335,20 @@ test('a stale form error does not reveal a password field when password is off',
   );
   expect(screen.getByLabelText(AUTH_COPY.passwordLabel).elements()).toHaveLength(0);
 });
+
+test('with no sign-in method in effect: no email form, start-fresh stays', async () => {
+  const screen = await render(Page, props({ methods: [] }));
+  await expect.element(screen.getByTestId('start-fresh')).toBeInTheDocument();
+  expect(screen.container.querySelector('#identifier')).toBeNull();
+  expect(screen.getByTestId('sendlink-submit').elements()).toHaveLength(0);
+  expect(screen.getByRole('button', { name: AUTH_COPY.emailMeLink }).elements()).toHaveLength(0);
+});
+
+test('with password but no magic link: the password field shows and posts to signInPassword', async () => {
+  const screen = await render(Page, props({ methods: ['password'] }));
+  await expect.element(screen.getByLabelText(AUTH_COPY.passwordLabel)).toBeInTheDocument();
+  expect(screen.getByTestId('sendlink-submit').elements()).toHaveLength(0);
+  expect(screen.getByTestId('password-cancel').elements()).toHaveLength(0);
+  const form = screen.container.querySelector('#identifier')!.closest('form')!;
+  expect(form.getAttribute('action')).toMatch(/^\?\/signInPassword/);
+});

@@ -32,7 +32,8 @@ function data(m: Manifest | null = manifest) {
     manifestError: m === null,
     datasetVersion: 'fixture-0',
     appRelease: 'dev',
-    user: null
+    user: null,
+    signInAvailable: true
   };
 }
 

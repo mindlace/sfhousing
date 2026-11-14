@@ -5,6 +5,7 @@ import { safeReturnTo } from '$lib/account/safe-redirect';
 import { authFor, getAuth } from '$lib/server/auth/better-auth';
 import { resolveHandleToEmail } from '$lib/server/auth/magic-link';
 import { enabledAuthMethods } from '$lib/server/auth/methods';
+import { requireMethod } from '$lib/server/auth/require-method';
 import { getDb } from '$lib/server/db';
 import { isE2eEnv } from '$lib/server/e2e/env';
 import {
@@ -45,6 +46,8 @@ export const load: PageServerLoad = async (event) => {
 
 export const actions: Actions = {
   sendLink: async (event) => {
+    // No mail provider (or magic link otherwise off): nothing would reach the inbox.
+    requireMethod(event, 'magic-link');
     const { request, platform, url } = event;
     const form = await request.formData();
     const identifier = String(form.get('identifier') ?? '').trim();

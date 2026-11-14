@@ -31,6 +31,7 @@
     pinned={headerActions.pinned ?? undefined}
     status={headerActions.status ?? undefined}
     user={currentUser.overlay(page.data.user)}
+    signInAvailable={page.data.signInAvailable ?? true}
     routeId={page.route.id}
   />
   <main

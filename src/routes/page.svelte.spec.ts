@@ -22,7 +22,8 @@ function data(over: { manifest?: Manifest | null; manifestError?: boolean } = {}
     manifestError: over.manifestError ?? false,
     datasetVersion: 'fixture-0',
     appRelease: 'dev',
-    user: null
+    user: null,
+    signInAvailable: true
   };
 }
 

@@ -40,6 +40,21 @@ describe('SiteHeader', () => {
       await expect.element(link).toHaveAttribute('href', '/signin');
     });
 
+    it('offers no Sign in when no sign-in method is in effect', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { user: null, signInAvailable: false });
+      await expect.element(page.getByRole('banner')).toBeVisible();
+      expect(page.getByRole('link', { name: 'Sign in' }).elements()).toHaveLength(0);
+      expect(document.querySelector('[data-header-account]')).toBeNull();
+    });
+
+    it('still links a signed-in user to /account when no sign-in method is in effect', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { user: { handle: 'ada' }, signInAvailable: false });
+      const link = page.getByRole('banner').getByRole('link', { name: '@ada' });
+      await expect.element(link).toHaveAttribute('href', '/account');
+    });
+
     it('links a signed-in user to /account, by handle', async () => {
       await page.viewport(1024, 768);
       render(SiteHeader, { user: { handle: 'ada' } });

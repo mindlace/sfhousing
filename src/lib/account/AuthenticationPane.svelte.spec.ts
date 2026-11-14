@@ -306,6 +306,39 @@ describe('AuthenticationPane', () => {
       expect(passkey.listUserPasskeys).not.toHaveBeenCalled();
     });
 
+    it('with no sign-in method in effect, offers a registered user no control that sends mail', async () => {
+      const screen = await render(AuthenticationPane, {
+        user: registered,
+        hasGoogle: false,
+        methods: [],
+        hasPassword: false,
+        canRemovePassword: false
+      });
+      await expect.element(screen.getByText(emailConfirmed('ada@x.com'))).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: ACCOUNT_COPY.changeEmail }).elements()
+      ).toHaveLength(0);
+      expect(screen.container.querySelector('input[type="email"]')).toBeNull();
+      expect(screen.getByRole('button', { name: ACCOUNT_COPY.sendLink }).elements()).toHaveLength(
+        0
+      );
+    });
+
+    it('with no sign-in method in effect, offers a pseudonymous user no add-email form', async () => {
+      const screen = await render(AuthenticationPane, {
+        user: pseudonymous,
+        hasGoogle: false,
+        methods: [],
+        hasPassword: false,
+        canRemovePassword: false
+      });
+      expect(screen.container.querySelector('input[type="email"]')).toBeNull();
+      expect(screen.getByText(ACCOUNT_COPY.emailAddPrompt).elements()).toHaveLength(0);
+      expect(screen.getByRole('button', { name: ACCOUNT_COPY.sendLink }).elements()).toHaveLength(
+        0
+      );
+    });
+
     it('with password on, renders the password section', async () => {
       const screen = await render(AuthenticationPane, {
         user: registered,

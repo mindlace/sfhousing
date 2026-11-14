@@ -24,7 +24,10 @@ vi.mock('$lib/server/auth/better-auth', () => ({
 
 // A non-e2e test build: `import.meta.env.VITE_E2E` is unset, so isE2eEnv is false and no
 // devLink sink is wired. The e2e case stubs the flag on and sets ENVIRONMENT=development.
-const platform = { env: { AUTH_LINK_RL: {} } } as unknown as App.Platform;
+/** SES keys: a mail provider is configured, so magic link is in effect. */
+const MAIL = { SES_ACCESS_KEY_ID: 'key-id', SES_SECRET_ACCESS_KEY: 'secret' };
+const platform = { env: { AUTH_LINK_RL: {}, ...MAIL } } as unknown as App.Platform;
+// No mail keys: the e2e build's mail sink stands in for a provider.
 const e2ePlatform = {
   env: { AUTH_LINK_RL: {}, ENVIRONMENT: 'development' }
 } as unknown as App.Platform;
@@ -117,6 +120,18 @@ describe('POST /api/account/email/verify', () => {
     const res = await POST(evt({ email: 'a@b.com' }, undefined, e2ePlatform));
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.devLink).toBe(MAGIC_VERIFY_URL);
+  });
+
+  it('404 and no link sent when no mail provider is configured', async () => {
+    const noMail = { env: { AUTH_LINK_RL: {} } } as unknown as App.Platform;
+    let caught: unknown;
+    try {
+      await POST(evt({ email: 'a@b.com' }, undefined, noMail));
+    } catch (e) {
+      caught = e;
+    }
+    expect((caught as { status: number }).status).toBe(404);
+    expect(signInMagicLink).not.toHaveBeenCalled();
   });
 
   it('415 and no link sent when the body is not JSON', async () => {

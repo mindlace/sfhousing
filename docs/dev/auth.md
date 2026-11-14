@@ -30,14 +30,18 @@ A pseudonymous account (Better-Auth `anonymous()` plugin, email `@pseudonymous.s
 
 ## Sign-in methods
 
-One var, `AUTH_METHODS`, switches the methods: a comma list of `magic-link`, `password`, `passkey`, `google`. It is read only in `src/lib/server/auth/methods.ts`. Unknown tokens are dropped and `magic-link` is always on. Google also needs `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and is off without them.
+One var, `AUTH_METHODS`, switches the methods: a comma list of `magic-link`, `password`, `passkey`, `google`. It is read only in `src/lib/server/auth/methods.ts`. Unknown tokens are dropped and `magic-link` is always listed. Google also needs `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and is off without them.
 
-Staging and production run with `AUTH_METHODS=magic-link` (in `wrangler.jsonc`): the pseudonymous account and the email magic link only.
+Magic link is in effect only while mail can be delivered: it switches on when `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY`, or `EMAIL_PROVIDER=resend` and `RESEND_API_KEY`, are set. `enabledAuthMethods` drops it otherwise, through `mailCanBeDelivered` in `src/lib/server/email/provider.ts`, the same condition `sendEmail` uses to choose a provider over log mode. An e2e build keeps it, because its mail sink stands in for a provider. So does nothing else: a local `npm run dev` or `npm run preview` without a provider has no magic link.
+
+With no sign-in method in effect, the header shows no `Sign in` for a signed-out visitor (the root layout's `signInAvailable`), `/signin` still answers and keeps `Start fresh without an account` but renders no email form, `/account` renders no control that sends mail, and every path that would send a magic link or a verification mail answers 404 (below). A pseudonymous account, sims, invites by handle and account deletion keep working.
+
+Staging and production run with `AUTH_METHODS=magic-link` (in `wrangler.jsonc`): the pseudonymous account and the email magic link only, once a mail provider is configured.
 
 A disabled method is off in three places:
 
-- Its Better-Auth paths answer 404 at the gate in `src/routes/api/auth/[...all]/+server.ts`, decided by `methodForAuthPath` and `enabledAuthMethods`. Better-Auth's own handlers are not a sufficient gate: its password-reset, change-password and verify-password endpoints act even with `emailAndPassword.enabled` false.
-- Its pages and account APIs answer 404 through `requireMethod(event, method)` in `src/lib/server/auth/require-method.ts`. Use it in any new route that belongs to a method.
+- Its Better-Auth paths answer 404 at the gate in `src/routes/api/auth/[...all]/+server.ts`, decided by `methodForAuthPath` and `enabledAuthMethods`. Better-Auth's own handlers are not a sufficient gate: its password-reset, change-password and verify-password endpoints act even with `emailAndPassword.enabled` false. Magic link's paths are the ones that send mail: `/sign-in/magic-link`, `/send-verification-email`, `/change-email` and `/verify-email`; `/magic-link/verify` sends nothing and stays open.
+- Its pages and account APIs answer 404 through `requireMethod(event, method)` in `src/lib/server/auth/require-method.ts`. Use it in any new route that belongs to a method. For magic link these are the `/signin` `sendLink` action, `/api/account/email`, `/api/account/email/verify` and the invite page's `join` when it would send a link.
 - Its controls do not render.
 
 ### Turning a method on in a test
@@ -65,7 +69,8 @@ SvelteKit's origin check covers only form content types. Every state-changing JS
 Templates are in `src/lib/server/email-templates/` and are sent by `sendEmail` (`src/lib/server/email/send.ts`): sign-in link, password reset, email-change approve and confirm, and invite.
 
 - `EMAIL_PROVIDER` picks the backend: `ses` (default) or `resend`.
-- With no provider configured (no `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY`, or no `RESEND_API_KEY`), mail runs in log mode: `sendEmail` logs `[email:log-mode]` with only the from address, the recipient and the subject, and returns `{ sent: false, logged: true }`. The link is not logged, so outside an e2e build a magic link or an invite sent in log mode cannot be read anywhere. Magic-link sign-in and emailed invites therefore do not work in an environment until a mail provider is configured: `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY` (optional `SES_REGION`), or `EMAIL_PROVIDER=resend` with `RESEND_API_KEY`. The only readable copy is the e2e-only dev link on `/signin` and `/api/e2e/mail`.
+- With no provider configured (`mailProvider` in `src/lib/server/email/provider.ts` returns null: no `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY`, or `EMAIL_PROVIDER=resend` without `RESEND_API_KEY`), mail runs in log mode: `sendEmail` logs `[email:log-mode]` with only the from address, the recipient and the subject, and returns `{ sent: false, logged: true }`. The link is not logged. Magic link is therefore off until a provider is configured (see Sign-in methods); an emailed invite is still created but its mail cannot be read. The only readable copy is the e2e-only dev link on `/signin` and `/api/e2e/mail`.
+- No mail goes to an address `isDeliverable` refuses (same module): a pseudonymous account's `PSEUDONYMOUS_EMAIL_DOMAIN` address. Invite create and resend skip it, and the manager's pending-invite view does not mark such an invite as emailed, so Resend is not offered.
 - `SES_FROM` must be set even in log mode, or `sendEmail` throws. It is a var in `wrangler.jsonc`, which local dev also reads.
 
 ## Authorization and roles
@@ -107,3 +112,5 @@ The reaper functions exist and have no trigger. `selectReapableUsers` (`src/lib/
 ## Secrets and vars
 
 See [deploy.md](deploy.md) for where each is set.
+
+`BETTER_AUTH_SECRET` must be set, at least 32 characters and not a placeholder (`verifyAuthSecret` in `src/lib/server/auth/better-auth.ts`). Without it every request that resolves a session fails with a 500, not only the auth routes: that is any request carrying a session cookie, on any page, plus the routes in `SESSION_ROUTE_PREFIXES`. A signed-out visitor to a public page is unaffected.

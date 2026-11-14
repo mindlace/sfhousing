@@ -83,6 +83,7 @@ function data(policy: SimPolicy = painted(), title: string | null = 'SD permits'
     datasetVersion: 'fixture-0',
     appRelease: 'dev',
     user: null,
+    signInAvailable: true,
     manifest,
     manifestError: false,
     calibration: fixtureCalibration(),

@@ -8,7 +8,9 @@ vi.mock('$lib/server/security/rate-limit', () => ({ enforceRate: vi.fn(async () 
 const changeEmail = vi.fn(async () => {});
 vi.mock('$lib/server/auth/better-auth', () => ({ authFor: () => ({ api: { changeEmail } }) }));
 
-const platform = { env: { AUTH_LINK_RL: {} } } as unknown as App.Platform;
+/** SES keys: a mail provider is configured, so magic link is in effect. */
+const MAIL = { SES_ACCESS_KEY_ID: 'key-id', SES_SECRET_ACCESS_KEY: 'secret' };
+const platform = { env: { AUTH_LINK_RL: {}, ...MAIL } } as unknown as App.Platform;
 
 function evt(
   bodyObj: unknown,
@@ -39,6 +41,21 @@ describe('PATCH /api/account/email', () => {
     expect(changeEmail).toHaveBeenCalledWith(
       expect.objectContaining({ body: expect.objectContaining({ callbackURL: '/' }) })
     );
+  });
+
+  it('404 and no change email when no mail provider is configured', async () => {
+    const event = evt({ email: 'new@email.com' });
+    (event as { platform: App.Platform }).platform = {
+      env: { AUTH_LINK_RL: {} }
+    } as unknown as App.Platform;
+    let caught: unknown;
+    try {
+      await PATCH(event);
+    } catch (e) {
+      caught = e;
+    }
+    expect((caught as { status: number }).status).toBe(404);
+    expect(changeEmail).not.toHaveBeenCalled();
   });
 
   it('400 on malformed email', async () => {

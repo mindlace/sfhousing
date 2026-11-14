@@ -2,12 +2,15 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { ACCOUNT_COPY } from '$lib/account/account-copy';
 import { authFor } from '$lib/server/auth/better-auth';
+import { requireMethod } from '$lib/server/auth/require-method';
 import { isE2eEnv } from '$lib/server/e2e/env';
 import { isValidEmail } from '$lib/server/email/validate';
 import { enforceRate } from '$lib/server/security/rate-limit';
 import { refuseUnlessSameOriginJson } from '$lib/server/security/same-origin-json';
 
 export const POST: RequestHandler = async (event) => {
+  // Sends mail: off (404) while magic link is, that is while no mail provider is configured.
+  requireMethod(event, 'magic-link');
   const refused = refuseUnlessSameOriginJson(event);
   if (refused) return refused;
   const { locals, request, platform } = event;
