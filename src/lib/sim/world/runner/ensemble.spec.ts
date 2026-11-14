@@ -5,11 +5,13 @@ import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generat
 import { createLru } from '$lib/sim/lru';
 import { scenarioUrls } from '$lib/sim/scenario/load';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
-import { DEFAULT_POLICY4 } from '$lib/timeline/policy4';
+import { DEFAULT_POLICY4, type SimPolicy4 } from '$lib/timeline/policy4';
 import { createFundingSystem } from '../funding';
 import { withFunding } from '../index';
 import type { MapStream } from '../map-stream';
-import { compileTimeline } from '../policy/compile';
+import { firstDifference } from '../policy/compare';
+import { compileTimeline, type CompileCtx } from '../policy/compile';
+import { span } from '../policy/test/fixtures';
 import type { PolicyTimeline } from '../policy/frame';
 import { createWorldSeries, scoreStaticsOf, type ScoreStatics } from '../score';
 import type { Statics } from '../statics';
@@ -25,6 +27,25 @@ const WORLDS = 4;
 let statics: Statics;
 let timeline: PolicyTimeline;
 let score: ScoreStatics;
+let ctx: CompileCtx;
+
+/** The default document plus rent-controlled lots protected from model month `from`. */
+function editedAt(from: number): PolicyTimeline {
+  const doc: SimPolicy4 = structuredClone(DEFAULT_POLICY4);
+  doc.kinds.zoning.push({
+    id: 'edit',
+    label: 'edit',
+    preset: null,
+    on: true,
+    where: { tag: 'category', category: 'rentControl' },
+    spans: [span(ctx.input.asOf, from, null, { tag: 'protect', years: null })]
+  });
+  const c = compileTimeline(doc, {}, ctx, 'plan');
+  expect(c.step(Infinity)).toBe(true);
+  const t = c.result();
+  expect(firstDifference(timeline, t)).toBe(from);
+  return t;
+}
 
 beforeAll(async () => {
   const { manifest, fetch, fetchBytes } = datasetFetch(FIXTURE);
@@ -50,7 +71,8 @@ beforeAll(async () => {
     { gen: generate, genForUnits: generateForUnits, logOnce: () => {} }
   );
   if ('code' in ds) throw new Error(`load failed: ${ds.code} ${ds.message}`);
-  const c = compileTimeline(DEFAULT_POLICY4, {}, ds.ctx(MONTHS), 'plan');
+  ctx = ds.ctx(MONTHS);
+  const c = compileTimeline(DEFAULT_POLICY4, {}, ctx, 'plan');
   expect(c.step(Infinity)).toBe(true);
   statics = ds.statics;
   timeline = c.result();
@@ -105,6 +127,46 @@ function run(e: Ensemble, stop: () => boolean = () => false): string[] {
 }
 
 const rowsOf = (e: Ensemble) => e.series.map((s) => s!.rows(0, s!.finalThrough()));
+
+/** Rows, worlds and ledger of a fresh ensemble run under `t` with the gate open. */
+function fresh(t: PolicyTimeline) {
+  const e = ensemble({ timeline: t });
+  e.setStatics(score);
+  run(e);
+  return { rows: rowsOf(e), worlds: structuredClone(e.worlds), ledger: [...e.ledger!] };
+}
+
+const same = (e: Ensemble, ref: ReturnType<typeof fresh>) => {
+  expect(e.month).toBe(MONTHS);
+  expect(rowsOf(e)).toEqual(ref.rows);
+  expect(e.ledger).toEqual(ref.ledger);
+  expect(structuredClone(e.worlds)).toEqual(ref.worlds);
+};
+
+/** Runs to month `m` with `k` worlds (0 < k < WORLDS) already past it: mid-month. */
+function midMonth(e: Ensemble, m: number, k: number) {
+  let past = -1;
+  run(e, () => {
+    const kind = e.next();
+    if (e.month === m && (kind === 'step' || kind === 'quiet')) past++;
+    return past === k;
+  });
+  expect(e.month).toBe(m);
+  expect(e.steppedThrough).toBeGreaterThanOrEqual(m + 1);
+}
+
+/** Months stepped quietly and loudly by the remaining units. */
+function stepsOf(e: Ensemble) {
+  const quiet = new Set<number>();
+  const loud = new Set<number>();
+  for (let k = e.next(); k !== null; k = e.next()) {
+    if (k === 'quiet') quiet.add(e.month + 1);
+    if (k === 'step') loud.add(e.month + 1);
+    e.unit();
+  }
+  return { quiet: [...quiet], loud: [...loud] };
+}
+const months = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
 
 /** Plain loop: one funded world per seed, a fresh series fed live, the ledger of seed 1. */
 function plainLoop(worlds: number) {
@@ -318,5 +380,119 @@ describe('createEnsemble', () => {
     run(e);
     expect(rowsOf(e)).toEqual(rowsOf(ref));
     expect(e.ledger).toEqual(ref.ledger);
+  });
+  it('an edit at a month some worlds have stepped restores (mid-month)', () => {
+    const t2 = editedAt(31);
+    const ref = fresh(t2);
+    // Not vacuous: the edit changes the results.
+    expect(ref.rows).not.toEqual(fresh(timeline).rows);
+    const e = ensemble();
+    e.setStatics(score);
+    midMonth(e, 30, 2);
+    expect(e.steppedThrough).toBe(31);
+    e.restore(t2, 31);
+    expect(e.month).toBe(0);
+    const s = stepsOf(e);
+    expect(s.quiet).toEqual(months(1, 30));
+    same(e, ref);
+  });
+
+  it('an edit after a month some worlds have stepped keeps (mid-month)', () => {
+    const t2 = editedAt(32);
+    const ref = fresh(t2);
+    expect(ref.rows).not.toEqual(fresh(timeline).rows);
+    const e = ensemble();
+    e.setStatics(score);
+    midMonth(e, 30, 2);
+    expect(e.steppedThrough).toBe(31);
+    e.keep(t2);
+    run(e);
+    same(e, ref);
+  });
+
+  it('an edit during quiet re-stepping, after the quiet month reached, ends quiet before it', () => {
+    const t2 = editedAt(90);
+    const ref = fresh(t2);
+    const stream = recordingStream();
+    const e = ensemble({ world1: { stream } });
+    e.setStatics(score);
+    run(e);
+    e.restore(timeline, 101);
+    midMonth(e, 30, 1);
+    expect(e.quiet).toBe(true);
+    expect(e.steppedThrough).toBe(100);
+    const before = stream.events;
+    e.restore(t2, 90);
+    const quietUnits = (() => {
+      let n = 0;
+      for (let k = e.next(); k !== null && e.quiet; k = e.next()) {
+        expect(k === 'quiet' || k === 'feed').toBe(true);
+        e.unit();
+        n++;
+      }
+      return n;
+    })();
+    expect(quietUnits).toBeGreaterThan(0);
+    expect(e.month).toBe(89);
+    expect(stream.events).toBe(before);
+    const s = stepsOf(e);
+    expect(s.quiet).toEqual([]);
+    expect(s.loud).toEqual(months(90, MONTHS));
+    same(e, ref);
+  });
+
+  it('an edit during quiet re-stepping, before the quiet month reached, restores', () => {
+    const t2 = editedAt(40);
+    const ref = fresh(t2);
+    const e = ensemble({ copyMonths: [0, 20] });
+    e.setStatics(score);
+    run(e);
+    e.restore(timeline, 101);
+    expect(e.month).toBe(20);
+    midMonth(e, 50, 3);
+    e.restore(t2, 40);
+    expect(e.month).toBe(20);
+    const s = stepsOf(e);
+    expect(s.quiet).toEqual(months(21, 39));
+    expect(s.loud).toEqual(months(40, MONTHS));
+    same(e, ref);
+  });
+
+  it('an edit at month 1 creates the worlds again, quietly', () => {
+    const t2 = editedAt(1);
+    const ref = fresh(t2);
+    const stream = recordingStream();
+    const e = ensemble({ world1: { stream } });
+    e.setStatics(score);
+    run(e, () => e.month === 10);
+    expect(e.steppedThrough).toBe(10);
+    const before = stream.events;
+    e.restore(t2, 1);
+    expect(e.month).toBe(-1);
+    expect(e.quiet).toBe(true);
+    run(e, () => e.month === 0 && e.next() === 'step');
+    expect(stream.events).toBe(before);
+    run(e);
+    expect(stream.events).toBeGreaterThan(before);
+    same(e, ref);
+  });
+
+  it('restore refuses a month after steppedThrough', () => {
+    const e = ensemble();
+    run(e, () => e.month === 10);
+    expect(() => e.restore(timeline, 12)).toThrow(RangeError);
+  });
+
+  it('a feed unit drains at most one stepped month', () => {
+    const e = ensemble();
+    run(e, () => e.month === 50);
+    e.setStatics(score);
+    let feeds = 0;
+    while (e.next() === 'feed') {
+      e.unit();
+      feeds++;
+    }
+    expect(feeds).toBe(WORLDS * 50);
+    expect(e.next()).toBe('step');
   });
 });

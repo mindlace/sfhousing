@@ -53,14 +53,28 @@ export interface Ensemble {
   unit(): void;
   /** Opens the series gate with `s` (re-creating each series from its data), or closes it (null). */
   setStatics(s: ScoreStatics | null): void;
-  /** Min over the series' `finalThrough()`; -1 while the gate is closed or a series awaits restore. */
+  /**
+   * Min over the series' `finalThrough()`; -1 while the gate is closed, worlds are being created or
+   * a series awaits restore. A log not fed yet only holds the minimum back (series only grow).
+   */
   finalThrough(): number;
-  /** Rule 13: carry on under `t`. */
+  /**
+   * The last model month whose frame this ensemble has used or will re-step quietly: the "last
+   * month stepped" of rule 13. It counts a month some worlds have stepped (mid-month), the months
+   * left to step quietly, and the month after the one a fresh due list was planned at (`planDue`
+   * reads that frame; `createWorld` reads month 1's). An edit whose first difference is after it
+   * is applied with `keep`; any other with `restore`.
+   */
+  readonly steppedThrough: number;
+  /** Rule 13: carry on under `t`. Only for a first difference after `steppedThrough`. */
   keep(t: PolicyTimeline): void;
   /**
-   * Rule 14: restore from the last copy at or before m - 1 and drop later copies; cut the ledger.
-   * Then `next()` gives `restore` (one world cloned and its due list rebuilt with `planDue`), then
-   * `quiet` until month m - 1. With no copy at or before m - 1, the worlds are created again.
+   * Rule 14, for a first difference m at or before `steppedThrough`: restore from the last copy at
+   * or before m - 1 and drop later copies; cut the ledger. Then `next()` gives `restore` (one world
+   * cloned and its due list rebuilt with `planDue`), then `quiet` until month m - 1. When every
+   * world still stands at or before m - 1 inside a quiet re-step whose due lists read no frame
+   * from m on, only the timeline and the quiet end change. With m = 1, or no copy at or before
+   * m - 1, the worlds are created again, quietly.
    */
   restore(t: PolicyTimeline, m: number): void;
   /** Restore or quiet units remain. */
@@ -98,6 +112,8 @@ export function createEnsemble(o: EnsembleOpts): Ensemble {
   let nextIdx = 0;
   /** Quiet steps run through this month. */
   let quietThrough = -1;
+  /** The month the due lists were last planned at with `planDue` (0 at creation). */
+  let plannedAt = 0;
   /** The copy worlds are being restored from, and how many are restored. */
   let restoring: Copy | null = null;
   let restored = 0;
@@ -110,6 +126,8 @@ export function createEnsemble(o: EnsembleOpts): Ensemble {
   /** A world's series data while the gate is closed or its series awaits restore. */
   const data: (WorldSeriesData | null)[] = [];
   const logs: FeedEntry[][] = [];
+  /** The first entry of each log not fed yet. */
+  const heads: number[] = [];
   const copies = new Map<number, Copy & { taken: number }>();
 
   /** The sink of world `k`; world 1's (k 0) also feeds the ledger, the stream and `onEvent`. */
@@ -138,6 +156,7 @@ export function createEnsemble(o: EnsembleOpts): Ensemble {
     month = -1;
     nextIdx = 0;
     quietThrough = -1;
+    plannedAt = 0;
     restoring = null;
     copies.clear();
     worlds.length = 0;
@@ -147,6 +166,7 @@ export function createEnsemble(o: EnsembleOpts): Ensemble {
       series[k] = null;
       data[k] = null;
       logs[k] = [];
+      heads[k] = 0;
     }
   }
   reset();
@@ -161,7 +181,7 @@ export function createEnsemble(o: EnsembleOpts): Ensemble {
   /** The lowest-index world whose log can be fed now, or -1. */
   const feedable = (): number => {
     if (scoreStatics === null) return -1;
-    for (let k = 0; k < W; k++) if (series[k] !== null && logs[k].length > 0) return k;
+    for (let k = 0; k < W; k++) if (series[k] !== null && heads[k] < logs[k].length) return k;
     return -1;
   };
 
@@ -174,14 +194,28 @@ export function createEnsemble(o: EnsembleOpts): Ensemble {
     return month + 1 <= quietThrough ? 'quiet' : 'step';
   }
 
+  function steppedThrough(): number {
+    const cur = month + (nextIdx > 0 ? 1 : 0);
+    return Math.max(cur, quietThrough, plannedAt + 1);
+  }
+
   function createUnit(): void {
     const k = created;
     const seed = k + 1;
     const buf: WorldEvent[] = [];
-    const w = createWorld(statics, timeline, seed, { event: (e) => buf.push(e) });
+    const w = createWorld(statics, timeline, seed, {
+      event: (e) => buf.push(e),
+      ledger: sinks[k].ledger
+    });
     worlds[k] = w;
-    // `createWorld`'s events, replayed once it returns (map-stream.md, "Host calls").
-    for (const e of buf) sinks[k].event(e);
+    // `createWorld`'s events, replayed once it returns (map-stream.md, "Host calls"); quiet when
+    // the worlds are created again by a restore.
+    quietNow = month < quietThrough;
+    try {
+      for (const e of buf) sinks[k].event(e);
+    } finally {
+      quietNow = false;
+    }
     dues[k] = planDue(w, statics, timeline, seed, months);
     if (scoreStatics !== null && series[k] === null) series[k] = seriesOf(scoreStatics, data[k]);
     created++;
@@ -196,6 +230,7 @@ export function createEnsemble(o: EnsembleOpts): Ensemble {
     dues[k] = planDue(w, statics, timeline, k + 1, months);
     data[k] = c.feeds[k].data;
     logs[k] = c.feeds[k].log.slice();
+    heads[k] = 0;
     series[k] = scoreStatics === null ? null : seriesOf(scoreStatics, data[k]);
     restored++;
     if (restored === W) restoring = null;
@@ -211,21 +246,29 @@ export function createEnsemble(o: EnsembleOpts): Ensemble {
     const k = c.taken;
     c.worlds[k] = structuredClone(worlds[k]);
     const s = series[k];
-    c.feeds[k] = { data: s ? s.data() : data[k], log: logs[k].slice() };
+    c.feeds[k] = { data: s ? s.data() : data[k], log: logs[k].slice(heads[k]) };
     c.taken++;
   }
 
+  /** Feeds one world's log up to and including its first `stepped` mark: one world-month (rule 5). */
   function feedUnit(): void {
     const k = feedable();
     const s = series[k]!;
     const w = worlds[k];
     const log = logs[k];
-    for (let i = 0; i < log.length; i++) {
-      const f = log[i];
+    let i = heads[k];
+    while (i < log.length) {
+      const f = log[i++];
       if ('e' in f) s.add(f.e, w, statics);
-      else s.stepped(f.stepped);
+      else {
+        s.stepped(f.stepped);
+        break;
+      }
     }
-    logs[k] = [];
+    if (i === log.length) {
+      logs[k] = [];
+      heads[k] = 0;
+    } else heads[k] = i;
   }
 
   function stepUnit(quiet: boolean): void {
@@ -259,6 +302,9 @@ export function createEnsemble(o: EnsembleOpts): Ensemble {
     },
     get series() {
       return series;
+    },
+    get steppedThrough() {
+      return steppedThrough();
     },
     get quiet() {
       return restoring !== null || month < quietThrough;
@@ -308,16 +354,27 @@ export function createEnsemble(o: EnsembleOpts): Ensemble {
     },
     restore(t, m) {
       if (!Number.isInteger(m) || m < 1) throw new RangeError(`ensemble: restore to month ${m}`);
-      if (month >= 0 && m - 1 > month) {
-        throw new RangeError(`ensemble: restore to month ${m} past month ${month} stepped`);
+      const through = steppedThrough();
+      if (m > through) {
+        throw new RangeError(`ensemble: restore to month ${m} past month ${through}; keep instead`);
       }
       timeline = t;
+      const cur = month + (nextIdx > 0 ? 1 : 0);
+      if (cur <= m - 1 && m - 1 <= quietThrough && plannedAt < m - 1) {
+        // Inside a quiet re-step that has not reached m: the worlds and due lists read frames
+        // before m only, which `t` shares. Steps from m on are loud again.
+        quietThrough = m - 1;
+        for (const c of [...copies.keys()]) if (c > m - 1) copies.delete(c);
+        return;
+      }
       let from: Copy | null = null;
       for (const c of copies.values()) {
         if (c.taken === W && c.month <= m - 1 && (from === null || c.month > from.month)) from = c;
       }
-      if (from === null) {
+      // `createWorld` reads month 1's frame: a change there re-creates the worlds.
+      if (from === null || m === 1) {
         reset();
+        quietThrough = m - 1;
         return;
       }
       for (const c of [...copies.keys()]) if (c > from.month) copies.delete(c);
@@ -327,6 +384,7 @@ export function createEnsemble(o: EnsembleOpts): Ensemble {
       month = from.month;
       nextIdx = 0;
       quietThrough = m - 1;
+      plannedAt = from.month;
       for (let k = 0; k < W; k++) series[k] = null;
     },
     copiedMonths() {
