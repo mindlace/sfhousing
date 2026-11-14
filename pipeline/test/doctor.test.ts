@@ -6,6 +6,7 @@ import { boxesLockProblem, BOXES_ID } from '../lib/lidar/artifact';
 import { LIDAR_PROJECT, LIDAR_VENV } from '../lib/lidar/python';
 import { readLock, writeLock, type Lock } from '../lib/lock';
 import { doctor, lidarSyncHint, reportDoctor, type DoctorCheck } from '../steps/doctor';
+import { MINI } from './helpers';
 
 const fakeRun = (outputs: Record<string, string>) => async (cmd: string, args: string[]) => {
   const key = [cmd, ...args].join(' ');
@@ -23,6 +24,8 @@ describe('doctor', () => {
   it('passes with pinned tools, accepting brew version when pmtiles prints dev', async () => {
     const checks = await doctor({
       nodeVersion: 'v24.2.0',
+      // The mini lock and its current artifact: the live lock's building-boxes entry may go stale.
+      lockPath: join(MINI, 'sources.lock.json'),
       which: async (c) => `/opt/homebrew/bin/${c}`,
       run: fakeRun({
         'tippecanoe --version': 'tippecanoe v2.79.0\n',
@@ -34,6 +37,10 @@ describe('doctor', () => {
       })
     });
     expect(checks.filter((c) => !c.ok)).toEqual([]);
+    expect(checks.find((c) => c.name === 'boxes-lock')).toMatchObject({
+      ok: true,
+      found: 'building-boxes current'
+    });
     expect(checks.find((c) => c.name === 'uv')).toMatchObject({ ok: true, optional: true });
     expect(checks.find((c) => c.name === 'lidar-python')).toMatchObject({
       ok: true,

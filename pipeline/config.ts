@@ -11,6 +11,9 @@ export const TOOL_VERSIONS = {
 } as const;
 export const SQL_VARS = {
   min_piece_m2: 2.0,
+  // 76_render_boxes.sql, the render-only clip of the building boxes (never the model's pieces):
+  // 2 m² would drop the 0.5 m-deep false-front strips on short faces (plan Decisions).
+  render_min_piece_m2: 0.25,
   iou_min: 0.5,
   // Storey height: the generator's FTF_M, the one source the codec's existingHeightM also uses.
   floors_m: FTF_M,
