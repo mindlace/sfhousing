@@ -2,19 +2,13 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { SIMS_COPY } from '$lib/members/copy';
 import { isKnownDevice } from '$lib/server/onboarding/known-device';
+import { refuseUnlessSameOriginJson } from '$lib/server/security/same-origin-json';
 import { startSim } from '$lib/server/sims/start-sim';
 
 export const POST: RequestHandler = async (event) => {
-  // Cross-site defence, before anything is minted or created: a no-cors page can post a
-  // body with no Content-Type, which request.json() would still parse.
-  const contentType = event.request.headers.get('content-type') ?? '';
-  if (contentType.split(';')[0].trim().toLowerCase() !== 'application/json') {
-    return json({ error: SIMS_COPY.jsonRequired }, { status: 415 });
-  }
-  const origin = event.request.headers.get('origin');
-  if (origin !== null && origin !== event.url.origin) {
-    return json({ error: SIMS_COPY.crossOrigin }, { status: 403 });
-  }
+  // Cross-site defence, before anything is minted or created.
+  const refused = refuseUnlessSameOriginJson(event);
+  if (refused) return refused;
   let body: unknown;
   try {
     body = await event.request.json();

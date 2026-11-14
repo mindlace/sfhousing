@@ -4,9 +4,9 @@
 // The create-a-sim side is in sims-onboarding.spec.ts.
 import { expect, test, type Page } from '@playwright/test';
 import { AUTH_COPY, pendingSimLine } from '../src/lib/account/copy';
-import { SIMS_COPY } from '../src/lib/members/copy';
+import { MEMBERS_COPY, SIMS_COPY, inviteHeading } from '../src/lib/members/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { uniqueEmail } from './helpers/auth';
+import { loginAs, readMail, uniqueEmail } from './helpers/auth';
 
 const SESSION_COOKIE = 'better-auth.session_token';
 const PENDING_SIM_COOKIE = 'sfh_pending_sim';
@@ -137,4 +137,51 @@ test('the escape hatch without a stashed sim lands on /sims', async ({ page }) =
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
   await page.getByRole('button', { name: AUTH_COPY.startFresh }).click();
   await page.waitForURL((url) => url.pathname === '/sims');
+});
+
+// A handle invite carries no invitedEmail: whoever holds the link joins on submit, with no
+// magic-link round trip, and gets a fresh pseudonymous account (claim.ts's
+// `{ kind: 'mint', pseudonymous: true }`). A manager creates the sim and the invite, a second
+// registered user supplies the @handle, and the invite link comes from the e2e mail sink.
+test('a visitor with no account joins from an invite link and gets a pseudonymous account', async ({
+  page,
+  browser
+}) => {
+  const targetEmail = uniqueEmail('invitee');
+  const targetHandle = targetEmail.split('@')[0];
+  const targetCtx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  const targetLogin = await targetCtx.request.post('/api/e2e/login', {
+    data: { email: targetEmail }
+  });
+  expect(targetLogin.ok()).toBeTruthy();
+  await targetCtx.close();
+
+  const inviterEmail = uniqueEmail('inviter');
+  await loginAs(page, inviterEmail);
+  const title = 'Cold Invite Sim';
+  const created = await page.request.post('/api/sims', { data: { title } });
+  expect(created.status()).toBe(201);
+  const { simId } = (await created.json()) as { simId: string };
+  const invited = await page.request.post(`/api/sims/${simId}/invites`, {
+    data: { target: `@${targetHandle}` }
+  });
+  expect(invited.status()).toBe(201);
+  const inviteUrl = await readMail(page.request, 'invite', targetEmail);
+
+  const fresh = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  const invitePage = await fresh.newPage();
+  await invitePage.goto(new URL(inviteUrl).pathname);
+  await expect(invitePage.locator('html')).toHaveAttribute('data-hydrated', '');
+  await expect(invitePage.getByRole('heading', { level: 1 })).toHaveText(
+    inviteHeading(inviterEmail.split('@')[0], title)
+  );
+  await invitePage.getByRole('button', { name: MEMBERS_COPY.inviteJoinSim }).click();
+  await invitePage.waitForURL(new RegExp(`/sims/${simId}$`));
+  await expect(invitePage.getByRole('heading', { level: 1 })).toHaveText(title);
+
+  const session = (await (await invitePage.request.get('/api/auth/get-session')).json()) as {
+    user?: { isAnonymous?: boolean };
+  } | null;
+  expect(session?.user?.isAnonymous).toBe(true);
+  await fresh.close();
 });

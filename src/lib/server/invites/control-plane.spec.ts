@@ -1,0 +1,678 @@
+import { describe, it, expect } from 'vitest';
+import { freshDb, seedUser } from '$lib/server/test/auth-db';
+import { eq } from 'drizzle-orm';
+import { simInvite, user } from '$lib/server/db/schema';
+import { createSimRecord, addMemberById, getRole } from '$lib/server/sims/sim-index';
+import {
+  claimInvite,
+  createInvite,
+  INVITE_PENDING_CAP,
+  listManagerPendingInvites,
+  acceptInviteByToken,
+  acceptInviteById,
+  declineInvite,
+  revokeInvite,
+  resendInvite,
+  listRecipientPendingInvites,
+  findInviteByToken,
+  parseInviteTarget
+} from './control-plane';
+
+async function setup() {
+  const { db } = freshDb();
+  const manager = await seedUser(db, { id: 'manager', email: 'manager@test.com' });
+  await createSimRecord({ db, simId: 'q1', title: 'T', managerId: manager.id });
+  return { db, manager };
+}
+
+describe('createInvite', () => {
+  it('email invite to a brand-new email mints a hashed token', async () => {
+    const { db, manager } = await setup();
+    const res = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'New@Test.com' }
+    });
+    expect(res.token).toMatch(/^[0-9a-f]{64}$/);
+    expect(res.invite.tokenHash).not.toBe(res.token);
+    expect(res.invite.tokenHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(res.invite.invitedEmail).toBe('new@test.com');
+    expect(res.invite.invitedUserId).toBeNull();
+    expect(res.invite.role).toBe('editor');
+    expect(res.invite.status).toBe('pending');
+    expect(res.resolvedUser).toBeNull();
+  });
+
+  it('email invite to an existing account stamps the survivor id', async () => {
+    const { db, manager } = await setup();
+    await seedUser(db, { id: 'jane', email: 'jane@test.com', handle: 'jane' });
+    const res = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'jane@test.com' }
+    });
+    expect(res.invite.invitedUserId).toBe('jane');
+    expect(res.resolvedUser?.userId).toBe('jane');
+    expect(res.invite.invitedEmail).toBe('jane@test.com');
+  });
+
+  it('handle invite to an existing user resolves the identity', async () => {
+    const { db, manager } = await setup();
+    await seedUser(db, { id: 'jane', email: 'jane@test.com', handle: 'jane' });
+    const res = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'handle', handle: 'jane' }
+    });
+    expect(res.invite.invitedUserId).toBe('jane');
+    expect(res.invite.invitedEmail).toBeNull();
+    expect(res.resolvedUser?.userId).toBe('jane');
+  });
+
+  it('rejects an unknown handle', async () => {
+    const { db, manager } = await setup();
+    await expect(
+      createInvite({
+        db,
+        simId: 'q1',
+        invitedByUserId: manager.id,
+        canInviteByEmail: true,
+        target: { kind: 'handle', handle: 'ghost' }
+      })
+    ).rejects.toThrow(/no user/i);
+  });
+
+  it('resolves a canonically-equivalent handle (uppercase, @-prefixed, NFD)', async () => {
+    const { db, manager } = await setup();
+    // Stored canonical form: NFC, lowercase 'café' (U+0063 U+0061 U+0066 U+00E9).
+    await seedUser(db, { id: 'jane', email: 'jane@test.com', handle: 'café' });
+
+    // parseInviteTarget strips '@', leaving uppercase 'CAFÉ' (U+0043 U+0041 U+0046 U+00C9).
+    const upper = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: parseInviteTarget('@CAFÉ')
+    });
+    expect(upper.invite.invitedUserId).toBe('jane');
+    expect(upper.resolvedUser?.userId).toBe('jane');
+
+    // NFD-decomposed input (U+0063 U+0061 U+0066 U+0065 U+0301) on a second sim.
+    await createSimRecord({ db, simId: 'q2', title: 'T2', managerId: manager.id });
+    const nfd = await createInvite({
+      db,
+      simId: 'q2',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'handle', handle: 'café'.normalize('NFD') }
+    });
+    expect(nfd.invite.invitedUserId).toBe('jane');
+    expect(nfd.resolvedUser?.userId).toBe('jane');
+  });
+
+  it('rejects a confusable look-alike handle (same skeleton, different canonical handle)', async () => {
+    const { db, manager } = await setup();
+    // Stored Latin handle 'oka' (U+006F U+006B U+0061).
+    await seedUser(db, { id: 'jane', email: 'jane@test.com', handle: 'oka' });
+    // Confusable input: Cyrillic о (U+043E) + Latin k (U+006B) + Cyrillic а (U+0430).
+    await expect(
+      createInvite({
+        db,
+        simId: 'q1',
+        invitedByUserId: manager.id,
+        canInviteByEmail: true,
+        target: { kind: 'handle', handle: 'оkа' }
+      })
+    ).rejects.toThrow(/no user/i);
+  });
+
+  it('rejects inviting an existing member', async () => {
+    const { db, manager } = await setup();
+    await seedUser(db, { id: 'jane', email: 'jane@test.com', handle: 'jane' });
+    await addMemberById({ db, simId: 'q1', userId: 'jane', role: 'editor' });
+    await expect(
+      createInvite({
+        db,
+        simId: 'q1',
+        invitedByUserId: manager.id,
+        canInviteByEmail: true,
+        target: { kind: 'handle', handle: 'jane' }
+      })
+    ).rejects.toThrow(/already a member/i);
+  });
+
+  it('rejects a duplicate pending invite to the same email', async () => {
+    const { db, manager } = await setup();
+    await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'dup@test.com' }
+    });
+    await expect(
+      createInvite({
+        db,
+        simId: 'q1',
+        invitedByUserId: manager.id,
+        canInviteByEmail: true,
+        target: { kind: 'email', email: 'dup@test.com' }
+      })
+    ).rejects.toThrow(/already invited/i);
+  });
+
+  it('rejects an email target when the inviter cannot invite by email', async () => {
+    const { db, manager } = await setup();
+    await expect(
+      createInvite({
+        db,
+        simId: 'q1',
+        invitedByUserId: manager.id,
+        canInviteByEmail: false,
+        target: { kind: 'email', email: 'stranger@test.com' }
+      })
+    ).rejects.toThrow(/verified account/i);
+    const rows = await db.select().from(simInvite);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('still allows a handle target when the inviter cannot invite by email', async () => {
+    const { db, manager } = await setup();
+    await seedUser(db, { id: 'jane', email: 'jane@test.com', handle: 'jane' });
+    const res = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: false,
+      target: { kind: 'handle', handle: 'jane' }
+    });
+    expect(res.invite.invitedUserId).toBe('jane');
+  });
+
+  it('rejects a new invite once the sim is at the pending-invite cap', async () => {
+    const { db, manager } = await setup();
+    for (let i = 0; i < INVITE_PENDING_CAP; i++) {
+      await createInvite({
+        db,
+        simId: 'q1',
+        invitedByUserId: manager.id,
+        canInviteByEmail: true,
+        target: { kind: 'email', email: `pending${i}@test.com` }
+      });
+    }
+    await expect(
+      createInvite({
+        db,
+        simId: 'q1',
+        invitedByUserId: manager.id,
+        canInviteByEmail: true,
+        target: { kind: 'email', email: 'overflow@test.com' }
+      })
+    ).rejects.toThrow(/too many pending invites/i);
+  });
+});
+
+describe('listManagerPendingInvites', () => {
+  it('lists display + invitedByEmail and sorts by display', async () => {
+    const { db, manager } = await setup();
+    // A user with NO live email (empty string) — handle invite yields invitedByEmail false.
+    await seedUser(db, { id: 'noemail', email: '', handle: 'zed' });
+    await seedUser(db, { id: 'jane', email: 'jane@test.com', handle: 'jane' });
+
+    await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'handle', handle: 'zed' }
+    });
+    await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'apple@test.com' }
+    });
+    await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'handle', handle: 'jane' }
+    });
+
+    const list = await listManagerPendingInvites({ db, simId: 'q1' });
+    // sorted by display: '@zed' (handle has no email so display is '@zed'),
+    // 'apple@test.com', 'jane@test.com' — '@' (0x40) sorts before letters via localeCompare?
+    // localeCompare puts '@zed' last in many locales; assert via the map instead of order assumptions.
+    const byId = new Map(list.map((r) => [r.display, r]));
+    // Handle invite to a user with no live email → display '@zed', invitedByEmail false.
+    expect(byId.get('@zed')?.invitedByEmail).toBe(false);
+    // Email invite → display is the email, invitedByEmail true.
+    expect(byId.get('apple@test.com')?.invitedByEmail).toBe(true);
+    // Handle invite (invitedEmail null) → display is '@jane'; jane has a live email so
+    // invitedByEmail is true.
+    expect(byId.get('@jane')?.invitedByEmail).toBe(true);
+    expect(list).toHaveLength(3);
+
+    // Confirm it is sorted by display (localeCompare order).
+    const displays = list.map((r) => r.display);
+    const sorted = [...displays].sort((a, b) => a.localeCompare(b));
+    expect(displays).toEqual(sorted);
+  });
+
+  it('omits expired invites', async () => {
+    const { db, manager } = await setup();
+    const past = new Date('2000-01-01T00:00:00Z');
+    await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'old@test.com' },
+      now: past
+    });
+    // Also confirm the row exists but is filtered out by expiry.
+    expect(await listManagerPendingInvites({ db, simId: 'q1' })).toHaveLength(0);
+    // Sanity: passing a `now` before expiry surfaces it.
+    expect(await listManagerPendingInvites({ db, simId: 'q1', now: past })).toHaveLength(1);
+  });
+});
+
+describe('accept / decline / revoke', () => {
+  async function setupInvite() {
+    const { db, manager } = await setup();
+    const res = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'invitee@test.com' }
+    });
+    return { db, manager, token: res.token, inviteId: res.invite.id };
+  }
+
+  it('accept by token adds the member and stamps the invite', async () => {
+    const { db, token, inviteId } = await setupInvite();
+    const claimer = await seedUser(db, { id: 'claimer', email: 'claimer@test.com' });
+
+    const result = await acceptInviteByToken({ db, token, userId: claimer.id });
+    expect(result).toEqual({ simId: 'q1' });
+    expect(await getRole({ db, simId: 'q1', userId: claimer.id })).toBe('editor');
+
+    const [row] = await db.select().from(simInvite).where(eq(simInvite.id, inviteId));
+    expect(row.status).toBe('accepted');
+    expect(row.acceptedByUserId).toBe(claimer.id);
+  });
+
+  it('rejects accepting an expired invite', async () => {
+    const { db, token, inviteId } = await setupInvite();
+    const claimer = await seedUser(db, { id: 'claimer', email: 'claimer@test.com' });
+    await db
+      .update(simInvite)
+      .set({ expiresAt: new Date('2000-01-01T00:00:00Z') })
+      .where(eq(simInvite.id, inviteId));
+
+    await expect(acceptInviteByToken({ db, token, userId: claimer.id })).rejects.toThrow(
+      /expired/i
+    );
+  });
+
+  it('rejects a token that has already been used', async () => {
+    const { db, token } = await setupInvite();
+    const claimer = await seedUser(db, { id: 'claimer', email: 'claimer@test.com' });
+    await acceptInviteByToken({ db, token, userId: claimer.id });
+
+    const other = await seedUser(db, { id: 'other', email: 'other@test.com' });
+    await expect(acceptInviteByToken({ db, token, userId: other.id })).rejects.toThrow(
+      /not found|not pending/i
+    );
+  });
+
+  it('decline by the recipient marks it declined with no membership', async () => {
+    const { db, inviteId } = await setupInvite();
+    const claimer = await seedUser(db, { id: 'claimer', email: 'claimer@test.com' });
+
+    await declineInvite({ db, inviteId, userId: claimer.id });
+
+    const [row] = await db.select().from(simInvite).where(eq(simInvite.id, inviteId));
+    expect(row.status).toBe('declined');
+    expect(await getRole({ db, simId: 'q1', userId: claimer.id })).toBeNull();
+  });
+
+  it('revoke by the manager blocks the same token from accepting', async () => {
+    const { db, token, inviteId } = await setupInvite();
+
+    await revokeInvite({ db, simId: 'q1', inviteId });
+    const [row] = await db.select().from(simInvite).where(eq(simInvite.id, inviteId));
+    expect(row.status).toBe('revoked');
+
+    const claimer = await seedUser(db, { id: 'claimer', email: 'claimer@test.com' });
+    await expect(acceptInviteByToken({ db, token, userId: claimer.id })).rejects.toThrow(
+      /not pending/i
+    );
+  });
+});
+
+describe('acceptInviteById', () => {
+  async function setupHandleInvite() {
+    const { db, manager } = await setup();
+    await seedUser(db, { id: 'jane', email: 'jane@test.com', handle: 'jane' });
+    const res = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'handle', handle: 'jane' }
+    });
+    return { db, inviteId: res.invite.id };
+  }
+
+  it('accepts when invitedUserId is the caller (a)', async () => {
+    const { db, inviteId } = await setupHandleInvite();
+    const result = await acceptInviteById({
+      db,
+      inviteId,
+      userId: 'jane',
+      email: 'jane@test.com',
+      emailVerified: true
+    });
+    expect(result).toEqual({ simId: 'q1' });
+    expect(await getRole({ db, simId: 'q1', userId: 'jane' })).toBe('editor');
+    const [row] = await db.select().from(simInvite).where(eq(simInvite.id, inviteId));
+    expect(row.status).toBe('accepted');
+    expect(row.acceptedByUserId).toBe('jane');
+  });
+
+  it('throws when invitedUserId is set but differs from the caller (b)', async () => {
+    const { db, inviteId } = await setupHandleInvite();
+    const other = await seedUser(db, { id: 'mallory', email: 'mallory@test.com' });
+    await expect(
+      acceptInviteById({
+        db,
+        inviteId,
+        userId: other.id,
+        email: 'mallory@test.com',
+        emailVerified: true
+      })
+    ).rejects.toThrow(/not addressed to you/i);
+    expect(await getRole({ db, simId: 'q1', userId: other.id })).toBeNull();
+  });
+
+  it('accepts an email-only invite when the caller has a matching verified email (c)', async () => {
+    const { db, manager } = await setup();
+    const res = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'new@test.com' }
+    });
+    expect(res.invite.invitedUserId).toBeNull();
+    const claimer = await seedUser(db, { id: 'claimer', email: 'new@test.com' });
+    await db
+      .update(user)
+      .set({ emailVerified: true })
+      .where(eq(user.id, `${claimer.id}-live`));
+
+    const result = await acceptInviteById({
+      db,
+      inviteId: res.invite.id,
+      userId: claimer.id,
+      email: 'New@Test.com',
+      emailVerified: true
+    });
+    expect(result).toEqual({ simId: 'q1' });
+    expect(await getRole({ db, simId: 'q1', userId: claimer.id })).toBe('editor');
+  });
+
+  it('throws on an email-only invite when the caller email does not match (d, security)', async () => {
+    const { db, manager } = await setup();
+    const res = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'target@test.com' }
+    });
+    expect(res.invite.invitedUserId).toBeNull();
+    const mallory = await seedUser(db, { id: 'mallory', email: 'mallory@test.com' });
+
+    // Wrong email, even if verified.
+    await expect(
+      acceptInviteById({
+        db,
+        inviteId: res.invite.id,
+        userId: mallory.id,
+        email: 'mallory@test.com',
+        emailVerified: true
+      })
+    ).rejects.toThrow(/not addressed to you/i);
+
+    // Right email but unverified — still blocked.
+    await expect(
+      acceptInviteById({
+        db,
+        inviteId: res.invite.id,
+        userId: mallory.id,
+        email: 'target@test.com',
+        emailVerified: false
+      })
+    ).rejects.toThrow(/not addressed to you/i);
+
+    expect(await getRole({ db, simId: 'q1', userId: mallory.id })).toBeNull();
+  });
+
+  it('reports lifecycle errors before the ownership check', async () => {
+    const { db, inviteId } = await setupHandleInvite();
+    await db
+      .update(simInvite)
+      .set({ expiresAt: new Date('2000-01-01T00:00:00Z') })
+      .where(eq(simInvite.id, inviteId));
+    // A non-manager caller on an expired invite should hear "expired", not an auth error.
+    const other = await seedUser(db, { id: 'mallory', email: 'mallory@test.com' });
+    await expect(
+      acceptInviteById({
+        db,
+        inviteId,
+        userId: other.id,
+        email: 'mallory@test.com',
+        emailVerified: true
+      })
+    ).rejects.toThrow(/expired/i);
+  });
+});
+
+describe('resendInvite', () => {
+  it('rotates the token and updates lastSentAt; old token no longer accepts', async () => {
+    const { db, manager } = await setup();
+    const created = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'invitee@test.com' },
+      now: new Date('2026-06-01T00:00:00Z')
+    });
+    const oldToken = created.token;
+    const oldHash = created.invite.tokenHash;
+
+    const past = new Date('2026-06-01T00:02:00Z'); // +120s, past cooldown
+    const res = await resendInvite({ db, simId: 'q1', inviteId: created.invite.id, now: past });
+    expect(res.emailed).toBe(true);
+    expect(typeof res.token).toBe('string');
+    expect(res.token).not.toBe(oldToken);
+    expect(res.invite?.tokenHash).not.toBe(oldHash);
+    expect(res.invite?.lastSentAt?.getTime()).toBe(past.getTime());
+
+    const claimer = await seedUser(db, { id: 'claimer', email: 'claimer@test.com' });
+    await expect(acceptInviteByToken({ db, token: oldToken, userId: claimer.id })).rejects.toThrow(
+      /not found|not pending/i
+    );
+  });
+
+  it('is rate-limited within the cooldown window', async () => {
+    const { db, manager } = await setup();
+    const now = new Date('2026-06-01T00:00:00Z');
+    const created = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'invitee@test.com' },
+      now
+    });
+    await expect(
+      resendInvite({ db, simId: 'q1', inviteId: created.invite.id, now })
+    ).rejects.toThrow(/too soon|rate/i);
+  });
+
+  it('returns emailed:false when there is no email to send to', async () => {
+    const { db, manager } = await setup();
+    await seedUser(db, { id: 'noemail', email: '', handle: 'zed' });
+    const created = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'handle', handle: 'zed' },
+      now: new Date('2026-06-01T00:00:00Z')
+    });
+    const res = await resendInvite({
+      db,
+      simId: 'q1',
+      inviteId: created.invite.id,
+      now: new Date('2026-06-01T00:02:00Z')
+    });
+    expect(res).toEqual({ emailed: false });
+  });
+});
+
+describe('listRecipientPendingInvites', () => {
+  it('matches by invitedUserId and by verified email; populates title + handle', async () => {
+    const { db, manager } = await setup();
+    await seedUser(db, { id: 'meId', email: 'me@x.com', handle: 'me' });
+    // Email-only invite to an address with no account.
+    await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'other@x.com' }
+    });
+    // Handle invite to identity meId.
+    await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'handle', handle: 'me' }
+    });
+    // A second sim with an email invite to me@x.com (no account on that address path).
+    await createSimRecord({ db, simId: 'q2', title: 'Second', managerId: manager.id });
+    await createInvite({
+      db,
+      simId: 'q2',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'me@x.com' }
+    });
+
+    const list = await listRecipientPendingInvites({
+      db,
+      userId: 'meId',
+      email: 'me@x.com',
+      emailVerified: true
+    });
+    // The handle invite (invitedUserId=meId) + the email invite to me@x.com.
+    // Note: the email invite to me@x.com resolved to meId at create time too, but both surface.
+    const simIds = list.map((r) => r.simId).sort();
+    expect(simIds).toContain('q1');
+    expect(simIds).toContain('q2');
+    expect(list.length).toBeGreaterThanOrEqual(2);
+    for (const r of list) {
+      expect(r.simTitle.length).toBeGreaterThan(0);
+      expect(r.inviterHandle.length).toBeGreaterThan(0);
+    }
+
+    // Unverified email suppresses the email-only match.
+    const unverified = await listRecipientPendingInvites({
+      db,
+      userId: 'nobody',
+      email: 'other@x.com',
+      emailVerified: false
+    });
+    expect(unverified).toHaveLength(0);
+  });
+});
+
+describe('parseInviteTarget', () => {
+  it('classifies emails and handles', () => {
+    expect(parseInviteTarget('  Foo@Bar.com ')).toEqual({ kind: 'email', email: 'foo@bar.com' });
+    expect(parseInviteTarget('@jane')).toEqual({ kind: 'handle', handle: 'jane' });
+    expect(parseInviteTarget('jane')).toEqual({ kind: 'handle', handle: 'jane' });
+  });
+  it('rejects empty input', () => {
+    expect(() => parseInviteTarget('   ')).toThrow(/required/i);
+  });
+});
+
+describe('findInviteByToken', () => {
+  it('returns title, handle, and invitedEmail for a live invite; null for bogus', async () => {
+    const { db, manager } = await setup();
+    const created = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'invitee@test.com' }
+    });
+    const found = await findInviteByToken({ db, token: created.token });
+    expect(found).not.toBeNull();
+    expect(found?.simId).toBe('q1');
+    expect(found?.simTitle).toBe('T');
+    expect(found?.inviterHandle).toBe('manager');
+    expect(found?.invitedEmail).toBe('invitee@test.com');
+    expect(found?.status).toBe('pending');
+    expect(found?.expired).toBe(false);
+
+    expect(await findInviteByToken({ db, token: 'bogustoken' })).toBeNull();
+  });
+});
+
+describe('claimInvite', () => {
+  it('claimInvite is single-use under concurrent claims', async () => {
+    const { db, manager } = await setup();
+    // Seed a user whose identity id is 'idA' (acceptedByUserId FK requires userIdentity row).
+    await seedUser(db, { id: 'idA', email: 'idA@test.com' });
+    // Insert a pending invite with a fixed id 'inv1' targeting simId 'q1'.
+    await db.insert(simInvite).values({
+      id: 'inv1',
+      simId: 'q1',
+      role: 'editor',
+      invitedEmail: null,
+      invitedUserId: null,
+      tokenHash: 'fakehash1',
+      invitedByUserId: manager.id,
+      status: 'pending',
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      lastSentAt: new Date()
+    });
+
+    const [a, b] = await Promise.all([
+      claimInvite(db, 'inv1', 'idA'),
+      claimInvite(db, 'inv1', 'idA')
+    ]);
+    expect([a, b].filter(Boolean)).toHaveLength(1); // exactly one wins
+    const [row] = await db.select().from(simInvite).where(eq(simInvite.id, 'inv1'));
+    expect(row.status).toBe('accepted');
+  });
+});
