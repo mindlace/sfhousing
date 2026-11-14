@@ -241,7 +241,22 @@ a slope, height above *local* ground changes across the building.
 - **Dataset version.** This changes the dataset version. Follow "Finishing a branch that changes the
   dataset" in `docs/dev/pipeline.md`.
 
-### Review before calling it done
+### Release and iteration
+
+No hold before upload. Dataset versions are cheap to publish, and every tuning round ships the
+normal way:
+
+1. Upload the dataset.
+2. Sign off and merge to `main`.
+3. Staging deploys (`docs/dev/deploy.md`).
+
+The owner reviews on staging, and the next round iterates from there. Production moves only when
+the owner merges a release PR, which they do once they are happy with staging.
+
+If an unrelated change must reach production first, the release carries the current building state
+with it. Revert the building commits or wait. (Author's note; no feature flag is planned.)
+
+### Review on each round
 
 Produce a before/after review at street-level pitch (about 60–70°, zoom 16–17) for:
 
