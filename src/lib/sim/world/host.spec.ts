@@ -669,10 +669,15 @@ describe('the host', () => {
 
   it('a rejected load answers internal', async () => {
     const f = datasetFetch(FIXTURE);
+    let errored: () => void = () => {};
+    const errorPosted = new Promise<void>((r) => (errored = r));
     const host = createTimelineHost({
       fetch: f.fetch,
       fetchBytes: f.fetchBytes,
-      post: (msg) => posts.push(msg),
+      post: (msg) => {
+        posts.push(msg);
+        if (msg.type === 'error') errored();
+      },
       setTimeout: (fn, ms) => setTimeout(fn, ms),
       clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
       now: () => 0,
@@ -688,7 +693,7 @@ describe('the host', () => {
       worlds: 1,
       months: 12
     });
-    await new Promise((r) => setTimeout(r, 0));
+    await errorPosted;
     expect(posts.map((m) => m.type)).toEqual(['ready', 'error']);
     expect(posts[1]).toMatchObject({ rev: 7, code: 'internal' });
   });
