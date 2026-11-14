@@ -471,6 +471,120 @@ describe('map-stream: onEvent and flush', () => {
     expect(whole.slotProjectIds).toContain(multi.projectId);
   });
 
+  describe('cellsFor', () => {
+    /** The cells outside `view` of every project at the world's month anchored in `view`. */
+    const outsideOf = (world: World, view: string[]): Set<string> => {
+      const out = new Set<string>();
+      for (const s of schedulesNow(world, bench.statics)) {
+        if (s === null) continue;
+        const a = anchorOf(bench.input, s);
+        if (a === null || !view.includes(a)) continue;
+        for (const c of cellsOf(bench.input, s)) if (!view.includes(c)) out.add(c);
+      }
+      return out;
+    };
+    /** A project of the dataset date whose T11 parcels span two cells. */
+    const findMulti = () => {
+      const probe = runWorld(bench.statics, bench.timeline, SEED, 0);
+      const multi = schedulesNow(probe, bench.statics).find(
+        (s) => s !== null && cellsOf(bench.input, s).length >= 2
+      )!;
+      expect(multi).toBeDefined();
+      const anchor = anchorOf(bench.input, multi)!;
+      return { multi, anchor, other: cellsOf(bench.input, multi).find((c) => c !== anchor)! };
+    };
+
+    it('cellsFor names the outside cell of a multi-parcel project anchored in a requested cell', () => {
+      const { anchor, other } = findMulti();
+      const t = started(bench);
+      const want = outsideOf(t.world, [anchor]);
+      expect(want.has(other)).toBe(true);
+      expect(t.stream.cellsFor([anchor])).toEqual(want);
+      // never a cell of the argument; a repeated cell counts once
+      const both = t.stream.cellsFor([anchor, other, anchor]);
+      expect(both).toEqual(outsideOf(t.world, [anchor, other]));
+      expect(both.has(anchor) || both.has(other)).toBe(false);
+      // unknown cells add nothing, and the query does not mark anything dirty
+      expect(t.stream.cellsFor(['no-such-cell']).size).toBe(0);
+      expect(t.stream.cellsFor([]).size).toBe(0);
+      const a = t.stream.flush(t.world, bench.statics, Infinity)!;
+      expect(a.cells.length).toBeGreaterThan(0);
+      t.stream.cellsFor([anchor]);
+      expect(t.stream.flush(t.world, bench.statics, Infinity)).toBeNull();
+    });
+
+    it('with cellsFor the anchor cell is sent once the named chunk loads; without it it waits', () => {
+      const { multi, anchor } = findMulti();
+      const view = [anchor];
+      const run = (mode: 'none' | 'without' | 'with') => {
+        const loaded = new Set<string>(view);
+        const t = started(bench, {
+          ready: mode === 'none' ? () => true : (c: string) => loaded.has(c)
+        });
+        const sent: TimelineUpdate[] = [];
+        const take = (u: TimelineUpdate | null) => {
+          if (u === null) return;
+          sent.push(u);
+          if (mode === 'with') for (const c of t.stream.cellsFor(view)) loaded.add(c);
+        };
+        take(t.stream.flush(t.world, bench.statics, Infinity));
+        for (const u of fill({
+          world: t.world,
+          statics: bench.statics,
+          timeline: bench.timeline,
+          seed: SEED,
+          stream: t.stream,
+          sink: t.sink,
+          due: t.due,
+          through: 1
+        }))
+          take(u);
+        // the host asks again after the flush, then the next flush sends the cell
+        take(t.stream.flush(t.world, bench.statics, Infinity));
+        take(t.stream.flush(t.world, bench.statics, Infinity));
+        return lastSent(sent).get(anchor);
+      };
+      expect(run('without')).toBeUndefined();
+      const got = run('with')!;
+      expect(got).toBeDefined();
+      expect(got.slotProjectIds).toContain(multi.projectId);
+      expect(got).toEqual(run('none'));
+    });
+
+    it('a rewind that removes the project drops its cell from cellsFor', () => {
+      const t = started(bench);
+      t.stream.flush(t.world, bench.statics, Infinity);
+      const saved = structuredClone(t.world);
+      fill({
+        world: t.world,
+        statics: bench.statics,
+        timeline: bench.timeline,
+        seed: SEED,
+        stream: t.stream,
+        sink: t.sink,
+        due: t.due,
+        through: 24
+      });
+      // a sim project begun after month 0 whose cells span two: its anchor and an outside cell
+      // no project of the saved world reaches from that anchor
+      let hit: { anchor: string; other: string } | null = null;
+      for (let row = saved.projects.n; row < t.world.projects.n && hit === null; row++) {
+        const s = scheduleAt(t.world, bench.statics, row, lastDayOf(t.world, bench.statics));
+        if (s === null) continue;
+        const anchor = anchorOf(bench.input, s);
+        const other = cellsOf(bench.input, s).find((c) => c !== anchor);
+        if (anchor !== null && other !== undefined && !outsideOf(saved, [anchor]).has(other))
+          hit = { anchor, other };
+      }
+      expect(hit).not.toBeNull();
+      const { anchor, other } = hit!;
+      expect(t.stream.cellsFor([anchor]).has(other)).toBe(true);
+      t.stream.rewind(structuredClone(saved), bench.statics);
+      expect(t.stream.cellsFor([anchor])).toEqual(outsideOf(saved, [anchor]));
+      expect(t.stream.cellsFor([anchor]).has(other)).toBe(false);
+    });
+  });
+
   it('revisions count from 0 and complete is set (rule 7)', () => {
     const windowMonths = 24;
     const { world, sink, stream, due } = started(bench, {}, windowMonths);
