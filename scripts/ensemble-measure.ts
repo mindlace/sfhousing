@@ -13,6 +13,7 @@
 //             massing ahead of the flush (plan D12) and lists the cold ones over 50 ms.
 //   sizes     where a world's bytes go (serialized sizes by column), no timing.
 //   resume    restore every world from the month 0 copy and replay `--at` months quietly.
+//   host      the timeline host itself: open, fill, one edit (Task 8's bundled figures).
 // `--extra` names a directory holding the dataset's `transit.json` and `neighborhoods.geojson`
 // when the dataset directory lacks them. Measurement only: nothing in the bundle imports it.
 import { existsSync, readFileSync } from 'node:fs';
@@ -76,6 +77,9 @@ import { streamDeps } from '../src/lib/sim/world/test/map-stream-deps';
 import type { Due, StepSink, World, WorldEvent } from '../src/lib/sim/world/types';
 import { benchDoc, benchMoney } from '../src/lib/sim/world/funding/test/fixtures';
 import { withFunding } from '../src/lib/sim/world/world';
+import { createTimelineHost } from '../src/lib/sim/world/host';
+import { datasetFetch } from '../src/lib/sim/world/runner/test/harness';
+import type { TimelineHostRequest, TimelineHostResponse } from '../src/lib/sim/timeline-protocol';
 
 const now = () => performance.now();
 // tsx runs the script in a child process, so `node --expose-gc` may not reach it
@@ -1243,6 +1247,158 @@ function caseResume(c: Common, ats: number[]) {
   return { case: 'resume', money: c.money, worlds: `${c.worlds} + ${c.worlds}`, results };
 }
 
+// ---------------------------------------------------------------- the host itself (plan Task 8)
+
+/**
+ * `--case host`: the timeline host (`createTimelineHost`) on the dataset directory, on a real
+ * clock, as `host.perf.spec.ts` runs it but bundled (no Vitest module runner): open the
+ * reconciled `DEFAULT_POLICY4` with every chunk wanted, fill and drain; then the metro rule from
+ * month 120, its lots resolved through the host's `resolveBrush`, refilled and drained. Every
+ * task of the host (its timer callbacks and requests) is timed; what ran inside a task is not
+ * (the perf spec has the breakdown).
+ */
+async function caseHost(dir: string, live: Live, worlds: number, months: number) {
+  const f = datasetFetch(dir);
+  const tasks: { label: string; start: number; ms: number; posts: string[] }[] = [];
+  const posts: { t: number; msg: TimelineHostResponse }[] = [];
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  let cur: string[] | null = null;
+  const task = (label: string, fn: () => void) => {
+    const mine: string[] = [];
+    cur = mine;
+    const start = now();
+    try {
+      fn();
+    } finally {
+      cur = null;
+      tasks.push({ label, start, ms: now() - start, posts: mine });
+    }
+  };
+  const host = createTimelineHost({
+    fetch: f.fetch,
+    fetchBytes: f.fetchBytes,
+    // keep only what is read below: a posted cell's buffers are not held
+    post: (msg) => {
+      cur?.push(msg.type);
+      const keep =
+        msg.type === 'cells'
+          ? ({
+              type: 'cells',
+              render: { ...msg.render, cells: msg.render.cells.length ? [0] : [] }
+            } as never)
+          : msg.type === 'filled'
+            ? ({ type: 'filled', rev: msg.rev, through: msg.through } as never)
+            : msg;
+      posts.push({ t: now(), msg: keep });
+    },
+    setTimeout: (fn, ms) => {
+      const h = setTimeout(() => {
+        timers.delete(h);
+        task('timer', fn);
+      }, ms);
+      timers.add(h);
+      return h;
+    },
+    clearTimeout: (h) => {
+      timers.delete(h as ReturnType<typeof setTimeout>);
+      clearTimeout(h as ReturnType<typeof setTimeout>);
+    },
+    now,
+    retryDelaysMs: [],
+    warn: () => {}
+  });
+  const handle = (req: TimelineHostRequest) => task(`handle:${req.type}`, () => host.handle(req));
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const of = <T extends TimelineHostResponse['type']>(type: T, rev?: number) =>
+    posts
+      .filter(
+        (p) => p.msg.type === type && (rev === undefined || (p.msg as { rev?: number }).rev === rev)
+      )
+      .map((p) => ({ t: p.t, msg: p.msg as Extract<TimelineHostResponse, { type: T }> }));
+  async function settled(rev: number) {
+    for (let k = 0; k < 3; k++) {
+      while (of('compiled', rev).length === 0 || timers.size > 0) {
+        const err = of('error')[0];
+        if (err) throw new Error(`host error: ${err.msg.code} ${err.msg.message}`);
+        await sleep(5);
+      }
+      await new Promise((r) => setImmediate(r));
+    }
+  }
+  const b = f.manifest.chunks.map((c) => c.bbox);
+  const bbox: [number, number, number, number] = [
+    Math.min(...b.map((x) => x[0])),
+    Math.min(...b.map((x) => x[1])),
+    Math.max(...b.map((x) => x[2])),
+    Math.max(...b.map((x) => x[3]))
+  ];
+  const t0 = now();
+  handle({
+    type: 'openTimeline',
+    rev: 1,
+    manifest: f.manifest,
+    policy: reconciled(DEFAULT_POLICY4, live.funded),
+    lots: {},
+    worlds,
+    months
+  });
+  handle({ type: 'prefetch', bbox });
+  await settled(1);
+  const firstCells = posts.find((p) => p.msg.type === 'cells' && p.msg.render.cells.length > 0)!.t;
+  const firstFilled = of('filled', 1)[0].t;
+  const firstCompiling = of('compiling', 1)[0].t;
+  const lastFilled = of('filled', 1).at(-1)!.t;
+  const openTasks = tasks.length;
+  // the edit: the metro rule from month 120, its lots from the host's resolveBrush
+  const doc = reconciled(
+    docOf(
+      policyOf(
+        'metro',
+        { tag: 'transit', stopTypes: ['metro'] },
+        monthFirstDay(live.funded.asOf, 120),
+        {
+          tag: 'bands',
+          bands: [
+            { maxM: 402, stories: 6 },
+            { maxM: 805, stories: 4 }
+          ]
+        }
+      )
+    ),
+    live.funded
+  );
+  const lots: Record<string, ParcelId[]> = {};
+  let reqId = 0;
+  for (const { key, query } of queriesOf4(doc)) {
+    const id = ++reqId;
+    handle({ type: 'resolveBrush', reqId: id, query });
+    let answer: Extract<TimelineHostResponse, { type: 'brushLots' }> | undefined;
+    while (!(answer = of('brushLots').find((p) => p.msg.reqId === id)?.msg)) await sleep(5);
+    lots[key] = answer.result.ok ? answer.result.lots : [];
+  }
+  const e0 = now();
+  handle({ type: 'setPolicy', rev: 2, policy: doc, lots });
+  await settled(2);
+  const editMs = now() - e0;
+  host.dispose();
+  const filling = tasks.filter((t) => t.label !== 'handle:resolveBrush');
+  const over = filling.filter((t) => t.ms > 50).sort((a, b) => b.ms - a.ms);
+  const r = (x: number) => r1(x);
+  return {
+    case: 'host',
+    worlds: `${worlds} + ${worlds}`,
+    months,
+    firstCellsMs: r(firstCells - t0),
+    firstFilledMs: r(firstFilled - t0),
+    fillFromFirstCompilingToLastFilledMs: r(lastFilled - firstCompiling),
+    editSettledMs: r(editMs),
+    refill: of('refill', 2).map((p) => p.msg.from),
+    tasks: { open: openTasks, all: filling.length, ms: stats(filling.map((t) => t.ms)) },
+    over50: over.map((t) => ({ ms: r(t.ms), label: t.label, posts: [...new Set(t.posts)] })),
+    tasksOver50InOpenAndFill: over.filter((t) => t.start < e0).length
+  };
+}
+
 // ---------------------------------------------------------------- main
 
 async function main(): Promise<number> {
@@ -1251,7 +1407,7 @@ async function main(): Promise<number> {
   if (!dir || !which) {
     console.error(
       'usage: node --expose-gc node_modules/.bin/tsx scripts/ensemble-measure.ts --dir <dataset> ' +
-        '--case ensemble|replan|compile|first|flush|flush-warm|sizes|resume [--extra <dir>] [--no-gross] ' +
+        '--case ensemble|replan|compile|first|flush|flush-warm|sizes|resume|host [--extra <dir>] [--no-gross] ' +
         '[--no-money] [--money-set baseline|bench|benchset] [--no-copies] [--copies 0,240] [--at 240,470] [--variant market|zoning] [--runs 3] [--worlds 48] [--months 480]'
     );
     return 2;
@@ -1324,6 +1480,7 @@ async function main(): Promise<number> {
     else if (which === 'sizes') result = caseSizes(c);
     else if (which === 'resume')
       result = caseResume(c, (opt('--at') ?? '240,470').split(',').map(Number));
+    else if (which === 'host') result = await caseHost(dir, live, worlds, months);
     else throw new Error(`unknown case ${which}`);
   }
   console.log(JSON.stringify({ dataset: dir.split('/').pop(), ...(result as object) }, null, 2));
