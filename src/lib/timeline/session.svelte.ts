@@ -152,6 +152,13 @@ export class TimelineSession {
   #clientKey = '';
   /** The key of the latest open's document (the stripped one after a provisional open). */
   #openKey = '';
+  /** The key of the stripped pair of the latest provisional open; '' when none. */
+  #strippedKey = '';
+  /**
+   * The stripped document while the full one stands rejected after a provisional open (carry 6):
+   * a re-open is followed by a `setPolicy` of it (fix round 2). Null otherwise.
+   */
+  #fullRejected: SimPolicy4 | null = null;
   /** The latest rev answered by a refill, or the open's: kept edits above it are pending. */
   #baseRev = 0;
   /** The latest pair the page asked for: Retry opens it. Lots null: provisional. */
@@ -267,6 +274,7 @@ export class TimelineSession {
   open(policy: SimPolicy4, lots: Lots | null): void {
     const doc = this.#reconcile(policy);
     this.#current = { policy: doc, lots };
+    this.#fullRejected = null;
     this.#openWith(doc, lots);
   }
 
@@ -284,7 +292,7 @@ export class TimelineSession {
     const key = keyOf(doc, lots);
     if (key === this.#lastKey) {
       this.#dirty = false;
-      if (this.#provisional && key === this.#openKey) {
+      if (this.#provisional && key === this.#strippedKey) {
         // The document wanted is the stripped one: the open was the full document (I1).
         this.#fullRev = this.#openRev;
         this.#fullRefilled = true;
@@ -315,7 +323,10 @@ export class TimelineSession {
         this.#client.retryChunks();
         return;
       case 'error':
-        if (this.#current) this.#openWith(this.#current.policy, this.#current.lots);
+        if (this.#current) {
+          this.#openWith(this.#current.policy, this.#current.lots);
+          this.#keepStripped();
+        }
         return;
       case 'crash':
         this.#restart();
@@ -367,6 +378,25 @@ export class TimelineSession {
     this.#rev = rev;
     this.#clientLast = { policy: sendDoc, lots: sendLots };
     this.#opened(rev, sendDoc, sendLots, sendDoc !== doc);
+    if (sendDoc !== doc) this.#strippedKey = this.#openKey;
+  }
+
+  /**
+   * Fix round 2: after a re-open while the full document stands rejected, the stripped pair goes
+   * out at once. Sent before the load, it replaces the re-open's document (ensemble-runner.md,
+   * "Rejection before the load"). Part of opening, not an edit; provisional stays true and the
+   * full document waits for the user's next edit.
+   */
+  #keepStripped(): void {
+    const stripped = this.#fullRejected;
+    if (stripped === null) return;
+    const dirty = this.#dirty;
+    this.#dirty = false;
+    this.#provisional = true;
+    this.#post(stripped, {});
+    this.#dirty = dirty;
+    this.#fullRev = null;
+    this.#fullRefilled = false;
   }
 
   /** A new session at `rev` (an open or a restart's re-open): the log starts over. */
@@ -404,6 +434,7 @@ export class TimelineSession {
     const rev = this.#client.setPolicy(doc, lots);
     this.#rev = rev;
     const key = keyOf(doc, lots);
+    if (key !== this.#strippedKey) this.#fullRejected = null;
     // The first send after a provisional open is part of opening, not an edit.
     const opening = this.#provisional && this.#fullRev === null && !this.#dirty;
     if (this.#provisional && this.#fullRev === null) this.#fullRev = rev;
@@ -439,6 +470,10 @@ export class TimelineSession {
     const provisional =
       this.#provisional && this.#fullRev === null && this.#clientKey === this.#openKey;
     this.#opened(this.#rev, last.policy, last.lots, provisional);
+    if (this.#fullRejected !== null) {
+      this.#keepStripped();
+      return;
+    }
     const cur = this.#current;
     if (cur && cur.lots !== null && keyOf(cur.policy, cur.lots) !== this.#clientKey) {
       this.#post(cur.policy, cur.lots);
@@ -509,7 +544,7 @@ export class TimelineSession {
       // A late rejection of the open's own document: nothing to take up (rule 35).
       this.#stop();
     } else if (e.early) {
-      // GUESS (composer): "early" = sent before any `compiling`/`compiled` arrived (line 416). It
+      // GUESS (composer): "early" = sent before any `compiling`/`compiled` arrived (`#post`). It
       // may have replaced the opening's document before the load (rule 35), or the fill may go on
       // under an earlier document (rule 34): older-rev posts after this tell.
       this.#earlyRejected = rev;
@@ -528,8 +563,10 @@ export class TimelineSession {
     if (target) {
       this.#lastKey = target.key;
       this.#accepted = target.policy;
-      const stripped = target.rev === this.#openRev && this.#provisional;
-      if (!stripped) this.#deps.undoTo(target.policy);
+      // Never undo to the stripped document: that would drop the user's brushes (carry 6).
+      const stripped = this.#provisional && target.key === this.#strippedKey;
+      if (stripped) this.#fullRejected = target.policy;
+      else this.#deps.undoTo(target.policy);
     }
     this.#notice({ id: 'not-applied' });
   }
@@ -587,6 +624,7 @@ export class TimelineSession {
     const v = this.#view;
     if (this.#provisional && this.#fullRefilled && v !== null && v.filledThrough === v.lastIndex) {
       this.#provisional = false;
+      this.#fullRejected = null;
     }
     this.#afterView();
     this.#cardCheck();

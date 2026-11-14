@@ -623,6 +623,72 @@ describe('TimelineSession', () => {
     expect(session.stoppedByError).toBe(false);
   });
 
+  // ---- fix round 2 ----
+
+  /** Provisional open, the full pair sent and rejected (carry 6); returns the stripped document. */
+  function fullRejected(): SimPolicy4 {
+    session.open(withPaint, null);
+    const stripped = worker.lastOf('openTimeline')!.policy;
+    emit(compiled(1));
+    emit(filled(1, 0, LAST + 1));
+    session.send(withPaint, lots);
+    emit(error(2, 'bad-request'));
+    return stripped;
+  }
+
+  it('a restart while the full document stands rejected re-opens, then sends the stripped pair', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const stripped = fullRejected();
+    worker.crash();
+    session.retry({ id: 'crash', retry: 'restart' });
+    expect(worker.posts.map((p) => p.type)).toEqual(['openTimeline', 'setPolicy']);
+    expect(worker.lastOf('setPolicy')!).toMatchObject({ policy: stripped, lots: {} });
+    expect(session.provisional).toBe(true);
+    expect(session.notices.some((n) => n.id === 'error')).toBe(false);
+    expect(undoTo).not.toHaveBeenCalled();
+    emit(compiled(4));
+    emit(refill(4, 0));
+    emit(filled(4, 0, LAST + 1));
+    expect([session.provisional, session.shown(5).stale]).toEqual([true, true]);
+    expect(worker.all('setPolicy')).toHaveLength(1);
+  });
+
+  it("a 'timeline' error's Retry while the full document stands rejected sends the stripped pair", () => {
+    const stripped = fullRejected();
+    emit(error(2, 'timeline'));
+    const notice = session.notices.find((n) => n.id === 'error')!;
+    session.retry(notice);
+    const tail = worker.posts.slice(-2);
+    expect(tail.map((p) => p.type)).toEqual(['openTimeline', 'setPolicy']);
+    expect(tail[1]).toMatchObject({ policy: stripped, lots: {} });
+    expect(session.provisional).toBe(true);
+    expect(session.notices.some((n) => n.id === 'error')).toBe(false);
+    expect(undoTo).not.toHaveBeenCalled();
+    emit(compiled(4));
+    emit(refill(4, 0));
+    emit(filled(4, 0, LAST + 1));
+    expect(session.provisional).toBe(true);
+  });
+
+  it('after that re-open, a later rejected edit still never undoes to the stripped document', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const stripped = fullRejected();
+    worker.crash();
+    session.retry({ id: 'crash', retry: 'restart' });
+    emit(compiled(4));
+    emit(refill(4, 0));
+    session.edited();
+    session.send(mk(protect('a', 6), painted), lots);
+    emit(error(5, 'bad-request'));
+    expect(undoTo).not.toHaveBeenCalled();
+    expect(session.provisional).toBe(true);
+    // the user removes the brushes: the stripped pair is what runs, so provisional ends when whole
+    session.edited();
+    session.send(stripped, {});
+    emit(filled(4, 0, LAST + 1));
+    expect(session.provisional).toBe(false);
+  });
+
   it('sends a reconciled document', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     opened();
