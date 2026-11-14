@@ -123,10 +123,43 @@ describe('methodForAuthPath', () => {
     }
   });
 
+  it('maps the reset link callback to password', () => {
+    expect(methodForAuthPath('/api/auth/reset-password/abc123')).toBe('password');
+  });
+
+  it('maps email sign-up to password', () => {
+    expect(methodForAuthPath('/api/auth/sign-up/email')).toBe('password');
+  });
+
+  it('maps password verification to password', () => {
+    expect(methodForAuthPath('/api/auth/verify-password')).toBe('password');
+  });
+
+  it('maps every passkey endpoint to passkey', () => {
+    for (const p of [
+      '/passkey/generate-register-options',
+      '/passkey/generate-authenticate-options',
+      '/passkey/verify-registration',
+      '/passkey/verify-authentication',
+      '/passkey/list-user-passkeys',
+      '/passkey/delete-passkey',
+      '/passkey/update-passkey'
+    ]) {
+      expect(methodForAuthPath(`/api/auth${p}`)).toBe('passkey');
+    }
+  });
+
   it('maps every Google path to google', () => {
     for (const p of ['/sign-in/social', '/link-social', '/callback/google']) {
       expect(methodForAuthPath(`/api/auth${p}`)).toBe('google');
     }
+  });
+
+  it('ignores a trailing slash', () => {
+    expect(methodForAuthPath('/api/auth/sign-in/email/')).toBe('password');
+    expect(methodForAuthPath('/api/auth/reset-password/')).toBe('password');
+    expect(methodForAuthPath('/api/auth/link-social/')).toBe('google');
+    expect(methodForAuthPath('/api/auth/get-session/')).toBeNull();
   });
 
   it('leaves the always-on paths and foreign paths unmapped', () => {

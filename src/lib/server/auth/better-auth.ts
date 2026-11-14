@@ -75,7 +75,11 @@ async function recordHistoryFor(
  *
  *  `methods` are the sign-in methods to configure. Omitted, they are the ones `AUTH_METHODS`
  *  switches on (less Google without credentials). A method that is off gets no
- *  configuration: no password sign-in, no passkey plugin, no Google provider. */
+ *  configuration: password off is `emailAndPassword: { enabled: false }` with no reset or
+ *  other callback (so sign-in, sign-up and the reset request are refused), passkey off has
+ *  no plugin, Google off has no provider. `/change-password` and `/verify-password` check
+ *  no configuration at all, only that the caller already holds a credential: the path gate
+ *  over `methodForAuthPath` is what closes them while password is off. */
 export interface GetAuthOptions {
   captureMagicLink?: (link: { email: string; url: string }) => void;
   methods?: ReadonlySet<AuthMethod>;
@@ -134,58 +138,62 @@ export function getAuth(
     advanced: { database: { generateId: authGenerateId } },
     // Link a trusted Google account to the current signed-in account (e.g. a magic-link user adds Google).
     account: { accountLinking: { enabled: true, trustedProviders: ['google'] } },
-    emailAndPassword: {
-      // Password sign-in is a switchable method (`AUTH_METHODS`); off by default.
-      enabled: methods.has('password'),
-      // There is NO password sign-up path in this product. Onboarding is zero-barrier and
-      // pseudonymous (the `anonymous()` plugin); a password is only ever SET on an already
-      // signed-in session. Without this flag, `enabling` email+password publishes an
-      // unauthenticated POST /api/auth/sign-up/email (sign-up.mjs gates solely on
-      // `enabled || disableSignUp`) whose USER_ALREADY_EXISTS error is an email-enumeration
-      // oracle — exactly what the reset gate below works to avoid. `disableSignUp` is read
-      // ONLY by that route: setPassword/changePassword (update-user.mjs) and
-      // requestPasswordReset/resetPassword (password.mjs) never consult it, so the
-      // add-a-credential flows this design depends on stay open.
-      disableSignUp: true,
-      minPasswordLength: PASSWORD_MIN_LENGTH,
-      maxPasswordLength: PASSWORD_MAX_LENGTH,
-      // Do NOT enable autoSignIn — setting a password is an add-a-credential action
-      // on an already-signed-in session, never a sign-up.
-      autoSignIn: false,
-      // Reset is sessionless recovery — the requester may be locked out precisely
-      // because someone else holds a live session, and `resetPassword` runs off a
-      // token with no caller session to preserve. So ALL sessions die here, unlike
-      // the change path (see the route), which keeps the caller on a rotated token.
-      revokeSessionsOnPasswordReset: true,
-      /**
-       * Conditional by design — see password-reset-gate.ts for the two refusals.
-       * Refusal is SILENT: better-auth's forgetPassword returns the same neutral
-       * response either way, matching the enumeration posture of the magic-link
-       * sign-in action. Do not "fix" this into unconditional sending.
-       *
-       * KNOWN, ACCEPTED (not fixed here): better-auth creates the verification row BEFORE
-       * invoking this callback (password.mjs:63-70), so a refused address still accrues one
-       * unusable reset token per request. The token is inert — a refused address can never
-       * receive the link — but the rows do accumulate. Fixing it needs an upstream change or
-       * a pre-route hook; deliberately out of scope for this change.
-       */
-      sendResetPassword: async ({
-        user,
-        url
-      }: {
-        user: { email: string; emailVerified: boolean };
-        url: string;
-      }) => {
-        if (!mayReceivePasswordReset(user)) return;
-        // e2e seam, mirroring the change-email records below: the reset URL never appears
-        // in any HTTP response, so a test has no other way to follow the link. This is an
-        // ADDITION, not a short-circuit — the real send still happens. Better-Auth wraps
-        // this callback in runInBackgroundOrAwait, so it can land after the response
-        // returns; readers must poll, not read once.
-        recordE2eMail(platform, 'password-reset', user.email, url);
-        await sendEmail(platform, { to: user.email, ...(await buildResetPasswordEmail(url)) });
-      }
-    },
+    // Password is a switchable method (`AUTH_METHODS`); off by default. Off means the bare
+    // `{ enabled: false }`: Better-Auth's reset routes check only for `sendResetPassword`,
+    // never `enabled`, so leaving the callback configured would keep the reset flow live.
+    emailAndPassword: methods.has('password')
+      ? {
+          enabled: true,
+          // There is NO password sign-up path in this product. Onboarding is zero-barrier and
+          // pseudonymous (the `anonymous()` plugin); a password is only ever SET on an already
+          // signed-in session. Without this flag, `enabling` email+password publishes an
+          // unauthenticated POST /api/auth/sign-up/email (sign-up.mjs gates solely on
+          // `enabled || disableSignUp`) whose USER_ALREADY_EXISTS error is an email-enumeration
+          // oracle — exactly what the reset gate below works to avoid. `disableSignUp` is read
+          // ONLY by that route: setPassword/changePassword (update-user.mjs) and
+          // requestPasswordReset/resetPassword (password.mjs) never consult it, so the
+          // add-a-credential flows this design depends on stay open.
+          disableSignUp: true,
+          minPasswordLength: PASSWORD_MIN_LENGTH,
+          maxPasswordLength: PASSWORD_MAX_LENGTH,
+          // Do NOT enable autoSignIn — setting a password is an add-a-credential action
+          // on an already-signed-in session, never a sign-up.
+          autoSignIn: false,
+          // Reset is sessionless recovery — the requester may be locked out precisely
+          // because someone else holds a live session, and `resetPassword` runs off a
+          // token with no caller session to preserve. So ALL sessions die here, unlike
+          // the change path (see the route), which keeps the caller on a rotated token.
+          revokeSessionsOnPasswordReset: true,
+          /**
+           * Conditional by design — see password-reset-gate.ts for the two refusals.
+           * Refusal is SILENT: better-auth's forgetPassword returns the same neutral
+           * response either way, matching the enumeration posture of the magic-link
+           * sign-in action. Do not "fix" this into unconditional sending.
+           *
+           * KNOWN, ACCEPTED (not fixed here): better-auth creates the verification row BEFORE
+           * invoking this callback (password.mjs:63-70), so a refused address still accrues one
+           * unusable reset token per request. The token is inert — a refused address can never
+           * receive the link — but the rows do accumulate. Fixing it needs an upstream change or
+           * a pre-route hook; deliberately out of scope for this change.
+           */
+          sendResetPassword: async ({
+            user,
+            url
+          }: {
+            user: { email: string; emailVerified: boolean };
+            url: string;
+          }) => {
+            if (!mayReceivePasswordReset(user)) return;
+            // e2e seam, mirroring the change-email records below: the reset URL never appears
+            // in any HTTP response, so a test has no other way to follow the link. This is an
+            // ADDITION, not a short-circuit — the real send still happens. Better-Auth wraps
+            // this callback in runInBackgroundOrAwait, so it can land after the response
+            // returns; readers must poll, not read once.
+            recordE2eMail(platform, 'password-reset', user.email, url);
+            await sendEmail(platform, { to: user.email, ...(await buildResetPasswordEmail(url)) });
+          }
+        }
+      : { enabled: false },
     user: {
       // modelName removed — Better-Auth's `user` model maps to the table literally named `user`.
       // NOT-NULL custom columns must be declared or transformInput drops them on insert.

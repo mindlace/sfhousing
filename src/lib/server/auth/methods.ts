@@ -53,17 +53,25 @@ export function enabledAuthMethods(event: {
 const AUTH_PREFIX = '/api/auth';
 const PASSWORD_PATHS = new Set([
   '/sign-in/email',
+  '/sign-up/email',
   '/request-password-reset',
   '/reset-password',
-  '/change-password'
+  '/change-password',
+  '/verify-password'
 ]);
 const GOOGLE_PATHS = new Set(['/sign-in/social', '/link-social']);
 
-/** The switchable method a Better-Auth endpoint belongs to, or null for an always-on one. */
+/**
+ * The switchable method a Better-Auth endpoint belongs to, or null for an always-on one.
+ * Password: sign-in and sign-up by email, the reset request, the reset (and its
+ * `/reset-password/:token` link), change and verify. Passkey: everything under
+ * `/passkey/`. Google: social sign-in, linking and every `/callback/:id`. A trailing slash
+ * does not change the answer.
+ */
 export function methodForAuthPath(path: string): AuthMethod | null {
   if (!path.startsWith(`${AUTH_PREFIX}/`)) return null;
-  const rest = path.slice(AUTH_PREFIX.length);
-  if (PASSWORD_PATHS.has(rest)) return 'password';
+  const rest = path.slice(AUTH_PREFIX.length).replace(/\/+$/, '');
+  if (PASSWORD_PATHS.has(rest) || rest.startsWith('/reset-password/')) return 'password';
   if (rest.startsWith('/passkey/')) return 'passkey';
   if (GOOGLE_PATHS.has(rest) || rest.startsWith('/callback/')) return 'google';
   return null;

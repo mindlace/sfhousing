@@ -1,7 +1,8 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { count } from 'drizzle-orm';
+import { count, eq } from 'drizzle-orm';
 import * as schema from '$lib/server/db/schema';
-import { freshDb, makePlatform } from '$lib/server/test/auth-db';
+import { clearE2eMail, readE2eMail } from '$lib/server/e2e/mail-sink';
+import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
 import { mockConsole } from '$lib/server/test/mock-console';
 import { PASSKEY_RP_NAME, PSEUDONYMOUS_EMAIL_DOMAIN } from './brand';
 import type { AuthMethod } from './methods';
@@ -16,6 +17,8 @@ const { getAuth } = await import('./better-auth');
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  clearE2eMail();
 });
 
 const ORIGIN = 'http://localhost:5173';
@@ -63,6 +66,22 @@ async function pseudonymousWithPassword(platform: App.Platform) {
     body: { newPassword: PASSWORD }
   });
   return { email: response!.user.email };
+}
+
+/** What `sendResetPassword`'s e2e record needs: an e2e build in development, a From address. */
+const E2E_ENV = { ENVIRONMENT: 'development', SES_FROM: 'noreply@example.com' };
+
+async function resetTokens(db: ReturnType<typeof setup>['db']): Promise<number> {
+  const rows = await db.select().from(schema.verification);
+  return rows.filter((r) => r.identifier.startsWith('reset-password:')).length;
+}
+
+async function credentialCount(db: ReturnType<typeof setup>['db']): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(schema.account)
+    .where(eq(schema.account.providerId, 'credential'));
+  return row.n;
 }
 
 function pluginIds(auth: ReturnType<typeof getAuth>): string[] {
@@ -122,6 +141,123 @@ describe('Better-Auth with the default sign-in methods', () => {
     expect(Object.keys(auth.options.socialProviders ?? {})).not.toContain('google');
   });
 
+  it('configures password off as the bare enabled:false, with no reset callback', () => {
+    const { platform } = setup();
+    expect(getAuth(platform, ORIGIN).options.emailAndPassword).toEqual({ enabled: false });
+  });
+
+  it('refuses a password reset request by default: no mail, no token', async () => {
+    vi.stubEnv('VITE_E2E', '1');
+    const { db, platform } = setup(E2E_ENV);
+    await seedUser(db, { id: 'ada', email: 'ada@example.com', emailVerified: true });
+    const auth = getAuth(platform, ORIGIN);
+    const { error } = mockConsole('error');
+    const res = await auth.handler(
+      request('POST', '/request-password-reset', { email: 'ada@example.com', redirectTo: '/' })
+    );
+    expect(res.status).toBe(400);
+    expect(readE2eMail('password-reset', 'ada@example.com')).toBeNull();
+    expect(await resetTokens(db)).toBe(0);
+    expect(String(error.mock.calls[0])).toContain("Reset password isn't enabled");
+  });
+
+  it('refuses a password reset by default: no credential is created', async () => {
+    const { db, platform } = setup();
+    await seedUser(db, { id: 'ada', email: 'ada@example.com', emailVerified: true });
+    const auth = getAuth(platform, ORIGIN);
+    mockConsole('error');
+    const res = await auth.handler(
+      request('POST', '/reset-password', { newPassword: PASSWORD, token: 'forged' })
+    );
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(await credentialCount(db)).toBe(0);
+  });
+
+  it('bounces the reset link callback with an invalid-token error by default', async () => {
+    const { platform } = setup();
+    const auth = getAuth(platform, ORIGIN);
+    const res = await auth.handler(request('GET', '/reset-password/forged?callbackURL=/'));
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toContain('error=INVALID_TOKEN');
+  });
+
+  it('refuses email sign-up by default', async () => {
+    const { db, platform } = setup();
+    const auth = getAuth(platform, ORIGIN);
+    mockConsole('error');
+    const res = await auth.handler(
+      request('POST', '/sign-up/email', { email: 'new@example.com', password: PASSWORD, name: 'N' })
+    );
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(await db.select().from(schema.user)).toHaveLength(0);
+  });
+
+  it('refuses changing or verifying a password the account does not have', async () => {
+    const { db, platform } = setup();
+    const auth = getAuth(platform, ORIGIN);
+    const { headers } = await auth.api.signInAnonymous({ returnHeaders: true });
+    const cookie = cookieHeader(headers.get('set-cookie'));
+    mockConsole('error');
+    const change = await auth.handler(
+      request(
+        'POST',
+        '/change-password',
+        { currentPassword: PASSWORD, newPassword: `${PASSWORD}-2` },
+        cookie
+      )
+    );
+    expect(change.status).toBe(400);
+    const verify = await auth.handler(
+      request('POST', '/verify-password', { password: PASSWORD }, cookie)
+    );
+    expect(verify.status).toBeGreaterThanOrEqual(400);
+    expect(await credentialCount(db)).toBe(0);
+  });
+
+  it('refuses linking Google by default', async () => {
+    const { platform } = setup({ GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsecret' });
+    const auth = getAuth(platform, ORIGIN);
+    const { headers } = await auth.api.signInAnonymous({ returnHeaders: true });
+    mockConsole('error');
+    const res = await auth.handler(
+      request(
+        'POST',
+        '/link-social',
+        { provider: 'google', callbackURL: '/' },
+        cookieHeader(headers.get('set-cookie'))
+      )
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('refuses the Google callback by default, even with a valid OAuth state', async () => {
+    const { db, platform } = setup({ GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsecret' });
+    // Start a Google sign-in while Google is on, so the state row and cookie are real.
+    const on = getAuth(platform, ORIGIN, {
+      methods: new Set<AuthMethod>(['magic-link', 'google'])
+    });
+    const start = await on.handler(
+      request('POST', '/sign-in/social', { provider: 'google', callbackURL: '/' })
+    );
+    const { url } = (await start.json()) as { url: string };
+    const state = new URL(url).searchParams.get('state')!;
+    const cookie = cookieHeader(start.headers.get('set-cookie'));
+
+    const off = getAuth(platform, ORIGIN);
+    mockConsole('warn', 'error');
+    const res = await off.handler(
+      request(
+        'GET',
+        `/callback/google?code=c&state=${encodeURIComponent(state)}`,
+        undefined,
+        cookie
+      )
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toContain('error=oauth_provider_not_found');
+    expect(await sessionCount(db)).toBe(0);
+  });
+
   it('keeps the pseudonymous account, magic link and sveltekitCookies last', () => {
     const { platform } = setup();
     const ids = pluginIds(getAuth(platform, ORIGIN));
@@ -144,6 +280,22 @@ describe('Better-Auth with a method switched on', () => {
     );
     expect(res.status).toBe(200);
     expect(await sessionCount(db)).toBe(before + 1);
+  });
+
+  it('serves the password reset request when on: a token and a recorded mail', async () => {
+    vi.stubEnv('VITE_E2E', '1');
+    const { db, platform } = setup(E2E_ENV);
+    await seedUser(db, { id: 'ada', email: 'ada@example.com', emailVerified: true });
+    const auth = getAuth(platform, ORIGIN, {
+      methods: new Set<AuthMethod>(['magic-link', 'password'])
+    });
+    mockConsole();
+    const res = await auth.handler(
+      request('POST', '/request-password-reset', { email: 'ada@example.com', redirectTo: '/' })
+    );
+    expect(res.status).toBe(200);
+    await vi.waitFor(() => expect(readE2eMail('password-reset', 'ada@example.com')).not.toBeNull());
+    expect(await resetTokens(db)).toBe(1);
   });
 
   it('registers the passkey plugin with the product as relying party when on', () => {
