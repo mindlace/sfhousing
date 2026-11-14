@@ -39,6 +39,26 @@ test('the signInPassword action refuses with 404 by default', async ({ page, bas
   expect(body).toMatchObject({ type: 'failure', status: 404 });
 });
 
+test('/forgot-password and /reset-password answer 404 by default', async ({ page }) => {
+  expect((await page.request.get('/forgot-password')).status()).toBe(404);
+  expect((await page.request.get('/reset-password?token=abc')).status()).toBe(404);
+});
+
+test('the password reset actions refuse with 404 by default', async ({ page, baseURL }) => {
+  const headers = { origin: baseURL!, 'x-sveltekit-action': 'true' };
+  const forgot = await page.request.post('/forgot-password?/requestReset', {
+    headers,
+    form: { identifier: 'someone@e2e.test' }
+  });
+  expect(forgot.status()).toBe(404);
+  const password = 'correct horse battery staple';
+  const reset = await page.request.post('/reset-password?/resetPassword', {
+    headers,
+    form: { token: 't', password, confirm: password }
+  });
+  expect(reset.status()).toBe(404);
+});
+
 test('switching password and passkey on renders their controls', async ({ page, context }) => {
   await enableAuthMethods(context, ['password', 'passkey']);
   await gotoSignin(page);

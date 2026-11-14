@@ -27,7 +27,29 @@ export const AUTH_COPY = {
   forgotPassword: 'Forgot your password?',
   passwordResetDone: 'Password updated. Sign in with your new password.',
   startFresh: 'Start fresh without an account',
-  cancel: 'Cancel'
+  cancel: 'Cancel',
+  forgotTitle: 'Reset your password',
+  forgotHeading: 'Reset your password',
+  forgotIntro:
+    "Enter your handle or email address and we'll send you a link to choose a new password.",
+  forgotIdentifierLabel: 'Email or handle',
+  forgotSubmit: 'Email me a reset link',
+  forgotSent: 'If that account can receive email, a reset link is on its way. Check your inbox.',
+  backToSignin: 'Back to sign in',
+  resetTitle: 'Choose a new password',
+  resetHeading: 'Choose a new password',
+  resetNewLabel: 'New password',
+  resetConfirmLabel: 'Confirm new password',
+  resetSubmit: 'Set new password',
+  resetMismatch: "Those two passwords don't match.",
+  resetInvalid: 'That reset link has expired or has already been used.',
+  resetRequestAnother: 'Request a new reset link',
+  passwordBreached:
+    'That password has appeared in a known data breach. Please choose a different one.'
 } as const;
+
+export const passwordTooShort = (min: number): string =>
+  `Use at least ${min} characters. Length matters more than symbols: a few plain words works well.`;
+export const passwordTooLong = (max: number): string => `That's longer than ${max} characters.`;
 
 export const pendingSimLine = (title: string): string => `Signing in to create ${title}`;

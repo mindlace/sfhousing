@@ -99,3 +99,41 @@ test('signin: the pending-sim banner has no axe violations', async ({ page, cont
   await expect(page.getByText(pendingSimLine('Banner'))).toBeVisible();
   await expectNoA11yViolations(page);
 });
+
+test('forgot-password: no axe violations, empty, with an error, and after sending', async ({
+  page,
+  context
+}) => {
+  await enableAuthMethods(context, ['password']);
+  await gotoSignin(page, '/forgot-password');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(AUTH_COPY.forgotHeading);
+  await expect(page.locator('#identifier')).toHaveAccessibleName(AUTH_COPY.forgotIdentifierLabel);
+  await expectNoA11yViolations(page);
+
+  await page.locator('#identifier').fill(' ');
+  await page.getByTestId('request-reset-submit').click();
+  await expect(page.getByTestId('identifier-error')).toHaveText(AUTH_COPY.enterIdentifier);
+  await expect(page.locator('#identifier')).toBeFocused();
+  await expectNoA11yViolations(page);
+
+  await page.locator('#identifier').fill(uniqueEmail('forgot-a11y'));
+  await page.getByTestId('request-reset-submit').click();
+  await expect(page.getByTestId('reset-sent')).toHaveText(AUTH_COPY.forgotSent);
+  await expect(page.getByTestId('reset-sent')).toBeFocused();
+  await expectNoA11yViolations(page);
+});
+
+test('reset-password: no axe violations with a token and with a rejected link', async ({
+  page,
+  context
+}) => {
+  await enableAuthMethods(context, ['password']);
+  await gotoSignin(page, '/reset-password?token=abc');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(AUTH_COPY.resetHeading);
+  await expect(page.getByLabel(AUTH_COPY.resetNewLabel, { exact: true })).toBeVisible();
+  await expectNoA11yViolations(page);
+
+  await gotoSignin(page, '/reset-password?error=INVALID_TOKEN');
+  await expect(page.getByTestId('reset-invalid')).toHaveText(AUTH_COPY.resetInvalid);
+  await expectNoA11yViolations(page);
+});
