@@ -15,6 +15,7 @@
       <li>Simulating is fast, so no world state is stored. What is stored is the changes to the ruleset.</li>
       <li>No rule says what runs on the server and what runs in the browser.</li>
       <li>Optimize for sharing and remixing. Memory is not the worry.</li>
+      <li>Adopt planafoot's gradual auth: a person is a user straight away, and signs in when and as they want.</li>
     </ul>
     <p>Why now: timeline-ui is the last unit of the step engine, and it puts a new document (<code>SimPolicy4</code>) behind the same in-memory snapshot store <code>/sim</code> has today. Every page feature built after it would be built on that store.</p>
   </section>
@@ -29,19 +30,22 @@
         <li>An edit shows at once and survives a reload with no connection.</li>
         <li>Undo and redo work across reloads and devices, to the depth of the whole log.</li>
         <li>Every state a sim has ever been in can be named (sim id and position) and reopened.</li>
+        <li>A person is a user from their first edit, with no sign-up, and can attach a sign-in later.</li>
         <li>Sharing is copying a link, with nothing to publish. Remixing is one commit, keeps the person's own sims, and records what it came from.</li>
-        <li>The logs of all sims can be read together to study how people explore.</li>
+        <li>The logs of all sims can be read together to study how people explore: the shape of an exploration, the levers pulled, and histories that stop short.</li>
       </ul>
     </section>
     <section id="sec-non-goals">
       <h3>Non-goals</h3>
       <ul>
         <li>Two people editing one sim at the same moment. The commit carries what that needs (an actor and a parent), and nothing more is built.</li>
-        <li>Accounts or sign-in.</li>
+        <li>Roles, invitations or any way to give another account the right to edit a sim.</li>
+        <li>Email and Google sign-in, account deletion, and the clearing out of pseudonymous accounts nobody returns to. Each comes after this build.</li>
         <li>Storing world states, results or anything else the engine computes.</li>
         <li>Changing the engine or its messages (<code>setPolicy</code>, <code>refill</code>). The page querying a results projection held by the engine is separate work.</li>
         <li><code>/</code> (already an op list in <code>Plan.ops</code>) and <code>/lesscars</code> (no edits).</li>
-        <li>Recording what a person looked at. See <a href="#sec-open">Open questions</a>.</li>
+        <li>Recording what a person looked at. That is for a later, opt-in PostHog setup (<a href="#sec-study">Studying exploration</a>).</li>
+        <li>Any screen for studying exploration. The data is read with SQL.</li>
       </ul>
     </section>
     <section id="sec-anti-goals">
@@ -63,6 +67,7 @@
       <li><strong>Saving.</strong> <code>Autosave</code> writes the whole document to one <code>localStorage</code> key, 500 ms after the last change.</li>
       <li><strong>Sharing.</strong> Publish inserts an immutable row in the D1 <code>plan</code> table, deduplicated by content hash, served at <code>/s/&lt;id&gt;</code>. A row has no owner, and a republish is an unrelated row.</li>
       <li><strong>Server.</strong> No Durable Object, no websocket. <code>@planafoot/drizzle-cf-migrations</code> already runs the D1 migrations (<code>drizzle-cf.config.ts</code> has one track, <code>d1</code>).</li>
+      <li><strong>Identity.</strong> None. There are no accounts and no sessions.</li>
       <li><strong>Engine.</strong> The step engine gets the whole <code>SimPolicy4</code> on each edit (<code>setPolicy</code>), finds the first month that differs (<code>firstDifference</code>), restores its month-0 copy and replays. A rerun is byte-identical for the same document, dataset version, app build and seeds. The future it replaces is discarded.</li>
       <li><strong>timeline-ui</strong> (plan written, not built) keeps <code>PolicyStore</code>, makes it generic over <code>SimPolicy4</code>, and adds <code>undoTo</code> and <code>spanLens</code>. The conductor's ledger records that it finishes on the current messages first.</li>
     </ul>
@@ -146,10 +151,11 @@
           <tr><th scope="row"><code>kind</code></th><td>Author</td><td><code>edit</code>, <code>restore</code> or <code>system</code> (an import, a move to a new dataset version).</td></tr>
           <tr><th scope="row"><code>label</code></th><td>Author</td><td>The words undo announces, as <code>PolicyStore</code> labels are today.</td></tr>
           <tr><th scope="row"><code>restores</code></th><td>Author</td><td>On a <code>restore</code>: the position whose ruleset this commit reproduces, and whether it was an undo or a redo.</td></tr>
-          <tr><th scope="row"><code>actor</code></th><td>Sim object</td><td>Who appended it. Today always the sim's one writer.</td></tr>
+          <tr><th scope="row"><code>actor</code></th><td>Sim object</td><td>The account that appended it, taken from the session by the server. Always the sim's one writer in this build.</td></tr>
           <tr><th scope="row"><code>at</code></th><td>Sim object</td><td>Server time of acceptance.</td></tr>
           <tr><th scope="row"><code>build</code>, <code>datasetVersion</code></th><td>Author</td><td>The app release and dataset the author was running. Results differ between builds, so a replay needs both.</td></tr>
           <tr><th scope="row"><code>hash</code></th><td>Sim object</td><td>Hash of the previous commit's hash and this commit's canonical text.</td></tr>
+          <tr><th scope="row"><code>source</code></th><td>Author</td><td>A short, stable code for the control that made the commit (a transit band's stories, a funding pool added, a paint stroke, undo). Unlike <code>label</code>, it is not page text and does not change when the wording does.</td></tr>
           <tr><th scope="row"><code>changes</code></th><td>Author</td><td>The list of changes.</td></tr>
         </tbody>
       </table>
@@ -158,6 +164,7 @@
         <li id="r2"><strong>R2.</strong> A commit holds resulting values, never an instruction to recompute. A preset stores the numbers it resolved to, as it does today.</li>
         <li id="r3"><strong>R3.</strong> The sim object refuses a commit whose changes do not fold to a valid ruleset (<code>parsePolicy4</code> and the existing size limits).</li>
       </ul>
+      <aside data-kind="decision"><strong>My call</strong> <code>source</code> exists for the study of exploration (<a href="#sec-study">Studying exploration</a>): which levers people pulled is read from it, without parsing labels or inferring from changes.</aside>
       <aside data-kind="decision"><strong>My call</strong> The hash chain replaces planafoot's state digest. Server and browser hold the same commits, so comparing one hash at the tip proves the browser's log is the server's.</aside>
     </section>
 
@@ -225,7 +232,8 @@
         <li id="r15"><strong>R15.</strong> A commit is applied to the page and written to IndexedDB before it is sent. The page never waits for the server to show an edit.</li>
         <li id="r16"><strong>R16.</strong> The page's ruleset is the fold of the confirmed commits followed by the pending ones. Confirmed commits come only from the stream.</li>
         <li id="r17"><strong>R17.</strong> Pending commits survive a reload and are sent in order when the socket opens. Editing works with no connection for as long as it lasts.</li>
-        <li id="r18"><strong>R18.</strong> The sim object accepts a commit only when its <code>parent</code> is the tip. Otherwise it answers <code>behind</code>; the browser takes the newer commits, recomputes each pending commit as a diff against the new tip, and resends. This is the two-tabs and two-devices case.</li>
+        <li id="r18"><strong>R18.</strong> The sim object accepts a commit only when its <code>parent</code> is the tip. Otherwise it answers <code>behind</code>; the browser takes the newer commits, recomputes each pending commit as a diff against the new tip, and resends.</li>
+        <li id="r40"><strong>R40.</strong> Any number of tabs in one browser may edit one sim. Each tab has its own socket and sends its own commits; R18 puts them in one order, and every tab shows that order.</li>
         <li id="r19"><strong>R19.</strong> A pending commit that no longer applies (its item was deleted elsewhere) is dropped, and the page says so.</li>
         <li id="r20"><strong>R20.</strong> On first load after release, a document in the old <code>localStorage</code> autosave becomes a new sim whose first commit (<code>system</code>) holds it. The key is then removed.</li>
       </ul>
@@ -238,7 +246,8 @@
         <li id="r21"><strong>R21.</strong> One Durable Object per sim, addressed by the sim id, holds the log in its SQLite storage: one row per commit, kept for ever.</li>
         <li id="r22"><strong>R22.</strong> Its schema is a second track in <code>drizzle-cf.config.ts</code>. <code>npm run db:generate</code> builds its migration bundle and the object applies it on open with <code>safeMigrate</code> from <code>@planafoot/drizzle-cf-migrations/do</code>. Migrations are never hand-edited, as for D1.</li>
         <li id="r23"><strong>R23.</strong> It uses the websocket hibernation API with an automatic ping reply, so an idle open sim costs nothing.</li>
-        <li id="r24"><strong>R24.</strong> D1 holds one row per sim (id, created, last position, title, dataset version, commit count). It is an index for listing and study, rebuildable from the objects, and never read to serve a sim.</li>
+        <li id="r24"><strong>R24.</strong> D1 holds one row per sim (id, owner, created, last position, name, dataset version, commit count, what it was remixed from) and one row per commit's envelope (sim, position, kind, source, time, build, size), without the changes. Both are an index, for study and for listing a person's sims. They are rebuildable from the objects and never read to serve a sim's rules.</li>
+        <li id="r41"><strong>R41.</strong> The sim object writes the index after it accepts and broadcasts a commit, never before. A failed index write is retried and does not refuse or delay the commit.</li>
         <li id="r25"><strong>R25.</strong> Appends are rate-limited per sim and a commit has a size cap. <code>PUBLISH_RL</code> (10 per minute) is for publishing and is not reused.</li>
       </ul>
     </section>
@@ -266,19 +275,39 @@
       <aside data-kind="decision"><strong>My call</strong> Appends go over the socket. Planafoot posts writes over HTTP and uses the socket only for the broadcast; with one writer and a commit that is already idempotent by <code>id</code>, one channel is less to build.</aside>
     </section>
 
+    <section id="sec-accounts">
+      <h3>Accounts</h3>
+      <p>This follows planafoot: onboarding with no barrier, an account that is pseudonymous until the person chooses otherwise, built on Better-Auth.</p>
+      <ul>
+        <li id="r44"><strong>R44.</strong> A person gets a pseudonymous account at their first edit, with no email and no form (Better-Auth's <code>anonymous()</code> plugin). Reading a shared sim needs no account.</li>
+        <li id="r45"><strong>R45.</strong> A first edit made offline is kept as pending. The account is made at the first connection and the pending commits are sent under it.</li>
+        <li id="r46"><strong>R46.</strong> The Worker resolves the session and passes the account's id to the sim object. The object trusts only that; the browser never states who it is.</li>
+        <li id="r47"><strong>R47.</strong> A sim's writer is the account that sent its first commit. Only that account may append.</li>
+        <li id="r48"><strong>R48.</strong> A person can attach a sign-in at any time: a passkey, or a handle and password. Both keep the account pseudonymous. After that, signing in on another device brings their sims.</li>
+        <li id="r49"><strong>R49.</strong> Signing in to an existing account from a browser that already has a pseudonymous one joins the two, and the pseudonymous account's sims pass to the one that survives. Everything keys off a stable identity id that survives the join, as planafoot's <code>user_identity</code> does.</li>
+        <li id="r50"><strong>R50.</strong> Making accounts is rate-limited per address.</li>
+      </ul>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> Gradual auth as planafoot does it: "we get users straight away and allow them to auth when and as they want".</aside>
+      <aside data-kind="decision"><strong>My call</strong> The account is made at the first edit, not on arrival, so a visitor who only looks, and a crawler, make none.</aside>
+      <aside data-kind="decision"><strong>My call</strong> The first sign-in methods are a passkey and a handle with a password, because neither needs an outside service. Email needs a sender and Google needs an OAuth client; planafoot has both and they can follow.</aside>
+      <aside data-kind="decision"><strong>My call</strong> From planafoot's identity model this takes the stable identity id and Better-Auth's own tables. It leaves out the history trail of handles and emails, which is there for abuse work this site does not have.</aside>
+    </section>
+
     <section id="sec-identity">
       <h3>Identity and sharing</h3>
       <ul>
         <li id="r29"><strong>R29.</strong> The browser mints a sim's id at its first edit. The id is long and random; knowing it is what lets someone read the sim.</li>
-        <li id="r30"><strong>R30.</strong> The browser also mints a write key, kept in IndexedDB. The first commit registers its hash; later appends must carry the key. There are no accounts.</li>
+        <li id="r30"><strong>R30.</strong> Who may write is decided by the account (R47), not by anything the browser holds. A person signed in on two devices writes the same sim from both, in one order (R18).</li>
         <li id="r31"><strong>R31.</strong> A share link names a sim and a position. It always shows that state, read-only, because the log does not change. Copying the link is the whole of sharing: the state is already on the server, or is sent as soon as there is a connection.</li>
         <li id="r32"><strong>R32.</strong> Editing a sim you cannot write to starts a remix: a new sim whose first commit (<code>system</code>) holds the ruleset at that position and records the sim and position it came from. No separate step copies anything first.</li>
         <li id="r33"><strong>R33.</strong> A remix is made locally and at once, like any commit, so it works offline from a link already open.</li>
-        <li id="r34"><strong>R34.</strong> A browser holds any number of sims, each with its own address, and lists the ones it has written. A remix never replaces the person's current sim, as the single autosave slot does today.</li>
+        <li id="r34"><strong>R34.</strong> A person holds any number of sims, each with its own address. The list of them belongs to the account, so it follows a sign-in to another device. A remix never replaces the person's current sim, as the single autosave slot does today.</li>
         <li id="r35"><strong>R35.</strong> The D1 index row records what a sim was remixed from, so the tree of remixes can be read and counted without opening every log.</li>
+        <li id="r42"><strong>R42.</strong> A sim has a name the person can set at any time, as a commit. A new sim gets a default name; a remix starts with its source's name.</li>
+        <li id="r43"><strong>R43.</strong> From the list of its sims a person can open one, start a new one, rename one and remove one from the list. Removing takes the sim off the person's list; the log on the server stays, and its links still open.</li>
         <li id="r36"><strong>R36.</strong> Existing <code>/s/&lt;id&gt;</code> links and their D1 rows keep working unchanged. Remixing one starts a new sim from its document.</li>
       </ul>
-      <aside data-kind="decision"><strong>My call</strong> One writer per sim, by key. Opening the same sim in a second browser needs the key moved there, which is not built here; a second tab in the same browser already has it.</aside>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> One writer per sim, with more than one tab open and editing in either. Sims are nameable so a person can have more than one. With accounts, one person's sims share the account's id, so they can be read together for study.</aside>
       <aside data-kind="decision"><strong>My call</strong> A remix's first commit holds the whole ruleset, not a pointer into the parent's log. A remix then never depends on another sim's object being reachable or taken down. The cost is that undo in a remix stops at its first commit; the page links to the parent for the history before it.</aside>
     </section>
 
@@ -299,15 +328,28 @@
         <li>Publish becomes "copy link": there is nothing to upload, since the state already has an address.</li>
         <li>A shared sim opens with the same editors. The first edit makes it the visitor's own remix and says so.</li>
         <li>A remix names the sim it came from, with a link to it.</li>
+        <li>The sim's name sits in the header beside the save state. Tapping it opens the list of sims; nothing else about the list is on screen until then.</li>
+        <li>Signing in and the account pane are in the header's Menu. Nothing asks a person to sign in.</li>
         <li>Tab, selection, scrubber position and map view stay local to the page and out of the log.</li>
+      </ul>
+    </section>
+
+    <section id="sec-study">
+      <h3>Studying exploration</h3>
+      <p>The owner wants to classify the shape of an exploration, see which levers people pulled, and treat short change histories as a possible sign that a function is poorly exposed. No screen for this is wanted now.</p>
+      <ul>
+        <li>The D1 index (R24) answers these with SQL: commits per sim, their kinds and sources in order, the time between them, undo and redo runs, remix trees.</li>
+        <li>The owner column groups one person's sims, so an exploration that runs across several sims can be read as one.</li>
+        <li>The full changes of a commit are read from its sim object when a question needs them.</li>
+        <li>What a person did in the page that changed no rule (which years and results they looked at) is not in the log. A later, opt-in PostHog setup records those actions and joins them to the log by sim id and position. Nothing for it is built here.</li>
       </ul>
     </section>
 
     <section id="sec-privacy">
       <h3>What leaves the browser</h3>
-      <aside data-kind="warning"><strong>Warning</strong> Today nothing leaves the browser until Publish. With this design every edit is stored on the server from the first one, including edits that are later undone. The site must say so where it explains saving.</aside>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> Every edit is stored on the server from the first one, including edits later undone. Today nothing leaves the browser until Publish. No text announces the change: "everything is persisted" is how apps behave by default.</aside>
       <ul>
-        <li>A commit stores no IP address and no identifier that links one sim to another.</li>
+        <li>A commit stores no IP address. Its actor is the account's stable id, which names nobody until the person attaches contact details, and neither sign-in method in this build does.</li>
         <li>Takedown stays manual: an operator deletes the sim object's storage and its index row.</li>
       </ul>
     </section>
@@ -320,6 +362,7 @@
       <li>A Durable Object class needs an export from the worker entry, which adapter-cloudflare's generated <code>_worker.js</code> does not have today.</li>
       <li>The CSP is <code>connect-src 'self'</code>. If a supported browser does not admit a same-origin <code>wss:</code> under it, the change is an interface change (<code>CLAUDE.md</code>).</li>
       <li>A Durable Object isolate has 128 MB and 10 GB of storage; a websocket message may be up to 32 MiB.</li>
+      <li>Better-Auth needs a secret in <code>.dev.vars</code> and in each environment, and its tables go through <code>npm run db:generate</code> like any schema change.</li>
       <li>Any runtime dependency added to the bundle (for example an IndexedDB wrapper) gets a credit in <code>src/lib/attribution.ts</code>.</li>
       <li>Vitest requires an assertion in every test; real Durable Object and R2 behaviour is tested in Playwright against workerd.</li>
     </ul>
@@ -327,7 +370,7 @@
 
   <section id="sec-order">
     <h2>Size and order</h2>
-    <p>This is a project of four units. Each can be planned and reviewed alone.</p>
+    <p>This is a project of five units. Each can be planned and reviewed alone.</p>
     <table id="tbl-units">
       <caption>Build units</caption>
       <thead>
@@ -335,12 +378,13 @@
       </thead>
       <tbody>
         <tr><th scope="row">1. Log core</th><td>Commit and change types, parsers, <code>fold</code>, <code>diff</code>, the undo and redo derivation, the hash chain. Pure TypeScript, no I/O.</td><td>Nothing</td></tr>
-        <tr><th scope="row">2. Sim object</th><td>The Durable Object, its migration track, the socket, append rules, limits, the D1 index, the worker entry.</td><td>1</td></tr>
-        <tr><th scope="row">3. Log store</th><td>The browser store (confirmed plus pending), IndexedDB, the reconnecting socket, the autosave import. Replaces <code>PolicyStore</code> on <code>/sim</code>.</td><td>1, 2, timeline-ui</td></tr>
-        <tr><th scope="row">4. Sharing and remix</th><td>Links to a position, a sim's own address, the list of a browser's sims, remix on first edit, the remix record in the index, the old <code>/s</code> rows, the privacy text.</td><td>3</td></tr>
+        <tr><th scope="row">2. Accounts</th><td>Better-Auth with pseudonymous accounts, the stable identity id, sessions, the passkey and the handle with password, joining two accounts, the account pane.</td><td>Nothing</td></tr>
+        <tr><th scope="row">3. Sim object</th><td>The Durable Object, its migration track, the socket, append rules, the writer check, limits, the D1 index, the worker entry.</td><td>1, 2</td></tr>
+        <tr><th scope="row">4. Log store</th><td>The browser store (confirmed plus pending), IndexedDB, the reconnecting socket, the autosave import. Replaces <code>PolicyStore</code> on <code>/sim</code>.</td><td>1, 3, timeline-ui</td></tr>
+        <tr><th scope="row">5. Sharing and remix</th><td>Links to a position, a sim's own address, names and the list of a browser's sims, remix on first edit, the remix record in the index, the old <code>/s</code> rows.</td><td>4</td></tr>
       </tbody>
     </table>
-    <p>Unit 4 is the point of the project; units 1 to 3 are what it stands on. Where a choice in an earlier unit trades something against a faster or simpler share or remix, sharing and remix win.</p>
+    <p>Unit 5 is the point of the project; units 1 to 4 are what it stands on. Where a choice in an earlier unit trades something against a faster or simpler share or remix, sharing and remix win.</p>
     <aside data-kind="decision"><strong>My call</strong> This goes before world-core sparse storage. The owner is not worried about memory; nothing here stores a world or depends on its size, and each page feature built before it would be built on the snapshot store.</aside>
   </section>
 
@@ -348,8 +392,9 @@
     <h2>Testing</h2>
     <ul>
       <li><strong>Core.</strong> Property tests: applying <code>diff(a, b)</code> to <code>a</code> gives <code>b</code>; a restore reproduces the earlier ruleset's canonical text; the undo and redo derivation matches a reference editor over random sequences of edit, undo and redo.</li>
+      <li><strong>Accounts.</strong> A first edit makes one account and a second edit makes no other. A passkey or a password added on one browser signs in on another. Joining a pseudonymous account to an existing one moves its sims.</li>
       <li><strong>Sim object.</strong> Gapless positions; a duplicate <code>id</code> appends once; <code>behind</code>, <code>invalid</code> and <code>not-writer</code> refusals; resume from any position; migrate on open.</li>
-      <li><strong>End to end.</strong> Edit, reload, undo back past the reload. Edit offline, reload, reconnect, and the commits arrive in order. Two tabs converge. A share link shows its position after later edits. Editing a shared sim starts a remix, leaves the visitor's other sims as they were, and the index records its source.</li>
+      <li><strong>End to end.</strong> Edit, reload, undo back past the reload. Edit offline, reload, reconnect, and the commits arrive in order. Two tabs edit the same sim in turn and both show one order. A second sim is started, named and switched to without touching the first. A share link shows its position after later edits. Editing a shared sim starts a remix, leaves the visitor's other sims as they were, and the index records its source.</li>
     </ul>
   </section>
 
@@ -360,27 +405,28 @@
       <li>The id format, the hash function and the canonical text of a commit.</li>
       <li>The SQLite schema, the rate and size limits, and the cap on a sim's length.</li>
       <li>How the worker entry exports the class (planafoot does this on the same adapter).</li>
-      <li>The wording of the save states and the privacy line, kept terse.</li>
+      <li>The wording of the save states and the list of sims, kept terse.</li>
+      <li>The list of <code>source</code> codes, one per control, and how a tab claims pending commits left by a tab that closed.</li>
       <li>A new page under <code>docs/dev/</code> linked from <code>CLAUDE.md</code>, and the changes to <code>docs/dev/plan-sharing.md</code>.</li>
     </ul>
   </section>
 
   <section id="sec-open">
-    <h2>Open questions</h2>
-    <aside data-kind="question"><strong>Question 1</strong> When you look back at how someone explored, what do you want to see? Rule changes alone are in the log. What they looked at (which years, which results) is not recorded, and the headline numbers of each variant are recomputed, on whatever build is current.</aside>
-    <aside data-kind="question"><strong>Question 2</strong> Is storing every edit on the server from the first one acceptable, with a line of text saying so, or should a sim stay local until the person shares it?</aside>
-    <aside data-kind="question"><strong>Question 3</strong> Should one browser's sims be linkable to each other for study? As written they are not.</aside>
-    <p>My calls, for you to check while reading:</p>
+    <h2>Calls to check</h2>
+    <p>The owner has answered the questions this design raised; the answers are in <a href="#sec-identity">Identity and sharing</a>, <a href="#sec-study">Studying exploration</a> and <a href="#sec-privacy">What leaves the browser</a>. These calls are mine:</p>
     <ul>
+      <li>A <code>source</code> code on every commit, and commit envelopes copied to D1 for study (<a href="#sec-commit">The commit</a>, <a href="#sec-server">The sim object</a>).</li>
+      <li>Removing a sim takes it off the person's list and leaves the server's log (<a href="#sec-identity">Identity and sharing</a>).</li>
       <li>The hash chain in place of a state digest (<a href="#sec-commit">The commit</a>).</li>
       <li>"Offer" read as a span, named by policy and start day (<a href="#sec-changes">Changes</a>).</li>
       <li>Editors keep their edit functions and the store commits the diff (<a href="#sec-fold">Fold and diff</a>).</li>
       <li>Pending commits kept in IndexedDB, beyond what planafoot does (<a href="#sec-local-first">Local first</a>).</li>
       <li>Appends over the socket (<a href="#sec-stream">The stream</a>).</li>
-      <li>One writer per sim by key, links to a position, remix on first edit as a new self-contained sim (<a href="#sec-identity">Identity and sharing</a>).</li>
+      <li>The account made at the first edit; a passkey and a handle with password first; no history trail (<a href="#sec-accounts">Accounts</a>).</li>
+      <li>Links to a position, and remix on first edit as a new self-contained sim (<a href="#sec-identity">Identity and sharing</a>).</li>
       <li>The engine's messages unchanged, and the results projection left as separate work (<a href="#sec-engine">The engine and the variants</a>).</li>
       <li>View state stays out of the log (<a href="#sec-ui">What the page shows</a>).</li>
-      <li>Four units, before sparse storage (<a href="#sec-order">Size and order</a>).</li>
+      <li>Five units, before sparse storage (<a href="#sec-order">Size and order</a>).</li>
     </ul>
   </section>
 </article>
