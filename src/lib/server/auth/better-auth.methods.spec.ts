@@ -161,16 +161,32 @@ describe('Better-Auth with the default sign-in methods', () => {
     expect(String(error.mock.calls[0])).toContain("Reset password isn't enabled");
   });
 
-  it('refuses a password reset by default: no credential is created', async () => {
-    const { db, platform } = setup();
+  // The attack the old configuration allowed: request a reset for someone else's verified
+  // address, take the token the request minted, and post the reset with it. That set a
+  // password on the account and revoked its sessions. Under the default methods the
+  // request mints nothing, so there is no token for the reset to consume.
+  it('refuses the reset-request-then-reset chain by default: no credential, sessions kept', async () => {
+    const { db, platform } = setup(E2E_ENV);
     await seedUser(db, { id: 'ada', email: 'ada@example.com', emailVerified: true });
     const auth = getAuth(platform, ORIGIN);
-    mockConsole('error');
-    const res = await auth.handler(
-      request('POST', '/reset-password', { newPassword: PASSWORD, token: 'forged' })
+    const ctx = await auth.$context;
+    await ctx.internalAdapter.createSession('ada-live');
+    const sessionsBefore = await sessionCount(db);
+    expect(sessionsBefore).toBe(1);
+    mockConsole();
+
+    await auth.handler(
+      request('POST', '/request-password-reset', { email: 'ada@example.com', redirectTo: '/' })
     );
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    const minted = (await db.select().from(schema.verification))
+      .map((r) => r.identifier)
+      .filter((id) => id.startsWith('reset-password:'))
+      .map((id) => id.slice('reset-password:'.length));
+    const token = minted[0] ?? 'none-minted';
+    await auth.handler(request('POST', '/reset-password', { newPassword: PASSWORD, token }));
+
     expect(await credentialCount(db)).toBe(0);
+    expect(await sessionCount(db)).toBe(sessionsBefore);
   });
 
   it('bounces the reset link callback with an invalid-token error by default', async () => {

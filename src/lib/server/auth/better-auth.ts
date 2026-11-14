@@ -77,9 +77,11 @@ async function recordHistoryFor(
  *  switches on (less Google without credentials). A method that is off gets no
  *  configuration: password off is `emailAndPassword: { enabled: false }` with no reset or
  *  other callback (so sign-in, sign-up and the reset request are refused), passkey off has
- *  no plugin, Google off has no provider. `/change-password` and `/verify-password` check
- *  no configuration at all, only that the caller already holds a credential: the path gate
- *  over `methodForAuthPath` is what closes them while password is off. */
+ *  no plugin, Google off has no provider. `/change-password`, `/verify-password` and
+ *  `/reset-password` check no configuration at all: the first two need a credential the
+ *  caller already holds, the last a reset token, and a token minted while password was on
+ *  stays usable for an hour after it is switched off. The path gate over
+ *  `methodForAuthPath` is what closes all three while password is off. */
 export interface GetAuthOptions {
   captureMagicLink?: (link: { email: string; url: string }) => void;
   methods?: ReadonlySet<AuthMethod>;
@@ -139,8 +141,9 @@ export function getAuth(
     // Link a trusted Google account to the current signed-in account (e.g. a magic-link user adds Google).
     account: { accountLinking: { enabled: true, trustedProviders: ['google'] } },
     // Password is a switchable method (`AUTH_METHODS`); off by default. Off means the bare
-    // `{ enabled: false }`: Better-Auth's reset routes check only for `sendResetPassword`,
-    // never `enabled`, so leaving the callback configured would keep the reset flow live.
+    // `{ enabled: false }`: Better-Auth's reset request route checks only for
+    // `sendResetPassword`, never `enabled`, and the reset route checks nothing, so leaving
+    // the callback configured would keep the reset flow live.
     emailAndPassword: methods.has('password')
       ? {
           enabled: true,
