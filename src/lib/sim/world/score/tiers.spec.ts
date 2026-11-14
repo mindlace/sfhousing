@@ -143,7 +143,7 @@ describe('tiers, funded mini', () => {
     }
   });
 
-  it("a funded row completing without its 'award' throws", () => {
+  it("a funded row completing without its 'award' is counted, not thrown", () => {
     const series = createWorldSeries(c.score);
     const dropAward: WorldSeries = {
       ...series,
@@ -151,9 +151,9 @@ describe('tiers, funded mini', () => {
         if (e.kind !== 'award') series.add(e, w, s);
       }
     };
-    expect(() => feedFunded(c.statics, c.timeline, 1, c.months, dropAward)).toThrow(
-      /without an 'award'/
-    );
+    feedFunded(c.statics, c.timeline, 1, c.months, dropAward);
+    expect(extrasOf(series).unawarded()).toBeGreaterThan(0);
+    expect(extrasOf(runOf(1).series).unawarded()).toBe(0);
   });
 
   it("tierTargets use world 1's tiers, targets the mean", () => {

@@ -121,9 +121,9 @@ describe('data and restore', () => {
   it('saved data of an older layout is rejected', () => {
     const s = testStatics(input, 24);
     const d = createWorldSeries(s).data();
-    expect(d.version).toBe(4);
+    expect(d.version).toBe(5);
     expect(createWorldSeries(s, structuredClone(d)).data()).toEqual(d);
-    for (const version of [1, 2, 3]) {
+    for (const version of [1, 2, 3, 4]) {
       const old = { ...d, version } as unknown as WorldSeriesData;
       expect(() => createWorldSeries(s, old)).toThrow(`saved series version ${version}`);
     }
