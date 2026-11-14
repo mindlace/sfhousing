@@ -26,6 +26,15 @@ PUBLIC_DATASET_VERSION=fixture-0
 
 and run `npm run data:fixture`. Without the override and without the tree's dataset in local R2, the map's data loads 404; there is deliberately no code fallback. e2e builds set `PUBLIC_DATASET_VERSION=fixture-0` (with `ENVIRONMENT=development`) on the `wrangler dev` command line instead, so they do not depend on `.dev.vars`.
 
+Sign-in also reads `.dev.vars`:
+
+```
+BETTER_AUTH_SECRET=<any long random string>
+AUTH_METHODS=magic-link,password
+```
+
+`BETTER_AUTH_SECRET` is required. `AUTH_METHODS` is optional and overrides the `wrangler.jsonc` value (magic link only; see [auth.md](auth.md)). `SES_FROM` must be set even with no mail provider; the `wrangler.jsonc` var covers local dev. With no provider, mail runs in log mode and a magic link or an invite is logged to the terminal. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (with `google` in `AUTH_METHODS`) turn on Google sign-in, and `SES_ACCESS_KEY_ID` plus `SES_SECRET_ACCESS_KEY`, or `EMAIL_PROVIDER=resend` plus `RESEND_API_KEY`, turn on real mail. These are read through a typed cast of `platform.env`, so do not add them to generate types.
+
 ## Local data
 
 - `npm run data:fixture` loads `e2e/fixtures/data/fixture-0/` into local R2 under `data/fixture-0/`. Today this is a platform placeholder; the data-pipeline's `pipeline fixture` command will overwrite it under the same version name.

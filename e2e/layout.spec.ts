@@ -582,6 +582,8 @@ test.describe('account entry', () => {
     for (const path of ['/', '/sim']) {
       test(`${path}: waits in the Menu and is reachable from it, axe clean`, async ({ page }) => {
         await page.goto(path);
+        // the Menu toggle does nothing before hydration, so a loaded machine flaked here
+        await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
         await expect(page.getByRole('banner')).toBeVisible();
         await expect(account(page)).toBeHidden();
         await openHeaderMenu(page);

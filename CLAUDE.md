@@ -27,6 +27,7 @@ If you see type errors about `worker-configuration`, run `npm run types`.
 
 Fetch the file when working in the relevant area:
 
+- **Accounts, sims and invitations (identity model, `AUTH_METHODS` and the method switch, session gate, JSON-route origin check, mail log mode, roles, the roster seam, e2e seams, reaping)** — [docs/dev/auth.md](docs/dev/auth.md)
 - **Developer workflow (setup, `.dev.vars`, `data:fixture`/`data:local`, migrations, header actions)** — [docs/dev/developing.md](docs/dev/developing.md)
 - **Deployment (environments, release flow, datasets ship with their code, bootstrap checklist)** — [docs/dev/deploy.md](docs/dev/deploy.md)
 - **Data serving (`/data/<version>/*` route contract, key layout, caching, path rules)** — [docs/dev/data-serving.md](docs/dev/data-serving.md)

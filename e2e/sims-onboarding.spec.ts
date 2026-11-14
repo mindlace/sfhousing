@@ -41,8 +41,9 @@ test('a second sim keeps the same user', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Second');
   expect((await sessionOf(page))?.user?.id).toBe(first);
   await page.goto('/sims');
-  await expect(page.getByRole('link', { name: 'First' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Second' })).toBeVisible();
+  // exact: a random handle such as "@first-operational" also matches a substring name
+  await expect(page.getByRole('link', { name: 'First', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Second', exact: true })).toBeVisible();
 });
 
 test('creating on a known device redirects to /signin', async ({ page, context, baseURL }) => {

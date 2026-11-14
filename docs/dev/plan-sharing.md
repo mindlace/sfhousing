@@ -85,7 +85,7 @@ Not `immutable`, so a takedown expires from caches within an hour. A row of the 
 
 ### Rate limit
 
-10 publishes per 60 s per IP, plans and policies together (one key, `publish:<ip>`), through the Workers rate-limit binding `PUBLISH_RL` (`wrangler.jsonc` `ratelimits`, namespace 4101 production / 4201 staging). `enforceRate` (`src/lib/server/sharing/rate-limit.ts`):
+10 publishes per 60 s per IP, plans and policies together (one key, `publish:<ip>`), through the Workers rate-limit binding `PUBLISH_RL` (`wrangler.jsonc` `ratelimits`, namespace 4101 production / 4201 staging). `enforceRate` (`src/lib/server/security/rate-limit.ts`):
 
 - `ENVIRONMENT === 'development'` (local dev and the e2e preview): always allowed. e2e tests that need a 429 mock it with `page.route`.
 - Binding missing in production: **denied** (fail closed), logged with the limiter label only (the key embeds the IP).

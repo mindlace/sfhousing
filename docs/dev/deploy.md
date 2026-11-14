@@ -44,7 +44,22 @@ Nothing is promoted. The build computes the dataset version `<v>` from the sourc
 - Variables: `RELEASE_PLEASE_APP_ID` (present, unused by v3 of the token action), `RELEASE_PLEASE_CLIENT_ID`, `CLOUDFLARE_ACCOUNT_ID`.
 - Secrets: `RELEASE_PLEASE_APP_PRIVATE_KEY`, `CLOUDFLARE_API_TOKEN`.
 
-Nothing else.
+These are the GitHub Actions ones; nothing else is set there.
+
+### Worker (set in Cloudflare)
+
+Already set: `BETTER_AUTH_SECRET` as a secret on staging and on production, each with its own value (never share one between them).
+
+In `wrangler.jsonc` `vars`, per environment: `ENVIRONMENT`, `AUTH_METHODS=magic-link` (the pseudonymous account and the email magic link only), `SES_FROM` (needed even in mail log mode) and `PUBLIC_APP_RELEASE`.
+
+Each of these only switches a feature on, and is read through a typed cast of `platform.env`:
+
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`: Google sign-in, and only if `AUTH_METHODS` lists `google`.
+- `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY` (and optional `SES_REGION`), or `EMAIL_PROVIDER=resend` with `RESEND_API_KEY`: real mail delivery. Without them mail runs in log mode and a magic link or an invite is only logged.
+- `BOOTSTRAP_EMAILS`: comma list of verified addresses that get operator capabilities.
+- `BETTER_AUTH_URL`: base URL override; unset, the request origin is used.
+
+See [auth.md](auth.md).
 
 ## One-time bootstrap
 

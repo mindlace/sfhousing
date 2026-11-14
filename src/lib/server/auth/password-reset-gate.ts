@@ -10,7 +10,7 @@ import { PSEUDONYMOUS_EMAIL_DOMAIN } from './brand';
  *     mail that was sent and never arrived.
  *  2. UNVERIFIED address — an unverified address is a claim, not a credential.
  *     Mailing a reset to one lets someone who typed another person's address
- *     (e.g. into Stripe checkout) pull a reset token for it.
+ *     (e.g. into any form that accepts an address) pull a reset token for it.
  *
  * A user with no verified email has no reset path. That is inherent to
  * pseudonymity, not a gap. See the design spec, sections 3 and 9.
