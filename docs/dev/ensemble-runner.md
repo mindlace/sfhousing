@@ -140,14 +140,14 @@ Live 2026-11-10-6ee5a23d (155,020 parcels, gross table, baseline money 8 pools),
 
 The host's heap baseline is the dataset, every chunk and the compiles with 1 + 1 worlds; Task 1's is after load and compiles. Task 1's are the trustworthy absolute figures; the host's confirm them and add the edits. Each added zoning state costs about 16 MB (its zoning view); the 20 edits held 11.8 MB more than a fresh open of the same document.
 
-Tasks over 50 ms on the live city, host under Vitest (bundled the same, 100 to 103 ms for the first), measured before the post-Task-8 fix: a warm task of 99.2 ms (one warm unit then massed every revision of a row: `CASE:2014.1370PRX:phase:1`, 42.6 + 40.3 ms; fixed since: one unit per revision); a warm task of 62.1 ms and slices of 51.6, 52.9 and 57.9 ms with `create` units (`planDue` up to 38.5 ms): a unit costlier than its kind's estimate. On the bench city (no money) only compile seams pass 50 ms (51.1, 51.2 ms).
+After warming per (row, revision) (`measure-1.md` §13, quiet, HEAD fc81bd7e): first `cells` / first `filled` 1,031.2 / 2,523.9 ms under Vitest, 939.0 to 1,012.0 / 2,083.2 to 2,207.9 ms bundled; fill 4,067.3 ms (Vitest), 3,720.5 to 3,818.7 ms bundled. The 100 ms two-revision warm task is gone (`CASE:2014.1370PRX:phase:1` now 60.1 ms, its largest massing 43.6 ms). Tasks over 50 ms on the live city, Vitest: the cold massing (636.7 ms), compile seams (58.1 to 81.1 ms), and two warm slices of 60.1 and 62.8 ms whose last massing cost more than the kind's estimate. No `create` slice passed 50 ms in that run (51.6 to 57.9 ms in Task 8). On the bench city (no money) only compile seams pass 50 ms (51.3, 52.5 ms).
 
 ## Known limits
 
 - **Heap**: S16's 300 MB is not met (427.7 MB live set, 546.2 MB with the month-0 copy); the partner re-sets it. `HEAP_BOUND_MB` in `host.perf.spec.ts` is null until then and the heap case asserts only the leak margin.
 - **Rich money**: on the live city with world-funding's bench money set, `planDue` is 77.6 / 111.4 ms per world (median / max), the change month 154 to 188 ms per world unit, 96 creates 4.3 s: over the 50 ms unit bar. A bound inside the step (`StepCtx`) is world-core's, deferred.
 - **Cold massing**: `CASE:2007.0946PRX:phase:3` is one generator call of about 636 ms, accepted; warm-ahead moves it out of the flush.
-- **Estimates**: a unit costlier than its kind's last 4 can push a slice a few ms past 50 (`create`, `warm`). The live overruns of 51.6 to 62.1 ms come from this scheduling rule, inherited from the old host (D7); they are accepted, not chased.
+- **Estimates**: a unit costlier than its kind's last 4 can push a slice a few ms past 50 (`create`, `warm`). The live overruns (warm 60.1 to 62.8 ms; `create` up to 57.9 ms in Task 8) come from this scheduling rule, inherited from the old host (D7); they are accepted, not chased.
 - **`resyncMap`**: the snapshot is unbudgeted (rule 20): about 10 ms warm, 1.2 s with a cold memo.
 - **Load**: `loadScenario` precomputes the input outside any slice (`precomputeOf` 61 to 67 ms, as the old host's load).
 - **Edits**: a rejected `setPolicy` drops an earlier pending valid edit.
