@@ -112,3 +112,73 @@ describe.each(cities)('%s, one frame change at month 121', (name, load) => {
     expect(seen).toBeGreaterThan(0);
   });
 });
+
+// Pipeline phases filed after the dataset date take month 1's view for their caps and existing
+// homes, as today's engine takes `parcels` (docs/dev/world-core.md). Month 121 comes after every
+// bench phase files, so this case changes zoning at month 13, before most phases file. Doubling a
+// phase's yields never binds its revision cap on the bench city, so the new view also cuts every
+// phase parcel's yields to 0: a phase capped by the new view could not revise upward (seeds 2
+// and 3 then differ from today's).
+const M_PHASE = 13;
+const PHASE_SEEDS = SEEDS.slice(0, 5);
+
+describe('bench, a zoning change at month 13 before phases on rezoned parcels file', () => {
+  let input: SimInput;
+  let statics: Statics;
+  let p2: SimInput['parcels'];
+  /** Phase project ids whose caps differ between the two views. */
+  let rezonedPhases: Set<string>;
+  beforeAll(() => {
+    input = benchInput();
+    statics = staticsOf(input);
+    const F = input.parcels.fillLevels.length;
+    const up = upzoned(input, everyTenth(precomputeOf(input).candidates));
+    const cut = up.yield.slice();
+    for (const p of input.projects) {
+      for (const ph of p.phases ?? []) {
+        for (const id of ph.parcelIds) {
+          const i = input.parcels.index.get(id);
+          if (i !== undefined) cut.fill(0, i * F, (i + 1) * F);
+        }
+      }
+    }
+    p2 = { ...up, yield: cut };
+    const cap = (yieldCol: Uint16Array, r: number[]) =>
+      r.reduce((a, i) => a + yieldCol[i * F + F - 1], 0);
+    rezonedPhases = new Set();
+    for (const p of input.projects) {
+      (p.phases ?? []).forEach((ph, j) => {
+        const r = ph.parcelIds
+          .map((id) => input.parcels.index.get(id))
+          .filter((i): i is number => i !== undefined);
+        if (cap(p2.yield, r) !== cap(input.parcels.yield, r)) {
+          rezonedPhases.add(`${p.id}:phase:${j + 1}`);
+        }
+      });
+    }
+  });
+
+  it.each(PHASE_SEEDS)(
+    'equals today’s dated regime, with a rezoned phase filed after the change (seed %i)',
+    (seed) => {
+      const asOf = input.asOf;
+      const change = monthFirstDay(asOf, M_PHASE);
+      const old = simulateDetailed(
+        oldInputOf(input, { regimes: [{ day: change, parcels: p2 }] }),
+        seed,
+        HORIZON
+      );
+      const late = old.schedules.filter(
+        (s) => rezonedPhases.has(s.projectId) && (s.entered.permitFiled ?? 0) >= change
+      );
+      expect(late.length).toBeGreaterThan(0);
+      const after = frameOf(input, {
+        id: 1,
+        view: { parcels: p2, pre: precomputeOf({ ...input, parcels: p2 }) }
+      });
+      const t = changingAt(M_PHASE, frameOf(input), after, touchedRows(input.parcels, p2));
+      const w = runWorld(statics, t, seed, horizonMonth(asOf));
+      expectSame(readAll(w, statics, HORIZON), withoutRegime(old));
+    }
+  );
+});

@@ -40,12 +40,12 @@ const TOL = { netMean: 0.01, netSd: 0.15, awards: 0.03, funded: 0.03 };
 
 /**
  * synthCity, bench funding set: the awards ratio |new - old| / old recorded 2026-11-13 after the
- * award-day fix, years 5, 10, 20, 40. Not held to `TOL.awards`: the line is served once a month in
+ * award-day fix and the rule 10 hold of money returned during the scan, years 5, 10, 20, 40. Not held to `TOL.awards`: the line is served once a month in
  * month-then-key order (rule 9, R5, kept by the partner's ruling 2026-11-13), so a capped fund
  * opened to many lots in one month is taken by that month's applications in key order rather than
  * by application day. A regression guard only: each year stays within `BENCH_AWARDS_SLACK`.
  */
-const BENCH_AWARDS_R = [0.275, 0.182, 0.089, 0.035] as const;
+const BENCH_AWARDS_R = [0.273, 0.184, 0.089, 0.037] as const;
 const BENCH_AWARDS_SLACK = 0.03;
 
 const REFEREE = process.env.SFH_WORLD_FUNDING_REFEREE === '1';

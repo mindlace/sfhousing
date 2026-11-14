@@ -10,6 +10,7 @@ import type { PolicyFrame, PolicyTimeline } from './policy/frame';
 import { lotEntity, ordinaryStart, skipBound } from './rates';
 import { staticsOf, type Statics } from './statics';
 import { benchInput } from './test/cities.node';
+import { expectEqual } from './test/same.node';
 import { Recorder, horizonMonth, runWorld } from './test/run';
 import { changingAt, everyStage, frameOf, limited, marketAt, oneFrame } from './test/timeline';
 import type { Due, StepSink, World } from './types';
@@ -94,8 +95,8 @@ describe('the due list, bench city with a frame change at month 121', () => {
         }
         const after = rec.events.filter((e) => e.month > c.from);
         expect(after.length).toBeGreaterThan(0);
-        expect(crec.events, `copy at ${c.from}`).toEqual(after);
-        expect(c.w, `copy at ${c.from}`).toEqual(w);
+        expectEqual(crec.events, after, `copy at ${c.from}`);
+        expectEqual(c.w, w, `copy at ${c.from}`);
       }
     }
   );
@@ -151,6 +152,7 @@ describe('the due list, bench city with a frame change at month 121', () => {
     const sh = seedHash(seed);
     let skipped = 0;
     let kept = 0;
+    const bad: unknown[] = [];
     for (const [month, through] of [
       [1, 60],
       [M, 200],
@@ -163,10 +165,12 @@ describe('the due list, bench city with a frame change at month 121', () => {
         const s = ordinaryStart(statics, t, month, sh, lot, statics.asOf, 0);
         if (u > bound[lot]) {
           skipped++;
-          if (s !== null) expect(s.month, `lot ${lot}`).toBeGreaterThan(through);
+          if (s !== null && !(s.month > through)) bad.push({ lot, month, through, s });
         } else if (s !== null && s.month <= through) kept++;
       }
     }
+    // Collected and asserted once: a per-lot `expect` over the whole city is most of the time.
+    expect({ count: bad.length, first: bad.slice(0, 5) }).toEqual({ count: 0, first: [] });
     expect(skipped).toBeGreaterThan(0);
     expect(kept).toBeGreaterThan(0);
   });

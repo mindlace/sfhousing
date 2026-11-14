@@ -13,3 +13,4 @@ playwright-report/
 /scratch/
 pipeline/.cache/
 pipeline/out/
+.superpowers/brainstorm/

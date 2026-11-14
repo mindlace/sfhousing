@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { ordinaryMonth } from '$lib/sim/scenario/engine';
 import {
   lastInitiationMonth,
@@ -26,17 +26,38 @@ import {
   viewOf
 } from './test/timeline';
 
+/**
+ * Asserts once that nothing was collected, naming the count and the first few: a per-item
+ * `expect` over every candidate of the bench city is most of these tests' time.
+ */
+function expectNone(bad: unknown[]): void {
+  expect({ count: bad.length, first: bad.slice(0, 5) }).toEqual({ count: 0, first: [] });
+}
+
 const cities: [string, () => SimInput][] = [
   ['mini', miniInput],
   ['bench', benchInput]
 ];
 
 describe.each(cities)('the ordinary clock on the %s city', (_name, inputOf) => {
+  // The city, its precompute and statics are memoised per process: build them once here rather
+  // than in whichever test runs first.
+  beforeAll(() => {
+    const input = inputOf();
+    precomputeOf(input);
+    staticsOf(input);
+  });
+
   it('startRates is precompute log1mh at the market in force at asOf', () => {
     const input = inputOf();
     const pre = precomputeOf(input);
     const rates = startRates(viewOf(input), marketAt(input, input.asOf));
-    expect(Array.from(rates)).toEqual(Array.from(pre.log1mh));
+    expect(rates.length).toBe(pre.log1mh.length);
+    const bad: unknown[] = [];
+    for (let i = 0; i < rates.length; i++) {
+      if (!Object.is(rates[i], pre.log1mh[i])) bad.push({ i, got: rates[i], want: pre.log1mh[i] });
+    }
+    expectNone(bad);
     expect(startRates(viewOf(input), marketAt(input, input.asOf))).toBe(rates);
   });
 
@@ -57,27 +78,28 @@ describe.each(cities)('the ordinary clock on the %s city', (_name, inputOf) => {
     const t = oneFrame(frameOf(input));
     const asOf = input.asOf;
     let planned = 0;
+    const bad: unknown[] = [];
     for (const s of [1, 2, 3]) {
       const sh = seedHash(s);
       for (let c = 0; c < pre.candidates.length; c++) {
         const i = pre.candidates[c];
         const stream = streamOf(sh, pre.entity[c], 0);
         const T = ordinaryMonth(drawOn(stream, P.INIT, 0), pre.log1mh[i], null, []);
-        const want =
-          T === 0
-            ? null
-            : asOf + 1 + Math.floor((T - 1 + drawOn(stream, P.INIT_DAY, 0)) * MONTH_DAYS);
         const got = ordinaryStart(statics, t, 1, sh, i, asOf, 0);
-        expect(got?.day ?? null).toBe(want);
-        if (got) {
-          planned++;
-          expect(got.month).toBe(monthOfDay(asOf, got.day));
-          expect(got.frameMonth).toBe(
-            monthOfDay(asOf, asOf + 1 + Math.floor((T - 1) * MONTH_DAYS))
-          );
+        if (T === 0) {
+          if (got !== null) bad.push({ s, c, got, want: null });
+          continue;
+        }
+        const day = asOf + 1 + Math.floor((T - 1 + drawOn(stream, P.INIT_DAY, 0)) * MONTH_DAYS);
+        const month = monthOfDay(asOf, day);
+        const frameMonth = monthOfDay(asOf, asOf + 1 + Math.floor((T - 1) * MONTH_DAYS));
+        if (got) planned++;
+        if (got?.day !== day || got.month !== month || got.frameMonth !== frameMonth) {
+          bad.push({ s, c, got, want: { day, month, frameMonth } });
         }
       }
     }
+    expectNone(bad);
     expect(planned).toBeGreaterThan(0);
   });
 
@@ -95,6 +117,7 @@ describe.each(cities)('the ordinary clock on the %s city', (_name, inputOf) => {
     const l1 = startRates(view, s0 + 0.4);
     const sh = seedHash(1);
     let planned = 0;
+    const bad: unknown[] = [];
     for (const r of [asOf, asOf + 1000]) {
       const bounds = regimeMonths(r, [monthFirstDay(asOf, 37)]);
       for (let c = 0; c < pre.candidates.length; c++) {
@@ -103,18 +126,19 @@ describe.each(cities)('the ordinary clock on the %s city', (_name, inputOf) => {
         const T = piecewiseMonth(log(1 - drawOn(stream, P.INIT, 0)), bounds, [l0[i], l1[i]]);
         const got = ordinaryStart(statics, t, 60, sh, i, r, 2);
         if (T === 0) {
-          expect(got).toBeNull();
+          if (got !== null) bad.push({ r, c, got, want: null });
           continue;
         }
         planned++;
         const day = r + 1 + Math.floor((T - 1 + drawOn(stream, P.INIT_DAY, 0)) * MONTH_DAYS);
-        expect(got).toEqual({
-          day,
-          month: monthOfDay(asOf, day),
-          frameMonth: monthOfDay(asOf, r + 1 + Math.floor((T - 1) * MONTH_DAYS))
-        });
+        const month = monthOfDay(asOf, day);
+        const frameMonth = monthOfDay(asOf, r + 1 + Math.floor((T - 1) * MONTH_DAYS));
+        if (got?.day !== day || got.month !== month || got.frameMonth !== frameMonth) {
+          bad.push({ r, c, got, want: { day, month, frameMonth } });
+        }
       }
     }
+    expectNone(bad);
     expect(planned).toBeGreaterThan(0);
   });
 
@@ -127,14 +151,25 @@ describe.each(cities)('the ordinary clock on the %s city', (_name, inputOf) => {
     const changed = changingAt(37, f, { ...f, id: 1, speed: halfFiled }, null);
     const one = oneFrame(f);
     const sh = seedHash(1);
+    const bad: unknown[] = [];
+    let planned = 0;
     for (const r of [input.asOf, input.asOf + 1000]) {
       for (let c = 0; c < pre.candidates.length; c++) {
         const i = pre.candidates[c];
-        expect(ordinaryStart(statics, changed, 60, sh, i, r, 1)).toEqual(
-          ordinaryStart(statics, one, 60, sh, i, r, 1)
-        );
+        const got = ordinaryStart(statics, changed, 60, sh, i, r, 1);
+        const want = ordinaryStart(statics, one, 60, sh, i, r, 1);
+        if (want) planned++;
+        if (
+          got?.day !== want?.day ||
+          got?.month !== want?.month ||
+          got?.frameMonth !== want?.frameMonth
+        ) {
+          bad.push({ r, c, got, want });
+        }
       }
     }
+    expectNone(bad);
+    expect(planned).toBeGreaterThan(0);
   });
 
   it('an empty segment between two changes in a row: unmerged bounds, and A, B, A is one frame', () => {
@@ -173,6 +208,8 @@ describe.each(cities)('the ordinary clock on the %s city', (_name, inputOf) => {
     expect(bounds[0]).toBe(bounds[1]);
     const sh = seedHash(1);
     let planned = 0;
+    const bad: unknown[] = [];
+    const one = oneFrame(fa);
     for (let j = 0; j < pre.candidates.length; j++) {
       const i = pre.candidates[j];
       const stream = streamOf(sh, pre.entity[j], 0);
@@ -182,16 +219,20 @@ describe.each(cities)('the ordinary clock on the %s city', (_name, inputOf) => {
         rates[2][i]
       ]);
       const got = ordinaryStart(statics, abc, c + 5, sh, i, r, 0);
-      if (T === 0) expect(got).toBeNull();
-      else {
+      if (T === 0) {
+        if (got !== null) bad.push({ abc: j, got, want: null });
+      } else {
         planned++;
         const day = r + 1 + Math.floor((T - 1 + drawOn(stream, P.INIT_DAY, 0)) * MONTH_DAYS);
-        expect(got?.day).toBe(day);
+        if (got?.day !== day) bad.push({ abc: j, got, want: day });
       }
-      expect(ordinaryStart(statics, aba, c + 5, sh, i, r, 0)).toEqual(
-        ordinaryStart(statics, oneFrame(fa), c + 5, sh, i, r, 0)
-      );
+      const a = ordinaryStart(statics, aba, c + 5, sh, i, r, 0);
+      const o = ordinaryStart(statics, one, c + 5, sh, i, r, 0);
+      if (a?.day !== o?.day || a?.month !== o?.month || a?.frameMonth !== o?.frameMonth) {
+        bad.push({ aba: j, got: a, want: o });
+      }
     }
+    expectNone(bad);
     expect(planned).toBeGreaterThan(0);
   });
 

@@ -71,10 +71,20 @@ and size come from the frame of the model month holding the lot-month's first da
 day's. Stage outcomes and lengths are drawn on the step's frame: `newCalibration` for a project not
 filed at the dataset date, `calibration` otherwise.
 
+Pipeline phases filed after the dataset date take their caps and existing homes from month 1's view
+(`world.ts:228`, `pipeline.ts:395-404`), not the view in force when they file. Today's engine does
+the same: `staticOf` (`scenario/engine.ts`) reads only `input.parcels`, and dated regimes reach
+only simulated projects (`scenario/types.ts:110-117`).
+
 **Speed.** A stage's scale is `speed` times each `speedNew` entry that reaches the project, clamped
 to `[MIN_SCALE, MAX_SCALE]` (`stage.ts` `speedOf`). An entry reaches it when its filing day is
 `>= from`, or it has not filed. Masters and phases count as filed before the dataset date, so
 `speedNew` reaches only simulated starts and pipeline rows still at `preApplication` on `asOf`.
+
+At a speed change on day `c` (`stage.ts` `reanchor`), `used += (c - anchor) / old speed` and the
+new leave is `c + floor(new speed * (length - used))`, clamped to `c`. The clamp never binds in
+exact arithmetic; it guards against rounding: `used` can round one ulp past `length`, the leave
+would fall in the month before, already taken, and the row would be lost.
 
 ## A free lot's start
 
@@ -156,7 +166,9 @@ All colocated in `src/lib/sim/world/`. Server project (signoff) unless noted.
 - **Referee** (exact against `simulateDetailed`): `referee.spec.ts` (one frame, all rows),
   `referee.variants.spec.ts` (market, speed, `speedNew`, route shares), `pipeline.referee.spec.ts`
   (pipeline, masters, phases), `frames.referee.spec.ts` (a zoning change equals a dated regime, a
-  market change a dated market step). Bench and fixture cities, seeds 1 to 20; live seeds 1 to 5.
+  market change a dated market step; on the bench city, seeds 1 to 5, a change at month 13 that
+  cuts phase parcels' yields, with phases filing after it). Bench and fixture cities, seeds 1 to
+  20; live seeds 1 to 5.
 - **Properties**: `frames.property.spec.ts` (speed and zoning changes), `due.property.spec.ts`
   (carried vs rebuilt list, window extension, `structuredClone` copies, skip shortcut, no frame
   past `readyThrough`), `order.property.spec.ts` (event order, rule 2's lot-table permutation),
@@ -172,7 +184,11 @@ All colocated in `src/lib/sim/world/`. Server project (signoff) unless noted.
   neither, the live blocks skip.
 - Helpers: `test/cities.node.ts` (bench, fixture, live inputs; Node only), `test/timeline.ts`
   (hand-built timelines, `oldInputOf`), `test/run.ts` (`runWorld`, `Recorder`, `readAll`),
-  `test/mini.ts`.
+  `test/mini.ts`, `test/same.node.ts` (`expectEqual`: `toEqual` with Node's native deep
+  comparison first; Node only).
+- Whole-city loops collect mismatches and assert once (`expect({ count, first })`), and big
+  comparisons use `expectEqual`: a per-item `expect`, or `toEqual` over a world's typed columns,
+  is most of such a test's time.
 
 ## Cost
 
