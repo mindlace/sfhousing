@@ -1,19 +1,22 @@
 // Planning and making applications (spec rules 5, 6, 8, 9): which model month a free lot applies
-// in, the rows it adds to the funding line, and its leaving the line.
+// in, the rows it adds to the funding line, re-making a row under a new frame (rules 17, 18) and
+// its leaving the line.
 import { lineKey } from '$lib/sim/scenario/funded';
-import { seedHash, streamOf } from '$lib/sim/scenario/rng';
+import { below, coverageLevel } from '$lib/sim/scenario/funding';
+import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
 import type { ProjectKind } from '$lib/timelapse/types';
 import { lotRow } from '../columns';
 import { lotEntity } from '../rates';
 import { monthOfDay } from '../months';
 import { NO_DAY, type StepCtx, type World } from '../types';
-import { kindClock, type KindClock, type Spell } from './clocks';
-import { frameMoney } from './frame-money';
+import { kindClock, sizeIn, type KindClock, type Spell } from './clocks';
+import { frameMoney, sameMoney, type FrameMoney } from './frame-money';
 import {
   KIND_AFFORDABLE,
   KIND_MARKET,
   addLineRow,
   fundOf,
+  setSpell,
   spellOf,
   type FundLine
 } from './columns';
@@ -149,7 +152,9 @@ export function joinLine(line: FundLine, month: number, apps: Application[]): vo
  * System 4: each kind whose day falls in `ctx.month` and is not waiting joins the line; the month's
  * new rows are appended in key order after every waiting row (rule 9). Each records (rule 6) the
  * lot, the kind, the day, the key day and key, the bundle's programme ids, the size, the level and
- * the month whose view gave the size. Records `ctx.month` as `line.appliedThrough`.
+ * the month whose view gave the size. An application whose size and bundle came from a frame
+ * before this month's change is re-made or lapses under this month's frame (`remakeRow`). Records
+ * `ctx.month` as `line.appliedThrough`.
  */
 export function applyLots(ctx: StepCtx, lots: Int32Array): void {
   const { line } = fundOf(ctx.world);
@@ -174,8 +179,66 @@ export function applyLots(ctx: StepCtx, lots: Int32Array): void {
       });
     }
   }
+  const from = line.n;
   joinLine(line, ctx.month, apps);
+  // An application whose lot-month began under an earlier frame (its day falls after a change)
+  // carries that frame's size and bundle: it is re-made under this month's frame as a waiting
+  // one was by `policyChanged` (rule 17), or lapses (rule 18). The core plans every lot that
+  // applied again after `apply`, so a lapsed kind's new spell is read then.
+  let remade = false;
+  for (let i = from; i < line.n; i++) {
+    if (!stale(ctx, line.viewMonth[i])) continue;
+    remakeRow(ctx, frameMoney(ctx.timeline, ctx.frame), line, i);
+    remade = true;
+  }
+  if (remade) line.version++;
   line.appliedThrough = ctx.month;
+}
+
+/** True when the frame of model month `m` differs from `ctx.frame` in view or money identity. */
+function stale(ctx: StepCtx, m: number): boolean {
+  const g = ctx.timeline.frameAt(m);
+  if (g === ctx.frame) return false;
+  return g.view !== ctx.frame.view || !sameMoney(g, ctx.frame, ctx.timeline);
+}
+
+/**
+ * Re-makes waiting line row `i` of a free lot under `ctx.frame` (rule 17, `remake`): the size the
+ * attempt's SIZE draw gives in the frame's view against the lot's existing homes now, and the
+ * bundle of its kind that size meets. It lapses when there is no size or no chance in the view,
+ * the bundle is empty, or the bundle's level is below the row's; a lapse marks the row `gone` and
+ * records the kind's new spell from the month's first day (rule 18). Otherwise the row takes the
+ * bundle's ids, the size, the level and `viewMonth = ctx.month`, keeping its place, `month`,
+ * `applied`, `keyDay` and `key`. Writes columns directly: the caller bumps `line.version`. True
+ * when it lapsed.
+ */
+export function remakeRow(ctx: StepCtx, fm: FrameMoney, line: FundLine, i: number): boolean {
+  const lot = line.lot[i];
+  const kind: ProjectKind = line.kind[i] === KIND_AFFORDABLE ? 'affordable' : 'market';
+  const spell = spellsOf(ctx, lot)[kind];
+  const view = ctx.frame.view;
+  const uS = drawOn(spell.stream, P.SIZE, 0);
+  const size = sizeIn(ctx.statics, view, ctx.frame.calibration, lot, spell.existing, uS);
+  let bundle: number[] = [];
+  let level = 0;
+  if (size !== null && view.pre.logit[lot] !== -Infinity) {
+    bundle = fm.bundleOf(kind, size.units);
+    if (bundle.length > 0)
+      level = coverageLevel(fm.index.price(kind, bundle, size.protoId).coverage);
+  }
+  if (size === null || bundle.length === 0 || below(level, line.level[i])) {
+    line.gone[i] = 1;
+    setSpell(line, lot, line.kind[i], spell.k, ctx.firstDay - 1);
+    return true;
+  }
+  const programmes = fm.fin.programmes;
+  line.bundle[i] = bundle.map((g) => programmes[g].id).join(',');
+  line.f[i] = size.f;
+  line.units[i] = size.units;
+  line.stories[i] = size.stories;
+  line.level[i] = level;
+  line.viewMonth[i] = ctx.month;
+  return false;
 }
 
 /** Rule 8: marks both of the lot's waiting applications `gone` (through the line's index). */

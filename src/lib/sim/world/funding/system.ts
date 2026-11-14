@@ -1,10 +1,11 @@
 // The funding system world-core's hook calls (spec S12). Filled so far: `create`, `planLot`,
-// `apply`, `moneyIn`, `onProjectEvent` (ordinary starts and money events), `serve` and the line's
-// compaction; the policy and shadow systems come with their own tasks.
+// `policyChanged`, `apply`, `moneyIn`, `onProjectEvent` (ordinary starts and money events),
+// `serve` and the line's compaction; the shadow system comes with its own task.
 import { ORIGIN_SIM, type FundingSystem, type StepCtx, type World } from '../types';
 import { applyLots, leaveLine, planLotMonth } from './apply';
 import { fundOf, initFunding } from './columns';
 import { compact } from './line-index';
+import { policyChanged } from './policy';
 import { moneyIn, moneyOnEvent } from './pools';
 import { serveLine } from './serve';
 
@@ -32,6 +33,7 @@ export function createFundingSystem(): FundingSystem {
     },
     policyChanged(ctx) {
       ensure(ctx);
+      policyChanged(ctx);
     },
     moneyIn(ctx) {
       ensure(ctx);
