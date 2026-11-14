@@ -775,4 +775,58 @@ describe('compiles while filling', () => {
     }
     runner.dispose();
   });
+
+  it('a compile step costing more than a slice neither ends slices nor starves', async () => {
+    // Runner reads cost 1 ms; the first compile read after any runner read costs 46 ms, later
+    // ones 1 ms: every compile step costs over SLICE_PLAN_MS (45) and assembles about 20 frames.
+    const clock = fakeClock();
+    let inCompile = false;
+    const now = () => {
+      inCompile = false;
+      clock.tick(1);
+      return clock.now();
+    };
+    const compileNow = () => {
+      clock.tick(inCompile ? 1 : 46);
+      inCompile = true;
+      return clock.now();
+    };
+    const at: { type: string; plan: number; comp: number }[] = [];
+    /** World-months stepped by each task, and whether `compiled` had been posted before it. */
+    const tasks: { steps: number; compiled: boolean }[] = [];
+    const stepped = () => {
+      const { plan, comp } = runner.ensembles();
+      let n = 0;
+      for (const e of [plan, comp]) for (const w of e?.worlds ?? []) n += w.month;
+      return n;
+    };
+    const runner: Runner = createRunner({
+      dataset: { ...ds, ctx: (m) => ({ ...ds.ctx(m), now: compileNow }) },
+      post(msg) {
+        const { plan, comp } = runner.ensembles();
+        at.push({ type: msg.type, plan: plan?.month ?? -1, comp: comp?.month ?? -1 });
+      },
+      now,
+      later: (fn, ms) =>
+        clock.setTimeout(() => {
+          const compiled = at.some((a) => a.type === 'compiled');
+          const before = stepped();
+          fn();
+          tasks.push({ steps: stepped() - before, compiled });
+        }, ms),
+      warn: () => {},
+      logOnce: () => {}
+    });
+    const CHANGE = 100;
+    runner.open(1, protectedFrom(CHANGE, 43), {}, WORLDS, MONTHS);
+    await clock.runUntil(() => at.some((a) => a.type === 'filled'));
+    expect(at.filter((a) => a.type === 'error')).toEqual([]);
+    const compiled = at.find((a) => a.type === 'compiled')!;
+    expect(compiled.plan).toBeLessThan(CHANGE - 1);
+    expect(compiled.comp).toBeLessThan(CHANGE - 1);
+    // while the compiles ran ahead, slices still carried several world steps
+    const early = tasks.filter((t) => !t.compiled);
+    expect(Math.max(...early.map((t) => t.steps))).toBeGreaterThanOrEqual(4);
+    runner.dispose();
+  });
 });

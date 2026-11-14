@@ -425,17 +425,33 @@ export function createRunner(deps: RunnerDeps): Runner {
   // --- the task loop ---
 
   const unfinished = (s: Side | null): s is Side => s !== null && !s.done && !s.stalled;
+  /** Ahead compiles that did not fit their slice: each is the first unit of a later slice. */
+  const owed: Side[] = [];
+  /** The last slice's first unit was an owed compile. */
+  let owedLast = false;
 
   function slice(warmOnly: boolean): void {
     const start = deps.now();
-    // Controller ruling (Task 5 fix round 1): while a side's compile is unfinished it gets one
-    // compile unit in every slice with room, besides rule 11's step on demand, so `compiled` and
-    // the first `filled` do not wait for the worlds to reach the last change. They follow the
-    // slice's first unit, so filling continues meanwhile.
-    const ahead: Side[] = warmOnly ? [] : [plan, comp].filter(unfinished);
+    // Controller rulings (Task 5 fix rounds 1 and 2): while a side's compile is unfinished it gets
+    // one compile unit in every slice with room, besides rule 11's step on demand, so `compiled`
+    // and the first `filled` do not wait for the worlds to reach the last change. These follow the
+    // slice's first unit, so filling continues meanwhile. One that does not fit does not end the
+    // slice (other units go on filling it): it is owed, and an owed compile is the first unit of
+    // the next slice, but never of two slices in a row, so filling keeps every other slice.
+    let firstUnit: Unit | null = null;
+    if (!warmOnly) {
+      while (owed.length > 0 && !unfinished(owed[0])) owed.shift();
+      if (owed.length > 0 && !owedLast) firstUnit = { kind: 'compile', side: owed.shift()! };
+      owedLast = firstUnit !== null;
+    }
+    const ahead: Side[] = warmOnly
+      ? []
+      : [plan, comp].filter((s): s is Side => unfinished(s) && s !== firstUnit?.side);
     for (let first = true; ; first = false) {
       let u: Unit | null;
-      if (!first && ahead.length > 0) {
+      const isAhead = !first && ahead.length > 0;
+      if (first && firstUnit !== null) u = firstUnit;
+      else if (isAhead) {
         const s = ahead.shift()!;
         if (!unfinished(s)) continue;
         u = { kind: 'compile', side: s };
@@ -444,7 +460,11 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (u === null) break; // `pick` offers an unfinished compile itself when nothing else runs
       if (!first) {
         const est = estimate(u.kind);
-        if (est === undefined || deps.now() - start + est > SLICE_PLAN_MS) break;
+        if (est === undefined || deps.now() - start + est > SLICE_PLAN_MS) {
+          if (!isAhead) break;
+          if (!owed.includes(u.side!)) owed.push(u.side!);
+          continue;
+        }
       }
       const t0 = deps.now();
       run(u);
