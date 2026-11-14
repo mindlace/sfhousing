@@ -1,7 +1,8 @@
 // The timeline host (ensemble-runner spec S14, rules 2, 3, 18, 20, 21): one session per
 // `openTimeline`, checked and loaded as `initScenario` is today (scenario-host.ts:518-583,
 // 630-664), then filled by the runner (`runner/runner.ts`). Today's shared requests are answered
-// from the session's dataset (`runner/lookups.ts`) and the plan's frame at the last `viewMonth`.
+// from the session's dataset (`runner/lookups.ts`) and the plan's frame at the last `viewMonth`;
+// `heights` and `heightLids` come from the runner's staged builds for that frame's zoning (S14).
 //
 // A new `openTimeline` (or `dispose`) ends the session: its timers are cancelled, nothing of it is
 // posted afterwards, and the requests still waiting on it are answered `no-session`.
@@ -106,6 +107,8 @@ interface Session {
   opening: Opening;
   /** A `viewMonth` before the runner exists. */
   view: number | null;
+  /** A `heightLids` before the runner exists: it waits for it (scenario-host.ts:1144-1156). */
+  lids: { reqId: number; bbox: [number, number, number, number] } | null;
 }
 
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
@@ -152,8 +155,11 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
     if (st === null) return;
     st.token.cancel();
     st.chunks.dispose();
+    const lidReq = st.runner?.takeLids() ?? st.lids?.reqId ?? null;
+    st.lids = null;
     st.runner?.dispose();
     // every request still waiting on this session is answered now
+    if (lidReq !== null) noSession('heightLids', lidReq, 'height lids');
     st.brush?.end();
     const early = st.early;
     st.early = [];
@@ -202,7 +208,8 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
         worlds: req.worlds,
         months: req.months
       },
-      view: null
+      view: null,
+      lids: null
     } as Omit<Session, 'chunks'> as Session;
     const dsDeps: DatasetDeps = {
       fetch: deps.fetch,
@@ -273,6 +280,9 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
     const o = st.opening;
     st.rev = o.rev;
     runner.open(o.rev, o.policy, o.lots, o.worlds, o.months);
+    const lids = st.lids;
+    st.lids = null;
+    if (lids !== null) runner.heightLids(lids.reqId, lids.bbox);
   }
 
   function setPolicy(req: Extract<TimelineHostRequest, { type: 'setPolicy' }>): void {
@@ -398,9 +408,23 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
         );
         return post({ type: 'lotAt', reqId: req.reqId, result });
       }
-      case 'heightLids':
-        // Task 9 builds them from `cityInputAt`; until then they are not available
-        return noSession('heightLids', req.reqId, 'height lids');
+      case 'heightLids': {
+        // S14: for the zoning in force at the last viewMonth, built in the runner's slices
+        if (!s) return noSession('heightLids', req.reqId, 'height lids');
+        if (s.runner) return s.runner.heightLids(req.reqId, req.bbox);
+        const prev = s.lids;
+        if (prev) {
+          const message = 'a newer heightLids replaced this one';
+          post({
+            type: 'heightLids',
+            reqId: prev.reqId,
+            result: { ok: false, reason: 'superseded', message }
+          });
+        }
+        const b = req.bbox;
+        s.lids = { reqId: req.reqId, bbox: [b[0], b[1], b[2], b[3]] };
+        return;
+      }
       case 'prefetch': {
         if (!s) return;
         const cells = cellsIntersecting(s.manifest, req.bbox);

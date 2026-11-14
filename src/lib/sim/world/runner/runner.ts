@@ -2,14 +2,18 @@
 // D12): two compiles, two ensembles (the plan and its comparison), the map stream of the plan's
 // world 1, and the posts, in slices of a macrotask each.
 //
-// A slice runs units in this order: for the ensemble with the lower month (the plan on a tie,
-// rules 6 and 16), a compile step when its next frame is not ready (rule 11), else its next unit;
-// a world steps only while it is not ahead of the other ensemble. When neither has a unit, an
-// unfinished compile steps on, so its `ScoreStatics` arrive (D2). A unit of a kind runs only when
-// the time used plus the largest of that kind's last 4 costs fits in `SLICE_PLAN_MS`; the first
-// unit of a slice always runs (D7). After the units: one `compiling` if the progress changed;
-// statics for a compile that finished (and `compiled` for the plan's); at most one `filled`
-// (rule 8); `lookups` when the frame in view changed its permitting (D10).
+// A slice runs units in this order: first, as the old host (scenario-host.ts:864-866), the height
+// limits of the zoning in force at the last `viewMonth` (S14): a city build's inputs
+// (`cityInputAt`), its steps (posting `heights`), then a wanted `heightLids` view's lid build on
+// that city; these also run after a throw stopped filling. Then, for the ensemble with the lower
+// month (the plan on a tie, rules 6 and 16), a compile step when its next frame is not ready
+// (rule 11), else its next unit; a world steps only while it is not ahead of the other ensemble.
+// When neither has a unit, an unfinished compile steps on, so its `ScoreStatics` arrive (D2). A
+// unit of a kind runs only when the time used plus the largest of that kind's last 4 costs fits in
+// `SLICE_PLAN_MS`; the first unit of a slice always runs (D7). After the units: one `compiling` if
+// the progress changed; statics for a compile that finished (and `compiled` for the plan's); at
+// most one `filled` (rule 8); `lookups` when the frame in view changed its permitting (D10); a
+// city build when the zoning view in view is not the one whose `heights` went out last.
 //
 // A flush of the map stream is a macrotask of its own (D6), at most every `FLUSH_EVERY_MS`, never
 // while a restore re-steps quietly; when filling ends the stream is drained until an update says
@@ -39,12 +43,20 @@
 // world: a world whose step threw is not trusted.
 // Worker-bundle module: zod-free, DOM-free, $app-free.
 import type { ParcelId } from '$lib/data/parcel';
+import {
+  createCityBuild,
+  type CityModel,
+  type CityResult,
+  type StagedBuild
+} from '$lib/map/height/city';
+import { createLidBuild, LidTooLarge, type LidBuild } from '$lib/map/height/lids';
 import { packTimedTransferables } from '$lib/map/pack-timed';
 import { LeverFormatError } from '$lib/sim/levers/types';
 import type { Rev } from '$lib/sim/protocol';
 import { massingFor } from '$lib/sim/scenario/massing';
 import { SLICE_PLAN_MS } from '$lib/sim/scenario/scenario-host';
-import type { TimelineErrorCode, TimelineResponse } from '$lib/sim/timeline-protocol';
+import type { HeightLidsResult } from '$lib/sim/scenario/types';
+import type { TimelineErrorCode, TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import type { Day } from '$lib/timelapse/time';
 import { canonicalJson } from '$lib/sim-page/policy';
 import { queriesOf4, type SimPolicy4 } from '$lib/timeline/policy4';
@@ -53,6 +65,7 @@ import { monthLastDay, monthOfDay } from '../months';
 import { comparisonOf, firstDifference } from '../policy/compare';
 import { compileTimeline, type CompileCtx, type TimelineCompile } from '../policy/compile';
 import type { PolicyFrame, PolicyTimeline } from '../policy/frame';
+import { cityInputAt, type FrameCityInput } from '../policy/limits';
 import { lookupsAt } from '../policy/lookups';
 import { scheduleAt } from '../read';
 import * as scoreModule from '../score';
@@ -61,7 +74,7 @@ import { finalTable } from '../score/statics';
 import type { World, WorldEvent } from '../types';
 import type { Dataset } from './dataset';
 import { COPY_MONTHS, createEnsemble, type Ensemble, type UnitKind } from './ensemble';
-import { scheduleReady } from './lookups';
+import { cityTransfer, lidLotsOf, lidsTransfer, scheduleReady } from './lookups';
 
 // Bound once, as world-core's hot modules do (docs/dev/world-core.md, Cost).
 const { chunkOf, scoreStaticsOf } = scoreModule;
@@ -77,7 +90,8 @@ const COST_WINDOW = 4;
 
 export interface RunnerDeps {
   dataset: Dataset;
-  post(msg: TimelineResponse, transfer: ArrayBuffer[]): void;
+  /** The runner's own messages, `heights` and `heightLids` answers. */
+  post(msg: TimelineHostResponse, transfer: ArrayBuffer[]): void;
   now(): number;
   later(fn: () => void, ms: number): unknown;
   warn(msg: string): void;
@@ -100,6 +114,13 @@ export interface Runner {
   resyncMap(): void;
   /** A chunk loaded or the loader's report changed: a stalled compile or a waiting cell may move. */
   chunkArrived(): void;
+  /**
+   * S14: the height lids of `bbox` for the zoning in force at the last `viewMonth`. Answers the
+   * one it replaces `superseded`; the answer comes from a staged build in later slices.
+   */
+  heightLids(reqId: number, bbox: readonly number[]): void;
+  /** The waiting `heightLids` request, taken (the session ends: the host answers it). */
+  takeLids(): number | null;
   /** A viewport's cells: the loader also wants the cells of the projects anchored in them (S17). */
   wantCells(cells: Iterable<string>): void;
   /** Plan frame at the last viewMonth (clamped to 1..readyThrough), or null before month 1's frame. */
@@ -128,7 +149,24 @@ export interface RunnerInternals {
   lookedAt: object | null;
 }
 
-type Kind = UnitKind | 'compile' | 'warm';
+/** `cityInput`: a city build's inputs (`cityInputAt`); `heights`: a city or lid build's step. */
+type Kind = UnitKind | 'compile' | 'warm' | 'cityInput' | 'heights';
+
+/** A city build of the zoning view `view` (S14), until done; `build` null until its inputs exist. */
+interface CityWork {
+  view: object;
+  rev: Rev;
+  input: FrameCityInput | null;
+  build: StagedBuild<CityResult> | null;
+}
+
+/** The latest complete city: the view it was built for, its inputs and its model. */
+interface Limits {
+  view: object;
+  rev: Rev;
+  input: FrameCityInput;
+  model: CityModel;
+}
 
 /** A compile being stepped, and its timeline once month 1's frame exists. */
 interface Compiling {
@@ -233,9 +271,23 @@ export function createRunner(deps: RunnerDeps): Runner {
   /** World 1's rows started or revised, to mass before the next flush (D12). */
   const warm = new Set<number>();
 
+  // the height limits (S14), as scenario-host.ts:325-335, 416
+  /** The city build of the zoning in view, until done. */
+  let city: CityWork | null = null;
+  /** The latest complete city, whose `heights` went out last. */
+  let limits: Limits | null = null;
+  /** The `heightLids` waiting for its answer. */
+  let lidWant: { reqId: number; bbox: [number, number, number, number] } | null = null;
+  /** The running lid build of `lidWant`, on `limits`. */
+  let lid: { reqId: number; limits: Limits; build: LidBuild; missing: number } | null = null;
+  /** A city or lid build threw: no more heights until the next accepted edit. */
+  let heightsBroken = false;
+  /** When the running slice started (a staged build's budget is what is left of it). */
+  let sliceStart = 0;
+
   const costs = new Map<Kind, number[]>();
 
-  const post = (msg: TimelineResponse, transfer: ArrayBuffer[] = []) => {
+  const post = (msg: TimelineHostResponse, transfer: ArrayBuffer[] = []) => {
     if (!disposed) deps.post(msg, transfer);
   };
 
@@ -260,6 +312,9 @@ export function createRunner(deps: RunnerDeps): Runner {
   }
 
   function pick(): Unit | null {
+    // as the old host: a city, then a wanted lid view, before the timeline (scenario-host.ts:864-866)
+    const hk = heightsKind();
+    if (hk !== null) return { kind: hk, side: null };
     if (plan === null || comp === null) return null;
     const order = monthOf(comp) < monthOf(plan) ? [comp, plan] : [plan, comp];
     for (const s of order) {
@@ -380,6 +435,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     failed = false;
     const fresh = broken;
     broken = false;
+    heightsBroken = false;
     replace(plan!, ed.plan, fresh);
     if (ed.comp !== null) {
       comp!.key = ed.compKey;
@@ -520,6 +576,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   function run(u: Unit): void {
     if (u.kind === 'compile') compileUnit(u.side!);
     else if (u.kind === 'warm') warmUnit();
+    else if (u.kind === 'cityInput' || u.kind === 'heights') heightsUnit();
     else u.side!.ensemble!.unit();
   }
 
@@ -570,6 +627,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
     postFilled();
     postLookups();
+    checkHeights();
   }
 
   /** At most one `filled`: the months final in both ensembles and not posted yet (rule 8). */
@@ -652,6 +710,154 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (u !== null) sendCells(u);
   }
 
+  // --- the height limits (S14; scenario-host.ts:1025-1156) ---
+
+  /** What is left of the slice plan (a staged build always runs at least one unit). */
+  const sliceLeft = () => Math.max(0, SLICE_PLAN_MS - (deps.now() - sliceStart));
+  const clock = () => deps.now();
+
+  /** The next height unit: the city of the zoning in view, then a wanted lid view on its limits. */
+  function heightsKind(): 'cityInput' | 'heights' | null {
+    if (heightsBroken) return null;
+    if (city !== null) return city.build === null ? 'cityInput' : 'heights';
+    if (lidWant !== null && limits !== null) return 'heights';
+    return null;
+  }
+
+  /**
+   * D2: a city build when the zoning view at the last `viewMonth` is not the one whose `heights`
+   * went out last (views are interned by content, compile.ts rule 17). Back on that view, a city
+   * build of another stops.
+   */
+  function checkHeights(): void {
+    const t = plan?.timeline;
+    if (heightsBroken || !t) return;
+    const v = t.frameAt(viewMonthOf(t)).view;
+    if (city !== null && city.view === v) return;
+    if (limits !== null && limits.view === v) {
+      city = null;
+      return;
+    }
+    city = { view: v, rev, input: null, build: null };
+  }
+
+  /** One height unit; a throw ends the height limits (filling goes on) and answers a waiting lid. */
+  function heightsUnit(): void {
+    try {
+      if (city !== null) cityStep(city);
+      else lidStep();
+    } catch (e) {
+      heightsBroken = true;
+      city = null;
+      lid = null;
+      deps.warn(`height limits: ${String(e)}`);
+      const w = lidWant;
+      lidWant = null;
+      const message = `height lids are not available: ${String(e)}`;
+      if (w) postLids(w.reqId, { ok: false, reason: 'no-session', message });
+    }
+  }
+
+  /**
+   * The city build of the zoning in view (scenario-host.ts:1035-1066): its inputs in a unit of
+   * their own (`cityInputAt` on the plan frame in view, read now: never a frame held from an older
+   * timeline), then its steps; once done, `heights` goes out and the city becomes `limits`.
+   */
+  function cityStep(c: CityWork): void {
+    if (c.build === null) {
+      const t = plan!.timeline!;
+      const f = t.frameAt(viewMonthOf(t));
+      if (limits !== null && limits.view === f.view) {
+        city = null;
+        return;
+      }
+      const parcels = ds.loaded.fzp.parcels;
+      const input = cityInputAt(f);
+      c.view = f.view;
+      c.rev = rev;
+      c.input = input;
+      c.build = createCityBuild({
+        rev,
+        labelPoint: parcels.labelPoint,
+        lotAreaM2: parcels.lotAreaM2,
+        existingStories: parcels.existingStories,
+        stories: input.stories,
+        countable: input.countable,
+        sources: input.sources
+      });
+      return;
+    }
+    if (!c.build.step(sliceLeft(), clock)) return;
+    const { city: built, model } = c.build.result();
+    city = null;
+    limits = { view: c.view, rev: c.rev, input: c.input!, model };
+    // a lid build on older limits starts again on these
+    lid = null;
+    post({ type: 'heights', rev, city: built }, cityTransfer(built));
+  }
+
+  /**
+   * One slice of the wanted lid view (scenario-host.ts:1072-1104). With none running, the job
+   * starts one on the current limits (gathers its lots, allocates its raster) and ends: its units
+   * run from the next one.
+   */
+  function lidStep(): void {
+    const want = lidWant!;
+    const lim = limits!;
+    if (lid === null) {
+      const { lots, missing } = lidLotsOf(
+        ds.manifest,
+        ds.chunks.byCell,
+        ds.loaded.fzp.parcels.index,
+        want.bbox
+      );
+      let build: LidBuild;
+      try {
+        build = createLidBuild({
+          limitsRev: lim.rev,
+          sourceIds: lim.input.sources.ruleIds,
+          bbox: want.bbox,
+          lots,
+          stories: lim.input.stories,
+          sources: lim.input.sources.source,
+          model: lim.model
+        });
+      } catch (e) {
+        if (!(e instanceof LidTooLarge)) throw e;
+        lidWant = null;
+        return postLids(want.reqId, { ok: false, reason: 'too-large', message: e.message });
+      }
+      lid = { reqId: want.reqId, limits: lim, build, missing };
+      return;
+    }
+    if (!lid.build.step(sliceLeft(), clock)) return;
+    const lids = lid.build.result();
+    const { reqId, missing } = lid;
+    lid = null;
+    lidWant = null;
+    postLids(reqId, { ok: true, lids, missing }, lidsTransfer(lids));
+  }
+
+  function postLids(reqId: number, result: HeightLidsResult, transfer: ArrayBuffer[] = []): void {
+    post({ type: 'heightLids', reqId, result }, transfer);
+  }
+
+  /** After a throw stopped filling (rule 21): a slice of height units only. */
+  function heightsSlice(): void {
+    sliceStart = deps.now();
+    for (let first = true; ; first = false) {
+      const k = heightsKind();
+      if (k === null) break;
+      if (!first) {
+        const est = estimate(k);
+        if (est === undefined || deps.now() - sliceStart + est > SLICE_PLAN_MS) break;
+      }
+      const t0 = deps.now();
+      heightsUnit();
+      measure(k, deps.now() - t0);
+    }
+  }
+
   // --- the task loop ---
 
   const unfinished = (s: Side | null): s is Side => s !== null && !s.done && !s.stalled;
@@ -662,6 +868,7 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   function slice(warmOnly: boolean): void {
     const start = deps.now();
+    sliceStart = start;
     // Controller rulings (Task 5 fix rounds 1 and 2): while a side's compile is unfinished it gets
     // one compile unit in every slice with room, besides rule 11's step on demand, so `compiled`
     // and the first `filled` do not wait for the worlds to reach the last change. These follow the
@@ -729,7 +936,13 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   function tick(): void {
     pending = false;
-    if (disposed || (failed && edit === null)) return;
+    if (disposed) return;
+    if (failed && edit === null) {
+      // rule 21: filling stopped; the height limits still answer
+      if (heightsKind() === null) return;
+      heightsSlice();
+      return schedule();
+    }
     try {
       if (mapTaskDue()) mapTask();
       else if (flushDue()) {
@@ -750,7 +963,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   }
 
   function kick(ms = 0): void {
-    if (pending || disposed || (failed && edit === null)) return;
+    if (pending || disposed || (failed && edit === null && heightsKind() === null)) return;
     pending = true;
     deps.later(tick, ms);
   }
@@ -761,8 +974,10 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (edit !== null) {
       // a stalled edit compile waits for `chunkArrived`
       if (editWork() !== null) return kick();
-    } else if (failed) return;
-    else if (pick() !== null) return kick();
+    } else if (failed) {
+      if (heightsKind() !== null) kick();
+      return;
+    } else if (pick() !== null) return kick();
     if (streamWants()) kick(Math.max(0, lastFlushAt + FLUSH_EVERY_MS - deps.now()));
   }
 
@@ -875,6 +1090,30 @@ export function createRunner(deps: RunnerDeps): Runner {
     viewMonth(month) {
       view = Number.isFinite(month) ? Math.trunc(month) : 1;
       postLookups();
+      // D3: the city build runs in the slices, never here
+      checkHeights();
+      if (heightsKind() !== null) kick();
+    },
+    heightLids(reqId, bbox) {
+      if (disposed) return;
+      if (heightsBroken) {
+        const message = 'height lids are not available: the height limits failed';
+        return postLids(reqId, { ok: false, reason: 'no-session', message });
+      }
+      const prev = lidWant;
+      if (prev) {
+        const message = 'a newer heightLids replaced this one';
+        postLids(prev.reqId, { ok: false, reason: 'superseded', message });
+      }
+      lidWant = { reqId, bbox: [bbox[0], bbox[1], bbox[2], bbox[3]] };
+      lid = null;
+      kick();
+    },
+    takeLids() {
+      const w = lidWant;
+      lidWant = null;
+      lid = null;
+      return w === null ? null : w.reqId;
     },
     resyncMap() {
       // B7: during a quiet re-step (or before its rewind) the answer waits for the restored world

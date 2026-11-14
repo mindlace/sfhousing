@@ -477,9 +477,11 @@ describe('a full fill of the default document', () => {
     expect(preview.result.ok).toBe(true);
   });
 
-  it('heightLids answers not available', async () => {
-    const got = await h.ask({ type: 'heightLids', bbox: allBbox(h.manifest) }, 'heightLids');
-    expect(got.result).toMatchObject({ ok: false, reason: 'no-session' });
+  it('heightLids answers with the lids of the zoning in view', async () => {
+    const bbox = h.manifest.chunks[0].bbox as [number, number, number, number];
+    const got = await h.ask({ type: 'heightLids', bbox }, 'heightLids');
+    expect(got.result).toMatchObject({ ok: true, missing: 0 });
+    expect(h.of('heights')).toHaveLength(1);
   });
 
   it('viewMonth clamps out-of-range months', async () => {

@@ -10,6 +10,7 @@
 // - lotOutlinesResult: scenario-host.ts:1501-1509.
 // - previewResult: scenario-host.ts:1533-1562.
 // - lotAtResult: scenario-host.ts:1445-1457.
+// - lidLotsOf: scenario-host.ts:1111-1133; cityTransfer, lidsTransfer: scenario-host.ts:432-466.
 // - buildableStories: scenario-host.ts:1391-1405.
 // - cardDepsOf: scenario-host.ts:255-256, 1330-1342 (qualityRules, building, logOnce), 1356
 //   (record); `building`'s readiness check is `Geometry.allReady` (scenario/geometry.ts:231-240)
@@ -28,7 +29,8 @@ import {
   type GeneratedBuilding
 } from '$lib/generator';
 import { toLngLat } from '$lib/generator/geo';
-import { LID_PAD_M } from '$lib/map/height/lids';
+import { LID_PAD_M, type LidLot } from '$lib/map/height/lids';
+import type { HeightCity, HeightLids, LabelSet } from '$lib/map/height/types';
 import { packCell, packTransferables } from '$lib/map/pack';
 import { M_PER_DEG_LAT, M_PER_DEG_LNG } from '$lib/plan/geometry';
 import { cellsIntersecting, type FetchLike } from '$lib/sim/chunks';
@@ -327,6 +329,74 @@ export function lotAtResult(
     for (const rec of byCell.get(cellId) ?? []) near.push(rec);
   const rec = lotAtPoint(near, point, (r) => r.polygon.map((ring) => toLngLat(ring, r.labelPoint)));
   return { ok: true, parcelId: rec ? rec.id : null, owner: rec ? owner(rec.id) : null };
+}
+
+// --- height limits ---
+
+/**
+ * The lid lots of a view: the loaded records of the cells around the bbox padded by `LID_PAD_M`
+ * whose label point lies in it, as rows of the limits tables (`index`). `missing` counts the
+ * cells intersecting the bbox itself that are not loaded.
+ */
+export function lidLotsOf(
+  manifest: Manifest,
+  byCell: Map<string, ParcelRecord[]>,
+  index: Map<ParcelId, number>,
+  bbox: readonly number[]
+): { lots: LidLot[]; missing: number } {
+  const dLng = LID_PAD_M / M_PER_DEG_LNG;
+  const dLat = LID_PAD_M / M_PER_DEG_LAT;
+  const [w0, s0, e0, n0] = [bbox[0] - dLng, bbox[1] - dLat, bbox[2] + dLng, bbox[3] + dLat];
+  const lots: LidLot[] = [];
+  for (const cellId of cellsIntersecting(manifest, [w0, s0, e0, n0])) {
+    for (const rec of byCell.get(cellId) ?? []) {
+      const [lng, lat] = rec.labelPoint;
+      if (lng < w0 || lng > e0 || lat < s0 || lat > n0) continue;
+      const row = index.get(rec.id);
+      if (row === undefined) continue;
+      lots.push({ row, rings: rec.polygon.map((ring) => toLngLat(ring, rec.labelPoint)) });
+    }
+  }
+  const missing = cellsIntersecting(manifest, bbox).filter((c) => !byCell.has(c)).length;
+  return { lots, missing };
+}
+
+function buffersOf(arrays: readonly ArrayBufferView[]): ArrayBuffer[] {
+  return [...new Set(arrays.map((a) => a.buffer as ArrayBuffer))];
+}
+
+const labelOwners = (l: LabelSet): ArrayBufferView[] =>
+  l.owners && l.ownerStarts ? [l.owners, l.ownerStarts] : [];
+
+/** The buffers a `heights` post transfers: the city's chains and labels, each once. */
+export function cityTransfer(c: HeightCity): ArrayBuffer[] {
+  return buffersOf([
+    ...Object.values(c.chains),
+    c.labels.position,
+    c.labels.minZoom,
+    ...labelOwners(c.labels)
+  ]);
+}
+
+/** The buffers a `heightLids` answer transfers, each once. */
+export function lidsTransfer(l: HeightLids): ArrayBuffer[] {
+  const w = l.walls;
+  return buffersOf([
+    ...Object.values(l.pieces),
+    ...l.faces.flatMap((f) => f.rings),
+    ...Object.values(l.rims),
+    w.a,
+    w.b,
+    w.zLo,
+    w.zHi,
+    w.piece,
+    l.labels.position,
+    l.labels.minZoom,
+    ...labelOwners(l.labels),
+    l.paintLabels.position,
+    l.paintLabels.minZoom,
+    ...labelOwners(l.paintLabels)
+  ]);
 }
 
 // --- the card ---
