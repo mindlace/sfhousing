@@ -287,8 +287,8 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
         st.opening = { ...st.opening, rev, policy: req.policy, lots: req.lots };
       return;
     }
+    // the runner's rev becomes this one only when it accepts the edit (rule 12)
     st.runner.setPolicy(rev, req.policy, req.lots);
-    st.rev = rev; // only once the runner has taken the edit
   }
 
   // --- shared requests ---
@@ -420,7 +420,7 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
       try {
         dispatch(req);
       } catch (e) {
-        error(s?.rev ?? latestRev, 'internal', String(e));
+        error(s?.runner?.rev ?? s?.rev ?? latestRev, 'internal', String(e));
       }
     },
     dispose() {
