@@ -1,12 +1,33 @@
 import { TOOL_VERSIONS } from '../config';
 import { openDuck } from '../lib/duck';
 import { run as realRun, which as realWhich } from '../lib/exec';
+import { LIDAR_PROJECT, LIDAR_VENV, uvRun } from '../lib/lidar/python';
+
+const LIDAR_IMPORTS = 'import laspy, lazrs, numpy, scipy, pyproj';
+
+/** The command that installs the rasterizer's pinned Python into LIDAR_VENV. */
+export function lidarSyncHint(): string {
+  const env = `UV_PROJECT_ENVIRONMENT=${LIDAR_VENV}`;
+  return `${env} uv sync --project ${LIDAR_PROJECT} --frozen (needs network once)`;
+}
 
 export interface DoctorCheck {
   name: string;
   ok: boolean;
+  /** Needed only by an optional command (fetch --only usgs-lidar-sf): a failure is a warning. */
+  optional?: boolean;
   found?: string;
   hint?: string;
+}
+
+/** Print one line per check; exit 1 only when a required check failed. */
+export function reportDoctor(checks: DoctorCheck[], out: (line: string) => void): number {
+  for (const c of checks) {
+    const detail = c.ok ? (c.found ?? '') : `${c.found ? `${c.found} ` : ''}-> ${c.hint ?? ''}`;
+    const tag = c.ok ? 'OK  ' : c.optional ? 'WARN' : 'FAIL';
+    out(`${tag} ${c.name}${detail ? `  ${detail}` : ''}`);
+  }
+  return checks.every((c) => c.ok || c.optional) ? 0 : 1;
 }
 
 export async function doctor(
@@ -97,6 +118,32 @@ export async function doctor(
         hint: 'npm install (needs network once to INSTALL DuckDB extensions)'
       });
     }
+  }
+
+  // The LiDAR rasterizer (fetch --only usgs-lidar-sf) runs in a pinned uv project. Nothing else
+  // needs Python, so both checks are optional.
+  if (!(await which('uv'))) {
+    checks.push({
+      name: 'uv',
+      ok: false,
+      optional: true,
+      hint: 'brew install uv (only for fetch --only usgs-lidar-sf)'
+    });
+  } else {
+    const v = await run('uv', ['--version']);
+    checks.push({ name: 'uv', ok: true, optional: true, found: v.stdout.trim() || undefined });
+    const probe = await uvRun(['python', '-c', LIDAR_IMPORTS], {}, { run });
+    const ok = probe.code === 0;
+    checks.push({
+      name: 'lidar-python',
+      ok,
+      optional: true,
+      found: ok
+        ? 'laspy lazrs numpy scipy pyproj'
+        : probe.stderr.trim().split('\n').at(-1) || undefined,
+      // Absolute paths: uv resolves a relative UV_PROJECT_ENVIRONMENT against the project root.
+      hint: ok ? undefined : lidarSyncHint()
+    });
   }
 
   return checks;

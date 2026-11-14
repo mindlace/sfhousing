@@ -13,3 +13,9 @@ playwright-report/
 /scratch/
 pipeline/.cache/
 pipeline/out/
+# The LiDAR rasterizer uv project: its venv lives in pipeline/.cache/lidar-venv (uvRun); these
+# guard against a stray local run, since anything under pipeline/ changes the dataset version.
+pipeline/lidar-raster/.venv/
+pipeline/lidar-raster/**/__pycache__/
+pipeline/lidar-raster/.pytest_cache/
+pipeline/lidar-raster/**/*.egg-info/

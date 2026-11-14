@@ -9,7 +9,7 @@ import {
   checkDataset,
   type InvariantResult
 } from './steps/check';
-import { doctor } from './steps/doctor';
+import { doctor, reportDoctor } from './steps/doctor';
 import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
 import { lesscarsBasemap } from './steps/lesscars-basemap';
@@ -94,15 +94,8 @@ const steps: Record<string, { help: string; run: Step }> = {
       })
   },
   doctor: {
-    help: 'check required tools and DuckDB extensions',
-    run: async () => {
-      const checks = await doctor();
-      for (const c of checks) {
-        const detail = c.ok ? (c.found ?? '') : `${c.found ? `${c.found} ` : ''}-> ${c.hint ?? ''}`;
-        console.log(`${c.ok ? 'OK  ' : 'FAIL'} ${c.name}${detail ? `  ${detail}` : ''}`);
-      }
-      return checks.every((c) => c.ok) ? 0 : 1;
-    }
+    help: 'check required tools and DuckDB extensions (uv and the LiDAR Python are optional)',
+    run: async () => reportDoctor(await doctor(), console.log)
   },
   build: {
     help: 'verify the lock, build out/<v>/ and run the invariants (offline) [--skip-tiles]',
