@@ -1,19 +1,14 @@
-import { error, fail } from '@sveltejs/kit';
+import { fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { AUTH_COPY } from '$lib/account/copy';
 import { authFor } from '$lib/server/auth/better-auth';
 import { resolveHandleToEmail } from '$lib/server/auth/magic-link';
-import { enabledAuthMethods } from '$lib/server/auth/methods';
+import { requireMethod } from '$lib/server/auth/require-method';
 import { getDb } from '$lib/server/db';
 import { enforceRate } from '$lib/server/security/rate-limit';
 
-/** Password reset exists only where password sign-in is on; everywhere else it is a 404. */
-function requirePassword(event: Parameters<typeof enabledAuthMethods>[0]): void {
-  if (!enabledAuthMethods(event).has('password')) throw error(404);
-}
-
 export const load: PageServerLoad = (event) => {
-  requirePassword(event);
+  requireMethod(event, 'password');
   return {};
 };
 
@@ -30,7 +25,7 @@ export const actions: Actions = {
    * `mayReceivePasswordReset` refuses them silently; that is by design, not a bug.
    */
   requestReset: async (event) => {
-    requirePassword(event);
+    requireMethod(event, 'password');
     const { request, platform } = event;
     const form = await request.formData();
     // A leading '@' is how people write handles; resolveHandleToEmail does not

@@ -1,20 +1,15 @@
-import { error, fail, redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { AUTH_COPY, passwordTooLong, passwordTooShort } from '$lib/account/copy';
 import { authFor } from '$lib/server/auth/better-auth';
-import { enabledAuthMethods } from '$lib/server/auth/methods';
 import { isPasswordBreached } from '$lib/server/auth/password-breach';
 import {
   validatePasswordShape,
   PASSWORD_MIN_LENGTH,
   PASSWORD_MAX_LENGTH
 } from '$lib/server/auth/password-policy';
+import { requireMethod } from '$lib/server/auth/require-method';
 import { enforceRate } from '$lib/server/security/rate-limit';
-
-/** Password reset exists only where password sign-in is on; everywhere else it is a 404. */
-function requirePassword(event: Parameters<typeof enabledAuthMethods>[0]): void {
-  if (!enabledAuthMethods(event).has('password')) throw error(404);
-}
 
 /**
  * Better-Auth's GET /api/auth/reset-password/:token validates the token and then
@@ -23,7 +18,7 @@ function requirePassword(event: Parameters<typeof enabledAuthMethods>[0]): void 
  * reload: the token is consumed only by the POST below.
  */
 export const load: PageServerLoad = (event) => {
-  requirePassword(event);
+  requireMethod(event, 'password');
   return {
     token: event.url.searchParams.get('token') ?? '',
     invalid: event.url.searchParams.has('error')
@@ -32,7 +27,7 @@ export const load: PageServerLoad = (event) => {
 
 export const actions: Actions = {
   resetPassword: async (event) => {
-    requirePassword(event);
+    requireMethod(event, 'password');
     const { request, platform } = event;
     const form = await request.formData();
     const token = String(form.get('token') ?? '');

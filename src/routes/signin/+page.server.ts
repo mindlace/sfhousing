@@ -2,7 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { AUTH_COPY } from '$lib/account/copy';
 import { safeReturnTo } from '$lib/account/safe-redirect';
-import { getAuth } from '$lib/server/auth/better-auth';
+import { authFor, getAuth } from '$lib/server/auth/better-auth';
 import { resolveHandleToEmail } from '$lib/server/auth/magic-link';
 import { enabledAuthMethods } from '$lib/server/auth/methods';
 import { getDb } from '$lib/server/db';
@@ -176,7 +176,8 @@ export const actions: Actions = {
       : await resolveHandleToEmail(db, identifier);
     if (!email) return fail(400, { error: AUTH_COPY.signinFailed });
 
-    const auth = getAuth(platform!, url.origin);
+    // authFor: the instance for THIS request's methods (the e2e cookie can switch password on).
+    const auth = authFor(event);
     try {
       await auth.api.signInEmail({ headers: request.headers, body: { email, password } });
     } catch {

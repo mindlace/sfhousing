@@ -1,6 +1,7 @@
 <script lang="ts">
   import './layout.css';
   import { page } from '$app/state';
+  import { currentUser } from '$lib/account/current-user.svelte';
   import SiteHeader from '$lib/shell/SiteHeader.svelte';
   import SiteFooter from '$lib/shell/SiteFooter.svelte';
   import { provideHeaderActions } from '$lib/shell/header-actions.svelte';
@@ -29,7 +30,7 @@
     actions={headerActions.current ?? undefined}
     pinned={headerActions.pinned ?? undefined}
     status={headerActions.status ?? undefined}
-    user={page.data.user}
+    user={currentUser.overlay(page.data.user)}
     routeId={page.route.id}
   />
   <main

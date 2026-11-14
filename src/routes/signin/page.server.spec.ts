@@ -51,7 +51,19 @@ vi.mock('$lib/server/sims/start-sim', async () => {
 });
 // The magic-link verify URL the fake sendMagicLink hands to captureMagicLink.
 const MAGIC_VERIFY_URL = 'https://app.test/api/auth/magic-link/verify?token=xyz';
+const fakeAuth = (opts?: { captureMagicLink?: (l: { email: string; url: string }) => void }) => ({
+  api: {
+    // Mirror the real flow: signInMagicLink drives sendMagicLink, which hands the verify
+    // URL to the caller's capture sink synchronously, in-process.
+    signInMagicLink: (...a: unknown[]) => {
+      opts?.captureMagicLink?.({ email: 'x', url: MAGIC_VERIFY_URL });
+      return signInMagicLink(...a);
+    },
+    signInEmail: (...a: unknown[]) => signInEmail(...a)
+  }
+});
 vi.mock('$lib/server/auth/better-auth', () => ({
+  authFor: () => fakeAuth(),
   getAuth: (
     _p: unknown,
     _o: unknown,

@@ -1,8 +1,9 @@
 // Under the default methods (magic link and the pseudonymous account only) /signin offers
 // neither a password, a passkey nor Google, and every endpoint behind them refuses.
 import { expect, test, type Page } from '@playwright/test';
+import { ACCOUNT_COPY } from '../src/lib/account/account-copy';
 import { AUTH_COPY } from '../src/lib/account/copy';
-import { enableAuthMethods } from './helpers/auth';
+import { enableAuthMethods, loginAs, uniqueEmail } from './helpers/auth';
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -66,4 +67,58 @@ test('switching password and passkey on renders their controls', async ({ page, 
   await expect(page.getByRole('button', { name: AUTH_COPY.passkeyButton })).toBeVisible();
   // Google also needs credentials the e2e build does not hold.
   await expect(page.getByRole('button', { name: AUTH_COPY.googleButton })).toHaveCount(0);
+});
+
+test('/account renders no password, passkey or Google control by default', async ({ page }) => {
+  await loginAs(page, uniqueEmail('default-account'));
+  await page.goto('/account');
+  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+  await expect(page.getByRole('heading', { name: ACCOUNT_COPY.emailHeading })).toBeVisible();
+  await expect(page.getByRole('heading', { name: ACCOUNT_COPY.passwordHeading })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: ACCOUNT_COPY.passkeysHeading })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: ACCOUNT_COPY.googleHeading })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: ACCOUNT_COPY.passwordSet })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: ACCOUNT_COPY.passkeyAdd })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: ACCOUNT_COPY.googleConnect })).toHaveCount(0);
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
+});
+
+test('the password API answers 404 to POST and DELETE by default, even when signed in', async ({
+  page,
+  baseURL
+}) => {
+  await loginAs(page, uniqueEmail('default-pw-api'));
+  const headers = { origin: baseURL! };
+  const post = await page.request.post('/api/account/password', {
+    headers,
+    data: { password: 'correct horse battery staple' }
+  });
+  expect(post.status()).toBe(404);
+  const del = await page.request.delete('/api/account/password', { headers, data: {} });
+  expect(del.status()).toBe(404);
+});
+
+test('the account API answers with password off, and the password route is reached once it is on', async ({
+  page,
+  context,
+  baseURL
+}) => {
+  await loginAs(page, uniqueEmail('default-account-api'));
+  const get = await page.request.get('/api/account');
+  expect(get.status()).toBe(200);
+  expect(await get.json()).toEqual({
+    hasGoogle: false,
+    hasPassword: false,
+    canRemovePassword: expect.any(Boolean),
+    pseudonymous: false
+  });
+
+  // With password switched on for this context the route is reached: a too-short password is
+  // a 400 from the route itself, not the 404 of a method that is off.
+  await enableAuthMethods(context, ['password']);
+  const short = await page.request.post('/api/account/password', {
+    headers: { origin: baseURL! },
+    data: { password: 'short' }
+  });
+  expect(short.status()).toBe(400);
 });
