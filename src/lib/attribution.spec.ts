@@ -56,6 +56,25 @@ describe('SOFTWARE credits', () => {
     });
   });
 
+  it('credits Better Auth, better-call, Kysely and SimpleWebAuthn', () => {
+    expect(SOFTWARE).toContainEqual({
+      name: 'Better Auth',
+      license: 'MIT',
+      url: 'https://better-auth.com'
+    });
+    expect(SOFTWARE).toContainEqual({
+      name: 'better-call',
+      license: 'MIT',
+      url: 'https://github.com/Bekacru/better-call'
+    });
+    expect(SOFTWARE).toContainEqual({ name: 'Kysely', license: 'MIT', url: 'https://kysely.dev' });
+    expect(SOFTWARE).toContainEqual({
+      name: 'SimpleWebAuthn',
+      license: 'MIT',
+      url: 'https://simplewebauthn.dev'
+    });
+  });
+
   it('keeps the fdlibm notice through minification', () => {
     const src = readFileSync(new URL('./timelapse/math.ts', import.meta.url), 'utf8');
     expect(src.startsWith('/*!')).toBe(true);

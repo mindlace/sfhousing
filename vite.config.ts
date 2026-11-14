@@ -39,7 +39,22 @@ export default defineConfig({
     chunkSizeWarningLimit: 1200,
     // Rolldown's bundlerTimings report fires whenever plugins take most of a slow build, which a
     // loaded machine guarantees; signoff fails on its stderr lines although nothing is wrong.
-    rolldownOptions: { checks: { bundlerTimings: false } }
+    rolldownOptions: {
+      checks: { bundlerTimings: false },
+      onLog(level, log, defaultHandler) {
+        // Two harmless re-export warnings from better-auth's own bundle.
+        if (log.code === 'UNUSED_EXTERNAL_IMPORT') {
+          const { exporter, names = [] } = log as { exporter?: string; names?: string[] };
+          if (
+            (exporter === '@better-auth/telemetry' && names.includes('getTelemetryAuthConfig')) ||
+            (exporter === '@better-auth/core/api' && names.includes('optionsMiddleware'))
+          ) {
+            return;
+          }
+        }
+        defaultHandler(level, log);
+      }
+    }
   },
   test: {
     expect: { requireAssertions: true },

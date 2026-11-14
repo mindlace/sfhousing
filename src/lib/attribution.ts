@@ -37,7 +37,11 @@ export const SOFTWARE: { name: string; license: string; url: string }[] = [
     license: 'MIT',
     url: 'https://github.com/Konixy/better-svelte-email'
   },
-  { name: 'aws4fetch', license: 'MIT', url: 'https://github.com/mhart/aws4fetch' }
+  { name: 'aws4fetch', license: 'MIT', url: 'https://github.com/mhart/aws4fetch' },
+  { name: 'Better Auth', license: 'MIT', url: 'https://better-auth.com' },
+  { name: 'better-call', license: 'MIT', url: 'https://github.com/Bekacru/better-call' },
+  { name: 'Kysely', license: 'MIT', url: 'https://kysely.dev' },
+  { name: 'SimpleWebAuthn', license: 'MIT', url: 'https://simplewebauthn.dev' }
 ];
 
 /** First 10 chars of a valid ISO date/datetime, else the input unchanged. */
