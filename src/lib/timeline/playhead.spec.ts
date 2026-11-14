@@ -16,6 +16,15 @@ describe('playhead rules', () => {
     expect(keyTarget('ArrowRight', end - 1, asOf, end)).toBe(end);
   });
 
+  it('a playhead past the filled end does not move forward (a refill withdrew months under it)', () => {
+    const end = filledEndDay(months, 10, asOf);
+    const past = end + 40;
+    expect(keyTarget('ArrowRight', past, asOf, end)).toBe(past);
+    expect(keyTarget('ArrowUp', past, asOf, end)).toBe(past);
+    expect(keyTarget('PageUp', past, asOf, end)).toBe(past);
+    expect(keyTarget('ArrowLeft', past, asOf, end)).toBeLessThan(past);
+  });
+
   it('Home goes to the dataset date; Left and Right move a month; Page keys a year', () => {
     const end = filledEndDay(months, 40, asOf);
     const mid = dayFromUtc(2026, 6, 15);

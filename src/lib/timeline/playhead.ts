@@ -22,8 +22,12 @@ export function viewMonthOf(asOf: Day, day: Day): number {
   return Math.max(1, monthOfDay(asOf, day));
 }
 
+const FORWARD_KEYS = new Set(['ArrowRight', 'ArrowUp', 'PageUp']);
+
 /** The day a key moves the playhead to, or null for a key it ignores (rule 23). */
 export function keyTarget(key: string, day: Day, asOf: Day, end: Day): Day | null {
+  // After a refill withdrew months under the playhead (day > end) forward keys leave it be (rule 25).
+  if (day > end && FORWARD_KEYS.has(key)) return day;
   switch (key) {
     case 'ArrowLeft':
     case 'ArrowDown':
