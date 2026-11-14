@@ -27,6 +27,7 @@ If you see type errors about `worker-configuration`, run `npm run types`.
 
 Fetch the file when working in the relevant area:
 
+- **Accounts, sims and invitations (identity model, `AUTH_METHODS` and the method switch, session gate, JSON-route origin check, mail log mode, roles, the roster seam, e2e seams, reaping)** — [docs/dev/auth.md](docs/dev/auth.md)
 - **Developer workflow (setup, `.dev.vars`, `data:fixture`/`data:local`, migrations, header actions)** — [docs/dev/developing.md](docs/dev/developing.md)
 - **Deployment (environments, release flow, datasets ship with their code, bootstrap checklist)** — [docs/dev/deploy.md](docs/dev/deploy.md)
 - **Data serving (`/data/<version>/*` route contract, key layout, caching, path rules)** — [docs/dev/data-serving.md](docs/dev/data-serving.md)
@@ -44,6 +45,7 @@ Fetch the file when working in the relevant area:
 - **Public money on `/sim` (`FinanceLevers`, schema 3 loader, presets and their sources, Funding tab, Results money and income rows, card line, notices)** — [docs/dev/sim-funding.md](docs/dev/sim-funding.md)
 - **`/lesscars` (plan format, checks, dated regimes and reservations, freed land, paired runs, output files, the page)** — [docs/dev/lesscars.md](docs/dev/lesscars.md)
 - **Road-like lots (imagery review behind `road-lots.json`, lots beside freed sites, live build measurements)** — [docs/dev/road-lots.md](docs/dev/road-lots.md)
+- **Building boxes (LiDAR fetch → `boxes` → `build`, `BOXES` thresholds, `src` values, the `building-boxes` artifact, z14+ tiles, V37, tuning loop)** — [docs/dev/building-boxes.md](docs/dev/building-boxes.md)
 - **Policies with dates (schema 4 document, compiling to frames, frame ids, the comparison)** — [docs/dev/policy-timeline.md](docs/dev/policy-timeline.md)
 - **Finance model (prototypes, market terms, grant-equivalents, bundles, income tiers, debt and legal limits)** — [docs/dev/finance-model.md](docs/dev/finance-model.md)
 - **Today's market (`calibration.market`, the start-odds shift, `market.json`, `SimInput.market` steps, the affordable-cohort flag)** — [docs/dev/market.md](docs/dev/market.md)
@@ -89,9 +91,9 @@ Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link t
 
 ## Architecture
 
-One Cloudflare Worker (SvelteKit via `@sveltejs/adapter-cloudflare`) with bindings `DB` (D1), `BUCKET` (R2, bucket `sfhousing`, shared by both environments) and `PUBLISH_RL` (rate limit), plus `ASSETS`. All geographic data is static and versioned on R2 at key `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` by `src/routes/data/[version]/[...path]/+server.ts`. The build computes the dataset version from the source tree (`treeDatasetVersion`, injected as `__SFH_DATASET_VERSION__`); `PUBLIC_DATASET_VERSION` is a development-only override. The version reaches the client as data from the root layout load, never as a global. Published versions are immutable.
+One Cloudflare Worker (SvelteKit via `@sveltejs/adapter-cloudflare`) with bindings `DB` (D1), `BUCKET` (R2, bucket `sfhousing`, shared by both environments), seven rate limits (`PUBLISH_RL`, `AUTH_LINK_RL`, `AUTH_PASSWORD_RL`, `PSEUDO_MINT_RL`, `INVITE_RL`, `ACCOUNT_EDIT_RL`, `MUTATION_REGISTERED_RL`; see [docs/dev/auth.md](docs/dev/auth.md)) and `ASSETS`, and the vars `ENVIRONMENT`, `AUTH_METHODS`, `SES_FROM` and `PUBLIC_APP_RELEASE` (`wrangler.jsonc`). All geographic data is static and versioned on R2 at key `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` by `src/routes/data/[version]/[...path]/+server.ts`. The build computes the dataset version from the source tree (`treeDatasetVersion`, injected as `__SFH_DATASET_VERSION__`); `PUBLIC_DATASET_VERSION` is a development-only override. The version reaches the client as data from the root layout load, never as a global. Published versions are immutable.
 
-Shell: the root layout renders the skip link, header, `<main>` and footer. Pages put actions in the header with `useHeaderActions(snippet, { pinned?, status? })` from `src/lib/shell/header-actions.svelte.ts`; only the root layout calls `provideHeaderActions()`. `status` is a non-interactive status slot on the left (after the mode links from lg, after the site name below lg, never in the Menu), used for the save state on `/` and `/sim`.
+Shell: the root layout renders the skip link, header, `<main>` and footer. Pages put actions in the header with `useHeaderActions(snippet, { pinned?, status? })` from `src/lib/shell/header-actions.svelte.ts`; only the root layout calls `provideHeaderActions()`. `status` is a non-interactive status slot on the left (after the mode links from lg, after the site name below lg, never in the Menu), used for the save state on `/` and `/sim`. The header also carries an account entry after the actions (`@handle` linking `/account`, fed by the root layout's `user`; or `Sign in` while a sign-in method is in effect, `signInAvailable`), in the Menu below lg.
 
 ## Conventions
 

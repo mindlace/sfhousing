@@ -8,7 +8,7 @@ import type { DocCodec } from '$lib/sharing/doc-codec';
 import { sha256Hex } from '$lib/sharing/hash';
 import { newPlanId } from '$lib/sharing/ids';
 import { SCHEMA2_PUBLISH_MESSAGE } from '$lib/sim-page/sim-doc';
-import { enforceRate } from './rate-limit';
+import { enforceRate } from '../security/rate-limit';
 import { readCapped } from './read-body';
 import { json, shareError } from './respond';
 import { findPlanByHash, insertPlan } from './store';
@@ -61,7 +61,7 @@ export async function handlePublish(
 
     // 2. Rate limit before the body is touched, so a flood costs no read or parse work.
     const ip = request.headers.get('cf-connecting-ip') ?? 'unknown';
-    if (!(await enforceRate(env.PUBLISH_RL, 'publish:' + ip, env))) {
+    if (!(await enforceRate(env.PUBLISH_RL, 'publish:' + ip, env, { critical: true }))) {
       return shareError(429, 'rate_limited', { headers: { 'Retry-After': '60' }, kind });
     }
 

@@ -149,6 +149,29 @@ async function replacedAt(page: Page, id: string, at: [number, number]): Promise
   );
 }
 
+/**
+ * Every rendered existing-buildings feature of `ids` in the viewport, by parcel id: its box
+ * (`heightM/baseM`) and whether `state.replaced` is true. A box split across tiles repeats.
+ */
+async function renderedBoxes(
+  page: Page,
+  ids: string[]
+): Promise<Record<string, { box: string; replaced: boolean }[]>> {
+  return page.evaluate((ids) => {
+    const map = (window as Win).__sfhMap!.map!;
+    const out: Record<string, { box: string; replaced: boolean }[]> = {};
+    for (const f of map.queryRenderedFeatures({ layers: ['existing-buildings'] })) {
+      const id = String(f.id);
+      if (!ids.includes(id)) continue;
+      (out[id] ??= []).push({
+        box: `${f.properties.heightM}/${f.properties.baseM}`,
+        replaced: f.state.replaced === true
+      });
+    }
+    return out;
+  }, ids);
+}
+
 /** The first of `ids` whose existing building is rendered at its label point, else null. */
 async function firstRendered(page: Page, ids: string[]): Promise<string | null> {
   for (const id of ids) {
@@ -578,6 +601,67 @@ test.describe('map view', () => {
     await waitIdle(page);
     expect(await tileLoads(page)).toBeGreaterThan(before);
     expect(await replacedAt(page, replaced!, at)).toEqual([true]);
+  });
+
+  // Building boxes (docs/dev/building-boxes.md): from z14 a parcel's building can be several boxes
+  // (base plus front, step or parts), all carrying the parcel's id, so the one `replaced`
+  // feature-state (promoteId parcelId) hides every box. z16-17 overzoom the archive's z15 tiles.
+  test('a replaced parcel has every box hidden at z16-17', async ({ page, isMobile }) => {
+    await gotoEditor(page);
+    await paintOnce(page, isMobile);
+    await expect
+      .poll(async () => {
+        const s = await settled(page);
+        return s.pending === 0 && s.hidden > 0;
+      })
+      .toBe(true);
+    const hidden = (await settled(page)).hiddenIds;
+    for (const zoom of [16, 17]) {
+      await jumpAndIdle(page, { center: FRAME.center, zoom, pitch: 0, bearing: 0 });
+      const boxes = await renderedBoxes(page, hidden);
+      // At least one replaced parcel is drawn as several boxes (lot 11: base and step).
+      const multi = hidden.filter((id) => new Set(boxes[id]?.map((b) => b.box)).size >= 2);
+      expect(multi.length, `z${zoom} multi-box replaced parcels`).toBeGreaterThan(0);
+      for (const id of hidden) {
+        for (const b of boxes[id] ?? []) expect(b.replaced, `z${zoom} ${id} ${b.box}`).toBe(true);
+      }
+    }
+  });
+
+  test('every box of the 8-part parcel 3512014 is hidden at z16-17 when it is replaced', async ({
+    page
+  }) => {
+    const id = '3512014';
+    await gotoEditor(page);
+    const parts = async (zoom: number) => {
+      await jumpAndIdle(page, { center: PARCEL_3512014, zoom, pitch: 0, bearing: 0 });
+      return (await renderedBoxes(page, [id]))[id] ?? [];
+    };
+    // Control: drawn as 8 distinct boxes, none replaced.
+    for (const zoom of [16, 17]) {
+      const shown = await parts(zoom);
+      expect(new Set(shown.map((b) => b.box)).size, `z${zoom}`).toBe(8);
+      expect(shown.some((b) => b.replaced)).toBe(false);
+    }
+    // The controller's hide path: setFeatureState({ source: 'buildings', id }, { replaced: true }).
+    await page.evaluate(
+      (id) =>
+        (window as Win).__sfhMap!.applyGenerated({
+          revision: 0,
+          cells: [],
+          removedCells: [],
+          hide: { add: [id], remove: [] }
+        }),
+      id
+    );
+    await expect
+      .poll(() => page.evaluate(() => (window as Win).__sfhMap!.hiddenIds()))
+      .toEqual([id]);
+    for (const zoom of [16, 17]) {
+      const shown = await parts(zoom);
+      expect(new Set(shown.map((b) => b.box)).size, `z${zoom}`).toBe(8);
+      for (const b of shown) expect(b.replaced, `z${zoom} ${b.box}`).toBe(true);
+    }
   });
 
   test('E7: chunk failure outline, chip and Retry', async ({ page, isMobile }) => {

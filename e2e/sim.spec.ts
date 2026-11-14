@@ -334,8 +334,7 @@ test('at 375 px the links and Policy wait in Menu; the score bar stays pinned', 
     menuPanel.getByRole('button', { name: 'Policy', exact: true })
   ];
   for (const item of items) await expect(item).toBeHidden();
-  await menu.click();
-  await expect(menu).toHaveAttribute('aria-expanded', 'true');
+  await openHeaderMenu(page);
   for (const item of items) await expect(item).toBeVisible();
   await expect(scoreBar(page)).toBeVisible();
 });

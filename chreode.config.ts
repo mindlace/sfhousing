@@ -217,6 +217,19 @@ export default defineConfig({
       pattern: /^\[WebServer\]\s+╵\s+~{13}\s*$/,
       reason:
         'underline of "sideEffects" (13 tildes); generic shape, so any other 13-character esbuild underline would also match'
+    },
+    // Better-Auth logs a warning for each negative-path auth result the e2e specs provoke on
+    // purpose (a sign-in with a wrong password, a reset request for an unknown user). The server
+    // still answers with the generic refusal; production logging is left as it is. Anchored to the
+    // two exact messages, not to Better-Auth warnings in general.
+    {
+      pattern: /^\[WebServer\] ▲ \[WARNING\] \S+ WARN \[Better Auth\]: Invalid password\s*$/,
+      reason: 'expected Better-Auth warning when an e2e spec signs in with a wrong password'
+    },
+    {
+      pattern:
+        /^\[WebServer\] ▲ \[WARNING\] \S+ WARN \[Better Auth\]: Reset Password: User not found\s*$/,
+      reason: 'expected Better-Auth warning when an e2e spec requests a reset for an unknown user'
     }
   ],
   // npm ci also runs prepare (wrangler types / svelte-kit sync) for the merged tree.

@@ -40,8 +40,13 @@ export default defineConfig({
     { name: 'mobile-perf', testMatch: perf, use: mobile, dependencies: ['chromium-perf'] }
   ],
   webServer: {
-    // VITE_E2E=1 compiles the map debug hook (window.__sfhMap) into this build only.
-    command: `npm run data:fixture && npm run db:migrate && VITE_E2E=1 npm run build && wrangler dev --port ${port} --var ENVIRONMENT:development --var PUBLIC_DATASET_VERSION:fixture-0`,
+    // VITE_E2E=1 compiles the map debug hook (window.__sfhMap) and the e2e seams into this build
+    // only. wrangler dev also loads .dev.vars, and each --var overrides it: these pin what the
+    // suite depends on, so a developer's .dev.vars (AUTH_METHODS=magic-link,password, say)
+    // cannot change the configuration e2e proves. Specs switch methods per context instead.
+    // The mail keys are pinned empty, so mail stays in log mode (the e2e sink keeps the links)
+    // and a run never sends real mail, whatever provider keys .dev.vars holds.
+    command: `npm run data:fixture && npm run db:migrate && VITE_E2E=1 npm run build && wrangler dev --port ${port} --var ENVIRONMENT:development --var PUBLIC_DATASET_VERSION:fixture-0 --var AUTH_METHODS:magic-link --var EMAIL_PROVIDER:ses --var SES_ACCESS_KEY_ID: --var SES_SECRET_ACCESS_KEY: --var RESEND_API_KEY: --var BETTER_AUTH_SECRET:e2e-local-secret-000000000000000000000000 --var BETTER_AUTH_URL:http://localhost:${port}`,
     url: `http://localhost:${port}/about`,
     // A reused :4173 server may be a stale build from another worktree, which silently tests the wrong code; Playwright now fails loudly if the port is busy.
     reuseExistingServer: false,

@@ -1,0 +1,27 @@
+[project]
+name = "sfh-lidar"
+version = "1.0.0"
+description = "Rasterizes the USGS 3DEP San Francisco point cloud into sfhl/1 tiles (fetch time only)."
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "numpy==2.5.4",
+  "scipy==1.18.1",
+  "laspy==2.7.0",
+  "lazrs==0.8.2",
+  "pyproj==3.8.0",
+]
+
+[dependency-groups]
+dev = ["pytest==9.2.0"]
+
+[tool.uv]
+# Not a package: nothing is built or installed from this tree (no egg-info under pipeline/).
+# The virtualenv lives at pipeline/.cache/lidar-venv (UV_PROJECT_ENVIRONMENT, set by uvRun).
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+# laspy 2.7 ctypes structs on Python 3.14: harmless until 3.19.
+filterwarnings = ["ignore::DeprecationWarning:laspy.*"]

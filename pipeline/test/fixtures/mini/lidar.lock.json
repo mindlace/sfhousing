@@ -1,0 +1,22 @@
+{
+  "sources": [
+    {
+      "files": [
+        {
+          "archiveKey": "sources/0413d93443bce66564e6c09361edf6ae412d14bbc14fea219a1bcc8772b881c9.sfhl",
+          "bytes": 11053,
+          "name": "usgs-lidar-sf/101_50.sfhl",
+          "sha256": "0413d93443bce66564e6c09361edf6ae412d14bbc14fea219a1bcc8772b881c9",
+          "url": "https://fixture.invalid/usgs-lidar-sf/101_50.sfhl"
+        }
+      ],
+      "homepage": "https://www.usgs.gov/3d-elevation-program",
+      "id": "usgs-lidar-sf",
+      "label": "USGS 3DEP LiDAR, San Francisco 2023",
+      "license": "public-domain",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 1,
+      "upstreamVersion": "CA_SanFrancisco_1_B23 sfhl/1 res=0.25 ground=1 tile=500 pad=20 veg=0.35"
+    }
+  ]
+}

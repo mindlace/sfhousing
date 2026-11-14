@@ -58,8 +58,13 @@ export async function gotoHydrated(page: Page, path: string): Promise<void> {
 
 export const publishOpen = (page: Page): Locator => page.getByTestId('publish-open');
 
-/** Below 1024 px, opens the header's Menu (where the actions live); from 1024 px, does nothing. */
+/**
+ * Below 1024 px, opens the header's Menu (where the actions live); from 1024 px, does nothing.
+ * Waits for hydration first: the Menu toggle does nothing before it, so a click on a loaded
+ * machine left `aria-expanded` false.
+ */
 export async function openHeaderMenu(page: Page): Promise<void> {
+  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
   const menu = page.getByRole('banner').getByRole('button', { name: 'Menu', exact: true });
   if (!(await menu.isVisible())) return;
   if ((await menu.getAttribute('aria-expanded')) !== 'true') await menu.click();

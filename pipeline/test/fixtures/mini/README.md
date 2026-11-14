@@ -19,7 +19,7 @@ dates `"2024-06-30T00:00:00.000"`, and numeric roll columns as `"2.0"` (`closed_
 `name` from `raw/`; their sha256 is verified against `sources.lock.json`. The lock also lists the committed
 binary `protomaps-basemap` (`pmtiles extract` of build 20261009 over the fixture bbox) and `protomaps-fonts`
 (Noto Sans glyph PBFs + OFL.txt at the pinned basemaps-assets commit); `make-fixture.ts` hashes them but does
-not download them.
+not download them. `lidar.lock.json` (the synthetic LiDAR) sits beside the lock.
 
 ## Lots
 
@@ -99,20 +99,80 @@ Point` x[E−50, E+50] y[-100,100].
 
 ## Derived row counts (`src_*` after normalisation)
 
-| table               | rows | derivation                                                                                                      |
-| ------------------- | ---- | --------------------------------------------------------------------------------------------------------------- |
-| `src_parcels`       | 31   | 25 lots, lot 2 has 3 rows (27), + 3 retired + 1 null-id                                                         |
-| `src_landuse`       | 26   | lots 1, 2, 3 (x2), 4, 5, 6, 7, 8, 10, 11, 13, 14, 15–25 = 24, + 2 orphans                                       |
-| `src_footprints`    | 3    | SF3512013, SF3512001, CN0000001                                                                                 |
-| `src_neighborhoods` | 3    | Bayview Hunters Point, Mission, Noe Valley                                                                      |
-| `src_overture`      | 14   | b01 b02 b03 b04 b06 b10 b13 b14 broad + bpier bunder bmarin besri bbay                                          |
-| `src_height_bulk`   | 8    | the eight districts                                                                                             |
-| `src_parcel_attrs`  | 25   | as `src_parcels`                                                                                                |
-| `src_roll`          | 41   | 2025: 19 (lots 1, 2 x3, 3–8, 10, 11, 14–19, 21); 2024: those less 3, + 13 + `3512099` = 20; 2023: lots 3, 4 = 2 |
-| `src_streets`       | 5    | the five centerlines below                                                                                      |
-| `src_city_lands`    | 4    | the four City Lands polygons below                                                                              |
-| `src_historic`      | 21   | lots 1, 2 (3 condo rows), 3–17, 19 = 20, + retired `3512099`                                                    |
-| `src_sb79_exempt`   | 3    | `3512012` permanent, unmatched `3512999` permanent, `3512015` temporary                                         |
+| table                | rows | derivation                                                                                                      |
+| -------------------- | ---- | --------------------------------------------------------------------------------------------------------------- |
+| `src_parcels`        | 31   | 25 lots, lot 2 has 3 rows (27), + 3 retired + 1 null-id                                                         |
+| `src_landuse`        | 26   | lots 1, 2, 3 (x2), 4, 5, 6, 7, 8, 10, 11, 13, 14, 15–25 = 24, + 2 orphans                                       |
+| `src_footprints`     | 3    | SF3512013, SF3512001, CN0000001                                                                                 |
+| `src_neighborhoods`  | 3    | Bayview Hunters Point, Mission, Noe Valley                                                                      |
+| `src_overture`       | 14   | b01 b02 b03 b04 b06 b10 b13 b14 broad + bpier bunder bmarin besri bbay                                          |
+| `src_overture_parts` | 5    | p10, p14a, p14b, p14c, p14leg (see Parts)                                                                       |
+| `src_height_bulk`    | 8    | the eight districts                                                                                             |
+| `src_parcel_attrs`   | 25   | as `src_parcels`                                                                                                |
+| `src_roll`           | 41   | 2025: 19 (lots 1, 2 x3, 3–8, 10, 11, 14–19, 21); 2024: those less 3, + 13 + `3512099` = 20; 2023: lots 3, 4 = 2 |
+| `src_streets`        | 5    | the five centerlines below                                                                                      |
+| `src_city_lands`     | 4    | the four City Lands polygons below                                                                              |
+| `src_historic`       | 21   | lots 1, 2 (3 condo rows), 3–17, 19 = 20, + retired `3512099`                                                    |
+| `src_sb79_exempt`    | 3    | `3512012` permanent, unmatched `3512999` permanent, `3512015` temporary                                         |
+
+## Parts
+
+`overture-building-parts` (optional source; same release as `overture-buildings`, both `fixture` here) has
+five parts. Local metres, as the lots:
+
+| part     | building | extent              | height | other                                                      | exercises                                     |
+| -------- | -------- | ------------------- | ------ | ---------------------------------------------------------- | --------------------------------------------- |
+| `p14a`   | `b14`    | x[132,138] y[5,25]  | 20     |                                                            | podium over the whole footprint               |
+| `p14b`   | `b14`    | x[133,137] y[15,24] | 60     | `roof_shape` `pyramidal`, `roof_height` 8, `min_height` 20 | tower with a roof                             |
+| `p14c`   | `b14`    | x[132,134] y[5,7]   | none   |                                                            | a part without a height (not counted)         |
+| `p14leg` | `b14`    | x[139,140] y[26,27] | 10     |                                                            | outside the footprint, inside lot 14          |
+| `p10`    | `b10`    | x[95,100] y[5,25]   | 18     |                                                            | covers half of `b10`: x[100,105] is uncovered |
+
+## LiDAR
+
+`usgs-lidar-sf` is locked in `lidar.lock.json` (never in `sources.lock.json`) and its sfhl/1 tile is
+`raw/usgs-lidar-sf/101_50.sfhl`, which holds the whole window x[-70,300] y[-110,120] around O (written by
+`synthTile`; `E` is about 866 m east, so no tile holds the shoreline lots and `bbay` has no LiDAR: the
+`no_lidar` fallback). The scene is in absolute EPSG:7131 metres, with the LiDAR sitting at footprint +
+(1.0, -0.3) m. Heights are above local ground.
+
+| what    | scene                                                                                                                      |
+| ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| ground  | 20.00 m; a 1:10 slope rising east over x[130,140] (21 m east of it), under `b14`, whose part heights do not read the LiDAR |
+| `b01`   | flat 12 m                                                                                                                  |
+| `b02`   | 15 m; its Mission-St face (y = 5, Mission St at y = -8) stands 1.5 m higher (16.5 m) over a 1.2 m band                     |
+| `b03`   | hag 0 (a building newer than the flight)                                                                                   |
+| `b04`   | 12 m (4 floors) with a veg tree x[36,40] y[12,16] overhanging its roof by 2 m at +5 m (hag 17 m)                           |
+| `b06`   | 9 m courtyard (the hole x[54,56] y[12,18] stays at hag 0)                                                                  |
+| `b10`   | 18 m, with a 4 x 9 m region (36 m2) at 26 m over x[100.5,104.5] y[10,19], inside the uncovered half                        |
+| `b13`   | gable: eave 6 m, ridge 10 m, ridge along y (x = 125)                                                                       |
+| `b14`   | drawn as its parts: 20 m podium, tower body 52 m under an 8 m pyramidal roof (apex 60 m)                                   |
+| `broad` | 4 m                                                                                                                        |
+
+`make-fixture.ts` writes `sources.lock.json` from scratch, so it drops any `building-boxes` entry; it then
+prints `run npm run pipeline -- boxes --fixture, then fixture --update-golden`.
+
+## Building boxes
+
+`raw/building-boxes/` (`boxes.parquet`, `roofs.parquet`, `inputs.json`) is the fixture's locked
+`building-boxes` artifact, derived from the files above by `npm run pipeline -- boxes --fixture` and listed
+in `sources.lock.json` with `retrievedAt` 2026-10-10 (the fixture's date, so `builtAt` stays put). The
+derivation is deterministic: rerunning on the same inputs gives the same bytes. Regenerate in this order
+whenever a raw file, the boxes code (`BOXES_CODE_PATHS` in `pipeline/lib/version.ts`) or `BOXES` changes:
+
+```
+npx tsx pipeline/test/fixtures/mini/make-fixture.ts   # only when the raw files change
+npm run pipeline -- boxes --fixture
+npm run pipeline -- fixture --update-golden
+```
+
+`boxes-command.test.ts` ("the committed mini artifact is current") fails when the committed artifact no
+longer matches a fresh derivation.
+
+`tiles-no-boxes/` holds main's buildings tiles from before the boxes work: `buildings.geojsonseq` (the
+tippecanoe input) and `buildings.pmtiles` (byte-identical to main's `e2e/fixtures/data/fixture-0` copy,
+tippecanoe 2.79.0). `tiles.test.ts` checks that a build without the artifact still writes exactly these
+bytes. Never regenerate them: a difference means the no-artifact path moved.
 
 ## Streets
 

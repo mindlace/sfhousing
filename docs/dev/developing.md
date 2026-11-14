@@ -26,6 +26,20 @@ PUBLIC_DATASET_VERSION=fixture-0
 
 and run `npm run data:fixture`. Without the override and without the tree's dataset in local R2, the map's data loads 404; there is deliberately no code fallback. e2e builds set `PUBLIC_DATASET_VERSION=fixture-0` (with `ENVIRONMENT=development`) on the `wrangler dev` command line instead, so they do not depend on `.dev.vars`.
 
+Sign-in also reads `.dev.vars`:
+
+```
+BETTER_AUTH_SECRET=<any long random string>
+```
+
+`BETTER_AUTH_SECRET` is required. `SES_FROM` must be set even with no mail provider; the `wrangler.jsonc` var covers local dev.
+
+Magic link is on only while mail can be delivered (see [auth.md](auth.md)). With no provider in `.dev.vars`, `npm run dev` and `npm run preview` have no magic link: the header shows no `Sign in` to a signed-out visitor, and `/signin` offers only `Start fresh without an account`. Mail runs in log mode (from, recipient and subject only, never the link), so an emailed invite cannot be read either. To get sign-in back locally, add a provider: `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY`, or `EMAIL_PROVIDER=resend` and `RESEND_API_KEY`. Real mail is then sent.
+
+`AUTH_METHODS` (optional) overrides the `wrangler.jsonc` value, for example `AUTH_METHODS=magic-link,password` to try password sign-in. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (with `google` in `AUTH_METHODS`) turn on Google sign-in. These are read through a typed cast of `platform.env`, so do not add them to generate types.
+
+The e2e server ignores these for the settings the suite depends on: `playwright.config.ts` passes `AUTH_METHODS=magic-link`, empty `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY` and `RESEND_API_KEY`, the secret and the URL as `--var` flags, which override `.dev.vars`. So an e2e run sends no real mail even with provider keys in `.dev.vars`; it keeps magic link anyway, and its mail sink holds the links. Specs turn other methods on per browser context with `enableAuthMethods`.
+
 ## Local data
 
 - `npm run data:fixture` loads `e2e/fixtures/data/fixture-0/` into local R2 under `data/fixture-0/`. Today this is a platform placeholder; the data-pipeline's `pipeline fixture` command will overwrite it under the same version name.

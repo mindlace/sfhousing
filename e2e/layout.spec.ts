@@ -418,7 +418,7 @@ test.describe('medium width', () => {
       expect(fit, 'the header overflows').toBe(true);
       await expect(page.locator('.sfh-dock-panel')).toBeVisible();
 
-      await menu.click();
+      await openHeaderMenu(page);
       await expect(paint).toBeVisible();
       for (const name of ['Paint', 'Simulate', 'Fewer cars'])
         await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
@@ -535,5 +535,67 @@ test.describe('landscape phone 667×375', () => {
     await expect(page.locator('[data-paint-row]').first()).toBeVisible();
     await expect(page.getByRole('radiogroup', { name: 'Brush tool' })).toHaveCount(0);
     await expectNoA11yViolations(page);
+  });
+});
+
+// The account entry (Sign in) follows the actions in the header's right group from lg and waits in
+// the Menu below it, so it never crowds the page's pinned score, status or actions.
+test.describe('account entry', () => {
+  const account = (page: Page): Locator =>
+    page.getByRole('banner').getByRole('link', { name: 'Sign in', exact: true });
+
+  test.describe('desktop', () => {
+    // eslint-disable-next-line playwright/no-skipped-test
+    test.skip(({ isMobile }) => isMobile, 'chromium project only');
+    test.use({ viewport: { width: 1024, height: 768 } });
+
+    for (const path of ['/', '/sim']) {
+      test(`${path} at 1024×768: visible, clear of the score bar and the actions, axe clean`, async ({
+        page
+      }) => {
+        await page.goto(path);
+        await expect(headerScore(page)).toBeVisible();
+        await expect(account(page)).toBeVisible();
+        await expect(account(page)).toHaveAttribute('href', '/signin');
+        const entry = await box(account(page));
+        const others = page
+          .getByRole('banner')
+          .locator('a, button, [data-testid="score-bar"], [data-header-status]')
+          .filter({ visible: true });
+        const count = await others.count();
+        for (let i = 0; i < count; i++) {
+          const other = others.nth(i);
+          if (await other.evaluate((el) => el.hasAttribute('data-header-account'))) continue;
+          const b = await other.boundingBox();
+          if (!b || b.width === 0) continue;
+          expect(intersects(entry, b), `account entry overlaps ${fmt(b)}`).toBe(false);
+        }
+        await expectNoA11yViolations(page);
+      });
+    }
+  });
+
+  test.describe('mobile', () => {
+    // eslint-disable-next-line playwright/no-skipped-test
+    test.skip(({ isMobile }) => !isMobile, 'mobile project only');
+
+    for (const path of ['/', '/sim']) {
+      test(`${path}: waits in the Menu and is reachable from it, axe clean`, async ({ page }) => {
+        await page.goto(path);
+        // the Menu toggle does nothing before hydration, so a loaded machine flaked here
+        await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+        await expect(page.getByRole('banner')).toBeVisible();
+        // The map and its controls settle after hydration: the scan below covers the whole page,
+        // so it waits for the map and the bottom-right footprint the dock and Reset view follow.
+        // waitForFunction has no raised expect timeout: it runs until the test's own.
+        await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);
+        await expectFootprintSettled(page);
+        await expect(account(page)).toBeHidden();
+        await openHeaderMenu(page);
+        await expect(account(page)).toBeVisible();
+        await expect(account(page)).toBeInViewport({ ratio: 1 });
+        await expectNoA11yViolations(page);
+      });
+    }
   });
 });
