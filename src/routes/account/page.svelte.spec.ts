@@ -30,6 +30,7 @@ function props(over: Record<string, unknown> = {}) {
       hasPasskey: false,
       hasOAuthAccount: false,
       linkError: false,
+      canSignOut: true,
       ...over
     }
   } as unknown as Props;
@@ -114,6 +115,18 @@ describe('/account page', () => {
     await screen.getByLabelText(ACCOUNT_COPY.deleteConfirmLabel).fill('ada');
     await screen.getByRole('button', { name: ACCOUNT_COPY.deletePermanently }).click();
     await vi.waitFor(() => expect(gotoCalls.map((c) => c.url)).toContain('/'));
+  });
+
+  it('offers no Sign out to an account that could not sign back in', async () => {
+    const screen = await render(
+      Page,
+      props({ user: { ...registered, email: '', pseudonymous: true }, canSignOut: false })
+    );
+    await expect
+      .element(screen.getByRole('heading', { name: ACCOUNT_COPY.heading, level: 1 }))
+      .toBeInTheDocument();
+    expect(screen.getByRole('button', { name: ACCOUNT_COPY.signOut }).elements()).toHaveLength(0);
+    expect(screen.container.querySelector('form[action="?/signOut"]')).toBeNull();
   });
 
   it('offers Sign out: a form posting to the signOut action', async () => {

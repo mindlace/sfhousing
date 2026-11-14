@@ -59,9 +59,12 @@
       tone="error"
       message={data.linkError ? AUTH_COPY.linkFailed : ''}
     />
-    <form method="POST" action="?/signOut">
-      <button type="submit" class={BARE}>{ACCOUNT_COPY.signOut}</button>
-    </form>
+    {#if data.canSignOut}
+      <!-- Only for an account that can sign back in: a pseudonymous one would be lost. -->
+      <form method="POST" action="?/signOut">
+        <button type="submit" class={BARE}>{ACCOUNT_COPY.signOut}</button>
+      </form>
+    {/if}
   </div>
 
   <section class="flex flex-col gap-3" aria-labelledby="profile-heading">

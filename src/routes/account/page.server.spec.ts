@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { isRedirect } from '@sveltejs/kit';
 import { E2E_AUTH_METHODS_COOKIE } from '$lib/server/auth/methods';
 
-const { hasPasskey, hasOAuth, signOut, authFor } = vi.hoisted(() => {
+const { hasPasskey, hasOAuth, hasPwd, signOut, authFor } = vi.hoisted(() => {
   const signOut = vi.fn(async (_args: unknown) => ({ success: true }));
   return {
     hasPasskey: vi.fn(async (_db: unknown, _id: string) => false),
+    hasPwd: vi.fn(async (_db: unknown, _id: string) => false),
     hasOAuth: vi.fn(async (_db: unknown, _id: string) => false),
     signOut,
     authFor: vi.fn((_event: unknown) => ({ api: { signOut } }))
@@ -16,6 +17,7 @@ vi.mock('$lib/server/db', () => ({ getDb: () => ({}) }));
 vi.mock('$lib/server/user-store/passkey', () => ({ userHasPasskey: hasPasskey }));
 vi.mock('$lib/server/user-store/oauth', () => ({ userHasOAuthAccount: hasOAuth }));
 vi.mock('$lib/server/auth/better-auth', () => ({ authFor }));
+vi.mock('$lib/server/user-store/password-credential', () => ({ hasPassword: hasPwd }));
 
 import { actions, load } from './+page.server';
 import { KNOWN_DEVICE_COOKIE } from '$lib/server/onboarding/known-device';
@@ -47,6 +49,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   hasPasskey.mockResolvedValue(false);
   hasOAuth.mockResolvedValue(false);
+  hasPwd.mockResolvedValue(false);
 });
 
 describe('/account load', () => {
@@ -77,6 +80,7 @@ describe('/account load', () => {
       methods: ['magic-link'],
       hasPasskey: true,
       hasOAuthAccount: true,
+      canSignOut: true,
       linkError: false
     });
   });
@@ -134,6 +138,30 @@ describe('/account load', () => {
     ]);
   });
 
+  describe('canSignOut', () => {
+    const pseudo = { ...user, email: '', emailVerified: false, pseudonymous: true };
+    const asPseudo = () => evt({ locals: { user: pseudo, session: { userId: 'u1-live' } } });
+
+    it('is false for a pseudonymous account with no passkey or password', async () => {
+      const data = (await load(asPseudo())) as { canSignOut: boolean };
+      expect(data.canSignOut).toBe(false);
+    });
+
+    it('is true for a pseudonymous account holding a passkey or a password', async () => {
+      hasPasskey.mockResolvedValue(true);
+      expect(((await load(asPseudo())) as { canSignOut: boolean }).canSignOut).toBe(true);
+      hasPasskey.mockResolvedValue(false);
+      hasPwd.mockResolvedValue(true);
+      expect(((await load(asPseudo())) as { canSignOut: boolean }).canSignOut).toBe(true);
+      expect(hasPwd).toHaveBeenCalledWith(expect.anything(), 'u1');
+    });
+
+    it('is true for an account with an email', async () => {
+      const data = (await load(evt())) as { canSignOut: boolean };
+      expect(data.canSignOut).toBe(true);
+    });
+  });
+
   it('flags a confirm link that came back failed', async () => {
     const data = (await load(
       evt({ url: new URL('https://app.test/account?link=failed&error=INVALID_TOKEN') })
@@ -179,6 +207,26 @@ describe('/account signOut action', () => {
     const { event, cookies } = actionEvent();
     await redirectOf(() => actions.signOut(event));
     expect(cookies.delete).not.toHaveBeenCalledWith(KNOWN_DEVICE_COOKIE, expect.anything());
+  });
+
+  it('refuses a pseudonymous account that cannot sign back in: session intact, back to /account', async () => {
+    const pseudo = { ...user, email: '', emailVerified: false, pseudonymous: true };
+    const { event } = actionEvent();
+    (event as unknown as { locals: { user: unknown } }).locals.user = pseudo;
+    const r = await redirectOf(() => actions.signOut(event));
+    expect(r).toMatchObject({ status: 303, location: '/account' });
+    expect(signOut).not.toHaveBeenCalled();
+    expect(authFor).not.toHaveBeenCalled();
+  });
+
+  it('signs out a pseudonymous account that holds a passkey', async () => {
+    hasPasskey.mockResolvedValue(true);
+    const pseudo = { ...user, email: '', emailVerified: false, pseudonymous: true };
+    const { event } = actionEvent();
+    (event as unknown as { locals: { user: unknown } }).locals.user = pseudo;
+    const r = await redirectOf(() => actions.signOut(event));
+    expect(r).toMatchObject({ status: 303, location: '/' });
+    expect(signOut).toHaveBeenCalled();
   });
 
   it('lands a visitor with no session on / without calling Better-Auth', async () => {

@@ -38,7 +38,7 @@ Magic link is on only while mail can be delivered (see [auth.md](auth.md)). With
 
 `AUTH_METHODS` (optional) overrides the `wrangler.jsonc` value, for example `AUTH_METHODS=magic-link,password` to try password sign-in. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (with `google` in `AUTH_METHODS`) turn on Google sign-in. These are read through a typed cast of `platform.env`, so do not add them to generate types.
 
-The e2e server ignores these for the settings the suite depends on: `playwright.config.ts` passes `AUTH_METHODS=magic-link`, the secret and the URL as `--var` flags, which override `.dev.vars`, and an e2e build keeps magic link with no provider (its mail sink stands in). Specs turn other methods on per browser context with `enableAuthMethods`.
+The e2e server ignores these for the settings the suite depends on: `playwright.config.ts` passes `AUTH_METHODS=magic-link`, empty `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY` and `RESEND_API_KEY`, the secret and the URL as `--var` flags, which override `.dev.vars`. So an e2e run sends no real mail even with provider keys in `.dev.vars`; it keeps magic link anyway, and its mail sink holds the links. Specs turn other methods on per browser context with `enableAuthMethods`.
 
 ## Local data
 
