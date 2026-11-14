@@ -67,6 +67,7 @@ function spyChunks(): ChunkSet & { want: Mock<(cells: Iterable<string>) => void>
     byCell: new Map(),
     records: new Map(),
     failed: ['x'],
+    wanted: new Set(),
     want: vi.fn<(cells: Iterable<string>) => void>(),
     prefetch: vi.fn(),
     retryFailed: vi.fn(),
@@ -113,6 +114,7 @@ describe('createChunkSet', () => {
     );
     const cell = manifest.chunks[0].cellId;
     set.want([cell]);
+    expect(set.wanted).toEqual(new Set([cell]));
     await until(() => chunked.length === 1);
     expect(chunked).toEqual([cell]);
     const recs = set.byCell.get(cell)!;

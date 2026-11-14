@@ -380,31 +380,35 @@ export function cardDepsOf(
   parcels: () => ScenarioParcels,
   logOnce: (k: string, m: string) => void
 ): CardDeps {
-  const P = ds.massing.input.parcels;
-  const allReady = (s: Schedule): boolean => {
-    let any = false;
-    for (const id of s.parcelIds) {
-      const i = P.index.get(id);
-      if (i === undefined) continue; // absent from T11: no cell to wait for
-      if (!ds.chunks.byCell.has(P.cells[P.cell[i]].cellId)) return false;
-      any = true;
-    }
-    return any;
-  };
   return {
     qualityRules: new Map(ds.loaded.projects.qualityRules.map((q) => [q.id, q])),
-    building: (sc, k) => (allReady(sc) ? massingFor(sc, k, ds.massing) : NOT_DRAWN),
+    building: (sc, k) => (scheduleReady(ds, sc) ? massingFor(sc, k, ds.massing) : NOT_DRAWN),
     logOnce: (key, msg) => logOnce(`card:${key}`, msg),
     record: (id) => ds.chunks.records.get(id) ?? null,
-    // `CardDeps.buildable` is typed `number`, but today's host answers null where nothing can be
-    // built (`LotLimits.buildable: number | null`, scenario-host.ts:1405) and `cardAt` only copies
-    // it into that field, so the null passes through as today's does.
+    // Null where nothing can be built (today's `LotLimits.buildable`, scenario-host.ts:1405);
+    // `cardAt` passes it through to `limits.buildable`.
     buildable: (id, allowed, existingUnits) =>
       buildableStories(
         { parcels: parcels(), records: ds.chunks.records, memo: ds.memo, gen: ds.massing.gen },
         id,
         allowed,
         existingUnits
-      ) as number
+      )
   };
+}
+
+/**
+ * True when `s` has a T11 parcel and every T11 parcel's cell is loaded (`Geometry.allReady`,
+ * scenario/geometry.ts:231-240): only then is it massed, as the map would draw it.
+ */
+export function scheduleReady(ds: Dataset, s: Schedule): boolean {
+  const P = ds.massing.input.parcels;
+  let any = false;
+  for (const id of s.parcelIds) {
+    const i = P.index.get(id);
+    if (i === undefined) continue; // absent from T11: no cell to wait for
+    if (!ds.chunks.byCell.has(P.cells[P.cell[i]].cellId)) return false;
+    any = true;
+  }
+  return any;
 }

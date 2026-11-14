@@ -66,6 +66,8 @@ export interface ChunkSet {
   records: Map<ParcelId, ParcelRecord>;
   /** The failed cells of the loader's latest report. */
   failed: string[];
+  /** Every cell `want` (or `prefetch`) has asked for: the map stream's `cellsFor` input. */
+  wanted: Set<string>;
   want(cells: Iterable<string>): void;
   /** The cells of a viewport bbox ([w, s, e, n]). */
   prefetch(bbox: readonly number[]): void;
@@ -101,8 +103,13 @@ export function createChunkSet(manifest: Manifest, deps: DatasetDeps): ChunkSet 
     byCell: new Map(),
     records: new Map(),
     failed: [],
-    want: (cells) => loader.want(cells),
-    prefetch: (bbox) => loader.want(cellsIntersecting(manifest, bbox)),
+    wanted: new Set(),
+    want(cells) {
+      const list = [...cells];
+      for (const c of list) set.wanted.add(c);
+      loader.want(list);
+    },
+    prefetch: (bbox) => set.want(cellsIntersecting(manifest, bbox)),
     retryFailed: () => loader.retryFailed(),
     dispose: () => loader.dispose()
   };
