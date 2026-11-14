@@ -1032,7 +1032,11 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
 
   it('only a fund policy shows that pool alone, with no Add money', async () => {
     setup(BOND_POLICY, { only: { tag: 'fund', pool: BOND_POLICY.funding.pools[0].id } });
-    await expect.element(page.getByRole('button', { name: 'Add money' })).not.toBeInTheDocument();
+    await expect
+      .element(page.getByRole('button', { name: 'Add money', exact: true }))
+      .not.toBeInTheDocument();
+    // The pool's editor is open: the policy is already selected.
+    await expect.element(page.getByRole('textbox', { name: 'Name' })).toBeVisible();
     expect(document.querySelectorAll('[data-funding-row^="group:"]')).toHaveLength(0);
     expect(document.querySelectorAll('[data-funding-row^="pool:"]')).toHaveLength(1);
   });
@@ -1086,7 +1090,7 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
       only: { tag: 'fund', pool: 'u-pool-1' },
       termsReadOnly: true
     });
-    await page.getByRole('button', { name: /City bond, 2028/ }).click();
+    await expect.element(page.getByRole('textbox', { name: 'Name' })).toBeVisible();
     expect(document.querySelector('input[data-field="rate"]')).toBeNull();
     expect(document.querySelector('input[data-field="years"]')).toBeNull();
     expect(document.querySelector('p[data-field="rate"]')!.textContent).toContain('6');

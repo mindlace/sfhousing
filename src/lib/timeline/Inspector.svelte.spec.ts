@@ -7,10 +7,11 @@ import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { formatMonthYear } from '$lib/fzp/format';
-import { DRAFT_DISCARDED } from '$lib/sim-page/funding-copy';
+import { DRAFT_DISCARDED, limitAlert } from '$lib/sim-page/funding-copy';
+import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
 import type { FundingDrafts } from '$lib/sim-page/funding-drafts.svelte';
 import type { PolicyStore } from '$lib/sim-page/policy-store.svelte';
-import { BOND_POLICY, fundingCalibration } from '$lib/sim-page/test/funding';
+import { BOND_POLICY, fundingCalibration, policyWith } from '$lib/sim-page/test/funding';
 import { OBSERVED_TIMING } from '$lib/sim-page/timing';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { monthFirstDay, monthLastDay, monthOfDay } from '$lib/sim/world/months';
@@ -144,7 +145,13 @@ describe('Inspector', () => {
     const d2 = movePolicy(d1, 'zoning', 'z2', -1);
     expect(store.policy).toEqual(d2);
     expect(store.policy.kinds.zoning.map((p) => p.id)).toEqual(['z2', 'z1']);
-    await expect.element(page.getByRole('button', { name: 'Move up' })).toBeDisabled();
+    // At the top it stays focusable, aria-disabled, with focus kept on it (WCAG 2.4.3).
+    const up = page.getByRole('button', { name: 'Move up' });
+    await expect.element(up).toHaveAttribute('aria-disabled', 'true');
+    expect(document.activeElement).toBe(up.element());
+    // A press there changes nothing (Playwright will not press an aria-disabled button).
+    (up.element() as HTMLElement).click();
+    expect(store.policy).toEqual(d2);
     await page.getByRole('button', { name: 'Remove policy' }).click();
     const d3 = removePolicy(d2, 'zoning', 'z2');
     expect(store.policy).toEqual(d3);
@@ -171,12 +178,16 @@ describe('Inspector', () => {
     await bar('permitting/p1/1').click();
     const preset = page.getByRole('combobox', { name: 'Preset' });
     await expect.element(preset).toBeDisabled();
-    await expect.element(page.getByText(PRESET_PER_POLICY)).toBeInTheDocument();
+    // The reason waits behind a tap (rule 37).
+    expect(document.body.textContent).not.toContain(PRESET_PER_POLICY);
+    await page.getByRole('button', { name: 'Preset fixed' }).click();
+    await expect.element(page.getByText(PRESET_PER_POLICY)).toBeVisible();
   });
 
   it('an existing fund policy shows its debt terms read-only', async () => {
     const { store, drafts } = setup({ initial: { kind: 'money', id: bond[0].id, span: 0 } });
-    await page.getByRole('button', { name: /City bond, 2028/ }).click();
+    // The pool's editor is open without a further tap.
+    await expect.element(page.getByRole('textbox', { name: 'Name' })).toBeVisible();
     expect(editor()!.querySelector('input[data-field="rate"]')).toBeNull();
     expect(editor()!.querySelector('input[data-field="years"]')).toBeNull();
     expect(editor()!.querySelector('p[data-field="rate"]')!.textContent).toContain('6');
@@ -250,7 +261,9 @@ describe('Inspector', () => {
     await expect.element(to('month')).toBeDisabled();
 
     // Split at the playhead month selects the later part; the only span cannot be removed.
-    await expect.element(page.getByRole('button', { name: 'Remove span' })).toBeDisabled();
+    await expect
+      .element(page.getByRole('button', { name: 'Remove span' }))
+      .toHaveAttribute('aria-disabled', 'true');
     const start = s().from;
     await page.getByRole('button', { name: 'Split at playhead' }).click();
     expect(store.policy.kinds.zoning[0].spans.map((x) => [x.from, x.to])).toEqual([
@@ -333,5 +346,102 @@ describe('Inspector', () => {
     await userEvent.keyboard('{Escape}');
     expect(document.activeElement).toBe(bar('permitting/p1/1'));
     expect(selectedText()).toBe('');
+  });
+
+  it('a fund policy on a City pool shows its programmes and edits them', async () => {
+    const prog = { ...BOND_POLICY.funding.programmes[0], id: 'u-prog-9', pool: 'city-gf' };
+    const money = upgradePolicy(policyWith({ programmes: [prog] }), asOf).kinds.money;
+    expect(money[0].spans[0].what).toMatchObject({ tag: 'fund', pool: null });
+    const { store } = setup({
+      doc: { schema: 4, kinds: { zoning: [], permitting: [], money } },
+      initial: { kind: 'money', id: money[0].id, span: 0 }
+    });
+    const row = () => editor()!.querySelector<HTMLElement>('[data-prog-row="u-prog-9"]');
+    await expect.poll(() => row()).not.toBeNull();
+    row()!.querySelector('button')!.click();
+    await expect
+      .poll(() => row()!.querySelector('input[data-field="prog-minHomes"]'))
+      .not.toBeNull();
+    await userEvent.fill(
+      row()!.querySelector<HTMLInputElement>('input[data-field="prog-minHomes"]')!,
+      '33'
+    );
+    await userEvent.keyboard('{Enter}');
+    const what = store.policy.kinds.money[0].spans[0].what;
+    expect(what.tag === 'fund' && what.programmes[0].minHomes).toBe(33);
+    expect(what.tag === 'fund' && what.pool).toBeNull();
+  });
+
+  it('a refused edit shows its reason', async () => {
+    // 24 programmes in the document: one more, through the lens, passes the limit.
+    const base = BOND_POLICY.funding.programmes[0];
+    const progs = (pool: string, n: number, from: number) =>
+      Array.from({ length: n }, (_, i) => ({ ...base, id: `u-prog-${from + i}`, pool }));
+    const money = upgradePolicy(
+      policyWith({ programmes: [...progs('city-tax', 23, 1), ...progs('city-gf', 1, 30)] }),
+      asOf
+    ).kinds.money;
+    const gf = money.find((p) => p.where.tag === 'fund' && p.where.pool === 'city-gf')!;
+    const { store } = setup({
+      doc: { schema: 4, kinds: { zoning: [], permitting: [], money } },
+      initial: { kind: 'money', id: gf.id, span: 0 }
+    });
+    const before = store.policy;
+    await page.getByRole('button', { name: /^What it pays for: add a programme/ }).click();
+    await expect.element(page.getByText(limitAlert('programmes'))).toBeVisible();
+    expect(store.policy).toBe(before);
+  });
+
+  it('an add past the funding limits shows the limit, adds nothing', async () => {
+    const pools = Array.from({ length: FINANCE_LIMITS.pools }, (_, i) => ({
+      ...BOND_POLICY.funding.pools[0],
+      id: `u-pool-${i + 1}`
+    }));
+    const money = upgradePolicy(policyWith({ pools, programmes: [] }), asOf).kinds.money;
+    const { store } = setup({ doc: { schema: 4, kinds: { zoning: [], permitting: [], money } } });
+    const before = store.policy;
+    await page.getByRole('button', { name: 'Add money', exact: true }).click();
+    await page.getByRole('button', { name: 'Your own pool' }).click();
+    await expect.element(page.getByText(limitAlert('pools'))).toBeVisible();
+    expect(store.policy).toBe(before);
+  });
+
+  it('discards a draft when the editor closes or "+" opens', async () => {
+    const { drafts } = setup();
+    await page.getByRole('button', { name: 'Add money', exact: true }).click();
+    await page.getByRole('button', { name: 'Your own pool' }).click();
+    expect(drafts.isOpen).toBe(true);
+    await page.getByRole('button', { name: 'Close editor' }).click();
+    expect(drafts.isOpen).toBe(false);
+    expect(announced()).toEqual([DRAFT_DISCARDED]);
+
+    await page.getByRole('button', { name: 'Add money', exact: true }).click();
+    // Focus moves into the menu.
+    await expect
+      .poll(() => document.activeElement?.textContent)
+      .toBe(document.querySelector('[data-testid="inspector"] ul button')!.textContent);
+    await page.getByRole('button', { name: 'Your own pool' }).click();
+    expect(drafts.isOpen).toBe(true);
+    await page.getByRole('button', { name: 'Add zoning' }).click();
+    await expect.poll(() => drafts.isOpen).toBe(false);
+    expect(announced()).toEqual([DRAFT_DISCARDED, DRAFT_DISCARDED]);
+  });
+
+  it('read-only: a money policy shows no control; "+" offers nothing', async () => {
+    setup({ readonly: true, initial: { kind: 'money', id: bond[0].id, span: 0 } });
+    await expect
+      .element(page.getByRole('heading', { level: 2, name: bond[0].label }))
+      .toBeInTheDocument();
+    const box = () => editor()!;
+    expect(
+      box().querySelectorAll(
+        'input:not([disabled]), select:not([disabled]), textarea, [contenteditable="true"]'
+      )
+    ).toHaveLength(0);
+    expect([...box().querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Close editor'
+    ]);
+    await page.getByRole('button', { name: 'Add zoning' }).click();
+    expect(document.body.textContent).not.toContain('Transit rule');
   });
 });

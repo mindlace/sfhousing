@@ -24,9 +24,14 @@
     'min-h-6 rounded-md px-1 text-left font-semibold underline hover:bg-surface-raised dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11';
 </script>
 
-<div role="group" aria-label="Add to {KIND_LABEL[kind]}" class="flex flex-col gap-1 text-sm">
+<div
+  data-add-menu
+  role="group"
+  aria-label="Add to {KIND_LABEL[kind]}"
+  class="flex flex-col gap-1 text-sm"
+>
   <ul class="flex flex-col items-start gap-1">
-    {#each choices as c (c.label)}
+    {#each choices as c, i (i)}
       <li>
         <button type="button" class={link} onclick={() => onpick(c.choice, c.label)}
           >{c.label}</button

@@ -19,7 +19,7 @@
   import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
   import { marketLevel } from '$lib/sim/scenario/market';
   import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
-  import { DRAFT_DISCARDED, limitAlert, type LimitKind } from '$lib/sim-page/funding-copy';
+  import { DRAFT_DISCARDED, limitAlert } from '$lib/sim-page/funding-copy';
   import type { FundingDrafts } from '$lib/sim-page/funding-drafts.svelte';
   import { completeDraft, newOwnPool, type PoolDraft } from '$lib/sim-page/funding-edit';
   import { fundingPresets } from '$lib/sim-page/funding-presets';
@@ -28,7 +28,7 @@
   import type { PolicyStore } from '$lib/sim-page/policy-store.svelte';
   import type { Day } from '$lib/timelapse/time';
   import type { Calibration } from '$lib/timelapse/types';
-  import { addPolicy, type AddChoice, type AddOffer } from './add';
+  import { addPolicy, AddLimitError, poolCount, type AddChoice, type AddOffer } from './add';
   import AddMenu from './AddMenu.svelte';
   import { spanLens, type EditStore } from './lens';
   import { viewMonthOf } from './playhead';
@@ -179,8 +179,13 @@
     const a = adding;
     if (a === lastAdding) return;
     lastAdding = a;
-    if (a !== null) untrack(discardDraft);
+    if (a === null || readonly) return;
+    untrack(discardDraft);
+    // Focus moves into the menu (WCAG 2.4.3).
+    void tick().then(() => root?.querySelector<HTMLElement>('[data-add-menu] button')?.focus());
   });
+  /** The menu, never in view mode (rule 17). */
+  const menu = $derived(readonly ? null : adding);
 
   // The editor going away is a close too.
   $effect(() => () => untrack(discardDraft));
@@ -213,8 +218,9 @@
   // ---- policy actions (rule 13) ----
 
   function act(change: (d: SimPolicy4) => SimPolicy4, label: string): void {
+    const before = store.policy;
     store.apply(change, label);
-    announce(label);
+    if (store.policy !== before) announce(label);
   }
 
   function toggleOn(): void {
@@ -256,13 +262,6 @@
   /** A refused add's text (a funding limit), in the menu's alert line. */
   let addAlert = $state('');
 
-  const limitOf = (e: RangeError): LimitKind =>
-    /programme/.test(e.message)
-      ? 'programmes'
-      : /scale/.test(e.message)
-        ? 'baselineScale'
-        : 'pools';
-
   async function focusTitle(): Promise<void> {
     await tick();
     title?.focus();
@@ -274,8 +273,8 @@
     try {
       r = addPolicy(store.policy, choice, { w, month: playheadMonth, cal: calibration });
     } catch (e) {
-      if (e instanceof RangeError) {
-        addAlert = limitAlert(limitOf(e));
+      if (e instanceof AddLimitError) {
+        addAlert = limitAlert(e.limit);
         return false;
       }
       throw e;
@@ -290,11 +289,8 @@
     return true;
   }
 
-  /** Own pools in the document: a fund policy with a pool of its own. */
-  const ownPools = $derived(
-    store.policy.kinds.money.filter((p) => p.spans[0]?.what.tag === 'fund' && p.spans[0].what.pool)
-      .length
-  );
+  /** Added pools in the document, counted as `addPolicy` counts them. */
+  const ownPools = $derived(poolCount(store.policy));
 
   function pick(choice: AddOffer, label: string): void {
     if (choice.kind === 'money' && choice.what === 'ownPool') {
@@ -338,8 +334,8 @@
   }
 
   const heading = $derived(
-    adding !== null
-      ? `Add to ${KIND_LABEL[adding]}`
+    menu !== null
+      ? `Add to ${KIND_LABEL[menu]}`
       : poolDraft !== null
         ? 'Your own pool'
         : fixed !== null
@@ -349,11 +345,11 @@
           : (policy?.label ?? '')
   );
   const shown = $derived(
-    adding !== null || poolDraft !== null || fixed !== null || policy !== undefined
+    menu !== null || poolDraft !== null || fixed !== null || policy !== undefined
   );
 
   const btn =
-    'min-h-6 min-w-6 rounded-md border border-control-line px-2 font-semibold text-ink hover:bg-surface-raised disabled:opacity-40 dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11';
+    'min-h-6 min-w-6 rounded-md border border-control-line px-2 font-semibold text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11';
   const muted = 'text-ink-muted dark:text-ink-dark-muted';
   const alertClass = (t: string) => `text-sm text-red-800 dark:text-red-300 ${t ? '' : 'sr-only'}`;
 </script>
@@ -379,8 +375,8 @@
       >
     </div>
 
-    {#if adding !== null}
-      <AddMenu kind={adding} {calibration} doc={store.policy} onpick={pick} />
+    {#if menu !== null}
+      <AddMenu kind={menu} {calibration} doc={store.policy} onpick={pick} />
       <p role="alert" class={alertClass(addAlert)}>{addAlert}</p>
     {:else if poolDraft !== null}
       <ul class="flex flex-col">
@@ -415,13 +411,17 @@
             class="{btn} aria-checked:bg-accent-tint dark:aria-checked:bg-accent-dark/30"
             onclick={toggleOn}>On</button
           >
-          <button type="button" class={btn} disabled={index <= 0} onclick={() => move(-1)}
-            >Move up</button
+          <!-- aria-disabled, not disabled: a press that reaches the end keeps focus (2.4.3). -->
+          <button
+            type="button"
+            class={btn}
+            aria-disabled={index <= 0 ? 'true' : undefined}
+            onclick={() => move(-1)}>Move up</button
           >
           <button
             type="button"
             class={btn}
-            disabled={index < 0 || index >= count - 1}
+            aria-disabled={index < 0 || index >= count - 1 ? 'true' : undefined}
             onclick={() => move(1)}>Move down</button
           >
           <button type="button" class={btn} onclick={removeThis}>Remove policy</button>

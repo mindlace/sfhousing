@@ -10,6 +10,7 @@
 <script lang="ts">
   import { PATHWAYS, type Calibration, type Pathway } from '$lib/timelapse/types';
   import type { EditStore } from '$lib/timeline/lens';
+  import Explain from '$lib/timeline/Explain.svelte';
   import RouteTimeline from './RouteTimeline.svelte';
   import SourceList from './SourceList.svelte';
   import {
@@ -131,9 +132,13 @@
       {/each}
     </select>
   </label>
+  {#if presetLocked !== null}
+    <span class="text-xs text-ink-muted dark:text-ink-dark-muted">
+      <Explain text={presetLocked}>Preset fixed</Explain>
+    </span>
+  {/if}
   <p id="{uid}-preset-desc" class="text-xs text-ink-muted dark:text-ink-dark-muted">
-    {preset.summary} Evidence tier {tier}.{#if presetLocked !== null}
-      {presetLocked}{/if}
+    {preset.summary} Evidence tier {tier}.
   </p>
 
   <p class="font-semibold" data-testid="timing-label">{label}</p>

@@ -142,7 +142,7 @@
   const select =
     'min-h-6 rounded-md border border-control-line bg-surface px-1 text-ink disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11';
   const btn =
-    'min-h-6 min-w-6 rounded-md border border-control-line px-2 font-semibold text-ink hover:bg-surface-raised disabled:opacity-40 dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11';
+    'min-h-6 min-w-6 rounded-md border border-control-line px-2 font-semibold text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11';
 </script>
 
 <section aria-labelledby="{uid}-h" class="flex flex-col gap-2 text-sm text-ink dark:text-ink-dark">
@@ -228,11 +228,18 @@
       </fieldset>
       <div class="flex flex-wrap gap-2">
         <button type="button" class={btn} onclick={add}>Add span</button>
-        <button type="button" class={btn} disabled={!canSplit} onclick={split}
-          >Split at playhead</button
+        <!-- aria-disabled: a press that disables its own button keeps focus (2.4.3). -->
+        <button
+          type="button"
+          class={btn}
+          aria-disabled={canSplit ? undefined : 'true'}
+          onclick={split}>Split at playhead</button
         >
-        <button type="button" class={btn} disabled={spans.length < 2} onclick={remove}
-          >Remove span</button
+        <button
+          type="button"
+          class={btn}
+          aria-disabled={spans.length < 2 ? 'true' : undefined}
+          onclick={remove}>Remove span</button
         >
       </div>
     </div>

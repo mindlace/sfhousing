@@ -6,6 +6,7 @@
  * area, observed timing, a baseline or terms policy with nothing typed yet) the policy is built
  * directly. Pure TS.
  */
+import type { LimitKind } from '$lib/sim-page/funding-copy';
 import { DEFAULT_POLICY, type SimPolicy } from '$lib/sim-page/policy';
 import { addPreset, fundingPresets, nextAddedId } from '$lib/sim-page/funding-presets';
 import { PRESETS, resolvePreset, timingLabel, type PresetId } from '$lib/sim-page/timing';
@@ -42,6 +43,16 @@ export type AddOffer = AddChoice | { kind: 'money'; what: 'ownPool' };
 
 /** Today's starting years for "Protect buildings newer than" (ProtectionsSection's DEFAULT_YEARS). */
 const NEWER_THAN_YEARS = 30;
+
+/** An add past a `FINANCE_LIMITS` bound over the document; `limit` names which (today's texts). */
+export class AddLimitError extends RangeError {
+  constructor(readonly limit: LimitKind) {
+    super(`past the ${limit} limit`);
+  }
+}
+
+/** Added pools over the document, as the pool limit counts them. */
+export const poolCount = (doc: SimPolicy4): number => documentFunding(doc).pools.length;
 
 const PROTECT_LABELS: Record<Category, string> = {
   rentControl: 'Protect rent-controlled buildings',
@@ -174,15 +185,25 @@ function created(doc: SimPolicy4, choice: AddChoice, cal: Calibration): Policy[]
       const have = documentFunding(doc);
       if (choice.what === 'fund') {
         // As addPreset: past the pool limit over the document, a RangeError.
-        if (have.pools.length + 1 > FINANCE_LIMITS.pools)
-          throw new RangeError(`at most ${FINANCE_LIMITS.pools} pools`);
+        if (have.pools.length + 1 > FINANCE_LIMITS.pools) throw new AddLimitError('pools');
         p3.funding.pools = [{ ...structuredClone(choice.pool), id: nextAddedId(have, 'pool') }];
         return upgraded();
       }
       const preset = fundingPresets(cal).find((x) => x.id === choice.preset && x.available);
       if (preset === undefined) throw new Error(`funding preset ${choice.preset} is not offered`);
-      // Ids clear of the document's, limits over the document: throws RangeError past one.
-      const all = addPreset(have, preset);
+      // Ids clear of the document's, limits over the document. Pools and programmes add up;
+      // what addPreset still refuses past them is the scale limit (an entry may replace one).
+      if (have.pools.length + preset.pools.length > FINANCE_LIMITS.pools)
+        throw new AddLimitError('pools');
+      if (have.programmes.length + preset.programmes.length > FINANCE_LIMITS.programmes)
+        throw new AddLimitError('programmes');
+      let all: FinanceLevers;
+      try {
+        all = addPreset(have, preset);
+      } catch (e) {
+        if (e instanceof RangeError) throw new AddLimitError('baselineScale');
+        throw e;
+      }
       const old = new Set([...have.pools.map((x) => x.id), ...have.programmes.map((g) => g.id)]);
       p3.funding = {
         baselineScale: preset.baselineScale.map((e) => ({ ...e })),

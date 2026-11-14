@@ -39,6 +39,7 @@
     NOTHING_ADDED,
     NO_LIMIT,
     POOL_LIMIT_DESC,
+    addProgrammeName,
     PROGRAMME_LIMIT_DESC,
     SWITCHED_OFF,
     TERM_NAME,
@@ -87,6 +88,7 @@
   import FundingGroupEditor from './FundingGroupEditor.svelte';
   import FundingPoolRow from './FundingPoolRow.svelte';
   import MarketTerms from './MarketTerms.svelte';
+  import ProgrammeList from './ProgrammeList.svelte';
   import type { ProgrammeHost } from './ProgrammeEditor.svelte';
   import type { EditStore } from '$lib/timeline/lens';
   import SourceList from './SourceList.svelte';
@@ -333,6 +335,13 @@
     });
   }
 
+  /** With `only` naming a City pool (no pool of the policy's own): that baseline pool. */
+  const cityPool = $derived(
+    only?.tag === 'fund' && !f.pools.some((p) => p.id === only.pool)
+      ? baseline?.pools.find((p) => p.id === only.pool)
+      : undefined
+  );
+
   // ---- programmes and market terms (4.8, 4.8a) ----
 
   const slope = $derived(calibration.market?.slope.perCostShare ?? null);
@@ -552,7 +561,9 @@
             <ul class="flex flex-col gap-2">
               {#each f.pools as pool, i (pool.id)}
                 {#if only === undefined || (only.tag === 'fund' && only.pool === pool.id)}
-                  {@const on = selected?.kind === 'pool' && selected.id === pool.id}
+                  <!-- With `only` naming this pool, its editor is open: the policy is selected. -->
+                  {@const on =
+                    only !== undefined || (selected?.kind === 'pool' && selected.id === pool.id)}
                   <FundingPoolRow
                     {pool}
                     id={pool.id}
@@ -586,6 +597,22 @@
                 />
               {/if}
             </ul>
+          {/if}
+          {#if cityPool !== undefined && host !== undefined}
+            <!-- Programmes a user added to a City pool: the pool is the City's, the list theirs. -->
+            <section data-funding-row="pool:{cityPool.id}" class="flex flex-col gap-1">
+              <h4 class="font-semibold">{cityPool.label}</h4>
+              <ProgrammeList
+                pools={[cityPool]}
+                addPool={cityPool}
+                poolChoices={null}
+                addName={addProgrammeName(cityPool.label)}
+                added
+                policy={store.policy}
+                {host}
+                {onedit}
+              />
+            </section>
           {/if}
           {#if only === undefined}
             <AddMoney
