@@ -66,8 +66,8 @@
   }
 
   function save(): void {
-    const snapshot = { label, set: structuredClone(current) };
-    store.apply((p) => ({ ...p, timing: { ...p.timing, saved: snapshot } }), 'Saved timelines');
+    const saved = { label, set: structuredClone(current) };
+    store.apply((p) => ({ ...p, timing: { ...p.timing, saved } }), 'Saved timelines');
     announce('Saved timelines');
   }
 

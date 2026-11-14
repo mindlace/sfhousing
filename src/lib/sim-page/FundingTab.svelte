@@ -467,41 +467,39 @@
 <div class="flex flex-col gap-4 text-sm text-ink dark:text-ink-dark">
   {#if baseline && steps.length > 0}
     <!-- Status of the policy, not a control: above every button (owner's rule). -->
-    {#if showBaseline}
-      <div class="flex flex-col items-start gap-1">
-        <p class="font-semibold">{coverageLineText(steps[0])}</p>
-        <button
-          type="button"
-          aria-expanded={coverageOpen}
-          aria-controls="{uid}-coverage"
-          class={link}
-          onclick={() => (coverageOpen = !coverageOpen)}
-          >Coverage over time <span aria-hidden="true">{coverageOpen ? '−' : '+'}</span></button
-        >
-        <div id="{uid}-coverage" hidden={!coverageOpen} class="flex flex-col gap-1">
-          <!-- One line per date the bundle changes; today is the coverage line above. -->
-          {#if steps.length > 1}
-            <ul class="flex flex-col gap-1">
-              {#each steps.slice(1) as s, i (s.from)}
-                <li>{coverageStepText(s, sized[i + 1])}</li>
-              {/each}
-            </ul>
-          {/if}
-          <p>{COVERAGE_RUN_SENTENCE}</p>
-          <p>{COVERAGE_RULE_SENTENCE}</p>
-          <p>{COVERAGE_OFF_SHORT_SENTENCE}</p>
-          {#if sized.some((x) => x)}
-            <p>{COVERAGE_SIZE_SENTENCE}</p>
-          {/if}
-          <p>{COVERAGE_PRIVATE_SENTENCE}</p>
-          <!-- The model's known limits come last: they bound the line rather than explain it. -->
-          {#if Number.isFinite(smallest) && smallest > 0}
-            <p class={muted}>{smallProjectsCaveat(smallest)}</p>
-          {/if}
-          <p class={muted}>{MONTH_OFFER_CAVEAT}</p>
-        </div>
+    <div class="flex flex-col items-start gap-1">
+      <p class="font-semibold">{coverageLineText(steps[0])}</p>
+      <button
+        type="button"
+        aria-expanded={coverageOpen}
+        aria-controls="{uid}-coverage"
+        class={link}
+        onclick={() => (coverageOpen = !coverageOpen)}
+        >Coverage over time <span aria-hidden="true">{coverageOpen ? '−' : '+'}</span></button
+      >
+      <div id="{uid}-coverage" hidden={!coverageOpen} class="flex flex-col gap-1">
+        <!-- One line per date the bundle changes; today is the coverage line above. -->
+        {#if steps.length > 1}
+          <ul class="flex flex-col gap-1">
+            {#each steps.slice(1) as s, i (s.from)}
+              <li>{coverageStepText(s, sized[i + 1])}</li>
+            {/each}
+          </ul>
+        {/if}
+        <p>{COVERAGE_RUN_SENTENCE}</p>
+        <p>{COVERAGE_RULE_SENTENCE}</p>
+        <p>{COVERAGE_OFF_SHORT_SENTENCE}</p>
+        {#if sized.some((x) => x)}
+          <p>{COVERAGE_SIZE_SENTENCE}</p>
+        {/if}
+        <p>{COVERAGE_PRIVATE_SENTENCE}</p>
+        <!-- The model's known limits come last: they bound the line rather than explain it. -->
+        {#if Number.isFinite(smallest) && smallest > 0}
+          <p class={muted}>{smallProjectsCaveat(smallest)}</p>
+        {/if}
+        <p class={muted}>{MONTH_OFFER_CAVEAT}</p>
       </div>
-    {/if}
+    </div>
 
     <div bind:this={rowsEl} class="flex flex-col gap-4">
       {#if showBaseline}

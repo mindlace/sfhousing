@@ -26,7 +26,7 @@ export interface PolicySyncDeps {
 export class PolicySync {
   #deps: PolicySyncDeps;
   #debounceMs: number;
-  #policy: SimPolicy4 | null = null;
+  #policy = $state.raw<SimPolicy4 | null>(null);
   #timer: ReturnType<typeof setTimeout> | null = null;
   /** Answered queries, failures included (a failure stands until `retry`). Never mutated. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -39,6 +39,8 @@ export class PolicySync {
   #inFlight = new Map<string, { token: number; gen: number }>();
   /** Queries answered `no-session`, waiting for `resume`. */
   #parked = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
+  /** `#parked`'s size, so `pending` follows it. */
+  #parkedN = $state(0);
   #generation = 0;
   /** Every query asked, by key, so `retry` can ask it again. */
   #queries = new Map<string, BrushQuery>(); // eslint-disable-line svelte/prefer-svelte-reactivity
@@ -64,11 +66,14 @@ export class PolicySync {
   }
 
   /**
-   * A newer document has not settled yet: the debounce is armed or a lot query is in flight. A
-   * failed query leaves it false (the lots before it were dropped; `retry` asks again).
+   * A newer document has not settled yet: the debounce is armed, a lot query is in flight, or a
+   * query it needs waits for a session. A failed query leaves it false (the lots before it were
+   * dropped; `retry` asks again).
    */
   get pending(): boolean {
-    return this.#armed || this.#resolving > 0;
+    if (this.#armed || this.#resolving > 0) return true;
+    const p = this.#policy;
+    return this.#parkedN > 0 && p !== null && queriesOf4(p).some((q) => this.#parked.has(q.key));
   }
 
   result(key: string): BrushLotsResult | undefined {
@@ -104,6 +109,7 @@ export class PolicySync {
     this.#generation++;
     const parked = [...this.#parked];
     this.#parked.clear();
+    this.#parkedN = 0;
     const needed = (this.#policy ? queriesOf4(this.#policy) : []).map((q) => q.key);
     for (const key of parked) {
       const query = this.#queries.get(key);
@@ -145,7 +151,10 @@ export class PolicySync {
       // Not an answer about the lots: ask again in the next session, or now if one has started.
       const query = this.#queries.get(key);
       if (asked.gen < this.#generation && query) this.#ask(key, query);
-      else this.#parked.add(key);
+      else {
+        this.#parked.add(key);
+        this.#parkedN = this.#parked.size;
+      }
       return;
     }
     // eslint-disable-next-line svelte/prefer-svelte-reactivity

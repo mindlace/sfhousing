@@ -41,7 +41,7 @@ import type { FundingDrafts } from './funding-drafts.svelte';
 import { addPresetEdit, isRefused, newProgramme } from './funding-edit';
 import { fundingPresets, nextFiscal, type FundingPreset } from './funding-presets';
 import { NO_LOAN_RATE } from './funding-sources';
-import { baselineGroups, coverageSteps, programmeSentence } from './funding-view';
+import { baselineGroups, coverageSteps, programmePreview, programmeSentence } from './funding-view';
 import type { SimPolicy } from './policy';
 import type { PolicyStore } from './policy-store.svelte';
 import { BOND_POLICY, FUND_ASOF, fundingCalibration, policyWith } from './test/funding';
@@ -52,7 +52,11 @@ const YEAR = new Date(JULY * 86_400_000).getUTCFullYear();
 
 function setup(
   policy: SimPolicy = policyWith({}),
-  extra: { only?: ComponentProps<typeof FundingTabHost>['only']; priceDay?: number } = {}
+  extra: {
+    only?: ComponentProps<typeof FundingTabHost>['only'];
+    priceDay?: number;
+    termsReadOnly?: boolean;
+  } = {}
 ) {
   const calibration = fundingCalibration();
   let store!: PolicyStore<SimPolicy>;
@@ -1037,5 +1041,59 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
     setup(policyWith({}), { only: { tag: 'baseline' } });
     await expect.element(row(/^City ·/)).toBeVisible();
     await expect.element(page.getByRole('button', { name: 'Add money' })).not.toBeInTheDocument();
+  });
+
+  it('prices the cost per home of a programme on priceDay', async () => {
+    const later = dayOf(2030, 7, 1);
+    const policy = structuredClone(BOND_POLICY);
+    policy.funding.baselineScale = [
+      { pool: 'city-gf', from: later, scale: 0 },
+      { pool: 'city-tax', from: later, scale: 0 }
+    ];
+    const cal = fundingCalibration();
+    const lines = (day: number) =>
+      programmePreview(
+        policy.funding.programmes[0],
+        policy.funding.pools[0],
+        policy.funding,
+        cal.baselineFunding!,
+        day,
+        cal.market!.slope.perCostShare
+      ).lines.join(' ');
+    expect(lines(later)).not.toBe(lines(FUND_ASOF));
+    setup(policy, { priceDay: later });
+    await page.getByRole('button', { name: /City bond, 2028/ }).click();
+    await tick();
+    (document.querySelector('[data-prog-row="u-prog-1"] button') as HTMLElement).click();
+    await tick();
+    const shown = document.querySelector('[data-prog-row="u-prog-1"]')!.textContent!;
+    expect(shown).toContain(lines(later));
+    expect(shown).not.toContain(lines(FUND_ASOF));
+  });
+
+  it('shows the coverage line for every only tag', async () => {
+    const cal = fundingCalibration();
+    const line = coverageLineText(
+      coverageSteps(BOND_POLICY.funding, cal.baselineFunding!, FUND_ASOF, HORIZON)[0]
+    );
+    setup(BOND_POLICY, { only: { tag: 'fund', pool: 'u-pool-1' } });
+    await expect.element(page.getByText(line, { exact: true })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: /Coverage over time/ })).toBeVisible();
+  });
+
+  it('termsReadOnly shows the rate and years of a stored pool as text with sources', async () => {
+    setup(BOND_POLICY, {
+      only: { tag: 'fund', pool: 'u-pool-1' },
+      termsReadOnly: true
+    });
+    await page.getByRole('button', { name: /City bond, 2028/ }).click();
+    expect(document.querySelector('input[data-field="rate"]')).toBeNull();
+    expect(document.querySelector('input[data-field="years"]')).toBeNull();
+    expect(document.querySelector('p[data-field="rate"]')!.textContent).toContain('6');
+    expect(document.querySelector('p[data-field="years"]')!.textContent).toContain('20');
+    // The source line stays beside the value.
+    expect(document.body.textContent).toContain(
+      'Interest rate: 6% From Bond interest rate and term'
+    );
   });
 });

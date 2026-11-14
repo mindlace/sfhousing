@@ -121,6 +121,7 @@ describe('PolicySync', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(h.sync.result(key)).toBeUndefined();
     expect(h.sync.lots).toBeNull();
+    expect(h.sync.pending).toBe(true);
     h.sync.update(d);
     await vi.advanceTimersByTimeAsync(1000);
     expect(h.resolve).toHaveBeenCalledTimes(1);
@@ -129,6 +130,7 @@ describe('PolicySync', () => {
     h.pending[1].resolve(ok(['a']));
     await vi.advanceTimersByTimeAsync(250);
     expect(h.sync.lots).toEqual({ [key]: ['a'] });
+    expect(h.sync.pending).toBe(false);
   });
 
   it('a no-session answer to a query asked before resume is asked again at once', async () => {

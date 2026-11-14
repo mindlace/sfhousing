@@ -788,7 +788,9 @@
           <p data-field="rate">
             Interest rate: {debt.rate === null ? '' : ratePercent(debt.rate)}
           </p>
+          {@render sourceLine(evidenceLine('debt.rate'))}
           <p data-field="years">Years to repay: {debt.termYears}</p>
+          {@render sourceLine(evidenceLine('debt.termYears'))}
         {:else}
           <div class="flex flex-col gap-0.5">
             <label class="flex flex-wrap items-center gap-1">
