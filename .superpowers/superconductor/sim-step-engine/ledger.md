@@ -357,6 +357,8 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 - gate wave 3 2026-11-13 18:24: VERDICT OK* (seven_day 44% of 60%, headroom 16; five_hour NO DATA). ensemble-runner admitted (estimate 4 to 6 points: nine interface rows consumed, the worker host). timeline-ui (wave 4) to be gated again; the two together may not fit under the reserve before Tuesday's reset.
 - Release A candidate: the integration branch at 0fc585d0 (world-core, policy-timeline, world-funding, plus world-score and map-stream, none of which changes a hashed file). Not finished yet: the held funding referee waits on the partner's rule 9 decision.
 - wave 3: start seven_day 44% @ 2026-11-13 18:30 | not exclusive at the start: world-funding's day-order experiment runs beside it
+- wave 3 end 2026-11-13 23:50: seven_day 57% | exclusive: no (world-funding's experiments, memo work and fix rounds ran beside it) | specs completed: 1 (ensemble-runner) | per-spec: 13 points, an upper bound.
+- gate wave 4 2026-11-13 23:50: VERDICT OK* (seven_day 57% of 60% reserve, headroom 3, resets Tue 05:00; five_hour NO DATA). timeline-ui does not fit under the reserve at any measured per-spec cost (3.4 to 13 points): DEFERRED until the reset or the partner's override. Also still deferred for budget: S12 `StepCtx.through` and sliced planning (rich money).
 
 ## Frame-defect tally
 - shared-type-home: 3 — instances: 2026-11-13 wave 1, S3 to S6 had no named file; 2026-11-13 Q6 month arithmetic; 2026-11-13 Q8 the dev doc. TRIPWIRE reached: the package names no home for anything two specs share. Settled for wave 1; before each later wave the conductor names shared files in the assignment, and the aggregate goes to the partner at the wave boundary as a candidate composer note.
@@ -368,6 +370,7 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 - spec-ambiguity: 3 — instances: 2026-11-13 world-core Q3, Q4; S12 chain events. TRIPWIRE reached; the three are unrelated readings (which frame, reader field shape, hook call list), each settled from the design text. Reported to the partner; no composer bounce proposed.
 
 - worktree-pin: 2 — instances: 2026-11-13 policy-timeline, twice (create refused; enter-outside refused). Harness, not design; settled by nesting.
+- protocol-drop-vs-no-resend: 1 — instances: 2026-11-13 S14/rule 22 client drop of older-rev posts against rule 14's no re-post (found by the branch review, amended b9a616c8).
 
 ## Integration
 - step 0 (flattened leaf, sonnet, agentId a3f4fe8bd4065c821): c0bd4864 on superconductor/sim-step-engine, type-only `statics.ts` and `policy/frame.ts`; check, eslint, prettier clean. Not a spec; excluded from calibration.
@@ -393,3 +396,4 @@ Conduction started 2026-11-13 (fresh session; everything above is the composer's
 - merged world-funding planning memo 8b6d4b68 into superconductor/sim-step-engine @ 755be8f0; no hashed or core file in the diff; a quiet full run (check, lint, unit) is queued behind the lock.
 - full run on 755be8f0 (plus ledger commits) holding the lock as `conductor`: check 0 errors, lint 0 errors (82 warnings), unit 448 files passed and 1 skipped, 7,133 tests pass, 423 skipped, 207 s. Covers the `CardDeps.buildable` and planning-memo merges.
 - merged world-funding guard test and doc 1d40d1d6 into superconductor/sim-step-engine; check run on the merge.
+- merged ensemble-runner (HEAD 179e42c9, branch review READY after the rule 22 fix wave; re-review at nested worktree `.superpowers/sdd/2026-11-13-ensemble-runner/rereview-final.md`) into superconductor/sim-step-engine @ 4383ec37. Quiet full run under the lock: check 0 errors, lint 0 errors / 82 warnings, unit 459 files passed (1 skipped), 7,261 pass, 423 skipped. Warm task re-measured live: the 99-103 ms task is gone; longest warm task other than the accepted cold massing 62.8 ms (estimate overrun, known limit); one bundled run showed an unattributed 82.2 ms task. Deferred minors: no rapid-edit case against the real host; the test recorder reads chunks with the latest statics (timeline-ui must not copy that); three comment lines over 100 columns. Nothing on a page uses the host yet: `/sim` still runs the old engine until timeline-ui.
