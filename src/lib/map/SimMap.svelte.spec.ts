@@ -426,6 +426,12 @@ describe('SimMap feature-state across tile reloads (acceptance #5)', { timeout: 
       .queryRenderedFeatures(map.project(AT), { layers: [BUILDINGS_LAYER] })
       .filter((f) => String(f.id) === P)
       .map((f) => f.state.replaced);
+  // From z14 a parcel draws as several boxes (base, front, step, part); every one must be replaced.
+  const expectAllReplaced = (map: import('maplibre-gl').Map) => {
+    const states = replacedAt(map);
+    expect(states.length).toBeGreaterThan(0);
+    expect(states.every((s) => s === true)).toBe(true);
+  };
 
   it('a hidden parcel stays replaced after its tiles unload and reload', async () => {
     const { root, ready } = await mount();
@@ -441,21 +447,21 @@ describe('SimMap feature-state across tile reloads (acceptance #5)', { timeout: 
       hide: { add: [P], remove: [] }
     });
     await jumpIdle(map, 17);
-    expect(replacedAt(map)).toEqual([true]);
+    expectAllReplaced(map);
     let tileLoads = 0;
     map.on('sourcedata', (e) => {
       if (e.sourceId === 'buildings' && e.tile) tileLoads++;
     });
     await jumpIdle(map, 11);
     await jumpIdle(map, 17);
-    expect(replacedAt(map)).toEqual([true]);
+    expectAllReplaced(map);
     // Force a real refetch and re-parse of every loaded buildings tile, cache or not.
     const before = tileLoads;
     map.refreshTiles('buildings');
     await jumpIdle(map, 17);
     console.info(`[F9] buildings tile loads: zoom trip ${before}, refresh ${tileLoads - before}`);
     expect(tileLoads).toBeGreaterThan(before);
-    expect(replacedAt(map)).toEqual([true]);
+    expectAllReplaced(map);
   });
 });
 
