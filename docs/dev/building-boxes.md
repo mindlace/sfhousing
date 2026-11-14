@@ -110,10 +110,14 @@ V37 "render boxes": without the artifact it is OK with `no boxes artifact`. Othe
 2. Edit `BOXES` in `pipeline/boxes-config.ts`.
 3. `npm run pipeline -- boxes`. The `building-boxes` entry in `sources.lock.json` changes.
 4. Commit the config and the lock.
-5. `npm run pipeline -- build`, then the review script (Task 12).
+5. `npm run pipeline -- build`, then the review script ([Review a round](#review-a-round)).
 6. `npm run pipeline -- upload <v>`, then `npm run signoff`, open the PR and merge. Staging deploys; the owner reviews there.
 
 After any Overture refresh (`fetch` of `overture-buildings`), run `boxes` before `build`: `build` refuses a stale artifact.
+
+## Review a round
+
+`npx tsx scripts/building-review.ts --before <v> --after <v> [--out <dir>] [--sample 20] [--roofs <parquet>]` builds once with `VITE_E2E=1`, serves each version with `wrangler dev` on port 4174 (stopped on exit and on error) and captures the map canvas alone (1280x800, DPR 2) for the ten review areas and for a seeded sample of step and false-front buildings from `building-roofs.parquet`. Both versions must be in local R2 (`npm run data:local -- <before> --from <staging>`; `npm run pipeline -- upload <after> --local`). It writes `index.html` (before | after pairs, the sample with a phantom-step checkbox column, the stats) and `stats.json` to `pipeline/.cache/review/<after>/` (gitignored). Nudge a view's centre in `REVIEW_VIEWS` when its named buildings are out of frame.
 
 ## The spike's frames
 
