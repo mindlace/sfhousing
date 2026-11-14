@@ -2,9 +2,11 @@
 // from their own account, and the roster follows. Axe passes on each new page state.
 import { expect, test } from '@playwright/test';
 import {
+  MEMBER_ERROR_COPY,
   MEMBERS_COPY,
   inviteHeading,
   invitationsAcceptNamed,
+  membersRemoveConfirm,
   membersResendNamed,
   membersRevokeNamed
 } from '../src/lib/members/copy';
@@ -16,6 +18,7 @@ import {
   inviteLinkFor,
   inviteViaApi,
   openMembers,
+  ownHandle,
   signInAndCreateSim
 } from './helpers/members';
 
@@ -31,6 +34,7 @@ test('invite by email: the invitee joins cold and the manager sees them as an ed
 
   // The manager types the address into the Members panel.
   await openMembers(page, simId);
+  const managerHandle = await ownHandle(page);
   await page.getByTestId('invite-input').fill(invited);
   await page.getByTestId('invite-submit').click();
   await expect(page.getByText(invited)).toBeVisible();
@@ -42,8 +46,9 @@ test('invite by email: the invitee joins cold and the manager sees them as an ed
     const guest = await fresh.newPage();
     const link = await inviteLinkFor(page, invited);
     await guest.goto(link);
-    await expect(guest.getByRole('heading', { level: 1 })).toContainText(simTitle);
-    await expect(guest.getByRole('heading', { level: 1 })).toContainText('invited you');
+    await expect(guest.getByRole('heading', { level: 1 })).toHaveText(
+      inviteHeading(managerHandle, simTitle)
+    );
     await expectNoA11yViolations(guest);
     await coldJoin(guest, link, invited);
     await expect(guest.getByRole('heading', { level: 1 })).toHaveText(simTitle);
@@ -75,6 +80,9 @@ test('revoke removes the pending row and kills the link', async ({ page, browser
   await openMembers(page, simId);
   await expect(page.getByText(invited)).toBeVisible();
   await page.getByRole('button', { name: membersRevokeNamed(invited) }).click();
+  // Revoke confirms in place before it acts.
+  await expect(page.getByText(invited)).toBeVisible();
+  await page.getByTestId('members-confirm').click();
   await expect(page.getByText(invited)).toHaveCount(0);
 
   const fresh = await freshContext(browser, testInfo);
@@ -97,7 +105,7 @@ test('resend inside the cooldown is refused with a visible message', async ({ pa
   await openMembers(page, simId);
   // The invite itself started the 60 s cooldown (RESEND_COOLDOWN_MS).
   await page.getByRole('button', { name: membersResendNamed(invited) }).click();
-  await expect(page.getByRole('alert')).toHaveText('resend too soon');
+  await expect(page.getByTestId('members-status')).toHaveText(MEMBER_ERROR_COPY.resend_too_soon);
   await expectNoA11yViolations(page);
 });
 
@@ -118,7 +126,14 @@ test('the manager removes an editor, who then loses the sim', async ({
     await openMembers(page, simId);
     const remove = page.getByRole('button', { name: /^Remove .+ from the sim$/ });
     await expect(remove).toHaveCount(1);
+    // A removable member row on screen, then its confirm.
+    await expectNoA11yViolations(page);
+    const guestHandle = await ownHandle(guest);
     await remove.click();
+    await expect(page.getByText(membersRemoveConfirm(guestHandle), { exact: true })).toBeVisible();
+    await expect(page.getByTestId('members-confirm')).toBeFocused();
+    await expectNoA11yViolations(page);
+    await page.getByTestId('members-confirm').click();
     await expect(page.getByText('· editor')).toHaveCount(0);
 
     const gone = await guest.goto(`/sims/${simId}`);
@@ -161,6 +176,8 @@ test('the banner on a sim page offers Accept, and Not now hides it', async ({
 }, testInfo) => {
   const simTitle = `banner-${Date.now()}`;
   const simId = await signInAndCreateSim(page, uniqueEmail('mgr'), simTitle);
+  await page.goto('/sims');
+  const managerHandle = await ownHandle(page);
   const recipient = uniqueEmail('rcpt');
   await inviteViaApi(page, simId, recipient);
 
@@ -171,8 +188,7 @@ test('the banner on a sim page offers Accept, and Not now hides it', async ({
     await rp.goto(`/sims/${ownId}`);
     await expect(rp.locator('html')).toHaveAttribute('data-hydrated', '');
     const banner = rp.getByTestId('invite-banner');
-    await expect(banner).toContainText(simTitle);
-    await expect(banner).toContainText('invited you');
+    await expect(banner).toContainText(inviteHeading(managerHandle, simTitle));
     await expectNoA11yViolations(rp);
 
     await rp.getByRole('button', { name: MEMBERS_COPY.inviteNotNow }).click();
@@ -191,6 +207,8 @@ test('the banner on a sim page offers Accept, and Not now hides it', async ({
 test('the invite heading names the inviter and the sim', async ({ page, browser }, testInfo) => {
   const simTitle = `heading-${Date.now()}`;
   const simId = await signInAndCreateSim(page, uniqueEmail('mgr'), simTitle);
+  await page.goto('/sims');
+  const managerHandle = await ownHandle(page);
   const invited = uniqueEmail('guest');
   await inviteViaApi(page, simId, invited);
   const link = await inviteLinkFor(page, invited);
@@ -198,8 +216,9 @@ test('the invite heading names the inviter and the sim', async ({ page, browser 
   try {
     const guest = await fresh.newPage();
     await guest.goto(link);
-    const text = (await guest.getByRole('heading', { level: 1 }).textContent()) ?? '';
-    expect(text).toBe(inviteHeading(text.match(/^@(\S+)/)![1], simTitle));
+    await expect(guest.getByRole('heading', { level: 1 })).toHaveText(
+      inviteHeading(managerHandle, simTitle)
+    );
   } finally {
     await fresh.close();
   }

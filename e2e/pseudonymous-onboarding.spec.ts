@@ -47,22 +47,6 @@ test('start fresh answers one redirect that sets the session and clears the pend
   context,
   baseURL
 }) => {
-  // Every response in the flow, with the set-cookie headers each carried.
-  const seen: { method: string; path: string; status: number; setCookie: string[] }[] = [];
-  page.on('response', async (res) => {
-    const req = res.request();
-    if (req.resourceType() !== 'document' && req.method() !== 'POST') return;
-    const url = new URL(res.url());
-    if (url.pathname.startsWith('/data/')) return;
-    const headers = await res.headersArray().catch(() => []);
-    seen.push({
-      method: req.method(),
-      path: url.pathname + url.search,
-      status: res.status(),
-      setCookie: headers.filter((h) => h.name.toLowerCase() === 'set-cookie').map((h) => h.value)
-    });
-  });
-
   await context.addCookies([{ name: 'sfh_known', value: '1', url: baseURL! }]);
   await createSim(page, 'Two Cookies');
   await page.waitForURL((url) => url.pathname === '/signin');
@@ -71,10 +55,14 @@ test('start fresh answers one redirect that sets the session and clears the pend
   const before = (await context.cookies()).map((c) => c.name);
   expect(before).toContain(PENDING_SIM_COOKIE);
   expect(before).not.toContain(SESSION_COOKIE);
-  const toSignin = seen.splice(0);
 
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+  // Listen before the click, so the response cannot arrive first.
+  const startFresh = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && r.url().includes('startFresh')
+  );
   await page.getByTestId('start-fresh').click();
+  const res = await startFresh;
   await page.waitForURL(/\/sims\/[^/]+$/);
 
   // The browser context after that response: the session is there, the stash is gone.
@@ -84,17 +72,15 @@ test('start fresh answers one redirect that sets the session and clears the pend
 
   // Both effects came on ONE response: the 303 to the new sim (kept whole through
   // headersHandle's re-wrap of a redirect).
-  const startFresh = seen.find((r) => r.method === 'POST' && r.path.includes('startFresh'))!;
-  expect(startFresh.status).toBe(303);
-  const names = startFresh.setCookie.map((c) => c.split('=', 1)[0]);
+  expect(res.status()).toBe(303);
+  const setCookie = (await res.headersArray())
+    .filter((h) => h.name.toLowerCase() === 'set-cookie')
+    .map((h) => h.value);
+  const names = setCookie.map((c) => c.split('=', 1)[0]);
   expect(names).toContain(SESSION_COOKIE);
   expect(names).toContain(PENDING_SIM_COOKIE);
-  const cleared = startFresh.setCookie.find((c) => c.startsWith(`${PENDING_SIM_COOKIE}=`))!;
+  const cleared = setCookie.find((c) => c.startsWith(`${PENDING_SIM_COOKIE}=`))!;
   expect(cleared).toMatch(/Max-Age=0/i);
-  // Evidence for the report.
-  test
-    .info()
-    .annotations.push({ type: 'responses', description: JSON.stringify([toSignin, seen]) });
 });
 
 test('a pseudonymous user adds an unclaimed email through the link and keeps their sim', async ({
@@ -129,7 +115,7 @@ test('a pseudonymous user adds an unclaimed email through the link and keeps the
   await page.goto(simPath);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(title);
   await page.goto('/sims');
-  await expect(page.getByRole('link', { name: title })).toBeVisible();
+  await expect(page.getByRole('link', { name: title, exact: true })).toBeVisible();
 });
 
 test('the escape hatch without a stashed sim lands on /sims', async ({ page }) => {

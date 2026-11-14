@@ -36,6 +36,13 @@ export async function signInAndCreateSim(
   return ((await res.json()) as { simId: string }).simId;
 }
 
+/** The signed-in handle (no @) of `page`, read from the header's account entry. */
+export async function ownHandle(page: Page): Promise<string> {
+  const title = await page.locator('[data-header-account]').getAttribute('title');
+  expect(title, 'header account entry title').toMatch(/^@/);
+  return title!.slice(1);
+}
+
 /** Invite `target` to the sim as the page's signed-in manager, through the API. */
 export async function inviteViaApi(page: Page, simId: string, target: string): Promise<void> {
   const res = await page.request.post(`/api/sims/${simId}/invites`, { data: { target } });

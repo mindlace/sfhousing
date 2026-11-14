@@ -48,7 +48,7 @@ A disabled method is off in three places:
 
 In an e2e build, a cookie named `sfh_e2e_auth_methods` (`E2E_AUTH_METHODS_COOKIE`) replaces `AUTH_METHODS` for that browser context. Specs call `enableAuthMethods(context, ['password'])` from `e2e/helpers/auth.ts`. The server honours the cookie only when `isE2eEnv` is true (`src/lib/server/e2e/env.ts`): `VITE_E2E=1` was set at build time, which inlines the check so a normal build drops the branch, and `ENVIRONMENT=development` at run time. Staging and production fail both tests, so a cookie cannot switch a method on there.
 
-To turn a method on for local dev, put `AUTH_METHODS=magic-link,password` in `.dev.vars`.
+To turn a method on for local dev, put `AUTH_METHODS=magic-link,password` in `.dev.vars` (magic link itself also needs a mail provider there; see [developing.md](developing.md)). The e2e server pins `AUTH_METHODS=magic-link` with a `--var`, so `.dev.vars` cannot change what the suite runs against.
 
 ## Session gate
 

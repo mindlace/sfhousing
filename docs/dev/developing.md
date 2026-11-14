@@ -30,10 +30,15 @@ Sign-in also reads `.dev.vars`:
 
 ```
 BETTER_AUTH_SECRET=<any long random string>
-AUTH_METHODS=magic-link,password
 ```
 
-`BETTER_AUTH_SECRET` is required. `AUTH_METHODS` is optional and overrides the `wrangler.jsonc` value (magic link only; see [auth.md](auth.md)). `SES_FROM` must be set even with no mail provider; the `wrangler.jsonc` var covers local dev. With no provider, mail runs in log mode: only the from address, recipient and subject are logged, never the link. Outside an e2e build a magic link or an invite cannot then be read, so magic-link sign-in and emailed invites do not work locally until you set `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY`, or `EMAIL_PROVIDER=resend` and `RESEND_API_KEY`. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (with `google` in `AUTH_METHODS`) turn on Google sign-in, and `SES_ACCESS_KEY_ID` plus `SES_SECRET_ACCESS_KEY`, or `EMAIL_PROVIDER=resend` plus `RESEND_API_KEY`, turn on real mail. These are read through a typed cast of `platform.env`, so do not add them to generate types.
+`BETTER_AUTH_SECRET` is required. `SES_FROM` must be set even with no mail provider; the `wrangler.jsonc` var covers local dev.
+
+Magic link is on only while mail can be delivered (see [auth.md](auth.md)). With no provider in `.dev.vars`, `npm run dev` and `npm run preview` have no magic link: the header shows no `Sign in` to a signed-out visitor, and `/signin` offers only `Start fresh without an account`. Mail runs in log mode (from, recipient and subject only, never the link), so an emailed invite cannot be read either. To get sign-in back locally, add a provider: `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY`, or `EMAIL_PROVIDER=resend` and `RESEND_API_KEY`. Real mail is then sent.
+
+`AUTH_METHODS` (optional) overrides the `wrangler.jsonc` value, for example `AUTH_METHODS=magic-link,password` to try password sign-in. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (with `google` in `AUTH_METHODS`) turn on Google sign-in. These are read through a typed cast of `platform.env`, so do not add them to generate types.
+
+The e2e server ignores these for the settings the suite depends on: `playwright.config.ts` passes `AUTH_METHODS=magic-link`, the secret and the URL as `--var` flags, which override `.dev.vars`, and an e2e build keeps magic link with no provider (its mail sink stands in). Specs turn other methods on per browser context with `enableAuthMethods`.
 
 ## Local data
 

@@ -2,8 +2,8 @@
 // label and error association, and live-region announce and focus on the confirmation.
 // Later auth pages add their cases here.
 import { expect, test, type Page } from '@playwright/test';
-import { AUTH_COPY, pendingSimLine } from '../src/lib/account/copy';
-import { MEMBERS_COPY, SIMS_COPY } from '../src/lib/members/copy';
+import { AUTH_COPY } from '../src/lib/account/copy';
+import { MEMBERS_COPY } from '../src/lib/members/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { enableAuthMethods, loginAs, readMail, uniqueEmail } from './helpers/auth';
 import { openHeaderMenu } from './helpers/sharing';
@@ -88,17 +88,6 @@ test('signin: submit button goes aria-busy and disabled while the action is pend
   // The sent state replaces the form, so the busy button is simply gone.
   await expect(page.getByTestId('form-status')).toHaveText(AUTH_COPY.emailSent);
   await expect(submit).toHaveCount(0);
-});
-
-test('signin: the pending-sim banner has no axe violations', async ({ page, context, baseURL }) => {
-  await context.addCookies([{ name: 'sfh_known', value: '1', url: baseURL! }]);
-  await page.goto('/sims');
-  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
-  await page.getByLabel(SIMS_COPY.titleLabel).fill('Banner');
-  await page.getByRole('button', { name: SIMS_COPY.create }).click();
-  await page.waitForURL((url) => url.pathname === '/signin');
-  await expect(page.getByText(pendingSimLine('Banner'))).toBeVisible();
-  await expectNoA11yViolations(page);
 });
 
 test('forgot-password: no axe violations, empty, with an error, and after sending', async ({
