@@ -28,6 +28,18 @@ type Later = 'spend' | 'repay' | 'loss' | 'release';
 const ORDER: Record<Later, number> = { spend: 0, repay: 1, loss: 2, release: 3 };
 const INSTR = ['grant', 'loan', 'guarantee'] as const;
 
+/**
+ * Money reached pool row `q` on `day` of `month` (rule 11, T17): keep the month's LATEST day.
+ * Money events of a month are not booked in day order (system 2's arrivals, then system 3's
+ * releases and repayments by project row), so an earlier day never overwrites a later one.
+ */
+function noteMoney(pools: FundPools, q: number, month: number, day: Day): void {
+  if (pools.moneyMonth[q] !== month || day > pools.moneyDay[q]) {
+    pools.moneyDay[q] = day;
+    pools.moneyMonth[q] = month;
+  }
+}
+
 /** System 2 (rule 12): every entry of frame.finance.arrivals, in list order; 0 dollars skipped. */
 export function moneyIn(ctx: StepCtx): void {
   const fin = ctx.frame.finance!;
@@ -38,8 +50,7 @@ export function moneyIn(ctx: StepCtx): void {
     const id = fin.pools[a.pool].id;
     const q = poolRowOf(pools, id);
     pools.received[q] += a.dollars;
-    pools.moneyDay[q] = a.day;
-    pools.moneyMonth[q] = ctx.month;
+    noteMoney(pools, q, ctx.month, a.day);
     if (ledger) ledger({ day: a.day, pool: id, programme: null, kind: 'in', dollars: a.dollars });
   }
 }
@@ -225,9 +236,6 @@ function book(
   }
   if (kind === 'repay' || kind === 'release') {
     const fq = fm.pool.get(pools.mPool[m]);
-    if (fq !== undefined && fm.index.capped[fq] === 1) {
-      pools.moneyDay[q] = day;
-      pools.moneyMonth[q] = ctx.month;
-    }
+    if (fq !== undefined && fm.index.capped[fq] === 1) noteMoney(pools, q, ctx.month, day);
   }
 }

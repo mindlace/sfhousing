@@ -271,6 +271,44 @@ describe('serveLine', () => {
     expect(awardDay(h3.ctx, line, 0, pools, [q])).toBe(d);
   });
 
+  it('T17: a release earlier in the month, booked after a late arrival, does not date the award earlier', () => {
+    // m-city gets one inflow, late in month 3. A is awarded in month 2 on money set by hand;
+    // B waits for want of money.
+    const m = 3;
+    const d = monthLastDay(statics.asOf, m) - 2;
+    const f: Finance = {
+      ...fin,
+      pools: fin.pools.map((p) =>
+        p.id === 'm-city' ? { ...p, inflows: [{ kind: 'once', day: d, dollars: 1e12 }] } : p
+      )
+    };
+    const t = oneMoneyTimeline(input, f);
+    const w = freshWorld(t);
+    const { line, pools } = fundOf(w);
+    const [a, b] = LOTS;
+    joinLine(line, 2, [app(a, 'affordable', day(2, 3), AFF), app(b, 'affordable', day(2, 9), AFF)]);
+    const q = poolRowOf(pools, 'm-city');
+    pools.received[q] = askOf(line, 0, 'm-city', 2);
+    const sys = createFundingSystem();
+    const h2 = harness(w, 2, { t });
+    sys.serve(h2.ctx);
+    expect(h2.starts().map((s) => s.lot)).toEqual([a]);
+    const rowA = h2.starts()[0].row;
+
+    // Month 3, in system order: the arrival on d (system 2), then A's exit on day e < d releases
+    // its commitment (system 3), then the scan (system 5).
+    const h3 = harness(w, m, { t });
+    sys.moneyIn(h3.ctx);
+    const e = day(m, 4);
+    expect(e).toBeLessThan(d);
+    moneyOnEvent(h3.ctx, { kind: 'end', row: rowA, day: e, how: 'exit' });
+    expect(pools.committed[q]).toBe(0);
+    expect(pools.moneyMonth[q]).toBe(m);
+    expect(pools.moneyDay[q]).toBe(d);
+    sys.serve(h3.ctx);
+    expect(h3.starts().map((s) => [s.lot, s.day])).toEqual([[b, d]]);
+  });
+
   it('FundedStart carries kind, view, size, applied, paying programme ids and fundingOf dollars', () => {
     const w = freshWorld();
     const { line, pools } = fundOf(w);
