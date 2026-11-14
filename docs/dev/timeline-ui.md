@@ -4,15 +4,15 @@ Developer notes for `src/lib/timeline/` and `src/lib/sim-page/SimPage.svelte`. S
 
 ## Pieces
 
-| Piece                     | File                                                                        | Owns                                                                                                           |
-| ------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `SimPage`                 | `src/lib/sim-page/SimPage.svelte`                                           | the store, autosave, publish, the map tools, notices, the inspector's hosting                                  |
-| `TimelineMode`            | `src/lib/timeline/TimelineMode.svelte`                                      | takes `FzpMode`'s place: header score, status, notices, map, card, tooltip, timeline, over a `TimelineSession` |
-| `TimelineSession`         | `src/lib/timeline/session.svelte.ts`                                        | the client's events in arrival order, stale state, kept documents, notices, the card's refresh                 |
-| `fill.ts`, `chunk-log.ts` | same folder                                                                 | pure rules for stale, Play and the fill text; the arrival-ordered log behind `viewOfLog`                       |
-| `PolicySync`              | `src/lib/timeline/policy-sync.svelte.ts`                                    | resolves `queriesOf4(policy)` through `resolveBrush`, settles `lots` 250 ms after the last change (rule 16)    |
-| `Inspector`               | `src/lib/timeline/Inspector.svelte` (`WhenEditor`, `WhatEditor`, `AddMenu`) | the selected span's editor, hosting today's editors through `lens.ts`                                          |
-| `PolicyStore<SimPolicy4>` | `src/lib/sim-page/policy-store.svelte.ts`                                   | undo and redo; takes an optional `normalize(next, prev)` run inside `apply` and `undoTo`                       |
+| Piece                     | File                                                                           | Owns                                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `SimPage`                 | `src/lib/sim-page/SimPage.svelte`                                              | the store, autosave, publish, the map tools, notices, the inspector's hosting                                  |
+| `TimelineMode`            | `src/lib/timeline/TimelineMode.svelte`                                         | takes `FzpMode`'s place: header score, status, notices, map, card, tooltip, timeline, over a `TimelineSession` |
+| `TimelineSession`         | `src/lib/timeline/session.svelte.ts`                                           | the client's events in arrival order, stale state, kept documents, notices, the card's refresh                 |
+| `fill.ts`, `chunk-log.ts` | same folder                                                                    | pure rules for stale, Play and the fill text; the arrival-ordered log behind `viewOfLog`                       |
+| `PolicySync`              | `src/lib/timeline/policy-sync.svelte.ts`                                       | resolves `queriesOf4(policy)` through `resolveBrush`, settles `lots` 250 ms after the last change (rule 16)    |
+| `Inspector`               | `Inspector.svelte`, `WhenEditor.svelte`, `WhatEditor.svelte`, `AddMenu.svelte` | the selected span's editor, hosting today's editors through `lens.ts`                                          |
+| `PolicyStore<SimPolicy4>` | `src/lib/sim-page/policy-store.svelte.ts`                                      | undo and redo; takes an optional `normalize(next, prev)` run inside `apply` and `undoTo`                       |
 
 `src/lib/fzp/debug.ts` keeps `window.__sfhFzp`, now with `phase`, `day`, `asOf`, `playing`, `speed`, `filledThrough`, `lastIndex`, `policy`, `stale`, `refills` (every `refill`'s `from`, in arrival order) and `mean()` (VITE_E2E builds only). `e2e/helpers/run.ts` waits on it (`waitFilled`, `openKind`, `addPolicy`). `window.__sfhSim.preview` is unchanged.
 
@@ -39,7 +39,7 @@ Developer notes for `src/lib/timeline/` and `src/lib/sim-page/SimPage.svelte`. S
 
 ## The session's rules
 
-- **Stale.** From an edit at rev R the page shows the held view (the one before the first unsettled edit), dimmed, with "Updating". An accepted edit ends it when a `refill` at rev >= R has arrived and the filled part reaches the playhead's month (`fill.ts`, `shownAt`). `compiled` never settles it: it precedes the `refill`. A `refill` at any rev puts the page back in stale for that rev's document.
+- **Stale.** From an edit at rev R the page shows the held view (the one before the first unsettled edit), dimmed, with "Updating". An accepted edit ends it when a `refill` at rev >= R has arrived and the filled part reaches the playhead's month (`fill.ts`, `shownAt`). `compiled` never settles it: it precedes the `refill`. A `refill` at an older rev than the newest sent (an edit taken up again after a later one was rejected) puts the page back in stale; pending and Play are left alone.
 - **Rejection.** A `bad-request` (rule 34, "That change couldn't be applied.") undoes the store to the newest kept document not answered `bad-request`. The session keeps every document sent since the last rev answered by a `refill`, that rev's included (`#kept`); an older rev's `bad-request` can follow a newer one. After a rejection the page stays stale until `filledThrough` is back to the held view's and passes the playhead (`floor` in `EditState`).
 - **Play** is unavailable from an edit until `filledThrough === lastIndex`, unless an error stopped the fill, when it plays inside the filled part. Any edit pauses playback; the playhead does not move.
 - **The provisional open (OQ-3).** The worker resolves brushes only after its dataset loads, so an `open` cannot carry the lots of a restored document with painted or transit policies. With `lots` null the session opens the document without those zoning policies (`provisionalOf`), then sends the full pair as its next `setPolicy`, as part of opening, not an edit. Until a `refill` at that rev or later has come and the window is whole, `provisional` is true: the headline stays "calculating" and the results stay stale. With the dataset loaded and lots resolved before the first open, one open carries the full document.
@@ -66,7 +66,7 @@ Developer notes for `src/lib/timeline/` and `src/lib/sim-page/SimPage.svelte`. S
 - **The early-edit guess.** The worker does not mark the rejection of an edit sent before the dataset loaded, so the page guesses. An early edit's rejection shows rule 35 ("The simulation couldn't load.") briefly, then flips to rule 34 ("That change couldn't be applied." plus the undo) when a post at an older rev arrives. Pressing Retry inside that window can leave the rule 35 notice up.
 - **The restart rev.** `TimelineClient.restart` returns no rev, so the session assumes the client's next rev.
 - **Debt terms.** A hand-edited /s link can still carry two sets of terms on one pool id (`parse4` checks only that every span names the same pool); world-score then prices the statements on month W's terms.
-- **The engine's limits** (ruling 8), listed with their numbers in [ensemble-runner.md](ensemble-runner.md): worker memory about +394 MB with no copies and +526 MB with the month-0 copy (live city); some worker slices 52 to 63 ms; one cold massing of about 636 ms; planning with rich public money over the per-slice bar. The page shows no state for them.
+- **The engine's limits** (ruling 8), listed with their numbers in [ensemble-runner.md](ensemble-runner.md): worker memory about +394 MB with no copies and +526 MB with the month-0 copy (live city); the longest worker compile step about 52.6 ms; one cold massing of about 636 ms; planning with rich public money over the per-slice bar. The page shows no state for them.
 
 ## For the composer
 
