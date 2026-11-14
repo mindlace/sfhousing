@@ -108,7 +108,7 @@ What money and tiers read, from world-funding as merged (shadows and `'displaced
 
 ## Timing
 
-Bench `synthCity`, quiet machine, lock held, 2026-11-13, after the perf pass. Unfunded, 96 worlds: median 0.684 ms, p90 0.948 ms per month (bar 1 ms). Funded, 32 worlds: median 0.786 ms (months 101-150, ledger 763 events) and 0.779 ms (months 400-450, ledger 2394 events), so no growth with ledger length. `chunk.perf.spec.ts` labels a run quiet only with `SFH_PERF_QUIET=1`: set it when holding the lock. `npm run test:perf`, not in signoff.
+Bench `synthCity`, quiet machine, lock held, 2026-11-13, after the perf pass and the rule 12 fix. Unfunded, 96 worlds: median 0.728 ms, p90 0.897 ms per month (bar 1 ms, read at the median). Funded, 32 worlds: median 0.767 ms (months 101-150, ledger 763 events) and 0.771 ms (months 400-450, ledger 2394 events), so no growth with ledger length. `chunk.perf.spec.ts` labels a run quiet only with `SFH_PERF_QUIET=1`: set it when holding the lock. `npm run test:perf`, not in signoff.
 
 ## Known gaps
 
