@@ -24,6 +24,7 @@ vi.mock('$lib/server/invites/email', () => ({ sendInviteEmail }));
 vi.mock('$lib/server/user-store/user', () => ({ getUser }));
 vi.mock('$lib/server/invites/control-plane', () => ({ resendInvite }));
 
+import { PSEUDONYMOUS_EMAIL_DOMAIN } from '$lib/server/auth/brand';
 import { POST } from './+server';
 
 function postEvent(simId: string, inviteId: string) {
@@ -137,6 +138,21 @@ describe('POST /api/sims/:simId/invites/:inviteId/resend', () => {
     expect(await res.clone().text()).not.toContain(RAW_TOKEN);
     expect(await res.json()).toEqual({ emailed: true });
     expect(sendInviteEmail).toHaveBeenCalledWith(expect.objectContaining({ token: RAW_TOKEN }));
+  });
+
+  it('sends no mail to a pseudonymous invitee', async () => {
+    getDb.mockReturnValue({
+      select: () => ({ from: () => ({ where: () => [{ title: 'Trip' }] }) })
+    });
+    getUser.mockResolvedValue({ handle: 'pseudo', email: `temp-x@${PSEUDONYMOUS_EMAIL_DOMAIN}` });
+    resendInvite.mockResolvedValue({
+      emailed: true,
+      token: 'tok',
+      invite: { id: 'inv1', invitedEmail: null, invitedUserId: 'p1', invitedByUserId: 'u1' }
+    });
+    const res = await POST(postEvent('q1', 'inv1'));
+    expect(res.status).toBe(200);
+    expect(sendInviteEmail).not.toHaveBeenCalled();
   });
 
   it('never logs the rotated token when the email send fails', async () => {

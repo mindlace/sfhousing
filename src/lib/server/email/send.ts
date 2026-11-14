@@ -1,4 +1,5 @@
 import { AwsClient } from 'aws4fetch';
+import { mailProvider } from './provider';
 
 export interface SendEmailInput {
   to: string | string[];
@@ -42,22 +43,22 @@ export async function sendEmail(
   }
 
   const normalized: NormalizedEmail = { ...input, from, to };
-  const provider = (env.EMAIL_PROVIDER ?? 'ses').toLowerCase();
+  const provider = mailProvider(env);
 
+  // Local / test path: with no provider configured, log the message and skip the network
+  // call. Mirrors the R2 local-fallback pattern.
+  if (!provider) {
+    console.log('[email:log-mode]', { from, to, subject: input.subject });
+    return { sent: false, logged: true };
+  }
   return provider === 'resend' ? sendViaResend(env, normalized) : sendViaSes(env, normalized);
 }
 
 async function sendViaSes(env: EmailEnv, input: NormalizedEmail): Promise<SendEmailResult> {
-  const accessKeyId = env.SES_ACCESS_KEY_ID;
-  const secretAccessKey = env.SES_SECRET_ACCESS_KEY;
+  // mailProvider chose SES, so both keys are set.
+  const accessKeyId = env.SES_ACCESS_KEY_ID!;
+  const secretAccessKey = env.SES_SECRET_ACCESS_KEY!;
   const region = env.SES_REGION ?? 'us-west-1';
-
-  // Local / test path: when the SES secret is missing, log the message and
-  // skip the network call. Mirrors the R2 local-fallback pattern.
-  if (!secretAccessKey || !accessKeyId) {
-    console.log('[email:log-mode]', { from: input.from, to: input.to, subject: input.subject });
-    return { sent: false, logged: true };
-  }
 
   const body: Record<string, unknown> = {
     FromEmailAddress: input.from,
@@ -102,14 +103,8 @@ async function sendViaSes(env: EmailEnv, input: NormalizedEmail): Promise<SendEm
 }
 
 async function sendViaResend(env: EmailEnv, input: NormalizedEmail): Promise<SendEmailResult> {
-  const apiKey = env.RESEND_API_KEY;
-
-  // Local / test path: when the API key is missing, log the message and skip
-  // the network call — same no-op contract as the SES path.
-  if (!apiKey) {
-    console.log('[email:log-mode]', { from: input.from, to: input.to, subject: input.subject });
-    return { sent: false, logged: true };
-  }
+  // mailProvider chose Resend, so the key is set.
+  const apiKey = env.RESEND_API_KEY!;
 
   const body: Record<string, unknown> = {
     from: input.from,

@@ -3,6 +3,7 @@ import { freshDb, seedUser } from '$lib/server/test/auth-db';
 import { eq } from 'drizzle-orm';
 import { simInvite, user } from '$lib/server/db/schema';
 import { createSimRecord, addMemberById, getRole } from '$lib/server/sims/sim-index';
+import { PSEUDONYMOUS_EMAIL_DOMAIN } from '$lib/server/auth/brand';
 import {
   claimInvite,
   createInvite,
@@ -552,6 +553,53 @@ describe('resendInvite', () => {
       now: new Date('2026-06-01T00:02:00Z')
     });
     expect(res).toEqual({ emailed: false });
+  });
+
+  it('returns emailed:false for a pseudonymous invitee and keeps the token', async () => {
+    const { db, manager } = await setup();
+    await seedUser(db, {
+      id: 'pseudo',
+      email: `temp-x@${PSEUDONYMOUS_EMAIL_DOMAIN}`,
+      handle: 'zed'
+    });
+    const created = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'handle', handle: 'zed' },
+      now: new Date('2026-06-01T00:00:00Z')
+    });
+    const res = await resendInvite({
+      db,
+      simId: 'q1',
+      inviteId: created.invite.id,
+      now: new Date('2026-06-01T00:02:00Z')
+    });
+    expect(res).toEqual({ emailed: false });
+    const [row] = await db.select().from(simInvite).where(eq(simInvite.id, created.invite.id));
+    expect(row.tokenHash).toBe(created.invite.tokenHash);
+  });
+});
+
+describe('a pending invite to a pseudonymous account, in the manager view', () => {
+  it('is not marked as emailed, so Resend is not offered', async () => {
+    const { db, manager } = await setup();
+    await seedUser(db, {
+      id: 'pseudo',
+      email: `temp-x@${PSEUDONYMOUS_EMAIL_DOMAIN}`,
+      handle: 'zed'
+    });
+    await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: false,
+      target: { kind: 'handle', handle: 'zed' }
+    });
+    const [view] = await listManagerPendingInvites({ db, simId: 'q1' });
+    expect(view.display).toBe('@zed');
+    expect(view.invitedByEmail).toBe(false);
   });
 });
 

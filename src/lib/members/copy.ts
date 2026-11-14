@@ -69,7 +69,10 @@ export const MEMBERS_COPY = {
   inviteTargetRequired: 'target required',
   inviteFailed: 'invite failed',
   resendFailed: 'resend failed',
-  notSignedIn: 'not signed in'
+  notSignedIn: 'not signed in',
+  inviteNetworkRateLimited: 'Too many invites from your network. Please wait a moment.',
+  // Stands in for a sim's title when its index row is gone.
+  simTitleFallback: 'a sim'
 } as const;
 
 export const inviteHeading = (handle: string, simTitle: string): string =>

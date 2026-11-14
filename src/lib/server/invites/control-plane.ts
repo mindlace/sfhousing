@@ -13,6 +13,8 @@ import { newId } from '$lib/server/ids/base58';
 import { generateInviteToken, hashToken } from '$lib/server/invites/token';
 import { addMemberById } from '$lib/server/sims/sim-index';
 import { foldSimRole } from '$lib/server/sims/sim-roles';
+import { isDeliverable } from '$lib/server/email/provider';
+import { MEMBERS_COPY } from '$lib/members/copy';
 
 export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -157,7 +159,8 @@ export function toManagerPendingInviteView(
   invitedUser: InviteUser
 ): ManagerPendingInvite {
   const display = row.invitedEmail ?? (invitedUser ? `@${invitedUser.handle}` : '(unknown)');
-  const invitedByEmail = !!(row.invitedEmail || (invitedUser && invitedUser.email));
+  // Only an address mail can reach counts: a pseudonymous account's synthetic one does not.
+  const invitedByEmail = isDeliverable(row.invitedEmail) || isDeliverable(invitedUser?.email);
   return {
     id: row.id,
     display,
@@ -334,7 +337,7 @@ export async function resendInvite(args: {
     const u = (await getUsers(args.db, [live.invitedUserId])).get(live.invitedUserId);
     email = u?.email && u.email.length > 0 ? u.email : null;
   }
-  if (!email) {
+  if (!isDeliverable(email)) {
     return { emailed: false };
   }
 
@@ -385,12 +388,12 @@ export async function listRecipientPendingInvites(args: {
       .select({ title: simIndex.title })
       .from(simIndex)
       .where(eq(simIndex.simId, r.simId));
-    titles.set(r.simId, q?.title ?? 'a sim');
+    titles.set(r.simId, q?.title ?? MEMBERS_COPY.simTitleFallback);
   }
   return mine.map((r) => ({
     id: r.id,
     simId: r.simId,
-    simTitle: titles.get(r.simId) ?? 'a sim',
+    simTitle: titles.get(r.simId) ?? MEMBERS_COPY.simTitleFallback,
     inviterHandle: inviters.get(r.invitedByUserId)?.handle ?? 'someone'
   }));
 }
@@ -418,7 +421,7 @@ export async function findInviteByToken(args: {
     .select({ title: simIndex.title })
     .from(simIndex)
     .where(eq(simIndex.simId, r.simId));
-  const simTitle = q?.title ?? 'a sim';
+  const simTitle = q?.title ?? MEMBERS_COPY.simTitleFallback;
   const inviter = (await getUsers(args.db, [r.invitedByUserId])).get(r.invitedByUserId);
   return {
     id: r.id,

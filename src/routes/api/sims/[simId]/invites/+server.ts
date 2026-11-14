@@ -12,6 +12,7 @@ import {
 } from '$lib/server/invites/control-plane';
 import { getUser } from '$lib/server/user-store/user';
 import { sendInviteEmail } from '$lib/server/invites/email';
+import { isDeliverable } from '$lib/server/email/provider';
 import {
   enforceRate,
   enforceMutationRate,
@@ -32,7 +33,7 @@ export const POST: RequestHandler = async (event) => {
   const ip = event.request.headers.get('CF-Connecting-IP') ?? 'unknown';
   await enforceMutationRate(event, `invite_ip:${ip}`, {
     limiter: platform.env.INVITE_RL,
-    message: 'Too many invites from your network. Please wait a moment.',
+    message: MEMBERS_COPY.inviteNetworkRateLimited,
     critical: true
   });
   await enforceMutationRate(event, `invite:${actor.actorId}`, {
@@ -58,7 +59,9 @@ export const POST: RequestHandler = async (event) => {
       target,
       canInviteByEmail
     });
-    const recipientEmail = out.invite.invitedEmail ?? (out.resolvedUser?.email || null);
+    // No mail to an address that cannot receive it (a pseudonymous account's).
+    const candidate = out.invite.invitedEmail ?? (out.resolvedUser?.email || null);
+    const recipientEmail = isDeliverable(candidate) ? candidate : null;
     if (recipientEmail) {
       // Per-recipient global cooldown (across sims): silently skip the send when over
       // limit — the invite row still exists and can be resent later.
@@ -80,7 +83,7 @@ export const POST: RequestHandler = async (event) => {
             to: recipientEmail,
             token: out.token,
             inviterHandle: inviter.handle,
-            simTitle: q?.title ?? 'a sim'
+            simTitle: q?.title ?? MEMBERS_COPY.simTitleFallback
           });
         } catch (err) {
           console.error('invite email send failed', err);

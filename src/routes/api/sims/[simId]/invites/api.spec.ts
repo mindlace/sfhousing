@@ -39,6 +39,8 @@ vi.mock('$lib/server/invites/control-plane', async () => {
   return { ...actual, createInvite, getManagerPendingInvite };
 });
 
+import { PSEUDONYMOUS_EMAIL_DOMAIN } from '$lib/server/auth/brand';
+import { MEMBERS_COPY } from '$lib/members/copy';
 import { POST } from './+server';
 
 function postEvent(simId: string, body: unknown) {
@@ -98,10 +100,15 @@ describe('POST /api/sims/:simId/invites (creates an invite)', () => {
     // first call is the IP key
     enforceMutationRate.mockRejectedValueOnce({
       status: 429,
-      body: { message: 'Too many invites from your network. Please wait a moment.' }
+      body: { message: MEMBERS_COPY.inviteNetworkRateLimited }
     });
     const status = await httpStatus(() => POST(postEvent('q1', { target: 'u2@test.com' })));
     expect(status).toBe(429);
+    expect(enforceMutationRate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringMatching(/^invite_ip:/),
+      expect.objectContaining({ message: MEMBERS_COPY.inviteNetworkRateLimited, critical: true })
+    );
     expect(createInvite).not.toHaveBeenCalled();
     expect(sendInviteEmail).not.toHaveBeenCalled();
   });
@@ -196,6 +203,19 @@ describe('POST /api/sims/:simId/invites (creates an invite)', () => {
     });
     await POST(postEvent('q1', { target: '@bob' }));
     expect(sendInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('sends no mail to a pseudonymous account invited by handle, and says it was not emailed', async () => {
+    createInvite.mockResolvedValue({
+      invite: { id: 'inv-p', invitedEmail: null },
+      token: 'tok',
+      resolvedUser: { email: `temp-x@${PSEUDONYMOUS_EMAIL_DOMAIN}` }
+    });
+    const res = await POST(postEvent('q1', { target: '@pseudo' }));
+    expect(res.status).toBe(201);
+    expect(sendInviteEmail).not.toHaveBeenCalled();
+    expect(enforceRate).not.toHaveBeenCalled();
+    expect(await res.json()).toEqual({ id: 'inv-p', display: '@pseudo', invitedByEmail: false });
   });
 
   it('skips the email send when the per-recipient cooldown is over limit', async () => {

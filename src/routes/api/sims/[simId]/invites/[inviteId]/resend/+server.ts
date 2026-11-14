@@ -7,6 +7,7 @@ import { requireSimRole } from '$lib/server/authz/require-sim-role';
 import { resendInvite } from '$lib/server/invites/control-plane';
 import { getUser } from '$lib/server/user-store/user';
 import { sendInviteEmail } from '$lib/server/invites/email';
+import { isDeliverable } from '$lib/server/email/provider';
 import { refuseUnlessSameOriginJson } from '$lib/server/security/same-origin-json';
 import { MEMBERS_COPY } from '$lib/members/copy';
 import { enforceMutationRate, RATE_LIMIT_MESSAGES } from '$lib/server/security/rate-limit';
@@ -42,7 +43,7 @@ export const POST: RequestHandler = async (event) => {
         const u = await getUser(db, inv.invitedUserId);
         to = u?.email && u.email.length > 0 ? u.email : null;
       }
-      if (to) {
+      if (to && isDeliverable(to)) {
         const inviter = await getUser(db, inv.invitedByUserId);
         const [q] = await db
           .select({ title: simIndex.title })
@@ -55,7 +56,7 @@ export const POST: RequestHandler = async (event) => {
             to,
             token: res.token,
             inviterHandle: inviter.handle,
-            simTitle: q?.title ?? 'a sim'
+            simTitle: q?.title ?? MEMBERS_COPY.simTitleFallback
           });
         }
       }
