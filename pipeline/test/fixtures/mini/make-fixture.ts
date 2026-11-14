@@ -8,13 +8,23 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import proj4 from 'proj4';
 import { BASEMAP_BUILD, FONTS_COMMIT, FONT_STACKS } from '../../../config';
-import { archiveKeyFor, type Lock, type LockEntry, sha256File, writeLock } from '../../../lib/lock';
+import {
+  archiveKeyFor,
+  type Lock,
+  type LockEntry,
+  readLock,
+  sha256File,
+  writeLock
+} from '../../../lib/lock';
 import { PROJECT_SOURCE_IDS } from '../../../project-records/types';
 import { EXEMPTION_HOMEPAGE, EXEMPTION_LICENSE } from '../../../sb79-config';
+import { encodeLidarTile, lidarTileName, tilesForBbox } from '../../../lib/lidar/tile';
 import { DATASF } from '../../../sources/datasf';
+import { LIDAR_ID, lidarUpstreamVersion } from '../../../sources/lidar';
 import { SFBOS_EXEMPTIONS_ID, SFBOS_EXEMPTIONS_LABEL } from '../../../sources/sfbos';
 import { GTFS_FEEDS } from '../../../transit-config';
 import { every, tripTables, type TripSpec } from '../../gtfs-builder';
+import { synthTile, type SynthScene } from '../../lidar-synth';
 import { MOHCD_RAW, PROJECT_RAW } from './projects-raw';
 
 proj4.defs(
@@ -547,6 +557,33 @@ const overture = [
   ov('broad', 4, null, ['OpenStreetMap'], polygon(rect(47, 43, 53, 49)))
 ];
 
+// ---- Overture building parts (theme=buildings/type=building_part) ----
+// b14 is drawn as parts: a 20 m podium over its footprint, a 60 m tower with a pyramidal roof,
+// a part with no height (not counted) and a part outside the footprint but inside lot 14.
+// b10's one part covers x[95,100] only, so x[100,105] is uncovered.
+function part(id: string, buildingId: string, height: number | null, g: Geom, extra: Props = {}) {
+  const props: Props = {
+    id,
+    building_id: buildingId,
+    height,
+    datasets: ['OpenStreetMap'],
+    ...extra
+  };
+  for (const k of Object.keys(props)) if (props[k] === null) delete props[k];
+  return feature(props, g);
+}
+const overtureParts = [
+  part('p10', 'b10', 18, polygon(rect(95, 5, 100, 25))),
+  part('p14a', 'b14', 20, polygon(rect(132, 5, 138, 25))),
+  part('p14b', 'b14', 60, polygon(rect(133, 15, 137, 24)), {
+    roof_shape: 'pyramidal',
+    roof_height: 8,
+    min_height: 20
+  }),
+  part('p14c', 'b14', null, polygon(rect(132, 5, 134, 7))),
+  part('p14leg', 'b14', 10, polygon(rect(139, 26, 140, 27)))
+];
+
 // ---- street centerlines (3psu-pn9h; sim data layers) ----
 // Mission St runs along y = -8 in two segments, Fixture Ave up x = 148 and stops below lot 18,
 // a paper street lies off the shoreline lots and I-80 crosses above the lots at y = 75.
@@ -782,6 +819,13 @@ const SOURCES = [
     label: 'Overture Maps Buildings'
   },
   {
+    id: 'overture-building-parts',
+    features: overtureParts,
+    license: 'ODbL-1.0',
+    homepage: 'https://overturemaps.org',
+    label: 'Overture Maps Building Parts'
+  },
+  {
     id: 'datasf-height-bulk',
     features: heightBulk,
     license: 'public-domain',
@@ -996,6 +1040,77 @@ fs.writeFileSync(
     ...EXEMPT_ROWS.map(([apn, t]) => `${apn},${t}`)
   ].join('\n') + '\n'
 );
+// Synthetic LiDAR: sfhl/1 tiles over x[-70, 300] y[-110, 120] around O (one 500 m tile, 101_50),
+// locked in lidar.lock.json (never in sources.lock.json). The tile holding the shoreline lots is
+// not in that window (E is about 866 m east), so bbay has no LiDAR and takes the no_lidar fallback.
+// The scene is drawn in absolute EPSG:7131 metres and the LiDAR sits at footprint + (1.0, -0.3).
+{
+  const A = (x: number, y: number): [number, number] => [OX + x, OY + y];
+  const R = (x0: number, y0: number, x1: number, y1: number): Ring =>
+    rect(x0, y0, x1, y1).map(([x, y]) => A(x, y));
+  // 1:10 rising east over x[130, 140] (under b14), flat 20 m elsewhere.
+  const ground = (ax: number, _ay: number) => 20 + 0.1 * Math.min(10, Math.max(0, ax - OX - 130));
+  const scene: SynthScene = {
+    ground,
+    shift: [1.0, -0.3],
+    boxes: [
+      { ring: R(2, 5, 8, 25), top: 12 },
+      // Mission-St face (y = 5): a 1.2 m band standing 1.5 m higher.
+      { ring: R(12, 5, 18, 25), top: (_x, y) => (y - OY < 6.2 ? 16.5 : 15) },
+      // b03 (newer than the flight) has hag 0: no box. b04: 4 floors, 12 m.
+      { ring: R(32, 5, 38, 25), top: 12 },
+      // b06 courtyard 9 m: four rectangles around the hole x[54,56] y[12,18].
+      { ring: R(51, 5, 54, 25), top: 9 },
+      { ring: R(56, 5, 59, 25), top: 9 },
+      { ring: R(54, 5, 56, 12), top: 9 },
+      { ring: R(54, 18, 56, 25), top: 9 },
+      // b10 18 m with a 4 x 9 m region (36 m2) at 26 m inside the uncovered half.
+      { ring: R(95, 5, 105, 25), top: 18 },
+      { ring: R(100.5, 10, 104.5, 19), top: 26 },
+      // b13 gable: eave 6, ridge 10, ridge along y.
+      { ring: R(122, 5, 128, 25), top: (x) => 6 + 4 * (1 - Math.abs(x - OX - 125) / 3) },
+      // b14 as its parts: 20 m podium, 52 m tower body under an 8 m pyramidal roof.
+      { ring: R(132, 5, 138, 25), top: 20 },
+      {
+        ring: R(133, 15, 137, 24),
+        top: (x, y) => {
+          const u = Math.max(Math.abs(x - OX - 135) / 2, Math.abs(y - OY - 19.5) / 4.5);
+          return 52 + 8 * (1 - u);
+        }
+      },
+      { ring: R(47, 43, 53, 49), top: 4 }
+    ],
+    // A 3 m tree beside b04 whose crown overhangs its roof by 2 m at +5 m (17 m above ground).
+    veg: [{ ring: R(36, 12, 40, 16), top: 17 }]
+  };
+  const BOX = { x0: OX - 70, y0: OY - 110, x1: OX + 300, y1: OY + 120 };
+  const names: string[] = [];
+  for (const [tx, ty] of tilesForBbox(BOX)) {
+    const name = lidarTileName(tx, ty);
+    fs.mkdirSync(path.dirname(path.join(rawDir, name)), { recursive: true });
+    fs.writeFileSync(path.join(rawDir, name), encodeLidarTile(synthTile(tx, ty, scene)));
+    names.push(name);
+  }
+  const lidarEntry = await binaryEntry(
+    LIDAR_ID,
+    names,
+    {
+      upstreamVersion: lidarUpstreamVersion(),
+      license: 'public-domain',
+      homepage: 'https://www.usgs.gov/3d-elevation-program',
+      label: 'USGS 3DEP LiDAR, San Francisco 2023'
+    },
+    (name) => `https://fixture.invalid/${name}`
+  );
+  writeLock(path.join(here, 'lidar.lock.json'), { sources: [lidarEntry] });
+  console.log(`${LIDAR_ID}: ${names.length}`);
+}
 const lock: Lock = { sources: entries };
-writeLock(path.join(here, 'sources.lock.json'), lock);
+const lockFile = path.join(here, 'sources.lock.json');
+if (fs.existsSync(lockFile) && readLock(lockFile).sources.some((e) => e.id === 'building-boxes')) {
+  console.log(
+    'dropped building-boxes: run npm run pipeline -- boxes --fixture, then fixture --update-golden'
+  );
+}
+writeLock(lockFile, lock);
 console.log(entries.map((e) => `${e.id}: ${e.rowCount}`).join('\n'));

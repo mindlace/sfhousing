@@ -14,6 +14,7 @@ import {
 import { decodeTransit } from '../../src/lib/data/transit-codec';
 import type { Day } from '../../src/lib/timelapse/time';
 import type { Calibration, Pathway, Stage } from '../../src/lib/timelapse/types';
+import { BOXES } from '../boxes-config';
 import { BBOX, type InvariantProfile } from '../config';
 import { checkQuality } from '../lib/quality';
 import { pointStrictlyInside } from '../lib/rings';
@@ -352,7 +353,8 @@ export function maxOf(xs: readonly number[]): number {
 /**
  * Spec §4.9 invariants V1–V13, transit spec §4.3 V14, scenario-data spec §4.10 V15–V19 and
  * project-records spec §4.9 V20 over a built dataset directory, then V21–V24 from
- * `extras.projectChecks`, V30 (T14) from the counts and V31–V33 (policy.bin), V35 (/lesscars) and V36 (gross.bin). Never throws.
+ * `extras.projectChecks`, V30 (T14) from the counts and V31–V33 (policy.bin), V35 (/lesscars), V36
+ * (gross.bin) and V37 (render boxes). Never throws.
  */
 export async function checkDataset(
   outDir: string,
@@ -854,5 +856,46 @@ export async function checkDataset(
 
   // V36 gross.bin, against parcels.bin and the decoded chunk records.
   out.push(checkV36(outDir, m, p, recById, extras.stableDetail ?? false));
+
+  // V37 the render boxes, when the build had a building-boxes artifact.
+  out.push(checkV37(c, extras.skipTiles ?? !existsSync(join(outDir, 'buildings.pmtiles'))));
   return out;
+}
+
+/**
+ * V37 render boxes (docs/dev/building-boxes.md), from the counts. Without the artifact (no
+ * `boxes.missing_buildings`, which the render-boxes step always writes) OK with `no boxes
+ * artifact`. Otherwise it passes iff `boxes.outside_footprint` and `boxes.missing_buildings` are 0,
+ * `boxes.step.max_per_building` is at most `BOXES.stepCap` and, unless tiles were skipped,
+ * `tiles.buildings.drops_z14plus` is 0 (measured). The detail summarises src counts, the fallback
+ * share of buildings and the fit share of registration clusters, after any problems.
+ */
+export function checkV37(c: Record<string, number>, tilesSkipped: boolean): InvariantResult {
+  if (c['boxes.missing_buildings'] === undefined)
+    return { id: 'V37', ok: true, detail: 'no boxes artifact' };
+  const n = (k: string) => c[k] ?? 0;
+  const problems: string[] = [];
+  if (n('boxes.outside_footprint') !== 0)
+    problems.push(`boxes outside their footprint ${n('boxes.outside_footprint')}`);
+  if (n('boxes.missing_buildings') !== 0)
+    problems.push(`buildings without a box ${n('boxes.missing_buildings')}`);
+  if (n('boxes.step.max_per_building') > BOXES.stepCap)
+    problems.push(
+      `steps on one building ${n('boxes.step.max_per_building')} > cap ${BOXES.stepCap}`
+    );
+  if (!tilesSkipped) {
+    const drops = c['tiles.buildings.drops_z14plus'];
+    if (drops === undefined) problems.push('z14+ tile drops not measured');
+    else if (drops !== 0) problems.push(`z14+ tile drop reports ${drops}`);
+  }
+  const srcs = ['box', 'base', 'front', 'step', 'part'];
+  const fallback = ['no_lidar', 'new_building', 'unreliable', 'elevated'].reduce(
+    (s, f) => s + n(`boxes.fallback.${f}`),
+    0
+  );
+  const summary =
+    `src ${srcs.join('/')} ${srcs.map((s) => n(`boxes.src.${s}`)).join('/')}; ` +
+    `fallback ${pct(ratio(fallback, c['boxes.buildings']))}; ` +
+    `reg fit ${pct(ratio(c['boxes.reg.fit'], c['boxes.reg.clusters']))}`;
+  return { id: 'V37', ok: problems.length === 0, detail: [...problems, summary].join('; ') };
 }

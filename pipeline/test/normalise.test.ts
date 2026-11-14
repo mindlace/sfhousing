@@ -204,6 +204,56 @@ describe('normalise mini fixture', () => {
     expect(cols).toEqual(['cnn', 'streetname', 'classcode', 'layer', 'f_st', 't_st', 'geom']);
   });
 
+  it('normalise reads the mini parts', async () => {
+    const db = await miniDuck();
+    const rows = await db.all<{
+      id: string;
+      building_id: string;
+      roof_shape: string | null;
+      roof_height: number | null;
+      height: number | null;
+    }>(
+      `SELECT id, building_id, roof_shape, roof_height, height FROM src_overture_parts ORDER BY id`
+    );
+    expect(rows.map((r) => r.id)).toEqual(['p10', 'p14a', 'p14b', 'p14c', 'p14leg']);
+    const b = rows.find((r) => r.id === 'p14b')!;
+    expect(b.roof_shape).toBe('pyramidal');
+    expect(b.roof_height).toBe(8);
+    expect(b.building_id).toBe('b14');
+    expect(rows.find((r) => r.id === 'p14c')!.height).toBeNull();
+  });
+
+  it('a lock without parts gives an empty src_overture_parts', async () => {
+    const lock = readLock(join(MINI, 'sources.lock.json'));
+    lock.sources = lock.sources.filter((s) => s.id !== 'overture-building-parts');
+    const dir = tmp();
+    const db = await openDuck();
+    const counts = await normaliseAll(db, lock, join(MINI, 'raw'), dir, {
+      byName: true,
+      exemptionsCsv: SB79_EXEMPTIONS_CSV.fixture
+    });
+    await loadNormalised(db, dir);
+    expect(counts['overture-building-parts']).toBe(0);
+    const [n] = await db.all<{ n: number }>(`SELECT count(*) n FROM src_overture_parts`);
+    expect(n.n).toBe(0);
+    // The empty table's NULL::GEOMETRY reads back as BLOB (like src_streets'), so geom is by name.
+    const cols = (
+      await db.all<{ column_name: string; column_type: string }>(`DESCRIBE src_overture_parts`)
+    ).map((c) => (c.column_name === 'geom' ? 'geom' : `${c.column_name} ${c.column_type}`));
+    expect(cols).toEqual([
+      'id VARCHAR',
+      'building_id VARCHAR',
+      'height DOUBLE',
+      'min_height DOUBLE',
+      'roof_shape VARCHAR',
+      'roof_height DOUBLE',
+      'num_floors INTEGER',
+      'min_floor INTEGER',
+      'datasets VARCHAR[]',
+      'geom'
+    ]);
+  });
+
   it('city lands: four mini rows in EPSG:7131, names verbatim', async () => {
     const db = await miniDuck();
     const rows = await db.all<{ land_name: string }>(

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { BBOX } from '../config';
 import type { Duck } from '../lib/duck';
 import type { Http } from '../lib/http';
-import type { LockEntry } from '../lib/lock';
+import type { Lock, LockEntry } from '../lib/lock';
 import { storeFile } from '../lib/raw';
 
 export const STAC_CATALOG = 'https://stac.overturemaps.org/catalog.json';
@@ -60,4 +60,54 @@ export async function fetchOverture(
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Building parts of the same release as `overture-buildings`: parts reference their building's id,
+ * so a release mismatch would orphan them. Same bbox filter, ordered by id.
+ */
+export async function fetchOvertureParts(
+  release: string,
+  rawDir: string,
+  db: Duck
+): Promise<LockEntry> {
+  if (!/^\d{4}-\d{2}-\d{2}\.\d+$/.test(release)) {
+    throw new Error(`bad Overture release: ${release}`);
+  }
+  const glob = `s3://overturemaps-us-west-2/release/${release}/theme=buildings/type=building_part/*`;
+  const dir = mkdtempSync(join(tmpdir(), 'sfh-overture-parts-'));
+  const out = join(dir, 'overture-building-parts.parquet');
+  try {
+    await db.run("SET s3_region='us-west-2'");
+    await db.run(`COPY (
+      SELECT id, building_id, height, min_height, roof_shape, roof_height, num_floors, min_floor,
+             list_transform(sources, s -> s.dataset) AS datasets, geometry AS geom
+      FROM read_parquet('${glob}', hive_partitioning=1)
+      WHERE bbox.xmin >= ${BBOX.w} AND bbox.xmax <= ${BBOX.e}
+        AND bbox.ymin >= ${BBOX.s} AND bbox.ymax <= ${BBOX.n}
+      ORDER BY id
+    ) TO '${out}' (FORMAT parquet)`);
+    const [r] = await db.all<{ n: number }>(`SELECT count(*) AS n FROM read_parquet('${out}')`);
+    const file = await storeFile(rawDir, 'overture-building-parts.parquet', glob, out);
+    return {
+      id: 'overture-building-parts',
+      files: [file],
+      retrievedAt: new Date().toISOString(),
+      upstreamVersion: release,
+      rowCount: r.n,
+      license: 'ODbL-1.0',
+      label: 'Overture Maps Building Parts',
+      homepage: 'https://overturemaps.org'
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** null when consistent or parts are absent; else the message naming both releases. */
+export function overtureReleaseProblem(lock: Lock): string | null {
+  const parts = lock.sources.find((s) => s.id === 'overture-building-parts');
+  const buildings = lock.sources.find((s) => s.id === 'overture-buildings');
+  if (!parts || !buildings || parts.upstreamVersion === buildings.upstreamVersion) return null;
+  return `overture-building-parts release ${parts.upstreamVersion} differs from overture-buildings ${buildings.upstreamVersion}; refetch both with --release`;
 }

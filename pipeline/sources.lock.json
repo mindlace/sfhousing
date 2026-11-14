@@ -3,6 +3,38 @@
     {
       "files": [
         {
+          "archiveKey": "sources/849943fe26ec09d91c7c4d5b0a9266a96672ac3c2aafc3c4381bdd3d852d713c.parquet",
+          "bytes": 11887785,
+          "name": "building-boxes/boxes.parquet",
+          "sha256": "849943fe26ec09d91c7c4d5b0a9266a96672ac3c2aafc3c4381bdd3d852d713c",
+          "url": "derived:building-boxes/boxes.parquet"
+        },
+        {
+          "archiveKey": "sources/c12d536ed6562e85066422108c05de15fde83b144bc2c0bd643bf62dd0c13d1d.parquet",
+          "bytes": 9618995,
+          "name": "building-boxes/roofs.parquet",
+          "sha256": "c12d536ed6562e85066422108c05de15fde83b144bc2c0bd643bf62dd0c13d1d",
+          "url": "derived:building-boxes/roofs.parquet"
+        },
+        {
+          "archiveKey": "sources/2b8531b70b7c96084dc99a259ac11575e3f8ec771bd72a3a1abcca1010a7db4e.json",
+          "bytes": 697,
+          "name": "building-boxes/inputs.json",
+          "sha256": "2b8531b70b7c96084dc99a259ac11575e3f8ec771bd72a3a1abcca1010a7db4e",
+          "url": "derived:building-boxes/inputs.json"
+        }
+      ],
+      "homepage": "https://www.usgs.gov/3d-elevation-program",
+      "id": "building-boxes",
+      "label": "Building boxes (USGS 3DEP LiDAR 2023 and Overture)",
+      "license": "ODbL-1.0",
+      "retrievedAt": "2026-11-14T11:55:36.324Z",
+      "rowCount": 162733,
+      "upstreamVersion": "boxes/1 code=472f4d15c2df config=dc85575b930a overture-buildings=edc5682f2cd8 overture-building-parts=a49c23350b4c usgs-lidar-sf=75c8da13a523 datasf-parcels=508b9268da45 datasf-streets=f0582c8ff890 datasf-neighborhoods=ddd0f07a9a90"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/b75d184012d4b2634b13c9f7ec89575a917b080e291005466b9d4eb9a3144299.csv",
           "bytes": 4133318,
           "name": "datasf-assessor-roll.page-000.csv",
@@ -1067,6 +1099,24 @@
       "retrievedAt": "2026-10-16T17:04:17.239Z",
       "rowCount": 3238,
       "upstreamVersion": "20260723..20260828"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/85742443092a13b25751aa5172ba4f9a899f06adde0ab6202d03db499f1e4cc2.parquet",
+          "bytes": 344863,
+          "name": "overture-building-parts.parquet",
+          "sha256": "85742443092a13b25751aa5172ba4f9a899f06adde0ab6202d03db499f1e4cc2",
+          "url": "s3://overturemaps-us-west-2/release/2026-09-23.1/theme=buildings/type=building_part/*"
+        }
+      ],
+      "homepage": "https://overturemaps.org",
+      "id": "overture-building-parts",
+      "label": "Overture Maps Building Parts",
+      "license": "ODbL-1.0",
+      "retrievedAt": "2026-11-14T08:59:02.774Z",
+      "rowCount": 1647,
+      "upstreamVersion": "2026-09-23.1"
     },
     {
       "files": [

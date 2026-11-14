@@ -6,7 +6,8 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
-  rmSync
+  rmSync,
+  statSync
 } from 'node:fs';
 import { writeFileSync } from 'node:fs';
 import { availableParallelism, tmpdir } from 'node:os';
@@ -17,14 +18,17 @@ import { run } from '../lib/exec';
 import { openDuck, type Duck } from '../lib/duck';
 import { lockSha256, rawPath, readLock, sortKeys, verifyRaw, type Lock } from '../lib/lock';
 import { landClipSection } from '../lib/land-report';
+import { boxesFilesOf, boxesLockProblem, boxesStaleWarnings } from '../lib/lidar/artifact';
 import { QUALITY_REPORT_MD, createQualityTables, writeQualityReport } from '../lib/quality';
 import { Report } from '../lib/report';
 import { loadRoadLotInputs, readRoadLots, ROAD_LOTS_JSON, roadLotProblems } from '../lib/road-lots';
 import { runSql } from '../lib/sql';
 import { GROSS_BIN, POLICY_BIN } from '../lib/scenario-files';
-import { codeTreeHash, computeDatasetVersion } from '../lib/version';
+import { boxesCodeHash, codeTreeHash, computeDatasetVersion } from '../lib/version';
 import { asOfFromLock } from '../project-records/parse';
+import { LIDAR_LOCK, readLidarLock } from '../sources/lidar';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
+import { overtureReleaseProblem } from '../sources/overture';
 import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
 import {
@@ -44,6 +48,7 @@ import { buildManifest, writeManifest } from './manifest';
 import { writeLessCars } from './lesscars';
 import { writePolicy } from './policy';
 import { writeProjectRecords } from './projects';
+import { writeRenderBoxes } from './render-boxes';
 import { writeScenario } from './scenario';
 import { installFonts, writeBasemap, writeBuildingsTiles } from './tiles';
 import { transitTargetDate, writeTransit } from './transit';
@@ -175,6 +180,11 @@ export async function build(
   if (mismatches.length > 0) {
     throw new BuildError(`raw files do not match the lock:\n  ${mismatches.join('\n  ')}`);
   }
+  const releaseProblem = overtureReleaseProblem(lock);
+  if (releaseProblem) throw new BuildError(releaseProblem);
+  // Stale boxes would sit on the wrong footprints: stop before anything is written.
+  const boxesProblem = boxesLockProblem(lock);
+  if (boxesProblem) throw new BuildError(boxesProblem);
   const datasetVersion =
     opts.datasetVersion ??
     computeDatasetVersion({
@@ -183,6 +193,12 @@ export async function build(
       toolVersions: TOOL_VERSIONS
     });
   const fixtureMode = FIXTURE_RE.test(datasetVersion);
+  // The non-gated inputs, code and config only warn, and only off fixture builds (plan Decisions:
+  // the golden report stays stable; a test re-deriving the mini artifact catches drift there).
+  if (!fixtureMode)
+    report.warnings.push(
+      ...boxesStaleWarnings(lock, readLidarLock(LIDAR_LOCK.live), await boxesCodeHash(REPO_ROOT))
+    );
   // funding.json failures come before any step runs (finance-data spec 4.10); the calibration
   // step reads the same file again.
   const fundingPath = fixtureMode ? FUNDING.fixture : FUNDING.live;
@@ -219,6 +235,13 @@ export async function build(
     // The override file is checked against the raw rule's output of this build.
     const roadProblems = await roadLotProblems(db);
     if (roadProblems.length > 0) throw new BuildError(`road lots: ${roadProblems.join('; ')}`);
+    const derivedDir = join(opts.derivedRoot ?? DERIVED_ROOT, datasetVersion);
+    // The render-only boxes (docs/dev/pipeline.md, Building boxes in build): beside pieces, which
+    // they never touch. Without a building-boxes entry nothing is created (`written` false) and
+    // the tiles carry today's single boxes.
+    const renderBoxes = await report.time('render-boxes', () =>
+      writeRenderBoxes({ db, files: boxesFilesOf(lock, opts.rawDir, byName), derivedDir })
+    );
     const chunks = await report.time('chunks', () =>
       writeChunks(db, outDir, datasetVersion, report)
     );
@@ -234,7 +257,6 @@ export async function build(
     // the GTFS feeds (`TRANSIT_DATE_SOURCE_IDS`). A policy-only source moves neither.
     const transitDate = transitTargetDate(lock);
     const asOf = asOfFromLock(lock);
-    const derivedDir = join(opts.derivedRoot ?? DERIVED_ROOT, datasetVersion);
     // The build's single report `counts` (T14): every owner records its `recordQuality` counts
     // into this object, and `writeQualityReport` and V30 read it. The project-records step writes
     // all its counts into it; the other counts join it below.
@@ -354,7 +376,16 @@ export async function build(
       await landClipSection(db)
     ]);
     if (!opts.skipTiles) {
-      await report.time('tiles', () => writeBuildingsTiles(db, outDir, work));
+      // With the building-boxes artifact, z14+ carry the render boxes (docs/dev/building-boxes.md);
+      // without it the archive is today's, byte for byte, and the report gains no drop count.
+      const tiles = await report.time('tiles', () =>
+        writeBuildingsTiles(db, outDir, work, { split: renderBoxes.written })
+      );
+      if (renderBoxes.written) counts['tiles.buildings.drops_z14plus'] = tiles.dropsAtSplit;
+      // tippecanoe's bytes vary by platform: live builds only, so the fixture report stays stable.
+      if (!fixtureMode) {
+        counts['tiles.buildings.bytes'] = statSync(join(outDir, 'buildings.pmtiles')).size;
+      }
     }
     // The removed freeway stretches of the basemap id list move to source layer roads_lc
     // (docs/dev/lesscars.md "Basemap ids"); without phases the archive is copied byte for byte
@@ -403,6 +434,7 @@ export async function build(
       ...gross.counts,
       ...policy.counts,
       ...lesscars.counts,
+      ...renderBoxes.counts,
       ...Object.fromEntries(overtureContrib.map((o) => [`overture.contrib.${o.dataset}`, o.n])),
       'units.total': totals.units,
       'parcels.height_max_m': totals.hmax,
