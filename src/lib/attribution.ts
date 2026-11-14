@@ -19,7 +19,9 @@ export const SOFTWARE: { name: string; license: string; url: string }[] = [
     name: 'fdlibm (exp, log)',
     license: 'Sun Microsystems permissive notice',
     url: 'https://www.netlib.org/fdlibm/'
-  }
+  },
+  { name: 'bs58', license: 'MIT', url: 'https://github.com/cryptocoinjs/bs58' },
+  { name: 'uuid', license: 'MIT', url: 'https://github.com/uuidjs/uuid' }
 ];
 
 /** First 10 chars of a valid ISO date/datetime, else the input unchanged. */

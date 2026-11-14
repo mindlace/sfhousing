@@ -17,6 +17,19 @@ describe('SOFTWARE credits', () => {
     });
   });
 
+  it('credits bs58 and uuid', () => {
+    expect(SOFTWARE).toContainEqual({
+      name: 'bs58',
+      license: 'MIT',
+      url: 'https://github.com/cryptocoinjs/bs58'
+    });
+    expect(SOFTWARE).toContainEqual({
+      name: 'uuid',
+      license: 'MIT',
+      url: 'https://github.com/uuidjs/uuid'
+    });
+  });
+
   it('keeps the fdlibm notice through minification', () => {
     const src = readFileSync(new URL('./timelapse/math.ts', import.meta.url), 'utf8');
     expect(src.startsWith('/*!')).toBe(true);

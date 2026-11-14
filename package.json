@@ -53,11 +53,13 @@
     "@luma.gl/engine": "~9.4.0",
     "@luma.gl/shadertools": "~9.4.0",
     "@protomaps/basemaps": "^5.7.2",
+    "bs58": "^6.0.0",
     "clipper2-ts": "2.0.1",
     "drizzle-orm": "^1.0.0-rc.4-5d5b77c",
     "kdbush": "^4.1.0",
     "maplibre-gl": "^6.13.0",
     "pmtiles": "^4.5.0",
+    "uuid": "^14.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
