@@ -7,6 +7,7 @@ import {
   fillStatusText,
   playAvailable,
   refilled,
+  rejected,
   settled,
   shownAt
 } from './fill';
@@ -70,8 +71,24 @@ describe('stale, fill and Play state', () => {
   });
   it('a refill keeps the first held view and leaves pending and Play as they were', () => {
     const s = refilled(edited(NO_EDIT, whole), cut(whole, 40));
-    expect(s).toEqual({ held: whole, pending: true, sinceWhole: true });
+    expect(s).toEqual({ held: whole, pending: true, sinceWhole: true, floor: -1 });
     expect(refilled(NO_EDIT, whole).sinceWhole).toBe(false);
+  });
+  it('a rejected edit is stale until the fill is back to the held view and past the playhead', () => {
+    const held = cut(whole, 40);
+    let s = rejected(settled(edited(NO_EDIT, held)));
+    expect(s.floor).toBe(40);
+    expect(shownAt(s, cut(whole, 30), 5)).toEqual({ view: held, stale: true });
+    s = afterView(s, cut(whole, 30), 5);
+    expect(s.held).toBe(held);
+    s = afterView(s, cut(whole, 40), 5);
+    expect([s.held, s.floor]).toEqual([null, -1]);
+    expect(shownAt(s, cut(whole, 40), 5).stale).toBe(false);
+  });
+  it('a refill after a rejection hands the stale rule back to carry 4', () => {
+    const s = refilled(rejected(settled(edited(NO_EDIT, whole))), whole);
+    expect(s.floor).toBe(-1);
+    expect(shownAt(s, cut(whole, 30), 5).stale).toBe(false);
   });
   it('fill status names the year of the last final month, and nothing when full', () => {
     expect(fillStatusText(cut(whole, 251))).toMatch(/^Forecast filled to \d{4}$/);

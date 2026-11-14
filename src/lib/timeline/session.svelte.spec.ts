@@ -294,10 +294,15 @@ describe('TimelineSession', () => {
     session.edited();
     session.send(doc2, {});
     emit(error(2, 'bad-request'));
+    expect(session.notices.map((n) => n.id)).toEqual(['error']);
+    expect(session.stoppedByError).toBe(true);
+    expect(undoTo).not.toHaveBeenCalled();
     emit(compiled(1));
+    expect(undoTo).toHaveBeenCalledTimes(1);
     expect(undoTo).toHaveBeenCalledWith(doc1);
     expect(session.notices).toEqual([{ id: 'not-applied' }]);
     expect(session.stoppedByError).toBe(false);
+    expect(session.accepted).toEqual(doc1);
   });
 
   it('a later accepted edit resumes after an error and clears it', () => {
@@ -455,6 +460,167 @@ describe('TimelineSession', () => {
     expect(undoTo).not.toHaveBeenCalled();
     expect([session.provisional, session.shown(5).stale]).toEqual([true, true]);
     expect(session.shown(5).view).toBe(session.view);
+  });
+
+  // ---- fix round 1 ----
+
+  it('provisional ends when the document becomes the stripped one before lots resolve (I1, A)', () => {
+    session.open(withPaint, null);
+    const stripped = worker.lastOf('openTimeline')!.policy;
+    session.edited();
+    session.send(stripped, {});
+    expect(worker.all('setPolicy')).toHaveLength(0);
+    emit(compiled(1));
+    emit(filled(1, 0, LAST + 1));
+    expect([session.provisional, session.shown(5).stale]).toEqual([false, false]);
+  });
+
+  it('provisional ends when the user removes the brushes after the full document was rejected (I1, B)', () => {
+    session.open(withPaint, null);
+    const stripped = worker.lastOf('openTimeline')!.policy;
+    emit(compiled(1));
+    emit(filled(1, 0, LAST + 1));
+    session.send(withPaint, lots);
+    emit(error(2, 'bad-request'));
+    expect(session.provisional).toBe(true);
+    session.edited();
+    session.send(stripped, {});
+    expect(worker.all('setPolicy')).toHaveLength(1);
+    expect([session.provisional, session.shown(5).stale]).toEqual([false, false]);
+  });
+
+  it('a card opened after a refill, before its day is filled, is asked again (I2)', () => {
+    const refresh = vi.fn();
+    session.oncardrefresh = refresh;
+    opened();
+    session.edited();
+    session.send(doc2, {});
+    emit(compiled(2));
+    emit(refill(2, 10));
+    session.watchCard(dayOf(15));
+    expect(refresh).not.toHaveBeenCalled();
+    emit(filled(2, 10, 6));
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('a card opened while an edit is pending is asked again once it settles and fills (I2)', () => {
+    const refresh = vi.fn();
+    session.oncardrefresh = refresh;
+    opened();
+    session.edited();
+    session.watchCard(dayOf(5));
+    session.send(doc2, {});
+    emit(compiled(2));
+    emit(refill(2, 20));
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('a restart re-opens with the pair the client last posted, then sends the current one (I3)', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    opened();
+    session.edited();
+    session.send(doc2, {});
+    emit(compiled(2));
+    emit(refill(2, 20));
+    session.edited();
+    session.send(doc3, {});
+    emit(compiled(3));
+    emit(error(3, 'bad-request'));
+    expect(undoTo).toHaveBeenLastCalledWith(doc2);
+    session.edited();
+    session.send(doc2, {});
+    emit(compiled(2));
+    emit(refill(2, 20));
+    worker.crash();
+    session.retry({ id: 'crash', retry: 'restart' });
+    expect(worker.lastOf('openTimeline')!.policy).toEqual(doc3);
+    expect(worker.lastOf('setPolicy')!.policy).toEqual(doc2);
+    expect(session.accepted).toEqual(doc2);
+  });
+
+  it('a restart re-opens at the next rev and its posts are taken (ruling d)', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    opened();
+    worker.crash();
+    session.retry({ id: 'crash', retry: 'restart' });
+    expect(worker.lastOf('openTimeline')!.rev).toBe(2);
+    emit(compiled(2));
+    emit(filled(2, 0, 6));
+    expect(session.view!.filledThrough).toBe(5);
+    emit(error(1, 'timeline'));
+    expect(session.notices).toEqual([]);
+    session.edited();
+    session.send(doc2, {});
+    expect(worker.lastOf('setPolicy')!.rev).toBe(3);
+    emit(compiled(3));
+    emit(refill(3, 6));
+    emit(filled(3, 6, LAST - 5));
+    expect([session.shown(LAST).stale, session.playAvailable()]).toEqual([false, true]);
+  });
+
+  it('a crash before any open: Retry restarts and clears the crash (minor 2)', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    worker.crash();
+    session.retry({ id: 'crash', retry: 'restart' });
+    expect([session.stoppedByError, session.phase, session.notices]).toEqual([
+      false,
+      'loading',
+      []
+    ]);
+  });
+
+  it('a rejected edit stays stale until the previous forecast is whole again (ruling a)', () => {
+    opened();
+    session.playhead(dayOf(5));
+    session.edited();
+    session.send(doc2, {});
+    session.send(doc3, {});
+    emit(compiled(2));
+    emit(refill(2, 10));
+    emit(filled(2, 10, 3));
+    emit(error(3, 'bad-request'));
+    expect(undoTo).toHaveBeenLastCalledWith(doc2);
+    // filled to month 12, past the playhead, but short of the 19 held before the edit
+    expect(session.shown(5).stale).toBe(true);
+    emit(filled(2, 13, 7));
+    expect(session.shown(5).stale).toBe(false);
+  });
+
+  it('an accepted edit is not held to the earlier fill (carry 4 governs)', () => {
+    opened();
+    session.playhead(dayOf(5));
+    session.edited();
+    session.send(doc2, {});
+    emit(compiled(2));
+    emit(refill(2, 10));
+    expect(session.shown(5).stale).toBe(false);
+  });
+
+  it('compiled(R) then its rejection: the re-taken compiled restores statics (ruling b)', () => {
+    opened();
+    const other: ScoreStatics = { ...STATICS };
+    session.edited();
+    session.send(doc2, {});
+    emit(compiledMsg(2, other, 9));
+    expect([session.statics, session.unknownLots]).toEqual([other, 9]);
+    emit(error(2, 'bad-request'));
+    emit(compiled(1));
+    emit(refill(1, 20));
+    expect(session.statics).toBe(STATICS);
+    expect([session.capacity, session.unknownLots]).toEqual([{ rev: 1 }, 3]);
+  });
+
+  it('an early rejection overtaken by a later accepted edit still shows not-applied (minor 5)', () => {
+    session.open(doc1, {});
+    session.edited();
+    session.send(doc2, {});
+    emit(error(2, 'bad-request'));
+    session.edited();
+    session.send(doc3, {});
+    emit(compiled(3));
+    emit(refill(3, 0));
+    expect(session.notices).toEqual([{ id: 'not-applied' }]);
+    expect(session.stoppedByError).toBe(false);
   });
 
   it('sends a reconciled document', () => {

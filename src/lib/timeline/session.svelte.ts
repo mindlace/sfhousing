@@ -31,6 +31,7 @@ import {
   edited,
   playAvailable,
   refilled,
+  rejected,
   settled,
   shownAt,
   type EditState
@@ -146,8 +147,13 @@ export class TimelineSession {
   #kept: Sent[] = [];
   /** What the worker's timelines run (or will): a pair equal to it is not sent. */
   #lastKey = '';
-  /** The last pair posted to the client, which a restart re-opens with. */
+  /** The last pair posted to the client, which a restart re-opens with, and its key. */
+  #clientLast: { policy: SimPolicy4; lots: Lots } | null = null;
   #clientKey = '';
+  /** The key of the latest open's document (the stripped one after a provisional open). */
+  #openKey = '';
+  /** The latest rev answered by a refill, or the open's: kept edits above it are pending. */
+  #baseRev = 0;
   /** The latest pair the page asked for: Retry opens it. Lots null: provisional. */
   #current: { policy: SimPolicy4; lots: Lots | null } | null = null;
   /** `edited()` was called and its pair is not sent yet. */
@@ -207,6 +213,11 @@ export class TimelineSession {
   get view(): TimelineView | null {
     return this.#view;
   }
+  /**
+   * The last `compiled`'s statics, for what the page needs once (dates, baseline). It can be newer
+   * than the statics `view` was built from (those of the last chunk) until the first `filled` at
+   * that rev: read series figures from `view` only.
+   */
   get statics(): ScoreStatics | null {
     return this.#statics;
   }
@@ -270,9 +281,16 @@ export class TimelineSession {
     const doc = this.#reconcile(policy);
     this.#current = { policy: doc, lots };
     if (this.#openRev === 0) return; // `open` sends it
-    if (keyOf(doc, lots) === this.#lastKey) {
+    const key = keyOf(doc, lots);
+    if (key === this.#lastKey) {
       this.#dirty = false;
+      if (this.#provisional && key === this.#openKey) {
+        // The document wanted is the stripped one: the open was the full document (I1).
+        this.#fullRev = this.#openRev;
+        this.#fullRefilled = true;
+      }
       this.#settleIfDone();
+      this.#update();
       return;
     }
     this.#post(doc, lots);
@@ -314,7 +332,11 @@ export class TimelineSession {
   /** The day of the open card, or null when none is open. */
   watchCard(day: Day | null): void {
     this.#cardDay = day;
-    this.#cardDirty = false;
+    // Asked now while its day is stale (an edit pending, or not filled there yet): ask again later.
+    const v = this.#view;
+    this.#cardDirty =
+      day !== null &&
+      (this.#edit.pending || v === null || v.filledThrough < indexOfDay(v.months, day));
   }
 
   dispose(): void {
@@ -337,10 +359,13 @@ export class TimelineSession {
   }
 
   #openWith(doc: SimPolicy4, lots: Lots | null): void {
-    const sendDoc = lots === null ? this.#reconcile(provisionalOf(doc)) : doc;
+    // Stripping may legitimately change the reconciled result: no R-3 warning for it.
+    const cal = this.#deps.calibration;
+    const sendDoc = lots === null ? reconcilePolicy4(provisionalOf(doc), cal, cal.asOf).doc : doc;
     const sendLots = lots ?? {};
     const rev = this.#client.open(this.#deps.manifest, sendDoc, sendLots);
     this.#rev = rev;
+    this.#clientLast = { policy: sendDoc, lots: sendLots };
     this.#opened(rev, sendDoc, sendLots, sendDoc !== doc);
   }
 
@@ -348,6 +373,8 @@ export class TimelineSession {
   #opened(rev: number, policy: SimPolicy4, lots: Lots, provisional: boolean): void {
     const key = keyOf(policy, lots);
     this.#openRev = rev;
+    this.#openKey = key;
+    this.#baseRev = rev;
     this.#kept = [{ rev, policy, lots, key, edit: false, early: true, rejected: false }];
     this.#lastKey = key;
     this.#clientKey = key;
@@ -390,6 +417,7 @@ export class TimelineSession {
       rejected: false
     });
     this.#lastKey = key;
+    this.#clientLast = { policy: doc, lots };
     this.#clientKey = key;
     this.#accepted = doc;
     this.#dirty = false;
@@ -399,11 +427,17 @@ export class TimelineSession {
   #restart(): void {
     const reopens = this.#openRev > 0;
     this.#client.restart(this.#deps.createWorker());
-    if (!reopens) return;
-    // The client re-opens with the last pair it was given, at its next rev.
+    const last = this.#clientLast;
+    if (!reopens || last === null) {
+      this.#crashed = false;
+      this.dismiss('crash');
+      return;
+    }
+    // GUESS (composer): the client re-opens with the last pair it posted, at its next rev;
+    // `restart` returns no rev, so it is mirrored here.
     this.#rev += 1;
-    const last = this.#kept.find((e) => e.key === this.#clientKey) ?? this.#kept.at(-1)!;
-    const provisional = this.#provisional && this.#fullRev === null;
+    const provisional =
+      this.#provisional && this.#fullRev === null && this.#clientKey === this.#openKey;
     this.#opened(this.#rev, last.policy, last.lots, provisional);
     const cur = this.#current;
     if (cur && cur.lots !== null && keyOf(cur.policy, cur.lots) !== this.#clientKey) {
@@ -441,7 +475,13 @@ export class TimelineSession {
       if (base) kept = [base, ...kept];
     }
     this.#kept = kept;
+    this.#baseRev = rev;
     this.#fillWentOn(rev);
+    if (this.#earlyRejected !== null && rev > this.#earlyRejected) {
+      // A later edit was accepted over an early rejection: that change still was not applied.
+      this.#earlyRejected = null;
+      this.#notice({ id: 'not-applied' });
+    }
     if (this.#fullRev !== null && rev >= this.#fullRev) this.#fullRefilled = true;
     // An accepted edit or a taken-up one resumes a fill an error stopped.
     if (this.#stopped) {
@@ -469,8 +509,9 @@ export class TimelineSession {
       // A late rejection of the open's own document: nothing to take up (rule 35).
       this.#stop();
     } else if (e.early) {
-      // It may have replaced the opening's document before the load (rule 35), or the fill may go
-      // on under an earlier document (rule 34): older-rev posts after this tell.
+      // GUESS (composer): "early" = sent before any `compiling`/`compiled` arrived (line 416). It
+      // may have replaced the opening's document before the load (rule 35), or the fill may go on
+      // under an earlier document (rule 34): older-rev posts after this tell.
       this.#earlyRejected = rev;
       this.#stop();
     } else {
@@ -481,6 +522,8 @@ export class TimelineSession {
 
   /** Rule 34: undo to the newest kept document not rejected, unless it is the stripped open. */
   #notApplied(): void {
+    // Ruling (a): stale until the previous forecast is back to the held view's months.
+    this.#edit = rejected(this.#edit);
     const target = this.#kept.filter((k) => !k.rejected).at(-1);
     if (target) {
       this.#lastKey = target.key;
@@ -524,7 +567,7 @@ export class TimelineSession {
 
   /** An edit is pending while it is unsent or a kept edit above the base is not rejected. */
   #recomputePending(): void {
-    const base = this.#kept[0]?.rev ?? 0;
+    const base = this.#baseRev;
     const pending = this.#dirty || this.#kept.some((e) => e.edit && !e.rejected && e.rev > base);
     if (!pending && this.#edit.pending) this.#edit = settled(this.#edit);
   }

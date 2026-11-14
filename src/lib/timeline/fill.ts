@@ -10,13 +10,19 @@ export interface EditState {
   pending: boolean;
   /** True from an edit until the forecast is whole again (`filledThrough === lastIndex` after settling). */
   sinceWhole: boolean;
+  /**
+   * After a rejected edit (rule 34): stale also until `filledThrough` is back to this, the held
+   * view's, so the previous forecast is whole again. -1 when no rejection is in play; a refill (an
+   * acceptance, carry 4) clears it.
+   */
+  floor: number;
 }
 
-export const NO_EDIT: EditState = { held: null, pending: false, sinceWhole: false };
+export const NO_EDIT: EditState = { held: null, pending: false, sinceWhole: false, floor: -1 };
 
 /** An edit was made: the first held view is kept while edits stack. */
 export function edited(s: EditState, current: TimelineView | null): EditState {
-  return { held: s.held ?? current, pending: true, sinceWhole: true };
+  return { held: s.held ?? current, pending: true, sinceWhole: true, floor: s.floor };
 }
 
 /** A `refill` at or past the latest edit's rev arrived (or its `bad-request`). */
@@ -31,7 +37,12 @@ export function settled(s: EditState): EditState {
  * later one was rejected) so puts the page back into stale. Pending and Play are left alone.
  */
 export function refilled(s: EditState, before: TimelineView | null): EditState {
-  return { ...s, held: s.held ?? before };
+  return { ...s, held: s.held ?? before, floor: -1 };
+}
+
+/** An edit was rejected (rule 34): stale until the fill is back to the held view's months. */
+export function rejected(s: EditState): EditState {
+  return { ...s, floor: s.held === null ? -1 : s.held.filledThrough };
 }
 
 /** The view to show at month `i`, and whether it is the dimmed numbers from before the change. */
@@ -41,17 +52,21 @@ export function shownAt(
   i: number
 ): { view: TimelineView | null; stale: boolean } {
   const inPlay = s.held !== null || s.pending;
-  const stale = inPlay && (s.pending || current === null || current.filledThrough < i);
+  const stale =
+    inPlay &&
+    (s.pending || current === null || current.filledThrough < i || current.filledThrough < s.floor);
   return { view: stale ? s.held : current, stale };
 }
 
 /** The state after a view arrives: held is dropped once not stale at `i`; Play's wait ends when whole. */
 export function afterView(s: EditState, current: TimelineView | null, i: number): EditState {
   const whole = current !== null && current.filledThrough === current.lastIndex;
+  const stale = shownAt(s, current, i).stale;
   return {
-    held: shownAt(s, current, i).stale ? s.held : null,
+    held: stale ? s.held : null,
     pending: s.pending,
-    sinceWhole: s.sinceWhole && !(whole && !s.pending)
+    sinceWhole: s.sinceWhole && !(whole && !s.pending),
+    floor: stale ? s.floor : -1
   };
 }
 
