@@ -2,7 +2,7 @@ import { render } from 'vitest-browser-svelte';
 import { describe, it, expect, vi } from 'vitest';
 import { flushSync } from 'svelte';
 import LeaveSimConfirm from './LeaveSimConfirm.svelte';
-import { MEMBERS_COPY } from './copy';
+import { MEMBER_ERROR_COPY, MEMBERS_COPY } from './copy';
 
 // The route passes SvelteKit's `enhance`; here a stand-in stops the real submit and drives
 // the submit callback with a chosen result.
@@ -168,12 +168,12 @@ describe('LeaveSimConfirm', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it('shows the action failure and does not fire onLeave', async () => {
+  it('shows the line for the failure code above the buttons, and does not fire onLeave', async () => {
     update.mockClear();
     const onLeave = vi.fn();
     const screen = await render(LeaveSimConfirm, {
       ...base,
-      enhance: enhanceWith({ type: 'failure', data: { error: 'title did not match' } }) as never,
+      enhance: enhanceWith({ type: 'failure', data: { code: 'not_member' } }) as never,
       currentUserId: 'u1',
       members: [
         { userId: 'u1', handle: 'me', role: 'viewer' },
@@ -183,9 +183,36 @@ describe('LeaveSimConfirm', () => {
     });
     await screen.getByRole('button', { name: MEMBERS_COPY.leaveButton }).click();
     await screen.getByRole('button', { name: MEMBERS_COPY.leaveSimpleButton }).click();
-    await expect.element(screen.getByRole('alert')).toHaveTextContent('title did not match');
+    const status = screen.getByTestId('leave-status');
+    await expect.element(status).toHaveTextContent(MEMBER_ERROR_COPY.not_member);
+    for (const b of screen.container.querySelectorAll('button')) {
+      expect(
+        !!(status.element().compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+      ).toBe(true);
+    }
     expect(onLeave).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it('shows the generic line, never server text, for an unknown failure', async () => {
+    const screen = await render(LeaveSimConfirm, {
+      ...base,
+      enhance: enhanceWith({
+        type: 'failure',
+        data: { code: 'nope', error: 'D1_ERROR: locked' }
+      }) as never,
+      currentUserId: 'u1',
+      members: [
+        { userId: 'u1', handle: 'me', role: 'viewer' },
+        { userId: 'u2', handle: 'owner', role: 'manager' }
+      ]
+    });
+    await screen.getByRole('button', { name: MEMBERS_COPY.leaveButton }).click();
+    await screen.getByRole('button', { name: MEMBERS_COPY.leaveSimpleButton }).click();
+    await expect
+      .element(screen.getByTestId('leave-status'))
+      .toHaveTextContent(MEMBER_ERROR_COPY.failed);
+    expect(screen.container.textContent).not.toContain('D1');
   });
 
   it('the last manager sees a successor picker including "Let the app choose"', async () => {

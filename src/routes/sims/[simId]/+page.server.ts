@@ -4,7 +4,7 @@ import { getDb } from '$lib/server/db';
 import { requireSimRole } from '$lib/server/authz/require-sim-role';
 import { getSimTitle } from '$lib/server/sims/sim-index';
 import { leaveSim } from '$lib/server/sims/sims';
-import { MEMBERS_COPY } from '$lib/members/copy';
+import { memberErrorCode } from '$lib/server/invites/error-code';
 
 export const load: PageServerLoad = async (event) => {
   // The shared data comes from the layout load; this only gates the page itself.
@@ -24,7 +24,7 @@ export const actions: Actions = {
 
     const db = getDb(event.platform!);
     const simTitle = await getSimTitle({ db, simId });
-    if (simTitle === null) return fail(404, { error: MEMBERS_COPY.simNotFound });
+    if (simTitle === null) return fail(404, { code: 'sim_not_found' as const });
 
     try {
       await leaveSim({
@@ -36,7 +36,9 @@ export const actions: Actions = {
         successorUserId
       });
     } catch (e) {
-      return fail(400, { error: e instanceof Error ? e.message : MEMBERS_COPY.leaveFailed });
+      const code = memberErrorCode(e);
+      if (code === 'failed') console.error('leave sim failed', e);
+      return fail(400, { code });
     }
 
     throw redirect(303, '/sims');

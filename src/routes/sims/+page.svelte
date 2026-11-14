@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
+  import FieldError from '$lib/account/FieldError.svelte';
   import InvitationsList from '$lib/members/InvitationsList.svelte';
   import { SIMS_COPY, SIM_TITLE_MAX } from '$lib/members/copy';
   import type { ActionData, PageData } from './$types';
@@ -31,15 +32,15 @@
         maxlength={SIM_TITLE_MAX}
         autocomplete="off"
         class="rounded border border-current/40 bg-transparent px-3 py-2"
+        aria-invalid={form?.error ? 'true' : undefined}
+        aria-describedby={form?.error ? 'sim-title-error' : undefined}
       />
+      <FieldError id="sim-title-error" forId="sim-title" message={form?.error ?? null} />
     </div>
     <button type="submit" class="rounded border border-current px-4 py-2 font-medium">
       {SIMS_COPY.create}
     </button>
   </form>
-  {#if form?.error}
-    <p role="alert" class="mb-4 text-sm">{form.error}</p>
-  {/if}
 
   {#if data.sims.length > 0}
     <ul class="space-y-1">

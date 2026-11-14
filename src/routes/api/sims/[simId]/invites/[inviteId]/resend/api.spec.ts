@@ -115,10 +115,10 @@ describe('POST /api/sims/:simId/invites/:inviteId/resend', () => {
 
   it('400 when the resend service rejects', async () => {
     expect.hasAssertions();
-    resendInvite.mockRejectedValue(new Error('invite not found'));
+    resendInvite.mockRejectedValue(new Error('resend too soon'));
     const res = await POST(postEvent('q1', 'inv1'));
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: 'invite not found' });
+    expect(await res.json()).toEqual({ code: 'resend_too_soon' });
   });
 
   it('returns only { emailed }, never the rotated raw token', async () => {

@@ -1,10 +1,22 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { AUTH_COPY } from '$lib/account/copy';
-  import FieldError from '$lib/account/FieldError.svelte';
   import FormStatus from '$lib/account/FormStatus.svelte';
-  import { MEMBERS_COPY, inviteHeading } from '$lib/members/copy';
+  import { MEMBERS_COPY, inviteHeading, memberErrorText } from '$lib/members/copy';
   let { data, form } = $props();
+
+  // One status line under the heading: the sent confirmation, an Accept or Join failure (a
+  // code from the action, never its text), or a magic link that came back failed.
+  const failed = $derived(!!form?.code || (!!data.linkError && !form?.checkEmail));
+  const status = $derived(
+    form?.checkEmail
+      ? MEMBERS_COPY.inviteCheckEmail
+      : form?.code
+        ? memberErrorText(form.code)
+        : data.linkError
+          ? AUTH_COPY.linkFailed
+          : ''
+  );
 
   const btn = 'rounded border border-current px-4 py-2 font-medium disabled:opacity-60';
   const bare = 'self-start px-1 py-1 underline';
@@ -25,12 +37,13 @@
 <div class="mx-auto flex max-w-md flex-col gap-3 py-4">
   {#if !data.invite}
     <h1 class="text-2xl font-semibold">{MEMBERS_COPY.inviteInvalidTitle}</h1>
+    <FormStatus message={status} tone={failed ? 'error' : 'info'} />
     <p>{MEMBERS_COPY.inviteInvalid}</p>
   {:else}
     <h1 class="text-2xl font-semibold">
       {inviteHeading(data.invite.inviterHandle, data.invite.simTitle)}
     </h1>
-    <FormStatus message={form?.checkEmail ? MEMBERS_COPY.inviteCheckEmail : ''} focus />
+    <FormStatus message={status} tone={failed ? 'error' : 'info'} focus={!!form?.checkEmail} />
     {#if form?.checkEmail}
       {#if form?.devLink}
         <p>
@@ -53,8 +66,6 @@
           autocomplete="email"
           class={input}
           value={data.invite.invitedEmail ?? ''}
-          aria-invalid={form?.error ? 'true' : undefined}
-          aria-describedby={form?.error ? 'invite-email-error' : undefined}
         />
         <button type="submit" class={btn} disabled={busy} aria-busy={busy ? 'true' : undefined}
           >{MEMBERS_COPY.inviteJoinSim}</button
@@ -67,9 +78,6 @@
           data-testid="start-fresh"
           disabled={busy}>{AUTH_COPY.startFresh}</button
         >
-        {#if form?.error}
-          <FieldError id="invite-email-error" forId="invite-email" message={form.error} />
-        {/if}
       </form>
     {/if}
   {/if}

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SIMS_COPY } from '$lib/members/copy';
+import { mockConsole } from '$lib/server/test/mock-console';
 
 const { requireSimRole, removeSimMember } = vi.hoisted(() => ({
   requireSimRole: vi.fn(),
@@ -73,11 +74,24 @@ describe('DELETE /api/sims/:simId/members/:userId', () => {
     });
   });
 
-  it('400 with the message when removeSimMember throws', async () => {
-    removeSimMember.mockRejectedValue(new Error('remove failed'));
+  it('400 with a code, not the message, when removeSimMember refuses', async () => {
+    removeSimMember.mockRejectedValue(
+      new Error('cannot remove another manager; they must leave the sim themselves')
+    );
     const res = await DELETE(deleteEvent('s1', 'manager-1'));
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: 'remove failed' });
+    expect(await res.json()).toEqual({ code: 'manager_protected' });
+  });
+
+  it('400 with the generic code, and no server text, for an unexpected error', async () => {
+    const { error: errSpy } = mockConsole('error');
+    removeSimMember.mockRejectedValue(new Error('D1_ERROR: database is locked'));
+    const res = await DELETE(deleteEvent('s1', 'manager-1'));
+    expect(res.status).toBe(400);
+    const text = await res.text();
+    expect(JSON.parse(text)).toEqual({ code: 'failed' });
+    expect(text).not.toContain('D1');
+    expect(errSpy).toHaveBeenCalled();
   });
 
   it('415 when the request is not JSON, before any authz or write', async () => {

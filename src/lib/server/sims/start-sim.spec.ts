@@ -4,9 +4,22 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { SIMS_COPY, SIM_TITLE_MAX, titleTooLong } from '$lib/members/copy';
 import { user as userTable } from '$lib/server/db/schema';
 import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
+import { mockConsole } from '$lib/server/test/mock-console';
 
 const mint = vi.hoisted(() => vi.fn());
 vi.mock('$lib/server/onboarding/pseudonymous-mint', () => ({ mintPseudonymousSession: mint }));
+// createSim stays real unless a case makes it throw.
+const createFails = vi.hoisted(() => ({ with: null as Error | null }));
+vi.mock('./sims', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./sims')>();
+  return {
+    ...real,
+    createSim: (args: Parameters<typeof real.createSim>[0]) => {
+      if (createFails.with) throw createFails.with;
+      return real.createSim(args);
+    }
+  };
+});
 
 import { listSimsForUser } from './sim-index';
 import { createSim } from './sims';
@@ -16,6 +29,7 @@ const opened: Array<() => void> = [];
 afterEach(() => {
   for (const close of opened.splice(0)) close();
   mint.mockReset();
+  createFails.with = null;
 });
 
 function setup(
@@ -114,5 +128,15 @@ describe('startSim', () => {
     for (let i = 0; i < 5; i++) await createSim({ db, title: `S${i}`, managerId: 'u1' });
     const res = await startSim(event, 'One more');
     expect(res).toMatchObject({ status: 403, data: { error: SIMS_COPY.quota } });
+  });
+
+  it('answers the generic line, never the error text, when creating the sim throws', async () => {
+    const { db, event } = setup({ user: { id: 'u1', pseudonymous: false } });
+    await seedUser(db, { id: 'u1', email: 'u1@test.com' });
+    createFails.with = new Error('D1_ERROR: database is locked');
+    const { error: errSpy } = mockConsole('error');
+    const res = await startSim(event, 'Garden');
+    expect(res).toMatchObject({ status: 400, data: { error: SIMS_COPY.createFailed } });
+    expect(errSpy).toHaveBeenCalled();
   });
 });

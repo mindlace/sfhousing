@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormStatus from '$lib/account/FormStatus.svelte';
   import { MEMBERS_COPY } from './copy';
   import { inviteBannerModel, type PendingInvite } from './invite-banner';
 
@@ -19,7 +20,7 @@
   let dismissed = $state(false);
   // Declined rows leave locally; filtering keeps it idempotent when `invites` re-seeds.
   let declinedIds = $state<string[]>([]);
-  let error = $state<string | null>(null);
+  let error = $state('');
 
   const model = $derived(
     dismissed
@@ -39,7 +40,7 @@
   }
 
   async function run(id: string) {
-    error = null;
+    error = '';
     const inv = model?.invite;
     if (id === 'dismiss') dismissed = true;
     else if (id === 'view') await onview();
@@ -53,20 +54,24 @@
   }
 </script>
 
-<div role="status" aria-label={MEMBERS_COPY.inviteBannerLabel} data-testid="invite-banner">
+<!-- No live region wraps the banner: it holds buttons. Its one status line is mounted with the
+     banner, above the buttons, and only its text changes. -->
+<div data-testid="invite-banner">
   {#if model}
-    <div
-      class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded border border-current/40 px-3 py-2 text-sm"
-    >
-      <span>{model.message}</span>
-      <span class="flex gap-2">
-        {#each model.actions as action (action.id)}
-          <button type="button" class="underline" onclick={() => run(action.id)}
-            >{action.label}</button
-          >
-        {/each}
-      </span>
-    </div>
-    {#if error}<p role="alert" class="mb-4 text-sm">{error}</p>{/if}
+    <section aria-label={MEMBERS_COPY.inviteBannerLabel} class="mb-4 flex flex-col gap-1">
+      <FormStatus testid="invite-banner-status" tone="error" message={error} />
+      <div
+        class="flex flex-wrap items-center justify-between gap-2 rounded border border-current/40 px-3 py-2 text-sm"
+      >
+        <span>{model.message}</span>
+        <span class="flex gap-2">
+          {#each model.actions as action (action.id)}
+            <button type="button" class="min-h-6 underline" onclick={() => run(action.id)}
+              >{action.label}</button
+            >
+          {/each}
+        </span>
+      </div>
+    </section>
   {/if}
 </div>

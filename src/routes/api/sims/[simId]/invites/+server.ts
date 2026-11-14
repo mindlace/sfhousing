@@ -4,6 +4,7 @@ import type { RequestHandler } from './$types';
 import { getDb } from '$lib/server/db';
 import { simIndex } from '$lib/server/db/schema';
 import { MEMBERS_COPY } from '$lib/members/copy';
+import { memberErrorCode } from '$lib/server/invites/error-code';
 import { requireSimRole } from '$lib/server/authz/require-sim-role';
 import {
   createInvite,
@@ -44,7 +45,7 @@ export const POST: RequestHandler = async (event) => {
 
   const body = (await event.request.json().catch(() => null)) as { target?: string } | null;
   if (!body || typeof body.target !== 'string') {
-    return json({ error: MEMBERS_COPY.inviteTargetRequired }, { status: 400 });
+    return json({ code: 'target_required' }, { status: 400 });
   }
   const inviter = await getUser(db, actor.actorId);
   if (!inviter) throw error(401, MEMBERS_COPY.notSignedIn);
@@ -111,9 +112,8 @@ export const POST: RequestHandler = async (event) => {
       { status: 201 }
     );
   } catch (e) {
-    return json(
-      { error: e instanceof Error ? e.message : MEMBERS_COPY.inviteFailed },
-      { status: 400 }
-    );
+    const code = memberErrorCode(e);
+    if (code === 'failed') console.error('invite create failed', e);
+    return json({ code }, { status: 400 });
   }
 };

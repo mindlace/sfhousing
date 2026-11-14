@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { MEMBERS_COPY } from '$lib/members/copy';
+import { memberErrorCode } from '$lib/server/invites/error-code';
 import { getDb } from '$lib/server/db';
 import { acceptInviteById } from '$lib/server/invites/control-plane';
 import { refuseUnlessSameOriginJson } from '$lib/server/security/same-origin-json';
@@ -23,9 +24,8 @@ export const POST: RequestHandler = async (event) => {
     await onSimRosterChanged(res.simId);
     return json({ simId: res.simId }, { status: 200 });
   } catch (e) {
-    return json(
-      { error: e instanceof Error ? e.message : MEMBERS_COPY.acceptFailed },
-      { status: 400 }
-    );
+    const code = memberErrorCode(e);
+    if (code === 'failed') console.error('invite accept failed', e);
+    return json({ code }, { status: 400 });
   }
 };

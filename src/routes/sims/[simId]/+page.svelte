@@ -1,7 +1,8 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
+  import FormStatus from '$lib/account/FormStatus.svelte';
   import MembersPanel from '$lib/members/MembersPanel.svelte';
-  import { MEMBERS_COPY, membersSummaryCount } from '$lib/members/copy';
+  import { MEMBERS_COPY, memberErrorText, membersSummaryCount } from '$lib/members/copy';
   import { MembershipOverlay } from '$lib/members/membership-overlay.svelte';
   import type { PageData } from './$types';
 
@@ -12,59 +13,64 @@
   const pending = $derived(overlay.invites(data.simId, data.pendingInvites));
   const base = () => ({ members: data.members, invites: data.pendingInvites });
 
-  let notice = $state<{ text: string; kind: 'status' | 'alert' } | null>(null);
+  // One always-mounted status line under the title: only its text changes.
+  let notice = $state<{ text: string; error: boolean }>({ text: '', error: false });
+  const clear = (): void => {
+    notice = { text: '', error: false };
+  };
   const fail = (text: string): void => {
-    notice = { text, kind: 'alert' };
+    notice = { text, error: true };
   };
 
   const JSON_HEADERS = { 'content-type': 'application/json' };
   const api = $derived(`/api/sims/${data.simId}`);
 
-  /** The server's `{ error }` message, else the generic failure line. */
-  async function failure(res: Response, fallback: string): Promise<string> {
-    const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
-    return typeof body?.error === 'string' ? body.error : fallback;
+  /** The line for the route's `{ code }`; never the response's own text. */
+  async function failure(res: Response): Promise<string> {
+    if (res.status === 429) return memberErrorText('rate_limited');
+    const body = (await res.json().catch(() => null)) as { code?: unknown } | null;
+    return memberErrorText(body?.code);
   }
 
   async function invite(target: string) {
-    notice = null;
+    clear();
     const res = await fetch(`${api}/invites`, {
       method: 'POST',
       headers: JSON_HEADERS,
       body: JSON.stringify({ target })
     });
-    if (!res.ok) return fail(await failure(res, MEMBERS_COPY.inviteFailed));
+    if (!res.ok) return fail(await failure(res));
     const row = (await res.json()) as { id: string; display: string; invitedByEmail: boolean };
     overlay.addInvite(data.simId, row, base());
   }
 
   async function remove(userId: string) {
-    notice = null;
+    clear();
     const res = await fetch(`${api}/members/${userId}`, {
       method: 'DELETE',
       headers: JSON_HEADERS
     });
-    if (!res.ok) return fail(await failure(res, MEMBERS_COPY.membersActionFailed));
+    if (!res.ok) return fail(await failure(res));
     overlay.removeMember(data.simId, userId, base());
   }
 
   async function resend(inviteId: string) {
-    notice = null;
+    clear();
     const res = await fetch(`${api}/invites/${inviteId}/resend`, {
       method: 'POST',
       headers: JSON_HEADERS
     });
-    if (!res.ok) return fail(await failure(res, MEMBERS_COPY.resendFailed));
-    notice = { text: MEMBERS_COPY.membersResent, kind: 'status' };
+    if (!res.ok) return fail(await failure(res));
+    notice = { text: MEMBERS_COPY.membersResent, error: false };
   }
 
   async function revoke(inviteId: string) {
-    notice = null;
+    clear();
     const res = await fetch(`${api}/invites/${inviteId}`, {
       method: 'DELETE',
       headers: JSON_HEADERS
     });
-    if (!res.ok) return fail(await failure(res, MEMBERS_COPY.membersActionFailed));
+    if (!res.ok) return fail(await failure(res));
     overlay.removeInvite(data.simId, inviteId, base());
   }
 </script>
@@ -75,6 +81,11 @@
 
 <div class="mx-auto max-w-xl px-4 py-8">
   <h1 class="text-2xl font-semibold">{data.title}</h1>
+  <FormStatus
+    testid="members-status"
+    tone={notice.error ? 'error' : 'info'}
+    message={notice.text}
+  />
 
   <details class="mt-6" data-testid="members">
     <summary class="cursor-pointer text-sm font-medium"
@@ -84,6 +95,7 @@
       <MembersPanel
         {members}
         isManager={data.role === 'manager'}
+        canInviteByEmail={data.canInviteByEmail}
         {pending}
         currentUserId={data.currentUserId ?? undefined}
         simId={data.simId}
@@ -94,11 +106,6 @@
         onResend={resend}
         onRevoke={revoke}
       />
-      {#if notice}
-        <p role={notice.kind === 'alert' ? 'alert' : 'status'} class="mt-2 text-sm">
-          {notice.text}
-        </p>
-      {/if}
     </div>
   </details>
 </div>

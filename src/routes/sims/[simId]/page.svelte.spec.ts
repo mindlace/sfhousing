@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import {
+  MEMBER_ERROR_COPY,
   MEMBERS_COPY,
   membersRemoveNamed,
   membersResendNamed,
@@ -22,6 +23,7 @@ function data(over: Record<string, unknown> = {}) {
     currentUserId: 'u1',
     members,
     pendingInvites: [{ id: 'i1', display: 'guest@x.test', invitedByEmail: true }],
+    canInviteByEmail: true,
     ...over
   };
 }
@@ -34,6 +36,10 @@ async function show(d: Record<string, unknown>) {
 }
 
 const JSON_ONLY = { 'content-type': 'application/json' };
+
+/** True when `a` comes before `b` in document order. */
+const before = (a: Element, b: Element) =>
+  !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -83,15 +89,68 @@ describe('/sims/[simId] page', () => {
     });
   });
 
-  it('a refused invite shows the server message', async () => {
+  it('a refused invite shows the line for its code under the title, before the buttons', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ error: 'already invited' }), { status: 400 }))
+      vi.fn(async () => new Response(JSON.stringify({ code: 'already_invited' }), { status: 400 }))
     );
     const screen = await show(data());
     await screen.getByPlaceholder(MEMBERS_COPY.membersInvitePlaceholder).fill('guest@x.test');
     await screen.getByRole('button', { name: MEMBERS_COPY.membersInvite }).click();
-    await expect.element(screen.getByRole('alert')).toHaveTextContent('already invited');
+    const status = screen.getByTestId('members-status');
+    await expect.element(status).toHaveTextContent(MEMBER_ERROR_COPY.already_invited);
+    await expect.element(status).toHaveAttribute('data-tone', 'error');
+    const heading = screen.getByRole('heading', { level: 1 }).element();
+    expect(before(heading, status.element())).toBe(true);
+    for (const b of screen.container.querySelectorAll('button')) {
+      expect(before(status.element(), b)).toBe(true);
+    }
+  });
+
+  it('never shows text the server sent, only the line for a known code', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ code: 'D1_ERROR', error: 'D1_ERROR: locked' }), {
+            status: 400
+          })
+      )
+    );
+    const screen = await show(data());
+    await screen.getByPlaceholder(MEMBERS_COPY.membersInvitePlaceholder).fill('@nora');
+    await screen.getByRole('button', { name: MEMBERS_COPY.membersInvite }).click();
+    await expect
+      .element(screen.getByTestId('members-status'))
+      .toHaveTextContent(MEMBER_ERROR_COPY.failed);
+    expect(screen.container.textContent).not.toContain('D1');
+  });
+
+  it('a 429 shows the rate-limit line', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ message: 'Slow down' }), { status: 429 }))
+    );
+    const screen = await show(data());
+    await screen.getByPlaceholder(MEMBERS_COPY.membersInvitePlaceholder).fill('@nora');
+    await screen.getByRole('button', { name: MEMBERS_COPY.membersInvite }).click();
+    await expect
+      .element(screen.getByTestId('members-status'))
+      .toHaveTextContent(MEMBER_ERROR_COPY.rate_limited);
+  });
+
+  it('the status line is mounted, empty, before anything happens', async () => {
+    const screen = await show(data());
+    const status = screen.getByTestId('members-status').element();
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.textContent?.trim()).toBe('');
+  });
+
+  it('a manager with no confirmed email gets the handle-only invite field', async () => {
+    const screen = await show(data({ canInviteByEmail: false }));
+    await expect
+      .element(screen.getByTestId('invite-input'))
+      .toHaveAttribute('placeholder', MEMBERS_COPY.membersInviteHandlePlaceholder);
   });
 
   it('remove sends a body-less JSON DELETE and drops the row', async () => {
@@ -99,6 +158,8 @@ describe('/sims/[simId] page', () => {
     vi.stubGlobal('fetch', fetchMock);
     const screen = await show(data());
     await screen.getByRole('button', { name: membersRemoveNamed('eddie') }).click();
+    expect(fetchMock).not.toHaveBeenCalled();
+    await screen.getByTestId('members-confirm').click();
     await expect.poll(() => screen.container.textContent).not.toContain('@eddie');
     expect(fetchMock).toHaveBeenCalledWith('/api/sims/s1/members/u2', {
       method: 'DELETE',
@@ -111,6 +172,8 @@ describe('/sims/[simId] page', () => {
     vi.stubGlobal('fetch', fetchMock);
     const screen = await show(data());
     await screen.getByRole('button', { name: membersRevokeNamed('guest@x.test') }).click();
+    expect(fetchMock).not.toHaveBeenCalled();
+    await screen.getByTestId('members-confirm').click();
     await expect.poll(() => screen.container.textContent).not.toContain('guest@x.test');
     expect(fetchMock).toHaveBeenCalledWith('/api/sims/s1/invites/i1', {
       method: 'DELETE',
@@ -123,23 +186,26 @@ describe('/sims/[simId] page', () => {
     vi.stubGlobal('fetch', fetchMock);
     const screen = await show(data());
     await screen.getByRole('button', { name: membersResendNamed('guest@x.test') }).click();
-    await expect.element(screen.getByRole('status')).toHaveTextContent(MEMBERS_COPY.membersResent);
+    await expect
+      .element(screen.getByTestId('members-status'))
+      .toHaveTextContent(MEMBERS_COPY.membersResent);
     expect(fetchMock).toHaveBeenCalledWith('/api/sims/s1/invites/i1/resend', {
       method: 'POST',
       headers: JSON_ONLY
     });
   });
 
-  it('a failed remove keeps the row and shows an alert', async () => {
+  it('a failed remove keeps the row and shows the generic line', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response(null, { status: 500 }))
     );
     const screen = await show(data());
     await screen.getByRole('button', { name: membersRemoveNamed('eddie') }).click();
+    await screen.getByTestId('members-confirm').click();
     await expect
-      .element(screen.getByRole('alert'))
-      .toHaveTextContent(MEMBERS_COPY.membersActionFailed);
+      .element(screen.getByTestId('members-status'))
+      .toHaveTextContent(MEMBER_ERROR_COPY.failed);
     expect(screen.container.textContent).toContain('@eddie');
   });
 });

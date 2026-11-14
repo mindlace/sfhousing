@@ -1,7 +1,16 @@
 import { render } from 'vitest-browser-svelte';
 import { describe, it, expect, vi } from 'vitest';
+import '../../routes/layout.css';
 import MembersPanel from './MembersPanel.svelte';
-import { MEMBERS_COPY, membersRemoveNamed, membersResendNamed, membersRevokeNamed } from './copy';
+import {
+  MEMBERS_COPY,
+  membersRemoveConfirm,
+  membersRemoveNamed,
+  membersResendNamed,
+  membersRevokeConfirm,
+  membersRevokeNamed
+} from './copy';
+import { userEvent } from 'vitest/browser';
 
 const MANAGER_ROLE_DISPLAY = '· manager';
 
@@ -73,14 +82,67 @@ describe('MembersPanel', () => {
     expect(onInvite).not.toHaveBeenCalled();
   });
 
-  it('fires onRemove for a non-manager member only', async () => {
+  it('offers Remove for a non-manager member only, and removes only after the confirm', async () => {
     const onRemove = vi.fn();
     const screen = await render(MembersPanel, { members, isManager: true, onRemove });
     expect(
       screen.container.querySelector(`[aria-label="${membersRemoveNamed('owner')}"]`)
     ).toBeNull();
     await screen.getByRole('button', { name: membersRemoveNamed('mara') }).click();
+    expect(onRemove).not.toHaveBeenCalled();
+    await expect.element(screen.getByText(membersRemoveConfirm('mara'))).toBeInTheDocument();
+    const confirm = screen.getByRole('button', { name: MEMBERS_COPY.membersRemove, exact: true });
+    await expect.element(confirm).toHaveFocus();
+    await confirm.click();
     expect(onRemove).toHaveBeenCalledWith('m2');
+  });
+
+  it('Cancel on the remove confirm restores the control and returns focus to it', async () => {
+    const onRemove = vi.fn();
+    const screen = await render(MembersPanel, { members, isManager: true, onRemove });
+    await screen.getByRole('button', { name: membersRemoveNamed('mara') }).click();
+    await screen.getByRole('button', { name: MEMBERS_COPY.membersConfirmCancel }).click();
+    const trigger = screen.getByRole('button', { name: membersRemoveNamed('mara') });
+    await expect.element(trigger).toHaveFocus();
+    expect(screen.container.textContent).not.toContain(membersRemoveConfirm('mara'));
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it('Escape on the remove confirm restores the control and returns focus to it', async () => {
+    const onRemove = vi.fn();
+    const screen = await render(MembersPanel, { members, isManager: true, onRemove });
+    await screen.getByRole('button', { name: membersRemoveNamed('mara') }).click();
+    await expect.element(screen.getByTestId('members-confirm')).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    await expect
+      .element(screen.getByRole('button', { name: membersRemoveNamed('mara') }))
+      .toHaveFocus();
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it('the remove control is at least 24px square', async () => {
+    const screen = await render(MembersPanel, { members, isManager: true });
+    const r = screen
+      .getByRole('button', { name: membersRemoveNamed('mara') })
+      .element()
+      .getBoundingClientRect();
+    expect(r.width).toBeGreaterThanOrEqual(24);
+    expect(r.height).toBeGreaterThanOrEqual(24);
+  });
+
+  it('a manager with no confirmed email is offered handle invites only', async () => {
+    const screen = await render(MembersPanel, {
+      members,
+      isManager: true,
+      canInviteByEmail: false
+    });
+    const input = screen.getByTestId('invite-input');
+    await expect
+      .element(input)
+      .toHaveAttribute('placeholder', MEMBERS_COPY.membersInviteHandlePlaceholder);
+    await expect
+      .element(input)
+      .toHaveAttribute('aria-label', MEMBERS_COPY.membersInviteHandleLabel);
   });
 
   it('manager: resend enabled when invitedByEmail; revoke fires', async () => {
@@ -96,7 +158,29 @@ describe('MembersPanel', () => {
     await screen.getByRole('button', { name: membersResendNamed('a@x.com') }).click();
     expect(onResend).toHaveBeenCalledWith('i9');
     await screen.getByRole('button', { name: membersRevokeNamed('a@x.com') }).click();
+    expect(onRevoke).not.toHaveBeenCalled();
+    await expect.element(screen.getByText(membersRevokeConfirm('a@x.com'))).toBeInTheDocument();
+    const confirm = screen.getByTestId('members-confirm');
+    await expect.element(confirm).toHaveFocus();
+    await confirm.click();
     expect(onRevoke).toHaveBeenCalledWith('i9');
+  });
+
+  it('Escape on the revoke confirm restores the control and returns focus to it', async () => {
+    const onRevoke = vi.fn();
+    const screen = await render(MembersPanel, {
+      members,
+      isManager: true,
+      pending: [{ id: 'i9', display: 'a@x.com', invitedByEmail: true }],
+      onRevoke
+    });
+    await screen.getByRole('button', { name: membersRevokeNamed('a@x.com') }).click();
+    await expect.element(screen.getByTestId('members-confirm')).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    await expect
+      .element(screen.getByRole('button', { name: membersRevokeNamed('a@x.com') }))
+      .toHaveFocus();
+    expect(onRevoke).not.toHaveBeenCalled();
   });
 
   it('invite input has a programmatic label', async () => {

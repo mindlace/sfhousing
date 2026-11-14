@@ -8,6 +8,7 @@ import { requireSimRole } from '$lib/server/authz/require-sim-role';
 import { createInvite } from '$lib/server/invites/control-plane';
 import { addMemberById } from '$lib/server/sims/sim-index';
 import { createSim } from '$lib/server/sims/sims';
+import { PSEUDONYMOUS_EMAIL_DOMAIN } from '$lib/server/auth/brand';
 import { load } from './+layout.server';
 
 const opened: Array<() => void> = [];
@@ -143,6 +144,36 @@ describe('/sims/[simId] layout load', () => {
       expect(wire).not.toContain('@private.test');
       expect(wire).not.toContain('Mia Real');
     }
+  });
+
+  describe('canInviteByEmail', () => {
+    async function asManager(user: Record<string, unknown>) {
+      const env = await seed();
+      vi.mocked(requireSimRole).mockResolvedValue({
+        role: 'manager',
+        actor: { actorId: 'u-mia', actorKind: 'human' }
+      } as never);
+      return (await load({
+        params: { simId: env.simId },
+        platform: makePlatform(env.shim),
+        locals: { user: { id: 'u-mia', ...user }, capabilities: [] }
+      } as never)) as unknown as { canInviteByEmail: boolean };
+    }
+
+    it('is true for a manager with a confirmed, deliverable email', async () => {
+      const out = await asManager({ email: 'mia@private.test', emailVerified: true });
+      expect(out.canInviteByEmail).toBe(true);
+    });
+
+    it('is false for an unconfirmed email or a pseudonymous address', async () => {
+      expect(
+        (await asManager({ email: 'mia@private.test', emailVerified: false })).canInviteByEmail
+      ).toBe(false);
+      expect(
+        (await asManager({ email: `x@${PSEUDONYMOUS_EMAIL_DOMAIN}`, emailVerified: true }))
+          .canInviteByEmail
+      ).toBe(false);
+    });
   });
 
   describe('pending invitations', () => {

@@ -15,16 +15,28 @@ describe('InviteBanner', () => {
     vi.unstubAllGlobals();
   });
 
-  it('is a status region that is empty when there is nothing to show', async () => {
+  it('renders nothing, and no live region, on the sims list', async () => {
     const screen = await render(InviteBanner, {
       invites: one,
       path: '/sims',
       onaccepted: vi.fn(),
       onview: vi.fn()
     });
-    const region = screen.getByRole('status');
-    await expect.element(region).toBeInTheDocument();
-    await expect.element(region).toBeEmptyDOMElement();
+    await expect.element(screen.getByTestId('invite-banner')).toBeEmptyDOMElement();
+    expect(screen.container.querySelector('[role="status"], [role="alert"]')).toBeNull();
+  });
+
+  it('nests no live region: the wrapper holding the buttons is not one', async () => {
+    const screen = await render(InviteBanner, {
+      invites: one,
+      path: '/sims/s9',
+      onaccepted: vi.fn(),
+      onview: vi.fn()
+    });
+    const regions = [...screen.container.querySelectorAll('[role="status"], [role="alert"]')];
+    expect(regions).toHaveLength(1);
+    expect(regions[0].querySelector('button')).toBeNull();
+    expect(regions[0].parentElement?.closest('[role="status"], [role="alert"]')).toBeNull();
   });
 
   it('one invite: heading with Accept, Decline and Not now', async () => {
@@ -62,7 +74,7 @@ describe('InviteBanner', () => {
     });
   });
 
-  it('a failed Accept shows an alert', async () => {
+  it('a failed Accept shows its line above the buttons, in the mounted status', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response(null, { status: 400 }))
@@ -74,10 +86,15 @@ describe('InviteBanner', () => {
       onaccepted,
       onview: vi.fn()
     });
+    const status = screen.getByTestId('invite-banner-status');
+    await expect.element(status).toBeInTheDocument();
     await screen.getByRole('button', { name: MEMBERS_COPY.invitationsAccept }).click();
-    await expect
-      .element(screen.getByRole('alert'))
-      .toHaveTextContent(MEMBERS_COPY.invitationsAcceptFailedToast);
+    await expect.element(status).toHaveTextContent(MEMBERS_COPY.invitationsAcceptFailedToast);
+    for (const b of screen.container.querySelectorAll('button')) {
+      expect(
+        !!(status.element().compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+      ).toBe(true);
+    }
     expect(onaccepted).not.toHaveBeenCalled();
   });
 

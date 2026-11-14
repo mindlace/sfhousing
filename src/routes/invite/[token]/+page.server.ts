@@ -16,13 +16,15 @@ import { reseedHandleFromSim } from '$lib/server/user-store/identity';
 import { generateUniqueHandle } from '$lib/server/user-store/handle';
 import { recordUserVersion } from '$lib/server/user-store/history';
 import { skeleton } from '$lib/server/user-store/confusable-skeleton';
-import { MEMBERS_COPY } from '$lib/members/copy';
+import { memberErrorCode } from '$lib/server/invites/error-code';
 
 export const load: PageServerLoad = async (event) => {
   const db = getDb(event.platform!);
   const invite = await findInviteByToken({ db, token: event.params.token });
+  // A magic link sent from this page that failed (expired, used) comes back marked.
+  const linkError = event.url.searchParams.get('link') === 'failed';
   if (!invite || invite.status !== 'pending' || invite.expired) {
-    return { invite: null, signedIn: !!event.locals.user };
+    return { invite: null, signedIn: !!event.locals.user, linkError };
   }
   return {
     invite: {
@@ -30,7 +32,8 @@ export const load: PageServerLoad = async (event) => {
       inviterHandle: invite.inviterHandle,
       invitedEmail: invite.invitedEmail
     },
-    signedIn: !!event.locals.user
+    signedIn: !!event.locals.user,
+    linkError
   };
 };
 
@@ -48,7 +51,9 @@ export const actions: Actions = {
       throw redirect(303, `/sims/${res.simId}`);
     } catch (e) {
       if (isRedirect(e)) throw e;
-      return fail(400, { error: e instanceof Error ? e.message : MEMBERS_COPY.acceptFailed });
+      const code = memberErrorCode(e);
+      if (code === 'failed') console.error('invite accept failed', e);
+      return fail(400, { code });
     }
   },
 
@@ -61,14 +66,8 @@ export const actions: Actions = {
     const db = getDb(event.platform!);
     const invite = await findInviteByToken({ db, token: event.params.token });
     if (!invite || invite.status !== 'pending' || invite.expired) {
-      return fail(400, { error: MEMBERS_COPY.inviteInvalid });
+      return fail(400, { code: 'invite_invalid' as const });
     }
-
-    const decision = await classifyColdAccept({
-      db,
-      invitedEmail: invite.invitedEmail,
-      enteredEmail: email
-    });
 
     // Send a real magic link to `linkEmail` (always returning to this invite). The e2e
     // dev-link helper captures the verification URL synchronously from sendMagicLink, in
@@ -88,12 +87,21 @@ export const actions: Actions = {
       });
       await auth.api.signInMagicLink({
         headers: event.request.headers,
-        body: { email: linkEmail, callbackURL: `/invite/${event.params.token}` }
+        body: {
+          email: linkEmail,
+          callbackURL: `/invite/${event.params.token}`,
+          errorCallbackURL: `/invite/${event.params.token}?link=failed`
+        }
       });
       return devLink;
     };
 
     try {
+      const decision = await classifyColdAccept({
+        db,
+        invitedEmail: invite.invitedEmail,
+        enteredEmail: email
+      });
       switch (decision.kind) {
         case 'mint': {
           // Known device + not explicitly starting fresh → steer to sign-in.
@@ -108,7 +116,10 @@ export const actions: Actions = {
             );
           }
           const minted = await mintPseudonymousSession(event);
-          if (!minted.ok) return fail(minted.status, { error: minted.message });
+          if (!minted.ok) {
+            const code = minted.status === 429 ? 'rate_limited' : 'session_start';
+            return fail(minted.status, { code });
+          }
           const u = minted.user;
 
           const simTitle = invite.simTitle;
@@ -134,7 +145,7 @@ export const actions: Actions = {
                 })
                 .where(eq(user.userIdentity, u.id));
             } catch {
-              return fail(400, { error: MEMBERS_COPY.createAccountFailed });
+              return fail(400, { code: 'create_account_failed' as const });
             }
             await recordUserVersion({
               db,
@@ -175,7 +186,9 @@ export const actions: Actions = {
       }
     } catch (e) {
       if (isRedirect(e) || isHttpError(e)) throw e;
-      return fail(400, { error: e instanceof Error ? e.message : MEMBERS_COPY.joinFailed });
+      const code = memberErrorCode(e);
+      if (code === 'failed') console.error('invite join failed', e);
+      return fail(400, { code });
     }
   }
 };

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { MEMBERS_COPY } from '$lib/members/copy';
 import { simInvite } from '$lib/server/db/schema';
 import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
 
@@ -94,7 +93,7 @@ describe('leaveSim action', () => {
   it('answers 404 when the sim has no index row', async () => {
     const env = await seed();
     const res = await actions.leaveSim(leaveEvent({ ...env, simId: 'gone' }, 'u-mia'));
-    expect(res).toMatchObject({ status: 404, data: { error: MEMBERS_COPY.simNotFound } });
+    expect(res).toMatchObject({ status: 404, data: { code: 'sim_not_found' } });
   });
 
   it('a plain member leaves and lands on /sims; the sim and the others stay', async () => {
@@ -111,7 +110,8 @@ describe('leaveSim action', () => {
     const env = await seed();
     await addMemberById({ db: env.db, simId: env.simId, userId: 'u-eddie', role: 'manager' });
     const bad = await actions.leaveSim(leaveEvent(env, 'u-mia', { confirmTitle: 'nope' }));
-    expect(bad).toMatchObject({ status: 400, data: { error: 'title did not match' } });
+    expect(bad).toMatchObject({ status: 400, data: { code: 'title_mismatch' } });
+    expect(bad).not.toHaveProperty('data.error');
     expect(await getRole({ db: env.db, simId: env.simId, userId: 'u-mia' })).toBe('manager');
     const ok = await redirectOf(() =>
       actions.leaveSim(leaveEvent(env, 'u-mia', { confirmTitle: 'Garden' }))

@@ -6,13 +6,15 @@
   let { data, children } = $props();
 </script>
 
-<div class="mx-auto max-w-xl px-4 pt-4">
-  <InviteBanner
-    invites={data.recipientInvites}
-    path={page.url.pathname}
-    onaccepted={(simId) => goto(`/sims/${simId}`, { invalidateAll: true })}
-    onview={() => goto('/sims')}
-  />
-</div>
+{#if data.recipientInvites.length}
+  <div class="mx-auto max-w-xl px-4 pt-4">
+    <InviteBanner
+      invites={data.recipientInvites}
+      path={page.url.pathname}
+      onaccepted={(simId) => goto(`/sims/${simId}`, { invalidateAll: true })}
+      onview={() => goto('/sims')}
+    />
+  </div>
+{/if}
 
 {@render children()}

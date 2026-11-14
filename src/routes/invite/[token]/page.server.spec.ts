@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { isRedirect } from '@sveltejs/kit';
 import type { TokenInvite } from '$lib/server/invites/control-plane';
-import { MEMBERS_COPY } from '$lib/members/copy';
+import { mockConsole } from '$lib/server/test/mock-console';
 
 // A chainable db.update(...).set(...).where(...) stub so the email-bound mint branch can
 // drive it. dbUpdateSetMock captures the `.set({...})` payload for assertions.
@@ -96,9 +96,10 @@ function joinEvent(fields: Record<string, string>, token = 'tok') {
   } as unknown as Parameters<typeof actions.join>[0];
 }
 
-function loadEvent(opts: { token?: string; user?: { id: string } | null }) {
+function loadEvent(opts: { token?: string; user?: { id: string } | null; query?: string }) {
   return {
     params: { token: opts.token ?? 'tok' },
+    url: new URL(`https://app.test/invite/${opts.token ?? 'tok'}${opts.query ?? ''}`),
     platform,
     locals: { user: opts.user ?? null }
   } as unknown as Parameters<typeof load>[0];
@@ -128,7 +129,7 @@ describe('invite token landing — load', () => {
   it('returns invite:null for a missing invite', async () => {
     findMock.mockResolvedValue(null);
     const result = await load(loadEvent({}));
-    expect(result).toEqual({ invite: null, signedIn: false });
+    expect(result).toEqual({ invite: null, signedIn: false, linkError: false });
   });
 
   it('returns invite:null for a non-pending invite', async () => {
@@ -152,8 +153,15 @@ describe('invite token landing — load', () => {
         inviterHandle: 'ada',
         invitedEmail: 'guest@test.com'
       },
-      signedIn: true
+      signedIn: true,
+      linkError: false
     });
+  });
+
+  it('flags a failed magic link that came back to this page', async () => {
+    findMock.mockResolvedValue(pendingInvite);
+    const result = await load(loadEvent({ query: '?link=failed&error=INVALID_TOKEN' }));
+    expect(result).toMatchObject({ linkError: true });
   });
 });
 
@@ -188,10 +196,11 @@ describe('invite token landing — accept action', () => {
     expect(rosterMock).toHaveBeenCalledWith('q1');
   });
 
-  it('returns fail(400) with the error message when the service throws', async () => {
+  it('returns fail(400) with a code, not the message, when the service throws', async () => {
     acceptMock.mockRejectedValue(new Error('invite expired'));
     const result = await actions.accept(acceptEvent({ user: { id: 'u1' } }));
-    expect(result).toMatchObject({ status: 400, data: { error: 'invite expired' } });
+    expect(result).toMatchObject({ status: 400, data: { code: 'invite_invalid' } });
+    expect(result).not.toHaveProperty('data.error');
     expect(rosterMock).not.toHaveBeenCalled();
   });
 });
@@ -207,8 +216,17 @@ describe('invite token landing — join action (cold-accept)', () => {
   it('fails when the invite is no longer valid', async () => {
     findMock.mockResolvedValue(null);
     const result = await actions.join(joinEvent({}));
-    expect(result).toMatchObject({ status: 400 });
+    expect(result).toMatchObject({ status: 400, data: { code: 'invite_invalid' } });
     expect(classifyMock).not.toHaveBeenCalled();
+  });
+
+  it('answers the generic code, never the message, when a step throws', async () => {
+    const { error: errSpy } = mockConsole('error');
+    classifyMock.mockRejectedValue(new Error('D1_ERROR: database is locked'));
+    const result = await actions.join(joinEvent({ email: 'guest@test.com' }));
+    expect(result).toMatchObject({ status: 400, data: { code: 'failed' } });
+    expect(JSON.stringify(result)).not.toContain('D1');
+    expect(errSpy).toHaveBeenCalled();
   });
 
   it('known device, not starting fresh → steers to /signin, no mint attempted', async () => {
@@ -333,7 +351,7 @@ describe('invite token landing — join action (cold-accept)', () => {
     const result = await actions.join(joinEvent({ email: 'guest@test.com' }));
     expect(result).toMatchObject({
       status: 400,
-      data: { error: MEMBERS_COPY.createAccountFailed }
+      data: { code: 'create_account_failed' }
     });
     expect(acceptMock).not.toHaveBeenCalled();
   });
@@ -342,7 +360,7 @@ describe('invite token landing — join action (cold-accept)', () => {
     classifyMock.mockResolvedValue({ kind: 'mint', pseudonymous: true });
     mintMock.mockResolvedValue({ ok: false, status: 429, message: 'slow down' });
     const result = await actions.join(joinEvent({ email: '' }));
-    expect(result).toMatchObject({ status: 429, data: { error: 'slow down' } });
+    expect(result).toMatchObject({ status: 429, data: { code: 'rate_limited' } });
     expect(reseedMock).not.toHaveBeenCalled();
     expect(acceptMock).not.toHaveBeenCalled();
   });
@@ -356,7 +374,13 @@ describe('invite token landing — join action (cold-accept)', () => {
     // A REAL magic link is sent (no capture sink), to the INVITED address.
     expect(lastGetAuthOpts?.captureMagicLink).toBeUndefined();
     expect(signInMagicLinkMock).toHaveBeenCalledWith(
-      expect.objectContaining({ body: { email: 'guest@test.com', callbackURL: '/invite/tok' } })
+      expect.objectContaining({
+        body: {
+          email: 'guest@test.com',
+          callbackURL: '/invite/tok',
+          errorCallbackURL: '/invite/tok?link=failed'
+        }
+      })
     );
     expect(mintMock).not.toHaveBeenCalled();
   });
@@ -384,7 +408,13 @@ describe('invite token landing — join action (cold-accept)', () => {
     // No capture sink → the normal emailing path.
     expect(lastGetAuthOpts?.captureMagicLink).toBeUndefined();
     expect(signInMagicLinkMock).toHaveBeenCalledWith(
-      expect.objectContaining({ body: { email: 'other@test.com', callbackURL: '/invite/tok' } })
+      expect.objectContaining({
+        body: {
+          email: 'other@test.com',
+          callbackURL: '/invite/tok',
+          errorCallbackURL: '/invite/tok?link=failed'
+        }
+      })
     );
   });
 

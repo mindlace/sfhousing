@@ -65,7 +65,8 @@ export async function startSim(
   try {
     return await createSim({ db, title, managerId: identityId });
   } catch (e) {
-    if (e instanceof Error) return fail(400, { error: e.message });
-    throw e;
+    // Never the error's text: it is an internal message (or a database error).
+    console.error('create sim failed', e);
+    return fail(400, { error: SIMS_COPY.createFailed });
   }
 }

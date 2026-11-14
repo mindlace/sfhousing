@@ -4,6 +4,7 @@ import { getDb } from '$lib/server/db';
 import { requireSimRole } from '$lib/server/authz/require-sim-role';
 import { listManagerPendingInvites } from '$lib/server/invites/control-plane';
 import { getSimTitle, listMembers } from '$lib/server/sims/sim-index';
+import { isDeliverable } from '$lib/server/email/provider';
 
 // The shared load for every /sims/[simId] route: auth (once), the title, the roster, the
 // viewer's role, and for a manager the pending invitations. What reaches the browser is
@@ -25,6 +26,10 @@ export const load: LayoutServerLoad = async (event) => {
     title,
     role,
     currentUserId: event.locals.user?.id ?? null,
+    // The invite route refuses an email target unless the inviter's email is confirmed.
+    canInviteByEmail: !!(
+      event.locals.user?.emailVerified && isDeliverable(event.locals.user.email)
+    ),
     members: members.map(({ userId, handle, role: memberRole }) => ({
       userId,
       handle,

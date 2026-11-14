@@ -49,12 +49,12 @@ describe('POST /api/invites/:inviteId/accept', () => {
     expect(onSimRosterChanged).toHaveBeenCalledWith('sim1');
   });
 
-  it('answers 400 with the message and does not call the roster hook when accept fails', async () => {
+  it('answers 400 with a code, not the message, and does not call the roster hook when accept fails', async () => {
     expect.hasAssertions();
     acceptInviteById.mockRejectedValue(new Error('invite expired'));
     const res = await POST(acceptEvent());
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: 'invite expired' });
+    expect(await res.json()).toEqual({ code: 'invite_invalid' });
     expect(onSimRosterChanged).not.toHaveBeenCalled();
   });
 

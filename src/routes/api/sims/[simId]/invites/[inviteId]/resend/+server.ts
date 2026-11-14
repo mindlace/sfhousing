@@ -10,6 +10,7 @@ import { sendInviteEmail } from '$lib/server/invites/email';
 import { isDeliverable } from '$lib/server/email/provider';
 import { refuseUnlessSameOriginJson } from '$lib/server/security/same-origin-json';
 import { MEMBERS_COPY } from '$lib/members/copy';
+import { memberErrorCode } from '$lib/server/invites/error-code';
 import { enforceMutationRate, RATE_LIMIT_MESSAGES } from '$lib/server/security/rate-limit';
 
 export const POST: RequestHandler = async (event) => {
@@ -27,10 +28,9 @@ export const POST: RequestHandler = async (event) => {
   try {
     res = await resendInvite({ db, simId, inviteId: event.params.inviteId! });
   } catch (e) {
-    return json(
-      { error: e instanceof Error ? e.message : MEMBERS_COPY.resendFailed },
-      { status: 400 }
-    );
+    const code = memberErrorCode(e);
+    if (code === 'failed') console.error('invite resend failed', e);
+    return json({ code }, { status: 400 });
   }
 
   // The token has already rotated; isolate email-send failures so a transient SES

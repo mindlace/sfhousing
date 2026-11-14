@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ActionResult } from '@sveltejs/kit';
-  import { MEMBERS_COPY } from './copy';
+  import FormStatus from '$lib/account/FormStatus.svelte';
+  import { MEMBERS_COPY, memberErrorText } from './copy';
 
   interface Member {
     userId: string;
@@ -48,7 +49,7 @@
   let confirmTitle = $state('');
   let successorUserId = $state('');
   let confirming = $state(false);
-  let error: string | null = $state(null);
+  let error = $state('');
 
   let triggerEl = $state<HTMLButtonElement | null>(null);
   let firstControlEl = $state<HTMLElement | null>(null);
@@ -65,7 +66,7 @@
 
   function cancel() {
     confirming = false;
-    error = null;
+    error = '';
     queueMicrotask(() => triggerEl?.focus());
   }
 
@@ -73,12 +74,11 @@
     () =>
     async ({ result, update }) => {
       if (result.type === 'failure' || result.type === 'error') {
-        error =
-          (result.type === 'failure' ? (result.data?.error as string | undefined) : undefined) ??
-          MEMBERS_COPY.leaveFailed;
+        // The action answers a code; never show text from the server.
+        error = memberErrorText(result.type === 'failure' ? result.data?.code : undefined);
         return;
       }
-      error = null;
+      error = '';
       confirming = false;
       onLeave?.();
       if (onsubmit) await onsubmit(result);
@@ -86,10 +86,16 @@
     };
 </script>
 
+{#snippet status()}
+  <!-- Always mounted above the controls: only the text changes. -->
+  <FormStatus testid="leave-status" tone="error" message={error} />
+{/snippet}
+
 {#if me && others.length === 0}
   <!-- Sole member: leaving deletes the sim and its pending invitations. Simple confirm,
        no title typing; posts to the same leaveSim action, which redirects to /sims. -->
   <div class="mt-4 border-t border-current/20 pt-3">
+    {@render status()}
     {#if confirming}
       <form method="POST" {action} class="space-y-2" use:enhance={submit}>
         <input type="hidden" name="simId" value={simId} />
@@ -106,7 +112,6 @@
             {MEMBERS_COPY.leaveCancel}
           </button>
         </div>
-        {#if error}<span role="alert" class="block text-sm">{error}</span>{/if}
       </form>
     {:else}
       <button
@@ -121,6 +126,7 @@
   </div>
 {:else if me && others.length > 0}
   <div class="mt-4 border-t border-current/20 pt-3">
+    {@render status()}
     {#if isLastManager}
       <form method="POST" {action} class="space-y-2" use:enhance={submit}>
         <input type="hidden" name="simId" value={simId} />
@@ -140,7 +146,6 @@
         <button type="submit" class="rounded border border-current px-3 py-1 font-medium"
           >{MEMBERS_COPY.leaveHandoffButton}</button
         >
-        {#if error}<span role="alert" class="block text-sm">{error}</span>{/if}
       </form>
     {:else if needsTitle}
       <form method="POST" {action} class="space-y-2" use:enhance={submit}>
@@ -163,7 +168,6 @@
         >
           {MEMBERS_COPY.leaveButton}
         </button>
-        {#if error}<span role="alert" class="block text-sm">{error}</span>{/if}
       </form>
     {:else if confirming}
       <form method="POST" {action} class="flex items-center gap-2" use:enhance={submit}>
@@ -179,7 +183,6 @@
         <button type="button" class="underline" onclick={cancel}>
           {MEMBERS_COPY.leaveCancel}
         </button>
-        {#if error}<span role="alert" class="block text-sm">{error}</span>{/if}
       </form>
     {:else}
       <button

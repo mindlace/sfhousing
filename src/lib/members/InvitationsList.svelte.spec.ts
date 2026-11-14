@@ -15,6 +15,10 @@ const invite = {
   inviterHandle: 'mara'
 };
 
+/** True when `a` comes before `b` in document order. */
+const before = (a: Element, b: Element) =>
+  !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
 describe('InvitationsList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -36,6 +40,13 @@ describe('InvitationsList', () => {
     const screen = await render(InvitationsList, { invitations: [], onaccepted: vi.fn() });
     expect(screen.container.textContent).not.toContain(MEMBERS_COPY.invitationsHeading);
     expect(screen.container.querySelector('section')).toBeNull();
+  });
+
+  it('mounts its status line, empty, before anything happens', async () => {
+    const screen = await render(InvitationsList, { invitations: [invite], onaccepted: vi.fn() });
+    const status = screen.getByTestId('invitations-status').element();
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.textContent?.trim()).toBe('');
   });
 
   it('accept posts JSON with no body and calls onaccepted with the sim id', async () => {
@@ -61,9 +72,14 @@ describe('InvitationsList', () => {
     const onaccepted = vi.fn();
     const screen = await render(InvitationsList, { invitations: [invite], onaccepted });
     await screen.getByRole('button', { name: invitationsAcceptNamed('Build a deck') }).click();
-    await expect
-      .element(screen.getByRole('alert'))
-      .toHaveTextContent(MEMBERS_COPY.invitationsAcceptFailedToast);
+    const status = screen.getByTestId('invitations-status');
+    await expect.element(status).toHaveTextContent(MEMBERS_COPY.invitationsAcceptFailedToast);
+    // Under the heading, before every button.
+    const heading = screen.getByRole('heading', { name: MEMBERS_COPY.invitationsHeading });
+    expect(before(heading.element(), status.element())).toBe(true);
+    for (const b of screen.container.querySelectorAll('button')) {
+      expect(before(status.element(), b)).toBe(true);
+    }
     expect(onaccepted).not.toHaveBeenCalled();
   });
 
@@ -74,7 +90,7 @@ describe('InvitationsList', () => {
     const screen = await render(InvitationsList, { invitations: [invite], onaccepted: vi.fn() });
     await screen.getByRole('button', { name: invitationsDeclineNamed('Build a deck') }).click();
     await expect
-      .element(screen.getByRole('status'))
+      .element(screen.getByTestId('invitations-status'))
       .toHaveTextContent(MEMBERS_COPY.invitationsDeclinedToast);
     await expect.poll(() => screen.container.textContent).not.toContain(invite.simTitle);
     expect(fetchMock).toHaveBeenCalledWith('/api/invites/inv1/decline', {
@@ -92,7 +108,7 @@ describe('InvitationsList', () => {
     const screen = await render(InvitationsList, { invitations: [invite], onaccepted: vi.fn() });
     await screen.getByRole('button', { name: invitationsDeclineNamed('Build a deck') }).click();
     await expect
-      .element(screen.getByRole('alert'))
+      .element(screen.getByTestId('invitations-status'))
       .toHaveTextContent(MEMBERS_COPY.invitationsActionFailedToast);
     expect(screen.container.textContent).toContain(invite.simTitle);
   });

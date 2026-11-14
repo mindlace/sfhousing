@@ -14,6 +14,7 @@ export const SIMS_COPY = {
   crossOrigin: 'Cross-site requests are not allowed.',
   signInRequired: 'Sign in to create a sim.',
   sessionStart: "Couldn't start your session. Try again.",
+  createFailed: "Couldn't create the sim. Try again.",
   quota: `You can manage up to ${MAX_SIMS_PER_MANAGER} sims.`
 } as const;
 
@@ -28,9 +29,6 @@ export const MEMBERS_COPY = {
   inviteAccept: 'Accept invitation',
   inviteEmailLabel: 'How can we reach you?',
   inviteJoinSim: 'Join sim',
-  acceptFailed: 'accept failed',
-  joinFailed: 'join failed',
-  createAccountFailed: 'Could not create your account. Try signing in instead.',
   // Invitations addressed to the signed-in user.
   invitationsDeclinedToast: 'Invitation declined',
   invitationsAcceptFailedToast: "Couldn't accept that invitation. Try again.",
@@ -46,11 +44,15 @@ export const MEMBERS_COPY = {
   membersInvite: 'Invite',
   membersPending: 'Pending',
   membersResent: 'Invitation sent',
-  membersActionFailed: "That didn't go through. Try again.",
-  membersResend: 'resend',
-  membersRevoke: 'revoke',
-  membersInvitePlaceholder: 'email or @handle',
+  membersResend: 'Resend',
+  membersRevoke: 'Revoke',
+  membersRemove: 'Remove',
+  membersConfirmCancel: 'Cancel',
+  membersInvitePlaceholder: 'Email or @handle',
   membersInviteLabel: 'Invite by email or handle',
+  // A manager with no confirmed email can invite by handle only.
+  membersInviteHandlePlaceholder: '@handle',
+  membersInviteHandleLabel: 'Invite by handle',
   // The leave flow.
   leaveButton: 'Leave sim',
   leaveSoleMemberWarning:
@@ -63,17 +65,48 @@ export const MEMBERS_COPY = {
   leaveConfirmTitleLabel: 'Type the sim title to confirm',
   leaveSimplePrompt: 'Leave this sim?',
   leaveSimpleButton: 'Leave',
-  leaveFailed: 'Leave failed',
-  simNotFound: 'Sim not found',
   // Server answers.
-  inviteTargetRequired: 'target required',
-  inviteFailed: 'invite failed',
-  resendFailed: 'resend failed',
-  notSignedIn: 'not signed in',
+  notSignedIn: 'Sign in first.',
   inviteNetworkRateLimited: 'Too many invites from your network. Please wait a moment.',
   // Stands in for a sim's title when its index row is gone.
   simTitleFallback: 'a sim'
 } as const;
+
+/**
+ * What the members routes and actions answer on failure is one of these codes, never server
+ * or exception text; the page shows the line for it. Anything else shows `failed`.
+ */
+export const MEMBER_ERROR_COPY = {
+  target_required: 'Enter an email or @handle.',
+  already_member: 'Already a member.',
+  already_invited: 'Already invited.',
+  too_many_pending: 'Too many pending invitations. Revoke one first.',
+  no_such_handle: 'No one has that handle.',
+  email_needs_confirmed: 'Add a confirmed email on Account to invite by email.',
+  invite_invalid: 'This invitation is no longer valid.',
+  not_addressed: 'This invitation is for someone else.',
+  resend_too_soon: 'Sent recently. Try again later.',
+  manager_protected: "Managers can't be removed.",
+  not_member: 'Not a member of this sim.',
+  title_mismatch: "That title doesn't match.",
+  sim_not_found: 'Sim not found.',
+  create_account_failed: "Couldn't create your account. Try signing in instead.",
+  rate_limited: 'Too many requests. Wait a moment.',
+  session_start: "Couldn't start your session. Try again.",
+  failed: "That didn't go through. Try again."
+} as const;
+
+export type MemberErrorCode = keyof typeof MEMBER_ERROR_COPY;
+
+export const isMemberErrorCode = (code: unknown): code is MemberErrorCode =>
+  typeof code === 'string' && Object.hasOwn(MEMBER_ERROR_COPY, code);
+
+/** The line for a code from a members route or action; one generic line for anything else. */
+export const memberErrorText = (code: unknown): string =>
+  isMemberErrorCode(code) ? MEMBER_ERROR_COPY[code] : MEMBER_ERROR_COPY.failed;
+
+export const membersRemoveConfirm = (handle: string): string => `Remove @${handle}?`;
+export const membersRevokeConfirm = (display: string): string => `Revoke ${display}?`;
 
 export const inviteHeading = (handle: string, simTitle: string): string =>
   `@${handle} invited you to "${simTitle}"`;

@@ -185,13 +185,30 @@ describe('POST /api/sims/:simId/invites (creates an invite)', () => {
     );
   });
 
-  it('400 + message when the invite service rejects', async () => {
+  it('400 with a code, not the message, when the invite service rejects', async () => {
     expect.hasAssertions();
     createInvite.mockRejectedValue(new Error('email invites require a verified account'));
     const res = await POST(postEvent('q1', { target: 'stranger@test.com' }));
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: 'email invites require a verified account' });
+    expect(await res.json()).toEqual({ code: 'email_needs_confirmed' });
     expect(sendInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('400 with the generic code, and no server text, for an unexpected error', async () => {
+    expect.hasAssertions();
+    createInvite.mockRejectedValue(new Error('D1_ERROR: no such table: invite'));
+    const res = await POST(postEvent('q1', { target: '@bob' }));
+    expect(res.status).toBe(400);
+    const text = await res.text();
+    expect(JSON.parse(text)).toEqual({ code: 'failed' });
+    expect(text).not.toContain('D1');
+  });
+
+  it('400 target_required when the body has no target', async () => {
+    expect.hasAssertions();
+    const res = await POST(postEvent('q1', {}));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ code: 'target_required' });
   });
 
   it('does not send an email when there is no recipient address', async () => {
