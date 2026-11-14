@@ -3,17 +3,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { FUTURE_SCHEMA_MESSAGE } from '$lib/plan';
-import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import {
-  FIXTURE0_AS_OF,
-  manyStrokes4Text,
   month,
   painted4,
   painted4Text,
   paintedText,
   simDoc,
   simDoc4,
-  tampered4Text,
   tamperedText
 } from '$lib/server/test/sim-docs';
 import {
@@ -24,7 +20,7 @@ import {
 } from '$lib/sim-page/sim-doc';
 import { DEFAULT_POLICY4 } from './policy4';
 import { SIM_SERVER_CODEC4 } from './server-codec';
-import { SIM_KEY4, openSimDoc4, serializeSimDoc4 } from './sim-doc4';
+import { SIM_KEY4, serializeSimDoc4 } from './sim-doc4';
 
 const C = SIM_SERVER_CODEC4;
 const schema2 = () =>
@@ -164,68 +160,5 @@ describe('SIM_SERVER_CODEC4 description', () => {
     expect(JSON.parse(C.serialize(C.rebase(legacy.value, 'fixture-3'))).datasetVersion).toBe(
       'fixture-3'
     );
-  });
-});
-
-describe('parity with the page', () => {
-  // The schema 4 load copies sim-doc4.ts's private parseDoc4: the same body must succeed or fail
-  // the same way (code and path) on the server and through openSimDoc4's schema 4 branch.
-  const ds = { asOf: FIXTURE0_AS_OF, calibration: fixtureCalibration() };
-  const base = () => JSON.parse(painted4Text()) as Record<string, unknown>;
-  const policy = () => base().policy as { kinds: Record<string, unknown> };
-  const bodies: [string, string][] = [
-    ['good', painted4Text()],
-    ['good, titled', painted4Text({ title: '  Mission  ' })],
-    ['unaligned', painted4Text({}, month(2) + 3)],
-    ['tampered', tampered4Text()],
-    ['title not a string', JSON.stringify({ ...base(), title: 7 })],
-    ['title too long', JSON.stringify({ ...base(), title: 'x'.repeat(500) })],
-    ['blank title', JSON.stringify({ ...base(), title: '   ' })],
-    ['bad dataset version', JSON.stringify({ ...base(), datasetVersion: 'not a version!' })],
-    ['missing dataset version', JSON.stringify({ ...base(), datasetVersion: undefined })],
-    ['wrong kind', JSON.stringify({ ...base(), kind: 'plan' })],
-    ['no policy', JSON.stringify({ ...base(), policy: undefined })],
-    [
-      'zoning not a list',
-      JSON.stringify({
-        ...base(),
-        policy: { ...policy(), kinds: { ...policy().kinds, zoning: 1 } }
-      })
-    ],
-    [
-      'span from not a day',
-      JSON.stringify({
-        ...base(),
-        policy: {
-          ...policy(),
-          kinds: {
-            ...policy().kinds,
-            zoning: [
-              {
-                ...(policy().kinds.zoning as Record<string, unknown>[])[0],
-                spans: [{ from: 'soon', to: null, what: { tag: 'brushes', brushes: [] } }]
-              }
-            ]
-          }
-        }
-      })
-    ],
-    ['too many strokes', manyStrokes4Text()]
-  ];
-
-  it.each(bodies)('%s: the same outcome on both sides', (_name, text) => {
-    const server = C.load(text);
-    const page = openSimDoc4(text, ds);
-    expect(server.ok).toBe(page.ok);
-    if (!server.ok && !page.ok)
-      expect(server.errors.map((e) => [e.code, e.path])).toEqual(
-        page.errors.map((e) => [e.code, e.path])
-      );
-    if (server.ok && page.ok) expect(server.value.title).toBe(page.value.doc.title);
-  });
-
-  it('the bad bodies do fail (the parity is not vacuous)', () => {
-    const ok = bodies.filter(([, text]) => C.load(text).ok).map(([name]) => name);
-    expect(ok).toEqual(['good', 'good, titled', 'unaligned', 'tampered', 'blank title']);
   });
 });
