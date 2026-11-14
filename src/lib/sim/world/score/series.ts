@@ -1,7 +1,7 @@
 // One world's calendar-month series from its events (world-score rules 1, 3 and 5). Each event
-// files the deltas `shownSeries` (scenario/score.ts) files for the same schedule part, so the prefix
-// sums equal `shownSeries` month for month. The series keeps every per-row fact that changes in its
-// own state, because `createWorld` sends events before the world exists.
+// files the deltas `shownSeries` (scenario/score.ts) files for the same schedule part, so the
+// prefix sums equal `shownSeries` month for month. The series keeps every per-row fact that
+// changes in its own state, because `createWorld` sends events before the world exists.
 import { TIER_FIELDS, tiersOf } from '$lib/sim/scenario/finance-score';
 import type { Day } from '$lib/timelapse/time';
 import { STAGE_ORDER, type Stage, type TierUnits } from '$lib/timelapse/types';
@@ -131,11 +131,11 @@ function phaseUnits(statics: Statics, w: World, row: number): number[] {
   return (statics.projects[w.projects.src[row]].phases ?? []).map((ph) => ph.units);
 }
 
-/** World 1's cumulative funded and displaced homes and tiers, which `WorldSeries` has no channel for (Q5). */
+/** World 1's cumulative funded and displaced homes and tiers; `WorldSeries` has no channel (Q5). */
 export interface Extras {
   /** Cumulative homes by final calendar month `from..through`. */
   homes(from: number, through: number): { funded: number; displaced: number }[];
-  /** Cumulative homes by income tier by final calendar month `from..through`; throws without finance. */
+  /** Cumulative homes by income tier, final months `from..through`; throws without finance. */
   tiers(from: number, through: number): TierUnits[];
 }
 
@@ -164,6 +164,8 @@ interface Tables {
 }
 
 /** One set of tables per statics, shared by all its series (one copy stays in cache). */
+// Keyed by the statics object, like TIER_TABLES: a statics object must not be mutated after its
+// first series is created, or the cached tables go stale.
 const TABLES = new WeakMap<ScoreStatics, Tables>();
 
 function tablesOf(s: ScoreStatics): Tables {
@@ -213,6 +215,7 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
   let n = 0;
 
   /** The calendar month of `day`, a day no later than the horizon. */
+  // Callers must check `day <= H` first: no bounds check here (hot path).
   const monthOf = (day: Day): number => (day < m0 ? 0 : monthTable[day - m0]);
 
   /** Adds `v` to field `f` of calendar month `i`; a final month throws. */

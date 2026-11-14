@@ -25,7 +25,7 @@ function lastDayOf(first: Day): Day {
 export interface TierTable {
   /** For rows no award splits: `affordable` only (no programmes). */
   base: TierCtx;
-  /** `[m]` for model month m in 1..windowMonths: the ctx of month m's frame, null without finance. */
+  /** `[m]` for model month m in 1..windowMonths: month m's frame ctx, null without finance. */
   byMonth: (TierCtx | null)[];
 }
 
@@ -107,9 +107,10 @@ type OffSpan = Finance['off'][number];
  * one pool id different debt terms, all its borrowing in the window is priced on month W's. Each
  * pool's inflows are the arrivals its definition in force each month gives over that month's days
  * (month 1 from `asOf`), one `once` inflow each, and `off` holds the days whose frame drops them
- * (a pool not in force or switched off; an uncapped pool has no inflows), merged into spans. So `addedBorrowing` of it counts exactly the
- * frames' arrivals. Null when no frame of months 1..`windowMonths` has finance. Throws when a
- * frame holds an arrival its pool's definition does not give.
+ * (a pool not in force or switched off; an uncapped pool has no inflows), merged into spans. So
+ * `addedBorrowing` of it counts exactly the frames' arrivals. Null when no frame of months
+ * 1..`windowMonths` has finance. Throws when a frame holds an arrival its pool's definition does
+ * not give.
  */
 export function planFinanceOf(
   timeline: PolicyTimeline,

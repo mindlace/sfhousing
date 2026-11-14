@@ -2,7 +2,7 @@
 
 The score numbers for `/sim`, read from the step engine's world events: a per-world series by calendar month, chunk statistics across worlds, the page's `TimelineView`, and the project card. Design: `docs/superpowers/specs/` (world-score; rule numbers are its rules). Pure TypeScript, worker-safe. Policy frames come from [policy-timeline.md](policy-timeline.md).
 
-World 1's money and tiers, `MoneyView` and limit statements are built; the funded card fields are not yet. See Tiers, Money, Funded worlds and Known gaps.
+Money, tiers and limit statements are built; the funded card fields are not yet. See Tiers, Money, Funded worlds and Known gaps.
 
 ## Files
 
@@ -56,7 +56,7 @@ It throws for no worlds, mismatched counts, or a month not final.
 
 With finance in the window (month 1's frame or a change up to `windowMonths` has `finance`), `scoreStaticsOf` sets `tierBaseline = tierBaselineOf(rhna)` and builds a tier table: for each model month 1..`windowMonths`, the `tierContext` of that month's programme definitions (one per distinct finance state; null in a month without finance). Without finance `tierBaseline` is null and the series files no tiers.
 
-The series files tiers as `tierSeries` does (rule 2): `-existing` from `aboveModerate` at a construction start after `asOf`; at completion, `tiersOf(scheduleAt(world, statics, row, day))`. A funded row is split by the programme definitions in force in the month of its award (design 3.4), not of its completion: the series records each row's `'award'` day (`WorldSeriesData.award`, so restore keeps it). A funded row that completes without an `'award'` throws (a feed bug). Each month's five tiers sum to world 1's `completedNet`.
+The series files tiers as `tierSeries` does (rule 2): `-existing` from `aboveModerate` at a construction start after `asOf`; at completion, `tiersOf(scheduleAt(world, statics, row, day))`. A funded row is split by the programme definitions in force in the month of its award (design 3.4), not of its completion: the series records each row's `'award'` day (`WorldSeriesData.award`, so restore keeps it). A funded row that completes without an `'award'` throws (a feed bug). Every funded world files tiers; each month's five tiers sum to that world's `completedNet`. Chunks carry world 1's.
 
 Runner rule: pass `createWorldSeries` the very `ScoreStatics` object `scoreStaticsOf` returned. The tier table lives in a module-private `WeakMap` keyed by that object, so a copy (a `structuredClone`, a spread) of a ScoreStatics with finance throws `world-score: ScoreStatics without its tier context; pass the object scoreStaticsOf returned`. A worker that receives ScoreStatics by message calls `scoreStaticsOf` itself. `viewOf` never reads the table, so the page may build the view from a copy.
 
@@ -101,6 +101,10 @@ What money and tiers read, from world-funding as merged (shadows and `'displaced
 - **Pools** (`funding/columns.ts:48-72`, through `fundOf(world)`): per pool id `received`, `committed`, `spentGrant`, `outLoan`, `lostLoan`, `lostGuarantee`; money rows `mRow`… for awards with events to come.
 - **`FinanceFrame`**: `timeline.frameAt(m).finance` (`world/policy/frame.ts:32-43`), null without money; `frameMoney(timeline, frame)` indexes it (`funding/frame-money.ts`). `scoreStaticsOf` builds the tier table from it (see Tiers).
 - **Building one in a test** (`funding/test/fixtures.ts`): `fundedMini()` (:33), `benchFunded(benchInput())` (:47, Node), the live city's `liveInput(dir)` already carries baseline `finance` when its calibration has `market` and `baselineFunding` (`scenario/input.ts:76-94`). Then `oneMoneyTimeline(input, input.finance!)` (:104) and `runFunded(staticsOf(input), timeline, seed, through, { afterStep })` (:230) for `{ world, events, ledger }`; `withFunding(createFundingSystem())` for your own feed. `randomFinance(seed)` (:155) for loans, guarantees, losses; `checkStep` (`funding/test/identities.ts:45`) for E1-E7.
+
+## Timing
+
+Bench `synthCity`, quiet machine, lock held, 2026-11-13, after the perf pass. Unfunded, 96 worlds: median 0.684 ms, p90 0.948 ms per month (bar 1 ms). Funded, 32 worlds: median 0.786 ms (months 101-150, ledger 763 events) and 0.779 ms (months 400-450, ledger 2394 events), so no growth with ledger length. `chunk.perf.spec.ts` labels a run quiet only with `SFH_PERF_QUIET=1`: set it when holding the lock. `npm run test:perf`, not in signoff.
 
 ## Known gaps
 
