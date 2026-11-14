@@ -7,7 +7,7 @@ import { createWorld, planDue, step, withFunding } from '../../index';
 import type { PolicyTimeline } from '../../policy/frame';
 import type { Statics } from '../../statics';
 import { frameOf, oneFrame } from '../../test/timeline';
-import type { StepSink, World, WorldEvent } from '../../types';
+import type { FundingSystem, StepSink, World, WorldEvent } from '../../types';
 import { scoreStaticsOf } from '../statics';
 import type { ScoreStatics, WorldSeries, WorldSeriesData } from '../types';
 
@@ -49,7 +49,8 @@ export function timelineStatics(
  * added to `series` in `mode` (default `live`: creation events once `createWorld` returns, then
  * each event as it is sent), `stepped(m)` after each month's events. `onEvent` sees each event
  * after the series has filed it, with the world it was filed against and the model month that
- * sent it (0 for `createWorld`). Returns the world and its whole ledger (none from `createWorld`).
+ * sent it (0 for `createWorld`). `system` is the funding system (default `createFundingSystem()`).
+ * Returns the world and its whole ledger (none from `createWorld`).
  */
 export function feedFunded(
   statics: Statics,
@@ -58,7 +59,8 @@ export function feedFunded(
   through: number,
   series: WorldSeries,
   onEvent?: (e: WorldEvent, w: World, month: number) => void,
-  mode: FeedMode = 'live'
+  mode: FeedMode = 'live',
+  system: FundingSystem = createFundingSystem()
 ): { world: World; ledger: LedgerEvent[] } {
   const ledger: LedgerEvent[] = [];
   let world: World | null = null;
@@ -76,7 +78,7 @@ export function feedFunded(
     event: (e) => (world === null || mode !== 'live' ? buffer.push({ e, month }) : take(e, month)),
     ledger: (e) => ledger.push(e)
   };
-  const core = withFunding(createFundingSystem());
+  const core = withFunding(system);
   const w = core.createWorld(statics, timeline, seed, sink);
   world = w;
   if (mode !== 'after') flush();
