@@ -12,19 +12,19 @@ is imported, never changed; rules defined by unexported code (`segValue`, `fundi
 
 ## Files
 
-| File             | What                                                                                                                                 |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `system.ts`      | `createFundingSystem()`: the hook methods, each a thin call into the files below.                                                    |
-| `columns.ts`     | `FundLine`, `FundPools`: the line, spell and shadow tables, the pool counters and money rows; `initFunding`, `fundOf`, row helpers.  |
-| `clocks.ts`      | The market and affordable funded clocks of a free lot (rules 2 to 5, 7), the size in a view (`sizeIn`). Nothing stored.              |
-| `apply.ts`       | `planLotMonth` (the hook's `planLot`), `applyLots`, `joinLine` (rule 9 order), `remakeRow` (rule 17), `leaveLine` (rule 8).          |
-| `serve.ts`       | `serveLine` (rule 10, grouped by default), `awardDay` (rule 11, T17), `fundedStartOf`; `awardRow` is the one award site.             |
-| `pools.ts`       | `moneyIn` (rule 12), `commitAward`, `moneyOnEvent` (rule 13), `availableOf`.                                                         |
-| `policy.ts`      | `policyChanged` (rules 17 to 19): re-make or lapse each waiting row, respell, plan again.                                            |
-| `shadow.ts`      | `shadowAward`, `stepShadows` (rule 20), then the line's (amortized) compaction.                                                      |
-| `frame-money.ts` | `frameMoney` (one frame's offers, bundles and money key, memoised per timeline and frame id), `sameMoney`.                           |
-| `line-index.ts`  | Indices of the line kept outside the world (by lot, by award group), keyed by `FundLine` in a `WeakMap`; `compact` (amortized).      |
-| `test/`          | `fixtures.ts` (browser-safe: mini city money, `runFunded`, `moneyTimeline`, `benchMoney`), `cities.node.ts` (Node), `identities.ts`. |
+| File             | What                                                                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `system.ts`      | `createFundingSystem()`: the hook methods, each a thin call into the files below.                                                          |
+| `columns.ts`     | `FundLine`, `FundPools`: the line, spell and shadow tables, the pool counters and money rows; `initFunding`, `fundOf`, row helpers.        |
+| `clocks.ts`      | The market and affordable funded clocks of a free lot (rules 2 to 5, 7), the size in a view (`sizeIn`). Nothing stored.                    |
+| `apply.ts`       | `planLotMonth` (the hook's `planLot`), `applyLots`, `joinLine` (rule 9 order), `remakeRow` (rule 17), `leaveLine` (rule 8), `fundableAny`. |
+| `serve.ts`       | `serveLine` (rule 10, grouped by default), `awardDay` (rule 11, T17), `fundedStartOf`; `awardRow` is the one award site.                   |
+| `pools.ts`       | `moneyIn` (rule 12), `commitAward`, `moneyOnEvent` (rule 13), `availableOf`.                                                               |
+| `policy.ts`      | `policyChanged` (rules 17 to 19): re-make or lapse each waiting row, respell, plan again.                                                  |
+| `shadow.ts`      | `shadowAward`, `stepShadows` (rule 20), then the line's (amortized) compaction.                                                            |
+| `frame-money.ts` | `frameMoney` (one frame's offers, bundles and money key, memoised per timeline and frame id), `sameMoney`.                                 |
+| `line-index.ts`  | Indices of the line kept outside the world (by lot, by award group), keyed by `FundLine` in a `WeakMap`; `compact` (amortized).            |
+| `test/`          | `fixtures.ts` (browser-safe: mini city money, `runFunded`, `moneyTimeline`, `benchMoney`), `cities.node.ts` (Node), `identities.ts`.       |
 
 ## The columns
 
@@ -164,15 +164,25 @@ Task 12, 2026-11-13, synthCity, quiet (lock held):
 | µs per world-month                | p50        | p90         | mean            | max     |
 | --------------------------------- | ---------- | ----------- | --------------- | ------- |
 | Whole step, compaction every step | 154.8      | 196.4       | 161.6           | 604     |
-| Whole step, amortized compaction  | 99.3–100.8 | 130.5–132.1 | **105.8–107.2** | 747–814 |
+| Whole step, amortized compaction  | 99.3–100.8 | 130.5–132.1 | 105.8–107.2     | 747–814 |
+| Whole step, plus eligibility skip | 98.4–99.0  | 132.3–135.0 | **104.3–104.7** | 627–709 |
 
-Split (hooks wrapped, amortized compaction, two runs): core alone mean 56.2–56.4, planLot 42.1–44.8,
-onProjectEvent 12.3–13.8, serve 6.5–6.8, apply 3.5, shadow and compaction 0.5 (50.5 before),
-moneyIn 0.1. **The bar misses** (mean about 106 µs); the core's own share is about 56 µs. The
-whole-city replan month (a frame change at month 121 on a timeline otherwise the same): **133 to
-137 ms per world**, about 146k `planLot` calls (every free lot: world-core's skip shortcut spares
-only the ordinary clock, and the hook cannot see the due list's `through`), against Task 1's
-11.1 ms gated estimate and the 50 ms slice.
+Split (hooks wrapped, both perf changes, two runs): core alone mean 61.0–63.2, planLot 27.6–31.2
+(42.1–44.8 before the eligibility skip), onProjectEvent 13.1–13.5, serve 6.6–6.7, apply 3.6–3.7,
+shadow and compaction 0.5 (50.5 before amortizing), moneyIn 0.1–0.2. **The bar misses** (mean
+about 104.5 µs); the core's own share is about 56 to 63 µs.
+
+The whole-city replan month (a frame change at month 121 on a timeline otherwise the same): about
+146k `planLot` calls per world (every free lot: world-core's skip shortcut spares only the
+ordinary clock, and the hook cannot see the due list's `through`). **57 to 61 ms per world** with
+the eligibility skip (133 to 137 ms before), against Task 1's 11.1 ms gated estimate and the 50 ms
+slice.
+
+**Eligibility skip** (`apply.ts` `fundableAny`): a kind gets no clock when no frame its spell
+reads (the segments `kindClock` walks) has money offering the kind, gives the lot a chance
+(`logit` not -Infinity) and offers a least `minHomes` the lot's largest size in that view meets:
+today's `eligibleOf` (`funded.ts:232-256`) per frame, per lot, on offered programmes. Exact,
+since such a clock has no day and callers read only the day; `eligibility.spec.ts` holds it.
 
 ## Tests
 
@@ -180,7 +190,7 @@ All in `src/lib/sim/world/funding/`. Server project (signoff) unless noted.
 
 - **Units**: `columns`, `clocks`, `frame-money` (`sameMoney` agrees with `policy/money.ts`),
   `apply`, `serve` (line order, award day, the done-lot guard), `pools` (rule 12, money events),
-  `policy` (rules 5, 17 to 19, off pools, raised arrivals), `shadow`, `compaction`.
+  `policy` (rules 5, 17 to 19, off pools, raised arrivals), `shadow`, `compaction`, `eligibility`.
 - **End to end** `funded.spec.ts`: E1 to E7 after every step on 200 random finances (mini city),
   rule 21, rule 14, rule 16, `structuredClone`, a permuted lot table, the money series I1 to I6.
 - **Remedies** `remedies.spec.ts`: grouped serving equals the direct scan (events, ledger, world),
