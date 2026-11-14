@@ -118,6 +118,8 @@ export interface ScoreStatics {
   references: TimelineScore['references'];
   compare: 'plan' | 'preFzp';
   limits: ReturnType<typeof limitStatements> | null;
+  /** Each debt pool's terms as plain data (rule 12's `owed`); null without finance. */
+  debts: { pool: string; debt: { rate: number; termYears: number } }[] | null;
 }
 
 /** What the page reads; every series has `filledThrough + 1` entries. */

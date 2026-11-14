@@ -2,7 +2,7 @@
 
 The score numbers for `/sim`, read from the step engine's world events: a per-world series by calendar month, chunk statistics across worlds, the page's `TimelineView`, and the project card. Design: `docs/superpowers/specs/` (world-score; rule numbers are its rules). Pure TypeScript, worker-safe. Policy frames come from [policy-timeline.md](policy-timeline.md).
 
-World 1's money and tiers are built; `MoneyView`, limit statements and the funded card fields are not yet. See Tiers, Funded worlds and Known gaps.
+World 1's money and tiers, `MoneyView` and limit statements are built; the funded card fields are not yet. See Tiers, Money, Funded worlds and Known gaps.
 
 ## Files
 
@@ -10,7 +10,7 @@ World 1's money and tiers are built; `MoneyView`, limit statements and the funde
 | ------------------------------------ | ------------------------------------------------------------------------------------------- |
 | `src/lib/sim/world/score/types.ts`   | `WorldSeries`, `WorldSeriesData`, `SeriesChunk`, `ScoreStatics`, `TimelineView`, `CardDeps` |
 | `src/lib/sim/world/score/series.ts`  | `createWorldSeries(statics, from?)`                                                         |
-| `src/lib/sim/world/score/statics.ts` | `scoreStaticsOf`, `horizonOf`, `finalTable`                                                 |
+| `src/lib/sim/world/score/statics.ts` | `scoreStaticsOf`, `horizonOf`, `finalTable`, `planFinanceOf`                                |
 | `src/lib/sim/world/score/chunk.ts`   | `chunkOf(plan, twin, money, from, through)`                                                 |
 | `src/lib/sim/world/score/view.ts`    | `viewOf`, `chunksBefore`, `BAND_Z`                                                          |
 | `src/lib/sim/world/score/card.ts`    | `cardAt(world, statics, frame, deps, parcelId, day, projectId?)`                            |
@@ -58,7 +58,15 @@ With finance in the window (month 1's frame or a change up to `windowMonths` has
 
 The series files tiers as `tierSeries` does (rule 2): `-existing` from `aboveModerate` at a construction start after `asOf`; at completion, `tiersOf(scheduleAt(world, statics, row, day))`. A funded row is split by the programme definitions in force in the month of its award (design 3.4), not of its completion: the series records each row's `'award'` day (`WorldSeriesData.award`, so restore keeps it). A funded row that completes without an `'award'` throws (a feed bug). Each month's five tiers sum to world 1's `completedNet`.
 
-Runner rule: pass `createWorldSeries` the very `ScoreStatics` object `scoreStaticsOf` returned. The tier table lives in a module-private `WeakMap` keyed by that object, so a copy (a `structuredClone`, a spread) of a ScoreStatics with finance throws `world-score: ScoreStatics without its tier context; pass the object scoreStaticsOf returned`. A worker that receives ScoreStatics by message calls `scoreStaticsOf` itself.
+Runner rule: pass `createWorldSeries` the very `ScoreStatics` object `scoreStaticsOf` returned. The tier table lives in a module-private `WeakMap` keyed by that object, so a copy (a `structuredClone`, a spread) of a ScoreStatics with finance throws `world-score: ScoreStatics without its tier context; pass the object scoreStaticsOf returned`. A worker that receives ScoreStatics by message calls `scoreStaticsOf` itself. `viewOf` never reads the table, so the page may build the view from a copy.
+
+## Money
+
+`viewOf` gives `money` as today's `TimelineScore['money']` for world 1 (rule 12), with every series cut at `filledThrough`. `owed` is each debt pool's `received[filledThrough]` with `debtService(principal, debt).total`. `perAddedHome`, `owedAt`, `cityOf` and `displacedShare` (`finance-score`) are read with `i = filledThrough`. `money` is null when a chunk has none.
+
+`limits` and `debts` live in `ScoreStatics` as plain data, both null without finance. `scoreStaticsOf` gives `limits = limitStatements(addedBorrowing(planFinanceOf(timeline, asOf, W), input.finance.pools, asOf, horizonOf(s)))`, so they are seed-free, independent of any ledger and fixed as the forecast fills. `planFinanceOf` turns each month's pool definition into one-off inflows and sets `off` to the days a frame drops them, so it counts exactly the frames' arrivals. A pool's label, kind and debt terms are month W's definition, a decided simplification: were two spans to give one pool different debt terms, all its borrowing in the window would be priced on month W's. `debts` lists each debt pool's terms from that same definition.
+
+`viewOf` and `chunksBefore` read only the chunks and the plain fields of `ScoreStatics`, never the tier `WeakMap`. They therefore run on a copy (a `structuredClone` posted to the page), and give the same view as on the original.
 
 ## The view
 
@@ -96,6 +104,6 @@ What money and tiers will read, from world-funding as merged (`displaced` events
 
 ## Known gaps
 
-- `MoneyView`, limit statements and the funded card fields are not built: `limits` and `TimelineView.money` are null.
+- The funded card fields are not built.
 - `perAddedHome` keeps today's denominator: world 1's `fundedHomes - displacedHomes` at `filledThrough` (ruled 2026-11-13), not the plan effect.
 - A project's `'award'` world event arrives after the stage events of the chain `startProject` begins (it runs synchronously). Read awards by project row, never by position relative to stage events.

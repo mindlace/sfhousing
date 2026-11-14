@@ -1,6 +1,5 @@
 import { debtService } from '$lib/sim/finance';
 import { targetsOf, tierTargetsOf } from '$lib/sim/scenario/score';
-import { debtsFor } from './statics';
 import type {
   MoneyRow,
   MoneyView,
@@ -33,7 +32,7 @@ function bandOf(m: PlanRow, sd: PlanRow): { lo: PlanRow; hi: PlanRow } {
  */
 function moneyViewOf(rows: MoneyRow[], statics: ScoreStatics): MoneyView {
   const limits = statics.limits;
-  const debts = debtsFor(statics);
+  const debts = statics.debts;
   if (limits === null || debts === null) {
     throw new Error('world-score: money in the chunks but no finance in the statics');
   }
@@ -63,10 +62,10 @@ function moneyViewOf(rows: MoneyRow[], statics: ScoreStatics): MoneyView {
   }
   const last = rows.length - 1;
   const owed: MoneyView['owed'] = [];
+  const debtOf = new Map(debts.map((d) => [d.pool, d.debt]));
   for (const p of pools) {
-    const debt = debts.get(p.id);
-    if (debt === undefined) throw new Error(`world-score: no debt terms for pool ${p.id}`);
-    if (debt === null) continue;
+    const debt = debtOf.get(p.id);
+    if (debt === undefined) continue;
     const principal = p.received[last];
     owed.push({
       pool: p.id,

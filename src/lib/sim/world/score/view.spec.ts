@@ -45,7 +45,8 @@ const statics = {
   phasing: [],
   references: [],
   compare: 'plan',
-  limits: null
+  limits: null,
+  debts: null
 } as unknown as ScoreStatics;
 
 describe('viewOf', () => {

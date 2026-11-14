@@ -3,6 +3,8 @@
 // today's quantities read at `filledThrough`, on world 1's money alone.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { debtService, limitStatements } from '$lib/sim/finance';
+import { buildFinance } from '$lib/sim/levers/finance';
+import type { FinanceLevers } from '$lib/sim/levers/types';
 import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
 import { addedBorrowing, cityOf, moneyOf, perAddedHome } from '$lib/sim/scenario/finance-score';
 import { miniCalibrationWithRoutes, miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
@@ -25,7 +27,7 @@ import { createWorldSeries } from './series';
 import { horizonOf, planFinanceOf, scoreStaticsOf } from './statics';
 import { TEST_RHNA, feedFunded, feedWorld, testStatics, timelineStatics } from './test/feed';
 import type { MoneyFeed, ScoreStatics, SeriesChunk, WorldSeries } from './types';
-import { viewOf } from './view';
+import { chunksBefore, viewOf } from './view';
 
 type Finance = NonNullable<SimInput['finance']>;
 
@@ -89,11 +91,8 @@ const INPUT: SimInput = (() => {
   };
 })();
 
-/**
- * The plan: the baseline bond doubled from month 13, and an added bond pool with a grant
- * programme, in force for months 1-24 and from month 37 (so months 25-36 drop its arrivals).
- */
-function planDoc() {
+/** The added bond pool and its grant programme (test values). */
+function addedBond(): { bond: Pool; grant: Programme } {
   const asOf = INPUT.asOf;
   const bond: Pool = {
     id: 'u-bond',
@@ -115,14 +114,21 @@ function planDoc() {
     minHomes: 2,
     tiers: { ...TIERS }
   };
+  return { bond, grant };
+}
+
+const TERMS = { guaranteeRateCut: 0.01 };
+const SCALE = () => [{ pool: 'm-bond', from: monthFirstDay(INPUT.asOf, 13), scale: 2 }];
+
+/**
+ * The plan: the baseline bond doubled from month 13, and an added bond pool with a grant
+ * programme, in force for months 1-24 and from month 37 (so months 25-36 drop its arrivals).
+ */
+function planDoc() {
+  const { bond, grant } = addedBond();
   return miniDoc(
-    pol('t', { tag: 'terms' }, { tag: 'terms', terms: { guaranteeRateCut: 0.01 } }, [[1, null]]),
-    pol(
-      'b',
-      { tag: 'baseline' },
-      { tag: 'scales', entries: [{ pool: 'm-bond', from: monthFirstDay(asOf, 13), scale: 2 }] },
-      [[13, null]]
-    ),
+    pol('t', { tag: 'terms' }, { tag: 'terms', terms: TERMS }, [[1, null]]),
+    pol('b', { tag: 'baseline' }, { tag: 'scales', entries: SCALE() }, [[13, null]]),
     pol('f', { tag: 'fund', pool: 'u-bond' }, { tag: 'fund', pool: bond, programmes: [grant] }, [
       [1, 24],
       [37, null]
@@ -130,8 +136,20 @@ function planDoc() {
   );
 }
 
-function compiled(): PolicyTimeline {
-  const c = compileTimeline(planDoc(), {}, { ...CTX, input: INPUT }, 'plan');
+/** The same money with constant levers: every policy in force from month 1. */
+function constantDoc() {
+  const { bond, grant } = addedBond();
+  return miniDoc(
+    pol('t', { tag: 'terms' }, { tag: 'terms', terms: TERMS }, [[1, null]]),
+    pol('b', { tag: 'baseline' }, { tag: 'scales', entries: SCALE() }, [[1, null]]),
+    pol('f', { tag: 'fund', pool: 'u-bond' }, { tag: 'fund', pool: bond, programmes: [grant] }, [
+      [1, null]
+    ])
+  );
+}
+
+function compiled(doc = planDoc()): PolicyTimeline {
+  const c = compileTimeline(doc, {}, { ...CTX, input: INPUT }, 'plan');
   expect(c.step(Infinity)).toBe(true);
   return c.result();
 }
@@ -256,11 +274,33 @@ describe('limits (rule 12)', () => {
     );
   });
 
+  it("with constant levers, limits are today's (OD-2)", () => {
+    const asOf = INPUT.asOf;
+    const { bond, grant } = addedBond();
+    const levers: FinanceLevers = {
+      baselineScale: SCALE(),
+      pools: [bond],
+      programmes: [grant],
+      terms: TERMS
+    };
+    const s = timelineStatics(INPUT, compiled(constantDoc()), W);
+    // as scenario-host.ts:1194-1202: the plan's finance against the twin's (the base's) pools
+    const plan = buildFinance(INPUT.finance, levers, asOf)!;
+    const want = limitStatements(addedBorrowing(plan, INPUT.finance!.pools, asOf, horizonOf(s)));
+    expect(want.length).toBeGreaterThan(0);
+    expect(s.limits).toEqual(want);
+    expect(s.debts).toEqual([
+      { pool: 'm-bond', debt: BOND_DEBT },
+      { pool: 'u-bond', debt: { rate: 0.04, termYears: 30 } }
+    ]);
+  });
+
   it('scoreStaticsOf without finance gives limits null', () => {
     const { finance: _f, ...bare } = INPUT;
     void _f;
     const s = testStatics(bare, W);
     expect(s.limits).toBeNull();
+    expect(s.debts).toBeNull();
   });
 });
 
@@ -305,6 +345,25 @@ describe('the money view at filledThrough (rule 12)', () => {
     expect({ ...v.money!, limits: [] }).toEqual({ ...today, limits: [] });
     expect(v.money!.limits).toEqual(score.limits);
     for (const p of v.money!.pools) expect(p.received).toHaveLength(ft + 1);
+  });
+
+  it('a structuredClone of the statics and chunks gives the same view', () => {
+    const r = run(1);
+    const t = twin(1);
+    const chunks = [chunk(r, t, 0, 10), chunk(r, t, 11, 60), chunk(r, t, 61, score.lastIndex)];
+    const a = viewOf(chunks, score);
+    // Not degenerate: a funded view with every part the page reads.
+    expect(a.tiers).not.toBeNull();
+    expect(a.tierTargets).not.toBeNull();
+    expect(a.money!.owed.length).toBeGreaterThan(0);
+    expect(a.money!.limits.length).toBeGreaterThan(0);
+    const copy = structuredClone(score);
+    const b = viewOf(structuredClone(chunks), copy);
+    expect(b.money!.owed).toEqual(a.money!.owed);
+    expect(b).toEqual(a);
+    // and refilled from a copy, as the page refills
+    const before = chunksBefore(structuredClone(chunks), 30);
+    expect(viewOf(before, copy)).toEqual(viewOf(chunksBefore(chunks, 30), score));
   });
 
   it("perAddedHome divides by world 1's funded minus displaced homes at filledThrough", () => {

@@ -100,15 +100,14 @@ export function tierTableFor(s: ScoreStatics): TierTable | null {
 type Finance = NonNullable<SimInput['finance']>;
 type OffSpan = Finance['off'][number];
 
-/** Each pool's debt terms by id (null for a pool that does not borrow), for `owed` (rule 12). */
-const DEBTS = new WeakMap<ScoreStatics, Map<string, Pool['debt']>>();
-
 /**
  * The plan's money over the window as one `finance` (rule 12): pools, programmes, slope and terms
- * of month `windowMonths`'s frame (the same ids and order in every frame). Each pool's inflows are
- * the arrivals its definition in force each month gives over that month's days (month 1 from
- * `asOf`), one `once` inflow each, and `off` holds the days whose frame drops them (a pool not in
- * force, switched off or uncapped), merged into spans. So `addedBorrowing` of it counts exactly the
+ * of month `windowMonths`'s frame (the same ids and order in every frame). A pool's shape (label,
+ * kind and debt terms) is month W's definition, a decided simplification: were two spans to give
+ * one pool id different debt terms, all its borrowing in the window is priced on month W's. Each
+ * pool's inflows are the arrivals its definition in force each month gives over that month's days
+ * (month 1 from `asOf`), one `once` inflow each, and `off` holds the days whose frame drops them
+ * (a pool not in force or switched off; an uncapped pool has no inflows), merged into spans. So `addedBorrowing` of it counts exactly the
  * frames' arrivals. Null when no frame of months 1..`windowMonths` has finance. Throws when a
  * frame holds an arrival its pool's definition does not give.
  */
@@ -169,22 +168,6 @@ export function planFinanceOf(
 }
 
 /**
- * Each pool's debt terms by id for the `ScoreStatics` `scoreStaticsOf` made (rule 12's `owed`);
- * null without finance. A copy of a ScoreStatics with finance (e.g. a `structuredClone`) has none
- * and throws.
- */
-export function debtsFor(s: ScoreStatics): Map<string, Pool['debt']> | null {
-  if (s.limits === null) return null;
-  const d = DEBTS.get(s);
-  if (d === undefined) {
-    throw new Error(
-      'world-score: ScoreStatics without its debt terms; pass the object scoreStaticsOf returned'
-    );
-  }
-  return d;
-}
-
-/**
  * What the page needs once. `months` runs from the dataset month to the last calendar month whose
  * last day is at or before the last day of model month `windowMonths`. `limits` are those of the
  * borrowing the plan adds over the window (`planFinanceOf`) beyond the dataset's baseline pools
@@ -215,10 +198,18 @@ export function scoreStaticsOf(
     references:
       base === 'preFzp' ? REFERENCES : REFERENCES.filter((r) => r.measure === 'completedNet'),
     compare: base,
-    limits: plan === null ? null : limitStatements(addedBorrowing(plan, baselinePools, asOf, h))
+    limits: plan === null ? null : limitStatements(addedBorrowing(plan, baselinePools, asOf, h)),
+    // Plain data, so `viewOf` gives `owed` from a copy (month W's terms, see `planFinanceOf`).
+    debts:
+      plan === null
+        ? null
+        : plan.pools.flatMap((p) =>
+            p.debt === null
+              ? []
+              : [{ pool: p.id, debt: { rate: p.debt.rate, termYears: p.debt.termYears } }]
+          )
   };
   if (tiers !== null) TIER_TABLES.set(out, tiers);
-  if (plan !== null) DEBTS.set(out, new Map(plan.pools.map((p) => [p.id, p.debt])));
   return out;
 }
 
