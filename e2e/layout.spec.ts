@@ -587,9 +587,8 @@ test.describe('account entry', () => {
         await expect(page.getByRole('banner')).toBeVisible();
         // The map and its controls settle after hydration: the scan below covers the whole page,
         // so it waits for the map and the bottom-right footprint the dock and Reset view follow.
-        await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
-          timeout: 20_000
-        });
+        // waitForFunction has no raised expect timeout: it runs until the test's own.
+        await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);
         await expectFootprintSettled(page);
         await expect(account(page)).toBeHidden();
         await openHeaderMenu(page);

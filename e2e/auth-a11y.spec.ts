@@ -74,9 +74,11 @@ test('signin: submit button goes aria-busy and disabled while the action is pend
   page
 }) => {
   await gotoSignin(page);
-  // Delay the sendLink response so the pending window is wide enough to assert against.
+  // Hold the sendLink request until the test has seen the pending state, then release it.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
   await page.route('**/*sendLink*', async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await held;
     await route.continue();
   });
   await page.locator('#identifier').fill(uniqueEmail('signin-busy'));
@@ -84,6 +86,7 @@ test('signin: submit button goes aria-busy and disabled while the action is pend
   const clickPromise = submit.click();
   await expect(submit).toHaveAttribute('aria-busy', 'true');
   await expect(submit).toBeDisabled();
+  release();
   await clickPromise;
   // The sent state replaces the form, so the busy button is simply gone.
   await expect(page.getByTestId('form-status')).toHaveText(AUTH_COPY.emailSent);
