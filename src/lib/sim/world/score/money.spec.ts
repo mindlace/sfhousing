@@ -10,10 +10,10 @@ import { monthIndexer, monthsOf } from '$lib/sim/scenario/score';
 import { simulateDetailed } from '$lib/sim/scenario/simulate';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
-import { benchFunded, fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';
+import { benchFunded } from '../funding/test/cities.node';
+import { fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';
 import type { PolicyTimeline } from '../policy/frame';
 import { staticsOf, type Statics } from '../statics';
-import { benchInput } from '../test/cities.node';
 import { readAll } from '../test/run';
 import type { World, WorldEvent } from '../types';
 import { chunkOf } from './chunk';
@@ -327,7 +327,7 @@ describe('world 1 money, funded bench', () => {
   let r: Run;
   // A bench city's funded world takes seconds.
   beforeAll(() => {
-    c = cityOf(benchFunded(benchInput()), 240);
+    c = cityOf(benchFunded('baseline').input, 240);
     r = run(c, 1);
   }, 120_000);
 

@@ -11,7 +11,8 @@
 import { describe, expect, it } from 'vitest';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import type { SimInput } from '$lib/sim/scenario/types';
-import { benchFunded, oneMoneyTimeline, runFunded } from '../funding/test/fixtures';
+import { benchFunded } from '../funding/test/cities.node';
+import { oneMoneyTimeline, runFunded } from '../funding/test/fixtures';
 import type { PolicyTimeline } from '../policy/frame';
 import { staticsOf, type Statics } from '../statics';
 import { benchInput } from '../test/cities.node';
@@ -165,7 +166,7 @@ describe('scoring timing, bench city', () => {
 describe('scoring timing, funded bench city (no bar)', () => {
   it(`${2 * FUNDED_SEEDS} funded worlds, world 1's whole ledger: months 101-150 and 400-450`, () => {
     const TO = 450;
-    const input: SimInput = benchFunded(benchInput());
+    const input: SimInput = benchFunded('baseline').input;
     const statics = staticsOf(input);
     const timeline: PolicyTimeline = oneMoneyTimeline(input, input.finance!);
     const score = timelineStatics(input, timeline, WINDOW);

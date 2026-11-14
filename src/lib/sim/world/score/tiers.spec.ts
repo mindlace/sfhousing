@@ -7,13 +7,14 @@ import { targetsOf, tierTargetsOf } from '$lib/sim/scenario/score';
 import type { Schedule, SimInput } from '$lib/sim/scenario/types';
 import type { TierUnits } from '$lib/timelapse/types';
 import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import { benchFunded, fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';
+import { benchFunded } from '../funding/test/cities.node';
+import { benchMoney, fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';
 import { monthOfDay } from '../months';
 import type { PolicyFrame, PolicyTimeline } from '../policy/frame';
 import { frameIdOf } from '../policy/intern';
 import { scheduleAt } from '../read';
 import { staticsOf, type Statics } from '../statics';
-import { benchInput, fixtureInput, liveDir, liveInput } from '../test/cities.node';
+import { fixtureInput, liveDir, liveInput } from '../test/cities.node';
 import type { World } from '../types';
 import { chunkOf } from './chunk';
 import { createWorldSeries, extrasOf } from './series';
@@ -319,7 +320,7 @@ describe('tiers, funded bench', () => {
   it(
     'seed 1: tiers equal tierSeries of the schedules at the horizon',
     () => {
-      const c = cityOf(benchFunded(benchInput()), 240);
+      const c = cityOf(benchFunded('baseline').input, 240);
       const got = checkTiers(c, run(c, 1));
       const end = got[got.length - 1];
       expect(end.veryLow + end.low).toBeGreaterThan(0);
@@ -333,7 +334,7 @@ describe('tiers, funded bench', () => {
  * programmes award nothing on the fixture in 480 months, the mini city's do.
  */
 async function fundedCity(input: SimInput, months: number): Promise<City> {
-  const base = benchFunded(input);
+  const base = benchMoney(input);
   return cityOf({ ...base, finance: miniFinance(base.asOf) }, months);
 }
 
