@@ -54,6 +54,42 @@ export type OpenTimelineRequest = {
  * (`openSimDoc4`, calibration and `asOf` from the manifest's files) before sending; an
  * unreconciled one is rejected with `error` code `bad-request` at this `rev` and the previous
  * timeline keeps filling. `rev` is the page's count of policy edits; older work is dropped.
+ *
+ * Every acceptance of an edit is answered by exactly one `refill` at its `rev`; a rejected edit by
+ * `error` `bad-request` at its `rev` and no `refill`. The `compiled` at that `rev` comes before the
+ * `refill`, and no `filled` at that `rev` comes before it. When the edit withdraws months, `from`
+ * is the first calendar month not final at the first changed model month - 1; when it withdraws
+ * nothing (kept), `from` is the first calendar month not yet posted (the window length when the
+ * window is whole). An edit taken before the dataset loaded opens the session at its `rev` and is
+ * answered the same way (`from` 0, after its `compiled`).
+ *
+ * An edit is accepted unless answered `bad-request`, which can come at any time before its
+ * `refill`, also after its `compiling` and after the worker began using it (a compile rejects a
+ * document at the first month that cannot be compiled). After a rejected edit the worker's
+ * timelines are the last accepted `setPolicy`'s: an edit at `rev` R that a later one replaced is
+ * not abandoned until a later edit has its `refill`; if the later ones are all rejected, R settles
+ * at its own `rev`. When R was in use and the later edit is rejected before the worker accepted
+ * it, R simply settles: its `compiled` (unless already out) and one `refill`. When R is taken up
+ * again (it was still compiling, or a later edit was rejected after the worker accepted it), it is
+ * accepted afresh: a new `compiled` and a new `refill` at R, even if it had them already (its
+ * worlds may have been restored for the later edit, and the `refill` re-bases `from`). So a `rev`
+ * can get more than one `compiled` and `refill`: never dedupe them by `rev`. Otherwise the later
+ * edit's `refill`, at a `rev` above R, answers R. In a chain the `bad-request`s can arrive out of
+ * `rev` order (R + 2's, then R + 1's once it is taken up again). So the page keeps every document
+ * it sent since the last `rev` answered by a `refill`, that `rev`'s own document included (it may
+ * undo to it), undoes to
+ * the newest one not answered `bad-request` on each `bad-request` (an older `rev`'s included),
+ * and is stale from its oldest unsettled edit until a `refill` at that `rev` or a later one has
+ * arrived and the filled months reach the playhead. A taken-up edit's `compiling` is older than
+ * the last `setPolicy` sent, so the client drops it: no progress shows while it recompiles.
+ * Transient: between a late `bad-request` and the taken-up edit's acceptance, `heights`,
+ * `lookups` and `cells` can still come from the rejected edit's timelines (in use until then);
+ * the acceptance replaces them (new `lookups`, a fresh height build, a rewind on a restore).
+ *
+ * Exceptions, where filling stops and no `refill` comes until the next accepted edit or open: a
+ * throw in the timelines in use (rule 21, `error` `timeline`); a late rejection with nothing to
+ * take up (the open's own document); and an edit sent before the dataset loaded that the compiler
+ * then rejects (it replaced the opening's document, which is not taken up again).
  */
 export type SetPolicyRequest = {
   type: 'setPolicy';
@@ -100,7 +136,10 @@ export type TimelineResponse =
     }
   /** `through` is the last final calendar-month index; `series.from` the first index carried. */
   | { type: 'filled'; rev: Rev; through: number; series: SeriesChunk }
-  /** Every calendar month from index `from` on is withdrawn until filled again. */
+  /**
+   * Every calendar month from index `from` on is withdrawn until filled again. Exactly one answers
+   * each accepted `setPolicy` (see `SetPolicyRequest`): one at `rev` >= R settles edit R.
+   */
   | { type: 'refill'; rev: Rev; from: number }
   /** No `rev`: never dropped. */
   | { type: 'cells'; render: TimelineUpdate }

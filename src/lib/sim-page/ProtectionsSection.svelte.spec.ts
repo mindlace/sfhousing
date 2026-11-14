@@ -144,4 +144,14 @@ describe('ProtectionsSection', () => {
     ).toHaveLength(0);
     expect(page.getByText(/Protected with the brush/).elements()).toHaveLength(0);
   });
+
+  it('only=newerThan renders that row alone', async () => {
+    const store = new PolicyStore(DEFAULT_POLICY);
+    render(ProtectionsSection, { props: { store, only: 'newerThan', announce: vi.fn() } });
+    await expect
+      .element(page.getByRole('checkbox', { name: 'Buildings newer than' }))
+      .toBeVisible();
+    expect(page.getByRole('checkbox').elements()).toHaveLength(1);
+    expect(page.getByText('Rent-controlled buildings (likely)').elements()).toHaveLength(0);
+  });
 });

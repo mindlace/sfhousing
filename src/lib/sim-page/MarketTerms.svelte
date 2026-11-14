@@ -14,6 +14,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { TermKey } from '$lib/timelapse/types';
+  import Explain from '$lib/timeline/Explain.svelte';
   import {
     RATE_CUT_DESC,
     TERM_IN_USE_DESC,
@@ -92,6 +93,13 @@
     }
     delete pending[r.key];
     onedit(setTermEdit(r.key, v.value));
+    // A first value re-creates the field (it leaves its explanation): focus stays in it, unless it
+    // has moved on (a Tab's commit).
+    void tick().then(() => {
+      const a = document.activeElement;
+      if (a !== null && a !== document.body) return;
+      document.getElementById(inputId(r.key))?.focus();
+    });
   }
 
   function clear(r: Row, locked: boolean): void {
@@ -107,6 +115,31 @@
     'min-h-6 w-24 rounded-md border border-control-line bg-surface px-2 text-ink aria-invalid:border-red-800 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:aria-invalid:border-red-300 pointer-coarse:min-h-11';
 </script>
 
+{#snippet rateField(r: Row, p: ReturnType<typeof pendingOf>)}
+  <label class="flex flex-wrap items-center gap-1">
+    {termTitle(r.key)}, percentage points
+    <input
+      id={inputId(r.key)}
+      type="number"
+      inputmode="decimal"
+      min="0"
+      max="5"
+      step="0.05"
+      class={input}
+      value={p?.text ?? (r.typed === null ? '' : fieldText(r.typed, 'fraction'))}
+      aria-invalid={p ? 'true' : undefined}
+      aria-describedby="{uid}-{r.key}-err"
+      onchange={(e) => commit(r, e.currentTarget)}
+      onkeydown={(e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        commit(r, e.currentTarget);
+      }}
+      oninput={() => (lastCommit = null)}
+    />
+  </label>
+{/snippet}
+
 {#if rows.length > 0}
   <section class="flex flex-col gap-2">
     <h3 class="font-semibold">Market terms you set</h3>
@@ -116,30 +149,11 @@
         {@const locked = r.inUse && r.sourced === null}
         <li data-term-row={r.key} class="flex flex-col items-start gap-0.5">
           {#if r.key === 'guaranteeRateCut'}
-            <label class="flex flex-wrap items-center gap-1">
-              {termTitle(r.key)}, percentage points
-              <input
-                id={inputId(r.key)}
-                type="number"
-                inputmode="decimal"
-                min="0"
-                max="5"
-                step="0.05"
-                class={input}
-                value={p?.text ?? (r.typed === null ? '' : fieldText(r.typed, 'fraction'))}
-                aria-invalid={p ? 'true' : undefined}
-                aria-describedby="{r.typed === null
-                  ? `${uid}-${r.key}-desc `
-                  : ''}{uid}-{r.key}-err"
-                onchange={(e) => commit(r, e.currentTarget)}
-                onkeydown={(e) => {
-                  if (e.key !== 'Enter') return;
-                  e.preventDefault();
-                  commit(r, e.currentTarget);
-                }}
-                oninput={() => (lastCommit = null)}
-              />
-            </label>
+            {#if r.typed === null}
+              <Explain text={RATE_CUT_DESC} as="wrap">{@render rateField(r, p)}</Explain>
+            {:else}
+              {@render rateField(r, p)}
+            {/if}
           {:else if r.typed !== null}
             <p id={inputId(r.key)} tabindex="-1">
               {termTitle(r.key)}: {valueText(r.key, r.typed)}
@@ -153,7 +167,7 @@
             {p?.error ?? ''}
           </p>
           {#if r.typed === null}
-            <p id="{uid}-{r.key}-desc" class={muted}>{RATE_CUT_DESC}</p>
+            <!-- The note waits behind the empty field (rule 38). -->
           {:else if r.sourced === null || r.sourcedValue === null}
             <p data-source-line class={muted}>{YOUR_VALUE_LINE}</p>
             <button

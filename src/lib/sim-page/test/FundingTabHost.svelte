@@ -4,7 +4,8 @@
   `onready`, and records every announcement in order for the test to read.
 -->
 <script lang="ts">
-  import type { Calibration } from '$lib/timelapse/types';
+  import type { ComponentProps } from 'svelte';
+  import type { Calibration, Day } from '$lib/timelapse/types';
   import { FundingDrafts } from '../funding-drafts.svelte';
   import FundingTab from '../FundingTab.svelte';
   import type { SimPolicy } from '../policy';
@@ -13,10 +14,20 @@
   interface Props {
     policy: SimPolicy;
     calibration: Calibration;
-    onready?: (store: PolicyStore, drafts: FundingDrafts) => void;
+    onready?: (store: PolicyStore<SimPolicy>, drafts: FundingDrafts) => void;
+    only?: ComponentProps<typeof FundingTab>['only'];
+    termsReadOnly?: boolean;
+    priceDay?: Day;
   }
 
-  let { policy, calibration, onready = undefined }: Props = $props();
+  let {
+    policy,
+    calibration,
+    onready = undefined,
+    only = undefined,
+    termsReadOnly = undefined,
+    priceDay = undefined
+  }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   const store = new PolicyStore(policy);
@@ -27,7 +38,15 @@
   let announced = $state<string[]>([]);
 </script>
 
-<FundingTab {store} {calibration} {drafts} announce={(m) => (announced = [...announced, m])} />
+<FundingTab
+  {store}
+  {calibration}
+  {drafts}
+  {only}
+  {termsReadOnly}
+  {priceDay}
+  announce={(m) => (announced = [...announced, m])}
+/>
 
 <ol data-testid="announced" hidden>
   {#each announced as m, i (i)}

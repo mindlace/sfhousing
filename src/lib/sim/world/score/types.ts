@@ -54,6 +54,13 @@ export type MoneyView = NonNullable<TimelineScore['money']> & {
   perAddedHome: { all: number | null; city: number | null };
   /** Displaced homes (of completed funded projects) over funded homes at `filledThrough`. */
   displacedShare: number | null;
+  /**
+   * `perAddedHome` by month: entry i is the figure read at calendar month i (null where none are
+   * added); entry `filledThrough` equals `perAddedHome`.
+   */
+  perAddedHomeByMonth: { all: (number | null)[]; city: (number | null)[] };
+  /** `displacedShare` by month, as `perAddedHomeByMonth`; entry `filledThrough` equals it. */
+  displacedShareByMonth: (number | null)[];
 };
 
 /** The score numbers for a run of final months, one entry per calendar month from `from`. */

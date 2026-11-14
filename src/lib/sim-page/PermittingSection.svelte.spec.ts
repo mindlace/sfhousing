@@ -9,7 +9,7 @@ import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
 import fixture0CalibrationJson from '../../../e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json';
 import PermittingSection from './PermittingSection.svelte';
-import { DEFAULT_POLICY } from './policy';
+import { DEFAULT_POLICY, type SimPolicy } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 import { setStageMonths } from './timing';
 
@@ -31,7 +31,7 @@ const share = (route: string) => page.getByRole('spinbutton', { name: `${route} 
 const value = (route: string) => (share(route).element() as HTMLInputElement).value;
 
 /** A custom permit-review edit on discretionary, applied straight to the store. */
-function editPermitReview(store: PolicyStore, cal: Calibration): void {
+function editPermitReview(store: PolicyStore<SimPolicy>, cal: Calibration): void {
   store.apply(
     (p) => ({
       ...p,
@@ -150,6 +150,7 @@ describe('PermittingSection', () => {
 
   it('shows the Local Program line', async () => {
     setup();
+    await page.getByRole('button', { name: 'Local Program lots streamlined' }).click();
     await expect
       .element(
         page.getByText('Family Zoning Plan Local Program lots use the streamlined route.', {
@@ -209,5 +210,15 @@ describe('PermittingSection', () => {
       const prov = calibration.pathwayForNew.provenance;
       await expect.element(page.getByText(`${prov.label} (tier ${prov.tier})`)).toBeVisible();
     });
+  });
+
+  it('snapshot=false shows no Save and no Revert to saved', async () => {
+    const store = new PolicyStore(DEFAULT_POLICY);
+    void render(PermittingSection, {
+      props: { store, calibration: load(), announce: vi.fn(), snapshot: false }
+    });
+    await expect.element(preset()).toBeVisible();
+    expect(save().elements()).toHaveLength(0);
+    expect(revertBtn('Revert to saved').elements()).toHaveLength(0);
   });
 });

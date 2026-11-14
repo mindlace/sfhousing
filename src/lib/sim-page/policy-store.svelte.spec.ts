@@ -1,11 +1,8 @@
-// PolicyStore (undo and redo over the recipe) and LeverSync (resolve every brush query, compile,
-// debounce, send): the latest recipe alone reaches the worker (Review Focus 2).
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BrushQuery } from '$lib/sim/levers/brushes';
-import type { SimLevers } from '$lib/sim/levers/types';
-import type { BrushLotsResult } from '$lib/sim/scenario/types';
-import { DEFAULT_POLICY, queryKey, type SimPolicy, type ZoningRule } from './policy';
-import { LeverSync, PolicyStore } from './policy-store.svelte';
+// PolicyStore: undo and redo over the policy document.
+import { flushSync } from 'svelte';
+import { describe, expect, it } from 'vitest';
+import { DEFAULT_POLICY, type SimPolicy, type ZoningRule } from './policy';
+import { PolicyStore } from './policy-store.svelte';
 
 const BASE = DEFAULT_POLICY;
 
@@ -23,50 +20,14 @@ function area(name: string, stories = 4): ZoningRule {
   };
 }
 const withBrushes = (...rules: ZoningRule[]): SimPolicy => ({ ...BASE, rules });
-const areaQuery = (name: string): BrushQuery => ({
-  kind: 'transit',
-  stopTypes: ['metro'],
-  maxM: metres(name)
-});
-const ok = (lots: string[]): BrushLotsResult => ({
-  ok: true,
-  lots,
-  points: new Float64Array(lots.length * 2)
-});
-const failed: BrushLotsResult = { ok: false, reason: 'data-missing', message: 'no transit' };
-const noSession: BrushLotsResult = { ok: false, reason: 'no-session', message: 'gone' };
-
-type Resolver = (r: BrushLotsResult) => void;
-
-function harness(answer?: (q: BrushQuery) => BrushLotsResult) {
-  const pending: { q: BrushQuery; resolve: Resolver }[] = [];
-  const sent: SimLevers[] = [];
-  const resolve = vi.fn((q: BrushQuery) =>
-    answer
-      ? Promise.resolve(answer(q))
-      : new Promise<BrushLotsResult>((res) => pending.push({ q, resolve: res }))
-  );
-  const sync = new LeverSync({
-    resolve,
-    send: (l) => sent.push(l),
-    setTimeout: globalThis.setTimeout,
-    clearTimeout: globalThis.clearTimeout
-  });
-  return { sync, sent, resolve, pending };
-}
 
 describe('PolicyStore', () => {
-  it('a locked store ignores changes, undo and redo', () => {
+  it('has no run lock: a change, undo and redo always apply (rule 14)', () => {
     const s = new PolicyStore(DEFAULT_POLICY);
+    expect('locked' in s).toBe(false);
     s.apply((p) => ({ ...p, protect: { ...p.protect, historic: true } }), 'a');
-    s.locked = true;
-    const before = s.policy;
-    s.apply((p) => ({ ...p, protect: { ...p.protect, rentControl: true } }), 'b');
-    expect(s.undo()).toBeNull();
-    expect(s.redo()).toBeNull();
-    expect(s.policy).toBe(before);
-    s.locked = false;
     expect(s.undo()).toBe('a');
+    expect(s.redo()).toBe('a');
   });
 
   it('undo and redo restore the policy and return labels', () => {
@@ -160,271 +121,74 @@ describe('PolicyStore', () => {
   });
 });
 
-describe('LeverSync', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+describe('PolicyStore generic', () => {
+  type Doc = { n: number };
+  const a: Doc = { n: 1 };
+  const b: Doc = { n: 2 };
+  const c: Doc = { n: 3 };
 
-  it('only the latest recipe is sent', async () => {
-    const h = harness((q) => ok(q.kind === 'transit' ? [`lot-${q.maxM}`] : []));
-    // Five changes 40 ms apart, all inside one 250 ms window of the one before.
-    for (const [i, d] of DISTRICTS.entries()) {
-      if (i > 0) await vi.advanceTimersByTimeAsync(40);
-      h.sync.update(withBrushes(area(d)));
-    }
-    expect(h.sent).toEqual([]);
-    await vi.advanceTimersByTimeAsync(249);
-    expect(h.sent).toEqual([]);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(h.sent).toHaveLength(1);
-    // the latest rule (RM-2, the fifth band) and its id as the edit's source
-    expect(h.sent[0].rules).toEqual([{ lots: ['lot-500'], stories: 4, source: 'b-RM-2-4' }]);
-    expect(h.sync.levers).toBe(h.sent[0]);
+  it('undoTo walks back to the given document and keeps redo', () => {
+    const s = new PolicyStore<Doc>(a);
+    s.apply(() => b, 'b');
+    s.apply(() => c, 'c');
+    s.undoTo(a, 'Not applied');
+    expect([s.policy, s.canRedo, s.canUndo]).toEqual([a, true, false]);
+    expect(s.redo()).toBe('b');
   });
 
-  it('a query still in flight holds the send until it resolves', async () => {
-    const h = harness();
-    h.sync.update(withBrushes(area('RH-1')));
-    expect(h.sync.resolving).toBe(1);
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(h.sent).toEqual([]);
-    h.pending[0].resolve(ok(['a', 'b']));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(h.sync.resolving).toBe(0);
-    expect(h.sync.result(queryKey(areaQuery('RH-1')))).toMatchObject({ ok: true });
-    await vi.advanceTimersByTimeAsync(250);
-    expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].rules[0].lots).toEqual(['a', 'b']);
+  it('undoTo a document not in the past records one change', () => {
+    const s = new PolicyStore<Doc>(a);
+    s.apply(() => b, 'b');
+    const x: Doc = { n: 9 };
+    s.undoTo(x, 'Not applied');
+    expect(s.policy).toBe(x);
+    expect(s.undoLabel).toBe('Not applied');
+    expect(s.undo()).toBe('Not applied');
+    expect(s.policy).toBe(b);
   });
 
-  it('pending: while the debounce is armed or a query is in flight, false once sent', async () => {
-    const h = harness();
-    expect(h.sync.pending).toBe(false);
-    h.sync.update(BASE);
-    expect(h.sync.pending).toBe(true); // armed
-    await vi.advanceTimersByTimeAsync(250);
-    expect(h.sent).toHaveLength(1);
-    expect(h.sync.pending).toBe(false);
-    h.sync.update(withBrushes(area('RH-1')));
-    expect(h.sync.pending).toBe(true); // in flight
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(h.sync.pending).toBe(true);
-    h.pending[0].resolve(ok(['a']));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(h.sync.pending).toBe(true); // answered, now armed
-    await vi.advanceTimersByTimeAsync(250);
-    expect(h.sent).toHaveLength(2);
-    expect(h.sync.pending).toBe(false);
+  it('undoTo the current document changes nothing', () => {
+    const s = new PolicyStore<Doc>(a);
+    s.undoTo(a, 'Not applied');
+    expect([s.policy, s.canUndo]).toEqual([a, false]);
   });
 
-  it('pending is false after a needed query fails (the standing levers stay)', async () => {
-    const h = harness(() => failed);
-    h.sync.update(withBrushes(area('RH-1')));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(h.sync.pending).toBe(false);
-    expect(h.sent).toEqual([]);
-  });
-
-  it('a query asked once is cached across updates', async () => {
-    const h = harness((q) => ok(q.kind === 'transit' ? [`lot-${q.maxM}`] : []));
-    h.sync.update(withBrushes(area('RH-1')));
-    await vi.advanceTimersByTimeAsync(0);
-    h.sync.update(withBrushes(area('RH-1', 6)));
-    h.sync.update(withBrushes(area('RH-1', 8)));
-    await vi.advanceTimersByTimeAsync(250);
-    expect(h.resolve).toHaveBeenCalledTimes(1);
-    expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].rules[0].stories).toBe(8);
-  });
-
-  it('a failed query sends nothing until retry succeeds', async () => {
-    const h = harness();
-    const key = queryKey(areaQuery('RH-1'));
-    h.sync.update(withBrushes(area('RH-1')));
-    h.pending[0].resolve(failed);
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(h.sent).toEqual([]);
-    expect(h.sync.result(key)).toEqual(failed);
-    // Another update does not ask again by itself: the failure stands until Retry.
-    h.sync.update(withBrushes(area('RH-1', 6)));
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(h.resolve).toHaveBeenCalledTimes(1);
-    expect(h.sent).toEqual([]);
-
-    h.sync.retry(key);
-    expect(h.resolve).toHaveBeenCalledTimes(2);
-    expect(h.sync.result(key)).toBeUndefined();
-    expect(h.sync.resolving).toBe(1);
-    h.pending[1].resolve(ok(['x']));
-    await vi.advanceTimersByTimeAsync(250);
-    expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].rules).toEqual([{ lots: ['x'], stories: 6, source: 'b-RH-1-6' }]);
-  });
-
-  it('a policy with no brushes compiles at once, after the debounce', async () => {
-    const h = harness();
-    h.sync.update({ ...BASE, protect: { ...BASE.protect, historic: true } });
-    expect(h.resolve).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(250);
-    expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].protect.historic).toBe(true);
-    expect(h.sent[0].compare).toBe('fzp'); // a customised policy compares with FZP as written
-  });
-
-  it('a superseded query answering late does not send the old recipe', async () => {
-    const h = harness();
-    h.sync.update(withBrushes(area('RH-1')));
-    h.sync.update(withBrushes(area('RH-2')));
-    h.pending[1].resolve(ok(['two']));
-    await vi.advanceTimersByTimeAsync(250);
-    expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].rules[0].lots).toEqual(['two']);
-    h.pending[0].resolve(ok(['one']));
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(h.sent).toHaveLength(1);
-    expect(h.sync.result(queryKey(areaQuery('RH-1')))).toMatchObject({ ok: true });
-  });
-
-  it('a bad-request answer also stands until retry', async () => {
-    const h = harness();
-    const key = queryKey(areaQuery('RH-1'));
-    h.sync.update(withBrushes(area('RH-1')));
-    h.pending[0].resolve({ ok: false, reason: 'bad-request', message: 'x' });
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(h.sync.result(key)).toMatchObject({ reason: 'bad-request' });
-    h.sync.resume();
-    expect(h.resolve).toHaveBeenCalledTimes(1);
-    expect(h.sent).toEqual([]);
-  });
-
-  it('no-session is not a failure: the query waits for resume, then sends', async () => {
-    const h = harness();
-    const key = queryKey(areaQuery('RH-1'));
-    h.sync.update(withBrushes(area('RH-1')));
-    h.pending[0].resolve(noSession);
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(h.sync.result(key)).toBeUndefined();
-    expect(h.sync.resolving).toBe(0);
-    expect(h.sent).toEqual([]);
-    // Not asked again before the session is back, however often the recipe changes.
-    h.sync.update(withBrushes(area('RH-1', 6)));
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(h.resolve).toHaveBeenCalledTimes(1);
-
-    h.sync.resume();
-    expect(h.resolve).toHaveBeenCalledTimes(2);
-    h.pending[1].resolve(ok(['a']));
-    await vi.advanceTimersByTimeAsync(250);
-    expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].rules[0]).toMatchObject({ lots: ['a'], stories: 6 });
-  });
-
-  it('a no-session answer to a query asked before resume is asked again at once', async () => {
-    const h = harness();
-    h.sync.update(withBrushes(area('RH-1')));
-    h.sync.resume(); // a new session started while the old one still held the query
-    h.pending[0].resolve(noSession);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(h.resolve).toHaveBeenCalledTimes(2);
-    h.pending[1].resolve(ok(['b']));
-    await vi.advanceTimersByTimeAsync(250);
-    expect(h.sent).toHaveLength(1);
-  });
-
-  describe('open (a load)', () => {
-    it('open: sends as soon as every query has answered, without the debounce', async () => {
-      const h = harness();
-      h.sync.open(withBrushes(area('RH-1')));
-      h.pending[0].resolve(ok(['a']));
-      await vi.advanceTimersByTimeAsync(0);
-      expect(h.sent).toHaveLength(1);
-      expect(h.sent[0].rules[0].lots).toEqual(['a']);
-      expect(h.sync.levers).toBe(h.sent[0]);
+  it('an identical document is no change: no entry, no notification', () => {
+    const s = new PolicyStore<Doc>(a);
+    let seen = 0;
+    const stop = $effect.root(() => {
+      $effect(() => {
+        void s.policy;
+        void s.canUndo;
+        seen++;
+      });
     });
+    flushSync();
+    const before = seen;
+    s.apply((p) => p, 'nothing');
+    flushSync();
+    expect([s.canUndo, s.undoLabel, seen]).toEqual([false, null, before]);
+    stop();
+  });
 
-    it("open: a failed query sends with that brush's lots empty", async () => {
-      // RH-1 fails, RH-2 finds its lot: the failed brush adds no edit (an edit with no lots is
-      // not emitted), the other is sent.
-      const h = harness((q) =>
-        q.kind === 'transit' && q.maxM === metres('RH-1') ? failed : ok(['b'])
-      );
-      h.sync.open(withBrushes(area('RH-1'), area('RH-2')));
-      await vi.advanceTimersByTimeAsync(0);
-      expect(h.sent).toHaveLength(1);
-      expect(h.sent[0].rules).toEqual([{ lots: ['b'], stories: 4, source: 'b-RH-2-4' }]);
-      expect(h.sync.result(queryKey(areaQuery('RH-1')))).toBe(failed);
+  it('normalize runs in apply and its result is what is stored', () => {
+    const calls: [Doc, Doc][] = [];
+    const normal: Doc = { n: 100 };
+    const s = new PolicyStore<Doc>(a, (next, prev) => {
+      calls.push([next, prev]);
+      return normal;
     });
+    s.apply(() => b, 'b');
+    expect(calls).toEqual([[b, a]]);
+    expect(s.policy).toBe(normal);
+    expect(s.undo()).toBe('b');
+    expect(s.policy).toBe(a);
+  });
 
-    it('open: a failed query alone sends no rules', async () => {
-      const h = harness(() => failed);
-      h.sync.open(withBrushes(area('RH-1')));
-      await vi.advanceTimersByTimeAsync(0);
-      expect(h.sent).toHaveLength(1);
-      expect(h.sent[0].rules).toEqual([]);
-      expect(h.sent[0].compare).toBe('fzp');
-    });
-
-    it('open: a bad-request answer also sends with empty lots', async () => {
-      const h = harness();
-      h.sync.open(withBrushes(area('RH-1')));
-      h.pending[0].resolve({ ok: false, reason: 'bad-request', message: 'x' });
-      await vi.advanceTimersByTimeAsync(0);
-      expect(h.sent).toHaveLength(1);
-      expect(h.sent[0].rules).toEqual([]);
-      expect(h.sync.result(queryKey(areaQuery('RH-1')))).toMatchObject({ reason: 'bad-request' });
-    });
-
-    it('open: a no-session answer parks; resume asks again and the answer is sent at once', async () => {
-      const h = harness();
-      h.sync.open(withBrushes(area('RH-1')));
-      h.pending[0].resolve(noSession);
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(h.sent).toEqual([]);
-      expect(h.resolve).toHaveBeenCalledTimes(1);
-      h.sync.resume();
-      expect(h.resolve).toHaveBeenCalledTimes(2);
-      h.pending[1].resolve(ok(['a']));
-      await vi.advanceTimersByTimeAsync(0);
-      expect(h.sent).toHaveLength(1);
-      expect(h.sent[0].rules[0].lots).toEqual(['a']);
-    });
-
-    it('open: a policy with no brushes sends at once', async () => {
-      const h = harness();
-      h.sync.open(BASE);
-      expect(h.resolve).not.toHaveBeenCalled();
-      expect(h.sent).toEqual([]);
-      await vi.advanceTimersByTimeAsync(0);
-      expect(h.sent).toHaveLength(1);
-      expect(h.sent[0].rules).toEqual([]);
-    });
-
-    it('after the opening send, a failed query on an edit sends nothing', async () => {
-      const h = harness((q) =>
-        q.kind === 'transit' && q.maxM === metres('RH-1') ? ok(['a']) : failed
-      );
-      h.sync.open(withBrushes(area('RH-1')));
-      await vi.advanceTimersByTimeAsync(0);
-      expect(h.sent).toHaveLength(1);
-      h.sync.update(withBrushes(area('RH-2')));
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(h.sent).toHaveLength(1);
-      expect(h.sync.result(queryKey(areaQuery('RH-2')))).toBe(failed);
-    });
-
-    it('an update before the opening send ends the opening: the debounce applies', async () => {
-      const h = harness();
-      h.sync.open(withBrushes(area('RH-1')));
-      h.sync.update(withBrushes(area('RH-2')));
-      h.pending[1].resolve(ok(['two']));
-      await vi.advanceTimersByTimeAsync(249);
-      expect(h.sent).toEqual([]);
-      await vi.advanceTimersByTimeAsync(1);
-      expect(h.sent).toHaveLength(1);
-      expect(h.sent[0].rules[0].lots).toEqual(['two']);
-    });
+  it('normalize also runs when undoTo records a change', () => {
+    const normal: Doc = { n: 100 };
+    const s = new PolicyStore<Doc>(a, () => normal);
+    s.undoTo(c, 'Not applied');
+    expect(s.policy).toBe(normal);
   });
 });

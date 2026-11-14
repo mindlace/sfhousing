@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { cdp, page } from 'vitest/browser';
 import '../../routes/layout.css';
+import { REFERENCE_NOTE } from '$lib/timeline/copy';
 import { chartLabel, chartModel, tableRows } from './chart';
 import {
   FIX_ASOF,
@@ -150,13 +151,12 @@ describe('ScoreChart', () => {
   it('explains the dotted reference lines', async () => {
     await page.viewport(1024, 768);
     await render(ScoreChart, { props: props() });
-    await expect
-      .element(
-        page.getByText(
-          "Dotted: published estimates of what the plan adds. Compare them with the violet lines, which show this simulation's plan effect (with the plan minus the old zoning)."
-        )
-      )
-      .toBeInTheDocument();
+    await expect.element(page.getByText(REFERENCE_NOTE).first()).not.toBeInTheDocument();
+    await page
+      .getByRole('button', { name: /^Planning: about 39,000/ })
+      .first()
+      .click();
+    await expect.element(page.getByText(REFERENCE_NOTE).first()).toBeVisible();
     await expect
       .element(
         page.getByText(

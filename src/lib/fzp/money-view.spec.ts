@@ -29,7 +29,8 @@ import {
   tiersAt,
   TIERS_FUNDED_SENTENCE,
   TIERS_UNRECORDED_SENTENCE,
-  uncappedPoolIds
+  uncappedPoolIds,
+  moneyFigureAt
 } from './money-view';
 import type { Pool } from '$lib/timelapse/types';
 
@@ -261,5 +262,30 @@ describe('marketText', () => {
     const none = structuredClone(cal);
     delete none.market;
     expect(marketText(none)).toBeNull();
+  });
+});
+
+describe('moneyFigureAt', () => {
+  it('a view money gives the by-month figure at i, a scored one its own month', () => {
+    const base = money;
+    const n = base.fundedHomes.length;
+    const view = {
+      ...base,
+      perAddedHome: { all: 7, city: 8 },
+      displacedShare: 0.25,
+      perAddedHomeByMonth: {
+        all: Array.from({ length: n }, (_, k) => 100 + k),
+        city: Array.from({ length: n }, (_, k) => 200 + k)
+      },
+      displacedShareByMonth: Array.from({ length: n }, (_, k) => (k === 2 ? null : k / 100))
+    };
+    expect(moneyFigureAt(view, 3)).toEqual({
+      perAddedHome: { all: 103, city: 203 },
+      displacedShare: 0.03
+    });
+    expect(moneyFigureAt(view, 2).displacedShare).toBeNull();
+    expect(displacementLine(view, 3)).toContain('(3.0% of funded homes)');
+    expect(displacementLine(view, 3)).not.toMatch(/ by \d{4}/);
+    expect(moneyFigureAt(base, 1).perAddedHome.all).toBe(moneyAt(base, 1).perAddedHome);
   });
 });
