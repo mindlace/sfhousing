@@ -663,27 +663,52 @@ describe('a late compile rejection resumes the last accepted edit (S14)', () => 
       const docR = withZoning(baseDoc(), protect(100, 197));
       r.runner.setPolicy(2, docR, {});
       if (state === 'settled') await r.run(() => r.of('refill').some((m) => m.rev === 2));
-      else await r.run(() => r.runner.rev === 2);
-      // kept: R + 1 differs from R only from month 200; restored: also from month 110
+      else {
+        await r.run(() => r.runner.rev === 2);
+        // settling: accepted, its refill not out yet
+        expect(r.of('refill')).toEqual([]);
+      }
+      // kept: R + 1 differs from R only from month 200; restored: also from month 90, before the
+      // month stepped (R's own restore left the worlds at 99)
       const bad =
         how === 'kept'
           ? withZoning(docR, mismatched(200))
-          : withZoning(baseDoc(), protect(110, 197), mismatched(200));
+          : withZoning(baseDoc(), protect(90, 197), mismatched(200));
       r.runner.setPolicy(3, bad, {});
       await r.run(() => r.runner.rev === 3);
       expect(r.runner.internals().kept).toBeGreaterThan(0);
+      // R + 1's acceptance kept the worlds, or restored them (a refill is due from month 90)
+      if (how === 'restored') expect(r.runner.internals().refillAt).toBe(90);
+      else if (state === 'settled') expect(r.runner.internals().refillAt).toBeNull();
       await r.run(() => r.errors().length > 0);
       expect(r.errors()).toEqual([expect.objectContaining({ rev: 3, code: 'bad-request' })]);
       const errAt = r.posts.findIndex((m) => m.type === 'error');
-      expect(r.of('compiled', errAt).some((c) => c.rev === 3)).toBe(false);
       await r.run(r.full(2));
+      // R + 1's plan compile never finished: no compiled and no refill at R + 1, ever
+      expect(r.of('compiled').some((c) => c.rev === 3)).toBe(false);
       expect(r.errors()).toHaveLength(1);
       expect(r.runner.rev).toBe(2);
       // nothing at R + 1 after its bad-request; R's compiled and its refill after it
       expect(r.posts.slice(errAt + 1).some((m) => 'rev' in m && m.rev === 3)).toBe(false);
       expect(r.of('refill', errAt).map((m) => m.rev)).toEqual([2]);
       expect(r.of('refill').filter((m) => m.rev === 3)).toEqual([]);
-      settledAt(r.posts.slice(errAt + 1), 2);
+      const refill = settledAt(r.posts.slice(errAt + 1), 2);
+      // taken up again, R is accepted afresh: settled before, it now has two compiled and refills
+      const twice = state === 'settled' ? 2 : 1;
+      expect(r.of('compiled').filter((c) => c.rev === 2)).toHaveLength(twice);
+      expect(r.of('refill').filter((m) => m.rev === 2)).toHaveLength(twice);
+      // the posted mark before this refill, as a client applying every filled and refill holds it
+      let mark = -1;
+      for (const m of r.posts.slice(0, r.posts.indexOf(refill)))
+        if (m.type === 'filled') mark = m.through;
+        else if (m.type === 'refill') mark = Math.min(mark, m.from - 1);
+      if (state === 'settled' && how === 'kept') {
+        // R + 1 differs from R only from month 200: nothing to withdraw
+        expect(refill.from).toBe(mark + 1);
+      } else {
+        // a restore: R's own (settling) or one undoing R + 1's from month 90
+        expect(refill.from).toBeLessThanOrEqual(mark);
+      }
       expect(r.runner.internals().kept).toBe(0);
       expect(viewFrom(r.posts)).toEqual(await fresh(docR, {}, months));
       r.runner.dispose();
