@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { freshDb, seedUser, makePlatform } from '$lib/server/test/auth-db';
 import { createSimRecord, addMember } from '$lib/server/sims/sim-index';
 import { ROLE_BUNDLE, APP_RESOURCE, type Capability } from '$lib/server/authz';
-import type { ActorKind } from './actor';
+import { PUBLIC_ACTOR_ID, type ActorKind } from './actor';
 import { requireCap } from './require-cap';
 
 type EventArg = Parameters<typeof requireCap>[0];
@@ -193,5 +193,22 @@ describe('requireCap — sim stays membership-only', () => {
         requireCap(event(platform, stranger), ROLE_BUNDLE.viewer, { type: 'sim', id: 'q1' })
       )
     ).toBe(404);
+  });
+});
+
+describe('requireCap — anonymous public actor', () => {
+  it('returns a public actor on an anonymous request allowed by an injected cap', async () => {
+    const { shim } = freshDb();
+    const platform = makePlatform(shim);
+    const caps: Capability[] = [
+      { ability: ROLE_BUNDLE.viewer, resource: { type: 'sim', id: 'q1' } }
+    ];
+    const res = await requireCap(
+      event(platform, null),
+      ROLE_BUNDLE.viewer,
+      { type: 'sim', id: 'q1' },
+      { caps }
+    );
+    expect(res.actor).toEqual({ actorId: PUBLIC_ACTOR_ID, actorKind: 'public' });
   });
 });

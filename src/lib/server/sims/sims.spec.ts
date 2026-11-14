@@ -49,6 +49,14 @@ describe('createSim', () => {
       .where(eq(capabilityEvent.resourceId, simId));
     expect(rows.map((r) => r.actorId)).toEqual(['owner1']);
   });
+
+  it('createSim calls onSimRosterChanged with the new sim id', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    const { simId } = await createSim({ db, title: 'My Sim', managerId: 'owner1' });
+    expect(onSimRosterChanged).toHaveBeenCalledTimes(1);
+    expect(onSimRosterChanged).toHaveBeenCalledWith(simId);
+  });
 });
 
 describe('removeSimMember', () => {
@@ -58,6 +66,7 @@ describe('removeSimMember', () => {
     const { simId } = await createSim({ db, title: 'Q', managerId: 'owner1' });
     await seedInvite(db, simId, 'owner1', 'pending', 'h1');
     await seedInvite(db, simId, 'owner1', 'accepted', 'h2');
+    vi.mocked(onSimRosterChanged).mockClear();
 
     const result = await removeSimMember({ db, simId, userId: 'owner1' });
 
@@ -102,6 +111,7 @@ describe('removeSimMember', () => {
     await seedUser(db, { id: 'ed', email: 'e@test.com' });
     const { simId } = await createSim({ db, title: 'Q', managerId: 'owner1' });
     await addMemberById({ db, simId, userId: 'ed', role: 'editor' });
+    vi.mocked(onSimRosterChanged).mockClear();
 
     await removeSimMember({ db, simId, userId: 'ed' });
 

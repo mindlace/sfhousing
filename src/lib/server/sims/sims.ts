@@ -13,6 +13,7 @@ export async function createSim(args: {
 }): Promise<{ simId: string }> {
   const simId = newId();
   await createSimRecord({ db: args.db, simId, title: args.title, managerId: args.managerId });
+  await onSimRosterChanged(simId);
   return { simId };
 }
 
