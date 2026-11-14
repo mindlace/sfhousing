@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { BOXES } from '../boxes-config.js';
 import type { MultiPoly, Ring } from '../geom.js';
 import { createTableFromRows, openDuck } from '../lib/duck.js';
 import { clusterBuildings } from '../lib/lidar/clusters.js';
@@ -7,6 +8,7 @@ import {
   registerCluster,
   registrationBbox,
   scoreGrid,
+  shiftFromGrid,
   type Footprint
 } from '../lib/lidar/register.js';
 import { runSql } from '../lib/sql.js';
@@ -48,7 +50,6 @@ describe('registerCluster', () => {
     const s = registerCluster(windowFor(scene, members), members);
     expect(s).not.toBeNull();
     expect(s!.source).toBe('fit');
-    expect(s!.dx).toBeCloseTo(1.24, 0);
     expect(Math.abs(s!.dx - 1.24)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(s!.dy + 0.32)).toBeLessThanOrEqual(0.1);
     expect(s!.flagged).toBe(false);
@@ -63,8 +64,12 @@ describe('registerCluster', () => {
     const scene: SynthScene = { ground, boxes: [{ ring: eaves, top: 9 }], shift: [0.6, 0.2] };
     const members = [fp('a', ring)];
     const s = registerCluster(windowFor(scene, members), members)!;
+    expect(s.source).toBe('fit');
+    expect(s.flagged).toBe(false);
     expect(Math.abs(s.dx - 0.6)).toBeLessThanOrEqual(0.15);
     expect(Math.abs(s.dy - 0.2)).toBeLessThanOrEqual(0.15);
+    // The opposite walls give close maxima; the shift between them still scores well.
+    expect(s.score).toBeGreaterThanOrEqual(BOXES.regPeakFloor * s.best);
   });
 
   it('a rowhouse block fits as one', () => {
@@ -206,11 +211,76 @@ describe('scoreGrid and analysePeak', () => {
     expect(Math.abs(p.dy + 1.27)).toBeLessThan(0.02);
     expect(p.ratio).toBeLessThan(0.85);
     expect(p.atEdge).toBe(false);
-    expect(p.score).toBeCloseTo(1 - 0.03 ** 2 - 0.03 ** 2, 6);
+    // best is the best cell (0.4, -1.3); score is read at the refined peak.
+    expect(p.best).toBeCloseTo(1 - 0.03 ** 2 - 0.03 ** 2, 6);
+    expect(p.score).toBeGreaterThan(0.99);
+    expect(p.score).toBeLessThanOrEqual(1);
     const edge = new Float64Array(61 * 61);
     for (let iy = 0; iy < 61; iy++)
       for (let ix = 0; ix < 61; ix++) edge[iy * 61 + ix] = shifts[ix] + 0.01 * shifts[iy];
     expect(analysePeak(shifts, edge).atEdge).toBe(true);
+  });
+});
+
+describe('shiftFromGrid', () => {
+  const shifts = Float64Array.from({ length: 61 }, (_, k) => (k - 30) / 10);
+  /** A score grid from f(dx, dy). */
+  const grid = (f: (dx: number, dy: number) => number): Float64Array => {
+    const S = new Float64Array(61 * 61);
+    for (let iy = 0; iy < 61; iy++)
+      for (let ix = 0; ix < 61; ix++) S[iy * 61 + ix] = f(shifts[ix], shifts[iy]);
+    return S;
+  };
+  const bump = (dx: number, dy: number, x: number, y: number, sigma: number): number =>
+    Math.exp(-((dx - x) ** 2 + (dy - y) ** 2) / (2 * sigma * sigma));
+
+  it('two narrow maxima 0.8 m apart are ambiguous, not a fit between them', () => {
+    // Away from every candidate so the fallback cannot land near the true maxima by chance.
+    const S = grid(
+      (dx, dy) => bump(dx, dy, -2.0, 1.5, 0.15) + 0.97 * bump(dx, dy, -1.2, 1.5, 0.15)
+    );
+    const s = shiftFromGrid(shifts, S);
+    expect(s.source).not.toBe('fit');
+    expect(s.flagged).toBe(true);
+  });
+
+  it('two narrow maxima 1.05 m apart are ambiguous, not a fit between them', () => {
+    const S = grid(
+      (dx, dy) => bump(dx, dy, -2.0, 1.5, 0.15) + 0.97 * bump(dx, dy, -0.95, 1.5, 0.15)
+    );
+    const s = shiftFromGrid(shifts, S);
+    expect(s.source).not.toBe('fit');
+    expect(s.flagged).toBe(true);
+  });
+
+  it('one narrow maximum is a confident fit scored where it lands', () => {
+    const S = grid((dx, dy) => bump(dx, dy, -1.43, 1.52, 0.15));
+    const s = shiftFromGrid(shifts, S);
+    expect(s.source).toBe('fit');
+    expect(s.flagged).toBe(false);
+    expect(Math.abs(s.dx + 1.43)).toBeLessThan(0.05);
+    expect(Math.abs(s.dy - 1.52)).toBeLessThan(0.05);
+    expect(s.score).toBeGreaterThanOrEqual(BOXES.regPeakFloor * s.best);
+  });
+
+  it('a positive grid peak is never none, even when every candidate scores <= 0', () => {
+    // Two equal maxima far apart (ambiguous) on a negative floor: (0,0) and both frames read -0.2.
+    const S = grid(
+      (dx, dy) => -0.2 + bump(dx, dy, 2.5, -2.5, 0.15) + bump(dx, dy, -2.5, 2.5, 0.15)
+    );
+    const s = shiftFromGrid(shifts, S);
+    expect(s.best).toBeGreaterThan(0);
+    expect(s.source).toBe('zero');
+    expect([s.dx, s.dy, s.flagged]).toEqual([0, 0, true]);
+    expect(s.score).toBeLessThanOrEqual(0);
+  });
+
+  it('none when the whole grid is <= 0', () => {
+    const S = grid((dx, dy) => -0.1 - 0.01 * (dx * dx + dy * dy));
+    const s = shiftFromGrid(shifts, S);
+    expect(s.source).toBe('none');
+    expect([s.dx, s.dy, s.flagged]).toEqual([0, 0, true]);
+    expect(s.best).toBeLessThanOrEqual(0);
   });
 });
 
@@ -247,6 +317,8 @@ describe('clusterBuildings', () => {
       // e|f: 2 m apart, both on block 3520 -> two clusters.
       // g: no parcel piece -> its own cluster.
       // h holds i inside it (distance 0, boundaries 2 m apart), block 3530 -> one cluster.
+      // j has equal pieces on blocks 3541 and 3540: the lower parcel id (3540002) is its main
+      // parcel, so it joins k (block 3540, 1 m east), not l (block 3541, 1 m west).
       // a, c, e, g share x extents: DuckDB's polygon ST_Distance reads 0 between such squares.
       const rows: [string, string][] = [
         ['a', sq(0, 0)],
@@ -257,7 +329,10 @@ describe('clusterBuildings', () => {
         ['f', sq(12, 200)],
         ['g', sq(0, 300)],
         ['h', sq(0, 400, 20)],
-        ['i', sq(2, 402, 4)]
+        ['i', sq(2, 402, 4)],
+        ['j', sq(0, 500)],
+        ['k', sq(11, 500)],
+        ['l', sq(-11, 500)]
       ];
       await createTableFromRows(
         db,
@@ -290,7 +365,11 @@ describe('clusterBuildings', () => {
           ['f', '3520002', 100],
           ['g', null, 100],
           ['h', '3530001', 384],
-          ['i', '3530001', 16]
+          ['i', '3530001', 16],
+          ['j', '3541001', 50],
+          ['j', '3540002', 50],
+          ['k', '3540001', 100],
+          ['l', '3541005', 100]
         ]
       );
       const clusters = await clusterBuildings(db);
@@ -303,7 +382,10 @@ describe('clusterBuildings', () => {
         f: 'f',
         g: 'g',
         h: 'h',
-        i: 'h'
+        i: 'h',
+        j: 'j',
+        k: 'j',
+        l: 'l'
       });
     } finally {
       db.close();

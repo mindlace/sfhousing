@@ -17,23 +17,31 @@ export interface Footprint {
 /**
  * Where a cluster's shift came from.
  * - `fit`: a confident peak of the edge-gradient score.
- * - `frame-nad83`, `frame-wgs84`, `zero`: the fit was ambiguous or at the edge of the search, and
- *   that candidate ((0,0) for `zero`) scored best and above 0. Usable; `flagged` is true.
- * - `none`: no candidate scored above 0, so nothing in the LiDAR supports any shift. dx = dy = 0,
- *   `score` <= 0, `flagged` is true; downstream treats the cluster as unreliable (single box).
+ * - `frame-nad83`, `frame-wgs84`, `zero`: the fit was not confident (at the edge of the search,
+ *   ambiguous, or its refined peak in a valley), and that candidate ((0,0) for `zero`) scored best
+ *   of the three on the grid, whatever its sign. Usable; `flagged` is true.
+ * - `none`: the whole score grid is <= 0 (`best <= 0`): nothing in the LiDAR lines up with the
+ *   footprints at any shift. dx = dy = 0, `flagged` is true; downstream treats the cluster as
+ *   unreliable (single box).
  *
- * Exactly: `source === 'none'` iff `score <= 0`. A cluster with no LiDAR coverage gets no Shift at
- * all (`registerCluster` returns null); downstream stores its shift source as NULL.
+ * Exactly: `source === 'none'` iff `best <= 0`; judge reliability by `source`, not by `score`. A
+ * cluster with no LiDAR coverage gets no Shift at all (`registerCluster` returns null); downstream
+ * stores its shift source as NULL.
  */
 export type ShiftSource = 'fit' | 'frame-nad83' | 'frame-wgs84' | 'zero' | 'none';
+
+/** The OSM frame candidates; each must be a key of BOXES.regFrames and a ShiftSource. */
+const FRAMES = ['frame-nad83', 'frame-wgs84'] as const satisfies readonly ShiftSource[];
 
 export interface Shift {
   dx: number;
   dy: number;
   source: ShiftSource;
-  /** The chosen shift's score (the peak's for `fit`, the candidate's otherwise). */
+  /** The score at (dx, dy), read bilinearly on the grid. */
   score: number;
-  /** Best score farther than regSecondPeakM from the peak over the peak's; 1 when the peak <= 0. */
+  /** The best cell of the score grid. */
+  best: number;
+  /** Best score farther than regSecondPeakM from the peak over `best`; 1 when `best` <= 0. */
   ratio: number;
   /** Weighted spread (m) of the grid cells within 10% of the peak. */
   sharpX: number;
@@ -214,9 +222,13 @@ export function scoreGrid(
  *   score that lie within regSecondPeakM of the best cell. On a sharp peak this is the sub-cell
  *   refinement; where eaves make the LiDAR outline larger than the footprint, opposite walls give
  *   two close maxima and the centroid lands between them (the spike's parabolic refinement picked
- *   one wall pair).
- * - `ratio`: the best score farther than regSecondPeakM from the peak over the peak's (1 when the
- *   peak is not positive).
+ *   one wall pair). Close maxima that are distinct alignments (a valley between them, or asymmetric
+ *   ones whose flank pulls the centroid) leave the centroid on low ground: `score`, read at the
+ *   centroid, then falls under regPeakFloor x `best` and `shiftFromGrid` treats the fit as
+ *   ambiguous.
+ * - `score`: the grid read bilinearly at the peak; `best`: the best cell.
+ * - `ratio`: the best score farther than regSecondPeakM from the peak over `best` (1 when `best`
+ *   is not positive).
  * - `sharpX`/`sharpY`: the weighted spread about the peak of every cell within 10% of the best.
  * - `atEdge`: the best cell lies on the border of the search grid.
  */
@@ -275,7 +287,7 @@ export function analysePeak(
   const ratio = best > 0 && Number.isFinite(second) ? second / best : 1;
   const lim = shifts[n - 1] - 1e-6;
   const atEdge = Math.abs(shifts[ix]) >= lim || Math.abs(shifts[iy]) >= lim;
-  return { dx, dy, score: best, ratio, sharpX, sharpY, atEdge };
+  return { dx, dy, score: scoreAt(shifts, S, dx, dy), best, ratio, sharpX, sharpY, atEdge };
 }
 
 /** Bilinear read of the score grid at a continuous shift (clamped to the grid). */
@@ -297,30 +309,37 @@ function scoreAt(shifts: Float64Array, S: Float64Array, dx: number, dy: number):
 }
 
 /**
- * One rigid shift for a cluster's members. A confident fit (not at the edge, positive, second-peak
- * ratio under regAmbiguousRatio) is `fit`. Otherwise the two OSM frames and (0,0) are scored on the
- * grid and the best positive one wins, flagged; `none` when none is positive.
- *
- * Returns null when there is no LiDAR coverage: no window, or no finite height under any member.
+ * The shift a score grid supports.
+ * - Confident (`fit`, unflagged): `best` > 0, the best cell not on the grid border, `ratio` under
+ *   regAmbiguousRatio, and the refined peak scoring at least regPeakFloor x `best`.
+ * - Otherwise, when `best` > 0: (0,0) and the two OSM frames are read on the grid and the highest
+ *   wins (ties to (0,0)), flagged, even if its own score is <= 0. That is the spec's fallback, "the
+ *   better of the two frame offsets, judged by score, or no shift".
+ * - `none` (dx = dy = 0, flagged) only when the whole grid is <= 0.
  */
-export function registerCluster(w: RasterWindow | null, members: Footprint[]): Shift | null {
-  if (!w) return null;
-  const href = referenceHeight(w, members);
-  if (href === null) return null;
-  const { shifts, S } = scoreGrid(w, members, href);
+export function shiftFromGrid(shifts: Float64Array, S: Float64Array): Shift {
   const peak = analysePeak(shifts, S);
-  if (!peak.atEdge && peak.score > 0 && peak.ratio < BOXES.regAmbiguousRatio)
+  if (!(peak.best > 0))
+    return {
+      ...peak,
+      dx: 0,
+      dy: 0,
+      score: scoreAt(shifts, S, 0, 0),
+      source: 'none',
+      flagged: true
+    };
+  if (
+    !peak.atEdge &&
+    peak.ratio < BOXES.regAmbiguousRatio &&
+    peak.score >= BOXES.regPeakFloor * peak.best
+  )
     return { ...peak, source: 'fit', flagged: false };
 
   const candidates: [ShiftSource, number, number][] = [
     ['zero', 0, 0],
-    ...Object.entries(BOXES.regFrames).map(([name, [fx, fy]]): [ShiftSource, number, number] => [
-      name as ShiftSource,
-      fx,
-      fy
-    ])
+    ...FRAMES.map((f): [ShiftSource, number, number] => [f, ...BOXES.regFrames[f]])
   ];
-  let pick: [ShiftSource, number, number] | null = null;
+  let pick = candidates[0];
   let pickScore = -Infinity;
   for (const c of candidates) {
     const sc = scoreAt(shifts, S, c[1], c[2]);
@@ -329,7 +348,19 @@ export function registerCluster(w: RasterWindow | null, members: Footprint[]): S
       pickScore = sc;
     }
   }
-  if (!pick || !(pickScore > 0))
-    return { ...peak, dx: 0, dy: 0, score: pickScore, source: 'none', flagged: true };
   return { ...peak, dx: pick[1], dy: pick[2], score: pickScore, source: pick[0], flagged: true };
+}
+
+/**
+ * One rigid shift for a cluster's members: the score grid of `scoreGrid`, judged by
+ * `shiftFromGrid`.
+ *
+ * Returns null when there is no LiDAR coverage: no window, or no finite height under any member.
+ */
+export function registerCluster(w: RasterWindow | null, members: Footprint[]): Shift | null {
+  if (!w) return null;
+  const href = referenceHeight(w, members);
+  if (href === null) return null;
+  const { shifts, S } = scoreGrid(w, members, href);
+  return shiftFromGrid(shifts, S);
 }

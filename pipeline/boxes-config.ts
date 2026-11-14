@@ -16,6 +16,9 @@ export const BOXES = {
   regMaxSamples: 2000,
   regAmbiguousRatio: 0.85,
   regSecondPeakM: 1.0,
+  // A fit is ambiguous when the score at its refined peak is under this share of the best cell's
+  // (the refined peak fell in a valley between two maxima). The eaves case scores 0.88.
+  regPeakFloor: 0.75,
   // Known OSM frame offsets (east, north), tier 2 (measured on the spike).
   regFrames: { 'frame-nad83': [0.0, 0.24], 'frame-wgs84': [1.24, -0.32] },
   // Footprint margin and false-front band.
