@@ -27,7 +27,7 @@
     MARKET_TERMS,
     resolveTerms
   } from '$lib/sim/finance';
-  import type { Calibration, Pool, TermKey } from '$lib/timelapse/types';
+  import type { Calibration, Day, Pool, TermKey } from '$lib/timelapse/types';
   import {
     COVERAGE_OFF_SHORT_SENTENCE,
     COVERAGE_PRIVATE_SENTENCE,
@@ -88,11 +88,17 @@
   import FundingPoolRow from './FundingPoolRow.svelte';
   import MarketTerms from './MarketTerms.svelte';
   import type { ProgrammeHost } from './ProgrammeEditor.svelte';
-  import type { PolicyStore } from './policy-store.svelte';
+  import type { EditStore } from '$lib/timeline/lens';
   import SourceList from './SourceList.svelte';
 
   interface Props {
-    store: PolicyStore;
+    store: EditStore;
+    /** Only those rows (no "Add money"); absent: the whole tab. */
+    only?: { tag: 'baseline' } | { tag: 'fund'; pool: string } | { tag: 'terms' };
+    /** Debt terms render as text: an existing fund policy's terms change by ending it. */
+    termsReadOnly?: boolean;
+    /** The day the coverage figure and a programme's cost per home are priced on. */
+    priceDay?: Day;
     /** A calibration with `market` and `baselineFunding` (`simTabs` offers the tab only then). */
     calibration: Calibration;
     /** The page's one unfinished pool or programme (Tasks 6 and 7 open it). */
@@ -101,20 +107,33 @@
     announce: (m: string) => void;
   }
 
-  let { store, calibration, drafts, announce }: Props = $props();
+  let {
+    store,
+    only = undefined,
+    termsReadOnly = false,
+    priceDay = undefined,
+    calibration,
+    drafts,
+    announce
+  }: Props = $props();
 
   const uid = $props.id();
   let rowsEl = $state<HTMLDivElement>();
 
   const baseline = $derived(calibration.baselineFunding);
   const asOf = $derived(calibration.asOf);
+  /** What the figures are priced on; dates are still checked against `asOf`. */
+  const priced = $derived(priceDay ?? calibration.asOf);
+  const showBaseline = $derived(only === undefined || only.tag === 'baseline');
+  const showPools = $derived(only === undefined || only.tag === 'fund');
+  const showTerms = $derived(only === undefined || only.tag === 'terms');
   const f = $derived(store.policy.funding);
   const presets = $derived(fundingPresets(calibration));
 
-  const steps = $derived(baseline ? coverageSteps(f, baseline, asOf, HORIZON) : []);
+  const steps = $derived(baseline ? coverageSteps(f, baseline, priced, HORIZON) : []);
   const summary = $derived(steps.length > 0 ? coverageSummaryText(steps) : '');
   const sized = $derived(steps.map((s) => coverageSizeMixed(f, baseline, s.from)));
-  const groups = $derived(baseline ? baselineGroups(f, baseline, asOf) : []);
+  const groups = $derived(baseline ? baselineGroups(f, baseline, priced) : []);
   /** R22: the smallest project size today's affordable programmes reach. */
   const smallest = $derived(
     Math.min(
@@ -183,7 +202,9 @@
     const before = store.policy;
     store.apply(e.change, e.label, e.coalesce === undefined ? undefined : `${e.coalesce}@${run}`);
     if (store.policy === before || !baseline) return;
-    const after = coverageSummaryText(coverageSteps(store.policy.funding, baseline, asOf, HORIZON));
+    const after = coverageSummaryText(
+      coverageSteps(store.policy.funding, baseline, priced, HORIZON)
+    );
     announce(`${e.label}.${after === said ? '' : ` ${after}`}`);
   }
 
@@ -400,6 +421,7 @@
       ? {
           baseline,
           asOf,
+          priceDay: priced,
           slope,
           presets,
           draft: progDraft,
@@ -445,174 +467,192 @@
 <div class="flex flex-col gap-4 text-sm text-ink dark:text-ink-dark">
   {#if baseline && steps.length > 0}
     <!-- Status of the policy, not a control: above every button (owner's rule). -->
-    <div class="flex flex-col items-start gap-1">
-      <p class="font-semibold">{coverageLineText(steps[0])}</p>
-      <button
-        type="button"
-        aria-expanded={coverageOpen}
-        aria-controls="{uid}-coverage"
-        class={link}
-        onclick={() => (coverageOpen = !coverageOpen)}
-        >Coverage over time <span aria-hidden="true">{coverageOpen ? '−' : '+'}</span></button
-      >
-      <div id="{uid}-coverage" hidden={!coverageOpen} class="flex flex-col gap-1">
-        <!-- One line per date the bundle changes; today is the coverage line above. -->
-        {#if steps.length > 1}
-          <ul class="flex flex-col gap-1">
-            {#each steps.slice(1) as s, i (s.from)}
-              <li>{coverageStepText(s, sized[i + 1])}</li>
-            {/each}
-          </ul>
-        {/if}
-        <p>{COVERAGE_RUN_SENTENCE}</p>
-        <p>{COVERAGE_RULE_SENTENCE}</p>
-        <p>{COVERAGE_OFF_SHORT_SENTENCE}</p>
-        {#if sized.some((x) => x)}
-          <p>{COVERAGE_SIZE_SENTENCE}</p>
-        {/if}
-        <p>{COVERAGE_PRIVATE_SENTENCE}</p>
-        <!-- The model's known limits come last: they bound the line rather than explain it. -->
-        {#if Number.isFinite(smallest) && smallest > 0}
-          <p class={muted}>{smallProjectsCaveat(smallest)}</p>
-        {/if}
-        <p class={muted}>{MONTH_OFFER_CAVEAT}</p>
+    {#if showBaseline}
+      <div class="flex flex-col items-start gap-1">
+        <p class="font-semibold">{coverageLineText(steps[0])}</p>
+        <button
+          type="button"
+          aria-expanded={coverageOpen}
+          aria-controls="{uid}-coverage"
+          class={link}
+          onclick={() => (coverageOpen = !coverageOpen)}
+          >Coverage over time <span aria-hidden="true">{coverageOpen ? '−' : '+'}</span></button
+        >
+        <div id="{uid}-coverage" hidden={!coverageOpen} class="flex flex-col gap-1">
+          <!-- One line per date the bundle changes; today is the coverage line above. -->
+          {#if steps.length > 1}
+            <ul class="flex flex-col gap-1">
+              {#each steps.slice(1) as s, i (s.from)}
+                <li>{coverageStepText(s, sized[i + 1])}</li>
+              {/each}
+            </ul>
+          {/if}
+          <p>{COVERAGE_RUN_SENTENCE}</p>
+          <p>{COVERAGE_RULE_SENTENCE}</p>
+          <p>{COVERAGE_OFF_SHORT_SENTENCE}</p>
+          {#if sized.some((x) => x)}
+            <p>{COVERAGE_SIZE_SENTENCE}</p>
+          {/if}
+          <p>{COVERAGE_PRIVATE_SENTENCE}</p>
+          <!-- The model's known limits come last: they bound the line rather than explain it. -->
+          {#if Number.isFinite(smallest) && smallest > 0}
+            <p class={muted}>{smallProjectsCaveat(smallest)}</p>
+          {/if}
+          <p class={muted}>{MONTH_OFFER_CAVEAT}</p>
+        </div>
       </div>
-    </div>
+    {/if}
 
     <div bind:this={rowsEl} class="flex flex-col gap-4">
-      <section class="flex flex-col gap-2">
-        <h3 class="font-semibold">Today's funding</h3>
-        <ul class="flex flex-col gap-2">
-          {#each groups as g (g.group)}
-            {@const on = selected?.kind === 'baselineGroup' && selected.group === g.group}
-            <li data-funding-row="group:{g.group}" class={rowClass(on)}>
-              <button
-                type="button"
-                aria-pressed={on}
-                class={rowButton}
-                onclick={() => select(on ? null : { kind: 'baselineGroup', group: g.group })}
-              >
-                <span class="font-semibold">{g.name} · {groupAmount(g)}</span>
-                <span class={muted}>{groupPays(g)}</span>
-                {#if g.changesFrom !== null}
-                  <span class={muted}>{groupChangesText(g.changesFrom)}</span>
-                {/if}
-              </button>
-              <!-- A button's children are presentational: a changed amount is also a sibling
+      {#if showBaseline}
+        <section class="flex flex-col gap-2">
+          <h3 class="font-semibold">Today's funding</h3>
+          <ul class="flex flex-col gap-2">
+            {#each groups as g (g.group)}
+              {@const on = selected?.kind === 'baselineGroup' && selected.group === g.group}
+              <li data-funding-row="group:{g.group}" class={rowClass(on)}>
+                <button
+                  type="button"
+                  aria-pressed={on}
+                  class={rowButton}
+                  onclick={() => select(on ? null : { kind: 'baselineGroup', group: g.group })}
+                >
+                  <span class="font-semibold">{g.name} · {groupAmount(g)}</span>
+                  <span class={muted}>{groupPays(g)}</span>
+                  {#if g.changesFrom !== null}
+                    <span class={muted}>{groupChangesText(g.changesFrom)}</span>
+                  {/if}
+                </button>
+                <!-- A button's children are presentational: a changed amount is also a sibling
                    status, so it is spoken (WCAG 4.1.3). -->
-              <span role="status" class="sr-only">{g.name}: {groupAmount(g)}; {groupPays(g)}</span>
-              {#if on}
-                <FundingGroupEditor
-                  group={g}
+                <span role="status" class="sr-only">{g.name}: {groupAmount(g)}; {groupPays(g)}</span
+                >
+                {#if on}
+                  <FundingGroupEditor
+                    group={g}
+                    policy={store.policy}
+                    {baseline}
+                    {asOf}
+                    {onedit}
+                    host={host!}
+                  />
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
+
+      {#if showPools}
+        <section class="flex flex-col gap-2">
+          {#if only === undefined}
+            <h3 class="font-semibold">Money you add</h3>
+          {/if}
+          {#if only === undefined && f.pools.length === 0 && poolDraft === null}
+            <p class={muted}>{NOTHING_ADDED}</p>
+          {:else}
+            <ul class="flex flex-col gap-2">
+              {#each f.pools as pool, i (pool.id)}
+                {#if only === undefined || (only.tag === 'fund' && only.pool === pool.id)}
+                  {@const on = selected?.kind === 'pool' && selected.id === pool.id}
+                  <FundingPoolRow
+                    {pool}
+                    id={pool.id}
+                    selected={on}
+                    policy={store.policy}
+                    {presets}
+                    past={pastOf(pool.id)}
+                    {asOf}
+                    autoName={autoNamed.has(pool.id)}
+                    onselect={() => select(on ? null : { kind: 'pool', id: pool.id })}
+                    onedit={(e) => poolEdit(i, pool.id, e)}
+                    {host}
+                    {termsReadOnly}
+                  />
+                {/if}
+              {/each}
+              {#if only === undefined && poolDraft !== null}
+                <!-- The draft in the place the pool will take (4.6). -->
+                <FundingPoolRow
+                  pool={poolDraft}
+                  id={null}
+                  selected={true}
                   policy={store.policy}
-                  {baseline}
+                  {presets}
+                  past={{ pool: false, inflows: [] }}
                   {asOf}
+                  onselect={() => {}}
                   {onedit}
-                  host={host!}
+                  {ondraft}
+                  {ondiscard}
                 />
               {/if}
-            </li>
-          {/each}
-        </ul>
-      </section>
+            </ul>
+          {/if}
+          {#if only === undefined}
+            <AddMoney
+              {presets}
+              disabledReason={addDisabled}
+              alert={addAlert}
+              {onpreset}
+              {onownpool}
+              bind:open={addOpen}
+            />
+          {/if}
+        </section>
+      {/if}
 
-      <section class="flex flex-col gap-2">
-        <h3 class="font-semibold">Money you add</h3>
-        {#if f.pools.length === 0 && poolDraft === null}
-          <p class={muted}>{NOTHING_ADDED}</p>
-        {:else}
-          <ul class="flex flex-col gap-2">
-            {#each f.pools as pool, i (pool.id)}
-              {@const on = selected?.kind === 'pool' && selected.id === pool.id}
-              <FundingPoolRow
-                {pool}
-                id={pool.id}
-                selected={on}
-                policy={store.policy}
-                {presets}
-                past={pastOf(pool.id)}
-                {asOf}
-                autoName={autoNamed.has(pool.id)}
-                onselect={() => select(on ? null : { kind: 'pool', id: pool.id })}
-                onedit={(e) => poolEdit(i, pool.id, e)}
-                {host}
-              />
-            {/each}
-            {#if poolDraft !== null}
-              <!-- The draft in the place the pool will take (4.6). -->
-              <FundingPoolRow
-                pool={poolDraft}
-                id={null}
-                selected={true}
-                policy={store.policy}
-                {presets}
-                past={{ pool: false, inflows: [] }}
-                {asOf}
-                onselect={() => {}}
-                {onedit}
-                {ondraft}
-                {ondiscard}
-              />
-            {/if}
-          </ul>
-        {/if}
-        <AddMoney
-          {presets}
-          disabledReason={addDisabled}
-          alert={addAlert}
-          {onpreset}
-          {onownpool}
-          bind:open={addOpen}
-        />
-      </section>
-
-      <MarketTerms rows={terms} policy={store.policy} {onedit} inputId={termInputId} />
+      {#if showTerms}
+        <MarketTerms rows={terms} policy={store.policy} {onedit} inputId={termInputId} />
+      {/if}
     </div>
 
     <p role="alert" class="text-red-800 dark:text-red-300 {alertText ? '' : 'sr-only'}">
       {alertText}
     </p>
 
-    <details class="text-xs {muted}">
-      <summary
-        class="flex min-h-6 cursor-pointer items-center font-semibold text-ink dark:text-ink-dark pointer-coarse:min-h-11"
-        >Sources and tiers</summary
-      >
-      <div class="mt-1 flex flex-col gap-1">
-        <p>Today's funding:</p>
-        <SourceList items={baseline.provenance} />
-        <p>
-          {checkLineText(baseline.check.impliedHomesPerYear, baseline.check.observedHomesPerYear)}
-        </p>
-        <SourceList items={[baseline.check.provenance]} />
-        {#each presetSources as p (p.id)}
-          <p>{p.label}:</p>
-          <SourceList items={p.provenance} />
-        {/each}
-        {#each customLines as line, i (i)}
-          <p>{line}</p>
-        {/each}
-        {#each typedTerms as k (k)}
-          <p>{typedTermText(k)}</p>
-        {/each}
-        <p>{COVERAGE_RULE_SENTENCE}</p>
-        <p>
-          {affordableCostText(
-            AFFORDABLE.value.costPerHome,
-            AFFORDABLE.value.ownPerHome,
-            AFFORDABLE.provenance.tier
-          )}
-        </p>
-        <SourceList items={[AFFORDABLE.provenance]} />
-        {#each unsourcedTerms as t (t.key)}
-          <p>{TERM_NAME[t.key]}: {noSourcedValueText(t.reason)}</p>
-        {/each}
-        <p>How a loan is drawn, an assumption:</p>
-        <SourceList items={[DRAW_UP_FRONT.provenance, AVERAGE_DRAWN.provenance]} />
-        {#each presets.filter((p) => !p.available) as p (p.id)}
-          <p>{notOfferedText(p.label, p.reason ?? '')}</p>
-        {/each}
-      </div>
-    </details>
+    {#if showBaseline}
+      <details class="text-xs {muted}">
+        <summary
+          class="flex min-h-6 cursor-pointer items-center font-semibold text-ink dark:text-ink-dark pointer-coarse:min-h-11"
+          >Sources and tiers</summary
+        >
+        <div class="mt-1 flex flex-col gap-1">
+          <p>Today's funding:</p>
+          <SourceList items={baseline.provenance} />
+          <p>
+            {checkLineText(baseline.check.impliedHomesPerYear, baseline.check.observedHomesPerYear)}
+          </p>
+          <SourceList items={[baseline.check.provenance]} />
+          {#each presetSources as p (p.id)}
+            <p>{p.label}:</p>
+            <SourceList items={p.provenance} />
+          {/each}
+          {#each customLines as line, i (i)}
+            <p>{line}</p>
+          {/each}
+          {#each typedTerms as k (k)}
+            <p>{typedTermText(k)}</p>
+          {/each}
+          <p>{COVERAGE_RULE_SENTENCE}</p>
+          <p>
+            {affordableCostText(
+              AFFORDABLE.value.costPerHome,
+              AFFORDABLE.value.ownPerHome,
+              AFFORDABLE.provenance.tier
+            )}
+          </p>
+          <SourceList items={[AFFORDABLE.provenance]} />
+          {#each unsourcedTerms as t (t.key)}
+            <p>{TERM_NAME[t.key]}: {noSourcedValueText(t.reason)}</p>
+          {/each}
+          <p>How a loan is drawn, an assumption:</p>
+          <SourceList items={[DRAW_UP_FRONT.provenance, AVERAGE_DRAWN.provenance]} />
+          {#each presets.filter((p) => !p.available) as p (p.id)}
+            <p>{notOfferedText(p.label, p.reason ?? '')}</p>
+          {/each}
+        </div>
+      </details>
+    {/if}
   {/if}
 </div>

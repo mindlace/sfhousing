@@ -7,11 +7,11 @@
  * so the controller announces nothing; the adapter announces the store's label instead, as it
  * does for each committed stroke.
  */
+import type { StrokeStore } from '$lib/timeline/lens';
 import type { BrushControllerDeps } from '$lib/brush/BrushController.svelte';
 import { newOpId } from '$lib/brush/ids';
 import type { PlanOp } from '$lib/plan';
 import type { CustomBrush, SimPolicy, Stroke } from './policy';
-import type { PolicyStore } from './policy-store.svelte';
 import type { StrokePreview } from './stroke-preview';
 
 /** The undo label of a Paint stroke ("Allowed 8 stories"). */
@@ -65,7 +65,9 @@ export function removeCustomBrush(p: SimPolicy, id: string): SimPolicy {
 }
 
 export function createStrokeAdapter(deps: {
-  store: PolicyStore;
+  store: StrokeStore;
+  /** True while edits are refused (the old page's run lock); absent: never. */
+  locked?: () => boolean;
   stories(): number;
   announce(msg: string): void;
   /** The live preview; absent: no previews (the view mode has no controller anyway). */
@@ -75,10 +77,10 @@ export function createStrokeAdapter(deps: {
   let rev = 0;
   return {
     editor: {
-      // During a run the store is locked: the controller refuses strokes, undo and redo, so
+      // During a run the page is locked: the controller refuses strokes, undo and redo, so
       // nothing is announced that did not happen.
       get readOnly() {
-        return store.locked;
+        return deps.locked?.() ?? false;
       },
       commit(op) {
         const stroke: Stroke = { path: op.path.map((q) => [q[0], q[1]]), radiusM: op.radiusM };

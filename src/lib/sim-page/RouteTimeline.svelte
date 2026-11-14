@@ -19,12 +19,12 @@
   import type { TimedStage } from '$lib/sim/levers/types';
   import { MONTH_DAYS } from '$lib/timelapse/time';
   import type { Calibration, ExitReason, Pathway, Provenance } from '$lib/timelapse/types';
-  import type { PolicyStore } from './policy-store.svelte';
+  import type { EditStore } from '$lib/timeline/lens';
   import SourceList from './SourceList.svelte';
   import { PRESETS, routeView, setStageMonths, type StageView } from './timing';
 
   interface Props {
-    store: PolicyStore;
+    store: EditStore;
     calibration: Calibration;
     pathway: Pathway;
     /** Speaks a change (WCAG 4.1.3). */

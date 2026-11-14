@@ -92,6 +92,8 @@
     ondiscard?: () => void;
     /** The programme rows' context (4.8); absent on the draft pool, which has no programmes. */
     host?: ProgrammeHost;
+    /** A stored pool's rate and term render as text: they change by ending the policy. */
+    termsReadOnly?: boolean;
   }
 
   let {
@@ -107,7 +109,8 @@
     onedit,
     ondraft = undefined,
     ondiscard = undefined,
-    host = undefined
+    host = undefined,
+    termsReadOnly = false
   }: Props = $props();
 
   const uid = $props.id();
@@ -781,46 +784,53 @@
         {@const rateErr =
           errorOf('rate', debt.rate) ?? (debt.rate === null ? DEBT_RATE_ERROR : null)}
         {@const yearsErr = errorOf('years', debt.termYears)}
-        <div class="flex flex-col gap-0.5">
-          <label class="flex flex-wrap items-center gap-1">
-            Interest rate, %
-            <input
-              type="number"
-              inputmode="decimal"
-              step="any"
-              data-field="rate"
-              class="{input} w-24"
-              value={textOf(
-                'rate',
-                debt.rate,
-                debt.rate === null ? '' : fieldText(debt.rate, 'fraction')
-              )}
-              aria-invalid={rateErr ? 'true' : undefined}
-              aria-describedby="{uid}-rate-err"
-              {...typed(commitRate)}
-            />
-          </label>
-          {@render alertLine('rate', rateErr)}
-          {@render sourceLine(evidenceLine('debt.rate'))}
-        </div>
-        <div class="flex flex-col gap-0.5">
-          <label class="flex flex-wrap items-center gap-1">
-            Years to repay
-            <input
-              type="number"
-              inputmode="numeric"
-              step="any"
-              data-field="years"
-              class="{input} w-24"
-              value={textOf('years', debt.termYears, fieldText(debt.termYears, 'plain'))}
-              aria-invalid={yearsErr ? 'true' : undefined}
-              aria-describedby="{uid}-years-err"
-              {...typed(commitYears)}
-            />
-          </label>
-          {@render alertLine('years', yearsErr)}
-          {@render sourceLine(evidenceLine('debt.termYears'))}
-        </div>
+        {#if termsReadOnly && stored !== null}
+          <p data-field="rate">
+            Interest rate: {debt.rate === null ? '' : ratePercent(debt.rate)}
+          </p>
+          <p data-field="years">Years to repay: {debt.termYears}</p>
+        {:else}
+          <div class="flex flex-col gap-0.5">
+            <label class="flex flex-wrap items-center gap-1">
+              Interest rate, %
+              <input
+                type="number"
+                inputmode="decimal"
+                step="any"
+                data-field="rate"
+                class="{input} w-24"
+                value={textOf(
+                  'rate',
+                  debt.rate,
+                  debt.rate === null ? '' : fieldText(debt.rate, 'fraction')
+                )}
+                aria-invalid={rateErr ? 'true' : undefined}
+                aria-describedby="{uid}-rate-err"
+                {...typed(commitRate)}
+              />
+            </label>
+            {@render alertLine('rate', rateErr)}
+            {@render sourceLine(evidenceLine('debt.rate'))}
+          </div>
+          <div class="flex flex-col gap-0.5">
+            <label class="flex flex-wrap items-center gap-1">
+              Years to repay
+              <input
+                type="number"
+                inputmode="numeric"
+                step="any"
+                data-field="years"
+                class="{input} w-24"
+                value={textOf('years', debt.termYears, fieldText(debt.termYears, 'plain'))}
+                aria-invalid={yearsErr ? 'true' : undefined}
+                aria-describedby="{uid}-years-err"
+                {...typed(commitYears)}
+              />
+            </label>
+            {@render alertLine('years', yearsErr)}
+            {@render sourceLine(evidenceLine('debt.termYears'))}
+          </div>
+        {/if}
       {/if}
 
       {#if kind === 'bank'}

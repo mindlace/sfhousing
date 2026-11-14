@@ -1,5 +1,6 @@
 // PolicyStore (undo and redo over the recipe) and LeverSync (resolve every brush query, compile,
 // debounce, send): the latest recipe alone reaches the worker (Review Focus 2).
+import { flushSync } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrushQuery } from '$lib/sim/levers/brushes';
 import type { SimLevers } from '$lib/sim/levers/types';
@@ -157,6 +158,78 @@ describe('PolicyStore', () => {
     store.apply((q) => ({ ...q, rules: [area('RH-1', 5)] }), 'c', 'k');
     expect(store.undo()).toBe('c');
     expect(store.policy).toBe(p);
+  });
+});
+
+describe('PolicyStore generic', () => {
+  type Doc = { n: number };
+  const a: Doc = { n: 1 };
+  const b: Doc = { n: 2 };
+  const c: Doc = { n: 3 };
+
+  it('undoTo walks back to the given document and keeps redo', () => {
+    const s = new PolicyStore<Doc>(a);
+    s.apply(() => b, 'b');
+    s.apply(() => c, 'c');
+    s.undoTo(a, 'Not applied');
+    expect([s.policy, s.canRedo, s.canUndo]).toEqual([a, true, false]);
+    expect(s.redo()).toBe('b');
+  });
+
+  it('undoTo a document not in the past records one change', () => {
+    const s = new PolicyStore<Doc>(a);
+    s.apply(() => b, 'b');
+    const x: Doc = { n: 9 };
+    s.undoTo(x, 'Not applied');
+    expect(s.policy).toBe(x);
+    expect(s.undoLabel).toBe('Not applied');
+    expect(s.undo()).toBe('Not applied');
+    expect(s.policy).toBe(b);
+  });
+
+  it('undoTo the current document changes nothing', () => {
+    const s = new PolicyStore<Doc>(a);
+    s.undoTo(a, 'Not applied');
+    expect([s.policy, s.canUndo]).toEqual([a, false]);
+  });
+
+  it('an identical document is no change: no entry, no notification', () => {
+    const s = new PolicyStore<Doc>(a);
+    let seen = 0;
+    const stop = $effect.root(() => {
+      $effect(() => {
+        void s.policy;
+        void s.canUndo;
+        seen++;
+      });
+    });
+    flushSync();
+    const before = seen;
+    s.apply((p) => p, 'nothing');
+    flushSync();
+    expect([s.canUndo, s.undoLabel, seen]).toEqual([false, null, before]);
+    stop();
+  });
+
+  it('normalize runs in apply and its result is what is stored', () => {
+    const calls: [Doc, Doc][] = [];
+    const normal: Doc = { n: 100 };
+    const s = new PolicyStore<Doc>(a, (next, prev) => {
+      calls.push([next, prev]);
+      return normal;
+    });
+    s.apply(() => b, 'b');
+    expect(calls).toEqual([[b, a]]);
+    expect(s.policy).toBe(normal);
+    expect(s.undo()).toBe('b');
+    expect(s.policy).toBe(a);
+  });
+
+  it('normalize also runs when undoTo records a change', () => {
+    const normal: Doc = { n: 100 };
+    const s = new PolicyStore<Doc>(a, () => normal);
+    s.undoTo(c, 'Not applied');
+    expect(s.policy).toBe(normal);
   });
 });
 

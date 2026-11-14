@@ -1,5 +1,5 @@
 /**
- * The /sim policy in memory (SimPage autosaves it, plan 5): `PolicyStore` keeps the recipe
+ * The /sim policy in memory (SimPage autosaves it, plan 5): `PolicyStore` keeps the document
  * with undo and redo, and `LeverSync` turns each recipe into the `SimLevers` the worker runs.
  * `LeverSync` resolves every brush query the recipe needs (cached by `queryKey`), compiles once
  * all are known, and sends the result 250 ms after the last change (Call 18), so only the latest
@@ -11,27 +11,38 @@
 import type { BrushQuery } from '$lib/sim/levers/brushes';
 import type { SimLevers } from '$lib/sim/levers/types';
 import type { BrushLotsResult } from '$lib/sim/scenario/types';
+import type { SimPolicy4 } from '$lib/timeline/policy4';
 import { compileLevers, queriesOf, type SimPolicy } from './policy';
 
-type Entry = { policy: SimPolicy; label: string };
+type Entry<P> = { policy: P; label: string };
 
-export class PolicyStore {
-  #policy: SimPolicy;
+/**
+ * The document in memory with undo and redo. Generic: schema 3 (`SimPolicy`, the old page) and
+ * schema 4 (`SimPolicy4`, the timeline) share it.
+ */
+export class PolicyStore<P = SimPolicy4> {
+  #policy: P;
   /** Each entry is the policy before a change, with that change's label. */
-  #past = $state.raw<Entry[]>([]);
+  #past = $state.raw<Entry<P>[]>([]);
   /** Each entry is the policy after an undone change, with that change's label. */
-  #future = $state.raw<Entry[]>([]);
+  #future = $state.raw<Entry<P>[]>([]);
   /** The coalesce key of the latest history entry; cleared by undo and redo. */
   #coalesceKey: string | undefined = undefined;
-  /** During a run (spec §1): `apply`, `undo` and `redo` change nothing. `reset` still loads. */
+  #normalize: ((next: P, prev: P) => P) | undefined;
+  /**
+   * During a run (spec §1): `apply`, `undo` and `redo` change nothing. `reset` still loads.
+   * Kept only until Task 14 removes it with RunPhase (rule 14).
+   */
   locked = $state(false);
 
-  constructor(initial: SimPolicy) {
+  /** `normalize` settles a changed document before it is recorded (`apply`, `undoTo`). */
+  constructor(initial: P, normalize?: (next: P, prev: P) => P) {
     this.#policy = $state.raw(initial);
+    this.#normalize = normalize;
   }
 
   /** Replaced (never mutated) on every change. */
-  get policy(): SimPolicy {
+  get policy(): P {
     return this.#policy;
   }
 
@@ -54,19 +65,23 @@ export class PolicyStore {
   }
 
   /**
-   * Records a change named `label` (for "Undo: …"); clears redo. No-op if nothing changed. A
-   * change with the same `coalesce` key as the latest one, with no undo or redo between, merges
+   * Records a change named `label` (for "Undo: …"); clears redo. Runs at once. A change that
+   * returns the identical document (`===`) is no change: no entry, no notification. A change
+   * with the same `coalesce` key as the latest one, with no undo or redo between, merges
    * into that entry: one undo reverses both, and the entry takes the newer label.
    */
-  apply(change: (p: SimPolicy) => SimPolicy, label: string, coalesce?: string): void {
+  apply(change: (p: P) => P, label: string, coalesce?: string): void {
     if (this.locked) return;
-    const next = change(this.#policy);
-    if (next === this.#policy) return;
+    const prev = this.#policy;
+    let next = change(prev);
+    if (next === prev) return;
+    if (this.#normalize) next = this.#normalize(next, prev);
+    if (next === prev) return;
     if (coalesce !== undefined && coalesce === this.#coalesceKey && this.#past.length > 0) {
       const last = this.#past.at(-1)!;
       this.#past = [...this.#past.slice(0, -1), { policy: last.policy, label }];
     } else {
-      this.#past = [...this.#past, { policy: this.#policy, label }];
+      this.#past = [...this.#past, { policy: prev, label }];
     }
     this.#coalesceKey = coalesce;
     this.#future = [];
@@ -77,7 +92,7 @@ export class PolicyStore {
    * Replaces the policy and clears undo and redo: a load (the autosave restore), not a change
    * the user can undo (Call 12).
    */
-  reset(p: SimPolicy): void {
+  reset(p: P): void {
     this.#past = [];
     this.#future = [];
     this.#coalesceKey = undefined;
@@ -106,6 +121,19 @@ export class PolicyStore {
     this.#past = [...this.#past, { policy: this.#policy, label: next.label }];
     this.#policy = next.policy;
     return next.label;
+  }
+
+  /**
+   * Undoes until `policy === p` (redo keeps what was undone). If `p` is not in the past,
+   * records one change back to `p` labelled `label`.
+   */
+  undoTo(p: P, label: string): void {
+    if (this.#policy === p) return;
+    if (this.#past.some((e) => e.policy === p)) {
+      while (this.#policy !== p && this.undo() !== null);
+      return;
+    }
+    this.apply(() => p, label);
   }
 }
 

@@ -404,6 +404,7 @@
   });
   const adapter = createStrokeAdapter({
     store,
+    locked: () => store.locked,
     stories: () => tools.stories(),
     announce: (m) => brush.announce(m, ANNOUNCE_MS),
     preview: strokePreview

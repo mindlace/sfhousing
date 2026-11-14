@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
   import { PATHWAYS, type Calibration, type Pathway } from '$lib/timelapse/types';
-  import type { PolicyStore } from './policy-store.svelte';
+  import type { EditStore } from '$lib/timeline/lens';
   import RouteTimeline from './RouteTimeline.svelte';
   import SourceList from './SourceList.svelte';
   import {
@@ -25,12 +25,17 @@
   } from './timing';
 
   interface Props {
-    store: PolicyStore;
+    store: EditStore;
+    /**
+     * Save and "Revert to saved" (default true). Schema 4 carries a saved set as its own off
+     * policy, and each policy has on/off and undo.
+     */
+    snapshot?: boolean;
     calibration: Calibration;
     /** Speaks a change (WCAG 4.1.3). */
     announce(msg: string): void;
   }
-  let { store, calibration, announce }: Props = $props();
+  let { store, calibration, snapshot = true, announce }: Props = $props();
 
   const uid = $props.id();
   const PATHWAY_NAMES: Record<Pathway, string> = {
@@ -47,7 +52,9 @@
   /** The weakest evidence among the preset's values (a higher tier is weaker). */
   const tier = $derived(Math.max(...preset.provenance.map((x) => x.tier)));
   const shares = $derived(shownRouteShares(current, calibration));
-  const target = $derived(revertTarget(timing, calibration));
+  const target = $derived(
+    revertTarget(snapshot ? timing : { ...timing, saved: null }, calibration)
+  );
   const same = (a: TimingSet, b: TimingSet) => JSON.stringify(a) === JSON.stringify(b);
   const canSave = $derived(!same(current, timing.saved?.set ?? OBSERVED_TIMING.current));
 
@@ -127,17 +134,19 @@
 
   <p class="font-semibold" data-testid="timing-label">{label}</p>
   <div class="flex flex-wrap gap-2">
-    <button type="button" class={btn} disabled={!canSave} onclick={save}>Save timelines</button>
+    {#if snapshot}
+      <button type="button" class={btn} disabled={!canSave} onclick={save}>Save timelines</button>
+    {/if}
     <button
       type="button"
       class={btn}
       disabled={target === null}
-      aria-describedby={timing.saved ? `${uid}-revert-desc` : undefined}
+      aria-describedby={snapshot && timing.saved ? `${uid}-revert-desc` : undefined}
       onclick={revert}
     >
-      {timing.saved ? 'Revert to saved' : `Revert to ${preset.name}`}
+      {snapshot && timing.saved ? 'Revert to saved' : `Revert to ${preset.name}`}
     </button>
-    {#if timing.saved}
+    {#if snapshot && timing.saved}
       <span id="{uid}-revert-desc" class="sr-only"
         >Restores the saved timelines: {timing.saved.label}</span
       >

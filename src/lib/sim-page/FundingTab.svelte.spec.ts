@@ -2,7 +2,7 @@
 // The Funding tab (funding-ui spec 4.4, 4.5, 4.9, 4.10, 4.16): the coverage line and its
 // disclosure, today's funding rows and the group editor with dated changes, "Money you add"
 // when empty, and the selection clearing on an undo that removes the selected row.
-import { tick } from 'svelte';
+import { tick, type ComponentProps } from 'svelte';
 import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
@@ -30,6 +30,7 @@ import {
   YOUR_VALUE_LINE,
   addProgrammeName,
   clearTermName,
+  coverageLineText,
   coverageSummaryText,
   limitAlert,
   removeChangeName,
@@ -49,15 +50,19 @@ import FundingTabHost from './test/FundingTabHost.svelte';
 const JULY = nextFiscal(FUND_ASOF);
 const YEAR = new Date(JULY * 86_400_000).getUTCFullYear();
 
-function setup(policy: SimPolicy = policyWith({})) {
+function setup(
+  policy: SimPolicy = policyWith({}),
+  extra: { only?: ComponentProps<typeof FundingTabHost>['only']; priceDay?: number } = {}
+) {
   const calibration = fundingCalibration();
-  let store!: PolicyStore;
+  let store!: PolicyStore<SimPolicy>;
   let drafts!: FundingDrafts;
   render(FundingTabHost, {
     props: {
       policy,
       calibration,
-      onready: (s: PolicyStore, d: FundingDrafts) => {
+      ...extra,
+      onready: (s: PolicyStore<SimPolicy>, d: FundingDrafts) => {
         store = s;
         drafts = d;
       }
@@ -279,7 +284,7 @@ const errorOf = (el: Element) =>
     .map((id) => document.getElementById(id))
     .find((x) => x?.getAttribute('role') === 'alert');
 
-function applyPreset(store: PolicyStore, preset: FundingPreset) {
+function applyPreset(store: PolicyStore<SimPolicy>, preset: FundingPreset) {
   const e = addPresetEdit(store.policy, preset);
   if (isRefused(e)) throw new Error(e.refused);
   store.apply(e.change, e.label);
@@ -1003,5 +1008,34 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
     const held = fundingPresets(calibration).filter((p) => !p.available);
     expect(held.length).toBeGreaterThan(0);
     for (const p of held) expect(text).toContain(`Not offered yet: ${p.label}: ${p.reason}`);
+  });
+
+  it('prices the coverage figure on priceDay', async () => {
+    const policy = policyWith({
+      baselineScale: [
+        { pool: 'city-gf', from: JULY, scale: 0 },
+        { pool: 'city-tax', from: JULY, scale: 0 }
+      ]
+    });
+    const cal = fundingCalibration();
+    const line = (day: number) =>
+      coverageLineText(coverageSteps(policy.funding, cal.baselineFunding!, day, HORIZON)[0]);
+    expect(line(JULY)).not.toBe(line(FUND_ASOF));
+    setup(policy, { priceDay: JULY });
+    await expect.element(page.getByText(line(JULY), { exact: true })).toBeVisible();
+    expect(document.body.textContent).not.toContain(line(FUND_ASOF));
+  });
+
+  it('only a fund policy shows that pool alone, with no Add money', async () => {
+    setup(BOND_POLICY, { only: { tag: 'fund', pool: BOND_POLICY.funding.pools[0].id } });
+    await expect.element(page.getByRole('button', { name: 'Add money' })).not.toBeInTheDocument();
+    expect(document.querySelectorAll('[data-funding-row^="group:"]')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-funding-row^="pool:"]')).toHaveLength(1);
+  });
+
+  it("only baseline shows today's funding alone", async () => {
+    setup(policyWith({}), { only: { tag: 'baseline' } });
+    await expect.element(row(/^City ·/)).toBeVisible();
+    await expect.element(page.getByRole('button', { name: 'Add money' })).not.toBeInTheDocument();
   });
 });

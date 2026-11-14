@@ -6,14 +6,16 @@
 -->
 <script lang="ts">
   import type { SimPolicy } from './policy';
-  import type { PolicyStore } from './policy-store.svelte';
+  import type { EditStore } from '$lib/timeline/lens';
 
   interface Props {
-    store: PolicyStore;
+    store: EditStore;
+    /** Renders that one row alone (a category policy's editor). */
+    only?: 'rentControl' | 'historic' | 'newerThan';
     /** Speaks a change's label (WCAG 4.1.3). */
     announce?: (msg: string) => void;
   }
-  let { store, announce = undefined }: Props = $props();
+  let { store, only = undefined, announce = undefined }: Props = $props();
 
   /** Tier 4 UI default for "Buildings newer than". */
   const DEFAULT_YEARS = 30;
@@ -77,65 +79,74 @@
 <div class="flex flex-col gap-3 text-sm">
   <fieldset class="flex flex-col gap-1">
     <legend class="font-semibold">Protect by category</legend>
-    <label class="flex min-h-6 items-center gap-1.5">
-      <input
-        type="checkbox"
-        class="size-6"
-        checked={protect.rentControl}
-        onchange={(e) => setRentControl(e.currentTarget.checked)}
-      />
-      Rent-controlled buildings (likely)
-    </label>
-    <label class="flex min-h-6 items-center gap-1.5">
-      <input
-        type="checkbox"
-        class="size-6"
-        checked={protect.historic}
-        onchange={(e) => setHistoric(e.currentTarget.checked)}
-      />
-      Historic buildings (status A or A*)
-    </label>
-    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+    {#if only === undefined || only === 'rentControl'}
       <label class="flex min-h-6 items-center gap-1.5">
         <input
           type="checkbox"
           class="size-6"
-          checked={newer}
-          onchange={(e) => setNewer(e.currentTarget.checked)}
+          checked={protect.rentControl}
+          onchange={(e) => setRentControl(e.currentTarget.checked)}
         />
-        Buildings newer than
+        Rent-controlled buildings (likely)
       </label>
+    {/if}
+    {#if only === undefined || only === 'historic'}
       <label class="flex min-h-6 items-center gap-1.5">
-        <span class="sr-only">Buildings newer than, in years</span>
         <input
-          type="number"
-          inputmode="numeric"
-          min={YEARS_MIN}
-          max={YEARS_MAX}
-          step="1"
-          disabled={!newer}
-          aria-invalid={yearsError ? 'true' : undefined}
-          aria-describedby={yearsError ? `${uid}-years-error` : undefined}
-          class="min-h-6 w-20 rounded-md border border-control-line bg-surface px-2 text-ink disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
-          value={yearsText}
-          oninput={(e) => (yearsText = e.currentTarget.value)}
-          onchange={(e) => commitYears(e.currentTarget.value)}
+          type="checkbox"
+          class="size-6"
+          checked={protect.historic}
+          onchange={(e) => setHistoric(e.currentTarget.checked)}
         />
-        <span aria-hidden="true">years</span>
+        Historic buildings (status A or A*)
       </label>
-    </div>
-    <!-- Always present and in the accessibility tree (sr-only while empty, never display:none),
+    {/if}
+    {#if only === undefined || only === 'newerThan'}
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <label class="flex min-h-6 items-center gap-1.5">
+          <input
+            type="checkbox"
+            class="size-6"
+            checked={newer}
+            onchange={(e) => setNewer(e.currentTarget.checked)}
+          />
+          Buildings newer than
+        </label>
+        <label class="flex min-h-6 items-center gap-1.5">
+          <span class="sr-only">Buildings newer than, in years</span>
+          <input
+            type="number"
+            inputmode="numeric"
+            min={YEARS_MIN}
+            max={YEARS_MAX}
+            step="1"
+            disabled={!newer}
+            aria-invalid={yearsError ? 'true' : undefined}
+            aria-describedby={yearsError ? `${uid}-years-error` : undefined}
+            class="min-h-6 w-20 rounded-md border border-control-line bg-surface px-2 text-ink disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
+            value={yearsText}
+            oninput={(e) => (yearsText = e.currentTarget.value)}
+            onchange={(e) => commitYears(e.currentTarget.value)}
+          />
+          <span aria-hidden="true">years</span>
+        </label>
+      </div>
+      <!-- Always present and in the accessibility tree (sr-only while empty, never display:none),
          so the error is spoken when it appears (WCAG 4.1.3). -->
-    <p
-      id="{uid}-years-error"
-      role="alert"
-      class="text-red-800 dark:text-red-300 {yearsError ? '' : 'sr-only'}"
-    >
-      {yearsError ?? ''}
-    </p>
+      <p
+        id="{uid}-years-error"
+        role="alert"
+        class="text-red-800 dark:text-red-300 {yearsError ? '' : 'sr-only'}"
+      >
+        {yearsError ?? ''}
+      </p>
+    {/if}
   </fieldset>
 
-  <p class="text-ink-muted dark:text-ink-dark-muted">
-    Protected lots get no new housing in the simulation. Projects already in the pipeline continue.
-  </p>
+  {#if only === undefined}
+    <p class="text-ink-muted dark:text-ink-dark-muted">
+      Protected lots get no new housing in the simulation. Projects already in the pipeline
+      continue.
+    </p>
+  {/if}
 </div>
