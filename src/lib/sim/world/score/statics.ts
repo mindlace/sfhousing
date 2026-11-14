@@ -1,10 +1,18 @@
+import { limitStatements } from '$lib/sim/finance';
 import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
-import { tierBaselineOf, tierContext, type TierCtx } from '$lib/sim/scenario/finance-score';
+import {
+  addedBorrowing,
+  tierBaselineOf,
+  tierContext,
+  type TierCtx
+} from '$lib/sim/scenario/finance-score';
+import { inflowArrivals } from '$lib/sim/scenario/funding';
 import { REFERENCES, monthsOf, phasingOf } from '$lib/sim/scenario/score';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { ProjectsFile } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
-import { monthLastDay, monthOfDay } from '../months';
+import type { Inflow, Pool } from '$lib/timelapse/types';
+import { monthFirstDay, monthLastDay, monthOfDay } from '../months';
 import type { FinanceFrame, PolicyTimeline } from '../policy/frame';
 import type { ScoreStatics } from './types';
 
@@ -89,9 +97,98 @@ export function tierTableFor(s: ScoreStatics): TierTable | null {
   return t;
 }
 
+type Finance = NonNullable<SimInput['finance']>;
+type OffSpan = Finance['off'][number];
+
+/** Each pool's debt terms by id (null for a pool that does not borrow), for `owed` (rule 12). */
+const DEBTS = new WeakMap<ScoreStatics, Map<string, Pool['debt']>>();
+
+/**
+ * The plan's money over the window as one `finance` (rule 12): pools, programmes, slope and terms
+ * of month `windowMonths`'s frame (the same ids and order in every frame). Each pool's inflows are
+ * the arrivals its definition in force each month gives over that month's days (month 1 from
+ * `asOf`), one `once` inflow each, and `off` holds the days whose frame drops them (a pool not in
+ * force, switched off or uncapped), merged into spans. So `addedBorrowing` of it counts exactly the
+ * frames' arrivals. Null when no frame of months 1..`windowMonths` has finance. Throws when a
+ * frame holds an arrival its pool's definition does not give.
+ */
+export function planFinanceOf(
+  timeline: PolicyTimeline,
+  asOf: Day,
+  windowMonths: number
+): Finance | null {
+  const frames: (FinanceFrame | null)[] = [];
+  let last: FinanceFrame | null = null;
+  for (let m = 1; m <= windowMonths; m++) {
+    const f = timeline.frameAt(m).finance;
+    frames.push(f);
+    if (f !== null) last = f;
+  }
+  if (last === null) return null;
+  const off: OffSpan[] = [];
+  const pools = last.pools.map((shape, q): Pool => {
+    const inflows: Inflow[] = [];
+    let open: OffSpan | null = null;
+    for (let m = 1; m <= windowMonths; m++) {
+      const f = frames[m - 1];
+      const lo = m === 1 ? asOf : monthFirstDay(asOf, m);
+      const hi = monthLastDay(asOf, m);
+      // What the definition in force gives this month, and what the frame holds, by day.
+      const want = new Map<Day, number>();
+      const def = f === null ? shape : f.pools[q];
+      for (const fl of def.inflows) {
+        const dollars = fl.kind === 'once' ? fl.dollars : fl.dollarsPerYear;
+        for (const day of inflowArrivals(fl, lo, hi)) {
+          inflows.push({ kind: 'once', day, dollars });
+          want.set(day, (want.get(day) ?? 0) + dollars);
+        }
+      }
+      const got = new Map<Day, number>();
+      if (f !== null) {
+        for (const a of f.arrivals) {
+          if (a.pool === q) got.set(a.day, (got.get(a.day) ?? 0) + a.dollars);
+        }
+      }
+      for (const [day, dollars] of got) {
+        if (want.get(day) !== dollars) {
+          throw new Error(
+            `world-score: month ${m}'s frame has ${dollars} reaching pool ${shape.id} on day ` +
+              `${day}, its definition gives ${want.get(day) ?? 0}`
+          );
+        }
+      }
+      for (const day of [...want.keys()].sort((a, b) => a - b)) {
+        if (got.has(day)) open = null;
+        else if (open !== null) open.to = day;
+        else off.push((open = { pool: shape.id, from: day, to: day }));
+      }
+    }
+    return { ...shape, inflows };
+  });
+  return { pools, programmes: last.programmes, off, slope: last.slope, terms: last.terms };
+}
+
+/**
+ * Each pool's debt terms by id for the `ScoreStatics` `scoreStaticsOf` made (rule 12's `owed`);
+ * null without finance. A copy of a ScoreStatics with finance (e.g. a `structuredClone`) has none
+ * and throws.
+ */
+export function debtsFor(s: ScoreStatics): Map<string, Pool['debt']> | null {
+  if (s.limits === null) return null;
+  const d = DEBTS.get(s);
+  if (d === undefined) {
+    throw new Error(
+      'world-score: ScoreStatics without its debt terms; pass the object scoreStaticsOf returned'
+    );
+  }
+  return d;
+}
+
 /**
  * What the page needs once. `months` runs from the dataset month to the last calendar month whose
- * last day is at or before the last day of model month `windowMonths`.
+ * last day is at or before the last day of model month `windowMonths`. `limits` are those of the
+ * borrowing the plan adds over the window (`planFinanceOf`) beyond the dataset's baseline pools
+ * (the default document's money), through `horizonOf`: seed-free and independent of any ledger.
  */
 export function scoreStaticsOf(
   input: SimInput,
@@ -106,6 +203,8 @@ export function scoreStaticsOf(
   while (lastDayOf(h + 1) <= limit) h = lastDayOf(h + 1);
   const tiers = tierTableOf(input, timeline, windowMonths);
   const months = monthsOf(asOf, h);
+  const plan = planFinanceOf(timeline, asOf, windowMonths);
+  const baselinePools = input.finance?.pools ?? [];
   const out: ScoreStatics = {
     asOf,
     months,
@@ -116,9 +215,10 @@ export function scoreStaticsOf(
     references:
       base === 'preFzp' ? REFERENCES : REFERENCES.filter((r) => r.measure === 'completedNet'),
     compare: base,
-    limits: null
+    limits: plan === null ? null : limitStatements(addedBorrowing(plan, baselinePools, asOf, h))
   };
   if (tiers !== null) TIER_TABLES.set(out, tiers);
+  if (plan !== null) DEBTS.set(out, new Map(plan.pools.map((p) => [p.id, p.debt])));
   return out;
 }
 

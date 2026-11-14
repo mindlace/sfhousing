@@ -1,5 +1,14 @@
+import { debtService } from '$lib/sim/finance';
 import { targetsOf, tierTargetsOf } from '$lib/sim/scenario/score';
-import type { PlanRow, ScoreStatics, SeriesChunk, TimelineView } from './types';
+import { debtsFor } from './statics';
+import type {
+  MoneyRow,
+  MoneyView,
+  PlanRow,
+  ScoreStatics,
+  SeriesChunk,
+  TimelineView
+} from './types';
 
 /** z of the 80% central band (10th to 90th percentile), as today's `band`. */
 export const BAND_Z = 1.2816;
@@ -17,6 +26,65 @@ function bandOf(m: PlanRow, sd: PlanRow): { lo: PlanRow; hi: PlanRow } {
   };
 }
 
+/**
+ * World 1's money as of month `rows.length - 1` (rule 12): today's `TimelineScore['money']` with
+ * its series cut there, `owed` on each debt pool's `received` that month, and `limits` the
+ * statics' (the same in every world, fixed as the forecast fills).
+ */
+function moneyViewOf(rows: MoneyRow[], statics: ScoreStatics): MoneyView {
+  const limits = statics.limits;
+  const debts = debtsFor(statics);
+  if (limits === null || debts === null) {
+    throw new Error('world-score: money in the chunks but no finance in the statics');
+  }
+  const pools: MoneyView['pools'] = rows[0].pools.map((p) => ({
+    id: p.id,
+    label: p.label,
+    kind: p.kind,
+    received: [],
+    committed: [],
+    out: [],
+    spent: [],
+    repaid: [],
+    lost: [],
+    lostCredit: []
+  }));
+  for (const r of rows) {
+    r.pools.forEach((p, q) => {
+      const s = pools[q];
+      s.received.push(p.received);
+      s.committed.push(p.committed);
+      s.out.push(p.out);
+      s.spent.push(p.spent);
+      s.repaid.push(p.repaid);
+      s.lost.push(p.lost);
+      s.lostCredit.push(p.lostCredit);
+    });
+  }
+  const last = rows.length - 1;
+  const owed: MoneyView['owed'] = [];
+  for (const p of pools) {
+    const debt = debts.get(p.id);
+    if (debt === undefined) throw new Error(`world-score: no debt terms for pool ${p.id}`);
+    if (debt === null) continue;
+    const principal = p.received[last];
+    owed.push({
+      pool: p.id,
+      principal,
+      repayment: debtService(principal, debt).total,
+      nominal: true
+    });
+  }
+  return {
+    pools,
+    fundedHomes: rows.map((r) => r.fundedHomes),
+    displacedHomes: rows.map((r) => r.displacedHomes),
+    publicSpent: rows.map((r) => r.publicSpent),
+    owed,
+    limits
+  };
+}
+
 /** Joins contiguous chunks into what the page reads. Throws on a gap, an overlap or a late start. */
 export function viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineView {
   const mean: TimelineView['mean'] = [];
@@ -25,7 +93,9 @@ export function viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineVi
   const planEffect: TimelineView['planEffect'] = [];
   const planEffectBand: TimelineView['planEffectBand'] = [];
   const tiers: NonNullable<TimelineView['tiers']> = [];
+  const money: MoneyRow[] = [];
   let hasTiers = chunks.length > 0;
+  let hasMoney = chunks.length > 0;
   for (const c of chunks) {
     if (c.from !== mean.length) {
       throw new Error(`chunk from ${c.from} does not follow ${mean.length - 1}`);
@@ -41,6 +111,8 @@ export function viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineVi
     }
     if (c.tiers) tiers.push(...c.tiers);
     else hasTiers = false;
+    if (c.money) money.push(...c.money);
+    else hasMoney = false;
   }
   const { units, since, provenance } = statics.baseline;
   const tierSeries = hasTiers ? tiers : null;
@@ -56,7 +128,7 @@ export function viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineVi
     targets: targetsOf(units, mean),
     tierTargets:
       statics.tierBaseline && tierSeries ? tierTargetsOf(statics.tierBaseline, tierSeries) : null,
-    money: null,
+    money: hasMoney && money.length > 0 ? moneyViewOf(money, statics) : null,
     tiers: tierSeries,
     baseline: { completedNet: units, since, provenance },
     phasing: statics.phasing,

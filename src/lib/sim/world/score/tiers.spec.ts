@@ -120,7 +120,8 @@ describe('tiers, funded mini', () => {
 
   it('scoreStaticsOf gives the tier baseline with finance', () => {
     expect(c.score.tierBaseline).toEqual(TEST_RHNA(c.input.asOf).byTier);
-    expect(c.score.limits).toBeNull();
+    // with finance, limits are set (rule 12); the mini city's money borrows nothing
+    expect(c.score.limits).toEqual([]);
   });
 
   it.each([1, 2, 3])('seed %i: tiers equal tierSeries of the schedules at the horizon', (seed) => {
@@ -353,6 +354,5 @@ describe.skipIf(LIVE === null)('tiers, funded live city', () => {
   it('seed 1: tiers equal tierSeries of the schedules at the horizon', async () => {
     const c = await fundedCity(await liveInput(LIVE!), 240);
     checkTiers(c, run(c, 1));
-  }, // The live city's funded world takes over a minute.
-  300_000);
+  }, 300_000); // The live city's funded world takes over a minute.
 });
