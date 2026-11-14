@@ -68,14 +68,18 @@ describe('TimelineHeaderScore', () => {
     const s = await render(TimelineHeaderScore, {
       props: props({ stale: true, busy: true, expanded: true, onclick })
     });
-    expect(bar().element().parentElement!.classList.contains('opacity-60')).toBe(true);
+    // Muted ink, not opacity: the button keeps AA contrast.
+    expect(bar().element().parentElement!.dataset.stale).toBe('true');
+    expect(getComputedStyle(bar().element()).color).toBe('rgb(75, 85, 99)');
+    expect(getComputedStyle(bar().element().parentElement!).opacity).toBe('1');
     await expect.element(bar()).toHaveAttribute('aria-expanded', 'true');
     await expect.element(bar()).toHaveAttribute('aria-controls', 'dock');
     await expect.element(bar()).toHaveAttribute('aria-busy', 'true');
     await bar().click();
     expect(onclick).toHaveBeenCalledTimes(1);
     await s.rerender(props({ stale: false }));
-    expect(bar().element().parentElement!.classList.contains('opacity-60')).toBe(false);
+    expect(bar().element().parentElement!.dataset.stale).toBeUndefined();
+    expect(getComputedStyle(bar().element()).color).not.toBe('rgb(75, 85, 99)');
   });
 
   it('speaks a new live text 1,000 ms after it settles, only while not quiet', async () => {

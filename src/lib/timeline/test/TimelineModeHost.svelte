@@ -1,10 +1,12 @@
 <!--
   Test host: TimelineMode with the root layout's header slots beside it (as FzpModeHost) and the
   page's part of the document: `policy`, `lots` and the selection live here, and `ctl` lets a test
-  set them as the page's store and PolicySync would. `onedit` applies the change.
+  set them as the page's store and PolicySync would. `onedit` applies the change; `onundoto`
+  (rule 34) sets the document unless the test passes its own. With `withInspector` the inspector
+  renders the Results face.
 -->
 <script lang="ts">
-  import { untrack, type ComponentProps } from 'svelte';
+  import { untrack, type ComponentProps, type Snippet } from 'svelte';
   import { provideHeaderActions } from '$lib/shell/header-actions.svelte';
   import type { SimPolicy4 } from '../policy4';
   import type { Lots } from '../session.svelte';
@@ -13,15 +15,24 @@
 
   type Rest = Omit<
     ComponentProps<typeof TimelineMode>,
-    'policy' | 'lots' | 'selected' | 'onselect' | 'onedit' | 'onadd' | 'readonly'
+    'policy' | 'lots' | 'selected' | 'onselect' | 'onedit' | 'onadd' | 'readonly' | 'onundoto'
   >;
   interface Props extends Rest {
+    onundoto?: (p: SimPolicy4) => void;
+    withInspector?: boolean;
     initialPolicy: SimPolicy4;
     initialLots: Lots | null;
     ctl: { setPolicy?: (p: SimPolicy4) => void; setLots?: (l: Lots | null) => void };
   }
 
-  let { initialPolicy, initialLots, ctl, ...rest }: Props = $props();
+  let {
+    initialPolicy,
+    initialLots,
+    ctl,
+    onundoto = undefined,
+    withInspector = false,
+    ...rest
+  }: Props = $props();
   const slot = provideHeaderActions();
   let policy = $state.raw<SimPolicy4>(untrack(() => initialPolicy));
   let lots = $state.raw<Lots | null>(untrack(() => initialLots));
@@ -31,6 +42,10 @@
     ctl.setLots = (l) => (lots = l);
   });
 </script>
+
+{#snippet inspector({ results }: { results: Snippet })}
+  <div data-testid="host-inspector">{@render results()}</div>
+{/snippet}
 
 <div class="relative flex h-12 items-center justify-end gap-2 px-4">
   <div data-testid="header-status">{@render slot.status?.()}</div>
@@ -47,5 +62,7 @@
     onselect={(r) => (selected = r)}
     onedit={(change) => (policy = change(policy))}
     onadd={() => {}}
+    onundoto={onundoto ?? ((p) => (policy = p))}
+    inspector={withInspector ? inspector : undefined}
   />
 </div>

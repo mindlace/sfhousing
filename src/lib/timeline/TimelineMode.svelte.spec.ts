@@ -1,6 +1,7 @@
 // TimelineMode composition (timeline-ui rules 1, 18-36): the real TimelineSession and
 // TimelineClient over a fake worker, a recording SimMap stub, and the header slots from a host.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
@@ -19,14 +20,20 @@ import type { ScoreStatics } from '$lib/sim/world/score/types';
 import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
 import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
-import { UPDATING } from './copy';
+import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING } from './copy';
 import { fillStatusText } from './fill';
 import { filledEndDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
 import { headerOf } from './results';
 import { dayPct } from './rows';
 import type { Lots } from './session.svelte';
-import { FakeTimelineWorker, compiledMsg, filledMsg, refillMsg } from './test/fake-timeline-worker';
+import {
+  FakeTimelineWorker,
+  compiledMsg,
+  errorMsg,
+  filledMsg,
+  refillMsg
+} from './test/fake-timeline-worker';
 import { chunk, statics as baseStatics } from './test/fixtures';
 import TimelineModeHost from './test/TimelineModeHost.svelte';
 
@@ -85,6 +92,10 @@ type Over = Partial<{
   initialPolicy: SimPolicy4;
   initialLots: Lots | null;
   onmiss: () => void;
+  onundoto: (p: SimPolicy4) => void;
+  withInspector: boolean;
+  scoreControls: string;
+  statusMs: number;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -111,8 +122,11 @@ function setup(over: Over = {}) {
       initialPolicy: over.initialPolicy ?? DEFAULT_POLICY4,
       initialLots: over.initialLots === undefined ? {} : over.initialLots,
       ctl,
-      statusMs: 0,
-      ...(over.onmiss ? { onmiss: over.onmiss } : {})
+      statusMs: over.statusMs ?? 0,
+      ...(over.onmiss ? { onmiss: over.onmiss } : {}),
+      ...(over.onundoto ? { onundoto: over.onundoto } : {}),
+      ...(over.withInspector ? { withInspector: true } : {}),
+      ...(over.scoreControls ? { scoreControls: over.scoreControls } : {})
     }
   });
   return {
@@ -256,7 +270,9 @@ describe('TimelineMode', () => {
     s.setPolicy(mk(protect(5)));
     await expect.element(statusSlot()).toHaveTextContent(UPDATING);
     // The explanation waits behind the status (rule 31, F12).
-    await expect.element(statusSlot().getByRole('button', { name: UPDATING })).toBeInTheDocument();
+    await expect
+      .element(page.getByTestId('tl-status').getByRole('button', { name: UPDATING }))
+      .toBeInTheDocument();
     expect(debug().stale).toBe(true);
     s.setLots({});
     await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
@@ -329,12 +345,13 @@ describe('TimelineMode', () => {
     const req = w().lastOf('parcelSummary')!;
     w().emit({ type: 'parcelSummary', reqId: req.reqId, summary: summary(REAL_ACTUAL) });
     const card = page.getByTestId('tl-card');
-    await expect.element(card.getByRole('heading')).toBeInTheDocument();
+    await expect.element(card.getByRole('heading', { level: 2 })).toBeInTheDocument();
     expect(card.element().hasAttribute('data-stale')).toBe(false);
 
     s.setPolicy(mk(protect(5)));
     await expect.element(card).toHaveAttribute('data-stale', 'true');
-    expect(getComputedStyle(card.element().querySelector('section')!).opacity).toBe('0.6');
+    // Dimmed as muted ink (AA), not by opacity.
+    expect(getComputedStyle(card.element().querySelector('h2')!).color).toBe('rgb(75, 85, 99)');
     s.setLots({});
     await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
     emit(compiledMsg(2, STATICS));
@@ -371,10 +388,143 @@ describe('TimelineMode', () => {
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     const top = sheet.element().getBoundingClientRect().top;
     const s = slider().element().getBoundingClientRect();
-    const chart = page.getByRole('figure').element().getBoundingClientRect();
+    const chart = page.getByTestId('tl-dock').getByRole('figure').element().getBoundingClientRect();
     expect(s.top).toBeGreaterThanOrEqual(0);
     expect(s.bottom).toBeLessThanOrEqual(top + 0.5);
     expect(chart.top).toBeGreaterThanOrEqual(0);
     expect(chart.bottom).toBeLessThanOrEqual(top + 0.5);
+  });
+
+  it('a rejected edit undoes through onundoto to the last accepted document', async () => {
+    const onundoto = vi.fn<(p: SimPolicy4) => void>();
+    const s = await opened(LAST, { onundoto });
+    s.setPolicy(mk(protect(5)));
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    emit(errorMsg(2, 'bad-request'));
+    await expect.poll(() => onundoto.mock.calls).toEqual([[DEFAULT_POLICY4]]);
+    await expect.element(page.getByTestId('tl-alerts')).toHaveTextContent(CHANGE_NOT_APPLIED);
+  });
+
+  it('on a phone the playhead and chart stay above an open inspector sheet', async () => {
+    await page.viewport(390, 760);
+    await opened(LAST, { withInspector: true });
+    const insp = page.getByTestId('tl-inspector');
+    await expect.element(insp.getByTestId('host-inspector')).toBeVisible();
+    await expect.element(slider()).toBeInTheDocument();
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const top = insp.element().getBoundingClientRect().top;
+    const s = slider().element().getBoundingClientRect();
+    const chart = page.getByTestId('tl-dock').getByRole('figure').element().getBoundingClientRect();
+    expect(s.top).toBeGreaterThanOrEqual(0);
+    expect(s.bottom).toBeLessThanOrEqual(top + 0.5);
+    expect(chart.top).toBeGreaterThanOrEqual(0);
+    expect(chart.bottom).toBeLessThanOrEqual(top + 0.5);
+  });
+
+  it('while stale the map canvas, Results, card and header dim; their controls keep full contrast', async () => {
+    const s = await opened(LAST, { withInspector: true });
+    const canvas = document.createElement('canvas');
+    canvas.className = 'maplibregl-canvas';
+    page.getByTestId('fzp-sim-map-stub').element().appendChild(canvas);
+    await expect.poll(() => stub.props.timelinePick).toBeTruthy();
+    stub.props.timelinePick!({ projectId: 'pr-1', parcelId: 'p1', x: 40, y: 40, kind: 'tap' });
+    await expect.poll(() => w().all('parcelSummary')).toHaveLength(1);
+    const req = w().lastOf('parcelSummary')!;
+    w().emit({ type: 'parcelSummary', reqId: req.reqId, summary: summary(REAL_ACTUAL) });
+    await expect
+      .element(page.getByTestId('tl-card').getByRole('heading', { level: 2 }))
+      .toBeInTheDocument();
+    const net = page.getByTestId('fzp-net');
+    await expect.element(net).toBeInTheDocument();
+    const fresh = getComputedStyle(net.element()).color;
+
+    s.setPolicy(mk(protect(5)));
+    await expect.element(page.getByTestId('tl-map')).toHaveAttribute('data-stale', 'true');
+    // The map's picture dims; the map, its controls and the controls over it do not.
+    expect(getComputedStyle(canvas).opacity).toBe('0.6');
+    const opacityOf = (el: Element) => {
+      let o = 1;
+      for (let e: Element | null = el; e; e = e.parentElement)
+        o *= Number(getComputedStyle(e).opacity);
+      return o;
+    };
+    const controls = [
+      ...document.querySelectorAll(
+        '[data-testid=tl-results] button, [data-testid=tl-card] button, [data-testid=header-pinned] button, [data-testid=fzp-sim-map-stub]'
+      )
+    ];
+    expect(controls.length).toBeGreaterThan(3);
+    for (const c of controls) expect(opacityOf(c)).toBe(1);
+    // Text dims to the muted ink, which keeps AA contrast.
+    await expect.poll(() => getComputedStyle(net.element()).color).not.toBe(fresh);
+    expect(getComputedStyle(net.element()).color).toBe('rgb(75, 85, 99)');
+    expect(getComputedStyle(scoreBar().element()).color).toBe('rgb(75, 85, 99)');
+    const cardText = page.getByTestId('tl-card').getByRole('heading', { level: 2 }).element();
+    expect(getComputedStyle(cardText).color).toBe('rgb(75, 85, 99)');
+  });
+
+  it('the status slot changes at most once a second; the latest text goes out after the gap', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    try {
+      setup({ statusMs: 1000 });
+      await tick();
+      expect(workers).toHaveLength(1);
+      const live = () => statusSlot().element().textContent?.trim();
+      emit(compiledMsg(1, STATICS));
+      emit(filledMsg(1, 0, 1));
+      await tick();
+      const first = fillStatusText(viewOf([chunk(0, 1)], STATICS));
+      const second = fillStatusText(viewOf([chunk(0, LAST)], STATICS));
+      expect(first).not.toBe(second);
+      expect(live()).toBe(first);
+      emit(filledMsg(1, 1, LAST - 1));
+      await tick();
+      expect(live()).toBe(first);
+      emit(filledMsg(1, LAST, 1));
+      await tick();
+      expect(live()).toBe(first);
+      vi.advanceTimersByTime(999);
+      await tick();
+      expect(live()).toBe(first);
+      vi.advanceTimersByTime(1);
+      await tick();
+      // The text wanted in between never showed: the latest goes out.
+      expect(live()).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the live region holds only the status text; its explanation sits outside it', async () => {
+    await page.viewport(390, 760);
+    const s = await opened();
+    s.setPolicy(mk(protect(5)));
+    const live = statusSlot();
+    await expect.element(live).toHaveTextContent(UPDATING);
+    const slot = page.getByTestId('tl-status').element();
+    const before = slot.getBoundingClientRect();
+    await page.getByTestId('tl-status').getByRole('button', { name: UPDATING }).click();
+    const tip = page.getByRole('tooltip');
+    await expect.element(tip).toHaveTextContent(STALE_NOTE);
+    expect(live.element().contains(tip.element())).toBe(false);
+    expect(live.element().querySelector('button')).toBeNull();
+    expect(live.element().textContent?.trim()).toBe(UPDATING);
+    // Open, it does not widen or deepen the header's slot.
+    const after = slot.getBoundingClientRect();
+    expect(after.width).toBe(before.width);
+    expect(after.height).toBe(before.height);
+  });
+
+  it('the header score controls the inspector only while it shows', async () => {
+    const a = await opened(LAST, { scoreControls: 'insp' });
+    await expect.element(scoreBar()).toBeInTheDocument();
+    expect(scoreBar().element().hasAttribute('aria-controls')).toBe(false);
+    (await a.r).unmount();
+    workers = [];
+    await opened(LAST, { scoreControls: 'insp', withInspector: true });
+    await expect.element(scoreBar()).toHaveAttribute('aria-controls', 'insp');
+    expect(document.getElementById('insp')).toBe(page.getByTestId('tl-inspector').element());
   });
 });

@@ -20,7 +20,8 @@
     PreviewResult
   } from '$lib/sim/scenario/types';
   import type { LeverLookups, Lookups } from '$lib/sim/levers/apply';
-  import type { ScoreCopy } from '$lib/sim-page/policy';
+  import { scoreCopy, type ScoreCopy } from '$lib/sim-page/policy';
+  import type { SimLevers } from '$lib/sim/levers/types';
 
   export type MapLike = NonNullable<ReturnType<SimMapHandle['getMap']>>;
 
@@ -64,12 +65,16 @@
     return l;
   }
 
-  /** Who the plan effect is for, from the statics' comparison (rule 26, as `scoreCopy`). */
+  /**
+   * Who the plan effect is for, from the statics' comparison (rule 26): `scoreCopy`'s wording,
+   * which reads only the levers' `compare` ('plan' is the comparison with the plan as written).
+   */
   function copyOf(compare: 'plan' | 'preFzp' | null): ScoreCopy {
-    return compare === 'plan'
-      ? { plan: 'your policy', twin: 'the Family Zoning Plan as written', compare: 'fzp' }
-      : { plan: 'the Family Zoning Plan', twin: 'the old zoning', compare: 'preFzp' };
+    return scoreCopy(compare === 'plan' ? ({ compare: 'fzp' } as SimLevers) : null);
   }
+
+  /** Below md the inspector sheet starts under the chart, and is never shorter than this. */
+  const MIN_SHEET = 240;
 
   /** The widest text the status slot shows: its width is reserved (rule 32). */
   const STATUS_WIDEST = 'Forecast filled to 2088';
@@ -77,6 +82,7 @@
 
 <script lang="ts">
   import { onMount, untrack, type Snippet } from 'svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import type { Manifest } from '$lib/data/manifest';
   import { cardFunding, type CardFunding } from '$lib/fzp/card';
   import { BR_BLOCK, watchCardArea } from '$lib/fzp/card-area-watch';
@@ -152,11 +158,8 @@
     lots: Lots | null;
     readonly: boolean;
     onedit(change: (p: SimPolicy4) => SimPolicy4, label: string): void;
-    /**
-     * Rule 34: undo to the last document the worker accepted (the store's `undoTo`). Default: an
-     * `onedit` back to it.
-     */
-    onundoto?(p: SimPolicy4): void;
+    /** Rule 34: undo to the last document the worker accepted (the store's `undoTo`). */
+    onundoto(p: SimPolicy4): void;
     selected: SpanRef | null;
     onselect(ref: SpanRef | null): void;
     /** The timeline's "+" (the menu is the page's). */
@@ -212,7 +215,7 @@
     lots,
     readonly,
     onedit,
-    onundoto = undefined,
+    onundoto,
     selected,
     onselect,
     onadd,
@@ -652,11 +655,10 @@
   function startSession(): void {
     if (dead || session || !manifest || !calibration) return;
     const cal = calibration;
-    const undo = (p: SimPolicy4) => (onundoto ? onundoto(p) : onedit(() => p, CHANGE_NOT_APPLIED));
     const s = new TimelineSession({
       manifest,
       calibration: cal,
-      undoTo: (p) => untrack(() => undo(p)),
+      undoTo: (p) => untrack(() => onundoto(p)),
       createWorker: () => createWorker(),
       createClient: (worker, events) => {
         const c = new TimelineClient(worker, {
@@ -784,6 +786,35 @@
     session?.retry(n);
   }
 
+  // ---- the inspector (rule 1) ----
+
+  const narrow = new MediaQuery('(max-width: 767px)');
+  const inspectorShown = $derived(mounted && session !== null && !!inspector && inspectorOpen);
+  /** Below md with the inspector open: it is a sheet under the chart. */
+  const phoneSheet = $derived(inspectorShown && narrow.current);
+  let dockEl = $state<HTMLElement>();
+  let chartBox = $state<HTMLElement>();
+  let sheetTop = $state(0);
+
+  function placeSheet(): void {
+    if (!chartBox) return;
+    const bottom = chartBox.getBoundingClientRect().bottom;
+    sheetTop = Math.max(0, Math.min(bottom, window.innerHeight - MIN_SHEET));
+  }
+  // Opening scrolls the timeline to the top, so the playhead and the chart are in view above the
+  // sheet (as the kind sheet does); the sheet follows the chart's bottom edge.
+  $effect(() => {
+    if (!phoneSheet || !dockEl) return;
+    dockEl.scrollIntoView({ block: 'start', behavior: 'instant' });
+    untrack(placeSheet);
+    window.addEventListener('resize', placeSheet);
+    window.addEventListener('scroll', placeSheet, true);
+    return () => {
+      window.removeEventListener('resize', placeSheet);
+      window.removeEventListener('scroll', placeSheet, true);
+    };
+  });
+
   useHeaderActions(headerActions, { pinned: scoreBar, status: statusSlot });
 
   onMount(() => {
@@ -829,15 +860,21 @@
 {#snippet statusSlot()}
   {@render status?.()}
   {#if !noScenario}
-    <!-- Both texts share one grid cell: the slot keeps the widest one's width (rule 32). -->
+    <!-- The shown text shares one grid cell with the widest one: the slot keeps its width (rule
+         32). The live region holds the status text only; "Updating"'s explanation sits beside
+         it, outside, and opens as a popover at every width so the header keeps its size. -->
     <span
-      class="inline-grid text-sm text-ink-muted dark:text-ink-dark-muted"
+      class="tl-status relative inline-grid text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted"
       data-testid="tl-status"
     >
       <span aria-hidden="true" class="invisible col-start-1 row-start-1 whitespace-nowrap"
         >{STATUS_WIDEST}</span
       >
-      <span role="status" class="col-start-1 row-start-1 whitespace-nowrap">
+      <span role="status" class="sr-only">{statusText}</span>
+      <span
+        aria-hidden={statusText === UPDATING ? undefined : 'true'}
+        class="col-start-1 row-start-1 whitespace-nowrap"
+      >
         {#if statusText === UPDATING}
           <Explain text={STALE_NOTE}>{UPDATING}</Explain>
         {:else}
@@ -859,7 +896,7 @@
       busy={stale}
       {stale}
       expanded={scoreExpanded}
-      controls={scoreControls ?? ''}
+      controls={inspectorShown ? (scoreControls ?? '') : ''}
       onclick={() => onscore?.()}
       live={at ? homesAddedBy(day, at) : ''}
       quiet={playing}
@@ -868,7 +905,7 @@
 {/snippet}
 
 {#snippet results()}
-  <div class:opacity-60={stale} data-testid="tl-results" data-stale={stale ? 'true' : undefined}>
+  <div class="tl-dim" data-testid="tl-results" data-stale={stale ? 'true' : undefined}>
     <SimResults
       {score}
       {at}
@@ -905,7 +942,9 @@
 {/snippet}
 
 {#snippet chartPart()}
-  <ChartRow view={current} {index} target={chartTarget} />
+  <div bind:this={chartBox}>
+    <ChartRow view={current} {index} target={chartTarget} />
+  </div>
 {/snippet}
 
 <!-- Below md the page scrolls: the map keeps a fixed share and the timeline follows in flow, so a
@@ -993,12 +1032,7 @@
   <div class="relative flex min-h-0 flex-1 max-md:h-[40%] max-md:flex-none">
     <!-- The map and everything positioned over it. -->
     <div bind:this={mapBox} class="relative min-h-0 min-w-0 flex-1">
-      <div
-        class="h-full transition-opacity"
-        class:opacity-60={stale}
-        data-testid="tl-map"
-        data-stale={stale ? 'true' : undefined}
-      >
+      <div class="tl-map h-full" data-testid="tl-map" data-stale={stale ? 'true' : undefined}>
         {#if manifest}
           <SimMap
             {manifest}
@@ -1015,7 +1049,7 @@
       </div>
 
       {#if session && calibration && cardChance}
-        <div class="tl-card" data-stale={stale ? 'true' : undefined} data-testid="tl-card">
+        <div class="tl-dim" data-stale={stale ? 'true' : undefined} data-testid="tl-card">
           <ProjectCardPanel
             state={cardState}
             {day}
@@ -1047,12 +1081,14 @@
       {/if}
     </div>
 
-    {#if mounted && session && inspector && inspectorOpen}
-      <!-- Beside the map from md, leaving the timeline in view; a sheet on a phone (rule 1). -->
+    {#if inspectorShown && inspector}
+      <!-- Beside the map from md, leaving the timeline in view; below md a sheet from under the
+           chart to the bottom, so the playhead and the chart stay above it (rules 1, 9). -->
       <aside
         id={scoreControls}
         data-testid="tl-inspector"
-        class="z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:max-h-[60dvh] max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:w-96 md:shrink-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
+        style:top={phoneSheet ? `${sheetTop}px` : undefined}
+        class="z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:w-96 md:shrink-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
       >
         {@render inspector({ results, day })}
       </aside>
@@ -1061,7 +1097,9 @@
 
   {#if mounted && session && calibration}
     <div
+      bind:this={dockEl}
       class="shrink-0 border-t border-line bg-surface md:max-h-[50%] md:overflow-y-auto dark:border-line-dark dark:bg-surface-dark"
+      style:padding-bottom={phoneSheet ? '100dvh' : undefined}
       data-testid="tl-dock"
     >
       <Timeline
@@ -1083,7 +1121,48 @@
 </div>
 
 <style>
-  .tl-card[data-stale] > :global(section) {
+  /* Stale (rule 31): the map's picture dims, never its controls. */
+  .tl-map[data-stale] :global(.maplibregl-canvas) {
     opacity: 0.6;
+  }
+  /* Results and the card: text turns to the muted ink, which keeps AA contrast; controls keep
+     their own colours; graphics outside controls dim. */
+  .tl-dim[data-stale]
+    :global(:not(button, a, input, select, textarea, summary, button *, a *, summary *)) {
+    color: var(--color-ink-muted);
+  }
+  .tl-dim[data-stale] :global(svg:not(button svg, a svg)) {
+    opacity: 0.6;
+  }
+  @media (prefers-color-scheme: dark) {
+    .tl-dim[data-stale]
+      :global(:not(button, a, input, select, textarea, summary, button *, a *, summary *)) {
+      color: var(--color-ink-dark-muted);
+    }
+  }
+  /* "Updating"'s explanation opens under the slot at every width (Explain is inline below md),
+     so the header neither widens nor grows. */
+  .tl-status :global([role='tooltip']) {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 40;
+    width: max-content;
+    max-width: min(14rem, calc(100vw - 2rem));
+    white-space: normal;
+    margin-top: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--color-line);
+    border-radius: 0.25rem;
+    background: var(--color-surface);
+    color: var(--color-ink);
+    box-shadow: 0 4px 6px rgb(0 0 0 / 0.1);
+  }
+  @media (prefers-color-scheme: dark) {
+    .tl-status :global([role='tooltip']) {
+      border-color: var(--color-line-dark);
+      background: var(--color-surface-dark);
+      color: var(--color-ink-dark);
+    }
   }
 </style>

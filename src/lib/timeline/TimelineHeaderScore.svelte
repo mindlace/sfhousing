@@ -74,7 +74,6 @@
      its own. The delta and the meter take no pointer events, so a press on them presses it. -->
 <div
   class="relative flex min-h-6 min-w-6 flex-col items-start justify-center overflow-hidden rounded-md border border-gray-300 bg-surface px-2 pb-1 text-sm leading-tight font-semibold whitespace-nowrap text-ink tabular-nums hover:bg-surface-raised has-[button:focus-visible]:outline-2 has-[button:focus-visible]:outline-offset-2 has-[button:focus-visible]:outline-accent dark:border-gray-600 dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:has-[button:focus-visible]:outline-accent-dark pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-  class:opacity-60={stale}
   data-stale={stale ? 'true' : undefined}
 >
   <button
@@ -118,3 +117,15 @@
 </div>
 
 <span class="sr-only" aria-live="polite" data-testid="score-live">{spoken}</span>
+
+<style>
+  /* Stale (rule 31): the count turns to the muted ink, which keeps the button at AA contrast. */
+  div[data-stale] {
+    color: var(--color-ink-muted);
+  }
+  @media (prefers-color-scheme: dark) {
+    div[data-stale] {
+      color: var(--color-ink-dark-muted);
+    }
+  }
+</style>
