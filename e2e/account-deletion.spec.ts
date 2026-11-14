@@ -8,7 +8,7 @@ import { MEMBERS_COPY } from '../src/lib/members/copy';
 import { ACCOUNT_COPY, deleteConfirmLine } from '../src/lib/account/account-copy';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { uniqueEmail } from './helpers/auth';
-import { gotoAccount, readHandle } from './helpers/account';
+import { gotoAccount, readHandle, startPseudonymous } from './helpers/account';
 import {
   coldJoin,
   freshContext,
@@ -93,4 +93,29 @@ test('a wrong handle keeps the delete button off; cancel returns focus to the tr
   await expect(trigger).toBeFocused();
   // Nothing was deleted.
   expect((await page.request.get('/api/account')).status()).toBe(200);
+});
+
+test('a pseudonymous visitor deletes their account and ends signed out', async ({ page }) => {
+  const title = `pseudo-del-${Date.now()}`;
+  await startPseudonymous(page, title);
+  const simPath = new URL(page.url()).pathname;
+  expect((await page.request.get('/api/account')).status()).toBe(200);
+
+  await gotoAccount(page);
+  const handle = await readHandle(page);
+  await page.getByRole('button', { name: ACCOUNT_COPY.deleteButton }).click();
+  const confirm = page.getByLabel(ACCOUNT_COPY.deleteConfirmLabel);
+  await confirm.fill(handle);
+  await expect(confirm).toHaveValue(handle);
+  await page.getByRole('button', { name: ACCOUNT_COPY.deletePermanently }).click();
+  await page.waitForURL((url) => url.pathname === '/');
+
+  // Signed out: no session, the account API refuses and the sim is gone.
+  expect((await page.request.get('/api/account')).status()).toBe(401);
+  await openHeaderMenu(page);
+  await expect(
+    page.getByRole('banner').getByRole('link', { name: 'Sign in', exact: true })
+  ).toBeVisible();
+  const gone = await page.request.get(simPath, { maxRedirects: 0 });
+  expect([303, 401, 404]).toContain(gone.status());
 });

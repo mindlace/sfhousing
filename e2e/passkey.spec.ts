@@ -13,6 +13,7 @@ test('register a passkey, then sign in with it in a fresh session', async ({
   context,
   browserName
 }, testInfo) => {
+  // eslint-disable-next-line playwright/no-skipped-test
   test.skip(
     browserName !== 'chromium' || testInfo.project.name !== 'chromium',
     'needs the Chromium virtual authenticator (CDP)'

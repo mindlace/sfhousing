@@ -110,3 +110,30 @@ test('account: a signed-out visit goes to /signin with returnTo=/account', async
   await page.goto('/account');
   await expect(page).toHaveURL(/\/signin\?returnTo=(%2F|\/)account$/);
 });
+
+// The skip-link case of the original account a11y suite, run against /account.
+test('account: the focused skip link does not overlap the header controls', async ({ page }) => {
+  await loginAs(page, uniqueEmail('a11y-skip'));
+  await gotoAccount(page);
+  await page.keyboard.press('Tab');
+  const skipLink = page.getByRole('link', { name: 'Skip to content' });
+  await expect(skipLink).toBeFocused();
+  const overlaps = await page.evaluate(() => {
+    const skip = document.activeElement!.getBoundingClientRect();
+    return [...document.querySelectorAll('header button, header [data-header-account]')].filter(
+      (el) => {
+        const b = el.getBoundingClientRect();
+        return (
+          b.width > 0 &&
+          skip.left < b.right &&
+          skip.right > b.left &&
+          skip.top < b.bottom &&
+          skip.bottom > b.top
+        );
+      }
+    ).length;
+  });
+  // The site-name link at the left edge sits under the skip link when it is focused (existing root layout
+  // behaviour); the controls that must stay clear are the Menu and the account entry.
+  expect(overlaps, 'the focused skip link overlaps a header control').toBe(0);
+});

@@ -457,4 +457,54 @@ describe('PasswordSection', () => {
     await expect.element(screen.getByRole('button', { name: ACCOUNT_COPY.remove })).toBeDisabled();
     expect(onChanged).not.toHaveBeenCalled();
   });
+
+  /** True when `status` comes before the section's button row in document order. */
+  const before = (status: Element, buttonRow: Element | null) =>
+    !!buttonRow && !!(status.compareDocumentPosition(buttonRow) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  it('keeps the recovery nudge under the heading, before the button row', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 })
+    );
+    const screen = await render(PasswordSection, {
+      hasPassword: false,
+      canRemove: false,
+      handle,
+      hasEmail: false
+    });
+    await screen.getByRole('button', { name: ACCOUNT_COPY.passwordSet }).click();
+    await screen.getByLabelText(ACCOUNT_COPY.passwordLabel).fill(goodPassword);
+    await screen.getByRole('button', { name: ACCOUNT_COPY.save }).click();
+    const nudge = screen.getByTestId('password-status');
+    await expect.element(nudge).toBeInTheDocument();
+    const row = screen
+      .getByRole('button', { name: ACCOUNT_COPY.passwordChange })
+      .element().parentElement;
+    const heading = screen.getByRole('heading', { name: ACCOUNT_COPY.passwordHeading }).element();
+    expect(before(heading, nudge.element())).toBe(true);
+    expect(before(nudge.element(), row)).toBe(true);
+    expect(row?.contains(nudge.element())).toBe(false);
+  });
+
+  it('keeps a refused-removal error under the heading, before the button row', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: ACCOUNT_COPY.passwordSetError }), { status: 400 })
+    );
+    const screen = await render(PasswordSection, {
+      hasPassword: true,
+      canRemove: true,
+      handle,
+      hasEmail: true
+    });
+    await screen.getByRole('button', { name: ACCOUNT_COPY.remove }).click();
+    const err = screen.getByTestId('password-error');
+    await expect.element(err).toHaveTextContent(ACCOUNT_COPY.passwordSetError);
+    const row = screen
+      .getByRole('button', { name: ACCOUNT_COPY.passwordChange })
+      .element().parentElement;
+    const heading = screen.getByRole('heading', { name: ACCOUNT_COPY.passwordHeading }).element();
+    expect(before(heading, err.element())).toBe(true);
+    expect(before(err.element(), row)).toBe(true);
+    expect(row?.contains(err.element())).toBe(false);
+  });
 });

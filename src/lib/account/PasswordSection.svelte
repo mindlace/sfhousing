@@ -186,8 +186,19 @@
 
 <section class="flex flex-col gap-2">
   <h3 class="font-semibold">{ACCOUNT_COPY.passwordHeading}</h3>
+  <!-- Every status line sits here, under the heading: never among the controls. -->
   {#if !loading}
     <FormStatus testid="password-done" message={done} />
+    {#if error && !editing}
+      <FormStatus testid="password-error" tone="error" message={error} />
+    {/if}
+    {#if justSet}
+      <FormStatus
+        testid="password-status"
+        tone="info"
+        message={ACCOUNT_COPY.passwordAddRecoveryNudge}
+      />
+    {/if}
   {/if}
   <p class={HINT}>{ACCOUNT_COPY.passwordDescription}</p>
   <!-- The handle IS the sign-in identifier; a user who does not know it cannot sign in. -->
@@ -275,9 +286,6 @@
         </div>
       </form>
     {:else}
-      {#if error}
-        <FormStatus testid="password-error" tone="error" message={error} />
-      {/if}
       <div class="flex items-center gap-3">
         <button type="button" class={BTN} onclick={openEditor}>
           {isSet ? ACCOUNT_COPY.passwordChange : ACCOUNT_COPY.passwordSet}
@@ -301,13 +309,5 @@
         <p class={HINT} id="password-remove-reason">{ACCOUNT_COPY.passwordLastFactor}</p>
       {/if}
     {/if}
-  {/if}
-
-  {#if justSet}
-    <FormStatus
-      testid="password-status"
-      tone="info"
-      message={ACCOUNT_COPY.passwordAddRecoveryNudge}
-    />
   {/if}
 </section>
