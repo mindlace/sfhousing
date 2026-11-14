@@ -6,12 +6,13 @@ import { OBSERVED_TIMING, timingLabel, type TimingSet } from '$lib/sim-page/timi
 import { replaceRule } from '$lib/sim-page/transit-edit';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
 import { monthFirstDay, monthLastDay } from '$lib/sim/world/months';
-import type { Programme } from '$lib/timelapse/types';
+import type { Programme, TermKey } from '$lib/timelapse/types';
 import {
   CUSTOM_TIMING_LABEL,
   PRESET_PER_POLICY,
   project,
   spanLens,
+  termsInForce,
   tryWriteBack,
   writeBack
 } from './lens';
@@ -293,6 +294,24 @@ describe('project and writeBack', () => {
     const q = project(richDoc, r);
     const edited = { ...q, funding: { ...q.funding, terms: { guaranteeRateCut: 0.03 } } };
     expect(writeBack(richDoc, r, edited)).toBe(richDoc);
+  });
+
+  it('the terms in force merge every terms policy that is on, in document order', () => {
+    const t = (id: string, terms: Partial<Record<TermKey, number>>, over: Partial<Policy> = {}) =>
+      pol(id, { tag: 'terms' }, [{ tag: 'terms', terms }], over);
+    const doc: SimPolicy4 = {
+      ...richDoc,
+      kinds: {
+        ...richDoc.kinds,
+        money: [
+          t('t1', { guaranteeRateCut: 0.01, requiredReturn: 0.2 }),
+          t('t2', { guaranteeRateCut: 0.02 }),
+          t('t3', { requiredReturn: 0.9 }, { on: false })
+        ]
+      }
+    };
+    expect(termsInForce(doc, first(1))).toEqual({ guaranteeRateCut: 0.02, requiredReturn: 0.2 });
+    expect(termsInForce(doc, asOf)).toEqual({});
   });
 
   it('a timing change writes the set and the policy’s preset', () => {

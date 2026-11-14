@@ -49,7 +49,9 @@ test('/sim header, playhead and timeline have no axe violations in dark', async 
   await gotoSim(page);
   await expect(page.getByRole('banner')).toBeVisible();
   await expect(page.getByTestId('tl-today')).toHaveText('Today');
-  await expectNoA11yViolations(page, { include: ['header', '[data-testid=tl-dock]'] });
+  await expectNoA11yViolations(page, {
+    include: ['header', '[data-testid=tl-status-line]', '[data-testid=tl-dock]']
+  });
 });
 
 test('at 375px the open Menu has no axe violations in dark', async ({ page }) => {

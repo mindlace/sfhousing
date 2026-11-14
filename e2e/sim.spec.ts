@@ -9,6 +9,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { SfhSimDebug } from '../src/lib/sim-page/debug';
+import { forecastFilled } from '../src/lib/timeline/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
 import {
@@ -723,6 +724,20 @@ test('at 375 px: no horizontal scroll, and the footer links stay unobscured', as
   await startPainting(page, true);
   await expectNoHorizontalScroll(page);
   await expectFooterReachable(page);
+  // The strip sits at the viewport's bottom, under the timeline, never over the map: the map's
+  // Reset view button (a coarse pointer's bottom-left control) stays clear and on top.
+  await scrollToTop(page);
+  const reset = page.locator('.sim-map-reset');
+  await expect(reset).toBeVisible();
+  const r = (await reset.boundingBox())!;
+  const strip = (await page.getByTestId('palette-strip').boundingBox())!;
+  expect(r.y + r.height, 'the strip covers Reset view').toBeLessThanOrEqual(strip.y);
+  const topmost = await reset.evaluate((el) => {
+    const b = el.getBoundingClientRect();
+    const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+    return !!top && el.contains(top);
+  });
+  expect(topmost, 'Reset view is covered').toBe(true);
 });
 
 // ---- permitting (plan 4) ------------------------------------------------------------------------
@@ -997,20 +1012,60 @@ async function widestHeaderText(page: Page): Promise<void> {
   });
 }
 
-for (const width of [1024, 1280]) {
-  test(`at ${width} px the header fits with the widest strings, before and after an edit, and the score stays put`, async ({
+/**
+ * Where the status shows (rule 32): from 2xl (1536 px) in the header's slot, beside the save
+ * state; below it on a line just under the header bar. Either way one live region speaks it, and
+ * it is never among the buttons.
+ */
+async function expectStatusPlace(page: Page, width: number): Promise<void> {
+  const inHeader = width >= 1536;
+  const slot = page.getByTestId('tl-status');
+  const line = page.getByTestId('tl-status-line');
+  await expect(inHeader ? slot : line).toBeVisible();
+  await expect(inHeader ? line : slot).toBeHidden();
+  await expect(page.getByTestId('tl-status-live')).toHaveCount(1);
+  await expect(page.getByTestId('tl-status-live')).toHaveAttribute('role', 'status');
+  if (!inHeader) {
+    const header = (await page.getByRole('banner').boundingBox())!;
+    const box = (await line.boundingBox())!;
+    expect(Math.abs(box.y - (header.y + header.height))).toBeLessThanOrEqual(1);
+    expect(box.height).toBeGreaterThanOrEqual(24);
+    await expect(line.getByRole('button')).toHaveCount(0);
+  }
+}
+
+/** The shown status copy at its widest ("Forecast filled to 2088"), in both places. */
+async function widestStatusText(page: Page): Promise<void> {
+  await page.evaluate((text) => {
+    for (const id of ['tl-status', 'tl-status-line']) {
+      const el = document.querySelector(`[data-testid="${id}"]`);
+      const shown = el?.querySelector(':scope > span[aria-hidden="true"]:last-child');
+      if (shown) shown.textContent = text;
+    }
+  }, forecastFilled(2088));
+}
+
+for (const width of [1024, 1280, 1536]) {
+  test(`at ${width} px the header fits with the widest strings, before and after an edit, the score stays put and the status shows in its place`, async ({
     page
   }) => {
     await page.setViewportSize({ width, height: 1024 });
     await gotoSim(page);
     await expect(page.getByRole('banner').getByRole('button', { name: 'View' })).toBeVisible();
     await widestHeaderText(page);
+    await widestStatusText(page);
     await expect(scoreBar(page)).toHaveAccessibleName(/^12,345 homes added by \d{4}$/);
+    await expectStatusPlace(page, width);
     const before = await expectHeaderFits(page);
+    await expectNoA11yViolations(page, {
+      include: ['header', '[data-testid=tl-status-line]', '[data-testid=tl-status-live]']
+    });
     const n = await refillCount(page);
     await addPolicy(page, 'Zoning', 'Transit rule');
     await waitRefilled(page, n);
     await widestHeaderText(page);
+    await widestStatusText(page);
+    await expectStatusPlace(page, width);
     const after = await expectHeaderFits(page);
     expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
   });

@@ -1,6 +1,7 @@
 // Pure rules for stale numbers, the fill state and Play (timeline-ui rules 24, 25, 31). Browser-safe.
 import { utcParts } from '$lib/fzp/time';
 import type { TimelineView } from '$lib/sim/world/score/types';
+import { forecastFilled } from './copy';
 
 /** What the page knows about the latest edit. `pending`: an edit not yet settled (sent or still debouncing). */
 export interface EditState {
@@ -84,5 +85,5 @@ export function fillStatusText(current: TimelineView | null): string {
   if (current === null || current.filledThrough === current.lastIndex) return '';
   const day = current.months[current.filledThrough];
   if (day === undefined) return '';
-  return `Forecast filled to ${utcParts(day).y}`;
+  return forecastFilled(utcParts(day).y);
 }

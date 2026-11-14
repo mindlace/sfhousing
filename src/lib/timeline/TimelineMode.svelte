@@ -77,7 +77,7 @@
   const MIN_SHEET = 240;
 
   /** The widest text the status slot shows: its width is reserved (rule 32). */
-  const STATUS_WIDEST = 'Forecast filled to 2088';
+  const STATUS_WIDEST = forecastFilled(2088);
 </script>
 
 <script lang="ts">
@@ -114,13 +114,14 @@
   import type { Day } from '$lib/timelapse/time';
   import { HIDDEN_VIEW, type ViewPrefs } from '$lib/view/prefs';
   import ChartRow from './ChartRow.svelte';
-  import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING } from './copy';
+  import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, forecastFilled } from './copy';
   import Explain from './Explain.svelte';
   import { fillStatusText } from './fill';
   import { fundsOf4 } from './owner';
   import Playhead from './Playhead.svelte';
   import { filledEndDay, indexOfDay, viewMonthOf } from './playhead';
-  import { spanAt, type PolicyKind, type SimPolicy4 } from './policy4';
+  import { termsInForce } from './lens';
+  import type { PolicyKind, SimPolicy4 } from './policy4';
   import { headerOf, scoreOfView } from './results';
   import { TimelineSession, type Lots, type SessionNotice } from './session.svelte';
   import type { SpanRef } from './spans';
@@ -327,13 +328,7 @@
   });
   const funds = $derived(fundsOf4(policy));
   /** The market terms in force at the playhead, for the Results' lost-grants line. */
-  const terms = $derived.by(() => {
-    const t = policy.kinds.money
-      .filter((p) => p.where.tag === 'terms')
-      .map((p) => spanAt(p, day)?.what)
-      .find((w) => w?.tag === 'terms');
-    return resolveTerms(MARKET_TERMS, t?.tag === 'terms' ? t.terms : {});
-  });
+  const terms = $derived(resolveTerms(MARKET_TERMS, termsInForce(policy, day)));
   const uncapped = $derived(uncappedPoolIds(calibration?.baselineFunding?.pools, funds.pools));
   const phase = $derived<FzpPhase>(
     noScenario ? 'no-scenario' : failed ? 'failed' : (session?.phase ?? 'loading')
@@ -870,30 +865,35 @@
   {/if}
 {/snippet}
 
+<!-- The status text as shown (the live region is apart, once, in the page): plain text hidden from
+     the accessibility tree, or "Updating" with its explanation, which opens as a popover so the
+     header and the line keep their size. -->
+{#snippet statusShown()}
+  <span
+    aria-hidden={statusText === UPDATING ? undefined : 'true'}
+    class="col-start-1 row-start-1 whitespace-nowrap"
+  >
+    {#if statusText === UPDATING}
+      <Explain text={STALE_NOTE}>{UPDATING}</Explain>
+    {:else}
+      {statusText}
+    {/if}
+  </span>
+{/snippet}
+
 {#snippet statusSlot()}
   {@render status?.()}
   {#if !noScenario}
-    <!-- The shown text shares one grid cell with the widest one: the slot keeps its width (rule
-         32). The live region holds the status text only; "Updating"'s explanation sits beside
-         it, outside, and opens as a popover at every width so the header keeps its size. -->
+    <!-- From 2xl: the shown text shares one grid cell with the widest one, so the slot keeps its
+         width (rule 32). Below 2xl the slot is too narrow: the line under the bar shows it. -->
     <span
-      class="tl-status relative inline-grid text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted"
+      class="tl-status relative ml-2 inline-grid text-sm text-ink-muted tabular-nums max-2xl:hidden dark:text-ink-dark-muted"
       data-testid="tl-status"
     >
       <span aria-hidden="true" class="invisible col-start-1 row-start-1 whitespace-nowrap"
         >{STATUS_WIDEST}</span
       >
-      <span role="status" class="sr-only">{statusText}</span>
-      <span
-        aria-hidden={statusText === UPDATING ? undefined : 'true'}
-        class="col-start-1 row-start-1 whitespace-nowrap"
-      >
-        {#if statusText === UPDATING}
-          <Explain text={STALE_NOTE}>{UPDATING}</Explain>
-        {:else}
-          {statusText}
-        {/if}
-      </span>
+      {@render statusShown()}
     </span>
   {/if}
 {/snippet}
@@ -967,153 +967,170 @@
   class="sfh-fzp sfh-tl relative flex h-full flex-col max-md:overflow-y-auto"
   data-testid="tl-mode"
 >
-  <!-- Every notice is a pill in this one stack (as FzpMode). -->
-  <NoticePills bind:el={pillsEl}>
-    {#if noScenario}
-      <div
-        role="status"
-        data-testid="fzp-status"
-        class="{PILL} w-[min(28rem,100%)]! flex-col! items-start! gap-0! rounded-lg! pr-4 pb-0"
-      >
-        <p>
-          The Family Zoning Plan timelapse isn't available for dataset {datasetVersion}. It needs
-          simulation data that this dataset doesn't have.
-        </p>
-        <a href="/" class="inline-flex min-h-11 items-center font-semibold underline"
-          >Go to the editor</a
+  {#if !noScenario}
+    <!-- The status's one live region, at every width (polite, at most one change a second). -->
+    <span role="status" class="sr-only" data-testid="tl-status-live">{statusText}</span>
+    <!-- Below 2xl the status is a line just under the header bar (rule 32). Its height is always
+         kept, so nothing moves when the status comes or goes. -->
+    <div
+      class="tl-status sticky top-0 z-30 grid min-h-6 shrink-0 items-center border-b border-line bg-surface px-4 text-sm text-ink-muted tabular-nums 2xl:hidden dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark-muted"
+      data-testid="tl-status-line"
+    >
+      {@render statusShown()}
+    </div>
+  {/if}
+  <!-- The notice stack's host (its parent): from md the stack overlays the map's top, below the
+       status line. Below md the stack is in flow and this box is no box. -->
+  <div class="relative flex min-h-0 flex-1 flex-col max-md:contents">
+    <!-- Every notice is a pill in this one stack (as FzpMode). -->
+    <NoticePills bind:el={pillsEl}>
+      {#if noScenario}
+        <div
+          role="status"
+          data-testid="fzp-status"
+          class="{PILL} w-[min(28rem,100%)]! flex-col! items-start! gap-0! rounded-lg! pr-4 pb-0"
         >
-      </div>
-    {:else if failed}
-      <div class={PILL}>
-        <p role="alert" data-testid="fzp-status">The simulation couldn't load.</p>
-        <button type="button" class="shrink-0 {PILL_ACTION}" onclick={() => void retryLoad()}
-          >Retry</button
-        >
-      </div>
-    {:else}
-      {#if session}
-        {@render notices?.()}
-      {/if}
-      {#if phase === 'loading' && !halted}
-        <p role="status" data-testid="fzp-status" class="{PILL} pr-4">Loading the simulation…</p>
-      {/if}
-      {#if session}
-        <div role="status" data-testid="tl-notices" class="contents">
-          {#each session.notices as n (n.id)}
-            {#if n.id === 'failed-cells'}
-              <span class={PILL}>
-                <span>Some map data didn't load.</span>
-                <button type="button" class={PILL_ACTION} onclick={() => retryNotice(n)}
-                  >Retry</button
-                >
-              </span>
-            {:else if n.id === 'crash'}
-              <span class={PILL}>
-                <span>Part of the simulation stopped.</span>
-                <button type="button" class={PILL_ACTION} onclick={() => retryNotice(n)}
-                  >Retry</button
-                >
-              </span>
-            {/if}
-          {/each}
+          <p>
+            The Family Zoning Plan timelapse isn't available for dataset {datasetVersion}. It needs
+            simulation data that this dataset doesn't have.
+          </p>
+          <a href="/" class="inline-flex min-h-11 items-center font-semibold underline"
+            >Go to the editor</a
+          >
         </div>
-        <div role="alert" data-testid="tl-alerts" class="contents">
-          {#each session.notices as n (n.id)}
-            {#if n.id === 'error'}
-              <span class={PILL}>
-                <span>{n.text}</span>
-                <button type="button" class={PILL_ACTION} onclick={() => retryNotice(n)}
-                  >Retry</button
-                >
-              </span>
-            {:else if n.id === 'not-applied'}
-              <span class={PILL}>
-                <span>{CHANGE_NOT_APPLIED}</span>
-                <button
-                  type="button"
-                  aria-label="Dismiss"
-                  class={PILL_ACTION}
-                  onclick={() => session?.dismiss('not-applied')}>×</button
-                >
-              </span>
-            {/if}
-          {/each}
+      {:else if failed}
+        <div class={PILL}>
+          <p role="alert" data-testid="fzp-status">The simulation couldn't load.</p>
+          <button type="button" class="shrink-0 {PILL_ACTION}" onclick={() => void retryLoad()}
+            >Retry</button
+          >
         </div>
+      {:else}
+        {#if session}
+          {@render notices?.()}
+        {/if}
+        {#if phase === 'loading' && !halted}
+          <p role="status" data-testid="fzp-status" class="{PILL} pr-4">Loading the simulation…</p>
+        {/if}
+        {#if session}
+          <div role="status" data-testid="tl-notices" class="contents">
+            {#each session.notices as n (n.id)}
+              {#if n.id === 'failed-cells'}
+                <span class={PILL}>
+                  <span>Some map data didn't load.</span>
+                  <button type="button" class={PILL_ACTION} onclick={() => retryNotice(n)}
+                    >Retry</button
+                  >
+                </span>
+              {:else if n.id === 'crash'}
+                <span class={PILL}>
+                  <span>Part of the simulation stopped.</span>
+                  <button type="button" class={PILL_ACTION} onclick={() => retryNotice(n)}
+                    >Retry</button
+                  >
+                </span>
+              {/if}
+            {/each}
+          </div>
+          <div role="alert" data-testid="tl-alerts" class="contents">
+            {#each session.notices as n (n.id)}
+              {#if n.id === 'error'}
+                <span class={PILL}>
+                  <span>{n.text}</span>
+                  <button type="button" class={PILL_ACTION} onclick={() => retryNotice(n)}
+                    >Retry</button
+                  >
+                </span>
+              {:else if n.id === 'not-applied'}
+                <span class={PILL}>
+                  <span>{CHANGE_NOT_APPLIED}</span>
+                  <button
+                    type="button"
+                    aria-label="Dismiss"
+                    class={PILL_ACTION}
+                    onclick={() => session?.dismiss('not-applied')}>×</button
+                  >
+                </span>
+              {/if}
+            {/each}
+          </div>
+        {/if}
       {/if}
-    {/if}
-  </NoticePills>
+    </NoticePills>
 
-  <div class="relative flex min-h-0 flex-1 max-md:h-[40%] max-md:flex-none">
-    <!-- The map and everything positioned over it. -->
-    <div bind:this={mapBox} class="relative min-h-0 min-w-0 flex-1">
-      <div class="tl-map h-full" data-testid="tl-map" data-stale={stale ? 'true' : undefined}>
-        {#if manifest}
-          <SimMap
-            {manifest}
-            {requestParcelSummary}
-            onRetryChunks={() => client?.retryChunks()}
-            onready={onMapReady}
-            {view}
-            timelinePick={onPick}
-            tapCards={cards}
+    <div class="relative flex min-h-0 flex-1 max-md:h-[40%] max-md:flex-none">
+      <!-- The map and everything positioned over it. -->
+      <div bind:this={mapBox} class="relative min-h-0 min-w-0 flex-1">
+        <div class="tl-map h-full" data-testid="tl-map" data-stale={stale ? 'true' : undefined}>
+          {#if manifest}
+            <SimMap
+              {manifest}
+              {requestParcelSummary}
+              onRetryChunks={() => client?.retryChunks()}
+              onready={onMapReady}
+              {view}
+              timelinePick={onPick}
+              tapCards={cards}
+            />
+          {:else}
+            <div class="h-full" data-testid="fzp-frame"></div>
+          {/if}
+        </div>
+
+        {#if session && calibration && cardChance}
+          <div class="tl-dim" data-stale={stale ? 'true' : undefined} data-testid="tl-card">
+            <ProjectCardPanel
+              state={cardState}
+              {day}
+              {asOf}
+              calibration={{ inFlight: calibration, fresh: calibration }}
+              chance={cardChance}
+              onclose={closeCard}
+              onsource={(id) => dialog?.open(id)}
+              anchor={cardAnchor}
+              allowedBy={cardAllowedBy}
+              fundedBy={cardFundedBy}
+              affordable={cardFunded?.kind === 'affordable'}
+              onsize={(s) => (cardSize = s)}
+            />
+          </div>
+          <ProjectTooltip state={tipState} {day} x={tipAt.x} y={tipAt.y} />
+        {/if}
+
+        {#if calibration && !noScenario}
+          <SourcesDialog
+            bind:this={dialog}
+            {calibration}
+            {score}
+            projectsUrl={manifest?.scenarios?.fzp.projects ?? null}
+            {asOf}
+            {terms}
+            onopen={() => (playing = false)}
           />
-        {:else}
-          <div class="h-full" data-testid="fzp-frame"></div>
         {/if}
       </div>
 
-      {#if session && calibration && cardChance}
-        <div class="tl-dim" data-stale={stale ? 'true' : undefined} data-testid="tl-card">
-          <ProjectCardPanel
-            state={cardState}
-            {day}
-            {asOf}
-            calibration={{ inFlight: calibration, fresh: calibration }}
-            chance={cardChance}
-            onclose={closeCard}
-            onsource={(id) => dialog?.open(id)}
-            anchor={cardAnchor}
-            allowedBy={cardAllowedBy}
-            fundedBy={cardFundedBy}
-            affordable={cardFunded?.kind === 'affordable'}
-            onsize={(s) => (cardSize = s)}
-          />
-        </div>
-        <ProjectTooltip state={tipState} {day} x={tipAt.x} y={tipAt.y} />
-      {/if}
-
-      {#if calibration && !noScenario}
-        <SourcesDialog
-          bind:this={dialog}
-          {calibration}
-          {score}
-          projectsUrl={manifest?.scenarios?.fzp.projects ?? null}
-          {asOf}
-          {terms}
-          onopen={() => (playing = false)}
-        />
+      {#if inspectorShown && inspector}
+        <!-- Beside the map from md, leaving the timeline in view; below md a sheet from under the
+           chart to the mode box's end (top and bottom inline), so the playhead and the chart stay
+           above it and the footer below it (rules 1, 9; W6b). -->
+        <aside
+          id={scoreControls}
+          data-testid="tl-inspector"
+          style:top={phoneSheet ? `${sheetTop}px` : undefined}
+          style:bottom={phoneSheet ? `${sheetBottom}px` : undefined}
+          class="z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:w-96 md:shrink-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
+        >
+          {@render inspector({ results, day })}
+        </aside>
       {/if}
     </div>
-
-    {#if inspectorShown && inspector}
-      <!-- Beside the map from md, leaving the timeline in view; below md a sheet from under the
-           chart to the bottom, so the playhead and the chart stay above it (rules 1, 9). -->
-      <aside
-        id={scoreControls}
-        data-testid="tl-inspector"
-        style:top={phoneSheet ? `${sheetTop}px` : undefined}
-        style:bottom={phoneSheet ? `${sheetBottom}px` : undefined}
-        class="z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:w-96 md:shrink-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
-      >
-        {@render inspector({ results, day })}
-      </aside>
-    {/if}
   </div>
 
   {#if mounted && session && calibration}
     <div
       bind:this={dockEl}
-      class="shrink-0 border-t border-line bg-surface md:max-h-[50%] md:overflow-y-auto dark:border-line-dark dark:bg-surface-dark"
+      class="shrink-0 border-t border-line bg-surface max-2xl:scroll-mt-6 md:max-h-[50%] md:overflow-y-auto dark:border-line-dark dark:bg-surface-dark"
       style:padding-bottom={phoneSheet ? '100dvh' : undefined}
       data-testid="tl-dock"
     >
@@ -1141,6 +1158,13 @@
      2.2 2.4.11). The footprint includes the bottom inset (docs/dev/map-interfaces.md). */
   .sfh-tl :global(.sim-map .maplibregl-ctrl-bottom-left) {
     bottom: max(var(--map-bottom-inset, 0px), var(--map-controls-br-block-size, 0px));
+  }
+  /* The same for a coarse pointer's Reset view button (SimMap's own gap, 16 px over the inset). */
+  .sfh-tl :global(.sim-map .sim-map-reset) {
+    bottom: max(
+      calc(var(--map-bottom-inset, 0px) + 16px),
+      calc(var(--map-controls-br-block-size, 0px) + 8px)
+    );
   }
   /* Stale (rule 31): the map's picture dims, never its controls. */
   .tl-map[data-stale] :global(.maplibregl-canvas) {

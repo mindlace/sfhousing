@@ -113,7 +113,8 @@
     opener = null;
   }
 
-  // The sheet covers the page from just under the chart to the bottom, across the timeline's width.
+  // The sheet covers the page from just under the chart to the end of the page's mode box (above
+  // the footer), across the timeline's width.
   // Opening scrolls the timeline to the top of the viewport first, so the playhead and chart are in
   // view above it; the sheet is never left shorter than MIN_SHEET.
   const MIN_SHEET = 280;
@@ -181,7 +182,7 @@
 <!-- With the sheet open the page gets room to scroll the timeline to the top of the viewport. -->
 <div
   bind:this={root}
-  class="tl relative"
+  class="tl relative max-2xl:scroll-mt-6"
   data-testid="tl-timeline"
   style:padding-bottom={sheeting ? '100dvh' : undefined}
 >

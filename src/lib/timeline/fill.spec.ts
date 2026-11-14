@@ -11,6 +11,8 @@ import {
   settled,
   shownAt
 } from './fill';
+import { utcParts } from '$lib/fzp/time';
+import { forecastFilled } from './copy';
 import { chunk, cut, statics } from './test/fixtures';
 
 const whole = viewOf([chunk(0, 300)], statics({ lastIndex: 299 }));
@@ -94,5 +96,9 @@ describe('stale, fill and Play state', () => {
     expect(fillStatusText(cut(whole, 251))).toMatch(/^Forecast filled to \d{4}$/);
     expect(fillStatusText(whole)).toBe('');
     expect(fillStatusText(null)).toBe('');
+  });
+  it("fill status's wording is copy.ts's one sentence", () => {
+    const day = cut(whole, 251).months[251];
+    expect(fillStatusText(cut(whole, 251))).toBe(forecastFilled(utcParts(day).y));
   });
 });

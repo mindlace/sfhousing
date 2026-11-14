@@ -7,6 +7,8 @@ import { formatPercent } from '$lib/scoreboard/format';
 import type { CoverageStep } from '$lib/sim-page/funding-view';
 
 export const FORECAST_NOTE = 'A forecast if nothing changes.';
+/** The fill state (rule 32), in the header's status slot from 2xl, under the bar below it. */
+export const forecastFilled = (year: number): string => `Forecast filled to ${year}`;
 export const RANGE_NOTE = 'Chance only. A few large sites carry most of it.';
 /** Behind each reference line's legend entry on the chart. */
 export const REFERENCE_NOTE =

@@ -150,7 +150,8 @@ async function opened(through = LAST, over: Over = {}) {
 const debug = () => window.__sfhFzp!;
 const playButton = () => page.getByTestId('tl-play');
 const scoreBar = () => page.getByTestId('score-bar');
-const statusSlot = () => page.getByTestId('tl-status').getByRole('status');
+/** The one live region of the status (rule 32), the same at every width. */
+const statusSlot = () => page.getByTestId('tl-status-live');
 const slider = () => page.getByRole('slider', { name: 'Date in the simulation' });
 
 function summary(project?: ProjectCard): ParcelSummary {
@@ -281,7 +282,7 @@ describe('TimelineMode', () => {
     await expect.element(statusSlot()).toHaveTextContent(UPDATING);
     // The explanation waits behind the status (rule 31, F12).
     await expect
-      .element(page.getByTestId('tl-status').getByRole('button', { name: UPDATING }))
+      .element(page.getByTestId('tl-status-line').getByRole('button', { name: UPDATING }))
       .toBeInTheDocument();
     expect(debug().stale).toBe(true);
     s.setLots({});
@@ -533,21 +534,61 @@ describe('TimelineMode', () => {
     }
   });
 
+  for (const [width, place] of [
+    [1280, 'line'],
+    [1600, 'header']
+  ] as const) {
+    it(`at ${width} px exactly one live region speaks the status; it shows in the ${place}`, async () => {
+      await page.viewport(width, 900);
+      await opened(5);
+      const partly = fillStatusText(viewOf([chunk(0, 6)], STATICS));
+      await expect.element(statusSlot()).toHaveTextContent(partly);
+      const speaking = [...document.querySelectorAll('[role="status"], [aria-live]')].filter(
+        (el) => el.textContent?.trim() === partly
+      );
+      expect(speaking).toHaveLength(1);
+      const header = page.getByTestId('tl-status');
+      const line = page.getByTestId('tl-status-line');
+      await expect.element(place === 'header' ? header : line).toBeVisible();
+      await expect.element(place === 'header' ? header : line).toHaveTextContent(partly);
+      await expect.element(place === 'header' ? line : header).not.toBeVisible();
+    });
+  }
+
+  it('below 2xl the line under the bar keeps its height as the status comes and goes', async () => {
+    const s = await opened(5);
+    const line = page.getByTestId('tl-status-line');
+    await expect.element(line).toBeVisible();
+    const filling = line.element().getBoundingClientRect().height;
+    expect(filling).toBeGreaterThanOrEqual(24);
+    emit(filledMsg(1, 6, LAST - 5));
+    await expect.poll(() => statusSlot().element().textContent?.trim()).toBe('');
+    expect(line.element().getBoundingClientRect().height).toBe(filling);
+    s.setPolicy(mk(protect(5)));
+    await expect.element(statusSlot()).toHaveTextContent(UPDATING);
+    expect(line.element().getBoundingClientRect().height).toBe(filling);
+    // Just under the header bar, above the map.
+    const header = page.getByTestId('header-status').element().parentElement!;
+    expect(line.element().getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      header.getBoundingClientRect().bottom - 0.5
+    );
+  });
+
   it('the live region holds only the status text; its explanation sits outside it', async () => {
     await page.viewport(390, 760);
     const s = await opened();
     s.setPolicy(mk(protect(5)));
     const live = statusSlot();
     await expect.element(live).toHaveTextContent(UPDATING);
-    const slot = page.getByTestId('tl-status').element();
+    const slot = page.getByTestId('tl-status-line').element();
     const before = slot.getBoundingClientRect();
-    await page.getByTestId('tl-status').getByRole('button', { name: UPDATING }).click();
+    await page.getByTestId('tl-status-line').getByRole('button', { name: UPDATING }).click();
     const tip = page.getByRole('tooltip');
     await expect.element(tip).toHaveTextContent(STALE_NOTE);
     expect(live.element().contains(tip.element())).toBe(false);
     expect(live.element().querySelector('button')).toBeNull();
     expect(live.element().textContent?.trim()).toBe(UPDATING);
-    // Open, it does not widen or deepen the header's slot.
+    // Open, it does not widen or deepen the line under the bar.
     const after = slot.getBoundingClientRect();
     expect(after.width).toBe(before.width);
     expect(after.height).toBe(before.height);

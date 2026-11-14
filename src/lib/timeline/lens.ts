@@ -49,8 +49,11 @@ function locate(doc: SimPolicy4, ref: SpanRef): { p: Policy; s: Span } | null {
   return p && s ? { p, s } : null;
 }
 
-/** The market terms the document's terms policies have in force on `day`, in document order. */
-function termsInForce(doc: SimPolicy4, day: Day): SimPolicy['funding']['terms'] {
+/**
+ * The market terms the document's terms policies have in force on `day`: every one that is on,
+ * merged in document order (a later policy's term wins), as the engine reads them.
+ */
+export function termsInForce(doc: SimPolicy4, day: Day): SimPolicy['funding']['terms'] {
   let terms: SimPolicy['funding']['terms'] = {};
   for (const p of doc.kinds.money) {
     if (p.where.tag !== 'terms') continue;
