@@ -338,6 +338,23 @@ describe('TimelineClient over the timeline host, delayed delivery', () => {
     client.dispose();
   });
 
+  it('a setPolicy then a rejected one before it settled: the first settles at its own rev', async () => {
+    const doc = withZoning(baseDoc(), protect(40, 200));
+    const { wk, rec, client, rev } = await editMidFill(doc, 20, 80);
+    const bad = client.setPolicy(withZoning(baseDoc(), unresolved()), {});
+    await finish(wk, rev);
+    expect(rec.got.filter((m) => m.type === 'error')).toEqual([
+      expect.objectContaining({ rev: bad, code: 'bad-request' })
+    ]);
+    // S14: the page's last accepted document is the first edit's; it gets its one refill
+    refillsAt(rec.got, bad, 0);
+    refillsAt(rec.got, rev, 1);
+    expect(rec.gaps).toEqual([]);
+    expect(rec.held()).toBe(rec.statics()!.lastIndex);
+    expect(rec.view()).toEqual(await fresh(doc));
+    client.dispose();
+  });
+
   it('a second open with posts of the first in flight: none of them is delivered', async () => {
     const wk = delayedWorker();
     const rec = recorder();

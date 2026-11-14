@@ -111,6 +111,19 @@ const painted = (from: number): Policy => ({
 
 const paintLotsTable = () => ({ [queryKey(customQuery(PAINT))]: paintLots });
 
+/**
+ * A zoning policy whose effect does not match its selector: it needs no lots, so `setPolicy` takes
+ * it, and the compiler rejects it (`LeverFormatError`) at month `from`.
+ */
+const mismatched = (from: number): Policy => ({
+  id: 'mismatched',
+  label: 'mismatched',
+  preset: null,
+  on: true,
+  where: { tag: 'category', category: 'newerThan' },
+  spans: [span(asOf, from, null, { tag: 'brushes', brushes: [] })]
+});
+
 function withZoning(doc: SimPolicy4, ...ps: Policy[]): SimPolicy4 {
   const out = structuredClone(doc);
   out.kinds.zoning.push(...ps);
@@ -556,6 +569,134 @@ describe('edits', () => {
     expect(now.owed).toBe(0);
     expect(plan!.copiedMonths()).toEqual([0]);
     expect(comp!.copiedMonths()).toEqual([0]);
+    r.runner.dispose();
+  });
+});
+
+describe('a rejected edit resumes the last accepted one (S14)', () => {
+  // R = 2 is still compiling or accepted-and-unsettled when R + 1 = 3 arrives and is rejected:
+  // at once (a brush query missing from `lots`) or by the compiler (an effect that does not match)
+  const cases = [
+    ['compiling', 'at once'],
+    ['compiling', 'by the compiler'],
+    ['accepted', 'at once'],
+    ['accepted', 'by the compiler']
+  ] as const;
+  for (const [state, how] of cases)
+    it(`R ${state}, R + 1 rejected ${how}: bad-request at R + 1, then compiled, refill and fill at R, equal to a fresh open of R`, async () => {
+      // 1 ms per clock read: an edit at fill month 120 takes several slices to be ready
+      const r = makeRunner(1, true);
+      r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+      await r.run(r.both(120));
+      const docR = withZoning(baseDoc(), protect(100, 197));
+      r.runner.setPolicy(2, docR, {});
+      if (state === 'compiling') {
+        await r.run(() => r.of('compiling').some((c) => c.rev === 2));
+        expect(r.runner.internals().pending).not.toBeNull();
+        expect(r.runner.rev).toBe(1);
+      } else {
+        await r.run(() => r.runner.rev === 2 && r.runner.ensembles().plan!.quiet);
+        expect(r.of('refill')).toEqual([]);
+      }
+      const bad =
+        how === 'at once'
+          ? withZoning(baseDoc(), painted(1))
+          : withZoning(baseDoc(), mismatched(1));
+      r.runner.setPolicy(3, bad, {});
+      await r.run(r.full(2));
+      expect(r.errors()).toEqual([expect.objectContaining({ rev: 3, code: 'bad-request' })]);
+      const errAt = r.posts.findIndex((m) => m.type === 'error');
+      expect(
+        r.posts.slice(errAt + 1).some((m) => 'rev' in m && m.rev === 3 && m.type !== 'compiling')
+      ).toBe(false);
+      expect(r.of('refill').map((m) => m.rev)).toEqual([2]);
+      const refill = settledAt(r.posts, 2);
+      expect(r.posts.indexOf(refill)).toBeGreaterThan(errAt);
+      if (state === 'compiling')
+        expect(r.posts.findIndex((m) => m.type === 'compiled' && m.rev === 2)).toBeGreaterThan(
+          errAt
+        );
+      expect(r.runner.rev).toBe(2);
+      expect(r.runner.internals().superseded).toBe(0);
+      expect(viewFrom(r.posts)).toEqual(await fresh(docR));
+      r.runner.dispose();
+    });
+
+  it('R superseded while compiling by R + 1 and R + 2, both rejected by the compiler: R is taken up again', async () => {
+    const r = makeRunner(1, true);
+    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    await r.run(r.both(120));
+    const docR = withZoning(baseDoc(), protect(100, 197));
+    r.runner.setPolicy(2, docR, {});
+    await r.run(() => r.of('compiling').some((c) => c.rev === 2));
+    r.runner.setPolicy(3, withZoning(baseDoc(), mismatched(1)), {});
+    r.runner.setPolicy(4, withZoning(baseDoc(), mismatched(2)), {});
+    expect(r.runner.internals().superseded).toBe(2);
+    await r.run(r.full(2));
+    expect(r.errors().map((e) => [e.rev, e.code])).toEqual([
+      [4, 'bad-request'],
+      [3, 'bad-request']
+    ]);
+    expect(r.of('refill').map((m) => m.rev)).toEqual([2]);
+    settledAt(r.posts, 2);
+    expect(viewFrom(r.posts)).toEqual(await fresh(docR));
+    r.runner.dispose();
+  });
+});
+
+describe('refill edge cases (S14)', () => {
+  it('an edit after a rejected open: one refill from 0 after its compiled', async () => {
+    const r = makeRunner();
+    r.runner.open(1, withZoning(baseDoc(), mismatched(1)), {}, WORLDS, MONTHS);
+    await r.run(() => r.errors().length > 0);
+    expect(r.errors()).toEqual([expect.objectContaining({ rev: 1, code: 'bad-request' })]);
+    r.runner.setPolicy(2, baseDoc(), {});
+    await r.run(r.full(2));
+    expect(r.errors()).toHaveLength(1);
+    expect(r.of('refill')).toEqual([{ type: 'refill', rev: 2, from: 0 }]);
+    settledAt(r.posts, 2, true);
+    expect(viewFrom(r.posts)).toEqual(await fresh(baseDoc()));
+    r.runner.dispose();
+  });
+
+  it('a kept edit on a whole window: one refill from the window length, no filled after it', async () => {
+    const r = makeRunner();
+    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    await r.run(r.full(1));
+    const statics = r.of('compiled').at(-1)!.statics;
+    const relabelled = baseDoc();
+    relabelled.kinds.permitting[0].label = 'renamed';
+    r.runner.setPolicy(2, relabelled, {});
+    await r.run(() => r.of('refill').length > 0);
+    // let every later task post what it would (the stream drains, then nothing is scheduled)
+    for (let k = 0; k < 1000 && (await r.clock.runNext()); k++);
+    expect(r.errors()).toEqual([]);
+    const refill = settledAt(r.posts, 2, true);
+    expect(refill.from).toBe(statics.lastIndex + 1);
+    expect(r.of('filled', r.posts.indexOf(refill))).toEqual([]);
+    expect(viewFrom(r.posts)).toEqual(await fresh(baseDoc()));
+    r.runner.dispose();
+  });
+
+  it('a second edit at the same rev: its refill waits for its own compiled', async () => {
+    // as the long-window restore above: the month-1 re-creation ends long before the compile
+    const months = 400;
+    const r = makeRunner(1, true);
+    r.runner.open(1, baseDoc(), {}, WORLDS, months);
+    await r.run(r.both(60));
+    const relabelled = baseDoc();
+    relabelled.kinds.permitting[0].label = 'renamed';
+    r.runner.setPolicy(2, relabelled, {});
+    await r.run(() => r.of('refill').some((m) => m.rev === 2));
+    const at = r.posts.length;
+    // the host passes an equal rev on (M5 ignores only an older one)
+    r.runner.setPolicy(2, withZoning(baseDoc(), protect(1, 200)), {});
+    await r.run(() => r.of('refill', at).length > 0 && r.of('compiled', at).length > 0);
+    const c = r.posts.findIndex((m, k) => k >= at && m.type === 'compiled');
+    const f = r.posts.findIndex((m, k) => k >= at && m.type === 'refill');
+    expect(c).toBeLessThan(f);
+    expect(r.posts.slice(at, f).some((m) => m.type === 'filled')).toBe(false);
+    expect(r.errors()).toEqual([]);
     r.runner.dispose();
   });
 });

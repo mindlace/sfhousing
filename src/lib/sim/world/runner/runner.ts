@@ -24,10 +24,13 @@
 // `'timeline'` and stops filling; the lookups (`viewFrame`, `card`) keep answering (rule 21).
 //
 // Edits (rules 12 to 17; D2, D4). `setPolicy` replaces any edit not yet accepted (nothing more is
-// posted for its `rev`) and starts the new plan compile and, unless `comparisonOf` gives the
-// same document and base (D4), the comparison's. While an edit is pending nothing steps: slices
-// run only its compiles, posting `compiling` at its `rev`. A `LeverFormatError` from them posts
-// `bad-request` at that `rev` and drops the edit; filling resumes under the timelines in use. The
+// posted for its `rev` unless the new one is rejected) and starts the new plan compile and, unless
+// `comparisonOf` gives the same document and base (D4), the comparison's. While an edit is pending
+// nothing steps: slices run only its compiles, posting `compiling` at its `rev`. A
+// `LeverFormatError` from them posts `bad-request` at that `rev` and drops the edit; the newest
+// edit it superseded (never rejected, so accepted as far as the page knows) is taken up again,
+// its compile started over (S14); with none, filling resumes under the timelines in use. A
+// document rejected at once in `setPolicy` leaves a pending edit pending. The
 // edit is accepted once each new timeline is ready through its ensemble's `steppedThrough` (or
 // complete): then, at once, for each recompiled side, the gate closes (`setStatics(null)`, D2),
 // and `m = firstDifference(old, new)` keeps the ensemble (null or past `steppedThrough`) or
@@ -40,9 +43,11 @@
 // min(m) - 1 when a side restored (the posted mark drops to just before it), else from the first
 // calendar month not posted yet (it withdraws nothing). No `filled` goes out between the
 // acceptance and that `refill`. An edit accepted and superseded before its `refill` gets none of
-// its own: the next accepted edit's (a higher rev) answers both. An edit dropped before acceptance
-// gets nothing; a later accepted edit's `refill` answers it. Map flushes go on while an edit
-// compiles (world 1 waits).
+// its own: the next accepted edit's (a higher rev) answers both; so does an edit superseded before
+// acceptance. So after a rejected edit the timelines are the last accepted `setPolicy`'s, and it
+// gets its `refill` at its own rev. A throw (rule 21) after an acceptance and before the `refill`
+// stops filling: that edit gets no `refill`; the next accepted edit's or an open settles the page.
+// Map flushes go on while an edit compiles (world 1 waits).
 // `setPolicy` rejects at once a document whose queries (`queriesOf4`, its own or its
 // comparison's) are not all in `lots`.
 //
@@ -158,6 +163,8 @@ export interface RunnerInternals {
   refillAt: number | null;
   /** An accepted edit's `refill` is not posted yet. */
   refillDue: boolean;
+  /** Superseded edits that a rejection would take up again. */
+  superseded: number;
   /** Owed compile units. */
   owed: number;
   /** The permitting last posted in `lookups` (D10), or null. */
@@ -225,6 +232,15 @@ interface Edit {
   /** Null: the comparison does not change (D4). */
   comp: Compiling | null;
   compKey: string;
+  /** Its document, to take it up again should the edit that superseded it be rejected (S14). */
+  doc: EditDoc;
+}
+
+/** A `setPolicy`'s document. */
+interface EditDoc {
+  rev: Rev;
+  policy: SimPolicy4;
+  lots: Record<string, ParcelId[]>;
 }
 
 /** What `comparisonOf` gives, as D4 compares it. */
@@ -283,6 +299,11 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   /** An edit not yet accepted (rule 12). */
   let edit: Edit | null = null;
+  /**
+   * The documents of the edits superseded before acceptance since the last accepted one, oldest
+   * first, none rejected: when the edit pending is rejected, the newest is taken up again (S14).
+   */
+  const superseded: EditDoc[] = [];
   /** An accepted edit's `refill` is not posted yet (S14: one answers every accepted edit). */
   let refillDue = false;
   /** The lowest first difference of the restores whose `refill` is not posted yet (rule 14). */
@@ -459,6 +480,66 @@ export function createRunner(deps: RunnerDeps): Runner {
     return c.timeline.readyThrough() >= Math.min(months, e.steppedThrough);
   }
 
+  /**
+   * A pending edit of `d` (its compiles created, none stepped). Throws `LeverFormatError` for a
+   * document rejected at once, anything else for a failure (M4).
+   */
+  function editOf(d: EditDoc): Edit {
+    const c = comparisonOf(d.policy);
+    const compKey = keyOf(c);
+    // every query either document needs is in `lots` (S14): else rejected now, not at the
+    // month that first needs it, after the old timelines are gone (the late path stays)
+    missingQuery(d.policy, d.lots);
+    missingQuery(c.doc, d.lots);
+    const compiling = (base: 'plan' | 'preFzp', doc: SimPolicy4): Compiling => ({
+      base,
+      compile: compileTimeline(doc, d.lots, ctx!, base),
+      timeline: null,
+      done: false,
+      stalled: false
+    });
+    return {
+      rev: d.rev,
+      plan: compiling('plan', d.policy),
+      // D4; after a throw both sides are compiled again
+      comp: broken || compKey !== comp!.key ? compiling(c.base, c.doc) : null,
+      compKey,
+      doc: d
+    };
+  }
+
+  /** No edit pending, none to take up again (rule 21, an accepted edit). */
+  function dropEdits(): void {
+    edit = null;
+    superseded.length = 0;
+  }
+
+  /**
+   * The edit pending was rejected: the newest superseded edit, which the page counts as accepted
+   * (it got no `bad-request`), is taken up again, so the timelines in use end as the last accepted
+   * `setPolicy`'s (S14). Its compile starts over.
+   */
+  function takeUpSuperseded(): void {
+    while (edit === null && superseded.length > 0) {
+      const d = superseded.pop()!;
+      try {
+        edit = editOf(d);
+      } catch (e) {
+        const reject = e instanceof LeverFormatError;
+        post({
+          type: 'error',
+          rev: d.rev,
+          code: reject ? 'bad-request' : 'timeline',
+          message: String(e)
+        });
+        if (!reject) {
+          failed = broken = true;
+          dropEdits();
+        }
+      }
+    }
+  }
+
   /** One step of the edit's compile `c`; a rejected document drops the edit (rule 12). */
   function editUnit(c: Compiling): void {
     const ed = edit!;
@@ -468,6 +549,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!(e instanceof LeverFormatError)) throw e;
       edit = null;
       post({ type: 'error', rev: ed.rev, code: 'bad-request', message: String(e) });
+      takeUpSuperseded();
       return;
     }
     if (readyFor(ed.plan, plan!) && (ed.comp === null || readyFor(ed.comp, comp!))) accept();
@@ -476,8 +558,10 @@ export function createRunner(deps: RunnerDeps): Runner {
   /** The edit becomes the timelines in use (rules 13 to 17, D2, D4). */
   function accept(): void {
     const ed = edit!;
-    edit = null;
+    dropEdits();
     rev = ed.rev;
+    // S14: the `compiled` a `refill` waits for is this rev's, even when an earlier one had this rev
+    compiledRev = null;
     failed = false;
     const fresh = broken;
     broken = false;
@@ -1043,7 +1127,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       }
       // an edit's compile that throws other than `LeverFormatError`: at the edit's rev (D11)
       const ed = edit;
-      edit = null;
+      dropEdits();
       if (e instanceof Rejected) fail(e.reason, 'bad-request');
       else fail(e, 'timeline', ed?.rev ?? rev);
       return;
@@ -1101,6 +1185,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     failed = false;
     broken = false;
     refillDue = edited;
+    compiledRev = null;
     kick();
   }
 
@@ -1135,38 +1220,19 @@ export function createRunner(deps: RunnerDeps): Runner {
     },
     setPolicy(r, policy, lots) {
       if (disposed || ctx === null) return;
-      // rule 12: replaces an edit not yet accepted; nothing more is posted for its rev
-      edit = null;
       if (plan === null || comp === null) {
         // the open's document was rejected: this one opens
+        dropEdits();
         rev = r;
         return start(policy, lots, true);
       }
       let ed: Edit;
       try {
         // M4: inside the try, so a throw is answered at this rev
-        const c = comparisonOf(policy);
-        const compKey = keyOf(c);
-        // every query either document needs is in `lots` (S14): else rejected now, not at the
-        // month that first needs it, after the old timelines are gone (the late path stays)
-        missingQuery(policy, lots);
-        missingQuery(c.doc, lots);
-        const compiling = (base: 'plan' | 'preFzp', doc: SimPolicy4): Compiling => ({
-          base,
-          compile: compileTimeline(doc, lots, ctx!, base),
-          timeline: null,
-          done: false,
-          stalled: false
-        });
-        ed = {
-          rev: r,
-          plan: compiling('plan', policy),
-          // D4; after a throw both sides are compiled again
-          comp: broken || compKey !== comp.key ? compiling(c.base, c.doc) : null,
-          compKey
-        };
+        ed = editOf({ rev: r, policy, lots });
       } catch (e) {
-        // rule 12: the timelines in use go on filling
+        // rule 12: the timelines in use go on filling; S14: a rejected document leaves the edit
+        // pending as it is (the page's last accepted document)
         const reject = e instanceof LeverFormatError;
         post({
           type: 'error',
@@ -1174,9 +1240,15 @@ export function createRunner(deps: RunnerDeps): Runner {
           code: reject ? 'bad-request' : 'timeline',
           message: String(e)
         });
-        if (!reject) failed = broken = true;
+        if (!reject) {
+          failed = broken = true;
+          dropEdits();
+        }
         return kick();
       }
+      // rule 12: replaces an edit not yet accepted; nothing more is posted for its rev unless this
+      // one is rejected, when it is taken up again (S14)
+      if (edit !== null) superseded.push(edit.doc);
       edit = ed;
       kick();
     },
@@ -1251,6 +1323,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         pending: edit && [edit.plan.compile, ...(edit.comp ? [edit.comp.compile] : [])],
         refillAt,
         refillDue,
+        superseded: superseded.length,
         owed: owed.length,
         lookedAt
       };

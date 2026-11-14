@@ -61,13 +61,18 @@ export type OpenTimelineRequest = {
  * is the first calendar month not final at the first changed model month - 1; when it withdraws
  * nothing (kept), `from` is the first calendar month not yet posted (the window length when the
  * window is whole). An edit taken before the dataset loaded opens the session at its `rev` and is
- * answered the same way (`from` 0, after its `compiled`). Superseded edits: an edit at `rev` R
- * replaced by a later one before its `refill` went out (pending or already accepted) gets no
- * `refill` of its own; the later accepted edit's `refill`, at a `rev` above R, answers it. So the
- * settle signal for edit R is a `refill` with `rev` >= R: the page treats its results as stale
- * from edit R until one has arrived and the filled months reach the playhead. (If every later edit
- * is rejected, none comes: the timelines in use are still an older edit's, which is what stale
- * says.)
+ * answered the same way (`from` 0, after its `compiled`). An edit is accepted unless answered
+ * `bad-request`. After a rejected edit the worker's timelines are the last accepted `setPolicy`'s:
+ * an edit at `rev` R replaced by a later one before its `refill` went out (still compiling, or
+ * already in use) is never abandoned until a later edit is accepted; if the later ones are all
+ * rejected, R gets its `compiled` (when still compiling) and its one `refill` at R. Otherwise
+ * the later accepted edit's `refill`, at a `rev` above R, answers it. So the settle signal for
+ * edit R is a `refill` with `rev` >= R: the page treats its results as stale from edit R until
+ * one has arrived and the filled months reach the playhead. An edit whose timelines throw after
+ * acceptance (`error` `timeline`, filling stops) gets no `refill`: the page stays stale until the
+ * next accepted edit or open. Known limit: the comparison's compile can still reject the document
+ * after acceptance (`error` `bad-request` at R, filling stops), and that can come after R's
+ * `refill`.
  */
 export type SetPolicyRequest = {
   type: 'setPolicy';
