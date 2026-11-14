@@ -5,10 +5,12 @@ import { createPlaybackHost } from './lesscars/playback-host';
 import { createWorkerRouter } from './router';
 import { createScenarioHost } from './scenario/scenario-host';
 import type { WorkerRequest, WorkerResponse } from './scenario/types';
+import type { TimelineHostResponse, TimelineRequest } from './timeline-protocol';
+import { createTimelineHost } from './world/host';
 
 interface Scope {
-  postMessage(msg: WorkerResponse, transfer: Transferable[]): void;
-  onmessage: ((e: MessageEvent<WorkerRequest>) => void) | null;
+  postMessage(msg: WorkerResponse | TimelineHostResponse, transfer: Transferable[]): void;
+  onmessage: ((e: MessageEvent<WorkerRequest | TimelineRequest>) => void) | null;
 }
 const scope = self as unknown as Scope;
 // Conductor ruling: production keeps 1/4/16 s; only the e2e build shortens it.
@@ -24,6 +26,16 @@ const router = createWorkerRouter({
   }),
   createScenario: () =>
     createScenarioHost({
+      fetch: (url) => fetch(url),
+      fetchBytes: (url) => fetch(url),
+      post: (msg, transfer) => scope.postMessage(msg, transfer),
+      setTimeout: (fn, ms) => setTimeout(fn, ms),
+      clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+      now: () => performance.now(),
+      retryDelaysMs
+    }),
+  createTimeline: () =>
+    createTimelineHost({
       fetch: (url) => fetch(url),
       fetchBytes: (url) => fetch(url),
       post: (msg, transfer) => scope.postMessage(msg, transfer),

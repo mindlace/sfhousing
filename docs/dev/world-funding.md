@@ -12,19 +12,19 @@ is imported, never changed; rules defined by unexported code (`segValue`, `fundi
 
 ## Files
 
-| File             | What                                                                                                                                       |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `system.ts`      | `createFundingSystem()`: the hook methods, each a thin call into the files below.                                                          |
-| `columns.ts`     | `FundLine`, `FundPools`: the line, spell and shadow tables, the pool counters and money rows; `initFunding`, `fundOf`, row helpers.        |
-| `clocks.ts`      | The market and affordable funded clocks of a free lot (rules 2 to 5, 7), the size in a view (`sizeIn`). Nothing stored.                    |
-| `apply.ts`       | `planLotMonth` (the hook's `planLot`), `applyLots`, `joinLine` (rule 9 order), `remakeRow` (rule 17), `leaveLine` (rule 8), `fundableAny`. |
-| `serve.ts`       | `serveLine` (rule 10, grouped by default), `awardDay` (rule 11, T17), `fundedStartOf`; `awardRow` is the one award site.                   |
-| `pools.ts`       | `moneyIn` (rule 12), `commitAward`, `moneyOnEvent` (rule 13), `availableOf`.                                                               |
-| `policy.ts`      | `policyChanged` (rules 17 to 19): re-make or lapse each waiting row, respell, plan again.                                                  |
-| `shadow.ts`      | `shadowAward`, `stepShadows` (rule 20), then the line's (amortized) compaction.                                                            |
-| `frame-money.ts` | `frameMoney` (one frame's offers, bundles and money key, memoised per timeline and frame id), `sameMoney`.                                 |
-| `line-index.ts`  | Indices of the line kept outside the world (by lot, by award group), keyed by `FundLine` in a `WeakMap`; `compact` (amortized).            |
-| `test/`          | `fixtures.ts` (browser-safe: mini city money, `runFunded`, `moneyTimeline`, `benchMoney`), `cities.node.ts` (Node), `identities.ts`.       |
+| File             | What                                                                                                                                                         |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `system.ts`      | `createFundingSystem()`: the hook methods, each a thin call into the files below.                                                                            |
+| `columns.ts`     | `FundLine`, `FundPools`: the line, spell and shadow tables, the pool counters and money rows; `initFunding`, `fundOf`, row helpers.                          |
+| `clocks.ts`      | The market and affordable funded clocks of a free lot (rules 2 to 5, 7), the size in a view (`sizeIn`). Nothing stored.                                      |
+| `apply.ts`       | `planLotMonth` (the hook's `planLot`), `applyLots`, `joinLine` (rule 9 order), `remakeRow` (rule 17), `leaveLine` (rule 8), `fundableAny`, the rowless memo. |
+| `serve.ts`       | `serveLine` (rule 10, grouped by default), `awardDay` (rule 11, T17), `fundedStartOf`; `awardRow` is the one award site.                                     |
+| `pools.ts`       | `moneyIn` (rule 12), `commitAward`, `moneyOnEvent` (rule 13), `availableOf`.                                                                                 |
+| `policy.ts`      | `policyChanged` (rules 17 to 19): re-make or lapse each waiting row, respell, plan again.                                                                    |
+| `shadow.ts`      | `shadowAward`, `stepShadows` (rule 20), then the line's (amortized) compaction.                                                                              |
+| `frame-money.ts` | `frameMoney` (one frame's offers, bundles and money key, memoised per timeline and frame id), `sameMoney`.                                                   |
+| `line-index.ts`  | Indices of the line kept outside the world (by lot, by award group), keyed by `FundLine` in a `WeakMap`; `compact` (amortized).                              |
+| `test/`          | `fixtures.ts` (browser-safe: mini city money, `runFunded`, `moneyTimeline`, `benchMoney`), `cities.node.ts` (Node), `identities.ts`.                         |
 
 ## The columns
 
@@ -199,13 +199,98 @@ reads (the segments `kindClock` walks) has money offering the kind, gives the lo
 today's `eligibleOf` (`funded.ts:232-256`) per frame, per lot, on offered programmes. Exact,
 since such a clock has no day and callers read only the day; `eligibility.spec.ts` holds it.
 
+### Funded planning (the rowless memo, `bundleOf`, no per-call closures)
+
+Most of a funded `planDue` or replan month was `fundableAny` on lots no frame can fund (live
+`2026-11-10-6ee5a23d`: 151,810 of 154,391 `planLot` calls in one `planDue`). Three changes, no
+change to world-core's hook, results identical:
+
+- **The rowless memo** (`apply.ts`, `rowlessBits`). For a free lot with **no lot row** (free since
+  the dataset date, attempt 0), `fundableAny(ctx, asOf, kind, lot)` reads only the timeline, the
+  month and the lot's static data: the frame of `first = min(monthOfDay(asOf, asOf + 1), month)`
+  and of each change in `(first, month]` (their view's chance and yields, their money's offers and
+  least `minHomes`). No draw, no seed, nothing of the world: the same answer in every world of the
+  timeline. **Keyed on** the `PolicyTimeline` object (a `WeakMap`), then on `(asOf, lot count,
+first, last)`, `last` being the latest change in `(first, month]`: those fix the frames read. A
+  `Uint8Array` per key, a byte per lot (asked, market fundable, affordable fundable), filled
+  lazily. **Invalidated by** nothing within a timeline's lifetime: its frames up to the ready
+  month never change; a new timeline object gets a new memo. It lives outside the world, so a kept
+  copy (`structuredClone(world)`) never carries it. **A lot with a row never reads it**: its own
+  free day and attempt (`r`, `k`) and its existing homes (demolished) differ, so it takes the path
+  above unchanged. A rowless lot respelled after a lapse (rule 18) starts later; the frames
+  `fundableAny` reads from that start are a subset of those it reads from `asOf`, so the memo is
+  read for it only as "not fundable" and "fundable" is checked again from the respelled start.
+  **Memory**: a byte per lot per (first month, last change read) met; live, a timeline with no
+  change 155,020 bytes, with one change 310,040 (2 tables).
+- **`bundleOf`** (`frame-money.ts`) answers from an array per kind indexed by units, capped at the
+  largest `minHomes` offered (rounded up), instead of a string-keyed map; the same canonical
+  arrays.
+- **No per-call closures** in `fundableAny`, `clocksOf`, `spellsOf` and `kindClock`: a toolchain
+  with esbuild `keepNames` (tsx) wraps each closure made per call in `__name`, about 3.4 times the
+  cost of the bundled code.
+
+`memo.spec.ts` holds the results: events and ledger (an FNV hash) equal the hashes recorded from
+the build before the change, memo on and off, on synthCity seeds 1 and 2 (baseline money and the
+bench set) and live seeds 1 to 3 (`SFH_WORLD_LIVE`), each `createWorld`, `planDue` through 480
+and 130 steps with every free lot replanned at month 120. On the mini city it runs a money
+timeline with a programme switched off and on, and a compiled timeline (`compileTimeline`) whose
+money changes three times and whose zoning changes at month 30 (a painted policy touching lots):
+events, ledger and world equal memo on and off, every memo answer agrees with `fundableAny`, and
+lots with a row and respelled rowless lots are both met. The 200-seed referee gives the table
+below unchanged.
+
+2026-11-13, quiet (lock held), one process per row, Node v24 on an Apple M5 Pro; "bundle" is an
+esbuild bundle without `keepNames` (as a Vite build); "vitest" the perf project. The change month
+is month 120 after a market step (+0.25 from month 120: every free lot replanned).
+
+| Measurement                                            | bundle before | bundle after | vitest before | vitest after |
+| ------------------------------------------------------ | ------------- | ------------ | ------------- | ------------ |
+| live, funded `planDue` per world, median ms            | 15.0          | 5.8          | 27.6          | 8.0          |
+| live, 96 worlds' `planDue`, ms                         | 1,484         | 591          | 2,682         | 799          |
+| live, change month per world, median ms (48 worlds)    | 26.8          | 6.7          | 40.6          | 8.7          |
+| synthCity baseline, world-month mean µs (bar 90)       | 75.8          | 79.3         | 87.1          | 83.1         |
+| synthCity bench set, `planDue` per world, median ms    | 109.3         | 72.8         | 158.3         | 120.4        |
+| synthCity bench set, change month per world, median ms | 157.1         | 120.5        | 215.8         | 172.0        |
+| synthCity bench set, world-month mean µs               | 222.0         | 208.3        | 272.6         | 256.1        |
+
+With the bench set (rich money: most lots fundable for both kinds) the memo has little to skip;
+`planDue` (72.8 ms) and the change month (120.5 ms) stay over a 50 ms unit from the bundle. The
+`StepCtx.through` bound (the planning proposal) is what would cut them further; it is a change to
+world-core's hook, not taken here.
+
+### Memory per world
+
+What funding keeps outside a world is per **timeline object**: the rowless memo and `frameMoney`
+(`WeakMap`s keyed on the `PolicyTimeline`). The line index is per world (keyed on its line), the
+size table per view. So a host shares one timeline object across the worlds of an ensemble and one
+funding system may serve them all; a timeline wrapped per world gets its own caches (on live about
+1.3 MB per world, most of it outside funding).
+
+Live `2026-11-10-6ee5a23d`, `DEFAULT_POLICY4` compiled (no change in 480 months), worlds stepped to
+month 480 on one timeline, heap plus array buffers after a forced GC, per world: 4.25 to 4.50 MB
+before the memo and after it alike (1, 8 and 48 worlds; world 2.2 MB of typed arrays, due list
+0.6 MB). The memo adds 155,020 bytes per timeline, nothing per world.
+
+A rise from +428 MB to +701 MB in ensemble-runner's measurement (96 worlds, no copies kept) was not
+the memo: the script's last dropped copy (`structuredClone` of every world at month 480) stayed
+reachable from a dead local in the measuring function, depending on how V8 compiled it. Both builds
+give either figure from run to run; with the copy taken in a function of its own both give
++427.5 to +427.7 MB every run.
+
+`retained.spec.ts` guards it: six worlds on one timeline, each with its own funding system, leave
+the memo's tables and `frameMoney`'s frames as the first world left them, within a table of a byte
+per lot per (first month, last change read); a world and its due list hold the same typed-array
+bytes with the memo on and off.
+
 ## Tests
 
 All in `src/lib/sim/world/funding/`. Server project (signoff) unless noted.
 
 - **Units**: `columns`, `clocks`, `frame-money` (`sameMoney` agrees with `policy/money.ts`),
   `apply`, `serve` (line order, award day, the done-lot guard), `pools` (rule 12, money events),
-  `policy` (rules 5, 17 to 19, off pools, raised arrivals), `shadow`, `compaction`, `eligibility`.
+  `policy` (rules 5, 17 to 19, off pools, raised arrivals), `shadow`, `compaction`, `eligibility`,
+  `memo` (the rowless memo and `bundleOf`: results as recorded, memo on and off; above),
+  `retained` (caches outside the world per timeline, not per world; above).
 - **End to end** `funded.spec.ts`: E1 to E7 after every step on 200 random finances (mini city),
   rule 21, rule 14, rule 16, `structuredClone`, a permuted lot table, the money series I1 to I6.
 - **Remedies** `remedies.spec.ts`: grouped serving equals the direct scan (events, ledger, world),
@@ -235,7 +320,8 @@ all four tolerances. For the bench funding set, awards are printed and held only
 their recorded ratios (below); net homes, net sd and funded homes are held to the tolerances.
 
 Run of 2026-11-13 (synthCity; live `2026-11-10-6ee5a23d`; after the award-day fix and the rule 10
-hold of money returned during the scan); "r" is
+hold of money returned during the scan; re-run after the rowless memo with every number
+identical); "r" is
 |new − old| / old:
 
 | Case                | Year | net new  | net sd  | net old  | old sd  | mean r | sd r  | awards new | awards old | aw r  | funded new | funded old | fu r  |

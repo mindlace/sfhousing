@@ -9,6 +9,7 @@ import type { ProjectKind } from '$lib/timelapse/types';
 import { lotRow } from '../columns';
 import { lotEntity } from '../rates';
 import { monthOfDay } from '../months';
+import type { PolicyTimeline } from '../policy/frame';
 import { NO_DAY, type StepCtx, type World } from '../types';
 import { kindClock, sizeIn, type KindClock, type Spell } from './clocks';
 import { frameMoney, sameMoney, type FrameMoney } from './frame-money';
@@ -53,6 +54,20 @@ function waiting(line: FundLine | null, lot: number, kind: number): boolean {
   return line !== null && isWaiting(line, lot, kind);
 }
 
+/** One kind's spell of attempt `k` of free `lot` (free since `r`, unless `line` holds a respell). */
+function spellFor(
+  line: FundLine | null,
+  lot: number,
+  kind: number,
+  k: number,
+  stream: number,
+  r: number,
+  existing: number
+): Spell {
+  const own = line === null ? NO_DAY : spellOf(line, lot, kind, k);
+  return { lot, k, stream, r: own === NO_DAY ? r : own, existing };
+}
+
 /** The attempt of free lot `lot` and each kind's spell start (a respelled one from `spellOf`). */
 export function spellsOf(ctx: StepCtx, lot: number): { market: Spell; affordable: Spell } {
   const { world, statics } = ctx;
@@ -63,18 +78,18 @@ export function spellsOf(ctx: StepCtx, lot: number): { market: Spell; affordable
   const existing = i >= 0 && l.demolished[i] === 1 ? 0 : ctx.frame.view.parcels.existingUnits[lot];
   const stream = streamOf(seedHash(ctx.seed), lotEntity(statics, lot), k);
   const line = lineOf(world);
-  const spell = (kind: number): Spell => {
-    const own = line === null ? NO_DAY : spellOf(line, lot, kind, k);
-    return { lot, k, stream, r: own === NO_DAY ? r : own, existing };
+  return {
+    market: spellFor(line, lot, KIND_MARKET, k, stream, r, existing),
+    affordable: spellFor(line, lot, KIND_AFFORDABLE, k, stream, r, existing)
   };
-  return { market: spell(KIND_MARKET), affordable: spell(KIND_AFFORDABLE) };
 }
 
 /**
  * Test seams: `skip` false turns off the per-lot part of `fundableAny` (the offer check stays);
- * `early` false builds the lot's spells before the eligibility check.
+ * `early` false builds the lot's spells before the eligibility check; `memo` false turns off the
+ * eligibility memo for lots with no row (`rowlessBits`).
  */
-export const ELIGIBILITY = { skip: true, early: true };
+export const ELIGIBILITY = { skip: true, early: true, memo: true };
 
 /** The most homes any fill level gives `lot` in `parcels` (the largest size a SIZE draw can give). */
 function topYield(parcels: ScenarioParcels, lot: number): number {
@@ -97,22 +112,145 @@ function topYield(parcels: ScenarioParcels, lot: number): number {
 export function fundableAny(ctx: StepCtx, r: number, kind: ProjectKind, lot: number): boolean {
   const { timeline, month } = ctx;
   const first = Math.min(monthOfDay(ctx.statics.asOf, r + 1), month);
-  const can = (m: number): boolean => {
-    const g = timeline.frameAt(m);
-    if (g.finance === null) return false;
-    const fm = frameMoney(timeline, g);
-    if (fm.offered[kind].length === 0) return false;
-    if (!ELIGIBILITY.skip) return true;
-    if (g.view.pre.logit[lot] === -Infinity) return false;
-    return topYield(g.view.parcels, lot) >= fm.least[kind];
-  };
-  if (can(first)) return true;
+  if (canFund(timeline, first, kind, lot)) return true;
   for (const c of timeline.changes()) {
     if (c <= first) continue;
     if (c > month) break;
-    if (can(c)) return true;
+    if (canFund(timeline, c, kind, lot)) return true;
   }
   return false;
+}
+
+/** `fundableAny`'s test on the frame of model month `m`. */
+function canFund(timeline: PolicyTimeline, m: number, kind: ProjectKind, lot: number): boolean {
+  const g = timeline.frameAt(m);
+  if (g.finance === null) return false;
+  const fm = frameMoney(timeline, g);
+  if (fm.offered[kind].length === 0) return false;
+  if (!ELIGIBILITY.skip) return true;
+  if (g.view.pre.logit[lot] === -Infinity) return false;
+  return topYield(g.view.parcels, lot) >= fm.least[kind];
+}
+
+// ---- The eligibility memo for lots with no row ----
+//
+// For a free lot with no lot row (free since the dataset date on attempt 0), `fundableAny(ctx,
+// asOf, kind, lot)` reads only the timeline, the month and the lot's static data: the frame of
+// month `first = min(monthOfDay(asOf, asOf + 1), month)` and of each change `c` with
+// `first < c <= month` (their view's chance and yields, their money's offers and least
+// `minHomes`). It reads no draw, no seed and nothing of the world, so its answer is the same for
+// every world of the timeline: it is memoised outside the world, in a `WeakMap` keyed on the
+// `PolicyTimeline` object, then on `(asOf, lot count, first, last)`, `last` being the latest change
+// in `(first, month]` (or `first`): those fix the frames read. One `Uint8Array` per key, a byte
+// per lot, filled lazily (0 = not yet asked). Nothing invalidates it within a timeline's lifetime:
+// a timeline's frames up to its ready month never change, so neither does an answer; a new
+// timeline object gets a new memo, and an old one's memo goes with it. It is not in the world, so
+// a kept copy (`structuredClone(world)`) never carries it.
+//
+// Only lots with no row read it. A lot with a row has its own free day and attempt (`r`, `k`), may
+// be demolished (its existing homes differ) and is planned through the path below unchanged. A
+// rowless lot whose kind was respelled (`spellOf`, after a lapse) has a later spell start `r'`: the
+// frames `fundableAny` reads from `r'` are a subset of those it reads from `asOf` (the frame of its
+// first month is the frame of `first` or of a change in `(first, month]`), so "not fundable from
+// `asOf`" implies "not fundable from `r'`", and the memo is read only that way for it; "fundable
+// from `asOf`" is checked again from `r'`.
+
+/** Memo bits: asked, then fundable from the dataset date for the market / affordable kind. */
+const ASKED = 1;
+const FUNDABLE_MARKET = 2;
+const FUNDABLE_AFFORDABLE = 4;
+const FUNDABLE = FUNDABLE_MARKET | FUNDABLE_AFFORDABLE;
+
+interface RowlessMemo {
+  /** One table per `asOf|lots|first|last`, a byte per lot. */
+  tables: Map<string, Uint8Array>;
+  /** The table of the last month asked (a planning pass or a step asks one month many times). */
+  month: number;
+  asOf: number;
+  lots: number;
+  table: Uint8Array | null;
+}
+
+const rowlessMemo = new WeakMap<PolicyTimeline, RowlessMemo>();
+
+/** The memo table of `ctx.month` on `ctx.timeline`. */
+function rowlessTable(ctx: StepCtx): Uint8Array {
+  const { timeline, month } = ctx;
+  const asOf = ctx.statics.asOf;
+  const lots = ctx.statics.parcelId.length;
+  let memo = rowlessMemo.get(timeline);
+  if (memo === undefined) {
+    memo = { tables: new Map(), month: 0, asOf: 0, lots: 0, table: null };
+    rowlessMemo.set(timeline, memo);
+  }
+  if (memo.table !== null && memo.month === month && memo.asOf === asOf && memo.lots === lots)
+    return memo.table;
+  const first = Math.min(monthOfDay(asOf, asOf + 1), month);
+  let last = first;
+  for (const c of timeline.changes()) {
+    if (c <= first) continue;
+    if (c > month) break;
+    last = c;
+  }
+  const key = `${asOf}|${lots}|${first}|${last}`;
+  let table = memo.tables.get(key);
+  if (table === undefined) {
+    table = new Uint8Array(lots);
+    memo.tables.set(key, table);
+  }
+  memo.month = month;
+  memo.asOf = asOf;
+  memo.lots = lots;
+  memo.table = table;
+  return table;
+}
+
+/**
+ * `fundableAny(ctx, asOf, kind, lot)` of both kinds as memo bits (`ASKED` set; 2 market, 4
+ * affordable), memoised. Only for a lot with no row.
+ */
+export function rowlessBits(ctx: StepCtx, lot: number): number {
+  const table = rowlessTable(ctx);
+  let bits = table[lot];
+  if (bits === 0) {
+    const asOf = ctx.statics.asOf;
+    bits = ASKED;
+    if (fundableAny(ctx, asOf, 'market', lot)) bits |= FUNDABLE_MARKET;
+    if (fundableAny(ctx, asOf, 'affordable', lot)) bits |= FUNDABLE_AFFORDABLE;
+    table[lot] = bits;
+  }
+  return bits;
+}
+
+/** The memo's tables for `timeline` and their bytes (a byte per lot per table). */
+export function rowlessMemoSize(timeline: PolicyTimeline): { tables: number; bytes: number } {
+  const memo = rowlessMemo.get(timeline);
+  let bytes = 0;
+  if (memo !== undefined) for (const t of memo.tables.values()) bytes += t.byteLength;
+  return { tables: memo === undefined ? 0 : memo.tables.size, bytes };
+}
+
+/**
+ * Whether `kind` of free `lot` (attempt `k`, row free since `r0`) needs a clock: not waiting and
+ * fundable from its spell start (`fundableAny`). `bits` is the rowless memo's answer (0 when the
+ * lot has a row or the memo is off).
+ */
+function needsClock(
+  ctx: StepCtx,
+  line: FundLine | null,
+  lot: number,
+  kind: ProjectKind,
+  r0: number,
+  k: number,
+  bits: number
+): boolean {
+  const code = CODE[kind];
+  if (waiting(line, lot, code)) return false;
+  const bit = kind === 'market' ? FUNDABLE_MARKET : FUNDABLE_AFFORDABLE;
+  if (bits !== 0 && (bits & bit) === 0) return false;
+  const own = line === null ? NO_DAY : spellOf(line, lot, code, k);
+  if (own === NO_DAY && bits !== 0) return true;
+  return fundableAny(ctx, own === NO_DAY ? r0 : own, kind, lot);
 }
 
 /**
@@ -123,30 +261,34 @@ function clocksOf(ctx: StepCtx, lot: number, line: FundLine | null): readonly (K
   if (!ELIGIBILITY.early) {
     const spells = spellsOf(ctx, lot);
     const sh = seedHash(ctx.seed);
-    return KINDS.map((kind) =>
-      waiting(line, lot, CODE[kind]) || !fundableAny(ctx, spells[kind].r, kind, lot)
-        ? null
-        : kindClock(ctx.statics, ctx.timeline, ctx.month, sh, spells[kind], kind)
-    );
+    const out: (KindClock | null)[] = [null, null];
+    for (let j = 0; j < KINDS.length; j++) {
+      const kind = KINDS[j];
+      if (waiting(line, lot, CODE[kind]) || !fundableAny(ctx, spells[kind].r, kind, lot)) continue;
+      out[j] = kindClock(ctx.statics, ctx.timeline, ctx.month, sh, spells[kind], kind);
+    }
+    return out;
   }
   // Eligibility first, on each kind's spell start alone (the `r` `spellsOf` gives, without the
-  // stream): a lot no frame can fund for either kind costs no spells and no stream.
+  // stream): a lot no frame can fund for either kind costs no spells and no stream. A lot with no
+  // row reads the memo first.
   const l = ctx.world.lots;
   const i = lotRow(l, lot);
+  const bits = i < 0 && ELIGIBILITY.memo && ELIGIBILITY.skip ? rowlessBits(ctx, lot) : 0;
+  if (bits !== 0 && (bits & FUNDABLE) === 0) return NO_CLOCKS;
   const r0 = i < 0 ? ctx.statics.asOf : l.r[i];
   const k = i < 0 ? 0 : l.k[i];
-  const need = KINDS.map((kind) => {
-    const code = CODE[kind];
-    if (waiting(line, lot, code)) return false;
-    const own = line === null ? NO_DAY : spellOf(line, lot, code, k);
-    return fundableAny(ctx, own === NO_DAY ? r0 : own, kind, lot);
-  });
-  if (!need[0] && !need[1]) return NO_CLOCKS;
+  const market = needsClock(ctx, line, lot, 'market', r0, k, bits);
+  const affordable = needsClock(ctx, line, lot, 'affordable', r0, k, bits);
+  if (!market && !affordable) return NO_CLOCKS;
   const spells = spellsOf(ctx, lot);
   const sh = seedHash(ctx.seed);
-  return KINDS.map((kind, j) =>
-    need[j] ? kindClock(ctx.statics, ctx.timeline, ctx.month, sh, spells[kind], kind) : null
-  );
+  return [
+    market ? kindClock(ctx.statics, ctx.timeline, ctx.month, sh, spells.market, 'market') : null,
+    affordable
+      ? kindClock(ctx.statics, ctx.timeline, ctx.month, sh, spells.affordable, 'affordable')
+      : null
+  ];
 }
 
 const NO_CLOCKS: readonly (KindClock | null)[] = [null, null];

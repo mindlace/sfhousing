@@ -3,13 +3,14 @@ import { DEFAULT_LEVERS } from './levers/types';
 import { createWorkerRouter } from './router';
 import type { SimRequest, SimResponse } from './protocol';
 import type { PlaybackResponse } from './lesscars/types';
+import type { TimelineHostResponse } from './timeline-protocol';
 import type { ScenarioRequest, ScenarioResponse, WorkerRequest } from './scenario/types';
 
 function setup() {
   const log: string[] = [];
   const editorReqs: SimRequest[] = [];
   const scenarioReqs: ScenarioRequest[] = [];
-  const posted: (ScenarioResponse | PlaybackResponse | SimResponse)[] = [];
+  const posted: (ScenarioResponse | PlaybackResponse | SimResponse | TimelineHostResponse)[] = [];
   let created = 0;
   const router = createWorkerRouter({
     post: (msg) => posted.push(msg),
@@ -29,6 +30,13 @@ function setup() {
           scenarioReqs.push(r);
         },
         dispose: () => log.push('scenario:dispose')
+      };
+    },
+    createTimeline: () => {
+      log.push('timeline:create');
+      return {
+        handle: (r) => log.push(`timeline:${r.type}`),
+        dispose: () => log.push('timeline:dispose')
       };
     },
     createPlayback: () => {
@@ -424,5 +432,103 @@ describe('worker router', () => {
       }
     ]);
     expect(t.created()).toBe(0);
+  });
+
+  describe('timeline mode', () => {
+    const openTimeline = { type: 'openTimeline', rev: 1 };
+    const setPolicy = { type: 'setPolicy', rev: 2 };
+    const brush = { type: 'resolveBrush', reqId: 3, query: {} };
+
+    it('openTimeline disposes the editor and scenario hosts, then goes to the timeline host', () => {
+      const t = setup();
+      t.send(initScenario);
+      t.log.length = 0;
+      t.send(openTimeline);
+      expect(t.log).toEqual([
+        'editor:dispose',
+        'scenario:dispose',
+        'timeline:create',
+        'timeline:openTimeline'
+      ]);
+    });
+
+    it('openTimeline disposes the playback host', () => {
+      const t = setup();
+      t.send({ type: 'initPlayback' });
+      t.log.length = 0;
+      t.send(openTimeline);
+      expect(t.log).toEqual([
+        'editor:dispose',
+        'playback:dispose',
+        'timeline:create',
+        'timeline:openTimeline'
+      ]);
+    });
+
+    it('init, initScenario and initPlayback dispose the timeline host', () => {
+      for (const next of [init, initScenario, { type: 'initPlayback' }]) {
+        const t = setup();
+        t.send(openTimeline);
+        t.log.length = 0;
+        t.send(next);
+        expect(t.log).toContain('timeline:dispose');
+      }
+    });
+
+    it('creates the timeline host once and routes setPolicy, viewMonth and resyncMap to it', () => {
+      const t = setup();
+      t.send(openTimeline, setPolicy, { type: 'viewMonth', month: 1 }, { type: 'resyncMap' });
+      expect(t.log.filter((l) => l === 'timeline:create')).toHaveLength(1);
+      expect(t.log.slice(-3)).toEqual([
+        'timeline:setPolicy',
+        'timeline:viewMonth',
+        'timeline:resyncMap'
+      ]);
+    });
+
+    it('shared requests go to the host of the latest init', () => {
+      const t = setup();
+      t.send(openTimeline, brush, prefetch, summary);
+      expect(t.log.slice(-3)).toEqual([
+        'timeline:resolveBrush',
+        'timeline:prefetch',
+        'timeline:parcelSummary'
+      ]);
+      t.send(initScenario, brush);
+      expect(t.log.slice(-1)).toEqual(['scenario:resolveBrush']);
+      t.send(openTimeline, brush);
+      expect(t.log.slice(-1)).toEqual(['timeline:resolveBrush']);
+    });
+
+    it('setPolicy outside timeline mode is bad-request', () => {
+      const t = setup();
+      t.send(setPolicy);
+      expect(t.posted).toEqual([
+        { type: 'error', rev: 2, code: 'bad-request', message: expect.any(String) }
+      ]);
+      t.send(initScenario, setPolicy);
+      expect(t.posted).toHaveLength(2);
+      expect(t.log).not.toContain('timeline:create');
+    });
+
+    it('viewMonth and resyncMap outside timeline mode post nothing', () => {
+      const t = setup();
+      t.send({ type: 'viewMonth', month: 1 }, { type: 'resyncMap' });
+      expect(t.posted).toEqual([]);
+      expect(t.log).toEqual([]);
+    });
+
+    it('reroll and setLevers in timeline mode are bad-request and create no scenario host', () => {
+      const t = setup();
+      t.send(openTimeline, { type: 'reroll', rev: 5, seed: 1 });
+      expect(t.posted).toMatchObject([{ type: 'error', rev: 5, code: 'bad-request' }]);
+      expect(t.created()).toBe(0);
+    });
+
+    it('answers opLots with null in timeline mode', () => {
+      const t = setup();
+      t.send(openTimeline, { type: 'opLots', reqId: 4 });
+      expect(t.posted).toEqual([{ type: 'opLots', reqId: 4, result: null }]);
+    });
   });
 });
