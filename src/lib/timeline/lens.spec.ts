@@ -16,7 +16,7 @@ import {
   writeBack
 } from './lens';
 import { parsePolicy4 } from './parse4';
-import type { Effect, Policy, PolicyKind, SimPolicy4 } from './policy4';
+import type { Effect, Policy, PolicyKind, SimPolicy4, Span } from './policy4';
 import type { SpanRef } from './spans';
 
 const asOf = 20000;
@@ -176,10 +176,12 @@ describe('project and writeBack', () => {
       historic: false,
       newerThanYears: 10
     });
+    // A fund span carries the market terms in force at its start, as context (the test below).
     expect(project(richDoc, ref('money', 'fund-u-pool-1', 1)).funding).toEqual({
       ...DEFAULT_POLICY.funding,
       pools: [{ ...pool, label: 'Later' }],
-      programmes: [grant]
+      programmes: [grant],
+      terms: { guaranteeRateCut: 0.01 }
     });
     expect(project(richDoc, ref('money', 'fund-state')).funding.pools).toEqual([]);
     expect(project(richDoc, ref('money', 'terms')).funding.terms).toEqual({
@@ -257,6 +259,40 @@ describe('project and writeBack', () => {
       pool: { ...edited, debt: { rate: 0.06, termYears: 20 } },
       programmes: []
     });
+  });
+
+  it('a fund span projects the market terms in force at its start, and never writes them', () => {
+    const withTerms = (terms: Policy): SimPolicy4 => ({
+      ...richDoc,
+      kinds: {
+        ...richDoc.kinds,
+        money: [...richDoc.kinds.money.filter((p) => p.where.tag !== 'terms'), terms]
+      }
+    });
+    const cut = (doc: SimPolicy4, span: number) =>
+      project(doc, ref('money', 'fund-u-pool-1', span)).funding.terms;
+    const terms = (over: Partial<Policy>, spans?: Span[]) =>
+      withTerms({
+        ...pol('terms', { tag: 'terms' }, [{ tag: 'terms', terms: { guaranteeRateCut: 0.01 } }]),
+        ...(spans ? { spans } : {}),
+        ...over
+      });
+    // In force from month 1: both fund spans (months 1 and 13) see it.
+    expect(cut(richDoc, 0)).toEqual({ guaranteeRateCut: 0.01 });
+    expect(cut(richDoc, 1)).toEqual({ guaranteeRateCut: 0.01 });
+    // Switched off: none.
+    expect(cut(terms({ on: false }), 0)).toEqual({});
+    // Ended before the second fund span starts: only the first sees it.
+    const ended = terms({}, [
+      { from: first(1), to: last(6), what: { tag: 'terms', terms: { guaranteeRateCut: 0.01 } } }
+    ]);
+    expect(cut(ended, 0)).toEqual({ guaranteeRateCut: 0.01 });
+    expect(cut(ended, 1)).toEqual({});
+    // The fund's editor changing them writes nothing: the terms policy is where terms are written.
+    const r = ref('money', 'fund-u-pool-1');
+    const q = project(richDoc, r);
+    const edited = { ...q, funding: { ...q.funding, terms: { guaranteeRateCut: 0.03 } } };
+    expect(writeBack(richDoc, r, edited)).toBe(richDoc);
   });
 
   it('a timing change writes the set and the policy’s preset', () => {

@@ -389,6 +389,18 @@ describe('TimelineMode', () => {
     expect(onmiss).toHaveBeenCalledTimes(1);
   });
 
+  it("on a phone a kind's sheet ends where the mode's box ends, above what follows it", async () => {
+    await page.viewport(390, 760);
+    await opened();
+    await page.getByRole('button', { name: /^Permitting/ }).click();
+    const sheet = page.getByRole('dialog', { name: 'Permitting' });
+    await expect.element(sheet).toBeVisible();
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const end = page.getByTestId('tl-mode').element().getBoundingClientRect().bottom;
+    expect(end).toBeLessThan(760);
+    expect(Math.abs(sheet.element().getBoundingClientRect().bottom - end)).toBeLessThanOrEqual(0.5);
+  });
+
   it('on a phone the playhead and chart stay above an open kind sheet', async () => {
     await page.viewport(390, 760);
     await opened();
@@ -415,6 +427,19 @@ describe('TimelineMode', () => {
     emit(errorMsg(2, 'bad-request'));
     await expect.poll(() => onundoto.mock.calls).toEqual([[DEFAULT_POLICY4]]);
     await expect.element(page.getByTestId('tl-alerts')).toHaveTextContent(CHANGE_NOT_APPLIED);
+  });
+
+  it("on a phone the inspector sheet ends where the mode's box ends, above what follows it", async () => {
+    // The host's mode box ends at 748 px of a 760 px viewport: the page's footer follows it.
+    await page.viewport(390, 760);
+    await opened(LAST, { withInspector: true });
+    const insp = page.getByTestId('tl-inspector');
+    await expect.element(insp.getByTestId('host-inspector')).toBeVisible();
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const end = page.getByTestId('tl-mode').element().getBoundingClientRect().bottom;
+    expect(end).toBeLessThan(760);
+    expect(Math.abs(insp.element().getBoundingClientRect().bottom - end)).toBeLessThanOrEqual(0.5);
   });
 
   it('on a phone the playhead and chart stay above an open inspector sheet', async () => {

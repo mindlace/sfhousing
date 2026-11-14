@@ -802,12 +802,17 @@
   const phoneSheet = $derived(inspectorShown && narrow.current);
   let dockEl = $state<HTMLElement>();
   let chartBox = $state<HTMLElement>();
+  let modeEl = $state<HTMLElement>();
   let sheetTop = $state(0);
+  /** Px from the viewport's bottom to the mode box's: the page's footer stays clear (W6b). */
+  let sheetBottom = $state(0);
 
   function placeSheet(): void {
     if (!chartBox) return;
     const bottom = chartBox.getBoundingClientRect().bottom;
-    sheetTop = Math.max(0, Math.min(bottom, window.innerHeight - MIN_SHEET));
+    const end = Math.min(modeEl?.getBoundingClientRect().bottom ?? Infinity, window.innerHeight);
+    sheetBottom = Math.max(0, window.innerHeight - end);
+    sheetTop = Math.max(0, Math.min(bottom, end - MIN_SHEET));
   }
   // Opening scrolls the timeline to the top, so the playhead and the chart are in view above the
   // sheet (as the kind sheet does); the sheet follows the chart's bottom edge.
@@ -958,6 +963,7 @@
 <!-- Below md the page scrolls: the map keeps a fixed share and the timeline follows in flow, so a
      kind's sheet can scroll the playhead and the chart to the top above it (rule 9). -->
 <div
+  bind:this={modeEl}
   class="sfh-fzp sfh-tl relative flex h-full flex-col max-md:overflow-y-auto"
   data-testid="tl-mode"
 >
@@ -1096,6 +1102,7 @@
         id={scoreControls}
         data-testid="tl-inspector"
         style:top={phoneSheet ? `${sheetTop}px` : undefined}
+        style:bottom={phoneSheet ? `${sheetBottom}px` : undefined}
         class="z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:w-96 md:shrink-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
       >
         {@render inspector({ results, day })}
@@ -1129,6 +1136,12 @@
 </div>
 
 <style>
+  /* A narrow or short map wraps the attribution (bottom right) across its width: the zoom and
+     compass control (bottom left) sits above the attribution's footprint, never under it (WCAG
+     2.2 2.4.11). The footprint includes the bottom inset (docs/dev/map-interfaces.md). */
+  .sfh-tl :global(.sim-map .maplibregl-ctrl-bottom-left) {
+    bottom: max(var(--map-bottom-inset, 0px), var(--map-controls-br-block-size, 0px));
+  }
   /* Stale (rule 31): the map's picture dims, never its controls. */
   .tl-map[data-stale] :global(.maplibregl-canvas) {
     opacity: 0.6;

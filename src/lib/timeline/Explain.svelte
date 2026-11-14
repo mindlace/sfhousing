@@ -26,15 +26,30 @@
   let openAtPress = false;
   let pressKind = '';
 
+  /**
+   * Dismissed by Escape: a mouse entering does not reopen it until the pointer moves. A layout
+   * change can put the target under a resting pointer, and the browser then sends an enter with no
+   * move (WCAG 1.4.13: dismissed without moving the pointer).
+   */
+  let dismissed = false;
+
   const withinFocus = () => !!wrapper && wrapper.contains(document.activeElement);
 
   function onenter(e: PointerEvent) {
-    if (e.pointerType === 'mouse') open = true;
+    if (e.pointerType === 'mouse' && !dismissed) open = true;
+  }
+  function onmove(e: PointerEvent) {
+    if (e.pointerType !== 'mouse' || !dismissed) return;
+    dismissed = false;
+    open = true;
   }
   function onleave(e: PointerEvent) {
-    if (e.pointerType === 'mouse' && !withinFocus()) open = false;
+    if (e.pointerType !== 'mouse') return;
+    dismissed = false;
+    if (!withinFocus()) open = false;
   }
   function onfocusin() {
+    dismissed = false;
     open = true;
   }
   function onfocusout(e: FocusEvent) {
@@ -45,6 +60,7 @@
   function onwindowkeydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && open) {
       open = false;
+      dismissed = true;
       e.stopPropagation();
     }
   }
@@ -85,6 +101,7 @@
   class="relative inline-flex flex-col md:inline-block"
   onpointerenter={onenter}
   onpointerleave={onleave}
+  onpointermove={onmove}
   {onfocusin}
   {onfocusout}
   {onpointerdown}

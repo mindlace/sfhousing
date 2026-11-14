@@ -74,6 +74,35 @@ describe('PolicySync', () => {
     expect(h.sync.lots).toEqual(first);
   });
 
+  it('a query still in flight holds the settle until it resolves', async () => {
+    const h = harness();
+    const d = doc(transit('a', 100));
+    h.sync.update(d);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.sync.pending).toBe(true);
+    expect(h.sync.lots).toBeNull();
+    h.pending[0].resolve(ok(['a', 'b']));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.sync.lots).toEqual({ [queriesOf4(d)[0].key]: ['a', 'b'] });
+  });
+
+  it("a superseded query answering late does not settle the old document's lots", async () => {
+    const h = harness();
+    const one = doc(transit('a', 100));
+    const two = doc(transit('a', 200));
+    h.sync.update(one);
+    h.sync.update(two);
+    h.pending[1].resolve(ok(['two']));
+    await vi.advanceTimersByTimeAsync(250);
+    const settled = h.sync.lots;
+    expect(settled).toEqual({ [queriesOf4(two)[0].key]: ['two'] });
+    h.pending[0].resolve(ok(['one']));
+    await vi.advanceTimersByTimeAsync(1000);
+    // Still the latest document's lots, the same settle: the late answer only fills the cache.
+    expect(h.sync.lots).toBe(settled);
+    expect(h.sync.result(queriesOf4(one)[0].key)).toMatchObject({ ok: true });
+  });
+
   it('open with no queries gives {} at once', () => {
     const h = harness();
     h.sync.open(DEFAULT_POLICY4);

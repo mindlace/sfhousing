@@ -777,9 +777,6 @@ test('footer links stay unobscured at 375 px: playhead, card and Results', async
   page
 }) => {
   test.skip(!isMobile, 'W6b is the phone layout');
-  // Known bug (Task 17 report): below md the editor's sheet (Results here) is fixed over the
-  // page's bottom, so the footer links under it cannot be reached while it is open.
-  test.fail();
   await gotoFzp(page);
   await expectFooterReachable(page);
 

@@ -83,6 +83,24 @@ describe('Explain', () => {
     await expect.element(page.getByText(TEXT)).not.toBeInTheDocument();
   });
 
+  it('stays dismissed after Escape when a layout change puts it under a resting pointer', async () => {
+    await render(ExplainHost, { props: { text: TEXT } });
+    focusTarget(target().element() as HTMLElement);
+    await expect.element(page.getByText(TEXT)).toBeVisible();
+    await userEvent.keyboard('{Escape}');
+    await expect.element(page.getByText(TEXT)).not.toBeInTheDocument();
+    // The browser's boundary events for a pointer that did not move (WCAG 1.4.13: dismissed until
+    // the pointer moves).
+    const box = target().element().parentElement!;
+    box.dispatchEvent(new PointerEvent('pointerover', { pointerType: 'mouse', bubbles: true }));
+    box.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    expect(document.querySelector('[data-explain-open]')).toBeNull();
+    // A real move over it opens it again.
+    box.dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', bubbles: true }));
+    await expect.element(page.getByText(TEXT)).toBeVisible();
+  });
+
   it('opens on a touch tap and closes on the second', async () => {
     await render(ExplainHost, { props: { text: TEXT } });
     const el = target().element() as HTMLElement;

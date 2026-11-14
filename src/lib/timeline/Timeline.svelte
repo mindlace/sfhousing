@@ -120,17 +120,21 @@
   let root: HTMLElement | undefined = $state();
   let chartCell: HTMLElement | undefined = $state();
   let handle: HTMLElement | undefined = $state();
-  let box = $state({ top: 0, left: 0, width: 0 });
+  let box = $state({ top: 0, left: 0, width: 0, bottom: 0 });
   const sheeting = $derived(phone && sheet !== null && kinds.includes(sheet));
 
   function place() {
     if (!root || !chartCell) return;
     const r = root.getBoundingClientRect();
     const bottom = chartCell.getBoundingClientRect().bottom;
+    // The sheet ends where the page's mode box ends, so what follows it (the footer) stays clear.
+    const mode = root.closest('[data-testid="tl-mode"]')?.getBoundingClientRect().bottom;
+    const end = Math.min(mode ?? Infinity, window.innerHeight);
     box = {
-      top: Math.max(0, Math.min(bottom, window.innerHeight - MIN_SHEET)),
+      top: Math.max(0, Math.min(bottom, end - MIN_SHEET)),
       left: r.left,
-      width: r.width
+      width: r.width,
+      bottom: Math.max(0, window.innerHeight - end)
     };
   }
   $effect(() => {
@@ -233,6 +237,7 @@
       onkeydown={ontrap}
       aria-label={KIND_LABEL[sheet]}
       style:top="{box.top}px"
+      style:bottom="{box.bottom}px"
       style:left="{box.left}px"
       style:width="{box.width}px"
     >

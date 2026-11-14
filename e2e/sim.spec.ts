@@ -570,9 +570,6 @@ test('at 375 px with Results open the playhead and the footer links stay unobscu
   page
 }) => {
   test.skip(!isMobile, 'the phone layout');
-  // Known bug (Task 17 report): below md the editor's sheet (Results here) is fixed over the
-  // page's bottom, so the footer links under it cannot be reached while it is open.
-  test.fail();
   await gotoSim(page);
   await openScore(page);
   // Every playhead control is the topmost element at its centre.
@@ -699,8 +696,6 @@ test('below md on a fine pointer the palette strip leaves the zoom control uncov
   page
 }) => {
   test.skip(isMobile, 'a coarse pointer gets no navigation control');
-  // Known bug (Task 17 report): on a short map the wrapped attribution covers the compass.
-  test.fail();
   await page.setViewportSize({ width: 700, height: 800 });
   await gotoSim(page);
   await startPainting(page, true);
@@ -713,9 +708,6 @@ test('at 375 px: no horizontal scroll, and the footer links stay unobscured', as
   page
 }) => {
   test.skip(!isMobile, 'W6b is the phone layout');
-  // Known bug (Task 17 report): below md the editor's sheet (Results here) is fixed over the
-  // page's bottom, so the footer links under it cannot be reached while it is open.
-  test.fail();
   await gotoSim(page);
   await expectNoHorizontalScroll(page);
   await expectFooterReachable(page);
@@ -1009,9 +1001,6 @@ for (const width of [1024, 1280]) {
   test(`at ${width} px the header fits with the widest strings, before and after an edit, and the score stays put`, async ({
     page
   }) => {
-    // Known bug (Task 17 report): the status slot's reserved width ("Forecast filled to 2088")
-    // overflows into the header score's column, so a fill status shows under the score.
-    test.fail();
     await page.setViewportSize({ width, height: 1024 });
     await gotoSim(page);
     await expect(page.getByRole('banner').getByRole('button', { name: 'View' })).toBeVisible();

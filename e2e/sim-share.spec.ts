@@ -462,9 +462,6 @@ test('at 768 px on /s/<id> the banner, editor and notices leave the zoom control
   isMobile
 }) => {
   test.skip(isMobile, 'a coarse pointer gets no navigation control');
-  // Known bug (Task 17 report): beside the editor the map is narrow, and the wrapped attribution
-  // covers the compass.
-  test.fail();
   const id = await seedPolicy(page, tampered(await capturePresetDoc(page)));
   await page.setViewportSize({ width: 768, height: 800 });
   await page.emulateMedia({ reducedMotion: 'reduce' });

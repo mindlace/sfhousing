@@ -331,6 +331,9 @@ test('the pill stack showing a notice has no axe violations in dark', async ({ p
       throw new Error('e2e: simulated worker crash');
     });
   });
-  await expect(page.getByTestId('tl-notices')).toContainText('Part of the simulation stopped.');
+  // The status pills render inside the one stack the scan covers.
+  await expect(page.getByTestId('fzp-notices').getByTestId('tl-notices')).toContainText(
+    'Part of the simulation stopped.'
+  );
   await expectNoA11yViolations(page, { include: ['[data-testid=fzp-notices]'] });
 });

@@ -350,9 +350,6 @@ test('4. a dated change: the state switched off from next July', async ({ page }
 });
 
 test('5. market terms: a typed rate cut lets a guarantee run', async ({ page }) => {
-  // Known bug (Task 17 report): a fund's editor reads its own span's projection, which carries no
-  // market terms, so a Market terms policy never enables the guarantee there.
-  test.fail();
   await gotoSim(page);
   await addPolicy(page, 'Public money', 'Market terms');
   const cut = editor(page).getByRole('spinbutton', {

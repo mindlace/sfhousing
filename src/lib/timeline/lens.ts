@@ -12,8 +12,9 @@ import { limitAlert } from '$lib/sim-page/funding-copy';
 import { canonicalJson, DEFAULT_POLICY, type SimPolicy } from '$lib/sim-page/policy';
 import { PRESETS, timingLabel, type TimingSet } from '$lib/sim-page/timing';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
+import type { Day } from '$lib/timelapse/time';
 import type { Programme } from '$lib/timelapse/types';
-import type { Policy, SimPolicy4, Span } from './policy4';
+import { spanAt, type Policy, type SimPolicy4, type Span } from './policy4';
 import { policyOf, type SpanRef } from './spans';
 
 /** The label of a custom timing policy as added; it follows the set once the set is edited. */
@@ -48,7 +49,21 @@ function locate(doc: SimPolicy4, ref: SpanRef): { p: Policy; s: Span } | null {
   return p && s ? { p, s } : null;
 }
 
-/** `DEFAULT_POLICY` holding only the effect of the span at `ref`; `DEFAULT_POLICY` itself if none. */
+/** The market terms the document's terms policies have in force on `day`, in document order. */
+function termsInForce(doc: SimPolicy4, day: Day): SimPolicy['funding']['terms'] {
+  let terms: SimPolicy['funding']['terms'] = {};
+  for (const p of doc.kinds.money) {
+    if (p.where.tag !== 'terms') continue;
+    const s = spanAt(p, day);
+    if (s?.what.tag === 'terms') terms = { ...terms, ...s.what.terms };
+  }
+  return terms;
+}
+
+/**
+ * `DEFAULT_POLICY` holding only the effect of the span at `ref`; `DEFAULT_POLICY` itself if none.
+ * A fund span also carries the market terms in force at its start, for its editor to price with.
+ */
 export function project(doc: SimPolicy4, ref: SpanRef): SimPolicy {
   const at = locate(doc, ref);
   if (!at) return DEFAULT_POLICY;
@@ -76,7 +91,9 @@ export function project(doc: SimPolicy4, ref: SpanRef): SimPolicy {
     out.funding = {
       ...DEFAULT_POLICY.funding,
       pools: what.pool ? [what.pool] : [],
-      programmes: what.programmes
+      programmes: what.programmes,
+      // Context only (which instruments the terms allow): `readFund` never reads it back.
+      terms: termsInForce(doc, s.from)
     };
   } else if (w.tag === 'terms' && what.tag === 'terms') {
     out.funding = { ...DEFAULT_POLICY.funding, terms: what.terms };
