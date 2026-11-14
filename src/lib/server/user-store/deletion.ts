@@ -143,7 +143,7 @@ export async function deleteAccount(args: {
   const [live] = await db.select().from(user).where(eq(user.userIdentity, sid));
   if (!live) return;
 
-  // 1. Remove memberships.
+  // 1. Remove memberships (revokes reach grants held by fused identities too).
   const sims = await listSimsForUser({ db, userId: sid });
   for (const s of sims) {
     await removeSimMember({ db, simId: s.simId, userId: sid });
@@ -152,8 +152,8 @@ export async function deleteAccount(args: {
   await closeAccountRows({ db, identityId: sid, live });
 }
 
-/** The user-row closure tail: scrub, history, credentials, tombstone.
- *  Shared by account deletion and account reaping. `live` is the live `user` row for
+/** The user-row closure tail of deleteAccount (which reaping also runs): release the
+ *  handle, scrub, history, credentials, tombstone. `live` is the live `user` row for
  *  `identityId`. */
 export async function closeAccountRows(args: {
   db: Database;
@@ -163,7 +163,7 @@ export async function closeAccountRows(args: {
   const { db, identityId: sid, live } = args;
   const now = new Date();
 
-  // 3. Release the old handle, scrub the live row, record the tombstone version.
+  // 2. Release the old handle, scrub the live row, record the tombstone version.
   await releaseHandle(db, sid, live.handle, now);
   await scrubLiveUser(db, sid, live.id, now);
   await recordUserVersion({
@@ -174,7 +174,7 @@ export async function closeAccountRows(args: {
     email: deletedEmail(sid)
   });
 
-  // 4. Erase PII across the full identity union (survivor + identities fused into it):
+  // 3. Erase PII across the full identity union (survivor + identities fused into it):
   //    hash prior versions, then purge identity-keyed rows for every id in the union.
   const fusedIn = await db
     .select({ id: userIdentity.id })
@@ -183,9 +183,9 @@ export async function closeAccountRows(args: {
   const idUnion = [sid, ...fusedIn.map((r) => r.id)];
   await hashPriorVersions(db, idUnion);
 
-  // 5. Purge credentials (by live user id) + invites (by union).
+  // 4. Purge credentials (by live user id) + invites (by union).
   await purgeCredentialsAndSettings(db, live.id, idUnion);
 
-  // 6. Tombstone fuse — LAST.
+  // 5. Tombstone fuse — LAST.
   await markIdentityDeleted(db, sid, now);
 }

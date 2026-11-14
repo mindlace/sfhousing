@@ -17,6 +17,7 @@ import {
   simInvite
 } from '$lib/server/db/schema';
 import { recordUserVersion } from './history';
+import { handleAccountLink } from './identity';
 import { sha256Hex } from '$lib/sharing/hash';
 import { skeleton } from './confusable-skeleton';
 import {
@@ -236,6 +237,34 @@ describe('deleteAccount', () => {
     expect(u.email).toBe(deletedEmail('id1'));
     const [idRow] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'id1'));
     expect(idRow.deletedAt).not.toBeNull();
+  });
+
+  test('removes the sims held through a fused identity: solo deleted, shared handed on', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'pseudo', email: 'p@x.com', handle: 'pseudo' });
+    await seedUser(db, { id: 'surv', email: 'surv@x.com', handle: 'surv' });
+    await seedUser(db, { id: 'id2', email: 'bob@x.com', handle: 'bob' });
+    const { simId: solo } = await createSim({ db, title: 'Solo', managerId: 'pseudo' });
+    const { simId: shared } = await createSim({ db, title: 'Shared', managerId: 'pseudo' });
+    await addMemberById({ db, simId: shared, userId: 'id2', role: 'editor' });
+    await handleAccountLink({
+      db,
+      isUpgrade: false,
+      pseudonymousUserId: 'pseudo-live',
+      newUserId: 'surv-live'
+    });
+
+    await deleteAccount({
+      db,
+      identityId: 'surv',
+      actor: { actorId: 'surv', actorKind: 'human' as const }
+    });
+
+    expect(await listSimsForUser({ db, userId: 'surv' })).toEqual([]);
+    expect(await getSimTitle({ db, simId: solo })).toBeNull();
+    expect(await getSimTitle({ db, simId: shared })).toBe('Shared');
+    expect(await getRole({ db, simId: shared, userId: 'id2' })).toBe('manager');
+    expect(await getRole({ db, simId: shared, userId: 'surv' })).toBeNull();
   });
 
   test('deleting a sole-member sim removes its pending invites', async () => {

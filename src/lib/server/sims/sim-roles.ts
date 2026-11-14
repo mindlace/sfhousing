@@ -190,15 +190,23 @@ export async function foldManagedSimCount(db: Database, identityId: string): Pro
   return (await foldSimsForUser(db, identityId)).filter((q) => q.role === 'manager').length;
 }
 
-// ---- write helpers (operate on the EXACT principal id; no union, no index gate) ----
+// ---- write helpers (survivor+fused union, like the folds; no index gate) ----
+// A grant may sit on any identity fused into the survivor, and the folds read it through
+// the survivor, so the writes look across the same union: a revoke goes to the principal
+// that holds the bundle. A new grant goes to the principal id the caller passed.
 // Writes are index-BLIND by design: they append role events without checking sim_index.
 // Reads (above) gate on the index, so a grant only surfaces once the sim exists. The
 // caller (createSimRecord) inserts the index row alongside the manager grant. Do not add an
 // index gate here — the read/write asymmetry is intentional.
 
-async function heldBundles(db: Database, simId: string, userId: string): Promise<Set<string>> {
+type HeldBundle = { principalId: string; ability: string };
+
+/** Role bundles currently granted on the sim to any principal in the union of `userId`. */
+async function heldBundles(db: Database, simId: string, userId: string): Promise<HeldBundle[]> {
+  const ids = await principalUnion(db, userId);
   const rows = await db
     .select({
+      principalId: capabilityEvent.principalId,
       ability: capabilityEvent.ability,
       action: capabilityEvent.action,
       createdAt: capabilityEvent.createdAt
@@ -206,16 +214,23 @@ async function heldBundles(db: Database, simId: string, userId: string): Promise
     .from(capabilityEvent)
     .where(
       and(
-        eq(capabilityEvent.principalId, userId),
+        inArray(capabilityEvent.principalId, ids),
         eq(capabilityEvent.resourceType, 'sim'),
         eq(capabilityEvent.resourceId, simId),
         inArray(capabilityEvent.ability, ROLE_BUNDLES)
       )
     )
     .orderBy(asc(capabilityEvent.createdAt), asc(capabilityEvent.createdAtCounter));
-  const held = new Set<string>();
-  for (const [ability, action] of latestActionByAbility(rows))
-    if (action === 'grant') held.add(ability);
+  const byPrincipal = new Map<string, RoleRow[]>();
+  for (const r of rows) {
+    const list = byPrincipal.get(r.principalId) ?? [];
+    list.push({ ability: r.ability, action: r.action, createdAt: r.createdAt });
+    byPrincipal.set(r.principalId, list);
+  }
+  const held: HeldBundle[] = [];
+  for (const [principalId, list] of byPrincipal)
+    for (const [ability, action] of latestActionByAbility(list))
+      if (action === 'grant') held.push({ principalId, ability });
   return held;
 }
 
@@ -240,7 +255,8 @@ function roleEvent(
 }
 
 /** Set a principal's role to EXACTLY `role` on a sim (idempotent). Grants the target
- *  bundle if not held; revokes any other held role bundle. */
+ *  bundle if no principal in the union holds it; revokes every other held role bundle
+ *  across the union. */
 export async function setSimRole(
   db: Database,
   simId: string,
@@ -251,13 +267,15 @@ export async function setSimRole(
   const target = BUNDLE_BY_ROLE[role];
   const held = await heldBundles(db, simId, userId);
   const events = [];
-  if (!held.has(target)) events.push(roleEvent(simId, userId, target, 'grant', actorId));
-  for (const b of held)
-    if (b !== target) events.push(roleEvent(simId, userId, b, 'revoke', actorId));
+  if (!held.some((h) => h.ability === target))
+    events.push(roleEvent(simId, userId, target, 'grant', actorId));
+  for (const h of held)
+    if (h.ability !== target)
+      events.push(roleEvent(simId, h.principalId, h.ability, 'revoke', actorId));
   for (const e of events) await insertCapabilityEvent(db, e);
 }
 
-/** Grant `role` only if the principal currently holds NO role on the sim (idempotent add). */
+/** Grant `role` only if no principal in the union holds a role on the sim (idempotent add). */
 export async function addSimRole(
   db: Database,
   simId: string,
@@ -266,12 +284,12 @@ export async function addSimRole(
   actorId: string | null = null
 ): Promise<{ added: boolean }> {
   const held = await heldBundles(db, simId, userId);
-  if (held.size > 0) return { added: false };
+  if (held.length > 0) return { added: false };
   await insertCapabilityEvent(db, roleEvent(simId, userId, BUNDLE_BY_ROLE[role], 'grant', actorId));
   return { added: true };
 }
 
-/** Revoke every role bundle the principal currently holds on the sim (membership removal). */
+/** Revoke every role bundle held on the sim across the union (membership removal). */
 export async function revokeSimRoles(
   db: Database,
   simId: string,
@@ -279,6 +297,6 @@ export async function revokeSimRoles(
   actorId: string | null = null
 ): Promise<void> {
   const held = await heldBundles(db, simId, userId);
-  const events = [...held].map((b) => roleEvent(simId, userId, b, 'revoke', actorId));
+  const events = held.map((h) => roleEvent(simId, h.principalId, h.ability, 'revoke', actorId));
   for (const e of events) await insertCapabilityEvent(db, e);
 }

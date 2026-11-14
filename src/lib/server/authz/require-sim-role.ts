@@ -7,9 +7,9 @@ import type { Actor } from './actor';
 
 /**
  * Worker-side authorization for a sim, now a thin wrapper over the unitary
- * `requireCap` seam (which runs the `authorize` matcher). The DO is per-sim and
- * cannot see global membership (that lives in D1), so authz happens here before any
- * sim RPC. Throws SvelteKit errors (propagates from `load` and `+server`): 401 (no
+ * `requireCap` seam (which runs the `authorize` matcher). Membership lives in D1, so
+ * every sim page and route checks here before it acts. Throws SvelteKit errors
+ * (propagates from `load` and `+server`): 401 (no
  * user) → 404 (not a member; no enumeration) → 403 (role below minimum). Role
  * minimums: reads = `viewer`, content/direct mutations = `editor`, membership = `manager`.
  *

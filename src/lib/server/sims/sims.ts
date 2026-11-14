@@ -17,12 +17,12 @@ export async function createSim(args: {
   return { simId };
 }
 
-/** Drop the sim's index row and its pending invites. Ledger rows stay. */
+/** Drop the sim's index row and its pending invites in one batch. Ledger rows stay. */
 export async function deleteSim(db: Database, simId: string): Promise<void> {
-  await db.delete(simIndex).where(eq(simIndex.simId, simId));
-  await db
-    .delete(simInvite)
-    .where(and(eq(simInvite.simId, simId), eq(simInvite.status, 'pending')));
+  await db.batch([
+    db.delete(simIndex).where(eq(simIndex.simId, simId)),
+    db.delete(simInvite).where(and(eq(simInvite.simId, simId), eq(simInvite.status, 'pending')))
+  ]);
 }
 
 /**

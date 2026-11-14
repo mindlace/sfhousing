@@ -4,9 +4,10 @@ import { freshDb, seedUser } from '$lib/server/test/auth-db';
 import { capabilityEvent, simInvite } from '$lib/server/db/schema';
 import { isValidId } from '$lib/server/ids/factory';
 import { addMemberById, getRole, getSimTitle } from './sim-index';
-import { foldSimRole } from './sim-roles';
+import { foldSimRole, setSimRole } from './sim-roles';
+import { handleAccountLink } from '$lib/server/user-store/identity';
 import { onSimRosterChanged } from './roster-hook';
-import { createSim, leaveSim, removeSimMember } from './sims';
+import { createSim, deleteSim, leaveSim, removeSimMember } from './sims';
 
 vi.mock('./roster-hook', () => ({ onSimRosterChanged: vi.fn(async () => {}) }));
 
@@ -56,6 +57,23 @@ describe('createSim', () => {
     const { simId } = await createSim({ db, title: 'My Sim', managerId: 'owner1' });
     expect(onSimRosterChanged).toHaveBeenCalledTimes(1);
     expect(onSimRosterChanged).toHaveBeenCalledWith(simId);
+  });
+});
+
+describe('deleteSim', () => {
+  it('drops the index row and the pending invites in one batch', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    const { simId } = await createSim({ db, title: 'Q', managerId: 'owner1' });
+    await seedInvite(db, simId, 'owner1', 'pending', 'h1');
+    const batch = vi.spyOn(db, 'batch');
+
+    await deleteSim(db, simId);
+
+    expect(batch).toHaveBeenCalledTimes(1);
+    expect(batch.mock.calls[0][0]).toHaveLength(2);
+    expect(await getSimTitle({ db, simId })).toBeNull();
+    expect(await db.select().from(simInvite).where(eq(simInvite.simId, simId))).toEqual([]);
   });
 });
 
@@ -151,5 +169,98 @@ describe('leaveSim', () => {
 
     await leaveSim({ db, simId, userId: 'co', simTitle: 'Q', confirmTitle: 'Q' });
     expect(await getRole({ db, simId, userId: 'co' })).toBeNull();
+  });
+
+  it('calls onSimRosterChanged when the sim survives the leave', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    await seedUser(db, { id: 'ed', email: 'e@test.com' });
+    const { simId } = await createSim({ db, title: 'Q', managerId: 'owner1' });
+    await addMemberById({ db, simId, userId: 'ed', role: 'editor' });
+    vi.mocked(onSimRosterChanged).mockClear();
+
+    await leaveSim({ db, simId, userId: 'ed', simTitle: 'Q' });
+
+    expect(onSimRosterChanged).toHaveBeenCalledTimes(1);
+    expect(onSimRosterChanged).toHaveBeenCalledWith(simId);
+  });
+});
+
+// A pseudonymous account (`pseudo`) that signs in by magic link to the email of an existing
+// account (`surv`) is fused into it: its grants stay on `pseudo`, and the folds read them
+// through `surv`. Removal must reach them too.
+describe('a member whose grants sit on a fused identity', () => {
+  async function fuse(db: Awaited<ReturnType<typeof freshDb>>['db']) {
+    await handleAccountLink({
+      db,
+      isUpgrade: false,
+      pseudonymousUserId: 'pseudo-live',
+      newUserId: 'surv-live'
+    });
+  }
+
+  it('leaves a solo sim, which is deleted', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'pseudo', email: 'p@test.com' });
+    await seedUser(db, { id: 'surv', email: 's@test.com' });
+    const { simId } = await createSim({ db, title: 'Q', managerId: 'pseudo' });
+    await fuse(db);
+    expect(await getRole({ db, simId, userId: 'surv' })).toBe('manager');
+
+    await leaveSim({ db, simId, userId: 'surv', simTitle: 'Q' });
+
+    expect(await getRole({ db, simId, userId: 'surv' })).toBeNull();
+    expect(await getSimTitle({ db, simId })).toBeNull();
+  });
+
+  it('leaves a shared sim as its manager, and the other member is promoted', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'pseudo', email: 'p@test.com' });
+    await seedUser(db, { id: 'surv', email: 's@test.com' });
+    await seedUser(db, { id: 'ed', email: 'e@test.com' });
+    const { simId } = await createSim({ db, title: 'Q', managerId: 'pseudo' });
+    await addMemberById({ db, simId, userId: 'ed', role: 'editor' });
+    await fuse(db);
+    vi.mocked(onSimRosterChanged).mockClear();
+
+    await leaveSim({ db, simId, userId: 'surv', simTitle: 'Q' });
+
+    expect(await getRole({ db, simId, userId: 'surv' })).toBeNull();
+    expect(await getRole({ db, simId, userId: 'ed' })).toBe('manager');
+    expect(await getSimTitle({ db, simId })).toBe('Q');
+    expect(onSimRosterChanged).toHaveBeenCalledWith(simId);
+  });
+
+  it('is removed by a manager', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    await seedUser(db, { id: 'pseudo', email: 'p@test.com' });
+    await seedUser(db, { id: 'surv', email: 's@test.com' });
+    const { simId } = await createSim({ db, title: 'Q', managerId: 'owner1' });
+    await addMemberById({ db, simId, userId: 'pseudo', role: 'editor' });
+    await fuse(db);
+    expect(await getRole({ db, simId, userId: 'surv' })).toBe('editor');
+
+    const result = await removeSimMember({ db, simId, userId: 'surv', actorUserId: 'owner1' });
+
+    expect(result).toEqual({ deleted: false });
+    expect(await getRole({ db, simId, userId: 'surv' })).toBeNull();
+    expect(await getRole({ db, simId, userId: 'owner1' })).toBe('manager');
+  });
+
+  it('is promoted as successor and can then be demoted', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    await seedUser(db, { id: 'pseudo', email: 'p@test.com' });
+    await seedUser(db, { id: 'surv', email: 's@test.com' });
+    const { simId } = await createSim({ db, title: 'Q', managerId: 'owner1' });
+    await addMemberById({ db, simId, userId: 'pseudo', role: 'editor' });
+    await fuse(db);
+
+    await leaveSim({ db, simId, userId: 'owner1', simTitle: 'Q', successorUserId: 'surv' });
+    expect(await getRole({ db, simId, userId: 'surv' })).toBe('manager');
+
+    await setSimRole(db, simId, 'surv', 'viewer');
+    expect(await getRole({ db, simId, userId: 'surv' })).toBe('viewer');
   });
 });

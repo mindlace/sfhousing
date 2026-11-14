@@ -14,11 +14,9 @@ import {
 } from './sim-roles';
 
 /**
- * Record a freshly-provisioned sim: its index projection row and the manager's
- * authoritative membership (the latter as a manager role-grant event on the capability
- * ledger). Call AFTER the DO is provisioned (orphan-safe ordering — see
- * sim-client.createSim). The index row is inserted FIRST so a concurrent fold read
- * (which is index-gated) sees the sim, then the manager grant is appended.
+ * Record a new sim: its index row and the manager's membership (a manager role-grant
+ * event on the capability ledger). The index row is inserted FIRST so a concurrent fold
+ * read (which is index-gated) sees the sim, then the manager grant is appended.
  */
 export async function createSimRecord(args: {
   db: Database;
@@ -62,8 +60,7 @@ export async function ensureSimRecord(args: {
   await addSimRole(args.db, args.simId, args.managerId, 'manager', args.managerId);
 }
 
-/** The sim's D1-projected title — the shell datum the flipped layout paints before any DO
- *  state arrives. Null for sims with no index row (demo copies). */
+/** The sim's title from its index row. Null for a sim with no index row. */
 export async function getSimTitle(args: { db: Database; simId: string }): Promise<string | null> {
   const rows = await args.db
     .select({ title: simIndex.title })
@@ -73,7 +70,7 @@ export async function getSimTitle(args: { db: Database; simId: string }): Promis
   return rows[0]?.title ?? null;
 }
 
-/** Mirror a renamed sim's title into the index projection (the DO is authoritative). */
+/** Set a sim's title in its index row. */
 export async function updateSimIndexTitle(args: {
   db: Database;
   simId: string;
@@ -228,13 +225,11 @@ export async function reconcileSimManagement(
 }
 
 /**
- * Delete one membership row, then reconcile management. The pure-D1 core of the public
- * removeMember (sim-client.ts), which additionally deletes the sim when { empty }.
- * Returns `members`, the PRE-revocation roster fold: once the events are revoked the
- * fold is empty, and removeMember needs the departed members to thread the byte-charge
- * refund targets into deleteSim (spec §7 reversal).
+ * Revoke one membership (across the member's fused identities), then reconcile
+ * management. `removeSimMember` in sims.ts calls it and deletes the sim when { empty }.
+ * Returns `members`, the roster fold from before the revoke.
  *
- * Co-manager protection (#434 L5): when `actorUserId` is supplied AND it is removing a
+ * Co-manager protection: when `actorUserId` is supplied AND it is removing a
  * DIFFERENT principal who currently holds `manager`, the removal is refused — a manager
  * must give up control themselves (the leave path's type-the-name guard), not be
  * ejected by a peer manager. The guard is opt-in: only administrative removal-of-another
@@ -262,7 +257,7 @@ export async function removeMembership(
  * Leave-specific pre-step (pure D1): validate the leaver and honor their successor pick.
  *  - not a member                                    → throw 'not a member'
  *  - manager leaving while OTHER managers exist, with
- *    a mismatched confirmTitle                       → throw 'title did not match' (#190 case 2)
+ *    a mismatched confirmTitle                       → throw 'title did not match'
  *  - SOLE manager with a successorUserId that is a
  *    current other member                            → promote that successor (courtesy)
  *  - otherwise                                        → no-op (removeMembership's reconcile auto-picks)

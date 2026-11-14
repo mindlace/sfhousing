@@ -42,7 +42,7 @@ describe('createSimRecord + listSimsForUser', () => {
   });
 });
 
-describe('ensureSimRecord (idempotent re-seed for a surviving DO)', () => {
+describe('ensureSimRecord (idempotent re-seed)', () => {
   it('seeds the index row + manager grant when D1 was wiped', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'canary', email: 'c@test.com' });
@@ -78,7 +78,7 @@ describe('ensureSimRecord (idempotent re-seed for a surviving DO)', () => {
     expect(await getRole({ db, simId: 'q-canary', userId: 'canary' })).toBe('manager');
   });
 
-  it('does not clobber an existing membership when the DO + D1 are both intact', async () => {
+  it('does not clobber an existing membership when the index row and grant are intact', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'canary', email: 'c@test.com' });
     await createSimRecord({
@@ -372,7 +372,7 @@ describe('removeMembership', () => {
     expect(await getRole({ db, simId: 'q1', userId: 'owner1' })).toBeNull();
   });
 
-  // #434 L5 — co-manager protection (opt-in via actorUserId).
+  // Co-manager protection (opt-in via actorUserId).
   it('refuses a manager administratively removing ANOTHER manager', async () => {
     const { db } = freshDb();
     await seedSoleManagerPlus(db, [{ id: 'owner2', role: 'manager' }]);

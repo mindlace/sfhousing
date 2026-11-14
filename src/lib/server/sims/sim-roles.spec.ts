@@ -478,3 +478,51 @@ describe('capability fold tie-break (L7a)', () => {
     expect(await foldSimRole(db, 'q1', 'u1')).toBeNull();
   });
 });
+
+describe('writes across a fused principal', () => {
+  it('revokeSimRoles on the survivor revokes a bundle held by a fused identity', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'survivor', email: 's@test.com' });
+    await seedIdentity(db, { id: 'fused', supersededById: 'survivor' });
+    await seedSim(db, 'q1');
+    await setSimRole(db, 'q1', 'fused', 'manager');
+    await revokeSimRoles(db, 'q1', 'survivor');
+    expect(await foldSimRole(db, 'q1', 'survivor')).toBeNull();
+    const rows = await db
+      .select({ ability: capabilityEvent.ability, action: capabilityEvent.action })
+      .from(capabilityEvent)
+      .where(eq(capabilityEvent.principalId, 'fused'));
+    expect(rows).toContainEqual({ ability: BUNDLE.manager, action: 'revoke' });
+  });
+
+  it('setSimRole on the survivor demotes a role held by a fused identity', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'survivor', email: 's@test.com' });
+    await seedIdentity(db, { id: 'fused', supersededById: 'survivor' });
+    await seedSim(db, 'q1');
+    await setSimRole(db, 'q1', 'fused', 'manager');
+    await setSimRole(db, 'q1', 'survivor', 'editor');
+    expect(await foldSimRole(db, 'q1', 'survivor')).toBe('editor');
+  });
+
+  it('setSimRole writes no event when a fused identity already holds exactly that role', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'survivor', email: 's@test.com' });
+    await seedIdentity(db, { id: 'fused', supersededById: 'survivor' });
+    await seedSim(db, 'q1');
+    await setSimRole(db, 'q1', 'fused', 'editor');
+    await setSimRole(db, 'q1', 'survivor', 'editor');
+    expect(await bundleCount(db, 'q1', 'survivor')).toBe(0);
+    expect(await foldSimRole(db, 'q1', 'survivor')).toBe('editor');
+  });
+
+  it('addSimRole adds nothing when a fused identity already holds a role', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'survivor', email: 's@test.com' });
+    await seedIdentity(db, { id: 'fused', supersededById: 'survivor' });
+    await seedSim(db, 'q1');
+    await setSimRole(db, 'q1', 'fused', 'viewer');
+    expect(await addSimRole(db, 'q1', 'survivor', 'manager')).toEqual({ added: false });
+    expect(await foldSimRole(db, 'q1', 'survivor')).toBe('viewer');
+  });
+});
