@@ -70,8 +70,11 @@ export function spellsOf(ctx: StepCtx, lot: number): { market: Spell; affordable
   return { market: spell(KIND_MARKET), affordable: spell(KIND_AFFORDABLE) };
 }
 
-/** Test seam: false turns off the per-lot part of `fundableAny` (the offer check stays). */
-export const ELIGIBILITY = { skip: true };
+/**
+ * Test seams: `skip` false turns off the per-lot part of `fundableAny` (the offer check stays);
+ * `early` false builds the lot's spells before the eligibility check.
+ */
+export const ELIGIBILITY = { skip: true, early: true };
 
 /** The most homes any fill level gives `lot` in `parcels` (the largest size a SIZE draw can give). */
 function topYield(parcels: ScenarioParcels, lot: number): number {
@@ -116,15 +119,37 @@ export function fundableAny(ctx: StepCtx, r: number, kind: ProjectKind, lot: num
  * Each kind's clock read through `ctx.month`, null for a kind already waiting or one no frame it
  * reads can fund (`fundableAny`: its clock would have no day): callers read only a clock's day.
  */
-function clocksOf(ctx: StepCtx, lot: number, line: FundLine | null): (KindClock | null)[] {
+function clocksOf(ctx: StepCtx, lot: number, line: FundLine | null): readonly (KindClock | null)[] {
+  if (!ELIGIBILITY.early) {
+    const spells = spellsOf(ctx, lot);
+    const sh = seedHash(ctx.seed);
+    return KINDS.map((kind) =>
+      waiting(line, lot, CODE[kind]) || !fundableAny(ctx, spells[kind].r, kind, lot)
+        ? null
+        : kindClock(ctx.statics, ctx.timeline, ctx.month, sh, spells[kind], kind)
+    );
+  }
+  // Eligibility first, on each kind's spell start alone (the `r` `spellsOf` gives, without the
+  // stream): a lot no frame can fund for either kind costs no spells and no stream.
+  const l = ctx.world.lots;
+  const i = lotRow(l, lot);
+  const r0 = i < 0 ? ctx.statics.asOf : l.r[i];
+  const k = i < 0 ? 0 : l.k[i];
+  const need = KINDS.map((kind) => {
+    const code = CODE[kind];
+    if (waiting(line, lot, code)) return false;
+    const own = line === null ? NO_DAY : spellOf(line, lot, code, k);
+    return fundableAny(ctx, own === NO_DAY ? r0 : own, kind, lot);
+  });
+  if (!need[0] && !need[1]) return NO_CLOCKS;
   const spells = spellsOf(ctx, lot);
   const sh = seedHash(ctx.seed);
-  return KINDS.map((kind) =>
-    waiting(line, lot, CODE[kind]) || !fundableAny(ctx, spells[kind].r, kind, lot)
-      ? null
-      : kindClock(ctx.statics, ctx.timeline, ctx.month, sh, spells[kind], kind)
+  return KINDS.map((kind, j) =>
+    need[j] ? kindClock(ctx.statics, ctx.timeline, ctx.month, sh, spells[kind], kind) : null
   );
 }
+
+const NO_CLOCKS: readonly (KindClock | null)[] = [null, null];
 
 /**
  * Rule 5: the model month of the earliest application day of a kind not already waiting, or 0.

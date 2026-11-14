@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import { seedHash } from '$lib/sim/scenario/rng';
 import type { ProjectKind } from '$lib/timelapse/types';
-import type { PolicyTimeline } from '../policy/frame';
+import type { PolicyFrame, PolicyTimeline } from '../policy/frame';
+import { frameIdOf } from '../policy/intern';
 import { staticsOf, type Statics } from '../statics';
 import type { FundingSystem, StepSink, World } from '../types';
 import { withFunding } from '../world';
@@ -128,3 +129,53 @@ describe.each([['baseline'], ['bench']] as const)(
     });
   }
 );
+
+/** `t` with every frame from `month` on under another id: every free lot is planned again then. */
+function replanAt(t: PolicyTimeline, month: number): PolicyTimeline {
+  const moved = new Map<number, PolicyFrame>();
+  const changes = [...new Set([...t.changes(), month])].sort((a, b) => a - b);
+  return {
+    frameAt(m) {
+      const f = t.frameAt(m);
+      if (m < month) return f;
+      let g = moved.get(m);
+      if (g === undefined) {
+        g = { ...f, id: frameIdOf(`replan-probe|${f.id}`) };
+        moved.set(m, g);
+      }
+      return g;
+    },
+    changes: () => changes,
+    touched: (m) => (m === month ? null : t.touched(m)),
+    readyThrough: () => t.readyThrough()
+  };
+}
+
+describe('eligibility before spells, synthCity bench set, a replan month', () => {
+  const { input, doc } = benchFunded('bench');
+  const statics = staticsOf(input);
+  const REPLAN = 6;
+  const timeline = replanAt(moneyTimeline(input, doc), REPLAN);
+
+  it.each([1, 2, 3])('seed %i: the early return never changes planLot’s answer', (seed) => {
+    const count = { asked: 0, differ: 0, inReplan: 0 };
+    const f = createFundingSystem();
+    const inner = f.planLot;
+    f.planLot = (ctx, lot) => {
+      const early = inner(ctx, lot);
+      ELIGIBILITY.early = false;
+      try {
+        if (inner(ctx, lot) !== early) count.differ++;
+      } finally {
+        ELIGIBILITY.early = true;
+      }
+      count.asked++;
+      if (ctx.month === REPLAN) count.inReplan++;
+      return early;
+    };
+    run(f, statics, timeline, seed, REPLAN, true);
+    expect(count.differ).toBe(0);
+    // planDue and the replan month ask every free lot.
+    expect(count.inReplan).toBeGreaterThan(100_000);
+  });
+});
