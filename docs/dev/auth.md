@@ -1,6 +1,6 @@
 # Accounts, sims and invitations
 
-Sign-in, accounts, sims (a person's saved policy with a roster) and invitations. The code is a port of planafoot's, with "quest" renamed to "sim". Better-Auth owns sessions and credentials; the app owns identity, roles and membership in D1.
+Sign-in, accounts, sims (a person's saved policy with a roster) and invitations. Better-Auth owns sessions and credentials; the app owns identity, roles and membership in D1.
 
 ## Identity model
 
@@ -65,7 +65,7 @@ SvelteKit's origin check covers only form content types. Every state-changing JS
 Templates are in `src/lib/server/email-templates/` and are sent by `sendEmail` (`src/lib/server/email/send.ts`): sign-in link, password reset, email-change approve and confirm, and invite.
 
 - `EMAIL_PROVIDER` picks the backend: `ses` (default) or `resend`.
-- With no provider configured (no `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY`, or no `RESEND_API_KEY`), mail runs in log mode: `sendEmail` logs `[email:log-mode]` and returns `{ sent: false, logged: true }`. A magic link or an invite is logged, not delivered.
+- With no provider configured (no `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY`, or no `RESEND_API_KEY`), mail runs in log mode: `sendEmail` logs `[email:log-mode]` with only the from address, the recipient and the subject, and returns `{ sent: false, logged: true }`. The link is not logged, so outside an e2e build a magic link or an invite sent in log mode cannot be read anywhere. Magic-link sign-in and emailed invites therefore do not work in an environment until a mail provider is configured: `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY` (optional `SES_REGION`), or `EMAIL_PROVIDER=resend` with `RESEND_API_KEY`. The only readable copy is the e2e-only dev link on `/signin` and `/api/e2e/mail`.
 - `SES_FROM` must be set even in log mode, or `sendEmail` throws. It is a var in `wrangler.jsonc`, which local dev also reads.
 
 ## Authorization and roles
@@ -87,7 +87,7 @@ Membership is D1 only. `onSimRosterChanged` in `src/lib/server/sims/roster-hook.
 `src/lib/server/invites/`. An invite is a bearer token, stored only as a SHA-256 hash (`token.ts`). The link is `/invite/<token>`; the mail is `invite.ts` in `email-templates/`. Create, revoke, resend, accept and decline are under `/api/sims/[simId]/invites` and `/api/invites/[inviteId]`.
 
 - An invite names an email or a handle. A visitor with no account who opens it is classified by `classifyColdAccept` in `claim.ts`: mint (a handle invite mints a pseudonymous account; an emailed invite mints an email-bound account), sign in (the entered email owns an account), or verify (the entered email differs from the invited one).
-- Accept and decline call `onSimRosterChanged`.
+- Accepting calls `onSimRosterChanged`; declining changes no roster and does not. The call sites are `createSim` and `removeSimMember` (when the sim survives) in `src/lib/server/sims/sims.ts`, the API accept route `src/routes/api/invites/[inviteId]/accept/+server.ts`, and the two accept paths (signed in, and cold accept) of `src/routes/invite/[token]/+page.server.ts`.
 
 ## e2e seams
 

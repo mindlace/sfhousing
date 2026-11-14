@@ -39,10 +39,8 @@ export async function createSimRecord(args: {
 /**
  * Idempotently (re)seed a sim's control-plane projection. Unlike createSimRecord
  * — which assumes a freshly-provisioned sim and inserts unconditionally — this tolerates
- * an existing index row and an already-held manager grant. It is the shape needed when a
- * sim's Durable Object SURVIVES a D1 content wipe (the release canary, whose DO is
- * excluded from the wipe to preserve its continuous migration history): the next provision
- * rebuilds the wiped index row + manager grant onto the live DO without disturbing it.
+ * an existing index row and an already-held manager grant, so calling it again for the
+ * same sim changes nothing and restores whichever of the two is missing.
  */
 export async function ensureSimRecord(args: {
   db: Database;

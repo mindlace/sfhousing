@@ -33,7 +33,7 @@ BETTER_AUTH_SECRET=<any long random string>
 AUTH_METHODS=magic-link,password
 ```
 
-`BETTER_AUTH_SECRET` is required. `AUTH_METHODS` is optional and overrides the `wrangler.jsonc` value (magic link only; see [auth.md](auth.md)). `SES_FROM` must be set even with no mail provider; the `wrangler.jsonc` var covers local dev. With no provider, mail runs in log mode and a magic link or an invite is logged to the terminal. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (with `google` in `AUTH_METHODS`) turn on Google sign-in, and `SES_ACCESS_KEY_ID` plus `SES_SECRET_ACCESS_KEY`, or `EMAIL_PROVIDER=resend` plus `RESEND_API_KEY`, turn on real mail. These are read through a typed cast of `platform.env`, so do not add them to generate types.
+`BETTER_AUTH_SECRET` is required. `AUTH_METHODS` is optional and overrides the `wrangler.jsonc` value (magic link only; see [auth.md](auth.md)). `SES_FROM` must be set even with no mail provider; the `wrangler.jsonc` var covers local dev. With no provider, mail runs in log mode: only the from address, recipient and subject are logged, never the link. Outside an e2e build a magic link or an invite cannot then be read, so magic-link sign-in and emailed invites do not work locally until you set `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY`, or `EMAIL_PROVIDER=resend` and `RESEND_API_KEY`. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (with `google` in `AUTH_METHODS`) turn on Google sign-in, and `SES_ACCESS_KEY_ID` plus `SES_SECRET_ACCESS_KEY`, or `EMAIL_PROVIDER=resend` plus `RESEND_API_KEY`, turn on real mail. These are read through a typed cast of `platform.env`, so do not add them to generate types.
 
 ## Local data
 
