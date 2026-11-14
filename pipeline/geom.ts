@@ -88,6 +88,21 @@ export function grow(p: MultiPoly, d: number): MultiPoly {
   return offset(p, d);
 }
 
+/** Buffer of an open polyline by d on each side: butt ends, miter joins. */
+export function bufferLine(path: Ring, d: number): MultiPoly {
+  if (path.length < 2 || !(d > 0)) return [];
+  return fromPaths(
+    Clipper.inflatePathsD(
+      [path.map(([x, y]) => ({ x, y }))],
+      d,
+      JoinType.Miter,
+      EndType.Butt,
+      MITER_LIMIT,
+      PRECISION
+    )
+  );
+}
+
 export function union(a: MultiPoly[]): MultiPoly {
   const paths = a.flatMap((p) => toPaths(p));
   if (paths.length === 0) return [];
