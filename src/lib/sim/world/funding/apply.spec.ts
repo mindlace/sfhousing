@@ -1,6 +1,6 @@
 // world-funding Task 4: the funding system, `planLot` and applications (spec rules 5, 6, 8, 9).
 import { describe, expect, it } from 'vitest';
-import { lineKey } from '$lib/sim/scenario/funded';
+import { NEVER_KEY_DAY, lineKey } from '$lib/sim/scenario/funded';
 import { seedHash } from '$lib/sim/scenario/rng';
 import type { ProjectKind } from '$lib/timelapse/types';
 import { lotRow } from '../columns';
@@ -151,6 +151,21 @@ describe('the funding line', () => {
       .filter((r) => r.month === 3)
       .map((r) => r.kind);
     expect(kinds).toEqual([KIND_MARKET, KIND_AFFORDABLE]);
+  });
+
+  it('a key day past NEVER_KEY_DAY is stored as NEVER_KEY_DAY, its key unchanged', () => {
+    const world = withFunding(createFundingSystem()).createWorld(statics, timeline, 1, NOWHERE);
+    const { line } = fundOf(world);
+    const A = lotOfRank(2);
+    // A day past the Int32 range: stored as it is, the column would wrap to a negative day.
+    const late = 5_000_000_000;
+    const a = application(A, KIND_MARKET, 900);
+    joinLine(line, 1, [{ ...a, keyDay: late, key: lineKey(late, statics.rank[A], 'market') }]);
+    expect(line.keyDay[0]).toBe(NEVER_KEY_DAY);
+    expect(line.key[0]).toBe(lineKey(NEVER_KEY_DAY, statics.rank[A], 'market'));
+    // A day within range is kept as it is.
+    joinLine(line, 2, [application(A, KIND_AFFORDABLE, 900)]);
+    expect(line.keyDay[1]).toBe(900);
   });
 
   it('applyLots appends a month after every waiting row, its own rows in key order', () => {

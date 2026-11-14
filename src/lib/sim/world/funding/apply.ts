@@ -1,7 +1,7 @@
 // Planning and making applications (spec rules 5, 6, 8, 9): which model month a free lot applies
 // in, the rows it adds to the funding line, re-making a row under a new frame (rules 17, 18) and
 // its leaving the line.
-import { lineKey } from '$lib/sim/scenario/funded';
+import { NEVER_KEY_DAY, lineKey } from '$lib/sim/scenario/funded';
 import { below, coverageLevel } from '$lib/sim/scenario/funding';
 import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
 import type { ProjectKind } from '$lib/timelapse/types';
@@ -136,7 +136,8 @@ export function joinLine(line: FundLine, month: number, apps: Application[]): vo
     line.kind[i] = a.kind;
     line.month[i] = month;
     line.applied[i] = a.applied;
-    line.keyDay[i] = a.keyDay;
+    // The column is Int32: a later reference day is stored as NEVER_KEY_DAY (the key caps it too).
+    line.keyDay[i] = Math.min(a.keyDay, NEVER_KEY_DAY);
     line.key[i] = a.key;
     line.bundle[i] = a.bundle;
     line.f[i] = a.f;
