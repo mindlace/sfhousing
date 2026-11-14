@@ -5,6 +5,7 @@ import type { BuildoutMode, TypologyId } from '$lib/generator';
 import type { ChunkStatus, GeneratedUpdate, LotLimits, ParcelSummaryLike } from '$lib/map/types';
 import type { BBox, Envelope, Plan, PlanOp } from '$lib/plan';
 import type { Score } from '$lib/scoreboard';
+import type { Lookups } from './levers/apply';
 import type { LotOutlines } from './outlines';
 import type { ProjectCard } from './scenario/types';
 
@@ -84,6 +85,11 @@ export interface ParcelSummary {
    * ParcelSummary stays assignable to ParcelSummaryLike (the editor hands it over unmapped).
    */
   limits?: LotLimits;
+  /**
+   * Timeline host only (S14): the stage tables of the frame in force on the requested day, for
+   * that project.
+   */
+  lookups?: Lookups;
 }
 
 // I17 addendum: ParcelSummary must be assignable to map-view's ParcelSummaryLike.

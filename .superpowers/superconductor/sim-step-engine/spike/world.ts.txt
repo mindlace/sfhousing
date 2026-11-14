@@ -1,0 +1,1023 @@
+// THROWAWAY SPIKE (untracked): a month-step world for the path without public money.
+// Struct-of-arrays world, `step(world, statics, frame, seed, sink)`, draws as today.
+import { FILL_LEVELS, fillStories, type ScenarioParcels } from '$lib/data/scenario-codec';
+import { log } from '$lib/timelapse/math';
+import { sampleTransition } from '$lib/timelapse/model';
+import { MONTH_DAYS, stageMonths, type Day } from '$lib/timelapse/time';
+import {
+  EXIT_ORDER,
+  PATHWAYS,
+  STAGE_ORDER,
+  type Calibration,
+  type Pathway,
+  type Stage
+} from '$lib/timelapse/types';
+import type { StageScale } from '$lib/sim/levers/timers';
+import { nextStage, pathwayFrom, revisionRatio } from '$lib/sim/scenario/engine';
+import {
+  lastInitiationMonth,
+  precomputeOf,
+  sizeCumAgainst,
+  type Precompute
+} from '$lib/sim/scenario/input';
+import { P, drawOn, jobEntity, seedHash, streamOf } from '$lib/sim/scenario/rng';
+import type { SimInput } from '$lib/sim/scenario/types';
+
+const F = FILL_LEVELS.length;
+const NS = STAGE_ORDER.length; // 7
+const SI = Object.fromEntries(STAGE_ORDER.map((s, i) => [s, i])) as Record<Stage, number>;
+const CONSTRUCTION = SI.construction;
+const ENTITLED = SI.entitled;
+const COMPLETE = SI.complete;
+const WAITING = 255; // a phase not yet filed
+const NOSTOP = 255;
+
+// project origins
+export const O_PIPE = 0;
+export const O_PHASE = 1;
+export const O_MASTER = 2;
+export const O_SIM = 3;
+// revision rules
+const R_NONE = 0;
+const R_PIPE = 1;
+const R_SIM = 2;
+// lot states
+export const L_HELD = 0;
+export const L_FREE = 1;
+export const L_PENDING = 2;
+export const L_LIVE = 3;
+export const L_DONE = 4;
+// project end kinds
+export const E_ALIVE = 0;
+export const E_COMPLETE = 1;
+export const E_EXIT = 2;
+export const E_ENTITLED = 3; // a master
+
+export type LotMode = 'clock' | 'exact' | 'lazy';
+
+// ---------------------------------------------------------------- statics
+
+interface RowStatic {
+  entity: number;
+  rowsC: Int32Array; // candidate indices of its parcels (only candidates matter)
+  rows: Int32Array; // T11 rows
+  yieldCap: number;
+  envelope: number;
+  phased: null | {
+    allC: Int32Array;
+    restC: Int32Array;
+    phases: {
+      id: string;
+      entity: number;
+      rowsC: Int32Array;
+      existing: number;
+      yieldCap: number;
+      envelope: number;
+    }[];
+  };
+}
+
+export interface Statics {
+  input: SimInput;
+  asOf: Day;
+  cal: Calibration;
+  newCal: Calibration;
+  parcels: ScenarioParcels;
+  pre: Precompute;
+  C: number;
+  cand: Int32Array; // candidate -> T11 row
+  ent: Uint32Array;
+  segDays: Day[];
+  segRates: Float64Array[]; // per segment, log1mh by T11 row
+  rows: RowStatic[];
+  initHolders: Int32Array; // by candidate
+  initBlocked: Uint8Array;
+  revisionAt: (Calibration['revision']['at'][number] | undefined)[];
+}
+
+function rowsOf(p: ScenarioParcels, ids: readonly string[]): Int32Array {
+  const out: number[] = [];
+  for (const id of ids) {
+    const i = p.index.get(id);
+    if (i !== undefined) out.push(i);
+  }
+  return Int32Array.from(out);
+}
+
+function capsOf(p: ScenarioParcels, rows: Int32Array) {
+  let yieldCap = 0;
+  let envelope = 0;
+  for (const i of rows) {
+    yieldCap += p.yield[i * F + F - 1];
+    envelope = Math.max(envelope, p.envelopeStories[i]);
+  }
+  return { yieldCap, envelope };
+}
+
+export function isSkipped(p: SimInput['projects'][number]): boolean {
+  return (
+    p.stage === 'complete' ||
+    (p.pathway === 'permitOnly' && (p.stage === 'filed' || p.stage === 'entitled'))
+  );
+}
+const isPhased = (p: SimInput['projects'][number]) => p.multiPhase && p.phases !== null;
+
+export function monthEnd(asOf: Day, m: number): Day {
+  return asOf + Math.floor(m * MONTH_DAYS);
+}
+
+export function staticsOf(input: SimInput): Statics {
+  if (input.regimes && input.regimes.length > 0) throw new Error('spike: no regimes');
+  if (input.reservedFrom) throw new Error('spike: no reservations');
+  if (input.finance) throw new Error('spike: no finance');
+  const parcels = input.parcels;
+  const pre = precomputeOf(input);
+  const C = pre.candidates.length;
+  const candOf = new Int32Array(parcels.count).fill(-1);
+  for (let c = 0; c < C; c++) candOf[pre.candidates[c]] = c;
+  const toC = (rows: Int32Array) => {
+    const out: number[] = [];
+    for (const i of rows) if (candOf[i] >= 0) out.push(candOf[i]);
+    return Int32Array.from(out);
+  };
+  const initHolders = new Int32Array(C);
+  const initBlocked = new Uint8Array(C);
+  const rows: RowStatic[] = input.projects.map((p) => {
+    const own = rowsOf(parcels, p.parcelIds);
+    let phased: RowStatic['phased'] = null;
+    if (isPhased(p)) {
+      const phases = p.phases ?? [];
+      const inPhase = new Set(phases.flatMap((ph) => ph.parcelIds));
+      phased = {
+        allC: toC(
+          rowsOf(parcels, [...new Set([...p.parcelIds, ...phases.flatMap((ph) => ph.parcelIds)])])
+        ),
+        restC: toC(
+          rowsOf(
+            parcels,
+            p.parcelIds.filter((id) => !inPhase.has(id))
+          )
+        ),
+        phases: phases.map((ph, j) => {
+          const id = `${p.id}:phase:${j + 1}`;
+          const r = rowsOf(parcels, ph.parcelIds);
+          let existing = 0;
+          for (const i of r) existing += parcels.existingUnits[i];
+          return { id, entity: jobEntity(id), rowsC: toC(r), existing, ...capsOf(parcels, r) };
+        })
+      };
+    }
+    return { entity: jobEntity(p.id), rows: own, rowsC: toC(own), phased, ...capsOf(parcels, own) };
+  });
+  // initial holds: skipped rows block their own parcels; unphased rows hold their own; a phased
+  // master holds all of its and its phases' parcels until it is entitled or ends
+  input.projects.forEach((p, k) => {
+    const rs = rows[k];
+    if (isSkipped(p)) {
+      for (const c of rs.rowsC) initBlocked[c] = 1;
+      return;
+    }
+    if (isPhased(p)) {
+      for (const c of rs.phased!.allC) initHolders[c]++;
+      return;
+    }
+    for (const c of rs.rowsC) initHolders[c]++;
+  });
+  const revisionAt: Statics['revisionAt'] = STAGE_ORDER.map(() => undefined);
+  for (const a of input.calibration.revision.at) {
+    const i = SI[a.stage];
+    if (revisionAt[i] === undefined) revisionAt[i] = a;
+  }
+  return {
+    input,
+    asOf: input.asOf,
+    cal: input.calibration,
+    newCal: input.newProjects?.calibration ?? input.calibration,
+    parcels,
+    pre,
+    C,
+    cand: pre.candidates,
+    ent: pre.entity,
+    segDays: pre.segments.days,
+    segRates: pre.segments.log1mh,
+    rows,
+    initHolders,
+    initBlocked,
+    revisionAt
+  };
+}
+
+// ---------------------------------------------------------------- the frame
+
+export interface PolicyFrame {
+  id: number;
+  /** time-in-stage scale of new projects (simulated, pipeline at preApplication) */
+  newScale: StageScale | null;
+  /** time-in-stage scale of in-flight rows, masters and phases */
+  inFlightScale: StageScale | null;
+}
+
+function scaleOf(s: StageScale | null, path: number, stage: number): number {
+  if (s === null) return 1;
+  return (s[PATHWAYS[path]] as Partial<Record<Stage, number>>)[STAGE_ORDER[stage]] ?? 1;
+}
+
+// ---------------------------------------------------------------- the world
+
+function grow<T extends Int32Array | Float64Array | Uint8Array | Uint32Array>(a: T, n: number): T {
+  const b = new (a.constructor as new (n: number) => T)(n);
+  b.set(a);
+  return b;
+}
+
+export class ProjectColumns {
+  n = 0;
+  cap: number;
+  origin: Uint8Array;
+  src: Int32Array; // input row k (pipe, phase, master) or candidate c (sim)
+  sub: Int32Array; // phase index (1-based) or attempt k
+  stream: Uint32Array;
+  pathway: Uint8Array;
+  isNew: Uint8Array; // runs on newCal / newScale
+  stage: Uint8Array;
+  stopAt: Uint8Array;
+  leave: Int32Array; // day it leaves the current stage
+  leaveKind: Uint8Array; // 0 advance, 1.. EXIT_ORDER index + 1
+  anchor: Int32Array; // stage clock: leave = anchor + floor(speed * (len - prog))
+  prog: Float64Array;
+  len: Float64Array;
+  speed: Float64Array;
+  endKind: Uint8Array;
+  endDay: Int32Array;
+  endStage: Uint8Array;
+  entered: Int32Array; // NS per project, -1 = none
+  units: Int32Array;
+  stories: Float64Array; // NaN = null
+  rule: Uint8Array;
+  yieldCap: Int32Array;
+  envelope: Int32Array;
+  existing: Int32Array;
+  top: Int32Array;
+  env: Int32Array;
+  row: Int32Array;
+  constructor(cap = 1024) {
+    this.cap = cap;
+    this.origin = new Uint8Array(cap);
+    this.src = new Int32Array(cap);
+    this.sub = new Int32Array(cap);
+    this.stream = new Uint32Array(cap);
+    this.pathway = new Uint8Array(cap);
+    this.isNew = new Uint8Array(cap);
+    this.stage = new Uint8Array(cap);
+    this.stopAt = new Uint8Array(cap);
+    this.leave = new Int32Array(cap);
+    this.leaveKind = new Uint8Array(cap);
+    this.anchor = new Int32Array(cap);
+    this.prog = new Float64Array(cap);
+    this.len = new Float64Array(cap);
+    this.speed = new Float64Array(cap);
+    this.endKind = new Uint8Array(cap);
+    this.endDay = new Int32Array(cap);
+    this.endStage = new Uint8Array(cap);
+    this.entered = new Int32Array(cap * NS).fill(-1);
+    this.units = new Int32Array(cap);
+    this.stories = new Float64Array(cap);
+    this.rule = new Uint8Array(cap);
+    this.yieldCap = new Int32Array(cap);
+    this.envelope = new Int32Array(cap);
+    this.existing = new Int32Array(cap);
+    this.top = new Int32Array(cap);
+    this.env = new Int32Array(cap);
+    this.row = new Int32Array(cap);
+  }
+  add(): number {
+    if (this.n === this.cap) {
+      const cap = this.cap * 2;
+      for (const key of Object.keys(this) as (keyof this)[]) {
+        const v = this[key];
+        if (ArrayBuffer.isView(v)) {
+          const old = v as unknown as Int32Array;
+          const per = old.length / this.cap;
+          const b = grow(old, cap * per);
+          if (key === 'entered') b.fill(-1, old.length);
+          (this as Record<string, unknown>)[key as string] = b;
+        }
+      }
+      this.cap = cap;
+    }
+    return this.n++;
+  }
+  bytes(): number {
+    let b = 0;
+    for (const v of Object.values(this))
+      if (ArrayBuffer.isView(v)) b += ((v as Int32Array).byteLength / this.cap) * this.n;
+    return b;
+  }
+}
+
+export class LotColumns {
+  state: Uint8Array;
+  holders: Int32Array;
+  blocked: Uint8Array;
+  lastExit: Int32Array;
+  demolished: Uint8Array;
+  k: Int32Array;
+  r: Int32Array; // risk-start day
+  n: Int32Array; // lot-months evaluated since r
+  nextDay: Int32Array; // first day of lot-month n + 1
+  L: Float64Array; // threshold log(1 - u), < 0
+  clock: Float64Array; // accumulated log-survival since r ('clock' mode)
+  segJ: Int32Array; // 'exact' mode: current segment, its first month - 1, acc before it
+  segA: Int32Array;
+  segAcc: Float64Array;
+  due: Int32Array; // 'exact' mode: the lot-month it starts in under the current segment; 0 never
+  pendDay: Int32Array;
+  project: Int32Array;
+  stream: Uint32Array;
+  constructor(C: number, shared: boolean) {
+    this.state = new Uint8Array(C);
+    this.holders = new Int32Array(C);
+    this.blocked = new Uint8Array(C);
+    this.lastExit = new Int32Array(C);
+    this.demolished = new Uint8Array(C);
+    this.k = new Int32Array(C);
+    this.r = new Int32Array(C);
+    this.n = new Int32Array(C);
+    this.nextDay = new Int32Array(C);
+    this.L = new Float64Array(C);
+    void shared; // the per-world clock is kept for lots off the shared clock (exits, holds)
+    this.clock = new Float64Array(C);
+    this.segJ = new Int32Array(C);
+    this.segA = new Int32Array(C);
+    this.segAcc = new Float64Array(C);
+    this.due = new Int32Array(C);
+    this.pendDay = new Int32Array(C);
+    this.project = new Int32Array(C).fill(-1);
+    this.stream = new Uint32Array(C);
+  }
+  bytes(): number {
+    let b = 0;
+    for (const v of Object.values(this)) if (ArrayBuffer.isView(v)) b += (v as Int32Array).byteLength;
+    return b;
+  }
+}
+
+export interface World {
+  month: number; // months done
+  lots: LotColumns;
+  projects: ProjectColumns;
+  live: Int32Array; // dense list of live project rows
+  nLive: number;
+  frameId: number;
+  /** 'lazy' mode: min-heap of (wake day, lot) */
+  hk: Int32Array;
+  hv: Int32Array;
+  hn: number;
+}
+
+function hpush(w: World, k: number, v: number) {
+  if (w.hn === w.hk.length) {
+    w.hk = grow(w.hk, w.hk.length * 2);
+    w.hv = grow(w.hv, w.hv.length * 2);
+  }
+  let i = w.hn++;
+  const hk = w.hk;
+  const hv = w.hv;
+  while (i > 0) {
+    const p = (i - 1) >> 1;
+    if (hk[p] <= k) break;
+    hk[i] = hk[p];
+    hv[i] = hv[p];
+    i = p;
+  }
+  hk[i] = k;
+  hv[i] = v;
+}
+
+function hpop(w: World) {
+  const hk = w.hk;
+  const hv = w.hv;
+  const n = --w.hn;
+  const k = hk[n];
+  const v = hv[n];
+  let i = 0;
+  for (;;) {
+    let c = 2 * i + 1;
+    if (c >= n) break;
+    if (c + 1 < n && hk[c + 1] < hk[c]) c++;
+    if (hk[c] >= k) break;
+    hk[i] = hk[c];
+    hv[i] = hv[c];
+    i = c;
+  }
+  hk[i] = k;
+  hv[i] = v;
+}
+
+const NEVER = 0x7fffffff;
+
+/**
+ * 'lazy': from month `from` (the first undecided month of lot c), the next month to look at:
+ * the start month if it falls in this segment (due = 1), else the first month of the next
+ * segment (due = 0, acc carried as piecewiseMonth does). Sets n, nextDay and pushes a wake.
+ */
+function plan(x: Ctx, c: number, from: number) {
+  const L_ = x.w.lots;
+  const st = x.st;
+  const i = st.cand[c];
+  const r = L_.r[c];
+  const days = st.segDays;
+  const first = r + 1 + Math.floor((from - 1) * MONTH_DAYS);
+  let j = 0;
+  while (j < days.length && days[j] <= first) j++;
+  const l = st.segRates[j][i];
+  const a = from - 1;
+  const segEnd = j < days.length ? lastInitiationMonth(r, days[j] - 1) : Infinity;
+  let target = NEVER;
+  L_.due[c] = 0;
+  if (l < 0) {
+    const T = a + Math.max(1, Math.ceil((L_.L[c] - L_.segAcc[c]) / l));
+    if (T <= segEnd) {
+      target = T;
+      L_.due[c] = 1;
+    }
+  }
+  if (L_.due[c] === 0 && segEnd !== Infinity) {
+    L_.segAcc[c] += (segEnd - a) * l;
+    target = segEnd + 1;
+  }
+  L_.n[c] = target;
+  L_.nextDay[c] = target === NEVER ? NEVER : r + 1 + Math.floor((target - 1) * MONTH_DAYS);
+  if (target !== NEVER) hpush(x.w, L_.nextDay[c], c);
+}
+
+export type EventKind = 'start' | 'enter' | 'revise' | 'complete' | 'exit' | 'entitled';
+export interface StepSink {
+  event(p: number, kind: EventKind, stage: number, day: Day, units: number, stories: number): void;
+}
+
+export interface Opts {
+  mode: LotMode;
+  /** S10: a shared clock column for lots on attempt 0 from asOf (owned by the ensemble) */
+  sharedClock?: Float64Array | null;
+}
+
+// a run's mutable context, so the helpers take few arguments
+interface Ctx {
+  w: World;
+  st: Statics;
+  fr: PolicyFrame;
+  sh: number;
+  sink: StepSink | null;
+  opts: Opts;
+}
+
+function pushLive(w: World, p: number) {
+  if (w.nLive === w.live.length) w.live = grow(w.live, w.live.length * 2);
+  w.live[w.nLive++] = p;
+}
+
+/** Sets the stage clock of `p` entering stage `s` on `e` (survived > 0 for a conditioned row). */
+function enterStage(x: Ctx, p: number, s: number, e: Day, survived: number) {
+  const P_ = x.w.projects;
+  P_.stage[p] = s;
+  const path = P_.pathway[p];
+  const cal = P_.isNew[p] ? x.st.newCal : x.st.cal;
+  const t = cal.transitions[PATHWAYS[path]][STAGE_ORDER[s] as Exclude<Stage, 'complete'>];
+  if (t === undefined) throw new Error(`no ${PATHWAYS[path]} ${STAGE_ORDER[s]} transition`);
+  const stream = P_.stream[p];
+  const r = sampleTransition(
+    t,
+    drawOn(stream, P.STAGE, s),
+    drawOn(stream, P.STAGE_TIME, s),
+    stageMonths(survived)
+  );
+  const speed = scaleOf(P_.isNew[p] ? x.fr.newScale : x.fr.inFlightScale, path, s);
+  P_.leaveKind[p] = r.kind === 'advance' ? 0 : EXIT_ORDER.indexOf(r.kind) + 1;
+  P_.anchor[p] = e + survived;
+  P_.prog[p] = survived;
+  P_.len[p] = r.days;
+  P_.speed[p] = speed;
+  P_.leave[p] = e + survived + Math.floor(speed * (r.days - survived));
+}
+
+function revise(x: Ctx, p: number, n: number, day: Day) {
+  const P_ = x.w.projects;
+  if (n >= CONSTRUCTION || P_.rule[p] === R_NONE) return;
+  const at = x.st.revisionAt[n];
+  if (at === undefined) return;
+  const stream = P_.stream[p];
+  if (!(drawOn(stream, P.REV, n) < at.probability)) return;
+  const ratio = revisionRatio(at.ratio, drawOn(stream, P.REV_RATIO, n));
+  const units = P_.units[p];
+  const st0 = P_.stories[p];
+  let next: number;
+  let stories: number;
+  if (P_.rule[p] === R_PIPE) {
+    next = Math.min(Math.max(1, Math.round(ratio * units)), Math.max(units, P_.yieldCap[p]));
+    if (Number.isNaN(st0)) stories = NaN;
+    else {
+      let s = Math.max(1, Math.round((st0 * next) / units));
+      if (next > units) s = Math.min(s, Math.max(st0, P_.envelope[p]));
+      stories = s;
+    }
+  } else {
+    const y = x.st.parcels.yield;
+    const row = P_.row[p];
+    next = Math.min(P_.top[p], Math.max(P_.existing[p] + 1, Math.round(ratio * units)));
+    let f = 0;
+    while (f < F - 1 && y[row * F + f] < next) f++;
+    stories = fillStories(FILL_LEVELS[f], P_.env[p]);
+  }
+  if (next !== units) {
+    P_.units[p] = next;
+    P_.stories[p] = stories;
+    x.sink?.event(p, 'revise', n, day, next, stories);
+  }
+}
+
+// ---- holds
+
+function freeLot(x: Ctx, c: number, r: Day, k: number) {
+  const L_ = x.w.lots;
+  L_.state[c] = L_FREE;
+  L_.r[c] = r;
+  L_.k[c] = k;
+  L_.n[c] = 0;
+  L_.nextDay[c] = r + 1;
+  const stream = streamOf(x.sh, x.st.ent[c], k);
+  L_.stream[c] = stream;
+  L_.L[c] = log(1 - drawOn(stream, P.INIT, 0));
+  L_.clock[c] = 0;
+  L_.segJ[c] = -1;
+  L_.segA[c] = 0;
+  L_.segAcc[c] = 0;
+  L_.due[c] = 0;
+  if (x.opts.mode === 'lazy') plan(x, c, 1);
+}
+
+function releaseHold(x: Ctx, rowsC: Int32Array, exitDay: Day | null) {
+  const L_ = x.w.lots;
+  for (const c of rowsC) {
+    if (exitDay === null) {
+      L_.blocked[c] = 1;
+      if (L_.state[c] === L_HELD) L_.state[c] = L_DONE;
+      continue;
+    }
+    if (exitDay > L_.lastExit[c]) L_.lastExit[c] = exitDay;
+    if (--L_.holders[c] === 0 && L_.blocked[c] === 0 && L_.state[c] === L_HELD) {
+      freeLot(x, c, Math.max(x.st.asOf, L_.lastExit[c]), 0);
+    }
+  }
+}
+
+function holdRowsOf(x: Ctx, p: number): Int32Array | null {
+  const P_ = x.w.projects;
+  const rs = x.st.rows[P_.src[p]];
+  if (P_.origin[p] === O_PIPE) return rs.rowsC;
+  if (P_.origin[p] === O_PHASE) return rs.phased!.phases[P_.sub[p] - 1].rowsC;
+  if (P_.origin[p] === O_MASTER) return rs.phased!.allC;
+  return null;
+}
+
+// ---- project lifecycle
+
+function endProject(x: Ctx, p: number, kind: number, day: Day, stage: number) {
+  const P_ = x.w.projects;
+  P_.endKind[p] = kind;
+  P_.endDay[p] = day;
+  P_.endStage[p] = stage;
+  if (P_.origin[p] === O_SIM) {
+    const c = P_.src[p];
+    const L_ = x.w.lots;
+    L_.project[c] = -1;
+    if (kind === E_EXIT) freeLot(x, c, day, P_.sub[p] + 1);
+    else L_.state[c] = L_DONE;
+    return;
+  }
+  if (P_.origin[p] === O_MASTER && kind === E_ENTITLED) return; // phases take over (spawnPhases)
+  releaseHold(x, holdRowsOf(x, p)!, kind === E_EXIT ? day : null);
+}
+
+function onConstruction(x: Ctx, p: number) {
+  const P_ = x.w.projects;
+  const L_ = x.w.lots;
+  if (P_.origin[p] === O_SIM) {
+    L_.demolished[P_.src[p]] = 1;
+    return;
+  }
+  const rows = holdRowsOf(x, p);
+  if (rows) for (const c of rows) L_.demolished[c] = 1;
+}
+
+/** Steps `p` through every stage leave on or before `d1`. Returns false once it has ended. */
+function runProject(x: Ctx, p: number, d1: Day): boolean {
+  const P_ = x.w.projects;
+  while (P_.endKind[p] === E_ALIVE && P_.leave[p] <= d1) {
+    const day = P_.leave[p];
+    const s = P_.stage[p];
+    if (s === WAITING) {
+      // a phase files
+      P_.entered[p * NS + SI.permitFiled] = day;
+      x.sink?.event(p, 'start', SI.permitFiled, day, P_.units[p], P_.stories[p]);
+      enterStage(x, p, SI.permitFiled, day, 0);
+      continue;
+    }
+    const kind = P_.leaveKind[p];
+    if (kind !== 0) {
+      x.sink?.event(p, 'exit', s, day, 0, 0);
+      endProject(x, p, E_EXIT, day, s);
+      return false;
+    }
+    const n = SI[nextStage(PATHWAYS[P_.pathway[p]], STAGE_ORDER[s])];
+    const stop = P_.stopAt[p];
+    if (stop !== NOSTOP && n >= stop) {
+      if (n === stop) P_.entered[p * NS + n] = day;
+      x.sink?.event(p, 'entitled', n, day, 0, 0);
+      P_.endKind[p] = E_ENTITLED;
+      P_.endDay[p] = day;
+      spawnPhases(x, p, day);
+      return false;
+    }
+    P_.entered[p * NS + n] = day;
+    x.sink?.event(p, 'enter', n, day, 0, 0);
+    if (n === CONSTRUCTION) onConstruction(x, p);
+    if (n === COMPLETE) {
+      x.sink?.event(p, 'complete', n, day, 0, 0);
+      endProject(x, p, E_COMPLETE, day, n);
+      return false;
+    }
+    revise(x, p, n, day);
+    enterStage(x, p, n, day, 0);
+  }
+  return P_.endKind[p] === E_ALIVE;
+}
+
+function newProject(x: Ctx, origin: number, src: number, sub: number, stream: number): number {
+  const P_ = x.w.projects;
+  const p = P_.add();
+  P_.origin[p] = origin;
+  P_.src[p] = src;
+  P_.sub[p] = sub;
+  P_.stream[p] = stream;
+  P_.stopAt[p] = NOSTOP;
+  P_.endKind[p] = E_ALIVE;
+  P_.rule[p] = R_NONE;
+  P_.stories[p] = NaN;
+  pushLive(x.w, p);
+  return p;
+}
+
+/** Phase filing days (§4.4.3a) and the phase projects, waiting to file; holds move to them. */
+function spawnPhases(x: Ctx, master: number, E: Day) {
+  const st = x.st;
+  const k = x.w.projects.src[master];
+  const prow = st.input.projects[k];
+  const rs = st.rows[k];
+  const ps = rs.phased!;
+  const L_ = x.w.lots;
+  // the phases (and the rest) take their holds before the master lets go
+  for (const c of ps.restC) {
+    L_.blocked[c] = 1;
+  }
+  let prev = E;
+  const phases = prow.phases ?? [];
+  for (let j = 0; j < phases.length; j++) {
+    const i = j + 1;
+    const ph = phases[j];
+    const plan = ph.plannedPermitFiled;
+    let Fi: Day;
+    if (plan !== null && plan > st.asOf) Fi = Math.max(plan, E + 1);
+    else {
+      const days = st.cal.phaseGap.days;
+      const u = drawOn(streamOf(x.sh, rs.entity, i), P.PHASE_GAP, 0);
+      Fi = Math.max(i === 1 ? E : prev, st.asOf) + 1 + days[Math.floor(u * days.length)];
+    }
+    prev = Fi;
+    const pst = ps.phases[j];
+    for (const c of pst.rowsC) L_.holders[c]++;
+    const P_ = x.w.projects;
+    const p = newProject(x, O_PHASE, k, i, streamOf(x.sh, pst.entity, 0));
+    P_.pathway[p] = PATHWAYS.indexOf(prow.pathway);
+    P_.isNew[p] = 0;
+    P_.stage[p] = WAITING;
+    P_.leave[p] = Fi;
+    P_.leaveKind[p] = 0;
+    P_.units[p] = ph.units;
+    P_.stories[p] = NaN;
+    P_.rule[p] = R_PIPE;
+    P_.yieldCap[p] = pst.yieldCap;
+    P_.envelope[p] = pst.envelope;
+  }
+  // now the master lets go of every parcel (rest stays blocked; phases hold theirs)
+  for (const c of ps.allC) {
+    L_.holders[c]--;
+    if (L_.blocked[c] === 1 && L_.state[c] === L_HELD) L_.state[c] = L_DONE;
+  }
+}
+
+// ---- lots
+
+/** Evaluates lot-month n (just reached) of lot c; true when the lot starts in it. */
+function lotMonth(x: Ctx, c: number, n: number, firstDay: Day): boolean {
+  const L_ = x.w.lots;
+  const st = x.st;
+  const i = st.cand[c];
+  const days = st.segDays;
+  let j = 0;
+  while (j < days.length && days[j] <= firstDay) j++;
+  const l = st.segRates[j][i];
+  if (x.opts.mode === 'clock') {
+    // S10: the shared clock (owned by the ensemble) for a lot on attempt 0 from asOf
+    const sc = x.opts.sharedClock;
+    if (sc && L_.k[c] === 0 && L_.r[c] === st.asOf) return sc[c] <= L_.L[c];
+    L_.clock[c] += l;
+    return L_.clock[c] <= L_.L[c];
+  }
+  // exact: piecewiseMonth's arithmetic, one segment at a time
+  if (j !== L_.segJ[c]) {
+    if (L_.segJ[c] >= 0) {
+      const lPrev = st.segRates[L_.segJ[c]][i];
+      L_.segAcc[c] += (n - 1 - L_.segA[c]) * lPrev;
+      L_.segA[c] = n - 1;
+    }
+    L_.segJ[c] = j;
+    L_.due[c] = l < 0 ? L_.segA[c] + Math.max(1, Math.ceil((L_.L[c] - L_.segAcc[c]) / l)) : 0;
+  }
+  return L_.due[c] !== 0 && n >= L_.due[c];
+}
+
+function startSim(x: Ctx, c: number, day: Day): number {
+  const st = x.st;
+  const L_ = x.w.lots;
+  const i = st.cand[c];
+  const p0 = st.parcels;
+  const stream = L_.stream[c];
+  const existing = L_.demolished[c] ? 0 : p0.existingUnits[i];
+  const own = existing === p0.existingUnits[i];
+  const cum = own ? st.pre.sizeCum : sizeCumAgainst(st.input, i, existing);
+  const at = own ? i * F : 0;
+  const u = drawOn(stream, P.SIZE, 0);
+  let f = 0;
+  while (f < F && !(u < cum[at + f])) f++;
+  if (f === F) return -1;
+  const cal = st.newCal;
+  const path: Pathway =
+    p0.localProgram[i] === 1 ? 'streamlined' : pathwayFrom(cal.pathwayForNew, stream);
+  const first: Stage =
+    drawOn(stream, P.PPA, 0) < cal.ppaShare[path]
+      ? 'preApplication'
+      : path === 'permitOnly'
+        ? 'permitFiled'
+        : 'filed';
+  let top = 0;
+  for (let g = 0; g < F; g++) top = Math.max(top, p0.yield[i * F + g]);
+  const P_ = x.w.projects;
+  const p = newProject(x, O_SIM, c, L_.k[c], stream);
+  P_.pathway[p] = PATHWAYS.indexOf(path);
+  P_.isNew[p] = 1;
+  P_.units[p] = p0.yield[i * F + f];
+  P_.stories[p] = fillStories(FILL_LEVELS[f], p0.envelopeStories[i]);
+  P_.rule[p] = R_SIM;
+  P_.existing[p] = existing;
+  P_.top[p] = top;
+  P_.env[p] = p0.envelopeStories[i];
+  P_.row[p] = i;
+  P_.entered[p * NS + SI[first]] = day;
+  x.sink?.event(p, 'start', SI[first], day, P_.units[p], P_.stories[p]);
+  enterStage(x, p, SI[first], day, 0);
+  return p;
+}
+
+/** Runs lot c up to day d1: its lot-months, a pending start, its project's chain, restarts. */
+function runLot(x: Ctx, c: number, d1: Day) {
+  const L_ = x.w.lots;
+  for (;;) {
+    const s = L_.state[c];
+    if (s === L_FREE && x.opts.mode === 'lazy') {
+      if (L_.nextDay[c] > d1) return;
+      const n = L_.n[c];
+      const r = L_.r[c];
+      if (L_.due[c] === 0) {
+        plan(x, c, n);
+        continue;
+      }
+      const v = drawOn(L_.stream[c], P.INIT_DAY, 0);
+      L_.state[c] = L_PENDING;
+      L_.pendDay[c] = r + 1 + Math.floor((n - 1 + v) * MONTH_DAYS);
+      if (L_.pendDay[c] > d1) {
+        hpush(x.w, L_.pendDay[c], c);
+        return;
+      }
+      continue;
+    }
+    if (s === L_FREE) {
+      if (L_.nextDay[c] > d1) return;
+      const n = ++L_.n[c];
+      const first = L_.nextDay[c];
+      const r = L_.r[c];
+      L_.nextDay[c] = r + 1 + Math.floor(n * MONTH_DAYS);
+      if (lotMonth(x, c, n, first)) {
+        const v = drawOn(L_.stream[c], P.INIT_DAY, 0);
+        const day = r + 1 + Math.floor((n - 1 + v) * MONTH_DAYS);
+        L_.state[c] = L_PENDING;
+        L_.pendDay[c] = day;
+      }
+      continue;
+    }
+    if (s === L_PENDING) {
+      if (L_.pendDay[c] > d1) return;
+      const p = startSim(x, c, L_.pendDay[c]);
+      if (p < 0) {
+        L_.state[c] = L_DONE;
+        return;
+      }
+      L_.state[c] = L_LIVE;
+      L_.project[c] = p;
+      runProject(x, p, d1); // may free the lot again (exit), so loop
+      continue;
+    }
+    return;
+  }
+}
+
+// ---- world creation
+
+export function newWorld(st: Statics, seed: number, fr: PolicyFrame, opts: Opts, sink: StepSink | null): World {
+  const w: World = {
+    month: 0,
+    lots: new LotColumns(st.C, opts.sharedClock != null),
+    projects: new ProjectColumns(Math.max(1024, st.input.projects.length * 2)),
+    live: new Int32Array(1024),
+    nLive: 0,
+    frameId: fr.id,
+    hk: new Int32Array(opts.mode === 'lazy' ? 1024 : 0),
+    hv: new Int32Array(opts.mode === 'lazy' ? 1024 : 0),
+    hn: 0
+  };
+  const x: Ctx = { w, st, fr, sh: seedHash(seed), sink, opts };
+  const L_ = w.lots;
+  L_.holders.set(st.initHolders);
+  L_.blocked.set(st.initBlocked);
+  L_.lastExit.fill(st.asOf);
+  for (let c = 0; c < st.C; c++) {
+    if (L_.blocked[c]) L_.state[c] = L_DONE;
+    else if (L_.holders[c] > 0) L_.state[c] = L_HELD;
+    else freeLot(x, c, st.asOf, 0);
+  }
+  const P_ = w.projects;
+  const asOf = st.asOf;
+  st.input.projects.forEach((row, k) => {
+    if (isSkipped(row)) return;
+    const rs = st.rows[k];
+    const phased = isPhased(row);
+    // clamped history; the current stage on asOf when absent
+    const entered: number[] = new Array(NS).fill(-1);
+    let first = Infinity;
+    const stages = phased ? (['preApplication', 'filed', 'entitled'] as Stage[]) : STAGE_ORDER;
+    for (const s of stages) {
+      const d = row.history[s];
+      if (d === undefined) continue;
+      entered[SI[s]] = Math.min(d, asOf);
+      first = Math.min(first, entered[SI[s]]);
+    }
+    const p = newProject(x, phased ? O_MASTER : O_PIPE, k, 0, streamOf(x.sh, rs.entity, 0));
+    P_.pathway[p] = PATHWAYS.indexOf(row.pathway);
+    if (phased && (row.history.entitled !== undefined || SI[row.stage] >= ENTITLED)) {
+      let E = entered[ENTITLED] >= 0 ? entered[ENTITLED] : undefined;
+      if (E === undefined) {
+        for (let i = ENTITLED + 1; i < NS && E === undefined; i++) {
+          const d = row.history[STAGE_ORDER[i]];
+          if (d !== undefined) E = Math.min(d, asOf);
+        }
+        E ??= asOf;
+        if (row.pathway !== 'permitOnly') entered[ENTITLED] = E;
+      }
+      for (let s = 0; s < NS; s++) P_.entered[p * NS + s] = entered[s];
+      P_.endKind[p] = E_ENTITLED;
+      P_.endDay[p] = E;
+      spawnPhases(x, p, E);
+      return;
+    }
+    let e = entered[SI[row.stage]];
+    if (e < 0) {
+      e = asOf;
+      entered[SI[row.stage]] = e;
+      first = Math.min(first, e);
+    }
+    for (let s = 0; s < NS; s++) P_.entered[p * NS + s] = entered[s];
+    // a holder whose construction is in its history has already demolished (old: holdRows reads
+    // s.entered, history included)
+    if (process.env.SPIKE_FIX_HISTDEMO !== '0' && !phased && entered[CONSTRUCTION] >= 0)
+      for (const c of rs.rowsC) L_.demolished[c] = 1;
+    P_.isNew[p] = !phased && row.stage === 'preApplication' ? 1 : 0;
+    P_.units[p] = row.units;
+    P_.stories[p] = row.stories === null ? NaN : row.stories;
+    if (phased) {
+      P_.stopAt[p] = ENTITLED;
+      P_.rule[p] = R_NONE;
+    } else {
+      P_.rule[p] = R_PIPE;
+      P_.yieldCap[p] = rs.yieldCap;
+      P_.envelope[p] = rs.envelope;
+    }
+    sink?.event(p, 'start', SI[row.stage], first, row.units, P_.stories[p]);
+    enterStage(x, p, SI[row.stage], e, asOf + 1 - e);
+  });
+  return w;
+}
+
+// ---- the step
+
+/** Re-anchors every live project's stage clock on day `c` under the frame's speeds. */
+function applySpeeds(x: Ctx, c: Day) {
+  const P_ = x.w.projects;
+  const w = x.w;
+  for (let q = 0; q < w.nLive; q++) {
+    const p = w.live[q];
+    if (P_.endKind[p] !== E_ALIVE || P_.stage[p] === WAITING) continue;
+    const s1 = scaleOf(P_.isNew[p] ? x.fr.newScale : x.fr.inFlightScale, P_.pathway[p], P_.stage[p]);
+    if (s1 === P_.speed[p]) continue;
+    const prog = P_.prog[p] + (c - P_.anchor[p]) / P_.speed[p];
+    P_.anchor[p] = c;
+    P_.prog[p] = prog;
+    P_.speed[p] = s1;
+    P_.leave[p] = c + Math.floor(s1 * (P_.len[p] - prog));
+  }
+}
+
+export function step(
+  w: World,
+  st: Statics,
+  fr: PolicyFrame,
+  seed: number,
+  sink: StepSink | null,
+  opts: Opts
+): void {
+  const x: Ctx = { w, st, fr, sh: seedHash(seed), sink, opts };
+  const m = w.month + 1;
+  const d0 = monthEnd(st.asOf, m - 1) + 1;
+  const d1 = monthEnd(st.asOf, m);
+  // 1. policy
+  if (fr.id !== w.frameId) {
+    applySpeeds(x, d0);
+    w.frameId = fr.id;
+  }
+  // 3. stages (pipeline, masters, phases, simulated): may free lots
+  for (let q = 0; q < w.nLive; q++) {
+    const p = w.live[q];
+    if (w.projects.endKind[p] === E_ALIVE) runProject(x, p, d1);
+  }
+  // 4/6. starts: every free or pending lot walks its own months inside [d0, d1]
+  const L_ = w.lots;
+  if (opts.mode === 'lazy') {
+    // wake only the lots whose next look falls in this month (stale entries are skipped)
+    while (w.hn > 0 && w.hk[0] <= d1) {
+      const day = w.hk[0];
+      const c = w.hv[0];
+      hpop(w);
+      const s = L_.state[c];
+      if ((s === L_FREE && L_.nextDay[c] === day) || (s === L_PENDING && L_.pendDay[c] === day))
+        runLot(x, c, d1);
+    }
+  } else
+    for (let c = 0; c < st.C; c++) {
+      const s = L_.state[c];
+      if (s === L_FREE || s === L_PENDING) runLot(x, c, d1);
+    }
+  // compact the live list
+  let k = 0;
+  for (let q = 0; q < w.nLive; q++) {
+    const p = w.live[q];
+    if (w.projects.endKind[p] === E_ALIVE) w.live[k++] = p;
+  }
+  w.nLive = k;
+  w.month = m;
+}
+
+/** S10: advances the shared clock for every lot on attempt 0 from asOf, month m (= lot-month m). */
+export function advanceSharedClock(st: Statics, clock: Float64Array, m: number) {
+  const first = st.asOf + 1 + Math.floor((m - 1) * MONTH_DAYS);
+  const days = st.segDays;
+  let j = 0;
+  while (j < days.length && days[j] <= first) j++;
+  const rates = st.segRates[j];
+  const cand = st.cand;
+  for (let c = 0; c < st.C; c++) clock[c] += rates[cand[c]];
+}
+
+/**
+ * S10 lockstep: one step of W worlds sharing one clock for lots on attempt 0 from asOf. Lots not
+ * in that state keep their own clock... which the shared layout has no room for, so this variant
+ * is used only to time the hot loop (see the spec).
+ */
+export function projectId(st: Statics, w: World, p: number): string {
+  const P_ = w.projects;
+  const o = P_.origin[p];
+  const row = st.input.projects[P_.src[p]];
+  if (o === O_PIPE || o === O_MASTER) return row?.id;
+  if (o === O_PHASE) return `${row.id}:phase:${P_.sub[p]}`;
+  return `sim:${st.parcels.id[st.cand[P_.src[p]]]}:${P_.sub[p]}`;
+}
+
+export { NS, SI, WAITING };

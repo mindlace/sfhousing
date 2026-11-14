@@ -1,0 +1,150 @@
+// Test support: feeding one world's events to a `WorldSeries` in each order the runner may use.
+// Browser-safe.
+import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { SimInput } from '$lib/sim/scenario/types';
+import { createFundingSystem } from '../../funding';
+import { createWorld, planDue, step, withFunding } from '../../index';
+import type { PolicyTimeline } from '../../policy/frame';
+import type { Statics } from '../../statics';
+import { frameOf, oneFrame } from '../../test/timeline';
+import type { FundingSystem, StepSink, World, WorldEvent } from '../../types';
+import { scoreStaticsOf } from '../statics';
+import type { ScoreStatics, WorldSeries, WorldSeriesData } from '../types';
+
+/**
+ * `live`: creation events added once `createWorld` returns, then each step's inside the sink.
+ * `buffered`: each step's events added after the step. `after`: every event added against the
+ * final world, month by month. Every mode calls `stepped(m)` after month m's events.
+ */
+export type FeedMode = 'live' | 'buffered' | 'after';
+
+/** Score statics for `input` under one frame, compared with the plan. */
+export function testStatics(input: SimInput, windowMonths: number): ScoreStatics {
+  return scoreStaticsOf(input, oneFrame(frameOf(input)), 'plan', windowMonths, {
+    units: 0,
+    since: input.asOf,
+    provenance: { tier: 0, label: 'test', sources: [], method: 'test' }
+  });
+}
+
+/** A test `rhnaCompletedNet` with tiers (test values). */
+export const TEST_RHNA = (asOf: number) => ({
+  units: 1000,
+  since: asOf,
+  byTier: { veryLow: 100, low: 150, moderate: 200, aboveModerate: 500, unrecorded: 50 },
+  provenance: { tier: 0 as const, label: 'test', sources: [], method: 'test' }
+});
+
+/** Score statics for `input` under `timeline` (which may carry money), compared with the plan. */
+export function timelineStatics(
+  input: SimInput,
+  timeline: PolicyTimeline,
+  windowMonths: number
+): ScoreStatics {
+  return scoreStaticsOf(input, timeline, 'plan', windowMonths, TEST_RHNA(input.asOf));
+}
+
+/**
+ * A funded world (`withFunding(createFundingSystem())`) run through month `through`, its events
+ * added to `series` in `mode` (default `live`: creation events once `createWorld` returns, then
+ * each event as it is sent), `stepped(m)` after each month's events. `onEvent` sees each event
+ * after the series has filed it, with the world it was filed against and the model month that
+ * sent it (0 for `createWorld`). `system` is the funding system (default `createFundingSystem()`).
+ * Returns the world and its whole ledger (none from `createWorld`).
+ */
+export function feedFunded(
+  statics: Statics,
+  timeline: PolicyTimeline,
+  seed: number,
+  through: number,
+  series: WorldSeries,
+  onEvent?: (e: WorldEvent, w: World, month: number) => void,
+  mode: FeedMode = 'live',
+  system: FundingSystem = createFundingSystem()
+): { world: World; ledger: LedgerEvent[] } {
+  const ledger: LedgerEvent[] = [];
+  let world: World | null = null;
+  let month = 0;
+  let buffer: { e: WorldEvent; month: number }[] = [];
+  const take = (e: WorldEvent, at: number) => {
+    series.add(e, world!, statics);
+    onEvent?.(e, world!, at);
+  };
+  const flush = () => {
+    for (const b of buffer) take(b.e, b.month);
+    buffer = [];
+  };
+  const sink: StepSink = {
+    event: (e) => (world === null || mode !== 'live' ? buffer.push({ e, month }) : take(e, month)),
+    ledger: (e) => ledger.push(e)
+  };
+  const core = withFunding(system);
+  const w = core.createWorld(statics, timeline, seed, sink);
+  world = w;
+  if (mode !== 'after') flush();
+  const due = core.planDue(w, statics, timeline, seed, through);
+  for (let m = 1; m <= through; m++) {
+    month = m;
+    core.step(w, due, statics, timeline, seed, sink);
+    if (mode === 'buffered') flush();
+    if (mode !== 'after') series.stepped(m);
+  }
+  if (mode === 'after') {
+    let at = 0;
+    for (let m = 0; m <= through; m++) {
+      for (; at < buffer.length && buffer[at].month === m; at++) take(buffer[at].e, m);
+      if (m > 0) series.stepped(m);
+    }
+  }
+  return { world: w, ledger };
+}
+
+/** Runs a world through month `through`, feeding `series` in `mode`; returns the world. */
+export function feedWorld(
+  statics: Statics,
+  timeline: PolicyTimeline,
+  seed: number,
+  through: number,
+  series: WorldSeries,
+  mode: FeedMode,
+  opts: { saveAt?: number; onSave?: (d: WorldSeriesData) => void } = {}
+): World {
+  let world: World | null = null;
+  let buffer: WorldEvent[] = [];
+  const byMonth: WorldEvent[][] = [[]];
+  let month = 0;
+  let live = false;
+  const sink: StepSink = {
+    event(e) {
+      if (mode === 'after') byMonth[month].push(e);
+      else if (live) series.add(e, world!, statics);
+      else buffer.push(e);
+    }
+  };
+  const flush = () => {
+    for (const e of buffer) series.add(e, world!, statics);
+    buffer = [];
+  };
+  const stepped = (m: number) => {
+    series.stepped(m);
+    if (opts.saveAt === m) opts.onSave?.(series.data());
+  };
+  world = createWorld(statics, timeline, seed, sink);
+  if (mode !== 'after') flush();
+  live = mode === 'live';
+  const due = planDue(world, statics, timeline, seed, through);
+  for (let m = 1; m <= through; m++) {
+    month = m;
+    byMonth.push([]);
+    step(world, due, statics, timeline, seed, sink);
+    if (mode === 'buffered') flush();
+    if (mode !== 'after') stepped(m);
+  }
+  if (mode === 'after') {
+    for (let m = 0; m <= through; m++) {
+      for (const e of byMonth[m]) series.add(e, world, statics);
+      if (m > 0) stepped(m);
+    }
+  }
+  return world;
+}

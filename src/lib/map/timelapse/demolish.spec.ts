@@ -452,3 +452,120 @@ describe('DemolishPump.swap', () => {
     expect(sorted(d.replaced)).toEqual(sorted(prefixIds(B, 4000)));
   });
 });
+
+describe('DemolishPump.amend', () => {
+  it('amend adds entries that apply as revision-0 entries do', () => {
+    const d = fake();
+    const pump = new DemolishPump(d);
+    pump.replace(entries(5));
+    pump.amend([{ parcelId: 'x', day: 2000 }], []);
+    expect(pump.total).toBe(6);
+    pump.setTarget(1999);
+    drain(d, pump);
+    expect(pump.has('x')).toBe(false);
+    expect(d.replaced.has('x')).toBe(false);
+    pump.setTarget(2000);
+    drain(d, pump);
+    expect(pump.has('x')).toBe(true);
+    expect(d.setCalls.flat().filter((id) => id === 'x')).toHaveLength(1);
+    expect(d.replaced.has('x')).toBe(true);
+  });
+
+  it('amend keeps the (day, parcelId) order with the entries already loaded', () => {
+    const d = fake();
+    const pump = new DemolishPump(d);
+    pump.replace([
+      { parcelId: 'b', day: 10 },
+      { parcelId: 'd', day: 20 }
+    ]);
+    pump.amend(
+      [
+        { parcelId: 'e', day: 20 },
+        { parcelId: 'a', day: 10 },
+        { parcelId: 'c', day: 15 }
+      ],
+      []
+    );
+    pump.setTarget(20);
+    drain(d, pump);
+    expect(d.setCalls.flat()).toEqual(['a', 'b', 'c', 'd', 'e']);
+    pump.setTarget(14);
+    drain(d, pump);
+    expect(sorted(pump.appliedIds())).toEqual(['a', 'b']);
+  });
+
+  it('amend restore removes every entry of a parcel', () => {
+    const d = fake();
+    const pump = new DemolishPump(d);
+    pump.replace([
+      { parcelId: 'x', day: 100 },
+      { parcelId: 'y', day: 150 },
+      { parcelId: 'x', day: 200 }
+    ]);
+    pump.setTarget(300);
+    drain(d, pump);
+    expect(d.replaced.has('x')).toBe(true);
+    pump.amend([], ['x']);
+    expect(pump.has('x')).toBe(false);
+    expect(pump.total).toBe(1);
+    d.flushFrame();
+    expect(d.replaced.has('x')).toBe(false);
+    expect(lastCall(d.clearCalls)).toEqual(['x']);
+    expect(pump.has('y')).toBe(true);
+    expect(pump.applied).toBe(1);
+    expect(pump.pending).toBe(false);
+  });
+
+  it('restore and add of one parcel hides it from the new day only', () => {
+    const d = fake();
+    const pump = new DemolishPump(d);
+    pump.replace([{ parcelId: 'x', day: 100 }]);
+    pump.setTarget(300);
+    drain(d, pump);
+    pump.amend([{ parcelId: 'x', day: 200 }], ['x']);
+    expect(pump.total).toBe(1);
+    pump.setTarget(150);
+    drain(d, pump);
+    expect(pump.has('x')).toBe(false);
+    expect(d.replaced.has('x')).toBe(false);
+    pump.setTarget(200);
+    drain(d, pump);
+    expect(pump.has('x')).toBe(true);
+    expect(d.replaced.has('x')).toBe(true);
+  });
+
+  it('amend while a swap diff is owed converges', () => {
+    const A = named('a', 5000);
+    const B = named('b', 5000);
+    const d = fake();
+    const pump = new DemolishPump(d);
+    pump.replace(A);
+    pump.setTarget(1e9);
+    drain(d, pump);
+    pump.swap(B);
+    d.flushFrame();
+    expect(pump.pending).toBe(true);
+    const add = [...named('c', 10), { parcelId: 'a7', day: 1500 }];
+    const restore = ['b0', 'b4000', 'a1'];
+    pump.amend(add, restore);
+    drain(d, pump);
+    const want = new Set([...prefixIds(B, 1e9), ...prefixIds(add, 1e9)]);
+    for (const id of restore) want.delete(id);
+    expect(sorted(d.replaced)).toEqual(sorted(want));
+    expect(sorted(pump.appliedIds())).toEqual(sorted(want));
+    expect(pump.total).toBe(5000 - 2 + 11);
+  });
+
+  it('amend with nothing to add or restore changes nothing', () => {
+    const d = fake();
+    const pump = new DemolishPump(d);
+    pump.replace(entries(3));
+    pump.setTarget(1001);
+    drain(d, pump);
+    const calls = d.setCalls.flat().length + d.clearCalls.flat().length;
+    pump.amend([], ['nope']);
+    expect(pump.pending).toBe(false);
+    expect(pump.total).toBe(3);
+    expect(d.setCalls.flat().length + d.clearCalls.flat().length).toBe(calls);
+  });
+});

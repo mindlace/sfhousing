@@ -12,6 +12,15 @@ import type { Day } from '$lib/timelapse/time';
 /** Same gate as generated-controller's `sfh-slice`: dev builds and e2e only. */
 const MEASURE = import.meta.env.DEV || import.meta.env.VITE_E2E === '1';
 
+type Entry = { parcelId: ParcelId; day: Day };
+
+/** (day, parcelId) order. */
+function compare(dayA: Day, idA: ParcelId, dayB: Day, idB: ParcelId): number {
+  if (dayA !== dayB) return dayA - dayB;
+  return idA < idB ? -1 : idA > idB ? 1 : 0;
+}
+const byDayId = (x: Entry, y: Entry): number => compare(x.day, x.parcelId, y.day, y.parcelId);
+
 export interface PumpDeps {
   setReplaced(id: ParcelId): void;
   clearReplaced(id: ParcelId): void;
@@ -82,6 +91,56 @@ export class DemolishPump {
     const oldRefs = this.refs;
     const owed = this.diff;
     this.load(list);
+    this.rebase(oldRefs, owed);
+  }
+
+  /**
+   * After revision 0: removes every entry of each `restore` parcel, then adds `add`. As in `swap`,
+   * the applied set is at once the new list's prefix at the target, and feature-state follows by
+   * the same diff. An amend that removes and adds nothing changes nothing.
+   */
+  amend(add: readonly Entry[], restore: readonly ParcelId[]): void {
+    if (this.destroyed) return;
+    const gone = new Set(restore);
+    const { days, ids } = this;
+    let kept = 0;
+    for (const id of ids) if (!gone.has(id)) kept++;
+    if (add.length === 0 && kept === ids.length) return;
+    this.cancel();
+    const oldRefs = this.refs;
+    const owed = this.diff;
+    // merge the kept entries with the sorted additions, (day, parcelId) order
+    const more = add.slice().sort(byDayId);
+    const n = kept + more.length;
+    const outDays = new Float64Array(n);
+    const outIds = new Array<ParcelId>(n);
+    let i = 0;
+    let j = 0;
+    for (let k = 0; k < n; k++) {
+      while (i < ids.length && gone.has(ids[i])) i++;
+      const old =
+        j >= more.length ||
+        (i < ids.length && compare(days[i], ids[i], more[j].day, more[j].parcelId) <= 0);
+      if (old) {
+        outDays[k] = days[i];
+        outIds[k] = ids[i++];
+      } else {
+        outDays[k] = more[j].day;
+        outIds[k] = more[j++].parcelId;
+      }
+    }
+    this.days = outDays;
+    this.ids = outIds;
+    this.rebase(oldRefs, owed);
+  }
+
+  /**
+   * After `days`/`ids` changed under the current target (`swap`, `amend`): the applied set is at
+   * once the list's prefix at the target, and `diff` holds the feature-state calls that take what
+   * is shown to it. Mid-diff, the new diff is taken against the feature-state the owed calls leave
+   * unchanged.
+   */
+  private rebase(oldRefs: Map<ParcelId, number>, owed: Map<ParcelId, boolean>): void {
     const { days, ids, target } = this;
     const refs = new Map<ParcelId, number>();
     let cursor = 0;
@@ -133,10 +192,7 @@ export class DemolishPump {
 
   /** Sorts the list by (day, parcelId) into `days` and `ids`. */
   private load(list: readonly { parcelId: ParcelId; day: Day }[]): void {
-    const sorted = list.slice().sort((x, y) => {
-      if (x.day !== y.day) return x.day - y.day;
-      return x.parcelId < y.parcelId ? -1 : x.parcelId > y.parcelId ? 1 : 0;
-    });
+    const sorted = list.slice().sort(byDayId);
     this.days = new Float64Array(sorted.length);
     this.ids = new Array<ParcelId>(sorted.length);
     for (let i = 0; i < sorted.length; i++) {

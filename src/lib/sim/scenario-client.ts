@@ -7,6 +7,7 @@ import type { BBox } from '$lib/plan';
 import type { Day } from '$lib/timelapse/time';
 import type { WorkerLike } from './client';
 import type { BrushCatalog, BrushQuery } from './levers/brushes';
+import { LookupRequests } from './lookup-requests';
 import type { SimLevers } from './levers/types';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev } from './protocol';
 import type {
@@ -59,36 +60,6 @@ export interface ScenarioClientEvents {
   onCrash?(e: Event): void;
 }
 
-const noSession = (): BrushLotsResult => ({
-  ok: false,
-  reason: 'no-session',
-  message: 'the worker session ended before answering'
-});
-
-const noSessionOutlines = (): LotOutlinesResult => ({
-  ok: false,
-  reason: 'no-session',
-  message: 'the worker session ended before answering'
-});
-
-const noSessionLotAt = (): LotAtResult => ({
-  ok: false,
-  reason: 'no-session',
-  message: 'the worker session ended before answering'
-});
-
-const noSessionPreview = (): PreviewResult => ({
-  ok: false,
-  reason: 'no-session',
-  message: 'the worker session ended before answering'
-});
-
-const noSessionLids = (): HeightLidsResult => ({
-  ok: false,
-  reason: 'no-session',
-  message: 'the worker session ended before answering'
-});
-
 export class ScenarioClient {
   #worker: ScenarioWorkerLike;
   #events: ScenarioClientEvents;
@@ -103,14 +74,7 @@ export class ScenarioClient {
   #currentSeed: number | null = null;
   /** A non-stale timeline has arrived since the last `initScenario`/`restart`: resync may run. */
   #hasTimeline = false;
-  #reqId = 0;
-  #pending = new Map<number, (s: ParcelSummary | null) => void>();
-  #pendingBrush = new Map<number, (r: BrushLotsResult) => void>();
-  #pendingOutlines = new Map<number, (r: LotOutlinesResult) => void>();
-  #pendingLotAt = new Map<number, (r: LotAtResult) => void>();
-  #pendingPreview = new Map<number, (r: PreviewResult) => void>();
-  #pendingCatalog = new Map<number, (c: BrushCatalog | null) => void>();
-  #pendingLids = new Map<number, (r: HeightLidsResult) => void>();
+  #lookups: LookupRequests;
   #datasetVersion: string | null = null;
   #disposed = false;
   #crashed = false;
@@ -118,6 +82,7 @@ export class ScenarioClient {
   constructor(worker: ScenarioWorkerInput, events: ScenarioClientEvents) {
     this.#worker = worker as ScenarioWorkerLike;
     this.#events = events;
+    this.#lookups = new LookupRequests((msg) => this.#worker.postMessage(msg));
     this.#attach(this.#worker);
   }
 
@@ -209,18 +174,7 @@ export class ScenarioClient {
   }
 
   parcelSummary(parcelId: ParcelId, day: Day, projectId?: string): Promise<ParcelSummary | null> {
-    if (this.#disposed || this.#crashed) return Promise.resolve(null);
-    const reqId = ++this.#reqId;
-    return new Promise((resolve) => {
-      this.#pending.set(reqId, resolve);
-      this.#worker.postMessage({
-        type: 'parcelSummary',
-        reqId,
-        parcelId,
-        day,
-        ...(projectId !== undefined && { projectId })
-      });
-    });
+    return this.#lookups.parcelSummary(parcelId, day, projectId);
   }
 
   /**
@@ -229,77 +183,32 @@ export class ScenarioClient {
    * and `dispose`.
    */
   resolveBrush(query: BrushQuery): Promise<BrushLotsResult> {
-    if (this.#disposed || this.#crashed) return Promise.resolve(noSession());
-    const reqId = ++this.#reqId;
-    return new Promise((resolve) => {
-      this.#pendingBrush.set(reqId, resolve);
-      this.#worker.postMessage({ type: 'resolveBrush', reqId, query });
-    });
+    return this.#lookups.resolveBrush(query);
   }
 
-  /**
-   * The ring outlines of lots (the loaded ones; `missing` counts the rest). Answered by a session
-   * initialised with levers; `no-session` otherwise, and on crash, `restart` and `dispose`.
-   */
+  /** The ring outlines of lots; see `LookupRequests.lotOutlines`. */
   lotOutlines(lots: ParcelId[]): Promise<LotOutlinesResult> {
-    if (this.#disposed || this.#crashed) return Promise.resolve(noSessionOutlines());
-    const reqId = ++this.#reqId;
-    return new Promise((resolve) => {
-      this.#pendingOutlines.set(reqId, resolve);
-      this.#worker.postMessage({ type: 'lotOutlines', reqId, lots });
-    });
+    return this.#lookups.lotOutlines(lots);
   }
 
-  /**
-   * The lot under `point` (lng, lat) and the layer that sets its height limit, from the limits the
-   * worker holds now. Answered by a session initialised with levers; `no-session` otherwise, and
-   * on crash, `restart` and `dispose`.
-   */
+  /** The lot under `point` (lng, lat) and its height-limit layer; see `LookupRequests.lotAt`. */
   lotAt(point: [number, number]): Promise<LotAtResult> {
-    if (this.#disposed || this.#crashed) return Promise.resolve(noSessionLotAt());
-    const reqId = ++this.#reqId;
-    return new Promise((resolve) => {
-      this.#pendingLotAt.set(reqId, resolve);
-      this.#worker.postMessage({ type: 'lotAt', reqId, point });
-    });
+    return this.#lookups.lotAt(point);
   }
 
-  /**
-   * The buildings `lots` could hold at `stories` (/sim's live preview of a Paint stroke). Answered
-   * by a session initialised with levers; `no-session` otherwise, and on crash, `restart` and
-   * `dispose`.
-   */
+  /** The buildings `lots` could hold at `stories`; see `LookupRequests.previewBuildings`. */
   previewBuildings(lots: ParcelId[], stories: number): Promise<PreviewResult> {
-    if (this.#disposed || this.#crashed) return Promise.resolve(noSessionPreview());
-    const reqId = ++this.#reqId;
-    return new Promise((resolve) => {
-      this.#pendingPreview.set(reqId, resolve);
-      this.#worker.postMessage({ type: 'previewBuildings', reqId, lots, stories });
-    });
+    return this.#lookups.previewBuildings(lots, stories);
   }
 
-  /**
-   * The glass lids of the loaded lots in `bbox` (lng/lat), on the latest complete city. A newer
-   * call answers this one `superseded`. Answered by a session initialised with levers;
-   * `no-session` otherwise, and on crash, `restart` and `dispose`.
-   */
+  /** The glass lids of the loaded lots in `bbox`; see `LookupRequests.heightLids`. */
   heightLids(bbox: [number, number, number, number]): Promise<HeightLidsResult> {
-    if (this.#disposed || this.#crashed) return Promise.resolve(noSessionLids());
-    const reqId = ++this.#reqId;
-    return new Promise((resolve) => {
-      this.#pendingLids.set(reqId, resolve);
-      this.#worker.postMessage({ type: 'heightLids', reqId, bbox });
-    });
+    return this.#lookups.heightLids(bbox);
   }
 
   /** The brush pickers' catalog; null without a lever session, and on crash, restart, dispose. */
   brushCatalog(): Promise<BrushCatalog | null> {
-    if (this.#disposed || this.#crashed) return Promise.resolve(null);
-    const reqId = ++this.#reqId;
-    return new Promise((resolve) => {
-      this.#pendingCatalog.set(reqId, resolve);
-      this.#worker.postMessage({ type: 'brushCatalog', reqId });
-    });
+    return this.#lookups.brushCatalog();
   }
 
   /**
@@ -326,6 +235,7 @@ export class ScenarioClient {
     if (this.#disposed) return;
     this.#detach();
     this.#crashed = false;
+    this.#lookups.closed = false;
     this.#resyncRev = null;
     this.#leversRev = null; // the fresh worker knows no levers until the next initScenario
     this.#hasTimeline = false;
@@ -337,6 +247,7 @@ export class ScenarioClient {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#lookups.closed = true;
     this.#detach();
   }
 
@@ -352,30 +263,14 @@ export class ScenarioClient {
     w.onerror = null;
     w.onmessageerror = null;
     w.terminate();
-    this.#resolvePending();
-  }
-
-  #resolvePending(): void {
-    for (const resolve of this.#pending.values()) resolve(null);
-    this.#pending.clear();
-    for (const resolve of this.#pendingBrush.values()) resolve(noSession());
-    this.#pendingBrush.clear();
-    for (const resolve of this.#pendingOutlines.values()) resolve(noSessionOutlines());
-    this.#pendingOutlines.clear();
-    for (const resolve of this.#pendingLotAt.values()) resolve(noSessionLotAt());
-    this.#pendingLotAt.clear();
-    for (const resolve of this.#pendingPreview.values()) resolve(noSessionPreview());
-    this.#pendingPreview.clear();
-    for (const resolve of this.#pendingCatalog.values()) resolve(null);
-    this.#pendingCatalog.clear();
-    for (const resolve of this.#pendingLids.values()) resolve(noSessionLids());
-    this.#pendingLids.clear();
+    this.#lookups.resolveAll();
   }
 
   #crash(worker: ScenarioWorkerLike, e: Event): void {
     if (this.#disposed || worker !== this.#worker || this.#crashed) return;
     console.error('[sim] worker crashed', e);
     this.#crashed = true;
+    this.#lookups.closed = true;
     this.#resyncRev = null;
     // onmessageerror can fire while the worker is still alive: detach and terminate it, so a late
     // message (a `ready` above all) cannot revive the UI while `crashed` stays true.
@@ -385,6 +280,7 @@ export class ScenarioClient {
 
   #receive(msg: ScenarioResponse): void {
     if (this.#disposed || this.#crashed) return;
+    if (this.#lookups.receive(msg)) return;
     switch (msg.type) {
       case 'ready':
         this.#datasetVersion = msg.datasetVersion;
@@ -403,55 +299,14 @@ export class ScenarioClient {
       case 'chunks':
         this.#events.onChunks?.(msg);
         return;
-      case 'parcelSummary': {
-        const resolve = this.#pending.get(msg.reqId);
-        if (!resolve) return;
-        this.#pending.delete(msg.reqId);
-        resolve(msg.summary);
-        return;
-      }
-      case 'brushLots': {
-        const resolve = this.#pendingBrush.get(msg.reqId);
-        if (!resolve) return;
-        this.#pendingBrush.delete(msg.reqId);
-        resolve(msg.result);
-        return;
-      }
-      case 'lotOutlines': {
-        const resolve = this.#pendingOutlines.get(msg.reqId);
-        if (!resolve) return;
-        this.#pendingOutlines.delete(msg.reqId);
-        resolve(msg.result);
-        return;
-      }
-      case 'lotAt': {
-        const resolve = this.#pendingLotAt.get(msg.reqId);
-        if (!resolve) return;
-        this.#pendingLotAt.delete(msg.reqId);
-        resolve(msg.result);
-        return;
-      }
-      case 'previewBuildings': {
-        const resolve = this.#pendingPreview.get(msg.reqId);
-        if (!resolve) return;
-        this.#pendingPreview.delete(msg.reqId);
-        resolve(msg.result);
-        return;
-      }
-      case 'brushCatalog': {
-        const resolve = this.#pendingCatalog.get(msg.reqId);
-        if (!resolve) return;
-        this.#pendingCatalog.delete(msg.reqId);
-        resolve(msg.catalog);
-        return;
-      }
-      case 'heightLids': {
-        const resolve = this.#pendingLids.get(msg.reqId);
-        if (!resolve) return;
-        this.#pendingLids.delete(msg.reqId);
-        resolve(msg.result);
-        return;
-      }
+      case 'parcelSummary':
+      case 'brushLots':
+      case 'lotOutlines':
+      case 'lotAt':
+      case 'previewBuildings':
+      case 'brushCatalog':
+      case 'heightLids':
+        return; // an answer nobody waits for (`LookupRequests.receive` took the others)
       case 'heights':
         this.#events.onHeights?.(msg);
         return;

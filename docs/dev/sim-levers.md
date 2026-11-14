@@ -21,6 +21,8 @@ Stories are integers from 0 to 255 (one byte in the packed columns). `DEFAULT_LE
 
 The page's `SimPolicy` (`src/lib/sim-page/policy.ts`, schema 3) compiles to these levers in `compileLevers`: its zoning rules become `rules` (a transit rule one edit per band), its custom paint becomes `paint` in stroke order (an erase removing earlier paint), its category protections `protect`, its `funding` is copied into `finance`, and `compare` is `'preFzp'` for the default policy and `'fzp'` for any other ([sim-page.md](sim-page.md), "The recipe and its compile rules").
 
+Dated policies (schema 4) compile to these levers month by month: see [policy-timeline.md](policy-timeline.md).
+
 ## Funding levers
 
 `SimLevers.finance` is a `FinanceLevers` (`{ baselineScale, pools, programmes, terms }`, `finance.ts`). The full rules are in [finance-levers.md](finance-levers.md); in brief:

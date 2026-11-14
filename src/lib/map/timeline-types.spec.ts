@@ -32,7 +32,8 @@ interface RowTimelineUpdate {
   revision: number; // 0 = snapshot
   cells: TimedPackedCell[];
   removedCells: string[];
-  demolish: { parcelId: ParcelId; day: Day }[]; // complete list in revision 0; empty afterwards
+  demolish: { parcelId: ParcelId; day: Day }[]; // complete list in revision 0; afterwards entries newly known (S17)
+  restore?: ParcelId[]; // after revision 0: lots whose demolition no longer holds (S17)
   swap?: true; // revision 0 only: install over the cells on the map (run slider Task 3)
   complete?: boolean; // the run has packed every loaded cell
 }

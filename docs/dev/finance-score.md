@@ -157,11 +157,11 @@ is I6. A label swap only.)
 `fundedHomes[i]` sums `finalUnits - existingUnits` over every schedule **with `funding`** that
 completed by month `i`, counted at completion (unlike `completedNet`, which takes existing homes
 off at the construction start). The rule keys on `funding`, never on `origin`. `displacedHomes[i]`
-sums `funding.displaced` over the same schedules. **`displacedHomes` counts only funded projects
-that completed**: homes displaced by funded projects that dropped out, or are still being built at
-the end of the run, are not counted (the interface as written). The displaced start's own
-completion date is not tracked; its homes are counted in the month the funded project completes (a
-tier 2 simplification). `displacedShare(money, i)` is displaced over funded, null with none
+sums `funding.displaced` over the same schedules. **In the step engine's score
+(`world-score.md`, design section 3.5) displaced homes count on the `'displaced'` event's own day**,
+not at the funded project's completion, so they include funded projects still building or dropped.
+The text below describes `shownSeries`, which counts them only for funded projects that completed,
+in the month the project completes. `displacedShare(money, i)` is displaced over funded, null with none
 funded, for the page to set beside `DISPLACEMENT_RANGE`.
 
 ## Public money per added home
@@ -196,6 +196,18 @@ every debt pool**, the baseline's `city-debt` bond pool included: money borrowed
 decided to borrow it. `owedAt(entry, received)` scales the repayment by `received / principal`
 (0 when the principal is 0), within a dollar of `debtService` at that principal, so the page needs
 no debt terms.
+
+## In the step engine
+
+[world-score.md](world-score.md) reads the same figures from the step engine's world events, with
+two differences. `owed` and `perAddedHome` are read at `filledThrough`. Its `displacedHomes` series
+counts each displacement on its own day, while `perAddedHome` and `displacedShare` (given in the
+view, read at `filledThrough`) keep the denominators above: world 1's `fundedHomes` less
+`displacedHomesCompleted`, the displaced homes of funded projects completed by then. The series
+shows displacement when it happens; the ratio pairs it with funded homes, which count at
+completion, keeping today's meaning (partner ruling). `limits` come from `scoreStaticsOf`,
+independent of the ledger: the same in every world, fixed as the forecast fills; debt terms live in
+`ScoreStatics.debts`.
 
 ## The limit statements
 

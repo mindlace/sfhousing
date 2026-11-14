@@ -1,0 +1,135 @@
+# world-core: the world, the draws and the step
+
+Part of the step-engine package. Design: [2026-11-12-2305-sim-step-engine.md](../design/2026-11-12-2305-sim-step-engine.md), approved 2026-11-13. Release A. Depends on nothing in the package; `policy-timeline` supplies the timeline it reads (rows S4 to S6), and tests here build timelines by hand.
+
+## Purpose
+
+Today's engine works out a project's whole life when the project begins, for one policy, to a fixed end date. This subsystem is the same model run one month at a time: a world is a set of tables, and `step` moves it forward one month under whatever policy is in force that month. It covers everything that needs no public money. `world-funding` plugs into it for the rest.
+
+The test of this subsystem is today's engine. Under a policy that never changes and without public money, a world must give the same projects on the same days as `simulateDetailed`, seed for seed.
+
+## Scope
+
+- The world's tables and how they are made at the dataset date.
+- Draws (reused, unchanged).
+- The due list.
+- The step: its systems, their order, and every rule that needs no money.
+- The readers that turn a world's rows back into today's `Schedule` and `Master`.
+- The hook `world-funding` plugs into.
+
+Not in scope: applications, the line, pools, awards, money events (`world-funding`); what a frame contains and how it is compiled (`policy-timeline`); running many worlds, slicing, copies (`ensemble-runner`); series and scores (`world-score`); reservations and freed land (out of the package).
+
+Code lives in `src/lib/sim/world/`. It imports the pure functions it needs from the old folders: `draw`, `drawOn`, `streamOf` and `P` (`rng.ts`), `piecewiseMonth` and `precomputeOf` (`input.ts`), `sampleTransition`, `sampleKind`, `sampleTime`, `sampleAdvance` (`timelapse/model.ts`), `exp` and `log` (`timelapse/math.ts`). It changes no file there. The old engine's own steps (`pipelineRow`, `pipelinePass`, `masterOf`, `multiPhasePass`, `phaseSchedule`, `stageStep`, `runStages`, `initiationMonth`, `initiationDay`, `newPathway`, `simulatedPass`, `simulatedProject`, `startSimulated`, `ordinaryDay`) are either not exported or take a `Run` that carries an end date: write them again here, and let the referee tests hold the two equal. Do not add an export to an old file.
+
+## Interfaces
+
+{{ROW S1}}
+
+{{ROW S2}}
+
+{{ROW S3}}
+
+{{ROW S7}}
+
+{{ROW S8}}
+
+{{ROW S9}}
+
+{{ROW S11}}
+
+{{ROW S12}}
+
+Read from other owners, repeated here so the builder has them:
+
+{{ROW S4}}
+
+{{ROW S5}}
+
+{{ROW S6}}
+
+## Rules
+
+Each rule below is today's rule unless it says "new". Today's rules are defined by the code named; the referee tests are what holds this subsystem to them. The spike's code (`.superpowers/superconductor/sim-step-engine/spike/world.ts.txt`) passed the referee for rules 1 to 14 under one frame and may be read as a worked example. It is not to be copied in as is: it kept a dense per-lot table and has no events, no readers and no hook.
+
+### Months and days
+
+1. Model month m (m >= 1) covers days `asOf + floor((m - 1) × 30.436875) + 1` to `asOf + floor(m × 30.436875)`. `StepCtx.firstDay` and `lastDay` are those two days for the month being stepped; `StepCtx.month` is m.
+2. Every event keeps its day. Days do not order anything between entities. Within a system, lots are handled in the order of `Statics.rank` and projects in the order of their rows, unless a rule here gives another key. Permuting the rows of the lot table (same ids, same ranks) must give the same events.
+
+### The world at the dataset date
+
+3. `createWorld` makes one row in `projects` for every pipeline project, master and phase that exists at the dataset date, as `pipelinePass` and `multiPhasePass` treat them (`engine.ts:661-704, 714-898`), and sends for each a `'start'` event followed by an `'enter'` event for every stage already entered, with their real (past) days. A pipeline row already in a stage has that stage's outcome and length drawn given the time it has already spent there (`engine.ts:490-534`).
+4. `lots` starts empty. A lot gets a row the first time something happens to it that its draws and the timeline alone do not say: a project starts on it, a pipeline project holds it, or it is freed.
+
+### Starts (the ordinary clock)
+
+5. A free lot's attempt k has threshold `-log(1 - u)`, u its `INIT` draw on the stream of (seed, lot entity, k). Each lot-month the lot is at risk adds `-log(1 - h)`, h being the chance of starting in the view of the frame in force, shifted by that frame's `market`. The lot's months count from the day it became free (the dataset date for a lot never held), 30.436875 days each, and a lot-month takes the frame of the model month that holds the lot-month's first day. The lot starts in the first lot-month whose total passes the threshold; the day inside it comes from `INIT_DAY` (`engine.ts:934-975`, `input.ts:243-263`, `funded.ts:391-395` for the day). The lot is due in the model month that holds that day.
+6. Nothing is added up month by month and no total is stored (design ruling T10). To plan a lot, the engine evaluates `piecewiseMonth` over the frames the lot has lived through since it became free (read from `timeline` for months up to the one being stepped) followed by the current frame continuing without end. A lot with no chance of starting under the current frame is not planned.
+7. New: when the frame changes in month m, the lots in `timeline.touched(m)` are planned again; when `touched(m)` is null, or `market` differs, every free lot is. A lot already due in a month before m is not affected. Because rule 6 reads the past frames, a lot's chance built up before m is kept without being stored.
+8. At the start: the route is drawn on the frame's `newCalibration` (a Local Program lot in the frame's view is streamlined), the size on the frame's view (`SIZE`, against the lot's existing homes, or 0 once its building has been demolished), as `simulatedProject` and `newPathway` do (`engine.ts:901-1005`). The project's row stores what it needs from the view it started under and never holds the view: level, homes, stories, existing homes, and the lot's yield at every level, which later revisions are capped by.
+9. Holds: a lot is free only when every project holding it has dropped out. It is blocked for good if any holder completes, is skipped, or is still alive. A master passes its holds to its phases at entitlement. A lot freed by a drop-out is at risk again from the drop-out day on attempt k + 1; once a project has entered construction on it, its existing homes count as 0 (`funded.ts:1595-1602`, `engine.ts` `Holds`).
+
+### Stages
+
+10. On entering a stage a project's outcome and its length at normal speed come from its `STAGE` and `STAGE_TIME` draws (`sampleTransition`, `sampleKind`, `sampleTime`), on the frame's `newCalibration` if the project had not filed at the dataset date and on its `calibration` otherwise (`scenario/types.ts:101-108`). Rule 15 is the exception.
+11. The speed s of a project in a stage is the frame's `speed` for its route and stage, times every `speedNew[i].scale` for that route and stage whose `from` is before the day the project filed, or which finds it not yet filed; the product is clamped to `[MIN_SCALE, MAX_SCALE]` (`levers/timers.ts:37-50`). While s does not change, the stage ends on `entered + floor(s × length)`; for a pipeline row already in the stage at the dataset date, on `survived + floor(s × (length - survived))` counted from the stage's entry, as today.
+12. New: when a frame change alters s for a project in a stage, on the first day c of that month: `used += (c - anchor) / s_old`, `anchor = c`, and the end becomes `c + floor(s_new × (length - used))`. The outcome never changes. If the new end is before c, the stage ends on c.
+13. Entering a stage may revise the size (`REV`, `REV_RATIO`), with today's merge rules for revisions on one day and today's cap by the start view's yields. Phases file after their master's entitlement by the plan date or the `PHASE_GAP` draw, as today.
+14. A chain inside one month is followed to its end in that step: a project that enters a stage and leaves it the same month, or a lot that is freed and starts again in the same month.
+15. A project started with `FundedStart.certain` true (finance-engine spec 4.9, `engine.ts:509-523`): every stage's outcome is advance; `STAGE` is not read; its length at normal speed is `sampleAdvance(t, STAGE_TIME draw).days`; rules 11 and 12 scale it like any other; it has no revisions.
+
+### The step
+
+16. Systems, in order: (1) policy, when `frame.id !== world.frame`: rules 7 and 12, then `FundingSystem.policyChanged`; (2) `moneyIn`; (3) stages due this month, with `onProjectEvent` called for each event sent; (4) lots whose funded application falls this month go to `apply`, and lots whose ordinary start falls this month are set aside; (5) `serve`; (6) the lots set aside start, unless a project started on them in (5), and `onProjectEvent` is called for each `'start'`; (7) `shadow`. A project started in (5) or (6) that enters or leaves a stage in the same month has each of those stage events (`'enter'`, `'revise'`, `'end'`, `'phaseFiled'`) passed to `onProjectEvent` too, since every stage event moves money (`world-funding` rule 13); the `'start'` of a project the funding system itself started in (5) is not passed back (conductor ruling, 2026-11-13). Then `world.month += 1` and `world.frame = frame.id`.
+17. `StepCtx.startProject(lot, day, funded)` is the one way a project begins, for system 6 (`funded` null) and for `world-funding`'s awards. It makes the row, draws the route by rule 8 unless `funded.pathway` is set, takes the size from `funded` when given, stores `funded`'s programmes and dollars on the row, sends `'start'` then `'enter'`, plans the project's first stage end, follows rule 14, and returns the row. `StepCtx.displace(row, lot, day, units)` adds `units` to the row's displaced homes and sends `'displaced'`.
+18. With no `FundingSystem`, or when the frame's `finance` is null, the step calls no hook and behaves as rules 1 to 16 without systems 2, 5 and 7.
+19. `step` asserts `timeline.readyThrough() >= world.month + 1` and never calls `frameAt` for a later month.
+
+### The due list
+
+20. `planDue` and the planning inside `step` must agree: for any world reached by stepping, `planDue(world, …, through)` gives the same months for the same entities as the due list that was carried along, including after frame changes. A test steps one world two ways (carried list, and a list rebuilt every 12 months) and compares every event.
+21. Nothing is planned past `through`. When the runner extends the window it calls `planDue` again; an entity due inside the new window is never missed.
+
+### Readers
+
+22. `scheduleAt` and `masterAt` build today's types from the row. Fields that today's engine fixes when the project begins and this engine learns later (a stage day, the end, a revision, `funding.displaced`) appear only once their day is at or before `day`. `funding` is built from what rule 17 stored.
+
+## Tests that must pass
+
+Referee (exact; these assert, and run in signoff on the bench city and the fixture). Cities: the bench city (`synthCity`), the fixture dataset, and the live city when a local copy is present (skipped, not failed, when it is not). Seeds 1 to 20 on the first two, 1 to 5 on live.
+
+- One frame, no money: after stepping through the month that holds the horizon day, `scheduleAt` and `masterAt` over every row at the horizon equal `simulateDetailed(input, seed, horizon)`'s schedules and masters, compared as sorted lists with deep equality. Repeat with `market` shifted; with `speed` not 1 (today's `inFlightScale`); with a `speedNew` entry from `asOf + 1` (today's `newProjects.scale`); and with `newCalibration` carrying route shares.
+- A zoning change in mid-run equals today's dated zoning: a timeline whose view changes at month m gives the same schedules as `simulateDetailed` on an input with one `regimes` entry dated the first day of month m.
+- A market change in mid-run equals today's `market` step dated the first day of month m.
+
+Properties (assert, in signoff).
+
+- A change of speed in mid-run, without money: every event before the change is identical to the unchanged run; no project's outcome differs; with a scale below 1 no day moves later, above 1 none earlier.
+- A zoning change at month m: every event dated before month m is identical; every lot not in `touched(m)` has identical events for the whole run.
+- `structuredClone(world)` then stepping the copy with a rebuilt due list gives the same events as stepping the original, including across a frame change.
+- Rule 20's two-way test, with a frame change inside the run.
+- Rule 2's permutation test.
+- The same inputs give byte-identical event streams in Node and in the browser test project.
+- Events: `'start'` precedes every other event of its row; no event has a day outside the month being stepped, except those `createWorld` sends.
+- A certain funded start (through a stub `FundingSystem`) has `sampleAdvance` lengths, no revisions and no drop-out.
+- The ESLint determinism rule covers `src/lib/sim/world/**` (global constraints).
+
+Cost (`test:perf`; each prints its number and asserts the bar only there; ballpark numbers on a busy machine are marked so).
+
+- 48 worlds, one month, no money, bench city: at most 3 ms.
+- `createWorld` plus `planDue` through month 480, live city, one world: printed, no bar. The conductor reads the runner's measurement of 96 worlds for the decision.
+
+Docs: a new `docs/dev/step-engine.md` (the world, the step, the due list, the hook), linked from `CLAUDE.md`.
+
+## Left to the builder
+
+- The columns of `LotColumns` and `ProjectColumns`, and how rows are found by lot or by project id.
+- The data structure behind `Due`.
+- How the files are split inside `src/lib/sim/world/`.
+- Whether to keep the shortcut that skips a lot whose draw cannot pass within `through` (today's `skipAbove`); it must not change any event inside the window.
+
+Decided here, not left: that no start total is stored (rule 6), the system order (rule 16), which calibration serves which project (rule 10), the speed rule and its clamp (rules 11 and 12), what `touched` means for planning (rule 7), the certain-project rule (rule 15), the order inside a system (rule 2), and the event order (S7).
+
+## Global constraints
+
+{{CONSTRAINTS}}

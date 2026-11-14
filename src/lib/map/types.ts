@@ -61,7 +61,9 @@ export interface TimelineUpdate {
   revision: number; // 0 = snapshot
   cells: TimedPackedCell[];
   removedCells: string[];
-  demolish: { parcelId: ParcelId; day: Day }[]; // complete list in revision 0 (needs no geometry); empty afterwards
+  demolish: { parcelId: ParcelId; day: Day }[]; // revision 0: the complete list (needs no geometry); later: entries newly known
+  /** After revision 0: lots whose demolition no longer holds (applied before `demolish`). Ignored in revision 0. */
+  restore?: ParcelId[];
   swap?: true; // revision 0 only: install over the cells on the map instead of clearing them
   complete?: boolean; // the run has packed every loaded cell (the scenario worker sets it)
 }

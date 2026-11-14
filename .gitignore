@@ -19,3 +19,4 @@ pipeline/lidar-raster/.venv/
 pipeline/lidar-raster/**/__pycache__/
 pipeline/lidar-raster/.pytest_cache/
 pipeline/lidar-raster/**/*.egg-info/
+.superpowers/brainstorm/

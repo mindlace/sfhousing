@@ -192,7 +192,7 @@ function kindOf<T extends string>(v: unknown, path: string, kinds: readonly T[])
   return oneOf((v as Record<string, unknown>).kind, j(path, 'kind'), kinds);
 }
 
-function parseRule(v: unknown, path: string): ZoningRule {
+export function parseRule(v: unknown, path: string): ZoningRule {
   const kind = kindOf(v, path, ['transit'] as const);
   const r = rec(v, path, ['id', 'kind', 'stopTypes', 'bands']);
   const bp = j(path, 'bands');
@@ -216,7 +216,7 @@ function parseRule(v: unknown, path: string): ZoningRule {
   };
 }
 
-function parseCustom(v: unknown, path: string): CustomBrush {
+export function parseCustom(v: unknown, path: string): CustomBrush {
   const kind = kindOf(v, path, ['paint', 'erase'] as const);
   if (kind === 'paint') {
     const r = rec(v, path, ['id', 'kind', 'strokes', 'stories']);
@@ -265,7 +265,7 @@ const ALL_PRESETS = PRESETS.map((p) => p.id);
 /** How the preset layer is read: 'strict' re-checks it, 'reconcile' leaves it to the caller. */
 export type PresetLayerMode = 'strict' | 'reconcile';
 
-function parseTimingSet(v: unknown, path: string, mode: PresetLayerMode): TimingSet {
+export function parseTimingSet(v: unknown, path: string, mode: PresetLayerMode): TimingSet {
   const r = rec(v, path, [
     'preset',
     'presetTimers',
