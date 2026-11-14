@@ -612,47 +612,6 @@ describe('FzpMode the representative flag', () => {
     vi.unstubAllEnvs();
   });
 
-  it("'Back to the representative future' sends a swap reroll null and clears the URL seed", async () => {
-    const s = setup({ urlSeed: 5 });
-    await toReady(s, 5);
-    await expect.poll(future).toBe('This future: #5');
-    await (
-      await details()
-    )
-      .getByRole('button', { name: 'Back to the representative future' })
-      .first()
-      .click();
-    const reroll = s.w().lastOf('reroll')!;
-    expect(reroll).toMatchObject({ seed: null, swap: true });
-    s.w().emit(timelineMsg(reroll.rev, 31));
-    await expect.poll(future).toBe('This future: #31 (representative)');
-    expect(s.onurlseed.mock.calls).toEqual([[null]]);
-  });
-
-  it("'Back to the representative future' works during a switch and is disabled once the worker stopped", async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    const s = await ranked({ urlSeed: RANKS[10] }, RANKS[10]);
-    const board = await details();
-    const back = () =>
-      board.getByRole('button', { name: 'Back to the representative future' }).first();
-    await expect.element(back()).not.toHaveAttribute('aria-disabled');
-
-    await pressRun('{ArrowUp}');
-    expect(s.w().allOf('reroll')).toHaveLength(1);
-    await expect.element(back()).not.toHaveAttribute('aria-disabled');
-    (back().element() as HTMLElement).click();
-    // Latest wins: it waits for the switch in flight, then goes out.
-    expect(s.w().allOf('reroll')).toHaveLength(1);
-    s.w().emit(timelineMsg(s.w().lastOf('reroll')!.rev, RANKS[9]));
-    await expect.poll(() => s.w().allOf('reroll').length).toBe(2);
-    expect(s.w().lastOf('reroll')).toMatchObject({ seed: null, swap: true });
-
-    s.w().crash();
-    await expect.element(back()).toHaveAttribute('aria-disabled', 'true');
-    (back().element() as HTMLElement).click();
-    expect(s.w().allOf('reroll')).toHaveLength(2);
-  });
-
   it('onResyncNeeded calls client.resync: one reroll per episode, flag kept', async () => {
     const s = setup();
     await toReady(s, 7);
@@ -942,24 +901,6 @@ describe('FzpMode run slider', () => {
     await expect
       .element(runSlider())
       .toHaveAttribute('aria-valuetext', `Run ${RANKS[10]}, rank 11 of 101`);
-  });
-
-  it('Back to the representative future moves the slider to the median', async () => {
-    const s = await ranked({ urlSeed: RANKS[10] }, RANKS[10]);
-    await (
-      await details()
-    )
-      .getByRole('button', { name: 'Back to the representative future' })
-      .first()
-      .click();
-    await expect
-      .element(runSlider())
-      .toHaveAttribute('aria-valuetext', `Run ${MEDIAN_SEED}, rank 51 of 101`);
-    const r = s.w().lastOf('reroll')!;
-    expect(r).toMatchObject({ seed: null, swap: true });
-    s.w().emit(timelineMsg(r.rev, MEDIAN_SEED));
-    await expect.poll(future).toBe(`This future: #${MEDIAN_SEED} (representative)`);
-    expect(s.onurlseed.mock.calls).toEqual([[null]]);
   });
 
   it('a failed switch shows the alert and the handle returns to the run on show', async () => {

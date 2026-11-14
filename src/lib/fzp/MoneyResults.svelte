@@ -42,10 +42,12 @@
     /** A revision is pending: both blocks carry aria-busy. */
     pending: boolean;
     part: 'money' | 'tiers';
+    /** A caption above the block's heading ("In this city"). */
+    scope?: string;
     /** Ids of the pools whose `Pool.uncapped` is true: Received reads "no limit" (4.11). */
     uncapped?: ReadonlySet<string>;
   }
-  let { score, i, at, terms, pending, part, uncapped = new Set() }: Props = $props();
+  let { score, i, at, terms, pending, part, scope, uncapped = new Set() }: Props = $props();
 
   const uid = $props.id();
   let detailsOpen = $state(false);
@@ -78,6 +80,7 @@
     aria-busy={busy}
     data-testid="fzp-money"
   >
+    {#if scope}<p class={muted} data-testid="fzp-scope">{scope}</p>{/if}
     <h2 id="{uid}-money-h" class="font-semibold">Public money</h2>
     {#if city}
       <p class="mt-1 tabular-nums" data-testid="fzp-money-city">{city}</p>
@@ -179,6 +182,7 @@
     aria-busy={busy}
     data-testid="fzp-tiers"
   >
+    {#if scope}<p class={muted} data-testid="fzp-scope">{scope}</p>{/if}
     <h2 id="{uid}-tiers-h" class="font-semibold">Who the homes are for</h2>
     <p class="mt-1 tabular-nums" data-testid="fzp-tiers-affordable">{affordableLine(t)}</p>
     <button

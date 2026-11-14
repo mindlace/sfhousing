@@ -285,8 +285,6 @@
 
   let score = $state.raw<TimelineScore | null>(null);
   let seed = $state<number | null>(null);
-  let bandRuns = $state(0);
-  let bandRunsTotal = $state(0);
   let representative = $state(false);
   let day = $state<Day>(untrack(() => initialCalibration?.asOf ?? 0));
   /** The furthest day reached: the results reveal nothing after it. Reset on entering Setup. */
@@ -585,14 +583,6 @@
     position = p;
     switchFailed = false;
     runs.select(requestSeed(r, p));
-  }
-
-  /** 'Back to the representative future': the slider's median, or a null seed before ranks. */
-  function backToRepresentative(): void {
-    if (!client || !canSwitch) return;
-    if (ranks) return onselect(medianRank(ranks.length));
-    switchFailed = false;
-    runs.select(null);
   }
 
   /** The tick of the run on show, once the band's order is known. */
@@ -903,8 +893,6 @@
       score = t.score;
       answerLevers(t.rev);
       seed = t.seed;
-      bandRuns = t.bandRuns;
-      bandRunsTotal = t.bandRunsTotal;
       checkAsOf(t.score);
       const req = latest;
       const answer = req !== null && !req.answered && t.rev >= req.rev && t.rev <= req.upTo;
@@ -1169,16 +1157,11 @@
     {at}
     {day}
     {asOf}
+    city={null}
     horizon={HORIZON}
-    highWater={highWater.value}
-    {bandRuns}
-    {bandRunsTotal}
-    {seed}
-    {representative}
-    {canSwitch}
+    filledEnd={HORIZON}
     {datasetVersion}
     builtAt={manifest?.builtAt ?? ''}
-    onrepresentative={backToRepresentative}
     onsources={() => dialog?.open()}
     {copy}
     {capacity}

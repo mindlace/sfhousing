@@ -41,6 +41,10 @@ import {
 } from '$lib/sim/scenario/finance-score';
 import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import type { ResolvedTerms } from '$lib/timelapse/types';
+import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from '$lib/timeline/chunk-log';
+import { resultsAt, scoreOfView } from '$lib/timeline/results';
+import { chunk, statics } from '$lib/timeline/test/fixtures';
+import type { TimelineView } from '$lib/sim/world/score/types';
 
 /** Index 53 of the fixture: 2031-03-15. */
 const DAY = dayFromUtc(2031, 3, 15);
@@ -50,13 +54,8 @@ const INTRO =
 type Overrides = Partial<{
   score: typeof TIMELINE_SCORE | null;
   day: number;
-  highWater: number;
-  bandRuns: number;
-  bandRunsTotal: number;
-  seed: number | null;
-  representative: boolean;
-  canSwitch: boolean;
-  onrepresentative: () => void;
+  filledEnd: number;
+  city: number | null;
   onsources: () => void;
   copy: ReturnType<typeof scoreCopy>;
   capacity: LeverCapacity | null;
@@ -73,15 +72,10 @@ const props = (over: Overrides = {}) => {
     day: DAY,
     asOf: FIX_ASOF,
     horizon: FIX_HORIZON,
-    highWater: FIX_HORIZON,
-    bandRuns: 101,
-    bandRunsTotal: 101,
-    seed: 7,
-    representative: true,
-    canSwitch: true,
+    filledEnd: FIX_HORIZON,
+    city: null as number | null,
     datasetVersion: 'fixture-0',
     builtAt: '2026-10-10T12:00:00Z',
-    onrepresentative: vi.fn(),
     onsources: vi.fn(),
     ...over
   };
@@ -177,24 +171,13 @@ describe('headline and pipeline', () => {
 });
 
 describe('bands', () => {
-  it('marks both band lines provisional while runs are outstanding, then clears', async () => {
+  it('shows both ranges as settled numbers, never "still calculating"', async () => {
     await page.viewport(1024, 768);
-    const screen = await render(SimResults, {
-      props: props({ bandRuns: 40, bandRunsTotal: 101 })
-    });
+    await render(SimResults, { props: props() });
     const total = page.getByText(/^In 8 of 10 simulated futures:/);
     const plan = page.getByText(/^In 8 of 10 futures:/);
-    await expect
-      .element(total)
-      .toHaveTextContent('In 8 of 10 simulated futures: 16,770–17,830 (still calculating)');
-    await expect
-      .element(plan)
-      .toHaveTextContent('In 8 of 10 futures: 1,240–1,340 (still calculating)');
-    await expect.element(total).toHaveAttribute('aria-busy', 'true');
-    await expect.element(plan).toHaveAttribute('aria-busy', 'true');
-
-    await screen.rerender(props({ bandRuns: 101, bandRunsTotal: 101 }));
     await expect.element(total).toHaveTextContent('In 8 of 10 simulated futures: 16,770–17,830');
+    await expect.element(plan).toHaveTextContent('In 8 of 10 futures: 1,240–1,340');
     await expect.element(total).not.toHaveTextContent('still calculating');
     await expect.element(plan).not.toHaveTextContent('still calculating');
     await expect.element(total).not.toHaveAttribute('aria-busy', 'true');
@@ -366,16 +349,16 @@ describe('targets and progress', () => {
     ]);
   });
 
-  it('hides the deadline line until the high-water mark reaches the deadline month', async () => {
+  it('hides the deadline line until the filled mark reaches the deadline month', async () => {
     await page.viewport(1024, 768);
     const before = await render(SimResults, {
-      props: props({ day: dayFromUtc(2030, 6, 1), highWater: dayFromUtc(2030, 12, 31) })
+      props: props({ day: dayFromUtc(2030, 6, 1), filledEnd: dayFromUtc(2030, 12, 31) })
     });
     expect(document.body.textContent).not.toContain('At the deadline');
     await before.unmount();
 
     await render(SimResults, {
-      props: props({ day: dayFromUtc(2030, 6, 1), highWater: dayFromUtc(2031, 1, 1) })
+      props: props({ day: dayFromUtc(2030, 6, 1), filledEnd: dayFromUtc(2031, 1, 1) })
     });
     const at = scoreAt(
       TIMELINE_SCORE,
@@ -410,41 +393,7 @@ describe('targets and progress', () => {
   });
 });
 
-describe('future line', () => {
-  it('representative: marks it and offers no way back', async () => {
-    await page.viewport(1024, 768);
-    await render(SimResults, { props: props({ seed: 7, representative: true }) });
-    openSources();
-    await expect.element(page.getByText('This future: #7 (representative)')).toBeVisible();
-    expect(document.body.textContent).not.toContain('Back to the representative future');
-  });
-
-  it('a run other than the representative: no suffix, and a button back', async () => {
-    await page.viewport(1024, 768);
-    const onrepresentative = vi.fn();
-    await render(SimResults, {
-      props: props({ seed: 7, representative: false, onrepresentative })
-    });
-    openSources();
-    await expect.element(page.getByText('This future: #7')).toBeVisible();
-    expect(page.getByText('This future: #7').element().textContent).not.toContain('representative');
-    await page.getByRole('button', { name: 'Back to the representative future' }).click();
-    expect(onrepresentative).toHaveBeenCalledOnce();
-  });
-
-  it('the way back is disabled, and inert, while a future cannot be asked for', async () => {
-    await page.viewport(1280, 800);
-    const onrepresentative = vi.fn();
-    await render(SimResults, {
-      props: props({ seed: 7, representative: false, canSwitch: false, onrepresentative })
-    });
-    openSources();
-    const back = page.getByRole('button', { name: 'Back to the representative future' });
-    await expect.element(back).toHaveAttribute('aria-disabled', 'true');
-    (back.element() as HTMLElement).click();
-    expect(onrepresentative).not.toHaveBeenCalled();
-  });
-
+describe('sources dialog', () => {
   it('opens the sources dialog through its callback', async () => {
     await page.viewport(1024, 768);
     const onsources = vi.fn();
@@ -558,16 +507,12 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
 
   it('every control in the desktop panel is at least 24x24', async () => {
     await page.viewport(1024, 768);
-    await render(SimResults, { props: props({ representative: false }) });
+    await render(SimResults, { props: props() });
     openSources();
     expectTarget(document.querySelector('.sfh-fzp-legend > summary')!, 'Map key summary');
     expectTarget(
       document.querySelector('[data-testid="fzp-chart"] details > summary')!,
       'Show as table summary'
-    );
-    expectTarget(
-      page.getByRole('button', { name: 'Back to the representative future' }).element(),
-      'Back to the representative future'
     );
     expectTarget(
       page.getByRole('button', { name: 'Where these numbers come from' }).element(),
@@ -617,7 +562,7 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
   /** The 15th of month `i` of the fixture. */
   const dayOf = (i: number) => MONEY_SCORE.months[i] + 14;
   const at = (i: number, over: Overrides = {}) =>
-    props({ score: MONEY_SCORE, day: dayOf(i), highWater: dayOf(i), ...over });
+    props({ score: MONEY_SCORE, day: dayOf(i), filledEnd: dayOf(i), ...over });
   const el = (id: string) => document.querySelector(`[data-testid="${id}"]`);
   const open = async (name: string) => {
     await page.getByRole('button', { name }).click();
@@ -852,7 +797,7 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
     await page.viewport(1024, 768);
     const score = { ...MONEY_SCORE, money: { ...money, limits: [] } };
     await render(SimResults, {
-      props: props({ score, day: dayOf(MONEY_LAST), highWater: dayOf(MONEY_LAST) })
+      props: props({ score, day: dayOf(MONEY_LAST), filledEnd: dayOf(MONEY_LAST) })
     });
     await open('Money details');
     expect(el('fzp-money-limits')).toBeNull();
@@ -874,5 +819,68 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
     await screen.rerender(props({ market: r1 }));
     await expect.element(page.getByTestId('fzp-market')).toHaveTextContent(r1);
     expect(el('fzp-market')!.textContent).not.toContain(MARKET_FUNDING_SENTENCE);
+  });
+});
+
+describe('fed from a stepped view (timeline-ui rule 26)', () => {
+  const view = (): TimelineView =>
+    viewOfLog(
+      logFilled(
+        logCompiled(EMPTY_LOG, statics({ finance: true })),
+        chunk(0, 24, { pools: ['a', 'b'] })
+      )
+    )!;
+  const IDX = 12;
+  const feed = (v: TimelineView, over: Overrides = {}) => {
+    const score = scoreOfView(v, null);
+    const r = resultsAt(v, null, IDX);
+    return {
+      ...props({ score, filledEnd: v.months[v.filledThrough], ...over }),
+      at: r.at,
+      city: r.city,
+      asOf: v.months[0],
+      horizon: v.months[v.lastIndex]
+    };
+  };
+
+  it('renders every row of rule 26 and This city', async () => {
+    await page.viewport(1024, 768);
+    const v = view();
+    const r = resultsAt(v, null, IDX);
+    await render(SimResults, { props: feed(v) });
+    const text = document.body.textContent!;
+    expect(page.getByTestId('fzp-net').element().textContent).toBe(formatCount(r.at.total));
+    expect(page.getByTestId('fzp-city').element().textContent).toBe(formatCount(r.city));
+    expect(text).toContain(`of which ${formatCount(r.at.actual)} built by today`);
+    expect(text).toContain('Homes in projects still in progress');
+    expect(text).toContain('Simulated, from today');
+    expect(text).toContain('Simulated, new projects not yet');
+    expect(text).toContain('Proposed homes in projects that stopped');
+    expect(text).toContain('What the plan added');
+    expect(text).toContain('Homes completed because of the plan');
+    expect(text).toMatch(/In 8 of 10 simulated futures: [\d,]+–[\d,]+/);
+    expect(text).toMatch(/In 8 of 10 futures: [\d,]+–[\d,]+/);
+    expect(text).not.toContain('still calculating');
+    expect(document.querySelector('[data-testid="fzp-chart"]')).not.toBeNull();
+    expect(document.querySelectorAll('[role="meter"]').length).toBeGreaterThan(0);
+    expect(document.querySelector('[data-testid="fzp-sources"]')).not.toBeNull();
+    const scopes = [...document.querySelectorAll('[data-testid="fzp-scope"]')];
+    expect(scopes.map((e) => e.textContent)).toEqual(['In this city']);
+    expect(document.querySelector('[data-testid="fzp-money"]')).not.toBeNull();
+  });
+
+  it('reads perAddedHome and displacedShare from the view', async () => {
+    await page.viewport(1024, 768);
+    const v = view();
+    const withSentinel: TimelineView = {
+      ...v,
+      money: { ...v.money!, perAddedHome: { all: 123456, city: 654321 }, displacedShare: 0.5 }
+    };
+    await render(SimResults, { props: feed(withSentinel) });
+    expect(page.getByTestId('fzp-money-all').element().textContent).toContain('$123,456');
+    expect(page.getByTestId('fzp-money-city').element().textContent).toContain('$654,321');
+    expect(page.getByTestId('fzp-money-displaced').element().textContent).toContain(
+      '(50% of funded homes)'
+    );
   });
 });

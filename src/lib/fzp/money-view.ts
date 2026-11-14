@@ -15,6 +15,7 @@ import {
   type Money
 } from '$lib/sim/scenario/finance-score';
 import type { TimelineScore } from '$lib/sim/protocol';
+import type { MoneyView } from '$lib/sim/world/score/types';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
 import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import {
@@ -60,11 +61,13 @@ type Tiers = NonNullable<TimelineScore['tiers']>;
 
 /** The money series at month `i`. */
 export function moneyAt(money: Money, i: number): MoneyAt {
+  // A stepped view's money carries its own per-home figures (at its filled end): read, not divided.
+  const own = 'perAddedHome' in money ? (money as MoneyView).perAddedHome : null;
   return {
     spent: money.publicSpent[i],
     citySpent: cityOf(money, i),
-    perAddedHome: perAddedHome(money, i, 'all'),
-    cityPerAddedHome: perAddedHome(money, i, 'city'),
+    perAddedHome: own ? own.all : perAddedHome(money, i, 'all'),
+    cityPerAddedHome: own ? own.city : perAddedHome(money, i, 'city'),
     fundedHomes: money.fundedHomes[i],
     displacedHomes: money.displacedHomes[i],
     pools: money.pools.map((p) => ({
@@ -136,7 +139,8 @@ export function fundedLine(m: MoneyAt): string {
 
 /** The displaced homes beside the published range; the share is `displacedShare`. */
 export function displacementLine(money: Money, i: number): string {
-  const share = displacedShare(money, i);
+  const share =
+    'displacedShare' in money ? (money as MoneyView).displacedShare : displacedShare(money, i);
   const pct = share === null ? '' : ` (${formatPercent(share)} of funded homes)`;
   const { low, high } = DISPLACEMENT_RANGE.value;
   const tier = DISPLACEMENT_RANGE.provenance.tier;
