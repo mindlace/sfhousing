@@ -4,6 +4,7 @@ import { getAuth } from '$lib/server/auth/better-auth';
 import { shouldResolveSession } from '$lib/server/auth/session-gate';
 import { getDb } from '$lib/server/db';
 import { resolveSessionUser } from '$lib/server/user-store/user';
+import { resolveCapabilities } from '$lib/server/operator/capabilities';
 
 function setPublicLocals(locals: App.Locals) {
   locals.user = null;
@@ -48,8 +49,12 @@ export const sessionHandle: Handle = async ({ event, resolve }) => {
     event.locals.session = session.session
       ? { id: session.session.id, userId: session.session.userId }
       : null;
-    // Capabilities are resolved from the role ledger in a later change.
-    event.locals.capabilities = [];
+    // Operator capabilities: a verified BOOTSTRAP_EMAILS address gets the app wildcard with no
+    // read; anyone else gets the ledger fold (one capability_event read, plus the identity
+    // chain reads). Runs only here, on a request that already resolved a session user.
+    // BOOTSTRAP_EMAILS is a secret, not a wrangler var, so it is not in `Env`.
+    const { BOOTSTRAP_EMAILS } = event.platform!.env as { BOOTSTRAP_EMAILS?: string };
+    event.locals.capabilities = u ? await resolveCapabilities(db, u, BOOTSTRAP_EMAILS) : [];
     // A tombstoned identity survives `getSession` but `resolveSessionUser` returns
     // null; treat that as anonymous ('public'), not 'human'.
     event.locals.actorKind = u ? 'human' : 'public';

@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RequestEvent } from '@sveltejs/kit';
 
-const { getAuth, getSession, resolveSessionUser } = vi.hoisted(() => ({
+const { getAuth, getSession, resolveSessionUser, resolveCapabilities } = vi.hoisted(() => ({
   getAuth: vi.fn(),
   getSession: vi.fn(),
-  resolveSessionUser: vi.fn()
+  resolveSessionUser: vi.fn(),
+  resolveCapabilities: vi.fn()
 }));
 vi.mock('$lib/server/auth/better-auth', () => ({ getAuth }));
 vi.mock('$lib/server/user-store/user', () => ({ resolveSessionUser }));
+vi.mock('$lib/server/operator/capabilities', () => ({ resolveCapabilities }));
 
 // @ts-expect-error -- SvelteKit's internal server entry ships no module typings.
 import { with_request_store } from '@sveltejs/kit/internal/server';
@@ -49,6 +51,7 @@ beforeEach(() => {
   getSession.mockResolvedValue(null);
   getAuth.mockReturnValue({ api: { getSession } });
   resolveSessionUser.mockResolvedValue(ALICE);
+  resolveCapabilities.mockResolvedValue([]);
 });
 
 describe('sessionHandle', () => {
@@ -60,6 +63,8 @@ describe('sessionHandle', () => {
       expect(e.locals).toEqual(PUBLIC_LOCALS);
     }
     expect(getAuth).not.toHaveBeenCalled();
+    expect(resolveSessionUser).not.toHaveBeenCalled();
+    expect(resolveCapabilities).not.toHaveBeenCalled();
   });
 
   it('works with no BETTER_AUTH_SECRET on a signed-out page', async () => {
@@ -97,6 +102,38 @@ describe('sessionHandle', () => {
     expect(e.locals.actorKind).toBe('human');
   });
 
+  it('resolves capabilities for the session user with the BOOTSTRAP_EMAILS value', async () => {
+    getSession.mockResolvedValue({
+      user: { id: 'live-1' },
+      session: { id: 'sess-1', userId: 'live-1' }
+    });
+    const e = event('/', {
+      cookie: 'better-auth.session_token=t',
+      env: { DB: {}, BETTER_AUTH_SECRET: SECRET, BOOTSTRAP_EMAILS: 'alice@example.com' }
+    });
+    await sessionHandle({ event: e, resolve: ok });
+    expect(resolveCapabilities).toHaveBeenCalledTimes(1);
+    expect(resolveCapabilities).toHaveBeenCalledWith(expect.anything(), ALICE, 'alice@example.com');
+  });
+
+  it('gives a verified BOOTSTRAP_EMAILS user cap.grant', async () => {
+    const actual = await vi.importActual<typeof import('$lib/server/operator/capabilities')>(
+      '$lib/server/operator/capabilities'
+    );
+    resolveCapabilities.mockImplementation(actual.resolveCapabilities);
+    resolveSessionUser.mockResolvedValue({ ...ALICE, emailVerified: true, pseudonymous: false });
+    getSession.mockResolvedValue({
+      user: { id: 'live-1' },
+      session: { id: 'sess-1', userId: 'live-1' }
+    });
+    const e = event('/', {
+      cookie: 'better-auth.session_token=t',
+      env: { DB: {}, BETTER_AUTH_SECRET: SECRET, BOOTSTRAP_EMAILS: 'Alice@Example.com' }
+    });
+    await sessionHandle({ event: e, resolve: ok });
+    expect(actual.hasCapability(e.locals.capabilities, 'cap.grant')).toBe(true);
+  });
+
   it('recognises the __Secure- cookie name', async () => {
     const e = event('/', { cookie: '__Secure-better-auth.session_token=t' });
     await sessionHandle({ event: e, resolve: ok });
@@ -130,6 +167,7 @@ describe('sessionHandle', () => {
     const e = event('/', { cookie: 'better-auth.session_token=t' });
     await sessionHandle({ event: e, resolve: ok });
     expect(e.locals.user).toBeNull();
+    expect(resolveCapabilities).not.toHaveBeenCalled();
     expect(e.locals.capabilities).toEqual([]);
     expect(e.locals.actorKind).toBe('public');
   });
