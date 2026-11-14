@@ -6,7 +6,7 @@ import { handleE2eSeed } from '$lib/server/sharing/e2e-seed';
 import { handleGetPlan } from '$lib/server/sharing/get-plan';
 import { handlePublish } from '$lib/server/sharing/publish';
 import { createTestD1, testPlatform, type TestD1 } from '$lib/server/test/d1';
-import { paintedText } from '$lib/server/test/sim-docs';
+import { painted4Text, paintedText } from '$lib/server/test/sim-docs';
 import { FakeR2Bucket } from '$lib/server/test/fake-r2';
 import type { ShareError } from '$lib/sharing/api';
 import { PLAN_CODEC } from '$lib/sharing/doc-codec';
@@ -95,7 +95,7 @@ describe('POST /api/e2e/plans', () => {
 
   it("kind: 'sim' seeds a policy row counted through the sim codec; a bad kind is 400", async () => {
     const { t, platform } = setup();
-    const body = paintedText();
+    const body = painted4Text();
     const res = await handleE2eSeed(
       { request: post({ body, kind: 'sim', datasetVersion: 'fixture-0' }), platform },
       { e2eEnabled: true }
@@ -104,6 +104,7 @@ describe('POST /api/e2e/plans', () => {
     const [row] = rows(t);
     expect(row.kind).toBe('sim');
     expect(row.op_count).toBe(1);
+    expect(row.schema).toBe(4);
     expect(row.body).toBe(body);
 
     const bad = await handleE2eSeed(
@@ -111,6 +112,19 @@ describe('POST /api/e2e/plans', () => {
       { e2eEnabled: true }
     );
     expect(bad.status).toBe(400);
+  });
+
+  it('a schema 3 policy body still seeds verbatim, counted as the schema 3 codec counted it', async () => {
+    const { t, platform } = setup();
+    const body = paintedText();
+    const res = await handleE2eSeed(
+      { request: post({ body, kind: 'sim', datasetVersion: 'fixture-0' }), platform },
+      { e2eEnabled: true }
+    );
+    expect(res.status).toBe(201);
+    const [row] = rows(t);
+    expect(row.body).toBe(body);
+    expect(row.op_count).toBe(1);
   });
 
   it('the same body again → 200 with the existing id and one row (idempotent re-seed)', async () => {

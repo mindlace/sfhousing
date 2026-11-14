@@ -1,8 +1,13 @@
-// The dock's one selection (a rule or a painted area) and the limits view it chooses.
+// The selection on /sim: the schema 3 dock's (TransitTab, until it goes), and on the timeline a
+// policy by id: the limits view it chooses and what a tap on a lot selects.
 import { describe, expect, it } from 'vitest';
 import type { LimitOwner } from '$lib/sim/levers/source';
-import { DEFAULT_POLICY, customQuery, queryKey, type Lots, type SimPolicy } from './policy';
-import { limitsViewOf, liveSelection, ownerLabel, selectionForLot, tabOf } from './selection';
+import { monthFirstDay } from '$lib/sim/world/months';
+import type { PolicyLimitOwner } from '$lib/sim/world/policy/limits';
+import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
+import { fixedRef } from '$lib/timeline/rows';
+import { DEFAULT_POLICY, type SimPolicy } from './policy';
+import { limitsViewOf, liveSelection, selectionForLot } from './selection';
 
 const policy: SimPolicy = {
   ...DEFAULT_POLICY,
@@ -35,114 +40,101 @@ describe('liveSelection', () => {
   });
 });
 
+const AS_OF = 20_000;
+const M = (m: number) => monthFirstDay(AS_OF, m);
+const transit: Policy = {
+  id: 'near-bart',
+  label: 'Taller near BART',
+  preset: null,
+  on: true,
+  where: { tag: 'transit', stopTypes: ['metro'] },
+  spans: [{ from: M(1), to: null, what: { tag: 'bands', bands: [{ maxM: 400, stories: 8 }] } }]
+};
+const painted: Policy = {
+  id: 'mission',
+  label: 'Mission paint',
+  preset: null,
+  on: true,
+  where: { tag: 'painted' },
+  spans: [
+    { from: M(1), to: M(13) - 1, what: { tag: 'brushes', brushes: [] } },
+    { from: M(13), to: null, what: { tag: 'brushes', brushes: [] } }
+  ]
+};
+const doc: SimPolicy4 = {
+  schema: 4,
+  kinds: { zoning: [transit, painted], permitting: [], money: [] }
+};
+const asLimit = (o: PolicyLimitOwner): LimitOwner => o as unknown as LimitOwner;
+
 describe('limitsViewOf', () => {
-  it('a selected rule gives rule mode, winning over the tool', () => {
-    expect(limitsViewOf({ kind: 'rule', id: 'r1' }, 'paint', 'edit')).toEqual({
-      kind: 'rule',
-      ruleId: 'r1'
+  it('a selected transit policy gives rule mode on its id, winning over the tool', () => {
+    expect(
+      limitsViewOf({ kind: 'zoning', id: 'near-bart', span: 0 }, doc, 'paint', 'edit')
+    ).toEqual({ kind: 'rule', ruleId: 'near-bart' });
+  });
+
+  it('the fixed zoning row gives fzp mode, winning over the tool', () => {
+    expect(limitsViewOf(fixedRef('zoning'), doc, 'erase', 'edit')).toEqual({ kind: 'fzp' });
+  });
+
+  it('a painted policy, or Paint or Erase in edit, gives paint mode', () => {
+    expect(limitsViewOf({ kind: 'zoning', id: 'mission', span: 1 }, doc, 'move', 'edit')).toEqual({
+      kind: 'paint'
     });
+    expect(limitsViewOf(null, doc, 'paint', 'edit')).toEqual({ kind: 'paint' });
+    expect(limitsViewOf(null, doc, 'erase', 'edit')).toEqual({ kind: 'paint' });
   });
 
-  it('the FZP baseline gives fzp mode, winning over the tool', () => {
-    expect(limitsViewOf({ kind: 'fzp' }, 'move', 'edit')).toEqual({ kind: 'fzp' });
-    expect(limitsViewOf({ kind: 'fzp' }, 'erase', 'edit')).toEqual({ kind: 'fzp' });
-  });
-
-  it('a painted area, or Paint or Erase in edit, gives paint mode', () => {
-    expect(limitsViewOf({ kind: 'paint', id: 'b1' }, 'move', 'edit')).toEqual({ kind: 'paint' });
-    expect(limitsViewOf(null, 'paint', 'edit')).toEqual({ kind: 'paint' });
-    expect(limitsViewOf(null, 'erase', 'edit')).toEqual({ kind: 'paint' });
-  });
-
-  it('Move, or the view with a tool chosen, gives plain', () => {
-    expect(limitsViewOf(null, 'move', 'edit')).toEqual({ kind: 'plain' });
-    expect(limitsViewOf(null, 'paint', 'view')).toEqual({ kind: 'plain' });
+  it('Move, another kind, a policy gone, or the view with a tool chosen, gives plain', () => {
+    expect(limitsViewOf(null, doc, 'move', 'edit')).toEqual({ kind: 'plain' });
+    expect(limitsViewOf(null, doc, 'paint', 'view')).toEqual({ kind: 'plain' });
+    expect(limitsViewOf({ kind: 'zoning', id: 'gone', span: 0 }, doc, 'move', 'edit')).toEqual({
+      kind: 'plain'
+    });
+    expect(limitsViewOf(fixedRef('money'), doc, 'move', 'edit')).toEqual({ kind: 'plain' });
   });
 });
 
 describe('selectionForLot', () => {
-  const k1 = queryKey(customQuery(policy.custom[0]));
-  const lots: Lots = (k) => (k === k1 ? ['L1'] : undefined);
-
-  it('a rule still in the policy selects that rule', () => {
-    expect(selectionForLot({ kind: 'rule', ruleId: 'r1' }, 'L1', policy, lots)).toEqual({
-      kind: 'rule',
-      id: 'r1'
+  it("selects the owner's policy on the span covering the playhead's day", () => {
+    const o = asLimit({ kind: 'paint', policy: 'mission' });
+    expect(selectionForLot(o, 'L1', doc, M(14))).toEqual({
+      kind: 'zoning',
+      id: 'mission',
+      span: 1
+    });
+    expect(selectionForLot(o, 'L1', doc, M(2))).toEqual({ kind: 'zoning', id: 'mission', span: 0 });
+    const r = asLimit({ kind: 'rule', ruleId: 'near-bart', policy: 'near-bart' });
+    expect(selectionForLot(r, 'L1', doc, M(2))).toEqual({
+      kind: 'zoning',
+      id: 'near-bart',
+      span: 0
     });
   });
 
-  it('a rule no longer in the policy (removed, or a stale answer) selects the FZP baseline', () => {
-    expect(selectionForLot({ kind: 'rule', ruleId: 'r9' }, 'L1', policy, lots)).toEqual({
-      kind: 'fzp'
+  it('with no span covering the day (or the policy off), its first span', () => {
+    const off: SimPolicy4 = {
+      ...doc,
+      kinds: { ...doc.kinds, zoning: [{ ...painted, on: false }] }
+    };
+    const o = asLimit({ kind: 'paint', policy: 'mission' });
+    expect(selectionForLot(o, 'L1', off, M(14))).toEqual({
+      kind: 'zoning',
+      id: 'mission',
+      span: 0
     });
   });
 
-  it('a missing or empty rule id selects the FZP baseline', () => {
-    expect(selectionForLot({ kind: 'rule', ruleId: '' }, 'L1', policy, lots)).toEqual({
-      kind: 'fzp'
-    });
-    const missing = { kind: 'rule', ruleId: undefined } as unknown as LimitOwner;
-    expect(selectionForLot(missing, 'L1', policy, lots)).toEqual({ kind: 'fzp' });
-  });
-
-  it('paint selects the painted area holding the lot, else the FZP baseline', () => {
-    expect(selectionForLot({ kind: 'paint' }, 'L1', policy, lots)).toEqual({
-      kind: 'paint',
-      id: 'b1'
-    });
-    expect(selectionForLot({ kind: 'paint' }, 'L2', policy, lots)).toEqual({ kind: 'fzp' });
-    expect(selectionForLot({ kind: 'paint' }, 'L1', policy, () => undefined)).toEqual({
-      kind: 'fzp'
-    });
-  });
-
-  it('fzp selects the FZP baseline', () => {
-    expect(selectionForLot({ kind: 'fzp' }, 'L1', policy, lots)).toEqual({ kind: 'fzp' });
+  it('the plan, or a policy no longer in the document, selects the fixed zoning row', () => {
+    expect(selectionForLot(asLimit({ kind: 'fzp' }), 'L1', doc, M(2))).toEqual(fixedRef('zoning'));
+    const gone = asLimit({ kind: 'paint', policy: 'gone' });
+    expect(selectionForLot(gone, 'L1', doc, M(2))).toEqual(fixedRef('zoning'));
   });
 
   it('no lot, or a lot without an owner, clears the selection', () => {
-    expect(selectionForLot(null, null, policy, lots)).toBeNull();
-    expect(selectionForLot({ kind: 'fzp' }, null, policy, lots)).toBeNull();
-    expect(selectionForLot(null, 'L1', policy, lots)).toBeNull();
-  });
-});
-
-describe('ownerLabel', () => {
-  const k1 = queryKey(customQuery(policy.custom[0]));
-  const lots: Lots = (k) => (k === k1 ? ['L1'] : undefined);
-
-  it('names a rule still in the policy by its layer name', () => {
-    expect(ownerLabel({ kind: 'rule', ruleId: 'r1' }, 'L1', policy, lots)).toBe('Near Muni Metro');
-  });
-
-  it('gives null for a rule no longer in the policy, or with no id', () => {
-    expect(ownerLabel({ kind: 'rule', ruleId: 'r9' }, 'L1', policy, lots)).toBeNull();
-    expect(ownerLabel({ kind: 'rule', ruleId: '' }, 'L1', policy, lots)).toBeNull();
-  });
-
-  it('names paint by its story count', () => {
-    expect(ownerLabel({ kind: 'paint' }, 'L1', policy, lots)).toBe('Painted 6 stories');
-    const one: SimPolicy = { ...policy, custom: [{ ...policy.custom[0], stories: 1 } as never] };
-    const k = queryKey(customQuery(one.custom[0]));
-    expect(ownerLabel({ kind: 'paint' }, 'L1', one, (x) => (x === k ? ['L1'] : undefined))).toBe(
-      'Painted 1 story'
-    );
-  });
-
-  it('gives null for paint it cannot place (another lot, unknown lots)', () => {
-    expect(ownerLabel({ kind: 'paint' }, 'L2', policy, lots)).toBeNull();
-    expect(ownerLabel({ kind: 'paint' }, 'L1', policy, () => undefined)).toBeNull();
-  });
-
-  it('gives null for FZP', () => {
-    expect(ownerLabel({ kind: 'fzp' }, 'L1', policy, lots)).toBeNull();
-  });
-});
-
-describe('tabOf', () => {
-  it('a rule and the FZP baseline live on Transit; a painted area on Paint', () => {
-    expect(tabOf({ kind: 'rule', id: 'r1' })).toBe('transit');
-    expect(tabOf({ kind: 'fzp' })).toBe('transit');
-    expect(tabOf({ kind: 'paint', id: 'b1' })).toBe('paint');
+    expect(selectionForLot(null, null, doc, M(2))).toBeNull();
+    expect(selectionForLot(asLimit({ kind: 'fzp' }), null, doc, M(2))).toBeNull();
+    expect(selectionForLot(null, 'L1', doc, M(2))).toBeNull();
   });
 });

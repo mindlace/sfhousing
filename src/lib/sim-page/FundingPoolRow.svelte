@@ -85,13 +85,16 @@
     asOf: Day;
     /** The page's memory that this pool's name was generated and never edited (4.9). */
     autoName?: boolean;
-    onselect: () => void;
+    /** Selects or unselects the pool. Omitted, its editor stays open and the header is no toggle. */
+    onselect?: () => void;
     onedit: (e: FundingEdit | Refused) => void;
     /** A draft's next state; `field` is the `data-field` of the control that committed it. */
     ondraft?: (d: PoolDraft, field: string) => void;
     ondiscard?: () => void;
     /** The programme rows' context (4.8); absent on the draft pool, which has no programmes. */
     host?: ProgrammeHost;
+    /** A stored pool's rate and term render as text: they change by ending the policy. */
+    termsReadOnly?: boolean;
   }
 
   let {
@@ -103,11 +106,12 @@
     past,
     asOf,
     autoName = false,
-    onselect,
+    onselect = undefined,
     onedit,
     ondraft = undefined,
     ondiscard = undefined,
-    host = undefined
+    host = undefined,
+    termsReadOnly = false
   }: Props = $props();
 
   const uid = $props.id();
@@ -509,6 +513,8 @@
   const muted = 'text-ink-muted dark:text-ink-dark-muted';
   const rowButton =
     'flex min-h-11 w-full flex-col items-start rounded-md px-1 py-1 text-left hover:bg-surface-raised dark:hover:bg-surface-dark-raised';
+  /** The header without the toggle (no `onselect`). */
+  const rowHead = 'flex min-h-11 w-full flex-col items-start px-1 py-1 text-left';
   const link =
     'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
   const input =
@@ -540,12 +546,19 @@
   class={rowClass(selected || isDraft)}
 >
   {#if stored !== null}
-    <button type="button" aria-pressed={selected} class={rowButton} onclick={onselect}>
-      <span class="font-semibold">{name} · {amountText(stored)}</span>
+    {#snippet head(p: Pool)}
+      <span class="font-semibold">{name} · {amountText(p)}</span>
       {#each programmes as g (g.id)}
-        <span class={muted}>{programmeSentence(g, stored)}</span>
+        <span class={muted}>{programmeSentence(g, p)}</span>
       {/each}
-    </button>
+    {/snippet}
+    {#if onselect}
+      <button type="button" aria-pressed={selected} class={rowButton} onclick={onselect}>
+        {@render head(stored)}
+      </button>
+    {:else}
+      <div class={rowHead}>{@render head(stored)}</div>
+    {/if}
     <!-- A button's children are presentational: a changed amount is also a sibling status, so it
          is spoken (4.16, WCAG 4.1.3). -->
     <span role="status" class="sr-only">{name}: {amountText(stored)}</span>
@@ -781,46 +794,55 @@
         {@const rateErr =
           errorOf('rate', debt.rate) ?? (debt.rate === null ? DEBT_RATE_ERROR : null)}
         {@const yearsErr = errorOf('years', debt.termYears)}
-        <div class="flex flex-col gap-0.5">
-          <label class="flex flex-wrap items-center gap-1">
-            Interest rate, %
-            <input
-              type="number"
-              inputmode="decimal"
-              step="any"
-              data-field="rate"
-              class="{input} w-24"
-              value={textOf(
-                'rate',
-                debt.rate,
-                debt.rate === null ? '' : fieldText(debt.rate, 'fraction')
-              )}
-              aria-invalid={rateErr ? 'true' : undefined}
-              aria-describedby="{uid}-rate-err"
-              {...typed(commitRate)}
-            />
-          </label>
-          {@render alertLine('rate', rateErr)}
+        {#if termsReadOnly && stored !== null}
+          <p data-field="rate">
+            Interest rate: {debt.rate === null ? '' : ratePercent(debt.rate)}
+          </p>
           {@render sourceLine(evidenceLine('debt.rate'))}
-        </div>
-        <div class="flex flex-col gap-0.5">
-          <label class="flex flex-wrap items-center gap-1">
-            Years to repay
-            <input
-              type="number"
-              inputmode="numeric"
-              step="any"
-              data-field="years"
-              class="{input} w-24"
-              value={textOf('years', debt.termYears, fieldText(debt.termYears, 'plain'))}
-              aria-invalid={yearsErr ? 'true' : undefined}
-              aria-describedby="{uid}-years-err"
-              {...typed(commitYears)}
-            />
-          </label>
-          {@render alertLine('years', yearsErr)}
+          <p data-field="years">Years to repay: {debt.termYears}</p>
           {@render sourceLine(evidenceLine('debt.termYears'))}
-        </div>
+        {:else}
+          <div class="flex flex-col gap-0.5">
+            <label class="flex flex-wrap items-center gap-1">
+              Interest rate, %
+              <input
+                type="number"
+                inputmode="decimal"
+                step="any"
+                data-field="rate"
+                class="{input} w-24"
+                value={textOf(
+                  'rate',
+                  debt.rate,
+                  debt.rate === null ? '' : fieldText(debt.rate, 'fraction')
+                )}
+                aria-invalid={rateErr ? 'true' : undefined}
+                aria-describedby="{uid}-rate-err"
+                {...typed(commitRate)}
+              />
+            </label>
+            {@render alertLine('rate', rateErr)}
+            {@render sourceLine(evidenceLine('debt.rate'))}
+          </div>
+          <div class="flex flex-col gap-0.5">
+            <label class="flex flex-wrap items-center gap-1">
+              Years to repay
+              <input
+                type="number"
+                inputmode="numeric"
+                step="any"
+                data-field="years"
+                class="{input} w-24"
+                value={textOf('years', debt.termYears, fieldText(debt.termYears, 'plain'))}
+                aria-invalid={yearsErr ? 'true' : undefined}
+                aria-describedby="{uid}-years-err"
+                {...typed(commitYears)}
+              />
+            </label>
+            {@render alertLine('years', yearsErr)}
+            {@render sourceLine(evidenceLine('debt.termYears'))}
+          </div>
+        {/if}
       {/if}
 
       {#if kind === 'bank'}

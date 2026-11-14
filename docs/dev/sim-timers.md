@@ -5,7 +5,7 @@ Plan: `docs/superpowers/plans/` (plan 4 of 5, permitting timers). The sourced co
 that the stage details show. A value that could not be sourced is `{ value: null, reason }`, and
 the preset or floor that needs it is unavailable (plan Calls 7 and 8). The UI is
 `PermittingSection.svelte` and `RouteTimeline.svelte` in `src/lib/sim-page/`; the rules are in
-`timing.ts`. See also [sim-page.md](sim-page.md) and [sim-levers.md](sim-levers.md).
+`timing.ts`. On `/sim` the section is hosted in the inspector for a selected permitting policy ([timeline-ui.md](timeline-ui.md)); its "preset", "timer" and "share" below are one span's set, and the dates are the span's. See also [sim-page.md](sim-page.md) and [sim-levers.md](sim-levers.md).
 
 ## The timing model
 
@@ -68,6 +68,8 @@ carries a product past the clamp.
 
 ## Save and Revert
 
+**On `/sim` (timeline-ui)** there is no Save and no "Revert to saved": `PermittingSection` takes `snapshot={false}`, because schema 4 carries a saved set as its own off policy and each policy has an on/off switch and Undo. Revert reads "Revert to <preset name>" and returns the selected span's set to its preset's resolved set (a custom timing policy keeps preset `observed` with the label `CUSTOM_TIMING_LABEL`, so it reverts to the observed timings). The preset belongs to the policy: on a policy of several spans the preset select is disabled, with the reason behind a tap (`PRESET_PER_POLICY`). The paragraphs below describe the schema 3 snapshot, which `upgrade.ts` turns into an off policy.
+
 Save ("Save timelines") stores the current set as `timing.saved` with the label shown at that
 moment. Plan 5 persists it: autosave keeps it, so "Revert to saved" survives a reload, but Publish
 strips it (`SIM_CODEC.publishable`), so a shared link carries no snapshot. Every load (autosave
@@ -79,9 +81,9 @@ and "Revert to <preset name>" otherwise. Choosing a preset keeps the saved snaps
 labelled store change, so Undo covers it. Editing a preset's set makes the label
 "Custom (from <preset name>)".
 
-## The timeline UI
+## The route timelines
 
-Each route's bar is a roving-tabindex group of segment buttons (Left, Right, Home, End move;
+(Each route's own bars, inside the section; not the page's timeline of policies, [timeline-ui.md](timeline-ui.md).) Each route's bar is a roving-tabindex group of segment buttons (Left, Right, Home, End move;
 Enter or a click opens the stage details). Names read "<Stage>, <months> months, <advance>% move
 on[, locked][, at the minimum]" ("1 month" is singular). The details hold the "Typical months"
 input (step 0.5), "Shorten by 0.5 month" and "Lengthen by 0.5 month" buttons (shown "−" and "+"), the minimum, the chances, the reach line and the
@@ -108,7 +110,7 @@ Permit-office speedups and custom edits reach every project (`'all'`); approval-
 entitlement changes reach only projects filing after the policy starts (`'new'`). The details say
 which: "Applies to every project, including those already in this stage" or "Applies to projects
 filing after the policy starts". On the map, bars read the cohort's own lookups (Call 15); see
-[fzp-mode.md](fzp-mode.md).
+[fzp-mode.md](fzp-mode.md), "Lookups on the map".
 
 ## Evidence
 

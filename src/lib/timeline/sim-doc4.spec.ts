@@ -8,6 +8,7 @@ import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
 import { readRecord, type LocalPlanRecord } from '$lib/sharing/storage';
 import { paintedText, simDoc } from '$lib/server/test/sim-docs';
 import { CODECS } from '$lib/server/sharing/codecs';
+import { SIM_SERVER_CODEC4 } from './server-codec';
 import { DEFAULT_POLICY, SCHEMA2_PUBLISH_MESSAGE, SIM_CODEC, SIM_KEY } from '$lib/sim-page/sim-doc';
 import { serializeSimDoc } from '$lib/sim-page/sim-doc';
 import type { CustomBrush, SimPolicy, Stroke } from '$lib/sim-page/policy';
@@ -531,9 +532,9 @@ describe('migrateSimAutosave', () => {
   });
 });
 
-describe('nothing is switched on', () => {
-  it('keeps the v1 codec in place', () => {
+describe('the server is switched on', () => {
+  it('CODECS.sim is the schema 4 codec; the v1 codec keeps its key', () => {
     expect(SIM_CODEC.storageKey).toBe('sfhousing:sim:v1');
-    expect(CODECS.sim).toBe(SIM_CODEC);
+    expect(CODECS.sim).toBe(SIM_SERVER_CODEC4);
   });
 });

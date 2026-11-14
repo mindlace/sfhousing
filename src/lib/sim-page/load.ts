@@ -8,7 +8,7 @@ import type { Calibration } from '$lib/timelapse/types';
 
 type FetchFn = (url: string) => Promise<Response>;
 
-/** What the scenario load gives, before the URL's seed. */
+/** What the scenario load gives. */
 export type SimScenarioData = {
   manifest: Manifest | null;
   manifestError: boolean;
@@ -17,18 +17,10 @@ export type SimScenarioData = {
   noScenario: boolean;
 };
 
-export type FzpPageData = SimScenarioData & {
-  seed: number | null;
-  seedInvalid: boolean;
-};
+/** The /sim load's data: the scenario (the URL names no future). */
+export type SimPageData = SimScenarioData;
 
-/** The /sim load's data: the scenario and the URL's seed. */
-export type SimPageData = FzpPageData;
-
-/**
- * The manifest of `version` (or of `current` when that 404s: `fellBack`) and its calibration.
- * The seed is the caller's (it reads the URL).
- */
+/** The manifest of `version` (or of `current` when that 404s: `fellBack`) and its calibration. */
 export async function loadSimScenario(
   version: string,
   current: string,

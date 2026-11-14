@@ -1,14 +1,17 @@
-// /sim e2e (plan 3, Task 12; the dock, sim-ux plan 2): the /fzp redirect, the header score and
-// phone Menu, the policy dock (tabs, Results, rail, phone sheet), a transit rule, a Paint stroke and its undo, a category protection, Back and Forward
-// after a reroll, and the accessibility checks. Runs against the VITE_E2E build, which exposes
-// window.__sfhFzp (src/lib/fzp/debug.ts, with /sim's `levers` field), window.__sfhSim (the live
-// preview, src/lib/sim-page/debug.ts) and window.__sfhMap.
+// /sim e2e on the timeline (timeline-ui): the /fzp redirect, the header score and the phone Menu,
+// Results and the editor in the inspector, a transit rule, a painted area and its undo, selecting
+// on the map, a category protection, permitting presets and edits, the map overlays, the header
+// layout and the live paint preview, with the accessibility checks. Runs against the VITE_E2E
+// build, which exposes window.__sfhFzp (src/lib/fzp/debug.ts: the playhead day, the fill, the
+// refills, the document), window.__sfhSim (the live preview, src/lib/sim-page/debug.ts) and
+// window.__sfhMap. Every edit is checked against the real worker: the forecast refills and fills
+// again.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { SfhSimDebug } from '../src/lib/sim-page/debug';
-import { formatCount } from '../src/lib/scoreboard/format';
+import { forecastFilled } from '../src/lib/timeline/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { runSlider, slider, startRun, waitRanked } from './helpers/run';
+import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
 import {
   FRAME,
   FROM,
@@ -31,44 +34,44 @@ type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 function fzp<K extends keyof SfhFzpDebug>(page: Page, key: K): Promise<SfhFzpDebug[K]> {
   return page.evaluate((k) => (window as FzpWin).__sfhFzp![k], key) as Promise<SfhFzpDebug[K]>;
 }
-const leverStatus = (page: Page) => fzp(page, 'levers');
 type SimWin = Win & { __sfhSim?: SfhSimDebug };
 /** The live preview's state (`window.__sfhSim`, src/lib/sim-page/debug.ts). */
 const simPreview = (page: Page) =>
   page.evaluate(() => (window as SimWin).__sfhSim?.preview ?? null);
 
-/** The page is ready, the map is up and the levers sent with the session are in force. */
+/** The page is ready, the map is up and the forecast is filled. */
 async function waitReady(page: Page): Promise<void> {
-  await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready', undefined, {
-    timeout: 20_000
-  });
-  await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
-    timeout: 20_000
-  });
+  await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready');
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="map-root"]')?.getAttribute('data-state') === 'ready'
+  );
   await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);
-  await expect
-    .poll(async () => (await leverStatus(page)).status, { timeout: 20_000 })
-    .toBe('current');
+  await waitFilled(page);
 }
 
-/** /sim (or `path`), ready, in Setup; with `run`, a run started and paused (the day at or just past asOf). */
-async function gotoSim(
-  page: Page,
-  path = '/sim',
-  { run = false }: { run?: boolean } = {}
-): Promise<void> {
+/** /sim (or `path`), ready, the forecast filled. */
+async function gotoSim(page: Page, path = '/sim'): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(path);
   await waitReady(page);
-  if (run) await startRun(page);
+}
+
+/** The number of refills the page has seen. */
+const refillCount = (page: Page): Promise<number> =>
+  page.evaluate(() => (window as FzpWin).__sfhFzp!.refills.length);
+
+/** Waits for a refill after the `before`-th, and the forecast filled again. */
+async function waitRefilled(page: Page, before: number): Promise<void> {
+  await page.waitForFunction((n) => {
+    const f = (window as FzpWin).__sfhFzp!;
+    return f.refills.length > n && !f.stale && f.filledThrough === f.lastIndex;
+  }, before);
 }
 
 /**
  * Turns the zoning height limits off in the saved view prefs (`sfhousing:view`) before the page
- * loads, for a Paint test that never looks at them. They are on by default and are the costliest
- * overlay, on startup and again when Paint is chosen (their paint mode): at 15 workers with CPU
- * load they took about 8 s of a 30 s Paint test, and the tests timed out (#74, #75, #76). Their
- * own tests leave them on.
+ * loads, for a Paint test that never looks at them: they are the costliest overlay, on startup
+ * and again when Paint is chosen (#74, #75, #76). Their own tests leave them on.
  */
 async function hideHeightLimits(page: Page): Promise<void> {
   await page.addInitScript(() =>
@@ -77,93 +80,43 @@ async function hideHeightLimits(page: Page): Promise<void> {
 }
 
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
-/** The dock's Results face (`data-testid="score-details"`): Run and the header score show it. */
-const scoreDetails = (page: Page): Locator => page.getByRole('region', { name: 'Results' });
-/** The policy dock. Its root is `display: contents`: the docked panel, rail or sheet is the box. */
-const panel = (page: Page): Locator => page.getByTestId('dock');
-/** The docked panel (from md). */
-const dockPanel = (page: Page): Locator => page.locator('.sfh-dock-panel');
-/** The phone sheet's handle (below md). */
-const handle = (page: Page): Locator => page.getByTestId('dock-handle');
-const tabOf = (page: Page, name: string): Locator =>
-  panel(page).getByRole('tab', { name, exact: true });
+/** Results, which the header score shows in the inspector. */
+const results = (page: Page): Locator => page.getByTestId('tl-results');
+/** The editor (the selected policy, a fixed row or the "+" menu). */
+const editor = (page: Page): Locator => page.getByTestId('inspector');
+/** The inspector's box: beside the map from md, a sheet below. */
+const inspectorBox = (page: Page): Locator => page.getByTestId('tl-inspector');
 const menuButton = (page: Page): Locator =>
   page.getByRole('banner').getByRole('button', { name: 'Menu', exact: true });
-/** Hidden ones included: below lg it waits in the Menu, which closes when the sheet opens. */
-const policyButton = (page: Page): Locator =>
-  page
-    .getByRole('banner')
-    .getByRole('button', { name: 'Policy', exact: true, includeHidden: true });
 
 async function openScore(page: Page): Promise<Locator> {
   if ((await scoreBar(page).getAttribute('aria-expanded')) !== 'true') await scoreBar(page).click();
   await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'true');
-  await expect(scoreDetails(page)).toBeVisible();
-  return scoreDetails(page);
+  await expect(results(page)).toBeVisible();
+  return results(page);
 }
 
-/** The dock shows its body: the docked panel from md, the sheet open (peek or full) below. */
-const dockShown = (page: Page): Promise<boolean> =>
-  page.evaluate(
-    () =>
-      !!document.querySelector('.sfh-dock-panel') ||
-      document.querySelector('[data-testid="dock-handle"]')?.getAttribute('aria-expanded') ===
-        'true'
-  );
-
-/**
- * The dock, opened if it is not already (from md the Policy button, which waits in the Menu below
- * lg; below md the handle).
- */
-async function openPolicy(page: Page): Promise<Locator> {
-  if (!(await dockShown(page))) {
-    if (await handle(page).isVisible()) await handle(page).click();
-    else await (await headerAction(page, 'Policy')).click();
-  }
-  await expect.poll(() => dockShown(page)).toBe(true);
-  return panel(page);
+/** Closes the editor if it shows. */
+async function closeEditor(page: Page): Promise<void> {
+  const close = editor(page).getByRole('button', { name: 'Close editor' });
+  if (await close.isVisible()) await close.click();
+  await expect(editor(page)).toHaveCount(0);
 }
 
-/** Opens the dock (on the editing face, in Setup) and selects the tab `name`. */
-async function openTab(page: Page, name: string): Promise<void> {
-  await openPolicy(page);
-  await tabOf(page, name).click();
-  await expect(tabOf(page, name)).toHaveAttribute('aria-selected', 'true');
+/** Below md the page scrolls inside the mode's box: back to its top, where the map is. */
+async function scrollToTop(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+    document.querySelector('[data-testid="tl-mode"]')?.scrollTo(0, 0);
+  });
 }
 
-/** Below md: folds an open sheet to its handle (a no-op from md). */
-async function closeSheet(page: Page): Promise<void> {
-  if (!(await handle(page).isVisible())) return;
-  if ((await handle(page).getAttribute('aria-expanded')) !== 'true') return;
-  await panel(page).getByRole('button', { name: 'Collapse Policy' }).click();
-  await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
-}
-
-/** The Transit tab's layer rows, the FZP baseline row left out. */
-const layerRows = (page: Page): Locator =>
-  panel(page)
-    .getByRole('list', { name: 'Transit layers' })
-    .locator('[data-layer-row]:not([data-layer-row="fzp"])');
-/** A layer row's select button (its name ends in the lot count). */
-const selectButton = (row: Locator): Locator => row.locator(':scope > button');
-
-/**
- * Opens the Transit tab and presses "+ Transit layer" once the brush catalog allows it (it is
- * aria-disabled until then, and Playwright waits for it to be enabled), then waits for the new
- * layer's lot count. Returns its row, selected and expanded.
- */
-async function addTransitLayer(page: Page): Promise<Locator> {
-  await openTab(page, 'Transit');
-  const n = await layerRows(page).count();
-  await panel(page).getByRole('button', { name: 'Add transit layer' }).click({ timeout: 20_000 });
-  const row = layerRows(page).nth(n);
-  await expect(selectButton(row)).toHaveAttribute('aria-pressed', 'true');
-  await expect(row.getByRole('group', { name: 'Stop types' })).toBeVisible();
-  await expect(selectButton(row)).toHaveAccessibleName(/ · [\d,]+ lots?$/, { timeout: 20_000 });
-  return row;
-}
+/** The painted areas of the selected painted policy's span. */
 const customList = (page: Page): Locator =>
-  panel(page).getByRole('list', { name: 'Painted areas' }).getByRole('listitem');
+  editor(page).getByRole('list', { name: 'Painted areas' }).getByRole('listitem');
+/** A brush tool in the painted policy's editor. */
+const tool = (page: Page, name: 'Move' | 'Paint' | 'Erase'): Locator =>
+  editor(page).getByRole('radio', { name, exact: true });
 
 /** One stroke across fixture-0's parcel row: a mouse drag on desktop, a finger on the phone. */
 async function strokeOnce(page: Page, isMobile: boolean): Promise<void> {
@@ -182,83 +135,63 @@ async function strokeOnce(page: Page, isMobile: boolean): Promise<void> {
 
 /**
  * Paints the lots of fixture-0's parcel row with one keyboard stamp (Enter on the focused map, with
- * Paint chosen) at FRAME's centre. For a test that needs painted lots, not a drag: strokeOnce's
- * wait for the jump's tiles, its pointer moves (each a live preview and a software-GL frame) and
- * the preview layer took 9 to 12 s of a 30 s test at 15 workers, the stamp 2 to 5 s (#70). It
- * needs only the camera, which `jumpTo` sets at once: the worker resolves the lots city-wide.
+ * Paint chosen) at FRAME's centre: cheaper than a drag (#70), and it needs only the camera.
  */
-async function stampOnce(page: Page): Promise<void> {
-  await page.evaluate((f) => (window as Win).__sfhMap!.map!.jumpTo(f), FRAME);
+async function stampOnce(page: Page, center: [number, number] = FRAME.center): Promise<void> {
+  await page.evaluate((f) => (window as Win).__sfhMap!.map!.jumpTo(f), { ...FRAME, center });
   await page.locator('.maplibregl-canvas').focus();
   await page.keyboard.press('Enter');
 }
 
 /**
- * Chooses a stroke tool from the open Paint tab. On a phone this folds the sheet to its handle for
- * the palette strip (layout ruling 5).
+ * Adds a painted policy and chooses Paint in its editor. Below md the editor's sheet then closes
+ * (the palette strip offers the tools), so the map is free for a stroke; the stroke goes into a new
+ * painted policy of its own then.
  */
-async function chooseTool(page: Page, isMobile: boolean, choose: () => Promise<void>) {
-  await choose();
+async function startPainting(page: Page, isMobile: boolean): Promise<void> {
+  await addPolicy(page, 'Zoning', 'Painted area');
+  await expect(tool(page, 'Paint')).toBeEnabled();
+  await tool(page, 'Paint').click();
   if (isMobile) {
-    await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByTestId('palette-strip')).toBeVisible();
+    await closeEditor(page);
+    await scrollToTop(page);
   }
 }
 
-/** The palette strip's Done: back to Move, the sheet open full on the Paint tab. */
-async function stripDone(page: Page): Promise<void> {
-  await page.getByTestId('palette-strip').getByRole('button', { name: 'Done' }).click();
-  await expect(handle(page)).toHaveAttribute('aria-expanded', 'true');
-  await expect(tabOf(page, 'Paint')).toHaveAttribute('aria-selected', 'true');
-}
-
-/**
- * Records, from now on, each change to the lever notice row with the lever status at that moment
- * (a MutationObserver, so a notice that shows only briefly is still seen).
- */
-async function watchLeverNotices(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const w = window as FzpWin & { __leverSeen?: { status: string; text: string }[] };
-    const row = document.querySelector('[data-testid="fzp-lever-status"]')!;
-    w.__leverSeen = [];
-    new MutationObserver(() => {
-      w.__leverSeen!.push({
-        status: w.__sfhFzp!.levers.status,
-        text: (row.textContent ?? '').trim()
-      });
-    }).observe(row, { childList: true, subtree: true, characterData: true });
-  });
-}
-const leverSeen = (page: Page) =>
-  page.evaluate(
-    () =>
-      (window as FzpWin & { __leverSeen?: { status: string; text: string }[] }).__leverSeen ?? []
+/** The zoning policies' painted areas in the document, counted. */
+const paintedAreas = (page: Page): Promise<number> =>
+  page.evaluate(() =>
+    (window as FzpWin)
+      .__sfhFzp!.policy.kinds.zoning.filter((p) => p.where.tag === 'painted')
+      .flatMap((p) => p.spans)
+      .reduce((n, s) => n + (s.what.tag === 'brushes' ? s.what.brushes.length : 0), 0)
   );
 
 /**
- * From now on, each time the "Updating the simulation" pill shows, records the docked panel's and
- * the time bar's boxes at that moment (a MutationObserver, so a pill that shows briefly is still
- * measured).
+ * From now on, records each animation frame's `stale` and live-preview state (`__sfhFzp`,
+ * `__sfhSim`), so a state that shows only briefly is still seen.
  */
-async function watchBoxesWhileUpdating(page: Page): Promise<void> {
+async function sampleFrames(page: Page): Promise<void> {
   await page.evaluate(() => {
-    type Box = { x: number; y: number; width: number; height: number };
-    const w = window as unknown as { __updatingBoxes?: { panel: Box; bar: Box }[] };
-    const row = document.querySelector('[data-testid="fzp-lever-status"]')!;
-    const box = (selector: string): Box => {
-      const r = document.querySelector(selector)!.getBoundingClientRect();
-      return { x: r.x, y: r.y, width: r.width, height: r.height };
+    const w = window as SimWin & {
+      __sfhFzp?: SfhFzpDebug;
+      __frames?: { stale: boolean; preview: string | null }[];
     };
-    w.__updatingBoxes = [];
-    new MutationObserver(() => {
-      if (!(row.textContent ?? '').includes('Updating the simulation')) return;
-      w.__updatingBoxes!.push({
-        panel: box('.sfh-dock-panel'),
-        bar: box('[data-testid="fzp-scrubber"]')
-      });
-    }).observe(row, { childList: true, subtree: true, characterData: true });
+    w.__frames = [];
+    const tick = () => {
+      w.__frames!.push({ stale: w.__sfhFzp!.stale, preview: w.__sfhSim?.preview ?? null });
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   });
 }
+const frames = (page: Page) =>
+  page.evaluate(
+    () =>
+      (window as Window & { __frames?: { stale: boolean; preview: string | null }[] }).__frames ??
+      []
+  );
 
 // W6b: the footer links stay visible, unobscured and tappable (as in e2e/fzp.spec.ts).
 const FOOTER_LINKS = ['About', 'Data & licences', 'Source code (GitHub)'];
@@ -269,6 +202,7 @@ async function expectFooterReachable(page: Page): Promise<void> {
       name,
       exact: true
     });
+    await link.scrollIntoViewIfNeeded();
     await expect(link).toBeVisible();
     await expect(link).toBeInViewport({ ratio: 1 });
     const hit = await link.evaluate((el) => {
@@ -294,34 +228,25 @@ async function expectNoHorizontalScroll(page: Page): Promise<void> {
 
 // ---- the redirect and the shell -----------------------------------------------------------------
 
-test('/fzp?seed=5 lands on /sim?seed=5 and its levers come into force', async ({ page }) => {
-  await page.goto('/fzp?seed=5');
-  await expect(page).toHaveURL(/\/sim\?seed=5$/);
+test('/fzp lands on /sim and the forecast fills', async ({ page }) => {
+  await page.goto('/fzp');
+  await expect(page).toHaveURL(/\/sim$/);
   await waitReady(page);
-  expect((await leverStatus(page)).status).toBe('current');
-  expect(await fzp(page, 'seed')).toBe(5);
+  expect(await fzp(page, 'phase')).toBe('ready');
+  expect(await fzp(page, 'filledThrough')).toBe(await fzp(page, 'lastIndex'));
 });
 
-test('/sim starts on the Family Zoning Plan; the header score flips the dock to Results', async ({
-  page
-}) => {
+test('/sim opens on the Family Zoning Plan; the header score shows Results', async ({ page }) => {
   await gotoSim(page);
-
-  const { baseline, shown } = JSON.parse(
-    await page.evaluate(() => JSON.stringify((window as FzpWin).__sfhFzp!.score))
-  ) as { baseline: { completedNet: number }; shown: { completedNet: number }[] };
-  await expect(scoreBar(page)).toHaveText(
-    `${formatCount(baseline.completedNet + shown[0].completedNet)} homes added`
-  );
+  const doc = await fzp(page, 'policy');
+  expect(doc.kinds).toEqual({ zoning: [], permitting: [], money: [] });
+  await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes added by \d{4}$/);
   await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'false');
-  const details = await openScore(page);
-  await expect(details.getByText('What the plan added')).toBeVisible();
+  const face = await openScore(page);
+  await expect(face.getByText('What your policy added')).toBeVisible();
 });
 
-test('at 375 px the links and Policy wait in Menu; the score bar stays pinned', async ({
-  isMobile,
-  page
-}) => {
+test('at 375 px the links wait in Menu; the score bar stays pinned', async ({ isMobile, page }) => {
   test.skip(!isMobile, 'the phone header');
   await gotoSim(page);
   await expect(scoreBar(page)).toBeVisible();
@@ -330,8 +255,7 @@ test('at 375 px the links and Policy wait in Menu; the score bar stays pinned', 
   const menuPanel = page.locator(`[id="${await menu.getAttribute('aria-controls')}"]`);
   const items = [
     menuPanel.getByRole('link', { name: 'Paint', exact: true }),
-    menuPanel.getByRole('link', { name: 'Simulate', exact: true }),
-    menuPanel.getByRole('button', { name: 'Policy', exact: true })
+    menuPanel.getByRole('link', { name: 'Simulate', exact: true })
   ];
   for (const item of items) await expect(item).toBeHidden();
   await menu.click();
@@ -340,213 +264,134 @@ test('at 375 px the links and Policy wait in Menu; the score bar stays pinned', 
   await expect(scoreBar(page)).toBeVisible();
 });
 
-test('from md the Policy button folds the dock to a rail and reopens it, and returns focus', async ({
-  isMobile,
-  page
-}) => {
-  test.skip(isMobile, 'the docked panel is md+');
+test('the header score flips the inspector between Results and the editor', async ({ page }) => {
   await gotoSim(page);
-  // Docked and open by default on Transit, without taking focus.
-  await expect(dockPanel(page)).toBeVisible();
-  await expect(tabOf(page, 'Transit')).toHaveAttribute('aria-selected', 'true');
-  await expect(policyButton(page)).toHaveAttribute('aria-expanded', 'true');
-  expect(await panel(page).evaluate((d) => d.contains(document.activeElement))).toBe(false);
-  await policyButton(page).click();
-  await expect(dockPanel(page)).toBeHidden();
-  await expect(page.getByTestId('dock-rail')).toBeVisible();
-  await expect(policyButton(page)).toHaveAttribute('aria-expanded', 'false');
-
-  // Opened by the user: focus moves to the selected tab; Escape folds it and focus returns.
-  await policyButton(page).click();
-  await expect(dockPanel(page)).toBeVisible();
-  await expect(policyButton(page)).toHaveAttribute('aria-expanded', 'true');
-  await expect(tabOf(page, 'Transit')).toBeFocused();
-  await page.keyboard.press('Escape');
-  await expect(dockPanel(page)).toBeHidden();
-  await expect(policyButton(page)).toBeFocused();
-
-  await policyButton(page).click();
-  await panel(page).getByRole('button', { name: 'Collapse Policy' }).click();
-  await expect(dockPanel(page)).toBeHidden();
-  await expect(policyButton(page)).toBeFocused();
-});
-
-test('below md the sheet opens from the handle or the Menu, and focus returns to Menu', async ({
-  isMobile,
-  page
-}) => {
-  test.skip(!isMobile, 'the sheet is below md');
-  await gotoSim(page);
-  // Closed to its handle by default; the sheet is not modal.
-  await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
-  await expect(handle(page)).toHaveText('Transit');
-  await handle(page).click();
-  await expect(tabOf(page, 'Transit')).toBeVisible();
-  await expect(page.locator('dialog[open]')).toHaveCount(0);
-  await handle(page).click();
-  await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
-
-  await openHeaderMenu(page);
-  await expect(policyButton(page)).toHaveAttribute('aria-expanded', 'false');
-  await policyButton(page).click();
-  await expect(handle(page)).toHaveAttribute('aria-expanded', 'true');
-  await expect(policyButton(page)).toHaveAttribute('aria-expanded', 'true');
-  await panel(page).getByRole('button', { name: 'Collapse Policy' }).click();
-  await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
-  await expect(policyButton(page)).toHaveAttribute('aria-expanded', 'false');
-  // The Policy button waits in the closed Menu, so focus returns to the Menu button.
-  await expect(menuButton(page)).toBeFocused();
-
-  await (await headerAction(page, 'Policy')).click();
-  await expect(handle(page)).toHaveAttribute('aria-expanded', 'true');
-  await page.keyboard.press('Escape');
-  await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
-  await expect(menuButton(page)).toBeFocused();
-});
-
-test('the header score flips the dock to Results and back in Setup; in a run it keeps Results', async ({
-  page
-}) => {
-  await gotoSim(page);
-  await openScore(page);
-  expect(await fzp(page, 'runPhase')).toBe('setup');
-  await expect(panel(page).getByRole('button', { name: 'Edit policy' })).toBeVisible();
-  await scoreBar(page).click();
-  await expect(scoreDetails(page)).toBeHidden();
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await expect(editor(page).getByRole('heading', { name: 'Transit rule' })).toBeVisible();
   await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'false');
-  await expect(tabOf(page, 'Transit')).toBeVisible();
 
-  await startRun(page);
-  await expect(scoreDetails(page)).toBeVisible();
   await scoreBar(page).click();
-  await expect(scoreDetails(page)).toBeVisible();
-  expect(await fzp(page, 'runPhase')).toBe('run');
+  await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'true');
+  await expect(results(page)).toBeVisible();
+  await expect(editor(page)).toHaveCount(0);
+
+  await scoreBar(page).click();
+  await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'false');
+  await expect(results(page)).toHaveCount(0);
+  await expect(editor(page).getByRole('heading', { name: 'Transit rule' })).toBeVisible();
 });
 
 // ---- brushes ------------------------------------------------------------------------------------
 
-test('a transit layer resolves its lots and updates the levers', async ({ page }) => {
+test('a transit rule resolves its lots and refills the forecast', async ({ page }) => {
   await gotoSim(page);
-  const before = await leverStatus(page);
+  const before = await refillCount(page);
+  await sampleFrames(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  const what = editor(page).getByRole('region', { name: 'What' });
+  await expect(what).toContainText('Near regional rail and Muni Metro');
+  await expect(what.getByRole('status').first()).toHaveText(/^[\d,]+ lots?$/);
 
-  await watchLeverNotices(page);
-  const row = await addTransitLayer(page);
-  await expect(layerRows(page)).toHaveCount(1);
-  await expect(selectButton(row)).toContainText('Near regional rail and Muni Metro');
-
-  // The levers go resolving -> current; the updating notice shows, then clears.
-  await expect
-    .poll(async () => {
-      const l = await leverStatus(page);
-      return l.status === 'current' && (l.sentRev ?? -1) > (before.sentRev ?? -1);
-    })
-    .toBe(true);
-  await expect(page.getByTestId('fzp-lever-status')).toHaveText('');
-  const seen = await leverSeen(page);
-  const resolving = seen.findIndex(
-    (s) => s.status === 'resolving' && s.text.startsWith('Updating the simulation for your policy')
-  );
-  expect(resolving, JSON.stringify(seen)).toBeGreaterThanOrEqual(0);
-  expect(
-    seen.slice(resolving + 1).some((s) => s.text === ''),
-    JSON.stringify(seen)
-  ).toBe(true);
+  // The forecast goes stale, then refills from the edit and fills again.
+  await waitRefilled(page, before);
+  const seen = await frames(page);
+  const stale = seen.findIndex((f) => f.stale);
+  expect(stale, 'the forecast never went stale').toBeGreaterThanOrEqual(0);
+  expect(seen.slice(stale + 1).some((f) => !f.stale)).toBe(true);
   // No building flash on a transit edit (sim-ux spec, Goal 2).
-  for (let k = 0; k < 10; k++) {
-    expect(await simPreview(page)).toBe('none');
-    await page.waitForTimeout(100);
-  }
+  expect(seen.every((f) => f.preview === 'none')).toBe(true);
 });
 
-test('a notice never moves the docked panel or the time bar', async ({ page, isMobile }) => {
-  test.skip(isMobile, 'desktop rule; phones push content down by design');
+test('the Updating status never moves the timeline or the editor', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'desktop rule; phones scroll the page');
   await gotoSim(page);
-  const row = await addTransitLayer(page);
-  await expect
-    .poll(async () => (await leverStatus(page)).status, { timeout: 20_000 })
-    .toBe('current');
-  const before = await leverStatus(page);
-  const panelBox = await dockPanel(page).boundingBox();
-  const barBox = await page.getByTestId('fzp-scrubber').boundingBox();
-  await watchBoxesWhileUpdating(page);
-  // A chip edit sends a revision: the "Updating the simulation" pill shows until it is current.
-  await row
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await waitRefilled(page, 0);
+  const before = await refillCount(page);
+  const boxes = async () => ({
+    editor: await inspectorBox(page).boundingBox(),
+    dock: await page.getByTestId('tl-dock').boundingBox()
+  });
+  const at = await boxes();
+  // Each frame while the forecast is stale, the editor's and the timeline's boxes.
+  await page.evaluate(() => {
+    type Box = { x: number; y: number; width: number; height: number };
+    const w = window as unknown as {
+      __sfhFzp: SfhFzpDebug;
+      __staleBoxes?: { editor: Box; dock: Box }[];
+    };
+    const box = (selector: string): Box => {
+      const r = document.querySelector(selector)!.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height };
+    };
+    w.__staleBoxes = [];
+    const tick = () => {
+      if (w.__sfhFzp.stale)
+        w.__staleBoxes!.push({
+          editor: box('[data-testid="tl-inspector"]'),
+          dock: box('[data-testid="tl-dock"]')
+        });
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  // A chip edit sends a revision: the status reads "Updating" until the refill passes.
+  await editor(page)
     .getByRole('group', { name: 'Stop types' })
     .getByRole('button', { name: /^Muni Rapid bus/ })
     .click();
-  await expect
-    .poll(async () => {
-      const l = await leverStatus(page);
-      return l.status === 'current' && (l.sentRev ?? -1) > (before.sentRev ?? -1);
-    })
-    .toBe(true);
+  await waitRefilled(page, before);
   const seen = await page.evaluate(
-    () =>
-      (
-        window as unknown as {
-          __updatingBoxes?: { panel: unknown; bar: unknown }[];
-        }
-      ).__updatingBoxes ?? []
+    () => (window as unknown as { __staleBoxes?: unknown[] }).__staleBoxes ?? []
   );
-  expect(seen.length, 'the Updating pill never showed').toBeGreaterThan(0);
-  for (const s of seen) {
-    expect(s.panel).toEqual(panelBox);
-    expect(s.bar).toEqual(barBox);
-  }
-  expect(await dockPanel(page).boundingBox()).toEqual(panelBox);
-  expect(await page.getByTestId('fzp-scrubber').boundingBox()).toEqual(barBox);
+  expect(seen.length, 'the forecast never went stale').toBeGreaterThan(0);
+  for (const s of seen) expect(s).toEqual(at);
+  expect(await boxes()).toEqual(at);
 });
 
-test('a Paint stroke adds a custom brush and Ctrl+Z removes it', async ({ isMobile, page }) => {
+test('a Paint stroke adds a painted area and Ctrl+Z removes it', async ({ isMobile, page }) => {
   await hideHeightLimits(page);
   await gotoSim(page);
-  await openTab(page, 'Paint');
-  const paint = panel(page).getByRole('radio', { name: 'Paint', exact: true });
-  await expect(paint).toBeEnabled();
-  await chooseTool(page, isMobile, () => paint.click());
+  await startPainting(page, isMobile);
   await strokeOnce(page, isMobile);
-
-  // Done goes back to Move and reopens the sheet on Paint.
-  if (isMobile) await stripDone(page);
-  await expect(customList(page)).toHaveCount(1);
-  await expect(customList(page).first()).toContainText(/\d+ stor/);
-  await closeSheet(page);
+  await expect.poll(() => paintedAreas(page)).toBe(1);
+  if (!isMobile) {
+    await expect(customList(page)).toHaveCount(1);
+    await expect(customList(page).first()).toContainText(/\d+ stor/);
+  }
 
   await page.keyboard.press('Control+z');
-  await openPolicy(page);
-  await expect(customList(page)).toHaveCount(0);
-  await expect(panel(page).getByRole('button', { name: /^Redo: / })).toBeEnabled();
+  await expect.poll(() => paintedAreas(page)).toBe(0);
+  await expect(
+    page.getByRole('banner').getByRole('button', { name: /^Redo: /, includeHidden: true })
+  ).toBeEnabled();
 });
 
-test('a painted area is selected, outlined and removed from the Paint tab', async ({
-  isMobile,
-  page
-}) => {
+test('a painted area is selected, outlined and removed', async ({ isMobile, page }) => {
+  test.skip(isMobile, 'the painted policy editor and the map side by side are md+');
   const OUTLINE_LAYER = 'sim-painted-outline';
   await hideHeightLimits(page);
   await gotoSim(page);
-  await openTab(page, 'Paint');
-  const paint = panel(page).getByRole('radio', { name: 'Paint', exact: true });
-  await expect(paint).toBeEnabled();
-  await chooseTool(page, isMobile, () => paint.click());
+  await startPainting(page, isMobile);
   // A painted area, not a drag, is what the row needs (as in the eraser test, #70).
   await stampOnce(page);
-  if (isMobile) await stripDone(page);
   await expect(customList(page)).toHaveCount(1);
+  await tool(page, 'Move').click();
 
   // Selecting the row outlines its lots (Move is chosen: nothing else would).
   const row = customList(page).first().getByRole('button', { pressed: false });
   await row.first().click();
   await expect(customList(page).first().getByRole('button', { pressed: true })).toBeVisible();
-  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(OUTLINE_LAYER);
+  await expect.poll(() => deckIds(page)).toContain(OUTLINE_LAYER);
 
   // Remove is one change: the row and its outline go, and Undo brings the row back unselected.
-  await panel(page)
+  await editor(page)
     .getByRole('button', { name: /^Remove: / })
     .click();
   await expect(customList(page)).toHaveCount(0);
   await expect.poll(() => deckIds(page)).not.toContain(OUTLINE_LAYER);
-  await panel(page)
+  await page
+    .getByRole('banner')
     .getByRole('button', { name: /^Undo: Removed: / })
     .click();
   await expect(customList(page)).toHaveCount(1);
@@ -554,86 +399,63 @@ test('a painted area is selected, outlined and removed from the Paint tab', asyn
   expect(await deckIds(page)).not.toContain(OUTLINE_LAYER);
 });
 
-// ---- selecting on the map (sim-ux plan 4, Task 4) -----------------------------------------------
+// ---- selecting on the map (sim-ux plan 4, Task 4; timeline-ui rule 19) ------------------------
 
-/** 3512006: a fixture-0 lot in the row FROM..TO crosses, near the fixture's metro and rail stops. */
-const LOT_X: [number, number] = [-122.4189155, 37.760135];
+/**
+ * 3513001: a fixture-0 lot near the fixture's metro and rail stops, with no project on it (a tap
+ * on a project opens its card, rule 19), whose limit a 20-story transit rule sets.
+ */
+const LOT_X: [number, number] = [-122.42013, 37.7596398];
+/** 3512018: a lot with no project that paint can raise (an eligible lot). */
+const LOT_PAINTED: [number, number] = [-122.4180813, 37.7604051];
 /** About 45 m south of the fixture's row of lots, in the frame: no lot there. */
 const NO_LOT: [number, number] = [-122.4187, 37.7597];
 
-/** Waits until the levers sent last are in force, with a revision newer than `before`. */
-async function waitCurrentAfter(page: Page, before: number | null): Promise<void> {
-  await expect
-    .poll(
-      async () => {
-        const l = await leverStatus(page);
-        return l.status === 'current' && (l.sentRev ?? -1) > (before ?? -1);
-      },
-      { timeout: 20_000 }
-    )
-    .toBe(true);
-}
-
-/** Folds a phone sheet, frames the fixture's lots and clicks (taps on the phone) at `at`. */
+/** Centres the map on `at` and clicks (taps on the phone) there. */
 async function clickMapAt(page: Page, isMobile: boolean, at: [number, number]): Promise<void> {
-  await closeSheet(page);
-  await jumpAndIdle(page);
+  await scrollToTop(page);
+  await jumpAndIdle(page, { ...FRAME, center: at });
   const [x, y] = await projectToPage(page, at);
   if (isMobile) await page.touchscreen.tap(x, y);
   else await page.mouse.click(x, y);
 }
 
-/** The Transit and Paint rows whose select button is pressed. */
-const pressedRows = (page: Page): Locator =>
-  panel(page).locator(
-    '[data-layer-row] > button[aria-pressed="true"], [data-paint-row][aria-pressed="true"]'
-  );
-
 /**
- * Adds a transit layer at 20 stories (taller than FZP on the fixture's lots, so it sets their
- * limit), deselects it so a click is what selects it again, leaves the Transit tab and waits for
- * its revision to be in force. Returns its row.
+ * Adds a transit rule at 20 stories (taller than FZP on the fixture's lots, so it sets their
+ * limit), closes the editor so a click is what selects it again, and waits for the refill.
  */
-async function addTallLayer(page: Page): Promise<Locator> {
-  const before = (await leverStatus(page)).sentRev;
-  const row = await addTransitLayer(page);
-  const inner = row.getByRole('group', { name: 'Band 1' });
+async function addTallRule(page: Page): Promise<void> {
+  const before = await refillCount(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  const inner = editor(page).getByRole('group', { name: 'Band 1' });
   for (let k = 0; k < 14; k++)
     await inner.getByRole('button', { name: 'More stories, band 1', exact: true }).click();
   await expect(inner).toContainText('20 stories');
-  await selectButton(row).click();
-  await expect(selectButton(row)).toHaveAttribute('aria-pressed', 'false');
-  await openTab(page, 'Protect');
-  await waitCurrentAfter(page, before);
-  return row;
+  await closeEditor(page);
+  await waitRefilled(page, before);
 }
 
-test('clicking a lot in Set Policy selects the transit layer that sets its limit', async ({
-  isMobile,
-  page
-}) => {
+test('clicking a lot selects the transit rule that sets its limit', async ({ isMobile, page }) => {
   await gotoSim(page);
-  const row = await addTallLayer(page);
+  await addTallRule(page);
 
   await clickMapAt(page, isMobile, LOT_X);
-  await expect(tabOf(page, 'Transit')).toHaveAttribute('aria-selected', 'true');
-  await expect(selectButton(row)).toHaveAttribute('aria-pressed', 'true');
-  await expect(selectButton(row)).toBeInViewport();
-  await expect(row.getByRole('group', { name: 'Stop types' })).toBeVisible();
-  // A phone opens the sheet at peek only (40dvh), so the lot stays in view; focus stays off the
-  // dock.
-  if (isMobile)
-    expect(await page.locator('.sfh-dock-sheet').evaluate((e) => e.style.maxHeight)).toContain(
-      '40dvh'
-    );
-  expect(await panel(page).evaluate((d) => d.contains(document.activeElement))).toBe(false);
+  await expect(editor(page).getByRole('heading', { name: 'Transit rule' })).toBeVisible();
+  await expect(editor(page).getByRole('group', { name: 'Stop types' })).toBeVisible();
+  // From md the Zoning kind opens, its bar pressed.
+  if (!isMobile)
+    await expect(
+      page.getByRole('button', { name: /^Transit rule, /, pressed: true })
+    ).toBeInViewport();
+  // Focus stays off the editor.
+  expect(await editor(page).evaluate((d) => d.contains(document.activeElement))).toBe(false);
 
   // A click on no lot clears the selection.
   await clickMapAt(page, isMobile, NO_LOT);
-  await expect(pressedRows(page)).toHaveCount(0);
+  await expect(editor(page)).toHaveCount(0);
 });
 
-test('a tap on a built lot in Set Policy only selects: no building card or tooltip', async ({
+test('a tap on a built lot with no project selects the plan that sets its limit', async ({
   isMobile,
   page
 }) => {
@@ -645,27 +467,22 @@ test('a tap on a built lot in Set Policy only selects: no building card or toolt
   await jumpAndIdle(page, { center: lot, zoom: 17, pitch: 0, bearing: 0 });
   const [x, y] = await projectToPage(page, lot);
   await page.touchscreen.tap(x, y);
-  const fzpRow = panel(page).getByRole('button', { name: 'FZP baseline', exact: true });
-  await expect(fzpRow).toHaveAttribute('aria-pressed', 'true');
-  await expect(pressedRows(page)).toHaveCount(1);
-  // SimMap shows its card at once on a tap: none, then or after the selection.
-  const mapRoot = page.getByTestId('map-root');
-  await expect(mapRoot.locator('.sim-map-card')).toHaveCount(0);
-  await expect(mapRoot.getByRole('tooltip')).toHaveCount(0);
+  await expect(
+    editor(page).getByRole('heading', { name: 'Family Zoning Plan, as adopted' })
+  ).toBeVisible();
+  // No project card: the building is today's, not a project's. (Cards are always on, rule 19, so
+  // SimMap's own card for the existing building may show beside the selection.)
+  await expect(page.getByTestId('tl-card').getByRole('region')).toHaveCount(0);
+  await expect(page.getByTestId('map-root').getByRole('tooltip')).toHaveCount(0);
 });
 
 /** 3512011, the parcel only "100 Fixture St" (a pipeline project) holds, in the fixture's row. */
 const PROJECT_LOT: [number, number] = [-122.4183084, 37.7601349];
 
-test('in a run, a project card names the layer that allowed its lot', async ({
-  isMobile,
-  page
-}) => {
-  test.setTimeout(120_000);
+test('a project card names the rule that allowed its lot', async ({ isMobile, page }) => {
   await gotoSim(page);
-  await addTallLayer(page);
-  await closeSheet(page);
-  await startRun(page);
+  await addTallRule(page);
+  await scrollToTop(page);
   await jumpAndIdle(page, { ...FRAME, center: PROJECT_LOT });
   const card = page.getByRole('region', { name: '100 Fixture St', exact: true });
   await expect(async () => {
@@ -673,9 +490,9 @@ test('in a run, a project card names the layer that allowed its lot', async ({
     if (isMobile) await page.touchscreen.tap(x, y);
     else await page.mouse.click(x, y);
     await expect(card).toBeVisible({ timeout: 1_500 });
-  }).toPass({ timeout: 15_000 });
+  }).toPass();
   const line = card.getByTestId('card-allowed-by');
-  await expect(line).toHaveText(/^Allowed by: Near /);
+  await expect(line).toHaveText(/^Allowed by: Transit rule/);
   // It follows the size line.
   const order = await card.evaluate((c) => {
     const nodes = [...c.querySelectorAll('p')];
@@ -692,285 +509,151 @@ test('in a run, a project card names the layer that allowed its lot', async ({
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
 });
 
-test('clicking inside a painted stroke opens the Paint tab on that area', async ({
-  isMobile,
-  page
-}) => {
+test('clicking inside a painted stroke selects its painted policy', async ({ isMobile, page }) => {
   await hideHeightLimits(page);
   await gotoSim(page);
-  const before = (await leverStatus(page)).sentRev;
-  await openTab(page, 'Paint');
-  const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
-  await expect(tool('Paint')).toBeEnabled();
-  await chooseTool(page, isMobile, () => tool('Paint').click());
-  // A stamp is a one-point stroke: its circle at FRAME's centre covers LOT_X, and the Paint row
-  // being selected below shows the click landed inside it. A drag's live preview cost 7 to 9 s
-  // under load (#76).
-  await stampOnce(page);
-  if (isMobile) await stripDone(page);
-  else await tool('Move').click();
-  await expect(customList(page)).toHaveCount(1);
-  await openTab(page, 'Transit');
-  await waitCurrentAfter(page, before);
-
-  await clickMapAt(page, isMobile, LOT_X);
-  await expect(tabOf(page, 'Paint')).toHaveAttribute('aria-selected', 'true');
-  const area = customList(page).first().locator('[data-paint-row]');
-  await expect(area).toHaveAttribute('aria-pressed', 'true');
-  await expect(area).toBeInViewport();
-  await expect(pressedRows(page)).toHaveCount(1);
-});
-
-test('a category protection shows the protections line in the score', async ({ page }) => {
-  await gotoSim(page);
-  const before = await leverStatus(page);
-  await openTab(page, 'Protect');
-  await panel(page).getByRole('checkbox', { name: 'Rent-controlled buildings (likely)' }).check();
-
-  await expect
-    .poll(async () => {
-      const l = await leverStatus(page);
-      return l.status === 'current' && (l.sentRev ?? -1) > (before.sentRev ?? -1);
-    })
-    .toBe(true);
-  const details = await openScore(page);
-  await expect(details).toContainText(
-    /\d[\d,]* lots? protected: [\d,]+ fewer homes? of zoned capacity/
-  );
-});
-
-// ---- Back and Forward ---------------------------------------------------------------------------
-
-/**
- * Waits until the page shows the future the address bar names: that seed and not representative,
- * or (with no seed) the representative future.
- */
-async function expectAddressFuture(page: Page): Promise<void> {
-  const raw = new URL(page.url()).searchParams.get('seed');
-  if (raw === null) {
-    await expect.poll(() => fzp(page, 'representative'), { timeout: 20_000 }).toBe(true);
+  await startPainting(page, isMobile);
+  // A stamp is a one-point stroke: its circle covers LOT_PAINTED.
+  await stampOnce(page, LOT_PAINTED);
+  await expect.poll(() => paintedAreas(page)).toBe(1);
+  const before = await refillCount(page);
+  if (isMobile) {
+    await page.getByTestId('palette-strip').getByRole('button', { name: 'Done' }).click();
   } else {
-    await expect.poll(() => fzp(page, 'seed'), { timeout: 20_000 }).toBe(Number(raw));
-    expect(await fzp(page, 'representative')).toBe(false);
+    await tool(page, 'Move').click();
+    await closeEditor(page);
   }
-  expect(await fzp(page, 'phase')).toBe('ready');
-}
+  await closeEditor(page);
+  await waitRefilled(page, before);
 
-test('Back after a run slider move', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/fzp?seed=5');
-  await expect(page).toHaveURL(/\/sim\?seed=5$/);
-  await waitReady(page);
-  await expectAddressFuture(page);
+  await clickMapAt(page, isMobile, LOT_PAINTED);
+  await expect(editor(page).getByRole('heading', { name: 'Painted zoning' })).toBeVisible();
+});
 
-  await startRun(page);
-  await waitRanked(page);
-  const ranks = (await fzp(page, 'ranks'))!;
-  // Best, or Worst when Best is the run on show.
-  const [key, seed] = ranks[0] === 5 ? ['End', ranks[100]] : ['Home', ranks[0]];
-  await runSlider(page).focus();
-  await page.keyboard.press(key);
-  await expect(page).toHaveURL(new RegExp(`/sim\\?seed=${seed}$`));
-  await expectAddressFuture(page);
-
-  // Leave by a client navigation: Back is then SvelteKit's popstate onto the URL it stored before
-  // the move's replaceState (?seed=5), while the address bar names the moved seed.
-  await openHeaderMenu(page);
-  await page.getByRole('banner').getByRole('link', { name: 'Simulate', exact: true }).click();
-  await expect(page).toHaveURL(/\/sim$/);
-  await expectAddressFuture(page);
-
-  await page.goBack();
-  await expect(page).toHaveURL(new RegExp(`/sim\\?seed=${seed}$`));
-  await expectAddressFuture(page);
-  await page.goForward();
-  await expect(page).toHaveURL(/\/sim$/);
-  await expectAddressFuture(page);
+test('a category protection shows the protections line in Results', async ({ page }) => {
+  await gotoSim(page);
+  const before = await refillCount(page);
+  await addPolicy(page, 'Zoning', 'Protect rent-controlled buildings');
+  await waitRefilled(page, before);
+  const face = await openScore(page);
+  await expect(face).toContainText(
+    /\d[\d,]* lots? protected: [\d,]+ fewer homes?\s+of zoned capacity/
+  );
 });
 
 // ---- accessibility and layout -------------------------------------------------------------------
 
-for (const name of ['Transit', 'Paint', 'Protect', 'Funding']) {
-  test(`axe: the dock open on ${name}`, async ({ page }) => {
+for (const [kind, choice] of [
+  ['Zoning', 'Transit rule'],
+  ['Zoning', 'Painted area'],
+  ['Zoning', 'Protect historic buildings'],
+  ['Public money', 'City funding scale']
+] as const) {
+  test(`axe: the editor open on ${choice}`, async ({ page }) => {
     await gotoSim(page);
-    await openTab(page, name);
+    await addPolicy(page, kind, choice);
     await expectNoA11yViolations(page);
   });
 }
 
-// ---- Setup and Run (spec §1) ----------------------------------------------------------------------
-
-test('Run flips the dock to Results and Edit policy returns to the present', async ({ page }) => {
-  await gotoSim(page);
-  expect(await fzp(page, 'runPhase')).toBe('setup');
-  await openTab(page, 'Protect');
-  await page.getByRole('button', { name: 'Run', exact: true }).click();
-  await expect.poll(() => fzp(page, 'runPhase')).toBe('run');
-  await expect
-    .poll(() => fzp(page, 'day'), { timeout: 20_000 })
-    .toBeGreaterThan(await fzp(page, 'asOf'));
-  // A run offers Results only: no tabs, no Undo, and the header score reports it.
-  await expect(scoreDetails(page)).toBeVisible();
-  await expect(panel(page).getByRole('tablist')).toHaveCount(0);
-  await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'true');
-  const edit = panel(page).getByRole('button', { name: 'Edit policy' });
-  await expect(edit).toBeVisible();
-
-  await edit.click();
-  await expect.poll(() => fzp(page, 'runPhase')).toBe('setup');
-  await expect.poll(() => fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
-  expect(await fzp(page, 'playing')).toBe(false);
-  // Back on the tab used before Run, its controls live.
-  await expect(tabOf(page, 'Protect')).toHaveAttribute('aria-selected', 'true');
-  await expect(tabOf(page, 'Protect')).toBeFocused();
-  await expect(
-    panel(page).getByRole('checkbox', { name: 'Rent-controlled buildings (likely)' })
-  ).toBeEnabled();
-  await expect(slider(page)).toBeDisabled();
-});
-
-test('a run carries homes by tier and, with the baseline funding, money with no limits', async ({
+test('the window has homes by tier and, with the baseline funding, public money', async ({
   page
 }) => {
   await gotoSim(page);
-  await openTab(page, 'Protect');
-  await page.getByRole('button', { name: 'Run', exact: true }).click();
-  // The run's own timeline has answered: in Run, past the present, its score carrying tiers.
-  await page.waitForFunction(() => {
-    const f = (window as FzpWin).__sfhFzp!;
-    return f.runPhase === 'run' && f.day > f.asOf && f.score?.tiers !== undefined;
-  });
-  const score = (await fzp(page, 'score'))!;
-  const tiers = score.tiers!;
-  expect(tiers.targets).toHaveLength(4);
-  const last = tiers.completed.at(-1)!;
-  const sum = last.veryLow + last.low + last.moderate + last.aboveModerate + last.unrecorded;
-  expect(sum).toBe(score.shown.at(-1)!.completedNet);
-  expect(score.money!.pools.length).toBeGreaterThan(0);
-  expect(score.money!.limits).toEqual([]);
+  const face = await openScore(page);
+  await expect(face.getByRole('heading', { name: /Who the homes are for/ })).toBeVisible();
+  await expect(face.getByRole('heading', { name: /Public money/ })).toBeVisible();
+  await expect(face.getByTestId('fzp-money-city')).toBeVisible();
 });
 
-test('at 375 px in a run the sheet peeks Results, and the scrubber and footer links stay unobscured', async ({
+test('at 375 px with Results open the playhead and the footer links stay unobscured', async ({
   isMobile,
   page
 }) => {
   test.skip(!isMobile, 'the phone layout');
-  await gotoSim(page, '/sim', { run: true });
-  await expect(scoreDetails(page)).toBeVisible();
-  await expect(handle(page)).toHaveText('Results');
-  const sheet = (await page.locator('.sfh-dock-sheet').boundingBox())!;
-  const bar = (await page.getByTestId('fzp-scrubber').boundingBox())!;
-  const viewport = page.viewportSize()!;
-  // A peek: at most 40dvh, above the time bar.
-  expect(sheet.height).toBeLessThanOrEqual(viewport.height * 0.4 + 1);
-  expect(sheet.y + sheet.height).toBeLessThanOrEqual(bar.y + 0.5);
-  // Every scrubber control is the topmost element at its centre.
-  for (const control of await page.getByTestId('fzp-scrubber').getByRole('button').all()) {
-    if (!(await control.isVisible())) continue;
+  await gotoSim(page);
+  await openScore(page);
+  // Every playhead control is the topmost element at its centre.
+  for (const testId of ['tl-pause', 'tl-play', 'tl-faster', 'tl-today']) {
+    const control = page.getByTestId(testId);
     const hit = await control.evaluate((el) => {
       const r = el.getBoundingClientRect();
       const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
       return !!top && el.contains(top);
     });
-    expect(hit, `${await control.getAttribute('aria-label')} is covered`).toBe(true);
+    expect(hit, `${testId} is covered`).toBe(true);
   }
   await expectNoHorizontalScroll(page);
   await expectFooterReachable(page);
 });
 
-test('the Today marker in a run returns to Setup; Replay at the horizon does not', async ({
+test('End, Play at the window end reads Replay, and Today returns to the present', async ({
   page
 }) => {
-  await gotoSim(page, '/sim', { run: true });
+  await gotoSim(page);
+  const asOf = await fzp(page, 'asOf');
   await slider(page).focus();
   await page.keyboard.press('End');
-  await expect.poll(() => fzp(page, 'day')).toBe(await fzp(page, 'horizon'));
-  await expect.poll(() => fzp(page, 'playing')).toBe(false);
+  await expect.poll(() => fzp(page, 'day')).toBeGreaterThan(asOf);
+  await expect(page.getByTestId('tl-play-label')).toHaveText('Replay');
+  expect(await fzp(page, 'playing')).toBe(false);
 
-  // Replay restarts the run from the present: scrubbing forward from asOf is not "back to Today".
-  await page.getByTestId('fzp-play').click();
+  // Replay starts again from the present.
+  await page.getByTestId('tl-play').click();
   await expect.poll(() => fzp(page, 'playing')).toBe(true);
-  expect(await fzp(page, 'runPhase')).toBe('run');
-
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
   await expect.poll(() => fzp(page, 'playing')).toBe(false);
-  await page.getByTestId('fzp-start').click();
-  await expect.poll(() => fzp(page, 'runPhase')).toBe('setup');
-  expect(await fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
-  await expect(page.getByTestId('fzp-play-label')).toHaveText('Run');
+  await page.getByTestId('tl-today').click();
+  await expect.poll(() => fzp(page, 'day')).toBe(asOf);
+  await expect(page.getByTestId('tl-play-label')).toHaveText('Play');
 });
 
-test('scrubbing back keeps the chart and the high-water mark where they were', async ({ page }) => {
-  await gotoSim(page, '/sim', { run: true });
-  const total = scoreDetails(page).locator('[data-testid="fzp-chart"] [data-series="total"]');
-  await slider(page).focus();
-  for (let i = 0; i < 3; i++) await page.keyboard.press('PageUp');
-  const far = await fzp(page, 'day');
-  expect(far).toBeGreaterThan(await fzp(page, 'asOf'));
-  await expect.poll(() => fzp(page, 'highWater')).toBe(far);
-  const drawn = (await total.getAttribute('d'))!;
-  expect(drawn.length).toBeGreaterThan(0);
-
-  await page.keyboard.press('PageDown');
-  await page.keyboard.press('PageDown');
-  await expect.poll(() => fzp(page, 'day')).toBeLessThan(far);
-  expect(await fzp(page, 'highWater')).toBe(far);
-  await expect(total).toHaveAttribute('d', drawn);
-
-  // The partly revealed chart passes axe.
-  await openPolicy(page);
-  await expect(scoreDetails(page)).toBeVisible();
-  await expectNoA11yViolations(page);
-});
-
-test('axe: the dock on Results during a run', async ({ page }) => {
-  await gotoSim(page, '/sim', { run: true });
-  await openPolicy(page);
-  await expect(panel(page).getByRole('button', { name: 'Edit policy' })).toBeVisible();
-  await expect(scoreDetails(page)).toBeVisible();
-  await expectNoA11yViolations(page);
-});
-
-test("a selected layer's expanded editor passes axe", async ({ page }) => {
+test('axe: Results', async ({ page }) => {
   await gotoSim(page);
-  const row = await addTransitLayer(page);
+  await openScore(page);
+  await expectNoA11yViolations(page);
+});
+
+test("a transit rule's editor passes axe at a bound and with the plan's row", async ({ page }) => {
+  await gotoSim(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
   // A bound reached: More on the outer band is aria-disabled at the inner band's height.
-  const outer = row.getByRole('group', { name: 'Band 2' });
+  const outer = editor(page).getByRole('group', { name: 'Band 2' });
   for (let k = 0; k < 2; k++)
     await outer.getByRole('button', { name: 'More stories, band 2', exact: true }).click();
   await expect(
     outer.getByRole('button', { name: 'More stories, band 2', exact: true })
   ).toHaveAttribute('aria-disabled', 'true');
   await expectNoA11yViolations(page);
-  // The FZP baseline selected instead: the layer folds, the baseline row is pressed.
-  const fzp = panel(page).getByRole('button', { name: 'FZP baseline', exact: true });
-  await fzp.click();
-  await expect(fzp).toHaveAttribute('aria-pressed', 'true');
-  await expect(row.getByRole('group', { name: 'Stop types' })).toHaveCount(0);
+  // The plan's row selected instead: its read-only view. (A phone's editor sheet closes first, so
+  // the kind's sheet is not under it.)
+  await closeEditor(page);
+  await openKind(page, 'Zoning');
+  const plan = page.getByRole('button', { name: 'Family Zoning Plan, as adopted, whole window' });
+  await plan.last().click();
+  await expect(
+    editor(page).getByRole('heading', { name: 'Family Zoning Plan, as adopted' })
+  ).toBeVisible();
+  await expect(editor(page).getByRole('group', { name: 'Stop types' })).toHaveCount(0);
   await expectNoA11yViolations(page);
 });
 
-test('layer edits are one undo step per run; the row stays selected and expanded', async ({
-  page
-}) => {
+test('rule edits are one undo step per run; the policy stays selected', async ({ page }) => {
   await gotoSim(page);
-  const row = await addTransitLayer(page);
-  const inner = row.getByRole('group', { name: 'Band 1' });
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  const inner = editor(page).getByRole('group', { name: 'Band 1' });
   for (let k = 0; k < 3; k++)
     await inner.getByRole('button', { name: 'More stories, band 1', exact: true }).click();
   await expect(inner).toContainText('9 stories');
-  const undo = panel(page).getByRole('button', { name: /^Undo/ });
+  const undo = await headerAction(page, /^Undo/);
   await expect(undo).toHaveAccessibleName(
     'Undo: Edited: Allowed up to 9 stories near regional rail and Muni Metro'
   );
   await undo.click();
   await expect(inner).toContainText('6 stories');
-  await expect(selectButton(row)).toHaveAttribute('aria-pressed', 'true');
-  await expect(row.getByRole('group', { name: 'Stop types' })).toBeVisible();
-  // The next undo takes back the layer itself.
-  await expect(undo).toHaveAccessibleName(
-    'Undo: Allowed up to 6 stories near regional rail and Muni Metro'
-  );
+  await expect(editor(page).getByRole('heading', { name: 'Transit rule' })).toBeVisible();
+  // The next undo takes back the rule itself.
+  await expect(await headerAction(page, /^Undo/)).toHaveAccessibleName('Undo: Added: Transit rule');
 });
 
 /**
@@ -998,19 +681,15 @@ async function expectNavControlClear(page: Page, cover: Locator): Promise<void> 
   }
 }
 
-test('from md the docked panel leaves the zoom and compass control uncovered', async ({
+test('from md the editor leaves the zoom and compass control uncovered', async ({
   isMobile,
   page
 }) => {
-  test.skip(isMobile, 'the docked panel is md+, and a coarse pointer gets no navigation control');
+  test.skip(isMobile, 'the editor is beside the map from md; a coarse pointer has no control');
   await page.setViewportSize({ width: 1280, height: 800 });
   await gotoSim(page);
-  await expect(dockPanel(page)).toBeVisible();
-  await expectNavControlClear(page, dockPanel(page));
-  // Folded to the rail, the control moves beside the rail.
-  await (await headerAction(page, 'Policy')).click();
-  await expect(page.getByTestId('dock-rail')).toBeVisible();
-  await expectNavControlClear(page, page.getByTestId('dock-rail'));
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await expectNavControlClear(page, inspectorBox(page));
 });
 
 test('below md on a fine pointer the palette strip leaves the zoom control uncovered', async ({
@@ -1020,10 +699,7 @@ test('below md on a fine pointer the palette strip leaves the zoom control uncov
   test.skip(isMobile, 'a coarse pointer gets no navigation control');
   await page.setViewportSize({ width: 700, height: 800 });
   await gotoSim(page);
-  await openTab(page, 'Paint');
-  await chooseTool(page, true, () =>
-    panel(page).getByRole('radio', { name: 'Paint', exact: true }).click()
-  );
+  await startPainting(page, true);
   await expect(page.getByTestId('palette-strip')).toBeVisible();
   await expectNavControlClear(page, page.getByTestId('palette-strip'));
 });
@@ -1037,59 +713,53 @@ test('at 375 px: no horizontal scroll, and the footer links stay unobscured', as
   await expectNoHorizontalScroll(page);
   await expectFooterReachable(page);
 
-  // With the sheet on Results (the header score).
+  // With Results open (the header score).
   await openScore(page);
   await expectNoHorizontalScroll(page);
   await expectFooterReachable(page);
   await scoreBar(page).click();
-  await expect(scoreDetails(page)).toBeHidden();
+  await expect(results(page)).toHaveCount(0);
 
   // With the palette strip showing (a stroke tool chosen).
-  await openTab(page, 'Paint');
-  await chooseTool(page, true, () =>
-    panel(page).getByRole('radio', { name: 'Paint', exact: true }).click()
-  );
+  await startPainting(page, true);
   await expectNoHorizontalScroll(page);
   await expectFooterReachable(page);
+  // The strip sits at the viewport's bottom, under the timeline, never over the map: the map's
+  // Reset view button (a coarse pointer's bottom-left control) stays clear and on top.
+  await scrollToTop(page);
+  const reset = page.locator('.sim-map-reset');
+  await expect(reset).toBeVisible();
+  const r = (await reset.boundingBox())!;
+  const strip = (await page.getByTestId('palette-strip').boundingBox())!;
+  expect(r.y + r.height, 'the strip covers Reset view').toBeLessThanOrEqual(strip.y);
+  const topmost = await reset.evaluate((el) => {
+    const b = el.getBoundingClientRect();
+    const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+    return !!top && el.contains(top);
+  });
+  expect(topmost, 'Reset view is covered').toBe(true);
 });
 
-// ---- permitting timelines (plan 4) ----------------------------------------------------------------
+// ---- permitting (plan 4) ------------------------------------------------------------------------
 
-/** The Permits tab: the permitting timelines. */
-async function openTiming(page: Page): Promise<void> {
-  await openTab(page, 'Permits');
-}
-
-const timingLabel = (page: Page): Locator => panel(page).getByTestId('timing-label');
+const PRESET = "Permits at San Diego's pace";
+const timingLabel = (page: Page): Locator => editor(page).getByTestId('timing-label');
 const routeTimeline = (page: Page, route: string): Locator =>
-  panel(page).getByRole('group', { name: `${route} timeline` });
+  editor(page).getByRole('group', { name: `${route} timeline` });
 
-/** Waits for a lever revision above `before` to be in force. */
-async function expectNewRevision(page: Page, before: number | null): Promise<void> {
-  await expect
-    .poll(
-      async () => {
-        const l = await leverStatus(page);
-        return l.status === 'current' && (l.sentRev ?? -1) > (before ?? -1);
-      },
-      { timeout: 20_000 }
-    )
-    .toBe(true);
-}
-
-test('choosing a preset sends timers and the label changes', async ({ page }) => {
+test('adding a preset refills the forecast and names the policy', async ({ page }) => {
   await gotoSim(page);
-  await openTiming(page);
-  const before = (await leverStatus(page)).sentRev;
-  await panel(page).getByLabel('Preset').selectOption({ label: "Permits at San Diego's pace" });
-  await expectNewRevision(page, before);
-  await expect(timingLabel(page)).toHaveText("Permits at San Diego's pace");
+  const before = await refillCount(page);
+  await addPolicy(page, 'Permitting', PRESET);
+  await waitRefilled(page, before);
+  await expect(editor(page).getByRole('heading', { name: PRESET })).toBeVisible();
+  await expect(timingLabel(page)).toHaveText(PRESET);
 });
 
 test('a keyboard edit makes the set custom and Revert undoes it', async ({ page }) => {
   await gotoSim(page);
-  await openTiming(page);
-  await expect(timingLabel(page)).toHaveText('SF as observed');
+  await addPolicy(page, 'Permitting', PRESET);
+  await expect(timingLabel(page)).toHaveText(PRESET);
   const timeline = routeTimeline(page, 'Discretionary');
   await timeline.getByRole('button').first().focus();
   for (let i = 0; i < 8; i++) {
@@ -1099,27 +769,29 @@ test('a keyboard edit makes the set custom and Revert undoes it', async ({ page 
   }
   await expect(page.locator(':focus')).toHaveAccessibleName(/^Permit review,/);
   await page.keyboard.press('Enter');
-  const before = (await leverStatus(page)).sentRev;
-  const shorten = panel(page).getByRole('button', { name: 'Shorten by 0.5 month' });
+  let before = await refillCount(page);
+  const shorten = editor(page).getByRole('button', { name: 'Shorten by 0.5 month' });
   for (let i = 0; i < 3; i++) await shorten.click();
-  await expect(timingLabel(page)).toHaveText('Custom (from SF as observed)');
-  await expectNewRevision(page, before);
+  await expect(timingLabel(page)).toHaveText(`Custom (from ${PRESET})`);
+  await waitRefilled(page, before);
 
-  const edited = (await leverStatus(page)).sentRev;
-  await panel(page).getByRole('button', { name: 'Revert to SF as observed' }).click();
-  await expect(timingLabel(page)).toHaveText('SF as observed');
-  await expectNewRevision(page, edited);
+  before = await refillCount(page);
+  await editor(page)
+    .getByRole('button', { name: `Revert to ${PRESET}` })
+    .click();
+  await expect(timingLabel(page)).toHaveText(PRESET);
+  await waitRefilled(page, before);
 });
 
 test('the minimum is visible', async ({ page }) => {
   await gotoSim(page);
-  await openTiming(page);
+  await addPolicy(page, 'Permitting', PRESET);
   const timeline = routeTimeline(page, 'Discretionary');
   await timeline.getByRole('button', { name: /^Permit review,/ }).click();
-  const months = panel(page).getByLabel('Typical months');
+  const months = editor(page).getByLabel('Typical months');
   await months.fill('0');
   await months.press('Tab');
-  await expect(panel(page).getByText('At the minimum')).toBeVisible();
+  await expect(editor(page).getByText('At the minimum')).toBeVisible();
   await expect(
     timeline.getByRole('button', { name: /^Permit review,.*at the minimum/ })
   ).toBeVisible();
@@ -1129,8 +801,8 @@ test('the minimum is visible', async ({ page }) => {
 
 test('route shares sum to 100', async ({ page }) => {
   await gotoSim(page);
-  await openTiming(page);
-  const share = (name: string) => panel(page).getByLabel(`${name} share, %`);
+  await addPolicy(page, 'Permitting', PRESET);
+  const share = (name: string) => editor(page).getByLabel(`${name} share, %`);
   await share('Permit only').fill('100');
   await share('Permit only').press('Tab');
   await expect(share('Permit only')).toHaveValue('100');
@@ -1138,28 +810,26 @@ test('route shares sum to 100', async ({ page }) => {
   await expect(share('Streamlined')).toHaveValue('0');
 });
 
-test('axe: the Permits tab open, details open (1280 px; the 375 px sheet on mobile)', async ({
-  page
-}) => {
+test('axe: a permitting policy open, a stage open', async ({ page }) => {
   await gotoSim(page);
-  await openTiming(page);
+  await addPolicy(page, 'Permitting', PRESET);
   await routeTimeline(page, 'Discretionary').getByRole('button').nth(1).click();
-  await expect(panel(page).getByLabel('Typical months')).toBeVisible();
+  await expect(editor(page).getByLabel('Typical months')).toBeVisible();
   await expectNoA11yViolations(page);
 });
 
 test('at 375 px with the timelines open: no horizontal scroll', async ({ isMobile, page }) => {
   test.skip(!isMobile, 'the phone layout');
   await gotoSim(page);
-  await openTiming(page);
+  await addPolicy(page, 'Permitting', PRESET);
   await routeTimeline(page, 'Discretionary').getByRole('button').nth(1).click();
-  await expect(panel(page).getByLabel('Typical months')).toBeVisible();
+  await expect(editor(page).getByLabel('Typical months')).toBeVisible();
   await expectNoHorizontalScroll(page);
-  const box = (await page.locator('.sfh-dock-sheet').boundingBox())!;
+  const box = (await inspectorBox(page).boundingBox())!;
   expect(box.x + box.width).toBeLessThanOrEqual(375);
 });
 
-// ---- map overlays (plan 2, Task 4) ----------------------------------------------------------------
+// ---- map overlays (plan 2, Task 4; timeline-ui rule 18) -----------------------------------------
 
 const LIMITS_LAYER = 'sim-height-limits';
 const mapVisibility = (page: Page, id: string) =>
@@ -1169,45 +839,26 @@ const mapVisibility = (page: Page, id: string) =>
   );
 const deckIds = (page: Page) =>
   page.evaluate(() => (window as Win).__sfhMap!.timelineSnapshot()?.layerIds ?? []);
-/** Hidden ones included: below lg the View button waits in the header Menu. */
-const viewButtons = (page: Page): Locator =>
-  page.getByRole('banner').getByRole('button', { name: 'View', exact: true, includeHidden: true });
 
-/** Run from Setup, until the run is on (the phone sheet sits above the time bar, never on it). */
-async function pressRun(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Run', exact: true }).click();
-  await expect.poll(() => fzp(page, 'runPhase')).toBe('run');
-}
-
-test('Setup shows the height limits and transit; Run hides them; Edit policy brings them back', async ({
-  page
-}) => {
+test('the height limits and transit show, and View is offered at any day', async ({ page }) => {
   await gotoSim(page);
-  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(LIMITS_LAYER);
-  await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('visible');
-  await expect(await headerAction(page, 'View')).toBeVisible();
-
-  // Paused: a playing run draws a software-GL map frame per tick, and every later step waits on one.
-  await startRun(page);
-  await expect.poll(() => deckIds(page)).not.toContain(LIMITS_LAYER);
-  await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('none');
-  await openHeaderMenu(page);
-  await expect(viewButtons(page)).toHaveCount(0);
-
-  await page.keyboard.press('Escape'); // the Menu
-  await openPolicy(page);
-  await panel(page).getByRole('button', { name: 'Edit policy' }).click();
-  await expect.poll(() => fzp(page, 'runPhase')).toBe('setup');
   await expect.poll(() => deckIds(page)).toContain(LIMITS_LAYER);
   await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('visible');
-  await expect(viewButtons(page)).toHaveCount(1);
+  await expect(await headerAction(page, 'View')).toBeVisible();
+  await page.keyboard.press('Escape'); // the Menu, below lg
+
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  await expect.poll(() => fzp(page, 'day')).toBeGreaterThan(await fzp(page, 'asOf'));
+  await expect.poll(() => deckIds(page)).toContain(LIMITS_LAYER);
+  await expect(await headerAction(page, 'View')).toBeVisible();
 });
 
 test('the Zoning height limits toggle removes the limits and survives a reload', async ({
   page
 }) => {
   await gotoSim(page);
-  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(LIMITS_LAYER);
+  await expect.poll(() => deckIds(page)).toContain(LIMITS_LAYER);
   await (await headerAction(page, 'View')).click();
   await page.getByRole('checkbox', { name: 'Zoning height limits' }).uncheck();
   await expect.poll(() => deckIds(page)).not.toContain(LIMITS_LAYER);
@@ -1226,7 +877,7 @@ test('zoomed in over the loaded lots, the glass lids draw: the toggle changes th
 }) => {
   test.skip(isMobile, 'the desktop map is enough to see the lids');
   await gotoSim(page);
-  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(LIMITS_LAYER);
+  await expect.poll(() => deckIds(page)).toContain(LIMITS_LAYER);
   // Past LIDS_FADE (contours gone), pitched over the fixture's lots.
   await jumpAndIdle(page, { ...FRAME, zoom: 17, pitch: 55 });
   // The lids answer comes after the moveend; wait until two frames agree.
@@ -1239,14 +890,14 @@ test('zoomed in over the loaded lots, the glass lids draw: the toggle changes th
         on = next;
         return same;
       },
-      { timeout: 20_000, intervals: [500] }
+      { intervals: [500] }
     )
     .toBe(true);
   await (await headerAction(page, 'View')).click();
   await page.getByRole('checkbox', { name: 'Zoning height limits' }).uncheck();
   await expect.poll(() => deckIds(page)).not.toContain(LIMITS_LAYER);
   await page.keyboard.press('Escape');
-  await expect.poll(async () => (await mapShot(page)).equals(on), { timeout: 10_000 }).toBe(false);
+  await expect.poll(async () => (await mapShot(page)).equals(on)).toBe(false);
 });
 
 for (const scheme of ['light', 'dark'] as const) {
@@ -1287,8 +938,8 @@ test('without transit: no transit.json request, no transit layers, View has only
     await page.getByRole('banner').getByRole('link', { name: 'Simulate', exact: true }).click();
     await waitReady(page);
     expect(await page.evaluate(() => (window as Window & { __spa?: boolean }).__spa)).toBe(true);
-  }).toPass({ timeout: 40_000 });
-  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(LIMITS_LAYER);
+  }).toPass();
+  await expect.poll(() => deckIds(page)).toContain(LIMITS_LAYER);
   const transitLayers = await page.evaluate(() =>
     (window as Win)
       .__sfhMap!.map!.getStyle()
@@ -1337,7 +988,8 @@ async function expectHeaderFits(page: Page): Promise<number> {
 
 /**
  * The widest header strings the page can show: the "Autosave off" chip and a five-digit score.
- * The score's count is the button's own text; its "added" span (visually hidden below lg) stays.
+ * The score's count is the button's first text; its "added" span (visually hidden below lg) and
+ * "by {year}" stay.
  */
 async function widestHeaderText(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -1345,37 +997,77 @@ async function widestHeaderText(page: Page): Promise<void> {
     if (chip) {
       const w = document.createTreeWalker(chip, NodeFilter.SHOW_TEXT);
       for (let n = w.nextNode(); n; n = w.nextNode())
-        if (n.textContent?.trim()) {
+        if (n.textContent?.trim() === 'Saved') {
           n.textContent = 'Autosave off';
           break;
         }
     }
     const score = document.querySelector('[data-testid="score-bar"]');
     if (!score) return;
-    let first = true;
     for (const n of score.childNodes)
-      if (n.nodeType === Node.TEXT_NODE) {
-        n.textContent = first ? '12,345 homes ' : '';
-        first = false;
+      if (n.nodeType === Node.TEXT_NODE && n.textContent?.trim()) {
+        n.textContent = '12,345 homes ';
+        break;
       }
   });
 }
 
-for (const width of [1024, 1280]) {
-  test(`at ${width} px the header fits in Setup and in Run with the widest strings, and the score stays put`, async ({
+/**
+ * Where the status shows (rule 32): from 2xl (1536 px) in the header's slot, beside the save
+ * state; below it on a line just under the header bar. Either way one live region speaks it, and
+ * it is never among the buttons.
+ */
+async function expectStatusPlace(page: Page, width: number): Promise<void> {
+  const inHeader = width >= 1536;
+  const slot = page.getByTestId('tl-status');
+  const line = page.getByTestId('tl-status-line');
+  await expect(inHeader ? slot : line).toBeVisible();
+  await expect(inHeader ? line : slot).toBeHidden();
+  await expect(page.getByTestId('tl-status-live')).toHaveCount(1);
+  await expect(page.getByTestId('tl-status-live')).toHaveAttribute('role', 'status');
+  if (!inHeader) {
+    const header = (await page.getByRole('banner').boundingBox())!;
+    const box = (await line.boundingBox())!;
+    expect(Math.abs(box.y - (header.y + header.height))).toBeLessThanOrEqual(1);
+    expect(box.height).toBeGreaterThanOrEqual(24);
+    await expect(line.getByRole('button')).toHaveCount(0);
+  }
+}
+
+/** The shown status copy at its widest ("Forecast filled to 2088"), in both places. */
+async function widestStatusText(page: Page): Promise<void> {
+  await page.evaluate((text) => {
+    for (const id of ['tl-status', 'tl-status-line']) {
+      const el = document.querySelector(`[data-testid="${id}"]`);
+      const shown = el?.querySelector(':scope > span[aria-hidden="true"]:last-child');
+      if (shown) shown.textContent = text;
+    }
+  }, forecastFilled(2088));
+}
+
+for (const width of [1024, 1280, 1536]) {
+  test(`at ${width} px the header fits with the widest strings, before and after an edit, the score stays put and the status shows in its place`, async ({
     page
   }) => {
     await page.setViewportSize({ width, height: 1024 });
     await gotoSim(page);
     await expect(page.getByRole('banner').getByRole('button', { name: 'View' })).toBeVisible();
     await widestHeaderText(page);
-    await expect(scoreBar(page)).toHaveAccessibleName('12,345 homes added');
-    const setupCentre = await expectHeaderFits(page);
-    await pressRun(page);
-    await expect(viewButtons(page)).toHaveCount(0);
+    await widestStatusText(page);
+    await expect(scoreBar(page)).toHaveAccessibleName(/^12,345 homes added by \d{4}$/);
+    await expectStatusPlace(page, width);
+    const before = await expectHeaderFits(page);
+    await expectNoA11yViolations(page, {
+      include: ['header', '[data-testid=tl-status-line]', '[data-testid=tl-status-live]']
+    });
+    const n = await refillCount(page);
+    await addPolicy(page, 'Zoning', 'Transit rule');
+    await waitRefilled(page, n);
     await widestHeaderText(page);
-    const runCentre = await expectHeaderFits(page);
-    expect(Math.abs(runCentre - setupCentre)).toBeLessThanOrEqual(1);
+    await widestStatusText(page);
+    await expectStatusPlace(page, width);
+    const after = await expectHeaderFits(page);
+    expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
   });
 }
 
@@ -1390,13 +1082,10 @@ for (const width of [768]) {
     await expect(menu).toBeVisible();
     // Closed: the site name, status, score and Menu button only; no action or mode link shows.
     await expect(banner.getByRole('button', { name: 'View', exact: true })).toHaveCount(0);
-    await expect(banner.getByRole('button', { name: 'Policy', exact: true })).toHaveCount(0);
     await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
-    // The dock is still the desktop panel from md: its button waits in the Menu.
-    await expect(dockPanel(page)).toBeVisible();
     await expectHeaderFits(page);
     await openHeaderMenu(page);
-    for (const name of ['View', 'Policy', /^(Publish|Share link)/])
+    for (const name of ['View', /^(Publish|Share link)/])
       await expect(
         banner.getByRole('button', { name, exact: typeof name === 'string' })
       ).toBeVisible();
@@ -1404,8 +1093,6 @@ for (const width of [768]) {
       await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
     await expectNoHorizontalScroll(page);
     await menu.click();
-    await pressRun(page);
-    await expect(viewButtons(page)).toHaveCount(0);
     await expectHeaderFits(page);
   });
 }
@@ -1413,21 +1100,18 @@ for (const width of [768]) {
 // ---- outlines of painted lots while erasing (plan 2, Task 5) ---------------------------------------
 
 test('the eraser outlines painted lots, only while chosen', async ({ isMobile, page }) => {
+  test.skip(isMobile, 'the painted policy editor and the map side by side are md+');
   const OUTLINE_LAYER = 'sim-painted-outline';
   await gotoSim(page);
-  await openTab(page, 'Paint');
-  const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
-  await chooseTool(page, isMobile, () => tool('Paint').click());
+  await startPainting(page, isMobile);
   await stampOnce(page);
-  if (isMobile) await stripDone(page);
   await expect(customList(page)).toHaveCount(1);
   expect(await deckIds(page)).not.toContain(OUTLINE_LAYER);
 
-  await chooseTool(page, isMobile, () => tool('Erase').click());
+  await tool(page, 'Erase').click();
   await expect.poll(() => deckIds(page)).toContain(OUTLINE_LAYER);
 
-  if (isMobile) await stripDone(page);
-  else await tool('Move').click();
+  await tool(page, 'Move').click();
   await expect.poll(() => deckIds(page)).not.toContain(OUTLINE_LAYER);
 });
 
@@ -1468,45 +1152,39 @@ test('a Paint drag shows live buildings under the brush, fading on release', asy
   await gotoSim(page);
   // gotoSim emulates reduced motion, under which a release clears at once: the fade needs it off.
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await openTab(page, 'Paint');
-  const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
-  await chooseTool(page, isMobile, () => tool('Paint').click());
+  await startPainting(page, isMobile);
   await jumpAndIdle(page);
   expect(await simPreview(page)).toBe('none');
 
   const release = await holdDrag(page, isMobile);
-  await expect.poll(() => simPreview(page), { timeout: 10_000 }).toBe('live');
+  await expect.poll(() => simPreview(page)).toBe('live');
   expect(isPreviewLayer(await deckIds(page))).toBe(true);
   await release();
 
   await expect.poll(() => simPreview(page)).toBe('fading');
-  await expect.poll(() => simPreview(page), { timeout: 4_000 }).toBe('none');
+  await expect.poll(() => simPreview(page)).toBe('none');
   expect(isPreviewLayer(await deckIds(page))).toBe(false);
-  if (isMobile) await stripDone(page);
-  await expect(customList(page)).toHaveCount(1);
+  await expect.poll(() => paintedAreas(page)).toBe(1);
 });
 
 test('an Erase drag shows no buildings', async ({ isMobile, page }) => {
   await gotoSim(page);
-  await openTab(page, 'Paint');
-  const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
-  await chooseTool(page, isMobile, () => tool('Paint').click());
+  await startPainting(page, isMobile);
   await strokeOnce(page, isMobile);
-  if (isMobile) await stripDone(page);
-  await expect(customList(page)).toHaveCount(1);
+  await expect.poll(() => paintedAreas(page)).toBe(1);
   await expect.poll(() => simPreview(page)).toBe('none');
-  // Sample the preview through an Erase stroke and after it.
-  await chooseTool(page, isMobile, () => tool('Erase').click());
-  const seen: (string | null)[] = [];
-  const sampling = (async () => {
-    for (let k = 0; k < 20; k++) {
-      seen.push(await simPreview(page));
-      await page.waitForTimeout(100);
-    }
-  })();
+  // Sample the preview each frame through an Erase stroke and after it.
+  if (isMobile)
+    await page.getByTestId('palette-strip').getByRole('button', { name: 'Tool: Paint' }).click();
+  else await tool(page, 'Erase').click();
+  await sampleFrames(page);
   await strokeOnce(page, isMobile);
-  await sampling;
-  expect(seen.every((s) => s === 'none')).toBe(true);
+  await page.evaluate(
+    () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  );
+  const seen = await frames(page);
+  expect(seen.length).toBeGreaterThan(0);
+  expect(seen.every((s) => s.preview === 'none')).toBe(true);
   expect(isPreviewLayer(await deckIds(page))).toBe(false);
 });
 
@@ -1521,7 +1199,5 @@ test('hovering a building shows its allowed and buildable stories', async ({ isM
   await page.mouse.move(x, y, { steps: 5 });
   const tip = page.getByTestId('map-root').getByRole('tooltip');
   await expect(tip).toContainText('Parcel 3512014');
-  await expect(tip).toContainText(/Allowed: \d+( · (Buildable here: \d+|Protected))?/, {
-    timeout: 10_000
-  });
+  await expect(tip).toContainText(/Allowed: \d+( · (Buildable here: \d+|Protected))?/);
 });

@@ -15,6 +15,7 @@ import {
   type Money
 } from '$lib/sim/scenario/finance-score';
 import type { TimelineScore } from '$lib/sim/protocol';
+import type { MoneyView } from '$lib/sim/world/score/types';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
 import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import {
@@ -58,13 +59,39 @@ export interface TiersAt {
 
 type Tiers = NonNullable<TimelineScore['tiers']>;
 
+/**
+ * The per-home dollars and the displaced share at month `i`. A stepped view's money carries them by
+ * month (entry `i`, null past its filled end, as the other rows have no entry there); a scored
+ * run's are its own series at `i`. Never divided here for a view.
+ */
+export function moneyFigureAt(
+  money: Money,
+  i: number
+): { perAddedHome: { all: Dollars | null; city: Dollars | null }; displacedShare: number | null } {
+  if ('perAddedHomeByMonth' in money && 'displacedShareByMonth' in money) {
+    const v = money as MoneyView;
+    return {
+      perAddedHome: {
+        all: v.perAddedHomeByMonth.all[i] ?? null,
+        city: v.perAddedHomeByMonth.city[i] ?? null
+      },
+      displacedShare: v.displacedShareByMonth[i] ?? null
+    };
+  }
+  return {
+    perAddedHome: { all: perAddedHome(money, i, 'all'), city: perAddedHome(money, i, 'city') },
+    displacedShare: displacedShare(money, i)
+  };
+}
+
 /** The money series at month `i`. */
 export function moneyAt(money: Money, i: number): MoneyAt {
+  const fig = moneyFigureAt(money, i);
   return {
     spent: money.publicSpent[i],
     citySpent: cityOf(money, i),
-    perAddedHome: perAddedHome(money, i, 'all'),
-    cityPerAddedHome: perAddedHome(money, i, 'city'),
+    perAddedHome: fig.perAddedHome.all,
+    cityPerAddedHome: fig.perAddedHome.city,
     fundedHomes: money.fundedHomes[i],
     displacedHomes: money.displacedHomes[i],
     pools: money.pools.map((p) => ({
@@ -134,9 +161,9 @@ export function fundedLine(m: MoneyAt): string {
   return `Funded homes finished: ${formatCount(m.fundedHomes)}. Added homes: ${formatCount(m.fundedHomes - m.displacedHomes)}.`;
 }
 
-/** The displaced homes beside the published range; the share is `displacedShare`. */
+/** The displaced homes beside the published range; the share comes from `moneyFigureAt`. */
 export function displacementLine(money: Money, i: number): string {
-  const share = displacedShare(money, i);
+  const share = moneyFigureAt(money, i).displacedShare;
   const pct = share === null ? '' : ` (${formatPercent(share)} of funded homes)`;
   const { low, high } = DISPLACEMENT_RANGE.value;
   const tier = DISPLACEMENT_RANGE.provenance.tier;

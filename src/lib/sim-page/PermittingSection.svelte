@@ -9,7 +9,8 @@
 -->
 <script lang="ts">
   import { PATHWAYS, type Calibration, type Pathway } from '$lib/timelapse/types';
-  import type { PolicyStore } from './policy-store.svelte';
+  import type { EditStore } from '$lib/timeline/lens';
+  import Explain from '$lib/timeline/Explain.svelte';
   import RouteTimeline from './RouteTimeline.svelte';
   import SourceList from './SourceList.svelte';
   import {
@@ -25,12 +26,19 @@
   } from './timing';
 
   interface Props {
-    store: PolicyStore;
+    store: EditStore;
+    /**
+     * Save and "Revert to saved" (default true). Schema 4 carries a saved set as its own off
+     * policy, and each policy has on/off and undo.
+     */
+    snapshot?: boolean;
     calibration: Calibration;
     /** Speaks a change (WCAG 4.1.3). */
     announce(msg: string): void;
+    /** Why the preset cannot change here (a preset is a whole policy's), or null. */
+    presetLocked?: string | null;
   }
-  let { store, calibration, announce }: Props = $props();
+  let { store, calibration, snapshot = true, announce, presetLocked = null }: Props = $props();
 
   const uid = $props.id();
   const PATHWAY_NAMES: Record<Pathway, string> = {
@@ -47,7 +55,9 @@
   /** The weakest evidence among the preset's values (a higher tier is weaker). */
   const tier = $derived(Math.max(...preset.provenance.map((x) => x.tier)));
   const shares = $derived(shownRouteShares(current, calibration));
-  const target = $derived(revertTarget(timing, calibration));
+  const target = $derived(
+    revertTarget(snapshot ? timing : { ...timing, saved: null }, calibration)
+  );
   const same = (a: TimingSet, b: TimingSet) => JSON.stringify(a) === JSON.stringify(b);
   const canSave = $derived(!same(current, timing.saved?.set ?? OBSERVED_TIMING.current));
 
@@ -59,8 +69,8 @@
   }
 
   function save(): void {
-    const snapshot = { label, set: structuredClone(current) };
-    store.apply((p) => ({ ...p, timing: { ...p.timing, saved: snapshot } }), 'Saved timelines');
+    const saved = { label, set: structuredClone(current) };
+    store.apply((p) => ({ ...p, timing: { ...p.timing, saved } }), 'Saved timelines');
     announce('Saved timelines');
   }
 
@@ -108,11 +118,14 @@
 </script>
 
 <div class="flex flex-col gap-3 text-sm">
-  <label class="flex flex-col gap-1 font-semibold">
-    Preset
+  <div class="flex flex-col gap-1 font-semibold">
+    <Explain text="{preset.summary} Evidence tier {tier}." label="About {preset.name}"
+      ><span id="{uid}-preset-label">Preset</span></Explain
+    >
     <select
+      aria-labelledby="{uid}-preset-label"
       class="min-h-6 rounded-md border border-control-line bg-surface px-1 font-normal text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
-      aria-describedby="{uid}-preset-desc"
+      disabled={presetLocked !== null}
       value={current.preset}
       onchange={(e) => choosePreset(e.currentTarget.value as PresetId)}
     >
@@ -120,24 +133,28 @@
         <option value={p.id}>{p.name}</option>
       {/each}
     </select>
-  </label>
-  <p id="{uid}-preset-desc" class="text-xs text-ink-muted dark:text-ink-dark-muted">
-    {preset.summary} Evidence tier {tier}.
-  </p>
+  </div>
+  {#if presetLocked !== null}
+    <span class="text-xs text-ink-muted dark:text-ink-dark-muted">
+      <Explain text={presetLocked}>Preset fixed</Explain>
+    </span>
+  {/if}
 
   <p class="font-semibold" data-testid="timing-label">{label}</p>
   <div class="flex flex-wrap gap-2">
-    <button type="button" class={btn} disabled={!canSave} onclick={save}>Save timelines</button>
+    {#if snapshot}
+      <button type="button" class={btn} disabled={!canSave} onclick={save}>Save timelines</button>
+    {/if}
     <button
       type="button"
       class={btn}
       disabled={target === null}
-      aria-describedby={timing.saved ? `${uid}-revert-desc` : undefined}
+      aria-describedby={snapshot && timing.saved ? `${uid}-revert-desc` : undefined}
       onclick={revert}
     >
-      {timing.saved ? 'Revert to saved' : `Revert to ${preset.name}`}
+      {snapshot && timing.saved ? 'Revert to saved' : `Revert to ${preset.name}`}
     </button>
-    {#if timing.saved}
+    {#if snapshot && timing.saved}
       <span id="{uid}-revert-desc" class="sr-only"
         >Restores the saved timelines: {timing.saved.label}</span
       >
@@ -166,8 +183,11 @@
   {/each}
 
   <p>
-    Family Zoning Plan Local Program lots {current.localProgramStreamlined ? 'use' : 'do not use'} the
-    streamlined route.
+    <Explain
+      text="Family Zoning Plan Local Program lots {current.localProgramStreamlined
+        ? 'use'
+        : 'do not use'} the streamlined route.">Local Program lots streamlined</Explain
+    >: {current.localProgramStreamlined ? 'yes' : 'no'}
   </p>
 
   <details class="text-xs text-ink-muted dark:text-ink-dark-muted">

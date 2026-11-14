@@ -135,6 +135,7 @@
           {policy}
           baseline={host.baseline}
           asOf={host.asOf}
+          priceDay={host.priceDay}
           slope={host.slope}
           presets={host.presets}
           selected={selected === g.id}
@@ -155,6 +156,7 @@
           {policy}
           baseline={host.baseline}
           asOf={host.asOf}
+          priceDay={host.priceDay}
           slope={host.slope}
           presets={host.presets}
           selected={true}

@@ -1,61 +1,56 @@
-// /sim page (spec §4.7, moved from /fzp): the future on show always matches the URL. Every load
-// run remounts SimPage, and so does a navigation within /sim that SvelteKit serves without
-// rerunning the load (its last-load URL predates replaceState). A fake Worker stands in for the
-// scenario worker; the SimMap stub records its props.
+// /sim page (timeline-ui Task 15): a new load result remounts SimPage, the same one keeps it; the
+// URL names no future (rule 25, OD-4), so `?seed=` is dropped from the address with replaceState,
+// other parameters kept, and changes nothing. The real SimPage and TimelineMode run over a fake
+// timeline worker; SimMap is a stub.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page } from 'vitest/browser';
 import type { AfterNavigate } from '@sveltejs/kit';
 import { parseManifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
-import { FakeScenarioWorker, timelineMsg } from '$lib/fzp/test/fake-worker';
 import { stub } from '$lib/fzp/test/sim-map-stub';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
+import { DEFAULT_POLICY4 } from '$lib/timeline/policy4';
+import { SIM_KEY4 } from '$lib/timeline/sim-doc4';
+import type { FakeTimelineWorker } from '$lib/timeline/test/fake-timeline-worker';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import Page from './+page.svelte';
-import SimPageHost from './test/SimPageHost.svelte';
 
 const nav = vi.hoisted(() => ({
   after: [] as ((n: AfterNavigate) => void)[],
-  replaced: [] as string[],
-  /** The address bar's query string, which `addressSeed` reads instead of `location`. */
-  address: ''
+  replaced: [] as { url: string; state: App.PageState }[],
+  /** The address bar, which SimRoute reads instead of `location`. */
+  address: 'http://localhost/sim'
 }));
+const workers = vi.hoisted(() => [] as FakeTimelineWorker[]);
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
-vi.mock('$lib/fzp/seed', async (importOriginal) => {
-  const real = await importOriginal<typeof import('$lib/fzp/seed')>();
+vi.mock('$lib/sim/client', async (orig) => {
+  const { FakeTimelineWorker } = await import('$lib/timeline/test/fake-timeline-worker');
   return {
-    ...real,
-    addressSearch: () => nav.address,
-    addressSeed: () => real.parseSeed(new URLSearchParams(nav.address))
+    ...(await orig<typeof import('$lib/sim/client')>()),
+    spawnSimWorker: () => {
+      const w = new FakeTimelineWorker();
+      workers.push(w);
+      return w;
+    }
   };
 });
-// The shared client-test stub of $app/navigation has no afterNavigate; this page needs one.
+vi.mock('$lib/timeline/address', async (orig) => ({
+  ...(await orig<typeof import('$lib/timeline/address')>()),
+  addressHref: () => nav.address
+}));
 vi.mock('$app/navigation', () => ({
   afterNavigate: (cb: (n: AfterNavigate) => void) => nav.after.push(cb),
-  replaceState: (url: string) => nav.replaced.push(url)
+  replaceState: (url: string, state: App.PageState) => nav.replaced.push({ url, state })
 }));
 
-class StubWorker extends FakeScenarioWorker {
-  static all: StubWorker[] = [];
-  constructor() {
-    super();
-    StubWorker.all.push(this);
-  }
-}
-
-/**
- * Runs the page's afterNavigate callbacks for a navigation whose address bar reads `address`.
- * `to.url` is SvelteKit's stored URL, which after a replaceState is not the address bar.
- */
-function navigated(type: AfterNavigate['type'], address: string, stored = '') {
+/** Runs the page's afterNavigate callbacks for a navigation whose address bar reads `address`. */
+function navigated(type: AfterNavigate['type'], address: string) {
   nav.address = address;
-  const to = { url: new URL(`http://localhost/sim${stored}`) } as AfterNavigate['to'];
+  const to = { url: new URL(address) } as AfterNavigate['to'];
   for (const cb of nav.after) cb({ type, to, from: null, willUnload: false } as AfterNavigate);
 }
 
-function data(seed: number | null, o: { seedInvalid?: boolean } = {}) {
+function data() {
   return {
     datasetVersion: 'fixture-0',
     appRelease: 'dev',
@@ -63,122 +58,64 @@ function data(seed: number | null, o: { seedInvalid?: boolean } = {}) {
     manifestError: false,
     calibration: fixtureCalibration(),
     calibrationError: false,
-    noScenario: false,
-    seed,
-    seedInvalid: o.seedInvalid ?? false
+    noScenario: false
   };
 }
-
-const initSeeds = (w: StubWorker) =>
-  w.posts.filter((p) => p.type === 'initScenario').map((p) => (p as { seed: number | null }).seed);
 
 describe('/sim page', () => {
   beforeEach(() => {
     stub.reset();
-    StubWorker.all = [];
+    workers.length = 0;
     nav.after.length = 0;
     nav.replaced.length = 0;
-    nav.address = '';
-    vi.stubGlobal('Worker', StubWorker);
-    // The page autosaves to localStorage (plan 5): start each test without a saved policy.
+    nav.address = 'http://localhost/sim';
+    localStorage.removeItem(SIM_KEY4);
     localStorage.removeItem('sfhousing:sim:v1');
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
+    localStorage.removeItem(SIM_KEY4);
+    localStorage.removeItem('sfhousing:sim:v1');
   });
 
-  it('remounts FzpMode on a new load result and keeps it for the same one', async () => {
-    const first = data(123);
+  it('remounts SimPage on a new load result and keeps it for the same one', async () => {
+    const first = data();
     const r = await render(Page, { props: { data: first, params: {} } });
-    await expect.poll(() => StubWorker.all.length).toBe(1);
-    expect(initSeeds(StubWorker.all[0])).toEqual([123]);
+    await expect.poll(() => workers.length).toBe(1);
+    expect(workers[0].lastOf('openTimeline')!.policy).toEqual(DEFAULT_POLICY4);
 
-    // The same data object (what replaceState leaves behind): no remount.
     await r.rerender({ data: first, params: {} });
-    expect(StubWorker.all).toHaveLength(1);
+    expect(workers).toHaveLength(1);
 
-    // A navigation to /sim reruns the load: a new data object, the representative future.
-    await r.rerender({ data: data(null), params: {} });
-    await expect.poll(() => StubWorker.all.length).toBe(2);
-    expect(StubWorker.all[0].terminated).toBe(true);
-    expect(StubWorker.all[1].terminated).toBe(false);
-    expect(initSeeds(StubWorker.all[1])).toEqual([null]);
+    await r.rerender({ data: data(), params: {} });
+    await expect.poll(() => workers.length).toBe(2);
+    expect(workers[0].terminated).toBe(true);
+    expect(workers[1].terminated).toBe(false);
   });
 
-  it('remounts for a same-route navigation the load skips, when its URL names another future', async () => {
-    await render(SimPageHost, { props: { data: data(5) } });
-    navigated('enter', '?seed=5');
-    await expect.poll(() => StubWorker.all.length).toBe(1);
-    const w = StubWorker.all[0];
-    const init = w.lastOf('initScenario')!;
-    expect(init.seed).toBe(5);
-    w.emit({ type: 'ready', rev: init.rev, datasetVersion: 'fixture-0', chunkCount: 4 });
-    w.emit(timelineMsg(init.rev, 5));
+  it('?seed= is removed from the URL and changes nothing', async () => {
+    await render(Page, { props: { data: data(), params: {} } });
+    await expect.poll(() => workers.length).toBe(1);
+    const sent = workers[0].posts.length;
 
-    // 'Back to the representative future' (in the Sources disclosure of the dock's Results face,
-    // which the header score flips to): the answer writes the bare URL with replaceState.
-    await page.getByTestId('score-bar').click();
-    const results = page.getByRole('region', { name: 'Results' });
-    await results.getByTestId('fzp-sources').getByText('Sources', { exact: true }).first().click();
-    await results
-      .getByRole('button', { name: 'Back to the representative future' })
-      .first()
-      .click();
-    const reroll = w.lastOf('reroll')!;
-    expect(reroll.seed).toBeNull();
-    w.emit(timelineMsg(reroll.rev, 31));
-    await expect.poll(() => nav.replaced.length).toBe(1);
-    expect(StubWorker.all).toHaveLength(1); // replaceState never remounts
+    navigated('enter', 'http://localhost/sim?seed=5&x=1&x=2#map');
+    await expect.poll(() => nav.replaced.map((r) => r.url)).toEqual(['/sim?x=1&x=2#map']);
+    // A bad seed goes the same way.
+    navigated('link', 'http://localhost/sim?seed=junk');
+    await expect.poll(() => nav.replaced.map((r) => r.url)).toEqual(['/sim?x=1&x=2#map', '/sim']);
+    // No remount, no new message: the seed meant nothing.
+    expect(workers).toHaveLength(1);
+    expect(workers[0].posts.slice(sent).filter((p) => p.type === 'openTimeline')).toEqual([]);
 
-    // A link to /sim?seed=5: the seed of the last load, so SvelteKit keeps the same data object.
-    navigated('link', '?seed=5');
-    await expect.poll(() => StubWorker.all.length).toBe(2);
-    expect(StubWorker.all[0].terminated).toBe(true);
-    expect(StubWorker.all[1].lastOf('initScenario')!.seed).toBe(5);
-
-    // A navigation to the future already on show does not remount.
-    navigated('link', '?seed=5');
-    await new Promise((res) => setTimeout(res, 50));
-    expect(StubWorker.all).toHaveLength(2);
-  });
-
-  it('Back onto a rerolled entry: the load ran for the stored /sim, the bar wins', async () => {
-    // SvelteKit navigated to (and loaded) the pre-replaceState URL /sim; the bar reads ?seed=7.
-    await render(Page, { props: { data: data(null), params: {} } });
-    navigated('popstate', '?seed=7', '');
-    await expect.poll(() => StubWorker.all.length).toBe(2);
-    expect(StubWorker.all[0].terminated).toBe(true);
-    expect(initSeeds(StubWorker.all[1])).toEqual([7]);
-  });
-
-  it('Back onto the bare /sim after the way back: the load ran for ?seed=5, the bar wins', async () => {
-    await render(Page, { props: { data: data(5), params: {} } });
-    navigated('popstate', '', '?seed=5');
-    await expect.poll(() => StubWorker.all.length).toBe(2);
-    expect(initSeeds(StubWorker.all[1])).toEqual([null]);
-  });
-
-  it('an invalid seed is cleaned on /sim', async () => {
-    // /fzp?seed=abc&x=1&x=2 redirected here: the representative future, and the
-    // address loses only its seed.
-    await render(Page, {
-      props: { data: data(null, { seedInvalid: true }), params: {} }
-    });
-    navigated('enter', '?seed=abc&x=1&x=2', '?seed=abc&x=1&x=2');
-    await expect.poll(() => nav.replaced).toEqual(['?x=1&x=2']);
-    await expect.poll(() => StubWorker.all.length).toBe(1);
-    expect(initSeeds(StubWorker.all[0])).toEqual([null]);
-  });
-
-  it('opens on the FZP comparison', async () => {
-    await render(Page, { props: { data: data(null), params: {} } });
-    await expect.poll(() => StubWorker.all.length).toBe(1);
-    expect(StubWorker.all[0].lastOf('initScenario')!.levers).toEqual(DEFAULT_LEVERS);
+    // An address with no seed is left alone: a seeded one after it is the next replace.
+    navigated('link', 'http://localhost/sim?x=1');
+    navigated('link', 'http://localhost/sim?seed=7&y=1');
+    await expect.poll(() => nav.replaced).toHaveLength(3);
+    expect(nav.replaced.map((r) => r.url)).toEqual(['/sim?x=1&x=2#map', '/sim', '/sim?y=1']);
   });
 
   it('is titled for the policy simulation', async () => {
-    await render(Page, { props: { data: data(null), params: {} } });
+    await render(Page, { props: { data: data(), params: {} } });
     await expect.poll(() => document.title).toBe('Policy simulation · SF Housing Simulator');
     expect(document.querySelector('h1')?.textContent).toBe('Housing policy simulation');
   });

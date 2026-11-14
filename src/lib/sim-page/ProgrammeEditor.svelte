@@ -23,6 +23,8 @@
   export interface ProgrammeHost {
     baseline: Baseline;
     asOf: Day;
+    /** The day a programme's cost per home is priced on (`asOf` unless the tab says otherwise). */
+    priceDay: Day;
     /** `calibration.market.slope.perCostShare`, or null. */
     slope: number | null;
     presets: FundingPreset[];
@@ -118,6 +120,8 @@
     policy: SimPolicy;
     baseline: Baseline;
     asOf: Day;
+    /** The day the preview prices on; absent: `asOf`. */
+    priceDay?: Day;
     slope: number | null;
     presets: FundingPreset[];
     selected: boolean;
@@ -139,6 +143,7 @@
     policy,
     baseline,
     asOf,
+    priceDay = undefined,
     slope,
     presets,
     selected,
@@ -219,7 +224,7 @@
   const preview = $derived(
     complete === null
       ? null
-      : programmePreview(complete, pool, policy.funding, baseline, asOf, slope)
+      : programmePreview(complete, pool, policy.funding, baseline, priceDay ?? asOf, slope)
   );
   /** The preview's sources, each once (the draw assumption's two entries may repeat). */
   const sources = $derived.by((): Provenance[] => {

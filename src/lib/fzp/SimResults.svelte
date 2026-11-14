@@ -13,7 +13,16 @@
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { Day } from '$lib/timelapse/time';
   import { formatDate, formatMonthYear } from './format';
-  import { monthIndex } from './time';
+  import {
+    CITY_NOTE,
+    FORECAST_NOTE,
+    RANGE_NOTE,
+    TWIN_NOTE,
+    capacityNote,
+    marketBody
+  } from '$lib/timeline/copy';
+  import Explain from '$lib/timeline/Explain.svelte';
+  import { monthIndex, utcParts } from './time';
   import MapKey from './MapKey.svelte';
   import MoneyResults from './MoneyResults.svelte';
   import { resolveTerms } from '$lib/sim/finance';
@@ -38,17 +47,12 @@
     day: Day;
     asOf: Day;
     horizon: Day;
-    /** The furthest day reached: the deadline line waits until it reaches the deadline month. */
-    highWater: Day;
-    bandRuns: number;
-    bandRunsTotal: number;
-    seed: number | null;
-    representative: boolean;
-    /** False while no run switch can be asked for (the worker has stopped). */
-    canSwitch: boolean;
+    /** "This city": the baseline and world 1's completed homes at the playhead's month. */
+    city: number | null;
+    /** The last filled month's day: the deadline line waits until the forecast reaches it. */
+    filledEnd: Day;
     datasetVersion: string;
     builtAt: string;
-    onrepresentative: () => void;
     onsources: () => void;
     /** Who the plan effect is for (/sim): the Family Zoning Plan copy by default. */
     copy?: ScoreCopy;
@@ -70,16 +74,11 @@
     at,
     day,
     asOf,
+    city,
     horizon,
-    highWater,
-    bandRuns,
-    bandRunsTotal,
-    seed,
-    representative,
-    canSwitch,
+    filledEnd,
     datasetVersion,
     builtAt,
-    onrepresentative,
     onsources,
     copy = scoreCopy(null),
     capacity = null,
@@ -98,17 +97,19 @@
     if (!capacity || capacity.protectedLots <= 0) return null;
     const lots = count(capacity.protectedLots, 'lot', 'lots');
     const fewer = count(capacity.withoutProtections - capacity.plan, 'fewer home', 'fewer homes');
-    return `${lots} protected: ${fewer} of zoned capacity`;
+    return { lots, fewer };
   });
 
   /** "the plan" in the Family Zoning Plan copy (its text unchanged), else the copy's own name. */
   const short = $derived(copy.plan === 'the Family Zoning Plan' ? 'the plan' : copy.plan);
 
+  /** The year of the window's last month: the capacity figure's note names it. */
+  const lastYear = $derived(score ? utcParts(score.months[score.months.length - 1]).y : 0);
+
   const WIDE = '(min-width: 768px)';
 
-  const provisional = $derived(bandRuns < bandRunsTotal);
-  const band = $derived(score && at ? bandLine(score, at.monthIndex, provisional) : null);
-  const planBand = $derived(score && at ? planBandLine(score, at.monthIndex, provisional) : null);
+  const band = $derived(score && at ? bandLine(score, at.monthIndex, false) : null);
+  const planBand = $derived(score && at ? planBandLine(score, at.monthIndex, false) : null);
   const max = $derived(at ? trackMax(at.targets.map((t) => t.tp)) : 1);
   const stages = $derived(score && at ? inProgressRows(score.shown[at.monthIndex].inProgress) : []);
   const inProgressTotal = $derived(stages.reduce((sum, s) => sum + s.units, 0));
@@ -118,8 +119,8 @@
     score && at ? sinceText(score, at).slice(formatCount(at.total).length) : ''
   );
   const planPending = $derived(at !== null && at.planCompleted === null);
-  /** The month index of the high-water mark: nothing after it is revealed. */
-  const reveal = $derived(score ? monthIndex(highWater, score.months[0], score.months.length) : -1);
+  /** The month index of the filled mark: nothing after it is revealed. */
+  const reveal = $derived(score ? monthIndex(filledEnd, score.months[0], score.months.length) : -1);
 
   /** The map key opens by default on a wide viewport (the sheet on a phone starts closed). */
   const keyOpen = typeof matchMedia === 'function' && matchMedia(WIDE).matches;
@@ -145,15 +146,27 @@
     <p class="mt-3 text-sm text-ink-muted dark:text-ink-dark-muted">Loading the simulation…</p>
   {:else}
     <p>
-      <span data-testid="fzp-net" class="text-3xl font-bold tabular-nums"
-        >{formatCount(at.total)}</span
-      ><span class="text-base">{sinceRest}</span>
+      <Explain text={FORECAST_NOTE} label="{formatCount(at.total)}{sinceRest}"
+        ><span data-testid="fzp-net" class="text-3xl font-bold tabular-nums"
+          >{formatCount(at.total)}</span
+        ><span class="text-base">{sinceRest}</span></Explain
+      >
     </p>
     <p class="text-sm text-ink-muted dark:text-ink-dark-muted">{builtByTodayText(at)}</p>
+    {#if city !== null}
+      <dl class="mt-1 text-sm">
+        <div class="flex justify-between gap-3">
+          <dt><Explain text={CITY_NOTE}>This city</Explain></dt>
+          <dd class="tabular-nums" data-testid="fzp-city">{formatCount(city)}</dd>
+        </div>
+      </dl>
+    {/if}
     {@render staleLine()}
 
     <section class="mt-4" aria-busy={planPending ? 'true' : undefined}>
-      <h2 class="text-sm font-semibold">What {short} added</h2>
+      <h2 class="text-sm font-semibold">
+        <Explain text={TWIN_NOTE}>What {short} added</Explain>
+      </h2>
       <p class="mt-1 text-sm text-ink-muted dark:text-ink-dark-muted">
         {comparisonLine(copy, at.planCompleted)}
       </p>
@@ -169,7 +182,7 @@
         class="text-sm text-ink-muted dark:text-ink-dark-muted"
         aria-busy={planBand.busy ? 'true' : undefined}
       >
-        {planBand.text}
+        <Explain text={RANGE_NOTE}>{planBand.text}</Explain>
       </p>
       <dl class="mt-1 text-sm">
         <div class="flex justify-between gap-3">
@@ -182,7 +195,9 @@
       {#if protectionLine}
         <!-- Not live: the numbers change with every lever change (spec: no aria-live). -->
         <p class="mt-2 text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted">
-          {protectionLine}
+          {protectionLine.lots} protected:
+          <Explain text={capacityNote(lastYear)}>{protectionLine.fewer}</Explain>
+          of zoned capacity
         </p>
       {/if}
     </section>
@@ -195,9 +210,10 @@
       {pending}
       {uncapped}
       part="money"
+      scope="In this city"
     />
 
-    <ScoreChart {score} {asOf} {horizon} {day} {highWater} />
+    <ScoreChart {score} {asOf} {horizon} {day} highWater={filledEnd} />
 
     <div class="mt-4">
       {#each at.targets as t, k (t.tp.target.id)}
@@ -217,6 +233,7 @@
       {terms}
       {pending}
       part="tiers"
+      scope="In this city"
     />
 
     <dl class="mt-4 space-y-1 text-sm">
@@ -257,44 +274,19 @@
         >Sources</summary
       >
       <p class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted">
-        One possible future for San Francisco under {copy.plan}. It starts from every real project
-        in the pipeline today and adds new ones at the rates the city's own records show. It is a
-        simulation, not a forecast.
+        {FORECAST_NOTE}
       </p>
       {#if market}
         <p class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted" data-testid="fzp-market">
-          {market}
+          {marketBody(market)}
         </p>
       {/if}
       <p
         class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted"
         aria-busy={band.busy ? 'true' : undefined}
       >
-        {band.text}
+        <Explain text={RANGE_NOTE}>{band.text}</Explain>
       </p>
-      <p class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted">
-        To see what {short} itself does, each future is run twice: once with {copy.plan}, and once
-        as the same city simulated under {copy.twin}, with the same luck. The difference between the
-        two is {short}'s effect. Some homes would have been built anyway; they are not counted here.
-      </p>
-
-      {#if seed !== null}
-        <p class="mt-3 text-sm">
-          This future: #{seed}{representative ? ' (representative)' : ''}
-        </p>
-      {/if}
-      {#if !representative}
-        <!-- aria-disabled, not disabled, so a press does not drop keyboard focus to <body>. -->
-        <button
-          type="button"
-          aria-disabled={canSwitch ? undefined : 'true'}
-          class="min-h-11 rounded-md px-1 text-left text-sm font-semibold underline aria-disabled:cursor-not-allowed aria-disabled:text-ink-muted dark:aria-disabled:text-ink-dark-muted"
-          onclick={() => {
-            if (canSwitch) onrepresentative();
-          }}>Back to the representative future</button
-        >
-      {/if}
-
       <MapKey open={keyOpen} />
 
       <button

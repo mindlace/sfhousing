@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTestD1, testPlatform, type TestD1 } from '$lib/server/test/d1';
 import { FakeR2Bucket } from '$lib/server/test/fake-r2';
 import { FakeRateLimiter } from '$lib/server/test/fake-rate-limiter';
-import { paintedText } from '$lib/server/test/sim-docs';
+import { painted4Text } from '$lib/server/test/sim-docs';
 import { POST as POST_PLAN } from '../../plans/+server';
 import { GET as GET_PLAN } from '../../plans/[id]/+server';
 import { POST } from '../+server';
@@ -43,7 +43,7 @@ const req = (path: string, body?: string) =>
   });
 
 async function publishBoth(platform: App.Platform) {
-  const sim = await POST({ request: req('/api/policies', paintedText()), platform } as never);
+  const sim = await POST({ request: req('/api/policies', painted4Text()), platform } as never);
   const plan = await POST_PLAN({ request: req('/api/plans', small), platform } as never);
   expect([sim.status, plan.status]).toEqual([201, 201]);
   return {
@@ -62,7 +62,7 @@ describe('GET /api/policies/:id', () => {
       platform
     } as never);
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe(paintedText());
+    expect(await res.text()).toBe(painted4Text());
   });
 
   it('kind mismatch 404s the API both ways', async () => {
