@@ -296,7 +296,7 @@ function flatRoof(sorted: Float64Array): Flat {
 function medianSlope(h: Float64Array, cIdx: number[], nx: number, ny: number, res: number): number {
   const hc = new Float32Array(nx * ny).fill(NaN);
   for (const k of cIdx) hc[k] = h[k];
-  const { gx, gy } = gradient(gaussian(hc, nx, ny, 2), nx, ny, res);
+  const { gx, gy } = gradient(gaussian(hc, nx, ny, BOXES.pitchSlopeSigmaCells), nx, ny, res);
   const s: number[] = [];
   for (const k of cIdx) {
     const v = Math.hypot(gx[k], gy[k]);
@@ -510,24 +510,58 @@ function signedArea(r: Ring): number {
   return a / 2;
 }
 
+/** Distance from (x, y) to the nearest edge of any outer ring of p. */
+function distToOuter(p: MultiPoly, x: number, y: number): number {
+  let d = Infinity;
+  for (const poly of p) {
+    const ring = poly[0];
+    if (!ring) continue;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [x1, y1] = ring[j];
+      const ex = ring[i][0] - x1;
+      const ey = ring[i][1] - y1;
+      const l2 = ex * ex + ey * ey;
+      const s = l2 > 0 ? Math.max(0, Math.min(1, ((x - x1) * ex + (y - y1) * ey) / l2)) : 0;
+      d = Math.min(d, Math.hypot(x - (x1 + s * ex), y - (y1 + s * ey)));
+    }
+  }
+  return d;
+}
+
+/** Edges within 1 cm of the footprint's exterior lie on it (`area` comes back from clipper at mm). */
+const ON_EXTERIOR_M = 0.01;
+
 /**
  * Faces of the outer rings: runs of consecutive edges whose turns, and whose deviation from the
- * run's first edge, stay under frontFaceAngleDeg; at least frontMinFaceM long. `n` is the outward
- * unit normal of the face's chord; `mid` is halfway along it.
+ * run's first edge, stay under frontFaceAngleDeg; at least frontMinFaceM long. Only edges on the
+ * exterior of `footprint` count: a cut of `area` against a counted part is never a face. `n` is the
+ * outward unit normal of the face's chord; `mid` is halfway along it.
  */
-function facesOf(shape: MultiPoly): Face[] {
+function facesOf(shape: MultiPoly, footprint: MultiPoly): Face[] {
   const lim = (BOXES.frontFaceAngleDeg * Math.PI) / 180;
   const faces: Face[] = [];
+  const onExterior = (a: [number, number], b: [number, number]): boolean =>
+    [0, 0.25, 0.5, 0.75, 1].every(
+      (f) =>
+        distToOuter(footprint, a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])) <= ON_EXTERIOR_M
+    );
   for (const poly of shape) {
     const ring0 = poly[0];
     if (!ring0 || ring0.length < 3) continue;
     const ring = signedArea(ring0) > 0 ? ring0 : [...ring0].reverse();
-    const edges: { a: [number, number]; b: [number, number]; t: number; len: number }[] = [];
+    const edges: {
+      a: [number, number];
+      b: [number, number];
+      t: number;
+      len: number;
+      ext: boolean;
+    }[] = [];
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i];
       const b = ring[(i + 1) % ring.length];
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      if (len > 1e-6) edges.push({ a, b, t: Math.atan2(b[1] - a[1], b[0] - a[0]), len });
+      if (len > 1e-6)
+        edges.push({ a, b, t: Math.atan2(b[1] - a[1], b[0] - a[0]), len, ext: onExterior(a, b) });
     }
     const m = edges.length;
     if (m < 3) continue;
@@ -535,14 +569,18 @@ function facesOf(shape: MultiPoly): Face[] {
       const d = Math.abs(t - s) % (2 * Math.PI);
       return d > Math.PI ? 2 * Math.PI - d : d;
     };
-    // Start at the sharpest corner so no run wraps past it.
+    // Start just after a cut edge if there is one, else at the sharpest corner, so no run wraps
+    // past a break.
     let start = 0;
-    for (let i = 1; i < m; i++)
-      if (
-        turn(edges[(i + m - 1) % m].t, edges[i].t) >
-        turn(edges[(start + m - 1) % m].t, edges[start].t)
-      )
-        start = i;
+    const cut = edges.findIndex((e) => !e.ext);
+    if (cut >= 0) start = (cut + 1) % m;
+    else
+      for (let i = 1; i < m; i++)
+        if (
+          turn(edges[(i + m - 1) % m].t, edges[i].t) >
+          turn(edges[(start + m - 1) % m].t, edges[start].t)
+        )
+          start = i;
     let run: typeof edges = [];
     const close = (): void => {
       const len = run.reduce((s, e) => s + e.len, 0);
@@ -567,6 +605,10 @@ function facesOf(shape: MultiPoly): Face[] {
     };
     for (let q = 0; q < m; q++) {
       const e = edges[(start + q) % m];
+      if (!e.ext) {
+        close();
+        continue;
+      }
       if (run.length && (turn(run[run.length - 1].t, e.t) >= lim || turn(run[0].t, e.t) >= lim))
         close();
       run.push(e);
@@ -732,21 +774,25 @@ export function deriveBoxes(
     if (
       ridge - eave >= BOXES.pitchMinRiseM &&
       loss < flat.loss &&
-      medianSlope(h, cIdx, nx, ny, res) >= Math.abs(fit.k) / 2
+      medianSlope(h, cIdx, nx, ny, res) >= BOXES.pitchSlopeShareMin * Math.abs(fit.k)
     ) {
       rec.roof = 'pitched';
       rec.eaveM = round1(eave);
       rec.ridgeM = round1(ridge);
-      const deg = (Math.atan2(-fit.ey, fit.ex) * 180) / Math.PI;
-      rec.ridgeDeg = round1((((deg % 180) + 180) % 180) % 180);
+      // Round, then reduce: rounding 179.96 after the reduction would give 180.0.
+      const deg = round1((Math.atan2(-fit.ey, fit.ex) * 180) / Math.PI);
+      rec.ridgeDeg = (((deg % 180) + 180) % 180) + 0;
       top = (eave + ridge) / 2;
       const f = fit;
       model = (x, y) => fitAt(f, x, y);
     }
   }
-  const baseTop = Math.min(Math.max(round1(top), BOXES.heightRangeM[0]), BOXES.heightRangeM[1]);
   const clampH = (v: number): number =>
     Math.min(Math.max(round1(v), BOXES.heightRangeM[0]), BOXES.heightRangeM[1]);
+  // The base box's rendered top. Front rise and step gap are measured from it (plan decision),
+  // and on a flat roof it is the roof model.
+  const baseTop = clampH(top);
+  if (rec.roof === 'flat') model = () => baseTop;
 
   // Steps: cells clearly above the roof model, without rough texture, opened by one cell and
   // grown back one cell into the candidates (the rough ring a wall edge leaves).
@@ -789,12 +835,12 @@ export function deriveBoxes(
     for (const cells of pieces) {
       if (cells.length < minCells) continue;
       const level = medianOf(cells);
-      if (level - top >= BOXES.stepGapM) parts.push({ cells, level });
+      if (level - baseTop >= BOXES.stepGapM) parts.push({ cells, level });
     }
   }
   parts.sort(
     (a, b) =>
-      b.cells.length * (b.level - top) - a.cells.length * (a.level - top) ||
+      b.cells.length * (b.level - baseTop) - a.cells.length * (a.level - baseTop) ||
       b.level - a.level ||
       a.cells[0] - b.cells[0]
   );
@@ -829,7 +875,7 @@ export function deriveBoxes(
   // frontRiseM over the base top. A band left with under coverageMin of its cells is skipped.
   const stepNear = dilate3(stepCells, nx, ny);
   const fronts: { shape: MultiPoly; value: number }[] = [];
-  for (const face of facesOf(shape)) {
+  for (const face of facesOf(shape, fp.shape)) {
     if (!streets.facing(face.mid, face.n, BOXES.frontStreetM, BOXES.frontFacingCos)) continue;
     const bandMask = cellMask(
       sw,
@@ -856,10 +902,12 @@ export function deriveBoxes(
     // The band must stand over the base top AND over the roof surface: a gable end facing the
     // street reaches toward the ridge, above mid-roof, but is no false front. On a flat roof the
     // two tests are the same.
-    if (value - top < BOXES.frontRiseM || quantile(above, BOXES.frontPct) < BOXES.frontRiseM)
+    if (value - baseTop < BOXES.frontRiseM || quantile(above, BOXES.frontPct) < BOXES.frontRiseM)
       continue;
     fronts.push({ shape: intersect(bufferLine(face.path, BOXES.frontDepthM), shape), value });
   }
+  // Steps win over strips whatever their height (a step reaching the street face is the facade
+  // there); between strips the taller wins.
   fronts.sort((a, b) => b.value - a.value);
   const frontBoxes: { shape: MultiPoly; value: number }[] = [];
   let taken = stepUnion;

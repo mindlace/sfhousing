@@ -43,6 +43,11 @@ export const BOXES = {
   pitchMinRiseM: 1.0,
   pitchMinSlope: 0.18,
   pitchMinR2: 0.6,
+  // A pitched fit also needs the median local slope over the raised cells (h Gaussian-smoothed at
+  // pitchSlopeSigmaCells against LiDAR noise) to be at least pitchSlopeShareMin x the fitted
+  // slope: a stepped roof fits a plane but is flat almost everywhere.
+  pitchSlopeSigmaCells: 2,
+  pitchSlopeShareMin: 0.5,
   // Coverage.
   groundShareMin: 0.8,
   coverageMin: 0.5,

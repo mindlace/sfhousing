@@ -65,7 +65,10 @@ function run(
   const b = bboxOf(fp.shape);
   const pad = 4;
   const w = synthWindow(scene, { x0: b.x0 - pad, y0: b.y0 - pad, x1: b.x1 + pad, y1: b.y1 + pad });
-  return deriveBoxes(w, { fp, shift: shiftOf(), streets: streetsFront, ...o });
+  const r = deriveBoxes(w, { fp, shift: shiftOf(), streets: streetsFront, ...o });
+  // The global constraint, asserted on every scenario this helper runs.
+  expectInside(r.boxes, o.area ?? fp.shape);
+  return r;
 }
 
 /** The global constraint: no LiDAR-derived box pokes outside its footprint (and its holes). */
@@ -515,6 +518,7 @@ describe('deriveBoxes', () => {
       expect(boxes[0]).toMatchObject({ src: 'box', heightM: 13, baseM: 0, k: 0 });
       expect(boxes[0].shape).toEqual(fp.shape);
       expect(roof).toMatchObject({ fallback: 'no_lidar', roof: 'unknown', groundM: null });
+      expectInside(boxes, fp.shape);
     });
 
     it('no shift (no coverage) is no_lidar', () => {
@@ -607,6 +611,7 @@ describe('deriveBoxes', () => {
       });
       expect(boxes).toHaveLength(1);
       expect(boxes[0].shape).toEqual(half);
+      expectInside(boxes, half);
     });
   });
 
@@ -616,14 +621,104 @@ describe('deriveBoxes', () => {
     // Ground rising 20 -> 26 across the footprint (a ramp; a kink at the walls would be smoothed
     // by the 1 m ground grid).
     const ground = (x: number): number => 20 + 0.6 * (x - 100);
-    const s: SynthScene = { ground, boxes: [{ ring, top: (x) => 33 - ground(x) }] };
+    // A level roof at 33 m NAVD88 and a 30 m2 penthouse at 40 m, both drawn above local ground.
+    const s: SynthScene = {
+      ground,
+      boxes: [
+        { ring, top: (x) => 33 - ground(x) },
+        { ring: rect(106, 205, 109, 215), top: (x) => 40 - ground(x) }
+      ]
+    };
     const { boxes, roof } = run(s, fp);
     expect(Math.abs(roof.groundM! - 23)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(roof.groundMinM! - 20)).toBeLessThanOrEqual(0.1);
+    // Against the median ground (23) the roof is level at 10 and the penthouse at 17. Against
+    // local ground the roof would read as a 13 -> 7 shed (pitched, with an eave and a ridge) and
+    // the penthouse at about 40 - 24.5 = 15.5, so these assertions fail for a local reference.
     expect(roof.roof).toBe('flat');
-    expect(boxes).toHaveLength(1);
-    expect(Math.abs(boxes[0].heightM - 10)).toBeLessThanOrEqual(0.1);
-    expectInside(boxes, fp.shape);
+    expect(roof.eaveM).toBeNull();
+    expect(roof.ridgeM).toBeNull();
+    const base = bySrc(boxes, 'base');
+    expect(base).toHaveLength(1);
+    expect(Math.abs(base[0].heightM - (33 - roof.groundM!))).toBeLessThanOrEqual(0.1);
+    const steps = bySrc(boxes, 'step');
+    expect(steps).toHaveLength(1);
+    expect(Math.abs(steps[0].heightM - (40 - roof.groundM!))).toBeLessThanOrEqual(0.1);
+    expect(boxes).toHaveLength(2);
+  });
+
+  describe('rise and gap are measured from the rendered base top', () => {
+    // A 2.0 m roof renders at the 2.5 m floor (heightRangeM).
+    const ring = rect(100, 200, 110, 220);
+    const fp = fpOf([[ring]]);
+
+    it('a band 1.1 m over the roof but 0.6 m over the rendered top is no front', () => {
+      const { boxes, roof } = run(
+        { ground: flatGround, boxes: [{ ring, top: (_x, y) => (y < 202 ? 3.1 : 2.0) }] },
+        fp
+      );
+      expect(bySrc(boxes, 'base')[0].heightM).toBe(BOXES.heightRangeM[0]);
+      expect(bySrc(boxes, 'front')).toHaveLength(0);
+      expect(roof.nFront).toBe(0);
+    });
+
+    it('a region 2.6 m over the roof but 2.1 m over the rendered top is no step', () => {
+      const { boxes, roof } = run(
+        {
+          ground: flatGround,
+          boxes: [
+            { ring, top: 2.0 },
+            { ring: rect(103, 208, 109, 214), top: 4.6 }
+          ]
+        },
+        fp,
+        { streets: new StreetIndex([]) }
+      );
+      expect(bySrc(boxes, 'step')).toHaveLength(0);
+      expect(roof.nStep).toBe(0);
+    });
+  });
+
+  it('ridgeDeg stays in [0, 180) for a ridge just west of north', () => {
+    // A 6 x 20 m gable rotated 0.03 degrees anticlockwise: its ridge bears 359.97 = 179.97.
+    const a = (0.03 * Math.PI) / 180;
+    const [cx, cy] = [103, 210];
+    const rot = (x: number, y: number): [number, number] => [
+      cx + (x - cx) * Math.cos(a) - (y - cy) * Math.sin(a),
+      cy + (x - cx) * Math.sin(a) + (y - cy) * Math.cos(a)
+    ];
+    const ring: Ring = rect(100, 200, 106, 220).map(([x, y]) => rot(x, y));
+    // Distance across the ridge, in the rotated frame.
+    const across = (x: number, y: number): number =>
+      (x - cx) * Math.cos(a) + (y - cy) * Math.sin(a);
+    const { roof } = run(
+      {
+        ground: flatGround,
+        boxes: [{ ring, top: (x, y) => 10 - (4 / 3) * Math.abs(across(x, y)) }]
+      },
+      fpOf([[ring]])
+    );
+    expect(roof.roof).toBe('pitched');
+    expect(roof.ridgeDeg).toBeGreaterThanOrEqual(0);
+    expect(roof.ridgeDeg).toBeLessThan(180);
+    expect(Math.min(roof.ridgeDeg!, 180 - roof.ridgeDeg!)).toBeLessThanOrEqual(0.5);
+  });
+
+  it('no front along an area cut that faces a street', () => {
+    // A counted part covers the south 5 m (the street side); its LiDAR leaks 1.5 m past the cut.
+    // The uncovered area's south edge is a cut, not the building's exterior.
+    const ring = rect(100, 200, 110, 220);
+    const fp = fpOf([[ring]]);
+    const north: MultiPoly = [[rect(100, 205, 110, 220)]];
+    const s: SynthScene = {
+      ground: flatGround,
+      boxes: [{ ring, top: (_x, y) => (y < 206.5 ? 20 : 10) }]
+    };
+    const { boxes, roof } = run(s, fp, { area: north });
+    expect(bySrc(boxes, 'base')).toHaveLength(1);
+    expect(bySrc(boxes, 'front')).toHaveLength(0);
+    expect(roof.nFront).toBe(0);
+    // An exterior street face inside `area` still gets its front: 'area restricts the derivation'.
   });
 
   it('samples at the shift, draws at the footprint', () => {
