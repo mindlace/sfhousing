@@ -12,6 +12,7 @@
 | `src/lib/sim/world/runner/ensemble.ts` | One ensemble: units, feed logs, copies (`COPY_MONTHS`)                                                         |
 | `src/lib/sim/world/runner/dataset.ts`  | Chunk set, load, `MassingCtx`, `CompileCtx` and its `YieldSource`                                              |
 | `src/lib/sim/world/runner/lookups.ts`  | Brushes, outlines, preview, `lotAt`, lid lots, card deps                                                       |
+| `src/lib/sim/world/runner/warm.ts`     | Warm-ahead queue: one (row, revision) massing per unit (D12)                                                   |
 | `src/lib/sim/router.ts`                | Routes `openTimeline`, `setPolicy`, `viewMonth`, `resyncMap` to the timeline host                              |
 
 ## The worker
@@ -26,9 +27,9 @@ The router treats `openTimeline` as `initScenario`: it disposes the editor host'
 
 ### Slicing
 
-A unit is one world one month (`step`), or one of `create`, `restore`, `copy`, `feed`, `quiet`, a compile `step(20)`, a `warm` massing row, a `cityInput` or a `heights` build step. A slice runs units until `SLICE_PLAN_MS` (45 ms); a unit of a kind runs only when the time used plus the largest of that kind's last 4 costs fits; the first unit always runs (D7). Then `setTimeout`.
+A unit is one world one month (`step`), or one of `create`, `restore`, `copy`, `feed`, `quiet`, a compile `step(20)`, a `warm` massing of one (row, revision), a `cityInput` or a `heights` build step. A slice runs units until `SLICE_PLAN_MS` (45 ms); a unit of a kind runs only when the time used plus the largest of that kind's last 4 costs fits; the first unit always runs (D7). Then `setTimeout`.
 
-A flush (`MapStream.flush(world1, statics, 20)`) is a task of its own, at most every 250 ms (D6). Warm units mass world 1's started and revised rows just before it, in slices of their own (D12). When filling ends the stream is drained until an update says `complete` (D5).
+A flush (`MapStream.flush(world1, statics, 20)`) is a task of its own, at most every 250 ms (D6). Warm units mass world 1's started and revised rows, one (row, revision) per unit, just before it, in slices of their own (D12). When filling ends the stream is drained until an update says `complete` (D5).
 
 ### Order
 
@@ -91,7 +92,7 @@ A throw in a unit posts `error` `'timeline'` at the current rev and stops fillin
 - **D9** `MoneyFeed` null without pools, else world 1's ledger and the frame of `through`.
 - **D10** `lookups` on a change of permitting objects at the last `viewMonth`, and after every edit.
 - **D11** A compile throw other than `LeverFormatError` is `'timeline'`, as rule 21.
-- **D12** Warm world 1's massings before each flush; a cold massing over 50 ms is reported, not split.
+- **D12** Warm world 1's massings before each flush, one (row, revision) per unit (`runner/warm.ts`); a cold massing over 50 ms is reported, not split.
 
 ## What the old host supplied
 
@@ -135,14 +136,13 @@ Live 2026-11-10-6ee5a23d (155,020 parcels, gross table, baseline money 8 pools),
 
 The host's heap baseline is the dataset, every chunk and the compiles with 1 + 1 worlds; Task 1's is after load and compiles. Task 1's are the trustworthy absolute figures; the host's confirm them and add the edits. Each added zoning state costs about 16 MB (its zoning view); the 20 edits held 11.8 MB more than a fresh open of the same document.
 
-Tasks over 50 ms on the live city, host under Vitest (bundled the same, 101 to 103 ms for the first): a warm task of 99.2 ms (one warm unit masses every revision of a row: `CASE:2014.1370PRX:phase:1`, 42.6 + 40.3 ms); a warm task of 62.1 ms and slices of 51.6, 52.9 and 57.9 ms with `create` units (`planDue` up to 38.5 ms): a unit costlier than its kind's estimate. On the bench city (no money) only compile seams pass 50 ms (51.1, 51.2 ms).
+Tasks over 50 ms on the live city, host under Vitest (bundled the same, 100 to 103 ms for the first), measured before the post-Task-8 fix: a warm task of 99.2 ms (one warm unit then massed every revision of a row: `CASE:2014.1370PRX:phase:1`, 42.6 + 40.3 ms; fixed since: one unit per revision); a warm task of 62.1 ms and slices of 51.6, 52.9 and 57.9 ms with `create` units (`planDue` up to 38.5 ms): a unit costlier than its kind's estimate. On the bench city (no money) only compile seams pass 50 ms (51.1, 51.2 ms).
 
 ## Known limits
 
 - **Heap**: S16's 300 MB is not met (427.7 MB live set, 546.2 MB with the month-0 copy); the partner re-sets it. `HEAP_BOUND_MB` in `host.perf.spec.ts` is null until then and the heap case asserts only the leak margin.
 - **Rich money**: on the live city with world-funding's bench money set, `planDue` is 77.6 / 111.4 ms per world (median / max), the change month 154 to 188 ms per world unit, 96 creates 4.3 s: over the 50 ms unit bar. A bound inside the step (`StepCtx`) is world-core's, deferred.
 - **Cold massing**: `CASE:2007.0946PRX:phase:3` is one generator call of about 636 ms, accepted; warm-ahead moves it out of the flush.
-- **Warm unit per row**: a warm unit masses every revision of a row, so two heavy revisions (`CASE:2014.1370PRX:phase:1`) make a 100 ms task; D12 queues (row, revision).
 - **Estimates**: a unit costlier than its kind's last 4 can push a slice a few ms past 50 (`create`, `warm`).
 - **`resyncMap`**: the snapshot is unbudgeted (rule 20): about 10 ms warm, 1.2 s with a cold memo.
 - **Load**: `loadScenario` precomputes the input outside any slice (`precomputeOf` 61 to 67 ms, as the old host's load).

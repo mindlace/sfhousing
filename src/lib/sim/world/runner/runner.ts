@@ -77,6 +77,7 @@ import type { World, WorldEvent } from '../types';
 import type { Dataset } from './dataset';
 import { COPY_MONTHS, createEnsemble, type Ensemble, type UnitKind } from './ensemble';
 import { cityTransfer, lidLotsOf, lidsTransfer, scheduleReady } from './lookups';
+import { createWarmQueue } from './warm';
 
 // Bound once, as world-core's hot modules do (docs/dev/world-core.md, Cost).
 const { chunkOf, scoreStaticsOf } = scoreModule;
@@ -289,8 +290,16 @@ export function createRunner(deps: RunnerDeps): Runner {
   let dirty = false;
   /** The last update said `complete`. */
   let complete = false;
-  /** World 1's rows started or revised, to mass before the next flush (D12). */
-  const warm = new Set<number>();
+  /** World 1's rows started or revised, massed one revision per unit before the next flush (D12). */
+  const warm = createWarmQueue(
+    (row) => {
+      const w = plan?.ensemble?.worlds[0];
+      if (w === undefined) return null;
+      const s = scheduleAt(w, ds.statics, row, monthLastDay(asOf, w.month));
+      return s !== null && scheduleReady(ds, s) ? s : null;
+    },
+    (s, k) => massingFor(s, k, ds.massing)
+  );
 
   // the height limits (S14), as scenario-host.ts:325-335, 416
   /** The city build of the zoning in view, until done. */
@@ -582,21 +591,13 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (e.kind === 'start' || e.kind === 'revise') warm.add(e.row);
   }
 
-  /** Masses one of world 1's queued rows on the generator memo the stream's massings share. */
-  function warmUnit(): void {
-    const row: number = warm.values().next().value!;
-    warm.delete(row);
-    const w = plan?.ensemble?.worlds[0];
-    if (w === undefined) return;
-    const s = scheduleAt(w, ds.statics, row, monthLastDay(asOf, w.month));
-    // a cell waiting on its chunk is massed by the flush once ready
-    if (s === null || !scheduleReady(ds, s)) return;
-    for (let k = 0; k < s.revisions.length; k++) massingFor(s, k, ds.massing);
-  }
+  /** Rows queued, or a row being warmed, remain (D12). */
+  const warmPending = () => warm.pending();
 
   function run(u: Unit): void {
     if (u.kind === 'compile') compileUnit(u.side!);
-    else if (u.kind === 'warm') warmUnit();
+    else if (u.kind === 'warm')
+      warm.unit(); // one (row, revision): the estimator gates each
     else if (u.kind === 'cityInput' || u.kind === 'heights') heightsUnit();
     else u.side!.ensemble!.unit();
   }
@@ -942,7 +943,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         const s = ahead.shift()!;
         if (!unfinished(s)) continue;
         u = { kind: 'compile', side: s };
-      } else if (warmOnly) u = warm.size > 0 ? { kind: 'warm', side: null } : null;
+      } else if (warmOnly) u = warmPending() ? { kind: 'warm', side: null } : null;
       else u = pick();
       if (u === null) break; // `pick` offers an unfinished compile itself when nothing else runs
       if (!first) {
@@ -1005,7 +1006,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (mapTaskDue()) mapTask();
       else if (flushDue()) {
         // D12: warm before the flush, in slices of their own; then the flush, a task of its own
-        if (warm.size > 0) slice(true);
+        if (warmPending()) slice(true);
         else flush();
       } else if (edit !== null) editSlice();
       else slice(false);

@@ -545,21 +545,48 @@ function hostOn(c: City) {
 
 // ---------------------------------------------------------------- reading the tasks
 
-/** A task over the bar is accepted when a compile seam or the one cold massing explains it. */
+/**
+ * A task over the bar is accepted when the accepted items explain it: the one cold massing over
+ * the bar (its time), and a compile step's overrun past its 20 ms budget (a compile seam). Only
+ * those items' time is excused. Every top-level unit, less the accepted items inside it, must
+ * still fit the bar, and so must the task as a whole; any other cold massing over the bar misses.
+ */
 function verdict(t: TaskRec): string {
   const parts = t.parts ?? [];
+  const accepted = (p: Part) =>
+    p.label === 'massingFor' &&
+    p.ms > SLICE_BAR_MS &&
+    p.detail?.startsWith(`${ACCEPTED_MASSING}:`) === true;
   const cold = parts.filter((p) => p.label === 'massingFor' && p.ms > SLICE_BAR_MS);
-  if (cold.length > 0) {
-    const ok = cold.every((p) => p.detail?.startsWith(`${ACCEPTED_MASSING}:`));
-    return ok
-      ? 'accepted: cold massing'
-      : `MISS: cold massing ${cold.map((p) => p.detail).join(', ')}`;
+  const badCold = cold.filter((p) => !accepted(p));
+  if (badCold.length > 0) return `MISS: cold massing ${badCold.map((p) => p.detail).join(', ')}`;
+  // Parts are recorded as they end, so a top-level part follows the nested parts it holds.
+  let inside: Part[] = [];
+  let excused = 0;
+  const reasons = new Set<string>();
+  const overUnits: string[] = [];
+  for (const p of parts) {
+    if (p.depth > 0) {
+      inside.push(p);
+      continue;
+    }
+    let mine = 0;
+    for (const q of [p, ...inside]) {
+      if (!accepted(q)) continue;
+      mine += q.ms;
+      reasons.add('cold massing');
+    }
+    const seam = p.label === 'compile.step' ? Math.max(0, p.ms - 20) : 0;
+    if (seam > 0) reasons.add('compile seam');
+    excused += mine + seam;
+    const rest = p.ms - mine - seam;
+    if (rest > SLICE_BAR_MS) overUnits.push(`${p.label} ${r1(rest)}`);
+    inside = [];
   }
-  // a compile step that overran its 20 ms budget in a seam: the task minus the overrun fits
-  const over = parts
-    .filter((p) => p.depth === 0 && p.label === 'compile.step')
-    .reduce((n, p) => n + Math.max(0, p.ms - 20), 0);
-  if (over > 0 && t.ms - over <= SLICE_BAR_MS) return 'accepted: compile seam';
+  if (overUnits.length > 0) return `MISS: unit over the bar ${overUnits.join(', ')}`;
+  if (excused > 0 && t.ms - excused <= SLICE_BAR_MS) {
+    return `accepted: ${[...reasons].join(' and ')}`;
+  }
   return 'MISS';
 }
 

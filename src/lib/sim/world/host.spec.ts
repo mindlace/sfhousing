@@ -832,3 +832,56 @@ describe('compiles while filling', () => {
     runner.dispose();
   });
 });
+
+describe('warm-ahead (D12)', () => {
+  it('a slice runs no second warm unit whose estimate would overrun', async () => {
+    // Every generator call costs 30 ms of the fake clock and records its task. The chunks of the
+    // shared dataset are loaded, so world 1's rows are warmed before the flushes mass them: the
+    // generator runs in warm units only, and a second 30 ms unit never fits a 45 ms slice.
+    const clock = fakeClock();
+    let task = 0;
+    const calls: number[] = [];
+    const charged = <F extends (...a: never[]) => unknown>(f: F) =>
+      ((...a: Parameters<F>) => {
+        clock.tick(30);
+        calls.push(task);
+        return f(...a);
+      }) as unknown as F;
+    const memo = createLru<string, GeneratedBuilding | null>(10_000);
+    const massing = {
+      ...ds.massing,
+      memo,
+      gen: charged(ds.massing.gen),
+      genForUnits: charged(ds.massing.genForUnits)
+    };
+    const posts: string[] = [];
+    const runner: Runner = createRunner({
+      dataset: { ...ds, memo, massing },
+      post: (msg) => posts.push(msg.type),
+      now: () => {
+        clock.tick(0.1);
+        return clock.now();
+      },
+      later: (fn, ms) =>
+        clock.setTimeout(() => {
+          task++;
+          fn();
+        }, ms),
+      warn: () => {},
+      logOnce: () => {}
+    });
+    runner.open(1, DEFAULT_POLICY4, {}, 2, 60);
+    await clock.runUntil(() => posts.includes('filled') && done());
+    function done(): boolean {
+      const w = runner.ensembles().plan?.worlds[0];
+      return w !== undefined && w.month === 60 && posts.includes('cells');
+    }
+    expect(posts).not.toContain('error');
+    // (one revision per unit is warm.spec.ts's; fixture-0's world 1 has no two-revision row)
+    expect(calls.length).toBeGreaterThan(1);
+    const perTask = new Map<number, number>();
+    for (const t of calls) perTask.set(t, (perTask.get(t) ?? 0) + 1);
+    expect(Math.max(...perTask.values())).toBe(1);
+    runner.dispose();
+  });
+});
