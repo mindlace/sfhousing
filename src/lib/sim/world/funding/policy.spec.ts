@@ -11,7 +11,7 @@ import type { SimInput } from '$lib/sim/scenario/types';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, Programme } from '$lib/timelapse/types';
-import { lotRow } from '../columns';
+import { ensureLot, lotRow } from '../columns';
 import type { DueList } from '../due';
 import { monthFirstDay, monthLastDay } from '../months';
 import type { PolicyFrame, PolicyTimeline } from '../policy/frame';
@@ -19,13 +19,14 @@ import { frameIdOf } from '../policy/intern';
 import { lotEntity } from '../rates';
 import { staticsOf, type Statics } from '../statics';
 import { IDENTITY } from '../test/timeline';
-import type { FundingSystem, StepCtx, StepSink } from '../types';
+import { LOT_FREE, type FundingSystem, type StepCtx, type StepSink, type World } from '../types';
 import { withFunding } from '../world';
-import { joinLine, spellsOf } from './apply';
+import { applyLots, joinLine, spellsOf } from './apply';
 import { kindClock } from './clocks';
-import { KIND_AFFORDABLE, fundOf, spellOf, type FundLine } from './columns';
+import { KIND_AFFORDABLE, KIND_MARKET, fundOf, spellOf, type FundLine } from './columns';
 import { frameMoney, sameMoney } from './frame-money';
 import { serveLine } from './serve';
+import { policyChanged } from './policy';
 import { createFundingSystem } from './system';
 import {
   MONEY_MONTHS,
@@ -65,7 +66,7 @@ function spied(): { sys: FundingSystem; joined: Joined[]; changes: Change[] } {
   const joined: Joined[] = [];
   const changes: Change[] = [];
   const apply = sys.apply;
-  const policyChanged = sys.policyChanged;
+  const changed = sys.policyChanged;
   sys.apply = (ctx, lots) => {
     const from = 'gone' in ctx.world.line ? fundOf(ctx.world).line.n : 0;
     apply(ctx, lots);
@@ -85,7 +86,7 @@ function spied(): { sys: FundingSystem; joined: Joined[]; changes: Change[] } {
   };
   sys.policyChanged = (ctx) => {
     const before = structuredClone(fundOf(ctx.world).line);
-    policyChanged(ctx);
+    changed(ctx);
     changes.push({ month: ctx.month, before, after: structuredClone(fundOf(ctx.world).line) });
   };
   return { sys, joined, changes };
@@ -568,8 +569,30 @@ describe('an application whose lot-month began before a change of money', () => 
   const input = fundedMini();
   const s = staticsOf(input);
   const kinds = ['market', 'affordable'] as const;
+  type Kind = (typeof kinds)[number];
+  const code = (k: Kind) => (k === 'affordable' ? KIND_AFFORDABLE : KIND_MARKET);
+  const kindName = (c: number): Kind => (c === KIND_AFFORDABLE ? 'affordable' : 'market');
 
-  it('seeds 1 to 120 of random finances: it joins re-made under the new frame, or lapses', () => {
+  /** The attempt of free `lot` in `world`. */
+  const attemptOf = (world: World, lot: number) => {
+    const li = lotRow(world.lots, lot);
+    return li < 0 ? 0 : world.lots.k[li];
+  };
+  /** The clock of `kind` on `lot`'s attempt `k` respelled from `ctx`'s first day (rule 18). */
+  const respelled = (ctx: StepCtx, t: PolicyTimeline, lot: number, k: number, kind: Kind) => {
+    const sh = seedHash(ctx.seed);
+    const stream = streamOf(sh, lotEntity(s, lot), k);
+    const existing = spellsOf(ctx, lot)[kind].existing;
+    const spell = { lot, k, stream, r: ctx.firstDay - 1, existing };
+    return kindClock(s, t, ctx.month, sh, spell, kind);
+  };
+  /** The row of `lot`'s `kind` among rows `from..n-1`, -1 when none. */
+  const rowIn = (line: FundLine, from: number, lot: number, kind: number) => {
+    for (let i = from; i < line.n; i++) if (line.lot[i] === lot && line.kind[i] === kind) return i;
+    return -1;
+  };
+
+  it('random finances 1 to 120: it joins re-made, or lapses and applies again as policyChanged has it', () => {
     let stale = 0;
     let lapsed = 0;
     for (let seed = 1; seed <= 120; seed++) {
@@ -577,45 +600,219 @@ describe('an application whose lot-month began before a change of money', () => 
       const t = oneMoneyTimeline({ ...input, finance }, finance);
       const sys = createFundingSystem();
       const apply = sys.apply;
+      const changed = sys.policyChanged;
+      /** Applications `apply` must join this month, as (lot, kind code, day, key day). */
+      let expected: { month: number; lot: number; kind: number; day: Day; keyDay: Day }[] = [];
+      sys.policyChanged = (ctx) => {
+        const was = waiting(fundOf(ctx.world).line);
+        changed(ctx);
+        const { line } = fundOf(ctx.world);
+        // Each kind that lapsed here and whose new spell's day is in this month.
+        for (const a of was) {
+          const li = lotRow(ctx.world.lots, a.lot);
+          if (li >= 0 && ctx.world.lots.state[li] !== LOT_FREE) continue;
+          const k = attemptOf(ctx.world, a.lot);
+          if (spellOf(line, a.lot, a.kind, k) !== ctx.firstDay - 1) continue;
+          const c = respelled(ctx, t, a.lot, k, kindName(a.kind));
+          if (c.day === null || c.month !== ctx.month) continue;
+          const keyDay = c.keyDay;
+          expected.push({ month: ctx.month, lot: a.lot, kind: a.kind, day: c.day, keyDay });
+        }
+      };
       sys.apply = (ctx, lots) => {
         const sh = seedHash(ctx.seed);
+        const { line } = fundOf(ctx.world);
         // The applications whose size and bundle come from a frame other in money than this one.
-        const want: { lot: number; kind: number }[] = [];
+        const want: { lot: number; kind: Kind; spell: number }[] = [];
         for (const lot of lots) {
           const spells = spellsOf(ctx, lot);
           for (const kind of kinds) {
+            if (waiting(line).some((a) => a.lot === lot && a.kind === code(kind))) continue;
             const c = kindClock(s, t, ctx.month, sh, spells[kind], kind);
             if (c.day === null || c.month !== ctx.month) continue;
             if (sameMoney(t.frameAt(c.viewMonth), ctx.frame, t)) continue;
-            want.push({ lot, kind: kind === 'affordable' ? KIND_AFFORDABLE : 0 });
+            want.push({ lot, kind, spell: spells[kind].r });
           }
         }
-        const from = fundOf(ctx.world).line.n;
+        const from = line.n;
         apply(ctx, lots);
-        const { line } = fundOf(ctx.world);
         const fm = frameMoney(t, ctx.frame);
+        for (const e of expected.filter((x) => x.month === ctx.month)) {
+          const i = rowIn(line, from, e.lot, e.kind);
+          expect(i).toBeGreaterThanOrEqual(0);
+          expect(line.applied[i]).toBe(e.day);
+          expect(line.keyDay[i]).toBe(e.keyDay);
+        }
+        expected = expected.filter((x) => x.month > ctx.month);
         for (const w of want) {
-          let i = from;
-          while (i < line.n && !(line.lot[i] === w.lot && line.kind[i] === w.kind)) i++;
-          // Not joined: that kind was already waiting.
-          if (i === line.n) continue;
           stale++;
-          if (line.gone[i] === 1) {
-            lapsed++;
-            const li = lotRow(ctx.world.lots, w.lot);
-            const k = li < 0 ? 0 : ctx.world.lots.k[li];
-            expect(spellOf(line, w.lot, w.kind, k)).toBe(ctx.firstDay - 1);
-          } else {
+          const k = attemptOf(ctx.world, w.lot);
+          const i = rowIn(line, from, w.lot, code(w.kind));
+          if (spellOf(line, w.lot, code(w.kind), k) !== ctx.firstDay - 1) {
+            // Re-made: it joined under this month's frame.
+            expect(i).toBeGreaterThanOrEqual(0);
             expect(line.viewMonth[i]).toBe(ctx.month);
             expect(fm.bundleIds(line.bundle[i])).not.toBeNull();
+            continue;
           }
+          // Lapsed: its new spell from the first day applies this month when its day is in it.
+          lapsed++;
+          const c = respelled(ctx, t, w.lot, k, w.kind);
+          if (c.day === null || c.month !== ctx.month) {
+            expect(i).toBe(-1);
+            continue;
+          }
+          expect(i).toBeGreaterThanOrEqual(0);
+          expect(line.applied[i]).toBe(c.day);
+          expect(line.keyDay[i]).toBe(c.keyDay);
+          expect(line.viewMonth[i]).toBe(c.viewMonth);
+          expect(fm.bundleIds(line.bundle[i])).not.toBeNull();
         }
+        // The month's new rows are in key order (rule 9).
+        for (let i = from + 1; i < line.n; i++)
+          expect(line.key[i]).toBeGreaterThan(line.key[i - 1]);
       };
       worldOf(sys, s, t, seed).stepTo(MONTHS);
+      expect(expected).toEqual([]);
     }
-    // Not vacuous: such applications occur, and some of them lapse.
+    // Not vacuous: such applications occur and some lapse (one applying again in the same month
+    // is rare here; the next test builds one).
     expect(stale).toBeGreaterThan(0);
     expect(lapsed).toBeGreaterThan(0);
+  });
+
+  it('a kind lapsed on joining applies again in the same month, as one lapsed in policyChanged', () => {
+    // A hot tiny city (log-odds -4, slope 30) whose money is grant gA (share 0.99) through month
+    // 2, then grant gB (share 0.98) from month 3: each spell passes in its first lot-month. A lot
+    // freed in the middle of month 2 has its first lot-month straddle months 2 and 3.
+    const c = 3;
+    const q = tinyQueue({ logOdds: Array(5).fill(-4), units: [10, 10, 10, 10, 10] });
+    const stack = tinyStack({ asOf: q.asOf, slope: 30 });
+    const hot: SimInput = {
+      ...q,
+      finance: { ...stack, programmes: stack.programmes.map((g) => ({ ...g, from: q.asOf + 1e5 })) }
+    };
+    const hs = staticsOf(hot);
+    const ample: Inflow[] = [{ kind: 'yearly', from: q.asOf, to: null, dollarsPerYear: 1e12 }];
+    const docA = fundDoc(
+      q.asOf,
+      poolOf('u-a', ample),
+      [grantOf('gA', 'u-a', 0.99, q.asOf)],
+      [[1, c - 1]]
+    );
+    const docB = fundDoc(
+      q.asOf,
+      poolOf('u-b', ample),
+      [grantOf('gB', 'u-b', 0.98, q.asOf)],
+      [[c, null]]
+    );
+    const money = [...docA.kinds.money, ...docB.kinds.money];
+    const t = moneyTimeline(hot, { schema: 4, kinds: { zoning: [], permitting: [], money } });
+    const lot = 2;
+    const r = monthFirstDay(q.asOf, c - 1) + 15;
+    const firstDay = monthFirstDay(q.asOf, c);
+
+    /** A funded world whose `lot` is free since `r`, and month `c`'s context on it. */
+    const setUp = (seed: number) => {
+      const world = withFunding(createFundingSystem()).createWorld(hs, t, seed, { event() {} });
+      const li = ensureLot(world.lots, lot, hs.asOf);
+      world.lots.r[li] = r;
+      world.month = c - 1;
+      const puts: [number, number][] = [];
+      const ctx: StepCtx = {
+        world,
+        due: {
+          take() {
+            throw new Error('no take');
+          },
+          put: (e, m) => puts.push([e, m]),
+          drop() {}
+        },
+        statics: hs,
+        timeline: t,
+        frame: t.frameAt(c),
+        month: c,
+        seed,
+        out: { event() {} },
+        firstDay,
+        lastDay: monthLastDay(q.asOf, c),
+        startProject() {
+          throw new Error('no starts here');
+        },
+        displace() {
+          throw new Error('no displacement here');
+        }
+      };
+      return { world, ctx, puts };
+    };
+
+    let found = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const sh = seedHash(seed);
+      const stream = streamOf(sh, lotEntity(hs, lot), 0);
+      // Its gA application falls in month c on a lot-month that began in month c - 1.
+      const c0 = kindClock(hs, t, c, sh, { lot, k: 0, stream, r, existing: 0 }, 'affordable');
+      if (c0.day === null || c0.month !== c || c0.viewMonth !== c - 1) continue;
+      // Its spell from month c's first day applies in month c too.
+      const spell = { lot, k: 0, stream, r: firstDay - 1, existing: 0 };
+      const again = kindClock(hs, t, c, sh, spell, 'affordable');
+      if (again.day === null || again.month !== c) continue;
+      found++;
+      const want = {
+        applied: again.day,
+        key: lineKey(again.keyDay, hs.rank[lot], 'affordable'),
+        bundle: 'gB',
+        viewMonth: c
+      };
+      const rowOf = (line: FundLine) => {
+        let i = line.n - 1;
+        while (i >= 0 && !(line.gone[i] === 0 && line.lot[i] === lot)) i--;
+        const { applied, key, bundle, viewMonth } = line;
+        return i < 0
+          ? null
+          : {
+              applied: applied[i],
+              key: key[i],
+              bundle: bundle[i],
+              viewMonth: viewMonth[i]
+            };
+      };
+
+      // On joining: the gA application lapses as it joins, and gB's joins in its place.
+      const a = setUp(seed);
+      applyLots(a.ctx, Int32Array.of(lot));
+      const lineA = fundOf(a.world).line;
+      expect(waiting(lineA).length).toBe(1);
+      expect(rowOf(lineA)).toEqual(want);
+      expect(spellOf(lineA, lot, KIND_AFFORDABLE, 0)).toBe(firstDay - 1);
+
+      // In policyChanged: the same application, waiting from month c - 1, lapses at month c; the
+      // lot is planned for month c and its apply there joins the same application.
+      const b = setUp(seed);
+      const lineB = fundOf(b.world).line;
+      joinLine(lineB, c - 1, [
+        {
+          lot,
+          kind: KIND_AFFORDABLE,
+          applied: c0.day,
+          keyDay: c0.keyDay,
+          key: lineKey(c0.keyDay, hs.rank[lot], 'affordable'),
+          bundle: 'gA',
+          f: c0.f,
+          units: c0.units,
+          stories: c0.stories,
+          level: c0.level,
+          viewMonth: c - 1
+        }
+      ]);
+      lineB.appliedThrough = c - 1;
+      policyChanged(b.ctx);
+      expect(waiting(lineB)).toEqual([]);
+      expect(b.puts).toEqual([[lot, c]]);
+      applyLots(b.ctx, Int32Array.of(lot));
+      expect(rowOf(lineB)).toEqual(want);
+    }
+    expect(found).toBeGreaterThan(0);
   });
 });
 

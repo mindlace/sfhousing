@@ -148,50 +148,65 @@ export function joinLine(line: FundLine, month: number, apps: Application[]): vo
   noteAdded(line, before, from, line.n);
 }
 
+/** The application of clock `c` (its day set) on `lot`, size and bundle from `c`'s frame. */
+function appOf(ctx: StepCtx, lot: number, c: KindClock): Application {
+  const ids = ctx.timeline.frameAt(c.viewMonth).finance!.programmes;
+  return {
+    lot,
+    kind: CODE[c.kind],
+    applied: c.day!,
+    keyDay: c.keyDay,
+    key: lineKey(c.keyDay, ctx.statics.rank[lot], c.kind),
+    bundle: c.bundle.map((g) => ids[g].id).join(','),
+    f: c.f,
+    units: c.units,
+    stories: c.stories,
+    level: c.level,
+    viewMonth: c.viewMonth
+  };
+}
+
 /**
  * System 4: each kind whose day falls in `ctx.month` and is not waiting joins the line; the month's
  * new rows are appended in key order after every waiting row (rule 9). Each records (rule 6) the
  * lot, the kind, the day, the key day and key, the bundle's programme ids, the size, the level and
- * the month whose view gave the size. An application whose size and bundle came from a frame
- * before this month's change is re-made or lapses under this month's frame (`remakeRow`). Records
- * `ctx.month` as `line.appliedThrough`.
+ * the month whose view gave the size. Records `ctx.month` as `line.appliedThrough`.
+ *
+ * An application whose lot-month began under an earlier frame (its day falls after this month's
+ * change) carries that frame's size and bundle: it is re-made under this month's frame as a
+ * waiting one is by `policyChanged` (rule 17), or lapses (rule 18). As after a lapse in
+ * `policyChanged`, a lapsed kind's new spell (from the month's first day) is read at once: when
+ * its day falls in this month it joins with the month's other new rows, in key order. That
+ * spell's lot-month 1 runs on this month's frame, so it cannot lapse again (asserted).
  */
 export function applyLots(ctx: StepCtx, lots: Int32Array): void {
   const { line } = fundOf(ctx.world);
-  const rank = ctx.statics.rank;
   const apps: Application[] = [];
   for (const lot of lots) {
     for (const c of clocksOf(ctx, lot, line)) {
       if (c === null || c.day === null || c.month !== ctx.month) continue;
-      const ids = ctx.timeline.frameAt(c.viewMonth).finance!.programmes;
-      apps.push({
-        lot,
-        kind: CODE[c.kind],
-        applied: c.day,
-        keyDay: c.keyDay,
-        key: lineKey(c.keyDay, rank[lot], c.kind),
-        bundle: c.bundle.map((g) => ids[g].id).join(','),
-        f: c.f,
-        units: c.units,
-        stories: c.stories,
-        level: c.level,
-        viewMonth: c.viewMonth
-      });
+      const app = appOf(ctx, lot, c);
+      if (!stale(ctx, c.viewMonth)) {
+        apps.push(app);
+        continue;
+      }
+      const spell = spellsOf(ctx, lot)[c.kind];
+      const re = remade(ctx, frameMoney(ctx.timeline, ctx.frame), lot, c.kind, spell, app.level);
+      if (re !== null) {
+        apps.push({ ...app, ...re, viewMonth: ctx.month });
+        continue;
+      }
+      setSpell(line, lot, app.kind, spell.k, ctx.firstDay - 1);
+      const again = spellsOf(ctx, lot)[c.kind];
+      const sh = seedHash(ctx.seed);
+      const c2 = kindClock(ctx.statics, ctx.timeline, ctx.month, sh, again, c.kind);
+      if (c2.day === null || c2.month !== ctx.month) continue;
+      if (stale(ctx, c2.viewMonth))
+        throw new Error(`applyLots: lot ${lot}'s spell from this month reads another frame`);
+      apps.push(appOf(ctx, lot, c2));
     }
   }
-  const from = line.n;
   joinLine(line, ctx.month, apps);
-  // An application whose lot-month began under an earlier frame (its day falls after a change)
-  // carries that frame's size and bundle: it is re-made under this month's frame as a waiting
-  // one was by `policyChanged` (rule 17), or lapses (rule 18). The core plans every lot that
-  // applied again after `apply`, so a lapsed kind's new spell is read then.
-  let remade = false;
-  for (let i = from; i < line.n; i++) {
-    if (!stale(ctx, line.viewMonth[i])) continue;
-    remakeRow(ctx, frameMoney(ctx.timeline, ctx.frame), line, i);
-    remade = true;
-  }
-  if (remade) line.version++;
   line.appliedThrough = ctx.month;
 }
 
@@ -202,41 +217,70 @@ function stale(ctx: StepCtx, m: number): boolean {
   return g.view !== ctx.frame.view || !sameMoney(g, ctx.frame, ctx.timeline);
 }
 
+/** What `remake` gives an application under `ctx.frame`. */
+interface Remade {
+  /** Programme ids joined with ','. */
+  bundle: string;
+  f: number;
+  units: number;
+  stories: number;
+  level: number;
+}
+
 /**
- * Re-makes waiting line row `i` of a free lot under `ctx.frame` (rule 17, `remake`): the size the
- * attempt's SIZE draw gives in the frame's view against the lot's existing homes now, and the
- * bundle of its kind that size meets. It lapses when there is no size or no chance in the view,
- * the bundle is empty, or the bundle's level is below the row's; a lapse marks the row `gone` and
- * records the kind's new spell from the month's first day (rule 18). Otherwise the row takes the
- * bundle's ids, the size, the level and `viewMonth = ctx.month`, keeping its place, `month`,
- * `applied`, `keyDay` and `key`. Writes columns directly: the caller bumps `line.version`. True
- * when it lapsed.
+ * Rule 17's `remake` of an application of `kind` on free `lot`, at coverage level `level`, on the
+ * attempt `spell`: the size the attempt's SIZE draw gives in `ctx.frame`'s view against the lot's
+ * existing homes now, and the bundle of its kind that size meets. Null (a lapse) when there is no
+ * size or no chance in the view, the bundle is empty, or its level is below `level`.
+ */
+function remade(
+  ctx: StepCtx,
+  fm: FrameMoney,
+  lot: number,
+  kind: ProjectKind,
+  spell: Spell,
+  level: number
+): Remade | null {
+  const view = ctx.frame.view;
+  const uS = drawOn(spell.stream, P.SIZE, 0);
+  const size = sizeIn(ctx.statics, view, ctx.frame.calibration, lot, spell.existing, uS);
+  if (size === null || view.pre.logit[lot] === -Infinity) return null;
+  const bundle = fm.bundleOf(kind, size.units);
+  if (bundle.length === 0) return null;
+  const now = coverageLevel(fm.index.price(kind, bundle, size.protoId).coverage);
+  if (below(now, level)) return null;
+  const programmes = fm.fin.programmes;
+  return {
+    bundle: bundle.map((g) => programmes[g].id).join(','),
+    f: size.f,
+    units: size.units,
+    stories: size.stories,
+    level: now
+  };
+}
+
+/**
+ * Re-makes waiting line row `i` of a free lot under `ctx.frame` (rule 17, `remade`). A lapse marks
+ * the row `gone` and records the kind's new spell from the month's first day (rule 18). Otherwise
+ * the row takes the bundle's ids, the size, the level and `viewMonth = ctx.month`, keeping its
+ * place, `month`, `applied`, `keyDay` and `key`. Writes columns directly: the caller bumps
+ * `line.version`. True when it lapsed.
  */
 export function remakeRow(ctx: StepCtx, fm: FrameMoney, line: FundLine, i: number): boolean {
   const lot = line.lot[i];
   const kind: ProjectKind = line.kind[i] === KIND_AFFORDABLE ? 'affordable' : 'market';
   const spell = spellsOf(ctx, lot)[kind];
-  const view = ctx.frame.view;
-  const uS = drawOn(spell.stream, P.SIZE, 0);
-  const size = sizeIn(ctx.statics, view, ctx.frame.calibration, lot, spell.existing, uS);
-  let bundle: number[] = [];
-  let level = 0;
-  if (size !== null && view.pre.logit[lot] !== -Infinity) {
-    bundle = fm.bundleOf(kind, size.units);
-    if (bundle.length > 0)
-      level = coverageLevel(fm.index.price(kind, bundle, size.protoId).coverage);
-  }
-  if (size === null || bundle.length === 0 || below(level, line.level[i])) {
+  const re = remade(ctx, fm, lot, kind, spell, line.level[i]);
+  if (re === null) {
     line.gone[i] = 1;
     setSpell(line, lot, line.kind[i], spell.k, ctx.firstDay - 1);
     return true;
   }
-  const programmes = fm.fin.programmes;
-  line.bundle[i] = bundle.map((g) => programmes[g].id).join(',');
-  line.f[i] = size.f;
-  line.units[i] = size.units;
-  line.stories[i] = size.stories;
-  line.level[i] = level;
+  line.bundle[i] = re.bundle;
+  line.f[i] = re.f;
+  line.units[i] = re.units;
+  line.stories[i] = re.stories;
+  line.level[i] = re.level;
   line.viewMonth[i] = ctx.month;
   return false;
 }
