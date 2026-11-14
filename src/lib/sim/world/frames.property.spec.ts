@@ -2,6 +2,7 @@
 // a speed change moves days one way and changes no outcome; a zoning change leaves what came
 // before it and the lots it does not touch alone; the view a start takes; replanning a lot freed on
 // a month's last day; a re-anchored stage that ends in the change month.
+import { isDeepStrictEqual } from 'node:util';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { FILL_LEVELS } from '$lib/data/scenario-codec';
 import { precomputeOf } from '$lib/sim/scenario/input';
@@ -18,6 +19,7 @@ import { masterAt, scheduleAt } from './read';
 import { reanchor, rowSpeed } from './stage';
 import { staticsOf, type Statics } from './statics';
 import { benchInput } from './test/cities.node';
+import { expectEqual } from './test/same.node';
 import { Recorder, SEEDS, horizonMonth, runWorld } from './test/run';
 import {
   changingAt,
@@ -116,13 +118,16 @@ describe('a frame change in mid-run, bench city', () => {
         const b = run(statics, changingAt(M, f, g, new Int32Array(0)), seed, through);
         // Everything before the change is identical, rows included.
         const before = (r: Run) => r.rec.events.filter((e) => e.month < M);
-        expect(before(b)).toEqual(before(a));
+        expectEqual(before(b), before(a));
         // From the change on, every event (stage ends and starts alike) is dated in the month
-        // that sent it.
+        // that sent it. Mismatches are collected and asserted once: a per-event `expect` over the
+        // whole city is most of this test's time.
+        const bad: unknown[] = [];
         let dated = 0;
         for (const e of b.rec.events) {
           if (e.month < M) continue;
-          expect(monthOfDay(input.asOf, e.day), `${e.kind} row ${e.row}`).toBe(e.month);
+          const m = monthOfDay(input.asOf, e.day);
+          if (m !== e.month) bad.push({ kind: e.kind, row: e.row, day: e.day, month: e.month, m });
           dated++;
         }
         expect(dated).toBeGreaterThan(0);
@@ -138,18 +143,23 @@ describe('a frame change in mid-run, bench city', () => {
             const { day: _b, ...kb } = endB;
             void _a;
             void _b;
-            expect(kb, id).toEqual(ka);
+            if (!isDeepStrictEqual(kb, ka)) bad.push({ id, end: kb, want: ka });
           }
           const ea = enteredOf(evA);
           const eb = enteredOf(evB);
           const [slow, fast] = faster ? [ea, eb] : [eb, ea];
           for (const [stage, d] of slow) {
-            expect(fast.has(stage), `${id} ${stage}`).toBe(true);
-            expect(fast.get(stage)!, `${id} ${stage}`).toBeLessThanOrEqual(d);
+            const got = fast.get(stage);
+            if (got === undefined || got > d) bad.push({ id, stage, fast: got, slow: d });
             compared++;
-            if (fast.get(stage)! < d) moved++;
+            if (got !== undefined && got < d) moved++;
           }
         }
+        expect({ v, count: bad.length, first: bad.slice(0, 5) }).toEqual({
+          v,
+          count: 0,
+          first: []
+        });
         expect(compared).toBeGreaterThan(0);
         expect(moved).toBeGreaterThan(0);
       }
