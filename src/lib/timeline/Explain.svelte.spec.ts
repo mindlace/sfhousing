@@ -74,4 +74,26 @@ describe('Explain', () => {
       .element(page.getByRole('button', { name: 'About the forecast' }))
       .toBeInTheDocument();
   });
+
+  it('closes on Escape when opened by hover with focus elsewhere', async () => {
+    await render(ExplainHost, { props: { text: TEXT } });
+    await target().hover();
+    await expect.element(page.getByText(TEXT)).toBeVisible();
+    await userEvent.keyboard('{Escape}');
+    await expect.element(page.getByText(TEXT)).not.toBeInTheDocument();
+  });
+
+  it('opens on a touch tap and closes on the second', async () => {
+    await render(ExplainHost, { props: { text: TEXT } });
+    const el = target().element() as HTMLElement;
+    const tap = () => {
+      el.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true }));
+      el.focus();
+      el.dispatchEvent(new MouseEvent('click', { detail: 1, bubbles: true }));
+    };
+    tap();
+    await expect.element(page.getByText(TEXT)).toBeVisible();
+    tap();
+    await expect.element(page.getByText(TEXT)).not.toBeInTheDocument();
+  });
 });

@@ -41,7 +41,8 @@
     const next = e.relatedTarget as Node | null;
     if (!next || !wrapper?.contains(next)) open = false;
   }
-  function onkeydown(e: KeyboardEvent) {
+  // On the window: Escape closes however it opened, including by hover with focus elsewhere.
+  function onwindowkeydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && open) {
       open = false;
       e.stopPropagation();
@@ -51,6 +52,7 @@
     pressKind = e.pointerType;
     openAtPress = open;
   }
+  // Wrap mode has no second-tap close: a tap there belongs to the focusable child's own action.
   function onclick(e: MouseEvent) {
     if (as !== 'button') return;
     if (e.detail === 0) open = !open;
@@ -71,6 +73,8 @@
   });
 </script>
 
+<svelte:window onkeydown={onwindowkeydown} />
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <span
   bind:this={wrapper}
@@ -79,7 +83,6 @@
   onpointerleave={onleave}
   {onfocusin}
   {onfocusout}
-  {onkeydown}
   {onpointerdown}
 >
   {#if as === 'button'}
@@ -100,7 +103,7 @@
     <span
       id={textId}
       role="tooltip"
-      class="mt-1 text-sm text-ink-muted md:absolute md:top-0 md:left-full md:z-30 md:mt-0 md:ml-1 md:w-56 md:rounded md:border md:border-line md:bg-surface md:px-2 md:py-1 md:text-ink md:shadow-md"
+      class="mt-1 text-sm text-ink-muted md:absolute md:top-0 md:left-full md:z-30 md:mt-0 md:ml-1 md:w-max md:max-w-[min(14rem,calc(100vw-2rem))] md:rounded md:border md:border-line md:bg-surface md:px-2 md:py-1 md:text-ink md:shadow-md"
     >
       {text}
     </span>
