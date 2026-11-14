@@ -695,9 +695,11 @@ export function deriveBoxes(
     nFinite++;
     if (sw.hag[k] < BOXES.raisedHagM) nLow++;
   }
-  if (nInt === 0 || nFinite / nInt < BOXES.coverageMin || shift.source === 'none')
-    return fallback('unreliable');
+  if (nInt === 0 || nFinite / nInt < BOXES.coverageMin) return fallback('unreliable');
+  // Ground before the registration test: a lot built after the flight has nothing to register
+  // against (its score grid is flat, source 'none'), and it is a new building, not unreliable.
   if (nLow / nFinite >= BOXES.groundShareMin) return fallback('new_building');
+  if (shift.source === 'none') return fallback('unreliable');
 
   // Height above the reference, and C: interior cells, finite, not vegetation, raised.
   const h = new Float64Array(nx * ny);

@@ -1,5 +1,10 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { boxesLockProblem, BOXES_ID } from '../lib/lidar/artifact';
 import { LIDAR_PROJECT, LIDAR_VENV } from '../lib/lidar/python';
+import { readLock, writeLock, type Lock } from '../lib/lock';
 import { doctor, lidarSyncHint, reportDoctor, type DoctorCheck } from '../steps/doctor';
 
 const fakeRun = (outputs: Record<string, string>) => async (cmd: string, args: string[]) => {
@@ -88,6 +93,51 @@ describe('doctor', () => {
         ' (needs network once)'
     );
     expect(LIDAR_VENV).toMatch(/^\/.*\/pipeline\/\.cache\/lidar-venv$/);
+  });
+});
+
+describe('doctor boxes-lock', () => {
+  const fixed = { nodeVersion: 'v24.2.0', which: async () => null, run: fakeRun({}) };
+  const miniLock = (): Lock => {
+    const l = readLock('pipeline/test/fixtures/mini/sources.lock.json');
+    return { sources: l.sources.filter((s) => s.id !== BOXES_ID) };
+  };
+  const tmpLock = (lock: Lock): string => {
+    const p = join(mkdtempSync(join(tmpdir(), 'sfh-doctor-')), 'sources.lock.json');
+    writeLock(p, lock);
+    return p;
+  };
+
+  it('is ok without a lock or without a building-boxes entry', async () => {
+    const none = await doctor({ ...fixed, lockPath: join(tmpdir(), 'sfh-no-such-lock.json') });
+    expect(none.find((c) => c.name === 'boxes-lock')).toMatchObject({ ok: true });
+    const bare = await doctor({ ...fixed, lockPath: tmpLock(miniLock()) });
+    const check = bare.find((c) => c.name === 'boxes-lock');
+    expect(check).toMatchObject({ ok: true });
+    expect(check?.optional).toBeUndefined();
+  });
+
+  it('is a required failure carrying the boxesLockProblem message when stale', async () => {
+    const lock = miniLock();
+    lock.sources.push({
+      id: BOXES_ID,
+      files: [],
+      retrievedAt: '2026-10-10T00:00:00.000Z',
+      upstreamVersion:
+        'boxes/1 code=aaaaaaaaaaaa config=aaaaaaaaaaaa overture-buildings=aaaaaaaaaaaa ' +
+        'overture-building-parts=- usgs-lidar-sf=- datasf-parcels=- datasf-streets=- ' +
+        'datasf-neighborhoods=-',
+      rowCount: 0,
+      license: 'ODbL-1.0',
+      homepage: 'https://www.usgs.gov/3d-elevation-program'
+    });
+    const problem = boxesLockProblem(lock);
+    expect(problem).toMatch(/npm run pipeline -- boxes/);
+    const checks = await doctor({ ...fixed, lockPath: tmpLock(lock) });
+    const check = checks.find((c) => c.name === 'boxes-lock');
+    expect(check).toMatchObject({ ok: false, hint: problem });
+    expect(check?.optional).toBeUndefined();
+    expect(reportDoctor([check!], () => {})).toBe(1);
   });
 });
 

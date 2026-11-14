@@ -115,6 +115,26 @@ describe('mapped parts', () => {
     expect(partCoverage(fp, counted)).toBeCloseTo(0.5, 6);
   });
 
+  it('drops slivers where a part edge almost meets the footprint edge', () => {
+    // The mini b10: lng/lat rounding leaves the part's north edge a few mm off the footprint's,
+    // and the raw difference keeps a zero-width spike back to the footprint's far corner.
+    const fp: MultiPoly = [
+      [
+        [
+          [95, 5],
+          [105, 5],
+          [105, 25],
+          [95, 25.008]
+        ] as Ring
+      ]
+    ];
+    const counted = [part('p10', rect(95, 5, 100, 24.999), { heightM: 18 })];
+    const u = uncoveredArea(fp, counted);
+    expect(Math.abs(area(u) - 100)).toBeLessThan(0.1);
+    for (const poly of u)
+      for (const ring of poly) for (const [x] of ring) expect(x).toBeGreaterThan(99.9);
+  });
+
   it('drops uncovered pieces under 2 m2', () => {
     const fp = rect(0, 0, 10, 10);
     const counted = [part('x', rect(0, 0, 10, 9.9))];

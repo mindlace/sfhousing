@@ -152,6 +152,23 @@ five parts. Local metres, as the lots:
 `make-fixture.ts` writes `sources.lock.json` from scratch, so it drops any `building-boxes` entry; it then
 prints `run npm run pipeline -- boxes --fixture, then fixture --update-golden`.
 
+## Building boxes
+
+`raw/building-boxes/` (`boxes.parquet`, `roofs.parquet`, `inputs.json`) is the fixture's locked
+`building-boxes` artifact, derived from the files above by `npm run pipeline -- boxes --fixture` and listed
+in `sources.lock.json` with `retrievedAt` 2026-10-10 (the fixture's date, so `builtAt` stays put). The
+derivation is deterministic: rerunning on the same inputs gives the same bytes. Regenerate in this order
+whenever a raw file, the boxes code (`BOXES_CODE_PATHS` in `pipeline/lib/version.ts`) or `BOXES` changes:
+
+```
+npx tsx pipeline/test/fixtures/mini/make-fixture.ts   # only when the raw files change
+npm run pipeline -- boxes --fixture
+npm run pipeline -- fixture --update-golden
+```
+
+`boxes-command.test.ts` ("the committed mini artifact is current") fails when the committed artifact no
+longer matches a fresh derivation.
+
 ## Streets
 
 `datasf-streets` (3psu-pn9h, GeoJSON): `line` is a MultiLineString in local metres; `cnn` and `classcode` are

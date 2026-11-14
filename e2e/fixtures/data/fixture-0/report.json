@@ -144,7 +144,7 @@
     "link.ppaOnly": 1,
     "link.satellites": 0,
     "link.splitComponents": 1,
-    "manifest.bytes": 6850,
+    "manifest.bytes": 7047,
     "multiphase.descendants.2007.0001PRX": 1,
     "multiphase.descendants.2010.0002PRX": 1,
     "multiphase.descendants.2012-000020PRX": 1,
@@ -651,7 +651,7 @@
       "ok": true
     },
     {
-      "detail": "manifest 6850/64000 B; neighborhoods 709/150000 B",
+      "detail": "manifest 7047/64000 B; neighborhoods 709/150000 B",
       "id": "V11",
       "ok": true
     },
@@ -785,7 +785,7 @@
     "derivedData": "ODbL-1.0",
     "notice": "Derived data files under /data/ that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0."
   },
-  "lockSha256": "21cf918cbfa22026027165fe441906b33d3edc4caec76a1ac5a9709883294fbc",
+  "lockSha256": "7cae0cfaf22f5884c9c8f6ade68bbd06d315477477f456212148968e8773db76",
   "tilesSkipped": false,
   "toolVersions": {
     "duckdb": "1.5.6",

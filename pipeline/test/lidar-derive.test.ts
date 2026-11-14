@@ -586,6 +586,13 @@ describe('deriveBoxes', () => {
       expect(roof.fallback).toBe('unreliable');
     });
 
+    it("a bare lot whose registration found nothing ('none') is new_building", () => {
+      const { roof } = run({ ground: flatGround, boxes: [] }, fp, {
+        shift: shiftOf(0, 0, 'none')
+      });
+      expect(roof.fallback).toBe('new_building');
+    });
+
     it("shift source 'none' is unreliable", () => {
       const { roof } = run({ ground: flatGround, boxes: [{ ring, top: 10 }] }, fp, {
         shift: shiftOf(0, 0, 'none')

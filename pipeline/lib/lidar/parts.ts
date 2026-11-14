@@ -3,7 +3,7 @@
 // LiDAR derivation as its `area`). Parts are curated, so they may poke outside the footprint, and
 // registration never shifts them.
 import { BOXES } from '../../boxes-config.js';
-import { area, difference, intersect, union, type MultiPoly } from '../../geom.js';
+import { area, difference, grow, inset, intersect, union, type MultiPoly } from '../../geom.js';
 import type { RenderBox } from './derive.js';
 
 export interface Part {
@@ -109,9 +109,16 @@ function unionOfParts(counted: Part[]): MultiPoly {
   return union(counted.map((p) => p.shape));
 }
 
-/** fp minus the union of counted parts; pieces under 2 m2 dropped. */
+/**
+ * fp minus the union of counted parts, opened by partSliverM (slivers narrower than twice that
+ * dropped, the rest clipped back to the raw difference); pieces under 2 m2 dropped.
+ */
 export function uncoveredArea(fp: MultiPoly, counted: Part[]): MultiPoly {
-  return difference(fp, unionOfParts(counted)).filter((poly) => area([poly]) >= MIN_PIECE_M2);
+  const raw = difference(fp, unionOfParts(counted));
+  if (raw.length === 0) return [];
+  const e = BOXES.partSliverM;
+  const opened = intersect(grow(inset(raw, e), e), raw);
+  return opened.filter((poly) => area([poly]) >= MIN_PIECE_M2);
 }
 
 /** area(fp ∩ ∪parts) / area(fp). */

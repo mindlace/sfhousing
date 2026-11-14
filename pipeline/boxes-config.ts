@@ -55,6 +55,9 @@ export const BOXES = {
   // Landmark parts: 5 roof tiers.
   partTiers: 5,
   partTierShapes: ['pyramidal', 'dome', 'cone', 'onion'],
+  // The uncovered area loses slivers under 2x this wide (an opening): part and footprint edges
+  // that should coincide differ by mm to cm after the lng/lat round trip.
+  partSliverM: 0.05,
   splitZoom: 14,
   heightRangeM: [2.5, 340]
 } as const;

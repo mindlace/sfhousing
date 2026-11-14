@@ -9,6 +9,7 @@ import {
   checkDataset,
   type InvariantResult
 } from './steps/check';
+import { boxesCommand } from './steps/boxes';
 import { doctor, reportDoctor } from './steps/doctor';
 import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
@@ -29,6 +30,7 @@ const OUT = join(ROOT, 'pipeline/out');
 const LOCK = join(ROOT, 'pipeline/sources.lock.json');
 const RAW = join(ROOT, 'pipeline/.cache/raw');
 const PIPELINE_MD = join(ROOT, 'docs/dev/pipeline.md');
+const MINI = join(ROOT, 'pipeline/test/fixtures/mini');
 
 export interface ParsedArgs {
   cmd: string | undefined;
@@ -97,6 +99,20 @@ const steps: Record<string, { help: string; run: Step }> = {
   doctor: {
     help: 'check required tools and DuckDB extensions (uv and the LiDAR Python are optional)',
     run: async () => reportDoctor(await doctor(), console.log)
+  },
+  boxes: {
+    help: 'derive the building boxes from the locked footprints, parts and LiDAR tiles and lock the building-boxes artifact [--fixture: the mini fixture]',
+    run: (args) => {
+      const fixture = args.flags.fixture === true;
+      return boxesCommand({
+        lockPath: fixture ? join(MINI, 'sources.lock.json') : LOCK,
+        lidarLockPath: fixture ? LIDAR_LOCK.fixture : LIDAR_LOCK.live,
+        rawDir: fixture ? join(MINI, 'raw') : RAW,
+        byName: fixture,
+        repoRoot: ROOT,
+        fixture
+      });
+    }
   },
   build: {
     help: 'verify the lock, build out/<v>/ and run the invariants (offline) [--skip-tiles]',
