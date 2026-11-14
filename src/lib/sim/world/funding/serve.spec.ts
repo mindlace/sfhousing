@@ -30,10 +30,11 @@ import { withFunding } from '../world';
 import { joinLine, type Application } from './apply';
 import { KIND_AFFORDABLE, KIND_MARKET, fundOf, poolRowOf, type FundLine } from './columns';
 import { frameMoney } from './frame-money';
-import { moneyOnEvent } from './pools';
+import { availableOf, heldOf, moneyOnEvent } from './pools';
 import { awardDay, fundedStartOf, serveLine } from './serve';
 import { createFundingSystem } from './system';
-import { fundedMini, oneMoneyTimeline } from './test/fixtures';
+import { benchFunded } from './test/cities.node';
+import { fundedMini, moneyTimeline, oneMoneyTimeline, runFunded } from './test/fixtures';
 
 type Finance = NonNullable<SimInput['finance']>;
 
@@ -232,6 +233,73 @@ describe('serveLine', () => {
     expect(fl.line.gone[1]).toBe(0);
     // Month 3's scan serves B, on the month's first day.
     const h3 = harness(w2, 3);
+    sys.serve(h3.ctx);
+    expect(h3.starts().map((s) => [s.lot, s.day])).toEqual([[b, monthFirstDay(statics.asOf, 3)]]);
+  });
+
+  it('rule 10: money a chain returns during the scan waits for next month; money already there serves', () => {
+    // Asks of m-city by lot (one application alone on a fresh line).
+    const askLot = (lot: number): number => {
+      const fl = fundOf(freshWorld());
+      joinLine(fl.line, 2, [app(lot, 'affordable', day(2, 1), AFF)]);
+      return askOf(fl.line, 0, 'm-city', 2);
+    };
+    // By ask, largest first: A asks the most, B more than C. B fits only on A's returned money,
+    // C on money already there.
+    const byAsk = LOTS.slice(0, 8).sort((x, y) => askLot(y) - askLot(x));
+    const [a, b, c] = [byAsk[0], byAsk[1], byAsk[byAsk.length - 1]];
+    const askA = askLot(a);
+    const askB = askLot(b);
+    const askC = askLot(c);
+    expect(askB).toBeGreaterThan(askC);
+    expect(askA + askC).toBeGreaterThanOrEqual(askB);
+
+    const w = freshWorld();
+    const { line, pools } = fundOf(w);
+    joinLine(line, 2, [
+      app(a, 'affordable', day(2, 1), AFF),
+      app(b, 'affordable', day(2, 2), AFF),
+      app(c, 'affordable', day(2, 3), AFF)
+    ]);
+    expect(Array.from(line.lot.subarray(0, 3))).toEqual([a, b, c]);
+    const q = poolRowOf(pools, 'm-city');
+    // A's ask and C's: after A, B does not fit on what is left; C does.
+    pools.received[q] = askA + askC;
+    const sys = createFundingSystem();
+    const exit = day(2, 5);
+    const def = fin.pools.find((p) => p.id === 'm-city')!;
+    let held = -1;
+    let mid = -1;
+    const h2 = harness(w, 2, {
+      chain(ctx, row, lot) {
+        if (lot !== a) return;
+        // A's chain: it exits before construction in its award month, releasing its grant.
+        const e: WorldEvent = { kind: 'end', row, day: exit, how: 'exit' };
+        ctx.out.event(e);
+        sys.onProjectEvent(ctx, e);
+        held = heldOf(pools, q);
+        // Mid-scan E4: the scan's available money is the ledger's less the held amount.
+        mid = availableOf(pools, q, def) - held;
+      }
+    });
+    sys.serve(h2.ctx);
+    // B, which needs A's returned money, is not awarded this month; C, on money already there, is.
+    expect(h2.starts().map((s) => s.lot)).toEqual([a, c]);
+    expect(Array.from(line.gone.subarray(0, 3))).toEqual([1, 0, 1]);
+    // The release is written at the event and the counters move at once; during the scan the
+    // returned dollars are held out of available money (E4 less the held amount).
+    expect(
+      h2.log.some((l) => l.what === 'ledger' && l.e.kind === 'release' && l.e.pool === 'm-city')
+    ).toBe(true);
+    expect(held).toBe(askA);
+    expect(mid).toBe(def.leverage * (askA + askC) - askA);
+    // After the scan nothing is held, and the release did not set the pool's money day (T17).
+    expect(heldOf(pools, q)).toBe(0);
+    expect(pools.moneyMonth[q]).not.toBe(2);
+    expect(pools.committed[q]).toBe(askC);
+    expect(availableOf(pools, q, def)).toBe(def.leverage * (askA + askC) - askC);
+    // Month 3's scan serves B, on the month's first day.
+    const h3 = harness(w, 3);
     sys.serve(h3.ctx);
     expect(h3.starts().map((s) => [s.lot, s.day])).toEqual([[b, monthFirstDay(statics.asOf, 3)]]);
   });
@@ -562,6 +630,23 @@ describe('serveLine', () => {
     f2.pools.received[poolRowOf(f2.pools, 'm-city')] = 1e12;
     const h2 = harness(w2, 2, { result: (r) => r + 1 });
     expect(() => serveLine(h2.ctx)).toThrow(/predicted/);
+  });
+});
+
+describe('rule 10 on the bench city', () => {
+  it('synthCity bench funding set, seed 2: the award made on money returned in month 219 waits for month 220', () => {
+    const { input: bench, doc } = benchFunded('bench');
+    const st = staticsOf(bench);
+    const t = moneyTimeline(bench, doc);
+    const { world, events } = runFunded(st, t, 2, 220, { ledger: false });
+    const awards = (m: number): number[] =>
+      events
+        .flatMap((e) => (e.kind === 'award' && e.month === m ? [world.projects.src[e.row]] : []))
+        .sort((x, y) => x - y);
+    // In month 219 an award's chain exits in its award month and releases money to u-bench-fund
+    // inside the scan (same-scan investigation). Lot 4116 needs that money: it waits a month.
+    expect(awards(219)).toEqual([4048, 76989, 83994, 90704]);
+    expect(awards(220)).toEqual([4116]);
   });
 });
 

@@ -71,7 +71,9 @@ writing**, or the index goes stale silently (a write without a bump is not detec
 - **Line order** (rule 9): `joinLine` appends a month's applications after every waiting row, in
   key order. Order is (month applied, key); `applied` orders nothing.
 - **Once-a-month scan** (rule 10): `serve` runs once after the month's applications joined; money
-  that moves after it waits for next month. Grouped serving (rule 1's decision): per award group
+  that moves after it waits for next month. Money returned during the scan (a release or repayment
+  by an award's chain) waits for next month's scan too, and does not set the pool's money day;
+  commits and losses apply at once (`holdingReturns`, `heldOf` in `pools.ts`). Grouped serving (rule 1's decision): per award group
   (kind, bundle, market prototype) the largest passing size H, then the earliest member at most H
   in line order, confirmed with `awardPasses`; every H is dropped after an award.
 - **Award day T17** (rule 11): `awardDay` is the later of `applied` (this month) or the month's
@@ -232,7 +234,8 @@ The live case needs `SFH_WORLD_LIVE` (a directory with `manifest.json` and `scen
 all four tolerances. For the bench funding set, awards are printed and held only to within 0.03 of
 their recorded ratios (below); net homes, net sd and funded homes are held to the tolerances.
 
-Run of 2026-11-13 (synthCity; live `2026-11-10-6ee5a23d`; after the award-day fix); "r" is
+Run of 2026-11-13 (synthCity; live `2026-11-10-6ee5a23d`; after the award-day fix and the rule 10
+hold of money returned during the scan); "r" is
 |new − old| / old:
 
 | Case                | Year | net new  | net sd  | net old  | old sd  | mean r | sd r  | awards new | awards old | aw r  | funded new | funded old | fu r  |
@@ -241,22 +244,22 @@ Run of 2026-11-13 (synthCity; live `2026-11-10-6ee5a23d`; after the award-day fi
 |                     | 10   | 196535.8 | 7447.0  | 196536.0 | 7446.9  | 0.0000 | 0.000 | 39.97      | 39.93      | 0.001 | 7770.2     | 7770.3     | 0.000 |
 |                     | 20   | 411972.3 | 11924.0 | 411982.1 | 11921.5 | 0.0000 | 0.000 | 78.14      | 78.09      | 0.001 | 15572.0    | 15572.5    | 0.000 |
 |                     | 40   | 814565.0 | 16162.0 | 814567.7 | 16160.2 | 0.0000 | 0.000 | 153.99     | 153.94     | 0.000 | 31171.7    | 31171.4    | 0.000 |
-| synthCity bench set | 5    | 85558.6  | 3956.9  | 85580.1  | 3911.1  | 0.0003 | 0.012 | 85.84      | 67.33      | 0.275 | 6877.2     | 6726.0     | 0.022 |
-|                     | 10   | 197840.4 | 7495.8  | 197834.0 | 7495.6  | 0.0000 | 0.000 | 128.05     | 108.34     | 0.182 | 10857.4    | 10673.5    | 0.017 |
-|                     | 20   | 414895.8 | 11959.7 | 414870.3 | 11970.0 | 0.0001 | 0.001 | 216.75     | 198.96     | 0.089 | 20631.9    | 20445.6    | 0.009 |
-|                     | 40   | 820518.8 | 16248.9 | 820542.3 | 16246.2 | 0.0000 | 0.000 | 388.43     | 375.16     | 0.035 | 40184.5    | 40005.0    | 0.004 |
+| synthCity bench set | 5    | 85557.4  | 3957.4  | 85580.1  | 3911.1  | 0.0003 | 0.012 | 85.70      | 67.33      | 0.273 | 6875.0     | 6726.0     | 0.022 |
+|                     | 10   | 197837.0 | 7496.0  | 197834.0 | 7495.6  | 0.0000 | 0.000 | 128.25     | 108.34     | 0.184 | 10858.4    | 10673.5    | 0.017 |
+|                     | 20   | 414900.1 | 11969.2 | 414870.3 | 11970.0 | 0.0001 | 0.000 | 216.69     | 198.96     | 0.089 | 20631.3    | 20445.6    | 0.009 |
+|                     | 40   | 820533.4 | 16222.3 | 820542.3 | 16246.2 | 0.0000 | 0.001 | 389.04     | 375.16     | 0.037 | 40182.0    | 40005.0    | 0.004 |
 | live baseline       | 5    | 16552.0  | 3898.5  | 16552.0  | 3898.5  | 0.0000 | 0.000 | 25.39      | 25.38      | 0.001 | 4651.6     | 4651.3     | 0.000 |
 |                     | 10   | 36143.7  | 5364.8  | 36144.8  | 5364.6  | 0.0000 | 0.000 | 41.52      | 41.52      | 0.000 | 7772.0     | 7772.1     | 0.000 |
 |                     | 20   | 58564.9  | 5311.7  | 58569.4  | 5310.2  | 0.0001 | 0.000 | 81.67      | 81.68      | 0.000 | 15570.3    | 15570.4    | 0.000 |
 |                     | 40   | 86256.8  | 6061.7  | 86267.9  | 6073.8  | 0.0001 | 0.002 | 160.97     | 160.95     | 0.000 | 31167.6    | 31168.1    | 0.000 |
 
-T3 (funded here, ordinary there in the same month): synthCity baseline 8, bench set 2908, live 1.
+T3 (funded here, ordinary there in the same month): synthCity baseline 8, bench set 2925, live 1.
 
 ### Awards differ from today's engine with the bench set
 
 The line is served once a month in month-then-key order (rule 9, R5); today's engine serves by
-application day. With the bench funding set (synthCity) the mean awards differ by r = 0.275, 0.182,
-0.089 and 0.035 at years 5, 10, 20 and 40; net homes and funded homes agree within tolerance. So
+application day. With the bench funding set (synthCity) the mean awards differ by r = 0.273, 0.184,
+0.089 and 0.037 at years 5, 10, 20 and 40; net homes and funded homes agree within tolerance. So
 homes agree, but award counts and which projects get money do not.
 
 Seed 1: lot 9132112 (111 homes) is awarded on day 1 by today's engine, but waits to month 12 here,

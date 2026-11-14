@@ -40,6 +40,33 @@ function noteMoney(pools: FundPools, q: number, month: number, day: Day): void {
   }
 }
 
+/**
+ * Rule 10: the dollars returned to each capped pool row (releases and repayments) while serve's
+ * scan is open, held out of the scan's available money until it ends; null outside the scan, so
+ * nothing is held between steps and the world carries no column for it.
+ */
+let scan: { pools: FundPools; held: Map<number, number> } | null = null;
+
+/**
+ * Runs serve's scan `fn` over `pools` with returned money held (rule 10): money a chain started in
+ * the scan returns is booked and written at its event, but waits for next month's scan and does
+ * not set the pool's money day (T17). Reductions apply at once.
+ */
+export function holdingReturns(pools: FundPools, fn: () => void): void {
+  if (scan !== null) throw new Error('holdingReturns: a scan is already open');
+  scan = { pools, held: new Map() };
+  try {
+    fn();
+  } finally {
+    scan = null;
+  }
+}
+
+/** Dollars returned to pool row `q` in the open scan and held from it; 0 outside a scan. */
+export function heldOf(pools: FundPools, q: number): number {
+  return scan !== null && scan.pools === pools ? (scan.held.get(q) ?? 0) : 0;
+}
+
 /** System 2 (rule 12): every entry of frame.finance.arrivals, in list order; 0 dollars skipped. */
 export function moneyIn(ctx: StepCtx): void {
   const fin = ctx.frame.finance!;
@@ -236,6 +263,9 @@ function book(
   }
   if (kind === 'repay' || kind === 'release') {
     const fq = fm.pool.get(pools.mPool[m]);
-    if (fq !== undefined && fm.index.capped[fq] === 1) noteMoney(pools, q, ctx.month, day);
+    if (fq === undefined || fm.index.capped[fq] !== 1) return;
+    // Rule 10: returned during serve's scan, it waits for next month's scan (and its money day).
+    if (scan !== null && scan.pools === pools) scan.held.set(q, (scan.held.get(q) ?? 0) + d);
+    else noteMoney(pools, q, ctx.month, day);
   }
 }

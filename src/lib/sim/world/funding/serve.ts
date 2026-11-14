@@ -13,7 +13,7 @@ import { leaveLine } from './apply';
 import { KIND_AFFORDABLE, fundOf, poolRowOf, type FundLine, type FundPools } from './columns';
 import { frameMoney, type FrameMoney } from './frame-money';
 import { firstAtMost, lineIndex, rowOfSeq, startAfter, type Group } from './line-index';
-import { availableOf, commitAward } from './pools';
+import { availableOf, commitAward, heldOf, holdingReturns } from './pools';
 import { shadowAward } from './shadow';
 
 const kindOf = (line: FundLine, i: number): ProjectKind =>
@@ -29,7 +29,9 @@ export interface ServeOpts {
  * System 5 (rule 10): one scan in line order (rows 0..n-1, skipping `gone`), each against the
  * pools as they stand. An award's chain may take a later lot's rows off the line (an ordinary
  * start marks them `gone`); they are skipped. Money that moves after the scan waits for next
- * month's: there is no second scan.
+ * month's: there is no second scan. So does money an award's chain returns during the scan (a
+ * release or repayment): it is held out of the scan's available money (`holdingReturns`), while
+ * commits and losses apply at once.
  *
  * Rule 8's guard is lazy: a row whose lot is no longer free (its ordinary clock fired, also when
  * that start gained no home, which the core does without a 'start') is found when it would be
@@ -48,12 +50,20 @@ export interface ServeOpts {
  * (`opts.grouped === false`, a test seam).
  */
 export function serveLine(ctx: StepCtx, opts: ServeOpts = {}): void {
+  const { pools } = fundOf(ctx.world);
+  holdingReturns(pools, () => scanLine(ctx, opts));
+}
+
+/** `serveLine`'s scan, with money returned during it held (`holdingReturns`). */
+function scanLine(ctx: StepCtx, opts: ServeOpts): void {
   const { line, pools } = fundOf(ctx.world);
   const fm = frameMoney(ctx.timeline, ctx.frame);
   const fin = fm.fin;
   // The world pool row of each frame pool index.
   const rowOf = fin.pools.map((p) => poolRowOf(pools, p.id));
-  const avail = (q: number): number => availableOf(pools, rowOf[q], fin.pools[q]);
+  // Available money less what was returned during this scan (rule 10).
+  const avail = (q: number): number =>
+    availableOf(pools, rowOf[q], fin.pools[q]) - heldOf(pools, rowOf[q]);
   if (opts.grouped === false) {
     const n = line.n;
     for (let i = 0; i < n; i++) {
