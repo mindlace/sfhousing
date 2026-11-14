@@ -32,12 +32,29 @@ export interface MoneyRow {
     lostCredit: number;
   }[];
   fundedHomes: number;
+  /** Homes in 'displaced' events by each event's own day (rule 2). */
   displacedHomes: number;
+  /**
+   * The displaced homes of funded projects completed by this month (rule 12): the term of the
+   * `perAddedHome` and `displacedShare` denominators, paired with `fundedHomes`, which also counts
+   * at completion.
+   */
+  displacedHomesCompleted: number;
   publicSpent: number;
 }
 
-/** Today's `TimelineScore['money']`, its series cut at `filledThrough`. */
-export type MoneyView = NonNullable<TimelineScore['money']>;
+/**
+ * Today's `TimelineScore['money']`, its series cut at `filledThrough`, with rule 12's figures read
+ * at `filledThrough`: today's `perAddedHome` and `displacedShare` over `displacedHomesCompleted`.
+ */
+export type MoneyView = NonNullable<TimelineScore['money']> & {
+  /** `MoneyRow.displacedHomesCompleted` by month. */
+  displacedHomesCompleted: number[];
+  /** Public money per added home at `filledThrough`, all money and the City's; null as today's. */
+  perAddedHome: { all: number | null; city: number | null };
+  /** Displaced homes (of completed funded projects) over funded homes at `filledThrough`. */
+  displacedShare: number | null;
+};
 
 /** The score numbers for a run of final months, one entry per calendar month from `from`. */
 export interface SeriesChunk {
@@ -54,11 +71,13 @@ export interface SeriesChunk {
 /**
  * One world's series as plain data that `structuredClone` copies. Per-row columns are indexed by
  * the world's project row and grow as rows start; per-month arrays hold `SERIES_FIELDS` entries
- * per calendar month (pipeline, new, entitledNew, exited, `inProgress` in LIVE order, then world 1's
- * funded and displaced homes, then its homes by income tier in `TIER_FIELDS` order).
+ * per calendar month (pipeline, new, entitledNew, exited, `inProgress` in LIVE order, then the
+ * funded homes, the displaced homes by event day and those of completed funded projects, then the
+ * homes by income tier in `TIER_FIELDS` order). Every funded world files money and tiers; a chunk
+ * carries world 1's.
  */
 export interface WorldSeriesData {
-  version: 3;
+  version: 4;
   /** The last model month passed to `stepped`; 0 before any. */
   stepped: number;
   /** `finalThrough()`. */
@@ -81,6 +100,10 @@ export interface WorldSeriesData {
   filed: Int32Array;
   /** A funded row's award day (its `'award'` event), else `NO_DAY`. */
   award: Int32Array;
+  /** A funded row's displaced homes before its completion (rule 12). */
+  disp: Int32Array;
+  /** A funded row's completion day, else `NO_DAY`. */
+  done: Int32Array;
   /** Per-month deltas. */
   delta: Int32Array;
   /** Per-month prefix sums through `summed`. */

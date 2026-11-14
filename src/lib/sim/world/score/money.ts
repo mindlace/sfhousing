@@ -49,6 +49,7 @@ export function moneyRowsOf(
       })),
       fundedHomes: h.funded,
       displacedHomes: h.displaced,
+      displacedHomesCompleted: h.displacedCompleted,
       publicSpent
     });
   }

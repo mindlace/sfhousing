@@ -352,11 +352,18 @@ describe('the money view at filledThrough (rule 12)', () => {
       horizon,
       months: monthsOf(INPUT.asOf, horizon)
     });
-    expect(Object.keys(v.money!).sort()).toEqual(Object.keys(today).sort());
+    const extra = ['displacedHomesCompleted', 'displacedShare', 'perAddedHome'];
+    expect(Object.keys(v.money!).sort()).toEqual([...Object.keys(today), ...extra].sort());
     // `displacedHomes` counts each 'displaced' event in its own month (rule 2), not at the funded
-    // project's completion as `moneyOf` does: money.spec.ts checks it against the events.
+    // project's completion as `moneyOf` does: money.spec.ts checks it against the events. Rule
+    // 12's term, those of completed funded projects, is `moneyOf`'s at `filledThrough`.
+    const { displacedHomesCompleted, displacedShare: _s, perAddedHome: _p, ...rest } = v.money!;
+    void _s;
+    void _p;
     const strip = (m: typeof today) => ({ ...m, limits: [], displacedHomes: [] });
-    expect(strip(v.money!)).toEqual(strip(today));
+    expect(strip(rest)).toEqual(strip(today));
+    expect(displacedHomesCompleted).toHaveLength(ft + 1);
+    expect(displacedHomesCompleted[ft]).toBe(today.displacedHomes[ft]);
     const upTo = r.displaced.filter((e) => e.day <= horizon).reduce((a, e) => a + e.units, 0);
     expect(v.money!.displacedHomes[ft]).toBe(upTo);
     expect(v.money!.limits).toEqual(score.limits);
@@ -382,24 +389,36 @@ describe('the money view at filledThrough (rule 12)', () => {
     expect(viewOf(before, copy)).toEqual(viewOf(chunksBefore(chunks, 30), score));
   });
 
-  it("perAddedHome divides by world 1's funded minus displaced homes at filledThrough", () => {
+  it("perAddedHome and displacedShare are today's at filledThrough, displaced paired at completion", () => {
     const r = run(1);
     let some = 0;
     let none = 0;
     let differ = 0;
-    let displacing = 0;
+    let apart = 0;
     for (let ft = 0; ft <= score.lastIndex; ft += 6) {
       const a = viewOf([chunk(r, twin(1), 0, ft)], score);
       const b = viewOf([chunk(r, twin(7), 0, ft)], score);
       const m = a.money!;
-      const d = m.fundedHomes[ft] - m.displacedHomes[ft];
-      const all = d <= 0 ? null : Math.round(m.publicSpent[ft] / d);
-      const city = d <= 0 ? null : Math.round(cityOf(m, ft) / d);
-      expect(perAddedHome(m, a.filledThrough, 'all')).toBe(all);
-      expect(perAddedHome(m, a.filledThrough, 'city')).toBe(city);
-      const f = m.fundedHomes[ft];
-      expect(displacedShare(m, a.filledThrough)).toBe(f <= 0 ? null : m.displacedHomes[ft] / f);
-      if (all !== null && m.displacedHomes[ft] > 0) displacing++;
+      // The referee: today's figures over today's money as of that month.
+      const horizon = lastDay(INPUT.asOf, ft);
+      const today = moneyOf({
+        ledger: r.feed.ledger,
+        schedules: readAll(r.world, statics, horizon).schedules,
+        finance: plan,
+        baseline: INPUT.finance!.pools,
+        asOf: INPUT.asOf,
+        horizon,
+        months: monthsOf(INPUT.asOf, horizon)
+      });
+      const all = perAddedHome(today, ft, 'all');
+      expect(m.perAddedHome).toEqual({ all, city: perAddedHome(today, ft, 'city') });
+      expect(m.displacedShare).toBe(displacedShare(today, ft));
+      // and today's formula over the view's own series
+      const d = m.fundedHomes[ft] - m.displacedHomesCompleted[ft];
+      expect(m.perAddedHome.all).toBe(d <= 0 ? null : Math.round(m.publicSpent[ft] / d));
+      expect(m.perAddedHome.city).toBe(d <= 0 ? null : Math.round(cityOf(m, ft) / d));
+      // The shown displaced series and the ratio's term differ in timing.
+      if (m.displacedHomes[ft] !== m.displacedHomesCompleted[ft]) apart++;
       // the plan effect does not enter: another twin leaves the money as it was
       if (JSON.stringify(a.planEffect) !== JSON.stringify(b.planEffect)) differ++;
       expect(b.money).toEqual(a.money);
@@ -409,7 +428,6 @@ describe('the money view at filledThrough (rule 12)', () => {
     expect(differ).toBeGreaterThan(0);
     expect(some).toBeGreaterThan(0);
     expect(none).toBeGreaterThan(0);
-    // Displacement is non-zero at some of the months checked: it enters the denominator.
-    expect(displacing).toBeGreaterThan(0);
+    expect(apart).toBeGreaterThan(0);
   });
 });

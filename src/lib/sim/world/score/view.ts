@@ -1,4 +1,5 @@
 import { debtService } from '$lib/sim/finance';
+import { displacedShare, perAddedHome, type Money } from '$lib/sim/scenario/finance-score';
 import { targetsOf, tierTargetsOf } from '$lib/sim/scenario/score';
 import type {
   MoneyRow,
@@ -28,7 +29,9 @@ function bandOf(m: PlanRow, sd: PlanRow): { lo: PlanRow; hi: PlanRow } {
 /**
  * World 1's money as of month `rows.length - 1` (rule 12): today's `TimelineScore['money']` with
  * its series cut there, `owed` on each debt pool's `received` that month, and `limits` the
- * statics' (the same in every world, fixed as the forecast fills).
+ * statics' (the same in every world, fixed as the forecast fills). `perAddedHome` and
+ * `displacedShare` are today's, read that month over a money whose displaced homes are those of
+ * completed funded projects (`displacedHomesCompleted`), paired with `fundedHomes`.
  */
 function moneyViewOf(rows: MoneyRow[], statics: ScoreStatics): MoneyView {
   const limits = statics.limits;
@@ -74,13 +77,24 @@ function moneyViewOf(rows: MoneyRow[], statics: ScoreStatics): MoneyView {
       nominal: true
     });
   }
-  return {
+  const money: Money = {
     pools,
     fundedHomes: rows.map((r) => r.fundedHomes),
     displacedHomes: rows.map((r) => r.displacedHomes),
     publicSpent: rows.map((r) => r.publicSpent),
     owed,
     limits
+  };
+  const displacedHomesCompleted = rows.map((r) => r.displacedHomesCompleted);
+  const paired: Money = { ...money, displacedHomes: displacedHomesCompleted };
+  return {
+    ...money,
+    displacedHomesCompleted,
+    perAddedHome: {
+      all: perAddedHome(paired, last, 'all'),
+      city: perAddedHome(paired, last, 'city')
+    },
+    displacedShare: displacedShare(paired, last)
   };
 }
 

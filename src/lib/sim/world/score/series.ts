@@ -37,16 +37,20 @@ const FRESH = 1;
 const ENTITLED_NEW = 2;
 const EXITED = 3;
 const STAGE0 = 4;
-/** World 1's extras (rule 2): homes completed by funded projects, homes in 'displaced' events. */
+/**
+ * Money extras (rule 2): homes completed by funded projects, homes in 'displaced' events on their
+ * own day, and (rule 12's denominators) the displaced homes of funded projects completed by then.
+ */
 const FUNDED = STAGE0 + NL;
 const DISPLACED = FUNDED + 1;
-/** World 1's homes by income tier (rule 2), `TIER_FIELDS` in order. */
-const TIER0 = DISPLACED + 1;
+const DISPLACED_DONE = DISPLACED + 1;
+/** Homes by income tier (rule 2), `TIER_FIELDS` in order. */
+const TIER0 = DISPLACED_DONE + 1;
 const TIER_AM = TIER0 + TIER_FIELDS.indexOf('aboveModerate');
 /** Fields per month. */
 export const SERIES_FIELDS = TIER0 + TIER_FIELDS.length;
 /** `WorldSeriesData.version` of this layout. */
-const VERSION = 3;
+const VERSION = 4;
 
 /** No row state yet (no `'start'` seen). */
 const UNKNOWN = -2;
@@ -71,12 +75,15 @@ function emptyData(s: ScoreStatics): WorldSeriesData {
     pending: new Int32Array(0),
     filed: new Int32Array(0),
     award: new Int32Array(0),
+    disp: new Int32Array(0),
+    done: new Int32Array(0),
     delta: new Int32Array(SERIES_FIELDS * n),
     sum: new Int32Array(SERIES_FIELDS * n)
   };
 }
 
-type RowColumn = 'stage' | 'since' | 'units' | 'entitled' | 'pending' | 'filed' | 'award';
+type RowColumn =
+  'stage' | 'since' | 'units' | 'entitled' | 'pending' | 'filed' | 'award' | 'disp' | 'done';
 const ROW_COLUMNS: RowColumn[] = [
   'stage',
   'since',
@@ -84,7 +91,9 @@ const ROW_COLUMNS: RowColumn[] = [
   'entitled',
   'pending',
   'filed',
-  'award'
+  'award',
+  'disp',
+  'done'
 ];
 
 /** A copy of saved data that shares no array with it. */
@@ -98,6 +107,8 @@ function copyData(from: WorldSeriesData): WorldSeriesData {
     pending: from.pending.slice(),
     filed: from.filed.slice(),
     award: from.award.slice(),
+    disp: from.disp.slice(),
+    done: from.done.slice(),
     delta: from.delta.slice(),
     sum: from.sum.slice()
   };
@@ -131,10 +142,16 @@ function phaseUnits(statics: Statics, w: World, row: number): number[] {
   return (statics.projects[w.projects.src[row]].phases ?? []).map((ph) => ph.units);
 }
 
-/** World 1's cumulative funded and displaced homes and tiers; `WorldSeries` has no channel (Q5). */
+/** Cumulative funded and displaced homes and tiers; `WorldSeries` has no channel (Q5). */
 export interface Extras {
-  /** Cumulative homes by final calendar month `from..through`. */
-  homes(from: number, through: number): { funded: number; displaced: number }[];
+  /**
+   * Cumulative homes by final calendar month `from..through`: `displaced` by each event's own day
+   * (rule 2), `displacedCompleted` those of funded projects completed by that month (rule 12).
+   */
+  homes(
+    from: number,
+    through: number
+  ): { funded: number; displaced: number; displacedCompleted: number }[];
   /** Cumulative homes by income tier, final months `from..through`; throws without finance. */
   tiers(from: number, through: number): TierUnits[];
 }
@@ -385,8 +402,15 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
 
   function fileDisplaced(e: Of<'displaced'>): void {
     // Rule 2: the event's own month, whether or not the funded project has completed.
-    known(e.row);
+    const row = e.row;
+    known(row);
     on(DISPLACED, e.day, e.units);
+    // Rule 12: a project not yet completed carries it to its completion; a completed one's later
+    // displacement joins in the event's month (never before the completion's: a model month can
+    // straddle two calendar months, and system 7 sends it after the month's completions).
+    const done = d.done[row];
+    if (done !== NO_DAY) on(DISPLACED_DONE, e.day > done ? e.day : done, e.units);
+    else d.disp[row] += e.units;
   }
 
   function fileStart(e: Of<'start'>, w: World, statics: Statics): void {
@@ -398,6 +422,8 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     d.entitled[row] = NO_DAY;
     d.filed[row] = 0;
     d.award[row] = NO_DAY;
+    d.disp[row] = 0;
+    d.done[row] = NO_DAY;
     if (w.projects.origin[row] === ORIGIN_MASTER) {
       let total = 0;
       for (const u of phaseUnits(statics, w, row)) total += u;
@@ -467,7 +493,12 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     if (how === 'complete') {
       on(origin === ORIGIN_SIM ? FRESH : PIPELINE, day, units);
       // Read from the row, never from event order: the 'award' follows the start chain.
-      if (p.funded[row] === 1) on(FUNDED, day, units - p.existing[row]);
+      if (p.funded[row] === 1) {
+        on(FUNDED, day, units - p.existing[row]);
+        // Rule 12: its displaced homes so far pair with its funded homes, at completion.
+        d.done[row] = day;
+        on(DISPLACED_DONE, day, d.disp[row]);
+      }
       fileTiers(e, w, statics);
     } else if (how === 'exit') {
       if (day > asOf) on(EXITED, day, units);
@@ -542,10 +573,14 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     homes(from: number, through: number) {
       checkRange('homes', from, through);
       sumThrough(through);
-      const out: { funded: number; displaced: number }[] = [];
+      const out: { funded: number; displaced: number; displacedCompleted: number }[] = [];
       for (let i = from; i <= through; i++) {
         const at = i * SERIES_FIELDS;
-        out.push({ funded: d.sum[at + FUNDED], displaced: d.sum[at + DISPLACED] });
+        out.push({
+          funded: d.sum[at + FUNDED],
+          displaced: d.sum[at + DISPLACED],
+          displacedCompleted: d.sum[at + DISPLACED_DONE]
+        });
       }
       return out;
     },

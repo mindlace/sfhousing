@@ -26,7 +26,7 @@ Money, tiers and limit statements are built; the funded card fields are not yet.
 
 Creation events (the `'start'` of every row at world creation) are emitted inside `createWorld`, before it returns. Add them after it returns, then feed the steps. A row needs its `'start'` before any other event (`known` throws).
 
-The series keeps its own per-row state (stage, open span start, units, entitled day, a master's pending and filed phases), so it never reads rows back from the world: a restored series needs only its `WorldSeriesData`. `'award'` records the row's award day (for tiers); `'displaced'` adds its units to `displacedHomes` in the calendar month of its own day (rule 2), whether or not the funded project has completed.
+The series keeps its own per-row state (stage, open span start, units, entitled day, a master's pending and filed phases), so it never reads rows back from the world: a restored series needs only its `WorldSeriesData`. `'award'` records the row's award day (for tiers); `'displaced'` adds its units to `displacedHomes` in the calendar month of its own day (rule 2), whether or not the funded project has completed. For rule 12 the series also keeps `displacedHomesCompleted`: a funded row's displaced homes so far are filed at its completion, and a later `'displaced'` event of a completed row in the event's month (never before the completion's month). It reads only the events, so every feed order gives the same.
 
 ## Calendar months
 
@@ -62,7 +62,11 @@ Runner rule: pass `createWorldSeries` the very `ScoreStatics` object `scoreStati
 
 ## Money
 
-`viewOf` gives `money` as today's `TimelineScore['money']` for world 1 (rule 12), with every series cut at `filledThrough`. `owed` is each debt pool's `received[filledThrough]` with `debtService(principal, debt).total`. `perAddedHome`, `owedAt`, `cityOf` and `displacedShare` (`finance-score`) are read with `i = filledThrough`. `money` is null when a chunk has none.
+`viewOf` gives `money` as today's `TimelineScore['money']` for world 1 (rule 12), with every series cut at `filledThrough`. `owed` is each debt pool's `received[filledThrough]` with `debtService(principal, debt).total`. `money` is null when a chunk has none.
+
+`MoneyView` adds three fields to today's money: `displacedHomesCompleted` (per month, cut at `filledThrough`), and `perAddedHome: { all, city }` and `displacedShare`, read at `filledThrough`. The page reads those two figures from the view and does not call `finance-score`'s functions on `money` for them: they are today's `perAddedHome` and `displacedShare` computed over a money whose `displacedHomes` is `displacedHomesCompleted`.
+
+The shown `displacedHomes` series and the ratio's displaced term differ in timing on purpose (partner ruling, rule 12). The series shows displacement when it happens (rule 2). The ratio pairs it with `fundedHomes`, which counts at completion, so its denominator keeps today's meaning: homes added by completed funded projects, less what those projects displaced. At `filledThrough` it equals `moneyOf`'s `displacedHomes` over the schedules read on that month's last day, and on funded mini (480 months) `perAddedHome` and `displacedShare` at the horizon equal the old engine's in all 49 of seeds 1-50 whose money matches (`money.spec.ts`). `owedAt` and `cityOf` read the series as before.
 
 `limits` and `debts` live in `ScoreStatics` as plain data, both null without finance. `scoreStaticsOf` gives `limits = limitStatements(addedBorrowing(planFinanceOf(timeline, asOf, W), input.finance.pools, asOf, horizonOf(s)))`, so they are seed-free, independent of any ledger and fixed as the forecast fills. `planFinanceOf` turns each month's pool definition into one-off inflows and sets `off` to the days a frame drops them, so it counts exactly the frames' arrivals. A pool's label, kind and debt terms are month W's definition, a decided simplification: were two spans to give one pool different debt terms, all its borrowing in the window would be priced on month W's. `debts` lists each debt pool's terms from that same definition.
 
@@ -109,6 +113,6 @@ Bench `synthCity`, quiet machine, lock held, 2026-11-13, after the perf pass. Un
 ## Known gaps
 
 - The funded card fields are not built.
-- `perAddedHome` keeps today's denominator: world 1's `fundedHomes - displacedHomes` at `filledThrough` (ruled 2026-11-13), not the plan effect. With rule 2 the two halves count at different times: `fundedHomes` at completion, `displacedHomes` on the shadow's day, including funded projects still building or that dropped out. At the horizon `displacedHomes` is `moneyOf`'s plus the displaced homes of funded rows not completed by then, so it is never smaller than today's, and the denominator can reach 0 where today's is positive (`perAddedHome` null): funded mini, 480 months, seeds 4 and 21 of 1-50.
+- `perAddedHome` uses world 1's money, not the plan effect (ruled 2026-11-13). Its denominator is `fundedHomes - displacedHomesCompleted` (see Money), not the shown `displacedHomes`, which also holds funded projects still building or that dropped out.
 - A money change mid-window re-makes or lapses waiting applications; none of that reaches the series. An application is not a project row: only an award starts a row and sends one `'award'`, so funded homes, tiers and the award day the tiers read are per funded row (`score/lapse.spec.ts`).
 - A project's `'award'` world event arrives after the stage events of the chain `startProject` begins (it runs synchronously). Read awards by project row, never by position relative to stage events.

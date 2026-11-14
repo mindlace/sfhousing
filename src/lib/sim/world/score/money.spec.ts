@@ -4,9 +4,10 @@
 // world 1's alone.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
-import { moneyOf, poolSeries } from '$lib/sim/scenario/finance-score';
+import { displacedShare, moneyOf, perAddedHome, poolSeries } from '$lib/sim/scenario/finance-score';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import { monthIndexer, monthsOf } from '$lib/sim/scenario/score';
+import { simulateDetailed } from '$lib/sim/scenario/simulate';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
 import { benchFunded, fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';
@@ -19,6 +20,7 @@ import { chunkOf } from './chunk';
 import { moneyRowsOf } from './money';
 import { createWorldSeries, extrasOf } from './series';
 import { feedFunded, timelineStatics } from './test/feed';
+import { viewOf } from './view';
 import type { MoneyFeed, ScoreStatics, WorldSeries } from './types';
 
 type Finance = NonNullable<SimInput['finance']>;
@@ -124,6 +126,8 @@ function checkHomes(c: City, r: Run): number {
   expect(got.map((m) => m.fundedHomes)).toEqual(want.fundedHomes);
   expect(got.map((m) => m.publicSpent)).toEqual(want.publicSpent);
   // `displacedHomes` differs from `moneyOf`'s by design (rule 2): see `checkDisplaced`.
+  // Rule 12's term: the displaced homes of funded projects completed by then, `moneyOf`'s.
+  expect(got[through].displacedHomesCompleted).toBe(want.displacedHomes[through]);
   // Not degenerate: world-funding's shadows send 'displaced' events.
   expect(checkDisplaced(c, r, got, want.displacedHomes).length).toBeGreaterThan(0);
   return want.fundedHomes[through];
@@ -335,4 +339,47 @@ describe('world 1 money, funded bench', () => {
   it("fundedHomes equals moneyOf's at every month", () => {
     expect(checkHomes(c, r)).toBeGreaterThan(0);
   });
+});
+
+describe("rule 12 against today's engine, funded mini", () => {
+  it("seeds 1-50: perAddedHome and displacedShare at the horizon are today's where the money is", () => {
+    const c = cityOf(fundedMini(), 480);
+    const last = c.score.lastIndex;
+    const horizon = lastDay(c.input.asOf, last);
+    const months = monthsOf(c.input.asOf, horizon);
+    const same: number[] = [];
+    const nonNull: number[] = [];
+    for (let seed = 1; seed <= 50; seed++) {
+      const r = run(c, seed);
+      const money = viewOf([chunkOf([r.series], [r.series], r.feed, 0, last)], c.score).money!;
+      const old = simulateDetailed(c.input, seed, horizon);
+      const want = moneyOf({
+        ledger: old.ledger,
+        schedules: old.schedules,
+        finance: c.fin,
+        baseline: [],
+        asOf: c.input.asOf,
+        horizon,
+        months
+      });
+      // Compared only where the world's money is the old engine's (funded homes and money spent).
+      if (
+        money.fundedHomes[last] !== want.fundedHomes[last] ||
+        money.publicSpent[last] !== want.publicSpent[last]
+      )
+        continue;
+      same.push(seed);
+      expect(money.displacedHomesCompleted[last]).toBe(want.displacedHomes[last]);
+      expect(money.perAddedHome).toEqual({
+        all: perAddedHome(want, last, 'all'),
+        city: perAddedHome(want, last, 'city')
+      });
+      expect(money.displacedShare).toBe(displacedShare(want, last));
+      if (money.perAddedHome.all !== null) nonNull.push(seed);
+    }
+    // 49 of 50 on 2026-11-13 (seed 46's world differs: world-funding's tolerance).
+    expect(same.length).toBeGreaterThanOrEqual(49);
+    // Seeds 4 and 21 gave null under the mixed-timing denominator.
+    expect(nonNull).toEqual(expect.arrayContaining([4, 21]));
+  }, 120_000);
 });
