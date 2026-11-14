@@ -6,7 +6,8 @@
 //
 // Each update is an incremental revision (revision = last + 1, as a fill sends) whose cells replace
 // the installed cells of the same ids, alternating between two seeds so every apply swaps content.
-// `demolish` is empty: this times the cell install, not the demolish pump (timeline.perf covers it).
+// Two series per size: install only (`demolish: []`) and with a demolish list, which the pump
+// counts in `pending`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import type { Deck } from '@deck.gl/core';
@@ -118,8 +119,7 @@ describe('apply cost (real map, playback running)', { timeout: 900_000 }, () => 
     h.setTime(SYNTHETIC_START);
     h.setTimelineLookups(SYNTHETIC_LOOKUPS);
     const stop = startPlayback(h);
-    const medians: Record<number, number> = {};
-    const samples: Record<number, string[]> = {};
+    const out: string[] = [];
     try {
       for (const k of KS) {
         const a = makeSyntheticTimeline(1, k * PER_CELL, PER_CELL);
@@ -131,25 +131,31 @@ describe('apply cost (real map, playback running)', { timeout: 900_000 }, () => 
         await expect
           .poll(() => dbg().timelineSnapshot()?.pending, { timeout: 120_000, interval: 50 })
           .toBe(0);
-        const ms: number[] = [];
-        for (let r = 0; r < RUNS; r++) {
-          const next = r % 2 === 0 ? b : a;
-          const revision = dbg().timelineSnapshot()!.revision + 1;
-          ms.push(await applyTimed(h, { ...next, revision, demolish: [] }));
+        // Two series: install only (no demolish list), then with the generator's demolish list
+        // (fresh parcel ids each run, so the pump always has new entries). The synthetic parcels
+        // are not on the fixture map, so the pump's feature-state calls hit no feature.
+        for (const withDemolish of [false, true]) {
+          const ms: number[] = [];
+          for (let r = 0; r < RUNS; r++) {
+            const next = r % 2 === 0 ? b : a;
+            const revision = dbg().timelineSnapshot()!.revision + 1;
+            const demolish = withDemolish
+              ? next.demolish.map((d) => ({ ...d, parcelId: `${d.parcelId}-${k}-${revision}` }))
+              : [];
+            ms.push(await applyTimed(h, { ...next, revision, demolish }));
+          }
+          // Pending reached 0 for every timed apply (applyTimed throws otherwise).
+          expect(dbg().timelineSnapshot()!.pending).toBe(0);
+          const tag = withDemolish ? 'with_demolish' : 'install_only';
+          out.push(
+            `k${k}_${tag}_median_ms=${median(ms).toFixed(1)} ` +
+              `k${k}_${tag}_samples_ms=[${ms.map((x) => x.toFixed(1))}]`
+          );
         }
-        medians[k] = median(ms);
-        samples[k] = ms.map((x) => x.toFixed(1));
-        // Pending reached 0 for every timed apply (applyTimed throws otherwise).
-        expect(dbg().timelineSnapshot()!.pending).toBe(0);
       }
     } finally {
       stop();
     }
-    console.info(
-      `[apply-cost] perCell=${PER_CELL} runs=${RUNS} ` +
-        KS.map(
-          (k) => `k${k}_median_ms=${medians[k].toFixed(1)} k${k}_samples_ms=[${samples[k]}]`
-        ).join(' ')
-    );
+    console.info(`[apply-cost] perCell=${PER_CELL} runs=${RUNS} ${out.join(' ')}`);
   });
 });
