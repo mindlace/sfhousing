@@ -5,10 +5,6 @@
  * crash, a session that ended) is not a failure: the query waits for `resume`. `open` is the
  * opening document (a load): it settles as soon as every query has answered, with no debounce, a
  * failed query counting as no lots.
- *
- * A deliberate duplication of `LeverSync` (`sim-page/policy-store.svelte.ts`): that one stays
- * until Task 17 deletes it with the old page, and it compiles schema 3 levers; this one yields
- * lots.
  */
 import type { ParcelId } from '$lib/data/parcel';
 import type { BrushQuery } from '$lib/sim/levers/brushes';
