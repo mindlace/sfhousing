@@ -1,0 +1,101 @@
+// E2e a11y gates for /signin: axe AA on every rendered state, the identifier field's
+// label and error association, and live-region announce and focus on the confirmation.
+// Later auth pages add their cases here.
+import { expect, test, type Page } from '@playwright/test';
+import { AUTH_COPY, pendingSimLine } from '../src/lib/account/copy';
+import { SIMS_COPY } from '../src/lib/members/copy';
+import { expectNoA11yViolations } from './helpers/a11y';
+import { enableAuthMethods, uniqueEmail } from './helpers/auth';
+
+test.use({ storageState: { cookies: [], origins: [] } });
+
+async function gotoSignin(page: Page, path = '/signin'): Promise<void> {
+  await page.goto(path);
+  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+}
+
+test('signin: no axe violations in sign-in or sign-up mode', async ({ page }) => {
+  await gotoSignin(page);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(AUTH_COPY.signIn);
+  await expectNoA11yViolations(page);
+
+  await gotoSignin(page, '/signin?signup=1');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(AUTH_COPY.signUp);
+  await expectNoA11yViolations(page);
+});
+
+test('signin: no axe violations with password and passkey on, password mode open', async ({
+  page,
+  context
+}) => {
+  await enableAuthMethods(context, ['password', 'passkey']);
+  await gotoSignin(page);
+  await expectNoA11yViolations(page);
+  await page.getByRole('button', { name: AUTH_COPY.usePassword }).click();
+  await expect(page.getByLabel(AUTH_COPY.passwordLabel)).toBeVisible();
+  await expectNoA11yViolations(page);
+});
+
+test('signin: identifier field is labelled and a provoked error is associated and focused', async ({
+  page
+}) => {
+  await gotoSignin(page);
+  const input = page.locator('#identifier');
+  await expect(input).toHaveAccessibleName(AUTH_COPY.identifierLabel);
+  await expect(input).not.toHaveAttribute('aria-invalid', 'true');
+
+  // A single space passes the `required` attribute; the server trims it to empty and
+  // re-renders with `form.error` set.
+  await input.fill(' ');
+  await page.getByTestId('sendlink-submit').click();
+  await expect(page.getByTestId('identifier-error')).toHaveText(AUTH_COPY.enterIdentifier);
+  await expect(input).toHaveAttribute('aria-invalid', 'true');
+  await expect(input).toHaveAttribute('aria-describedby', 'identifier-error');
+  await expect(input).toBeFocused();
+  await expectNoA11yViolations(page);
+});
+
+test('signin: sent confirmation announces via the live region and takes focus', async ({
+  page
+}) => {
+  await gotoSignin(page);
+  await page.locator('#identifier').fill(uniqueEmail('signin-a11y'));
+  const status = page.getByTestId('form-status');
+  await expect(status).toHaveAttribute('role', 'status');
+  await expect(status).toHaveAttribute('aria-live', 'polite');
+  await page.getByTestId('sendlink-submit').click();
+  await expect(status).toHaveText(AUTH_COPY.emailSent);
+  await expect(status).toBeFocused();
+  await expectNoA11yViolations(page);
+});
+
+test('signin: submit button goes aria-busy and disabled while the action is pending', async ({
+  page
+}) => {
+  await gotoSignin(page);
+  // Delay the sendLink response so the pending window is wide enough to assert against.
+  await page.route('**/*sendLink*', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.continue();
+  });
+  await page.locator('#identifier').fill(uniqueEmail('signin-busy'));
+  const submit = page.getByTestId('sendlink-submit');
+  const clickPromise = submit.click();
+  await expect(submit).toHaveAttribute('aria-busy', 'true');
+  await expect(submit).toBeDisabled();
+  await clickPromise;
+  // The sent state replaces the form, so the busy button is simply gone.
+  await expect(page.getByTestId('form-status')).toHaveText(AUTH_COPY.emailSent);
+  await expect(submit).toHaveCount(0);
+});
+
+test('signin: the pending-sim banner has no axe violations', async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: 'sfh_known', value: '1', url: baseURL! }]);
+  await page.goto('/sims');
+  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+  await page.getByLabel(SIMS_COPY.titleLabel).fill('Banner');
+  await page.getByRole('button', { name: SIMS_COPY.create }).click();
+  await page.waitForURL((url) => url.pathname === '/signin');
+  await expect(page.getByText(pendingSimLine('Banner'))).toBeVisible();
+  await expectNoA11yViolations(page);
+});

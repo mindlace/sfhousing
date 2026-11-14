@@ -1,0 +1,33 @@
+export const AUTH_COPY = {
+  pageTitle: 'Sign in',
+  pageTitleSignup: 'Sign up',
+  signIn: 'Sign in',
+  signUp: 'Sign up',
+  enterIdentifier: 'Enter your email or handle.',
+  tooManySignin: 'Too many sign-in requests. Wait a moment.',
+  signinFailed: "That handle and password don't match. Try again.",
+  emailSent: 'Link sent. Check your email.',
+  devLink: 'Open sign-in link (test only)',
+  sending: 'Sending your link…',
+  redirectingGoogle: 'Redirecting to Google…',
+  passkeyWaiting: 'Waiting for your passkey…',
+  passkeyFailed: "Passkey sign-in didn't go through. Try again.",
+  googleError: "Google sign-in didn't go through. Try again.",
+  passkeyButton: 'Sign in with a passkey',
+  googleButton: 'Continue with Google',
+  chooseOne: 'Choose one:',
+  emailLabel: 'Email',
+  emailPlaceholder: 'you@example.com',
+  identifierLabel: 'Email or handle',
+  identifierPlaceholder: 'you@example.com or your-handle',
+  emailMeLink: 'Email me a link',
+  usePassword: 'Use a password instead',
+  passwordLabel: 'Password',
+  passwordSubmit: 'Sign in',
+  forgotPassword: 'Forgot your password?',
+  passwordResetDone: 'Password updated. Sign in with your new password.',
+  startFresh: 'Start fresh without an account',
+  cancel: 'Cancel'
+} as const;
+
+export const pendingSimLine = (title: string): string => `Signing in to create ${title}`;
