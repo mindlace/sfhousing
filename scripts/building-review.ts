@@ -29,14 +29,19 @@ const view = (
   bearing = 0
 ): ReviewView => ({ id, name, center, zoom, pitch, bearing });
 
-/** The spec's ten review areas. Centres are approximate: nudge one when its buildings are out of frame. */
+/**
+ * The spec's ten review areas. Centres are approximate: nudge one when its buildings are out of
+ * frame. The two towers' views sit north of the towers at zoom 16 so their tops stay in frame
+ * (checked on the first live build, 2026-11-14).
+ */
 export const REVIEW_VIEWS: ReviewView[] = [
   view(
     'downtown-rincon',
     'Rincon Hill (Salesforce, 181 Fremont, Millennium)',
-    [-122.3955, 37.7895]
+    [-122.3958, 37.7908],
+    16
   ),
-  view('transamerica-fidi', 'Transamerica and the Financial District', [-122.4028, 37.7952]),
+  view('transamerica-fidi', 'Transamerica and the Financial District', [-122.4028, 37.7958], 16),
   view('sutro', 'Sutro Tower', [-122.4528, 37.7552], 16, 65),
   view('civic-center', 'Civic Center (City Hall)', [-122.4193, 37.7793]),
   view('ferry-building', 'Ferry Building', [-122.3937, 37.7955], 17),
