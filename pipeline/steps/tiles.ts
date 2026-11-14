@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { BOXES } from '../boxes-config';
 import { FONT_STACKS, type BBOX } from '../config';
 import type { Duck } from '../lib/duck';
 import { run } from '../lib/exec';
@@ -19,12 +20,60 @@ interface ExportRow {
   geojson4326: string;
 }
 
-/** Write buildings.geojsonseq (workDir) from buildings_export and tile it to outDir/buildings.pmtiles. */
+interface RenderExportRow extends ExportRow {
+  src: string;
+  ground_m: number | null;
+  ground_min_m: number | null;
+}
+
+/** The buildings layer's attributes and tippecanoe types (`-y`, `-T`), in argument order. */
+const TODAY_FIELDS: [string, string][] = [
+  ['parcelId', 'string'],
+  ['heightM', 'float'],
+  ['baseM', 'float'],
+  ['hs', 'int']
+];
+/** The z14+ render boxes' extra attributes. */
+const SPLIT_FIELDS: [string, string][] = [
+  ['src', 'string'],
+  ['groundM', 'float'],
+  ['groundMinM', 'float']
+];
+
+/** tippecanoe's tile-too-big reports: `tile z/x/y size is N …` or `tile z/x/y has N features, …`. */
+const TILE_REPORT = /(?:^|\s)tile (\d+)\/\d+\/\d+ (?:size is \d+|has \d+ features)/;
+
+/**
+ * How many of tippecanoe's tile-too-big reports in `stderr` are at zoom `minZoom` or above. With
+ * `--drop-smallest-as-needed` each such report means features of that tile were dropped to fit.
+ */
+export function tileDropReports(stderr: string, minZoom: number): number {
+  let n = 0;
+  for (const line of stderr.split(/[\r\n]/)) {
+    const m = TILE_REPORT.exec(line);
+    if (m && Number(m[1]) >= minZoom) n++;
+  }
+  return n;
+}
+
+/**
+ * Write buildings.geojsonseq (workDir) and tile it to outDir/buildings.pmtiles, one `buildings`
+ * layer at z12–15.
+ * - Without `split` (no building-boxes artifact): buildings_export only, exactly as before the
+ *   boxes work (same input bytes and tippecanoe arguments).
+ * - With `split`: buildings_export at z12–13 (tippecanoe minzoom/maxzoom per feature, today's four
+ *   properties), then render_export at z14–15 (`BOXES.splitZoom`), which adds `src`, `groundM` and
+ *   `groundMinM` (each left out when null). Returns how many z14+ tiles tippecanoe reported over
+ *   `maxTileBytes` (it then drops their smallest features); 0 without split.
+ */
 export async function writeBuildingsTiles(
   db: Duck,
   outDir: string,
-  workDir: string
-): Promise<void> {
+  workDir: string,
+  opts: { split?: boolean; maxTileBytes?: number } = {},
+  deps: { run: typeof run } = { run }
+): Promise<{ dropsAtSplit: number }> {
+  const split = opts.split ?? false;
   const rows = await db.all<ExportRow>(
     'SELECT parcel_id, height_m, base_m, hs, geojson4326 FROM buildings_export ORDER BY parcel_id NULLS LAST, bid'
   );
@@ -34,14 +83,49 @@ export async function writeBuildingsTiles(
     properties.heightM = r.height_m;
     properties.baseM = r.base_m;
     properties.hs = r.hs;
-    return JSON.stringify({ type: 'Feature', properties, geometry: JSON.parse(r.geojson4326) });
+    const geometry = JSON.parse(r.geojson4326);
+    return JSON.stringify(
+      split
+        ? {
+            type: 'Feature',
+            tippecanoe: { minzoom: 12, maxzoom: BOXES.splitZoom - 1 },
+            properties,
+            geometry
+          }
+        : { type: 'Feature', properties, geometry }
+    );
   });
+  if (split) {
+    const boxes = await db.all<RenderExportRow>(
+      `SELECT parcel_id, height_m, base_m, hs, src, ground_m, ground_min_m, geojson4326
+       FROM render_export ORDER BY parcel_id NULLS LAST, bid, k`
+    );
+    for (const r of boxes) {
+      const properties: Record<string, unknown> = {};
+      if (r.parcel_id !== null) properties.parcelId = r.parcel_id;
+      properties.heightM = r.height_m;
+      properties.baseM = r.base_m;
+      properties.hs = r.hs;
+      properties.src = r.src;
+      if (r.ground_m !== null) properties.groundM = r.ground_m;
+      if (r.ground_min_m !== null) properties.groundMinM = r.ground_min_m;
+      lines.push(
+        JSON.stringify({
+          type: 'Feature',
+          tippecanoe: { minzoom: BOXES.splitZoom, maxzoom: 15 },
+          properties,
+          geometry: JSON.parse(r.geojson4326)
+        })
+      );
+    }
+  }
   mkdirSync(outDir, { recursive: true });
   mkdirSync(workDir, { recursive: true });
   writeFileSync(join(workDir, 'buildings.geojsonseq'), lines.join('\n') + '\n');
   // tippecanoe records its output/input paths in the metadata (name, description,
   // generator_options): run it in workDir with relative names so the archive is reproducible.
-  const r = await run(
+  const fields = split ? [...TODAY_FIELDS, ...SPLIT_FIELDS] : TODAY_FIELDS;
+  const r = await deps.run(
     'tippecanoe',
     [
       '-o',
@@ -52,24 +136,10 @@ export async function writeBuildingsTiles(
       '12',
       '-z',
       '15',
-      '-y',
-      'parcelId',
-      '-y',
-      'heightM',
-      '-y',
-      'baseM',
-      '-y',
-      'hs',
-      '-T',
-      'parcelId:string',
-      '-T',
-      'heightM:float',
-      '-T',
-      'baseM:float',
-      '-T',
-      'hs:int',
+      ...fields.flatMap(([name]) => ['-y', name]),
+      ...fields.flatMap(([name, type]) => ['-T', `${name}:${type}`]),
       '--drop-smallest-as-needed',
-      '--maximum-tile-bytes=400000',
+      `--maximum-tile-bytes=${opts.maxTileBytes ?? 400000}`,
       '--no-simplification-of-shared-nodes',
       '--force',
       'buildings.geojsonseq'
@@ -82,6 +152,7 @@ export async function writeBuildingsTiles(
     copyFileSync(built, join(outDir, 'buildings.pmtiles'));
     rmSync(built);
   }
+  return { dropsAtSplit: split ? tileDropReports(r.stderr, BOXES.splitZoom) : 0 };
 }
 
 /**

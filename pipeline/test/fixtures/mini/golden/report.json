@@ -628,6 +628,7 @@
     "scenario.yield.fzp_net_total": 36,
     "scenario.yield.nonlp_base_mismatch": 0,
     "tiles.basemap_split_changed": 2,
+    "tiles.buildings.drops_z14plus": 0,
     "transit.bytes": 2876,
     "transit.patterns": 7,
     "transit.stops": 8,
@@ -813,6 +814,11 @@
     {
       "detail": "25 rows decode; re-encode byte-identical; 25 rows equal scenarioYield at s 0..81 and 255",
       "id": "V36",
+      "ok": true
+    },
+    {
+      "detail": "src box/base/front/step/part 4/7/1/1/9; fallback 33.3%; reg fit 81.8%",
+      "id": "V37",
       "ok": true
     }
   ],

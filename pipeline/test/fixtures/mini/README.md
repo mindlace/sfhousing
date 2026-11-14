@@ -169,6 +169,11 @@ npm run pipeline -- fixture --update-golden
 `boxes-command.test.ts` ("the committed mini artifact is current") fails when the committed artifact no
 longer matches a fresh derivation.
 
+`tiles-no-boxes/` holds main's buildings tiles from before the boxes work: `buildings.geojsonseq` (the
+tippecanoe input) and `buildings.pmtiles` (byte-identical to main's `e2e/fixtures/data/fixture-0` copy,
+tippecanoe 2.79.0). `tiles.test.ts` checks that a build without the artifact still writes exactly these
+bytes. Never regenerate them: a difference means the no-artifact path moved.
+
 ## Streets
 
 `datasf-streets` (3psu-pn9h, GeoJSON): `line` is a MultiLineString in local metres; `cnn` and `classcode` are

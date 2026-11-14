@@ -6,7 +6,8 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
-  rmSync
+  rmSync,
+  statSync
 } from 'node:fs';
 import { writeFileSync } from 'node:fs';
 import { availableParallelism, tmpdir } from 'node:os';
@@ -375,7 +376,16 @@ export async function build(
       await landClipSection(db)
     ]);
     if (!opts.skipTiles) {
-      await report.time('tiles', () => writeBuildingsTiles(db, outDir, work));
+      // With the building-boxes artifact, z14+ carry the render boxes (docs/dev/building-boxes.md);
+      // without it the archive is today's, byte for byte, and the report gains no drop count.
+      const tiles = await report.time('tiles', () =>
+        writeBuildingsTiles(db, outDir, work, { split: renderBoxes.written })
+      );
+      if (renderBoxes.written) counts['tiles.buildings.drops_z14plus'] = tiles.dropsAtSplit;
+      // tippecanoe's bytes vary by platform: live builds only, so the fixture report stays stable.
+      if (!fixtureMode) {
+        counts['tiles.buildings.bytes'] = statSync(join(outDir, 'buildings.pmtiles')).size;
+      }
     }
     // The removed freeway stretches of the basemap id list move to source layer roads_lc
     // (docs/dev/lesscars.md "Basemap ids"); without phases the archive is copied byte for byte
