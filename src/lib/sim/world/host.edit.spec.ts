@@ -644,6 +644,62 @@ describe('a rejected edit resumes the last accepted one (S14)', () => {
   });
 });
 
+describe('a late compile rejection resumes the last accepted edit (S14)', () => {
+  // R + 1 is accepted at fill month 120 (ready through the month stepped) and its plan compile
+  // rejects it at month 200, after acceptance
+  const months = 320;
+  const cases = [
+    ['settled', 'kept'],
+    ['settling', 'kept'],
+    ['settled', 'restored']
+  ] as const;
+  for (const [state, how] of cases)
+    it(`R ${state}, R + 1 ${how} then rejected at month 200: bad-request at R + 1, then compiled and refill at R, equal to a fresh open of R`, async () => {
+      // 1 ms per clock read: a compile step assembles about 20 frames, so R + 1 is accepted
+      // well before its compile reaches month 200
+      const r = makeRunner(1, true);
+      r.runner.open(1, baseDoc(), {}, WORLDS, months);
+      await r.run(r.both(120));
+      const docR = withZoning(baseDoc(), protect(100, 197));
+      r.runner.setPolicy(2, docR, {});
+      if (state === 'settled') await r.run(() => r.of('refill').some((m) => m.rev === 2));
+      else await r.run(() => r.runner.rev === 2);
+      // kept: R + 1 differs from R only from month 200; restored: also from month 110
+      const bad =
+        how === 'kept'
+          ? withZoning(docR, mismatched(200))
+          : withZoning(baseDoc(), protect(110, 197), mismatched(200));
+      r.runner.setPolicy(3, bad, {});
+      await r.run(() => r.runner.rev === 3);
+      expect(r.runner.internals().kept).toBeGreaterThan(0);
+      await r.run(() => r.errors().length > 0);
+      expect(r.errors()).toEqual([expect.objectContaining({ rev: 3, code: 'bad-request' })]);
+      const errAt = r.posts.findIndex((m) => m.type === 'error');
+      expect(r.of('compiled', errAt).some((c) => c.rev === 3)).toBe(false);
+      await r.run(r.full(2));
+      expect(r.errors()).toHaveLength(1);
+      expect(r.runner.rev).toBe(2);
+      // nothing at R + 1 after its bad-request; R's compiled and its refill after it
+      expect(r.posts.slice(errAt + 1).some((m) => 'rev' in m && m.rev === 3)).toBe(false);
+      expect(r.of('refill', errAt).map((m) => m.rev)).toEqual([2]);
+      expect(r.of('refill').filter((m) => m.rev === 3)).toEqual([]);
+      settledAt(r.posts.slice(errAt + 1), 2);
+      expect(r.runner.internals().kept).toBe(0);
+      expect(viewFrom(r.posts)).toEqual(await fresh(docR, {}, months));
+      r.runner.dispose();
+    });
+
+  it('an open whose own compile rejects it late: nothing to take up, filling stops', async () => {
+    const r = makeRunner();
+    r.runner.open(1, withZoning(baseDoc(), mismatched(60)), {}, WORLDS, 130);
+    await r.run(() => r.errors().length > 0);
+    expect(r.errors()).toEqual([expect.objectContaining({ rev: 1, code: 'bad-request' })]);
+    expect(r.of('refill')).toEqual([]);
+    expect(r.runner.internals().pending).toBeNull();
+    r.runner.dispose();
+  });
+});
+
 describe('refill edge cases (S14)', () => {
   it('an edit after a rejected open: one refill from 0 after its compiled', async () => {
     const r = makeRunner();

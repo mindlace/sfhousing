@@ -38,14 +38,17 @@
 // 17). The ensemble with the lower month steps first and the other waits (rules 6, 16). When the
 // plan's quiet re-step ends, its slice stops; the next task (a map task, like a flush, D6) rewinds
 // the plan's map stream and answers a `resyncMap` that came during the re-step. Every accepted
-// edit is answered by one `refill` at its rev (S14), once the `compiled` at that rev is out, no
-// ensemble re-steps quietly and no rewind waits: from the first calendar month not final at
+// edit is answered by one `refill` at its rev (S14), once the `compiled` at that rev is out, the
+// comparison's compile has finished, no ensemble re-steps quietly and no rewind waits: from the first calendar month not final at
 // min(m) - 1 when a side restored (the posted mark drops to just before it), else from the first
 // calendar month not posted yet (it withdraws nothing). No `filled` goes out between the
 // acceptance and that `refill`. An edit accepted and superseded before its `refill` gets none of
 // its own: the next accepted edit's (a higher rev) answers both; so does an edit superseded before
 // acceptance. So after a rejected edit the timelines are the last accepted `setPolicy`'s, and it
-// gets its `refill` at its own rev. A throw (rule 21) after an acceptance and before the `refill`
+// gets its `refill` at its own rev. Acceptance keeps the document in use before it and those it
+// superseded (`kept`, documents only) until both compiles in use finish: a compile that rejects
+// its document at a later month posts `bad-request` at the rev in use and takes the newest kept
+// document up again as an edit at its own rev. A throw (rule 21) after an acceptance and before the `refill`
 // stops filling: that edit gets no `refill`; the next accepted edit's or an open settles the page.
 // Map flushes go on while an edit compiles (world 1 waits).
 // `setPolicy` rejects at once a document whose queries (`queriesOf4`, its own or its
@@ -165,6 +168,8 @@ export interface RunnerInternals {
   refillDue: boolean;
   /** Superseded edits that a rejection would take up again. */
   superseded: number;
+  /** Documents a late rejection of the compiles in use would take up again. */
+  kept: number;
   /** Owed compile units. */
   owed: number;
   /** The permitting last posted in `lookups` (D10), or null. */
@@ -267,7 +272,11 @@ class HeightsFailed extends Error {
 
 /** A compile step's `LeverFormatError`: the document is rejected, `bad-request` (rule 12, D11). */
 class Rejected extends Error {
-  constructor(readonly reason: LeverFormatError) {
+  constructor(
+    readonly reason: LeverFormatError,
+    /** The side whose compile rejected it. */
+    readonly side: object
+  ) {
     super(reason.message);
   }
 }
@@ -304,6 +313,14 @@ export function createRunner(deps: RunnerDeps): Runner {
    * first, none rejected: when the edit pending is rejected, the newest is taken up again (S14).
    */
   const superseded: EditDoc[] = [];
+  /**
+   * The documents the timelines in use could fall back to, oldest first, none rejected: the one in
+   * use before each accepted edit and the edits it superseded. Kept until both compiles in use have
+   * finished, since either can still reject its document at a later month (S14).
+   */
+  const kept: EditDoc[] = [];
+  /** The document of the timelines in use (null after a late rejection, until the next accepts). */
+  let inUse: EditDoc | null = null;
   /** An accepted edit's `refill` is not posted yet (S14: one answers every accepted edit). */
   let refillDue = false;
   /** The lowest first difference of the restores whose `refill` is not posted yet (rule 14). */
@@ -448,7 +465,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     try {
       if (stepCompile(s)) s.justDone = true;
     } catch (e) {
-      if (e instanceof LeverFormatError) throw new Rejected(e);
+      if (e instanceof LeverFormatError) throw new Rejected(e, s);
       throw e;
     }
     if (!had && s.timeline !== null) s.ensemble = ensembleOf(s, s.timeline);
@@ -508,10 +525,30 @@ export function createRunner(deps: RunnerDeps): Runner {
     };
   }
 
-  /** No edit pending, none to take up again (rule 21, an accepted edit). */
+  /** No edit pending, none to take up again (rule 21, a reopen). */
   function dropEdits(): void {
     edit = null;
     superseded.length = 0;
+    kept.length = 0;
+  }
+
+  /**
+   * A compile in use rejected its document at a month past the one stepped, after acceptance
+   * (S14): `bad-request` at the rev in use, and the newest kept document is taken up as an edit at
+   * its own rev, compiled afresh against the timelines in use. False when nothing is kept (the
+   * open's document): rule 21 then stops filling.
+   */
+  function lateRejection(e: Rejected): boolean {
+    if (kept.length === 0) return false;
+    post({ type: 'error', rev, code: 'bad-request', message: String(e.reason) });
+    // the side's compile is spent: the comparison is compiled again whatever its key (D4)
+    if (e.side === comp) comp!.key = '';
+    inUse = null;
+    superseded.push(...kept);
+    kept.length = 0;
+    takeUpSuperseded();
+    if (edit === null && !failed) failed = true;
+    return true;
   }
 
   /**
@@ -558,7 +595,12 @@ export function createRunner(deps: RunnerDeps): Runner {
   /** The edit becomes the timelines in use (rules 13 to 17, D2, D4). */
   function accept(): void {
     const ed = edit!;
-    dropEdits();
+    edit = null;
+    // S14: what this edit's compiles may still reject at a later month falls back to, newest last
+    if (inUse !== null) kept.push(inUse);
+    kept.push(...superseded);
+    superseded.length = 0;
+    inUse = ed.doc;
     rev = ed.rev;
     // S14: the `compiled` a `refill` waits for is this rev's, even when an earlier one had this rev
     compiledRev = null;
@@ -644,6 +686,9 @@ export function createRunner(deps: RunnerDeps): Runner {
    */
   function settle(): void {
     if (!refillDue || compiledRev !== rev) return;
+    // and the comparison's compile has finished too, so neither can still reject this rev after it
+    // (a `filled` waits for its statics anyway)
+    if (comp === null || comp.statics === null) return;
     if (rewindDue || (comp?.ensemble?.quiet ?? false) || planQuiet()) return;
     const from =
       refillAt === null ? posted + 1 : final === null ? 0 : firstAfter(final, refillAt - 1);
@@ -753,6 +798,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       });
       compiledRev = rev;
     }
+    // S14: both compiles in use finished, so neither can reject its document any more
+    if (kept.length > 0 && plan!.done && comp!.done) kept.length = 0;
     // S14: an edit's `refill` follows its `compiled`, and goes before any `filled` at its rev
     if (refillDue) settle();
     postFilled();
@@ -1125,11 +1172,16 @@ export function createRunner(deps: RunnerDeps): Runner {
         fail(e.reason);
         return schedule();
       }
+      // a compile in use rejecting its document late: the last accepted document is taken up (S14)
+      if (e instanceof Rejected && lateRejection(e)) return schedule();
       // an edit's compile that throws other than `LeverFormatError`: at the edit's rev (D11)
       const ed = edit;
       dropEdits();
-      if (e instanceof Rejected) fail(e.reason, 'bad-request');
-      else fail(e, 'timeline', ed?.rev ?? rev);
+      if (e instanceof Rejected) {
+        // the document in use is rejected: nothing to fall back to it
+        inUse = null;
+        fail(e.reason, 'bad-request');
+      } else fail(e, 'timeline', ed?.rev ?? rev);
       return;
     }
     schedule();
@@ -1186,6 +1238,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     broken = false;
     refillDue = edited;
     compiledRev = null;
+    inUse = { rev, policy, lots };
     kick();
   }
 
@@ -1324,6 +1377,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         refillAt,
         refillDue,
         superseded: superseded.length,
+        kept: kept.length,
         owed: owed.length,
         lookedAt
       };
