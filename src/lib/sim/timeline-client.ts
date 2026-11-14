@@ -1,0 +1,280 @@
+// Main-thread client for the timeline host (ensemble-runner rule 22): the rev floors on policy
+// edits and opens, crash and restart (re-opening with the last policy), and the lookups of ScenarioClient
+// unchanged. Mirrors ScenarioClient's crash handling (scenario-client.ts), which it leaves alone.
+import type { Manifest } from '$lib/data/manifest';
+import type { ParcelId } from '$lib/data/parcel';
+import type { BBox } from '$lib/plan';
+import type { SimPolicy4 } from '$lib/timeline/policy4';
+import type { Day } from '$lib/timelapse/time';
+import type { BrushCatalog, BrushQuery } from './levers/brushes';
+import { LookupRequests } from './lookup-requests';
+import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev } from './protocol';
+import type {
+  BrushLotsResult,
+  HeightLidsResult,
+  LotAtResult,
+  LotOutlinesResult,
+  PreviewResult,
+  ScenarioResponse,
+  WorkerRequest
+} from './scenario/types';
+import type { ScenarioWorkerInput, ScenarioWorkerLike } from './scenario-client';
+import type {
+  TimelineHostRequest,
+  TimelineHostResponse,
+  TimelineResponse
+} from './timeline-protocol';
+
+/** Worlds in the ensemble (rule 22): the page opens every timeline with this many. */
+export const WORLDS = 48;
+/** The window, in model months (40 years). */
+export const WINDOW_MONTHS = 480;
+
+type Of<T extends TimelineResponse['type']> = Extract<TimelineResponse, { type: T }>;
+
+export interface TimelineClientEvents {
+  onReady?(r: ReadyResponse): void;
+  /**
+   * In arrival order, whatever the `rev`; dropped only when older than the last `open`. The chunk
+   * belongs to the statics of the last `compiled` delivered before it.
+   */
+  onFilled?(m: Of<'filled'>): void;
+  /** In arrival order, whatever the `rev`; dropped only when older than the last `open`. */
+  onRefill?(m: Of<'refill'>): void;
+  /** Never dropped: the map's revision numbers are their own sequence. */
+  onCells?(m: Of<'cells'>): void;
+  /** Never dropped. */
+  onLookups?(m: Of<'lookups'>): void;
+  /** Progress display only: a `rev` older than the last `setPolicy` or `open` is dropped. */
+  onCompiling?(m: Of<'compiling'>): void;
+  /** In arrival order, whatever the `rev`; dropped only when older than the last `open`. */
+  onCompiled?(m: Of<'compiled'>): void;
+  /** Every error, whatever its rev: the caller compares `rev` with what it sent. */
+  onError?(m: Of<'error'>): void;
+  onChunks?(c: ChunksResponse): void;
+  onHeights?(m: Extract<ScenarioResponse, { type: 'heights' }>): void;
+  /** The worker crashed. Retry is `restart(spawnSimWorker())`, which re-opens the timeline. */
+  onCrash?(e: Event): void;
+}
+
+/**
+ * The client side of the timeline host.
+ *
+ * Drops (S14, rule 22): a `compiling` older than the last `open` or `setPolicy` sent is dropped
+ * (progress display only). `compiled`, `filled` and `refill` are delivered in arrival order whatever
+ * their `rev`, and dropped only when older than the last `open` sent (a `restart` re-open counts):
+ * a post at an older `rev` was valid when the worker made it, the worker never posts a month twice,
+ * and its `refill` at the newer `rev` withdraws what an edit changes, so dropping one would lose
+ * months for good. A consumer applies them in order and does not assume `rev` rises; a `filled`
+ * chunk belongs to the statics of the last `compiled` delivered before it. `cells`, `lookups` and
+ * `error` are never dropped. `setPolicy` before `open` throws; `restart` re-opens only when a
+ * timeline was opened.
+ */
+export class TimelineClient {
+  #worker: ScenarioWorkerLike;
+  #events: TimelineClientEvents;
+  #lookups: LookupRequests;
+  #rev = 0;
+  /** The rev of the latest `openTimeline` or `setPolicy` sent: an older `compiling` is dropped. */
+  #policyRev = 0;
+  /** The rev of the latest `openTimeline` sent: an older `compiled`, `filled`, `refill` is dropped. */
+  #openRev = 0;
+  #manifest: Manifest | null = null;
+  #policy: SimPolicy4 | null = null;
+  #lots: Record<string, ParcelId[]> = {};
+  #disposed = false;
+  #crashed = false;
+
+  constructor(worker: ScenarioWorkerInput, events: TimelineClientEvents) {
+    this.#worker = worker as ScenarioWorkerLike;
+    this.#events = events;
+    this.#lookups = new LookupRequests((msg) => this.#worker.postMessage(msg));
+    this.#attach(this.#worker);
+  }
+
+  /** True after a worker crash, until `restart`. */
+  get crashed(): boolean {
+    return this.#crashed;
+  }
+
+  /** Posts a timeline-host request; `WorkerRequest` (the scenario union) does not list them. */
+  #post(req: TimelineHostRequest): void {
+    this.#worker.postMessage(req as WorkerRequest);
+  }
+
+  #sendOpen(): Rev {
+    const rev = ++this.#rev;
+    this.#policyRev = rev;
+    this.#openRev = rev;
+    this.#post({
+      type: 'openTimeline',
+      rev,
+      manifest: this.#manifest!,
+      policy: this.#policy!,
+      lots: this.#lots,
+      worlds: WORLDS,
+      months: WINDOW_MONTHS
+    });
+    return rev;
+  }
+
+  /** `policy` must be reconciled (`openSimDoc4`); see `OpenTimelineRequest`. */
+  open(manifest: Manifest, policy: SimPolicy4, lots: Record<string, ParcelId[]>): Rev {
+    this.#manifest = manifest;
+    this.#policy = policy;
+    this.#lots = lots;
+    return this.#sendOpen();
+  }
+
+  /** A policy edit: `compiling` for older edits is dropped from here on, nothing else. */
+  setPolicy(policy: SimPolicy4, lots: Record<string, ParcelId[]>): Rev {
+    if (this.#manifest === null) throw new Error('open first');
+    this.#policy = policy;
+    this.#lots = lots;
+    const rev = ++this.#rev;
+    this.#policyRev = rev;
+    this.#post({ type: 'setPolicy', rev, policy, lots });
+    return rev;
+  }
+
+  /** The model month the playhead is in. */
+  viewMonth(month: number): void {
+    this.#post({ type: 'viewMonth', month });
+  }
+
+  /** Asks for the whole map again (a `cells` of revision 0). */
+  resyncMap(): void {
+    this.#post({ type: 'resyncMap' });
+  }
+
+  prefetch(bbox: BBox): void {
+    this.#post({ type: 'prefetch', bbox });
+  }
+
+  retryChunks(): void {
+    this.#post({ type: 'retryChunks' });
+  }
+
+  parcelSummary(parcelId: ParcelId, day: Day, projectId?: string): Promise<ParcelSummary | null> {
+    return this.#lookups.parcelSummary(parcelId, day, projectId);
+  }
+
+  resolveBrush(query: BrushQuery): Promise<BrushLotsResult> {
+    return this.#lookups.resolveBrush(query);
+  }
+
+  lotOutlines(lots: ParcelId[]): Promise<LotOutlinesResult> {
+    return this.#lookups.lotOutlines(lots);
+  }
+
+  lotAt(point: [number, number]): Promise<LotAtResult> {
+    return this.#lookups.lotAt(point);
+  }
+
+  previewBuildings(lots: ParcelId[], stories: number): Promise<PreviewResult> {
+    return this.#lookups.previewBuildings(lots, stories);
+  }
+
+  heightLids(bbox: [number, number, number, number]): Promise<HeightLidsResult> {
+    return this.#lookups.heightLids(bbox);
+  }
+
+  brushCatalog(): Promise<BrushCatalog | null> {
+    return this.#lookups.brushCatalog();
+  }
+
+  /**
+   * Replaces a crashed (or any) worker with a fresh one and, when a timeline was open, re-opens it
+   * with the last policy and lots at a new rev, so older answers stay stale.
+   */
+  restart(worker: ScenarioWorkerInput): void {
+    if (this.#disposed) return;
+    this.#detach();
+    this.#crashed = false;
+    this.#lookups.closed = false;
+    this.#worker = worker as ScenarioWorkerLike;
+    this.#attach(this.#worker);
+    if (this.#manifest !== null && this.#policy !== null) this.#sendOpen();
+  }
+
+  dispose(): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    this.#lookups.closed = true;
+    this.#detach();
+  }
+
+  #attach(worker: ScenarioWorkerLike): void {
+    worker.onmessage = (e) => this.#receive(e.data as TimelineHostResponse);
+    worker.onerror = (e) => this.#crash(worker, e);
+    worker.onmessageerror = (e) => this.#crash(worker, e);
+  }
+
+  #detach(): void {
+    const w = this.#worker;
+    w.onmessage = null;
+    w.onerror = null;
+    w.onmessageerror = null;
+    w.terminate();
+    this.#lookups.resolveAll();
+  }
+
+  #crash(worker: ScenarioWorkerLike, e: Event): void {
+    if (this.#disposed || worker !== this.#worker || this.#crashed) return;
+    console.error('[sim] worker crashed', e);
+    this.#crashed = true;
+    this.#lookups.closed = true;
+    // onmessageerror can fire while the worker is still alive: detach and terminate it.
+    this.#detach();
+    this.#events.onCrash?.(e);
+  }
+
+  #receive(msg: TimelineHostResponse): void {
+    if (this.#disposed || this.#crashed) return;
+    if (this.#lookups.receive(msg)) return;
+    switch (msg.type) {
+      case 'ready':
+        this.#events.onReady?.(msg);
+        return;
+      case 'compiling':
+        if (msg.rev >= this.#policyRev) this.#events.onCompiling?.(msg);
+        return;
+      case 'compiled':
+        if (msg.rev >= this.#openRev) this.#events.onCompiled?.(msg);
+        return;
+      case 'filled':
+        if (msg.rev >= this.#openRev) this.#events.onFilled?.(msg);
+        return;
+      case 'refill':
+        if (msg.rev >= this.#openRev) this.#events.onRefill?.(msg);
+        return;
+      case 'cells':
+        this.#events.onCells?.(msg);
+        return;
+      case 'lookups':
+        this.#events.onLookups?.(msg);
+        return;
+      case 'error':
+        this.#events.onError?.(msg);
+        return;
+      case 'chunks':
+        this.#events.onChunks?.(msg);
+        return;
+      case 'heights':
+        this.#events.onHeights?.(msg);
+        return;
+      case 'parcelSummary':
+      case 'brushLots':
+      case 'brushCatalog':
+      case 'lotOutlines':
+      case 'previewBuildings':
+      case 'heightLids':
+      case 'lotAt':
+        return; // an answer nobody waits for
+      default: {
+        const never: never = msg;
+        console.error('[sim] unknown response', never);
+      }
+    }
+  }
+}
