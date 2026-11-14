@@ -175,6 +175,28 @@ function makeRunner(tickMs = 0.1, compileClock = false) {
   return { clock, runner, posts, at, tasks, of, run, full, both, errors };
 }
 
+/**
+ * S14: the one `refill` at `rev`, checked to follow the `compiled` at `rev` with no `filled` at
+ * `rev` before it; `kept`: its `from` is the first calendar month not posted before it.
+ */
+function settledAt(posts: Msg[], rev: number, kept = false): Of<'refill'> {
+  const refills = posts.filter((m): m is Of<'refill'> => m.type === 'refill' && m.rev === rev);
+  expect(refills).toHaveLength(1);
+  const r = posts.indexOf(refills[0]);
+  const c = posts.findIndex((m) => m.type === 'compiled' && m.rev === rev);
+  expect(c).toBeGreaterThanOrEqual(0);
+  expect(c).toBeLessThan(r);
+  expect(posts.slice(0, r).some((m) => m.type === 'filled' && m.rev === rev)).toBe(false);
+  if (kept) {
+    const last = posts
+      .slice(0, r)
+      .filter((m): m is Of<'filled'> => m.type === 'filled')
+      .at(-1);
+    expect(refills[0].from).toBe(last === undefined ? 0 : last.through + 1);
+  }
+  return refills[0];
+}
+
 /** Trims a chunk to the months before `n`, or null when it starts at or after `n`. */
 function before(c: SeriesChunk, n: number): SeriesChunk | null {
   if (c.from >= n) return null;
@@ -227,7 +249,7 @@ function applyAll(updates: TimelineUpdate[]): FakeController {
 }
 
 describe('edits', () => {
-  it('an edit dated after the fill point posts no refill and later months reflect it', async () => {
+  it('an edit dated after the fill point posts one refill that withdraws nothing and later months reflect it', async () => {
     const r = makeRunner();
     r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
     await r.run(r.both(60));
@@ -239,7 +261,12 @@ describe('edits', () => {
     r.runner.setPolicy(2, doc, paintLotsTable());
     await r.run(r.full(2));
     expect(r.errors()).toEqual([]);
-    expect(r.of('refill')).toEqual([]);
+    // S14: one refill from the first calendar month not posted (last posted + 1)
+    expect(r.of('refill')).toHaveLength(1);
+    const refill = settledAt(r.posts, 2, true);
+    expect(refill.from).toBeGreaterThan(0);
+    const after = r.of('filled', r.posts.indexOf(refill));
+    expect(after[0].series.from).toBe(refill.from);
     // kept: the same ensemble and world objects, under the new timeline
     expect(r.runner.ensembles().plan).toBe(plan);
     expect(plan.worlds[0]).toBe(w1);
@@ -268,6 +295,7 @@ describe('edits', () => {
     const expected = Array.from(finalTable(statics)).findIndex((mm) => mm > 99);
     expect(expected).toBeGreaterThan(0);
     expect(r.of('refill')).toEqual([{ type: 'refill', rev: 2, from: expected }]);
+    settledAt(r.posts, 2);
     const refillAt = r.posts.findIndex((m) => m.type === 'refill');
     const after = r.of('filled', refillAt);
     expect(after[0].series.from).toBe(expected);
@@ -283,7 +311,7 @@ describe('edits', () => {
     r.runner.dispose();
   });
 
-  it('a label-only edit or an added policy that is off: no refill, no change', async () => {
+  it('a label-only edit or an added policy that is off: one refill each that withdraws nothing, no change', async () => {
     const r = makeRunner();
     r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
     await r.run(r.both(60));
@@ -298,7 +326,9 @@ describe('edits', () => {
     r.runner.setPolicy(3, offDoc, {});
     await r.run(r.full(3));
     expect(r.errors()).toEqual([]);
-    expect(r.of('refill')).toEqual([]);
+    expect(r.of('refill').map((m) => m.rev)).toEqual([2, 3]);
+    settledAt(r.posts, 2, true);
+    settledAt(r.posts, 3, true);
     expect(r.runner.ensembles().plan).toBe(plan);
     expect(r.runner.ensembles().comp).toBe(comp);
     expect(plan.worlds[0]).toBe(w1);
@@ -321,6 +351,9 @@ describe('edits', () => {
     await r.run(() => r.full(3)() && r.of('cells').at(-1)?.render.complete === true);
     expect(r.errors()).toEqual([]);
     expect(r.posts.slice(at).filter((m) => 'rev' in m && m.rev !== 3)).toEqual([]);
+    // S14, superseded: rev 2 was accepted but not settled; the refill at 3 answers both
+    expect(r.of('refill').map((m) => m.rev)).toEqual([3]);
+    settledAt(r.posts, 3);
     expect(viewFrom(r.posts)).toEqual(await fresh(second));
     const cells = r.of('cells').map((c) => c.render);
     const ctl = applyAll(cells);
@@ -354,6 +387,7 @@ describe('edits', () => {
     expect(after.length).toBeGreaterThan(0);
     expect(after.every((f) => f.rev === 1)).toBe(true);
     expect(r.posts.slice(errAt + 1).filter((m) => 'rev' in m && m.rev === 2)).toEqual([]);
+    expect(r.of('refill')).toEqual([]);
     expect(plan.worlds[0]).toBe(w1);
     expect(viewFrom(r.posts)).toEqual(await fresh(baseDoc()));
     r.runner.dispose();
@@ -393,10 +427,25 @@ describe('edits', () => {
     const statics = r.of('compiled').at(-1)!.statics;
     expect(Array.from(finalTable(statics)).findIndex((mm) => mm > 0)).toBe(0);
     expect(r.of('refill')).toEqual([{ type: 'refill', rev: 2, from: 0 }]);
+    settledAt(r.posts, 2);
     const { plan, comp } = r.runner.ensembles();
     expect(plan!.copiedMonths()).toEqual([0]);
     expect(comp!.copiedMonths()).toEqual([0]);
     expect(viewFrom(r.posts)).toEqual(await fresh(doc));
+    r.runner.dispose();
+  });
+
+  it('a restore whose quiet re-step ends before its compile: the refill waits for the compiled', async () => {
+    // 1 ms per clock read and a long window: the month-1 re-creation is over long before the
+    // compile reaches the last month
+    const months = 400;
+    const r = makeRunner(1, true);
+    r.runner.open(1, baseDoc(), {}, WORLDS, months);
+    await r.run(r.both(60));
+    r.runner.setPolicy(2, withZoning(baseDoc(), protect(1, 200)), {});
+    await r.run(r.full(2));
+    expect(r.errors()).toEqual([]);
+    expect(settledAt(r.posts, 2).from).toBe(0);
     r.runner.dispose();
   });
 
@@ -452,6 +501,7 @@ describe('edits', () => {
     await r.run(r.full(1));
     expect(r.errors()).toHaveLength(1);
     expect(r.posts.slice(n + 1).filter((m) => 'rev' in m && m.rev === 2)).toEqual([]);
+    expect(r.of('refill')).toEqual([]);
     expect(plan.worlds[0]).toBe(w1);
     expect(viewFrom(r.posts)).toEqual(await fresh(baseDoc()));
     r.runner.dispose();
@@ -473,6 +523,9 @@ describe('edits', () => {
     await r.run(r.full(3));
     expect(r.errors()).toEqual([]);
     expect(r.posts.slice(at).filter((m) => 'rev' in m && m.rev !== 3)).toEqual([]);
+    // S14, superseded before acceptance: no refill at 2, one at 3
+    expect(r.of('refill').map((m) => m.rev)).toEqual([3]);
+    settledAt(r.posts, 3);
     expect(viewFrom(r.posts)).toEqual(await fresh(second));
     r.runner.dispose();
   });
@@ -491,6 +544,7 @@ describe('edits', () => {
     const now = r.runner.internals();
     expect(now.pending).toBeNull();
     expect(now.refillAt).toBeNull();
+    expect(now.refillDue).toBe(false);
     expect(now.lookedAt).not.toBeNull();
     // one timeline per ensemble, the side's own: the plan's new one, the comparison's kept one
     const { plan, comp } = r.runner.ensembles();
@@ -507,7 +561,7 @@ describe('edits', () => {
 });
 
 describe('the host', () => {
-  it('setPolicy during load: only the latest rev is compiled and posted', async () => {
+  it('setPolicy during load: only the latest rev is compiled and posted, and its refill answers it', async () => {
     const f = datasetFetch(FIXTURE);
     const clock = fakeClock();
     const posts: Msg[] = [];
@@ -550,6 +604,9 @@ describe('the host', () => {
     const revs = posts.flatMap((m) => ('rev' in m && m.type !== 'ready' ? [m.rev] : []));
     expect(new Set(revs)).toEqual(new Set([3]));
     expect(posts.filter((m) => m.type === 'compiled')).toHaveLength(1);
+    // S14: the edits taken before the load open the session; one refill (from 0) answers them
+    expect(posts.filter((m) => m.type === 'refill')).toEqual([{ type: 'refill', rev: 3, from: 0 }]);
+    settledAt(posts, 3);
     expect(viewFrom(posts)).toEqual(await fresh(doc3, {}, 40));
     host.dispose();
   });

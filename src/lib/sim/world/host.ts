@@ -91,6 +91,8 @@ interface Opening {
   lots: Record<string, ParcelId[]>;
   worlds: number;
   months: number;
+  /** The document is a `setPolicy`'s taken before the load: its `refill` is owed (S14). */
+  edited: boolean;
 }
 
 interface Session {
@@ -206,7 +208,8 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
         policy: req.policy,
         lots: req.lots,
         worlds: req.worlds,
-        months: req.months
+        months: req.months,
+        edited: false
       },
       view: null,
       lids: null
@@ -279,7 +282,7 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
     runner.wantCells(st.chunks.wanted);
     const o = st.opening;
     st.rev = o.rev;
-    runner.open(o.rev, o.policy, o.lots, o.worlds, o.months);
+    runner.open(o.rev, o.policy, o.lots, o.worlds, o.months, o.edited);
     const lids = st.lids;
     st.lids = null;
     if (lids !== null) runner.heightLids(lids.reqId, lids.bbox);
@@ -294,7 +297,7 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
     if (st.runner === null) {
       // before the load: the latest edit is the one opened (Review Focus 1)
       if (rev >= st.opening.rev)
-        st.opening = { ...st.opening, rev, policy: req.policy, lots: req.lots };
+        st.opening = { ...st.opening, rev, policy: req.policy, lots: req.lots, edited: true };
       return;
     }
     // M5: as before the load, an edit older than the latest one taken is ignored

@@ -54,6 +54,20 @@ export type OpenTimelineRequest = {
  * (`openSimDoc4`, calibration and `asOf` from the manifest's files) before sending; an
  * unreconciled one is rejected with `error` code `bad-request` at this `rev` and the previous
  * timeline keeps filling. `rev` is the page's count of policy edits; older work is dropped.
+ *
+ * Every accepted edit is answered by exactly one `refill` at its `rev`; a rejected one by `error`
+ * `bad-request` at its `rev` and no `refill`. The `compiled` at that `rev` comes before the
+ * `refill`, and no `filled` at that `rev` comes before it. When the edit withdraws months, `from`
+ * is the first calendar month not final at the first changed model month - 1; when it withdraws
+ * nothing (kept), `from` is the first calendar month not yet posted (the window length when the
+ * window is whole). An edit taken before the dataset loaded opens the session at its `rev` and is
+ * answered the same way (`from` 0, after its `compiled`). Superseded edits: an edit at `rev` R
+ * replaced by a later one before its `refill` went out (pending or already accepted) gets no
+ * `refill` of its own; the later accepted edit's `refill`, at a `rev` above R, answers it. So the
+ * settle signal for edit R is a `refill` with `rev` >= R: the page treats its results as stale
+ * from edit R until one has arrived and the filled months reach the playhead. (If every later edit
+ * is rejected, none comes: the timelines in use are still an older edit's, which is what stale
+ * says.)
  */
 export type SetPolicyRequest = {
   type: 'setPolicy';
@@ -100,7 +114,10 @@ export type TimelineResponse =
     }
   /** `through` is the last final calendar-month index; `series.from` the first index carried. */
   | { type: 'filled'; rev: Rev; through: number; series: SeriesChunk }
-  /** Every calendar month from index `from` on is withdrawn until filled again. */
+  /**
+   * Every calendar month from index `from` on is withdrawn until filled again. Exactly one answers
+   * each accepted `setPolicy` (see `SetPolicyRequest`): one at `rev` >= R settles edit R.
+   */
   | { type: 'refill'; rev: Rev; from: number }
   /** No `rev`: never dropped. */
   | { type: 'cells'; render: TimelineUpdate }

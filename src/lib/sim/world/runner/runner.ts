@@ -34,10 +34,15 @@
 // restores it from its copy. The `rev` becomes the edit's, so every later post carries it (rule
 // 17). The ensemble with the lower month steps first and the other waits (rules 6, 16). When the
 // plan's quiet re-step ends, its slice stops; the next task (a map task, like a flush, D6) rewinds
-// the plan's map stream and answers a `resyncMap` that came during the re-step. When no ensemble
-// re-steps quietly and no rewind waits, one `refill` goes out from the first calendar month not
-// final at min(m) - 1 and the posted mark drops to just before it. No `filled` goes out between
-// the acceptance and that `refill`. Map flushes go on while an edit compiles (world 1 waits).
+// the plan's map stream and answers a `resyncMap` that came during the re-step. Every accepted
+// edit is answered by one `refill` at its rev (S14), once the `compiled` at that rev is out, no
+// ensemble re-steps quietly and no rewind waits: from the first calendar month not final at
+// min(m) - 1 when a side restored (the posted mark drops to just before it), else from the first
+// calendar month not posted yet (it withdraws nothing). No `filled` goes out between the
+// acceptance and that `refill`. An edit accepted and superseded before its `refill` gets none of
+// its own: the next accepted edit's (a higher rev) answers both. An edit dropped before acceptance
+// gets nothing; a later accepted edit's `refill` answers it. Map flushes go on while an edit
+// compiles (world 1 waits).
 // `setPolicy` rejects at once a document whose queries (`queriesOf4`, its own or its
 // comparison's) are not all in `lots`.
 //
@@ -107,9 +112,14 @@ export interface Runner {
     policy: SimPolicy4,
     lots: Record<string, ParcelId[]>,
     worlds: number,
-    months: number
+    months: number,
+    /** The document is an accepted `setPolicy`'s (taken before the load): a `refill` is owed. */
+    edited?: boolean
   ): void;
-  /** Rules 12 to 17: compile the edit; keep or restore each ensemble once it is accepted. */
+  /**
+   * Rules 12 to 17: compile the edit; keep or restore each ensemble once it is accepted. S14: one
+   * `refill` at the edit's rev answers it, after that rev's `compiled` and before its `filled`.
+   */
   setPolicy(rev: Rev, policy: SimPolicy4, lots: Record<string, ParcelId[]>): void;
   /** The `rev` of the timelines in use: the open's, or the last accepted edit's. */
   readonly rev: Rev;
@@ -146,6 +156,8 @@ export interface RunnerInternals {
   pending: TimelineCompile[] | null;
   /** The model month a `refill` is due from, or null. */
   refillAt: number | null;
+  /** An accepted edit's `refill` is not posted yet. */
+  refillDue: boolean;
   /** Owed compile units. */
   owed: number;
   /** The permitting last posted in `lookups` (D10), or null. */
@@ -271,8 +283,12 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   /** An edit not yet accepted (rule 12). */
   let edit: Edit | null = null;
+  /** An accepted edit's `refill` is not posted yet (S14: one answers every accepted edit). */
+  let refillDue = false;
   /** The lowest first difference of the restores whose `refill` is not posted yet (rule 14). */
   let refillAt: number | null = null;
+  /** The rev of the last `compiled` posted: a `refill` waits for its rev's (S14). */
+  let compiledRev: Rev | null = null;
   /** The plan restored: rewind the map stream once its quiet re-step is over (rule 14). */
   let rewindDue = false;
   /** A `resyncMap` that came while the plan re-stepped quietly (answered after it). */
@@ -466,6 +482,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     const fresh = broken;
     broken = false;
     heightsBroken = false;
+    // S14: one `refill` answers this edit (and any accepted one it superseded before its own)
+    refillDue = true;
     replace(plan!, ed.plan, fresh);
     if (ed.comp !== null) {
       comp!.key = ed.compKey;
@@ -535,17 +553,20 @@ export function createRunner(deps: RunnerDeps): Runner {
   }
 
   /**
-   * After an acceptance, a unit or a map task: once no ensemble re-steps quietly and the plan's
-   * stream is rewound, post the `refill` (rule 14).
+   * After an acceptance, a unit, a map task or a `compiled`: once the `compiled` at the rev in use
+   * is out, no ensemble re-steps quietly and the plan's stream is rewound, post the `refill` (rule
+   * 14, S14). A restore's is from the first calendar month not final at min(m) - 1 (by the new
+   * statics); a kept edit's withdraws nothing: from the first calendar month not posted yet.
    */
   function settle(): void {
-    if (refillAt !== null && !rewindDue && !(comp?.ensemble?.quiet ?? false) && !planQuiet()) {
-      const at = refillAt - 1;
-      const from = final === null ? 0 : firstAfter(final, at);
-      refillAt = null;
-      post({ type: 'refill', rev, from });
-      posted = Math.min(posted, from - 1);
-    }
+    if (!refillDue || compiledRev !== rev) return;
+    if (rewindDue || (comp?.ensemble?.quiet ?? false) || planQuiet()) return;
+    const from =
+      refillAt === null ? posted + 1 : final === null ? 0 : firstAfter(final, refillAt - 1);
+    refillDue = false;
+    refillAt = null;
+    post({ type: 'refill', rev, from });
+    posted = Math.min(posted, from - 1);
   }
 
   /** The first calendar month whose last day is after model month `m`: not final at `m`. */
@@ -646,7 +667,10 @@ export function createRunner(deps: RunnerDeps): Runner {
         unknownLots: s.compile.unknownLots(),
         statics: st
       });
+      compiledRev = rev;
     }
+    // S14: an edit's `refill` follows its `compiled`, and goes before any `filled` at its rev
+    if (refillDue) settle();
     postFilled();
     postLookups();
     checkHeights();
@@ -657,8 +681,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     const a = plan!.ensemble;
     const b = comp!.ensemble;
     if (!a || !b || plan!.statics === null || comp!.statics === null) return;
-    // a restore's months are withdrawn first (rule 14)
-    if (refillAt !== null) return;
+    // an accepted edit's `refill` goes first (rule 14, S14)
+    if (refillDue) return;
     const through = Math.min(a.finalThrough(), b.finalThrough());
     if (through <= posted) return;
     const series = chunkOf(
@@ -957,7 +981,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       const t0 = deps.now();
       run(u);
       measure(u.kind, deps.now() - t0);
-      if (refillAt !== null) settle();
+      if (refillDue) settle();
       // a quiet re-step that just ended: its rewind is the next task, before any loud step (I1)
       if (mapTaskDue()) break;
     }
@@ -1060,8 +1084,11 @@ export function createRunner(deps: RunnerDeps): Runner {
       stalled: false
     }) satisfies Side as Side;
 
-  /** Both sides from nothing: the open, or an edit after an open whose document was rejected. */
-  function start(policy: SimPolicy4, lots: Record<string, ParcelId[]>): void {
+  /**
+   * Both sides from nothing: the open, or an edit after an open whose document was rejected.
+   * `edited`: the document is an accepted `setPolicy`'s, so its `refill` is owed (S14).
+   */
+  function start(policy: SimPolicy4, lots: Record<string, ParcelId[]>, edited: boolean): void {
     try {
       const c = comparisonOf(policy);
       plan = sideOf(true, 'plan', compileTimeline(policy, lots, ctx!, 'plan'), '');
@@ -1073,6 +1100,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
     failed = false;
     broken = false;
+    refillDue = edited;
     kick();
   }
 
@@ -1089,7 +1117,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     get rev() {
       return rev;
     },
-    open(r, policy, lots, w, m) {
+    open(r, policy, lots, w, m, edited = false) {
       rev = r;
       worlds = w;
       months = m;
@@ -1103,7 +1131,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         },
         months
       );
-      start(policy, lots);
+      start(policy, lots, edited);
     },
     setPolicy(r, policy, lots) {
       if (disposed || ctx === null) return;
@@ -1112,7 +1140,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (plan === null || comp === null) {
         // the open's document was rejected: this one opens
         rev = r;
-        return start(policy, lots);
+        return start(policy, lots, true);
       }
       let ed: Edit;
       try {
@@ -1222,6 +1250,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         compiles: [plan?.compile ?? null, comp?.compile ?? null],
         pending: edit && [edit.plan.compile, ...(edit.comp ? [edit.comp.compile] : [])],
         refillAt,
+        refillDue,
         owed: owed.length,
         lookedAt
       };
