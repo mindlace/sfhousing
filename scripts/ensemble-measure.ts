@@ -74,6 +74,7 @@ import { staticsOf, type Statics } from '../src/lib/sim/world/statics';
 import { dirRecords } from '../src/lib/sim/world/test/map-stream-cities.node.js';
 import { streamDeps } from '../src/lib/sim/world/test/map-stream-deps';
 import type { Due, StepSink, World, WorldEvent } from '../src/lib/sim/world/types';
+import { benchDoc, benchMoney } from '../src/lib/sim/world/funding/test/fixtures';
 import { withFunding } from '../src/lib/sim/world/world';
 
 const now = () => performance.now();
@@ -537,6 +538,11 @@ interface Common {
   dropCopies: boolean;
   /** `--copies 0,240`: the model months copies are taken after (default every 60). */
   copyMonths: number[] | null;
+  /**
+   * The plan's money document, reconciled with `input` (`--money-set`): `baseline` is
+   * `DEFAULT_POLICY4`; `bench` and `benchset` are world-funding's bench funding document.
+   */
+  doc: SimPolicy4;
   months: number;
   worlds: number;
   money: boolean;
@@ -547,7 +553,7 @@ interface Common {
 function caseEnsemble(c: Common) {
   const heap0 = heapMb();
   const tc = now();
-  const compiled = compileBoth(c.live, c.input, DEFAULT_POLICY4, c.months);
+  const compiled = compileBoth(c.live, c.input, c.doc, c.months);
   const compileMs = now() - tc;
   const deps = streamDeps(c.input, c.live.records, { now });
   const heapBase = heapMb();
@@ -734,7 +740,7 @@ function createShort(c: Common, compiled: ReturnType<typeof compileBoth>) {
 function caseReplan(c: Common, variant: 'market' | 'zoning') {
   const AT = 120;
   let input = c.input;
-  let doc: SimPolicy4 = DEFAULT_POLICY4;
+  let doc: SimPolicy4 = c.doc;
   let lots: Record<string, ParcelId[]> = {};
   if (variant === 'market') {
     const steps = input.market ?? [];
@@ -745,7 +751,13 @@ function caseReplan(c: Common, variant: 'market' | 'zoning') {
     };
   } else {
     const m = metroDoc(c.live, input, AT);
-    doc = m.doc;
+    doc = reconciled(
+      {
+        ...c.doc,
+        kinds: { ...c.doc.kinds, zoning: [...c.doc.kinds.zoning, ...m.doc.kinds.zoning] }
+      },
+      input
+    );
     lots = m.lots;
   }
   const ctx = ctxOf(c.live, input, c.months, yieldsOf(c.live, false, null));
@@ -950,7 +962,7 @@ async function caseFirst(dir: string, extra: string | null, money: boolean, worl
 
 /** Case 8: world 1 alone, flushed after every month at 20 ms; optionally warmed ahead (D12). */
 function caseFlush(c: Common, warm: boolean) {
-  const compiled = compileBoth(c.live, c.input, DEFAULT_POLICY4, c.months);
+  const compiled = compileBoth(c.live, c.input, c.doc, c.months);
   const statics = staticsOf(c.input);
   const timeline = compiled.plan.timeline;
   const deps = streamDeps(c.input, c.live.records, { now }); // cold memo
@@ -1093,7 +1105,7 @@ function partBytes(part: Record<string, unknown>) {
  * series data, world 1's ledger, and the map stream's memos (heap before and after a full drain).
  */
 function caseSizes(c: Common) {
-  const compiled = compileBoth(c.live, c.input, DEFAULT_POLICY4, c.months);
+  const compiled = compileBoth(c.live, c.input, c.doc, c.months);
   const deps = streamDeps(c.input, c.live.records, { now });
   const s = createSession(c.input, c.money, compiled, c.worlds, c.months, deps);
   const kb = (x: unknown) => r1(serialize(x).length / 1024);
@@ -1172,7 +1184,7 @@ function caseSizes(c: Common) {
  * back, then m months stepped quietly (series fed, ledger kept, no map stream, nothing posted).
  */
 function caseResume(c: Common, ats: number[]) {
-  const compiled = compileBoth(c.live, c.input, DEFAULT_POLICY4, c.months);
+  const compiled = compileBoth(c.live, c.input, c.doc, c.months);
   const deps = streamDeps(c.input, c.live.records, { now });
   const s = createSession(c.input, c.money, compiled, c.worlds, c.months, deps);
   const copy = takeCopy(s);
@@ -1239,7 +1251,7 @@ async function main(): Promise<number> {
     console.error(
       'usage: node --expose-gc node_modules/.bin/tsx scripts/ensemble-measure.ts --dir <dataset> ' +
         '--case ensemble|replan|compile|first|flush|flush-warm|sizes|resume [--extra <dir>] [--no-gross] ' +
-        '[--no-money] [--no-copies] [--copies 0,240] [--at 240,470] [--variant market|zoning] [--runs 3] [--worlds 48] [--months 480]'
+        '[--no-money] [--money-set baseline|bench|benchset] [--no-copies] [--copies 0,240] [--at 240,470] [--variant market|zoning] [--runs 3] [--worlds 48] [--months 480]'
     );
     return 2;
   }
@@ -1259,8 +1271,34 @@ async function main(): Promise<number> {
     result = await caseFirst(dir, extra, money, worlds);
   } else {
     const live = await loadLive(dir, extra);
-    const input = money ? live.funded : unfunded(live.funded);
+    // --money-set: baseline (the dataset's), bench (the dataset's baseline plus world-funding's
+    // bench funding document), benchset (world-funding's `benchSet(…, 'bench')`: bench baseline,
+    // routes and market in place of the dataset's, plus that document)
+    const set = opt('--money-set') ?? 'baseline';
+    const input = !money
+      ? unfunded(live.funded)
+      : set === 'benchset'
+        ? benchMoney(live.funded)
+        : live.funded;
     if (money && input.finance === undefined) throw new Error('dataset has no baseline funding');
+    const raw = money && set !== 'baseline' ? benchDoc(input.asOf) : DEFAULT_POLICY4;
+    const doc = reconciled(raw, input);
+    const programmes = (d: SimPolicy4) =>
+      d.kinds.money.reduce(
+        (a, p) =>
+          a +
+          p.spans.reduce(
+            (b, sp) => b + ('programmes' in sp.what ? sp.what.programmes.length : 0),
+            0
+          ),
+        0
+      );
+    console.error(
+      `money set ${money ? set : 'off'}: ${doc.kinds.money.length} money policies ` +
+        `(${raw.kinds.money.length} before reconciling), ${programmes(doc)} programmes ` +
+        `(${programmes(raw)} before), ` +
+        `${input.finance?.pools.length ?? 0} baseline pools, ${input.finance?.programmes.length ?? 0} baseline programmes`
+    );
     const copies = opt('--copies');
     const c: Common = {
       live,
@@ -1269,7 +1307,8 @@ async function main(): Promise<number> {
       money,
       input,
       dropCopies: has('--no-copies'),
-      copyMonths: copies === null ? null : copies.split(',').map(Number)
+      copyMonths: copies === null ? null : copies.split(',').map(Number),
+      doc
     };
     console.error(
       `${live.label}: ${input.parcels.count} parcels, gross table ${live.loaded.gross ? 'yes' : 'no'}, ` +
