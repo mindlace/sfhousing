@@ -64,6 +64,31 @@ describe('frameMoney', () => {
     expect(fm.bundleOf('market', 1)).toEqual([2, 3]);
   });
 
+  it('bundleOf (units array, capped at the largest minHomes) equals the filter for any units', () => {
+    const base = miniFinance(miniInput().input.asOf);
+    // minHomes 0, 2, 3.5 and 40 (test values): a fractional and a large least.
+    const mins = [2, 40, 0, 3.5];
+    const f = miniFrame(7, {
+      programmes: base.programmes.map((g, i) => ({ ...g, minHomes: mins[i] }))
+    });
+    const fm = frameMoney(oneFrame(f), f);
+    const seen = new Map<string, number[]>();
+    let checked = 0;
+    for (const kind of ['market', 'affordable'] as const)
+      for (const units of [0, 1, 2, 3, 3.5, 4, 39, 40, 41, 500, 65_535, 2.5, -1]) {
+        const want = fm.offered[kind].filter((i) => f.finance!.programmes[i].minHomes <= units);
+        const got = fm.bundleOf(kind, units);
+        expect(got, `${kind} ${units}`).toEqual(want);
+        // One shared array per distinct set, whichever path answered.
+        const k = want.join(',');
+        if (seen.has(k)) expect(got).toBe(seen.get(k));
+        else seen.set(k, got);
+        expect(fm.bundleOf(kind, units)).toBe(got);
+        checked++;
+      }
+    expect(checked).toBe(26);
+  });
+
   it('bundleIds round-trips a joined id list and refuses an unknown id', () => {
     const f = miniFrame(1);
     const fm = frameMoney(oneFrame(f), f);

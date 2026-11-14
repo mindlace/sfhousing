@@ -89,7 +89,17 @@ export function frameMoney(timeline: PolicyTimeline, frame: PolicyFrame): FrameM
     if (b === undefined) bundles.set(k, (b = set));
     return b;
   };
+  // `bundleOf` per kind in an array indexed by units, capped at `top` (the largest `minHomes`
+  // offered, rounded up): from there on every offered programme is met, so the set is the same.
+  // Units off the array (not a whole number, or negative) use the keyed map.
+  const top: Record<ProjectKind, number> = { market: 0, affordable: 0 };
+  for (const kind of ['market', 'affordable'] as const)
+    for (const i of offered[kind])
+      top[kind] = Math.max(top[kind], Math.ceil(fin.programmes[i].minHomes));
+  const byUnits: Record<ProjectKind, (number[] | undefined)[]> = { market: [], affordable: [] };
   const sized = new Map<string, number[]>();
+  const bundleAt = (kind: ProjectKind, units: number): number[] =>
+    canon(offered[kind].filter((i) => fin.programmes[i].minHomes <= units));
 
   const fm: FrameMoney = {
     fin,
@@ -100,10 +110,20 @@ export function frameMoney(timeline: PolicyTimeline, frame: PolicyFrame): FrameM
     least,
     key: keyOf(fin),
     bundleOf(kind, units) {
+      const u = Math.min(units, top[kind]);
+      if (Number.isInteger(u) && u >= 0) {
+        const row = byUnits[kind];
+        let b = row[u];
+        if (b === undefined) {
+          b = bundleAt(kind, u);
+          row[u] = b;
+        }
+        return b;
+      }
       const k = `${kind}|${units}`;
       let b = sized.get(k);
       if (b === undefined) {
-        b = canon(offered[kind].filter((i) => fin.programmes[i].minHomes <= units));
+        b = bundleAt(kind, units);
         sized.set(k, b);
       }
       return b;
