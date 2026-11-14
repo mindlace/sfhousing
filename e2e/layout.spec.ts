@@ -418,7 +418,7 @@ test.describe('medium width', () => {
       expect(fit, 'the header overflows').toBe(true);
       await expect(page.locator('.sfh-dock-panel')).toBeVisible();
 
-      await menu.click();
+      await openHeaderMenu(page);
       await expect(paint).toBeVisible();
       for (const name of ['Paint', 'Simulate', 'Fewer cars'])
         await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
@@ -585,6 +585,12 @@ test.describe('account entry', () => {
         // the Menu toggle does nothing before hydration, so a loaded machine flaked here
         await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
         await expect(page.getByRole('banner')).toBeVisible();
+        // The map and its controls settle after hydration: the scan below covers the whole page,
+        // so it waits for the map and the bottom-right footprint the dock and Reset view follow.
+        await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
+          timeout: 20_000
+        });
+        await expectFootprintSettled(page);
         await expect(account(page)).toBeHidden();
         await openHeaderMenu(page);
         await expect(account(page)).toBeVisible();
