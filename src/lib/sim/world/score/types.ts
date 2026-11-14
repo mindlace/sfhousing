@@ -77,7 +77,7 @@ export interface SeriesChunk {
  * carries world 1's.
  */
 export interface WorldSeriesData {
-  version: 4;
+  version: 5;
   /** The last model month passed to `stepped`; 0 before any. */
   stepped: number;
   /** `finalThrough()`. */
@@ -86,6 +86,8 @@ export interface WorldSeriesData {
   summed: number;
   /** One past the highest row started. */
   rows: number;
+  /** Funded rows whose step was stepped with their completion filed and no `'award'` (a feed bug). */
+  unawarded: number;
   /** LIVE index of the open span, -1 none, -2 not started. */
   stage: Int8Array;
   /** Start day of the open span. */
@@ -98,7 +100,10 @@ export interface WorldSeriesData {
   pending: Int32Array;
   /** A master's filed phases, bit `phase - 1` of each (a phase files once). */
   filed: Int32Array;
-  /** A funded row's award day (its `'award'` event), else `NO_DAY`. */
+  /**
+   * A funded row's award day (its `'award'` event), else `NO_DAY`; `NO_DAY + 1` while a row that
+   * completed first awaits it, `NO_DAY + 2` once its step was stepped without it.
+   */
   award: Int32Array;
   /** A funded row's displaced homes before its completion (rule 12). */
   disp: Int32Array;
