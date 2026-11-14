@@ -1,13 +1,13 @@
-// The funding system world-core's hook calls (spec S12). Filled so far: `create`, `planLot`,
-// `policyChanged`, `apply`, `moneyIn`, `onProjectEvent` (ordinary starts and money events),
-// `serve` and the line's compaction; the shadow system comes with its own task.
+// The funding system world-core's hook calls (spec S12): `create`, `planLot`, `policyChanged`,
+// `apply`, `moneyIn`, `onProjectEvent` (ordinary starts and money events), `serve`, and `shadow`
+// (shadow starts, then the line's compaction).
 import { ORIGIN_SIM, type FundingSystem, type StepCtx, type World } from '../types';
 import { applyLots, leaveLine, planLotMonth } from './apply';
 import { fundOf, initFunding } from './columns';
-import { compact } from './line-index';
 import { policyChanged } from './policy';
 import { moneyIn, moneyOnEvent } from './pools';
 import { serveLine } from './serve';
+import { stepShadows } from './shadow';
 
 /**
  * Gives the world its funding columns when a timeline first offers money after month 1. The core
@@ -61,8 +61,8 @@ export function createFundingSystem(): FundingSystem {
       serveLine(ctx);
     },
     shadow(ctx) {
-      // System 7 runs last in every funded month: no `gone` row survives the step.
-      compact(fundOf(ensure(ctx)).line);
+      ensure(ctx);
+      stepShadows(ctx);
     },
     planLot(ctx, lot) {
       return planLotMonth(ctx, lot);

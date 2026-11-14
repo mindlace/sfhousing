@@ -51,7 +51,10 @@ export interface FundLine extends LineColumns {
   shadowK: Int32Array;
   shadowR: Int32Array;
   shadowExisting: Int32Array;
-  /** Planned ordinary-start month as last evaluated, 0 = never so far. */
+  /**
+   * The month of the shadow's planned ordinary start as last evaluated: 0 = not evaluated yet,
+   * -1 = evaluated and never passed so far.
+   */
   shadowMonth: Int32Array;
 }
 
@@ -349,4 +352,17 @@ export function addShadow(
   line.shadowR[i] = r;
   line.shadowExisting[i] = existing;
   line.shadowMonth[i] = 0;
+}
+
+/** Removes the shadow rows `ended` (ascending indices), keeping the order of the rest. */
+export function dropShadows(line: FundLine, ended: readonly number[]): void {
+  if (ended.length === 0) return;
+  let w = ended[0];
+  for (let j = 0; j < ended.length; j++) {
+    const from = ended[j] + 1;
+    const to = j + 1 < ended.length ? ended[j + 1] : line.shadowN;
+    if (to > from) moveRows(line, SHADOWS, from, to, w);
+    w += to - from;
+  }
+  line.shadowN = w;
 }

@@ -14,6 +14,7 @@ import { KIND_AFFORDABLE, fundOf, poolRowOf, type FundLine, type FundPools } fro
 import { frameMoney, type FrameMoney } from './frame-money';
 import { firstAtMost, lineIndex, rowOfSeq, startAfter, type Group } from './line-index';
 import { availableOf, commitAward } from './pools';
+import { shadowAward } from './shadow';
 
 const kindOf = (line: FundLine, i: number): ProjectKind =>
   line.kind[i] === KIND_AFFORDABLE ? 'affordable' : 'market';
@@ -175,8 +176,9 @@ function serveRow(
 
 /**
  * The award of line row `i` (rule 11), which the award rule passes against the pools as they
- * stand: its set, day and `FundedStart`, the commit, the row leaving the line, the funded start
- * and the `'award'` event. Both scans award through this one function.
+ * stand: its set, day and `FundedStart`, the commit, the row leaving the line, the shadow of the
+ * ordinary start it pre-empts (rule 20), the funded start and the `'award'` event. Both scans
+ * award through this one function.
  */
 function awardRow(
   ctx: StepCtx,
@@ -202,6 +204,9 @@ function awardRow(
   const row = ctx.world.projects.n;
   commitAward(ctx, fm, row, day, award, units);
   leaveLine(line, lot);
+  // Rule 20: the shadow of the attempt the award pre-empts, read before the start's chain can
+  // free the lot and start it again.
+  shadowAward(ctx, line, lot, row);
   const got = ctx.startProject(lot, day, funded);
   if (got === -1)
     throw new Error(`serveLine: startProject returned -1 for a funded start on lot ${lot}`);
