@@ -16,13 +16,17 @@ All the port's tables came from one migration, `migrations/d1/20261114112404_biz
 
 ### Pseudonymous accounts
 
-A pseudonymous account (Better-Auth `anonymous()` plugin, email `@pseudonymous.sfhousing.invalid`, constant `PSEUDONYMOUS_EMAIL_DOMAIN` in `src/lib/server/auth/brand.ts`) is minted when a person creates a sim or joins from an invite. Nothing is minted for a visitor who only browses. The mint is rate limited (`PSEUDO_MINT_RL`).
+A pseudonymous account (Better-Auth `anonymous()` plugin, email `@pseudonymous.sfhousing.invalid`, constant `PSEUDONYMOUS_EMAIL_DOMAIN` in `src/lib/server/auth/brand.ts`) is minted when a person creates a sim, joins from an invite, or presses `Start fresh without an account` on `/signin`. Nothing is minted for a visitor who only browses. The mint is rate limited (`PSEUDO_MINT_RL`).
 
 - The known-device cookie `sfh_known` is set for non-pseudonymous users and passkey holders. A signed-out known device that tries to create a sim goes to `/signin` instead of minting again; the intent is kept in `sfh_pending_sim` and resumed after sign-in.
 - Email and Google end pseudonymity and can fuse two accounts (`onLinkAccount`, `handleAccountLink`). A password or a passkey does not fuse two accounts.
 - A password makes an account durable without ending pseudonymity. Sign-in is by handle and password: the action resolves the handle itself (`resolveHandleToEmail` in `src/lib/server/auth/magic-link.ts`). Better-Auth's `username` plugin is not installed. There is no password sign-up; a password is set from `/account` on a signed-in session. Policy is length only plus a breach check (`password-breach.ts`).
 - Password reset mails only a verified, deliverable address (`mayReceivePasswordReset` in `src/lib/server/auth/password-reset-gate.ts`). A pseudonymous account with no verified email has no reset path.
 - A pseudonymous account whose sessions have all been expired longer than `REAP_GRACE_MS` and that holds no passkey, password or Google account is reapable (see Reaping).
+
+### Sign out
+
+`/account` has a `Sign out` form action (`signOut` in `src/routes/account/+page.server.ts`): Better-Auth's `signOut` deletes the session row and clears the session cookies, and the visitor lands on `/` signed out. The known-device cookie stays, as in planafoot, so the next sim on that device steers to `/signin`. A pseudonymous account that signs out has no way back in.
 
 ### Deletion
 
@@ -92,6 +96,7 @@ Membership is D1 only. `onSimRosterChanged` in `src/lib/server/sims/roster-hook.
 `src/lib/server/invites/`. An invite is a bearer token, stored only as a SHA-256 hash (`token.ts`). The link is `/invite/<token>`; the mail is `invite.ts` in `email-templates/`. Create, revoke, resend, accept and decline are under `/api/sims/[simId]/invites` and `/api/invites/[inviteId]`.
 
 - An invite names an email or a handle. A visitor with no account who opens it is classified by `classifyColdAccept` in `claim.ts`: mint (a handle invite mints a pseudonymous account; an emailed invite mints an email-bound account), sign in (the entered email owns an account), or verify (the entered email differs from the invited one).
+- On failure the members routes and actions answer `{ code }` (`memberErrorCode` in `src/lib/server/invites/error-code.ts` maps the services' thrown reasons; anything else is `failed`), never an error's text. The pages show `memberErrorText(code)` from `MEMBER_ERROR_COPY` in `src/lib/members/copy.ts`. A new reason needs a code there.
 - Accepting calls `onSimRosterChanged`; declining changes no roster and does not. The call sites are `createSim` and `removeSimMember` (when the sim survives) in `src/lib/server/sims/sims.ts`, the API accept route `src/routes/api/invites/[inviteId]/accept/+server.ts`, and the two accept paths (signed in, and cold accept) of `src/routes/invite/[token]/+page.server.ts`.
 
 ## e2e seams
