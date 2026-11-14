@@ -14,7 +14,6 @@ import {
   perAddedHome,
   type Money
 } from '$lib/sim/scenario/finance-score';
-import type { Day } from '$lib/timelapse/time';
 import type { TimelineScore } from '$lib/sim/protocol';
 import type { MoneyView } from '$lib/sim/world/score/types';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
@@ -29,7 +28,6 @@ import {
   type PoolKind,
   type Provenance
 } from '$lib/timelapse/types';
-import { utcParts } from './time';
 import { formatDollars, formatDollarsExact, formatSourcePercent } from './format';
 import { marketSentence } from './market-view';
 
@@ -38,8 +36,6 @@ export interface MoneyAt {
   citySpent: Dollars;
   perAddedHome: Dollars | null;
   cityPerAddedHome: Dollars | null;
-  /** The month index the two per-home figures are read at. */
-  figureIndex: number;
   fundedHomes: number;
   displacedHomes: number;
   pools: {
@@ -64,30 +60,27 @@ export interface TiersAt {
 type Tiers = NonNullable<TimelineScore['tiers']>;
 
 /**
- * The per-home dollars and the displaced share for month `i`, and the month index they are read at.
- * A stepped view's money carries them at its filled end only (`atIndex`); a scored run's are its
- * own series at `i`. Never divided here for a view.
+ * The per-home dollars and the displaced share at month `i`. A stepped view's money carries them by
+ * month (entry `i`, null past its filled end, as the other rows have no entry there); a scored
+ * run's are its own series at `i`. Never divided here for a view.
  */
 export function moneyFigureAt(
   money: Money,
   i: number
-): {
-  perAddedHome: { all: Dollars | null; city: Dollars | null };
-  displacedShare: number | null;
-  atIndex: number;
-} {
-  if ('perAddedHome' in money && 'displacedShare' in money) {
+): { perAddedHome: { all: Dollars | null; city: Dollars | null }; displacedShare: number | null } {
+  if ('perAddedHomeByMonth' in money && 'displacedShareByMonth' in money) {
     const v = money as MoneyView;
     return {
-      perAddedHome: v.perAddedHome,
-      displacedShare: v.displacedShare,
-      atIndex: money.fundedHomes.length - 1
+      perAddedHome: {
+        all: v.perAddedHomeByMonth.all[i] ?? null,
+        city: v.perAddedHomeByMonth.city[i] ?? null
+      },
+      displacedShare: v.displacedShareByMonth[i] ?? null
     };
   }
   return {
     perAddedHome: { all: perAddedHome(money, i, 'all'), city: perAddedHome(money, i, 'city') },
-    displacedShare: displacedShare(money, i),
-    atIndex: i
+    displacedShare: displacedShare(money, i)
   };
 }
 
@@ -99,7 +92,6 @@ export function moneyAt(money: Money, i: number): MoneyAt {
     citySpent: cityOf(money, i),
     perAddedHome: fig.perAddedHome.all,
     cityPerAddedHome: fig.perAddedHome.city,
-    figureIndex: fig.atIndex,
     fundedHomes: money.fundedHomes[i],
     displacedHomes: money.displacedHomes[i],
     pools: money.pools.map((p) => ({
@@ -138,20 +130,18 @@ export const TIER_NAME: Record<IncomeTier, string> = {
   aboveModerate: 'Above moderate'
 };
 
-const perHome = (x: Dollars | null, by: number | null): string =>
-  x === null
-    ? 'no homes added yet'
-    : `${formatDollarsExact(x)} per added home${by === null ? '' : ` by ${by}`}`;
+const perHome = (x: Dollars | null): string =>
+  x === null ? 'no homes added yet' : `${formatDollarsExact(x)} per added home`;
 
 /** The City's line, or null when no pool is the City's. */
-export function cityLine(m: MoneyAt, by: number | null = null): string | null {
+export function cityLine(m: MoneyAt): string | null {
   if (!m.pools.some((p) => CITY_POOL_KINDS.has(p.kind))) return null;
-  return `City money: ${perHome(m.cityPerAddedHome, by)} · ${formatDollars(m.citySpent)} spent so far`;
+  return `City money: ${perHome(m.cityPerAddedHome)} · ${formatDollars(m.citySpent)} spent so far`;
 }
 
 /** All public money's line; `publicSpent` is `money.publicSpent[i]`, as F14 defines it. */
-export function allLine(m: MoneyAt, publicSpent: number, by: number | null = null): string {
-  return `All public money: ${perHome(m.perAddedHome, by)} · ${formatDollars(publicSpent)} spent so far`;
+export function allLine(m: MoneyAt, publicSpent: number): string {
+  return `All public money: ${perHome(m.perAddedHome)} · ${formatDollars(publicSpent)} spent so far`;
 }
 
 /**
@@ -171,20 +161,10 @@ export function fundedLine(m: MoneyAt): string {
   return `Funded homes finished: ${formatCount(m.fundedHomes)}. Added homes: ${formatCount(m.fundedHomes - m.displacedHomes)}.`;
 }
 
-/** The year a figure read at `atIndex` is labelled with, or null when it is the shown month's. */
-export function figureYear(atIndex: number, i: number, months: readonly Day[]): number | null {
-  return atIndex === i ? null : utcParts(months[atIndex]).y;
-}
-
 /** The displaced homes beside the published range; the share comes from `moneyFigureAt`. */
-export function displacementLine(money: Money, i: number, months: readonly Day[] = []): string {
-  const fig = moneyFigureAt(money, i);
-  const by = figureYear(fig.atIndex, i, months);
-  const share = fig.displacedShare;
-  const pct =
-    share === null
-      ? ''
-      : ` (${formatPercent(share)} of funded homes${by === null ? '' : ` by ${by}`})`;
+export function displacementLine(money: Money, i: number): string {
+  const share = moneyFigureAt(money, i).displacedShare;
+  const pct = share === null ? '' : ` (${formatPercent(share)} of funded homes)`;
   const { low, high } = DISPLACEMENT_RANGE.value;
   const tier = DISPLACEMENT_RANGE.provenance.tier;
   return (

@@ -876,39 +876,28 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
     expect(document.querySelector('[data-testid="fzp-money"]')).not.toBeNull();
   });
 
-  it('reads perAddedHome and displacedShare from the view', async () => {
+  it('reads the per-home figures and the share by month from the view, unlabelled', async () => {
     await page.viewport(1024, 768);
     const v = view();
+    const n = v.filledThrough + 1;
+    const col = (x: number) => Array.from({ length: n }, (_, k) => (k === IDX ? x : 1));
     const withSentinel: TimelineView = {
       ...v,
-      money: { ...v.money!, perAddedHome: { all: 123456, city: 654321 }, displacedShare: 0.5 }
+      money: {
+        ...v.money!,
+        perAddedHomeByMonth: { all: col(123456), city: col(654321) },
+        displacedShareByMonth: col(0.5)
+      }
     };
     await render(SimResults, { props: feed(withSentinel) });
-    expect(page.getByTestId('fzp-money-all').element().textContent).toContain('$123,456');
-    expect(page.getByTestId('fzp-money-city').element().textContent).toContain('$654,321');
-    expect(page.getByTestId('fzp-money-displaced').element().textContent).toContain(
-      '(50% of funded homes by '
-    );
-  });
-
-  it('labels the per-home figures and the share with the year they are read at', async () => {
-    await page.viewport(1024, 768);
-    const v = view();
-    const withSentinel: TimelineView = {
-      ...v,
-      money: { ...v.money!, perAddedHome: { all: 123456, city: 654321 }, displacedShare: 0.5 }
-    };
-    await render(SimResults, { props: feed(withSentinel) });
-    const year = new Date(v.months[v.filledThrough] * 86400000).getUTCFullYear();
-    expect(page.getByTestId('fzp-money-all').element().textContent).toContain(
-      `per added home by ${year}`
-    );
+    const all = page.getByTestId('fzp-money-all').element().textContent!;
+    expect(all).toContain('$123,456 per added home ·');
     expect(page.getByTestId('fzp-money-city').element().textContent).toContain(
-      `per added home by ${year}`
+      '$654,321 per added home ·'
     );
-    expect(page.getByTestId('fzp-money-displaced').element().textContent).toContain(
-      `(50% of funded homes by ${year})`
-    );
+    const d = page.getByTestId('fzp-money-displaced').element().textContent!;
+    expect(d).toContain('(50% of funded homes)');
+    expect(`${all}${d}`).not.toMatch(/ by \d{4}/);
   });
 
   it('renders the tier block headed In this city when a tier baseline is given', async () => {

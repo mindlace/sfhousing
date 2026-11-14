@@ -30,7 +30,6 @@ import {
   TIERS_FUNDED_SENTENCE,
   TIERS_UNRECORDED_SENTENCE,
   uncappedPoolIds,
-  figureYear,
   moneyFigureAt
 } from './money-view';
 import type { Pool } from '$lib/timelapse/types';
@@ -266,21 +265,27 @@ describe('marketText', () => {
   });
 });
 
-describe('moneyFigureAt and the by-year label', () => {
-  it('a view money gives its own figures at its filled end, a scored one its month', () => {
+describe('moneyFigureAt', () => {
+  it('a view money gives the by-month figure at i, a scored one its own month', () => {
     const base = money;
-    const last = base.fundedHomes.length - 1;
-    const view = { ...base, perAddedHome: { all: 7, city: 8 }, displacedShare: 0.25 };
-    expect(moneyFigureAt(view, 0)).toEqual({
+    const n = base.fundedHomes.length;
+    const view = {
+      ...base,
       perAddedHome: { all: 7, city: 8 },
       displacedShare: 0.25,
-      atIndex: last
+      perAddedHomeByMonth: {
+        all: Array.from({ length: n }, (_, k) => 100 + k),
+        city: Array.from({ length: n }, (_, k) => 200 + k)
+      },
+      displacedShareByMonth: Array.from({ length: n }, (_, k) => (k === 2 ? null : k / 100))
+    };
+    expect(moneyFigureAt(view, 3)).toEqual({
+      perAddedHome: { all: 103, city: 203 },
+      displacedShare: 0.03
     });
-    expect(moneyFigureAt(base, 0).atIndex).toBe(0);
-    const months = base.fundedHomes.map((_, k) => k * 400);
-    expect(displacementLine(view, 0, months)).toContain(
-      `(25% of funded homes by ${figureYear(last, 0, months)})`
-    );
-    expect(figureYear(3, 3, months)).toBeNull();
+    expect(moneyFigureAt(view, 2).displacedShare).toBeNull();
+    expect(displacementLine(view, 3)).toContain('(3.0% of funded homes)');
+    expect(displacementLine(view, 3)).not.toMatch(/ by \d{4}/);
+    expect(moneyFigureAt(base, 1).perAddedHome.all).toBe(moneyAt(base, 1).perAddedHome);
   });
 });
