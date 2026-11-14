@@ -10,6 +10,8 @@ export const SIMS_COPY = {
   empty: 'No sims yet.',
   titleRequired: 'Give the sim a title.',
   tooManySims: 'Too many new sims too quickly. Wait a moment.',
+  jsonRequired: 'Send JSON.',
+  crossOrigin: 'Cross-site requests are not allowed.',
   signInRequired: 'Sign in to create a sim.',
   sessionStart: "Couldn't start your session. Try again.",
   quota: `You can manage up to ${MAX_SIMS_PER_MANAGER} sims.`

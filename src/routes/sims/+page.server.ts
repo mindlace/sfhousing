@@ -5,7 +5,7 @@ import { clearPendingSim, readPendingSim } from '$lib/server/onboarding/pending-
 import { listSimsForUser } from '$lib/server/sims/sim-index';
 import { simQuotaExceeded } from '$lib/server/sims/sim-quota';
 import { createSim } from '$lib/server/sims/sims';
-import { startSim } from '$lib/server/sims/start-sim';
+import { checkSimTitle, startSim } from '$lib/server/sims/start-sim';
 
 export const load: PageServerLoad = async (event) => {
   const { locals, platform } = event;
@@ -18,8 +18,10 @@ export const load: PageServerLoad = async (event) => {
   const pendingTitle = readPendingSim(event.cookies);
   if (pendingTitle) {
     clearPendingSim(event.cookies);
-    if (!(await simQuotaExceeded(db, locals.user))) {
-      const { simId } = await createSim({ db, title: pendingTitle, managerId: locals.user.id });
+    // The cookie is user-controlled: it gets the same checks as a typed title.
+    const checked = checkSimTitle(pendingTitle);
+    if ('title' in checked && !(await simQuotaExceeded(db, locals.user))) {
+      const { simId } = await createSim({ db, title: checked.title, managerId: locals.user.id });
       throw redirect(303, `/sims/${simId}`);
     }
   }

@@ -117,6 +117,18 @@ describe('/sims load', () => {
     expect(store.has('sfh_pending_sim')).toBe(false);
   });
 
+  it.each([
+    ['over-long', 'x'.repeat(SIM_TITLE_MAX + 1)],
+    ['empty', '   ']
+  ])('creates no sim from an %s stashed title and returns the list', async (_n, pending) => {
+    const { db, event, store } = setup({ pending, user: { id: 'u1', pseudonymous: false } });
+    await seedUser(db, { id: 'u1', email: 'u1@test.com' });
+    const res = (await load(event())) as { sims: unknown[] };
+    expect(res.sims).toEqual([]);
+    // A blank stash reads back as absent, so only the over-long one is cleared.
+    if (pending.trim()) expect(store.has('sfh_pending_sim')).toBe(false);
+  });
+
   it('clears the stash and lists when the pending sim is over the quota', async () => {
     const { db, event, store } = setup({
       pending: 'Resumed',

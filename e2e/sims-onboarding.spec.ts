@@ -1,6 +1,7 @@
 // Pseudonymous onboarding at /sims: a first visit mints an account behind the scenes,
 // creating a sim redirects into it, and a known device is steered to /signin.
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { SIMS_COPY } from '../src/lib/members/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
 
 const SESSION_COOKIE = 'better-auth.session_token';
@@ -10,8 +11,8 @@ test.use({ storageState: { cookies: [], origins: [] } });
 async function createSim(page: Page, title: string) {
   await page.goto('/sims');
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
-  await page.getByLabel('Sim title').fill(title);
-  await page.getByRole('button', { name: 'Create' }).click();
+  await page.getByLabel(SIMS_COPY.titleLabel).fill(title);
+  await page.getByRole('button', { name: SIMS_COPY.create }).click();
 }
 
 type Session = { user?: { id: string; isAnonymous?: boolean } } | null;
@@ -58,23 +59,61 @@ test('after the create redirect the context holds the session cookie and no know
   await createSim(page, 'Cookies');
   await page.waitForURL(/\/sims\/[^/]+$/);
   const names = (await context.cookies()).map((c) => c.name).sort();
-  console.log(`cookies after the redirect: ${names.join(', ')}`);
-  expect(names).toContain(SESSION_COOKIE);
-  expect(names).not.toContain('sfh_known');
+  expect(names).toEqual([SESSION_COOKIE]);
 });
 
-test('a garbage session cookie on / is a signed-out 200', async ({ browser, baseURL }) => {
+/** The root layout data (`user` is null when signed out) as the browser would load it. */
+async function layoutDataWith(
+  context: BrowserContext,
+  baseURL: string,
+  cookie: string
+): Promise<{
+  status: number;
+  body: string;
+  setCookie: string[];
+  cacheControl: string | undefined;
+}> {
+  const res = await context.request.get(`${baseURL}/__data.json`, { headers: { cookie } });
+  return {
+    status: res.status(),
+    body: await res.text(),
+    setCookie: res
+      .headersArray()
+      .filter((h) => h.name.toLowerCase() === 'set-cookie')
+      .map((h) => h.value),
+    cacheControl: res.headers()['cache-control']
+  };
+}
+
+test('a garbage session cookie on / is a signed-out 200 with no cookie set', async ({
+  browser,
+  baseURL,
+  page
+}) => {
+  // Control: a valid session makes the root layout data carry the user's handle.
+  await createSim(page, 'Control');
+  await page.waitForURL(/\/sims\/[^/]+$/);
+  const valid = (await page.context().cookies()).find((c) => c.name === SESSION_COOKIE)!;
+  const signedIn = await layoutDataWith(
+    page.context(),
+    baseURL!,
+    `${SESSION_COOKIE}=${valid.value}`
+  );
+  expect(signedIn.body).toContain('"handle"');
+
   const context = await browser.newContext();
   try {
-    const res = await context.request.get(`${baseURL}/`, {
+    const home = await context.request.get(`${baseURL}/`, {
       headers: { cookie: `${SESSION_COOKIE}=garbage` }
     });
-    const setCookies = res.headersArray().filter((h) => h.name.toLowerCase() === 'set-cookie');
-    console.log(
-      `garbage cookie: status=${res.status()} set-cookie=${JSON.stringify(setCookies.map((h) => h.value))} cache-control=${res.headers()['cache-control']}`
-    );
-    expect(res.status()).toBe(200);
-    expect(await res.text()).not.toContain('Sign out');
+    expect(home.status()).toBe(200);
+    expect(home.headersArray().filter((h) => h.name.toLowerCase() === 'set-cookie')).toEqual([]);
+    expect(home.headers()['cache-control']).toBe('private, no-cache');
+
+    const garbage = await layoutDataWith(context, baseURL!, `${SESSION_COOKIE}=garbage`);
+    expect(garbage.status).toBe(200);
+    expect(garbage.body).not.toContain('"handle"');
+    expect(garbage.setCookie).toEqual([]);
   } finally {
     await context.close();
   }
@@ -82,7 +121,7 @@ test('a garbage session cookie on / is a signed-out 200', async ({ browser, base
 
 test('axe: /sims and a sim page', async ({ page }) => {
   await page.goto('/sims');
-  await expect(page.getByLabel('Sim title')).toBeVisible();
+  await expect(page.getByLabel(SIMS_COPY.titleLabel)).toBeVisible();
   await expectNoA11yViolations(page);
   await createSim(page, 'Accessible');
   await page.waitForURL(/\/sims\/[^/]+$/);

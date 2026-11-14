@@ -11,6 +11,14 @@ import { createSim } from './sims';
 
 export type StartSimFailure = ActionFailure<{ error: string }>;
 
+/** The one title check: typed, posted, or read back from the pending-sim cookie. */
+export function checkSimTitle(raw: string): { title: string } | StartSimFailure {
+  const title = raw.trim();
+  if (!title) return fail(400, { error: SIMS_COPY.titleRequired });
+  if (title.length > SIM_TITLE_MAX) return fail(400, { error: titleTooLong(SIM_TITLE_MAX) });
+  return { title };
+}
+
 /**
  * Create a sim for the person at this request, minting a pseudonymous account first when
  * they are signed out. A signed-out visitor on a known device is sent to /signin with the
@@ -22,9 +30,9 @@ export async function startSim(
   rawTitle: string
 ): Promise<StartSimFailure | { simId: string }> {
   const { locals, platform } = event;
-  const title = rawTitle.trim();
-  if (!title) return fail(400, { error: SIMS_COPY.titleRequired });
-  if (title.length > SIM_TITLE_MAX) return fail(400, { error: titleTooLong(SIM_TITLE_MAX) });
+  const checked = checkSimTitle(rawTitle);
+  if (!('title' in checked)) return checked;
+  const { title } = checked;
 
   const db = getDb(platform!);
 

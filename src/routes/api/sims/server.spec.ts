@@ -5,6 +5,7 @@ import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
 const mint = vi.hoisted(() => vi.fn());
 vi.mock('$lib/server/onboarding/pseudonymous-mint', () => ({ mintPseudonymousSession: mint }));
 
+import { simIndex, user as userTable } from '$lib/server/db/schema';
 import { createSim } from '$lib/server/sims/sims';
 import { POST } from './+server';
 
@@ -24,14 +25,18 @@ function setup(opts: { known?: boolean; user?: { id: string; pseudonymous: boole
     set: (n: string, v: string) => void store.set(n, v),
     delete: (n: string) => void store.delete(n)
   };
-  const call = (body: unknown) =>
+  const call = (body: unknown, headers: Record<string, string | null> = {}) =>
     POST({
       platform: makePlatform(t.shim),
       locals: { user: opts.user ?? null },
       cookies,
       request: new Request('http://localhost/api/sims', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: Object.fromEntries(
+          Object.entries({ 'content-type': 'application/json', ...headers }).filter(
+            (e): e is [string, string] => e[1] !== null
+          )
+        ),
         body: typeof body === 'string' ? body : JSON.stringify(body)
       }),
       url: new URL('http://localhost/api/sims')
@@ -83,6 +88,46 @@ describe('POST /api/sims', () => {
     const res = await call({ title: 'Garden' });
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: SIMS_COPY.signInRequired });
-    expect(store.get('sfh_pending_sim')).toBe('Garden');
+    expect(store.has('sfh_pending_sim')).toBe(false);
+  });
+
+  describe('cross-site requests', () => {
+    async function expectNothingCreated(db: Awaited<ReturnType<typeof setup>>['db']) {
+      expect(mint).not.toHaveBeenCalled();
+      expect(await db.select().from(simIndex)).toEqual([]);
+      expect(await db.select().from(userTable)).toEqual([]);
+    }
+
+    it('answers 415 when there is no content type', async () => {
+      const { db, call } = setup();
+      const res = await call({ title: 'Garden' }, { 'content-type': null });
+      expect(res.status).toBe(415);
+      await expectNothingCreated(db);
+    });
+
+    it('answers 415 for text/plain', async () => {
+      const { db, call } = setup();
+      const res = await call({ title: 'Garden' }, { 'content-type': 'text/plain' });
+      expect(res.status).toBe(415);
+      await expectNothingCreated(db);
+    });
+
+    it('answers 403 for a foreign Origin', async () => {
+      const { db, call } = setup();
+      const res = await call({ title: 'Garden' }, { origin: 'https://evil.example' });
+      expect(res.status).toBe(403);
+      await expectNothingCreated(db);
+    });
+
+    it('allows the site own Origin and a charset on the content type', async () => {
+      const { db, call } = setup();
+      await seedUser(db, { id: 'p1', email: 'p1@test.com' });
+      mint.mockResolvedValue({ ok: true, user: { id: 'p1', pseudonymous: true } });
+      const res = await call(
+        { title: 'Garden' },
+        { origin: 'http://localhost', 'content-type': 'application/json; charset=utf-8' }
+      );
+      expect(res.status).toBe(201);
+    });
   });
 });
