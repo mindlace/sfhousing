@@ -76,6 +76,7 @@ describe('TimelineClient', () => {
   });
 
   it('restart re-opens with the last policy and lots', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const onCrash = vi.fn();
     const { w, client } = setup({ onCrash });
     client.open(MANIFEST, P1, L1);
@@ -88,6 +89,8 @@ describe('TimelineClient', () => {
     expect(client.crashed).toBe(false);
     expect(w2.posts).toHaveLength(1);
     expect(w2.posts[0]).toMatchObject({ type: 'openTimeline', rev: 3, policy: P2, lots: L2 });
+    expect(err).toHaveBeenCalledWith('[sim] worker crashed', expect.anything());
+    err.mockRestore();
   });
 
   it('restart before any open posts nothing', () => {
@@ -98,12 +101,15 @@ describe('TimelineClient', () => {
   });
 
   it('lookups answer no-session on crash', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { w, client } = setup();
     client.open(MANIFEST, P1, L1);
     const pending = client.resolveBrush({} as never);
     w.crash();
     await expect(pending).resolves.toMatchObject({ ok: false, reason: 'no-session' });
     await expect(client.resolveBrush({} as never)).resolves.toMatchObject({ reason: 'no-session' });
+    expect(err).toHaveBeenCalledWith('[sim] worker crashed', expect.anything());
+    err.mockRestore();
   });
 
   it('resolves a lookup from its answer and posts viewMonth and resyncMap', async () => {

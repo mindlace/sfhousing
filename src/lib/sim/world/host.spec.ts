@@ -591,6 +591,7 @@ describe('the host', () => {
   });
 
   it('a failed needed chunk is reported and retryChunks completes the compile', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const f = datasetFetch(FIXTURE);
     const manifest = structuredClone(f.manifest);
     delete (manifest.scenarios!.fzp as { gross?: string }).gross;
@@ -635,6 +636,12 @@ describe('the host', () => {
     expect(h.errors()).toEqual([]);
     expect(h.of('compiling').at(-1)!.failedCells).toEqual([]);
     expect(h.of('compiled')).toHaveLength(1);
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(`chunk ${cell.cellId} attempt 1 failed`),
+      expect.objectContaining({ message: expect.stringContaining('HTTP 500') })
+    );
+    warn.mockRestore();
   });
 
   it('a second openTimeline silences the first session', async () => {
@@ -662,10 +669,15 @@ describe('the host', () => {
 
   it('a rejected load answers internal', async () => {
     const f = datasetFetch(FIXTURE);
+    let errored: () => void = () => {};
+    const errorPosted = new Promise<void>((r) => (errored = r));
     const host = createTimelineHost({
       fetch: f.fetch,
       fetchBytes: f.fetchBytes,
-      post: (msg) => posts.push(msg),
+      post: (msg) => {
+        posts.push(msg);
+        if (msg.type === 'error') errored();
+      },
       setTimeout: (fn, ms) => setTimeout(fn, ms),
       clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
       now: () => 0,
@@ -681,7 +693,7 @@ describe('the host', () => {
       worlds: 1,
       months: 12
     });
-    await new Promise((r) => setTimeout(r, 0));
+    await errorPosted;
     expect(posts.map((m) => m.type)).toEqual(['ready', 'error']);
     expect(posts[1]).toMatchObject({ rev: 7, code: 'internal' });
   });
