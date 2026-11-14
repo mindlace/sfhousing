@@ -76,7 +76,9 @@ function visibleTextNodes(root: Node): Text[] {
 }
 const longTexts = () =>
   visibleTextNodes(document.body)
-    .filter((n) => !n.parentElement!.closest('dialog, [data-notice], [data-explain-open]'))
+    .filter(
+      (n) => !n.parentElement!.closest('dialog, [data-notice], [data-explain-open], .sr-only')
+    )
     .map((n) => n.textContent!.trim())
     .filter((t) => t.split(/\s+/).length >= 12);
 

@@ -25,7 +25,7 @@ export const coverageShortLine = (step: CoverageStep): string =>
     ? 'Affordable homes: fully funded'
     : `Affordable homes: ${formatPercent(step.coverage)} covered`;
 /** Behind the short coverage figure when the cost is not fully covered. */
-export const COVERAGE_CHANCE_NOTE = 'Share of the cost covered today. They start only by chance.';
+export const COVERAGE_CHANCE_NOTE = 'They start only by chance.';
 
 // Why duplicated: funding-copy.ts says "a run", and the original may not change.
 export const COVERAGE_RUN_SENTENCE4 =

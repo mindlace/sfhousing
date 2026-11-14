@@ -96,4 +96,20 @@ describe('Explain', () => {
     tap();
     await expect.element(page.getByText(TEXT)).not.toBeInTheDocument();
   });
+
+  it("marks the open text, and adds to the child's own description instead of replacing it", async () => {
+    await render(ExplainHost, { props: { text: TEXT, as: 'wrap', own: 'Its own' } });
+    const link = page.getByRole('link', { name: 'Target' });
+    const el = () => link.element() as HTMLElement;
+    expect(document.querySelector('[data-explain-open]')).toBeNull();
+    expect(el().getAttribute('aria-describedby')).toBe('own-d');
+    focusTarget(el());
+    await expect.element(page.getByText(TEXT)).toBeVisible();
+    expect(document.querySelector('[data-explain-open]')!.textContent).toContain(TEXT);
+    await expect.element(link).toHaveAccessibleDescription(`Its own ${TEXT}`);
+    await userEvent.keyboard('{Escape}');
+    await expect.element(page.getByText(TEXT)).not.toBeInTheDocument();
+    expect(document.querySelector('[data-explain-open]')).toBeNull();
+    expect(el().getAttribute('aria-describedby')).toBe('own-d');
+  });
 });

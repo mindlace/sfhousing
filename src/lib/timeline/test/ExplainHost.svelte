@@ -5,14 +5,16 @@
   let {
     text,
     as = 'button',
-    label = undefined
-  }: { text: string; as?: 'button' | 'wrap'; label?: string } = $props();
+    label = undefined,
+    own = undefined
+  }: { text: string; as?: 'button' | 'wrap'; label?: string; own?: string } = $props();
 </script>
 
 <div>
+  {#if own}<span id="own-d">{own}</span>{/if}
   <Explain {text} {as} {label}>
     {#if as === 'wrap'}
-      <a href="#x" data-testid="target">Target</a>
+      <a href="#x" data-testid="target" aria-describedby={own ? 'own-d' : undefined}>Target</a>
     {:else}
       <span data-testid="target">Target</span>
     {/if}

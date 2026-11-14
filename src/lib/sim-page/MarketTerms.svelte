@@ -108,26 +108,29 @@
     'min-h-6 w-24 rounded-md border border-control-line bg-surface px-2 text-ink aria-invalid:border-red-800 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:aria-invalid:border-red-300 pointer-coarse:min-h-11';
 </script>
 
-{#snippet rateInput(r: Row, p: ReturnType<typeof pendingOf>)}
-  <input
-    id={inputId(r.key)}
-    type="number"
-    inputmode="decimal"
-    min="0"
-    max="5"
-    step="0.05"
-    class={input}
-    value={p?.text ?? (r.typed === null ? '' : fieldText(r.typed, 'fraction'))}
-    aria-invalid={p ? 'true' : undefined}
-    aria-describedby="{uid}-{r.key}-err"
-    onchange={(e) => commit(r, e.currentTarget)}
-    onkeydown={(e) => {
-      if (e.key !== 'Enter') return;
-      e.preventDefault();
-      commit(r, e.currentTarget);
-    }}
-    oninput={() => (lastCommit = null)}
-  />
+{#snippet rateField(r: Row, p: ReturnType<typeof pendingOf>)}
+  <label class="flex flex-wrap items-center gap-1">
+    {termTitle(r.key)}, percentage points
+    <input
+      id={inputId(r.key)}
+      type="number"
+      inputmode="decimal"
+      min="0"
+      max="5"
+      step="0.05"
+      class={input}
+      value={p?.text ?? (r.typed === null ? '' : fieldText(r.typed, 'fraction'))}
+      aria-invalid={p ? 'true' : undefined}
+      aria-describedby="{uid}-{r.key}-err"
+      onchange={(e) => commit(r, e.currentTarget)}
+      onkeydown={(e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        commit(r, e.currentTarget);
+      }}
+      oninput={() => (lastCommit = null)}
+    />
+  </label>
 {/snippet}
 
 {#if rows.length > 0}
@@ -139,14 +142,11 @@
         {@const locked = r.inUse && r.sourced === null}
         <li data-term-row={r.key} class="flex flex-col items-start gap-0.5">
           {#if r.key === 'guaranteeRateCut'}
-            <label class="flex flex-wrap items-center gap-1">
-              {termTitle(r.key)}, percentage points
-              {#if r.typed === null}
-                <Explain text={RATE_CUT_DESC} as="wrap">{@render rateInput(r, p)}</Explain>
-              {:else}
-                {@render rateInput(r, p)}
-              {/if}
-            </label>
+            {#if r.typed === null}
+              <Explain text={RATE_CUT_DESC} as="wrap">{@render rateField(r, p)}</Explain>
+            {:else}
+              {@render rateField(r, p)}
+            {/if}
           {:else if r.typed !== null}
             <p id={inputId(r.key)} tabindex="-1">
               {termTitle(r.key)}: {valueText(r.key, r.typed)}

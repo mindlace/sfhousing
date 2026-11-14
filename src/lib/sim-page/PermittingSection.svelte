@@ -118,9 +118,12 @@
 </script>
 
 <div class="flex flex-col gap-3 text-sm">
-  <label class="flex flex-col gap-1 font-semibold">
-    Preset
+  <div class="flex flex-col gap-1 font-semibold">
+    <Explain text="{preset.summary} Evidence tier {tier}." label="About {preset.name}"
+      ><span id="{uid}-preset-label">Preset</span></Explain
+    >
     <select
+      aria-labelledby="{uid}-preset-label"
       class="min-h-6 rounded-md border border-control-line bg-surface px-1 font-normal text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
       disabled={presetLocked !== null}
       value={current.preset}
@@ -130,17 +133,12 @@
         <option value={p.id}>{p.name}</option>
       {/each}
     </select>
-  </label>
+  </div>
   {#if presetLocked !== null}
     <span class="text-xs text-ink-muted dark:text-ink-dark-muted">
       <Explain text={presetLocked}>Preset fixed</Explain>
     </span>
   {/if}
-  <p class="text-xs text-ink-muted dark:text-ink-dark-muted">
-    <Explain text="{preset.summary} Evidence tier {tier}." label="About {preset.name}"
-      >{preset.name}</Explain
-    >
-  </p>
 
   <p class="font-semibold" data-testid="timing-label">{label}</p>
   <div class="flex flex-wrap gap-2">
