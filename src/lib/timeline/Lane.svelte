@@ -31,12 +31,13 @@
     min-height: 30px;
     border-bottom: 1px solid var(--color-line);
     min-width: 0;
+    isolation: isolate;
   }
   .hatch {
     top: 0;
     right: 0;
     bottom: 0;
-    z-index: 2;
+    z-index: -1;
     pointer-events: none;
     background-color: color-mix(in srgb, var(--color-surface) 55%, transparent);
     background-image: repeating-linear-gradient(

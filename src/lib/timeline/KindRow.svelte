@@ -16,6 +16,8 @@
     kind: PolicyKind;
     policies: Policy[];
     open: boolean;
+    /** What the toggle reports; its sheet counts as open on a phone. Defaults to `open`. */
+    expanded?: boolean;
     ontoggle: () => void;
     asOf: Day;
     windowEnd: Day;
@@ -33,6 +35,7 @@
     kind,
     policies,
     open,
+    expanded = undefined,
     ontoggle,
     asOf,
     windowEnd,
@@ -47,6 +50,7 @@
   }: Props = $props();
 
   const label = $derived(KIND_LABEL[kind]);
+  const countId = $props.id();
   const step = $derived(Math.min(7, 24 / Math.max(policies.length, 1)));
   const fixedSelected = $derived(
     selected?.kind === kind && selected.id === 'fixed' && selected.span === 0
@@ -55,12 +59,18 @@
 
 <div class="contents" data-testid="tl-kind-{kind}">
   <div class="lab kind">
-    <button type="button" class="toggle" aria-expanded={open} onclick={ontoggle}>
+    <button
+      type="button"
+      class="toggle"
+      aria-expanded={expanded ?? open}
+      aria-describedby={countId}
+      onclick={ontoggle}
+    >
       <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true" class:turned={open}>
         <path d="M3 1.5 7 5 3 8.5" fill="none" stroke="currentColor" stroke-width="1.6" />
       </svg>{label}
     </button>
-    <span class="count">{policies.length}</span>
+    <span class="count" id={countId} data-testid="tl-count">{policies.length}</span>
     {#if !readonly}
       <button
         type="button"

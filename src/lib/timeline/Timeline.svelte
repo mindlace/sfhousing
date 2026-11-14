@@ -6,7 +6,7 @@
   chart staying above its handle (rule 9). The "+" menu and the editor belong to the page.
 -->
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { tick, type Snippet } from 'svelte';
   import { marketLevel } from '$lib/sim/scenario/market';
   import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
   import { monthLastDay } from '$lib/sim/world/months';
@@ -86,25 +86,55 @@
     return () => mq.removeEventListener('change', on);
   });
 
+  // The element that opened the sheet gets focus back when it closes.
+  let opener: HTMLElement | null = null;
+
   function toggle(kind: PolicyKind) {
-    if (phone) sheet = sheet === kind ? null : kind;
-    else opened[kind] = !opened[kind];
+    if (!phone) {
+      opened[kind] = !opened[kind];
+      return;
+    }
+    if (sheet === kind) {
+      closeSheet();
+      return;
+    }
+    opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    sheet = kind;
+  }
+
+  async function closeSheet() {
+    sheet = null;
+    // The grid is inert while the sheet is open; focus goes back once it is not.
+    await tick();
+    opener?.focus();
+    opener = null;
   }
 
   // The sheet covers the page from just under the chart to the bottom, across the timeline's width.
+  // Opening scrolls the timeline to the top of the viewport first, so the playhead and chart are in
+  // view above it; the sheet is never left shorter than MIN_SHEET.
+  const MIN_SHEET = 280;
   let root: HTMLElement | undefined = $state();
   let chartCell: HTMLElement | undefined = $state();
+  let handle: HTMLElement | undefined = $state();
   let box = $state({ top: 0, left: 0, width: 0 });
   const sheeting = $derived(phone && sheet !== null && kinds.includes(sheet));
 
   function place() {
     if (!root || !chartCell) return;
     const r = root.getBoundingClientRect();
-    box = { top: chartCell.getBoundingClientRect().bottom, left: r.left, width: r.width };
+    const bottom = chartCell.getBoundingClientRect().bottom;
+    box = {
+      top: Math.max(0, Math.min(bottom, window.innerHeight - MIN_SHEET)),
+      left: r.left,
+      width: r.width
+    };
   }
   $effect(() => {
     if (!sheeting) return;
+    root?.scrollIntoView({ block: 'start', behavior: 'instant' });
     place();
+    tick().then(() => handle?.focus());
     window.addEventListener('resize', place);
     window.addEventListener('scroll', place, true);
     return () => {
@@ -113,18 +143,42 @@
     };
   });
 
+  // Tab wraps inside the sheet: nothing behind it is reachable.
+  function ontrap(e: KeyboardEvent) {
+    if (e.key !== 'Tab') return;
+    const items = [
+      ...(e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('button, [tabindex="0"]')
+    ].filter((el) => !el.hasAttribute('disabled'));
+    if (items.length === 0) return;
+    const [first, last] = [items[0], items[items.length - 1]];
+    const at = document.activeElement;
+    if (e.shiftKey && at === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && at === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
   function onwindowkeydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && sheeting) {
-      sheet = null;
       e.stopPropagation();
+      closeSheet();
     }
   }
 </script>
 
 <svelte:window onkeydown={onwindowkeydown} />
 
-<div bind:this={root} class="tl relative" data-testid="tl-timeline">
-  <div class="grid">
+<!-- With the sheet open the page gets room to scroll the timeline to the top of the viewport. -->
+<div
+  bind:this={root}
+  class="tl relative"
+  data-testid="tl-timeline"
+  style:padding-bottom={sheeting ? '100dvh' : undefined}
+>
+  <div class="grid" inert={sheeting}>
     <div class="ph">{@render playhead()}</div>
 
     <div class="lab plain">Homes completed</div>
@@ -137,6 +191,7 @@
         {kind}
         policies={policy.kinds[kind]}
         open={phone ? false : opened[kind]}
+        expanded={phone ? sheet === kind : opened[kind]}
         ontoggle={() => toggle(kind)}
         {asOf}
         {windowEnd}
@@ -170,16 +225,20 @@
     <div
       class="sheet"
       role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      onkeydown={ontrap}
       aria-label={KIND_LABEL[sheet]}
       style:top="{box.top}px"
       style:left="{box.left}px"
       style:width="{box.width}px"
     >
       <button
+        bind:this={handle}
         type="button"
         class="handle"
         aria-label="Close {KIND_LABEL[sheet]}"
-        onclick={() => (sheet = null)}
+        onclick={closeSheet}
       >
         <span aria-hidden="true"></span>
       </button>
@@ -188,7 +247,7 @@
           kind={sheet}
           policies={policy.kinds[sheet]}
           open={true}
-          ontoggle={() => (sheet = null)}
+          ontoggle={closeSheet}
           {asOf}
           {windowEnd}
           months={WINDOW_MONTHS}

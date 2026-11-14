@@ -144,7 +144,10 @@ describe('Timeline rows', () => {
       .filter((t) => wanted.includes(t));
     expect(order).toEqual(wanted);
     const permitting = page.getByTestId('tl-kind-permitting').element();
-    expect(permitting.textContent).toContain('2');
+    expect(permitting.querySelector('[data-testid=tl-count]')?.textContent).toBe('2');
+    expect(kindButton('Permitting').element().getAttribute('aria-describedby')).toBe(
+      permitting.querySelector('[data-testid=tl-count]')?.id
+    );
     expect(permitting.querySelectorAll('[data-testid=tl-mini]')).toHaveLength(2);
     expect(barsOf('permitting')).toHaveLength(0);
     await expect.element(page.getByRole('button', { name: 'Add Zoning policy' })).toBeVisible();
@@ -188,13 +191,20 @@ describe('Timeline rows', () => {
     }
     const world = page.getByTestId('tl-world').element();
     expect(world.textContent).toContain('Market conditions');
-    expect(world.textContent).toContain(marketLevel(cal));
+    expect(world.textContent).toContain(
+      marketLevel(cal) === 'private' ? 'private starts only' : 'all starts'
+    );
+    expect(world.textContent).not.toMatch(/, (private|all)$/);
     await page.getByRole('button', { name: /^Permitting times, as observed/ }).click();
     expect(onselect).toHaveBeenCalledWith({ kind: 'permitting', id: 'fixed', span: 0 });
     const firstRow = document.querySelector(
       '[data-testid=tl-kind-permitting] [data-testid=tl-fixed]'
     );
     expect(firstRow?.textContent).toContain('Permitting times, as observed');
+    const rowOrder = all(
+      '[data-testid=tl-kind-permitting] [data-testid=tl-fixed], [data-testid=tl-kind-permitting] [data-testid=tl-policy]'
+    ).map((e) => e.getAttribute('data-testid'));
+    expect(rowOrder).toEqual(['tl-fixed', 'tl-policy', 'tl-policy']);
   });
 
   it('has no Public money without market and baseline funding', async () => {
@@ -326,5 +336,100 @@ describe('Timeline rows', () => {
     expect(chart.bottom).toBeLessThanOrEqual(top + 1);
     await userEvent.keyboard('{Escape}');
     expect(document.querySelector('[role=dialog]')).toBeNull();
+  });
+  it('draws the hatch beneath the bars and keeps every bar text at 4.5:1', async () => {
+    await setup({ filledEnd: asOf + Math.floor((windowEnd - asOf) / 8) });
+    await kindButton('Permitting').click();
+    const rgb = (c: string) =>
+      c
+        .match(/[\d.]+/g)!
+        .slice(0, 3)
+        .map(Number);
+    const lum = (c: string) => {
+      const [r, g, b] = rgb(c).map((v) => {
+        const x = v / 255;
+        return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (a: string, b: string) => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    const bars = barsOf('permitting');
+    // Bars 2 and 3 are the off policy's; all four sit wholly under the hatch.
+    for (const b of bars) {
+      const r = b.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      expect(top === b || b.contains(top)).toBe(true);
+      const st = getComputedStyle(b);
+      expect(ratio(st.color, st.backgroundColor)).toBeGreaterThanOrEqual(4.5);
+    }
+    for (const kind of ['zoning', 'money'] as const) {
+      await kindButton(kind === 'zoning' ? 'Zoning' : 'Public money').click();
+      for (const b of barsOf(kind)) {
+        const st = getComputedStyle(b);
+        expect(ratio(st.color, st.backgroundColor)).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+    const off = barsOf('permitting')[2];
+    expect(off.getAttribute('aria-label')).toMatch(/, off$/);
+    expect(getComputedStyle(off).opacity).toBe('1');
+  });
+
+  it('moves focus into the phone sheet, keeps it there and returns it on close', async () => {
+    await setup();
+    await page.viewport(390, 800);
+    await expect.element(page.getByTestId('ph-part')).toBeVisible();
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const toggle = kindButton('Permitting').element() as HTMLElement;
+    toggle.focus();
+    await userEvent.keyboard('{Enter}');
+    await expect.element(page.getByRole('dialog', { name: 'Permitting' })).toBeVisible();
+    const sheet = page.getByRole('dialog', { name: 'Permitting' }).element();
+    await expect
+      .poll(() =>
+        sheet.contains(document.activeElement)
+          ? 'in'
+          : String(document.activeElement?.outerHTML).slice(0, 120)
+      )
+      .toBe('in');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    for (let i = 0; i < 12; i++) {
+      await userEvent.tab();
+      expect(sheet.contains(document.activeElement)).toBe(true);
+    }
+    // Nothing behind the sheet takes focus.
+    expect(toggle.closest('[inert]')).not.toBeNull();
+    await userEvent.keyboard('{Escape}');
+    expect(document.querySelector('[role=dialog]')).toBeNull();
+    await expect.poll(() => document.activeElement === toggle).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('keeps the playhead and chart in view and the sheet tall when the timeline is low or scrolled', async () => {
+    await page.viewport(390, 800);
+    const spacer = document.createElement('div');
+    spacer.style.height = '1500px';
+    document.body.insertBefore(spacer, document.body.firstChild);
+    await setup();
+    await page.viewport(390, 800);
+    const check = async () => {
+      await kindButton('Permitting').click();
+      const sheet = page.getByRole('dialog', { name: 'Permitting' }).element();
+      await expect.poll(() => sheet.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
+      const r = sheet.getBoundingClientRect();
+      const ph = page.getByTestId('ph-part').element().getBoundingClientRect();
+      const chart = page.getByTestId('chart-part').element().getBoundingClientRect();
+      expect(ph.top).toBeGreaterThanOrEqual(0);
+      expect(chart.bottom).toBeLessThanOrEqual(r.top + 1);
+      expect(window.innerHeight - r.top).toBeGreaterThanOrEqual(300);
+      await userEvent.keyboard('{Escape}');
+    };
+    window.scrollTo(0, 0);
+    await check();
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    await check();
+    spacer.remove();
   });
 });

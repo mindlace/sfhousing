@@ -6,9 +6,9 @@
 -->
 <script lang="ts">
   import type { Day } from '$lib/timelapse/time';
-  import { monthOfDay } from '$lib/sim/world/months';
+  import { monthFirstDay, monthLastDay, monthOfDay } from '$lib/sim/world/months';
   import type { PolicyKind, SimPolicy4, Span } from './policy4';
-  import { barBox, barLabel, dayPct, settingOf } from './rows';
+  import { barBox, barLabel, settingOf } from './rows';
   import { barKey, moveEdge, moveSpan, setFrom, setTo, spanMonths, type SpanRef } from './spans';
 
   interface Props {
@@ -54,21 +54,19 @@
   let drag: { edge: 'from' | 'to'; month: number } | null = $state(null);
 
   const box = $derived.by(() => {
-    const b = barBox(span, asOf, windowEnd);
-    if (!drag) return b;
+    if (!drag) return barBox(span, asOf, windowEnd);
     const m = spanMonths(span, asOf);
-    const left = drag.edge === 'from' ? Math.min(drag.month, m.to ?? drag.month) : m.from;
+    const from = drag.edge === 'from' ? Math.min(drag.month, m.to ?? drag.month) : m.from;
     const to = drag.edge === 'to' ? Math.max(drag.month, m.from) : m.to;
-    const l = dayPct(
-      asOf + Math.floor(((left - 1) * (windowEnd - asOf)) / months),
+    return barBox(
+      {
+        ...span,
+        from: monthFirstDay(asOf, from),
+        to: to === null ? null : monthLastDay(asOf, to)
+      },
       asOf,
       windowEnd
     );
-    const r =
-      to === null
-        ? 100
-        : dayPct(asOf + Math.floor((to * (windowEnd - asOf)) / months), asOf, windowEnd);
-    return { left: l, width: Math.max(r - l, 0.4) };
   });
 
   function onkeydown(e: KeyboardEvent) {
@@ -128,7 +126,7 @@
     class:open
     data-testid="tl-bar"
     data-open={open}
-    aria-label={barLabel(policyLabel, span, asOf)}
+    aria-label={barLabel(policyLabel, span, asOf) + (off ? ', off' : '')}
     aria-pressed={selected}
     onclick={() => onselect(ref)}
     {onkeydown}
@@ -194,8 +192,11 @@
     -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent);
     mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent);
   }
+  /* Off: no whole-element fade (it would lighten the ground under white text). */
   .bar.off {
-    opacity: 0.45;
+    background: var(--color-surface-raised);
+    color: var(--color-ink-muted);
+    box-shadow: inset 0 0 0 2px var(--k);
   }
   .bar.sel {
     outline: 2px solid var(--color-accent);
@@ -220,6 +221,10 @@
     right: -4px;
   }
   @media (prefers-color-scheme: dark) {
+    .bar.off {
+      background: var(--color-surface-dark-raised);
+      color: var(--color-ink-dark-muted);
+    }
     .bar.sel,
     .bar:focus-visible {
       outline-color: var(--color-accent-dark);

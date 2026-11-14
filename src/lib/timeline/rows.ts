@@ -10,7 +10,17 @@ import type { Effect, PolicyKind, Span } from './policy4';
 import type { SpanRef } from './spans';
 import { spanMonths } from './spans';
 
-/** A fixed row's selection: `id` is `FIXED_ID`, or `MARKET_ID` for "Market conditions" (kind money). */
+/**
+ * A fixed row's selection, carried as a `SpanRef` (Timeline's `selected` and `onselect` stay
+ * `SpanRef | null`). Contract for the inspector:
+ * - `id` is `FIXED_ID` for a kind's fixed row ("Family Zoning Plan, as adopted", "Permitting times,
+ *   as observed", "City funding today"; `kind` is that kind, `span` 0) and `MARKET_ID` for "Market
+ *   conditions" (`{ kind: 'money', id: MARKET_ID, span: 0 }`).
+ * - The market ref's `kind` is always 'money', even when the Public money kind is absent (no
+ *   market and baseline funding): "The world" row is always drawn, so it can still be selected.
+ * - These ids are reserved: no policy may carry them. Test `isFixedRef(ref)` before any policy
+ *   lookup; a fixed ref names no policy, span or edit, and its view is read-only.
+ */
 export const FIXED_ID = 'fixed';
 export const MARKET_ID = 'fixed-market';
 
@@ -39,7 +49,9 @@ export const hasMoney = (cal: Calibration): boolean =>
 
 /** The market bar's text: today's market when the calibration has a model, else the long-run average. */
 export function marketText(cal: Calibration, level: 'all' | 'private'): string {
-  return cal.market ? `Today's market, ${level}` : '2007 to 2025 average';
+  return cal.market
+    ? `Today's market, ${level === 'private' ? 'private starts only' : 'all starts'}`
+    : '2007 to 2025 average';
 }
 
 /** "$500M", "$1.5B", "$250K". */
