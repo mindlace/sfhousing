@@ -2,12 +2,15 @@
 // files the deltas `shownSeries` (scenario/score.ts) files for the same schedule part, so the prefix
 // sums equal `shownSeries` month for month. The series keeps every per-row fact that changes in its
 // own state, because `createWorld` sends events before the world exists.
+import { TIER_FIELDS, tiersOf } from '$lib/sim/scenario/finance-score';
 import { monthIndexer } from '$lib/sim/scenario/score';
 import type { Day } from '$lib/timelapse/time';
-import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
+import { STAGE_ORDER, type Stage, type TierUnits } from '$lib/timelapse/types';
+import { monthOfDay } from '../months';
+import { scheduleAt } from '../read';
 import type { Statics } from '../statics';
 import { NO_DAY, ORIGIN_MASTER, ORIGIN_SIM, type World, type WorldEvent } from '../types';
-import { finalTable, horizonOf } from './statics';
+import { finalTable, horizonOf, tierTableFor } from './statics';
 import type { MonthRow, ScoreStatics, WorldSeries, WorldSeriesData } from './types';
 
 type Live = Exclude<Stage, 'complete'>;
@@ -27,10 +30,13 @@ const STAGE0 = 4;
 /** World 1's extras (rule 2): homes completed by funded projects, homes in 'displaced' events. */
 const FUNDED = STAGE0 + NL;
 const DISPLACED = FUNDED + 1;
+/** World 1's homes by income tier (rule 2), `TIER_FIELDS` in order. */
+const TIER0 = DISPLACED + 1;
+const TIER_AM = TIER0 + TIER_FIELDS.indexOf('aboveModerate');
 /** Fields per month. */
-export const SERIES_FIELDS = DISPLACED + 1;
+export const SERIES_FIELDS = TIER0 + TIER_FIELDS.length;
 /** `WorldSeriesData.version` of this layout. */
-const VERSION = 2;
+const VERSION = 3;
 
 /** No row state yet (no `'start'` seen). */
 const UNKNOWN = -2;
@@ -52,13 +58,22 @@ function emptyData(s: ScoreStatics): WorldSeriesData {
     entitled: new Int32Array(0),
     pending: new Int32Array(0),
     filed: new Int32Array(0),
+    award: new Int32Array(0),
     delta: new Int32Array(SERIES_FIELDS * n),
     sum: new Int32Array(SERIES_FIELDS * n)
   };
 }
 
-type RowColumn = 'stage' | 'since' | 'units' | 'entitled' | 'pending' | 'filed';
-const ROW_COLUMNS: RowColumn[] = ['stage', 'since', 'units', 'entitled', 'pending', 'filed'];
+type RowColumn = 'stage' | 'since' | 'units' | 'entitled' | 'pending' | 'filed' | 'award';
+const ROW_COLUMNS: RowColumn[] = [
+  'stage',
+  'since',
+  'units',
+  'entitled',
+  'pending',
+  'filed',
+  'award'
+];
 
 /** A copy of saved data that shares no array with it. */
 function copyData(from: WorldSeriesData): WorldSeriesData {
@@ -70,6 +85,7 @@ function copyData(from: WorldSeriesData): WorldSeriesData {
     entitled: from.entitled.slice(),
     pending: from.pending.slice(),
     filed: from.filed.slice(),
+    award: from.award.slice(),
     delta: from.delta.slice(),
     sum: from.sum.slice()
   };
@@ -103,10 +119,12 @@ function phaseUnits(statics: Statics, w: World, row: number): number[] {
   return (statics.projects[w.projects.src[row]].phases ?? []).map((ph) => ph.units);
 }
 
-/** World 1's cumulative funded and displaced homes, which `WorldSeries` has no channel for (Q5). */
+/** World 1's cumulative funded and displaced homes and tiers, which `WorldSeries` has no channel for (Q5). */
 export interface Extras {
   /** Cumulative homes by final calendar month `from..through`. */
   homes(from: number, through: number): { funded: number; displaced: number }[];
+  /** Cumulative homes by income tier by final calendar month `from..through`; throws without finance. */
+  tiers(from: number, through: number): TierUnits[];
 }
 
 const EXTRAS = new WeakMap<WorldSeries, Extras>();
@@ -137,6 +155,7 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     }
     d = copyData(from);
   }
+  const tierTable = tierTableFor(s);
   const H: Day = horizonOf(s);
   const m0 = s.months[0];
   const idx = monthIndexer(s.months, H);
@@ -203,6 +222,36 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     }
   }
 
+  /**
+   * A completed row's homes by income tier at its month (rule 2, `tierSeries`): `tiersOf` of its
+   * schedule on the completion day, a funded row's by the programme definitions in force in the
+   * month of its award (design 3.4).
+   */
+  function fileTiers(e: WorldEvent, w: World, statics: Statics): void {
+    if (tierTable === null || e.day > H) return;
+    const row = e.row;
+    let ctx = tierTable.base;
+    if (w.projects.funded[row] === 1) {
+      const award = d.award[row];
+      if (award === NO_DAY) {
+        throw new Error(
+          `world-score: funded row ${row} completes on day ${e.day} without an 'award'`
+        );
+      }
+      const at = tierTable.byMonth[Math.max(1, monthOfDay(s.asOf, award))];
+      if (!at) throw new Error(`world-score: row ${row} awarded on day ${award} without finance`);
+      ctx = at;
+    }
+    const sc = scheduleAt(w, statics, row, e.day);
+    const revs = sc?.revisions;
+    if (!sc || revs![revs!.length - 1].units !== d.units[row]) {
+      throw new Error(`world-score: row ${row}'s schedule on day ${e.day} is not the one filed`);
+    }
+    const t = tiersOf(sc, ctx);
+    const i = monthOf(e.day);
+    for (let k = 0; k < TIER_FIELDS.length; k++) bump(TIER0 + k, i, t[TIER_FIELDS[k]]);
+  }
+
   function addMasterEvent(e: WorldEvent, w: World, statics: Statics): void {
     const row = e.row;
     switch (e.kind) {
@@ -260,7 +309,12 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     current = e;
     const row = e.row;
     const p = w.projects;
-    if (e.kind === 'award') return;
+    if (e.kind === 'award') {
+      known(row);
+      if (d.award[row] !== NO_DAY) throw new Error(`world-score: row ${row} awarded twice`);
+      d.award[row] = e.day;
+      return;
+    }
     if (e.kind === 'displaced') {
       // Rule 2: the event's own month, whether or not the funded project has completed.
       known(row);
@@ -275,6 +329,7 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
       d.since[row] = NO_DAY;
       d.entitled[row] = NO_DAY;
       d.filed[row] = 0;
+      d.award[row] = NO_DAY;
       if (origin === ORIGIN_MASTER) {
         let total = 0;
         for (const u of phaseUnits(statics, w, row)) total += u;
@@ -298,7 +353,10 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
           if (st === ENTITLED && origin === ORIGIN_SIM) {
             d.entitled[row] = e.day;
             on(ENTITLED_NEW, e.day, d.units[row] - p.existing[row]);
-          } else if (st === CONSTRUCTION) on(net, e.day, -p.existing[row]);
+          } else if (st === CONSTRUCTION) {
+            on(net, e.day, -p.existing[row]);
+            if (tierTable !== null) on(TIER_AM, e.day, -p.existing[row]);
+          }
         }
         return;
       }
@@ -320,6 +378,7 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
           on(net, e.day, d.units[row]);
           // Read from the row, never from event order: the 'award' follows the start chain.
           if (p.funded[row] === 1) on(FUNDED, e.day, d.units[row] - p.existing[row]);
+          fileTiers(e, w, statics);
         } else if (e.how === 'exit') {
           if (e.day > s.asOf) on(EXITED, e.day, d.units[row]);
         } else throw new Error(`world-score: row ${row} ends 'entitled' but is not a master`);
@@ -366,12 +425,12 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     };
   }
 
-  function checkRange(from: number, through: number): void {
+  function checkRange(name: string, from: number, through: number): void {
     if (!(Number.isInteger(from) && Number.isInteger(through))) {
-      throw new RangeError(`world-score: rows(${from}, ${through}) needs whole months`);
+      throw new RangeError(`world-score: ${name}(${from}, ${through}) needs whole months`);
     }
     if (!(0 <= from && from <= through && through <= d.final)) {
-      throw new RangeError(`world-score: rows(${from}, ${through}) outside 0..${d.final}`);
+      throw new RangeError(`world-score: ${name}(${from}, ${through}) outside 0..${d.final}`);
     }
   }
 
@@ -386,7 +445,7 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     },
     finalThrough: () => d.final,
     rows(from: number, through: number): MonthRow[] {
-      checkRange(from, through);
+      checkRange('rows', from, through);
       sumThrough(through);
       const out: MonthRow[] = [];
       for (let i = from; i <= through; i++) out.push(rowAt(i));
@@ -396,12 +455,29 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
   };
   EXTRAS.set(series, {
     homes(from: number, through: number) {
-      checkRange(from, through);
+      checkRange('homes', from, through);
       sumThrough(through);
       const out: { funded: number; displaced: number }[] = [];
       for (let i = from; i <= through; i++) {
         const at = i * SERIES_FIELDS;
         out.push({ funded: d.sum[at + FUNDED], displaced: d.sum[at + DISPLACED] });
+      }
+      return out;
+    },
+    tiers(from: number, through: number) {
+      if (tierTable === null) throw new Error('world-score: no tiers without finance');
+      checkRange('tiers', from, through);
+      sumThrough(through);
+      const out: TierUnits[] = [];
+      for (let i = from; i <= through; i++) {
+        const at = i * SERIES_FIELDS + TIER0;
+        out.push({
+          veryLow: d.sum[at],
+          low: d.sum[at + 1],
+          moderate: d.sum[at + 2],
+          aboveModerate: d.sum[at + 3],
+          unrecorded: d.sum[at + 4]
+        });
       }
       return out;
     }

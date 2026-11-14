@@ -16,7 +16,7 @@ import type { World, WorldEvent } from '../types';
 import { chunkOf } from './chunk';
 import { moneyRowsOf } from './money';
 import { createWorldSeries, extrasOf } from './series';
-import { feedFunded, testStatics } from './test/feed';
+import { feedFunded, timelineStatics } from './test/feed';
 import type { MoneyFeed, ScoreStatics, WorldSeries } from './types';
 
 type Finance = NonNullable<SimInput['finance']>;
@@ -42,12 +42,13 @@ interface City {
 
 function cityOf(input: SimInput, months: number): City {
   const fin = input.finance!;
+  const timeline = oneMoneyTimeline(input, fin);
   return {
     input,
     fin,
     statics: staticsOf(input),
-    timeline: oneMoneyTimeline(input, fin),
-    score: testStatics(input, months),
+    timeline,
+    score: timelineStatics(input, timeline, months),
     months
   };
 }
@@ -178,7 +179,7 @@ describe('world 1 money, funded mini', () => {
     const want = moneyRowsOf(a.feed, extrasOf(a.series), 100, through);
     const one = chunkOf([a.series, b.series], [b.series, d.series], a.feed, 100, through);
     expect(one.money).toEqual(want);
-    expect(one.tiers).toBeNull();
+    expect(one.tiers).toEqual(extrasOf(a.series).tiers(100, through));
     // Other plan worlds and the twins do not move it.
     const two = chunkOf(
       [a.series, d.series, b.series],
@@ -237,10 +238,11 @@ describe('world 1 money, funded mini', () => {
 describe('world 1 money, funded bench', () => {
   let c: City;
   let r: Run;
+  // A bench city's funded world takes seconds.
   beforeAll(() => {
     c = cityOf(benchFunded(benchInput()), 240);
     r = run(c, 1);
-  });
+  }, 120_000);
 
   it('pool series equal poolSeries of the same ledger', () => {
     expect(r.series.finalThrough()).toBe(c.score.lastIndex);

@@ -71,8 +71,11 @@ export function chunkOf(
       }
     }
   }
-  // World 1's money (rule 9); read first, so a series without extras throws before any work.
-  const moneyRows = money === null ? null : moneyRowsOf(money, extrasOf(plan[0]), from, through);
+  // World 1's money and tiers (rule 9); read first, so a series without extras throws before any
+  // work.
+  const extras = money === null ? null : extrasOf(plan[0]);
+  const moneyRows = extras === null ? null : moneyRowsOf(money!, extras, from, through);
+  const tiers = extras === null ? null : extras.tiers(from, through);
 
   const w = plan.length;
   const planRows = plan.map((s) => s.rows(from, through));
@@ -100,5 +103,5 @@ export function chunkOf(
       sd: { entitledNew: e.sd, completedNetNew: c.sd }
     });
   }
-  return { from, mean, sd, shown: planRows[0], planEffect, money: moneyRows, tiers: null };
+  return { from, mean, sd, shown: planRows[0], planEffect, money: moneyRows, tiers };
 }

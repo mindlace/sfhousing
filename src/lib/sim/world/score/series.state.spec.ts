@@ -7,7 +7,7 @@ import { horizonMonth } from '../test/run';
 import { frameOf, oneFrame } from '../test/timeline';
 import { monthOfDay } from '../months';
 import { ORIGIN_MASTER, type WorldEvent } from '../types';
-import { createWorldSeries } from './series';
+import { createWorldSeries, extrasOf } from './series';
 import { finalTable, horizonOf } from './statics';
 import { feedWorld, testStatics } from './test/feed';
 import type { ScoreStatics, WorldSeries, WorldSeriesData } from './types';
@@ -116,6 +116,21 @@ describe('data and restore', () => {
     expect(b.data().stage.some((v) => v === 3)).toBe(false);
     expect(a.data().delta.some((v) => v === 7)).toBe(false);
     expect(b.finalThrough()).toBe(a.finalThrough());
+  });
+
+  it('saved data of an older layout is rejected', () => {
+    const s = testStatics(input, 24);
+    const d = createWorldSeries(s).data();
+    for (const version of [1, 2]) {
+      const old = { ...d, version } as unknown as WorldSeriesData;
+      expect(() => createWorldSeries(s, old)).toThrow(`saved series version ${version}`);
+    }
+  });
+
+  it("extras' range errors name homes, not rows", () => {
+    const s = testStatics(input, 24);
+    const series = createWorldSeries(s);
+    expect(() => extrasOf(series).homes(0, 0)).toThrow(/^world-score: homes\(0, 0\)/);
   });
 
   it('a phase filed twice throws', () => {

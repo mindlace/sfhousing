@@ -2,7 +2,7 @@
 
 The score numbers for `/sim`, read from the step engine's world events: a per-world series by calendar month, chunk statistics across worlds, the page's `TimelineView`, and the project card. Design: `docs/superpowers/specs/` (world-score; rule numbers are its rules). Pure TypeScript, worker-safe. Policy frames come from [policy-timeline.md](policy-timeline.md).
 
-Money, tiers and the funded card fields are not built yet. See Funded worlds and Known gaps.
+World 1's money and tiers are built; `MoneyView`, limit statements and the funded card fields are not yet. See Tiers, Funded worlds and Known gaps.
 
 ## Files
 
@@ -14,7 +14,7 @@ Money, tiers and the funded card fields are not built yet. See Funded worlds and
 | `src/lib/sim/world/score/chunk.ts`   | `chunkOf(plan, twin, money, from, through)`                                                 |
 | `src/lib/sim/world/score/view.ts`    | `viewOf`, `chunksBefore`, `BAND_Z`                                                          |
 | `src/lib/sim/world/score/card.ts`    | `cardAt(world, statics, frame, deps, parcelId, day, projectId?)`                            |
-| `src/lib/sim/world/score/test/`      | `feed.ts`: `feedWorld`, `testStatics` for the specs                                         |
+| `src/lib/sim/world/score/test/`      | `feed.ts`: `feedWorld`, `feedFunded`, `testStatics`, `timelineStatics` for the specs        |
 
 ## Feeding a series
 
@@ -48,7 +48,17 @@ The final-month guard: an event that would change a final month throws, naming t
 - `shown`: world 1's own rows ("this city").
 - `planEffect`: mean and sd of the paired differences, world k's plan minus world k's twin, for `entitledNew` and `completedNetNew`. Not a difference of means.
 
-It throws for no worlds, mismatched counts, a month not final, or a non-null `money`.
+- `money`, `tiers`: world 1's, with a `money` feed (rule 9); null without one.
+
+It throws for no worlds, mismatched counts, or a month not final.
+
+## Tiers
+
+With finance in the window (month 1's frame or a change up to `windowMonths` has `finance`), `scoreStaticsOf` sets `tierBaseline = tierBaselineOf(rhna)` and builds a tier table: for each model month 1..`windowMonths`, the `tierContext` of that month's programme definitions (one per distinct finance state; null in a month without finance). Without finance `tierBaseline` is null and the series files no tiers.
+
+The series files tiers as `tierSeries` does (rule 2): `-existing` from `aboveModerate` at a construction start after `asOf`; at completion, `tiersOf(scheduleAt(world, statics, row, day))`. A funded row is split by the programme definitions in force in the month of its award (design 3.4), not of its completion: the series records each row's `'award'` day (`WorldSeriesData.award`, so restore keeps it). A funded row that completes without an `'award'` throws (a feed bug). Each month's five tiers sum to world 1's `completedNet`.
+
+Runner rule: pass `createWorldSeries` the very `ScoreStatics` object `scoreStaticsOf` returned. The tier table lives in a module-private `WeakMap` keyed by that object, so a copy (a `structuredClone`, a spread) of a ScoreStatics with finance throws `world-score: ScoreStatics without its tier context; pass the object scoreStaticsOf returned`. A worker that receives ScoreStatics by message calls `scoreStaticsOf` itself.
 
 ## The view
 
@@ -81,11 +91,11 @@ What money and tiers will read, from world-funding as merged (`displaced` events
   - Days do not ascend within a month (system order). `poolSeries` takes the ledger as is (`funding/funded.spec.ts:231-266`).
 - **Row columns** (`world/types.ts:109-117`, written by `startProject`, `world/world.ts:382-390`): `funded` (1 on a funded start), `kind` (0 market, 1 affordable), `applied`, `granted`, `lent`, `guaranteed` (project dollars), `programmes` (ids joined with `,`, paying ones only). `certain` (`world/world.ts:363`). Size from `units`/`stories` and the revision table. `dispN`, `dispRow`, `dispDay`, `dispUnits` (`world/types.ts:125-129`) stay empty until shadows land. `scheduleAt` reads them into `Schedule.funding` (`world/read.ts:80-90`).
 - **Pools** (`funding/columns.ts:48-72`, through `fundOf(world)`): per pool id `received`, `committed`, `spentGrant`, `outLoan`, `lostLoan`, `lostGuarantee`; money rows `mRow`… for awards with events to come.
-- **`FinanceFrame`**: `timeline.frameAt(m).finance` (`world/policy/frame.ts:32-43`), null without money; `frameMoney(timeline, frame)` indexes it (`funding/frame-money.ts`). `scoreStaticsOf` still throws on a frame with finance (`score/statics.ts:15-20`).
+- **`FinanceFrame`**: `timeline.frameAt(m).finance` (`world/policy/frame.ts:32-43`), null without money; `frameMoney(timeline, frame)` indexes it (`funding/frame-money.ts`). `scoreStaticsOf` builds the tier table from it (see Tiers).
 - **Building one in a test** (`funding/test/fixtures.ts`): `fundedMini()` (:33), `benchFunded(benchInput())` (:47, Node), the live city's `liveInput(dir)` already carries baseline `finance` when its calibration has `market` and `baselineFunding` (`scenario/input.ts:76-94`). Then `oneMoneyTimeline(input, input.finance!)` (:104) and `runFunded(staticsOf(input), timeline, seed, through, { afterStep })` (:230) for `{ world, events, ledger }`; `withFunding(createFundingSystem())` for your own feed. `randomFinance(seed)` (:155) for loans, guarantees, losses; `checkStep` (`funding/test/identities.ts:45`) for E1-E7.
 
 ## Known gaps
 
-- Money, tiers, `MoneyView`, limit statements and the funded card fields wait for world-funding. `scoreStaticsOf` throws if any frame up to the window carries finance; `chunkOf` throws on a `money` feed; `tierBaseline`, `limits`, `money` and `tiers` are null.
+- `MoneyView`, limit statements and the funded card fields are not built: `limits` and `TimelineView.money` are null.
 - `perAddedHome` keeps today's denominator: world 1's `fundedHomes - displacedHomes` at `filledThrough` (ruled 2026-11-13), not the plan effect.
 - A project's `'award'` world event arrives after the stage events of the chain `startProject` begins (it runs synchronously). Read awards by project row, never by position relative to stage events.

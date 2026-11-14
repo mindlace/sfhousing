@@ -55,10 +55,10 @@ export interface SeriesChunk {
  * One world's series as plain data that `structuredClone` copies. Per-row columns are indexed by
  * the world's project row and grow as rows start; per-month arrays hold `SERIES_FIELDS` entries
  * per calendar month (pipeline, new, entitledNew, exited, `inProgress` in LIVE order, then world 1's
- * funded and displaced homes).
+ * funded and displaced homes, then its homes by income tier in `TIER_FIELDS` order).
  */
 export interface WorldSeriesData {
-  version: 2;
+  version: 3;
   /** The last model month passed to `stepped`; 0 before any. */
   stepped: number;
   /** `finalThrough()`. */
@@ -79,6 +79,8 @@ export interface WorldSeriesData {
   pending: Int32Array;
   /** A master's filed phases, bit `phase - 1` of each (a phase files once). */
   filed: Int32Array;
+  /** A funded row's award day (its `'award'` event), else `NO_DAY`. */
+  award: Int32Array;
   /** Per-month deltas. */
   delta: Int32Array;
   /** Per-month prefix sums through `summed`. */

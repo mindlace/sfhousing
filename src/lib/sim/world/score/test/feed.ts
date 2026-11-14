@@ -27,12 +27,29 @@ export function testStatics(input: SimInput, windowMonths: number): ScoreStatics
   });
 }
 
+/** A test `rhnaCompletedNet` with tiers (test values). */
+export const TEST_RHNA = (asOf: number) => ({
+  units: 1000,
+  since: asOf,
+  byTier: { veryLow: 100, low: 150, moderate: 200, aboveModerate: 500, unrecorded: 50 },
+  provenance: { tier: 0 as const, label: 'test', sources: [], method: 'test' }
+});
+
+/** Score statics for `input` under `timeline` (which may carry money), compared with the plan. */
+export function timelineStatics(
+  input: SimInput,
+  timeline: PolicyTimeline,
+  windowMonths: number
+): ScoreStatics {
+  return scoreStaticsOf(input, timeline, 'plan', windowMonths, TEST_RHNA(input.asOf));
+}
+
 /**
- * A funded world (`withFunding(createFundingSystem())`) run through month `through`, every event
- * added to `series` as it is sent (creation events once `createWorld` returns), `stepped(m)` after
- * each month. `onEvent` sees each event after the series has filed it, with the model month that
- * sent it (0 for `createWorld`). Returns the world and its
- * whole ledger (none from `createWorld`).
+ * A funded world (`withFunding(createFundingSystem())`) run through month `through`, its events
+ * added to `series` in `mode` (default `live`: creation events once `createWorld` returns, then
+ * each event as it is sent), `stepped(m)` after each month's events. `onEvent` sees each event
+ * after the series has filed it, with the world it was filed against and the model month that
+ * sent it (0 for `createWorld`). Returns the world and its whole ledger (none from `createWorld`).
  */
 export function feedFunded(
   statics: Statics,
@@ -40,29 +57,42 @@ export function feedFunded(
   seed: number,
   through: number,
   series: WorldSeries,
-  onEvent?: (e: WorldEvent, w: World, month: number) => void
+  onEvent?: (e: WorldEvent, w: World, month: number) => void,
+  mode: FeedMode = 'live'
 ): { world: World; ledger: LedgerEvent[] } {
   const ledger: LedgerEvent[] = [];
   let world: World | null = null;
   let month = 0;
-  const buffer: WorldEvent[] = [];
-  const take = (e: WorldEvent) => {
+  let buffer: { e: WorldEvent; month: number }[] = [];
+  const take = (e: WorldEvent, at: number) => {
     series.add(e, world!, statics);
-    onEvent?.(e, world!, month);
+    onEvent?.(e, world!, at);
+  };
+  const flush = () => {
+    for (const b of buffer) take(b.e, b.month);
+    buffer = [];
   };
   const sink: StepSink = {
-    event: (e) => (world === null ? buffer.push(e) : take(e)),
+    event: (e) => (world === null || mode !== 'live' ? buffer.push({ e, month }) : take(e, month)),
     ledger: (e) => ledger.push(e)
   };
   const core = withFunding(createFundingSystem());
   const w = core.createWorld(statics, timeline, seed, sink);
   world = w;
-  for (const e of buffer) take(e);
+  if (mode !== 'after') flush();
   const due = core.planDue(w, statics, timeline, seed, through);
   for (let m = 1; m <= through; m++) {
     month = m;
     core.step(w, due, statics, timeline, seed, sink);
-    series.stepped(m);
+    if (mode === 'buffered') flush();
+    if (mode !== 'after') series.stepped(m);
+  }
+  if (mode === 'after') {
+    let at = 0;
+    for (let m = 0; m <= through; m++) {
+      for (; at < buffer.length && buffer[at].month === m; at++) take(buffer[at].e, m);
+      if (m > 0) series.stepped(m);
+    }
   }
   return { world: w, ledger };
 }
