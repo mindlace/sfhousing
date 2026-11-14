@@ -591,6 +591,7 @@ describe('the host', () => {
   });
 
   it('a failed needed chunk is reported and retryChunks completes the compile', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const f = datasetFetch(FIXTURE);
     const manifest = structuredClone(f.manifest);
     delete (manifest.scenarios!.fzp as { gross?: string }).gross;
@@ -635,6 +636,12 @@ describe('the host', () => {
     expect(h.errors()).toEqual([]);
     expect(h.of('compiling').at(-1)!.failedCells).toEqual([]);
     expect(h.of('compiled')).toHaveLength(1);
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(`chunk ${cell.cellId} attempt 1 failed`),
+      expect.objectContaining({ message: expect.stringContaining('HTTP 500') })
+    );
+    warn.mockRestore();
   });
 
   it('a second openTimeline silences the first session', async () => {
