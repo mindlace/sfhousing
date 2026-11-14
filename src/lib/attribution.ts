@@ -1,4 +1,14 @@
 export const SOFTWARE: { name: string; license: string; url: string }[] = [
+  {
+    name: 'unique-names-generator',
+    license: 'MIT',
+    url: 'https://github.com/andreasonny83/unique-names-generator'
+  },
+  {
+    name: 'Unicode confusables data (UTS #39)',
+    license: 'Unicode License v3',
+    url: 'https://www.unicode.org/license.txt'
+  },
   { name: 'MapLibre GL JS', license: 'BSD-3-Clause', url: 'https://maplibre.org' },
   { name: 'deck.gl', license: 'MIT', url: 'https://deck.gl' },
   { name: 'luma.gl', license: 'MIT', url: 'https://luma.gl' },

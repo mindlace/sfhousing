@@ -30,6 +30,19 @@ describe('SOFTWARE credits', () => {
     });
   });
 
+  it('credits unique-names-generator and the Unicode confusables data', () => {
+    expect(SOFTWARE).toContainEqual({
+      name: 'unique-names-generator',
+      license: 'MIT',
+      url: 'https://github.com/andreasonny83/unique-names-generator'
+    });
+    expect(SOFTWARE).toContainEqual({
+      name: 'Unicode confusables data (UTS #39)',
+      license: 'Unicode License v3',
+      url: 'https://www.unicode.org/license.txt'
+    });
+  });
+
   it('keeps the fdlibm notice through minification', () => {
     const src = readFileSync(new URL('./timelapse/math.ts', import.meta.url), 'utf8');
     expect(src.startsWith('/*!')).toBe(true);

@@ -59,6 +59,7 @@
     "kdbush": "^4.1.0",
     "maplibre-gl": "^6.13.0",
     "pmtiles": "^4.5.0",
+    "unique-names-generator": "^4.7.1",
     "uuid": "^14.0.1",
     "zod": "^4.4.3"
   },

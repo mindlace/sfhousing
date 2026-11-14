@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import * as schema from '$lib/server/db/schema';
 import { getDb } from '$lib/server/db';
+import { skeleton } from '$lib/server/user-store/confusable-skeleton';
 import { freshDb, grantEvent, makePlatform, seedIdentity, seedUser } from './auth-db';
 
 describe('freshDb', () => {
@@ -117,6 +118,16 @@ describe('makePlatform', () => {
     const platform = makePlatform(shim, { ENVIRONMENT: 'development', AUTH_METHODS: 'magic-link' });
     expect(platform.env).toMatchObject({ ENVIRONMENT: 'development', AUTH_METHODS: 'magic-link' });
     expect(platform.env.DB).toBe(shim);
+    close();
+  });
+});
+
+describe('seedUser handleSkeleton', () => {
+  it('sets handleSkeleton to skeleton(handle)', async () => {
+    const { db, close } = freshDb();
+    await seedUser(db, { id: 'u1', email: 'a@example.com', handle: 'r00t' });
+    const [row] = await db.select().from(schema.user);
+    expect(row.handleSkeleton).toBe(skeleton('r00t'));
     close();
   });
 });

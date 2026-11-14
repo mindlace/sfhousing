@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '$lib/server/db/schema';
 import { newId } from '$lib/server/ids/base58';
 import type { Database } from '$lib/server/db';
+import { skeleton } from '$lib/server/user-store/confusable-skeleton';
 import { createTestD1, testPlatform } from './d1';
 
 export function freshDb(): { db: Database; shim: D1Database; close(): void } {
@@ -43,7 +44,8 @@ export async function seedUser(
     createdAt: now,
     updatedAt: now,
     userIdentity: opts.id,
-    handle: opts.handle ?? opts.email.split('@')[0]
+    handle: opts.handle ?? opts.email.split('@')[0],
+    handleSkeleton: skeleton(opts.handle ?? opts.email.split('@')[0])
   });
   return { id: opts.id, email: opts.email };
 }
