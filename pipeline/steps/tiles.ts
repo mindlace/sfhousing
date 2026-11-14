@@ -60,10 +60,11 @@ export function tileDropReports(stderr: string, minZoom: number): number {
 const MAX_TILE_BYTES = 400_000;
 
 /**
- * The limit with the boxes artifact. The first live build (2026-11-14) put 13 of 52 z14 tiles over
- * 400 KB (largest 680 KB, downtown; z15 at most 209 KB), so 400 KB dropped boxes there (V37).
- * z12–13 tiles stay far under either limit, so their bytes do not move. A tile over this limit
- * still fails V37: the next step is `BOXES.splitZoom` 15, not a higher limit.
+ * The limit of the z14+ render boxes run. The first live build (2026-11-14) put 13 of 52 z14
+ * tiles over 400 KB (largest 680 KB, downtown; z15 at most 209 KB), so 400 KB dropped boxes there
+ * (V37). z12 needs its own run at MAX_TILE_BYTES: main's z12 tiles already exceed 400 KB and drop
+ * their smallest buildings, and at 1 MB the z12 bytes doubled (V11's first paint). A z14 tile over
+ * this limit still fails V37: the next step is `BOXES.splitZoom` 15, not a higher limit.
  */
 export const SPLIT_MAX_TILE_BYTES = 1_000_000;
 
@@ -72,11 +73,12 @@ export const SPLIT_MAX_TILE_BYTES = 1_000_000;
  * layer at z12–15.
  * - Without `split` (no building-boxes artifact): buildings_export only, exactly as before the
  *   boxes work (same input bytes and tippecanoe arguments).
- * - With `split`: buildings_export at z12–13 (tippecanoe minzoom/maxzoom per feature, today's four
- *   properties), then render_export at z14–15 (`BOXES.splitZoom`), which adds `src`, `groundM` and
- *   `groundMinM` (each left out when null), under SPLIT_MAX_TILE_BYTES. Returns how many z14+
- *   tiles tippecanoe reported over `maxTileBytes` (it then drops their smallest features); 0
- *   without split.
+ * - With `split`: two tippecanoe runs joined by tile-join. buildings.geojsonseq holds
+ *   buildings_export at z12–13 (tippecanoe minzoom/maxzoom per feature, today's four properties),
+ *   tiled under MAX_TILE_BYTES as before; boxes.geojsonseq holds render_export at z14–15
+ *   (`BOXES.splitZoom`), which adds `src`, `groundM` and `groundMinM` (each left out when null),
+ *   tiled under `maxTileBytes` (default SPLIT_MAX_TILE_BYTES). Returns how many z14+ tiles the
+ *   second run reported over its limit (it then drops their smallest features); 0 without split.
  */
 export async function writeBuildingsTiles(
   db: Duck,
@@ -107,6 +109,7 @@ export async function writeBuildingsTiles(
         : { type: 'Feature', properties, geometry }
     );
   });
+  const boxLines: string[] = [];
   if (split) {
     const boxes = await db.all<RenderExportRow>(
       `SELECT parcel_id, height_m, base_m, hs, src, ground_m, ground_min_m, geojson4326
@@ -121,7 +124,7 @@ export async function writeBuildingsTiles(
       properties.src = r.src;
       if (r.ground_m !== null) properties.groundM = r.ground_m;
       if (r.ground_min_m !== null) properties.groundMinM = r.ground_min_m;
-      lines.push(
+      boxLines.push(
         JSON.stringify({
           type: 'Feature',
           tippecanoe: { minzoom: BOXES.splitZoom, maxzoom: 15 },
@@ -137,34 +140,59 @@ export async function writeBuildingsTiles(
   // tippecanoe records its output/input paths in the metadata (name, description,
   // generator_options): run it in workDir with relative names so the archive is reproducible.
   const fields = split ? [...TODAY_FIELDS, ...SPLIT_FIELDS] : TODAY_FIELDS;
-  const r = await deps.run(
-    'tippecanoe',
-    [
-      '-o',
-      'buildings.pmtiles',
-      '-l',
-      'buildings',
-      '-Z',
-      '12',
-      '-z',
-      '15',
-      ...fields.flatMap(([name]) => ['-y', name]),
-      ...fields.flatMap(([name, type]) => ['-T', `${name}:${type}`]),
-      '--drop-smallest-as-needed',
-      `--maximum-tile-bytes=${opts.maxTileBytes ?? (split ? SPLIT_MAX_TILE_BYTES : MAX_TILE_BYTES)}`,
-      '--no-simplification-of-shared-nodes',
-      '--force',
-      'buildings.geojsonseq'
-    ],
-    { cwd: workDir, input: '' }
-  );
-  if (r.code !== 0) throw new Error(`tippecanoe failed (${r.code}): ${r.stderr}`);
+  const tile = async (output: string, input: string, maxBytes: number) => {
+    const r = await deps.run(
+      'tippecanoe',
+      [
+        '-o',
+        output,
+        '-l',
+        'buildings',
+        '-Z',
+        '12',
+        '-z',
+        '15',
+        ...fields.flatMap(([name]) => ['-y', name]),
+        ...fields.flatMap(([name, type]) => ['-T', `${name}:${type}`]),
+        '--drop-smallest-as-needed',
+        `--maximum-tile-bytes=${maxBytes}`,
+        '--no-simplification-of-shared-nodes',
+        '--force',
+        input
+      ],
+      { cwd: workDir, input: '' }
+    );
+    if (r.code !== 0) throw new Error(`tippecanoe failed (${r.code}): ${r.stderr}`);
+    return r;
+  };
+  let dropsAtSplit = 0;
+  if (!split) {
+    await tile('buildings.pmtiles', 'buildings.geojsonseq', opts.maxTileBytes ?? MAX_TILE_BYTES);
+  } else {
+    writeFileSync(join(workDir, 'boxes.geojsonseq'), boxLines.join('\n') + '\n');
+    await tile('buildings-low.pmtiles', 'buildings.geojsonseq', MAX_TILE_BYTES);
+    const high = await tile(
+      'buildings-high.pmtiles',
+      'boxes.geojsonseq',
+      opts.maxTileBytes ?? SPLIT_MAX_TILE_BYTES
+    );
+    dropsAtSplit = tileDropReports(high.stderr, BOXES.splitZoom);
+    // -pk: tile-join otherwise skips tiles over 500 KB.
+    const j = await deps.run(
+      'tile-join',
+      ['-pk', '-f', '-o', 'buildings.pmtiles', 'buildings-low.pmtiles', 'buildings-high.pmtiles'],
+      { cwd: workDir, input: '' }
+    );
+    if (j.code !== 0) throw new Error(`tile-join failed (${j.code}): ${j.stderr}`);
+    for (const f of ['buildings-low.pmtiles', 'buildings-high.pmtiles'])
+      rmSync(join(workDir, f), { force: true });
+  }
   if (resolve(workDir) !== resolve(outDir)) {
     const built = join(workDir, 'buildings.pmtiles');
     copyFileSync(built, join(outDir, 'buildings.pmtiles'));
     rmSync(built);
   }
-  return { dropsAtSplit: split ? tileDropReports(r.stderr, BOXES.splitZoom) : 0 };
+  return { dropsAtSplit };
 }
 
 /**

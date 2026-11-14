@@ -304,20 +304,44 @@ describe.skipIf(!hasTippecanoe || !hasPmtiles)('buildings tiles zoom split [tool
     expect(perLot.get('3512014')).toBe(8);
   });
 
-  it('the split run raises the byte limit to SPLIT_MAX_TILE_BYTES; the plain run keeps 400000', async () => {
-    // Live 2026-11-14: 13 of 52 z14 tiles were over 400 KB (max 680 KB) with nothing dropped.
+  it('tiles z12-13 at 400000 B and the z14+ boxes at SPLIT_MAX_TILE_BYTES, then joins them', async () => {
+    // Live 2026-11-14: 13 of 52 z14 tiles were over 400 KB (max 680 KB), while main's z12 tiles
+    // already fill 400 KB, so one shared limit either drops boxes or doubles the z12 bytes.
     expect(SPLIT_MAX_TILE_BYTES).toBe(1_000_000);
     const dir = mkdtempSync(join(tmpdir(), 'sfh-tiles-limit-'));
-    const seen: string[][] = [];
+    const seen: { cmd: string; args: string[] }[] = [];
     const fake = {
-      run: async (_cmd: string, args: string[]) => {
-        seen.push(args);
+      run: async (cmd: string, args: string[]) => {
+        seen.push({ cmd, args });
         return { code: 0, stdout: '', stderr: '' };
       }
     };
     await writeBuildingsTiles(db, dir, dir, { split: true }, fake);
-    expect(seen[0]).toContain(`--maximum-tile-bytes=${SPLIT_MAX_TILE_BYTES}`);
-    expect(seen[0]).not.toContain('--maximum-tile-bytes=400000');
+    expect(seen.map((c) => c.cmd)).toEqual(['tippecanoe', 'tippecanoe', 'tile-join']);
+    const [low, high, join2] = seen.map((c) => c.args);
+    expect(low).toContain('--maximum-tile-bytes=400000');
+    expect(low.at(-1)).toBe('buildings.geojsonseq');
+    expect(high).toContain(`--maximum-tile-bytes=${SPLIT_MAX_TILE_BYTES}`);
+    expect(high.at(-1)).toBe('boxes.geojsonseq');
+    expect(join2).toEqual([
+      '-pk',
+      '-f',
+      '-o',
+      'buildings.pmtiles',
+      'buildings-low.pmtiles',
+      'buildings-high.pmtiles'
+    ]);
+    // z12-13 features only in the first input, the z14+ boxes only in the second.
+    const zooms = (f: string) =>
+      new Set(
+        readFileSync(join(dir, f), 'utf8')
+          .trim()
+          .split('\n')
+          .map((l) => JSON.stringify(JSON.parse(l).tippecanoe))
+      );
+    expect(zooms('buildings.geojsonseq')).toEqual(new Set(['{"minzoom":12,"maxzoom":13}']));
+    expect(zooms('boxes.geojsonseq')).toEqual(new Set(['{"minzoom":14,"maxzoom":15}']));
+    // Without the artifact: one run at 400000, as on main.
     expect(calls[0].args).toContain('--maximum-tile-bytes=400000');
   });
 
