@@ -412,6 +412,33 @@
     </ul>
   </section>
 
+  <section id="sec-builder-check">
+    <h2>Builder check, unanswered</h2>
+    <p>A fresh reader went through this document on 2026-11-14 as the builder would. The design was paused before these were sorted or answered. They are recorded as reported.</p>
+    <section id="sec-builder-questions">
+      <h3>Questions, most important first</h3>
+      <ul>
+        <li id="bq1"><strong>Dataset changes.</strong> Every load today reconciles the document against the current dataset and calibration (<code>openSimDoc4</code>, <code>src/lib/timeline/sim-doc4.ts:238</code>). If the reconciled result is the ruleset it must be a <code>system</code> commit, but a read-only viewer cannot append and the sim object has no calibration to validate with. If it is computed over the fold on each open, "the ruleset is always the fold" and R31 are false. Which is it?</li>
+        <li id="bq2"><strong>What "recomputed against the new tip" means (R18).</strong> Replaying the pending commit's stored changes onto the new tip keeps the other tab's work. Diffing the new tip against the tab's intended state undoes it. The edit functions cannot be re-run after a reload, and a pending <code>restore</code> is undefined under either reading.</li>
+        <li id="bq3"><strong>Joining accounts (R49).</strong> Planafoot does not join on a passkey or a password; its fuse runs only through <code>onLinkAccount</code> for email and Google, and a password deliberately does not trigger it (<code>planafoot/src/lib/server/auth/password-pseudonymity.spec.ts:21-36</code>). Which identity survives, and how does each sim's writer check follow?</li>
+        <li id="bq4"><strong>Schema changes to <code>SimPolicy4</code>.</strong> A log kept for ever holds changes against today's shapes. Either <code>fold</code> keeps every past vocabulary and upgrades on read, or a <code>system</code> commit migrates the tip and older positions stop parsing.</li>
+        <li id="bq5"><strong>The writer editing from an earlier position of their own sim.</strong> R31 makes a position link read-only and R32 makes an edit a remix only for someone who cannot write. For the writer: a restore then the edit, a remix, or a refusal?</li>
+        <li id="bq6"><strong>Old positions re-simulate on the current build and dataset.</strong> Only one build is ever deployed, so the future someone saw cannot be reproduced exactly. If that matters, the plan needs pinned builds or stored results; if not, <code>build</code> is for study only.</li>
+      </ul>
+    </section>
+    <section id="sec-builder-corrections">
+      <h3>Where this document is wrong about the repository or itself</h3>
+      <ul>
+        <li id="bc1">R1: a coalesce run has no end signal today. It ends only when the next <code>apply</code> carries a different key (<code>src/lib/sim-page/policy-store.svelte.ts:57-71</code>). The store needs its own rule for when a draft becomes a commit, and whether an unfinished draft survives a reload.</li>
+        <li id="bc2">The change vocabulary has no reorder, but timeline-ui adds "Move up" and "Move down" for policies and the <code>kinds</code> arrays are ordered. R8 cannot hold without one.</li>
+        <li id="bc3">R24 says the D1 index is rebuildable, but removing a sim from a list (R43) and ownership passing on a join (R49) exist only in D1. Those rows are a source of truth and need a durability rule.</li>
+        <li id="bc4">R22: <code>npm run db:generate</code> is hard-wired to <code>generate d1</code> (<code>package.json:27</code>) and does not build a Durable Object track.</li>
+        <li id="bc5">R20 assumes one old autosave key. After timeline-ui there are two, and <code>sfhousing:sim:v1</code> is kept on purpose so an older tab keeps working (<code>src/lib/timeline/sim-doc4.ts:315-319</code>).</li>
+        <li id="bc6">"timeline-ui (plan written, not built)" is out of date: tasks 1 to 3 are committed on <code>step-engine/timeline-ui</code> (ea21a9fb).</li>
+      </ul>
+    </section>
+  </section>
+
   <section id="sec-open">
     <h2>Calls to check</h2>
     <p>The owner has answered the questions this design raised; the answers are in <a href="#sec-identity">Identity and sharing</a>, <a href="#sec-study">Studying exploration</a> and <a href="#sec-privacy">What leaves the browser</a>. These calls are mine:</p>
