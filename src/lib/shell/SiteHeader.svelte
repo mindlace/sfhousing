@@ -2,7 +2,7 @@
   The site header. From lg: the site name, the mode links, the page's status, then (on the
   right) the pinned item and the actions. Below lg: the site name, the status, the pinned item
   and a hamburger Menu button whose panel (under the header) holds the mode links and the
-  actions. The status and the actions render once at every width: from lg the panel is
+  actions. The account entry (Sign in, or @handle) follows the actions in the same group. The status and the actions render once at every width: from lg the panel is
   `display: contents`, so the actions sit in the header row.
 -->
 <script lang="ts">
@@ -13,12 +13,15 @@
     actions,
     pinned,
     status,
+    user = null,
     routeId = null
   }: {
     actions?: Snippet;
     pinned?: Snippet;
     /** Non-interactive page state (the /sim save state), left-aligned, never in the Menu. */
     status?: Snippet;
+    /** The signed-in account's handle, or null when signed out. */
+    user?: { handle: string } | null;
     routeId?: string | null;
   } = $props();
 
@@ -166,6 +169,11 @@
     </nav>
     <div class="flex items-center gap-2 max-lg:flex-wrap lg:justify-self-end">
       {@render actions?.()}
+      <a
+        href={user ? '/account' : '/signin'}
+        class={[tab(false), 'max-w-40 text-sm']}
+        data-header-account><span class="truncate">{user ? `@${user.handle}` : 'Sign in'}</span></a
+      >
     </div>
   </div>
 </header>

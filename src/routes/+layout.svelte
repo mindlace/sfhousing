@@ -29,6 +29,7 @@
     actions={headerActions.current ?? undefined}
     pinned={headerActions.pinned ?? undefined}
     status={headerActions.status ?? undefined}
+    user={page.data.user}
     routeId={page.route.id}
   />
   <main

@@ -5,7 +5,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { AUTH_COPY, pendingSimLine } from '../src/lib/account/copy';
 import { SIMS_COPY } from '../src/lib/members/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { enableAuthMethods, uniqueEmail } from './helpers/auth';
+import { enableAuthMethods, loginAs, uniqueEmail } from './helpers/auth';
+import { openHeaderMenu } from './helpers/sharing';
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -135,5 +136,37 @@ test('reset-password: no axe violations with a token and with a rejected link', 
 
   await gotoSignin(page, '/reset-password?error=INVALID_TOKEN');
   await expect(page.getByTestId('reset-invalid')).toHaveText(AUTH_COPY.resetInvalid);
+  await expectNoA11yViolations(page);
+});
+
+test('route announcer: a client-side nav to /signin announces the new page title', async ({
+  page
+}) => {
+  await page.goto('/about');
+  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+  // The header's Sign in link is the in-app anchor to /signin; clicking it is a client-side nav,
+  // so SvelteKit's route announcer picks up the new title. Below lg it waits in the Menu.
+  await openHeaderMenu(page);
+  await page.getByRole('banner').getByRole('link', { name: 'Sign in', exact: true }).click();
+  await expect(page).toHaveURL(/\/signin(\?|$)/);
+  await expect(page.locator('#svelte-announcer')).toHaveText(AUTH_COPY.pageTitle);
+});
+
+test('header: signed out shows Sign in, signed in shows the handle, both axe clean', async ({
+  page
+}) => {
+  await gotoSignin(page, '/about');
+  await openHeaderMenu(page);
+  await expect(
+    page.getByRole('banner').getByRole('link', { name: 'Sign in', exact: true })
+  ).toHaveAttribute('href', '/signin');
+  await expectNoA11yViolations(page);
+
+  await loginAs(page, uniqueEmail('header-entry'));
+  await gotoSignin(page, '/about');
+  await openHeaderMenu(page);
+  const entry = page.getByRole('banner').getByRole('link', { name: /^@/ });
+  await expect(entry).toBeVisible();
+  await expect(entry).toHaveAttribute('href', '/account');
   await expectNoA11yViolations(page);
 });

@@ -32,6 +32,47 @@ describe('SiteHeader', () => {
     expect(el.getBoundingClientRect().height).toBe(48);
   });
 
+  describe('account entry', () => {
+    it('links a signed-out visitor to /signin', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { user: null });
+      const link = page.getByRole('banner').getByRole('link', { name: 'Sign in' });
+      await expect.element(link).toHaveAttribute('href', '/signin');
+    });
+
+    it('links a signed-in user to /account, by handle', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { user: { handle: 'ada' } });
+      const link = page.getByRole('banner').getByRole('link', { name: '@ada' });
+      await expect.element(link).toHaveAttribute('href', '/account');
+    });
+
+    it('at 375px waits in the Menu until it opens, then sits in the panel', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { user: null });
+      await expect.element(page.getByText('Sign in')).not.toBeVisible();
+      await page.getByRole('button', { name: 'Menu' }).click();
+      const link = page.getByRole('link', { name: 'Sign in' });
+      await expect.element(link).toBeVisible();
+      const menu = page.getByRole('button', { name: 'Menu' }).element();
+      const panel = document.getElementById(menu.getAttribute('aria-controls')!);
+      expect(panel?.contains(link.element())).toBe(true);
+    });
+
+    it('at 1024px is visible in the banner, after the actions, and the header stays 48px', async () => {
+      await page.viewport(1024, 768);
+      const actions = createRawSnippet(() => ({ render: () => '<button>Publish</button>' }));
+      render(SiteHeader, { user: null, actions });
+      const banner = page.getByRole('banner');
+      const link = banner.getByRole('link', { name: 'Sign in' });
+      await expect.element(link).toBeVisible();
+      const a = banner.getByRole('button', { name: 'Publish' }).element().getBoundingClientRect();
+      const l = link.element().getBoundingClientRect();
+      expect(l.left).toBeGreaterThanOrEqual(a.right);
+      expect(banner.element().getBoundingClientRect().height).toBe(48);
+    });
+  });
+
   describe('mode links', () => {
     it('shows both links at 1024px and marks the current mode', async () => {
       await page.viewport(1024, 768);
