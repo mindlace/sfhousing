@@ -1,8 +1,8 @@
 import { ROLE_BUNDLE } from './ability';
+import type { SimMemberRole } from '$lib/server/db/schema/simControlPlane';
 import type { Capability } from './authorize';
 
-// Declared here until the schema task moves it to `$lib/server/db/schema/simControlPlane`.
-export type SimMemberRole = 'manager' | 'editor' | 'viewer';
+export type { SimMemberRole };
 
 /** Lift a sim membership role into the single bundle capability it confers on that
  *  sim. `null` (non-member) → no capabilities. Membership-only: callers never mix in
