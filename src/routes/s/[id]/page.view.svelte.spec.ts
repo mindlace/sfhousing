@@ -105,7 +105,9 @@ async function dataFor(text: string, o: { upgradedFrom?: number } = {}) {
     datasetNotice: 'none' as const,
     ...(o.upgradedFrom === undefined ? {} : { upgradedFrom: o.upgradedFrom }),
     datasetVersion: 'fixture-0',
-    appRelease: 'dev'
+    appRelease: 'dev',
+    user: null,
+    signInAvailable: true
   };
   const r = await load({
     data: server,

@@ -13,6 +13,7 @@ import {
   gotoEditor,
   headerNet,
   jumpAndIdle,
+  openHeaderMenu,
   openResults,
   paintOnce,
   projectToPage,
@@ -57,9 +58,7 @@ test('/sim header, playhead and timeline have no axe violations in dark', async 
 test('at 375px the open Menu has no axe violations in dark', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await gotoEditor(page);
-  const menu = page.getByRole('banner').getByRole('button', { name: 'Menu', exact: true });
-  await menu.click();
-  await expect(menu).toHaveAttribute('aria-expanded', 'true');
+  await openHeaderMenu(page);
   await expect(
     page.getByRole('navigation', { name: 'Modes' }).getByRole('link', { name: 'Paint' })
   ).toBeVisible();

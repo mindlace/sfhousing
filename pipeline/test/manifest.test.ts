@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Lock } from '../lib/lock';
 import { buildManifest } from '../steps/manifest';
@@ -162,5 +163,23 @@ describe('buildManifest', () => {
     expect(at(true, true).scenarios?.fzp.gross).toBe('/data/fixture-3/scenarios/fzp/gross.bin');
     expect('gross' in at(true, false).scenarios!.fzp).toBe(false);
     expect('scenarios' in at(false, true)).toBe(false);
+  });
+});
+
+describe('the mini manifest', () => {
+  it('the manifest lists building-boxes', () => {
+    for (const f of [
+      'pipeline/test/fixtures/mini/golden/manifest.json',
+      'e2e/fixtures/data/fixture-0/manifest.json'
+    ]) {
+      const m = JSON.parse(readFileSync(f, 'utf8')) as { sources: { id: string }[] };
+      expect(m.sources).toContainEqual(
+        expect.objectContaining({
+          id: 'building-boxes',
+          license: 'ODbL-1.0',
+          label: 'Building boxes (USGS 3DEP LiDAR 2023 and Overture)'
+        })
+      );
+    }
   });
 });

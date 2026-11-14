@@ -293,4 +293,81 @@ describe('upload', () => {
     const o = opts(t, { outDir: outDir('fixture-7', { lockSha256: 'f'.repeat(64) }) });
     expect(await upload(o)).toBe(0);
   });
+
+  describe('the LiDAR lock', () => {
+    const tile = (sha: string, n: number) => ({
+      url: 'u',
+      sha256: sha,
+      bytes: 1,
+      archiveKey: `sources/${sha}.sfhl`,
+      name: `usgs-lidar-sf/${n}_0.sfhl`
+    });
+    const lidarLock = (shas: string[]): Lock => ({
+      sources: [
+        {
+          id: 'usgs-lidar-sf',
+          files: shas.map((s, i) => tile(s, i)),
+          retrievedAt: '',
+          upstreamVersion: 'v',
+          rowCount: shas.length,
+          license: '',
+          homepage: ''
+        }
+      ]
+    });
+    const marker = (l: Lock) => `sources/lidar-lock-${lockSha256(l)}.json`;
+    const rawWith = (...shas: string[]) => {
+      const d = mkdtempSync(join(tmpdir(), 'sfh-raw-'));
+      for (const s of shas) writeFileSync(join(d, s), s);
+      return d;
+    };
+    const puts = (calls: string[]) => calls.filter((c) => c.startsWith('put'));
+
+    it('upload archives the LiDAR lock tiles and writes one marker last, with no tile probes', async () => {
+      const l = lidarLock(['t0', 't1']);
+      const { t, calls } = fakeTarget();
+      const o = opts(t, { lidarLock: l, rawDir: rawWith('t0', 't1') });
+      expect(await upload(o)).toBe(0);
+      expect(puts(calls)).toContain('put sources/t0.sfhl');
+      expect(puts(calls)).toContain('put sources/t1.sfhl');
+      expect(calls.filter((c) => c.startsWith('exists sources/t'))).toEqual([]);
+      const at = (k: string) => calls.indexOf(`put ${k}`);
+      expect(at(marker(l))).toBeGreaterThan(at('sources/t1.sfhl'));
+      expect(at(marker(l))).toBeGreaterThan(at('sources/t0.sfhl'));
+      expect(puts(calls).filter((c) => c.includes('lidar-lock-'))).toHaveLength(1);
+    });
+    it('skips every tile when the marker exists', async () => {
+      const l = lidarLock(['t0', 't1']);
+      const { t, calls } = fakeTarget([marker(l)]);
+      expect(await upload(opts(t, { lidarLock: l, rawDir: '/nonexistent' }))).toBe(0);
+      expect(puts(calls).filter((c) => c.includes('.sfhl') || c.includes('lidar-lock-'))).toEqual(
+        []
+      );
+    });
+    it('a partial upload writes no marker', async () => {
+      const l = lidarLock(['t0', 't1']);
+      const { t, calls } = fakeTarget([], { 'sources/t1.sfhl': 99 });
+      expect(await upload(opts(t, { lidarLock: l, rawDir: rawWith('t0', 't1') }))).toBe(1);
+      expect(puts(calls).filter((c) => c.includes('lidar-lock-'))).toEqual([]);
+      expect(puts(calls).filter((c) => c.includes('manifest'))).toEqual([]);
+    });
+    it('upload refuses a tile in neither place', async () => {
+      const l = lidarLock(['t0', 't1']);
+      const { t, calls } = fakeTarget();
+      const msgs: string[] = [];
+      const o = opts(t, { lidarLock: l, rawDir: rawWith('t0'), log: (s: string) => msgs.push(s) });
+      expect(await upload(o)).toBe(1);
+      expect(puts(calls)).toEqual([]);
+      expect(msgs.join('\n')).toContain(
+        'usgs-lidar-sf: usgs-lidar-sf/1_0.sfhl is neither archived nor in the raw cache'
+      );
+    });
+    it('a tile missing locally but already archived is not re-uploaded', async () => {
+      const l = lidarLock(['t0', 't1']);
+      const { t, calls } = fakeTarget(['sources/t1.sfhl']);
+      expect(await upload(opts(t, { lidarLock: l, rawDir: rawWith('t0') }))).toBe(0);
+      expect(puts(calls)).toContain('put sources/t0.sfhl');
+      expect(puts(calls)).not.toContain('put sources/t1.sfhl');
+    });
+  });
 });

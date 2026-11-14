@@ -66,10 +66,14 @@ display refresh rate, so on a 120 Hz display the p50 is about 8.3 ms. The bar is
 | Apple M5 Pro (same), timeline "playback", after the `__lc` clones                                | 2026-11-03 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.0 ms  | Yes                                          |
 | Apple M5 Pro (same), timeline "drag", after the `__lc` clones                                    | 2026-11-03 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 8.9 ms  | Yes                                          |
 | Apple M5 Pro (same), timeline "playback + limits", after the `__lc` clones                       | 2026-11-03 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.0 ms  | Yes                                          |
+| Apple M5 Pro (same), representative, live `2026-11-10-6ee5a23d` (before building boxes), load ~6 | 2026-11-14 | Playwright Chromium, Metal | 2   | 1182   | 8.3 ms | 10.1 ms | Yes (ballpark; worst-case p95 10.2 ms)       |
+| Apple M5 Pro (same), representative, live `2026-11-14-0135312a` (building boxes z14+), load ~6   | 2026-11-14 | Playwright Chromium, Metal | 2   | 1177   | 8.3 ms | 9.9 ms  | Yes (ballpark; worst-case p95 9.6 ms)        |
 
 Run the bench with both transit layers on (the default View prefs). fixture-0 has only 8 stops, so its transit row measures the layer overhead. The live-network row ran the same bench against a local copy of the production dataset (`npm run data:local -- <version>`, then `npm run data:transit -- <version>`) served with `PUBLIC_DATASET_VERSION` set to that version instead of `fixture-0` (the override is ignored unless `ENVIRONMENT=development` is also set) (the bench config pins `fixture-0`, so this needs a one-off config override). Re-check against live data when the stop layers change.
 
 Add a row when you run the bench on new hardware or after a change to the rendering path.
+
+The two 2026-11-14 rows compare the existing buildings before and after the building boxes (`SFH_BENCH_DATASET=<v> npm run bench:map`, both versions copied from staging with `data:local`). The after dataset's `buildings.pmtiles` is 65% larger (16.4 to 27.1 MB) and its z14 tiles reach 680 KB; the bench camera (downtown, zoom 15) loads those box tiles. The machine was not quiet (1-minute load 5 to 6.4 on 15 cores, from other sessions' lint and type checks), so the numbers are ballpark; they match the earlier quiet rows. The rest of the sweep also passed on both versions: timeline playback / drag / playback + limits p95 10.1 / 9.9 / 10.0 ms before and 9.6 / 9.8 / 10.0 ms after, and every run-slider case.
 
 ## Timeline cases (FZP timelapse renderer)
 

@@ -32,6 +32,70 @@ describe('SiteHeader', () => {
     expect(el.getBoundingClientRect().height).toBe(48);
   });
 
+  describe('account entry', () => {
+    it('links a signed-out visitor to /signin', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { user: null });
+      const link = page.getByRole('banner').getByRole('link', { name: 'Sign in' });
+      await expect.element(link).toHaveAttribute('href', '/signin');
+    });
+
+    it('offers no Sign in when no sign-in method is in effect', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { user: null, signInAvailable: false });
+      await expect.element(page.getByRole('banner')).toBeVisible();
+      expect(page.getByRole('link', { name: 'Sign in' }).elements()).toHaveLength(0);
+      expect(document.querySelector('[data-header-account]')).toBeNull();
+    });
+
+    it('still links a signed-in user to /account when no sign-in method is in effect', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { user: { handle: 'ada' }, signInAvailable: false });
+      const link = page.getByRole('banner').getByRole('link', { name: '@ada' });
+      await expect.element(link).toHaveAttribute('href', '/account');
+    });
+
+    it('links a signed-in user to /account, by handle', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { user: { handle: 'ada' } });
+      const link = page.getByRole('banner').getByRole('link', { name: '@ada' });
+      await expect.element(link).toHaveAttribute('href', '/account');
+    });
+
+    it('carries the full handle as a title, since a long one is truncated', async () => {
+      await page.viewport(1024, 768);
+      const handle = 'a-very-long-handle-that-will-not-fit-in-the-header';
+      render(SiteHeader, { user: { handle } });
+      const link = page.getByRole('banner').getByRole('link', { name: `@${handle}` });
+      await expect.element(link).toHaveAttribute('title', `@${handle}`);
+    });
+
+    it('at 375px waits in the Menu until it opens, then sits in the panel', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { user: null });
+      await expect.element(page.getByText('Sign in')).not.toBeVisible();
+      await page.getByRole('button', { name: 'Menu' }).click();
+      const link = page.getByRole('link', { name: 'Sign in' });
+      await expect.element(link).toBeVisible();
+      const menu = page.getByRole('button', { name: 'Menu' }).element();
+      const panel = document.getElementById(menu.getAttribute('aria-controls')!);
+      expect(panel?.contains(link.element())).toBe(true);
+    });
+
+    it('at 1024px is visible in the banner, after the actions, and the header stays 48px', async () => {
+      await page.viewport(1024, 768);
+      const actions = createRawSnippet(() => ({ render: () => '<button>Publish</button>' }));
+      render(SiteHeader, { user: null, actions });
+      const banner = page.getByRole('banner');
+      const link = banner.getByRole('link', { name: 'Sign in' });
+      await expect.element(link).toBeVisible();
+      const a = banner.getByRole('button', { name: 'Publish' }).element().getBoundingClientRect();
+      const l = link.element().getBoundingClientRect();
+      expect(l.left).toBeGreaterThanOrEqual(a.right);
+      expect(banner.element().getBoundingClientRect().height).toBe(48);
+    });
+  });
+
   describe('mode links', () => {
     it('shows both links at 1024px and marks the current mode', async () => {
       await page.viewport(1024, 768);

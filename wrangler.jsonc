@@ -19,10 +19,22 @@
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "sfhousing" }],
   "ratelimits": [
     // namespace_id is a user-chosen integer, unique within the Cloudflare account
-    { "name": "PUBLISH_RL", "namespace_id": "4101", "simple": { "limit": 10, "period": 60 } }
+    { "name": "PUBLISH_RL", "namespace_id": "4101", "simple": { "limit": 10, "period": 60 } },
+    { "name": "AUTH_LINK_RL", "namespace_id": "4102", "simple": { "limit": 5, "period": 60 } },
+    { "name": "AUTH_PASSWORD_RL", "namespace_id": "4103", "simple": { "limit": 5, "period": 60 } },
+    { "name": "PSEUDO_MINT_RL", "namespace_id": "4104", "simple": { "limit": 5, "period": 60 } },
+    { "name": "INVITE_RL", "namespace_id": "4105", "simple": { "limit": 10, "period": 60 } },
+    { "name": "ACCOUNT_EDIT_RL", "namespace_id": "4106", "simple": { "limit": 10, "period": 60 } },
+    {
+      "name": "MUTATION_REGISTERED_RL",
+      "namespace_id": "4107",
+      "simple": { "limit": 120, "period": 60 }
+    }
   ],
   "vars": {
     "ENVIRONMENT": "production",
+    "AUTH_METHODS": "magic-link",
+    "SES_FROM": "SF Housing Simulator <noreply@sfhousing.mindlace.net>",
     "PUBLIC_APP_RELEASE": "dev"
   },
   "env": {
@@ -47,10 +59,34 @@
       "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "sfhousing" }],
       "ratelimits": [
         // namespace_id is a user-chosen integer, unique within the Cloudflare account
-        { "name": "PUBLISH_RL", "namespace_id": "4201", "simple": { "limit": 10, "period": 60 } }
+        { "name": "PUBLISH_RL", "namespace_id": "4201", "simple": { "limit": 10, "period": 60 } },
+        { "name": "AUTH_LINK_RL", "namespace_id": "4202", "simple": { "limit": 5, "period": 60 } },
+        {
+          "name": "AUTH_PASSWORD_RL",
+          "namespace_id": "4203",
+          "simple": { "limit": 5, "period": 60 }
+        },
+        {
+          "name": "PSEUDO_MINT_RL",
+          "namespace_id": "4204",
+          "simple": { "limit": 5, "period": 60 }
+        },
+        { "name": "INVITE_RL", "namespace_id": "4205", "simple": { "limit": 10, "period": 60 } },
+        {
+          "name": "ACCOUNT_EDIT_RL",
+          "namespace_id": "4206",
+          "simple": { "limit": 10, "period": 60 }
+        },
+        {
+          "name": "MUTATION_REGISTERED_RL",
+          "namespace_id": "4207",
+          "simple": { "limit": 120, "period": 60 }
+        }
       ],
       "vars": {
         "ENVIRONMENT": "staging",
+        "AUTH_METHODS": "magic-link",
+        "SES_FROM": "SF Housing Simulator <noreply@sfhousing.mindlace.net>",
         "PUBLIC_APP_RELEASE": "dev"
       }
     }

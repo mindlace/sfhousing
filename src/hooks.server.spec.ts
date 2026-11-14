@@ -1,9 +1,205 @@
-import { describe, expect, it } from 'vitest';
-import { handle } from './hooks.server';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RequestEvent } from '@sveltejs/kit';
+
+const { getAuth, getSession, resolveSessionUser, resolveCapabilities } = vi.hoisted(() => ({
+  getAuth: vi.fn(),
+  getSession: vi.fn(),
+  resolveSessionUser: vi.fn(),
+  resolveCapabilities: vi.fn()
+}));
+vi.mock('$lib/server/auth/better-auth', () => ({ getAuth }));
+vi.mock('$lib/server/user-store/user', () => ({ resolveSessionUser }));
+vi.mock('$lib/server/operator/capabilities', () => ({ resolveCapabilities }));
+
+// @ts-expect-error -- SvelteKit's internal server entry ships no module typings.
+import { with_request_store } from '@sveltejs/kit/internal/server';
+import { handle, headersHandle, sessionHandle } from './hooks.server';
+
+type StoreRunner = (store: unknown, fn: () => Promise<Response>) => Promise<Response>;
+
+// `sequence` reads SvelteKit's per-request store, which only the server runtime sets. Run the
+// composed handle inside a minimal store (no tracing) as the runtime would.
+async function inRequestStore(e: RequestEvent, fn: () => Promise<Response>): Promise<Response> {
+  const tracing = { record_span: ({ fn }: { fn: (span: unknown) => unknown }) => fn({}) };
+  return (with_request_store as StoreRunner)({ event: e, state: { tracing } }, fn);
+}
+
+const SECRET = 'a'.repeat(64);
+const PUBLIC_LOCALS = { user: null, session: null, capabilities: [], actorKind: 'public' };
+const ALICE = { id: 'ident-1', email: 'alice@example.com', handle: 'alice' };
+
+function event(
+  path: string,
+  opts: { cookie?: string; upgrade?: string; env?: Record<string, unknown> } = {}
+): RequestEvent {
+  const url = new URL(`http://localhost${path}`);
+  const headers = new Headers();
+  if (opts.cookie) headers.set('cookie', opts.cookie);
+  if (opts.upgrade) headers.set('upgrade', opts.upgrade);
+  return {
+    url,
+    request: new Request(url, { headers }),
+    platform: { env: opts.env ?? { DB: {}, BETTER_AUTH_SECRET: SECRET } },
+    locals: {}
+  } as unknown as RequestEvent;
+}
+
+const ok = async () => new Response('ok');
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  getSession.mockResolvedValue(null);
+  getAuth.mockReturnValue({ api: { getSession } });
+  resolveSessionUser.mockResolvedValue(ALICE);
+  resolveCapabilities.mockResolvedValue([]);
+});
+
+describe('sessionHandle', () => {
+  it('does not construct Better-Auth for a signed-out page', async () => {
+    for (const path of ['/', '/sim', '/s/abc', '/p/abc']) {
+      const e = event(path);
+      const res = await sessionHandle({ event: e, resolve: ok });
+      expect(res.status).toBe(200);
+      expect(e.locals).toEqual(PUBLIC_LOCALS);
+    }
+    expect(getAuth).not.toHaveBeenCalled();
+    expect(resolveSessionUser).not.toHaveBeenCalled();
+    expect(resolveCapabilities).not.toHaveBeenCalled();
+  });
+
+  it('works with no BETTER_AUTH_SECRET on a signed-out page', async () => {
+    const actual = await vi.importActual<typeof import('$lib/server/auth/better-auth')>(
+      '$lib/server/auth/better-auth'
+    );
+    getAuth.mockImplementation(actual.getAuth);
+    const res = await sessionHandle({ event: event('/', { env: { DB: {} } }), resolve: ok });
+    expect(res.status).toBe(200);
+    // The same env does break an auth route: the real getAuth refuses the missing secret.
+    await expect(
+      sessionHandle({ event: event('/signin', { env: { DB: {} } }), resolve: ok })
+    ).rejects.toThrow();
+  });
+
+  it('never resolves a session under /data/, even with a cookie', async () => {
+    const e = event('/data/fixture-0/manifest.json', { cookie: 'better-auth.session_token=t' });
+    await sessionHandle({ event: e, resolve: ok });
+    expect(getAuth).not.toHaveBeenCalled();
+    expect(resolveSessionUser).not.toHaveBeenCalled();
+    expect(resolveCapabilities).not.toHaveBeenCalled();
+    expect(e.locals).toEqual(PUBLIC_LOCALS);
+  });
+
+  it('resolves the session when a session cookie is present', async () => {
+    getSession.mockResolvedValue({
+      user: { id: 'live-1' },
+      session: { id: 'sess-1', userId: 'live-1' }
+    });
+    const e = event('/', { cookie: 'better-auth.session_token=t' });
+    await sessionHandle({ event: e, resolve: ok });
+    expect(getAuth).toHaveBeenCalledTimes(1);
+    expect(resolveSessionUser).toHaveBeenCalledWith(expect.anything(), 'live-1');
+    expect(e.locals.user).toEqual(ALICE);
+    expect(e.locals.session).toEqual({ id: 'sess-1', userId: 'live-1' });
+    expect(e.locals.capabilities).toEqual([]);
+    expect(e.locals.actorKind).toBe('human');
+  });
+
+  it('resolves capabilities for the session user with the BOOTSTRAP_EMAILS value', async () => {
+    getSession.mockResolvedValue({
+      user: { id: 'live-1' },
+      session: { id: 'sess-1', userId: 'live-1' }
+    });
+    const e = event('/', {
+      cookie: 'better-auth.session_token=t',
+      env: { DB: {}, BETTER_AUTH_SECRET: SECRET, BOOTSTRAP_EMAILS: 'alice@example.com' }
+    });
+    await sessionHandle({ event: e, resolve: ok });
+    expect(resolveCapabilities).toHaveBeenCalledTimes(1);
+    expect(resolveCapabilities).toHaveBeenCalledWith(expect.anything(), ALICE, 'alice@example.com');
+  });
+
+  it('gives a verified BOOTSTRAP_EMAILS user cap.grant', async () => {
+    const actual = await vi.importActual<typeof import('$lib/server/operator/capabilities')>(
+      '$lib/server/operator/capabilities'
+    );
+    resolveCapabilities.mockImplementation(actual.resolveCapabilities);
+    resolveSessionUser.mockResolvedValue({ ...ALICE, emailVerified: true, pseudonymous: false });
+    getSession.mockResolvedValue({
+      user: { id: 'live-1' },
+      session: { id: 'sess-1', userId: 'live-1' }
+    });
+    const e = event('/', {
+      cookie: 'better-auth.session_token=t',
+      env: { DB: {}, BETTER_AUTH_SECRET: SECRET, BOOTSTRAP_EMAILS: 'Alice@Example.com' }
+    });
+    await sessionHandle({ event: e, resolve: ok });
+    expect(actual.hasCapability(e.locals.capabilities, 'cap.grant')).toBe(true);
+  });
+
+  it('recognises the __Secure- cookie name', async () => {
+    const e = event('/', { cookie: '__Secure-better-auth.session_token=t' });
+    await sessionHandle({ event: e, resolve: ok });
+    expect(getAuth).toHaveBeenCalledTimes(1);
+    expect(getSession).toHaveBeenCalledWith({ headers: e.request.headers });
+  });
+
+  it('constructs Better-Auth on auth routes without a cookie', async () => {
+    const e = event('/signin');
+    await sessionHandle({ event: e, resolve: ok });
+    expect(getAuth).toHaveBeenCalledTimes(1);
+    expect(getAuth).toHaveBeenCalledWith(e.platform, 'http://localhost');
+    expect(e.locals).toEqual(PUBLIC_LOCALS);
+  });
+
+  it('reads with disableRefresh on a WebSocket upgrade', async () => {
+    const e = event('/', { cookie: 'better-auth.session_token=t', upgrade: 'WebSocket' });
+    await sessionHandle({ event: e, resolve: ok });
+    expect(getSession).toHaveBeenCalledWith({
+      headers: e.request.headers,
+      query: { disableRefresh: true }
+    });
+  });
+
+  it('treats a deleted identity as public', async () => {
+    getSession.mockResolvedValue({
+      user: { id: 'live-1' },
+      session: { id: 'sess-1', userId: 'live-1' }
+    });
+    resolveSessionUser.mockResolvedValue(null);
+    const e = event('/', { cookie: 'better-auth.session_token=t' });
+    await sessionHandle({ event: e, resolve: ok });
+    expect(e.locals.user).toBeNull();
+    expect(resolveCapabilities).not.toHaveBeenCalled();
+    expect(e.locals.capabilities).toEqual([]);
+    expect(e.locals.actorKind).toBe('public');
+  });
+});
 
 describe('handle', () => {
+  it('runs the session handle before the header handle', async () => {
+    getSession.mockResolvedValue({
+      user: { id: 'live-1' },
+      session: { id: 'sess-1', userId: 'live-1' }
+    });
+    let seen: unknown = undefined;
+    const e = event('/', { cookie: 'better-auth.session_token=t' });
+    const res = await inRequestStore(e, async () =>
+      handle({
+        event: e,
+        resolve: async (ev) => {
+          seen = ev.locals.user;
+          return new Response('ok');
+        }
+      })
+    );
+    expect(seen).toEqual(ALICE);
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+});
+
+describe('headersHandle', () => {
   it('sets security headers', async () => {
-    const response = await handle({
+    const response = await headersHandle({
       event: {} as never,
       resolve: async () => new Response('ok')
     });
@@ -12,7 +208,7 @@ describe('handle', () => {
   });
 
   it('sets headers on responses with immutable headers', async () => {
-    const response = await handle({
+    const response = await headersHandle({
       event: {} as never,
       resolve: async () => Response.redirect('https://example.com/', 302)
     });
@@ -20,9 +216,27 @@ describe('handle', () => {
     expect(response.headers.get('location')).toBe('https://example.com/');
   });
 
+  it('keeps every set-cookie on the immutable-headers re-wrap', async () => {
+    const response = await headersHandle({
+      event: {} as never,
+      resolve: async () => {
+        const res = new Response('ok');
+        res.headers.append('set-cookie', 'a=1; Path=/');
+        res.headers.append('set-cookie', 'b=2; Path=/');
+        // Emulate immutable headers: set() throws, so the handle re-wraps the response.
+        res.headers.set = () => {
+          throw new TypeError('immutable');
+        };
+        return res;
+      }
+    });
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(response.headers.getSetCookie()).toEqual(['a=1; Path=/', 'b=2; Path=/']);
+  });
+
   describe('cache-control default for HTML', () => {
     const run = (resolve: () => Response) =>
-      handle({ event: {} as never, resolve: async () => resolve() });
+      headersHandle({ event: {} as never, resolve: async () => resolve() });
     const html = (cc?: string) =>
       new Response('<p>x</p>', {
         headers: {

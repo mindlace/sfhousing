@@ -6,17 +6,25 @@ export interface RunResult {
   code: number;
 }
 
-/** Run a command with an argument array (never a shell). Never throws on non-zero exit. */
+/**
+ * Run a command with an argument array (never a shell). Never throws on non-zero exit.
+ * `env` adds to (and overrides) the inherited environment.
+ */
 export function run(
   cmd: string,
   args: string[],
-  opts: { cwd?: string; input?: string } = {}
+  opts: { cwd?: string; input?: string; env?: Record<string, string> } = {}
 ): Promise<RunResult> {
   return new Promise((resolve) => {
     const child = execFile(
       cmd,
       args,
-      { cwd: opts.cwd, maxBuffer: 256 * 1024 * 1024, encoding: 'utf8' },
+      {
+        cwd: opts.cwd,
+        env: opts.env ? { ...process.env, ...opts.env } : undefined,
+        maxBuffer: 256 * 1024 * 1024,
+        encoding: 'utf8'
+      },
       (err, stdout, stderr) => {
         if (!err) return resolve({ stdout, stderr, code: 0 });
         const e = err as NodeJS.ErrnoException & { code?: number | string };

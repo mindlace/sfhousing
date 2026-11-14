@@ -46,6 +46,7 @@
     ]
   },
   "dependencies": {
+    "@better-auth/passkey": "^1.6.25",
     "@deck.gl/core": "~9.4.0",
     "@deck.gl/layers": "~9.4.0",
     "@deck.gl/maplibre": "~9.4.0",
@@ -53,11 +54,19 @@
     "@luma.gl/engine": "~9.4.0",
     "@luma.gl/shadertools": "~9.4.0",
     "@protomaps/basemaps": "^5.7.2",
+    "aws4fetch": "^1.0.20",
+    "better-auth": "^1.6.25",
+    "better-call": "^1.3.7",
+    "better-svelte-email": "^2.1.1",
+    "bs58": "^6.0.0",
     "clipper2-ts": "2.0.1",
     "drizzle-orm": "^1.0.0-rc.4-5d5b77c",
     "kdbush": "^4.1.0",
+    "kysely": "^0.29.3",
     "maplibre-gl": "^6.13.0",
     "pmtiles": "^4.5.0",
+    "unique-names-generator": "^4.7.1",
+    "uuid": "^14.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -114,6 +123,7 @@
     "@loaders.gl/loader-utils": "4.5.3",
     "@loaders.gl/schema": "4.5.3",
     "@loaders.gl/schema-utils": "4.5.3",
-    "@loaders.gl/worker-utils": "4.5.3"
+    "@loaders.gl/worker-utils": "4.5.3",
+    "kysely": "^0.29.3"
   }
 }

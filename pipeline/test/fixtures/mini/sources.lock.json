@@ -3,6 +3,38 @@
     {
       "files": [
         {
+          "archiveKey": "sources/cd7be9a2901f1c904c1a2375016f5eab7165504dffe832f6ad0e416655015d67.parquet",
+          "bytes": 2268,
+          "name": "building-boxes/boxes.parquet",
+          "sha256": "cd7be9a2901f1c904c1a2375016f5eab7165504dffe832f6ad0e416655015d67",
+          "url": "derived:building-boxes/boxes.parquet"
+        },
+        {
+          "archiveKey": "sources/b6ef679bb3e2ce9fef148f0c75d9d3adab53090d79c4097d271e552a22d7e929.parquet",
+          "bytes": 5164,
+          "name": "building-boxes/roofs.parquet",
+          "sha256": "b6ef679bb3e2ce9fef148f0c75d9d3adab53090d79c4097d271e552a22d7e929",
+          "url": "derived:building-boxes/roofs.parquet"
+        },
+        {
+          "archiveKey": "sources/c7ad516be98f485fb67d6be954c6c917511cb6ce4ae15dafdc4ef219262211d4.json",
+          "bytes": 697,
+          "name": "building-boxes/inputs.json",
+          "sha256": "c7ad516be98f485fb67d6be954c6c917511cb6ce4ae15dafdc4ef219262211d4",
+          "url": "derived:building-boxes/inputs.json"
+        }
+      ],
+      "homepage": "https://www.usgs.gov/3d-elevation-program",
+      "id": "building-boxes",
+      "label": "Building boxes (USGS 3DEP LiDAR 2023 and Overture)",
+      "license": "ODbL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 12,
+      "upstreamVersion": "boxes/1 code=6ad1b432e861 config=dc85575b930a overture-buildings=9eafd45b224f overture-building-parts=5cf4e60fa210 usgs-lidar-sf=5aa70101421c datasf-parcels=043e64236abd datasf-streets=d189eabe60de datasf-neighborhoods=b4596d45e804"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/77ff3a8709c5583a0e768b944110b5d7bdff6a6ee47400a36d45f4982917220a.csv",
           "bytes": 3469,
           "name": "datasf-assessor-roll.page-000.csv",
@@ -499,6 +531,24 @@
       "license": "SFMTA Transit Data License Agreement",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
       "rowCount": 6,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/13d6fbedb3aabb0808ecaab7566b9433fc3352753429bc9efe00692d884c4fea.geojson",
+          "bytes": 1507,
+          "name": "overture-building-parts.page-000.geojson",
+          "sha256": "13d6fbedb3aabb0808ecaab7566b9433fc3352753429bc9efe00692d884c4fea",
+          "url": "https://fixture.invalid/overture-building-parts.page-000.geojson"
+        }
+      ],
+      "homepage": "https://overturemaps.org",
+      "id": "overture-building-parts",
+      "label": "Overture Maps Building Parts",
+      "license": "ODbL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 5,
       "upstreamVersion": "fixture"
     },
     {

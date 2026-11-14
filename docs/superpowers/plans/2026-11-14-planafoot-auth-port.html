@@ -1,0 +1,701 @@
+<article>
+  <header>
+    <h1>Planafoot auth port plan</h1>
+    <p>Port planafoot's accounts, sessions, roles, membership and invitations into sfhousing, with "quest" renamed to "sim".</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>sfhousing gains planafoot's identity model (pseudonymous accounts that upgrade by email magic link, plus password, passkey and Google behind a switch), the capability ledger, sims as membership containers at <code>/sims/[simId]</code>, invitations, an <code>/account</code> page, account deletion and the reaper functions, as a foundation for the later per-sim Durable Object log.</dd>
+      <dt>Architecture</dt>
+      <dd>A port, not a redesign. Each task copies named planafoot files, applies the rename map and the listed cuts, ports their tests, and makes them pass. Membership is D1-only: a <code>sim_index</code> row plus role grants on the <code>capability_event</code> ledger; the future Durable Object attaches through the no-op <code>onSimRosterChanged(simId)</code> seam. Better-Auth runs per request only when a session cookie is present or the route needs it. Which sign-in methods are live is read from one var, <code>AUTH_METHODS</code>, defaulting to magic link only.</dd>
+      <dt>Tech Stack</dt>
+      <dd>SvelteKit 2, Svelte 5 runes, Tailwind 4, Cloudflare Workers, D1 with Drizzle 1.0 rc, better-auth 1.6.25 with <code>@better-auth/passkey</code>, better-svelte-email, Vitest (server and browser projects), Playwright.</dd>
+      <dt>Spec</dt>
+      <dd>The owner's instruction ("steal everything auth related from planafoot auth/invite/etc via s/quest/sim/"), the dispatch's fifteen decisions as amended (sign-in methods switch; <code>BETTER_AUTH_SECRET</code> already set), and the port manifest <a href="../design/2026-11-14-planafoot-auth-port-manifest.md">docs/superpowers/design/2026-11-14-planafoot-auth-port-manifest.md</a>, with the corrections in <a href="#sec-corrections">Manifest corrections</a>.</dd>
+    </dl>
+    <p>Path roots: <strong>PF</strong> = <code>/Users/mindlace/Projects/planafoot</code> (read only, <code>main</code> at <code>ba6ff9428</code>); <strong>SFH</strong> = <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/planafoot-auth</code>. Every path below without a root is under SFH.</p>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li>Work only inside <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/planafoot-auth</code>. PF is read only.</li>
+      <li>Never compound shell commands as <code>cd ... &amp;&amp; cmd</code>; run <code>cd</code> on its own, or use absolute paths. Run every command in the foreground.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns. <code>npm run lint</code> and <code>npm run check</code> pass at the end of every task.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>.</li>
+      <li>Ported tests are renamed to sfhousing's convention: <code>*.spec.ts</code> for server and route specs, <code>*.svelte.spec.ts</code> for component specs. A ported test is never weakened to pass. A test may be deleted only when the code it covers is cut by this plan (Turnstile, Money, Stripe, MCP OAuth, telemetry, <code>user_settings</code>, groups, Durable Object calls), and the task's commit body names each deleted case.</li>
+      <li>Component specs under <code>src/lib</code> never import <code>$app/*</code>; inject callbacks or <code>vi.mock</code>. Only route specs get the <code>$app/state</code> and <code>$app/navigation</code> stubs (<code>vite.config.client-test.ts:27-34</code>).</li>
+      <li>Schema changes: edit <code>src/lib/server/db/schema/</code>, then <code>npm run db:generate</code>, then <code>npm run db:migrate</code>. Never hand-edit a migration. All new tables are generated in one migration (Task 3).</li>
+      <li>Rename map (manifest section 4) applies to every identifier, string, cookie, route and comment: quest becomes sim. Routes are <code>/sims</code>, <code>/sims/[simId]</code> and <code>/api/sims/...</code>; never <code>/s/</code>, never <code>/sim</code>, never the <code>plan</code> table, never <code>src/lib/sim/</code>.</li>
+      <li>Placement: server code in <code>src/lib/server/{auth,authz,user-store,invites,onboarding,event-log,ids,email,email-templates,security,sims,reap,operator,e2e}/</code>; client code in <code>src/lib/account/</code> and <code>src/lib/members/</code>.</li>
+      <li>No i18n. Strings go in copy modules shaped like <code>src/lib/sharing/copy.ts</code> (a <code>COPY</code>-style <code>as const</code> object plus small functions for interpolated strings), and ported tests assert on those constants. Copy is terse. No "planafoot" or "plan afoot" string survives.</li>
+      <li>Telemetry is cut: no <code>captureServerEvent</code>, <code>capture</code>, <code>logEvent</code>, <code>logLimitBreach</code>, <code>breachContext</code>. Keep planafoot's <code>console.error</code> lines.</li>
+      <li>No Turnstile and no CSP change (<code>svelte.config.js</code> untouched).</li>
+      <li>Sign-in methods: <code>AUTH_METHODS</code> (wrangler var, comma list) is read only by <code>enabledAuthMethods</code> / <code>parseAuthMethods</code> in <code>src/lib/server/auth/methods.ts</code>. Magic link (with the pseudonymous account) is always on; <code>password</code>, <code>passkey</code> and <code>google</code> are on only when listed, and Google also needs <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code>. Staging and production set <code>"AUTH_METHODS": "magic-link"</code>. A disabled method's endpoints answer 404 and its UI is not rendered.</li>
+      <li>Test-only seams run only when <code>isE2eEnv(platform)</code> is true: <code>import.meta.env.VITE_E2E === '1'</code> and <code>ENVIRONMENT === 'development'</code>. No KV binding.</li>
+      <li>Every bundled runtime dependency added gets a credit in <code>SOFTWARE</code> (<code>src/lib/attribution.ts</code>) and an assertion in <code>src/lib/attribution.spec.ts</code>.</li>
+      <li>Every new page gets an e2e axe pass with <code>expectNoA11yViolations</code> (<code>e2e/helpers/a11y.ts:48</code>) in both the <code>chromium</code> and <code>mobile</code> projects.</li>
+      <li>Conventional Commits. No Claude attribution of any kind in commits, code or docs. Multi-line messages use several <code>-m</code> flags, never heredocs.</li>
+    </ul>
+    <section id="sec-commands">
+      <h3>Verification commands</h3>
+      <ul>
+        <li>Server specs: <code>npx vitest --run --project server &lt;paths&gt;</code></li>
+        <li>Component specs: <code>npx vitest --run --project client &lt;paths&gt;</code></li>
+        <li>e2e: <code>npx playwright test &lt;paths&gt;</code> (the webServer builds, loads the fixture and migrates itself)</li>
+        <li>Whole gate at the end of each task: <code>npm run check</code>, <code>npm run lint</code>, <code>npm run test:unit</code></li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <p>The failure modes a mechanical port most likely ships. Each names the task whose tests pin it.</p>
+    <ol>
+      <li><strong>Signed-out visitors see exactly today's site.</strong> <code>/</code>, <code>/sim</code>, <code>/s/[id]</code>, <code>/p/[id]</code> and <code>/data/...</code> with no cookie never construct Better-Auth, never set a cookie, and keep their cache headers; <code>/data/</code> skips the session even with a cookie; a missing <code>BETTER_AUTH_SECRET</code> breaks only auth routes. Pinned in Task 9 (<code>hooks.server.spec.ts</code>, <code>e2e/auth-session.spec.ts</code>).</li>
+      <li><strong>Hook order and cookies.</strong> The session handle runs before the header handle, and the header handle's immutable-headers re-wrap keeps every <code>set-cookie</code> (two cookies in, two out). Pinned in Task 9.</li>
+      <li><strong>Disabled methods are unreachable.</strong> With the default <code>AUTH_METHODS</code>, password, passkey and Google endpoints (Better-Auth paths, form actions, <code>/forgot-password</code>, <code>/reset-password</code>, <code>/api/account/password</code>) answer 404 and no page renders their controls; the e2e cookie override is ignored outside an e2e build. Pinned in Tasks 8, 9, 11, 12, 17.</li>
+      <li><strong>Severed couplings left half-attached.</strong> No import of a Durable Object stub, Money, Stripe, MCP OAuth, PostHog, Paraglide, <code>user_settings</code>, groups or <code>OAUTH_KV</code> survives, and every former <code>syncQuestRoster</code> call site calls <code>onSimRosterChanged</code>. Pinned by a grep step in Task 19 and by <code>sims.spec.ts</code> (Task 5).</li>
+      <li><strong>Foreign-key actions frozen right in the one migration.</strong> <code>capability_event.principal_id</code> cascade; <code>user</code>, <code>session</code>, <code>account</code>, <code>passkey</code>, <code>user_version</code>, <code>sim_invite.invited_user_id</code> and <code>invited_by_user_id</code> cascade; <code>sim_invite.accepted_by_user_id</code> set null; <code>user_identity → principal</code>, <code>superseded_by_id</code> and <code>handle_tombstone.released_by</code> no action; no foreign key on <code>sim_invite.sim_id</code>, which is NOT NULL. Pinned in Task 3 (<code>auth-schema.spec.ts</code>).</li>
+    </ol>
+    <p>Also watch: a leftover "quest"/"planafoot" string (Task 19 grep), a ported test quietly loosened (compare case counts against PF in review), and planafoot's deliberate behaviours kept: a password or passkey does not fuse accounts, only email and Google drive <code>onLinkAccount</code>; sign-in errors stay uninformative; the password-reset gate refuses silently.</p>
+  </section>
+
+  <section id="sec-corrections">
+    <h2>Manifest corrections</h2>
+    <p>Facts checked against PF; where the manifest differs, the plan follows the source.</p>
+    <ul>
+      <li>The invite resend route limits on <code>MUTATION_REGISTERED_RL</code> (120/60), not <code>INVITE_RL</code>, with key <code>invite_resend:&lt;actor&gt;</code> (<code>PF/src/routes/api/quests/[questId]/invites/[inviteId]/resend/+server.ts:16-17</code>; <code>PF/wrangler.jsonc:35-37</code>). Six bindings are added, not five.</li>
+      <li>The invite create route uses <code>enforceMutationRate</code> and <code>RATE_LIMIT_MESSAGES.invites</code> (<code>.../invites/+server.ts:32-43</code>), so the unified rate-limit module carries both.</li>
+      <li><code>sendEmail</code> throws when no From address is set, before log mode (<code>PF/src/lib/server/email/send.ts:39-42</code>). Log mode needs <code>SES_FROM</code> set as a plain var in every environment, including local and e2e.</li>
+      <li>planafoot also lists <code>kysely</code> as a direct dependency besides the override (<code>PF/package.json:187,202</code>; commit <code>a8f3bd012</code> "add kysely as direct dep so adapter can resolve it"), and its Vite config needs <code>ssr.noExternal</code> for <code>@better-svelte-email/components</code> and <code>@better-svelte-email/server</code> plus an <code>onLog</code> filter for two better-auth <code>UNUSED_EXTERNAL_IMPORT</code> warnings (<code>PF/vite.config.ts:36-50,55-60</code>). The render import is <code>@better-svelte-email/server</code>, installed by the <code>better-svelte-email</code> package.</li>
+      <li>e2e needs <code>BETTER_AUTH_URL</code> pinned to <code>http://localhost:&lt;port&gt;</code>, not only the secret: under <code>wrangler dev</code> with a <code>custom_domain</code> route the worker sees the production hostname (<code>PF/src/lib/server/auth/better-auth.ts:101-106</code>), and planafoot's e2e backend sets it per port (<code>PF/e2e/helpers/backend.ts:101</code>).</li>
+      <li>The magic-link dev-link seam is gated on <code>isE2eEnv</code>, and the Turnstile bypass and rate-limit bypass on <code>isTestEnv</code> (<code>PF/src/routes/signin/+page.server.ts:53,97,160</code>; <code>PF/src/lib/server/security/rate-limit.ts:49</code>). With Turnstile cut and sfhousing's <code>ENVIRONMENT === 'development'</code> bypass, only <code>isE2eEnv</code> remains.</li>
+      <li><code>Actor</code> and <code>ActorKind</code> come from <code>PF/src/lib/shared/legacy/quest/vocab.ts:9-15</code>, re-exported through <code>PF/src/lib/server/legacy/quest-store/schema.ts:24,33</code>, which is what <code>require-cap.ts</code>, <code>deletion.ts</code> and <code>reap-user.ts</code> import.</li>
+      <li><code>requireCap</code>'s allow branch uses <code>PUBLIC_GROUP_ID</code> from <code>groups.ts</code> for a signed-out actor (<code>PF/src/lib/server/authz/require-cap.ts:66-69</code>); with groups cut the constant moves to <code>authz/actor.ts</code> as <code>PUBLIC_ACTOR_ID = 'group:public'</code>.</li>
+      <li>The invite banner is not global: it is mounted only by <code>PF/src/routes/quests/+layout.svelte</code> and suppressed on the list page (<code>inviteBanner.ts:13-14</code>). It ports to <code>/sims/+layout.svelte</code>.</li>
+      <li><code>client-ip.ts</code> is used only by planafoot's global rate limits in <code>hooks.server.ts</code>; nothing ported needs it, so it is not ported.</li>
+      <li><code>crypto/sha256.ts</code> is replaced by sfhousing's identical <code>sha256Hex</code> in <code>src/lib/sharing/hash.ts:1-4</code>.</li>
+      <li>The quest quota is per tier (free tier 5, <code>PF/src/lib/server/plan-tier/caps.ts:16</code>); the title cap is 63 (<code>PF/config/security.ts:67</code>); reap grace is 48 hours and batch 300 (<code>PF/config/security.ts:128-132</code>).</li>
+      <li>Component tests in PF are <code>*.svelte.test.ts</code> and route tests <code>page.server.test.ts</code>/<code>server.test.ts</code>; sfhousing's client project would collect the former, but convention is <code>.spec</code>, so all are renamed.</li>
+    </ul>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>New and changed areas</caption>
+      <thead>
+        <tr><th scope="col">Area</th><th scope="col">Files</th><th scope="col">Responsibility</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Primitives</th><td><code>src/lib/server/ids/</code>, <code>src/lib/server/event-log/</code>, <code>src/lib/server/db/columns.ts</code></td><td>base58 uuidv7 ids, append and fold of event ledgers, NFC text columns</td></tr>
+        <tr><th scope="row">Schema</th><td><code>src/lib/server/db/schema/{principal,users,auth,userVersion,handleTombstone,capabilityEvent,simControlPlane,simInvite}.ts</code></td><td>All new tables; one generated migration</td></tr>
+        <tr><th scope="row">Test harness</th><td><code>src/lib/server/test/auth-db.ts</code></td><td><code>freshDb</code>, <code>seedUser</code>, <code>seedIdentity</code>, <code>grantEvent</code>, <code>makePlatform</code> on <code>createTestD1</code></td></tr>
+        <tr><th scope="row">Identity</th><td><code>src/lib/server/user-store/</code></td><td>User read seam, history, handles, confusables, profile, credentials, upgrade and fuse, deletion</td></tr>
+        <tr><th scope="row">Authorization</th><td><code>src/lib/server/authz/</code>, <code>src/lib/server/db/capability-events.ts</code>, <code>src/lib/server/operator/</code></td><td>Abilities, <code>authorize</code>, <code>requireCap</code>, <code>requireSimRole</code>, operator caps</td></tr>
+        <tr><th scope="row">Sims</th><td><code>src/lib/server/sims/{sim-roles,sim-index,sims,sim-quota}.ts</code></td><td>Role ledger folds, the control plane, create/delete/remove/leave</td></tr>
+        <tr><th scope="row">Auth</th><td><code>src/lib/server/auth/</code>, <code>src/lib/server/onboarding/</code>, <code>src/lib/server/e2e/</code></td><td>Better-Auth config, method switch, session gate, pseudonymous mint, cookies, e2e seams</td></tr>
+        <tr><th scope="row">Email</th><td><code>src/lib/server/email/</code>, <code>src/lib/server/email-templates/</code></td><td>SES/Resend send with log mode; templates and their copy</td></tr>
+        <tr><th scope="row">Invites</th><td><code>src/lib/server/invites/</code></td><td>Tokens, cold-accept classification, the invite control plane, invite mail</td></tr>
+        <tr><th scope="row">Reaping</th><td><code>src/lib/server/reap/</code></td><td>Eligibility and reap of idle pseudonymous accounts (no trigger)</td></tr>
+        <tr><th scope="row">Security</th><td><code>src/lib/server/security/rate-limit.ts</code> (moved from <code>sharing/</code>)</td><td>The one <code>enforceRate</code></td></tr>
+        <tr><th scope="row">Client</th><td><code>src/lib/account/</code>, <code>src/lib/members/</code></td><td>Auth client, form primitives, copy, account panes, member UI</td></tr>
+        <tr><th scope="row">Routes</th><td><code>/signin</code>, <code>/forgot-password</code>, <code>/reset-password</code>, <code>/invite/[token]</code>, <code>/account</code>, <code>/sims</code>, <code>/sims/[simId]</code>; <code>/api/auth/[...all]</code>, <code>/api/account/*</code>, <code>/api/sims/*</code>, <code>/api/invites/*</code>, <code>/api/e2e/{login,mail}</code></td><td>Pages and endpoints</td></tr>
+        <tr><th scope="row">Shell</th><td><code>src/hooks.server.ts</code>, <code>src/app.d.ts</code>, <code>src/routes/+layout.server.ts</code>, <code>src/routes/+layout.svelte</code>, <code>src/lib/shell/SiteHeader.svelte</code></td><td>Session resolution, locals, the header account entry</td></tr>
+        <tr><th scope="row">Config</th><td><code>package.json</code>, <code>vite.config.ts</code>, <code>wrangler.jsonc</code>, <code>playwright.config.ts</code></td><td>Dependencies, SSR bundling, bindings and vars, e2e vars</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Primitives (ids, event log, columns, Database type)</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/lib/server/ids/base58.ts</code>, <code>factory.ts</code>, <code>base58.spec.ts</code> from <code>PF/src/lib/server/ids/</code></li>
+      <li>Create <code>src/lib/server/event-log/append.ts</code>, <code>fold.ts</code> and their specs from <code>PF/src/lib/server/event-log/</code></li>
+      <li>Create <code>src/lib/server/db/columns.ts</code> and <code>columns.spec.ts</code> from <code>PF/src/lib/server/db/</code> (drop the comment claiming an eslint restriction; sfhousing's <code>plan.ts</code> keeps importing drizzle directly)</li>
+      <li>Modify <code>src/lib/server/db/index.ts</code>; <code>package.json</code> (add <code>bs58</code> ^6.0.0, <code>uuid</code> ^14.0.1); <code>src/lib/attribution.ts</code> and its spec</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces: <code>newId(): string</code>, <code>isValidId(id: string): boolean</code> (base58 uuidv7, about 22 chars); <code>foldRevokeWins</code>, <code>foldLatest</code>, <code>foldEventLog</code>, <code>buildAppendEventSql</code>, <code>appendEventAsync</code>, <code>appendEventSync</code> with PF's signatures; <code>normText</code>, <code>privateText</code>, <code>toNfc</code> and the re-exported drizzle constructors.</li>
+      <li>Produces: <code>export type Database = DrizzleD1Database&lt;typeof schema&gt;</code> and <code>getDb(platform: App.Platform | undefined): Database</code> (same body as today at <code>src/lib/server/db/index.ts:4-8</code>, now typed).</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Copy the four specs (<code>base58</code>, <code>append</code>, <code>fold</code>, <code>columns</code>) to their target paths, unchanged except imports.</li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail on missing modules.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/ids src/lib/server/event-log src/lib/server/db/columns.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> <code>npm install bs58@^6.0.0 uuid@^14.0.1</code>; copy the sources; add the <code>Database</code> type and return type in <code>db/index.ts</code>.</li>
+      <li id="t1-s4"><input type="checkbox"> Add credits and assertions: <code>{ name: 'bs58', license: 'MIT', url: 'https://github.com/cryptocoinjs/bs58' }</code>, <code>{ name: 'uuid', license: 'MIT', url: 'https://github.com/uuidjs/uuid' }</code>, each with a <code>toContainEqual</code> in <code>attribution.spec.ts</code>.</li>
+      <li id="t1-s5"><input type="checkbox"> Run the specs, <code>src/lib/attribution.spec.ts</code>, <code>npm run check</code> and <code>npm run lint</code>; all pass.</li>
+      <li id="t1-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git commit -m "feat(auth): port id, event-log and column primitives from planafoot"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Pure authorization core</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/lib/server/authz/{ability,resource,authorize,sim-caps,index}.ts</code> and specs <code>ability.spec.ts</code>, <code>resource.spec.ts</code>, <code>authorize.spec.ts</code>, <code>sim-caps.spec.ts</code> from <code>PF/src/lib/server/authz/</code></li>
+      <li>Not ported: <code>groups.ts</code>, <code>SUPPORT_ORDER</code> and the support branch of <code>abilityDominates</code> (<code>ability.ts:44,57,74-75</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces: <code>type ResourceType = 'app' | 'sim'</code>; <code>ResourceRef</code>; <code>APP_RESOURCE</code>; <code>covers(held, target, ancestors?)</code>; <code>type Ability = string</code>; <code>ROLE_BUNDLE</code> (<code>role.manager</code>, <code>role.editor</code>, <code>role.viewer</code>); <code>abilityDominates(held, target): boolean</code>; <code>type Capability</code>; <code>authorize(caps, { ability, resource })</code>; <code>holdsAnyOn</code>; <code>simCaps(role: SimMemberRole | null, simId: string): Capability[]</code>.</li>
+      <li>Bundles: viewer = <code>['sim.read']</code>; editor = viewer + <code>['sim.write']</code>; manager = editor + <code>['member.manage', 'invite.manage']</code>.</li>
+      <li><code>SimMemberRole</code> is declared here as <code>'manager' | 'editor' | 'viewer'</code> in <code>authz/sim-caps.ts</code> until Task 3 moves it to <code>schema/simControlPlane.ts</code>; Task 3 re-points the import (builder's call: keeps this task free of schema).</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Port the four specs with the rename map; the ability spec asserts the bundle expansions above (for example <code>abilityDominates('role.editor', 'sim.write')</code> true, <code>abilityDominates('role.viewer', 'sim.write')</code> false, <code>abilityDominates('role.manager', 'invite.manage')</code> true). Delete support-family cases (commit body names them).</li>
+      <li id="t2-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/authz</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Copy and rename the sources; the barrel exports no group symbols.</li>
+      <li id="t2-s4"><input type="checkbox"> Run them, then <code>npm run check</code> and <code>npm run lint</code>; pass.</li>
+      <li id="t2-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(authz): port the pure authorization core with sim resources"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: All new tables in one migration, and the auth test harness</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/lib/server/db/schema/principal.ts</code>, <code>users.ts</code>, <code>auth.ts</code>, <code>userVersion.ts</code>, <code>handleTombstone.ts</code>, <code>capabilityEvent.ts</code> from <code>PF/src/lib/server/db/schema/</code>, importing from <code>$lib/server/db/columns</code></li>
+      <li>Create <code>src/lib/server/db/schema/simControlPlane.ts</code> (from <code>questControlPlane.ts</code>) and <code>simInvite.ts</code> (from <code>questInvite.ts</code>)</li>
+      <li>Modify <code>src/lib/server/db/schema/index.ts</code> (re-export all); <code>src/lib/server/authz/sim-caps.ts</code> (import <code>SimMemberRole</code> from schema)</li>
+      <li>Create <code>src/lib/server/test/auth-db.ts</code>, <code>src/lib/server/db/schema/auth-schema.spec.ts</code></li>
+      <li>Generated: one new migration under <code>migrations/d1/</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Tables and foreign-key actions exactly as PF's schema files, with these changes: <code>capability_event.resource_type</code> comment becomes <code>'app' | 'sim'</code>; <code>sim_index(sim_id pk, title normText not null, created_at, updated_at)</code>; <code>sim_invite</code> as <code>quest_invite</code> with <code>sim_id text NOT NULL</code> (no foreign key), no <code>body_md</code>, unique index <code>sim_invite_token_hash_idx</code>. No <code>group</code>, <code>user_settings</code>, <code>subscription</code> tables.</li>
+      <li>Produces: <code>SimMemberRole</code>, <code>InviteStatus</code>, <code>SimInvite</code>, <code>User</code> (row type) from the schema barrel.</li>
+      <li>Produces in <code>auth-db.ts</code>: <code>freshDb(): { db: Database; shim: D1Database; close(): void }</code> on <code>createTestD1()</code>; <code>seedUser(db, { id, email, name?, handle?, emailVerified? })</code> (live row id <code>`${id}-live`</code>); <code>seedIdentity(db, { id, supersededById? })</code>; <code>grantEvent(db, { identityId, capability, action?, at?, actorId?, counter? })</code>; <code>makePlatform(shim: D1Database, env?: Record&lt;string, unknown&gt;): App.Platform</code> built on <code>testPlatform</code> (<code>src/lib/server/test/d1.ts:122</code>). Bodies as <code>PF/src/lib/server/test-support/utils.ts:13-120</code>; the shim is sfhousing's D1, whose <code>meta.changes</code> and <code>batch</code> already work (<code>d1.ts:44-56,105-106</code>).</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write <code>auth-schema.spec.ts</code>: open <code>createTestD1()</code> and read <code>PRAGMA foreign_key_list(&lt;table&gt;)</code>; assert <code>on_delete</code> per column:
+        <pre><code data-lang="ts">it('freezes the foreign-key actions planafoot uses', () =&gt; {
+  expect(fk('capability_event', 'principal_id')).toEqual({ table: 'principal', onDelete: 'CASCADE' });
+  expect(fk('user', 'user_identity').onDelete).toBe('CASCADE');
+  for (const t of ['session', 'account', 'passkey']) expect(fk(t, 'user_id').onDelete).toBe('CASCADE');
+  expect(fk('user_version', 'user_identity').onDelete).toBe('CASCADE');
+  expect(fk('sim_invite', 'invited_user_id').onDelete).toBe('CASCADE');
+  expect(fk('sim_invite', 'invited_by_user_id').onDelete).toBe('CASCADE');
+  expect(fk('sim_invite', 'accepted_by_user_id').onDelete).toBe('SET NULL');
+  expect(fk('user_identity', 'id').onDelete).toBe('NO ACTION');
+  expect(fk('user_identity', 'superseded_by_id').onDelete).toBe('NO ACTION');
+  expect(fk('handle_tombstone', 'released_by').onDelete).toBe('NO ACTION');
+});
+it('keeps sim_invite.sim_id NOT NULL with no foreign key', () =&gt; { /* table_info notnull = 1; no fk row */ });
+it('has no group, user_settings or subscription table', () =&gt; { /* sqlite_master lookup */ });</code></pre>
+        Plus a seeding smoke test: <code>seedUser</code> then <code>grantEvent</code> then deleting the <code>principal</code> row removes the ledger row.
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run it and see it fail (tables missing).
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/db/schema/auth-schema.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Write the eight schema files and the barrel; review every <code>references(...)</code> against the spec above before generating, because the migration freezes them.</li>
+      <li id="t3-s4"><input type="checkbox"> Generate and apply. Expect exactly one new top-level <code>.sql</code> file (and its source directory).
+        <pre><code data-lang="sh">npm run db:generate
+npm run db:migrate</code></pre>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Write <code>auth-db.ts</code>.</li>
+      <li id="t3-s6"><input type="checkbox"> Run the new spec, <code>src/lib/server/test/d1.spec.ts</code> and the sharing specs (they share the migration set); all pass.</li>
+      <li id="t3-s7"><input type="checkbox"> Commit: <code>git commit -m "feat(db): add identity, auth, ledger and sim tables in one migration"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Identity read seam and user store</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create from <code>PF/src/lib/server/user-store/</code>, each with its spec: <code>user.ts</code>, <code>history.ts</code>, <code>confusable-skeleton.ts</code>, <code>confusables-data.ts</code>, <code>confusables.meta.ts</code>, <code>handle-normalize.ts</code>, <code>handle.ts</code>, <code>profile.ts</code>, <code>auth-factors.ts</code>, <code>passkey.ts</code>, <code>oauth.ts</code>, <code>password-credential.ts</code>, <code>identity.ts</code></li>
+      <li>Create <code>scripts/regen-confusables.ts</code> and its spec from <code>PF/scripts/</code></li>
+      <li>Create <code>src/lib/server/auth/brand.ts</code>; <code>src/lib/server/auth/password-reset-gate.ts</code> and spec (needed by <code>password-credential.ts</code>)</li>
+      <li>Modify <code>package.json</code> (<code>unique-names-generator</code> ^4.7.1), <code>src/lib/attribution.ts</code> and spec</li>
+      <li>Not ported: <code>oauth-grants.ts</code>, <code>user-settings.ts</code>, <code>record-last-viewed.ts</code>, <code>backfill-handle-skeleton.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces (<code>brand.ts</code>): <code>PSEUDONYMOUS_EMAIL_DOMAIN = 'pseudonymous.sfhousing.invalid'</code> (the <code>.invalid</code> TLD is reserved by RFC 6761 and can never receive mail) and <code>PASSKEY_RP_NAME = 'SF Housing Simulator'</code>. <code>password-reset-gate.ts</code> imports the domain from here instead of PF's literal (<code>PF/.../password-reset-gate.ts:5</code>).</li>
+      <li>Produces (<code>user.ts</code>): <code>type User = { id; handle; name; email; image; emailVerified; pseudonymous }</code>, <code>survivorId</code>, <code>principalUnion</code>, <code>getUser</code>, <code>getUserByHandle</code>, <code>getUserByEmail</code>, <code>resolveHandleOrEmailToUser</code>, <code>getUsers</code>, <code>isDeletedIdentity</code>, <code>resolveSessionUser(db, liveUserId): Promise&lt;User | null&gt;</code>.</li>
+      <li>Produces (<code>identity.ts</code>): <code>createIdentityForNewVersion</code>, <code>reseedHandleFromSim({ db, identityId, simTitle })</code>, <code>normalizeLinkArgs</code>, <code>handleAccountLink</code>. Produces (<code>handle.ts</code>): <code>seedHandle(title, rng?)</code>, <code>generateUniqueHandle({ db, simTitle })</code>.</li>
+      <li><code>RESERVED</code> (<code>handle-normalize.ts:9-27</code>): replace <code>quests</code> with <code>sims</code> and add <code>sim</code>, <code>s</code>, <code>p</code>, <code>lesscars</code>, <code>fzp</code>, <code>attribution</code>, <code>data</code>.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Port every spec with <code>test-support/utils</code> imports pointed at <code>$lib/server/test/auth-db</code>, and the rename map applied. Add to <code>handle-normalize.spec.ts</code>: <code>validateHandle</code> rejects each of <code>sims sim s p lesscars fzp attribution data</code>; accepts <code>quests</code>. Add to <code>password-reset-gate.spec.ts</code>: <code>mayReceivePasswordReset({ email: 'x@pseudonymous.sfhousing.invalid', emailVerified: true })</code> is <code>false</code>.</li>
+      <li id="t4-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/user-store src/lib/server/auth scripts/regen-confusables.spec.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> <code>npm install unique-names-generator@^4.7.1</code>; copy and rename the sources.</li>
+      <li id="t4-s4"><input type="checkbox"> Credits: <code>unique-names-generator</code> (MIT, <code>https://github.com/andreasonny83/unique-names-generator</code>) and <code>Unicode confusables data (UTS #39)</code> (<code>Unicode License v3</code>, <code>https://www.unicode.org/license.txt</code>), with spec assertions.</li>
+      <li id="t4-s5"><input type="checkbox"> Run the specs, <code>npm run check</code>, <code>npm run lint</code>; pass. <code>identity.spec.ts</code> covers upgrade and fuse here at the D1 level.</li>
+      <li id="t4-s6"><input type="checkbox"> Commit: <code>git commit -m "feat(user-store): port the identity read seam, handles and credentials"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Role ledger, sim control plane and request authorization</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/lib/server/db/capability-events.ts</code> (+ spec)</li>
+      <li>Create <code>src/lib/server/sims/sim-roles.ts</code> from <code>PF/.../projections/quest-roles.ts</code>; <code>sim-index.ts</code> from <code>quest-index.ts</code>; <code>sims.ts</code> (new, from the pure-D1 parts of <code>PF/.../store-clients/quest.ts:200-277</code>); specs <code>sim-roles.spec.ts</code>, <code>sim-index.spec.ts</code>, <code>sims.spec.ts</code></li>
+      <li>Create <code>src/lib/server/authz/actor.ts</code>, <code>require-cap.ts</code>, <code>require-sim-role.ts</code>, specs <code>require-cap.spec.ts</code>, <code>require-sim-role.spec.ts</code>, <code>enforcement-parity.spec.ts</code></li>
+      <li>Modify <code>src/app.d.ts</code> (Locals and Error types only; Task 9 populates them)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces (<code>actor.ts</code>): <code>ACTOR_KINDS = ['human', 'ai', 'automation', 'public'] as const</code>, <code>ActorKind</code>, <code>type Actor = { actorId: string; actorKind: ActorKind }</code>, <code>PUBLIC_ACTOR_ID = 'group:public'</code>.</li>
+      <li>Produces (<code>app.d.ts</code>): <code>Locals { user: User | null; session: { id: string; userId: string } | null; capabilities: Capability[]; actorKind: ActorKind }</code>; <code>Error { message: string; resource?: 'sim'; reference?: string }</code>. <code>Platform</code> stays sfhousing's (<code>ctx</code>, no <code>context</code>).</li>
+      <li>Produces (<code>sim-roles.ts</code>): <code>foldSimRole</code>, <code>foldSimMembers</code>, <code>foldSimsForUser</code>, <code>foldManagedSimCount</code>, <code>setSimRole</code>, <code>addSimRole(db, simId, userId, role, actorId)</code>, <code>revokeSimRoles(db, simId, userId)</code>, <code>SimMemberFold</code>, <code>SimRoleListItem</code>. Reads keep the inner join on <code>sim_index</code> (PF <code>quest-roles.ts:88,113,164</code>).</li>
+      <li>Produces (<code>sim-index.ts</code>): <code>createSimRecord</code>, <code>ensureSimRecord</code>, <code>getSimTitle</code>, <code>updateSimIndexTitle</code>, <code>countSimsManagedBy</code>, <code>listSimsForUser({ db, userId }): Promise&lt;SimListItem[]&gt;</code>, <code>getRole({ db, simId, userId })</code>, <code>ControlPlaneMember</code> (no <code>timeZone</code>), <code>listMembers({ db, simId })</code> (no <code>user_settings</code> join), <code>addMember</code>, <code>addMemberById</code>, <code>reconcileSimManagement</code>, <code>removeMembership(db, simId, userId, opts?)</code>, <code>prepareLeave(db, { simId, userId, simTitle, confirmTitle?, successorUserId? })</code>.</li>
+      <li>Produces (<code>sims.ts</code>): <code>createSim({ db, title, managerId }): Promise&lt;{ simId: string }&gt;</code> (<code>newId()</code>, then <code>createSimRecord</code>); <code>deleteSim(db, simId): Promise&lt;void&gt;</code> (deletes the <code>sim_index</code> row and that sim's <code>pending</code> <code>sim_invite</code> rows; ledger rows stay); <code>removeSimMember({ db, simId, userId, actorUserId? }): Promise&lt;{ deleted: boolean }&gt;</code> (<code>removeMembership</code>, then <code>deleteSim</code> when empty, else <code>onSimRosterChanged</code>); <code>leaveSim({ db, simId, userId, simTitle, confirmTitle?, successorUserId? })</code>; <code>onSimRosterChanged(simId: string): Promise&lt;void&gt;</code> (no-op seam for the future per-sim Durable Object, documented as such). No <code>SoleMemberGuardError</code>, no <code>platform</code> argument.</li>
+      <li>Produces (<code>require-cap.ts</code>): <code>type CapEvent</code>; <code>requireCap(event, ability, resource, opts?): Promise&lt;{ caps; actor: Actor }&gt;</code>, resolving only <code>app</code> (locals caps) and <code>sim</code> (<code>getRole</code> then <code>simCaps</code>); 401, then 404 with <code>resource: 'sim'</code>, then 403. Produces <code>requireSimRole(event, simId, minRole): Promise&lt;{ role; actor }&gt;</code>.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Port <code>capability-events.spec</code>, <code>quest-roles.spec</code> (480 lines), <code>quest-index.spec</code> (540), <code>require-cap.spec</code> (354), <code>require-quest-role.spec</code>, <code>enforcement-parity.spec</code> with renames. Delete only time-zone cases and plan/task/group cases of <code>require-cap.spec</code>; list them in the commit body.</li>
+      <li id="t5-s2"><input type="checkbox"> Write <code>sims.spec.ts</code> from the pure-D1 cases of <code>PF/src/lib/server/store-clients/quest.spec.ts</code>:
+        <pre><code data-lang="ts">it('createSim inserts the index row, then a manager grant by the manager');   // getRole = 'manager'; foldSimRole actorId = managerId
+it('removeSimMember deletes an emptied sim and its pending invites');          // { deleted: true }; getSimTitle null; no pending sim_invite rows for simId
+it('removeSimMember promotes a successor when the last manager goes');        // remaining editor becomes 'manager'
+it('removeSimMember refuses to remove another manager');                       // rejects 'cannot remove another manager; they must leave the sim themselves'
+it('leaveSim honours the chosen successor');                                   // successor role 'manager'
+it('leaveSim by a co-manager requires the typed title');                       // rejects 'title did not match'
+it('calls onSimRosterChanged after a removal that keeps the sim');             // vi.spyOn on the module export, called with simId</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sims src/lib/server/authz src/lib/server/db/capability-events.spec.ts</code></pre>
+      </li>
+      <li id="t5-s4"><input type="checkbox"> Copy and rename the sources; write <code>sims.ts</code> and <code>actor.ts</code>; update <code>app.d.ts</code>. Error strings take the sim form (manifest section 4: <code>'too many pending invites for this sim'</code>, <code>'could not establish a sim manager; please retry'</code>).</li>
+      <li id="t5-s5"><input type="checkbox"> Run the specs, <code>npm run check</code>, <code>npm run lint</code>; pass.</li>
+      <li id="t5-s6"><input type="checkbox"> Commit: <code>git commit -m "feat(sims): port the role ledger, sim control plane and requireCap"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: One enforceRate, the auth rate-limit bindings and vars</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Move <code>src/lib/server/sharing/rate-limit.ts</code> and its spec to <code>src/lib/server/security/rate-limit.ts</code> (<code>git mv</code>); modify <code>src/lib/server/sharing/publish.ts:11</code> import</li>
+      <li>Modify <code>wrangler.jsonc</code> (both envs), then regenerate <code>worker-configuration.d.ts</code> with <code>npm run types</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces: <code>enforceRate(limiter: RateLimiter | undefined, key: string, env: { ENVIRONMENT?: string }, opts?: { critical?: boolean }): Promise&lt;boolean&gt;</code>. <code>critical</code> defaults to <code>true</code>, which is today's behaviour (development always allows; missing binding fails closed in production only). <code>critical: false</code> allows a missing binding everywhere (PF's non-critical semantics). Ported callers pass <code>platform!.env</code> where PF passed <code>platform!</code>, and drop <code>ctx</code>/<code>silent</code>.</li>
+      <li>Produces: <code>enforceMutationRate(event: { platform?: App.Platform }, key: string, opts: { limiter: RateLimiter | undefined; message: string; critical?: boolean }): Promise&lt;void&gt;</code> (throws <code>error(429, message)</code>); <code>RATE_LIMIT_MESSAGES = { invites: 'Too many invites too quickly. Please slow down.' } as const</code> (PF's string; the other three families have no ported caller).</li>
+      <li>Bindings (name, limit/period, production id, staging id): <code>AUTH_LINK_RL</code> 5/60 4102/4202; <code>AUTH_PASSWORD_RL</code> 5/60 4103/4203; <code>PSEUDO_MINT_RL</code> 5/60 4104/4204; <code>INVITE_RL</code> 10/60 4105/4205; <code>ACCOUNT_EDIT_RL</code> 10/60 4106/4206; <code>MUTATION_REGISTERED_RL</code> 120/60 4107/4207.</li>
+      <li>Vars in both envs: <code>"AUTH_METHODS": "magic-link"</code>; <code>"SES_FROM": "SF Housing Simulator &lt;noreply@sfhousing.mindlace.net&gt;"</code> (builder's call: <code>sendEmail</code> throws without a From, and log mode needs it; the owner may change the address).</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> After the move, add spec cases: <code>critical: false</code> with no binding in production returns <code>true</code>; the default (no opts) with no binding in production still returns <code>false</code>; <code>enforceMutationRate</code> throws an <code>HttpError</code> with status 429 and the given message when the limiter denies.</li>
+      <li id="t6-s2"><input type="checkbox"> Run and see the new cases fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/security/rate-limit.spec.ts</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Implement; update the publish import; add bindings and vars; <code>npm run types</code>.</li>
+      <li id="t6-s4"><input type="checkbox"> Run the rate-limit spec and <code>src/lib/server/sharing/publish.spec.ts</code>, plus <code>npm run check</code> and <code>npm run lint</code>; pass.</li>
+      <li id="t6-s5"><input type="checkbox"> Commit: <code>git commit -m "refactor(security): one enforceRate for the app; add auth rate-limit bindings"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Email sending and templates</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/lib/server/email/send.ts</code>, <code>validate.ts</code> and specs from <code>PF/src/lib/server/email/</code></li>
+      <li>Create <code>src/lib/server/email-templates/</code>: <code>render.ts</code>, <code>Layout.svelte</code>, <code>LinkActionEmail.svelte</code>, <code>InviteEmail.svelte</code>, <code>sign-in.ts</code>, <code>reset-password.ts</code>, <code>change-approve.ts</code>, <code>confirm-email.ts</code>, <code>invite.ts</code>, their specs, and <code>copy.ts</code></li>
+      <li>Modify <code>package.json</code> (<code>better-svelte-email</code> ^2.1.1, <code>aws4fetch</code> ^1.0.20), <code>vite.config.ts</code> (<code>ssr.noExternal: ['@better-svelte-email/components', '@better-svelte-email/server']</code>), attribution and spec</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces: <code>sendEmail(platform, input: SendEmailInput): Promise&lt;SendEmailResult&gt;</code> unchanged, including log mode (<code>console.log('[email:log-mode]', ...)</code>, <code>{ sent: false, logged: true }</code>) when provider keys are absent.</li>
+      <li>Produces: <code>buildSignInEmail(url)</code>, <code>buildResetPasswordEmail(url)</code>, <code>buildChangeApprove(url, newEmail)</code>, <code>buildConfirmEmail(url)</code>, <code>buildInviteEmail({ url, inviterHandle, simTitle })</code>, each resolving <code>{ subject, html, text }</code>. Subjects and body text come from <code>EMAIL_COPY</code> in <code>copy.ts</code> and name "SF Housing Simulator".</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Port the specs; template specs assert on <code>EMAIL_COPY</code> constants and that no output contains <code>/plan ?afoot/i</code>.</li>
+      <li id="t7-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/email src/lib/server/email-templates</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> Install, copy, inline the <code>m.*</code> strings into <code>copy.ts</code>, set <code>noExternal</code>.</li>
+      <li id="t7-s4"><input type="checkbox"> Credits: <code>better-svelte-email</code> (MIT, <code>https://github.com/Konixy/better-svelte-email</code>) and <code>aws4fetch</code> (MIT, <code>https://github.com/mhart/aws4fetch</code>); verify each license in <code>node_modules/*/package.json</code> before writing it.</li>
+      <li id="t7-s5"><input type="checkbox"> Run the specs and <code>npm run build</code> (proves SSR bundling), <code>npm run check</code>, <code>npm run lint</code>; pass.</li>
+      <li id="t7-s6"><input type="checkbox"> Commit: <code>git commit -m "feat(email): port email sending with log mode and the auth templates"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: Better-Auth configuration and the sign-in method switch</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/lib/server/auth/better-auth.ts</code>, <code>google-provider.ts</code>, <code>magic-link.ts</code>, <code>password-policy.ts</code>, <code>password-breach.ts</code> and specs (<code>better-auth.spec.ts</code>, <code>password-pseudonymity.spec.ts</code>, <code>google-provider.spec.ts</code>, <code>magic-link.spec.ts</code>, <code>password-policy.spec.ts</code>, <code>password-breach.spec.ts</code>) from <code>PF/src/lib/server/auth/</code></li>
+      <li>Create <code>src/lib/server/auth/methods.ts</code>, <code>methods.spec.ts</code>, <code>better-auth.methods.spec.ts</code></li>
+      <li>Create <code>src/lib/server/e2e/env.ts</code>, <code>mail-sink.ts</code> and specs</li>
+      <li>Modify <code>package.json</code> (<code>better-auth</code> ^1.6.25, <code>@better-auth/passkey</code> ^1.6.25, <code>better-call</code> ^1.3.7, <code>kysely</code> ^0.29.3 as a dependency and in <code>overrides</code>), <code>vite.config.ts</code> (<code>build.rollupOptions.onLog</code> filter as <code>PF/vite.config.ts:36-50</code>), attribution and spec</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces (<code>methods.ts</code>): <code>AUTH_METHODS = ['magic-link', 'password', 'passkey', 'google'] as const</code>; <code>type AuthMethod</code>; <code>parseAuthMethods(raw: string | undefined): ReadonlySet&lt;AuthMethod&gt;</code> (comma list, trimmed, unknown tokens dropped, always contains <code>magic-link</code>; <code>undefined</code> gives <code>{'magic-link'}</code>); <code>E2E_AUTH_METHODS_COOKIE = 'sfh_e2e_auth_methods'</code>; <code>enabledAuthMethods(event: { platform?: App.Platform; cookies?: Pick&lt;Cookies, 'get'&gt; }): ReadonlySet&lt;AuthMethod&gt;</code> (env <code>AUTH_METHODS</code>; when <code>isE2eEnv</code> and the cookie is present, the cookie's list instead; <code>google</code> removed unless <code>googleConfigured</code>); <code>methodForAuthPath(path: string): AuthMethod | null</code> mapping Better-Auth paths under <code>/api/auth</code>: <code>/sign-in/email</code>, <code>/request-password-reset</code>, <code>/reset-password</code>, <code>/change-password</code> → <code>password</code>; anything under <code>/passkey/</code> → <code>passkey</code>; <code>/sign-in/social</code>, <code>/link-social</code>, anything under <code>/callback/</code> → <code>google</code>.</li>
+      <li>Produces (<code>google-provider.ts</code>): PF's <code>googleProvider(env)</code> and <code>GOOGLE_AUTH_ORIGIN</code>, plus <code>googleConfigured(env: { GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }): boolean</code>.</li>
+      <li>Produces (<code>better-auth.ts</code>): <code>verifyAuthSecret</code>, <code>authGenerateId</code>, <code>GetAuthOptions { captureMagicLink?; methods?: ReadonlySet&lt;AuthMethod&gt; }</code>, <code>getAuth(platform, fallbackBaseURL, opts?)</code>, and <code>authFor(event: RequestEvent, opts?: Omit&lt;GetAuthOptions, 'methods'&gt;)</code> = <code>getAuth(event.platform!, event.url.origin, { ...opts, methods: enabledAuthMethods(event) })</code>. The config is PF's (<code>better-auth.ts:107-305</code>) except: <code>emailAndPassword.enabled = methods.has('password')</code>; the <code>passkey</code> plugin is in the list only when <code>methods.has('passkey')</code> (with <code>rpName: PASSKEY_RP_NAME</code>); <code>socialProviders.google</code> only when <code>methods.has('google')</code>; <code>anonymous({ emailDomainName: PSEUDONYMOUS_EMAIL_DOMAIN, ... })</code>; the three <code>OAUTH_KV</code> stashes become <code>recordE2eMail(platform, kind, email, url)</code>; <code>sveltekitCookies</code> stays last; <code>onLinkAccount</code> and the database hooks unchanged. Default <code>methods</code> = <code>parseAuthMethods(env.AUTH_METHODS)</code> minus unconfigured Google.</li>
+      <li>Produces (<code>e2e/env.ts</code>): <code>isE2eEnv(platform: App.Platform | undefined): boolean</code>. Produces (<code>e2e/mail-sink.ts</code>): <code>type E2eMailKind = 'password-reset' | 'change-email-approve' | 'change-email-verify' | 'invite'</code>; <code>recordE2eMail(platform, kind, to, url): void</code> (no-op unless <code>isE2eEnv</code>; module-level map keyed by kind and lower-cased address, latest wins); <code>readE2eMail(kind, to): string | null</code>; <code>clearE2eMail(): void</code>.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Port the six auth specs; drop <code>OAUTH_KV</code> and <code>isTestEnv</code> cases, replacing each stash assertion with a <code>readE2eMail</code> assertion under a stubbed <code>VITE_E2E</code>. <code>password-pseudonymity.spec</code> runs with <code>methods: new Set(['magic-link', 'password'])</code>.</li>
+      <li id="t8-s2"><input type="checkbox"> Write <code>methods.spec.ts</code>:
+        <pre><code data-lang="ts">it('defaults to magic link only', () =&gt; expect([...parseAuthMethods(undefined)]).toEqual(['magic-link']));
+it('always keeps magic link and drops unknown tokens', () =&gt;
+  expect([...parseAuthMethods('password, bogus')].sort()).toEqual(['magic-link', 'password']));
+it('drops google without a client id and secret');          // AUTH_METHODS 'google', no creds → no 'google'
+it('ignores the e2e cookie outside an e2e build');          // VITE_E2E unset → env value wins
+it('takes the e2e cookie in an e2e build in development'); // vi.stubEnv('VITE_E2E', '1')
+it('maps Better-Auth paths to their method');               // '/api/auth/passkey/generate-register-options' → 'passkey', '/api/auth/callback/google' → 'google', '/api/auth/get-session' → null</code></pre>
+      </li>
+      <li id="t8-s3"><input type="checkbox"> Write <code>better-auth.methods.spec.ts</code> against <code>freshDb</code> and a <code>makePlatform</code> env with a 32-char secret and no <code>AUTH_METHODS</code>:
+        <pre><code data-lang="ts">it('mints a pseudonymous user on the invalid synthetic domain'); // signInAnonymous ok; user.email ends with '@pseudonymous.sfhousing.invalid'; isAnonymous true
+it('refuses password sign-in by default');                       // handler POST /api/auth/sign-in/email → status &gt;= 400, no session row
+it('serves no passkey endpoints by default');                    // handler GET /api/auth/passkey/generate-register-options → 404
+it('offers no Google provider by default');                      // handler POST /api/auth/sign-in/social {provider:'google'} → status &gt;= 400
+it('accepts password sign-in when the method is on');           // methods {'magic-link','password'} after setPassword → 200</code></pre>
+        The first case is the required proof that Better-Auth accepts the domain.
+      </li>
+      <li id="t8-s4"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/auth src/lib/server/e2e</code></pre>
+      </li>
+      <li id="t8-s5"><input type="checkbox"> Install the four packages and the override; copy and adapt the sources; add the <code>onLog</code> filter.</li>
+      <li id="t8-s6"><input type="checkbox"> Credits with spec assertions (verify licenses in <code>node_modules</code>): Better Auth (MIT, <code>https://better-auth.com</code>), better-call (MIT, <code>https://github.com/Bekacru/better-call</code>), Kysely (MIT, <code>https://kysely.dev</code>), SimpleWebAuthn (MIT, <code>https://simplewebauthn.dev</code>).</li>
+      <li id="t8-s7"><input type="checkbox"> Run the specs, <code>npm run build</code>, <code>npm run check</code>, <code>npm run lint</code>; pass.</li>
+      <li id="t8-s8"><input type="checkbox"> Commit: <code>git commit -m "feat(auth): port the Better-Auth config behind an AUTH_METHODS switch"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-9">
+    <h2>Task 9: Auth endpoint, session hooks and e2e seams</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/routes/api/auth/[...all]/+server.ts</code> and <code>server.spec.ts</code> from PF</li>
+      <li>Create <code>src/lib/server/auth/session-gate.ts</code> and spec</li>
+      <li>Modify <code>src/hooks.server.ts</code>, <code>src/hooks.server.spec.ts</code>, <code>src/routes/+layout.server.ts</code>, <code>src/routes/layout.server.spec.ts</code></li>
+      <li>Create <code>src/lib/server/e2e/session.ts</code> (from <code>PF/.../test-support/session.ts</code>) and spec; <code>src/routes/api/e2e/login/+server.ts</code>; <code>src/routes/api/e2e/mail/+server.ts</code></li>
+      <li>Modify <code>playwright.config.ts</code>; create <code>e2e/helpers/auth.ts</code>, <code>e2e/auth-session.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces (<code>session-gate.ts</code>): <code>SESSION_COOKIE_SUFFIX = 'better-auth.session_token'</code>; <code>hasSessionCookie(cookieHeader: string | null): boolean</code> (a cookie named <code>better-auth.session_token</code> or <code>__Secure-better-auth.session_token</code>); <code>routeNeedsSession(pathname: string): boolean</code>, true for the prefixes <code>/api/auth</code>, <code>/account</code>, <code>/api/account</code>, <code>/sims</code>, <code>/api/sims</code>, <code>/invite</code>, <code>/api/invites</code>, <code>/signin</code>, <code>/forgot-password</code>, <code>/reset-password</code>, <code>/api/e2e</code> (builder's call: forgot and reset count as sign-in routes); <code>shouldResolveSession(url: URL, headers: Headers): boolean</code> = not under <code>/data/</code> and (<code>hasSessionCookie</code> or <code>routeNeedsSession</code>).</li>
+      <li>Produces (<code>hooks.server.ts</code>): <code>sessionHandle: Handle</code> (PF <code>hooks.server.ts:60-91</code> without bearer and capabilities: <code>locals.capabilities = []</code> until Task 18; when <code>shouldResolveSession</code> is false, set the null locals and never call <code>getAuth</code>); <code>headersHandle: Handle</code> (today's <code>handle</code> body, unchanged); <code>handle = sequence(sessionHandle, headersHandle)</code>. The WebSocket <code>disableRefresh</code> branch is kept.</li>
+      <li>Root layout load adds <code>user: locals?.user ?? null</code>.</li>
+      <li>Auth endpoint: PF's handler (anonymous POST 404, the three rate-limited paths on the unified <code>enforceRate</code>), plus first: <code>const m = methodForAuthPath(path); if (m &amp;&amp; !enabledAuthMethods(event).has(m)) return 404</code>. Calls <code>authFor(event).handler(request)</code>.</li>
+      <li><code>POST /api/e2e/login</code> body <code>{ email }</code> returns <code>{ userId }</code> (identity id) with a signed session cookie; 404 unless <code>VITE_E2E === '1'</code> (checked first, as <code>src/routes/api/e2e/plans/+server.ts:9-11</code>) and <code>isE2eEnv</code>. <code>GET /api/e2e/mail?kind=&amp;to=</code> returns <code>{ url }</code> or 404, same gate.</li>
+      <li>Playwright <code>webServer.command</code> adds <code>--var BETTER_AUTH_SECRET:e2e-local-secret-000000000000000000000000</code> and <code>--var BETTER_AUTH_URL:http://localhost:${port}</code>.</li>
+      <li>Produces (<code>e2e/helpers/auth.ts</code>): <code>loginAs(page, email): Promise&lt;{ userId: string }&gt;</code>; <code>enableAuthMethods(context, methods: string[]): Promise&lt;void&gt;</code> (sets the e2e cookie for the test's own context); <code>followMagicLink(page, opts?)</code> (PF <code>e2e/helpers/auth.ts:53-57</code>); <code>readMail(request, kind, to): Promise&lt;string&gt;</code> (polls <code>/api/e2e/mail</code>, because Better-Auth may send after the response); <code>uniqueEmail(tag): string</code>.</li>
+    </ul>
+    <ol>
+      <li id="t9-s1"><input type="checkbox"> Rewrite <code>hooks.server.spec.ts</code>: existing cases target <code>headersHandle</code> with the same assertions. New cases, with <code>vi.mock('$lib/server/auth/better-auth')</code> and <code>vi.mock('$lib/server/user-store/user')</code>:
+        <pre><code data-lang="ts">it('does not construct Better-Auth for a signed-out page');            // '/', '/sim', '/s/abc', '/p/abc' no cookie → getAuth not called; locals = { user: null, session: null, capabilities: [], actorKind: 'public' }
+it('works with no BETTER_AUTH_SECRET on a signed-out page');         // env without the secret → 200
+it('never resolves a session under /data/, even with a cookie');      // '/data/fixture-0/manifest.json' + cookie → getAuth not called
+it('resolves the session when a session cookie is present');          // '/' + 'better-auth.session_token=t' → locals.user from resolveSessionUser; session.userId = live id; actorKind 'human'
+it('recognises the __Secure- cookie name');
+it('constructs Better-Auth on auth routes without a cookie');         // '/signin' → getAuth called once
+it('reads with disableRefresh on a WebSocket upgrade');               // getSession called with { query: { disableRefresh: true } }
+it('treats a deleted identity as public');                            // resolveSessionUser → null → actorKind 'public'
+it('runs the session handle before the header handle');               // resolve sees locals.user set; response has nosniff
+it('keeps every set-cookie on the immutable-headers re-wrap');        // two set-cookie in → response.headers.getSetCookie() length 2</code></pre>
+      </li>
+      <li id="t9-s2"><input type="checkbox"> Port <code>api/auth/[...all]/server.test.ts</code> as <code>server.spec.ts</code> (limiter cases use <code>ENVIRONMENT: 'production'</code> and <code>FakeRateLimiter</code>); add: with default methods, <code>POST /api/auth/sign-in/email</code>, <code>POST /api/auth/request-password-reset</code>, <code>GET /api/auth/passkey/generate-register-options</code> and <code>GET /api/auth/callback/google</code> answer 404 before any limiter call; with <code>AUTH_METHODS: 'password'</code> the sign-in path reaches the limiter. Port <code>session.spec</code>; add <code>layout.server.spec</code> expectations of <code>user: null</code>, and one with <code>locals.user</code> set.</li>
+      <li id="t9-s3"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/hooks.server.spec.ts src/lib/server/auth "src/routes/api/auth" src/lib/server/e2e src/routes/layout.server.spec.ts</code></pre>
+      </li>
+      <li id="t9-s4"><input type="checkbox"> Implement the gate, the hooks, the endpoint, the layout field, the two e2e routes and the Playwright flags.</li>
+      <li id="t9-s5"><input type="checkbox"> Write <code>e2e/auth-session.spec.ts</code>: <code>loginAs</code> then <code>GET /api/auth/get-session</code> returns the email; a fresh context's <code>GET /</code> and <code>GET /data/fixture-0/manifest.json</code> carry no <code>set-cookie</code>; the logged-in context's <code>/data/...</code> response has no <code>set-cookie</code> either.</li>
+      <li id="t9-s6"><input type="checkbox"> Run the unit specs, then e2e including the existing cache and header suites:
+        <pre><code data-lang="sh">npx playwright test e2e/auth-session.spec.ts e2e/headers.spec.ts e2e/cache-headers.spec.ts e2e/data-route.spec.ts</code></pre>
+      </li>
+      <li id="t9-s7"><input type="checkbox"> <code>npm run check</code>, <code>npm run lint</code>, <code>npm run test:unit</code>; pass. Commit: <code>git commit -m "feat(auth): resolve sessions in hooks only when a cookie or route needs it"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-10">
+    <h2>Task 10: Pseudonymous onboarding and sim creation</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/lib/server/onboarding/{pseudonymous-mint,known-device,pending-identifier,pending-sim}.ts</code> and specs from <code>PF/src/lib/server/onboarding/</code></li>
+      <li>Create <code>src/lib/server/sims/sim-quota.ts</code> and spec</li>
+      <li>Create <code>src/routes/sims/+page.server.ts</code>, <code>+page.svelte</code>, <code>page.server.spec.ts</code>; <code>src/routes/sims/[simId]/+page.server.ts</code>, <code>+page.svelte</code>; <code>src/routes/api/sims/+server.ts</code>, <code>server.spec.ts</code>; <code>src/lib/members/copy.ts</code></li>
+      <li>Modify <code>src/routes/+layout.server.ts</code> (known-device refresh) and its spec</li>
+      <li>Create <code>e2e/sims-onboarding.spec.ts</code> from <code>PF/e2e/pseudonymous-onboarding.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces: <code>mintPseudonymousSession(event, deps?)</code> as PF (<code>pseudonymous-mint.ts:18-43</code>) on <code>authFor(event)</code>, 429 copy <code>SIMS_COPY.tooManySims</code>; cookies <code>sfh_known</code>, <code>sfh_pending_identifier</code>, <code>sfh_pending_sim</code> with <code>markKnownDevice</code>, <code>isKnownDevice</code>, <code>stash/read/clearPendingIdentifier</code>, <code>stash/read/clearPendingSim</code>.</li>
+      <li>Produces: <code>MAX_SIMS_PER_MANAGER = 5</code> (PF free tier), <code>SIM_TITLE_MAX = 63</code>; <code>simQuotaExceeded(db, user: { id: string }): Promise&lt;string | null&gt;</code> (copy <code>SIMS_COPY.quota</code>).</li>
+      <li>Produces: <code>startSim(event, title): Promise&lt;ActionFailure | { simId: string }&gt;</code> in <code>src/lib/server/sims/start-sim.ts</code>, PF's <code>startQuest</code> (<code>PF/src/routes/+page.server.ts:164-215</code>) without the Durable Object: empty title 400, over <code>SIM_TITLE_MAX</code> 400, signed out on a known device stashes and redirects to <code>/signin?returnTo=/sims</code> (builder's call: the list page resumes the stash), else mint; first sim of a pseudonymous user reseeds the handle; quota; <code>createSim</code>. Used by the <code>/sims</code> <code>create</code> action (redirect 303 to <code>/sims/&lt;id&gt;</code>) and by <code>POST /api/sims {title}</code> (201 <code>{ simId }</code>, JSON errors).</li>
+      <li><code>/sims</code> load: signed in, it resumes <code>sfh_pending_sim</code> (create, clear, redirect) as PF's landing load does (<code>PF/src/routes/+page.server.ts:48-75</code>), then lists <code>listSimsForUser</code> sorted by title; signed out, it returns an empty list and the page shows only the create form (builder's call: <code>/sims</code> is the front door, unlike PF's redirect to <code>/</code>). <code>/sims/[simId]</code> load: <code>requireSimRole(event, simId, 'viewer')</code>, returns <code>{ simId, title }</code>.</li>
+      <li>Root layout: PF <code>+layout.server.ts:51-57</code>: with <code>locals.session</code>, read <code>userHasPasskey</code>; mark the known device when the user is not pseudonymous or has a passkey. No other PF layout fields.</li>
+    </ul>
+    <ol>
+      <li id="t10-s1"><input type="checkbox"> Port the onboarding specs with renames; write <code>sim-quota.spec</code> (5 managed sims → copy string, 4 → null); write route specs for <code>/sims</code> and <code>/api/sims</code>: empty title 400; 64-char title 400; signed-out known device → 303 <code>/signin?returnTo=/sims</code> with the stash cookie; signed-out fresh → mint stub called, sim created, 303 <code>/sims/&lt;id&gt;</code>; signed-in at quota → 403; pending stash resumed on load; API returns 201 <code>{ simId }</code>.</li>
+      <li id="t10-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/onboarding src/lib/server/sims src/routes/sims src/routes/api/sims src/routes/layout.server.spec.ts</code></pre>
+      </li>
+      <li id="t10-s3"><input type="checkbox"> Implement; the pages are minimal (a labelled title field and Create button; a list of links; the sim page's title as <code>h1</code>), strings in <code>SIMS_COPY</code>.</li>
+      <li id="t10-s4"><input type="checkbox"> Write <code>e2e/sims-onboarding.spec.ts</code>: a fresh visitor creates a sim at <code>/sims</code>, lands on <code>/sims/&lt;id&gt;</code> showing the title, and <code>/api/auth/get-session</code> reports a pseudonymous user; a second sim keeps the same user; with <code>sfh_known=1</code> set, creating redirects to <code>/signin</code>; axe passes on <code>/sims</code> and <code>/sims/&lt;id&gt;</code>.
+        <pre><code data-lang="sh">npx playwright test e2e/sims-onboarding.spec.ts</code></pre>
+      </li>
+      <li id="t10-s5"><input type="checkbox"> Gate, then commit: <code>git commit -m "feat(sims): create sims with pseudonymous onboarding"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-11">
+    <h2>Task 11: The /signin page</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/routes/signin/+page.server.ts</code>, <code>+page.svelte</code>, <code>page.server.spec.ts</code>, <code>page.svelte.spec.ts</code> from <code>PF/src/routes/signin/</code></li>
+      <li>Create <code>src/lib/account/auth-client.ts</code>, <code>FieldError.svelte</code>, <code>FormStatus.svelte</code>, <code>safe-redirect.ts</code> (+ spec), <code>copy.ts</code></li>
+      <li>Create <code>e2e/auth-a11y.spec.ts</code> (the <code>/signin</code> cases), <code>e2e/email-link.spec.ts</code>, <code>e2e/auth-methods-default.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces: <code>authClient</code> (PF <code>auth-client.ts</code>: <code>anonymousClient</code>, <code>magicLinkClient</code>, <code>passkeyClient</code>); <code>safeReturnTo(raw: string | null): string</code> (default <code>/</code>); <code>FieldError</code>, <code>FormStatus</code> components (PF props); <code>AUTH_COPY</code> in <code>src/lib/account/copy.ts</code>.</li>
+      <li>Load returns PF's fields minus <code>turnstileSiteKey</code>, with <code>pendingSim</code> for <code>pendingQuest</code>, plus <code>methods: AuthMethod[]</code> from <code>enabledAuthMethods</code>.</li>
+      <li>Actions: <code>sendLink</code> (PF, without Turnstile; dev link returned when <code>isE2eEnv</code>); <code>signInPassword</code> (PF, without Turnstile; first line returns <code>fail(404, { error: AUTH_COPY.signinFailed })</code> when password is off); <code>startFresh</code> (PF; resumes the pending sim through <code>createSim</code> and redirects to <code>/sims/&lt;id&gt;</code>, else to <code>/sims</code>).</li>
+      <li>The page renders the password form only with <code>password</code>, the passkey button only with <code>passkey</code>, the Google button only with <code>google</code>; the dev link keeps <code>data-testid="dev-link"</code>.</li>
+    </ul>
+    <ol>
+      <li id="t11-s1"><input type="checkbox"> Port both specs; delete Turnstile cases (named in the commit); assertions use <code>AUTH_COPY</code>. Add: default methods render no password field, no "Sign in with a passkey", no "Continue with Google"; <code>methods: ['magic-link', 'password', 'passkey', 'google']</code> renders all three; <code>signInPassword</code> under default methods fails 404 without calling <code>signInEmail</code>.</li>
+      <li id="t11-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/routes/signin src/lib/account
+npx vitest --run --project client src/routes/signin</code></pre>
+      </li>
+      <li id="t11-s3"><input type="checkbox"> Implement.</li>
+      <li id="t11-s4"><input type="checkbox"> Port <code>PF/e2e/email-link.spec.ts</code> (magic link via <code>followMagicLink</code>, unique email per test); write <code>auth-methods-default.spec.ts</code> (no password, passkey or Google controls on <code>/signin</code>; <code>POST /api/auth/sign-in/email</code> is 404); port the <code>/signin</code> cases of <code>PF/e2e/auth-a11y.spec.ts</code> with <code>expectNoA11yViolations</code>.
+        <pre><code data-lang="sh">npx playwright test e2e/email-link.spec.ts e2e/auth-methods-default.spec.ts e2e/auth-a11y.spec.ts</code></pre>
+      </li>
+      <li id="t11-s5"><input type="checkbox"> Gate, then commit: <code>git commit -m "feat(auth): add the sign-in page"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-12">
+    <h2>Task 12: Forgot-password and reset-password pages</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/routes/forgot-password/</code> and <code>src/routes/reset-password/</code> (<code>+page.server.ts</code>, <code>+page.svelte</code>, <code>page.server.spec.ts</code>, <code>page.svelte.spec.ts</code>) from PF</li>
+      <li>Modify <code>src/lib/account/copy.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Both loads and actions throw <code>error(404)</code> when <code>password</code> is not in <code>enabledAuthMethods(event)</code>; otherwise PF's behaviour without Turnstile, on <code>authFor(event)</code> and the unified <code>enforceRate</code>. The reset link reaches the e2e mail sink as kind <code>password-reset</code> (Task 8).</li>
+    </ul>
+    <ol>
+      <li id="t12-s1"><input type="checkbox"> Port the four specs (Turnstile cases deleted and named); add: default methods → load and action both 404.</li>
+      <li id="t12-s2"><input type="checkbox"> Run and see them fail; implement; run again and pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/routes/forgot-password src/routes/reset-password
+npx vitest --run --project client src/routes/forgot-password src/routes/reset-password</code></pre>
+      </li>
+      <li id="t12-s3"><input type="checkbox"> Gate, then commit: <code>git commit -m "feat(auth): add password reset pages behind the password switch"</code>. Their e2e runs in Task 17, which can set a password.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-13">
+    <h2>Task 13: Header account entry</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify <code>src/lib/shell/SiteHeader.svelte</code>, <code>SiteHeader.svelte.spec.ts</code>, <code>src/routes/+layout.svelte</code>, <code>e2e/layout.spec.ts</code>, and any golden under <code>e2e/*-snapshots/</code> the entry moves</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>SiteHeader gains <code>user?: { handle: string } | null</code>. It renders one link after the actions, inside the right-hand group (the <code>div</code> holding <code>{@render actions?.()}</code>, <code>SiteHeader.svelte:181-183</code>), so it sits in the header row from lg and in the Menu panel below lg: <code>Sign in</code> → <code>/signin</code> when <code>user</code> is null, <code>@handle</code> → <code>/account</code> otherwise. Same link classes as the mode links' resting state. The root layout passes <code>page.data.user</code>.</li>
+    </ul>
+    <ol>
+      <li id="t13-s1"><input type="checkbox"> Add spec cases: null user renders link <code>Sign in</code> with <code>href="/signin"</code>; <code>{ handle: 'ada' }</code> renders <code>@ada</code> with <code>href="/account"</code>; at 375 px the link is hidden until Menu opens and then inside the panel; at 1024 px it is visible in the banner; the header stays 48 px tall.</li>
+      <li id="t13-s2"><input type="checkbox"> Run and see them fail; implement; run and pass.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/shell/SiteHeader.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t13-s3"><input type="checkbox"> Add to <code>e2e/layout.spec.ts</code>: on <code>/</code> and <code>/sim</code> at 1024×768, the account link is visible and does not overlap the pinned score bar or the actions; on mobile it is reachable through the Menu. Run the layout, map and pages suites; where a golden differs only by the new link, update it with <code>--update-snapshots</code>, open the image and confirm.
+        <pre><code data-lang="sh">npx playwright test e2e/layout.spec.ts e2e/map.spec.ts e2e/pages-a11y.spec.ts e2e/chrome-dark.spec.ts</code></pre>
+      </li>
+      <li id="t13-s4"><input type="checkbox"> Gate, then commit: <code>git commit -m "feat(shell): add the account entry to the site header"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-14">
+    <h2>Task 14: Invitations (server, API and the invite page)</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/lib/server/invites/{token,claim,control-plane,email}.ts</code> and specs from <code>PF/src/lib/server/invites/</code> (token hashes with <code>sha256Hex</code> from <code>$lib/sharing/hash</code>)</li>
+      <li>Create <code>src/routes/api/sims/[simId]/invites/+server.ts</code>, <code>[inviteId]/+server.ts</code>, <code>[inviteId]/resend/+server.ts</code> and <code>api.spec.ts</code> files; <code>src/routes/api/invites/[inviteId]/accept/+server.ts</code>, <code>decline/+server.ts</code></li>
+      <li>Create <code>src/routes/invite/[token]/+page.server.ts</code>, <code>+page.svelte</code>, <code>page.server.spec.ts</code>, <code>page.svelte.spec.ts</code></li>
+      <li>Modify <code>src/lib/members/copy.ts</code>: it exports <code>SIMS_COPY</code> (Task 10) and now <code>MEMBERS_COPY</code> (invite page, member UI, leave flow; PF's <code>invite_*</code>, <code>invitations_*</code>, <code>leave_quest_*</code>, <code>primitive_members_*</code> families)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces: PF's control-plane exports renamed (<code>INVITE_TTL_MS</code>, <code>INVITE_PENDING_CAP</code>, <code>parseInviteTarget</code>, <code>createInvite({ db, simId, invitedByUserId, target, canInviteByEmail })</code>, <code>toManagerPendingInviteView</code>, <code>listManagerPendingInvites</code>, <code>getManagerPendingInvite</code>, <code>claimInvite</code>, <code>acceptInviteByToken</code>, <code>acceptInviteById</code>, <code>declineInvite</code>, <code>revokeInvite</code>, <code>resendInvite</code>, <code>RESEND_COOLDOWN_MS</code>, <code>listRecipientPendingInvites</code>, <code>RecipientInvite</code> with <code>simTitle</code>, <code>findInviteByToken</code>, <code>TokenInvite</code> with <code>simTitle</code>), with the <code>questId === null</code> branches removed (<code>control-plane.ts:253,392,435</code>). <code>generateInviteToken</code>, <code>hashToken</code>, <code>classifyColdAccept</code>, <code>sendInviteEmail({ platform, origin, to, token, inviterHandle, simTitle })</code> (records kind <code>invite</code> in the mail sink).</li>
+      <li>Routes keep PF's limits: create on <code>INVITE_RL</code> (<code>invite_ip:</code>, <code>invite:</code>, <code>invite_email:</code>), resend on <code>MUTATION_REGISTERED_RL</code> (<code>invite_resend:</code>). Every former <code>syncQuestRoster</code> call (<code>invite/[token]/+page.server.ts:46,148</code>; <code>api/invites/[inviteId]/accept/+server.ts:22</code>) becomes <code>await onSimRosterChanged(simId)</code>. Redirects go to <code>/sims/&lt;id&gt;</code>; the no-sim fallback goes to <code>/sims</code>. Fallback title <code>'a sim'</code>.</li>
+    </ul>
+    <ol>
+      <li id="t14-s1"><input type="checkbox"> Port <code>control-plane.spec</code> (678 lines), <code>claim.spec</code>, <code>token.spec</code>, <code>email.spec</code>, the invites <code>api.spec</code> files and <code>invite/[token]/page.server.test</code> (403 lines) with renames; quest-free invite cases deleted and named; add a case that the accept route and the token page call <code>onSimRosterChanged</code> with the sim id.</li>
+      <li id="t14-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/invites src/routes/api/sims src/routes/api/invites src/routes/invite
+npx vitest --run --project client src/routes/invite</code></pre>
+      </li>
+      <li id="t14-s3"><input type="checkbox"> Implement; run again and pass. Gate, then commit: <code>git commit -m "feat(invites): port sim invitations and the invite page"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-15">
+    <h2>Task 15: Sim pages with member management</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/lib/members/MembersPanel.svelte</code>, <code>InvitationsList.svelte</code>, <code>LeaveSimConfirm.svelte</code>, <code>InviteBanner.svelte</code>, <code>invite-banner.ts</code>, <code>membership-overlay.svelte.ts</code> and their specs from <code>PF/src/lib/client/members/</code></li>
+      <li>Create <code>src/routes/sims/+layout.server.ts</code>, <code>+layout.svelte</code>; <code>src/routes/sims/[simId]/+layout.server.ts</code>; modify <code>src/routes/sims/+page.*</code>, <code>src/routes/sims/[simId]/+page.*</code></li>
+      <li>Create <code>src/routes/api/sims/[simId]/members/[userId]/+server.ts</code> and <code>api.spec.ts</code></li>
+      <li>Create <code>e2e/invite.spec.ts</code>, <code>e2e/invite-redundant-entry.spec.ts</code>, <code>e2e/leave-sim.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li><code>/sims/[simId]</code> layout load: title, <code>listMembers</code> mapped to the public shape (no email on the wire, PF <code>quests/[questId]/+layout.server.ts:26-33</code>), the viewer's role, and for managers <code>listManagerPendingInvites</code>. Page action <code>leaveSim</code> (PF <code>quests/[questId]/+page.server.ts:20-46</code>, title from <code>getSimTitle</code>, 404 when missing) redirects to <code>/sims</code> (builder's call: PF's <code>/</code> is its sims list).</li>
+      <li><code>/sims</code> list load adds <code>listRecipientPendingInvites</code>; <code>/sims/+layout.server.ts</code> returns <code>recipientInvites</code> for the banner.</li>
+      <li>Components take callbacks instead of <code>$app/*</code> imports: <code>LeaveSimConfirm</code> takes <code>onsubmit</code>/<code>enhance</code> from its route; <code>InvitationsList</code> and the banner take <code>onaccepted(simId)</code>. <code>bannerToast</code> is replaced by <code>InviteBanner.svelte</code>: a <code>role="status"</code> region at the top of <code>/sims/[simId]</code> with PF's actions (Accept, Decline, Not now; or View and Not now for several), driven by <code>inviteBannerModel(invites, path)</code>, which keeps PF's suppression on <code>/sims</code>.</li>
+      <li>Members DELETE: <code>requireSimRole(manager)</code>, then <code>removeSimMember({ db, simId, userId, actorUserId })</code>.</li>
+    </ul>
+    <ol>
+      <li id="t15-s1"><input type="checkbox"> Port the component specs as <code>*.svelte.spec.ts</code> (assert on <code>SIMS_COPY</code>/<code>MEMBERS_COPY</code>), <code>inviteBanner.spec</code> as <code>invite-banner.spec.ts</code> against the model, the overlay spec, and the members <code>api.spec</code>.</li>
+      <li id="t15-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/members src/routes/sims
+npx vitest --run --project server src/lib/members src/routes/sims src/routes/api/sims</code></pre>
+      </li>
+      <li id="t15-s3"><input type="checkbox"> Implement; run and pass.</li>
+      <li id="t15-s4"><input type="checkbox"> Port <code>PF/e2e/invite.spec.ts</code>, <code>invite-redundant-entry.spec.ts</code> and <code>leave-quest.spec.ts</code> (invite links from <code>readMail(request, 'invite', to)</code>; manager signed in with <code>loginAs</code> or by creating a sim; unique emails), and add axe passes on <code>/sims</code>, <code>/sims/&lt;id&gt;</code> as manager and <code>/invite/&lt;token&gt;</code>.
+        <pre><code data-lang="sh">npx playwright test e2e/invite.spec.ts e2e/invite-redundant-entry.spec.ts e2e/leave-sim.spec.ts</code></pre>
+      </li>
+      <li id="t15-s5"><input type="checkbox"> Gate, then commit: <code>git commit -m "feat(sims): add member management and invitations UI"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-16">
+    <h2>Task 16: Account deletion and reaping functions</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/lib/server/user-store/deletion.ts</code> and spec; <code>src/lib/server/reap/eligibility.ts</code>, <code>reap-user.ts</code>, <code>config.ts</code> and specs</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces: <code>deleteAccount({ db, identityId, actor }: { db: Database; identityId: string; actor: Actor }): Promise&lt;void&gt;</code> (no <code>platform</code>, <code>cancelSubscription</code> or <code>soleMemberGuard</code>; <code>actor</code> kept for the future sim-log attribution) looping <code>listSimsForUser</code> and <code>removeSimMember</code>; <code>closeAccountRows({ db, identityId, live })</code> (no <code>survivors</code>, no Money, Stripe or OAuth steps); <code>releaseHandle</code>, <code>scrubLiveUser</code>, <code>hashPriorVersions</code>, <code>purgeCredentialsAndSettings(db, liveId, identityIds)</code> (session, account, passkey, sim_invite; no <code>user_settings</code>/<code>subscription</code>), <code>markIdentityDeleted</code> last, <code>deletedHandle</code>, <code>deletedEmail</code>.</li>
+      <li>Produces: <code>REAP_GRACE_MS = 48 * 60 * 60 * 1000</code>, <code>REAP_BATCH = 300</code>; <code>selectReapableUsers(db, now, graceMs, limit)</code> unchanged; <code>REAP_ACTOR</code>; <code>reapUser(db, liveUserId): Promise&lt;{ reaped: boolean }&gt;</code>. No trigger, no queue, no cron.</li>
+    </ul>
+    <ol>
+      <li id="t16-s1"><input type="checkbox"> Port <code>deletion.spec</code> (Money, Stripe, OAuth and settings cases deleted and named; quest-removal cases rewritten for sims: a sole-member sim is deleted, a shared sim survives with a promoted manager), <code>eligibility.spec</code>, <code>reap-user.spec</code> (sole-member-guard cases deleted and named).</li>
+      <li id="t16-s2"><input type="checkbox"> Run and see them fail; implement; run and pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/user-store/deletion.spec.ts src/lib/server/reap</code></pre>
+      </li>
+      <li id="t16-s3"><input type="checkbox"> Gate, then commit: <code>git commit -m "feat(user-store): port account deletion and the reaper functions"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-17">
+    <h2>Task 17: The /account page and account APIs</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/routes/api/account/+server.ts</code>, <code>password/+server.ts</code>, <code>profile/+server.ts</code>, <code>email/+server.ts</code>, <code>email/verify/+server.ts</code> and specs from PF</li>
+      <li>Create <code>src/lib/account/ProfilePane.svelte</code>, <code>AuthenticationPane.svelte</code>, <code>PasswordSection.svelte</code>, <code>DeleteAccountPane.svelte</code>, <code>current-user.svelte.ts</code> and specs</li>
+      <li>Create <code>src/routes/account/+page.server.ts</code>, <code>+page.svelte</code>, <code>page.server.spec.ts</code></li>
+      <li>Create e2e: <code>account-handle</code>, <code>account-email</code>, <code>account-a11y</code>, <code>account-deletion</code>, <code>password-auth</code>, <code>password-reset</code>, <code>passkey</code> (chromium only) from <code>PF/e2e/</code>; extend <code>auth-methods-default.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li><code>GET /api/account</code> returns only <code>{ hasGoogle, hasPassword, canRemovePassword, pseudonymous }</code>. <code>DELETE /api/account</code> as PF (<code>confirmHandle</code> must equal the handle) on <code>deleteAccount({ db, identityId, actor: { actorId, actorKind: 'human' } })</code>, then sign-out.</li>
+      <li><code>/api/account/password</code> answers 404 for every method when <code>password</code> is off; otherwise PF (with <code>isPasswordBreached</code>, <code>ACCOUNT_EDIT_RL</code>).</li>
+      <li><code>/account</code> load: 303 to <code>/signin?returnTo=/account</code> when signed out; returns <code>user</code>, <code>methods</code>, <code>hasPasskey</code>, <code>hasOAuthAccount</code>. The page renders <code>ProfilePane</code>, <code>AuthenticationPane</code> and <code>DeleteAccountPane</code> as sections with <code>h2</code> headings. <code>AuthenticationPane</code> takes <code>methods</code> and renders <code>PasswordSection</code> only with <code>password</code>, passkeys only with <code>passkey</code>, Google link only with <code>google</code>; the email section always. <code>bannerToast</code> uses become inline <code>FormStatus</code> messages. <code>DeleteAccountPane</code> navigates with a callback prop; <code>clearCheckpointCache</code> is cut.</li>
+    </ul>
+    <ol>
+      <li id="t17-s1"><input type="checkbox"> Port the route specs (Money and billing fields removed from the GET expectation and named) and component specs as <code>*.svelte.spec.ts</code>; add: default methods → <code>AuthenticationPane</code> shows no password, passkey or Google controls; password API 404 for GET, POST, PATCH and DELETE under default methods.</li>
+      <li id="t17-s2"><input type="checkbox"> Run and see them fail; implement; run and pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/routes/api/account src/routes/account src/lib/account
+npx vitest --run --project client src/lib/account src/routes/account</code></pre>
+      </li>
+      <li id="t17-s3"><input type="checkbox"> Port the seven e2e specs. <code>password-auth</code> and <code>password-reset</code> call <code>enableAuthMethods(context, ['password'])</code> and read reset links with <code>readMail(..., 'password-reset', ...)</code>; <code>passkey</code> calls <code>enableAuthMethods(context, ['passkey'])</code> and skips outside chromium; email-change specs read <code>change-email-approve</code> and <code>change-email-verify</code>. Extend <code>auth-methods-default.spec.ts</code>: <code>/account</code> shows no password, passkey or Google controls, <code>/forgot-password</code> is 404. Add <code>/account</code>, <code>/forgot-password</code> and <code>/reset-password</code> (password on) to the axe passes.
+        <pre><code data-lang="sh">npx playwright test e2e/account-handle.spec.ts e2e/account-email.spec.ts e2e/account-a11y.spec.ts e2e/account-deletion.spec.ts e2e/password-auth.spec.ts e2e/password-reset.spec.ts e2e/passkey.spec.ts e2e/auth-methods-default.spec.ts</code></pre>
+      </li>
+      <li id="t17-s4"><input type="checkbox"> Gate, then commit: <code>git commit -m "feat(account): add the account page and account APIs"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-18">
+    <h2>Task 18: Operator capabilities (trimmed)</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>src/lib/server/operator/capabilities.ts</code>, <code>grants.ts</code>, <code>registry.ts</code> and specs from <code>PF/src/lib/server/operator/</code></li>
+      <li>Modify <code>src/hooks.server.ts</code> and its spec</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li><code>OPERATOR_ABILITIES = ['cap.grant', 'cap.revoke'] as const</code>; no <code>SUPPORT_ROLE_BY_CAP</code>. <code>capabilities.ts</code> exports PF's <code>isBootstrapEmail</code>, <code>resolveGrantedCapabilities</code>, <code>resolveCapabilities(db, user, bootstrapEmails)</code>, <code>hasCapability</code>, <code>isOperator</code>, <code>requireCapability</code>, <code>requireOperator</code>, <code>resolveCapsFor</code>. <code>grants.ts</code> keeps <code>grantCapability</code>/<code>revokeCapability</code> with no-escalation and without <code>reconcileSupportMembership</code>.</li>
+      <li><code>sessionHandle</code> sets <code>locals.capabilities = u ? await resolveCapabilities(db, u, env.BOOTSTRAP_EMAILS) : []</code>, only on the path that already resolved a session.</li>
+    </ul>
+    <ol>
+      <li id="t18-s1"><input type="checkbox"> Port the specs (support-family and support-projection cases deleted and named); add a hooks case: a session user whose email is in <code>BOOTSTRAP_EMAILS</code> gets <code>cap.grant</code>; a no-cookie request still never calls <code>getAuth</code>.</li>
+      <li id="t18-s2"><input type="checkbox"> Run and see them fail; implement; run and pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/operator src/hooks.server.spec.ts</code></pre>
+      </li>
+      <li id="t18-s3"><input type="checkbox"> Gate, then commit: <code>git commit -m "feat(authz): port trimmed operator capabilities"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-19">
+    <h2>Task 19: Docs and the leftover sweep</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create <code>docs/dev/auth.md</code> (from <code>PF/CLAUDE.md:111-125</code> and the auth-mail and reset-gate sections of <code>PF/docs/dev/email.md</code>, rewritten for sfhousing: identity model, method switch and how to turn a method on, session gate, sims and roles, invitations, the e2e seams, reaping with no trigger)</li>
+      <li>Modify <code>CLAUDE.md</code> (scoped-docs line), <code>docs/dev/deploy.md</code> (replace "Nothing else." at line 47 with the vars and secrets below), <code>docs/dev/developing.md</code> (<code>.dev.vars</code>: <code>BETTER_AUTH_SECRET</code>, optional <code>AUTH_METHODS</code>, Google and email keys), <code>docs/dev/testing.md</code> (<code>auth-db.ts</code>, <code>/api/e2e/login</code>, <code>/api/e2e/mail</code>, <code>enableAuthMethods</code>)</li>
+    </ul>
+    <ol>
+      <li id="t19-s1"><input type="checkbox"> Run the sweep; every hit is fixed or is a deliberate reference in docs or this plan.
+        <pre><code data-lang="sh">git grep -n -i -E "quest|planafoot|plan afoot|paraglide|posthog|stripe|moneyStub|OAUTH_KV|userSettings|user_settings|turnstile|syncQuestRoster|PUBLIC_GROUP_ID|isTestEnv" -- src e2e scripts wrangler.jsonc</code></pre>
+      </li>
+      <li id="t19-s2"><input type="checkbox"> Write the docs; <code>npm run lint</code> (Prettier covers markdown).</li>
+      <li id="t19-s3"><input type="checkbox"> Full run: <code>npm run check</code>, <code>npm run lint</code>, <code>npm run test:unit</code>, <code>npm run test:e2e</code>; all pass.</li>
+      <li id="t19-s4"><input type="checkbox"> Commit: <code>git commit -m "docs(auth): document accounts, sims, invitations and the method switch"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <p>None blocks a task.</p>
+    <ul>
+      <li><strong>Sending address.</strong> Task 6 sets <code>SES_FROM</code> to <code>SF Housing Simulator &lt;noreply@sfhousing.mindlace.net&gt;</code>. Recommendation: keep it, and use that domain for the provider's DNS records. Changing it later is a one-line var edit.</li>
+      <li><strong>Reaper trigger.</strong> Functions only, per the owner's decision. Recommendation: none until pseudonymous accounts pile up; then a GitHub Actions schedule calling an authenticated endpoint, which needs no second worker.</li>
+    </ul>
+  </section>
+
+  <section id="sec-owner-actions">
+    <h2>Before merge: owner actions</h2>
+    <section id="sec-owner-done">
+      <h3>Already done</h3>
+      <ul>
+        <li><code>BETTER_AUTH_SECRET</code> is set on staging and production with wrangler, each environment with its own value, and written into the worktree's <code>.dev.vars</code>. The e2e webServer passes its own value on the command line (Task 9).</li>
+      </ul>
+    </section>
+    <section id="sec-owner-required">
+      <h3>Needed for the site to stay up</h3>
+      <ul>
+        <li>Nothing further. Signed-out pages never touch Better-Auth, the rate-limit bindings and vars are declared in <code>wrangler.jsonc</code>, and the new tables go into the existing <code>sfhousing</code> and <code>sfhousing-staging</code> D1 databases through the normal migration step.</li>
+        <li>Check once that no other worker in the Cloudflare account uses rate-limit namespace ids 4102 to 4107 or 4202 to 4207.</li>
+      </ul>
+    </section>
+    <section id="sec-owner-features">
+      <h3>Needed only to switch a feature on</h3>
+      <ul>
+        <li><strong>Email delivery.</strong> Until an email provider is configured, a magic link (and an invite, reset or email-change link) is only written to the worker log; it is not delivered, so nobody can upgrade a pseudonymous account by email. To deliver: choose SES or Resend; verify the sending domain and add its SPF, DKIM and DMARC records; set <code>EMAIL_PROVIDER</code> (<code>ses</code> default, or <code>resend</code>), <code>SES_FROM</code> if the address changes, and either <code>SES_ACCESS_KEY_ID</code> plus <code>SES_REGION</code> (vars) and the secret <code>SES_SECRET_ACCESS_KEY</code> (with SES production access), or the secret <code>RESEND_API_KEY</code>, per environment.</li>
+        <li><strong>Password, passkey or Google sign-in.</strong> Off by default. Add the method to <code>AUTH_METHODS</code> in that environment's vars (for example <code>"magic-link,password,passkey"</code>). Passkeys are bound to the host, so a passkey made on staging does not work on production.</li>
+        <li><strong>Google.</strong> Also needs a Google Cloud OAuth client and consent screen per environment, with the secrets <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code>, and redirect URIs <code>https://sfhousing.mindlace.net/api/auth/callback/google</code>, <code>https://sfhousing-staging.mindlace.net/api/auth/callback/google</code>, <code>http://localhost:5173/api/auth/callback/google</code> and <code>http://localhost:4173/api/auth/callback/google</code>. Without both secrets Google stays off even when listed.</li>
+        <li><strong>Operator capabilities.</strong> Set <code>BOOTSTRAP_EMAILS</code> (comma list) only if someone needs <code>cap.grant</code>.</li>
+        <li><strong>Optional.</strong> <code>BETTER_AUTH_URL</code> per environment (<code>https://sfhousing.mindlace.net</code>, <code>https://sfhousing-staging.mindlace.net</code>); without it the request origin is used, which is correct behind the custom domains.</li>
+      </ul>
+    </section>
+  </section>
+</article>

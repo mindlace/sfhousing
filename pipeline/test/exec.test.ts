@@ -10,4 +10,11 @@ describe('run', () => {
   it('passes input through', async () => {
     expect((await run('cat', [], { input: 'hi' })).stdout).toBe('hi');
   });
+
+  it('passes extra environment variables over the inherited environment', async () => {
+    const r = await run('sh', ['-c', 'printf "%s %s" "$SFH_EXEC_TEST" "${PATH:+path}"'], {
+      env: { SFH_EXEC_TEST: 'yes' }
+    });
+    expect(r.stdout).toBe('yes path');
+  });
 });
