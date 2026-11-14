@@ -5,9 +5,11 @@
  * Pure TS, worker-safe.
  */
 import type { ParcelId } from '$lib/data/parcel';
+import { countableMask } from '$lib/map/height/room';
 import type { LayerCtx } from '$lib/sim/levers/layers';
-import { protectedRows } from '$lib/sim/levers/resolve';
+import { protectedRows, resolveEnvelopes } from '$lib/sim/levers/resolve';
 import { limitSources, ownerOf, SRC_PAINT, type LimitSources } from '$lib/sim/levers/source';
+import type { SimLevers } from '$lib/sim/levers/types';
 import {
   compileLevers,
   DEFAULT_POLICY,
@@ -39,6 +41,18 @@ interface Resolved {
   paintOwners: PolicyLimitOwner[];
   ruleOwners: Map<string, PolicyLimitOwner>;
   mask: Uint8Array;
+  /** The city inputs, on the first `cityInputAt`. */
+  city: FrameCityInput | null;
+}
+
+/** One frame's inputs to the height city and lid builds (`CityInput`, `LidInput`). */
+export interface FrameCityInput {
+  /** effective story limit per lot row (protected lots at FZP) — CityInput.stories / LidInput.stories */
+  readonly stories: Uint8Array;
+  /** countableMask(...) — CityInput.countable */
+  readonly countable: Uint8Array;
+  /** limitSources(...) — CityInput.sources; LidInput.sources = .source, sourceIds = .ruleIds */
+  readonly sources: LimitSources;
 }
 
 /**
@@ -73,12 +87,14 @@ export function attachAttribution(frame: PolicyFrame, a: Attribution): void {
   ATTRIBUTION.set(frame, a);
 }
 
-function resolve(a: Attribution): Resolved {
-  const { layers, lots } = a;
-  const lookup: Lots = (key) => lots[key];
-  // Paint union and protections exactly as the view's levers (rules 11, 12).
-  const z = zoningLevers({ zoning: [...a.zoning], permitting: [], money: [] }, lots, true);
-  // Rules with their policy id as the edit source; list order, so the first maximum wins.
+/**
+ * Today's levers for the zoning state of `a`: the rules with their policy id as the edit source
+ * (list order, so the first maximum wins), the paint union and the protections exactly as the
+ * view's levers (rules 11, 12).
+ */
+function leversOf(a: Attribution): SimLevers {
+  const lookup: Lots = (key) => a.lots[key];
+  const z = zoningLevers({ zoning: [...a.zoning], permitting: [], money: [] }, a.lots, true);
   const rules: ZoningRule[] = [];
   for (const x of a.zoning) {
     const w = x.policy.where;
@@ -88,7 +104,15 @@ function resolve(a: Attribution): Resolved {
   }
   const levers = compileLevers({ ...DEFAULT_POLICY, rules }, lookup)!;
   levers.paint = z.paint;
-  const rows = protectedRows(layers, z.protect, a.asOf);
+  levers.protect = z.protect;
+  return levers;
+}
+
+function resolve(a: Attribution): Resolved {
+  const { layers, lots } = a;
+  const lookup: Lots = (key) => lots[key];
+  const levers = leversOf(a);
+  const rows = protectedRows(layers, levers.protect, a.asOf);
   const sources = limitSources(layers, levers, rows);
 
   const index = layers.parcels.index;
@@ -110,7 +134,7 @@ function resolve(a: Attribution): Resolved {
   );
   const mask = new Uint8Array(layers.parcels.count);
   for (const r of rows) mask[r] = 1;
-  return { sources, paintBy, paintOwners, ruleOwners, mask };
+  return { sources, paintBy, paintOwners, ruleOwners, mask, city: null };
 }
 
 function attributionOf(frame: PolicyFrame, what: string): Attribution {
@@ -145,6 +169,43 @@ export function limitsAt(frame: PolicyFrame, row: number): FrameLimits {
   if (!Number.isInteger(row) || row < 0 || row >= a.layers.parcels.count)
     throw new RangeError(`limitsAt: row ${row} is outside 0..${a.layers.parcels.count - 1}`);
   return at(a, row);
+}
+
+/**
+ * The city inputs of `frame`, as the old host's `cityOf` hands them to `createCityBuild` and
+ * `lidStep` to `createLidBuild`: over `resolveEnvelopes` of the zoning in force (unfilled),
+ * `stories` = the plan table's stories (a protected lot at FZP), `countable` = `countableMask`,
+ * `sources` = `limitSources` (the one `limitsAt` reads). For the runner's `heights` and
+ * `heightLids`. A `preFzp` compile's frames read FZP, as `limitsAt` (no zoning is in force).
+ *
+ * Computed on the first call and memoised per zoning state (months sharing it share the object).
+ * The arrays are returned by reference: callers must not mutate any of them. They are shared by
+ * every caller of the state, `sources` is the one `limitsAt` reads, and none is promised apart
+ * from the dataset's stock columns (`stories` is a fresh copy today, but may come to alias
+ * `layers.parcels.envelopeStories` when nothing changes). The wrapper is frozen.
+ *
+ * Pass `timeline.frameAt(month)` of the timeline in use, as for `limitsAt`. Throws `RangeError`
+ * for a frame no live compile handed out.
+ */
+export function cityInputAt(frame: PolicyFrame): FrameCityInput {
+  const a = attributionOf(frame, 'cityInputAt');
+  const r = (a.resolved ??= resolve(a));
+  if (r.city !== null) return r.city;
+  const { layers } = a;
+  const res = resolveEnvelopes(layers, leversOf(a), a.asOf);
+  // the same protections as `resolve` (one function of the same levers): checked, not assumed
+  const rows = res.protectedRows;
+  let marked = 0;
+  for (let i = 0; i < r.mask.length; i++) marked += r.mask[i];
+  if (rows.length !== marked || rows.some((i) => r.mask[i] !== 1))
+    throw new Error('cityInputAt: the protected rows differ from the attribution’s');
+  const t = res.plan.table;
+  r.city = Object.freeze({
+    stories: t.stories,
+    countable: countableMask(t, layers.parcels.eligible, res.plan.needs, rows),
+    sources: r.sources
+  });
+  return r.city;
 }
 
 /**
