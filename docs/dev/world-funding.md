@@ -166,6 +166,12 @@ Task 12, 2026-11-13, synthCity, quiet (lock held):
 | Whole step, compaction every step | 154.8      | 196.4       | 161.6           | 604     |
 | Whole step, amortized compaction  | 99.3–100.8 | 130.5–132.1 | 105.8–107.2     | 747–814 |
 | Whole step, plus eligibility skip | 98.4–99.0  | 132.3–135.0 | **104.3–104.7** | 627–709 |
+| Plus eligibility before spells    | 99.8–102.6 | 138.0–147.0 | 107.9–111.9     | 664–716 |
+
+The last row's window was noisier: the core's share, whose code did not change, read 71.7–73.6
+µs in it against 61–63 µs before, so that row says nothing for or against the change on an
+ordinary month (planLot 30.2–30.5 µs either way: most lots that reach `planLot` in an ordinary
+month are fundable).
 
 Split (hooks wrapped, both perf changes, two runs): core alone mean 61.0–63.2, planLot 27.6–31.2
 (42.1–44.8 before the eligibility skip), onProjectEvent 13.1–13.5, serve 6.6–6.7, apply 3.6–3.7,
@@ -174,9 +180,14 @@ about 104.5 µs); the core's own share is about 56 to 63 µs.
 
 The whole-city replan month (a frame change at month 121 on a timeline otherwise the same): about
 146k `planLot` calls per world (every free lot: world-core's skip shortcut spares only the
-ordinary clock, and the hook cannot see the due list's `through`). **57 to 61 ms per world** with
-the eligibility skip (133 to 137 ms before), against Task 1's 11.1 ms gated estimate and the 50 ms
-slice.
+ordinary clock, and the hook cannot see the due list's `through`): 133 to 137 ms per world before
+the eligibility skip, 57 to 61 ms with it, and **47.8 to 57.7 ms** with eligibility checked before
+spells (the noisier window above), against Task 1's 11.1 ms gated estimate and the 50 ms slice.
+
+**Eligibility before spells** (`clocksOf`): each kind's eligibility is read on its spell start
+alone (the lot row's free day, or the respelled day from the spell table, without the stream); a
+lot neither kind can fund gets no spells and no stream. `eligibility.spec.ts` checks `planLot`'s
+answer is the same with and without it over a whole-city replan month (synthCity, bench set).
 
 **Eligibility skip** (`apply.ts` `fundableAny`): a kind gets no clock when no frame its spell
 reads (the segments `kindClock` walks) has money offering the kind, gives the lot a chance
