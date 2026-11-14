@@ -26,8 +26,10 @@ export const TOUCH_FROM: LngLat = [-122.419, 37.76014];
 export const TOUCH_TO: LngLat = [-122.4183, 37.76014];
 
 export const PLAN_KEY = 'sfhousing:plan:v1';
-/** The /sim policy's autosave key (`SIM_KEY` in src/lib/sim-page/sim-doc.ts). */
-export const SIM_KEY = 'sfhousing:sim:v1';
+/** The /sim policy's autosave key (`SIM_KEY4` in src/lib/timeline/sim-doc4.ts, schema 4). */
+export const SIM_KEY = 'sfhousing:sim:v2';
+/** The schema 3 autosave key, carried over to `SIM_KEY` on open (`SIM_KEY` in sim-page/sim-doc.ts). */
+export const SIM_KEY_V1 = 'sfhousing:sim:v1';
 
 /** `src/lib/sharing/fixtures/plans/small.json` as raw text (3 ops on fixture-0). */
 export const smallText = readFileSync(
