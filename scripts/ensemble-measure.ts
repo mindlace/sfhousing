@@ -549,6 +549,17 @@ interface Common {
   input: SimInput;
 }
 
+/**
+ * Takes and times one copy, keeping it in `keep` (null: dropped). In a function of its own so no
+ * binding of the caller holds a dropped copy alive (it skewed the heap rows of sections 10 to 12).
+ */
+function copyInto(s: Session, keep: Copy[] | null, ms: number[]): void {
+  const t = now();
+  const copy = takeCopy(s);
+  ms.push(now() - t);
+  if (keep !== null) keep.push(copy);
+}
+
 /** Cases 1 (create), 2 (heap), 3 (fill), 4 (burst), 9 (statics). */
 function caseEnsemble(c: Common) {
   const heap0 = heapMb();
@@ -564,14 +575,9 @@ function caseEnsemble(c: Common) {
 
   const copies: Copy[] = [];
   const copyMs: number[] = [];
-  let t = now();
   const copyAt = (m: number) =>
     c.copyMonths === null ? m % COPY_EVERY === 0 : c.copyMonths.includes(m);
-  if (copyAt(0)) {
-    const copy0 = takeCopy(s);
-    copyMs.push(now() - t);
-    if (!c.dropCopies) copies.push(copy0);
-  }
+  if (copyAt(0)) copyInto(s, c.dropCopies ? null : copies, copyMs);
 
   const burst: Unit[] = [];
   const perMonth: number[] = [];
@@ -617,12 +623,7 @@ function caseEnsemble(c: Common) {
       filledPosts++;
     }
     if (month > 1) perMonth.push(total);
-    if (copyAt(month)) {
-      t = now();
-      const copy = takeCopy(s);
-      copyMs.push(now() - t);
-      if (!c.dropCopies) copies.push(copy);
-    }
+    if (copyAt(month)) copyInto(s, c.dropCopies ? null : copies, copyMs);
   }
   const fillMs = now() - fillStart;
   const copySum = copyMs.reduce((a, b) => a + b, 0);
