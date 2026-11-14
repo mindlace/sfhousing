@@ -508,6 +508,32 @@ describe('SimPage publish and view', () => {
     expect(inspector().getByRole('spinbutton').elements()).toHaveLength(0);
   });
 
+  it('view mode takes a document the route already opened, with its notices', async () => {
+    const shared = doc4(zoning(historic), 'SD');
+    await opened({
+      mode: 'view',
+      persist: 'off',
+      initialText: '{"not":"opened again"}',
+      opened: { doc: shared, notices: [{ id: 'upgraded', text: 'Was older.', tone: 'info' }] }
+    });
+    expect(w().lastOf('openTimeline')!.policy).toEqual(zoning(historic));
+    await expect.element(notices().getByText('Was older.')).toBeVisible();
+  });
+
+  it("a shared text that won't open after a Retry is an alert", async () => {
+    setup({
+      mode: 'view',
+      persist: 'off',
+      calibration: null,
+      calibrationError: true,
+      initialText: '{"schema":4}'
+    });
+    await page.getByRole('button', { name: 'Retry' }).click();
+    await expect
+      .element(page.getByRole('alert').getByText(copyFor('sim').unparsable))
+      .toBeVisible();
+  });
+
   it('the view menu is offered at all times', async () => {
     const viewButton = () => header().getByRole('button', { name: 'View', exact: true });
     const r = await opened();
@@ -817,6 +843,42 @@ describe('SimPage tools', () => {
     // A tap on a building opens its card again.
     stub.props.timelinePick!({ projectId: 'pr-1', parcelId: 'p1', x: 40, y: 40, kind: 'tap' });
     await expect.poll(() => w().all('parcelSummary')).toHaveLength(1);
+  });
+
+  it('"Stop painting" shows while "+" or a pool draft hides the painted policy’s tools', async () => {
+    await opened({ storage: () => seeded(doc4(zoning(painted))) });
+    const stop = () => header().getByRole('button', { name: 'Stop painting' });
+    await openZoning();
+    await page.getByTestId('tl-bar').first().click();
+    await inspector().getByRole('radio', { name: 'Paint' }).click();
+    expect(stop().elements()).toHaveLength(0);
+
+    // "+" over the selected painted policy: its menu hides the tools.
+    await page.getByRole('button', { name: 'Add Permitting policy' }).click();
+    await expect
+      .element(inspector().getByRole('group', { name: 'Add to Permitting' }))
+      .toBeVisible();
+    await expect.element(stop()).toBeVisible();
+
+    // A pool draft hides them too.
+    await page.getByRole('button', { name: 'Add Public money policy' }).click();
+    await page.getByRole('button', { name: 'Your own pool' }).click();
+    await expect.element(inspectorTitle()).toHaveTextContent('Your own pool');
+    await expect.element(stop()).toBeVisible();
+    await stop().click();
+    await expect.poll(() => stub.props.tapCards).toBe(true);
+  });
+
+  it('the transit catalog is asked for once, when the editor first shows', async () => {
+    await opened();
+    expect(w().all('brushCatalog')).toHaveLength(0);
+    const add = page.getByRole('button', { name: 'Add Zoning policy' });
+    await add.click();
+    await expect.poll(() => w().all('brushCatalog')).toHaveLength(1);
+    await inspector().getByRole('button', { name: 'Close editor' }).click();
+    await add.click();
+    await expect.element(inspector().getByRole('group', { name: 'Add to Zoning' })).toBeVisible();
+    expect(w().all('brushCatalog')).toHaveLength(1);
   });
 
   it('closing a pool draft puts focus on the Public money "+"', async () => {

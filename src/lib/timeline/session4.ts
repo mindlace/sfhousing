@@ -26,8 +26,10 @@ import {
   type SimDoc4
 } from './sim-doc4';
 
-export type SimNotice4 = Omit<SimNotice, 'id'> & {
+export type SimNotice4 = Omit<SimNotice, 'id' | 'tone'> & {
   id: SimNotice['id'] | 'upgraded' | 'dates-moved' | 'unparsable';
+  /** 'alert': the page has nothing to show (a shared text that won't open). */
+  tone?: SimNotice['tone'] | 'alert';
 };
 
 /** `from` is the month and year of model month 1. */
@@ -142,9 +144,11 @@ export function restoreSim4(
     if (stored === null) {
       const v1 = planText(storage, SIM_KEY);
       const had = rawItem(storage, SIM_KEY) !== null;
-      if (migrateSimAutosave(storage, ds) === 'migrated') stored = v1;
-      else if (v1 !== null && openSimDoc4(v1, ds).ok) unmigrated = v1;
-      else lost = had;
+      // 'kept': a v2 record is there but unreadable; the restore reports it, the v1 stays put.
+      const m = migrateSimAutosave(storage, ds);
+      if (m === 'migrated') stored = v1;
+      else if (m === 'none' && v1 !== null && openSimDoc4(v1, ds).ok) unmigrated = v1;
+      else if (m === 'none') lost = had;
     }
   }
   const handoffText = remix?.doc ?? unmigrated;

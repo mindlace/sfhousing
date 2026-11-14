@@ -8,7 +8,8 @@
   (`display: contents`, so its empty box adds no gap in the stack): a notice
   added later is announced, and the empty region stays in the accessibility tree. The region
   mounts empty and takes the notices present on load a moment later (LIVE_DELAY_MS), since a
-  screen reader announces a change to a live region, not one that mounts already populated.
+  screen reader announces a change to a live region, not one that mounts already populated. A
+  notice of tone 'alert' (nothing to show) is its own alert region, announced at once.
 -->
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
@@ -68,6 +69,7 @@
     <!-- A notice with its details open is a card: a list does not fit a full-radius pill. -->
     <div
       data-testid="sim-notice"
+      role={n.tone === 'alert' ? 'alert' : undefined}
       class="{PILL} max-w-[min(34rem,100%)]! {n.details && n.details.length > 0 && open[n.id]
         ? 'flex-col! items-stretch! rounded-2xl!'
         : ''}"

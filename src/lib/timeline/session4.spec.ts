@@ -201,6 +201,23 @@ describe('restoreSim4', () => {
     expect(mem.getItem(SIM_KEY)).toBe('{nope');
   });
 
+  it('a corrupt v2 record beside a stale v1 shows the corrupt notice, not the v1', () => {
+    const mem = new MemoryStorage();
+    const old: SimDoc = {
+      schema: 3,
+      kind: 'sim',
+      datasetVersion: 'fixture-0',
+      policy: { ...DEFAULT_POLICY, protect: { ...DEFAULT_POLICY.protect, historic: true } }
+    };
+    mem.setItem(SIM_KEY, record(SIM_CODEC.serialize(old)));
+    for (const bad of ['{nope', JSON.stringify({ v: 1, savedAt: 'x', plan: 7 })]) {
+      mem.setItem(SIM_KEY4, bad);
+      const { doc, notices } = restoreSim4(mem, autosaveOf(mem), ds);
+      expect(doc.policy.kinds).toEqual({ zoning: [], permitting: [], money: [] });
+      expect(notices).toEqual([{ id: 'corrupt', text: SIM.n1, tone: 'info' }]);
+    }
+  });
+
   it('with no storage, the default document and no notices', () => {
     const { doc, notices } = restoreSim4(null, autosaveOf(new MemoryStorage()), ds);
     expect(doc.policy.kinds).toEqual({ zoning: [], permitting: [], money: [] });

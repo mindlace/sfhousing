@@ -10,7 +10,8 @@
   TimelineMode mounts, so its first `policy` is the opened one; with no calibration it opens on
   `oncalibration`, after a Retry's reload. Edit: the v1 autosave migrates to `sfhousing:sim:v2`,
   then the autosave (or a Remix hand-off) is restored through the schema 4 codec, with today's
-  notices. View (`/s/<id>`): the shared text, opened read-only.
+  notices. View (`/s/<id>`): the document the route's load opened, else (no calibration then) the
+  shared text, opened here after a Retry; one that won't open is an alert notice.
   The map (rule 19): with Paint or Erase a stroke goes into the selected painted policy's selected
   span (the span lens); with no painted policy selected a new one is added from the playhead's
   month, holding the stroke, as one change, and selected. A stroke tool is always on show: in the
@@ -110,6 +111,8 @@
     persist?: 'restore' | 'off';
     /** View: the shared document's text (any schema `openSimDoc4` opens). */
     initialText?: string;
+    /** View: the shared document as the route's load opened it (wins over `initialText`). */
+    opened?: { doc: SimDoc4; notices: SimNotice4[] };
     /** The Remix hand-off from /s/<id> (`history.state.sfhSimRemix`). */
     remix?: { from: string; doc?: string; upgradedFrom?: number };
     /** View: the schema the shared document was upgraded from (`/s/<id>`). */
@@ -134,6 +137,7 @@
     title: viewTitle = undefined,
     persist = undefined,
     initialText = undefined,
+    opened: openedByRoute = undefined,
     remix = undefined,
     upgradedFrom = undefined,
     storage = getStorage,
@@ -236,6 +240,12 @@
     const d = ds;
     if (opened || !d) return;
     opened = true;
+    if (openedByRoute !== undefined) {
+      title = viewTitle ?? openedByRoute.doc.title;
+      notices = openedByRoute.notices;
+      load(openedByRoute.doc.policy);
+      return;
+    }
     if (initialText !== undefined) {
       const r = openShared(initialText, d, upgradedFrom);
       if (r.ok) {
@@ -243,7 +253,7 @@
         notices = r.notices;
         load(r.doc.policy);
       } else {
-        notices = [{ id: 'unparsable', text: SIM.unparsable, tone: 'info' }];
+        notices = [{ id: 'unparsable', text: SIM.unparsable, tone: 'alert' }];
         load(store.policy);
       }
       return;
@@ -534,11 +544,14 @@
 
   /**
    * From md, Paint or Erase with the painted policy's tools out of view (closed, another
-   * selection, Results): the header offers the way back to Move. Below md the palette strip does.
+   * selection, Results, or a "+" menu or pool draft in the inspector over the painted policy, as
+   * Inspector picks its face): the header offers the way back to Move. Below md the palette strip
+   * does.
    */
-  const toolOff = $derived(
-    !readonly && wide.current && tools.tool !== 'move' && !(paintRef !== null && face === 'editor')
+  const toolsShown = $derived(
+    paintRef !== null && face === 'editor' && adding === null && drafts.draft?.kind !== 'pool'
   );
+  const toolOff = $derived(!readonly && wide.current && tools.tool !== 'move' && !toolsShown);
 
   // The controller's own tool keys set brush.tool: keep the /sim tool in step.
   $effect(() => {
