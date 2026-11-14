@@ -59,6 +59,7 @@ function data(seed: number | null, o: { seedInvalid?: boolean } = {}) {
   return {
     datasetVersion: 'fixture-0',
     appRelease: 'dev',
+    user: null,
     manifest: parseManifest(manifestJson),
     manifestError: false,
     calibration: fixtureCalibration(),

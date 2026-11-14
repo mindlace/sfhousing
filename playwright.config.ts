@@ -40,8 +40,9 @@ export default defineConfig({
     { name: 'mobile-perf', testMatch: perf, use: mobile, dependencies: ['chromium-perf'] }
   ],
   webServer: {
-    // VITE_E2E=1 compiles the map debug hook (window.__sfhMap) into this build only.
-    command: `npm run data:fixture && npm run db:migrate && VITE_E2E=1 npm run build && wrangler dev --port ${port} --var ENVIRONMENT:development --var PUBLIC_DATASET_VERSION:fixture-0`,
+    // VITE_E2E=1 compiles the map debug hook (window.__sfhMap) and the e2e seams into this build
+    // only. wrangler dev does not read .dev.vars here, so the auth secret and URL are passed in.
+    command: `npm run data:fixture && npm run db:migrate && VITE_E2E=1 npm run build && wrangler dev --port ${port} --var ENVIRONMENT:development --var PUBLIC_DATASET_VERSION:fixture-0 --var BETTER_AUTH_SECRET:e2e-local-secret-000000000000000000000000 --var BETTER_AUTH_URL:http://localhost:${port}`,
     url: `http://localhost:${port}/about`,
     // A reused :4173 server may be a stale build from another worktree, which silently tests the wrong code; Playwright now fails loudly if the port is busy.
     reuseExistingServer: false,

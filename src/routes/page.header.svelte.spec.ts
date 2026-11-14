@@ -17,7 +17,8 @@ const data = {
   fellBack: false,
   manifestError: false,
   datasetVersion: 'fixture-0',
-  appRelease: 'dev'
+  appRelease: 'dev',
+  user: null
 };
 
 const box = (el: Element) => el.getBoundingClientRect();

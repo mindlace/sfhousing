@@ -33,7 +33,8 @@ function data(m: Manifest = manifest, plan: Plan = emptyPlan('fixture-0')) {
     fellBack: false,
     manifestError: false,
     datasetVersion: 'fixture-0',
-    appRelease: 'dev'
+    appRelease: 'dev',
+    user: null
   };
 }
 
