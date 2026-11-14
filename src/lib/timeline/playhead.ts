@@ -1,0 +1,98 @@
+// Playhead rules for the timeline: keys, the filled end, and the view-month gate.
+import { dayFromUtc, monthIndex, nextMonth, prevMonth, shiftYear, utcParts } from '$lib/fzp/time';
+import { monthOfDay } from '$lib/sim/world/months';
+import type { Day } from '$lib/timelapse/time';
+
+/** Calendar month index of `day` in `months` (clamped to [0, months.length - 1]). */
+export function indexOfDay(months: Day[], day: Day): number {
+  return monthIndex(day, months[0], months.length);
+}
+
+/** The last day of calendar month `filledThrough`; `asOf` when nothing is filled. */
+export function filledEndDay(months: Day[], filledThrough: number, asOf: Day): Day {
+  if (filledThrough < 0 || months.length === 0) return asOf;
+  const k = Math.min(filledThrough, months.length - 1);
+  if (k + 1 < months.length) return months[k + 1] - 1;
+  const { y, m } = utcParts(months[k]);
+  return dayFromUtc(y, m + 1, 1) - 1;
+}
+
+/** The model month the playhead is in, for `viewMonth`: max(1, monthOfDay(asOf, day)). */
+export function viewMonthOf(asOf: Day, day: Day): number {
+  return Math.max(1, monthOfDay(asOf, day));
+}
+
+/** The day a key moves the playhead to, or null for a key it ignores (rule 23). */
+export function keyTarget(key: string, day: Day, asOf: Day, end: Day): Day | null {
+  switch (key) {
+    case 'ArrowLeft':
+    case 'ArrowDown':
+      return prevMonth(day, asOf);
+    case 'ArrowRight':
+    case 'ArrowUp':
+      return nextMonth(day, end);
+    case 'PageDown':
+      return shiftYear(day, -1, asOf, end);
+    case 'PageUp':
+      return shiftYear(day, 1, asOf, end);
+    case 'Home':
+      return asOf;
+    case 'End':
+      return end;
+    default:
+      return null;
+  }
+}
+
+/** Clamps a requested day into [asOf, end]. */
+export function clampDay(day: Day, asOf: Day, end: Day): Day {
+  return Math.min(Math.max(day, asOf), Math.max(asOf, end));
+}
+
+interface GateDeps {
+  send(month: number): void;
+  now(): number;
+  setTimeout: typeof setTimeout;
+  clearTimeout: typeof clearTimeout;
+  minMs?: number;
+}
+
+/** Sends the wanted view month at most once per `minMs`; the latest wanted goes out after the gap. */
+export class MonthGate {
+  #deps: GateDeps;
+  #lastSent = -Infinity;
+  #pending: number | null = null;
+  #timer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(deps: GateDeps) {
+    this.#deps = deps;
+  }
+
+  want(month: number): void {
+    const wait = this.#lastSent + (this.#deps.minMs ?? 250) - this.#deps.now();
+    if (this.#timer === null && wait <= 0) {
+      this.#fire(month);
+      return;
+    }
+    this.#pending = month;
+    if (this.#timer === null) {
+      this.#timer = this.#deps.setTimeout(() => {
+        this.#timer = null;
+        const m = this.#pending;
+        this.#pending = null;
+        if (m !== null) this.#fire(m);
+      }, wait);
+    }
+  }
+
+  dispose(): void {
+    if (this.#timer !== null) this.#deps.clearTimeout(this.#timer);
+    this.#timer = null;
+    this.#pending = null;
+  }
+
+  #fire(month: number): void {
+    this.#lastSent = this.#deps.now();
+    this.#deps.send(month);
+  }
+}
