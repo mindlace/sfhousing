@@ -2,7 +2,7 @@
 // offer of the kind, no chance in the view, or the lot's largest size below the least `minHomes`
 // offered) gets no clock. Exact: runs with and without the skip give the same events, ledger and
 // world, and every skipped (lot, kind) has a clock with no day.
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import { seedHash } from '$lib/sim/scenario/rng';
 import type { ProjectKind } from '$lib/timelapse/types';
@@ -116,9 +116,20 @@ describe.each([['baseline'], ['bench']] as const)(
     const statics = staticsOf(input);
     const timeline = moneyTimeline(input, doc);
 
-    it.each([1, 2, 3])(`synthCity ${set} seed %i, 24 months: the same with and without`, (seed) => {
-      const got = same(statics, timeline, seed, 24);
-      expect(got.events.some((e) => e.kind === 'award')).toBe(true);
+    describe.each([1, 2, 3])(`synthCity ${set} seed %i`, (seed) => {
+      // The run without the skip is the reference: made in a hook, outside the test's budget.
+      let without: Run;
+      beforeAll(() => {
+        without = run(createFundingSystem(), statics, timeline, seed, 24, false);
+      });
+
+      it(`synthCity ${set} seed ${seed}, 24 months: the same with and without`, () => {
+        const got = run(createFundingSystem(), statics, timeline, seed, 24, true);
+        expect(got.events).toEqual(without.events);
+        expect(got.ledger).toEqual(without.ledger);
+        expect(got.world).toEqual(without.world);
+        expect(got.events.some((e) => e.kind === 'award')).toBe(true);
+      });
     });
 
     it(`synthCity ${set} seed 1, 6 months: every skipped kind's clock has no day`, () => {
