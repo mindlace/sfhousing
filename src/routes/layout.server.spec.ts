@@ -3,6 +3,9 @@ import { DATASET_VERSION_RE } from '$lib/data/dataset-version';
 
 vi.mock('$env/dynamic/public', () => ({ env: {} }));
 vi.mock('$app/environment', () => ({ dev: false }));
+const userHasPasskey = vi.hoisted(() => vi.fn());
+vi.mock('$lib/server/user-store/passkey', () => ({ userHasPasskey }));
+vi.mock('$lib/server/db', () => ({ getDb: () => ({}) }));
 
 import { load } from './+layout.server';
 
@@ -53,6 +56,53 @@ describe('root layout load', () => {
   it('serves user: null to a signed-out visitor', async () => {
     const result = await load({ locals: { user: null } } as never);
     expect(result).toMatchObject({ user: null });
+  });
+
+  describe('known-device refresh', () => {
+    const cookiesFor = (known = false) => {
+      const set = vi.fn();
+      return { set, get: (n: string) => (known && n === 'sfh_known' ? '1' : undefined) };
+    };
+
+    async function run(opts: { pseudonymous: boolean; passkey: boolean; known?: boolean }) {
+      const cookies = cookiesFor(opts.known);
+      userHasPasskey.mockResolvedValue(opts.passkey);
+      await load({
+        platform: { env: {} },
+        locals: {
+          user: { id: 'ident-1', pseudonymous: opts.pseudonymous },
+          session: { id: 's1', userId: 'live-1' }
+        },
+        cookies
+      } as never);
+      return cookies.set;
+    }
+
+    it('marks the device known for a registered user', async () => {
+      const set = await run({ pseudonymous: false, passkey: false });
+      expect(set).toHaveBeenCalledWith('sfh_known', '1', expect.anything());
+    });
+
+    it('marks the device known for a pseudonymous user with a passkey', async () => {
+      const set = await run({ pseudonymous: true, passkey: true });
+      expect(set).toHaveBeenCalledWith('sfh_known', '1', expect.anything());
+    });
+
+    it('leaves a pseudonymous user without a passkey unmarked', async () => {
+      const set = await run({ pseudonymous: true, passkey: false });
+      expect(set).not.toHaveBeenCalled();
+    });
+
+    it('does not re-set an existing marker', async () => {
+      const set = await run({ pseudonymous: false, passkey: false, known: true });
+      expect(set).not.toHaveBeenCalled();
+    });
+
+    it('never reads the passkey table when signed out', async () => {
+      userHasPasskey.mockClear();
+      await load({ locals: { user: null }, cookies: cookiesFor() } as never);
+      expect(userHasPasskey).not.toHaveBeenCalled();
+    });
   });
 
   it('throws 500 on a malformed override in development', () => {

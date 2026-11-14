@@ -1,0 +1,40 @@
+import { redirect } from '@sveltejs/kit';
+import type { Actions, PageServerLoad } from './$types';
+import { getDb } from '$lib/server/db';
+import { clearPendingSim, readPendingSim } from '$lib/server/onboarding/pending-sim';
+import { listSimsForUser } from '$lib/server/sims/sim-index';
+import { simQuotaExceeded } from '$lib/server/sims/sim-quota';
+import { createSim } from '$lib/server/sims/sims';
+import { startSim } from '$lib/server/sims/start-sim';
+
+export const load: PageServerLoad = async (event) => {
+  const { locals, platform } = event;
+  if (!locals.user) return { sims: [] };
+  const db = getDb(platform!);
+
+  // Resume a sim the visitor typed before being routed to sign-in: create it now, clear
+  // the cookie, and drop them in. Over the quota the cookie is already cleared, so the
+  // load falls through to the list (a load cannot fail()).
+  const pendingTitle = readPendingSim(event.cookies);
+  if (pendingTitle) {
+    clearPendingSim(event.cookies);
+    if (!(await simQuotaExceeded(db, locals.user))) {
+      const { simId } = await createSim({ db, title: pendingTitle, managerId: locals.user.id });
+      throw redirect(303, `/sims/${simId}`);
+    }
+  }
+
+  const sims = await listSimsForUser({ db, userId: locals.user.id });
+  sims.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+  return { sims };
+};
+
+export const actions: Actions = {
+  create: async (event) => {
+    const form = await event.request.formData();
+    const raw = form.get('title');
+    const result = await startSim(event, typeof raw === 'string' ? raw : '');
+    if ('simId' in result) throw redirect(303, `/sims/${result.simId}`);
+    return result;
+  }
+};
