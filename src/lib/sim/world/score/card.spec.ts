@@ -317,7 +317,7 @@ describe('cardAt: funded fields from a funded world', () => {
   const timeline = oneMoneyTimeline(input, input.finance!);
   const frame = timeline.frameAt(1);
   const deps = depsOf(false);
-  const { world } = runFunded(statics, timeline, 1, horizonMonth(input.asOf));
+  const { world, events } = runFunded(statics, timeline, 1, horizonMonth(input.asOf));
   const p = world.projects;
   const fundedRows: number[] = [];
   for (let r = 0; r < p.n; r++)
@@ -345,6 +345,28 @@ describe('cardAt: funded fields from a funded world', () => {
       expect(cardOf(r).kind).toBeUndefined();
   });
 
-  // waits for world-funding shadows sha
-  it.todo('funding.displaced is 0 before the displaced event and the shadow’s homes from its day');
+  it('funding.displaced is 0 before the displaced event and the shadow’s homes from its day', () => {
+    // Rule 15: the schedule's field on `day`, which the card reads its project from.
+    const shown = (row: number, day: Day) => {
+      const s = scheduleAt(world, statics, row, day);
+      if (s === null) return null;
+      const card = cardAt(world, statics, frame, deps, s.parcelIds[0], day, s.projectId);
+      expect(card.summary.project?.projectId).toBe(s.projectId);
+      return s.funding!.displaced;
+    };
+    let checked = 0;
+    for (const e of events) {
+      if (e.kind !== 'displaced') continue;
+      expect(e.units).toBeGreaterThan(0);
+      // Each funded row has at most one shadow, so one 'displaced' event.
+      expect(events.filter((x) => x.kind === 'displaced' && x.row === e.row)).toHaveLength(1);
+      expect(shown(e.row, e.day)).toBe(e.units);
+      expect(shown(e.row, late)).toBe(e.units);
+      const before = shown(e.row, e.day - 1);
+      if (before === null) continue; // the row began on the event's day
+      expect(before).toBe(0);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
 });

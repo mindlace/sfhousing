@@ -26,7 +26,7 @@ World 1's money and tiers, `MoneyView` and limit statements are built; the funde
 
 Creation events (the `'start'` of every row at world creation) are emitted inside `createWorld`, before it returns. Add them after it returns, then feed the steps. A row needs its `'start'` before any other event (`known` throws).
 
-The series keeps its own per-row state (stage, open span start, units, entitled day, a master's pending and filed phases), so it never reads rows back from the world: a restored series needs only its `WorldSeriesData`. `'award'` is ignored; `'displaced'` throws until world-funding.
+The series keeps its own per-row state (stage, open span start, units, entitled day, a master's pending and filed phases), so it never reads rows back from the world: a restored series needs only its `WorldSeriesData`. `'award'` records the row's award day (for tiers); `'displaced'` adds its units to `displacedHomes` in the calendar month of its own day (rule 2), whether or not the funded project has completed.
 
 ## Calendar months
 
@@ -90,14 +90,14 @@ The lot-limits line comes from `limitsOf(frame, parcelId)` (owner and protection
 
 ## Funded worlds
 
-What money and tiers will read, from world-funding as merged (`displaced` events and shadows, policy-change remake and lapse are not in yet). Paths under `src/lib/sim/`.
+What money and tiers read, from world-funding as merged (shadows and `'displaced'` events, policy-change remake and lapse included). Paths under `src/lib/sim/`.
 
 - **Ledger.** `StepSink.ledger?(e)` (`world/types.ts:152-155`) gets today's `LedgerEvent` (`scenario/money.ts:20`, shape `scenario/engine.ts:72-78`): `{ day, pool, programme, kind, dollars }`, kind `in | commit | spend | repay | loss | release`. No project row. `createWorld` sends none (`funding/system.ts:26-31`); a month whose frame has `finance` null calls no hook (`world/world.ts:220`). So world 1's ledger since month 0 is every step's entries from month 1, in order.
   - `in` (programme null): system 2, from `frame.finance.arrivals`, 0 dollars skipped (`funding/pools.ts:32-45`). Month 1 holds the dataset date.
   - `commit`: on the award day, before `startProject` (`funding/serve.ts:60-62`, `funding/pools.ts:61-101`). The `'award'` world event comes after the chain `startProject` began (`funding/serve.ts:67`).
   - `spend` on entering construction; `repay`, `release`, `loss` at `'end'`, on the event's day, sorted within the event as today (`funding/pools.ts:118-193`).
   - Days do not ascend within a month (system order). `poolSeries` takes the ledger as is (`funding/funded.spec.ts:231-266`).
-- **Row columns** (`world/types.ts:109-117`, written by `startProject`, `world/world.ts:382-390`): `funded` (1 on a funded start), `kind` (0 market, 1 affordable), `applied`, `granted`, `lent`, `guaranteed` (project dollars), `programmes` (ids joined with `,`, paying ones only). `certain` (`world/world.ts:363`). Size from `units`/`stories` and the revision table. `dispN`, `dispRow`, `dispDay`, `dispUnits` (`world/types.ts:125-129`) stay empty until shadows land. `scheduleAt` reads them into `Schedule.funding` (`world/read.ts:80-90`).
+- **Row columns** (`world/types.ts:109-117`, written by `startProject`, `world/world.ts:382-390`): `funded` (1 on a funded start), `kind` (0 market, 1 affordable), `applied`, `granted`, `lent`, `guaranteed` (project dollars), `programmes` (ids joined with `,`, paying ones only). `certain` (`world/world.ts:363`). Size from `units`/`stories` and the revision table. `dispN`, `dispRow`, `dispDay`, `dispUnits` (`world/types.ts:125-129`): one entry per shadow that displaced homes, on its `'displaced'` event's day. `scheduleAt` reads them into `Schedule.funding` (`world/read.ts:80-90`).
 - **Pools** (`funding/columns.ts:48-72`, through `fundOf(world)`): per pool id `received`, `committed`, `spentGrant`, `outLoan`, `lostLoan`, `lostGuarantee`; money rows `mRow`… for awards with events to come.
 - **`FinanceFrame`**: `timeline.frameAt(m).finance` (`world/policy/frame.ts:32-43`), null without money; `frameMoney(timeline, frame)` indexes it (`funding/frame-money.ts`). `scoreStaticsOf` builds the tier table from it (see Tiers).
 - **Building one in a test** (`funding/test/fixtures.ts`): `fundedMini()` (:33), `benchFunded(benchInput())` (:47, Node), the live city's `liveInput(dir)` already carries baseline `finance` when its calibration has `market` and `baselineFunding` (`scenario/input.ts:76-94`). Then `oneMoneyTimeline(input, input.finance!)` (:104) and `runFunded(staticsOf(input), timeline, seed, through, { afterStep })` (:230) for `{ world, events, ledger }`; `withFunding(createFundingSystem())` for your own feed. `randomFinance(seed)` (:155) for loans, guarantees, losses; `checkStep` (`funding/test/identities.ts:45`) for E1-E7.
@@ -105,5 +105,6 @@ What money and tiers will read, from world-funding as merged (`displaced` events
 ## Known gaps
 
 - The funded card fields are not built.
-- `perAddedHome` keeps today's denominator: world 1's `fundedHomes - displacedHomes` at `filledThrough` (ruled 2026-11-13), not the plan effect.
+- `perAddedHome` keeps today's denominator: world 1's `fundedHomes - displacedHomes` at `filledThrough` (ruled 2026-11-13), not the plan effect. With rule 2 the two halves count at different times: `fundedHomes` at completion, `displacedHomes` on the shadow's day, including funded projects still building or that dropped out. At the horizon `displacedHomes` is `moneyOf`'s plus the displaced homes of funded rows not completed by then, so it is never smaller than today's, and the denominator can reach 0 where today's is positive (`perAddedHome` null): funded mini, 480 months, seeds 4 and 21 of 1-50.
+- A money change mid-window re-makes or lapses waiting applications; none of that reaches the series. An application is not a project row: only an award starts a row and sends one `'award'`, so funded homes, tiers and the award day the tiers read are per funded row (`score/lapse.spec.ts`).
 - A project's `'award'` world event arrives after the stage events of the chain `startProject` begins (it runs synchronously). Read awards by project row, never by position relative to stage events.

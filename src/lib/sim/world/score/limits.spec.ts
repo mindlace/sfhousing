@@ -6,7 +6,13 @@ import { debtService, limitStatements } from '$lib/sim/finance';
 import { buildFinance } from '$lib/sim/levers/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
-import { addedBorrowing, cityOf, moneyOf, perAddedHome } from '$lib/sim/scenario/finance-score';
+import {
+  addedBorrowing,
+  cityOf,
+  displacedShare,
+  moneyOf,
+  perAddedHome
+} from '$lib/sim/scenario/finance-score';
 import { miniCalibrationWithRoutes, miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
 import { monthsOf } from '$lib/sim/scenario/score';
 import type { SimInput } from '$lib/sim/scenario/types';
@@ -21,7 +27,7 @@ import { miniDoc, span } from '../policy/test/fixtures';
 import { staticsOf, type Statics } from '../statics';
 import { readAll } from '../test/run';
 import { frameOf, oneFrame } from '../test/timeline';
-import type { World } from '../types';
+import type { World, WorldEvent } from '../types';
 import { chunkOf } from './chunk';
 import { createWorldSeries } from './series';
 import { horizonOf, planFinanceOf, scoreStaticsOf } from './statics';
@@ -161,6 +167,8 @@ interface Run {
   series: WorldSeries;
   world: World;
   feed: MoneyFeed;
+  /** Every 'displaced' event. */
+  displaced: Extract<WorldEvent, { kind: 'displaced' }>[];
 }
 
 let statics: Statics;
@@ -173,14 +181,17 @@ function run(seed: number): Run {
   let r = runs.get(seed);
   if (r === undefined) {
     const series = createWorldSeries(score);
-    const got = feedFunded(statics, timeline, seed, W, series);
+    const displaced: Run['displaced'] = [];
+    const got = feedFunded(statics, timeline, seed, W, series, (e) => {
+      if (e.kind === 'displaced') displaced.push(e);
+    });
     const feed: MoneyFeed = {
       ledger: got.ledger,
       finance: timeline.frameAt(1).finance!,
       world: got.world,
       statics
     };
-    r = { series, world: got.world, feed };
+    r = { series, world: got.world, feed, displaced };
     runs.set(seed, r);
   }
   return r;
@@ -342,7 +353,12 @@ describe('the money view at filledThrough (rule 12)', () => {
       months: monthsOf(INPUT.asOf, horizon)
     });
     expect(Object.keys(v.money!).sort()).toEqual(Object.keys(today).sort());
-    expect({ ...v.money!, limits: [] }).toEqual({ ...today, limits: [] });
+    // `displacedHomes` counts each 'displaced' event in its own month (rule 2), not at the funded
+    // project's completion as `moneyOf` does: money.spec.ts checks it against the events.
+    const strip = (m: typeof today) => ({ ...m, limits: [], displacedHomes: [] });
+    expect(strip(v.money!)).toEqual(strip(today));
+    const upTo = r.displaced.filter((e) => e.day <= horizon).reduce((a, e) => a + e.units, 0);
+    expect(v.money!.displacedHomes[ft]).toBe(upTo);
     expect(v.money!.limits).toEqual(score.limits);
     for (const p of v.money!.pools) expect(p.received).toHaveLength(ft + 1);
   });
@@ -371,6 +387,7 @@ describe('the money view at filledThrough (rule 12)', () => {
     let some = 0;
     let none = 0;
     let differ = 0;
+    let displacing = 0;
     for (let ft = 0; ft <= score.lastIndex; ft += 6) {
       const a = viewOf([chunk(r, twin(1), 0, ft)], score);
       const b = viewOf([chunk(r, twin(7), 0, ft)], score);
@@ -380,6 +397,9 @@ describe('the money view at filledThrough (rule 12)', () => {
       const city = d <= 0 ? null : Math.round(cityOf(m, ft) / d);
       expect(perAddedHome(m, a.filledThrough, 'all')).toBe(all);
       expect(perAddedHome(m, a.filledThrough, 'city')).toBe(city);
+      const f = m.fundedHomes[ft];
+      expect(displacedShare(m, a.filledThrough)).toBe(f <= 0 ? null : m.displacedHomes[ft] / f);
+      if (all !== null && m.displacedHomes[ft] > 0) displacing++;
       // the plan effect does not enter: another twin leaves the money as it was
       if (JSON.stringify(a.planEffect) !== JSON.stringify(b.planEffect)) differ++;
       expect(b.money).toEqual(a.money);
@@ -389,5 +409,7 @@ describe('the money view at filledThrough (rule 12)', () => {
     expect(differ).toBeGreaterThan(0);
     expect(some).toBeGreaterThan(0);
     expect(none).toBeGreaterThan(0);
+    // Displacement is non-zero at some of the months checked: it enters the denominator.
+    expect(displacing).toBeGreaterThan(0);
   });
 });

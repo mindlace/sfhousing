@@ -1,10 +1,12 @@
 // Rules 2 and 9 on funded worlds: world 1's pool series are `poolSeries` of its ledger by
-// calendar month, `fundedHomes` is `moneyOf`'s, and money in a chunk is world 1's alone.
+// calendar month, `fundedHomes` is `moneyOf`'s, `displacedHomes` counts each 'displaced' event in
+// its own month (today counts them when the funded project completes), and money in a chunk is
+// world 1's alone.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
 import { moneyOf, poolSeries } from '$lib/sim/scenario/finance-score';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
-import { monthsOf } from '$lib/sim/scenario/score';
+import { monthIndexer, monthsOf } from '$lib/sim/scenario/score';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
 import { benchFunded, fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';
@@ -24,11 +26,17 @@ type Finance = NonNullable<SimInput['finance']>;
 /** The last day of calendar month `i` from the dataset month. */
 const lastDay = (asOf: Day, i: number): Day => addMonths(firstOfMonth(asOf), i + 1) - 1;
 
+type Displaced = Extract<WorldEvent, { kind: 'displaced' }>;
+
 interface Run {
   series: WorldSeries;
   world: World;
   ledger: LedgerEvent[];
   feed: MoneyFeed;
+  /** Every 'displaced' event, in the order sent. */
+  displaced: Displaced[];
+  /** Each row's completion day. */
+  completed: Map<number, Day>;
 }
 
 interface City {
@@ -55,14 +63,20 @@ function cityOf(input: SimInput, months: number): City {
 
 function run(c: City, seed: number, onEvent?: (e: WorldEvent, w: World) => void): Run {
   const series = createWorldSeries(c.score);
-  const got = feedFunded(c.statics, c.timeline, seed, c.months, series, onEvent);
+  const displaced: Displaced[] = [];
+  const completed = new Map<number, Day>();
+  const got = feedFunded(c.statics, c.timeline, seed, c.months, series, (e, w) => {
+    if (e.kind === 'displaced') displaced.push(e);
+    else if (e.kind === 'end' && e.how === 'complete') completed.set(e.row, e.day);
+    onEvent?.(e, w);
+  });
   const feed: MoneyFeed = {
     ledger: got.ledger,
     finance: c.timeline.frameAt(1).finance!,
     world: got.world,
     statics: c.statics
   };
-  return { series, ...got, feed };
+  return { series, ...got, feed, displaced, completed };
 }
 
 /** `moneyOf` over the schedules read on the last final day and the same ledger. */
@@ -109,9 +123,47 @@ function checkHomes(c: City, r: Run): number {
   const want = today(c, r, through);
   expect(got.map((m) => m.fundedHomes)).toEqual(want.fundedHomes);
   expect(got.map((m) => m.publicSpent)).toEqual(want.publicSpent);
-  // No 'displaced' event is sent yet (world-funding's shadows): both sides are 0 every month.
-  expect(got.map((m) => m.displacedHomes)).toEqual(want.displacedHomes);
+  // `displacedHomes` differs from `moneyOf`'s by design (rule 2): see `checkDisplaced`.
+  // Not degenerate: world-funding's shadows send 'displaced' events.
+  expect(checkDisplaced(c, r, got, want.displacedHomes).length).toBeGreaterThan(0);
   return want.fundedHomes[through];
+}
+
+/** The calendar month of each day through the last day of final month `through`. */
+function monthOfDayIn(c: City, through: number): (d: Day) => number {
+  const horizon = lastDay(c.input.asOf, through);
+  const idx = monthIndexer(monthsOf(c.input.asOf, horizon), horizon);
+  const m0 = firstOfMonth(c.input.asOf);
+  return (d) => idx(Math.max(d, m0));
+}
+
+/**
+ * Rule 2 against the events: month by month, `displacedHomes` is the running sum of the
+ * 'displaced' events by their own calendar month. At the horizon it is also `moneyOf`'s (which
+ * counts a completed funded row's displaced homes as of the horizon, in its completion month) plus
+ * the displaced homes of funded rows not completed by then. Returns the events within the horizon.
+ */
+function checkDisplaced(
+  c: City,
+  r: Run,
+  got: { displacedHomes: number }[],
+  today: number[]
+): Displaced[] {
+  const through = got.length - 1;
+  const horizon = lastDay(c.input.asOf, through);
+  const monthOf = monthOfDayIn(c, through);
+  const events = r.displaced.filter((e) => e.day <= horizon);
+  const want = new Array<number>(through + 1).fill(0);
+  for (const e of events) want[monthOf(e.day)] += e.units;
+  for (let i = 1; i <= through; i++) want[i] += want[i - 1];
+  expect(got.map((m) => m.displacedHomes)).toEqual(want);
+  let open = 0;
+  for (const e of events) {
+    const done = r.completed.get(e.row);
+    if (done === undefined || done > horizon) open += e.units;
+  }
+  expect(got[through].displacedHomes).toBe(today[through] + open);
+  return events;
 }
 
 describe('world 1 money, funded mini', () => {
@@ -227,12 +279,43 @@ describe('world 1 money, funded mini', () => {
     expect(extrasOf(whole).homes(0, through)).toEqual(extrasOf(r.series).homes(0, through));
   });
 
-  it.todo(
-    // Waits for world-funding shadows sha: no 'displaced' event is sent yet, and the test is not
-    // to hand-build one. Then: find a 'displaced' event whose row completes in a later calendar
-    // month or not by the horizon; displacedHomes steps up by e.units at monthOf(e.day) only.
-    'a displaced event counts in its own month whether or not the funded project has completed'
-  );
+  it('a displaced event counts in its own month whether or not the funded project has completed', () => {
+    let later = 0;
+    let never = 0;
+    for (const seed of [1, 2, 3]) {
+      const r = runOf(seed);
+      const through = r.series.finalThrough();
+      const horizon = lastDay(c.input.asOf, through);
+      const monthOf = monthOfDayIn(c, through);
+      const homes = extrasOf(r.series).homes(0, through);
+      const step = (i: number) => homes[i].displaced - (i > 0 ? homes[i - 1].displaced : 0);
+      /** The units of the events in calendar month i. */
+      const inMonth = (i: number) =>
+        r.displaced
+          .filter((x) => x.day <= horizon && monthOf(x.day) === i)
+          .reduce((a, x) => a + x.units, 0);
+      for (const e of r.displaced) {
+        if (e.day > horizon) continue;
+        expect(r.world.projects.funded[e.row]).toBe(1);
+        const i = monthOf(e.day);
+        const done = r.completed.get(e.row);
+        const doneMonth = done === undefined || done > horizon ? null : monthOf(done);
+        if (doneMonth === i) continue;
+        // Its own month steps up by its units (with any other event of that month) ...
+        expect(e.units).toBeGreaterThan(0);
+        expect(step(i)).toBe(inMonth(i));
+        // ... and its row's completion month holds only that month's own events.
+        if (doneMonth === null) never++;
+        else {
+          expect(step(doneMonth)).toBe(inMonth(doneMonth));
+          if (doneMonth > i) later++;
+        }
+      }
+    }
+    // Both cases occur: a row completing in a later month, and one not completed by the horizon.
+    expect(later).toBeGreaterThan(0);
+    expect(never).toBeGreaterThan(0);
+  });
 });
 
 describe('world 1 money, funded bench', () => {
