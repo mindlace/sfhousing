@@ -10,9 +10,11 @@ import { DEFAULT_POLICY, type SimPolicy } from '$lib/sim-page/policy';
 import { addPreset, fundingPresets, nextAddedId } from '$lib/sim-page/funding-presets';
 import { PRESETS, resolvePreset, timingLabel, type PresetId } from '$lib/sim-page/timing';
 import { newLayer } from '$lib/sim-page/transit-edit';
+import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import { monthFirstDay } from '$lib/sim/world/months';
 import type { Calibration, Pool } from '$lib/timelapse/types';
+import { CUSTOM_TIMING_LABEL } from './lens';
 import type { Effect, Policy, PolicyKind, Selector, SimPolicy4 } from './policy4';
 import type { SpanRef, TimelineWindow } from './spans';
 import { upgradePolicy } from './upgrade';
@@ -73,11 +75,12 @@ export function addChoices(
     }
     case 'permitting':
       return [
-        ...PRESETS.filter((p) => p.available).map((p) => ({
+        // Observed timing is the fixed row, not an addition.
+        ...PRESETS.filter((p) => p.available && p.id !== 'observed').map((p) => ({
           choice: { kind, what: 'preset' as const, preset: p.id },
           label: p.name
         })),
-        { choice: { kind, what: 'custom' }, label: 'Custom timing' }
+        { choice: { kind, what: 'custom' }, label: CUSTOM_TIMING_LABEL }
       ];
     case 'money':
       if (!hasMoney(cal)) return [];
@@ -153,7 +156,7 @@ function created(doc: SimPolicy4, choice: AddChoice, cal: Calibration): Policy[]
       if (got.length > 0) return got;
       // Observed timing: schema 3 holds it as "no change", so build the policy.
       const set = p3.timing.current;
-      const label = choice.what === 'custom' ? 'Custom timing' : timingLabel(set);
+      const label = choice.what === 'custom' ? CUSTOM_TIMING_LABEL : timingLabel(set);
       return [direct('timing', label, { tag: 'routes' }, { tag: 'timing', set }, set.preset)];
     }
     case 'money': {
@@ -170,6 +173,9 @@ function created(doc: SimPolicy4, choice: AddChoice, cal: Calibration): Policy[]
         return [direct('terms', 'Market terms', { tag: 'terms' }, { tag: 'terms', terms: {} })];
       const have = documentFunding(doc);
       if (choice.what === 'fund') {
+        // As addPreset: past the pool limit over the document, a RangeError.
+        if (have.pools.length + 1 > FINANCE_LIMITS.pools)
+          throw new RangeError(`at most ${FINANCE_LIMITS.pools} pools`);
         p3.funding.pools = [{ ...structuredClone(choice.pool), id: nextAddedId(have, 'pool') }];
         return upgraded();
       }

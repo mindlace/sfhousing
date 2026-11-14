@@ -5,7 +5,9 @@ import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
 import { monthFirstDay } from '$lib/sim/world/months';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration, Pool } from '$lib/timelapse/types';
+import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
 import { addChoices, addPolicy, type AddChoice } from './add';
+import { CUSTOM_TIMING_LABEL } from './lens';
 import { parsePolicy4 } from './parse4';
 import { DEFAULT_POLICY4, type PolicyKind, type SimPolicy4 } from './policy4';
 import { reconcilePolicy4 } from './reconcile4';
@@ -205,5 +207,24 @@ describe('addChoices', () => {
       what: 'preset',
       preset: 'benchmarkPermits'
     });
+    expect(list.map((c) => c.choice)).not.toContainEqual({
+      kind: 'permitting',
+      what: 'preset',
+      preset: 'observed'
+    });
+  });
+});
+
+describe('addPolicy fixes', () => {
+  it('custom timing starts from the observed set under the custom label', () => {
+    const { doc, ref } = addPolicy(DEFAULT_POLICY4, { kind: 'permitting', what: 'custom' }, ctx(4));
+    expect(policyOf(doc, 'permitting', ref.id)!.label).toBe(CUSTOM_TIMING_LABEL);
+  });
+
+  it('an own pool past the document’s pool limit throws RangeError, as a preset does', () => {
+    let doc = DEFAULT_POLICY4;
+    for (let i = 0; i < FINANCE_LIMITS.pools; i++) doc = addPolicy(doc, fundChoice, ctx(13)).doc;
+    expect(() => parsePolicy4(structuredClone(doc), { asOf })).not.toThrow();
+    expect(() => addPolicy(doc, fundChoice, ctx(13))).toThrow(RangeError);
   });
 });

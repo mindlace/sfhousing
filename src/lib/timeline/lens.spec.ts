@@ -1,14 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { DEFAULT_POLICY, type SimPolicy, type TransitBand } from '$lib/sim-page/policy';
-import { OBSERVED_TIMING } from '$lib/sim-page/timing';
+import { limitAlert } from '$lib/sim-page/funding-copy';
+import { OBSERVED_TIMING, timingLabel, type TimingSet } from '$lib/sim-page/timing';
 import { replaceRule } from '$lib/sim-page/transit-edit';
+import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
 import { monthFirstDay, monthLastDay } from '$lib/sim/world/months';
-import { project, spanLens, writeBack } from './lens';
+import type { Programme } from '$lib/timelapse/types';
+import {
+  CUSTOM_TIMING_LABEL,
+  PRESET_PER_POLICY,
+  project,
+  spanLens,
+  tryWriteBack,
+  writeBack
+} from './lens';
+import { parsePolicy4 } from './parse4';
 import type { Effect, Policy, PolicyKind, SimPolicy4 } from './policy4';
 import type { SpanRef } from './spans';
 
-const asOf = 100;
+const asOf = 20000;
 const first = (m: number) => monthFirstDay(asOf, m);
 const last = (m: number) => monthLastDay(asOf, m);
 
@@ -255,6 +266,186 @@ describe('project and writeBack', () => {
     const out = writeBack(richDoc, r, { ...p, timing: { current: set, saved: null } });
     expect(out.kinds.permitting[0].preset).toBe('benchmarkPermits');
     expect(out.kinds.permitting[0].spans[0].what).toEqual({ tag: 'timing', set });
+    // A label the user typed stays.
+    expect(out.kinds.permitting[0].label).toBe('timing');
+  });
+
+  it('an off transit policy projects as off; a rule written back turns it on', () => {
+    const r = ref('zoning', 'r-off');
+    const p = project(richDoc, r);
+    expect(p.rules).toEqual([]);
+    const on = writeBack(richDoc, r, {
+      ...p,
+      rules: [{ id: 'r-off', kind: 'transit', stopTypes: ['regionalRail'], bands: [b2] }]
+    });
+    const q = on.kinds.zoning.find((x) => x.id === 'r-off')!;
+    expect(q.on).toBe(true);
+    expect(q.spans[0].what).toEqual({ tag: 'bands', bands: [b2] });
+  });
+});
+
+describe('timing presets and labels', () => {
+  const observedSet = structuredClone(OBSERVED_TIMING.current);
+  const setOf = (preset: 'observed' | 'benchmarkPermits' | 'noDiscretionary'): TimingSet => ({
+    ...structuredClone(observedSet),
+    preset
+  });
+  const timingDoc = (sets: TimingSet[], label: string): SimPolicy4 => ({
+    schema: 4,
+    kinds: {
+      zoning: [],
+      permitting: [
+        pol(
+          't',
+          { tag: 'routes' },
+          sets.map((set) => ({ tag: 'timing' as const, set })),
+          { preset: sets[0].preset, label }
+        )
+      ],
+      money: []
+    }
+  });
+  const withSet = (doc: SimPolicy4, r: SpanRef, set: TimingSet) => {
+    const p = project(doc, r);
+    return tryWriteBack(doc, r, { ...p, timing: { current: set, saved: null } });
+  };
+
+  it('a preset change on a one-span policy relabels a label that was the old preset’s name', () => {
+    const doc = timingDoc([setOf('benchmarkPermits')], timingLabel(setOf('benchmarkPermits')));
+    const out = withSet(doc, ref('permitting', 't'), setOf('observed'));
+    expect(out.refused).toBeNull();
+    expect(out.doc.kinds.permitting[0].preset).toBe('observed');
+    expect(out.doc.kinds.permitting[0].label).toBe(timingLabel(setOf('observed')));
+    expect(() => parsePolicy4(structuredClone(out.doc), { asOf: null })).not.toThrow();
+  });
+
+  it('a custom edit relabels "Custom timing" to the set’s own label', () => {
+    const doc = timingDoc([setOf('observed')], CUSTOM_TIMING_LABEL);
+    const edited: TimingSet = {
+      ...setOf('observed'),
+      routeShares: { discretionary: 10, streamlined: 80, permitOnly: 10 }
+    };
+    const out = withSet(doc, ref('permitting', 't'), edited);
+    expect(out.doc.kinds.permitting[0].label).toBe(timingLabel(edited));
+  });
+
+  it('a preset change in one span of a multi-span policy is refused; the document still parses', () => {
+    const doc = timingDoc([setOf('benchmarkPermits'), setOf('benchmarkPermits')], 'x');
+    expect(() => parsePolicy4(structuredClone(doc), { asOf: null })).not.toThrow();
+    const out = withSet(doc, ref('permitting', 't', 1), setOf('noDiscretionary'));
+    expect(out.doc).toBe(doc);
+    expect(out.refused).toBe(PRESET_PER_POLICY);
+    // A change that keeps the preset is fine.
+    const same: TimingSet = {
+      ...setOf('benchmarkPermits'),
+      routeShares: { discretionary: 10, streamlined: 80, permitOnly: 10 }
+    };
+    const ok = withSet(doc, ref('permitting', 't', 1), same);
+    expect(ok.refused).toBeNull();
+    expect(ok.doc.kinds.permitting[0].spans[1].what).toEqual({ tag: 'timing', set: same });
+    expect(() => parsePolicy4(structuredClone(ok.doc), { asOf: null })).not.toThrow();
+  });
+});
+
+describe('programmes through the lens', () => {
+  const prog = (id: string, poolId = pool.id): Programme => ({
+    ...grant,
+    id,
+    label: id,
+    pool: poolId
+  });
+  const fundDoc = (spans: number, others: Programme[] = []): SimPolicy4 => ({
+    schema: 4,
+    kinds: {
+      zoning: [],
+      permitting: [],
+      money: [
+        pol(
+          'fund-u-pool-1',
+          { tag: 'fund', pool: pool.id },
+          Array.from({ length: spans }, () => ({
+            tag: 'fund' as const,
+            pool,
+            programmes: [prog('u-prog-1')]
+          }))
+        ),
+        ...(others.length > 0
+          ? [
+              pol('fund-state', { tag: 'fund', pool: 'state' }, [
+                { tag: 'fund', pool: null, programmes: others }
+              ])
+            ]
+          : [])
+      ]
+    }
+  });
+  const addProg = (doc: SimPolicy4, r: SpanRef, g: Programme) => {
+    const p = project(doc, r);
+    return tryWriteBack(doc, r, {
+      ...p,
+      funding: { ...p.funding, programmes: [...p.funding.programmes, g] }
+    });
+  };
+  const fundSpans = (doc: SimPolicy4) =>
+    doc.kinds.money[0].spans.map((s) => (s.what.tag === 'fund' ? s.what.programmes : null));
+
+  it('a programme added in one span of a two-span fund lands in every span', () => {
+    const doc = fundDoc(2);
+    const out = addProg(doc, ref('money', 'fund-u-pool-1', 1), prog('u-prog-2'));
+    expect(out.refused).toBeNull();
+    const [a, b] = fundSpans(out.doc);
+    expect(a!.map((g) => g.id)).toEqual(['u-prog-1', 'u-prog-2']);
+    expect(b).toEqual(a);
+    expect(() => parsePolicy4(structuredClone(out.doc), { asOf: null })).not.toThrow();
+  });
+
+  it('a programme removed in one span leaves every span', () => {
+    const doc = fundDoc(2);
+    const r = ref('money', 'fund-u-pool-1', 0);
+    const p = project(doc, r);
+    const out = tryWriteBack(doc, r, { ...p, funding: { ...p.funding, programmes: [] } });
+    expect(fundSpans(out.doc)).toEqual([[], []]);
+    expect(() => parsePolicy4(structuredClone(out.doc), { asOf: null })).not.toThrow();
+  });
+
+  it('a new programme whose id another policy holds is renamed', () => {
+    const doc = fundDoc(1, [prog('u-prog-2', 'state')]);
+    // Today's editor picks the id from the projection alone: u-prog-2 is free there.
+    const out = addProg(doc, ref('money', 'fund-u-pool-1'), prog('u-prog-2'));
+    const ids = fundSpans(out.doc)[0]!.map((g) => g.id);
+    expect(ids).toEqual(['u-prog-1', 'u-prog-3']);
+    expect(() => parsePolicy4(structuredClone(out.doc), { asOf: null })).not.toThrow();
+  });
+
+  it('an edit past the programme limit is refused and the document is unchanged', () => {
+    const others = Array.from({ length: FINANCE_LIMITS.programmes - 1 }, (_, i) =>
+      prog(`u-s-${i}`, 'state')
+    );
+    const doc = fundDoc(1, others);
+    expect(() => parsePolicy4(structuredClone(doc), { asOf: null })).not.toThrow();
+    const out = addProg(doc, ref('money', 'fund-u-pool-1'), prog('u-prog-9'));
+    expect(out.doc).toBe(doc);
+    expect(out.refused).toBe(limitAlert('programmes'));
+  });
+
+  it('the lens reports a refusal and leaves the store as it was', () => {
+    const others = Array.from({ length: FINANCE_LIMITS.programmes - 1 }, (_, i) =>
+      prog(`u-s-${i}`, 'state')
+    );
+    const doc = fundDoc(1, others);
+    const store = new DocStore(doc);
+    const lens = spanLens(store, () => ref('money', 'fund-u-pool-1'));
+    const ok = lens.apply(
+      (p) => ({
+        ...p,
+        funding: { ...p.funding, programmes: [...p.funding.programmes, prog('n')] }
+      }),
+      'Added'
+    );
+    expect(ok).toBe(false);
+    expect(lens.refused).toBe(limitAlert('programmes'));
+    expect(store.policy).toBe(doc);
+    expect(store.labels).toEqual([]);
   });
 
   it('a missing ref projects the default policy and writes nothing', () => {
@@ -298,6 +489,21 @@ describe('spanLens', () => {
     expect(store.policy).toBe(twoSpanDoc);
     expect(lens.redo()).toBe('Edited');
     expect(lens.policy.rules[0].bands).toEqual([b2]);
+  });
+
+  it('policy is the same object while the document and the ref are unchanged', () => {
+    const store = new DocStore(twoSpanDoc);
+    let r: SpanRef = { kind: 'zoning', id: 'r1', span: 0 };
+    const lens = spanLens(store, () => ({ ...r }));
+    const a = lens.policy;
+    expect(lens.policy).toBe(a);
+    r = { kind: 'zoning', id: 'r1', span: 1 };
+    const b = lens.policy;
+    expect(b).not.toBe(a);
+    expect(lens.policy).toBe(b);
+    lens.apply((p) => replaceRule(p, { ...p.rules[0], bands: [b2] }), 'Edited');
+    expect(lens.policy).not.toBe(b);
+    expect(lens.refused).toBeNull();
   });
 
   it('with no selection the policy is the default and apply does nothing', () => {
