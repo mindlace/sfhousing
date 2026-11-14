@@ -20,6 +20,7 @@ import { build } from '../steps/build';
 import { writeRenderBoxes } from '../steps/render-boxes';
 import {
   installFonts,
+  SPLIT_MAX_TILE_BYTES,
   tileDropReports,
   writeBasemap,
   writeBuildingsTiles,
@@ -301,6 +302,23 @@ describe.skipIf(!hasTippecanoe || !hasPmtiles)('buildings tiles zoom split [tool
     expect(perLot.get('3512010')).toBe(1);
     expect(perLot.get('3512011')).toBe(2);
     expect(perLot.get('3512014')).toBe(8);
+  });
+
+  it('the split run raises the byte limit to SPLIT_MAX_TILE_BYTES; the plain run keeps 400000', async () => {
+    // Live 2026-11-14: 13 of 52 z14 tiles were over 400 KB (max 680 KB) with nothing dropped.
+    expect(SPLIT_MAX_TILE_BYTES).toBe(1_000_000);
+    const dir = mkdtempSync(join(tmpdir(), 'sfh-tiles-limit-'));
+    const seen: string[][] = [];
+    const fake = {
+      run: async (_cmd: string, args: string[]) => {
+        seen.push(args);
+        return { code: 0, stdout: '', stderr: '' };
+      }
+    };
+    await writeBuildingsTiles(db, dir, dir, { split: true }, fake);
+    expect(seen[0]).toContain(`--maximum-tile-bytes=${SPLIT_MAX_TILE_BYTES}`);
+    expect(seen[0]).not.toContain('--maximum-tile-bytes=400000');
+    expect(calls[0].args).toContain('--maximum-tile-bytes=400000');
   });
 
   it('drop detection works (Review Focus 3)', async () => {

@@ -96,7 +96,7 @@ SELECT src, count(*), round(sum(area_m2)) FROM read_parquet('pipeline/.cache/der
 
 `writeBuildingsTiles` (`pipeline/steps/tiles.ts`) runs one tippecanoe pass into one `buildings` layer. With the artifact, the `buildings_export` features carry `"tippecanoe": {"minzoom": 12, "maxzoom": 13}` and today's four properties (`parcelId`, `heightM`, `baseM`, `hs`), so `z12BuildingsMax` holds and z12–13 are unchanged; the `render_export` features carry minzoom 14, maxzoom 15 and add `src`, `groundM` and `groundMinM` (each left out when null). z16 and up overzoom z15. Without the artifact the tiles input and arguments are exactly as before, and `buildings.pmtiles` is byte-identical (`tiles.test.ts` checks it against `pipeline/test/fixtures/mini/tiles-no-boxes/`). The style is unchanged: one `existing-buildings` fill-extrusion layer, source layer `buildings`, `promoteId` `parcelId`; nothing styles by `src`.
 
-`--drop-smallest-as-needed` silently drops the smallest features of a tile over 400 KB. The step counts tippecanoe's tile-too-big reports at z14 and up (`tiles.buildings.drops_z14plus`); any such drop fails V37.
+`--drop-smallest-as-needed` silently drops the smallest features of a tile over the byte limit: 400 KB without the artifact (main's archive), `SPLIT_MAX_TILE_BYTES` (1 MB, `pipeline/steps/tiles.ts`) with it. The first live build put 13 of 52 z14 tiles over 400 KB (largest 680 KB, downtown; z15 at most 209 KB). z12–13 tiles stay far under both limits, so their bytes do not move. The step counts tippecanoe's tile-too-big reports at z14 and up (`tiles.buildings.drops_z14plus`); any such drop fails V37. If z14 tiles outgrow 1 MB, move `splitZoom` to 15 rather than raising the limit again.
 
 ## Counts and V37
 

@@ -56,6 +56,17 @@ export function tileDropReports(stderr: string, minZoom: number): number {
   return n;
 }
 
+/** tippecanoe's stored (gzip) tile limit for the buildings archive without the boxes artifact. */
+const MAX_TILE_BYTES = 400_000;
+
+/**
+ * The limit with the boxes artifact. The first live build (2026-11-14) put 13 of 52 z14 tiles over
+ * 400 KB (largest 680 KB, downtown; z15 at most 209 KB), so 400 KB dropped boxes there (V37).
+ * z12–13 tiles stay far under either limit, so their bytes do not move. A tile over this limit
+ * still fails V37: the next step is `BOXES.splitZoom` 15, not a higher limit.
+ */
+export const SPLIT_MAX_TILE_BYTES = 1_000_000;
+
 /**
  * Write buildings.geojsonseq (workDir) and tile it to outDir/buildings.pmtiles, one `buildings`
  * layer at z12–15.
@@ -63,8 +74,9 @@ export function tileDropReports(stderr: string, minZoom: number): number {
  *   boxes work (same input bytes and tippecanoe arguments).
  * - With `split`: buildings_export at z12–13 (tippecanoe minzoom/maxzoom per feature, today's four
  *   properties), then render_export at z14–15 (`BOXES.splitZoom`), which adds `src`, `groundM` and
- *   `groundMinM` (each left out when null). Returns how many z14+ tiles tippecanoe reported over
- *   `maxTileBytes` (it then drops their smallest features); 0 without split.
+ *   `groundMinM` (each left out when null), under SPLIT_MAX_TILE_BYTES. Returns how many z14+
+ *   tiles tippecanoe reported over `maxTileBytes` (it then drops their smallest features); 0
+ *   without split.
  */
 export async function writeBuildingsTiles(
   db: Duck,
@@ -139,7 +151,7 @@ export async function writeBuildingsTiles(
       ...fields.flatMap(([name]) => ['-y', name]),
       ...fields.flatMap(([name, type]) => ['-T', `${name}:${type}`]),
       '--drop-smallest-as-needed',
-      `--maximum-tile-bytes=${opts.maxTileBytes ?? 400000}`,
+      `--maximum-tile-bytes=${opts.maxTileBytes ?? (split ? SPLIT_MAX_TILE_BYTES : MAX_TILE_BYTES)}`,
       '--no-simplification-of-shared-nodes',
       '--force',
       'buildings.geojsonseq'
