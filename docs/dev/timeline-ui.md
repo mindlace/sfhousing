@@ -66,23 +66,28 @@ Developer notes for `src/lib/timeline/` and `src/lib/sim-page/SimPage.svelte`. S
 - **The early-edit guess.** The worker does not mark the rejection of an edit sent before the dataset loaded, so the page guesses. An early edit's rejection shows rule 35 ("The simulation couldn't load.") briefly, then flips to rule 34 ("That change couldn't be applied." plus the undo) when a post at an older rev arrives. Pressing Retry inside that window can leave the rule 35 notice up.
 - **The restart rev.** `TimelineClient.restart` returns no rev, so the session assumes the client's next rev.
 - **Debt terms.** A hand-edited /s link can still carry two sets of terms on one pool id (`parse4` checks only that every span names the same pool); world-score then prices the statements on month W's terms.
+- **The painted restore.** A restore with painted or transit policies reaches the full document's first results at 3.66 s on the live city, against 1.83 s for an empty document. The worker resolves brushes only after its dataset loads, so the page opens the stripped document and then sends the full one, which costs a recompile. Accepted by main.
 - **The engine's limits** (ruling 8), listed with their numbers in [ensemble-runner.md](ensemble-runner.md): worker memory about +394 MB with no copies and +526 MB with the month-0 copy (live city); the longest worker compile step about 52.6 ms; one cold massing of about 636 ms; planning with rich public money over the per-slice bar. The page shows no state for them.
 
 ## For the composer
 
-The two places the page guesses about the worker (`src/lib/timeline/session.svelte.ts`):
+The places the page works around the worker (`src/lib/timeline/session.svelte.ts`):
 
 - The early-edit classification: `early: !this.#sawCompile` at `:447`, handled at `:546-552` (`#earlyRejected`, `#stop()`), undone by `#fillWentOn` when an older-rev post arrives. A marker on the worker's `bad-request` for an edit sent before the load would remove it.
 - The restart rev: `this.#rev += 1` at `:467-469`. A rev returned by `TimelineClient.restart` would remove it.
+- The "await lots" open: `provisionalOf` and the stripped open (`session.svelte.ts`, `open` and `#openWith`), then the full document as the next `setPolicy`. A worker that could take brush queries before its dataset loads, or an `openTimeline` that awaits lots, would remove the recompile (the painted restore above).
 
 ## Measurements
 
-Task 22's operator fills these (machine, date, load average, lock held). Commands are in [map-perf.md](map-perf.md).
+Apple M5 Pro, 2026-11-14, quiet (lock held, load about 1.6). Live city is dataset `2026-11-10-6ee5a23d`; opens are cold-cache, median of 3. Commands and cases are in [map-perf.md](map-perf.md).
 
-| Measure                                                                                         | Value     |
-| ----------------------------------------------------------------------------------------------- | --------- |
-| Apply a `cells` update, 22 cells, median of 5                                                   | (pending) |
-| Apply a `cells` update, 121 cells, median of 5                                                  | (pending) |
-| `bench:map` with the timeline docked, p50 / p95                                                 | (pending) |
-| Live city, empty document: first results / whole window                                         | (pending) |
-| Live city, painted document (the provisional open's extra refill): first results / whole window | (pending) |
+| Measure                                                                                                   | Value                             |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Apply a `cells` update, 22 cells, median of 5 (install only / with demolish)                              | 155 ms / 161 ms                   |
+| Apply a `cells` update, 121 cells, median of 5 (install only / with demolish)                             | 889 ms / 1,002 ms                 |
+| `bench:map` with the timeline docked, live city, p50 / p95                                                | 8.3 ms / 10.3 ms (bar 16.7, PASS) |
+| `bench:map` with the timeline docked, fixture-0, p50 / p95                                                | 8.3 ms / 10.0 ms (PASS)           |
+| Live city, empty document: first results / whole window                                                   | 1.83 s / 3.21 s                   |
+| Live city, painted document: first results (stripped open) / full document first results and whole window | 1.96 s / 3.66 s                   |
+
+Apply-cost runs headless SwiftShader with synthetic cells (500 projects a cell), so it is relative, not a GPU figure. The painted (provisional) open reaches the full document's first results at 3.66 s on the live city, against 1.83 s for an empty document (reported to main). No ENOENT on `parcels/42_21.json` was seen.

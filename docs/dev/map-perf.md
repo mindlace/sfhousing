@@ -124,11 +124,11 @@ Filter with `'sim-timeline\.bench'`, not a bare path: Playwright matches the fil
 
 ### Results
 
-| Machine   | Date      | Dataset   | Case                                   | p50 / p95 or median | Label                       |
-| --------- | --------- | --------- | -------------------------------------- | ------------------- | --------------------------- |
-| (pending) | (pending) | fixture-0 | pan, timeline docked                   | (pending)           | deferred: needs a quiet run |
-| (pending) | (pending) | live SF   | fill-install, open-painted, open-empty | (pending)           | deferred: needs a quiet run |
-| (pending) | (pending) | fixture-0 | apply-cost, K = 22 and 121             | (pending)           | deferred: needs a quiet run |
+| Machine                                     | Date | Dataset                                     | Case                                   | p50 / p95 or median                                                                                                                                                                                  | Label                                                                                   |
+| ------------------------------------------- | ---- | ------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Apple M5 Pro, 2026-11-14, quiet (lock held) |      | live SF `2026-11-10-6ee5a23d` and fixture-0 | pan, timeline docked                   | live 8.3 / 10.3 ms (71 cells, 3,613 parts); fixture-0 8.3 / 10.0 ms                                                                                                                                  | PASS, DPR 2, Metal                                                                      |
+| same                                        |      | live SF                                     | fill-install; open-painted; open-empty | fill: first results 1,882 ms, whole 3,257 ms, 378 installs, 3.02 frame-ms per cell, longtask_ms 0; painted open: first any 1,961 ms, first full 3,664 ms; empty open: first 1,831 ms, whole 3,207 ms | cold cache, median of 3                                                                 |
+| same                                        |      | fixture-0                                   | apply-cost, K = 22 and 121             | K = 22: 155 ms install only, 161 ms with demolish; K = 121: 889 ms, 1,002 ms                                                                                                                         | headless SwiftShader, synthetic cells (500 projects a cell): relative, not a GPU figure |
 
 ## CI
 
