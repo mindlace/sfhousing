@@ -179,9 +179,10 @@ export function limitsAt(frame: PolicyFrame, row: number): FrameLimits {
  * `heightLids`. A `preFzp` compile's frames read FZP, as `limitsAt` (no zoning is in force).
  *
  * Computed on the first call and memoised per zoning state (months sharing it share the object).
- * The arrays are returned by reference: callers must not mutate any of them. They are shared by
- * every caller of the state, `sources` is the one `limitsAt` reads, and none is promised apart
- * from the dataset's stock columns (`stories` is a fresh copy today, but may come to alias
+ * The arrays are returned by reference: callers must not mutate them or put their buffers in a
+ * `postMessage` transfer list (copy first). They are shared by every caller of the state,
+ * `sources` is the one `limitsAt` reads, and none is guaranteed to be separate from the dataset's
+ * stock columns (`stories` is a fresh copy today, but may come to alias
  * `layers.parcels.envelopeStories` when nothing changes). The wrapper is frozen.
  *
  * Pass `timeline.frameAt(month)` of the timeline in use, as for `limitsAt`. Throws `RangeError`
