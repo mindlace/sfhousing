@@ -1,13 +1,44 @@
-import { error } from '@sveltejs/kit';
-import type { PageServerLoad } from './$types';
+import { fail, redirect } from '@sveltejs/kit';
+import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import { requireSimRole } from '$lib/server/authz/require-sim-role';
 import { getSimTitle } from '$lib/server/sims/sim-index';
+import { leaveSim } from '$lib/server/sims/sims';
+import { MEMBERS_COPY } from '$lib/members/copy';
 
 export const load: PageServerLoad = async (event) => {
-  const { simId } = event.params;
-  await requireSimRole(event, simId, 'viewer');
-  const title = await getSimTitle({ db: getDb(event.platform!), simId });
-  if (title === null) throw error(404, 'Not found');
-  return { simId, title };
+  // The shared data comes from the layout load; this only gates the page itself.
+  await requireSimRole(event, event.params.simId, 'viewer');
+  return {};
+};
+
+export const actions: Actions = {
+  leaveSim: async (event) => {
+    const simId = event.params.simId;
+    if (!event.locals.user) throw redirect(303, '/sims');
+    const { actor } = await requireSimRole(event, simId, 'viewer');
+
+    const form = await event.request.formData();
+    const confirmTitle = (form.get('confirmTitle') ?? '').toString();
+    const successorUserId = (form.get('successorUserId') ?? '').toString();
+
+    const db = getDb(event.platform!);
+    const simTitle = await getSimTitle({ db, simId });
+    if (simTitle === null) return fail(404, { error: MEMBERS_COPY.simNotFound });
+
+    try {
+      await leaveSim({
+        db,
+        simId,
+        userId: actor.actorId,
+        simTitle,
+        confirmTitle,
+        successorUserId
+      });
+    } catch (e) {
+      return fail(400, { error: e instanceof Error ? e.message : MEMBERS_COPY.leaveFailed });
+    }
+
+    throw redirect(303, '/sims');
+  }
 };

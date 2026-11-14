@@ -5,6 +5,7 @@ import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
 const mint = vi.hoisted(() => vi.fn());
 vi.mock('$lib/server/onboarding/pseudonymous-mint', () => ({ mintPseudonymousSession: mint }));
 
+import { createInvite } from '$lib/server/invites/control-plane';
 import { createSim } from '$lib/server/sims/sims';
 import { actions, load } from './+page.server';
 
@@ -15,7 +16,16 @@ afterEach(() => {
 });
 
 function setup(
-  opts: { known?: boolean; pending?: string; user?: { id: string; pseudonymous: boolean } } = {}
+  opts: {
+    known?: boolean;
+    pending?: string;
+    user?: {
+      id: string;
+      pseudonymous: boolean;
+      email?: string;
+      emailVerified?: boolean;
+    };
+  } = {}
 ) {
   const t = freshDb();
   opened.push(t.close);
@@ -93,7 +103,7 @@ describe('/sims create action', () => {
 describe('/sims load', () => {
   it('returns an empty list when signed out', async () => {
     const { event } = setup();
-    expect(await load(event())).toEqual({ sims: [] });
+    expect(await load(event())).toEqual({ sims: [], invitations: [] });
   });
 
   it('lists the user sims sorted by title', async () => {
@@ -103,6 +113,26 @@ describe('/sims load', () => {
     await createSim({ db, title: 'Alpha', managerId: 'u1' });
     const res = (await load(event())) as { sims: { title: string }[] };
     expect(res.sims.map((s) => s.title)).toEqual(['Alpha', 'beta']);
+  });
+
+  it('lists the invitations addressed to the user, as { id, simId, simTitle, inviterHandle }', async () => {
+    const { db, event } = setup({
+      user: { id: 'u1', pseudonymous: false, email: 'u1@test.com', emailVerified: true }
+    });
+    await seedUser(db, { id: 'u1', email: 'u1@test.com', emailVerified: true });
+    await seedUser(db, { id: 'm1', email: 'm1@test.com', handle: 'mara' });
+    const { simId } = await createSim({ db, title: 'Garden', managerId: 'm1' });
+    await createInvite({
+      db,
+      simId,
+      invitedByUserId: 'm1',
+      target: { kind: 'handle', handle: 'u1' },
+      canInviteByEmail: true
+    });
+    const res = (await load(event())) as { invitations: Record<string, unknown>[] };
+    expect(res.invitations).toEqual([
+      { id: expect.any(String), simId, simTitle: 'Garden', inviterHandle: 'mara' }
+    ]);
   });
 
   it('resumes a pending sim: creates it, clears the stash, redirects', async () => {

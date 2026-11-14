@@ -1,5 +1,7 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
+  import { goto } from '$app/navigation';
+  import InvitationsList from '$lib/members/InvitationsList.svelte';
   import { SIMS_COPY, SIM_TITLE_MAX } from '$lib/members/copy';
   import type { ActionData, PageData } from './$types';
 
@@ -12,6 +14,11 @@
 
 <div class="mx-auto max-w-xl px-4 py-8">
   <h1 class="mb-4 text-2xl font-semibold">{SIMS_COPY.heading}</h1>
+
+  <InvitationsList
+    invitations={data.invitations}
+    onaccepted={(simId) => goto(`/sims/${simId}`, { invalidateAll: true })}
+  />
 
   <form method="POST" action="?/create" use:enhance class="mb-6 flex flex-wrap items-end gap-2">
     <div class="flex min-w-0 flex-1 flex-col gap-1">

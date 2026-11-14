@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
+import { listRecipientPendingInvites } from '$lib/server/invites/control-plane';
 import { clearPendingSim, readPendingSim } from '$lib/server/onboarding/pending-sim';
 import { listSimsForUser } from '$lib/server/sims/sim-index';
 import { simQuotaExceeded } from '$lib/server/sims/sim-quota';
@@ -9,7 +10,7 @@ import { checkSimTitle, startSim } from '$lib/server/sims/start-sim';
 
 export const load: PageServerLoad = async (event) => {
   const { locals, platform } = event;
-  if (!locals.user) return { sims: [] };
+  if (!locals.user) return { sims: [], invitations: [] };
   const db = getDb(platform!);
 
   // Resume a sim the visitor typed before being routed to sign-in: create it now, clear
@@ -28,7 +29,13 @@ export const load: PageServerLoad = async (event) => {
 
   const sims = await listSimsForUser({ db, userId: locals.user.id });
   sims.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
-  return { sims };
+  const invitations = await listRecipientPendingInvites({
+    db,
+    userId: locals.user.id,
+    email: locals.user.email,
+    emailVerified: locals.user.emailVerified
+  });
+  return { sims, invitations };
 };
 
 export const actions: Actions = {

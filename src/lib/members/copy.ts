@@ -35,8 +35,18 @@ export const MEMBERS_COPY = {
   invitationsDeclinedToast: 'Invitation declined',
   invitationsAcceptFailedToast: "Couldn't accept that invitation. Try again.",
   invitationsActionFailedToast: "That didn't go through. Try again.",
+  invitationsHeading: 'Invitations',
+  invitationsAccept: 'Accept',
+  invitationsDecline: 'Decline',
+  inviteNotNow: 'Not now',
+  inviteView: 'View',
+  inviteBannerLabel: 'Invitations',
   // The member list and invite form.
+  membersSummary: 'Members',
+  membersInvite: 'Invite',
   membersPending: 'Pending',
+  membersResent: 'Invitation sent',
+  membersActionFailed: "That didn't go through. Try again.",
   membersResend: 'resend',
   membersRevoke: 'revoke',
   membersInvitePlaceholder: 'email or @handle',
@@ -44,7 +54,7 @@ export const MEMBERS_COPY = {
   // The leave flow.
   leaveButton: 'Leave sim',
   leaveSoleMemberWarning:
-    "You're the only member. Leaving will permanently delete this sim and all its data.",
+    "You're the only member. Leaving deletes this sim and its pending invitations.",
   leaveDeleteButton: 'Leave & delete sim',
   leaveCancel: 'Cancel',
   leaveSuccessorLabel: 'Who takes over?',
@@ -54,6 +64,7 @@ export const MEMBERS_COPY = {
   leaveSimplePrompt: 'Leave this sim?',
   leaveSimpleButton: 'Leave',
   leaveFailed: 'Leave failed',
+  simNotFound: 'Sim not found',
   // Server answers.
   inviteTargetRequired: 'target required',
   inviteFailed: 'invite failed',
@@ -69,6 +80,9 @@ export const invitationsAcceptNamed = (simTitle: string): string =>
   `Accept invitation to ${simTitle}`;
 export const invitationsDeclineNamed = (simTitle: string): string =>
   `Decline invitation to ${simTitle}`;
+export const inviteMultiple = (count: number): string => `You have ${count} invitations`;
+export const membersSummaryCount = (count: number): string =>
+  `${MEMBERS_COPY.membersSummary} (${count})`;
 export const membersRemoveNamed = (handle: string): string => `Remove ${handle} from the sim`;
 export const membersResendNamed = (display: string): string => `Resend invitation to ${display}`;
 export const membersRevokeNamed = (display: string): string => `Revoke invitation to ${display}`;
