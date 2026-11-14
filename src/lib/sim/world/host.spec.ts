@@ -35,6 +35,7 @@ import {
 import { finalTable } from './score/statics';
 import { createChunkSet, loadDataset, type Dataset, type DatasetDeps } from './runner/dataset';
 import { cardDepsOf } from './runner/lookups';
+import { createRunner, type Runner } from './runner/runner';
 import { datasetFetch, fakeClock } from './runner/test/harness';
 import { FakeController } from './test/map-stream-run';
 import type { World, WorldEvent } from './types';
@@ -122,6 +123,8 @@ interface HostOpts {
   manifest?: Manifest;
   fetch?: FetchLike;
   retryDelaysMs?: number[];
+  /** Compute time charged per clock read (default `TICK_MS`). */
+  tickMs?: number;
 }
 
 function makeHost(o: HostOpts = {}) {
@@ -143,7 +146,7 @@ function makeHost(o: HostOpts = {}) {
       }, ms),
     clearTimeout: (h) => clock.clearTimeout(h),
     now: () => {
-      clock.tick(TICK_MS);
+      clock.tick(o.tickMs ?? TICK_MS);
       return clock.now();
     },
     retryDelaysMs: o.retryDelaysMs ?? [],
@@ -382,6 +385,7 @@ describe('a full fill of the default document', () => {
 
   it('the posted series equal a plain loop of the same worlds', () => {
     const chunks = h.of('filled').map((f) => f.series);
+    expect(h.of('compiled')[0].statics).toEqual(plain.statics);
     expect(viewOf(chunks, plain.statics)).toEqual(viewOf([plain.chunk], plain.statics));
   });
 
@@ -580,6 +584,7 @@ describe('the host', () => {
     expect(h.errors()).toEqual([]);
     const plain = plainLoop(DEFAULT_POLICY4, 96, 24);
     const chunks = h.of('filled').map((f) => f.series);
+    expect(h.of('compiled')[0].statics).toEqual(plain.statics);
     expect(viewOf(chunks, plain.statics)).toEqual(viewOf([plain.chunk], plain.statics));
   });
 
@@ -709,5 +714,65 @@ describe('the host', () => {
       'manifest-invalid',
       'scenario-missing'
     ]);
+  });
+});
+
+/** The default document plus lots newer than `years` protected from model month `from`. */
+function protectedFrom(from: number, years: number): SimPolicy4 {
+  const doc: SimPolicy4 = structuredClone(DEFAULT_POLICY4);
+  doc.kinds.zoning.push({
+    id: `newer-${years}`,
+    label: 'newer',
+    preset: null,
+    on: true,
+    where: { tag: 'category', category: 'newerThan' },
+    spans: [span(asOf, from, null, { tag: 'protect', years })]
+  });
+  return doc;
+}
+
+describe('compiles while filling', () => {
+  it('a compile whose view-job units each spend the budget finishes with no chunk arriving', async () => {
+    // 25 ms per clock read: every unit of a view job (resolve, apply, precompute) spends the 20 ms
+    // compile budget, so a step returns false having moved neither the frames nor the recompute
+    // count. The compile is still progressing and must not wait for a chunk.
+    const h = makeHost({ tickMs: 25 });
+    h.open({ policy: protectedFrom(1, 37), worlds: 2, months: 24 });
+    await h.runAll();
+    expect(h.errors()).toEqual([]);
+    expect(h.of('compiled')).toHaveLength(1);
+    expect(h.of('chunks')).toEqual([]);
+  });
+
+  it('a zoning change at a later month posts compiled and a first filled before the worlds reach it', async () => {
+    const clock = fakeClock();
+    const at: { type: string; plan: number; comp: number }[] = [];
+    // 1 ms per clock read, the compile's clock included: a 20 ms step assembles about 20 frames
+    const now = () => {
+      clock.tick(1);
+      return clock.now();
+    };
+    const runner: Runner = createRunner({
+      dataset: { ...ds, ctx: (m) => ({ ...ds.ctx(m), now }) },
+      post(msg) {
+        const { plan, comp } = runner.ensembles();
+        at.push({ type: msg.type, plan: plan?.month ?? -1, comp: comp?.month ?? -1 });
+      },
+      now,
+      later: (fn, ms) => clock.setTimeout(fn, ms),
+      warn: () => {},
+      logOnce: () => {}
+    });
+    const CHANGE = 100;
+    runner.open(1, protectedFrom(CHANGE, 41), {}, WORLDS, MONTHS);
+    await clock.runUntil(() => at.some((a) => a.type === 'filled'));
+    expect(at.filter((a) => a.type === 'error')).toEqual([]);
+    const compiled = at.find((a) => a.type === 'compiled')!;
+    const filled = at.find((a) => a.type === 'filled')!;
+    for (const a of [compiled, filled]) {
+      expect(a.plan).toBeLessThan(CHANGE - 1);
+      expect(a.comp).toBeLessThan(CHANGE - 1);
+    }
+    runner.dispose();
   });
 });

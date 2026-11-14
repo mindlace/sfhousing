@@ -287,8 +287,8 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
         st.opening = { ...st.opening, rev, policy: req.policy, lots: req.lots };
       return;
     }
-    st.rev = rev;
     st.runner.setPolicy(rev, req.policy, req.lots);
+    st.rev = rev; // only once the runner has taken the edit
   }
 
   // --- shared requests ---

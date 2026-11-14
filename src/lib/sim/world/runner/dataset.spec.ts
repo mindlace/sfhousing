@@ -68,6 +68,7 @@ function spyChunks(): ChunkSet & { want: Mock<(cells: Iterable<string>) => void>
     records: new Map(),
     failed: ['x'],
     wanted: new Set(),
+    wantAlso: vi.fn(),
     want: vi.fn<(cells: Iterable<string>) => void>(),
     prefetch: vi.fn(),
     retryFailed: vi.fn(),
@@ -121,6 +122,12 @@ describe('createChunkSet', () => {
     expect(recs.length).toBeGreaterThan(0);
     for (const r of recs) expect(set.records.get(r.id)).toBe(r);
     expect(reports.at(-1)).toMatchObject({ type: 'chunks', pending: 0, failed: [] });
+    // `wantAlso` loads without joining `wanted` (the stream's cellsFor input)
+    const other = manifest.chunks[1].cellId;
+    set.wantAlso([other]);
+    await until(() => chunked.length === 2);
+    expect(chunked).toEqual([cell, other]);
+    expect(set.wanted).toEqual(new Set([cell]));
     set.dispose();
   });
 

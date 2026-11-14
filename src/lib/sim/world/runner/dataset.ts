@@ -69,6 +69,8 @@ export interface ChunkSet {
   /** Every cell `want` (or `prefetch`) has asked for: the map stream's `cellsFor` input. */
   wanted: Set<string>;
   want(cells: Iterable<string>): void;
+  /** Loads `cells` without adding them to `wanted` (the `cellsFor` additions, S17). */
+  wantAlso(cells: Iterable<string>): void;
   /** The cells of a viewport bbox ([w, s, e, n]). */
   prefetch(bbox: readonly number[]): void;
   retryFailed(): void;
@@ -109,6 +111,7 @@ export function createChunkSet(manifest: Manifest, deps: DatasetDeps): ChunkSet 
       for (const c of list) set.wanted.add(c);
       loader.want(list);
     },
+    wantAlso: (cells) => loader.want(cells),
     prefetch: (bbox) => set.want(cellsIntersecting(manifest, bbox)),
     retryFailed: () => loader.retryFailed(),
     dispose: () => loader.dispose()

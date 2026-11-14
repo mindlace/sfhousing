@@ -219,24 +219,39 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
+  /**
+   * One compile step. The side is stalled (it waits for `chunkArrived`) only when the step said
+   * "waiting on cells": it returned false before its budget was spent, with neither the frames
+   * nor the recompute count moved. A step returns false for exactly two reasons: its budget is
+   * spent (compile.ts:380, :383; zoning-view.ts:155-156), or a view job's recompute could not
+   * finish (zoning-view.ts:124-128, the only unit that returns false); a recompute step computes
+   * every ready need it can, so one that returns at once with nothing done waits on chunks
+   * (scenario-host.ts:960-962). The other view-job units (twin, resolve, apply, precompute) move
+   * neither count and can each spend the whole budget on the live city: that is progress.
+   */
   function compileUnit(s: Side): void {
     const before = s.timeline === null ? 0 : s.timeline.readyThrough();
     const doneBefore = s.compile.progress().done;
+    const t0 = deps.now();
+    let finished: boolean;
     try {
-      if (s.compile.step(COMPILE_STEP_MS)) {
-        s.done = true;
-        s.justDone = true;
-      }
+      finished = s.compile.step(COMPILE_STEP_MS);
     } catch (e) {
       if (e instanceof LeverFormatError) throw new Rejected(e);
       throw e;
+    }
+    const spent = deps.now() - t0 >= COMPILE_STEP_MS;
+    if (finished) {
+      s.done = true;
+      s.justDone = true;
     }
     if (s.timeline === null) {
       s.timeline = timelineOf(s.compile);
       if (s.timeline !== null) s.ensemble = ensembleOf(s, s.timeline);
     }
     const after = s.timeline === null ? 0 : s.timeline.readyThrough();
-    if (!s.done && after === before && s.compile.progress().done === doneBefore) s.stalled = true;
+    if (!finished && !spent && after === before && s.compile.progress().done === doneBefore)
+      s.stalled = true;
   }
 
   function ensembleOf(s: Side, t: PolicyTimeline): Ensemble {
@@ -395,27 +410,38 @@ export function createRunner(deps: RunnerDeps): Runner {
     post({ type: 'cells', render: u }, u.cells.flatMap(packTimedTransferables));
     // S17: the chunks of projects anchored in the wanted cells, so their anchor cells can go
     const extra = stream!.cellsFor(ds.chunks.wanted);
-    if (extra.size > 0) ds.chunks.want(extra);
+    if (extra.size > 0) ds.chunks.wantAlso(extra);
   }
 
   function flush(): void {
-    dirty = false;
+    const t0 = deps.now();
     const u = stream!.flush(world1()!, ds.statics, FLUSH_BUDGET_MS);
     lastFlushAt = deps.now();
+    // A flush that spent its budget may have left ready dirty cells: flush again when due.
+    dirty = lastFlushAt - t0 >= FLUSH_BUDGET_MS;
     if (u !== null) sendCells(u);
   }
 
   // --- the task loop ---
 
+  const unfinished = (s: Side | null): s is Side => s !== null && !s.done && !s.stalled;
+
   function slice(warmOnly: boolean): void {
     const start = deps.now();
+    // Controller ruling (Task 5 fix round 1): while a side's compile is unfinished it gets one
+    // compile unit in every slice with room, besides rule 11's step on demand, so `compiled` and
+    // the first `filled` do not wait for the worlds to reach the last change. They follow the
+    // slice's first unit, so filling continues meanwhile.
+    const ahead: Side[] = warmOnly ? [] : [plan, comp].filter(unfinished);
     for (let first = true; ; first = false) {
-      const u: Unit | null = warmOnly
-        ? warm.size > 0
-          ? { kind: 'warm', side: null }
-          : null
-        : pick();
-      if (u === null) break;
+      let u: Unit | null;
+      if (!first && ahead.length > 0) {
+        const s = ahead.shift()!;
+        if (!unfinished(s)) continue;
+        u = { kind: 'compile', side: s };
+      } else if (warmOnly) u = warm.size > 0 ? { kind: 'warm', side: null } : null;
+      else u = pick();
+      if (u === null) break; // `pick` offers an unfinished compile itself when nothing else runs
       if (!first) {
         const est = estimate(u.kind);
         if (est === undefined || deps.now() - start + est > SLICE_PLAN_MS) break;
@@ -516,7 +542,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     wantCells(cells) {
       if (stream === null) return;
       const extra = stream.cellsFor(cells);
-      if (extra.size > 0) ds.chunks.want(extra);
+      if (extra.size > 0) ds.chunks.wantAlso(extra);
     },
     viewFrame() {
       const t = plan?.timeline;
