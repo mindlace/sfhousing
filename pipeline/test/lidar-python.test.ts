@@ -1,5 +1,5 @@
 // Tagged `tools`: the Python rasterizer's pytest suite skips with a message when uv is absent.
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { which, type RunResult } from '../lib/exec';
 import { openDuck } from '../lib/duck';
 import { LIDAR_PROJECT, LIDAR_VENV, uvRun } from '../lib/lidar/python';
@@ -8,7 +8,14 @@ const hasUv = !!(await which('uv'));
 if (!hasUv) console.log('[tools] uv not found: skipping lidar rasterizer tests');
 
 describe.skipIf(!hasUv)('lidar rasterizer [tools]', () => {
-  it('passes its pytest suite', { timeout: 600_000 }, async () => {
+  // A fresh checkout builds the venv on first use; do that here, under the hook timeout, so the
+  // suite itself runs within the test timeout.
+  beforeAll(async () => {
+    const r = await uvRun(['python', '-c', 'import laspy, pyproj'], { cwd: LIDAR_PROJECT });
+    expect(r.code, `${r.stdout}\n${r.stderr}`).toBe(0);
+  });
+
+  it('passes its pytest suite', async () => {
     const r = await uvRun(['pytest', '-q', '-p', 'no:cacheprovider', 'tests'], {
       cwd: LIDAR_PROJECT
     });
