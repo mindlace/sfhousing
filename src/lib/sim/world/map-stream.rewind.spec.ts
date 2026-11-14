@@ -27,7 +27,8 @@ import type { PolicyFrame, PolicyTimeline } from './policy/frame';
 import { startRates } from './rates';
 import { benchInput, fixtureInput } from './test/cities.node';
 import { benchRecords, fixtureRecords } from './test/map-stream-cities.node';
-import { streamDeps } from './test/map-stream-deps';
+import { sharedGenMemo, streamDeps as depsOf, warmGenMemo } from './test/map-stream-deps';
+import { useFastTypedArrayEquality } from './test/map-stream-equal';
 import {
   FakeController,
   fill,
@@ -43,6 +44,12 @@ const SEED = 1;
 const WINDOW = 480;
 const NS = STAGE_ORDER.length;
 const CONSTRUCTION = STAGE_ORDER.indexOf('construction');
+
+useFastTypedArrayEquality();
+
+/** Every stream of this file shares one generator memo per city (a pure cache by content). */
+const streamDeps: typeof depsOf = (i, r, o = {}) =>
+  depsOf(i, r, { genMemo: sharedGenMemo(i), ...o });
 
 interface City {
   input: SimInput;
@@ -78,6 +85,7 @@ function use(c: City): void {
 beforeAll(async () => {
   bench = cityOf(benchInput(), benchRecords());
   fixture = cityOf(await fixtureInput(), fixtureRecords());
+  warmGenMemo(bench.input, bench.records, bench.statics, oneFrame(bench.base), SEED, 120);
 });
 
 let deps: FakeTimelineDeps;
@@ -355,14 +363,18 @@ describe('map-stream: rewind (rule 9)', () => {
       if (!kept.has(id)) later.push(id);
     }
     expect(later.length).toBeGreaterThan(0);
+    const gone = new Set(later);
     const held = new Set<string>(); // cells that held one of them
     for (const [id, c] of foldCells(updates))
-      if (c.slotProjectIds.some((p) => later.includes(p))) held.add(id);
+      if (c.slotProjectIds.some((p) => gone.has(p))) held.add(id);
     expect(held.size).toBeGreaterThan(0);
 
-    const folded = foldCells([...updates, ...refill]);
-    for (const c of folded.values())
-      for (const p of later) expect(c.slotProjectIds).not.toContain(p);
+    // no cell of the map after the refill holds one of them (one expect over every cell and
+    // project, not one per pair: 256 cells x ~1,600 projects was ~2.3 s of `expect` alone)
+    const stale: string[] = [];
+    for (const [id, c] of foldCells([...updates, ...refill]))
+      for (const p of c.slotProjectIds) if (gone.has(p)) stale.push(`${id}:${p}`);
+    expect(stale).toEqual([]);
     const touched = new Set(
       refill.flatMap((u) => [...u.cells.map((c) => c.cellId), ...u.removedCells])
     );
@@ -393,9 +405,10 @@ describe('map-stream: rewind (rule 9)', () => {
     const rec = new Recorder();
     const w = runWorld(statics, timeline, SEED, 120, rec);
     const want = new Set<string>();
-    for (const e of rec.events) {
-      if (e.month <= 60) continue;
-      const a = anchorOfRow(w, e.row);
+    const rows = new Set<number>(); // a row's anchor once, however many events it has
+    for (const e of rec.events) if (e.month > 60) rows.add(e.row);
+    for (const row of rows) {
+      const a = anchorOfRow(w, row);
       if (a !== null) want.add(a);
     }
     expect(want.size).toBeGreaterThan(0);
@@ -407,7 +420,9 @@ describe('map-stream: rewind (rule 9)', () => {
     for (const u of now)
       for (const id of [...u.cells.map((c) => c.cellId), ...u.removedCells])
         expect(want.has(id)).toBe(true);
-    const refill = [...now, ...fill({ ...re, through: 120 })];
+    // flushed yearly: which cells go out is the rule here, and a cell dirtied in any month of the
+    // year goes out in that year's flush (monthly, the 60 months of whole-cell packs were ~400 ms)
+    const refill = [...now, ...fill({ ...re, through: 120, flushEvery: 12 })];
     const sent = new Set(refill.flatMap((u) => u.cells.map((c) => c.cellId)));
     expect([...sent].sort()).toEqual([...want].sort());
     // the map ends where the first fill left it
@@ -907,6 +922,17 @@ describe('map-stream: snapshot and revisions (rules 7, 10)', () => {
     expect(after.flatMap((u) => u.removedCells)).not.toContain(cell);
     feed(after);
     expectFreshState(fake, re2.world);
+  });
+
+  it('the fast typed-array equality tells what toEqual tells', () => {
+    const f = (...x: number[]) => Float32Array.from(x);
+    expect(f(1, NaN, 0)).toEqual(f(1, NaN, 0));
+    expect(f(1, NaN, 0)).not.toEqual(f(1, NaN, -0));
+    expect(f(1, 2)).not.toEqual(f(1, 3));
+    expect(f(1, 2)).not.toEqual(f(1, 2, 3));
+    expect(f(1, 2)).not.toEqual(Uint8Array.of(1, 2));
+    expect({ a: [f(1), Uint8Array.of(2)] }).toEqual({ a: [f(1), Uint8Array.of(2)] });
+    expect({ a: [f(1), Uint8Array.of(2)] }).not.toEqual({ a: [f(1), Uint8Array.of(3)] });
   });
 
   it('the fake controller refuses an update out of order', () => {

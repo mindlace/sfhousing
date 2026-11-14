@@ -18,7 +18,8 @@ import {
 import type { PolicyTimeline } from './policy/frame';
 import { benchInput, fixtureInput } from './test/cities.node';
 import { benchRecords, fixtureRecords } from './test/map-stream-cities.node';
-import { streamDeps } from './test/map-stream-deps';
+import { sharedGenMemo, streamDeps as depsOf, warmGenMemo } from './test/map-stream-deps';
+import { useFastTypedArrayEquality } from './test/map-stream-equal';
 import { fill, startStream, StreamSink } from './test/map-stream-run';
 import { Recorder, SEEDS, readAll, runWorld } from './test/run';
 import { frameOf, oneFrame } from './test/timeline';
@@ -29,6 +30,12 @@ const WINDOW = 480;
 const CONSTRUCTION = STAGE_ORDER.indexOf('construction');
 const COMPLETE = STAGE_ORDER.indexOf('complete');
 const NS = STAGE_ORDER.length;
+
+useFastTypedArrayEquality();
+
+/** Every stream of this file shares one generator memo per city (a pure cache by content). */
+const streamDeps: typeof depsOf = (i, r, o = {}) =>
+  depsOf(i, r, { genMemo: sharedGenMemo(i), ...o });
 
 interface City {
   input: SimInput;
@@ -95,6 +102,7 @@ let bench: City;
 
 beforeAll(() => {
   bench = cityOf(benchInput(), benchRecords());
+  warmGenMemo(bench.input, bench.records, bench.statics, bench.timeline, SEED, 120);
 });
 
 /** A stream started on a fresh world of `city`. */
@@ -350,7 +358,9 @@ describe('map-stream: onEvent and flush', () => {
   });
 
   it('sliced equals unsliced', () => {
-    const MONTHS = 120;
+    // 60 months: every budget-0 flush is one piece of work, so the sliced run costs a flush call
+    // per massing; the precondition asserts below still hold (thousands of mid-cell stops)
+    const MONTHS = 60;
     const a = started(bench);
     const updatesA = [
       a.stream.flush(a.world, bench.statics, Infinity)!,
