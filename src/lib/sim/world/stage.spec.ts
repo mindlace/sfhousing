@@ -12,6 +12,8 @@ import {
   type Stage
 } from '$lib/timelapse/types';
 import { addProject, emptyWorld, pushRev, revisionsOf } from './columns';
+import { monthFirstDay, monthOfDay } from './months';
+import { dueMonthOf } from './pipeline';
 import { enterStage, reanchor, reviseOnEntry, rowSpeed, speedOf } from './stage';
 import { frameOf, IDENTITY } from './test/timeline';
 import { miniInput } from './test/mini';
@@ -185,6 +187,30 @@ describe('reanchor', () => {
     p.leave[row] = 3;
     reanchor(w, row, 3, 1);
     expect(p.leave[row]).toBe(3);
+  });
+
+  it('clamps to the change day when used rounds past length, so the row stays due', () => {
+    // s_old = 1.045, length 1000, used 0: leave = anchor + 1045. Re-anchoring on that very day
+    // gives used = 1045 / 1.045 = 1000.0000000000001, one ulp past length.
+    const asOf = 0;
+    const m = 36;
+    const c = monthFirstDay(asOf, m);
+    const { w, row } = rowOn(0, 1);
+    const p = w.projects;
+    p.anchor[row] = c - 1045;
+    p.used[row] = 0;
+    p.length[row] = 1000;
+    p.speed[row] = 1.045;
+    p.leave[row] = p.anchor[row] + Math.floor(1.045 * 1000);
+    expect(p.leave[row]).toBe(c);
+    expect(dueMonthOf(w, asOf, row)).toBe(m);
+    reanchor(w, row, c, 1);
+    expect(p.used[row]).toBeGreaterThan(p.length[row]);
+    const unclamped = c + Math.floor(p.speed[row] * (p.length[row] - p.used[row]));
+    expect(unclamped).toBe(c - 1);
+    expect(monthOfDay(asOf, unclamped)).toBe(m - 1);
+    expect(p.leave[row]).toBe(c);
+    expect(dueMonthOf(w, asOf, row)).toBe(m);
   });
 });
 
