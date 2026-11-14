@@ -1392,7 +1392,10 @@ async function caseHost(dir: string, live: Live, worlds: number, months: number)
     firstFilledMs: r(firstFilled - t0),
     fillFromFirstCompilingToLastFilledMs: r(lastFilled - firstCompiling),
     editSettledMs: r(editMs),
-    refill: of('refill', 2).map((p) => p.msg.from),
+    refill: of('refill', 2).map((p) => ({
+      from: p.msg.from,
+      afterCompiled: of('compiled', 2).some((c) => c.t <= p.t)
+    })),
     tasks: { open: openTasks, all: filling.length, ms: stats(filling.map((t) => t.ms)) },
     over50: over.map((t) => ({ ms: r(t.ms), label: t.label, posts: [...new Set(t.posts)] })),
     tasksOver50InOpenAndFill: over.filter((t) => t.start < e0).length
