@@ -77,7 +77,11 @@ A throw in a unit posts `error` `'timeline'` at the current rev and stops fillin
 
 ## The client
 
-`TimelineClient` drops `compiling`, `compiled`, `filled` and `refill` older than its floor and never drops `cells`, `lookups` or `heights`. The floor is the rev of the last `open` / `setPolicy` sent, except that `error` `bad-request` at the floor's rev lowers it to the last rev seen accepted (the last `compiled`, or the open's rev before any): the worker keeps filling at that rev. A `bad-request` for an older rev changes nothing. A `refill` before its rev's `compiled` is kept. This amends rule 22's "older than the last `setPolicy` it sent". `restart(worker)` re-opens with the last policy.
+`TimelineClient` (rule 22, S14) drops a `compiling` older than the last `open` or `setPolicy` sent (progress display only). It delivers `compiled`, `filled` and `refill` in arrival order whatever their rev, and drops them only when older than the last `open` sent; `restart(worker)` re-opens with the last policy and counts as an open. It never drops `cells`, `lookups`, `heights` or `error` (a rejected edit's `bad-request` included).
+
+Why not drop older revs after a `setPolicy`: posts made before the worker handled the edit are still in flight, and the worker never sends their months again (a kept edit fills on from `posted + 1`; a restore withdraws only from `refill.from`). Dropping them would leave a gap for good. postMessage order and the worker's rules (no `filled` while an edit is pending, nothing at a superseded rev, nothing at an older rev after acceptance) already make every post consistent in arrival order.
+
+A consumer applies `filled` and `refill` in order (`refill` withdraws every month from its `from`) and does not assume rev rises; a `filled` chunk belongs to the statics of the last `compiled` delivered before it. `timeline-client.host.spec.ts` drives the host through the client with delayed delivery (an edit kept, restored and rejected mid-fill; a second open with the first's posts in flight) and checks the months delivered are contiguous and equal a fresh open.
 
 ## Decisions
 
@@ -143,7 +147,7 @@ Tasks over 50 ms on the live city, host under Vitest (bundled the same, 100 to 1
 - **Heap**: S16's 300 MB is not met (427.7 MB live set, 546.2 MB with the month-0 copy); the partner re-sets it. `HEAP_BOUND_MB` in `host.perf.spec.ts` is null until then and the heap case asserts only the leak margin.
 - **Rich money**: on the live city with world-funding's bench money set, `planDue` is 77.6 / 111.4 ms per world (median / max), the change month 154 to 188 ms per world unit, 96 creates 4.3 s: over the 50 ms unit bar. A bound inside the step (`StepCtx`) is world-core's, deferred.
 - **Cold massing**: `CASE:2007.0946PRX:phase:3` is one generator call of about 636 ms, accepted; warm-ahead moves it out of the flush.
-- **Estimates**: a unit costlier than its kind's last 4 can push a slice a few ms past 50 (`create`, `warm`).
+- **Estimates**: a unit costlier than its kind's last 4 can push a slice a few ms past 50 (`create`, `warm`). The live overruns of 51.6 to 62.1 ms come from this scheduling rule, inherited from the old host (D7); they are accepted, not chased.
 - **`resyncMap`**: the snapshot is unbudgeted (rule 20): about 10 ms warm, 1.2 s with a cold memo.
 - **Load**: `loadScenario` precomputes the input outside any slice (`precomputeOf` 61 to 67 ms, as the old host's load).
 - **Edits**: a rejected `setPolicy` drops an earlier pending valid edit.
@@ -152,7 +156,7 @@ Tasks over 50 ms on the live city, host under Vitest (bundled the same, 100 to 1
 
 ## Tests and measurement
 
-Signoff: `host.spec.ts`, `host.edit.spec.ts`, `host.heights.spec.ts`, `runner/*.spec.ts`, `timeline-client.spec.ts`, `timeline-protocol.spec.ts`, `worker-router.spec.ts` (fixture-0, fake clock; behaviour and order only).
+Signoff: `host.spec.ts`, `host.edit.spec.ts`, `host.heights.spec.ts`, `runner/*.spec.ts`, `timeline-client.spec.ts`, `timeline-client.host.spec.ts`, `timeline-protocol.spec.ts`, `worker-router.spec.ts` (fixture-0, fake clock; behaviour and order only).
 
 `npm run test:perf` runs `host.perf.spec.ts`: on the bench city no task over 50 ms except a compile seam or the accepted massing; live (`SFH_WORLD_LIVE=<dataset dir>`, else the newest under `pipeline/out/`, else the bench city) first `cells` and `filled` within 3 s and the whole-window fill within 4,320 ms; the heap reported, and the leak margin asserted. Every task's contents are printed for the longest and those over 50 ms.
 

@@ -19,13 +19,14 @@ export type TimelineErrorCode = ScenarioErrorCode | 'timeline';
  * editor host's state.
  *
  * `rev` is the page's count of policy edits (`open` is rev 1 of a session; each `setPolicy` is the
- * next): the worker drops work for an older `rev`, and the client drops `compiling`, `compiled`,
- * `filled` and `refill` with an older `rev` than its drop floor. The floor is the last
- * `setPolicy` / `open` rev it sent, except that an `error` code `bad-request` at a rev equal to the
- * floor lowers it to the last rev seen accepted (the last `compiled` received, or the open rev
- * before any), because the worker keeps filling under the previous timelines and posts at that
- * rev; a `bad-request` for an older rev changes nothing. A `refill` may precede its rev's
- * `compiled` and is not dropped for it.
+ * next): the worker drops work for an older `rev`. The client drops a `compiling` whose `rev` is
+ * older than the last `setPolicy` or `open` it sent (progress display only). It delivers
+ * `compiled`, `filled` and `refill` in arrival order whatever their `rev`, dropping only those
+ * older than the last `open` it sent: a post at an older `rev` was valid when the worker made it,
+ * months before an edit are never posted again, and the worker's `refill` at the newer `rev`
+ * withdraws what the edit changes. A consumer applies these in order and does not assume `rev`
+ * rises from one message to the next; a `filled` chunk belongs to the statics of the last
+ * `compiled` delivered before it.
  *
  * The page reconciles the document before sending: `openSimDoc4` with the dataset's calibration
  * and `asOf`, read from the manifest's files. The worker rejects an unreconciled document with

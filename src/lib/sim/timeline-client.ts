@@ -1,5 +1,5 @@
-// Main-thread client for the timeline host (ensemble-runner rule 22): the rev barrier on policy
-// edits, crash and restart (re-opening with the last policy), and the lookups of ScenarioClient
+// Main-thread client for the timeline host (ensemble-runner rule 22): the rev floors on policy
+// edits and opens, crash and restart (re-opening with the last policy), and the lookups of ScenarioClient
 // unchanged. Mirrors ScenarioClient's crash handling (scenario-client.ts), which it leaves alone.
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
@@ -34,17 +34,20 @@ type Of<T extends TimelineResponse['type']> = Extract<TimelineResponse, { type: 
 
 export interface TimelineClientEvents {
   onReady?(r: ReadyResponse): void;
-  /** Only for the latest policy edit: an older `rev` is dropped. */
+  /**
+   * In arrival order, whatever the `rev`; dropped only when older than the last `open`. The chunk
+   * belongs to the statics of the last `compiled` delivered before it.
+   */
   onFilled?(m: Of<'filled'>): void;
-  /** Only for the latest policy edit: an older `rev` is dropped. */
+  /** In arrival order, whatever the `rev`; dropped only when older than the last `open`. */
   onRefill?(m: Of<'refill'>): void;
   /** Never dropped: the map's revision numbers are their own sequence. */
   onCells?(m: Of<'cells'>): void;
   /** Never dropped. */
   onLookups?(m: Of<'lookups'>): void;
-  /** Only for the latest policy edit: an older `rev` is dropped. */
+  /** Progress display only: a `rev` older than the last `setPolicy` or `open` is dropped. */
   onCompiling?(m: Of<'compiling'>): void;
-  /** Only for the latest policy edit: an older `rev` is dropped. */
+  /** In arrival order, whatever the `rev`; dropped only when older than the last `open`. */
   onCompiled?(m: Of<'compiled'>): void;
   /** Every error, whatever its rev: the caller compares `rev` with what it sent. */
   onError?(m: Of<'error'>): void;
@@ -57,24 +60,25 @@ export interface TimelineClientEvents {
 /**
  * The client side of the timeline host.
  *
- * Drop floor (S14): `compiling`, `compiled`, `filled` and `refill` older than the floor are
- * dropped. The floor is the rev of the last `open` / `setPolicy` sent, except that an `error` code
- * `bad-request` at a rev equal to the floor (the worker rejected that edit) lowers it to the last
- * rev seen accepted (the rev of the last `compiled` received, or the open rev before any), because
- * the worker keeps filling under the previous timelines and posts at that rev. A `bad-request` for
- * an older rev changes nothing, and the next sent edit raises the floor again. A `refill` is not
- * dropped for arriving before its rev's `compiled`: it is not older than the floor. `setPolicy`
- * before `open` throws; `restart` re-opens only when a timeline was opened.
+ * Drops (S14, rule 22): a `compiling` older than the last `open` or `setPolicy` sent is dropped
+ * (progress display only). `compiled`, `filled` and `refill` are delivered in arrival order whatever
+ * their `rev`, and dropped only when older than the last `open` sent (a `restart` re-open counts):
+ * a post at an older `rev` was valid when the worker made it, the worker never posts a month twice,
+ * and its `refill` at the newer `rev` withdraws what an edit changes, so dropping one would lose
+ * months for good. A consumer applies them in order and does not assume `rev` rises; a `filled`
+ * chunk belongs to the statics of the last `compiled` delivered before it. `cells`, `lookups` and
+ * `error` are never dropped. `setPolicy` before `open` throws; `restart` re-opens only when a
+ * timeline was opened.
  */
 export class TimelineClient {
   #worker: ScenarioWorkerLike;
   #events: TimelineClientEvents;
   #lookups: LookupRequests;
   #rev = 0;
-  /** The rev of the latest `openTimeline` or `setPolicy` sent: older answers are dropped. */
+  /** The rev of the latest `openTimeline` or `setPolicy` sent: an older `compiling` is dropped. */
   #policyRev = 0;
-  /** The last rev seen accepted: the highest `compiled` received, or the open rev before any. */
-  #acceptedRev = 0;
+  /** The rev of the latest `openTimeline` sent: an older `compiled`, `filled`, `refill` is dropped. */
+  #openRev = 0;
   #manifest: Manifest | null = null;
   #policy: SimPolicy4 | null = null;
   #lots: Record<string, ParcelId[]> = {};
@@ -101,7 +105,7 @@ export class TimelineClient {
   #sendOpen(): Rev {
     const rev = ++this.#rev;
     this.#policyRev = rev;
-    this.#acceptedRev = rev;
+    this.#openRev = rev;
     this.#post({
       type: 'openTimeline',
       rev,
@@ -122,7 +126,7 @@ export class TimelineClient {
     return this.#sendOpen();
   }
 
-  /** A policy edit: answers for older edits are dropped from here on. */
+  /** A policy edit: `compiling` for older edits is dropped from here on, nothing else. */
   setPolicy(policy: SimPolicy4, lots: Record<string, ParcelId[]>): Rev {
     if (this.#manifest === null) throw new Error('open first');
     this.#policy = policy;
@@ -236,14 +240,13 @@ export class TimelineClient {
         if (msg.rev >= this.#policyRev) this.#events.onCompiling?.(msg);
         return;
       case 'compiled':
-        this.#acceptedRev = Math.max(this.#acceptedRev, msg.rev);
-        if (msg.rev >= this.#policyRev) this.#events.onCompiled?.(msg);
+        if (msg.rev >= this.#openRev) this.#events.onCompiled?.(msg);
         return;
       case 'filled':
-        if (msg.rev >= this.#policyRev) this.#events.onFilled?.(msg);
+        if (msg.rev >= this.#openRev) this.#events.onFilled?.(msg);
         return;
       case 'refill':
-        if (msg.rev >= this.#policyRev) this.#events.onRefill?.(msg);
+        if (msg.rev >= this.#openRev) this.#events.onRefill?.(msg);
         return;
       case 'cells':
         this.#events.onCells?.(msg);
@@ -252,9 +255,6 @@ export class TimelineClient {
         this.#events.onLookups?.(msg);
         return;
       case 'error':
-        if (msg.code === 'bad-request' && msg.rev === this.#policyRev) {
-          this.#policyRev = this.#acceptedRev;
-        }
         this.#events.onError?.(msg);
         return;
       case 'chunks':
