@@ -20,7 +20,7 @@ import { chunkOf } from './chunk';
 import { moneyRowsOf } from './money';
 import { createWorldSeries, extrasOf } from './series';
 import { feedFunded, timelineStatics } from './test/feed';
-import { viewOf } from './view';
+import { chunksBefore, viewOf } from './view';
 import type { MoneyFeed, ScoreStatics, WorldSeries } from './types';
 
 type Finance = NonNullable<SimInput['finance']>;
@@ -170,6 +170,56 @@ function checkDisplaced(
   return events;
 }
 
+/**
+ * Rule 12's figures by month: at every month i of a full view, today's `perAddedHome` and
+ * `displacedShare` at i over the view's money with the completed-paired displaced term; at
+ * `filledThrough`, the scalars exactly; a partial view gives the prefix. Returns the number of
+ * months with no added homes (null in the series).
+ */
+function checkByMonth(c: City, r: Run): number {
+  const last = c.score.lastIndex;
+  const chunks = [
+    chunkOf([r.series], [r.series], r.feed, 0, 99),
+    chunkOf([r.series], [r.series], r.feed, 100, last)
+  ];
+  const m = viewOf(chunks, c.score).money!;
+  const paired = { ...m, displacedHomes: m.displacedHomesCompleted };
+  expect(m.perAddedHomeByMonth.all).toHaveLength(last + 1);
+  expect(m.perAddedHomeByMonth.city).toHaveLength(last + 1);
+  expect(m.displacedShareByMonth).toHaveLength(last + 1);
+  let empty = 0;
+  for (let i = 0; i <= last; i++) {
+    expect(m.perAddedHomeByMonth.all[i]).toBe(perAddedHome(paired, i, 'all'));
+    expect(m.perAddedHomeByMonth.city[i]).toBe(perAddedHome(paired, i, 'city'));
+    expect(m.displacedShareByMonth[i]).toBe(displacedShare(paired, i));
+    if (m.fundedHomes[i] - m.displacedHomesCompleted[i] <= 0) {
+      expect(m.perAddedHomeByMonth.all[i]).toBeNull();
+      expect(m.perAddedHomeByMonth.city[i]).toBeNull();
+      empty++;
+    }
+    if (m.fundedHomes[i] <= 0) expect(m.displacedShareByMonth[i]).toBeNull();
+  }
+  expect(m.perAddedHomeByMonth.all[last]).toBe(m.perAddedHome.all);
+  expect(m.perAddedHomeByMonth.city[last]).toBe(m.perAddedHome.city);
+  expect(m.displacedShareByMonth[last]).toBe(m.displacedShare);
+  // Not degenerate: some months have a figure.
+  expect(m.perAddedHomeByMonth.all.some((x) => x !== null)).toBe(true);
+  expect(m.displacedShareByMonth.some((x) => x !== null)).toBe(true);
+  // A partial view gives the prefix, its last entry its own scalar.
+  for (const k of [1, 60, 150]) {
+    const p = viewOf(chunksBefore(chunks, k), c.score).money!;
+    expect(p.perAddedHomeByMonth).toEqual({
+      all: m.perAddedHomeByMonth.all.slice(0, k),
+      city: m.perAddedHomeByMonth.city.slice(0, k)
+    });
+    expect(p.displacedShareByMonth).toEqual(m.displacedShareByMonth.slice(0, k));
+    expect(p.perAddedHomeByMonth.all[k - 1]).toBe(p.perAddedHome.all);
+    expect(p.perAddedHomeByMonth.city[k - 1]).toBe(p.perAddedHome.city);
+    expect(p.displacedShareByMonth[k - 1]).toBe(p.displacedShare);
+  }
+  return empty;
+}
+
 describe('world 1 money, funded mini', () => {
   let c: City;
   const runs = new Map<number, Run>();
@@ -192,6 +242,14 @@ describe('world 1 money, funded mini', () => {
   it.each([1, 2, 3])("seed %i: fundedHomes equals moneyOf's at every month", (seed) => {
     expect(checkHomes(c, runOf(seed))).toBeGreaterThan(0);
   });
+
+  it.each([1, 2, 3])(
+    "seed %i: perAddedHome and displacedShare by month are today's at each month",
+    (seed) => {
+      // Early months have no funded homes: a month with no added homes gives null.
+      expect(checkByMonth(c, runOf(seed))).toBeGreaterThan(0);
+    }
+  );
 
   it('a slice from..through equals the same months of 0..finalThrough', () => {
     const r = runOf(1);
@@ -338,6 +396,10 @@ describe('world 1 money, funded bench', () => {
 
   it("fundedHomes equals moneyOf's at every month", () => {
     expect(checkHomes(c, r)).toBeGreaterThan(0);
+  });
+
+  it("perAddedHome and displacedShare by month are today's at each month", () => {
+    expect(checkByMonth(c, r)).toBeGreaterThan(0);
   });
 });
 

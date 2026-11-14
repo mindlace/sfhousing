@@ -66,7 +66,9 @@ Runner rule: pass `createWorldSeries` the very `ScoreStatics` object `scoreStati
 
 `viewOf` gives `money` as today's `TimelineScore['money']` for world 1 (rule 12), with every series cut at `filledThrough`. `owed` is each debt pool's `received[filledThrough]` with `debtService(principal, debt).total`. `money` is null when a chunk has none.
 
-`MoneyView` adds three fields to today's money: `displacedHomesCompleted` (per month, cut at `filledThrough`), and `perAddedHome: { all, city }` and `displacedShare`, read at `filledThrough`. The page reads those two figures from the view and does not call `finance-score`'s functions on `money` for them: they are today's `perAddedHome` and `displacedShare` computed over a money whose `displacedHomes` is `displacedHomesCompleted`.
+`MoneyView` adds five fields to today's money: `displacedHomesCompleted` (per month, cut at `filledThrough`); `perAddedHome: { all, city }` and `displacedShare`, read at `filledThrough`; and the same two figures by month, `perAddedHomeByMonth: { all: (number | null)[]; city: (number | null)[] }` and `displacedShareByMonth: (number | null)[]`. The page reads those figures from the view and does not call `finance-score`'s functions on `money` for them: they are today's `perAddedHome` and `displacedShare` computed over a money whose `displacedHomes` is `displacedHomesCompleted`.
+
+The `ByMonth` series (for timeline-ui's rule 26: Results rows for the playhead's month) have `filledThrough + 1` entries like the other money series. Entry i is today's function applied at month i over that paired money, which reads only month i of each series, so it is the figure a view filled through month i gives: a partial view (`chunksBefore`) gives the prefix. An entry is null where today's function gives null: `perAddedHome` when `fundedHomes - displacedHomesCompleted <= 0` (no added homes), `displacedShare` when `fundedHomes <= 0`. Entry `filledThrough` is the scalar exactly (`perAddedHomeByMonth.all[filledThrough] === perAddedHome.all`, and so on), and the page reads the playhead's month by index. They are plain arrays, so the view stays structured-cloneable.
 
 The shown `displacedHomes` series and the ratio's displaced term differ in timing on purpose (partner ruling, rule 12). The series shows displacement when it happens (rule 2). The ratio pairs it with `fundedHomes`, which counts at completion, so its denominator keeps today's meaning: homes added by completed funded projects, less what those projects displaced. At `filledThrough` it equals `moneyOf`'s `displacedHomes` over the schedules read on that month's last day, and on funded mini (480 months) `perAddedHome` and `displacedShare` at the horizon equal the old engine's in all 49 of seeds 1-50 whose money matches (`money.spec.ts`). `owedAt` and `cityOf` read the series as before.
 
@@ -111,6 +113,8 @@ What money and tiers read, from world-funding as merged (shadows and `'displaced
 ## Timing
 
 Bench `synthCity`, quiet machine, lock held, 2026-11-13, after the perf pass and the rule 12 fix. Unfunded, 96 worlds: median 0.728 ms, p90 0.897 ms per month (bar 1 ms, read at the median). Funded, 32 worlds: median 0.767 ms (months 101-150, ledger 763 events) and 0.771 ms (months 400-450, ledger 2394 events), so no growth with ledger length. `chunk.perf.spec.ts` labels a run quiet only with `SFH_PERF_QUIET=1`: set it when holding the lock. `npm run test:perf`, not in signoff.
+
+`viewOf` (`view.perf.spec.ts`, no bar): bench `synthCity`, 4 funded worlds, a full 480-month window in 480 one-month chunks, 1000 calls, quiet machine, lock held, 2026-11-14. Before the `ByMonth` series: median 0.183 ms, p90 0.199 ms. With them: median 0.208 ms, p90 0.324 ms per call.
 
 ## Known gaps
 
