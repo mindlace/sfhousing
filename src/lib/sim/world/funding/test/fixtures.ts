@@ -11,8 +11,11 @@ import type { LedgerEvent } from '$lib/sim/scenario/money';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, PoolKind, Programme } from '$lib/timelapse/types';
+import type { SimPolicy4 } from '$lib/timeline/policy4';
 import { monthFirstDay, monthLastDay } from '../../months';
+import { inForceAt, moneyLeversOf } from '../../policy/combine';
 import type { FinanceFrame, PolicyFrame, PolicyTimeline } from '../../policy/frame';
+import { createMoneyTrack } from '../../policy/money';
 import { frameIdOf } from '../../policy/intern';
 import type { Statics } from '../../statics';
 import { miniInput } from '../../test/mini';
@@ -113,6 +116,38 @@ export function oneMoneyTimeline(input: SimInput, fin: Finance): PolicyTimeline 
       frames.set(m, f);
     }
     return f;
+  };
+  const changes: number[] = [];
+  for (let m = 2; m <= MONEY_MONTHS; m++) if (frameAt(m).id !== frameAt(m - 1).id) changes.push(m);
+  return {
+    frameAt,
+    changes: () => changes,
+    touched: () => new Int32Array(0),
+    readyThrough: () => Number.MAX_SAFE_INTEGER
+  };
+}
+
+/**
+ * Frames of `input` (its view and market constant) whose `finance` is policy-timeline's money
+ * track of `doc` (`createMoneyTrack`, levers `moneyLeversOf(inForceAt(doc, first day))` as the
+ * compiler takes them); a frame's id comes from `frameIdOf` of the track's money key and the
+ * market, so months with the same money identity share an id whatever their arrivals. Changes are
+ * found over the first `MONEY_MONTHS` months.
+ */
+export function moneyTimeline(input: SimInput, doc: SimPolicy4): PolicyTimeline {
+  const track = createMoneyTrack(doc, input);
+  const base = frameOf(input);
+  const frames: PolicyFrame[] = [];
+  // The track is asked for months 1, 2, … in order.
+  const frameAt = (m: number): PolicyFrame => {
+    if (!(m >= 1) || !Number.isInteger(m)) throw new RangeError(`moneyTimeline: month ${m}`);
+    while (frames.length < m) {
+      const k = frames.length + 1;
+      const got = track.month(k, moneyLeversOf(inForceAt(doc, monthFirstDay(input.asOf, k))));
+      const id = frameIdOf(`money-fixture|${got === null ? 'none' : got.key}|${base.market}`);
+      frames.push({ ...base, id, finance: got === null ? null : got.frame });
+    }
+    return frames[m - 1];
   };
   const changes: number[] = [];
   for (let m = 2; m <= MONEY_MONTHS; m++) if (frameAt(m).id !== frameAt(m - 1).id) changes.push(m);
