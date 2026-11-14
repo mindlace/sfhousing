@@ -38,17 +38,22 @@ Fetch the file when working in the relevant area:
 - **Map performance (`npm run bench:map`, pass bar, results, CI note)** — [docs/dev/map-perf.md](docs/dev/map-perf.md)
 - **FZP timelapse `FzpMode` (`/fzp` redirects to `/sim`; scrubber contract, layout variables, `window.__sfhFzp`, request flow, T9 lookups seam, known gaps)** — [docs/dev/fzp-mode.md](docs/dev/fzp-mode.md)
 - **Policy levers engine (`SimLevers`, resolution order, law switch, timer reach, `setLevers` protocol)** — [docs/dev/sim-levers.md](docs/dev/sim-levers.md)
+- **Map feed from a stepped world (`MapStream`, events to `TimelineUpdate`, rewind, snapshot, `restore`)** — [docs/dev/map-stream.md](docs/dev/map-stream.md)
 - **`/sim` page (policy recipe, brushes, lever status, dataset requirement)** — [docs/dev/sim-page.md](docs/dev/sim-page.md)
 - **Permitting timers on `/sim` (presets, floors, evidence, timeline UI)** — [docs/dev/sim-timers.md](docs/dev/sim-timers.md)
 - **Public money on `/sim` (`FinanceLevers`, schema 3 loader, presets and their sources, Funding tab, Results money and income rows, card line, notices)** — [docs/dev/sim-funding.md](docs/dev/sim-funding.md)
 - **`/lesscars` (plan format, checks, dated regimes and reservations, freed land, paired runs, output files, the page)** — [docs/dev/lesscars.md](docs/dev/lesscars.md)
 - **Road-like lots (imagery review behind `road-lots.json`, lots beside freed sites, live build measurements)** — [docs/dev/road-lots.md](docs/dev/road-lots.md)
+- **Policies with dates (schema 4 document, compiling to frames, frame ids, the comparison)** — [docs/dev/policy-timeline.md](docs/dev/policy-timeline.md)
 - **Finance model (prototypes, market terms, grant-equivalents, bundles, income tiers, debt and legal limits)** — [docs/dev/finance-model.md](docs/dev/finance-model.md)
 - **Today's market (`calibration.market`, the start-odds shift, `market.json`, `SimInput.market` steps, the affordable-cohort flag)** — [docs/dev/market.md](docs/dev/market.md)
 - **Finance data (`affordableHomes`, `byTier`, `affordableRoutes`, `baselineFunding`, `funding.json`, the MOHCD source)** — [docs/dev/finance-data.md](docs/dev/finance-data.md)
 - **Funded starts, the funding queue and the pools in the engine (`SimInput.finance`, `off`, latents, the line and its order, the award rule, re-pricing and lapse, the ledger protocol, the card's funding fields, `sampleAdvance`, budgets)** — [docs/dev/finance-engine.md](docs/dev/finance-engine.md)
 - **Funding levers (`FinanceLevers`, `buildFinance`, `off` spans, the twin, the worker's guard, the finance warm task)** — [docs/dev/finance-levers.md](docs/dev/finance-levers.md)
 - **Homes by income tier and public money in the results (`TimelineScore.tiers` and `money`, `tiersOf`, the ledger series and their identities, per added home, limit statements)** — [docs/dev/finance-score.md](docs/dev/finance-score.md)
+- **World core (the world, the step and its systems, the due list, the readers, the funding hook)** — [docs/dev/world-core.md](docs/dev/world-core.md)
+- **Results from the step engine (WorldSeries, chunks, TimelineView, cardAt)** — [docs/dev/world-score.md](docs/dev/world-score.md)
+- **Public money in the step engine (world-funding: the line by month, funded clocks over frames, money events at stage events, shadows, the tolerance referee)** — [docs/dev/world-funding.md](docs/dev/world-funding.md)
 - **Design, specs and plans** — `docs/superpowers/design/`, `docs/superpowers/specs/`, `docs/superpowers/plans/`
 
 Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link them from this list.
