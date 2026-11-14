@@ -100,8 +100,16 @@ function findSlot(u: TimelineUpdate, projectId: string): { cell: TimedPackedCell
 
 let bench: City;
 
+// One step per hook, each well inside the default hook timeout under load: the bench input and its
+// records are a city build each, and the warm-up is the generator's cold cost.
+let benchIn: SimInput;
 beforeAll(() => {
-  bench = cityOf(benchInput(), benchRecords());
+  benchIn = benchInput();
+});
+beforeAll(() => {
+  bench = cityOf(benchIn, benchRecords());
+});
+beforeAll(() => {
   warmGenMemo(bench.input, bench.records, bench.statics, bench.timeline, SEED, 120);
 });
 
