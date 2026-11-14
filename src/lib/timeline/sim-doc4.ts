@@ -207,7 +207,8 @@ export function parseSimDoc4(text: string, asOf: Day | null): Result<SimDoc4> {
  * without the month alignment or the programme term check, and the stroke and size limits, as
  * `openSimDoc4` reads a schema 4 body before reconciling it. Nothing is upgraded or reconciled. A
  * schema 2 or 3 body is `unknown-schema` (opening one needs a dataset: `openSimDoc4`), a newer one
- * `future-schema`. For a holder of stored rows with no dataset, such as the server.
+ * `future-schema`; a caller that accepts 2 or 3 branches on `schema` before calling. For a holder
+ * of stored rows with no dataset, such as the server.
  */
 export function loadSimDoc4(text: string): Result<SimDoc4> {
   const o = jsonObject(text);

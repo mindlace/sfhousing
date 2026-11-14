@@ -107,7 +107,7 @@ Slicing: a unit (a recompute step, `applyLevers`, `precomputeOf`) runs whole, so
 
 ## Saving and sharing
 
-`SimDoc4 = { schema: 4, kind: 'sim', datasetVersion, title?, policy }` (`sim-doc4.ts`). `parseSimDoc4` (strict) takes schema 4 only: 2 and 3 are `unknown-schema`, newer is `future-schema`. `openSimDoc4(text, { asOf, calibration })` opens 2, 3 or 4 as a reconciled schema 4 document, with `upgradedFrom` and the `Policy4Report`. `createSimCodec4` is the `DocCodec`; `SIM_KEY4` is `sfhousing:sim:v2`, and `migrateSimAutosave` copies a v1 autosave to v2 as an upgraded document, leaving v1 alone and never touching an existing v2. The D1 table does not change.
+`SimDoc4 = { schema: 4, kind: 'sim', datasetVersion, title?, policy }` (`sim-doc4.ts`). `parseSimDoc4` (strict) takes schema 4 only: 2 and 3 are `unknown-schema`, newer is `future-schema`. `openSimDoc4(text, { asOf, calibration })` opens 2, 3 or 4 as a reconciled schema 4 document, with `upgradedFrom` and the `Policy4Report`. `createSimCodec4` is the `DocCodec`; `SIM_KEY4` is `sfhousing:sim:v2`, and `migrateSimAutosave` copies a v1 autosave to v2 as an upgraded document, leaving v1 alone and never touching an existing v2. The D1 table does not change. Their callers (the server codec, `/sim`) come with timeline-ui.
 
 `loadSimDoc4(text)` is the lenient, dataset-free load of a stored schema 4 body (envelope, title, policy unaligned and without the term check, stroke and size limits; nothing upgraded or reconciled; 2 and 3 are `unknown-schema`): use it where there is no dataset, such as the server's `/api/policies` row load, and `openSimDoc4` where there is one.
 
