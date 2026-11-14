@@ -60,6 +60,25 @@ async function setup(props: Partial<HostProps> = {}) {
   return { q, onday, view };
 }
 
+describe('Playhead markers', () => {
+  it('a marker jump while playing pauses, clamps to the filled mark and moves the day', async () => {
+    const rhna = dayFromUtc(2031, 1, 31);
+    const far = dayFromUtc(2060, 1, 1);
+    const { onday } = await setup({
+      startPlaying: true,
+      markers: [
+        { day: rhna, label: 'RHNA deadline', name: 'Jump to RHNA deadline, January 2031' },
+        { day: far, label: '2060', name: 'Jump to 2060' }
+      ]
+    });
+    await page.getByRole('button', { name: 'Jump to RHNA deadline, January 2031' }).click();
+    expect(stateText()).toBe(`${rhna}|false|year`);
+    expect(onday).toHaveBeenCalledTimes(1);
+    await page.getByRole('button', { name: 'Jump to 2060' }).click();
+    expect(stateDay()).toBe(END);
+  });
+});
+
 describe('Playhead', () => {
   it('is a slider named "Date in the simulation" with the month as value text', async () => {
     await setup();
@@ -185,6 +204,9 @@ describe('Playhead', () => {
     const { q } = await setup({ playable: false });
     await expect.element(play()).toHaveAttribute('aria-disabled', 'true');
     await expect.element(play()).toHaveAccessibleDescription(/forecast is filled/);
+    await expect
+      .element(page.getByTestId('tl-faster'))
+      .toHaveAccessibleDescription(/forecast is filled/);
     (play().element() as HTMLElement).click();
     flushSync();
     expect(stateText().split('|')[1]).toBe('false');

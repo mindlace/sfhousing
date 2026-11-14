@@ -1,6 +1,6 @@
 <!-- Test host: binds the Playhead's $bindable props and prints them (Playhead.svelte.spec.ts). -->
 <script lang="ts">
-  import type { Speed } from '$lib/fzp/types';
+  import type { Marker, Speed } from '$lib/fzp/types';
   import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import type { Day } from '$lib/timelapse/time';
   import Playhead from '../Playhead.svelte';
@@ -10,6 +10,7 @@
     windowEnd: Day;
     end: Day;
     playable?: boolean;
+    markers?: Marker[];
     startDay?: Day;
     startPlaying?: boolean;
     onday?: (day: Day) => void;
@@ -21,6 +22,7 @@
     windowEnd,
     end,
     playable = true,
+    markers = [],
     startDay,
     startPlaying = false,
     ...rest
@@ -33,5 +35,15 @@
   let speed = $state<Speed>(DEFAULT_SPEED);
 </script>
 
-<Playhead {asOf} {windowEnd} {end} {playable} bind:day bind:playing bind:speed {...rest} />
+<Playhead
+  {asOf}
+  {windowEnd}
+  {end}
+  {playable}
+  {markers}
+  bind:day
+  bind:playing
+  bind:speed
+  {...rest}
+/>
 <output data-testid="state">{day}|{playing}|{speed}</output>

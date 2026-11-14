@@ -3,13 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
-import { dayFromUtc } from '$lib/fzp/time';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from './chunk-log';
 import ChartRow from './ChartRow.svelte';
-import Ruler from './Ruler.svelte';
 import { chunk, cut, statics } from './test/fixtures';
-import { vi } from 'vitest';
 
 function fullView(): TimelineView {
   const log = logFilled(logCompiled(EMPTY_LOG, statics()), chunk(0, 24));
@@ -26,7 +23,14 @@ describe('ChartRow', () => {
     const fig = page.getByRole('figure', { name: 'Net new homes by month' });
     await expect.element(fig).toBeVisible();
     expect(fig.element().querySelector('figcaption')!.textContent).toMatch(/Results table/);
-    const xs = ['chart-avg', 'chart-avg-later', 'chart-city', 'chart-band', 'chart-band-later']
+    const xs = [
+      'chart-avg',
+      'chart-avg-later',
+      'chart-city',
+      'chart-city-later',
+      'chart-band',
+      'chart-band-later'
+    ]
       .map((id) => page.getByTestId(id).element().getAttribute('d')!)
       .flatMap(pathXs);
     const through = (5 / 23) * 1000;
@@ -37,8 +41,13 @@ describe('ChartRow', () => {
     await render(ChartRow, { props: { view: fullView(), index: 10, target: null } });
     const solid = page.getByTestId('chart-avg').element();
     const later = page.getByTestId('chart-avg-later').element();
-    expect(later.getAttribute('stroke-opacity')).toBe('0.45');
-    expect(solid.getAttribute('stroke-opacity')).toBeNull();
+    // Full-strength colour (so it keeps 3:1) told apart from the part before by dash.
+    expect(later.getAttribute('stroke-opacity')).toBeNull();
+    expect(later.getAttribute('stroke-dasharray')).toBeTruthy();
+    expect(solid.getAttribute('stroke-dasharray')).toBeNull();
+    expect(
+      page.getByTestId('chart-city-later').element().getAttribute('stroke-opacity')
+    ).toBeNull();
     const city = page.getByTestId('chart-city').element();
     expect(city.getAttribute('stroke-dasharray')).toBeTruthy();
     expect(solid.getAttribute('stroke-dasharray')).toBeNull();
@@ -62,50 +71,39 @@ describe('ChartRow', () => {
     const readout = page.getByTestId('chart-readout');
     await expect.element(readout).toBeVisible();
     // chunk(): mean 3k, this city 3k + 1, at k = 3.
-    await expect.element(readout).toHaveTextContent(/average 9,/);
-    await expect.element(readout).toHaveTextContent(/this city 10/);
+    await expect.element(readout).toHaveTextContent(/average 1,009,/);
+    await expect.element(readout).toHaveTextContent(/this city 1,010/);
     await expect.element(readout).toHaveTextContent(/8 in 10 \d/);
     await userEvent.keyboard('{ArrowRight}');
-    await expect.element(readout).toHaveTextContent(/average 12/);
+    await expect.element(readout).toHaveTextContent(/average 1,012/);
   });
 
-  it('shows the numbers on hover and nothing without a view', async () => {
+  it('shows the numbers on hover', async () => {
     await render(ChartRow, { props: { view: fullView(), index: 0, target: null } });
     const el = page.getByRole('slider', { name: 'Month in the chart' });
     await el.hover();
     await expect.element(page.getByTestId('chart-readout')).toBeVisible();
   });
 
+  it('plots and reads out completed net homes with the baseline added', async () => {
+    const view = fullView();
+    expect(view.baseline.completedNet).toBe(1000);
+    await render(ChartRow, {
+      props: { view, index: 0, target: { deadlineIndex: 12, units: 1020 } }
+    });
+    // Month 0 of the fixture is 0 homes: the line starts at the baseline, below the target.
+    const avgY = (id: string) =>
+      Number(/M[\d.-]+,([\d.-]+)/.exec(page.getByTestId(id).element().getAttribute('d')!)![1]);
+    const targetY = Number(page.getByTestId('chart-target').element().getAttribute('y1'));
+    expect(avgY('chart-avg')).toBeGreaterThan(targetY);
+    (page.getByRole('slider', { name: 'Month in the chart' }).element() as HTMLElement).focus();
+    await expect.element(page.getByTestId('chart-readout')).toHaveTextContent(/average 1,000,/);
+    await expect.element(page.getByTestId('chart-readout')).toHaveTextContent(/8 in 10 1,0/);
+  });
+
   it('draws no marks and no overlay without a view', async () => {
     await render(ChartRow, { props: { view: null, index: 0, target: null } });
     await expect.element(page.getByTestId('chart-avg')).not.toBeInTheDocument();
     await expect.element(page.getByRole('slider')).not.toBeInTheDocument();
-  });
-});
-
-describe('Ruler', () => {
-  const asOf = dayFromUtc(2026, 10, 15);
-  const windowEnd = dayFromUtc(2066, 10, 31);
-  it('labels the years from the dataset date, fills to the mark and jumps from markers', async () => {
-    const onjump = vi.fn();
-    const rhna = dayFromUtc(2031, 1, 31);
-    await render(Ruler, {
-      props: {
-        asOf,
-        windowEnd,
-        filledEnd: dayFromUtc(2046, 10, 15),
-        markers: [
-          { day: rhna, label: 'RHNA deadline', name: 'Jump to RHNA deadline, January 2031' },
-          { day: dayFromUtc(2045, 1, 1), label: '2045', name: 'Jump to 2045' }
-        ],
-        onjump
-      }
-    });
-    await expect.element(page.getByText('2026')).toBeVisible();
-    await expect.element(page.getByText('2066')).toBeVisible();
-    const filled = page.getByTestId('tl-ruler-filled').element() as HTMLElement;
-    expect(parseFloat(filled.style.width)).toBeCloseTo(50, 0);
-    await page.getByRole('button', { name: 'Jump to RHNA deadline, January 2031' }).click();
-    expect(onjump).toHaveBeenCalledWith(rhna);
   });
 });

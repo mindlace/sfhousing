@@ -2,7 +2,7 @@
   The chart row (rule 4, rule 28): net new homes by month as the average of the simulated cities
   (heavy solid line) with the 8-in-10 band behind it, this city (thin dotted line) and the state
   target as a dashed marker at its deadline. Lines differ by dash as well as colour. The part
-  after `index` is drawn lighter; nothing is drawn past `filledThrough`. Hover or focus of a
+  after `index` is drawn lighter, as sparser dashes at full colour (3:1 holds); nothing is drawn past `filledThrough`. Hover or focus of a
   month, and Left and Right on the focused overlay, show that month's three numbers.
   The figcaption points to the Results table as the text alternative.
 -->
@@ -28,6 +28,8 @@
   const W = 1000;
   const H = 100;
   const last = $derived(view?.filledThrough ?? -1);
+  /** The homes already completed at the dataset date: added, as the headline counts them. */
+  const base = $derived(view?.baseline.completedNet ?? 0);
   const lastIndex = $derived(Math.max(view?.lastIndex ?? 1, 1));
   const x = (i: number) => (i / lastIndex) * W;
 
@@ -35,14 +37,14 @@
     if (!view || last < 0) return 1;
     let m = target?.units ?? 0;
     for (let i = 0; i <= last; i++) {
-      m = Math.max(m, view.band[i].hi, view.mean[i].completedNet, view.shown[i].completedNet);
+      m = Math.max(m, base + view.band[i].hi, avg(i), city(i));
     }
     return Math.max(m, 1);
   });
   const yMin = $derived.by(() => {
     if (!view || last < 0) return 0;
-    let m = 0;
-    for (let i = 0; i <= last; i++) m = Math.min(m, view.band[i].lo);
+    let m = Math.min(0, base);
+    for (let i = 0; i <= last; i++) m = Math.min(m, base + view.band[i].lo);
     return m;
   });
   const y = (v: number) => H - ((v - yMin) / Math.max(yMax - yMin, 1)) * (H - 4) - 2;
@@ -58,15 +60,15 @@
   function area(a: number, b: number): string {
     if (!view || b < a) return '';
     let d = '';
-    for (let i = a; i <= b; i++) d += `${i === a ? 'M' : 'L'}${pt(i, view.band[i].hi)}`;
-    for (let i = b; i >= a; i--) d += `L${pt(i, view.band[i].lo)}`;
+    for (let i = a; i <= b; i++) d += `${i === a ? 'M' : 'L'}${pt(i, base + view.band[i].hi)}`;
+    for (let i = b; i >= a; i--) d += `L${pt(i, base + view.band[i].lo)}`;
     return `${d}Z`;
   }
 
   // The solid part runs through the playhead's month, the lighter part from there on.
   const split = $derived(Math.min(Math.max(index, 0), last));
-  const avg = (i: number) => view!.mean[i].completedNet;
-  const city = (i: number) => view!.shown[i].completedNet;
+  const avg = (i: number) => base + view!.mean[i].completedNet;
+  const city = (i: number) => base + view!.shown[i].completedNet;
 
   let focusAt = $state<number | null>(null);
   let hoverAt = $state<number | null>(null);
@@ -76,7 +78,7 @@
     const b = view!.band[i];
     return (
       `${formatMonthYear(view!.months[i])}: average ${formatCount(avg(i))}, ` +
-      `8 in 10 ${formatRange(b.lo, b.hi)}, this city ${formatCount(city(i))}`
+      `8 in 10 ${formatRange(base + b.lo, base + b.hi)}, this city ${formatCount(city(i))}`
     );
   }
 
@@ -169,9 +171,8 @@
           fill="none"
           stroke={COLORS.fresh}
           stroke-width="1.25"
-          stroke-dasharray="1 3"
+          stroke-dasharray="1 7"
           stroke-linecap="round"
-          stroke-opacity="0.45"
           vector-effect="non-scaling-stroke"
           data-testid="chart-city-later"
         />
@@ -188,7 +189,7 @@
           fill="none"
           stroke={COLORS.total}
           stroke-width="2.5"
-          stroke-opacity="0.45"
+          stroke-dasharray="7 4"
           vector-effect="non-scaling-stroke"
           data-testid="chart-avg-later"
         />
