@@ -82,7 +82,7 @@ Constants exported from the client: `WORLDS = 48` and `WINDOW_MONTHS = 480`. The
 
 ## The client
 
-22. `TimelineClient` wraps the worker like `ScenarioClient` does: `open(manifest, policy, lots)`, `setPolicy(policy, lots): Rev`, `viewMonth(month)`, `resyncMap()`, the lookups of today's client unchanged, and callbacks `onFilled`, `onRefill`, `onCells`, `onLookups`, `onCompiling`, `onCompiled`, `onError`, `onChunks`, `onHeights`, `onCrash`. It drops `compiling`, `compiled`, `filled` and `refill` whose `rev` is older than the last `setPolicy` it sent, and never drops `cells` or `lookups`. `restart(worker)` re-opens with the last policy, as today's client does after a crash.
+22. `TimelineClient` wraps the worker like `ScenarioClient` does: `open(manifest, policy, lots)`, `setPolicy(policy, lots): Rev`, `viewMonth(month)`, `resyncMap()`, the lookups of today's client unchanged, and callbacks `onFilled`, `onRefill`, `onCells`, `onLookups`, `onCompiling`, `onCompiled`, `onError`, `onChunks`, `onHeights`, `onCrash`. It drops a `compiling` whose `rev` is older than the last `setPolicy` or `open` it sent. It delivers `compiled`, `filled` and `refill` in arrival order whatever their `rev`, dropping only those older than the last `open` it sent (rule 14 never posts a month twice, so a dropped post would be lost for good). It never drops `cells` or `lookups`. A test drives the host through the client with delayed delivery and a `setPolicy` mid-fill (kept, restored and rejected) and checks the months delivered are contiguous and equal a fresh open. `restart(worker)` re-opens with the last policy, as today's client does after a crash.
 
 ## Tests that must pass
 
