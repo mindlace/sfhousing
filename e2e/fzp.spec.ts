@@ -20,6 +20,7 @@ import {
   jumpAndIdle,
   openHeaderMenu,
   projectToPage,
+  waitTimelineDrawn,
   type LngLat,
   type Win
 } from './helpers/sharing';
@@ -153,7 +154,11 @@ async function frameOn(page: Page, lngLat: LngLat, zoom = FRAME.zoom): Promise<v
   await jumpAndIdle(page, { ...FRAME, center: lngLat, zoom });
 }
 
-/** Picks the part at `lngLat` until the card named `name` shows (the first picks can race the data). */
+/**
+ * Picks the part at `lngLat` until the card named `name` shows. The parts are drawn first (every
+ * caller frames the real project's lot, in chunk 50_25): a pick before that misses, and a miss
+ * selects the lot's plan, whose sheet on a phone moves the map away.
+ */
 async function openCardAt(
   page: Page,
   isMobile: boolean,
@@ -161,6 +166,7 @@ async function openCardAt(
   name: string
 ): Promise<Locator> {
   const c = card(page, name);
+  await waitTimelineDrawn(page, 1);
   // Off the map's centre a taller neighbour nearer the centre can lean outwards over the label
   // point: each try nudges the pick a few pixels further out, past its roof.
   let tries = 0;

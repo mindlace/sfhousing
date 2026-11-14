@@ -113,6 +113,27 @@ export async function jumpAndIdle(page: Page, frame: typeof FRAME = FRAME): Prom
   );
 }
 
+/**
+ * Waits until the map draws the timeline's parts: at least `cells` chunks installed, nothing
+ * queued, the map settled. The map's `idle` does not cover them: a jump makes the worker load the
+ * chunks in view, then the map installs them, so a tap right after `jumpAndIdle` can land on a lot
+ * whose part is not drawn yet (a miss: /sim then selects the lot's plan).
+ */
+export async function waitTimelineDrawn(page: Page, cells: number): Promise<void> {
+  await page.waitForFunction((n) => {
+    const s = (window as Win).__sfhMap?.timelineSnapshot();
+    return !!s && s.cells >= n && s.pending === 0;
+  }, cells);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const map = (window as Win).__sfhMap!.map!;
+        if (map.loaded() && !map.isMoving()) resolve();
+        else map.once('idle', () => resolve());
+      })
+  );
+}
+
 export async function projectToPage(page: Page, lngLat: LngLat): Promise<[number, number]> {
   return page.evaluate((ll) => {
     const map = (window as Win).__sfhMap!.map!;

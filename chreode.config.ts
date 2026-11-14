@@ -153,6 +153,17 @@ export default defineConfig({
       'playwright.config.ts',
       'vite.config.ts',
       'vite.config.client-test.ts'
+    ],
+    allow: [
+      // The /sim session's notice has a field named `retry` ('open' | 'restart' | 'chunks') and
+      // the session a method named `retry`; the spec asserts both. No test retry is configured.
+      // This file and this rule only; the pattern takes only lines naming one of those values.
+      {
+        path: 'src/lib/timeline/session.svelte.spec.ts',
+        rule: 'retries-raise',
+        pattern: /\bretry: '(open|restart|chunks)'/,
+        reason: "the session notice's `retry` field and `session.retry(...)`, not test retries"
+      }
     ]
   },
   stderrAllowlist: [
