@@ -5,7 +5,7 @@ import { nodeHttp, type Http } from '../lib/http';
 import { rawPath, readLock, sha256File, writeLock, type Lock, type LockEntry } from '../lib/lock';
 import { wranglerTarget, type R2Target } from '../lib/r2';
 import { DATASF, fetchDatasf, type DatasfId } from '../sources/datasf';
-import { fetchOverture } from '../sources/overture';
+import { fetchOverture, fetchOvertureParts, latestOvertureRelease } from '../sources/overture';
 import { fetchGtfs } from '../sources/gtfs';
 import { LIDAR_ID, LIDAR_LOCK, fetchLidar, writeLidarLock, type LidarOpts } from '../sources/lidar';
 import { run as realRun } from '../lib/exec';
@@ -19,9 +19,12 @@ export const RAW_DIR = join(ROOT, 'pipeline/.cache/raw');
 
 export const LIDAR_LOCK_PATH = LIDAR_LOCK.live;
 
+const PARTS_ID = 'overture-building-parts';
+
 export const FETCH_IDS = [
   ...(Object.keys(DATASF) as DatasfId[]),
   'overture-buildings',
+  PARTS_ID,
   'protomaps-basemap',
   'protomaps-fonts',
   ...GTFS_IDS,
@@ -29,8 +32,13 @@ export const FETCH_IDS = [
   LIDAR_ID
 ] as const;
 
-/** What a plain `fetch` refreshes: the LiDAR is a slow, explicit fetch (`--only usgs-lidar-sf`). */
-export const DEFAULT_FETCH_IDS: readonly string[] = FETCH_IDS.filter((i) => i !== LIDAR_ID);
+/**
+ * What a plain `fetch` refreshes. The LiDAR is a slow, explicit fetch (`--only usgs-lidar-sf`);
+ * the parts come with `overture-buildings` (same release), so they are not listed twice.
+ */
+export const DEFAULT_FETCH_IDS: readonly string[] = FETCH_IDS.filter(
+  (i) => i !== LIDAR_ID && i !== PARTS_ID
+);
 
 export interface FetchOpts {
   only?: string;
@@ -118,7 +126,14 @@ export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
   }
   const http = opts.http ?? nodeHttp;
   const fetched: LockEntry[] = [];
+  let release: string | undefined;
   for (const id of ids) {
+    // The parts ride with overture-buildings when both are asked for.
+    if (id === PARTS_ID && ids.includes('overture-buildings')) continue;
+    if (id === PARTS_ID && !opts.release) {
+      console.error(`--only ${PARTS_ID} needs --release (it must match overture-buildings)`);
+      return 2;
+    }
     const t0 = Date.now();
     console.log(`fetch ${id} ...`);
     let entry: LockEntry;
@@ -142,10 +157,20 @@ export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
       continue;
     }
     if (id in DATASF) entry = await fetchDatasf(id as DatasfId, rawDir, http);
-    else if (id === 'overture-buildings') {
+    else if (id === 'overture-buildings' || id === PARTS_ID) {
+      // One release for both: `latest` is resolved once, and the buildings bring the parts along.
+      release ??= opts.release ?? (await latestOvertureRelease(http));
       const db = await openDuck({ httpfs: true });
       try {
-        entry = await fetchOverture(opts.release, rawDir, db, http);
+        entry =
+          id === PARTS_ID
+            ? await fetchOvertureParts(release, rawDir, db)
+            : await fetchOverture(release, rawDir, db, http);
+        if (id === 'overture-buildings') {
+          const parts = await fetchOvertureParts(release, rawDir, db);
+          console.log(`  ${PARTS_ID}: ${parts.files.length} file(s), ${parts.rowCount} rows`);
+          fetched.push(parts);
+        }
       } finally {
         db.close();
       }

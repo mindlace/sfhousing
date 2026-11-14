@@ -25,8 +25,21 @@ describe('live raw layout (<rawDir>/<sha256>, no extension)', () => {
       const ov = mini.sources.find((s) => s.id === 'overture-buildings')!;
       const pq = join(tmp(), 'o.parquet');
       await normalise(db, 'overture-buildings', [join(MINI, 'raw', ov.files[0].name)], pq);
+      const parts = mini.sources.find((s) => s.id === 'overture-building-parts')!;
+      const pqParts = join(tmp(), 'p.parquet');
+      await normalise(
+        db,
+        'overture-building-parts',
+        [join(MINI, 'raw', parts.files[0].name)],
+        pqParts
+      );
       const lock: Lock = { sources: [] };
       for (const s of mini.sources) {
+        if (s.id === 'overture-building-parts') {
+          const f = storeBytes(raw, 'overture-building-parts.parquet', 'u', readFileSync(pqParts));
+          lock.sources.push({ ...s, files: [f] });
+          continue;
+        }
         if (s.id === 'overture-buildings') {
           const f = storeBytes(raw, 'overture-buildings.parquet', 'u', readFileSync(pq));
           lock.sources.push({ ...s, files: [f] });
@@ -62,11 +75,14 @@ describe('live raw layout (<rawDir>/<sha256>, no extension)', () => {
         'datasf-historic-status': 21,
         'sfbos-sb79-exemptions': 3,
         'overture-buildings': 14,
+        'overture-building-parts': 5,
         'protomaps-basemap': 2
       });
       await loadNormalised(db, norm);
       const [r] = await db.all<{ n: number }>('SELECT count(*) n FROM src_overture');
       expect(r.n).toBe(14);
+      const [pr] = await db.all<{ n: number }>('SELECT count(*) n FROM src_overture_parts');
+      expect(pr.n).toBe(5);
       // Extensionless CSV pages still parse with the header and SODA quoting.
       const [roll] = await db.all<{ n: number; u: number }>(
         `SELECT count(DISTINCT parcel_number) n, sum(number_of_units) u FROM src_roll

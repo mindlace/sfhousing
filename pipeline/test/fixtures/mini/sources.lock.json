@@ -504,6 +504,24 @@
     {
       "files": [
         {
+          "archiveKey": "sources/13d6fbedb3aabb0808ecaab7566b9433fc3352753429bc9efe00692d884c4fea.geojson",
+          "bytes": 1507,
+          "name": "overture-building-parts.page-000.geojson",
+          "sha256": "13d6fbedb3aabb0808ecaab7566b9433fc3352753429bc9efe00692d884c4fea",
+          "url": "https://fixture.invalid/overture-building-parts.page-000.geojson"
+        }
+      ],
+      "homepage": "https://overturemaps.org",
+      "id": "overture-building-parts",
+      "label": "Overture Maps Building Parts",
+      "license": "ODbL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 5,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/92dcf282fa9ce13fda3c34bed2164487853840395c365fa63f3537faf9ab9298.geojson",
           "bytes": 4690,
           "name": "overture-buildings.page-000.geojson",

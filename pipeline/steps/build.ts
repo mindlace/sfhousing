@@ -25,6 +25,7 @@ import { GROSS_BIN, POLICY_BIN } from '../lib/scenario-files';
 import { codeTreeHash, computeDatasetVersion } from '../lib/version';
 import { asOfFromLock } from '../project-records/parse';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
+import { overtureReleaseProblem } from '../sources/overture';
 import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
 import {
@@ -175,6 +176,8 @@ export async function build(
   if (mismatches.length > 0) {
     throw new BuildError(`raw files do not match the lock:\n  ${mismatches.join('\n  ')}`);
   }
+  const releaseProblem = overtureReleaseProblem(lock);
+  if (releaseProblem) throw new BuildError(releaseProblem);
   const datasetVersion =
     opts.datasetVersion ??
     computeDatasetVersion({

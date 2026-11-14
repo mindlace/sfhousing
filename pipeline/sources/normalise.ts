@@ -24,6 +24,7 @@ export type SourceId =
   | 'datasf-historic-status'
   | 'sfbos-sb79-exemptions'
   | 'overture-buildings'
+  | 'overture-building-parts'
   | 'protomaps-basemap';
 
 export const SOURCE_IDS: SourceId[] = [
@@ -39,6 +40,7 @@ export const SOURCE_IDS: SourceId[] = [
   'datasf-historic-status',
   'sfbos-sb79-exemptions',
   'overture-buildings',
+  'overture-building-parts',
   'protomaps-basemap'
 ];
 
@@ -46,13 +48,17 @@ export const SOURCE_IDS: SourceId[] = [
  * Sources a lock may lack: `normaliseAll` writes an empty table for them. `datasf-streets` is
  * page-only (street centrelines for plan references); the live lock gains it in a later plan.
  */
-const OPTIONAL_SOURCE_IDS: readonly SourceId[] = ['datasf-streets'];
+const OPTIONAL_SOURCE_IDS: readonly SourceId[] = ['datasf-streets', 'overture-building-parts'];
 
 /** Empty-table schema of each optional source (the columns its `buildSelect` writes). */
 const EMPTY_SELECT: Partial<Record<SourceId, string>> = {
   'datasf-streets': `SELECT NULL::VARCHAR AS cnn, NULL::VARCHAR AS streetname,
     NULL::VARCHAR AS classcode, NULL::VARCHAR AS layer, NULL::VARCHAR AS f_st,
-    NULL::VARCHAR AS t_st, NULL::GEOMETRY AS geom WHERE false`
+    NULL::VARCHAR AS t_st, NULL::GEOMETRY AS geom WHERE false`,
+  'overture-building-parts': `SELECT NULL::VARCHAR AS id, NULL::VARCHAR AS building_id,
+    NULL::DOUBLE AS height, NULL::DOUBLE AS min_height, NULL::VARCHAR AS roof_shape,
+    NULL::DOUBLE AS roof_height, NULL::INTEGER AS num_floors, NULL::INTEGER AS min_floor,
+    NULL::VARCHAR[] AS datasets, NULL::GEOMETRY AS geom WHERE false`
 };
 
 /** Normalised parquet basename -> src_ table. */
@@ -69,6 +75,7 @@ const TABLES: Record<SourceId, string> = {
   'datasf-historic-status': 'src_historic',
   'sfbos-sb79-exemptions': 'src_sb79_exempt',
   'overture-buildings': 'src_overture',
+  'overture-building-parts': 'src_overture_parts',
   'protomaps-basemap': 'src_land'
 };
 
@@ -185,6 +192,14 @@ async function buildSelect(
       datasets::VARCHAR[] AS datasets, geom::GEOMETRY AS geom
       FROM read_parquet([${list}]) ORDER BY id`;
   }
+  if (id === 'overture-building-parts' && parquet) {
+    const list = rawFiles.map(q).join(', ');
+    return `SELECT id::VARCHAR AS id, building_id::VARCHAR AS building_id, height::DOUBLE AS height,
+      min_height::DOUBLE AS min_height, roof_shape::VARCHAR AS roof_shape,
+      roof_height::DOUBLE AS roof_height, num_floors::INTEGER AS num_floors,
+      min_floor::INTEGER AS min_floor, datasets::VARCHAR[] AS datasets, geom::GEOMETRY AS geom
+      FROM read_parquet([${list}]) ORDER BY id`;
+  }
   if (id === 'protomaps-basemap') throw new Error('protomaps-basemap is decoded by normaliseLand');
   if (id === 'sfbos-sb79-exemptions') {
     throw new Error('sfbos-sb79-exemptions is read by normaliseSfbosExemptions');
@@ -287,6 +302,14 @@ async function buildSelect(
         ${cols.has('num_floors') ? 'CAST(TRY_CAST(num_floors AS DOUBLE) AS INTEGER)' : 'NULL::INTEGER'} AS num_floors,
         ${sel(cols, 'min_height', 'DOUBLE')},
         ${cols.has('is_underground') ? "CAST(is_underground AS VARCHAR) IN ('true','1')" : 'NULL::BOOLEAN'} AS is_underground,
+        ${cols.has('datasets') ? 'CAST(datasets AS VARCHAR[])' : 'NULL::VARCHAR[]'} AS datasets, geom
+        FROM ${p} ORDER BY id`;
+    case 'overture-building-parts':
+      return `SELECT ${sel(cols, 'id', 'VARCHAR')}, ${sel(cols, 'building_id', 'VARCHAR')},
+        ${sel(cols, 'height', 'DOUBLE')}, ${sel(cols, 'min_height', 'DOUBLE')},
+        ${sel(cols, 'roof_shape', 'VARCHAR')}, ${sel(cols, 'roof_height', 'DOUBLE')},
+        ${cols.has('num_floors') ? 'CAST(TRY_CAST(num_floors AS DOUBLE) AS INTEGER)' : 'NULL::INTEGER'} AS num_floors,
+        ${cols.has('min_floor') ? 'CAST(TRY_CAST(min_floor AS DOUBLE) AS INTEGER)' : 'NULL::INTEGER'} AS min_floor,
         ${cols.has('datasets') ? 'CAST(datasets AS VARCHAR[])' : 'NULL::VARCHAR[]'} AS datasets, geom
         FROM ${p} ORDER BY id`;
   }
