@@ -29,6 +29,10 @@ const srcLibForSrc: Plugin = {
 
 export default defineConfig({
   plugins: [datasetVersionPlugin(), tailwindcss(), sveltekit()],
+  ssr: {
+    // The email components ship uncompiled Svelte; bundling them lets the SSR build compile them.
+    noExternal: ['@better-svelte-email/components', '@better-svelte-email/server']
+  },
   build: {
     // The largest client chunk (~1.1 MB) is the MapLibre GL bundle. The limit sits just above it, so a
     // jump in chunk size past 1.2 MB warns again.

@@ -53,6 +53,8 @@
     "@luma.gl/engine": "~9.4.0",
     "@luma.gl/shadertools": "~9.4.0",
     "@protomaps/basemaps": "^5.7.2",
+    "aws4fetch": "^1.0.20",
+    "better-svelte-email": "^2.1.1",
     "bs58": "^6.0.0",
     "clipper2-ts": "2.0.1",
     "drizzle-orm": "^1.0.0-rc.4-5d5b77c",

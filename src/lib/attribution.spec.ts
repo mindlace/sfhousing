@@ -43,6 +43,19 @@ describe('SOFTWARE credits', () => {
     });
   });
 
+  it('credits better-svelte-email and aws4fetch', () => {
+    expect(SOFTWARE).toContainEqual({
+      name: 'better-svelte-email',
+      license: 'MIT',
+      url: 'https://github.com/Konixy/better-svelte-email'
+    });
+    expect(SOFTWARE).toContainEqual({
+      name: 'aws4fetch',
+      license: 'MIT',
+      url: 'https://github.com/mhart/aws4fetch'
+    });
+  });
+
   it('keeps the fdlibm notice through minification', () => {
     const src = readFileSync(new URL('./timelapse/math.ts', import.meta.url), 'utf8');
     expect(src.startsWith('/*!')).toBe(true);
