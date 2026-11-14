@@ -12,6 +12,7 @@
 //   flush     world 1 alone, flushed at 20 ms after every month; `flush-warm` also warms every
 //             massing ahead of the flush (plan D12) and lists the cold ones over 50 ms.
 //   sizes     where a world's bytes go (serialized sizes by column), no timing.
+//   resume    restore every world from the month 0 copy and replay `--at` months quietly.
 // `--extra` names a directory holding the dataset's `transit.json` and `neighborhoods.geojson`
 // when the dataset directory lacks them. Measurement only: nothing in the bundle imports it.
 import { existsSync, readFileSync } from 'node:fs';
@@ -534,6 +535,8 @@ interface Common {
   live: Live;
   /** `--no-copies`: copies are taken (and timed) but not kept, to size the live set alone. */
   dropCopies: boolean;
+  /** `--copies 0,240`: the model months copies are taken after (default every 60). */
+  copyMonths: number[] | null;
   months: number;
   worlds: number;
   money: boolean;
@@ -556,9 +559,13 @@ function caseEnsemble(c: Common) {
   const copies: Copy[] = [];
   const copyMs: number[] = [];
   let t = now();
-  const copy0 = takeCopy(s);
-  copyMs.push(now() - t);
-  if (!c.dropCopies) copies.push(copy0);
+  const copyAt = (m: number) =>
+    c.copyMonths === null ? m % COPY_EVERY === 0 : c.copyMonths.includes(m);
+  if (copyAt(0)) {
+    const copy0 = takeCopy(s);
+    copyMs.push(now() - t);
+    if (!c.dropCopies) copies.push(copy0);
+  }
 
   const burst: Unit[] = [];
   const perMonth: number[] = [];
@@ -604,7 +611,7 @@ function caseEnsemble(c: Common) {
       filledPosts++;
     }
     if (month > 1) perMonth.push(total);
-    if (month % COPY_EVERY === 0) {
+    if (copyAt(month)) {
       t = now();
       const copy = takeCopy(s);
       copyMs.push(now() - t);
@@ -615,6 +622,7 @@ function caseEnsemble(c: Common) {
   const copySum = copyMs.reduce((a, b) => a + b, 0);
   const fillOnly = perMonth.reduce((a, b) => a + b, 0);
 
+  const heapBeforeDrain = heapMb();
   // drain the map (D5): its memos belong in the heap a filled worker holds
   const td = now();
   let drains = 0;
@@ -654,6 +662,7 @@ function caseEnsemble(c: Common) {
     heap: {
       beforeCompileMb: heap0,
       baselineMb: heapBase,
+      filledBeforeMapDrainMb: heapBeforeDrain,
       filledWithCopiesMb: heapFull,
       deltaMb: {
         heap: r1(heapFull.heap - heapBase.heap),
@@ -1050,14 +1059,43 @@ function caseFlush(c: Common, warm: boolean) {
   };
 }
 
+/** Serialized bytes of a column set: as allocated, at its counts (`n`, `revN`, …), and `rowOf`. */
+function partBytes(part: Record<string, unknown>) {
+  const counts = Object.keys(part).filter(
+    (k) => typeof part[k] === 'number' && (k === 'n' || k.endsWith('N'))
+  );
+  let alloc = 0;
+  let atN = 0;
+  let rowOf = 0;
+  for (const [col, v] of Object.entries(part)) {
+    if (typeof v === 'number') continue;
+    const b = serialize(v).length;
+    alloc += b;
+    if (col === 'rowOf') {
+      rowOf = b;
+      continue;
+    }
+    let key = 'n';
+    for (const k of counts)
+      if (k !== 'n' && col.startsWith(k.slice(0, -1)) && k.length > key.length) key = k;
+    const n = (part[key] as number | undefined) ?? 0;
+    if (ArrayBuffer.isView(v)) atN += n * (v as unknown as Int32Array).BYTES_PER_ELEMENT;
+    else if (Array.isArray(v)) atN += serialize(v.slice(0, n)).length;
+    else atN += b;
+  }
+  return { alloc, atN, rowOf };
+}
+
 /**
  * Where a world's bytes go: `v8.serialize` sizes (a stand-in for a `structuredClone`'s) of world 1
- * of the plan, by part and by column, at months 0, 60 and `--months`, with its series data.
+ * of the plan, by part and by column, at months 0, 60 and `--months`, with its series data; then,
+ * at `--months`, every world's parts as allocated and cut to their counts, the due lists, the
+ * series data, world 1's ledger, and the map stream's memos (heap before and after a full drain).
  */
 function caseSizes(c: Common) {
   const compiled = compileBoth(c.live, c.input, DEFAULT_POLICY4, c.months);
   const deps = streamDeps(c.input, c.live.records, { now });
-  const s = createSession(c.input, c.money, compiled, 1, c.months, deps);
+  const s = createSession(c.input, c.money, compiled, c.worlds, c.months, deps);
   const kb = (x: unknown) => r1(serialize(x).length / 1024);
   const sizes = () => {
     const m = s.plan.members[0];
@@ -1079,7 +1117,117 @@ function caseSizes(c: Common) {
     for (const e of [s.plan, s.comp]) for (const m of e.members) unit(s, e, m, month);
     if (month === COPY_EVERY || month === c.months) out.push(sizes());
   }
-  return { case: 'sizes', money: c.money, sizes: out };
+  const all: Record<string, { alloc: number; atN: number }> = {};
+  const add = (k: string, alloc: number, atN: number) => {
+    all[k] ??= { alloc: 0, atN: 0 };
+    all[k].alloc += alloc;
+    all[k].atN += atN;
+  };
+  let n = 0;
+  for (const e of [s.plan, s.comp])
+    for (const m of e.members) {
+      n++;
+      const w = m.world as unknown as Record<string, Record<string, unknown>>;
+      for (const part of ['lots', 'projects', 'line', 'pools']) {
+        const b = partBytes(w[part]);
+        add(part, b.alloc - b.rowOf, b.atN);
+        if (part === 'lots') add('lots.rowOf', b.rowOf, 0);
+      }
+      const due = serialize(m.due).length;
+      add('due list', due, due);
+      const d = serialize(m.series.data()).length;
+      add('series data()', d, d);
+    }
+  const ledger = serialize(s.ledger).length;
+  add('ledger (world 1)', ledger, ledger);
+  const totals = Object.fromEntries(
+    Object.entries(all).map(([k, v]) => [
+      k,
+      { allocMb: MB(v.alloc), atNMb: MB(v.atN), perWorldKb: r1(v.alloc / n / 1024) }
+    ])
+  );
+  const before = heapMb();
+  for (let done = false; !done;) {
+    const u = s.stream.flush(s.plan.members[0].world, s.statics, Infinity);
+    done = u === null || u.complete === true;
+  }
+  const after = heapMb();
+  return {
+    case: 'sizes',
+    money: c.money,
+    worlds: n,
+    sizes: out,
+    allWorldsAtEnd: totals,
+    mapDrainHeapDeltaMb: {
+      heap: r1(after.heap - before.heap),
+      arrayBuffers: r1(after.arrayBuffers - before.arrayBuffers),
+      total: r1(after.total - before.total)
+    }
+  };
+}
+
+/**
+ * Resuming after an edit at month m with a copy at month 0 only: every world and series restored
+ * from the month 0 copy, each due list rebuilt (`planDue` through `--months`), world 1's ledger cut
+ * back, then m months stepped quietly (series fed, ledger kept, no map stream, nothing posted).
+ */
+function caseResume(c: Common, ats: number[]) {
+  const compiled = compileBoth(c.live, c.input, DEFAULT_POLICY4, c.months);
+  const deps = streamDeps(c.input, c.live.records, { now });
+  const s = createSession(c.input, c.money, compiled, c.worlds, c.months, deps);
+  const copy = takeCopy(s);
+  const results = [];
+  for (const at of ats) {
+    s.ledger.length = copy.ledgerLength;
+    const t0 = now();
+    const ens = [s.plan, s.comp].map((e, i) => ({
+      e,
+      members: e.members.map((m, k): Member => {
+        const buf: WorldEvent[] = [];
+        const sink: StepSink =
+          e.name === 'plan' && m.seed === 1
+            ? { event: (ev) => buf.push(ev), ledger: (ev) => s.ledger.push(ev) }
+            : { event: (ev) => buf.push(ev) };
+        return {
+          seed: m.seed,
+          world: structuredClone(copy.worlds[i][k]),
+          due: m.due,
+          series: createWorldSeries(e.score, copy.feeds[i][k]),
+          buf,
+          sink
+        };
+      })
+    }));
+    const restoreMs = now() - t0;
+    const t1 = now();
+    for (const { e, members } of ens)
+      for (const m of members)
+        m.due = s.core.planDue(m.world, s.statics, e.timeline, m.seed, c.months);
+    const planMs = now() - t1;
+    const perMonth: number[] = [];
+    const t2 = now();
+    for (let month = 1; month <= at; month++) {
+      const tm = now();
+      for (const { e, members } of ens)
+        for (const m of members) {
+          s.core.step(m.world, m.due, s.statics, e.timeline, m.seed, m.sink);
+          for (const ev of m.buf) m.series.add(ev, m.world, s.statics);
+          m.series.stepped(month);
+          m.buf.length = 0;
+        }
+      perMonth.push(now() - tm);
+    }
+    const replayMs = now() - t2;
+    results.push({
+      m: at,
+      restoreFromCopyMs: r1(restoreMs),
+      planDueAllWorldsMs: r1(planMs),
+      quietReplayMs: r1(replayMs),
+      totalMs: r1(restoreMs + planMs + replayMs),
+      perMonthAllWorlds: stats(perMonth)
+    });
+  }
+  return { case: 'resume', money: c.money, worlds: `${c.worlds} + ${c.worlds}`, results };
 }
 
 // ---------------------------------------------------------------- main
@@ -1090,8 +1238,8 @@ async function main(): Promise<number> {
   if (!dir || !which) {
     console.error(
       'usage: node --expose-gc node_modules/.bin/tsx scripts/ensemble-measure.ts --dir <dataset> ' +
-        '--case ensemble|replan|compile|first|flush|flush-warm|sizes [--extra <dir>] [--no-gross] ' +
-        '[--no-money] [--no-copies] [--variant market|zoning] [--runs 3] [--worlds 48] [--months 480]'
+        '--case ensemble|replan|compile|first|flush|flush-warm|sizes|resume [--extra <dir>] [--no-gross] ' +
+        '[--no-money] [--no-copies] [--copies 0,240] [--at 240,470] [--variant market|zoning] [--runs 3] [--worlds 48] [--months 480]'
     );
     return 2;
   }
@@ -1113,7 +1261,16 @@ async function main(): Promise<number> {
     const live = await loadLive(dir, extra);
     const input = money ? live.funded : unfunded(live.funded);
     if (money && input.finance === undefined) throw new Error('dataset has no baseline funding');
-    const c: Common = { live, months, worlds, money, input, dropCopies: has('--no-copies') };
+    const copies = opt('--copies');
+    const c: Common = {
+      live,
+      months,
+      worlds,
+      money,
+      input,
+      dropCopies: has('--no-copies'),
+      copyMonths: copies === null ? null : copies.split(',').map(Number)
+    };
     console.error(
       `${live.label}: ${input.parcels.count} parcels, gross table ${live.loaded.gross ? 'yes' : 'no'}, ` +
         `money ${money ? `${input.finance?.pools.length ?? 0} pools` : 'off'}, load ${r1(live.loadMs)} ms`
@@ -1125,6 +1282,8 @@ async function main(): Promise<number> {
     else if (which === 'flush') result = caseFlush(c, false);
     else if (which === 'flush-warm') result = caseFlush(c, true);
     else if (which === 'sizes') result = caseSizes(c);
+    else if (which === 'resume')
+      result = caseResume(c, (opt('--at') ?? '240,470').split(',').map(Number));
     else throw new Error(`unknown case ${which}`);
   }
   console.log(JSON.stringify({ dataset: dir.split('/').pop(), ...(result as object) }, null, 2));
