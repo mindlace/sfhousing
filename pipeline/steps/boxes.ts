@@ -231,12 +231,7 @@ export async function deriveBuildingBoxes(a: {
     roofOut.close();
   }
 
-  await db.run(`
-    CREATE OR REPLACE TABLE bx_boxes AS
-    SELECT bid, k, src, base_m, height_m,
-           CASE WHEN g IS NULL THEN NULL ELSE ST_AsWKB(ST_GeomFromGeoJSON(g))::BLOB END AS geom
-    FROM read_json(${q(boxOut.path)}, format = 'newline_delimited', columns = ${BOX_COLUMNS})
-    ORDER BY bid, k`);
+  await loadBoxRows(db, boxOut.path, 'bx_boxes');
   await db.run(`
     CREATE OR REPLACE TABLE bx_roofs AS
     SELECT r.bid, roof, eave_m, ridge_m, ridge_deg, ground_m, ground_min_m, shift_dx, shift_dy,
@@ -250,6 +245,27 @@ export async function deriveBuildingBoxes(a: {
       FROM buildings
     ) p USING (bid)
     ORDER BY r.bid`);
+}
+
+/**
+ * Load the box NDJSON rows into `table` (bid, k, src, base_m, height_m, geom WKB or NULL), ordered
+ * by bid, k. clipper's mm rounding can leave a spike whose edges cross (an OGC-invalid ring, on
+ * which GEOS overlay throws); such a geometry is made valid (its polygons kept), a valid one is
+ * stored untouched.
+ */
+export async function loadBoxRows(db: Duck, path: string, table: string): Promise<void> {
+  await db.run(`
+    CREATE OR REPLACE TABLE ${table} AS
+    SELECT bid, k, src, base_m, height_m,
+           CASE WHEN g IS NULL THEN NULL
+                WHEN ST_IsValid(g) THEN ST_AsWKB(g)::BLOB
+                ELSE ST_AsWKB(ST_CollectionExtract(ST_MakeValid(g), 3))::BLOB END AS geom
+    FROM (
+      SELECT bid, k, src, base_m, height_m,
+             CASE WHEN g IS NULL THEN NULL ELSE ST_GeomFromGeoJSON(g) END AS g
+      FROM read_json(${q(path)}, format = 'newline_delimited', columns = ${BOX_COLUMNS})
+    )
+    ORDER BY bid, k`);
 }
 
 /** One building's boxes and roof record (see deriveBuildingBoxes). */

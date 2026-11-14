@@ -1,8 +1,8 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Duck } from '../lib/duck';
+import { openDuck, type Duck } from '../lib/duck';
 import {
   BOXES_FILES,
   BOXES_ID,
@@ -19,7 +19,7 @@ import { openLidarMosaic } from '../lib/lidar/mosaic';
 import { rawPath, readLock, sha256File, type Lock, type LockEntry } from '../lib/lock';
 import { runSql } from '../lib/sql';
 import { LIDAR_LOCK, lidarTilesOf, readLidarLock } from '../sources/lidar';
-import { boxesCommand, deriveBuildingBoxes } from '../steps/boxes';
+import { boxesCommand, deriveBuildingBoxes, loadBoxRows } from '../steps/boxes';
 import { MINI, openMiniDuck } from './helpers';
 
 const RAW = join(MINI, 'raw');
@@ -435,5 +435,75 @@ describe('boxesCommand', () => {
     expect(code).toBe(1);
     expect(errs.join('\n')).toContain('fetch --restore --lidar');
     rmSync(c.dir, { recursive: true, force: true });
+  });
+});
+
+describe('loadBoxRows', () => {
+  // A live false-front strip (city run, 2026-11-14): clipper's mm rounding left a spike whose
+  // edges cross, so GEOS threw "side location conflict" in the outside-footprint check.
+  const SPIKE = {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [43992.553, 21768.224],
+        [43992.35, 21768.951],
+        [43992.347, 21768.95],
+        [43992.274, 21769.184],
+        [43992.273, 21769.184],
+        [43992.419, 21768.706],
+        [43988.566, 21767.631],
+        [43988.701, 21767.149],
+        [43992.553, 21768.224]
+      ]
+    ]
+  };
+  const SQUARE = {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [0, 0],
+        [4, 0],
+        [4, 4],
+        [0, 4],
+        [0, 0]
+      ]
+    ]
+  };
+
+  it('makes invalid box geometry valid and keeps valid geometry and NULLs as they are', async () => {
+    const dir = work();
+    const path = join(dir, 'bx_boxes.ndjson');
+    const row = (bid: string, k: number, src: string, g: object | null) =>
+      JSON.stringify({ bid, k, src, base_m: 0, height_m: 10, g: g && JSON.stringify(g) });
+    writeFileSync(
+      path,
+      [row('a', 0, 'base', null), row('a', 1, 'front', SPIKE), row('b', 0, 'base', SQUARE)].join(
+        '\n'
+      ) + '\n'
+    );
+    const d = await openDuck();
+    try {
+      await loadBoxRows(d, path, 'bx_test');
+      const rows = await d.all<{ bid: string; k: number; valid: boolean | null; a: number | null }>(
+        `SELECT bid, k, ST_IsValid(ST_GeomFromWKB(geom)) AS valid,
+                ST_Area(ST_GeomFromWKB(geom)) AS a
+         FROM bx_test ORDER BY bid, k`
+      );
+      expect(rows.map((r) => [r.bid, r.k, r.valid])).toEqual([
+        ['a', 0, null],
+        ['a', 1, true],
+        ['b', 0, true]
+      ]);
+      expect(rows[1].a).toBeGreaterThan(1.9);
+      expect(rows[2].a).toBe(16);
+      const [{ same }] = await d.all<{ same: boolean }>(
+        `SELECT geom = ST_AsWKB(ST_GeomFromGeoJSON('${JSON.stringify(SQUARE)}'))::BLOB AS same
+         FROM bx_test WHERE bid = 'b'`
+      );
+      expect(same).toBe(true);
+    } finally {
+      d.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
