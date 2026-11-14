@@ -2,9 +2,11 @@
 // force at the last `viewMonth` (month 1 before any), posted again when that zoning changes, and
 // `heightLids` answered for it by staged lid builds in the runner's slices. Fixture-0, one world,
 // a fake clock that charges compute time; a differential against the old host's posts.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
+import type { FetchLike } from '$lib/sim/chunks';
+import { STOP_TYPES } from '$lib/sim/levers/brushes';
 import { SRC_PAINT } from '$lib/sim/levers/source';
 import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import { scenarioUrls } from '$lib/sim/scenario/load';
@@ -12,12 +14,28 @@ import { createScenarioHost } from '$lib/sim/scenario/scenario-host';
 import type { ScenarioResponse } from '$lib/sim/scenario/types';
 import type { TimelineHostRequest, TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
-import { DEFAULT_POLICY4, type SimPolicy4 } from '$lib/timeline/policy4';
+import { DEFAULT_POLICY4, queriesOf4, type SimPolicy4 } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
 import { createTimelineHost } from './host';
 import { monthLastDay } from './months';
 import { span, timingSet } from './policy/test/fixtures';
 import { datasetFetch, fakeClock } from './runner/test/harness';
+
+// A seam for "a throw inside a city build": the next `createCityBuild` throws once.
+const boom = vi.hoisted(() => ({ city: false }));
+vi.mock('$lib/map/height/city', async (importOriginal) => {
+  const m = await importOriginal<typeof import('$lib/map/height/city')>();
+  return {
+    ...m,
+    createCityBuild(input: Parameters<typeof m.createCityBuild>[0]) {
+      if (boom.city) {
+        boom.city = false;
+        throw new Error('city boom');
+      }
+      return m.createCityBuild(input);
+    }
+  };
+});
 
 const FIXTURE = 'e2e/fixtures/data/fixture-0';
 const MONTHS = 30;
@@ -76,15 +94,16 @@ function allBbox(m: Manifest): BBox4 {
   ];
 }
 
-function makeHost() {
+function makeHost(o: { fetch?: FetchLike; manifest?: Manifest } = {}) {
   const f = datasetFetch(FIXTURE);
+  const manifest = o.manifest ?? f.manifest;
   const clock = fakeClock();
   const posts: { msg: Msg; transfer: ArrayBuffer[] }[] = [];
   /** True while a message handler runs: no staged unit may run then (D3). */
   let inHandler = false;
   let unitsInHandler = 0;
   const host = createTimelineHost({
-    fetch: f.fetch,
+    fetch: o.fetch ?? f.fetch,
     fetchBytes: f.fetchBytes,
     post: (msg, transfer) => {
       if (inHandler && (msg.type === 'heights' || msg.type === 'heightLids'))
@@ -130,7 +149,7 @@ function makeHost() {
     handle({
       type: 'openTimeline',
       rev,
-      manifest: f.manifest,
+      manifest,
       policy,
       lots,
       worlds: 1,
@@ -143,7 +162,7 @@ function makeHost() {
     handle({ type: 'heightLids', reqId: id, bbox });
     return id;
   };
-  const prefetchAll = () => handle({ type: 'prefetch', bbox: allBbox(f.manifest) });
+  const prefetchAll = () => handle({ type: 'prefetch', bbox: allBbox(manifest) });
   const filled = () => {
     const c = of('compiled').at(-1);
     return !!c && of('filled').at(-1)?.through === c.statics.lastIndex;
@@ -160,7 +179,7 @@ function makeHost() {
     lidsOf,
     prefetchAll,
     filled,
-    manifest: f.manifest,
+    manifest,
     unitsInHandler: () => unitsInHandler
   };
 }
@@ -347,5 +366,98 @@ describe('timeline host: heights', () => {
     h.host.dispose();
     expect(heightsOf(h)).toEqual(oldHeights);
     expect(h.lidsOf(id)!.result).toEqual(oldLids()!.result);
+  });
+
+  it('a throw in a city build posts error timeline at the rev in use, stops filling and answers lids no-session', async () => {
+    const { bbox } = await firstChunk();
+    const h = makeHost();
+    boom.city = true;
+    try {
+      h.open(DEFAULT_POLICY4);
+      h.prefetchAll();
+      const id = h.askLids(bbox);
+      await h.run(() => h.of('error').length > 0);
+      expect(h.of('error')).toEqual([
+        expect.objectContaining({ type: 'error', rev: 1, code: 'timeline' })
+      ]);
+      expect(h.lidsOf(id)?.result).toMatchObject({ ok: false, reason: 'no-session' });
+      const filled = h.of('filled').length;
+      expect(await h.idle()).toBe(true);
+      expect(h.of('filled')).toHaveLength(filled);
+      expect(heightsOf(h)).toEqual([]);
+      const late = h.askLids(bbox);
+      expect(h.lidsOf(late)?.result).toMatchObject({ ok: false, reason: 'no-session' });
+      expect(h.of('error')).toHaveLength(1);
+    } finally {
+      boom.city = false;
+    }
+  });
+
+  it("heightLids is answered while an edit's compile is stalled", async () => {
+    const f = datasetFetch(FIXTURE);
+    const cell = f.manifest.chunks[0];
+    // no gross table, and the first chunk never arrives: an edit painting it waits on it
+    const manifest = structuredClone(f.manifest);
+    delete (manifest.scenarios!.fzp as { gross?: string }).gross;
+    const fetch: FetchLike = (url) =>
+      url === cell.url ? new Promise<never>(() => {}) : f.fetch(url);
+    const { doc, lots } = await paintedDoc(1);
+    const h = makeHost({ fetch, manifest });
+    h.open(DEFAULT_POLICY4);
+    h.prefetchAll();
+    await h.run(() => heightsOf(h).length > 0 && h.filled());
+    h.handle({ type: 'setPolicy', rev: 2, policy: doc, lots });
+    await h.run(() => h.of('compiling').some((c) => c.rev === 2));
+    expect(await h.idle()).toBe(true);
+    const progress = h
+      .of('compiling')
+      .filter((c) => c.rev === 2)
+      .at(-1)!;
+    expect(progress.done).toBeLessThan(progress.total);
+    const id = h.askLids(f.manifest.chunks[1].bbox as BBox4);
+    await h.run(() => h.lidsOf(id) !== undefined);
+    const got = h.lidsOf(id)!.result;
+    expect(got.ok).toBe(true);
+    if (got.ok) expect([...got.lids.pieces.source].some((s) => s === SRC_PAINT)).toBe(false);
+    // the edit is still waiting on its chunk
+    expect(h.of('compiled').some((c) => c.rev === 2)).toBe(false);
+    expect(h.of('error')).toEqual([]);
+  });
+
+  it('an edit that renames a transit rule posts heights with the new rule id', async () => {
+    const asOf = await asOfOf();
+    const ruleDoc = (id: string): SimPolicy4 => {
+      const d: SimPolicy4 = structuredClone(DEFAULT_POLICY4);
+      d.kinds.zoning.push({
+        id,
+        label: id,
+        preset: null,
+        on: true,
+        where: { tag: 'transit', stopTypes: [...STOP_TYPES] },
+        spans: [span(asOf, 1, null, { tag: 'bands', bands: [{ maxM: 805, stories: 60 }] })]
+      });
+      return d;
+    };
+    const h = makeHost();
+    h.open(DEFAULT_POLICY4);
+    h.prefetchAll();
+    await h.run(() => heightsOf(h).length > 0 && h.filled());
+    // the transit query's lots, from the host's own brush resolver
+    const [{ key, query }] = queriesOf4(ruleDoc('a'));
+    h.handle({ type: 'resolveBrush', reqId: 900, query });
+    await h.run(() => h.of('brushLots').some((m) => m.reqId === 900));
+    const res = h.of('brushLots').find((m) => m.reqId === 900)!.result;
+    expect(res.ok).toBe(true);
+    const lots = { [key]: res.ok ? res.lots : [] };
+    h.handle({ type: 'setPolicy', rev: 2, policy: ruleDoc('a'), lots });
+    await h.run(() => heightsOf(h).length === 2);
+    expect(heightsOf(h)[1].city.sourceIds).toEqual(['a']);
+    // the same zoning view under another rule id: heights again, with the new id
+    h.handle({ type: 'setPolicy', rev: 3, policy: ruleDoc('b'), lots });
+    await h.run(() => heightsOf(h).length === 3);
+    expect(heightsOf(h)[2].rev).toBe(3);
+    expect(heightsOf(h)[2].city.sourceIds).toEqual(['b']);
+    expect(heightsOf(h)[2].city.chains.hi).toEqual(heightsOf(h)[1].city.chains.hi);
+    expect(h.of('error')).toEqual([]);
   });
 });

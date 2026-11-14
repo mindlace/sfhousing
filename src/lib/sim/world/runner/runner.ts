@@ -5,7 +5,8 @@
 // A slice runs units in this order: first, as the old host (scenario-host.ts:864-866), the height
 // limits of the zoning in force at the last `viewMonth` (S14): a city build's inputs
 // (`cityInputAt`), its steps (posting `heights`), then a wanted `heightLids` view's lid build on
-// that city; these also run after a throw stopped filling. Then, for the ensemble with the lower
+// that city; these also run while an edit compiles (for the timeline in use) and after a throw
+// stopped filling; a throw in one is rule 21's like any unit's. Then, for the ensemble with the lower
 // month (the plan on a tie, rules 6 and 16), a compile step when its next frame is not ready
 // (rule 11), else its next unit; a world steps only while it is not ahead of the other ensemble.
 // When neither has a unit, an unfinished compile steps on, so its `ScoreStatics` arrive (D2). A
@@ -13,7 +14,8 @@
 // `SLICE_PLAN_MS`; the first unit of a slice always runs (D7). After the units: one `compiling` if
 // the progress changed; statics for a compile that finished (and `compiled` for the plan's); at
 // most one `filled` (rule 8); `lookups` when the frame in view changed its permitting (D10); a
-// city build when the zoning view in view is not the one whose `heights` went out last.
+// city build when the zoning view or the limit attribution in view is not the one whose `heights`
+// went out last.
 //
 // A flush of the map stream is a macrotask of its own (D6), at most every `FLUSH_EVERY_MS`, never
 // while a restore re-steps quietly; when filling ends the stream is drained until an update says
@@ -152,16 +154,28 @@ export interface RunnerInternals {
 /** `cityInput`: a city build's inputs (`cityInputAt`); `heights`: a city or lid build's step. */
 type Kind = UnitKind | 'compile' | 'warm' | 'cityInput' | 'heights';
 
-/** A city build of the zoning view `view` (S14), until done; `build` null until its inputs exist. */
+/**
+ * Which frame a city is for: the timeline in use and the frame id at the last `viewMonth`. The
+ * limit attribution (`cityInputAt`) is per zoning state per compile, so either changing may change
+ * it; the input unit then compares the attribution itself.
+ */
+interface FrameKey {
+  timeline: PolicyTimeline;
+  id: number;
+}
+
+/** A city build for the frame `key` (S14), until done; `build` null until its inputs exist. */
 interface CityWork {
+  key: FrameKey;
   view: object;
   rev: Rev;
   input: FrameCityInput | null;
   build: StagedBuild<CityResult> | null;
 }
 
-/** The latest complete city: the view it was built for, its inputs and its model. */
+/** The latest complete city: the frame and view it was built for, its inputs and its model. */
 interface Limits {
+  key: FrameKey;
   view: object;
   rev: Rev;
   input: FrameCityInput;
@@ -213,6 +227,13 @@ function missingQuery(doc: SimPolicy4, lots: Record<string, ParcelId[]>): void {
 interface Unit {
   kind: Kind;
   side: Side | null;
+}
+
+/** A throw in a city or lid build: rule 21 at the current `rev`; a pending edit stays pending. */
+class HeightsFailed extends Error {
+  constructor(readonly reason: unknown) {
+    super(String(reason));
+  }
 }
 
 /** A compile step's `LeverFormatError`: the document is rejected, `bad-request` (rule 12, D11). */
@@ -724,24 +745,49 @@ export function createRunner(deps: RunnerDeps): Runner {
     return null;
   }
 
+  const sameKey = (a: FrameKey, t: PolicyTimeline, id: number) => a.timeline === t && a.id === id;
+
   /**
-   * D2: a city build when the zoning view at the last `viewMonth` is not the one whose `heights`
-   * went out last (views are interned by content, compile.ts rule 17). Back on that view, a city
-   * build of another stops.
+   * D2: an input unit when the frame at the last `viewMonth` (the timeline in use, its frame id)
+   * is not the one whose `heights` went out last. Cheap: the unit decides whether the zoning view
+   * or the limit attribution changed. Back on that frame, a city build of another stops.
    */
   function checkHeights(): void {
     const t = plan?.timeline;
     if (heightsBroken || !t) return;
-    const v = t.frameAt(viewMonthOf(t)).view;
-    if (city !== null && city.view === v) return;
-    if (limits !== null && limits.view === v) {
+    const f = t.frameAt(viewMonthOf(t));
+    if (city !== null && sameKey(city.key, t, f.id)) return;
+    if (limits !== null && sameKey(limits.key, t, f.id)) {
       city = null;
       return;
     }
-    city = { view: v, rev, input: null, build: null };
+    city = { key: { timeline: t, id: f.id }, view: f.view, rev, input: null, build: null };
   }
 
-  /** One height unit; a throw ends the height limits (filling goes on) and answers a waiting lid. */
+  function sameArray(x: ArrayLike<number>, y: ArrayLike<number>): boolean {
+    if (x === y) return true;
+    if (x.length !== y.length) return false;
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
+    return true;
+  }
+
+  /** The same city inputs: rule ids, winning source, stories and countable mask per lot. */
+  function sameInput(a: FrameCityInput, b: FrameCityInput): boolean {
+    if (a === b) return true;
+    const r = a.sources.ruleIds;
+    const s = b.sources.ruleIds;
+    if (r.length !== s.length || r.some((id, i) => id !== s[i])) return false;
+    return (
+      sameArray(a.sources.source, b.sources.source) &&
+      sameArray(a.stories, b.stories) &&
+      sameArray(a.countable, b.countable)
+    );
+  }
+
+  /**
+   * One height unit. A throw is rule 21's (`HeightsFailed`, posted by the task loop): the waiting
+   * lid is answered `no-session` and no height unit runs until the next accepted edit.
+   */
   function heightsUnit(): void {
     try {
       if (city !== null) cityStep(city);
@@ -750,29 +796,33 @@ export function createRunner(deps: RunnerDeps): Runner {
       heightsBroken = true;
       city = null;
       lid = null;
-      deps.warn(`height limits: ${String(e)}`);
       const w = lidWant;
       lidWant = null;
       const message = `height lids are not available: ${String(e)}`;
       if (w) postLids(w.reqId, { ok: false, reason: 'no-session', message });
+      throw new HeightsFailed(e);
     }
   }
 
   /**
    * The city build of the zoning in view (scenario-host.ts:1035-1066): its inputs in a unit of
    * their own (`cityInputAt` on the plan frame in view, read now: never a frame held from an older
-   * timeline), then its steps; once done, `heights` goes out and the city becomes `limits`.
+   * timeline), then its steps; once done, `heights` goes out and the city becomes `limits`. The
+   * same view with the same attribution as `limits` needs no build and posts nothing (D2).
    */
   function cityStep(c: CityWork): void {
     if (c.build === null) {
       const t = plan!.timeline!;
       const f = t.frameAt(viewMonthOf(t));
-      if (limits !== null && limits.view === f.view) {
+      const key = { timeline: t, id: f.id };
+      const input = cityInputAt(f);
+      if (limits !== null && limits.view === f.view && sameInput(limits.input, input)) {
+        limits = { ...limits, key, input };
         city = null;
         return;
       }
       const parcels = ds.loaded.fzp.parcels;
-      const input = cityInputAt(f);
+      c.key = key;
       c.view = f.view;
       c.rev = rev;
       c.input = input;
@@ -790,7 +840,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (!c.build.step(sliceLeft(), clock)) return;
     const { city: built, model } = c.build.result();
     city = null;
-    limits = { view: c.view, rev: c.rev, input: c.input!, model };
+    limits = { key: c.key, view: c.view, rev: c.rev, input: c.input!, model };
     // a lid build on older limits starts again on these
     lid = null;
     post({ type: 'heights', rev, city: built }, cityTransfer(built));
@@ -914,20 +964,28 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (!warmOnly || edit === null) afterSlice();
   }
 
-  /** A slice of an edit's compiles (rule 12): nothing steps; the edit may be accepted in it. */
+  /**
+   * A slice of an edit's compiles (rule 12): nothing steps; the edit may be accepted in it. Height
+   * units for the timeline in use run first, as the old host ran them ahead of a pending revision
+   * (scenario-host.ts:861-866): a `heightLids` never waits on an edit's compile.
+   */
   function editSlice(): void {
     const start = deps.now();
+    sliceStart = start;
     const ed = edit!;
     for (let first = true; edit === ed; first = false) {
-      const c = editWork();
-      if (c === null) break;
+      const hk = heightsKind();
+      const c = hk === null ? editWork() : null;
+      if (hk === null && c === null) break;
+      const kind: Kind = hk ?? 'compile';
       if (!first) {
-        const est = estimate('compile');
+        const est = estimate(kind);
         if (est === undefined || deps.now() - start + est > SLICE_PLAN_MS) break;
       }
       const t0 = deps.now();
-      editUnit(c);
-      measure('compile', deps.now() - t0);
+      if (hk !== null) heightsUnit();
+      else editUnit(c!);
+      measure(kind, deps.now() - t0);
     }
     if (edit === ed) postEditProgress(ed);
     // accepted: the new rev's `compiling`, `compiled`, `lookups` (and a `filled` when kept)
@@ -937,13 +995,13 @@ export function createRunner(deps: RunnerDeps): Runner {
   function tick(): void {
     pending = false;
     if (disposed) return;
-    if (failed && edit === null) {
-      // rule 21: filling stopped; the height limits still answer
-      if (heightsKind() === null) return;
-      heightsSlice();
-      return schedule();
-    }
     try {
+      if (failed && edit === null) {
+        // rule 21: filling stopped; the height limits still answer
+        if (heightsKind() === null) return;
+        heightsSlice();
+        return schedule();
+      }
       if (mapTaskDue()) mapTask();
       else if (flushDue()) {
         // D12: warm before the flush, in slices of their own; then the flush, a task of its own
@@ -952,6 +1010,12 @@ export function createRunner(deps: RunnerDeps): Runner {
       } else if (edit !== null) editSlice();
       else slice(false);
     } catch (e) {
+      // rule 21 for a city or lid build: at the rev in use; a pending edit goes on (and its
+      // acceptance re-creates every world)
+      if (e instanceof HeightsFailed) {
+        fail(e.reason);
+        return schedule();
+      }
       // an edit's compile that throws other than `LeverFormatError`: at the edit's rev (D11)
       const ed = edit;
       edit = null;
@@ -972,8 +1036,8 @@ export function createRunner(deps: RunnerDeps): Runner {
   function schedule(): void {
     if (mapTaskDue() || flushDue()) return kick();
     if (edit !== null) {
-      // a stalled edit compile waits for `chunkArrived`
-      if (editWork() !== null) return kick();
+      // a stalled edit compile waits for `chunkArrived`; height units run meanwhile
+      if (editWork() !== null || heightsKind() !== null) return kick();
     } else if (failed) {
       if (heightsKind() !== null) kick();
       return;
