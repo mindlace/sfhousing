@@ -18,7 +18,7 @@ import { fundOf, moneyRowsOf, poolRowOf, type FundPools } from './columns';
 import { frameMoney } from './frame-money';
 import { availableOf, commitAward, moneyOnEvent } from './pools';
 import { createFundingSystem } from './system';
-import { benchFunded, fundedMini, oneMoneyTimeline } from './test/fixtures';
+import { benchMoney, fundedMini, oneMoneyTimeline } from './test/fixtures';
 
 type Finance = NonNullable<SimInput['finance']>;
 
@@ -168,7 +168,7 @@ function treasuryStates(state: { received: number }[]) {
 
 describe('pools, arrivals and money events', () => {
   it("rule 12: under the bench baseline, after month 1 every capped baseline pool has received its first year's inflow", () => {
-    const bench = benchFunded(benchInput());
+    const bench = benchMoney(benchInput());
     const money = bench.finance!;
     const bt = oneMoneyTimeline(bench, money);
     const bs = staticsOf(bench);

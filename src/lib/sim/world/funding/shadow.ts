@@ -45,7 +45,7 @@ function holds(a: readonly number[], v: number): boolean {
  * read, less the existing homes recorded at the award), and ends; when no size level gains a home
  * it ends without a `displace`. Nothing else ends a shadow: the funded project's exit and the lot
  * starting again leave it running on its own attempt. A planned month before `ctx.month` throws
- * (the due list's invariant). Then the line's `gone` rows are dropped.
+ * (the due list's invariant). Then the line is compacted (amortized, `compact`).
  */
 export function stepShadows(ctx: StepCtx): void {
   const { line } = fundOf(ctx.world);
@@ -78,6 +78,7 @@ export function stepShadows(ctx: StepCtx): void {
     if (size !== null) ctx.displace(line.shadowRow[i], lot, s.day, size.units - existing);
   }
   dropShadows(line, ended);
-  // System 7 runs last in every funded month: no `gone` row survives the step.
+  // System 7 runs last in every funded month. Compaction is amortized (`compact`): on a long line
+  // `gone` rows may survive the step; every reader of the line skips them.
   compact(line);
 }

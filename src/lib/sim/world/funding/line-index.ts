@@ -111,11 +111,23 @@ export function leaveRows(line: FundLine, lot: number): void {
   }
 }
 
-/** `compactLine`, keeping a current index current (`seq` survives compaction). */
+/** A line this long or longer is compacted only once an eighth of it is `gone`. */
+export const COMPACT_MIN = 1024;
+
+/**
+ * `compactLine`, amortized: a line of `COMPACT_MIN` rows or more is compacted only when its `gone`
+ * rows are at least an eighth of it, a shorter one whenever it holds one. The count comes from the
+ * index (rebuilt from the columns when stale), so the decision reads only the line's columns and a
+ * clone decides as its original. A current index stays current (`seq` survives compaction).
+ */
 export function compact(line: FundLine): void {
-  const c = current(line);
+  const c = lineIndex(line);
+  let live = 0;
+  for (const g of c.groups) live += g.alive;
+  const gone = line.n - live;
+  if (gone === 0 || (line.n >= COMPACT_MIN && gone * 8 < line.n)) return;
   compactLine(line);
-  if (c !== null) c.version = line.version;
+  c.version = line.version;
 }
 
 function addRow(c: LineIndex, line: FundLine, i: number): Group {

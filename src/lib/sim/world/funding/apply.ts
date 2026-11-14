@@ -4,6 +4,7 @@
 import { NEVER_KEY_DAY, lineKey } from '$lib/sim/scenario/funded';
 import { below, coverageLevel } from '$lib/sim/scenario/funding';
 import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
+import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
 import type { ProjectKind } from '$lib/timelapse/types';
 import { lotRow } from '../columns';
 import { lotEntity } from '../rates';
@@ -22,6 +23,7 @@ import {
 } from './columns';
 import { beforeChange, isWaiting, leaveRows, noteAdded } from './line-index';
 
+const F = FILL_LEVELS.length;
 const KINDS: readonly ProjectKind[] = ['market', 'affordable'];
 const CODE: Record<ProjectKind, number> = { market: KIND_MARKET, affordable: KIND_AFFORDABLE };
 
@@ -69,39 +71,85 @@ export function spellsOf(ctx: StepCtx, lot: number): { market: Spell; affordable
 }
 
 /**
- * Whether any frame `kindClock` reads for a spell free since `r`, through `month`, offers a
- * programme of `kind`: the frame of the spell's first month and each change after it through
- * `month`. When none does, every lot-month's bundle is empty and the clock has no day (rule 5).
+ * Test seams: `skip` false turns off the per-lot part of `fundableAny` (the offer check stays);
+ * `early` false builds the lot's spells before the eligibility check.
  */
-function offersAny(ctx: StepCtx, r: number, kind: ProjectKind): boolean {
+export const ELIGIBILITY = { skip: true, early: true };
+
+/** The most homes any fill level gives `lot` in `parcels` (the largest size a SIZE draw can give). */
+function topYield(parcels: ScenarioParcels, lot: number): number {
+  let top = 0;
+  for (let f = 0; f < F; f++) top = Math.max(top, parcels.yield[lot * F + f]);
+  return top;
+}
+
+/**
+ * Whether any frame `kindClock` reads for `lot`'s spell free since `r`, through `ctx.month`, could
+ * give it a non-empty bundle of `kind`: the frame of the spell's first month and each change after
+ * it through the month (the segments `kindClock` walks). A frame can when it has money offering a
+ * programme of `kind`, the lot has a chance in its view (`logit` not -Infinity) and the lot's
+ * largest size in that view meets the least `minHomes` offered (`segOn` gives an empty bundle
+ * otherwise; as today's `eligibleOf`, `funded.ts:232-256`, but per frame and on offered
+ * programmes). When none can, every lot-month's bundle is empty and the clock has no day (rule 5);
+ * callers read only the day, so skipping the clock is exact. Per lot, O(levels) per frame: no
+ * whole-city pass.
+ */
+export function fundableAny(ctx: StepCtx, r: number, kind: ProjectKind, lot: number): boolean {
   const { timeline, month } = ctx;
   const first = Math.min(monthOfDay(ctx.statics.asOf, r + 1), month);
-  const offers = (m: number): boolean => {
+  const can = (m: number): boolean => {
     const g = timeline.frameAt(m);
-    return g.finance !== null && frameMoney(timeline, g).offered[kind].length > 0;
+    if (g.finance === null) return false;
+    const fm = frameMoney(timeline, g);
+    if (fm.offered[kind].length === 0) return false;
+    if (!ELIGIBILITY.skip) return true;
+    if (g.view.pre.logit[lot] === -Infinity) return false;
+    return topYield(g.view.parcels, lot) >= fm.least[kind];
   };
-  if (offers(first)) return true;
+  if (can(first)) return true;
   for (const c of timeline.changes()) {
     if (c <= first) continue;
     if (c > month) break;
-    if (offers(c)) return true;
+    if (can(c)) return true;
   }
   return false;
 }
 
 /**
  * Each kind's clock read through `ctx.month`, null for a kind already waiting or one no frame it
- * reads offers (its clock would have no day): callers read only a clock's day.
+ * reads can fund (`fundableAny`: its clock would have no day): callers read only a clock's day.
  */
-function clocksOf(ctx: StepCtx, lot: number, line: FundLine | null): (KindClock | null)[] {
+function clocksOf(ctx: StepCtx, lot: number, line: FundLine | null): readonly (KindClock | null)[] {
+  if (!ELIGIBILITY.early) {
+    const spells = spellsOf(ctx, lot);
+    const sh = seedHash(ctx.seed);
+    return KINDS.map((kind) =>
+      waiting(line, lot, CODE[kind]) || !fundableAny(ctx, spells[kind].r, kind, lot)
+        ? null
+        : kindClock(ctx.statics, ctx.timeline, ctx.month, sh, spells[kind], kind)
+    );
+  }
+  // Eligibility first, on each kind's spell start alone (the `r` `spellsOf` gives, without the
+  // stream): a lot no frame can fund for either kind costs no spells and no stream.
+  const l = ctx.world.lots;
+  const i = lotRow(l, lot);
+  const r0 = i < 0 ? ctx.statics.asOf : l.r[i];
+  const k = i < 0 ? 0 : l.k[i];
+  const need = KINDS.map((kind) => {
+    const code = CODE[kind];
+    if (waiting(line, lot, code)) return false;
+    const own = line === null ? NO_DAY : spellOf(line, lot, code, k);
+    return fundableAny(ctx, own === NO_DAY ? r0 : own, kind, lot);
+  });
+  if (!need[0] && !need[1]) return NO_CLOCKS;
   const spells = spellsOf(ctx, lot);
   const sh = seedHash(ctx.seed);
-  return KINDS.map((kind) =>
-    waiting(line, lot, CODE[kind]) || !offersAny(ctx, spells[kind].r, kind)
-      ? null
-      : kindClock(ctx.statics, ctx.timeline, ctx.month, sh, spells[kind], kind)
+  return KINDS.map((kind, j) =>
+    need[j] ? kindClock(ctx.statics, ctx.timeline, ctx.month, sh, spells[kind], kind) : null
   );
 }
+
+const NO_CLOCKS: readonly (KindClock | null)[] = [null, null];
 
 /**
  * Rule 5: the model month of the earliest application day of a kind not already waiting, or 0.
