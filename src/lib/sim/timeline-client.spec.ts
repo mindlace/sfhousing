@@ -143,4 +143,119 @@ describe('TimelineClient', () => {
     client.resyncMap();
     expect(w.posts.slice(1)).toEqual([{ type: 'viewMonth', month: 7 }, { type: 'resyncMap' }]);
   });
+
+  const compiled = (rev: number): TimelineHostResponse => ({
+    type: 'compiled',
+    rev,
+    capacity: {} as never,
+    unknownLots: 0,
+    statics: {} as never
+  });
+  const badRequest = (rev: number): TimelineHostResponse => ({
+    type: 'error',
+    rev,
+    code: 'bad-request',
+    message: 'x'
+  });
+
+  describe('drop floor after a rejected setPolicy', () => {
+    it('delivers filled and refill at the last accepted rev after bad-request at the floor', () => {
+      const onFilled = vi.fn();
+      const onRefill = vi.fn();
+      const { w, client } = setup({ onFilled, onRefill });
+      client.open(MANIFEST, P1, L1);
+      w.emit(compiled(1));
+      client.setPolicy(P2, L2);
+      w.emit({ type: 'filled', rev: 1, through: 1, series });
+      expect(onFilled).not.toHaveBeenCalled();
+      w.emit(badRequest(2));
+      w.emit({ type: 'filled', rev: 1, through: 2, series });
+      w.emit({ type: 'refill', rev: 1, from: 3 });
+      expect(onFilled).toHaveBeenCalledTimes(1);
+      expect(onRefill).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not drop a refill for a rev before that rev compiled', () => {
+      const onRefill = vi.fn();
+      const { w, client } = setup({ onRefill });
+      client.open(MANIFEST, P1, L1);
+      w.emit({ type: 'refill', rev: 1, from: 0 });
+      expect(onRefill).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to the open rev before any compiled', () => {
+      const onFilled = vi.fn();
+      const { w, client } = setup({ onFilled });
+      client.open(MANIFEST, P1, L1);
+      client.setPolicy(P2, L2);
+      w.emit(badRequest(2));
+      w.emit({ type: 'filled', rev: 1, through: 1, series });
+      expect(onFilled).toHaveBeenCalledTimes(1);
+    });
+
+    it('a later accepted setPolicy raises the floor again', () => {
+      const onFilled = vi.fn();
+      const { w, client } = setup({ onFilled });
+      client.open(MANIFEST, P1, L1);
+      w.emit(compiled(1));
+      client.setPolicy(P2, L2);
+      w.emit(badRequest(2));
+      expect(client.setPolicy(P2, L2)).toBe(3);
+      w.emit({ type: 'filled', rev: 1, through: 1, series });
+      w.emit({ type: 'filled', rev: 2, through: 1, series });
+      expect(onFilled).not.toHaveBeenCalled();
+      w.emit({ type: 'filled', rev: 3, through: 1, series });
+      expect(onFilled).toHaveBeenCalledTimes(1);
+    });
+
+    it('a bad-request for an older rev does not lower the floor', () => {
+      const onFilled = vi.fn();
+      const { w, client } = setup({ onFilled });
+      client.open(MANIFEST, P1, L1);
+      w.emit(compiled(1));
+      client.setPolicy(P2, L2);
+      client.setPolicy(P2, L2);
+      w.emit(badRequest(2));
+      w.emit({ type: 'filled', rev: 1, through: 1, series });
+      expect(onFilled).not.toHaveBeenCalled();
+    });
+
+    it('a non-bad-request error leaves the floor alone', () => {
+      const onFilled = vi.fn();
+      const { w, client } = setup({ onFilled });
+      client.open(MANIFEST, P1, L1);
+      w.emit(compiled(1));
+      client.setPolicy(P2, L2);
+      w.emit({ type: 'error', rev: 2, code: 'timeline', message: 'x' });
+      w.emit({ type: 'filled', rev: 1, through: 1, series });
+      expect(onFilled).not.toHaveBeenCalled();
+    });
+  });
+
+  it('setPolicy before open throws and posts nothing', () => {
+    const { w, client } = setup();
+    expect(() => client.setPolicy(P2, L2)).toThrow('open first');
+    expect(w.posts).toEqual([]);
+  });
+
+  it('drops a pre-restart rev after the re-open', () => {
+    const onFilled = vi.fn();
+    const first = fakeWorker();
+    const c = new TimelineClient(first, { onFilled });
+    c.open(MANIFEST, P1, L1);
+    c.setPolicy(P2, L2);
+    const w2 = fakeWorker();
+    c.restart(w2);
+    w2.emit({ type: 'filled', rev: 2, through: 1, series });
+    expect(onFilled).not.toHaveBeenCalled();
+    w2.emit({ type: 'filled', rev: 3, through: 1, series });
+    expect(onFilled).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispose answers pending lookups no-session', async () => {
+    const { client } = setup();
+    const pending = client.resolveBrush({} as never);
+    client.dispose();
+    await expect(pending).resolves.toMatchObject({ ok: false, reason: 'no-session' });
+  });
 });

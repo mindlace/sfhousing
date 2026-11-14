@@ -20,7 +20,12 @@ export type TimelineErrorCode = ScenarioErrorCode | 'timeline';
  *
  * `rev` is the page's count of policy edits (`open` is rev 1 of a session; each `setPolicy` is the
  * next): the worker drops work for an older `rev`, and the client drops `compiling`, `compiled`,
- * `filled` and `refill` with an older `rev` than the last `setPolicy` it sent.
+ * `filled` and `refill` with an older `rev` than its drop floor. The floor is the last
+ * `setPolicy` / `open` rev it sent, except that an `error` code `bad-request` at a rev equal to the
+ * floor lowers it to the last rev seen accepted (the last `compiled` received, or the open rev
+ * before any), because the worker keeps filling under the previous timelines and posts at that
+ * rev; a `bad-request` for an older rev changes nothing. A `refill` may precede its rev's
+ * `compiled` and is not dropped for it.
  *
  * The page reconciles the document before sending: `openSimDoc4` with the dataset's calibration
  * and `asOf`, read from the manifest's files. The worker rejects an unreconciled document with

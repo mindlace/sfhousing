@@ -54,6 +54,18 @@ export interface TimelineClientEvents {
   onCrash?(e: Event): void;
 }
 
+/**
+ * The client side of the timeline host.
+ *
+ * Drop floor (S14): `compiling`, `compiled`, `filled` and `refill` older than the floor are
+ * dropped. The floor is the rev of the last `open` / `setPolicy` sent, except that an `error` code
+ * `bad-request` at a rev equal to the floor (the worker rejected that edit) lowers it to the last
+ * rev seen accepted (the rev of the last `compiled` received, or the open rev before any), because
+ * the worker keeps filling under the previous timelines and posts at that rev. A `bad-request` for
+ * an older rev changes nothing, and the next sent edit raises the floor again. A `refill` is not
+ * dropped for arriving before its rev's `compiled`: it is not older than the floor. `setPolicy`
+ * before `open` throws; `restart` re-opens only when a timeline was opened.
+ */
 export class TimelineClient {
   #worker: ScenarioWorkerLike;
   #events: TimelineClientEvents;
@@ -61,6 +73,8 @@ export class TimelineClient {
   #rev = 0;
   /** The rev of the latest `openTimeline` or `setPolicy` sent: older answers are dropped. */
   #policyRev = 0;
+  /** The last rev seen accepted: the highest `compiled` received, or the open rev before any. */
+  #acceptedRev = 0;
   #manifest: Manifest | null = null;
   #policy: SimPolicy4 | null = null;
   #lots: Record<string, ParcelId[]> = {};
@@ -87,6 +101,7 @@ export class TimelineClient {
   #sendOpen(): Rev {
     const rev = ++this.#rev;
     this.#policyRev = rev;
+    this.#acceptedRev = rev;
     this.#post({
       type: 'openTimeline',
       rev,
@@ -109,6 +124,7 @@ export class TimelineClient {
 
   /** A policy edit: answers for older edits are dropped from here on. */
   setPolicy(policy: SimPolicy4, lots: Record<string, ParcelId[]>): Rev {
+    if (this.#manifest === null) throw new Error('open first');
     this.#policy = policy;
     this.#lots = lots;
     const rev = ++this.#rev;
@@ -220,6 +236,7 @@ export class TimelineClient {
         if (msg.rev >= this.#policyRev) this.#events.onCompiling?.(msg);
         return;
       case 'compiled':
+        this.#acceptedRev = Math.max(this.#acceptedRev, msg.rev);
         if (msg.rev >= this.#policyRev) this.#events.onCompiled?.(msg);
         return;
       case 'filled':
@@ -235,6 +252,9 @@ export class TimelineClient {
         this.#events.onLookups?.(msg);
         return;
       case 'error':
+        if (msg.code === 'bad-request' && msg.rev === this.#policyRev) {
+          this.#policyRev = this.#acceptedRev;
+        }
         this.#events.onError?.(msg);
         return;
       case 'chunks':
