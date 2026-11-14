@@ -6,6 +6,7 @@ import {
   edited,
   fillStatusText,
   playAvailable,
+  refilled,
   settled,
   shownAt
 } from './fill';
@@ -59,6 +60,18 @@ describe('stale, fill and Play state', () => {
   });
   it('Play is available with no edit, inside the filled part', () => {
     expect(playAvailable(NO_EDIT, cut(whole, 3), false)).toBe(true);
+  });
+  it('a refill holds the view before it until the fill passes the playhead again', () => {
+    let s = refilled(NO_EDIT, whole);
+    expect(shownAt(s, cut(whole, 9), 15)).toEqual({ view: whole, stale: true });
+    s = afterView(s, cut(whole, 15), 15);
+    expect(s.held).toBeNull();
+    expect(shownAt(s, cut(whole, 15), 15)).toEqual({ view: cut(whole, 15), stale: false });
+  });
+  it('a refill keeps the first held view and leaves pending and Play as they were', () => {
+    const s = refilled(edited(NO_EDIT, whole), cut(whole, 40));
+    expect(s).toEqual({ held: whole, pending: true, sinceWhole: true });
+    expect(refilled(NO_EDIT, whole).sinceWhole).toBe(false);
   });
   it('fill status names the year of the last final month, and nothing when full', () => {
     expect(fillStatusText(cut(whole, 251))).toMatch(/^Forecast filled to \d{4}$/);

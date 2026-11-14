@@ -24,6 +24,16 @@ export function settled(s: EditState): EditState {
   return { ...s, pending: false };
 }
 
+/**
+ * A `refill` arrived, at any rev: the months from its `from` are being rebuilt for that rev's
+ * document. The view before it is held (the first held view is kept) until the fill passes the
+ * playhead again; a refill at an older rev than the newest sent (an edit taken up again after a
+ * later one was rejected) so puts the page back into stale. Pending and Play are left alone.
+ */
+export function refilled(s: EditState, before: TimelineView | null): EditState {
+  return { ...s, held: s.held ?? before };
+}
+
 /** The view to show at month `i`, and whether it is the dimmed numbers from before the change. */
 export function shownAt(
   s: EditState,
