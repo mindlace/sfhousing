@@ -164,6 +164,26 @@ describe('TimelineSession', () => {
     expect(session.shown(15).stale).toBe(false);
   });
 
+  it('dropUnsent ends an unsent edit: not stale, Play back, nothing posted', () => {
+    opened();
+    emit(filled(1, 20, LAST - 19));
+    session.playhead(dayOf(15));
+    session.edited();
+    expect(session.shown(15).stale).toBe(true);
+    expect(session.playAvailable()).toBe(false);
+    const posts = worker.posts.length;
+    session.dropUnsent();
+    expect(session.shown(15).stale).toBe(false);
+    expect(session.shown(15).view).toBe(session.view);
+    expect(session.playAvailable()).toBe(true);
+    expect(worker.posts).toHaveLength(posts);
+    // A sent edit still pending is not dropped.
+    session.edited();
+    session.send(doc2, {});
+    session.dropUnsent();
+    expect(session.shown(15).stale).toBe(true);
+  });
+
   it('an open card re-requests once a filled covers its day after an edit', () => {
     const refresh = vi.fn();
     session.oncardrefresh = refresh;

@@ -397,6 +397,63 @@ describe('SimPage editing', () => {
     await expect.element(redoButton()).toBeEnabled();
   });
 
+  it("a stroke whose lots can't be found leaves the page current; the notice's Retry finds them", async () => {
+    await opened({ storage: () => seeded(doc4(zoning(painted))) });
+    await page
+      .getByTestId('tl-kind-zoning')
+      .getByRole('button', { name: /^Zoning/ })
+      .click();
+    await page.getByTestId('tl-bar').nth(1).click();
+    await inspector().getByRole('radio', { name: 'Paint' }).click();
+    await expect.poll(() => callsOf('setPanEnabled').at(-1)?.[0]).toBe(false);
+    const canvas = stub.map.getCanvas();
+    const ev = (type: string, x: number) =>
+      canvas.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: 10,
+          pointerId: 1,
+          pointerType: 'mouse',
+          button: type === 'pointermove' ? -1 : 0,
+          isPrimary: true
+        })
+      );
+    ev('pointerdown', 10);
+    for (let x = 20; x <= 80; x += 10) ev('pointermove', x);
+    ev('pointerup', 80);
+    await expect.poll(() => debug().stale).toBe(true);
+
+    let answered = 0;
+    /** Answers every resolveBrush asked so far. */
+    const answer = (ok: boolean) => {
+      for (const q of w().all('resolveBrush').slice(answered)) {
+        emit({
+          type: 'brushLots',
+          reqId: q.reqId,
+          result: ok
+            ? { ok: true, lots: ['P0'], points: Float64Array.from([0, 0]) }
+            : { ok: false, reason: 'data-missing', message: 'no lots' }
+        });
+        answered++;
+      }
+    };
+    await expect.poll(() => w().all('resolveBrush').length).toBeGreaterThan(0);
+    answer(false);
+    const alerts = page.getByTestId('tl-alerts');
+    await expect.element(alerts.getByText("Couldn't find lots")).toBeVisible();
+    await expect.poll(() => debug().stale).toBe(false);
+    expect(w().all('setPolicy')).toHaveLength(0);
+
+    await alerts.getByRole('button', { name: 'Retry' }).click();
+    await expect.poll(() => w().all('resolveBrush').length).toBeGreaterThan(answered);
+    answer(true);
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    expect(Object.values(w().lastOf('setPolicy')!.lots)).toContainEqual(['P0']);
+    await expect.element(alerts.getByText("Couldn't find lots")).not.toBeInTheDocument();
+  });
+
   it("an edit that leaves a programme's term unsourced drops it, with today's notice", async () => {
     const F = fundingOnly();
     const guarantee: Programme = {

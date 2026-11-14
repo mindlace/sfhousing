@@ -72,6 +72,21 @@ export class PolicySync {
     return this.#parkedN > 0 && p !== null && queriesOf4(p).some((q) => this.#parked.has(q.key));
   }
 
+  /**
+   * The keys of the latest document's queries whose last answer failed (a `no-session` answer is
+   * not a failure). After `update` they hold `lots` null until `retry` asks them again.
+   */
+  get failed(): string[] {
+    const p = this.#policy;
+    if (!p) return [];
+    return queriesOf4(p)
+      .map((q) => q.key)
+      .filter((key) => {
+        const r = this.#results.get(key);
+        return r !== undefined && !r.ok && r.reason !== 'no-session';
+      });
+  }
+
   result(key: string): BrushLotsResult | undefined {
     return this.#results.get(key);
   }

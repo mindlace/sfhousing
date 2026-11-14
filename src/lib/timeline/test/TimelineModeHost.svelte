@@ -1,7 +1,7 @@
 <!--
   Test host: TimelineMode with the root layout's header slots beside it (as FzpModeHost) and the
-  page's part of the document: `policy`, `lots` and the selection live here, and `ctl` lets a test
-  set them as the page's store and PolicySync would. `onedit` applies the change; `onundoto`
+  page's part of the document: `policy`, `lots`, `lotsFailed` and the selection live here, and
+  `ctl` lets a test set them as the page's store and PolicySync would. `onedit` applies the change; `onundoto`
   (rule 34) sets the document unless the test passes its own. With `withInspector` the inspector
   renders the Results face.
 -->
@@ -15,14 +15,26 @@
 
   type Rest = Omit<
     ComponentProps<typeof TimelineMode>,
-    'policy' | 'lots' | 'selected' | 'onselect' | 'onedit' | 'onadd' | 'readonly' | 'onundoto'
+    | 'policy'
+    | 'lots'
+    | 'lotsFailed'
+    | 'selected'
+    | 'onselect'
+    | 'onedit'
+    | 'onadd'
+    | 'readonly'
+    | 'onundoto'
   >;
   interface Props extends Rest {
     onundoto?: (p: SimPolicy4) => void;
     withInspector?: boolean;
     initialPolicy: SimPolicy4;
     initialLots: Lots | null;
-    ctl: { setPolicy?: (p: SimPolicy4) => void; setLots?: (l: Lots | null) => void };
+    ctl: {
+      setPolicy?: (p: SimPolicy4) => void;
+      setLots?: (l: Lots | null) => void;
+      setLotsFailed?: (f: boolean) => void;
+    };
   }
 
   let {
@@ -36,10 +48,12 @@
   const slot = provideHeaderActions();
   let policy = $state.raw<SimPolicy4>(untrack(() => initialPolicy));
   let lots = $state.raw<Lots | null>(untrack(() => initialLots));
+  let lotsFailed = $state(false);
   let selected = $state.raw<SpanRef | null>(null);
   untrack(() => {
     ctl.setPolicy = (p) => (policy = p);
     ctl.setLots = (l) => (lots = l);
+    ctl.setLotsFailed = (f) => (lotsFailed = f);
   });
 </script>
 
@@ -57,6 +71,7 @@
     {...rest}
     {policy}
     {lots}
+    {lotsFailed}
     readonly={false}
     {selected}
     onselect={(r) => (selected = r)}

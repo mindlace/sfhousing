@@ -20,6 +20,7 @@
     PreviewResult
   } from '$lib/sim/scenario/types';
   import type { LeverLookups, Lookups } from '$lib/sim/levers/apply';
+  import { lotsText } from '$lib/paint/rows';
   import { scoreCopy, type ScoreCopy } from '$lib/sim-page/policy';
   import type { SimLevers } from '$lib/sim/levers/types';
 
@@ -76,6 +77,9 @@
   /** Below md the inspector sheet starts under the chart, and is never shorter than this. */
   const MIN_SHEET = 240;
 
+  /** The brush-failure notice: the editors' own words for a query that failed. */
+  const LOTS_FAILED = lotsText({ kind: 'failed', keys: [] });
+
   /** The widest text the status slot shows: its width is reserved (rule 32). */
   const STATUS_WIDEST = forecastFilled(2088);
 </script>
@@ -92,7 +96,7 @@
   import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import ProjectCardPanel from '$lib/fzp/ProjectCardPanel.svelte';
   import ProjectTooltip from '$lib/fzp/ProjectTooltip.svelte';
-  import { RHNA_ID, homesAddedBy, scoreAt, scrubMarkers } from '$lib/fzp/score-view';
+  import { RHNA_ID, homesAddedBy, scrubMarkers } from '$lib/fzp/score-view';
   import SimResults from '$lib/fzp/SimResults.svelte';
   import SourcesDialog from '$lib/fzp/SourcesDialog.svelte';
   import { SummaryRequester, type SummaryState } from '$lib/fzp/summary-request';
@@ -122,7 +126,7 @@
   import { filledEndDay, indexOfDay, viewMonthOf } from './playhead';
   import { termsInForce } from './lens';
   import type { PolicyKind, SimPolicy4 } from './policy4';
-  import { headerOf, scoreOfView } from './results';
+  import { headerOf, resultsAt, scoreOfView } from './results';
   import { TimelineSession, type Lots, type SessionNotice } from './session.svelte';
   import type { SpanRef } from './spans';
   import Timeline from './Timeline.svelte';
@@ -157,6 +161,13 @@
     policy: SimPolicy4;
     /** The lots of `policy`'s brush queries; null while one is unresolved (PolicySync). */
     lots: Lots | null;
+    /**
+     * PolicySync settled with a failure: a brush query `policy` needs failed, so `lots` stays null
+     * until it is asked again. The unsent edit is dropped and the notice offers Retry.
+     */
+    lotsFailed?: boolean;
+    /** The brush-failure notice's Retry: ask the failed queries again. */
+    onlotsretry?(): void;
     readonly: boolean;
     onedit(change: (p: SimPolicy4) => SimPolicy4, label: string): void;
     /** Rule 34: undo to the last document the worker accepted (the store's `undoTo`). */
@@ -214,6 +225,8 @@
     notices = undefined,
     policy,
     lots,
+    lotsFailed = false,
+    onlotsretry = undefined,
     readonly,
     onedit,
     onundoto,
@@ -299,18 +312,20 @@
   /** Today's score shape over the view on show (rule 26). */
   const score = $derived(shown.view ? scoreOfView(shown.view, tierBaseline) : null);
   const shownFilled = $derived(shown.view?.filledThrough ?? -1);
-  // `resultsAt` without a second `scoreOfView`: the score above is the view's, built once.
-  const at = $derived(score && index <= shownFilled ? scoreAt(score, index) : null);
-  const city = $derived(
-    shown.view && index <= shownFilled
-      ? shown.view.baseline.completedNet + Math.round(shown.view.shown[index].completedNet)
+  /** `resultsAt` over the score above (the view's, built once). */
+  const resultsNow = $derived(
+    shown.view && score && index <= shownFilled
+      ? resultsAt(shown.view, tierBaseline, index, score)
       : null
   );
+  const at = $derived(resultsNow?.at ?? null);
+  const city = $derived(resultsNow?.city ?? null);
   const shownEnd = $derived(
     shown.view ? filledEndDay(shown.view.months, shown.view.filledThrough, asOf) : asOf
   );
   const markers = $derived(score ? scrubMarkers(score) : []);
-  const copy = $derived(copyOf(statics?.compare ?? null));
+  /** The shown view's comparison, so the label changes with its numbers (a held view keeps its). */
+  const copy = $derived(copyOf(shown.view?.compare ?? statics?.compare ?? null));
   /** Rule 27 (OQ-3: "calculating" while provisional). */
   const header = $derived(
     headerOf(
@@ -326,9 +341,19 @@
       units: rhna.target.units
     };
   });
-  const funds = $derived(fundsOf4(policy));
+  /**
+   * The document the shown numbers are from: the one the worker runs, or while stale the one it
+   * ran when the held view was taken; the edited `policy` until the session has one.
+   */
+  let heldDoc = $state.raw<SimPolicy4 | null>(null);
+  const resultsDoc = $derived((stale ? heldDoc : null) ?? session?.accepted ?? policy);
+  // The held document goes once the numbers on show are current again.
+  $effect(() => {
+    if (!stale) untrack(() => (heldDoc = null));
+  });
+  const funds = $derived(fundsOf4(resultsDoc));
   /** The market terms in force at the playhead, for the Results' lost-grants line. */
-  const terms = $derived(resolveTerms(MARKET_TERMS, termsInForce(policy, day)));
+  const terms = $derived(resolveTerms(MARKET_TERMS, termsInForce(resultsDoc, day)));
   const uncapped = $derived(uncappedPoolIds(calibration?.baselineFunding?.pools, funds.pools));
   const phase = $derived<FzpPhase>(
     noScenario ? 'no-scenario' : failed ? 'failed' : (session?.phase ?? 'loading')
@@ -744,8 +769,20 @@
     untrack(() => {
       if (!session || p === seenPolicy) return;
       seenPolicy = p;
+      // The numbers on show are the accepted document's: kept while the edit is stale.
+      if (!stale || heldDoc === null) heldDoc = session.accepted;
       session.edited();
       playing = false;
+    });
+  });
+
+  // PolicySync settled with a failure: the unsent edit ends (it goes out once Retry finds its
+  // lots), so the page shows the last sent document's forecast, current, with the notice.
+  $effect(() => {
+    void policy;
+    const failedNow = lotsFailed && lots === null;
+    untrack(() => {
+      if (session && failedNow) session.dropUnsent();
     });
   });
 
@@ -1023,8 +1060,13 @@
                   >
                 </span>
               {:else if n.id === 'crash'}
+                <!-- Rule 35's wording: before the first fill nothing had run to stop. -->
                 <span class={PILL}>
-                  <span>Part of the simulation stopped.</span>
+                  <span
+                    >{session.phase === 'ready'
+                      ? 'Part of the simulation stopped.'
+                      : "The simulation couldn't load."}</span
+                  >
                   <button type="button" class={PILL_ACTION} onclick={() => retryNotice(n)}
                     >Retry</button
                   >
@@ -1053,6 +1095,14 @@
                 </span>
               {/if}
             {/each}
+            {#if lotsFailed && lots === null}
+              <span class={PILL} data-testid="tl-lots-failed">
+                <span>{LOTS_FAILED}</span>
+                <button type="button" class={PILL_ACTION} onclick={() => onlotsretry?.()}
+                  >Retry</button
+                >
+              </span>
+            {/if}
           </div>
         {/if}
       {/if}

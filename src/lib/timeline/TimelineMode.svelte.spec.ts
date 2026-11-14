@@ -11,6 +11,7 @@ import { REAL_ACTUAL } from '$lib/fzp/fixtures/cards';
 import { CALCULATING } from '$lib/fzp/score-view';
 import { dayFromUtc, utcParts } from '$lib/fzp/time';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
+import { lotsText } from '$lib/paint/rows';
 import { formatCount } from '$lib/scoreboard/format';
 import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
@@ -35,6 +36,7 @@ import {
   refillMsg
 } from './test/fake-timeline-worker';
 import { chunk, statics as baseStatics } from './test/fixtures';
+import type { Pool } from '$lib/timelapse/types';
 import TimelineModeHost from './test/TimelineModeHost.svelte';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
@@ -96,6 +98,7 @@ type Over = Partial<{
   withInspector: boolean;
   scoreControls: string;
   statusMs: number;
+  onlotsretry: () => void;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -103,7 +106,11 @@ const w = () => workers[workers.length - 1];
 const emit = (r: TimelineHostResponse) => w().emit(r);
 
 function setup(over: Over = {}) {
-  const ctl: { setPolicy?: (p: SimPolicy4) => void; setLots?: (l: Lots | null) => void } = {};
+  const ctl: {
+    setPolicy?: (p: SimPolicy4) => void;
+    setLots?: (l: Lots | null) => void;
+    setLotsFailed?: (f: boolean) => void;
+  } = {};
   const createWorker = vi.fn(() => {
     const f = new FakeTimelineWorker();
     workers.push(f);
@@ -125,6 +132,7 @@ function setup(over: Over = {}) {
       statusMs: over.statusMs ?? 0,
       ...(over.onmiss ? { onmiss: over.onmiss } : {}),
       ...(over.onundoto ? { onundoto: over.onundoto } : {}),
+      ...(over.onlotsretry ? { onlotsretry: over.onlotsretry } : {}),
       ...(over.withInspector ? { withInspector: true } : {}),
       ...(over.scoreControls ? { scoreControls: over.scoreControls } : {})
     }
@@ -133,7 +141,8 @@ function setup(over: Over = {}) {
     r,
     createWorker,
     setPolicy: (p: SimPolicy4) => ctl.setPolicy!(p),
-    setLots: (l: Lots | null) => ctl.setLots!(l)
+    setLots: (l: Lots | null) => ctl.setLots!(l),
+    setLotsFailed: (f: boolean) => ctl.setLotsFailed!(f)
   };
 }
 
@@ -428,6 +437,146 @@ describe('TimelineMode', () => {
     emit(errorMsg(2, 'bad-request'));
     await expect.poll(() => onundoto.mock.calls).toEqual([[DEFAULT_POLICY4]]);
     await expect.element(page.getByTestId('tl-alerts')).toHaveTextContent(CHANGE_NOT_APPLIED);
+  });
+
+  it("an edit whose brush query fails isn't left stale: the notice's Retry asks again", async () => {
+    const onlotsretry = vi.fn();
+    const s = await opened(LAST, { onlotsretry });
+    const alerts = page.getByTestId('tl-alerts');
+    const failedText = lotsText({ kind: 'failed', keys: [] });
+    s.setPolicy(mk(protect(5)));
+    s.setLots(null);
+    await expect.poll(() => debug().stale).toBe(true);
+    await expect.element(playButton()).toHaveAttribute('aria-disabled', 'true');
+    expect(alerts.getByText(failedText).query()).toBeNull();
+
+    // PolicySync settled with a failure: the forecast stays the last sent document's.
+    s.setLotsFailed(true);
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect.element(playButton()).toHaveAttribute('aria-disabled', 'false');
+    await expect.poll(() => statusSlot().element().textContent?.trim()).toBe('');
+    await expect.element(alerts.getByText(failedText)).toBeVisible();
+    expect(w().all('setPolicy')).toHaveLength(0);
+
+    // A further edit that still needs the failed query is not stale either.
+    s.setPolicy(mk(protect(7)));
+    await expect.poll(() => debug().policy).toEqual(mk(protect(7)));
+    expect(debug().stale).toBe(false);
+
+    await alerts.getByRole('button', { name: 'Retry' }).click();
+    expect(onlotsretry).toHaveBeenCalledTimes(1);
+    // Asked again: the lots arrive and the edit goes out.
+    s.setLotsFailed(false);
+    await expect.element(alerts.getByText(failedText)).not.toBeInTheDocument();
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    expect(w().lastOf('setPolicy')!.policy).toEqual(mk(protect(7)));
+    expect(debug().stale).toBe(true);
+  });
+
+  it('the "What … added" label is the shown view\'s: it changes with its numbers', async () => {
+    const s = await opened(LAST, { withInspector: true });
+    const results = page.getByTestId('tl-results');
+    await expect.element(results).toHaveTextContent('What your policy added');
+    s.setPolicy(mk(protect(5)));
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    // The first policy in force flips the comparison; its numbers are not in yet.
+    emit(compiledMsg(2, { ...STATICS, compare: 'preFzp' }));
+    emit(refillMsg(2, 0));
+    await expect.poll(() => debug().filledThrough).toBe(-1);
+    expect(debug().stale).toBe(true);
+    await expect.element(results).toHaveTextContent('What your policy added');
+    emit(filledMsg(2, 0, LAST + 1));
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect.element(results).toHaveTextContent('What the plan added');
+  });
+
+  it('while stale the money rows read the held document, not the edited one', async () => {
+    const bond = (uncapped: boolean): Pool => ({
+      id: 'u-bond',
+      kind: 'generalRevenue',
+      label: 'Housing bond',
+      inflows: [{ kind: 'once', day: monthFirstDay(asOf, 2), dollars: 500_000_000 }],
+      uncapped,
+      debt: null,
+      leverage: 1
+    });
+    const money = (uncapped: boolean): SimPolicy4 => ({
+      schema: 4,
+      kinds: {
+        zoning: [],
+        permitting: [],
+        money: [
+          {
+            id: 'm',
+            label: 'Bond',
+            preset: null,
+            on: true,
+            where: { tag: 'fund', pool: 'u-bond' },
+            spans: [
+              {
+                from: monthFirstDay(asOf, 2),
+                to: null,
+                what: { tag: 'fund', pool: bond(uncapped), programmes: [] }
+              }
+            ]
+          }
+        ]
+      }
+    });
+    const filledPools = (rev: number) =>
+      emit({
+        type: 'filled',
+        rev,
+        through: LAST,
+        series: chunk(0, LAST + 1, { pools: ['u-bond'] })
+      });
+    const FIN: ScoreStatics = {
+      ...baseStatics({ lastIndex: LAST, finance: true }),
+      asOf,
+      months: MONTHS
+    };
+    const s = setup({ withInspector: true, initialPolicy: money(false) });
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, FIN));
+    filledPools(1);
+    const results = page.getByTestId('tl-results');
+    await results.getByRole('button', { name: /Money details/ }).click();
+    const received = () => {
+      const table = results.getByTestId('fzp-money-sources').element() as HTMLTableElement;
+      const r = [...table.tBodies[0].rows].find((x) => x.cells[0].textContent === 'Pool u-bond');
+      return r?.cells[1].textContent?.trim();
+    };
+    await expect.poll(received).toBeTruthy();
+    expect(received()).not.toBe('no limit');
+
+    s.setPolicy(money(true));
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    expect(debug().stale).toBe(true);
+    expect(received()).not.toBe('no limit');
+    emit(compiledMsg(2, FIN));
+    emit(refillMsg(2, 0));
+    filledPools(2);
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect.poll(received).toBe('no limit');
+  });
+
+  it("a crash before the first fill says the simulation couldn't load", async () => {
+    setup();
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    w().crash();
+    const notices = page.getByTestId('tl-notices');
+    await expect.element(notices).toHaveTextContent("The simulation couldn't load.");
+    expect(notices.element().textContent).not.toContain('Part of the simulation stopped.');
+    await notices.getByRole('button', { name: 'Retry' }).click();
+    await expect.poll(() => workers.length).toBe(2);
+    emit(compiledMsg(2, STATICS));
+    emit(filledMsg(2, 0, LAST + 1));
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    w().crash();
+    await expect.element(notices).toHaveTextContent('Part of the simulation stopped.');
   });
 
   it("on a phone the inspector sheet ends where the mode's box ends, above what follows it", async () => {

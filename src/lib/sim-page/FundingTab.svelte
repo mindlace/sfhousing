@@ -583,7 +583,9 @@
                     past={pastOf(pool.id)}
                     {asOf}
                     autoName={autoNamed.has(pool.id)}
-                    onselect={() => select(on ? null : { kind: 'pool', id: pool.id })}
+                    onselect={only === undefined
+                      ? () => select(on ? null : { kind: 'pool', id: pool.id })
+                      : undefined}
                     onedit={(e) => poolEdit(i, pool.id, e)}
                     {host}
                     {termsReadOnly}

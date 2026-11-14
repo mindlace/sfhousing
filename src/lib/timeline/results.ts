@@ -87,14 +87,18 @@ export function scoreOfView(view: TimelineView, tierBaseline: TierUnits | null):
   };
 }
 
-/** The Results at calendar month i (i <= filledThrough): today's ScoreAt over the average, and "This city". */
+/**
+ * The Results at calendar month i (i <= filledThrough): today's ScoreAt over the average, and
+ * "This city". `score` is `scoreOfView(view, tierBaseline)` when the caller has it already.
+ */
 export function resultsAt(
   view: TimelineView,
   tierBaseline: TierUnits | null,
-  i: number
+  i: number,
+  score: TimelineScore = scoreOfView(view, tierBaseline)
 ): { at: ScoreAt; city: number } {
   return {
-    at: scoreAt(scoreOfView(view, tierBaseline), i),
+    at: scoreAt(score, i),
     city: view.baseline.completedNet + whole(view.shown[i].completedNet)
   };
 }

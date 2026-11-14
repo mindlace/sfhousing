@@ -1041,6 +1041,8 @@
   notices={sessionNotices}
   policy={store.policy}
   lots={sync.lots}
+  lotsFailed={sync.lots === null && !sync.pending && sync.failed.length > 0}
+  onlotsretry={() => sync.failed.forEach((k) => sync.retry(k))}
   {readonly}
   onedit={(change, label) => store.apply(change, label)}
   onundoto={(p) => store.undoTo(p, 'Reverted a change')}

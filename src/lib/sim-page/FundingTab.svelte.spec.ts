@@ -1041,6 +1041,19 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
     expect(document.querySelectorAll('[data-funding-row^="pool:"]')).toHaveLength(1);
   });
 
+  it("only a fund policy: the pool's header is not a toggle that cannot change", async () => {
+    const pool = BOND_POLICY.funding.pools[0];
+    setup(BOND_POLICY, { only: { tag: 'fund', pool: pool.id } });
+    // The editor is open (as above), so the row has rendered.
+    await expect.element(page.getByRole('textbox', { name: 'Name' })).toBeVisible();
+    const rowEl = document.querySelector(`[data-funding-row="pool:${pool.id}"]`)!;
+    const head = rowEl.firstElementChild!;
+    expect(head.textContent).toContain(pool.label);
+    expect(head.tagName).not.toBe('BUTTON');
+    expect(head.hasAttribute('aria-pressed')).toBe(false);
+    expect(page.getByRole('button', { name: new RegExp(`^${pool.label} ·`) }).query()).toBeNull();
+  });
+
   it("only baseline shows today's funding alone", async () => {
     setup(policyWith({}), { only: { tag: 'baseline' } });
     await expect.element(row(/^City ·/)).toBeVisible();

@@ -85,7 +85,8 @@
     asOf: Day;
     /** The page's memory that this pool's name was generated and never edited (4.9). */
     autoName?: boolean;
-    onselect: () => void;
+    /** Selects or unselects the pool. Omitted, its editor stays open and the header is no toggle. */
+    onselect?: () => void;
     onedit: (e: FundingEdit | Refused) => void;
     /** A draft's next state; `field` is the `data-field` of the control that committed it. */
     ondraft?: (d: PoolDraft, field: string) => void;
@@ -105,7 +106,7 @@
     past,
     asOf,
     autoName = false,
-    onselect,
+    onselect = undefined,
     onedit,
     ondraft = undefined,
     ondiscard = undefined,
@@ -512,6 +513,8 @@
   const muted = 'text-ink-muted dark:text-ink-dark-muted';
   const rowButton =
     'flex min-h-11 w-full flex-col items-start rounded-md px-1 py-1 text-left hover:bg-surface-raised dark:hover:bg-surface-dark-raised';
+  /** The header without the toggle (no `onselect`). */
+  const rowHead = 'flex min-h-11 w-full flex-col items-start px-1 py-1 text-left';
   const link =
     'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
   const input =
@@ -543,12 +546,19 @@
   class={rowClass(selected || isDraft)}
 >
   {#if stored !== null}
-    <button type="button" aria-pressed={selected} class={rowButton} onclick={onselect}>
-      <span class="font-semibold">{name} · {amountText(stored)}</span>
+    {#snippet head(p: Pool)}
+      <span class="font-semibold">{name} · {amountText(p)}</span>
       {#each programmes as g (g.id)}
-        <span class={muted}>{programmeSentence(g, stored)}</span>
+        <span class={muted}>{programmeSentence(g, p)}</span>
       {/each}
-    </button>
+    {/snippet}
+    {#if onselect}
+      <button type="button" aria-pressed={selected} class={rowButton} onclick={onselect}>
+        {@render head(stored)}
+      </button>
+    {:else}
+      <div class={rowHead}>{@render head(stored)}</div>
+    {/if}
     <!-- A button's children are presentational: a changed amount is also a sibling status, so it
          is spoken (4.16, WCAG 4.1.3). -->
     <span role="status" class="sr-only">{name}: {amountText(stored)}</span>

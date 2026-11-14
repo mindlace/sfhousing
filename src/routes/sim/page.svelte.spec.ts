@@ -107,10 +107,11 @@ describe('/sim page', () => {
     expect(workers).toHaveLength(1);
     expect(workers[0].posts.slice(sent).filter((p) => p.type === 'openTimeline')).toEqual([]);
 
-    // An address with no seed is left alone.
+    // An address with no seed is left alone: a seeded one after it is the next replace.
     navigated('link', 'http://localhost/sim?x=1');
-    await new Promise((res) => setTimeout(res, 20));
-    expect(nav.replaced).toHaveLength(2);
+    navigated('link', 'http://localhost/sim?seed=7&y=1');
+    await expect.poll(() => nav.replaced).toHaveLength(3);
+    expect(nav.replaced.map((r) => r.url)).toEqual(['/sim?x=1&x=2#map', '/sim', '/sim?y=1']);
   });
 
   it('is titled for the policy simulation', async () => {

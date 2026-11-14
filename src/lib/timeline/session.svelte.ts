@@ -284,6 +284,17 @@ export class TimelineSession {
     this.#edit = edited(this.#edit, this.#view);
   }
 
+  /**
+   * The unsent edit will not go out (a brush query it needs failed, so PolicySync has no lots for
+   * it): its stale state ends, and the forecast stays the last sent document's. A sent edit still
+   * waiting for its refill is left alone.
+   */
+  dropUnsent(): void {
+    if (!this.#dirty) return;
+    this.#dirty = false;
+    this.#settleIfDone();
+  }
+
   /** The debounced pair from PolicySync: sent unless it equals what the worker runs. */
   send(policy: SimPolicy4, lots: Lots): void {
     const doc = this.#reconcile(policy);

@@ -141,6 +141,27 @@ describe('PolicySync', () => {
     expect(h.sync.lots).toEqual({ [key]: ['z'] });
   });
 
+  it("failed lists the latest document's failed queries, never no-session ones", async () => {
+    const h = harness();
+    const a = doc(transit('a', 100));
+    const ab = doc(transit('a', 100), transit('b', 200));
+    const [ka, kb] = queriesOf4(ab).map((q) => q.key);
+    h.sync.update(ab);
+    expect(h.sync.failed).toEqual([]);
+    h.pending[0].resolve(failed);
+    h.pending[1].resolve(noSession);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sync.failed).toEqual([ka]);
+    expect(h.sync.failed).not.toContain(kb);
+    // A document that no longer needs it: nothing failed.
+    h.sync.update(doc(transit('b', 200)));
+    expect(h.sync.failed).toEqual([]);
+    h.sync.update(a);
+    expect(h.sync.failed).toEqual([ka]);
+    h.sync.retry(ka);
+    expect(h.sync.failed).toEqual([]);
+  });
+
   it('parks no-session answers and resumes', async () => {
     const h = harness();
     const d = doc(transit('a', 100));
