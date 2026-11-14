@@ -92,6 +92,7 @@ test('a plain member leaves and the sim stays for the manager', async ({
     await openMembers(guest, simId);
     await guest.getByRole('button', { name: MEMBERS_COPY.leaveButton }).click();
     await expect(guest.getByText(MEMBERS_COPY.leaveSimplePrompt)).toBeVisible();
+    await expectNoA11yViolations(guest);
     await guest.getByRole('button', { name: MEMBERS_COPY.leaveSimpleButton }).click();
     await guest.waitForURL((url) => url.pathname === '/sims');
     const lost = await guest.goto(`/sims/${simId}`);

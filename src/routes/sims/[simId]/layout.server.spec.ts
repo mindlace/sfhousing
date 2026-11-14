@@ -98,6 +98,21 @@ describe('/sims/[simId] layout load', () => {
     ]);
   });
 
+  it('returns currentUserId null when there is no authenticated user', async () => {
+    const env = await seed();
+    vi.mocked(requireSimRole).mockResolvedValue({
+      role: 'manager',
+      actor: { actorId: 'u-mia', actorKind: 'human' }
+    } as never);
+    const result = (await load({
+      params: { simId: env.simId },
+      platform: makePlatform(env.shim),
+      locals: { user: undefined, capabilities: [] }
+    } as never)) as unknown as Wire;
+    expect(result.currentUserId).toBeNull();
+    expect(result.members).toHaveLength(3);
+  });
+
   it('404s when the index has no row for the sim', async () => {
     const env = await seed();
     vi.mocked(requireSimRole).mockResolvedValue({

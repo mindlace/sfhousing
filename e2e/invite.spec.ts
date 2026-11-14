@@ -52,6 +52,7 @@ test('invite by email: the invitee joins cold and the manager sees them as an ed
     await guest.getByTestId('members').locator('summary').click();
     await expect(guest.getByTestId('invite-input')).toHaveCount(0);
     await expect(guest.getByText('· editor')).toHaveCount(0);
+    await expectNoA11yViolations(guest);
   } finally {
     await fresh.close();
   }
