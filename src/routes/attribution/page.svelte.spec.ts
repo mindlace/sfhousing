@@ -35,7 +35,15 @@ async function expectNotices() {
 
 describe('/attribution page', () => {
   it('renders the manifest table and notices', async () => {
-    render(Page, { data: { datasetVersion: 'fixture-0', appRelease: 'dev', manifest } });
+    render(Page, {
+      data: {
+        datasetVersion: 'fixture-0',
+        appRelease: 'dev',
+        user: null,
+        signInAvailable: true,
+        manifest
+      }
+    });
     await expect
       .element(page.getByRole('heading', { level: 1 }))
       .toHaveTextContent('Data & licences');
@@ -55,6 +63,8 @@ describe('/attribution page', () => {
       data: {
         datasetVersion: 'fixture-0',
         appRelease: 'dev',
+        user: null,
+        signInAvailable: true,
         manifest: { ...manifest, sources: [{ ...source, label: 'Parcels' }] }
       }
     });
@@ -64,7 +74,15 @@ describe('/attribution page', () => {
   });
 
   it('shows a fallback and no table without a manifest', async () => {
-    render(Page, { data: { datasetVersion: 'fixture-0', appRelease: 'dev', manifest: null } });
+    render(Page, {
+      data: {
+        datasetVersion: 'fixture-0',
+        appRelease: 'dev',
+        user: null,
+        signInAvailable: true,
+        manifest: null
+      }
+    });
     await expect
       .element(page.getByText('Source list unavailable for this dataset version.'))
       .toBeInTheDocument();
@@ -81,6 +99,8 @@ describe('/attribution page', () => {
       data: {
         datasetVersion: 'fixture-0',
         appRelease: 'dev',
+        user: null,
+        signInAvailable: true,
         manifest: { ...manifest, sources: [source, gtfs] }
       }
     });
@@ -88,7 +108,15 @@ describe('/attribution page', () => {
   });
 
   it('omits the transit credit without GTFS sources', async () => {
-    render(Page, { data: { datasetVersion: 'fixture-0', appRelease: 'dev', manifest } });
+    render(Page, {
+      data: {
+        datasetVersion: 'fixture-0',
+        appRelease: 'dev',
+        user: null,
+        signInAvailable: true,
+        manifest
+      }
+    });
     await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
     expect(document.body.textContent).not.toContain(CREDIT);
   });
@@ -105,13 +133,27 @@ describe('/attribution page', () => {
 
   it('lists the housing-records notice when the manifest carries scenarios.fzp', async () => {
     render(Page, {
-      data: { datasetVersion: 'fixture-0', appRelease: 'dev', manifest: { ...manifest, scenarios } }
+      data: {
+        datasetVersion: 'fixture-0',
+        appRelease: 'dev',
+        user: null,
+        signInAvailable: true,
+        manifest: { ...manifest, scenarios }
+      }
     });
     await expect.element(page.getByText(SCENARIO_NOTICE)).toBeInTheDocument();
   });
 
   it('omits the housing-records notice without scenarios.fzp', async () => {
-    render(Page, { data: { datasetVersion: 'fixture-0', appRelease: 'dev', manifest } });
+    render(Page, {
+      data: {
+        datasetVersion: 'fixture-0',
+        appRelease: 'dev',
+        user: null,
+        signInAvailable: true,
+        manifest
+      }
+    });
     await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('Housing project records');
   });
@@ -123,6 +165,8 @@ describe('/attribution page', () => {
       data: {
         datasetVersion: 'fixture-0',
         appRelease: 'dev',
+        user: null,
+        signInAvailable: true,
         manifest: {
           ...manifest,
           scenarios: {
@@ -141,7 +185,13 @@ describe('/attribution page', () => {
 
   it('omits the policy credit without scenarios.fzp.policy', async () => {
     render(Page, {
-      data: { datasetVersion: 'fixture-0', appRelease: 'dev', manifest: { ...manifest, scenarios } }
+      data: {
+        datasetVersion: 'fixture-0',
+        appRelease: 'dev',
+        user: null,
+        signInAvailable: true,
+        manifest: { ...manifest, scenarios }
+      }
     });
     await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
     expect(document.body.textContent).not.toContain(POLICY_NOTICE);

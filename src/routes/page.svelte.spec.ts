@@ -21,7 +21,9 @@ function data(over: { manifest?: Manifest | null; manifestError?: boolean } = {}
     fellBack: false,
     manifestError: over.manifestError ?? false,
     datasetVersion: 'fixture-0',
-    appRelease: 'dev'
+    appRelease: 'dev',
+    user: null,
+    signInAvailable: true
   };
 }
 

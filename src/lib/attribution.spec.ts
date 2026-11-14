@@ -17,6 +17,64 @@ describe('SOFTWARE credits', () => {
     });
   });
 
+  it('credits bs58 and uuid', () => {
+    expect(SOFTWARE).toContainEqual({
+      name: 'bs58',
+      license: 'MIT',
+      url: 'https://github.com/cryptocoinjs/bs58'
+    });
+    expect(SOFTWARE).toContainEqual({
+      name: 'uuid',
+      license: 'MIT',
+      url: 'https://github.com/uuidjs/uuid'
+    });
+  });
+
+  it('credits unique-names-generator and the Unicode confusables data', () => {
+    expect(SOFTWARE).toContainEqual({
+      name: 'unique-names-generator',
+      license: 'MIT',
+      url: 'https://github.com/andreasonny83/unique-names-generator'
+    });
+    expect(SOFTWARE).toContainEqual({
+      name: 'Unicode confusables data (UTS #39)',
+      license: 'Unicode License v3',
+      url: 'https://www.unicode.org/license.txt'
+    });
+  });
+
+  it('credits better-svelte-email and aws4fetch', () => {
+    expect(SOFTWARE).toContainEqual({
+      name: 'better-svelte-email',
+      license: 'MIT',
+      url: 'https://github.com/Konixy/better-svelte-email'
+    });
+    expect(SOFTWARE).toContainEqual({
+      name: 'aws4fetch',
+      license: 'MIT',
+      url: 'https://github.com/mhart/aws4fetch'
+    });
+  });
+
+  it('credits Better Auth, better-call, Kysely and SimpleWebAuthn', () => {
+    expect(SOFTWARE).toContainEqual({
+      name: 'Better Auth',
+      license: 'MIT',
+      url: 'https://better-auth.com'
+    });
+    expect(SOFTWARE).toContainEqual({
+      name: 'better-call',
+      license: 'MIT',
+      url: 'https://github.com/Bekacru/better-call'
+    });
+    expect(SOFTWARE).toContainEqual({ name: 'Kysely', license: 'MIT', url: 'https://kysely.dev' });
+    expect(SOFTWARE).toContainEqual({
+      name: 'SimpleWebAuthn',
+      license: 'MIT',
+      url: 'https://simplewebauthn.dev'
+    });
+  });
+
   it('keeps the fdlibm notice through minification', () => {
     const src = readFileSync(new URL('./timelapse/math.ts', import.meta.url), 'utf8');
     expect(src.startsWith('/*!')).toBe(true);
