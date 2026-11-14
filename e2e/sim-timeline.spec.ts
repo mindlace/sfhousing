@@ -1,5 +1,6 @@
 // /sim's timeline end to end (timeline-ui): the headline settles once the forecast fills, a transit
-// rule from January 2031 refills the forecast from 2031 and leaves the months before it alone (the
+// rule from the model month starting in January 2031 refills the forecast from 2031 and leaves the
+// months before it alone (the
 // real worker's compiled -> refill -> filled order), a published policy opens on /s with the same
 // timeline, a stored schema 3 link opens with the "upgraded" notice, axe in light and dark with a
 // kind and the editor open, and the bars by keyboard (reached by Tab, selected by Enter, moved by
@@ -155,9 +156,10 @@ test('a transit rule from 2031 refills from 2031, months before unchanged', asyn
   const before = await mean(page);
   const n = (await fzp(page, 'refills')).length;
   const k = indexOf(await fzp(page, 'asOf'), 2031, 1);
-  // A new policy starts on the model month the playhead is in (rule 12). Model months start near
-  // the dataset date's day of the month (fixture-0: the 10th), so 1 February 2031 is in the model
-  // month that starts in January 2031 (and 1 January in the one that starts in December 2030).
+  // A new policy starts on the model month the playhead is in (rule 12), and its edge reads that
+  // model month's start date. Model months start near the dataset date's day of the month
+  // (fixture-0: the 10th), so the playhead on February 2031 is in the model month that starts in
+  // January 2031.
   await playheadTo(page, 2031, 2);
 
   await addPolicy(page, 'Zoning', 'Transit rule');
@@ -299,7 +301,9 @@ test('every bar is reachable and operable by keyboard; focus returns to the bar 
     await expect(bar).toHaveCount(1);
     await bar.focus();
     const name = (await bar.getAttribute('aria-label'))!;
-    const label = name.replace(/, [A-Z][a-z]+ \d{4} to .*$/, '');
+    // The name is "{label}, {10 Dec 2030} to {date | no end}[, off]".
+    const label = name.replace(/, \d{1,2} [A-Z][a-z]{2} \d{4} to .*$/, '');
+    expect(label).not.toBe(name);
     await page.keyboard.press('Enter');
     await expect(bar).toHaveAttribute('aria-pressed', 'true');
     await expect(editor(page).getByRole('heading', { name: label })).toBeVisible();
@@ -309,7 +313,9 @@ test('every bar is reachable and operable by keyboard; focus returns to the bar 
       (await fzp(page, 'policy')).kinds[key].map((p) => p.spans.map((s) => [s.from, s.to]));
     const was = await spans();
     expect(was.flat().length).toBeGreaterThan(0);
-    const named = new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, `);
+    const named = new RegExp(
+      `^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, \\d{1,2} [A-Z][a-z]{2} \\d{4} to `
+    );
     const focused = page.getByRole('button', { name: named, pressed: true });
     await focused.focus();
     await page.keyboard.press('ArrowRight');

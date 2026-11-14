@@ -233,7 +233,10 @@ test('1c. a11y with the "+" menu open and a pool editor expanded', async ({ page
   await expectNoA11yViolations(page);
   await editor(page).getByRole('button', { name: 'Close editor' }).click();
   await addBond(page);
-  await expect(poolRow(page).locator(':scope > button')).toHaveAttribute('aria-pressed', 'true');
+  // The pool's own editor: its header is plain text, not a toggle that cannot change (M3).
+  await expect(poolRow(page).locator(':scope > button')).toHaveCount(0);
+  await expect(poolRow(page).locator(':scope > [aria-pressed]')).toHaveCount(0);
+  await expect(poolRow(page).locator(':scope > div').first()).toBeVisible();
   await expect(poolRow(page).locator('[data-funding-editor]')).toBeVisible();
   await expectNoA11yViolations(page);
 });
