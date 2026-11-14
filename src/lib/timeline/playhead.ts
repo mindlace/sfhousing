@@ -52,20 +52,28 @@ export function clampDay(day: Day, asOf: Day, end: Day): Day {
 interface GateDeps {
   send(month: number): void;
   now(): number;
-  setTimeout: typeof setTimeout;
-  clearTimeout: typeof clearTimeout;
+  setTimeout?: typeof setTimeout;
+  clearTimeout?: typeof clearTimeout;
   minMs?: number;
 }
 
 /** Sends the wanted view month at most once per `minMs`; the latest wanted goes out after the gap. */
 export class MonthGate {
   #deps: GateDeps;
+  #setTimer: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  #clearTimer: (t: ReturnType<typeof setTimeout>) => void;
   #lastSent = -Infinity;
   #pending: number | null = null;
   #timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(deps: GateDeps) {
     this.#deps = deps;
+    // Called as plain functions, never as methods of `deps`: a bare window.setTimeout throws
+    // "Illegal invocation" when `this` is not the window.
+    const st = deps.setTimeout;
+    const ct = deps.clearTimeout;
+    this.#setTimer = st ? (fn, ms) => st(fn, ms) : (fn, ms) => globalThis.setTimeout(fn, ms);
+    this.#clearTimer = ct ? (t) => ct(t) : (t) => globalThis.clearTimeout(t);
   }
 
   want(month: number): void {
@@ -76,7 +84,7 @@ export class MonthGate {
     }
     this.#pending = month;
     if (this.#timer === null) {
-      this.#timer = this.#deps.setTimeout(() => {
+      this.#timer = this.#setTimer(() => {
         this.#timer = null;
         const m = this.#pending;
         this.#pending = null;
@@ -86,7 +94,7 @@ export class MonthGate {
   }
 
   dispose(): void {
-    if (this.#timer !== null) this.#deps.clearTimeout(this.#timer);
+    if (this.#timer !== null) this.#clearTimer(this.#timer);
     this.#timer = null;
     this.#pending = null;
   }

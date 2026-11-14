@@ -95,4 +95,47 @@ describe('MonthGate', () => {
     expect(sent).toEqual([2]);
     vi.useRealTimers();
   });
+
+  it('works with the default timers', () => {
+    vi.useFakeTimers();
+    const sent: number[] = [];
+    const gate = new MonthGate({ send: (m) => sent.push(m), now: () => Date.now() });
+    gate.want(2);
+    gate.want(3);
+    expect(sent).toEqual([2]);
+    vi.advanceTimersByTime(250);
+    expect(sent).toEqual([2, 3]);
+    gate.dispose();
+    vi.useRealTimers();
+  });
+
+  it('calls injected timers as plain functions, not as methods of the deps', () => {
+    vi.useFakeTimers();
+    const sent: number[] = [];
+    const real = { st: setTimeout, ct: clearTimeout };
+    const strict = {
+      // Like an unbound window.setTimeout: throws when `this` is the deps object.
+      setTimeout(this: unknown, fn: () => void, ms: number) {
+        if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+        return real.st(fn, ms);
+      },
+      clearTimeout(this: unknown, t: ReturnType<typeof setTimeout>) {
+        if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+        real.ct(t);
+      }
+    };
+    const gate = new MonthGate({
+      send: (m) => sent.push(m),
+      now: () => Date.now(),
+      setTimeout: strict.setTimeout as unknown as typeof setTimeout,
+      clearTimeout: strict.clearTimeout as unknown as typeof clearTimeout
+    });
+    gate.want(2);
+    gate.want(3);
+    gate.dispose();
+    gate.want(4);
+    vi.advanceTimersByTime(300);
+    expect(sent).toEqual([2, 4]);
+    vi.useRealTimers();
+  });
 });
