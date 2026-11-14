@@ -1,7 +1,9 @@
 /**
  * Span and policy edits for the timeline editor (timeline-ui spec, rules 4 and 11). Every edit
  * works in model months, writes days with `monthFirstDay` / `monthLastDay`, and returns the same
- * document when nothing changes. Pure TS: no Svelte, no DOM.
+ * document when nothing changes. Pure TS: no Svelte, no DOM. It guarantees span structure only:
+ * snapped months, order, no overlap, bounds. Programme terms (money) are reconciled where an edit
+ * is committed, not here.
  */
 import { monthFirstDay, monthLastDay, monthOfDay } from '$lib/sim/world/months';
 import type { Day } from '$lib/timelapse/time';
@@ -14,7 +16,7 @@ export interface SpanRef {
 }
 
 /** The editable window: model months 1..months after `asOf` (months = WINDOW_MONTHS). */
-export interface Window {
+export interface TimelineWindow {
   asOf: Day;
   months: number;
 }
@@ -46,15 +48,16 @@ function withSpans(doc: SimPolicy4, kind: PolicyKind, id: string, spans: Span[])
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** The span at `ref` with its months and the room the neighbours and the window leave it. */
-function locate(doc: SimPolicy4, ref: SpanRef, w: Window) {
+function locate(doc: SimPolicy4, ref: SpanRef, w: TimelineWindow) {
   const p = policyOf(doc, ref.kind, ref.id);
   const s = p?.spans[ref.span];
   if (!p || !s) return undefined;
   const cur = spanMonths(s, w.asOf);
   const prev = p.spans[ref.span - 1];
   const next = p.spans[ref.span + 1];
-  const minFrom = prev ? (spanMonths(prev, w.asOf).to ?? 0) + 1 : 1;
-  const maxTo = next ? spanMonths(next, w.asOf).from - 1 : w.months;
+  // A shared document may hold a span past the window: the room never lies behind the span itself.
+  const minFrom = Math.min(prev ? (spanMonths(prev, w.asOf).to ?? 0) + 1 : 1, cur.from);
+  const maxTo = Math.max(next ? spanMonths(next, w.asOf).from - 1 : w.months, cur.to ?? cur.from);
   return { p, s, cur, minFrom, maxTo, hasNext: next !== undefined };
 }
 
@@ -69,14 +72,24 @@ function replaceSpan(doc: SimPolicy4, ref: SpanRef, s: Span, before: Span): SimP
   );
 }
 
-export function setFrom(doc: SimPolicy4, ref: SpanRef, month: number, w: Window): SimPolicy4 {
+export function setFrom(
+  doc: SimPolicy4,
+  ref: SpanRef,
+  month: number,
+  w: TimelineWindow
+): SimPolicy4 {
   const l = locate(doc, ref, w);
   if (!l) return doc;
   const m = clamp(Math.round(month), l.minFrom, l.cur.to ?? l.maxTo);
   return replaceSpan(doc, ref, { ...l.s, from: monthFirstDay(w.asOf, m) }, l.s);
 }
 
-export function setTo(doc: SimPolicy4, ref: SpanRef, month: number | null, w: Window): SimPolicy4 {
+export function setTo(
+  doc: SimPolicy4,
+  ref: SpanRef,
+  month: number | null,
+  w: TimelineWindow
+): SimPolicy4 {
   const l = locate(doc, ref, w);
   if (!l) return doc;
   if (month === null && !l.hasNext) return replaceSpan(doc, ref, { ...l.s, to: null }, l.s);
@@ -89,7 +102,7 @@ export function moveEdge(
   ref: SpanRef,
   edge: 'from' | 'to',
   by: number,
-  w: Window
+  w: TimelineWindow
 ): SimPolicy4 {
   const l = locate(doc, ref, w);
   if (!l) return doc;
@@ -98,11 +111,11 @@ export function moveEdge(
 }
 
 /** Shift the whole span by `by` months, stopping at the window and the neighbours. */
-export function moveSpan(doc: SimPolicy4, ref: SpanRef, by: number, w: Window): SimPolicy4 {
+export function moveSpan(doc: SimPolicy4, ref: SpanRef, by: number, w: TimelineWindow): SimPolicy4 {
   const l = locate(doc, ref, w);
   if (!l) return doc;
   const lo = l.minFrom - l.cur.from;
-  const hi = l.cur.to === null ? w.months - l.cur.from : l.maxTo - l.cur.to;
+  const hi = l.maxTo - (l.cur.to ?? l.cur.from);
   const shift = clamp(Math.round(by), lo, hi);
   if (shift === 0) return doc;
   return replaceSpan(
@@ -125,7 +138,12 @@ export function nearerEdge(s: Span, playheadMonth: number, asOf: Day): 'from' | 
 }
 
 /** Split at month `atMonth` into `[from, atMonth-1]` and `[atMonth, to]`. */
-export function splitSpan(doc: SimPolicy4, ref: SpanRef, atMonth: number, w: Window): SimPolicy4 {
+export function splitSpan(
+  doc: SimPolicy4,
+  ref: SpanRef,
+  atMonth: number,
+  w: TimelineWindow
+): SimPolicy4 {
   const l = locate(doc, ref, w);
   if (!l) return doc;
   const a = Math.round(atMonth);
@@ -155,7 +173,7 @@ export function addSpan(
   kind: PolicyKind,
   id: string,
   fromMonth: number,
-  w: Window
+  w: TimelineWindow
 ): { doc: SimPolicy4; span: number } {
   const p = policyOf(doc, kind, id);
   if (!p || p.spans.length === 0) return { doc, span: -1 };

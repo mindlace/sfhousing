@@ -23,7 +23,7 @@ import {
   spanMonths,
   splitSpan,
   type SpanRef,
-  type Window
+  type TimelineWindow
 } from './spans';
 
 const miniCal = parseCalibration(structuredClone(miniCalibrationJson) as unknown);
@@ -34,7 +34,7 @@ const cal: Calibration = {
 };
 
 const asOf = 100;
-const w: Window = { asOf, months: 480 };
+const w: TimelineWindow = { asOf, months: 480 };
 const first = (m: number) => monthFirstDay(asOf, m);
 const last = (m: number) => monthLastDay(asOf, m);
 
@@ -225,7 +225,7 @@ describe('barKey', () => {
   });
 });
 
-describe('every op yields a reconciled document', () => {
+describe('every op yields a span-reconciled document', () => {
   it('reconcilePolicy4 returns each result as is', () => {
     const nexts = [
       setFrom(two, ref0, 5, w),
@@ -237,11 +237,55 @@ describe('every op yields a reconciled document', () => {
       removeSpan(two, ref0),
       setOn(two, 'zoning', 'a', false),
       removePolicy(two, 'zoning', 'b'),
-      movePolicy(two, 'zoning', 'a', 1)
+      movePolicy(two, 'zoning', 'a', 1),
+      // clamped results
+      moveSpan(two, ref0, -500, w),
+      moveSpan(two, ref0, 500, w),
+      moveSpan(two, ref1, 500, w),
+      setTo(two, ref0, 99, w),
+      setFrom(two, ref1, 2, w)
     ];
     for (const next of nexts) {
       expect(next).not.toBe(two);
       expect(reconcilePolicy4(next, cal, asOf).doc).toBe(next);
     }
+  });
+});
+
+describe('spans past the window never move backwards', () => {
+  const past = mk(pol('a', [sp(10, 20), sp(485, 490), sp(500, null)]));
+  const r = (span: number): SpanRef => ({ kind: 'zoning', id: 'a', span });
+  const fromOf = (d: SimPolicy4, i: number) => months(d, r(i)).from;
+  const toOf = (d: SimPolicy4, i: number) => months(d, r(i)).to;
+
+  it('setTo, setFrom and edge moves keep order and never overlap', () => {
+    const a = setTo(past, r(1), 495, w);
+    expect(toOf(a, 1)! >= fromOf(a, 1)).toBe(true);
+    expect(toOf(a, 1)).toBe(495);
+    const b = setFrom(past, r(2), 491, w);
+    expect(fromOf(b, 2)).toBeGreaterThan(toOf(b, 1)!);
+    const c = moveEdge(past, r(1), 'to', 1, w);
+    expect(toOf(c, 1)! >= 490).toBe(true);
+  });
+  it('a long span ending past the window is not shortened by ArrowRight', () => {
+    const long = mk(pol('a', [sp(10, 600)]));
+    const d = moveEdge(long, r(0), 'to', 1, w);
+    expect(months(d, r(0)).to).toBeGreaterThanOrEqual(600);
+    expect(reconcilePolicy4(d, cal, asOf).doc).toBe(d);
+  });
+  it('moveSpan(+1) never moves left', () => {
+    const d = moveSpan(past, r(1), 1, w);
+    expect(fromOf(d, 1)).toBeGreaterThanOrEqual(485);
+    expect(toOf(moveSpan(mk(pol('a', [sp(490, 500)])), r(0), 1, w), 0)).toBeGreaterThanOrEqual(500);
+  });
+  it('every result is reconciled', () => {
+    for (const next of [
+      setTo(past, r(1), 495, w),
+      setFrom(past, r(2), 491, w),
+      moveEdge(past, r(1), 'from', -3, w),
+      moveSpan(past, r(1), -2, w),
+      splitSpan(past, r(1), 487, w)
+    ])
+      expect(reconcilePolicy4(next, cal, asOf).doc).toBe(next);
   });
 });
