@@ -6,7 +6,6 @@
   import { reloadScenario } from '$lib/fzp/load';
   import { addressSearch, addressSeed, searchWithSeed } from '$lib/fzp/seed';
   import type { SimPageData } from './load';
-  import type { SimPolicy } from './policy';
   import SimPage from './SimPage.svelte';
 
   interface Props {
@@ -16,8 +15,8 @@
     mode: 'edit' | 'view';
     /** SimPage's persistence (edit: 'restore'; view: 'off'). */
     persist: 'restore' | 'off';
-    /** View: the shared document's policy. */
-    initialPolicy?: SimPolicy;
+    /** View: the shared document's text. */
+    initialText?: string;
     /** Edit: the Remix hand-off from /s/<id>. */
     remix?: { from: string; doc?: string; upgradedFrom?: number };
     /** View: the schema the shared document was upgraded from. */
@@ -28,17 +27,16 @@
     data,
     mode,
     persist,
-    initialPolicy = undefined,
+    initialText = undefined,
     remix = undefined,
     upgradedFrom = undefined
   }: Props = $props();
 
   /**
-   * The seed SimPage mounts with: the load's, unless after a navigation the address bar named
-   * another one. `data` identity tells the two apart.
+   * The seed the address bar named after a navigation (SimPage no longer takes one; Task 15
+   * removes the seed). `data` identity tells a new load apart.
    */
   let mount = $state.raw<{ data: typeof data; seed: number | null; n: number } | null>(null);
-  const urlSeed = $derived(mount !== null && mount.data === data ? mount.seed : data.seed);
   /** The future on show: the mounted seed, then each reroll answer's (what the URL now names). */
   let shown: number | null = null;
   let shownFor: typeof data | null = null;
@@ -87,12 +85,10 @@
         datasetVersion={data.datasetVersion}
         {mode}
         {persist}
-        {initialPolicy}
+        {initialText}
         {remix}
         {upgradedFrom}
-        {urlSeed}
         reload={() => reloadScenario(data.datasetVersion)}
-        onurlseed={writeSeed}
       />
     {/key}
   {/key}

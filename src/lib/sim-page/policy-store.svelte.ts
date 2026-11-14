@@ -29,11 +29,6 @@ export class PolicyStore<P = SimPolicy4> {
   /** The coalesce key of the latest history entry; cleared by undo and redo. */
   #coalesceKey: string | undefined = undefined;
   #normalize: ((next: P, prev: P) => P) | undefined;
-  /**
-   * During a run (spec §1): `apply`, `undo` and `redo` change nothing. `reset` still loads.
-   * Kept only until Task 14 removes it with RunPhase (rule 14).
-   */
-  locked = $state(false);
 
   /** `normalize` settles a changed document before it is recorded (`apply`, `undoTo`). */
   constructor(initial: P, normalize?: (next: P, prev: P) => P) {
@@ -71,7 +66,6 @@ export class PolicyStore<P = SimPolicy4> {
    * into that entry: one undo reverses both, and the entry takes the newer label.
    */
   apply(change: (p: P) => P, label: string, coalesce?: string): void {
-    if (this.locked) return;
     const prev = this.#policy;
     let next = change(prev);
     if (next === prev) return;
@@ -101,7 +95,6 @@ export class PolicyStore<P = SimPolicy4> {
 
   /** Restores the policy before the latest change; returns its label, or null if none. */
   undo(): string | null {
-    if (this.locked) return null;
     const last = this.#past.at(-1);
     if (!last) return null;
     this.#coalesceKey = undefined;
@@ -113,7 +106,6 @@ export class PolicyStore<P = SimPolicy4> {
 
   /** Reapplies the latest undone change; returns its label, or null if none. */
   redo(): string | null {
-    if (this.locked) return null;
     const next = this.#future.at(-1);
     if (!next) return null;
     this.#coalesceKey = undefined;

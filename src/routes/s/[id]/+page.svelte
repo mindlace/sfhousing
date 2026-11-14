@@ -73,7 +73,7 @@
       {data}
       mode="view"
       persist="off"
-      initialPolicy={data.doc.policy}
+      initialText={SIM_CODEC.serialize(data.doc)}
       upgradedFrom={data.upgradedFrom}
     />
   </div>

@@ -57,17 +57,12 @@ function harness(answer?: (q: BrushQuery) => BrushLotsResult) {
 }
 
 describe('PolicyStore', () => {
-  it('a locked store ignores changes, undo and redo', () => {
+  it('has no run lock: a change, undo and redo always apply (rule 14)', () => {
     const s = new PolicyStore(DEFAULT_POLICY);
+    expect('locked' in s).toBe(false);
     s.apply((p) => ({ ...p, protect: { ...p.protect, historic: true } }), 'a');
-    s.locked = true;
-    const before = s.policy;
-    s.apply((p) => ({ ...p, protect: { ...p.protect, rentControl: true } }), 'b');
-    expect(s.undo()).toBeNull();
-    expect(s.redo()).toBeNull();
-    expect(s.policy).toBe(before);
-    s.locked = false;
     expect(s.undo()).toBe('a');
+    expect(s.redo()).toBe('a');
   });
 
   it('undo and redo restore the policy and return labels', () => {

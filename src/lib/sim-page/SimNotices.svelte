@@ -1,6 +1,7 @@
 <!--
-  The /sim session notices (plan 5, Task 5): the autosave restore (N1 to N3 in the policy
-  wording), the timelines refit, and the Remix toast. Each is one pill line (compact UI, `PILL`
+  The /sim session notices (plan 5, Task 5; timeline-ui Task 14): the autosave restore (N1 to N3
+  in the policy wording), funding, the timelines refit, moved dates, "upgraded", and the Remix
+  toast. Each is one pill line (compact UI, `PILL`
   in shell/pill): a "Details" disclosure holds a list, a link goes where the notice says. Rendered
   in FzpMode's notice stack (`NoticePills`): an overlay at the map's top from md that moves
   nothing, in flow under the header below md. One always-mounted polite status region
@@ -12,9 +13,9 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { PILL, PILL_ACTION } from '$lib/shell/pill';
-  import type { SimNotice } from './sim-session';
+  import type { SimNotice4 } from '$lib/timeline/session4';
 
-  let { notices, ondismiss }: { notices: SimNotice[]; ondismiss: (id: SimNotice['id']) => void } =
+  let { notices, ondismiss }: { notices: SimNotice4[]; ondismiss: (id: SimNotice4['id']) => void } =
     $props();
 
   const TOAST_MS = 8_000;
@@ -34,7 +35,7 @@
 
   // One timer per toast id, started when it first appears; not reactive state.
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
-  const timers = new Map<SimNotice['id'], ReturnType<typeof setTimeout>>();
+  const timers = new Map<SimNotice4['id'], ReturnType<typeof setTimeout>>();
 
   $effect(() => {
     const toasts = new Set(shown.filter((n) => n.tone === 'toast').map((n) => n.id));
