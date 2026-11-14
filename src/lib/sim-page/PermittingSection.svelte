@@ -34,8 +34,10 @@
     calibration: Calibration;
     /** Speaks a change (WCAG 4.1.3). */
     announce(msg: string): void;
+    /** Why the preset cannot change here (a preset is a whole policy's), or null. */
+    presetLocked?: string | null;
   }
-  let { store, calibration, snapshot = true, announce }: Props = $props();
+  let { store, calibration, snapshot = true, announce, presetLocked = null }: Props = $props();
 
   const uid = $props.id();
   const PATHWAY_NAMES: Record<Pathway, string> = {
@@ -120,6 +122,7 @@
     <select
       class="min-h-6 rounded-md border border-control-line bg-surface px-1 font-normal text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
       aria-describedby="{uid}-preset-desc"
+      disabled={presetLocked !== null}
       value={current.preset}
       onchange={(e) => choosePreset(e.currentTarget.value as PresetId)}
     >
@@ -129,7 +132,8 @@
     </select>
   </label>
   <p id="{uid}-preset-desc" class="text-xs text-ink-muted dark:text-ink-dark-muted">
-    {preset.summary} Evidence tier {tier}.
+    {preset.summary} Evidence tier {tier}.{#if presetLocked !== null}
+      {presetLocked}{/if}
   </p>
 
   <p class="font-semibold" data-testid="timing-label">{label}</p>
