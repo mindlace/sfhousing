@@ -4,14 +4,13 @@
 // constraint is a sum over 96 worlds in one month); p50, p90 and max are printed beside it, with
 // each hook's share and the whole-city replan month, unasserted.
 import { describe, expect, it } from 'vitest';
-import type { PolicyFrame, PolicyTimeline } from '../policy/frame';
-import { frameIdOf } from '../policy/intern';
+import type { PolicyTimeline } from '../policy/frame';
 import { staticsOf, type Statics } from '../statics';
 import type { Due, FundingSystem, StepSink, World } from '../types';
 import { withFunding } from '../world';
 import { createFundingSystem } from './system';
 import { benchFunded } from './test/cities.node';
-import { moneyTimeline } from './test/fixtures';
+import { moneyTimeline, replanAt } from './test/fixtures';
 
 const NOWHERE: StepSink = { event() {} };
 const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -69,27 +68,6 @@ function timedSystem(spent: Record<Hook, number>): FundingSystem {
     };
   }
   return out as unknown as FundingSystem;
-}
-
-/** `t` with every frame from `month` on under another id: the core replans every free lot then. */
-function replanAt(t: PolicyTimeline, month: number): PolicyTimeline {
-  const moved = new Map<number, PolicyFrame>();
-  const changes = [...new Set([...t.changes(), month])].sort((a, b) => a - b);
-  return {
-    frameAt(m) {
-      const f = t.frameAt(m);
-      if (m < month) return f;
-      let g = moved.get(m);
-      if (g === undefined) {
-        g = { ...f, id: frameIdOf(`replan-probe|${f.id}`) };
-        moved.set(m, g);
-      }
-      return g;
-    },
-    changes: () => changes,
-    touched: (m) => (m === month ? null : t.touched(m)),
-    readyThrough: () => t.readyThrough()
-  };
 }
 
 describe('funded month cost, bench city (synthCity, baseline money)', () => {

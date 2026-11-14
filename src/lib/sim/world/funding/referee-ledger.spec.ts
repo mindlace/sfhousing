@@ -68,5 +68,7 @@ describe('fixture-0, baseline funding', () => {
     const got = checkedRun(c, seed);
     expect(got.steps).toBe(MONTHS);
     expect(c.timeline.frameAt(MONTHS).finance).not.toBeNull();
+    // Not vacuous: the fixture city's baseline money is awarded too.
+    expect(got.commits).toBeGreaterThan(0);
   });
 });

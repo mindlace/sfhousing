@@ -6,8 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import { seedHash } from '$lib/sim/scenario/rng';
 import type { ProjectKind } from '$lib/timelapse/types';
-import type { PolicyFrame, PolicyTimeline } from '../policy/frame';
-import { frameIdOf } from '../policy/intern';
+import type { PolicyTimeline } from '../policy/frame';
 import { staticsOf, type Statics } from '../statics';
 import type { FundingSystem, StepSink, World } from '../types';
 import { withFunding } from '../world';
@@ -20,6 +19,7 @@ import {
   moneyTimeline,
   oneMoneyTimeline,
   randomFinance,
+  replanAt,
   type MonthEvent
 } from './test/fixtures';
 
@@ -129,27 +129,6 @@ describe.each([['baseline'], ['bench']] as const)(
     });
   }
 );
-
-/** `t` with every frame from `month` on under another id: every free lot is planned again then. */
-function replanAt(t: PolicyTimeline, month: number): PolicyTimeline {
-  const moved = new Map<number, PolicyFrame>();
-  const changes = [...new Set([...t.changes(), month])].sort((a, b) => a - b);
-  return {
-    frameAt(m) {
-      const f = t.frameAt(m);
-      if (m < month) return f;
-      let g = moved.get(m);
-      if (g === undefined) {
-        g = { ...f, id: frameIdOf(`replan-probe|${f.id}`) };
-        moved.set(m, g);
-      }
-      return g;
-    },
-    changes: () => changes,
-    touched: (m) => (m === month ? null : t.touched(m)),
-    readyThrough: () => t.readyThrough()
-  };
-}
 
 describe('eligibility before spells, synthCity bench set, a replan month', () => {
   const { input, doc } = benchFunded('bench');

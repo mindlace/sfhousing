@@ -417,3 +417,24 @@ export function runFunded(
   }
   return { world, events, ledger };
 }
+
+/** `t` with every frame from `month` on under another id: the core replans every free lot then. */
+export function replanAt(t: PolicyTimeline, month: number): PolicyTimeline {
+  const moved = new Map<number, PolicyFrame>();
+  const changes = [...new Set([...t.changes(), month])].sort((a, b) => a - b);
+  return {
+    frameAt(m) {
+      const f = t.frameAt(m);
+      if (m < month) return f;
+      let g = moved.get(m);
+      if (g === undefined) {
+        g = { ...f, id: frameIdOf(`replan-probe|${f.id}`) };
+        moved.set(m, g);
+      }
+      return g;
+    },
+    changes: () => changes,
+    touched: (m) => (m === month ? null : t.touched(m)),
+    readyThrough: () => t.readyThrough()
+  };
+}

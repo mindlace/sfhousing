@@ -380,6 +380,31 @@ describe('serveLine', () => {
     expect(h.starts().map((s) => s.funded)).toEqual([fa, fb]);
   });
 
+  it('rule 11: an award on a Local Program lot takes the streamlined route, whatever its kind', () => {
+    const lp = timeline.frameAt(1).view.parcels.localProgram;
+    const lot = LOTS.find((l) => lp[l] === 1);
+    expect(lot).toBeDefined();
+    const w = freshWorld();
+    const { line, pools } = fundOf(w);
+    // A market award that is not certain: off the Local Program its route would be null.
+    joinLine(line, 2, [app(lot!, 'market', day(2, 6), 'm-bank-loan,m-city-guarantee')]);
+    pools.received[poolRowOf(pools, 'm-city')] = 1e12;
+    pools.received[poolRowOf(pools, 'm-bank')] = 1e12;
+    const h = harness(w, 2);
+    const fs = fundedStartOf(
+      h.ctx,
+      frameMoney(timeline, h.ctx.frame),
+      line,
+      0,
+      awardOf(line, 0, 2)
+    );
+    expect(fs.kind).toBe('market');
+    expect(fs.certain).toBe(false);
+    expect(fs.pathway).toBe('streamlined');
+    serveLine(h.ctx);
+    expect(h.starts().map((s) => s.funded?.pathway)).toEqual(['streamlined']);
+  });
+
   it('Review Focus 1: a lot removed from the line during the scan is skipped and the line is scanned once', () => {
     const w = freshWorld();
     const { line, pools } = fundOf(w);
