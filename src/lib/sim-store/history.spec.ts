@@ -94,14 +94,17 @@ describe('History', () => {
           return (
             (h.undo?.position ?? null) === r.undo &&
             (h.redo?.position ?? null) === r.redo &&
+            // The entry at position p was pushed by the commit that follows it: log[p].
+            (h.undo?.label ?? null) === (r.undo === null ? null : log[r.undo].label) &&
+            (h.redo?.label ?? null) === (r.redo === null ? null : log[r.redo].label) &&
             h.position === (log.at(-1)?.seq ?? 0)
           );
         }),
         { numRuns: 300 }
       )
     ).not.toThrow();
-    console.info(`history property: redo ${withRedo}, system ${withSystem}, jump ${withJump}`);
-    expect(withRedo).toBeGreaterThan(0);
+    // Unseeded; over 15 runs redo reached 15-32 of 300 (mean 22), system about 100, jump about 125.
+    expect(withRedo).toBeGreaterThan(5);
     expect(withSystem).toBeGreaterThan(0);
     expect(withJump).toBeGreaterThan(0);
   });
