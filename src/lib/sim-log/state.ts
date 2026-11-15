@@ -98,7 +98,7 @@ export class LogState {
           throw at(e, i);
         }
       });
-      for (const [span, i] of spans) this.checkStrokeKeys(span, i);
+      for (const [span, i] of spans) this.checkStrokes(span, i);
       this.datasetVersion = input.datasetVersion;
       this.memo = null;
       if (opts.check) {
@@ -258,6 +258,7 @@ export class LogState {
           bad(`${c.after} is not another key in ${lk}`);
         this.unlist(lk, c.key);
         this.insert(lk, c.key, c.after);
+        if (item.shape === 'stroke') spans.set(item.fields.span as string, i);
         return;
       }
       case 'set': {
@@ -302,24 +303,38 @@ export class LogState {
     }
   }
 
-  /** After a commit, each group of identical strokes in a span holds k:D, k:D~2, …, k:D~n. */
-  private checkStrokeKeys(span: string, index: number): void {
+  /**
+   * After a commit, a span's strokes are in the order `flatten` gives them: each brush's strokes
+   * together, and each group of identical strokes holding k:D, k:D~2, …, k:D~n in that order.
+   */
+  private checkStrokes(span: string, index: number): void {
     if (!this.items.has(span)) return;
-    const groups = new Map<string, number[]>();
+    const seen = new Map<string, number>();
+    const closed = new Set<string>();
+    let run: string | null = null;
     for (const key of this.list(listKey(span))) {
-      const base = strokeKeyBase(this.items.get(key)!.fields as unknown as StrokeFields);
+      const f = this.items.get(key)!.fields as unknown as StrokeFields;
+      if (f.brush !== run) {
+        if (run !== null) closed.add(run);
+        if (closed.has(f.brush))
+          throw new LogError(
+            'invalid-change',
+            `the strokes of brush ${f.brush} in ${span} would not be together`,
+            index
+          );
+        run = f.brush;
+      }
+      const base = strokeKeyBase(f);
       const n = key === base ? 1 : Number(key.slice(base.length + 1));
-      const g = groups.get(base);
-      if (g) g.push(n);
-      else groups.set(base, [n]);
-    }
-    for (const [base, ns] of groups)
-      if (Math.max(...ns) !== ns.length)
+      const count = (seen.get(base) ?? 0) + 1;
+      seen.set(base, count);
+      if (n !== count)
         throw new LogError(
           'invalid-change',
-          `the repeats of ${base} in ${span} would not be numbered 1 to ${ns.length}`,
+          `the repeats of ${base} in ${span} would not be numbered 1 to n in order`,
           index
         );
+    }
   }
 }
 

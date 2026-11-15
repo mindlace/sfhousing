@@ -181,7 +181,10 @@ export const REGISTRY: Registry = {
   shapes
 };
 
-/** The version of `shape` in `revision`; LogError('future-shapes') above reg.current, LogError('invalid-change') when the revision lacks the shape. */
+/**
+ * The version of `shape` in `revision`; LogError('future-shapes') above reg.current,
+ * LogError('invalid-change') when the revision lacks the shape.
+ */
 export function versionAt(reg: Registry, revision: number, shape: string): number {
   if (revision > reg.current)
     throw new LogError(
