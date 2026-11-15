@@ -40,13 +40,16 @@ export function registerAnswerOf(simId: string, status: number, body: unknown): 
       typeof body === 'object' &&
       body !== null &&
       'simId' in body &&
-      body.simId === simId &&
-      'created' in body &&
-      typeof body.created === 'boolean'
+      typeof body.simId === 'string'
     ) {
-      return { kind: 'ok', created: body.created };
+      // Another sim's id is a real fault. Anything less is an answer that did not arrive whole,
+      // and asking again is safe: the server answers 200 with created false.
+      if (body.simId !== simId) return { kind: 'bug', status, code: null };
+      if ('created' in body && typeof body.created === 'boolean') {
+        return { kind: 'ok', created: body.created };
+      }
     }
-    return { kind: 'bug', status, code: null };
+    return { kind: 'retry' };
   }
   if (status === 401) return { kind: 'sign-in' };
   if (status === 403 && codeOf(body) === 'quota') return { kind: 'quota' };
@@ -59,6 +62,8 @@ export function registerAnswerOf(simId: string, status: number, body: unknown): 
  * POST /api/sims { simId }, content-type application/json, aborted after REGISTER_TIMEOUT_MS on
  * `clock` (the timer is cancelled when an answer comes); a thrown or aborted fetch is 'retry'.
  * The request is same-origin with the browser's default credentials and adds no other header.
+ * An aborted request whose response was lost may have created a pseudonymous account on the
+ * server, and the retry can create another; this is inherent to a timeout.
  */
 export async function registerSim(
   fetchFn: typeof fetch,
@@ -86,7 +91,7 @@ export async function registerSim(
 /**
  * One registration at a time in this browser: the Web Lock REGISTER_LOCK, or a promise chain in
  * this tab when locks is null (so without Web Locks, tabs are not serialised against each
- * other). A job that throws releases it.
+ * other) or once a lock request has failed. A job that throws releases it.
  */
 export class RegisterGate {
   #locks: LocksLike | null;
@@ -97,9 +102,26 @@ export class RegisterGate {
   }
 
   run<T>(job: () => Promise<T>): Promise<T> {
-    if (this.#locks) {
-      return this.#locks.request(REGISTER_LOCK, {}, () => job()) as Promise<T>;
+    if (this.#locks) return this.#underLock(this.#locks, job);
+    return this.#chained(job);
+  }
+
+  /** The Web Lock; if the lock API itself fails before the job starts, the tab chain instead. */
+  async #underLock<T>(locks: LocksLike, job: () => Promise<T>): Promise<T> {
+    let started = false;
+    try {
+      return (await locks.request(REGISTER_LOCK, {}, () => {
+        started = true;
+        return job();
+      })) as T;
+    } catch (e) {
+      if (started) throw e;
+      this.#locks = null;
+      return this.#chained(job);
     }
+  }
+
+  #chained<T>(job: () => Promise<T>): Promise<T> {
     const result = this.#tail.then(() => job());
     this.#tail = result.then(
       () => undefined,

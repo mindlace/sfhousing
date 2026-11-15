@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { newId } from '$lib/ids/base58';
 import { REGISTER_LOCK, RegisterGate, registerAnswerOf, registerSim } from './register';
+import type { LocksLike } from './ports';
 import { FakeClock, FakeFetch, FakeLocks, microtasks } from './test/fakes';
 
 const id = newId();
@@ -28,10 +29,16 @@ describe('registerAnswerOf', () => {
     expect(registerAnswerOf(id, status, body)).toEqual(want);
   });
 
-  it('an ok body whose created is not a boolean is a bug', () => {
-    expect(registerAnswerOf(id, 201, { simId: id, created: 'yes' })).toEqual({
+  it.each([200, 201])('a %i with no body or a body of the wrong shape is retry', (status) => {
+    for (const body of [null, 'x', {}, { simId: id }, { simId: id, created: 'yes' }]) {
+      expect(registerAnswerOf(id, status, body)).toEqual({ kind: 'retry' });
+    }
+  });
+
+  it.each([200, 201])('a %i naming another sim is a bug, not retry', (status) => {
+    expect(registerAnswerOf(id, status, { simId: newId(), created: true })).toEqual({
       kind: 'bug',
-      status: 201,
+      status,
       code: null
     });
   });
@@ -60,7 +67,36 @@ describe('registerSim', () => {
     expect(await registerSim(f.fetch, id, clock)).toEqual({ kind: 'retry' });
     expect(clock.nextDelay()).toBeNull();
     f.handler = () => ({ status: 201 });
-    expect(await registerSim(f.fetch, id, clock)).toEqual({ kind: 'bug', status: 201, code: null });
+    expect(await registerSim(f.fetch, id, clock)).toEqual({ kind: 'retry' });
+    expect(clock.nextDelay()).toBeNull();
+    f.handler = () => ({ status: 404 });
+    expect(await registerSim(f.fetch, id, clock)).toEqual({ kind: 'bug', status: 404, code: null });
+  });
+
+  it('a body that cannot be read clears the timer and is retry on a 201', async () => {
+    const clock = new FakeClock();
+    const body = new ReadableStream({
+      pull: (c) => c.error(new TypeError('cut'))
+    });
+    const res = new Response(body, { status: 201 });
+    expect(await registerSim(() => Promise.resolve(res), id, clock)).toEqual({ kind: 'retry' });
+    expect(clock.nextDelay()).toBeNull();
+  });
+
+  it('a response that arrives after the abort changes nothing', async () => {
+    const clock = new FakeClock();
+    let late: (a: { status: number; body: unknown }) => void = () => {};
+    const f = new FakeFetch(() => new Promise((resolve) => (late = resolve as typeof late)));
+    const answers: unknown[] = [];
+    void registerSim(f.fetch, id, clock).then((a) => answers.push(a));
+    await microtasks();
+    clock.advance(30_000);
+    await microtasks();
+    late({ status: 201, body: { simId: id, created: true } });
+    await microtasks();
+    expect(answers).toEqual([{ kind: 'retry' }]);
+    expect(f.inFlight).toBe(0);
+    expect(clock.nextDelay()).toBeNull();
   });
 
   it('a request with no answer in 30 s is aborted and is retry (F10)', async () => {
@@ -119,6 +155,32 @@ describe('RegisterGate', () => {
     const gate = new RegisterGate(new FakeLocks());
     await expect(gate.run(async () => Promise.reject(new Error('x')))).rejects.toThrow('x');
     expect(await gate.run(async () => 'next')).toBe('next');
+  });
+
+  it('the lock is free after a job resolves and after a job throws', async () => {
+    const locks = new FakeLocks();
+    const gate = new RegisterGate(locks);
+    await gate.run(async () => 1);
+    expect(locks.held()).toEqual([]);
+    await expect(gate.run(() => Promise.reject(new Error('x')))).rejects.toThrow('x');
+    expect(locks.held()).toEqual([]);
+  });
+
+  it('a Web Locks request that rejects falls back to the tab chain, for later jobs too', async () => {
+    const calls: string[] = [];
+    const broken: LocksLike = {
+      request: (name) => {
+        calls.push(name);
+        return Promise.reject(new DOMException('opaque', 'SecurityError'));
+      },
+      query: () => Promise.reject(new DOMException('opaque', 'SecurityError'))
+    };
+    const gate = new RegisterGate(broken);
+    expect(await gate.run(async () => 'one')).toBe('one');
+    expect(await gate.run(async () => 'two')).toBe('two');
+    await expect(gate.run(() => Promise.reject(new Error('mine')))).rejects.toThrow('mine');
+    expect(await gate.run(async () => 'three')).toBe('three');
+    expect(calls).toEqual([REGISTER_LOCK]);
   });
 
   it('a job that throws lets the next one run without Web Locks', async () => {
