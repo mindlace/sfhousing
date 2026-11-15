@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mockConsole } from '$lib/server/test/mock-console';
 import { newId } from '$lib/ids/base58';
+import { SHAPES_REVISION } from '$lib/sim-log';
 import { LogStore } from '$lib/sim-store/log-store.svelte';
 import { memorySimDb } from '$lib/sim-store/sim-db';
 import { DS, draftOf, nameChange, stamped } from '$lib/sim-store/test/commits';
@@ -663,5 +664,254 @@ describe('SimSocket: connection', () => {
     r.hub.setAccess(false);
     await settle(r.hub, r.store);
     expect(r.sock.view.write).toBe(false);
+  });
+});
+
+// The hub stores a start commit when a writer opens an empty sim (rulings, Tasks 8 to 10): a
+// rig with no commits of its own has seq 1 stored before the first resume, so tips and `after`s
+// below are one above the brief's wherever the sim starts empty.
+describe('SimSocket: resume', () => {
+  const phases = (r: Rig, from: number) => r.views.slice(from).map((v) => v.phase);
+  /** Steps the hub until `done`, at most 50 steps (no unbounded loop if the client stalls). */
+  const stepUntil = (r: Rig, done: () => boolean) => {
+    for (let i = 0; i < 50 && !done(); i++) r.hub.step();
+    expect(done()).toBe(true);
+  };
+
+  it('C7 a paged resume asks again after each more: true and goes live on more: false', async () => {
+    const r = await rig({ hub: { pageSize: 2, frameSize: 1 } });
+    for (let s = 0; s < 5; s++) foreign(r, `F${s}`);
+    await live(r);
+    expect(r.hub.resumes).toEqual([0, 2, 4]);
+    expect(r.store.tipSeq).toBe(5);
+    expect(r.sock.view.phase).toBe('live');
+    expect(phases(r, 0)).toEqual(['connecting', 'catching-up', 'catching-up', 'live']);
+  });
+
+  it('C8 a gap while live resumes from the gap', async () => {
+    const r = await rig();
+    await live(r);
+    const n = r.views.length;
+    foreign(r, 'A', { except: r.hub.sockets[0] });
+    foreign(r, 'B');
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 1]);
+    expect(r.store.tipSeq).toBe(3);
+    expect(r.sock.view.phase).toBe('live');
+    expect(phases(r, n)).toEqual(['catching-up', 'live']);
+  });
+
+  it('C9 live frames during a catch-up never start a second resume', async () => {
+    const r = await rig({ hub: { pageSize: 1, frameSize: 1 } });
+    await live(r);
+    foreign(r, 'A', { except: r.hub.sockets[0] });
+    foreign(r, 'B', { except: r.hub.sockets[0] });
+    foreign(r, 'C'); // seq 4: a gap after 1
+    foreign(r, 'D'); // seq 5: arrives while the resume is under way
+    await settle(r.hub, r.store);
+    expect(r.store.tipSeq).toBe(5);
+    expect(r.hub.resumes).toEqual([0, 1, 2, 3, 4]);
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it('C9 C10 a frame answered not-ready inside an answer: its end resumes again, not live', async () => {
+    // An edit, so the sim is stored on the device and a reopen keeps its confirmed commits.
+    const r = await rig({ hub: { frameSize: 1 }, edits: 1 });
+    foreign(r, 'F0');
+    foreign(r, 'F1');
+    // Both frames of the answer come in one step: the store is reopened from inside the first.
+    let opening: Promise<void> | null = null;
+    r.store.subscribe(() => {
+      if (opening === null && r.store.tipSeq === 1) opening = r.store.open(r.sim);
+    });
+    r.sock.start();
+    r.hub.flush(); // its last frame, more: false, answered not-ready
+    expect(opening).not.toBeNull();
+    expect(r.store.tipSeq).toBe(1);
+    expect(r.sock.view.phase).toBe('catching-up');
+    expect(r.hub.resumes).toEqual([0]);
+    await opening;
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 1]);
+    expect(r.store.tipSeq).toBe(2);
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it('C10 frames that came while the store was opening are fetched again, once, when it is ready', async () => {
+    // An edit, so the sim is stored on the device and a reopen keeps its confirmed commits.
+    const r = await rig({ edits: 1 });
+    await live(r);
+    const opening = r.store.open(r.sim);
+    foreign(r, 'A');
+    r.hub.flush(); // the store answers stale, not-ready: nothing applied
+    expect(r.sock.view.phase).toBe('catching-up');
+    await opening;
+    expect(r.store.tipSeq).toBe(1);
+    await settle(r.hub, r.store);
+    expect(r.store.tipSeq).toBe(2);
+    expect(r.hub.resumes).toEqual([0, 1]);
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it('C10 C3 a hello while the store is on another sim owes the resume; sent when it is back', async () => {
+    const r = await rig();
+    await r.store.open(newId());
+    await live(r);
+    expect(r.hub.resumes).toEqual([]);
+    expect(r.sock.view.phase).toBe('catching-up');
+    await r.store.open(r.sim);
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0]);
+    expect(r.store.tipSeq).toBe(1);
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it('C18 a frame for a sim the store no longer has open applies nothing and asks nothing', async () => {
+    const r = await rig();
+    await live(r);
+    await r.store.open(newId());
+    foreign(r, 'A');
+    await settle(r.hub, r.store);
+    expect(r.store.tipSeq).toBe(0);
+    expect(r.hub.resumes).toEqual([0]);
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it('C20 a resume refused gone halts as diverged and keeps the commits', async () => {
+    const r = await rig({ edits: 1 });
+    r.hub.refuseResume('gone');
+    await live(r);
+    expect(r.sock.view).toMatchObject({ phase: 'halted', halt: 'diverged' });
+    expect(r.hub.sockets[0].closedWith).toBe(1000);
+    r.clock.advance(120_000);
+    expect(r.hub.sockets).toHaveLength(1);
+    expect(r.store.pendingCount).toBe(1);
+  });
+
+  it('C21 a refusal limit with no id backs off and resumes; an answer resets the backoff', async () => {
+    const r = await rig();
+    r.hub.refuseResume('limit', 'limit');
+    await live(r);
+    expect(r.hub.resumes).toEqual([0]);
+    expect(r.sock.view.phase).toBe('catching-up');
+    expect(r.clock.nextDelay()).toBe(1000);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.clock.nextDelay()).toBe(2000);
+    r.clock.advance(2000);
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 0, 0]);
+    expect(r.sock.view.phase).toBe('live');
+    r.hub.refuseResume('limit');
+    foreign(r, 'A', { except: r.hub.sockets[0] });
+    foreign(r, 'B'); // a gap: resume, refused
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 0, 0, 1]);
+    expect(r.sock.view.phase).toBe('catching-up');
+    expect(r.clock.nextDelay()).toBe(1000);
+  });
+
+  it('C21 a store change during a limit backoff does not send the owed resume early', async () => {
+    const r = await rig();
+    r.hub.refuseResume('limit');
+    await live(r);
+    r.store.rename('X');
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0]);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 0]);
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it('C21 C11 a close during a limit backoff cancels it', async () => {
+    const r = await rig();
+    r.hub.refuseResume('limit', 'limit');
+    await live(r);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.clock.nextDelay()).toBe(2000);
+    r.hub.closeAll(1011);
+    await settle(r.hub, r.store);
+    expect(r.clock.nextDelay()).toBe(1000);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.sock.view.phase).toBe('live');
+    expect(r.clock.nextDelay()).toBe(PING_MS);
+    expect(r.hub.resumes).toEqual([0, 0, 0]);
+  });
+
+  it('C22 a connection lost between pages resumes from what was applied', async () => {
+    const r = await rig({ hub: { pageSize: 2, frameSize: 1 } });
+    for (let s = 0; s < 5; s++) foreign(r, `F${s}`);
+    r.sock.start();
+    // Departure: the hub takes a step to receive a resume, one to answer, one per frame; step
+    // until the second resume has reached it, then lose its answer.
+    stepUntil(r, () => r.hub.resumes.length === 2);
+    expect(r.store.tipSeq).toBe(2);
+    r.hub.closeAll(1012);
+    await settle(r.hub, r.store);
+    expect(r.sock.view.phase).toBe('waiting');
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 2, 2, 4]);
+    expect(r.store.tipSeq).toBe(5);
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it("C29 a page the store cannot apply (a newer build's commit) is not asked for again", async () => {
+    // Departure: hidden, so no ping goes unanswered while the clock runs on with no settle.
+    const r = await rig({ hub: { pageSize: 1 }, visible: false });
+    const newer = draftOf(0, [nameChange('L')], { shapes: SHAPES_REVISION + 1 });
+    r.hub.storeRaw(r.sim, stamped(newer, 1));
+    r.hub.storeRaw(r.sim, stamped(draftOf(1, [nameChange('M')]), 2));
+    await live(r);
+    r.clock.advance(120_000);
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0]);
+    expect(r.store.stopped).toBe('future');
+    expect(r.sock.view.phase).toBe('catching-up');
+  });
+
+  it('C29 C10 more: true answered not-ready is owed, not stalled', async () => {
+    const r = await rig({ hub: { pageSize: 1 } });
+    foreign(r, 'F0');
+    foreign(r, 'F1');
+    r.sock.start();
+    stepUntil(r, () => r.hub.resumes.length === 1); // the resume has reached the hub
+    const opening = r.store.open(r.sim);
+    r.hub.flush(); // the first page, more: true, answered not-ready
+    expect(r.hub.resumes).toEqual([0]);
+    await opening;
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 0, 1]);
+    expect(r.store.tipSeq).toBe(2);
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it('C30 a commit the store cannot fold halts the socket as broken, logged by name only', async () => {
+    const { error } = mockConsole('error');
+    const r = await rig();
+    r.hub.storeRaw(r.sim, stamped(draftOf(0, [{ op: 'delete', key: 'p:nope' }]), 1));
+    await live(r);
+    expect(r.sock.view).toMatchObject({ phase: 'halted', halt: 'broken' });
+    expect(r.hub.sockets[0].closedWith).toBe(1000);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith('[sim-sync] receive failed', 'LogError');
+    r.clock.advance(120_000);
+    expect(r.hub.sockets).toHaveLength(1);
+  });
+
+  it('C17 a store subscriber that stops the socket inside an answer: no resume follows', async () => {
+    const r = await rig({ hub: { pageSize: 1 } });
+    foreign(r, 'F0');
+    foreign(r, 'F1');
+    r.store.subscribe(() => {
+      if (r.store.tipSeq === 1) r.sock.stop();
+    });
+    await live(r);
+    expect(r.hub.resumes).toEqual([0]);
+    expect(r.sock.view).toEqual(OFF_VIEW);
+    expect(r.clock.nextDelay()).toBeNull();
   });
 });

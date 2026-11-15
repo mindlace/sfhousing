@@ -144,8 +144,28 @@ export class SimSocket {
   #helloed = false;
   /** Failed connections since the last progress (decision 13). */
   #attempt = 0;
-  /** A resume was sent on this connection and its answer has not ended (Task 9 extends). */
+  /** A resume was sent on this connection and its answer's last frame (with `more`) has not come. */
   #resuming = false;
+  /**
+   * A resume is due but cannot be sent yet: the store is not ready or not on this sim, a resume
+   * is outstanding, or a `limit` backoff runs. It counts as outstanding: nothing is sent (S1).
+   */
+  #owed = false;
+  /** The `after` of the last resume sent on this connection. */
+  #lastAfter = 0;
+  /**
+   * An answer said `more: true` and the store's tip did not move past `lastAfter` (a page it
+   * cannot apply, decision 22): no further resume on this connection.
+   */
+  #stalled = false;
+  /** An answer on this connection reached the tip and nothing is outstanding, owed or stalled. */
+  #caughtUp = false;
+  /** `limit` refusals of a resume in a row; reset when an answer reaches `more: false`. */
+  #limitAttempt = 0;
+  /** The `limit` backoff that sends the owed resume (C21). */
+  #cancelLimit: (() => void) | null = null;
+  /** The store was ready on this sim at its last notification (C10: turning ready owes one). */
+  #here = false;
   /** A socket constructor has thrown once already: logged. */
   #loggedFail = false;
   #cancelHello: (() => void) | null = null;
@@ -167,6 +187,7 @@ export class SimSocket {
   start(): void {
     if (this.#started || this.#stopped) return;
     this.#started = true;
+    this.#here = this.#storeHere();
     this.#unsubscribe = [
       this.#o.store.subscribe(() => this.#onStore()),
       this.#o.net.watch((e) => this.#onNet(e))
@@ -292,7 +313,9 @@ export class SimSocket {
     this.#cancelRetry?.();
     this.#cancelPing?.();
     this.#cancelDeadline?.();
+    this.#cancelLimit?.();
     this.#cancelHello = this.#cancelRetry = this.#cancelPing = this.#cancelDeadline = null;
+    this.#cancelLimit = null;
   }
 
   // ---- frames ----
@@ -320,7 +343,7 @@ export class SimSocket {
         this.#onCommits(s, f.commits, f.more);
         return;
       case 'refused':
-        this.#onRefused(f.id, f.why);
+        this.#onRefused(s, f.id, f.why);
         return;
     }
   }
@@ -339,50 +362,141 @@ export class SimSocket {
     if (!this.#current(s)) return;
     this.#set({ phase: 'catching-up', serverBuild: f.build });
     if (!this.#current(s)) return;
-    this.#resume(s);
+    if (!this.#resume(s)) return;
     if (this.#o.net.visible()) this.#armPing();
   }
 
-  /**
-   * Seam for Task 9. Today: a resume from tipSeq when the store is ready on this sim; else
-   * nothing is sent and the socket stays catching-up (Task 9 owes the resume and sends it once
-   * the store is ready on this sim, C10).
-   */
-  #resume(s: SocketLike): void {
+  // ---- resume ----
+
+  /** The store is ready and has this socket's sim open. */
+  #storeHere(): boolean {
     const store = this.#o.store;
-    if (!store.ready || store.simId !== this.#o.simId) return;
-    this.#resuming = true;
-    s.send(encodeFrame({ type: 'resume', after: store.tipSeq }));
+    return store.ready && store.simId === this.#o.simId;
   }
 
   /**
-   * Every commits frame goes to the store with this socket's sim. Seam for Task 9: today only
-   * `more: false` ending this connection's resume is acted on (caught up: live, and with nothing
-   * pending or held the backoff resets, C12 as ruled in fix round 1); `more: true`, a gap and the
-   * store's other answers are Task 9's (C7 to C9, C29, C30), and so is a throw from receive (C30).
+   * A resume from the store's tip: sent now when the store is here, none is outstanding and no
+   * `limit` backoff runs; otherwise owed (C10, C21). Nothing once stalled (C29). Shows the phase;
+   * false when socket s is no longer current afterwards.
+   */
+  #resume(s: SocketLike): boolean {
+    this.#caughtUp = false;
+    if (this.#stalled) {
+      this.#owed = false;
+    } else if (this.#resuming || this.#cancelLimit !== null || !this.#storeHere()) {
+      this.#owed = true;
+    } else {
+      this.#owed = false;
+      this.#resuming = true;
+      this.#lastAfter = this.#o.store.tipSeq;
+      s.send(encodeFrame({ type: 'resume', after: this.#lastAfter }));
+    }
+    return this.#show(s);
+  }
+
+  /** Sends an owed resume once it can be (C10: one resume, not two); else shows the phase. */
+  #flushOwed(s: SocketLike): boolean {
+    const can =
+      this.#owed &&
+      this.#helloed &&
+      !this.#resuming &&
+      this.#cancelLimit === null &&
+      this.#storeHere();
+    return can ? this.#resume(s) : this.#show(s);
+  }
+
+  /**
+   * The phase of an open connection from its resume state: live only when caught up (nothing
+   * outstanding, owed or stalled). False when socket s is no longer current afterwards.
+   */
+  #show(s: SocketLike): boolean {
+    const p = this.#view.phase;
+    if (p === 'catching-up' || p === 'live') {
+      this.#set({ phase: this.#caughtUp ? 'live' : 'catching-up' });
+    }
+    return this.#current(s);
+  }
+
+  /**
+   * Every commits frame goes to the store with this socket's sim (C18: a frame for another sim
+   * applies nothing and asks nothing). A frame with `more` ends the outstanding answer: `true`
+   * resumes from the tip if it moved past `lastAfter`, else stalls (C7, C29); `false` is caught
+   * up unless something is owed (C7, C12). A gap resumes only when nothing is outstanding or
+   * owed (C8, C9). A frame the store was not ready for owes a resume (C10). A throw halts
+   * `broken` (C30).
    */
   #onCommits(s: SocketLike, commits: Commit[], more: boolean | undefined): void {
     const store = this.#o.store;
-    store.receive(this.#o.simId, commits);
-    if (!this.#current(s)) return;
-    if (more === false && this.#resuming) {
-      this.#resuming = false;
-      if (store.pendingCount === 0 && store.heldCount === 0) this.#attempt = 0;
-      this.#set({ phase: 'live' });
-      if (!this.#current(s)) return;
+    const end = more !== undefined && this.#resuming;
+    let r: ReturnType<SyncStore['receive']>;
+    try {
+      r = store.receive(this.#o.simId, commits);
+    } catch (e) {
+      console.error('[sim-sync] receive failed', errorName(e));
+      if (this.#current(s)) this.#halt('broken');
+      return;
     }
+    if (!this.#current(s)) return;
+    if (end) this.#resuming = false;
+    const stale = r.kind === 'stale' && 'why' in r ? r.why : null;
+    if (stale === 'not-ready') {
+      this.#owed = true;
+      this.#caughtUp = false;
+    } else if (stale === 'other-sim') {
+      // Nothing applied; no resume with another sim's tip (C18).
+    } else if (end && more === true) {
+      if (store.tipSeq > this.#lastAfter) {
+        if (!this.#resume(s)) return;
+      } else {
+        this.#stalled = true;
+        this.#caughtUp = false;
+      }
+    } else if (r.kind === 'gap' && !this.#resuming && !this.#owed) {
+      if (!this.#resume(s)) return;
+    }
+    if (end && more === false && stale === null && !this.#resuming && !this.#owed) {
+      this.#caughtUp = true;
+      this.#limitAttempt = 0;
+      if (store.pendingCount === 0 && store.heldCount === 0) this.#attempt = 0;
+    }
+    if (!this.#show(s)) return;
+    if (!this.#flushOwed(s)) return;
     this.#trySend();
   }
 
-  /** Seam for Tasks 9 and 10 (C20, C21, A3 to A9, A16, A17): ignored today. */
-  #onRefused(id: string | null, why: RefusedWhy): void {
-    void id;
-    void why;
+  /**
+   * A refusal with no id is the resume's (decision 24): `gone` halts `diverged` (C20); any
+   * other reason owes the resume and sends it after `backoffDelay(limitAttempt++)` (C21). A
+   * refusal naming an append is Task 10's (A3 to A9, A16, A17).
+   */
+  #onRefused(s: SocketLike, id: string | null, why: RefusedWhy): void {
+    if (id !== null) return;
+    if (why === 'gone') {
+      this.#halt('diverged');
+      return;
+    }
+    this.#resuming = false;
+    this.#owed = true;
+    this.#caughtUp = false;
+    this.#cancelLimit?.();
+    const delay = backoffDelay(this.#limitAttempt++, this.#o.random);
+    this.#cancelLimit = this.#o.clock.after(delay, () => {
+      this.#cancelLimit = null;
+      if (this.#current(s) && this.#flushOwed(s)) this.#trySend();
+    });
+    if (!this.#show(s)) return;
+    this.#trySend();
   }
 
-  /** Clears what one connection's resume knew (C11). Task 9 adds its own fields here. */
+  /** Clears what one connection's resume knew (C11, C22); `limitAttempt` is kept. */
   #resetResume(): void {
     this.#resuming = false;
+    this.#owed = false;
+    this.#stalled = false;
+    this.#caughtUp = false;
+    this.#lastAfter = 0;
+    this.#cancelLimit?.();
+    this.#cancelLimit = null;
   }
 
   /** Seam for Task 10 (rows A): sends nothing today. */
@@ -422,8 +536,24 @@ export class SimSocket {
 
   // ---- signals ----
 
+  /**
+   * The store's subscriber, called synchronously inside the store's mutating calls (receive
+   * included). The store turning ready on this sim owes a resume (C10); an owed resume is sent
+   * once it can be, before any send (A18).
+   */
   #onStore(): void {
     if (!this.#running()) return;
+    const here = this.#storeHere();
+    const was = this.#here;
+    this.#here = here;
+    const s = this.#sock;
+    if (s !== null && this.#helloed) {
+      if (here && !was && !this.#stalled) {
+        this.#owed = true;
+        this.#caughtUp = false;
+      }
+      if (!this.#flushOwed(s)) return;
+    }
     this.#trySend();
   }
 
