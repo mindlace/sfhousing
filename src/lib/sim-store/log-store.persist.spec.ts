@@ -556,8 +556,15 @@ describe('LogStore persistence', () => {
     await db.claimPending(sim, ['a'], 'c');
     await db.write(sim, { owner: 'c', confirmed: [], put: [], remove: [taken] });
     // The hello: the log puts a move first, so the record would have to move behind it.
+    const write = vi.spyOn(db, 'write');
     a.setServerDataset(F1);
+    expect(a.head()).toBeNull();
     await a.written();
+    // It was put as a move of a record written before: the database answered lost, created
+    // nothing, and the store forgot it without sending it.
+    const first = write.mock.calls[0][1].put.find((p) => p.id === taken);
+    expect(first).toMatchObject({ id: taken, move: true });
+    expect((await write.mock.results[0].value).lost).toEqual([taken]);
     expect(a.pendingCount).toBe(0);
     expect(a.head()).toBeNull();
     expect((await db.read(sim)).pending).toEqual([]);

@@ -193,13 +193,14 @@ function wrap(
         result.lost.push(p.id);
         continue;
       }
-      if (p.n !== undefined && !held) {
+      // a put with n, or a move, never creates a record
+      if ((p.n !== undefined || p.move) && !held) {
         result.lost.push(p.id);
         continue;
       }
       let n: number;
       // a put with n updates in place: the stored n stays, the given one is ignored
-      if (p.n !== undefined && held) n = held.n;
+      if (p.n !== undefined && !p.move && held) n = held.n;
       else {
         n = ++last;
         spent = true;

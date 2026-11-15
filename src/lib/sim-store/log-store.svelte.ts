@@ -107,8 +107,6 @@ interface Job {
   batch: WriteBatch;
   /** The version of each record put. */
   versions: Map<string, Pending>;
-  /** Records stored before and put without n (re-sequenced or claimed): checked first. */
-  reput: string[];
   /** The highest confirmed seq in the batch. */
   seq: number;
 }
@@ -790,16 +788,16 @@ export class LogStore implements DocStore {
    * The whole dirty state as one batch (decision 16), or null with nothing to write. The records
    * are the log's pending then held commits (a bare move aside), in the log's order: a record
    * already stored keeps its n while the stored order matches the log's, and from the first one
-   * out of order on each is put again without n, at the end, so that reading the records back in
-   * n order gives the log's order. Every record stored before is put with its n, so one another
-   * tab took comes back lost. Records stored and no longer held are removed.
+   * out of order on each goes to the end, so that reading the records back in n order gives the
+   * log's order. A record stored before is put with its n (in place) or with `move` (to the end),
+   * never plainly, so one another tab took or removed comes back lost and is never re-created.
+   * Records stored and no longer held are removed.
    */
   #job(marker: boolean): Job | null {
     const log = this.#log;
     const desired = [...log.pending, ...log.held].filter((p) => p.draft.id !== this.#bareMove);
     const put: PendingPut[] = [];
     const versions = new Map<string, Pending>();
-    const reput: string[] = [];
     let last = -Infinity;
     let inOrder = true;
     for (const p of desired) {
@@ -814,9 +812,9 @@ export class LogStore implements DocStore {
         continue;
       }
       inOrder = false;
-      put.push({ id, pending: p });
+      const stored = w !== undefined || this.#unplaced.has(id);
+      put.push(stored ? { id, pending: p, move: true } : { id, pending: p });
       versions.set(id, p);
-      if (w !== undefined || this.#unplaced.has(id)) reput.push(id);
     }
     const live = new Set(desired.map((p) => p.draft.id));
     const remove = [...new Set([...this.#written.keys(), ...this.#unplaced])].filter(
@@ -829,7 +827,7 @@ export class LogStore implements DocStore {
       if (!this.#simStored && put.length === 0) return null;
     }
     const seq = confirmed.at(-1)?.seq ?? this.#confirmedSeq;
-    return { batch: { owner: this.#opts.tabId, confirmed, put, remove }, versions, reput, seq };
+    return { batch: { owner: this.#opts.tabId, confirmed, put, remove }, versions, seq };
   }
 
   /**
@@ -839,8 +837,6 @@ export class LogStore implements DocStore {
    */
   async #loop(): Promise<void> {
     const db = this.#opts.db!;
-    /** Records found still this tab's since the last write. */
-    let checked = new Set<string>();
     let taken: MarkerJob | null = null;
     try {
       while (this.#canWrite()) {
@@ -849,19 +845,6 @@ export class LogStore implements DocStore {
         const mj = this.#markerJob;
         const job = this.#job(mj !== null);
         if (job === null) break;
-        const unchecked = job.reput.filter((id) => !checked.has(id));
-        if (unchecked.length > 0) {
-          // A put without n would re-create a record another tab took and removed: those not
-          // still this tab's are forgotten first.
-          const read = await db.read(simId);
-          if (gen !== this.#gen) continue;
-          const tab = this.#opts.tabId;
-          const mine = new Set(read.pending.filter((r) => r.owner === tab).map((r) => r.id));
-          const lost = unchecked.filter((id) => !mine.has(id));
-          if (lost.length > 0) this.#lose(lost);
-          else for (const id of unchecked) checked.add(id);
-          continue;
-        }
         this.#markerJob = null;
         taken = mj;
         const marker = mj === null ? {} : { marker: mj.marker };
@@ -878,13 +861,11 @@ export class LogStore implements DocStore {
             this.#markerJob = mj;
             taken = null;
             await this.#adoptCurrent(c.current);
-            checked = new Set();
             continue;
           }
           if (gen === this.#gen && c.outcome === 'created') this.#simStored = true;
           r = c;
         }
-        checked = new Set();
         taken = null;
         if (gen !== this.#gen) {
           // The store moved to another sim meanwhile: this landed on the sim it was made for.

@@ -33,6 +33,12 @@ export interface PendingPut {
    * The n counter only moves up, and never from a caller's value.
    */
   n?: number;
+  /**
+   * true: a record this owner wrote before, moved to the end. It must exist with the batch's
+   * owner (else lost, and nothing is created); it gets a new n and the rest of the record is
+   * replaced. `n` is then ignored.
+   */
+  move?: true;
 }
 export interface WriteBatch {
   owner: string; // this tab
@@ -126,11 +132,11 @@ function applyBatch(state: State, simId: string, batch: WriteBatch): WriteResult
       result.lost.push(p.id);
       continue;
     }
-    if (p.n !== undefined && !held) {
+    if ((p.n !== undefined || p.move) && !held) {
       result.lost.push(p.id);
       continue;
     }
-    const n = p.n !== undefined && held ? held.n : ++last;
+    const n = p.n !== undefined && !p.move && held ? held.n : ++last;
     d.pending.set(p.id, {
       simId,
       id: p.id,

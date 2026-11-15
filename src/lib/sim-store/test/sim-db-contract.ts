@@ -294,6 +294,116 @@ export function simDbContract(
         expect((await db.read(simId)).pending).toEqual([]);
       }));
 
+    it('a move put of an own record gives it a new n at the tail and replaces the rest', () =>
+      withDb(async (db) => {
+        const simId = newId();
+        const [a, b] = [putOf('a'), putOf('b')];
+        await db.write(simId, batch('tab1', { put: [a, b] }));
+        const changed = pendingOf('a2');
+        const r = await db.write(
+          simId,
+          batch('tab1', { put: [{ id: a.id, pending: changed, move: true }] })
+        );
+        expect(r).toEqual({ applied: true, n: { [a.id]: 3 }, lost: [] });
+        const read = await db.read(simId);
+        expect(read.pending).toEqual([
+          { simId, id: b.id, n: 2, owner: 'tab1', pending: b.pending },
+          { simId, id: a.id, n: 3, owner: 'tab1', pending: changed }
+        ]);
+        expect(await db.getMeta(nKey(simId))).toBe(3);
+      }));
+
+    it('a move put of a record that is gone is lost and creates nothing', () =>
+      withDb(async (db) => {
+        const simId = newId();
+        const a = putOf('a');
+        await db.write(simId, batch('tab1', { put: [a] }));
+        await db.write(simId, batch('tab1', { remove: [a.id] }));
+        const never = putOf('never');
+        const r = await db.write(
+          simId,
+          batch('tab1', {
+            put: [
+              { id: a.id, pending: a.pending, move: true },
+              { id: never.id, pending: never.pending, move: true }
+            ]
+          })
+        );
+        expect(r).toEqual({ applied: true, n: {}, lost: [a.id, never.id] });
+        expect((await db.read(simId)).pending).toEqual([]);
+        expect(await db.getMeta(nKey(simId))).toBe(1);
+      }));
+
+    it('a move put of a record another tab claimed is lost and leaves it untouched', () =>
+      withDb(async (db) => {
+        const simId = newId();
+        const [a, b] = [putOf('a'), putOf('b')];
+        await db.write(simId, batch('tab1', { put: [a, b] }));
+        await db.claimPending(simId, ['tab1'], 'tab2');
+        const before = await db.read(simId);
+        const r = await db.write(
+          simId,
+          batch('tab1', { put: [{ id: a.id, pending: pendingOf('a2'), move: true }] })
+        );
+        expect(r).toEqual({ applied: true, n: {}, lost: [a.id] });
+        expect(await db.read(simId)).toEqual(before);
+        expect(await db.getMeta(nKey(simId))).toBe(2);
+      }));
+
+    it('a batch mixing move, in-place and new puts gives the order the batch states', () =>
+      withDb(async (db) => {
+        const simId = newId();
+        const [a, b, c] = [putOf('a'), putOf('b'), putOf('c')];
+        await db.write(simId, batch('tab1', { put: [a, b, c] }));
+        const lead = putOf('lead');
+        // The stored order becomes a, lead, c, b: a stays, the rest follow in the batch's order.
+        const r = await db.write(
+          simId,
+          batch('tab1', {
+            put: [
+              { id: a.id, pending: pendingOf('a2'), n: 1 },
+              lead,
+              { id: c.id, pending: c.pending, move: true },
+              { id: b.id, pending: pendingOf('b2'), move: true }
+            ]
+          })
+        );
+        expect(r.n).toEqual({ [a.id]: 1, [lead.id]: 4, [c.id]: 5, [b.id]: 6 });
+        expect(r.lost).toEqual([]);
+        const read = await db.read(simId);
+        expect(read.pending.map((p) => [p.id, p.n, p.pending.draft.label])).toEqual([
+          [a.id, 1, 'a2'],
+          [lead.id, 4, 'lead'],
+          [c.id, 5, 'c'],
+          [b.id, 6, 'b2']
+        ]);
+      }));
+
+    it('an aborted batch with a move put spends no n and changes nothing', async () => {
+      let abort = false;
+      await using({ abortWrites: () => abort }, async (db) => {
+        const simId = newId();
+        const [a, b] = [putOf('a'), putOf('b')];
+        await db.write(simId, batch('tab1', { put: [a, b] }));
+        const before = await db.read(simId);
+        abort = true;
+        await expect(
+          db.write(
+            simId,
+            batch('tab1', { put: [{ id: a.id, pending: pendingOf('a2'), move: true }, putOf('c')] })
+          )
+        ).rejects.toThrow();
+        abort = false;
+        expect(await db.read(simId)).toEqual(before);
+        expect(await db.getMeta(nKey(simId))).toBe(2);
+        const r = await db.write(
+          simId,
+          batch('tab1', { put: [{ id: a.id, pending: a.pending, move: true }] })
+        );
+        expect(r.n).toEqual({ [a.id]: 3 });
+      });
+    });
+
     it("removes only the owner's pending records, and leaves other sims alone", () =>
       withDb(async (db) => {
         const simId = newId();
