@@ -76,8 +76,10 @@ interface Link {
  *    InvalidAccessError. Otherwise it records the code in `closedWith` (null when none given),
  *    sets readyState to 2 (CLOSING) and does nothing else at once. The hub sees the close in
  *    order after the frames sent before it, and one step after that the socket's own `close`
- *    listeners are called, once, with the code a browser reports: the client's code, 1005 if it
- *    gave none, 1006 if the socket was still connecting; readyState is then 3. Those two
+ *    listeners are called, once, with the code a browser reports against the real object, which
+ *    replies to a close with the same code, or 1000 when the client gave none; for a socket
+ *    still connecting an `error` event comes first and the code is 1006; readyState is then 3.
+ *    A reason over 123 UTF-8 bytes throws a DOMException named SyntaxError. Those two
  *    things are what a client that reconnects on its own close event relies on: the event
  *    comes later, never inside close(), and `close()` cannot be followed by another frame.
  *  - After close() was called, no other event is delivered to the socket (a late frame, or a
@@ -85,7 +87,7 @@ interface Link {
  *    nothing.
  * `resumed` is the hub's mark for this socket: set when the hub produces a resume answer that
  * reaches the tip, cleared when a resume arrives (so not when the client reads the frames).
- * Not modelled: close reasons, binaryType, bufferedAmount, removeEventListener, the Origin
+ * Not modelled: the reason's delivery, binaryType, bufferedAmount, removeEventListener, the Origin
  * check.
  */
 export class FakeSocket implements SocketLike {
@@ -94,7 +96,7 @@ export class FakeSocket implements SocketLike {
   /** Every text the client sent that was not dropped, in order. */
   readonly sent: string[] = [];
   resumed = false;
-  /** The code the client closed with (1005 when it gave none), null while it has not closed. */
+  /** The code the client closed with (1005 when it gave none: the close frame had none). */
   closedWith: number | null = null;
   #listeners: Record<EventType, Listener[]> = { open: [], message: [], close: [], error: [] };
   #link: Link;
@@ -117,9 +119,12 @@ export class FakeSocket implements SocketLike {
     this.#link.send(data);
   }
 
-  close(code?: number): void {
+  close(code?: number, reason?: string): void {
     if (code !== undefined && code !== 1000 && !(code >= 3000 && code <= 4999)) {
       throw new DOMException('The close code must be 1000 or 3000-4999', 'InvalidAccessError');
+    }
+    if (reason !== undefined && utf8Bytes(reason) > 123) {
+      throw new DOMException('The close reason must be at most 123 bytes', 'SyntaxError');
     }
     if (this.readyState >= 2) return;
     const connecting = this.readyState === 0;
@@ -165,15 +170,20 @@ type Ev =
   | { k: 'out-close'; s: FakeSocket; epoch: number; code: number }
   | { k: 'closed'; s: FakeSocket; code: number };
 
+/** The code the object closes with in reply to a peer's close (object-rules.ts closeReply). */
+function closeReply(code: number): number {
+  return code === 1005 || code === 1006 || code === 1015 ? 1000 : code;
+}
+
 /** Where in the real object's order of append checks a queued refusal takes effect. */
 const STEP: Record<RefusedWhy, number> = {
   gone: 1,
   'not-writer': 2,
   limit: 3,
-  invalid: 5,
   full: 7,
   behind: 8,
-  newer: 10
+  newer: 10,
+  invalid: 11
 };
 
 const URL_SIM = /\/api\/sims\/([^/?#]+)\/stream(?:[?#]|$)/;
@@ -191,7 +201,8 @@ const URL_SIM = /\/api\/sims\/([^/?#]+)\/stream(?:[?#]|$)/;
  *    When the socket has write and the sim has no commits, the start commit is stored at that
  *    moment (option `start`, default on): kind 'system', label 'Start', source 'sim.start',
  *    parent 0, one `set` of the name to the `title` option, the hub's dataset, build and
- *    SHAPES_REVISION. It is before any resume is answered, so a writer's first resume on a new
+ *    SHAPES_REVISION; its author is FakeObject's fixed actor, not the opener's identity
+ *    (identities are not modelled). It is before any resume is answered, so a writer's first resume on a new
  *    sim returns one commit the client did not make, and the client's own first commit (made
  *    on parent 0) is refused `behind`.
  *  - A frame the client sends takes one step to reach the hub (an `in` event). Resumes and
@@ -212,11 +223,15 @@ const URL_SIM = /\/api\/sims\/([^/?#]+)\/stream(?:[?#]|$)/;
  *    and answered by nothing; the sim is full (only by refuseNext('full')); the parent is not
  *    the tip: `behind`; the stamped commit over LIMITS.commitBytes: `limit`; a stored row the
  *    object cannot fold (see storeRaw): `newer`, or a 1011 close; then the draft's `shapes`
- *    above SHAPES_REVISION: `newer`; then closeOnAppend (the insert failing): 1011; then the
- *    fold check: `invalid`. refuseNext(why) queues a refusal that takes effect at the step of
- *    that reason in this order, for the first append that reaches that step: a queued `full`
- *    or `behind` leaves a duplicate's silence alone, and a queued `limit` leaves a reader's
- *    `not-writer` alone. Only the head of the queue is looked at. A refused append changes
+ *    above SHAPES_REVISION: `newer`; then the fold check of the draft on the stored rows:
+ *    `invalid` (or `newer`); then closeOnAppend (the insert failing): 1011. A queued `invalid`
+ *    takes effect at the fold check, for a draft that parses; one that does not parse is
+ *    `invalid` at the parse step. The commit-size check stamps with a 64-character actor and a
+ *    13-digit time, the real stamp's largest. refuseNext(why) queues a refusal that takes
+ *    effect at the step of that reason in this order, for the first append that reaches that
+ *    step: a queued `full` or `behind` leaves a duplicate's silence alone, and a queued `limit`
+ *    leaves a reader's `not-writer` alone. Only the head of the queue is looked at: a refusal
+ *    whose step no append reaches holds up every refusal queued after it. A refused append
  *    nothing. The id in a refusal is the frame's commit id (null when it has none).
  *  - A text over the real frame limit by length is refused `limit` with id null; a text 'ping'
  *    is answered 'pong'; a text that is not one client frame closes the socket 1008, and a
@@ -240,7 +255,7 @@ const URL_SIM = /\/api\/sims\/([^/?#]+)\/stream(?:[?#]|$)/;
  *
  * Not modelled: the rate bucket and the `limit` (rate) and `full` refusals as consequences of
  * load (use refuseNext), the resume budgets (use refuseResume), an answer capped by bytes
- * (use pageSize), the fold of a stored row (see storeRaw), takeDown (use closeAll(4410)), roles
+ * (use pageSize), takeDown (use closeAll(4410)), roles
  * and identities, hibernation and restarts (use closeAll), backpressure, the open handshake's
  * statuses (a refused open is a 1006 close), and the object's close reply to a client's close
  * beyond the client's own close event.
@@ -338,8 +353,8 @@ export class FakeHub {
    * above SHAPES_REVISION, or that does not fold for another reason, makes the sim unable to
    * fold its stored rows, as after a newer build's write. Every later append that passes the
    * `behind` check and the commit size check is then refused `newer` (a newer build's row) or
-   * closes its socket 1011 (any other), as the real object does. A row that folds is stored
-   * but the later appends are folded without it.
+   * closes its socket 1011 (any other), as the real object does. A row that folds is part of
+   * the state later appends are folded on.
    */
   storeRaw(simId: string, c: Commit): void {
     const obj = this.#object(simId);
@@ -523,13 +538,14 @@ export class FakeHub {
         const c = this.#conn.get(ev.s) as Conn;
         c.gone = true;
         c.resuming = false;
-        const code = ev.connecting ? 1006 : (ev.code ?? 1005);
+        const code = ev.connecting ? 1006 : closeReply(ev.code ?? 1005);
         this.#queue.push({ k: 'closed', s: ev.s, code });
         return true;
       }
       case 'closed':
         if (ev.s.readyState === 3) return false;
         ev.s.readyState = 3;
+        if (ev.code === 1006) ev.s.emit('error');
         ev.s.emit('close', ev.code);
         return true;
       case 'in': {
@@ -658,7 +674,6 @@ export class FakeHub {
       if (e instanceof LogFormatError) return refuse('invalid');
       throw e;
     }
-    if (taken(5)) return;
     if (obj.commits.some((x) => x.id === draft.id)) {
       this.duplicates += 1;
       return;
@@ -666,12 +681,24 @@ export class FakeHub {
     if (taken(7)) return;
     if (taken(8)) return;
     if (draft.parent !== obj.commits.length) return refuse('behind');
-    const row = stamped(draft, obj.commits.length + 1);
+    // The stamp at its real largest: a 64-character identity and a 13-digit time.
+    const row = {
+      ...stamped(draft, obj.commits.length + 1, 'a'.repeat(64)),
+      at: 1_700_000_000_000
+    };
     if (utf8Bytes(JSON.stringify(row)) > LIMITS.commitBytes) return refuse('limit');
     const folds = this.#fold.get(c.sim);
     if (folds === 'broken') return this.#serverClose(s, c, CLOSE_INTERNAL);
     if (folds === 'newer' || draft.shapes > SHAPES_REVISION) return refuse('newer');
-    if (taken(10)) return;
+    if (taken(10) || taken(11)) return;
+    const state = LogState.empty();
+    try {
+      for (const r of obj.commits) state.apply(r);
+      state.apply(draft, { check: true });
+    } catch (e) {
+      if (!(e instanceof LogError)) throw e;
+      return refuse(e.code === 'future-shapes' ? 'newer' : 'invalid');
+    }
     if (this.closeOnAppend > 0) {
       this.closeOnAppend -= 1;
       return this.#serverClose(s, c, CLOSE_INTERNAL);
