@@ -1,0 +1,1111 @@
+<article>
+  <header>
+    <h1>Sim log core plan</h1>
+    <p>Unit 1 of the sim message log: commit and change types, parsers, fold, diff, re-apply, the undo and redo derivation, the hash chain and the shape registry at revision 1. Pure TypeScript, no I/O.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>One pure module, <code>src/lib/sim-log/</code>, that the sim object (unit 2) and the browser log store (unit 4) both use to parse commits, fold a log to a ruleset, check it, diff two rulesets, re-apply pending changes on a new tip, derive undo and redo targets, and chain commit hashes.</dd>
+      <dt>Architecture</dt>
+      <dd>A ruleset (<code>{ name, policy: SimPolicy4, datasetVersion }</code>) is flattened into keyed items of 16 shapes (the sim, a policy and a span per <code>where</code> row, the painted stroke). A change acts on one item. <code>LogState</code> holds the items of a folded log, applies a commit atomically (upgrading each change from the commit's shape revision), and assembles the <code>SimPolicy4</code>. <code>diff</code> flattens two rulesets and emits the changes between them, list order included. Undo and redo are a two-stack replay over the log's kinds. Hashes are SHA-256 over canonical text.</dd>
+      <dt>Tech Stack</dt>
+      <dd>TypeScript, Vitest (project <code>server</code>, Node environment), fast-check 4 (already a dev dependency, <code>package.json:98</code>). No new dependency.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-14-sim-message-log-design.html">docs/superpowers/specs/2026-11-14-sim-message-log-design.html</a>, unit 1 of <code>#tbl-units</code>: R1 to R14, R19 (its pure part), R42, R54, R57, R62, <code>#tbl-commit</code>, <code>#tbl-changes</code>, the Testing section's "Core" line, and the "Left to the builder" items for keys, stroke naming, commit ids, the hash and canonical text. Units 2 to 5 are out of scope.</dd>
+    </dl>
+    <p>Root: every path is under <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/sim-message-log</code>.</p>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions made in this plan</h2>
+    <ol>
+      <li id="d1"><strong>Directory.</strong> <code>src/lib/sim-log/</code>, flat, with test helpers in <code>src/lib/sim-log/test/</code>. Specs are <code>*.spec.ts</code> and run in Vitest project <code>server</code> (<code>vite.config.ts:53-61</code>: <code>src/**/*.{test,spec}.ts</code>, Node). Reason: the module is pure, and Node has <code>crypto.subtle</code> and <code>TextEncoder</code> like the browser and workerd.</li>
+      <li id="d2"><strong>Item keys.</strong> The name item is <code>sim</code>; a policy <code>p:&lt;policyId&gt;</code>; a span <code>s:&lt;from&gt;:&lt;policyId&gt;</code>; a stroke <code>k:&lt;digest&gt;</code>, where the digest is <code>digest128</code> (MurmurHash3 x86_128, <code>src/lib/sim/world/policy/intern.ts:111</code>) of <code>canonicalJson</code> of the stroke's fields, and the n-th identical stroke in one span gets <code>~n</code> (n &gt;= 2). Reason: a key is a pure function of content, so <code>diff</code> of two rulesets names the same keys the log holds; content keys let two tabs' strokes into the same brush both survive re-application. <code>from</code> is digits, so the span key parses unambiguously whatever the policy id holds (ids are any 1 to 80 characters, <code>parse4.ts:255-258</code>). Checked against timeline-ui's in-place edits (<code>docs/dev/timeline-ui.md</code> on <code>step-engine/timeline-ui</code>, "Edits in place on an offer"): each is a <code>set</code> (pool name is the policy label) or a span replaced (R4), and the programme set written to every span replaces every span.</li>
+      <li id="d3"><strong>Brushes are named by their strokes.</strong> R62 lists a stroke and no brush shape. A stroke's fields are <code>{ span, brush, kind, stories, path, radiusM }</code>; a painted span's brushes are assembled from its strokes in list order, grouped by brush id in order of first appearance. Reason: timeline-ui's <code>appendStroke</code> joins a stroke to the last brush and <code>removeCustomBrush</code> merges neighbours (<code>git show step-engine/timeline-ui:src/lib/sim-page/stroke-adapter.ts</code>, lines 29-63); both are stroke adds and deletes here, and a stroke costs its own bytes (R5). Consequence: a brush with no strokes cannot be stored (see <a href="#d4">4</a>).</li>
+      <li id="d4"><strong>Log form.</strong> A ruleset with an empty brush is not in log form. <code>toLogForm</code> drops empty brushes; <code>diff</code> throws <code>RangeError</code> when its target is not in log form. Reason: an empty brush has no lots and no effect (<code>paintEdits</code>, <code>src/lib/sim-page/policy.ts:511-527</code>), and the editors never make one; imports (unit 4, R20) call <code>toLogForm</code>.</li>
+      <li id="d5"><strong>The name item always exists.</strong> It is not added or deleted; only <code>set</code> applies. Unset, the name is <code>DEFAULT_SIM_NAME = 'Untitled sim'</code>. Reason: R42 makes the name a <code>set</code>, and R58 folds a sim without commits to the default ruleset. Unit 5 may reword the default only by a new shape version, since it is part of the fold's output for every old position.</li>
+      <li id="d6"><strong>Delete cascades.</strong> Deleting a policy deletes its spans and their strokes; deleting a span deletes its strokes. Reason: <code>#tbl-changes</code> says "gone as if never added", and a span cannot exist without its policy. <code>diff</code> emits only the topmost delete.</li>
+      <li id="d7"><strong><code>end</code> only truncates.</strong> Valid when the new <code>to</code> is on or after <code>from</code> and before the current <code>to</code> (or the span had none). Extending a span or moving its start is a delete and an add (for a painted span, its strokes are added again). Reason: the owner's rule, "immutable save truncation or deletion" (<code>#sec-changes</code>).</li>
+      <li id="d8"><strong>Commit id.</strong> The sim id's format: a base58 UUIDv7 (<code>newId</code>, <code>isValidId</code>). Task 1 moves <code>src/lib/server/ids/base58.ts</code> to <code>src/lib/ids/base58.ts</code> and leaves a re-export at the old path, which is R29's move. Reason: the parser runs in the browser, which cannot import <code>$lib/server</code>; one id format for sims and commits; no call site changes.</li>
+      <li id="d9"><strong>Hash.</strong> <code>hash = sha256Hex(prevHash + commitText(commit))</code> with <code>sha256Hex</code> from <code>src/lib/sharing/hash.ts:1-4</code>; the first commit's <code>prevHash</code> is <code>GENESIS_HASH</code>, 64 zeros. Asynchronous; fold, diff and re-apply stay synchronous and never hash. Reason: already in the repo and in every runtime; the chain is computed once per accepted commit and checked once per load.</li>
+      <li id="d10"><strong>Canonical text of a commit.</strong> <code>canonicalJson</code> (<code>src/lib/sim-page/policy.ts:445</code>) of every field but <code>hash</code>. No field is ever <code>undefined</code>: absent values are <code>null</code> (<code>restores</code>) or absent keys (<code>after</code> on an unordered add). <code>commitText</code> throws on <code>undefined</code> or a non-finite number. Reason: <code>canonicalJson(undefined)</code> yields the text <code>undefined</code>, which is not JSON.</li>
+      <li id="d11"><strong><code>restores</code>.</strong> <code>{ position, as: 'undo' | 'redo' | 'jump' }</code>. <code>jump</code> is R14's restore to any position (timeline-ui's <code>undoTo</code>) and R32's restore before an edit. Reason: <code>#tbl-commit</code> names only undo and redo, but R14 needs a third, and timeline-ui records <code>undoTo</code> "as an ordinary change" (<code>#sec-today</code>), which is how <code>jump</code> counts in the derivation.</li>
+      <li id="d12"><strong>Undo and redo derivation.</strong> A two-stack editor replayed over the log: an <code>edit</code> or a <code>jump</code> pushes the current position on undo and empties redo; an undo restore pops undo down to its target and pushes the current position on redo; a redo restore the reverse. A <code>system</code> commit empties both stacks. A restore whose target is not on its stack counts as a jump. Reason: it reproduces <code>#tbl-undo</code> exactly; undo stops at an import, a remix's first commit and a dataset move (restoring a ruleset aligned to an older dataset onto a newer one would break R55); a restore re-applied on a moved tip keeps its declared target (R18).</li>
+      <li id="d13"><strong>Validity is structure only.</strong> <code>checkRuleset</code> runs <code>parsePolicy4(policy, { asOf: null, presetLayer: 'reconcile' })</code> and <code>simDoc4Problems</code> (<code>src/lib/timeline/sim-doc4.ts:74</code>). Reason: R3 says "checks structure only"; strict mode also checks preset availability (<code>policy.ts:262-284</code>), so a preset retired later would make every edit on an accepted sim refused.</li>
+      <li id="d14"><strong>A commit has at least one change.</strong> Reason: R19 drops a commit left with none, so none is ever stored.</li>
+      <li id="d15"><strong>Re-apply beyond R19.</strong> An <code>add</code> whose key exists is dropped (<code>exists</code>); an <code>end</code> that is no longer a truncation is dropped (<code>not-truncation</code>); an <code>add</code> or <code>move</code> whose <code>after</code> sibling is gone is kept and placed last in its list. Reason: the first two would otherwise make the whole commit invalid; the third keeps a new policy that another writer's delete only displaced.</li>
+      <li id="d16"><strong>Structural roles belong to the shape name.</strong> A shape's key rule, parent, list and whether <code>end</code> applies are fixed per name in code (<code>items.ts</code>). A shape version changes fields only, with a pure <code>up</code>. Reason: <code>diff</code> and assembly are code over the current versions; a change of structure is a new shape name.</li>
+      <li id="d17"><strong>Envelope limits.</strong> <code>label</code> at most 200 characters; <code>build</code> 1 to 64; <code>source</code> matches <code>/^[a-z][a-z0-9-]*(\.[a-z0-9-]+)*$/</code>, at most 64; a key at most 256; <code>at</code> is milliseconds since the epoch. Reason: none are page text limits; they only stop junk. The per-commit size cap is unit 2's.</li>
+    </ol>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li>Work only in <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/sim-message-log</code>, branch <code>worktree-sim-message-log</code>. If <code>node_modules</code> is missing, run <code>npm install</code> first (it is missing at plan time).</li>
+      <li>Never compound shell commands as <code>cd ... &amp;&amp; cmd</code>. Run every command in the foreground; start no background work.</li>
+      <li>Pure TypeScript: no I/O, no DOM, no <code>window</code>, no Worker-only or Node-only API, no <code>$app/*</code>, no <code>$lib/server/*</code> import from <code>src/lib/sim-log/</code>. The module runs in the browser and in a Durable Object alike. Randomness and time are not used (ids are minted by callers).</li>
+      <li>Do not change <code>src/lib/timeline/*</code>, <code>src/lib/sim-page/*</code> or <code>src/lib/sim/world/*</code>; this unit only reads them.</li>
+      <li>No new dependency. If one were ever added, it would need a credit in <code>SOFTWARE</code> (<code>src/lib/attribution.ts</code>).</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns. <code>npm run lint</code> and <code>npm run check</code> pass at the end of every task.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code> (<code>vite.config.ts:46</code>): every test calls <code>expect</code>, including inside fast-check properties.</li>
+      <li>Values are stored as given (R2): no rounding, quantizing or trimming inside the module. Parsers reject; they do not repair.</li>
+      <li>Conventional Commits. Multi-line messages use several <code>-m</code> flags, never heredocs. No Claude attribution anywhere: no <code>Co-Authored-By</code>, no generated-with footers, no mention in code, comments or docs.</li>
+    </ul>
+    <section id="sec-commands">
+      <h3>Verification commands</h3>
+      <ul>
+        <li>This unit's specs: <code>npx vitest --run --project server src/lib/sim-log</code></li>
+        <li>One file: <code>npx vitest --run --project server src/lib/sim-log/diff.spec.ts</code></li>
+        <li>End of every task: <code>npm run check</code> (prints <code>svelte-check found 0 errors and 0 warnings</code>) and <code>npm run lint</code> (exits 0).</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <p>Inputs the spec implies and no rule spells out, most likely to bite first. Each line's test is in the named task.</p>
+    <ol>
+      <li><strong>An accepted log must fold for good.</strong> A span whose timing preset has since become unavailable still folds and checks (reconcile mode), and a commit under a newer shape revision than this build knows throws <code>LogError</code> code <code>future-shapes</code>, not a crash or a wrong ruleset. Task 3 (<code>a retired preset still checks</code>, <code>a newer shape revision is future-shapes</code>).</li>
+      <li><strong>A refused commit leaves no trace.</strong> A commit whose third change is invalid, or whose result fails <code>checkRuleset</code>, leaves the state's ruleset text unchanged. The sim object relies on this to refuse and carry on. Task 3 (<code>apply is atomic</code>, <code>apply with check rolls back</code>).</li>
+      <li><strong>Identical strokes and empty brushes.</strong> The same stroke painted twice into one brush round-trips (keys <code>~2</code>); a target with an empty brush is refused by <code>diff</code> rather than silently changed. Task 2 (<code>identical strokes get ~n</code>) and Task 4 (<code>refuses a target not in log form</code>).</li>
+      <li><strong>Another writer deleted the sibling a pending add was placed after.</strong> The added policy is kept, last in its kind. Task 5 (<code>re-anchors an add whose sibling is gone</code>).</li>
+      <li><strong>Undo across a commit nobody typed.</strong> After an import, a remix's first commit or a dataset move, undo stops there and redo is empty. Task 6 (<code>a system commit is a barrier</code>).</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files this plan creates or changes</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Task</th><th scope="col">Responsibility</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>src/lib/ids/base58.ts</code> (moved), <code>src/lib/server/ids/base58.ts</code> (re-export)</th><td>1</td><td><code>newId</code>, <code>isValidId</code>, <code>decodeId</code>, importable in the browser</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-log/types.ts</code></th><td>1</td><td><code>Change</code>, <code>CommitDraft</code>, <code>Commit</code>, <code>Restores</code>, <code>Ruleset</code>, <code>FoldInput</code>, <code>LogFormatError</code>, <code>LogError</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim-log/parse.ts</code></th><td>1</td><td><code>parseChange</code>, <code>parseCommitDraft</code>, <code>parseCommit</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim-log/keys.ts</code></th><td>2</td><td>Item key rules</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-log/shapes.ts</code></th><td>2, 3</td><td><code>Registry</code>, <code>REGISTRY</code> at revision 1, field parsers, upgrades</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-log/items.ts</code></th><td>2</td><td>Flatten a ruleset to items, assemble items to a ruleset, structural roles, log form, canonical text</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-log/state.ts</code></th><td>3</td><td><code>LogState</code>, <code>fold</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim-log/check.ts</code></th><td>3</td><td><code>checkRuleset</code> (R3)</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-log/diff.ts</code></th><td>4</td><td><code>diff</code> (R8)</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-log/reapply.ts</code></th><td>5</td><td><code>reapply</code> (R19)</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-log/history.ts</code></th><td>6</td><td><code>undoRedo</code> (R10 to R14)</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-log/chain.ts</code></th><td>7</td><td><code>commitText</code>, <code>chainHash</code>, <code>verifyChain</code>, <code>GENESIS_HASH</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim-log/index.ts</code></th><td>8</td><td>The public surface for units 2 and 4</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-log/test/fixtures.ts</code>, <code>test/arbitraries.ts</code></th><td>2, 3</td><td>Builders, a two-version registry, fast-check rulesets</td></tr>
+        <tr><th scope="row"><code>docs/dev/sim-log.md</code>, <code>CLAUDE.md</code></th><td>8</td><td>The developer page and its link</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Commit and change types, and their parsers</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Move: <code>git mv src/lib/server/ids/base58.ts src/lib/ids/base58.ts</code> and <code>git mv src/lib/server/ids/base58.spec.ts src/lib/ids/base58.spec.ts</code> (fix the spec's import to <code>./base58</code>).</li>
+      <li>Create: <code>src/lib/server/ids/base58.ts</code> holding only <code>export { newId, isValidId, decodeId } from '$lib/ids/base58';</code> (its eight importers, for example <code>src/lib/server/sims/sim-roles.ts:5</code>, stay as they are; <code>factory.ts</code> re-exports from <code>./base58</code> and keeps working).</li>
+      <li>Create: <code>src/lib/sim-log/types.ts</code>, <code>src/lib/sim-log/parse.ts</code>, <code>src/lib/sim-log/parse.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>isValidId(s: string): boolean</code> (<code>src/lib/ids/base58.ts</code>); <code>DATASET_VERSION_RE</code> (<code>src/lib/data/dataset-version.ts:2</code>); <code>FIRST_DAY</code>, <code>LAST_DAY</code> (<code>src/lib/sim/levers/finance.ts:33-34</code>); <code>type Day</code> (<code>src/lib/timelapse/time.ts:7</code>); <code>type SimPolicy4</code> (<code>src/lib/timeline/policy4.ts:50</code>).</li>
+      <li>Produces, in <code>types.ts</code>:
+        <pre><code data-lang="ts">export type Change =
+  | { op: 'add'; key: string; shape: string; fields: Record&lt;string, unknown&gt;; after?: string | null }
+  | { op: 'end'; key: string; to: Day }
+  | { op: 'move'; key: string; after: string | null }
+  | { op: 'set'; key: string; field: string; value: string | number | boolean | null }
+  | { op: 'delete'; key: string };
+export type CommitKind = 'edit' | 'restore' | 'system';
+export interface Restores { position: number; as: 'undo' | 'redo' | 'jump' }
+/** What the author sends (R18's append). */
+export interface CommitDraft {
+  id: string; parent: number; kind: CommitKind; label: string; restores: Restores | null;
+  datasetVersion: string; shapes: number; build: string; source: string; changes: Change[];
+}
+/** A stored commit: the sim object adds seq, actor, at and hash. */
+export interface Commit extends CommitDraft { seq: number; actor: string; at: number; hash: string }
+/** What folding a commit needs. */
+export type FoldInput = Pick&lt;CommitDraft, 'changes' | 'shapes' | 'datasetVersion'&gt;;
+export interface RulesetContent { name: string; policy: SimPolicy4 }
+export interface Ruleset extends RulesetContent { datasetVersion: string | null }
+export class LogFormatError extends Error { readonly path: string; constructor(path: string, message: string) }
+export type LogErrorCode = 'invalid-change' | 'invalid-ruleset' | 'future-shapes';
+export class LogError extends Error {
+  readonly code: LogErrorCode; readonly index: number | null;
+  constructor(code: LogErrorCode, message: string, index?: number | null)
+}
+export const LABEL_MAX = 200; export const BUILD_MAX = 64; export const KEY_MAX = 256;
+export const SOURCE_RE = /^[a-z][a-z0-9-]*(\.[a-z0-9-]+)*$/; export const SOURCE_MAX = 64;</code></pre>
+        <code>LogFormatError</code>'s message is <code>`${path}: ${message}`</code>, as <code>PolicyFormatError</code> (<code>src/lib/sim-page/policy.ts:98-105</code>).
+      </li>
+      <li>Produces, in <code>parse.ts</code>: <code>parseChange(v: unknown, path: string): Change</code>; <code>parseCommitDraft(v: unknown): CommitDraft</code>; <code>parseCommit(v: unknown): Commit</code>. Paths use parse4's form (<code>changes[0].op</code>, <code>restores.position</code>). Each throws <code>LogFormatError</code> on the first bad field.</li>
+    </ul>
+    <h3>Rules the parsers enforce</h3>
+    <ul>
+      <li>Exact key sets (unknown key: path is that key, "unknown key"; missing: "missing"). <code>add</code> may carry <code>after</code> or not; every other op has a fixed set: <code>end {op,key,to}</code>, <code>move {op,key,after}</code>, <code>set {op,key,field,value}</code>, <code>delete {op,key}</code>.</li>
+      <li><code>key</code>, <code>shape</code>, <code>field</code>: strings of 1 to <code>KEY_MAX</code>. <code>after</code>: such a string or <code>null</code>. <code>to</code>: an integer day from <code>FIRST_DAY</code> to <code>LAST_DAY</code>. <code>value</code>: string, finite number, boolean or null. <code>fields</code>: a plain object whose every nested value is JSON (string, finite number, boolean, null, array, plain object); otherwise the path names the first bad nested value (<code>changes[0].fields.path[0][1]</code>).</li>
+      <li>Draft: <code>id</code> passes <code>isValidId</code>; <code>parent</code> integer &gt;= 0; <code>kind</code> one of the three; <code>label</code> string of at most <code>LABEL_MAX</code>; <code>restores</code> is non-null exactly when <code>kind === 'restore'</code>, with <code>position</code> an integer from 0 to <code>parent</code> and <code>as</code> one of the three; <code>datasetVersion</code> matches <code>DATASET_VERSION_RE</code>; <code>shapes</code> integer &gt;= 1; <code>build</code> 1 to <code>BUILD_MAX</code>; <code>source</code> matches <code>SOURCE_RE</code>, at most <code>SOURCE_MAX</code>; <code>changes</code> a non-empty array (<a href="#d14">decision 14</a>).</li>
+      <li>Stored commit: the draft's rules, plus <code>seq</code> integer &gt;= 1 with <code>parent === seq - 1</code> (path <code>parent</code>; R18 accepts only on the tip), <code>actor</code> 1 to 64 characters, <code>at</code> a safe integer &gt;= 0, <code>hash</code> matching <code>/^[0-9a-f]{64}$/</code>.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Move the id module and add the re-export, then write <code>src/lib/sim-log/parse.spec.ts</code>:
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import { newId } from '$lib/ids/base58';
+import { newId as serverNewId } from '$lib/server/ids/base58';
+import { parseChange, parseCommit, parseCommitDraft } from './parse';
+import { LogFormatError } from './types';
+
+const ID = 'CVBRX1eXcVRvAio3MBkuW'; // base58 of UUIDv7 019a8c3e-7b00-7000-8000-000000000001
+type J = Record&lt;string, unknown&gt;;
+const draft = (over: J = {}): J =&gt; ({
+  id: ID, parent: 0, kind: 'edit', label: 'Renamed', restores: null,
+  datasetVersion: 'fixture-0', shapes: 1, build: 'dev', source: 'sim.name',
+  changes: [{ op: 'set', key: 'sim', field: 'name', value: 'Mission' }],
+  ...over
+});
+const stored = (over: J = {}): J =&gt; ({
+  ...draft(), seq: 1, actor: 'actor-1', at: 1763164800000, hash: 'a'.repeat(64), ...over
+});
+function failsAt(run: () =&gt; unknown, path: string): void {
+  try {
+    run();
+  } catch (e) {
+    expect(e).toBeInstanceOf(LogFormatError);
+    expect((e as LogFormatError).path).toBe(path);
+    return;
+  }
+  expect.unreachable(`expected a LogFormatError at ${path}`);
+}
+
+describe('ids', () =&gt; {
+  it('keeps the server path as a re-export', () =&gt; {
+    expect(serverNewId).toBe(newId);
+  });
+});
+
+describe('parseChange', () =&gt; {
+  it.each([
+    [{ op: 'add', key: 'p:z1', shape: 'policy.painted', fields: { id: 'z1' }, after: null }],
+    [{ op: 'add', key: 's:20000:z1', shape: 'span.painted', fields: { from: 20000 } }],
+    [{ op: 'end', key: 's:20000:z1', to: 20100 }],
+    [{ op: 'move', key: 'p:z1', after: 'p:z0' }],
+    [{ op: 'set', key: 'p:z1', field: 'on', value: false }],
+    [{ op: 'delete', key: 'p:z1' }]
+  ])('parses %o', (c) =&gt; {
+    expect(parseChange(c, 'c')).toEqual(c);
+  });
+  it('rejects bad changes at their field', () =&gt; {
+    failsAt(() =&gt; parseChange({ op: 'patch', key: 'x' }, 'c'), 'c.op');
+    failsAt(() =&gt; parseChange({ op: 'end', key: 'x', to: 1.5 }, 'c'), 'c.to');
+    failsAt(() =&gt; parseChange({ op: 'delete', key: '' }, 'c'), 'c.key');
+    failsAt(() =&gt; parseChange({ op: 'delete', key: 'x', after: null }, 'c'), 'c.after');
+    failsAt(() =&gt; parseChange({ op: 'set', key: 'x', field: 'on', value: [1] }, 'c'), 'c.value');
+    failsAt(() =&gt; parseChange({ op: 'add', key: 'x', shape: 's', fields: [] }, 'c'), 'c.fields');
+    failsAt(
+      () =&gt; parseChange({ op: 'add', key: 'x', shape: 's', fields: { p: [[1, Infinity]] } }, 'c'),
+      'c.fields.p[0][1]'
+    );
+  });
+});
+
+describe('parseCommitDraft', () =&gt; {
+  it('returns an equal draft', () =&gt; {
+    expect(parseCommitDraft(draft())).toEqual(draft());
+  });
+  it('takes a restore with its target', () =&gt; {
+    const d = draft({ parent: 5, kind: 'restore', restores: { position: 4, as: 'undo' } });
+    expect(parseCommitDraft(d)).toEqual(d);
+  });
+  it.each([
+    [{ extra: 1 }, 'extra'],
+    [{ id: 'not-an-id' }, 'id'],
+    [{ parent: -1 }, 'parent'],
+    [{ kind: 'merge' }, 'kind'],
+    [{ kind: 'restore' }, 'restores'],
+    [{ restores: { position: 0, as: 'undo' } }, 'restores'],
+    [{ kind: 'restore', restores: { position: 1, as: 'undo' } }, 'restores.position'],
+    [{ kind: 'restore', restores: { position: 0, as: 'sideways' } }, 'restores.as'],
+    [{ label: 'x'.repeat(201) }, 'label'],
+    [{ datasetVersion: 'latest' }, 'datasetVersion'],
+    [{ shapes: 0 }, 'shapes'],
+    [{ build: '' }, 'build'],
+    [{ source: 'Bad Code' }, 'source'],
+    [{ changes: [] }, 'changes'],
+    [{ changes: [{ op: 'delete' }] }, 'changes[0].key']
+  ])('rejects %o at %s', (over, path) =&gt; {
+    failsAt(() =&gt; parseCommitDraft(draft(over)), path);
+  });
+});
+
+describe('parseCommit', () =&gt; {
+  it('returns an equal commit', () =&gt; {
+    expect(parseCommit(stored())).toEqual(stored());
+  });
+  it.each([
+    [{ seq: 0 }, 'seq'],
+    [{ seq: 2 }, 'parent'],
+    [{ actor: '' }, 'actor'],
+    [{ at: -1 }, 'at'],
+    [{ hash: 'xyz' }, 'hash']
+  ])('rejects %o at %s', (over, path) =&gt; {
+    failsAt(() =&gt; parseCommit(stored(over)), path);
+  });
+});</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run it and see it fail on the missing modules.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim-log/parse.spec.ts src/lib/ids</code></pre>
+        Expected: <code>parse.spec.ts</code> fails with "Failed to resolve import ./parse"; <code>src/lib/ids/base58.spec.ts</code> passes.
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Write <code>types.ts</code> as in the Interfaces block and <code>parse.ts</code> to the rules above. Use small local helpers in parse4's style (<code>rec</code>, <code>str</code>, <code>int</code>, <code>oneOf</code>, <code>j</code>; <code>parse4.ts:41-75</code>); they are private there, so write them here.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the specs again, then the gate.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim-log src/lib/ids src/lib/server</code></pre>
+        Expected: all pass. Then <code>npm run check</code> and <code>npm run lint</code> pass.
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/ids src/lib/server/ids src/lib/sim-log
+git commit -m "feat(sim-log): commit and change types and their parsers" -m "Move the base58 id helpers to src/lib/ids so the browser can import them; the server path re-exports them."</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Item keys, the shape registry at revision 1, flatten and assemble</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim-log/keys.ts</code>, <code>shapes.ts</code>, <code>items.ts</code>, <code>test/fixtures.ts</code>, <code>test/arbitraries.ts</code></li>
+      <li>Test: <code>src/lib/sim-log/keys.spec.ts</code>, <code>shapes.spec.ts</code>, <code>items.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 1's types; <code>canonicalJson</code> (<code>src/lib/sim-page/policy.ts:445</code>); <code>digest128</code> (<code>src/lib/sim/world/policy/intern.ts:111</code>); <code>SIM_TITLE_MAX</code> (<code>src/lib/members/copy.ts:4</code>, 63); <code>type Policy</code>, <code>Span</code>, <code>SimPolicy4</code>, <code>PolicyKind</code> (<code>policy4.ts</code>); <code>type CustomBrush</code>, <code>Stroke</code> (<code>policy.ts:35-51</code>).</li>
+      <li>Produces, in <code>keys.ts</code>:
+        <pre><code data-lang="ts">export const NAME_KEY = 'sim';
+export const policyKey = (id: string): string =&gt; `p:${id}`;
+export const spanKey = (policyId: string, from: Day): string =&gt; `s:${from}:${policyId}`;
+export interface StrokeFields {
+  span: string; brush: string; kind: 'paint' | 'erase'; stories: number | null;
+  path: [number, number][]; radiusM: number;
+}
+/** `k:` + digest128(canonicalJson(fields)). */
+export function strokeKeyBase(f: StrokeFields): string;
+/** The keys of a span's strokes in order: the n-th repeat of a base gets `~n` (n &gt;= 2). */
+export function strokeKeys(strokes: readonly StrokeFields[]): string[];
+/** True when `key` is `base` or `base~n` with n &gt;= 2. */
+export function isStrokeKeyOf(key: string, f: StrokeFields): boolean;
+export const listKey = (owner: PolicyKind | string): string =&gt; `l:${owner}`;</code></pre>
+      </li>
+      <li>Produces, in <code>shapes.ts</code>:
+        <pre><code data-lang="ts">export type Fields = Record&lt;string, unknown&gt;;
+export interface ShapeVersion {
+  /** Exact keys and primitive types; throws LogFormatError at `path`. */
+  parse(fields: unknown, path: string): Fields;
+  /** Field name to its value check; only these may be `set`. */
+  settable: Readonly&lt;Record&lt;string, (value: unknown, path: string) =&gt; unknown&gt;&gt;;
+  /** To the next version; absent on the newest. */
+  up?: { fields(f: Fields): Fields; set?(field: string, value: unknown): { field: string; value: unknown } };
+}
+export interface Registry {
+  current: number;
+  /** Revision to shape name to version (1-based). */
+  revisions: Readonly&lt;Record&lt;number, Readonly&lt;Record&lt;string, number&gt;&gt;&gt;&gt;;
+  /** Shape name to its versions, index 0 is version 1. Never shortened. */
+  shapes: Readonly&lt;Record&lt;string, readonly ShapeVersion[]&gt;&gt;;
+}
+export const SHAPES_REVISION = 1;
+export const REGISTRY: Registry;
+export const WHERE_ROWS: readonly { kind: PolicyKind; where: Selector['tag']; what: Effect['tag'] }[];
+export const DEFAULT_SIM_NAME = 'Untitled sim';
+/** The sim name check (R42): a string, trimmed, 1 to SIM_TITLE_MAX characters. */
+export function checkName(v: unknown, path: string): string;</code></pre>
+      </li>
+      <li>Produces, in <code>items.ts</code>:
+        <pre><code data-lang="ts">export interface Item { shape: string; fields: Fields }
+export interface Flat { items: Map&lt;string, Item&gt;; lists: Map&lt;string, string[]&gt; }
+/** Items of a log-form ruleset; throws RangeError on an empty brush. The sim item included. */
+export function flatten(r: RulesetContent): Flat;
+/** The ruleset the items describe; throws LogError('invalid-change') on a brush whose strokes disagree on kind or stories. */
+export function assemble(items: ReadonlyMap&lt;string, Item&gt;, lists: ReadonlyMap&lt;string, readonly string[]&gt;): RulesetContent;
+/** Structural roles by shape name (decision 16). */
+export function parentOf(item: Item): string | null;   // span: policyKey(id); stroke: fields.span; else null
+export function listOf(item: Item): string | null;     // policy: listKey(kind); stroke: listKey(fields.span); else null
+export function isEndable(shape: string): boolean;      // span.*
+export function keyFits(key: string, item: Item): boolean;
+export function toLogForm(p: SimPolicy4): SimPolicy4;    // drops brushes with no strokes
+export function rulesetText(r: RulesetContent): string;  // canonicalJson({ name, policy })</code></pre>
+      </li>
+    </ul>
+    <h3>Revision 1 (R62)</h3>
+    <table id="tbl-rev1">
+      <caption>The 16 shapes of revision 1, all at version 1</caption>
+      <thead>
+        <tr><th scope="col">Shape</th><th scope="col">Fields</th><th scope="col">Settable</th><th scope="col">Key, parent, list</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>sim</code></th><td><code>name</code></td><td><code>name</code> (<code>checkName</code>)</td><td><code>sim</code>; none; none</td></tr>
+        <tr><th scope="row"><code>policy.&lt;where&gt;</code>, one per row: transit, painted, category, routes, baseline, fund, terms</th><td><code>id</code> (1 to 80), <code>kind</code> (the row's kind), <code>where</code> (object whose <code>tag</code> is the row's), <code>label</code> (string, at most 80), <code>preset</code> (string or null), <code>on</code> (boolean)</td><td><code>label</code>, <code>on</code></td><td><code>p:&lt;id&gt;</code>; none; <code>l:&lt;kind&gt;</code></td></tr>
+        <tr><th scope="row"><code>span.&lt;where&gt;</code>, one per row</th><td><code>policy</code> (the policy id), <code>from</code> (day), <code>to</code> (day or null), <code>what</code> (object whose <code>tag</code> is the row's <code>what</code>; for <code>span.painted</code> exactly <code>{ tag: 'brushes' }</code>)</td><td>none (<code>end</code> applies)</td><td><code>s:&lt;from&gt;:&lt;policy&gt;</code>; <code>p:&lt;policy&gt;</code>; none (ordered by <code>from</code>)</td></tr>
+        <tr><th scope="row"><code>stroke</code></th><td><code>span</code> (a span key), <code>brush</code> (string), <code>kind</code> (<code>paint</code> or <code>erase</code>), <code>stories</code> (integer for paint, null for erase), <code>path</code> (array of number pairs), <code>radiusM</code> (number)</td><td>none</td><td><code>k:&lt;digest&gt;[~n]</code>; its <code>span</code>; <code>l:&lt;span key&gt;</code></td></tr>
+      </tbody>
+    </table>
+    <p>Shape parsers check exact keys and types only; the content of <code>where</code>, <code>what</code> and a stroke's numbers is checked by <code>checkRuleset</code> through <code>parsePolicy4</code> (Task 3), so there is one implementation of each rule. The rows are those of <code>WHERE_TAGS</code> and <code>WHAT_OF</code> (<code>parse4.ts:24-37</code>), copied as <code>WHERE_ROWS</code> because revision 1 freezes them.</p>
+    <h3>Assembly</h3>
+    <ul>
+      <li>Policies per kind in the order of <code>l:&lt;kind&gt;</code>; each policy object is <code>{ id, label, preset, on, where, spans }</code>.</li>
+      <li>A policy's spans are its span items sorted by <code>from</code>; each is <code>{ from, to, what }</code>.</li>
+      <li>A painted span's <code>what</code> is <code>{ tag: 'brushes', brushes }</code>: walk <code>l:&lt;span key&gt;</code>, group strokes by <code>brush</code> in order of first appearance; a paint brush is <code>{ id, kind: 'paint', strokes, stories }</code>, an erase brush <code>{ id, kind: 'erase', strokes }</code>, each stroke <code>{ path, radiusM }</code>.</li>
+      <li><code>flatten</code> is the exact inverse on log-form rulesets: <code>rulesetText(assemble(flatten(r))) === rulesetText(r)</code>.</li>
+    </ul>
+    <h3>Arbitraries (<code>test/arbitraries.ts</code>)</h3>
+    <ul>
+      <li><code>arbRuleset: fc.Arbitrary&lt;RulesetContent&gt;</code>, valid under <code>parsePolicy4(…, { asOf: null, presetLayer: 'reconcile' })</code> and <code>simDoc4Problems</code>, always in log form. It draws from one small universe so two draws share keys: names from <code>['Untitled sim', 'Mission', 'Outer Sunset']</code>; zoning ids <code>z1</code> to <code>z5</code> (each drawn as transit, painted or category), permitting <code>p1</code>, <code>p2</code> (routes, preset <code>observed</code>), money <code>m1</code> (baseline), <code>m2</code> (terms), <code>f1</code> and <code>f2</code> (fund pools <code>u-pool-1</code>, <code>u-pool-2</code> with programmes <code>u-prog-1</code>, <code>u-prog-2</code>, the same <code>what</code> in every span of a policy); ids unique per document and lists shuffled; labels and <code>on</code> drawn; spans from 0 to 3 non-overlapping, starting on <code>first(m)</code> for m in <code>[1, 3, 6, 12, 24]</code>, each <code>to</code> null (last span only) or <code>last(k)</code> before the next start; <code>what</code> from the builders below with one or two variants each (band stories 6 or 8, protect years for <code>newerThan</code> 10 or 20).</li>
+      <li>Painted spans hold 0 to 3 brushes with ids <code>b1</code> to <code>b3</code>, paint (stories 4 or 8) or erase, each with 1 to 3 strokes drawn from a pool of four fixed SF paths (inside <code>SF_BBOX</code>, <code>src/lib/plan/constants.ts:12</code>) and radii 10 or 50, so identical strokes in one brush occur.</li>
+      <li><code>arbPair: fc.Arbitrary&lt;[RulesetContent, RulesetContent]&gt;</code>: two independent draws.</li>
+      <li><code>test/fixtures.ts</code> holds the builders copied from <code>src/lib/timeline/parse4.spec.ts:9-62</code> (<code>AS_OF = FIXTURE_AS_OF</code>, <code>first</code>, <code>last</code>, <code>span</code>, <code>open</code>, <code>stroke</code>, <code>bandsW</code>, <code>brushesW</code>, <code>timingW</code>, <code>fundW</code>, <code>scaleEntry</code>, <code>pol</code>, <code>transit</code>, <code>painted</code>, <code>category</code>, <code>routes</code>, <code>baseline</code>, <code>fund</code>, <code>terms</code>, <code>doc</code>), plus <code>ruleset(policy: SimPolicy4, name = DEFAULT_SIM_NAME): RulesetContent</code> and <code>input(changes: Change[], over?: Partial&lt;FoldInput&gt;): FoldInput</code> (defaults <code>shapes: 1</code>, <code>datasetVersion: 'fixture-0'</code>).</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the three specs. Key assertions:
+        <pre><code data-lang="ts">// keys.spec.ts
+const F: StrokeFields = {
+  span: 's:20000:z2', brush: 'b1', kind: 'paint', stories: 5, path: [[-122.4, 37.7]], radiusM: 50
+};
+it('names items', () =&gt; {
+  expect([NAME_KEY, policyKey('z1'), spanKey('z1', 20000)]).toEqual(['sim', 'p:z1', 's:20000:z1']);
+});
+it('pins the stroke digest (a change breaks every stored stroke key)', () =&gt; {
+  expect(strokeKeyBase(F)).toBe('k:b9e72c9b421bb2613e2a6d2b06c47b89');
+});
+it('identical strokes get ~n', () =&gt; {
+  const b = strokeKeyBase(F);
+  const other = { ...F, radiusM: 10 };
+  expect(strokeKeys([F, other, F, F])).toEqual([b, strokeKeyBase(other), `${b}~2`, `${b}~3`]);
+  expect(isStrokeKeyOf(`${b}~2`, F)).toBe(true);
+  expect(isStrokeKeyOf(`${b}~1`, F)).toBe(false);
+});
+
+// shapes.spec.ts
+it('revision 1 declares the sixteen shapes at version 1', () =&gt; {
+  const rows = ['transit', 'painted', 'category', 'routes', 'baseline', 'fund', 'terms'];
+  const names = ['sim', 'stroke', ...rows.flatMap((r) =&gt; [`policy.${r}`, `span.${r}`])].sort();
+  expect(REGISTRY.current).toBe(SHAPES_REVISION);
+  expect(Object.keys(REGISTRY.revisions[1]).sort()).toEqual(names);
+  expect(Object.values(REGISTRY.revisions[1]).every((v) =&gt; v === 1)).toBe(true);
+});
+it('never drops a shape and has an upgrade out of every older version', () =&gt; {
+  for (let r = 2; r &lt;= REGISTRY.current; r++)
+    for (const s of Object.keys(REGISTRY.revisions[r - 1]))
+      expect(REGISTRY.revisions[r][s]).toBeGreaterThanOrEqual(REGISTRY.revisions[r - 1][s]);
+  for (const vs of Object.values(REGISTRY.shapes))
+    vs.slice(0, -1).forEach((v) =&gt; expect(v.up).toBeDefined());
+});
+it('checks names as checkSimTitle does', () =&gt; {
+  expect(checkName('Mission', 'v')).toBe('Mission');
+  expect(checkName('x'.repeat(63), 'v')).toHaveLength(63);
+  for (const bad of ['', ' Mission', 'Mission ', 'x'.repeat(64), 7])
+    expect(() =&gt; checkName(bad, 'v')).toThrow(LogFormatError);
+});
+it('keeps where, what and kind on their row', () =&gt; {
+  const t = REGISTRY.shapes['policy.transit'][0];
+  const ok = { id: 'z1', kind: 'zoning', where: { tag: 'transit', stopTypes: [] }, label: '', preset: null, on: true };
+  expect(t.parse(ok, 'f')).toEqual(ok);
+  expect(() =&gt; t.parse({ ...ok, where: { tag: 'painted' } }, 'f')).toThrow(LogFormatError);
+  expect(() =&gt; t.parse({ ...ok, kind: 'money' }, 'f')).toThrow(LogFormatError);
+  const p = REGISTRY.shapes['span.painted'][0];
+  const span = { policy: 'z2', from: 20000, to: null, what: { tag: 'brushes' } };
+  expect(p.parse(span, 'f')).toEqual(span);
+  expect(() =&gt; p.parse({ ...span, what: { tag: 'brushes', brushes: [] } }, 'f')).toThrow(LogFormatError);
+  const k = REGISTRY.shapes['stroke'][0];
+  expect(() =&gt; k.parse({ ...F, stories: null }, 'f')).toThrow(LogFormatError);
+  expect(() =&gt; k.parse({ ...F, kind: 'erase' }, 'f')).toThrow(LogFormatError);
+});
+
+// items.spec.ts
+it('flattens a painted policy into a policy, a span and ordered strokes', () =&gt; {
+  const s1 = { path: [[-122.4, 37.7]], radiusM: 50 };
+  const s2 = { path: [[-122.41, 37.71]], radiusM: 10 };
+  const r = ruleset(doc([painted('z2', [open({ tag: 'brushes', brushes: [
+    { id: 'b1', kind: 'paint', strokes: [s1, s2], stories: 5 },
+    { id: 'b2', kind: 'erase', strokes: [s1] }
+  ] })])]));
+  const { items, lists } = flatten(r);
+  const sk = spanKey('z2', first(1));
+  const strokes = lists.get(listKey(sk))!;
+  expect([...items.keys()].slice(0, 3)).toEqual(['sim', 'p:z2', sk]);
+  expect(lists.get(listKey('zoning'))).toEqual(['p:z2']);
+  expect(strokes.map((k) =&gt; items.get(k)!.fields.brush)).toEqual(['b1', 'b1', 'b2']);
+  expect(items.get(sk)!.fields.what).toEqual({ tag: 'brushes' });
+});
+it('assembles what it flattened, exactly', () =&gt; {
+  fc.assert(fc.property(arbRuleset, (r) =&gt; {
+    const { items, lists } = flatten(r);
+    expect(rulesetText(assemble(items, lists))).toBe(rulesetText(r));
+  }));
+});
+it('refuses an empty brush, which toLogForm drops', () =&gt; {
+  const p = doc([painted('z2', [open({ tag: 'brushes', brushes: [{ id: 'b1', kind: 'erase', strokes: [] }] })])]);
+  expect(() =&gt; flatten(ruleset(p))).toThrow(RangeError);
+  expect(toLogForm(p).kinds.zoning[0].spans[0].what).toEqual({ tag: 'brushes', brushes: [] });
+});
+it('draws only valid, log-form rulesets', () =&gt; {
+  fc.assert(fc.property(arbRuleset, (r) =&gt; {
+    expect(parsePolicy4(r.policy, { asOf: null, presetLayer: 'reconcile' })).toEqual(r.policy);
+    expect(simDoc4Problems({ schema: 4, kind: 'sim', datasetVersion: 'fixture-0', policy: r.policy })).toEqual([]);
+    expect(toLogForm(r.policy)).toEqual(r.policy);
+  }));
+});</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail on the missing modules.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim-log/keys.spec.ts src/lib/sim-log/shapes.spec.ts src/lib/sim-log/items.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Implement <code>keys.ts</code>, <code>shapes.ts</code> (revision 1 per <code>#tbl-rev1</code>; <code>REGISTRY.revisions</code> is <code>{ 1: { every name: 1 } }</code>), <code>items.ts</code>, <code>test/fixtures.ts</code> and <code>test/arbitraries.ts</code>. <code>flatten</code> emits items in document order (sim, then per kind each policy, its spans, their strokes) and computes stroke keys per span with <code>strokeKeys</code> over the span's strokes in order. <code>keyFits</code> compares against <code>policyKey</code>, <code>spanKey</code> (from the span's <code>policy</code> and <code>from</code>), <code>isStrokeKeyOf</code>, or <code>NAME_KEY</code>.</li>
+      <li id="t2-s4"><input type="checkbox"> Run the three specs; they pass. Then <code>npm run check</code> and <code>npm run lint</code>.</li>
+      <li id="t2-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim-log
+git commit -m "feat(sim-log): item keys, the shape registry at revision 1, flatten and assemble"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: LogState, fold, upgrade on read and the validity check</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim-log/state.ts</code>, <code>src/lib/sim-log/check.ts</code></li>
+      <li>Modify: <code>src/lib/sim-log/shapes.ts</code> (upgrade helpers), <code>src/lib/sim-log/test/fixtures.ts</code> (<code>twoVersionRegistry</code>)</li>
+      <li>Test: <code>src/lib/sim-log/state.spec.ts</code>, <code>src/lib/sim-log/check.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Tasks 1 and 2; <code>parsePolicy4</code> (<code>parse4.ts:353</code>); <code>simDoc4Problems</code> (<code>sim-doc4.ts:74</code>); <code>PolicyFormatError</code>; <code>DEFAULT_POLICY4</code> (<code>policy4.ts:58</code>).</li>
+      <li>Produces, in <code>shapes.ts</code>:
+        <pre><code data-lang="ts">/** The version of `shape` in `revision`; LogError('future-shapes') above reg.current, LogError('invalid-change') when the revision lacks the shape. */
+export function versionAt(reg: Registry, revision: number, shape: string): number;
+/** Fields written at `from` raised to the current version through each `up.fields`. */
+export function upgradeFields(reg: Registry, shape: string, from: number, f: Fields): Fields;
+/** A set written at `from` raised through each `up.set` (identity when absent). */
+export function upgradeSet(reg: Registry, shape: string, from: number, field: string, value: unknown): { field: string; value: unknown };</code></pre>
+      </li>
+      <li>Produces, in <code>state.ts</code>:
+        <pre><code data-lang="ts">export class LogState {
+  static empty(registry?: Registry): LogState;                       // default REGISTRY
+  static of(r: RulesetContent, datasetVersion: string | null, registry?: Registry): LogState;
+  get registry(): Registry;
+  /** Apply one commit's changes, read under input.shapes. Atomic: on throw the state is unchanged.
+   *  With check, also runs checkRuleset and rolls back with LogError('invalid-ruleset'). */
+  apply(input: FoldInput, opts?: { check?: boolean }): void;
+  /** Memoised until the next apply. */
+  ruleset(): Ruleset;
+  item(key: string): Item | undefined;
+  list(listKey: string): readonly string[];                          // [] when none
+  clone(): LogState;
+}
+export function fold(commits: readonly FoldInput[], registry?: Registry): Ruleset;</code></pre>
+      </li>
+      <li>Produces, in <code>check.ts</code>: <code>export interface RulesetProblem { path: string; message: string }</code> and <code>checkRuleset(r: Ruleset): RulesetProblem | null</code>: <code>checkName</code>, then <code>parsePolicy4(r.policy, { asOf: null, presetLayer: 'reconcile' })</code> (a <code>PolicyFormatError</code> becomes <code>{ path: `policy.${e.path}`, message }</code>), then the first of <code>simDoc4Problems({ schema: 4, kind: 'sim', datasetVersion: r.datasetVersion ?? 'fixture-0', title: r.name, policy: r.policy })</code>.</li>
+      <li>Produces, in <code>test/fixtures.ts</code>: <code>twoVersionRegistry(): Registry</code>: current 2; <code>policy.transit</code> has a legacy version 1 whose label field is named <code>title</code> (settable <code>title</code>, <code>on</code>) with <code>up.fields</code> renaming <code>title</code> to <code>label</code> and <code>up.set</code> mapping <code>title</code> to <code>label</code>, followed by REGISTRY's version as version 2; revision 1 maps <code>policy.transit</code> to 1 and revision 2 to 2; every other shape is REGISTRY's at 1 in both.</li>
+    </ul>
+    <h3>What each change does</h3>
+    <p>Every change is first read under <code>input.shapes</code>: an <code>add</code>'s fields go through the shape's parser at the written version, then <code>upgradeFields</code>; a <code>set</code> goes through <code>upgradeSet</code> for the item's shape, then the current version's settable check. A failure throws <code>LogError('invalid-change', message, index)</code>.</p>
+    <table id="tbl-apply">
+      <caption>Change semantics in <code>LogState.apply</code></caption>
+      <thead>
+        <tr><th scope="col">Change</th><th scope="col">Valid when</th><th scope="col">Effect</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>add</code></th><td>The shape exists; the key is free, not <code>sim</code>, and <code>keyFits</code>; the parent exists with the matching shape (<code>span.&lt;row&gt;</code> under <code>policy.&lt;row&gt;</code>, <code>stroke</code> under <code>span.painted</code>); <code>after</code> is present exactly for a listed shape and is null or a key in the same list.</td><td>The item exists; a listed item goes right after <code>after</code> (first when null).</td></tr>
+        <tr><th scope="row"><code>end</code></th><td>The item is a span; <code>from &lt;= to</code>; its current <code>to</code> is null or greater than <code>to</code>.</td><td>The span's <code>to</code> becomes <code>to</code>.</td></tr>
+        <tr><th scope="row"><code>move</code></th><td>The item is listed; <code>after</code> is null or another key in its list.</td><td>Removed from its place, put right after <code>after</code> (first when null).</td></tr>
+        <tr><th scope="row"><code>set</code></th><td>The item exists; the field is settable on its shape; the value passes the field's check.</td><td>The field becomes the value.</td></tr>
+        <tr><th scope="row"><code>delete</code></th><td>The item exists and is not <code>sim</code>.</td><td>The item, its descendants and their list entries are gone.</td></tr>
+      </tbody>
+    </table>
+    <p>The ruleset's <code>datasetVersion</code> becomes <code>input.datasetVersion</code> (R54: a position reads on its last commit's dataset). Implementation (builder's call): mutate in place with an undo journal of touched items and lists, so a commit costs its own changes, not a copy of the state; keep a parent-to-children index so a cascade and a policy's spans are found without a scan. <code>ruleset()</code> calls <code>assemble</code>.</p>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write <code>state.spec.ts</code> and <code>check.spec.ts</code>. Key cases (fixtures from Task 2; <code>pk = policyKey</code>; <code>sk = spanKey</code>):
+        <pre><code data-lang="ts">const metro = { id: 'z1', kind: 'zoning', where: { tag: 'transit', stopTypes: ['metro'] }, label: 'Metro', preset: null, on: true };
+const addMetro = { op: 'add', key: 'p:z1', shape: 'policy.transit', fields: metro, after: null } as const;
+const addSpan = { op: 'add', key: sk('z1', first(1)), shape: 'span.transit',
+  fields: { policy: 'z1', from: first(1), to: null, what: bandsW() } } as const;
+
+it('folds nothing to the default ruleset', () =&gt; {
+  expect(fold([])).toEqual({ name: DEFAULT_SIM_NAME, policy: DEFAULT_POLICY4, datasetVersion: null });
+});
+it('adds, sets, ends, moves and deletes', () =&gt; {
+  const r = fold([
+    input([addMetro, addSpan]),
+    input([{ op: 'set', key: 'p:z1', field: 'on', value: false },
+           { op: 'set', key: 'sim', field: 'name', value: 'Mission' },
+           { op: 'end', key: sk('z1', first(1)), to: last(12) }], { datasetVersion: '2026-11-08-3b7fa918' })
+  ]);
+  expect(r.name).toBe('Mission');
+  expect(r.datasetVersion).toBe('2026-11-08-3b7fa918');
+  expect(r.policy.kinds.zoning).toEqual([{ ...transit('z1', [span(first(1), last(12), bandsW())]), label: 'Metro', on: false }]);
+});
+it('a delete cascades to spans and strokes', () =&gt; {
+  const s = LogState.of(ruleset(doc([painted('z2')])), null);
+  s.apply(input([{ op: 'delete', key: 'p:z2' }]));
+  expect(s.ruleset().policy).toEqual(DEFAULT_POLICY4);
+  expect(s.list(listKey(sk('z2', first(1))))).toEqual([]);
+});
+it('moves within a kind', () =&gt; {
+  const s = LogState.of(ruleset(doc([transit('z1'), painted('z2')])), null);
+  s.apply(input([{ op: 'move', key: 'p:z2', after: null }]));
+  expect(s.ruleset().policy.kinds.zoning.map((p) =&gt; p.id)).toEqual(['z2', 'z1']);
+});
+it.each([
+  ['an existing key', [addMetro, addMetro], 1],
+  ['a missing parent', [addSpan], 0],
+  ['a key that does not fit', [{ ...addMetro, key: 'p:z9' }], 0],
+  ['a listed add without after', [{ op: 'add', key: 'p:z1', shape: 'policy.transit', fields: metro }], 0],
+  ['an unknown shape', [{ ...addMetro, shape: 'policy.street' }], 0],
+  ['a set of a fixed field', [addMetro, { op: 'set', key: 'p:z1', field: 'preset', value: 'x' }], 1],
+  ['an untrimmed name', [{ op: 'set', key: 'sim', field: 'name', value: ' x' }], 0],
+  ['an end that extends', [addMetro, addSpan, { op: 'end', key: addSpan.key, to: last(3) },
+    { op: 'end', key: addSpan.key, to: last(6) }], 3],
+  ['an end before from', [addMetro, addSpan, { op: 'end', key: addSpan.key, to: first(1) - 1 }], 2],
+  ['a move of a span', [addMetro, addSpan, { op: 'move', key: addSpan.key, after: null }], 2],
+  ['a delete of the name', [{ op: 'delete', key: 'sim' }], 0],
+  ['a delete of nothing', [{ op: 'delete', key: 'p:z1' }], 0]
+])('refuses %s, naming the change', (_, changes, index) =&gt; {
+  expect(() =&gt; fold([input(changes as Change[])])).toThrow(
+    expect.objectContaining({ code: 'invalid-change', index })
+  );
+});
+it('apply is atomic', () =&gt; {
+  const s = LogState.of(ruleset(doc([transit('z1')])), null);
+  const before = rulesetText(s.ruleset());
+  expect(() =&gt; s.apply(input([{ op: 'set', key: 'p:z1', field: 'on', value: false },
+    { op: 'delete', key: 'p:z9' }]))).toThrow(LogError);
+  expect(rulesetText(s.ruleset())).toBe(before);
+});
+it('apply with check rolls back a ruleset that does not parse', () =&gt; {
+  const s = LogState.of(ruleset(doc([transit('z1', [span(first(1), last(6), bandsW())])])), null);
+  const before = rulesetText(s.ruleset());
+  const overlap = { op: 'add', key: sk('z1', first(3)), shape: 'span.transit',
+    fields: { policy: 'z1', from: first(3), to: null, what: bandsW() } } as const;
+  expect(() =&gt; s.apply(input([overlap]), { check: true })).toThrow(
+    expect.objectContaining({ code: 'invalid-ruleset' })
+  );
+  expect(rulesetText(s.ruleset())).toBe(before);
+});
+it('a newer shape revision is future-shapes', () =&gt; {
+  expect(() =&gt; fold([input([addMetro], { shapes: 2 })])).toThrow(
+    expect.objectContaining({ code: 'future-shapes' })
+  );
+});
+it('an older shape version folds to the same text as its upgraded form', () =&gt; {
+  const reg = twoVersionRegistry();
+  const { label, ...rest } = metro;
+  const old = fold([
+    input([{ ...addMetro, fields: { ...rest, title: label } }], { shapes: 1 }),
+    input([{ op: 'set', key: 'p:z1', field: 'title', value: 'Metro 2' }], { shapes: 1 })
+  ], reg);
+  const now = fold([
+    input([addMetro], { shapes: 2 }),
+    input([{ op: 'set', key: 'p:z1', field: 'label', value: 'Metro 2' }], { shapes: 2 })
+  ], reg);
+  expect(rulesetText(old)).toBe(rulesetText(now));
+  expect(old.policy.kinds.zoning[0].label).toBe('Metro 2');
+});
+it('of() holds the ruleset it was given', () =&gt; {
+  fc.assert(fc.property(arbRuleset, (r) =&gt; {
+    expect(rulesetText(LogState.of(r, null).ruleset())).toBe(rulesetText(r));
+  }));
+});
+
+// check.spec.ts
+it('passes a valid ruleset', () =&gt; {
+  expect(checkRuleset({ ...ruleset(doc([transit('z1')])), datasetVersion: null })).toBeNull();
+});
+it('names the field parsePolicy4 names', () =&gt; {
+  const bad = doc([transit('z1', [span(first(1), last(6), bandsW()), span(first(3), null, bandsW())])]);
+  expect(checkRuleset({ ...ruleset(bad), datasetVersion: null })?.path).toBe('policy.kinds.zoning[0].spans[1].from');
+});
+it('a retired preset still checks', () =&gt; {
+  const set = { ...structuredClone(OBSERVED_TIMING.current), preset: 'ceqaInfill' };
+  const p = doc([], [routes('p1', [open({ tag: 'timing', set })])].map((x) =&gt; ({ ...x, preset: 'ceqaInfill' })));
+  expect(checkRuleset({ ...ruleset(p), datasetVersion: null })).toBeNull();
+});
+it('refuses a ruleset over the size limit', () =&gt; {
+  // Six strokes of 2,000 points serialize (quantized) to about 288 KB, over MAX_PLAN_BYTES (262,144).
+  const many = Array.from({ length: 6 }, (_, i) =&gt; ({ path: Array.from({ length: 2000 }, (_, k) =&gt;
+    [-122.4 + k * 1e-6, 37.7 + i * 1e-6] as [number, number]), radiusM: 50 }));
+  const p = doc([painted('z2', [open({ tag: 'brushes', brushes: [{ id: 'b1', kind: 'paint', strokes: many, stories: 5 }] })])]);
+  expect(checkRuleset({ ...ruleset(p), datasetVersion: null })?.message).toMatch(/larger than/);
+});</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim-log/state.spec.ts src/lib/sim-log/check.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement the upgrade helpers, <code>twoVersionRegistry</code>, <code>LogState</code>, <code>fold</code> and <code>checkRuleset</code> to <code>#tbl-apply</code>.</li>
+      <li id="t3-s4"><input type="checkbox"> Run all of <code>src/lib/sim-log</code>; it passes. Then <code>npm run check</code> and <code>npm run lint</code>.</li>
+      <li id="t3-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim-log
+git commit -m "feat(sim-log): fold a log to a ruleset, upgrading each commit from its shape revision"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: diff</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim-log/diff.ts</code></li>
+      <li>Test: <code>src/lib/sim-log/diff.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>flatten</code>, <code>parentOf</code>, <code>listOf</code>, <code>isEndable</code>, <code>toLogForm</code>, <code>rulesetText</code>, <code>REGISTRY</code> (settable fields of the current versions), <code>LogState</code> (tests only).</li>
+      <li>Produces: <code>diff(a: RulesetContent, b: RulesetContent): Change[]</code>. Changes are written under <code>SHAPES_REVISION</code>. Throws <code>RangeError</code> when <code>b</code> is not in log form. <code>diff(a, a)</code> is <code>[]</code>.</li>
+    </ul>
+    <h3>Algorithm</h3>
+    <pre><code data-lang="text">A = flatten(a); B = flatten(b)
+same(k): k in A and B, same shape, fields equal (canonicalJson) except
+         the shape's settable fields, and for a span `to` when B.to is a truncation of A.to
+         (B.to !== null and (A.to === null or B.to &lt; A.to))
+survives(k): same(k) and (parentOf(B[k]) is null or survives(parent))
+1. deletes  for k in A in flatten order, not survives(k), and its parent survives or has none:
+            { op: 'delete', key: k }                  (a cascade removes the rest)
+2. by level policies, then spans, then strokes:
+   listed   for each list L of that level in B, in B order:
+              stable = longest increasing subsequence of the surviving keys of L,
+                       taken in A's list order and ranked by their index in B's list
+              prev = null
+              for k in B's list L:
+                if not survives(k): { op: 'add', key: k, shape, fields: B[k].fields, after: prev }
+                else if k not in stable: { op: 'move', key: k, after: prev }
+                prev = k
+   spans    for each span k in B, not survives(k): { op: 'add', key: k, shape, fields }
+3. sets     name first (key 'sim'), then each surviving item's settable fields that differ
+4. ends     each surviving span whose `to` differs: { op: 'end', key, to: B.to }</code></pre>
+    <p>The property test below is the referee for the ordering; a builder may use another minimal-move method if it passes.</p>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write <code>diff.spec.ts</code>:
+        <pre><code data-lang="ts">const applied = (a: RulesetContent, changes: Change[]): string =&gt; {
+  const s = LogState.of(a, null);
+  s.apply(input(changes));
+  return rulesetText(s.ruleset());
+};
+const r = (z: unknown[], name?: string) =&gt; ruleset(doc(z as never[]), name);
+
+it('is empty between equal rulesets', () =&gt; {
+  fc.assert(fc.property(arbRuleset, (x) =&gt; { expect(diff(x, x)).toEqual([]); }));
+});
+it('renames with one set', () =&gt; {
+  expect(diff(r([]), r([], 'Mission'))).toEqual([{ op: 'set', key: 'sim', field: 'name', value: 'Mission' }]);
+});
+it('switches a policy off with one set', () =&gt; {
+  expect(diff(r([transit('z1')]), r([{ ...transit('z1'), on: false }]))).toEqual([
+    { op: 'set', key: 'p:z1', field: 'on', value: false }
+  ]);
+});
+it('reorders with one move', () =&gt; {
+  expect(diff(r([transit('z1'), transit('z3'), painted('z2')]),
+              r([painted('z2'), transit('z1'), transit('z3')]))).toEqual([
+    { op: 'move', key: 'p:z2', after: null }
+  ]);
+});
+it('truncates with end, and extends by delete and add', () =&gt; {
+  const open1 = r([transit('z1')]);
+  const to6 = r([transit('z1', [span(first(1), last(6), bandsW())])]);
+  const k = spanKey('z1', first(1));
+  expect(diff(open1, to6)).toEqual([{ op: 'end', key: k, to: last(6) }]);
+  expect(diff(to6, open1).map((c) =&gt; [c.op, c.key])).toEqual([['delete', k], ['add', k]]);
+});
+it('changes stories by replacing the span (R4)', () =&gt; {
+  const k = spanKey('z1', first(1));
+  expect(diff(r([transit('z1')]), r([transit('z1', [open(bandsW(8))])])).map((c) =&gt; [c.op, c.key]))
+    .toEqual([['delete', k], ['add', k]]);
+});
+it('adds one stroke after the last', () =&gt; {
+  const s1 = { path: [[-122.4, 37.7]], radiusM: 50 };
+  const s2 = { path: [[-122.41, 37.71]], radiusM: 10 };
+  const brush = (strokes: unknown[]) =&gt; open({ tag: 'brushes', brushes: [{ id: 'b1', kind: 'paint', strokes, stories: 5 }] });
+  const a = r([painted('z2', [brush([s1])])]);
+  const b = r([painted('z2', [brush([s1, s2])])]);
+  const changes = diff(a, b);
+  const strokes = flatten(b).lists.get(listKey(spanKey('z2', first(1))))!;
+  expect(changes).toEqual([{ op: 'add', key: strokes[1], shape: 'stroke',
+    fields: expect.objectContaining({ brush: 'b1', radiusM: 10 }), after: strokes[0] }]);
+});
+it('changing a policy where replaces it and everything under it', () =&gt; {
+  const a = r([transit('z1')]);
+  const b = r([{ ...transit('z1'), where: { tag: 'transit', stopTypes: ['rapidBus'] } }]);
+  expect(diff(a, b).map((c) =&gt; c.op)).toEqual(['delete', 'add', 'add']);
+  expect(applied(a, diff(a, b))).toBe(rulesetText(b));
+});
+it('refuses a target not in log form', () =&gt; {
+  const empty = r([painted('z2', [open({ tag: 'brushes', brushes: [{ id: 'b1', kind: 'erase', strokes: [] }] })])]);
+  expect(() =&gt; diff(r([]), empty)).toThrow(RangeError);
+});
+it('applying diff(a, b) to a gives b exactly, order included (R8)', () =&gt; {
+  fc.assert(fc.property(arbPair, ([a, b]) =&gt; {
+    expect(applied(a, diff(a, b))).toBe(rulesetText(b));
+  }), { numRuns: 300 });
+});
+it('a restore reproduces the earlier ruleset exactly (R10)', () =&gt; {
+  fc.assert(fc.property(fc.array(arbRuleset, { minLength: 2, maxLength: 6 }), fc.nat(), (rs, pick) =&gt; {
+    const s = LogState.empty();
+    let prev: RulesetContent = { name: DEFAULT_SIM_NAME, policy: DEFAULT_POLICY4 };
+    for (const x of rs) { const c = diff(prev, x); if (c.length) s.apply(input(c)); prev = x; }
+    const target = rs[pick % rs.length];
+    const c = diff(s.ruleset(), target);
+    if (c.length) s.apply(input(c));
+    expect(rulesetText(s.ruleset())).toBe(rulesetText(target));
+  }));
+});</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run it and see it fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim-log/diff.spec.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Implement <code>diff</code> to the algorithm.</li>
+      <li id="t4-s4"><input type="checkbox"> Run all of <code>src/lib/sim-log</code>; it passes. Then <code>npm run check</code> and <code>npm run lint</code>.</li>
+      <li id="t4-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim-log
+git commit -m "feat(sim-log): diff two rulesets into changes, list order included"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Re-applying pending changes on a new tip</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim-log/reapply.ts</code></li>
+      <li>Test: <code>src/lib/sim-log/reapply.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>LogState</code> (<code>item</code>, <code>list</code>, <code>clone</code>, <code>apply</code> with <code>check</code>), <code>listOf</code>, <code>parentOf</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export type DropReason = 'gone' | 'exists' | 'not-truncation';
+export interface Dropped { index: number; change: Change; why: DropReason }
+export type Reapplied =
+  | { ok: true; changes: Change[]; dropped: Dropped[] }
+  | { ok: false; why: 'empty' | 'invalid'; dropped: Dropped[] };
+/** R19: re-apply one pending commit's stored changes on `tip`. Never mutates `tip`. */
+export function reapply(tip: LogState, input: FoldInput): Reapplied;</code></pre>
+      </li>
+    </ul>
+    <p>Walk the changes in order on a clone of <code>tip</code>, applying each kept change as you go, so a later change sees an earlier one. A change is dropped as <code>gone</code> when its item (for <code>end</code>, <code>move</code>, <code>set</code>, <code>delete</code>) or its parent (for <code>add</code>) is missing; as <code>exists</code> when an <code>add</code>'s key is taken; as <code>not-truncation</code> when an <code>end</code> no longer shortens the span. An <code>add</code> or <code>move</code> whose <code>after</code> is not in the list is kept with <code>after</code> set to the list's last key (null when empty). Kept changes are returned as written (still under <code>input.shapes</code>) apart from that re-anchoring. None kept: <code>empty</code>. A kept change that still fails, or a result that fails <code>checkRuleset</code>: <code>invalid</code>. A pending <code>restore</code> is not this function's job: unit 4 recomputes it as <code>diff(new tip ruleset, target ruleset)</code> (R18).</p>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write <code>reapply.spec.ts</code>:
+        <pre><code data-lang="ts">const tipOf = (z: unknown[], m: unknown[] = []) =&gt; LogState.of(ruleset(doc(z as never[], [], m as never[])), null);
+
+it('keeps everything when the tip is the state the changes were made on', () =&gt; {
+  fc.assert(fc.property(arbPair, ([a, b]) =&gt; {
+    const changes = diff(a, b);
+    fc.pre(changes.length &gt; 0);
+    expect(reapply(LogState.of(a, null), input(changes))).toEqual({ ok: true, changes, dropped: [] });
+  }));
+});
+it('drops a change whose item is gone, and the rest stands', () =&gt; {
+  const changes: Change[] = [
+    { op: 'set', key: 'p:z1', field: 'label', value: 'Metro' },
+    { op: 'set', key: 'sim', field: 'name', value: 'Mission' }
+  ];
+  const out = reapply(tipOf([]), input(changes));
+  expect(out).toEqual({ ok: true, changes: [changes[1]], dropped: [{ index: 0, change: changes[0], why: 'gone' }] });
+});
+it('drops a commit left with no changes', () =&gt; {
+  const out = reapply(tipOf([]), input([{ op: 'delete', key: 'p:z1' }]));
+  expect(out).toMatchObject({ ok: false, why: 'empty' });
+});
+it('re-anchors an add whose sibling is gone', () =&gt; {
+  const add = { op: 'add', key: 'p:z3', shape: 'policy.category', after: 'p:z1',
+    fields: { id: 'z3', kind: 'zoning', where: { tag: 'category', category: 'historic' }, label: '', preset: null, on: true } } as const;
+  const out = reapply(tipOf([painted('z2')]), input([add]));
+  expect(out).toEqual({ ok: true, changes: [{ ...add, after: 'p:z2' }], dropped: [] });
+});
+it('drops a stroke another tab already added', () =&gt; {
+  const tip = tipOf([painted('z2')]);
+  const [k] = tip.list(listKey(spanKey('z2', first(1))));
+  const again = { op: 'add', key: k, shape: 'stroke', fields: tip.item(k)!.fields, after: null } as const;
+  const out = reapply(tip, input([again]));
+  expect(out).toMatchObject({ ok: false, why: 'empty', dropped: [{ why: 'exists' }] });
+});
+it('drops an end that no longer shortens the span', () =&gt; {
+  const tip = tipOf([transit('z1', [span(first(1), last(3), bandsW())])]);
+  const out = reapply(tip, input([{ op: 'end', key: spanKey('z1', first(1)), to: last(6) }]));
+  expect(out).toMatchObject({ ok: false, why: 'empty', dropped: [{ why: 'not-truncation' }] });
+});
+it('drops a commit that no longer folds to a valid ruleset', () =&gt; {
+  const tip = tipOf([], [fund('f1', 'u-pool-1')]);
+  const other = fund('f2', 'u-pool-1');
+  const { spans, ...pf } = other;
+  const changes: Change[] = [
+    { op: 'add', key: 'p:f2', shape: 'policy.fund', fields: { ...pf, kind: 'money' }, after: 'p:f1' },
+    { op: 'add', key: spanKey('f2', spans[0].from), shape: 'span.fund',
+      fields: { policy: 'f2', ...spans[0] } }
+  ];
+  expect(reapply(tip, input(changes))).toMatchObject({ ok: false, why: 'invalid' });
+});
+it('never changes the tip', () =&gt; {
+  const tip = tipOf([transit('z1')]);
+  const before = rulesetText(tip.ruleset());
+  reapply(tip, input([{ op: 'delete', key: 'p:z1' }]));
+  expect(rulesetText(tip.ruleset())).toBe(before);
+});</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run it and see it fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim-log/reapply.spec.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Implement <code>reapply</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Run all of <code>src/lib/sim-log</code>; it passes. Then <code>npm run check</code> and <code>npm run lint</code>.</li>
+      <li id="t5-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim-log
+git commit -m "feat(sim-log): re-apply a pending commit's changes on a new tip"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: The undo and redo derivation</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim-log/history.ts</code></li>
+      <li>Test: <code>src/lib/sim-log/history.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>CommitKind</code>, <code>Restores</code> (Task 1).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">/** A commit as the derivation reads it; pending commits take provisional seqs after the tip. */
+export interface HistoryEntry { seq: number; kind: CommitKind; restores: Restores | null }
+export interface UndoRedo { undo: number | null; redo: number | null }
+/** R12: the positions undo and redo restore to, from the log alone. `log` is seq 1..n in order. */
+export function undoRedo(log: readonly HistoryEntry[]): UndoRedo;</code></pre>
+      </li>
+    </ul>
+    <h3>Algorithm (decision 12)</h3>
+    <pre><code data-lang="text">undo = [], redo = [], cur = 0
+for e in log:
+  if e.kind is 'system':                       undo = []; redo = []
+  else if e.kind is 'edit' or e.restores.as is 'jump': undo.push(cur); redo = []
+  else if e.restores.as is 'undo':
+    i = undo.lastIndexOf(e.restores.position)
+    if i &lt; 0: as jump   else: undo.length = i; redo.push(cur)
+  else ('redo'):
+    i = redo.lastIndexOf(e.restores.position)
+    if i &lt; 0: as jump   else: redo.length = i; undo.push(cur)
+  cur = e.seq
+return { undo: undo.at(-1) ?? null, redo: redo.at(-1) ?? null }</code></pre>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write <code>history.spec.ts</code>:
+        <pre><code data-lang="ts">const edit = (seq: number): HistoryEntry =&gt; ({ seq, kind: 'edit', restores: null });
+const sys = (seq: number): HistoryEntry =&gt; ({ seq, kind: 'system', restores: null });
+const rest = (seq: number, position: number, as: Restores['as']): HistoryEntry =&gt;
+  ({ seq, kind: 'restore', restores: { position, as } });
+
+it('follows the spec table (tbl-undo)', () =&gt; {
+  const log = [1, 2, 3, 4, 5].map(edit);
+  expect(undoRedo(log)).toEqual({ undo: 4, redo: null });
+  log.push(rest(6, 4, 'undo'));
+  expect(undoRedo(log)).toEqual({ undo: 3, redo: 5 });
+  log.push(rest(7, 3, 'undo'));
+  expect(undoRedo(log)).toEqual({ undo: 2, redo: 6 });
+  log.push(rest(8, 6, 'redo'));
+  expect(undoRedo(log)).toEqual({ undo: 7, redo: 5 });
+  log.push(edit(9));
+  expect(undoRedo(log)).toEqual({ undo: 8, redo: null });
+  log.push(rest(10, 8, 'undo'));
+  expect(undoRedo(log).undo).toBe(7);
+});
+it('starts empty and can undo the first edit to position 0', () =&gt; {
+  expect(undoRedo([])).toEqual({ undo: null, redo: null });
+  expect(undoRedo([edit(1)])).toEqual({ undo: 0, redo: null });
+});
+it('a system commit is a barrier', () =&gt; {
+  expect(undoRedo([edit(1), sys(2)])).toEqual({ undo: null, redo: null });
+  expect(undoRedo([edit(1), edit(2), rest(3, 1, 'undo'), sys(4)])).toEqual({ undo: null, redo: null });
+  expect(undoRedo([sys(1), edit(2)])).toEqual({ undo: 1, redo: null });
+});
+it('a jump counts as an edit (R14)', () =&gt; {
+  expect(undoRedo([edit(1), edit(2), rest(3, 1, 'undo'), rest(4, 2, 'jump')])).toEqual({ undo: 3, redo: null });
+});
+it('an undo re-applied on a moved tip keeps its target', () =&gt; {
+  // Tab A undid to 2 while tab B appended 4; A's restore landed at 5.
+  expect(undoRedo([edit(1), edit(2), edit(3), edit(4), rest(5, 2, 'undo')])).toEqual({ undo: 1, redo: 4 });
+});
+it('matches a reference editor over random edit, undo and redo', () =&gt; {
+  const op = fc.constantFrom('edit', 'undo', 'redo');
+  fc.assert(fc.property(fc.array(op, { maxLength: 40 }), (ops) =&gt; {
+    // Reference: snapshots named by number; state of position p is stateAt[p].
+    let cur = 0, next = 1;
+    const u: number[] = [], rd: number[] = [], stateAt = [0], log: HistoryEntry[] = [];
+    for (const o of ops) {
+      const t = undoRedo(log);
+      const seq = log.length + 1;
+      if (o === 'edit') { u.push(cur); rd.length = 0; cur = next++; log.push(edit(seq)); }
+      else if (o === 'undo') {
+        if (u.length === 0) { expect(t.undo).toBeNull(); continue; }
+        expect(stateAt[t.undo!]).toBe(u.at(-1));
+        rd.push(cur); cur = u.pop()!; log.push(rest(seq, t.undo!, 'undo'));
+      } else {
+        if (rd.length === 0) { expect(t.redo).toBeNull(); continue; }
+        expect(stateAt[t.redo!]).toBe(rd.at(-1));
+        u.push(cur); cur = rd.pop()!; log.push(rest(seq, t.redo!, 'redo'));
+      }
+      stateAt.push(cur);
+    }
+    const t = undoRedo(log);
+    expect(t.undo === null ? null : stateAt[t.undo]).toBe(u.at(-1) ?? null);
+    expect(t.redo === null ? null : stateAt[t.redo]).toBe(rd.at(-1) ?? null);
+  }), { numRuns: 300 });
+});</code></pre>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run it and see it fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim-log/history.spec.ts</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Implement <code>undoRedo</code> to the algorithm.</li>
+      <li id="t6-s4"><input type="checkbox"> Run all of <code>src/lib/sim-log</code>; it passes. Then <code>npm run check</code> and <code>npm run lint</code>.</li>
+      <li id="t6-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim-log
+git commit -m "feat(sim-log): derive undo and redo targets from the log"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: The hash chain</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim-log/chain.ts</code></li>
+      <li>Test: <code>src/lib/sim-log/chain.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>canonicalJson</code> (<code>policy.ts:445</code>), <code>sha256Hex</code> (<code>src/lib/sharing/hash.ts:1</code>), <code>Commit</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export const GENESIS_HASH = '0'.repeat(64);
+/** canonicalJson of every field but `hash`; TypeError on undefined or a non-finite number anywhere. */
+export function commitText(c: Omit&lt;Commit, 'hash'&gt; | Commit): string;
+/** sha256Hex(prevHash + commitText(c)). */
+export function chainHash(prevHash: string, c: Omit&lt;Commit, 'hash'&gt; | Commit): Promise&lt;string&gt;;
+/** The first seq whose hash or position is wrong, or null. `prev` is the commit before
+ *  commits[0] (default: seq 0, GENESIS_HASH). */
+export function verifyChain(commits: readonly Commit[], prev?: { seq: number; hash: string }): Promise&lt;number | null&gt;;</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write <code>chain.spec.ts</code>:
+        <pre><code data-lang="ts">import { createHash } from 'node:crypto';
+
+const C = {
+  id: 'CVBRX1eXcVRvAio3MBkuW', seq: 1, parent: 0, kind: 'edit', label: 'Renamed', restores: null,
+  actor: 'actor-1', at: 1763164800000, datasetVersion: 'fixture-0', shapes: 1, build: 'dev',
+  source: 'sim.name', changes: [{ op: 'set', key: 'sim', field: 'name', value: 'Mission' }]
+} satisfies Omit&lt;Commit, 'hash'&gt;;
+const TEXT =
+  '{"actor":"actor-1","at":1763164800000,"build":"dev","changes":[{"field":"name","key":"sim",' +
+  '"op":"set","value":"Mission"}],"datasetVersion":"fixture-0","id":"CVBRX1eXcVRvAio3MBkuW",' +
+  '"kind":"edit","label":"Renamed","parent":0,"restores":null,"seq":1,"shapes":1,"source":"sim.name"}';
+
+it('writes the canonical text without the hash', () =&gt; {
+  expect(commitText(C)).toBe(TEXT);
+  expect(commitText({ ...C, hash: 'f'.repeat(64) })).toBe(TEXT);
+});
+it('hashes the previous hash and the text with SHA-256', async () =&gt; {
+  const want = createHash('sha256').update(GENESIS_HASH + TEXT, 'utf8').digest('hex');
+  expect(want).toBe('949f77d708450cca256a9febe90b7d57a978de51360da8610f03be5daee78243');
+  expect(await chainHash(GENESIS_HASH, C)).toBe(want);
+});
+it('refuses text that is not JSON', () =&gt; {
+  expect(() =&gt; commitText({ ...C, label: undefined as unknown as string })).toThrow(TypeError);
+  expect(() =&gt; commitText({ ...C, at: Number.NaN })).toThrow(TypeError);
+});
+async function chainOf(n: number): Promise&lt;Commit[]&gt; {
+  const out: Commit[] = [];
+  let prev = GENESIS_HASH;
+  for (let seq = 1; seq &lt;= n; seq++) {
+    const c = { ...C, seq, parent: seq - 1, label: `Edit ${seq}` };
+    prev = await chainHash(prev, c);
+    out.push({ ...c, hash: prev });
+  }
+  return out;
+}
+it('verifies a chain and names the first bad commit', async () =&gt; {
+  const log = await chainOf(3);
+  expect(await verifyChain(log)).toBeNull();
+  expect(await verifyChain(log.slice(1), { seq: 1, hash: log[0].hash })).toBeNull();
+  expect(await verifyChain([log[0], { ...log[1], label: 'Edited later' }, log[2]])).toBe(2);
+  expect(await verifyChain([log[0], log[2]])).toBe(3);
+  expect(await verifyChain(log, { seq: 0, hash: 'f'.repeat(64) })).toBe(1);
+});</code></pre>
+      </li>
+      <li id="t7-s2"><input type="checkbox"> Run it and see it fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim-log/chain.spec.ts</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> Implement <code>chain.ts</code>. Validate JSON-ness with a small recursive walk before <code>canonicalJson</code>.</li>
+      <li id="t7-s4"><input type="checkbox"> Run all of <code>src/lib/sim-log</code>; it passes. Then <code>npm run check</code> and <code>npm run lint</code>.</li>
+      <li id="t7-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim-log
+git commit -m "feat(sim-log): chain commit hashes with SHA-256 over canonical text"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: The public surface and its developer page</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim-log/index.ts</code>, <code>src/lib/sim-log/index.spec.ts</code>, <code>docs/dev/sim-log.md</code></li>
+      <li>Modify: <code>CLAUDE.md</code> (one line in "Scoped reference docs", after the <code>ensemble-runner.md</code> line)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces: <code>$lib/sim-log</code> exporting, and only these: the types, classes and limits of <code>types.ts</code>; <code>parseChange</code>, <code>parseCommitDraft</code>, <code>parseCommit</code>; <code>NAME_KEY</code>, <code>policyKey</code>, <code>spanKey</code>; <code>REGISTRY</code>, <code>SHAPES_REVISION</code>, <code>DEFAULT_SIM_NAME</code>, <code>type Registry</code>; <code>toLogForm</code>, <code>rulesetText</code>; <code>LogState</code>, <code>fold</code>; <code>checkRuleset</code>, <code>type RulesetProblem</code>; <code>diff</code>; <code>reapply</code> and its types; <code>undoRedo</code> and its types; <code>GENESIS_HASH</code>, <code>commitText</code>, <code>chainHash</code>, <code>verifyChain</code>.</li>
+      <li>How units 2 and 4 use it (for the page): the sim object parses an <code>append</code> with <code>parseCommitDraft</code>, refuses <code>behind</code> unless <code>parent</code> is its tip, calls <code>state.apply(draft, { check: true })</code> (a <code>LogError</code> is <code>invalid</code>), then sets <code>seq</code>, <code>actor</code>, <code>at</code> and <code>hash = await chainHash(tipHash, commit)</code>. The browser store folds confirmed commits into one <code>LogState</code>, applies pending ones on a clone, on <code>behind</code> calls <code>reapply</code> per pending commit (recomputing a pending restore with <code>diff</code>), commits an editor's change as <code>diff(current, edited)</code>, and asks <code>undoRedo</code> for targets, folding to the target position for the restore's <code>diff</code>.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Write <code>index.spec.ts</code>:
+        <pre><code data-lang="ts">import * as log from './index';
+
+it('exports the surface units 2 and 4 use', () =&gt; {
+  expect(Object.keys(log).sort()).toEqual([
+    'BUILD_MAX', 'DEFAULT_SIM_NAME', 'GENESIS_HASH', 'KEY_MAX', 'LABEL_MAX', 'LogError',
+    'LogFormatError', 'LogState', 'NAME_KEY', 'REGISTRY', 'SHAPES_REVISION', 'SOURCE_MAX',
+    'SOURCE_RE', 'chainHash', 'checkRuleset', 'commitText', 'diff', 'fold', 'parseChange',
+    'parseCommit', 'parseCommitDraft', 'policyKey', 'reapply', 'rulesetText', 'spanKey',
+    'toLogForm', 'undoRedo', 'verifyChain'
+  ]);
+});</code></pre>
+      </li>
+      <li id="t8-s2"><input type="checkbox"> Run it and see it fail on the missing module.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim-log/index.spec.ts</code></pre>
+      </li>
+      <li id="t8-s3"><input type="checkbox"> Write <code>index.ts</code> with named re-exports (types with <code>export type</code>).</li>
+      <li id="t8-s4"><input type="checkbox"> Write <code>docs/dev/sim-log.md</code> in the style of <code>docs/dev/policy-timeline.md</code>: a one-paragraph lead naming the spec and that this is unit 1; a Files table; then sections for the commit (fields, limits, <code>restores</code>), changes (<code>#tbl-apply</code>'s semantics, cascade, truncation only), items and keys (<code>#tbl-rev1</code>, stroke keys and <code>~n</code>, brushes assembled from strokes, log form), shapes (revisions, versions, <code>up</code>, upgrade on read, <code>future-shapes</code>, how to add a version: a new revision, the old version kept, a fixture test), fold and validity (reconcile mode and why), diff, re-apply, undo and redo (the algorithm and the barrier), the hash chain (text, genesis, the pinned vectors), "Using it from the sim object and the store" (the Interfaces paragraph above), and Tests. Terse; no rule of the design is restated beyond what a developer needs; cite rule numbers.</li>
+      <li id="t8-s5"><input type="checkbox"> Add to <code>CLAUDE.md</code>'s scoped list: <code>- **Sim log core (commits, changes, item keys, the shape registry, fold, diff, re-apply, undo and redo, the hash chain)** — [docs/dev/sim-log.md](docs/dev/sim-log.md)</code></li>
+      <li id="t8-s6"><input type="checkbox"> Run all of <code>src/lib/sim-log</code>, then <code>npm run check</code>, <code>npm run lint</code> (Prettier also checks the markdown) and <code>npm run test:unit</code>; all pass.</li>
+      <li id="t8-s7"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim-log docs/dev/sim-log.md CLAUDE.md
+git commit -m "docs(sim-log): the log core's public surface and developer page"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-open">
+    <h2>Open questions for the owner</h2>
+    <ul>
+      <li><strong>Undo across a dataset move.</strong> Decision 12 stops undo at every <code>system</code> commit, not only at a remix's first commit (<code>#sec-identity</code>). Recommendation: keep it; otherwise an undo restores a ruleset aligned to the older dataset under the newer one, which R55 exists to prevent.</li>
+      <li><strong>Extending a painted span.</strong> Decision 7 makes a later end, or an earlier start, a delete and an add that writes the span's strokes again. Recommendation: keep it (it is the owner's offer rule); it costs bytes only on a bar drag of a painted policy.</li>
+      <li><strong>Strict or reconcile at accept.</strong> Decision 13 reads R3's "structure only" as reconcile mode. Recommendation: keep it; strict mode would make a later preset retirement refuse every edit on an older sim until a dataset move.</li>
+    </ul>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li><strong>Spec coverage.</strong> R1, R2: values only, nothing recomputed (Global Constraints). R3: Task 3 (<code>checkRuleset</code>, <code>apply</code> with <code>check</code>). R4, R5, R6, R42, R62: Task 2 and Task 3. R7: Task 3. R8: Task 4. R9: <code>diff</code> is what the store commits (Task 8 page). R10, R11, R12, R13, R14: Tasks 4 and 6. R19: Task 5. R54: Task 3. R57: one log, all shapes, registry-driven (Task 2). <code>#tbl-commit</code>, <code>#tbl-changes</code>: Task 1. Testing "Core": Tasks 4, 3 (two-version registry) and 6. Left to the builder: decisions 2, 3, 8, 9, 10.</li>
+      <li><strong>Not here.</strong> R1's drafts, R15 to R18, R20, R40 and R55 are units 2 and 4; unit 1 gives them <code>reapply</code>, <code>diff</code> and <code>LogState</code>.</li>
+    </ul>
+  </section>
+</article>

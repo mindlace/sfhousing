@@ -1,0 +1,532 @@
+<article>
+  <header>
+    <h1>Sim message log</h1>
+    <p>A sim is an append-only log of changes to its rules. The rules, the page and every simulated month are computed from that log.</p>
+  </header>
+
+  <section id="sec-intent">
+    <h2>Intent</h2>
+    <p>The owner asked for this, in these terms:</p>
+    <ul>
+      <li>User input is recorded as a sequence of immutable messages. The state of the sim and of the page is a projection over them.</li>
+      <li>Follow planafoot's strategy: a websocket stream of messages, kept locally as well, with the consequence of an edit shown before the server answers.</li>
+      <li>Each sim (the thing that is saved and shared) has one consistent history, used for undo and redo.</li>
+      <li>The simulated months are a projection too. Editing an already-simulated year goes back to that month and simulates another future. Keeping every such variant shows how people explore the solution space.</li>
+      <li>Simulating is fast, so no world state is stored. What is stored is the changes to the ruleset.</li>
+      <li>No rule says what runs on the server and what runs in the browser.</li>
+      <li>Optimize for sharing and remixing. Memory is not the worry.</li>
+      <li>Adopt planafoot's gradual auth: a person is a user straight away, and signs in when and as they want.</li>
+      <li>Take planafoot's 2.0 quest-graph model "to the level of complexity appropriate to this": people will add notes and other things to a sim later.</li>
+      <li>Read a sim with the shapes and the dataset as of the time it was made or shared, so the experience can change without breaking the past, and the "your sim is running on a new dataset" messages go.</li>
+    </ul>
+    <p>Why now: timeline-ui is the last unit of the step engine, and it puts a new document (<code>SimPolicy4</code>) behind the same in-memory snapshot store <code>/sim</code> has today. Every page feature built after it would be built on that store. The sims ported from planafoot have a name and members and no content; this gives them one.</p>
+  </section>
+
+  <section id="sec-goals">
+    <h2>Goals, non-goals, anti-goals</h2>
+    <section id="sec-goals-list">
+      <h3>Goals</h3>
+      <ul>
+        <li>Every change to a sim's rules is one immutable commit in one ordered log per sim.</li>
+        <li>The ruleset is always the fold of that log. Nothing else holds rules.</li>
+        <li>An edit shows at once and survives a reload with no connection.</li>
+        <li>Undo and redo work across reloads and devices, to the depth of the whole log.</li>
+        <li>Every state a sim has ever been in can be named (sim id and position) and reopened as it was.</li>
+        <li>A person is a user from their first edit, with no sign-up, and can attach a sign-in later.</li>
+        <li>A sim's members who may write (managers and editors) write one log, from any number of tabs and devices.</li>
+        <li>Sharing is copying a link, with nothing to publish. Remixing is one commit, keeps the person's own sims, and records what it came from.</li>
+        <li>The logs of all sims can be read together to study how people explore: the shape of an exploration, the levers pulled, and histories that stop short.</li>
+      </ul>
+    </section>
+    <section id="sec-non-goals">
+      <h3>Non-goals</h3>
+      <ul>
+        <li>Merging two writers' edits beyond re-applying pending changes on the new tip (R18). No presence and no cursors.</li>
+        <li>New sign-in methods, or turning on password, passkey or Google. The port has them, off.</li>
+        <li>Notes. Only where they will go is designed (<a href="#sec-shapes">Shapes</a>).</li>
+        <li>Storing world states, results or anything else the engine computes.</li>
+        <li>Changing the engine or its messages (<code>setPolicy</code>, <code>refill</code>). The page querying a results projection held by the engine is separate work.</li>
+        <li><code>/</code> (already an op list in <code>Plan.ops</code>) and <code>/lesscars</code> (no edits).</li>
+        <li>Recording what a person looked at. That is for a later, opt-in PostHog setup (<a href="#sec-study">Studying exploration</a>).</li>
+        <li>Any screen for studying exploration. The data is read with SQL.</li>
+      </ul>
+    </section>
+    <section id="sec-anti-goals">
+      <h3>Anti-goals</h3>
+      <ul>
+        <li>A commit that changes after it is accepted, or a log with a gap or a second order.</li>
+        <li>An edit that is lost because the connection was down or the tab closed.</li>
+        <li>A second copy of the rules that can disagree with the log (a saved document, a cache treated as truth).</li>
+        <li>History stored as a moving head pointer. Planafoot tried it and dropped it.</li>
+        <li>A share link that stops opening because someone left a sim or deleted their account.</li>
+        <li>A rule in the design or the docs about where the engine runs.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-today">
+    <h2>What exists today</h2>
+    <ul>
+      <li><strong>Editing.</strong> <code>PolicyStore</code> (<code>src/lib/sim-page/policy-store.svelte.ts</code>) holds the policy plus undo and redo lists of whole-policy snapshots, in memory. Every editor calls <code>store.apply((p) =&gt; p', label, coalesce?)</code> with an inline closure. A coalesce run ends only when the next <code>apply</code> carries another key. Nothing is serialisable, and a reload loses the history.</li>
+      <li><strong>Saving.</strong> <code>Autosave</code> (<code>src/lib/sharing/autosave.svelte.ts</code>) writes the whole document to <code>sfhousing:sim:v1</code>, 500 ms after the last change.</li>
+      <li><strong>Sharing.</strong> Publish inserts an immutable row in the D1 <code>plan</code> table, deduplicated by content hash, served at <code>/s/&lt;id&gt;</code> (8 base58 characters). A row has no owner, and a republish is an unrelated row. <code>/s/&lt;id&gt;</code> opens on the document's dataset version, falls back to the current one when that is gone, and reconciles the timings on every load, with a notice when anything moved.</li>
+      <li><strong>Server.</strong> No Durable Object, no websocket. <code>@planafoot/drizzle-cf-migrations</code> runs the D1 migrations: <code>drizzle-cf.config.ts</code> has one track, <code>d1</code>, and <code>npm run db:generate</code> runs <code>generate d1</code> only (<code>package.json</code>).</li>
+      <li><strong>Accounts, sims and invitations</strong> (ported from planafoot, <a href="../../dev/auth.md"><code>docs/dev/auth.md</code></a>). A stable identity (<code>user_identity</code>) with a survivor graph for fused accounts; pseudonymous accounts; magic link the only sign-in in staging and production, once mail is configured. A sim is a <code>sim_index</code> row (server-minted <code>newId()</code>, a title of at most 63 characters); roles (manager, editor, viewer) are grants in the <code>capability_event</code> ledger, and an invitation grants editor. A person may manage 5 sims; a sim whose last member leaves is deleted; <code>onSimRosterChanged</code> is a no-op seam. A sim has no content: nothing links it to <code>/sim</code>.</li>
+      <li><strong>Engine.</strong> The step engine gets the whole <code>SimPolicy4</code> on each edit (<code>setPolicy</code>), finds the first month that differs (<code>firstDifference</code>), restores its month-0 copy and replays. A rerun is byte-identical for the same document, dataset version, app build and seeds. The future it replaces is discarded.</li>
+      <li><strong>timeline-ui</strong> is built and not merged: its 22 tasks and its docs are committed on the local branch <code>step-engine/timeline-ui</code> (79740f83), which sits on <code>step-engine/policy-timeline</code>; neither is on the remote. It makes <code>PolicyStore</code> generic over <code>SimPolicy4</code>, records <code>undoTo</code> as an ordinary change, adds <code>spanLens</code> and Move up and Move down for policies, and saves under <code>sfhousing:sim:v2</code> while keeping <code>v1</code> for an older tab.</li>
+    </ul>
+  </section>
+
+  <section id="sec-approaches">
+    <h2>Approaches</h2>
+    <table id="tbl-approaches">
+      <caption>Three ways to give a sim a history</caption>
+      <thead>
+        <tr><th scope="col">Approach</th><th scope="col">What it is</th><th scope="col">Trade-off</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row">A. Log of rule changes (picked)</th>
+          <td>One Durable Object per sim orders and stores small commits. The browser applies each commit at once, keeps it locally and streams it over a websocket. Undo is a new commit.</td>
+          <td>New server parts (a Durable Object, a websocket, a local database). A commit is a few hundred bytes, the history is linear, and every state is addressable.</td>
+        </tr>
+        <tr>
+          <th scope="row">B. Saved versions</th>
+          <td>Keep the snapshot store and send each whole document to the server as a version.</td>
+          <td>Least code. A painted policy is up to 262 KB per version, a version does not say what changed, and the page still has two copies of the rules.</td>
+        </tr>
+        <tr>
+          <th scope="row">C. Log with a moving head</th>
+          <td>As A, but undo records a move of the head to an earlier commit, so the log is a tree.</td>
+          <td>Keeps branches explicit. Planafoot built this and it went badly: the head is a second piece of state every reader must apply.</td>
+        </tr>
+      </tbody>
+    </table>
+    <aside data-kind="decision"><strong>Decision (owner)</strong> Approach A. The owner proposed it, said the stored thing is "deltas in the ruleset", and ruled out C: "undo is copying an earlier state to the tip as a new commit".</aside>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-terms">
+      <h3>Terms</h3>
+      <dl>
+        <dt>Sim</dt><dd>One log, with an id, a name and members. The thing a person saves, shares and reopens.</dd>
+        <dt>Writer</dt><dd>A member whose role carries <code>sim.write</code>: a manager or an editor.</dd>
+        <dt>Commit</dt><dd>One immutable entry in the log: an envelope and a list of changes.</dd>
+        <dt>Item</dt><dd>A thing in a sim, with a shape and a key: a policy, a span, a painted stroke, the sim's name. Later, a note.</dd>
+        <dt>Shape</dt><dd>The declared form of a kind of item, with numbered versions, kept in the registry.</dd>
+        <dt>Change</dt><dd>One addition, ending, move, field set or deletion of an item.</dd>
+        <dt>Ruleset</dt><dd>The <code>SimPolicy4</code>, name and dataset version computed by folding the log.</dd>
+        <dt>Tip</dt><dd>The last commit. There is no other head.</dd>
+        <dt>Position</dt><dd>A commit's sequence number. A sim id and a position name one state for ever.</dd>
+      </dl>
+      <figure id="fig-flow">
+        <svg class="diagram" viewBox="0 0 760 270" role="img" aria-labelledby="fig-flow-t">
+          <title id="fig-flow-t">An edit becomes a commit, is saved locally, reaches the sim's object and comes back in order; D1 holds the members and an index</title>
+          <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z"/></marker></defs>
+          <g class="group"><rect x="10" y="10" width="440" height="250"/><text x="230" y="30">Browser</text></g>
+          <g class="group"><rect x="500" y="10" width="250" height="250"/><text x="625" y="30">Cloudflare</text></g>
+          <g class="node" id="n-editors"><rect x="30" y="50" width="120" height="44"/><text x="90" y="72">editors</text></g>
+          <g class="node" id="n-store"><rect x="200" y="50" width="120" height="44"/><text x="260" y="72">log store</text></g>
+          <g class="node" id="n-idb"><rect x="200" y="190" width="120" height="44"/><text x="260" y="212">IndexedDB</text></g>
+          <g class="node result" id="n-engine"><rect x="30" y="190" width="120" height="44"/><text x="90" y="212">engine</text></g>
+          <g class="node" id="n-do"><rect x="540" y="50" width="170" height="44"/><text x="625" y="72">sim object (the log)</text></g>
+          <g class="node" id="n-d1"><rect x="540" y="190" width="170" height="44"/><text x="625" y="212">D1: members, index</text></g>
+          <g class="edge" data-from="n-editors" data-to="n-store"><path d="M150 72H198"/><text x="174" y="62">changes</text></g>
+          <g class="edge" data-from="n-store" data-to="n-idb"><path d="M260 94V188"/><text x="300" y="144">saved first</text></g>
+          <g class="edge" data-from="n-store" data-to="n-engine"><path d="M212 94L134 188"/><text x="140" y="140">ruleset</text></g>
+          <g class="edge" data-from="n-store" data-to="n-do"><path d="M320 62H538"/><text x="430" y="52">append</text></g>
+          <g class="edge" data-from="n-do" data-to="n-store"><path d="M540 84H322"/><text x="430" y="104">commits, in order</text></g>
+          <g class="edge" data-from="n-do" data-to="n-d1"><path d="M590 94V188"/><text x="552" y="144">index</text></g>
+          <g class="edge" data-from="n-d1" data-to="n-do"><path d="M670 188V96"/><text x="712" y="144">roster</text></g>
+        </svg>
+        <figcaption>Figure 1. The log store is the only source of the ruleset; D1 is the only source of who may write. The engine is drawn in the browser because that is where it runs today; nothing here requires it.</figcaption>
+      </figure>
+    </section>
+
+    <section id="sec-commit">
+      <h3>The commit</h3>
+      <table id="tbl-commit">
+        <caption>Fields of a commit</caption>
+        <thead>
+          <tr><th scope="col">Field</th><th scope="col">Set by</th><th scope="col">Meaning</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>id</code></th><td>Author</td><td>Unique id minted in the browser. Sending the same commit twice appends it once.</td></tr>
+          <tr><th scope="row"><code>seq</code></th><td>Sim object</td><td>Position in the log: 1, 2, 3 with no gaps.</td></tr>
+          <tr><th scope="row"><code>parent</code></th><td>Author</td><td>The position the author's changes were made on.</td></tr>
+          <tr><th scope="row"><code>kind</code></th><td>Author</td><td><code>edit</code>, <code>restore</code> or <code>system</code> (an import, a remix's first commit, a move to a newer dataset).</td></tr>
+          <tr><th scope="row"><code>label</code></th><td>Author</td><td>The words undo announces, as <code>PolicyStore</code> labels are today.</td></tr>
+          <tr><th scope="row"><code>restores</code></th><td>Author</td><td>On a <code>restore</code>: the position whose ruleset this commit reproduces, and whether it was an undo, a redo or a jump to any position (R14).</td></tr>
+          <tr><th scope="row"><code>actor</code></th><td>Sim object</td><td>The writer's stable identity id, as the Worker resolved it (R46).</td></tr>
+          <tr><th scope="row"><code>at</code></th><td>Sim object</td><td>Server time of acceptance.</td></tr>
+          <tr><th scope="row"><code>datasetVersion</code>, <code>shapes</code></th><td>Author</td><td>The dataset and the shape registry revision the commit was made with. It is read with both (R54).</td></tr>
+          <tr><th scope="row"><code>build</code></th><td>Author</td><td>The app release the author ran. For study only (R56).</td></tr>
+          <tr><th scope="row"><code>hash</code></th><td>Sim object</td><td>Hash of the previous commit's hash and this commit's canonical text.</td></tr>
+          <tr><th scope="row"><code>source</code></th><td>Author</td><td>A short, stable code for the control that made the commit (a transit band's stories, a funding pool added, a paint stroke, undo). Unlike <code>label</code>, it is not page text and does not change when the wording does.</td></tr>
+          <tr><th scope="row"><code>changes</code></th><td>Author</td><td>The list of changes.</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li id="r1"><strong>R1.</strong> A commit is one finished intent: a stroke, a released slider, a typed value. A drag shows live from a local draft. The draft becomes a commit when its coalesce key changes, when its field loses focus, or when the page is hidden. A draft still open when the page is hidden is committed then.</li>
+        <li id="r2"><strong>R2.</strong> A commit holds resulting values, never an instruction to recompute. A preset stores the numbers it resolved to, as it does today.</li>
+        <li id="r3"><strong>R3.</strong> The sim object refuses a commit whose changes do not fold to a valid ruleset: <code>parsePolicy4</code> with <code>asOf: null</code> in its reconcile mode, so a preset retired later never makes an accepted sim refuse edits, and the existing size limits. The object holds no calibration, so alignment to the dataset's months is the author's check, as it is on the page today.</li>
+      </ul>
+      <aside data-kind="decision"><strong>My call</strong> R1's three triggers, because a coalesce run has no end signal today and a draft open when the tab closes must not be lost. R3 checks structure only, because the object has no calibration and alignment is already checked where the edit is made.</aside>
+      <aside data-kind="decision"><strong>My call</strong> <code>source</code> exists for the study of exploration (<a href="#sec-study">Studying exploration</a>): which levers people pulled is read from it, without parsing labels or inferring from changes.</aside>
+      <aside data-kind="decision"><strong>My call</strong> The hash chain replaces planafoot's state digest. Server and browser hold the same commits, so comparing one hash at the tip proves the browser's log is the server's.</aside>
+    </section>
+
+    <section id="sec-changes">
+      <h3>Changes</h3>
+      <p>The ruleset is made of items that never change once added. This is the owner's rule from the timeline-ui ledger: "any offer by any source [is] immutable save truncation or deletion, so making a different offer ends the offer and starts a new one".</p>
+      <table id="tbl-changes">
+        <caption>The change vocabulary</caption>
+        <thead>
+          <tr><th scope="col">Change</th><th scope="col">Applies to</th><th scope="col">Meaning</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>add</code></th><td>Any item</td><td>The item exists from this commit on, with its shape and fields.</td></tr>
+          <tr><th scope="row"><code>end</code></th><td>A span</td><td>The span stops on a given day (truncation). Starting a different span on a policy ends the one in force.</td></tr>
+          <tr><th scope="row"><code>move</code></th><td>An item in an ordered list (a policy within its kind)</td><td>The item takes a new place: first, or after a named sibling.</td></tr>
+          <tr><th scope="row"><code>set</code></th><td>A field the item's shape marks settable: the sim's name, a policy's label and on switch</td><td>Names and switches, which are not offers.</td></tr>
+          <tr><th scope="row"><code>delete</code></th><td>Any item</td><td>The item is gone as if never added.</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li id="r4"><strong>R4.</strong> No change edits an item in place. Changing a band from 6 to 8 stories from the same day deletes the span and adds another, in one commit. So does a later end or an earlier start; for a painted span that writes its strokes again.</li>
+        <li id="r5"><strong>R5.</strong> A painted stroke is its own item, so a stroke costs its own bytes, not a copy of every stroke before it.</li>
+        <li id="r6"><strong>R6.</strong> The title joins the log. Today it sits outside <code>PolicyStore</code> and cannot be undone.</li>
+      </ul>
+      <aside data-kind="decision"><strong>My call</strong> "Offer" is read as a span of a policy. A span has no id in <code>SimPolicy4</code>; a policy's spans do not overlap, so a span is named by its policy and start day.</aside>
+    </section>
+
+    <section id="sec-shapes">
+      <h3>Shapes</h3>
+      <p>Planafoot 2.0 stores a quest as a graph: every node and edge claims a shape from a registry, six kinds of event change them, an action groups events under one actor, and every event is read under the schema revision its writer attested (<code>planafoot/docs/dev/quest-graph/model.md</code>, <code>vocab.md</code>). This design takes what makes a later note a new shape in the same log, and leaves the rest.</p>
+      <table id="tbl-shapes">
+        <caption>What comes from planafoot's quest graph</caption>
+        <thead>
+          <tr><th scope="col">Planafoot 2.0</th><th scope="col">Here</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">A node claims its shape at genesis</th><td>An item is added with its shape's name; the commit's <code>shapes</code> gives the version.</td></tr>
+          <tr><th scope="row">A registry with lineage (<code>succeeds</code>)</th><td>A registry in code: each shape's versions, each with a pure upgrade to the next. No version is ever removed.</td></tr>
+          <tr><th scope="row">Events read under the writer's attested revision</th><td>Each commit is read under its <code>shapes</code> and upgraded on read (R54).</td></tr>
+          <tr><th scope="row">An action groups events under one actor</th><td>The commit.</td></tr>
+          <tr><th scope="row"><code>writeOnce</code> facets</th><td>A shape marks which fields <code>set</code> may change. The rest are fixed, which is the offer rule.</td></tr>
+          <tr><th scope="row">Left out</th><td>Content-hash shape ids and Merkle lineage; typed head tables generated from the registry; edges with cardinality and topology rules (a reference is a field holding another item's key); the door's closed-world checks; touch-based concurrency (R18 instead); undo by compensating actions (R10 instead); automation actors; code generation.</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li id="r57"><strong>R57.</strong> Items of every shape live in the one log. The ruleset folds the shapes the engine reads; a shape it does not read (a note, later) is folded for the page and never sent to the engine. Adding a kind of thing is a new shape in the registry: no new store, table or frame.</li>
+        <li id="r62"><strong>R62.</strong> The registry is in use from the first commit; it is not kept for later. Revision 1 declares today's ruleset: the sim (its name); for each row of the <code>where</code> and <code>what</code> table of <code>SimPolicy4</code> (transit, painted, category, routes, baseline, fund, terms; <code>docs/dev/policy-timeline.md</code>), a policy shape (its kind, <code>where</code>, label, preset, on switch and place in its list) and a span shape (<code>from</code>, <code>to</code>, <code>what</code>); and the painted stroke. A span names its policy and a stroke names its span, as fields. <code>SimPolicy4</code> is not stored anywhere: it is what the fold assembles from these items for the engine.</li>
+      </ul>
+      <aside data-kind="decision"><strong>My call</strong> One policy shape and one span shape per row of the table (R62), so a change to one <code>what</code>, which is where the schema has churned, is one shape's new version and one upgrade.</aside>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> "maybe we adopt the 2.0 quest-graph ish (to the level of complexity appropriate to this) - we're gonna wanna let people add notes and other things down the road". And the shape registry comes along: "the shape registry helps with schema evolution, and we've already seen a fair bit of that".</aside>
+      <aside data-kind="decision"><strong>My call</strong> Shapes are versioned by number, and one registry revision names every shape's version. Planafoot hashes declarations for federation and cross-lineage comparison; one codebase with tens of shapes needs neither. Planafoot's 2.0 store is built but not yet in production, so nothing here depends on its code.</aside>
+    </section>
+
+    <section id="sec-fold">
+      <h3>Fold and diff</h3>
+      <ul>
+        <li id="r7"><strong>R7.</strong> <code>fold(commits)</code> gives the ruleset. It is one pure module, used by the browser and by the sim object. There is no second implementation.</li>
+        <li id="r8"><strong>R8.</strong> <code>diff(a, b)</code> gives the changes that turn ruleset <code>a</code> into <code>b</code>, the order of every list included (<code>move</code>). For every pair, applying <code>diff(a, b)</code> to <code>a</code> gives <code>b</code> exactly (the same canonical text).</li>
+        <li id="r9"><strong>R9.</strong> The editors keep their pure edit functions (<code>transit-edit.ts</code>, <code>funding-edit.ts</code>, timeline-ui's <code>spanLens</code> and policy edits). The store runs the function on the current ruleset and commits the diff. No editor writes changes by hand.</li>
+      </ul>
+      <aside data-kind="decision"><strong>My call</strong> R9 keeps <code>store.apply(change, label, coalesce?)</code> as the editors' interface, so timeline-ui's page code moves over without rewriting each tab. What is stored is still values, per R2.</aside>
+    </section>
+
+    <section id="sec-undo">
+      <h3>Undo and redo</h3>
+      <ul>
+        <li id="r10"><strong>R10.</strong> Undo appends a <code>restore</code> commit whose changes are <code>diff(tip ruleset, earlier ruleset)</code>. After it, the ruleset equals the earlier one exactly. Nothing is removed from the log.</li>
+        <li id="r11"><strong>R11.</strong> Redo is the same: a <code>restore</code> to the state the last undo left.</li>
+        <li id="r12"><strong>R12.</strong> Which state undo and redo go to is computed from the tail of the log, whoever wrote it. No stack is stored. A new <code>edit</code> empties redo, as in any editor; a jump counts as an edit. Undo stops at a <code>system</code> commit: an import, a remix's first commit, or a move to a newer dataset, since the rules before a move are aligned to the older dataset.</li>
+        <li id="r13"><strong>R13.</strong> Undo depth is the whole log, including after a reload and on another device.</li>
+        <li id="r14"><strong>R14.</strong> A restore to any position is the same operation. timeline-ui's <code>undoTo</code> (back to the last document the engine accepted) is a restore.</li>
+      </ul>
+      <table id="tbl-undo">
+        <caption>Five edits, two undos, one redo, then a new edit</caption>
+        <thead>
+          <tr><th scope="col">Position</th><th scope="col">Kind</th><th scope="col">Restores</th><th scope="col">Ruleset equals</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">1 to 5</th><td>edit</td><td></td><td>S1 to S5</td></tr>
+          <tr><th scope="row">6</th><td>restore (undo)</td><td>4</td><td>S4</td></tr>
+          <tr><th scope="row">7</th><td>restore (undo)</td><td>3</td><td>S3</td></tr>
+          <tr><th scope="row">8</th><td>restore (redo)</td><td>6</td><td>S4</td></tr>
+          <tr><th scope="row">9</th><td>edit</td><td></td><td>S4 plus the edit; redo is now empty, and undo goes to S4, then S3</td></tr>
+        </tbody>
+      </table>
+      <p>The futures simulated from S5, S4 and S3 are all still reachable: each is a position in the log.</p>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> With two writers, undo goes to the state before the tip, whoever made the tip (R12). It does not pick out the writer's own last commit.</aside>
+    </section>
+
+    <section id="sec-local-first">
+      <h3>Local first</h3>
+      <ul>
+        <li id="r15"><strong>R15.</strong> A commit is applied to the page and written to IndexedDB before it is sent. The page never waits for the server to show an edit.</li>
+        <li id="r16"><strong>R16.</strong> The page's ruleset is the fold of the confirmed commits followed by the pending ones. Confirmed commits come only from the stream.</li>
+        <li id="r17"><strong>R17.</strong> Pending commits survive a reload and are sent in order when the socket opens. Editing works with no connection for as long as it lasts.</li>
+        <li id="r18"><strong>R18.</strong> The sim object accepts a commit only when its <code>parent</code> is the tip. Otherwise it answers <code>behind</code>. The browser takes the newer commits, re-applies each pending commit's stored changes in order on the new tip, and resends. A pending <code>restore</code> keeps its target position; its changes are recomputed as <code>diff(new tip ruleset, target ruleset)</code>.</li>
+        <li id="r40"><strong>R40.</strong> Any number of tabs, devices and writers may edit one sim. Each socket sends its own commits; R18 puts them in one order, and every socket shows that order.</li>
+        <li id="r19"><strong>R19.</strong> A re-applied change whose item no longer exists is dropped, and the rest of its commit stands. A commit left with no changes, or that no longer folds to a valid ruleset, is dropped. The page says what was dropped.</li>
+        <li id="r20"><strong>R20.</strong> On first load after release, the old autosave becomes a new sim whose first commit (<code>system</code>) holds it: <code>sfhousing:sim:v2</code> if present, else <code>sfhousing:sim:v1</code> opened with <code>openSimDoc4</code>. Both keys stay, so an older open tab keeps working, and a marker key makes the import run once per browser.</li>
+      </ul>
+      <aside data-kind="decision"><strong>My call</strong> A pending commit stores its changes, not the state it meant, so re-applying it keeps the other socket's work. Diffing against an intended state would undo that work, and an edit function cannot be re-run after a reload. Both old autosave keys stay (R20) because timeline-ui keeps <code>v1</code> for a tab opened before it.</aside>
+      <aside data-kind="note"><strong>Note</strong> Planafoot shows an edit before the server answers but keeps the pending edit in memory only. R15 and R17 go further, because <code>/sim</code> already survives a reload offline and must not lose that.</aside>
+    </section>
+
+    <section id="sec-server">
+      <h3>The sim object</h3>
+      <ul>
+        <li id="r21"><strong>R21.</strong> One Durable Object per sim, addressed by the sim id, holds the log in its SQLite storage: one row per commit, kept for good. Only an operator's takedown removes it (R43).</li>
+        <li id="r22"><strong>R22.</strong> Its schema is a second track in <code>drizzle-cf.config.ts</code>: <code>sim</code>, with its own drizzle-kit config (<code>drizzle.sim.config.ts</code>), <code>dir: 'migrations/sim'</code>, a <code>bundle</code> (<code>outFile</code>, <code>exportName</code>) and a <code>schemas.sim</code> entry. <code>package.json</code> gains <code>db:generate:sim</code>, which runs <code>generate sim</code>. The object applies the bundle on open with <code>safeMigrate</code> from <code>@planafoot/drizzle-cf-migrations/do</code>. The track is append-only: it is never regenerated from scratch, because that re-stamps the baseline existing objects have applied.</li>
+        <li id="r23"><strong>R23.</strong> It uses the websocket hibernation API with an automatic ping reply, so an idle open sim costs nothing.</li>
+        <li id="r24"><strong>R24.</strong> <code>sim_index</code> is the D1 copy of what a sim's log says: its name (<code>title</code>), and new columns for what it was remixed from, its position count, its last change and its dataset version. A new <code>sim_commit</code> table holds each commit's envelope (sim, position, kind, source, actor, time, build, dataset version, size), without the changes. Both can be rebuilt from the objects and are never read to serve a sim's rules. The membership grants in <code>capability_event</code> are not in any log and are the source of truth for who may write. The role folds join <code>sim_index</code> (<code>sim-roles.ts</code>), so a rebuild writes the index row before anything reads roles.</li>
+        <li id="r41"><strong>R41.</strong> The sim object writes the index after it accepts and broadcasts a commit, never before. A failed index write is retried and does not refuse or delay the commit.</li>
+        <li id="r25"><strong>R25.</strong> Appends are rate-limited per sim and a commit has a size cap. <code>PUBLISH_RL</code> (10 per minute) is for publishing and is not reused.</li>
+        <li id="r53"><strong>R53.</strong> The Worker reads the identity's role (<code>foldSimRole</code>) when it opens a socket and passes the object the identity and whether it may write. <code>onSimRosterChanged</code> (<code>src/lib/server/sims/roster-hook.ts</code>) tells the object to read the role of each open socket's identity again; a socket that loses write gets an <code>access</code> frame (<a href="#tbl-frames">the stream</a>), and its pending commits become a remix (R32). The hook gains the environment as an argument, to reach the object's binding; its call sites (<code>docs/dev/auth.md</code>, Invitations) pass it, and the fuse becomes one (R49).</li>
+        <li id="r58"><strong>R58.</strong> A sim made without commits (on the <code>/sims</code> form, or before this build) folds to the default ruleset. The first time a writer opens it, the object appends a <code>system</code> commit holding its index name.</li>
+      </ul>
+      <aside data-kind="decision"><strong>My call</strong> The log lives only in the object; membership lives only in D1, and the object learns of a change through the ported seam. The index row is a copy of the log; the grants are not, and are never rebuilt from anything.</aside>
+    </section>
+
+    <section id="sec-stream">
+      <h3>The stream</h3>
+      <table id="tbl-frames">
+        <caption>Frames on the socket</caption>
+        <thead>
+          <tr><th scope="col">Direction</th><th scope="col">Frame</th><th scope="col">Meaning</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Server to browser</th><td><code>hello</code></td><td>First frame. Carries the server's build, so a stale tab can reload.</td></tr>
+          <tr><th scope="row">Server to browser</th><td><code>access {write}</code></td><td>After <code>hello</code>, and whenever this socket's right to write changes.</td></tr>
+          <tr><th scope="row">Browser to server</th><td><code>resume {after}</code></td><td>Sent on every open: the last confirmed position the browser holds.</td></tr>
+          <tr><th scope="row">Server to browser</th><td><code>commits</code></td><td>Commits in order, exactly as stored. The answer to <code>resume</code> and the live broadcast are the same frame.</td></tr>
+          <tr><th scope="row">Browser to server</th><td><code>append {commit}</code></td><td>One pending commit.</td></tr>
+          <tr><th scope="row">Server to browser</th><td><code>refused {id, why}</code></td><td><code>behind</code>, <code>invalid</code>, <code>not-writer</code>, <code>limit</code> or <code>gone</code> (the sim was taken down).</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li id="r26"><strong>R26.</strong> There is no separate acknowledgement. A pending commit is confirmed when it arrives on the stream with its <code>id</code> and a <code>seq</code>.</li>
+        <li id="r27"><strong>R27.</strong> A commit whose <code>seq</code> is not the next one is not applied; the browser sends <code>resume</code>.</li>
+        <li id="r28"><strong>R28.</strong> The log is the stream, so catching up is reading rows after a position. There is no replay cache and no snapshot to fall back to.</li>
+      </ul>
+      <aside data-kind="decision"><strong>My call</strong> Appends go over the socket. Planafoot posts writes over HTTP and uses the socket only for the broadcast; a commit is already idempotent by <code>id</code>, so one channel is less to build.</aside>
+    </section>
+
+    <section id="sec-accounts">
+      <h3>Accounts</h3>
+      <p>Accounts are the port of planafoot's (<a href="../../dev/auth.md"><code>docs/dev/auth.md</code></a>): Better-Auth for sessions and credentials, and the app's stable identity, roles and membership in D1. This design changes them only as R49, R51 and R52 say.</p>
+      <ul>
+        <li id="r44"><strong>R44.</strong> A person gets a pseudonymous account when their browser first registers a sim (R51): <code>startSim</code> calls <code>mintPseudonymousSession</code> (Better-Auth <code>anonymous()</code>, with an <code>@pseudonymous.sfhousing.invalid</code> address that is never mailed). Reading a sim needs no account, and a visitor who only looks gets none.</li>
+        <li id="r45"><strong>R45.</strong> A first edit made offline stays pending. The account is minted at the first connection and the pending commits are sent under it.</li>
+        <li id="r60"><strong>R60.</strong> A signed-out browser that has signed in before (the <code>sfh_known</code> cookie) is not given a second account: <code>POST /api/sims</code> answers 401, the commits stay pending, and the save state offers sign-in. They are sent after it.</li>
+        <li id="r46"><strong>R46.</strong> The Worker resolves the session to <code>locals.user.id</code>, the stable identity id followed to its survivor (<code>resolveSessionUser</code>), and passes it to the object with the right to write (R53). The browser never states who it is.</li>
+        <li id="r47"><strong>R47.</strong> A sim's writers are its members whose role carries <code>sim.write</code>: managers and editors (<code>src/lib/server/authz/ability.ts</code>). A viewer, and anyone else with the link, reads.</li>
+        <li id="r48"><strong>R48.</strong> A person attaches a sign-in when they want. In staging and production the one method is the email magic link, in effect only once a mail provider is configured; until then the pseudonymous account is all there is. Password, passkey and Google are ported and off (<code>AUTH_METHODS</code>). Another device signed in to the same address lists the same sims, because the list is read from the ledger (R34).</li>
+        <li id="r49"><strong>R49.</strong> A magic-link sign-in from a pseudonymous session runs <code>handleAccountLink</code>. If the address is new, the pseudonymous identity survives with the new live row (<code>applyUpgrade</code>), and nothing changes for its sims. If the address already has an account, that account's identity survives (<code>applyFuse</code>): the pseudonymous identity gets <code>superseded_by_id</code> pointing at it, and its live row is deleted. Its grants stay where they are, and the role folds read them through the survivor (<code>principalUnion</code>), so the survivor writes every sim either identity could. Commits keep the actor they were appended with; <code>superseded_by_id</code> resolves it to the survivor. <code>handleAccountLink</code> gains a call to the roster hook for each sim of the absorbed identity.</li>
+        <li id="r50"><strong>R50.</strong> Minting is rate-limited per address: <code>PSEUDO_MINT_RL</code>, 5 a minute per <code>CF-Connecting-IP</code>, failing closed in production when the binding is missing.</li>
+        <li id="r61"><strong>R61.</strong> No account is reaped. The ported reaper (<code>src/lib/server/reap/</code>), which nothing calls, is removed, with its section in <code>docs/dev/auth.md</code>.</li>
+      </ul>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> No reaping. Removing the unused reaper code, rather than leaving it without a trigger, is my call: code that deletes accounts should not sit one cron entry away from running.</aside>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> Gradual auth as planafoot does it: "we get users straight away and allow them to auth when and as they want". In staging and production the only sign-in is the magic link, once mail is configured; pseudonymous accounts are always on.</aside>
+      <aside data-kind="decision"><strong>My call</strong> The account is made at the first registration, not on arrival, so a visitor who only looks, and a crawler, make none. The port already works this way.</aside>
+    </section>
+
+    <section id="sec-identity">
+      <h3>Identity and sharing</h3>
+      <ul>
+        <li id="r29"><strong>R29.</strong> The browser mints a sim's id at its first edit, in the format <code>createSim</code> uses (<code>newId</code>, a base58 UUIDv7, checked by <code>isValidId</code>), so a sim and a remix can be made offline. <code>newId</code> moves out of <code>src/lib/server/ids/</code> so the browser can import it. Apart from its creation time the id is random; knowing it is what lets someone read the sim.</li>
+        <li id="r51"><strong>R51.</strong> The first connection registers the sim: the browser posts its id to <code>POST /api/sims</code>, then opens the socket. Registering again is a no-op for a writer of that sim and refused for anyone else, whose commits become a remix (R32). Changes: <code>createSim</code> takes the id and checks it with <code>isValidId</code>; it needs its own insert, because <code>createSimRecord</code> fails on an existing row and <code>ensureSimRecord</code> would make any caller a manager; <code>startSim</code> and the route take <code>simId</code> and an optional name, since <code>checkSimTitle</code> refuses an empty one and a new sim has the default name (R42); <code>reseedHandleFromSim</code> runs only when a name was given.</li>
+        <li id="r52"><strong>R52.</strong> A person may manage at most 1,000 sims (<code>MAX_SIMS_PER_MANAGER</code>, 5 today, and its copy in <code>SIMS_COPY.quota</code>). The ceiling stops one account, or a script holding one, from making objects and index rows without end. The rates do the real work: <code>startSim</code> gains <code>MUTATION_REGISTERED_RL</code> (120 a minute) keyed by identity, since an existing account has no limit on making sims today, and minting stays behind <code>PSEUDO_MINT_RL</code> (R50).</li>
+        <li id="r30"><strong>R30.</strong> Who may write is decided by the ledger (R47), never by anything the browser holds. A writer on two devices, or two writers, write the same sim in one order (R18).</li>
+        <li id="r31"><strong>R31.</strong> A share link names a sim and a position: <code>/s/&lt;simId&gt;/&lt;n&gt;</code>. Anyone with it reads that state, read-only, with no account and no membership. It shows the same state for good: the log does not change, and no member leaving or deleting their account removes it (R43). Copying the link is the whole of sharing.</li>
+        <li id="r32"><strong>R32.</strong> Editing a sim you cannot write to starts a remix: a new sim whose first commit (<code>system</code>) holds the ruleset at that position and records the sim and position it came from. A writer editing from an earlier position of their own sim gets a restore to that position and then the edit, as two commits on that sim (R10); no remix.</li>
+        <li id="r33"><strong>R33.</strong> A remix is made locally and at once, like any commit, so it works offline from a link already open.</li>
+        <li id="r34"><strong>R34.</strong> A person holds any number of sims, up to R52, each with its own address (<code>/sim/&lt;simId&gt;</code>). Their list is the sims they are a member of (<code>foldSimsForUser</code>), so it follows a sign-in to another device. A remix never replaces another sim, as the single autosave slot does today.</li>
+        <li id="r35"><strong>R35.</strong> The index row records what a sim was remixed from (R24), so the tree of remixes can be read and counted without opening every log.</li>
+        <li id="r42"><strong>R42.</strong> A sim's name is a <code>set</code> on its name item, which every sim has from the start, at most 63 characters (<code>SIM_TITLE_MAX</code>, checked as <code>checkSimTitle</code> does). <code>sim_index.title</code> is its copy. A new sim gets a default name; a remix starts with its source's name.</li>
+        <li id="r43"><strong>R43.</strong> From the list a person can open a sim, start one, rename one and leave one (<code>leaveSim</code>). Nothing a member does deletes a sim. When its last member leaves, or deletes their account (<code>deleteAccount</code> removes its memberships), the sim stays with no members: its log and its <code>sim_index</code> row are kept, its links open as before, nobody can write it, and an edit starts a remix (R32). Its id cannot be registered again (R51), so nobody takes it over. <code>removeSimMember</code> (<code>src/lib/server/sims/sims.ts</code>) stops calling <code>deleteSim</code> when the roster is empty and deletes the sim's pending invitations instead. <code>deleteSim</code> is left for an operator's takedown: it also clears the object's storage and leaves a mark, so the id is never registered again and its links stop opening. A remix is unaffected by a takedown, because its first commit holds its whole ruleset.</li>
+        <li id="r59"><strong>R59.</strong> An invitation adds a member, as an editor (<code>src/lib/server/invites/control-plane.ts</code>). The new member writes to the same log from the next socket they open, in the one order. Membership changes are not commits: the log holds only the sim's content.</li>
+        <li id="r36"><strong>R36.</strong> Existing <code>/s/&lt;id&gt;</code> links (8 characters) and their D1 rows keep working unchanged. Remixing one starts a new sim from its document.</li>
+      </ul>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> One writer per sim, with more than one tab open and editing in either. Sims are nameable so a person can have more than one.</aside>
+      <aside data-kind="decision"><strong>My call</strong> Writers are whom the ported ledger gives <code>sim.write</code> (R47): the owner's "one writer" predates roles and invitations, and a second rule beside the ledger would have to be kept in step with it. Two writers are ordered as two tabs are.</aside>
+      <aside data-kind="decision"><strong>My call</strong> Reading needs only the link (R31): a link that needs an account is not a share link. Membership decides who writes and who sees the member area at <code>/sims/&lt;simId&gt;</code>. Old <code>/s</code> ids are 8 characters and a sim id about 22, so <code>/s/&lt;simId&gt;/&lt;n&gt;</code> never collides with them.</aside>
+      <aside data-kind="decision"><strong>My call</strong> The browser mints the id so a sim and a remix can be made offline; registration is idempotent only for a writer, so knowing an id never makes anyone its manager. The cap rises to 1,000 because every remix is a new sim. The name is a commit so a rename is in the history and can be undone. A writer on an earlier position restores and then edits, which is the owner's undo, rather than forking their own sim.</aside>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> Deletion does not kill any shared link (R43): leaving a sim, or deleting an account, never removes a log.</aside>
+      <aside data-kind="decision"><strong>My call</strong> A remix's first commit holds the whole ruleset, so it never depends on another sim's object; the cost is that undo in a remix stops there, and the page links to the parent for the history before it.</aside>
+    </section>
+
+    <section id="sec-engine">
+      <h3>The engine, datasets and the variants</h3>
+      <ul>
+        <li id="r37"><strong>R37.</strong> The engine is fed as today: the store's ruleset, debounced 250 ms, through <code>TimelineClient.setPolicy</code>. Its messages do not change.</li>
+        <li id="r38"><strong>R38.</strong> No world state, series or result is stored anywhere. A variant is a position; reopening one folds the log to that position and simulates.</li>
+        <li id="r54"><strong>R54.</strong> A commit is read with the dataset and shapes it records. Folding to a position reads each commit's changes under its <code>shapes</code> and upgrades them through the registry to the current shapes; the position is simulated on its last commit's dataset, which stays on R2 because published datasets are immutable. Opening a position never reconciles it against today's dataset, so a link shows what was shared, and the notices that a sim runs on another dataset go.</li>
+        <li id="r55"><strong>R55.</strong> Before a writer's first edit under a newer dataset than the tip's, the browser appends a <code>system</code> commit that moves the sim: its changes are what <code>reconcilePolicy4</code> changes on the new dataset, and the page shows today's notices for what moved. Reading never moves a sim. A move to newer shapes is not a commit, because the upgrade on read gives the same ruleset every time.</li>
+        <li id="r56"><strong>R56.</strong> The engine is not pinned. An old position re-simulates on the current engine with its own dataset and shapes, so the future someone saw under an older engine is not reproduced exactly; <code>build</code> is kept for study. The engine's dataset loader keeps reading every dataset a log names, back to <code>MIN_SIM_DATASET</code>; a pipeline change that breaks an older dataset ships an upgrade in the loader, as a shape change ships one in the registry. A dataset may be pruned only once no commit names it, which <code>sim_commit</code> answers (R24); none is pruned for now.</li>
+        <li id="r39"><strong>R39.</strong> This design says nothing about where the engine runs. The sim object does not run it, and nothing prevents a server-side run later.</li>
+      </ul>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> The move to a newer dataset is automatic, on a writer's first edit under it (R55). The person is not asked. Old datasets stay as long as the site does; one can be pruned once nothing depends on it, and for now none is (R56).</aside>
+      <aside data-kind="decision"><strong>My call</strong> R54 to R56 otherwise. A dataset move is a commit because the editors resolve presets against the page's dataset, so an edit made on a newer one must start from a ruleset moved to it. A shape move is not, because the upgrade is pure. The engine is not pinned because only one build is ever deployed.</aside>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> "being able to use the shapes/dataset as-of the time the sim was shared will make it easier to evolve the experience w/o worrying about breaking the past, and allow us to drop those 'your sim is running on a new dataset' messages we give now."</aside>
+    </section>
+
+    <section id="sec-ui">
+      <h3>What the page shows</h3>
+      <ul>
+        <li>The save state stays in the header's status slot, apart from the controls: saved, saving, or saved on this device (offline, or waiting for sign-in, R60).</li>
+        <li>Undo and redo announce the commit's label, as today.</li>
+        <li>Publish becomes "copy link": there is nothing to upload, since the state already has an address.</li>
+        <li>A sim the visitor cannot write opens with the same editors. The first edit makes it the visitor's own remix and says so.</li>
+        <li>A remix names the sim it came from, with a link to it.</li>
+        <li>The sim's name sits in the header beside the save state. Tapping it opens the list of sims and a link to the member area; nothing else about either is on screen until then.</li>
+        <li>The header's account entry (Sign in, or the handle linking to <code>/account</code>) is as ported. Nothing asks a person to sign in except commits waiting on a known device (R60).</li>
+        <li>Tab, selection, scrubber position and map view stay local to the page and out of the log.</li>
+      </ul>
+    </section>
+
+    <section id="sec-study">
+      <h3>Studying exploration</h3>
+      <p>The owner wants to classify the shape of an exploration, see which levers people pulled, and treat short change histories as a possible sign that a function is poorly exposed. No screen for this is wanted now.</p>
+      <ul>
+        <li>The D1 index (R24) answers these with SQL: commits per sim, their kinds and sources in order, the time between them, undo and redo runs, remix trees.</li>
+        <li>The actor column, resolved through <code>user_identity.superseded_by_id</code>, groups one person's commits across sims, so an exploration that runs across several sims can be read as one.</li>
+        <li>The full changes of a commit are read from its sim object when a question needs them.</li>
+        <li>What a person did in the page that changed no rule (which years and results they looked at) is not in the log. A later, opt-in PostHog setup records those actions and joins them to the log by sim id and position. Nothing for it is built here.</li>
+      </ul>
+    </section>
+
+    <section id="sec-privacy">
+      <h3>What leaves the browser</h3>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> Every edit is stored on the server from the first one, including edits later undone. Today nothing leaves the browser until Publish. No text announces the change: "everything is persisted" is how apps behave by default.</aside>
+      <ul>
+        <li>A commit stores no IP address. Its actor is the stable identity id, which names nobody until the person signs in with an email. The address lives only in the D1 <code>user</code> row, and account deletion scrubs it.</li>
+        <li>Commits a deleted account made stay, in every sim, under its identity id, which now resolves to a tombstone.</li>
+        <li>A person cannot delete a sim. Leaving takes it off their list; its links still open (R43).</li>
+        <li>Takedown stays manual, and is the only way a sim is removed: an operator deletes it (R43).</li>
+      </ul>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> A deleted person's commits are kept, and a person cannot erase a sim. This project's privacy envelope and public surface differ from planafoot's: keeping sims is the greater virtue, and a sim discloses nothing particularly private.</aside>
+    </section>
+  </section>
+
+  <section id="sec-constraints">
+    <h2>Constraints</h2>
+    <ul>
+      <li>Starts after timeline-ui merges, and replaces the inside of its <code>PolicyStore&lt;SimPolicy4&gt;</code>.</li>
+      <li>A Durable Object class needs an export from the worker entry, which adapter-cloudflare's generated <code>_worker.js</code> (<code>main</code> in <code>wrangler.jsonc</code>) does not have today, and a binding and a <code>new_sqlite_classes</code> migration in both environments.</li>
+      <li>The CSP is <code>connect-src 'self'</code> (<code>svelte.config.js</code>). If a supported browser does not admit a same-origin <code>wss:</code> under it, the change is an interface change (<code>CLAUDE.md</code>).</li>
+      <li>The socket route sits under <code>/api/sims</code>, which is in <code>SESSION_ROUTE_PREFIXES</code>, so its session is resolved. It checks <code>Origin</code> as <code>refuseUnlessSameOriginJson</code> does for <code>POST /api/sims</code>.</li>
+      <li>A Durable Object isolate has 128 MB and 10 GB of storage; a websocket message may be up to 32 MiB.</li>
+      <li>Vitest requires an assertion in every test; real Durable Object and R2 behaviour is tested in Playwright against workerd.</li>
+    </ul>
+  </section>
+
+  <section id="sec-order">
+    <h2>Size and order</h2>
+    <p>This is a project of five units. Each can be planned and reviewed alone.</p>
+    <table id="tbl-units">
+      <caption>Build units</caption>
+      <thead>
+        <tr><th scope="col">Unit</th><th scope="col">Delivers</th><th scope="col">Needs</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">1. Log core</th><td>Commit and change types (with <code>move</code>), parsers, <code>fold</code>, <code>diff</code>, the undo and redo derivation, the hash chain, and the shape registry at revision 1 with its upgrade path. Pure TypeScript, no I/O.</td><td>Nothing</td></tr>
+        <tr><th scope="row">2. Sim object</th><td>The Durable Object, the <code>sim</code> migration track and <code>db:generate:sim</code>, the worker entry and bindings, the socket and its frames, append rules, limits, the first commit of a sim made without one (R58), the D1 index columns and <code>sim_commit</code>.</td><td>1</td></tr>
+        <tr><th scope="row">3. Control plane</th><td>Browser-minted ids in <code>createSim</code>, <code>startSim</code> and <code>POST /api/sims</code> (R51), the cap and the rate (R52), the roster hook implemented (R53) and called from the fuse (R49), a sim kept when its last member goes and takedown reaching the object (R43), the reaper removed (R61).</td><td>2</td></tr>
+        <tr><th scope="row">4. Log store</th><td>The browser store (confirmed plus pending), IndexedDB, the reconnecting socket, drafts (R1), re-applying on <code>behind</code> (R18), the autosave import (R20), reading positions on their own dataset and the move commit (R54, R55). Replaces <code>PolicyStore</code> on <code>/sim</code>.</td><td>1, 3, timeline-ui on main</td></tr>
+        <tr><th scope="row">5. Sharing and remix</th><td><code>/sim/&lt;simId&gt;</code> and <code>/s/&lt;simId&gt;/&lt;n&gt;</code>, the name and the list in the header, remix on first edit, restore then edit on an earlier position, the old <code>/s</code> rows.</td><td>4</td></tr>
+      </tbody>
+    </table>
+    <p>Unit 5 is the point of the project; units 1 to 4 are what it stands on. Where a choice in an earlier unit trades something against a faster or simpler share or remix, sharing and remix win.</p>
+    <aside data-kind="decision"><strong>My call</strong> This goes before world-core sparse storage. The owner is not worried about memory; nothing here stores a world or depends on its size, and each page feature built before it would be built on the snapshot store.</aside>
+  </section>
+
+  <section id="sec-testing">
+    <h2>Testing</h2>
+    <ul>
+      <li><strong>Core.</strong> Property tests: applying <code>diff(a, b)</code> to <code>a</code> gives <code>b</code>, order included; a restore reproduces the earlier ruleset's canonical text; the undo and redo derivation matches a reference editor over random sequences of edit, undo and redo. A commit written under an older shape version folds to the same canonical text as its upgraded form (a fixture registry with two versions).</li>
+      <li><strong>Control plane.</strong> A writer registering an id twice makes one sim; another account registering it is refused. A first registration mints one account and a second mints none; a known device gets 401. The 1,001st managed sim is refused. After a fuse the survivor writes the absorbed identity's sims. After the last member leaves, and after an account is deleted, the sim's links still open and an edit starts a remix. After a takedown they do not.</li>
+      <li><strong>Sim object.</strong> Gapless positions; a duplicate <code>id</code> appends once; <code>behind</code>, <code>invalid</code>, <code>not-writer</code> and <code>gone</code> refusals; resume from any position; migrate on open; a role change ends write on an open socket.</li>
+      <li><strong>End to end.</strong> Edit, reload, undo back past the reload. Edit offline, reload, reconnect, and the commits arrive in order. Two tabs edit the same sim in turn and both show one order. An invited editor's edit appears in the inviter's open tab. A second sim is started, named and switched to without touching the first. A share link shows its position, on its own dataset, after later edits. Editing a shared sim starts a remix, leaves the visitor's other sims as they were, and the index records its source.</li>
+    </ul>
+  </section>
+
+  <section id="sec-builder">
+    <h2>Left to the builder</h2>
+    <ul>
+      <li>The exact keys of items, and how a painted brush's strokes are named, checked against timeline-ui's list of in-place edits (<code>docs/dev/timeline-ui.md</code> on its branch).</li>
+      <li>The id format of a commit, the hash function and the canonical text of a commit.</li>
+      <li>The SQLite schema, the per-sim rate and size limits, and the cap on a sim's length.</li>
+      <li>How the worker entry exports the class (planafoot does this on the same adapter).</li>
+      <li>The default name, and the wording of the save states and the list of sims, kept terse.</li>
+      <li>The list of <code>source</code> codes, one per control, and how a tab claims pending commits left by a tab that closed.</li>
+      <li>A new page under <code>docs/dev/</code> linked from <code>CLAUDE.md</code>, and the changes to <code>docs/dev/plan-sharing.md</code> and <code>docs/dev/auth.md</code>.</li>
+    </ul>
+    <p>Carried from the log core (unit 1, built; <a href="../../dev/sim-log.md"><code>docs/dev/sim-log.md</code></a>) to the units that call it:</p>
+    <ul>
+      <li><strong>Log store.</strong> A pending delete of a stroke that another writer has since repeated drops its whole commit today. The rule to build: with k deletes of one group of identical strokes in a commit, and t the highest repeat on the new tip, the i-th delete targets repeat t - k + i, and is dropped as gone when that is below 1.</li>
+      <li><strong>Log store.</strong> Undo stops at a move to a newer dataset (R12), but a jump can name a position before one. Decide what such a jump does: refuse it, or restore and move in one commit.</li>
+      <li><strong>Log store.</strong> <code>reapply</code> throws for a pending commit made under a newer shape revision than the build knows. The page offers a reload; the commit is kept.</li>
+      <li><strong>Any unit that adds a shape version to the stroke.</strong> Turning a ruleset into items must then emit the newest fields, so that a folded state and one built from its ruleset hold the same items.</li>
+      <li><strong>Every caller.</strong> An item read from the state is the stored one: treat it as read-only.</li>
+    </ul>
+  </section>
+
+  <section id="sec-builder-check">
+    <h2>Builder check, settled</h2>
+    <p>A fresh reader went through the paused draft as the builder would. Each point and where it is now settled:</p>
+    <section id="sec-builder-questions">
+      <h3>Questions</h3>
+      <ul>
+        <li id="bq1"><strong>Dataset changes on load.</strong> Nothing is reconciled on open; a position reads on its own dataset, and a writer moves a sim to a newer one with a <code>system</code> commit (R54, R55).</li>
+        <li id="bq2"><strong>"Recomputed against the new tip".</strong> Pending changes are re-applied; a pending restore keeps its target (R18, R19).</li>
+        <li id="bq3"><strong>Joining accounts.</strong> Only the magic link fuses in this build; the existing account survives and the folds read the absorbed grants through it (R49).</li>
+        <li id="bq4"><strong>Schema changes to <code>SimPolicy4</code>.</strong> The registry keeps every shape version with its upgrade, and each commit is read under its own (R54, <a href="#sec-shapes">Shapes</a>).</li>
+        <li id="bq5"><strong>The writer editing from an earlier position.</strong> A restore, then the edit (R32).</li>
+        <li id="bq6"><strong>Old positions on a new build.</strong> The engine is not pinned; <code>build</code> is for study (R56).</li>
+      </ul>
+    </section>
+    <section id="sec-builder-corrections">
+      <h3>Corrections</h3>
+      <ul>
+        <li id="bc1">When a draft becomes a commit, and an unfinished draft when the page is hidden (R1).</li>
+        <li id="bc2">A <code>move</code> change for ordered lists (<a href="#tbl-changes">the change vocabulary</a>, R8).</li>
+        <li id="bc3">What in D1 is a copy and what is the source of truth (R24, R53).</li>
+        <li id="bc4">The object's own migration track and generate script (R22).</li>
+        <li id="bc5">Both old autosave keys (R20).</li>
+        <li id="bc6">The state of timeline-ui (<a href="#sec-today">What exists today</a>).</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-open">
+    <h2>Calls to check</h2>
+    <p>The owner's answers are marked "Decision (owner)" where they apply. These calls are mine:</p>
+    <ul>
+      <li>Writers are the members with <code>sim.write</code>; reading needs only the link (<a href="#sec-identity">Identity and sharing</a>).</li>
+      <li>The browser mints the id; registration is idempotent only for a writer; the account is minted then (<a href="#sec-identity">Identity and sharing</a>, <a href="#sec-accounts">Accounts</a>).</li>
+      <li>A ceiling of 1,000 managed sims, with a creation rate per identity (<a href="#sec-identity">Identity and sharing</a>).</li>
+      <li>The unused reaper code is removed (<a href="#sec-accounts">Accounts</a>).</li>
+      <li>Membership only in D1; rights read at socket open and on the roster hook (<a href="#sec-server">The sim object</a>).</li>
+      <li>The name is a commit, with <code>sim_index.title</code> its copy; a writer on an earlier position restores, then edits (<a href="#sec-identity">Identity and sharing</a>).</li>
+      <li><code>/sim/&lt;simId&gt;</code> for a sim, <code>/s/&lt;simId&gt;/&lt;n&gt;</code> for a position; a remix is a new self-contained sim (<a href="#sec-identity">Identity and sharing</a>).</li>
+      <li>Pending commits re-applied as changes, kept in IndexedDB; both old autosave keys kept (<a href="#sec-local-first">Local first</a>).</li>
+      <li>Each commit read with its own dataset and shapes; a dataset move is a commit, a shape move is not; the engine is not pinned (<a href="#sec-engine">The engine, datasets and the variants</a>).</li>
+      <li>From planafoot's quest graph only shaped items, a numbered registry and reads under the writer's revision; revision 1 has one policy shape and one span shape per <code>where</code> and <code>what</code> row (<a href="#sec-shapes">Shapes</a>).</li>
+      <li>Drafts commit on a key change, a lost focus or a hidden page; the object checks structure only (<a href="#sec-commit">The commit</a>).</li>
+      <li>A <code>source</code> code on every commit, envelopes copied to D1, and the hash chain (<a href="#sec-commit">The commit</a>, <a href="#sec-server">The sim object</a>).</li>
+      <li>"Offer" read as a span, named by policy and start day; extending a span is a delete and an add (<a href="#sec-changes">Changes</a>).</li>
+      <li>Undo stops at a <code>system</code> commit, a dataset move included (<a href="#sec-undo">Undo and redo</a>).</li>
+      <li>Editors keep their edit functions and the store commits the diff (<a href="#sec-fold">Fold and diff</a>).</li>
+      <li>Appends over the socket (<a href="#sec-stream">The stream</a>).</li>
+      <li>The engine's messages unchanged; view state out of the log (<a href="#sec-engine">The engine, datasets and the variants</a>, <a href="#sec-ui">What the page shows</a>).</li>
+      <li>Five units, before sparse storage (<a href="#sec-order">Size and order</a>).</li>
+    </ul>
+  </section>
+</article>
