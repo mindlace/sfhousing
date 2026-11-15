@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CLOSE_BINARY, CLOSE_MALFORMED } from '$lib/sim-stream/protocol';
 import { LIMITS } from './limits';
 import { DrizzleQueryError } from 'drizzle-orm';
@@ -10,8 +10,12 @@ import {
   distinctIdentities,
   loggable,
   openStatus,
+  ROLE_READ_FAILED,
   readMessage,
-  roleChanges
+  receivesLive,
+  rereadChanges,
+  roleChanges,
+  withResumed
 } from './object-rules';
 import type { OpenParams } from './open-params';
 
@@ -178,5 +182,80 @@ describe('distinctIdentities', () => {
         null
       ])
     ).toEqual(['id-1', 'id-2']);
+  });
+});
+
+describe('withResumed and receivesLive', () => {
+  it('marks a valid attachment resumed, and only a resumed socket receives live commits', () => {
+    expect(receivesLive(att)).toBe(false);
+    const marked = withResumed(att);
+    expect(marked).toEqual({ ...att, resumed: true });
+    expect(receivesLive(marked)).toBe(true);
+  });
+
+  it('leaves an invalid attachment unmarked and sends it nothing', () => {
+    for (const bad of [null, 'junk', { ...att, extra: 1 }, { identity: null, write: true }]) {
+      expect(withResumed(bad)).toBeNull();
+      expect(receivesLive(bad)).toBe(false);
+    }
+  });
+
+  it('keeps a write changed by a concurrent rereadRoles', () => {
+    // rereadRoles revoked write while the resume answer was going out: the mark reads the
+    // socket's current attachment, so the revocation stands.
+    const revoked = { ...att, write: false };
+    expect(withResumed(revoked)).toEqual({ identity: 'id-1', write: false, resumed: true });
+  });
+});
+
+describe('rereadChanges', () => {
+  const sockets = [
+    { identity: 'a', write: true, resumed: true },
+    { identity: 'b', write: false, resumed: false },
+    { identity: null, write: false, resumed: true }
+  ];
+
+  it('reads each identity once and names the sockets whose right changed', async () => {
+    const read = vi.fn(async (id: string) => id === 'b');
+    const changes = await rereadChanges(() => [...sockets, sockets[0]], read, 's1');
+    expect(read.mock.calls.map((c) => c[0]).sort()).toEqual(['a', 'b']);
+    expect(changes).toEqual([
+      { index: 0, attachment: { identity: 'a', write: false, resumed: true } },
+      { index: 1, attachment: { identity: 'b', write: true, resumed: false } },
+      { index: 3, attachment: { identity: 'a', write: false, resumed: true } }
+    ]);
+  });
+
+  it('names sockets from the list taken after the read', async () => {
+    let calls = 0;
+    const list = () => (calls++ === 0 ? sockets : [sockets[1], sockets[0]]);
+    expect(await rereadChanges(list, async () => false, 's1')).toEqual([
+      { index: 1, attachment: { identity: 'a', write: false, resumed: true } }
+    ]);
+  });
+
+  it('returns nothing, reading nothing, when no socket has an identity', async () => {
+    const read = vi.fn(async () => true);
+    expect(await rereadChanges(() => [], read, 's1')).toEqual([]);
+    expect(await rereadChanges(() => [sockets[2], 'junk'], read, 's1')).toEqual([]);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('on a failed read logs once, revokes nobody and throws a fixed message', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const identity = 'ident-7Hx9QpL2';
+    const read = vi.fn(async (id: string) => {
+      if (id === identity) throw new Error('D1 busy');
+      return false;
+    });
+    const list = [{ identity, write: true, resumed: true }, sockets[0]];
+    const failed = await rereadChanges(() => list, read, 's1').catch((e: unknown) => e);
+    expect(failed).toBeInstanceOf(Error);
+    expect((failed as Error).message).toBe(ROLE_READ_FAILED);
+    expect((failed as Error).message).not.toContain(identity);
+    expect(err).toHaveBeenCalledOnce();
+    expect(err.mock.calls[0].join(' ')).toContain('s1');
+    expect(err.mock.calls[0].join(' ')).toContain('D1 busy');
+    err.mockRestore();
   });
 });

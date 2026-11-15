@@ -111,6 +111,53 @@ export function loggable(e: unknown): string {
   return text.length > LOG_MAX ? text.slice(0, LOG_MAX - 1) + '…' : text;
 }
 
+/**
+ * The socket's attachment marked resumed, built from its current attachment so a `write` changed
+ * by a concurrent rereadRoles is kept; null when the attachment is invalid (I7).
+ */
+export function withResumed(attachment: unknown): SocketAttachment | null {
+  const a = parseAttachment(attachment);
+  return a ? { ...a, resumed: true } : null;
+}
+
+/** Whether a live commit goes to this socket: only once it has resumed (I7). */
+export function receivesLive(attachment: unknown): boolean {
+  return parseAttachment(attachment)?.resumed === true;
+}
+
+/** The message rereadRoles throws when its role read fails. Fixed: it names no identity. */
+export const ROLE_READ_FAILED = 'role read failed';
+
+/**
+ * rereadRoles' decision. Reads the role of each distinct identity on the open sockets (the list
+ * `sockets()` gives before the read), then names the sockets whose right changed in a second list
+ * taken after the read (indexes refer to it). No socket with an identity: nothing read, [].
+ * A failed read logs once (label and loggable text) and throws Error(ROLE_READ_FAILED): nobody
+ * is revoked, and the caller decides whether to retry.
+ */
+export async function rereadChanges(
+  sockets: () => readonly unknown[],
+  canWriteOf: (identity: string) => Promise<boolean>,
+  label: string
+): Promise<{ index: number; attachment: SocketAttachment }[]> {
+  const identities = distinctIdentities(sockets());
+  if (identities.length === 0) return [];
+  let writers: Map<string, boolean>;
+  try {
+    const read = await Promise.all(
+      identities.map(async (id) => [id, await canWriteOf(id)] as const)
+    );
+    writers = new Map(read);
+  } catch (e) {
+    console.error('[sim-object] role read failed', label, loggable(e));
+    // No cause: a failed query's error carries its bound parameters (identities) and would
+    // travel to the RPC caller.
+    // eslint-disable-next-line preserve-caught-error
+    throw new Error(ROLE_READ_FAILED);
+  }
+  return roleChanges(sockets(), writers);
+}
+
 /** Each identity of a socket with a valid attachment, once. */
 export function distinctIdentities(attachments: readonly unknown[]): string[] {
   const out = new Set<string>();

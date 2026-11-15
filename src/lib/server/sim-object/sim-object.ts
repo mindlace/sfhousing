@@ -19,18 +19,20 @@ import {
   commitsFrame,
   encodeFrame
 } from '$lib/sim-stream/protocol';
-import { canWrite, parseAttachment } from './access';
+import { canWrite } from './access';
+import { IndexRunner, takeDownInOrder } from './index-runner';
 import { syncSimIndex } from './index-sync';
-import { INDEX_BATCH, INDEX_RETRY_MS } from './limits';
+import { INDEX_RETRY_MS } from './limits';
 import { LogHost } from './log-host';
 import { simMigrations } from './migrations.generated';
 import {
   closeReply,
-  distinctIdentities,
   loggable,
   openStatus,
   readMessage,
-  roleChanges
+  receivesLive,
+  rereadChanges,
+  withResumed
 } from './object-rules';
 import { OPEN_HEADER, parseOpenParams } from './open-params';
 import * as schema from './schema';
@@ -39,7 +41,7 @@ import { SimStore, type SimDb } from './store';
 export class SimObject extends DurableObject<Env> {
   #host: LogHost | null = null;
   #migrateError: Error | null = null;
-  #indexing = false;
+  #index: IndexRunner | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -67,6 +69,15 @@ export class SimObject extends DurableObject<Env> {
         return;
       }
       this.#host = host;
+      this.#index = new IndexRunner(host, {
+        simId: ctx.id.name,
+        sync: (simId, commits, summary) => syncSimIndex(this.#d1(), simId, commits, summary),
+        armRetry: async () => {
+          if ((await ctx.storage.getAlarm()) === null) {
+            await ctx.storage.setAlarm(Date.now() + INDEX_RETRY_MS);
+          }
+        }
+      });
       try {
         if (host.indexBehind() && (await ctx.storage.getAlarm()) === null) {
           await ctx.storage.setAlarm(Date.now());
@@ -109,7 +120,7 @@ export class SimObject extends DurableObject<Env> {
           build: params.build,
           now: Date.now()
         });
-        if (out?.kind === 'accepted') this.ctx.waitUntil(this.#kickIndex());
+        if (out?.kind === 'accepted' && this.#index) this.ctx.waitUntil(this.#index.kick());
       } catch (e) {
         console.error('[sim-object] start failed', this.#label(), loggable(e));
         this.#close(server, CLOSE_INTERNAL, 'internal');
@@ -160,7 +171,7 @@ export class SimObject extends DurableObject<Env> {
         this.#send(ws, encodeFrame({ type: 'refused', id: out.id, why: out.why }));
       } else if (out.kind === 'accepted') {
         // The commit itself already went out through onCommit.
-        await this.#kickIndex();
+        await this.#index?.kick();
       }
     } catch (e) {
       console.error('[sim-object] append failed', this.#label(), loggable(e));
@@ -187,36 +198,23 @@ export class SimObject extends DurableObject<Env> {
 
   /** Retries the index write (R41). */
   async alarm(): Promise<void> {
-    await this.#kickIndex();
+    await this.#index?.kick();
   }
 
   /**
    * RPC for unit 3's roster hook (R53): re-read each open socket's role and send access on
-   * change.
+   * change. Throws Error('role read failed') when the role read fails, revoking nobody; returns
+   * normally when it succeeded or no open socket has an identity. Write the roster change first.
    */
   async rereadRoles(): Promise<void> {
     const simId = this.ctx.id.name;
     if (!simId) return;
-    const identities = distinctIdentities(
-      this.ctx.getWebSockets().map((ws) => ws.deserializeAttachment())
-    );
-    if (identities.length === 0) return;
-    let writers: Map<string, boolean>;
-    try {
-      const db = this.#d1();
-      const read = await Promise.all(
-        identities.map(async (id) => [id, canWrite(await foldSimRole(db, simId, id))] as const)
-      );
-      writers = new Map(read);
-    } catch (e) {
-      // Rights stay as they were; the caller's next call retries.
-      console.error('[sim-object] role read failed', simId, loggable(e));
-      return;
-    }
-    const sockets = this.ctx.getWebSockets();
-    const changes = roleChanges(
-      sockets.map((ws) => ws.deserializeAttachment()),
-      writers
+    const db = this.#d1();
+    let sockets: WebSocket[] = [];
+    const changes = await rereadChanges(
+      () => (sockets = this.ctx.getWebSockets()).map((ws) => ws.deserializeAttachment()),
+      async (identity) => canWrite(await foldSimRole(db, simId, identity)),
+      simId
     );
     for (const { index, attachment } of changes) {
       const ws = sockets[index];
@@ -229,12 +227,17 @@ export class SimObject extends DurableObject<Env> {
     }
   }
 
-  /** RPC for unit 3's takedown (R43): clear the log, mark it gone, close every socket with 4410. */
+  /**
+   * RPC for unit 3's takedown (R43): clear the log and mark it gone, wait for an index pass in
+   * flight, then close every socket with 4410. No index write lands after it returns.
+   */
   async takeDown(): Promise<void> {
     const host = this.#host;
-    if (!host) throw new Error('sim object unavailable');
-    await host.takeDown(Date.now());
-    for (const ws of this.ctx.getWebSockets()) this.#close(ws, CLOSE_GONE, 'gone');
+    const index = this.#index;
+    if (!host || !index) throw new Error('sim object unavailable');
+    await takeDownInOrder(host, index, Date.now(), () => {
+      for (const ws of this.ctx.getWebSockets()) this.#close(ws, CLOSE_GONE, 'gone');
+    });
   }
 
   #label(): string {
@@ -265,8 +268,8 @@ export class SimObject extends DurableObject<Env> {
    *  rereadRoles is not overwritten). */
   #markResumed(ws: WebSocket): void {
     try {
-      const a = parseAttachment(ws.deserializeAttachment());
-      if (a) ws.serializeAttachment({ ...a, resumed: true });
+      const a = withResumed(ws.deserializeAttachment());
+      if (a) ws.serializeAttachment(a);
     } catch {
       // The socket closed.
     }
@@ -277,40 +280,10 @@ export class SimObject extends DurableObject<Env> {
   #broadcast(frame: string): void {
     for (const ws of this.ctx.getWebSockets()) {
       try {
-        if (parseAttachment(ws.deserializeAttachment())?.resumed) ws.send(frame);
+        if (receivesLive(ws.deserializeAttachment())) ws.send(frame);
       } catch {
         // The socket closed between the list and the send.
       }
-    }
-  }
-
-  async #kickIndex(): Promise<void> {
-    const host = this.#host;
-    const simId = this.ctx.id.name;
-    if (this.#indexing || !host || !simId) return;
-    this.#indexing = true;
-    try {
-      // Rows stored during an await are picked up by the next unindexed(); the last check and
-      // the reset of #indexing run with no await between them, so no kick is lost.
-      for (
-        let batch = host.unindexed(INDEX_BATCH);
-        batch.length > 0;
-        batch = host.unindexed(INDEX_BATCH)
-      ) {
-        await syncSimIndex(this.#d1(), simId, batch, host.summary());
-        host.markIndexed(batch[batch.length - 1].commit.seq);
-      }
-    } catch (e) {
-      console.error('[sim-object] index write failed', simId, loggable(e));
-      try {
-        if ((await this.ctx.storage.getAlarm()) === null) {
-          await this.ctx.storage.setAlarm(Date.now() + INDEX_RETRY_MS);
-        }
-      } catch (e2) {
-        console.error('[sim-object] index retry not scheduled', simId, loggable(e2));
-      }
-    } finally {
-      this.#indexing = false;
     }
   }
 }
