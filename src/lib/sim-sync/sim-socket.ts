@@ -13,7 +13,15 @@ import {
   type ServerFrame
 } from '$lib/sim-stream/protocol';
 import { backoffDelay } from './backoff';
-import type { Clock, NetEvent, NetSignals, SocketCtor, SocketLike, SyncStore } from './ports';
+import {
+  errorName,
+  type Clock,
+  type NetEvent,
+  type NetSignals,
+  type SocketCtor,
+  type SocketLike,
+  type SyncStore
+} from './ports';
 
 /**
  * No hello within this after connecting, or no frame within this after a ping: the connection
@@ -138,6 +146,8 @@ export class SimSocket {
   #attempt = 0;
   /** A resume was sent on this connection and its answer has not ended (Task 9 extends). */
   #resuming = false;
+  /** A socket constructor has thrown once already: logged. */
+  #loggedFail = false;
   #cancelHello: (() => void) | null = null;
   #cancelRetry: (() => void) | null = null;
   #cancelPing: (() => void) | null = null;
@@ -195,6 +205,15 @@ export class SimSocket {
     return this.#started && !this.#stopped;
   }
 
+  /**
+   * Still running on socket s. Checked after every call out to code this class does not own (a
+   * store method, which notifies its subscribers synchronously, and onChange): such code may
+   * have stopped or reconnected this socket, and then the rest of the handler must not run.
+   */
+  #current(s: SocketLike): boolean {
+    return this.#running() && this.#sock === s;
+  }
+
   /** A new connection (C1); a constructor that throws is a failed attempt. */
   #connect(): void {
     this.#helloed = false;
@@ -202,21 +221,26 @@ export class SimSocket {
     let s: SocketLike;
     try {
       s = new this.#o.WebSocket(streamUrl(this.#o.origin, this.#o.simId));
-    } catch {
+    } catch (e) {
+      // Backed off (it may be transient), logged once per SimSocket.
+      if (!this.#loggedFail) {
+        this.#loggedFail = true;
+        console.error('[sim-sync] socket failed', errorName(e));
+      }
       this.#retry();
       return;
     }
     this.#sock = s;
     s.addEventListener('message', (e) => {
-      if (this.#sock === s) this.#onMessage(e.data);
+      if (this.#current(s)) this.#onMessage(s, e.data);
     });
     s.addEventListener('close', (e) => {
-      if (this.#sock === s) this.#onClose(e.code);
+      if (this.#current(s)) this.#onClose(e.code);
     });
     // 'error' is always followed by 'close' (C23); 'open' needs nothing: hello says it all.
     this.#cancelHello = this.#o.clock.after(HELLO_TIMEOUT_MS, () => {
       this.#cancelHello = null;
-      if (this.#sock === s) this.#dead();
+      if (this.#current(s)) this.#dead();
     });
     this.#set({ phase: 'connecting', write: null, inFlight: null });
   }
@@ -273,7 +297,7 @@ export class SimSocket {
 
   // ---- frames ----
 
-  #onMessage(data: unknown): void {
+  #onMessage(s: SocketLike, data: unknown): void {
     if (typeof data !== 'string') return;
     // Any frame at all, a pong included, shows the connection is alive (C16, C24).
     this.#cancelDeadline?.();
@@ -282,7 +306,7 @@ export class SimSocket {
     const f = frameOf(data);
     if (f === null) return; // C19
     if (!this.#helloed) {
-      if (f.type === 'hello') this.#onHello(f); // C27: nothing else before it
+      if (f.type === 'hello') this.#onHello(s, f); // C27: nothing else before it
       return;
     }
     switch (f.type) {
@@ -290,10 +314,10 @@ export class SimSocket {
         return; // C26
       case 'access':
         this.#set({ write: f.write });
-        this.#trySend();
+        if (this.#current(s)) this.#trySend();
         return;
       case 'commits':
-        this.#onCommits(f.commits, f.more);
+        this.#onCommits(s, f.commits, f.more);
         return;
       case 'refused':
         this.#onRefused(f.id, f.why);
@@ -302,7 +326,7 @@ export class SimSocket {
   }
 
   /** C3, C4, C5. */
-  #onHello(f: Extract<ServerFrame, { type: 'hello' }>): void {
+  #onHello(s: SocketLike, f: Extract<ServerFrame, { type: 'hello' }>): void {
     this.#cancelHello?.();
     this.#cancelHello = null;
     if (f.protocol !== PROTOCOL) {
@@ -312,8 +336,10 @@ export class SimSocket {
     this.#helloed = true;
     // Before anything is sent (store I11): head() stays null until the dataset is known.
     if (f.dataset !== undefined) this.#o.store.setServerDataset(f.dataset);
+    if (!this.#current(s)) return;
     this.#set({ phase: 'catching-up', serverBuild: f.build });
-    this.#resume();
+    if (!this.#current(s)) return;
+    this.#resume(s);
     if (this.#o.net.visible()) this.#armPing();
   }
 
@@ -322,25 +348,28 @@ export class SimSocket {
    * nothing is sent and the socket stays catching-up (Task 9 owes the resume and sends it once
    * the store is ready on this sim, C10).
    */
-  #resume(): void {
+  #resume(s: SocketLike): void {
     const store = this.#o.store;
     if (!store.ready || store.simId !== this.#o.simId) return;
     this.#resuming = true;
-    this.#sock?.send(encodeFrame({ type: 'resume', after: store.tipSeq }));
+    s.send(encodeFrame({ type: 'resume', after: store.tipSeq }));
   }
 
   /**
    * Every commits frame goes to the store with this socket's sim. Seam for Task 9: today only
    * `more: false` ending this connection's resume is acted on (caught up: live, and with nothing
-   * to send the backoff resets, C12); `more: true`, a gap and the store's other answers are
-   * Task 9's (C7 to C9, C29, C30), and so is a throw from receive (C30).
+   * pending or held the backoff resets, C12 as ruled in fix round 1); `more: true`, a gap and the
+   * store's other answers are Task 9's (C7 to C9, C29, C30), and so is a throw from receive (C30).
    */
-  #onCommits(commits: Commit[], more: boolean | undefined): void {
-    this.#o.store.receive(this.#o.simId, commits);
+  #onCommits(s: SocketLike, commits: Commit[], more: boolean | undefined): void {
+    const store = this.#o.store;
+    store.receive(this.#o.simId, commits);
+    if (!this.#current(s)) return;
     if (more === false && this.#resuming) {
       this.#resuming = false;
-      if (this.#o.store.head() === null) this.#attempt = 0;
+      if (store.pendingCount === 0 && store.heldCount === 0) this.#attempt = 0;
       this.#set({ phase: 'live' });
+      if (!this.#current(s)) return;
     }
     this.#trySend();
   }
@@ -363,9 +392,14 @@ export class SimSocket {
 
   /** The ping timer: a ping every PING_MS while visible (C16). */
   #armPing(): void {
+    const s = this.#sock;
     this.#cancelPing?.();
+    this.#cancelPing = null;
+    if (s === null) return;
     this.#cancelPing = this.#o.clock.after(PING_MS, () => {
       this.#cancelPing = null;
+      // Re-armed only while this socket is still the current one.
+      if (!this.#current(s)) return;
       this.#ping();
       this.#armPing();
     });
@@ -382,7 +416,7 @@ export class SimSocket {
     if (this.#cancelDeadline !== null) return;
     this.#cancelDeadline = this.#o.clock.after(HELLO_TIMEOUT_MS, () => {
       this.#cancelDeadline = null;
-      if (this.#sock === s) this.#dead();
+      if (this.#current(s)) this.#dead();
     });
   }
 

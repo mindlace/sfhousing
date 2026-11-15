@@ -1,6 +1,7 @@
 // SimSocket against the fake sim object (FakeHub), a real store over the in-memory database,
 // the fake clock and the fake network signals. No timers: time moves only by clock.advance.
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mockConsole } from '$lib/server/test/mock-console';
 import { newId } from '$lib/ids/base58';
 import { LogStore } from '$lib/sim-store/log-store.svelte';
 import { memorySimDb } from '$lib/sim-store/sim-db';
@@ -18,6 +19,10 @@ import { FakeClock, FakeNet } from './test/fakes';
 import { FakeHub, settle, type HubOptions } from './test/hub';
 
 const ORIGIN = 'http://localhost:4173';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 const stamp = () => ({ datasetVersion: DS, build: 'test' });
 
 interface Rig {
@@ -193,12 +198,26 @@ describe('SimSocket: connection', () => {
     expect(r.hub.resumes).toEqual([0, 1]);
   });
 
-  it('C11 a connection that fails before it opens counts as an attempt', async () => {
+  it('C11 a close clears the ping timer: no ping goes out while it waits', async () => {
     const r = await rig();
+    await live(r);
+    r.hub.reject = true;
+    r.hub.closeAll(1011);
+    await settle(r.hub, r.store);
+    r.clock.advance(PING_MS + HELLO_TIMEOUT_MS);
+    await settle(r.hub, r.store);
+    expect(r.hub.sockets.length).toBeGreaterThan(1);
+    expect(r.hub.sockets.flatMap((s) => s.sent).filter((t) => t === 'ping')).toEqual([]);
+    expect(r.sock.view.phase).toBe('waiting');
+  });
+
+  it('C11 a socket that cannot be made is backed off and logged once', async () => {
+    const r = await rig();
+    const { error } = mockConsole('error');
     let made = 0;
     const Throwing = function (url: string) {
       made++;
-      if (made === 1) throw new DOMException('no', 'SyntaxError');
+      if (made <= 2) throw new DOMException('no', 'SyntaxError');
       return new r.hub.WebSocket(url);
     } as unknown as SocketCtor;
     const sock = new SimSocket({ ...r.opts, WebSocket: Throwing });
@@ -206,8 +225,13 @@ describe('SimSocket: connection', () => {
     expect(sock.view.phase).toBe('waiting');
     expect(r.clock.nextDelay()).toBe(1000);
     r.clock.advance(1000);
+    expect(sock.view.phase).toBe('waiting');
+    expect(r.clock.nextDelay()).toBe(2000);
+    r.clock.advance(2000);
     await settle(r.hub, r.store);
     expect(sock.view.phase).toBe('live');
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith('[sim-sync] socket failed', 'SyntaxError');
   });
 
   it('C12 a connection that reaches live with nothing to send resets the backoff', async () => {
@@ -227,17 +251,20 @@ describe('SimSocket: connection', () => {
     expect(r.clock.nextDelay()).toBe(1000);
   });
 
-  it('C12 a connection that reaches live with something to send keeps the backoff', async () => {
-    // No start commit: the pending edit stays on the tip, so head() is not null when caught up.
-    const r = await rig({ edits: 1, hub: { start: false } });
-    r.hub.reject = true;
-    r.sock.start();
+  it('C12 connections that reach live with an edit still pending back off 1 s, then 2 s', async () => {
+    const r = await rig({ edits: 1 });
+    await live(r);
+    expect(r.sock.view.phase).toBe('live');
+    expect(r.store.pendingCount).toBe(1);
+    r.hub.closeAll(1011);
     await settle(r.hub, r.store);
-    r.hub.reject = false;
+    expect(r.clock.nextDelay()).toBe(1000);
+    // Another writer's commit, so the next resume re-applies the pending edit again.
+    foreign(r, 'F1');
     r.clock.advance(1000);
     await settle(r.hub, r.store);
     expect(r.sock.view.phase).toBe('live');
-    expect(r.store.head()).not.toBeNull();
+    expect(r.store.pendingCount).toBe(1);
     r.hub.closeAll(1011);
     await settle(r.hub, r.store);
     expect(r.clock.nextDelay()).toBe(2000);
@@ -492,6 +519,69 @@ describe('SimSocket: connection', () => {
     await settle(r.hub, r.store); // the closed socket's own close event
     expect(r.sock.view.phase).toBe('waiting');
     expect(r.clock.nextDelay()).toBe(1000);
+  });
+
+  it('C17 stop while connecting: the late open, hello and close of that socket do nothing', async () => {
+    const r = await rig();
+    r.sock.start();
+    const s = r.hub.sockets[0];
+    r.sock.stop();
+    expect(s.closedWith).toBe(1000);
+    await settle(r.hub, r.store);
+    s.emit('open');
+    s.emit('message', JSON.stringify({ type: 'hello', build: 'b', protocol: 1, dataset: DS }));
+    s.emit('close', 1011);
+    r.clock.advance(120_000);
+    expect(r.sock.view).toEqual(OFF_VIEW);
+    expect(r.hub.sockets).toHaveLength(1);
+    expect(r.hub.resumes).toEqual([]);
+    expect(r.store.serverDataset).toBeNull();
+    expect(r.clock.nextDelay()).toBeNull();
+  });
+
+  it('C17 a store subscriber that stops the socket during hello leaves it stopped', async () => {
+    const r = await rig();
+    r.store.subscribe(() => r.sock.stop());
+    await live(r);
+    expect(r.store.serverDataset).toBe(DS);
+    expect(r.sock.view).toEqual(OFF_VIEW);
+    expect(r.hub.resumes).toEqual([]);
+    expect(r.clock.nextDelay()).toBeNull();
+    r.clock.advance(120_000);
+    expect(r.hub.sockets[0].sent).toEqual([]);
+  });
+
+  it('C17 an onChange that stops the socket during hello leaves it stopped', async () => {
+    const r = await rig();
+    const sock: SimSocket = new SimSocket({
+      ...r.opts,
+      onChange: (v) => {
+        if (v.phase === 'catching-up') sock.stop();
+      }
+    });
+    sock.start();
+    await settle(r.hub, r.store);
+    expect(sock.view).toEqual(OFF_VIEW);
+    expect(r.hub.resumes).toEqual([]);
+    expect(r.clock.nextDelay()).toBeNull();
+  });
+
+  it('C17 a store subscriber that reconnects during hello: only the new socket goes on', async () => {
+    const r = await rig();
+    let once = false;
+    r.store.subscribe(() => {
+      if (once) return;
+      once = true;
+      r.sock.reconnect();
+    });
+    await live(r);
+    expect(r.hub.sockets).toHaveLength(2);
+    expect(r.hub.sockets[0].sent).toEqual([]);
+    expect(r.hub.resumes).toEqual([0]);
+    expect(r.sock.view.phase).toBe('live');
+    r.clock.advance(PING_MS);
+    expect(pings(r, 0)).toBe(0);
+    expect(pings(r, 1)).toBe(1);
   });
 
   it('C19 C23 a text that is not a known frame, and an error event, are ignored', async () => {
