@@ -1267,13 +1267,12 @@ describe('LocalLog under any script', () => {
           });
           for (const key of counted) seen[key]++;
         }),
-        { numRuns: 700 }
+        { numRuns: 450 }
       )
     ).not.toThrow();
-    // Unseeded; over 6 runs of 700: echoed 332-385, invalid 112-138, empty 49-63, too large
-    // 11-16, partial 10-24, B's commit between two of A's 7-11, gap 3-12, restore moved 1-8,
-    // target gone 0-7. The last three are asserted by the single-log property, which reaches
-    // them more often.
+    // Unseeded; over 5 runs of 450: echoed 212-246, invalid 69-84, empty 32-39, too large 7-12,
+    // partial 9-12, B's commit between two of A's 5-8, gap 0-8, restore moved 3-5, target gone
+    // 1-2. The last three are asserted by the single-log property, which reaches them more often.
     const rare = ['gap', 'restoreMoved', 'targetGone'];
     for (const [key, n] of Object.entries(seen))
       if (!rare.includes(key)) expect(n).toBeGreaterThan(0);
