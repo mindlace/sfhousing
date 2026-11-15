@@ -213,22 +213,28 @@ test.describe('registration', () => {
       const other = await ctx.newPage();
       await loginAs(other, uniqueEmail('cp-race-b'));
       const simId = newId();
-      const pages = [page, other, page, other];
+      const accounts = [page, other];
+      // Which account each of the four calls comes from.
+      const from = [0, 1, 0, 1];
       const responses = await Promise.all(
-        pages.map((p) => p.request.post('/api/sims', { data: { simId, title: 'Race' } }))
+        from.map((a) => accounts[a].request.post('/api/sims', { data: { simId, title: 'Race' } }))
       );
       const statuses = responses.map((r) => r.status());
       expect(statuses.filter((s) => s === 201)).toHaveLength(1);
-      const winner = pages[statuses.indexOf(201)];
-      const loser = winner === page ? other : page;
+      const won = from[statuses.indexOf(201)];
+      const byAccount = [0, 1].map((a) =>
+        statuses.filter((_, i) => from[i] === a).sort((x, y) => x - y)
+      );
       // The winner's repeat is the no-op; both of the other account's calls are refused.
-      statuses.forEach((status, i) => {
-        if (i === statuses.indexOf(201)) return;
-        expect(status).toBe(pages[i] === winner ? 200 : 409);
-      });
-      for (const [i, r] of responses.entries())
-        if (statuses[i] === 409)
-          expect(await r.json()).toEqual({ error: SIMS_COPY.notYours, code: 'taken' });
+      expect(byAccount[won]).toEqual([200, 201]);
+      expect(byAccount[1 - won]).toEqual([409, 409]);
+      const refusals = responses.filter((r) => r.status() === 409);
+      expect(await Promise.all(refusals.map((r) => r.json()))).toEqual([
+        { error: SIMS_COPY.notYours, code: 'taken' },
+        { error: SIMS_COPY.notYours, code: 'taken' }
+      ]);
+      const winner = accounts[won];
+      const loser = accounts[1 - won];
 
       // Exactly one member: the winner, as manager.
       await openMembers(winner, simId);
