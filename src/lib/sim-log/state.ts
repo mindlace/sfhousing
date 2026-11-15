@@ -82,8 +82,10 @@ export class LogState {
   /**
    * Apply one commit's changes, read under input.shapes. Atomic: on a throw the state is
    * unchanged. With check, also runs checkRuleset and rolls back with LogError('invalid-ruleset').
+   * With strokes: false, skips the stroke-order check, for a caller that applies a commit's
+   * changes one at a time and applies the whole commit again at the end.
    */
-  apply(input: FoldInput, opts: { check?: boolean } = {}): void {
+  apply(input: FoldInput, opts: { check?: boolean; strokes?: boolean } = {}): void {
     versionAt(this.reg, input.shapes, 'sim');
     const j: Journal = { items: new Map(), lists: new Map(), kids: new Map() };
     this.journal = j;
@@ -98,7 +100,7 @@ export class LogState {
           throw at(e, i);
         }
       });
-      for (const [span, i] of spans) this.checkStrokes(span, i);
+      if (opts.strokes !== false) for (const [span, i] of spans) this.checkStrokes(span, i);
       this.datasetVersion = input.datasetVersion;
       this.memo = null;
       if (opts.check) {

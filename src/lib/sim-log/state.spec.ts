@@ -358,6 +358,17 @@ describe('strokes', () => {
       s.apply(input([addStroke(Z, z, Y), { op: 'move', key: Z, after: X }]));
       expect(s.list(listKey(sp))).toEqual([X, Z, Y]);
     });
+
+    it('with strokes: false, skips the stroke-order check and nothing else', () => {
+      const s = two();
+      s.apply(input([addStroke(Z, z, Y)]), { strokes: false });
+      expect(s.list(listKey(sp))).toEqual([X, Y, Z]);
+      expect(() => s.apply(input([addStroke(Z, z, X)]), { strokes: false })).toThrow(
+        expect.objectContaining({ code: 'invalid-change', index: 0 })
+      );
+      s.apply(input([{ op: 'move', key: Z, after: X }]));
+      expect(s.list(listKey(sp))).toEqual([X, Z, Y]);
+    });
   });
 
   it('accepts deleting the whole span with its repeats', () => {

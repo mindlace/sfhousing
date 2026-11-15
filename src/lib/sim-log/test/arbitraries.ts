@@ -4,6 +4,7 @@
  */
 import fc from 'fast-check';
 import type { CustomBrush } from '$lib/sim-page/policy';
+import { monthOfDay } from '$lib/sim/world/months';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
 import { DEFAULT_SIM_NAME } from '../shapes';
 import type { RulesetContent } from '../types';
@@ -159,3 +160,165 @@ export const arbPair: fc.Arbitrary<[RulesetContent, RulesetContent]> = fc.tuple(
   arbRuleset,
   arbRuleset
 );
+
+/**
+ * One small edit, by picks: `op` chooses the edit, `a`, `b`, `c` where it lands. The picks are
+ * small so that two edits of one base often land on the same items, and the stroke edits (2, 3,
+ * 7, 8) are drawn more often than the rest.
+ */
+interface Edit {
+  op: number;
+  a: number;
+  b: number;
+  c: number;
+}
+const small = fc.nat({ max: 5 });
+const editArb: fc.Arbitrary<Edit> = fc.record({
+  op: fc.constantFrom(0, 1, 2, 2, 3, 3, 3, 4, 5, 6, 7, 7, 8, 8, 9),
+  a: small,
+  b: small,
+  c: small
+});
+
+const KIND_NAMES = ['zoning', 'permitting', 'money'] as const;
+const pick = <T>(xs: readonly T[], n: number): T | undefined =>
+  xs.length === 0 ? undefined : xs[n % xs.length];
+const moveTo = <T>(xs: T[], from: number, to: number): void => {
+  const [x] = xs.splice(from % xs.length, 1);
+  xs.splice(to % (xs.length + 1), 0, x);
+};
+
+/** Applies one edit in place; an edit with nothing to land on does nothing. */
+function applyEdit(r: RulesetContent, { op, a, b, c }: Edit): void {
+  const kinds = r.policy.kinds as unknown as Record<string, J[]>;
+  const all = KIND_NAMES.flatMap((k) => kinds[k]);
+  const spans = all.flatMap((p) => (p.spans as J[]).map((s) => ({ p, s })));
+  const brushSpans = spans.filter(({ s }) => s.what.tag === 'brushes');
+  const brushesAt = (n: number) => pick(brushSpans, n)?.s.what.brushes as CustomBrush[] | undefined;
+  const stroke = () => ({
+    path: structuredClone(PATHS[c % PATHS.length]),
+    radiusM: c % 2 === 0 ? 10 : 50
+  });
+  switch (op % 10) {
+    case 0: {
+      // delete a policy
+      const list = kinds[KIND_NAMES[a % 3]];
+      if (list.length > 0) list.splice(b % list.length, 1);
+      return;
+    }
+    case 1: {
+      // delete a span
+      const at = pick(spans, a);
+      if (at) at.p.spans.splice(at.p.spans.indexOf(at.s), 1);
+      return;
+    }
+    case 2: {
+      // add a stroke to a brush or as a new brush; a painted policy when no span has brushes
+      const brushes = brushesAt(a);
+      if (!brushes) {
+        if (!all.some((p) => p.id === 'z9')) kinds.zoning.push(painted('z9'));
+        return;
+      }
+      const i = b % (brushes.length + 1);
+      if (i < brushes.length) {
+        brushes[i].strokes.splice(c % (brushes[i].strokes.length + 1), 0, stroke());
+        return;
+      }
+      const id = ['b1', 'b2', 'b3', 'b4'].find((x) => !brushes.some((y) => y.id === x));
+      if (id) brushes.push({ id, kind: 'paint', strokes: [stroke()], stories: 4 });
+      return;
+    }
+    case 3: {
+      // delete a stroke, and its brush when it empties
+      const brushes = brushesAt(a);
+      const brush = brushes && pick(brushes, b);
+      if (!brushes || !brush) return;
+      brush.strokes.splice(c % brush.strokes.length, 1);
+      if (brush.strokes.length === 0) brushes.splice(brushes.indexOf(brush), 1);
+      return;
+    }
+    case 4: {
+      // truncate a span to its first month
+      const at = pick(spans, a);
+      if (!at) return;
+      const to = last(monthOfDay(AS_OF, at.s.from));
+      if (at.s.to === null || at.s.to > to) at.s.to = to;
+      return;
+    }
+    case 5: {
+      // end an open span and start a later one with the same effect
+      const at = pick(
+        spans.filter(({ s }) => s.to === null),
+        a
+      );
+      if (!at) return;
+      const m = monthOfDay(AS_OF, at.s.from) + 1 + (b % 3);
+      at.s.to = last(m);
+      at.p.spans.push(span(first(m + 1), null, structuredClone(at.s.what)));
+      return;
+    }
+    case 6: {
+      // reorder a kind's policies
+      const list = kinds[KIND_NAMES[a % 3]];
+      if (list.length > 1) moveTo(list, b, c);
+      return;
+    }
+    case 7: {
+      // reorder a span's brushes, or a brush's strokes
+      const brushes = brushesAt(a);
+      if (!brushes || brushes.length === 0) return;
+      if (b % 2 === 0) moveTo(brushes, b >> 1, c);
+      else moveTo(brushes[c % brushes.length].strokes, b >> 1, c >> 1);
+      return;
+    }
+    case 8: {
+      // repeat a stroke right after itself
+      const brush = pick(brushesAt(a) ?? [], b);
+      if (!brush) return;
+      const i = c % brush.strokes.length;
+      brush.strokes.splice(i + 1, 0, structuredClone(brush.strokes[i]));
+      return;
+    }
+    default: {
+      // rename the sim, or relabel or switch a policy
+      const p = pick(all, b);
+      if (a % 3 === 0 || !p) r.name = pick(['Mission', 'Outer Sunset', DEFAULT_SIM_NAME], c)!;
+      else if (a % 3 === 1) p.label = `l${c % 3}`;
+      else p.on = !p.on;
+    }
+  }
+}
+
+/** `base` after one to three small edits; valid and in log form when `base` is. */
+export const arbEdited = (base: RulesetContent): fc.Arbitrary<RulesetContent> =>
+  fc.array(editArb, { minLength: 1, maxLength: 3 }).map((edits) => {
+    const out = structuredClone(base);
+    for (const e of edits) applyEdit(out, e);
+    return out;
+  });
+
+/** A ruleset with a painted policy z9 whose one span holds two brushes, three strokes in all. */
+const withPainted = (r: RulesetContent): RulesetContent => {
+  const out = structuredClone(r);
+  const brushes: CustomBrush[] = [
+    {
+      id: 'b1',
+      kind: 'paint',
+      strokes: [0, 1].map((i) => ({ path: PATHS[i], radiusM: 50 })),
+      stories: 4
+    },
+    { id: 'b2', kind: 'erase', strokes: [{ path: PATHS[2], radiusM: 10 }] }
+  ];
+  out.policy.kinds.zoning.push(
+    painted('z9', [span(first(1), null, { tag: 'brushes', brushes })]) as never
+  );
+  return out;
+};
+
+/**
+ * A base and two edits of it, theirs then mine, made apart from each other so they collide. Half
+ * the bases carry a painted policy with strokes, for the stroke edits to land on.
+ */
+export const arbCollision: fc.Arbitrary<[RulesetContent, RulesetContent, RulesetContent]> = fc
+  .oneof(arbRuleset, arbRuleset.map(withPainted))
+  .chain((base) => fc.tuple(fc.constant(base), arbEdited(base), arbEdited(base)));
