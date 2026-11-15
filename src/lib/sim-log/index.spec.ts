@@ -33,5 +33,6 @@ describe('public surface', () => {
       'undoRedo',
       'verifyChain'
     ]);
+    expect('DEFER_STROKES' in log).toBe(false);
   });
 });

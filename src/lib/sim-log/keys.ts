@@ -15,9 +15,15 @@ export interface StrokeFields {
   radiusM: number;
 }
 
-/** `k:` + digest128(canonicalJson(fields)). */
+/**
+ * `k:` + digest128(canonicalJson) of the stroke's six key fields, picked by name, so that a field
+ * a later version of the `stroke` shape adds never changes a key. A new shape version never changes
+ * the fields a key is built from: these six for a stroke, `id` for a policy, `policy` and `from`
+ * for a span.
+ */
 export function strokeKeyBase(f: StrokeFields): string {
-  return `k:${digest128(canonicalJson(f))}`;
+  const { span, brush, kind, stories, path, radiusM } = f;
+  return `k:${digest128(canonicalJson({ span, brush, kind, stories, path, radiusM }))}`;
 }
 
 /** The keys of a span's strokes in order: the n-th repeat of a base gets `~n` (n >= 2). */

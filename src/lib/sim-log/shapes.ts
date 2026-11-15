@@ -8,7 +8,11 @@ export interface ShapeVersion {
   parse(fields: unknown, path: string): Fields;
   /** Field name to its value check; only these may be `set`. */
   settable: Readonly<Record<string, (value: unknown, path: string) => unknown>>;
-  /** To the next version; absent on the newest. */
+  /**
+   * To the next version; absent on the newest. A version may add fields but never changes the
+   * fields a key is built from (a stroke's six key fields, a policy's `id`, a span's `policy` and
+   * `from`): keys are not rewritten on read.
+   */
   up?: {
     fields(f: Fields): Fields;
     set?(field: string, value: unknown): { field: string; value: unknown };
@@ -195,6 +199,25 @@ export function versionAt(reg: Registry, revision: number, shape: string): numbe
   if (v === undefined)
     throw new LogError('invalid-change', `shape revision ${revision} has no shape ${shape}`);
   return v;
+}
+
+/**
+ * An add's fields read under `revision`: parsed with the version the revision names, raised
+ * through each `up.fields`, then parsed with the newest version when they were raised. Throws
+ * LogFormatError at `path` (a faulty upgrade included), and LogError as versionAt does.
+ */
+export function readFields(
+  reg: Registry,
+  revision: number,
+  shape: string,
+  fields: unknown,
+  path: string
+): Fields {
+  const v = versionAt(reg, revision, shape);
+  const versions = reg.shapes[shape];
+  const parsed = versions[v - 1].parse(fields, path);
+  if (v === versions.length) return parsed;
+  return versions[versions.length - 1].parse(upgradeFields(reg, shape, v, parsed), path);
 }
 
 /** Fields written at `from` raised to the current version through each `up.fields`. */

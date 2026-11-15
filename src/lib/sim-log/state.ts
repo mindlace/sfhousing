@@ -5,7 +5,7 @@ import { assemble, flatten, isEndable, keyFits, listOf, parentOf, type Item } fr
 import {
   DEFAULT_SIM_NAME,
   REGISTRY,
-  upgradeFields,
+  readFields,
   upgradeSet,
   versionAt,
   type Registry
@@ -36,6 +36,13 @@ function restore<V>(into: Map<string, V>, before: Map<string, V | undefined>): v
 function bad(message: string): never {
   throw new LogError('invalid-change', message);
 }
+
+/**
+ * Passed as apply's third argument by reapply alone: skips the stroke-order check, for a caller
+ * that applies a commit's changes one at a time and applies the whole commit again at the end. A
+ * state left that way is not kept. Not exported from index.ts.
+ */
+export const DEFER_STROKES: unique symbol = Symbol('defer the stroke-order check');
 
 /**
  * The items of a sim, the order of its lists and the ruleset they describe. An absent list and an
@@ -82,10 +89,11 @@ export class LogState {
   /**
    * Apply one commit's changes, read under input.shapes. Atomic: on a throw the state is
    * unchanged. With check, also runs checkRuleset and rolls back with LogError('invalid-ruleset').
-   * With strokes: false, skips the stroke-order check, for a caller that applies a commit's
-   * changes one at a time and applies the whole commit again at the end.
+   * `mode` is for reapply only (see DEFER_STROKES); TypeError together with check.
    */
-  apply(input: FoldInput, opts: { check?: boolean; strokes?: boolean } = {}): void {
+  apply(input: FoldInput, opts: { check?: boolean } = {}, mode?: typeof DEFER_STROKES): void {
+    if (mode === DEFER_STROKES && opts.check)
+      throw new TypeError('DEFER_STROKES cannot be combined with check');
     versionAt(this.reg, input.shapes, 'sim');
     const j: Journal = { items: new Map(), lists: new Map(), kids: new Map() };
     this.journal = j;
@@ -100,7 +108,7 @@ export class LogState {
           throw at(e, i);
         }
       });
-      if (opts.strokes !== false) for (const [span, i] of spans) this.checkStrokes(span, i);
+      if (mode !== DEFER_STROKES) for (const [span, i] of spans) this.checkStrokes(span, i);
       this.datasetVersion = input.datasetVersion;
       this.memo = null;
       if (opts.check) {
@@ -119,7 +127,7 @@ export class LogState {
     }
   }
 
-  /** Memoised until the next apply. */
+  /** Memoised until the next apply, and shared by every caller until then: read-only. */
   ruleset(): Ruleset {
     return (this.memo ??= {
       ...assemble(this.items, this.lists),
@@ -208,11 +216,9 @@ export class LogState {
     const where = `changes[${i}]`;
     switch (c.op) {
       case 'add': {
-        const v = versionAt(reg, revision, c.shape);
-        const parsed = reg.shapes[c.shape][v - 1].parse(c.fields, `${where}.fields`);
         const item: Item = {
           shape: c.shape,
-          fields: structuredClone(upgradeFields(reg, c.shape, v, parsed))
+          fields: structuredClone(readFields(reg, revision, c.shape, c.fields, `${where}.fields`))
         };
         if (c.key === NAME_KEY || this.items.has(c.key)) bad(`the key ${c.key} is taken`);
         if (!keyFits(c.key, item)) bad(`the key ${c.key} does not fit its ${c.shape} fields`);

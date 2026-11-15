@@ -23,7 +23,16 @@ export interface Flat {
 
 const KINDS: readonly PolicyKind[] = ['zoning', 'permitting', 'money'];
 
-/** Items of a log-form ruleset; throws RangeError on an empty brush. The sim item included. */
+/** Adds an item; RangeError when its key is already taken. */
+function put(items: Map<string, Item>, key: string, item: Item): void {
+  if (items.has(key)) throw new RangeError(`two items have the key ${key}`);
+  items.set(key, item);
+}
+
+/**
+ * Items of a log-form ruleset, the sim item included. Throws RangeError on an empty brush and on
+ * two items with one key (two policies with one id, two spans of a policy with one `from`).
+ */
 export function flatten(r: RulesetContent): Flat {
   const items = new Map<string, Item>();
   const lists = new Map<string, string[]>();
@@ -33,7 +42,7 @@ export function flatten(r: RulesetContent): Flat {
     for (const p of r.policy.kinds[kind]) {
       const pk = policyKey(p.id);
       keys.push(pk);
-      items.set(pk, {
+      put(items, pk, {
         shape: `policy.${p.where.tag}`,
         fields: {
           id: p.id,
@@ -54,7 +63,7 @@ export function flatten(r: RulesetContent): Flat {
 function flattenSpan(p: Policy, s: Span, items: Map<string, Item>, lists: Map<string, string[]>) {
   const sk = spanKey(p.id, s.from);
   const what: Effect = s.what;
-  items.set(sk, {
+  put(items, sk, {
     shape: `span.${p.where.tag}`,
     fields: {
       policy: p.id,
@@ -79,7 +88,7 @@ function flattenSpan(p: Policy, s: Span, items: Map<string, Item>, lists: Map<st
   }
   if (strokes.length === 0) return;
   const keys = strokeKeys(strokes);
-  keys.forEach((k, i) => items.set(k, { shape: 'stroke', fields: { ...strokes[i] } }));
+  keys.forEach((k, i) => put(items, k, { shape: 'stroke', fields: { ...strokes[i] } }));
   lists.set(listKey(sk), keys);
 }
 
@@ -108,7 +117,7 @@ function assembleBrushes(
     group.push(f);
   }
   return [...byId.values()].map((group): CustomBrush => {
-    const out = group.map((f) => ({ path: f.path, radiusM: f.radiusM }));
+    const out = group.map((f) => ({ path: structuredClone(f.path), radiusM: f.radiusM }));
     const head = group[0];
     return head.kind === 'paint'
       ? { id: head.brush, kind: 'paint', strokes: out, stories: head.stories as number }
@@ -116,7 +125,10 @@ function assembleBrushes(
   });
 }
 
-/** The ruleset the items describe; throws LogError('invalid-change') on a brush whose strokes disagree on kind or stories. */
+/**
+ * The ruleset the items describe, sharing no object with them; throws LogError('invalid-change')
+ * on a brush whose strokes disagree on kind or stories.
+ */
 export function assemble(
   items: ReadonlyMap<string, Item>,
   lists: ReadonlyMap<string, readonly string[]>

@@ -1,7 +1,7 @@
 import { isStrokeKeyOf, strokeKeyBase, type StrokeFields } from './keys';
 import { isEndable, listOf, parentOf, type Item } from './items';
-import { upgradeFields, versionAt } from './shapes';
-import type { LogState } from './state';
+import { readFields } from './shapes';
+import { DEFER_STROKES, type LogState } from './state';
 import { LogError, LogFormatError, type Change, type FoldInput } from './types';
 
 export type DropReason = 'gone' | 'exists' | 'not-truncation' | 'no-op';
@@ -20,11 +20,11 @@ type Resolve = (key: string) => string | undefined;
 
 /** The item an add describes, read under `revision`; null when it does not parse. */
 function addedItem(s: LogState, c: Add, revision: number): Item | null {
-  const reg = s.registry;
   try {
-    const v = versionAt(reg, revision, c.shape);
-    const parsed = reg.shapes[c.shape][v - 1].parse(c.fields, 'fields');
-    return { shape: c.shape, fields: upgradeFields(reg, c.shape, v, parsed) };
+    return {
+      shape: c.shape,
+      fields: readFields(s.registry, revision, c.shape, c.fields, 'fields')
+    };
   } catch (e) {
     if (e instanceof LogError || e instanceof LogFormatError) return null;
     throw e;
@@ -122,7 +122,7 @@ export function reapply(tip: LogState, input: FoldInput): Reapplied {
       continue;
     }
     try {
-      work.apply({ ...input, changes: [out] }, { strokes: false });
+      work.apply({ ...input, changes: [out] }, {}, DEFER_STROKES);
     } catch (e) {
       if (e instanceof LogError) return { ok: false, why: 'invalid', dropped };
       throw e;

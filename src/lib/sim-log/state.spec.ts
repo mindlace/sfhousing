@@ -4,7 +4,7 @@ import { DEFAULT_POLICY4 } from '$lib/timeline/policy4';
 import { listKey, spanKey, strokeKeyBase, type StrokeFields } from './keys';
 import { flatten, rulesetText, type Item } from './items';
 import { DEFAULT_SIM_NAME } from './shapes';
-import { LogState, fold } from './state';
+import { DEFER_STROKES, LogState, fold } from './state';
 import { arbRuleset } from './test/arbitraries';
 import {
   bandsW,
@@ -16,8 +16,10 @@ import {
   painted,
   ruleset,
   span,
+  strokeV2Registry,
   transit,
-  twoVersionRegistry
+  twoVersionRegistry,
+  badUpgradeRegistry
 } from './test/fixtures';
 import { LogError, type Change } from './types';
 
@@ -97,6 +99,67 @@ describe('fold', () => {
     );
     expect(rulesetText(old)).toBe(rulesetText(now));
     expect(old.policy.kinds.zoning[0].label).toBe('Metro 2');
+  });
+
+  it('an older stroke version keeps its key and folds to the text of its upgraded form', () => {
+    const reg = strokeV2Registry();
+    const sp = sk('z2', first(1));
+    const f: StrokeFields = {
+      span: sp,
+      brush: 'b1',
+      kind: 'paint',
+      stories: 5,
+      path: [[-122.4, 37.7]],
+      radiusM: 50
+    };
+    const key = strokeKeyBase(f);
+    const parent: Change[] = [
+      {
+        op: 'add',
+        key: 'p:z2',
+        shape: 'policy.painted',
+        fields: { ...metro, id: 'z2', where: { tag: 'painted' } },
+        after: null
+      },
+      {
+        op: 'add',
+        key: sp,
+        shape: 'span.painted',
+        fields: { policy: 'z2', from: first(1), to: null, what: { tag: 'brushes' } }
+      }
+    ];
+    const stroke = (fields: object): Change => ({
+      op: 'add',
+      key,
+      shape: 'stroke',
+      fields: { ...fields },
+      after: null
+    });
+    const old = LogState.empty(reg);
+    old.apply(input([...parent, stroke(f)], { shapes: 1 }));
+    expect(old.item(key)?.fields).toEqual({ ...f, w: 1 });
+    const now = LogState.empty(reg);
+    now.apply(input([...parent, stroke({ ...f, w: 1 })], { shapes: 2 }));
+    expect(old.list(listKey(sp))).toEqual([key]);
+    expect(rulesetText(old.ruleset())).toBe(rulesetText(now.ruleset()));
+  });
+
+  it('an upgrade whose fields the newest version rejects is invalid-change at the change', () => {
+    const { label, ...rest } = metro;
+    expect(() =>
+      fold(
+        [
+          input(
+            [
+              { op: 'set', key: 'sim', field: 'name', value: 'x' },
+              { ...addMetro, fields: { ...rest, title: label } }
+            ],
+            { shapes: 1 }
+          )
+        ],
+        badUpgradeRegistry()
+      )
+    ).toThrow(expect.objectContaining({ code: 'invalid-change', index: 1 }));
   });
 });
 
@@ -214,6 +277,25 @@ describe('LogState', () => {
     c.apply(input([{ op: 'delete', key: 'p:z1' }]));
     expect(s.ruleset().policy.kinds.zoning).toHaveLength(1);
     expect(c.ruleset().policy.kinds.zoning).toHaveLength(0);
+  });
+
+  it('a write to the ruleset it hands out changes neither the state nor a clone', () => {
+    const s = LogState.of(ruleset(doc([transit('z1'), painted('z2')])), null);
+    const before = rulesetText(s.ruleset());
+    const c = s.clone();
+    const out = s.ruleset();
+    const [z1, z2] = out.policy.kinds.zoning;
+    const what = z2.spans[0].what;
+    if (what.tag !== 'brushes') throw new Error('expected brushes');
+    what.brushes[0].strokes[0].path[0][0] = 0;
+    (z1.where as { stopTypes: string[] }).stopTypes.push('rapidBus');
+    const bands = z1.spans[0].what;
+    if (bands.tag === 'bands') bands.bands[0].stories = 99;
+    s.apply(input([{ op: 'set', key: 'sim', field: 'name', value: 'Mission' }]));
+    s.apply(input([{ op: 'set', key: 'sim', field: 'name', value: DEFAULT_SIM_NAME }]));
+    expect(s.ruleset()).not.toBe(out);
+    expect(rulesetText(s.ruleset())).toBe(before);
+    expect(rulesetText(c.ruleset())).toBe(before);
   });
 
   it('memoises the ruleset until the next apply', () => {
@@ -359,15 +441,31 @@ describe('strokes', () => {
       expect(s.list(listKey(sp))).toEqual([X, Z, Y]);
     });
 
-    it('with strokes: false, skips the stroke-order check and nothing else', () => {
+    it('with DEFER_STROKES, skips the stroke-order check and nothing else', () => {
       const s = two();
-      s.apply(input([addStroke(Z, z, Y)]), { strokes: false });
+      s.apply(input([addStroke(Z, z, Y)]), {}, DEFER_STROKES);
       expect(s.list(listKey(sp))).toEqual([X, Y, Z]);
-      expect(() => s.apply(input([addStroke(Z, z, X)]), { strokes: false })).toThrow(
+      expect(() => s.apply(input([addStroke(Z, z, X)]), {}, DEFER_STROKES)).toThrow(
         expect.objectContaining({ code: 'invalid-change', index: 0 })
       );
       s.apply(input([{ op: 'move', key: Z, after: X }]));
       expect(s.list(listKey(sp))).toEqual([X, Z, Y]);
+    });
+
+    it('refuses DEFER_STROKES together with check, changing nothing', () => {
+      const s = two();
+      expect(() => s.apply(input([addStroke(Z, z, X)]), { check: true }, DEFER_STROKES)).toThrow(
+        TypeError
+      );
+      expect(s.list(listKey(sp))).toEqual([X, Y]);
+    });
+
+    it('takes no strokes option', () => {
+      const s = two();
+      // @ts-expect-error the stroke-order deferral is not a public option
+      expect(() => s.apply(input([addStroke(Z, z, Y)]), { strokes: false })).toThrow(
+        expect.objectContaining({ code: 'invalid-change' })
+      );
     });
   });
 

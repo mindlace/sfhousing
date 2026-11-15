@@ -134,3 +134,44 @@ export function twoVersionRegistry(): Registry {
     shapes: { ...REGISTRY.shapes, 'policy.transit': [legacy, now] }
   };
 }
+
+/**
+ * Current revision 2. `stroke` has REGISTRY's version as version 1, raised to a version 2 that
+ * adds a field `w` (a number, 1 on upgrade). Every other shape is REGISTRY's at 1.
+ */
+export function strokeV2Registry(): Registry {
+  const v1 = REGISTRY.shapes['stroke'][0];
+  const v2: ShapeVersion = {
+    parse(fields, path) {
+      if (typeof fields !== 'object' || fields === null || !('w' in fields))
+        throw new LogFormatError(`${path}.w`, 'missing');
+      const { w, ...rest } = fields as Fields;
+      if (typeof w !== 'number') throw new LogFormatError(`${path}.w`, 'expected a number');
+      return { ...v1.parse(rest, path), w };
+    },
+    settable: {}
+  };
+  return {
+    current: 2,
+    revisions: {
+      1: Object.fromEntries(Object.keys(REGISTRY.shapes).map((n) => [n, 1])),
+      2: Object.fromEntries(Object.keys(REGISTRY.shapes).map((n) => [n, n === 'stroke' ? 2 : 1]))
+    },
+    shapes: { ...REGISTRY.shapes, stroke: [{ ...v1, up: { fields: (f) => ({ ...f, w: 1 }) } }, v2] }
+  };
+}
+
+/**
+ * twoVersionRegistry with a faulty upgrade: `policy.transit` version 1's `up.fields` also adds a
+ * key `extra`, which version 2 rejects.
+ */
+export function badUpgradeRegistry(): Registry {
+  const reg = twoVersionRegistry();
+  const [legacy, now] = reg.shapes['policy.transit'];
+  const up = legacy.up!;
+  const faulty: ShapeVersion = {
+    ...legacy,
+    up: { ...up, fields: (f) => ({ ...up.fields(f), extra: 1 }) }
+  };
+  return { ...reg, shapes: { ...reg.shapes, 'policy.transit': [faulty, now] } };
+}
