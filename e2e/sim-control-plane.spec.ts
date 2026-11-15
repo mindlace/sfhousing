@@ -16,7 +16,14 @@ import { newId } from '../src/lib/ids/base58';
 import { MEMBERS_COPY, SIMS_COPY } from '../src/lib/members/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { loginAs, sessionOf, uniqueEmail } from './helpers/auth';
-import { freshContext, inviteLinkFor, inviteViaApi, signInAndCreateSim } from './helpers/members';
+import {
+  freshContext,
+  inviteLinkFor,
+  inviteViaApi,
+  openMembers,
+  ownHandle,
+  signInAndCreateSim
+} from './helpers/members';
 import {
   closedCode,
   commitsOf,
@@ -194,6 +201,8 @@ test.describe('registration', () => {
     }
   });
 
+  // Four registrations of one new id at once, two from each account: the batch's grant gated on
+  // its own insert is what keeps a losing call from granting anything, on the real Worker.
   test('two accounts registering one new id at once: one manager, the other a reader', async ({
     page,
     browser
@@ -204,15 +213,31 @@ test.describe('registration', () => {
       const other = await ctx.newPage();
       await loginAs(other, uniqueEmail('cp-race-b'));
       const simId = newId();
-      const pages = [page, other];
-      const statuses = (
-        await Promise.all(
-          pages.map((p) => p.request.post('/api/sims', { data: { simId, title: 'Race' } }))
-        )
-      ).map((r) => r.status());
-      expect([...statuses].sort()).toEqual([201, 409]);
+      const pages = [page, other, page, other];
+      const responses = await Promise.all(
+        pages.map((p) => p.request.post('/api/sims', { data: { simId, title: 'Race' } }))
+      );
+      const statuses = responses.map((r) => r.status());
+      expect(statuses.filter((s) => s === 201)).toHaveLength(1);
       const winner = pages[statuses.indexOf(201)];
-      const loser = pages[statuses.indexOf(409)];
+      const loser = winner === page ? other : page;
+      // The winner's repeat is the no-op; both of the other account's calls are refused.
+      statuses.forEach((status, i) => {
+        if (i === statuses.indexOf(201)) return;
+        expect(status).toBe(pages[i] === winner ? 200 : 409);
+      });
+      for (const [i, r] of responses.entries())
+        if (statuses[i] === 409)
+          expect(await r.json()).toEqual({ error: SIMS_COPY.notYours, code: 'taken' });
+
+      // Exactly one member: the winner, as manager.
+      await openMembers(winner, simId);
+      const handle = await ownHandle(winner);
+      const rows = winner.getByTestId('members').getByRole('list').first().getByRole('listitem');
+      await expect(rows).toHaveCount(1);
+      await expect(rows.first()).toContainText(`@${handle}`);
+      await expect(rows.first()).toContainText('· manager');
+
       await winner.goto('/about');
       await loser.goto('/about');
       const w = await openSimSocket(winner, simId);
@@ -300,6 +325,13 @@ test.describe('the operator takedown', () => {
     page
   }) => {
     const simId = await signInAndCreateSim(page, uniqueEmail('cp-taken'), 'Doomed');
+    // A second sim of the same manager, which the takedown must leave alone.
+    const bystander = newId();
+    expect(
+      (
+        await page.request.post('/api/sims', { data: { simId: bystander, title: 'Bystander' } })
+      ).status()
+    ).toBe(201);
     const takedown = (authorization?: string) =>
       page.request.post(`/api/operator/sims/${simId}/takedown`, {
         headers: {
@@ -331,6 +363,16 @@ test.describe('the operator takedown', () => {
     expect(registered.status()).toBe(409);
     expect(await registered.json()).toEqual({ error: SIMS_COPY.notYours, code: 'taken' });
     expect((await page.goto(`/sims/${simId}`))?.status()).toBe(404);
+
+    // The other sim still opens, and its manager still writes it.
+    await page.goto('/about');
+    const b = await openSimSocket(page, bystander);
+    expect((await framesAtLeast(page, b, 2))[1]).toEqual({ type: 'access', write: true });
+    const tip = commitsOf(await resumeAndRead(page, b, 0)).length;
+    const d = nameDraft(tip, 'Still here');
+    expect(commitsOf(await sendAndRead(page, b, { type: 'append', commit: d }))).toMatchObject([
+      { id: d.id }
+    ]);
   });
 });
 
@@ -370,13 +412,17 @@ test.describe('a rename is a name commit', () => {
       const renamer = await page.context().newPage();
       await renamer.goto(`/sims/${simId}`);
       await expect(renamer.locator('html')).toHaveAttribute('data-hydrated', '');
-      await renamer.getByTestId('rename').locator('summary').click();
+      const disclosure = renamer.getByTestId('rename');
+      await disclosure.locator('summary').click();
       const field = renamer.getByLabel(SIMS_COPY.renameLabel, { exact: true });
+      const save = renamer.getByRole('button', { name: SIMS_COPY.renameSave });
       await expect(field).toHaveValue('Before');
       await expectNoA11yViolations(renamer);
       await field.fill('After');
-      await renamer.getByRole('button', { name: SIMS_COPY.renameSave }).click();
+      await save.click();
       await expect(renamer.getByRole('heading', { level: 1 })).toHaveText('After');
+      // The accepted rename closes the disclosure the person opened.
+      await expect(disclosure).not.toHaveAttribute('open');
 
       const [named] = commitsOf((await framesAtLeast(member, h, seen + 1))[seen]);
       expect(named).toMatchObject({
@@ -387,6 +433,23 @@ test.describe('a rename is a name commit', () => {
         datasetVersion: 'fixture-0',
         changes: [{ op: 'set', key: 'sim', field: 'name', value: 'After' }]
       });
+
+      // A refused name: the line asks for a name, the field keeps what was sent, and Save stays
+      // in line with the field.
+      await disclosure.locator('summary').click();
+      await field.fill('   ');
+      await save.click();
+      await expect(renamer.getByTestId('sim-name-error')).toHaveText(SIMS_COPY.nameRequired);
+      await expect(field).toHaveValue('   ');
+      const [f, b] = [await field.boundingBox(), await save.boundingBox()];
+      expect(Math.abs(b!.y + b!.height / 2 - (f!.y + f!.height / 2))).toBeLessThan(1);
+      await expectNoA11yViolations(renamer);
+
+      // The same name again: accepted, and no commit is appended (the log is checked below).
+      await field.fill('After');
+      await save.click();
+      await expect(renamer.getByTestId('sim-name-error')).toHaveCount(0);
+      await expect(disclosure).not.toHaveAttribute('open');
 
       await renamer.goto('/sims');
       await expect(renamer.locator(`a[href="/sims/${simId}"]`)).toHaveText('After');
