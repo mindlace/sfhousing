@@ -1010,4 +1010,63 @@ describe('what the socket reads (plan 2)', () => {
     ]);
     expect(s.tipSeq).toBe(2);
   });
+
+  it('a minted id never reads done, and an id back to null reads none (a withdrawn import)', async () => {
+    const db = memorySimDb();
+    const s = await opened(db);
+    const seen: string[] = [];
+    let minted: string | null = null;
+    s.subscribe(() => {
+      if (s.simId !== null && s.simId !== minted && minted !== null) seen.push(s.registration);
+    });
+    const first = s.importContent(content('i'), { key: 'k', value: 1, expect: 'other' });
+    minted = s.simId!;
+    expect(s.registration).toBe('wait');
+    await s.markRegistered(minted);
+    expect(await first).toBe('marker');
+    expect(s.simId).toBeNull();
+    expect(s.registration).toBe('none');
+    s.rename('A');
+    expect(s.simId).not.toBe(minted);
+    expect(s.registration).toBe('wait');
+    await s.written();
+    expect(s.registration).toBe('needed');
+    expect(seen).not.toContain('done');
+    await s.markRegistered(s.simId!);
+    expect(s.registration).toBe('done');
+  });
+
+  it('adopting the current sim takes its registered flag from its record', async () => {
+    for (const registered of [true, false]) {
+      const db = memorySimDb();
+      const a = await opened(db);
+      const b = await opened(db, { tabId: 'b' });
+      a.rename('A');
+      await a.written();
+      if (registered) await a.markRegistered(a.simId!);
+      b.rename('B');
+      await b.written();
+      expect(b.simId).toBe(a.simId);
+      expect(b.registration).toBe(registered ? 'done' : 'needed');
+    }
+  });
+
+  it('markRegistered marks nothing of another sim opened while it waited', async () => {
+    const db = memorySimDb();
+    const s = await opened(db);
+    s.rename('A');
+    await s.written();
+    const old = s.simId!;
+    const other = newId();
+    s.rename('B');
+    const opening = s.open(other);
+    const marking = s.markRegistered(old);
+    await Promise.all([opening, marking]);
+    expect(s.simId).toBe(other);
+    expect(s.registration).toBe('none');
+    expect((await db.read(other)).sim).toBeNull();
+    await s.markRegistered(old);
+    expect((await db.read(other)).sim).toBeNull();
+    expect(s.registration).toBe('none');
+  });
 });

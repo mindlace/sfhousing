@@ -644,6 +644,9 @@ export class LogStore implements DocStore {
   async markRegistered(simId: string): Promise<void> {
     if (simId !== this.#simId) return;
     const gen = this.#gen;
+    // The device write below waits for the write chain to be idle, so it can be put off while
+    // edits continue. The store already says 'done'; the worst case is one more registration
+    // request on the next load.
     this.#registered = true;
     this.#dirty = true;
     this.#flush();
@@ -757,6 +760,7 @@ export class LogStore implements DocStore {
       if (this.#simId === null) {
         this.#simId = this.#mintId();
         this.#minted = true;
+        this.#registered = false;
       }
       return;
     }
@@ -1056,6 +1060,7 @@ export class LogStore implements DocStore {
     if (mj.simBefore === null && !this.#simStored && empty) {
       this.#simId = null;
       this.#minted = false;
+      this.#registered = false;
     }
     mj.resolve('marker');
     this.#changed();
