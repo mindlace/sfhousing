@@ -17,8 +17,16 @@ import {
 } from '$lib/sim-log';
 import { canonicalJson } from '$lib/sim-page/policy';
 import { LIMITS, fitsCommit, utf8Bytes, type Limits } from '$lib/sim-stream/limits';
+import { newId } from '$lib/ids/base58';
 import { History, type LabelledEntry } from './history';
-import { MOVE_SOURCE, type Align, type DropReport, type DropWhy, type Pending } from './types';
+import {
+  MOVE_LABEL,
+  MOVE_SOURCE,
+  type Align,
+  type DropReport,
+  type DropWhy,
+  type Pending
+} from './types';
 
 /** Confirmed positions are folded from a clone of the tip at every multiple of the spacing. */
 export const CHECKPOINT_SPACING = 256;
@@ -42,6 +50,11 @@ export interface LocalLogInit {
    * through `diff`. Default: the draft keeps its own build.
    */
   build?: string;
+  /**
+   * The page's dataset. While the server's dataset equals it and the confirmed tip is on
+   * another, re-applying puts a move to it first (the page is current). Default null: never.
+   */
+  page?: string | null;
   /** Tests only; default LIMITS (the fitsCommit check on re-applied drafts). */
   limits?: Limits;
 }
@@ -58,6 +71,11 @@ export type Received =
 export interface Reapplied {
   changed: boolean;
   drops: DropReport[];
+}
+
+export interface Adopted extends Reapplied {
+  /** Adopted ids discarded because they are already confirmed: the store deletes the records. */
+  confirmed: string[];
 }
 
 interface Checkpoint {
@@ -144,6 +162,7 @@ export class LocalLog {
   readonly #align: Align;
   readonly #limits: Limits;
   readonly #build: string | null;
+  readonly #page: string | null;
   #serverDataset: string | null;
 
   #confirmed: Commit[] = [];
@@ -158,7 +177,15 @@ export class LocalLog {
   #pending: Pending[] = [];
   /** Pending id to its index in #pending. */
   #indexOf = new Map<string, number>();
-  #held: Pending[] = [];
+  /** Held after a commit from a newer build (I9): until a reload on a newer build. */
+  #heldFuture: Pending[] = [];
+  /** Held after a restore or move `align` could not reach: retried once the page is current. */
+  #heldDataset: Pending[] = [];
+  /** The order the commits were first seen in (loaded, pushed, adopted), by id. */
+  #order = new Map<string, number>();
+  #nextOrder = 0;
+  /** Moves this log authors go before everything it holds. */
+  #firstOrder = 0;
   #local: LogState;
   #pendingCheckpoints: Checkpoint[] = [];
   #history: History;
@@ -170,6 +197,7 @@ export class LocalLog {
     this.#align = init.align ?? ((c) => c);
     this.#limits = init.limits ?? LIMITS;
     this.#build = init.build ?? null;
+    this.#page = init.page ?? null;
     this.#serverDataset = init.serverDataset ?? null;
     init.confirmed.forEach((c, i) => {
       if (c.seq !== i + 1) throw new RangeError(`confirmed[${i}] has seq ${c.seq}, not ${i + 1}`);
@@ -183,6 +211,7 @@ export class LocalLog {
     this.initialConfirmed = init.pending
       .filter((p) => stored.has(p.draft.id))
       .map((p) => p.draft.id);
+    for (const p of init.pending) this.#see(p);
     this.initialDrops = this.#reapply(init.pending.filter((p) => !stored.has(p.draft.id)));
   }
 
@@ -199,9 +228,12 @@ export class LocalLog {
     return this.#pending;
   }
 
-  /** Pending commits held back untouched after one under a newer shape revision (I9). */
+  /**
+   * Pending commits held back untouched, in order: after one under a newer shape revision (I9),
+   * or after a restore or move `align` could not reach (retried once the page is current).
+   */
   get held(): readonly Pending[] {
-    return this.#held;
+    return this.#inOrder([...this.#heldDataset, ...this.#heldFuture]);
   }
 
   /** UTF-8 bytes of the pending drafts' JSON. */
@@ -223,11 +255,19 @@ export class LocalLog {
     return this.#serverDataset;
   }
 
-  /** Sets it and re-applies when a pending move's target differs from a known value. */
+  /**
+   * Sets it and re-applies when a pending move's target differs from a known value, or when the
+   * page is known current with commits held for the dataset, or with pending commits on a tip
+   * on another dataset (ruling (b)). With neither, nothing moves: reading never moves a sim.
+   */
   setServerDataset(s: string | null): Reapplied {
     this.#serverDataset = s;
-    if (s === null || !this.#pending.some((p) => isMove(p.draft) && p.draft.datasetVersion !== s))
-      return { changed: false, drops: [] };
+    const moveOff =
+      s !== null && this.#pending.some((p) => isMove(p.draft) && p.draft.datasetVersion !== s);
+    const follow =
+      (this.#pageCurrent() && this.#heldDataset.length > 0) ||
+      (this.#moveFirst() && this.#pending.length > 0);
+    if (!moveOff && !follow) return { changed: false, drops: [] };
     return this.#rewalk(this.#pending);
   }
 
@@ -285,6 +325,7 @@ export class LocalLog {
     this.#pending = [...this.#pending, p];
     this.#history.push(entryOf(p.draft, position + 1));
     this.#bytes += bytesOf(p.draft);
+    this.#see(p);
   }
 
   receive(commits: readonly Commit[]): Received {
@@ -339,26 +380,60 @@ export class LocalLog {
   /** Removes pending commits another tab took, unreported, and re-applies the rest. */
   forget(ids: readonly string[]): Reapplied {
     const gone = new Set(ids);
-    this.#held = this.#held.filter((p) => !gone.has(p.draft.id));
+    this.#heldFuture = this.#heldFuture.filter((p) => !gone.has(p.draft.id));
+    this.#heldDataset = this.#heldDataset.filter((p) => !gone.has(p.draft.id));
     const rest = this.#pending.filter((p) => !gone.has(p.draft.id));
     if (rest.length === this.#pending.length) return { changed: false, drops: [] };
     return this.#rewalk(rest);
   }
 
-  /** Appends pending commits claimed from other tabs after this tab's own, re-applied. */
-  adopt(pending: readonly Pending[]): Reapplied {
-    const known = new Set([...this.#indexOf.keys(), ...this.#held.map((p) => p.draft.id)]);
-    const fresh = pending.filter((p) => !known.has(p.draft.id));
-    if (fresh.length === 0) return { changed: false, drops: [] };
-    // After a held commit everything is held, in order (I9).
-    if (this.#held.length > 0) {
-      this.#held = [...this.#held, ...fresh];
-      return { changed: false, drops: [] };
+  /**
+   * Appends pending commits claimed from other tabs after this tab's own, re-applied. Those whose
+   * ids are already confirmed are discarded and named in `confirmed` (the store deletes them).
+   */
+  adopt(pending: readonly Pending[]): Adopted {
+    const known = new Set([...this.#indexOf.keys(), ...this.held.map((p) => p.draft.id)]);
+    const confirmed = pending.filter((p) => this.#seqOf.has(p.draft.id)).map((p) => p.draft.id);
+    const fresh = pending.filter((p) => !known.has(p.draft.id) && !this.#seqOf.has(p.draft.id));
+    if (fresh.length === 0) return { changed: false, drops: [], confirmed };
+    for (const p of fresh) this.#see(p);
+    // After a held commit everything is held, in order (I9), unless the page is current and
+    // the commits held for the dataset are about to be retried with them.
+    if (this.#heldFuture.length > 0) {
+      this.#heldFuture = [...this.#heldFuture, ...fresh];
+      return { changed: false, drops: [], confirmed };
     }
-    return this.#rewalk([...this.#pending, ...fresh]);
+    if (this.#heldDataset.length > 0 && !this.#pageCurrent()) {
+      this.#heldDataset = [...this.#heldDataset, ...fresh];
+      return { changed: false, drops: [], confirmed };
+    }
+    return { ...this.#rewalk([...this.#pending, ...fresh]), confirmed };
   }
 
   // ---- internals ----
+
+  /** Records the order a commit was first seen in. */
+  #see(p: Pending): void {
+    if (!this.#order.has(p.draft.id)) this.#order.set(p.draft.id, this.#nextOrder++);
+  }
+
+  #inOrder(list: readonly Pending[]): Pending[] {
+    const at = (p: Pending) => this.#order.get(p.draft.id) ?? Infinity;
+    return [...list].sort((a, b) => at(a) - at(b));
+  }
+
+  /**
+   * The page is known current (the server's dataset is the page's): commits held for the
+   * dataset are retried on every re-apply (ruling (b)).
+   */
+  #pageCurrent(): boolean {
+    return this.#page !== null && this.#serverDataset === this.#page && !this.#future;
+  }
+
+  /** The page is current and the confirmed tip is on another dataset: a move goes first. */
+  #moveFirst(): boolean {
+    return this.#pageCurrent() && this.#tipDataset !== null && this.#tipDataset !== this.#page;
+  }
 
   #inRange(position: number): void {
     if (!Number.isInteger(position) || position < 0 || position > this.position)
@@ -437,21 +512,57 @@ export class LocalLog {
    * Re-applies `list` on the tip in order (R18, R19, I3, I7, I11) and replaces the pending
    * commits, the local state, the pending checkpoints and the history with the result. Pending
    * whose ids are confirmed are removed first; a commit under a newer shape revision, or a
-   * restore or move that `align` cannot reach, moves with every one after it to `held`.
+   * restore or move that `align` cannot reach, moves with every one after it to `held`. While
+   * the page is current (#pageCurrent), the commits held for the dataset are retried in their
+   * order, and a move to the page's dataset goes first (ruling (b)).
    */
   #reapply(list: readonly Pending[]): DropReport[] {
     const tipSeq = this.tipSeq;
-    const live = list.filter((p) => !this.#seqOf.has(p.draft.id));
+    const unconfirmed = (p: Pending) => !this.#seqOf.has(p.draft.id);
+    let live = list.filter(unconfirmed);
+    // A held commit the server already has (sent by an earlier page) is no longer held.
+    this.#heldFuture = this.#heldFuture.filter(unconfirmed);
+    this.#heldDataset = this.#heldDataset.filter(unconfirmed);
     const work = this.#tip.clone();
     const history = this.#confirmedHistory.clone();
     const kept: Pending[] = [];
     const keptAt = new Map<string, number>();
     const checkpoints: Checkpoint[] = [];
     const drops: DropReport[] = [];
-    let held: Pending[] = [];
     let fold = this.#tipDataset;
     let bytes = 0;
     let lastCheckpoint = tipSeq;
+    const keep = (p: Pending, draft: CommitDraft, parent: number) => {
+      fold = draft.datasetVersion;
+      kept.push(draft === p.draft ? p : { draft, targetId: p.targetId });
+      keptAt.set(draft.id, parent + 1);
+      history.push(entryOf(draft, parent + 1));
+      bytes += bytesOf(draft);
+    };
+    if (this.#pageCurrent()) {
+      const order = (p: Pending) => this.#order.get(p.draft.id) ?? Infinity;
+      const firstFuture = Math.min(Infinity, ...this.#heldFuture.map(order));
+      // Nothing after a newer build's commit leaves held (I9).
+      const retried = this.#heldDataset.filter((p) => order(p) < firstFuture);
+      // Retried in their order; one that still cannot be aligned is held again, untouched.
+      this.#heldDataset = this.#heldDataset.filter((p) => !retried.includes(p));
+      live = this.#inOrder([...live, ...retried]);
+      const lead =
+        live.length > 0 && this.#moveFirst() ? this.#leadMove(live[0], work, tipSeq) : null;
+      if (lead) {
+        const merged = live;
+        live = lead.head ? merged.slice(1) : merged;
+        if (lead.draft) {
+          const first = merged[0];
+          const p = lead.head ? first : { draft: lead.draft, targetId: null };
+          if (!lead.head) this.#order.set(lead.draft.id, --this.#firstOrder);
+          const unchanged = lead.head && draftText(lead.draft) === draftText(first.draft);
+          keep(p, unchanged ? first.draft : lead.draft, tipSeq);
+        }
+        // With no move to make, the first commit re-applied carries the page's dataset.
+        fold = this.#page;
+      }
+    }
     /** The ruleset at a position at or below the work state's. */
     const at = (q: number): Ruleset => {
       if (q === tipSeq + kept.length) return work.ruleset();
@@ -468,8 +579,11 @@ export class LocalLog {
       const parent = tipSeq + kept.length;
       const out = this.#rework(p, work, parent, fold, at, keptAt);
       if ('hold' in out) {
-        if (out.hold === 'future') this.#future = true;
-        held = live.slice(i);
+        const held = live.slice(i);
+        if (out.hold === 'future') {
+          this.#future = true;
+          this.#heldFuture = [...this.#heldFuture, ...held];
+        } else this.#heldDataset = [...this.#heldDataset, ...held];
         break;
       }
       if ('silent' in out) continue;
@@ -502,20 +616,67 @@ export class LocalLog {
         continue;
       }
       if (out.dropped.length > 0) report(d, null, out.dropped);
-      fold = draft.datasetVersion;
-      kept.push(draft === d ? p : { draft, targetId: p.targetId });
-      keptAt.set(d.id, parent + 1);
-      history.push(entryOf(draft, parent + 1));
-      bytes += bytesOf(draft);
+      keep(p, draft, parent);
     }
     this.#pending = kept;
     this.#indexOf = new Map(kept.map((p, i) => [p.draft.id, i]));
-    this.#held = [...this.#held, ...held];
     this.#local = work;
     this.#pendingCheckpoints = checkpoints;
     this.#history = history;
     this.#bytes = bytes;
     return drops;
+  }
+
+  /**
+   * The move to the page's dataset on the confirmed tip, applied to `work`: `head` when `first`
+   * is already such a move (it is recomputed, not doubled), `draft` null when `align` changes
+   * nothing. Null, with `work` untouched, when the page cannot align its own dataset or the move
+   * would not be sendable: then nothing moves (ruling (c)).
+   */
+  #leadMove(
+    first: Pending,
+    work: LogState,
+    tipSeq: number
+  ): { head: boolean; draft: CommitDraft | null } | null {
+    const page = this.#page!;
+    const f = first.draft;
+    const head = isMove(f) && f.datasetVersion === page;
+    const tip = work.ruleset();
+    const aligned = this.#align(tip, page);
+    const changes = aligned === null ? null : diffOrNull(tip, aligned);
+    if (changes === null) return null;
+    if (changes.length === 0) return { head, draft: null };
+    const stamp = {
+      datasetVersion: page,
+      shapes: this.#reg.current,
+      build: this.#build ?? f.build
+    };
+    const draft: CommitDraft = head
+      ? { ...f, parent: tipSeq, changes, ...stamp }
+      : {
+          id: newId(),
+          parent: tipSeq,
+          kind: 'system',
+          label: MOVE_LABEL,
+          restores: null,
+          source: MOVE_SOURCE,
+          changes,
+          ...stamp
+        };
+    try {
+      parseCommitDraft(draft);
+    } catch (e) {
+      if (e instanceof LogFormatError) return null;
+      throw e;
+    }
+    if (!fitsCommit(draft, this.#limits)) return null;
+    try {
+      work.apply(draft, { check: true });
+    } catch (e) {
+      if (e instanceof LogError) return null;
+      throw e;
+    }
+    return { head, draft };
   }
 
   /** The changes and stamp of one pending commit on `work`, the fold being on `fold`. */
