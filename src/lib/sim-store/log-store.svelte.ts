@@ -19,7 +19,14 @@ import {
 import { datasetDecision, type DatasetDecision } from './dataset';
 import type { HistoryTarget } from './history';
 import { LocalLog, type Received } from './local-log';
-import type { SimDb } from './sim-db';
+import type {
+  CreateResult,
+  PendingPut,
+  PendingRecord,
+  SimDb,
+  WriteBatch,
+  WriteResult
+} from './sim-db';
 import {
   MOVE_SOURCE,
   type Align,
@@ -83,7 +90,45 @@ interface Draft {
   policy: SimPolicy4;
 }
 
+/** An import waiting for its write with the marker (decision 30). */
+interface MarkerJob {
+  marker: ImportMarker;
+  /** The import commit's id. */
+  id: string;
+  /** The move authored ahead of it, if any: withdrawn with it when nothing follows. */
+  moveId: string | null;
+  /** The sim id before the import: null when the import minted it. */
+  simBefore: string | null;
+  resolve: (r: ImportResult) => void;
+}
+
+/** One write: the whole dirty state (decision 16), and what it holds, to record once it lands. */
+interface Job {
+  batch: WriteBatch;
+  /** The version of each record put. */
+  versions: Map<string, Pending>;
+  /** Records stored before and put without n (re-sequenced or claimed): checked first. */
+  reput: string[];
+  /** The highest confirmed seq in the batch. */
+  seq: number;
+}
+
+/** A pending record this tab wrote: its stored n and the version written. */
+interface Written {
+  n: number;
+  p: Pending;
+}
+
 const isMove = (d: CommitDraft): boolean => d.kind === 'system' && d.source === MOVE_SOURCE;
+
+/** The same version of a pending commit (the log keeps the object when nothing changed). */
+const sameVersion = (a: Pending, b: Pending): boolean =>
+  a === b || (a.draft === b.draft && a.targetId === b.targetId);
+
+const errorName = (e: unknown): string => {
+  const name = (e as { name?: unknown } | null)?.name;
+  return typeof name === 'string' ? name : 'unknown';
+};
 
 /** Canonically equal policies (the name aside). */
 const samePolicy = (a: SimPolicy4, b: SimPolicy4): boolean =>
@@ -112,6 +157,29 @@ export class LogStore implements DocStore {
     redo: null
   };
   #subscribers: (() => void)[] = [];
+
+  // ---- persistence (decisions 16, 17, 28, 30) ----
+  // The Maps and Sets of the persistence code are bookkeeping of what is stored, never shown:
+  // what is shown is the runes, set from the log once per change (decision 32).
+  /* eslint-disable svelte/prefer-svelte-reactivity */
+  /** Changes whenever the log is replaced (open, adopting the current sim): stale writes skip. */
+  #gen = 0;
+  /** This store minted the sim id: its first write asks for meta.current. */
+  #minted = false;
+  /** The sim's record is in the database (read, or created by this store). */
+  #simStored = false;
+  /** This tab's pending records in the database, by id. */
+  #written = new Map<string, Written>();
+  /** Records this tab owns but did not place (claimed): put without n, or removed. */
+  #unplaced = new Set<string>();
+  /* eslint-enable svelte/prefer-svelte-reactivity */
+  /** The highest confirmed seq in the database for this sim. */
+  #confirmedSeq = 0;
+  /** The write chain, while it runs (one write at a time). */
+  #writing: Promise<void> | null = null;
+  /** The import waiting for its write (one at a time: a second import waits for it). */
+  #markerJob: MarkerJob | null = null;
+  #importing: Promise<void> | null = null;
 
   #ready = $state.raw(false);
   #simId = $state.raw<string | null>(null);
@@ -305,55 +373,132 @@ export class LogStore implements DocStore {
   // ---- life cycle ----
 
   /** null: a new sim, minted at the first commit (R29). Rejects when the read fails. */
-  async open(simId: string | null, _opts?: { claim?: readonly string[] }): Promise<void> {
-    // An open draft is committed to the sim it was made on before another is opened.
-    this.#settleDraft();
+  async open(simId: string | null, opts?: { claim?: readonly string[] }): Promise<void> {
+    // An open draft is committed to the sim it was made on before another is opened. A draft
+    // refused at that moment keeps its refusal visible.
+    if (this.#settleDraft() !== 'refused') this.#refusal = null;
+    let confirmed: Commit[] = [];
+    let records: PendingRecord[] = [];
+    let stored = false;
+    const db = this.#opts.db;
     // Without a database there is nothing to read: a known sim opens with an empty log.
-    this.#bareMove = null;
-    this.#moveRefused = false;
-    this.#refusal = null;
-    this.#log = this.#newLog();
-    this.#simId = simId;
+    if (db !== null) {
+      this.#ready = false;
+      try {
+        // What this tab made on the sim it leaves is written there first.
+        this.#kick();
+        await this.written();
+        if (simId !== null) {
+          const claim = opts?.claim ?? [];
+          if (claim.length > 0 && this.#local !== 'failed') {
+            await db.claimPending(simId, claim, this.#opts.tabId);
+          }
+          const read = await db.read(simId);
+          confirmed = read.confirmed;
+          records = read.pending.filter((r) => r.owner === this.#opts.tabId);
+          stored = read.sim !== null;
+        }
+      } catch (e) {
+        this.#dirty = true;
+        this.#flush();
+        throw e;
+      }
+    }
+    // This tab's records and the claimed ones, in n order; those already confirmed are removed
+    // at the next write (I5), and the ones re-applied differently are written again.
+    this.#replace(
+      simId,
+      confirmed,
+      records.map((r) => r.pending),
+      records,
+      stored
+    );
     this.#drops = [...this.#log.initialDrops];
     this.#ready = true;
     this.#alignStep();
     this.#changed();
   }
 
-  /** Takes other tabs' pending commits of this sim and re-applies them after this tab's. */
-  async claim(_owners: readonly string[]): Promise<number> {
-    // Without a database no other tab's commits can be reached.
+  /**
+   * Takes other tabs' pending commits of this sim and re-applies them after this tab's
+   * (decision 22). Answers how many were adopted. Rejects when the claim fails.
+   */
+  async claim(owners: readonly string[]): Promise<number> {
     this.settle();
-    return 0;
+    const db = this.#opts.db;
+    const simId = this.#simId;
+    // Without a working database no other tab's commits can be reached.
+    if (!this.#ready || db === null || this.#local === 'failed' || simId === null) return 0;
+    if (owners.length === 0) return 0;
+    const gen = this.#gen;
+    const claimed = await db.claimPending(simId, owners, this.#opts.tabId);
+    if (gen !== this.#gen || claimed.length === 0) return 0;
+    // A draft opened meanwhile was made on the fold without them.
+    this.#settleDraft();
+    const log = this.#log;
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const known = new Set([...log.pending, ...log.held].map((p) => p.draft.id));
+    const a = log.adopt(claimed.map((r) => r.pending));
+    // Put again without n, so they follow this tab's own; or removed when not kept.
+    for (const r of claimed) if (!this.#written.has(r.id)) this.#unplaced.add(r.id);
+    this.#addDrops(a.drops);
+    this.#alignStep();
+    this.#changed();
+    const gone = new Set(a.confirmed); // eslint-disable-line svelte/prefer-svelte-reactivity
+    return claimed.filter((r) => !known.has(r.id) && !gone.has(r.id)).length;
   }
 
-  /** One system commit (sim.import) to `content`, written with the marker (decision 30). */
+  /**
+   * One system commit (sim.import) to `content`, written with the marker in the same
+   * transaction (decision 30). 'marker': the marker was not what was expected; nothing was
+   * written and the commit is withdrawn. Without a working database: 'imported', no marker.
+   */
   async importContent(
     content: RulesetContent,
-    _marker: ImportMarker,
+    marker: ImportMarker,
     label = 'Imported'
   ): Promise<ImportResult> {
+    // One import at a time: its batch is the whole dirty state, so another import in it would be
+    // written under the first one's marker.
+    while (this.#importing !== null) await this.#importing;
     if (!this.#ready) return 'stopped';
     if (this.#recheck()) return this.#done('stopped');
     this.#settleDraft();
+    const simBefore = this.#simId;
     if (!this.#prepare()) {
       this.#changed();
       // Not stopped: the move this import needed was refused, and `refusal` says why.
       return this.#stoppedNow() !== null ? 'stopped' : (this.#refusal ?? 'stopped');
     }
+    const moveId = this.#bareMove;
     const r = authorEdit(this.#log, content, this.#meta(label, SOURCES.import), 'system');
     this.#settled(r);
+    if (!r.ok || !this.#canWrite()) {
+      this.#changed();
+      return r.ok ? 'imported' : r.why;
+    }
+    const id = r.pending.draft.id;
+    // Queued before the write starts, so the import is only ever written with its marker.
+    const done = new Promise<ImportResult>((resolve) => {
+      this.#markerJob = { marker, id, moveId, simBefore, resolve };
+    });
+    const finished: Promise<void> = done.then(() => {
+      if (this.#importing === finished) this.#importing = null;
+    });
+    this.#importing = finished;
     this.#changed();
-    return r.ok ? 'imported' : r.why;
+    return done;
   }
 
   // ---- the socket's side ----
 
   /** From the socket's hello. Re-applies and re-decides (the dataset rule). */
   setServerDataset(s: string): void {
+    // The value it has: nothing at all (a reconnect does not split a drag into two commits).
+    if (s === this.#serverDs) return;
     // A hello can stop the store: an open draft is committed first, while it can still author.
     this.#settleDraft();
-    if (s !== this.#serverDs) this.#moveRefused = false;
+    this.#moveRefused = false;
     this.#serverDs = s;
     this.#addDrops(this.#log.setServerDataset(s).drops);
     this.#alignStep();
@@ -381,17 +526,19 @@ export class LogStore implements DocStore {
     if (this.#serverDs === null || this.#stoppedNow() !== null) return null;
     const first = this.#log.pending[0];
     if (first === undefined || first.draft.id === this.#bareMove) return null;
-    // Storage unavailable or failed (decision 17): sent at once. With a working database a
-    // commit is sent only once stored, and nothing is stored here.
+    // Storage unavailable or failed (decision 17): sent at once, never reported stored.
     if (this.#opts.db === null || this.#local === 'failed') return first.draft;
-    return null;
+    // Storage working: only once the version returned is stored (R15).
+    const w = this.#written.get(first.draft.id);
+    return w !== undefined && sameVersion(w.p, first) ? first.draft : null;
   }
 
   /** Refused `invalid`: drop it, re-apply the rest, report it. */
   dropPending(id: string): void {
     const p = this.#log.pending.find((q) => q.draft.id === id);
     if (p === undefined) return;
-    // Dropping a move stops the store: an open draft is committed first, while it can author.
+    // An open draft is committed first on every drop, while the store can still author (a
+    // dropped move stops it).
     this.#settleDraft();
     // The server refused a move, or an alignment commit (the same source, treated the same):
     // no other is authored, and the store is stopped 'stale', until a commit lands or the
@@ -404,8 +551,8 @@ export class LogStore implements DocStore {
   }
 
   /** Resolves when nothing is left to write (or writing has failed). */
-  written(): Promise<void> {
-    return Promise.resolve();
+  async written(): Promise<void> {
+    while (this.#writing !== null) await this.#writing;
   }
 
   /** Called after every change of state, written or not. Returns the unsubscribe. */
@@ -418,11 +565,12 @@ export class LogStore implements DocStore {
 
   // ---- internals ----
 
-  #newLog(): LocalLog {
+  /** A log on the store's server dataset and the page's dataset and build. */
+  #newLog(confirmed: readonly Commit[] = [], pending: readonly Pending[] = []): LocalLog {
     const stamp = this.#opts.stamp();
     return new LocalLog({
-      confirmed: [],
-      pending: [],
+      confirmed,
+      pending,
       align: this.#align,
       serverDataset: this.#serverDs,
       page: stamp.datasetVersion,
@@ -503,7 +651,10 @@ export class LogStore implements DocStore {
     if (r.ok) {
       this.#bareMove = null;
       this.#refusal = null;
-      if (this.#simId === null) this.#simId = this.#mintId();
+      if (this.#simId === null) {
+        this.#simId = this.#mintId();
+        this.#minted = true;
+      }
       return;
     }
     this.#dropBareMove();
@@ -594,6 +745,249 @@ export class LogStore implements DocStore {
     });
   }
 
+  // ---- persistence internals ----
+  // Bookkeeping, never shown (see the persistence fields).
+  /* eslint-disable svelte/prefer-svelte-reactivity */
+
+  /**
+   * Replaces the log (a sim opened, or the current sim adopted) and what is known stored of it.
+   * Drops are the caller's.
+   */
+  #replace(
+    simId: string | null,
+    confirmed: readonly Commit[],
+    pending: readonly Pending[],
+    records: readonly PendingRecord[],
+    stored: boolean
+  ): void {
+    this.#gen++;
+    this.#bareMove = null;
+    this.#moveRefused = false;
+    this.#log = this.#newLog(confirmed, pending);
+    this.#simId = simId;
+    this.#minted = false;
+    this.#simStored = stored;
+    this.#written = new Map(records.map((r) => [r.id, { n: r.n, p: r.pending }]));
+    this.#unplaced = new Set();
+    this.#confirmedSeq = confirmed.at(-1)?.seq ?? 0;
+  }
+
+  #canWrite(): boolean {
+    return this.#opts.db !== null && this.#local !== 'failed' && this.#simId !== null;
+  }
+
+  /** Starts the write chain when it is idle and there is something to write. */
+  #kick(): void {
+    if (this.#writing !== null || !this.#canWrite()) return;
+    if (this.#markerJob === null && this.#job(false) === null) return;
+    this.#local = 'writing';
+    this.#dirty = true;
+    // The chain awaits its first write before it ends, so this is set before it is cleared.
+    this.#writing = this.#loop();
+  }
+
+  /**
+   * The whole dirty state as one batch (decision 16), or null with nothing to write. The records
+   * are the log's pending then held commits (a bare move aside), in the log's order: a record
+   * already stored keeps its n while the stored order matches the log's, and from the first one
+   * out of order on each is put again without n, at the end, so that reading the records back in
+   * n order gives the log's order. Every record stored before is put with its n, so one another
+   * tab took comes back lost. Records stored and no longer held are removed.
+   */
+  #job(marker: boolean): Job | null {
+    const log = this.#log;
+    const desired = [...log.pending, ...log.held].filter((p) => p.draft.id !== this.#bareMove);
+    const put: PendingPut[] = [];
+    const versions = new Map<string, Pending>();
+    const reput: string[] = [];
+    let last = -Infinity;
+    let inOrder = true;
+    for (const p of desired) {
+      const id = p.draft.id;
+      const w = this.#written.get(id);
+      if (inOrder && w !== undefined && w.n > last) {
+        last = w.n;
+        if (!sameVersion(w.p, p)) {
+          put.push({ id, pending: p, n: w.n });
+          versions.set(id, p);
+        }
+        continue;
+      }
+      inOrder = false;
+      put.push({ id, pending: p });
+      versions.set(id, p);
+      if (w !== undefined || this.#unplaced.has(id)) reput.push(id);
+    }
+    const live = new Set(desired.map((p) => p.draft.id));
+    const remove = [...new Set([...this.#written.keys(), ...this.#unplaced])].filter(
+      (id) => !live.has(id)
+    );
+    const confirmed = log.confirmed.slice(this.#confirmedSeq);
+    if (!marker) {
+      if (put.length === 0 && remove.length === 0 && confirmed.length === 0) return null;
+      // A look records nothing (I6): a sim not stored is written only with a commit of its own.
+      if (!this.#simStored && put.length === 0) return null;
+    }
+    const seq = confirmed.at(-1)?.seq ?? this.#confirmedSeq;
+    return { batch: { owner: this.#opts.tabId, confirmed, put, remove }, versions, reput, seq };
+  }
+
+  /**
+   * The write chain: one write at a time, each the whole dirty state when it starts, so a burst
+   * of changes during a write becomes one following batch. Ends when nothing is left to write
+   * or a write fails (decision 17).
+   */
+  async #loop(): Promise<void> {
+    const db = this.#opts.db!;
+    /** Records found still this tab's since the last write. */
+    let checked = new Set<string>();
+    let taken: MarkerJob | null = null;
+    try {
+      while (this.#canWrite()) {
+        const gen = this.#gen;
+        const simId = this.#simId!;
+        const mj = this.#markerJob;
+        const job = this.#job(mj !== null);
+        if (job === null) break;
+        const unchecked = job.reput.filter((id) => !checked.has(id));
+        if (unchecked.length > 0) {
+          // A put without n would re-create a record another tab took and removed: those not
+          // still this tab's are forgotten first.
+          const read = await db.read(simId);
+          if (gen !== this.#gen) continue;
+          const tab = this.#opts.tabId;
+          const mine = new Set(read.pending.filter((r) => r.owner === tab).map((r) => r.id));
+          const lost = unchecked.filter((id) => !mine.has(id));
+          if (lost.length > 0) this.#lose(lost);
+          else for (const id of unchecked) checked.add(id);
+          continue;
+        }
+        this.#markerJob = null;
+        taken = mj;
+        const marker = mj === null ? {} : { marker: mj.marker };
+        let r: WriteResult | CreateResult;
+        if (this.#simStored) r = await db.write(simId, job.batch, marker);
+        else {
+          const sim = { simId, createdAt: this.#opts.now?.() ?? Date.now(), registered: false };
+          const current = this.#minted && (this.#opts.current ?? true);
+          const c = await db.createSim(sim, { current, ...marker, batch: job.batch });
+          if (gen === this.#gen && c.outcome === 'current-taken') {
+            // Another tab made the current sim first (decision 28): this tab's work goes there,
+            // and an import with it, through that sim's write.
+            if (c.current === null) throw new Error('current-taken without a current sim');
+            this.#markerJob = mj;
+            taken = null;
+            await this.#adoptCurrent(c.current);
+            checked = new Set();
+            continue;
+          }
+          if (gen === this.#gen && c.outcome === 'created') this.#simStored = true;
+          r = c;
+        }
+        checked = new Set();
+        taken = null;
+        if (gen !== this.#gen) {
+          // The store moved to another sim meanwhile: this landed on the sim it was made for.
+          mj?.resolve(r.applied ? 'imported' : 'marker');
+          continue;
+        }
+        this.#landed(job, r, mj);
+      }
+    } catch (e) {
+      this.#fail(e, taken);
+    }
+    this.#writing = null;
+    if (this.#local === 'writing') this.#local = 'idle';
+    this.#dirty = true;
+    this.#flush();
+  }
+
+  /** Records what a write stored; a write refused for its marker withdraws the import. */
+  #landed(job: Job, r: WriteResult, mj: MarkerJob | null): void {
+    if (!r.applied) {
+      // Nothing was written: the rest of the dirty state stays dirty for the next write.
+      if (mj !== null) this.#withdraw(mj);
+      return;
+    }
+    for (const [id, n] of Object.entries(r.n)) {
+      this.#written.set(id, { n, p: job.versions.get(id)! });
+      this.#unplaced.delete(id);
+    }
+    for (const id of job.batch.remove) {
+      this.#written.delete(id);
+      this.#unplaced.delete(id);
+    }
+    this.#confirmedSeq = Math.max(this.#confirmedSeq, job.seq);
+    mj?.resolve('imported');
+    if (r.lost.length > 0) this.#lose(r.lost);
+    // A stored version may now be sent: its own change.
+    else this.#changed();
+  }
+
+  /** Records another tab took (decision 16): forgotten, never sent. */
+  #lose(ids: readonly string[]): void {
+    // A draft was made on the fold with them: committed first.
+    this.#settleDraft();
+    for (const id of ids) {
+      this.#written.delete(id);
+      this.#unplaced.delete(id);
+    }
+    this.#addDrops(this.#log.forget(ids).drops);
+    this.#alignStep();
+    this.#changed();
+  }
+
+  /** An import whose marker was not what was expected: withdrawn, unreported (decision 30). */
+  #withdraw(mj: MarkerJob): void {
+    // A draft was made on the fold with it: committed first.
+    this.#settleDraft();
+    const log = this.#log;
+    if (log.pending.some((p) => p.draft.id === mj.id)) {
+      this.#addDrops(log.drop(mj.id).filter((d) => d.id !== mj.id));
+    } else this.#addDrops(log.forget([mj.id]).drops);
+    // The move it needed is not kept with nothing behind it: a withdrawn import moves nothing.
+    if (mj.moveId !== null && log.pending.at(-1)?.draft.id === mj.moveId) log.drop(mj.moveId);
+    // A sim minted for it and holding nothing is not made.
+    const empty = log.tipSeq === 0 && log.pending.length === 0 && log.held.length === 0;
+    if (mj.simBefore === null && !this.#simStored && empty) {
+      this.#simId = null;
+      this.#minted = false;
+    }
+    mj.resolve('marker');
+    this.#changed();
+  }
+
+  /**
+   * Takes the current sim another tab made (decision 28): its confirmed commits, with this tab's
+   * pending commits re-applied on top, under its id.
+   */
+  async #adoptCurrent(simId: string): Promise<void> {
+    const gen = this.#gen;
+    const read = await this.#opts.db!.read(simId);
+    if (gen !== this.#gen) return;
+    // A draft is made on the fold it was opened on: committed first (decision 8).
+    this.#settleDraft();
+    const ours = [...this.#log.pending, ...this.#log.held];
+    this.#replace(simId, read.confirmed, ours, [], true);
+    this.#addDrops(this.#log.initialDrops);
+    this.#alignStep();
+    this.#changed();
+  }
+
+  /** A write failed: failed for the store's life, logged once, sent without storing. */
+  #fail(e: unknown, taken: MarkerJob | null): void {
+    if (this.#local !== 'failed') {
+      this.#local = 'failed';
+      console.error('[sim-store] write failed', errorName(e));
+    }
+    this.#dirty = true;
+    const waiting = this.#markerJob;
+    this.#markerJob = null;
+    taken?.resolve('imported');
+    waiting?.resolve('imported');
+  }
+  /* eslint-enable svelte/prefer-svelte-reactivity */
+
   #addDrops(drops: readonly DropReport[]): void {
     if (drops.length > 0) this.#drops = [...this.#drops, ...drops];
   }
@@ -636,8 +1030,9 @@ export class LogStore implements DocStore {
     this.#flush();
   }
 
-  /** Tells the subscribers when anything was derived during this call. */
+  /** Starts a write of what changed, then tells the subscribers if anything was derived. */
   #flush(): void {
+    this.#kick();
     if (!this.#dirty) return;
     this.#dirty = false;
     for (const fn of this.#subscribers) fn();
