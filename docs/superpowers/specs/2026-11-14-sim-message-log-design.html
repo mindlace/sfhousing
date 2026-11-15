@@ -468,6 +468,14 @@
       <li>The list of <code>source</code> codes, one per control, and how a tab claims pending commits left by a tab that closed.</li>
       <li>A new page under <code>docs/dev/</code> linked from <code>CLAUDE.md</code>, and the changes to <code>docs/dev/plan-sharing.md</code> and <code>docs/dev/auth.md</code>.</li>
     </ul>
+    <p>Carried from the log core (unit 1, built; <a href="../../dev/sim-log.md"><code>docs/dev/sim-log.md</code></a>) to the units that call it:</p>
+    <ul>
+      <li><strong>Log store.</strong> A pending delete of a stroke that another writer has since repeated drops its whole commit today. The rule to build: with k deletes of one group of identical strokes in a commit, and t the highest repeat on the new tip, the i-th delete targets repeat t - k + i, and is dropped as gone when that is below 1.</li>
+      <li><strong>Log store.</strong> Undo stops at a move to a newer dataset (R12), but a jump can name a position before one. Decide what such a jump does: refuse it, or restore and move in one commit.</li>
+      <li><strong>Log store.</strong> <code>reapply</code> throws for a pending commit made under a newer shape revision than the build knows. The page offers a reload; the commit is kept.</li>
+      <li><strong>Any unit that adds a shape version to the stroke.</strong> Turning a ruleset into items must then emit the newest fields, so that a folded state and one built from its ruleset hold the same items.</li>
+      <li><strong>Every caller.</strong> An item read from the state is the stored one: treat it as read-only.</li>
+    </ul>
   </section>
 
   <section id="sec-builder-check">
