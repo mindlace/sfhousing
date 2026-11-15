@@ -27,8 +27,10 @@ export interface PendingPut {
   id: string;
   pending: Pending;
   /**
-   * Given: the record must exist with the batch's owner (else lost). Absent: a new record, or one
-   * of this owner's moved to the end; a record of another owner is lost.
+   * Given: an update in place. The record must exist with the batch's owner (else lost); its
+   * stored n is kept and this value is ignored. Absent: a new record, or one of this owner's moved
+   * to the end with a new n and the rest of the record replaced; a record of another owner is lost.
+   * The n counter only moves up, and never from a caller's value.
    */
   n?: number;
 }
@@ -63,7 +65,9 @@ export interface SimDb {
   /**
    * One transaction, checked in this order: the marker (outcome 'marker'), then when `current`
    * is asked and meta.current is set, 'current-taken'; else puts the sim, sets meta.current when
-   * asked, the marker's value, and the batch. `applied` is true only for 'created'.
+   * asked, the marker's value, and the batch. `applied` is true only for 'created'. A sim that
+   * already exists keeps its record (`registered`, `createdAt`); the outcome is still 'created'
+   * and the batch applies.
    */
   createSim(
     sim: SimRecord,
@@ -74,16 +78,20 @@ export interface SimDb {
    * the removes (an id both put and removed ends removed).
    */
   write(simId: string, batch: WriteBatch, opts?: { marker?: Marker }): Promise<WriteResult>;
+  // A marker (here and on createSim) on a reserved key rejects, writing nothing.
   /** One transaction: every pending record of simId whose owner is in `from` gets owner `to`. */
   claimPending(simId: string, from: readonly string[], to: string): Promise<PendingRecord[]>;
   setRegistered(simId: string): Promise<void>;
   getMeta(key: string): Promise<unknown>; // undefined when absent
+  /** Rejects, writing nothing, for a reserved key: CURRENT_KEY and any key starting `n:`. */
   setMeta(key: string, value: unknown): Promise<void>;
   close(): void;
 }
 
 export const CURRENT_KEY = 'current';
 export const nKey = (simId: string): string => `n:${simId}`;
+/** Meta keys the store owns: CURRENT_KEY and every key starting `n:`. */
+export const isReservedKey = (key: string): boolean => key === CURRENT_KEY || key.startsWith('n:');
 
 interface SimData {
   sim: SimRecord | null;
@@ -122,7 +130,7 @@ function applyBatch(state: State, simId: string, batch: WriteBatch): WriteResult
       result.lost.push(p.id);
       continue;
     }
-    const n = p.n !== undefined ? p.n : ++last;
+    const n = p.n !== undefined && held ? held.n : ++last;
     d.pending.set(p.id, {
       simId,
       id: p.id,
@@ -166,6 +174,7 @@ export function memorySimDb(opts: { abortWrites?: () => boolean } = {}): SimDb {
     },
     createSim(sim, o = {}) {
       return transact((s) => {
+        if (o.marker && isReservedKey(o.marker.key)) throw new Error('reserved key');
         const current = (s.meta.get(CURRENT_KEY) as string | undefined) ?? null;
         const none = { n: {}, lost: [] };
         if (o.marker && !markerMatches(s.meta, o.marker)) {
@@ -174,7 +183,8 @@ export function memorySimDb(opts: { abortWrites?: () => boolean } = {}): SimDb {
         if (o.current && current !== null) {
           return { ...none, applied: false, outcome: 'current-taken' as const, current };
         }
-        dataOf(s, sim.simId).sim = structuredClone(sim);
+        const d = dataOf(s, sim.simId);
+        d.sim ??= structuredClone(sim);
         if (o.current) s.meta.set(CURRENT_KEY, sim.simId);
         if (o.marker) s.meta.set(o.marker.key, structuredClone(o.marker.value));
         const r = o.batch ? applyBatch(s, sim.simId, o.batch) : { ...none, applied: true };
@@ -187,6 +197,7 @@ export function memorySimDb(opts: { abortWrites?: () => boolean } = {}): SimDb {
     },
     write(simId, batch, o = {}) {
       return transact((s) => {
+        if (o.marker && isReservedKey(o.marker.key)) throw new Error('reserved key');
         if (o.marker) {
           if (!markerMatches(s.meta, o.marker)) return { applied: false, n: {}, lost: [] };
           s.meta.set(o.marker.key, structuredClone(o.marker.value));
@@ -216,6 +227,7 @@ export function memorySimDb(opts: { abortWrites?: () => boolean } = {}): SimDb {
     },
     setMeta(key, value) {
       return transact((s) => {
+        if (isReservedKey(key)) throw new Error('reserved key');
         s.meta.set(key, structuredClone(value));
       });
     },

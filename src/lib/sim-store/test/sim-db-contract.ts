@@ -133,11 +133,17 @@ export function simDbContract(
 
         // a write whose marker does not match writes nothing
         const simId = newId();
-        const w = await db.write(simId, batch('tab1', { put: [putOf('b')] }), {
-          marker: { key: 'm', value: 'x', expect: 'other' }
-        });
+        const own = putOf('own');
+        await db.write(simId, batch('tab1', { put: [own] }));
+        const before = await db.read(simId);
+        const w = await db.write(
+          simId,
+          batch('tab1', { confirmed: [commitAt(1)], put: [putOf('b')], remove: [own.id] }),
+          { marker: { key: 'm', value: 'x', expect: 'other' } }
+        );
         expect(w).toEqual({ applied: false, n: {}, lost: [] });
-        expect(await db.read(simId)).toEqual({ sim: null, confirmed: [], pending: [] });
+        expect(await db.read(simId)).toEqual(before);
+        expect(await db.getMeta(nKey(simId))).toBe(1);
         expect(await db.getMeta('m')).toBe('there');
       }));
 
@@ -177,36 +183,72 @@ export function simDbContract(
         expect((await db.write(other, batch('tab1', { put: [o] }))).n).toEqual({ [o.id]: 1 });
       }));
 
-    it('keeps a given n and moves a put without n to the end', () =>
+    it('keeps the stored n for a put with n, and moves a put without n to the end', () =>
       withDb(async (db) => {
         const simId = newId();
         const [a, b, c] = [putOf('a'), putOf('b'), putOf('c')];
         await db.write(simId, batch('tab1', { put: [a, b, c] }));
+        const order = async () =>
+          (await db.read(simId)).pending.map((r) => [r.id, r.n] as [string, number]);
+
+        // a given n is ignored: the stored one stays, whatever the caller thinks it is
         const changed = pendingOf('a2');
-        const kept = await db.write(
+        const same = await db.write(
           simId,
           batch('tab1', { put: [{ id: a.id, pending: changed, n: 1 }] })
         );
-        expect(kept.n).toEqual({ [a.id]: 1 });
-        let read = await db.read(simId);
-        expect(read.pending.map((r) => [r.id, r.n])).toEqual([
+        expect(same.n).toEqual({ [a.id]: 1 });
+        const stale = await db.write(
+          simId,
+          batch('tab1', { put: [{ id: a.id, pending: pendingOf('a3'), n: 2 }] })
+        );
+        expect(stale.n).toEqual({ [a.id]: 1 });
+        const above = await db.write(
+          simId,
+          batch('tab1', { put: [{ id: b.id, pending: b.pending, n: 99 }] })
+        );
+        expect(above.n).toEqual({ [b.id]: 2 });
+        expect(await order()).toEqual([
           [a.id, 1],
           [b.id, 2],
           [c.id, 3]
         ]);
-        expect(read.pending[0].pending).toEqual(changed);
+        expect((await db.read(simId)).pending[0].pending.draft.label).toBe('a3');
 
+        // the counter was not set from a caller's n: the next new record gets 4
+        const d = putOf('d');
+        expect((await db.write(simId, batch('tab1', { put: [d] }))).n).toEqual({ [d.id]: 4 });
+        expect(await db.getMeta(nKey(simId))).toBe(4);
+
+        // without n: a new n at the tail, and the rest of the record replaced
         const moved = await db.write(
           simId,
-          batch('tab1', { put: [{ id: a.id, pending: a.pending }] })
+          batch('tab1', { put: [{ id: a.id, pending: changed }] })
         );
-        expect(moved.n).toEqual({ [a.id]: 4 });
-        read = await db.read(simId);
+        expect(moved.n).toEqual({ [a.id]: 5 });
+        const read = await db.read(simId);
         expect(read.pending.map((r) => [r.id, r.n])).toEqual([
           [b.id, 2],
           [c.id, 3],
-          [a.id, 4]
+          [d.id, 4],
+          [a.id, 5]
         ]);
+        expect(read.pending[3]).toEqual({
+          simId,
+          id: a.id,
+          n: 5,
+          owner: 'tab1',
+          pending: changed
+        });
+      }));
+
+    it('an id both put and removed in one batch ends removed', () =>
+      withDb(async (db) => {
+        const simId = newId();
+        const [a, b] = [putOf('a'), putOf('b')];
+        await db.write(simId, batch('tab1', { put: [a] }));
+        await db.write(simId, batch('tab1', { put: [b], remove: [b.id, a.id] }));
+        expect((await db.read(simId)).pending).toEqual([]);
       }));
 
     it('a put of a record another owner holds is lost, not written', () =>
@@ -298,40 +340,151 @@ export function simDbContract(
         expect(await db.claimPending(newId(), ['tab1'], 'tab4')).toEqual([]);
       }));
 
-    it('a write whose transaction aborts rejects and writes nothing', async () => {
+    it('an aborted createSim writes nothing: no sim, current, marker, row or counter', async () => {
       let abort = false;
       await using({ abortWrites: () => abort }, async (db) => {
         const s = sim();
         const a = putOf('a');
-        await db.createSim(s, { current: true, batch: batch('tab1', { put: [a] }) });
+        abort = true;
+        await expect(
+          db.createSim(s, {
+            current: true,
+            marker: { key: 'm', value: 1, expect: undefined },
+            batch: batch('tab1', { confirmed: [commitAt(1)], put: [a] })
+          })
+        ).rejects.toThrow();
+        abort = false;
+        expect(await db.read(s.simId)).toEqual({ sim: null, confirmed: [], pending: [] });
+        expect(await db.getMeta(CURRENT_KEY)).toBeUndefined();
+        expect(await db.getMeta('m')).toBeUndefined();
+        expect(await db.getMeta(nKey(s.simId))).toBeUndefined();
+        // and the same call, once it may, behaves as on a fresh database
+        const r = await db.createSim(s, {
+          current: true,
+          batch: batch('tab1', { put: [a] })
+        });
+        expect(r.outcome).toBe('created');
+        expect(r.n).toEqual({ [a.id]: 1 });
+      });
+    });
+
+    it('a write, claim, registration or meta write that aborts rejects and changes nothing', async () => {
+      let abort = false;
+      await using({ abortWrites: () => abort }, async (db) => {
+        const s = sim();
+        const a = putOf('a');
+        await db.createSim(s, {
+          current: true,
+          batch: batch('tab1', { confirmed: [commitAt(1)], put: [a] })
+        });
+        await db.setMeta('k0', 'kept');
+        const snapshot = async () => ({
+          read: await db.read(s.simId),
+          current: await db.getMeta(CURRENT_KEY),
+          counter: await db.getMeta(nKey(s.simId)),
+          k0: await db.getMeta('k0'),
+          m: await db.getMeta('m'),
+          k: await db.getMeta('k')
+        });
+        const before = await snapshot();
         abort = true;
 
         const b = putOf('b');
         await expect(
-          db.write(s.simId, batch('tab1', { confirmed: [commitAt(1)], put: [b], remove: [a.id] }), {
+          db.write(s.simId, batch('tab1', { confirmed: [commitAt(2)], put: [b], remove: [a.id] }), {
             marker: { key: 'm', value: 1, expect: undefined }
           })
         ).rejects.toThrow();
-        await expect(
-          db.createSim(sim(), { marker: { key: 'm', value: 1, expect: undefined } })
-        ).rejects.toThrow();
+        abort = false;
+        expect(await snapshot()).toEqual(before);
+        abort = true;
+
         await expect(db.claimPending(s.simId, ['tab1'], 'tab2')).rejects.toThrow();
         await expect(db.setRegistered(s.simId)).rejects.toThrow();
         await expect(db.setMeta('k', 1)).rejects.toThrow();
-
+        await expect(
+          db.createSim(sim(), { marker: { key: 'm', value: 1, expect: undefined } })
+        ).rejects.toThrow();
         abort = false;
-        const read = await db.read(s.simId);
-        expect(read.confirmed).toEqual([]);
-        expect(read.pending.map((r) => [r.id, r.owner])).toEqual([[a.id, 'tab1']]);
-        expect(read.sim?.registered).toBe(false);
-        expect(await db.getMeta('m')).toBeUndefined();
-        expect(await db.getMeta('k')).toBeUndefined();
-        expect(await db.getMeta(CURRENT_KEY)).toBe(s.simId);
+        expect(await snapshot()).toEqual(before);
+
         // no n was spent by the aborted batch
         const c = putOf('c');
         expect((await db.write(s.simId, batch('tab1', { put: [c] }))).n).toEqual({ [c.id]: 2 });
       });
     });
+
+    it('createSim on a known sim keeps its record and still applies the batch', () =>
+      withDb(async (db) => {
+        const s = sim(newId(), { createdAt: 5 });
+        await db.createSim(s);
+        await db.setRegistered(s.simId);
+        const a = putOf('a');
+        const r = await db.createSim(
+          { ...s, createdAt: 99, registered: false },
+          { current: true, batch: batch('tab1', { put: [a] }) }
+        );
+        expect(r).toEqual({
+          outcome: 'created',
+          applied: true,
+          n: { [a.id]: 1 },
+          lost: [],
+          current: s.simId
+        });
+        const read = await db.read(s.simId);
+        expect(read.sim).toEqual({ ...s, registered: true });
+        expect(read.pending.map((p) => p.id)).toEqual([a.id]);
+      }));
+
+    it('keys of the store are reserved: setMeta and a marker on them reject without writing', () =>
+      withDb(async (db) => {
+        const s = sim();
+        await db.createSim(s, { current: true });
+        const a = putOf('a');
+        await db.write(s.simId, batch('tab1', { put: [a] }));
+        for (const key of [CURRENT_KEY, nKey(s.simId), 'n:anything']) {
+          await expect(db.setMeta(key, 'x')).rejects.toThrow();
+          const marker = { key, value: 'x', expect: await db.getMeta(key) };
+          const w = batch('tab1', { put: [putOf('b')] });
+          await expect(db.write(s.simId, w, { marker })).rejects.toThrow();
+          await expect(db.createSim(sim(), { marker, batch: w })).rejects.toThrow();
+        }
+        expect(await db.getMeta(CURRENT_KEY)).toBe(s.simId);
+        expect(await db.getMeta(nKey(s.simId))).toBe(1);
+        expect((await db.read(s.simId)).pending.map((p) => p.id)).toEqual([a.id]);
+      }));
+
+    it('overlapping claims give each record to exactly one claimer', () =>
+      withDb(async (db) => {
+        const simId = newId();
+        const puts = [putOf('a'), putOf('b'), putOf('c')];
+        await db.write(simId, batch('tab1', { put: puts }));
+        const [x, y] = await Promise.all([
+          db.claimPending(simId, ['tab1'], 'tab2'),
+          db.claimPending(simId, ['tab1'], 'tab3')
+        ]);
+        expect(x.length + y.length).toBe(3);
+        expect([...x, ...y].map((r) => r.id).sort()).toEqual(puts.map((p) => p.id).sort());
+        expect(new Set([...x, ...y].map((r) => r.owner)).size).toBe(1);
+        const read = await db.read(simId);
+        expect(new Set(read.pending.map((r) => r.owner)).size).toBe(1);
+      }));
+
+    it('overlapping createSim calls asking for current: exactly one becomes current', () =>
+      withDb(async (db) => {
+        const [s1, s2] = [sim(), sim()];
+        const [r1, r2] = await Promise.all([
+          db.createSim(s1, { current: true }),
+          db.createSim(s2, { current: true })
+        ]);
+        expect([r1.outcome, r2.outcome].sort()).toEqual(['created', 'current-taken']);
+        const winner = r1.outcome === 'created' ? s1 : s2;
+        const loser = winner === s1 ? s2 : s1;
+        expect(await db.getMeta(CURRENT_KEY)).toBe(winner.simId);
+        expect(r1.current).toBe(winner.simId);
+        expect(r2.current).toBe(winner.simId);
+        expect((await db.read(loser.simId)).sim).toBeNull();
+      }));
 
     it('marks a sim registered', () =>
       withDb(async (db) => {
@@ -379,6 +532,19 @@ export function simDbContract(
         expect(second.sim?.registered).toBe(false);
         expect(second.pending[0].pending.draft.label).toBe('a');
         expect(second.confirmed[0].label).toBe('Edit');
+
+        // what write is given, what claimPending returns, a marker's value
+        const w = putOf('w');
+        const wb = batch('tab1', { put: [w] });
+        const value = { v: 1 };
+        await db.write(s.simId, wb, { marker: { key: 'mk', value, expect: undefined } });
+        w.pending.draft.label = 'changed';
+        value.v = 2;
+        expect(await db.getMeta('mk')).toEqual({ v: 1 });
+        const claimed = await db.claimPending(s.simId, ['tab1'], 'tab2');
+        for (const r of claimed) r.pending.draft.label = 'claimed';
+        const third = await db.read(s.simId);
+        expect(third.pending.map((r) => r.pending.draft.label)).toEqual(['a', 'w']);
 
         const meta = { x: 1 };
         await db.setMeta('k', meta);
