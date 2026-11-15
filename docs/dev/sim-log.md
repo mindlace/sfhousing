@@ -30,7 +30,7 @@ Limits (exported): `LABEL_MAX` 200, `BUILD_MAX` 64 (at least 1), `KEY_MAX` 256 (
 
 `restores` is `{ position, as }`, with `position` from 0 to `parent` and `as` one of `undo`, `redo` or `jump`. A `restore` commit must have it and any other kind must have null. A jump counts as an edit for undo and redo. A `system` commit empties both stacks (see Undo and redo).
 
-The parsers throw `LogFormatError` with a `path` (`changes[2].key`). Unknown and missing keys are errors. An absent `after` on an `add` stays an absent key; the parser never sets it to `undefined`.
+The parsers throw `LogFormatError` with a `path` (`changes[2].key`). `parseChange(v, path)` takes the path its errors start from. Unknown and missing keys are errors. An absent `after` on an `add` stays an absent key; the parser never sets it to `undefined`.
 
 ## Changes
 
@@ -48,8 +48,8 @@ Five ops, `Change` in `types.ts`. `LogState.apply` reads a commit's changes in o
 - A `delete` cascades: a policy takes its spans and their strokes, a span its strokes, and their lists.
 - There is no edit in place (R4). Only `name`, `label` and `on` can be `set`; spans and strokes have no settable field. A changed band is a delete and an add in one commit. An `end` only shortens; to lengthen a span, delete it and add it again.
 - A stroke add must agree with the kind and stories of the other strokes of its brush in the span.
-- `LogError` carries `code` (`invalid-change`, `invalid-ruleset` or `future-shapes`) and `index`, the change that failed (null for `invalid-ruleset` and `future-shapes`).
-- Fields on an `add` are parsed under the shape version the commit's revision names, upgraded to the newest, and cloned.
+- `LogError` carries `code` (`invalid-change`, `invalid-ruleset` or `future-shapes`) and `index`: the change that failed, or for a stroke-order refusal the last change that touched the span; null for `invalid-ruleset` and `future-shapes`.
+- Fields on an `add` are parsed under the shape version the commit's revision names, upgraded to the newest, parsed again with the newest when upgraded, and cloned (`readFields`). A faulty upgrade is `invalid-change` at that change.
 
 ## Items and keys
 
@@ -62,11 +62,12 @@ A sim is flattened to keyed items and ordered lists (`flatten`, `assemble` in `i
 | a span   | `s:<from>:<policyId>` (`spanKey`)               | `span.<where tag>`   | `policy`, `from`, `to`, `what`                        |
 | a stroke | `k:<digest>`, repeats `k:<digest>~2`, `~3`, ... | `stroke`             | `span`, `brush`, `kind`, `stories`, `path`, `radiusM` |
 
-- The digest is `digest128(canonicalJson(fields))` (`strokeKeyBase`). The n-th identical stroke in a span gets `~n` for n of 2 or more (`strokeKeys`). Two strokes of one span with the same fields are legal.
+- The digest is `digest128(canonicalJson)` of the six fields `span`, `brush`, `kind`, `stories`, `path` and `radiusM`, picked by name (`strokeKeyBase`), so a field a later stroke version adds is not in the key. The n-th identical stroke in a span gets `~n` for n of 2 or more (`strokeKeys`). Two strokes of one span with the same fields are legal.
 - Lists: `l:<kind>` holds the policy keys of `zoning`, `permitting` and `money` in order; `l:<span key>` holds the stroke keys of a span in order. An absent list and an empty list are the same, and `flatten` creates no empty list.
 - A brush is not an item. Its strokes are items with the brush's `id`, `kind` and `stories` copied on each. `assemble` collects a span's strokes by `brush` in list order, so a brush's strokes must be together and agree on kind and stories. A painted span's `what` in the item is only `{ tag: 'brushes' }`. Other `what` values are kept whole.
 - Spans of one policy are assembled in ascending `from`.
 - Log form: no brush has zero strokes. `toLogForm(policy)` drops empty brushes; `flatten` throws `RangeError` on one.
+- `flatten` also throws `RangeError` on two items with one key: two policies with one id, or two spans of a policy with one `from`. `checkRuleset` refuses both.
 - A folded state is canonical: its item keys and lists always equal those of `flatten(state.ruleset())`.
 - `rulesetText` is `canonicalJson({ name, policy })`: a ruleset's identity.
 
@@ -80,32 +81,34 @@ The registry (`REGISTRY`, `shapes.ts`) names every shape of the log (R57, R62).
 - `versionAt(reg, revision, shape)` throws `LogError('future-shapes')` for a revision above `current` and `invalid-change` for a revision without the shape.
 - Upgrade on read (R54): fields parsed at an older version go through each `up.fields` to the newest. A `set` goes through each `up.set`, then is checked against the newest version's `settable`. A commit is never rewritten.
 - `LogState.apply` throws `future-shapes` before changing anything when the commit's `shapes` is above the registry's `current`.
+- A version may add fields but never changes the fields a key is built from: a stroke's six key fields, a policy's `id`, a span's `policy` and `from`. Keys are not rewritten on read, so an `up.fields` that changes one of those values is forbidden.
 
 To add a version of a shape:
 
 1. Append the new `ShapeVersion` to that shape's array. Do not edit or remove the old one.
 2. Give the old version an `up` that takes its fields (and `set`s, if a field moved) to the new one.
 3. Raise `SHAPES_REVISION` and add `revisions[new]` mapping every shape to its version. Keep every older revision row.
-4. Add a fixture test: a commit written under the old revision folds to the same `rulesetText` as its upgraded form (see the test "an older shape version folds to the same text" in `state.spec.ts`).
+4. Add a fixture test: a commit written under the old revision folds to the same `rulesetText` as its upgraded form (see the tests "an older shape version folds to the same text as its upgraded form" and "an older stroke version keeps its key and folds to the text of its upgraded form" in `state.spec.ts`).
 
 `shapes.spec.ts` fails if a shape is dropped or an older version has no `up`.
 
 ## Fold and validity
 
-`new LogState` is private; use `LogState.empty()` (name `DEFAULT_SIM_NAME`, `DEFAULT_POLICY4`, no dataset version) or `LogState.of(ruleset, datasetVersion)`.
+`new LogState` is private; use `LogState.empty(registry?)` (name `DEFAULT_SIM_NAME`, `DEFAULT_POLICY4`, no dataset version) or `LogState.of(ruleset, datasetVersion, registry?)`. `registry` defaults to `REGISTRY`; tests pass a fixture registry.
 
 - `apply(input)` applies one commit's changes atomically: on any throw the state is as it was. It sets the state's dataset version to the commit's. `input` is a `FoldInput`: `changes`, `shapes`, `datasetVersion`.
 - After all of a commit's changes, a check runs once for each span whose strokes the commit touched. It refuses (`LogError`, `invalid-change`) a commit that leaves a span's strokes with a brush's strokes not together, or with identical strokes not keyed `k:D`, `k:D~2`, ... in list order. A commit may pass through a bad order and be good at its end.
 - `apply(input, { check: true })` also runs `checkRuleset` and, on a problem, rolls back and throws `LogError('invalid-ruleset')`. The sim object applies commits this way (R3, R18).
-- `fold(commits)` applies each commit to an empty state without `check` and returns the `Ruleset`. `datasetVersion` is that of the last commit, null for none.
-- `ruleset()` is memoised until the next `apply`. `item(key)`, `list(listKey)` and `registry` read the state; `clone()` copies it.
+- `fold(commits, registry?)` applies each commit to an empty state without `check` and returns the `Ruleset`. `datasetVersion` is that of the last commit, null for none.
+- `ruleset()` is memoised until the next `apply` and the same object goes to every caller until then: treat it as read-only. It shares no object with the state's items, so a write to it never reaches the state or a clone.
+- `item(key)`, `list(listKey)` and `registry` read the state; `clone()` copies it.
 - `checkRuleset(ruleset)` returns the first `{ path, message }` problem or null. It is structure only: the name, then `parsePolicy4` with `asOf: null` in reconcile mode, then the size limits (`simDoc4Problems`). A preset retired later never makes an accepted sim refuse edits. A null `datasetVersion` is checked as `fixture-0`.
 
-`apply` has a second option, `{ strokes: false }`, that skips the stroke-order check and nothing else. It exists only for `reapply`'s intermediate steps. No other caller may use it, and a state left that way must not be kept.
+`apply`'s only option is `check`; `reapply` defers the stroke-order check internally.
 
 ## Diff
 
-`diff(a, b)` returns the changes that take `a` to `b`, list order included (R8, R10). Applied in order to `LogState.of(a)`, they give the items and lists of `flatten(b)`. It throws `RangeError` when either ruleset has an empty brush.
+`diff(a, b)` returns the changes that take `a` to `b`, list order included (R8, R10). Applied in order to `LogState.of(a)`, they give the items and lists of `flatten(b)`. It throws `RangeError` when either ruleset has an empty brush or two items with one key.
 
 An item survives when it has the same shape and fields in both, apart from settable fields and a span's `to`, a surviving `to` differing only by a truncation, and its parent survives. The changes come in this order:
 
@@ -120,7 +123,7 @@ In a list the surviving items on a longest increasing subsequence of their order
 
 ## Re-apply
 
-`reapply(tip, input)` re-applies one pending commit's changes on a new tip (R19). `tip` is never mutated.
+`reapply(tip, input)` re-applies one pending commit's changes on a new tip (R19). `tip` is never mutated. It throws `LogError('future-shapes')` before any work when `input.shapes` is above the tip registry's `current`, as `apply` does: the commit comes from a newer build, so keep it pending rather than drop it.
 
 It walks the changes in order, each seeing the kept ones before it. A change is dropped, and the rest of the commit stands, with one of these reasons:
 
@@ -133,10 +136,14 @@ It walks the changes in order, each seeing the kept ones before it. A change is 
 
 - An add or move whose `after` is gone or not in the list is re-anchored. A stroke goes after the last other stroke of its brush, else last in its list; anything else goes last. A null `after` is left alone.
 - A stroke add whose key is one of its own (`k:D` or `k:D~n`) takes the lowest free key of its identical strokes in the span (for example `k:X~2` becomes `k:X` when another writer deleted `k:X`). Later changes in the commit that name the old key follow it.
+- An add whose key is taken is dropped as `exists` before any rewrite, so a rewrite only lowers a key. Later changes that name the key a rewrite took read as gone.
+- A pending delete of a lower repeat (`k:D`) on a tip where another writer added a higher one (`k:D~2`) leaves the repeats unnumbered, so the commit is `invalid`.
+- A span key names a place (`s:<from>:<policyId>`), not content. When two writers each replace the same span, re-applying is last-writer-wins on that span: the pending delete removes the tip's replacement and the pending add stands.
 - A change that `apply` refuses, other than the cases above, refuses the whole commit: `{ ok: false, why: 'invalid' }`. So does a result that fails the stroke-order check or `checkRuleset`.
-- Validity is checked once per commit: the kept changes are applied one at a time with `{ strokes: false }`, then applied together to a copy of the tip with `{ check: true }`. A commit that is valid only as a whole is kept.
+- Validity is checked once per commit: the kept changes are applied one at a time with the stroke-order check deferred, then applied together to a copy of the tip with `{ check: true }`. A commit that is valid only as a whole is kept.
 - A commit with nothing kept is `{ ok: false, why: 'empty' }`.
 - `ok: true` returns `changes`, exactly what a full-check apply on `tip` accepted, and `dropped` (`{ index, change, why }`, `index` into the input).
+- `dropped` is returned on `ok: false` too. On an `invalid` found mid-walk it holds only the changes dropped before the refusal.
 
 ## Undo and redo
 
@@ -151,7 +158,7 @@ The result is the top of each stack, or null. The commit that carries an undo is
 
 ## Hash chain
 
-`commitText(c)` is `canonicalJson` of every field of the commit but `hash`. It throws `TypeError` on `undefined` or a non-finite number anywhere. `chainHash(prev, c)` is `sha256Hex(prev + commitText(c))` (R27). `GENESIS_HASH` is 64 zeros, the `prev` of seq 1. `verifyChain(commits, prev?)` returns the first `seq` whose position or hash is wrong, or null; `prev` is `{ seq, hash }` of the commit before `commits[0]`, default seq 0 and `GENESIS_HASH`.
+`commitText(c)` is `canonicalJson` of every field of the commit but `hash`. It throws `TypeError` on `undefined` or a non-finite number anywhere. `chainHash(prev, c)` is `sha256Hex(prev + commitText(c))`, the `hash` of the commit table. Both `chainHash` and `verifyChain` are async. `GENESIS_HASH` is 64 zeros, the `prev` of seq 1. `verifyChain(commits, prev?)` resolves to the first `seq` whose position (a seq that is not the next one, R27) or hash is wrong, or null; `prev` is `{ seq, hash }` of the commit before `commits[0]`, default seq 0 and `GENESIS_HASH`.
 
 `chain.spec.ts` pins the canonical text of a fixture commit and its hash `949f77d708450cca256a9febe90b7d57a978de51360da8610f03be5daee78243`, checked against Node's SHA-256. Changing `commitText` changes every stored hash: do not.
 
@@ -170,6 +177,14 @@ The browser store (unit 4):
 - On `behind`, calls `reapply` for each pending commit, recomputing a pending restore with `diff`.
 - Commits an editor's change as `diff(current, edited)`.
 - Asks `undoRedo` for targets, folding to the target position to get the restore's `diff`.
+
+### Rules for callers
+
+- `apply` changes the state in place. The sim object runs its rate limit, size cap, `parent` check and duplicate-id check before `apply`, or applies to a `clone()` and swaps it in on success.
+- The store removes pending commits whose ids are already among the confirmed ones before calling `reapply`; otherwise their adds come back `exists` and the rest re-applies on top of itself. A pending restore never goes to `reapply`; it is recomputed with `diff` (R18).
+- Editor output goes through `toLogForm`, and an imported ruleset (R20) through `checkRuleset`, before `diff` or `LogState.of`.
+- `future-shapes` from `apply` or `reapply` means the commit comes from a newer build: keep it, stop sending, offer a reload.
+- A jump (R14) to a position before a dataset move restores rules made for the older dataset under the newer one. Undo stops at the move; the store unit decides whether a jump across it is followed by a move commit or refused.
 
 ## Tests
 

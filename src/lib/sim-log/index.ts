@@ -21,8 +21,9 @@ export type {
 export { parseChange, parseCommit, parseCommitDraft } from './parse';
 export { NAME_KEY, policyKey, spanKey } from './keys';
 export { DEFAULT_SIM_NAME, REGISTRY, SHAPES_REVISION } from './shapes';
-export type { Registry } from './shapes';
+export type { Registry, ShapeVersion } from './shapes';
 export { rulesetText, toLogForm } from './items';
+export type { Item } from './items';
 export { LogState, fold } from './state';
 export { checkRuleset } from './check';
 export type { RulesetProblem } from './check';
