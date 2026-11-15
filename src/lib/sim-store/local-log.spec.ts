@@ -23,6 +23,8 @@ import { CHECKPOINTS_MAX, CHECKPOINT_SPACING, LocalLog, PENDING_CHECKPOINT } fro
 import { DS, FakeObject, draftOf, nameChange, renamingAlign, stamped } from './test/commits';
 import { MOVE_LABEL, MOVE_SOURCE, type Align, type DropReport, type Pending } from './types';
 import { datasetDecision } from './dataset';
+import { authorMove } from './author';
+import { newId } from '$lib/ids/base58';
 
 const EMPTY = ruleset(DEFAULT_POLICY4);
 const F1 = 'fixture-1';
@@ -345,6 +347,8 @@ describe('LocalLog', () => {
     const align = renamingAlign([DS, F1]);
     const { o, log } = start({ align });
     const m = editOn(log, (r) => align(r, F1)!, { ...MOVE, datasetVersion: F1 });
+    // An edit behind it: a move is never kept alone (R55).
+    const e = editOn(log, (r) => withZ(r, 'b'), { datasetVersion: F1 });
     log.receive([foreign(o, (r) => withZ(r, 'c'))]);
     expect(log.pending[0].draft).toMatchObject({
       id: m.id,
@@ -354,7 +358,7 @@ describe('LocalLog', () => {
     });
     const out = log.receive([foreign(o, (r) => align(r, F1)!, { ...MOVE, datasetVersion: F1 })]);
     expect(out).toEqual({ kind: 'applied', changed: false, drops: [] });
-    expect(log.pending).toEqual([]);
+    expect(log.pending.map((p) => p.draft.id)).toEqual([e.id]);
     expect(log.ruleset().datasetVersion).toBe(F1);
   });
 
@@ -861,6 +865,43 @@ describe('LocalLog', () => {
     const pf = own(draftOf(2, addZ(objR(o), 'b'), { shapes: FUTURE }));
     const held = new LocalLog({ confirmed: [c1, f], pending: [pf], ...current });
     expect([held.pending, held.held, held.future]).toEqual([[], [pf], true]);
+  });
+
+  it('never leaves alone a reloaded lead move whose edits no longer apply', () => {
+    const align = renamingAlign([F1]);
+    const { o, c1 } = start();
+    const r1 = objR(o);
+    const moved = align(r1, F1)!;
+    const m = draftOf(1, diff(r1, moved), { ...MOVE, datasetVersion: F1 });
+    const e = draftOf(2, diff(moved, withoutZ(moved, 'a')), { datasetVersion: F1 });
+    const f = foreign(o, (r) => withoutZ(r, 'a'));
+    const pending = [own(m), own(e)];
+    // Loaded with the page current (a lead move), and with the server's dataset unknown.
+    for (const serverDataset of [F1, null]) {
+      const log = new LocalLog({ confirmed: [c1, f], pending, align, page: F1, serverDataset });
+      expect(log.initialDrops).toEqual([expect.objectContaining({ id: e.id, why: 'empty' })]);
+      expect([log.pending, log.held]).toEqual([[], []]);
+      expect(log.ruleset().datasetVersion).toBe(DS);
+    }
+  });
+
+  it('never leaves alone a lead move authored through authorMove when its edit drops', () => {
+    const align = renamingAlign([F1]);
+    const { o, c1 } = start();
+    const log = new LocalLog({ confirmed: [c1], pending: [], align, page: F1, serverDataset: F1 });
+    const m = authorMove(log, align, {
+      id: newId(),
+      stamp: { datasetVersion: F1, build: 'test' }
+    });
+    expect(m.ok).toBe(true);
+    const e = editOn(log, (r) => withoutZ(r, 'a'), { datasetVersion: F1 });
+    const out = log.receive([foreign(o, (r) => withoutZ(r, 'a'))]);
+    expect(out.kind).toBe('applied');
+    expect(out.kind === 'applied' && out.drops).toEqual([
+      expect.objectContaining({ id: e.id, why: 'empty' })
+    ]);
+    expect([log.pending, log.held]).toEqual([[], []]);
+    expect(log.ruleset().datasetVersion).toBe(DS);
   });
 
   it('does not author again a lead move the caller dropped', () => {

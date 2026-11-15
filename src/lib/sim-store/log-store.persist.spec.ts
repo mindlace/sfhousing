@@ -502,6 +502,31 @@ describe('LogStore persistence', () => {
     expect(again.held).toEqual([]);
   });
 
+  it('reopens a stored move whose edits no longer apply: nothing pending, the move deleted', async () => {
+    const db = memorySimDb();
+    const obj = new FakeObject();
+    const sim = newId();
+    const align = renamingAlign([DS, F1]);
+    const x = await opened(db, { tabId: 'x', stamp: stampOf(F1), align }, sim);
+    x.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    x.setServerDataset(F1);
+    x.apply(withZ('a'), 'A');
+    await x.written();
+    const [move, edit] = (await db.read(sim)).pending;
+    expect([move.pending.draft.source, edit.pending.draft.label]).toEqual([MOVE_SOURCE, 'A']);
+    // Another writer adds the same policy on the old dataset before the tab comes back.
+    const c2 = accept(obj, draftOf(1, addChanges('a')));
+    await db.write(sim, { owner: 'z', confirmed: [c2], put: [], remove: [] });
+    const a = store(db, { stamp: stampOf(F1), align });
+    await a.open(sim, { claim: ['x'] });
+    expect([a.pending, a.drops.map((d) => [d.id, d.why])]).toEqual([[], [[edit.id, 'empty']]]);
+    a.setServerDataset(F1);
+    expect(a.pendingCount).toBe(0);
+    await a.written();
+    expect(a.head()).toBeNull();
+    expect((await db.read(sim)).pending).toEqual([]);
+  });
+
   it('stores held commits and their order, before and after they are retried', async () => {
     const db = memorySimDb();
     const obj = new FakeObject();

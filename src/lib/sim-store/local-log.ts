@@ -584,8 +584,6 @@ export class LocalLog {
       history.push(entryOf(draft, parent + 1));
       bytes += bytesOf(draft);
     };
-    /** The id of the lead move this log authored and kept first, if any. */
-    let authoredLead: string | null = null;
     // #pageCurrent() is false once anything is held for a newer build (#future), so nothing
     // after such a commit is ever retried here (I9).
     if (this.#pageCurrent()) {
@@ -609,7 +607,6 @@ export class LocalLog {
             this.#order.set(lead.draft.id, --this.#firstOrder);
             this.#authored.add(lead.draft.id);
           }
-          if (this.#authored.has(lead.draft.id)) authoredLead = lead.draft.id;
           const unchanged = lead.head && draftText(lead.draft) === draftText(first.draft);
           keep(p, unchanged ? first.draft : lead.draft, tipSeq);
         }
@@ -672,9 +669,13 @@ export class LocalLog {
       if (out.dropped.length > 0) report(d, null, out.dropped);
       keep(p, draft, parent);
     }
-    if (authoredLead !== null && kept.length === 1) {
-      // Everything after the move this log authored went (dropped or held): a move with no
-      // edit after it is not made. Nothing was kept after it, so no checkpoint either.
+    // A lead move (one kept first whose target is another dataset than the tip's), whoever
+    // authored it and whenever, with everything after it gone (dropped or held): a move is never
+    // sent alone (R55). An alignment on the tip's own dataset moves nothing and is not covered.
+    const head = kept[0]?.draft;
+    const lone = kept.length === 1 && isMove(head) && head.datasetVersion !== this.#tipDataset;
+    if (lone) {
+      // Nothing was kept after it, so no checkpoint either.
       this.#pending = [];
       this.#indexOf = new Map();
       this.#local = this.#tip.clone();
