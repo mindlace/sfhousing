@@ -170,16 +170,66 @@ describe('openSimDb', () => {
     try {
       const a = must(await openSimDb({ name }));
       const b = must(await openSimDb({ name }));
+      const [sa, sb] = [sim(), sim()];
       const [ra, rb] = await Promise.all([
-        a.createSim(sim(), { current: true }),
-        b.createSim(sim(), { current: true })
+        a.createSim(sa, { current: true }),
+        b.createSim(sb, { current: true })
       ]);
       expect([ra.outcome, rb.outcome].sort()).toEqual(['created', 'current-taken']);
       expect(ra.current).toBe(rb.current);
+      const [winner, loser] = ra.outcome === 'created' ? [sa, sb] : [sb, sa];
+      expect(ra.current).toBe(winner.simId);
+      expect(await a.getMeta('current')).toBe(winner.simId);
+      expect((await a.read(winner.simId)).sim).toEqual(winner);
+      expect((await a.read(loser.simId)).sim).toBeNull();
       a.close();
       b.close();
     } finally {
       await deleteName(name);
+    }
+  });
+
+  it('rejects a failed write with its own error and writes nothing of it', async () => {
+    const name = testName();
+    try {
+      const db = must(await openSimDb({ name }));
+      await db.setMeta('kept', 1);
+      // a function cannot be cloned: the request throws a DataCloneError
+      const err = await db.setMeta('bad', () => 1).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).name).toBe('DataCloneError');
+      expect(await db.getMeta('bad')).toBeUndefined();
+      expect(await db.getMeta('kept')).toBe(1);
+
+      // a later request of the same transaction fails after an earlier one succeeded
+      const simId = newId();
+      const a = putOf('a');
+      const b = { ...putOf('b'), pending: { ...putOf('b').pending, draft: () => 1 } };
+      const err2 = await db
+        .write(simId, batch('tab1', [a, b as unknown as PendingPut]))
+        .catch((e: unknown) => e);
+      expect((err2 as Error).name).toBe('DataCloneError');
+      expect((await db.read(simId)).pending).toEqual([]);
+      expect(await db.getMeta(`n:${simId}`)).toBeUndefined();
+      db.close();
+    } finally {
+      await deleteName(name);
+    }
+  });
+
+  it('answers null when reading indexedDB throws', async () => {
+    const own = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
+    expect(own?.configurable).toBe(true);
+    Object.defineProperty(globalThis, 'indexedDB', {
+      configurable: true,
+      get() {
+        throw new Error('denied');
+      }
+    });
+    try {
+      expect(await openSimDb({ name: testName() })).toBeNull();
+    } finally {
+      if (own) Object.defineProperty(globalThis, 'indexedDB', own);
     }
   });
 });

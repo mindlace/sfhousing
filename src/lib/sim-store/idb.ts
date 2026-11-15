@@ -74,10 +74,11 @@ export function openSimDb(
   } = {}
 ): Promise<SimDb | null> {
   return new Promise((resolve) => {
-    if (typeof indexedDB === 'undefined') return resolve(null);
     let settled = false;
     let request: IDBOpenDBRequest;
     try {
+      // reading the factory can throw (blocked storage): the same answer as a missing one
+      if (typeof indexedDB === 'undefined') return resolve(null);
       request = indexedDB.open(opts.name ?? SIM_DB_NAME, SIM_DB_VERSION);
     } catch {
       return resolve(null);
@@ -125,10 +126,10 @@ function wrap(
     return new Promise<T>((resolve, reject) => {
       if (closed) return reject(new Error('closed'));
       let tx: IDBTransaction;
-      let selfAbort = false;
+      let seamAbort = false;
+      let bodyError: unknown;
       let value: T;
       const abort = (): void => {
-        selfAbort = true;
         try {
           tx.abort();
         } catch {
@@ -146,16 +147,26 @@ function wrap(
       const abortAsked = mode === 'readwrite' && opts.abortWrites?.() === true;
       tx.oncomplete = () => resolve(value);
       tx.onabort = () =>
-        reject(selfAbort ? new Error('aborted') : (tx.error ?? new Error('transaction aborted')));
+        reject(
+          seamAbort
+            ? new Error('aborted')
+            : (bodyError ?? tx.error ?? new Error('transaction aborted'))
+        );
       tx.onerror = () => {
         // the abort event follows and rejects; this one only keeps an error from bubbling
       };
       body(tx).then(
         (v) => {
           value = v;
-          if (abortAsked) abort();
+          if (abortAsked) {
+            seamAbort = true;
+            abort();
+          }
         },
-        () => abort()
+        (e: unknown) => {
+          bodyError = e;
+          abort();
+        }
       );
     });
   }
