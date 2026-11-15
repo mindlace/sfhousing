@@ -7,6 +7,8 @@ vi.mock('$lib/server/sims/roster-hook', () => ({
 import { eq } from 'drizzle-orm';
 import { onSimRosterChanged, rosterChangedAll } from '$lib/server/sims/roster-hook';
 import { freshDb, seedSim, seedUser } from '$lib/server/test/auth-db';
+import { fakeSimEnv } from '$lib/server/test/sim-env';
+import { mockConsole } from '$lib/server/test/mock-console';
 import {
   addMemberById,
   getRole,
@@ -224,7 +226,7 @@ describe('markIdentityDeleted', () => {
 describe('deleteAccount', () => {
   const actor = { actorId: 'id1', actorKind: 'human' as const };
   /** Stands in for platform.env: the fan-out must receive it as given. */
-  const env = { marker: 'env' };
+  const env = fakeSimEnv();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -271,6 +273,30 @@ describe('deleteAccount', () => {
     expect(defer).toHaveBeenCalledWith(never);
     const [idRow] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'id1'));
     expect(idRow.deletedAt).not.toBeNull();
+  });
+
+  test('a defer that throws does not fail the deletion: the fan-out is awaited instead', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'id1', email: 'alice@x.com', handle: 'alice' });
+    const simId = await seedSim(db, { title: 'Solo', managerId: 'id1' });
+    let told = false;
+    vi.mocked(rosterChangedAll).mockImplementationOnce(async () => {
+      await Promise.resolve();
+      told = true;
+    });
+    const { error } = mockConsole('error');
+    const defer = vi.fn(() => {
+      throw new Error('defer boom');
+    });
+
+    await deleteAccount({ db, env, identityId: 'id1', actor, defer });
+
+    expect(rosterChangedAll).toHaveBeenCalledWith(env, [simId]);
+    expect(told).toBe(true);
+    const [idRow] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'id1'));
+    expect(idRow.deletedAt).not.toBeNull();
+    expect(error).toHaveBeenCalledWith('[account-delete] defer failed', 'defer boom');
+    error.mockRestore();
   });
 
   test('scrubs identity, keeps a sole-member sim with no members, promotes a manager on a shared one, sets deleted_at', async () => {

@@ -9,6 +9,8 @@ vi.mock('$app/environment', () => ({
 
 import { freshDb, seedSim, seedUser } from '$lib/server/test/auth-db';
 import { mockConsole } from '$lib/server/test/mock-console';
+import { fakeSimEnv } from '$lib/server/test/sim-env';
+import type { SimEnv } from '$lib/server/sim-object/stub';
 import { addMemberById, getRole } from './sim-index';
 import { removeSimMember } from './sims';
 import {
@@ -21,9 +23,7 @@ import {
 
 function fakeSim(reread: () => Promise<void>) {
   const names: string[] = [];
-  const env = {
-    SIM: { getByName: (n: string) => (names.push(n), { rereadRoles: reread }) }
-  };
+  const env = fakeSimEnv((n) => (names.push(n), { rereadRoles: reread }));
   return { env, names };
 }
 
@@ -36,7 +36,9 @@ afterEach(() => {
 describe('onSimRosterChanged', () => {
   it('does nothing without the binding', async () => {
     const { error } = mockConsole('error');
-    await expect(onSimRosterChanged({}, 'sim-1')).resolves.toBeUndefined();
+    // An env from a deployment without the binding.
+    const noBinding = {} as NonNullable<SimEnv>;
+    await expect(onSimRosterChanged(noBinding, 'sim-1')).resolves.toBeUndefined();
     await expect(onSimRosterChanged(undefined, 'sim-1')).resolves.toBeUndefined();
     expect(error).not.toHaveBeenCalled();
   });
@@ -87,14 +89,11 @@ describe('onSimRosterChanged', () => {
 
   it('never rejects when getting the stub itself throws', async () => {
     const { error } = mockConsole('error');
-    const env = {
-      SIM: {
-        getByName: () => {
-          throw new Error('no such namespace');
-        }
-      }
-    };
-    await expect(onSimRosterChanged(env, 'sim-1')).resolves.toBeUndefined();
+    const getByName = vi.fn(() => {
+      throw new Error('no such namespace');
+    });
+    await expect(onSimRosterChanged(fakeSimEnv(getByName), 'sim-1')).resolves.toBeUndefined();
+    expect(getByName).toHaveBeenCalledTimes(REREAD_ATTEMPTS);
     expect(error).toHaveBeenCalledOnce();
   });
 

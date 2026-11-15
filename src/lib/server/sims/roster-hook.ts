@@ -1,4 +1,5 @@
 import { loggable } from '$lib/server/sim-object/object-rules';
+import type { SimEnv } from '$lib/server/sim-object/stub';
 import { liveSimStub } from './live-sim';
 
 /** Attempts per sim; the second runs on a fresh stub (a stub that threw is broken). */
@@ -31,7 +32,7 @@ async function bounded<T>(call: Promise<T>, ms: number): Promise<T> {
  * except an overloaded object (retrying worsens the overload); logs once after the last
  * failed attempt, with the sim id and safe text only.
  */
-export async function onSimRosterChanged(env: unknown, simId: string): Promise<void> {
+export async function onSimRosterChanged(env: SimEnv, simId: string): Promise<void> {
   let last: unknown;
   for (let attempt = 1; attempt <= REREAD_ATTEMPTS; attempt++) {
     try {
@@ -44,11 +45,15 @@ export async function onSimRosterChanged(env: unknown, simId: string): Promise<v
       if ((e as { overloaded?: unknown } | null)?.overloaded === true) break;
     }
   }
-  console.error('[roster-hook] reread failed', simId, loggable(last));
+  try {
+    console.error('[roster-hook] reread failed', simId, loggable(last));
+  } catch {
+    // Never rejects, not even through its own log line.
+  }
 }
 
 /** onSimRosterChanged for each sim, ROSTER_FANOUT at a time. Never rejects. */
-export async function rosterChangedAll(env: unknown, simIds: readonly string[]): Promise<void> {
+export async function rosterChangedAll(env: SimEnv, simIds: readonly string[]): Promise<void> {
   let next = 0;
   const worker = async () => {
     while (next < simIds.length) await onSimRosterChanged(env, simIds[next++]);

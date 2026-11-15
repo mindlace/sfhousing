@@ -40,5 +40,7 @@ export const POST: RequestHandler = async ({ params, platform, request, url }) =
     console.error('[takedown] failed', simId, loggable(e));
     return json({ error: 'Takedown failed.' }, { status: 500 });
   }
+  // The one record of a takedown besides its mark: info, never warn or error.
+  console.info('[takedown] done', simId);
   return json({ simId });
 };

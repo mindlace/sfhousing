@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { freshDb, seedSim } from '$lib/server/test/auth-db';
+import { fakeSimEnv } from '$lib/server/test/sim-env';
 import { rosterChangedAll } from '$lib/server/sims/roster-hook';
 import { foldSimsForUser } from '$lib/server/sims/sim-roles';
 import { user, userIdentity, userVersion } from '$lib/server/db/schema';
@@ -178,7 +179,7 @@ describe('handleAccountLink', () => {
   });
 
   describe('the fuse tells the absorbed identity sims (R49)', () => {
-    const env = { tag: 'env' };
+    const env = fakeSimEnv();
 
     beforeEach(() => {
       vi.mocked(rosterChangedAll).mockClear();
@@ -216,6 +217,32 @@ describe('handleAccountLink', () => {
       const [gotEnv, ids] = vi.mocked(rosterChangedAll).mock.calls[0];
       expect(gotEnv).toBe(env);
       expect([...ids].sort()).toEqual([a, b].sort());
+    });
+
+    it('a defer that throws leaves the fuse standing and the link resolved', async () => {
+      const { db } = freshDb();
+      const { pseudo, surv } = await pair(db);
+      await seedSim(db, { title: 'A', managerId: pseudo.userIdentity });
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const defer = vi.fn(() => {
+        throw new Error('defer boom');
+      });
+      await expect(
+        handleAccountLink({
+          db,
+          isUpgrade: false,
+          pseudonymousUserId: 'u-pseudo',
+          newUserId: 'u-exist',
+          roster: { env, defer }
+        })
+      ).resolves.toBeUndefined();
+      expect(defer).toHaveBeenCalledOnce();
+      expect(rosterChangedAll).toHaveBeenCalledOnce();
+      const ident = await getIdentity(db, pseudo.userIdentity);
+      expect(ident?.supersededById).toBe(surv.userIdentity);
+      expect(await db.select().from(user).where(eq(user.id, 'u-pseudo'))).toHaveLength(0);
+      expect(await getUser(db, pseudo.userIdentity)).toMatchObject({ id: surv.userIdentity });
+      expect(errors).toHaveBeenCalledWith('[fuse] defer failed', 'defer boom');
     });
 
     it('a fuse of an identity with no sims tells nobody', async () => {

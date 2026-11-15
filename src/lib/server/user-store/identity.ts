@@ -5,6 +5,7 @@ import { principal, user, userIdentity } from '$lib/server/db/schema';
 import { newId } from '$lib/server/ids/factory';
 import { loggable } from '$lib/server/sim-object/object-rules';
 import { rosterChangedAll } from '$lib/server/sims/roster-hook';
+import type { SimEnv } from '$lib/server/sim-object/stub';
 import { foldSimsForUser } from '$lib/server/sims/sim-roles';
 import { skeleton } from './confusable-skeleton';
 import { generateUniqueHandle } from './handle';
@@ -178,7 +179,7 @@ export async function handleAccountLink(args: {
   /** R49: after a fuse, the absorbed identity's sims are told to re-read roles, handed to
    *  `defer` (the request's waitUntil) so a sign-in never waits on it. Absent where only the
    *  graph is under test: then nobody is told. */
-  roster?: { env: unknown; defer: (work: Promise<void>) => void };
+  roster?: { env: SimEnv; defer: (work: Promise<void>) => void };
 }): Promise<void> {
   if (args.isUpgrade) {
     await applyUpgrade(args.db, args.pseudonymousUserId, args.newUserId);
@@ -192,6 +193,8 @@ export async function handleAccountLink(args: {
   );
   if (args.roster && simIds.length > 0) {
     // rosterChangedAll never rejects; the guard keeps a throwing defer from failing the sign-in.
+    // The number of sims is not capped, so the fan-out may outrun waitUntil's time limit: a sim
+    // it does not reach keeps its open sockets' old rights until they reconnect.
     const work = rosterChangedAll(args.roster.env, simIds);
     try {
       args.roster.defer(work);

@@ -18,6 +18,8 @@ import { recordUserVersion } from './history';
 import { listSimsForUser } from '$lib/server/sims/sim-index';
 import { removeSimMember } from '$lib/server/sims/sims';
 import { rosterChangedAll } from '$lib/server/sims/roster-hook';
+import type { SimEnv } from '$lib/server/sim-object/stub';
+import { loggable } from '$lib/server/sim-object/object-rules';
 
 const TOMBSTONE_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 const HEX64 = /^[a-f0-9]{64}$/;
@@ -138,7 +140,7 @@ export async function markIdentityDeleted(
  */
 export async function deleteAccount(args: {
   db: Database;
-  env: unknown;
+  env: SimEnv;
   identityId: string;
   actor: Actor;
   defer?: (work: Promise<void>) => void;
@@ -160,10 +162,19 @@ export async function deleteAccount(args: {
       left.push(s.simId);
     }
   } finally {
-    // Also when a later removal threw: the ones already written are told.
+    // Also when a later removal threw: the ones already written are told. The number of sims
+    // is not capped, so the fan-out may outrun waitUntil's time limit: a sim it does not reach
+    // keeps its open sockets' old rights until they reconnect. A defer that throws must not fail
+    // the deletion between the removals and the account rows, so the fan-out is awaited instead.
     const told = rosterChangedAll(args.env, left);
-    if (args.defer) args.defer(told);
-    else await told;
+    if (!args.defer) await told;
+    else
+      try {
+        args.defer(told);
+      } catch (e) {
+        console.error('[account-delete] defer failed', loggable(e));
+        await told;
+      }
   }
 
   await closeAccountRows({ db, identityId: sid, live });

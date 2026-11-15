@@ -8,6 +8,7 @@ import { buildFirstManagerGrantSql } from './sim-roles';
 import { onSimRosterChanged } from './roster-hook';
 import { liveSimStub } from './live-sim';
 import { loggable } from '$lib/server/sim-object/object-rules';
+import type { SimEnv } from '$lib/server/sim-object/stub';
 
 /**
  * Register a sim under a browser-minted id (R51). Throws Error('invalid sim id') unless
@@ -25,7 +26,7 @@ import { loggable } from '$lib/server/sim-object/object-rules';
  */
 export async function createSim(args: {
   db: Database;
-  env: unknown;
+  env: SimEnv;
   simId: string;
   title: string;
   managerId: string;
@@ -68,11 +69,7 @@ const dialect = new SQLiteAsyncDialect();
  * 3. One batch (one transaction) of three idempotent deletes.
  * A throw after step 1 leaves the id marked and the rest for a retry to finish.
  */
-export async function deleteSim(args: {
-  db: Database;
-  env: unknown;
-  simId: string;
-}): Promise<void> {
+export async function deleteSim(args: { db: Database; env: SimEnv; simId: string }): Promise<void> {
   const { db, simId } = args;
   const stub = liveSimStub(args.env, simId);
   if (!stub) throw new Error('sim object unavailable');
@@ -105,7 +102,7 @@ export async function deleteSim(args: {
  */
 export async function removeSimMember(args: {
   db: Database;
-  env: unknown;
+  env: SimEnv;
   simId: string;
   userId: string;
   actorUserId?: string;
@@ -137,7 +134,7 @@ export async function removeSimMember(args: {
  */
 export async function leaveSim(args: {
   db: Database;
-  env: unknown;
+  env: SimEnv;
   simId: string;
   userId: string;
   simTitle: string;

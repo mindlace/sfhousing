@@ -144,19 +144,22 @@ describe('POST /api/operator/sims/[simId]/takedown', () => {
 
   it('200 { simId } with the right token: the sim is gone and its id never registers', async () => {
     const { db, simId, call, takeDowns, marks } = await setup();
-    const { error, log, warn } = mockConsole();
+    const { error, log, warn, info } = mockConsole('error', 'log', 'warn', 'info');
     const res = await call();
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ simId });
     expect(takeDowns).toEqual([simId]);
     expect(await marks()).toEqual([simId]);
     expect(await getSimTitle({ db, simId })).toBeNull();
-    expect(await createSim({ db, env: {}, simId, title: 'Again', managerId: 'm1' })).toEqual({
-      simId,
-      created: false
-    });
-    // A takedown logs nothing.
+    expect(await createSim({ db, env: undefined, simId, title: 'Again', managerId: 'm1' })).toEqual(
+      {
+        simId,
+        created: false
+      }
+    );
+    // A takedown logs one info line with the sim id, and nothing else.
     expect([error, log, warn].map((s) => s.mock.calls)).toEqual([[], [], []]);
+    expect(info.mock.calls).toEqual([['[takedown] done', simId]]);
   });
 
   it('200 for a valid id with no index row: the id is marked and its object cleared', async () => {
