@@ -36,8 +36,8 @@ describe('decideAppend', () => {
     ['no rate token', { takeToken: () => false }, 'limit'],
     ['a stale parent', { tip: 2 }, 'behind'],
     ['a parent ahead of the tip', { tip: 0 }, 'behind'],
-    ['a sim at its length cap', { tip: LIMITS.simCommits }, 'limit'],
-    ['a sim at its size cap', { bytes: LIMITS.simBytes }, 'limit']
+    ['a sim at its length cap', { tip: LIMITS.simCommits }, 'full'],
+    ['a sim at its size cap', { bytes: LIMITS.simBytes }, 'full']
   ])('refuses %s', (_, over, why) => {
     expect(decideAppend(gate(over), draft, draft.id, 400)).toEqual({
       kind: 'refused',
@@ -103,6 +103,6 @@ describe('decideAppend', () => {
 
   it('honours injected limits', () => {
     const small = { ...LIMITS, simCommits: 1 };
-    expect(decideAppend(gate(), draft, draft.id, 400, small)).toMatchObject({ why: 'limit' });
+    expect(decideAppend(gate(), draft, draft.id, 400, small)).toMatchObject({ why: 'full' });
   });
 });

@@ -10,7 +10,11 @@ export const CLOSE_MALFORMED = 1008;
 export const CLOSE_INTERNAL = 1011;
 export const CLOSE_GONE = 4410;
 
-export type RefusedWhy = 'behind' | 'invalid' | 'newer' | 'not-writer' | 'limit' | 'gone';
+/**
+ * Why an append or a resume was refused. `limit` is the rate or one commit's size (back off);
+ * `full` is a sim at its commit-count or byte cap (permanent: it takes no more commits).
+ */
+export type RefusedWhy = 'behind' | 'invalid' | 'newer' | 'not-writer' | 'limit' | 'full' | 'gone';
 
 export type ServerFrame =
   | { type: 'hello'; build: string; protocol: number }

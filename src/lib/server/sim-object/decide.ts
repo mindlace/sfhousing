@@ -21,7 +21,7 @@ export type AppendDecision =
 
 /**
  * The order in which an append is checked: gone, not-writer, rate, frame size, parse, duplicate
- * id, sim length and size, parent. The token is taken at the rate step only, so a reader or a
+ * id, sim length and size (`full`), parent. The token is taken at the rate step only, so a reader or a
  * signed-out socket never spends the budget. The fold check follows in the log host.
  */
 export function decideAppend(
@@ -45,7 +45,7 @@ export function decideAppend(
   }
   if (gate.hasId(draft.id)) return { kind: 'duplicate', id: draft.id };
   if (gate.tip >= limits.simCommits || gate.bytes + frameBytes > limits.simBytes) {
-    return refuse('limit');
+    return refuse('full');
   }
   if (draft.parent !== gate.tip) return refuse('behind');
   return { kind: 'accept', draft };
