@@ -313,6 +313,29 @@ export function simDbContract(
         expect(await db.getMeta(nKey(simId))).toBe(3);
       }));
 
+    it('a move put that also gives n ignores the n: it moves, and never creates', () =>
+      withDb(async (db) => {
+        const simId = newId();
+        const [a, b] = [putOf('a'), putOf('b')];
+        await db.write(simId, batch('tab1', { put: [a, b] }));
+        const gone = putOf('gone');
+        const r = await db.write(
+          simId,
+          batch('tab1', {
+            put: [
+              { id: a.id, pending: pendingOf('a2'), n: 1, move: true },
+              { id: gone.id, pending: gone.pending, n: 7, move: true }
+            ]
+          })
+        );
+        expect(r).toEqual({ applied: true, n: { [a.id]: 3 }, lost: [gone.id] });
+        expect((await db.read(simId)).pending.map((p) => [p.id, p.n])).toEqual([
+          [b.id, 2],
+          [a.id, 3]
+        ]);
+        expect(await db.getMeta(nKey(simId))).toBe(3);
+      }));
+
     it('a move put of a record that is gone is lost and creates nothing', () =>
       withDb(async (db) => {
         const simId = newId();

@@ -178,6 +178,8 @@ export class LogStore implements DocStore {
   /** The import waiting for its write (one at a time: a second import waits for it). */
   #markerJob: MarkerJob | null = null;
   #importing: Promise<void> | null = null;
+  /** The open or claim under way, settled either way (they never overlap). */
+  #lifecycle: Promise<void> | null = null;
 
   #ready = $state.raw(false);
   #simId = $state.raw<string | null>(null);
@@ -371,7 +373,37 @@ export class LogStore implements DocStore {
   // ---- life cycle ----
 
   /** null: a new sim, minted at the first commit (R29). Rejects when the read fails. */
-  async open(simId: string | null, opts?: { claim?: readonly string[] }): Promise<void> {
+  open(simId: string | null, opts?: { claim?: readonly string[] }): Promise<void> {
+    return this.#exclusive(() => this.#open(simId, opts));
+  }
+
+  /**
+   * Takes other tabs' pending commits of this sim and re-applies them after this tab's
+   * (decision 22). Answers how many were adopted. Rejects when the claim fails.
+   */
+  claim(owners: readonly string[]): Promise<number> {
+    return this.#exclusive(() => this.#claim(owners));
+  }
+
+  /**
+   * `open` and `claim` never overlap: one started while the other runs waits for it, so records
+   * claimed for a sim are adopted into that sim's log. Runs at once when nothing is under way.
+   */
+  async #exclusive<T>(run: () => Promise<T>): Promise<T> {
+    while (this.#lifecycle !== null) await this.#lifecycle;
+    const out = run();
+    const done: Promise<void> = out.then(
+      () => {},
+      () => {}
+    );
+    this.#lifecycle = done;
+    void done.then(() => {
+      if (this.#lifecycle === done) this.#lifecycle = null;
+    });
+    return out;
+  }
+
+  async #open(simId: string | null, opts?: { claim?: readonly string[] }): Promise<void> {
     // An open draft is committed to the sim it was made on before another is opened. A draft
     // refused at that moment keeps its refusal visible.
     if (this.#settleDraft() !== 'refused') this.#refusal = null;
@@ -417,11 +449,7 @@ export class LogStore implements DocStore {
     this.#changed();
   }
 
-  /**
-   * Takes other tabs' pending commits of this sim and re-applies them after this tab's
-   * (decision 22). Answers how many were adopted. Rejects when the claim fails.
-   */
-  async claim(owners: readonly string[]): Promise<number> {
+  async #claim(owners: readonly string[]): Promise<number> {
     this.settle();
     const db = this.#opts.db;
     const simId = this.#simId;
@@ -521,6 +549,8 @@ export class LogStore implements DocStore {
 
   /** The head pending draft that may be sent (I2), or null; null while stopped. */
   head(): CommitDraft | null {
+    // Not ready (an open under way, or one that rejected): which sim it is on is not settled.
+    if (!this.#ready) return null;
     if (this.#serverDs === null || this.#stoppedNow() !== null) return null;
     const first = this.#log.pending[0];
     if (first === undefined || first.draft.id === this.#bareMove) return null;
@@ -843,6 +873,16 @@ export class LogStore implements DocStore {
         const gen = this.#gen;
         const simId = this.#simId!;
         const mj = this.#markerJob;
+        if (
+          mj !== null &&
+          ![...this.#log.pending, ...this.#log.held].some((p) => p.draft.id === mj.id)
+        ) {
+          // Re-applying dropped the import before its write: no marker is written for content
+          // the sim does not hold, so the next load can import again. Withdrawn.
+          this.#markerJob = null;
+          this.#withdraw(mj);
+          continue;
+        }
         const job = this.#job(mj !== null);
         if (job === null) break;
         this.#markerJob = null;

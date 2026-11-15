@@ -591,3 +591,164 @@ describe('LogStore persistence', () => {
     expect(s.pendingCount).toBe(0);
   });
 });
+
+describe('LogStore persistence (fix round 1)', () => {
+  /** A memory database whose reads reject while `fail.on`. */
+  function flakyReads() {
+    const db = memorySimDb();
+    const fail = { on: false };
+    const read = db.read;
+    db.read = (simId) => (fail.on ? Promise.reject(new Error('read failed')) : read(simId));
+    return { db, fail };
+  }
+
+  it('hands out nothing and authors nothing after an open that rejected', async () => {
+    const { db, fail } = flakyReads();
+    const s = await opened(db);
+    s.setServerDataset(DS);
+    s.apply(withZ('a'), 'A');
+    await s.written();
+    expect(s.head()?.label).toBe('A');
+    const first = s.simId!;
+    const before = JSON.stringify(await db.read(first));
+    const other = newId();
+    fail.on = true;
+    await expect(s.open(other)).rejects.toThrow('read failed');
+    fail.on = false;
+    expect(s.ready).toBe(false);
+    expect(s.head()).toBeNull();
+    expect(s.apply(withZ('b'), 'B')).toBe(false);
+    s.rename('R');
+    expect(s.undo()).toBeNull();
+    expect(await s.importContent(content('i'), { key: 'k', value: 1, expect: undefined })).toBe(
+      'stopped'
+    );
+    await s.written();
+    expect(await db.read(other)).toEqual({ sim: null, confirmed: [], pending: [] });
+    expect(JSON.stringify(await db.read(first))).toBe(before);
+    expect(await db.getMeta('k')).toBeUndefined();
+    // A later open that succeeds makes it ready again.
+    await s.open(other);
+    expect(s.ready).toBe(true);
+    expect(s.apply(withZ('b'), 'B')).toBe(true);
+    await s.written();
+    expect(s.head()?.label).toBe('B');
+    expect((await db.read(other)).pending.map((p) => p.pending.draft.label)).toEqual(['B']);
+  });
+
+  it('hands out nothing while an open is under way', async () => {
+    const db = memorySimDb();
+    const s = await opened(db);
+    s.setServerDataset(DS);
+    s.apply(withZ('a'), 'A');
+    await s.written();
+    expect(s.head()).not.toBeNull();
+    const opening = s.open(newId());
+    expect(s.head()).toBeNull();
+    await opening;
+  });
+
+  it('writes no marker for an import dropped before its write, and withdraws it', async () => {
+    const db = memorySimDb();
+    const obj = new FakeObject();
+    const sim = newId();
+    const s = await opened(db, {}, sim);
+    s.setServerDataset(DS);
+    s.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    s.apply(withZ('a'), 'A');
+    await s.written();
+    // A write in flight (A re-applied on a foreign commit).
+    foreign(s, obj, addChanges('z9'));
+    expect(s.local).toBe('writing');
+    const imported = s.importContent(
+      { name: s.name, policy: withZ('i')(s.policy) },
+      { key: 'k', value: 1, expect: undefined }
+    );
+    // Another tab makes the same change first: re-applied, the import is empty and dropped.
+    foreign(s, obj, addChanges('i'));
+    expect(s.pending.map((p) => p.draft.source)).not.toContain(SOURCES.import);
+    expect(await imported).toBe('marker');
+    await s.written();
+    expect(await db.getMeta('k')).toBeUndefined();
+    const r = await db.read(sim);
+    expect(r.pending.map((p) => p.pending.draft.source)).toEqual([SOURCES.edit]);
+  });
+
+  it('a claim and an open do not overlap: claimed records are adopted, never orphaned', async () => {
+    const db = memorySimDb();
+    const obj = new FakeObject();
+    const sim = newId();
+    const a = await opened(db, {}, sim);
+    a.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    a.apply(withZ('a'), 'A');
+    await a.written();
+    const [record] = (await db.read(sim)).pending;
+    const b = await opened(db, { tabId: 'b' }, sim);
+    b.apply(withZ('b'), 'B');
+    await b.written();
+    // The claim's transaction lands only once the open has started.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const claimPending = db.claimPending;
+    db.claimPending = async (...args) => {
+      const out = await claimPending(...args);
+      await gate;
+      return out;
+    };
+    const claimed = b.claim(['a']);
+    const other = newId();
+    const opening = b.open(other);
+    release();
+    expect(await claimed).toBe(1);
+    await opening;
+    expect(b.simId).toBe(other);
+    // Adopted into the sim it was claimed for, and placed after b's own there.
+    const r = await db.read(sim);
+    expect(r.pending.map((p) => [p.owner, p.pending.draft.label])).toEqual([
+      ['b', 'B'],
+      ['b', 'A']
+    ]);
+    expect(r.pending[1].n).toBeGreaterThan(record.n);
+    const back = store(db, { tabId: 'b' });
+    await back.open(sim);
+    expect(labels(back)).toEqual(['B', 'A']);
+  });
+
+  it('runs two imports one after the other, each with its own marker', async () => {
+    const db = memorySimDb();
+    const s = await opened(db);
+    const first = s.importContent(content('i1'), { key: 'k', value: 1, expect: undefined });
+    const second = s.importContent(content('i2'), { key: 'k', value: 2, expect: 'nope' });
+    expect(await first).toBe('imported');
+    expect(await second).toBe('marker');
+    await s.written();
+    expect(await db.getMeta('k')).toBe(1);
+    expect(ids(s.policy)).toEqual(['i1']);
+    const r = await db.read(s.simId!);
+    expect(r.pending.map((p) => p.pending.draft.source)).toEqual([SOURCES.import]);
+    expect(r.pending[0].id).toBe(s.pending[0].draft.id);
+  });
+
+  it('claim deletes the claimed records whose commits are already confirmed', async () => {
+    const db = memorySimDb();
+    const obj = new FakeObject();
+    const sim = newId();
+    const a = await opened(db, {}, sim);
+    a.setServerDataset(DS);
+    a.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    a.apply(withZ('a'), 'A');
+    a.apply(withZ('c'), 'C');
+    await a.written();
+    // The server confirmed A; tab b hears it, then takes tab a's records.
+    const confirmedA = accept(obj, a.head()!);
+    const b = await opened(db, { tabId: 'b' }, sim);
+    b.receive(obj.commits);
+    await b.written();
+    expect(await b.claim(['a'])).toBe(1);
+    expect(labels(b)).toEqual(['C']);
+    await b.written();
+    const r = await db.read(sim);
+    expect(r.pending.map((p) => [p.owner, p.pending.draft.label])).toEqual([['b', 'C']]);
+    expect(r.confirmed.map((c) => c.id)).toContain(confirmedA.id);
+  });
+});
