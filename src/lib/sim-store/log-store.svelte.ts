@@ -29,7 +29,10 @@ import {
   type Stopped
 } from './types';
 
-/** What the page and the editors use of a schema 4 store (decision 29). */
+/**
+ * What the editors call on a schema 4 store (decision 29). A load (the page's `PolicyStore.reset`)
+ * is not an edit and is not here: in log terms it is `open` or an import.
+ */
 export interface DocStore {
   readonly policy: SimPolicy4;
   readonly canUndo: boolean;
@@ -41,7 +44,6 @@ export interface DocStore {
   undo(): string | null;
   redo(): string | null;
   undoTo(p: SimPolicy4, label: string): void;
-  reset(p: SimPolicy4): void;
 }
 
 export interface LogStoreOptions {
@@ -64,7 +66,8 @@ export interface LogStoreOptions {
 }
 
 export type LocalStatus = 'idle' | 'writing' | 'failed';
-export type EditRefusal = 'invalid' | 'too-large' | 'queue-full';
+/** 'stopped': an open draft could only be settled once the store was stopped, so it went. */
+export type EditRefusal = 'invalid' | 'too-large' | 'queue-full' | 'stopped';
 export interface ImportMarker {
   key: string;
   value: unknown;
@@ -100,8 +103,8 @@ export class LogStore implements DocStore {
   #bareMove: string | null = null;
   /** The server refused a move: stopped 'stale' until a commit is applied or its dataset changes. */
   #moveRefused = false;
-  /** A commit from a newer build was seen: stopped for the store's life. */
-  #future = false;
+  /** Derived state changed since subscribers were last told (told once per public call). */
+  #dirty = false;
   /** Each fold policy shown, to the id of the commit at the local tip then (null: position 0). */
   #shownAt = new WeakMap<SimPolicy4, string | null>();
   #targets: { undo: HistoryTarget | null; redo: HistoryTarget | null } = {
@@ -134,6 +137,7 @@ export class LogStore implements DocStore {
     this.#log = this.#newLog();
     this.#policy = this.#log.ruleset().policy;
     this.#derive();
+    this.#dirty = false;
   }
 
   get ready(): boolean {
@@ -195,11 +199,12 @@ export class LogStore implements DocStore {
     coalesce?: string,
     source: string = SOURCES.edit
   ): boolean {
-    if (!this.#ready || this.#recheck()) return false;
+    if (!this.#ready) return false;
+    if (this.#recheck()) return this.#done(false);
     const draft = this.#draft;
     if (coalesce !== undefined && draft !== null && draft.key === coalesce) {
       const next = this.#run(change, this.#policy);
-      if (next === null) return false;
+      if (next === null) return this.#done(false);
       this.#draft = { key: coalesce, label, source, policy: next };
       this.#changed();
       return true;
@@ -223,13 +228,13 @@ export class LogStore implements DocStore {
       this.#changed();
       return true;
     }
-    const ok = this.#author(
+    const r = this.#author(
       (m) => authorEdit(this.#log, { name: this.#log.ruleset().name, policy: next }, m),
       label,
       source
     );
     this.#changed();
-    return ok && this.#policy !== shown;
+    return r.ok && this.#policy !== shown;
   }
 
   undo(): string | null {
@@ -271,20 +276,6 @@ export class LogStore implements DocStore {
     this.#changed();
   }
 
-  /** An undoable edit to p (source sim.reset, label 'Reset'). */
-  reset(p: SimPolicy4): void {
-    if (!this.#ready) return;
-    this.#settleDraft();
-    if (this.#prepare()) {
-      this.#author(
-        (m) => authorEdit(this.#log, { name: this.#log.ruleset().name, policy: p }, m),
-        'Reset',
-        SOURCES.reset
-      );
-    }
-    this.#changed();
-  }
-
   rename(name: string): void {
     if (!this.#ready) return;
     this.#settleDraft();
@@ -315,8 +306,9 @@ export class LogStore implements DocStore {
 
   /** null: a new sim, minted at the first commit (R29). Rejects when the read fails. */
   async open(simId: string | null, _opts?: { claim?: readonly string[] }): Promise<void> {
+    // An open draft is committed to the sim it was made on before another is opened.
+    this.#settleDraft();
     // Without a database there is nothing to read: a known sim opens with an empty log.
-    this.#draft = null;
     this.#bareMove = null;
     this.#moveRefused = false;
     this.#refusal = null;
@@ -341,7 +333,8 @@ export class LogStore implements DocStore {
     _marker: ImportMarker,
     label = 'Imported'
   ): Promise<ImportResult> {
-    if (!this.#ready || this.#recheck()) return 'stopped';
+    if (!this.#ready) return 'stopped';
+    if (this.#recheck()) return this.#done('stopped');
     this.#settleDraft();
     if (!this.#prepare()) {
       this.#changed();
@@ -358,6 +351,8 @@ export class LogStore implements DocStore {
 
   /** From the socket's hello. Re-applies and re-decides (the dataset rule). */
   setServerDataset(s: string): void {
+    // A hello can stop the store: an open draft is committed first, while it can still author.
+    this.#settleDraft();
     if (s !== this.#serverDs) this.#moveRefused = false;
     this.#serverDs = s;
     this.#addDrops(this.#log.setServerDataset(s).drops);
@@ -396,7 +391,11 @@ export class LogStore implements DocStore {
   dropPending(id: string): void {
     const p = this.#log.pending.find((q) => q.draft.id === id);
     if (p === undefined) return;
-    // The server refused a move: no other is authored until a commit lands or its dataset changes.
+    // Dropping a move stops the store: an open draft is committed first, while it can author.
+    this.#settleDraft();
+    // The server refused a move, or an alignment commit (the same source, treated the same):
+    // no other is authored, and the store is stopped 'stale', until a commit lands or the
+    // server's dataset changes. A refused move never loops.
     if (isMove(p.draft)) this.#moveRefused = true;
     if (id === this.#bareMove) this.#bareMove = null;
     this.#addDrops(this.#log.drop(id));
@@ -443,8 +442,8 @@ export class LogStore implements DocStore {
 
   /** Why the store authors nothing now, or null (decision 21 and the rulings). */
   #stoppedNow(): Stopped | null {
-    if (this.#log.future) this.#future = true;
-    if (this.#future) return 'future';
+    // Permanent for the log (a newer build's commit); a sim opened after it has a new log.
+    if (this.#log.future) return 'future';
     // Anything held: a push would land behind it, out of view.
     if (this.#log.held.length > 0) return this.#serverDs === null ? 'unknown-dataset' : 'stale';
     if (this.#moveRefused) return 'stale';
@@ -452,10 +451,13 @@ export class LogStore implements DocStore {
     return d.kind === 'stop' ? d.why : null;
   }
 
-  /** Re-checks the stopped state before authoring; true when stopped. */
+  /**
+   * Re-checks the stopped state before authoring; true when stopped. A change is derived here and
+   * told to subscribers when the public call ends.
+   */
   #recheck(): boolean {
     const s = this.#stoppedNow();
-    if (s !== this.#stopped) this.#changed();
+    if (s !== this.#stopped) this.#derive();
     return s !== null;
   }
 
@@ -491,10 +493,10 @@ export class LogStore implements DocStore {
   }
 
   /** Authors one commit; on a refusal sets `refusal` and drops a bare move. */
-  #author(make: (meta: Meta) => Authored, label: string, source: string): boolean {
+  #author(make: (meta: Meta) => Authored, label: string, source: string): Authored {
     const r = make(this.#meta(label, source));
     this.#settled(r);
-    return r.ok;
+    return r;
   }
 
   #settled(r: Authored): void {
@@ -518,38 +520,51 @@ export class LogStore implements DocStore {
 
   /**
    * Commits the open draft, if any (decision 8), and derives, so what is shown is the fold again
-   * (a refused draft leaves nothing behind, F4). Subscribers are told by the caller.
+   * (a refused draft leaves nothing behind, F4). A draft that can no longer be authored (the
+   * store is stopped, or the move it needs was refused) is reported through `refusal`, never
+   * dropped silently. Subscribers are told by the caller.
    */
-  #settleDraft(): void {
+  #settleDraft(): 'none' | 'committed' | 'unchanged' | 'refused' {
     const d = this.#draft;
-    if (d === null) return;
+    if (d === null) return 'none';
     this.#draft = null;
+    let out: 'committed' | 'unchanged' | 'refused';
     if (this.#prepare()) {
-      this.#author(
+      const r = this.#author(
         (m) => authorEdit(this.#log, { name: this.#log.ruleset().name, policy: d.policy }, m),
         d.label,
         d.source
       );
-    } else this.#dropBareMove();
+      out = r.ok ? 'committed' : r.why === 'unchanged' ? 'unchanged' : 'refused';
+    } else {
+      this.#dropBareMove();
+      if (this.#stoppedNow() !== null) this.#refusal = 'stopped';
+      out = 'refused';
+    }
     this.#derive();
+    return out;
   }
 
   #restore(which: 'undo' | 'redo'): string | null {
     if (!this.#ready || !(which === 'undo' ? this.#canUndo : this.#canRedo)) return null;
-    this.#settleDraft();
+    const draft = this.#draft;
+    const settled = this.#settleDraft();
+    // Undo over a draft that did not land stops there: one that changed nothing is undone by
+    // itself (what shows is the fold again); a refused one answers null, with `refusal` set.
+    if (draft !== null && settled === 'unchanged') return this.#done(draft.label);
+    if (settled === 'refused') return this.#done(null);
     const target = this.#targets[which];
     // Off whenever the store would have to move or is stopped (decision 11).
     if (target === null || this.#recheck() || this.#decision().kind !== 'edit') {
-      this.#changed();
-      return null;
+      return this.#done(null);
     }
-    const ok = this.#author(
+    const r = this.#author(
       (m) => authorRestore(this.#log, target.position, which, m, this.#align),
       target.label,
       SOURCES[which]
     );
     this.#changed();
-    return ok ? target.label : null;
+    return r.ok ? target.label : null;
   }
 
   /**
@@ -612,11 +627,25 @@ export class LogStore implements DocStore {
     this.#drafting = draft !== null;
     this.#pending = log.pending;
     this.#serverDataset = this.#serverDs;
+    this.#dirty = true;
   }
 
-  /** Derives, then tells the subscribers. */
+  /** Derives, then tells the subscribers: the last step of a public call that changed state. */
   #changed(): void {
     this.#derive();
+    this.#flush();
+  }
+
+  /** Tells the subscribers when anything was derived during this call. */
+  #flush(): void {
+    if (!this.#dirty) return;
+    this.#dirty = false;
     for (const fn of this.#subscribers) fn();
+  }
+
+  /** Ends a public call that returns early: tells the subscribers if anything changed. */
+  #done<T>(value: T): T {
+    this.#flush();
+    return value;
   }
 }

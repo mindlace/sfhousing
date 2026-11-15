@@ -130,7 +130,7 @@ describe('LogStore', () => {
     expect(s.apply(withZ('a'), 'A')).toBe(false);
     expect(s.undo()).toBeNull();
     s.rename('X');
-    s.reset(doc([transit('r')]));
+    s.undoTo(doc([transit('r')]), 'R');
     expect(s.pendingCount).toBe(0);
     expect(s.local).toBe('failed');
   });
@@ -311,17 +311,6 @@ describe('LogStore', () => {
     s.undoTo(doc([transit('q')]), 'Set');
     expect(ids(s.policy)).toEqual(['q']);
     expect([last(s).kind, last(s).label, last(s).restores]).toEqual(['edit', 'Set', null]);
-  });
-
-  it('reset is an undoable edit', async () => {
-    const s = await fresh();
-    s.apply(withZ('z1'), 'A');
-    s.reset(doc([transit('r')]));
-    expect(ids(s.policy)).toEqual(['r']);
-    expect([last(s).kind, last(s).label, last(s).source]).toEqual(['edit', 'Reset', SOURCES.reset]);
-    expect(s.undoLabel).toBe('Reset');
-    expect(s.undo()).toBe('Reset');
-    expect(ids(s.policy)).toEqual(['z1']);
   });
 
   it('renames with a name commit', async () => {
@@ -688,7 +677,6 @@ describe('LogStore', () => {
       expect(s.undo()).toBeNull();
       expect(s.redo()).toBeNull();
       s.undoTo(doc([transit('u')]), 'U');
-      s.reset(doc());
       s.rename('R');
       s.settle();
       expect(s.pendingCount).toBe(n);
@@ -724,5 +712,133 @@ describe('LogStore', () => {
     s.apply(withZ('b'), 'B');
     expect(fn).toHaveBeenCalledTimes(2);
     await expect(s.written()).resolves.toBeUndefined();
+  });
+
+  it('tells subscribers once per call, after the state is final', async () => {
+    let page = DS;
+    const { s } = await onSim({ stamp: () => ({ datasetVersion: page, build: 'test' }) });
+    const seen: (Stopped | null)[] = [];
+    s.subscribe(() => seen.push(s.stopped));
+    s.apply(withZ('a'), 'A', 'k');
+    expect(seen).toEqual([null]);
+    // The page's dataset moves under it: the settle that finds the store stopped (and then
+    // reports the draft) tells once, with the final state.
+    page = F1;
+    s.settle();
+    expect(seen).toEqual([null, 'unknown-dataset']);
+    expect(s.refusal).toBe('stopped');
+  });
+});
+
+describe('LogStore: a draft when the store stops (fix round 1)', () => {
+  it('commits an open draft before a refused move stops the store, and keeps it', async () => {
+    const { s } = await onSim({ stamp: stampOf(F1), align: renamingAlign([DS, F1]) });
+    s.setServerDataset(F1);
+    s.apply(withZ('a'), 'A');
+    const move = s.head()!;
+    s.apply(withZ('d'), 'Drag', 'k');
+    s.dropPending(move.id);
+    expect(s.stopped).toBe('stale');
+    expect(s.drafting).toBe(false);
+    expect(s.refusal).toBeNull();
+    expect(s.pending.map((p) => p.draft.label)).toEqual(expect.arrayContaining(['A', 'Drag']));
+    expect(sorted(s.policy)).toEqual(['a', 'd']);
+  });
+
+  it('commits an open draft before a hello that stops the store, and keeps it', async () => {
+    const { s } = await onSim({ stamp: stampOf(F1), align: renamingAlign([DS, F1]) });
+    s.setServerDataset(F1);
+    s.apply(withZ('a'), 'A');
+    s.apply(withZ('d'), 'Drag', 'k');
+    s.setServerDataset(F2);
+    expect(s.stopped).toBe('stale');
+    expect(s.drafting).toBe(false);
+    expect(s.refusal).toBeNull();
+    expect(s.pending.map((p) => p.draft.label)).toEqual(['A', 'Drag']);
+    expect(sorted(s.policy)).toEqual(['a', 'd']);
+  });
+
+  it('commits an open draft before a newer-build commit stops the store, and keeps it', async () => {
+    const { s, obj } = await onSim();
+    s.setServerDataset(DS);
+    s.apply(withZ('d'), 'Drag', 'k');
+    const seq = obj.commits.length + 1;
+    s.receive([stamped(draftOf(seq - 1, addChanges('z9'), { shapes: SHAPES_REVISION + 1 }), seq)]);
+    expect(s.stopped).toBe('future');
+    expect(s.drafting).toBe(false);
+    expect(s.pending.map((p) => p.draft.label)).toEqual(['Drag']);
+    expect(ids(s.policy)).toEqual(['d']);
+  });
+
+  it('reports a draft it can only settle once stopped, and shows the fold', async () => {
+    let page = DS;
+    const { s } = await onSim({ stamp: () => ({ datasetVersion: page, build: 'test' }) });
+    s.apply(withZ('d'), 'Drag', 'k');
+    page = F1;
+    s.settle();
+    expect(s.drafting).toBe(false);
+    expect(s.refusal).toBe('stopped');
+    expect(s.pendingCount).toBe(0);
+    expect(ids(s.policy)).toEqual([]);
+  });
+
+  it('settles an open draft before opening another sim', async () => {
+    const mintId = vi.fn(newId);
+    const s = await fresh({ mintId });
+    s.apply(withZ('d'), 'Drag', 'k');
+    expect(mintId).not.toHaveBeenCalled();
+    await s.open(newId());
+    // The draft became a commit of the new sim it was made on (its id and the sim's minted).
+    expect(mintId).toHaveBeenCalledTimes(2);
+    expect(s.drafting).toBe(false);
+  });
+
+  it('opens another sim unstopped after a newer-build stop', async () => {
+    const { s, obj } = await onSim();
+    const seq = obj.commits.length + 1;
+    s.receive([stamped(draftOf(seq - 1, addChanges('z9'), { shapes: SHAPES_REVISION + 1 }), seq)]);
+    expect(s.stopped).toBe('future');
+    await s.open(newId());
+    expect(s.stopped).toBeNull();
+    expect(s.apply(withZ('a'), 'A')).toBe(true);
+  });
+});
+
+describe('LogStore: undo over a draft that does not land (fix round 1)', () => {
+  it('a draft that changes nothing is undone by itself; the change before it stays', async () => {
+    const s = await fresh();
+    s.apply(withZ('z1'), 'Zoning');
+    s.apply((p) => structuredClone(p), 'Height', 'k');
+    expect(s.undoLabel).toBe('Height');
+    expect(s.undo()).toBe('Height');
+    expect(s.drafting).toBe(false);
+    expect(s.pendingCount).toBe(1);
+    expect(ids(s.policy)).toEqual(['z1']);
+    expect(s.undoLabel).toBe('Zoning');
+  });
+
+  it('a refused draft stops the undo there, with the refusal', async () => {
+    const s = await fresh();
+    s.apply(withZ('z1'), 'Zoning');
+    const big = { ...transit('big'), preset: 'x'.repeat(1_100_000) };
+    s.apply(
+      (p) => doc([...zoning(p), big], p.kinds.permitting as J[], p.kinds.money as J[]),
+      'Height',
+      'k'
+    );
+    expect(s.undo()).toBeNull();
+    expect(s.refusal).toBe('too-large');
+    expect(s.pendingCount).toBe(1);
+    expect(ids(s.policy)).toEqual(['z1']);
+  });
+
+  it('redo while a draft is open does nothing (the draft is an edit that clears redo)', async () => {
+    const s = await fresh();
+    s.apply(withZ('z1'), 'A');
+    s.undo();
+    s.apply(withZ('d'), 'Drag', 'k');
+    expect(s.canRedo).toBe(false);
+    expect(s.redo()).toBeNull();
+    expect(s.drafting).toBe(true);
   });
 });

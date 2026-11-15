@@ -25,8 +25,7 @@ export const SOURCES = {
   revert: 'sim.revert',
   move: MOVE_SOURCE,
   name: 'sim.name',
-  import: 'sim.import',
-  reset: 'sim.reset'
+  import: 'sim.import'
 } as const;
 
 /** The most pending commits a tab holds. */
