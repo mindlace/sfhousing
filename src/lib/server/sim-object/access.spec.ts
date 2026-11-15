@@ -23,7 +23,23 @@ describe('access', () => {
       ['a', false],
       ['b', true]
     ]);
-    expect(accessChanges(sockets, writers)).toEqual([0, 1, 3]);
+    expect(accessChanges(sockets, writers)).toEqual([0, 1, 3, 4]);
+  });
+
+  it('revokes a socket whose identity is absent from the map; leaves one that cannot write', () => {
+    const sockets = [
+      { identity: 'gone', write: true },
+      { identity: 'gone', write: false },
+      { identity: 'kept', write: true }
+    ];
+    expect(accessChanges(sockets, new Map([['kept', true]]))).toEqual([0]);
+    expect(accessChanges(sockets, new Map())).toEqual([0, 2]);
+  });
+
+  it('refuses any string that is not a role', () => {
+    const bad = ['toString', '__proto__', 'constructor', 'hasOwnProperty', 'owner', ''];
+    for (const r of bad) expect(canWrite(r as never)).toBe(false);
+    expect(canWrite(undefined as never)).toBe(false);
   });
 
   it('never grants a signed-out socket, whatever the map holds', () => {

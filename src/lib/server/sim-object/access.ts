@@ -1,7 +1,7 @@
 import { abilityDominates, ROLE_BUNDLE } from '$lib/server/authz/ability';
 import type { SimMemberRole } from '$lib/server/db/schema/simControlPlane';
 
-const IDENTITY_MAX = 64;
+import { IDENTITY_MAX } from './open-params';
 
 /** A socket's state, kept as its hibernation attachment (16 KiB max; this is well under). */
 export interface SocketAttachment {
@@ -32,10 +32,14 @@ export function parseAttachment(v: unknown): SocketAttachment | null {
 
 /** R47: a role whose bundle dominates sim.write. */
 export function canWrite(role: SimMemberRole | null): boolean {
-  return role !== null && abilityDominates(ROLE_BUNDLE[role], 'sim.write');
+  if (typeof role !== 'string' || !Object.hasOwn(ROLE_BUNDLE, role)) return false;
+  return abilityDominates(ROLE_BUNDLE[role], 'sim.write');
 }
 
-/** Indexes of the sockets whose right to write differs from `writers` (identity to canWrite). */
+/**
+ * Indexes of the sockets whose right to write differs from `writers` (identity to canWrite).
+ * A missing identity loses write; the caller must not call this when its role read failed.
+ */
 export function accessChanges(
   sockets: readonly Pick<SocketAttachment, 'identity' | 'write'>[],
   writers: ReadonlyMap<string, boolean>
@@ -43,8 +47,7 @@ export function accessChanges(
   const out: number[] = [];
   sockets.forEach((s, i) => {
     if (s.identity === null) return;
-    const now = writers.get(s.identity);
-    if (now !== undefined && now !== s.write) out.push(i);
+    if ((writers.get(s.identity) ?? false) !== s.write) out.push(i);
   });
   return out;
 }

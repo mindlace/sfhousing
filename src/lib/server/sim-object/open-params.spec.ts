@@ -24,6 +24,15 @@ describe('open params', () => {
     expect(parseOpenParams(header)?.title).toBe(title);
   });
 
+  it('round-trips an astral character, and a 63-character non-Latin title stays bounded', () => {
+    const astral = { ...ok, title: 'a😀b' };
+    expect(parseOpenParams(encodeOpenParams(astral))).toEqual(astral);
+    const long = { ...ok, title: '庭'.repeat(63) };
+    const header = encodeOpenParams(long);
+    expect(header.length).toBeLessThan(600);
+    expect(parseOpenParams(header)).toEqual(long);
+  });
+
   it.each<[string, unknown]>([
     ['a writer with no identity', { ...ok, identity: null }],
     ['an unknown key', { ...ok, extra: 1 }],

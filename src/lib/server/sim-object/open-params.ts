@@ -5,7 +5,7 @@ import { BUILD_MAX } from '$lib/sim-log';
 /** The header the Worker sets on the upgrade request it forwards to the object. */
 export const OPEN_HEADER = 'x-sfh-sim-open';
 
-const IDENTITY_MAX = 64;
+export const IDENTITY_MAX = 64;
 const KEYS = ['identity', 'write', 'title', 'datasetVersion', 'build'];
 
 /** What the Worker tells the object when it opens a socket (R46, R53, R58). */
