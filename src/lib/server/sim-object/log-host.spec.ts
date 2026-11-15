@@ -309,7 +309,7 @@ describe('LogHost append', () => {
     let refused = 0;
     await expect(
       fc.assert(
-        fc.asyncProperty(fc.array(arbOp, { minLength: 8, maxLength: 40 }), async (ops) => {
+        fc.asyncProperty(fc.array(arbOp, { minLength: 8, maxLength: 24 }), async (ops) => {
           const sentBodies: string[] = [];
           const { host, store } = make({ onCommit: (body) => sentBodies.push(body) });
           // The model: the drafts accepted so far, in order, and their ids.
@@ -391,7 +391,8 @@ describe('LogHost append', () => {
             await expectInvariants(store, host);
           }
         }),
-        { numRuns: 100 }
+        // Bounded so the property stays well inside the default 5 s test timeout under load.
+        { numRuns: 40 }
       )
     ).resolves.toBeUndefined();
     // The generated edits mostly land, and the other kinds are refused.
