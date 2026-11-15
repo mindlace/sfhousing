@@ -10,13 +10,15 @@ import {
   simTakedown
 } from '$lib/server/db/schema';
 import { newId } from '$lib/server/ids/factory';
-import { addMemberById, getRole, getSimTitle, listMembers } from './sim-index';
+import { addMemberById, getRole, getSimTitle, listMembers, simIdInUse } from './sim-index';
 import { addSimRole, foldSimRole, setSimRole } from './sim-roles';
 import { handleAccountLink } from '$lib/server/user-store/identity';
 import { onSimRosterChanged } from './roster-hook';
 import { createSim, deleteSim, leaveSim, removeSimMember } from './sims';
 
 vi.mock('./roster-hook', () => ({ onSimRosterChanged: vi.fn(async () => {}) }));
+// The takedown reaches the object through liveSimStub, which is null under dev.
+vi.mock('$app/environment', () => ({ dev: false }));
 
 /** Stands in for platform.env: the hook must receive it as given. */
 const env = { marker: 'env' };
@@ -271,19 +273,162 @@ describe('createSim', () => {
 });
 
 describe('deleteSim', () => {
-  it('drops the index row and the pending invites in one batch', async () => {
+  type Db = Awaited<ReturnType<typeof freshDb>>['db'];
+
+  /** A fake SIM binding whose object's takeDown runs `onTakeDown`; `calls` lists the names. */
+  function objectEnv(onTakeDown: () => Promise<void> = async () => {}) {
+    const calls: string[] = [];
+    const env = {
+      SIM: {
+        getByName: (name: string) => ({
+          takeDown: async () => {
+            calls.push(name);
+            await onTakeDown();
+          }
+        })
+      }
+    };
+    return { env, calls };
+  }
+
+  async function seedCommit(db: Db, simId: string, seq: number) {
+    await db.insert(simCommit).values({
+      simId,
+      seq,
+      kind: 'system',
+      source: 'sim.start',
+      actor: 'owner1',
+      at: new Date(),
+      build: 'b',
+      datasetVersion: 'fixture-0',
+      bytes: 10,
+      restoresPosition: null,
+      restoresAs: null
+    });
+  }
+
+  /** What D1 holds for the sim. */
+  async function remains(db: Db, simId: string) {
+    return {
+      marked: (await db.select().from(simTakedown).where(eq(simTakedown.simId, simId))).length,
+      title: await getSimTitle({ db, simId }),
+      commits: (await db.select().from(simCommit).where(eq(simCommit.simId, simId))).length,
+      invites: (await db.select().from(simInvite).where(eq(simInvite.simId, simId))).map(
+        (r) => r.status
+      )
+    };
+  }
+
+  const done = { marked: 1, title: null, commits: 0, invites: ['accepted'] };
+
+  async function seeded() {
     const { db } = freshDb();
     await seedUser(db, { id: 'owner1', email: 'm@test.com' });
     const simId = await seedSim(db, { title: 'Q', managerId: 'owner1' });
     await seedInvite(db, simId, 'owner1', 'pending', 'h1');
-    const batch = vi.spyOn(db, 'batch');
+    await seedInvite(db, simId, 'owner1', 'accepted', 'h2');
+    await seedCommit(db, simId, 1);
+    await seedCommit(db, simId, 2);
+    return { db, simId };
+  }
 
-    await deleteSim(db, simId);
+  it('deleteSim marks the id, takes the object down, then deletes the D1 rows', async () => {
+    const { db, simId } = await seeded();
+    const seen: { marked: boolean; indexed: boolean }[] = [];
+    const { env, calls } = objectEnv(async () => {
+      const marks = await db.select().from(simTakedown).where(eq(simTakedown.simId, simId));
+      seen.push({
+        marked: marks.length === 1,
+        indexed: (await getSimTitle({ db, simId })) !== null
+      });
+    });
 
-    expect(batch).toHaveBeenCalledTimes(1);
-    expect(batch.mock.calls[0][0]).toHaveLength(2);
+    await deleteSim({ db, env, simId });
+
+    expect(calls).toEqual([simId]);
+    expect(seen).toEqual([{ marked: true, indexed: true }]);
+    expect(await remains(db, simId)).toEqual(done);
+    expect(await simIdInUse(db, simId)).toBe(true);
+    // The ledger's grants stay, and grant nothing: the role folds join the index row.
+    expect(await ledgerOf(db, simId)).toEqual([{ principalId: 'owner1', action: 'grant' }]);
+    expect(await getRole({ db, simId, userId: 'owner1' })).toBeNull();
+    expect(await createSim({ db, env, simId, title: 'Again', managerId: 'owner1' })).toEqual({
+      simId,
+      created: false
+    });
     expect(await getSimTitle({ db, simId })).toBeNull();
-    expect(await db.select().from(simInvite).where(eq(simInvite.simId, simId))).toEqual([]);
+  });
+
+  it('deleteSim without the object writes nothing', async () => {
+    const { db, simId } = await seeded();
+    const before = await remains(db, simId);
+    await expect(deleteSim({ db, env: {}, simId })).rejects.toThrow('sim object unavailable');
+    expect(await db.select().from(simTakedown)).toEqual([]);
+    expect(await remains(db, simId)).toEqual(before);
+    expect(await getSimTitle({ db, simId })).toBe('Q');
+  });
+
+  it('a failed takeDown keeps the mark and the rows; a retry finishes the job', async () => {
+    const { db, simId } = await seeded();
+    const failing = objectEnv(async () => {
+      throw new Error('x');
+    });
+    await expect(deleteSim({ db, env: failing.env, simId })).rejects.toThrow('x');
+    expect(await remains(db, simId)).toEqual({
+      marked: 1,
+      title: 'Q',
+      commits: 2,
+      invites: ['pending', 'accepted']
+    });
+    expect(await simIdInUse(db, simId)).toBe(true);
+
+    const { env, calls } = objectEnv();
+    await deleteSim({ db, env, simId });
+    expect(calls).toEqual([simId]);
+    expect(await remains(db, simId)).toEqual(done);
+  });
+
+  it('a failed delete after the object was cleared: a retry finishes the job', async () => {
+    const { db, simId } = await seeded();
+    const { env, calls } = objectEnv();
+    const batch = vi.spyOn(db, 'batch').mockRejectedValueOnce(new Error('D1 busy'));
+    await expect(deleteSim({ db, env, simId })).rejects.toThrow('D1 busy');
+    expect(calls).toEqual([simId]);
+    expect((await remains(db, simId)).title).toBe('Q');
+
+    await deleteSim({ db, env, simId });
+    // takeDown() is idempotent: the retry calls it again.
+    expect(calls).toEqual([simId, simId]);
+    expect(batch).toHaveBeenCalledTimes(2);
+    expect(await remains(db, simId)).toEqual(done);
+  });
+
+  it('a retry after some D1 rows were deleted finishes the job', async () => {
+    const { db, simId } = await seeded();
+    const { env } = objectEnv();
+    await db.insert(simTakedown).values({ simId, takenDownAt: new Date() });
+    await db.delete(simIndex).where(eq(simIndex.simId, simId));
+
+    await deleteSim({ db, env, simId });
+
+    expect(await remains(db, simId)).toEqual(done);
+  });
+
+  it('takes down a valid id with no index row: the mark bars it, the object is cleared', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    const simId = newId();
+    const { env, calls } = objectEnv();
+
+    await deleteSim({ db, env, simId });
+
+    expect(calls).toEqual([simId]);
+    expect(await simIdInUse(db, simId)).toBe(true);
+    expect(await createSim({ db, env, simId, title: 'Mine', managerId: 'owner1' })).toEqual({
+      simId,
+      created: false
+    });
+    expect(await getRole({ db, simId, userId: 'owner1' })).toBeNull();
   });
 });
 

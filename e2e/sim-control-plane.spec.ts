@@ -5,12 +5,16 @@
 // When the last member leaves, the sim is kept with no members: its link still opens
 // read-only. The design says an edit there starts a remix; remix is a later unit, so here the
 // former member's append is refused `not-writer`.
+//
+// The operator takedown: the route clears the object (open sockets close with 4410 `gone`),
+// deletes the D1 rows and bars the id. The preview server gets an obviously fake token.
 import { expect, test } from '@playwright/test';
 import { newId } from '../src/lib/ids/base58';
 import { MEMBERS_COPY, SIMS_COPY } from '../src/lib/members/copy';
 import { loginAs, sessionOf, uniqueEmail } from './helpers/auth';
 import { freshContext, inviteLinkFor, inviteViaApi, signInAndCreateSim } from './helpers/members';
 import {
+  closedCode,
   commitsOf,
   framesAtLeast,
   nameDraft,
@@ -281,5 +285,47 @@ test.describe('a fuse tells the absorbed identity sims', () => {
     } finally {
       await sctx.close();
     }
+  });
+});
+
+test.describe('the operator takedown', () => {
+  /** The preview server's --var in playwright.config.ts: fake, test-only. */
+  const TAKEDOWN_TOKEN = 'e2e-takedown-token-00000000000000000000';
+
+  test('a refused token changes nothing; a takedown closes sockets with gone, for good', async ({
+    page
+  }) => {
+    const simId = await signInAndCreateSim(page, uniqueEmail('cp-taken'), 'Doomed');
+    const takedown = (authorization?: string) =>
+      page.request.post(`/api/operator/sims/${simId}/takedown`, {
+        headers: {
+          'content-type': 'application/json',
+          ...(authorization ? { authorization } : {})
+        },
+        data: {}
+      });
+
+    // A wrong token and no token: 404, and the sim still opens for its writer.
+    for (const refused of [await takedown('Bearer wrong'), await takedown()]) {
+      expect(refused.status()).toBe(404);
+      expect(await refused.json()).toEqual({ error: 'Not found.' });
+    }
+    await page.goto('/about');
+    const h = await openSimSocket(page, simId);
+    expect((await framesAtLeast(page, h, 2))[1]).toEqual({ type: 'access', write: true });
+    expect(commitsOf(await resumeAndRead(page, h, 0)).length).toBeGreaterThan(0);
+
+    const res = await takedown(`Bearer ${TAKEDOWN_TOKEN}`);
+    expect(res.status()).toBe(200);
+    expect(await res.json()).toEqual({ simId });
+    expect(await closedCode(page, h)).toBe(4410);
+
+    // The stream route answers 404 once the index row is gone, so the upgrade fails.
+    const again = await openSimSocket(page, simId);
+    expect(await closedCode(page, again)).toBe(1006);
+    const registered = await page.request.post('/api/sims', { data: { simId } });
+    expect(registered.status()).toBe(409);
+    expect(await registered.json()).toEqual({ error: SIMS_COPY.notYours, code: 'taken' });
+    expect((await page.goto(`/sims/${simId}`))?.status()).toBe(404);
   });
 });

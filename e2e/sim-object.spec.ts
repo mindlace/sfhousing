@@ -3,9 +3,9 @@
 // and in any order. A "no frame came" check sends a resume after it and reads the next frame:
 // frames on one socket arrive in order, so anything the earlier frame caused would come first.
 //
-// A role change ending write on an open socket is in sim-control-plane.spec.ts (the roster hook
-// calls rereadRoles()). Not here yet: `gone` after a takedown, which needs a caller of the
-// object's takeDown(); the logic under it is tested in Node (log-host.spec.ts).
+// A role change ending write on an open socket, and `gone` after a takedown, are in
+// sim-control-plane.spec.ts: the roster hook calls rereadRoles(), and the operator takedown
+// route calls takeDown().
 import { expect, test, type Page } from '@playwright/test';
 import { newId } from '../src/lib/ids/base58';
 import type { Commit } from '../src/lib/sim-log/types';

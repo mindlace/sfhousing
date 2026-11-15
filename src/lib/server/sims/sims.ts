@@ -1,11 +1,12 @@
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 import { SQLiteAsyncDialect } from 'drizzle-orm/sqlite-core';
 import type { Database } from '$lib/server/db';
-import { simIndex, simInvite } from '$lib/server/db/schema';
+import { simCommit, simIndex, simInvite, simTakedown } from '$lib/server/db/schema';
 import { isValidId } from '$lib/server/ids/factory';
 import { buildInsertSimIndexIfFreeSql, removeMembership, prepareLeave } from './sim-index';
 import { buildFirstManagerGrantSql } from './sim-roles';
 import { onSimRosterChanged } from './roster-hook';
+import { liveSimStub } from './live-sim';
 import { loggable } from '$lib/server/sim-object/object-rules';
 
 /**
@@ -50,13 +51,39 @@ export async function createSim(args: {
 const dialect = new SQLiteAsyncDialect();
 
 /**
- * Drop the sim's index row and its pending invites in one batch. Ledger rows stay. Nothing a
- * member does reaches this: a sim whose last member goes is kept (removeSimMember). It is left
- * for an operator's takedown.
+ * The operator takedown (R43): mark the id, clear the object, then delete the D1 rows.
+ * Throws Error('sim object unavailable') before writing anything when there is no object.
+ *
+ * Its only caller is the operator route; nothing a member does reaches it (a sim whose last
+ * member goes is kept, removeSimMember). Destructive and final: the object's log is cleared,
+ * the `sim_index` and `sim_commit` rows and the pending invitations are deleted, and the mark
+ * bars the id for ever. Ledger rows stay; they grant nothing, since the role folds join the
+ * index row.
+ *
+ * The order is what makes it safe to stop half-way and run again:
+ * 1. The mark first (upsert-safe), so registration refuses the id from here on, whatever fails
+ *    later.
+ * 2. `takeDown()` (idempotent), which returns only after no index write can land, so no
+ *    `sim_index` or `sim_commit` row reappears after step 3.
+ * 3. One batch (one transaction) of three idempotent deletes.
+ * A throw after step 1 leaves the id marked and the rest for a retry to finish.
  */
-export async function deleteSim(db: Database, simId: string): Promise<void> {
+export async function deleteSim(args: {
+  db: Database;
+  env: unknown;
+  simId: string;
+}): Promise<void> {
+  const { db, simId } = args;
+  const stub = liveSimStub(args.env, simId);
+  if (!stub) throw new Error('sim object unavailable');
+  await db
+    .insert(simTakedown)
+    .values({ simId, takenDownAt: new Date() })
+    .onConflictDoNothing({ target: simTakedown.simId });
+  await stub.takeDown();
   await db.batch([
     db.delete(simIndex).where(eq(simIndex.simId, simId)),
+    db.delete(simCommit).where(eq(simCommit.simId, simId)),
     db.delete(simInvite).where(and(eq(simInvite.simId, simId), eq(simInvite.status, 'pending')))
   ]);
 }
