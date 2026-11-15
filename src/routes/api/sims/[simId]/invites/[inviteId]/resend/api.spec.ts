@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type MockInstance } from 'vitest';
 import { mockConsole } from '$lib/server/test/mock-console';
 
 const { requireSimRole, resendInvite, sendInviteEmail, getUser, getDb, enforceMutationRate } =
@@ -47,6 +47,21 @@ async function httpStatus(fn: () => unknown): Promise<number> {
   } catch (e) {
     return (e as { status: number }).status;
   }
+}
+
+function queryError(): Error {
+  return Object.assign(new Error('Failed query: select 1 params: guest@test.com'), {
+    name: 'DrizzleQueryError'
+  });
+}
+
+function expectSafeLog(error: MockInstance, text: string, simId: string): void {
+  expect(error).toHaveBeenCalledWith(text, simId, '(query failed)');
+  for (const call of error.mock.calls)
+    for (const arg of call) {
+      expect(arg).not.toBeInstanceOf(Error);
+      if (typeof arg === 'string') expect(arg).not.toContain('guest@test.com');
+    }
 }
 
 beforeEach(() => {
@@ -119,6 +134,31 @@ describe('POST /api/sims/:simId/invites/:inviteId/resend', () => {
     const res = await POST(postEvent('q1', 'inv1'));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ code: 'resend_too_soon' });
+  });
+
+  it('logs the sim id and safe text, never the error itself', async () => {
+    const { error } = mockConsole('error');
+    resendInvite.mockRejectedValue(queryError());
+    const res = await POST(postEvent('q1', 'inv1'));
+    expect(res.status).toBe(400);
+    expectSafeLog(error, 'invite resend failed', 'q1');
+  });
+
+  it('logs the sim id and safe text when the email send fails with a query error', async () => {
+    const { error } = mockConsole('error');
+    getDb.mockReturnValue({
+      select: () => ({ from: () => ({ where: () => [{ title: 'Trip' }] }) })
+    });
+    getUser.mockResolvedValue({ handle: 'ada', email: 'ada@test.com' });
+    resendInvite.mockResolvedValue({
+      emailed: true,
+      token: 'tok',
+      invite: { id: 'inv1', invitedEmail: 'guest@test.com', invitedByUserId: 'u1' }
+    });
+    sendInviteEmail.mockRejectedValue(queryError());
+    const res = await POST(postEvent('q1', 'inv1'));
+    expect(res.status).toBe(200);
+    expectSafeLog(error, 'invite resend email send failed', 'q1');
   });
 
   it('returns only { emailed }, never the rotated raw token', async () => {

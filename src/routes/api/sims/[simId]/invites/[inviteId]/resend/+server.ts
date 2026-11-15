@@ -11,6 +11,7 @@ import { isDeliverable } from '$lib/server/email/provider';
 import { refuseUnlessSameOriginJson } from '$lib/server/security/same-origin-json';
 import { MEMBERS_COPY } from '$lib/members/copy';
 import { memberErrorCode } from '$lib/server/invites/error-code';
+import { loggable } from '$lib/server/sim-object/object-rules';
 import { enforceMutationRate, RATE_LIMIT_MESSAGES } from '$lib/server/security/rate-limit';
 
 export const POST: RequestHandler = async (event) => {
@@ -29,7 +30,7 @@ export const POST: RequestHandler = async (event) => {
     res = await resendInvite({ db, simId, inviteId: event.params.inviteId! });
   } catch (e) {
     const code = memberErrorCode(e);
-    if (code === 'failed') console.error('invite resend failed', e);
+    if (code === 'failed') console.error('invite resend failed', simId, loggable(e));
     return json({ code }, { status: 400 });
   }
 
@@ -62,7 +63,7 @@ export const POST: RequestHandler = async (event) => {
       }
     }
   } catch (err) {
-    console.error('invite resend email send failed', err);
+    console.error('invite resend email send failed', simId, loggable(err));
   }
   return json({ emailed: res.emailed }, { status: 200 });
 };

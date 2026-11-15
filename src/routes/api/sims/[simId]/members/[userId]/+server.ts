@@ -5,6 +5,7 @@ import { requireSimRole } from '$lib/server/authz/require-sim-role';
 import { removeSimMember } from '$lib/server/sims/sims';
 import { refuseUnlessSameOriginJson } from '$lib/server/security/same-origin-json';
 import { memberErrorCode } from '$lib/server/invites/error-code';
+import { loggable } from '$lib/server/sim-object/object-rules';
 
 export const DELETE: RequestHandler = async (event) => {
   const refused = refuseUnlessSameOriginJson(event);
@@ -24,7 +25,7 @@ export const DELETE: RequestHandler = async (event) => {
     return new Response(null, { status: 204 });
   } catch (e) {
     const code = memberErrorCode(e);
-    if (code === 'failed') console.error('member remove failed', e);
+    if (code === 'failed') console.error('member remove failed', simId, loggable(e));
     return json({ code }, { status: 400 });
   }
 };

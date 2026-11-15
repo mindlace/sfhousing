@@ -44,7 +44,7 @@ export const actions: Actions = {
       });
     } catch (e) {
       const code = memberErrorCode(e);
-      if (code === 'failed') console.error('leave sim failed', e);
+      if (code === 'failed') console.error('leave sim failed', simId, loggable(e));
       return fail(400, { code });
     }
 
