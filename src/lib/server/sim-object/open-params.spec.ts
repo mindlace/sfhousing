@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { encodeOpenParams, parseOpenParams, type OpenParams } from './open-params';
+import { DEFAULT_SIM_NAME } from '$lib/sim-log';
+import { checkName } from '$lib/sim-log/shapes';
+import { encodeOpenParams, headerTitle, parseOpenParams, type OpenParams } from './open-params';
 
 const ok: OpenParams = {
   identity: 'u1',
@@ -58,6 +60,22 @@ describe('open params', () => {
     expect(parseOpenParams(null)).toBeNull();
     expect(parseOpenParams('')).toBeNull();
     expect(parseOpenParams('{')).toBeNull();
+  });
+
+  it('headerTitle makes any stored title one the header and the name check accept', () => {
+    expect(headerTitle('Garden')).toBe('Garden');
+    expect(headerTitle('  Garden \n')).toBe('Garden');
+    expect(headerTitle('t'.repeat(80))).toBe('t'.repeat(63));
+    expect(headerTitle('a'.repeat(62) + ' b')).toBe('a'.repeat(62));
+    expect(headerTitle('a'.repeat(62) + '😀')).toBe('a'.repeat(62));
+    expect(headerTitle('a'.repeat(61) + '😀')).toBe('a'.repeat(61) + '😀');
+    expect(headerTitle('')).toBe(DEFAULT_SIM_NAME);
+    expect(headerTitle(' \t ')).toBe(DEFAULT_SIM_NAME);
+    for (const t of ['  x ', 'é'.repeat(99), ' ', '😀'.repeat(40)]) {
+      const title = headerTitle(t);
+      expect(parseOpenParams(encodeOpenParams({ ...ok, title }))?.title).toBe(title);
+      expect(() => checkName(title, 'name')).not.toThrow();
+    }
   });
 
   it('accepts the limits exactly', () => {

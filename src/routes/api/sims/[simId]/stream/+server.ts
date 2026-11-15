@@ -6,7 +6,7 @@ import { isValidId } from '$lib/ids/base58';
 import { devOverride, resolveDatasetVersion } from '$lib/server/config/dataset-version';
 import { getDb } from '$lib/server/db';
 import { canWrite } from '$lib/server/sim-object/access';
-import { encodeOpenParams, OPEN_HEADER } from '$lib/server/sim-object/open-params';
+import { encodeOpenParams, headerTitle, OPEN_HEADER } from '$lib/server/sim-object/open-params';
 import { simStub } from '$lib/server/sim-object/stub';
 import { refuseForeignOrigin } from '$lib/server/security/same-origin-json';
 import { getRole, getSimTitle } from '$lib/server/sims/sim-index';
@@ -29,7 +29,8 @@ export const GET: RequestHandler = async ({ params, platform, locals, request, u
   const title = await getSimTitle({ db, simId });
   if (title === null) return json({ error: 'Not found.' }, { status: 404 });
   const stub = simStub(platform?.env, simId);
-  if (!stub) {
+  // Under `npm run dev` the object does not run, whatever the platform proxy binds.
+  if (dev || !stub) {
     return json({ error: 'Live sims need the sim object (npm run preview).' }, { status: 503 });
   }
   const identity = locals.user?.id ?? null;
@@ -41,7 +42,7 @@ export const GET: RequestHandler = async ({ params, platform, locals, request, u
     encodeOpenParams({
       identity,
       write,
-      title,
+      title: headerTitle(title),
       datasetVersion: resolveDatasetVersion({
         built: __SFH_DATASET_VERSION__,
         override: devOverride(platform?.env) ?? publicEnv.PUBLIC_DATASET_VERSION,

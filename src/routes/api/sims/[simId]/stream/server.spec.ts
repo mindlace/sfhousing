@@ -1,10 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const flags = vi.hoisted(() => ({ dev: false, roleThrows: false }));
 vi.mock('$env/dynamic/public', () => ({ env: {} }));
-vi.mock('$app/environment', () => ({ dev: false }));
+vi.mock('$app/environment', () => ({
+  get dev() {
+    return flags.dev;
+  }
+}));
+vi.mock('$lib/server/sims/sim-index', async (orig) => {
+  const m = await orig<typeof import('$lib/server/sims/sim-index')>();
+  return {
+    ...m,
+    getRole: async (args: Parameters<typeof m.getRole>[0]) => {
+      if (flags.roleThrows) throw new Error('D1 busy');
+      return m.getRole(args);
+    }
+  };
+});
 
 import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
-import { addMemberById, createSimRecord } from '$lib/server/sims/sim-index';
+import { addMemberById, createSimRecord, updateSimIndexTitle } from '$lib/server/sims/sim-index';
+import { DEFAULT_SIM_NAME } from '$lib/sim-log';
 import { newId } from '$lib/ids/base58';
 import { OPEN_HEADER, parseOpenParams } from '$lib/server/sim-object/open-params';
 import { SIMS_COPY } from '$lib/members/copy';
@@ -19,6 +35,8 @@ const ENV = {
 const opened: Array<() => void> = [];
 afterEach(() => {
   for (const close of opened.splice(0)) close();
+  flags.dev = false;
+  flags.roleThrows = false;
 });
 
 async function setup() {
@@ -63,7 +81,7 @@ async function setup() {
       url: new URL(`http://localhost/api/sims/${id}/stream`)
     } as never);
   };
-  return { simId, forwarded, call };
+  return { simId, forwarded, call, db: t.db };
 }
 
 describe('GET /api/sims/[simId]/stream', () => {
@@ -96,6 +114,35 @@ describe('GET /api/sims/[simId]/stream', () => {
   it('answers 503 where the object is not bound', async () => {
     const { call } = await setup();
     expect((await call({ env: ENV })).status).toBe(503);
+  });
+
+  it('answers 503 under npm run dev even where the object is bound', async () => {
+    const { call, forwarded } = await setup();
+    flags.dev = true;
+    const res = await call({ user: 'm1' });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: expect.stringContaining('npm run preview') });
+    expect(forwarded).toHaveLength(0);
+  });
+
+  it('forwards nothing when the role read throws', async () => {
+    const { call, forwarded } = await setup();
+    flags.roleThrows = true;
+    await expect(call({ user: 'm1' })).rejects.toThrow('D1 busy');
+    expect(forwarded).toHaveLength(0);
+  });
+
+  it.each<[string, string, string]>([
+    ['padded', '  Garden  ', 'Garden'],
+    ['too long', ' ' + 'x'.repeat(70), 'x'.repeat(63)],
+    ['cut before a trailing space', 'y'.repeat(62) + ' z', 'y'.repeat(62)],
+    ['cut inside an astral character', 'w'.repeat(62) + '😀', 'w'.repeat(62)],
+    ['blank', '   ', DEFAULT_SIM_NAME]
+  ])('sends a stored title that is %s as one the object accepts', async (_, stored, sent) => {
+    const { call, forwarded, db, simId } = await setup();
+    await updateSimIndexTitle({ db, simId, title: stored });
+    await call({ user: 'm1' });
+    expect(parseOpenParams(forwarded[0].headers.get(OPEN_HEADER))?.title).toBe(sent);
   });
 
   it('forwards a manager as a writer, stamping the open header', async () => {

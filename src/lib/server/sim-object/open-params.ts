@@ -1,6 +1,6 @@
 import { DATASET_VERSION_RE } from '$lib/data/dataset-version';
 import { SIM_TITLE_MAX } from '$lib/members/copy';
-import { BUILD_MAX } from '$lib/sim-log';
+import { BUILD_MAX, DEFAULT_SIM_NAME } from '$lib/sim-log';
 
 /** The header the Worker sets on the upgrade request it forwards to the object. */
 export const OPEN_HEADER = 'x-sfh-sim-open';
@@ -23,6 +23,18 @@ export function encodeOpenParams(p: OpenParams): string {
     /[^\x20-\x7e]/g,
     (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')
   );
+}
+
+/**
+ * The header's title from a stored `sim_index.title`: trimmed, cut to SIM_TITLE_MAX characters
+ * (never inside an astral character) and trimmed again, or DEFAULT_SIM_NAME when nothing is
+ * left. So the object accepts the header and the log core's name check accepts the start commit.
+ */
+export function headerTitle(stored: string): string {
+  let t = stored.trim().slice(0, SIM_TITLE_MAX);
+  if (/[\ud800-\udbff]$/.test(t)) t = t.slice(0, -1);
+  t = t.trim();
+  return t.length > 0 ? t : DEFAULT_SIM_NAME;
 }
 
 function inRange(v: unknown, max: number): v is string {
