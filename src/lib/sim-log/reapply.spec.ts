@@ -346,6 +346,28 @@ describe('reapply', () => {
       });
     });
 
+    it('places the deletes of two groups in one commit each against its own group', () => {
+      const tip = tipWith({ id: 'b1', paths: [P1, P1, P1, P2, P2] });
+      const out = reapply(tip, input([del(X), del(Y), del(`${X}~2`)]));
+      expect(out).toEqual({
+        ok: true,
+        changes: [del(`${X}~2`), del(`${Y}~2`), del(`${X}~3`)],
+        dropped: []
+      });
+    });
+
+    it('drops two of three deletes as gone on a tip with one repeat, and keeps the last', () => {
+      const tip = tipWith({ id: 'b1', paths: [P1] });
+      expect(reapply(tip, input([del(X), del(`${X}~2`), del(`${X}~3`)]))).toEqual({
+        ok: true,
+        changes: [del(X)],
+        dropped: [
+          { index: 0, change: del(X), why: 'gone' },
+          { index: 1, change: del(`${X}~2`), why: 'gone' }
+        ]
+      });
+    });
+
     it('retargets past a different stroke between the repeats', () => {
       const tip = tipWith({ id: 'b1', paths: [P1, P2, P1] });
       expect(reapply(tip, input([del(X)]))).toEqual({

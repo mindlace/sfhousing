@@ -398,6 +398,21 @@ describe('authorRestore and nextTarget', () => {
     expect(text(log.ruleset())).toBe(text(align(log.rulesetAt(1), F1)!));
   });
 
+  it('restores position 0: no target id, restores.position 0, the empty ruleset', () => {
+    const log = fresh();
+    edit(log, (r) => withZ(r, 'a'));
+    edit(log, (r) => withZ(r, 'b'));
+    const r = authorRestore(log, 0, 'jump', meta({ label: 'Start' }), identity);
+    if (!r.ok) throw new Error(r.why);
+    expect(r.pending.targetId).toBeNull();
+    expect(r.pending.draft).toMatchObject({
+      kind: 'restore',
+      restores: { position: 0, as: 'jump' },
+      parent: 2
+    });
+    expect(text(log.ruleset())).toBe(text(EMPTY));
+  });
+
   it('does not call align for a target already on the stamp dataset', () => {
     const log = fresh();
     edit(log, (r) => withZ(r, 'a'));
