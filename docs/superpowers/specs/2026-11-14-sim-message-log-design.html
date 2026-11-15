@@ -267,7 +267,7 @@
     <section id="sec-local-first">
       <h3>Local first</h3>
       <ul>
-        <li id="r15"><strong>R15.</strong> A commit is applied to the page and written to IndexedDB before it is sent. The page never waits for the server to show an edit.</li>
+        <li id="r15"><strong>R15.</strong> A commit is applied to the page and written to IndexedDB before it is sent. The page never waits for the server to show an edit. When IndexedDB is unavailable or a write fails, the commit is still sent, so the server holds the only copy instead of none, and the save state never says it is saved on this device.</li>
         <li id="r16"><strong>R16.</strong> The page's ruleset is the fold of the confirmed commits followed by the pending ones. Confirmed commits come only from the stream.</li>
         <li id="r17"><strong>R17.</strong> Pending commits survive a reload and are sent in order when the socket opens. Editing works with no connection for as long as it lasts.</li>
         <li id="r18"><strong>R18.</strong> The sim object accepts a commit only when its <code>parent</code> is the tip. Otherwise it answers <code>behind</code>. The browser takes the newer commits, re-applies each pending commit's stored changes in order on the new tip, and resends. A pending <code>restore</code> keeps its target position; its changes are recomputed as <code>diff(new tip ruleset, target ruleset)</code>.</li>
