@@ -17,7 +17,10 @@ function assertJson(v: unknown, path: string): void {
   }
 }
 
-/** canonicalJson of every field but `hash`; TypeError on undefined or a non-finite number anywhere. */
+/**
+ * canonicalJson of every field but `hash`; TypeError on undefined or a non-finite number
+ * anywhere.
+ */
 export function commitText(c: Omit<Commit, 'hash'> | Commit): string {
   const rest: Record<string, unknown> = { ...c };
   delete rest.hash;

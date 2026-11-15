@@ -7,7 +7,7 @@ import { listKey, spanKey } from './keys';
 import { DEFAULT_SIM_NAME } from './shapes';
 import { LogState } from './state';
 import type { Change, RulesetContent } from './types';
-import { arbPair, arbRuleset } from './test/arbitraries';
+import { arbEdited, arbPair, arbRuleset } from './test/arbitraries';
 import {
   bandsW,
   doc,
@@ -202,6 +202,19 @@ describe('diff', () => {
       fc.property(arbPair, ([a, b]) => {
         expectApplies(a, b, diff(a, b));
       }),
+      { numRuns: 300 }
+    );
+  });
+
+  it('applying diff(a, b) gives b exactly when b is an edit of a, both ways (R8)', () => {
+    fc.assert(
+      fc.property(
+        arbRuleset.chain((a) => arbEdited(a).map((b) => [a, b] as const)),
+        ([a, b]) => {
+          expectApplies(a, b, diff(a, b));
+          expectApplies(b, a, diff(b, a));
+        }
+      ),
       { numRuns: 300 }
     );
   });

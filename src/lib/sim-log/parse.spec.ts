@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseChange, parseCommit, parseCommitDraft } from './parse';
-import { LogFormatError } from './types';
+import { FIRST_DAY, LAST_DAY } from '$lib/sim/levers/finance';
+import { KEY_MAX, LogFormatError, SOURCE_MAX } from './types';
 
 const ID = 'CVBRX1eXcVRvAio3MBkuW'; // base58 of UUIDv7 019a8c3e-7b00-7000-8000-000000000001
 type J = Record<string, unknown>;
@@ -59,6 +60,23 @@ describe('parseChange', () => {
       'c.fields.p[0][1]'
     );
   });
+  it.each([
+    ['a missing key', { op: 'end', key: 'x' }, 'c.to'],
+    ['an unknown key', { op: 'move', key: 'x', after: null, extra: 1 }, 'c.extra'],
+    ['a set of NaN', { op: 'set', key: 'x', field: 'on', value: Number.NaN }, 'c.value'],
+    ['a move after an empty key', { op: 'move', key: 'x', after: '' }, 'c.after'],
+    ['a move after a number', { op: 'move', key: 'x', after: 5 }, 'c.after'],
+    ['a key over KEY_MAX', { op: 'delete', key: 'x'.repeat(KEY_MAX + 1) }, 'c.key'],
+    ['an after over KEY_MAX', { op: 'move', key: 'x', after: 'x'.repeat(KEY_MAX + 1) }, 'c.after'],
+    ['a to after the last day', { op: 'end', key: 'x', to: LAST_DAY + 1 }, 'c.to'],
+    ['a to before the first day', { op: 'end', key: 'x', to: FIRST_DAY - 1 }, 'c.to']
+  ])('rejects %s', (_, c, path) => {
+    failsAt(() => parseChange(c, 'c'), path);
+  });
+  it('takes a key of KEY_MAX', () => {
+    const c = { op: 'delete', key: 'x'.repeat(KEY_MAX) };
+    expect(parseChange(c, 'c')).toStrictEqual(c);
+  });
   it('omits an absent after rather than setting it undefined', () => {
     const c = parseChange({ op: 'add', key: 'x', shape: 's', fields: {} }, 'c');
     expect('after' in c).toBe(false);
@@ -87,6 +105,8 @@ describe('parseCommitDraft', () => {
     [{ shapes: 0 }, 'shapes'],
     [{ build: '' }, 'build'],
     [{ source: 'Bad Code' }, 'source'],
+    [{ source: 'a'.repeat(SOURCE_MAX + 1) }, 'source'],
+    [{ parent: 3, kind: 'restore', restores: { position: 4, as: 'jump' } }, 'restores.position'],
     [{ changes: [] }, 'changes'],
     [{ changes: [{ op: 'delete' }] }, 'changes[0].key']
   ])('rejects %o at %s', (over, path) => {

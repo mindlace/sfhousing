@@ -21,7 +21,8 @@ const C = {
 const TEXT =
   '{"actor":"actor-1","at":1763164800000,"build":"dev","changes":[{"field":"name","key":"sim",' +
   '"op":"set","value":"Mission"}],"datasetVersion":"fixture-0","id":"CVBRX1eXcVRvAio3MBkuW",' +
-  '"kind":"edit","label":"Renamed","parent":0,"restores":null,"seq":1,"shapes":1,"source":"sim.name"}';
+  '"kind":"edit","label":"Renamed","parent":0,"restores":null,"seq":1,"shapes":1,' +
+  '"source":"sim.name"}';
 
 describe('hash chain', () => {
   it('writes the canonical text without the hash', () => {
@@ -40,6 +41,17 @@ describe('hash chain', () => {
     expect(() => commitText({ ...C, at: Number.NaN })).toThrow(TypeError);
     expect(() => commitText({ ...C, at: Infinity })).toThrow(TypeError);
   });
+  it('refuses undefined and NaN inside a change and inside an array', () => {
+    const add = (fields: Record<string, unknown>) => ({
+      ...C,
+      changes: [{ op: 'add' as const, key: 'k', shape: 's', fields }]
+    });
+    expect(() => commitText(add({ a: undefined }))).toThrow(TypeError);
+    expect(() => commitText(add({ a: Number.NaN }))).toThrow(TypeError);
+    expect(() => commitText(add({ p: [[1, Number.NaN]] }))).toThrow(TypeError);
+    expect(() => commitText(add({ p: [1, undefined] }))).toThrow(TypeError);
+    expect(commitText(add({ p: [[1, 2]] }))).toContain('"p":[[1,2]]');
+  });
   async function chainOf(n: number): Promise<Commit[]> {
     const out: Commit[] = [];
     let prev = GENESIS_HASH;
@@ -57,5 +69,16 @@ describe('hash chain', () => {
     expect(await verifyChain([log[0], { ...log[1], label: 'Edited later' }, log[2]])).toBe(2);
     expect(await verifyChain([log[0], log[2]])).toBe(3);
     expect(await verifyChain(log, { seq: 0, hash: 'f'.repeat(64) })).toBe(1);
+  });
+  it('verifies an empty list', async () => {
+    expect(await verifyChain([])).toBeNull();
+    expect(await verifyChain([], { seq: 5, hash: 'f'.repeat(64) })).toBeNull();
+  });
+  it('names a commit after the first whose previous hash is wrong', async () => {
+    const log = await chainOf(3);
+    expect(await verifyChain(log.slice(1), { seq: 1, hash: 'f'.repeat(64) })).toBe(2);
+    expect(await verifyChain([log[0], log[1], { ...log[2], hash: 'f'.repeat(64) }])).toBe(3);
+    const relinked = { ...log[1], hash: await chainHash('f'.repeat(64), log[1]) };
+    expect(await verifyChain([log[0], relinked, log[2]])).toBe(2);
   });
 });
