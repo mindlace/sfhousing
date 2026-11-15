@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { accessChanges, canWrite, parseAttachment } from './access';
+import { accessChanges, canWrite, newSocketId, parseAttachment } from './access';
+import { utf8Bytes } from './limits';
 
 describe('access', () => {
   it('managers and editors write; viewers and strangers read', () => {
@@ -55,6 +56,40 @@ describe('access', () => {
     });
     expect(parseAttachment(null)).toBeNull();
     expect(parseAttachment({ identity: 'a', write: 'yes', resumed: false })).toBeNull();
+  });
+
+  it("reads the socket's id, and still reads an attachment from before ids", () => {
+    const sid = newSocketId();
+    expect(parseAttachment({ identity: null, write: false, resumed: true, sid })).toEqual({
+      identity: null,
+      write: false,
+      resumed: true,
+      sid
+    });
+    expect(parseAttachment({ identity: 'a', write: false, resumed: false })).not.toHaveProperty(
+      'sid'
+    );
+  });
+
+  it.each<[string, unknown]>([
+    ['a numeric id', 7],
+    ['an empty id', ''],
+    ['a null id', null],
+    ['an id of the wrong form', 'not-a-socket-id'],
+    ['an id too long', 'a'.repeat(25)]
+  ])('refuses an attachment with %s', (_, sid) => {
+    expect(parseAttachment({ identity: 'a', write: false, resumed: false, sid })).toBeNull();
+  });
+
+  it('mints short random socket ids, each different, that name no one', () => {
+    const minted = Array.from({ length: 50 }, () => newSocketId());
+    for (const sid of minted) expect(sid).toMatch(/^[0-9a-f]{24}$/);
+    expect(new Set(minted).size).toBe(50);
+    expect(
+      utf8Bytes(
+        JSON.stringify({ identity: 'x'.repeat(64), write: true, resumed: true, sid: minted[0] })
+      )
+    ).toBeLessThan(200);
   });
 
   it.each<[string, unknown]>([

@@ -18,7 +18,7 @@ import {
   commitsFrame,
   encodeFrame
 } from '$lib/sim-stream/protocol';
-import { canWrite, type SocketAttachment } from './access';
+import { canWrite, newSocketId, type SocketAttachment } from './access';
 import { IndexRunner, takeDownInOrder } from './index-runner';
 import { syncSimIndex } from './index-sync';
 import { INDEX_RETRY_MS } from './limits';
@@ -48,8 +48,9 @@ export class SimObject extends DurableObject<Env> {
   #index: IndexRunner | null = null;
   /** In memory only: full again after a wake. */
   #budgets: ResumeBudgets | null = null;
-  /** Sockets with a resume queued or being answered. In memory only: none after a wake. */
-  readonly #resuming = new WeakSet<WebSocket>();
+  /** The ids (resumeKey) of sockets with a resume queued or being answered. In memory only:
+   *  none after a wake. */
+  readonly #resuming = new Set<string>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -113,7 +114,13 @@ export class SimObject extends DurableObject<Env> {
     }
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ identity: params.identity, write: params.write, resumed: false });
+    // sid keys the one-resume-per-socket rule only; it is never sent or logged.
+    server.serializeAttachment({
+      identity: params.identity,
+      write: params.write,
+      resumed: false,
+      sid: newSocketId()
+    } satisfies SocketAttachment);
     server.send(helloFrame(params));
     server.send(encodeFrame({ type: 'access', write: params.write }));
     // R58: a writer opening an empty sim records its first commit. This socket is not resumed
@@ -155,7 +162,7 @@ export class SimObject extends DurableObject<Env> {
           host,
           frame.after,
           {
-            key: ws,
+            open: () => this.#open(ws),
             read: () => this.#attachment(ws),
             store: (a) => this.#store(ws, a),
             send: (f) => this.#send(ws, f)
@@ -311,6 +318,15 @@ export class SimObject extends DurableObject<Env> {
       ws.close(code, reason);
     } catch {
       // Already closed.
+    }
+  }
+
+  /** Whether the socket is still open; false once it cannot be told. */
+  #open(ws: WebSocket): boolean {
+    try {
+      return ws.readyState === WebSocket.OPEN;
+    } catch {
+      return false;
     }
   }
 

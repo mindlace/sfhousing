@@ -1038,7 +1038,11 @@ describe("the object's resume rule (answerResume)", () => {
   interface Sock {
     att: unknown;
     frames: string[];
+    closed?: boolean;
   }
+  let ids = 0;
+  /** A socket id as the object mints them (24 hex characters). */
+  const sidOf = (n: number) => n.toString(16).padStart(24, '0');
   const ONE = { maxBytes: 1, take: () => true };
 
   /** A host whose live commits go, as the object's broadcast does, to marked sockets only. */
@@ -1051,12 +1055,15 @@ describe("the object's resume rule (answerResume)", () => {
       }
     });
     const open = (): Sock => {
-      const s: Sock = { att: { identity: 'u1', write: true, resumed: false }, frames: [] };
+      const s: Sock = {
+        att: { identity: 'u1', write: true, resumed: false, sid: sidOf(++ids) },
+        frames: []
+      };
       socks.push(s);
       return s;
     };
     // One per object, as in the object: the sockets with a resume queued or being answered.
-    const outstanding = new WeakSet<object>();
+    const outstanding = new Set<string>();
     let resumes = 0;
     const counted = {
       resume: (...args: Parameters<LogHost['resume']>) => {
@@ -1064,8 +1071,8 @@ describe("the object's resume rule (answerResume)", () => {
         return m.host.resume(...args);
       }
     };
-    const port = (s: Sock, key: object = s) => ({
-      key,
+    const port = (s: Sock) => ({
+      open: () => !s.closed,
       read: () => s.att,
       store: (a: unknown) => {
         s.att = a;
@@ -1074,8 +1081,8 @@ describe("the object's resume rule (answerResume)", () => {
         s.frames.push(f);
       }
     });
-    const resume = (s: Sock, after: number, bounds?: ResumeBounds, key?: object) =>
-      answerResume(counted, after, port(s, key), outstanding, bounds);
+    const resume = (s: Sock, after: number, bounds?: ResumeBounds) =>
+      answerResume(counted, after, port(s), outstanding, bounds);
     return { ...m, open, resume, port, outstanding, resumes: () => resumes };
   }
 
@@ -1166,11 +1173,12 @@ describe("the object's resume rule (answerResume)", () => {
     await append(w.host, nameDraft(0, 'A'));
     const s = w.open();
     await w.resume(s, 0);
-    s.att = { identity: 'u1', write: false, resumed: true };
+    const sid = (s.att as { sid: string }).sid;
+    s.att = { identity: 'u1', write: false, resumed: true, sid };
     const p = w.resume(s, 0);
-    expect(s.att).toEqual({ identity: 'u1', write: false, resumed: false });
+    expect(s.att).toEqual({ identity: 'u1', write: false, resumed: false, sid });
     await p;
-    expect(s.att).toEqual({ identity: 'u1', write: false, resumed: true });
+    expect(s.att).toEqual({ identity: 'u1', write: false, resumed: true, sid });
   });
 
   it('one resume per socket: a second while one is queued is refused limit and queues nothing', async () => {
@@ -1212,47 +1220,97 @@ describe("the object's resume rule (answerResume)", () => {
     expect(w.resumes()).toBe(2);
   });
 
-  it('frees the socket after a failed resume, and a closed socket with one queued is no trouble', async () => {
+  it('frees the socket after a failed resume', async () => {
     const w = world();
     await append(w.host, nameDraft(0, 'A'));
     const s = w.open();
     const failing = { resume: () => Promise.reject(new Error('disk')) };
     await expect(answerResume(failing, 0, w.port(s), w.outstanding)).rejects.toThrow('disk');
+    expect(w.outstanding.size).toBe(0);
     await w.resume(s, 0);
     expect(receivesLive(s.att)).toBe(true);
-    // Closed while queued: its attachment can no longer be read and sends go nowhere.
-    const closed: Sock = { att: s.att, frames: [] };
-    const port = {
-      key: closed,
-      read: () => null,
-      store: () => {
-        throw new Error('stored on a closed socket');
-      },
-      send: () => {}
-    };
-    await expect(answerResume(w.host, 0, port, w.outstanding)).resolves.toBeUndefined();
-    await expect(answerResume(w.host, 0, port, w.outstanding)).resolves.toBeUndefined();
   });
 
-  it('the mark always says whether the most recent answer reached the tip', async () => {
-    // Two resumes on one attachment that the one-per-socket rule would not see as one socket
-    // (distinct keys): only the answer step can keep the mark right.
+  it('a socket closed with a resume queued is answered nothing, pays nothing, reads no body', async () => {
     const w = world();
     for (let i = 0; i < 3; i++) await append(w.host, nameDraft(i, `N${i}`));
     const s = w.open();
-    const k1 = {};
-    const k2 = {};
-    await Promise.all([w.resume(s, 0, undefined, k1), w.resume(s, 0, ONE, k2)]);
-    expect(receivesLive(s.att)).toBe(false);
-    await Promise.all([
-      w.resume(s, 0, undefined, k1),
-      w.resume(s, 0, { maxBytes: LIMITS.resumeBytes, take: () => false }, k2)
+    let paid = 0;
+    const take = (n: number) => {
+      paid += n;
+      return true;
+    };
+    const queued = w.resume(s, 0, { maxBytes: LIMITS.resumeBytes, take });
+    s.closed = true;
+    s.att = null; // a closed socket's attachment can no longer be read
+    await expect(queued).resolves.toBeUndefined();
+    expect(paid).toBe(0);
+    expect(s.frames.map((f) => JSON.parse(f))).toEqual([
+      { type: 'refused', id: null, why: 'limit' }
     ]);
+    expect(w.outstanding.size).toBe(0);
+  });
+
+  it('gates by the id in the attachment, whatever socket object carries it', async () => {
+    const w = world();
+    for (let i = 0; i < 3; i++) await append(w.host, nameDraft(i, `N${i}`));
+    const s = w.open();
+    // A second object for the same connection (same attachment, so the same id).
+    const twin: Sock = { att: s.att, frames: [] };
+    const first = w.resume(s, 0);
+    const second = w.resume(twin, 0);
+    expect(twin.frames.map((f) => JSON.parse(f))).toEqual([
+      { type: 'refused', id: null, why: 'limit' }
+    ]);
+    await Promise.all([first, second]);
+    expect(w.resumes()).toBe(1);
+    // Another socket's id is its own.
+    const other = w.open();
+    await Promise.all([w.resume(s, 3), w.resume(other, 0)]);
+    expect(w.resumes()).toBe(3);
+  });
+
+  it('sockets whose attachment has no id share one outstanding resume', async () => {
+    const w = world();
+    for (let i = 0; i < 3; i++) await append(w.host, nameDraft(i, `N${i}`));
+    const a: Sock = { att: { identity: 'u1', write: true, resumed: false }, frames: [] };
+    const b: Sock = { att: { identity: null, write: false, resumed: false }, frames: [] };
+    const first = w.resume(a, 0);
+    await w.resume(b, 0);
+    await first;
+    expect(w.resumes()).toBe(1);
+    expect(JSON.parse(b.frames[0])).toEqual({ type: 'refused', id: null, why: 'limit' });
+    expect(receivesLive(a.att)).toBe(true);
+    // Not a key any id could take: a socket with an id is never gated by them.
+    const c = w.open();
+    const again = w.resume(a, 3);
+    await w.resume(c, 0);
+    await again;
+    expect(w.resumes()).toBe(3);
+  });
+
+  it('the mark always says whether the most recent answer reached the tip', async () => {
+    // Two resumes on one attachment that the gate does not see as one (its id changes between
+    // them): only the answer step can keep the mark right.
+    const w = world();
+    for (let i = 0; i < 3; i++) await append(w.host, nameDraft(i, `N${i}`));
+    const s = w.open();
+    const pair = (a: [number, ResumeBounds | undefined], b: [number, ResumeBounds | undefined]) => {
+      s.att = { ...(s.att as object), sid: sidOf(++ids) };
+      const pa = w.resume(s, ...a);
+      s.att = { ...(s.att as object), sid: sidOf(++ids) };
+      const pb = w.resume(s, ...b);
+      return Promise.all([pa, pb]);
+    };
+    await pair([0, undefined], [0, ONE]);
     expect(receivesLive(s.att)).toBe(false);
-    await Promise.all([w.resume(s, 0, undefined, k1), w.resume(s, 9, undefined, k2)]);
+    await pair([0, undefined], [0, { maxBytes: LIMITS.resumeBytes, take: () => false }]);
     expect(receivesLive(s.att)).toBe(false);
-    await Promise.all([w.resume(s, 0, ONE, k1), w.resume(s, 0, undefined, k2)]);
+    await pair([0, undefined], [9, undefined]);
+    expect(receivesLive(s.att)).toBe(false);
+    await pair([0, ONE], [0, undefined]);
     expect(receivesLive(s.att)).toBe(true);
+    expect(w.resumes()).toBe(8);
   });
 });
 

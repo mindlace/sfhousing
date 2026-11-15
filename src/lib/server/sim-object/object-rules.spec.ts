@@ -163,6 +163,13 @@ describe('roleChanges', () => {
     ]);
   });
 
+  it("keeps the socket's id in the attachment it rewrites", () => {
+    const sid = 'ab'.repeat(12);
+    expect(
+      roleChanges([{ identity: 'a', write: true, resumed: true, sid }], new Map([['a', false]]))
+    ).toEqual([{ index: 0, attachment: { identity: 'a', write: false, resumed: true, sid } }]);
+  });
+
   it('leaves alone a socket whose identity was not read, or whose attachment is invalid', () => {
     // A socket opened while the roles were read: the Worker has just set its right.
     const sockets = [{ identity: 'new', write: true, resumed: false }, 'junk'];
@@ -252,6 +259,12 @@ describe('withResumed and receivesLive', () => {
     expect(cleared).toEqual({ ...att, resumed: false });
     expect(receivesLive(cleared)).toBe(false);
     expect(withResumed('junk', false)).toBeNull();
+  });
+
+  it("keeps the socket's id when it sets or clears the mark", () => {
+    const sid = 'cd'.repeat(12);
+    expect(withResumed({ ...att, sid })).toEqual({ ...att, resumed: true, sid });
+    expect(withResumed({ ...att, resumed: true, sid }, false)).toEqual({ ...att, sid });
   });
 });
 

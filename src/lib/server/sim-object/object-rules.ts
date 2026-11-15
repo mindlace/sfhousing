@@ -148,40 +148,54 @@ export function withResumed(attachment: unknown, resumed = true): SocketAttachme
   return a ? { ...a, resumed } : null;
 }
 
-/** A socket as a resume sees it: `key` names it, `read` and `store` are its attachment. */
+/** A socket as a resume sees it: whether it is still open, and its attachment. */
 export interface ResumeSocket {
-  key: object;
+  open: () => boolean;
   read: () => unknown;
   store: (a: SocketAttachment) => void;
   send: (frame: string) => void;
 }
 
 /**
+ * The key of a socket in the one-resume-per-socket rule: the id in its attachment. A socket with
+ * no id (opened by a build from before ids, or an attachment that cannot be read) gets the one
+ * shared key '', which no id can take: such sockets share one outstanding resume rather than
+ * having none (fail closed; they are few and short-lived).
+ */
+export function resumeKey(attachment: unknown): string {
+  return parseAttachment(attachment)?.sid ?? '';
+}
+
+/**
  * The object's answer to a resume frame. One resume per socket at a time: while one is queued or
- * being answered (`outstanding` holds its key), a further one is refused `limit` with `id: null`
- * at once, queues nothing and leaves the mark alone. Otherwise a socket is resumed exactly while
- * its most recent resume answer reached the tip: the mark is cleared at once, before the resume
- * waits its turn, so no live commit reaches the socket while it catches up (its pages cover
- * them); the answer step then stores it as "frames ending with more: false", in the same
- * serialized turn as the read that reached the tip, so no commit is stored between them (I7). A
- * refusal (`gone`, `limit`, sent with `id: null`) or a capped answer leaves it clear.
+ * being answered (`outstanding` holds the socket's key, `resumeKey`, read when the frame
+ * arrives), a further one is refused `limit` with `id: null` at once, queues nothing and leaves
+ * the mark alone. Otherwise a socket is resumed exactly while its most recent resume answer
+ * reached the tip: the mark is cleared at once, before the resume waits its turn, so no live
+ * commit reaches the socket while it catches up (its pages cover them); the answer step then
+ * stores it as "frames ending with more: false", in the same serialized turn as the read that
+ * reached the tip, so no commit is stored between them (I7). A refusal (`gone`, `limit`, sent
+ * with `id: null`) or a capped answer leaves it clear. A socket that closed while its resume
+ * waited pays nothing and gets no body read: its budget refuses every page.
  */
 export async function answerResume(
   host: Pick<LogHost, 'resume'>,
   after: number,
   socket: ResumeSocket,
-  outstanding: WeakSet<object>,
-  bounds?: ResumeBounds
+  outstanding: Set<string>,
+  bounds: ResumeBounds = { maxBytes: LIMITS.resumeBytes, take: () => true }
 ): Promise<void> {
-  if (outstanding.has(socket.key)) {
+  // Synchronous, before the first await: the message handler has not yielded since the frame
+  // arrived, so every commit stored from here on is after the socket's request.
+  const attachment = socket.read();
+  const key = resumeKey(attachment);
+  if (outstanding.has(key)) {
     socket.send(encodeFrame({ type: 'refused', id: null, why: 'limit' }));
     return;
   }
-  outstanding.add(socket.key);
+  outstanding.add(key);
   try {
-    // Synchronous, before the first await: the message handler has not yielded since the frame
-    // arrived, so every commit stored from here on is after the socket's request.
-    const cleared = withResumed(socket.read(), false);
+    const cleared = withResumed(attachment, false);
     if (cleared) socket.store(cleared);
     await host.resume(
       after,
@@ -194,10 +208,10 @@ export async function answerResume(
         const mark = withResumed(socket.read(), a.kind === 'frames' && !a.more);
         if (mark) socket.store(mark);
       },
-      bounds
+      { maxBytes: bounds.maxBytes, take: (n) => socket.open() && bounds.take(n) }
     );
   } finally {
-    outstanding.delete(socket.key);
+    outstanding.delete(key);
   }
 }
 
