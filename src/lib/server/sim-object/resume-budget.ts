@@ -9,9 +9,23 @@ import {
   WRITER_RESUME_BUDGET,
   type BudgetSize
 } from './limits';
+import { parseAttachment } from './access';
 import type { ResumeBounds } from './log-host';
 
 export { READER_RESUME_BUDGET, WRITER_RESUME_BUDGET, type BudgetSize };
+
+/**
+ * Whether a resume page is paid from the writers' budget: only when the socket's attachment, read
+ * now, is valid and says write. An attachment that cannot be read (invalid, or the read throws)
+ * pays as a reader: fail closed.
+ */
+export function paysAsWriter(readAttachment: () => unknown): boolean {
+  try {
+    return parseAttachment(readAttachment())?.write === true;
+  } catch {
+    return false;
+  }
+}
 
 /** One object's two resume budgets, in memory (full again after a wake). */
 export class ResumeBudgets {
@@ -32,10 +46,16 @@ export class ResumeBudgets {
     this.#maxBytes = maxBytes;
   }
 
-  /** The bounds of one resume: a socket that may write pays from the writers' budget, any other
-   *  from the readers' (anything but `true` is a reader: fail closed). */
-  bounds(write: boolean, now: () => number): ResumeBounds {
-    const bucket = write === true ? this.#writers : this.#readers;
-    return { maxBytes: this.#maxBytes, take: (n) => bucket.take(now(), n) };
+  /**
+   * The bounds of one socket's resume. Each page is paid from the budget of the socket's right to
+   * write as `readAttachment` gives it when the page is paid (so a write revoked between pages
+   * pays the next page as a reader): the writers' budget only when paysAsWriter, the readers'
+   * otherwise, an attachment that cannot be read included.
+   */
+  boundsFor(readAttachment: () => unknown, now: () => number): ResumeBounds {
+    return {
+      maxBytes: this.#maxBytes,
+      take: (n) => (paysAsWriter(readAttachment) ? this.#writers : this.#readers).take(now(), n)
+    };
   }
 }

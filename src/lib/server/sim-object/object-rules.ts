@@ -148,64 +148,62 @@ export function withResumed(attachment: unknown, resumed = true): SocketAttachme
   return a ? { ...a, resumed } : null;
 }
 
-/** A socket as a resume sees it; `read` and `store` are its attachment. */
+/** A socket as a resume sees it: `key` names it, `read` and `store` are its attachment. */
 export interface ResumeSocket {
+  key: object;
   read: () => unknown;
   store: (a: SocketAttachment) => void;
   send: (frame: string) => void;
 }
 
 /**
- * The object's answer to a resume frame. A socket is resumed exactly while its most recent resume
- * answer reached the tip: the mark is cleared at once, before the resume waits its turn, so no
- * live commit reaches the socket while it catches up (its pages cover them); it is set again only
- * when an answer ends with more: false, in the same serialized turn as the read that reached the
- * tip, so no commit is stored between them (I7). A refusal (`gone`, `limit`, sent with
- * `id: null`) or a capped answer leaves it clear until a later resume reaches the tip.
+ * The object's answer to a resume frame. One resume per socket at a time: while one is queued or
+ * being answered (`outstanding` holds its key), a further one is refused `limit` with `id: null`
+ * at once, queues nothing and leaves the mark alone. Otherwise a socket is resumed exactly while
+ * its most recent resume answer reached the tip: the mark is cleared at once, before the resume
+ * waits its turn, so no live commit reaches the socket while it catches up (its pages cover
+ * them); the answer step then stores it as "frames ending with more: false", in the same
+ * serialized turn as the read that reached the tip, so no commit is stored between them (I7). A
+ * refusal (`gone`, `limit`, sent with `id: null`) or a capped answer leaves it clear.
  */
 export async function answerResume(
   host: Pick<LogHost, 'resume'>,
   after: number,
   socket: ResumeSocket,
+  outstanding: WeakSet<object>,
   bounds?: ResumeBounds
 ): Promise<void> {
-  // Synchronous, before the first await: the message handler has not yielded since the frame
-  // arrived, so every commit stored from here on is after the socket's request.
-  const cleared = withResumed(socket.read(), false);
-  if (cleared) socket.store(cleared);
-  await host.resume(
-    after,
-    (a) => {
-      if (a.kind !== 'frames') {
-        return socket.send(encodeFrame({ type: 'refused', id: null, why: a.kind }));
-      }
-      for (const f of a.frames) socket.send(f);
-      if (!a.more) {
-        const marked = withResumed(socket.read());
-        if (marked) socket.store(marked);
-      }
-    },
-    bounds
-  );
+  if (outstanding.has(socket.key)) {
+    socket.send(encodeFrame({ type: 'refused', id: null, why: 'limit' }));
+    return;
+  }
+  outstanding.add(socket.key);
+  try {
+    // Synchronous, before the first await: the message handler has not yielded since the frame
+    // arrived, so every commit stored from here on is after the socket's request.
+    const cleared = withResumed(socket.read(), false);
+    if (cleared) socket.store(cleared);
+    await host.resume(
+      after,
+      (a) => {
+        if (a.kind !== 'frames') {
+          socket.send(encodeFrame({ type: 'refused', id: null, why: a.kind }));
+        } else {
+          for (const f of a.frames) socket.send(f);
+        }
+        const mark = withResumed(socket.read(), a.kind === 'frames' && !a.more);
+        if (mark) socket.store(mark);
+      },
+      bounds
+    );
+  } finally {
+    outstanding.delete(socket.key);
+  }
 }
 
 /** Whether a live commit goes to this socket: only once it has resumed (I7). */
 export function receivesLive(attachment: unknown): boolean {
   return parseAttachment(attachment)?.resumed === true;
-}
-
-/**
- * Whether a resume page is paid from the writers' budget: only when the socket's current
- * attachment is valid and says write. Read at the moment of payment, so a write revoked while the
- * resume waited its turn pays as a reader; an attachment that cannot be read pays as a reader
- * (fail closed).
- */
-export function paysAsWriter(readAttachment: () => unknown): boolean {
-  try {
-    return parseAttachment(readAttachment())?.write === true;
-  } catch {
-    return false;
-  }
 }
 
 /** The message rereadRoles throws when its role read fails. Fixed: it names no identity. */

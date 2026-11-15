@@ -59,6 +59,13 @@ export interface ServerAppend {
   now: number;
 }
 
+/**
+ * What a resume charges for each commit beyond its stored bytes: the room of a whole `commits`
+ * frame around it (wrapper, `more`) plus a comma. A frame of k commits is at most its bodies plus
+ * k times this, so the cap and the budgets never count fewer bytes than go on the wire.
+ */
+export const RESUME_ROW_EXTRA = utf8Bytes(commitsFrame([], false)) + 1;
+
 /** The one answer a resume gets. */
 export type ResumeAnswer =
   { kind: 'gone' } | { kind: 'limit' } | { kind: 'frames'; frames: string[]; more: boolean };
@@ -185,11 +192,14 @@ export class LogHost {
   /**
    * Calls `deliver` once, inside the serialized section: `gone` when the sim is gone or after >
    * tip; `limit` when the budget cannot pay for the first page; otherwise the commits after the
-   * position, at most `bounds.maxBytes` of stored bodies (always at least one commit), with
-   * `more` true when commits are left. Each page read is paid for (`bounds.take`) before it is
-   * kept; a refusal after the first cuts the answer there. Nothing after the position gives one
-   * empty frame and pays nothing. Default bounds: limits.resumeBytes and a budget that never
-   * refuses.
+   * position, costing at most `bounds.maxBytes` (always at least one commit), with `more` true
+   * when commits are left. A row costs its stored bytes plus RESUME_ROW_EXTRA, so an answer never
+   * puts more on the wire than it paid for. Sizes are read first (no body); each page is paid
+   * (`bounds.take`) before it is kept, and a refusal after the first cuts the answer there; only
+   * then are the bodies of the rows kept read. A refused answer reads no body. The two reads run
+   * in one synchronous turn: nothing else on the chain runs between them. Nothing after the
+   * position gives one empty frame and pays nothing. Default bounds: limits.resumeBytes and a
+   * budget that never refuses.
    */
   resume(
     after: number,
@@ -198,34 +208,41 @@ export class LogHost {
   ): Promise<void> {
     return this.#serial(() => {
       if (this.gone() || after > this.tip()) return deliver({ kind: 'gone' });
-      const rows: StoredRow[] = [];
-      let bytes = 0;
+      let cost = 0;
+      let last = after;
       let from = after;
       let more = false;
       for (;;) {
-        const page = this.#store.rowsAfter(from, PAGE);
-        const kept: StoredRow[] = [];
-        let pageBytes = 0;
+        const page = this.#store.sizesAfter(from, PAGE);
+        let kept = 0;
+        let keptLast = from;
+        let pageCost = 0;
         for (const r of page) {
-          if (rows.length + kept.length > 0 && bytes + pageBytes + r.bytes > bounds.maxBytes) {
-            more = true;
-            break;
+          const c = r.bytes + RESUME_ROW_EXTRA;
+          if (last > after || kept > 0) {
+            if (cost + pageCost + c > bounds.maxBytes) {
+              more = true;
+              break;
+            }
           }
-          kept.push(r);
-          pageBytes += r.bytes;
+          kept++;
+          keptLast = r.seq;
+          pageCost += c;
         }
-        if (kept.length > 0) {
-          if (!bounds.take(pageBytes)) {
-            if (rows.length === 0) return deliver({ kind: 'limit' });
+        if (kept > 0) {
+          if (!bounds.take(pageCost)) {
+            if (last === after) return deliver({ kind: 'limit' });
             more = true;
             break;
           }
-          rows.push(...kept);
-          bytes += pageBytes;
-          from = kept[kept.length - 1].seq;
+          cost += pageCost;
+          last = keptLast;
+          from = keptLast;
         }
         if (more || page.length < PAGE) break;
       }
+      // Same turn as the size reads: the rows are exactly those sized and paid for.
+      const rows = last > after ? this.#store.rowsThrough(after, last) : [];
       deliver({ kind: 'frames', frames: this.#frames(rows, more), more });
     });
   }

@@ -19,6 +19,7 @@ import { commitsFrame, type RefusedWhy } from '$lib/sim-stream/protocol';
 import { LIMITS, STAMP_MAX, fitsCommit, utf8Bytes } from './limits';
 import {
   LogHost,
+  RESUME_ROW_EXTRA,
   type AppendOutcome,
   type Author,
   type LogHostOptions,
@@ -73,6 +74,13 @@ async function resumeOf(host: LogHost, after: number): Promise<string[] | null> 
 }
 
 const lastMore = (frames: string[]) => JSON.parse(frames[frames.length - 1]).more;
+
+/** What rows cost a resume: their stored bodies plus the frame room each is charged. */
+const costOf = (rows: readonly StoredRow[]) =>
+  rows.reduce((t, r) => t + r.bytes + RESUME_ROW_EXTRA, 0);
+
+const WRITER_ATT = { identity: 'u1', write: true, resumed: false };
+const READER_ATT = { identity: 'u2', write: false, resumed: false };
 
 const seqsOf = (frames: string[]): number[] =>
   frames.flatMap((f) => JSON.parse(f).commits.map((c: { seq: number }) => c.seq));
@@ -752,7 +760,7 @@ describe('LogHost resume', () => {
     const { host, store } = make({ limits: { ...LIMITS, burst: 2000 } });
     const n = 1203;
     for (let s = 0; s < n; s++) await append(host, nameDraft(s, `N${s}`));
-    const cap = store.rowsAfter(0, 300).reduce((t, r) => t + r.bytes, 0);
+    const cap = costOf(store.rowsAfter(0, 300));
     const seqs: number[] = [];
     let after = 0;
     let answers = 0;
@@ -796,9 +804,25 @@ describe('LogHost resume', () => {
       paid.push(n);
       return true;
     };
-    const cap = rows[0].bytes + rows[1].bytes;
+    const cap = costOf(rows.slice(0, 2));
     expect(await answerOf(host, 0, { maxBytes: cap, take })).toMatchObject({ more: true });
     expect(paid).toEqual([cap]);
+  });
+
+  it('never puts more bytes on the wire than the answer paid for', async () => {
+    for (const sendBytes of [1, LIMITS.sendBytes]) {
+      const { host } = await three({ limits: { ...LIMITS, sendBytes } });
+      for (const maxBytes of [1, LIMITS.resumeBytes]) {
+        let paid = 0;
+        const take = (n: number) => {
+          paid += n;
+          return true;
+        };
+        const a = await answerOf(host, 0, { maxBytes, take });
+        if (a.kind !== 'frames') throw new Error(a.kind);
+        expect(a.frames.reduce((t, f) => t + utf8Bytes(f), 0)).toBeLessThanOrEqual(paid);
+      }
+    }
   });
 
   it('refuses limit when the budget cannot pay for the first page', async () => {
@@ -808,32 +832,116 @@ describe('LogHost resume', () => {
     });
   });
 
+  /** A store that records the reads a resume makes; `onBodies` runs inside the body read. */
+  class SpyStore extends SimStore {
+    bodyReads: [number, number][] = [];
+    fullReads = 0;
+    onBodies: (() => void) | null = null;
+    override rowsThrough(after: number, last: number): StoredRow[] {
+      this.bodyReads.push([after, last]);
+      this.onBodies?.();
+      return super.rowsThrough(after, last);
+    }
+    override rowsAfter(seq: number, limit: number): StoredRow[] {
+      this.fullReads++;
+      return super.rowsAfter(seq, limit);
+    }
+  }
+
+  async function spied(n: number, opts: LogHostOptions = {}) {
+    const store = new SpyStore(freshSimDb().db);
+    const host = new LogHost(store, { limits: { ...LIMITS, burst: 2000 }, ...opts });
+    for (let s = 0; s < n; s++) await append(host, nameDraft(s, `N${s}`));
+    host.ruleset();
+    store.bodyReads = [];
+    store.fullReads = 0;
+    return { store, host };
+  }
+
+  it('a resume refused limit reads no body', async () => {
+    const { store, host } = await spied(600);
+    expect(await answerOf(host, 0, { maxBytes: LIMITS.resumeBytes, take: () => false })).toEqual({
+      kind: 'limit'
+    });
+    expect(store.bodyReads).toEqual([]);
+    expect(store.fullReads).toBe(0);
+  });
+
+  it('reads the bodies of the rows it sends, once, and no others', async () => {
+    const { store, host } = await spied(1203);
+    let calls = 0;
+    const cut = await answerOf(host, 10, {
+      maxBytes: LIMITS.resumeBytes,
+      take: () => calls++ === 0
+    });
+    expect(seqsOf((cut as { frames: string[] }).frames)).toHaveLength(500);
+    expect(store.bodyReads).toEqual([[10, 510]]);
+    store.bodyReads = [];
+    const capped = await answerOf(host, 0, { maxBytes: 1, take: () => true });
+    expect(seqsOf((capped as { frames: string[] }).frames)).toEqual([1]);
+    expect(store.bodyReads).toEqual([[0, 1]]);
+    store.bodyReads = [];
+    await answerOf(host, 1203, { maxBytes: 1, take: () => true });
+    expect(store.bodyReads).toEqual([]);
+    expect(store.fullReads).toBe(0);
+  });
+
+  it('nothing runs between the size read and the body read: an append queued there waits', async () => {
+    let subscribed = false;
+    const live: number[] = [];
+    const { store, host } = await spied(3, {
+      onCommit: (_, c) => {
+        if (subscribed) live.push(c.seq);
+      }
+    });
+    let queued: Promise<AppendOutcome> | null = null;
+    store.onBodies = () => {
+      store.onBodies = null;
+      queued = append(host, nameDraft(3, 'Between'));
+    };
+    const got: number[] = [];
+    await host.resume(0, (a) => {
+      if (a.kind !== 'frames') throw new Error(a.kind);
+      got.push(...seqsOf(a.frames));
+      if (!a.more) subscribed = true;
+    });
+    expect(queued).not.toBeNull();
+    expect(await (queued as unknown as Promise<AppendOutcome>)).toMatchObject({
+      kind: 'accepted',
+      commit: { seq: 4 }
+    });
+    expect(got).toEqual([1, 2, 3]);
+    expect(live).toEqual([4]);
+  });
+
   it("readers spending their budget leave a writer's resume answered (F1)", async () => {
     const { host, store } = await three();
-    const all = store.rowsAfter(0, ALL).reduce((t, r) => t + r.bytes, 0);
+    const all = costOf(store.rowsAfter(0, ALL));
     const size = { burst: all, perSecond: 1 };
     const budgets = new ResumeBudgets(T0, { writers: size, readers: size });
     const at = () => T0;
-    expect((await answerOf(host, 0, budgets.bounds(false, at))).kind).toBe('frames');
-    expect(await answerOf(host, 0, budgets.bounds(false, at))).toEqual({ kind: 'limit' });
-    expect(await answerOf(host, 0, budgets.bounds(true, at))).toMatchObject({
-      kind: 'frames',
-      more: false
-    });
-    expect(await answerOf(host, 0, budgets.bounds(true, at))).toEqual({ kind: 'limit' });
+    const reader = budgets.boundsFor(() => READER_ATT, at);
+    const writer = budgets.boundsFor(() => WRITER_ATT, at);
+    expect((await answerOf(host, 0, reader)).kind).toBe('frames');
+    expect(await answerOf(host, 0, reader)).toEqual({ kind: 'limit' });
+    expect(await answerOf(host, 0, writer)).toMatchObject({ kind: 'frames', more: false });
+    expect(await answerOf(host, 0, writer)).toEqual({ kind: 'limit' });
   });
 
   it('a budget refills with the clock it is given', async () => {
     const { host, store } = await three();
-    const all = store.rowsAfter(0, ALL).reduce((t, r) => t + r.bytes, 0);
+    const all = costOf(store.rowsAfter(0, ALL));
     const size = { burst: all, perSecond: all };
     const budgets = new ResumeBudgets(T0, { writers: size, readers: size });
     let now = T0;
-    const at = () => now;
-    expect((await answerOf(host, 0, budgets.bounds(false, at))).kind).toBe('frames');
-    expect(await answerOf(host, 0, budgets.bounds(false, at))).toEqual({ kind: 'limit' });
+    const reader = budgets.boundsFor(
+      () => READER_ATT,
+      () => now
+    );
+    expect((await answerOf(host, 0, reader)).kind).toBe('frames');
+    expect(await answerOf(host, 0, reader)).toEqual({ kind: 'limit' });
     now = T0 + 1000;
-    expect(await answerOf(host, 0, budgets.bounds(false, at))).toMatchObject({ more: false });
+    expect(await answerOf(host, 0, reader)).toMatchObject({ more: false });
   });
 
   it('answers nothing-after with one empty frame, more false, without paying', async () => {
@@ -947,7 +1055,17 @@ describe("the object's resume rule (answerResume)", () => {
       socks.push(s);
       return s;
     };
-    const port = (s: Sock) => ({
+    // One per object, as in the object: the sockets with a resume queued or being answered.
+    const outstanding = new WeakSet<object>();
+    let resumes = 0;
+    const counted = {
+      resume: (...args: Parameters<LogHost['resume']>) => {
+        resumes++;
+        return m.host.resume(...args);
+      }
+    };
+    const port = (s: Sock, key: object = s) => ({
+      key,
       read: () => s.att,
       store: (a: unknown) => {
         s.att = a;
@@ -956,9 +1074,9 @@ describe("the object's resume rule (answerResume)", () => {
         s.frames.push(f);
       }
     });
-    const resume = (s: Sock, after: number, bounds?: ResumeBounds) =>
-      answerResume(m.host, after, port(s), bounds);
-    return { ...m, open, resume };
+    const resume = (s: Sock, after: number, bounds?: ResumeBounds, key?: object) =>
+      answerResume(counted, after, port(s, key), outstanding, bounds);
+    return { ...m, open, resume, port, outstanding, resumes: () => resumes };
   }
 
   /** Catches up from `after` the way the client does: next page only after the last frame. */
@@ -1053,6 +1171,88 @@ describe("the object's resume rule (answerResume)", () => {
     expect(s.att).toEqual({ identity: 'u1', write: false, resumed: false });
     await p;
     expect(s.att).toEqual({ identity: 'u1', write: false, resumed: true });
+  });
+
+  it('one resume per socket: a second while one is queued is refused limit and queues nothing', async () => {
+    const w = world();
+    for (let i = 0; i < 3; i++) await append(w.host, nameDraft(i, `N${i}`));
+    const s = w.open();
+    const first = w.resume(s, 0);
+    expect(s.att).toMatchObject({ resumed: false });
+    // The second arrives while the first waits its turn: refused at once (before the first is
+    // answered), queueing nothing, mark untouched.
+    const second = w.resume(s, 0);
+    expect(w.resumes()).toBe(1);
+    expect(s.frames.map((f) => JSON.parse(f))).toEqual([
+      { type: 'refused', id: null, why: 'limit' }
+    ]);
+    await Promise.all([first, second]);
+    expect(w.resumes()).toBe(1);
+    expect(seqsOf(s.frames.slice(1))).toEqual([1, 2, 3]);
+    expect(receivesLive(s.att)).toBe(true);
+    // Answered: the socket may resume again.
+    await w.resume(s, 3);
+    expect(w.resumes()).toBe(2);
+    expect(JSON.parse(s.frames.at(-1) as string)).toEqual({
+      type: 'commits',
+      commits: [],
+      more: false
+    });
+  });
+
+  it('a second refused while one is outstanding leaves the mark the first sets', async () => {
+    const w = world();
+    for (let i = 0; i < 3; i++) await append(w.host, nameDraft(i, `N${i}`));
+    const s = w.open();
+    await w.resume(s, 0);
+    const capped = w.resume(s, 0, ONE);
+    await w.resume(s, 0);
+    await capped;
+    expect(receivesLive(s.att)).toBe(false);
+    expect(w.resumes()).toBe(2);
+  });
+
+  it('frees the socket after a failed resume, and a closed socket with one queued is no trouble', async () => {
+    const w = world();
+    await append(w.host, nameDraft(0, 'A'));
+    const s = w.open();
+    const failing = { resume: () => Promise.reject(new Error('disk')) };
+    await expect(answerResume(failing, 0, w.port(s), w.outstanding)).rejects.toThrow('disk');
+    await w.resume(s, 0);
+    expect(receivesLive(s.att)).toBe(true);
+    // Closed while queued: its attachment can no longer be read and sends go nowhere.
+    const closed: Sock = { att: s.att, frames: [] };
+    const port = {
+      key: closed,
+      read: () => null,
+      store: () => {
+        throw new Error('stored on a closed socket');
+      },
+      send: () => {}
+    };
+    await expect(answerResume(w.host, 0, port, w.outstanding)).resolves.toBeUndefined();
+    await expect(answerResume(w.host, 0, port, w.outstanding)).resolves.toBeUndefined();
+  });
+
+  it('the mark always says whether the most recent answer reached the tip', async () => {
+    // Two resumes on one attachment that the one-per-socket rule would not see as one socket
+    // (distinct keys): only the answer step can keep the mark right.
+    const w = world();
+    for (let i = 0; i < 3; i++) await append(w.host, nameDraft(i, `N${i}`));
+    const s = w.open();
+    const k1 = {};
+    const k2 = {};
+    await Promise.all([w.resume(s, 0, undefined, k1), w.resume(s, 0, ONE, k2)]);
+    expect(receivesLive(s.att)).toBe(false);
+    await Promise.all([
+      w.resume(s, 0, undefined, k1),
+      w.resume(s, 0, { maxBytes: LIMITS.resumeBytes, take: () => false }, k2)
+    ]);
+    expect(receivesLive(s.att)).toBe(false);
+    await Promise.all([w.resume(s, 0, undefined, k1), w.resume(s, 9, undefined, k2)]);
+    expect(receivesLive(s.att)).toBe(false);
+    await Promise.all([w.resume(s, 0, ONE, k1), w.resume(s, 0, undefined, k2)]);
+    expect(receivesLive(s.att)).toBe(true);
   });
 });
 

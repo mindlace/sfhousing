@@ -22,7 +22,7 @@ import { canWrite, type SocketAttachment } from './access';
 import { IndexRunner, takeDownInOrder } from './index-runner';
 import { syncSimIndex } from './index-sync';
 import { INDEX_RETRY_MS } from './limits';
-import { LogHost, type ResumeBounds, type ServerAppend } from './log-host';
+import { LogHost, type ServerAppend } from './log-host';
 import { simMigrations } from './migrations.generated';
 import {
   APPEND_FAILED,
@@ -31,7 +31,6 @@ import {
   helloFrame,
   loggable,
   openStatus,
-  paysAsWriter,
   readMessage,
   receivesLive,
   rereadChanges,
@@ -49,6 +48,8 @@ export class SimObject extends DurableObject<Env> {
   #index: IndexRunner | null = null;
   /** In memory only: full again after a wake. */
   #budgets: ResumeBudgets | null = null;
+  /** Sockets with a resume queued or being answered. In memory only: none after a wake. */
+  readonly #resuming = new WeakSet<WebSocket>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -147,16 +148,23 @@ export class SimObject extends DurableObject<Env> {
     const { frame, attachment, bytes } = read;
     if (frame.type === 'resume') {
       try {
-        // Clears the mark now; sets it again only when an answer reaches the tip (I7).
+        // One per socket at a time; clears the mark now and sets it again only when an answer
+        // reaches the tip (I7). Each page is paid from the budget of the socket's right to write
+        // as its attachment says when the page is paid (fails closed to the readers').
         await answerResume(
           host,
           frame.after,
           {
+            key: ws,
             read: () => this.#attachment(ws),
             store: (a) => this.#store(ws, a),
             send: (f) => this.#send(ws, f)
           },
-          this.#resumeBounds(ws)
+          this.#resuming,
+          (this.#budgets ??= new ResumeBudgets(Date.now())).boundsFor(
+            () => this.#attachment(ws),
+            Date.now
+          )
         );
       } catch (e) {
         console.error('[sim-object] resume failed', this.#label(), loggable(e));
@@ -304,19 +312,6 @@ export class SimObject extends DurableObject<Env> {
     } catch {
       // Already closed.
     }
-  }
-
-  /** A resume's bounds. Each page is paid from the budget of the socket's right as the Worker
-   *  last set it, read when the page is paid (inside the serialized section): a socket without
-   *  write never spends the writers' budget (paysAsWriter fails closed). */
-  #resumeBounds(ws: WebSocket): ResumeBounds {
-    const budgets = (this.#budgets ??= new ResumeBudgets(Date.now()));
-    const writers = budgets.bounds(true, Date.now);
-    const readers = budgets.bounds(false, Date.now);
-    return {
-      maxBytes: writers.maxBytes,
-      take: (n) => (paysAsWriter(() => ws.deserializeAttachment()) ? writers : readers).take(n)
-    };
   }
 
   /** The socket's current attachment; null once it cannot be read (the socket closed). */
