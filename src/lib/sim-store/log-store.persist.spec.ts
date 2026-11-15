@@ -808,14 +808,19 @@ describe('LogStore persistence (fix round 1)', () => {
 
   it('runs one write chain: a change made during its first pass waits for its write', async () => {
     const db = memorySimDb();
-    // Each write transaction stays in flight for a macrotask, so two chains would overlap.
+    // Each write transaction stays in flight until the test opens its gate, so two chains would
+    // overlap; `called` tells the test that a write has started.
     let inFlight = 0;
     let most = 0;
+    const gates: (() => void)[] = [];
+    let called = () => {};
     for (const m of ['createSim', 'write'] as const) {
       const real = db[m].bind(db) as (...a: unknown[]) => Promise<unknown>;
       (db as unknown as Record<string, unknown>)[m] = async (...args: unknown[]) => {
         most = Math.max(most, ++inFlight);
-        await new Promise((r) => setTimeout(r, 0));
+        const gate = new Promise<void>((open) => gates.push(open));
+        called();
+        await gate;
         try {
           return await real(...args);
         } finally {
@@ -835,8 +840,18 @@ describe('LogStore persistence (fix round 1)', () => {
     };
     const s = await opened(db, { now });
     s.apply(withZ('a'), 'A');
-    await s.written();
-    expect([reentered, most]).toEqual([true, 1]);
+    // The first pass ran synchronously, the re-entering edit included: one write has started.
+    expect([reentered, gates.length]).toEqual([true, 1]);
+    const written = s.written().then(() => 'done' as const);
+    // Open one write at a time, then wait for the next write to start or the chain to end.
+    for (let open = gates.shift(); open !== undefined; open = gates.shift()) {
+      const next = new Promise<'call'>((r) => (called = () => r('call')));
+      open();
+      if ((await Promise.race([written, next])) === 'done') break;
+      expect(gates.length).toBe(1);
+    }
+    await written;
+    expect([most, gates.length]).toEqual([1, 0]);
     const r = await db.read(s.simId!);
     expect(r.pending.map((p) => p.pending.draft.label)).toEqual(['A', 'B']);
     expect(r.pending.map((p) => p.pending)).toEqual([...s.pending]);
