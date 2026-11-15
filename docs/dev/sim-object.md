@@ -63,7 +63,7 @@ Modules reachable from `sim-object.ts` import no `$app/*`, no `$env/*` and no bu
 | 426    | No `Upgrade: websocket` header                                                                                   |
 | 403    | `Origin` present and not this origin (`refuseForeignOrigin`; an empty `Origin` is refused; an absent one passes) |
 | 404    | The id is not a valid id, or there is no `sim_index` row                                                         |
-| 503    | The `SIM` binding is absent (`npm run dev`); body says to use `npm run preview`                                  |
+| 503    | `platform.env.SIM` is absent; body says to use `npm run preview`                                                 |
 
 Errors from the route are JSON `{ error }`. Then the route reads the session (`locals.user`, resolved by the session gate: see [auth.md](auth.md)) and the role (`getRole`) and forwards the upgrade to the object. Anyone who knows the sim id gets a socket: a signed-out visitor or a non-member gets `write: false`. The status of the object's own answer passes through unchanged, empty body:
 
@@ -121,12 +121,14 @@ Only these two keys per frame are accepted (`parseClientFrame`). A text `ping` i
 | ------------ | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `behind`     | `parent` is not the tip                                                                         | Resume to catch up, `reapply` the pending commits (see sim-log.md), send again                                         |
 | `invalid`    | The commit does not parse as a `CommitDraft`, or does not fold on the current state             | Drop it; it will not become valid                                                                                      |
-| `newer`      | The commit's `shapes` revision is above what this server knows (the log core's `future-shapes`) | Keep it pending and send it again later; stop sending and offer a reload                                               |
+| `newer`      | The commit's `shapes` revision is above what this server knows (the log core's `future-shapes`) | Keep it pending, stop sending, offer a reload, send again after the reload                                             |
 | `not-writer` | The socket has no right to write (signed out, a reader, or a role that ended)                   | Stop sending; keep the commit pending until an `access` frame says `write: true`                                       |
-| `limit`      | A size or rate limit (see Limits), or an oversized message                                      | Rate: send again after a pause. Size: drop it; sending it again cannot succeed                                         |
+| `limit`      | A size or rate limit (see Limits), or an oversized message                                      | The frame does not say which limit it was; see below                                                                   |
 | `gone`       | On an append, the sim was taken down. On a resume, the position is past the tip                 | Taken down: stop. Resume past the tip: the browser's position is wrong (its log is not this sim's); start again from 0 |
 
 An oversized message (text longer than `LIMITS.frameBytes` characters) is refused `limit` with `id: null` without being parsed and without taking a rate token. The object cannot name its commit, so a browser checks a commit's size against the shared limit before sending and never relies on this refusal. A commit's stored form (the draft plus `seq`, `actor`, `at` and `hash`) must fit `LIMITS.commitBytes`, so keep a draft well under it.
+
+The `limit` frame does not name the limit. Its causes: the sim's rate bucket is empty (`decide.ts`, step 3); the message is over `frameBytes` (`decide.ts`, step 4, or the unparsed pre-check); the sim is full, at `simCommits` or `simBytes` (`decide.ts`, step 7); the stored commit is over `commitBytes` (`log-host.ts`, step 9). A browser that has checked the commit's size against the shared limit before sending can read `limit` as either the rate or a full sim, and cannot tell those two apart from the frame.
 
 A duplicate id gets no frame: the resume answer already carried the stored copy, and the browser removes pending commits whose ids are confirmed.
 
@@ -139,11 +141,11 @@ A duplicate id gets no frame: the resume answer already carried the stored copy,
 | 1011 | `CLOSE_INTERNAL`  | The object failed on this socket: a failed insert, a stored row that no longer folds, no log host, an error |
 | 4410 | `CLOSE_GONE`      | `takeDown()`: the sim is gone                                                                               |
 
-The reason strings are `binary`, `malformed`, `internal` and `gone`. When the browser closes, the object answers the close with the same code, or 1000 for 1005, 1006 and 1015. After 1011 the browser reconnects (with backoff) and resumes from its confirmed position; after 4410 it stops, and a reconnect gets 410.
+The reason strings are `binary`, `malformed`, `internal` and `gone`. When the browser closes, the object answers the close with the same code, or 1000 for 1005, 1006 and 1015. After 1011 the browser reconnects (with backoff) and resumes from its confirmed position; after 4410 it stops. A reconnect gets 410 from the object, or 404 from the route once the `sim_index` row is deleted.
 
 ### Resume
 
-- `resume` is the first thing a browser sends after `hello` and `access`, and again after every reconnect. The object answers with every commit after `after`, in `seq` order, as `commits` frames of whole commits: at most `LIMITS.sendBytes` per frame (at least one commit), read 500 rows at a time. There is no end marker: the browser applies commits as they arrive, by `seq`.
+- `resume` is the first thing a browser sends after `hello` and `access`, and again after every reconnect. The object answers with every commit after `after`, in `seq` order, as `commits` frames of whole commits: the stored bodies of a frame sum to at most `LIMITS.sendBytes` (at least one commit; the wrapper and commas come on top), read 500 rows at a time. There is no end marker: the browser applies commits as they arrive, by `seq`.
 - Nothing after the position: one frame `{"type":"commits","commits":[]}`.
 - `after` greater than the tip, or a gone sim: `{"type":"refused","id":null,"why":"gone"}`. The socket stays open and is not marked resumed.
 - The first frame of an answer marks the socket resumed. A resume and an append never interleave: both run in turn.
@@ -168,7 +170,7 @@ The order of the checks, as built. The first that fails answers `refused` and ch
 | 9    | The object stamps `seq`, `actor`, `at` and `hash`; the stored form is over `LIMITS.commitBytes`           | `limit`             |
 | 10   | The fold check (`apply` with `check: true`): `future-shapes` is `newer`, any other refusal `invalid`      | `newer`, `invalid`  |
 
-So a commit that is both oversize and invalid is refused `limit`. After step 10 the commit is inserted and its stored body is sent, as a one-commit `commits` frame, to every resumed socket, the author's included. Steps 1 and 2 take no token, so a reader or a signed-out socket cannot spend the sim's budget; a refusal at step 4 or later has taken one.
+So a commit that is both oversize and invalid is refused `limit`. After step 10 the commit is inserted and its stored body is sent, as a one-commit `commits` frame, to every resumed socket, the author's included. Steps 1 and 2 take no token, so a reader or a signed-out socket cannot spend the sim's budget; a refusal at step 4 or later has taken one, and so has a duplicate (step 6, no frame). A browser that re-sends its pending commits after a reconnect spends the burst on duplicates.
 
 The rate bucket is per sim and held in memory: `LIMITS.burst` tokens, refilled at `LIMITS.perSecond`. It starts full each time the object wakes, so a writer gets a fresh burst after the sim goes idle.
 
@@ -178,17 +180,17 @@ A writer opening a sim with no commits (R58) makes the object append the start c
 
 ## Limits
 
-`LIMITS` in `src/lib/server/sim-object/limits.ts`. Change a value there; `limits.spec.ts` and the decision specs read them from it.
+`LIMITS` in `src/lib/server/sim-object/limits.ts`. Change a value there. `limits.spec.ts` pins `simBytes`, so changing it also means changing that spec.
 
-| Field         | Value               | Means                                                                                 |
-| ------------- | ------------------- | ------------------------------------------------------------------------------------- |
-| `commitBytes` | 1,048,576 (1 MiB)   | The largest stored commit (its JSON body in UTF-8, with `seq`, `actor`, `at`, `hash`) |
-| `frameBytes`  | 1,052,672           | The largest incoming message in UTF-8 bytes: `commitBytes` plus 4,096 of frame room   |
-| `simCommits`  | 100,000             | Commits in one sim                                                                    |
-| `simBytes`    | 67,108,864 (64 MiB) | Stored bytes in one sim. A fold or a resume never needs more than this in memory      |
-| `burst`       | 120                 | Appends a sim accepts in a burst                                                      |
-| `perSecond`   | 2                   | Refill rate of the sim's bucket                                                       |
-| `sendBytes`   | 1,048,576           | The most a resume sends in one `commits` frame, except that one commit is always sent |
+| Field         | Value               | Means                                                                                                                             |
+| ------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `commitBytes` | 1,048,576 (1 MiB)   | The largest stored commit (its JSON body in UTF-8, with `seq`, `actor`, `at`, `hash`)                                             |
+| `frameBytes`  | 1,052,672           | The largest incoming message in UTF-8 bytes: `commitBytes` plus 4,096 of frame room                                               |
+| `simCommits`  | 100,000             | Commits in one sim                                                                                                                |
+| `simBytes`    | 67,108,864 (64 MiB) | Stored bytes in one sim. A fold or a resume never needs more than this in memory                                                  |
+| `burst`       | 120                 | Appends a sim accepts in a burst                                                                                                  |
+| `perSecond`   | 2                   | Refill rate of the sim's bucket                                                                                                   |
+| `sendBytes`   | 1,048,576           | The most stored-body bytes a resume puts in one `commits` frame (wrapper and commas extra), except that one commit is always sent |
 
 Also in `limits.ts`: `INDEX_BATCH` 50 (commits per D1 write) and `INDEX_RETRY_MS` 30,000. The resume page size, 500 rows, is `PAGE` in `log-host.ts`.
 
@@ -198,25 +200,25 @@ Also in `limits.ts`: `INDEX_BATCH` 50 (commits per D1 write) and `INDEX_RETRY_MS
 
 Two tables in the object's own SQLite (`schema.ts`):
 
-| Table       | Columns                                                                                                         |
-| ----------- | --------------------------------------------------------------------------------------------------------------- |
-| `commits`   | `seq` (primary key), `id` (unique), `hash`, `bytes` (UTF-8 size of `body`), `body` (the commit's JSON, as sent) |
-| `sim_state` | One row, `id` 1: `indexed_seq` (the watermark, default 0), `gone_at` (null until a takedown)                    |
+| Table       | Columns                                                                                                                                 |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `commits`   | `seq` (primary key), `id` (unique), `hash`, `bytes` (UTF-8 size of `body`), `body` (the stamped commit's JSON, as stored and broadcast) |
+| `sim_state` | One row, `id` 1: `indexed_seq` (the watermark, default 0), `gone_at` (null until a takedown)                                            |
 
 The object has its own migration track, `sim`, beside the D1 one (`drizzle-cf.config.ts`).
 
 - Edit `src/lib/server/sim-object/schema.ts`, run `npm run db:generate:sim`, commit what it writes (`migrations/sim/` and `migrations.generated.ts`). Nothing to apply: each object migrates on open.
 - The track is append-only for good. Every object ever created applies this history, so never delete `migrations/sim` or regenerate it from scratch. Never hand-edit a migration. No `CHECK` constraints (the migrations package forbids them in a Durable Object track).
-- `migrations.spec.ts` freezes the first migration (`20261115062714_fat_scorpion`) with `describeAppendOnlyBundle`; it fails if that file changes or a later one is rewritten.
+- `migrations.spec.ts` freezes the first migration (`20261115062714_fat_scorpion`) with `describeAppendOnlyBundle`; it checks only that the baseline sorts first and creates `commits` and `sim_state`, that every key is timestamp-prefixed, and that the bundle applies. Editing a migration in place, the baseline included, passes it: rewriting history is caught only by review.
 - On construction the object runs `safeMigrate(durable, simMigrations)` inside `blockConcurrencyWhile`. If the migration fails, or the storage cannot be opened, the error is logged (the sim id and the error text) and the object has no log host: an open answers 503, a message closes the socket 1011, and `takeDown()` throws. It stays that way until the object is next constructed. The class still constructs, so it stays destroyable.
-- The object logs only what is unexpected, with the sim id and an error message cut to 300 characters (`loggable`): never a commit body, an identity or a refusal. A failed query logs `(query failed)`, never its parameters.
+- The object logs only what is unexpected, with the sim id and an error message cut to 300 characters (`loggable`): never a commit body or an identity, and no refusal of a browser's append. The one refusal logged is the reason code of a refused start commit. A failed query logs `(query failed)`, never its parameters.
 
 ## The D1 copy
 
 Written by the object after it has stored and sent a commit (I4). Both tables are copies: rebuildable from the objects, never read to serve rules.
 
 - `sim_index` (one row per sim, made when the sim is created): the pass updates `positions`, `last_change_at`, `dataset_version`, `title` (the folded sim name) and `updated_at`, only where the row's `positions` is lower than the log's, so it never moves backwards. `remixed_from` and `remixed_from_position` exist but nothing writes them yet; the object will copy them from a remix's first commit (`remixOf`) when the sharing unit adds that field.
-- `sim_commit` (key `sim_id`, `seq`): each commit's envelope, everything but its changes: `kind`, `source`, `actor`, `at`, `build`, `dataset_version`, `bytes`, `restores_position`, `restores_as` (null when the commit is not a restore). Inserted `on conflict do nothing`, so a replay is harmless.
+- `sim_commit` (key `sim_id`, `seq`): each commit's envelope, columns `kind`, `source`, `actor`, `at`, `build`, `dataset_version`, `bytes`, `restores_position`, `restores_as` (null when the commit is not a restore). Inserted `on conflict do nothing`, so a replay is harmless.
 - The watermark is `sim_state.indexed_seq`: the last position copied. The index pass reads at most `INDEX_BATCH` unindexed commits, writes them and the `sim_index` update in one D1 batch, and moves the watermark forward only.
 - The pass runs after an accepted append (the author's message handler waits for it) and after a start commit (`waitUntil`). It runs one at a time.
 - A failed D1 write is logged and never refused to the author. The object sets an alarm `INDEX_RETRY_MS` ahead if none is set, and `alarm()` runs the pass again. On construction, if the watermark is behind the tip and no alarm is set, the object sets one for now.
@@ -230,7 +232,7 @@ Both RPC methods are called through `simStub(env, simId)`, which is null without
 
 Call it after a roster change that can change who may write: an accepted invite, a role change, a removal (R53). `onSimRosterChanged` (`src/lib/server/sims/roster-hook.ts`) is its seam.
 
-- Write the roster change to D1 first, then call `rereadRoles()`. It reads the role of every distinct identity on an open socket. A socket that opens after that list is taken and before the read ends is not in the read and keeps the right the Worker gave it at open. The Worker read that right before it saw the roster change if the change was written late, so a socket opened after the change was written reads the new role; one opened around the call can keep a stale right until the next call.
+- Write the roster change to D1 first, then call `rereadRoles()`. It reads the role of every distinct identity on an open socket. A socket that opens after that list is taken and before the read ends is not in the read and keeps the right the Worker gave it at open. The route read its role before the change was written, so it can keep a stale right until the next call.
 - It sends `{"type":"access","write":...}` only to sockets whose right changed, and updates their attachments. A writer who loses the right is not disconnected; later appends are refused `not-writer`. A reader who gains it gets `write: true`.
 - A signed-out socket is never touched. A non-member's role is null: no write.
 - If the role read fails for any reason, it logs once and changes nothing: nobody is revoked, and it resolves normally. The caller cannot tell; a later call retries.
@@ -240,7 +242,7 @@ Call it after a roster change that can change who may write: an accepted invite,
 
 Call it for a manual takedown (R43). It runs in turn with appends and resumes.
 
-- It deletes every commit, sets `gone_at` and resets `indexed_seq` to 0, drops the held state, then closes every open socket with 4410 `gone`. It throws when the object has no log host (503).
+- It deletes every commit, sets `gone_at` and resets `indexed_seq` to 0, drops the held state, then closes every open socket with 4410 `gone`. It throws `Error('sim object unavailable')` when the object has no log host; an RPC caller sees an exception, not a status.
 - What it leaves: the `sim_state` row, with `gone_at` set. Later opens get 410, appends `gone`, resumes `gone`. The object stays addressable, so a takedown is final and the sim id stays dead. Calling it again only moves `gone_at`.
 - It does not touch D1. The control plane deletes the sim's `sim_index` and `sim_commit` rows. An index write that was already running when `takeDown()` ran can still land afterwards, so delete after `takeDown()` returns and expect a stray row to be possible.
 
@@ -253,7 +255,7 @@ Call it for a manual takedown (R43). It runs in turn with appends and resumes.
 ## Running it
 
 - The build is `vite build && tsx scripts/worker-entry.ts`. The adapter writes `.svelte-kit/cloudflare/_worker.js` exporting only the SvelteKit handler; `wrapWorker` moves it to `.svelte-kit/cloudflare-adapter/_worker.js` and writes an entry in its place that re-exports its default and `SimObject`. It throws if the adapter output is missing or already wrapped, so run it only after a fresh `vite build`. Wrangler's `main` stays `.svelte-kit/cloudflare/_worker.js` and bundles the entry from source; the top-level `alias` `$lib` to `./src/lib` in `wrangler.jsonc` resolves `$lib` imports for every environment.
-- `npm run dev` (plain Vite) has no `SIM` binding: the socket answers 503. Use `npm run preview` (build, then `wrangler dev` on port 4173), which also serves e2e.
+- The Durable Object does not run under `npm run dev`; the route answers 503 when `platform.env.SIM` is absent. The exact status under `npm run dev` is unverified. Use `npm run preview` (build, then `wrangler dev` on port 4173), which also serves e2e.
 - `wrangler.jsonc` declares the object in both environments: `durable_objects.bindings` (`SIM`, `SimObject`) and `migrations` with tag `v1-sim-object` and `new_sqlite_classes`. Cloudflare's configuration docs now prefer a declarative `exports` field, which cannot be mixed with `migrations`; switching is a deliberate later change. A migration tag is never edited or reused: a change of class or storage adds a new tag.
 - Operators: after this deploy, rolling the Worker back to a version without the `SimObject` class is not safe.
 - Hooks (`src/hooks.server.ts`): a websocket upgrade resolves the session with `disableRefresh`, because the 101 response's headers cannot be changed, and `headersHandle` returns a 101 as it is.

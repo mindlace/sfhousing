@@ -50,7 +50,7 @@ Both write to the Miniflare R2 state in `.wrangler/`; delete that directory to r
 
 ## The sim object
 
-`npm run dev` cannot run the per-sim Durable Object: `GET /api/sims/<id>/stream` answers 503 there. Use `npm run preview` (build, then `wrangler dev` on port 4173). See [sim-object.md](sim-object.md).
+The per-sim Durable Object does not run under `npm run dev`; the stream route answers 503 when `platform.env.SIM` is absent (the exact status under `npm run dev` is unverified). Use `npm run preview` (build, then `wrangler dev` on port 4173). See [sim-object.md](sim-object.md).
 
 ## Migrations
 
