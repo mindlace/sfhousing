@@ -171,12 +171,12 @@ The sim object (unit 2):
 3. Calls `state.apply(draft, { check: true })`; a `LogError` is `invalid`.
 4. Sets `seq`, `actor` and `at`, and `hash = await chainHash(tipHash, commit)`.
 
-The browser store (unit 4):
+The browser store (unit 4, built in `src/lib/sim-store/`, described in [sim-store.md](sim-store.md)):
 
-- Folds confirmed commits into one `LogState` and applies pending ones on a clone.
-- On `behind`, calls `reapply` for each pending commit, recomputing a pending restore with `diff`.
+- Folds confirmed commits into one `LogState` and applies pending ones on a clone (`LocalLog`).
+- On a new confirmed commit, calls `reapply` for each pending commit, recomputing a pending restore with `diff`.
 - Commits an editor's change as `diff(current, edited)`.
-- Asks `undoRedo` for targets, folding to the target position to get the restore's `diff`.
+- Keeps `History`, which walks the commits as `undoRedo` does (a property test pins them equal) and adds each target's label, folding to the target position to get the restore's `diff`.
 
 ### Rules for callers
 
@@ -184,7 +184,7 @@ The browser store (unit 4):
 - The store removes pending commits whose ids are already among the confirmed ones before calling `reapply`; otherwise their adds come back `exists` and the rest re-applies on top of itself. A pending restore never goes to `reapply`; it is recomputed with `diff` (R18).
 - Editor output goes through `toLogForm`, and an imported ruleset (R20) through `checkRuleset`, before `diff` or `LogState.of`.
 - `future-shapes` from `apply` or `reapply` means the commit comes from a newer build: keep it, stop sending, offer a reload.
-- A jump (R14) to a position before a dataset move restores rules made for the older dataset under the newer one. Undo stops at the move; the store unit decides whether a jump across it is followed by a move commit or refused.
+- A jump (R14) to a position before a dataset move restores rules made for the older dataset under the newer one. Undo stops at the move; the store aligns a restore to the dataset the fold is on (sim-store.md, The dataset rule).
 
 ## Tests
 
