@@ -158,7 +158,7 @@
           <tr><th scope="row"><code>parent</code></th><td>Author</td><td>The position the author's changes were made on.</td></tr>
           <tr><th scope="row"><code>kind</code></th><td>Author</td><td><code>edit</code>, <code>restore</code> or <code>system</code> (an import, a remix's first commit, a move to a newer dataset).</td></tr>
           <tr><th scope="row"><code>label</code></th><td>Author</td><td>The words undo announces, as <code>PolicyStore</code> labels are today.</td></tr>
-          <tr><th scope="row"><code>restores</code></th><td>Author</td><td>On a <code>restore</code>: the position whose ruleset this commit reproduces, and whether it was an undo or a redo.</td></tr>
+          <tr><th scope="row"><code>restores</code></th><td>Author</td><td>On a <code>restore</code>: the position whose ruleset this commit reproduces, and whether it was an undo, a redo or a jump to any position (R14).</td></tr>
           <tr><th scope="row"><code>actor</code></th><td>Sim object</td><td>The writer's stable identity id, as the Worker resolved it (R46).</td></tr>
           <tr><th scope="row"><code>at</code></th><td>Sim object</td><td>Server time of acceptance.</td></tr>
           <tr><th scope="row"><code>datasetVersion</code>, <code>shapes</code></th><td>Author</td><td>The dataset and the shape registry revision the commit was made with. It is read with both (R54).</td></tr>
@@ -171,7 +171,7 @@
       <ul>
         <li id="r1"><strong>R1.</strong> A commit is one finished intent: a stroke, a released slider, a typed value. A drag shows live from a local draft. The draft becomes a commit when its coalesce key changes, when its field loses focus, or when the page is hidden. A draft still open when the page is hidden is committed then.</li>
         <li id="r2"><strong>R2.</strong> A commit holds resulting values, never an instruction to recompute. A preset stores the numbers it resolved to, as it does today.</li>
-        <li id="r3"><strong>R3.</strong> The sim object refuses a commit whose changes do not fold to a valid ruleset: <code>parsePolicy4</code> with <code>asOf: null</code> and the existing size limits. The object holds no calibration, so alignment to the dataset's months is the author's check, as it is on the page today.</li>
+        <li id="r3"><strong>R3.</strong> The sim object refuses a commit whose changes do not fold to a valid ruleset: <code>parsePolicy4</code> with <code>asOf: null</code> in its reconcile mode, so a preset retired later never makes an accepted sim refuse edits, and the existing size limits. The object holds no calibration, so alignment to the dataset's months is the author's check, as it is on the page today.</li>
       </ul>
       <aside data-kind="decision"><strong>My call</strong> R1's three triggers, because a coalesce run has no end signal today and a draft open when the tab closes must not be lost. R3 checks structure only, because the object has no calibration and alignment is already checked where the edit is made.</aside>
       <aside data-kind="decision"><strong>My call</strong> <code>source</code> exists for the study of exploration (<a href="#sec-study">Studying exploration</a>): which levers people pulled is read from it, without parsing labels or inferring from changes.</aside>
@@ -195,7 +195,7 @@
         </tbody>
       </table>
       <ul>
-        <li id="r4"><strong>R4.</strong> No change edits an item in place. Changing a band from 6 to 8 stories from the same day deletes the span and adds another, in one commit.</li>
+        <li id="r4"><strong>R4.</strong> No change edits an item in place. Changing a band from 6 to 8 stories from the same day deletes the span and adds another, in one commit. So does a later end or an earlier start; for a painted span that writes its strokes again.</li>
         <li id="r5"><strong>R5.</strong> A painted stroke is its own item, so a stroke costs its own bytes, not a copy of every stroke before it.</li>
         <li id="r6"><strong>R6.</strong> The title joins the log. Today it sits outside <code>PolicyStore</code> and cannot be undone.</li>
       </ul>
@@ -243,7 +243,7 @@
       <ul>
         <li id="r10"><strong>R10.</strong> Undo appends a <code>restore</code> commit whose changes are <code>diff(tip ruleset, earlier ruleset)</code>. After it, the ruleset equals the earlier one exactly. Nothing is removed from the log.</li>
         <li id="r11"><strong>R11.</strong> Redo is the same: a <code>restore</code> to the state the last undo left.</li>
-        <li id="r12"><strong>R12.</strong> Which state undo and redo go to is computed from the tail of the log, whoever wrote it. No stack is stored. A new <code>edit</code> empties redo, as in any editor.</li>
+        <li id="r12"><strong>R12.</strong> Which state undo and redo go to is computed from the tail of the log, whoever wrote it. No stack is stored. A new <code>edit</code> empties redo, as in any editor; a jump counts as an edit. Undo stops at a <code>system</code> commit: an import, a remix's first commit, or a move to a newer dataset, since the rules before a move are aligned to the older dataset.</li>
         <li id="r13"><strong>R13.</strong> Undo depth is the whole log, including after a reload and on another device.</li>
         <li id="r14"><strong>R14.</strong> A restore to any position is the same operation. timeline-ui's <code>undoTo</code> (back to the last document the engine accepted) is a restore.</li>
       </ul>
@@ -349,7 +349,7 @@
         <li id="r33"><strong>R33.</strong> A remix is made locally and at once, like any commit, so it works offline from a link already open.</li>
         <li id="r34"><strong>R34.</strong> A person holds any number of sims, up to R52, each with its own address (<code>/sim/&lt;simId&gt;</code>). Their list is the sims they are a member of (<code>foldSimsForUser</code>), so it follows a sign-in to another device. A remix never replaces another sim, as the single autosave slot does today.</li>
         <li id="r35"><strong>R35.</strong> The index row records what a sim was remixed from (R24), so the tree of remixes can be read and counted without opening every log.</li>
-        <li id="r42"><strong>R42.</strong> A sim's name is a <code>set</code> on its name item, at most 63 characters (<code>SIM_TITLE_MAX</code>, checked as <code>checkSimTitle</code> does). <code>sim_index.title</code> is its copy. A new sim gets a default name; a remix starts with its source's name.</li>
+        <li id="r42"><strong>R42.</strong> A sim's name is a <code>set</code> on its name item, which every sim has from the start, at most 63 characters (<code>SIM_TITLE_MAX</code>, checked as <code>checkSimTitle</code> does). <code>sim_index.title</code> is its copy. A new sim gets a default name; a remix starts with its source's name.</li>
         <li id="r43"><strong>R43.</strong> From the list a person can open a sim, start one, rename one and leave one (<code>leaveSim</code>). Nothing a member does deletes a sim. When its last member leaves, or deletes their account (<code>deleteAccount</code> removes its memberships), the sim stays with no members: its log and its <code>sim_index</code> row are kept, its links open as before, nobody can write it, and an edit starts a remix (R32). Its id cannot be registered again (R51), so nobody takes it over. <code>removeSimMember</code> (<code>src/lib/server/sims/sims.ts</code>) stops calling <code>deleteSim</code> when the roster is empty and deletes the sim's pending invitations instead. <code>deleteSim</code> is left for an operator's takedown: it also clears the object's storage and leaves a mark, so the id is never registered again and its links stop opening. A remix is unaffected by a takedown, because its first commit holds its whole ruleset.</li>
         <li id="r59"><strong>R59.</strong> An invitation adds a member, as an editor (<code>src/lib/server/invites/control-plane.ts</code>). The new member writes to the same log from the next socket they open, in the one order. Membership changes are not commits: the log holds only the sim's content.</li>
         <li id="r36"><strong>R36.</strong> Existing <code>/s/&lt;id&gt;</code> links (8 characters) and their D1 rows keep working unchanged. Remixing one starts a new sim from its document.</li>
@@ -513,7 +513,8 @@
       <li>From planafoot's quest graph only shaped items, a numbered registry and reads under the writer's revision; revision 1 has one policy shape and one span shape per <code>where</code> and <code>what</code> row (<a href="#sec-shapes">Shapes</a>).</li>
       <li>Drafts commit on a key change, a lost focus or a hidden page; the object checks structure only (<a href="#sec-commit">The commit</a>).</li>
       <li>A <code>source</code> code on every commit, envelopes copied to D1, and the hash chain (<a href="#sec-commit">The commit</a>, <a href="#sec-server">The sim object</a>).</li>
-      <li>"Offer" read as a span, named by policy and start day (<a href="#sec-changes">Changes</a>).</li>
+      <li>"Offer" read as a span, named by policy and start day; extending a span is a delete and an add (<a href="#sec-changes">Changes</a>).</li>
+      <li>Undo stops at a <code>system</code> commit, a dataset move included (<a href="#sec-undo">Undo and redo</a>).</li>
       <li>Editors keep their edit functions and the store commits the diff (<a href="#sec-fold">Fold and diff</a>).</li>
       <li>Appends over the socket (<a href="#sec-stream">The stream</a>).</li>
       <li>The engine's messages unchanged; view state out of the log (<a href="#sec-engine">The engine, datasets and the variants</a>, <a href="#sec-ui">What the page shows</a>).</li>
