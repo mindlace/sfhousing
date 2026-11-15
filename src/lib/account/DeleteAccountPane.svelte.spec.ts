@@ -84,4 +84,32 @@ describe('DeleteAccountPane', () => {
     await screen.getByRole('button', { name: ACCOUNT_COPY.deleteButton }).click();
     await expect.element(screen.getByText(/@ada/).first()).toBeVisible();
   });
+
+  it('repeats the delete while the server answers 202, then calls onDeleted', async () => {
+    const more = () => new Response(JSON.stringify({ more: true }), { status: 202 });
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(more())
+      .mockResolvedValueOnce(more())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const screen = await render(DeleteAccountPane, { user: { handle: 'ada' }, onDeleted });
+    await screen.getByRole('button', { name: ACCOUNT_COPY.deleteButton }).click();
+    await screen.getByLabelText(ACCOUNT_COPY.deleteConfirmLabel).fill('ada');
+    await screen.getByRole('button', { name: ACCOUNT_COPY.deletePermanently }).click();
+    await vi.waitFor(() => expect(onDeleted).toHaveBeenCalledOnce());
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('stops after 100 passes that all answer 202 and shows the network error', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response(JSON.stringify({ more: true }), { status: 202 })
+    );
+    const screen = await render(DeleteAccountPane, { user: { handle: 'ada' }, onDeleted });
+    await screen.getByRole('button', { name: ACCOUNT_COPY.deleteButton }).click();
+    await screen.getByLabelText(ACCOUNT_COPY.deleteConfirmLabel).fill('ada');
+    await screen.getByRole('button', { name: ACCOUNT_COPY.deletePermanently }).click();
+    await expect.element(screen.getByText(ACCOUNT_COPY.networkError)).toBeVisible();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(100);
+    expect(onDeleted).not.toHaveBeenCalled();
+  });
 });
