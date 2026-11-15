@@ -5,7 +5,8 @@ import {
   simIndex,
   user,
   type SimInvite,
-  type InviteStatus
+  type InviteStatus,
+  type SimMemberRole
 } from '$lib/server/db/schema';
 import { getUsers, survivorId } from '$lib/server/user-store/user';
 import { normalizeHandle } from '$lib/server/user-store/handle-normalize';
@@ -147,8 +148,50 @@ export async function createInvite(args: {
     expiresAt: new Date(now.getTime() + INVITE_TTL_MS),
     lastSentAt: now
   });
+  await recheckInviter(args.db, args.simId, args.invitedByUserId, id);
   const [invite] = await args.db.select().from(simInvite).where(eq(simInvite.id, id));
   return { invite, token, resolvedUser: resolved };
+}
+
+/** The role an invitation needs: the invite route's `requireSimRole(..., 'manager')`. */
+const INVITER_ROLE: SimMemberRole = 'manager';
+
+/**
+ * Thrown by createInvite when the inviter no longer holds INVITER_ROLE after the insert.
+ * `role` is the role read (null for none, or when the read failed), so the route can answer
+ * as `requireSimRole` answers a caller who may not invite.
+ */
+export class InviterRoleLostError extends Error {
+  constructor(readonly role: SimMemberRole | null) {
+    super('inviter role lost');
+    this.name = 'InviterRoleLostError';
+  }
+}
+
+/**
+ * Re-read the inviter's role after the insert, through the fold the route used. The inviter's
+ * last leave may have run after the route authorized them: it revokes, then ends pending
+ * invitations. This read follows the insert, so either it sees the revoke (and the row is
+ * deleted here) or the revoke follows it (and the leave's own delete ends the row). Either way
+ * no pending invitation survives on a sim nobody manages. A failed read counts as "no".
+ */
+async function recheckInviter(
+  db: Database,
+  simId: string,
+  inviterId: string,
+  inviteId: string
+): Promise<void> {
+  let role: SimMemberRole | null = null;
+  try {
+    role = await foldSimRole(db, simId, inviterId);
+  } catch (e) {
+    console.error('[invite-create] role re-check failed', simId, loggable(e));
+  }
+  if (role === INVITER_ROLE) return;
+  await db
+    .delete(simInvite)
+    .where(and(eq(simInvite.id, inviteId), eq(simInvite.status, 'pending')));
+  throw new InviterRoleLostError(role);
 }
 
 type InviteUser = { handle: string; email: string | null } | null | undefined;
@@ -249,7 +292,7 @@ export async function claimInvite(
  * this one is already claimed. Without the reconcile the kept sim would have an editor and no
  * manager, so the invitee becomes its manager. The caller runs the roster hook afterwards.
  * The grant stands once written: a failed reconcile is logged, never reported as a failed
- * accept (the next roster change reconciles again).
+ * accept (the next accepted invitation or member removal for that sim reconciles again).
  */
 async function finalizeAccept(
   db: Database,

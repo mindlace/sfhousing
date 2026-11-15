@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { freshDb, seedSim, seedUser } from '$lib/server/test/auth-db';
+import { mockConsole } from '$lib/server/test/mock-console';
 import { capabilityEvent, simInvite } from '$lib/server/db/schema';
 import { isValidId } from '$lib/server/ids/factory';
 import { addMemberById, getRole, getSimTitle, listMembers } from './sim-index';
@@ -100,6 +101,38 @@ describe('removeSimMember', () => {
     // The last member's open socket must lose write too.
     expect(onSimRosterChanged).toHaveBeenCalledOnce();
     expect(onSimRosterChanged).toHaveBeenCalledWith(env, simId);
+  });
+
+  it('a failure ending the pending invitations still tells the object and does not fail the removal', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    const simId = await seedSim(db, { title: 'Q', managerId: 'owner1' });
+    await seedInvite(db, simId, 'owner1', 'pending', 'h1');
+    vi.mocked(onSimRosterChanged).mockClear();
+    const { error } = mockConsole('error');
+    // The revoke never deletes (the ledger is append-only); only the invitations' end does.
+    const failing = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'delete')
+          return () => {
+            throw new Error('delete boom');
+          };
+        return Reflect.get(target, prop, receiver);
+      }
+    }) as typeof db;
+
+    await expect(removeSimMember({ db: failing, env, simId, userId: 'owner1' })).resolves.toEqual({
+      empty: true
+    });
+
+    expect(await getRole({ db, simId, userId: 'owner1' })).toBeNull();
+    expect(onSimRosterChanged).toHaveBeenCalledWith(env, simId);
+    expect(error).toHaveBeenCalledWith(
+      '[remove-member] pending invites not ended',
+      simId,
+      'delete boom'
+    );
+    error.mockRestore();
   });
 
   it('removeSimMember promotes a successor when the last manager goes', async () => {

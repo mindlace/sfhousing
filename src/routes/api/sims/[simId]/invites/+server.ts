@@ -9,7 +9,8 @@ import { requireSimRole } from '$lib/server/authz/require-sim-role';
 import {
   createInvite,
   parseInviteTarget,
-  getManagerPendingInvite
+  getManagerPendingInvite,
+  InviterRoleLostError
 } from '$lib/server/invites/control-plane';
 import { getUser } from '$lib/server/user-store/user';
 import { sendInviteEmail } from '$lib/server/invites/email';
@@ -112,6 +113,13 @@ export const POST: RequestHandler = async (event) => {
       { status: 201 }
     );
   } catch (e) {
+    if (e instanceof InviterRoleLostError) {
+      // The inviter's role went while the invite was being created (their row is already
+      // deleted, no mail sent). Answer as requireSimRole answers a caller who may not invite
+      // (require-cap.ts): 404 to a non-member, 403 to a member below manager.
+      if (e.role === null) throw error(404, { message: 'not found', resource: 'sim' });
+      throw error(403, 'forbidden');
+    }
     const code = memberErrorCode(e);
     if (code === 'failed') console.error('invite create failed', e);
     return json({ code }, { status: 400 });

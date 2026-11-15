@@ -118,7 +118,7 @@ test('a pseudonymous visitor deletes their account and ends signed out', async (
   await expect(
     page.getByRole('banner').getByRole('link', { name: 'Sign in', exact: true })
   ).toBeVisible();
-  const gone = await page.request.get(simPath, { maxRedirects: 0 });
+  const simPage = await page.request.get(simPath, { maxRedirects: 0 });
   // Signed out, the sim page answers 401 before it would say whether the sim exists.
-  expect(gone.status()).toBe(401);
+  expect(simPage.status()).toBe(401);
 });

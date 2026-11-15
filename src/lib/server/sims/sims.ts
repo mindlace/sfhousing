@@ -4,6 +4,7 @@ import { simIndex, simInvite } from '$lib/server/db/schema';
 import { newId } from '$lib/server/ids/factory';
 import { createSimRecord, removeMembership, prepareLeave } from './sim-index';
 import { onSimRosterChanged } from './roster-hook';
+import { loggable } from '$lib/server/sim-object/object-rules';
 
 /**
  * Create a sim: mint its id, record the index row, then the manager's grant. No roster hook:
@@ -61,9 +62,15 @@ export async function removeSimMember(args: {
     actorUserId: args.actorUserId
   });
   if (empty) {
-    await args.db
-      .delete(simInvite)
-      .where(and(eq(simInvite.simId, args.simId), eq(simInvite.status, 'pending')));
+    // The revoke is committed: a failure here is logged, never reported as a failed removal,
+    // and the hook below still runs.
+    try {
+      await args.db
+        .delete(simInvite)
+        .where(and(eq(simInvite.simId, args.simId), eq(simInvite.status, 'pending')));
+    } catch (e) {
+      console.error('[remove-member] pending invites not ended', args.simId, loggable(e));
+    }
   }
   // Every removal, the last member's included: their open socket must lose write too.
   if (args.notify !== false) await onSimRosterChanged(args.env, args.simId);

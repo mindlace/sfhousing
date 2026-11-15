@@ -348,7 +348,7 @@ describe('removeMembership', () => {
     const res = await removeMembership(db, 'q1', 'ed');
     expect(res.empty).toBe(false);
     // `members` is the PRE-revocation roster — the departing member is still on it
-    // (removeMember threads it into deleteSim as the refund targets).
+    // (nothing reads it today; it is returned for callers that need the departing roster).
     expect(res.members.map((m) => m.userId).sort()).toEqual(['ed', 'owner1']);
     expect(await getRole({ db, simId: 'q1', userId: 'ed' })).toBeNull();
     expect(await getRole({ db, simId: 'q1', userId: 'owner1' })).toBe('manager');

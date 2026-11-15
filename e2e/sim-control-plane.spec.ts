@@ -91,6 +91,10 @@ test.describe('roster changes reach open sockets', () => {
     baseURL
   }, testInfo) => {
     const simId = await signInAndCreateSim(page, uniqueEmail('cp-last'), 'Kept');
+    // A second sim the leaver keeps, so their list has something to render.
+    const other = await page.request.post('/api/sims', { data: { title: 'Still mine' } });
+    expect(other.status()).toBe(201);
+    const { simId: otherId } = (await other.json()) as { simId: string };
     await page.goto('/about');
     const h = await openSimSocket(page, simId);
     await framesAtLeast(page, h, 2);
@@ -113,9 +117,10 @@ test.describe('roster changes reach open sockets', () => {
       why: 'not-writer'
     });
 
-    // The leaver's list no longer has it.
+    // The leaver's list no longer has it: once the list shows the sim they kept, the left one
+    // is absent.
     await page.goto('/sims');
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.locator(`a[href="/sims/${otherId}"]`)).toBeVisible();
     await expect(page.locator(`a[href="/sims/${simId}"]`)).toHaveCount(0);
 
     const ctx = await freshContext(browser, testInfo);

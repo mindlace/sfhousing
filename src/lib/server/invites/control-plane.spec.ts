@@ -2,11 +2,32 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 
 // A seam between an accept's claim and its grant: the grant (addMemberById) first runs
 // `beforeGrant` when a test sets it, so a test can interleave a leave there. `failReconcile`
-// makes the next reconcile throw.
+// makes the next reconcile throw. `beforeRoleRead` runs before the next role fold
+// (foldSimRole) and `failRoleRead` makes it throw: a create's re-check of its inviter.
 const seam = vi.hoisted(() => ({
   beforeGrant: null as null | (() => Promise<void>),
-  failReconcile: false
+  failReconcile: false,
+  beforeRoleRead: null as null | (() => Promise<void>),
+  failRoleRead: false
 }));
+vi.mock('$lib/server/sims/sim-roles', async (importOriginal) => {
+  const real = await importOriginal<typeof import('$lib/server/sims/sim-roles')>();
+  return {
+    ...real,
+    foldSimRole: async (
+      ...args: Parameters<typeof real.foldSimRole>
+    ): ReturnType<typeof real.foldSimRole> => {
+      const run = seam.beforeRoleRead;
+      seam.beforeRoleRead = null;
+      if (run) await run();
+      if (seam.failRoleRead) {
+        seam.failRoleRead = false;
+        throw new Error('role read boom');
+      }
+      return real.foldSimRole(...args);
+    }
+  };
+});
 vi.mock('$lib/server/sims/sim-index', async (importOriginal) => {
   const real = await importOriginal<typeof import('$lib/server/sims/sim-index')>();
   return {
@@ -41,6 +62,7 @@ import {
   removeMembership
 } from '$lib/server/sims/sim-index';
 import { leaveSim } from '$lib/server/sims/sims';
+import { setSimRole } from '$lib/server/sims/sim-roles';
 import { PSEUDONYMOUS_EMAIL_DOMAIN } from '$lib/server/auth/brand';
 import {
   claimInvite,
@@ -54,12 +76,15 @@ import {
   resendInvite,
   listRecipientPendingInvites,
   findInviteByToken,
-  parseInviteTarget
+  parseInviteTarget,
+  InviterRoleLostError
 } from './control-plane';
 
 afterEach(() => {
   seam.beforeGrant = null;
   seam.failReconcile = false;
+  seam.beforeRoleRead = null;
+  seam.failRoleRead = false;
   vi.restoreAllMocks();
 });
 
@@ -328,6 +353,78 @@ describe('listManagerPendingInvites', () => {
     expect(await listManagerPendingInvites({ db, simId: 'q1' })).toHaveLength(0);
     // Sanity: passing a `now` before expiry surfaces it.
     expect(await listManagerPendingInvites({ db, simId: 'q1', now: past })).toHaveLength(1);
+  });
+});
+
+// The inviter's last leave can run after the route authorized them. A create re-reads the
+// inviter's role after its insert, so no pending invitation survives on a sim nobody manages.
+describe('createInvite re-checks its inviter after the insert', () => {
+  const target = { kind: 'email', email: 'invitee@test.com' } as const;
+
+  it('the inviter leaves after the insert: the row is gone and the create is refused', async () => {
+    const { db, manager } = await setup();
+    const atLeave: string[] = [];
+    seam.beforeRoleRead = async () => {
+      const rows = await db.select().from(simInvite).where(eq(simInvite.simId, 'q1'));
+      atLeave.push(...rows.map((r) => r.status));
+      await leaveSim({ db, env: undefined, simId: 'q1', userId: manager.id, simTitle: 'T' });
+    };
+
+    const create = createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target
+    });
+    await expect(create).rejects.toBeInstanceOf(InviterRoleLostError);
+    await expect(create).rejects.toMatchObject({ role: null });
+
+    // The leave ran after the insert, and no row survives it.
+    expect(atLeave).toEqual(['pending']);
+    expect(await db.select().from(simInvite).where(eq(simInvite.simId, 'q1'))).toEqual([]);
+  });
+
+  it('an inviter demoted after the insert is refused with the role read', async () => {
+    const { db, manager } = await setup();
+    await seedUser(db, { id: 'co', email: 'co@test.com' });
+    await addMemberById({ db, simId: 'q1', userId: 'co', role: 'manager' });
+    seam.beforeRoleRead = () => setSimRole(db, 'q1', manager.id, 'editor', null);
+
+    await expect(
+      createInvite({ db, simId: 'q1', invitedByUserId: manager.id, canInviteByEmail: true, target })
+    ).rejects.toMatchObject({ role: 'editor' });
+    expect(await db.select().from(simInvite).where(eq(simInvite.simId, 'q1'))).toEqual([]);
+  });
+
+  it('the role still held: the invitation stands', async () => {
+    const { db, manager } = await setup();
+    const out = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target
+    });
+    const rows = await db.select().from(simInvite).where(eq(simInvite.simId, 'q1'));
+    expect(rows.map((r) => [r.id, r.status])).toEqual([[out.invite.id, 'pending']]);
+  });
+
+  it('a role read that throws counts as no: refused, no row, logged with safe text', async () => {
+    const { db, manager } = await setup();
+    const { error } = mockConsole('error');
+    seam.failRoleRead = true;
+
+    await expect(
+      createInvite({ db, simId: 'q1', invitedByUserId: manager.id, canInviteByEmail: true, target })
+    ).rejects.toMatchObject({ role: null });
+
+    expect(await db.select().from(simInvite).where(eq(simInvite.simId, 'q1'))).toEqual([]);
+    expect(error).toHaveBeenCalledWith(
+      '[invite-create] role re-check failed',
+      'q1',
+      'role read boom'
+    );
   });
 });
 
