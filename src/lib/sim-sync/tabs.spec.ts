@@ -1,0 +1,142 @@
+import { describe, expect, it } from 'vitest';
+import { TAB_LOCK_PREFIX, TabPresence } from './tabs';
+import { FakeBus, FakeLocks, microtasks } from './test/fakes';
+
+const tab = (tabId: string, locks: FakeLocks | null, bus: FakeBus | null) =>
+  new TabPresence({ tabId, locks, channel: bus?.channel() ?? null });
+
+describe('TabPresence', () => {
+  it('T1 T7 holds its own lock from start until stop', async () => {
+    const locks = new FakeLocks();
+    const a = tab('a', locks, null);
+    await a.start();
+    expect(locks.held()).toEqual([`${TAB_LOCK_PREFIX}a`]);
+    a.stop();
+    await microtasks();
+    expect(locks.held()).toEqual([]);
+  });
+
+  it('T4 the gone owners are those whose lock is free, never this tab', async () => {
+    const locks = new FakeLocks();
+    const a = tab('a', locks, null);
+    const b = tab('b', locks, null);
+    await a.start();
+    await b.start();
+    expect(await a.goneOwners(['a', 'b', 'c'])).toEqual(['c']);
+  });
+
+  it('T5 without Web Locks every owner but this tab is gone, and watch does nothing', async () => {
+    const a = tab('a', null, null);
+    await a.start();
+    expect(await a.goneOwners(['a', 'b'])).toEqual(['b']);
+    a.watch('b');
+    expect(a.watching()).toEqual([]);
+  });
+
+  it('T2 T3 tabs learn of each other on the channel and hear when the other goes, once', async () => {
+    const locks = new FakeLocks();
+    const bus = new FakeBus();
+    const a = tab('a', locks, bus);
+    const b = tab('b', locks, bus);
+    const goneA: string[] = [];
+    const goneB: string[] = [];
+    a.onGone((o) => goneA.push(o));
+    b.onGone((o) => goneB.push(o));
+    await a.start();
+    await b.start();
+    await microtasks();
+    expect(a.watching()).toEqual(['b']);
+    expect(b.watching()).toEqual(['a']);
+    a.watch('b'); // twice is once
+    b.stop();
+    await microtasks();
+    expect(goneA).toEqual(['b']);
+    expect(goneB).toEqual([]);
+    expect(locks.held()).toEqual([`${TAB_LOCK_PREFIX}a`]);
+    expect(a.watching()).toEqual([]);
+  });
+
+  it('T6 T7 without a channel only watched owners are heard; stop abandons watches silently', async () => {
+    const locks = new FakeLocks();
+    const a = tab('a', locks, null);
+    const b = tab('b', locks, null);
+    const c = tab('c', locks, null);
+    const gone: string[] = [];
+    a.onGone((o) => gone.push(o));
+    await a.start();
+    await b.start();
+    await c.start();
+    a.watch('b');
+    await microtasks();
+    a.stop();
+    b.stop();
+    c.stop();
+    await microtasks();
+    expect(gone).toEqual([]);
+  });
+
+  it('ignores its own messages and malformed ones', async () => {
+    const locks = new FakeLocks();
+    const bus = new FakeBus();
+    const a = tab('a', locks, bus);
+    await a.start();
+    const raw = bus.channel();
+    raw.postMessage({ type: 'here', tabId: 'a', reply: false });
+    raw.postMessage({ type: 'here', tabId: 7 });
+    raw.postMessage({ type: 'here', tabId: 'x' });
+    raw.postMessage({ type: 'bye', tabId: 'y', reply: false });
+    raw.postMessage(null);
+    raw.postMessage('here');
+    await microtasks();
+    expect(a.watching()).toEqual([]);
+  });
+
+  it('S8 a tab that is closing but still holds its lock is not gone', async () => {
+    const locks = new FakeLocks();
+    const a = tab('a', locks, null);
+    const b = tab('b', locks, null);
+    await a.start();
+    await b.start();
+    b.stop();
+    expect(await a.goneOwners(['b'])).toEqual([]);
+    await microtasks();
+    expect(await a.goneOwners(['b'])).toEqual(['b']);
+  });
+
+  it('S8 two live tabs each watching the other never hear the other gone', async () => {
+    const locks = new FakeLocks();
+    const bus = new FakeBus();
+    const a = tab('a', locks, bus);
+    const b = tab('b', locks, bus);
+    const gone: string[] = [];
+    a.onGone((o) => gone.push(`a:${o}`));
+    b.onGone((o) => gone.push(`b:${o}`));
+    await a.start();
+    await b.start();
+    await microtasks();
+    expect(a.watching()).toEqual(['b']);
+    expect(b.watching()).toEqual(['a']);
+    expect(gone).toEqual([]);
+    expect(await a.goneOwners(['b'])).toEqual([]);
+    expect(await b.goneOwners(['a'])).toEqual([]);
+  });
+
+  it('a stopped tab watches nothing, and an unsubscribed listener is not told', async () => {
+    const locks = new FakeLocks();
+    const bus = new FakeBus();
+    const a = tab('a', locks, bus);
+    const b = tab('b', locks, bus);
+    const told: string[] = [];
+    const off = a.onGone((o) => told.push(o));
+    await a.start();
+    await b.start();
+    await microtasks();
+    off();
+    b.stop();
+    await microtasks();
+    expect(told).toEqual([]);
+    a.stop();
+    a.watch('b');
+    expect(a.watching()).toEqual([]);
+  });
+});
