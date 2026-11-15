@@ -87,13 +87,13 @@ async function onSim(over: Partial<LogStoreOptions> = {}, ds = DS) {
   const s = new LogStore(opts(over));
   await s.open(newId());
   accept(obj, draftOf(0, [nameChange('Start')], { datasetVersion: ds }));
-  s.receive(obj.commits);
+  s.receive(s.simId!, obj.commits);
   return { s, obj };
 }
 
 /** Another tab's commit, accepted by the object, then received. */
 function foreign(s: LogStore, obj: FakeObject, changes: Change[], over: Partial<CommitDraft> = {}) {
-  return s.receive([accept(obj, draftOf(obj.commits.length, changes, over))]);
+  return s.receive(s.simId!, [accept(obj, draftOf(obj.commits.length, changes, over))]);
 }
 
 /** A move to `ds` by another tab. */
@@ -109,7 +109,7 @@ function drain(s: LogStore, obj: FakeObject): CommitDraft[] {
   const sent: CommitDraft[] = [];
   for (let d = s.head(); d !== null; d = s.head()) {
     sent.push(d);
-    s.receive([accept(obj, d)]);
+    s.receive(s.simId!, [accept(obj, d)]);
   }
   return sent;
 }
@@ -374,7 +374,7 @@ describe('LogStore', () => {
     s.apply(withZ('a'), 'A');
     s.apply(withZ('d'), 'Drag', 'k');
     // Its own commit coming back does not end the draft.
-    s.receive([accept(obj, s.head()!)]);
+    s.receive(s.simId!, [accept(obj, s.head()!)]);
     expect(s.drafting).toBe(true);
     foreign(s, obj, addChanges('z9'));
     expect(s.drafting).toBe(false);
@@ -395,8 +395,11 @@ describe('LogStore', () => {
     expect(ids(s.policy)).toEqual(['z2']);
     s.clearDrops();
     expect(s.drops).toEqual([]);
+    // An id in neither pending nor held: nothing at all.
+    const shown = s.policy;
     s.dropPending('not-pending');
     expect(s.pendingCount).toBe(1);
+    expect([s.drops, s.policy, s.stopped]).toEqual([[], shown, null]);
   });
 
   it('refuses an edit past the pending cap with queue-full', async () => {
@@ -603,7 +606,7 @@ describe('LogStore', () => {
     s.apply(withZ('b'), 'B');
     s.apply(withZ('d'), 'Drag', 'k');
     // A's echo leaves B pending: the alignment step runs, with the draft open.
-    s.receive([accept(obj, s.head()!)]);
+    s.receive(s.simId!, [accept(obj, s.head()!)]);
     expect(s.drafting).toBe(false);
     expect(s.pending.map((p) => p.draft.label)).toEqual(['B', 'Drag', MOVE_LABEL]);
     expect(ids(s.policy)).toEqual(['cal-fixture-0', 'a', 'b', 'd']);
@@ -654,7 +657,7 @@ describe('LogStore', () => {
     expect([s.canUndo, s.canRedo]).toEqual([true, true]);
     if (why === 'future') {
       const seq = obj.commits.length + 1;
-      s.receive([
+      s.receive(s.simId!, [
         stamped(draftOf(seq - 1, addChanges('z9'), { shapes: SHAPES_REVISION + 1 }), seq)
       ]);
     } else {
@@ -763,7 +766,9 @@ describe('LogStore: a draft when the store stops (fix round 1)', () => {
     s.setServerDataset(DS);
     s.apply(withZ('d'), 'Drag', 'k');
     const seq = obj.commits.length + 1;
-    s.receive([stamped(draftOf(seq - 1, addChanges('z9'), { shapes: SHAPES_REVISION + 1 }), seq)]);
+    s.receive(s.simId!, [
+      stamped(draftOf(seq - 1, addChanges('z9'), { shapes: SHAPES_REVISION + 1 }), seq)
+    ]);
     expect(s.stopped).toBe('future');
     expect(s.drafting).toBe(false);
     expect(s.pending.map((p) => p.draft.label)).toEqual(['Drag']);
@@ -796,7 +801,9 @@ describe('LogStore: a draft when the store stops (fix round 1)', () => {
   it('opens another sim unstopped after a newer-build stop', async () => {
     const { s, obj } = await onSim();
     const seq = obj.commits.length + 1;
-    s.receive([stamped(draftOf(seq - 1, addChanges('z9'), { shapes: SHAPES_REVISION + 1 }), seq)]);
+    s.receive(s.simId!, [
+      stamped(draftOf(seq - 1, addChanges('z9'), { shapes: SHAPES_REVISION + 1 }), seq)
+    ]);
     expect(s.stopped).toBe('future');
     await s.open(newId());
     expect(s.stopped).toBeNull();

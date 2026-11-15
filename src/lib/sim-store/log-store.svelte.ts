@@ -81,6 +81,11 @@ export interface ImportMarker {
   expect: unknown;
 }
 export type ImportResult = 'imported' | 'unchanged' | 'marker' | 'stopped' | EditRefusal;
+/**
+ * What `LogStore.receive` answers: the log's answer, or `stale` with `why` when the frame was
+ * ignored (for another sim, or while the store is not ready).
+ */
+export type StoreReceived = Received | { kind: 'stale'; why: 'other-sim' | 'not-ready' };
 
 /** A coalesced run of edits, in memory only until it is settled into one commit (R1). */
 interface Draft {
@@ -531,7 +536,14 @@ export class LogStore implements DocStore {
     this.#changed();
   }
 
-  receive(commits: readonly Commit[]): Received {
+  /**
+   * A `commits` frame from the socket of sim `simId`. A frame for another sim than the store's,
+   * or one that arrives while the store is not ready (an open under way, or one that rejected),
+   * is ignored: nothing is applied or written, and the answer is `stale` with its reason.
+   */
+  receive(simId: string, commits: readonly Commit[]): StoreReceived {
+    if (!this.#ready) return { kind: 'stale', why: 'not-ready' };
+    if (simId !== this.#simId) return { kind: 'stale', why: 'other-sim' };
     const log = this.#log;
     const tip = log.tipSeq;
     // A new commit that is not one of this tab's pending ones ends an open draft (decision 8).

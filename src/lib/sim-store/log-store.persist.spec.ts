@@ -2,6 +2,7 @@
 // import hook, over the in-memory database (memorySimDb, the same contract as IndexedDB).
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  DEFAULT_SIM_NAME,
   SHAPES_REVISION,
   diff,
   type Change,
@@ -61,7 +62,7 @@ function accept(obj: FakeObject, d: CommitDraft): Commit {
 
 /** Another tab's commit, accepted by the object, then received. */
 function foreign(s: LogStore, obj: FakeObject, changes: Change[], over: Partial<CommitDraft> = {}) {
-  return s.receive([accept(obj, draftOf(obj.commits.length, changes, over))]);
+  return s.receive(s.simId!, [accept(obj, draftOf(obj.commits.length, changes, over))]);
 }
 
 /** Every write transaction of `db`, spied. */
@@ -103,7 +104,7 @@ describe('LogStore persistence', () => {
     const obj = new FakeObject();
     const k = await opened(db, { tabId: 'k' }, newId());
     k.setServerDataset(DS);
-    k.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    k.receive(k.simId!, [accept(obj, draftOf(0, [nameChange('Start')]))]);
     await k.written();
     expect(writes.every((w) => w.mock.calls.length === 0)).toBe(true);
     expect(mintId).not.toHaveBeenCalled();
@@ -182,7 +183,7 @@ describe('LogStore persistence', () => {
     await s.written();
     abort = true;
     const obj = new FakeObject();
-    s.receive([accept(obj, s.head()!)]);
+    s.receive(s.simId!, [accept(obj, s.head()!)]);
     s.apply(withZ('b'), 'B');
     expect(s.head()).toBeNull();
     await s.written();
@@ -251,7 +252,7 @@ describe('LogStore persistence', () => {
     const sim = newId();
     const a = await opened(db, {}, sim);
     a.setServerDataset(DS);
-    a.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    a.receive(a.simId!, [accept(obj, draftOf(0, [nameChange('Start')]))]);
     a.apply(withZ('a'), 'A');
     a.apply(withZ('b'), 'B');
     await a.written();
@@ -281,7 +282,7 @@ describe('LogStore persistence', () => {
     const obj = new FakeObject();
     const sim = newId();
     const a = await opened(db, {}, sim);
-    a.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    a.receive(a.simId!, [accept(obj, draftOf(0, [nameChange('Start')]))]);
     a.apply(withZ('a'), 'A');
     await a.written();
     const b = await opened(db, { tabId: 'b' }, sim);
@@ -403,7 +404,7 @@ describe('LogStore persistence', () => {
     const db = memorySimDb();
     const obj = new FakeObject();
     const s = await opened(db, { stamp: stampOf(F1), align: renamingAlign([DS, F1]) }, newId());
-    s.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    s.receive(s.simId!, [accept(obj, draftOf(0, [nameChange('Start')]))]);
     s.setServerDataset(F1);
     expect(await s.importContent(content('i'), { key: 'k', value: 1, expect: 'other' })).toBe(
       'marker'
@@ -482,7 +483,7 @@ describe('LogStore persistence', () => {
     const obj = new FakeObject();
     const sim = newId();
     const x = await opened(db, { tabId: 'x' }, sim);
-    x.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    x.receive(x.simId!, [accept(obj, draftOf(0, [nameChange('Start')]))]);
     x.apply(withZ('a'), 'A');
     await x.written();
     const align = renamingAlign([DS, F1]);
@@ -508,7 +509,7 @@ describe('LogStore persistence', () => {
     const sim = newId();
     const align = renamingAlign([DS, F1]);
     const x = await opened(db, { tabId: 'x', stamp: stampOf(F1), align }, sim);
-    x.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    x.receive(x.simId!, [accept(obj, draftOf(0, [nameChange('Start')]))]);
     x.setServerDataset(F1);
     x.apply(withZ('a'), 'A');
     await x.written();
@@ -537,7 +538,7 @@ describe('LogStore persistence', () => {
     const on = (c: RulesetContent) => (c as Ruleset).datasetVersion;
     const align: Align = (c, to) => (blocked && on(c) !== to ? null : base(c, to));
     const s = await opened(db, { stamp: stampOf(F1), align }, sim);
-    s.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    s.receive(s.simId!, [accept(obj, draftOf(0, [nameChange('Start')]))]);
     s.setServerDataset(F1);
     s.apply(withZ('a'), 'A');
     await s.written();
@@ -570,7 +571,7 @@ describe('LogStore persistence', () => {
     const obj = new FakeObject();
     const sim = newId();
     const x = await opened(db, { tabId: 'x' }, sim);
-    x.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    x.receive(x.simId!, [accept(obj, draftOf(0, [nameChange('Start')]))]);
     x.apply(withZ('a'), 'A');
     await x.written();
     const taken = x.pending[0].draft.id;
@@ -679,7 +680,7 @@ describe('LogStore persistence (fix round 1)', () => {
     const sim = newId();
     const s = await opened(db, {}, sim);
     s.setServerDataset(DS);
-    s.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    s.receive(s.simId!, [accept(obj, draftOf(0, [nameChange('Start')]))]);
     s.apply(withZ('a'), 'A');
     await s.written();
     // A write in flight (A re-applied on a foreign commit).
@@ -704,7 +705,7 @@ describe('LogStore persistence (fix round 1)', () => {
     const obj = new FakeObject();
     const sim = newId();
     const a = await opened(db, {}, sim);
-    a.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    a.receive(a.simId!, [accept(obj, draftOf(0, [nameChange('Start')]))]);
     a.apply(withZ('a'), 'A');
     await a.written();
     const [record] = (await db.read(sim)).pending;
@@ -739,6 +740,72 @@ describe('LogStore persistence (fix round 1)', () => {
     expect(labels(back)).toEqual(['B', 'A']);
   });
 
+  it('ignores a frame for another sim and writes nothing', async () => {
+    const db = memorySimDb();
+    const obj = new FakeObject();
+    const sim = newId();
+    const s = await opened(db, {}, sim);
+    s.setServerDataset(DS);
+    s.receive(sim, [accept(obj, draftOf(0, [nameChange('Start')]))]);
+    s.apply(withZ('a'), 'A');
+    await s.written();
+    const before = JSON.stringify(await db.read(sim));
+    const writes = spyWrites(db);
+    const shown = s.policy;
+    const other = accept(obj, draftOf(1, addChanges('z9')));
+    expect(s.receive(newId(), [other])).toEqual({ kind: 'stale', why: 'other-sim' });
+    expect([s.policy, s.name, s.drops, labels(s)]).toEqual([shown, 'Start', [], ['A']]);
+    await s.written();
+    expect(writes.every((w) => w.mock.calls.length === 0)).toBe(true);
+    expect(JSON.stringify(await db.read(sim))).toBe(before);
+  });
+
+  it('ignores every frame while an open is under way', async () => {
+    const db = memorySimDb();
+    const objA = new FakeObject();
+    const a = newId();
+    const s = await opened(db, {}, a);
+    s.receive(a, [accept(objA, draftOf(0, [nameChange('Start')]))]);
+    s.apply(withZ('a'), 'A');
+    await s.written();
+    const storedA = JSON.stringify(await db.read(a));
+    const b = newId();
+    const objB = new FakeObject();
+    const opening = s.open(b);
+    const fromB = accept(objB, draftOf(0, [nameChange('B start')]));
+    const fromA = accept(objA, draftOf(1, addChanges('z9')));
+    expect(s.receive(b, [fromB])).toEqual({ kind: 'stale', why: 'not-ready' });
+    expect(s.receive(a, [fromA])).toEqual({ kind: 'stale', why: 'not-ready' });
+    await opening;
+    await s.written();
+    expect([s.simId, s.name, s.pendingCount]).toEqual([b, DEFAULT_SIM_NAME, 0]);
+    expect(JSON.stringify(await db.read(a))).toBe(storedA);
+    expect(await db.read(b)).toEqual({ sim: null, confirmed: [], pending: [] });
+  });
+
+  it("after open(B) a frame for A is ignored and B's stored log is untouched", async () => {
+    const db = memorySimDb();
+    const objA = new FakeObject();
+    const objB = new FakeObject();
+    const a = newId();
+    const b = newId();
+    const t = await opened(db, { tabId: 't' }, b);
+    t.receive(b, [accept(objB, draftOf(0, [nameChange('B start')]))]);
+    t.apply(withZ('b'), 'B');
+    await t.written();
+    const s = await opened(db, {}, a);
+    s.receive(a, [accept(objA, draftOf(0, [nameChange('Start')]))]);
+    await s.open(b);
+    const storedB = JSON.stringify(await db.read(b));
+    const writes = spyWrites(db);
+    const late = accept(objA, draftOf(1, addChanges('z9')));
+    expect(s.receive(a, [late])).toEqual({ kind: 'stale', why: 'other-sim' });
+    await s.written();
+    expect([s.simId, s.name, ids(s.policy)]).toEqual([b, 'B start', []]);
+    expect(writes.every((w) => w.mock.calls.length === 0)).toBe(true);
+    expect(JSON.stringify(await db.read(b))).toBe(storedB);
+  });
+
   it('runs two imports one after the other, each with its own marker', async () => {
     const db = memorySimDb();
     const s = await opened(db);
@@ -760,14 +827,14 @@ describe('LogStore persistence (fix round 1)', () => {
     const sim = newId();
     const a = await opened(db, {}, sim);
     a.setServerDataset(DS);
-    a.receive([accept(obj, draftOf(0, [nameChange('Start')]))]);
+    a.receive(a.simId!, [accept(obj, draftOf(0, [nameChange('Start')]))]);
     a.apply(withZ('a'), 'A');
     a.apply(withZ('c'), 'C');
     await a.written();
     // The server confirmed A; tab b hears it, then takes tab a's records.
     const confirmedA = accept(obj, a.head()!);
     const b = await opened(db, { tabId: 'b' }, sim);
-    b.receive(obj.commits);
+    b.receive(b.simId!, obj.commits);
     await b.written();
     expect(await b.claim(['a'])).toBe(1);
     expect(labels(b)).toEqual(['C']);
