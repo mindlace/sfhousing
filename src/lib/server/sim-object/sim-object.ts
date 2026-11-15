@@ -15,7 +15,6 @@ import {
   CLOSE_INTERNAL,
   PING,
   PONG,
-  PROTOCOL,
   commitsFrame,
   encodeFrame
 } from '$lib/sim-stream/protocol';
@@ -28,6 +27,7 @@ import { simMigrations } from './migrations.generated';
 import {
   APPEND_FAILED,
   closeReply,
+  helloFrame,
   loggable,
   openStatus,
   readMessage,
@@ -109,7 +109,7 @@ export class SimObject extends DurableObject<Env> {
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ identity: params.identity, write: params.write, resumed: false });
-    server.send(encodeFrame({ type: 'hello', build: params.build, protocol: PROTOCOL }));
+    server.send(helloFrame(params));
     server.send(encodeFrame({ type: 'access', write: params.write }));
     // R58: a writer opening an empty sim records its first commit. This socket is not resumed
     // yet, so the commit reaches it in its own resume answer (decision 14).

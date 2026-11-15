@@ -17,7 +17,7 @@ export const CLOSE_GONE = 4410;
 export type RefusedWhy = 'behind' | 'invalid' | 'newer' | 'not-writer' | 'limit' | 'full' | 'gone';
 
 export type ServerFrame =
-  | { type: 'hello'; build: string; protocol: number }
+  | { type: 'hello'; build: string; protocol: number; dataset?: string }
   | { type: 'access'; write: boolean }
   | { type: 'commits'; commits: Commit[] }
   | { type: 'refused'; id: string | null; why: RefusedWhy };

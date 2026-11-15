@@ -4,6 +4,8 @@ import { DrizzleQueryError } from 'drizzle-orm';
 import {
   CLOSE_BINARY,
   CLOSE_MALFORMED,
+  PROTOCOL,
+  encodeFrame,
   parseClientFrame,
   type ParsedClientFrame,
   type RefusedWhy
@@ -25,6 +27,16 @@ export function serverAppendResult(out: AppendOutcome): ServerAppendResult {
 
 /** The message appendAs throws on any failure but a missing host. Fixed: it names no identity. */
 export const APPEND_FAILED = 'append failed';
+
+/** The first frame on a socket: the Worker's build, PROTOCOL and its dataset version (R55). */
+export function helloFrame(p: OpenParams): string {
+  return encodeFrame({
+    type: 'hello',
+    build: p.build,
+    protocol: PROTOCOL,
+    dataset: p.datasetVersion
+  });
+}
 
 export interface OpenInput {
   /** The request's Upgrade header. */

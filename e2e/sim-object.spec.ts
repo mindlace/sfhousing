@@ -52,7 +52,12 @@ test.describe('sim object socket', () => {
     await page.goto('/about');
     const h = await openSimSocket(page, simId);
     const [hello, access] = await framesAtLeast(page, h, 2);
-    expect(hello).toEqual({ type: 'hello', build: expect.any(String), protocol: 1 });
+    expect(hello).toEqual({
+      type: 'hello',
+      build: expect.any(String),
+      protocol: 1,
+      dataset: 'fixture-0'
+    });
     expect(access).toEqual({ type: 'access', write: true });
     const [start, ...rest] = commitsOf(await resumeAndRead(page, h, 0));
     expect(rest).toEqual([]);

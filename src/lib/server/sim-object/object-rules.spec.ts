@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CLOSE_BINARY, CLOSE_MALFORMED } from '$lib/sim-stream/protocol';
+import { CLOSE_BINARY, CLOSE_MALFORMED, PROTOCOL } from '$lib/sim-stream/protocol';
 import { LIMITS } from './limits';
 import { DrizzleQueryError } from 'drizzle-orm';
 import {
@@ -8,6 +8,7 @@ import {
   QUERY_FAILED,
   closeReply,
   distinctIdentities,
+  helloFrame,
   loggable,
   openStatus,
   ROLE_READ_FAILED,
@@ -54,6 +55,17 @@ const params: OpenParams = {
   datasetVersion: 'fixture-0',
   build: 'b'
 };
+describe('helloFrame', () => {
+  it('carries the build, the protocol and the server dataset (R55)', () => {
+    expect(JSON.parse(helloFrame(params))).toEqual({
+      type: 'hello',
+      build: params.build,
+      protocol: PROTOCOL,
+      dataset: params.datasetVersion
+    });
+  });
+});
+
 const open = { upgrade: 'websocket', params, simId: 's1', host: true, gone: false };
 const att = { identity: 'id-1', write: true, resumed: false };
 
