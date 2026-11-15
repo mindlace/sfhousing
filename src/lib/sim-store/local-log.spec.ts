@@ -1267,12 +1267,14 @@ describe('LocalLog under any script', () => {
           });
           for (const key of counted) seen[key]++;
         }),
-        { numRuns: 450 }
+        // Seeded: unseeded, the weakest floor (B's commit between two of A's, 5-8 per run) could
+        // reach 0 about once in 500 runs, and coverage floors must not flake in a five-run burn-in.
+        { numRuns: 450, seed: 28 }
       )
     ).not.toThrow();
-    // Unseeded; over 5 runs of 450: echoed 212-246, invalid 69-84, empty 32-39, too large 7-12,
-    // partial 9-12, B's commit between two of A's 5-8, gap 0-8, restore moved 3-5, target gone
-    // 1-2. The last three are asserted by the single-log property, which reaches them more often.
+    // Seed 28 reaches: echoed 248, invalid 99, empty 46, too large 10, partial 9, B's commit
+    // between two of A's 11, gap 2, restore moved 7, target gone 3. The last three are asserted by
+    // the single-log property, which reaches them more often.
     const rare = ['gap', 'restoreMoved', 'targetGone'];
     for (const [key, n] of Object.entries(seen))
       if (!rare.includes(key)) expect(n).toBeGreaterThan(0);
@@ -1549,12 +1551,14 @@ describe('LocalLog under any script', () => {
           expect(text(log.ruleset())).toBe(text(objR(o)));
           for (const key of counted) seen[key]++;
         }),
-        { numRuns: 300 }
+        // Seeded: unseeded, the weakest floor (the page turning stale with pending, 8-16 per run)
+        // could reach 0, and coverage floors must not flake in a five-run burn-in.
+        { numRuns: 300, seed: 7 }
       )
     ).not.toThrow();
-    // Unseeded; over 6 runs of 300: a commit held at open 51-69 (every one retried at hello),
-    // a pending restore at hello on a tip off fixture-2 68-92, the move first 169-196, a
-    // release by another writer 92-109, the page turning stale with pending 8-16.
+    // Seed 7 reaches: a commit held at open 52 (every one retried at hello), a pending restore at
+    // hello on a tip off fixture-2 69, the move first 170, a release by another writer 92, the
+    // page turning stale with pending 23.
     for (const n of Object.values(seen)) expect(n).toBeGreaterThan(0);
   });
 });
