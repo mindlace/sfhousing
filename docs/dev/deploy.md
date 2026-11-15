@@ -60,8 +60,48 @@ Each of these only switches a feature on, and is read through a typed cast of `p
 - `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY` (and optional `SES_REGION`), or `EMAIL_PROVIDER=resend` and `RESEND_API_KEY`: real mail delivery. Magic link switches on when one of these pairs is set, and is off until then: the header shows no `Sign in`, `/signin` shows no email form (only `Start fresh without an account`), `/account` offers no email change, and every path that sends a link or a verification mail answers 404. Pseudonymous accounts, sims, invites by handle and account deletion work either way. Without a provider, mail that is still sent (an invite to an email address) runs in log mode: only the from address, recipient and subject are logged, never the link.
 - `BOOTSTRAP_EMAILS`: comma list of verified addresses that get operator capabilities.
 - `BETTER_AUTH_URL`: base URL override; unset, the request origin is used.
+- `SIM_TAKEDOWN_TOKEN`: a secret, optional and unset by default in both environments. It switches on the operator takedown route (below); nothing else reads it, and no build, deploy or other route needs it.
 
 See [auth.md](auth.md).
+
+## Operator takedown of a sim
+
+`POST /api/operator/sims/<simId>/takedown` removes a sim: it bars the id for ever, clears the sim's stored log, closes its open sockets (close code 4410), and deletes its `sim_index` and `sim_commit` rows and its pending invitations. The ledger's old grants stay and grant nothing. It cannot be undone, and nothing a member does can do it.
+
+The route is off until the secret is set: every request answers 404 while `SIM_TAKEDOWN_TOKEN` is unset or shorter than 32 characters. The secret is unset in staging and in production.
+
+1. Set the secret on the environment, a value of at least 32 characters (for example `openssl rand -hex 32`). Keep it where you can read it back; never commit it.
+
+   ```sh
+   wrangler secret put SIM_TAKEDOWN_TOKEN              # production
+   wrangler secret put SIM_TAKEDOWN_TOKEN --env staging  # staging
+   ```
+
+2. Call the route. The header is `Authorization: Bearer <token>`, spelled that way, and `Content-Type: application/json` is required. Send no `Origin` header (`curl` sends none).
+
+   ```sh
+   curl -X POST https://<host>/api/operator/sims/<simId>/takedown \
+     -H 'Content-Type: application/json' \
+     -H "Authorization: Bearer $SIM_TAKEDOWN_TOKEN" \
+     -d '{}'
+   ```
+
+3. Optionally remove the secret afterwards, which turns the route off again: `wrangler secret delete SIM_TAKEDOWN_TOKEN` (add `--env staging` for staging).
+
+Answers:
+
+| Status | Means                                                                                                               |
+| ------ | ------------------------------------------------------------------------------------------------------------------- |
+| 200    | `{ "simId": "<simId>" }`: done. The id is marked, the object is cleared and the D1 rows are gone                    |
+| 404    | The token is missing, wrong, short or the secret is unset, or `<simId>` is not a valid id. One body for all of them |
+| 415    | Not `application/json`                                                                                              |
+| 403    | The request carried an `Origin` that is not the host's                                                              |
+| 503    | The sim object cannot be reached (no `SIM` binding, as under `npm run dev`). Nothing was written                    |
+| 500    | A step failed after the id was marked. Call again: every step is safe to repeat, so a retry finishes the job        |
+
+Any valid id with the right token is taken down and barred, whether or not it has a `sim_index` row. That clears a log whose index row is already gone, and bars an id nobody registered yet. The id can never be registered again.
+
+See [sim-object.md](sim-object.md) (`takeDown()`) and [auth.md](auth.md) (Sims with no members).
 
 ## One-time bootstrap
 
