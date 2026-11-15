@@ -31,16 +31,21 @@ function readHere(data: unknown): Here | null {
  */
 export class TabPresence {
   readonly #tabId: string;
-  readonly #locks: LocksLike | null;
+  #locks: LocksLike | null;
   readonly #channel: ChannelLike | null;
   readonly #abort = new AbortController();
   readonly #watching = new Set<string>();
   readonly #told = new Set<string>();
   readonly #listeners = new Set<(owner: string) => void>();
   #release: (() => void) | null = null;
-  #started = false;
+  #starting: Promise<boolean> | null = null;
+  #holding = false;
   #stopped = false;
 
+  /**
+   * `tabId` is unique per instance and never reused: a new TabPresence, even in the same tab
+   * after a reload, gets a new id.
+   */
   constructor(o: { tabId: string; locks: LocksLike | null; channel: ChannelLike | null }) {
     this.#tabId = o.tabId;
     this.#locks = o.locks;
@@ -48,38 +53,53 @@ export class TabPresence {
   }
 
   /**
-   * Holds TAB_LOCK_PREFIX + tabId until stop(); resolves once it is held; then posts
-   * { type: 'here', tabId, reply: false }. Without Web Locks resolves at once. A second call,
-   * or a call after stop(), does nothing.
+   * Holds TAB_LOCK_PREFIX + tabId until stop(); resolves true once it is held and announced
+   * ({ type: 'here', tabId, reply: false } on the channel). Resolves false, announcing nothing,
+   * when this tab holds no lock: there is no Web Locks, or the request for its own lock failed
+   * (logged). From then on the tab behaves as with no Web Locks (goneOwners reports every other
+   * owner, watch does nothing) and answers no announcement: a tab that does not hold its lock
+   * never invites others to watch it. A second call while the first waits returns the first
+   * call's promise; after stop() it resolves false.
    */
-  async start(): Promise<void> {
-    if (this.#started || this.#stopped) return;
-    this.#started = true;
+  start(): Promise<boolean> {
+    if (this.#starting !== null) return this.#starting;
+    if (this.#stopped) return Promise.resolve(false);
+    this.#starting = this.#start();
+    return this.#starting;
+  }
+
+  async #start(): Promise<boolean> {
     this.#channel?.addEventListener('message', this.#onMessage);
     const locks = this.#locks;
-    if (locks !== null) {
-      await new Promise<void>((held) => {
-        const hold = new Promise<void>((release) => {
-          this.#release = release;
-        });
-        locks
-          .request(TAB_LOCK_PREFIX + this.#tabId, {}, () => {
-            held();
-            return hold;
-          })
-          .catch((e: unknown) => {
-            console.error(`sim-sync: tab lock failed: ${errorName(e)}`);
-            held();
-          });
+    if (locks === null) return false;
+    const held = await new Promise<boolean>((resolve) => {
+      const hold = new Promise<void>((release) => {
+        this.#release = release;
       });
+      locks
+        .request(TAB_LOCK_PREFIX + this.#tabId, {}, () => {
+          resolve(true);
+          return hold;
+        })
+        .catch((e: unknown) => {
+          console.error(`[sim-sync] tab lock failed: ${errorName(e)}`);
+          resolve(false);
+        });
+    });
+    if (!held) {
+      this.#locks = null;
+      return false;
     }
-    if (this.#stopped) return;
+    if (this.#stopped) return false;
+    this.#holding = true;
     this.#post({ type: 'here', tabId: this.#tabId, reply: false });
+    return true;
   }
 
   /**
-   * Of `owners`, those whose lock is not held, never this tab. Without Web Locks: every owner
-   * but this tab.
+   * Of `owners`, those whose lock is not held, never this tab. Without Web Locks (or when this
+   * tab's own lock could not be had): every owner but this tab, so the caller asks at open
+   * only and never to find out later that a tab has gone.
    */
   async goneOwners(owners: readonly string[]): Promise<string[]> {
     const others = owners.filter((o) => o !== this.#tabId);
@@ -90,8 +110,8 @@ export class TabPresence {
   }
 
   /**
-   * Waits for `owner`'s lock, releases it at once, then tells onGone, once per owner. Never
-   * this tab; nothing without Web Locks or after stop().
+   * Waits for `owner`'s lock, releases it at once, then tells onGone, once per owner until the
+   * owner announces itself again. Never this tab; nothing without Web Locks or after stop().
    */
   watch(owner: string): void {
     const locks = this.#locks;
@@ -110,7 +130,7 @@ export class TabPresence {
         (e: unknown) => {
           this.#watching.delete(owner);
           if (errorName(e) !== 'AbortError') {
-            console.error(`sim-sync: tab watch failed: ${errorName(e)}`);
+            console.error(`[sim-sync] tab watch failed: ${errorName(e)}`);
           }
         }
       );
@@ -128,7 +148,11 @@ export class TabPresence {
     };
   }
 
-  /** Releases the lock, aborts the watches (nothing is told), closes the channel. */
+  /**
+   * Releases the lock, aborts the watches (nothing is told), closes the channel. After it other
+   * tabs may take this tab's unsent commits: the caller stops sending and closes its store
+   * first.
+   */
   stop(): void {
     if (this.#stopped) return;
     this.#stopped = true;
@@ -144,14 +168,15 @@ export class TabPresence {
     try {
       this.#channel?.postMessage(m);
     } catch (e) {
-      console.error(`sim-sync: tab post failed: ${errorName(e)}`);
+      console.error(`[sim-sync] tab post failed: ${errorName(e)}`);
     }
   }
 
   readonly #onMessage = (e: MessageEvent): void => {
     const m = readHere(e.data);
     if (m === null || m.tabId === this.#tabId) return;
+    this.#told.delete(m.tabId);
     this.watch(m.tabId);
-    if (!m.reply) this.#post({ type: 'here', tabId: this.#tabId, reply: true });
+    if (!m.reply && this.#holding) this.#post({ type: 'here', tabId: this.#tabId, reply: true });
   };
 }

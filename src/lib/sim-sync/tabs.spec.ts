@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mockConsole } from '$lib/server/test/mock-console';
 import { TAB_LOCK_PREFIX, TabPresence } from './tabs';
 import { FakeBus, FakeLocks, microtasks } from './test/fakes';
 
@@ -6,6 +7,8 @@ const tab = (tabId: string, locks: FakeLocks | null, bus: FakeBus | null) =>
   new TabPresence({ tabId, locks, channel: bus?.channel() ?? null });
 
 describe('TabPresence', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it('T1 T7 holds its own lock from start until stop', async () => {
     const locks = new FakeLocks();
     const a = tab('a', locks, null);
@@ -56,7 +59,7 @@ describe('TabPresence', () => {
     expect(a.watching()).toEqual([]);
   });
 
-  it('T6 T7 without a channel only watched owners are heard; stop abandons watches silently', async () => {
+  it('T6 without a channel only watched owners are heard', async () => {
     const locks = new FakeLocks();
     const a = tab('a', locks, null);
     const b = tab('b', locks, null);
@@ -68,11 +71,115 @@ describe('TabPresence', () => {
     await c.start();
     a.watch('b');
     await microtasks();
-    a.stop();
     b.stop();
     c.stop();
     await microtasks();
+    expect(gone).toEqual(['b']);
+  });
+
+  it('T7 stop abandons a watch silently', async () => {
+    const locks = new FakeLocks();
+    const a = tab('a', locks, null);
+    const b = tab('b', locks, null);
+    const gone: string[] = [];
+    a.onGone((o) => gone.push(o));
+    await a.start();
+    await b.start();
+    a.watch('b');
+    await microtasks();
+    expect(a.watching()).toEqual(['b']);
+    a.stop();
+    expect(a.watching()).toEqual([]);
+    b.stop();
+    await microtasks();
     expect(gone).toEqual([]);
+  });
+
+  it('a tab that cannot get its own lock does not announce itself and behaves as without locks', async () => {
+    const { error } = mockConsole('error');
+    const bus = new FakeBus();
+    const heard = bus.channel();
+    const messages: unknown[] = [];
+    heard.addEventListener('message', (e) => messages.push(e.data));
+    const locks = {
+      request: () => Promise.reject(new DOMException('no', 'SecurityError')),
+      query: () => Promise.reject(new Error('unused'))
+    };
+    const a = new TabPresence({ tabId: 'a', locks, channel: bus.channel() });
+    expect(await a.start()).toBe(false);
+    await microtasks();
+    expect(messages).toEqual([]);
+    expect(await a.goneOwners(['a', 'b'])).toEqual(['b']);
+    a.watch('b');
+    expect(a.watching()).toEqual([]);
+    expect(error.mock.calls).toEqual([['[sim-sync] tab lock failed: SecurityError']]);
+  });
+
+  it('start resolves true once the lock is held and announced', async () => {
+    const a = tab('a', new FakeLocks(), null);
+    expect(await a.start()).toBe(true);
+  });
+
+  it('a second start while the first waits is the first call', async () => {
+    const locks = new FakeLocks();
+    const a = tab('a', locks, null);
+    const first = a.start();
+    const second = a.start();
+    expect(second).toBe(first);
+    expect(locks.requested).toEqual([`${TAB_LOCK_PREFIX}a`]);
+    expect(await second).toBe(true);
+    expect(locks.held()).toEqual([`${TAB_LOCK_PREFIX}a`]);
+  });
+
+  it('a fresh announcement from an owner already told gone makes it watchable again', async () => {
+    const locks = new FakeLocks();
+    const bus = new FakeBus();
+    const a = tab('a', locks, bus);
+    const gone: string[] = [];
+    a.onGone((o) => gone.push(o));
+    await a.start();
+    const b = tab('b', locks, bus);
+    await b.start();
+    await microtasks();
+    b.stop();
+    await microtasks();
+    expect(gone).toEqual(['b']);
+    a.watch('b');
+    expect(a.watching()).toEqual([]);
+    const b2 = tab('b', locks, bus);
+    await b2.start();
+    await microtasks();
+    expect(a.watching()).toEqual(['b']);
+    b2.stop();
+    await microtasks();
+    expect(gone).toEqual(['b', 'b']);
+  });
+
+  it('a watch that fails other than by abort is logged once', async () => {
+    const { error } = mockConsole('error');
+    const locks = new FakeLocks();
+    const a = tab('a', locks, null);
+    await a.start();
+    locks.request = () => Promise.reject(new TypeError('boom'));
+    a.watch('b');
+    await microtasks();
+    expect(error.mock.calls).toEqual([['[sim-sync] tab watch failed: TypeError']]);
+    expect(a.watching()).toEqual([]);
+  });
+
+  it('a post that throws is logged once and not thrown', async () => {
+    const { error } = mockConsole('error');
+    const channel = {
+      postMessage: () => {
+        throw new DOMException('x', 'DataCloneError');
+      },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      close: () => {}
+    };
+    const a = new TabPresence({ tabId: 'a', locks: new FakeLocks(), channel });
+    expect(await a.start()).toBe(true);
+    expect(error.mock.calls).toEqual([['[sim-sync] tab post failed: DataCloneError']]);
   });
 
   it('ignores its own messages and malformed ones', async () => {

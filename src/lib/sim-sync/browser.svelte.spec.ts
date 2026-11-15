@@ -36,6 +36,45 @@ describe('in a real browser', () => {
     spy.close();
   });
 
+  it('two watchers of one tab both hear it go', async () => {
+    const [ida, idb, idc] = [newId(), newId(), newId()];
+    const make = (tabId: string) =>
+      new TabPresence({
+        tabId,
+        locks: navigator.locks,
+        channel: new BroadcastChannel(TAB_CHANNEL)
+      });
+    const [a, b, c] = [make(ida), make(idb), make(idc)];
+    const heard = (t: TabPresence) => new Promise<string>((resolve) => t.onGone(resolve));
+    const [goneA, goneB] = [heard(a), heard(b)];
+    // each watcher answers c's announcement only once it is watching c
+    const spy = new BroadcastChannel(TAB_CHANNEL);
+    const replied = new Set<string>();
+    let announced = false;
+    const both = new Promise<void>((resolve) =>
+      spy.addEventListener('message', (e) => {
+        const d = e.data as { tabId?: unknown; reply?: unknown };
+        if (d.tabId === idc && d.reply === false) announced = true;
+        if (announced && d.reply === true && (d.tabId === ida || d.tabId === idb)) {
+          replied.add(d.tabId);
+        }
+        if (replied.size === 2) resolve();
+      })
+    );
+    await a.start();
+    await b.start();
+    await c.start();
+    await both;
+    expect(a.watching()).toContain(idc);
+    expect(b.watching()).toContain(idc);
+    c.stop();
+    expect(await goneA).toBe(idc);
+    expect(await goneB).toBe(idc);
+    a.stop();
+    b.stop();
+    spy.close();
+  });
+
   it("browserPorts gives this window's ports", () => {
     const p = browserPorts();
     expect(p.origin).toBe(location.origin);
