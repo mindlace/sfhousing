@@ -164,6 +164,7 @@ describe('POST /api/operator/sims/[simId]/takedown', () => {
 
   it('200 for a valid id with no index row: the id is marked and its object cleared', async () => {
     const { call, takeDowns, marks } = await setup();
+    mockConsole('info');
     const other = newId();
     const res = await call({ id: other });
     expect(res.status).toBe(200);
@@ -179,7 +180,7 @@ describe('POST /api/operator/sims/[simId]/takedown', () => {
         if (fail) throw new Error('object busy');
       }
     });
-    mockConsole('error');
+    mockConsole('error', 'info');
     expect((await call()).status).toBe(500);
     expect(await getSimTitle({ db, simId })).toBe(TITLE);
     fail = false;
