@@ -399,6 +399,47 @@ describe('authorMove', () => {
     expect(same.pending.length).toBe(0);
   });
 
+  it('aligns the content of a fold already on the stamp dataset', () => {
+    const align = renamingAlign([DS]);
+    const log = onDs();
+    const before = log.ruleset();
+    const r = authorMove(log, align, { id: newId(), stamp });
+    if (!r.ok) throw new Error(r.why);
+    expect(r.pending.draft).toMatchObject({
+      kind: 'system',
+      label: MOVE_LABEL,
+      source: MOVE_SOURCE,
+      restores: null,
+      datasetVersion: DS,
+      parent: 1
+    });
+    expect(r.pending.draft.changes).toEqual(diff(before, align(before, DS)!));
+    expect(log.pending.length).toBe(1);
+    expect(log.ruleset().name).toBe(`${DEFAULT_SIM_NAME} @${DS}`);
+    expect(authorMove(log, align, { id: newId(), stamp })).toEqual({
+      ok: false,
+      why: 'unchanged'
+    });
+  });
+
+  it('answers unchanged on the stamp dataset when align changes nothing', () => {
+    const log = onDs();
+    expect(authorMove(log, identity, { id: newId(), stamp })).toEqual({
+      ok: false,
+      why: 'unchanged'
+    });
+    expect(log.pending.length).toBe(0);
+  });
+
+  it('answers invalid on the stamp dataset when align answers null', () => {
+    const log = onDs();
+    expect(authorMove(log, renamingAlign([F1]), { id: newId(), stamp })).toEqual({
+      ok: false,
+      why: 'invalid'
+    });
+    expect(log.pending.length).toBe(0);
+  });
+
   it('refuses a move align cannot reach', () => {
     const log = onDs();
     const r = authorMove(log, renamingAlign([DS]), {

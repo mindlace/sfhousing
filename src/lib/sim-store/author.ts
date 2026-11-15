@@ -173,8 +173,8 @@ export function authorRestore(
 }
 
 /**
- * The move or alignment commit to the stamp's dataset; 'unchanged' when the fold is already on it
- * or `align` changes nothing.
+ * The move, or on the fold's own dataset the alignment, commit to the stamp's dataset; 'unchanged'
+ * when `align` changes nothing or the log has no commits.
  */
 export function authorMove(
   log: LocalLog,
@@ -183,7 +183,7 @@ export function authorMove(
 ): Authored {
   const cur = log.ruleset();
   const to = meta.stamp.datasetVersion;
-  if (cur.datasetVersion === null || cur.datasetVersion === to) return refuse('unchanged');
+  if (cur.datasetVersion === null) return refuse('unchanged');
   const aligned = align(cur, to);
   if (aligned === null) return refuse('invalid');
   const changes = diffOrNull(cur, aligned);
