@@ -48,11 +48,17 @@ The e2e server ignores these for the settings the suite depends on: `playwright.
 
 Both write to the Miniflare R2 state in `.wrangler/`; delete that directory to reset local state.
 
+## The sim object
+
+`npm run dev` cannot run the per-sim Durable Object: `GET /api/sims/<id>/stream` answers 503 there. Use `npm run preview` (build, then `wrangler dev` on port 4173). See [sim-object.md](sim-object.md).
+
 ## Migrations
 
 1. Edit `src/lib/server/db/schema/` (the index re-exports tables).
 2. `npm run db:generate` (generate → classify → flatten into `migrations/d1`).
 3. `npm run db:migrate`.
+
+The sim object has its own track: edit `src/lib/server/sim-object/schema.ts`, run `npm run db:generate:sim`, commit what it writes. Nothing to apply: each object migrates on open. Never delete `migrations/sim` or regenerate it from scratch. See [sim-object.md](sim-object.md).
 
 Never hand-edit files in `migrations/`. CI applies migrations to remote D1 before each deploy.
 

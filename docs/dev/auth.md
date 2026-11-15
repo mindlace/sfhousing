@@ -58,6 +58,8 @@ To turn a method on for local dev, put `AUTH_METHODS=magic-link,password` in `.d
 
 `src/hooks.server.ts` does Better-Auth, database and capability work only when a session cookie is present or the route needs one (`shouldResolveSession` in `src/lib/server/auth/session-gate.ts`). The routes that need one are listed in `SESSION_ROUTE_PREFIXES` there. A signed-out visitor to a public page never constructs Better-Auth and gets no cookie, with the same cache headers as before sign-in existed. Everything under `/data/` never resolves a session, even with a cookie, because its responses are public and cached.
 
+`/api/sims/<id>/stream`, the sim websocket, is under `/api/sims` and so resolves the session. A websocket upgrade reads it with `disableRefresh` (the 101 response's headers cannot be changed), and the route checks `Origin` with `refuseForeignOrigin` from the same module as the JSON routes below. See [sim-object.md](sim-object.md).
+
 A new page or API that reads or sets the session for a visitor with no cookie yet must be added to `SESSION_ROUTE_PREFIXES`.
 
 ### JSON routes
@@ -89,7 +91,7 @@ Every grant is an append-only event in the `capability_event` ledger; the effect
 
 Sims are rows in `sim_index` (`src/lib/server/sims/sim-index.ts`); membership is the ledger. `startSim` (`src/lib/server/sims/start-sim.ts`) creates a sim and mints a pseudonymous account when the visitor has none. Pages are `/sims` and `/sims/[simId]`; the API is under `/api/sims`.
 
-Membership is D1 only. `onSimRosterChanged` in `src/lib/server/sims/roster-hook.ts` is a no-op seam: a per-sim Durable Object that mirrors the roster would attach there. It is called after a roster change that leaves the sim alive. A sim whose last member leaves is deleted with its pending invites (`removeSimMember` in `src/lib/server/sims/sims.ts`).
+Membership is D1 only. The per-sim object (`SimObject`, [sim-object.md](sim-object.md)) holds the log and not the roster: the stream route reads the role and tells the object whether the socket may write. `onSimRosterChanged` in `src/lib/server/sims/roster-hook.ts` is still a no-op seam; the control plane unit makes it call the object's `rereadRoles()` after the roster change is written. It is called after a roster change that leaves the sim alive. A sim whose last member leaves is deleted with its pending invites (`removeSimMember` in `src/lib/server/sims/sims.ts`).
 
 ## Invitations
 
