@@ -3,7 +3,8 @@
   "compatibility_date": "2026-03-01",
   "compatibility_flags": ["nodejs_compat"],
   "main": ".svelte-kit/cloudflare/_worker.js",
-  // $lib for the Durable Object's modules, which wrangler bundles from source (scripts/worker-entry.ts)
+  // $lib for the Durable Object's modules, which wrangler bundles from source
+  // (scripts/worker-entry.ts)
   "alias": { "$lib": "./src/lib" },
   "durable_objects": { "bindings": [{ "name": "SIM", "class_name": "SimObject" }] },
   "migrations": [{ "tag": "v1-sim-object", "new_sqlite_classes": ["SimObject"] }],

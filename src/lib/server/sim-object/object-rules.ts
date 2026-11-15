@@ -1,5 +1,6 @@
 // The decisions the SimObject class makes about a socket, as pure functions: the class
 // (sim-object.ts) only calls them, so it holds no rule a Node spec does not cover.
+import { DrizzleQueryError } from 'drizzle-orm';
 import {
   CLOSE_BINARY,
   CLOSE_MALFORMED,
@@ -81,6 +82,33 @@ export function roleChanges(
     const a = parsed[index] as SocketAttachment;
     return { index, attachment: { ...a, write: writers.get(a.identity as string) ?? false } };
   });
+}
+
+/** The longest text logged for an error. */
+export const LOG_MAX = 300;
+/** Logged in place of a thrown value that is not an Error. */
+export const NON_ERROR = '(non-error thrown)';
+/** Logged in place of a failed query's own message, which holds its SQL and bound parameters. */
+export const QUERY_FAILED = '(query failed)';
+
+/**
+ * The text that may be logged for a thrown value: the innermost Error cause's message, never a
+ * DrizzleQueryError's own message (it carries the query's bound parameters, identities among
+ * them), cut to LOG_MAX characters; NON_ERROR for anything that is not an Error.
+ */
+export function loggable(e: unknown): string {
+  if (!(e instanceof Error)) return NON_ERROR;
+  let inner: Error = e;
+  const seen = new Set<Error>([inner]);
+  while (inner.cause instanceof Error && !seen.has(inner.cause)) {
+    inner = inner.cause;
+    seen.add(inner);
+  }
+  const text =
+    inner instanceof DrizzleQueryError || inner.name === 'DrizzleQueryError'
+      ? QUERY_FAILED
+      : inner.message;
+  return text.length > LOG_MAX ? text.slice(0, LOG_MAX - 1) + '…' : text;
 }
 
 /** Each identity of a socket with a valid attachment, once. */

@@ -27,6 +27,7 @@ import { simMigrations } from './migrations.generated';
 import {
   closeReply,
   distinctIdentities,
+  loggable,
   openStatus,
   readMessage,
   roleChanges
@@ -34,10 +35,6 @@ import {
 import { OPEN_HEADER, parseOpenParams } from './open-params';
 import * as schema from './schema';
 import { SimStore, type SimDb } from './store';
-
-function message(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
 
 export class SimObject extends DurableObject<Env> {
   #host: LogHost | null = null;
@@ -49,6 +46,7 @@ export class SimObject extends DurableObject<Env> {
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
     void ctx.blockConcurrencyWhile(async () => {
       // A throw here would reset the object; it must still construct so it stays destroyable.
+      let host: LogHost;
       try {
         const durable = durableDrizzle(ctx.storage, { schema });
         this.#migrateError = safeMigrate(
@@ -56,19 +54,26 @@ export class SimObject extends DurableObject<Env> {
           simMigrations
         );
         if (this.#migrateError) {
-          console.error('[sim-object] migrate failed', this.#label(), this.#migrateError.message);
+          console.error('[sim-object] migrate failed', this.#label(), loggable(this.#migrateError));
           return;
         }
-        this.#host = new LogHost(new SimStore(durable as unknown as SimDb), {
+        host = new LogHost(new SimStore(durable as unknown as SimDb), {
           label: this.#label(),
           onCommit: (body) => this.#broadcast(commitsFrame([body]))
         });
-        if (this.#host.indexBehind() && (await ctx.storage.getAlarm()) === null) {
+      } catch (e) {
+        // The storage cannot be opened: the object answers 503.
+        console.error('[sim-object] open failed', this.#label(), loggable(e));
+        return;
+      }
+      this.#host = host;
+      try {
+        if (host.indexBehind() && (await ctx.storage.getAlarm()) === null) {
           await ctx.storage.setAlarm(Date.now());
         }
       } catch (e) {
-        this.#host = null;
-        console.error('[sim-object] open failed', this.#label(), message(e));
+        // The host stays: the next accepted commit kicks the index again.
+        console.error('[sim-object] index alarm not set', this.#label(), loggable(e));
       }
     });
   }
@@ -106,7 +111,7 @@ export class SimObject extends DurableObject<Env> {
         });
         if (out?.kind === 'accepted') this.ctx.waitUntil(this.#kickIndex());
       } catch (e) {
-        console.error('[sim-object] start failed', this.#label(), message(e));
+        console.error('[sim-object] start failed', this.#label(), loggable(e));
         this.#close(server, CLOSE_INTERNAL, 'internal');
       }
     }
@@ -138,7 +143,7 @@ export class SimObject extends DurableObject<Env> {
           }
         });
       } catch (e) {
-        console.error('[sim-object] resume failed', this.#label(), message(e));
+        console.error('[sim-object] resume failed', this.#label(), loggable(e));
         this.#close(ws, CLOSE_INTERNAL, 'internal');
       }
       return;
@@ -158,7 +163,7 @@ export class SimObject extends DurableObject<Env> {
         await this.#kickIndex();
       }
     } catch (e) {
-      console.error('[sim-object] append failed', this.#label(), message(e));
+      console.error('[sim-object] append failed', this.#label(), loggable(e));
       this.#close(ws, CLOSE_INTERNAL, 'internal');
     }
   }
@@ -185,7 +190,10 @@ export class SimObject extends DurableObject<Env> {
     await this.#kickIndex();
   }
 
-  /** RPC for unit 3's roster hook (R53): re-read each open socket's role and send access on change. */
+  /**
+   * RPC for unit 3's roster hook (R53): re-read each open socket's role and send access on
+   * change.
+   */
   async rereadRoles(): Promise<void> {
     const simId = this.ctx.id.name;
     if (!simId) return;
@@ -202,7 +210,7 @@ export class SimObject extends DurableObject<Env> {
       writers = new Map(read);
     } catch (e) {
       // Rights stay as they were; the caller's next call retries.
-      console.error('[sim-object] role read failed', simId, message(e));
+      console.error('[sim-object] role read failed', simId, loggable(e));
       return;
     }
     const sockets = this.ctx.getWebSockets();
@@ -293,13 +301,13 @@ export class SimObject extends DurableObject<Env> {
         host.markIndexed(batch[batch.length - 1].commit.seq);
       }
     } catch (e) {
-      console.error('[sim-object] index write failed', simId, message(e));
+      console.error('[sim-object] index write failed', simId, loggable(e));
       try {
         if ((await this.ctx.storage.getAlarm()) === null) {
           await this.ctx.storage.setAlarm(Date.now() + INDEX_RETRY_MS);
         }
       } catch (e2) {
-        console.error('[sim-object] index retry not scheduled', simId, message(e2));
+        console.error('[sim-object] index retry not scheduled', simId, loggable(e2));
       }
     } finally {
       this.#indexing = false;

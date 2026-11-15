@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { CLOSE_BINARY, CLOSE_MALFORMED } from '$lib/sim-stream/protocol';
 import { LIMITS } from './limits';
+import { DrizzleQueryError } from 'drizzle-orm';
 import {
+  LOG_MAX,
+  NON_ERROR,
+  QUERY_FAILED,
   closeReply,
   distinctIdentities,
+  loggable,
   openStatus,
   readMessage,
   roleChanges
@@ -118,6 +123,46 @@ describe('roleChanges', () => {
     // A socket opened while the roles were read: the Worker has just set its right.
     const sockets = [{ identity: 'new', write: true, resumed: false }, 'junk'];
     expect(roleChanges(sockets, new Map([['a', false]]))).toEqual([]);
+  });
+});
+
+describe('loggable', () => {
+  const identity = 'ident-7Hx9QpL2';
+
+  it('never logs a failed query or its bound parameters', () => {
+    const e = new DrizzleQueryError(
+      'select * from x where id = ?',
+      [identity],
+      new Error('D1_ERROR: busy')
+    );
+    expect(loggable(e)).toBe('D1_ERROR: busy');
+    expect(loggable(e)).not.toContain(identity);
+    const bare = new DrizzleQueryError('select * from x where id = ?', [identity]);
+    expect(loggable(bare)).not.toContain(identity);
+    expect(loggable(bare)).toBe(QUERY_FAILED);
+  });
+
+  it('gives a plain error its message, and a nested cause the innermost one', () => {
+    expect(loggable(new Error('boom'))).toBe('boom');
+    const inner = new Error('innermost');
+    const mid = new Error('middle', { cause: inner });
+    expect(loggable(new Error('outer', { cause: mid }))).toBe('innermost');
+    expect(loggable(new Error('outer', { cause: 'not an error' }))).toBe('outer');
+  });
+
+  it('uses a placeholder for a non-Error and cuts a long message', () => {
+    expect(loggable('a string')).toBe(NON_ERROR);
+    expect(loggable({ message: identity })).toBe(NON_ERROR);
+    const long = loggable(new Error('x'.repeat(LOG_MAX * 2)));
+    expect(long.length).toBe(LOG_MAX);
+    expect(long.endsWith('…')).toBe(true);
+  });
+
+  it('stops on a cause cycle', () => {
+    const a = new Error('a');
+    const b = new Error('b', { cause: a });
+    a.cause = b;
+    expect(['a', 'b']).toContain(loggable(a));
   });
 });
 
