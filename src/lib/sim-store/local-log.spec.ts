@@ -836,6 +836,123 @@ describe('LocalLog', () => {
     expect(text(log.ruleset())).toBe(text(objR(o)));
   });
 
+  it('re-stamps pending made while current when the page turns stale', () => {
+    // Identity align: the lead move's diff is empty, so the edit itself carries the page's.
+    const { o, log } = start({ page: F1, serverDataset: F1 });
+    editOn(log, (r) => withZ(r, 'b'), { datasetVersion: F1 });
+    log.receive([foreign(o, (r) => withZ(r, 'c'))]);
+    expect(log.pending.map((p) => p.draft.datasetVersion)).toEqual([F1]);
+    expect(log.setServerDataset(F2)).toEqual({ changed: false, drops: [] });
+    expect(log.pending.map((p) => [p.draft.parent, p.draft.datasetVersion])).toEqual([[2, DS]]);
+    expect(log.ruleset().datasetVersion).toBe(DS);
+    expect(ids(log.ruleset()).sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('never leaves a lead move alone', () => {
+    const align = renamingAlign([F1]);
+    const { o, c1 } = start();
+    const p = draftOf(1, diff(objR(o), withoutZ(objR(o), 'a')));
+    const f = foreign(o, (r) => withoutZ(r, 'a'));
+    const current = { align, page: F1, serverDataset: F1 };
+    const lost = new LocalLog({ confirmed: [c1, f], pending: [own(p)], ...current });
+    expect(lost.initialDrops).toEqual([expect.objectContaining({ id: p.id, why: 'empty' })]);
+    expect([lost.pending, lost.held]).toEqual([[], []]);
+    // A newer build's draft is found before a lead is chosen.
+    const pf = own(draftOf(2, addZ(objR(o), 'b'), { shapes: FUTURE }));
+    const held = new LocalLog({ confirmed: [c1, f], pending: [pf], ...current });
+    expect([held.pending, held.held, held.future]).toEqual([[], [pf], true]);
+  });
+
+  it('does not author again a lead move the caller dropped', () => {
+    const align = renamingAlign([F1]);
+    const { o, c1 } = start();
+    const e = own(draftOf(1, addZ(objR(o), 'b')));
+    const log = new LocalLog({ confirmed: [c1], pending: [e], align, page: F1, serverDataset: F1 });
+    const [m] = log.pending;
+    expect(m.draft).toMatchObject({ source: MOVE_SOURCE, datasetVersion: F1 });
+    expect(log.drop(m.draft.id)).toEqual([]);
+    expect(log.pending.map((p) => [p.draft.id, p.draft.datasetVersion])).toEqual([
+      [e.draft.id, DS]
+    ]);
+    log.adopt([]);
+    expect(log.forget(['unknown']).drops).toEqual([]);
+    expect(log.pending).toHaveLength(1);
+    // A commit applied by receive lets the log try again.
+    log.receive([foreign(o, (r) => withZ(r, 'c'))]);
+    expect(log.pending.map((p) => p.draft.source)).toEqual([MOVE_SOURCE, 'sim.test']);
+    expect(log.pending[0].draft.id).not.toBe(m.draft.id);
+  });
+
+  it('after its own move is dropped, holds what it cannot align until a commit lands', () => {
+    // The release property's counterexample: an edit and a jump to before a move, the page
+    // current, the log's own move dropped.
+    const o = new FakeObject();
+    accept(o, draftOf(0, addZ(EMPTY, 'a')));
+    const toF1 = renamingAlign([F1]);
+    const r1 = objR(o);
+    accept(o, draftOf(1, diff(r1, toF1(r1, F1)!), { ...MOVE, datasetVersion: F1 }));
+    const old = new LocalLog({ confirmed: o.commits.slice(), pending: [], align: toF1 });
+    const e = editOn(old, (r) => withoutZ(r, 'a'), { datasetVersion: F1 });
+    const j = restoreOn(old, 1, 'jump', toF1);
+    const log = new LocalLog({
+      confirmed: o.commits.slice(),
+      pending: old.pending,
+      align: renamingAlign([F2]),
+      page: F2,
+      serverDataset: F2
+    });
+    const [m] = log.pending;
+    expect(log.pending.map((p) => p.draft.id)).toEqual([m.draft.id, e.id, j.id]);
+    log.drop(m.draft.id);
+    expect(log.pending.map((p) => [p.draft.id, p.draft.datasetVersion])).toEqual([[e.id, F1]]);
+    expect(log.held.map((p) => p.draft.id)).toEqual([j.id]);
+    // Its edit lands: the move is tried again, and the jump with it.
+    expect(o.append(log.pending[0].draft).kind).toBe('accepted');
+    log.receive(o.commits.slice(log.tipSeq));
+    expect(log.held).toEqual([]);
+    expect(log.pending.map((p) => [p.draft.id, p.draft.datasetVersion])).toEqual([
+      [expect.any(String), F2],
+      [j.id, F2]
+    ]);
+    for (const p of log.pending) expect(o.append(p.draft).kind).toBe('accepted');
+    log.receive(o.commits.slice(log.tipSeq));
+    expect([log.pending, log.held]).toEqual([[], []]);
+    expect(text(log.ruleset())).toBe(text(objR(o)));
+  });
+
+  it('holds a pushed commit behind one held for the dataset', () => {
+    const o = new FakeObject();
+    accept(o, draftOf(0, addZ(EMPTY, 'a')));
+    const toF1 = renamingAlign([F1]);
+    const r1 = objR(o);
+    accept(o, draftOf(1, diff(r1, toF1(r1, F1)!), { ...MOVE, datasetVersion: F1 }));
+    const old = new LocalLog({ confirmed: o.commits.slice(), pending: [], align: toF1 });
+    editOn(old, (r) => withoutZ(r, 'a'), { datasetVersion: F1 });
+    const j = restoreOn(old, 1, 'jump', toF1);
+    const toF2 = renamingAlign([F2]);
+    const log = new LocalLog({
+      confirmed: o.commits.slice(),
+      pending: old.pending,
+      align: toF2,
+      page: F2
+    });
+    const r2 = objR(o);
+    log.receive([accept(o, draftOf(2, diff(r2, toF2(r2, F2)!), { ...MOVE, datasetVersion: F2 }))]);
+    const shown = log.ruleset();
+    const position = log.position;
+    const e = editOn(log, (r) => withZ(r, 'b'), { datasetVersion: F2 });
+    expect(log.held.map((p) => p.draft.id)).toEqual([j.id, e.id]);
+    expect([log.position, log.ruleset()]).toEqual([position, shown]);
+    expect(() => log.push(own(draftOf(position, [{ op: 'delete', key: 'p:nope' }])))).toThrow(
+      LogError
+    );
+    log.setServerDataset(F2);
+    expect(log.held).toEqual([]);
+    const order = log.pending.map((p) => p.draft.id);
+    expect(order.indexOf(j.id)).toBeLessThan(order.indexOf(e.id));
+    expect(ids(log.ruleset()).sort()).toEqual(['a', 'b']);
+  });
+
   it('moves nothing for a reader with nothing pending', () => {
     const { log } = start({ page: F2, align: renamingAlign([F2]) });
     expect(log.setServerDataset(F2)).toEqual({ changed: false, drops: [] });
@@ -865,12 +982,6 @@ describe('LocalLog', () => {
   });
 });
 
-/** One step of the property's script. */
-type Step = {
-  op: 'edit' | 'undo' | 'foreign' | 'send' | 'recv' | 'skip' | 'one' | 'drop';
-  k: number;
-};
-
 /** The k-th edit of `r`: add a missing transit policy or remove a present one; some rename too. */
 function editOf(r: RulesetContent, k: number): RulesetContent {
   const pick = ['a', 'b', 'c'][k % 3];
@@ -879,7 +990,7 @@ function editOf(r: RulesetContent, k: number): RulesetContent {
 }
 
 /** Every invariant that holds after any public call. */
-function checkInvariants(log: LocalLog, o: FakeObject): void {
+function checkInvariants(log: LocalLog, o: FakeObject, limits = LIMITS): void {
   const confirmed = log.confirmed;
   expect(confirmed.map((c) => c.id)).toEqual(o.commits.slice(0, log.tipSeq).map((c) => c.id));
   // I3: pending sit on the tip; a restore names its target's current position.
@@ -894,7 +1005,7 @@ function checkInvariants(log: LocalLog, o: FakeObject): void {
   expect(text(s.ruleset())).toBe(text(log.rulesetAt(log.tipSeq)));
   for (const p of log.pending) {
     expect(parseCommitDraft(structuredClone(p.draft))).toEqual(p.draft);
-    expect(fitsCommit(p.draft)).toBe(true);
+    expect(fitsCommit(p.draft, limits)).toBe(true);
     s.apply(p.draft, { check: true });
   }
   // R16: the fold of confirmed then pending.
@@ -916,25 +1027,251 @@ function checkInvariants(log: LocalLog, o: FakeObject): void {
   ]);
 }
 
+/** One tab over the shared object: its log, and every id it pushed or was told it dropped. */
+interface Tab {
+  log: LocalLog;
+  pushed: Map<string, number>;
+  reported: Set<string>;
+}
+
+/**
+ * The ledger (risk 1): every id a tab pushed is confirmed, pending, held, or was reported
+ * dropped. A commit is never lost silently.
+ */
+function checkLedger(tab: Tab): void {
+  const { log } = tab;
+  const known = new Set([
+    ...log.confirmed.map((c) => c.id),
+    ...log.pending.map((p) => p.draft.id),
+    ...log.held.map((p) => p.draft.id),
+    ...tab.reported
+  ]);
+  for (const id of tab.pushed.keys()) expect(known.has(id)).toBe(true);
+}
+
 describe('LocalLog under any script', () => {
+  it('two logs on one object: no commit lost, one order, one fold (I10)', () => {
+    // Small commits: one policy fits; a restore that grows to re-add two is too large.
+    const limits = { ...LIMITS, commitBytes: STAMP_MAX + 800 };
+    const seen = {
+      empty: 0,
+      invalid: 0,
+      targetGone: 0,
+      tooLarge: 0,
+      partial: 0,
+      restoreMoved: 0,
+      between: 0,
+      echoed: 0,
+      gap: 0
+    };
+    // A (the log the counts are about) edits, undoes and keeps its commits pending a while; B
+    // also lands commits often (`land`: catch up, edit, send), so B's commits come between A's
+    // pending ones, and has pending of its own that A's commits re-apply.
+    type Op = 'edit' | 'undo' | 'send' | 'recv' | 'skip' | 'one' | 'drop' | 'land' | 'sync';
+    const aOps = [
+      'edit',
+      'edit',
+      'edit',
+      'undo',
+      'undo',
+      'sync',
+      'sync',
+      'send',
+      'recv',
+      'skip',
+      'one'
+    ] as const;
+    const ops: [Op, boolean][] = [
+      ...[...aOps, 'drop', 'drop'].map((op): [Op, boolean] => [op as Op, false]),
+      ...(['land', 'land', 'edit', 'undo', 'send', 'recv', 'drop'] as const).map(
+        (op): [Op, boolean] => [op, true]
+      )
+    ];
+    const step = fc
+      .record({ pick: fc.constantFrom(...ops), k: fc.nat({ max: 40 }) })
+      .map(({ pick: [op, b], k }) => ({ op, b, k }));
+    // The sim starts with three policies, so removals and restores have something to work on.
+    const start0 = withZ(withZ(withZ(EMPTY, 'a'), 'b'), 'c');
+    expect(() =>
+      fc.assert(
+        fc.property(fc.array(step, { maxLength: 40 }), (script) => {
+          const o = new FakeObject();
+          accept(o, draftOf(0, diff(EMPTY, start0)));
+          const tab = (): Tab => ({
+            log: new LocalLog({ confirmed: o.commits.slice(), pending: [], limits }),
+            pushed: new Map(),
+            reported: new Set()
+          });
+          const [A, B] = [tab(), tab()];
+          const counted = new Set<keyof typeof seen>();
+          /** The step at which each commit reached the object. */
+          const landed = new Map<string, number>();
+          let now = 0;
+          const report = (t: Tab, drops: readonly DropReport[]) => {
+            for (const d of drops) {
+              t.reported.add(d.id);
+              if (t !== A) continue;
+              if (!d.whole) counted.add('partial');
+              else if (d.why === 'empty') counted.add('empty');
+              else if (d.why === 'invalid') counted.add('invalid');
+              else if (d.why === 'target-gone') counted.add('targetGone');
+              else if (d.why === 'too-large') counted.add('tooLarge');
+            }
+          };
+          const push = (t: Tab, d: CommitDraft, targetId: string | null = null) => {
+            // The author's own checks: what does not fit is refused, never pushed.
+            if (d.changes.length === 0 || !fitsCommit(d, limits)) return;
+            t.log.push(own(d, targetId));
+            t.pushed.set(d.id, now);
+          };
+          const deliver = (t: Tab, commits: readonly Commit[]) => {
+            const { log } = t;
+            const before = log.pending.filter((p) => p.draft.kind === 'restore');
+            const positions = before.map((p) => p.draft.restores!.position);
+            const out = log.receive(commits);
+            if (out.kind === 'stale') return;
+            report(t, out.drops);
+            if (t !== A) return;
+            if (out.kind === 'gap') counted.add('gap');
+            if (out.kind === 'applied' && !out.changed && out.drops.length === 0)
+              counted.add('echoed');
+            before.forEach((p, i) => {
+              const q = log.pending.find((x) => x.draft.id === p.draft.id);
+              if (q && q.draft.restores!.position !== positions[i]) counted.add('restoreMoved');
+            });
+          };
+          /** Sends the head; a log caught up with the object only ever has it accepted. */
+          const send = (t: Tab) => {
+            const { log } = t;
+            if (log.pending.length === 0) return;
+            const caughtUp = log.tipSeq === o.commits.length;
+            const head = log.pending[0].draft;
+            const r = o.append(head);
+            if (r.kind === 'accepted') landed.set(head.id, now);
+            if (caughtUp) expect(r.kind).toBe('accepted');
+            // Behind, or sent before and not yet received.
+            else
+              expect(r.kind === 'duplicate' || (r.kind === 'refused' && r.why === 'behind')).toBe(
+                true
+              );
+          };
+          for (const { op, b, k } of script) {
+            now++;
+            const t = b ? B : A;
+            const { log } = t;
+            const edit = () => {
+              const r = log.ruleset();
+              push(t, draftOf(log.position, diff(r, editOf(r, k)), { label: `E${k}` }));
+            };
+            if (op === 'edit') edit();
+            else if (op === 'sync') {
+              deliver(t, o.commits.slice(log.tipSeq));
+              send(t);
+            } else if (op === 'land') {
+              // Catch up, edit when nothing is pending, and send: a commit lands.
+              deliver(t, o.commits.slice(log.tipSeq));
+              if (log.pending.length === 0) edit();
+              send(t);
+            } else if (op === 'undo') {
+              const u = log.history().undo;
+              if (u) {
+                const changes = diff(log.ruleset(), log.rulesetAt(u.position));
+                const d = draftOf(log.position, changes, {
+                  kind: 'restore',
+                  restores: { position: u.position, as: 'undo' },
+                  label: u.label
+                });
+                push(t, d, log.idAt(u.position));
+              }
+            } else if (op === 'send') send(t);
+            else if (op === 'recv') deliver(t, o.commits.slice(log.tipSeq));
+            else if (op === 'skip') deliver(t, o.commits.slice(log.tipSeq + 1));
+            else if (op === 'one') deliver(t, o.commits.slice(log.tipSeq, log.tipSeq + 1));
+            else if (op === 'drop' && log.pending.length > 0)
+              report(t, log.drop(log.pending[k % log.pending.length].draft.id));
+            for (const x of [A, B]) {
+              checkInvariants(x.log, o, limits);
+              checkLedger(x);
+            }
+          }
+          // Drain both: send and receive until neither has anything pending.
+          for (let round = 0; round < 200; round++) {
+            if (A.log.pending.length === 0 && B.log.pending.length === 0) break;
+            now++;
+            for (const x of [A, B]) {
+              send(x);
+              deliver(x, o.commits.slice(x.log.tipSeq));
+            }
+          }
+          const stored = new Set(o.commits.map((c) => c.id));
+          for (const x of [A, B]) {
+            deliver(x, o.commits.slice(x.log.tipSeq));
+            checkInvariants(x.log, o, limits);
+            checkLedger(x);
+            expect([x.log.pending, x.log.held]).toEqual([[], []]);
+            // I10: one order and one fold.
+            expect(x.log.confirmed.map((c) => c.id)).toEqual([...stored]);
+            expect(text(x.log.ruleset())).toBe(text(objR(o)));
+            for (const id of x.pushed.keys())
+              expect(stored.has(id) || x.reported.has(id)).toBe(true);
+          }
+          // B's commit landed between two of A's, the later one already pending then.
+          o.commits.forEach((c, j) => {
+            if (!B.pushed.has(c.id)) return;
+            const before = o.commits.slice(0, j).some((x) => A.pushed.has(x.id));
+            const after = o.commits
+              .slice(j + 1)
+              .some((x) => A.pushed.has(x.id) && A.pushed.get(x.id)! < landed.get(c.id)!);
+            if (before && after) counted.add('between');
+          });
+          for (const key of counted) seen[key]++;
+        }),
+        { numRuns: 700 }
+      )
+    ).not.toThrow();
+    // Unseeded; over 6 runs of 700: echoed 332-385, invalid 112-138, empty 49-63, too large
+    // 11-16, partial 10-24, B's commit between two of A's 7-11, gap 3-12, restore moved 1-8,
+    // target gone 0-7. The last three are asserted by the single-log property, which reaches
+    // them more often.
+    const rare = ['gap', 'restoreMoved', 'targetGone'];
+    for (const [key, n] of Object.entries(seen))
+      if (!rare.includes(key)) expect(n).toBeGreaterThan(0);
+  });
+
   it('keeps its invariants through edits, undos, foreign commits, echoes and gaps', () => {
-    const seen = { partial: 0, whole: 0, targetGone: 0, restoreMoved: 0, echoed: 0, gap: 0 };
+    const seen = {
+      partial: 0,
+      empty: 0,
+      invalid: 0,
+      targetGone: 0,
+      restoreMoved: 0,
+      echoed: 0,
+      gap: 0
+    };
     // Edits, undos and foreign commits weighted up, so pending restores meet foreign commits.
-    const ops: Step['op'][] = [
+    const ops = [
       ...['edit', 'edit', 'edit', 'undo', 'undo', 'foreign', 'foreign'],
       ...['send', 'recv', 'skip', 'one', 'drop', 'drop']
-    ] as Step['op'][];
+    ] as const;
     const step = fc.record({ op: fc.constantFrom(...ops), k: fc.nat({ max: 40 }) });
     expect(() =>
       fc.assert(
         fc.property(fc.array(step, { maxLength: 24 }), (script) => {
           const o = new FakeObject();
-          const log = new LocalLog({ confirmed: [], pending: [] });
+          const t: Tab = {
+            log: new LocalLog({ confirmed: [], pending: [] }),
+            pushed: new Map(),
+            reported: new Set()
+          };
+          const { log } = t;
           const counted = new Set<keyof typeof seen>();
           const count = (drops: readonly DropReport[]) => {
             for (const d of drops) {
-              counted.add(d.whole ? 'whole' : 'partial');
-              if (d.why === 'target-gone') counted.add('targetGone');
+              t.reported.add(d.id);
+              if (!d.whole) counted.add('partial');
+              else if (d.why === 'empty') counted.add('empty');
+              else if (d.why === 'invalid') counted.add('invalid');
+              else if (d.why === 'target-gone') counted.add('targetGone');
             }
           };
           const deliver = (commits: readonly Commit[]) => {
@@ -965,11 +1302,15 @@ describe('LocalLog under any script', () => {
           for (const { op, k } of script) {
             if (op === 'edit') {
               const next = editOf(log.ruleset(), k);
-              if (text(next) !== text(log.ruleset())) editOn(log, () => next, { label: `E${k}` });
+              if (text(next) !== text(log.ruleset()))
+                t.pushed.set(editOn(log, () => next, { label: `E${k}` }).id, 0);
             } else if (op === 'undo') {
-              const t = log.history().undo;
-              if (t && text(log.rulesetAt(t.position)) !== text(log.ruleset()))
-                restoreOn(log, t.position, 'undo', undefined, { label: t.label });
+              const u = log.history().undo;
+              if (u && text(log.rulesetAt(u.position)) !== text(log.ruleset()))
+                t.pushed.set(
+                  restoreOn(log, u.position, 'undo', undefined, { label: u.label }).id,
+                  0
+                );
             } else if (op === 'foreign') {
               const r = objR(o);
               const next = editOf(r, k + 1);
@@ -981,6 +1322,7 @@ describe('LocalLog under any script', () => {
             else if (op === 'drop' && log.pending.length > 0)
               count(log.drop(log.pending[k % log.pending.length].draft.id));
             checkInvariants(log, o);
+            checkLedger(t);
           }
           // Drain: send and receive until nothing is pending.
           for (let round = 0; round < 200 && log.pending.length > 0; round++) {
@@ -989,29 +1331,40 @@ describe('LocalLog under any script', () => {
           }
           deliver(o.commits.slice(log.tipSeq));
           checkInvariants(log, o);
+          checkLedger(t);
           expect(log.pending).toEqual([]);
           expect(text(log.ruleset())).toBe(text(objR(o)));
+          const stored = new Set(o.commits.map((c) => c.id));
+          for (const id of t.pushed.keys()) expect(stored.has(id) || t.reported.has(id)).toBe(true);
           for (const key of counted) seen[key]++;
         }),
         { numRuns: 1200 }
       )
     ).not.toThrow();
-    // Unseeded; over 6 runs of 1,200: echoed 555-595, whole drops 335-393, partial 34-50,
-    // gap 24-33, restore moved 13-31, target gone 8-19.
+    // Unseeded; over 6 runs of 1,200: echoed 577-632, invalid 274-300, empty 154-178,
+    // partial 35-52, gap 17-29, restore moved 11-24, target gone 10-21.
     for (const n of Object.values(seen)) expect(n).toBeGreaterThan(0);
   });
 
   it('follows a release: pending work from an older page moves to the current page', () => {
     // The sim starts on fixture-0 and was moved to fixture-1; an old page on fixture-1 leaves
     // pending work (jumps included); a release makes fixture-2 current; a new page on
-    // fixture-2 opens the records with the server's dataset unknown.
-    const [D0, D1, D2] = [DS, F1, F2];
+    // fixture-2 opens the records with the server's dataset unknown. After hello the server's
+    // dataset can also move on to fixture-3, leaving the page stale.
+    const [D0, D1, D2, D3] = [DS, F1, F2, 'fixture-3'];
     const oldAlign = renamingAlign([D1]);
     const newAlign = renamingAlign([D2]);
-    const seen = { heldAtOpen: 0, restoreAtHello: 0, retried: 0, moved: 0, released: 0 };
+    const seen = {
+      heldAtOpen: 0,
+      restoreAtHello: 0,
+      retried: 0,
+      moved: 0,
+      released: 0,
+      staleWithPending: 0
+    };
     const oldOps = ['edit', 'edit', 'undo', 'jump', 'jump', 'foreign', 'send', 'recv'] as const;
     const newOps = [
-      ...['edit', 'edit', 'undo', 'foreign', 'release', 'hello'],
+      ...['edit', 'edit', 'undo', 'foreign', 'release', 'hello', 'stale'],
       ...['send', 'recv', 'skip', 'drop']
     ] as const;
     const script = <T>(ops: readonly T[]) =>
@@ -1076,26 +1429,35 @@ describe('LocalLog under any script', () => {
             // I11 and ruling (b): the fold is on the tip's dataset, or (page current) the page's.
             const ds = log.ruleset().datasetVersion;
             expect(ds === tipDataset() || (log.serverDataset === D2 && ds === D2)).toBe(true);
-            if (current()) {
+            // Fix round finding 1: off a current page, nothing pending carries the page's
+            // dataset over a tip on another.
+            if (log.serverDataset !== D2 && tipDataset() !== D2)
+              for (const p of log.pending) expect(p.draft.datasetVersion).not.toBe(D2);
+            // A move to fixture-2 goes first, and then nothing stays held for the dataset. When
+            // the caller dropped the log's own move, no move is made until the next applied
+            // commit (finding 4): the bound on the fold above still holds.
+            const head = log.pending[0]?.draft;
+            if (current() && head?.source === MOVE_SOURCE) {
+              expect(head.datasetVersion).toBe(D2);
               expect(log.held).toEqual([]);
-              const head = log.pending[0]?.draft;
-              if (head) expect(head).toMatchObject({ source: MOVE_SOURCE, datasetVersion: D2 });
-              if (head) counted.add('moved');
+              counted.add('moved');
             }
           };
+          const decision = () =>
+            datasetDecision(D2, log.ruleset().datasetVersion, log.serverDataset).kind;
           const send = () => {
-            // head() sends nothing before the server's dataset is known (I11).
+            // head() sends nothing before the server's dataset is known or while stopped (I11).
             if (log.pending.length === 0 || log.serverDataset === null) return;
+            if (decision() === 'stop') return;
             const caughtUp = log.tipSeq === o.commits.length;
             const r = o.append(log.pending[0].draft);
             if (caughtUp) expect(r.kind).toBe('accepted');
           };
           let released = false;
           for (const { op, k } of after) {
-            const fold = log.ruleset().datasetVersion;
-            const decision = datasetDecision(D2, fold, log.serverDataset).kind;
-            if (op === 'edit' && decision !== 'stop') {
-              if (decision === 'move') {
+            const now = decision();
+            if (op === 'edit' && now !== 'stop') {
+              if (now === 'move') {
                 const r = log.ruleset();
                 const changes = diff(r, newAlign(r, D2)!);
                 if (changes.length > 0)
@@ -1104,7 +1466,7 @@ describe('LocalLog under any script', () => {
               const next = editOf(log.ruleset(), k);
               if (text(next) !== text(log.ruleset()))
                 editOn(log, () => next, { datasetVersion: D2 });
-            } else if (op === 'undo' && decision === 'edit') {
+            } else if (op === 'undo' && now === 'edit') {
               const t = log.history().undo;
               if (t && restores(log, t.position, newAlign))
                 restoreOn(log, t.position, 'undo', newAlign, { datasetVersion: D2 });
@@ -1118,11 +1480,20 @@ describe('LocalLog under any script', () => {
               if (changes.length > 0)
                 accept(o, draftOf(o.commits.length, changes, { ...MOVE, datasetVersion: D2 }));
             } else if (op === 'hello') hello();
-            else if (op === 'send') send();
+            else if (op === 'stale') {
+              // Another release: the server moves on to fixture-3 and this page is stale.
+              if (log.serverDataset === D2 && log.pending.length > 0)
+                counted.add('staleWithPending');
+              log.setServerDataset(D3);
+            } else if (op === 'send') send();
             else if (op === 'recv') log.receive(o.commits.slice(log.tipSeq));
             else if (op === 'skip') log.receive(o.commits.slice(log.tipSeq + 1));
-            else if (op === 'drop' && log.pending.length > 0)
-              log.drop(log.pending[k % log.pending.length].draft.id);
+            else if (op === 'drop') {
+              // A refusal of anything but a move: the server repeats the local checks, so it
+              // never refuses a move this log made (finding 4 has its own tests).
+              const kept = log.pending.filter((p) => p.draft.source !== MOVE_SOURCE);
+              if (kept.length > 0) log.drop(kept[k % kept.length].draft.id);
+            }
             check();
           }
           hello();
@@ -1141,9 +1512,9 @@ describe('LocalLog under any script', () => {
         { numRuns: 300 }
       )
     ).not.toThrow();
-    // Unseeded; over 6 runs of 300: a commit held at open 49-68 (every one retried at hello),
-    // a pending restore at hello on a tip off fixture-2 75-92, the move first 170-186, a
-    // release by another writer 97-117.
+    // Unseeded; over 6 runs of 300: a commit held at open 51-69 (every one retried at hello),
+    // a pending restore at hello on a tip off fixture-2 68-92, the move first 169-196, a
+    // release by another writer 92-109, the page turning stale with pending 8-16.
     for (const n of Object.values(seen)) expect(n).toBeGreaterThan(0);
   });
 });

@@ -186,6 +186,13 @@ export class LocalLog {
   #nextOrder = 0;
   /** Moves this log authors go before everything it holds. */
   #firstOrder = 0;
+  /** Ids of the lead moves this log authored (ruling (b)), while pending. */
+  #authored = new Set<string>();
+  /**
+   * The caller dropped a lead move this log authored: none is authored again until `receive`
+   * applies a commit or the server's dataset changes, so a refused move cannot loop.
+   */
+  #leadRefused = false;
   #local: LogState;
   #pendingCheckpoints: Checkpoint[] = [];
   #history: History;
@@ -256,18 +263,25 @@ export class LocalLog {
   }
 
   /**
-   * Sets it and re-applies when a pending move's target differs from a known value, or when the
-   * page is known current with commits held for the dataset, or with pending commits on a tip
-   * on another dataset (ruling (b)). With neither, nothing moves: reading never moves a sim.
+   * Sets it and re-applies when a pending move's target differs from a known value, when the
+   * page is current with commits held for the dataset or with pending commits on a tip on
+   * another dataset (ruling (b)), or when the page stops being current with pending commits: a
+   * page turning stale re-stamps what it made while current with the fold's dataset (I11). With
+   * none of these, nothing moves: reading never moves a sim.
    */
   setServerDataset(s: string | null): Reapplied {
+    const wasCurrent = this.#pageCurrent();
+    const before = this.#serverDataset;
     this.#serverDataset = s;
+    if (s === before) return { changed: false, drops: [] };
+    this.#leadRefused = false;
+    const pending = this.#pending.length > 0;
     const moveOff =
       s !== null && this.#pending.some((p) => isMove(p.draft) && p.draft.datasetVersion !== s);
     const follow =
-      (this.#pageCurrent() && this.#heldDataset.length > 0) ||
-      (this.#moveFirst() && this.#pending.length > 0);
-    if (!moveOff && !follow) return { changed: false, drops: [] };
+      (this.#pageCurrent() && this.#heldDataset.length > 0) || (this.#moveFirst() && pending);
+    const leftCurrent = wasCurrent && !this.#pageCurrent() && pending;
+    if (!moveOff && !follow && !leftCurrent) return { changed: false, drops: [] };
     return this.#rewalk(this.#pending);
   }
 
@@ -312,11 +326,22 @@ export class LocalLog {
     return this.#history;
   }
 
-  /** RangeError unless p.draft.parent === position; LogError when it does not fold (check). */
+  /**
+   * RangeError unless p.draft.parent === position; LogError when it does not fold (check).
+   * While a commit is held, the pushed one is held behind it, untouched (order is kept when the
+   * held ones are retried), and the fold does not change.
+   */
   push(p: Pending): void {
     const position = this.position;
     if (p.draft.parent !== position)
       throw new RangeError(`parent ${p.draft.parent} is not the position ${position}`);
+    if (this.#heldFuture.length > 0 || this.#heldDataset.length > 0) {
+      this.#local.clone().apply(p.draft, { check: true });
+      this.#see(p);
+      if (this.#heldFuture.length > 0) this.#heldFuture = [...this.#heldFuture, p];
+      else this.#heldDataset = [...this.#heldDataset, p];
+      return;
+    }
     const last = this.#pendingCheckpoints.at(-1)?.position ?? this.tipSeq;
     const checkpoint = position - last >= PENDING_CHECKPOINT ? this.#local.clone() : null;
     this.#local.apply(p.draft, { check: true });
@@ -357,8 +382,14 @@ export class LocalLog {
     if (!fresh) return { kind: 'stale' };
     let drops: DropReport[] = [];
     if (applied.length > 0) {
-      if (this.#echoes(applied)) this.#popEchoes(applied.length);
-      else drops = this.#reapply(this.#pending);
+      // An applied commit lets a refused move be tried again, and with it what is held for the
+      // dataset: then even its own commit coming back is followed by a re-walk.
+      const retry = this.#leadRefused || (this.#pageCurrent() && this.#heldDataset.length > 0);
+      this.#leadRefused = false;
+      if (this.#echoes(applied)) {
+        this.#popEchoes(applied.length);
+        if (retry) drops = this.#reapply(this.#pending);
+      } else drops = this.#reapply(this.#pending);
     }
     if (failure) throw failure.error;
     const changed = this.#changedSince(before);
@@ -371,6 +402,7 @@ export class LocalLog {
     const i = this.#indexOf.get(id);
     if (i === undefined) return [];
     const d = this.#pending[i].draft;
+    if (this.#authored.has(id)) this.#leadRefused = true;
     const own: DropReport[] = isMove(d)
       ? []
       : [{ id, label: d.label, whole: true, why: 'invalid', dropped: [] }];
@@ -383,7 +415,10 @@ export class LocalLog {
     this.#heldFuture = this.#heldFuture.filter((p) => !gone.has(p.draft.id));
     this.#heldDataset = this.#heldDataset.filter((p) => !gone.has(p.draft.id));
     const rest = this.#pending.filter((p) => !gone.has(p.draft.id));
-    if (rest.length === this.#pending.length) return { changed: false, drops: [] };
+    if (rest.length === this.#pending.length) {
+      this.#prune();
+      return { changed: false, drops: [] };
+    }
     return this.#rewalk(rest);
   }
 
@@ -415,6 +450,15 @@ export class LocalLog {
   /** Records the order a commit was first seen in. */
   #see(p: Pending): void {
     if (!this.#order.has(p.draft.id)) this.#order.set(p.draft.id, this.#nextOrder++);
+  }
+
+  /** Forgets the order and authorship of ids that left pending and held. */
+  #prune(): void {
+    const live = new Set(
+      [...this.#pending, ...this.#heldDataset, ...this.#heldFuture].map((p) => p.draft.id)
+    );
+    for (const id of this.#order.keys()) if (!live.has(id)) this.#order.delete(id);
+    for (const id of this.#authored) if (!live.has(id)) this.#authored.delete(id);
   }
 
   #inOrder(list: readonly Pending[]): Pending[] {
@@ -506,6 +550,7 @@ export class LocalLog {
     this.#indexOf = new Map(this.#pending.map((p, i) => [p.draft.id, i]));
     const tipSeq = this.tipSeq;
     this.#pendingCheckpoints = this.#pendingCheckpoints.filter((c) => c.position > tipSeq);
+    this.#prune();
   }
 
   /**
@@ -539,23 +584,32 @@ export class LocalLog {
       history.push(entryOf(draft, parent + 1));
       bytes += bytesOf(draft);
     };
+    /** The id of the lead move this log authored and kept first, if any. */
+    let authoredLead: string | null = null;
+    // #pageCurrent() is false once anything is held for a newer build (#future), so nothing
+    // after such a commit is ever retried here (I9).
     if (this.#pageCurrent()) {
-      const order = (p: Pending) => this.#order.get(p.draft.id) ?? Infinity;
-      const firstFuture = Math.min(Infinity, ...this.#heldFuture.map(order));
-      // Nothing after a newer build's commit leaves held (I9).
-      const retried = this.#heldDataset.filter((p) => order(p) < firstFuture);
+      const retried = this.#heldDataset;
       // Retried in their order; one that still cannot be aligned is held again, untouched.
-      this.#heldDataset = this.#heldDataset.filter((p) => !retried.includes(p));
+      this.#heldDataset = [];
       live = this.#inOrder([...live, ...retried]);
+      // A newer build's draft stops the store for good: no move is chosen for it.
+      const newer = live.some((p) => p.draft.shapes > this.#reg.current);
       const lead =
-        live.length > 0 && this.#moveFirst() ? this.#leadMove(live[0], work, tipSeq) : null;
+        live.length > 0 && this.#moveFirst() && !newer
+          ? this.#leadMove(live[0], work, tipSeq)
+          : null;
       if (lead) {
         const merged = live;
         live = lead.head ? merged.slice(1) : merged;
         if (lead.draft) {
           const first = merged[0];
           const p = lead.head ? first : { draft: lead.draft, targetId: null };
-          if (!lead.head) this.#order.set(lead.draft.id, --this.#firstOrder);
+          if (!lead.head) {
+            this.#order.set(lead.draft.id, --this.#firstOrder);
+            this.#authored.add(lead.draft.id);
+          }
+          if (this.#authored.has(lead.draft.id)) authoredLead = lead.draft.id;
           const unchanged = lead.head && draftText(lead.draft) === draftText(first.draft);
           keep(p, unchanged ? first.draft : lead.draft, tipSeq);
         }
@@ -618,12 +672,24 @@ export class LocalLog {
       if (out.dropped.length > 0) report(d, null, out.dropped);
       keep(p, draft, parent);
     }
-    this.#pending = kept;
-    this.#indexOf = new Map(kept.map((p, i) => [p.draft.id, i]));
-    this.#local = work;
-    this.#pendingCheckpoints = checkpoints;
-    this.#history = history;
-    this.#bytes = bytes;
+    if (authoredLead !== null && kept.length === 1) {
+      // Everything after the move this log authored went (dropped or held): a move with no
+      // edit after it is not made. Nothing was kept after it, so no checkpoint either.
+      this.#pending = [];
+      this.#indexOf = new Map();
+      this.#local = this.#tip.clone();
+      this.#pendingCheckpoints = [];
+      this.#history = this.#confirmedHistory.clone();
+      this.#bytes = 0;
+    } else {
+      this.#pending = kept;
+      this.#indexOf = new Map(kept.map((p, i) => [p.draft.id, i]));
+      this.#local = work;
+      this.#pendingCheckpoints = checkpoints;
+      this.#history = history;
+      this.#bytes = bytes;
+    }
+    this.#prune();
     return drops;
   }
 
@@ -641,6 +707,8 @@ export class LocalLog {
     const page = this.#page!;
     const f = first.draft;
     const head = isMove(f) && f.datasetVersion === page;
+    // A move of its own that the caller dropped is not authored again yet (#leadRefused).
+    if (!head && this.#leadRefused) return null;
     const tip = work.ruleset();
     const aligned = this.#align(tip, page);
     const changes = aligned === null ? null : diffOrNull(tip, aligned);
