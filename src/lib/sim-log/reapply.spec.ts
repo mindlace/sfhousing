@@ -153,6 +153,18 @@ describe('reapply', () => {
     expect(reapply(tip, input(changes))).toMatchObject({ ok: false, why: 'invalid' });
   });
 
+  it.each([
+    ['every change would be dropped as gone', [{ op: 'delete', key: 'p:z9' }]],
+    ['it has a set', [{ op: 'set', key: 'p:z1', field: 'on', value: false }]]
+  ])('throws future-shapes for a newer shape revision when %s', (_, changes) => {
+    const tip = tipOf([transit('z1')]);
+    const before = rulesetText(tip.ruleset());
+    expect(() => reapply(tip, input(changes as Change[], { shapes: 2 }))).toThrow(
+      expect.objectContaining({ code: 'future-shapes' })
+    );
+    expect(rulesetText(tip.ruleset())).toBe(before);
+  });
+
   it('never changes the tip', () => {
     const tip = tipOf([transit('z1')]);
     const before = rulesetText(tip.ruleset());
@@ -294,6 +306,15 @@ describe('reapply', () => {
       });
       expect(rulesetText(tip.ruleset())).toBe(before);
       expect(tip.list(listKey(sp))).toEqual([X, W]);
+    });
+
+    it('keeps a commit that deletes a lower repeat and then the higher one', () => {
+      const tip = tipWith({ id: 'b1', paths: [P1, P1] }, { id: 'b2', paths: [P3], stories: 9 });
+      const changes: Change[] = [
+        { op: 'delete', key: X },
+        { op: 'delete', key: `${X}~2` }
+      ];
+      expect(reapply(tip, input(changes))).toEqual({ ok: true, changes, dropped: [] });
     });
 
     it('drops the whole commit when a stroke disagrees with its brush', () => {

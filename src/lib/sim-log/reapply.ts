@@ -1,6 +1,6 @@
 import { isStrokeKeyOf, strokeKeyBase, type StrokeFields } from './keys';
 import { isEndable, listOf, parentOf, type Item } from './items';
-import { readFields } from './shapes';
+import { readFields, versionAt } from './shapes';
 import { DEFER_STROKES, type LogState } from './state';
 import { LogError, LogFormatError, type Change, type FoldInput } from './types';
 
@@ -105,9 +105,11 @@ function settle(s: LogState, c: Change, revision: number, resolve: Resolve): Cha
  * anchorFor), and a stroke add takes the lowest free key of its identical strokes, later changes
  * following the new key. The commit is `empty` when nothing is kept, and `invalid` when a kept
  * change is refused or the whole fails the stroke-order or ruleset check. The changes returned,
- * applied to `tip` as one commit, are accepted.
+ * applied to `tip` as one commit, are accepted. Throws LogError('future-shapes'), before any work,
+ * for a commit under a shape revision newer than the tip's registry knows.
  */
 export function reapply(tip: LogState, input: FoldInput): Reapplied {
+  versionAt(tip.registry, input.shapes, 'sim');
   const work = tip.clone();
   const kept: Change[] = [];
   const dropped: Dropped[] = [];
