@@ -9,7 +9,8 @@ import { requireSimRole } from '$lib/server/authz/require-sim-role';
 import {
   createInvite,
   parseInviteTarget,
-  getManagerPendingInvite
+  getManagerPendingInvite,
+  InviterRoleLostError
 } from '$lib/server/invites/control-plane';
 import { getUser } from '$lib/server/user-store/user';
 import { sendInviteEmail } from '$lib/server/invites/email';
@@ -20,6 +21,7 @@ import {
   RATE_LIMIT_MESSAGES
 } from '$lib/server/security/rate-limit';
 import { refuseUnlessSameOriginJson } from '$lib/server/security/same-origin-json';
+import { loggable } from '$lib/server/sim-object/object-rules';
 
 export const POST: RequestHandler = async (event) => {
   const refused = refuseUnlessSameOriginJson(event);
@@ -87,7 +89,7 @@ export const POST: RequestHandler = async (event) => {
             simTitle: q?.title ?? MEMBERS_COPY.simTitleFallback
           });
         } catch (err) {
-          console.error('invite email send failed', err);
+          console.error('invite email send failed', simId, loggable(err));
         }
       }
     }
@@ -100,7 +102,7 @@ export const POST: RequestHandler = async (event) => {
     try {
       view = await getManagerPendingInvite({ db, simId, inviteId: out.invite.id });
     } catch (err) {
-      console.error('invite read-back failed', err);
+      console.error('invite read-back failed', simId, loggable(err));
       view = null;
     }
     return json(
@@ -112,8 +114,16 @@ export const POST: RequestHandler = async (event) => {
       { status: 201 }
     );
   } catch (e) {
+    if (e instanceof InviterRoleLostError) {
+      // The inviter's role went while the invite was being created (their row is already
+      // deleted, no mail sent). Answer as requireSimRole answers a caller who may not invite
+      // (require-cap.ts): 404 to a non-member, 403 to a member below manager.
+      if (e.role === null) throw error(404, { message: 'not found', resource: 'sim' });
+      throw error(403, 'forbidden');
+    }
     const code = memberErrorCode(e);
-    if (code === 'failed') console.error('invite create failed', e);
+    // The error can carry the invited address (a database error's bound parameters).
+    if (code === 'failed') console.error('invite create failed', simId, loggable(e));
     return json({ code }, { status: 400 });
   }
 };

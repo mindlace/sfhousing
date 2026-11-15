@@ -15,9 +15,37 @@ import {
   receivesLive,
   rereadChanges,
   roleChanges,
+  serverAppendResult,
   withResumed
 } from './object-rules';
 import type { OpenParams } from './open-params';
+import type { AppendOutcome } from './log-host';
+import { nameDraft } from './test/drafts';
+
+describe('serverAppendResult', () => {
+  it('names the position of an accepted commit, and nothing of its body', () => {
+    const commit = { ...nameDraft(0, 'A'), seq: 1, actor: 'u1', at: 1, hash: 'h' };
+    const out: AppendOutcome = { kind: 'accepted', commit, body: JSON.stringify(commit) };
+    expect(serverAppendResult(out)).toStrictEqual({ kind: 'accepted', seq: 1 });
+  });
+
+  it('a duplicate is a duplicate, with no id', () => {
+    expect(serverAppendResult({ kind: 'duplicate', id: 'x' })).toStrictEqual({
+      kind: 'duplicate'
+    });
+  });
+
+  it('a refusal keeps its reason and drops the id', () => {
+    expect(serverAppendResult({ kind: 'refused', id: 'x', why: 'limit' })).toStrictEqual({
+      kind: 'refused',
+      why: 'limit'
+    });
+    expect(serverAppendResult({ kind: 'refused', id: null, why: 'gone' })).toStrictEqual({
+      kind: 'refused',
+      why: 'gone'
+    });
+  });
+});
 
 const params: OpenParams = {
   identity: 'id-1',

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { DrizzleQueryError } from 'drizzle-orm';
 import { mockConsole } from '$lib/server/test/mock-console';
+import { QUERY_FAILED } from '$lib/server/sim-object/object-rules';
 
 const {
   requireSimRole,
@@ -40,6 +42,7 @@ vi.mock('$lib/server/invites/control-plane', async () => {
 });
 
 import { PSEUDONYMOUS_EMAIL_DOMAIN } from '$lib/server/auth/brand';
+import { InviterRoleLostError } from '$lib/server/invites/control-plane';
 import { MEMBERS_COPY } from '$lib/members/copy';
 import { POST } from './+server';
 
@@ -202,6 +205,17 @@ describe('POST /api/sims/:simId/invites (creates an invite)', () => {
     const text = await res.text();
     expect(JSON.parse(text)).toEqual({ code: 'failed' });
     expect(text).not.toContain('D1');
+  });
+
+  it('logs only the sim id and safe text when the create fails, never the invited address', async () => {
+    const { error: logged } = mockConsole('error');
+    createInvite.mockRejectedValue(
+      new DrizzleQueryError('insert into sim_invite values (?)', ['u2@test.com'])
+    );
+    const res = await POST(postEvent('q1', { target: 'u2@test.com' }));
+    expect(await res.json()).toEqual({ code: 'failed' });
+    expect(logged).toHaveBeenCalledWith('invite create failed', 'q1', QUERY_FAILED);
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('u2@test.com');
   });
 
   it('400 target_required when the body has no target', async () => {
@@ -409,5 +423,44 @@ describe('POST /api/sims/:simId/invites — token never leaves the server', () =
       expect(JSON.stringify(call)).not.toContain(RAW_TOKEN);
     }
     errSpy.mockRestore();
+  });
+});
+
+// createInvite re-reads the inviter's role after its insert and refuses when it is gone (a
+// last leave raced the request). The route answers as requireSimRole answers a caller who may
+// not invite (require-cap.ts), and sends no mail.
+describe('POST /api/sims/:simId/invites when the inviter lost the role during the create', () => {
+  async function thrown(fn: () => unknown): Promise<{ status: number; body: unknown }> {
+    try {
+      await fn();
+    } catch (e) {
+      return e as { status: number; body: unknown };
+    }
+    throw new Error('expected a thrown answer');
+  }
+
+  it('answers 404 as for a non-member when the inviter has no role, and sends no mail', async () => {
+    createInvite.mockRejectedValue(new InviterRoleLostError(null));
+    const e = await thrown(() => POST(postEvent('q1', { target: 'u2@test.com' })));
+    expect(e).toMatchObject({ status: 404, body: { message: 'not found', resource: 'sim' } });
+    expect(sendInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('answers 403 as for a member below manager, and sends no mail', async () => {
+    createInvite.mockRejectedValue(new InviterRoleLostError('editor'));
+    const e = await thrown(() => POST(postEvent('q1', { target: 'u2@test.com' })));
+    expect(e).toMatchObject({ status: 403, body: { message: 'forbidden' } });
+    expect(sendInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('sends the mail once when the role still holds', async () => {
+    createInvite.mockResolvedValue({
+      invite: { id: 'inv1', invitedEmail: 'u2@test.com' },
+      token: 'tok',
+      resolvedUser: null
+    });
+    const res = await POST(postEvent('q1', { target: 'u2@test.com' }));
+    expect(res.status).toBe(201);
+    expect(sendInviteEmail).toHaveBeenCalledOnce();
   });
 });

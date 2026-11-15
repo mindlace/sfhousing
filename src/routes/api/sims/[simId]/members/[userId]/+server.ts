@@ -15,6 +15,7 @@ export const DELETE: RequestHandler = async (event) => {
   try {
     await removeSimMember({
       db,
+      env: event.platform?.env,
       simId,
       userId: event.params.userId!,
       // Opt into co-manager protection: a manager can't eject another manager here.

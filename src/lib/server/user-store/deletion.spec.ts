@@ -1,10 +1,21 @@
 import { describe, expect, test, vi, beforeEach } from 'vitest';
 
-vi.mock('$lib/server/sims/roster-hook', () => ({ onSimRosterChanged: vi.fn(async () => {}) }));
+vi.mock('$lib/server/sims/roster-hook', () => ({
+  onSimRosterChanged: vi.fn(async () => {}),
+  rosterChangedAll: vi.fn(async () => {})
+}));
 import { eq } from 'drizzle-orm';
-import { freshDb, seedUser } from '$lib/server/test/auth-db';
-import { addMemberById, getRole, getSimTitle, listSimsForUser } from '$lib/server/sims/sim-index';
-import { createSim } from '$lib/server/sims/sims';
+import { onSimRosterChanged, rosterChangedAll } from '$lib/server/sims/roster-hook';
+import { freshDb, seedSim, seedUser } from '$lib/server/test/auth-db';
+import { fakeSimEnv } from '$lib/server/test/sim-env';
+import { mockConsole } from '$lib/server/test/mock-console';
+import {
+  addMemberById,
+  getRole,
+  getSimTitle,
+  listMembers,
+  listSimsForUser
+} from '$lib/server/sims/sim-index';
 import { deleteAccount } from './deletion';
 import {
   user,
@@ -214,23 +225,94 @@ describe('markIdentityDeleted', () => {
 
 describe('deleteAccount', () => {
   const actor = { actorId: 'id1', actorKind: 'human' as const };
+  /** Stands in for platform.env: the fan-out must receive it as given. */
+  const env = fakeSimEnv();
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  test('scrubs identity, deletes a sole-member sim, promotes a manager on a shared one, sets deleted_at', async () => {
+  test('tells every sim it left in one fan-out, after the memberships are removed', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'id1', email: 'alice@x.com', handle: 'alice' });
+    await seedUser(db, { id: 'id2', email: 'bob@x.com', handle: 'bob' });
+    const ids = [
+      await seedSim(db, { title: 'Solo', managerId: 'id1' }),
+      await seedSim(db, { title: 'Shared A', managerId: 'id1' }),
+      await seedSim(db, { title: 'Shared B', managerId: 'id1' })
+    ];
+    await addMemberById({ db, simId: ids[1], userId: 'id2', role: 'editor' });
+    await addMemberById({ db, simId: ids[2], userId: 'id2', role: 'viewer' });
+    const rolesAtFanOut: (string | null)[] = [];
+    vi.mocked(rosterChangedAll).mockImplementationOnce(async (_env, simIds) => {
+      for (const simId of simIds) rolesAtFanOut.push(await getRole({ db, simId, userId: 'id1' }));
+    });
+
+    await deleteAccount({ db, env, identityId: 'id1', actor });
+
+    expect(rosterChangedAll).toHaveBeenCalledOnce();
+    const [givenEnv, givenIds] = vi.mocked(rosterChangedAll).mock.calls[0];
+    expect(givenEnv).toBe(env);
+    expect([...givenIds].sort()).toEqual([...ids].sort());
+    expect(rolesAtFanOut).toEqual([null, null, null]);
+    expect(onSimRosterChanged).not.toHaveBeenCalled();
+  });
+
+  test('hands the fan-out to defer when the caller gives one, and does not await it', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'id1', email: 'alice@x.com', handle: 'alice' });
+    const simId = await seedSim(db, { title: 'Solo', managerId: 'id1' });
+    const never = new Promise<void>(() => {});
+    vi.mocked(rosterChangedAll).mockReturnValueOnce(never);
+    const defer = vi.fn();
+
+    await deleteAccount({ db, env, identityId: 'id1', actor, defer });
+
+    expect(rosterChangedAll).toHaveBeenCalledWith(env, [simId]);
+    expect(defer).toHaveBeenCalledOnce();
+    expect(defer).toHaveBeenCalledWith(never);
+    const [idRow] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'id1'));
+    expect(idRow.deletedAt).not.toBeNull();
+  });
+
+  test('a defer that throws does not fail the deletion: the fan-out is awaited instead', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'id1', email: 'alice@x.com', handle: 'alice' });
+    const simId = await seedSim(db, { title: 'Solo', managerId: 'id1' });
+    let told = false;
+    vi.mocked(rosterChangedAll).mockImplementationOnce(async () => {
+      await Promise.resolve();
+      told = true;
+    });
+    const { error } = mockConsole('error');
+    const defer = vi.fn(() => {
+      throw new Error('defer boom');
+    });
+
+    await deleteAccount({ db, env, identityId: 'id1', actor, defer });
+
+    expect(rosterChangedAll).toHaveBeenCalledWith(env, [simId]);
+    expect(told).toBe(true);
+    const [idRow] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'id1'));
+    expect(idRow.deletedAt).not.toBeNull();
+    expect(error).toHaveBeenCalledWith('[account-delete] defer failed', 'defer boom');
+    error.mockRestore();
+  });
+
+  test('scrubs identity, keeps a sole-member sim with no members, promotes a manager on a shared one, sets deleted_at', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'id1', email: 'alice@x.com', name: 'Alice', handle: 'alice' });
     await seedUser(db, { id: 'id2', email: 'bob@x.com', handle: 'bob' });
-    const { simId: solo } = await createSim({ db, title: 'Solo', managerId: 'id1' });
-    const { simId: shared } = await createSim({ db, title: 'Shared', managerId: 'id1' });
+    const solo = await seedSim(db, { title: 'Solo', managerId: 'id1' });
+    const shared = await seedSim(db, { title: 'Shared', managerId: 'id1' });
     await addMemberById({ db, simId: shared, userId: 'id2', role: 'editor' });
 
-    await deleteAccount({ db, identityId: 'id1', actor });
+    await deleteAccount({ db, env, identityId: 'id1', actor });
 
     expect(await listSimsForUser({ db, userId: 'id1' })).toEqual([]);
-    expect(await getSimTitle({ db, simId: solo })).toBeNull();
+    expect(await getSimTitle({ db, simId: solo })).toBe('Solo');
+    expect(await getRole({ db, simId: solo, userId: 'id1' })).toBeNull();
+    expect(await listMembers({ db, simId: solo })).toEqual([]);
     expect(await getSimTitle({ db, simId: shared })).toBe('Shared');
     expect(await getRole({ db, simId: shared, userId: 'id2' })).toBe('manager');
     const [u] = await db.select().from(user).where(eq(user.userIdentity, 'id1'));
@@ -239,13 +321,13 @@ describe('deleteAccount', () => {
     expect(idRow.deletedAt).not.toBeNull();
   });
 
-  test('removes the sims held through a fused identity: solo deleted, shared handed on', async () => {
+  test('leaves the sims held through a fused identity: solo kept with no members, shared handed on', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'pseudo', email: 'p@x.com', handle: 'pseudo' });
     await seedUser(db, { id: 'surv', email: 'surv@x.com', handle: 'surv' });
     await seedUser(db, { id: 'id2', email: 'bob@x.com', handle: 'bob' });
-    const { simId: solo } = await createSim({ db, title: 'Solo', managerId: 'pseudo' });
-    const { simId: shared } = await createSim({ db, title: 'Shared', managerId: 'pseudo' });
+    const solo = await seedSim(db, { title: 'Solo', managerId: 'pseudo' });
+    const shared = await seedSim(db, { title: 'Shared', managerId: 'pseudo' });
     await addMemberById({ db, simId: shared, userId: 'id2', role: 'editor' });
     await handleAccountLink({
       db,
@@ -256,35 +338,43 @@ describe('deleteAccount', () => {
 
     await deleteAccount({
       db,
+      env,
       identityId: 'surv',
       actor: { actorId: 'surv', actorKind: 'human' as const }
     });
 
     expect(await listSimsForUser({ db, userId: 'surv' })).toEqual([]);
-    expect(await getSimTitle({ db, simId: solo })).toBeNull();
+    expect(await getSimTitle({ db, simId: solo })).toBe('Solo');
+    expect(await getRole({ db, simId: solo, userId: 'surv' })).toBeNull();
+    expect(await listMembers({ db, simId: solo })).toEqual([]);
     expect(await getSimTitle({ db, simId: shared })).toBe('Shared');
     expect(await getRole({ db, simId: shared, userId: 'id2' })).toBe('manager');
     expect(await getRole({ db, simId: shared, userId: 'surv' })).toBeNull();
   });
 
-  test('deleting a sole-member sim removes its pending invites', async () => {
+  test('leaving a sole-member sim keeps it and ends its pending invites', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'id1', email: 'alice@x.com', handle: 'alice' });
-    const { simId } = await createSim({ db, title: 'Solo', managerId: 'id1' });
+    await seedUser(db, { id: 'former', email: 'former@x.com', handle: 'former' });
+    const simId = await seedSim(db, { title: 'Solo', managerId: 'id1' });
+    // Sent by a former member, so the purge of the deleter's own invites does not reach it:
+    // only the emptied sim's ending of its pending invitations does.
     await db.insert(simInvite).values({
       id: 'inv1',
       simId,
       role: 'editor',
       invitedEmail: 'c@x.com',
       tokenHash: 'h1',
-      invitedByUserId: 'id1',
+      invitedByUserId: 'former',
       status: 'pending',
       createdAt: NOW,
       expiresAt: NOW
     });
 
-    await deleteAccount({ db, identityId: 'id1', actor });
+    await deleteAccount({ db, env, identityId: 'id1', actor });
 
+    expect(await getSimTitle({ db, simId })).toBe('Solo');
+    expect(await getRole({ db, simId, userId: 'id1' })).toBeNull();
     expect(await db.select().from(simInvite)).toHaveLength(0);
   });
 
@@ -317,6 +407,7 @@ describe('deleteAccount', () => {
 
     await deleteAccount({
       db,
+      env,
       identityId: 'surv',
       actor: { actorId: 'surv', actorKind: 'human' as const }
     });
@@ -355,7 +446,7 @@ describe('deleteAccount', () => {
       updatedAt: NOW
     });
 
-    await deleteAccount({ db, identityId: 'id1', actor });
+    await deleteAccount({ db, env, identityId: 'id1', actor });
 
     const tomb = await db.select().from(handleTombstone).where(eq(handleTombstone.handle, 'alice'));
     expect(tomb).toHaveLength(1);
@@ -367,16 +458,16 @@ describe('deleteAccount', () => {
   test('is a no-op when already deleted (deleted_at gate)', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'id1', email: 'alice@x.com', handle: 'alice' });
-    await deleteAccount({ db, identityId: 'id1', actor });
+    await deleteAccount({ db, env, identityId: 'id1', actor });
     const before = await db.select().from(userVersion).where(eq(userVersion.userIdentity, 'id1'));
-    await deleteAccount({ db, identityId: 'id1', actor });
+    await deleteAccount({ db, env, identityId: 'id1', actor });
     const after = await db.select().from(userVersion).where(eq(userVersion.userIdentity, 'id1'));
     expect(after).toHaveLength(before.length);
   });
 
   test('is a no-op for an unknown identity', async () => {
     const { db } = freshDb();
-    await deleteAccount({ db, identityId: 'nobody', actor });
+    await deleteAccount({ db, env, identityId: 'nobody', actor });
     expect(await db.select().from(userIdentity)).toHaveLength(0);
   });
 
@@ -394,7 +485,9 @@ describe('deleteAccount', () => {
       }
     }) as typeof db;
 
-    await expect(deleteAccount({ db: failing, identityId: 'id1', actor })).rejects.toThrow('boom');
+    await expect(deleteAccount({ db: failing, env, identityId: 'id1', actor })).rejects.toThrow(
+      'boom'
+    );
 
     const [idRow] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'id1'));
     expect(idRow.deletedAt).toBeNull();

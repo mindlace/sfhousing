@@ -1,6 +1,14 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
 import type { Database } from '$lib/server/db';
-import { simIndex, user, type SimMemberRole } from '$lib/server/db/schema';
+import { normTextToDriver } from '$lib/server/db/columns';
+import {
+  capabilityEvent,
+  simCommit,
+  simIndex,
+  simTakedown,
+  user,
+  type SimMemberRole
+} from '$lib/server/db/schema';
 import { getUsers, survivorId } from '$lib/server/user-store/user';
 import {
   addSimRole,
@@ -14,50 +22,52 @@ import {
 } from './sim-roles';
 
 /**
- * Record a new sim: its index row and the manager's membership (a manager role-grant
- * event on the capability ledger). The index row is inserted FIRST so a concurrent fold
- * read (which is index-gated) sees the sim, then the manager grant is appended.
+ * The id has a past: an index row, a takedown mark, a stored commit envelope, or any ledger
+ * event naming it as a sim. The last two cover sims whose index row an older code path deleted
+ * while their log or ledger remained: registering such an id would make the caller manager of
+ * the old log.
  */
-export async function createSimRecord(args: {
-  db: Database;
-  simId: string;
-  title: string;
-  managerId: string;
-}): Promise<void> {
-  const now = new Date();
-  await args.db.insert(simIndex).values({
-    simId: args.simId,
-    title: args.title,
-    createdAt: now,
-    updatedAt: now
-  });
-  await addSimRole(args.db, args.simId, args.managerId, 'manager', args.managerId);
-}
+const hasPast = (simId: string) => sql`(
+  exists (select 1 from ${simIndex} where ${simIndex.simId} = ${simId})
+  or exists (select 1 from ${simTakedown} where ${simTakedown.simId} = ${simId})
+  or exists (select 1 from ${simCommit} where ${simCommit.simId} = ${simId})
+  or exists (
+    select 1 from ${capabilityEvent}
+    where ${capabilityEvent.resourceType} = 'sim' and ${capabilityEvent.resourceId} = ${simId}
+  )
+)`;
 
 /**
- * Idempotently (re)seed a sim's control-plane projection. Unlike createSimRecord
- * — which assumes a freshly-provisioned sim and inserts unconditionally — this tolerates
- * an existing index row and an already-held manager grant, so calling it again for the
- * same sim changes nothing and restores whichever of the two is missing.
+ * One statement: insert the index row unless the id has a past (an index row, a takedown mark,
+ * a stored commit envelope or a ledger event). True when this call inserted it. The check and
+ * the insert are one statement, so D1 serializes it against a concurrent registration or
+ * takedown mark: either it lands before the mark, or not at all.
  */
-export async function ensureSimRecord(args: {
+export async function insertSimIndexIfFree(args: {
   db: Database;
   simId: string;
   title: string;
-  managerId: string;
-}): Promise<void> {
-  const now = new Date();
-  await args.db
-    .insert(simIndex)
-    .values({
-      simId: args.simId,
-      title: args.title,
-      createdAt: now,
-      updatedAt: now
-    })
-    .onConflictDoNothing();
-  // addSimRole is a no-op when the role bundle is already held, so this self-heals.
-  await addSimRole(args.db, args.simId, args.managerId, 'manager', args.managerId);
+}): Promise<boolean> {
+  const rows = await args.db.all<{ sim_id: string }>(buildInsertSimIndexIfFreeSql(args));
+  return rows.length === 1;
+}
+
+/** insertSimIndexIfFree's statement, for a batch; it returns `sim_id` when it inserted. */
+export function buildInsertSimIndexIfFreeSql(args: { simId: string; title: string }): SQL {
+  const now = Date.now();
+  // Raw SQL skips the normText column's NFC write, so the title goes through it here.
+  return sql`
+    insert into ${simIndex} (sim_id, title, created_at, updated_at)
+    select ${args.simId}, ${normTextToDriver(args.title)}, ${now}, ${now}
+    where not ${hasPast(args.simId)}
+    on conflict do nothing
+    returning sim_id`;
+}
+
+/** The id has a past: an index row, a takedown mark, a stored commit envelope or a ledger event. */
+export async function simIdInUse(db: Database, simId: string): Promise<boolean> {
+  const rows = await db.all<{ used: number }>(sql`select ${hasPast(simId)} as used`);
+  return rows[0]?.used === 1;
 }
 
 /** The sim's title from its index row. Null for a sim with no index row. */
@@ -226,8 +236,9 @@ export async function reconcileSimManagement(
 
 /**
  * Revoke one membership (across the member's fused identities), then reconcile
- * management. `removeSimMember` in sims.ts calls it and deletes the sim when { empty }.
- * Returns `members`, the roster fold from before the revoke.
+ * management. When the member is the sole manager and others remain, the successor is promoted
+ * first. `removeSimMember` in sims.ts calls it; an emptied sim ({ empty }) is kept.
+ * Returns `members`, the roster fold from before the promotion and the revoke.
  *
  * Co-manager protection: when `actorUserId` is supplied AND it is removing a
  * DIFFERENT principal who currently holds `manager`, the removal is refused — a manager
@@ -255,6 +266,13 @@ export async function removeMembership(
     if (member?.role === 'manager')
       throw new Error('cannot remove another manager; they must leave the sim themselves');
   }
+  // The sole manager leaving a sim others remain in: promote the successor the reconcile would
+  // pick BEFORE the revoke. A failure between the two writes then leaves the leaver still a
+  // member and the sim managed, and a retry (which still finds the leaver) finishes the job.
+  const others = members.filter((m) => m.userId !== target);
+  const managers = members.filter((m) => m.role === 'manager');
+  if (others.length && managers.length === 1 && managers[0].userId === target)
+    await setSimRole(db, simId, pickSuccessor(others), 'manager', null);
   await revokeSimRoles(db, simId, target);
   const { empty } = await reconcileSimManagement(db, simId);
   return { empty, members };

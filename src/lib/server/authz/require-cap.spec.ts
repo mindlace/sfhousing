@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { freshDb, seedUser, makePlatform } from '$lib/server/test/auth-db';
-import { createSimRecord, addMember } from '$lib/server/sims/sim-index';
+import { freshDb, seedSim, seedUser, makePlatform } from '$lib/server/test/auth-db';
+import { addMember } from '$lib/server/sims/sim-index';
 import { ROLE_BUNDLE, APP_RESOURCE, type Capability } from '$lib/server/authz';
 import { PUBLIC_ACTOR_ID, type ActorKind } from './actor';
 import { requireCap } from './require-cap';
@@ -50,7 +50,7 @@ describe('requireCap — sim resource (membership-only)', () => {
     const platform = makePlatform(shim);
     const manager = await seedUser(db, { id: 'manager', email: 'm@test.com' });
     const stranger = await seedUser(db, { id: 'stranger', email: 's@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: manager.id });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: manager.id });
     const { status: s, body } = await httpError(() =>
       requireCap(event(platform, stranger), ROLE_BUNDLE.viewer, { type: 'sim', id: 'q1' })
     );
@@ -63,7 +63,7 @@ describe('requireCap — sim resource (membership-only)', () => {
     const platform = makePlatform(shim);
     const manager = await seedUser(db, { id: 'manager', email: 'm@test.com' });
     const viewer = await seedUser(db, { id: 'viewer', email: 'v@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: manager.id });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: manager.id });
     await addMember({ db, simId: 'q1', email: viewer.email, role: 'viewer' });
     expect(
       await status(() =>
@@ -76,7 +76,7 @@ describe('requireCap — sim resource (membership-only)', () => {
     const { db, shim } = freshDb();
     const platform = makePlatform(shim);
     const manager = await seedUser(db, { id: 'manager', email: 'm@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: manager.id });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: manager.id });
     const res = await requireCap(event(platform, manager), ROLE_BUNDLE.editor, {
       type: 'sim',
       id: 'q1'
@@ -91,7 +91,7 @@ describe('requireCap — sim resource (membership-only)', () => {
       id: 'service:support-autoclose',
       email: 'service@test.com'
     });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: service.id });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: service.id });
     const res = await requireCap(event(platform, service, [], 'automation'), ROLE_BUNDLE.editor, {
       type: 'sim',
       id: 'q1'
@@ -103,7 +103,7 @@ describe('requireCap — sim resource (membership-only)', () => {
     const { db, shim } = freshDb();
     const platform = makePlatform(shim);
     const manager = await seedUser(db, { id: 'manager2', email: 'm2@test.com' });
-    await createSimRecord({ db, simId: 'q2', title: 'T2', managerId: manager.id });
+    await seedSim(db, { simId: 'q2', title: 'T2', managerId: manager.id });
     const res = await requireCap(event(platform, manager, [], 'human'), ROLE_BUNDLE.editor, {
       type: 'sim',
       id: 'q2'
@@ -116,7 +116,7 @@ describe('requireCap — sim resource (membership-only)', () => {
     const platform = makePlatform(shim);
     const manager = await seedUser(db, { id: 'manager', email: 'm@test.com' });
     const op = await seedUser(db, { id: 'op', email: 'op@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: manager.id });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: manager.id });
     const caps: Capability[] = [{ ability: '*', resource: APP_RESOURCE }];
     expect(
       await status(() =>
@@ -187,7 +187,7 @@ describe('requireCap — sim stays membership-only', () => {
     const platform = makePlatform(shim);
     const manager = await seedUser(db, { id: 'manager', email: 'm@test.com' });
     const stranger = await seedUser(db, { id: 'stranger', email: 's@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: manager.id });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: manager.id });
     expect(
       await status(() =>
         requireCap(event(platform, stranger), ROLE_BUNDLE.viewer, { type: 'sim', id: 'q1' })

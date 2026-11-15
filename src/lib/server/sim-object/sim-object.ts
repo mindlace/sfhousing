@@ -23,16 +23,19 @@ import { canWrite } from './access';
 import { IndexRunner, takeDownInOrder } from './index-runner';
 import { syncSimIndex } from './index-sync';
 import { INDEX_RETRY_MS } from './limits';
-import { LogHost } from './log-host';
+import { LogHost, type ServerAppend } from './log-host';
 import { simMigrations } from './migrations.generated';
 import {
+  APPEND_FAILED,
   closeReply,
   loggable,
   openStatus,
   readMessage,
   receivesLive,
   rereadChanges,
-  withResumed
+  serverAppendResult,
+  withResumed,
+  type ServerAppendResult
 } from './object-rules';
 import { OPEN_HEADER, parseOpenParams } from './open-params';
 import * as schema from './schema';
@@ -224,6 +227,43 @@ export class SimObject extends DurableObject<Env> {
       } catch {
         // The socket closed after the list was taken.
       }
+    }
+  }
+
+  /**
+   * RPC: appends a commit on a writer's behalf (a rename is a name commit) through the log host's
+   * one append path. The Worker has checked the role; `actor` is stamped as the author. Throws
+   * Error('sim object unavailable') without a log host, Error(APPEND_FAILED) on any other failure.
+   * Kicks the index pass whenever the tip moved, a start commit before a refusal included.
+   */
+  async appendAs(input: Omit<ServerAppend, 'now'>): Promise<ServerAppendResult> {
+    const host = this.#host;
+    if (!host) throw new Error('sim object unavailable');
+    let before: number | null = null;
+    let accepted = false;
+    try {
+      before = host.tip();
+      const out = await host.appendAs({ ...input, now: Date.now() });
+      accepted = out.kind === 'accepted';
+      return serverAppendResult(out);
+    } catch (e) {
+      console.error('[sim-object] append failed', this.#label(), loggable(e));
+      // No cause: a failed query's error carries its bound parameters and would cross the RPC.
+      // eslint-disable-next-line preserve-caught-error
+      throw new Error(APPEND_FAILED);
+    } finally {
+      // Also after a throw: a start commit stored before the failure still reaches the index.
+      await this.#kickIfMoved(host, before, accepted);
+    }
+  }
+
+  /** Kicks the index pass when the tip moved since `before`. Never throws, so it masks nothing
+   *  and a stored commit is never reported as failed. */
+  async #kickIfMoved(host: LogHost, before: number | null, accepted: boolean): Promise<void> {
+    try {
+      if (before !== null && (accepted || host.tip() !== before)) await this.#index?.kick();
+    } catch (e) {
+      console.error('[sim-object] index kick failed', this.#label(), loggable(e));
     }
   }
 

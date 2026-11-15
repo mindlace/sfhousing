@@ -92,8 +92,9 @@
 {/snippet}
 
 {#if me && others.length === 0}
-  <!-- Sole member: leaving deletes the sim and its pending invitations. Simple confirm,
-       no title typing; posts to the same leaveSim action, which redirects to /sims. -->
+  <!-- Sole member: the sim is kept with no members (its links still open, nobody can edit it)
+       and its pending invitations end. Simple confirm, no title typing; posts to the same
+       leaveSim action, which redirects to /sims. -->
   <div class="mt-4 border-t border-current/20 pt-3">
     {@render status()}
     {#if confirming}
@@ -106,7 +107,7 @@
             class="rounded border border-current px-3 py-1 font-medium"
             bind:this={firstControlEl}
           >
-            {MEMBERS_COPY.leaveDeleteButton}
+            {MEMBERS_COPY.leaveLastButton}
           </button>
           <button type="button" class="underline" onclick={cancel}>
             {MEMBERS_COPY.leaveCancel}

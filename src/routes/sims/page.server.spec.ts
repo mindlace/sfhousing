@@ -1,12 +1,34 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SIMS_COPY, SIM_TITLE_MAX, titleTooLong } from '$lib/members/copy';
-import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
+import { isValidId } from '$lib/server/ids/factory';
+import {
+  freshDb,
+  makePlatform,
+  seedManagedSims,
+  seedSim,
+  seedUser
+} from '$lib/server/test/auth-db';
+import { getRole, listSimsForUser } from '$lib/server/sims/sim-index';
+import { simIndex } from '$lib/server/db/schema';
+import { mockConsole } from '$lib/server/test/mock-console';
 
 const mint = vi.hoisted(() => vi.fn());
 vi.mock('$lib/server/onboarding/pseudonymous-mint', () => ({ mintPseudonymousSession: mint }));
+// newId stays real unless a case hands the next server-minted id.
+const minted = vi.hoisted(() => ({ next: null as string | null }));
+vi.mock('$lib/server/ids/factory', async (importOriginal) => {
+  const real = await importOriginal<typeof import('$lib/server/ids/factory')>();
+  return {
+    ...real,
+    newId: () => {
+      const id = minted.next;
+      minted.next = null;
+      return id ?? real.newId();
+    }
+  };
+});
 
 import { createInvite } from '$lib/server/invites/control-plane';
-import { createSim } from '$lib/server/sims/sims';
 import { actions, load } from './+page.server';
 import { load as layoutLoad } from './+layout.server';
 
@@ -14,6 +36,7 @@ const opened: Array<() => void> = [];
 afterEach(() => {
   for (const close of opened.splice(0)) close();
   mint.mockReset();
+  minted.next = null;
 });
 
 function setup(
@@ -26,6 +49,7 @@ function setup(
       email?: string;
       emailVerified?: boolean;
     };
+    env?: Record<string, unknown>;
   } = {}
 ) {
   const t = freshDb();
@@ -38,7 +62,8 @@ function setup(
     set: (n: string, v: string) => void store.set(n, v),
     delete: (n: string) => void store.delete(n)
   };
-  const platform = makePlatform(t.shim);
+  // development: the creation limiter allows without a binding (and logs nothing).
+  const platform = makePlatform(t.shim, { ENVIRONMENT: 'development', ...opts.env });
   const locals = { user: opts.user ?? null };
   const event = (title?: string) =>
     ({
@@ -93,13 +118,15 @@ describe('/sims create action', () => {
     const r = await redirectOf(() => actions.create(event('Garden')));
     expect(mint).toHaveBeenCalledOnce();
     expect(r.status).toBe(303);
-    expect(r.location).toMatch(/^\/sims\/.+/);
+    const simId = r.location.replace(/^\/sims\//, '');
+    expect(isValidId(simId)).toBe(true);
+    expect(await getRole({ db, simId, userId: 'p1' })).toBe('manager');
   });
 
   it('answers 403 for a signed-in user at the quota', async () => {
     const { db, event } = setup({ user: { id: 'u1', pseudonymous: false } });
     await seedUser(db, { id: 'u1', email: 'u1@test.com' });
-    for (let i = 0; i < 5; i++) await createSim({ db, title: `S${i}`, managerId: 'u1' });
+    await seedManagedSims(db, { managerId: 'u1', count: 1000 });
     const res = await actions.create(event('More'));
     expect(res).toMatchObject({ status: 403, data: { error: SIMS_COPY.quota } });
   });
@@ -114,8 +141,8 @@ describe('/sims load', () => {
   it('lists the user sims sorted by title', async () => {
     const { db, event } = setup({ user: { id: 'u1', pseudonymous: false } });
     await seedUser(db, { id: 'u1', email: 'u1@test.com' });
-    await createSim({ db, title: 'beta', managerId: 'u1' });
-    await createSim({ db, title: 'Alpha', managerId: 'u1' });
+    await seedSim(db, { title: 'beta', managerId: 'u1' });
+    await seedSim(db, { title: 'Alpha', managerId: 'u1' });
     const res = (await load(event())) as { sims: { title: string }[] };
     expect(res.sims.map((s) => s.title)).toEqual(['Alpha', 'beta']);
   });
@@ -126,7 +153,7 @@ describe('/sims load', () => {
     });
     await seedUser(db, { id: 'u1', email: 'u1@test.com', emailVerified: true });
     await seedUser(db, { id: 'm1', email: 'm1@test.com', handle: 'mara' });
-    const { simId } = await createSim({ db, title: 'Garden', managerId: 'm1' });
+    const simId = await seedSim(db, { title: 'Garden', managerId: 'm1' });
     await createInvite({
       db,
       simId,
@@ -157,8 +184,64 @@ describe('/sims load', () => {
     await seedUser(db, { id: 'u1', email: 'u1@test.com' });
     const r = await redirectOf(() => load(event()));
     expect(r.status).toBe(303);
-    expect(r.location).toMatch(/^\/sims\/.+/);
+    const simId = r.location.replace(/^\/sims\//, '');
+    expect(isValidId(simId)).toBe(true);
     expect(store.has('sfh_pending_sim')).toBe(false);
+    expect(await listSimsForUser({ db, userId: 'u1' })).toEqual([
+      { simId, title: 'Resumed', role: 'manager' }
+    ]);
+  });
+
+  it('rate-limits the resume by identity: over the limit it creates nothing and lists', async () => {
+    const limit = vi.fn(async () => ({ success: false }));
+    const { db, event, store } = setup({
+      pending: 'Resumed',
+      user: { id: 'u1', pseudonymous: false },
+      env: { ENVIRONMENT: 'production', MUTATION_REGISTERED_RL: { limit } }
+    });
+    await seedUser(db, { id: 'u1', email: 'u1@test.com' });
+    const res = (await load(event())) as { sims: unknown[] };
+    expect(res.sims).toEqual([]);
+    expect(limit).toHaveBeenCalledWith({ key: 'sim_start:u1' });
+    expect(store.has('sfh_pending_sim')).toBe(false);
+  });
+
+  it('a resume whose create throws keeps the stash, logs, and lists', async () => {
+    // No principal row for the user: the grant's foreign key fails the batch.
+    const { db, event, store } = setup({
+      pending: 'Resumed',
+      user: { id: 'ghost', pseudonymous: false }
+    });
+    const { error } = mockConsole('error');
+    const res = (await load(event())) as { sims: unknown[] };
+    expect(res.sims).toEqual([]);
+    expect(store.get('sfh_pending_sim')).toBe('Resumed');
+    expect(error).toHaveBeenCalledWith(
+      '[sims] resume failed',
+      expect.any(String),
+      expect.any(String)
+    );
+    expect(JSON.stringify(error.mock.calls)).not.toContain('ghost');
+    error.mockRestore();
+    expect(await db.select().from(simIndex)).toEqual([]);
+  });
+
+  it('a resume whose server-minted id was not new keeps the stash and does not enter that sim', async () => {
+    const { db, event, store } = setup({
+      pending: 'Resumed',
+      user: { id: 'u1', pseudonymous: false }
+    });
+    await seedUser(db, { id: 'u1', email: 'u1@test.com' });
+    await seedUser(db, { id: 'm1', email: 'm1@test.com' });
+    const theirs = await seedSim(db, { title: 'Theirs', managerId: 'm1' });
+    minted.next = theirs;
+    const { error } = mockConsole('error');
+    const res = (await load(event())) as { sims: unknown[] };
+    expect(res.sims).toEqual([]);
+    expect(store.get('sfh_pending_sim')).toBe('Resumed');
+    expect(error).toHaveBeenCalledWith('[sims] resume failed', theirs, expect.any(String));
+    error.mockRestore();
+    expect(await getRole({ db, simId: theirs, userId: 'u1' })).toBeNull();
   });
 
   it.each([
@@ -179,9 +262,9 @@ describe('/sims load', () => {
       user: { id: 'u1', pseudonymous: false }
     });
     await seedUser(db, { id: 'u1', email: 'u1@test.com' });
-    for (let i = 0; i < 5; i++) await createSim({ db, title: `S${i}`, managerId: 'u1' });
+    await seedManagedSims(db, { managerId: 'u1', count: 1000 });
     const res = (await load(event())) as { sims: unknown[] };
-    expect(res.sims).toHaveLength(5);
+    expect(res.sims).toHaveLength(1000);
     expect(store.has('sfh_pending_sim')).toBe(false);
   });
 });

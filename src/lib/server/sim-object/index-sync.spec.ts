@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { asc, eq } from 'drizzle-orm';
-import { freshDb, seedUser } from '$lib/server/test/auth-db';
-import { createSimRecord } from '$lib/server/sims/sim-index';
+import { freshDb, seedSim, seedUser } from '$lib/server/test/auth-db';
 import { simCommit, simIndex } from '$lib/server/db/schema';
 import type { Commit } from '$lib/sim-log';
 import { envelopeRow, syncSimIndex, type IndexedCommit, type IndexSummary } from './index-sync';
@@ -47,8 +46,7 @@ async function setup(sims = ['s1']) {
   const t = freshDb();
   opened.push(t.close);
   await seedUser(t.db, { id: 'u1', email: 'u1@test.com' });
-  for (const simId of sims)
-    await createSimRecord({ db: t.db, simId, title: 'Garden', managerId: 'u1' });
+  for (const simId of sims) await seedSim(t.db, { simId, title: 'Garden', managerId: 'u1' });
   return t;
 }
 

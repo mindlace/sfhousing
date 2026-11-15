@@ -1,8 +1,63 @@
-import { describe, it, expect } from 'vitest';
-import { freshDb, seedUser } from '$lib/server/test/auth-db';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+
+// A seam between an accept's claim and its grant: the grant (addMemberById) first runs
+// `beforeGrant` when a test sets it, so a test can interleave a leave there. `failReconcile`
+// makes the next reconcile throw. `beforeRoleRead` runs before the next role fold
+// (foldSimRole) and `failRoleRead` makes it throw: a create's re-check of its inviter.
+const seam = vi.hoisted(() => ({
+  beforeGrant: null as null | (() => Promise<void>),
+  failReconcile: false,
+  beforeRoleRead: null as null | (() => Promise<void>),
+  failRoleRead: false
+}));
+vi.mock('$lib/server/sims/sim-roles', async (importOriginal) => {
+  const real = await importOriginal<typeof import('$lib/server/sims/sim-roles')>();
+  return {
+    ...real,
+    foldSimRole: async (
+      ...args: Parameters<typeof real.foldSimRole>
+    ): ReturnType<typeof real.foldSimRole> => {
+      const run = seam.beforeRoleRead;
+      seam.beforeRoleRead = null;
+      if (run) await run();
+      if (seam.failRoleRead) {
+        seam.failRoleRead = false;
+        throw new Error('role read boom');
+      }
+      return real.foldSimRole(...args);
+    }
+  };
+});
+vi.mock('$lib/server/sims/sim-index', async (importOriginal) => {
+  const real = await importOriginal<typeof import('$lib/server/sims/sim-index')>();
+  return {
+    ...real,
+    addMemberById: async (args: Parameters<typeof real.addMemberById>[0]) => {
+      const run = seam.beforeGrant;
+      seam.beforeGrant = null;
+      if (run) await run();
+      return real.addMemberById(args);
+    },
+    reconcileSimManagement: async (
+      ...args: Parameters<typeof real.reconcileSimManagement>
+    ): ReturnType<typeof real.reconcileSimManagement> => {
+      if (seam.failReconcile) {
+        seam.failReconcile = false;
+        throw new Error('reconcile boom');
+      }
+      return real.reconcileSimManagement(...args);
+    }
+  };
+});
+
+import { freshDb, seedSim, seedUser } from '$lib/server/test/auth-db';
+import { mockConsole } from '$lib/server/test/mock-console';
 import { eq } from 'drizzle-orm';
 import { simInvite, user } from '$lib/server/db/schema';
-import { createSimRecord, addMemberById, getRole } from '$lib/server/sims/sim-index';
+import { addMemberById, getRole, listMembers, removeMembership } from '$lib/server/sims/sim-index';
+import { leaveSim } from '$lib/server/sims/sims';
+import { revokeSimRoles, setSimRole } from '$lib/server/sims/sim-roles';
+import { generateInviteToken, hashToken } from '$lib/server/invites/token';
 import { PSEUDONYMOUS_EMAIL_DOMAIN } from '$lib/server/auth/brand';
 import {
   claimInvite,
@@ -16,13 +71,22 @@ import {
   resendInvite,
   listRecipientPendingInvites,
   findInviteByToken,
-  parseInviteTarget
+  parseInviteTarget,
+  InviterRoleLostError
 } from './control-plane';
+
+afterEach(() => {
+  seam.beforeGrant = null;
+  seam.failReconcile = false;
+  seam.beforeRoleRead = null;
+  seam.failRoleRead = false;
+  vi.restoreAllMocks();
+});
 
 async function setup() {
   const { db } = freshDb();
   const manager = await seedUser(db, { id: 'manager', email: 'manager@test.com' });
-  await createSimRecord({ db, simId: 'q1', title: 'T', managerId: manager.id });
+  await seedSim(db, { simId: 'q1', title: 'T', managerId: manager.id });
   return { db, manager };
 }
 
@@ -106,7 +170,7 @@ describe('createInvite', () => {
     expect(upper.resolvedUser?.userId).toBe('jane');
 
     // NFD-decomposed input (U+0063 U+0061 U+0066 U+0065 U+0301) on a second sim.
-    await createSimRecord({ db, simId: 'q2', title: 'T2', managerId: manager.id });
+    await seedSim(db, { simId: 'q2', title: 'T2', managerId: manager.id });
     const nfd = await createInvite({
       db,
       simId: 'q2',
@@ -287,6 +351,78 @@ describe('listManagerPendingInvites', () => {
   });
 });
 
+// The inviter's last leave can run after the route authorized them. A create re-reads the
+// inviter's role after its insert, so no pending invitation survives on a sim nobody manages.
+describe('createInvite re-checks its inviter after the insert', () => {
+  const target = { kind: 'email', email: 'invitee@test.com' } as const;
+
+  it('the inviter leaves after the insert: the row is gone and the create is refused', async () => {
+    const { db, manager } = await setup();
+    const atLeave: string[] = [];
+    seam.beforeRoleRead = async () => {
+      const rows = await db.select().from(simInvite).where(eq(simInvite.simId, 'q1'));
+      atLeave.push(...rows.map((r) => r.status));
+      await leaveSim({ db, env: undefined, simId: 'q1', userId: manager.id, simTitle: 'T' });
+    };
+
+    const create = createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target
+    });
+    await expect(create).rejects.toBeInstanceOf(InviterRoleLostError);
+    await expect(create).rejects.toMatchObject({ role: null });
+
+    // The leave ran after the insert, and no row survives it.
+    expect(atLeave).toEqual(['pending']);
+    expect(await db.select().from(simInvite).where(eq(simInvite.simId, 'q1'))).toEqual([]);
+  });
+
+  it('an inviter demoted after the insert is refused with the role read', async () => {
+    const { db, manager } = await setup();
+    await seedUser(db, { id: 'co', email: 'co@test.com' });
+    await addMemberById({ db, simId: 'q1', userId: 'co', role: 'manager' });
+    seam.beforeRoleRead = () => setSimRole(db, 'q1', manager.id, 'editor', null);
+
+    await expect(
+      createInvite({ db, simId: 'q1', invitedByUserId: manager.id, canInviteByEmail: true, target })
+    ).rejects.toMatchObject({ role: 'editor' });
+    expect(await db.select().from(simInvite).where(eq(simInvite.simId, 'q1'))).toEqual([]);
+  });
+
+  it('the role still held: the invitation stands', async () => {
+    const { db, manager } = await setup();
+    const out = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target
+    });
+    const rows = await db.select().from(simInvite).where(eq(simInvite.simId, 'q1'));
+    expect(rows.map((r) => [r.id, r.status])).toEqual([[out.invite.id, 'pending']]);
+  });
+
+  it('a role read that throws counts as no: refused, no row, logged with safe text', async () => {
+    const { db, manager } = await setup();
+    const { error } = mockConsole('error');
+    seam.failRoleRead = true;
+
+    await expect(
+      createInvite({ db, simId: 'q1', invitedByUserId: manager.id, canInviteByEmail: true, target })
+    ).rejects.toMatchObject({ role: null });
+
+    expect(await db.select().from(simInvite).where(eq(simInvite.simId, 'q1'))).toEqual([]);
+    expect(error).toHaveBeenCalledWith(
+      '[invite-create] role re-check failed',
+      'q1',
+      'role read boom'
+    );
+  });
+});
+
 describe('accept / decline / revoke', () => {
   async function setupInvite() {
     const { db, manager } = await setup();
@@ -359,6 +495,200 @@ describe('accept / decline / revoke', () => {
     await expect(acceptInviteByToken({ db, token, userId: claimer.id })).rejects.toThrow(
       /not pending/i
     );
+  });
+});
+
+// A kept sim must never end with an editor and no manager. The accept claims the invitation;
+// the last member then leaves, which ends only pending invitations (this one is no longer
+// pending); the accept then grants editor. The accept reconciles management after its grant,
+// so the invitee becomes the sim's manager.
+describe('an accept racing the last member leaving', () => {
+  it('the leave lands between the claim and the grant: the invitee ends as manager', async () => {
+    const { db, manager } = await setup();
+    const { token, invite } = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'invitee@test.com' }
+    });
+    const claimer = await seedUser(db, { id: 'claimer', email: 'claimer@test.com' });
+    const statusAtLeave: string[] = [];
+    seam.beforeGrant = async () => {
+      const [row] = await db.select().from(simInvite).where(eq(simInvite.id, invite.id));
+      statusAtLeave.push(row.status);
+      await leaveSim({ db, env: undefined, simId: 'q1', userId: manager.id, simTitle: 'T' });
+    };
+
+    await expect(acceptInviteByToken({ db, token, userId: claimer.id })).resolves.toEqual({
+      simId: 'q1'
+    });
+
+    // The leave ran after the claim, while the manager was still the one member.
+    expect(statusAtLeave).toEqual(['accepted']);
+    expect(await getRole({ db, simId: 'q1', userId: manager.id })).toBeNull();
+    expect(await getRole({ db, simId: 'q1', userId: claimer.id })).toBe('manager');
+    expect((await listMembers({ db, simId: 'q1' })).map((m) => m.userId)).toEqual([claimer.id]);
+  });
+
+  it('the same holds for an accept by id', async () => {
+    const { db, manager } = await setup();
+    await seedUser(db, { id: 'jane', email: 'jane@test.com', handle: 'jane' });
+    const { invite } = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'handle', handle: 'jane' }
+    });
+    seam.beforeGrant = () =>
+      leaveSim({ db, env: undefined, simId: 'q1', userId: manager.id, simTitle: 'T' });
+
+    await acceptInviteById({
+      db,
+      inviteId: invite.id,
+      userId: 'jane',
+      email: 'jane@test.com',
+      emailVerified: true
+    });
+
+    expect(await getRole({ db, simId: 'q1', userId: 'jane' })).toBe('manager');
+    expect((await listMembers({ db, simId: 'q1' })).map((m) => m.userId)).toEqual(['jane']);
+  });
+
+  it('an invitation accepted after the last membership went, before its pending rows ended, is refused', async () => {
+    const { db, manager } = await setup();
+    const { token, invite } = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'invitee@test.com' }
+    });
+    // The leave's revoke is written; its ending of pending invitations has not run yet.
+    await removeMembership(db, 'q1', manager.id);
+    const claimer = await seedUser(db, { id: 'claimer', email: 'claimer@test.com' });
+
+    await expect(acceptInviteByToken({ db, token, userId: claimer.id })).rejects.toThrow(
+      'invite not pending'
+    );
+
+    expect(await getRole({ db, simId: 'q1', userId: claimer.id })).toBeNull();
+    expect(await listMembers({ db, simId: 'q1' })).toEqual([]);
+    const [row] = await db.select().from(simInvite).where(eq(simInvite.id, invite.id));
+    expect(row.status).toBe('pending');
+  });
+
+  it('a failed reconcile after the grant is logged, and the accept still succeeds', async () => {
+    const { db, manager } = await setup();
+    const { token } = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'invitee@test.com' }
+    });
+    const claimer = await seedUser(db, { id: 'claimer', email: 'claimer@test.com' });
+    const { error } = mockConsole('error');
+    seam.failReconcile = true;
+
+    await expect(acceptInviteByToken({ db, token, userId: claimer.id })).resolves.toEqual({
+      simId: 'q1'
+    });
+
+    expect(await getRole({ db, simId: 'q1', userId: claimer.id })).toBe('editor');
+    expect(error).toHaveBeenCalledOnce();
+    expect(error).toHaveBeenCalledWith('[invite-accept] reconcile failed', 'q1', 'reconcile boom');
+  });
+});
+
+// A kept sim with no members is joinable by nobody: a pending invitation that outlived the last
+// member (a failed delete, a cut account deletion) is refused like one that is not pending.
+describe('a pending invitation on a sim with no members', () => {
+  async function seedOrphanInvite() {
+    const { db, manager } = await setup();
+    await seedUser(db, { id: 'jane', email: 'jane@test.com', handle: 'jane' });
+    // The last member's roles are gone; the invitation row was never ended.
+    await revokeSimRoles(db, 'q1', manager.id);
+    const token = generateInviteToken();
+    const now = new Date();
+    await db.insert(simInvite).values({
+      id: 'orphan',
+      simId: 'q1',
+      role: 'editor',
+      invitedEmail: 'jane@test.com',
+      invitedUserId: 'jane',
+      tokenHash: await hashToken(token),
+      invitedByUserId: manager.id,
+      status: 'pending',
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + 60_000),
+      lastSentAt: now
+    });
+    return { db, token };
+  }
+
+  async function expectUntouched(db: Awaited<ReturnType<typeof seedOrphanInvite>>['db']) {
+    expect(await getRole({ db, simId: 'q1', userId: 'jane' })).toBeNull();
+    expect(await listMembers({ db, simId: 'q1' })).toEqual([]);
+    const [row] = await db.select().from(simInvite).where(eq(simInvite.id, 'orphan'));
+    expect(row.status).toBe('pending');
+    expect(row.acceptedByUserId).toBeNull();
+  }
+
+  it('cannot be accepted by token', async () => {
+    const { db, token } = await seedOrphanInvite();
+    await expect(acceptInviteByToken({ db, token, userId: 'jane' })).rejects.toThrow(
+      'invite not pending'
+    );
+    await expectUntouched(db);
+  });
+
+  it('cannot be accepted by id', async () => {
+    const { db } = await seedOrphanInvite();
+    await expect(
+      acceptInviteById({
+        db,
+        inviteId: 'orphan',
+        userId: 'jane',
+        email: 'jane@test.com',
+        emailVerified: true
+      })
+    ).rejects.toThrow('invite not pending');
+    await expectUntouched(db);
+  });
+});
+
+describe('createInvite when its compensating delete fails', () => {
+  it('is still refused as role lost, and the failure is logged with safe text', async () => {
+    const { db, manager } = await setup();
+    const { error } = mockConsole('error');
+    seam.failRoleRead = true;
+    const failing = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'delete')
+          return () => {
+            throw new Error('delete boom');
+          };
+        return Reflect.get(target, prop, receiver);
+      }
+    }) as typeof db;
+
+    const create = createInvite({
+      db: failing,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'invitee@test.com' }
+    });
+    await expect(create).rejects.toBeInstanceOf(InviterRoleLostError);
+    await expect(create).rejects.toMatchObject({ role: null });
+    expect(error).toHaveBeenCalledWith(
+      '[invite-create] compensating delete failed',
+      'q1',
+      'delete boom'
+    );
+    expect(JSON.stringify(error.mock.calls)).not.toContain('invitee@test.com');
   });
 });
 
@@ -624,7 +954,7 @@ describe('listRecipientPendingInvites', () => {
       target: { kind: 'handle', handle: 'me' }
     });
     // A second sim with an email invite to me@x.com (no account on that address path).
-    await createSimRecord({ db, simId: 'q2', title: 'Second', managerId: manager.id });
+    await seedSim(db, { simId: 'q2', title: 'Second', managerId: manager.id });
     await createInvite({
       db,
       simId: 'q2',

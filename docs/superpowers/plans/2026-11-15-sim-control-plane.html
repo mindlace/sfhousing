@@ -1,0 +1,1116 @@
+<article>
+  <header>
+    <h1>Sim control plane plan</h1>
+    <p>Unit 3 of the sim message log: browser-minted ids, the cap and the rate, the roster hook, kept sims, the operator takedown, the reaper removed and the rename as a name commit.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Make the D1 control plane agree with the sim object: a sim is registered under an id the browser minted, membership changes reach open sockets, nothing a member does deletes a sim, an operator's takedown clears the object, and a rename is a commit.</dd>
+      <dt>Architecture</dt>
+      <dd>D1 stays the only source of who may write; the object stays the only holder of the log. The Worker tells the object of a roster change through <code>onSimRosterChanged(env, simId)</code> (<code>rereadRoles()</code>), writes on a person's behalf through one new RPC, <code>appendAs</code>, that runs inside <code>LogHost</code>'s one serialized append path, and takes a sim down through <code>deleteSim</code>, which marks the id in a new D1 table, calls <code>takeDown()</code>, then deletes the D1 rows.</dd>
+      <dt>Tech stack</dt>
+      <dd>SvelteKit 2, Svelte 5, Cloudflare Workers and a SQLite Durable Object, D1 with Drizzle, Vitest (<code>server</code> project, the D1 shim <code>src/lib/server/test/d1.ts</code>, the object harness <code>src/lib/server/sim-object/test/harness.ts</code>), Playwright against <code>wrangler dev</code>.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-14-sim-message-log-design.html"><code>docs/superpowers/specs/2026-11-14-sim-message-log-design.html</code></a>, unit 3 of <a href="../specs/2026-11-14-sim-message-log-design.html#sec-order">Size and order</a>. Rules: R29, R30, R34, R42, R43, R44 to R53, R58 to R61, the Testing section's "Control plane" line, and both "Carried from" lists of "Left to the builder". Read it, and <code>docs/dev/sim-object.md</code> and <code>docs/dev/auth.md</code>, before any task.</dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li>Work in this worktree only: <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/sim-control-plane</code>. If <code>node_modules</code> is missing, run <code>npm install</code> first.</li>
+      <li>Never compound <code>cd … &amp;&amp; cmd</code>: run <code>cd</code> on its own, then the command, or use absolute paths.</li>
+      <li>Conventional Commits. A multi-line message uses several <code>-m</code> flags, never a heredoc.</li>
+      <li>No Claude attribution anywhere: no <code>Co-Authored-By</code>, no generated-with footer, no mention in code, comments or docs.</li>
+      <li>Code style: 2 spaces, single quotes, no trailing commas, 100 columns including comments. <code>npm run lint</code> clean for every file you touch.</li>
+      <li>Every test calls <code>expect</code> (Vitest runs with <code>expect.requireAssertions</code>).</li>
+      <li>Run everything in the foreground. Never start background work.</li>
+      <li>Never hand-edit a migration. A D1 schema change is <code>src/lib/server/db/schema/</code>, then <code>npm run db:generate</code>, then <code>npm run db:migrate</code>. This plan changes nothing in the object's track (<code>migrations/sim</code>, <code>db:generate:sim</code>); if a task finds it must, stop and ask.</li>
+      <li>Do not change <code>src/lib/sim-log/*</code>.</li>
+      <li>Modules reachable from <code>src/lib/server/sim-object/sim-object.ts</code> import no <code>$app/*</code>, no <code>$env/*</code> and no build-time global (wrangler bundles them without Vite). <code>live-sim.ts</code> imports <code>$app/environment</code> and must never be imported by anything under <code>src/lib/server/sim-object/</code> or by <code>src/lib/server/sims/sim-roles.ts</code>.</li>
+      <li>Logs carry no identity, email, handle, title, sim name or commit body: only a sim id and <code>loggable(e)</code> (<code>src/lib/server/sim-object/object-rules.ts:99</code>), which never logs a <code>DrizzleQueryError</code>'s own message (it holds bound parameters). An error that crossed an RPC boundary is logged with <code>loggable</code> too.</li>
+      <li>Fail closed: a function that decides or revokes access treats a missing or unreadable input as "no". A failure after a committed change is never reported to the person as the change failing.</li>
+      <li>No secrets, account identifiers or email addresses in code, logs or fixtures beyond the repo's test conventions (<code>@e2e.test</code> and <code>@test.com</code> addresses, ids from <code>newId()</code> or the existing literal seed ids).</li>
+      <li>Every task that adds or changes an e2e spec, or runs Playwright or the preview server:
+        <ul>
+          <li>First run <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>. If a process you did not start listens, do not kill it: wait until it is gone, then run. Leave nothing listening.</li>
+          <li>No fixed waits, no raised timeouts, no retries in the spec: wait on a frame (<code>framesAtLeast</code>), a response, a URL or a close (<code>closedCode</code>).</li>
+          <li>After committing: <code>npx chreode timing-check --head HEAD</code> prints no finding.</li>
+          <li>The changed specs pass <code>npx playwright test &lt;files&gt; --project chromium --repeat-each=5 --retries=0</code>.</li>
+          <li>Read the <code>[WebServer]</code> stderr of the run. Any new warning or error line fails signoff. Allowlist in <code>chreode.config.ts</code> only an exact expected message, with a reason. This plan expects none: a takedown and the roster hook log nothing when they succeed.</li>
+        </ul>
+      </li>
+      <li>The values the spec pins: at most 1,000 managed sims (<code>MAX_SIMS_PER_MANAGER</code>, R52); <code>MUTATION_REGISTERED_RL</code> (120 a minute) keyed by identity on <code>startSim</code> (R52); minting behind <code>PSEUDO_MINT_RL</code> (R50); a name of 1 to 63 characters, trimmed (<code>SIM_TITLE_MAX</code>, R42); the default name <code>DEFAULT_SIM_NAME</code>, <code>'Untitled sim'</code> (<code>src/lib/sim-log/shapes.ts:30</code>).</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>A role read that fails after a removal.</strong> The removed writer's open socket keeps writing until the next re-read or reconnect, and the person who removed them must still see the removal succeed. Pinned by Task 3's "a removal stands when every re-read fails" and Task 4's e2e of a removal ending write.</li>
+      <li><strong>A rename of a sim whose tip is on an older dataset.</strong> A server-side commit stamped with the Worker's current dataset would move the sim to it without a reconcile (R54, R55). Pinned by Task 1's "takes parent and dataset version from the tip".</li>
+      <li><strong>An RPC failure carrying a commit body or identity into Worker logs.</strong> A failed insert's error message holds its bound parameters. Pinned by Task 1 (<code>appendAs</code> throws a fixed text) and Task 8 (<code>renameSim</code> logs only <code>loggable</code>).</li>
+      <li><strong>An id registered while it is being taken down, or after.</strong> Registration must never recreate a taken-down sim. Pinned by Task 5's atomic insert test with a mark present and Task 7's e2e.</li>
+      <li><strong>A person with many sims.</strong> The fuse fans out one RPC per absorbed sim; it must be bounded and must never block sign-in. Pinned by Task 3's <code>rosterChangedAll</code> concurrency test and Task 6's "a failed sims read never blocks the fuse". Account deletion's budget is an open question (<a href="#sec-open-questions">Open questions</a>).</li>
+    </ol>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions made in this plan</h2>
+    <ol>
+      <li id="d1"><strong>Registration contract</strong> (R51, R60). <code>POST /api/sims</code> with JSON <code>{ simId: string, title?: string | null }</code>.
+        <table id="tbl-register">
+          <caption>POST /api/sims answers</caption>
+          <thead><tr><th scope="col">Case</th><th scope="col">Status</th><th scope="col">Body</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Not JSON, foreign Origin</th><td>415, 403</td><td>as today (<code>refuseUnlessSameOriginJson</code>, unchanged)</td></tr>
+            <tr><th scope="row">Body not JSON, <code>simId</code> missing or not <code>isValidId</code></th><td>400</td><td><code>{ error, code: 'invalid_id' }</code></td></tr>
+            <tr><th scope="row"><code>title</code> a string the title check refuses, or not a string and not null</th><td>400</td><td><code>{ error, code: 'title' }</code></td></tr>
+            <tr><th scope="row">Signed out on a known device</th><td>401</td><td><code>{ error, code: 'sign_in' }</code>; nothing minted</td></tr>
+            <tr><th scope="row">Signed out, id in use or taken down</th><td>409</td><td><code>{ error, code: 'taken' }</code>; nothing minted</td></tr>
+            <tr><th scope="row">Mint refused by <code>PSEUDO_MINT_RL</code>, or failed</th><td>429, 500</td><td><code>code: 'rate'</code>, <code>'session'</code></td></tr>
+            <tr><th scope="row">Identity over <code>MUTATION_REGISTERED_RL</code></th><td>429</td><td><code>code: 'rate'</code></td></tr>
+            <tr><th scope="row">The caller already writes this sim</th><td>200</td><td><code>{ simId, created: false }</code>; no change</td></tr>
+            <tr><th scope="row">Caller manages 1,000 sims (new id only)</th><td>403</td><td><code>code: 'quota'</code></td></tr>
+            <tr><th scope="row">Id in use by anyone else (a reader, a sim with no members) or taken down</th><td>409</td><td><code>{ error: SIMS_COPY.notYours, code: 'taken' }</code>: the same answer for every case, so it says only "not yours"</td></tr>
+            <tr><th scope="row">New id</th><td>201</td><td><code>{ simId, created: true }</code></td></tr>
+          </tbody>
+        </table>
+        The types live in <code>src/lib/sim-stream/register.ts</code> (imports nothing), so the browser store of unit 4 imports them. Reason: one table of codes the page can act on, and a refusal that names nothing about the holder.</li>
+      <li id="d2"><strong>The taken-down mark is a D1 table, <code>sim_takedown</code></strong> (<code>sim_id</code> primary key, <code>taken_down_at</code>). Registration checks it and <code>sim_index</code> in D1 only, so an arbitrary id never creates an object. The insert that registers is one statement, <code>insert into sim_index … select … where not exists (select 1 from sim_takedown …) on conflict do nothing returning sim_id</code>, so a registration racing a takedown either lands before the mark (and is then taken down) or not at all. The object's own <code>gone_at</code> stays as unit 2 built it. Reason: the check must not wake an object, and D1 serializes the two statements.</li>
+      <li id="d3"><strong><code>createSim</code> has its own insert</strong> and grants manager only when that insert returned the row (R51). <code>createSimRecord</code> and <code>ensureSimRecord</code> are removed: neither has a non-test caller after this unit (<code>grep</code> at plan time), and <code>ensureSimRecord</code> makes any caller a manager. The insert passes the title through <code>normTextToDriver</code> (<code>src/lib/server/db/columns.ts:23</code>), because raw SQL skips the <code>normText</code> column's NFC write.</li>
+      <li id="d4"><strong>Registration does not write the first commit.</strong> The first writer's socket does (R58, built in unit 2). Reason: registration stays a D1 operation, and the start commit already has one path.</li>
+      <li id="d5"><strong>The <code>/sims</code> form mints the id on the server</strong> (<code>newId()</code> in the <code>create</code> action, in the <code>/sims</code> load's pending-sim resume and in <code>/signin</code>'s start-fresh), and still requires a title. Reason: there is no browser store yet (unit 4); a form sim has no commits and gets its start commit at the first writer's open (R58). The pending-sim resume and start-fresh call <code>createSim</code> directly, outside the rate, as today: each makes one sim per sign-in or per mint.</li>
+      <li id="d6"><strong>Order inside <code>startSim</code></strong>: id check, title check, known device, (signed out) in-use check then mint, rate, (signed in) writer check, quota, insert, then the handle reseed. The writer check comes before the quota so a writer at the cap still gets the no-op. The reseed runs after the insert succeeded and only when a name was given (R51); its failure is logged and never reported as a failed registration.</li>
+      <li id="d7"><strong>"Managed" counts sims where the person holds <code>manager</code></strong> (<code>foldManagedSimCount</code>, unchanged). A sim with no members counts for nobody, so leaving frees a place.</li>
+      <li id="d8"><strong>The roster hook</strong> (R53) is <code>onSimRosterChanged(env, simId)</code>: a no-op without the binding or under <code>npm run dev</code>; otherwise <code>rereadRoles()</code> on a fresh stub, at most 2 attempts, the second only when the first did not throw an <code>.overloaded</code> error (Cloudflare: never retry an overloaded object, and recreate a stub after an exception: <a href="https://developers.cloudflare.com/durable-objects/best-practices/error-handling/">error handling</a>). It never throws; after the last failure it logs <code>[roster-hook] reread failed</code>, the sim id and <code>loggable(e)</code>. Callers write the roster first and then await it. Reason: the roster change has happened and must not be rolled back or reported as failed; a failed read revokes nobody (the object's rule), and the socket loses a stale right at its next open, where the route reads the role.</li>
+      <li id="d9"><strong>Call sites</strong>: <code>createSim</code> (after the grant), <code>removeSimMember</code> (every removal, the last member's included), the API accept route, both accept paths of <code>/invite/[token]</code>, and the fuse (Task 6). <code>leaveSim</code>, the members <code>DELETE</code> route and <code>deleteAccount</code> reach it through <code>removeSimMember</code>. Each passes <code>platform?.env</code>. <code>env</code> is a required argument everywhere it is threaded (a required <code>unknown</code> property must be named: checked at plan time), so no production caller can forget it.</li>
+      <li id="d10"><strong>A sim with no members</strong> (R43): <code>removeSimMember</code> returns <code>{ empty }</code>, never deletes; when empty it deletes the sim's pending invitations, then calls the hook (open writer sockets lose write). Its <code>sim_index</code> row stays, so its socket opens read-only for anyone; no one sees its member area (<code>requireSimRole</code> 404s for non-members) and it leaves every list (<code>foldSimsForUser</code>). Its id answers 409 to registration. The leave dialog and the account deletion text stop saying a sim is deleted.</li>
+      <li id="d11"><strong>The fuse</strong> (R49): <code>handleAccountLink</code> takes an optional <code>roster: { env, defer }</code>. On a fuse it reads the absorbed identity's sims before the fuse writes (a failed read gives none and is logged), and hands <code>rosterChangedAll(env, simIds)</code> to <code>defer</code>, which <code>better-auth.ts</code> sets to <code>platform.ctx.waitUntil</code>. An upgrade calls nothing (R49: nothing changes for its sims). Reason: the fuse only ever grants write, so a call that misses costs nothing a reconnect does not restore, and sign-in must never wait on, or fail because of, one RPC per sim. <code>rosterChangedAll</code> runs <code>ROSTER_FANOUT</code> (6) calls at a time inside <code>waitUntil</code>'s 30 seconds (<a href="https://developers.cloudflare.com/workers/runtime-apis/context/#waituntil">context</a>).</li>
+      <li id="d12"><strong>Takedown</strong> (R43): an operator route, <code>POST /api/operator/sims/[simId]/takedown</code>, authorized by a bearer token in a new secret, <code>SIM_TAKEDOWN_TOKEN</code> (at least 32 characters). Unset, short or wrong token, or an invalid id: 404, the same answer, so the route is not discoverable. It calls <code>deleteSim({ db, env, simId })</code>: object stub first (503 if absent), mark, <code>takeDown()</code>, then one D1 batch deleting <code>sim_index</code>, <code>sim_commit</code> and pending <code>sim_invite</code> rows. Ledger grants stay (every fold joins <code>sim_index</code>, <code>sim-roles.ts:88</code>). Reason: the object's storage can be cleared only from inside the Worker, so a <code>wrangler d1</code> command like the policy takedown cannot do it; the operator capability model needs a signed-in, verified operator, which needs a mail provider, which production may not have; a token works with <code>curl</code> and fails closed when unset. No admin UI.</li>
+      <li id="d13"><strong>The server-side append</strong>: <code>LogHost.appendAs(input)</code>, reached by a new RPC <code>SimObject.appendAs</code>. The Worker builds the draft without <code>parent</code> and <code>datasetVersion</code>; inside the one serialized section the host records the start commit first when the log is empty (R58), then sets <code>parent</code> to the tip and <code>datasetVersion</code> to the folded tip's, and runs the ordinary <code>#appendNow</code>: every check of unit 2 applies, a rate token is taken, the commit is broadcast and indexed. The author is <code>{ identity: actor, write: true }</code>: the Worker checked the role (I8). The RPC catches its own failure, logs <code>loggable</code>, and throws <code>Error('append failed')</code>. Reason: <code>behind</code> cannot happen when the tip is read in the serialized path, and taking the Worker's dataset would move the sim without a reconcile.</li>
+      <li id="d14"><strong>The rename</strong> (R42) is a <code>rename</code> form action on <code>/sims/[simId]</code>, for managers and editors (<code>requireSimRole(…, 'editor')</code>), shown as a <code>Rename</code> disclosure under the title. There is no rename anywhere today (<code>updateSimIndexTitle</code> has no caller); the member area is one tap from the list. The index title is not written by the Worker: <code>appendAs</code> awaits the index pass, which copies the folded name to <code>sim_index.title</code> before the action redirects; if that D1 write fails the alarm retries it and the old title shows until then. Refusals: <code>limit</code> 429, <code>full</code> 409, <code>gone</code> 404, no object (dev) 503, anything else 500, each with one line of copy.</li>
+      <li id="d15"><strong><code>liveSimStub(env, simId)</code></strong> (<code>src/lib/server/sims/live-sim.ts</code>) is <code>null</code> under <code>dev</code> and otherwise <code>simStub(env, simId)</code>. The hook, the rename and the takedown use it, so <code>npm run dev</code>, where the platform proxy may bind <code>SIM</code> but the object does not run (<code>docs/dev/sim-object.md</code>, Running it), never calls the object. Builder's call: one place for the rule the stream route already applies.</li>
+      <li id="d16"><strong>The reaper is removed</strong> (R61): <code>src/lib/server/reap/</code> (five files) and its <code>auth.md</code> section and mentions. <code>closeAccountRows</code> stays, exported, as <code>deleteAccount</code>'s tail. Comments that justify a rule by the reaper are reworded to the rule they still protect (a pseudonymous account with no credential has no way back in).</li>
+      <li id="d17"><strong>Shared stamp</strong>: <code>serverStamp(platform)</code> (<code>src/lib/server/sims/stamp.ts</code>) returns the dataset version and build exactly as the stream route computes them today (<code>src/routes/api/sims/[simId]/stream/+server.ts:46-51</code>); the route and the rename use it. Builder's call: two copies of that expression would drift.</li>
+      <li id="d18"><strong>Specs seed sims through <code>seedSim</code></strong> (<code>src/lib/server/test/auth-db.ts</code>), so a later signature change of <code>createSim</code> is one edit. Builder's call.</li>
+    </ol>
+  </section>
+
+  <section id="sec-invariants">
+    <h2>Invariants</h2>
+    <table id="tbl-invariants">
+      <caption>What stays true across this unit</caption>
+      <thead><tr><th scope="col">#</th><th scope="col">Invariant</th><th scope="col">Pinned by</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">C1</th><td>A roster change is written before the hook runs, and is never rolled back or reported failed because of the hook. <code>onSimRosterChanged</code> and <code>rosterChangedAll</code> never reject.</td><td>Task 3</td></tr>
+        <tr><th scope="row">C2</th><td>Registering an id never grants a role on an existing sim: a manager grant follows only an insert that created the <code>sim_index</code> row in the same call.</td><td>Task 5</td></tr>
+        <tr><th scope="row">C3</th><td>No path deletes a sim's log or its <code>sim_index</code> row except <code>deleteSim</code>, and only the operator route calls it.</td><td>Tasks 4, 7</td></tr>
+        <tr><th scope="row">C4</th><td>A takedown marks the id first, clears the object before any D1 row is deleted, and leaves no <code>sim_index</code>, <code>sim_commit</code> or pending invite row and no commit in the object; the id never registers again.</td><td>Task 7</td></tr>
+        <tr><th scope="row">C5</th><td>No existing JSON route's origin or rate check is removed or loosened; each new state-changing JSON route calls <code>refuseUnlessSameOriginJson</code> before anything else.</td><td>Tasks 5, 7</td></tr>
+        <tr><th scope="row">C6</th><td>Every server-side commit goes through <code>LogHost</code>'s serialized <code>#appendNow</code>; its <code>parent</code> and <code>datasetVersion</code> come from the tip inside that section. Unit 2's I1 to I9 hold; I8 now reads "the Worker decides who writes, for a socket and for <code>appendAs</code>".</td><td>Task 1</td></tr>
+        <tr><th scope="row">C7</th><td>Fail closed: an unset or short token denies; an unreadable role is not a writer; a failed role read revokes nobody and grants nobody.</td><td>Tasks 3, 5, 7</td></tr>
+        <tr><th scope="row">C8</th><td>Logs added here carry only a sim id and <code>loggable(e)</code>.</td><td>Tasks 1, 3, 5, 6, 7, 8</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-files">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files this unit creates or changes</caption>
+      <thead><tr><th scope="col">File</th><th scope="col">Responsibility</th><th scope="col">Task</th></tr></thead>
+      <tbody>
+        <tr><th scope="row"><code>src/lib/server/sim-object/log-host.ts</code>, <code>object-rules.ts</code>, <code>sim-object.ts</code>, <code>test/drafts.ts</code></th><td>The server-side append and its RPC</td><td>1</td></tr>
+        <tr><th scope="row"><code>src/lib/server/reap/</code> (deleted)</th><td>The reaper, removed</td><td>2</td></tr>
+        <tr><th scope="row"><code>src/lib/server/sims/roster-hook.ts</code>, <code>live-sim.ts</code> (new)</th><td>The hook body, the fan-out, the dev-aware stub</td><td>3</td></tr>
+        <tr><th scope="row"><code>src/lib/server/test/auth-db.ts</code></th><td><code>seedSim</code></td><td>3</td></tr>
+        <tr><th scope="row"><code>src/lib/server/sims/sims.ts</code></th><td><code>createSim</code>, <code>removeSimMember</code>, <code>leaveSim</code>, <code>deleteSim</code></td><td>3, 4, 5, 7</td></tr>
+        <tr><th scope="row"><code>src/lib/server/user-store/deletion.ts</code>, <code>identity.ts</code>, <code>src/lib/server/auth/better-auth.ts</code></th><td>Deletion keeps sims; the fuse tells sims</td><td>3, 4, 6</td></tr>
+        <tr><th scope="row"><code>src/lib/server/db/schema/simControlPlane.ts</code>, <code>migrations/d1/</code> (generated)</th><td><code>sim_takedown</code></td><td>5</td></tr>
+        <tr><th scope="row"><code>src/lib/server/sims/sim-index.ts</code></th><td><code>insertSimIndexIfFree</code>, <code>simIdInUse</code>; old record helpers removed</td><td>5</td></tr>
+        <tr><th scope="row"><code>src/lib/server/sims/start-sim.ts</code>, <code>sim-quota.ts</code>, <code>src/lib/members/copy.ts</code>, <code>src/lib/sim-stream/register.ts</code> (new)</th><td>Registration, cap, rate, codes, copy</td><td>5</td></tr>
+        <tr><th scope="row"><code>src/routes/api/sims/+server.ts</code>, <code>src/routes/sims/+page.server.ts</code>, <code>src/routes/signin/+page.server.ts</code></th><td>The registering callers</td><td>5</td></tr>
+        <tr><th scope="row"><code>src/lib/server/operator/token.ts</code> (new), <code>src/routes/api/operator/sims/[simId]/takedown/+server.ts</code> (new), <code>playwright.config.ts</code></th><td>The takedown route</td><td>7</td></tr>
+        <tr><th scope="row"><code>src/lib/server/sims/stamp.ts</code> (new), <code>rename.ts</code> (new), <code>src/routes/sims/[simId]/+page.server.ts</code>, <code>+page.svelte</code>, the stream route</th><td>The rename</td><td>8</td></tr>
+        <tr><th scope="row"><code>e2e/sim-control-plane.spec.ts</code> (new), <code>e2e/helpers/members.ts</code>, <code>e2e/account-deletion.spec.ts</code>, <code>e2e/leave-sim.spec.ts</code>, <code>e2e/sim-object.spec.ts</code></th><td>End to end</td><td>4 to 8</td></tr>
+        <tr><th scope="row"><code>docs/dev/auth.md</code>, <code>sim-object.md</code>, <code>deploy.md</code>, <code>plan-sharing.md</code>, <code>testing.md</code>, <code>CLAUDE.md</code></th><td>Docs</td><td>9</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The server-side append</h2>
+    <p>Adds one way for the Worker to append a commit on a person's behalf, through the one serialized path (decision <a href="#d13">13</a>).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/server/sim-object/log-host.ts</code> (add <code>ServerAppend</code>, <code>appendAs</code>; <code>ensureStarted</code> and <code>appendAs</code> share one private start-draft builder)</li>
+      <li>Modify: <code>src/lib/server/sim-object/object-rules.ts</code> (<code>ServerAppendResult</code>, <code>serverAppendResult</code>)</li>
+      <li>Modify: <code>src/lib/server/sim-object/sim-object.ts</code> (RPC <code>appendAs</code>)</li>
+      <li>Modify: <code>src/lib/server/sim-object/test/drafts.ts</code> (<code>serverDraft</code>)</li>
+      <li>Test: <code>src/lib/server/sim-object/log-host.spec.ts</code>, <code>src/lib/server/sim-object/object-rules.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>LogHost.#appendNow</code>, <code>#serial</code>, <code>#state()</code> (<code>log-host.ts:187-298</code>); <code>AppendOutcome</code>; <code>RefusedWhy</code> (<code>src/lib/sim-stream/protocol.ts:17</code>).</li>
+      <li>Produces, in <code>log-host.ts</code>:
+        <pre><code data-lang="ts">export interface ServerAppend {
+  /** The identity the Worker resolved and found to be a writer. */
+  actor: string;
+  /** Everything but parent and datasetVersion, which come from the tip. */
+  draft: Omit&lt;CommitDraft, 'parent' | 'datasetVersion'&gt;;
+  /** Used only when the log is empty, to record the start commit first (R58). */
+  start: { id: string; title: string; datasetVersion: string; build: string };
+  now: number;
+}
+appendAs(input: ServerAppend): Promise&lt;AppendOutcome&gt;</code></pre></li>
+      <li>Produces, in <code>object-rules.ts</code>:
+        <pre><code data-lang="ts">export type ServerAppendResult =
+  | { kind: 'accepted'; seq: number }
+  | { kind: 'duplicate' }
+  | { kind: 'refused'; why: RefusedWhy };
+export function serverAppendResult(out: AppendOutcome): ServerAppendResult;
+export const APPEND_FAILED = 'append failed';</code></pre></li>
+      <li>Produces, on <code>SimObject</code>: <code>appendAs(input: Omit&lt;ServerAppend, 'now'&gt;): Promise&lt;ServerAppendResult&gt;</code>. Throws <code>Error('sim object unavailable')</code> without a log host and <code>Error(APPEND_FAILED)</code> on any other failure (after logging <code>[sim-object] append failed</code>, the label and <code>loggable(e)</code>). On <code>accepted</code> it awaits <code>this.#index?.kick()</code> before returning.</li>
+      <li>Produces, in <code>test/drafts.ts</code>: <code>serverDraft(name: string, over?: Partial&lt;CommitDraft&gt;): Omit&lt;CommitDraft, 'parent' | 'datasetVersion'&gt;</code> (a <code>set</code> of <code>sim</code> <code>name</code>, kind <code>edit</code>, label <code>Rename</code>, source <code>sim.name</code>, <code>shapes: SHAPES_REVISION</code>, build <code>test</code>, a fresh id).</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests in <code>log-host.spec.ts</code>, using the file's <code>make</code>, <code>append</code>, <code>ALL</code> and <code>T0</code>:
+        <pre><code data-lang="ts">describe('LogHost appendAs', () =&gt; {
+  const start = (over = {}) =&gt; ({
+    id: newId(),
+    title: 'Old',
+    datasetVersion: 'fixture-2',
+    build: 'b1',
+    ...over
+  });
+
+  it('on an empty log records the start commit, then the commit on it', async () =&gt; {
+    const { host, store } = make();
+    const draft = serverDraft('New');
+    const out = await host.appendAs({ actor: 'u1', draft, start: start(), now: T0 });
+    expect(out).toMatchObject({
+      kind: 'accepted',
+      commit: { seq: 2, parent: 1, id: draft.id, actor: 'u1', datasetVersion: 'fixture-2' }
+    });
+    const rows = store.rowsAfter(0, ALL).map((r) =&gt; JSON.parse(r.body));
+    expect(rows[0]).toMatchObject({
+      seq: 1,
+      kind: 'system',
+      source: 'sim.start',
+      actor: 'u1',
+      changes: [{ op: 'set', key: 'sim', field: 'name', value: 'Old' }]
+    });
+    expect(host.ruleset().name).toBe('New');
+  });
+
+  it('takes parent and dataset version from the tip, never from the caller', async () =&gt; {
+    const { host } = make();
+    await append(host, nameDraft(0, 'A', { datasetVersion: 'fixture-1' }));
+    await append(host, nameDraft(1, 'B', { datasetVersion: 'fixture-1' }));
+    const out = await host.appendAs({
+      actor: 'u2', draft: serverDraft('C'), start: start(), now: T0
+    });
+    expect(out).toMatchObject({
+      kind: 'accepted',
+      commit: { seq: 3, parent: 2, datasetVersion: 'fixture-1', actor: 'u2' }
+    });
+    expect(host.ruleset()).toMatchObject({ name: 'C', datasetVersion: 'fixture-1' });
+  });
+
+  it('is refused gone after a takedown and stores nothing', async () =&gt; {
+    const { host, store } = make();
+    await host.takeDown(T0);
+    const d = serverDraft('X');
+    expect(await host.appendAs({ actor: 'u1', draft: d, start: start(), now: T0 })).toEqual({
+      kind: 'refused', id: d.id, why: 'gone'
+    });
+    expect(store.totals().seq).toBe(0);
+  });
+
+  it('refuses a name the check refuses and keeps the tip', async () =&gt; {
+    const { host, store } = make();
+    await append(host, nameDraft(0, 'A'));
+    const d = serverDraft(' padded ');
+    expect(await host.appendAs({ actor: 'u1', draft: d, start: start(), now: T0 })).toEqual({
+      kind: 'refused', id: d.id, why: 'invalid'
+    });
+    expect(store.totals().seq).toBe(1);
+  });
+
+  it('spends the sim rate budget like any append', async () =&gt; {
+    const { host } = make({ limits: { ...LIMITS, burst: 1, perSecond: 0 } });
+    await append(host, nameDraft(0, 'A'));
+    const d = serverDraft('B');
+    expect(await host.appendAs({ actor: 'u1', draft: d, start: start(), now: T0 })).toEqual({
+      kind: 'refused', id: d.id, why: 'limit'
+    });
+  });
+
+  it('runs in turn: two calls made together both land, in order', async () =&gt; {
+    const { host } = make();
+    const [a, b] = await Promise.all([
+      host.appendAs({ actor: 'u1', draft: serverDraft('A'), start: start(), now: T0 }),
+      host.appendAs({ actor: 'u1', draft: serverDraft('B'), start: start(), now: T0 })
+    ]);
+    expect([a, b].map((o) =&gt; (o.kind === 'accepted' ? o.commit.seq : 0))).toEqual([2, 3]);
+    expect(host.ruleset().name).toBe('B');
+  });
+
+  it('a stored row from a newer build: refused newer', async () =&gt; {
+    const host = new LogHost(await storeWithRow({ shapes: SHAPES_REVISION + 1 }));
+    const d = serverDraft('X');
+    expect(await host.appendAs({ actor: 'u1', draft: d, start: start(), now: T0 })).toEqual({
+      kind: 'refused', id: d.id, why: 'newer'
+    });
+  });
+});</code></pre>
+        In <code>object-rules.spec.ts</code>: <code>serverAppendResult</code> maps an accepted outcome to <code>{ kind: 'accepted', seq }</code> with no <code>body</code> or <code>commit</code> key, a duplicate to <code>{ kind: 'duplicate' }</code>, and a refusal to <code>{ kind: 'refused', why }</code> with no <code>id</code>.</li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail (no <code>appendAs</code>, no <code>serverDraft</code>):
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sim-object/log-host.spec.ts src/lib/server/sim-object/object-rules.spec.ts</code></pre></li>
+      <li id="t1-s3"><input type="checkbox"> Implement <code>appendAs</code>, <code>serverAppendResult</code> and the RPC. Inside one <code>#serial</code>: if <code>gone()</code>, refuse <code>gone</code> with the draft's id; if the tip is 0, append the start commit through the same private builder <code>ensureStarted</code> now uses (log its refusal as <code>ensureStarted</code> does, and return the refusal under the draft's id); read the tip's <code>datasetVersion</code> from <code>this.#state().ruleset()</code>, mapping a <code>LogError</code> <code>future-shapes</code> to <code>refused newer</code> as <code>#appendNow</code> does and rethrowing anything else (fall back to <code>start.datasetVersion</code> only if the folded value is null); build <code>{ ...draft, parent: this.tip(), datasetVersion }</code> and return <code>#appendNow(full, full.id, utf8Bytes(JSON.stringify(full)), { identity: actor, write: true }, now)</code>. The RPC catches every throw, logs it with <code>loggable</code>, and throws <code>new Error(APPEND_FAILED)</code> with no cause (the same reason as <code>rereadChanges</code>, <code>object-rules.ts:153-156</code>).</li>
+      <li id="t1-s4"><input type="checkbox"> Run the object's suites and see them pass (the existing <code>ensureStarted</code> tests prove the refactor kept it):
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sim-object src/lib/sim-stream</code></pre>
+        Expected: all pass. Then <code>npm run check</code>: no new errors.</li>
+      <li id="t1-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/server/sim-object
+git commit -m "feat(sim-object): append a commit on a person's behalf through the one append path"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Remove the reaper</h2>
+    <p>R61. Nothing calls it (<code>grep</code> at plan time: only <code>reap-user.ts</code> calls <code>deleteAccount</code> outside the account route).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Delete: <code>src/lib/server/reap/config.ts</code>, <code>eligibility.ts</code>, <code>eligibility.spec.ts</code>, <code>reap-user.ts</code>, <code>reap-user.spec.ts</code></li>
+      <li>Modify: <code>src/lib/server/user-store/deletion.ts:155-157</code> (the comment "which reaping also runs"), <code>src/lib/server/user-store/password-credential.ts:52</code>, <code>src/routes/api/account/password/+server.ts:93,162</code>, <code>src/lib/server/auth/password-pseudonymity.spec.ts:31-32</code> (reword each to the rule it protects: a pseudonymous account without a credential cannot sign back in)</li>
+      <li>Modify: <code>docs/dev/auth.md</code> (delete the Reaping section and the "reapable" bullet at line 25), <code>CLAUDE.md:30</code> (drop "reaping" from the auth.md line)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul><li>Consumes nothing. Produces nothing. <code>closeAccountRows</code> stays exported.</li></ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Delete the five files and make the edits above.</li>
+      <li id="t2-s2"><input type="checkbox"> Check nothing is left:
+        <pre><code data-lang="sh">grep -rniE "reap(er|ing|able|User|_)|REAP_|selectReapable" src docs/dev CLAUDE.md scripts wrangler.jsonc chreode.config.ts package.json</code></pre>
+        Expected: no output (the matches in <code>src/lib/sim-log</code> and <code>src/lib/map</code> are "reapply", which this pattern does not match).</li>
+      <li id="t2-s3"><input type="checkbox"> Run the suites that touched it:
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/user-store src/lib/server/auth src/routes/api/account</code></pre>
+        Expected: all pass. <code>npm run check</code> and <code>npm run lint</code>: clean.</li>
+      <li id="t2-s4"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add -A src/lib/server/reap src/lib/server/user-store src/lib/server/auth src/routes/api/account docs/dev/auth.md CLAUDE.md
+git commit -m "refactor(auth): remove the unused account reaper" -m "No account is reaped (R61); deleteAccount keeps closeAccountRows as its tail."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: The roster hook</h2>
+    <p>R53 and the sim object's carried items: write the roster change, then call <code>rereadRoles()</code>, handle its throw (decisions <a href="#d8">8</a>, <a href="#d9">9</a>, <a href="#d15">15</a>, <a href="#d18">18</a>).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/server/sims/live-sim.ts</code>, <code>src/lib/server/sims/roster-hook.spec.ts</code></li>
+      <li>Modify: <code>src/lib/server/sims/roster-hook.ts</code> (the body), <code>src/lib/server/sims/sims.ts</code> (<code>createSim</code>, <code>removeSimMember</code>, <code>leaveSim</code> take <code>env</code>), <code>src/lib/server/user-store/deletion.ts</code> (<code>deleteAccount</code> takes <code>env</code>)</li>
+      <li>Modify the callers, each passing <code>event.platform?.env</code> (or <code>platform?.env</code>): <code>src/routes/api/invites/[inviteId]/accept/+server.ts:24</code>, <code>src/routes/invite/[token]/+page.server.ts:50,160</code>, <code>src/routes/api/sims/[simId]/members/[userId]/+server.ts:16</code>, <code>src/routes/sims/[simId]/+page.server.ts:30</code>, <code>src/routes/api/account/+server.ts:35</code>, <code>src/lib/server/sims/start-sim.ts:66</code>, <code>src/routes/sims/+page.server.ts:24</code>, <code>src/routes/signin/+page.server.ts:228</code></li>
+      <li>Modify: <code>src/lib/server/test/auth-db.ts</code> (add <code>seedSim</code>); every spec that calls <code>createSim</code> only to have a sim calls <code>seedSim</code> instead (list them with <code>grep -rln "createSim(" src</code>: the specs in <code>src/lib/server/sims</code>, <code>src/lib/server/user-store</code>, <code>src/routes/api/account</code>, <code>src/routes/api/sims</code>, <code>src/routes/signin</code>, <code>src/routes/sims</code>); specs that assert the hook's arguments expect <code>(env, simId)</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>simStub(env, simId)</code> (<code>src/lib/server/sim-object/stub.ts</code>); <code>SimObject.rereadRoles()</code>, which throws <code>Error('role read failed')</code> and revokes nobody (<code>sim-object.ts:209</code>); <code>loggable</code>.</li>
+      <li>Produces, in <code>live-sim.ts</code>: <code>liveSimStub(env: unknown, simId: string): DurableObjectStub&lt;SimObject&gt; | null</code>: <code>null</code> when <code>dev</code> (<code>$app/environment</code>), else <code>simStub(env, simId)</code>.</li>
+      <li>Produces, in <code>roster-hook.ts</code>:
+        <pre><code data-lang="ts">export const REREAD_ATTEMPTS = 2;
+export const ROSTER_FANOUT = 6;
+/** After a roster change is written: tell the sim's object to re-read its sockets' roles.
+ *  Never rejects. */
+export function onSimRosterChanged(env: unknown, simId: string): Promise&lt;void&gt;;
+/** onSimRosterChanged for each sim, ROSTER_FANOUT at a time. Never rejects. */
+export function rosterChangedAll(env: unknown, simIds: readonly string[]): Promise&lt;void&gt;;</code></pre></li>
+      <li>Produces, in <code>sims.ts</code> (Task 5 changes <code>createSim</code> again; until then the id is still minted inside):
+        <pre><code data-lang="ts">createSim(args: { db: Database; env: unknown; title: string; managerId: string }): Promise&lt;{ simId: string }&gt;
+removeSimMember(args: { db: Database; env: unknown; simId: string; userId: string; actorUserId?: string }): Promise&lt;{ deleted: boolean }&gt;
+leaveSim(args: { db: Database; env: unknown; simId: string; userId: string; simTitle: string; confirmTitle?: string; successorUserId?: string }): Promise&lt;void&gt;</code></pre></li>
+      <li>Produces, in <code>deletion.ts</code>: <code>deleteAccount(args: { db: Database; env: unknown; identityId: string; actor: Actor }): Promise&lt;void&gt;</code>.</li>
+      <li>Produces, in <code>auth-db.ts</code>: <code>seedSim(db: Database, args: { title: string; managerId: string }): Promise&lt;string&gt;</code> (the sim id; calls <code>createSim</code> with <code>env: undefined</code>).</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write <code>roster-hook.spec.ts</code>. It does not mock <code>./roster-hook</code>; it mocks <code>$app/environment</code> as the stream route's spec does (<code>src/routes/api/sims/[simId]/stream/server.spec.ts:3-8</code>), with <code>dev</code> false unless a case sets it. A fake binding:
+        <pre><code data-lang="ts">function fakeSim(reread: () =&gt; Promise&lt;void&gt;) {
+  const names: string[] = [];
+  const env = {
+    SIM: { getByName: (n: string) =&gt; (names.push(n), { rereadRoles: reread }) }
+  };
+  return { env, names };
+}
+
+it('does nothing without the binding', async () =&gt; {
+  await expect(onSimRosterChanged({}, 'sim-1')).resolves.toBeUndefined();
+});
+
+it('does nothing under npm run dev, even with a binding', async () =&gt; {
+  flags.dev = true;
+  const reread = vi.fn(async () =&gt; {});
+  await onSimRosterChanged(fakeSim(reread).env, 'sim-1');
+  expect(reread).not.toHaveBeenCalled();
+});
+
+it('re-reads once on success, on the named object', async () =&gt; {
+  const reread = vi.fn(async () =&gt; {});
+  const { env, names } = fakeSim(reread);
+  await onSimRosterChanged(env, 'sim-1');
+  expect(reread).toHaveBeenCalledOnce();
+  expect(names).toEqual(['sim-1']);
+});
+
+it('retries once on a fresh stub, and logs nothing when the retry succeeds', async () =&gt; {
+  const { error } = mockConsole('error');
+  const reread = vi.fn().mockRejectedValueOnce(new Error('role read failed')).mockResolvedValue(undefined);
+  const { env, names } = fakeSim(reread);
+  await onSimRosterChanged(env, 'sim-1');
+  expect(names).toEqual(['sim-1', 'sim-1']);
+  expect(error).not.toHaveBeenCalled();
+});
+
+it('never rejects: after the last failure it logs the sim id and safe text only', async () =&gt; {
+  const { error } = mockConsole('error');
+  const reread = vi.fn(async () =&gt; {
+    throw new Error('role read failed');
+  });
+  await expect(onSimRosterChanged(fakeSim(reread).env, 'sim-1')).resolves.toBeUndefined();
+  expect(reread).toHaveBeenCalledTimes(REREAD_ATTEMPTS);
+  expect(error).toHaveBeenCalledOnce();
+  expect(error.mock.calls[0]).toEqual(['[roster-hook] reread failed', 'sim-1', 'role read failed']);
+});
+
+it('does not retry an overloaded object', async () =&gt; {
+  mockConsole('error');
+  const reread = vi.fn(async () =&gt; {
+    throw Object.assign(new Error('Durable Object is overloaded.'), { overloaded: true });
+  });
+  await onSimRosterChanged(fakeSim(reread).env, 'sim-1');
+  expect(reread).toHaveBeenCalledOnce();
+});
+
+it('rosterChangedAll tells every sim, at most ROSTER_FANOUT at a time, and never rejects', async () =&gt; {
+  mockConsole('error');
+  let running = 0;
+  let peak = 0;
+  const reread = vi.fn(async () =&gt; {
+    running++;
+    peak = Math.max(peak, running);
+    await Promise.resolve();
+    running--;
+    throw new Error('role read failed');
+  });
+  const ids = Array.from({ length: 20 }, (_, i) =&gt; `sim-${i}`);
+  const { env, names } = fakeSim(reread);
+  await expect(rosterChangedAll(env, ids)).resolves.toBeUndefined();
+  expect(new Set(names)).toEqual(new Set(ids));
+  expect(peak).toBeLessThanOrEqual(ROSTER_FANOUT);
+});
+
+it('a removal stands when every re-read fails', async () =&gt; {
+  mockConsole('error');
+  const { db } = freshDb();
+  await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+  await seedUser(db, { id: 'ed', email: 'e@test.com' });
+  const simId = await seedSim(db, { title: 'Q', managerId: 'owner1' });
+  await addMemberById({ db, simId, userId: 'ed', role: 'editor' });
+  const { env } = fakeSim(async () =&gt; {
+    throw new Error('role read failed');
+  });
+  await expect(removeSimMember({ db, env, simId, userId: 'ed' })).resolves.toBeDefined();
+  expect(await getRole({ db, simId, userId: 'ed' })).toBeNull();
+});</code></pre>
+        In the accept route's spec (<code>accept.spec.ts</code>), the members <code>DELETE</code> spec and the invite page's spec, change the hook assertion to <code>toHaveBeenCalledWith(platform.env, simId)</code> (the platform each spec builds).</li>
+      <li id="t3-s2"><input type="checkbox"> Run it and see it fail:
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sims/roster-hook.spec.ts</code></pre></li>
+      <li id="t3-s3"><input type="checkbox"> Implement <code>liveSimStub</code>, the hook and <code>rosterChangedAll</code> (a small pool: <code>ROSTER_FANOUT</code> workers each taking the next id). Get a new stub on each attempt (<a href="https://developers.cloudflare.com/durable-objects/api/stub/">a stub that threw is broken</a>). Thread <code>env</code> through <code>createSim</code>, <code>removeSimMember</code>, <code>leaveSim</code>, <code>deleteAccount</code> and every caller listed; each caller writes the roster, then awaits the hook. In the accept route and the invite page, the hook call stays after the accept and cannot make the request fail (it never rejects). Add <code>seedSim</code> and move the specs onto it. <code>removeSimMember</code> still deletes an emptied sim in this task (Task 4 changes that).</li>
+      <li id="t3-s4"><input type="checkbox"> Check no hook call is left without <code>env</code>, and nothing under the object imports <code>live-sim</code>:
+        <pre><code data-lang="sh">grep -rn "onSimRosterChanged(" src | grep -v "spec.ts"
+grep -rln "live-sim" src/lib/server/sim-object src/lib/server/sims/sim-roles.ts</code></pre>
+        Expected: every call in the first list has two arguments; the second prints nothing.</li>
+      <li id="t3-s5"><input type="checkbox"> Run the suites:
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server src/routes</code></pre>
+        Expected: all pass. <code>npm run check</code>, <code>npm run lint</code>: clean.</li>
+      <li id="t3-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/server src/routes
+git commit -m "feat(sims): the roster hook re-reads open sockets' roles after a roster change" -m "Written first, then rereadRoles on a fresh stub, two attempts, never rejecting (R53)."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: A sim is kept when its last member goes</h2>
+    <p>R43, R59 and the deferred end-to-end test of a role change ending write on an open socket (decision <a href="#d10">10</a>).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/server/sims/sims.ts</code> (<code>removeSimMember</code> keeps the sim; <code>deleteSim</code> gets no new caller), <code>src/lib/server/user-store/deletion.ts:126-150</code> (doc comment)</li>
+      <li>Modify: <code>src/lib/members/copy.ts:58-60</code>, <code>src/lib/members/LeaveSimConfirm.svelte</code>, <code>src/lib/members/LeaveSimConfirm.svelte.spec.ts</code>, <code>src/lib/account/account-copy.ts:65-66</code></li>
+      <li>Test: <code>src/lib/server/sims/sims.spec.ts</code>, <code>src/lib/server/user-store/deletion.spec.ts</code>, <code>src/routes/api/account/delete-pseudonymous.spec.ts</code></li>
+      <li>Create: <code>e2e/sim-control-plane.spec.ts</code>. Modify: <code>e2e/leave-sim.spec.ts</code>, <code>e2e/account-deletion.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 3's hook and <code>removeSimMember</code> signature.</li>
+      <li>Produces: <code>removeSimMember(…): Promise&lt;{ empty: boolean }&gt;</code> (replaces <code>{ deleted }</code>). When empty: one statement deletes the sim's <code>pending</code> invitations, then the hook runs. <code>MEMBERS_COPY.leaveLastButton</code> replaces <code>leaveDeleteButton</code>.</li>
+      <li>Copy (exact): <code>leaveSoleMemberWarning: "You're the only member. Once you leave, nobody can edit this sim and its invitations end. Its links still open."</code>, <code>leaveLastButton: 'Leave sim'</code>, <code>ACCOUNT_COPY.deleteDescription: 'Deletes your account. You leave every sim; their links still open. This cannot be undone.'</code></li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Rewrite the Node tests that expected deletion:
+        <ul>
+          <li><code>sims.spec.ts</code>: "removeSimMember keeps an emptied sim, ends its pending invitations and tells the object": <code>{ empty: true }</code>; <code>getSimTitle</code> still <code>'Q'</code>; pending rows gone, the accepted row kept; <code>onSimRosterChanged</code> called once with <code>(undefined, simId)</code>; nobody holds a role (<code>listMembers</code> is <code>[]</code>).</li>
+          <li><code>sims.spec.ts</code>, the fused-identity case "leaves a solo sim": the title stays and <code>getRole</code> for <code>surv</code> is null.</li>
+          <li><code>deletion.spec.ts</code>: the three cases that expected a deleted solo sim now expect its title kept, no role for the deleter and its pending invites gone.</li>
+          <li><code>delete-pseudonymous.spec.ts:60</code>: the solo sim is kept.</li>
+          <li><code>LeaveSimConfirm.svelte.spec.ts:46</code>: <code>expect(MEMBERS_COPY.leaveSoleMemberWarning).toMatch(/links still open/)</code>, and the button is <code>leaveLastButton</code>.</li>
+        </ul></li>
+      <li id="t4-s2"><input type="checkbox"> Run them and see them fail:
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sims/sims.spec.ts src/lib/server/user-store/deletion.spec.ts src/routes/api/account/delete-pseudonymous.spec.ts</code></pre></li>
+      <li id="t4-s3"><input type="checkbox"> Implement: <code>removeSimMember</code> no longer calls <code>deleteSim</code>; it deletes pending invites when empty and calls the hook on every path. Change the copy, the component and <code>deletion.ts</code>'s comment. <code>grep -rn "deleteSim(" src</code> must show no caller outside <code>sims.ts</code> and specs.</li>
+      <li id="t4-s4"><input type="checkbox"> Run the Node and client suites:
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server src/routes
+npx vitest --run --project client src/lib/members</code></pre>
+        Expected: all pass.</li>
+      <li id="t4-s5"><input type="checkbox"> Write <code>e2e/sim-control-plane.spec.ts</code> with the helpers from <code>e2e/helpers/sim-socket.ts</code>, <code>members.ts</code> and <code>auth.ts</code>. The member's identity id comes from <code>loginAs</code>'s <code>userId</code>. A signed-in accept is <code>page.goto(link)</code>, then the <code>MEMBERS_COPY.inviteAccept</code> button, then <code>waitForURL(new RegExp(`/sims/${simId}$`))</code>.
+        <pre><code data-lang="ts">test.describe('roster changes reach open sockets', () =&gt; {
+  test('an invited member gains write on an open socket, and loses it when removed', async ({
+    page,
+    browser
+  }, testInfo) =&gt; {
+    const simId = await signInAndCreateSim(page, uniqueEmail('cp-manager'), 'Roster');
+    const memberEmail = uniqueEmail('cp-member');
+    await inviteViaApi(page, simId, memberEmail);
+    const link = await inviteLinkFor(page, memberEmail);
+    const ctx = await freshContext(browser, testInfo);
+    try {
+      const member = await ctx.newPage();
+      const { userId } = await loginAs(member, memberEmail);
+      await member.goto('/about');
+      const h = await openSimSocket(member, simId);
+      expect((await framesAtLeast(member, h, 2))[1]).toEqual({ type: 'access', write: false });
+      const join = await ctx.newPage();
+      await join.goto(link);
+      await join.getByRole('button', { name: MEMBERS_COPY.inviteAccept }).click();
+      await join.waitForURL(new RegExp(`/sims/${simId}$`));
+      expect((await framesAtLeast(member, h, 3))[2]).toEqual({ type: 'access', write: true });
+      const tip = commitsOf(await resumeAndRead(member, h, 0)).length;
+      const ok = nameDraft(tip, 'Member edit');
+      expect(commitsOf(await sendAndRead(member, h, { type: 'append', commit: ok }))).toMatchObject([
+        { id: ok.id }
+      ]);
+      const before = (await framesAtLeast(member, h, 0)).length;
+      const removed = await page.request.delete(`/api/sims/${simId}/members/${userId}`, {
+        headers: { 'content-type': 'application/json' }
+      });
+      expect(removed.status()).toBe(204);
+      expect((await framesAtLeast(member, h, before + 1))[before]).toEqual({
+        type: 'access',
+        write: false
+      });
+      const late = nameDraft(tip + 1, 'Too late');
+      expect(await sendAndRead(member, h, { type: 'append', commit: late })).toEqual({
+        type: 'refused', id: late.id, why: 'not-writer'
+      });
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test('the last member leaves: open sockets lose write, and the link still opens', async ({
+    page,
+    browser,
+    baseURL
+  }, testInfo) =&gt; {
+    const simId = await signInAndCreateSim(page, uniqueEmail('cp-last'), 'Kept');
+    await page.goto('/about');
+    const h = await openSimSocket(page, simId);
+    await framesAtLeast(page, h, 2);
+    const [start] = commitsOf(await resumeAndRead(page, h, 0));
+    const before = (await framesAtLeast(page, h, 0)).length;
+    const left = await page.request.post(`/sims/${simId}?/leaveSim`, {
+      headers: { origin: baseURL!, 'x-sveltekit-action': 'true' },
+      form: {}
+    });
+    expect(left.ok()).toBe(true);
+    expect((await framesAtLeast(page, h, before + 1))[before]).toEqual({
+      type: 'access',
+      write: false
+    });
+    const d = nameDraft(1, 'After');
+    expect(await sendAndRead(page, h, { type: 'append', commit: d })).toEqual({
+      type: 'refused', id: d.id, why: 'not-writer'
+    });
+    const ctx = await freshContext(browser, testInfo);
+    try {
+      const visitor = await ctx.newPage();
+      await visitor.goto('/about');
+      const v = await openSimSocket(visitor, simId);
+      expect((await framesAtLeast(visitor, v, 2))[1]).toEqual({ type: 'access', write: false });
+      expect(commitsOf(await resumeAndRead(visitor, v, 0)).map((c) =&gt; c.id)).toEqual([start.id]);
+    } finally {
+      await ctx.close();
+    }
+  });
+});</code></pre>
+        In <code>e2e/leave-sim.spec.ts</code>, the first test becomes "the only member leaves: the sim is kept and its pending invitation ends": the button is <code>leaveLastButton</code>, <code>/sims/&lt;id&gt;</code> still answers 404 to the former member, the invite link is still invalid, and a fresh visitor's socket on the sim gets <code>access</code> <code>write: false</code>. In <code>e2e/account-deletion.spec.ts</code>, the test's title says "keeps both sims", and after the pending-link check a guest's socket on <code>soloId</code> gets <code>access</code> <code>write: false</code>. Update the header comment of <code>e2e/sim-object.spec.ts</code> (lines 6-8): the role-change test is now in <code>sim-control-plane.spec.ts</code>.</li>
+      <li id="t4-s6"><input type="checkbox"> Check port 4173 (Global Constraints), then run:
+        <pre><code data-lang="sh">npx playwright test e2e/sim-control-plane.spec.ts e2e/leave-sim.spec.ts e2e/account-deletion.spec.ts e2e/invite.spec.ts --project chromium</code></pre>
+        Expected: all pass; the <code>[WebServer]</code> stderr has no new line.</li>
+      <li id="t4-s7"><input type="checkbox"> Commit, then run <code>npx chreode timing-check --head HEAD</code> (no finding) and the changed specs with <code>--repeat-each=5 --retries=0</code> (all pass).
+        <pre><code data-lang="sh">git add src e2e
+git commit -m "feat(sims): keep a sim when its last member leaves" -m "Its pending invitations end, open writer sockets lose write, its links still open (R43)."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Registration with a browser-minted id, the cap and the rate</h2>
+    <p>R29 (already done by unit 1: <code>newId</code> and <code>isValidId</code> are in <code>src/lib/ids/base58.ts</code>, which the browser imports), R44, R45, R51, R52, R60 (decisions <a href="#d1">1</a> to <a href="#d7">7</a>).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/server/db/schema/simControlPlane.ts</code> (add <code>simTakedown</code>); run <code>npm run db:generate</code> and <code>npm run db:migrate</code>; commit what <code>db:generate</code> writes under <code>migrations/d1/</code></li>
+      <li>Modify: <code>src/lib/server/sims/sim-index.ts</code> (add <code>insertSimIndexIfFree</code>, <code>simIdInUse</code>; remove <code>createSimRecord</code>, <code>ensureSimRecord</code> and their spec cases), <code>src/lib/server/sims/sims.ts</code> (<code>createSim</code>), <code>src/lib/server/sims/start-sim.ts</code>, <code>src/lib/members/copy.ts</code></li>
+      <li>Create: <code>src/lib/sim-stream/register.ts</code></li>
+      <li>Modify: <code>src/routes/api/sims/+server.ts</code>, <code>src/routes/sims/+page.server.ts</code>, <code>src/routes/signin/+page.server.ts</code>, <code>src/lib/server/test/auth-db.ts</code> (<code>seedSim</code> passes <code>simId: newId()</code>), <code>src/lib/server/sims/sim-roles.ts:197-200</code> (the comment naming <code>createSimRecord</code>)</li>
+      <li>Test: <code>src/lib/server/sims/sims.spec.ts</code>, <code>sim-index.spec.ts</code>, <code>sim-quota.spec.ts</code>, <code>start-sim.spec.ts</code>, <code>src/routes/api/sims/server.spec.ts</code>, <code>src/routes/sims/page.server.spec.ts</code>, <code>src/routes/signin/page.server.spec.ts</code></li>
+      <li>Modify e2e: <code>e2e/helpers/members.ts</code> (<code>signInAndCreateSim</code> posts <code>{ simId: newId(), title }</code>), and every other direct post: <code>grep -rn "post('/api/sims'" e2e</code> (<code>auth-a11y.spec.ts:181</code>, <code>account-deletion.spec.ts:33</code>, <code>pseudonymous-onboarding.spec.ts:148</code>); add registration tests to <code>e2e/sim-control-plane.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>isValidId</code>, <code>newId</code> (<code>$lib/ids/base58</code>); <code>getRole</code>; <code>canWrite</code> (<code>src/lib/server/sim-object/access.ts</code>); <code>enforceRate</code> (<code>src/lib/server/security/rate-limit.ts</code>); <code>mintPseudonymousSession</code>; <code>normTextToDriver</code>; <code>DEFAULT_SIM_NAME</code> (<code>$lib/sim-log</code>); Task 3's hook.</li>
+      <li>Produces, in the schema:
+        <pre><code data-lang="ts">/** Ids taken down by an operator (R43): never registered again. */
+export const simTakedown = sqliteTable('sim_takedown', {
+  simId: text('sim_id').primaryKey(),
+  takenDownAt: integer('taken_down_at', { mode: 'timestamp_ms' }).notNull()
+});</code></pre></li>
+      <li>Produces, in <code>sim-index.ts</code>:
+        <pre><code data-lang="ts">/** One statement: insert the index row unless the id has a row or a takedown mark. True when
+ *  this call inserted it. */
+export function insertSimIndexIfFree(args: { db: Database; simId: string; title: string }): Promise&lt;boolean&gt;;
+/** The id has an index row or a takedown mark. */
+export function simIdInUse(db: Database, simId: string): Promise&lt;boolean&gt;;</code></pre>
+        The statement, checked at plan time against the D1 shim (see <a href="#sec-run">What was run at plan time</a>):
+        <pre><code data-lang="ts">const now = Date.now();
+const rows = await db.all&lt;{ sim_id: string }&gt;(sql`
+  insert into ${simIndex} (sim_id, title, created_at, updated_at)
+  select ${simId}, ${normTextToDriver(title)}, ${now}, ${now}
+  where not exists (select 1 from ${simTakedown} where ${simTakedown.simId} = ${simId})
+  on conflict do nothing
+  returning sim_id`);
+return rows.length === 1;</code></pre></li>
+      <li>Produces, in <code>sims.ts</code> (final):
+        <pre><code data-lang="ts">/** Register a sim under a browser-minted id (R51). Throws Error('invalid sim id') unless
+ *  isValidId. created false: the id has a row or a takedown mark, and nothing changed. */
+export function createSim(args: {
+  db: Database; env: unknown; simId: string; title: string; managerId: string;
+}): Promise&lt;{ simId: string; created: boolean }&gt;;</code></pre></li>
+      <li>Produces, in <code>src/lib/sim-stream/register.ts</code>:
+        <pre><code data-lang="ts">export type RegisterCode =
+  | 'invalid_id' | 'title' | 'sign_in' | 'taken' | 'quota' | 'rate' | 'session' | 'failed';
+export interface RegisterOk { simId: string; created: boolean }
+export interface RegisterError { error: string; code: RegisterCode }</code></pre></li>
+      <li>Produces, in <code>start-sim.ts</code>:
+        <pre><code data-lang="ts">export type StartSimFailure = ActionFailure&lt;RegisterError&gt;;
+export function checkSimTitle(raw: string): { title: string } | StartSimFailure; // code 'title'
+/** title undefined: the default name, and no handle reseed. */
+export function startSim(
+  event: RequestEvent,
+  input: { simId: string; title?: string }
+): Promise&lt;StartSimFailure | RegisterOk&gt;;</code></pre></li>
+      <li>Copy (exact): <code>MAX_SIMS_PER_MANAGER = 1000</code>; <code>SIMS_COPY.quota: `You can manage up to ${MAX_SIMS_PER_MANAGER.toLocaleString('en-US')} sims.`</code> (reads "1,000"); <code>SIMS_COPY.invalidId: 'That sim id is not valid.'</code>; <code>SIMS_COPY.notYours: "That sim isn't yours."</code>.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Add the table to the schema, then generate and apply the migration (never edit it):
+        <pre><code data-lang="sh">npm run db:generate
+npm run db:migrate</code></pre>
+        Expected: one new <code>migrations/d1/&lt;stamp&gt;_&lt;name&gt;.sql</code> and its folder, creating <code>sim_takedown</code> only.</li>
+      <li id="t5-s2"><input type="checkbox"> Write the failing tests.
+        <ul>
+          <li><code>sims.spec.ts</code>, <code>createSim</code>:
+            <pre><code data-lang="ts">it('registers a browser-minted id once: the second call changes nothing', async () =&gt; {
+  const { db } = freshDb();
+  await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+  await seedUser(db, { id: 'other', email: 'o@test.com' });
+  const simId = newId();
+  expect(await createSim({ db, env: undefined, simId, title: 'Mine', managerId: 'owner1' }))
+    .toEqual({ simId, created: true });
+  expect(await createSim({ db, env: undefined, simId, title: 'Theirs', managerId: 'other' }))
+    .toEqual({ simId, created: false });
+  expect(await getSimTitle({ db, simId })).toBe('Mine');
+  expect(await getRole({ db, simId, userId: 'other' })).toBeNull();
+  expect(onSimRosterChanged).toHaveBeenCalledOnce();
+});
+
+it('never registers a taken-down id', async () =&gt; {
+  const { db } = freshDb();
+  await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+  const simId = newId();
+  await db.insert(simTakedown).values({ simId, takenDownAt: new Date() });
+  expect(await createSim({ db, env: undefined, simId, title: 'Again', managerId: 'owner1' }))
+    .toEqual({ simId, created: false });
+  expect(await getRole({ db, simId, userId: 'owner1' })).toBeNull();
+});
+
+it('refuses an id that is not a valid id', async () =&gt; {
+  const { db } = freshDb();
+  await expect(
+    createSim({ db, env: undefined, simId: 'nope', title: 'X', managerId: 'owner1' })
+  ).rejects.toThrow('invalid sim id');
+});
+
+it('stores the title in NFC, as the column does', async () =&gt; {
+  const { db } = freshDb();
+  await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+  const simId = newId();
+  await createSim({ db, env: undefined, simId, title: 'Cafe\u0301', managerId: 'owner1' });
+  expect(await getSimTitle({ db, simId })).toBe('Caf\u00e9');
+});</code></pre></li>
+          <li><code>sim-quota.spec.ts</code>: <code>MAX_SIMS_PER_MANAGER</code> is 1000; with 1,000 managed sims (seed them with <code>seedSim</code> in a loop) <code>simQuotaExceeded</code> returns <code>SIMS_COPY.quota</code>, and <code>SIMS_COPY.quota</code> is <code>'You can manage up to 1,000 sims.'</code>; with 999 it is null. After leaving one (<code>removeSimMember</code>) it is null again.</li>
+          <li><code>start-sim.spec.ts</code> (its <code>setup</code> gains an optional <code>env</code> merged into <code>makePlatform</code>):
+            <ul>
+              <li>an invalid id: 400 <code>code: 'invalid_id'</code>, no mint;</li>
+              <li>no title: the sim's title is <code>DEFAULT_SIM_NAME</code> and the handle is not reseeded; a title: reseeded once for a fresh pseudonymous identity;</li>
+              <li>signed out, an id in use: 409 <code>code: 'taken'</code> and <code>mint</code> not called; signed out, new id: one mint, 201-shaped <code>{ simId, created: true }</code>;</li>
+              <li>signed in as a writer of the id: <code>{ simId, created: false }</code>, no second grant, even at the quota (seed 1,000 managed sims for this case);</li>
+              <li>signed in as a viewer of the id: 409 <code>taken</code>, and the viewer's role is still viewer;</li>
+              <li>a sim with no members (manager left): its former manager gets 409 <code>taken</code>;</li>
+              <li>the 1,001st new sim: 403 <code>code: 'quota'</code>;</li>
+              <li>rate: with <code>env: { ENVIRONMENT: 'production', MUTATION_REGISTERED_RL: { limit: async () =&gt; ({ success: false }) } }</code>, 429 <code>code: 'rate'</code> and nothing inserted; the limiter is called with key <code>`sim_start:${identityId}`</code>; with the binding missing in production, 429 (fail closed: <code>critical: true</code>);</li>
+              <li>a throwing insert: 400 <code>code: 'failed'</code> with <code>SIMS_COPY.createFailed</code>, and the log line holds no identity (<code>mockConsole</code>, assert the logged arguments contain neither the user id nor the title);</li>
+              <li>a reseed that throws after the insert: the result is still <code>{ created: true }</code>.</li>
+            </ul></li>
+          <li><code>src/routes/api/sims/server.spec.ts</code>: the table of decision <a href="#d1">1</a>, one case per row, including 415 and 403 unchanged; a second post by the same signed-in caller is 200 <code>{ simId, created: false }</code>; a known device with no session is 401 <code>code: 'sign_in'</code> and <code>mint</code> is not called; <code>title: null</code> is the default name; <code>title: 7</code> is 400 <code>code: 'title'</code>.</li>
+          <li><code>src/routes/sims/page.server.spec.ts</code>: the form's <code>create</code> action still redirects to <code>/sims/&lt;id&gt;</code> with a valid id and still refuses an empty title with <code>SIMS_COPY.titleRequired</code>; the pending-sim resume still creates one sim.</li>
+        </ul></li>
+      <li id="t5-s3"><input type="checkbox"> Run them and see them fail:
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sims src/routes/api/sims/server.spec.ts src/routes/sims src/routes/signin</code></pre></li>
+      <li id="t5-s4"><input type="checkbox"> Implement in the order of decision <a href="#d6">6</a>. The rate check is <code>enforceRate(env.MUTATION_REGISTERED_RL, `sim_start:${identityId}`, env, { critical: true })</code>, after the identity is known and before any role read or write. A signed-out caller is checked with <code>simIdInUse</code> before minting. <code>createSim</code>: <code>isValidId</code>, <code>insertSimIndexIfFree</code>, and only when it returned true <code>addSimRole(db, simId, managerId, 'manager', managerId)</code> then the hook. The route parses <code>{ simId, title }</code> as decision 1 says and maps a success to 201 or 200. The form action passes <code>{ simId: newId(), title: raw }</code>; the <code>/sims</code> load and <code>/signin</code>'s start-fresh pass <code>simId: newId()</code> and <code>env</code>. Replace <code>console.error('create sim failed', e)</code> with <code>console.error('[start-sim] create failed', loggable(e))</code>.</li>
+      <li id="t5-s5"><input type="checkbox"> Run the Node suites:
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server src/routes</code></pre>
+        Expected: all pass. <code>npm run check</code>, <code>npm run lint</code>: clean.</li>
+      <li id="t5-s6"><input type="checkbox"> Add to <code>e2e/sim-control-plane.spec.ts</code> (a <code>test.describe('registration')</code> with <code>test.use({ storageState: { cookies: [], origins: [] } })</code>):
+        <pre><code data-lang="ts">type Session = { user?: { id: string; isAnonymous?: boolean } } | null;
+const sessionOf = async (page: Page): Promise&lt;Session&gt; =&gt;
+  (await (await page.request.get('/api/auth/get-session')).json()) as Session;
+
+test('a fresh visitor registers an id: one account, then a no-op', async ({ page }) =&gt; {
+  const simId = newId();
+  const first = await page.request.post('/api/sims', { data: { simId } });
+  expect(first.status()).toBe(201);
+  expect(await first.json()).toEqual({ simId, created: true });
+  const minted = await sessionOf(page);
+  expect(minted?.user?.isAnonymous).toBe(true);
+  const again = await page.request.post('/api/sims', { data: { simId } });
+  expect(again.status()).toBe(200);
+  expect(await again.json()).toEqual({ simId, created: false });
+  expect((await sessionOf(page))?.user?.id).toBe(minted?.user?.id);
+  await page.goto('/about');
+  const h = await openSimSocket(page, simId);
+  expect((await framesAtLeast(page, h, 2))[1]).toEqual({ type: 'access', write: true });
+  expect(commitsOf(await resumeAndRead(page, h, 0))[0].changes).toEqual([
+    { op: 'set', key: 'sim', field: 'name', value: 'Untitled sim' }
+  ]);
+});
+
+test('another account registering the id is refused, and stays a reader', async ({
+  page,
+  browser
+}, testInfo) =&gt; {
+  const simId = await signInAndCreateSim(page, uniqueEmail('cp-owner'), 'Owned');
+  const ctx = await freshContext(browser, testInfo);
+  try {
+    const other = await ctx.newPage();
+    await loginAs(other, uniqueEmail('cp-other'));
+    const res = await other.request.post('/api/sims', { data: { simId } });
+    expect(res.status()).toBe(409);
+    expect(await res.json()).toEqual({ error: SIMS_COPY.notYours, code: 'taken' });
+    await other.goto('/about');
+    const h = await openSimSocket(other, simId);
+    expect((await framesAtLeast(other, h, 2))[1]).toEqual({ type: 'access', write: false });
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('a known device with no session gets 401 and no account', async ({
+  page,
+  context,
+  baseURL
+}) =&gt; {
+  await context.addCookies([{ name: 'sfh_known', value: '1', url: baseURL! }]);
+  const res = await page.request.post('/api/sims', { data: { simId: newId() } });
+  expect(res.status()).toBe(401);
+  expect((await res.json()).code).toBe('sign_in');
+  expect(await sessionOf(page)).toBeNull();
+});</code></pre>
+        In the "last member leaves" test of Task 4, add: the former manager's <code>POST /api/sims</code> with that id answers 409 <code>taken</code>. Update the four e2e posts listed under Files.</li>
+      <li id="t5-s7"><input type="checkbox"> Check port 4173, then run every spec that creates a sim:
+        <pre><code data-lang="sh">npx playwright test e2e/sim-control-plane.spec.ts e2e/sim-object.spec.ts e2e/sims-onboarding.spec.ts e2e/pseudonymous-onboarding.spec.ts e2e/email-link.spec.ts e2e/invite.spec.ts e2e/leave-sim.spec.ts e2e/account-deletion.spec.ts e2e/auth-a11y.spec.ts --project chromium</code></pre>
+        Expected: all pass, no new <code>[WebServer]</code> stderr.</li>
+      <li id="t5-s8"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> and <code>--repeat-each=5 --retries=0</code> on <code>e2e/sim-control-plane.spec.ts</code>.
+        <pre><code data-lang="sh">git add src migrations e2e
+git commit -m "feat(sims): register a sim under a browser-minted id" -m "A no-op for its writers, 409 for anyone else and for a taken-down id; 1,000 managed sims; a rate per identity (R51, R52, R60)."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: The fuse tells the absorbed identity's sims</h2>
+    <p>R49 (decision <a href="#d11">11</a>).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/server/user-store/identity.ts</code> (<code>applyFuse</code> returns the absorbed sims; <code>handleAccountLink</code> takes <code>roster</code>), <code>src/lib/server/auth/better-auth.ts:292-298</code></li>
+      <li>Test: <code>src/lib/server/user-store/identity.spec.ts</code>; e2e: <code>e2e/sim-control-plane.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>foldSimsForUser</code> (<code>sim-roles.ts:150</code>); <code>rosterChangedAll</code> (Task 3); <code>loggable</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export async function handleAccountLink(args: {
+  db: Database;
+  isUpgrade: boolean;
+  pseudonymousUserId: string;
+  newUserId: string;
+  /** R49: after a fuse, the absorbed identity's sims are told. Absent where only the graph is
+   *  under test. */
+  roster?: { env: unknown; defer: (work: Promise&lt;void&gt;) =&gt; void };
+}): Promise&lt;void&gt;;</code></pre>
+        In <code>better-auth.ts</code>: <code>roster: { env: platform.env, defer: (w) =&gt; platform.ctx?.waitUntil(w) }</code> (a missing <code>ctx</code> leaves the promise to run; it never rejects).</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests in <code>identity.spec.ts</code>:
+        <ul>
+          <li>a fuse hands <code>defer</code> one promise, and <code>rosterChangedAll</code> (mock <code>$lib/server/sims/roster-hook</code>) gets <code>(env, ids)</code> where <code>ids</code> are exactly the absorbed identity's sims (seed two for <code>pseudo</code>, one for <code>surv</code>; expect the two);</li>
+          <li>an upgrade calls neither <code>defer</code> nor the hook;</li>
+          <li>a fuse whose sims read throws still fuses (<code>superseded_by_id</code> set, the live row gone), logs <code>[fuse] sims read failed</code> with <code>loggable</code> text only, and defers nothing (make the read fail by spying on the module's <code>foldSimsForUser</code> through a <code>vi.mock</code> of <code>$lib/server/sims/sim-roles</code> that wraps the real one);</li>
+          <li>without <code>roster</code>, a fuse behaves as today (the existing cases).</li>
+        </ul></li>
+      <li id="t6-s2"><input type="checkbox"> Run and see them fail:
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/user-store/identity.spec.ts</code></pre></li>
+      <li id="t6-s3"><input type="checkbox"> Implement: in <code>applyFuse</code>, after the early returns and before <code>recordUserVersion</code>, read <code>foldSimsForUser(db, pseudoIdentity)</code> in a <code>try</code> (failure: log, use <code>[]</code>); return the ids. <code>handleAccountLink</code> passes them to <code>roster.defer(rosterChangedAll(roster.env, ids))</code> when there is at least one and <code>roster</code> is given.</li>
+      <li id="t6-s4"><input type="checkbox"> Run the auth and user-store suites (all pass), then add the e2e. It follows the magic-link request of <code>e2e/pseudonymous-onboarding.spec.ts:88-107</code>:
+        <pre><code data-lang="ts">test('after a fuse the survivor writes the absorbed identity's sim, on an open socket', async ({
+  page,
+  browser,
+  baseURL
+}, testInfo) =&gt; {
+  const survivorEmail = uniqueEmail('cp-survivor');
+  const sctx = await freshContext(browser, testInfo);
+  try {
+    const survivor = await sctx.newPage();
+    await loginAs(survivor, survivorEmail);
+    const simId = newId();
+    expect((await page.request.post('/api/sims', { data: { simId, title: 'Fused' } })).status())
+      .toBe(201);
+    await survivor.goto('/about');
+    const h = await openSimSocket(survivor, simId);
+    expect((await framesAtLeast(survivor, h, 2))[1]).toEqual({ type: 'access', write: false });
+    const res = await page.request.post('/signin?/sendLink', {
+      headers: { origin: baseURL!, 'x-sveltekit-action': 'true' },
+      form: { identifier: survivorEmail }
+    });
+    const body = (await res.json()) as { data: string };
+    const link = /https?:[^"\\]*magic-link\/verify[^"\\]*/.exec(body.data)?.[0];
+    expect(link, 'dev link in the action data').toBeTruthy();
+    await page.goto(link!);
+    expect((await framesAtLeast(survivor, h, 3))[2]).toEqual({ type: 'access', write: true });
+    const tip = commitsOf(await resumeAndRead(survivor, h, 0)).length;
+    const d = nameDraft(tip, 'Survivor edit');
+    expect(commitsOf(await sendAndRead(survivor, h, { type: 'append', commit: d })))
+      .toMatchObject([{ id: d.id }]);
+  } finally {
+    await sctx.close();
+  }
+});</code></pre></li>
+      <li id="t6-s5"><input type="checkbox"> Check port 4173, run <code>npx playwright test e2e/sim-control-plane.spec.ts e2e/pseudonymous-onboarding.spec.ts e2e/email-link.spec.ts --project chromium</code> (all pass, no new stderr), commit, then <code>npx chreode timing-check --head HEAD</code> and <code>--repeat-each=5 --retries=0</code> on the changed spec.
+        <pre><code data-lang="sh">git add src e2e
+git commit -m "feat(auth): a fuse tells the absorbed identity's sims to re-read roles" -m "Deferred with waitUntil and never blocking sign-in (R49)."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: The operator takedown</h2>
+    <p>R43's takedown and the deferred end-to-end test of <code>gone</code> (decisions <a href="#d2">2</a>, <a href="#d12">12</a>).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/server/sims/sims.ts</code> (<code>deleteSim</code>)</li>
+      <li>Create: <code>src/lib/server/operator/token.ts</code>, <code>token.spec.ts</code>, <code>src/routes/api/operator/sims/[simId]/takedown/+server.ts</code>, <code>server.spec.ts</code> beside it</li>
+      <li>Modify: <code>playwright.config.ts</code> (webServer command: add <code>--var SIM_TAKEDOWN_TOKEN:e2e-takedown-token-00000000000000000000</code>)</li>
+      <li>Test: <code>src/lib/server/sims/sims.spec.ts</code>; e2e: <code>e2e/sim-control-plane.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>liveSimStub</code>; <code>SimObject.takeDown()</code> (throws <code>Error('sim object unavailable')</code> without a log host; returns only after no index write can land, <code>sim-object.ts:234</code>); <code>simTakedown</code>, <code>simCommit</code>, <code>simIndex</code>, <code>simInvite</code>.</li>
+      <li>Produces, in <code>sims.ts</code>:
+        <pre><code data-lang="ts">/** The operator takedown (R43): mark the id, clear the object, then delete the D1 rows.
+ *  Throws Error('sim object unavailable') before writing anything when there is no object. */
+export function deleteSim(args: { db: Database; env: unknown; simId: string }): Promise&lt;void&gt;;</code></pre></li>
+      <li>Produces, in <code>token.ts</code>: <code>TOKEN_MIN = 32</code>; <code>bearerMatches(header: string | null, secret: string | undefined): Promise&lt;boolean&gt;</code>: false unless <code>secret</code> has at least <code>TOKEN_MIN</code> characters and <code>header</code> is <code>Bearer &lt;token&gt;</code>; compares the SHA-256 digests of the two in constant time (an XOR over the 32 bytes).</li>
+      <li>Produces the route <code>POST /api/operator/sims/[simId]/takedown</code>: <code>refuseUnlessSameOriginJson</code> (415, 403); bad token or invalid id 404 <code>{ error: 'Not found.' }</code>; no object (dev or no binding) 503; <code>deleteSim</code> throws: 500 <code>{ error: 'Takedown failed.' }</code> and <code>console.error('[takedown] failed', simId, loggable(e))</code>; success 200 <code>{ simId }</code>. The token is read from <code>(platform?.env as { SIM_TAKEDOWN_TOKEN?: string })</code>.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write the failing tests.
+        <ul>
+          <li><code>sims.spec.ts</code>, with a fake binding whose <code>takeDown</code> records what D1 holds when it is called:
+            <pre><code data-lang="ts">it('deleteSim marks the id, takes the object down, then deletes the D1 rows', async () =&gt; {
+  const { db } = freshDb();
+  await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+  const simId = await seedSim(db, { title: 'Q', managerId: 'owner1' });
+  await seedInvite(db, simId, 'owner1', 'pending', 'h1');
+  await seedInvite(db, simId, 'owner1', 'accepted', 'h2');
+  await db.insert(simCommit).values({
+    simId, seq: 1, kind: 'system', source: 'sim.start', actor: 'owner1', at: new Date(),
+    build: 'b', datasetVersion: 'fixture-0', bytes: 10, restoresPosition: null, restoresAs: null
+  });
+  const seen: { marked: boolean; indexed: boolean }[] = [];
+  const env = {
+    SIM: {
+      getByName: () =&gt; ({
+        takeDown: async () =&gt; {
+          seen.push({
+            marked: (await db.select().from(simTakedown).where(eq(simTakedown.simId, simId))).length === 1,
+            indexed: (await getSimTitle({ db, simId })) !== null
+          });
+        }
+      })
+    }
+  };
+  await deleteSim({ db, env, simId });
+  expect(seen).toEqual([{ marked: true, indexed: true }]);
+  expect(await getSimTitle({ db, simId })).toBeNull();
+  expect(await db.select().from(simCommit).where(eq(simCommit.simId, simId))).toEqual([]);
+  const invites = await db.select().from(simInvite).where(eq(simInvite.simId, simId));
+  expect(invites.map((r) =&gt; r.status)).toEqual(['accepted']);
+  expect(await simIdInUse(db, simId)).toBe(true);
+});
+
+it('deleteSim without the object writes nothing', async () =&gt; {
+  const { db } = freshDb();
+  await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+  const simId = await seedSim(db, { title: 'Q', managerId: 'owner1' });
+  await expect(deleteSim({ db, env: {}, simId })).rejects.toThrow('sim object unavailable');
+  expect(await db.select().from(simTakedown)).toEqual([]);
+  expect(await getSimTitle({ db, simId })).toBe('Q');
+});
+
+it('a failed takeDown keeps the mark and the rows, and the id stays unregistrable', async () =&gt; {
+  const { db } = freshDb();
+  await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+  const simId = await seedSim(db, { title: 'Q', managerId: 'owner1' });
+  const env = { SIM: { getByName: () =&gt; ({ takeDown: async () =&gt; { throw new Error('x'); } }) } };
+  await expect(deleteSim({ db, env, simId })).rejects.toThrow();
+  expect(await getSimTitle({ db, simId })).toBe('Q');
+  expect(await simIdInUse(db, simId)).toBe(true);
+});</code></pre>
+            This spec mocks <code>$app/environment</code> with <code>dev: false</code> for these cases.</li>
+          <li><code>token.spec.ts</code>: true for the right <code>Bearer</code> token; false for a wrong one, a missing header, <code>Basic …</code>, an empty bearer, an undefined secret, and a secret of 31 characters even when the header matches it.</li>
+          <li>The route's <code>server.spec.ts</code>: 415 without JSON; 403 for a foreign <code>Origin</code>; 404 with no secret, with a short secret, with a wrong token and for an invalid id, with the same body each time; 503 with no binding; 200 <code>{ simId }</code> with the right token, after which <code>getSimTitle</code> is null and a <code>createSim</code> with that id returns <code>created: false</code>; 500 when <code>takeDown</code> throws an error whose message holds the title, and the logged arguments are exactly <code>['[takedown] failed', simId, '(query failed)']</code> for a <code>DrizzleQueryError</code> and never contain the title.</li>
+        </ul></li>
+      <li id="t7-s2"><input type="checkbox"> Run and see them fail:
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sims/sims.spec.ts src/lib/server/operator src/routes/api/operator</code></pre></li>
+      <li id="t7-s3"><input type="checkbox"> Implement <code>deleteSim</code> (stub first, then <code>insert … onConflictDoNothing</code> into <code>sim_takedown</code>, then <code>await stub.takeDown()</code>, then one <code>db.batch</code> of the three deletes), <code>bearerMatches</code> and the route. The route path is not under <code>SESSION_ROUTE_PREFIXES</code> and does not need a session. Add the <code>--var</code> to <code>playwright.config.ts</code>.</li>
+      <li id="t7-s4"><input type="checkbox"> Run the Node suites (all pass). Add the e2e:
+        <pre><code data-lang="ts">const TAKEDOWN_TOKEN = 'e2e-takedown-token-00000000000000000000';
+
+test('a takedown closes open sockets with gone, and the id never comes back', async ({ page }) =&gt; {
+  const simId = await signInAndCreateSim(page, uniqueEmail('cp-taken'), 'Doomed');
+  await page.goto('/about');
+  const h = await openSimSocket(page, simId);
+  await framesAtLeast(page, h, 2);
+  await resumeAndRead(page, h, 0);
+  const res = await page.request.post(`/api/operator/sims/${simId}/takedown`, {
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${TAKEDOWN_TOKEN}` },
+    data: {}
+  });
+  expect(res.status()).toBe(200);
+  expect(await closedCode(page, h)).toBe(4410);
+  const again = await openSimSocket(page, simId);
+  expect(await closedCode(page, again)).toBe(1006);
+  expect((await page.request.post('/api/sims', { data: { simId } })).status()).toBe(409);
+  expect((await page.goto(`/sims/${simId}`))?.status()).toBe(404);
+});
+
+test('a takedown with a wrong token is 404 and changes nothing', async ({ page }) =&gt; {
+  const simId = await signInAndCreateSim(page, uniqueEmail('cp-safe'), 'Safe');
+  const res = await page.request.post(`/api/operator/sims/${simId}/takedown`, {
+    headers: { 'content-type': 'application/json', authorization: 'Bearer wrong' },
+    data: {}
+  });
+  expect(res.status()).toBe(404);
+  await page.goto('/about');
+  const h = await openSimSocket(page, simId);
+  expect((await framesAtLeast(page, h, 2))[1]).toEqual({ type: 'access', write: true });
+});</code></pre>
+        Update the header comment of <code>e2e/sim-object.spec.ts</code>: <code>gone</code> after a takedown is now in <code>sim-control-plane.spec.ts</code>.</li>
+      <li id="t7-s5"><input type="checkbox"> Check port 4173, run <code>npx playwright test e2e/sim-control-plane.spec.ts e2e/sim-object.spec.ts --project chromium</code> (all pass; read the stderr: wrangler's 404 block for the refused open is already allowed, anything else is new), commit, then <code>npx chreode timing-check --head HEAD</code> and <code>--repeat-each=5 --retries=0</code>.
+        <pre><code data-lang="sh">git add src e2e playwright.config.ts
+git commit -m "feat(sims): an operator takedown clears the sim object and its D1 rows" -m "Marked first so the id never registers again; a bearer token in SIM_TAKEDOWN_TOKEN, 404 when unset (R43)."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: A rename is a name commit</h2>
+    <p>R42 and R58 for a sim with no commits (decisions <a href="#d13">13</a>, <a href="#d14">14</a>, <a href="#d17">17</a>).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/server/sims/stamp.ts</code>, <code>src/lib/server/sims/rename.ts</code>, <code>src/lib/server/sims/rename.spec.ts</code></li>
+      <li>Modify: <code>src/routes/api/sims/[simId]/stream/+server.ts:42-52</code> (use <code>serverStamp</code>; behaviour unchanged, its spec stays green), <code>src/routes/sims/[simId]/+page.server.ts</code> (<code>rename</code> action), <code>src/routes/sims/[simId]/+page.svelte</code> (the form), <code>src/lib/members/copy.ts</code></li>
+      <li>Test: <code>src/routes/sims/[simId]/page.server.spec.ts</code>, <code>page.svelte.spec.ts</code>; e2e: <code>e2e/sim-control-plane.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>SimObject.appendAs</code> and <code>ServerAppendResult</code> (Task 1); <code>liveSimStub</code> (Task 3); <code>headerTitle</code> (<code>src/lib/server/sim-object/open-params.ts:33</code>); <code>checkSimTitle</code> (Task 5); <code>requireSimRole</code>.</li>
+      <li>Produces, in <code>stamp.ts</code>: <code>serverStamp(platform: App.Platform | undefined): { datasetVersion: string; build: string }</code>.</li>
+      <li>Produces, in <code>rename.ts</code>:
+        <pre><code data-lang="ts">export type RenameCode = 'unavailable' | 'gone' | 'limit' | 'full' | 'failed';
+export type AppendAsStub = {
+  appendAs(input: Omit&lt;ServerAppend, 'now'&gt;): Promise&lt;ServerAppendResult&gt;;
+};
+/** The name commit's draft: a set of the sim's name, source 'sim.name'. */
+export function renameDraft(name: string, build: string): Omit&lt;CommitDraft, 'parent' | 'datasetVersion'&gt;;
+/** Append the name commit as `actor`, who the caller checked is a writer. `name` is checked
+ *  (checkSimTitle). */
+export function renameSim(args: {
+  db: Database;
+  stub: AppendAsStub | null;
+  simId: string;
+  actor: string;
+  name: string;
+  stamp: { datasetVersion: string; build: string };
+}): Promise&lt;{ ok: true } | { ok: false; code: RenameCode }&gt;;</code></pre>
+        If <code>DurableObjectStub&lt;SimObject&gt;</code> is not assignable to <code>AppendAsStub</code>, the action wraps it: <code>stub &amp;&amp; { appendAs: (i) =&gt; stub.appendAs(i) as Promise&lt;ServerAppendResult&gt; }</code>.</li>
+      <li>Copy (exact), in <code>SIMS_COPY</code>: <code>renameSummary: 'Rename'</code>, <code>renameLabel: 'Name'</code>, <code>renameSave: 'Save'</code>, <code>renameBusy: 'Too many changes at once. Try again shortly.'</code>, <code>renameFull: 'This sim is full.'</code>, <code>renameUnavailable: "Renaming isn't available here."</code>, <code>renameFailed: "Couldn't rename the sim. Try again."</code>. Statuses: <code>unavailable</code> 503, <code>gone</code> 404 (copy <code>renameFailed</code>), <code>limit</code> 429, <code>full</code> 409, <code>failed</code> 500. The action answers <code>fail(status, { renameError })</code>; a title the check refuses is 400 with its own copy.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Write <code>rename.spec.ts</code> with a fake stub:
+        <ul>
+          <li>no stub: <code>{ ok: false, code: 'unavailable' }</code> and nothing called;</li>
+          <li>no index row: <code>gone</code>;</li>
+          <li>success: the stub got <code>actor</code>, a draft equal to <code>renameDraft(name, stamp.build)</code> apart from its id (<code>kind: 'edit'</code>, <code>label: 'Rename'</code>, <code>source: 'sim.name'</code>, <code>restores: null</code>, <code>shapes: SHAPES_REVISION</code>, one <code>set</code> of <code>sim</code> <code>name</code>), no <code>parent</code> and no <code>datasetVersion</code> key, and <code>start</code> with <code>title: headerTitle(index title)</code> and the stamp's dataset and build;</li>
+          <li><code>refused</code> <code>limit</code>, <code>full</code>, <code>gone</code> map to the same code; <code>invalid</code> and <code>newer</code> map to <code>failed</code> and log <code>['[rename] refused', simId, why]</code>;</li>
+          <li>the stub throws an error whose message holds the name and the actor: <code>failed</code>, and the logged arguments are <code>['[rename] failed', simId, loggable(e)]</code> where <code>loggable</code> of that error is checked not to contain the actor (use a <code>DrizzleQueryError</code> to show it becomes <code>'(query failed)'</code>).</li>
+        </ul>
+        In <code>page.server.spec.ts</code>: <code>rename</code> by a viewer is 403 and by a non-member 404 (from <code>requireSimRole</code>); an empty name is 400 with <code>SIMS_COPY.titleRequired</code>; a writer with the stub succeeding is redirected 303 to <code>/sims/&lt;id&gt;</code>. In <code>page.svelte.spec.ts</code>: the <code>Rename</code> disclosure renders for <code>manager</code> and <code>editor</code>, not for <code>viewer</code>, and its input has <code>maxlength</code> 63 and the current title.</li>
+      <li id="t8-s2"><input type="checkbox"> Run and see them fail:
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sims/rename.spec.ts "src/routes/sims/[simId]"
+npx vitest --run --project client "src/routes/sims/[simId]"</code></pre></li>
+      <li id="t8-s3"><input type="checkbox"> Implement <code>serverStamp</code> (move the stream route's expression into it), <code>renameDraft</code>, <code>renameSim</code>, the action and the form: a <code>&lt;details data-testid="rename"&gt;</code> under the <code>h1</code>, summary <code>renameSummary</code>, a labelled input <code>id="sim-name"</code> <code>name="name"</code>, a submit <code>renameSave</code>, and the error in a <code>FieldError</code> as <code>/sims/+page.svelte</code> does. The page reads <code>form</code> from <code>$props()</code>.</li>
+      <li id="t8-s4"><input type="checkbox"> Run the Node and client suites, including the stream route's spec (all pass). Add the e2e:
+        <pre><code data-lang="ts">test('a rename on the member page is a name commit every open socket sees', async ({ page }) =&gt; {
+  const simId = await signInAndCreateSim(page, uniqueEmail('cp-rename'), 'Before');
+  await page.goto('/about');
+  const h = await openSimSocket(page, simId);
+  await framesAtLeast(page, h, 2);
+  await resumeAndRead(page, h, 0);
+  const seen = (await framesAtLeast(page, h, 0)).length;
+  const member = await page.context().newPage();
+  await member.goto(`/sims/${simId}`);
+  await expect(member.locator('html')).toHaveAttribute('data-hydrated', '');
+  await member.getByTestId('rename').locator('summary').click();
+  await member.getByLabel(SIMS_COPY.renameLabel).fill('After');
+  await member.getByRole('button', { name: SIMS_COPY.renameSave }).click();
+  await expect(member.getByRole('heading', { level: 1 })).toHaveText('After');
+  const [named] = commitsOf((await framesAtLeast(page, h, seen + 1))[seen]);
+  expect(named).toMatchObject({
+    seq: 2,
+    source: 'sim.name',
+    datasetVersion: 'fixture-0',
+    changes: [{ op: 'set', key: 'sim', field: 'name', value: 'After' }]
+  });
+});
+
+test('renaming a sim with no commits records its start commit first', async ({
+  page,
+  baseURL
+}) =&gt; {
+  const simId = await signInAndCreateSim(page, uniqueEmail('cp-fresh'), 'Original');
+  const res = await page.request.post(`/sims/${simId}?/rename`, {
+    headers: { origin: baseURL!, 'x-sveltekit-action': 'true' },
+    form: { name: 'Renamed' }
+  });
+  expect((await res.json()).type).toBe('redirect');
+  await page.goto('/about');
+  const h = await openSimSocket(page, simId);
+  await framesAtLeast(page, h, 2);
+  expect(commitsOf(await resumeAndRead(page, h, 0)).map((c) =&gt; [c.source, c.changes])).toEqual([
+    ['sim.start', [{ op: 'set', key: 'sim', field: 'name', value: 'Original' }]],
+    ['sim.name', [{ op: 'set', key: 'sim', field: 'name', value: 'Renamed' }]]
+  ]);
+});</code></pre></li>
+      <li id="t8-s5"><input type="checkbox"> Check port 4173, run <code>npx playwright test e2e/sim-control-plane.spec.ts e2e/sim-object.spec.ts e2e/pages-a11y.spec.ts --project chromium</code> (all pass, no new stderr; if <code>pages-a11y</code> visits <code>/sims/&lt;id&gt;</code>, the closed disclosure must pass axe), commit, then <code>npx chreode timing-check --head HEAD</code> and <code>--repeat-each=5 --retries=0</code>.
+        <pre><code data-lang="sh">git add src e2e
+git commit -m "feat(sims): rename a sim with a name commit" -m "Through the object's server-side append; the index title follows from the index pass (R42, R58)."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-9">
+    <h2>Task 9: Docs</h2>
+    <p>Every statement is checked against the code as built on this branch, not against this plan.</p>
+    <h3>Files</h3>
+    <ul>
+      <li><code>docs/dev/auth.md</code>: Pseudonymous accounts (minted at the first registration, R44); Deletion (sims are kept, their invitations end); Sims and membership (registration contract and codes, <code>sim_takedown</code>, the 1,000 cap and how "managed" counts, the rate, the roster hook's behaviour and every call site, a sim with no members); Invitations (the hook's call sites, with <code>env</code>); no Reaping section.</li>
+      <li><code>docs/dev/sim-object.md</code>: <code>appendAs</code> (contract, order, what it refuses, its fixed error text) in "For the control plane"; I8 as amended; the roster hook as <code>rereadRoles()</code>'s caller; takedown's caller (<code>deleteSim</code>, the route); the stale lines that say <code>removeSimMember</code> deletes the sim; the e2e note now pointing at <code>e2e/sim-control-plane.spec.ts</code>; the files table.</li>
+      <li><code>docs/dev/deploy.md</code>: <code>SIM_TAKEDOWN_TOKEN</code> under secrets (optional; the route is 404 until set), and an "Operator takedown of a sim" section with the commands below.</li>
+      <li><code>docs/dev/plan-sharing.md</code>, Manual takedown: one line pointing to deploy.md for sims.</li>
+      <li><code>docs/dev/testing.md</code>: the e2e server's <code>SIM_TAKEDOWN_TOKEN</code> var.</li>
+      <li><code>CLAUDE.md</code>: the Architecture paragraph lists the <code>SIM</code> Durable Object binding (missing today) and the <code>SIM_TAKEDOWN_TOKEN</code> secret; the auth.md line names registration and takedown.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul><li>Consumes everything above. Produces nothing in code.</li></ul>
+    <ol>
+      <li id="t9-s1"><input type="checkbox"> Read each changed source file, then write the docs. The deploy.md takedown section:
+        <pre><code data-lang="sh">wrangler secret put SIM_TAKEDOWN_TOKEN            # production; add --env staging for staging
+curl -X POST https://&lt;host&gt;/api/operator/sims/&lt;simId&gt;/takedown \
+  -H 'content-type: application/json' -H "authorization: Bearer $SIM_TAKEDOWN_TOKEN" -d '{}'</code></pre>
+        with: the token is at least 32 characters (<code>openssl rand -hex 32</code>), kept where the operator can read it; 200 means the object is cleared and the D1 rows are gone; 500 can be retried (it is idempotent); the id is never registered again.</li>
+      <li id="t9-s2"><input type="checkbox"> Check every code name the docs mention exists:
+        <pre><code data-lang="sh">grep -rn "createSimRecord\|ensureSimRecord\|reap\|deleted: true" docs/dev CLAUDE.md
+npx prettier --check docs CLAUDE.md</code></pre>
+        Expected: no match; prettier clean.</li>
+      <li id="t9-s3"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add docs CLAUDE.md
+git commit -m "docs: the sim control plane" -m "Registration, the cap and rate, the roster hook, kept sims, the operator takedown and the rename."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-regressions">
+    <h2>Behaviour that must not regress</h2>
+    <table id="tbl-regressions">
+      <caption>Existing behaviour and the test that holds it</caption>
+      <thead><tr><th scope="col">Behaviour</th><th scope="col">Test</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">The <code>/sims</code> form creates a sim</th><td><code>e2e/sims-onboarding.spec.ts</code> "a fresh visitor creates a sim…", <code>src/routes/sims/page.server.spec.ts</code></td></tr>
+        <tr><th scope="row">Invitations</th><td><code>e2e/invite.spec.ts</code>, <code>src/lib/server/invites/control-plane.spec.ts</code>, the accept route's spec</td></tr>
+        <tr><th scope="row">Leaving, removing a member, the co-manager guard</th><td><code>e2e/leave-sim.spec.ts</code>, <code>sims.spec.ts</code> "removeSimMember refuses to remove another manager" and the fused-identity block</td></tr>
+        <tr><th scope="row">Account deletion scrubs and tombstones</th><td><code>deletion.spec.ts</code>, <code>e2e/account-deletion.spec.ts</code></td></tr>
+        <tr><th scope="row">Sign-in, upgrade and fuse</th><td><code>e2e/email-link.spec.ts</code>, <code>e2e/pseudonymous-onboarding.spec.ts</code>, <code>identity.spec.ts</code></td></tr>
+        <tr><th scope="row">Every state-changing JSON route refuses a foreign origin</th><td>each route spec's 415 and 403 cases (<code>src/routes/api/**/*.spec.ts</code>), unchanged and passing</td></tr>
+        <tr><th scope="row">The socket</th><td><code>e2e/sim-object.spec.ts</code>, unchanged apart from its header comment</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <ul>
+      <li id="q1"><strong>Takedown credential.</strong> The plan uses a bearer token (decision <a href="#d12">12</a>) because an operator sign-in needs mail, which production may not have. Recommendation: keep the token; if the owner prefers the operator capability once mail is configured, the route's check becomes <code>requireCapability(locals, 'takedown.sim')</code> and the path moves under a session prefix.</li>
+      <li id="q2"><strong>Deleting an account with many sims.</strong> With the cap at 1,000, <code>deleteAccount</code> removes up to 1,000 memberships in one request, each several D1 queries plus one RPC. Workers Paid allows 10,000 subrequests per invocation by default, D1 calls included (<a href="https://developers.cloudflare.com/workers/platform/limits/#subrequests">limits</a>). A very active account could exceed it; the run is idempotent and marks the identity deleted last, so a retry finishes it. Recommendation: measure the D1 statements of one removal and, if a 1,000-sim deletion would pass the limit, raise <code>limits.subrequests</code> in <code>wrangler.jsonc</code> or move the removals to a queue. Not in this unit.</li>
+      <li id="q3"><strong>Signed-out probing.</strong> A signed-out <code>POST /api/sims</code> with an id in use costs two D1 reads and is not rate-limited (the rate is per identity, and minting is not reached). Recommendation: accept; ids are random and the answer says only "not yours".</li>
+      <li id="q4"><strong>Where the rename lives.</strong> On the member page, not on the list row (decision <a href="#d14">14</a>). Recommendation: keep; the header's name and list come in unit 5.</li>
+    </ul>
+  </section>
+
+  <section id="sec-run">
+    <h2>What was run at plan time</h2>
+    <ul>
+      <li><code>npm install</code> in this worktree (no <code>node_modules</code> before).</li>
+      <li>Baseline: <code>npx vitest --run --project server</code> over <code>src/lib/server/sims</code>, <code>sim-object</code>, <code>user-store</code>, <code>reap</code>, <code>src/routes/api/sims</code>, <code>src/routes/sims</code>, <code>src/routes/api/invites</code>, <code>src/routes/invite</code>, <code>src/routes/api/account</code>: 47 files, 557 tests, all pass.</li>
+      <li>The atomic registration insert (Task 5's statement) in a throwaway spec over the D1 shim with a hand-made <code>sim_takedown</code> table: it inserts once, returns nothing on a second insert of the same id, and returns nothing for a marked id. A first attempt with Drizzle's <code>insert().select()</code> failed ("selected fields are not the same … as the table definition"), so the plan uses one <code>sql</code> statement. The probe also showed the raw statement skips <code>normText</code>'s NFC write, hence <code>normTextToDriver</code>. The probe file was deleted; nothing else in the tree changed.</li>
+      <li>A type probe with <code>tsc --strict</code>: a required property typed <code>unknown</code> must be named (an object without <code>env</code> is an error), so <code>env: unknown</code> forces every caller to pass it.</li>
+      <li>Not run: none of the plan's other code (the tests above are written against the real modules' signatures, read at plan time), no e2e, no preview server, no <code>db:generate</code>.</li>
+      <li>Cloudflare documentation read: subrequest limits and <code>waitUntil</code>'s 30 seconds (<a href="https://developers.cloudflare.com/workers/platform/limits/">limits</a>, <a href="https://developers.cloudflare.com/workers/runtime-apis/context/">context</a>), stub breakage and overload retries (<a href="https://developers.cloudflare.com/durable-objects/best-practices/error-handling/">error handling</a>, <a href="https://developers.cloudflare.com/durable-objects/best-practices/automatic-retries/">automatic retries</a>).</li>
+    </ul>
+  </section>
+</article>

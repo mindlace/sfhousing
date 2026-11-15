@@ -1,5 +1,5 @@
 /** The most sims one person can manage. */
-export const MAX_SIMS_PER_MANAGER = 5;
+export const MAX_SIMS_PER_MANAGER = 1000;
 /** The longest sim title. */
 export const SIM_TITLE_MAX = 63;
 
@@ -15,10 +15,23 @@ export const SIMS_COPY = {
   signInRequired: 'Sign in to create a sim.',
   sessionStart: "Couldn't start your session. Try again.",
   createFailed: "Couldn't create the sim. Try again.",
-  quota: `You can manage up to ${MAX_SIMS_PER_MANAGER} sims.`
+  quota: `You can manage up to ${MAX_SIMS_PER_MANAGER.toLocaleString('en-US')} sims.`,
+  invalidId: 'That sim id is not valid.',
+  notYours: "That sim isn't yours.",
+  // Renaming on the member page.
+  renameSummary: 'Rename',
+  renameLabel: 'Name',
+  renameSave: 'Save',
+  renameBusy: 'Too many changes at once. Try again shortly.',
+  renameFull: 'This sim is full.',
+  renameUnavailable: "Renaming isn't available here.",
+  renameFailed: "Couldn't rename the sim. Try again.",
+  nameRequired: 'Give the sim a name.'
 } as const;
 
 export const titleTooLong = (max: number): string => `Sim titles can be at most ${max} characters.`;
+/** The rename control's line for an over-long name; the creation form keeps titleTooLong. */
+export const nameTooLong = (max: number): string => `Names can be at most ${max} characters.`;
 
 export const MEMBERS_COPY = {
   // The invite page.
@@ -56,8 +69,8 @@ export const MEMBERS_COPY = {
   // The leave flow.
   leaveButton: 'Leave sim',
   leaveSoleMemberWarning:
-    "You're the only member. Leaving deletes this sim and its pending invitations.",
-  leaveDeleteButton: 'Leave & delete sim',
+    "You're the only member. Once you leave, nobody can edit this sim and its invitations end. Its links still open.",
+  leaveLastButton: 'Leave sim',
   leaveCancel: 'Cancel',
   leaveSuccessorLabel: 'Who takes over?',
   leaveSuccessorAuto: 'Let the app choose',

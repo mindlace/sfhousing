@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
+import { freshDb, makePlatform, seedSim, seedUser } from '$lib/server/test/auth-db';
 
 vi.mock('$lib/server/authz/require-sim-role', () => ({ requireSimRole: vi.fn() }));
 vi.mock('$lib/server/sims/roster-hook', () => ({ onSimRosterChanged: vi.fn(async () => {}) }));
@@ -7,7 +7,6 @@ vi.mock('$lib/server/sims/roster-hook', () => ({ onSimRosterChanged: vi.fn(async
 import { requireSimRole } from '$lib/server/authz/require-sim-role';
 import { createInvite } from '$lib/server/invites/control-plane';
 import { addMemberById } from '$lib/server/sims/sim-index';
-import { createSim } from '$lib/server/sims/sims';
 import { PSEUDONYMOUS_EMAIL_DOMAIN } from '$lib/server/auth/brand';
 import { load } from './+layout.server';
 
@@ -36,7 +35,7 @@ async function seed() {
   await seedUser(db, { id: 'u-mia', email: 'mia@private.test', handle: 'mia', name: 'Mia Real' });
   await seedUser(db, { id: 'u-eddie', email: 'eddie@private.test', handle: 'eddie' });
   await seedUser(db, { id: 'u-vera', email: 'vera@private.test', handle: 'vera' });
-  const { simId } = await createSim({ db, title: 'Garden', managerId: 'u-mia' });
+  const simId = await seedSim(db, { title: 'Garden', managerId: 'u-mia' });
   await addMemberById({ db, simId, userId: 'u-eddie', role: 'editor' });
   await addMemberById({ db, simId, userId: 'u-vera', role: 'viewer' });
   return { db, shim, simId };

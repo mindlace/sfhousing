@@ -193,7 +193,7 @@ describe('invite token landing — accept action', () => {
     expect(acceptMock).toHaveBeenCalledWith(
       expect.objectContaining({ token: 'tok', userId: 'u1' })
     );
-    expect(rosterMock).toHaveBeenCalledWith('q1');
+    expect(rosterMock).toHaveBeenCalledWith(platform.env, 'q1');
   });
 
   it('returns fail(400) with a code, not the message, when the service throws', async () => {
@@ -275,7 +275,7 @@ describe('invite token landing — join action (cold-accept)', () => {
     expect(isRedirect(caught)).toBe(true);
     expect((caught as { location: string }).location).toBe('/sims/q1');
     expect(mintMock).toHaveBeenCalled();
-    expect(rosterMock).toHaveBeenCalledWith('q1');
+    expect(rosterMock).toHaveBeenCalledWith(platform.env, 'q1');
   });
 
   it('pseudonymous mint (handle invite): seeds handle from sim title, auto-accepts, redirects to the sim', async () => {
@@ -298,7 +298,7 @@ describe('invite token landing — join action (cold-accept)', () => {
     expect(acceptMock).toHaveBeenCalledWith(
       expect.objectContaining({ token: 'tok', userId: 'ident1' })
     );
-    expect(rosterMock).toHaveBeenCalledWith('q1');
+    expect(rosterMock).toHaveBeenCalledWith(platform.env, 'q1');
   });
 
   it('email-bound mint (emailed invite, unknown account): binds the invited email UNVERIFIED, auto-accepts', async () => {
@@ -341,7 +341,7 @@ describe('invite token landing — join action (cold-accept)', () => {
     expect(acceptMock).toHaveBeenCalledWith(
       expect.objectContaining({ token: 'tok', userId: 'ident1' })
     );
-    expect(rosterMock).toHaveBeenCalledWith('q1');
+    expect(rosterMock).toHaveBeenCalledWith(platform.env, 'q1');
   });
 
   it('email-bound mint: returns a friendly fail when binding the email collides', async () => {

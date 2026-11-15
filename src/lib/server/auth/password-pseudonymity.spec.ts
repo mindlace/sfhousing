@@ -28,8 +28,9 @@ const { getAuth } = await import('./better-auth');
  * anonymous plugin's path-matched `onLinkAccount` hook cannot fire for it. That argument
  * is a fact about a DEPENDENCY, not about our code — a Better-Auth release that gives
  * setPassword a path, or that broadens the hook's matcher, silently de-pseudonymizes every
- * user who sets a password. Nothing else would catch it: the reaper filters on
- * `isAnonymous`, so the blast radius (accounts stop being reaped, pseudonymous UI flips)
+ * user who sets a password. Nothing else would catch it: the pseudonymous rules
+ * key off `isAnonymous` (a pseudonymous account with no credential has no way back in),
+ * so the blast radius (those accounts are no longer treated as pseudonymous, the UI flips)
  * is invisible to every other test.
  *
  * Hence an END-TO-END assertion against the real Better-Auth instance rather than a unit

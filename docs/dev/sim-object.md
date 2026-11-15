@@ -1,6 +1,6 @@
 # Sim object
 
-The per-sim Durable Object: `SimObject`, `src/lib/server/sim-object/`. It orders, checks and stores a sim's commits and serves them over a websocket. This is unit 2 of the sim message log; the browser log store (unit 4) speaks the socket protocol below, and the control plane (unit 3) calls `rereadRoles()` and `takeDown()`. Design: [2026-11-14-sim-message-log-design.html](../superpowers/specs/2026-11-14-sim-message-log-design.html) (rule numbers below, `R21` and so on, are its rules). The log core it folds with is [sim-log.md](sim-log.md).
+The per-sim Durable Object: `SimObject`, `src/lib/server/sim-object/`. It orders, checks and stores a sim's commits and serves them over a websocket. This is unit 2 of the sim message log; the browser log store (unit 4) speaks the socket protocol below, and the control plane (unit 3) calls `rereadRoles()`, `appendAs()` and `takeDown()`. Design: [2026-11-14-sim-message-log-design.html](../superpowers/specs/2026-11-14-sim-message-log-design.html) (rule numbers below, `R21` and so on, are its rules). The log core it folds with is [sim-log.md](sim-log.md).
 
 ## What it is
 
@@ -31,26 +31,31 @@ The per-sim Durable Object: `SimObject`, `src/lib/server/sim-object/`. It orders
 | `src/lib/sim-stream/limits.ts`                                     | `LIMITS`, `Limits`, `utf8Bytes`, `overFrameLimit`, `fitsCommit`, `STAMP_MAX`. Imports nothing: the browser can load it                                                     |
 | `src/lib/sim-stream/protocol.ts`                                   | Frame types, `PROTOCOL`, `PING`, `PONG`, close codes, `parseClientFrame`, `encodeFrame`, `commitsFrame`. Type-only imports from the log core: the browser can load it      |
 | `src/routes/api/sims/[simId]/stream/+server.ts`                    | The socket route: the trust boundary                                                                                                                                       |
+| `src/lib/server/sims/roster-hook.ts`, `live-sim.ts`                | `onSimRosterChanged`, `rosterChangedAll` (call `rereadRoles()`); `liveSimStub` (the object for a request handler, null under dev)                                          |
+| `src/lib/server/sims/rename.ts`, `stamp.ts`                        | `renameSim` (the rename's `appendAs` call); `serverStamp` (the dataset version and build the Worker stamps on an open header and an `appendAs`)                            |
+| `src/lib/server/sims/sims.ts`                                      | `deleteSim`: the takedown, the one caller of `takeDown()`                                                                                                                  |
+| `src/routes/api/operator/sims/[simId]/takedown/+server.ts`         | The operator takedown route                                                                                                                                                |
 | `src/lib/server/security/same-origin-json.ts`                      | `refuseForeignOrigin` (the route's Origin check, shared with `refuseUnlessSameOriginJson`)                                                                                 |
 | `scripts/worker-entry.ts`                                          | After `vite build`: wraps the adapter's `_worker.js` so the Worker also exports `SimObject`                                                                                |
 | `e2e/sim-object.spec.ts`, `e2e/helpers/sim-socket.ts`              | End-to-end specs and their websocket client                                                                                                                                |
+| `e2e/sim-control-plane.spec.ts`                                    | End-to-end specs of the control plane against the object: roster changes on open sockets, registration races, a fuse, the takedown, the rename                             |
 | `migrations/sim/`, `drizzle.sim.config.ts`, `drizzle-cf.config.ts` | The object's migration track and its config                                                                                                                                |
 
 Modules reachable from `sim-object.ts` import no `$app/*`, no `$env/*` and no build-time global: wrangler bundles them without Vite.
 
 ## Invariants
 
-| #   | Invariant                                                                                                                                                                                                 |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| I1  | Gapless: stored positions are exactly 1 to n; a row's `seq` is its position and its commit's `parent` is `seq - 1`. `SimStore.insert` throws `RangeError` unless `seq` is the tip plus 1                  |
-| I2  | Chain: `verifyChain` over the stored commits from `GENESIS_HASH` finds nothing wrong                                                                                                                      |
-| I3  | State is the fold: a held `LogState` always equals the fold of the stored commits. After a failed insert the host drops its state and totals and refolds on next use                                      |
-| I4  | Store, send, index: a commit is inserted before any socket is sent it, and the D1 index is written after the send. An index failure never refuses or delays a commit (R41)                                |
-| I5  | A refusal changes nothing: a refused or duplicate append leaves the rows, the tip, the hash and the folded state as they were. A refusal after the writer check takes a rate token                        |
-| I6  | Once per id: no two rows share a commit `id` (a unique column); an append whose id is stored gets no frame                                                                                                |
-| I7  | One order on every socket: a socket that has resumed gets every later commit once, in `seq` order: first the resume answer, then each new commit as it is stored                                          |
-| I8  | The Worker decides who writes: a socket writes only if the Worker said so at open or a later `rereadRoles()` did. The actor stamped is the identity the Worker passed; the browser never states who it is |
-| I9  | Append-only: rows are never updated or deleted, except all at once by `takeDown()` (R21). The migration track is append-only (R22)                                                                        |
+| #   | Invariant                                                                                                                                                                                                                                              |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| I1  | Gapless: stored positions are exactly 1 to n; a row's `seq` is its position and its commit's `parent` is `seq - 1`. `SimStore.insert` throws `RangeError` unless `seq` is the tip plus 1                                                               |
+| I2  | Chain: `verifyChain` over the stored commits from `GENESIS_HASH` finds nothing wrong                                                                                                                                                                   |
+| I3  | State is the fold: a held `LogState` always equals the fold of the stored commits. After a failed insert the host drops its state and totals and refolds on next use                                                                                   |
+| I4  | Store, send, index: a commit is inserted before any socket is sent it, and the D1 index is written after the send. An index failure never refuses or delays a commit (R41)                                                                             |
+| I5  | A refusal changes nothing: a refused or duplicate append leaves the rows, the tip, the hash and the folded state as they were. A refusal after the writer check takes a rate token                                                                     |
+| I6  | Once per id: no two rows share a commit `id` (a unique column); an append whose id is stored gets no frame                                                                                                                                             |
+| I7  | One order on every socket: a socket that has resumed gets every later commit once, in `seq` order: first the resume answer, then each new commit as it is stored                                                                                       |
+| I8  | The Worker decides who writes: a socket writes only if the Worker said so at open or a later `rereadRoles()` did, and `appendAs` is called only by the Worker. The actor stamped is the identity the Worker passed; the browser never states who it is |
+| I9  | Append-only: rows are never updated or deleted, except all at once by `takeDown()` (R21). The migration track is append-only (R22)                                                                                                                     |
 
 ## The socket
 
@@ -231,18 +236,47 @@ Written by the object after it has stored and sent a commit (I4). Both tables ar
 
 ## For the control plane (unit 3) and the browser store (unit 4)
 
-Both RPC methods are called through `simStub(env, simId)`, which is null without the binding.
+The three RPC methods are called through `simStub(env, simId)`, which is null without the binding. A request handler uses `liveSimStub(env, simId)` (`src/lib/server/sims/live-sim.ts`), which is also null under `npm run dev`.
 
 ### `rereadRoles()`
 
-Call it after a roster change that can change who may write: an accepted invite, a role change, a removal (R53). `onSimRosterChanged` (`src/lib/server/sims/roster-hook.ts`) is its seam.
+Call it after a roster change that can change who may write: an accepted invite, a removal, a fuse (R53). Its caller is `onSimRosterChanged` (`src/lib/server/sims/roster-hook.ts`), which bounds each attempt to 5 seconds, tries at most twice and never fails a request; its call sites are listed in [auth.md](auth.md), The roster hook.
 
 - Write the roster change to D1 first, then call `rereadRoles()`. It reads the role of every distinct identity on an open socket. A socket that opens after that list is taken and before the read ends is not in the read and keeps the right the Worker gave it at open. The route read its role before the change was written, so it can keep a stale right until the next call.
 - It sends `{"type":"access","write":...}` only to sockets whose right changed, and updates their attachments. A writer who loses the right is not disconnected; later appends are refused `not-writer`. A reader who gains it gets `write: true`.
 - A signed-out socket is never touched. A non-member's role is null: no write.
 - If the role read fails for any reason, it logs once (the sim id and the error text), changes nothing (nobody is revoked) and throws `Error('role read failed')`, fixed text that names no identity. Over RPC the caller's await rejects: retry, or surface it. It returns normally when the read succeeded, and at once, reading nothing, when no open socket has an identity.
 - It needs no log host.
-- Call it when the last member leaves too (`removeSimMember` deletes the sim's rows): the route then answers 404 to new opens, but open writer sockets keep writing until `rereadRoles()` finds no role for them.
+- It is called when the last member leaves too. The sim is kept (`removeSimMember` never deletes a sim), so new opens still succeed, read-only, and open writer sockets lose write at the re-read.
+
+### `appendAs(input)`
+
+Appends a commit on a writer's behalf through the log host's one append path. Its one caller is the rename (`renameSim`, `src/lib/server/sims/rename.ts`); only the Worker may call it, and no socket frame reaches it.
+
+- Input, `Omit<ServerAppend, 'now'>` (`log-host.ts`; the object adds `now`): `actor`, the identity the Worker resolved from the session and found to be a writer (`requireSimRole`; the object holds no roster and does not re-check it); `draft`, a commit with everything but `parent` and `datasetVersion`; `start`, `{ id, title, datasetVersion, build }`, the start commit to record if the log is empty.
+- It runs in turn with appends and resumes. Order: the sim is gone (`gone`); `actor` is not a string of 1 to 64 characters (`not-writer`; the input crosses the RPC untyped, so it is validated); `draft` is not a plain object (`invalid`); then, on an empty log only, the draft is parsed first (a draft that does not parse is `invalid` and leaves no start commit behind) and the start commit (R58) is stored with `actor` as author and `start.title` as the name; a refusal of the start commit is returned as the call's answer (`{ kind: 'refused', why }`; the draft's id stays on the host's internal outcome, not the RPC result). Then `parent` is set to the tip and `datasetVersion` to the folded log's (the `start` one when the fold has none), and the commit goes through the same checks as a socket's append from the rate step on (table above), then is stored and sent to every resumed socket. So the Worker never states a parent or a dataset version, and a rename cannot be `behind`.
+- The rate bucket is the sim's: the start commit takes a token and so does the commit.
+- It answers `{ kind: 'accepted', seq }`, `{ kind: 'duplicate' }` (the draft's id is already stored) or `{ kind: 'refused', why }` as data, never a commit body or id. The reasons: `gone`, `not-writer`, `invalid`, `limit`, `full`, `newer`.
+- It throws `Error('sim object unavailable')` without a log host, and `Error('append failed')` (`APPEND_FAILED`) on any other failure: fixed text with no cause, since a failed query's error carries its bound parameters. The cause is logged in the object with the sim id and `loggable(e)`.
+- It kicks the index pass whenever the tip moved, not only when its own commit was accepted: a start commit stored before a refusal, or before a throw, still reaches D1. The call returns after the pass, so `sim_index.title` already shows the new name.
+
+#### The rename
+
+The `rename` action of `src/routes/sims/[simId]/+page.server.ts` is the first caller. The caller must be an `editor` or a `manager` (`requireSimRole`); the actor is the session's identity, never a form field. The name goes through `checkSimTitle` (trimmed, 1 to 63 characters; the object parses the commit again). The Worker writes no D1 title: the object's index pass copies the folded name into `sim_index.title`. The commit is `kind: 'edit'`, label `Rename`, source `sim.name`, one `set` of the sim's `name`. On a sim with no commits the start commit comes first, named from the current index title (`headerTitle`).
+
+A name equal to the current index title (both trimmed, in NFC) appends nothing: `renameSim` answers success and the action redirects as for a rename. A non-member or a viewer is refused by `requireSimRole`'s thrown 404 or 403 before the action body runs. Every failure after the role check is `{ renameError, name }`: copy for the person, and the name as submitted, which the field keeps. On the page the field and `Save` share a row, with the line below them, and an accepted rename closes the disclosure.
+
+| Status | When                                                                                                                                                                                     |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | The name is empty or too long. The line asks for a name (`SIMS_COPY.nameRequired`, `nameTooLong`); the creation form keeps its title wording                                             |
+| 401    | The session has no identity                                                                                                                                                              |
+| 503    | No object (`npm run dev`, or no `SIM` binding)                                                                                                                                           |
+| 404    | The sim has no `sim_index` row, or the object answered `gone`                                                                                                                            |
+| 429    | The object answered `limit`                                                                                                                                                              |
+| 409    | The object answered `full`                                                                                                                                                               |
+| 500    | Any other refusal (`duplicate`, `not-writer`, `invalid`, `newer`: logged `[rename] refused` with the sim id and the code only), a throw (`[rename] failed`), or no valid dataset version |
+
+Success redirects 303 to `/sims/<simId>`.
 
 ### `takeDown()`
 
@@ -251,16 +285,17 @@ Call it for a manual takedown (R43). It runs in turn with appends and resumes.
 - It deletes every commit, sets `gone_at` and resets `indexed_seq` to 0 and drops the held state; then it waits for an index pass in flight (which stops without moving the watermark); then it closes every open socket with 4410 `gone` (`takeDownInOrder`). No index write lands after it returns. It throws `Error('sim object unavailable')` when the object has no log host; an RPC caller sees an exception, not a status.
 - What it leaves: the `sim_state` row, with `gone_at` set. Later opens get 410, appends `gone`, resumes `gone`. The object stays addressable, so a takedown is final and the sim id stays dead. Calling it again only moves `gone_at`.
 - It does not touch D1. The control plane deletes the sim's `sim_index` and `sim_commit` rows, after `takeDown()` returns: an index write running when it was called has landed by then.
+- Its one caller is `deleteSim` (`src/lib/server/sims/sims.ts`), behind the operator route `POST /api/operator/sims/<simId>/takedown`. The route is off until the secret `SIM_TAKEDOWN_TOKEN` (32 characters or more) is set; it is unset in staging and production. The caller presents it as `Authorization: Bearer <token>`. Answers, in order: the same-origin JSON check's own (415, 403); 404 for a missing, short, unset or wrong token, or an invalid id; 503 under dev or without `SIM`, before anything is written; 200 `{ simId }`; 500 if a step threw, after which a retry finishes the job. `deleteSim` marks the id in `sim_takedown` first (registration then refuses it), calls `takeDown()`, then deletes the `sim_index` and `sim_commit` rows and the pending invitations in one batch; each step is safe to repeat, and every delete names the sim id, so another sim's rows stay. A takedown that finished logs one info line, `[takedown] done`, with the sim id. A valid id is taken down whether or not it has a `sim_index` row, so an operator can clear a log whose index row is gone, or bar an unused id. Ledger rows stay and grant nothing (the role folds join the index row).
 
 ### Notes for the later units
 
-- A rename must become a name commit (`set` of `sim` `name`, source `sim.name`): the D1 `title` is copied from the folded name, and the object never reads `sim_index.title` after the start commit.
+- A rename is a name commit (`set` of `sim` `name`, source `sim.name`; see The rename): the D1 `title` is copied from the folded name, and the object never reads `sim_index.title` after the start commit.
 - The start commit takes its name from `sim_index.title` at the first writer's open (R58).
 - The browser store: `resume` from its confirmed position on every open; stop sending on `not-writer` until an `access` frame allows it; keep pending commits through `behind`, `newer` and `full` as in the table above; back off on `limit`; check each commit with `fitsCommit` before sending.
 
 ## For the next units
 
-- **Control plane (unit 3).** Write the roster change to D1, then call `rereadRoles()` and handle its throw (retry with `waitUntil`, or surface it). Call it on every path that can end a writer's role, the last member leaving included. Call `takeDown()` before deleting the sim's D1 rows. `onSimRosterChanged` needs `env` to reach `SIM`. Add the end-to-end tests deferred here: a role change ending write on an open socket, and `gone` after a takedown.
+- **Control plane (unit 3), done.** Roster changes call the hook after they are written ([auth.md](auth.md), The roster hook), the takedown calls `takeDown()` before it deletes the sim's D1 rows, and a rename calls `appendAs`. A registration also exists: `POST /api/sims` takes a browser-minted id ([auth.md](auth.md), Registering a sim). The socket route answers 404 until the index row exists, so register before opening the socket.
 - **Log store (unit 4).** Import the limits and `fitsCommit` from `$lib/sim-stream/limits`. Treat `full` as permanent, `limit` as back off, `newer` as keep pending and reload, and `gone` on a resume as restart from 0. Resume on every open before sending pending commits (each duplicate spends a rate token). Compare `hello.build` with the page's release; send `ping` to keep the socket alive; the socket does not open under `npm run dev`. Several concurrent resumes of a very large sim are not yet bounded in memory or in rate: one resume queues every frame of the answer on the socket in one turn, and pages are 500 rows with no byte bound. This unit owns that (for example a per-socket resume throttle and byte-bounded pages); first check how workerd buffers outgoing frames. Check that CSP `connect-src 'self'` admits the socket in WebKit and Firefox.
 - **Sharing (unit 5).** A remix's first commit carries `remixOf`, and the index pass copies it to `remixed_from` and `remixed_from_position`. Commit bodies go to every socket as stored, so `actor` ids (the stable identity id) are visible to anyone with a sim's link, signed-out readers included.
 
@@ -271,7 +306,7 @@ Call it for a manual takedown (R43). It runs in turn with appends and resumes.
 - `wrangler.jsonc` declares the object in both environments: `durable_objects.bindings` (`SIM`, `SimObject`) and `migrations` with tag `v1-sim-object` and `new_sqlite_classes`. Cloudflare's configuration docs now prefer a declarative `exports` field, which cannot be mixed with `migrations`; switching is a deliberate later change. A migration tag is never edited or reused: a change of class or storage adds a new tag.
 - Operators: after this deploy, rolling the Worker back to a version without the `SimObject` class is not safe.
 - Hooks (`src/hooks.server.ts`): a websocket upgrade resolves the session with `disableRefresh`, because the 101 response's headers cannot be changed, and `headersHandle` returns a 101 as it is.
-- e2e: `e2e/helpers/sim-socket.ts` opens sockets from the page's own `WebSocket` (so the session cookie and CSP apply), keeps every received frame in `window.__sfhSockets`, and waits on frame counts, never on time. Exports: `openSimSocket`, `framesAtLeast`, `sendFrame`, `sendAndRead`, `resumeAndRead`, `closedCode`, `commitsOf`, `nameDraft`. `e2e/sim-object.spec.ts` does not yet cover a role change ending write on an open socket, or `gone` after a takedown: they need the callers of `rereadRoles()` and `takeDown()`.
+- e2e: `e2e/helpers/sim-socket.ts` opens sockets from the page's own `WebSocket` (so the session cookie and CSP apply), keeps every received frame in `window.__sfhSockets`, and waits on frame counts, never on time. Exports: `openSimSocket`, `framesAtLeast`, `sendFrame`, `sendAndRead`, `resumeAndRead`, `closedCode`, `commitsOf`, `nameDraft`. A role change ending write on an open socket, and `gone` after a takedown, are in `e2e/sim-control-plane.spec.ts`; the preview server gets a fake `SIM_TAKEDOWN_TOKEN` through a `--var` in `playwright.config.ts`.
 
 ## Tests
 

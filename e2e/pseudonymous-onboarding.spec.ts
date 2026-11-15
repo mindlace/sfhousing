@@ -4,6 +4,7 @@
 // The create-a-sim side is in sims-onboarding.spec.ts.
 import { expect, test, type Page } from '@playwright/test';
 import { AUTH_COPY, pendingSimLine } from '../src/lib/account/copy';
+import { newId } from '../src/lib/ids/base58';
 import { MEMBERS_COPY, SIMS_COPY, inviteHeading } from '../src/lib/members/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { loginAs, readMail, uniqueEmail } from './helpers/auth';
@@ -145,7 +146,7 @@ test('a visitor with no account joins from an invite link and gets a pseudonymou
   const inviterEmail = uniqueEmail('inviter');
   await loginAs(page, inviterEmail);
   const title = 'Cold Invite Sim';
-  const created = await page.request.post('/api/sims', { data: { title } });
+  const created = await page.request.post('/api/sims', { data: { simId: newId(), title } });
   expect(created.status()).toBe(201);
   const { simId } = (await created.json()) as { simId: string };
   const invited = await page.request.post(`/api/sims/${simId}/invites`, {

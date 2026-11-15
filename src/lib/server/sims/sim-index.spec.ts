@@ -1,11 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { eq } from 'drizzle-orm';
-import { freshDb, seedUser, seedIdentity as seedIdentityHelper } from '$lib/server/test/auth-db';
-import { userVersion, simIndex } from '$lib/server/db/schema';
-import * as schema from '$lib/server/db/schema';
+import { eq, type SQL } from 'drizzle-orm';
 import {
-  createSimRecord,
-  ensureSimRecord,
+  freshDb,
+  seedSim,
+  seedUser,
+  seedIdentity as seedIdentityHelper
+} from '$lib/server/test/auth-db';
+import { userVersion, simIndex, simCommit, simTakedown } from '$lib/server/db/schema';
+import * as schema from '$lib/server/db/schema';
+import { newId } from '$lib/server/ids/factory';
+import {
+  insertSimIndexIfFree,
+  simIdInUse,
   listSimsForUser,
   getRole,
   getSimTitle,
@@ -19,16 +25,11 @@ import {
 } from './sim-index';
 import { addSimRole } from './sim-roles';
 
-describe('createSimRecord + listSimsForUser', () => {
+describe('seedSim + listSimsForUser', () => {
   it('records an index row and a manager membership, then lists it', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'owner1', email: 'm@test.com' });
-    await createSimRecord({
-      db,
-      simId: 'q-uuid',
-      title: 'My Sim',
-      managerId: 'owner1'
-    });
+    await seedSim(db, { simId: 'q-uuid', title: 'My Sim', managerId: 'owner1' });
     const rows = await listSimsForUser({ db, userId: 'owner1' });
     expect(rows).toEqual([{ simId: 'q-uuid', title: 'My Sim', role: 'manager' }]);
   });
@@ -37,63 +38,87 @@ describe('createSimRecord + listSimsForUser', () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'owner1', email: 'm@test.com' });
     await seedUser(db, { id: 'stranger', email: 's@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: 'owner1' });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: 'owner1' });
     expect(await listSimsForUser({ db, userId: 'stranger' })).toHaveLength(0);
   });
 });
 
-describe('ensureSimRecord (idempotent re-seed)', () => {
-  it('seeds the index row + manager grant when D1 was wiped', async () => {
+/** Each way an id can have a past: a row in one of the tables that name it. */
+const PASTS: Array<
+  [string, (db: ReturnType<typeof freshDb>['db'], simId: string) => Promise<unknown>]
+> = [
+  [
+    'an index row',
+    (db, simId) =>
+      db
+        .insert(simIndex)
+        .values({ simId, title: 'T', createdAt: new Date(), updatedAt: new Date() })
+  ],
+  [
+    'a takedown mark',
+    (db, simId) => db.insert(simTakedown).values({ simId, takenDownAt: new Date() })
+  ],
+  [
+    'a stored commit envelope',
+    (db, simId) =>
+      db.insert(simCommit).values({
+        simId,
+        seq: 0,
+        kind: 'system',
+        source: 'sim.start',
+        actor: 'someone',
+        at: new Date(),
+        build: 'b1',
+        datasetVersion: 'fixture-0',
+        bytes: 10
+      })
+  ],
+  [
+    'a ledger event',
+    async (db, simId) => {
+      await seedUser(db, { id: 'old', email: 'old@test.com' });
+      await addSimRole(db, simId, 'old', 'viewer', null);
+    }
+  ]
+];
+
+describe('insertSimIndexIfFree', () => {
+  it('inserts a free id once: true, then false', async () => {
     const { db } = freshDb();
-    await seedUser(db, { id: 'canary', email: 'c@test.com' });
-    await ensureSimRecord({
-      db,
-      simId: 'q-canary',
-      title: 'Release canary',
-      managerId: 'canary'
-    });
-    expect(await getRole({ db, simId: 'q-canary', userId: 'canary' })).toBe('manager');
-    expect(await listSimsForUser({ db, userId: 'canary' })).toEqual([
-      { simId: 'q-canary', title: 'Release canary', role: 'manager' }
-    ]);
+    const simId = newId();
+    expect(await insertSimIndexIfFree({ db, simId, title: 'Garden' })).toBe(true);
+    expect(await insertSimIndexIfFree({ db, simId, title: 'Other' })).toBe(false);
+    expect(await getSimTitle({ db, simId })).toBe('Garden');
   });
 
-  it('is idempotent: a second call adds neither a duplicate index row nor a duplicate grant', async () => {
+  it.each(PASTS)('inserts nothing for an id with %s', async (_name, seed) => {
     const { db } = freshDb();
-    await seedUser(db, { id: 'canary', email: 'c@test.com' });
-    await ensureSimRecord({
-      db,
-      simId: 'q-canary',
-      title: 'Release canary',
-      managerId: 'canary'
-    });
-    await ensureSimRecord({
-      db,
-      simId: 'q-canary',
-      title: 'Release canary',
-      managerId: 'canary'
-    });
-    const rows = await db.select().from(simIndex).where(eq(simIndex.simId, 'q-canary'));
-    expect(rows).toHaveLength(1);
-    expect(await getRole({ db, simId: 'q-canary', userId: 'canary' })).toBe('manager');
+    const simId = newId();
+    await seed(db, simId);
+    const before = await db.select().from(simIndex).where(eq(simIndex.simId, simId));
+    expect(await insertSimIndexIfFree({ db, simId, title: 'Mine now' })).toBe(false);
+    expect(await db.select().from(simIndex).where(eq(simIndex.simId, simId))).toEqual(before);
   });
 
-  it('does not clobber an existing membership when the index row and grant are intact', async () => {
+  it('stores the title in NFC', async () => {
     const { db } = freshDb();
-    await seedUser(db, { id: 'canary', email: 'c@test.com' });
-    await createSimRecord({
-      db,
-      simId: 'q-canary',
-      title: 'Release canary',
-      managerId: 'canary'
-    });
-    await ensureSimRecord({
-      db,
-      simId: 'q-canary',
-      title: 'Release canary',
-      managerId: 'canary'
-    });
-    expect(await getRole({ db, simId: 'q-canary', userId: 'canary' })).toBe('manager');
+    const simId = newId();
+    await insertSimIndexIfFree({ db, simId, title: 'Cafe\u0301' });
+    expect(await getSimTitle({ db, simId })).toBe('Caf\u00e9');
+  });
+});
+
+describe('simIdInUse', () => {
+  it('is false for a fresh id', async () => {
+    const { db } = freshDb();
+    expect(await simIdInUse(db, newId())).toBe(false);
+  });
+
+  it.each(PASTS)('is true for an id with %s', async (_name, seed) => {
+    const { db } = freshDb();
+    const simId = newId();
+    await seed(db, simId);
+    expect(await simIdInUse(db, simId)).toBe(true);
   });
 });
 
@@ -103,12 +128,12 @@ describe('countSimsManagedBy', () => {
     await seedUser(db, { id: 'creator', email: 'c@test.com' });
     await seedUser(db, { id: 'cohort', email: 'co@test.com' });
     // creator solely owns q1
-    await createSimRecord({ db, simId: 'q1', title: 'Q1', managerId: 'creator' });
+    await seedSim(db, { simId: 'q1', title: 'Q1', managerId: 'creator' });
     // q2 created by creator; cohort added as a co-manager
-    await createSimRecord({ db, simId: 'q2', title: 'Q2', managerId: 'creator' });
+    await seedSim(db, { simId: 'q2', title: 'Q2', managerId: 'creator' });
     await addMember({ db, simId: 'q2', email: 'co@test.com', role: 'manager' });
     // q3 created by creator; cohort added only as an editor
-    await createSimRecord({ db, simId: 'q3', title: 'Q3', managerId: 'creator' });
+    await seedSim(db, { simId: 'q3', title: 'Q3', managerId: 'creator' });
     await addMember({ db, simId: 'q3', email: 'co@test.com', role: 'editor' });
 
     expect(await countSimsManagedBy({ db, userId: 'creator' })).toBe(3);
@@ -121,7 +146,7 @@ describe('getRole', () => {
   it('returns the role for a member and null for a non-member', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'owner1', email: 'm@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: 'owner1' });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: 'owner1' });
     expect(await getRole({ db, simId: 'q1', userId: 'owner1' })).toBe('manager');
     expect(await getRole({ db, simId: 'q1', userId: 'nobody' })).toBeNull();
   });
@@ -186,7 +211,7 @@ describe('control-plane membership ops', () => {
     const { db } = freshDb();
     const manager = await seedUser(db, { id: 'manager', email: 'manager@test.com' });
     const ed = await seedUser(db, { id: 'ed', email: 'ed@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: manager.id });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: manager.id });
     return { db, manager, ed };
   }
 
@@ -253,7 +278,7 @@ describe('listMembers image field', () => {
       .update(schema.user)
       .set({ image: 'https://img/x.png' })
       .where(eq(schema.user.userIdentity, 'manager'));
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: 'manager' });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: 'manager' });
     const members = await listMembers({ db, simId: 'q1' });
     expect(members[0]).toMatchObject({ handle: expect.any(String), image: 'https://img/x.png' });
   });
@@ -269,7 +294,7 @@ describe('listMembers reads display fields from the ACTIVE user_version', () => 
       name: 'New Name',
       handle: 'newbie'
     });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: 'manager' });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: 'manager' });
 
     // Insert a history trail row for the same identity with different display fields.
     // listMembers reads from the live `user` row, so this history entry must be ignored.
@@ -301,7 +326,7 @@ describe('reconcileSimManagement', () => {
   it('is a no-op when a manager is present', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'owner1', email: 'm@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'Q', managerId: 'owner1' });
+    await seedSim(db, { simId: 'q1', title: 'Q', managerId: 'owner1' });
     await seedUser(db, { id: 'ed', email: 'e@test.com' });
     await addMemberById({ db, simId: 'q1', userId: 'ed', role: 'editor' });
     expect(await reconcileSimManagement(db, 'q1')).toEqual({ empty: false });
@@ -335,7 +360,7 @@ describe('removeMembership', () => {
     extras: { id: string; role: 'manager' | 'editor' | 'viewer' }[]
   ) {
     await seedUser(db, { id: 'owner1', email: 'm@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'My Sim', managerId: 'owner1' });
+    await seedSim(db, { simId: 'q1', title: 'My Sim', managerId: 'owner1' });
     for (const m of extras) {
       await seedUser(db, { id: m.id, email: `${m.id}@test.com` });
       await addMemberById({ db, simId: 'q1', userId: m.id, role: m.role });
@@ -348,7 +373,7 @@ describe('removeMembership', () => {
     const res = await removeMembership(db, 'q1', 'ed');
     expect(res.empty).toBe(false);
     // `members` is the PRE-revocation roster — the departing member is still on it
-    // (removeMember threads it into deleteSim as the refund targets).
+    // (nothing reads it today; it is returned for callers that need the departing roster).
     expect(res.members.map((m) => m.userId).sort()).toEqual(['ed', 'owner1']);
     expect(await getRole({ db, simId: 'q1', userId: 'ed' })).toBeNull();
     expect(await getRole({ db, simId: 'q1', userId: 'owner1' })).toBe('manager');
@@ -407,6 +432,81 @@ describe('removeMembership', () => {
     expect(await removeMembership(db, 'q1', 'owner2')).toMatchObject({ empty: false });
     expect(await getRole({ db, simId: 'q1', userId: 'owner2' })).toBeNull();
   });
+
+  /** The db, failing every ledger write that revokes a role from `principal` while armed. */
+  function failingRevokeOf(db: ReturnType<typeof freshDb>['db'], principal: string) {
+    const state = { armed: true, refused: 0 };
+    const dialect = (db as unknown as { dialect: { sqlToQuery(q: SQL): { params: unknown[] } } })
+      .dialect;
+    const failing = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'run')
+          return async (q: SQL) => {
+            const { params } = dialect.sqlToQuery(q);
+            if (state.armed && params.includes('revoke') && params.includes(principal)) {
+              state.refused++;
+              throw new Error('D1 cut');
+            }
+            return target.run(q);
+          };
+        return Reflect.get(target, prop, receiver);
+      }
+    }) as typeof db;
+    return { failing, state };
+  }
+
+  it('the sole manager leaving: a failure after the promotion leaves the sim managed, and a retry finishes', async () => {
+    const { db } = freshDb();
+    await seedSoleManagerPlus(db, [
+      { id: 'ed', role: 'editor' },
+      { id: 'vi', role: 'viewer' }
+    ]);
+    const { failing, state } = failingRevokeOf(db, 'owner1');
+
+    await expect(removeMembership(failing, 'q1', 'owner1')).rejects.toThrow('D1 cut');
+
+    expect(state.refused).toBe(1);
+    // The successor was promoted first; the leaver is still a member.
+    expect(await getRole({ db, simId: 'q1', userId: 'ed' })).toBe('manager');
+    expect(await getRole({ db, simId: 'q1', userId: 'owner1' })).toBe('manager');
+    expect(await getRole({ db, simId: 'q1', userId: 'vi' })).toBe('viewer');
+
+    state.armed = false;
+    expect(await removeMembership(failing, 'q1', 'owner1')).toMatchObject({ empty: false });
+    expect(await getRole({ db, simId: 'q1', userId: 'owner1' })).toBeNull();
+    expect((await listMembers({ db, simId: 'q1' })).map((m) => [m.userId, m.role])).toEqual([
+      ['ed', 'manager'],
+      ['vi', 'viewer']
+    ]);
+  });
+
+  it('promotes nobody when a non-manager is removed', async () => {
+    const { db } = freshDb();
+    await seedSoleManagerPlus(db, [
+      { id: 'ed', role: 'editor' },
+      { id: 'vi', role: 'viewer' }
+    ]);
+    const { failing } = failingRevokeOf(db, 'vi');
+    await expect(removeMembership(failing, 'q1', 'vi')).rejects.toThrow('D1 cut');
+    expect(await getRole({ db, simId: 'q1', userId: 'ed' })).toBe('editor');
+    expect(await removeMembership(db, 'q1', 'vi')).toMatchObject({ empty: false });
+    expect(await getRole({ db, simId: 'q1', userId: 'ed' })).toBe('editor');
+    expect(await getRole({ db, simId: 'q1', userId: 'owner1' })).toBe('manager');
+  });
+
+  it('promotes nobody when a manager leaves while another manager remains', async () => {
+    const { db } = freshDb();
+    await seedSoleManagerPlus(db, [
+      { id: 'owner2', role: 'manager' },
+      { id: 'ed', role: 'editor' }
+    ]);
+    const { failing } = failingRevokeOf(db, 'owner1');
+    await expect(removeMembership(failing, 'q1', 'owner1')).rejects.toThrow('D1 cut');
+    expect(await getRole({ db, simId: 'q1', userId: 'ed' })).toBe('editor');
+    expect(await removeMembership(db, 'q1', 'owner1')).toMatchObject({ empty: false });
+    expect(await getRole({ db, simId: 'q1', userId: 'ed' })).toBe('editor');
+    expect(await getRole({ db, simId: 'q1', userId: 'owner2' })).toBe('manager');
+  });
 });
 
 describe('prepareLeave', () => {
@@ -415,7 +515,7 @@ describe('prepareLeave', () => {
     extras: { id: string; role: 'manager' | 'editor' | 'viewer' }[]
   ) {
     await seedUser(db, { id: 'owner1', email: 'm@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'My Sim', managerId: 'owner1' });
+    await seedSim(db, { simId: 'q1', title: 'My Sim', managerId: 'owner1' });
     for (const m of extras) {
       await seedUser(db, { id: m.id, email: `${m.id}@test.com` });
       await addMemberById({ db, simId: 'q1', userId: m.id, role: m.role });
@@ -488,7 +588,7 @@ describe('getSimTitle', () => {
   it('returns the index-projected title', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'owner1', email: 'm@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'My Sim', managerId: 'owner1' });
+    await seedSim(db, { simId: 'q1', title: 'My Sim', managerId: 'owner1' });
     expect(await getSimTitle({ db, simId: 'q1' })).toBe('My Sim');
   });
 

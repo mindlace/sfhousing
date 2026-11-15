@@ -227,7 +227,7 @@ describe('MembersPanel leave control', () => {
       .toBeInTheDocument();
   });
 
-  it('shows a Leave control when the viewer is the only member (leaving deletes the sim)', async () => {
+  it('shows a Leave control when the viewer is the only member (the sim is kept with no members)', async () => {
     const screen = await render(MembersPanel, {
       members: [{ userId: 'u1', handle: 'me', role: 'manager' }],
       isManager: true,

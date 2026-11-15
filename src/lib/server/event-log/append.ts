@@ -14,11 +14,15 @@ import { sql, getTableColumns, getTableName, type SQL, type Table, type Column }
  * are identical across all four event tables (that shared name is the contract).
  *
  * Batch callers MUST issue one statement per row so each row sees the prior row's counter.
+ *
+ * `onlyIf`: an optional condition the append is gated on (a `WHERE` on the select), so a batch
+ * can make the row depend on an earlier statement; omitted, the statement is unchanged.
  */
 export function buildAppendEventSql(
   table: Table,
   values: Record<string, unknown>,
-  now: number
+  now: number,
+  opts: { onlyIf?: SQL } = {}
 ): SQL {
   const columns = getTableColumns(table) as Record<string, Column>;
   const tableId = sql.identifier(getTableName(table));
@@ -31,12 +35,13 @@ export function buildAppendEventSql(
     names.push(sql`${sql.identifier(col.name)}`);
     vals.push(sql`${col.mapToDriverValue(value)}`);
   }
-  return sql`
+  const statement = sql`
     INSERT INTO ${tableId} (${sql.join(names, sql`, `)}, created_at, created_at_counter)
     SELECT ${sql.join(vals, sql`, `)}, w.ca,
       (SELECT COALESCE(MAX(created_at_counter), -1) + 1 FROM ${tableId} WHERE created_at = w.ca)
     FROM (SELECT max(${now}, COALESCE((SELECT MAX(created_at) FROM ${tableId}), 0)) AS ca) AS w
   `;
+  return opts.onlyIf ? sql`${statement} WHERE ${opts.onlyIf}` : statement;
 }
 
 /** Append one event row on a synchronous (sim DO SQLite) handle. */

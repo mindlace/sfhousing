@@ -1,10 +1,12 @@
 import {
   LogError,
+  LogFormatError,
   LogState,
   NAME_KEY,
   REGISTRY,
   SHAPES_REVISION,
   chainHash,
+  parseCommitDraft,
   type Commit,
   type CommitDraft,
   type Registry,
@@ -14,6 +16,7 @@ import { commitsFrame, type RefusedWhy } from '$lib/sim-stream/protocol';
 import { decideAppend } from './decide';
 import type { IndexSummary, IndexedCommit } from './index-sync';
 import { LIMITS, RateBucket, utf8Bytes, type Limits } from './limits';
+import { IDENTITY_MAX } from './open-params';
 import type { SimStore, StoredRow, Totals } from './store';
 
 /** Rows read from the store at a time, by a fold and by a resume. */
@@ -35,6 +38,24 @@ export interface StartParams {
   actor: string;
   datasetVersion: string;
   build: string;
+  now: number;
+}
+
+/** What the start commit is made of, beside its author and time. */
+export interface StartDraft {
+  id: string;
+  title: string;
+  datasetVersion: string;
+  build: string;
+}
+
+export interface ServerAppend {
+  /** The identity the Worker resolved and found to be a writer. */
+  actor: string;
+  /** Everything but parent and datasetVersion, which come from the tip. */
+  draft: Omit<CommitDraft, 'parent' | 'datasetVersion'>;
+  /** Used only when the log is empty, to record the start commit first (R58). */
+  start: StartDraft;
   now: number;
 }
 
@@ -93,29 +114,60 @@ export class LogHost {
   ensureStarted(p: StartParams): Promise<AppendOutcome | null> {
     return this.#serial(async () => {
       if (this.gone() || this.tip() > 0) return null;
-      const draft: CommitDraft = {
-        id: p.id,
-        parent: 0,
-        kind: 'system',
-        label: 'Start',
-        restores: null,
-        datasetVersion: p.datasetVersion,
-        shapes: SHAPES_REVISION,
-        build: p.build,
-        source: 'sim.start',
-        changes: [{ op: 'set', key: NAME_KEY, field: 'name', value: p.title }]
-      };
-      const out = await this.#appendNow(
-        draft,
-        draft.id,
-        utf8Bytes(JSON.stringify(draft)),
-        { identity: p.actor, write: true },
-        p.now
-      );
-      if (out.kind === 'refused') {
-        console.error(`[sim-object] ${this.#label}: start commit refused (${out.why})`);
+      return this.#appendStart(p, p.actor, p.now);
+    });
+  }
+
+  /**
+   * A commit the Worker appends on a writer's behalf, through the same checks as a socket's.
+   * Its parent and dataset version are the tip's, read in turn; on an empty log the start commit
+   * (R58) is stored first, in the same turn. A refusal names the draft's id.
+   */
+  appendAs(input: ServerAppend): Promise<AppendOutcome> {
+    return this.#serial(async () => {
+      const { actor, draft, start, now } = input;
+      // The input crosses an RPC untyped: nothing below may assume its shape.
+      const plain = typeof draft === 'object' && draft !== null && !Array.isArray(draft);
+      const id = plain && typeof draft.id === 'string' ? draft.id : null;
+      if (this.gone()) return { kind: 'refused', id, why: 'gone' };
+      // The bound the open header puts on a socket's identity; no token taken, as for a socket.
+      if (typeof actor !== 'string' || actor.length < 1 || actor.length > IDENTITY_MAX) {
+        return { kind: 'refused', id, why: 'not-writer' };
       }
-      return out;
+      if (!plain) return { kind: 'refused', id, why: 'invalid' };
+      if (this.tip() === 0) {
+        // A draft that cannot parse must not leave a start commit behind it.
+        try {
+          parseCommitDraft({ ...draft, parent: 0, datasetVersion: start.datasetVersion });
+        } catch (e) {
+          if (e instanceof LogFormatError) return { kind: 'refused', id, why: 'invalid' };
+          throw e;
+        }
+        const started = await this.#appendStart(start, actor, now);
+        if (started.kind === 'refused') return { ...started, id };
+      }
+      let datasetVersion: string | null;
+      try {
+        datasetVersion = this.#state().ruleset().datasetVersion;
+      } catch (e) {
+        // As in #appendNow: a stored row a newer build wrote.
+        if (e instanceof LogError && e.code === 'future-shapes') {
+          return { kind: 'refused', id, why: 'newer' };
+        }
+        throw e;
+      }
+      const full: CommitDraft = {
+        ...draft,
+        parent: this.tip(),
+        datasetVersion: datasetVersion ?? start.datasetVersion
+      };
+      return this.#appendNow(
+        full,
+        id,
+        utf8Bytes(JSON.stringify(full)),
+        { identity: actor, write: true },
+        now
+      );
     });
   }
 
@@ -231,6 +283,33 @@ export class LogHost {
     }
     if (bodies.length > 0) frames.push(commitsFrame(bodies));
     return frames;
+  }
+
+  /** The start commit (R58), appended in the caller's turn; a refusal is logged by reason only. */
+  async #appendStart(s: StartDraft, actor: string, now: number): Promise<AppendOutcome> {
+    const draft: CommitDraft = {
+      id: s.id,
+      parent: 0,
+      kind: 'system',
+      label: 'Start',
+      restores: null,
+      datasetVersion: s.datasetVersion,
+      shapes: SHAPES_REVISION,
+      build: s.build,
+      source: 'sim.start',
+      changes: [{ op: 'set', key: NAME_KEY, field: 'name', value: s.title }]
+    };
+    const out = await this.#appendNow(
+      draft,
+      draft.id,
+      utf8Bytes(JSON.stringify(draft)),
+      { identity: actor, write: true },
+      now
+    );
+    if (out.kind === 'refused') {
+      console.error(`[sim-object] ${this.#label}: start commit refused (${out.why})`);
+    }
+    return out;
   }
 
   async #appendNow(

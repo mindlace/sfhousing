@@ -3,9 +3,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { session, user, userIdentity } from '$lib/server/db/schema';
-import { freshDb, seedUser } from '$lib/server/test/auth-db';
+import { freshDb, seedSim, seedUser } from '$lib/server/test/auth-db';
 import { addMemberById, getRole, getSimTitle } from '$lib/server/sims/sim-index';
-import { createSim } from '$lib/server/sims/sims';
 
 const { holder, signOut } = vi.hoisted(() => ({
   holder: { db: undefined as unknown },
@@ -57,11 +56,11 @@ function call(confirmHandle: string) {
 }
 
 describe('DELETE /api/account for a pseudonymous account', () => {
-  it('marks the identity deleted, removes the session, deletes a solo sim and keeps a shared one', async () => {
+  it('marks the identity deleted, removes the session, keeps a solo sim with no members and hands on a shared one', async () => {
     const { db } = await setup();
     await seedUser(db, { id: 'p2', email: 'p2@pseudonymous.invalid', handle: 'other-owl' });
-    const { simId: solo } = await createSim({ db, title: 'Solo', managerId: 'p1' });
-    const { simId: shared } = await createSim({ db, title: 'Shared', managerId: 'p1' });
+    const solo = await seedSim(db, { title: 'Solo', managerId: 'p1' });
+    const shared = await seedSim(db, { title: 'Shared', managerId: 'p1' });
     await addMemberById({ db, simId: shared, userId: 'p2', role: 'editor' });
 
     const res = await call('wandering-wren');
@@ -70,7 +69,8 @@ describe('DELETE /api/account for a pseudonymous account', () => {
     const [idRow] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'p1'));
     expect(idRow.deletedAt).not.toBeNull();
     expect(await db.select().from(session).where(eq(session.userId, 'p1-live'))).toHaveLength(0);
-    expect(await getSimTitle({ db, simId: solo })).toBeNull();
+    expect(await getSimTitle({ db, simId: solo })).toBe('Solo');
+    expect(await getRole({ db, simId: solo, userId: 'p1' })).toBeNull();
     expect(await getSimTitle({ db, simId: shared })).toBe('Shared');
     expect(await getRole({ db, simId: shared, userId: 'p2' })).toBe('manager');
     const [live] = await db.select().from(user).where(eq(user.userIdentity, 'p1'));

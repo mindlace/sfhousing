@@ -6,6 +6,7 @@ import {
   type Page,
   type TestInfo
 } from '@playwright/test';
+import { newId } from '../../src/lib/ids/base58';
 import { MEMBERS_COPY } from '../../src/lib/members/copy';
 import { loginAs, readMail } from './auth';
 
@@ -31,9 +32,11 @@ export async function signInAndCreateSim(
   title: string
 ): Promise<string> {
   await loginAs(page, email);
-  const res = await page.request.post('/api/sims', { data: { title } });
+  const simId = newId();
+  const res = await page.request.post('/api/sims', { data: { simId, title } });
   expect(res.status(), 'POST /api/sims').toBe(201);
-  return ((await res.json()) as { simId: string }).simId;
+  expect(await res.json()).toEqual({ simId, created: true });
+  return simId;
 }
 
 /** The signed-in handle (no @) of `page`, read from the header's account entry. */

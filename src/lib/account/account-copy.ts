@@ -63,7 +63,7 @@ export const ACCOUNT_COPY = {
 
   deleteHeading: 'Delete account',
   deleteDescription:
-    'Deletes your account. Sims only you are in are deleted; shared sims carry on. This cannot be undone.',
+    'Deletes your account. You leave every sim; their links still open. This cannot be undone.',
   deleteButton: 'Delete my account',
   deleteConfirmLabel: 'Type your handle to confirm',
   deletePermanently: 'Delete permanently',

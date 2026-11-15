@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { isRedirect, type ActionFailure } from '@sveltejs/kit';
 import { AUTH_COPY } from '$lib/account/copy';
 import { SIM_TITLE_MAX } from '$lib/members/copy';
+import { isValidId } from '$lib/server/ids/factory';
+import { mockConsole } from '$lib/server/test/mock-console';
 
 // Mocks for the action's collaborators.
 const enforceRate = vi.fn();
@@ -128,7 +130,7 @@ beforeEach(() => {
     user: { id: 'pseudo-u1', pseudonymous: true }
   });
   reseedHandleFromSim.mockResolvedValue('some-handle');
-  createSim.mockResolvedValue({ simId: 'sid-1' });
+  createSim.mockResolvedValue({ simId: 'sid-1', created: true });
 });
 
 function makeLoadEvent(url: string, envExtra: Record<string, unknown> = {}) {
@@ -567,11 +569,12 @@ describe('signin startFresh action', () => {
 
   it('reseeds the handle, creates the sim, and redirects into it for a valid stash', async () => {
     readPendingSim.mockReturnValue('Learn to swim');
-    createSim.mockResolvedValue({ simId: 'sid-99' });
+    createSim.mockResolvedValue({ simId: 'sid-99', created: true });
 
+    const event = makeStartFreshEvent();
     let caught: unknown;
     try {
-      await actions.startFresh(makeStartFreshEvent());
+      await actions.startFresh(event);
     } catch (e) {
       caught = e;
     }
@@ -582,10 +585,45 @@ describe('signin startFresh action', () => {
       expect.objectContaining({ identityId: 'pseudo-u1', simTitle: 'Learn to swim' })
     );
     expect(createSim).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Learn to swim', managerId: 'pseudo-u1' })
+      expect.objectContaining({
+        env: (event as { platform: App.Platform }).platform.env,
+        title: 'Learn to swim',
+        managerId: 'pseudo-u1'
+      })
     );
+    // The server mints the sim's id here: there is no browser store on this path.
+    const [{ simId }] = createSim.mock.calls[0] as [{ simId: string }];
+    expect(isValidId(simId)).toBe(true);
     expect(clearPendingIdentifier).toHaveBeenCalled();
   });
+
+  it.each([
+    ['throws', () => createSim.mockRejectedValue(new Error('batch failed'))],
+    ['does not create', () => createSim.mockResolvedValue({ simId: 'sid-x', created: false })]
+  ])(
+    'a create that %s lands on /sims with the stash kept, for the /sims load to resume',
+    async (_name, arrange) => {
+      readPendingSim.mockReturnValue('Learn to swim');
+      arrange();
+      const { error } = mockConsole('error');
+      let caught: unknown;
+      try {
+        await actions.startFresh(makeStartFreshEvent());
+      } catch (e) {
+        caught = e;
+      }
+      expect(isRedirect(caught)).toBe(true);
+      expect((caught as { location: string }).location).toBe('/sims');
+      expect(clearPendingSim).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(
+        '[signin] start fresh create failed',
+        expect.any(String),
+        expect.any(String)
+      );
+      expect(JSON.stringify(error.mock.calls)).not.toContain('pseudo-u1');
+      error.mockRestore();
+    }
+  );
 
   it('drops a stashed title that fails the title check and lands on /sims', async () => {
     // The cookie is user-controlled: it gets the same checks as a typed title.

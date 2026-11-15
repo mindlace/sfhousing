@@ -17,6 +17,9 @@ import { survivorId } from './user';
 import { recordUserVersion } from './history';
 import { listSimsForUser } from '$lib/server/sims/sim-index';
 import { removeSimMember } from '$lib/server/sims/sims';
+import { rosterChangedAll } from '$lib/server/sims/roster-hook';
+import type { SimEnv } from '$lib/server/sim-object/stub';
+import { loggable } from '$lib/server/sim-object/object-rules';
 
 const TOMBSTONE_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 const HEX64 = /^[a-f0-9]{64}$/;
@@ -124,16 +127,23 @@ export async function markIdentityDeleted(
 }
 
 /**
- * Delete a registered account: remove the user from every sim (sole-member sims are
- * deleted, shared ones survive with an auto-promoted manager), then scrub + tombstone
+ * Delete a registered account: remove the user from every sim (a sim they were the only
+ * member of is kept with no members, its links still open and its pending invitations end;
+ * a shared one carries on with an auto-promoted manager), then scrub + tombstone
  * the identity and purge PII. Ordered + idempotent; gated on user_identity.deleted_at so
  * a completed run re-invoked is a no-op. Caller authorizes and handles sign-out. NOT atomic.
  * `actor` is kept for the future sim-log attribution; nothing reads it yet.
+ *
+ * The sims it left are told of their roster change in one bounded fan-out after the loop,
+ * not one hook per removal: handed to `defer` when the caller gives one (the route passes
+ * `waitUntil`), awaited otherwise. The fan-out never rejects.
  */
 export async function deleteAccount(args: {
   db: Database;
+  env: SimEnv;
   identityId: string;
   actor: Actor;
+  defer?: (work: Promise<void>) => void;
 }): Promise<void> {
   const { db } = args;
   const sid = (await survivorId(db, args.identityId)) ?? args.identityId;
@@ -145,14 +155,32 @@ export async function deleteAccount(args: {
 
   // 1. Remove memberships (revokes reach grants held by fused identities too).
   const sims = await listSimsForUser({ db, userId: sid });
-  for (const s of sims) {
-    await removeSimMember({ db, simId: s.simId, userId: sid });
+  const left: string[] = [];
+  try {
+    for (const s of sims) {
+      await removeSimMember({ db, env: args.env, simId: s.simId, userId: sid, notify: false });
+      left.push(s.simId);
+    }
+  } finally {
+    // Also when a later removal threw: the ones already written are told. The number of sims
+    // is not capped, so the fan-out may outrun waitUntil's time limit: a sim it does not reach
+    // keeps its open sockets' old rights until they reconnect. A defer that throws must not fail
+    // the deletion between the removals and the account rows, so the fan-out is awaited instead.
+    const told = rosterChangedAll(args.env, left);
+    if (!args.defer) await told;
+    else
+      try {
+        args.defer(told);
+      } catch (e) {
+        console.error('[account-delete] defer failed', loggable(e));
+        await told;
+      }
   }
 
   await closeAccountRows({ db, identityId: sid, live });
 }
 
-/** The user-row closure tail of deleteAccount (which reaping also runs): release the
+/** The user-row closure tail of deleteAccount: release the
  *  handle, scrub, history, credentials, tombstone. `live` is the live `user` row for
  *  `identityId`. */
 export async function closeAccountRows(args: {

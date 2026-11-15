@@ -30,7 +30,7 @@ const base = {
 };
 
 describe('LeaveSimConfirm', () => {
-  it('the sole member can leave and is told it deletes the sim and its pending invitations', async () => {
+  it('the sole member can leave and is told the sim is kept, read-only, and its invitations end', async () => {
     expect.hasAssertions();
     const screen = await render(LeaveSimConfirm, {
       ...base,
@@ -43,14 +43,14 @@ describe('LeaveSimConfirm', () => {
 
     await screen.getByRole('button', { name: MEMBERS_COPY.leaveButton }).click();
     await expect.element(screen.getByText(MEMBERS_COPY.leaveSoleMemberWarning)).toBeInTheDocument();
-    expect(MEMBERS_COPY.leaveSoleMemberWarning).toMatch(/deletes this sim and its pending invit/);
+    expect(MEMBERS_COPY.leaveSoleMemberWarning).toMatch(/links still open/);
 
     const form = screen.container.querySelector('form');
     expect(form!.getAttribute('action')).toBe('/sims/s1?/leaveSim');
     expect(form!.getAttribute('method')?.toLowerCase()).toBe('post');
-    await expect
-      .element(screen.getByRole('button', { name: MEMBERS_COPY.leaveDeleteButton }))
-      .toBeInTheDocument();
+    const submit = screen.getByRole('button', { name: MEMBERS_COPY.leaveLastButton });
+    await expect.element(submit).toBeInTheDocument();
+    await expect.element(submit).toHaveAttribute('type', 'submit');
   });
 
   it('revealing the sole-member confirm focuses its first control; cancel returns to the trigger', async () => {
@@ -62,9 +62,13 @@ describe('LeaveSimConfirm', () => {
     });
     (container.querySelector('button') as HTMLElement).click();
     flushSync();
+    // The confirm's submit has focus (its text may equal the trigger's, so check its type).
     await expect
-      .poll(() => (document.activeElement as HTMLElement)?.textContent?.trim())
-      .toBe(MEMBERS_COPY.leaveDeleteButton);
+      .poll(() => {
+        const el = document.activeElement as HTMLElement | null;
+        return [el?.getAttribute('type'), el?.textContent?.trim()];
+      })
+      .toEqual(['submit', MEMBERS_COPY.leaveLastButton]);
     const cancel = [...container.querySelectorAll('button')].find(
       (b) => b.textContent?.trim() === MEMBERS_COPY.leaveCancel
     ) as HTMLElement;

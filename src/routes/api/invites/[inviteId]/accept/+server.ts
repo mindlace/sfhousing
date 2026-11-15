@@ -6,6 +6,7 @@ import { getDb } from '$lib/server/db';
 import { acceptInviteById } from '$lib/server/invites/control-plane';
 import { refuseUnlessSameOriginJson } from '$lib/server/security/same-origin-json';
 import { onSimRosterChanged } from '$lib/server/sims/roster-hook';
+import { loggable } from '$lib/server/sim-object/object-rules';
 
 export const POST: RequestHandler = async (event) => {
   const refused = refuseUnlessSameOriginJson(event);
@@ -21,11 +22,12 @@ export const POST: RequestHandler = async (event) => {
       email: user.email,
       emailVerified: user.emailVerified
     });
-    await onSimRosterChanged(res.simId);
+    // Never rejects: the accept stands whatever the object does.
+    await onSimRosterChanged(event.platform?.env, res.simId);
     return json({ simId: res.simId }, { status: 200 });
   } catch (e) {
     const code = memberErrorCode(e);
-    if (code === 'failed') console.error('invite accept failed', e);
+    if (code === 'failed') console.error('invite accept failed', loggable(e));
     return json({ code }, { status: 400 });
   }
 };

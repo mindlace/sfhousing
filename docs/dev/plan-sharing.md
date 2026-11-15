@@ -148,6 +148,8 @@ wrangler d1 execute sfhousing --remote --command "DELETE FROM plan WHERE id = '<
 
 The same command takes down a policy: plans and policies share the `plan` table and one id space (`kind` tells them apart). After this the link 404s, and caches expire within 1 h (API, `GET /api/plans/:id` or `GET /api/policies/:id`) / 5 min (page, `/p/:id` or `/s/:id`). For staging use `sfhousing-staging --env staging`.
 
+A sim (`/sims/<simId>`) is not a plan: take it down with the operator route in [deploy.md](deploy.md), Operator takedown of a sim.
+
 ## Migrations
 
 Schema change: edit `src/lib/server/db/schema/` → `npm run db:generate` → `npm run db:migrate`. Never hand-edit migrations. `db:generate` runs `@planafoot/drizzle-cf-migrations`' `dist/cli.js` directly with `tsx`, because invoking it through the `.bin` symlink makes its entry-point check fail and it silently does nothing.
