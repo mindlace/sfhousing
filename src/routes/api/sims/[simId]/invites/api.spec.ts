@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { DrizzleQueryError } from 'drizzle-orm';
 import { mockConsole } from '$lib/server/test/mock-console';
+import { QUERY_FAILED } from '$lib/server/sim-object/object-rules';
 
 const {
   requireSimRole,
@@ -203,6 +205,17 @@ describe('POST /api/sims/:simId/invites (creates an invite)', () => {
     const text = await res.text();
     expect(JSON.parse(text)).toEqual({ code: 'failed' });
     expect(text).not.toContain('D1');
+  });
+
+  it('logs only the sim id and safe text when the create fails, never the invited address', async () => {
+    const { error: logged } = mockConsole('error');
+    createInvite.mockRejectedValue(
+      new DrizzleQueryError('insert into sim_invite values (?)', ['u2@test.com'])
+    );
+    const res = await POST(postEvent('q1', { target: 'u2@test.com' }));
+    expect(await res.json()).toEqual({ code: 'failed' });
+    expect(logged).toHaveBeenCalledWith('invite create failed', 'q1', QUERY_FAILED);
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('u2@test.com');
   });
 
   it('400 target_required when the body has no target', async () => {

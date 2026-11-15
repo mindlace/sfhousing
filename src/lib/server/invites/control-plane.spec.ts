@@ -56,7 +56,8 @@ import { eq } from 'drizzle-orm';
 import { simInvite, user } from '$lib/server/db/schema';
 import { addMemberById, getRole, listMembers, removeMembership } from '$lib/server/sims/sim-index';
 import { leaveSim } from '$lib/server/sims/sims';
-import { setSimRole } from '$lib/server/sims/sim-roles';
+import { revokeSimRoles, setSimRole } from '$lib/server/sims/sim-roles';
+import { generateInviteToken, hashToken } from '$lib/server/invites/token';
 import { PSEUDONYMOUS_EMAIL_DOMAIN } from '$lib/server/auth/brand';
 import {
   claimInvite,
@@ -555,9 +556,9 @@ describe('an accept racing the last member leaving', () => {
     expect((await listMembers({ db, simId: 'q1' })).map((m) => m.userId)).toEqual(['jane']);
   });
 
-  it('an invitation claimed after the last membership went, before its pending rows ended, still proceeds', async () => {
+  it('an invitation accepted after the last membership went, before its pending rows ended, is refused', async () => {
     const { db, manager } = await setup();
-    const { token } = await createInvite({
+    const { token, invite } = await createInvite({
       db,
       simId: 'q1',
       invitedByUserId: manager.id,
@@ -568,10 +569,14 @@ describe('an accept racing the last member leaving', () => {
     await removeMembership(db, 'q1', manager.id);
     const claimer = await seedUser(db, { id: 'claimer', email: 'claimer@test.com' });
 
-    await acceptInviteByToken({ db, token, userId: claimer.id });
+    await expect(acceptInviteByToken({ db, token, userId: claimer.id })).rejects.toThrow(
+      'invite not pending'
+    );
 
-    expect(await getRole({ db, simId: 'q1', userId: claimer.id })).toBe('manager');
-    expect((await listMembers({ db, simId: 'q1' })).map((m) => m.userId)).toEqual([claimer.id]);
+    expect(await getRole({ db, simId: 'q1', userId: claimer.id })).toBeNull();
+    expect(await listMembers({ db, simId: 'q1' })).toEqual([]);
+    const [row] = await db.select().from(simInvite).where(eq(simInvite.id, invite.id));
+    expect(row.status).toBe('pending');
   });
 
   it('a failed reconcile after the grant is logged, and the accept still succeeds', async () => {
@@ -594,6 +599,96 @@ describe('an accept racing the last member leaving', () => {
     expect(await getRole({ db, simId: 'q1', userId: claimer.id })).toBe('editor');
     expect(error).toHaveBeenCalledOnce();
     expect(error).toHaveBeenCalledWith('[invite-accept] reconcile failed', 'q1', 'reconcile boom');
+  });
+});
+
+// A kept sim with no members is joinable by nobody: a pending invitation that outlived the last
+// member (a failed delete, a cut account deletion) is refused like one that is not pending.
+describe('a pending invitation on a sim with no members', () => {
+  async function seedOrphanInvite() {
+    const { db, manager } = await setup();
+    await seedUser(db, { id: 'jane', email: 'jane@test.com', handle: 'jane' });
+    // The last member's roles are gone; the invitation row was never ended.
+    await revokeSimRoles(db, 'q1', manager.id);
+    const token = generateInviteToken();
+    const now = new Date();
+    await db.insert(simInvite).values({
+      id: 'orphan',
+      simId: 'q1',
+      role: 'editor',
+      invitedEmail: 'jane@test.com',
+      invitedUserId: 'jane',
+      tokenHash: await hashToken(token),
+      invitedByUserId: manager.id,
+      status: 'pending',
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + 60_000),
+      lastSentAt: now
+    });
+    return { db, token };
+  }
+
+  async function expectUntouched(db: Awaited<ReturnType<typeof seedOrphanInvite>>['db']) {
+    expect(await getRole({ db, simId: 'q1', userId: 'jane' })).toBeNull();
+    expect(await listMembers({ db, simId: 'q1' })).toEqual([]);
+    const [row] = await db.select().from(simInvite).where(eq(simInvite.id, 'orphan'));
+    expect(row.status).toBe('pending');
+    expect(row.acceptedByUserId).toBeNull();
+  }
+
+  it('cannot be accepted by token', async () => {
+    const { db, token } = await seedOrphanInvite();
+    await expect(acceptInviteByToken({ db, token, userId: 'jane' })).rejects.toThrow(
+      'invite not pending'
+    );
+    await expectUntouched(db);
+  });
+
+  it('cannot be accepted by id', async () => {
+    const { db } = await seedOrphanInvite();
+    await expect(
+      acceptInviteById({
+        db,
+        inviteId: 'orphan',
+        userId: 'jane',
+        email: 'jane@test.com',
+        emailVerified: true
+      })
+    ).rejects.toThrow('invite not pending');
+    await expectUntouched(db);
+  });
+});
+
+describe('createInvite when its compensating delete fails', () => {
+  it('is still refused as role lost, and the failure is logged with safe text', async () => {
+    const { db, manager } = await setup();
+    const { error } = mockConsole('error');
+    seam.failRoleRead = true;
+    const failing = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'delete')
+          return () => {
+            throw new Error('delete boom');
+          };
+        return Reflect.get(target, prop, receiver);
+      }
+    }) as typeof db;
+
+    const create = createInvite({
+      db: failing,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'invitee@test.com' }
+    });
+    await expect(create).rejects.toBeInstanceOf(InviterRoleLostError);
+    await expect(create).rejects.toMatchObject({ role: null });
+    expect(error).toHaveBeenCalledWith(
+      '[invite-create] compensating delete failed',
+      'q1',
+      'delete boom'
+    );
+    expect(JSON.stringify(error.mock.calls)).not.toContain('invitee@test.com');
   });
 });
 

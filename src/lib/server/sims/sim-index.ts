@@ -236,8 +236,9 @@ export async function reconcileSimManagement(
 
 /**
  * Revoke one membership (across the member's fused identities), then reconcile
- * management. `removeSimMember` in sims.ts calls it; an emptied sim ({ empty }) is kept.
- * Returns `members`, the roster fold from before the revoke.
+ * management. When the member is the sole manager and others remain, the successor is promoted
+ * first. `removeSimMember` in sims.ts calls it; an emptied sim ({ empty }) is kept.
+ * Returns `members`, the roster fold from before the promotion and the revoke.
  *
  * Co-manager protection: when `actorUserId` is supplied AND it is removing a
  * DIFFERENT principal who currently holds `manager`, the removal is refused — a manager
@@ -265,6 +266,13 @@ export async function removeMembership(
     if (member?.role === 'manager')
       throw new Error('cannot remove another manager; they must leave the sim themselves');
   }
+  // The sole manager leaving a sim others remain in: promote the successor the reconcile would
+  // pick BEFORE the revoke. A failure between the two writes then leaves the leaver still a
+  // member and the sim managed, and a retry (which still finds the leaver) finishes the job.
+  const others = members.filter((m) => m.userId !== target);
+  const managers = members.filter((m) => m.role === 'manager');
+  if (others.length && managers.length === 1 && managers[0].userId === target)
+    await setSimRole(db, simId, pickSuccessor(others), 'manager', null);
   await revokeSimRoles(db, simId, target);
   const { empty } = await reconcileSimManagement(db, simId);
   return { empty, members };

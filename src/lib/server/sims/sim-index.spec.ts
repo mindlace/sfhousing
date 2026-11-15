@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { eq, type SQL } from 'drizzle-orm';
 import {
   freshDb,
   seedSim,
@@ -431,6 +431,81 @@ describe('removeMembership', () => {
     await seedSoleManagerPlus(db, [{ id: 'owner2', role: 'manager' }]);
     expect(await removeMembership(db, 'q1', 'owner2')).toMatchObject({ empty: false });
     expect(await getRole({ db, simId: 'q1', userId: 'owner2' })).toBeNull();
+  });
+
+  /** The db, failing every ledger write that revokes a role from `principal` while armed. */
+  function failingRevokeOf(db: ReturnType<typeof freshDb>['db'], principal: string) {
+    const state = { armed: true, refused: 0 };
+    const dialect = (db as unknown as { dialect: { sqlToQuery(q: SQL): { params: unknown[] } } })
+      .dialect;
+    const failing = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'run')
+          return async (q: SQL) => {
+            const { params } = dialect.sqlToQuery(q);
+            if (state.armed && params.includes('revoke') && params.includes(principal)) {
+              state.refused++;
+              throw new Error('D1 cut');
+            }
+            return target.run(q);
+          };
+        return Reflect.get(target, prop, receiver);
+      }
+    }) as typeof db;
+    return { failing, state };
+  }
+
+  it('the sole manager leaving: a failure after the promotion leaves the sim managed, and a retry finishes', async () => {
+    const { db } = freshDb();
+    await seedSoleManagerPlus(db, [
+      { id: 'ed', role: 'editor' },
+      { id: 'vi', role: 'viewer' }
+    ]);
+    const { failing, state } = failingRevokeOf(db, 'owner1');
+
+    await expect(removeMembership(failing, 'q1', 'owner1')).rejects.toThrow('D1 cut');
+
+    expect(state.refused).toBe(1);
+    // The successor was promoted first; the leaver is still a member.
+    expect(await getRole({ db, simId: 'q1', userId: 'ed' })).toBe('manager');
+    expect(await getRole({ db, simId: 'q1', userId: 'owner1' })).toBe('manager');
+    expect(await getRole({ db, simId: 'q1', userId: 'vi' })).toBe('viewer');
+
+    state.armed = false;
+    expect(await removeMembership(failing, 'q1', 'owner1')).toMatchObject({ empty: false });
+    expect(await getRole({ db, simId: 'q1', userId: 'owner1' })).toBeNull();
+    expect((await listMembers({ db, simId: 'q1' })).map((m) => [m.userId, m.role])).toEqual([
+      ['ed', 'manager'],
+      ['vi', 'viewer']
+    ]);
+  });
+
+  it('promotes nobody when a non-manager is removed', async () => {
+    const { db } = freshDb();
+    await seedSoleManagerPlus(db, [
+      { id: 'ed', role: 'editor' },
+      { id: 'vi', role: 'viewer' }
+    ]);
+    const { failing } = failingRevokeOf(db, 'vi');
+    await expect(removeMembership(failing, 'q1', 'vi')).rejects.toThrow('D1 cut');
+    expect(await getRole({ db, simId: 'q1', userId: 'ed' })).toBe('editor');
+    expect(await removeMembership(db, 'q1', 'vi')).toMatchObject({ empty: false });
+    expect(await getRole({ db, simId: 'q1', userId: 'ed' })).toBe('editor');
+    expect(await getRole({ db, simId: 'q1', userId: 'owner1' })).toBe('manager');
+  });
+
+  it('promotes nobody when a manager leaves while another manager remains', async () => {
+    const { db } = freshDb();
+    await seedSoleManagerPlus(db, [
+      { id: 'owner2', role: 'manager' },
+      { id: 'ed', role: 'editor' }
+    ]);
+    const { failing } = failingRevokeOf(db, 'owner1');
+    await expect(removeMembership(failing, 'q1', 'owner1')).rejects.toThrow('D1 cut');
+    expect(await getRole({ db, simId: 'q1', userId: 'ed' })).toBe('editor');
+    expect(await removeMembership(db, 'q1', 'owner1')).toMatchObject({ empty: false });
+    expect(await getRole({ db, simId: 'q1', userId: 'ed' })).toBe('editor');
+    expect(await getRole({ db, simId: 'q1', userId: 'owner2' })).toBe('manager');
   });
 });
 

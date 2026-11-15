@@ -17,6 +17,7 @@ import { generateUniqueHandle } from '$lib/server/user-store/handle';
 import { recordUserVersion } from '$lib/server/user-store/history';
 import { skeleton } from '$lib/server/user-store/confusable-skeleton';
 import { memberErrorCode } from '$lib/server/invites/error-code';
+import { loggable } from '$lib/server/sim-object/object-rules';
 
 export const load: PageServerLoad = async (event) => {
   const db = getDb(event.platform!);
@@ -52,7 +53,7 @@ export const actions: Actions = {
     } catch (e) {
       if (isRedirect(e)) throw e;
       const code = memberErrorCode(e);
-      if (code === 'failed') console.error('invite accept failed', e);
+      if (code === 'failed') console.error('invite accept failed', loggable(e));
       return fail(400, { code });
     }
   },
@@ -187,7 +188,7 @@ export const actions: Actions = {
     } catch (e) {
       if (isRedirect(e) || isHttpError(e)) throw e;
       const code = memberErrorCode(e);
-      if (code === 'failed') console.error('invite join failed', e);
+      if (code === 'failed') console.error('invite join failed', loggable(e));
       return fail(400, { code });
     }
   }

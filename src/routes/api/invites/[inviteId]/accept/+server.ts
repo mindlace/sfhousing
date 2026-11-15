@@ -6,6 +6,7 @@ import { getDb } from '$lib/server/db';
 import { acceptInviteById } from '$lib/server/invites/control-plane';
 import { refuseUnlessSameOriginJson } from '$lib/server/security/same-origin-json';
 import { onSimRosterChanged } from '$lib/server/sims/roster-hook';
+import { loggable } from '$lib/server/sim-object/object-rules';
 
 export const POST: RequestHandler = async (event) => {
   const refused = refuseUnlessSameOriginJson(event);
@@ -26,7 +27,7 @@ export const POST: RequestHandler = async (event) => {
     return json({ simId: res.simId }, { status: 200 });
   } catch (e) {
     const code = memberErrorCode(e);
-    if (code === 'failed') console.error('invite accept failed', e);
+    if (code === 'failed') console.error('invite accept failed', loggable(e));
     return json({ code }, { status: 400 });
   }
 };
