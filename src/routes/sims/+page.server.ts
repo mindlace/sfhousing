@@ -21,7 +21,12 @@ export const load: PageServerLoad = async (event) => {
     // The cookie is user-controlled: it gets the same checks as a typed title.
     const checked = checkSimTitle(pendingTitle);
     if ('title' in checked && !(await simQuotaExceeded(db, locals.user))) {
-      const { simId } = await createSim({ db, title: checked.title, managerId: locals.user.id });
+      const { simId } = await createSim({
+        db,
+        env: platform?.env,
+        title: checked.title,
+        managerId: locals.user.id
+      });
       throw redirect(303, `/sims/${simId}`);
     }
   }

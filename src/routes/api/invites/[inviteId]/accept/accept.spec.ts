@@ -13,11 +13,13 @@ vi.mock('$lib/server/sims/roster-hook', () => ({ onSimRosterChanged }));
 import { POST } from './+server';
 
 const USER = { id: 'u1', email: 'u1@test.com', emailVerified: true };
+/** The request's platform: the hook must receive its env as given. */
+const platform = { env: { marker: 'env' } };
 
 function acceptEvent(opts: { user?: typeof USER | null; headers?: Record<string, string> } = {}) {
   return {
     params: { inviteId: 'inv1' },
-    platform: { env: {} },
+    platform,
     url: new URL('http://x/api/invites/inv1/accept'),
     locals: { user: opts.user === undefined ? USER : opts.user },
     request: new Request('http://x/api/invites/inv1/accept', {
@@ -32,7 +34,7 @@ beforeEach(() => {
 });
 
 describe('POST /api/invites/:inviteId/accept', () => {
-  it('accepts, calls the roster hook with the sim id and answers { simId }', async () => {
+  it('accepts, calls the roster hook with the env and sim id and answers { simId }', async () => {
     expect.hasAssertions();
     acceptInviteById.mockResolvedValue({ simId: 'sim1' });
     const res = await POST(acceptEvent());
@@ -46,7 +48,7 @@ describe('POST /api/invites/:inviteId/accept', () => {
       emailVerified: true
     });
     expect(onSimRosterChanged).toHaveBeenCalledTimes(1);
-    expect(onSimRosterChanged).toHaveBeenCalledWith('sim1');
+    expect(onSimRosterChanged).toHaveBeenCalledWith(platform.env, 'sim1');
   });
 
   it('answers 400 with a code, not the message, and does not call the roster hook when accept fails', async () => {

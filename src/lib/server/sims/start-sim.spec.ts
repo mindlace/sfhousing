@@ -3,18 +3,19 @@ import { eq } from 'drizzle-orm';
 import type { RequestEvent } from '@sveltejs/kit';
 import { SIMS_COPY, SIM_TITLE_MAX, titleTooLong } from '$lib/members/copy';
 import { user as userTable } from '$lib/server/db/schema';
-import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
+import { freshDb, makePlatform, seedSim, seedUser } from '$lib/server/test/auth-db';
 import { mockConsole } from '$lib/server/test/mock-console';
 
 const mint = vi.hoisted(() => vi.fn());
 vi.mock('$lib/server/onboarding/pseudonymous-mint', () => ({ mintPseudonymousSession: mint }));
 // createSim stays real unless a case makes it throw.
-const createFails = vi.hoisted(() => ({ with: null as Error | null }));
+const createFails = vi.hoisted(() => ({ with: null as Error | null, env: [] as unknown[] }));
 vi.mock('./sims', async (importOriginal) => {
   const real = await importOriginal<typeof import('./sims')>();
   return {
     ...real,
     createSim: (args: Parameters<typeof real.createSim>[0]) => {
+      createFails.env.push(args.env);
       if (createFails.with) throw createFails.with;
       return real.createSim(args);
     }
@@ -22,7 +23,6 @@ vi.mock('./sims', async (importOriginal) => {
 });
 
 import { listSimsForUser } from './sim-index';
-import { createSim } from './sims';
 import { startSim } from './start-sim';
 
 const opened: Array<() => void> = [];
@@ -30,6 +30,7 @@ afterEach(() => {
   for (const close of opened.splice(0)) close();
   mint.mockReset();
   createFails.with = null;
+  createFails.env = [];
 });
 
 function setup(
@@ -55,6 +56,13 @@ function setup(
 }
 
 describe('startSim', () => {
+  it("passes the request's platform env to createSim", async () => {
+    const { db, event } = setup({ user: { id: 'u1', pseudonymous: false } });
+    await seedUser(db, { id: 'u1', email: 'u1@test.com' });
+    await startSim(event, 'Env');
+    expect(createFails.env).toEqual([event.platform!.env]);
+  });
+
   it('rejects an empty title with 400', async () => {
     const { event } = setup();
     const res = await startSim(event, '   ');
@@ -114,7 +122,7 @@ describe('startSim', () => {
   it('does not reseed the handle of a signed-in user who already has a sim', async () => {
     const { db, event } = setup({ user: { id: 'u1', pseudonymous: true } });
     await seedUser(db, { id: 'u1', email: 'u1@test.com', handle: 'keepme' });
-    await createSim({ db, title: 'First', managerId: 'u1' });
+    await seedSim(db, { title: 'First', managerId: 'u1' });
     const res = await startSim(event, 'Second');
     expect(res).toHaveProperty('simId');
     expect(mint).not.toHaveBeenCalled();
@@ -125,7 +133,7 @@ describe('startSim', () => {
   it('answers 403 with the quota copy at the cap', async () => {
     const { db, event } = setup({ user: { id: 'u1', pseudonymous: false } });
     await seedUser(db, { id: 'u1', email: 'u1@test.com' });
-    for (let i = 0; i < 5; i++) await createSim({ db, title: `S${i}`, managerId: 'u1' });
+    for (let i = 0; i < 5; i++) await seedSim(db, { title: `S${i}`, managerId: 'u1' });
     const res = await startSim(event, 'One more');
     expect(res).toMatchObject({ status: 403, data: { error: SIMS_COPY.quota } });
   });

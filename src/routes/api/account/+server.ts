@@ -34,8 +34,11 @@ export const DELETE: RequestHandler = async (event) => {
   const identityId = locals.user.id;
   await deleteAccount({
     db: getDb(platform!),
+    env: platform?.env,
     identityId,
-    actor: { actorId: identityId, actorKind: 'human' }
+    actor: { actorId: identityId, actorKind: 'human' },
+    // The sims it left are told after the response, never holding it up.
+    defer: platform?.ctx ? (work) => platform.ctx.waitUntil(work) : undefined
   });
   // Best-effort: clear the session cookie (rows are already gone).
   try {

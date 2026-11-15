@@ -19,7 +19,8 @@ vi.mock('$lib/server/auth/better-auth', () => ({
   authFor: () => ({ api: { signOut } })
 }));
 
-const platform = { env: {} } as unknown as App.Platform;
+const waitUntil = vi.fn();
+const platform = { env: { marker: 'env' }, ctx: { waitUntil } } as unknown as App.Platform;
 function evt(over: Record<string, unknown> = {}) {
   return {
     locals: { user: { id: 'u1', handle: 'ada', pseudonymous: false }, session: { userId: 'u1' } },
@@ -97,12 +98,18 @@ describe('DELETE /api/account', () => {
     expect(res.status).toBe(200);
     expect(((await res.json()) as Record<string, unknown>).ok).toBe(true);
     expect(deleteAccount).toHaveBeenCalledOnce();
-    expect(deleteAccount).toHaveBeenCalledWith(
-      expect.objectContaining({
-        identityId: 'u1',
-        actor: { actorId: 'u1', actorKind: 'human' }
-      })
-    );
+    expect(deleteAccount).toHaveBeenCalledWith({
+      db: {},
+      env: platform.env,
+      identityId: 'u1',
+      actor: { actorId: 'u1', actorKind: 'human' },
+      defer: expect.any(Function)
+    });
+    // The fan-out over the sims it left runs after the response, through waitUntil.
+    const { defer } = deleteAccount.mock.calls[0][0] as { defer: (p: Promise<void>) => void };
+    const work = Promise.resolve();
+    defer(work);
+    expect(waitUntil).toHaveBeenCalledWith(work);
     expect(signOut).toHaveBeenCalledOnce();
   });
 

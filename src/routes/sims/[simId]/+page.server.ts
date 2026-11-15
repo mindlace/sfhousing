@@ -29,6 +29,7 @@ export const actions: Actions = {
     try {
       await leaveSim({
         db,
+        env: event.platform?.env,
         simId,
         userId: actor.actorId,
         simTitle,

@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SIMS_COPY, SIM_TITLE_MAX, titleTooLong } from '$lib/members/copy';
-import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
+import { freshDb, makePlatform, seedSim, seedUser } from '$lib/server/test/auth-db';
 
 const mint = vi.hoisted(() => vi.fn());
 vi.mock('$lib/server/onboarding/pseudonymous-mint', () => ({ mintPseudonymousSession: mint }));
 
 import { createInvite } from '$lib/server/invites/control-plane';
-import { createSim } from '$lib/server/sims/sims';
 import { actions, load } from './+page.server';
 import { load as layoutLoad } from './+layout.server';
 
@@ -99,7 +98,7 @@ describe('/sims create action', () => {
   it('answers 403 for a signed-in user at the quota', async () => {
     const { db, event } = setup({ user: { id: 'u1', pseudonymous: false } });
     await seedUser(db, { id: 'u1', email: 'u1@test.com' });
-    for (let i = 0; i < 5; i++) await createSim({ db, title: `S${i}`, managerId: 'u1' });
+    for (let i = 0; i < 5; i++) await seedSim(db, { title: `S${i}`, managerId: 'u1' });
     const res = await actions.create(event('More'));
     expect(res).toMatchObject({ status: 403, data: { error: SIMS_COPY.quota } });
   });
@@ -114,8 +113,8 @@ describe('/sims load', () => {
   it('lists the user sims sorted by title', async () => {
     const { db, event } = setup({ user: { id: 'u1', pseudonymous: false } });
     await seedUser(db, { id: 'u1', email: 'u1@test.com' });
-    await createSim({ db, title: 'beta', managerId: 'u1' });
-    await createSim({ db, title: 'Alpha', managerId: 'u1' });
+    await seedSim(db, { title: 'beta', managerId: 'u1' });
+    await seedSim(db, { title: 'Alpha', managerId: 'u1' });
     const res = (await load(event())) as { sims: { title: string }[] };
     expect(res.sims.map((s) => s.title)).toEqual(['Alpha', 'beta']);
   });
@@ -126,7 +125,7 @@ describe('/sims load', () => {
     });
     await seedUser(db, { id: 'u1', email: 'u1@test.com', emailVerified: true });
     await seedUser(db, { id: 'm1', email: 'm1@test.com', handle: 'mara' });
-    const { simId } = await createSim({ db, title: 'Garden', managerId: 'm1' });
+    const simId = await seedSim(db, { title: 'Garden', managerId: 'm1' });
     await createInvite({
       db,
       simId,
@@ -179,7 +178,7 @@ describe('/sims load', () => {
       user: { id: 'u1', pseudonymous: false }
     });
     await seedUser(db, { id: 'u1', email: 'u1@test.com' });
-    for (let i = 0; i < 5; i++) await createSim({ db, title: `S${i}`, managerId: 'u1' });
+    for (let i = 0; i < 5; i++) await seedSim(db, { title: `S${i}`, managerId: 'u1' });
     const res = (await load(event())) as { sims: unknown[] };
     expect(res.sims).toHaveLength(5);
     expect(store.has('sfh_pending_sim')).toBe(false);

@@ -47,7 +47,7 @@ export const actions: Actions = {
         token: event.params.token,
         userId: event.locals.user.id
       });
-      await onSimRosterChanged(res.simId);
+      await onSimRosterChanged(event.platform?.env, res.simId);
       throw redirect(303, `/sims/${res.simId}`);
     } catch (e) {
       if (isRedirect(e)) throw e;
@@ -157,7 +157,7 @@ export const actions: Actions = {
           }
 
           const res = await acceptInviteByToken({ db, token: event.params.token, userId: u.id });
-          await onSimRosterChanged(res.simId);
+          await onSimRosterChanged(event.platform?.env, res.simId);
           throw redirect(303, `/sims/${res.simId}`);
         }
         case 'signin': {

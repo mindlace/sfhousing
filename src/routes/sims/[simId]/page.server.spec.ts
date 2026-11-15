@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { simInvite } from '$lib/server/db/schema';
-import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
+import { freshDb, makePlatform, seedSim, seedUser } from '$lib/server/test/auth-db';
 
 vi.mock('$lib/server/authz/require-sim-role', () => ({ requireSimRole: vi.fn() }));
 vi.mock('$lib/server/sims/roster-hook', () => ({ onSimRosterChanged: vi.fn(async () => {}) }));
 
 import { requireSimRole } from '$lib/server/authz/require-sim-role';
+import { onSimRosterChanged } from '$lib/server/sims/roster-hook';
 import { createInvite } from '$lib/server/invites/control-plane';
 import { addMemberById, getRole, getSimTitle } from '$lib/server/sims/sim-index';
-import { createSim } from '$lib/server/sims/sims';
 import { actions, load } from './+page.server';
 
 const opened: Array<() => void> = [];
@@ -27,7 +27,7 @@ async function seed() {
   await seedUser(db, { id: 'u-mia', email: 'mia@test.com', handle: 'mia' });
   await seedUser(db, { id: 'u-eddie', email: 'eddie@test.com', handle: 'eddie' });
   await seedUser(db, { id: 'u-nora', email: 'nora@test.com', handle: 'nora' });
-  const { simId } = await createSim({ db, title: 'Garden', managerId: 'u-mia' });
+  const simId = await seedSim(db, { title: 'Garden', managerId: 'u-mia' });
   return { db, shim, simId };
 }
 
@@ -99,8 +99,15 @@ describe('leaveSim action', () => {
   it('a plain member leaves and lands on /sims; the sim and the others stay', async () => {
     const env = await seed();
     await addMemberById({ db: env.db, simId: env.simId, userId: 'u-eddie', role: 'editor' });
-    const r = await redirectOf(() => actions.leaveSim(leaveEvent(env, 'u-eddie')));
+    vi.mocked(onSimRosterChanged).mockClear();
+    const event = leaveEvent(env, 'u-eddie');
+    const r = await redirectOf(() => actions.leaveSim(event));
     expect(r).toMatchObject({ status: 303, location: '/sims' });
+    // The request's env reaches the hook: without it the hook is a silent no-op.
+    expect(onSimRosterChanged).toHaveBeenCalledWith(
+      (event as { platform: App.Platform }).platform.env,
+      env.simId
+    );
     expect(await getRole({ db: env.db, simId: env.simId, userId: 'u-eddie' })).toBeNull();
     expect(await getRole({ db: env.db, simId: env.simId, userId: 'u-mia' })).toBe('manager');
     expect(await getSimTitle({ db: env.db, simId: env.simId })).toBe('Garden');

@@ -13,6 +13,9 @@ vi.mock('$lib/server/db', () => ({ getDb: () => ({}) }));
 
 import { DELETE } from './+server';
 
+/** The request's platform: removeSimMember must receive its env as given. */
+const platform = { env: { marker: 'env' } };
+
 function deleteEvent(
   simId: string,
   userId: string,
@@ -20,7 +23,7 @@ function deleteEvent(
 ) {
   return {
     params: { simId, userId },
-    platform: { env: {} },
+    platform,
     locals: { user: { id: 'manager-1', email: 'manager@test.com' } },
     url: new URL(`http://x/api/sims/${simId}/members/${userId}`),
     request: new Request(`http://x/api/sims/${simId}/members/${userId}`, {
@@ -67,6 +70,7 @@ describe('DELETE /api/sims/:simId/members/:userId', () => {
     expect(res.status).toBe(204);
     expect(removeSimMember).toHaveBeenCalledWith({
       db: {},
+      env: platform.env,
       simId: 's1',
       userId: 'u2',
       // The route opts into co-manager protection by passing the acting id.

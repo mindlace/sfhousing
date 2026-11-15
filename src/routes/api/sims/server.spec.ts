@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SIMS_COPY, SIM_TITLE_MAX, titleTooLong } from '$lib/members/copy';
-import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
+import { freshDb, makePlatform, seedSim, seedUser } from '$lib/server/test/auth-db';
 
 const mint = vi.hoisted(() => vi.fn());
 vi.mock('$lib/server/onboarding/pseudonymous-mint', () => ({ mintPseudonymousSession: mint }));
 
 import { simIndex, user as userTable } from '$lib/server/db/schema';
-import { createSim } from '$lib/server/sims/sims';
 import { POST } from './+server';
 
 const opened: Array<() => void> = [];
@@ -77,7 +76,7 @@ describe('POST /api/sims', () => {
   it('answers 403 JSON at the quota', async () => {
     const { db, call } = setup({ user: { id: 'u1', pseudonymous: false } });
     await seedUser(db, { id: 'u1', email: 'u1@test.com' });
-    for (let i = 0; i < 5; i++) await createSim({ db, title: `S${i}`, managerId: 'u1' });
+    for (let i = 0; i < 5; i++) await seedSim(db, { title: `S${i}`, managerId: 'u1' });
     const res = await call({ title: 'More' });
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: SIMS_COPY.quota });

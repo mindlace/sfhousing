@@ -21,7 +21,8 @@ export const POST: RequestHandler = async (event) => {
       email: user.email,
       emailVerified: user.emailVerified
     });
-    await onSimRosterChanged(res.simId);
+    // Never rejects: the accept stands whatever the object does.
+    await onSimRosterChanged(event.platform?.env, res.simId);
     return json({ simId: res.simId }, { status: 200 });
   } catch (e) {
     const code = memberErrorCode(e);

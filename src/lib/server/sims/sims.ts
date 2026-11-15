@@ -5,15 +5,20 @@ import { newId } from '$lib/server/ids/factory';
 import { createSimRecord, removeMembership, prepareLeave } from './sim-index';
 import { onSimRosterChanged } from './roster-hook';
 
-/** Create a sim: mint its id, record the index row, then the manager's grant. */
+/**
+ * Create a sim: mint its id, record the index row, then the manager's grant. No roster hook:
+ * a sim just registered cannot have an open socket (the stream route answers 404 until its
+ * index row exists), so the call would only wake an object for nothing. `env` is not read
+ * here yet; callers already pass the request's.
+ */
 export async function createSim(args: {
   db: Database;
+  env: unknown;
   title: string;
   managerId: string;
 }): Promise<{ simId: string }> {
   const simId = newId();
   await createSimRecord({ db: args.db, simId, title: args.title, managerId: args.managerId });
-  await onSimRosterChanged(simId);
   return { simId };
 }
 
@@ -34,22 +39,26 @@ export async function deleteSim(db: Database, simId: string): Promise<void> {
  * `actorUserId` opts into the co-manager protection: pass the acting principal's id on
  * administrative removal-of-another so removing a DIFFERENT manager is refused. Omit it
  * for self-removal / account deletion / orphan teardown, which may remove a manager.
+ *
+ * After the removal is written (and an emptied sim deleted) it awaits the roster hook, which
+ * never rejects, unless `notify` is false: account deletion tells every sim it left in one
+ * fan-out instead.
  */
 export async function removeSimMember(args: {
   db: Database;
+  env: unknown;
   simId: string;
   userId: string;
   actorUserId?: string;
+  notify?: boolean;
 }): Promise<{ deleted: boolean }> {
   const { empty } = await removeMembership(args.db, args.simId, args.userId, {
     actorUserId: args.actorUserId
   });
-  if (empty) {
-    await deleteSim(args.db, args.simId);
-    return { deleted: true };
-  }
-  await onSimRosterChanged(args.simId);
-  return { deleted: false };
+  if (empty) await deleteSim(args.db, args.simId);
+  // Every removal, the last member's included: their open socket must lose write too.
+  if (args.notify !== false) await onSimRosterChanged(args.env, args.simId);
+  return { deleted: empty };
 }
 
 /**
@@ -59,6 +68,7 @@ export async function removeSimMember(args: {
  */
 export async function leaveSim(args: {
   db: Database;
+  env: unknown;
   simId: string;
   userId: string;
   simTitle: string;
@@ -72,5 +82,5 @@ export async function leaveSim(args: {
     confirmTitle: args.confirmTitle,
     successorUserId: args.successorUserId
   });
-  await removeSimMember({ db: args.db, simId: args.simId, userId: args.userId });
+  await removeSimMember({ db: args.db, env: args.env, simId: args.simId, userId: args.userId });
 }

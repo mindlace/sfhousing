@@ -63,7 +63,7 @@ export async function startSim(
   if (nudge) return fail(403, { error: nudge });
 
   try {
-    return await createSim({ db, title, managerId: identityId });
+    return await createSim({ db, env: platform?.env, title, managerId: identityId });
   } catch (e) {
     // Never the error's text: it is an internal message (or a database error).
     console.error('create sim failed', e);

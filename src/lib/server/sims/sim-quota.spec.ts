@@ -1,13 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { SIMS_COPY } from '$lib/members/copy';
-import { freshDb, seedUser } from '$lib/server/test/auth-db';
-import { createSim } from './sims';
+import { freshDb, seedSim, seedUser } from '$lib/server/test/auth-db';
 import { MAX_SIMS_PER_MANAGER, simQuotaExceeded } from './sim-quota';
 
 async function manage(n: number) {
   const { db } = freshDb();
   await seedUser(db, { id: 'owner1', email: 'm@test.com' });
-  for (let i = 0; i < n; i++) await createSim({ db, title: `Sim ${i}`, managerId: 'owner1' });
+  for (let i = 0; i < n; i++) await seedSim(db, { title: `Sim ${i}`, managerId: 'owner1' });
   return db;
 }
 

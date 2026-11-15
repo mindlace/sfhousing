@@ -225,7 +225,12 @@ export const actions: Actions = {
     if (!('title' in checked)) throw redirect(303, '/sims');
     const db = getDb(event.platform!);
     await reseedHandleFromSim({ db, identityId: minted.user.id, simTitle: checked.title });
-    const { simId } = await createSim({ db, title: checked.title, managerId: minted.user.id });
+    const { simId } = await createSim({
+      db,
+      env: event.platform?.env,
+      title: checked.title,
+      managerId: minted.user.id
+    });
     throw redirect(303, `/sims/${simId}`);
   }
 };

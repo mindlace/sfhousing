@@ -5,6 +5,8 @@ import * as schema from '$lib/server/db/schema';
 import { newId } from '$lib/server/ids/base58';
 import type { Database } from '$lib/server/db';
 import { skeleton } from '$lib/server/user-store/confusable-skeleton';
+import { createSim } from '$lib/server/sims/sims';
+import { createSimRecord } from '$lib/server/sims/sim-index';
 import { createTestD1, testPlatform } from './d1';
 
 export function freshDb(): { db: Database; shim: D1Database; close(): void } {
@@ -96,4 +98,26 @@ export async function grantEvent(
     createdAt: opts.at ?? new Date(),
     createdAtCounter: opts.counter ?? 0
   });
+}
+
+/**
+ * Seed a sim managed by `managerId` and return its id: no object binding, so no roster hook.
+ * `simId` is for tests only and is not checked by `isValidId` (specs use literal ids such
+ * as `'q1'`); without it the id is minted as `createSim` mints one.
+ */
+export async function seedSim(
+  db: Database,
+  args: { title: string; managerId: string; simId?: string }
+): Promise<string> {
+  if (args.simId === undefined) {
+    const { simId } = await createSim({
+      db,
+      env: undefined,
+      title: args.title,
+      managerId: args.managerId
+    });
+    return simId;
+  }
+  await createSimRecord({ db, simId: args.simId, title: args.title, managerId: args.managerId });
+  return args.simId;
 }

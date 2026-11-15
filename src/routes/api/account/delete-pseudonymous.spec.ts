@@ -3,9 +3,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { session, user, userIdentity } from '$lib/server/db/schema';
-import { freshDb, seedUser } from '$lib/server/test/auth-db';
+import { freshDb, seedSim, seedUser } from '$lib/server/test/auth-db';
 import { addMemberById, getRole, getSimTitle } from '$lib/server/sims/sim-index';
-import { createSim } from '$lib/server/sims/sims';
 
 const { holder, signOut } = vi.hoisted(() => ({
   holder: { db: undefined as unknown },
@@ -60,8 +59,8 @@ describe('DELETE /api/account for a pseudonymous account', () => {
   it('marks the identity deleted, removes the session, deletes a solo sim and keeps a shared one', async () => {
     const { db } = await setup();
     await seedUser(db, { id: 'p2', email: 'p2@pseudonymous.invalid', handle: 'other-owl' });
-    const { simId: solo } = await createSim({ db, title: 'Solo', managerId: 'p1' });
-    const { simId: shared } = await createSim({ db, title: 'Shared', managerId: 'p1' });
+    const solo = await seedSim(db, { title: 'Solo', managerId: 'p1' });
+    const shared = await seedSim(db, { title: 'Shared', managerId: 'p1' });
     await addMemberById({ db, simId: shared, userId: 'p2', role: 'editor' });
 
     const res = await call('wandering-wren');

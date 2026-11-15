@@ -569,9 +569,10 @@ describe('signin startFresh action', () => {
     readPendingSim.mockReturnValue('Learn to swim');
     createSim.mockResolvedValue({ simId: 'sid-99' });
 
+    const event = makeStartFreshEvent();
     let caught: unknown;
     try {
-      await actions.startFresh(makeStartFreshEvent());
+      await actions.startFresh(event);
     } catch (e) {
       caught = e;
     }
@@ -582,7 +583,11 @@ describe('signin startFresh action', () => {
       expect.objectContaining({ identityId: 'pseudo-u1', simTitle: 'Learn to swim' })
     );
     expect(createSim).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Learn to swim', managerId: 'pseudo-u1' })
+      expect.objectContaining({
+        env: (event as { platform: App.Platform }).platform.env,
+        title: 'Learn to swim',
+        managerId: 'pseudo-u1'
+      })
     );
     expect(clearPendingIdentifier).toHaveBeenCalled();
   });
