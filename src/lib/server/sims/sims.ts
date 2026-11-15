@@ -1,32 +1,26 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
+import { SQLiteAsyncDialect } from 'drizzle-orm/sqlite-core';
 import type { Database } from '$lib/server/db';
 import { simIndex, simInvite } from '$lib/server/db/schema';
 import { isValidId } from '$lib/server/ids/factory';
-import { insertSimIndexIfFree, removeMembership, prepareLeave } from './sim-index';
-import { addSimRole } from './sim-roles';
+import { buildInsertSimIndexIfFreeSql, removeMembership, prepareLeave } from './sim-index';
+import { buildFirstManagerGrantSql } from './sim-roles';
 import { onSimRosterChanged } from './roster-hook';
 import { loggable } from '$lib/server/sim-object/object-rules';
-
-/** The manager grant failed after this call inserted the index row; the row was removed. */
-export class SimGrantFailed extends Error {
-  constructor() {
-    super('manager grant failed');
-    this.name = 'SimGrantFailed';
-  }
-}
 
 /**
  * Register a sim under a browser-minted id (R51). Throws Error('invalid sim id') unless
  * isValidId. created false: the id has a past (an index row, a takedown mark, a stored commit
- * or a ledger event), and nothing changed. A manager grant follows only an insert that created
- * the index row in this call, so knowing an id never makes anyone its manager.
+ * or a ledger event), and nothing changed.
+ *
+ * One D1 batch (one transaction) of two statements: the conditional insert of the index row,
+ * then the manager grant gated on `changes() = 1`, that is on THIS call's insert having written
+ * the row. So the index row and its first manager grant become visible together, and knowing an
+ * id never makes anyone its manager. A batch that throws wrote nothing.
  *
  * No roster hook: a sim just registered cannot have an open socket (the stream route answers
  * 404 until its index row exists), so the call would only wake an object for nothing. `env` is
  * not read here; callers pass the request's.
- *
- * Throws SimGrantFailed when the grant fails after the insert: the row is removed again first,
- * so no sim is left that nobody can claim.
  */
 export async function createSim(args: {
   db: Database;
@@ -37,24 +31,23 @@ export async function createSim(args: {
 }): Promise<{ simId: string; created: boolean }> {
   const { db, simId } = args;
   if (!isValidId(simId)) throw new Error('invalid sim id');
-  if (!(await insertSimIndexIfFree({ db, simId, title: args.title }))) {
-    return { simId, created: false };
-  }
-  try {
-    await addSimRole(db, simId, args.managerId, 'manager', args.managerId);
-  } catch (e) {
-    console.error('[start-sim] grant failed', simId, loggable(e));
-    // The one place outside deleteSim that deletes a sim_index row: the row this call just
-    // inserted, which has no member and no log yet.
-    try {
-      await db.delete(simIndex).where(eq(simIndex.simId, simId));
-    } catch (undo) {
-      console.error('[start-sim] grant undo failed', simId, loggable(undo));
-    }
-    throw new SimGrantFailed();
-  }
-  return { simId, created: true };
+  // Drizzle's batch does not take raw `sql` statements, so the two go to D1's own batch.
+  const client = (db as Database & { $client?: D1Database }).$client;
+  if (!client) throw new Error('D1 client unavailable');
+  const prepare = (q: SQL) => {
+    const { sql: text, params } = dialect.sqlToQuery(q);
+    return client.prepare(text).bind(...params);
+  };
+  const [inserted] = await client.batch<{ sim_id: string }>([
+    prepare(buildInsertSimIndexIfFreeSql({ simId, title: args.title })),
+    // Gated on the statement before it, never on "no ledger event yet": an orphan index row
+    // must not be claimable.
+    prepare(buildFirstManagerGrantSql(simId, args.managerId, sql`(select changes()) = 1`))
+  ]);
+  return { simId, created: inserted.results.length === 1 };
 }
+
+const dialect = new SQLiteAsyncDialect();
 
 /**
  * Drop the sim's index row and its pending invites in one batch. Ledger rows stay. Nothing a

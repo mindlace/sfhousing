@@ -1,35 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { freshDb, seedSim, seedUser } from '$lib/server/test/auth-db';
+import { freshDb, seedIdentity, seedSim, seedUser } from '$lib/server/test/auth-db';
 import { mockConsole } from '$lib/server/test/mock-console';
-import { capabilityEvent, simCommit, simInvite, simTakedown } from '$lib/server/db/schema';
+import {
+  capabilityEvent,
+  simCommit,
+  simIndex,
+  simInvite,
+  simTakedown
+} from '$lib/server/db/schema';
 import { newId } from '$lib/server/ids/factory';
 import { addMemberById, getRole, getSimTitle, listMembers } from './sim-index';
-import { foldSimRole, setSimRole } from './sim-roles';
+import { addSimRole, foldSimRole, setSimRole } from './sim-roles';
 import { handleAccountLink } from '$lib/server/user-store/identity';
 import { onSimRosterChanged } from './roster-hook';
-import { createSim, deleteSim, leaveSim, removeSimMember, SimGrantFailed } from './sims';
+import { createSim, deleteSim, leaveSim, removeSimMember } from './sims';
 
 vi.mock('./roster-hook', () => ({ onSimRosterChanged: vi.fn(async () => {}) }));
-// addSimRole stays real unless a case makes the manager grant throw.
-const grant = vi.hoisted(() => ({ fails: null as Error | null }));
-vi.mock('./sim-roles', async (importOriginal) => {
-  const real = await importOriginal<typeof import('./sim-roles')>();
-  return {
-    ...real,
-    addSimRole: (...a: Parameters<typeof real.addSimRole>) => {
-      if (grant.fails) throw grant.fails;
-      return real.addSimRole(...a);
-    }
-  };
-});
 
 /** Stands in for platform.env: the hook must receive it as given. */
 const env = { marker: 'env' };
 
 beforeEach(() => {
   vi.mocked(onSimRosterChanged).mockClear();
-  grant.fails = null;
 });
 
 async function seedInvite(
@@ -183,8 +176,8 @@ describe('createSim', () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'owner1', email: 'm@test.com' });
     const simId = newId();
-    await createSim({ db, env, simId, title: 'Café', managerId: 'owner1' });
-    expect(await getSimTitle({ db, simId })).toBe('Café');
+    await createSim({ db, env, simId, title: 'Cafe\u0301', managerId: 'owner1' });
+    expect(await getSimTitle({ db, simId })).toBe('Caf\u00e9');
   });
 
   it('two callers registering one new id at once: exactly one manager, the other nothing', async () => {
@@ -224,31 +217,57 @@ describe('createSim', () => {
     }
   });
 
-  it('a grant that fails after the insert removes the row it inserted, logs, and throws', async () => {
+  it('a batch that fails writes nothing: no index row, no grant, and the id stays free', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'owner1', email: 'm@test.com' });
     const simId = newId();
-    // A database error's message carries the bound parameters: an identity among them.
-    grant.fails = Object.assign(new Error('Failed query: insert … params: owner1'), {
-      name: 'DrizzleQueryError'
-    });
-    const { error } = mockConsole('error');
+    // The grant names a principal that does not exist: its foreign key fails the second
+    // statement, after the first one inserted the index row.
     await expect(
-      createSim({ db, env, simId, title: 'Stranded', managerId: 'owner1' })
-    ).rejects.toBeInstanceOf(SimGrantFailed);
+      createSim({ db, env, simId, title: 'Stranded', managerId: 'no-such-principal' })
+    ).rejects.toThrow();
     expect(await getSimTitle({ db, simId })).toBeNull();
     expect(await ledgerOf(db, simId)).toEqual([]);
-    expect(error).toHaveBeenCalledWith('[start-sim] grant failed', simId, expect.any(String));
-    expect(JSON.stringify(error.mock.calls)).not.toContain('owner1');
-    expect(JSON.stringify(error.mock.calls)).not.toContain('Stranded');
-    error.mockRestore();
-    // The id is free again: nobody's past is on it.
-    grant.fails = null;
     expect(await createSim({ db, env, simId, title: 'Again', managerId: 'owner1' })).toEqual({
       simId,
       created: true
     });
   });
+
+  it.each([
+    ['a survivor', 'owner1'],
+    ['a fused identity', 'fused1']
+  ])(
+    "the batch's grant for %s is the row addSimRole writes for a new sim's manager",
+    async (_name, managerId) => {
+      const simId = newId();
+      const seed = async (db: ReturnType<typeof freshDb>['db']) => {
+        await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+        await seedIdentity(db, { id: 'fused1', supersededById: 'owner1' });
+      };
+      const viaBatch = freshDb();
+      await seed(viaBatch.db);
+      await createSim({ db: viaBatch.db, env, simId, title: 'T', managerId });
+      const viaAdd = freshDb();
+      await seed(viaAdd.db);
+      await viaAdd.db
+        .insert(simIndex)
+        .values({ simId, title: 'T', createdAt: new Date(), updatedAt: new Date() });
+      await addSimRole(viaAdd.db, simId, managerId, 'manager', managerId);
+      const rowOf = async (db: ReturnType<typeof freshDb>['db']) => {
+        const rows = await db
+          .select()
+          .from(capabilityEvent)
+          .where(eq(capabilityEvent.resourceId, simId));
+        expect(rows).toHaveLength(1);
+        // Generated id and stamp aside, field by field.
+        const { id: _id, createdAt: _at, createdAtCounter: _n, ...rest } = rows[0];
+        return rest;
+      };
+      expect(await rowOf(viaBatch.db)).toEqual(await rowOf(viaAdd.db));
+      expect(await getRole({ db: viaBatch.db, simId, userId: 'owner1' })).toBe('manager');
+    }
+  );
 });
 
 describe('deleteSim', () => {

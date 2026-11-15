@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { asc } from 'drizzle-orm';
+import { asc, sql } from 'drizzle-orm';
 import { drizzle as drizzleSqlite } from 'drizzle-orm/better-sqlite3';
+import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
 import { drizzle as drizzleD1 } from 'drizzle-orm/d1';
 import Database from 'better-sqlite3';
 import { sqliteTable, text, integer } from '$lib/server/db/columns';
 import { createTestD1 } from '$lib/server/test/d1';
 import { newId } from '$lib/server/ids/base58';
-import { appendEventSync, appendEventAsync } from './append';
+import { appendEventSync, appendEventAsync, buildAppendEventSql } from './append';
 
 const testEvents = sqliteTable('test_events', {
   id: text('id').primaryKey(),
@@ -97,6 +98,25 @@ describe('appendEventSync stamping (DO SQLite)', () => {
   it('throws on an unknown column', () => {
     const db = freshSyncDb();
     expect(() => appendEventSync(db, testEvents, { nope: 1 }, 1000)).toThrow(/unknown column/);
+  });
+});
+
+describe('buildAppendEventSql onlyIf', () => {
+  it('appends when the gate holds and writes nothing when it does not', () => {
+    const db = freshSyncDb();
+    db.run(buildAppendEventSql(testEvents, values(), 1000, { onlyIf: sql`1 = 1` }));
+    db.run(buildAppendEventSql(testEvents, values(), 2000, { onlyIf: sql`1 = 0` }));
+    const rows = db.select().from(testEvents).all();
+    expect(rows.map((r) => r.createdAt)).toEqual([1000]);
+  });
+
+  it('without a gate builds the same statement as before, with no WHERE', () => {
+    const v = values();
+    const dialect = new SQLiteSyncDialect();
+    const plain = dialect.sqlToQuery(buildAppendEventSql(testEvents, v, 1000));
+    expect(plain).toEqual(dialect.sqlToQuery(buildAppendEventSql(testEvents, v, 1000, {})));
+    // The statement still ends at the stamp's derived table: no gate is added.
+    expect(plain.sql.trim()).toMatch(/AS w$/);
   });
 });
 

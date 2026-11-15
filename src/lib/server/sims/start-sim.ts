@@ -11,9 +11,9 @@ import { enforceRate } from '$lib/server/security/rate-limit';
 import { canWrite } from '$lib/server/sim-object/access';
 import { loggable } from '$lib/server/sim-object/object-rules';
 import { reseedHandleFromSim } from '$lib/server/user-store/identity';
-import { getRole, listSimsForUser, simAwaitingGrant, simIdInUse } from './sim-index';
+import { getRole, listSimsForUser, simIdInUse } from './sim-index';
 import { simQuotaExceeded } from './sim-quota';
-import { createSim, SimGrantFailed } from './sims';
+import { createSim } from './sims';
 
 export type StartSimFailure = ActionFailure<RegisterError>;
 
@@ -36,28 +36,17 @@ export function simStartAllowed(platform: App.Platform, identityId: string): Pro
 
 const taken = (): StartSimFailure => fail(409, { error: SIMS_COPY.notYours, code: 'taken' });
 
-/** How many times a registration that lost the insert re-reads the caller's role. */
-const SETTLE_READS = 5;
-
 /**
- * Whether the caller writes the sim, after an insert that did not create it. The registration
- * that won may still be between its insert and its manager grant (the index row exists and no
- * ledger event names the sim yet); while that is so, read again, a bounded number of times. Once
- * the sim has a ledger event (or no row) the answer is settled. Fails closed: false.
+ * The answer for an id that is already registered: the no-op for a caller who writes it, `taken`
+ * for anyone else. One role read is enough: createSim writes the index row and its manager grant
+ * in one transaction, so a visible row always has its grant.
  */
-async function writesOnceSettled(
+async function answerForRegistered(
   db: ReturnType<typeof getDb>,
   simId: string,
   userId: string
-): Promise<boolean> {
-  for (let i = 0; i < SETTLE_READS; i++) {
-    // Read the state before the role: once no grant is awaited, the role read after it sees
-    // the winner's grant.
-    const awaiting = await simAwaitingGrant(db, simId);
-    if (canWrite(await getRole({ db, simId, userId }))) return true;
-    if (!awaiting) return false;
-  }
-  return false;
+): Promise<StartSimFailure | RegisterOk> {
+  return canWrite(await getRole({ db, simId, userId })) ? { simId, created: false } : taken();
 }
 
 /**
@@ -70,8 +59,8 @@ async function writesOnceSettled(
  * load resumes it after sign-in) instead of silently getting a second account: throws the
  * redirect. `title` undefined: the default name, and no handle reseed.
  *
- * Order: id, title, known device, (signed out) in-use then mint, rate, (signed in) writer then
- * in-use, quota, insert, then the handle reseed.
+ * Order: id, title, known device, (signed out) in-use then mint, rate, (signed in) in-use then
+ * writer, quota, insert, then the handle reseed.
  */
 export async function startSim(
   event: RequestEvent,
@@ -102,8 +91,12 @@ export async function startSim(
     identityId = signedIn.id;
     pseudonymous = signedIn.pseudonymous;
   } else {
-    // An id in use mints nothing: the refusal must not leave an account behind.
+    // An id in use mints nothing: the refusal must not leave an account behind. This check is
+    // deliberately before the rate check and the mint; do not move the rate check above it.
     if (await simIdInUse(db, simId)) return taken();
+    // Every mint passes the mint limit (PSEUDO_MINT_RL). An account minted here is left with no
+    // sim when: the rate check below refuses it; a concurrent registration takes the id after
+    // the mint; or the create fails. That is accepted.
     const minted = await mintPseudonymousSession(event);
     if (!minted.ok) {
       return fail(minted.status, {
@@ -123,7 +116,7 @@ export async function startSim(
   // before the quota, so a writer at the cap still gets the no-op and a non-writer at the cap is
   // told `taken`, not `quota`.
   if (signedIn && (await simIdInUse(db, simId))) {
-    return (await writesOnceSettled(db, simId, identityId)) ? { simId, created: false } : taken();
+    return answerForRegistered(db, simId, identityId);
   }
 
   const nudge = await simQuotaExceeded(db, { id: identityId });
@@ -146,22 +139,15 @@ export async function startSim(
       managerId: identityId
     }));
   } catch (e) {
-    // createSim logged a failed grant itself, with the sim id, and removed its row.
-    if (e instanceof SimGrantFailed) {
-      return fail(500, { error: SIMS_COPY.createFailed, code: 'failed' });
-    }
-    // Never the error's text: it is an internal message (or a database error).
-    console.error('[start-sim] create failed', loggable(e));
-    return fail(400, { error: SIMS_COPY.createFailed, code: 'failed' });
+    // The batch is one transaction: if it threw, nothing was written, and a retry answers 201
+    // (or 200 if an earlier attempt had in fact committed). Never the error's text.
+    console.error('[start-sim] create failed', simId, loggable(e));
+    return fail(500, { error: SIMS_COPY.createFailed, code: 'failed' });
   }
 
-  if (!created) {
-    // The id was taken between the checks above and the insert. It may be this caller's own
-    // registration racing itself, so re-read the role: a writer gets the no-op. When the caller
-    // was signed out, the account just minted is kept with no sim; that is accepted.
-    if (await writesOnceSettled(db, simId, identityId)) return { simId, created: false };
-    return taken();
-  }
+  // The id was taken between the checks above and the insert; it may be this caller's own
+  // registration racing itself.
+  if (!created) return answerForRegistered(db, simId, identityId);
 
   if (reseed) {
     try {

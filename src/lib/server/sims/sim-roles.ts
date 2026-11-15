@@ -1,10 +1,10 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, type SQL } from 'drizzle-orm';
 import type { Database } from '$lib/server/db';
 import { capabilityEvent, simIndex, type SimMemberRole } from '$lib/server/db/schema';
 import { principalUnion, survivorId } from '$lib/server/user-store/user';
 import { newId } from '$lib/server/ids/base58';
 import { ROLE_BUNDLE } from '$lib/server/authz';
-import { insertCapabilityEvent } from '$lib/server/db/capability-events';
+import { buildCapabilityEventSql, insertCapabilityEvent } from '$lib/server/db/capability-events';
 import { foldRevokeWins } from '$lib/server/event-log/fold';
 
 const BUNDLE_BY_ROLE: Record<SimMemberRole, string> = {
@@ -196,7 +196,7 @@ export async function foldManagedSimCount(db: Database, identityId: string): Pro
 // that holds the bundle. A new grant goes to the principal id the caller passed.
 // Writes are index-BLIND by design: they append role events without checking sim_index.
 // Reads (above) gate on the index, so a grant only surfaces once the sim exists. The
-// caller (createSim) inserts the index row before the manager grant. Do not add an
+// caller (createSim) writes the index row and the manager grant in one batch. Do not add an
 // index gate here — the read/write asymmetry is intentional.
 
 type HeldBundle = { principalId: string; ability: string };
@@ -287,6 +287,19 @@ export async function addSimRole(
   if (held.length > 0) return { added: false };
   await insertCapabilityEvent(db, roleEvent(simId, userId, BUNDLE_BY_ROLE[role], 'grant', actorId));
   return { added: true };
+}
+
+/**
+ * The manager grant addSimRole(db, simId, managerId, 'manager', managerId) appends for a sim no
+ * ledger event names yet, as one statement for a batch, gated on `onlyIf`. For such a sim
+ * addSimRole's held-bundle read finds nothing, so the row is the same: granted to the principal
+ * id passed, issued by it.
+ */
+export function buildFirstManagerGrantSql(simId: string, managerId: string, onlyIf: SQL): SQL {
+  return buildCapabilityEventSql(
+    roleEvent(simId, managerId, BUNDLE_BY_ROLE.manager, 'grant', managerId),
+    { onlyIf }
+  );
 }
 
 /** Revoke every role bundle held on the sim across the union (membership removal). */

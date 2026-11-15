@@ -1,6 +1,7 @@
 import { capabilityEvent } from './schema';
 import type { Database } from './index';
-import { appendEventAsync } from '$lib/server/event-log/append';
+import type { SQL } from 'drizzle-orm';
+import { buildAppendEventSql } from '$lib/server/event-log/append';
 
 export type NewCapabilityEvent = {
   id: string;
@@ -24,9 +25,16 @@ export type NewCapabilityEvent = {
  * this only makes the SQL order deterministic without relying on the random base58 id.
  */
 export async function insertCapabilityEvent(db: Database, row: NewCapabilityEvent): Promise<void> {
+  await db.run(buildCapabilityEventSql(row));
+}
+
+/**
+ * The statement insertCapabilityEvent runs, for a caller that puts it in a batch. `onlyIf` gates
+ * the append on a condition (see buildAppendEventSql); omitted, it is the same statement.
+ */
+export function buildCapabilityEventSql(row: NewCapabilityEvent, opts: { onlyIf?: SQL } = {}): SQL {
   const now = (row.now ?? new Date()).getTime();
-  await appendEventAsync(
-    db,
+  return buildAppendEventSql(
     capabilityEvent,
     {
       id: row.id,
@@ -39,6 +47,7 @@ export async function insertCapabilityEvent(db: Database, row: NewCapabilityEven
       parentId: row.parentId ?? null,
       actorId: row.actorId ?? null
     },
-    now
+    now,
+    opts
   );
 }

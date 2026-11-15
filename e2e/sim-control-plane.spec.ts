@@ -186,6 +186,49 @@ test.describe('registration', () => {
     }
   });
 
+  test('two accounts registering one new id at once: one manager, the other a reader', async ({
+    page,
+    browser
+  }, testInfo) => {
+    await loginAs(page, uniqueEmail('cp-race-a'));
+    const ctx = await freshContext(browser, testInfo);
+    try {
+      const other = await ctx.newPage();
+      await loginAs(other, uniqueEmail('cp-race-b'));
+      const simId = newId();
+      const pages = [page, other];
+      const statuses = (
+        await Promise.all(
+          pages.map((p) => p.request.post('/api/sims', { data: { simId, title: 'Race' } }))
+        )
+      ).map((r) => r.status());
+      expect([...statuses].sort()).toEqual([201, 409]);
+      const winner = pages[statuses.indexOf(201)];
+      const loser = pages[statuses.indexOf(409)];
+      await winner.goto('/about');
+      await loser.goto('/about');
+      const w = await openSimSocket(winner, simId);
+      expect((await framesAtLeast(winner, w, 2))[1]).toEqual({ type: 'access', write: true });
+      const l = await openSimSocket(loser, simId);
+      expect((await framesAtLeast(loser, l, 2))[1]).toEqual({ type: 'access', write: false });
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test('one account registering one new id twice at once: one 201, one 200', async ({ page }) => {
+    await loginAs(page, uniqueEmail('cp-twice'));
+    const simId = newId();
+    const results = await Promise.all([
+      page.request.post('/api/sims', { data: { simId } }),
+      page.request.post('/api/sims', { data: { simId } })
+    ]);
+    expect(results.map((r) => r.status()).sort()).toEqual([200, 201]);
+    await page.goto('/about');
+    const h = await openSimSocket(page, simId);
+    expect((await framesAtLeast(page, h, 2))[1]).toEqual({ type: 'access', write: true });
+  });
+
   test('a known device with no session gets 401 and no account', async ({
     page,
     context,

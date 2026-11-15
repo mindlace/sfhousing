@@ -16,16 +16,23 @@ import { mockConsole } from '$lib/server/test/mock-console';
 
 const mint = vi.hoisted(() => vi.fn());
 vi.mock('$lib/server/onboarding/pseudonymous-mint', () => ({ mintPseudonymousSession: mint }));
-// createSim stays real unless a case makes it throw.
-const createFails = vi.hoisted(() => ({ with: null as Error | null, env: [] as unknown[] }));
+// createSim stays real unless a case makes it throw: before it writes (`with`), or after its
+// batch committed (`after`).
+const createFails = vi.hoisted(() => ({
+  with: null as Error | null,
+  after: null as Error | null,
+  env: [] as unknown[]
+}));
 vi.mock('./sims', async (importOriginal) => {
   const real = await importOriginal<typeof import('./sims')>();
   return {
     ...real,
-    createSim: (args: Parameters<typeof real.createSim>[0]) => {
+    createSim: async (args: Parameters<typeof real.createSim>[0]) => {
       createFails.env.push(args.env);
       if (createFails.with) throw createFails.with;
-      return real.createSim(args);
+      const result = await real.createSim(args);
+      if (createFails.after) throw createFails.after;
+      return result;
     }
   };
 });
@@ -44,7 +51,7 @@ vi.mock('$lib/server/user-store/identity', async (importOriginal) => {
 });
 
 import { addMemberById, getRole, getSimTitle, listSimsForUser } from './sim-index';
-import { SimGrantFailed, removeSimMember } from './sims';
+import { removeSimMember } from './sims';
 import { startSim } from './start-sim';
 
 const opened: Array<() => void> = [];
@@ -52,6 +59,7 @@ afterEach(() => {
   for (const close of opened.splice(0)) close();
   mint.mockReset();
   createFails.with = null;
+  createFails.after = null;
   createFails.env = [];
   reseed.calls = 0;
   reseed.fails = null;
@@ -334,32 +342,45 @@ describe('startSim', () => {
     error.mockRestore();
   });
 
-  it('answers the generic line, never the error text, when creating the sim throws', async () => {
+  it('a create that throws: 500 failed, logged with the sim id only, and a retry creates it', async () => {
     const { db, event } = setup({ user: { id: 'u1', pseudonymous: false } });
     await seedUser(db, { id: 'u1', email: 'u1@test.com' });
-    createFails.with = new Error('D1_ERROR: database is locked');
-    const { error } = mockConsole('error');
-    const res = await startSim(event, { simId: newId(), title: 'Garden' });
-    expect(res).toMatchObject({
-      status: 400,
-      data: { error: SIMS_COPY.createFailed, code: 'failed' }
+    // A database error's message carries the bound parameters: an identity among them.
+    createFails.with = Object.assign(new Error('Failed query: insert … params: u1, Garden'), {
+      name: 'DrizzleQueryError'
     });
-    expect(error).toHaveBeenCalledWith('[start-sim] create failed', expect.any(String));
-    const logged = JSON.stringify(error.mock.calls);
-    expect(logged).not.toContain('u1');
-    expect(logged).not.toContain('Garden');
-    error.mockRestore();
-  });
-
-  it('answers 500 failed when the manager grant failed (createSim undid the row)', async () => {
-    const { db, event } = setup({ user: { id: 'u1', pseudonymous: false } });
-    await seedUser(db, { id: 'u1', email: 'u1@test.com' });
-    createFails.with = new SimGrantFailed();
-    const res = await startSim(event, { simId: newId(), title: 'Garden' });
+    const { error } = mockConsole('error');
+    const simId = newId();
+    const res = await startSim(event, { simId, title: 'Garden' });
     expect(res).toMatchObject({
       status: 500,
       data: { error: SIMS_COPY.createFailed, code: 'failed' }
     });
+    expect(error).toHaveBeenCalledWith('[start-sim] create failed', simId, expect.any(String));
+    const logged = JSON.stringify(error.mock.calls);
+    expect(logged).not.toContain('u1');
+    expect(logged).not.toContain('Garden');
+    error.mockRestore();
+    expect(await getSimTitle({ db, simId })).toBeNull();
+    expect(await ledgerOf(db, simId)).toEqual([]);
+    createFails.with = null;
+    expect(await startSim(event, { simId, title: 'Garden' })).toEqual({ simId, created: true });
+  });
+
+  it('a create that committed and then threw: the retry answers the no-op', async () => {
+    const { db, event } = setup({ user: { id: 'u1', pseudonymous: false } });
+    await seedUser(db, { id: 'u1', email: 'u1@test.com' });
+    createFails.after = new Error('connection reset');
+    const { error } = mockConsole('error');
+    const simId = newId();
+    expect(await startSim(event, { simId, title: 'Garden' })).toMatchObject({
+      status: 500,
+      data: { code: 'failed' }
+    });
+    error.mockRestore();
+    createFails.after = null;
+    expect(await startSim(event, { simId, title: 'Garden' })).toEqual({ simId, created: false });
+    expect(await ledgerOf(db, simId)).toEqual([{ principalId: 'u1', action: 'grant' }]);
   });
 
   it('a reseed that throws after the insert still answers created', async () => {

@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
 import type { Database } from '$lib/server/db';
 import { normTextToDriver } from '$lib/server/db/columns';
 import {
@@ -48,30 +48,20 @@ export async function insertSimIndexIfFree(args: {
   simId: string;
   title: string;
 }): Promise<boolean> {
+  const rows = await args.db.all<{ sim_id: string }>(buildInsertSimIndexIfFreeSql(args));
+  return rows.length === 1;
+}
+
+/** insertSimIndexIfFree's statement, for a batch; it returns `sim_id` when it inserted. */
+export function buildInsertSimIndexIfFreeSql(args: { simId: string; title: string }): SQL {
   const now = Date.now();
   // Raw SQL skips the normText column's NFC write, so the title goes through it here.
-  const rows = await args.db.all<{ sim_id: string }>(sql`
+  return sql`
     insert into ${simIndex} (sim_id, title, created_at, updated_at)
     select ${args.simId}, ${normTextToDriver(args.title)}, ${now}, ${now}
     where not ${hasPast(args.simId)}
     on conflict do nothing
-    returning sim_id`);
-  return rows.length === 1;
-}
-
-/**
- * The sim has an index row and no ledger event names it: a registration is between its insert
- * and its manager grant (or its grant failed and the row is being removed).
- */
-export async function simAwaitingGrant(db: Database, simId: string): Promise<boolean> {
-  const rows = await db.all<{ waiting: number }>(sql`select (
-    exists (select 1 from ${simIndex} where ${simIndex.simId} = ${simId})
-    and not exists (
-      select 1 from ${capabilityEvent}
-      where ${capabilityEvent.resourceType} = 'sim' and ${capabilityEvent.resourceId} = ${simId}
-    )
-  ) as waiting`);
-  return rows[0]?.waiting === 1;
+    returning sim_id`;
 }
 
 /** The id has a past: an index row, a takedown mark, a stored commit envelope or a ledger event. */

@@ -9,9 +9,24 @@ import {
   seedUser
 } from '$lib/server/test/auth-db';
 import { getRole, listSimsForUser } from '$lib/server/sims/sim-index';
+import { simIndex } from '$lib/server/db/schema';
+import { mockConsole } from '$lib/server/test/mock-console';
 
 const mint = vi.hoisted(() => vi.fn());
 vi.mock('$lib/server/onboarding/pseudonymous-mint', () => ({ mintPseudonymousSession: mint }));
+// newId stays real unless a case hands the next server-minted id.
+const minted = vi.hoisted(() => ({ next: null as string | null }));
+vi.mock('$lib/server/ids/factory', async (importOriginal) => {
+  const real = await importOriginal<typeof import('$lib/server/ids/factory')>();
+  return {
+    ...real,
+    newId: () => {
+      const id = minted.next;
+      minted.next = null;
+      return id ?? real.newId();
+    }
+  };
+});
 
 import { createInvite } from '$lib/server/invites/control-plane';
 import { actions, load } from './+page.server';
@@ -21,6 +36,7 @@ const opened: Array<() => void> = [];
 afterEach(() => {
   for (const close of opened.splice(0)) close();
   mint.mockReset();
+  minted.next = null;
 });
 
 function setup(
@@ -188,6 +204,44 @@ describe('/sims load', () => {
     expect(res.sims).toEqual([]);
     expect(limit).toHaveBeenCalledWith({ key: 'sim_start:u1' });
     expect(store.has('sfh_pending_sim')).toBe(false);
+  });
+
+  it('a resume whose create throws keeps the stash, logs, and lists', async () => {
+    // No principal row for the user: the grant's foreign key fails the batch.
+    const { db, event, store } = setup({
+      pending: 'Resumed',
+      user: { id: 'ghost', pseudonymous: false }
+    });
+    const { error } = mockConsole('error');
+    const res = (await load(event())) as { sims: unknown[] };
+    expect(res.sims).toEqual([]);
+    expect(store.get('sfh_pending_sim')).toBe('Resumed');
+    expect(error).toHaveBeenCalledWith(
+      '[sims] resume failed',
+      expect.any(String),
+      expect.any(String)
+    );
+    expect(JSON.stringify(error.mock.calls)).not.toContain('ghost');
+    error.mockRestore();
+    expect(await db.select().from(simIndex)).toEqual([]);
+  });
+
+  it('a resume whose server-minted id was not new keeps the stash and does not enter that sim', async () => {
+    const { db, event, store } = setup({
+      pending: 'Resumed',
+      user: { id: 'u1', pseudonymous: false }
+    });
+    await seedUser(db, { id: 'u1', email: 'u1@test.com' });
+    await seedUser(db, { id: 'm1', email: 'm1@test.com' });
+    const theirs = await seedSim(db, { title: 'Theirs', managerId: 'm1' });
+    minted.next = theirs;
+    const { error } = mockConsole('error');
+    const res = (await load(event())) as { sims: unknown[] };
+    expect(res.sims).toEqual([]);
+    expect(store.get('sfh_pending_sim')).toBe('Resumed');
+    expect(error).toHaveBeenCalledWith('[sims] resume failed', theirs, expect.any(String));
+    error.mockRestore();
+    expect(await getRole({ db, simId: theirs, userId: 'u1' })).toBeNull();
   });
 
   it.each([

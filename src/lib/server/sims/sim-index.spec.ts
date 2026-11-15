@@ -103,8 +103,8 @@ describe('insertSimIndexIfFree', () => {
   it('stores the title in NFC', async () => {
     const { db } = freshDb();
     const simId = newId();
-    await insertSimIndexIfFree({ db, simId, title: 'Café' });
-    expect(await getSimTitle({ db, simId })).toBe('Café');
+    await insertSimIndexIfFree({ db, simId, title: 'Cafe\u0301' });
+    expect(await getSimTitle({ db, simId })).toBe('Caf\u00e9');
   });
 });
 

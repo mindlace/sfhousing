@@ -9,6 +9,7 @@ import { requireMethod } from '$lib/server/auth/require-method';
 import { getDb } from '$lib/server/db';
 import { isE2eEnv } from '$lib/server/e2e/env';
 import { newId } from '$lib/server/ids/factory';
+import { loggable } from '$lib/server/sim-object/object-rules';
 import {
   clearPendingIdentifier,
   readPendingIdentifier
@@ -220,20 +221,38 @@ export const actions: Actions = {
     // here would stamp aria-invalid on a field this action never touched.
     if (!minted.ok) return fail(minted.status, { startFreshError: minted.message });
     if (!title) throw redirect(303, '/sims');
-    clearPendingSim(event.cookies);
     // The cookie is user-controlled: it gets the same checks as a typed title.
     const checked = checkSimTitle(title);
-    if (!('title' in checked)) throw redirect(303, '/sims');
+    if (!('title' in checked)) {
+      clearPendingSim(event.cookies);
+      throw redirect(303, '/sims');
+    }
     const db = getDb(event.platform!);
     await reseedHandleFromSim({ db, identityId: minted.user.id, simTitle: checked.title });
     // There is no browser store on this path: the server mints the sim's id.
-    const { simId } = await createSim({
-      db,
-      env: event.platform?.env,
-      simId: newId(),
-      title: checked.title,
-      managerId: minted.user.id
-    });
-    throw redirect(303, `/sims/${simId}`);
+    let simId = newId();
+    let created = false;
+    let failure = 'not created';
+    try {
+      // The answer names the id it registered (the one passed).
+      ({ created, simId } = await createSim({
+        db,
+        env: event.platform?.env,
+        simId,
+        title: checked.title,
+        managerId: minted.user.id
+      }));
+    } catch (e) {
+      failure = loggable(e);
+    }
+    if (created) {
+      clearPendingSim(event.cookies);
+      throw redirect(303, `/sims/${simId}`);
+    }
+    // The session is minted either way. A failed create, or a server-minted id that was somehow
+    // not new (never this person's sim then): keep the stash and land on /sims, whose load
+    // resumes it (rate-limited) as for any signed-in person.
+    console.error('[signin] start fresh create failed', simId, failure);
+    throw redirect(303, '/sims');
   }
 };

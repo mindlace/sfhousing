@@ -3,6 +3,7 @@ import { isRedirect, type ActionFailure } from '@sveltejs/kit';
 import { AUTH_COPY } from '$lib/account/copy';
 import { SIM_TITLE_MAX } from '$lib/members/copy';
 import { isValidId } from '$lib/server/ids/factory';
+import { mockConsole } from '$lib/server/test/mock-console';
 
 // Mocks for the action's collaborators.
 const enforceRate = vi.fn();
@@ -595,6 +596,34 @@ describe('signin startFresh action', () => {
     expect(isValidId(simId)).toBe(true);
     expect(clearPendingIdentifier).toHaveBeenCalled();
   });
+
+  it.each([
+    ['throws', () => createSim.mockRejectedValue(new Error('batch failed'))],
+    ['does not create', () => createSim.mockResolvedValue({ simId: 'sid-x', created: false })]
+  ])(
+    'a create that %s lands on /sims with the stash kept, for the /sims load to resume',
+    async (_name, arrange) => {
+      readPendingSim.mockReturnValue('Learn to swim');
+      arrange();
+      const { error } = mockConsole('error');
+      let caught: unknown;
+      try {
+        await actions.startFresh(makeStartFreshEvent());
+      } catch (e) {
+        caught = e;
+      }
+      expect(isRedirect(caught)).toBe(true);
+      expect((caught as { location: string }).location).toBe('/sims');
+      expect(clearPendingSim).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(
+        '[signin] start fresh create failed',
+        expect.any(String),
+        expect.any(String)
+      );
+      expect(JSON.stringify(error.mock.calls)).not.toContain('pseudo-u1');
+      error.mockRestore();
+    }
+  );
 
   it('drops a stashed title that fails the title check and lands on /sims', async () => {
     // The cookie is user-controlled: it gets the same checks as a typed title.

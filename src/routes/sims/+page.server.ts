@@ -1,4 +1,5 @@
 import { redirect } from '@sveltejs/kit';
+import { loggable } from '$lib/server/sim-object/object-rules';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import { newId } from '$lib/server/ids/factory';
@@ -18,24 +19,38 @@ export const load: PageServerLoad = async (event) => {
   // cleared, so the load falls through to the list (a load cannot fail()).
   const pendingTitle = readPendingSim(event.cookies);
   if (pendingTitle) {
-    clearPendingSim(event.cookies);
     // The cookie is user-controlled: it gets the same checks as a typed title, and the same
     // creation rate as any other registration.
     const checked = checkSimTitle(pendingTitle);
     if (
-      'title' in checked &&
-      (await simStartAllowed(platform!, locals.user.id)) &&
-      !(await simQuotaExceeded(db, locals.user))
+      !('title' in checked) ||
+      !(await simStartAllowed(platform!, locals.user.id)) ||
+      (await simQuotaExceeded(db, locals.user))
     ) {
+      clearPendingSim(event.cookies);
+    } else {
       // There is no browser store on this path: the server mints the sim's id.
-      const { simId } = await createSim({
-        db,
-        env: platform?.env,
-        simId: newId(),
-        title: checked.title,
-        managerId: locals.user.id
-      });
-      throw redirect(303, `/sims/${simId}`);
+      const simId = newId();
+      let created = false;
+      let failure = 'not created';
+      try {
+        ({ created } = await createSim({
+          db,
+          env: platform?.env,
+          simId,
+          title: checked.title,
+          managerId: locals.user.id
+        }));
+      } catch (e) {
+        failure = loggable(e);
+      }
+      if (created) {
+        clearPendingSim(event.cookies);
+        throw redirect(303, `/sims/${simId}`);
+      }
+      // A failed create, or a server-minted id that was somehow not new (never the caller's
+      // sim then): keep the stash, so the next visit to /sims tries again, and show the list.
+      console.error('[sims] resume failed', simId, failure);
     }
   }
 
