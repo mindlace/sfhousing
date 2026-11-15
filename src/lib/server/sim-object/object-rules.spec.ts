@@ -11,6 +11,7 @@ import {
   helloFrame,
   loggable,
   openStatus,
+  paysAsWriter,
   ROLE_READ_FAILED,
   readMessage,
   receivesLive,
@@ -245,6 +246,26 @@ describe('withResumed and receivesLive', () => {
     // socket's current attachment, so the revocation stands.
     const revoked = { ...att, write: false };
     expect(withResumed(revoked)).toEqual({ identity: 'id-1', write: false, resumed: true });
+  });
+});
+
+describe('paysAsWriter', () => {
+  it("pays from the writers' budget only for a valid attachment with write", () => {
+    expect(paysAsWriter(() => att)).toBe(true);
+    expect(paysAsWriter(() => ({ ...att, resumed: true }))).toBe(true);
+    expect(paysAsWriter(() => ({ ...att, write: false }))).toBe(false);
+    expect(paysAsWriter(() => ({ identity: null, write: false, resumed: false }))).toBe(false);
+  });
+
+  it('fails closed: an attachment it cannot read pays as a reader', () => {
+    for (const bad of [null, undefined, 'junk', { ...att, extra: 1 }, { ...att, write: 'yes' }]) {
+      expect(paysAsWriter(() => bad)).toBe(false);
+    }
+    expect(
+      paysAsWriter(() => {
+        throw new Error('closed');
+      })
+    ).toBe(false);
   });
 });
 

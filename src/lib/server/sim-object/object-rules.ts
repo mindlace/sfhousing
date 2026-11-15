@@ -152,6 +152,20 @@ export function receivesLive(attachment: unknown): boolean {
   return parseAttachment(attachment)?.resumed === true;
 }
 
+/**
+ * Whether a resume page is paid from the writers' budget: only when the socket's current
+ * attachment is valid and says write. Read at the moment of payment, so a write revoked while the
+ * resume waited its turn pays as a reader; an attachment that cannot be read pays as a reader
+ * (fail closed).
+ */
+export function paysAsWriter(readAttachment: () => unknown): boolean {
+  try {
+    return parseAttachment(readAttachment())?.write === true;
+  } catch {
+    return false;
+  }
+}
+
 /** The message rereadRoles throws when its role read fails. Fixed: it names no identity. */
 export const ROLE_READ_FAILED = 'role read failed';
 

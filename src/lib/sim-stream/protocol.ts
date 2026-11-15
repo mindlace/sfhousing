@@ -19,7 +19,7 @@ export type RefusedWhy = 'behind' | 'invalid' | 'newer' | 'not-writer' | 'limit'
 export type ServerFrame =
   | { type: 'hello'; build: string; protocol: number; dataset?: string }
   | { type: 'access'; write: boolean }
-  | { type: 'commits'; commits: Commit[] }
+  | { type: 'commits'; commits: Commit[]; more?: boolean }
   | { type: 'refused'; id: string | null; why: RefusedWhy };
 
 export type ClientFrame =
@@ -69,7 +69,11 @@ export function encodeFrame(
   return JSON.stringify(frame);
 }
 
-/** A commits frame from stored bodies, spliced as they are stored. */
-export function commitsFrame(bodies: readonly string[]): string {
-  return '{"type":"commits","commits":[' + bodies.join(',') + ']}';
+/**
+ * A commits frame from stored bodies, spliced as they are stored. `more` only on the last frame of
+ * a resume answer: false caught up, true send resume again. Live frames carry none.
+ */
+export function commitsFrame(bodies: readonly string[], more?: boolean): string {
+  const tail = more === undefined ? '' : `,"more":${more ? 'true' : 'false'}`;
+  return '{"type":"commits","commits":[' + bodies.join(',') + ']' + tail + '}';
 }

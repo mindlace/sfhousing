@@ -59,6 +59,17 @@ export interface ServerAppend {
   now: number;
 }
 
+/** The one answer a resume gets. */
+export type ResumeAnswer =
+  { kind: 'gone' } | { kind: 'limit' } | { kind: 'frames'; frames: string[]; more: boolean };
+
+export interface ResumeBounds {
+  /** Stored-body bytes the answer may hold; the first commit is sent whatever its size. */
+  maxBytes: number;
+  /** Pays for a page's bytes from a budget; false when spent. */
+  take: (bytes: number) => boolean;
+}
+
 export interface LogHostOptions {
   limits?: Limits;
   registry?: Registry;
@@ -172,26 +183,50 @@ export class LogHost {
   }
 
   /**
-   * Calls `deliver` inside the serialized section with commits frames, once per page of rows, or
-   * once with null when gone or after > tip. Nothing after the position gives one empty frame.
+   * Calls `deliver` once, inside the serialized section: `gone` when the sim is gone or after >
+   * tip; `limit` when the budget cannot pay for the first page; otherwise the commits after the
+   * position, at most `bounds.maxBytes` of stored bodies (always at least one commit), with
+   * `more` true when commits are left. Each page read is paid for (`bounds.take`) before it is
+   * kept; a refusal after the first cuts the answer there. Nothing after the position gives one
+   * empty frame and pays nothing. Default bounds: limits.resumeBytes and a budget that never
+   * refuses.
    */
-  resume(after: number, deliver: (frames: string[] | null) => void): Promise<void> {
+  resume(
+    after: number,
+    deliver: (a: ResumeAnswer) => void,
+    bounds: ResumeBounds = { maxBytes: this.#limits.resumeBytes, take: () => true }
+  ): Promise<void> {
     return this.#serial(() => {
-      if (this.gone() || after > this.tip()) {
-        deliver(null);
-        return;
-      }
+      if (this.gone() || after > this.tip()) return deliver({ kind: 'gone' });
+      const rows: StoredRow[] = [];
+      let bytes = 0;
       let from = after;
-      let any = false;
+      let more = false;
       for (;;) {
-        const rows = this.#store.rowsAfter(from, PAGE);
-        if (rows.length === 0) break;
-        any = true;
-        deliver(this.#frames(rows));
-        from = rows[rows.length - 1].seq;
-        if (rows.length < PAGE) break;
+        const page = this.#store.rowsAfter(from, PAGE);
+        const kept: StoredRow[] = [];
+        let pageBytes = 0;
+        for (const r of page) {
+          if (rows.length + kept.length > 0 && bytes + pageBytes + r.bytes > bounds.maxBytes) {
+            more = true;
+            break;
+          }
+          kept.push(r);
+          pageBytes += r.bytes;
+        }
+        if (kept.length > 0) {
+          if (!bounds.take(pageBytes)) {
+            if (rows.length === 0) return deliver({ kind: 'limit' });
+            more = true;
+            break;
+          }
+          rows.push(...kept);
+          bytes += pageBytes;
+          from = kept[kept.length - 1].seq;
+        }
+        if (more || page.length < PAGE) break;
       }
-      if (!any) deliver([commitsFrame([])]);
+      deliver({ kind: 'frames', frames: this.#frames(rows, more), more });
     });
   }
 
@@ -267,8 +302,9 @@ export class LogHost {
     return (this.#held = state);
   }
 
-  /** Commits frames of stored bodies, each within sendBytes or holding a single commit. */
-  #frames(rows: readonly StoredRow[]): string[] {
+  /** Commits frames of stored bodies, each within sendBytes or holding a single commit; only the
+   *  last carries `more`. No rows give one empty frame. */
+  #frames(rows: readonly StoredRow[], more: boolean): string[] {
     const frames: string[] = [];
     let bodies: string[] = [];
     let size = 0;
@@ -281,7 +317,7 @@ export class LogHost {
       bodies.push(r.body);
       size += r.bytes;
     }
-    if (bodies.length > 0) frames.push(commitsFrame(bodies));
+    frames.push(commitsFrame(bodies, more));
     return frames;
   }
 

@@ -22,7 +22,7 @@ import { canWrite } from './access';
 import { IndexRunner, takeDownInOrder } from './index-runner';
 import { syncSimIndex } from './index-sync';
 import { INDEX_RETRY_MS } from './limits';
-import { LogHost, type ServerAppend } from './log-host';
+import { LogHost, type ResumeBounds, type ServerAppend } from './log-host';
 import { simMigrations } from './migrations.generated';
 import {
   APPEND_FAILED,
@@ -30,6 +30,7 @@ import {
   helloFrame,
   loggable,
   openStatus,
+  paysAsWriter,
   readMessage,
   receivesLive,
   rereadChanges,
@@ -38,6 +39,7 @@ import {
   type ServerAppendResult
 } from './object-rules';
 import { OPEN_HEADER, parseOpenParams } from './open-params';
+import { ResumeBudgets } from './resume-budget';
 import * as schema from './schema';
 import { SimStore, type SimDb } from './store';
 
@@ -45,6 +47,8 @@ export class SimObject extends DurableObject<Env> {
   #host: LogHost | null = null;
   #migrateError: Error | null = null;
   #index: IndexRunner | null = null;
+  /** In memory only: full again after a wake. */
+  #budgets: ResumeBudgets | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -142,20 +146,20 @@ export class SimObject extends DurableObject<Env> {
     }
     const { frame, attachment, bytes } = read;
     if (frame.type === 'resume') {
-      let marked = false;
       try {
-        await host.resume(frame.after, (frames) => {
-          if (frames === null) {
-            this.#send(ws, encodeFrame({ type: 'refused', id: null, why: 'gone' }));
-            return;
-          }
-          for (const f of frames) this.#send(ws, f);
-          // On the first page: live commits stored after it reach this socket in order (I7).
-          if (!marked) {
-            marked = true;
-            this.#markResumed(ws);
-          }
-        });
+        await host.resume(
+          frame.after,
+          (a) => {
+            if (a.kind === 'gone' || a.kind === 'limit') {
+              return this.#send(ws, encodeFrame({ type: 'refused', id: null, why: a.kind }));
+            }
+            for (const f of a.frames) this.#send(ws, f);
+            // Live commits only once an answer reached the tip, in the same turn: none is stored
+            // between the last page read and the mark (I7). A socket already resumed stays so.
+            if (!a.more) this.#markResumed(ws);
+          },
+          this.#resumeBounds(ws)
+        );
       } catch (e) {
         console.error('[sim-object] resume failed', this.#label(), loggable(e));
         this.#close(ws, CLOSE_INTERNAL, 'internal');
@@ -302,6 +306,19 @@ export class SimObject extends DurableObject<Env> {
     } catch {
       // Already closed.
     }
+  }
+
+  /** A resume's bounds. Each page is paid from the budget of the socket's right as the Worker
+   *  last set it, read when the page is paid (inside the serialized section): a socket without
+   *  write never spends the writers' budget (paysAsWriter fails closed). */
+  #resumeBounds(ws: WebSocket): ResumeBounds {
+    const budgets = (this.#budgets ??= new ResumeBudgets(Date.now()));
+    const writers = budgets.bounds(true, Date.now);
+    const readers = budgets.bounds(false, Date.now);
+    return {
+      maxBytes: writers.maxBytes,
+      take: (n) => (paysAsWriter(() => ws.deserializeAttachment()) ? writers : readers).take(n)
+    };
   }
 
   /** Stores resumed: true on the socket's current attachment (re-read, so a concurrent

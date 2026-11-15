@@ -22,9 +22,12 @@ import {
   type AppendOutcome,
   type Author,
   type LogHostOptions,
+  type ResumeAnswer,
+  type ResumeBounds,
   type ServerAppend
 } from './log-host';
 import { IDENTITY_MAX } from './open-params';
+import { ResumeBudgets } from './resume-budget';
 import { SimStore, type StoredRow } from './store';
 import { draftTo, nameDraft, serverDraft } from './test/drafts';
 import { freshSimDb, storeWithRow } from './test/harness';
@@ -42,19 +45,33 @@ function make(opts: LogHostOptions = {}) {
 const append = (host: LogHost, d: unknown, now = T0, author = WRITER): Promise<AppendOutcome> =>
   host.append(d, (d as CommitDraft).id ?? null, utf8Bytes(JSON.stringify(d)), author, now);
 
-/** Every frame a resume delivers, page after page; null when it is answered gone. */
-async function resumeOf(host: LogHost, after: number): Promise<string[] | null> {
-  const pages: (string[] | null)[] = [];
-  await host.resume(after, (frames) => {
-    pages.push(frames);
-  });
-  expect(pages.length).toBeGreaterThan(0);
-  if (pages.includes(null)) {
-    expect(pages).toEqual([null]);
-    return null;
-  }
-  return pages.flat() as string[];
+/** The one answer a resume delivers. */
+async function answerOf(
+  host: LogHost,
+  after: number,
+  bounds?: ResumeBounds
+): Promise<ResumeAnswer> {
+  const got: ResumeAnswer[] = [];
+  await host.resume(
+    after,
+    (a) => {
+      got.push(a);
+    },
+    bounds
+  );
+  expect(got).toHaveLength(1);
+  return got[0];
 }
+
+/** The frames of a resume answer; null when it is answered gone. */
+async function resumeOf(host: LogHost, after: number): Promise<string[] | null> {
+  const a = await answerOf(host, after);
+  if (a.kind === 'gone') return null;
+  expect(a.kind).toBe('frames');
+  return a.kind === 'frames' ? a.frames : [];
+}
+
+const lastMore = (frames: string[]) => JSON.parse(frames[frames.length - 1]).more;
 
 const seqsOf = (frames: string[]): number[] =>
   frames.flatMap((f) => JSON.parse(f).commits.map((c: { seq: number }) => c.seq));
@@ -702,19 +719,25 @@ describe('LogHost resume', () => {
   it('answers the commits after a position, as stored', async () => {
     const { host, store } = await three();
     const frames = await resumeOf(host, 1);
-    expect(frames).toEqual([commitsFrame(store.rowsAfter(1, ALL).map((r) => r.body))]);
+    expect(frames).toEqual([
+      commitsFrame(
+        store.rowsAfter(1, ALL).map((r) => r.body),
+        false
+      )
+    ]);
   });
 
-  it('chunks a long answer', async () => {
+  it('chunks a long answer, marking only its last frame', async () => {
     const { host } = await three({ limits: { ...LIMITS, sendBytes: 1 } });
     const frames = (await resumeOf(host, 0)) ?? [];
     expect(frames.map((f) => seqsOf([f]))).toEqual([[1], [2], [3]]);
+    expect(frames.map((f) => JSON.parse(f).more)).toEqual([undefined, undefined, false]);
   });
 
   it('answers one empty frame when there is nothing after', async () => {
     const { host } = await three();
-    expect(await resumeOf(host, 3)).toEqual([commitsFrame([])]);
-    expect(await resumeOf(make().host, 0)).toEqual([commitsFrame([])]);
+    expect(await resumeOf(host, 3)).toEqual([commitsFrame([], false)]);
+    expect(await resumeOf(make().host, 0)).toEqual([commitsFrame([], false)]);
   });
 
   it('resume past the tip or on a gone sim is null', async () => {
@@ -724,22 +747,156 @@ describe('LogHost resume', () => {
     expect(await resumeOf(host, 0)).toBeNull();
   });
 
-  it('delivers a log longer than one page page by page, in order and complete', async () => {
+  it('caps an answer by stored bytes, says more, and the answers join to the whole log', async () => {
     const { host, store } = make({ limits: { ...LIMITS, burst: 2000 } });
     const n = 1203;
     for (let s = 0; s < n; s++) await append(host, nameDraft(s, `N${s}`));
-    expect(store.totals().seq).toBe(n);
-    const pages: string[][] = [];
-    await host.resume(0, (frames) => {
-      expect(frames).not.toBeNull();
-      pages.push(frames ?? []);
+    const cap = store.rowsAfter(0, 300).reduce((t, r) => t + r.bytes, 0);
+    const seqs: number[] = [];
+    let after = 0;
+    let answers = 0;
+    for (;;) {
+      const a = await answerOf(host, after, { maxBytes: cap, take: () => true });
+      if (a.kind !== 'frames') throw new Error(a.kind);
+      answers++;
+      expect(lastMore(a.frames)).toBe(a.more);
+      for (const f of a.frames.slice(0, -1)) expect(JSON.parse(f).more).toBeUndefined();
+      const got = seqsOf(a.frames);
+      seqs.push(...got);
+      if (!a.more) break;
+      after = got[got.length - 1];
+    }
+    expect(seqs).toEqual(Array.from({ length: n }, (_, i) => i + 1));
+    expect(answers).toBeGreaterThan(4);
+    // The budget pays page by page: a refusal after the first page cuts the answer there.
+    let calls = 0;
+    const cut = await answerOf(host, 0, {
+      maxBytes: LIMITS.resumeBytes,
+      take: () => calls++ === 0
     });
-    expect(pages.length).toBeGreaterThan(1);
-    for (const page of pages) expect(seqsOf(page).length).toBeLessThanOrEqual(500);
-    expect(seqsOf(pages.flat())).toEqual(Array.from({ length: n }, (_, i) => i + 1));
-    expect(seqsOf((await resumeOf(host, 700)) ?? [])).toEqual(
-      Array.from({ length: n - 700 }, (_, i) => i + 701)
+    expect(cut).toMatchObject({ kind: 'frames', more: true });
+    expect(seqsOf((cut as { frames: string[] }).frames)).toEqual(
+      Array.from({ length: 500 }, (_, i) => i + 1)
     );
+  });
+
+  it('always sends one commit, even over the cap', async () => {
+    const { host } = await three();
+    const a = await answerOf(host, 0, { maxBytes: 1, take: () => true });
+    expect(a).toMatchObject({ kind: 'frames', more: true });
+    expect(seqsOf((a as { frames: string[] }).frames)).toEqual([1]);
+  });
+
+  it('pays each page for exactly the bytes it keeps', async () => {
+    const { host, store } = await three();
+    const rows = store.rowsAfter(0, ALL);
+    const paid: number[] = [];
+    const take = (n: number) => {
+      paid.push(n);
+      return true;
+    };
+    const cap = rows[0].bytes + rows[1].bytes;
+    expect(await answerOf(host, 0, { maxBytes: cap, take })).toMatchObject({ more: true });
+    expect(paid).toEqual([cap]);
+  });
+
+  it('refuses limit when the budget cannot pay for the first page', async () => {
+    const { host } = await three();
+    expect(await answerOf(host, 0, { maxBytes: LIMITS.resumeBytes, take: () => false })).toEqual({
+      kind: 'limit'
+    });
+  });
+
+  it("readers spending their budget leave a writer's resume answered (F1)", async () => {
+    const { host, store } = await three();
+    const all = store.rowsAfter(0, ALL).reduce((t, r) => t + r.bytes, 0);
+    const size = { burst: all, perSecond: 1 };
+    const budgets = new ResumeBudgets(T0, { writers: size, readers: size });
+    const at = () => T0;
+    expect((await answerOf(host, 0, budgets.bounds(false, at))).kind).toBe('frames');
+    expect(await answerOf(host, 0, budgets.bounds(false, at))).toEqual({ kind: 'limit' });
+    expect(await answerOf(host, 0, budgets.bounds(true, at))).toMatchObject({
+      kind: 'frames',
+      more: false
+    });
+    expect(await answerOf(host, 0, budgets.bounds(true, at))).toEqual({ kind: 'limit' });
+  });
+
+  it('a budget refills with the clock it is given', async () => {
+    const { host, store } = await three();
+    const all = store.rowsAfter(0, ALL).reduce((t, r) => t + r.bytes, 0);
+    const size = { burst: all, perSecond: all };
+    const budgets = new ResumeBudgets(T0, { writers: size, readers: size });
+    let now = T0;
+    const at = () => now;
+    expect((await answerOf(host, 0, budgets.bounds(false, at))).kind).toBe('frames');
+    expect(await answerOf(host, 0, budgets.bounds(false, at))).toEqual({ kind: 'limit' });
+    now = T0 + 1000;
+    expect(await answerOf(host, 0, budgets.bounds(false, at))).toMatchObject({ more: false });
+  });
+
+  it('answers nothing-after with one empty frame, more false, without paying', async () => {
+    const { host } = await three();
+    expect(await answerOf(host, 3, { maxBytes: 1, take: () => false })).toEqual({
+      kind: 'frames',
+      frames: [commitsFrame([], false)],
+      more: false
+    });
+  });
+
+  it('answers gone past the tip and after a takedown', async () => {
+    const { host } = await three();
+    expect(await answerOf(host, 4)).toEqual({ kind: 'gone' });
+    await host.takeDown(T0);
+    expect(await answerOf(host, 0)).toEqual({ kind: 'gone' });
+  });
+
+  it('a paged catch-up with appends between answers sees every commit once, in order (I7)', async () => {
+    // The object's rule: live commits only once an answer has more: false.
+    let subscribed = false;
+    const seen: number[] = [];
+    const { host } = make({
+      onCommit: (_, c) => {
+        if (subscribed) seen.push(c.seq);
+      }
+    });
+    for (let s = 0; s < 3; s++) await append(host, nameDraft(s, `N${s}`));
+    let after = 0;
+    let tip = 3;
+    // One commit per answer; an append made together with each of the first three resumes and
+    // with the one that reaches the tip (stored after it, so it must come live, once).
+    for (;;) {
+      const withAppend = tip < 6 || after === tip - 1;
+      const [answers] = await Promise.all([
+        (async () => {
+          const got: ResumeAnswer[] = [];
+          await host.resume(
+            after,
+            (a) => {
+              got.push(a);
+              if (a.kind === 'frames') {
+                seen.push(...seqsOf(a.frames));
+                if (!a.more) subscribed = true;
+              }
+            },
+            { maxBytes: 1, take: () => true }
+          );
+          return got;
+        })(),
+        withAppend ? append(host, nameDraft(tip, `L${tip}`)) : Promise.resolve(null)
+      ]);
+      if (withAppend) tip++;
+      expect(answers).toHaveLength(1);
+      const a = answers[0];
+      if (a.kind !== 'frames') throw new Error(a.kind);
+      if (!a.more) break;
+      after = seqsOf(a.frames).at(-1) as number;
+    }
+    expect(subscribed).toBe(true);
+    await append(host, nameDraft(tip, 'Live'));
+    await append(host, nameDraft(tip + 1, 'Live2'));
+    expect(tip).toBe(7);
+    expect(seen).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
   it('a resumer is delivered every later commit exactly once, in order (I7)', async () => {
@@ -753,9 +910,9 @@ describe('LogHost resume', () => {
     const ops = [
       append(host, nameDraft(0, 'A')),
       append(host, nameDraft(1, 'B')),
-      host.resume(1, (frames) => {
+      host.resume(1, (a) => {
         subscribed = true;
-        seen.push(...seqsOf(frames ?? []));
+        seen.push(...seqsOf(a.kind === 'frames' ? a.frames : []));
       }),
       append(host, nameDraft(2, 'C')),
       append(host, nameDraft(2, 'D')),

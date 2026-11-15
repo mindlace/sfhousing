@@ -53,6 +53,20 @@ describe('encoding', () => {
     expect(JSON.parse(commitsFrame([]))).toEqual({ type: 'commits', commits: [] });
   });
 
+  it('marks the last frame of a resume answer with more, and live frames with nothing', () => {
+    expect(JSON.parse(commitsFrame(['{"seq":1}'], true))).toEqual({
+      type: 'commits',
+      commits: [{ seq: 1 }],
+      more: true
+    });
+    expect(JSON.parse(commitsFrame([], false))).toEqual({
+      type: 'commits',
+      commits: [],
+      more: false
+    });
+    expect(commitsFrame(['{"seq":1}'])).toBe('{"type":"commits","commits":[{"seq":1}]}');
+  });
+
   it('encodes other frames as JSON', () => {
     expect(JSON.parse(encodeFrame({ type: 'refused', id: null, why: 'gone' }))).toEqual({
       type: 'refused',
