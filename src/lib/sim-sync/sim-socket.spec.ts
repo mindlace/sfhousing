@@ -37,14 +37,18 @@ interface Rig {
   views: SocketView[];
 }
 
-/** A store on a new sim with `edits` renames pending and stored, and a socket not started. */
+/**
+ * A store on a new sim with `edits` renames pending and stored, and a socket not started.
+ * `db: null`: a store with no database, whose head is sendable as soon as it is made.
+ */
 async function rig(
-  o: { hub?: HubOptions; online?: boolean; visible?: boolean; edits?: number } = {}
+  o: { hub?: HubOptions; online?: boolean; visible?: boolean; edits?: number; db?: null } = {}
 ): Promise<Rig> {
   const hub = new FakeHub(o.hub);
   const clock = new FakeClock();
   const net = new FakeNet({ online: o.online ?? true, visible: o.visible ?? true });
-  const store = new LogStore({ db: memorySimDb(), tabId: 'a', stamp });
+  const db = o.db === null ? null : memorySimDb();
+  const store = new LogStore({ db, tabId: 'a', stamp });
   const sim = newId();
   await store.open(sim);
   for (let i = 0; i < (o.edits ?? 0); i++) store.rename(`N${i}`);
@@ -253,7 +257,8 @@ describe('SimSocket: connection', () => {
   });
 
   it('C12 connections that reach live with an edit still pending back off 1 s, then 2 s', async () => {
-    const r = await rig({ edits: 1 });
+    // The edit is sent once live (Task 10): held at the object, so it stays pending.
+    const r = await rig({ hub: { hold: true }, edits: 1 });
     await live(r);
     expect(r.sock.view.phase).toBe('live');
     expect(r.store.pendingCount).toBe(1);
@@ -716,7 +721,8 @@ describe('SimSocket: resume', () => {
 
   it('C9 C10 a frame answered not-ready inside an answer: its end resumes again, not live', async () => {
     // An edit, so the sim is stored on the device and a reopen keeps its confirmed commits.
-    const r = await rig({ hub: { frameSize: 1 }, edits: 1 });
+    // Held at the object once sent (Task 10), so the edit never moves the tip.
+    const r = await rig({ hub: { frameSize: 1, hold: true }, edits: 1 });
     foreign(r, 'F0');
     foreign(r, 'F1');
     // Both frames of the answer come in one step: the store is reopened from inside the first.
@@ -738,8 +744,9 @@ describe('SimSocket: resume', () => {
   });
 
   it('C10 frames that came while the store was opening are fetched again, once, when it is ready', async () => {
-    // An edit, so the sim is stored on the device and a reopen keeps its confirmed commits.
-    const r = await rig({ edits: 1 });
+    // An edit, so the sim is stored on the device and a reopen keeps its confirmed commits;
+    // held at the object once sent (Task 10), so it never moves the tip.
+    const r = await rig({ hub: { hold: true }, edits: 1 });
     await live(r);
     const opening = r.store.open(r.sim);
     foreign(r, 'A');
@@ -925,8 +932,9 @@ describe('SimSocket: resume', () => {
   });
 
   it('C29 C10 a reopen between the frames of a page owes the resume and never stalls', async () => {
-    // An edit, so the sim is stored on the device and a reopen keeps its confirmed commits.
-    const r = await rig({ edits: 1 });
+    // An edit, so the sim is stored on the device and a reopen keeps its confirmed commits;
+    // held at the object once sent (Task 10), so it never moves the tip.
+    const r = await rig({ hub: { hold: true }, edits: 1 });
     await live(r); // tip 1: the start commit
     const s = r.hub.sockets[0];
     const a = foreign(r, 'A', { except: s });
@@ -1010,5 +1018,511 @@ describe('SimSocket: resume', () => {
     expect(r.hub.resumes).toEqual([0]);
     expect(r.sock.view).toEqual(OFF_VIEW);
     expect(r.clock.nextDelay()).toBeNull();
+  });
+});
+
+// The rows of the append table (Task 10). The hub stores a start commit when a writer opens an
+// empty sim, so the store's own first commit, made on parent 0, is re-applied on parent 1 by the
+// resume before it is ever sent: parents, resumes and stored ids below are one later than the
+// brief's wherever the sim starts empty.
+describe('SimSocket: appends', () => {
+  const sent = (r: Rig, id: string) => r.hub.appends.filter((d) => d.id === id);
+  const ids = (r: Rig) => r.hub.commits(r.sim).map((c) => c.id);
+  const kinds = (r: Rig, i = 0) =>
+    r.hub.sockets[i].sent.filter((t) => t !== 'ping').map((t) => JSON.parse(t).type);
+
+  it("A1 sends the stored head after the resume, one at a time, in the store's order", async () => {
+    const r = await rig({ hub: { hold: true }, edits: 3 });
+    const mine = r.store.pending.map((p) => p.draft.id);
+    await live(r);
+    expect(kinds(r)).toEqual(['resume', 'append']);
+    expect(r.hub.appends.map((d) => d.id)).toEqual([mine[0]]);
+    expect(r.sock.view.inFlight).toBe(mine[0]);
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(r.hub.appends.map((d) => d.id)).toEqual(mine.slice(0, 2));
+    r.hub.release();
+    await settle(r.hub, r.store);
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(ids(r).slice(1)).toEqual(mine);
+    expect(r.hub.appends.map((d) => d.id)).toEqual(mine);
+    expect(r.store.pendingCount).toBe(0);
+    expect(r.sock.view.inFlight).toBeNull();
+  });
+
+  it('A2 sends nothing while access says write: false, and sends once it says true', async () => {
+    const r = await rig({ hub: { write: false }, edits: 1 });
+    await live(r);
+    expect(r.hub.appends).toEqual([]);
+    expect(r.sock.view).toMatchObject({ phase: 'live', write: false });
+    r.hub.setAccess(true);
+    await settle(r.hub, r.store);
+    expect(r.hub.appends).toHaveLength(1);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('A3 not-writer holds the commit pending until access says write: true', async () => {
+    // Departures: hidden, so no unanswered ping reconnects (a new connection clears the hold,
+    // A15); and the hub sends access only on a change, so write goes false and back to true.
+    const r = await rig({ edits: 1, visible: false });
+    r.hub.refuseNext('not-writer');
+    await live(r);
+    expect(r.sock.view).toMatchObject({ hold: 'not-writer', inFlight: null });
+    r.clock.advance(120_000);
+    await settle(r.hub, r.store);
+    expect(r.hub.appends).toHaveLength(1);
+    expect(r.store.pendingCount).toBe(1);
+    r.hub.setAccess(false);
+    await settle(r.hub, r.store);
+    expect(r.sock.view).toMatchObject({ hold: 'not-writer', write: false });
+    r.hub.setAccess(true);
+    await settle(r.hub, r.store);
+    expect(r.hub.appends).toHaveLength(2);
+    expect(r.store.pendingCount).toBe(0);
+    expect(r.sock.view.hold).toBeNull();
+  });
+
+  it('A4 behind: the foreign commit arrives first, then the re-applied head is sent', async () => {
+    const r = await rig({ hub: { hold: true }, edits: 1 });
+    const id = r.store.pending[0].draft.id;
+    await live(r);
+    const f = foreign(r, 'F');
+    r.hub.release(); // parent 1 against tip 2: behind
+    await settle(r.hub, r.store);
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(sent(r, id).map((d) => d.parent)).toEqual([1, 2]);
+    expect(ids(r).slice(1)).toEqual([f.id, id]);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('A4 behind with a resume already under way waits for it rather than asking again', async () => {
+    const r = await rig({ hub: { hold: true }, edits: 1 });
+    const id = r.store.pending[0].draft.id;
+    await live(r);
+    const s = r.hub.sockets[0];
+    foreign(r, 'A', { except: s });
+    foreign(r, 'B'); // a gap for the store: a resume from 1
+    r.hub.release(); // ours, parent 1: behind
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 1]);
+    expect(sent(r, id).map((d) => d.parent)).toEqual([1, 3]);
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(r.store.pendingCount).toBe(0);
+    expect(r.store.tipSeq).toBe(4);
+  });
+
+  it('A5 behind with the tip unmoved resumes before sending again', async () => {
+    const r = await rig({ edits: 1 });
+    r.hub.refuseNext('behind');
+    await live(r);
+    expect(r.hub.resumes).toEqual([0, 1]);
+    expect(kinds(r)).toEqual(['resume', 'append', 'resume', 'append']);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('A6 invalid drops the commit, which the store reports, and sends the next', async () => {
+    const r = await rig({ edits: 2 });
+    const [first, second] = r.store.pending.map((p) => p.draft.id);
+    r.hub.refuseNext('invalid');
+    await live(r);
+    expect(r.store.drops.map((d) => d.id)).toEqual([first]);
+    expect(ids(r).slice(1)).toEqual([second]);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('A6 invalid naming a commit the store no longer has pending drops nothing else', async () => {
+    const r = await rig({ hub: { hold: true }, edits: 2 });
+    const [first, second] = r.store.pending.map((p) => p.draft.id);
+    await live(r);
+    expect(r.sock.view.inFlight).toBe(first);
+    r.store.dropPending(first); // gone from the store while it is in flight
+    await r.store.written();
+    const refused = { type: 'refused', id: first, why: 'invalid' };
+    r.hub.sockets[0].emit('message', JSON.stringify(refused));
+    await settle(r.hub, r.store);
+    expect(r.store.drops.map((d) => d.id)).toEqual([first]);
+    expect(r.sock.view.inFlight).toBe(second);
+    expect(r.store.pendingCount).toBe(1);
+  });
+
+  it('A7 limit holds, backs off 1 s, then sends again', async () => {
+    const r = await rig({ edits: 1 });
+    r.hub.refuseNext('limit');
+    await live(r);
+    expect(r.sock.view).toMatchObject({ hold: 'limit', inFlight: null });
+    r.clock.advance(999);
+    await settle(r.hub, r.store);
+    expect(r.hub.appends).toHaveLength(1);
+    r.clock.advance(1);
+    expect(r.sock.view.hold).toBeNull();
+    await settle(r.hub, r.store);
+    expect(r.hub.appends).toHaveLength(2);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('A7 limit in a row backs off longer; a confirmed append resets it', async () => {
+    const r = await rig({ edits: 2 });
+    r.hub.refuseNext('limit', 'limit');
+    await live(r);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.sock.view.hold).toBe('limit');
+    expect(r.clock.nextDelay()).toBe(2000);
+    r.clock.advance(2000);
+    await settle(r.hub, r.store);
+    expect(r.store.pendingCount).toBe(0);
+    r.hub.refuseNext('limit');
+    r.store.rename('More');
+    await settle(r.hub, r.store);
+    expect(r.store.pendingCount).toBe(1);
+    expect(r.sock.view.hold).toBe('limit');
+    expect(r.clock.nextDelay()).toBe(1000);
+  });
+
+  it.each(['full', 'newer'] as const)('A8 %s holds for good and keeps the commit', async (why) => {
+    const r = await rig({ edits: 1 });
+    r.hub.refuseNext(why);
+    await live(r);
+    r.hub.setAccess(false);
+    r.hub.setAccess(true);
+    r.clock.advance(300_000);
+    await settle(r.hub, r.store);
+    expect(r.sock.view.hold).toBe(why);
+    expect(r.hub.appends).toHaveLength(1);
+    expect(r.store.pendingCount).toBe(1);
+  });
+
+  it('A9 gone on an append halts and closes', async () => {
+    const r = await rig({ edits: 1 });
+    r.hub.refuseNext('gone');
+    await live(r);
+    expect(r.sock.view).toMatchObject({ phase: 'halted', halt: 'gone', inFlight: null });
+    expect(r.hub.sockets[0].closedWith).toBe(1000);
+    expect(r.store.pendingCount).toBe(1);
+    r.clock.advance(120_000);
+    expect(r.hub.sockets).toHaveLength(1);
+  });
+
+  it('A10 an append answered by silence (a duplicate) is confirmed by its copy on the stream', async () => {
+    const r = await rig({ hub: { hold: true }, edits: 2 });
+    await live(r);
+    // Departure: the version in flight is the one re-applied on the start commit.
+    const h = r.store.pending[0].draft;
+    expect(r.sock.view.inFlight).toBe(h.id);
+    r.hub.foreign(r.sim, structuredClone(h)); // another tab sent this very commit first
+    r.hub.release(); // ours is a duplicate: no frame
+    await settle(r.hub, r.store);
+    expect(r.hub.duplicates).toBe(1);
+    expect(r.sock.view.inFlight).not.toBe(h.id);
+    expect(r.sock.view.inFlight).not.toBeNull();
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(r.store.pendingCount).toBe(0);
+    expect(r.hub.commits(r.sim)).toHaveLength(3);
+  });
+
+  it('A11 a socket lost after its append was accepted resumes and never sends it again', async () => {
+    const r = await rig({ hub: { hold: true }, edits: 1 });
+    const id = r.store.pending[0].draft.id;
+    await live(r);
+    r.hub.release(); // accepted; its frame is queued
+    r.hub.closeAll(1006); // and lost
+    await settle(r.hub, r.store);
+    expect(r.sock.view).toMatchObject({ phase: 'waiting', inFlight: null });
+    expect(r.store.pendingCount).toBe(1);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(sent(r, id)).toHaveLength(1);
+    expect(r.store.pendingCount).toBe(0);
+    expect(r.hub.duplicates).toBe(0);
+  });
+
+  it('A12 a socket lost before its append was processed sends it again after the resume', async () => {
+    // Departure: the hub processes a held append even after its socket closed, as the object
+    // does. Here the append is lost on the way (mute), so the object never sees it.
+    const r = await rig({ edits: 1, hub: { write: false } });
+    const id = r.store.pending[0].draft.id;
+    await live(r);
+    const s = r.hub.sockets[0];
+    r.hub.mute = true;
+    s.emit('message', JSON.stringify({ type: 'access', write: true })); // sends the append
+    expect(r.sock.view.inFlight).toBe(id);
+    r.hub.flush();
+    r.hub.mute = false;
+    r.hub.setAccess(true);
+    r.hub.closeAll(1006);
+    await settle(r.hub, r.store);
+    expect(r.sock.view.inFlight).toBeNull();
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 0]);
+    expect(kinds(r, 0)).toEqual(['resume', 'append']);
+    expect(kinds(r, 1)).toEqual(['resume', 'append']);
+    // The first writer to open the empty sim (the new socket) made the start commit.
+    expect(ids(r).slice(1)).toEqual([id]);
+    expect(r.hub.duplicates).toBe(0);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('A12 an append that reached the object before its socket closed is stored once', async () => {
+    // The object keeps an append that reached it whatever happens to its socket: the copy sent
+    // again after the resume is a duplicate (silence), and the original's commit on the new
+    // connection's stream is what lets the next one go.
+    const r = await rig({ hub: { hold: true }, edits: 2 });
+    const [first, second] = r.store.pending.map((p) => p.draft.id);
+    await live(r);
+    r.hub.closeAll(1006);
+    await settle(r.hub, r.store);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 1]);
+    r.hub.release(); // the old socket's copy is stored; the new one's is a duplicate
+    await settle(r.hub, r.store);
+    expect(sent(r, first)).toHaveLength(2);
+    expect(r.hub.duplicates).toBe(1);
+    expect(r.sock.view.inFlight).toBe(second);
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(ids(r).slice(1)).toEqual([first, second]);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('A13 sends nothing once the store has another sim open', async () => {
+    const r = await rig();
+    await live(r);
+    await r.store.open(newId());
+    r.store.rename('Other');
+    await r.store.written();
+    await settle(r.hub, r.store);
+    expect(r.store.pendingCount).toBe(1);
+    expect(r.hub.appends).toEqual([]);
+  });
+
+  it('A14 an internal error on every append backs off longer; a confirmed append resets it', async () => {
+    const r = await rig({ edits: 1 });
+    r.hub.closeOnAppend = 3;
+    r.sock.start();
+    const delays: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      await settle(r.hub, r.store);
+      const d = r.clock.nextDelay()!;
+      delays.push(d);
+      r.clock.advance(d);
+    }
+    await settle(r.hub, r.store);
+    expect(delays).toEqual([1000, 2000, 4000]);
+    expect(r.store.pendingCount).toBe(0);
+    r.hub.closeAll(1011);
+    await settle(r.hub, r.store);
+    expect(r.clock.nextDelay()).toBe(1000);
+  });
+
+  it('A14 a confirmed append resets the backoff even with more left to send', async () => {
+    const r = await rig({ edits: 2 });
+    r.hub.closeOnAppend = 2;
+    r.sock.start();
+    await settle(r.hub, r.store);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.clock.nextDelay()).toBe(2000);
+    // The next connection: the first append is stored, the second closes the socket.
+    r.clock.advance(2000);
+    await settle(r.hub, r.store);
+    expect(r.store.pendingCount).toBe(0);
+    r.hub.closeOnAppend = 1;
+    r.store.rename('Third');
+    await settle(r.hub, r.store);
+    expect(r.store.pendingCount).toBe(1);
+    expect(r.sock.view.phase).toBe('waiting');
+    expect(r.clock.nextDelay()).toBe(1000);
+  });
+
+  it('A15 full outlives a reconnect', async () => {
+    const r = await rig({ edits: 1 });
+    r.hub.refuseNext('full');
+    await live(r);
+    r.hub.closeAll(1011);
+    await settle(r.hub, r.store);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.hub.sockets).toHaveLength(2);
+    expect(r.sock.view).toMatchObject({ phase: 'live', hold: 'full' });
+    expect(r.hub.appends).toHaveLength(1);
+  });
+
+  it('A15 a new connection clears not-writer and limit', async () => {
+    const r = await rig({ edits: 2 });
+    r.hub.refuseNext('not-writer');
+    await live(r);
+    expect(r.sock.view.hold).toBe('not-writer');
+    r.hub.closeAll(1011);
+    await settle(r.hub, r.store);
+    expect(r.sock.view.hold).toBe('not-writer');
+    r.hub.refuseNext('limit');
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.sock.view.hold).toBe('limit');
+    expect(r.store.pendingCount).toBe(2);
+    r.hub.closeAll(1011);
+    await settle(r.hub, r.store);
+    r.clock.advance(r.clock.nextDelay()!);
+    expect(r.sock.view.hold).toBeNull();
+    await settle(r.hub, r.store);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('A16 a refusal naming an id that is not in flight is ignored', async () => {
+    const r = await rig({ hub: { hold: true }, edits: 1 });
+    const id = r.store.pending[0].draft.id;
+    await live(r);
+    for (const why of ['invalid', 'gone', 'not-writer', 'behind'] as const) {
+      r.hub.sockets[0].emit('message', JSON.stringify({ type: 'refused', id: newId(), why }));
+    }
+    expect(r.store.drops).toEqual([]);
+    expect(r.sock.view).toMatchObject({ phase: 'live', hold: null, inFlight: id });
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(sent(r, id)).toHaveLength(1);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it("A17 a limit refusal with no id is the resume's, even with an append in flight", async () => {
+    const r = await rig({ hub: { hold: true }, edits: 1 });
+    const id = r.store.pending[0].draft.id;
+    await live(r);
+    expect(r.sock.view.inFlight).toBe(id);
+    r.hub.sockets[0].emit('message', JSON.stringify({ type: 'refused', id: null, why: 'limit' }));
+    expect(r.sock.view.hold).toBeNull();
+    expect(r.sock.view.inFlight).toBe(id);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 1]);
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(sent(r, id)).toHaveLength(1);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('A18 an owed resume blocks sending until its answer (S1)', async () => {
+    const r = await rig({ hub: { write: false }, edits: 1 });
+    await live(r);
+    r.hub.setAccess(true); // queued, not delivered
+    const opening = r.store.open(r.sim);
+    r.hub.flush(); // access arrives while the store opens: nothing can be sent
+    expect(kinds(r)).toEqual(['resume']);
+    await opening; // the store is ready again: the owed resume goes first
+    expect(kinds(r)).toEqual(['resume', 'resume']);
+    await settle(r.hub, r.store);
+    expect(kinds(r)).toEqual(['resume', 'resume', 'append']);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('a newer hold is never lifted by write access or by a limit wait', async () => {
+    const r = await rig({ hub: { hold: true }, edits: 1, visible: false });
+    await live(r);
+    r.hub.refuseNext('limit');
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(r.sock.view.hold).toBe('limit');
+    // A newer build's commit stalls the connection: newer replaces limit.
+    const newer = draftOf(1, [nameChange('L')], { shapes: SHAPES_REVISION + 1 });
+    r.hub.storeRaw(r.sim, stamped(newer, 2));
+    await settle(r.hub, r.store);
+    expect(r.sock.view.hold).toBe('newer');
+    r.clock.advance(1000); // the limit wait ends
+    const s = r.hub.sockets[0];
+    s.emit('message', JSON.stringify({ type: 'access', write: false }));
+    s.emit('message', JSON.stringify({ type: 'access', write: true }));
+    await settle(r.hub, r.store);
+    expect(r.sock.view.hold).toBe('newer');
+    expect(kinds(r)).toEqual(['resume', 'append']);
+  });
+
+  it('a newer hold from an append outlives a reconnect and write access', async () => {
+    const r = await rig({ edits: 1, visible: false });
+    r.hub.refuseNext('newer');
+    await live(r);
+    r.hub.closeAll(1011);
+    await settle(r.hub, r.store);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    r.hub.sockets[1].emit('message', JSON.stringify({ type: 'access', write: true }));
+    await settle(r.hub, r.store);
+    expect(r.sock.view).toMatchObject({ phase: 'live', hold: 'newer' });
+    expect(r.hub.appends).toHaveLength(1);
+  });
+
+  it('a burst of edits goes one at a time, each after the last came back', async () => {
+    const r = await rig({ hub: { hold: true }, edits: 1 });
+    await live(r);
+    for (let i = 0; i < 4; i++) r.store.rename(`B${i}`);
+    await settle(r.hub, r.store);
+    expect(r.hub.appends).toHaveLength(1);
+    for (let i = 0; i < 5; i++) {
+      r.hub.release();
+      await settle(r.hub, r.store);
+      expect(r.hub.appends).toHaveLength(Math.min(i + 2, 5));
+    }
+    expect(r.hub.appends.map((d) => d.parent)).toEqual([1, 2, 3, 4, 5]);
+    expect(r.hub.duplicates).toBe(0);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('a store with no database: the head re-applied inside receive is sent once, as re-applied', async () => {
+    const r = await rig({ hub: { hold: true }, db: null, edits: 1 });
+    const id = r.store.pending[0].draft.id;
+    await live(r);
+    foreign(r, 'F');
+    r.hub.release(); // behind
+    await settle(r.hub, r.store);
+    expect(sent(r, id).map((d) => d.parent)).toEqual([1, 2]);
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('a store subscriber that stops the socket inside the receive confirming an append', async () => {
+    const r = await rig({ hub: { hold: true }, edits: 2 });
+    await live(r);
+    r.store.subscribe(() => {
+      if (r.store.pendingCount === 1) r.sock.stop();
+    });
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(r.sock.view).toEqual(OFF_VIEW);
+    expect(r.hub.appends).toHaveLength(1);
+    expect(r.clock.nextDelay()).toBeNull();
+  });
+
+  it('a store subscriber that reconnects inside that receive: only the new socket sends', async () => {
+    const r = await rig({ hub: { hold: true }, edits: 2 });
+    const [, second] = r.store.pending.map((p) => p.draft.id);
+    await live(r);
+    let once = false;
+    r.store.subscribe(() => {
+      if (once || r.store.pendingCount !== 1) return;
+      once = true;
+      r.sock.reconnect();
+    });
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(kinds(r, 0)).toEqual(['resume', 'append']);
+    expect(kinds(r, 1)).toEqual(['resume', 'append']);
+    expect(r.sock.view.inFlight).toBe(second);
+  });
+
+  it('a close with an append in flight clears it; nothing is sent while waiting', async () => {
+    const r = await rig({ hub: { hold: true }, edits: 1 });
+    await live(r);
+    r.hub.reject = true;
+    r.hub.closeAll(1011);
+    await settle(r.hub, r.store);
+    r.store.rename('While away');
+    await settle(r.hub, r.store);
+    expect(r.sock.view).toMatchObject({ phase: 'waiting', inFlight: null });
+    expect(r.hub.appends).toHaveLength(1);
   });
 });

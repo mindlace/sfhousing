@@ -122,6 +122,18 @@ function frameOf(text: string): ServerFrame | null {
   }
 }
 
+/** A hold that lasts for the life of the SimSocket, across connections (decision 15). */
+function lasting(h: Hold | null): boolean {
+  return h === 'full' || h === 'newer';
+}
+
+/** The frame's commits hold one with this id (the wire is not trusted to be well formed). */
+function holdsId(commits: readonly unknown[], id: string): boolean {
+  return commits.some(
+    (c) => typeof c === 'object' && c !== null && (c as { id?: unknown }).id === id
+  );
+}
+
 /** The stream URL of a sim on an origin: http becomes ws, https becomes wss. */
 function streamUrl(origin: string, simId: string): string {
   const base = origin.replace(/^http/, 'ws').replace(/\/+$/, '');
@@ -154,8 +166,9 @@ export class SimSocket {
   /** The `after` of the last resume sent on this connection. */
   #lastAfter = 0;
   /**
-   * An answer said `more: true` and the store's tip did not move past `lastAfter` (a page it
-   * cannot apply, decision 22): no further resume on this connection.
+   * The store met a newer build's commit on this connection (it answered `future`, on any
+   * frame): no further resume on this connection, never live, nothing sent (C29, decision 22).
+   * Also set, as a backstop only, by an answer's `more: true` page the store took nothing from.
    */
   #stalled = false;
   /** An answer on this connection reached the tip and nothing is outstanding, owed or stalled. */
@@ -164,6 +177,14 @@ export class SimSocket {
   #limitAttempt = 0;
   /** The `limit` backoff that sends the owed resume (C21). */
   #cancelLimit: (() => void) | null = null;
+  /**
+   * The append sent on this connection and not yet answered (S1): its id and the parent of the
+   * version sent. Cleared when a commits frame holds its id, by a refusal naming it, and by the
+   * end of the connection.
+   */
+  #inFlight: { id: string; parent: number } | null = null;
+  /** The wait of a `limit` hold on an append (A7); lifts only a `limit` hold. */
+  #cancelHoldLimit: (() => void) | null = null;
   /** The store was ready on this sim at its last notification (C10: turning ready owes one). */
   #here = false;
   /** A socket constructor has thrown once already: logged. */
@@ -265,7 +286,11 @@ export class SimSocket {
       this.#cancelHello = null;
       if (this.#current(s)) this.#dead();
     });
-    this.#set({ phase: 'connecting', write: null, inFlight: null });
+    // A new connection lifts `not-writer` and `limit`; `full` and `newer` last (A15, d15).
+    this.#cancelHoldLimit?.();
+    this.#cancelHoldLimit = null;
+    const hold = lasting(this.#view.hold) ? this.#view.hold : null;
+    this.#set({ phase: 'connecting', write: null, inFlight: null, hold });
   }
 
   /** Lets go of the current socket: closed 1000, its later events unheard (C17). */
@@ -316,8 +341,9 @@ export class SimSocket {
     this.#cancelPing?.();
     this.#cancelDeadline?.();
     this.#cancelLimit?.();
+    this.#cancelHoldLimit?.();
     this.#cancelHello = this.#cancelRetry = this.#cancelPing = this.#cancelDeadline = null;
-    this.#cancelLimit = null;
+    this.#cancelLimit = this.#cancelHoldLimit = null;
   }
 
   // ---- frames ----
@@ -337,10 +363,13 @@ export class SimSocket {
     switch (f.type) {
       case 'hello':
         return; // C26
-      case 'access':
-        this.#set({ write: f.write });
+      case 'access': {
+        // Write coming back lifts a `not-writer` hold, never another (A2).
+        const lift = f.write && this.#view.hold === 'not-writer';
+        this.#set(lift ? { write: f.write, hold: null } : { write: f.write });
         if (this.#current(s)) this.#trySend();
         return;
+      }
       case 'commits':
         this.#onCommits(s, f.commits, f.more);
         return;
@@ -432,6 +461,10 @@ export class SimSocket {
   #onCommits(s: SocketLike, commits: Commit[], more: boolean | undefined): void {
     const store = this.#o.store;
     const end = more !== undefined && this.#resuming;
+    // The append in flight came back (A10): accepted, or a duplicate of one already stored,
+    // whatever the store answers for the frame (decision 1).
+    const sent = this.#inFlight;
+    const back = sent !== null && holdsId(commits, sent.id);
     let r: ReturnType<SyncStore['receive']>;
     try {
       r = store.receive(this.#o.simId, commits);
@@ -442,6 +475,14 @@ export class SimSocket {
     }
     if (!this.#current(s)) return;
     if (end) this.#resuming = false;
+    if (back && this.#inFlight === sent) {
+      // Progress: both backoffs start again (decision 13, the rulings' second reset).
+      this.#inFlight = null;
+      this.#attempt = 0;
+      this.#limitAttempt = 0;
+      this.#set({ inFlight: null });
+      if (!this.#current(s)) return;
+    }
     const stale = r.kind === 'stale' && 'why' in r ? r.why : null;
     if (stale === 'not-ready') {
       // A stalled connection asks for nothing more, so nothing is owed on it.
@@ -496,10 +537,13 @@ export class SimSocket {
    * A refusal with no id is the resume's (decision 24): `gone` halts `diverged` (C20); any
    * other reason owes the resume and sends it after `backoffDelay(limitAttempt++)` (C21). A
    * reason other than `limit` cannot be the budget's: it is logged once per SimSocket by its
-   * protocol word. A refusal naming an append is Task 10's (A3 to A9, A16, A17).
+   * protocol word. A refusal naming an id is an append's (#onAppendRefused).
    */
   #onRefused(s: SocketLike, id: string | null, why: RefusedWhy): void {
-    if (id !== null) return;
+    if (id !== null) {
+      this.#onAppendRefused(s, id, why);
+      return;
+    }
     if (why === 'gone') {
       this.#halt('diverged');
       return;
@@ -508,8 +552,8 @@ export class SimSocket {
       this.#loggedRefused = true;
       console.error('[sim-sync] resume refused', why);
     }
-    if (this.#stalled) return; // asks for nothing more on this connection: nothing to owe
     this.#resuming = false;
+    if (this.#stalled) return; // asks for nothing more on this connection: nothing to owe
     this.#owed = true;
     this.#caughtUp = false;
     this.#cancelLimit?.();
@@ -522,8 +566,13 @@ export class SimSocket {
     this.#trySend();
   }
 
-  /** Clears what one connection's resume knew (C11, C22); `limitAttempt` is kept. */
+  /**
+   * Clears what one connection's resume and send knew (C11, C22): an append in flight is
+   * forgotten, and the next connection's resume shows whether it was stored (A11, A12).
+   * `limitAttempt` is kept.
+   */
   #resetResume(): void {
+    this.#inFlight = null;
     this.#resuming = false;
     this.#owed = false;
     this.#stalled = false;
@@ -533,8 +582,104 @@ export class SimSocket {
     this.#cancelLimit = null;
   }
 
-  /** Seam for Task 10 (rows A): sends nothing today. */
-  #trySend(): void {}
+  // ---- appends ----
+
+  /**
+   * Sends the store's head, when every condition holds at this moment (A1, S1, S2). It runs
+   * from frames, refusals, timers and every store notification, the ones inside `receive`,
+   * `setServerDataset` and `dropPending` included, so it relies on no call order: it checks
+   * that this is the running, current, caught-up connection with no resume outstanding, owed
+   * or stalled, nothing in flight, no hold and write access, and that the store is ready on
+   * this socket's sim; only then does it read `head()`.
+   */
+  #trySend(): void {
+    const s = this.#sock;
+    if (s === null || !this.#current(s) || !this.#helloed) return;
+    if (!this.#storeHere()) {
+      // Seen not ready (an open under way does not notify when it starts): its end owes a
+      // resume, so frames it may have missed are fetched again before anything is sent (C10).
+      this.#here = false;
+      return;
+    }
+    const canSend =
+      this.#view.phase === 'live' &&
+      this.#caughtUp &&
+      !this.#resuming &&
+      !this.#owed && // an owed resume is outstanding too (A18)
+      !this.#stalled &&
+      this.#inFlight === null &&
+      this.#view.hold === null &&
+      this.#view.halt === null &&
+      this.#view.write === true;
+    if (!canSend) return;
+    const head = this.#o.store.head();
+    if (head === null) return;
+    this.#inFlight = { id: head.id, parent: head.parent };
+    s.send(encodeFrame({ type: 'append', commit: head }));
+    this.#set({ inFlight: head.id });
+  }
+
+  /**
+   * A refusal naming an id. Only one naming the append in flight is acted on (A16); it ends
+   * that append. `not-writer` holds until write comes back (A3); `behind` sends the head again
+   * once the store's tip is past the parent sent (A4), else resumes first (A5); `invalid` is
+   * the one refusal that discards: the store drops it and reports it (A6, S4); `limit` holds
+   * and waits `backoffDelay(limitAttempt++)` (A7); `full` and `newer` hold for the life of the
+   * SimSocket (A8); `gone` halts (A9). Every other refusal keeps the commit pending.
+   */
+  #onAppendRefused(s: SocketLike, id: string, why: RefusedWhy): void {
+    const sent = this.#inFlight;
+    if (sent === null || sent.id !== id) return;
+    this.#inFlight = null;
+    const store = this.#o.store;
+    switch (why) {
+      case 'gone':
+        this.#halt('gone');
+        return;
+      case 'not-writer':
+      case 'full':
+      case 'newer':
+        this.#set({ inFlight: null, hold: this.#holdFor(why) });
+        return;
+      case 'limit': {
+        this.#set({ inFlight: null, hold: this.#holdFor('limit') });
+        if (!this.#current(s) || this.#view.hold !== 'limit') return;
+        this.#cancelHoldLimit?.();
+        const delay = backoffDelay(this.#limitAttempt++, this.#o.random);
+        this.#cancelHoldLimit = this.#o.clock.after(delay, () => {
+          this.#cancelHoldLimit = null;
+          // Lifts only its own hold: never `newer` or `full`, set meanwhile.
+          if (!this.#current(s) || this.#view.hold !== 'limit') return;
+          this.#set({ hold: null });
+          if (this.#current(s)) this.#trySend();
+        });
+        return;
+      }
+      case 'invalid':
+        this.#set({ inFlight: null });
+        if (!this.#current(s)) return;
+        store.dropPending(id);
+        if (this.#current(s)) this.#trySend();
+        return;
+      case 'behind':
+        this.#set({ inFlight: null });
+        if (!this.#current(s)) return;
+        // The store's tip moved past what was sent (the head is re-applied on it), or a resume
+        // under way will move it: send when the rest allows. Else ask for what is missing.
+        if (store.tipSeq > sent.parent || this.#resuming || this.#owed || this.#stalled) {
+          this.#trySend();
+        } else if (this.#resume(s)) {
+          this.#trySend();
+        }
+        return;
+    }
+  }
+
+  /** The hold a refusal asks for, unless one that lasts (`full`, `newer`) is already set. */
+  #holdFor(h: Hold): Hold {
+    const now = this.#view.hold;
+    return now !== null && lasting(now) ? now : h;
+  }
 
   // ---- liveness ----
 
