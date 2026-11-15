@@ -307,7 +307,7 @@
           <tr><th scope="row">Browser to server</th><td><code>resume {after}</code></td><td>Sent on every open: the last confirmed position the browser holds.</td></tr>
           <tr><th scope="row">Server to browser</th><td><code>commits</code></td><td>Commits in order, exactly as stored. The answer to <code>resume</code> and the live broadcast are the same frame.</td></tr>
           <tr><th scope="row">Browser to server</th><td><code>append {commit}</code></td><td>One pending commit.</td></tr>
-          <tr><th scope="row">Server to browser</th><td><code>refused {id, why}</code></td><td><code>behind</code>, <code>invalid</code>, <code>not-writer</code>, <code>limit</code>, <code>newer</code> (the commit was made under a shape revision this server does not know yet; the browser keeps it pending and sends it again) or <code>gone</code> (the sim was taken down, or the browser's position is past the tip).</td></tr>
+          <tr><th scope="row">Server to browser</th><td><code>refused {id, why}</code></td><td><code>behind</code>, <code>invalid</code>, <code>not-writer</code>, <code>limit</code> (the rate, or one commit's size: back off), <code>full</code> (the sim is at its commit-count or byte cap and takes no more commits: stop sending, keep the commit pending, offer a remix), <code>newer</code> (the commit was made under a shape revision this server does not know yet; the browser keeps it pending and sends it again) or <code>gone</code> (the sim was taken down, or the browser's position is past the tip).</td></tr>
         </tbody>
       </table>
       <ul>
