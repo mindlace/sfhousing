@@ -12,6 +12,14 @@ export function refuseUnlessSameOriginJson(event: { request: Request; url: URL }
   if (contentType.split(';')[0].trim().toLowerCase() !== 'application/json') {
     return json({ error: SIMS_COPY.jsonRequired }, { status: 415 });
   }
+  return refuseForeignOrigin(event);
+}
+
+/**
+ * 403 JSON for a request whose Origin header is present and not this origin; null otherwise.
+ * An empty Origin header is present, so it is refused.
+ */
+export function refuseForeignOrigin(event: { request: Request; url: URL }): Response | null {
   const origin = event.request.headers.get('origin');
   if (origin !== null && origin !== event.url.origin) {
     return json({ error: SIMS_COPY.crossOrigin }, { status: 403 });

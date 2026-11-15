@@ -24,6 +24,8 @@ There is no CI workflow on pull requests: `npm run signoff` is the only check, a
 
 `PUBLIC_APP_RELEASE` is set at deploy time to the commit SHA (staging) or tag (production).
 
+The `SIM` Durable Object binding and its `new_sqlite_classes` migration (`wrangler.jsonc`, tag `v1-sim-object`) ship with the deploy in both environments, with no manual step. A migration tag is never edited or reused. After this deploy, rolling the Worker back to a version without the `SimObject` class is not safe. See [sim-object.md](sim-object.md).
+
 ### Contributors (fork PRs)
 
 Only a maintainer can sign off a contributor's PR. The maintainer runs `gh pr checkout <n>` then `npm run signoff`. Signoff pushes to the PR's head branch only if the maintainer has push rights to it; otherwise re-open the PR from a branch in this repo and sign that off.

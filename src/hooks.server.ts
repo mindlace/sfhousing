@@ -80,6 +80,8 @@ function setDefaultHeaders(response: Response) {
 
 export const headersHandle: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
+  // A WebSocket upgrade's 101 has immutable headers and carries no document to protect.
+  if (response.status === 101) return response;
   try {
     setDefaultHeaders(response);
     return response;

@@ -1,0 +1,2097 @@
+<article>
+  <header>
+    <h1>Sim object plan</h1>
+    <p>Unit 2 of the sim message log: one Durable Object per sim that orders, checks, stores and streams its commits over a websocket, its own SQLite migration track, the worker entry and bindings, and the D1 copy of each sim's log.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>A sim that exists in <code>sim_index</code> can be opened at <code>GET /api/sims/&lt;simId&gt;/stream</code> as a websocket. Its Durable Object sends <code>hello</code> and <code>access</code>, answers <code>resume</code> with the commits after a position, accepts an <code>append</code> only on the tip and only from a writer, refuses with <code>behind</code>, <code>invalid</code>, <code>not-writer</code>, <code>limit</code> or <code>gone</code>, stores every accepted commit for good, sends it to every resumed socket, and then copies its envelope to D1.</dd>
+      <dt>Architecture</dt>
+      <dd>The logic lives in plain modules under <code>src/lib/server/sim-object/</code> that Node tests run against the same SQLite bundle the object applies (better-sqlite3): <code>SimStore</code> (rows), <code>decideAppend</code> (the order of checks), <code>LogHost</code> (one serialized append path: decide, hash, fold-check, insert, broadcast). The class <code>SimObject</code> only wires sockets, attachments, the alarm and D1 to <code>LogHost</code>. The SvelteKit route resolves the session and the role, checks <code>Origin</code>, and forwards the upgrade with the identity and the right to write in a header the browser cannot set. A post-build script wraps the adapter's <code>_worker.js</code> so it also exports the class; wrangler bundles it, resolving <code>$lib</code> through its <code>alias</code> setting.</dd>
+      <dt>Tech Stack</dt>
+      <dd>TypeScript, Cloudflare Durable Objects (SQLite storage, websocket hibernation API, alarms, RPC), Drizzle (<code>durable-sqlite</code>, <code>d1</code>, <code>better-sqlite3</code> in tests), <code>@planafoot/drizzle-cf-migrations</code> 1.2.1 (<code>safeMigrate</code>, <code>describeAppendOnlyBundle</code>, <code>freshBundleSqlite</code>), Vitest (project <code>server</code>), fast-check 4, Playwright against <code>wrangler dev</code>. No new dependency.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-14-sim-message-log-design.html">docs/superpowers/specs/2026-11-14-sim-message-log-design.html</a>, unit 2 of <code>#tbl-units</code>: R3, R18 (server side), R21 to R25, R41, R26 to R28 and <code>#tbl-frames</code>, R58, the Worker's part of R46 and R53, the <code>actor</code>, <code>seq</code>, <code>at</code> and <code>hash</code> rows of <code>#tbl-commit</code>, <code>#sec-constraints</code>, the Testing section's "Sim object" line, and the "Left to the builder" items for the SQLite schema, the limits, the cap on a sim's length and the worker entry. Built on unit 1, <a href="../../dev/sim-log.md">docs/dev/sim-log.md</a> ("Rules for callers").</dd>
+    </dl>
+    <p>Root: every path is under <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/sim-object</code> (branch <code>worktree-sim-object</code>, from <code>origin/main</code> at 01bb73e7).</p>
+    <p>Out of scope: browser-minted ids and changes to <code>createSim</code>, <code>startSim</code> or <code>POST /api/sims</code> (unit 3); the roster hook's body and its call from the fuse (unit 3, which calls <code>rereadRoles()</code> built here); deletion and takedown reaching the object (unit 3, which calls <code>takeDown()</code> built here); anything in the browser (units 4 and 5); remix.</p>
+  </section>
+
+  <section id="sec-invariants">
+    <h2>Invariants of the object</h2>
+    <p>Every task's tests serve these. They are stated once here; the spec names in brackets say where each comes from.</p>
+    <ol>
+      <li id="i1"><strong>I1 Gapless.</strong> Stored positions are exactly 1 to n; each row's <code>seq</code> is its position and its commit's <code>parent</code> is <code>seq - 1</code> (<code>#tbl-commit</code>, anti-goal "a log with a gap or a second order").</li>
+      <li id="i2"><strong>I2 Chain.</strong> <code>verifyChain</code> over the stored commits, from <code>GENESIS_HASH</code>, is null (<code>#tbl-commit</code> <code>hash</code>).</li>
+      <li id="i3"><strong>I3 State is the fold.</strong> Whenever <code>LogHost</code> holds a folded state, <code>rulesetText</code> of it equals <code>rulesetText(fold(stored commits))</code> (R7, sim-log.md "Rules for callers").</li>
+      <li id="i4"><strong>I4 Store, send, index.</strong> An accepted commit is inserted before any socket is sent it, and the D1 index is written after the send, never before; an index failure never refuses or delays a commit (R41).</li>
+      <li id="i5"><strong>I5 A refusal changes nothing.</strong> A refused or duplicate append leaves the rows, the tip, the hash and the folded state as they were. It does take a rate token.</li>
+      <li id="i6"><strong>I6 Once per id.</strong> No two rows share a commit <code>id</code>; an append whose id is stored is a silent no-op (<code>#tbl-commit</code> <code>id</code>).</li>
+      <li id="i7"><strong>I7 One order on every socket.</strong> A socket that has sent <code>resume</code> receives every commit after that position exactly once, in <code>seq</code> order: first the resume answer, then each new commit as it is stored (R26 to R28, R40).</li>
+      <li id="i8"><strong>I8 The Worker decides who writes.</strong> A socket writes only if the Worker said so at open, or a later <code>rereadRoles()</code> did; the browser never states who it is, and the actor stamped is the identity the Worker passed (R46, R53).</li>
+      <li id="i9"><strong>I9 Append-only.</strong> Rows are never updated or deleted, except all at once by <code>takeDown()</code> (R21); the object's migration track is append-only (R22).</li>
+    </ol>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions made in this plan</h2>
+    <ol>
+      <li id="d1"><strong>Worker entry: wrap the adapter's output, let wrangler bundle it.</strong> <code>scripts/worker-entry.ts</code> runs after <code>vite build</code>: it moves the adapter's <code>.svelte-kit/cloudflare/_worker.js</code> to <code>.svelte-kit/cloudflare-adapter/_worker.js</code> (same depth, so its relative imports of <code>../output/server/</code> still resolve) and writes a two-line <code>_worker.js</code> that re-exports its default and exports <code>SimObject</code> from <code>src/lib/server/sim-object/sim-object.ts</code>. <code>wrangler.jsonc</code> gains <code>"alias": { "$lib": "./src/lib" }</code> so wrangler's esbuild resolves the object's <code>$lib</code> imports. Reason: the adapter writes its worker to <code>main</code> and deletes that path first (<code>node_modules/@sveltejs/adapter-cloudflare/index.js:49-77</code>), so no source file can be <code>main</code>; wrangler already bundles <code>main</code> on deploy and dev, so this needs no new dependency, unlike planafoot's explicit esbuild pass (<code>planafoot/scripts/build/build-worker-impl.ts</code>). Checked at plan time with <code>wrangler deploy --dry-run</code> on a wrapper exporting <code>$lib/sim-log</code> and <code>$lib/server/sims/sim-roles</code>: it bundled (7.3 MB) and exported both. <code>alias</code> is a top-level-only field (absent from <code>RawEnvironment</code> in <code>node_modules/wrangler/config-schema.json</code>), so it applies to staging too.</li>
+      <li id="d2"><strong>Binding <code>SIM</code>, class <code>SimObject</code>, migration tag <code>v1-sim-object</code>, in both environments.</strong> Addressed by <code>getByName(simId)</code>; inside the object <code>ctx.id.name</code> is the sim id (also in <code>alarm()</code>). Reason: Durable Object bindings and migrations are not inherited by an environment (developers.cloudflare.com/durable-objects/reference/environments/); <code>ctx.id.name</code> is set for <code>getByName</code> callers since 2026-03-15 (developers.cloudflare.com/durable-objects/api/id/#name), so nothing stores the sim id.</li>
+      <li id="d3"><strong><code>npm run dev</code> cannot run the object.</strong> <code>getPlatformProxy</code> (adapter-cloudflare's dev platform) does not run the Worker's code and needs <code>script_name</code> for a Durable Object (developers.cloudflare.com/workers/wrangler/api/#getplatformproxy); wrangler warns "These will not work in local development" and leaves the binding out. The route answers 503 when <code>platform.env.SIM</code> is missing; the socket, its e2e tests and any manual check use <code>npm run preview</code> (<code>wrangler dev</code>, which runs the class from the bundle). Reason: a second dev Worker with <code>script_name</code> would mean a second config and process for a path only unit 4's page will use, and that page must already work with no connection (R15 to R17).</li>
+      <li id="d4"><strong>The object's SQLite schema.</strong> <code>commits(seq integer primary key, id text not null unique, hash text not null, bytes integer not null, body text not null)</code> and a one-row <code>sim_state(id integer primary key, indexed_seq integer not null default 0, gone_at integer)</code>. <code>body</code> is <code>JSON.stringify</code> of the stored <code>Commit</code>, sent on the socket as it is. Reason: "commits in order, exactly as stored" (<code>#tbl-frames</code>) is then a splice, not a re-serialisation; <code>hash</code> and <code>bytes</code> are columns so the tip and the size cap need no parse; no <code>CHECK</code> (the package's doctrine forbids it in a DO track).</li>
+      <li id="d5"><strong>Frames.</strong> Exactly <code>#tbl-frames</code>, as JSON text with a <code>type</code> field: <code>{type:'hello', build, protocol: 1}</code>, <code>{type:'access', write}</code>, <code>{type:'commits', commits}</code>, <code>{type:'refused', id, why}</code> from the server; <code>{type:'resume', after}</code> and <code>{type:'append', commit}</code> from the browser. They live in <code>src/lib/sim-stream/protocol.ts</code>, which has only type imports, so unit 4 and the e2e helper import it. Keepalive is the text <code>ping</code>, answered <code>pong</code> by the runtime's auto-response. Close codes: 1003 a binary frame, 1008 a malformed frame, 1011 an internal error, 4410 taken down. Reason: one module both ends read; the auto-response answers without waking the object (R23; developers.cloudflare.com/durable-objects/api/state/#setwebsocketautoresponse).</li>
+      <li id="d6"><strong>Resume.</strong> The answer is one or more <code>commits</code> frames of at most 1 MiB each (at least one commit per frame), or one empty <code>commits</code> frame when there is nothing after the position. Live commits go only to sockets that have resumed. A resume past the tip, or on a taken-down sim, is answered <code>refused {id: null, why: 'gone'}</code>. Reason: the empty frame tells the browser it is caught up; holding broadcasts until resume gives I7 by construction; a browser holding positions the server lacks has a log the server no longer has, and <code>gone</code> is the only <code>#tbl-frames</code> reason that says so (see <a href="#sec-open">Open questions</a>).</li>
+      <li id="d7"><strong>The order of the append checks.</strong> gone, not-writer, rate (<code>limit</code>), frame size (<code>limit</code>), parse (<code>invalid</code>), duplicate id (silent), sim length and total size (<code>limit</code>), parent (<code>behind</code>), then the fold check (<code>invalid</code>) and the stored size (<code>limit</code>). Reason: cheap refusals first, so a flood costs no parse; a duplicate before <code>behind</code>, because a resent commit's parent is always stale and refusing it <code>behind</code> would make the browser re-apply it on top of itself; sim-log.md "Rules for callers" puts every non-fold check before <code>apply</code>.</li>
+      <li id="d8"><strong>A duplicate id gets no frame.</strong> Reason: the browser sends <code>resume</code> before its pending commits (R17), so the resume answer already carried the stored copy, which is its confirmation (R26).</li>
+      <li id="d9"><strong>Limits</strong> (<code>LIMITS</code> in <code>limits.ts</code>): a stored commit at most 1 MiB (1,048,576 bytes of UTF-8 body); an incoming append frame at most 1 MiB + 4 KiB; a sim at most 100,000 commits and 512 MiB of bodies; 120 appends in a burst and 2 a second after (per sim); send frames at most 1 MiB. Reason: a whole painted policy is up to 262 KB (<code>#tbl-approaches</code>), so an import (R20) fits a commit; at plan time a fold of 5,001 commits took 3 ms in Node and a checked apply 0.03 ms (ballpark, busy machine), so 100,000 commits fold well inside the 30 s CPU limit (developers.cloudflare.com/durable-objects/platform/limits/); 512 MiB is far below 10 GB; 2 a second is faster than a person paints. All are builder's calls the owner may move.</li>
+      <li id="d10"><strong>Per-sim rate as an in-object token bucket, not a rate-limit binding.</strong> Reason: a binding counts per Cloudflare location and approximately (developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/#locality); one object per sim is single-threaded, so its own bucket is exact and needs no new namespace in either environment. <code>PUBLISH_RL</code> is not reused (R25). The bucket starts full whenever the object wakes, which only ever allows more.</li>
+      <li id="d11"><strong>One append at a time.</strong> <code>LogHost</code> runs <code>append</code>, <code>ensureStarted</code>, <code>resume</code> and <code>takeDown</code> through one promise chain. Reason: <code>chainHash</code> awaits <code>crypto.subtle</code>, and input gates hold only across storage operations (developers.cloudflare.com/durable-objects/best-practices/rules-of-durable-objects/#understand-how-input-and-output-gates-work), so two appends on one parent could otherwise both pass the parent check.</li>
+      <li id="d12"><strong>Hash, then apply in place, then insert, then send.</strong> The hash is computed first (the only await); <code>apply(commit, {check: true})</code> runs on the held state (atomic: a throw leaves it as it was); the row insert and the call to the send sink follow with no await between them. If the insert throws, the held state is dropped and refolded on the next append. Reason: sim-log.md allows apply in place when every other check comes first; no await between apply and insert keeps I3; the storage write and the frames then leave together behind the output gate (developers.cloudflare.com/durable-objects/best-practices/rules-of-durable-objects/, "output gates").</li>
+      <li id="d13"><strong>The fold is lazy.</strong> The object folds its rows (pages of 500) on the first append after it wakes, not on open or resume. Reason: most wakes are a reader resuming, which reads rows only.</li>
+      <li id="d14"><strong>R58's first commit.</strong> When a writer opens a sim with no commits, the object appends <code>{kind: 'system', label: 'Start', source: 'sim.start', restores: null, changes: [{op: 'set', key: 'sim', field: 'name', value: &lt;index title&gt;}]}</code> with a new id, <code>parent: 0</code>, <code>shapes: SHAPES_REVISION</code>, the route's dataset version and the server's build, and the opener as actor. It goes through the same append path. A title the name check refuses leaves the log empty and is logged. Reason: R58; the opening socket gets it in its own resume answer, so it is not sent to that socket first.</li>
+      <li id="d15"><strong>The index write.</strong> <code>sim_state.indexed_seq</code> is a watermark. After each send, the object starts one index pass if none is running: up to 50 unindexed commits go to D1 in one <code>batch</code>, then the watermark moves. On failure it logs once and sets an alarm 30 s ahead; <code>alarm()</code> runs the same pass and re-arms on failure. On wake, if the watermark is behind and no alarm is set, it sets one for now. The <code>sim_index</code> update only moves forward (<code>positions</code> below the new count). Reason: R41; alarms are at-least-once and retried (developers.cloudflare.com/durable-objects/api/alarms/), and a fresh alarm per failure avoids the six-retry limit.</li>
+      <li id="d16"><strong>D1 columns.</strong> <code>sim_index</code> gains <code>remixed_from</code> (text), <code>remixed_from_position</code> (integer), <code>positions</code> (integer, not null, default 0), <code>last_change_at</code> (ms timestamp) and <code>dataset_version</code> (text). <code>sim_commit</code> holds <code>sim_id, seq, kind, source, actor, at, build, dataset_version, bytes, restores_position, restores_as</code>, primary key <code>(sim_id, seq)</code>, indexes on <code>actor</code> and <code>dataset_version</code>, no foreign key. The object writes all but the two <code>remixed_from</code> columns. Reason: R24's list; <code>restores_*</code> beyond it because <code>#sec-study</code> asks for "undo and redo runs", which <code>kind</code> alone cannot tell from a jump; no foreign key, as <code>sim_invite</code> (rebuildable copies); the remix source has no field in the commit yet (see <a href="#sec-open">Open questions</a>).</li>
+      <li id="d17"><strong>Worker to object: one header.</strong> The route sets <code>x-sfh-sim-open</code> to JSON <code>{identity, write, title, datasetVersion, build}</code>, deleting any copy the browser sent; the object refuses an open without a valid one (400). <code>identity</code> is <code>locals.user.id</code> or null; <code>write</code> is false whenever identity is null. Reason: a websocket upgrade must go through <code>fetch</code>; planafoot's live route stamps identity the same way (<code>planafoot/src/routes/api/quests/[questId]/live/+server.ts</code>).</li>
+      <li id="d18"><strong>Who writes.</strong> <code>canWrite(role)</code> is <code>abilityDominates(ROLE_BUNDLE[role], 'sim.write')</code> (<code>src/lib/server/authz/ability.ts:48</code>). Reason: R47 names <code>sim.write</code>; tying to the ability, not to role names, follows any later bundle change.</li>
+      <li id="d19"><strong>Origin.</strong> A foreign <code>Origin</code> is refused 403; a missing one passes, exactly as <code>refuseUnlessSameOriginJson</code> treats it (<code>src/lib/server/security/same-origin-json.ts:16-19</code>). The comparison moves into a shared <code>refuseForeignOrigin</code>. Reason: <code>#sec-constraints</code> says "as refuseUnlessSameOriginJson does"; a browser always sends <code>Origin</code> on a websocket handshake, and a client without one carries no victim's cookies.</li>
+      <li id="d20"><strong>A 101 passes <code>headersHandle</code> untouched.</strong> Reason: a 101's headers are immutable, and the re-wrap in <code>src/hooks.server.ts:81-92</code> would build a <code>new Response</code> without the <code>webSocket</code>, dropping the upgrade (planafoot returns early on 101 for the same reason, <code>planafoot/src/hooks.server.ts:211-216</code>).</li>
+      <li id="d21"><strong><code>rereadRoles()</code> and <code>takeDown()</code> are built here.</strong> RPC methods on <code>SimObject</code>: the first re-reads each open socket's role from D1 (<code>foldSimRole</code>) and sends <code>access</code> where it changed; the second deletes every commit, marks the sim gone, and closes every socket with 4410. Unit 3 calls them. Reason: both act on sockets and storage only the object holds; the dispatch asks for the interface now. Their end-to-end tests wait for unit 3's callers.</li>
+      <li id="d22"><strong>A commit under a newer shape revision is refused <code>invalid</code>.</strong> Reason: <code>apply</code> throws <code>future-shapes</code> and nothing in <code>#tbl-frames</code> fits better; the browser compares <code>hello.build</code> first and reloads when it differs (see <a href="#sec-open">Open questions</a>).</li>
+      <li id="d23"><strong>Logs.</strong> The object logs only what is unexpected (an index failure, an insert failure, a refused start commit, a migrate failure), with the sim id and the error message, never a commit body, an identity or a refusal. Reason: <code>npm run signoff</code> fails on unexpected server stderr; no account identifiers in logs.</li>
+      <li id="d24"><strong>Where each behaviour is tested.</strong> The decision, the store, the host and its invariants, the index write, the route and the open header run in Vitest (Node, better-sqlite3 with the object's own bundle); the class's wiring runs in Playwright against <code>wrangler dev</code>. No <code>@cloudflare/vitest-pool-workers</code>. Reason: <code>#sec-constraints</code> and <code>docs/dev/testing.md</code> make Playwright the source of truth for Workers behaviour; the pool would be a new dependency for code that is thin by design.</li>
+      <li id="d25"><strong>The e2e socket client is the page's own <code>WebSocket</code>.</strong> <code>e2e/helpers/sim-socket.ts</code> opens it in <code>page.evaluate</code> on <code>/about</code>, keeps every received frame in <code>window.__sfhSockets</code>, and waits with <code>page.waitForFunction</code> on a frame count. Reason: Playwright's request context cannot open a websocket; a page sends the session cookie and runs under the app's CSP, so the test also proves <code>connect-src 'self'</code> admits the socket in Chromium.</li>
+    </ol>
+  </section>
+
+  <section id="sec-open">
+    <h2>Open questions</h2>
+    <ol>
+      <li id="q1"><strong>Where a remix records its source.</strong> R32 says a remix's first commit "records the sim and position it came from", and R24 and R35 put it on the index row, but <code>CommitDraft</code> has no field for it (<code>src/lib/sim-log/types.ts</code>). This plan adds the two <code>remixed_from</code> columns and writes neither. Recommendation: unit 3 takes the source in <code>POST /api/sims</code> (R51 already posts there first) and writes the columns; no envelope change.</li>
+      <li id="q2"><strong>Two cases <code>#tbl-frames</code> has no reason for.</strong> A resume past the tip is answered <code>gone</code> (<a href="#d6">decision 6</a>) and a commit from a newer shape revision <code>invalid</code> (<a href="#d22">decision 22</a>). Recommendation: keep both; unit 4 treats <code>gone</code> on resume as "this log is not the server's" and reloads on a differing <code>hello.build</code> before sending anything, so <code>invalid</code> never drops a newer build's edit.</li>
+      <li id="q3"><strong>Renames from <code>/sims</code>.</strong> <code>updateSimIndexTitle</code> writes <code>sim_index.title</code> directly. Once a sim has a log, the next index write sets the title back to the log's name (R42 makes the index a copy). Nothing writes commits before unit 4, so nothing regresses in this unit. Recommendation: unit 3 or 5 makes the rename a name commit through the object.</li>
+      <li id="q4"><strong>CSP and other engines.</strong> <code>connect-src 'self'</code> is proven only in Chromium by this unit's e2e; MDN notes <code>'self'</code> "does not resolve to websocket schemes in all browsers". Recommendation: unit 4, whose page opens the socket, runs one check in WebKit and Firefox and raises a CSP change with the owner only if one refuses.</li>
+    </ol>
+  </section>
+
+  <section id="sec-run">
+    <h2>What was run at plan time</h2>
+    <p>The plan's code has not been run as a whole: none of the modules exist yet. What was run, in this worktree, with every scratch file deleted afterwards:</p>
+    <ul>
+      <li>A Vitest probe of the log-core calls the object makes: <code>parseCommitDraft</code> of a name commit, <code>apply(..., { check: true })</code>, a same-value name set, <code>chainHash</code> then <code>parseCommit</code> and <code>verifyChain</code>, and an <code>invalid-change</code> <code>LogError</code> from deleting a missing key that left the state unchanged. Passed; the stored body was 340 bytes.</li>
+      <li>A probe of the store pattern: <code>drizzle-orm/better-sqlite3</code> typed as <code>BaseSQLiteDatabase&lt;'sync', any, schema&gt;</code> over <code>freshBundleSqlite</code>: sync insert, ordered select, <code>max()</code>, lookup by id, and a unique-id insert throwing. Passed.</li>
+      <li><code>drizzle-kit generate</code> on the object's schema (written to a scratch directory): two <code>CREATE TABLE</code> statements, <code>id</code> as <code>NOT NULL UNIQUE</code>.</li>
+      <li>30 <code>arbRuleset</code> samples diffed in sequence and applied with <code>{ check: true }</code>: all applied (the property test's edits are valid). A fold of 5,001 commits took 3 ms; a checked apply 0.03 ms (ballpark only: the machine was busy).</li>
+      <li><code>vite build</code>, then esbuild and <code>wrangler deploy --dry-run</code> on a wrapper exporting the adapter's default plus <code>$lib/sim-log</code> and <code>$lib/server/sims/sim-roles</code> through the <code>$lib</code> alias: both bundled; the dry run's output exported both. The DO's module graph (sim-log, sim-roles, the D1 schema, drizzle <code>d1</code> and <code>durable-sqlite</code>, <code>safeMigrate</code>) bundles with no <code>$app</code> or <code>$env</code> import.</li>
+      <li>Every TypeScript block in this plan was syntax-checked with esbuild; the test files parse. None was type-checked against the real modules, and no e2e code was run.</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li>Work only in <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/sim-object</code>, branch <code>worktree-sim-object</code>. Read its <code>CLAUDE.md</code> first. If <code>node_modules</code> is missing, run <code>npm install</code> first (it also runs <code>wrangler types</code> and <code>svelte-kit sync</code>).</li>
+      <li>Never compound shell commands as <code>cd ... &amp;&amp; cmd</code>. Run every command in the foreground; start no background work.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns, comments included. The code blocks in this plan are not prettier-formatted: run <code>npx prettier --write</code> on the files you touch before <code>npm run lint</code>. <code>npm run lint</code> and <code>npm run check</code> pass at the end of every task.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code> (<code>vite.config.ts:47</code>): every test calls <code>expect</code>, including inside fast-check properties (wrap <code>fc.assert</code> in <code>await expect(...).resolves</code> or <code>expect(() =&gt; ...).not.toThrow()</code>).</li>
+      <li>Never hand-edit a migration. A schema step is: edit the Drizzle schema, run the generate command, commit what it writes. The <code>sim</code> track is append-only for good: never delete <code>migrations/sim</code> or regenerate it from scratch (R22).</li>
+      <li>No module that a Vitest spec imports may import <code>cloudflare:workers</code>; only <code>src/lib/server/sim-object/sim-object.ts</code> does, and no spec imports it (type-only imports of it are fine).</li>
+      <li>Modules reachable from <code>sim-object.ts</code> import no <code>$app/*</code>, no <code>$env/*</code> and no build-time global (<code>__SFH_DATASET_VERSION__</code>): wrangler bundles them without Vite. The route passes what the object needs.</li>
+      <li>No new dependency. No secret, account id or email in code or logs; the object logs only per <a href="#d23">decision 23</a>.</li>
+      <li>Conventional Commits. Multi-line messages use several <code>-m</code> flags, never heredocs. No Claude attribution anywhere: no <code>Co-Authored-By</code>, no generated-with footers, no mention in code, comments or docs.</li>
+      <li>Port 4173 is shared with other sessions' test runs. Before anything that starts the preview server or runs Playwright, run <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>. If something you did not start is listening, do not kill it: wait for it to go away, then run. Leave nothing listening when done.</li>
+      <li>Any task that adds or changes an e2e spec: no fixed waits (<code>setTimeout</code> sleeps, <code>waitForTimeout</code>) and no raised timeouts or retries in specs; wait on a readiness signal or a received frame. After committing, <code>npx chreode timing-check --head HEAD</code> is clean. The changed specs pass <code>npx playwright test &lt;files&gt; --project chromium --repeat-each=5 --retries=0</code>. Read the run's <code>[WebServer]</code> stderr for new warnings: unexpected stderr fails signoff; allowlist in <code>chreode.config.ts</code> only an exact expected message, with a reason.</li>
+    </ul>
+    <section id="sec-commands">
+      <h3>Verification commands</h3>
+      <ul>
+        <li>This unit's Node specs: <code>npx vitest --run --project server src/lib/server/sim-object src/lib/sim-stream</code></li>
+        <li>One file: <code>npx vitest --run --project server src/lib/server/sim-object/log-host.spec.ts</code></li>
+        <li>End of every task: <code>npm run check</code> (prints <code>svelte-check found 0 errors and 0 warnings</code>) and <code>npm run lint</code> (exits 0).</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <p>Inputs the spec implies and no rule spells out, most likely to bite first. Each line's test is in the named task.</p>
+    <ol>
+      <li><strong>Two appends on one parent at once.</strong> Two tabs of one writer send on the same tip within the hash's await. Exactly one is stored; the other is <code>behind</code>; positions stay gapless. Task 4 (<code>two appends on one parent: one stored, one behind</code>).</li>
+      <li><strong>The index is down.</strong> D1 fails while commits arrive. Every commit is still stored and sent; the unindexed ones reach D1 later, in order, and replaying a batch writes nothing twice and never moves the index back. Task 1 (<code>is idempotent and never moves the index backwards</code>) and Task 4 (<code>tracks what the index has not seen</code>).</li>
+      <li><strong>A browser ahead of the server.</strong> A tab resumes from a position the server does not have (local state reset, a takedown). It is told <code>gone</code>, not sent an empty answer it would read as "caught up". Task 4 (<code>resume past the tip or on a gone sim is null</code>) and Task 8 (<code>resume answers from any position</code>).</li>
+      <li><strong>A commit from a newer build or with an unusable title.</strong> A commit under a newer shape revision is refused <code>invalid</code> and stored nowhere; a legacy index title the name check refuses leaves the log empty, and the socket still opens and reads. Task 4 (<code>refuses a commit under a newer shape revision and changes nothing</code>, <code>ensureStarted with a title the name check refuses leaves the log empty</code>).</li>
+      <li><strong>The insert itself fails.</strong> Storage throws after the fold check accepted the commit. Nothing is sent, the held state is dropped, and the next append folds again from the rows, so I3 holds. Task 4 (<code>a failed insert drops the held state</code>).</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files this plan creates or changes</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Task</th><th scope="col">Responsibility</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>src/lib/server/db/schema/simControlPlane.ts</code>, <code>migrations/d1/</code> (generated)</th><td>1</td><td><code>sim_index</code> columns, <code>sim_commit</code> (R24)</td></tr>
+        <tr><th scope="row"><code>src/lib/server/sim-object/index-sync.ts</code></th><td>1</td><td><code>syncSimIndex</code>, <code>envelopeRow</code>: the D1 copy</td></tr>
+        <tr><th scope="row"><code>drizzle.sim.config.ts</code>, <code>drizzle-cf.config.ts</code>, <code>package.json</code>, <code>chreode.config.ts</code></th><td>2</td><td>The <code>sim</code> track and <code>db:generate:sim</code> (R22)</td></tr>
+        <tr><th scope="row"><code>src/lib/server/sim-object/schema.ts</code>, <code>migrations.generated.ts</code> (generated), <code>migrations/sim/</code> (generated)</th><td>2</td><td>The object's SQLite tables and bundle</td></tr>
+        <tr><th scope="row"><code>src/lib/server/sim-object/store.ts</code>, <code>test/harness.ts</code></th><td>2</td><td><code>SimStore</code>: rows, tip, watermark, gone mark</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-stream/protocol.ts</code></th><td>3</td><td>Frames, parse and encode, ping, close codes</td></tr>
+        <tr><th scope="row"><code>src/lib/server/sim-object/limits.ts</code></th><td>3</td><td><code>LIMITS</code>, <code>RateBucket</code>, <code>utf8Bytes</code></td></tr>
+        <tr><th scope="row"><code>src/lib/server/sim-object/decide.ts</code>, <code>test/drafts.ts</code></th><td>3, 4</td><td><code>decideAppend</code>; draft builders for specs</td></tr>
+        <tr><th scope="row"><code>src/lib/server/sim-object/log-host.ts</code></th><td>4</td><td><code>LogHost</code>: the serialized append path, resume, R58, takedown, index bookkeeping</td></tr>
+        <tr><th scope="row"><code>src/lib/server/sim-object/open-params.ts</code>, <code>access.ts</code></th><td>5</td><td>The Worker-to-object header; <code>canWrite</code>, attachments, access changes</td></tr>
+        <tr><th scope="row"><code>src/lib/server/sim-object/sim-object.ts</code>, <code>stub.ts</code></th><td>6</td><td>The <code>SimObject</code> class; <code>simStub</code></td></tr>
+        <tr><th scope="row"><code>scripts/worker-entry.ts</code>, <code>package.json</code>, <code>wrangler.jsonc</code></th><td>6</td><td>Export the class from <code>main</code>; binding, migration, <code>alias</code> in both environments</td></tr>
+        <tr><th scope="row"><code>src/routes/api/sims/[simId]/stream/+server.ts</code>, <code>src/lib/server/security/same-origin-json.ts</code>, <code>src/hooks.server.ts</code></th><td>7</td><td>The socket route, the Origin check, the 101 pass-through</td></tr>
+        <tr><th scope="row"><code>e2e/helpers/sim-socket.ts</code>, <code>e2e/sim-object.spec.ts</code></th><td>8</td><td>The socket end to end against workerd</td></tr>
+        <tr><th scope="row"><code>docs/dev/sim-object.md</code>, <code>CLAUDE.md</code>, <code>docs/dev/developing.md</code>, <code>docs/dev/deploy.md</code>, <code>docs/dev/auth.md</code>, <code>docs/dev/testing.md</code></th><td>9</td><td>The developer page and what changes for a developer</td></tr>
+      </tbody>
+    </table>
+    <p>Every spec sits beside its module (<code>*.spec.ts</code>, Vitest project <code>server</code>), except the e2e spec.</p>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The D1 index columns, <code>sim_commit</code> and the index write</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/server/db/schema/simControlPlane.ts:9-14</code> (add five columns to <code>simIndex</code>; add <code>simCommit</code>).</li>
+      <li>Generated: a new <code>migrations/d1/&lt;stamp&gt;_&lt;name&gt;/</code> directory and its flat <code>migrations/d1/&lt;stamp&gt;_&lt;name&gt;.sql</code>, written by <code>npm run db:generate</code>.</li>
+      <li>Create: <code>src/lib/server/sim-object/index-sync.ts</code>, <code>src/lib/server/sim-object/index-sync.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>type Commit</code>, <code>type CommitKind</code>, <code>type Restores</code> from <code>$lib/sim-log</code>; <code>type Database</code> (<code>src/lib/server/db/index.ts:5</code>); <code>sqliteTable</code>, <code>text</code>, <code>integer</code>, <code>index</code>, <code>primaryKey</code> from <code>../columns</code> (<code>src/lib/server/db/columns.ts:60</code>); test helpers <code>freshDb</code>, <code>seedUser</code> (<code>src/lib/server/test/auth-db.ts</code>), <code>createSimRecord</code> (<code>src/lib/server/sims/sim-index.ts:16</code>).</li>
+      <li>Produces (Tasks 4 and 6 rely on these exact names):
+        <pre><code data-lang="ts">// simControlPlane.ts: simIndex gains
+remixedFrom: text('remixed_from'),
+remixedFromPosition: integer('remixed_from_position'),
+positions: integer('positions').notNull().default(0),
+lastChangeAt: integer('last_change_at', { mode: 'timestamp_ms' }),
+datasetVersion: text('dataset_version')
+
+export const simCommit = sqliteTable(
+  'sim_commit',
+  {
+    simId: text('sim_id').notNull(),
+    seq: integer('seq').notNull(),
+    kind: text('kind').$type&lt;CommitKind&gt;().notNull(),
+    source: text('source').notNull(),
+    actor: text('actor').notNull(),
+    at: integer('at', { mode: 'timestamp_ms' }).notNull(),
+    build: text('build').notNull(),
+    datasetVersion: text('dataset_version').notNull(),
+    bytes: integer('bytes').notNull(),
+    restoresPosition: integer('restores_position'),
+    restoresAs: text('restores_as').$type&lt;Restores['as']&gt;()
+  },
+  (t) =&gt; [
+    primaryKey({ columns: [t.simId, t.seq] }),
+    index('sim_commit_actor_idx').on(t.actor),
+    index('sim_commit_dataset_version_idx').on(t.datasetVersion)
+  ]
+);
+export type SimCommitRow = typeof simCommit.$inferSelect;
+
+// index-sync.ts
+/** One stored commit and the UTF-8 size of its stored body. */
+export interface IndexedCommit { commit: Commit; bytes: number }
+/** What the index row copies from the log's tip (R24, R42). */
+export interface IndexSummary {
+  positions: number;
+  lastChangeAt: number;
+  datasetVersion: string | null;
+  title: string;
+}
+export function envelopeRow(simId: string, c: IndexedCommit): typeof simCommit.$inferInsert;
+export async function syncSimIndex(
+  db: Database,
+  simId: string,
+  commits: readonly IndexedCommit[],
+  summary: IndexSummary
+): Promise&lt;void&gt;;</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing spec <code>src/lib/server/sim-object/index-sync.spec.ts</code>.
+        <pre><code data-lang="ts">import { afterEach, describe, expect, it } from 'vitest';
+import { asc, eq } from 'drizzle-orm';
+import { freshDb, seedUser } from '$lib/server/test/auth-db';
+import { createSimRecord } from '$lib/server/sims/sim-index';
+import { simCommit, simIndex } from '$lib/server/db/schema';
+import type { Commit } from '$lib/sim-log';
+import { envelopeRow, syncSimIndex, type IndexedCommit, type IndexSummary } from './index-sync';
+
+const opened: Array&lt;() =&gt; void&gt; = [];
+afterEach(() =&gt; {
+  for (const close of opened.splice(0)) close();
+});
+
+const T0 = 1_700_000_000_000;
+
+function commit(seq: number, over: Partial&lt;Commit&gt; = {}): IndexedCommit {
+  return {
+    bytes: 300 + seq,
+    commit: {
+      id: `id-${seq}`,
+      parent: seq - 1,
+      kind: 'edit',
+      label: 'Rename',
+      restores: null,
+      datasetVersion: 'fixture-0',
+      shapes: 1,
+      build: 'b1',
+      source: 'sim.name',
+      changes: [{ op: 'set', key: 'sim', field: 'name', value: `N${seq}` }],
+      seq,
+      actor: 'u1',
+      at: T0 + seq,
+      hash: 'a'.repeat(64),
+      ...over
+    }
+  };
+}
+
+const summary = (positions: number, title = 'Garden'): IndexSummary =&gt; ({
+  positions,
+  lastChangeAt: T0 + positions,
+  datasetVersion: 'fixture-0',
+  title
+});
+
+async function setup(sims = ['s1']) {
+  const t = freshDb();
+  opened.push(t.close);
+  await seedUser(t.db, { id: 'u1', email: 'u1@test.com' });
+  for (const simId of sims)
+    await createSimRecord({ db: t.db, simId, title: 'Garden', managerId: 'u1' });
+  return t;
+}
+
+const indexRow = async (db: Awaited&lt;ReturnType&lt;typeof setup&gt;&gt;['db'], simId: string) =&gt;
+  (await db.select().from(simIndex).where(eq(simIndex.simId, simId)))[0];
+
+describe('envelopeRow', () =&gt; {
+  it('copies the envelope and leaves the changes out', () =&gt; {
+    const row = envelopeRow(
+      's1',
+      commit(3, { kind: 'restore', restores: { position: 1, as: 'undo' } })
+    );
+    expect(row).toEqual({
+      simId: 's1',
+      seq: 3,
+      kind: 'restore',
+      source: 'sim.name',
+      actor: 'u1',
+      at: new Date(T0 + 3),
+      build: 'b1',
+      datasetVersion: 'fixture-0',
+      bytes: 303,
+      restoresPosition: 1,
+      restoresAs: 'undo'
+    });
+  });
+
+  it('writes null restores for an edit', () =&gt; {
+    expect(envelopeRow('s1', commit(1))).toMatchObject({
+      restoresPosition: null,
+      restoresAs: null
+    });
+  });
+});
+
+describe('syncSimIndex', () =&gt; {
+  it('a new sim_index row starts with no positions and no copies', async () =&gt; {
+    const { db } = await setup();
+    expect(await indexRow(db, 's1')).toMatchObject({
+      positions: 0,
+      lastChangeAt: null,
+      datasetVersion: null,
+      remixedFrom: null,
+      remixedFromPosition: null
+    });
+  });
+
+  it('writes each envelope and the index columns', async () =&gt; {
+    const { db } = await setup();
+    await syncSimIndex(db, 's1', [commit(1), commit(2)], summary(2, 'Renamed'));
+    const rows = await db.select().from(simCommit).orderBy(asc(simCommit.seq));
+    expect(rows.map((r) =&gt; [r.simId, r.seq, r.bytes])).toEqual([
+      ['s1', 1, 301],
+      ['s1', 2, 302]
+    ]);
+    expect(await indexRow(db, 's1')).toMatchObject({
+      positions: 2,
+      title: 'Renamed',
+      datasetVersion: 'fixture-0',
+      lastChangeAt: new Date(T0 + 2)
+    });
+  });
+
+  it('is idempotent and never moves the index backwards', async () =&gt; {
+    const { db } = await setup();
+    await syncSimIndex(db, 's1', [commit(1), commit(2)], summary(2, 'B'));
+    await syncSimIndex(db, 's1', [commit(1), commit(2)], summary(2, 'B'));
+    await syncSimIndex(db, 's1', [commit(1)], summary(1, 'A'));
+    expect(await db.select().from(simCommit)).toHaveLength(2);
+    expect(await indexRow(db, 's1')).toMatchObject({ positions: 2, title: 'B' });
+  });
+
+  it('leaves other sims alone', async () =&gt; {
+    const { db } = await setup(['s1', 's2']);
+    await syncSimIndex(db, 's1', [commit(1)], summary(1));
+    expect(await indexRow(db, 's2')).toMatchObject({ positions: 0, title: 'Garden' });
+  });
+
+  it('writes nothing for an empty batch', async () =&gt; {
+    const { db } = await setup();
+    await syncSimIndex(db, 's1', [], summary(0));
+    expect(await db.select().from(simCommit)).toHaveLength(0);
+    expect(await indexRow(db, 's1')).toMatchObject({ positions: 0 });
+  });
+});</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run it and see it fail (module <code>./index-sync</code> not found).
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sim-object/index-sync.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Add the five columns and <code>simCommit</code> to <code>src/lib/server/db/schema/simControlPlane.ts</code> exactly as in Interfaces. Import <code>type CommitKind</code> and <code>type Restores</code> from <code>$lib/sim-log</code> with <code>import type</code> (the drizzle-kit loader must not follow a value import into <code>$lib</code>). Extend the import from <code>../columns</code> with <code>index</code> and <code>primaryKey</code>. Update the table comment: <code>sim_index</code> and <code>sim_commit</code> are copies of each sim's log, rebuildable from the objects, never read to serve a sim's rules (R24).</li>
+      <li id="t1-s4"><input type="checkbox"> Generate the D1 migration and apply it locally.
+        <pre><code data-lang="sh">npm run db:generate
+npm run db:migrate</code></pre>
+        Expected: the classifier lists only <code>ALTER TABLE `sim_index` ADD ...</code> (five), <code>CREATE TABLE `sim_commit`</code> and two <code>CREATE INDEX</code> lines, with no violation; one new dated directory and one new flat <code>.sql</code> appear under <code>migrations/d1/</code>; <code>db:migrate</code> applies one migration. If the generated SQL is a table rebuild instead of <code>ADD</code>, stop: the columns must be nullable or <code>NOT NULL</code> with a constant default.</li>
+      <li id="t1-s5"><input type="checkbox"> Implement <code>envelopeRow</code> and <code>syncSimIndex</code> in <code>src/lib/server/sim-object/index-sync.ts</code>. <code>envelopeRow</code> maps the fields of <code>#tbl-commit</code> named in R24 plus <code>restores</code> (<a href="#d16">decision 16</a>), <code>at</code> as <code>new Date(at)</code>. <code>syncSimIndex</code> returns at once for an empty batch; otherwise it sends one <code>db.batch</code>: an <code>insert(simCommit).values(envelopeRow(...)).onConflictDoNothing()</code> per commit, then <code>update(simIndex).set({ positions, lastChangeAt: new Date(lastChangeAt), datasetVersion, title, updatedAt: new Date(lastChangeAt) }).where(and(eq(simIndex.simId, simId), lt(simIndex.positions, summary.positions)))</code>. The module imports nothing from <code>$app</code> or <code>$env</code> (it runs in the object).</li>
+      <li id="t1-s6"><input type="checkbox"> Run the spec and the existing sim and schema specs; all pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sim-object/index-sync.spec.ts src/lib/server/sims src/lib/server/db</code></pre>
+      </li>
+      <li id="t1-s7"><input type="checkbox"> <code>npm run check</code> and <code>npm run lint</code> pass.</li>
+      <li id="t1-s8"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/server/db/schema/simControlPlane.ts migrations/d1 src/lib/server/sim-object/index-sync.ts src/lib/server/sim-object/index-sync.spec.ts
+git commit -m "feat(sim-object): index columns and sim_commit in D1" -m "sim_index copies each sim's log: positions, last change, dataset version and the remix source; sim_commit holds each commit's envelope (R24)."</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The object's migration track and its store</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>drizzle.sim.config.ts</code>; <code>src/lib/server/sim-object/schema.ts</code>; <code>src/lib/server/sim-object/store.ts</code>, <code>store.spec.ts</code>; <code>src/lib/server/sim-object/test/harness.ts</code>; <code>src/lib/server/sim-object/migrations.spec.ts</code></li>
+      <li>Modify: <code>drizzle-cf.config.ts</code> (add the <code>sim</code> track and its schema loader); <code>package.json:27</code> (add <code>db:generate:sim</code> after <code>db:generate</code>); <code>chreode.config.ts</code> (add <code>'drizzle.sim.config.ts'</code> to the rule that matches <code>'drizzle.config.ts'</code> and <code>'drizzle-cf.config.ts'</code>)</li>
+      <li>Generated by <code>npm run db:generate:sim</code>: <code>migrations/sim/&lt;stamp&gt;_&lt;name&gt;/</code> and <code>src/lib/server/sim-object/migrations.generated.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>defineTracks</code> (<code>@planafoot/drizzle-cf-migrations</code>); <code>freshBundleSqlite</code>, <code>describeAppendOnlyBundle</code> (<code>@planafoot/drizzle-cf-migrations/testing</code>); <code>GENESIS_HASH</code> from <code>$lib/sim-log</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// schema.ts
+export const commits = sqliteTable('commits', {
+  seq: integer('seq').primaryKey(),
+  id: text('id').notNull().unique(),
+  hash: text('hash').notNull(),
+  bytes: integer('bytes').notNull(),
+  body: text('body').notNull()
+});
+export const simState = sqliteTable('sim_state', {
+  id: integer('id').primaryKey(),
+  indexedSeq: integer('indexed_seq').notNull().default(0),
+  goneAt: integer('gone_at')
+});
+
+// migrations.generated.ts (written by the generator)
+export const simMigrations: Record&lt;string, string&gt;;
+
+// store.ts
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type SimDb = BaseSQLiteDatabase&lt;'sync', any, typeof schema&gt;;
+export interface StoredRow { seq: number; id: string; hash: string; bytes: number; body: string }
+export interface Totals { seq: number; hash: string; bytes: number }
+export class SimStore {
+  /** Inserts the sim_state row (id 1) if it is missing. */
+  constructor(db: SimDb);
+  /** The tip: seq 0, GENESIS_HASH and 0 bytes for an empty log. */
+  totals(): Totals;
+  hasId(id: string): boolean;
+  /** Throws RangeError unless row.seq is the tip's seq + 1 (I1). */
+  insert(row: StoredRow): void;
+  /** Up to `limit` rows with seq above `seq`, ascending. */
+  rowsAfter(seq: number, limit: number): StoredRow[];
+  goneAt(): number | null;
+  indexedSeq(): number;
+  setIndexedSeq(seq: number): void;
+  /** Deletes every commit, sets gone_at to `now` and indexed_seq to 0 (takedown, R43). */
+  clear(now: number): void;
+}
+
+// test/harness.ts
+export function freshSimDb(): { db: SimDb; sqlite: BetterSqlite3.Database };</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write <code>src/lib/server/sim-object/schema.ts</code> as in Interfaces, importing <code>sqliteTable</code>, <code>integer</code>, <code>text</code> from <code>drizzle-orm/sqlite-core</code>, with a header comment: the object's own SQLite, one per sim (R21); append-only, generated with <code>npm run db:generate:sim</code> only; no <code>CHECK</code> constraints (the package doctrine forbids them in a DO track).</li>
+      <li id="t2-s2"><input type="checkbox"> Write <code>drizzle.sim.config.ts</code>:
+        <pre><code data-lang="ts">import { defineConfig } from 'drizzle-kit';
+
+// The sim object's own SQLite: one database per sim (R21, R22). APPEND-ONLY: every object
+// applies this history on open, so never delete migrations/sim and regenerate it. Generate with
+// `npm run db:generate:sim` only.
+export default defineConfig({
+  schema: './src/lib/server/sim-object/schema.ts',
+  dialect: 'sqlite',
+  out: './migrations/sim',
+  verbose: true,
+  strict: true
+});</code></pre>
+        Add the track to <code>drizzle-cf.config.ts</code>:
+        <pre><code data-lang="ts">sim: {
+  dir: 'migrations/sim',
+  drizzleConfig: 'drizzle.sim.config.ts',
+  bundle: {
+    outFile: 'src/lib/server/sim-object/migrations.generated.ts',
+    exportName: 'simMigrations'
+  }
+}</code></pre>
+        and <code>sim: () =&gt; import('./src/lib/server/sim-object/schema')</code> to <code>schemas</code>. Add to <code>package.json</code> scripts:
+        <pre><code data-lang="json">"db:generate:sim": "tsx node_modules/@planafoot/drizzle-cf-migrations/dist/cli.js generate sim --config ./drizzle-cf.config.ts",</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Generate the track.
+        <pre><code data-lang="sh">npm run db:generate:sim</code></pre>
+        Expected: one dated directory under <code>migrations/sim/</code> whose <code>migration.sql</code> creates <code>commits</code> (with <code>`id` text NOT NULL UNIQUE</code>) and <code>sim_state</code>; the classifier reports no violation; it prints <code>Wrote .../migrations.generated.ts (1 migration(s))</code>. (At plan time a scratch run of drizzle-kit on this schema produced exactly these two <code>CREATE TABLE</code> statements.)</li>
+      <li id="t2-s4"><input type="checkbox"> Write <code>src/lib/server/sim-object/migrations.spec.ts</code>, with <code>FROZEN</code> set to the directory name step 3 printed:
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import {
+  describeAppendOnlyBundle,
+  freshBundleSqlite
+} from '@planafoot/drizzle-cf-migrations/testing';
+import { simMigrations } from './migrations.generated';
+
+/** The first migration ever shipped. Never change it: objects in production applied it. */
+const FROZEN = '&lt;the directory name from step 3&gt;';
+
+describeAppendOnlyBundle({
+  label: 'sim',
+  bundle: simMigrations,
+  frozenBaseline: FROZEN,
+  baselineContains: ['CREATE TABLE `commits`', 'CREATE TABLE `sim_state`'],
+  harness: { fresh: () =&gt; ({ sqlite: freshBundleSqlite(simMigrations) }), tables: ['commits', 'sim_state'] }
+});
+
+describe('sim schema', () =&gt; {
+  it('refuses a second row with one commit id', () =&gt; {
+    const sqlite = freshBundleSqlite(simMigrations);
+    const put = sqlite.prepare('INSERT INTO commits (seq, id, hash, bytes, body) VALUES (?, ?, ?, ?, ?)');
+    put.run(1, 'a', 'h', 2, '{}');
+    expect(() =&gt; put.run(2, 'a', 'h', 2, '{}')).toThrow(/UNIQUE/);
+  });
+});</code></pre>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Write <code>src/lib/server/sim-object/test/harness.ts</code>: <code>freshSimDb()</code> returns <code>freshBundleSqlite(simMigrations)</code> and <code>drizzle({ client: sqlite, schema }) as unknown as SimDb</code> (from <code>drizzle-orm/better-sqlite3</code>; checked at plan time: this sync handle runs the inserts, selects and unique-constraint throws the store needs).</li>
+      <li id="t2-s6"><input type="checkbox"> Write the failing spec <code>src/lib/server/sim-object/store.spec.ts</code>.
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import { GENESIS_HASH } from '$lib/sim-log';
+import { SimStore, type StoredRow } from './store';
+import { freshSimDb } from './test/harness';
+
+const row = (seq: number, over: Partial&lt;StoredRow&gt; = {}): StoredRow =&gt; ({
+  seq,
+  id: `id-${seq}`,
+  hash: String(seq).padStart(64, '0'),
+  bytes: 10 * seq,
+  body: `{"seq":${seq}}`,
+  ...over
+});
+
+describe('SimStore', () =&gt; {
+  it('an empty store is at seq 0 with the genesis hash', () =&gt; {
+    const store = new SimStore(freshSimDb().db);
+    expect(store.totals()).toEqual({ seq: 0, hash: GENESIS_HASH, bytes: 0 });
+    expect(store.goneAt()).toBeNull();
+    expect(store.indexedSeq()).toBe(0);
+  });
+
+  it('keeps positions gapless', () =&gt; {
+    const store = new SimStore(freshSimDb().db);
+    store.insert(row(1));
+    store.insert(row(2));
+    expect(() =&gt; store.insert(row(4))).toThrow(RangeError);
+    expect(() =&gt; store.insert(row(2, { id: 'other' }))).toThrow(RangeError);
+    expect(store.totals()).toEqual({ seq: 2, hash: row(2).hash, bytes: 30 });
+  });
+
+  it('refuses a second row with one id', () =&gt; {
+    const store = new SimStore(freshSimDb().db);
+    store.insert(row(1));
+    expect(() =&gt; store.insert(row(2, { id: 'id-1' }))).toThrow();
+    expect(store.totals().seq).toBe(1);
+  });
+
+  it('finds stored ids', () =&gt; {
+    const store = new SimStore(freshSimDb().db);
+    store.insert(row(1));
+    expect(store.hasId('id-1')).toBe(true);
+    expect(store.hasId('id-2')).toBe(false);
+  });
+
+  it('pages rows after a position in order', () =&gt; {
+    const store = new SimStore(freshSimDb().db);
+    for (let s = 1; s &lt;= 5; s++) store.insert(row(s));
+    expect(store.rowsAfter(1, 2).map((r) =&gt; r.seq)).toEqual([2, 3]);
+    expect(store.rowsAfter(3, 10).map((r) =&gt; r.seq)).toEqual([4, 5]);
+    expect(store.rowsAfter(5, 10)).toEqual([]);
+    expect(store.rowsAfter(0, 1)[0]).toEqual(row(1));
+  });
+
+  it('keeps the index watermark across stores on one database', () =&gt; {
+    const { db } = freshSimDb();
+    new SimStore(db).setIndexedSeq(2);
+    expect(new SimStore(db).indexedSeq()).toBe(2);
+  });
+
+  it('clear deletes every commit and leaves the mark', () =&gt; {
+    const store = new SimStore(freshSimDb().db);
+    store.insert(row(1));
+    store.setIndexedSeq(1);
+    store.clear(1234);
+    expect(store.totals()).toEqual({ seq: 0, hash: GENESIS_HASH, bytes: 0 });
+    expect(store.hasId('id-1')).toBe(false);
+    expect(store.goneAt()).toBe(1234);
+    expect(store.indexedSeq()).toBe(0);
+  });
+});</code></pre>
+      </li>
+      <li id="t2-s7"><input type="checkbox"> Run it and see it fail (module <code>./store</code> not found).
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sim-object/store.spec.ts</code></pre>
+      </li>
+      <li id="t2-s8"><input type="checkbox"> Implement <code>SimStore</code> in <code>src/lib/server/sim-object/store.ts</code> with Drizzle's sync API (<code>.run()</code>, <code>.get()</code>, <code>.all()</code>): the constructor runs <code>insert(simState).values({ id: 1 }).onConflictDoNothing()</code>; <code>totals()</code> reads the row with the highest <code>seq</code> and <code>sum(bytes)</code>; <code>insert</code> compares <code>row.seq</code> with <code>max(seq) + 1</code> before inserting. Every method is synchronous (no <code>await</code>): in the object a run of storage calls with no await between them commits atomically.</li>
+      <li id="t2-s9"><input type="checkbox"> Run the store and migrations specs; they pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sim-object/store.spec.ts src/lib/server/sim-object/migrations.spec.ts</code></pre>
+      </li>
+      <li id="t2-s10"><input type="checkbox"> <code>npm run check</code> and <code>npm run lint</code> pass.</li>
+      <li id="t2-s11"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add drizzle.sim.config.ts drizzle-cf.config.ts package.json chreode.config.ts migrations/sim src/lib/server/sim-object
+git commit -m "feat(sim-object): the object's migration track and log store" -m "A second, append-only track for the object's SQLite (db:generate:sim, R22) and SimStore over it: gapless rows, unique ids, the index watermark and the takedown mark."</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Frames, limits and the append decision</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim-stream/protocol.ts</code>, <code>protocol.spec.ts</code>; <code>src/lib/server/sim-object/limits.ts</code>, <code>limits.spec.ts</code>; <code>src/lib/server/sim-object/decide.ts</code>, <code>decide.spec.ts</code>; <code>src/lib/server/sim-object/test/drafts.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>parseCommitDraft</code>, <code>LogFormatError</code>, <code>NAME_KEY</code>, <code>SHAPES_REVISION</code>, types <code>Commit</code>, <code>CommitDraft</code> from <code>$lib/sim-log</code>; <code>newId</code> from <code>$lib/ids/base58</code>.</li>
+      <li>Produces (Tasks 4 to 8 use these names):
+        <pre><code data-lang="ts">// src/lib/sim-stream/protocol.ts: type-only imports, so e2e and the browser can import it
+import type { Commit, CommitDraft } from '$lib/sim-log';
+export const PROTOCOL = 1;
+export const PING = 'ping';
+export const PONG = 'pong';
+export const CLOSE_BINARY = 1003;
+export const CLOSE_MALFORMED = 1008;
+export const CLOSE_INTERNAL = 1011;
+export const CLOSE_GONE = 4410;
+export type RefusedWhy = 'behind' | 'invalid' | 'not-writer' | 'limit' | 'gone';
+export type ServerFrame =
+  | { type: 'hello'; build: string; protocol: number }
+  | { type: 'access'; write: boolean }
+  | { type: 'commits'; commits: Commit[] }
+  | { type: 'refused'; id: string | null; why: RefusedWhy };
+export type ClientFrame = { type: 'resume'; after: number } | { type: 'append'; commit: CommitDraft };
+/** A client frame as the server reads it: the commit is not parsed yet. */
+export type ParsedClientFrame =
+  | { type: 'resume'; after: number }
+  | { type: 'append'; commit: unknown; id: string | null };
+/** Null for anything that is not exactly one of the two client frames. */
+export function parseClientFrame(text: string): ParsedClientFrame | null;
+export function encodeFrame(frame: Exclude&lt;ServerFrame, { type: 'commits' }&gt; | ClientFrame): string;
+/** A commits frame from stored bodies, spliced as they are stored (#tbl-frames). */
+export function commitsFrame(bodies: readonly string[]): string;
+
+// src/lib/server/sim-object/limits.ts
+export interface Limits {
+  commitBytes: number; frameBytes: number; simCommits: number; simBytes: number;
+  burst: number; perSecond: number; sendBytes: number;
+}
+export const LIMITS: Limits = {
+  commitBytes: 1_048_576,
+  frameBytes: 1_052_672,
+  simCommits: 100_000,
+  simBytes: 536_870_912,
+  burst: 120,
+  perSecond: 2,
+  sendBytes: 1_048_576
+};
+export const INDEX_BATCH = 50;
+export const INDEX_RETRY_MS = 30_000;
+export function utf8Bytes(s: string): number;
+export class RateBucket {
+  constructor(burst: number, perSecond: number, now: number);
+  /** Takes one token; false when none is left. A clock that goes back adds nothing. */
+  take(now: number): boolean;
+}
+
+// src/lib/server/sim-object/decide.ts
+export interface AppendGate {
+  gone: boolean;
+  write: boolean;
+  identity: string | null;
+  rateOk: boolean;
+  tip: number;
+  bytes: number;
+  hasId(id: string): boolean;
+}
+export type AppendDecision =
+  | { kind: 'refused'; id: string | null; why: RefusedWhy }
+  | { kind: 'duplicate'; id: string }
+  | { kind: 'accept'; draft: CommitDraft };
+export function decideAppend(
+  gate: AppendGate,
+  commit: unknown,
+  id: string | null,
+  frameBytes: number,
+  limits?: Limits
+): AppendDecision;
+
+// src/lib/server/sim-object/test/drafts.ts
+/** A valid edit that sets the sim's name. */
+export function nameDraft(parent: number, name: string, over?: Partial&lt;CommitDraft&gt;): CommitDraft;</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing spec <code>src/lib/sim-stream/protocol.spec.ts</code>.
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import { commitsFrame, encodeFrame, parseClientFrame } from './protocol';
+
+describe('parseClientFrame', () =&gt; {
+  it('reads a resume', () =&gt; {
+    expect(parseClientFrame('{"type":"resume","after":3}')).toEqual({ type: 'resume', after: 3 });
+    expect(parseClientFrame('{"type":"resume","after":0}')).toEqual({ type: 'resume', after: 0 });
+  });
+
+  it.each([
+    '{"type":"resume","after":-1}',
+    '{"type":"resume","after":1.5}',
+    '{"type":"resume"}',
+    '{"type":"resume","after":"3"}',
+    '{"type":"resume","after":3,"extra":1}',
+    '{"type":"subscribe"}',
+    '[1]',
+    'null',
+    'ping',
+    '{'
+  ])('refuses %s', (text) =&gt; {
+    expect(parseClientFrame(text)).toBeNull();
+  });
+
+  it('reads an append and its id without parsing the commit', () =&gt; {
+    expect(parseClientFrame('{"type":"append","commit":{"id":"abc","junk":1}}')).toEqual({
+      type: 'append',
+      commit: { id: 'abc', junk: 1 },
+      id: 'abc'
+    });
+    expect(parseClientFrame('{"type":"append","commit":5}')).toEqual({
+      type: 'append',
+      commit: 5,
+      id: null
+    });
+    expect(parseClientFrame('{"type":"append"}')).toBeNull();
+  });
+
+  it('gives no id longer than 64 characters', () =&gt; {
+    const id = 'x'.repeat(65);
+    expect(parseClientFrame(JSON.stringify({ type: 'append', commit: { id } }))).toMatchObject({
+      id: null
+    });
+  });
+});
+
+describe('encoding', () =&gt; {
+  it('splices stored bodies into a commits frame', () =&gt; {
+    expect(JSON.parse(commitsFrame(['{"seq":1}', '{"seq":2}']))).toEqual({
+      type: 'commits',
+      commits: [{ seq: 1 }, { seq: 2 }]
+    });
+    expect(JSON.parse(commitsFrame([]))).toEqual({ type: 'commits', commits: [] });
+  });
+
+  it('encodes other frames as JSON', () =&gt; {
+    expect(JSON.parse(encodeFrame({ type: 'refused', id: null, why: 'gone' }))).toEqual({
+      type: 'refused',
+      id: null,
+      why: 'gone'
+    });
+  });
+});</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Write the failing spec <code>src/lib/server/sim-object/limits.spec.ts</code>.
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import { LIMITS, RateBucket, utf8Bytes } from './limits';
+
+describe('RateBucket', () =&gt; {
+  it('allows a burst, then refuses', () =&gt; {
+    const b = new RateBucket(3, 1, 0);
+    expect([b.take(0), b.take(0), b.take(0), b.take(0)]).toEqual([true, true, true, false]);
+  });
+
+  it('refills at its rate and never above its burst', () =&gt; {
+    const b = new RateBucket(2, 2, 0);
+    b.take(0);
+    b.take(0);
+    expect(b.take(0)).toBe(false);
+    expect(b.take(500)).toBe(true);
+    expect(b.take(500)).toBe(false);
+    expect([b.take(60_000), b.take(60_000), b.take(60_000)]).toEqual([true, true, false]);
+  });
+
+  it('adds nothing when the clock goes back', () =&gt; {
+    const b = new RateBucket(1, 1, 10_000);
+    b.take(10_000);
+    expect(b.take(0)).toBe(false);
+  });
+});
+
+describe('limits', () =&gt; {
+  it('counts UTF-8 bytes', () =&gt; {
+    expect(utf8Bytes('abc')).toBe(3);
+    expect(utf8Bytes('é')).toBe(2);
+  });
+
+  it('admits a frame a little larger than the largest commit', () =&gt; {
+    expect(LIMITS.frameBytes).toBeGreaterThan(LIMITS.commitBytes);
+  });
+});</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Write <code>src/lib/server/sim-object/test/drafts.ts</code>: <code>nameDraft(parent, name, over)</code> returns <code>{ id: newId(), parent, kind: 'edit', label: 'Rename', restores: null, datasetVersion: 'fixture-0', shapes: SHAPES_REVISION, build: 'test', source: 'sim.name', changes: [{ op: 'set', key: NAME_KEY, field: 'name', value: name }], ...over }</code>.</li>
+      <li id="t3-s4"><input type="checkbox"> Write the failing spec <code>src/lib/server/sim-object/decide.spec.ts</code>.
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import { decideAppend, type AppendGate } from './decide';
+import { LIMITS } from './limits';
+import { nameDraft } from './test/drafts';
+
+const gate = (over: Partial&lt;AppendGate&gt; = {}): AppendGate =&gt; ({
+  gone: false,
+  write: true,
+  identity: 'u1',
+  rateOk: true,
+  tip: 1,
+  bytes: 1000,
+  hasId: () =&gt; false,
+  ...over
+});
+
+describe('decideAppend', () =&gt; {
+  const draft = nameDraft(1, 'Garden');
+
+  it('accepts a valid commit on the tip, parsed', () =&gt; {
+    expect(decideAppend(gate(), draft, draft.id, 400)).toEqual({ kind: 'accept', draft });
+  });
+
+  it.each&lt;[string, Partial&lt;AppendGate&gt;, string]&gt;([
+    ['a sim taken down', { gone: true }, 'gone'],
+    ['a socket that may not write', { write: false }, 'not-writer'],
+    ['a socket with no identity', { identity: null }, 'not-writer'],
+    ['no rate token', { rateOk: false }, 'limit'],
+    ['a stale parent', { tip: 2 }, 'behind'],
+    ['a parent ahead of the tip', { tip: 0 }, 'behind'],
+    ['a sim at its length cap', { tip: LIMITS.simCommits }, 'limit'],
+    ['a sim at its size cap', { bytes: LIMITS.simBytes }, 'limit']
+  ])('refuses %s', (_, over, why) =&gt; {
+    expect(decideAppend(gate(over), draft, draft.id, 400)).toEqual({
+      kind: 'refused',
+      id: draft.id,
+      why
+    });
+  });
+
+  it('refuses an oversized frame as limit before parsing it', () =&gt; {
+    expect(decideAppend(gate(), { junk: true }, 'x', LIMITS.frameBytes + 1)).toEqual({
+      kind: 'refused',
+      id: 'x',
+      why: 'limit'
+    });
+  });
+
+  it('refuses a commit that does not parse as invalid', () =&gt; {
+    expect(decideAppend(gate(), { ...draft, kind: 'other' }, draft.id, 400)).toMatchObject({
+      why: 'invalid'
+    });
+    expect(decideAppend(gate(), 7, null, 4)).toEqual({ kind: 'refused', id: null, why: 'invalid' });
+  });
+
+  it('treats a stored id as a duplicate, even on a stale parent', () =&gt; {
+    expect(decideAppend(gate({ tip: 5, hasId: (x) =&gt; x === draft.id }), draft, draft.id, 400)).toEqual({
+      kind: 'duplicate',
+      id: draft.id
+    });
+  });
+
+  it('checks gone, then the writer, then the rate', () =&gt; {
+    expect(decideAppend(gate({ gone: true, write: false }), draft, draft.id, 400)).toMatchObject({
+      why: 'gone'
+    });
+    expect(decideAppend(gate({ write: false, rateOk: false }), draft, draft.id, 400)).toMatchObject({
+      why: 'not-writer'
+    });
+    expect(decideAppend(gate({ rateOk: false }), { junk: 1 }, null, 4)).toMatchObject({
+      why: 'limit'
+    });
+  });
+
+  it('honours injected limits', () =&gt; {
+    const small = { ...LIMITS, simCommits: 1 };
+    expect(decideAppend(gate(), draft, draft.id, 400, small)).toMatchObject({ why: 'limit' });
+  });
+});</code></pre>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Run the three specs and see them fail (modules not found).
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim-stream src/lib/server/sim-object/limits.spec.ts src/lib/server/sim-object/decide.spec.ts</code></pre>
+      </li>
+      <li id="t3-s6"><input type="checkbox"> Implement <code>protocol.ts</code>: <code>parseClientFrame</code> does <code>JSON.parse</code> in a try, requires a plain object whose keys are exactly <code>{type, after}</code> (resume; <code>after</code> a safe integer, at least 0) or <code>{type, commit}</code> (append); the append's <code>id</code> is <code>commit.id</code> when <code>commit</code> is a plain object and <code>id</code> a string of 1 to 64 characters, else null. <code>commitsFrame</code> is <code>'{"type":"commits","commits":[' + bodies.join(',') + ']}'</code>. The file has no value import.</li>
+      <li id="t3-s7"><input type="checkbox"> Implement <code>limits.ts</code>: <code>utf8Bytes</code> with one module-level <code>TextEncoder</code>; <code>RateBucket</code> keeps <code>tokens</code> (starts at <code>burst</code>) and <code>last</code>; <code>take(now)</code> adds <code>max(0, now - last) / 1000 * perSecond</code> capped at <code>burst</code>, moves <code>last</code> forward only, then spends one token if at least one is left.</li>
+      <li id="t3-s8"><input type="checkbox"> Implement <code>decideAppend</code> in <code>decide.ts</code>, in this order (<a href="#d7">decision 7</a>): <code>gate.gone</code> → <code>gone</code>; <code>!gate.write || gate.identity === null</code> → <code>not-writer</code>; <code>!gate.rateOk</code> → <code>limit</code>; <code>frameBytes &gt; limits.frameBytes</code> → <code>limit</code>; <code>parseCommitDraft(commit)</code> throwing <code>LogFormatError</code> → <code>invalid</code> (any other throw propagates); <code>gate.hasId(draft.id)</code> → <code>duplicate</code>; <code>gate.tip &gt;= limits.simCommits || gate.bytes + frameBytes &gt; limits.simBytes</code> → <code>limit</code>; <code>draft.parent !== gate.tip</code> → <code>behind</code>; else <code>accept</code>. A refusal carries the frame's <code>id</code> argument as given. Pure: no clock, no I/O.</li>
+      <li id="t3-s9"><input type="checkbox"> Run the three specs; they pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim-stream src/lib/server/sim-object/limits.spec.ts src/lib/server/sim-object/decide.spec.ts</code></pre>
+      </li>
+      <li id="t3-s10"><input type="checkbox"> <code>npm run check</code> and <code>npm run lint</code> pass.</li>
+      <li id="t3-s11"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim-stream src/lib/server/sim-object/limits.ts src/lib/server/sim-object/limits.spec.ts src/lib/server/sim-object/decide.ts src/lib/server/sim-object/decide.spec.ts src/lib/server/sim-object/test/drafts.ts
+git commit -m "feat(sim-object): socket frames, limits and the append decision" -m "The frames of #tbl-frames in one module both ends import, the per-sim size, length and rate limits (R25), and the order in which an append is checked (R3, R18)."</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The log host</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/server/sim-object/log-host.ts</code>, <code>log-host.spec.ts</code></li>
+      <li>Modify: <code>src/lib/server/sim-object/test/drafts.ts</code> (add <code>draftTo</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>SimStore</code>, <code>StoredRow</code> (Task 2); <code>decideAppend</code>, <code>LIMITS</code>, <code>Limits</code>, <code>RateBucket</code>, <code>utf8Bytes</code>, <code>commitsFrame</code>, <code>RefusedWhy</code>, <code>nameDraft</code> (Task 3); <code>IndexedCommit</code>, <code>IndexSummary</code> (Task 1); <code>LogState</code>, <code>LogError</code>, <code>chainHash</code>, <code>NAME_KEY</code>, <code>SHAPES_REVISION</code>, <code>REGISTRY</code>, types <code>Commit</code>, <code>CommitDraft</code>, <code>Registry</code>, <code>Ruleset</code> from <code>$lib/sim-log</code>; test-only <code>diff</code>, <code>fold</code>, <code>parseCommit</code>, <code>rulesetText</code>, <code>verifyChain</code>, <code>GENESIS_HASH</code>, <code>DEFAULT_SIM_NAME</code>, and <code>arbRuleset</code> (<code>src/lib/sim-log/test/arbitraries.ts:150</code>).</li>
+      <li>Produces (Task 6 wires these; unit 3 reaches <code>takeDown</code> through the class):
+        <pre><code data-lang="ts">export interface Author { identity: string | null; write: boolean }
+export type AppendOutcome =
+  | { kind: 'accepted'; commit: Commit; body: string }
+  | { kind: 'duplicate'; id: string }
+  | { kind: 'refused'; id: string | null; why: RefusedWhy };
+export interface StartParams {
+  id: string; title: string; actor: string; datasetVersion: string; build: string; now: number;
+}
+export interface LogHostOptions {
+  limits?: Limits;
+  registry?: Registry;
+  /** Called with no await after the row is stored, inside the serialized section (I4, I7). */
+  onCommit?: (body: string, commit: Commit) =&gt; void;
+}
+export class LogHost {
+  constructor(store: SimStore, opts?: LogHostOptions);
+  tip(): number;
+  gone(): boolean;
+  append(commit: unknown, id: string | null, frameBytes: number, author: Author, now: number): Promise&lt;AppendOutcome&gt;;
+  /** R58: null when the log has commits or the sim is gone. */
+  ensureStarted(p: StartParams): Promise&lt;AppendOutcome | null&gt;;
+  /** Calls `deliver` inside the serialized section with commits frames, or null when gone or after &gt; tip. */
+  resume(after: number, deliver: (frames: string[] | null) =&gt; void): Promise&lt;void&gt;;
+  /** The held state's ruleset, folding the rows first if none is held. */
+  ruleset(): Ruleset;
+  summary(): IndexSummary;
+  unindexed(limit: number): IndexedCommit[];
+  /** Moves the watermark forward only. */
+  markIndexed(seq: number): void;
+  indexBehind(): boolean;
+  takeDown(now: number): Promise&lt;void&gt;;
+}
+
+// test/drafts.ts gains
+/** A commit taking `from` to `target` (diff, R8), or null when they are equal. */
+export function draftTo(from: Ruleset, target: RulesetContent, parent: number): CommitDraft | null;</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Add <code>draftTo</code> to <code>test/drafts.ts</code>: <code>diff(from, { ...target, datasetVersion: 'fixture-0' })</code>; null when empty, else <code>{ ...nameDraft(parent, 'unused'), label: 'Edit', source: 'sim.test', changes }</code>. (At plan time, 30 fast-check samples of <code>arbRuleset</code>, each diffed from the previous state, all applied with <code>{ check: true }</code>.)</li>
+      <li id="t4-s2"><input type="checkbox"> Write the failing spec <code>src/lib/server/sim-object/log-host.spec.ts</code>.
+        <pre><code data-lang="ts">import { describe, expect, it, vi } from 'vitest';
+import fc from 'fast-check';
+import {
+  DEFAULT_SIM_NAME,
+  GENESIS_HASH,
+  SHAPES_REVISION,
+  chainHash,
+  fold,
+  parseCommit,
+  rulesetText,
+  verifyChain,
+  type CommitDraft,
+  type RulesetContent
+} from '$lib/sim-log';
+import { arbRuleset } from '$lib/sim-log/test/arbitraries';
+import { newId } from '$lib/ids/base58';
+import { commitsFrame } from '$lib/sim-stream/protocol';
+import { LIMITS, utf8Bytes } from './limits';
+import { LogHost, type AppendOutcome, type Author, type LogHostOptions } from './log-host';
+import { SimStore, type StoredRow } from './store';
+import { draftTo, nameDraft } from './test/drafts';
+import { freshSimDb } from './test/harness';
+
+const T0 = 1_700_000_000_000;
+const WRITER: Author = { identity: 'u1', write: true };
+const ALL = Number.MAX_SAFE_INTEGER;
+
+function make(opts: LogHostOptions = {}) {
+  const { db } = freshSimDb();
+  const store = new SimStore(db);
+  return { db, store, host: new LogHost(store, opts) };
+}
+
+const append = (host: LogHost, d: unknown, now = T0, author = WRITER): Promise&lt;AppendOutcome&gt; =&gt;
+  host.append(d, (d as CommitDraft).id ?? null, utf8Bytes(JSON.stringify(d)), author, now);
+
+async function resumeOf(host: LogHost, after: number): Promise&lt;string[] | null&gt; {
+  let got: string[] | null | undefined;
+  await host.resume(after, (frames) =&gt; {
+    got = frames;
+  });
+  expect(got).not.toBeUndefined();
+  return got ?? null;
+}
+
+const snapshot = (store: SimStore, host: LogHost) =&gt; ({
+  totals: store.totals(),
+  rows: store.rowsAfter(0, ALL),
+  text: rulesetText(host.ruleset())
+});
+
+/** I1, I2 and I3 (#sec-invariants). */
+async function expectInvariants(store: SimStore, host: LogHost) {
+  const commits = store.rowsAfter(0, ALL).map((r) =&gt; parseCommit(JSON.parse(r.body)));
+  expect(commits.map((c) =&gt; c.seq)).toEqual(commits.map((_, i) =&gt; i + 1));
+  expect(await verifyChain(commits)).toBeNull();
+  const folded = rulesetText(fold(commits));
+  expect(rulesetText(host.ruleset())).toBe(folded);
+  expect(rulesetText(new LogHost(store).ruleset())).toBe(folded);
+}
+
+describe('LogHost append', () =&gt; {
+  it('accepts appends on the tip with gapless positions', async () =&gt; {
+    const { host, store } = make();
+    expect(await append(host, nameDraft(0, 'A'))).toMatchObject({ kind: 'accepted', commit: { seq: 1 } });
+    expect(await append(host, nameDraft(1, 'B'))).toMatchObject({ kind: 'accepted', commit: { seq: 2 } });
+    expect(store.rowsAfter(0, ALL).map((r) =&gt; r.seq)).toEqual([1, 2]);
+    expect(host.ruleset().name).toBe('B');
+    await expectInvariants(store, host);
+  });
+
+  it('stamps seq, actor, at and the chained hash', async () =&gt; {
+    const { host, store } = make();
+    const out = await append(host, nameDraft(0, 'A'), T0 + 5);
+    expect(out).toMatchObject({ kind: 'accepted', commit: { seq: 1, actor: 'u1', at: T0 + 5 } });
+    const { commit, body } = out as Extract&lt;AppendOutcome, { kind: 'accepted' }&gt;;
+    const { hash, ...rest } = commit;
+    expect(hash).toBe(await chainHash(GENESIS_HASH, rest));
+    expect(store.rowsAfter(0, 1)[0]).toEqual({ seq: 1, id: commit.id, hash, bytes: utf8Bytes(body), body });
+    expect(JSON.parse(body)).toEqual(commit);
+  });
+
+  it.each&lt;[string, () =&gt; unknown, Author, string]&gt;([
+    ['a stale parent', () =&gt; nameDraft(0, 'X'), WRITER, 'behind'],
+    [
+      'a change that does not apply',
+      () =&gt; ({ ...nameDraft(1, 'X'), changes: [{ op: 'delete', key: 'p:nope' }] }),
+      WRITER,
+      'invalid'
+    ],
+    [
+      'a commit under a newer shape revision',
+      () =&gt; nameDraft(1, 'X', { shapes: SHAPES_REVISION + 1 }),
+      WRITER,
+      'invalid'
+    ],
+    ['a socket that may not write', () =&gt; nameDraft(1, 'X'), { identity: 'u2', write: false }, 'not-writer']
+  ])('refuses %s and changes nothing (I5)', async (_, draft, author, why) =&gt; {
+    const { host, store } = make();
+    await append(host, nameDraft(0, 'G'));
+    const before = snapshot(store, host);
+    expect(await append(host, draft(), T0 + 1, author)).toMatchObject({ kind: 'refused', why });
+    expect(snapshot(store, host)).toEqual(before);
+  });
+
+  it('refuses a stored body over the commit cap and changes nothing', async () =&gt; {
+    const { host, store } = make({ limits: { ...LIMITS, commitBytes: 200 } });
+    expect(await append(host, nameDraft(0, 'A'))).toMatchObject({ kind: 'refused', why: 'limit' });
+    expect(store.totals().seq).toBe(0);
+    expect(host.ruleset().name).toBe(DEFAULT_SIM_NAME);
+  });
+
+  it('appends an id once (I6)', async () =&gt; {
+    const { host, store } = make();
+    const a = nameDraft(0, 'A');
+    await append(host, a);
+    expect(await append(host, a)).toEqual({ kind: 'duplicate', id: a.id });
+    expect(store.totals().seq).toBe(1);
+  });
+
+  it('two appends on one parent: one stored, one behind', async () =&gt; {
+    const { host, store } = make();
+    const [ra, rb] = await Promise.all([append(host, nameDraft(0, 'A')), append(host, nameDraft(0, 'B'))]);
+    expect(ra).toMatchObject({ kind: 'accepted', commit: { seq: 1 } });
+    expect(rb).toMatchObject({ kind: 'refused', why: 'behind' });
+    expect(store.totals().seq).toBe(1);
+  });
+
+  it('sends each commit after its row is stored, in order (I4)', async () =&gt; {
+    const { db } = freshSimDb();
+    const store = new SimStore(db);
+    const sent: number[] = [];
+    const host = new LogHost(store, {
+      onCommit: (body, c) =&gt; {
+        expect(store.totals().seq).toBe(c.seq);
+        expect(JSON.parse(body)).toEqual(c);
+        sent.push(c.seq);
+      }
+    });
+    await append(host, nameDraft(0, 'A'));
+    await append(host, nameDraft(1, 'B'));
+    await append(host, nameDraft(0, 'C'));
+    expect(sent).toEqual([1, 2]);
+  });
+
+  it('enforces the length cap and the rate', async () =&gt; {
+    const short = make({ limits: { ...LIMITS, simCommits: 2 } });
+    await append(short.host, nameDraft(0, 'A'));
+    await append(short.host, nameDraft(1, 'B'));
+    expect(await append(short.host, nameDraft(2, 'C'))).toMatchObject({ why: 'limit' });
+    const slow = make({ limits: { ...LIMITS, burst: 2, perSecond: 1 } });
+    await append(slow.host, nameDraft(0, 'A'), T0);
+    await append(slow.host, nameDraft(1, 'B'), T0);
+    expect(await append(slow.host, nameDraft(2, 'C'), T0)).toMatchObject({ why: 'limit' });
+    expect(await append(slow.host, nameDraft(2, 'C'), T0 + 1000)).toMatchObject({ kind: 'accepted' });
+  });
+
+  it('a failed insert drops the held state', async () =&gt; {
+    class FlakyStore extends SimStore {
+      fail = true;
+      override insert(row: StoredRow): void {
+        if (this.fail) {
+          this.fail = false;
+          throw new Error('disk');
+        }
+        super.insert(row);
+      }
+    }
+    const store = new FlakyStore(freshSimDb().db);
+    const sent: number[] = [];
+    const host = new LogHost(store, { onCommit: (_, c) =&gt; sent.push(c.seq) });
+    expect(host.ruleset().name).toBe(DEFAULT_SIM_NAME);
+    await expect(append(host, nameDraft(0, 'Lost'))).rejects.toThrow('disk');
+    expect(sent).toEqual([]);
+    expect(host.ruleset().name).toBe(DEFAULT_SIM_NAME);
+    expect(await append(host, nameDraft(0, 'Kept'))).toMatchObject({ kind: 'accepted' });
+    expect(host.ruleset().name).toBe('Kept');
+  });
+
+  type Op = { kind: 'edit'; target: RulesetContent } | { kind: 'invalid' | 'stale' | 'repeat' };
+  const arbOp: fc.Arbitrary&lt;Op&gt; = fc.oneof(
+    { weight: 4, arbitrary: arbRuleset.map((target) =&gt; ({ kind: 'edit' as const, target })) },
+    fc.constantFrom({ kind: 'invalid' as const }, { kind: 'stale' as const }, { kind: 'repeat' as const })
+  );
+
+  it('keeps I1, I2, I3 and I5 over any sequence of appends', async () =&gt; {
+    await expect(
+      fc.assert(
+        fc.asyncProperty(fc.array(arbOp, { maxLength: 12 }), async (ops) =&gt; {
+          const { host, store } = make();
+          const sent: CommitDraft[] = [];
+          let now = T0;
+          for (const op of ops) {
+            now += 1000;
+            const tip = store.totals().seq;
+            let d: CommitDraft | null = null;
+            if (op.kind === 'edit') d = draftTo(host.ruleset(), op.target, tip);
+            if (op.kind === 'invalid')
+              d = { ...nameDraft(tip, 'X'), changes: [{ op: 'delete', key: 'p:nope' }] };
+            if (op.kind === 'stale') d = nameDraft(tip + 1, 'Stale');
+            if (op.kind === 'repeat') d = sent.at(-1) ?? null;
+            if (!d) continue;
+            const before = snapshot(store, host);
+            const out = await append(host, d, now);
+            if (out.kind === 'accepted') sent.push(d);
+            else expect(snapshot(store, host)).toEqual(before);
+            await expectInvariants(store, host);
+          }
+        }),
+        { numRuns: 25 }
+      )
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe('LogHost start (R58)', () =&gt; {
+  const start = (over: Partial&lt;{ title: string }&gt; = {}) =&gt; ({
+    id: newId(),
+    title: 'Garden',
+    actor: 'u1',
+    datasetVersion: 'fixture-0',
+    build: 'b1',
+    now: T0,
+    ...over
+  });
+
+  it('appends one system commit holding the index name', async () =&gt; {
+    const { host, store } = make();
+    expect(await host.ensureStarted(start())).toMatchObject({
+      kind: 'accepted',
+      commit: {
+        seq: 1,
+        parent: 0,
+        kind: 'system',
+        label: 'Start',
+        source: 'sim.start',
+        restores: null,
+        actor: 'u1',
+        build: 'b1',
+        datasetVersion: 'fixture-0',
+        changes: [{ op: 'set', key: 'sim', field: 'name', value: 'Garden' }]
+      }
+    });
+    expect(host.ruleset()).toMatchObject({ name: 'Garden', datasetVersion: 'fixture-0' });
+    expect(await host.ensureStarted(start())).toBeNull();
+    expect(store.totals().seq).toBe(1);
+  });
+
+  it('ensureStarted with a title the name check refuses leaves the log empty', async () =&gt; {
+    const err = vi.spyOn(console, 'error').mockImplementation(() =&gt; {});
+    const { host, store } = make();
+    expect(await host.ensureStarted(start({ title: ' padded ' }))).toMatchObject({
+      kind: 'refused',
+      why: 'invalid'
+    });
+    expect(store.totals().seq).toBe(0);
+    expect(err).toHaveBeenCalledOnce();
+    err.mockRestore();
+  });
+});
+
+describe('LogHost resume', () =&gt; {
+  async function three(opts: LogHostOptions = {}) {
+    const m = make(opts);
+    for (let s = 0; s &lt; 3; s++) await append(m.host, nameDraft(s, `N${s}`));
+    return m;
+  }
+
+  it('answers the commits after a position, as stored', async () =&gt; {
+    const { host, store } = await three();
+    const frames = await resumeOf(host, 1);
+    expect(frames).toEqual([commitsFrame(store.rowsAfter(1, ALL).map((r) =&gt; r.body))]);
+  });
+
+  it('chunks a long answer', async () =&gt; {
+    const { host } = await three({ limits: { ...LIMITS, sendBytes: 1 } });
+    const frames = (await resumeOf(host, 0)) ?? [];
+    expect(frames.map((f) =&gt; JSON.parse(f).commits.map((c: { seq: number }) =&gt; c.seq))).toEqual([[1], [2], [3]]);
+  });
+
+  it('answers one empty frame when there is nothing after', async () =&gt; {
+    const { host } = await three();
+    expect(await resumeOf(host, 3)).toEqual([commitsFrame([])]);
+    expect(await resumeOf(make().host, 0)).toEqual([commitsFrame([])]);
+  });
+
+  it('resume past the tip or on a gone sim is null', async () =&gt; {
+    const { host } = await three();
+    expect(await resumeOf(host, 4)).toBeNull();
+    await host.takeDown(T0);
+    expect(await resumeOf(host, 0)).toBeNull();
+  });
+});
+
+describe('LogHost takedown and index', () =&gt; {
+  it('takeDown clears the log and refuses later appends as gone', async () =&gt; {
+    const { host, store } = make();
+    await append(host, nameDraft(0, 'A'));
+    await host.takeDown(T0 + 9);
+    expect(host.gone()).toBe(true);
+    expect(store.totals().seq).toBe(0);
+    expect(await append(host, nameDraft(0, 'B'))).toMatchObject({ kind: 'refused', why: 'gone' });
+    expect(
+      await host.ensureStarted({ id: newId(), title: 'G', actor: 'u1', datasetVersion: 'fixture-0', build: 'b', now: T0 })
+    ).toBeNull();
+  });
+
+  it('tracks what the index has not seen', async () =&gt; {
+    const { db, host, store } = make();
+    await append(host, nameDraft(0, 'A'), T0 + 1);
+    const b = await append(host, nameDraft(1, 'B'), T0 + 2);
+    expect(host.indexBehind()).toBe(true);
+    expect(host.unindexed(1).map((c) =&gt; c.commit.seq)).toEqual([1]);
+    const { commit, body } = b as Extract&lt;AppendOutcome, { kind: 'accepted' }&gt;;
+    expect(host.unindexed(10)[1]).toEqual({ commit, bytes: utf8Bytes(body) });
+    host.markIndexed(1);
+    expect(host.unindexed(10).map((c) =&gt; c.commit.seq)).toEqual([2]);
+    expect(host.summary()).toEqual({
+      positions: 2,
+      lastChangeAt: T0 + 2,
+      datasetVersion: 'fixture-0',
+      title: 'B'
+    });
+    host.markIndexed(2);
+    expect(host.indexBehind()).toBe(false);
+    host.markIndexed(1);
+    expect(new SimStore(db).indexedSeq()).toBe(2);
+    expect(store.totals().seq).toBe(2);
+  });
+});</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Run it and see it fail (module <code>./log-host</code> not found).
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sim-object/log-host.spec.ts</code></pre>
+      </li>
+      <li id="t4-s4"><input type="checkbox"> Implement <code>LogHost</code> in <code>src/lib/server/sim-object/log-host.ts</code>. Private state: the store, the limits (default <code>LIMITS</code>), the registry (default <code>REGISTRY</code>), a cached <code>Totals</code> (read from the store once, then advanced on each insert, dropped on a failed insert and on takedown), the held <code>LogState</code> or null, a <code>RateBucket</code> made on the first append (<code>new RateBucket(burst, perSecond, now)</code>), and a promise chain. Every public async method runs through the chain:
+        <pre><code data-lang="ts">#serial&lt;T&gt;(fn: () =&gt; Promise&lt;T&gt; | T): Promise&lt;T&gt; {
+  const run = this.#chain.then(fn);
+  this.#chain = run.then(
+    () =&gt; undefined,
+    () =&gt; undefined
+  );
+  return run;
+}</code></pre>
+        The append path (<a href="#d12">decision 12</a>); <code>append</code> and <code>ensureStarted</code> call it inside <code>#serial</code>:
+        <pre><code data-lang="ts">async #appendNow(raw: unknown, id: string | null, frameBytes: number, author: Author, now: number): Promise&lt;AppendOutcome&gt; {
+  const totals = this.#totals();
+  const rateOk = this.#bucket(now).take(now);
+  const d = decideAppend(
+    { gone: this.gone(), write: author.write, identity: author.identity, rateOk,
+      tip: totals.seq, bytes: totals.bytes, hasId: (x) =&gt; this.#store.hasId(x) },
+    raw, id, frameBytes, this.#limits
+  );
+  if (d.kind !== 'accept') return d;
+  const stamped = { ...d.draft, seq: totals.seq + 1, actor: author.identity as string, at: now };
+  const hash = await chainHash(totals.hash, stamped); // the only await
+  const commit: Commit = { ...stamped, hash };
+  const body = JSON.stringify(commit);
+  const bytes = utf8Bytes(body);
+  if (bytes &gt; this.#limits.commitBytes) return { kind: 'refused', id: commit.id, why: 'limit' };
+  const state = this.#state();
+  try {
+    state.apply(commit, { check: true });
+  } catch (e) {
+    if (e instanceof LogError) return { kind: 'refused', id: commit.id, why: 'invalid' };
+    throw e;
+  }
+  try {
+    this.#store.insert({ seq: commit.seq, id: commit.id, hash, bytes, body });
+  } catch (e) {
+    this.#held = null; // I3: refold from the rows on the next append
+    this.#cached = null;
+    throw e;
+  }
+  this.#cached = { seq: commit.seq, hash, bytes: totals.bytes + bytes };
+  this.#onCommit?.(body, commit);
+  return { kind: 'accepted', commit, body };
+}</code></pre>
+        The rest:
+        <ul>
+          <li><code>#state()</code> returns the held state or folds: <code>LogState.empty(registry)</code>, then <code>apply(JSON.parse(body))</code> (no check) for each row, paging <code>rowsAfter</code> by 500.</li>
+          <li><code>ensureStarted(p)</code>: inside <code>#serial</code>, null when <code>gone()</code> or the tip is above 0; else the draft of <a href="#d14">decision 14</a> through <code>#appendNow</code> with author <code>{ identity: p.actor, write: true }</code> and <code>frameBytes = utf8Bytes(JSON.stringify(draft))</code>. On a refused outcome it logs <code>console.error('[sim-object] start commit refused', why)</code> once and returns the outcome.</li>
+          <li><code>resume(after, deliver)</code>: inside <code>#serial</code>; <code>deliver(null)</code> when gone or <code>after</code> is above the tip; else pages <code>rowsAfter(after, 500)</code> into frames: a frame takes bodies while their summed bytes stay within <code>limits.sendBytes</code>, always at least one; no rows gives <code>[commitsFrame([])]</code>.</li>
+          <li><code>ruleset()</code>: <code>this.#state().ruleset()</code>. <code>summary()</code>: <code>positions</code> the tip, <code>lastChangeAt</code> the <code>at</code> of the tip row, <code>datasetVersion</code> and <code>title</code> (<code>name</code>) from <code>ruleset()</code>.</li>
+          <li><code>unindexed(limit)</code>: <code>rowsAfter(store.indexedSeq(), limit)</code> mapped to <code>{ commit: JSON.parse(body), bytes }</code>. <code>markIndexed(seq)</code>: <code>setIndexedSeq(max(current, seq))</code>. <code>indexBehind()</code>: not gone and the watermark below the tip.</li>
+          <li><code>takeDown(now)</code>: inside <code>#serial</code>, <code>store.clear(now)</code>, then drop the held state and the cached totals.</li>
+          <li><code>gone()</code>: <code>store.goneAt() !== null</code>. <code>tip()</code>: <code>this.#totals().seq</code> (reads the store once when nothing is cached).</li>
+          <li>Never write to an object <code>ruleset()</code> returns: it is the state's memoised value (sim-log.md, "Carried from the log core": an item read from the state is the stored one).</li>
+        </ul>
+      </li>
+      <li id="t4-s5"><input type="checkbox"> Run the spec; it passes. Then run every spec of the unit so far.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sim-object/log-host.spec.ts
+npx vitest --run --project server src/lib/server/sim-object src/lib/sim-stream</code></pre>
+        Expected: all pass, with nothing on stderr (the padded-title test mutes and counts its one expected log line; the server project's stderr is policed at signoff).</li>
+      <li id="t4-s6"><input type="checkbox"> <code>npm run check</code> and <code>npm run lint</code> pass.</li>
+      <li id="t4-s7"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/server/sim-object/log-host.ts src/lib/server/sim-object/log-host.spec.ts src/lib/server/sim-object/test/drafts.ts
+git commit -m "feat(sim-object): the log host" -m "One serialized path decides, hashes, fold-checks, stores and then sends each append; resume answers from any position; R58's first commit; takedown; the index watermark. Property-tested against the object's invariants."</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: The open header and write access</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/server/sim-object/open-params.ts</code>, <code>open-params.spec.ts</code>; <code>src/lib/server/sim-object/access.ts</code>, <code>access.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>abilityDominates</code> (<code>src/lib/server/authz/ability.ts:48</code>), <code>ROLE_BUNDLE</code> (<code>ability.ts:8</code>); <code>type SimMemberRole</code> (<code>src/lib/server/db/schema/simControlPlane.ts:3</code>); <code>DATASET_VERSION_RE</code> (<code>src/lib/data/dataset-version.ts:2</code>); <code>BUILD_MAX</code> from <code>$lib/sim-log</code>; <code>SIM_TITLE_MAX</code> (<code>src/lib/members/copy.ts:4</code>).</li>
+      <li>Produces (Tasks 6 and 7, and unit 3's roster hook through <code>rereadRoles</code>):
+        <pre><code data-lang="ts">// open-params.ts
+export const OPEN_HEADER = 'x-sfh-sim-open';
+/** What the Worker tells the object when it opens a socket (R46, R53, R58). */
+export interface OpenParams {
+  identity: string | null;
+  write: boolean;
+  title: string;
+  datasetVersion: string;
+  build: string;
+}
+export function encodeOpenParams(p: OpenParams): string;
+/** Null unless the header is exactly an OpenParams: identity null or 1 to 64 characters, write
+ *  false when identity is null, title 1 to SIM_TITLE_MAX characters, datasetVersion matching
+ *  DATASET_VERSION_RE, build 1 to BUILD_MAX characters. */
+export function parseOpenParams(header: string | null): OpenParams | null;
+
+// access.ts
+/** A socket's state, kept as its hibernation attachment (16 KiB max; this is well under). */
+export interface SocketAttachment { identity: string | null; write: boolean; resumed: boolean }
+export function parseAttachment(v: unknown): SocketAttachment | null;
+/** R47: a role whose bundle dominates sim.write. */
+export function canWrite(role: SimMemberRole | null): boolean;
+/** Indexes of the sockets whose right to write differs from `writers` (identity to canWrite). */
+export function accessChanges(
+  sockets: readonly Pick&lt;SocketAttachment, 'identity' | 'write'&gt;[],
+  writers: ReadonlyMap&lt;string, boolean&gt;
+): number[];</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing specs.
+        <pre><code data-lang="ts">// src/lib/server/sim-object/open-params.spec.ts
+import { describe, expect, it } from 'vitest';
+import { encodeOpenParams, parseOpenParams, type OpenParams } from './open-params';
+
+const ok: OpenParams = {
+  identity: 'u1',
+  write: true,
+  title: 'Garden',
+  datasetVersion: 'fixture-0',
+  build: 'dev'
+};
+
+describe('open params', () =&gt; {
+  it('round-trips', () =&gt; {
+    expect(parseOpenParams(encodeOpenParams(ok))).toEqual(ok);
+    const reader = { ...ok, identity: null, write: false };
+    expect(parseOpenParams(encodeOpenParams(reader))).toEqual(reader);
+  });
+
+  it.each&lt;[string, unknown]&gt;([
+    ['a writer with no identity', { ...ok, identity: null }],
+    ['an unknown key', { ...ok, extra: 1 }],
+    ['a missing key', { identity: 'u1', write: true, title: 'G', datasetVersion: 'fixture-0' }],
+    ['a bad dataset version', { ...ok, datasetVersion: 'latest' }],
+    ['an empty build', { ...ok, build: '' }],
+    ['an empty title', { ...ok, title: '' }],
+    ['a long identity', { ...ok, identity: 'x'.repeat(65) }]
+  ])('refuses %s', (_, v) =&gt; {
+    expect(parseOpenParams(JSON.stringify(v))).toBeNull();
+  });
+
+  it('refuses no header and junk', () =&gt; {
+    expect(parseOpenParams(null)).toBeNull();
+    expect(parseOpenParams('{')).toBeNull();
+  });
+});
+
+// src/lib/server/sim-object/access.spec.ts
+import { describe, expect, it } from 'vitest';
+import { accessChanges, canWrite, parseAttachment } from './access';
+
+describe('access', () =&gt; {
+  it('managers and editors write; viewers and strangers read', () =&gt; {
+    expect([canWrite('manager'), canWrite('editor'), canWrite('viewer'), canWrite(null)]).toEqual(
+      [true, true, false, false]
+    );
+  });
+
+  it('lists the sockets whose right to write changed', () =&gt; {
+    const sockets = [
+      { identity: 'a', write: true },
+      { identity: 'b', write: false },
+      { identity: null, write: false },
+      { identity: 'a', write: true },
+      { identity: 'c', write: true }
+    ];
+    const writers = new Map([
+      ['a', false],
+      ['b', true]
+    ]);
+    expect(accessChanges(sockets, writers)).toEqual([0, 1, 3]);
+  });
+
+  it('reads only a well-formed attachment', () =&gt; {
+    expect(parseAttachment({ identity: 'a', write: true, resumed: false })).toEqual({
+      identity: 'a',
+      write: true,
+      resumed: false
+    });
+    expect(parseAttachment(null)).toBeNull();
+    expect(parseAttachment({ identity: 'a', write: 'yes', resumed: false })).toBeNull();
+  });
+});</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sim-object/open-params.spec.ts src/lib/server/sim-object/access.spec.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Implement both modules. <code>canWrite</code> is <code>role !== null &amp;&amp; abilityDominates(ROLE_BUNDLE[role], 'sim.write')</code> (<a href="#d18">decision 18</a>). <code>accessChanges</code> skips a null identity and an identity absent from <code>writers</code>. Neither module imports <code>$app</code>, <code>$env</code> or <code>cloudflare:workers</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Run them; they pass. <code>npm run check</code> and <code>npm run lint</code> pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/sim-object/open-params.spec.ts src/lib/server/sim-object/access.spec.ts</code></pre>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/server/sim-object/open-params.ts src/lib/server/sim-object/open-params.spec.ts src/lib/server/sim-object/access.ts src/lib/server/sim-object/access.spec.ts
+git commit -m "feat(sim-object): open parameters and write access" -m "The header in which the Worker tells the object who opened a socket and whether they may write (R46, R53), and the access diff a role change produces."</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: The Durable Object, the worker entry and the bindings</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/server/sim-object/sim-object.ts</code>; <code>src/lib/server/sim-object/stub.ts</code>; <code>scripts/worker-entry.ts</code>, <code>scripts/worker-entry.spec.ts</code></li>
+      <li>Modify: <code>package.json:13</code> (<code>build</code>); <code>wrangler.jsonc</code> (top level after <code>"main"</code> at line 5, and <code>env.staging</code> after its <code>"main"</code> at line 45)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: everything Tasks 1 to 5 produce; <code>foldSimRole(db, simId, identityId)</code> (<code>src/lib/server/sims/sim-roles.ts:75</code>); <code>safeMigrate</code> (<code>@planafoot/drizzle-cf-migrations/do</code>); <code>newId</code> (<code>$lib/ids/base58</code>); <code>DurableObject</code> (<code>cloudflare:workers</code>); <code>drizzle</code> from <code>drizzle-orm/durable-sqlite</code> and <code>drizzle-orm/d1</code>.</li>
+      <li>Produces (Task 7 uses <code>simStub</code>; unit 3 calls the two RPC methods):
+        <pre><code data-lang="ts">// sim-object.ts
+export class SimObject extends DurableObject&lt;Env&gt; {
+  constructor(ctx: DurableObjectState, env: Env);
+  /** The websocket open. Requires the Upgrade header and OPEN_HEADER (set by the route only). */
+  fetch(request: Request): Promise&lt;Response&gt;;
+  webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise&lt;void&gt;;
+  webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): Promise&lt;void&gt;;
+  webSocketError(ws: WebSocket, error: unknown): Promise&lt;void&gt;;
+  /** Retries the index write (R41). */
+  alarm(): Promise&lt;void&gt;;
+  /** RPC for unit 3's roster hook (R53): re-read each open socket's role and send access on change. */
+  rereadRoles(): Promise&lt;void&gt;;
+  /** RPC for unit 3's takedown (R43): clear the log, mark it gone, close every socket with 4410. */
+  takeDown(): Promise&lt;void&gt;;
+}
+
+// stub.ts
+/** The sim's object, or null where the binding is absent (vite dev, decision 3). */
+export function simStub(env: unknown, simId: string): DurableObjectStub&lt;SimObject&gt; | null;
+
+// scripts/worker-entry.ts
+export const ENTRY_MARK: string;
+export function entrySource(): string;
+/** Moves the adapter's _worker.js to .svelte-kit/cloudflare-adapter/ and writes the entry. */
+export function wrapWorker(root: string): void;</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing spec <code>scripts/worker-entry.spec.ts</code>.
+        <pre><code data-lang="ts">import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { ENTRY_MARK, entrySource, wrapWorker } from './worker-entry';
+
+const roots: string[] = [];
+afterEach(() =&gt; {
+  for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true });
+});
+
+function fakeBuild(): string {
+  const root = mkdtempSync(join(tmpdir(), 'worker-entry-'));
+  roots.push(root);
+  mkdirSync(join(root, '.svelte-kit/cloudflare'), { recursive: true });
+  writeFileSync(
+    join(root, '.svelte-kit/cloudflare/_worker.js'),
+    'import { Server } from "./../output/server/index.js";\nexport default {};\n'
+  );
+  return root;
+}
+
+describe('wrapWorker', () =&gt; {
+  it('moves the adapter output beside its directory and writes the entry', () =&gt; {
+    const root = fakeBuild();
+    wrapWorker(root);
+    expect(readFileSync(join(root, '.svelte-kit/cloudflare-adapter/_worker.js'), 'utf8')).toContain(
+      './../output/server/index.js'
+    );
+    expect(readFileSync(join(root, '.svelte-kit/cloudflare/_worker.js'), 'utf8')).toBe(entrySource());
+  });
+
+  it('exports the default worker and the SimObject class', () =&gt; {
+    expect(entrySource().startsWith(ENTRY_MARK)).toBe(true);
+    expect(entrySource()).toContain("export { default } from '../cloudflare-adapter/_worker.js';");
+    expect(entrySource()).toContain(
+      "export { SimObject } from '../../src/lib/server/sim-object/sim-object.ts';"
+    );
+  });
+
+  it('refuses to wrap twice or without a build', () =&gt; {
+    const root = fakeBuild();
+    wrapWorker(root);
+    expect(() =&gt; wrapWorker(root)).toThrow(/already wrapped/);
+    const empty = mkdtempSync(join(tmpdir(), 'worker-entry-'));
+    roots.push(empty);
+    expect(() =&gt; wrapWorker(empty)).toThrow(/vite build/);
+  });
+});</code></pre>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run it and see it fail.
+        <pre><code data-lang="sh">npx vitest --run --project server scripts/worker-entry.spec.ts</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Implement <code>scripts/worker-entry.ts</code> (<a href="#d1">decision 1</a>). <code>ENTRY_MARK</code> is <code>'// sfhousing worker entry'</code>; <code>entrySource()</code> is that mark plus <code>': written by scripts/worker-entry.ts after vite build; do not edit.'</code>, then the two export lines the spec names, then a newline. <code>wrapWorker(root)</code> throws <code>'no adapter output: run vite build first'</code> when <code>.svelte-kit/cloudflare/_worker.js</code> is missing and <code>'already wrapped: run vite build first'</code> when it starts with <code>ENTRY_MARK</code>; otherwise it creates <code>.svelte-kit/cloudflare-adapter/</code>, renames the file into it (replacing any older copy) and writes the entry. When run as a script (<code>import.meta.url === pathToFileURL(process.argv[1]).href</code>) it calls <code>wrapWorker(process.cwd())</code>. Set <code>package.json</code>'s <code>build</code> to <code>"vite build &amp;&amp; tsx scripts/worker-entry.ts"</code> (<code>preview</code>, the e2e web server and both deploy workflows all run <code>npm run build</code>).</li>
+      <li id="t6-s4"><input type="checkbox"> Run the spec; it passes.
+        <pre><code data-lang="sh">npx vitest --run --project server scripts/worker-entry.spec.ts</code></pre>
+      </li>
+      <li id="t6-s5"><input type="checkbox"> Add to <code>wrangler.jsonc</code> at the top level:
+        <pre><code data-lang="jsonc">// $lib for the Durable Object's modules, which wrangler bundles from source (scripts/worker-entry.ts)
+"alias": { "$lib": "./src/lib" },
+"durable_objects": { "bindings": [{ "name": "SIM", "class_name": "SimObject" }] },
+"migrations": [{ "tag": "v1-sim-object", "new_sqlite_classes": ["SimObject"] }],</code></pre>
+        and inside <code>env.staging</code> the same <code>durable_objects</code> and <code>migrations</code> (not <code>alias</code>, which is top-level only). Then regenerate the types:
+        <pre><code data-lang="sh">npm run types</code></pre>
+        Expected: <code>worker-configuration.d.ts</code> now has <code>SIM: DurableObjectNamespace&lt;...&gt;</code> in <code>Env</code>. (It types the class through <code>main</code>; code here never relies on that, it goes through <code>simStub</code>.)</li>
+      <li id="t6-s6"><input type="checkbox"> Write <code>src/lib/server/sim-object/stub.ts</code>: <code>import type { SimObject } from './sim-object'</code>; read <code>(env as { SIM?: DurableObjectNamespace&lt;SimObject&gt; } | undefined)?.SIM</code> and return <code>ns.getByName(simId)</code> or null.</li>
+      <li id="t6-s7"><input type="checkbox"> Write <code>src/lib/server/sim-object/sim-object.ts</code>. It is wiring only; every rule it applies is tested in Tasks 2 to 5, and its behaviour end to end in Task 8. Its fields: the <code>LogHost</code> or null, the migrate error, and an <code>indexing</code> flag.
+        <ul>
+          <li><strong>Constructor.</strong> <code>ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG))</code>, then <code>ctx.blockConcurrencyWhile</code>: <code>const durable = drizzle(ctx.storage, { schema })</code> (durable-sqlite); <code>safeMigrate(durable, simMigrations)</code> (cast <code>durable</code> to <code>Parameters&lt;typeof safeMigrate&gt;[0]</code> if the types disagree); on error log <code>[sim-object] migrate failed</code> with the message and stop (the object still constructs, so it stays destroyable); else <code>new LogHost(new SimStore(durable as unknown as SimDb), { onCommit: (body) =&gt; this.#broadcast(commitsFrame([body])) })</code>, and if <code>indexBehind()</code> and <code>await ctx.storage.getAlarm()</code> is null, <code>await ctx.storage.setAlarm(Date.now())</code>.</li>
+          <li><strong><code>fetch</code>.</strong> 426 without <code>Upgrade: websocket</code>; 400 when <code>parseOpenParams(request.headers.get(OPEN_HEADER))</code> is null or <code>ctx.id.name</code> is missing; 503 when there is no host; 410 when the host is gone. Else: <code>WebSocketPair</code>, <code>ctx.acceptWebSocket(server)</code>, <code>server.serializeAttachment({ identity, write, resumed: false })</code>, send <code>hello</code> (<code>build</code> from the params, <code>protocol: PROTOCOL</code>) and then <code>access</code>; if <code>write</code> and the tip is 0, <code>await host.ensureStarted({ id: newId(), title, actor: identity, datasetVersion, build, now: Date.now() })</code> and kick the index when it was accepted; return <code>new Response(null, { status: 101, webSocket: client })</code>. The opening socket is not resumed yet, so the start commit reaches it in its own resume answer (<a href="#d14">decision 14</a>).</li>
+          <li><strong><code>webSocketMessage</code>.</strong> No host: close 1011. A binary message: close 1003. <code>parseClientFrame</code> null or no valid attachment: close 1008. A resume: <code>await host.resume(after, deliver)</code>, where <code>deliver(null)</code> sends <code>refused {id: null, why: 'gone'}</code> and <code>deliver(frames)</code> sends each frame and then re-reads the attachment and stores it with <code>resumed: true</code> (re-read inside <code>deliver</code>, so a concurrent <code>rereadRoles</code> is not overwritten). An append: <code>await host.append(commit, id, utf8Bytes(message), { identity, write }, Date.now())</code>; a refusal is sent to this socket only; an acceptance kicks the index (the commit itself already went out through <code>onCommit</code>); a throw logs <code>[sim-object] append failed</code> and closes 1011.</li>
+          <li><strong><code>#broadcast(frame)</code>.</strong> Sends to every socket from <code>ctx.getWebSockets()</code> whose attachment has <code>resumed: true</code>, each send in its own try (a socket may close between the list and the send).</li>
+          <li><strong><code>webSocketClose</code>.</strong> <code>ws.close(code, reason)</code> in a try, with 1000 in place of the reserved 1005 and 1006: <code>compatibility_date</code> 2026-03-01 predates <code>web_socket_auto_reply_to_close</code> (2026-04-07), so the object completes the close handshake itself (developers.cloudflare.com/durable-objects/best-practices/websockets/). <code>webSocketError</code> does nothing; a close follows.</li>
+          <li><strong>The index pass</strong> (<a href="#d15">decision 15</a>):
+            <pre><code data-lang="ts">async #kickIndex(): Promise&lt;void&gt; {
+  const host = this.#host;
+  const simId = this.ctx.id.name;
+  if (this.#indexing || !host || !simId) return;
+  this.#indexing = true;
+  try {
+    // Rows stored during an await are picked up by the next unindexed(); the last check and
+    // the reset of #indexing run with no await between them, so no kick is lost.
+    for (let batch = host.unindexed(INDEX_BATCH); batch.length &gt; 0; batch = host.unindexed(INDEX_BATCH)) {
+      await syncSimIndex(this.#d1(), simId, batch, host.summary());
+      host.markIndexed(batch[batch.length - 1].commit.seq);
+    }
+  } catch (e) {
+    console.error('[sim-object] index write failed', simId, (e as Error).message);
+    if ((await this.ctx.storage.getAlarm()) === null)
+      await this.ctx.storage.setAlarm(Date.now() + INDEX_RETRY_MS);
+  } finally {
+    this.#indexing = false;
+  }
+}</code></pre>
+            <code>alarm()</code> awaits <code>#kickIndex()</code>. <code>#d1()</code> is <code>drizzle(this.env.DB, { schema: d1Schema }) as Database</code> (<code>drizzle-orm/d1</code>, <code>* as d1Schema from '$lib/server/db/schema'</code>).</li>
+          <li><strong><code>rereadRoles()</code>.</strong> Collect the non-null identities of the open sockets; for each, <code>canWrite(await foldSimRole(this.#d1(), simId, identity))</code>; then, on a fresh <code>ctx.getWebSockets()</code>, for each index <code>accessChanges</code> returns, store the attachment with the new <code>write</code> and send <code>access</code>.</li>
+          <li><strong><code>takeDown()</code>.</strong> <code>await host.takeDown(Date.now())</code>, then close every socket with 4410 <code>gone</code>, each in a try.</li>
+        </ul>
+      </li>
+      <li id="t6-s8"><input type="checkbox"> Check, lint, run every Node spec of the unit, then build and dry-run both environments.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npx vitest --run --project server src/lib/server/sim-object src/lib/sim-stream scripts/worker-entry.spec.ts
+npm run build
+npx wrangler deploy --dry-run --outdir .wrangler/dry-run
+npx wrangler deploy --dry-run --env staging --outdir .wrangler/dry-run-staging</code></pre>
+        Expected: <code>svelte-check found 0 errors and 0 warnings</code>; lint exits 0; specs pass; the build ends without error and <code>.svelte-kit/cloudflare/_worker.js</code> starts with <code>// sfhousing worker entry</code>; each dry run lists the binding <code>env.SIM (SimObject)</code> among the bindings and ends <code>--dry-run: exiting now.</code>; <code>grep -c "class SimObject" .wrangler/dry-run/_worker.js</code> prints at least 1. A dry run needs no Cloudflare credentials. (At plan time the same dry run on a wrapper that exported <code>$lib/sim-log</code> and <code>$lib/server/sims/sim-roles</code> through <code>alias</code> bundled and exported both.)</li>
+      <li id="t6-s9"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/server/sim-object/sim-object.ts src/lib/server/sim-object/stub.ts scripts/worker-entry.ts scripts/worker-entry.spec.ts package.json wrangler.jsonc
+git commit -m "feat(sim-object): the SimObject Durable Object and its binding" -m "One object per sim with SQLite storage and hibernating sockets (R21, R23), migrated on open; exported from the worker entry after vite build; SIM binding and the v1-sim-object migration in both environments."</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: The socket route</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/routes/api/sims/[simId]/stream/+server.ts</code>, <code>src/routes/api/sims/[simId]/stream/server.spec.ts</code></li>
+      <li>Modify: <code>src/lib/server/security/same-origin-json.ts:10-20</code> (+ its spec); <code>src/hooks.server.ts:81-92</code> (+ <code>src/hooks.server.spec.ts</code>, in <code>describe('headersHandle')</code> at line 200)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>simStub</code> (Task 6); <code>OPEN_HEADER</code>, <code>encodeOpenParams</code>, <code>canWrite</code> (Task 5); <code>getSimTitle</code> (<code>src/lib/server/sims/sim-index.ts:64</code>), <code>getRole</code> (<code>sim-index.ts:112</code>); <code>isValidId</code> (<code>$lib/ids/base58</code>); <code>devOverride</code>, <code>resolveDatasetVersion</code> (<code>src/lib/server/config/dataset-version.ts</code>), resolved exactly as <code>src/routes/+layout.server.ts:11-17</code> does; <code>SIMS_COPY.crossOrigin</code> (<code>src/lib/members/copy.ts:14</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// same-origin-json.ts
+/** 403 JSON for a request whose Origin is present and not this origin; null otherwise. */
+export function refuseForeignOrigin(event: { request: Request; url: URL }): Response | null;
+// refuseUnlessSameOriginJson keeps its signature and calls refuseForeignOrigin after its 415.
+
+// src/routes/api/sims/[simId]/stream/+server.ts
+export const GET: RequestHandler;</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write the failing route spec <code>src/routes/api/sims/[simId]/stream/server.spec.ts</code>.
+        <pre><code data-lang="ts">import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('$env/dynamic/public', () =&gt; ({ env: {} }));
+vi.mock('$app/environment', () =&gt; ({ dev: false }));
+
+import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
+import { addMemberById, createSimRecord } from '$lib/server/sims/sim-index';
+import { newId } from '$lib/ids/base58';
+import { OPEN_HEADER, parseOpenParams } from '$lib/server/sim-object/open-params';
+import { GET } from './+server';
+
+const ENV = {
+  ENVIRONMENT: 'development',
+  PUBLIC_DATASET_VERSION: 'fixture-0',
+  PUBLIC_APP_RELEASE: 'test-build'
+};
+
+const opened: Array&lt;() =&gt; void&gt; = [];
+afterEach(() =&gt; {
+  for (const close of opened.splice(0)) close();
+});
+
+async function setup() {
+  const t = freshDb();
+  opened.push(t.close);
+  await seedUser(t.db, { id: 'm1', email: 'm1@test.com' });
+  await seedUser(t.db, { id: 'v1', email: 'v1@test.com' });
+  const simId = newId();
+  await createSimRecord({ db: t.db, simId, title: 'Garden', managerId: 'm1' });
+  await addMemberById({ db: t.db, simId, userId: 'v1', role: 'viewer' });
+  const forwarded: Request[] = [];
+  // Node cannot build a 101 Response; the stand-in object answers 200 and records the request.
+  const SIM = {
+    getByName: (name: string) =&gt; ({
+      fetch: async (req: Request) =&gt; {
+        expect(name).toBe(simId);
+        forwarded.push(req);
+        return new Response('upgraded', { status: 200 });
+      }
+    })
+  };
+  const call = (opts: {
+    user?: string | null;
+    headers?: Record&lt;string, string&gt;;
+    id?: string;
+    env?: Record&lt;string, unknown&gt;;
+  } = {}) =&gt;
+    GET({
+      params: { simId: opts.id ?? simId },
+      platform: makePlatform(t.shim, opts.env ?? { ...ENV, SIM }),
+      locals: { user: opts.user ? { id: opts.user } : null },
+      request: new Request(`http://localhost/api/sims/${opts.id ?? simId}/stream`, {
+        headers: { upgrade: 'websocket', origin: 'http://localhost', ...opts.headers }
+      }),
+      url: new URL(`http://localhost/api/sims/${opts.id ?? simId}/stream`)
+    } as never);
+  return { simId, forwarded, call, SIM };
+}
+
+describe('GET /api/sims/[simId]/stream', () =&gt; {
+  it('answers 426 without a websocket upgrade', async () =&gt; {
+    const { call } = await setup();
+    expect((await call({ headers: { upgrade: '' } })).status).toBe(426);
+  });
+
+  it('refuses a foreign Origin with 403', async () =&gt; {
+    const { call, forwarded } = await setup();
+    expect((await call({ headers: { origin: 'https://evil.example' } })).status).toBe(403);
+    expect(forwarded).toHaveLength(0);
+  });
+
+  it('answers 404 for a malformed id and for a sim with no index row', async () =&gt; {
+    const { call } = await setup();
+    expect((await call({ id: 'not-an-id' })).status).toBe(404);
+    expect((await call({ id: newId() })).status).toBe(404);
+  });
+
+  it('answers 503 where the object is not bound', async () =&gt; {
+    const { call } = await setup();
+    expect((await call({ env: ENV })).status).toBe(503);
+  });
+
+  it('forwards a manager as a writer, stamping the open header', async () =&gt; {
+    const { call, forwarded } = await setup();
+    const res = await call({ user: 'm1', headers: { [OPEN_HEADER]: '{"identity":"x","write":true}' } });
+    expect(res.status).toBe(200);
+    expect(parseOpenParams(forwarded[0].headers.get(OPEN_HEADER))).toEqual({
+      identity: 'm1',
+      write: true,
+      title: 'Garden',
+      datasetVersion: 'fixture-0',
+      build: 'test-build'
+    });
+    expect(forwarded[0].headers.get('upgrade')).toBe('websocket');
+  });
+
+  it('forwards a viewer and a signed-out visitor as readers', async () =&gt; {
+    const { call, forwarded } = await setup();
+    await call({ user: 'v1' });
+    await call({ user: null });
+    expect(forwarded.map((r) =&gt; parseOpenParams(r.headers.get(OPEN_HEADER)))).toEqual([
+      expect.objectContaining({ identity: 'v1', write: false }),
+      expect.objectContaining({ identity: null, write: false })
+    ]);
+  });
+
+  it('passes a missing Origin, as the JSON routes do', async () =&gt; {
+    const { call, forwarded } = await setup();
+    const res = await call({ user: 'm1', headers: { origin: '' } });
+    expect(res.status).toBe(200);
+    expect(forwarded).toHaveLength(1);
+  });
+});</code></pre>
+        A header set to <code>''</code> must count as absent in the route (<code>request.headers.get('origin') || null</code>), because <code>Request</code> keeps an empty header.</li>
+      <li id="t7-s2"><input type="checkbox"> Add to <code>src/lib/server/security/same-origin-json.spec.ts</code>:
+        <pre><code data-lang="ts">describe('refuseForeignOrigin', () =&gt; {
+  const ev = (origin: string | null) =&gt; ({
+    request: new Request('http://localhost/x', origin ? { headers: { origin } } : {}),
+    url: new URL('http://localhost/x')
+  });
+  it('refuses another origin with 403 and passes this one or none', async () =&gt; {
+    expect(refuseForeignOrigin(ev('https://evil.example'))?.status).toBe(403);
+    expect(refuseForeignOrigin(ev('http://localhost'))).toBeNull();
+    expect(refuseForeignOrigin(ev(null))).toBeNull();
+  });
+});</code></pre>
+        and to <code>describe('headersHandle')</code> in <code>src/hooks.server.spec.ts</code> (Node cannot construct a status-101 <code>Response</code>, so the spec uses a stand-in whose headers throw, as a real 101's do):
+        <pre><code data-lang="ts">it('passes a 101 upgrade through untouched', async () =&gt; {
+  const upgrade = {
+    status: 101,
+    headers: {
+      get: () =&gt; null,
+      set: () =&gt; {
+        throw new TypeError('immutable');
+      }
+    }
+  } as unknown as Response;
+  expect(await headersHandle({ event: {} as never, resolve: async () =&gt; upgrade })).toBe(upgrade);
+});</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> Run the three specs and see the new tests fail.
+        <pre><code data-lang="sh">npx vitest --run --project server "src/routes/api/sims/[simId]/stream" src/lib/server/security/same-origin-json.spec.ts src/hooks.server.spec.ts</code></pre>
+      </li>
+      <li id="t7-s4"><input type="checkbox"> Implement. In <code>headersHandle</code>, return the response at once when <code>response.status === 101</code>, with a comment (<a href="#d20">decision 20</a>). Extract <code>refuseForeignOrigin</code> from <code>refuseUnlessSameOriginJson</code>, treating an empty <code>Origin</code> as absent. The route, in this order: 426 JSON unless <code>upgrade</code> is <code>websocket</code> (case-insensitive); <code>refuseForeignOrigin</code>; 404 unless <code>isValidId(simId)</code>; <code>getSimTitle</code> null → 404; <code>simStub(platform.env, simId)</code> null → 503 JSON <code>{ error: 'Live sims need the sim object (npm run preview).' }</code>; <code>identity = locals.user?.id ?? null</code>, <code>write = identity !== null &amp;&amp; canWrite(await getRole(...))</code>; the dataset version as the root layout resolves it; <code>build = platform.env.PUBLIC_APP_RELEASE ?? publicEnv.PUBLIC_APP_RELEASE ?? 'dev'</code>; copy the request headers, delete then set <code>OPEN_HEADER</code>; <code>return stub.fetch(new Request(request, { headers }))</code>. The session is already resolved: <code>/api/sims</code> is in <code>SESSION_ROUTE_PREFIXES</code> (<code>src/lib/server/auth/session-gate.ts:32</code>) and <code>sessionHandle</code> reads it without a refresh on an upgrade (<code>src/hooks.server.ts:37-41</code>).</li>
+      <li id="t7-s5"><input type="checkbox"> Run the specs; they pass. Then the whole server project, <code>npm run check</code> and <code>npm run lint</code>.
+        <pre><code data-lang="sh">npx vitest --run --project server "src/routes/api/sims/[simId]/stream" src/lib/server/security/same-origin-json.spec.ts src/hooks.server.spec.ts
+npx vitest --run --project server
+npm run check
+npm run lint</code></pre>
+      </li>
+      <li id="t7-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add "src/routes/api/sims/[simId]/stream" src/lib/server/security/same-origin-json.ts src/lib/server/security/same-origin-json.spec.ts src/hooks.server.ts src/hooks.server.spec.ts
+git commit -m "feat(sim-object): the sim stream route" -m "GET /api/sims/&lt;simId&gt;/stream checks Origin and the sim's index row, reads the identity's role, and forwards the upgrade to the sim's object with who opened it and whether they may write (R46, R53). A 101 now passes the headers handle untouched."</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: The socket end to end</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>e2e/helpers/sim-socket.ts</code>, <code>e2e/sim-object.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>ServerFrame</code>, <code>ClientFrame</code> types (Task 3, <code>src/lib/sim-stream/protocol.ts</code>, type-only imports, so the Playwright loader never resolves <code>$lib</code>); <code>type CommitDraft</code>, <code>type Commit</code> (<code>src/lib/sim-log/types.ts</code>, type-only); <code>newId</code> (<code>src/lib/ids/base58.ts</code>, which imports no <code>$lib</code>); <code>loginAs</code>, <code>uniqueEmail</code> (<code>e2e/helpers/auth.ts</code>); <code>freshContext</code>, <code>signInAndCreateSim</code> (<code>e2e/helpers/members.ts</code>).</li>
+      <li>Produces (unit 4's e2e may reuse): <code>openSimSocket</code>, <code>framesAtLeast</code>, <code>sendFrame</code>, <code>resumeAndRead</code>, <code>closedCode</code>, <code>nameDraft</code>, <code>commitsOf</code>, as below.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Write <code>e2e/helpers/sim-socket.ts</code>.
+        <pre><code data-lang="ts">// A websocket client for e2e specs: the page's own WebSocket (Playwright's request context cannot
+// open one), so the session cookie and the app's CSP apply. Every received frame is kept in
+// window.__sfhSockets; specs wait on frame counts, never on time.
+import { expect, type Page } from '@playwright/test';
+import type { Commit, CommitDraft } from '../../src/lib/sim-log/types';
+import type { ClientFrame, ServerFrame } from '../../src/lib/sim-stream/protocol';
+import { newId } from '../../src/lib/ids/base58';
+
+type Entry = { ws: WebSocket; frames: ServerFrame[]; closed: number | null };
+declare global {
+  interface Window {
+    __sfhSockets?: Entry[];
+  }
+}
+
+/** Open a socket on the sim from the page's origin; returns its handle. */
+export async function openSimSocket(page: Page, simId: string): Promise&lt;number&gt; {
+  return page.evaluate((id) =&gt; {
+    const list = (window.__sfhSockets ??= []);
+    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${scheme}://${location.host}/api/sims/${id}/stream`);
+    const entry: Entry = { ws, frames: [], closed: null };
+    ws.addEventListener('message', (e) =&gt; entry.frames.push(JSON.parse(String(e.data))));
+    ws.addEventListener('close', (e) =&gt; {
+      entry.closed = e.code;
+    });
+    list.push(entry);
+    return list.length - 1;
+  }, simId);
+}
+
+/** Wait until socket `h` has received at least `n` frames; returns all of them. */
+export async function framesAtLeast(page: Page, h: number, n: number): Promise&lt;ServerFrame[]&gt; {
+  await page.waitForFunction(
+    ([i, k]) =&gt; (window.__sfhSockets?.[i]?.frames.length ?? 0) &gt;= k,
+    [h, n] as const
+  );
+  return page.evaluate((i) =&gt; window.__sfhSockets![i].frames, h);
+}
+
+/** Send a frame once the socket is open. `commit` may be anything, to test refusals. */
+export async function sendFrame(
+  page: Page,
+  h: number,
+  frame: ClientFrame | { type: 'append'; commit: unknown }
+): Promise&lt;void&gt; {
+  await page.waitForFunction((i) =&gt; window.__sfhSockets?.[i]?.ws.readyState === 1, h);
+  await page.evaluate(([i, text]) =&gt; window.__sfhSockets![i].ws.send(text), [h, JSON.stringify(frame)] as const);
+}
+
+/** Send `frame` and return the next frame this socket receives. */
+export async function sendAndRead(page: Page, h: number, frame: ClientFrame | { type: 'append'; commit: unknown }): Promise&lt;ServerFrame&gt; {
+  const before = (await framesAtLeast(page, h, 0)).length;
+  await sendFrame(page, h, frame);
+  return (await framesAtLeast(page, h, before + 1))[before];
+}
+
+/** Resume after `after` and return the answer (one frame: e2e logs are small). */
+export const resumeAndRead = (page: Page, h: number, after: number): Promise&lt;ServerFrame&gt; =&gt;
+  sendAndRead(page, h, { type: 'resume', after });
+
+/** Wait for socket `h` to close; returns the close code. */
+export async function closedCode(page: Page, h: number): Promise&lt;number&gt; {
+  await page.waitForFunction((i) =&gt; window.__sfhSockets?.[i]?.closed !== null, h);
+  return page.evaluate((i) =&gt; window.__sfhSockets![i].closed!, h);
+}
+
+/** The commits of a `commits` frame (fails the test for any other frame). */
+export function commitsOf(frame: ServerFrame): Commit[] {
+  expect(frame.type).toBe('commits');
+  return frame.type === 'commits' ? frame.commits : [];
+}
+
+/** A valid edit setting the sim's name. Mirrors src/lib/server/sim-object/test/drafts.ts;
+ *  `shapes: 1` is SHAPES_REVISION today (src/lib/sim-log/shapes.ts). */
+export function nameDraft(parent: number, name: string, over: Partial&lt;CommitDraft&gt; = {}): CommitDraft {
+  return {
+    id: newId(),
+    parent,
+    kind: 'edit',
+    label: 'Rename',
+    restores: null,
+    datasetVersion: 'fixture-0',
+    shapes: 1,
+    build: 'e2e',
+    source: 'sim.name',
+    changes: [{ op: 'set', key: 'sim', field: 'name', value: name }],
+    ...over
+  };
+}</code></pre>
+      </li>
+      <li id="t8-s2"><input type="checkbox"> Write <code>e2e/sim-object.spec.ts</code>. Each test makes its own sim, so the tests run in parallel. A "no frame came" check sends a <code>resume</code> after it and reads the next frame: frames on one socket arrive in order, so anything the earlier frame caused would come first.
+        <pre><code data-lang="ts">import { expect, test, type Page } from '@playwright/test';
+import { newId } from '../src/lib/ids/base58';
+import { loginAs, uniqueEmail } from './helpers/auth';
+import { freshContext, signInAndCreateSim } from './helpers/members';
+import {
+  closedCode,
+  commitsOf,
+  framesAtLeast,
+  nameDraft,
+  openSimSocket,
+  resumeAndRead,
+  sendAndRead,
+  sendFrame
+} from './helpers/sim-socket';
+
+/** Sign in, create a sim through the API, open a socket on it and resume from 0. */
+async function writerOn(page: Page, title: string) {
+  const simId = await signInAndCreateSim(page, uniqueEmail('sim-writer'), title);
+  await page.goto('/about');
+  const h = await openSimSocket(page, simId);
+  await framesAtLeast(page, h, 2);
+  const start = commitsOf(await resumeAndRead(page, h, 0));
+  return { simId, h, start };
+}
+
+test.describe('sim object socket', () =&gt; {
+  test('a writer opening a new sim gets hello, access and the start commit', async ({ page }) =&gt; {
+    const simId = await signInAndCreateSim(page, uniqueEmail('sim-writer'), 'Garden');
+    await page.goto('/about');
+    const h = await openSimSocket(page, simId);
+    const [hello, access] = await framesAtLeast(page, h, 2);
+    expect(hello).toEqual({ type: 'hello', build: expect.any(String), protocol: 1 });
+    expect(access).toEqual({ type: 'access', write: true });
+    const [start, ...rest] = commitsOf(await resumeAndRead(page, h, 0));
+    expect(rest).toEqual([]);
+    expect(start).toMatchObject({
+      seq: 1,
+      parent: 0,
+      kind: 'system',
+      source: 'sim.start',
+      datasetVersion: 'fixture-0',
+      changes: [{ op: 'set', key: 'sim', field: 'name', value: 'Garden' }]
+    });
+    expect(start.hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  test('appends get gapless positions and every resumed socket sees one order', async ({ page }) =&gt; {
+    const { simId, h, start } = await writerOn(page, 'Order');
+    const h2 = await openSimSocket(page, simId);
+    await framesAtLeast(page, h2, 2);
+    await resumeAndRead(page, h2, 1);
+    const a = nameDraft(1, 'A');
+    const onH = commitsOf(await sendAndRead(page, h, { type: 'append', commit: a }));
+    const onH2 = commitsOf((await framesAtLeast(page, h2, 4))[3]);
+    expect(onH).toEqual(onH2);
+    expect(onH).toMatchObject([{ seq: 2, id: a.id, actor: expect.any(String) }]);
+    const b = nameDraft(2, 'B');
+    const fromH2 = commitsOf(await sendAndRead(page, h2, { type: 'append', commit: b }));
+    expect(fromH2).toMatchObject([{ seq: 3, id: b.id }]);
+    // h: hello, access, its resume answer, [a], [b]
+    expect(commitsOf((await framesAtLeast(page, h, 5))[4])).toEqual(fromH2);
+    expect(await sendAndRead(page, h, { type: 'append', commit: nameDraft(2, 'Late') })).toMatchObject({
+      type: 'refused',
+      why: 'behind'
+    });
+    const h3 = await openSimSocket(page, simId);
+    await framesAtLeast(page, h3, 2);
+    expect(commitsOf(await resumeAndRead(page, h3, 0)).map((c) =&gt; c.id)).toEqual([start[0].id, a.id, b.id]);
+  });
+
+  test('a stale parent is behind, and a duplicate id appends once', async ({ page }) =&gt; {
+    const { h, start } = await writerOn(page, 'Dupes');
+    const a = nameDraft(1, 'A');
+    await sendAndRead(page, h, { type: 'append', commit: a });
+    const stale = nameDraft(1, 'Stale');
+    expect(await sendAndRead(page, h, { type: 'append', commit: stale })).toEqual({
+      type: 'refused',
+      id: stale.id,
+      why: 'behind'
+    });
+    const before = (await framesAtLeast(page, h, 0)).length;
+    await sendFrame(page, h, { type: 'append', commit: a });
+    // Frames on one socket arrive in order: anything the duplicate caused would come first.
+    expect(await resumeAndRead(page, h, 2)).toEqual({ type: 'commits', commits: [] });
+    expect(await framesAtLeast(page, h, 0)).toHaveLength(before + 1);
+    expect(commitsOf(await resumeAndRead(page, h, 0)).map((c) =&gt; c.id)).toEqual([start[0].id, a.id]);
+  });
+
+  test('invalid and oversized appends are refused and change nothing', async ({ page }) =&gt; {
+    const { h, start } = await writerOn(page, 'Refusals');
+    const bad = { ...nameDraft(1, 'X'), changes: [{ op: 'delete', key: 'p:nope' }] };
+    expect(await sendAndRead(page, h, { type: 'append', commit: bad })).toEqual({
+      type: 'refused',
+      id: bad.id,
+      why: 'invalid'
+    });
+    const big = nameDraft(1, 'x'.repeat(1_100_000));
+    expect(await sendAndRead(page, h, { type: 'append', commit: big })).toEqual({
+      type: 'refused',
+      id: big.id,
+      why: 'limit'
+    });
+    expect(commitsOf(await resumeAndRead(page, h, 0)).map((c) =&gt; c.id)).toEqual([start[0].id]);
+  });
+
+  test('a non-member and a signed-out visitor read but cannot write', async ({ page, browser }, testInfo) =&gt; {
+    const { simId } = await writerOn(page, 'Shared');
+    const other = await freshContext(browser, testInfo);
+    const visitor = await freshContext(browser, testInfo);
+    try {
+      const reader = await other.newPage();
+      await loginAs(reader, uniqueEmail('sim-reader'));
+      const anon = await visitor.newPage();
+      for (const p of [reader, anon]) {
+        await p.goto('/about');
+        const h = await openSimSocket(p, simId);
+        expect((await framesAtLeast(p, h, 2))[1]).toEqual({ type: 'access', write: false });
+        expect(commitsOf(await resumeAndRead(p, h, 0))).toHaveLength(1);
+        const d = nameDraft(1, 'Mine');
+        expect(await sendAndRead(p, h, { type: 'append', commit: d })).toEqual({
+          type: 'refused',
+          id: d.id,
+          why: 'not-writer'
+        });
+      }
+    } finally {
+      await other.close();
+      await visitor.close();
+    }
+  });
+
+  test('resume answers from any position', async ({ page }) =&gt; {
+    const { h } = await writerOn(page, 'Resume');
+    await sendAndRead(page, h, { type: 'append', commit: nameDraft(1, 'A') });
+    await sendAndRead(page, h, { type: 'append', commit: nameDraft(2, 'B') });
+    expect(commitsOf(await resumeAndRead(page, h, 2)).map((c) =&gt; c.seq)).toEqual([3]);
+    expect(commitsOf(await resumeAndRead(page, h, 3))).toEqual([]);
+    expect(await resumeAndRead(page, h, 9)).toEqual({ type: 'refused', id: null, why: 'gone' });
+  });
+
+  test('a sim with no index row is refused before the upgrade', async ({ page }) =&gt; {
+    await page.goto('/about');
+    const h = await openSimSocket(page, newId());
+    expect(await closedCode(page, h)).toBe(1006);
+    expect(await framesAtLeast(page, h, 0)).toEqual([]);
+    expect((await page.request.get(`/api/sims/${newId()}/stream`)).status()).toBe(426);
+  });
+});</code></pre>
+      </li>
+      <li id="t8-s3"><input type="checkbox"> Check port 4173 is free (<code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code> prints nothing; if another session's server is there, wait for it to go away, never kill it). Run the new spec once, on both projects.
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/sim-object.spec.ts</code></pre>
+        Expected: 14 passed (7 tests, chromium and mobile). If the upgrade fails with a 500, look first at the 101 pass-through (Task 7) and the <code>[WebServer]</code> stderr.</li>
+      <li id="t8-s4"><input type="checkbox"> Check the D1 copy the run left in the local database (the e2e web server uses the local D1; R41 is otherwise covered only in Node).
+        <pre><code data-lang="sh">npx wrangler d1 execute DB --local --command "SELECT count(*) AS sims FROM sim_index WHERE positions &gt; 0"
+npx wrangler d1 execute DB --local --command "SELECT kind, source, count(*) AS n FROM sim_commit GROUP BY kind, source"</code></pre>
+        Expected: <code>sims</code> at least 6; the second lists <code>system</code> / <code>sim.start</code> and <code>edit</code> / <code>sim.name</code> rows.</li>
+      <li id="t8-s5"><input type="checkbox"> Run the specs that touch what this unit changed (the headers handle, sims, sign-in), once on chromium.
+        <pre><code data-lang="sh">npx playwright test e2e/headers.spec.ts e2e/sims-onboarding.spec.ts e2e/leave-sim.spec.ts e2e/invite.spec.ts e2e/auth-session.spec.ts --project chromium</code></pre>
+        Expected: all pass.</li>
+      <li id="t8-s6"><input type="checkbox"> Read the <code>[WebServer]</code> lines of both runs for stderr this unit added (wrangler's output on the new binding, any <code>[sim-object]</code> line). None may appear from the object in a passing run. A new wrangler line that signoff would treat as unexpected stderr goes in <code>chreode.config.ts</code>'s allowlist only as the exact message, with a reason.</li>
+      <li id="t8-s7"><input type="checkbox"> Commit, then run the timing check and the burn-in.
+        <pre><code data-lang="sh">git add e2e/helpers/sim-socket.ts e2e/sim-object.spec.ts
+git commit -m "test(sim-object): the socket end to end" -m "Hello and access, the start commit, gapless positions in one order on every socket, behind, invalid, limit and not-writer refusals, duplicate ids, resume from any position, and refusal of an unknown sim, against wrangler dev."
+npx chreode timing-check --head HEAD
+lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/sim-object.spec.ts --project chromium --repeat-each=5 --retries=0</code></pre>
+        Expected: the timing check reports nothing; 35 passed; nothing left listening on 4173.</li>
+    </ol>
+    <aside data-kind="note"><strong>Migrate on open</strong> A fresh object that stores and serves the start commit (the first test) has applied its bundle: before the migration there is no <code>commits</code> table. The bundle itself is checked in Node (Task 2's <code>migrations.spec.ts</code>).</aside>
+    <aside data-kind="note"><strong>Waiting for unit 3</strong> The Testing line's <code>gone</code> refusal and "a role change ends write on an open socket" need a caller of <code>takeDown()</code> and <code>rereadRoles()</code>; their end-to-end tests belong to unit 3, with the hook and the takedown. The logic under them is tested here in Node (Task 4 <code>takeDown clears the log and refuses later appends as gone</code>, Task 5 <code>lists the sockets whose right to write changed</code>).</aside>
+  </section>
+
+  <section id="sec-task-9">
+    <h2>Task 9: Developer docs</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>docs/dev/sim-object.md</code></li>
+      <li>Modify: <code>CLAUDE.md</code> (scoped reference list after the sim log core line 61; Commands table; Architecture paragraph line 96); <code>docs/dev/developing.md</code> ("Migrations", line 51, and a note on <code>npm run dev</code>); <code>docs/dev/deploy.md</code> (after "Release flow"); <code>docs/dev/auth.md</code> ("Session gate" line 57 and "Sims and membership" line 92); <code>docs/dev/testing.md</code> (Playwright section)</li>
+    </ul>
+    <ol>
+      <li id="t9-s1"><input type="checkbox"> Write <code>docs/dev/sim-object.md</code>, in the house style of <code>docs/dev/sim-log.md</code> (short sections, tables, rule numbers from the spec). Sections and what each must say:
+        <ul>
+          <li><strong>What it is</strong>: one <code>SimObject</code> per sim, binding <code>SIM</code>, addressed by <code>getByName(simId)</code>; the log lives only there, membership only in D1; links to the spec and to sim-log.md.</li>
+          <li><strong>Files</strong>: a table of every module under <code>src/lib/server/sim-object/</code>, <code>src/lib/sim-stream/protocol.ts</code>, the route and <code>scripts/worker-entry.ts</code>.</li>
+          <li><strong>Invariants</strong>: I1 to I9 of this plan, one line each.</li>
+          <li><strong>The socket</strong>: <code>GET /api/sims/&lt;simId&gt;/stream</code>; what the route checks and the statuses (426, 403, 404, 503); the open header and that the browser can never set it; the frames table with exact JSON; ping and pong; close codes; resume semantics (chunks, the empty frame, live commits only after resume, <code>gone</code> past the tip); the order of append checks and that a duplicate gets no frame.</li>
+          <li><strong>Limits</strong>: the <code>LIMITS</code> values and where to change them.</li>
+          <li><strong>Storage and migrations</strong>: the two tables; <code>npm run db:generate:sim</code>; append-only for good (never delete <code>migrations/sim</code>, the frozen-baseline spec); migrate on open with <code>safeMigrate</code>, and that a failed migration leaves the object answering 503.</li>
+          <li><strong>The D1 copy</strong>: <code>sim_index</code> columns, <code>sim_commit</code>, the watermark, the index pass and its alarm, that both are rebuildable copies never read to serve rules, and that <code>remixed_from*</code> is written by unit 3.</li>
+          <li><strong>For units 3 to 5</strong>: <code>rereadRoles()</code> (call after a roster change, R53) and <code>takeDown()</code> (R43) through <code>simStub(env, simId)</code>; renames must become name commits; the remix source; R58's start commit.</li>
+          <li><strong>Running it</strong>: the worker entry wrap after <code>vite build</code>; <code>npm run dev</code> has no object (503), use <code>npm run preview</code>; the e2e helper.</li>
+        </ul>
+      </li>
+      <li id="t9-s2"><input type="checkbox"> Link it from <code>CLAUDE.md</code>'s scoped list: <code>- **Sim object (the per-sim Durable Object, its socket and frames, append rules, limits, the sim migration track, the D1 copy, rereadRoles and takeDown)** — [docs/dev/sim-object.md](docs/dev/sim-object.md)</code>. Add <code>npm run db:generate:sim</code> to the Commands table ("Generate + classify + bundle a migration of the sim object's own SQLite track; append-only"). In the Architecture paragraph add the Durable Object binding <code>SIM</code> (class <code>SimObject</code>, SQLite) to the list of bindings, and one sentence: the build wraps the adapter's <code>_worker.js</code> so it also exports the class (<code>scripts/worker-entry.ts</code>), and wrangler resolves its <code>$lib</code> imports through <code>alias</code>.</li>
+      <li id="t9-s3"><input type="checkbox"> In <code>docs/dev/developing.md</code> "Migrations", add the second track: edit <code>src/lib/server/sim-object/schema.ts</code> → <code>npm run db:generate:sim</code> → commit; nothing to apply (each object migrates on open); never regenerate from scratch. Add under Setup or a new "The sim object" line: <code>npm run dev</code> cannot run the object, the socket answers 503 there, use <code>npm run preview</code>. In <code>docs/dev/deploy.md</code> add that the <code>SIM</code> binding and its <code>new_sqlite_classes</code> migration ship with the deploy in both environments, with no manual step, and that a DO migration tag is never edited or reused. In <code>docs/dev/auth.md</code>: the session gate covers <code>/api/sims/&lt;id&gt;/stream</code>, which checks <code>Origin</code> with <code>refuseForeignOrigin</code>; "Sims and membership" now says the per-sim object exists and that unit 3 makes <code>onSimRosterChanged</code> call its <code>rereadRoles()</code>. In <code>docs/dev/testing.md</code>, the object's logic runs in Node over <code>freshSimDb()</code> (the object's own bundle in better-sqlite3), and e2e specs open sockets with <code>e2e/helpers/sim-socket.ts</code>.</li>
+      <li id="t9-s4"><input type="checkbox"> Format and check: the docs index spec requires the link.
+        <pre><code data-lang="sh">npx prettier --write docs/dev/sim-object.md docs/dev/developing.md docs/dev/deploy.md docs/dev/auth.md docs/dev/testing.md CLAUDE.md
+npx vitest --run --project server scripts/docs-index.spec.ts
+npm run lint</code></pre>
+      </li>
+      <li id="t9-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add docs/dev/sim-object.md docs/dev/developing.md docs/dev/deploy.md docs/dev/auth.md docs/dev/testing.md CLAUDE.md
+git commit -m "docs(sim-object): the sim object and its socket" -m "The object, its frames and limits, the sim migration track, the D1 copy and the RPC methods units 3 to 5 call; what changes for development and deploys."</code></pre>
+      </li>
+    </ol>
+  </section>
+</article>
