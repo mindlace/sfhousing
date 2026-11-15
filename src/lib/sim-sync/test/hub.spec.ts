@@ -630,8 +630,11 @@ describe('FakeHub', () => {
     expect(a.codes).toEqual([1006]);
     expect(events).toEqual(['error', 'close']);
     expect(a.got).toEqual([]);
-    const long = 'x'.repeat(124);
-    expect(() => client(hub, newId()).ws.close(1000, long)).toThrow(/reason/);
+    const long = '\u00e9'.repeat(70); // 70 characters, 140 bytes
+    const toolong = client(hub, newId());
+    expect(() => toolong.ws.close(1000, long)).toThrow(
+      expect.objectContaining({ name: 'SyntaxError' })
+    );
     const ok = client(hub, newId());
     expect(() => ok.ws.close(1000, 'x'.repeat(123))).not.toThrow();
     expect(() => client(hub, newId()).ws.close(1011)).toThrow(/close code/);
@@ -672,6 +675,61 @@ describe('FakeHub', () => {
     a.ws.send(append(draftOf(1, [nameChange('A')])));
     hub.flush();
     expect(a.codes).toEqual([1011]);
+  });
+
+  describe('with a stored row that folds', () => {
+    const metro = {
+      id: 'z1',
+      kind: 'zoning',
+      where: { tag: 'transit', stopTypes: ['metro'] },
+      label: 'Metro',
+      preset: null,
+      on: true
+    };
+    const addMetro = {
+      op: 'add',
+      key: 'p:z1',
+      shape: 'policy.transit',
+      fields: metro,
+      after: null
+    };
+    const turnOff = { op: 'set', key: 'p:z1', field: 'on', value: false };
+
+    function withRow() {
+      const hub = new FakeHub();
+      const sim = newId();
+      const a = resumed(hub, sim); // the start commit is seq 1
+      hub.storeRaw(sim, stamped(draftOf(1, [addMetro as never]), 2));
+      hub.flush();
+      a.got.length = 0;
+      return { hub, sim, a };
+    }
+
+    it('accepts and stores a draft that edits what the raw row made', () => {
+      const { hub, sim, a } = withRow();
+      const d = draftOf(2, [turnOff as never]);
+      a.ws.send(append(d));
+      hub.flush();
+      expect(frames(a.got)).toMatchObject([{ type: 'commits', commits: [{ id: d.id, seq: 3 }] }]);
+      expect(hub.commits(sim)).toHaveLength(3);
+    });
+
+    it('refuses invalid a draft that conflicts with what the raw row made', () => {
+      const { hub, sim, a } = withRow();
+      const d = draftOf(2, [addMetro as never]);
+      a.ws.send(append(d));
+      hub.flush();
+      expect(frames(a.got)).toEqual([{ type: 'refused', id: d.id, why: 'invalid' }]);
+      expect(hub.commits(sim)).toHaveLength(2);
+    });
+
+    it('judges foreign commits by the same fold', () => {
+      const { hub, sim } = withRow();
+      const ok = hub.foreign(sim, draftOf(2, [turnOff as never]));
+      expect(ok.seq).toBe(3);
+      expect(() => hub.foreign(sim, draftOf(3, [turnOff as never]))).not.toThrow();
+      expect(() => hub.foreign(sim, draftOf(4, [addMetro as never]))).toThrow(/not accepted/);
+    });
   });
 
   it("still delivers the client's own close while muted", () => {

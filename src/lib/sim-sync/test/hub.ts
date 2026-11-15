@@ -23,7 +23,7 @@ import {
   type RefusedWhy
 } from '$lib/sim-stream/protocol';
 import { newId } from '$lib/ids/base58';
-import { DS, FakeObject, stamped } from '$lib/sim-store/test/commits';
+import { DS, stamped } from '$lib/sim-store/test/commits';
 import type { SocketCtor, SocketEventLike, SocketLike } from '../ports';
 import { microtasks, type FetchAnswer } from './fakes';
 
@@ -96,7 +96,11 @@ export class FakeSocket implements SocketLike {
   /** Every text the client sent that was not dropped, in order. */
   readonly sent: string[] = [];
   resumed = false;
-  /** The code the client closed with (1005 when it gave none: the close frame had none). */
+  /**
+   * The code the client closed with (1005 when it gave none: the close frame had none), null
+   * while it has not closed. What the hub received, not what the socket's own close event
+   * reports: that is the object's reply (1000 for a close with no code).
+   */
   closedWith: number | null = null;
   #listeners: Record<EventType, Listener[]> = { open: [], message: [], close: [], error: [] };
   #link: Link;
@@ -192,7 +196,10 @@ const URL_SIM = /\/api\/sims\/([^/?#]+)\/stream(?:[?#]|$)/;
  * A deterministic double of the sim object (one per sim id) and the sockets a client opens to
  * it. It models what the client sees of the real object (docs/dev/sim-object.md), using the
  * real frame encoder and parser (`$lib/sim-stream/protocol`), the real draft parser and limits
- * and the store's FakeObject for the append rules. Nothing happens on its own: no timer, no
+ * and the store's `stamped` helper for the shape of a stored commit. The hub is the only judge:
+ * it folds the stored rows from empty on every append (a cost of the size of the log, fine for
+ * tests of hundreds of commits), so every stored row, however it got there, is part of the
+ * state later appends are judged on. Nothing happens on its own: no timer, no
  * microtask. Every frame, in both directions, is an event in one queue; the test delivers
  * events with `flush()` or `step()`, and an event is handled in queue order:
  *
@@ -201,7 +208,7 @@ const URL_SIM = /\/api\/sims\/([^/?#]+)\/stream(?:[?#]|$)/;
  *    When the socket has write and the sim has no commits, the start commit is stored at that
  *    moment (option `start`, default on): kind 'system', label 'Start', source 'sim.start',
  *    parent 0, one `set` of the name to the `title` option, the hub's dataset, build and
- *    SHAPES_REVISION; its author is FakeObject's fixed actor, not the opener's identity
+ *    SHAPES_REVISION; its author is the stamping helper's fixed actor, not the opener's identity
  *    (identities are not modelled). It is before any resume is answered, so a writer's first resume on a new
  *    sim returns one commit the client did not make, and the client's own first commit (made
  *    on parent 0) is refused `behind`.
@@ -284,7 +291,7 @@ export class FakeHub {
   /** Appends wait for release() (settable after construction). */
   hold: boolean;
   #o: Required<Omit<HubOptions, 'build' | 'write' | 'hold'>>;
-  #sims = new Map<string, FakeObject>();
+  #sims = new Map<string, Commit[]>();
   /** Why a sim's stored rows no longer fold, once storeRaw put such a row there. */
   #fold = new Map<string, 'newer' | 'broken'>();
   #registered = new Set<string>();
@@ -331,7 +338,7 @@ export class FakeHub {
 
   /** The commits stored for a sim, in order (the hub's own list, not a copy). */
   commits(simId: string): Commit[] {
-    return this.#object(simId).commits;
+    return this.#object(simId);
   }
 
   /**
@@ -339,12 +346,9 @@ export class FakeHub {
    * throws) and sent now, queued, to every resumed open socket on that sim but `except`.
    */
   foreign(simId: string, d: CommitDraft, o: { except?: FakeSocket } = {}): Commit {
-    const out = this.#object(simId).append(d);
-    if (out.kind !== 'accepted') {
-      throw new Error(`FakeHub.foreign: not accepted (${out.kind})`);
-    }
-    this.#live(simId, out.commit, o.except);
-    return out.commit;
+    const commit = this.#commit(simId, d);
+    this.#live(simId, commit, o.except);
+    return commit;
   }
 
   /**
@@ -354,22 +358,22 @@ export class FakeHub {
    * fold its stored rows, as after a newer build's write. Every later append that passes the
    * `behind` check and the commit size check is then refused `newer` (a newer build's row) or
    * closes its socket 1011 (any other), as the real object does. A row that folds is part of
-   * the state later appends are folded on.
+   * the state later appends are folded on, as every stored row is.
    */
   storeRaw(simId: string, c: Commit): void {
-    const obj = this.#object(simId);
-    if (c.seq !== obj.commits.length + 1) throw new Error('FakeHub.storeRaw: seq is not next');
-    obj.commits.push(structuredClone(c));
+    const log = this.#object(simId);
+    if (c.seq !== log.length + 1) throw new Error('FakeHub.storeRaw: seq is not next');
+    log.push(structuredClone(c));
     if (!this.#fold.has(simId)) {
       const state = LogState.empty();
       try {
-        for (const row of obj.commits) state.apply(row);
+        for (const row of log) state.apply(row);
       } catch (e) {
         if (!(e instanceof LogError)) throw e;
         this.#fold.set(simId, e.code === 'future-shapes' ? 'newer' : 'broken');
       }
     }
-    this.#live(simId, obj.commits[obj.commits.length - 1]);
+    this.#live(simId, log[log.length - 1]);
   }
 
   /**
@@ -440,13 +444,57 @@ export class FakeHub {
     return n;
   }
 
-  #object(simId: string): FakeObject {
+  /** The sim's stored commits: the log itself. */
+  #object(simId: string): Commit[] {
     let o = this.#sims.get(simId);
     if (!o) {
-      o = new FakeObject();
+      o = [];
       this.#sims.set(simId, o);
     }
     return o;
+  }
+
+  /** The stored rows replayed, then the draft applied with the fold check. */
+  #verdict(log: readonly Commit[], draft: CommitDraft): 'ok' | 'newer' | 'invalid' {
+    const state = LogState.empty();
+    try {
+      for (const r of log) state.apply(r);
+      state.apply(draft, { check: true });
+    } catch (e) {
+      if (!(e instanceof LogError)) throw e;
+      return e.code === 'future-shapes' ? 'newer' : 'invalid';
+    }
+    return 'ok';
+  }
+
+  /**
+   * Judges a draft that did not come over a socket (foreign, the start commit) by the same
+   * rules as an append (it parses, its id is new, its parent is the tip, it folds) and stores
+   * it; throws when it is not accepted.
+   */
+  #commit(simId: string, d: CommitDraft): Commit {
+    const log = this.#object(simId);
+    let draft: CommitDraft;
+    try {
+      draft = parseCommitDraft(structuredClone(d));
+    } catch (e) {
+      if (e instanceof LogFormatError)
+        throw new Error('FakeHub: not accepted (invalid)', { cause: e });
+      throw e;
+    }
+    if (log.some((x) => x.id === draft.id)) throw new Error('FakeHub: not accepted (duplicate)');
+    if (draft.parent !== log.length) throw new Error('FakeHub: not accepted (behind)');
+    const verdict = this.#verdict(log, draft);
+    if (verdict !== 'ok') throw new Error(`FakeHub: not accepted (${verdict})`);
+    return this.#store(simId, draft);
+  }
+
+  /** Stamps the draft as the store's helper does (seq, parent, actor, at, hash) and stores it. */
+  #store(simId: string, draft: CommitDraft): Commit {
+    const log = this.#object(simId);
+    const commit = stamped(draft, log.length + 1);
+    log.push(commit);
+    return commit;
   }
 
   #open(url: string): FakeSocket {
@@ -477,7 +525,7 @@ export class FakeHub {
       this.#text(s, encodeFrame(frame));
     }
     this.#text(s, encodeFrame({ type: 'access', write: c.write }));
-    if (c.write && this.#o.start && this.#object(sim).commits.length === 0) this.#start(sim);
+    if (c.write && this.#o.start && this.#object(sim).length === 0) this.#start(sim);
     return s;
   }
 
@@ -495,9 +543,7 @@ export class FakeHub {
       source: 'sim.start',
       changes: [{ op: 'set', key: NAME_KEY, field: 'name', value: this.#o.title }]
     };
-    const out = this.#object(sim).append(draft);
-    if (out.kind !== 'accepted') throw new Error(`FakeHub: start commit ${out.kind}`);
-    this.#live(sim, out.commit);
+    this.#live(sim, this.#commit(sim, draft));
   }
 
   #text(s: FakeSocket, text: string): void {
@@ -627,7 +673,7 @@ export class FakeHub {
     c.resuming = false;
     if (c.gone) return;
     const refusal = this.#resumeRefusals.shift();
-    const log = this.#object(c.sim).commits;
+    const log = this.#object(c.sim);
     const why = refusal ?? (after > log.length ? 'gone' : null);
     if (why) {
       this.#text(s, encodeFrame({ type: 'refused', id: null, why }));
@@ -655,7 +701,7 @@ export class FakeHub {
   #append(s: FakeSocket, c: Conn, text: string, write: boolean): void {
     const frame = parseClientFrame(text);
     if (!frame || frame.type !== 'append') return;
-    const obj = this.#object(c.sim);
+    const log = this.#object(c.sim);
     const refuse = (why: RefusedWhy) =>
       this.#text(s, encodeFrame({ type: 'refused', id: frame.id, why }));
     const taken = (step: number): boolean => {
@@ -674,16 +720,17 @@ export class FakeHub {
       if (e instanceof LogFormatError) return refuse('invalid');
       throw e;
     }
-    if (obj.commits.some((x) => x.id === draft.id)) {
+    if (log.some((x) => x.id === draft.id)) {
       this.duplicates += 1;
       return;
     }
     if (taken(7)) return;
     if (taken(8)) return;
-    if (draft.parent !== obj.commits.length) return refuse('behind');
-    // The stamp at its real largest: a 64-character identity and a 13-digit time.
+    if (draft.parent !== log.length) return refuse('behind');
+    // The stamp at its real largest: a 64-ASCII-character identity (a multibyte one could be larger
+    // still) and a 13-digit time.
     const row = {
-      ...stamped(draft, obj.commits.length + 1, 'a'.repeat(64)),
+      ...stamped(draft, log.length + 1, 'a'.repeat(64)),
       at: 1_700_000_000_000
     };
     if (utf8Bytes(JSON.stringify(row)) > LIMITS.commitBytes) return refuse('limit');
@@ -691,21 +738,13 @@ export class FakeHub {
     if (folds === 'broken') return this.#serverClose(s, c, CLOSE_INTERNAL);
     if (folds === 'newer' || draft.shapes > SHAPES_REVISION) return refuse('newer');
     if (taken(10) || taken(11)) return;
-    const state = LogState.empty();
-    try {
-      for (const r of obj.commits) state.apply(r);
-      state.apply(draft, { check: true });
-    } catch (e) {
-      if (!(e instanceof LogError)) throw e;
-      return refuse(e.code === 'future-shapes' ? 'newer' : 'invalid');
-    }
+    const verdict = this.#verdict(log, draft);
+    if (verdict !== 'ok') return refuse(verdict);
     if (this.closeOnAppend > 0) {
       this.closeOnAppend -= 1;
       return this.#serverClose(s, c, CLOSE_INTERNAL);
     }
-    const out = obj.append(frame.commit as CommitDraft);
-    if (out.kind === 'accepted') this.#live(c.sim, out.commit);
-    else if (out.kind === 'refused') refuse(out.why);
+    this.#live(c.sim, this.#store(c.sim, draft));
   }
 }
 
