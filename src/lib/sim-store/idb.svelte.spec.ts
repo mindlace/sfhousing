@@ -116,6 +116,31 @@ describe('openSimDb', () => {
     }
   });
 
+  it('settles a write on the transaction, not on its requests: a late abort rejects', async () => {
+    const name = testName();
+    let abort = false;
+    try {
+      const db = must(await openSimDb({ name, abortWrites: () => abort }));
+      const s = sim();
+      await db.createSim(s, { current: true });
+      abort = true;
+      const a = putOf('a');
+      // every request of the batch succeeds before the transaction is aborted
+      await expect(
+        db.write(s.simId, batch('tab1', [a]), {
+          marker: { key: 'm', value: 1, expect: undefined }
+        })
+      ).rejects.toThrow();
+      abort = false;
+      expect((await db.read(s.simId)).pending).toEqual([]);
+      expect(await db.getMeta('m')).toBeUndefined();
+      expect(await db.getMeta(`n:${s.simId}`)).toBeUndefined();
+      db.close();
+    } finally {
+      await deleteName(name);
+    }
+  });
+
   it('allocates distinct n from two connections writing at once', async () => {
     const name = testName();
     try {

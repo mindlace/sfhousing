@@ -7,6 +7,7 @@
 import type { Commit } from '$lib/sim-log';
 import {
   CURRENT_KEY,
+  isReservedKey,
   nKey,
   type CreateResult,
   type Marker,
@@ -186,7 +187,8 @@ function wrap(
         continue;
       }
       let n: number;
-      if (p.n !== undefined) n = p.n;
+      // a put with n updates in place: the stored n stays, the given one is ignored
+      if (p.n !== undefined && held) n = held.n;
       else {
         n = ++last;
         spent = true;
@@ -229,6 +231,7 @@ function wrap(
       o: { current?: boolean; marker?: Marker; batch?: WriteBatch } = {}
     ): Promise<CreateResult> {
       return run([SIMS, COMMITS, PENDING, META], 'readwrite', async (tx) => {
+        if (o.marker && isReservedKey(o.marker.key)) throw new Error('reserved key');
         const meta = tx.objectStore(META);
         const current = ((await metaValue(tx, CURRENT_KEY)) as string | undefined) ?? null;
         const none = { n: {}, lost: [] };
@@ -238,7 +241,9 @@ function wrap(
         if (o.current && current !== null) {
           return { ...none, applied: false, outcome: 'current-taken' as const, current };
         }
-        await req(tx.objectStore(SIMS).put(sim));
+        const store = tx.objectStore(SIMS);
+        // a sim that exists keeps its record
+        if (!(await req(store.get(sim.simId)))) await req(store.put(sim));
         if (o.current)
           await req(meta.put({ key: CURRENT_KEY, value: sim.simId } satisfies MetaRow));
         if (o.marker) await req(meta.put({ key: o.marker.key, value: o.marker.value }));
@@ -253,6 +258,7 @@ function wrap(
 
     write(simId: string, batch: WriteBatch, o: { marker?: Marker } = {}): Promise<WriteResult> {
       return run([COMMITS, PENDING, META], 'readwrite', async (tx) => {
+        if (o.marker && isReservedKey(o.marker.key)) throw new Error('reserved key');
         if (o.marker) {
           if (!markerMatches(await metaValue(tx, o.marker.key), o.marker)) {
             return { applied: false, n: {}, lost: [] };
@@ -292,6 +298,7 @@ function wrap(
 
     setMeta(key: string, value: unknown): Promise<void> {
       return run([META], 'readwrite', async (tx) => {
+        if (isReservedKey(key)) throw new Error('reserved key');
         await req(tx.objectStore(META).put({ key, value } satisfies MetaRow));
       });
     },
