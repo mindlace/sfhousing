@@ -68,7 +68,7 @@ See [auth.md](auth.md).
 
 `POST /api/operator/sims/<simId>/takedown` removes a sim: it bars the id for ever, clears the sim's stored log, closes its open sockets (close code 4410), and deletes its `sim_index` and `sim_commit` rows and its pending invitations. The ledger's old grants stay and grant nothing. It cannot be undone, and nothing a member does can do it.
 
-The route is off until the secret is set: every request answers 404 while `SIM_TAKEDOWN_TOKEN` is unset or shorter than 32 characters. The secret is unset in staging and in production.
+The route is off until the secret is set: every same-origin JSON request answers 404 while `SIM_TAKEDOWN_TOKEN` is unset or shorter than 32 characters (a request that is not JSON gets 415, and one with a foreign `Origin` 403, first). The secret is unset in staging and in production.
 
 1. Set the secret on the environment, a value of at least 32 characters (for example `openssl rand -hex 32`). Keep it where you can read it back; never commit it.
 
@@ -77,9 +77,10 @@ The route is off until the secret is set: every request answers 404 while `SIM_T
    wrangler secret put SIM_TAKEDOWN_TOKEN --env staging  # staging
    ```
 
-2. Call the route. The header is `Authorization: Bearer <token>`, spelled that way, and `Content-Type: application/json` is required. Send no `Origin` header (`curl` sends none).
+2. Call the route. The header is `Authorization: Bearer <token>`, spelled that way, and `Content-Type: application/json` is required. Send no `Origin` header (`curl` sends none). Put the token in your shell first: with the variable empty the header is `Bearer `, which answers 404 like a wrong token.
 
    ```sh
+   read -rs SIM_TAKEDOWN_TOKEN   # paste the token; it is not echoed
    curl -X POST https://<host>/api/operator/sims/<simId>/takedown \
      -H 'Content-Type: application/json' \
      -H "Authorization: Bearer $SIM_TAKEDOWN_TOKEN" \
@@ -88,16 +89,16 @@ The route is off until the secret is set: every request answers 404 while `SIM_T
 
 3. Optionally remove the secret afterwards, which turns the route off again: `wrangler secret delete SIM_TAKEDOWN_TOKEN` (add `--env staging` for staging).
 
-Answers:
+Answers, in the order the route checks:
 
-| Status | Means                                                                                                               |
-| ------ | ------------------------------------------------------------------------------------------------------------------- |
-| 200    | `{ "simId": "<simId>" }`: done. The id is marked, the object is cleared and the D1 rows are gone                    |
-| 404    | The token is missing, wrong, short or the secret is unset, or `<simId>` is not a valid id. One body for all of them |
-| 415    | Not `application/json`                                                                                              |
-| 403    | The request carried an `Origin` that is not the host's                                                              |
-| 503    | The sim object cannot be reached (no `SIM` binding, as under `npm run dev`). Nothing was written                    |
-| 500    | A step failed after the id was marked. Call again: every step is safe to repeat, so a retry finishes the job        |
+| Status | Means                                                                                                                                                              |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 415    | Not `application/json`                                                                                                                                             |
+| 403    | The request carried an `Origin` that is not the host's                                                                                                             |
+| 404    | The token is missing, wrong, short or the secret is unset, or `<simId>` is not a valid id. One body for all of them                                                |
+| 503    | The sim object cannot be reached (no `SIM` binding, as under `npm run dev`). Nothing was written                                                                   |
+| 200    | `{ "simId": "<simId>" }`: done. The id is marked, the object is cleared and the D1 rows are gone. The Worker logs one info line, `[takedown] done` with the sim id |
+| 500    | A step failed. Call again: every step is safe to repeat, so a retry finishes the job                                                                               |
 
 Any valid id with the right token is taken down and barred, whether or not it has a `sim_index` row. That clears a log whose index row is already gone, and bars an id nobody registered yet. The id can never be registered again.
 

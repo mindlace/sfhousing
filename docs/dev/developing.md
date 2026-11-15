@@ -50,7 +50,7 @@ Both write to the Miniflare R2 state in `.wrangler/`; delete that directory to r
 
 ## The sim object
 
-The per-sim Durable Object does not run under `npm run dev`. The stream route answers 503 under dev, but a websocket upgrade request does not reach it there: the connection gets no answer (observed; Vite's dev server likely handles upgrades itself). Use `npm run preview` (build, then `wrangler dev` on port 4173). Under dev the roster hook does nothing, a rename answers 503 (it needs the object), and the operator takedown route answers 503 before it writes anything. `SIM_TAKEDOWN_TOKEN` is not needed locally except to try the takedown under `npm run preview` (put an at-least-32-character value of your own in `.dev.vars`). See [sim-object.md](sim-object.md) and [auth.md](auth.md).
+The per-sim Durable Object does not run under `npm run dev`. The stream route answers 503 under dev, but a websocket upgrade request does not reach it there: the connection gets no answer (observed; Vite's dev server likely handles upgrades itself). Use `npm run preview` (build, then `wrangler dev` on port 4173). Under dev the roster hook does nothing, a rename answers 503 (it needs the object), and the operator takedown route answers 503 before it writes anything, but only to a request with a valid token: without an at-least-32-character `SIM_TAKEDOWN_TOKEN` in `.dev.vars` it answers 404 first. `SIM_TAKEDOWN_TOKEN` is not needed locally except to try the takedown under `npm run preview` (put an at-least-32-character value of your own in `.dev.vars`). See [sim-object.md](sim-object.md) and [auth.md](auth.md).
 
 ## Migrations
 
