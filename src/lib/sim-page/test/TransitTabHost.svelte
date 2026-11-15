@@ -4,13 +4,15 @@
 -->
 <script lang="ts">
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
-  import type { LeverSync, PolicyStore } from '../policy-store.svelte';
+  import type { PolicySync } from '$lib/timeline/policy-sync.svelte';
+  import type { SimPolicy } from '../policy';
+  import type { PolicyStore } from '../policy-store.svelte';
   import { liveSelection, type DockSelection } from '../selection';
   import TransitTab from '../TransitTab.svelte';
 
   interface Props {
-    store: PolicyStore;
-    sync: Pick<LeverSync, 'result' | 'retry'>;
+    store: PolicyStore<SimPolicy>;
+    sync: Pick<PolicySync, 'result' | 'retry'>;
     catalog?: BrushCatalog | null;
     selection?: DockSelection;
     announce?: (msg: string) => void;

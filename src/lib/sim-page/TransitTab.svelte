@@ -18,14 +18,15 @@
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import { ruleChangeLabel, ruleLotStatus, transitUnavailable } from './brush-summary';
   import type { ZoningRule } from './policy';
-  import type { LeverSync, PolicyStore } from './policy-store.svelte';
+  import type { EditStore } from '$lib/timeline/lens';
+  import type { PolicySync } from '$lib/timeline/policy-sync.svelte';
   import type { DockSelection } from './selection';
   import { newLayer, replaceRule } from './transit-edit';
   import TransitLayerRow from './TransitLayerRow.svelte';
 
   interface Props {
-    store: PolicyStore;
-    sync: Pick<LeverSync, 'result' | 'retry'>;
+    store: EditStore;
+    sync: Pick<PolicySync, 'result' | 'retry'>;
     /** The chips' data: undefined while loading, null when unavailable. */
     catalog: BrushCatalog | null | undefined;
     selection: DockSelection;

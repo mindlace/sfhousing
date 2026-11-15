@@ -6,6 +6,8 @@
 <script lang="ts">
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { Day } from '$lib/timelapse/time';
+  import { REFERENCE_NOTE } from '$lib/timeline/copy';
+  import Explain from '$lib/timeline/Explain.svelte';
   import { CHART_H, COLORS, SERIES_NAME, chartLabel, chartModel, tableRows } from './chart';
   import { CALCULATING } from './score-view';
   import { monthIndex } from './time';
@@ -222,10 +224,6 @@
         </li>
       {/each}
     </ul>
-    <p class="mt-2 text-xs text-ink dark:text-ink-dark">
-      Dotted: published estimates of what the plan adds. Compare them with the violet lines, which
-      show this simulation's plan effect (with the plan minus the old zoning).
-    </p>
     <ul class="mt-1 space-y-1 text-xs text-ink dark:text-ink-dark">
       {#each model.references as r, i (i)}
         <li class="flex items-center gap-2" data-reference-label={i}>
@@ -241,7 +239,7 @@
               stroke-linecap="round"
             />
           </svg>
-          <span>{r.label}</span>
+          <Explain text={REFERENCE_NOTE}>{r.label}</Explain>
         </li>
       {/each}
     </ul>

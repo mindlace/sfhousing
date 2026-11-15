@@ -1,10 +1,11 @@
-// timelapse-sim spec §6, deferred to the page: what the worker fetches, how fast the first timeline
-// arrives, and that a run slider move changes the future but not the band. Runs against the VITE_E2E build
-// (window.__sfhFzp, src/lib/fzp/debug.ts).
+// timelapse-sim spec §6, deferred to the page, on /sim's timeline: what the worker fetches, and
+// that the same document after a reload fills the same forecast. Runs against the VITE_E2E build
+// (window.__sfhFzp, src/lib/fzp/debug.ts). The first month's wall-clock budget lives in
+// e2e/perf/first-month.perf.spec.ts.
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
-import { runSlider, startRun, waitRanked } from './helpers/run';
+import { waitFilled } from './helpers/run';
 import { gotoHydrated, jumpAndIdle, openHeaderMenu, type Win } from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
@@ -18,37 +19,17 @@ const manifest = JSON.parse(readFileSync(MANIFEST_URL, 'utf8')) as {
   };
 };
 const { fzp } = manifest.scenarios;
-// /sim (where /fzp now redirects) reads these five: the timelapse's three, the lever engine's
-// policy.bin and the optional gross.bin. The brush catalog (asked for when the dock's editing face first shows) reads only
-// transit.json and neighborhoods.geojson, never frontage.bin.
+// /sim (where /fzp redirects) reads these five: the timelapse's three, the lever engine's
+// policy.bin and the optional gross.bin. The brush catalog (asked for when the editor first shows
+// something) reads only transit.json and neighborhoods.geojson, never frontage.bin.
 const SIM_FILES = [fzp.parcels, fzp.projects, fzp.calibration, fzp.policy, fzp.gross!];
 
-const scoreJson = (page: Page, field?: 'shown' | 'band'): Promise<string> =>
-  page.evaluate((f) => {
-    const s = (window as FzpWin).__sfhFzp!.score;
-    return JSON.stringify(f ? s?.[f] : s);
-  }, field);
-
-const seedOf = (page: Page): Promise<number | null> =>
-  page.evaluate(() => (window as FzpWin).__sfhFzp!.seed);
+/** The average's completed net homes per filled month (`__sfhFzp.mean()`). */
+const meanOf = (page: Page): Promise<number[]> =>
+  page.evaluate(() => (window as FzpWin).__sfhFzp!.mean());
 
 async function waitReady(page: Page): Promise<void> {
-  await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready', undefined, {
-    timeout: 20_000
-  });
-}
-
-/**
- * The band and the plan effect are complete. A provisional score still has them, with the
- * score details saying "calculating" or "(still calculating)" and marking the lines `aria-busy`
- * (score-view.ts bandLine/planBandLine), so completeness is read from those two signs.
- */
-async function settled(page: Page): Promise<void> {
-  const bar = page.getByTestId('score-bar');
-  if ((await bar.getAttribute('aria-expanded')) !== 'true') await bar.click();
-  const board = page.getByRole('region', { name: 'Results' }); // the dock's Results face
-  await expect(board.locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 20_000 });
-  await expect(board).not.toContainText(/calculating/);
+  await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready');
 }
 
 test.beforeEach(async ({ page }) => {
@@ -92,10 +73,10 @@ test('fetches only the viewport chunks, the scenario files, policy.bin and gross
   await openHeaderMenu(page);
   await page.getByRole('banner').getByRole('link', { name: 'Simulate', exact: true }).click();
   await waitReady(page);
-  // `ready` is the worker's first timeline; the map can still be loading.
-  await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
-    timeout: 20_000
-  });
+  // `ready` is the worker's first months; the map can still be loading.
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="map-root"]')?.getAttribute('data-state') === 'ready'
+  );
 
   const bounds = await page.evaluate(() => {
     const b = (window as Win).__sfhMap!.map!.getBounds();
@@ -107,17 +88,17 @@ test('fetches only the viewport chunks, the scenario files, policy.bin and gross
   expect(inView.length).toBeGreaterThan(0);
   expect(intersects(FAR_BBOX), 'the far chunk must start outside the viewport').toBe(false);
 
-  // The viewport's chunk is prefetched after the first timeline.
+  // The viewport's chunk is prefetched after the first `compiled`.
   await expect.poll(() => [...new Set(chunkRequests())].sort()).toEqual(inView.sort());
   expect(fzp.policy, 'fixture-0 names policy').toBeTruthy();
   expect(fzp.gross, 'fixture-0 names gross').toBeTruthy();
-  // The same five files whether or not the panel is open; the brush catalog adds none.
+  // The same five files whether or not the editor is open; the brush catalog adds none.
   await expect
     .poll(() => [...new Set(urls.filter((u) => u.includes('/scenarios/')))].sort())
     .toEqual(SIM_FILES.sort());
   expect(
     urls.some((u) => u.endsWith('/frontage.bin')),
-    'the panel never fetches frontage.bin'
+    'the page never fetches frontage.bin'
   ).toBe(false);
 
   // Panning to the far chunk fetches it, and only then.
@@ -126,49 +107,15 @@ test('fetches only the viewport chunks, the scenario files, policy.bin and gross
   await expect.poll(() => chunkRequests()).toContain(chunkUrl(FAR_CELL));
 });
 
-test('the first timeline arrives within 3 s of navigation', async ({ page }) => {
-  const start = Date.now();
-  await page.goto('/sim', { waitUntil: 'commit' });
-  await expect
-    .poll(() => page.evaluate(() => (window as FzpWin).__sfhFzp?.score != null), {
-      timeout: 3_000,
-      intervals: [50]
-    })
-    .toBe(true);
-  expect(Date.now() - start).toBeLessThan(3_100);
-});
-
-test('a run slider move changes the future, not the band', async ({ page }) => {
+test('the same document after a reload fills an identical forecast', async ({ page }) => {
   await page.goto('/sim');
   await waitReady(page);
-  await settled(page);
-  await startRun(page);
-  await waitRanked(page);
-  const seed = await seedOf(page);
-  const shown = await scoreJson(page, 'shown');
-  const band = await scoreJson(page, 'band');
-  // `settled` waited for a complete band; an empty one would make the comparison below trivial.
-  expect(JSON.parse(band).length).toBeGreaterThan(0);
-
-  await runSlider(page).focus();
-  await page.keyboard.press('Home');
-  await expect.poll(() => seedOf(page)).not.toBe(seed);
-  await settled(page);
-
-  expect(await scoreJson(page, 'shown')).not.toBe(shown);
-  expect(await scoreJson(page, 'band')).toBe(band);
-});
-
-test('the same URL seed after a reload gives an identical timeline score', async ({ page }) => {
-  await page.goto('/sim?seed=12345');
-  await waitReady(page);
-  await settled(page);
-  const first = await scoreJson(page);
-  expect(JSON.parse(first)).not.toBeNull();
+  await waitFilled(page);
+  const first = await meanOf(page);
+  expect(first.length).toBeGreaterThan(0);
 
   await page.reload();
   await waitReady(page);
-  await settled(page);
-  expect(await seedOf(page)).toBe(12345);
-  expect(await scoreJson(page)).toBe(first);
+  await waitFilled(page);
+  expect(await meanOf(page)).toEqual(first);
 });

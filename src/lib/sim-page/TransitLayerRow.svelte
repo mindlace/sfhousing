@@ -36,9 +36,25 @@
     onedit(next: ZoningRule, coalesce?: string): void;
     onremove(): void;
     onretry(keys: string[]): void;
+    /**
+     * 'all' (default): the row as the Transit tab draws it. In the timeline's editor the stop types
+     * are the policy's and the bands the span's: 'stops' draws the chips alone, 'bands' the name,
+     * the lots, the bands and Remove layer, both always open and with no select button.
+     */
+    part?: 'all' | 'stops' | 'bands';
   }
 
-  let { rule, status, catalog, selected, onselect, onedit, onremove, onretry }: Props = $props();
+  let {
+    rule,
+    status,
+    catalog,
+    selected,
+    onselect,
+    onedit,
+    onremove,
+    onretry,
+    part = 'all'
+  }: Props = $props();
 
   const uid = $props.id();
   let addBandBtn = $state<HTMLButtonElement>();
@@ -102,19 +118,14 @@
     'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
 </script>
 
-<li
+<svelte:element
+  this={part === 'all' ? 'li' : 'div'}
   data-layer-row={rule.id}
   class="flex flex-col gap-1 rounded-md border p-1 {selected
     ? 'border-accent bg-surface-raised dark:border-accent-dark dark:bg-surface-dark-raised'
     : 'border-line bg-surface dark:border-line-dark dark:bg-surface-dark'}"
 >
-  <button
-    type="button"
-    aria-pressed={selected}
-    aria-label={label}
-    class="flex min-h-11 w-full items-center gap-2 rounded-md px-1 text-left hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
-    onclick={() => onselect()}
-  >
+  {#snippet head()}
     <!-- The same neutral ink tile as the Paint tab: the tallest band's stories. -->
     <span
       aria-hidden="true"
@@ -125,9 +136,24 @@
       <span class="font-semibold">{name}</span>
       <span class="text-ink-muted dark:text-ink-dark-muted">{lots}</span>
     </span>
-  </button>
-  <span role="status" class="sr-only">{lots}</span>
-  {#if status.kind === 'failed'}
+  {/snippet}
+  {#if part === 'all'}
+    <button
+      type="button"
+      aria-pressed={selected}
+      aria-label={label}
+      class="flex min-h-11 w-full items-center gap-2 rounded-md px-1 text-left hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
+      onclick={() => onselect()}
+    >
+      {@render head()}
+    </button>
+  {:else if part === 'bands'}
+    <div class="flex min-h-11 w-full items-center gap-2 px-1">{@render head()}</div>
+  {/if}
+  {#if part !== 'stops'}
+    <span role="status" class="sr-only">{lots}</span>
+  {/if}
+  {#if part !== 'stops' && status.kind === 'failed'}
     {@const keys = status.keys}
     <div class="flex flex-wrap gap-x-2 gap-y-1">
       <button type="button" aria-label="Retry: {label}" class={link} onclick={() => onretry(keys)}
@@ -136,97 +162,103 @@
     </div>
   {/if}
 
-  {#if selected}
+  {#if selected || part !== 'all'}
     <div class="flex flex-col gap-3 px-1 pt-1 pb-2">
-      <div role="group" aria-label="Stop types" class="flex flex-wrap gap-1">
-        {#each STOP_TYPES as t (t)}
-          {@const on = rule.stopTypes.includes(t)}
-          {@const locked = on && lastStop(t)}
-          <!-- The last stop type on stays pressed: aria-disabled (not disabled), so it keeps
+      {#if part !== 'bands'}
+        <div role="group" aria-label="Stop types" class="flex flex-wrap gap-1">
+          {#each STOP_TYPES as t (t)}
+            {@const on = rule.stopTypes.includes(t)}
+            {@const locked = on && lastStop(t)}
+            <!-- The last stop type on stays pressed: aria-disabled (not disabled), so it keeps
                focus and its reason is its description. -->
-          <button
-            type="button"
-            aria-pressed={on}
-            aria-disabled={locked ? 'true' : undefined}
-            aria-describedby={locked ? `${uid}-last-stop` : undefined}
-            class="min-h-11 rounded-full border border-control-line bg-surface px-3 text-left text-ink hover:bg-surface-raised aria-pressed:border-accent aria-pressed:bg-accent-tint aria-pressed:font-semibold aria-pressed:text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:aria-pressed:border-accent-dark dark:aria-pressed:bg-accent-dark/30 dark:aria-pressed:text-ink-dark"
-            onclick={() => {
-              if (!locked) edit(toggleStop(rule, t));
-            }}>{chipText(t)}</button
-          >
-        {/each}
-        <!-- hidden: a description only (aria-describedby still reads it), not read in browse
+            <button
+              type="button"
+              aria-pressed={on}
+              aria-disabled={locked ? 'true' : undefined}
+              aria-describedby={locked ? `${uid}-last-stop` : undefined}
+              class="min-h-11 rounded-full border border-control-line bg-surface px-3 text-left text-ink hover:bg-surface-raised aria-pressed:border-accent aria-pressed:bg-accent-tint aria-pressed:font-semibold aria-pressed:text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:aria-pressed:border-accent-dark dark:aria-pressed:bg-accent-dark/30 dark:aria-pressed:text-ink-dark"
+              onclick={() => {
+                if (!locked) edit(toggleStop(rule, t));
+              }}>{chipText(t)}</button
+            >
+          {/each}
+          <!-- hidden: a description only (aria-describedby still reads it), not read in browse
              mode when no chip is locked. -->
-        <span id="{uid}-last-stop" hidden>A layer needs at least one stop type</span>
-      </div>
-
-      {#each bands as b, i (i)}
-        {@const dist = distanceRange(bands, i)}
-        {@const st = storiesRange(bands, i)}
-        <div
-          role="group"
-          aria-label="Band {i + 1}"
-          class="flex flex-wrap items-center gap-x-3 gap-y-1"
-        >
-          <span class="flex items-center gap-1">
-            <!-- Each control's name starts with its visible text and carries its band, so the
-                 row's names are unique (WCAG 2.5.3; a list of buttons tells the bands apart). -->
-            <label for="{uid}-d{i}">Within <span class="sr-only">metres, band {i + 1}</span></label>
-            <input
-              id="{uid}-d{i}"
-              type="number"
-              inputmode="numeric"
-              step="1"
-              min={Math.min(dist.min, b.maxM)}
-              max={Math.max(dist.max, b.maxM)}
-              value={b.maxM}
-              class="min-h-11 w-24 rounded-md border border-control-line bg-surface px-2 text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
-              onchange={(e) => commitDistance(e.currentTarget, i)}
-              onkeydown={(e) => {
-                if (e.key === 'Enter') commitDistance(e.currentTarget, i);
-              }}
-            />
-            <span aria-hidden="true">m</span>
-          </span>
-          <span class="flex items-center gap-1">
-            <button
-              type="button"
-              aria-label="Fewer stories, band {i + 1}"
-              aria-disabled={b.stories <= st.min ? 'true' : undefined}
-              class={control}
-              onclick={() => stories(i, -1)}><span aria-hidden="true">−</span></button
-            >
-            <output aria-live="polite" class="min-w-20 text-center"
-              >{count(b.stories, 'story', 'stories')}</output
-            >
-            <button
-              type="button"
-              aria-label="More stories, band {i + 1}"
-              aria-disabled={b.stories >= st.max ? 'true' : undefined}
-              class={control}
-              onclick={() => stories(i, 1)}><span aria-hidden="true">+</span></button
-            >
-          </span>
-          <button
-            type="button"
-            aria-disabled={bands.length <= 1 ? 'true' : undefined}
-            class={link}
-            onclick={() => dropBand(i)}>Remove band <span class="sr-only">{i + 1}</span></button
-          >
+          <span id="{uid}-last-stop" hidden>A layer needs at least one stop type</span>
         </div>
-      {/each}
+      {/if}
 
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <button
-          bind:this={addBandBtn}
-          type="button"
-          aria-disabled={canAddBand ? undefined : 'true'}
-          class={link}
-          onclick={() => edit(addBand(rule))}
-          ><span class="sr-only">Add</span> <span aria-hidden="true">+</span> Band</button
-        >
-        <button type="button" class={link} onclick={() => onremove()}>Remove layer</button>
-      </div>
+      {#if part !== 'stops'}
+        {#each bands as b, i (i)}
+          {@const dist = distanceRange(bands, i)}
+          {@const st = storiesRange(bands, i)}
+          <div
+            role="group"
+            aria-label="Band {i + 1}"
+            class="flex flex-wrap items-center gap-x-3 gap-y-1"
+          >
+            <span class="flex items-center gap-1">
+              <!-- Each control's name starts with its visible text and carries its band, so the
+                 row's names are unique (WCAG 2.5.3; a list of buttons tells the bands apart). -->
+              <label for="{uid}-d{i}"
+                >Within <span class="sr-only">metres, band {i + 1}</span></label
+              >
+              <input
+                id="{uid}-d{i}"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                min={Math.min(dist.min, b.maxM)}
+                max={Math.max(dist.max, b.maxM)}
+                value={b.maxM}
+                class="min-h-11 w-24 rounded-md border border-control-line bg-surface px-2 text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
+                onchange={(e) => commitDistance(e.currentTarget, i)}
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') commitDistance(e.currentTarget, i);
+                }}
+              />
+              <span aria-hidden="true">m</span>
+            </span>
+            <span class="flex items-center gap-1">
+              <button
+                type="button"
+                aria-label="Fewer stories, band {i + 1}"
+                aria-disabled={b.stories <= st.min ? 'true' : undefined}
+                class={control}
+                onclick={() => stories(i, -1)}><span aria-hidden="true">−</span></button
+              >
+              <output aria-live="polite" class="min-w-20 text-center"
+                >{count(b.stories, 'story', 'stories')}</output
+              >
+              <button
+                type="button"
+                aria-label="More stories, band {i + 1}"
+                aria-disabled={b.stories >= st.max ? 'true' : undefined}
+                class={control}
+                onclick={() => stories(i, 1)}><span aria-hidden="true">+</span></button
+              >
+            </span>
+            <button
+              type="button"
+              aria-disabled={bands.length <= 1 ? 'true' : undefined}
+              class={link}
+              onclick={() => dropBand(i)}>Remove band <span class="sr-only">{i + 1}</span></button
+            >
+          </div>
+        {/each}
+
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <button
+            bind:this={addBandBtn}
+            type="button"
+            aria-disabled={canAddBand ? undefined : 'true'}
+            class={link}
+            onclick={() => edit(addBand(rule))}
+            ><span class="sr-only">Add</span> <span aria-hidden="true">+</span> Band</button
+          >
+          <button type="button" class={link} onclick={() => onremove()}>Remove layer</button>
+        </div>
+      {/if}
     </div>
   {/if}
-</li>
+</svelte:element>

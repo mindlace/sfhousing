@@ -166,12 +166,14 @@ function treasuryStates(state: { received: number }[]) {
   return Object.fromEntries(fin.pools.map((p, q) => [p.id, state[q]]));
 }
 
-describe('pools, arrivals and money events', () => {
+describe('rule 12 on the bench city (synthCity, bench baseline money)', () => {
+  // Built once at collection, outside the test's time budget (as compaction.spec does).
+  const bench = benchMoney(benchInput());
+  const money = bench.finance!;
+  const bt = oneMoneyTimeline(bench, money);
+  const bs = staticsOf(bench);
+
   it("rule 12: under the bench baseline, after month 1 every capped baseline pool has received its first year's inflow", () => {
-    const bench = benchMoney(benchInput());
-    const money = bench.finance!;
-    const bt = oneMoneyTimeline(bench, money);
-    const bs = staticsOf(bench);
     const ledger: LedgerEvent[] = [];
     const out: StepSink = { event() {}, ledger: (e) => ledger.push(e) };
     const core = withFunding(createFundingSystem());
@@ -234,7 +236,9 @@ describe('pools, arrivals and money events', () => {
       )
     ).toBe(Infinity);
   });
+});
 
+describe('pools, arrivals and money events', () => {
   it('rule 14: one world stepped with and without a ledger gives the same events and pool columns', () => {
     let ins = 0;
     for (const seed of [1, 2, 3]) {

@@ -207,6 +207,22 @@ const fullAt = (posts: Msg[], rev: number) => () => {
   return !!c && c.rev === rev && !!fl && fl.rev === rev && fl.through === c.statics.lastIndex;
 };
 
+/**
+ * S14, as the client delivered them: `n` refills at `rev` (none at another rev between); with one,
+ * the `compiled` at `rev` comes before it and no `filled` at `rev` does. Returns it.
+ */
+function refillsAt(got: Msg[], rev: number, n: number): Of<'refill'> | undefined {
+  const refills = got.filter((m): m is Of<'refill'> => m.type === 'refill' && m.rev === rev);
+  expect(refills).toHaveLength(n);
+  if (n === 0) return undefined;
+  const r = got.indexOf(refills[0]);
+  const c = got.findIndex((m) => m.type === 'compiled' && m.rev === rev);
+  expect(c).toBeGreaterThanOrEqual(0);
+  expect(c).toBeLessThan(r);
+  expect(got.slice(0, r).some((m) => m.type === 'filled' && m.rev === rev)).toBe(false);
+  return refills[0];
+}
+
 const filledThrough = (posts: Msg[], month: number) => () =>
   posts.some((m) => m.type === 'filled' && m.through >= month);
 
@@ -252,7 +268,15 @@ describe('TimelineClient over the timeline host, delayed delivery', () => {
     const { wk, rec, client, rev } = await editMidFill(doc, 20, 50);
     await finish(wk, rev);
     expect(rec.got.filter((m) => m.type === 'error')).toEqual([]);
-    expect(rec.got.some((m) => m.type === 'refill')).toBe(false);
+    // S14: one refill, withdrawing nothing: from the first month not posted before it
+    expect(rec.got.filter((m) => m.type === 'refill')).toHaveLength(1);
+    const refill = refillsAt(rec.got, rev, 1)!;
+    const last = rec.got
+      .slice(0, rec.got.indexOf(refill))
+      .filter((m): m is Of<'filled'> => m.type === 'filled')
+      .at(-1)!;
+    expect(last.through).toBeGreaterThanOrEqual(50);
+    expect(refill.from).toBe(last.through + 1);
     expect(rec.gaps).toEqual([]);
     expect(rec.held()).toBe(rec.statics()!.lastIndex);
     expect(rec.view()).toEqual(await fresh(doc));
@@ -264,10 +288,10 @@ describe('TimelineClient over the timeline host, delayed delivery', () => {
     const { wk, rec, client, rev } = await editMidFill(doc, 20, 80);
     await finish(wk, rev);
     expect(rec.got.filter((m) => m.type === 'error')).toEqual([]);
-    const refills = rec.got.filter((m): m is Of<'refill'> => m.type === 'refill');
-    expect(refills).toHaveLength(1);
+    expect(rec.got.filter((m) => m.type === 'refill')).toHaveLength(1);
+    const refill = refillsAt(rec.got, rev, 1)!;
     // the edit withdraws months the client got only from posts that were in flight
-    expect(refills[0].from).toBeGreaterThan(20);
+    expect(refill.from).toBeGreaterThan(20);
     expect(rec.gaps).toEqual([]);
     expect(rec.held()).toBe(rec.statics()!.lastIndex);
     const view = rec.view();
@@ -283,9 +307,51 @@ describe('TimelineClient over the timeline host, delayed delivery', () => {
     expect(rec.got.filter((m) => m.type === 'error')).toEqual([
       expect.objectContaining({ rev, code: 'bad-request' })
     ]);
+    // S14: a rejected edit gets no refill
+    refillsAt(rec.got, rev, 0);
+    expect(rec.got.filter((m) => m.type === 'refill')).toEqual([]);
     expect(rec.gaps).toEqual([]);
     expect(rec.held()).toBe(rec.statics()!.lastIndex);
     expect(rec.view()).toEqual(await fresh(baseDoc()));
+    client.dispose();
+  });
+
+  it('a setPolicy superseded before it settled: a refill at a later rev answers it', async () => {
+    const { wk, rec, client, rev } = await editMidFill(
+      withZoning(baseDoc(), protect(40, 200)),
+      20,
+      80
+    );
+    // the second edit reaches the host before the first is accepted
+    const doc = withZoning(baseDoc(), protect(30, 43));
+    const rev2 = client.setPolicy(doc, {});
+    expect(rev2).toBeGreaterThan(rev);
+    await finish(wk, rev2);
+    expect(rec.got.filter((m) => m.type === 'error')).toEqual([]);
+    // superseded: none of its own; the one at the later rev settles both
+    refillsAt(rec.got, rev, 0);
+    refillsAt(rec.got, rev2, 1);
+    expect(rec.got.filter((m) => m.type === 'refill')).toHaveLength(1);
+    expect(rec.gaps).toEqual([]);
+    expect(rec.held()).toBe(rec.statics()!.lastIndex);
+    expect(rec.view()).toEqual(await fresh(doc));
+    client.dispose();
+  });
+
+  it('a setPolicy then a rejected one before it settled: the first settles at its own rev', async () => {
+    const doc = withZoning(baseDoc(), protect(40, 200));
+    const { wk, rec, client, rev } = await editMidFill(doc, 20, 80);
+    const bad = client.setPolicy(withZoning(baseDoc(), unresolved()), {});
+    await finish(wk, rev);
+    expect(rec.got.filter((m) => m.type === 'error')).toEqual([
+      expect.objectContaining({ rev: bad, code: 'bad-request' })
+    ]);
+    // S14: the page's last accepted document is the first edit's; it gets its one refill
+    refillsAt(rec.got, bad, 0);
+    refillsAt(rec.got, rev, 1);
+    expect(rec.gaps).toEqual([]);
+    expect(rec.held()).toBe(rec.statics()!.lastIndex);
+    expect(rec.view()).toEqual(await fresh(doc));
     client.dispose();
   });
 

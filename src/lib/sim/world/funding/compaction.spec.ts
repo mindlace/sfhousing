@@ -2,7 +2,7 @@
 // they are at least an eighth of a line of `COMPACT_MIN` rows or more; a shorter line is compacted
 // whenever it holds one. The rule reads only the line's own columns, so a cloned world (cold
 // caches) compacts in the same months as the original and the worlds stay equal.
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import { emptyWorld } from '../columns';
 import { staticsOf } from '../statics';
@@ -87,11 +87,18 @@ describe('amortized compaction on the bench city (synthCity, bench baseline mone
     return { events, ledger, kept, lengths };
   }
 
-  it('seed 1: a clone at month 250 steps to month 300 as the original; gone rows wait, then go', () => {
-    const seed = 1;
-    const world = core.createWorld(statics, timeline, seed, { event() {} });
-    const due = core.planDue(world, statics, timeline, seed, LAST);
+  const seed = 1;
+  let world: World;
+  let due: Due;
+  // The first SPLIT months are setup: stepped in a hook, outside the test's budget.
+  beforeAll(() => {
+    world = core.createWorld(statics, timeline, seed, { event() {} });
+    due = core.planDue(world, statics, timeline, seed, LAST);
     for (let m = 1; m <= SPLIT; m++) core.step(world, due, statics, timeline, seed, { event() {} });
+  });
+
+  it('seed 1: a clone at month 250 steps to month 300 as the original; gone rows wait, then go', () => {
+    expect(world.month).toBe(SPLIT);
     const copy = structuredClone(world);
     // The due list is not part of the world: the copy's is planned again (world-core rule 20).
     const copyDue = core.planDue(copy, statics, timeline, seed, LAST);

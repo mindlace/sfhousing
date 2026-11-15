@@ -28,6 +28,7 @@
   import type { Day } from '$lib/timelapse/time';
   import type { Calibration, ResolvedTerms } from '$lib/timelapse/types';
   import { resolveTerms } from '$lib/sim/finance';
+  import { perHomeMethod } from '$lib/timeline/copy';
   import { TIER_LABEL } from './labels';
   import {
     NOT_SF_NOTE,
@@ -205,7 +206,9 @@
             <h4 class="font-semibold">{e.title}</h4>
             <p class="mt-1">{@render badge(e.prov.tier)}</p>
             {#each e.lines.slice(1) as line, i (i)}
-              <p class={i === 0 ? 'mt-1 font-semibold' : 'mt-1'}>{line}</p>
+              <p class={i === 0 ? 'mt-1 font-semibold' : 'mt-1'}>
+                {line === e.prov.method ? perHomeMethod(line) : line}
+              </p>
             {/each}
             {#if e.research}
               <p class="mt-1 font-semibold">{NOT_SF_NOTE}</p>

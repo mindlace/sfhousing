@@ -1,5 +1,5 @@
 // The /sim universal load (spec §4.1, moved from /fzp): manifest, calibration, scenario presence,
-// the URL seed and `start`. Every failure is a flag, never a thrown 500.
+// never the URL (`?seed=` and `start` are retired). Every failure is a flag, never a thrown 500.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { manifestUrl, parseManifest } from '$lib/data/manifest';
 import { parseCalibration } from '$lib/timelapse/model';
@@ -51,9 +51,7 @@ describe('/sim load', () => {
       manifestError: false,
       calibration: parseCalibration(calibrationJson),
       calibrationError: false,
-      noScenario: false,
-      seed: null,
-      seedInvalid: false
+      noScenario: false
     });
     expect(fetchFn.mock.calls.map((c) => c[0])).toEqual([manifestUrl('fixture-0'), CAL_URL]);
   });
@@ -81,9 +79,7 @@ describe('/sim load', () => {
       manifestError: true,
       calibration: null,
       calibrationError: false,
-      noScenario: false,
-      seed: null,
-      seedInvalid: false
+      noScenario: false
     });
     expect(err).toHaveBeenCalledTimes(1);
   });
@@ -129,19 +125,10 @@ describe('/sim load', () => {
     });
   });
 
-  it('parses ?seed=12', async () => {
-    const result = await load(event(files(), '?seed=12&x=1'));
-    expect(result).toMatchObject({ seed: 12, seedInvalid: false });
-  });
-
-  it('treats ?seed=junk as absent and asks for a clean-up', async () => {
-    const result = await load(event(files(), '?seed=junk'));
-    expect(result).toMatchObject({ seed: null, seedInvalid: true });
-  });
-
-  it('ignores the retired start parameter', async () => {
-    const data = await load(event(files(), '?start=fzp&seed=5'));
+  it('?seed= and the retired start parameter are not read', async () => {
+    const data = await load(event(files(), '?start=fzp&seed=5&x=1'));
+    expect(data).toEqual(await load(event(files())));
+    expect('seed' in data).toBe(false);
     expect('start' in data).toBe(false);
-    expect(data).toMatchObject({ seed: 5 });
   });
 });

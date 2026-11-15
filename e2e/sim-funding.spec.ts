@@ -1,24 +1,24 @@
-// /sim's Funding tab e2e (funding-ui spec 6, tests 1 to 10): the tab and its rows, presets, your
-// own pool, a dated change, market terms, the programme editor, the Results money and tier blocks
-// with the market paragraph and the sources dialog, the published summary, a schema-2 document's
-// notice and a calibration without baseline funding. Runs against the VITE_E2E build on fixture-0
-// (window.__sfhFzp, src/lib/fzp/debug.ts). Every fixture value is read from fixture-0's
-// calibration.json on disk and derived with the page's own view functions, never hard-coded.
+// /sim's public money e2e (funding-ui spec 6, tests 1 to 10) on the timeline: the Public money
+// kind's policies (City funding scale, a preset's fund, your own pool, market terms), each edited
+// in the inspector, the Results money and tier blocks with the market paragraph and the sources
+// dialog, the published policy's read-only summary, a schema-2 document's notice and a calibration
+// without baseline funding. Runs against the VITE_E2E build on fixture-0 (window.__sfhFzp,
+// src/lib/fzp/debug.ts). Every fixture value is read from fixture-0's calibration.json on disk and
+// derived with the page's own view functions, never hard-coded.
 import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
-import { HORIZON } from '../src/lib/fzp/time';
 import { marketText } from '../src/lib/fzp/money-view';
 import { marketLevel } from '../src/lib/sim/scenario/market';
+import { marketBody } from '../src/lib/timeline/copy';
 import type { FinanceLevers } from '../src/lib/sim/levers/types';
-import type { Calibration } from '../src/lib/timelapse/types';
+import type { Calibration, Pool, Programme } from '../src/lib/timelapse/types';
 import {
   AMOUNT_ERROR,
   DRAFT_LINE,
   NO_LIMIT,
   SWITCHED_OFF,
   addProgrammeName,
-  coverageStepText,
   fundingNotices,
   groupPaysText,
   perYearText,
@@ -29,15 +29,9 @@ import {
   nextFiscal,
   type FundingPreset
 } from '../src/lib/sim-page/funding-presets';
-import {
-  baselineGroups,
-  coverageSizeMixed,
-  coverageSteps,
-  programmeSentence,
-  summaryRows
-} from '../src/lib/sim-page/funding-view';
+import { baselineGroups, programmeSentence } from '../src/lib/sim-page/funding-view';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { startRun } from './helpers/run';
+import { addPolicy, openKind, waitFilled } from './helpers/run';
 import {
   SIM_KEY,
   gotoHydrated,
@@ -59,7 +53,7 @@ const CAL_URL = new URL(
 const CAL = JSON.parse(readFileSync(CAL_URL, 'utf8')) as Calibration;
 const BASELINE = CAL.baselineFunding!;
 const ASOF = CAL.asOf;
-/** The policy's funding with nothing changed (DEFAULT_LEVERS.finance). */
+/** A policy's funding with nothing changed (DEFAULT_LEVERS.finance). */
 const NO_FUNDING: FinanceLevers = { baselineScale: [], pools: [], programmes: [], terms: {} };
 const PRESETS = fundingPresets(CAL);
 /** July of the next fiscal year: where a dated change and a hand-made pool start. */
@@ -76,19 +70,10 @@ const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // ---- helpers (as in e2e/sim.spec.ts and e2e/sim-share.spec.ts, which keep their own copies) ------
 
-const leverStatus = (page: Page) =>
-  page.evaluate(() => (window as FzpWin).__sfhFzp!.levers) as Promise<SfhFzpDebug['levers']>;
-
-/**
- * The session is ready (the worker's first timeline) and its levers are in force. Waits on the
- * page's own signals (`__sfhFzp.phase`, `__sfhFzp.levers`) for as long as the test allows, as
- * `waitRanked` in e2e/helpers/run.ts does: no poll budget of its own.
- */
+/** The session is ready and the forecast filled. */
 async function waitSession(page: Page): Promise<void> {
-  await page.waitForFunction(() => {
-    const f = (window as FzpWin).__sfhFzp;
-    return f?.phase === 'ready' && f.levers.status === 'current';
-  });
+  await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready');
+  await waitFilled(page);
 }
 
 /** /sim (or `path`), the session ready. The map is not waited for: no test here reads it. */
@@ -99,110 +84,75 @@ async function gotoSim(page: Page, path = '/sim'): Promise<void> {
   await waitSession(page);
 }
 
-/** Waits for a lever revision above `before` to be in force (`__sfhFzp.levers`). */
-async function expectNewRevision(page: Page, before: number | null): Promise<void> {
-  await page.waitForFunction((b) => {
-    const l = (window as FzpWin).__sfhFzp!.levers;
-    return l.status === 'current' && (l.sentRev ?? -1) > b;
-  }, before ?? -1);
+const refillCount = (page: Page): Promise<number> =>
+  page.evaluate(() => (window as FzpWin).__sfhFzp!.refills.length);
+
+/** Waits for a refill after the `before`-th, and the forecast filled again. */
+async function waitRefilled(page: Page, before: number): Promise<void> {
+  await page.waitForFunction((n) => {
+    const f = (window as FzpWin).__sfhFzp!;
+    return f.refills.length > n && !f.stale && f.filledThrough === f.lastIndex;
+  }, before);
 }
 
-const sentRev = async (page: Page): Promise<number | null> => (await leverStatus(page)).sentRev;
+const editor = (page: Page): Locator => page.getByTestId('inspector');
+/** The header's Undo, made visible first (below 1024 px it waits in the Menu). */
+const undoButton = (page: Page): Promise<Locator> => headerAction(page, /^Undo/);
 
-/** The policy dock. Its root is `display: contents`: the docked panel, rail or sheet is the box. */
-const panel = (page: Page): Locator => page.getByTestId('dock');
-const handle = (page: Page): Locator => page.getByTestId('dock-handle');
+type Doc = SfhFzpDebug['policy'];
+const docOf = (page: Page): Promise<Doc> =>
+  page.evaluate(() => (window as FzpWin).__sfhFzp!.policy);
 
-const dockShown = (page: Page): Promise<boolean> =>
-  page.evaluate(
-    () =>
-      !!document.querySelector('.sfh-dock-panel') ||
-      document.querySelector('[data-testid="dock-handle"]')?.getAttribute('aria-expanded') ===
-        'true'
-  );
-
-/** The dock, opened if it is not already (from md the Policy button, below md the handle). */
-async function openPolicy(page: Page): Promise<Locator> {
-  if (!(await dockShown(page))) {
-    if (await handle(page).isVisible()) await handle(page).click();
-    else await (await headerAction(page, 'Policy')).click();
-  }
-  await expect.poll(() => dockShown(page)).toBe(true);
-  return panel(page);
+/** The document's public money, gathered as one `FinanceLevers` (every span, in order). */
+function fundingOf(doc: Doc): FinanceLevers {
+  const f: FinanceLevers = { baselineScale: [], pools: [], programmes: [], terms: {} };
+  for (const p of doc.kinds.money)
+    for (const s of p.spans) {
+      const w = s.what;
+      if (w.tag === 'scales') f.baselineScale.push(...w.entries);
+      else if (w.tag === 'fund') {
+        if (w.pool) f.pools.push(w.pool as Pool);
+        f.programmes.push(...(w.programmes as Programme[]));
+      } else if (w.tag === 'terms') Object.assign(f.terms, w.terms);
+    }
+  return f;
 }
 
-/** Below md: folds an open sheet to its handle. */
-async function closeSheet(page: Page, isMobile: boolean): Promise<void> {
-  if (!isMobile || (await handle(page).getAttribute('aria-expanded')) !== 'true') return;
-  await panel(page)
-    .getByRole('button', { name: /^Collapse Policy/ })
-    .click();
-  await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
+/** The document's funding once `ok` holds for it. */
+async function fundingWhen(page: Page, ok: (f: FinanceLevers) => boolean): Promise<FinanceLevers> {
+  await expect.poll(async () => ok(fundingOf(await docOf(page)))).toBe(true);
+  return fundingOf(await docOf(page));
 }
 
-const tabOf = (page: Page, name: string): Locator =>
-  panel(page).getByRole('tab', { name, exact: true });
-
-/** Opens the dock on the Funding tab. */
-async function openFunding(page: Page): Promise<void> {
-  await openPolicy(page);
-  await tabOf(page, 'Funding').click();
-  await expect(tabOf(page, 'Funding')).toHaveAttribute('aria-selected', 'true');
-}
-
-/** The autosaved policy's funding, or null. */
-const storedFunding = (page: Page): Promise<FinanceLevers | null> =>
+/** The autosaved document's policy, or null. */
+const storedPolicy = (page: Page): Promise<Doc | null> =>
   page.evaluate((k) => {
     const raw = localStorage.getItem(k);
     if (raw === null) return null;
-    const doc = JSON.parse((JSON.parse(raw) as { plan: string }).plan) as {
-      policy: { funding?: FinanceLevers };
-    };
-    return doc.policy.funding ?? null;
+    return (JSON.parse((JSON.parse(raw) as { plan: string }).plan) as { policy: Doc }).policy;
   }, SIM_KEY);
 
-/** The autosaved funding once `ok` holds for it. */
-async function savedFunding(page: Page, ok: (f: FinanceLevers) => boolean): Promise<FinanceLevers> {
-  await expect
-    .poll(async () => {
-      const f = await storedFunding(page);
-      return f !== null && ok(f);
-    })
-    .toBe(true);
-  return (await storedFunding(page))!;
+/** The first available preset whose pool is a general-obligation bond, as "+" offers it. */
+function bondPreset(): FundingPreset {
+  const p = PRESETS.find((x) => x.available && x.pools.some((y) => y.kind === 'goBond'));
+  if (!p) throw new Error('fixture-0 offers no general-obligation bond preset');
+  return p;
 }
 
-const addMoney = (page: Page): Locator =>
-  panel(page).getByRole('button', { name: 'Add money', exact: true });
-
-/**
- * The first available preset whose pool is a general-obligation bond, as the page's chooser
- * offers it (the chooser must be open).
- */
-async function bondPreset(page: Page): Promise<FundingPreset> {
-  const candidates = PRESETS.filter((p) => p.available && p.pools.some((x) => x.kind === 'goBond'));
-  for (const p of candidates) {
-    if (await panel(page).getByRole('button', { name: p.label, exact: true }).isVisible()) return p;
-  }
-  throw new Error('the chooser offers no general-obligation bond preset');
-}
-
-/** Opens "+ Add money" and adds the bond preset; waits for its levers. Returns it. */
+/** Adds the bond preset as a Public money policy and waits for its refill. Returns it. */
 async function addBond(page: Page): Promise<FundingPreset> {
-  await addMoney(page).click();
-  await expect(addMoney(page)).toHaveAttribute('aria-expanded', 'true');
-  const preset = await bondPreset(page);
-  const before = await sentRev(page);
-  await panel(page).getByRole('button', { name: preset.label, exact: true }).click();
-  await expectNewRevision(page, before);
+  const preset = bondPreset();
+  const before = await refillCount(page);
+  await addPolicy(page, 'Public money', preset.label);
+  await waitRefilled(page, before);
   return preset;
 }
 
-/** An added pool's row (`data-funding-row="pool:<id>"`). */
-const poolRow = (page: Page, id: string): Locator =>
-  panel(page).locator(`[data-funding-row="pool:${id}"]`);
+/** The bond's pool row in its editor (the pool is the policy, so its row is open). */
+const poolRow = (page: Page): Locator => editor(page).locator('[data-funding-row^="pool:"]');
 /** A programme's nested row (`data-prog-row="<id>"`; a new programme's draft is "draft"). */
-const progRow = (page: Page, id: string): Locator => panel(page).locator(`[data-prog-row="${id}"]`);
+const progRow = (page: Page, id: string): Locator =>
+  editor(page).locator(`[data-prog-row="${id}"]`);
 
 /** The always-present alert paragraph a field's input references. */
 async function alertOf(field: Locator): Promise<Locator> {
@@ -221,8 +171,8 @@ async function commit(field: Locator, text: string): Promise<void> {
 }
 
 const notices = (page: Page): Locator => page.getByTestId('sim-notice');
-/** The dock's Results face. */
-const results = (page: Page): Locator => page.getByRole('region', { name: 'Results' });
+/** Results, which the header score shows in the inspector. */
+const results = (page: Page): Locator => page.getByTestId('tl-results');
 
 async function expectNoHorizontalScroll(page: Page): Promise<void> {
   const { scroll, client } = await page.evaluate(() => ({
@@ -232,29 +182,25 @@ async function expectNoHorizontalScroll(page: Page): Promise<void> {
   expect(scroll, 'the page scrolls sideways').toBeLessThanOrEqual(client);
 }
 
-// ---- 1. the tab -----------------------------------------------------------------------------------
+// ---- 1. the policies ----------------------------------------------------------------------------
 
 // Spec 6 test 1 in four tests, each scanning two or three of its states, so no test carries ten
-// whole-page axe scans (several seconds each under a full run) inside one test's budget.
+// whole-page axe scans inside one test's budget.
 
-test('1a. Funding tab and its rows, a11y light and dark', async ({ page }) => {
+test('1a. City funding scale and its rows, a11y light and dark', async ({ page }) => {
   await gotoSim(page);
-  await openFunding(page);
-  const tabs = panel(page).getByRole('tab');
-  await expect(tabs).toHaveCount(5);
-  await expect(tabs.nth(4)).toHaveAccessibleName('Funding');
+  await addPolicy(page, 'Public money', 'City funding scale');
 
   // Today's funding: one row per group, its amount and its per-home figure from the fixture.
   const groups = baselineGroups(NO_FUNDING, BASELINE, ASOF);
   expect(groups.length).toBeGreaterThanOrEqual(3);
   for (const g of groups) {
     const amount = g.off ? SWITCHED_OFF : g.perYear === null ? NO_LIMIT : perYearText(g.perYear);
-    const row = panel(page).getByRole('button', { name: new RegExp(`^${esc(g.name)} · `) });
+    const row = editor(page).getByRole('button', { name: new RegExp(`^${esc(g.name)} · `) });
     await expect(row).toContainText(`${g.name} · ${amount}`);
     await expect(row).toContainText(groupPaysText(g.perHome));
     await expect(row).toHaveAttribute('aria-pressed', 'false');
   }
-  await expect(panel(page).getByRole('heading', { name: 'Market terms you set' })).toBeVisible();
   await expectNoA11yViolations(page);
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await expectNoA11yViolations(page);
@@ -262,35 +208,36 @@ test('1a. Funding tab and its rows, a11y light and dark', async ({ page }) => {
 
 test('1b. a11y with Coverage over time and Sources and tiers open', async ({ page }) => {
   await gotoSim(page);
-  await openFunding(page);
+  await addPolicy(page, 'Public money', 'City funding scale');
 
   // "Coverage over time" open.
-  const coverage = panel(page).getByRole('button', { name: 'Coverage over time' });
+  const coverage = editor(page).getByRole('button', { name: 'Coverage over time' });
   await coverage.click();
   await expect(coverage).toHaveAttribute('aria-expanded', 'true');
   await expectNoA11yViolations(page);
   await coverage.click();
 
   // "Sources and tiers" open.
-  const sources = panel(page).locator('details').filter({ hasText: 'Sources and tiers' });
+  const sources = editor(page).locator('details').filter({ hasText: 'Sources and tiers' });
   await sources.locator('summary').click();
   await expect(sources).toHaveAttribute('open', '');
   await expectNoA11yViolations(page);
 });
 
-test('1c. a11y with the Add money chooser open and a pool editor expanded', async ({ page }) => {
+test('1c. a11y with the "+" menu open and a pool editor expanded', async ({ page }) => {
   await gotoSim(page);
-  await openFunding(page);
 
-  // The "+ Add money" chooser open, then a pool's editor expanded (a preset selects its row).
-  await addMoney(page).click();
-  await expect(addMoney(page)).toHaveAttribute('aria-expanded', 'true');
+  // The kind's "+" menu open, then a preset's pool in its policy's editor.
+  await page.getByRole('button', { name: 'Add Public money policy' }).click();
+  await expect(page.getByRole('group', { name: 'Add to Public money' })).toBeVisible();
   await expectNoA11yViolations(page);
-  const preset = await bondPreset(page);
-  await panel(page).getByRole('button', { name: preset.label, exact: true }).click();
-  const row = poolRow(page, preset.pools[0].id);
-  await expect(row.locator(':scope > button')).toHaveAttribute('aria-pressed', 'true');
-  await expect(row.locator('[data-funding-editor]')).toBeVisible();
+  await editor(page).getByRole('button', { name: 'Close editor' }).click();
+  await addBond(page);
+  // The pool's own editor: its header is plain text, not a toggle that cannot change (M3).
+  await expect(poolRow(page).locator(':scope > button')).toHaveCount(0);
+  await expect(poolRow(page).locator(':scope > [aria-pressed]')).toHaveCount(0);
+  await expect(poolRow(page).locator(':scope > div').first()).toBeVisible();
+  await expect(poolRow(page).locator('[data-funding-editor]')).toBeVisible();
   await expectNoA11yViolations(page);
 });
 
@@ -299,8 +246,9 @@ test('1d. a11y with a programme editor as a grant, a loan draft and a loan', asy
   isMobile
 }) => {
   await gotoSim(page);
-  await openFunding(page);
   const preset = await addBond(page);
+  const f = await fundingWhen(page, (x) => x.programmes.length === 1);
+  expect(f.programmes[0].id).toBe(preset.programmes[0].id);
 
   // A programme editor expanded as a grant, with the income-mix fieldset.
   const prog = progRow(page, preset.programmes[0].id);
@@ -311,7 +259,6 @@ test('1d. a11y with a programme editor as a grant, a loan draft and a loan', asy
   await expectNoA11yViolations(page);
 
   // As a loan: a bond has no sourced loan rate, so the programme opens as a draft.
-  // The draft keeps the programme's row (it replaces the stored programme once complete).
   await prog.getByRole('radio', { name: 'Loan', exact: true }).click();
   await expect(prog.getByText(DRAFT_LINE)).toBeVisible();
   const rate = prog.getByRole('spinbutton', { name: /^Loan interest rate, %/ });
@@ -328,107 +275,105 @@ test('1d. a11y with a programme editor as a grant, a loan draft and a loan', asy
 
 // ---- 2 to 6. editing ------------------------------------------------------------------------------
 
-test('2. the bond preset: Undo names it and the levers follow', async ({ page }) => {
+test('2. the bond preset: Undo names it and the forecast follows', async ({ page }) => {
   await gotoSim(page);
-  await openFunding(page);
   const preset = await addBond(page);
-  const pool = preset.pools[0];
-  await expect(poolRow(page, pool.id)).toBeVisible();
+  await expect(poolRow(page)).toBeVisible();
+  expect((await docOf(page)).kinds.money).toHaveLength(1);
 
-  const undo = panel(page).getByRole('button', { name: `Undo: Added: ${preset.label}` });
-  await expect(undo).toBeEnabled();
-  const before = await sentRev(page);
+  const undo = await undoButton(page);
+  await expect(undo).toHaveAccessibleName(`Undo: Added: ${preset.label}`);
+  const before = await refillCount(page);
   await undo.click();
-  await expect(poolRow(page, pool.id)).toHaveCount(0);
-  await expect(panel(page).getByText('Nothing added yet.')).toBeVisible();
-  await expectNewRevision(page, before);
+  await expect.poll(async () => (await docOf(page)).kinds.money).toHaveLength(0);
+  await expect(editor(page)).toHaveCount(0);
+  await waitRefilled(page, before);
 });
 
 test('3. your own pool: the amount error, then a yearly amount', async ({ page }) => {
   await gotoSim(page);
-  await openFunding(page);
-  await addMoney(page).click();
-  await panel(page).getByRole('button', { name: 'Your own pool', exact: true }).click();
-  const draft = panel(page).locator('[data-funding-row="draft"]');
+  await page.getByRole('button', { name: 'Add Public money policy' }).click();
+  await page
+    .getByRole('group', { name: 'Add to Public money' })
+    .getByRole('button', { name: 'Your own pool', exact: true })
+    .click();
+  const draft = editor(page).locator('[data-funding-row="draft"]');
   const amount = draft.getByRole('spinbutton', { name: /^Amount, \$ million a year/ });
   await expect(amount).toHaveAttribute('aria-invalid', 'true');
   const alert = await alertOf(amount);
   await expect(alert).toHaveAttribute('role', 'alert');
   await expect(alert).toHaveText(AMOUNT_ERROR);
 
-  const before = await sentRev(page);
+  const before = await refillCount(page);
   await commit(amount, '60');
   await expect(draft).toHaveCount(0);
-  const f = await savedFunding(page, (x) => x.pools.length === 1);
-  const row = poolRow(page, f.pools[0].id);
-  const added = row.getByRole('spinbutton', { name: /^Amount, \$ million a year/ });
+  const f = await fundingWhen(page, (x) => x.pools.length === 1);
+  const added = poolRow(page).getByRole('spinbutton', { name: /^Amount, \$ million a year/ });
   await expect(added).toHaveValue('60');
   await expect(added).not.toHaveAttribute('aria-invalid', 'true');
   await expect(await alertOf(added)).toHaveText('');
-  await expect(row.locator('[data-funding-editor]')).toContainText(
+  await expect(editor(page).getByRole('heading', { name: f.pools[0].label })).toBeVisible();
+  await expect(poolRow(page).locator('[data-funding-editor]')).toContainText(
     `$60 million a year from July ${YEAR}`
   );
-  await expectNewRevision(page, before);
+  await waitRefilled(page, before);
 });
 
 test('4. a dated change: the state switched off from next July', async ({ page }) => {
   await gotoSim(page);
-  await openFunding(page);
+  await addPolicy(page, 'Public money', 'City funding scale');
   const state = baselineGroups(NO_FUNDING, BASELINE, ASOF).find((g) => g.group === 'state')!;
-  const row = panel(page).getByRole('button', { name: new RegExp(`^${esc(state.name)} · `) });
+  const row = editor(page).getByRole('button', { name: new RegExp(`^${esc(state.name)} · `) });
   await row.click();
   await expect(row).toHaveAttribute('aria-pressed', 'true');
-  await panel(page).getByRole('button', { name: 'Change from a date', exact: true }).click();
+  await editor(page).getByRole('button', { name: 'Change from a date', exact: true }).click();
   // The entry opens on July of the next year at 0%.
-  await expect(panel(page).getByRole('combobox', { name: /^Month/ })).toHaveValue('7');
-  await expect(panel(page).getByRole('spinbutton', { name: /^Year/ })).toHaveValue(String(YEAR));
-  await expect(panel(page).getByRole('spinbutton', { name: /^Amount, % of today's/ })).toHaveValue(
+  await expect(editor(page).getByRole('combobox', { name: /^Month/ })).toHaveValue('7');
+  await expect(editor(page).getByRole('spinbutton', { name: /^Year/ })).toHaveValue(String(YEAR));
+  await expect(editor(page).getByRole('spinbutton', { name: /^Amount, % of today's/ })).toHaveValue(
     '0'
   );
-  const before = await sentRev(page);
-  await panel(page).getByRole('button', { name: 'Apply change' }).click();
-  await expectNewRevision(page, before);
+  const before = await refillCount(page);
+  await editor(page).getByRole('button', { name: 'Apply change' }).click();
+  await waitRefilled(page, before);
 
-  const line = panel(page).locator(`[data-scale-line][data-scale-from="${JULY}"]`);
+  const line = editor(page).locator(`[data-scale-line][data-scale-from="${JULY}"]`);
   await expect(line).toContainText(SWITCHED_OFF);
   await expect(row).toContainText(`Changes from July ${YEAR}`);
+  await fundingWhen(page, (x) => x.baselineScale.length === 1);
 
   // The coverage line's disclosure: below 100% from that month.
-  const f = await savedFunding(page, (x) => x.baselineScale.length === 1);
-  const steps = coverageSteps(f, BASELINE, ASOF, HORIZON);
-  const step = steps.find((s) => s.from === JULY)!;
-  expect(step).toBeDefined();
-  const disclosure = panel(page).getByRole('button', { name: 'Coverage over time' });
+  const disclosure = editor(page).getByRole('button', { name: 'Coverage over time' });
   await disclosure.click();
-  const region = panel(page).locator(`[id="${await disclosure.getAttribute('aria-controls')}"]`);
-  const text = coverageStepText(step, coverageSizeMixed(f, BASELINE, step.from));
+  const region = editor(page).locator(`[id="${await disclosure.getAttribute('aria-controls')}"]`);
   const item = region.getByRole('listitem').filter({ hasText: `From July ${YEAR}` });
-  await expect(item).toHaveText(text);
-  const pct = Number(/^From July \d{4}: (\d+)%/.exec(text)?.[1]);
+  await expect(item).toHaveCount(1);
+  const pct = Number(/^From July \d{4}: (\d+)%/.exec((await item.textContent())!.trim())?.[1]);
   expect(pct).toBeLessThan(100);
 });
 
 test('5. market terms: a typed rate cut lets a guarantee run', async ({ page }) => {
   await gotoSim(page);
-  await openFunding(page);
-  const cut = panel(page).getByRole('spinbutton', {
+  await addPolicy(page, 'Public money', 'Market terms');
+  const cut = editor(page).getByRole('spinbutton', {
     name: /^Guarantee rate cut, percentage points/
   });
-  let before = await sentRev(page);
+  let before = await refillCount(page);
   await commit(cut, '0.5');
-  await expectNewRevision(page, before);
-  await savedFunding(page, (f) => f.terms.guaranteeRateCut === 0.005);
+  await waitRefilled(page, before);
+  await fundingWhen(page, (f) => f.terms.guaranteeRateCut === 0.005);
+  await editor(page).getByRole('button', { name: 'Close editor' }).click();
 
   const preset = await addBond(page);
   const prog = progRow(page, preset.programmes[0].id);
   await prog.locator(':scope > button').click();
   const guarantee = prog.getByRole('radio', { name: 'Loan guarantee', exact: true });
   await expect(guarantee).not.toHaveAttribute('aria-disabled', 'true');
-  before = await sentRev(page);
+  before = await refillCount(page);
   await guarantee.click();
   await expect(guarantee).toBeChecked();
-  await expectNewRevision(page, before);
-  const f = await savedFunding(page, (x) =>
+  await waitRefilled(page, before);
+  const f = await fundingWhen(page, (x) =>
     x.programmes.some((g) => g.instrument.kind === 'guarantee')
   );
   expect(f.terms).toEqual({ guaranteeRateCut: 0.005 });
@@ -436,39 +381,40 @@ test('5. market terms: a typed rate cut lets a guarantee run', async ({ page }) 
 
 test('6. the programme editor: a loan is a draft until its rate', async ({ page }) => {
   await gotoSim(page);
-  await openFunding(page);
   const preset = await addBond(page);
   const pool = preset.pools[0];
-  const row = poolRow(page, pool.id);
 
   // "+ What it pays for": a grant has every field, so it is added at once and selected.
-  let before = await sentRev(page);
-  await row.getByRole('button', { name: addProgrammeName(pool.label), exact: true }).click();
-  await expectNewRevision(page, before);
-  const f0 = await savedFunding(page, (x) => x.programmes.length === 2);
+  let before = await refillCount(page);
+  await poolRow(page)
+    .getByRole('button', { name: addProgrammeName(pool.label), exact: true })
+    .click();
+  await waitRefilled(page, before);
+  const f0 = await fundingWhen(page, (x) => x.programmes.length === 2);
   const id = f0.programmes.find((g) => g.id !== preset.programmes[0].id)!.id;
   const prog = progRow(page, id);
   await expect(prog.locator(':scope > button')).toHaveAttribute('aria-pressed', 'true');
 
-  // A loan on a bond has no sourced rate: a draft, so nothing reaches the store or the levers.
-  // The levers are sent from the store, and the Undo name, the autosave and the lever revision all
-  // follow it: with the draft line shown, each still holds the grant's state.
-  const undo = panel(page).getByRole('button', { name: /^Undo/ });
-  const undoName = await undo.getAttribute('aria-label');
-  before = await sentRev(page);
+  // A loan on a bond has no sourced rate: a draft, so nothing reaches the document or the worker.
+  // The Undo name and the refills follow the document: with the draft line shown, each still
+  // holds the grant's state.
+  // Its label, read from the attribute: below 1024 px the button waits in the closed Menu.
+  const undoLabel = page
+    .getByRole('banner')
+    .getByRole('button', { name: /^Undo/, includeHidden: true });
+  const undoName = await undoLabel.getAttribute('aria-label');
+  before = await refillCount(page);
   await prog.getByRole('radio', { name: 'Loan', exact: true }).click();
   await expect(prog.getByText(DRAFT_LINE)).toBeVisible();
-  await expect(undo).toHaveAttribute('aria-label', undoName!);
-  expect(await storedFunding(page)).toEqual(f0);
-  const l = await leverStatus(page);
-  expect(l.sentRev).toBe(before);
-  expect(l.status).toBe('current');
+  await expect(undoLabel).toHaveAttribute('aria-label', undoName!);
+  expect(fundingOf(await docOf(page))).toEqual(f0);
+  expect(await refillCount(page)).toBe(before);
 
-  // The rate completes it: one revision.
+  // The rate completes it: one refill.
   await commit(prog.getByRole('spinbutton', { name: /^Loan interest rate, %/ }), '4');
   await expect(prog.getByText(DRAFT_LINE)).toHaveCount(0);
-  await expectNewRevision(page, before);
-  const f1 = await savedFunding(page, (x) =>
+  await waitRefilled(page, before);
+  const f1 = await fundingWhen(page, (x) =>
     x.programmes.some((g) => g.id === id && g.instrument.kind === 'loan')
   );
   expect(f1.programmes.find((g) => g.id === id)!.instrument).toMatchObject({
@@ -477,10 +423,10 @@ test('6. the programme editor: a loan is a draft until its rate', async ({ page 
   });
 
   // The income mix.
-  before = await sentRev(page);
+  before = await refillCount(page);
   await commit(prog.getByRole('spinbutton', { name: /^Very low income, %/ }), '60');
-  await expectNewRevision(page, before);
-  const f2 = await savedFunding(
+  await waitRefilled(page, before);
+  const f2 = await fundingWhen(
     page,
     (x) => x.programmes.find((g) => g.id === id)?.tiers?.veryLow === 0.6
   );
@@ -493,14 +439,14 @@ test('6. the programme editor: a loan is a draft until its rate', async ({ page 
   await expect(prog.locator(':scope > button')).toHaveText(sentence);
 });
 
-// ---- 7. the run -----------------------------------------------------------------------------------
+// ---- 7. Results -----------------------------------------------------------------------------------
 
-test('7. a run: Public money, Who the homes are for, the market and the sources', async ({
+test('7. Results: Public money, Who the homes are for, the market and the sources', async ({
   page
 }) => {
   expect(marketLevel(CAL)).toBe('private');
   await gotoSim(page);
-  await startRun(page);
+  await page.getByTestId('score-bar').click();
   const face = results(page);
   await expect(face).toBeVisible();
 
@@ -533,7 +479,8 @@ test('7. a run: Public money, Who the homes are for, the market and the sources'
   const sources = face.getByTestId('fzp-sources');
   await sources.locator(':scope > summary').click();
   const paragraph = face.getByTestId('fzp-market');
-  await expect(paragraph).toHaveText(marketText(CAL)!);
+  // Results' wording: the sentence without its old closing disclaimer (timeline-ui rule 38).
+  await expect(paragraph).toHaveText(marketBody(marketText(CAL)!));
   const today = CAL.market!.today;
   await expect(paragraph).toContainText(
     `${today.observed.private} new projects started other than those proposing nearly all homes affordable`
@@ -559,19 +506,20 @@ test('7. a run: Public money, Who the homes are for, the market and the sources'
 
 // ---- 8 to 10. sharing and loading -----------------------------------------------------------------
 
-test('8. a published policy lists its public money', async ({ page, isMobile }) => {
+test('8. a published policy lists its public money', async ({ page }) => {
   await gotoSim(page);
-  await openFunding(page);
+  await addPolicy(page, 'Public money', 'Market terms');
   await commit(
-    panel(page).getByRole('spinbutton', { name: /^Guarantee rate cut, percentage points/ }),
+    editor(page).getByRole('spinbutton', { name: /^Guarantee rate cut, percentage points/ }),
     '0.5'
   );
+  await editor(page).getByRole('button', { name: 'Close editor' }).click();
   await addBond(page);
-  const f = await savedFunding(
+  const f = await fundingWhen(
     page,
     (x) => x.pools.length === 1 && x.programmes.length === 1 && x.terms.guaranteeRateCut === 0.005
   );
-  await closeSheet(page, isMobile);
+  await editor(page).getByRole('button', { name: 'Close editor' }).click();
 
   const opener = await openPublish(page);
   await expect(opener).toBeEnabled();
@@ -586,17 +534,28 @@ test('8. a published policy lists its public money', async ({ page, isMobile }) 
   await page.goto(link);
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
   await waitSession(page);
-  const summary = await openPolicy(page);
-  await expect(summary).toHaveAttribute('aria-label', 'Policy (read-only)');
-  const section = summary.getByRole('region', { name: 'Public money' });
-  const rows = summaryRows(f, BASELINE, PRESETS).map((r) => r.text);
-  await expect(section.getByRole('listitem')).toHaveText(rows);
-  const g = f.programmes[0];
+  await openKind(page, 'Public money');
   const pool = f.pools[0];
-  await expect(section).toContainText(pool.label);
-  await expect(section).toContainText(programmeSentence(g, pool));
-  await expect(section).toContainText(typedTermSummary('guaranteeRateCut', 0.005));
+  const g = f.programmes[0];
+  // The fund's read-only summary: its pool and what it pays for.
+  await page
+    .getByRole('button', { name: new RegExp(`^${esc(pool.label)}, `) })
+    .last()
+    .click();
+  const fund = editor(page).getByRole('region', { name: 'Public money' });
+  await expect(fund).toContainText(pool.label);
+  await expect(fund).toContainText(programmeSentence(g, pool));
   await expectNoA11yViolations(page);
+  // The terms' read-only summary (a phone's editor sheet closes first: the bars are under it).
+  await editor(page).getByRole('button', { name: 'Close editor' }).click();
+  await openKind(page, 'Public money');
+  await page
+    .getByRole('button', { name: /^Market terms, / })
+    .last()
+    .click();
+  await expect(editor(page).getByRole('region', { name: 'Public money' })).toContainText(
+    typedTermSummary('guaranteeRateCut', 0.005)
+  );
 });
 
 test('9. a schema-2 document opens on /s/<id> with the funding-added notice', async ({ page }) => {
@@ -619,12 +578,11 @@ test('9. a schema-2 document opens on /s/<id> with the funding-added notice', as
   await expect(notices(page).filter({ hasText: added.text })).toHaveCount(1);
 });
 
-test('10. no baselineFunding: no tab, funding-off notice', async ({ page }) => {
+test('10. no baselineFunding: no Public money kind, funding-off notice', async ({ page }) => {
   // An autosave holding added money, made by the app.
   await gotoSim(page);
-  await openFunding(page);
   await addBond(page);
-  await savedFunding(page, (f) => f.pools.length === 1);
+  await expect.poll(async () => (await storedPolicy(page))?.kinds.money.length).toBe(1);
 
   // The same data without baseline funding. A client navigation from /about, so the browser
   // fetches the calibration and the route serves it (docs/dev/fzp-mode.md, e2e notes).
@@ -648,9 +606,8 @@ test('10. no baselineFunding: no tab, funding-off notice', async ({ page }) => {
   })[0];
   expect(off.id).toBe('funding-off');
   await expect(notices(page).filter({ hasText: off.text })).toHaveCount(1);
-  await openPolicy(page);
-  await expect(tabOf(page, 'Protect')).toBeVisible();
-  await expect(tabOf(page, 'Funding')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Zoning', exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add Public money policy' })).toHaveCount(0);
   // The money is kept, not used.
-  expect((await storedFunding(page))?.pools).toHaveLength(1);
+  expect((await storedPolicy(page))?.kinds.money).toHaveLength(1);
 });
