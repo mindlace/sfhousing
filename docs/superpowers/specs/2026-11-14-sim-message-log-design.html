@@ -476,6 +476,15 @@
       <li><strong>Any unit that adds a shape version to the stroke.</strong> Turning a ruleset into items must then emit the newest fields, so that a folded state and one built from its ruleset hold the same items.</li>
       <li><strong>Every caller.</strong> An item read from the state is the stored one: treat it as read-only.</li>
     </ul>
+    <p>Carried from the sim object (unit 2, built; <a href="../../dev/sim-object.md"><code>docs/dev/sim-object.md</code></a>):</p>
+    <ul>
+      <li><strong>Control plane.</strong> Write the roster change, then call <code>rereadRoles()</code>, and handle its throw (a failed role read revokes nobody). Call it when the last member leaves too, or open writer sockets keep writing. Call <code>takeDown()</code> before deleting a sim's D1 rows. Add the end-to-end tests of a role change ending write on an open socket and of <code>gone</code> after a takedown.</li>
+      <li><strong>Log store.</strong> Under <code>npm run dev</code> the socket never opens: Vite takes websocket upgrades for its own socket, and the object does not run there. Decide whether the page treats that as offline in dev or dev changes how it runs. The socket works under <code>npm run preview</code>.</li>
+      <li><strong>Log store.</strong> Check a commit with <code>fitsCommit</code> (<code>src/lib/sim-stream/limits.ts</code>) before sending. On a refusal: <code>limit</code> backs off; <code>full</code> is permanent; <code>newer</code> keeps the commit pending and offers a reload; <code>gone</code> on a resume starts again. Send <code>resume</code> before pending commits, because a duplicate spends the rate budget. Reconnect with backoff: a sim whose stored rows no longer fold closes each append with an internal error.</li>
+      <li><strong>Log store.</strong> Several readers resuming a very large sim at once are not bounded in memory or rate. Bound it (pages sent with backpressure, or a per-socket resume rate) once it is known how the runtime buffers outgoing frames.</li>
+      <li><strong>Log store.</strong> Check that <code>connect-src 'self'</code> admits the socket in WebKit and Firefox; the end-to-end tests prove it in Chromium only.</li>
+      <li><strong>Sharing.</strong> The index pass copies <code>remixOf</code> to the <code>remixed_from</code> columns once the field exists. A commit's actor id is visible to anyone with a sim's link.</li>
+    </ul>
   </section>
 
   <section id="sec-builder-check">
