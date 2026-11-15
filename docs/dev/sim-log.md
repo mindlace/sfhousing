@@ -137,7 +137,7 @@ It walks the changes in order, each seeing the kept ones before it. A change is 
 - An add or move whose `after` is gone or not in the list is re-anchored. A stroke goes after the last other stroke of its brush, else last in its list; anything else goes last. A null `after` is left alone.
 - A stroke add whose key is one of its own (`k:D` or `k:D~n`) takes the lowest free key of its identical strokes in the span (for example `k:X~2` becomes `k:X` when another writer deleted `k:X`). Later changes in the commit that name the old key follow it.
 - An add whose key is taken is dropped as `exists` before any rewrite, so a rewrite only lowers a key. Later changes that name the key a rewrite took read as gone.
-- A pending delete of a lower repeat (`k:D`) on a tip where another writer added a higher one (`k:D~2`) leaves the repeats unnumbered, so the commit is `invalid`.
+- Deletes of identical strokes are retargeted, so a delete of `k:D` on a tip where another writer added `k:D~2` does not leave the repeats unnumbered. With k deletes of one group (`k:D`, `k:D~n` for n of 2 or more) in a commit and t the highest repeat on the tip (not the working copy), the i-th delete in commit order targets repeat t - k + i, and is dropped as `gone` when that is below 1. Adds earlier in the commit are not counted: a commit deletes strokes the writer saw, and the repeats it adds are the writer's own, which the add rewrite already places. A delete is placed by this rule against the tip alone: it does not follow a key rewrite earlier in the same commit (an add whose key was lowered).
 - A span key names a place (`s:<from>:<policyId>`), not content. When two writers each replace the same span, re-applying is last-writer-wins on that span: the pending delete removes the tip's replacement and the pending add stands.
 - A change that `apply` refuses, other than the cases above, refuses the whole commit: `{ ok: false, why: 'invalid' }`. So does a result that fails the stroke-order check or `checkRuleset`.
 - Validity is checked once per commit: the kept changes are applied one at a time with the stroke-order check deferred, then applied together to a copy of the tip with `{ check: true }`. A commit that is valid only as a whole is kept.
@@ -171,12 +171,12 @@ The sim object (unit 2):
 3. Calls `state.apply(draft, { check: true })`; a `LogError` is `invalid`.
 4. Sets `seq`, `actor` and `at`, and `hash = await chainHash(tipHash, commit)`.
 
-The browser store (unit 4):
+The browser store (unit 4, built in `src/lib/sim-store/`, described in [sim-store.md](sim-store.md)):
 
-- Folds confirmed commits into one `LogState` and applies pending ones on a clone.
-- On `behind`, calls `reapply` for each pending commit, recomputing a pending restore with `diff`.
+- Folds confirmed commits into one `LogState` and applies pending ones on a clone (`LocalLog`).
+- On a new confirmed commit, unless it is the store's own commit coming back, calls `reapply` for each pending commit, recomputing a pending restore with `diff`.
 - Commits an editor's change as `diff(current, edited)`.
-- Asks `undoRedo` for targets, folding to the target position to get the restore's `diff`.
+- Keeps `History`, which walks the commits as `undoRedo` does (a property test pins them equal) and adds each target's label, folding to the target position to get the restore's `diff`.
 
 ### Rules for callers
 
@@ -184,7 +184,7 @@ The browser store (unit 4):
 - The store removes pending commits whose ids are already among the confirmed ones before calling `reapply`; otherwise their adds come back `exists` and the rest re-applies on top of itself. A pending restore never goes to `reapply`; it is recomputed with `diff` (R18).
 - Editor output goes through `toLogForm`, and an imported ruleset (R20) through `checkRuleset`, before `diff` or `LogState.of`.
 - `future-shapes` from `apply` or `reapply` means the commit comes from a newer build: keep it, stop sending, offer a reload.
-- A jump (R14) to a position before a dataset move restores rules made for the older dataset under the newer one. Undo stops at the move; the store unit decides whether a jump across it is followed by a move commit or refused.
+- A jump (R14) to a position before a dataset move restores rules made for the older dataset under the newer one. Undo stops at the move; the store aligns a restore to the dataset the fold is on (sim-store.md, The dataset rule).
 
 ## Tests
 

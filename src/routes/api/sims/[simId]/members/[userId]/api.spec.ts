@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type MockInstance } from 'vitest';
 import { SIMS_COPY } from '$lib/members/copy';
 import { mockConsole } from '$lib/server/test/mock-console';
 
@@ -40,6 +40,21 @@ async function httpStatus(fn: () => unknown): Promise<number> {
   } catch (e) {
     return (e as { status: number }).status;
   }
+}
+
+function queryError(): Error {
+  return Object.assign(new Error('Failed query: select 1 params: guest@test.com'), {
+    name: 'DrizzleQueryError'
+  });
+}
+
+function expectSafeLog(error: MockInstance, text: string, simId: string): void {
+  expect(error).toHaveBeenCalledWith(text, simId, '(query failed)');
+  for (const call of error.mock.calls)
+    for (const arg of call) {
+      expect(arg).not.toBeInstanceOf(Error);
+      if (typeof arg === 'string') expect(arg).not.toContain('guest@test.com');
+    }
 }
 
 beforeEach(() => {
@@ -96,6 +111,14 @@ describe('DELETE /api/sims/:simId/members/:userId', () => {
     expect(JSON.parse(text)).toEqual({ code: 'failed' });
     expect(text).not.toContain('D1');
     expect(errSpy).toHaveBeenCalled();
+  });
+
+  it('logs the sim id and safe text, never the error itself', async () => {
+    const { error } = mockConsole('error');
+    removeSimMember.mockRejectedValue(queryError());
+    const res = await DELETE(deleteEvent('s1', 'u2'));
+    expect(res.status).toBe(400);
+    expectSafeLog(error, 'member remove failed', 's1');
   });
 
   it('415 when the request is not JSON, before any authz or write', async () => {

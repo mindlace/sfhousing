@@ -317,6 +317,75 @@ describe('reapply', () => {
       expect(reapply(tip, input(changes))).toEqual({ ok: true, changes, dropped: [] });
     });
 
+    const del = (key: string): Change => ({ op: 'delete', key });
+
+    it('retargets a delete of k:X to the highest repeat another writer added', () => {
+      const tip = tipWith({ id: 'b1', paths: [P1, P1] });
+      expect(reapply(tip, input([del(X)]))).toEqual({
+        ok: true,
+        changes: [del(`${X}~2`)],
+        dropped: []
+      });
+    });
+
+    it('retargets a delete of a middle repeat to the highest', () => {
+      const tip = tipWith({ id: 'b1', paths: [P1, P1, P1] });
+      expect(reapply(tip, input([del(`${X}~2`)]))).toEqual({
+        ok: true,
+        changes: [del(`${X}~3`)],
+        dropped: []
+      });
+    });
+
+    it('drops as gone the deletes below repeat 1', () => {
+      const tip = tipWith({ id: 'b1', paths: [P1] });
+      expect(reapply(tip, input([del(X), del(`${X}~2`)]))).toEqual({
+        ok: true,
+        changes: [del(X)],
+        dropped: [{ index: 0, change: del(X), why: 'gone' }]
+      });
+    });
+
+    it('places the deletes of two groups in one commit each against its own group', () => {
+      const tip = tipWith({ id: 'b1', paths: [P1, P1, P1, P2, P2] });
+      const out = reapply(tip, input([del(X), del(Y), del(`${X}~2`)]));
+      expect(out).toEqual({
+        ok: true,
+        changes: [del(`${X}~2`), del(`${Y}~2`), del(`${X}~3`)],
+        dropped: []
+      });
+    });
+
+    it('drops two of three deletes as gone on a tip with one repeat, and keeps the last', () => {
+      const tip = tipWith({ id: 'b1', paths: [P1] });
+      expect(reapply(tip, input([del(X), del(`${X}~2`), del(`${X}~3`)]))).toEqual({
+        ok: true,
+        changes: [del(X)],
+        dropped: [
+          { index: 0, change: del(X), why: 'gone' },
+          { index: 1, change: del(`${X}~2`), why: 'gone' }
+        ]
+      });
+    });
+
+    it('retargets past a different stroke between the repeats', () => {
+      const tip = tipWith({ id: 'b1', paths: [P1, P2, P1] });
+      expect(reapply(tip, input([del(X)]))).toEqual({
+        ok: true,
+        changes: [del(`${X}~2`)],
+        dropped: []
+      });
+    });
+
+    it('does not read a ~1 suffix as a repeat', () => {
+      const tip = tipWith({ id: 'b1', paths: [P1, P1] });
+      expect(reapply(tip, input([del(`${X}~1`)]))).toEqual({
+        ok: false,
+        why: 'empty',
+        dropped: [{ index: 0, change: del(`${X}~1`), why: 'gone' }]
+      });
+    });
+
     it('drops the whole commit when a stroke disagrees with its brush', () => {
       const tip = tipWith({ id: 'b1', paths: [P1] });
       const out = reapply(tip, input([add(sf('b1', P2, 9), X)]));

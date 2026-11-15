@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { simInvite } from '$lib/server/db/schema';
 import { freshDb, makePlatform, seedSim, seedUser } from '$lib/server/test/auth-db';
@@ -11,6 +11,10 @@ vi.mock('$app/environment', () => ({
 }));
 vi.mock('$env/dynamic/public', () => ({ env: {} }));
 vi.mock('$lib/server/authz/require-sim-role', () => ({ requireSimRole: vi.fn() }));
+vi.mock('$lib/server/sims/sims', async (orig) => {
+  const a = await orig<typeof import('$lib/server/sims/sims')>();
+  return { ...a, leaveSim: vi.fn(a.leaveSim) };
+});
 vi.mock('$lib/server/sims/roster-hook', () => ({ onSimRosterChanged: vi.fn(async () => {}) }));
 
 import { requireSimRole } from '$lib/server/authz/require-sim-role';
@@ -21,7 +25,23 @@ import { mockConsole } from '$lib/server/test/mock-console';
 import { onSimRosterChanged } from '$lib/server/sims/roster-hook';
 import { createInvite } from '$lib/server/invites/control-plane';
 import { addMemberById, getRole, getSimTitle } from '$lib/server/sims/sim-index';
+import { leaveSim } from '$lib/server/sims/sims';
 import { actions, load } from './+page.server';
+
+function queryError(): Error {
+  return Object.assign(new Error('Failed query: select 1 params: guest@test.com'), {
+    name: 'DrizzleQueryError'
+  });
+}
+
+function expectSafeLog(error: MockInstance, text: string, simId: string): void {
+  expect(error).toHaveBeenCalledWith(text, simId, '(query failed)');
+  for (const call of error.mock.calls)
+    for (const arg of call) {
+      expect(arg).not.toBeInstanceOf(Error);
+      if (typeof arg === 'string') expect(arg).not.toContain('guest@test.com');
+    }
+}
 
 const opened: Array<() => void> = [];
 afterEach(() => {
@@ -84,6 +104,15 @@ describe('/sims/[simId] page load', () => {
 });
 
 describe('leaveSim action', () => {
+  it('logs the sim id and safe text, never the error itself', async () => {
+    const { error } = mockConsole('error');
+    const env = await seed();
+    vi.mocked(leaveSim).mockRejectedValueOnce(queryError());
+    const res = await actions.leaveSim(leaveEvent(env, 'u-mia'));
+    expect(res).toMatchObject({ status: 400, data: { code: 'failed' } });
+    expectSafeLog(error, 'leave sim failed', env.simId);
+  });
+
   it('sends a signed-out visitor to /sims without touching the sim', async () => {
     const env = await seed();
     const r = await redirectOf(() => actions.leaveSim(leaveEvent(env, null)));

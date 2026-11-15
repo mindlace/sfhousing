@@ -1,0 +1,1099 @@
+<article>
+  <header>
+    <h1>Sim log store, plan 1: the store core</h1>
+    <p>Unit 4 of the sim message log, first of four plans: the browser's log store (confirmed plus pending commits, drafts, undo and redo as restore commits, re-applying on a new tip, the dataset rule and the move commit) and its IndexedDB, with no change to any page.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Build, test and document the browser's log store so that plan 2 (the socket) and plan 3 (the page) only wire it: a pure <code>LocalLog</code> that folds confirmed then pending commits and re-applies pending ones on a new tip without ever moving a sim to another dataset than its fold's; pure authoring of edit, restore, move and import commits; a pure dataset decision; a durable <code>SimDb</code> on IndexedDB; and a <code>LogStore</code> that satisfies a structural interface both it and today's <code>PolicyStore</code> meet. Also fix the carried items this unit owns that touch the log core and the server logs.</dd>
+      <dt>Architecture</dt>
+      <dd>New directory <code>src/lib/sim-store/</code>. Logic is in plain modules a Node test drives (<code>dataset.ts</code>, <code>history.ts</code>, <code>local-log.ts</code>, <code>author.ts</code>); persistence is behind the <code>SimDb</code> interface with an in-memory implementation for Node and an IndexedDB one tested in real Chromium; <code>log-store.svelte.ts</code> is a thin rune facade. Nothing under <code>src/lib/sim-page/</code>, <code>src/lib/timeline/</code> or <code>src/routes/sim/</code> changes in this plan.</dd>
+      <dt>Tech stack</dt>
+      <dd>TypeScript, Svelte 5 runes (a <code>.svelte.ts</code> class, imported by Node specs as <code>stroke-adapter.spec.ts</code> imports <code>PolicyStore</code>), IndexedDB (no library), Vitest <code>server</code> (Node 24) and <code>client</code> (Chromium via Playwright) projects, <code>fast-check</code>.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-14-sim-message-log-design.html"><code>docs/superpowers/specs/2026-11-14-sim-message-log-design.html</code></a>, unit 4 of <a href="../specs/2026-11-14-sim-message-log-design.html#sec-order">Size and order</a>. Rules in this plan: R1, R2, R9 to R16, R18, R19, R29 (the id minted at the first edit), R54 and R55 (the dataset rule, the move commit, a restore read under its own dataset), R15 as the owner amended it (storage failure), and from "Left to the builder": the log core's three "Log store" items, the control plane's "The next unit, first". The rest of unit 4 is in plans 2 to 4: <a href="2026-11-15-sim-log-store-outline.html"><code>2026-11-15-sim-log-store-outline.html</code></a>. Read the spec, <code>docs/dev/sim-log.md</code> and <code>docs/dev/sim-object.md</code> before any task.</dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li>Work in this worktree only: <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/sim-log-store</code>. If <code>node_modules</code> is missing, run <code>npm install</code> first.</li>
+      <li>Never compound <code>cd … &amp;&amp; cmd</code>: run <code>cd</code> on its own, then the command, or use absolute paths.</li>
+      <li>Conventional Commits. A multi-line message uses several <code>-m</code> flags, never a heredoc.</li>
+      <li>No Claude attribution anywhere: no <code>Co-Authored-By</code>, no generated-with footer, no mention in code, comments or docs.</li>
+      <li>Code style: 2 spaces, single quotes, no trailing commas, 100 columns including comments. <code>npm run lint</code> and <code>npm run check</code> clean for every file you touch.</li>
+      <li>Every test calls <code>expect</code> (<code>expect.requireAssertions</code>); wrap <code>fc.assert</code> in <code>expect(() =&gt; …).not.toThrow()</code>. A property test stays under 1.5 s on this machine: time it (<code>--reporter verbose</code> prints each test's time) and lower <code>numRuns</code> until it does. The default test timeout is 5 s; a previous unit's property ran at 98.7% of it.</li>
+      <li>Run everything in the foreground. Never start background work. This plan starts no preview or dev server and changes no e2e spec.</li>
+      <li>Never hand-edit a migration. This plan changes no D1 or object schema.</li>
+      <li>Do not change <code>src/lib/sim-log/*</code> except <code>reapply.ts</code> and <code>reapply.spec.ts</code> (Task 2). <code>src/lib/sim-log/index.ts</code>'s export list does not change.</li>
+      <li>Nothing in <code>src/lib/sim-store/</code> imports <code>$app/*</code>, <code>$env/*</code> or <code>$lib/server/*</code>: plan 3 imports it into the page. Import the log core only from <code>$lib/sim-log</code>, the limits from <code>$lib/sim-stream/limits</code>, ids from <code>$lib/ids/base58</code> (<code>newId</code>, browser-safe: <code>src/lib/ids/base58.ts:15</code>), <code>canonicalJson</code> from <code>$lib/sim-page/policy</code> (as <code>src/lib/sim-log/keys.ts:1</code> does).</li>
+      <li>Logs: <code>console.error</code> only for what is unexpected, prefixed <code>[sim-store]</code>, with a reason code and never a commit body, ruleset, name or label. Server logs (Task 1) carry a sim id and <code>loggable(e)</code> only.</li>
+      <li>No secrets, account identifiers or email addresses in code, logs or fixtures beyond the repo's test conventions (<code>@test.com</code> addresses, ids from <code>newId()</code>).</li>
+      <li>No new dependency. IndexedDB is used directly; its tests run in the <code>client</code> project's Chromium, which has a real IndexedDB (Node 24 has none: checked at plan time).</li>
+      <li>The values the spec and the earlier units pin: <code>LABEL_MAX</code> 200, <code>SOURCE_RE</code> lowercase dotted words, <code>SOURCE_MAX</code> 64 (<code>src/lib/sim-log/types.ts</code>); <code>DEFAULT_SIM_NAME</code> <code>'Untitled sim'</code>; a commit's <code>changes</code> are never empty; <code>parseCommitDraft</code> and <code>fitsCommit(draft)</code> (<code>src/lib/sim-stream/limits.ts:52</code>) pass before a commit is pending; the object's limits (<code>LIMITS</code>: 1 MiB a commit, 100,000 commits and 64 MiB a sim, a burst of 120 then 2 a second); <code>DATASET_VERSION_RE</code> (<code>src/lib/data/dataset-version.ts:2</code>; tests use <code>'fixture-0'</code>, <code>'fixture-1'</code> and <code>'fixture-2'</code>).</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>A tab opened before a release, re-applying its pending commits over another writer's move to the new dataset.</strong> The fold must stay on the new dataset; the old tab must stop authoring and keep its commits unsent. Pinned by Task 5's "never re-stamps a commit onto an older dataset than the fold's" and Task 9's "stops as stale after a foreign move".</li>
+      <li><strong>A co-writer's commit arriving in the middle of a drag.</strong> The draft is committed first, then re-applied with the rest. Pinned by Task 9's "a foreign commit ends an open draft".</li>
+      <li><strong>Two fresh tabs making their first edit at once.</strong> One sim, both edits in it. Pinned by Task 10's "two fresh stores over one database make one current sim".</li>
+      <li><strong>A tab whose pending row another tab claimed.</strong> It must not put its owner back, and must not send the commit. Pinned by Task 7's contract "a put of a record another owner holds is lost, not written" and Task 10's "forgets pending commits another tab took".</li>
+      <li><strong>IndexedDB failing mid-session (quota, an aborted transaction).</strong> The edit stays, is still sent, and the store never reports it stored. Pinned by Task 7's "a write whose transaction aborts rejects and writes nothing" and Task 10's "a failed write sends the edit and never reports it stored".</li>
+    </ol>
+  </section>
+
+  <section id="sec-invariants">
+    <h2>Invariants</h2>
+    <p>Each holds after every public call returns. A task's tests name the ones they pin.</p>
+    <ol>
+      <li id="i1"><strong>I1, the page is the fold.</strong> With no draft open, <code>LogStore.policy</code> and <code>name</code> are content-equal to <code>LocalLog.ruleset()</code>: the fold of the confirmed commits followed by the pending ones (R16). With a draft open they are the editor's output on top of that fold, and nothing else.</li>
+      <li id="i2"><strong>I2, stored before sent while storage works.</strong> With storage working, <code>LogStore.head()</code> returns a pending commit only once the version of it that it returns is in IndexedDB (R15). With storage unavailable from the start or after a failed write, <code>head()</code> returns the head without waiting for a write, so the server holds the only copy, and <code>local</code> stays <code>'failed'</code>: the store never reports such a commit as stored on this device.</li>
+      <li id="i3"><strong>I3, pending sit on the tip.</strong> <code>pending[i].draft.parent === tipSeq + i</code>, and a pending restore's <code>restores.position</code> is the current position of its target commit.</li>
+      <li id="i4"><strong>I4, confirmed only from the stream.</strong> A commit enters <code>confirmed</code> only through <code>receive</code>, in <code>seq</code> order with no gap (R26, R27).</li>
+      <li id="i5"><strong>I5, the stored state was a real state.</strong> Writes are serialized and each is one IndexedDB transaction that counts as done only on its <code>complete</code> event, so what IndexedDB holds is always a state the tab held, possibly an older one. On open, pending commits whose ids are confirmed are deleted, not resent.</li>
+      <li id="i6"><strong>I6, a look mints and records nothing.</strong> Until the first edit no sim id is minted and no record is written. Opening the store may open, and so create, an empty IndexedDB database.</li>
+      <li id="i7"><strong>I7, only sendable commits are pending.</strong> A commit becomes pending, whether authored or re-applied, only after <code>parseCommitDraft</code>, <code>fitsCommit</code> and <code>LogState.apply(…, { check: true })</code> on the local tip accepted it. A re-applied commit that fails is dropped and reported.</li>
+      <li id="i8"><strong>I8, history from the log.</strong> Undo and redo targets come from the commits alone (R12); <code>History</code>'s positions equal <code>undoRedo</code>'s for every log.</li>
+      <li id="i9"><strong>I9, nothing past a gap or a newer build.</strong> <code>receive</code> applies nothing after a commit whose <code>seq</code> is not the next one, or whose <code>shapes</code> is above <code>SHAPES_REVISION</code>; the latter, or a pending commit under such a revision, stops the store (<code>'future'</code>) and leaves that record untouched.</li>
+      <li id="i10"><strong>I10, one order.</strong> Two logs fed the same stream, each re-applying its own pending commits, end with the same confirmed commits and the same ruleset as the server (R18, R40).</li>
+      <li id="i11"><strong>I11, never moved to another dataset by re-applying.</strong> A re-applied pending commit is stamped with the dataset the local fold is on after the commits before it; only a move commit carries another dataset, and a re-applied move to another dataset than the fold's is kept only while the server's dataset is unknown or equals the move's. Nothing is sent before the server's dataset is known (<code>head()</code> is null until <code>setServerDataset</code>, which plan 2 calls on <code>hello</code>), so a move kept while it was unknown is never sent unchecked.</li>
+      <li id="i12"><strong>I12, authoring only on the page's dataset.</strong> A page authors on a sim only when the local fold's dataset is null or equals the page's, or the page knows it is current (its dataset equals the server's) and appends the move commit first (<a href="#tbl-dataset">the dataset rule</a>).</li>
+    </ol>
+  </section>
+
+  <section id="sec-dataset-rule">
+    <h2>The dataset rule</h2>
+    <p>F1 and F2, R54, R55. <code>LogState.apply</code> sets the fold's dataset to each commit's (<code>src/lib/sim-log/state.ts:112</code>), <code>reapply</code> passes a commit's <code>datasetVersion</code> through, and the object checks only its format (<code>src/lib/sim-log/parse.ts:160-162</code>; <code>decide.ts</code> and <code>log-host.ts</code> never compare it). Dataset versions cannot be ordered by name (two share a date), so nothing orders them. The store learns the server's dataset from the socket's <code>hello</code> (plan 2 adds it as an optional field; the open header already carries it, <code>src/lib/server/sim-object/sim-object.ts:112</code>) through <code>LogStore.setServerDataset</code>; it starts unknown (<code>null</code>) on every page load.</p>
+    <table id="tbl-dataset">
+      <caption><code>datasetDecision(page, tip, server)</code>: page P, the local fold's dataset, the server's (null until a hello)</caption>
+      <thead><tr><th scope="col">Fold's dataset</th><th scope="col">Server's dataset</th><th scope="col">Decision</th><th scope="col">What the store does</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">null (no commits)</th><td>null, P, or another</td><td><code>edit</code></td><td>Authors; the first commit carries P</td></tr>
+        <tr><th scope="row">P</th><td>null</td><td><code>edit</code></td><td>Authors offline as before</td></tr>
+        <tr><th scope="row">P</th><td>P</td><td><code>edit</code></td><td>Authors</td></tr>
+        <tr><th scope="row">P</th><td>another</td><td><code>edit</code></td><td>Authors on P (the sim is on P; nothing moves). A current writer moves it later</td></tr>
+        <tr><th scope="row">another</th><td>P</td><td><code>move</code></td><td>Appends the move commit, then authors</td></tr>
+        <tr><th scope="row">another</th><td>null</td><td><code>stop</code>, <code>'unknown-dataset'</code></td><td>Read only until a hello; plan 3 says to reconnect</td></tr>
+        <tr><th scope="row">another</th><td>another (the fold's or a third)</td><td><code>stop</code>, <code>'stale'</code></td><td>Read only; pending stay stored and unsent; plan 3 offers a reload</td></tr>
+      </tbody>
+    </table>
+    <p><code>stopped</code> is <code>'future'</code> (a newer build's commit, I9) when that applies, else the decision's reason, else null. Undo and redo are off whenever the decision is not <code>edit</code> or the store is stopped. Re-applying (I11) and, after it, one alignment commit (<a href="#d13">decision 13</a>) keep pending work on the dataset the fold is on.</p>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions made in this plan</h2>
+    <ol>
+      <li id="d1"><strong>Unit 4 is four plans</strong>: this core; the socket, registration and tabs; the page; reading on a sim's own dataset. Reason: each merges with <code>/sim</code> working, and the core's correctness can be reviewed without a page or a socket in the way. See <a href="2026-11-15-sim-log-store-outline.html">the outline</a>.</li>
+      <li id="d2"><strong>Until unit 5, <code>/sim</code> holds one current sim per browser</strong>, its id in the IndexedDB <code>meta</code> row <code>current</code>; no route changes. <code>LogStore.open(simId)</code> takes any id, so unit 5's <code>/sim/&lt;simId&gt;</code> calls it with the route's id and nothing in the store changes.</li>
+      <li id="d3"><strong>Two layers.</strong> <code>LocalLog</code> (plain class, pure) holds commits and does every fold and re-apply; <code>LogStore</code> (runes) adds drafts, the dataset gate, persistence and the editors' interface. Reason: logic a Node test drives.</li>
+      <li id="d4"><strong>After a commit the page shows the fold</strong>, keeping the object it already shows when the fold is canonically equal to it (<code>rulesetText</code>), else the fold's object. Reason: I1, while a commit that changed nothing visible keeps identity, so callers that compare <code>store.policy === before</code> (<code>Inspector.svelte:221-223</code>, <code>FundingTab.svelte:208-210</code>) announce only real changes. <code>apply</code> also returns whether its own edit was applied.</li>
+      <li id="d5"><strong>Pending commits are re-applied as soon as a foreign commit arrives</strong>, not only on <code>behind</code>. Reason: the page must show confirmed then pending (R16) at every moment; <code>behind</code> then only means "send again" (plan 2).</li>
+      <li id="d6"><strong>A pending restore names its target by commit id</strong> (<code>Pending.targetId</code>, null for position 0) and its position is recomputed on every re-apply; a restore whose target was dropped is dropped. Reason: a target can itself be pending, and its position moves when foreign commits land before it. The spec's "keeps its target position" will be amended to read this way.</li>
+      <li id="d7"><strong>Its own commit coming back skips the re-apply</strong> only when the confirmed commit is the head pending one by id with canonically equal changes; anything else re-applies everything.</li>
+      <li id="d8"><strong>Drafts (R1).</strong> <code>apply</code> with a coalesce key opens or continues a draft (memory only, not a commit). The draft becomes a commit when: the next <code>apply</code> has another key or none; <code>settle()</code> is called (plan 3 calls it on focus leaving the inspector, <code>visibilitychange</code> to hidden, <code>pagehide</code>, <code>beforeNavigate</code> and the page's teardown); <code>undo</code>, <code>redo</code>, <code>undoTo</code>, <code>reset</code>, <code>rename</code>, <code>importContent</code> or <code>claim</code> runs; or a foreign commit arrives. A draft committed at <code>pagehide</code> is committed in memory; its write is best effort.</li>
+      <li id="d9"><strong>Restore labels.</strong> An undo commit's <code>label</code> is the label of the change it undoes, a redo's the change it redoes, a jump's the caller's. <code>History</code> derives the labels from the log by the same walk as <code>undoRedo</code>.</li>
+      <li id="d10"><strong>An undo whose target already equals the current ruleset</strong> goes on to the next target; the same for redo.</li>
+      <li id="d11"><strong>Undo and redo are off whenever the store would have to move or is stopped</strong>: <code>canUndo</code>, <code>canRedo</code> false, <code>undo()</code>, <code>redo()</code> return null and author nothing. Reason: the move is a <code>system</code> commit that empties both stacks (R12).</li>
+      <li id="d12"><strong>A jump to a position on another dataset restores and aligns in one commit</strong>: <code>kind: 'restore'</code>, <code>restores: { position, as: 'jump' }</code>, changes <code>diff(current, align(ruleset at position, stamp))</code>; when <code>align</code> cannot reach that dataset the jump is refused. Reason: <code>undoTo</code> can land before a move made 250 ms earlier.</li>
+      <li id="d13"><strong>The move and the alignment commit</strong> (R55): on <code>move</code> (<a href="#tbl-dataset">the rule</a>) the store authors, before the next commit, <code>kind: 'system'</code>, source <code>sim.dataset</code>, label <code>'Moved to new data'</code>, changes <code>diff(current, align(current, P))</code>, stamped P; when the diff is empty no move commit is made and the next commit carries P. After every re-apply that kept pending commits, and when the server's dataset becomes known, if the fold is on P (or the decision is <code>move</code>) and <code>align</code> would still change it, one alignment commit of the same form is appended. A pending move is recomputed on every re-apply like a restore, and dropped, unreported, when its diff is empty, or when it moves to another dataset than the fold's and the server's known dataset is not its own.</li>
+      <li id="d14"><strong>A refused edit is not applied.</strong> An edit whose <code>diff</code>/<code>toLogForm</code> throws, that <code>parseCommitDraft</code> or <code>LogState</code> refuses, that fails <code>fitsCommit</code>, or that would pass the pending cap leaves the policy as it was, sets <code>refusal</code> (<code>'invalid'</code>, <code>'too-large'</code>, <code>'queue-full'</code>) and returns false; <code>'invalid'</code> also logs <code>[sim-store] edit refused</code>.</li>
+      <li id="d15"><strong>IndexedDB schema, version 1</strong>: database <code>sfhousing-sim-log</code>; stores <code>sims</code> (key <code>simId</code>), <code>commits</code> (key <code>[simId, seq]</code>), <code>pending</code> (key <code>[simId, id]</code>, unique index <code>order</code> on <code>[simId, n]</code>), <code>meta</code> (key <code>key</code>). <code>n</code> comes from the <code>meta</code> row <code>n:&lt;simId&gt;</code> inside the write transaction. Writes use <code>durability: 'strict'</code> (<a href="https://developer.mozilla.org/en-US/docs/Web/API/IDBDatabase/transaction#durability">MDN</a>) and resolve only on the transaction's <code>complete</code>, rejecting on <code>abort</code> or <code>error</code> (a quota error surfaces as an abort). A later version adds an <code>if (oldVersion &lt; 2)</code> step and never edits step 1.</li>
+      <li id="d16"><strong>A write batch is the tab's whole dirty state</strong> in one transaction. A put of a pending record applies only while the stored record's owner is this tab, checked inside the transaction; a record another tab holds comes back as <code>lost</code>, and the store forgets it without sending. A remove deletes only this tab's records.</li>
+      <li id="d17"><strong>Storage failure</strong> (R15 as amended): when IndexedDB is unavailable from the start or a write fails, the store keeps working, stops writing, and <code>head()</code> hands pending commits to be sent at once; <code>local</code> is <code>'failed'</code>, so the page never says "saved on this device". Whenever storage works, the strict order holds.</li>
+      <li id="d18"><strong>Earlier positions are folded from checkpoints</strong>: confirmed positions from <code>LogState</code> clones at multiples of a spacing that starts at 256 and doubles whenever there would be more than 64; pending positions from a clone every 32 pending commits. Nothing keeps a ruleset per commit.</li>
+      <li id="d19"><strong>Labels over <code>LABEL_MAX</code></strong> are cut to 199 UTF-16 units, never inside a surrogate pair, plus <code>…</code>. Builder's call: editors' labels embed policy names.</li>
+      <li id="d20"><strong>Sources</strong> (<code>SOURCES</code>): <code>sim.edit</code> (default for <code>apply</code>), <code>sim.undo</code>, <code>sim.redo</code>, <code>sim.revert</code> (a jump), <code>sim.dataset</code> (a move or an alignment), <code>sim.name</code> (a rename, as the server's rename), <code>sim.import</code>, <code>sim.reset</code>. <code>apply</code> takes an optional fourth argument <code>source</code>; plan 3 gives each control its own code.</li>
+      <li id="d21"><strong>A stopped store authors nothing</strong>: with <code>stopped</code> set (<code>'future'</code>, <code>'stale'</code>, <code>'unknown-dataset'</code>) <code>apply</code>, <code>rename</code>, <code>reset</code>, <code>undoTo</code> do nothing (<code>apply</code> returns false), <code>undo</code> and <code>redo</code> return null, and <code>head()</code> returns null. <code>'future'</code> is permanent for the store's life; the other two clear when the decision becomes <code>edit</code> or <code>move</code>.</li>
+      <li id="d22"><strong>Each tab shows the confirmed commits and its own pending ones.</strong> Another tab's pending work appears when it is confirmed. <code>LogStore.open(simId, { claim })</code> and <code>LogStore.claim(owners)</code> take other tabs' pending commits atomically and re-apply them after this tab's own; plan 2 decides which owners are gone.</li>
+      <li id="d23"><strong>The identical-stroke delete rule</strong> is computed against the tip passed to <code>reapply</code>, before the walk, for every delete whose key is <code>k:&lt;digest&gt;</code> or <code>k:&lt;digest&gt;~n</code> with n of 2 or more; a retargeted delete is applied to its target key directly. The count of repeats on the tip ignores adds of the same group earlier in the same commit: a commit from <code>diff</code> puts every delete before every add (sim-log.md, Diff, order 1 then 4), and <code>reapply</code> keeps a commit's order. It stays private to <code>reapply.ts</code>.</li>
+      <li id="d24"><strong>The control plane's raw-error log lines are four, not three</strong>: <code>resend/+server.ts:32,65</code>, <code>sims/[simId]/+page.server.ts:47</code>, and <code>members/[userId]/+server.ts:27</code>.</li>
+      <li id="d25"><strong>The IndexedDB code is tested in the <code>client</code> project</strong> (real Chromium), with the same contract suite run in Node against <code>memorySimDb</code>. Reason: no new dependency, and the real engine is the one that matters.</li>
+      <li id="d26"><strong>The store does not check the hash chain.</strong> Reason: <code>chainHash</code> is async and <code>receive</code> must be synchronous.</li>
+      <li id="d27"><strong>The pending cap</strong>: at most <code>PENDING_MAX</code> 1,000 commits and <code>PENDING_BYTES_MAX</code> 8 MiB (8,388,608 bytes of draft JSON) per tab per sim. An authored commit past either is refused <code>'queue-full'</code>; re-applying never refuses for the cap. Reason: far inside the object's limits (100,000 commits and 64 MiB a sim, so a full queue alone never fills a sim), drained in about seven and a half minutes at the object's rate (a burst of 120, then 2 a second), and bounded in memory with checkpoints every 32.</li>
+      <li id="d28"><strong>The current-sim pointer is set only if absent</strong>, inside the transaction that creates the sim. A fresh store whose first edit finds a current sim already set does not create a second one: it opens that sim and makes its first edit there as a pending commit.</li>
+      <li id="d29"><strong>The structural editor interface <code>DocStore</code></strong> names exactly what the page and the editors use of a schema 4 store today: <code>policy</code>, <code>canUndo</code>, <code>canRedo</code>, <code>undoLabel</code>, <code>redoLabel</code>, <code>apply</code>, <code>undo</code>, <code>redo</code>, <code>undoTo</code>, <code>reset</code> (<code>SimPage.svelte:190-1048</code>, <code>Inspector.svelte:95-283</code>, <code>lens.ts:301-341</code>). <code>PolicyStore&lt;SimPolicy4&gt;</code> and <code>LogStore</code> both satisfy it, checked at compile time; plan 3 switches <code>Inspector.svelte:50</code> and its test host from the class (nominal, because of its <code>#private</code> fields) to it. <code>LogStore.reset(p)</code> is an undoable edit to <code>p</code> (source <code>sim.reset</code>, label <code>'Reset'</code>), not a cleared history.</li>
+      <li id="d30"><strong>The import hook</strong>: <code>LogStore.importContent(content, marker)</code> authors one <code>system</code> commit (source <code>sim.import</code>) and writes it with a marker compare-and-set in the same transaction; when the marker is not what the caller expected, nothing is written and the commit is withdrawn. Plan 3 uses it for the first import and for a re-import of a newer autosave record.</li>
+      <li id="d31"><strong><code>undoTo(p)</code></strong> jumps to the commit that produced <code>p</code>; when that commit was dropped, or <code>p</code> was never a commit, it is an edit to <code>p</code>. A jump clears redo (R12: a jump counts as an edit), where <code>PolicyStore</code> kept it.</li>
+      <li id="d32"><strong>Derived state is computed once per change</strong>: <code>canUndo</code>, <code>undoLabel</code> and the rest are runes set after each state change, never recomputed on each read.</li>
+    </ol>
+  </section>
+
+  <section id="sec-owner">
+    <h2>For the owner</h2>
+    <p>This plan changes nothing a person sees. These decisions will, once plan 3 puts the store on <code>/sim</code>:</p>
+    <ul>
+      <li><strong>One sim per browser on <code>/sim</code> until unit 5</strong> (<a href="#d2">decision 2</a>). Plan 3's Remix from an old <code>/s/&lt;id&gt;</code> link starts a new current sim; the previous one stays saved and on the server, but <code>/sim</code> cannot open it again until unit 5's list.</li>
+      <li><strong>Undo after a co-writer's edit</strong> goes back to the earlier state, which also takes back what the co-writer did after it (R10, R12, as approved).</li>
+      <li><strong>Undo is off until the first change after a dataset update</strong>, and whenever the tab cannot edit (<a href="#d11">decision 11</a>).</li>
+      <li><strong>A tab on an older dataset than the server's stops editing and offers a reload</strong>; its unsent edits stay stored and are re-applied after the reload. A tab that has never reached the server this session cannot edit a sim on another dataset until it reconnects.</li>
+      <li><strong>A draft (a stepper run, a value being typed) open when the tab closes is committed in memory; its write to local storage is best effort.</strong> Closing, hiding, navigating away or switching away commits it (<a href="#d8">decision 8</a>).</li>
+      <li><strong><code>undoTo</code> (back to the last document the engine accepted) now clears redo</strong>, because it is a jump (<a href="#d31">decision 31</a>).</li>
+      <li><strong>Once 1,000 edits or 8 MiB wait offline, further edits are refused with a short notice</strong> until some are sent (<a href="#d27">decision 27</a>).</li>
+      <li><strong>When local storage is unavailable or fails, edits are still sent</strong>, and the page never says they are saved on this device (<a href="#d17">decision 17</a>).</li>
+      <li><strong>Two tabs offline do not see each other's edits</strong> until they reconnect (<a href="#d22">decision 22</a>).</li>
+      <li><strong>An empty painted brush disappears when its change is committed</strong>, because the log keeps none (<code>toLogForm</code>). No editor is known to leave one.</li>
+    </ul>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <p>None. The storage-failure question is settled: edits are still sent and never reported as stored (<a href="#d17">decision 17</a>; the owner amended R15).</p>
+  </section>
+
+  <section id="sec-not-regress">
+    <h2>Behaviour that must not regress</h2>
+    <ul>
+      <li>The log core: <code>npx vitest --run --project server src/lib/sim-log</code> passes, including every existing <code>reapply.spec.ts</code> test unchanged (Task 2).</li>
+      <li>The membership routes answer as before: their existing specs pass unchanged (Task 1).</li>
+      <li><code>/sim</code>, <code>/</code>, <code>/lesscars</code> and <code>/s/&lt;id&gt;</code>: untouched. Task 11 checks <code>git diff --stat origin/main -- src/lib/sim-page src/lib/timeline src/lib/sharing src/routes/sim src/routes/s</code> is empty.</li>
+    </ul>
+  </section>
+
+  <section id="sec-files">
+    <h2>File structure</h2>
+    <table id="tbl-files">
+      <caption>Files this plan creates</caption>
+      <thead><tr><th scope="col">File</th><th scope="col">Responsibility</th><th scope="col">Task</th></tr></thead>
+      <tbody>
+        <tr><th scope="row"><code>src/lib/sim-store/types.ts</code></th><td><code>Stamp</code>, <code>Pending</code>, <code>DropReport</code>, <code>Align</code>, <code>Stopped</code>, <code>MOVE_SOURCE</code></td><td>4</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-store/dataset.ts</code>, <code>dataset.spec.ts</code></th><td><code>datasetDecision</code>: the dataset rule</td><td>4</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-store/history.ts</code>, <code>history.spec.ts</code></th><td><code>History</code>: undo and redo targets with labels</td><td>3</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-store/local-log.ts</code>, <code>local-log.spec.ts</code></th><td><code>LocalLog</code>: fold, positions, receive, re-apply with re-stamping, drop, forget, adopt</td><td>5</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-store/author.ts</code>, <code>author.spec.ts</code></th><td>Edit, restore, move and import commits; <code>SOURCES</code>; <code>clampLabel</code>; the pending cap</td><td>6</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-store/sim-db.ts</code>, <code>sim-db.spec.ts</code></th><td><code>SimDb</code> and its records; <code>memorySimDb</code></td><td>7</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-store/idb.ts</code>, <code>idb.svelte.spec.ts</code></th><td><code>openSimDb</code> on IndexedDB</td><td>8</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-store/log-store.svelte.ts</code>, <code>log-store.spec.ts</code></th><td><code>LogStore</code>, <code>DocStore</code>: editing, drafts, the dataset gate</td><td>9</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-store/log-store.persist.spec.ts</code></th><td><code>LogStore</code>'s persistence: open, writes, the current pointer, claims, the import hook, storage failure</td><td>10</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-store/test/commits.ts</code></th><td><code>DS</code> (<code>'fixture-0'</code>), <code>draftOf</code>, <code>stamped</code>, <code>nameChange</code>, <code>FakeObject</code>, <code>renamingAlign</code> (test helpers)</td><td>5</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-store/test/sim-db-contract.ts</code></th><td><code>simDbContract</code>: the suite both <code>SimDb</code>s pass</td><td>7</td></tr>
+        <tr><th scope="row"><code>docs/dev/sim-store.md</code></th><td>The store as built</td><td>11</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Membership routes log no raw error</h2>
+    <p>"The next unit, first" in the control plane's carried list (<a href="#d24">decision 24</a>). A raw error can carry a bound address or identity; the rest of the membership code logs the sim id and <code>loggable(e)</code> (<code>src/lib/server/sim-object/object-rules.ts:114</code>).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/routes/api/sims/[simId]/invites/[inviteId]/resend/+server.ts:32,65</code>, <code>src/routes/sims/[simId]/+page.server.ts:47</code>, <code>src/routes/api/sims/[simId]/members/[userId]/+server.ts:27</code></li>
+      <li>Test: <code>…/resend/api.spec.ts</code>, <code>src/routes/sims/[simId]/page.server.spec.ts</code>, <code>…/members/[userId]/api.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul><li>Consumes <code>loggable</code>. Produces nothing. Each line becomes <code>console.error('&lt;same text&gt;', simId, loggable(e))</code> (<code>err</code> where the variable is <code>err</code>).</li></ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests. In each spec, a test that makes the service throw a query error carrying an address and checks the log. The error is <code>queryError()</code>, a local helper returning <code>Object.assign(new Error('Failed query: … params: guest@test.com'), { name: 'DrizzleQueryError' })</code>, which <code>loggable</code> turns into <code>(query failed)</code>. <code>JSON.stringify</code> of an <code>Error</code> is <code>{}</code>, so the check is on each argument:
+        <pre><code data-lang="ts">function expectSafeLog(error: MockInstance, text: string, simId: string): void {
+  expect(error).toHaveBeenCalledWith(text, simId, '(query failed)');
+  for (const call of error.mock.calls)
+    for (const arg of call) {
+      expect(arg).not.toBeInstanceOf(Error);
+      if (typeof arg === 'string') expect(arg).not.toContain('guest@test.com');
+    }
+}
+
+it('logs the sim id and safe text, never the error itself', async () =&gt; {
+  const { error } = mockConsole('error');
+  resendInvite.mockRejectedValue(queryError());
+  const res = await POST(postEvent('q1', 'inv1'));
+  expect(res.status).toBe(400);
+  expectSafeLog(error, 'invite resend failed', 'q1');
+});</code></pre>
+        The same in <code>resend/api.spec.ts</code> for the mail send (<code>sendInviteEmail.mockRejectedValue(queryError())</code> on the setup of the existing "never logs the rotated token" test; <code>expectSafeLog(error, 'invite resend email send failed', 'q1')</code>), in <code>members/[userId]/api.spec.ts</code> (<code>removeSimMember.mockRejectedValue(queryError())</code>; status 400; <code>'member remove failed'</code>), and in <code>page.server.spec.ts</code> for <code>leaveSim</code>: add <code>vi.mock('$lib/server/sims/sims', async (orig) =&gt; { const a = await orig&lt;typeof import('$lib/server/sims/sims')&gt;(); return { ...a, leaveSim: vi.fn(a.leaveSim) }; })</code> so every other test runs the real function, then <code>vi.mocked(leaveSim).mockRejectedValueOnce(queryError())</code>; expect <code>fail(400, { code: 'failed' })</code> and <code>expectSafeLog(error, 'leave sim failed', &lt;simId&gt;)</code>. Put <code>queryError</code> and <code>expectSafeLog</code> in each spec (three short copies; no shared test module for three files).</li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see the four fail:
+        <pre><code data-lang="sh">npx vitest --run --project server "src/routes/api/sims/[simId]/invites/[inviteId]/resend" "src/routes/api/sims/[simId]/members/[userId]" "src/routes/sims/[simId]/page.server.spec.ts"</code></pre>
+        Expected: 4 failed (the logged arguments differ, and an <code>Error</code> is logged).</li>
+      <li id="t1-s3"><input type="checkbox"> Change the four lines. Import <code>loggable</code> from <code>$lib/server/sim-object/object-rules</code> where it is not imported yet.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the same command. Expected: all pass. Then <code>grep -rnE "console\.(error|warn)\([^)]*, (e|err)\)" src/routes/api/sims src/routes/sims src/routes/api/invites src/routes/invite src/lib/server</code>: no output (at plan time it lists exactly the four lines; the client-side hits in <code>src/routes/+page.svelte</code>, <code>+page.ts</code> and <code>p/[id]/+page.ts</code> are outside this rule).</li>
+      <li id="t1-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/routes/api/sims src/routes/sims
+git commit -m "fix(sims): log the sim id and safe text when a membership route fails" -m "Four lines printed the raw error, whose query text can carry an address."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Re-apply retargets deletes of identical strokes</h2>
+    <p>The log core's first carried "Log store" item: "with k deletes of one group of identical strokes in a commit, and t the highest repeat on the new tip, the i-th delete targets repeat t - k + i, and is dropped as gone when that is below 1" (<a href="#d23">decision 23</a>). Today a pending delete of <code>k:X</code> on a tip holding <code>k:X</code> and <code>k:X~2</code> is <code>invalid</code> (checked at plan time).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-log/reapply.ts</code> (before the walk, and the walk's loop at the <code>settle</code> call)</li>
+      <li>Test: <code>src/lib/sim-log/reapply.spec.ts</code> (the <code>strokes</code> block)</li>
+      <li>Modify: <code>docs/dev/sim-log.md</code>, Re-apply: replace the bullet "A pending delete of a lower repeat … is <code>invalid</code>" with the rule</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul><li><code>reapply(tip, input)</code>'s signature and results do not change. A private <code>deleteTargets(tip: LogState, changes: readonly Change[]): Map&lt;number, string | null&gt;</code> maps each delete index whose key matches <code>/^(k:[^~]+)(?:~([2-9]|[1-9]\d+))?$/</code> (no suffix, or a repeat of 2 or more; <code>~1</code>, <code>~0</code> and <code>~01</code> do not match) to its target key, or null for gone. Deletes are grouped by the captured base in commit order; t is found by walking <code>base</code>, <code>base~2</code>, … on <code>tip</code> (the tip passed in, not the working copy) until one is missing. In the walk, an index in the map is not passed to <code>settle</code>: its change becomes <code>{ op: 'delete', key: target }</code>, or <code>'gone'</code> when the target is null or not in the working state; <code>dropped</code> keeps the original change and index. Prototyped at plan time (<a href="#sec-run">What was run</a>):
+      <pre><code data-lang="ts">const REPEAT = /^(k:[^~]+)(?:~([2-9]|[1-9]\d+))?$/;
+
+function highestRepeat(s: LogState, base: string): number {
+  let t = 0;
+  while (s.item(t === 0 ? base : `${base}~${t + 1}`)) t++;
+  return t;
+}</code></pre></li></ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests in the <code>strokes</code> block (helpers there: <code>tipWith</code>, <code>sf</code>, <code>X</code>, <code>P1</code>, <code>P2</code>):
+        <pre><code data-lang="ts">const del = (key: string): Change =&gt; ({ op: 'delete', key });
+
+it('retargets a delete of k:X to the highest repeat another writer added', () =&gt; {
+  const tip = tipWith({ id: 'b1', paths: [P1, P1] });
+  expect(reapply(tip, input([del(X)]))).toEqual({
+    ok: true, changes: [del(`${X}~2`)], dropped: []
+  });
+});
+
+it('retargets a delete of a middle repeat to the highest', () =&gt; {
+  const tip = tipWith({ id: 'b1', paths: [P1, P1, P1] });
+  expect(reapply(tip, input([del(`${X}~2`)]))).toEqual({
+    ok: true, changes: [del(`${X}~3`)], dropped: []
+  });
+});
+
+it('drops as gone the deletes below repeat 1', () =&gt; {
+  const tip = tipWith({ id: 'b1', paths: [P1] });
+  expect(reapply(tip, input([del(X), del(`${X}~2`)]))).toEqual({
+    ok: true,
+    changes: [del(X)],
+    dropped: [{ index: 0, change: del(X), why: 'gone' }]
+  });
+});
+
+it('retargets past a different stroke between the repeats', () =&gt; {
+  const tip = tipWith({ id: 'b1', paths: [P1, P2, P1] });
+  expect(reapply(tip, input([del(X)]))).toEqual({
+    ok: true, changes: [del(`${X}~2`)], dropped: []
+  });
+});
+
+it('does not read a ~1 suffix as a repeat', () =&gt; {
+  const tip = tipWith({ id: 'b1', paths: [P1, P1] });
+  expect(reapply(tip, input([del(`${X}~1`)]))).toEqual({
+    ok: false, why: 'empty', dropped: [{ index: 0, change: del(`${X}~1`), why: 'gone' }]
+  });
+});</code></pre>
+        The existing tests "keeps a commit that deletes a lower repeat and then the higher one", "carries a rewritten key into the changes after it" and "drops the whole commit when its only surviving change breaks stroke order" stay as they are and must still pass.</li>
+      <li id="t2-s2"><input type="checkbox"> Run: <code>npx vitest --run --project server src/lib/sim-log/reapply.spec.ts</code>. Expected: the first, second and fourth new tests fail (<code>ok: false, why: 'invalid'</code>); the third and fifth may already pass.</li>
+      <li id="t2-s3"><input type="checkbox"> Implement <code>deleteTargets</code> and its use in <code>reapply</code> as in Interfaces. Update the doc comment of <code>reapply</code> and the sim-log.md bullet (say why adds earlier in the commit are not counted: <a href="#d23">decision 23</a>).</li>
+      <li id="t2-s4"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-log</code>. Expected: all pass, five tests more than before this task.</li>
+      <li id="t2-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-log/reapply.ts src/lib/sim-log/reapply.spec.ts docs/dev/sim-log.md
+git commit -m "fix(sim-log): re-apply deletes of identical strokes to the highest repeats" -m "A pending delete of k:X on a tip where another writer added k:X~2 was refused as invalid."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: History with labels</h2>
+    <p>R10 to R13 and <a href="#d9">decision 9</a>. The same walk as <code>undoRedo</code> (<code>src/lib/sim-log/history.ts:15</code>), kept incrementally so a push is O(1) and labels come from the commits.</p>
+    <h3>Files</h3>
+    <ul><li>Create: <code>src/lib/sim-store/history.ts</code>, <code>src/lib/sim-store/history.spec.ts</code></li></ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>HistoryEntry</code>, <code>undoRedo</code> from <code>$lib/sim-log</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export interface LabelledEntry extends HistoryEntry {
+  label: string;
+}
+export interface HistoryTarget {
+  position: number;
+  /** For undo: the change undone. For redo: the change redone. */
+  label: string;
+}
+export class History {
+  /** Takes one commit, in seq order. */
+  push(e: LabelledEntry): void;
+  clone(): History;
+  get undo(): HistoryTarget | null;
+  get redo(): HistoryTarget | null;
+  /** The current position: the last pushed seq, 0 before any. */
+  get position(): number;
+}</code></pre>
+        The walk: a <code>system</code> commit empties both stacks. A restore <code>as: 'undo'</code> whose position is on the undo stack (last occurrence) truncates the undo stack there and pushes <code>{ position: cur, label: e.label }</code> on redo; <code>as: 'redo'</code> symmetrically. Anything else pushes <code>{ position: cur, label: e.label }</code> on undo and empties redo. Then <code>cur = e.seq</code>.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests:
+        <pre><code data-lang="ts">const e = (seq: number, label: string, r: Restores | null = null, kind?: CommitKind) =&gt;
+  ({ seq, kind: kind ?? (r ? 'restore' : 'edit'), restores: r, label });
+
+it('walks the spec table: five edits, two undos, a redo, an edit', () =&gt; {
+  const h = new History();
+  for (let s = 1; s &lt;= 5; s++) h.push(e(s, `L${s}`));
+  expect(h.undo).toEqual({ position: 4, label: 'L5' });
+  h.push(e(6, 'L5', { position: 4, as: 'undo' }));
+  h.push(e(7, 'L4', { position: 3, as: 'undo' }));
+  expect(h.redo).toEqual({ position: 6, label: 'L4' });
+  h.push(e(8, 'L4', { position: 6, as: 'redo' }));
+  expect(h.undo).toEqual({ position: 7, label: 'L4' });
+  h.push(e(9, 'L9'));
+  expect(h.redo).toBeNull();
+  expect(h.undo).toEqual({ position: 8, label: 'L9' });
+});
+
+it('stops at a system commit', () =&gt; {
+  const h = new History();
+  h.push(e(1, 'Start', null, 'system'));
+  expect(h.undo).toBeNull();
+  h.push(e(2, 'A'));
+  expect(h.undo).toEqual({ position: 1, label: 'A' });
+});
+
+it('clones without sharing stacks', () =&gt; {
+  const h = new History();
+  h.push(e(1, 'A'));
+  const c = h.clone();
+  c.push(e(2, 'B'));
+  expect(h.undo).toEqual({ position: 0, label: 'A' });
+  expect(c.undo).toEqual({ position: 1, label: 'B' });
+});
+
+it('gives the positions undoRedo gives, for any log', () =&gt; {
+  expect(() =&gt;
+    fc.assert(
+      fc.property(arbLog, (log) =&gt; {
+        const h = new History();
+        log.forEach((x) =&gt; h.push(x));
+        const r = undoRedo(log);
+        return (h.undo?.position ?? null) === r.undo &amp;&amp; (h.redo?.position ?? null) === r.redo;
+      }),
+      { numRuns: 300 }
+    )
+  ).not.toThrow();
+});</code></pre>
+        <code>arbLog</code>: up to 40 entries; each is an edit, a <code>system</code> (1 in 10), or a restore with a random earlier position and <code>as</code> from <code>undo</code>, <code>redo</code>, <code>jump</code>; seqs 1..n; labels <code>L&lt;seq&gt;</code>.</li>
+      <li id="t3-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-store/history.spec.ts</code>. Expected: fails, module missing.</li>
+      <li id="t3-s3"><input type="checkbox"> Implement <code>History</code> in <code>src/lib/sim-store/history.ts</code>.</li>
+      <li id="t3-s4"><input type="checkbox"> Run again. Expected: pass; the property under 1.5 s.</li>
+      <li id="t3-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-store/history.ts src/lib/sim-store/history.spec.ts
+git commit -m "feat(sim-store): undo and redo targets with their labels, from the log"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The store's types and the dataset rule</h2>
+    <p>F1, F2, R54, R55, I12: <a href="#sec-dataset-rule">the dataset rule</a>. The shared types every later task uses are stated here, once.</p>
+    <h3>Files</h3>
+    <ul><li>Create: <code>src/lib/sim-store/types.ts</code>, <code>src/lib/sim-store/dataset.ts</code>, <code>src/lib/sim-store/dataset.spec.ts</code></li></ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>CommitDraft</code>, <code>Dropped</code>, <code>RulesetContent</code> from <code>$lib/sim-log</code>.</li>
+      <li>Produces, <code>types.ts</code>:
+        <pre><code data-lang="ts">/** What the page stamps on a commit it authors. */
+export interface Stamp {
+  datasetVersion: string;
+  build: string;
+}
+/** A commit made in this tab and not yet on the stream (I3: parent is tipSeq + its index). */
+export interface Pending {
+  draft: CommitDraft;
+  /** A restore's target: the id of the commit at that position, null for position 0. */
+  targetId: string | null;
+}
+/** Why re-applying dropped a whole commit; null when only some of its changes went. */
+export type DropWhy = 'empty' | 'invalid' | 'too-large' | 'target-gone';
+/** What re-applying dropped (R19). Never reported: a move or alignment commit dropped. */
+export interface DropReport {
+  id: string;
+  label: string;
+  whole: boolean;
+  why: DropWhy | null;
+  dropped: Dropped[];
+}
+/**
+ * Moves a ruleset onto dataset `to`, or null when this page cannot (it has no calibration for
+ * `to`). Pure and idempotent: align(align(c, to), to) equals align(c, to). Plan 3: reconcilePolicy4.
+ */
+export type Align = (content: RulesetContent, to: string) =&gt; RulesetContent | null;
+/** Why the store authors nothing (decision 21). */
+export type Stopped = 'future' | 'stale' | 'unknown-dataset';
+/** The source of a move or an alignment commit. */
+export const MOVE_SOURCE = 'sim.dataset';
+export const MOVE_LABEL = 'Moved to new data';</code></pre></li>
+      <li>Produces, <code>dataset.ts</code>:
+        <pre><code data-lang="ts">export type DatasetDecision =
+  | { kind: 'edit' }
+  | { kind: 'move' }
+  | { kind: 'stop'; why: 'stale' | 'unknown-dataset' };
+/** The dataset rule: page P, the local fold's dataset, the server's (null until a hello). */
+export function datasetDecision(
+  page: string,
+  fold: string | null,
+  server: string | null
+): DatasetDecision;</code></pre>
+        Its body, as prototyped and run at plan time:
+        <pre><code data-lang="ts">if (fold === null || fold === page) return { kind: 'edit' };
+if (server === null) return { kind: 'stop', why: 'unknown-dataset' };
+return server === page ? { kind: 'move' } : { kind: 'stop', why: 'stale' };</code></pre></li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing test, one row per case of <a href="#tbl-dataset">the table</a>:
+        <pre><code data-lang="ts">const P = 'fixture-1';
+const O = 'fixture-0';
+const N = 'fixture-2';
+it.each([
+  [null, null, 'edit'],
+  [null, P, 'edit'],
+  [null, N, 'edit'],
+  [P, null, 'edit'],
+  [P, P, 'edit'],
+  [P, N, 'edit'],
+  [O, null, 'stop:unknown-dataset'],
+  [O, P, 'move'],
+  [O, N, 'stop:stale'],
+  [O, O, 'stop:stale']
+] as const)('fold %s, server %s: %s', (fold, server, want) =&gt; {
+  const d = datasetDecision(P, fold, server);
+  expect(d.kind === 'stop' ? `stop:${d.why}` : d.kind).toBe(want);
+});</code></pre></li>
+      <li id="t4-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-store/dataset.spec.ts</code>. Expected: fails, module missing.</li>
+      <li id="t4-s3"><input type="checkbox"> Implement <code>types.ts</code> and <code>dataset.ts</code>.</li>
+      <li id="t4-s4"><input type="checkbox"> Run again. Expected: 10 pass.</li>
+      <li id="t4-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-store/types.ts src/lib/sim-store/dataset.ts src/lib/sim-store/dataset.spec.ts
+git commit -m "feat(sim-store): the store's types and the dataset rule" -m "A page authors only on its own dataset, or moves the sim first when it knows it is current (R55)."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: The local log</h2>
+    <p>R16, R18, R19, R26, R27, R54, I3, I4, I7, I9, I11, decisions <a href="#d5">5</a> to <a href="#d7">7</a>, <a href="#d13">13</a>, <a href="#d18">18</a>. Re-applying follows sim-log.md "Rules for callers": remove pending whose ids are confirmed first; a pending restore never goes to <code>reapply</code>, it is recomputed with <code>diff</code>; nor does a pending move.</p>
+    <h3>Files</h3>
+    <ul><li>Create: <code>src/lib/sim-store/local-log.ts</code>, <code>src/lib/sim-store/local-log.spec.ts</code>, <code>src/lib/sim-store/test/commits.ts</code></li></ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>History</code> (Task 3); <code>Pending</code>, <code>DropReport</code>, <code>Align</code>, <code>MOVE_SOURCE</code> (Task 4); <code>LogState</code>, <code>reapply</code>, <code>diff</code>, <code>rulesetText</code>, <code>parseCommitDraft</code>, <code>REGISTRY</code>, <code>LogError</code>, <code>LogFormatError</code> and the types from <code>$lib/sim-log</code>; <code>fitsCommit</code>, <code>utf8Bytes</code>, <code>LIMITS</code>, <code>Limits</code>, <code>STAMP_MAX</code> from <code>$lib/sim-stream/limits</code>; <code>canonicalJson</code>.</li>
+      <li>Produces, <code>local-log.ts</code>:
+        <pre><code data-lang="ts">export const CHECKPOINT_SPACING = 256;
+export const CHECKPOINTS_MAX = 64;
+export const PENDING_CHECKPOINT = 32;
+export interface LocalLogInit {
+  confirmed: readonly Commit[]; // seq 1..n in order; RangeError otherwise
+  pending: readonly Pending[]; // in order; re-applied on construction
+  registry?: Registry;
+  /** Aligns restores and moves (decisions 12, 13). Default: (c) =&gt; c. */
+  align?: Align;
+  /** The server's dataset, or null while unknown (I11). */
+  serverDataset?: string | null;
+  /** Tests only; default LIMITS (the fitsCommit check on re-applied drafts). */
+  limits?: Limits;
+}
+export type Received =
+  | { kind: 'applied'; changed: boolean; drops: DropReport[] }
+  | { kind: 'stale' } // every commit was already held
+  | { kind: 'gap'; after: number; changed: boolean; drops: DropReport[] } // resume from after
+  | { kind: 'future'; changed: boolean; drops: DropReport[] }; // nothing applied from it on
+export interface Reapplied {
+  changed: boolean;
+  drops: DropReport[];
+}
+export class LocalLog {
+  constructor(init: LocalLogInit);
+  readonly initialDrops: DropReport[];
+  /** Pending ids the constructor removed as already confirmed (the store deletes them, I5). */
+  readonly initialConfirmed: string[];
+  get tipSeq(): number;
+  get confirmed(): readonly Commit[];
+  /** Pending commits in force: re-applied, shown, sendable. */
+  get pending(): readonly Pending[];
+  /** Pending commits held back untouched after one under a newer shape revision (I9). */
+  get held(): readonly Pending[];
+  /** UTF-8 bytes of the pending drafts' JSON. */
+  get pendingBytes(): number;
+  /** tipSeq + pending.length. */
+  get position(): number;
+  /** A confirmed or pending commit is under a newer shape revision. Permanent. */
+  get future(): boolean;
+  get serverDataset(): string | null;
+  /** Sets it and re-applies when a pending move's target differs from a known value. */
+  setServerDataset(s: string | null): Reapplied;
+  /** The fold of confirmed then pending; the same object until the next change. */
+  ruleset(): Ruleset;
+  /** 0 to position. RangeError outside. */
+  rulesetAt(position: number): Ruleset;
+  /** The commit id at 1 to position, null for 0. */
+  idAt(position: number): string | null;
+  /** The position of a held commit, 0 for null, null for an unknown id. */
+  positionOf(id: string | null): number | null;
+  /** History over confirmed then pending (read-only: do not push). */
+  history(): History;
+  /** RangeError unless p.draft.parent === position; LogError when it does not fold (check). */
+  push(p: Pending): void;
+  receive(commits: readonly Commit[]): Received;
+  /** Removes a pending commit (refused invalid) and re-applies those after it; reported. */
+  drop(id: string): DropReport[];
+  /** Removes pending commits another tab took, unreported, and re-applies the rest. */
+  forget(ids: readonly string[]): Reapplied;
+  /** Appends pending commits claimed from other tabs after this tab's own, re-applied. */
+  adopt(pending: readonly Pending[]): Reapplied;
+}</code></pre></li>
+      <li>Produces, <code>test/commits.ts</code> (test helpers for Tasks 6, 9, 10 and plan 2):
+        <pre><code data-lang="ts">export const DS = 'fixture-0';
+/** An edit draft with a fresh id, DS, SHAPES_REVISION, build 'test', source 'sim.test'. */
+export function draftOf(parent: number, changes: Change[], over?: Partial&lt;CommitDraft&gt;): CommitDraft;
+/** The draft as the object stores it at `seq` (parent seq - 1, actor, at = seq, a 64-hex hash). */
+export function stamped(d: CommitDraft, seq: number, actor?: string): Commit;
+export const nameChange = (name: string): Change =&gt;
+  ({ op: 'set', key: NAME_KEY, field: 'name', value: name });
+/** A test Align: to a dataset in `known`, the name gets the suffix ` @&lt;to&gt;` once; else null. */
+export function renamingAlign(known: readonly string[]): Align;
+/** The object's append rules that matter here: duplicate, behind, invalid (check), accepted. */
+export class FakeObject {
+  readonly commits: Commit[];
+  append(d: CommitDraft):
+    | { kind: 'accepted'; commit: Commit }
+    | { kind: 'duplicate' }
+    | { kind: 'refused'; why: 'behind' | 'invalid' };
+}</code></pre></li>
+    </ul>
+    <p>How it works (the parts the signatures leave open):</p>
+    <ul>
+      <li>State: <code>#tip</code>, a <code>LogState</code> of the confirmed commits; <code>#local</code>, a clone with the pending ones applied; clones of the work state before every <code>PENDING_CHECKPOINT</code>-th pending commit; a <code>History</code> of the confirmed commits and one extended with the pending ones (rebuilt from the confirmed one by cloning when pending change). <code>rulesetAt(k)</code> for <code>k &lt;= tipSeq</code> clones the highest confirmed checkpoint at or below k (or an empty state) and applies <code>confirmed</code> up to k; for <code>k &gt; tipSeq</code> it clones the pending checkpoint at or below and applies pending drafts up to k.</li>
+      <li>Confirmed checkpoints (<a href="#d18">decision 18</a>): a clone of <code>#tip</code> when <code>tipSeq</code> is a multiple of the spacing; past <code>CHECKPOINTS_MAX</code> the spacing doubles and checkpoints off it are dropped.</li>
+      <li>Confirmed commits are applied without <code>check</code>. A <code>LogError</code> with code <code>future-shapes</code> sets <code>future</code> and stops; any other error is rethrown (a bug, not a state).</li>
+      <li><code>receive</code>: skip commits with <code>seq &lt;= tipSeq</code>; none left is <code>stale</code>. Apply the in-order prefix; a commit that is not the next answers <code>gap</code> with the last applied seq; a future one answers <code>future</code>; both after re-applying for the prefix, with its drops. If every new commit is the head pending one by id with canonically equal changes (<a href="#d7">decision 7</a>), pop them (<code>changed: false</code>); else re-apply.</li>
+      <li>Re-apply (construction, <code>receive</code>, <code>drop</code>, <code>forget</code>, <code>adopt</code>, <code>setServerDataset</code>): remove pending whose ids are confirmed; then on a clone of <code>#tip</code> walk the pending in order, with <code>fold</code> the work state's <code>datasetVersion</code> before each:
+        <ul>
+          <li>A move (<code>kind: 'system'</code>, <code>source === MOVE_SOURCE</code>), target T = its <code>datasetVersion</code>: dropped unreported when T is not <code>fold</code> and <code>serverDataset</code> is known and not T (an alignment on the fold's own dataset is not a move and is never dropped for this), when <code>align(work, T)</code> is null, or when <code>diff(work, align(work, T))</code> is empty; else those changes, stamped T.</li>
+          <li>A restore: target position from its <code>targetId</code> with positions as re-applied so far; gone drops it (<code>why: 'target-gone'</code>). Stamp S = <code>fold ?? draft.datasetVersion</code>. The target ruleset, aligned with <code>align(target, S)</code> when its dataset is not null and not S (null drops it, <code>'invalid'</code>); changes <code>diff(work, target)</code>; empty drops it (<code>'empty'</code>).</li>
+          <li>Anything else: <code>reapply(work, draft)</code>; <code>ok: false</code> drops it (<code>why</code> its reason), <code>ok: true</code> with <code>dropped</code> reports <code>whole: false</code>. Stamp S as above. A <code>LogError('future-shapes')</code> moves this commit and every later one to <code>held</code> untouched, sets <code>future</code> and ends the walk.</li>
+          <li>Each kept draft gets <code>parent = tipSeq + i</code>, its stamp, its new changes and (restores) its new position, then must pass <code>parseCommitDraft</code> (<code>'invalid'</code> otherwise) and <code>fitsCommit</code> (<code>'too-large'</code>), then is applied to the work state with <code>{ check: true }</code> (<code>'invalid'</code> on <code>LogError</code>).</li>
+        </ul>
+        <code>changed</code> is whether <code>rulesetText</code> of the result differs from before.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests in <code>local-log.spec.ts</code>. Build rulesets with <code>$lib/sim-log/test/fixtures</code> (<code>doc</code>, <code>transit</code>, <code>ruleset</code>) and commits with <code>draftOf</code>, <code>stamped</code> and <code>diff</code>. Let <code>addZ(r, id)</code> be <code>diff(r, { ...r, policy: doc([...zoning, transit(id)]) })</code>. Tests, each asserting what its name says:
+        <pre><code data-lang="ts">it('folds confirmed then pending (R16)');
+it('confirms its own head without re-applying');            // changed: false, pending empty
+it('re-applies pending on a foreign commit (R18)');           // parent becomes 2; both policies held
+it('reports a pending change whose item is gone (R19)');      // whole: false, why null
+it('drops a pending commit left empty and reports it');       // whole: true, why 'empty'
+it('recomputes a pending restore against the new tip');      // ruleset equals rulesetAt(target)
+it('moves a restore whose target is pending');               // undo to e1 after f lands: position 3
+it('drops a pending restore whose target was dropped');      // why 'target-gone'
+it('aligns a restore whose target is on another dataset');   // renamingAlign([DS, 'fixture-1'])
+it('re-stamps a re-applied commit with the fold\'s dataset (I11)');
+// pending made on fixture-1 over a tip on fixture-1; foreign commit stamped fixture-2 lands:
+// the re-applied draft's datasetVersion is fixture-2, ruleset().datasetVersion is fixture-2
+it('never re-stamps a commit onto an older dataset than the fold\'s (I11)');
+// tip fixture-0, own pending move to fixture-1 then an edit; a foreign move to fixture-2 lands
+// with serverDataset 'fixture-2': own move dropped, the edit stamped fixture-2
+it('keeps a pending move while the server\'s dataset is unknown, drops it once known to differ');
+it('recomputes a pending move over a foreign commit, and drops it when empty');
+it('drops a re-applied commit that has grown past fitsCommit');   // why 'too-large'
+// limits { ...LIMITS, commitBytes: STAMP_MAX + 2_000 }: a pending undo whose recomputed diff
+// over a foreign commit adding three policies is over 2,000 bytes
+it('drops a re-applied commit that no longer parses');           // why 'invalid'
+// a loaded pending draft with source 'Bad Source'
+it('answers gap with the in-order prefix applied and its drops (R27)');
+it('answers stale for commits it holds');
+it('stops at a confirmed commit from a newer build, with its drops (I9)');
+it('holds a pending commit from a newer build and those after it, untouched (I9)');
+// constructor with a pending draft at shapes SHAPES_REVISION + 1: future, held has it and the
+// next one, pending is the ones before it, ruleset folds without them
+it('removes loaded pending that are already confirmed (I5)');    // initialConfirmed lists them
+it('re-applies loaded pending made on an older tip');             // parent fixed
+it('folds any confirmed position from checkpoints');
+// 600 name commits: k in 0, 1, 255, 256, 257, 511, 512, 600
+it('folds any pending position from pending checkpoints');      // 70 pending name commits
+it('refuses a push whose parent is not the position');           // RangeError
+it('refuses a push that does not fold');                          // LogError, nothing changed
+it('drop re-applies the pending after the dropped one');
+it('forget removes without a report; adopt appends after its own');
+it('maps ids and positions both ways');</code></pre>
+        The checkpoint tests assert <code>rulesetAt(k).name === (k === 0 ? DEFAULT_SIM_NAME : `n${k}`)</code> and must run well under a second.</li>
+      <li id="t5-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-store/local-log.spec.ts</code>. Expected: fails, module missing.</li>
+      <li id="t5-s3"><input type="checkbox"> Implement <code>test/commits.ts</code> and <code>local-log.ts</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Run again. Expected: all pass.</li>
+      <li id="t5-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-store/local-log.ts src/lib/sim-store/local-log.spec.ts src/lib/sim-store/test/commits.ts
+git commit -m "feat(sim-store): the local log of confirmed and pending commits" -m "Pending commits are re-applied on every foreign commit and stamped with the fold's dataset (R16, R18, R19)."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Authoring commits</h2>
+    <p>R2, R9, R10, R11, R14, R55, I7, I12, decisions <a href="#d9">9</a>, <a href="#d10">10</a>, <a href="#d12">12</a> to <a href="#d14">14</a>, <a href="#d19">19</a>, <a href="#d20">20</a>, <a href="#d27">27</a>. Editor output goes through <code>toLogForm</code> before <code>diff</code> (sim-log.md, Rules for callers). Authoring does not check the dataset rule: the store (Task 9) calls these only on <code>edit</code> or after a move.</p>
+    <h3>Files</h3>
+    <ul><li>Create: <code>src/lib/sim-store/author.ts</code>, <code>src/lib/sim-store/author.spec.ts</code></li></ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>LocalLog</code> (Task 5); <code>Pending</code>, <code>Stamp</code>, <code>Align</code>, <code>MOVE_SOURCE</code>, <code>MOVE_LABEL</code> (Task 4); <code>HistoryTarget</code> (Task 3); <code>diff</code>, <code>toLogForm</code>, <code>parseCommitDraft</code>, <code>LABEL_MAX</code>, <code>SHAPES_REVISION</code>, <code>LogError</code>, <code>LogFormatError</code> from <code>$lib/sim-log</code>; <code>fitsCommit</code>, <code>utf8Bytes</code>, <code>LIMITS</code>, <code>Limits</code> from <code>$lib/sim-stream/limits</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export const SOURCES = {
+  edit: 'sim.edit', undo: 'sim.undo', redo: 'sim.redo', revert: 'sim.revert',
+  move: MOVE_SOURCE, name: 'sim.name', import: 'sim.import', reset: 'sim.reset'
+} as const;
+export const PENDING_MAX = 1_000;
+export const PENDING_BYTES_MAX = 8 * 1024 * 1024;
+export type Refusal = 'unchanged' | 'invalid' | 'too-large' | 'queue-full';
+export function clampLabel(label: string): string;
+export interface Meta {
+  id: string;
+  label: string; // clamped here
+  source: string;
+  stamp: Stamp;
+  limits?: Limits; // tests only; default LIMITS
+  caps?: { count: number; bytes: number }; // tests only; default PENDING_MAX, PENDING_BYTES_MAX
+}
+export type Authored = { ok: true; pending: Pending } | { ok: false; why: Refusal };
+/** An edit (or a system commit: an import, an alignment) taking the fold to `next`. Pushes it. */
+export function authorEdit(log: LocalLog, next: RulesetContent, meta: Meta,
+  kind?: 'edit' | 'system'): Authored;
+/** A restore of `position` (undo, redo or jump), aligned to the stamp when needed. Pushes it. */
+export function authorRestore(log: LocalLog, position: number, as: Restores['as'], meta: Meta,
+  align: Align): Authored;
+/** The move or alignment commit to the stamp's dataset; 'unchanged' when align changes nothing. */
+export function authorMove(log: LocalLog, align: Align,
+  meta: Omit&lt;Meta, 'label' | 'source'&gt;): Authored;
+/** The undo or redo target, skipping targets equal to the local ruleset (decision 10). */
+export function nextTarget(log: LocalLog, which: 'undo' | 'redo'): HistoryTarget | null;</code></pre>
+        Every author function builds <code>{ id, parent: log.position, kind, label, restores, datasetVersion: stamp.datasetVersion, shapes: SHAPES_REVISION, build: stamp.build, source, changes }</code> and answers, in this order: <code>unchanged</code> for no changes; <code>invalid</code> when <code>toLogForm</code> or <code>diff</code> throws <code>RangeError</code>, <code>parseCommitDraft</code> throws <code>LogFormatError</code>, or <code>align</code> answers null; <code>too-large</code> when <code>!fitsCommit(draft, limits)</code>; <code>queue-full</code> when <code>log.pending.length &gt;= caps.count</code> or <code>log.pendingBytes</code> plus the draft's UTF-8 bytes pass <code>caps.bytes</code>; <code>invalid</code> when <code>push</code> throws <code>LogError</code>. Any refusal leaves the log unchanged. A restore's <code>targetId</code> is <code>log.idAt(position)</code>. <code>authorMove</code> uses <code>MOVE_LABEL</code>, <code>MOVE_SOURCE</code>, <code>kind: 'system'</code>, changes <code>diff(fold, align(fold, stamp.datasetVersion))</code>. <code>nextTarget</code> walks a clone of <code>log.history()</code>, pushing a virtual restore at <code>position + 1</code> for each target whose ruleset already equals the local one, until one differs or none is left.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests:
+        <pre><code data-lang="ts">it('commits the diff of the editor output in log form (R9)');
+it('answers unchanged for the same ruleset and pushes nothing');
+it('answers invalid for two policies with one id and pushes nothing');
+it('answers invalid for a source the parser refuses and pushes nothing');   // source 'Bad Source'
+it('answers too-large over the commit limit');   // limits: { ...LIMITS, commitBytes: 2_000 }
+it('caps the queue at 1,000 commits and 8 MiB by default', () =&gt; {
+  expect([PENDING_MAX, PENDING_BYTES_MAX]).toEqual([1_000, 8_388_608]);
+});
+it('answers queue-full at the count cap');        // caps { count: 3, bytes: 1e9 }: 4th refused
+it('answers queue-full past the byte cap');       // caps { count: 1e6, bytes: 1_500 }
+it('clamps a long label to LABEL_MAX without splitting a surrogate pair');
+it('undoes with a restore whose label is the undone change\'s (R10)');
+it('walks the spec table of undo and redo');     // tbl-undo: positions 6..9 and their rulesets
+it('skips an undo target equal to the current ruleset');
+it('restores a jump onto another dataset, aligned (decision 12)');
+it('refuses a jump whose target align cannot reach');
+it('authors the move with align\'s changes, and unchanged when align changes nothing (R55)');
+it('converges two writers on one order (I10)');</code></pre>
+        The cap tests use <code>caps</code>, because a real ruleset cannot reach 8 MiB of pending drafts quickly (<code>checkRuleset</code> caps a document's size); the byte test adds name commits until one is refused and asserts <code>pendingBytes</code> stayed at or below the cap and the refused one would have passed it. The convergence property: a <code>FakeObject</code>, two <code>LocalLog</code>s A and B each with an inbox, and a script of up to 12 steps from <code>edit(A|B, k)</code>, <code>undo(A|B)</code>, <code>send(A|B)</code>, <code>recv(A|B)</code>. <code>edit</code> picks by <code>k</code> one of: add <code>transit(id)</code> for an id in <code>['a', 'b', 'c']</code> not present, remove a present one, set the name to <code>N&lt;k&gt;</code>. <code>send(X)</code> appends X's head (<code>pending[0]</code>): accepted goes to both inboxes; <code>behind</code> makes X <code>receive(object.commits.slice(X.tipSeq))</code>; <code>invalid</code> makes X <code>drop</code> it. <code>recv(X)</code> drains X's inbox into <code>receive</code>. After the script, loop (at most 200 rounds) send and recv for both until neither has pending, then drain. Assert: A, B and the object hold the same ids in order, and <code>rulesetText</code> of A, B and the object's fold are equal. <code>numRuns</code> 40, then lower until under 1.5 s.</li>
+      <li id="t6-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-store/author.spec.ts</code>. Expected: fails, module missing.</li>
+      <li id="t6-s3"><input type="checkbox"> Implement <code>author.ts</code>.</li>
+      <li id="t6-s4"><input type="checkbox"> Run again, with <code>--reporter verbose</code>. Expected: all pass; the property under 1.5 s; the cap tests under a second each.</li>
+      <li id="t6-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-store/author.ts src/lib/sim-store/author.spec.ts
+git commit -m "feat(sim-store): author edits, restores and the dataset move as commits" -m "Undo and redo are restore commits labelled with the change; the pending queue is capped (R10, R11, R14, R55)."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: The store's database interface</h2>
+    <p>Decisions <a href="#d15">15</a>, <a href="#d16">16</a>, <a href="#d22">22</a>, <a href="#d25">25</a>, <a href="#d28">28</a>, <a href="#d30">30</a>. The interface, an in-memory implementation, and the contract both implementations pass.</p>
+    <h3>Files</h3>
+    <ul><li>Create: <code>src/lib/sim-store/sim-db.ts</code>, <code>src/lib/sim-store/test/sim-db-contract.ts</code>, <code>src/lib/sim-store/sim-db.spec.ts</code></li></ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>Pending</code> (Task 4); <code>Commit</code>.</li>
+      <li>Produces, <code>sim-db.ts</code>:
+        <pre><code data-lang="ts">export interface SimRecord {
+  simId: string;
+  createdAt: number;
+  /** Set by plan 2 once POST /api/sims answered 200 or 201. */
+  registered: boolean;
+}
+export interface PendingRecord {
+  simId: string;
+  id: string; // draft id
+  n: number; // order, unique per sim across tabs
+  owner: string; // the tab id that sends it
+  pending: Pending;
+}
+export interface SimRead {
+  sim: SimRecord | null;
+  confirmed: Commit[]; // seq order
+  pending: PendingRecord[]; // n order, every owner
+}
+export interface PendingPut {
+  id: string;
+  pending: Pending;
+  /**
+   * Given: the record must exist with the batch's owner (else lost). Absent: a new record, or one
+   * of this owner's moved to the end; a record of another owner is lost.
+   */
+  n?: number;
+}
+export interface WriteBatch {
+  owner: string; // this tab
+  confirmed: readonly Commit[]; // put by [simId, seq]: idempotent
+  put: readonly PendingPut[]; // in order; new n follow that order
+  remove: readonly string[]; // pending ids; only the owner's are deleted
+}
+/** A compare-and-set on meta[key]: written only when the stored value equals `expect`. */
+export interface Marker {
+  key: string;
+  value: unknown; // JSON-able
+  expect: unknown; // undefined: the row must be absent; compared by JSON.stringify
+}
+export interface WriteResult {
+  applied: boolean; // false: the marker did not match; nothing written
+  n: Record&lt;string, number&gt;; // the n of each put written
+  lost: string[]; // puts refused because another owner holds the record
+}
+export interface CreateResult extends WriteResult {
+  /** 'current-taken': current was asked for and another sim holds it; nothing written. */
+  outcome: 'created' | 'current-taken' | 'marker';
+  current: string | null; // meta.current after the call
+}
+export interface SimDb {
+  read(simId: string): Promise&lt;SimRead&gt;;
+  /**
+   * One transaction, checked in this order: the marker (outcome 'marker'), then when `current`
+   * is asked and meta.current is set, 'current-taken'; else puts the sim, sets meta.current when
+   * asked, the marker's value, and the batch.
+   */
+  createSim(sim: SimRecord, opts?: { current?: boolean; marker?: Marker; batch?: WriteBatch }):
+    Promise&lt;CreateResult&gt;;
+  /** One transaction: the marker first, then the batch. */
+  write(simId: string, batch: WriteBatch, opts?: { marker?: Marker }): Promise&lt;WriteResult&gt;;
+  /** One transaction: every pending record of simId whose owner is in `from` gets owner `to`. */
+  claimPending(simId: string, from: readonly string[], to: string): Promise&lt;PendingRecord[]&gt;;
+  setRegistered(simId: string): Promise&lt;void&gt;;
+  getMeta(key: string): Promise&lt;unknown&gt;; // undefined when absent
+  setMeta(key: string, value: unknown): Promise&lt;void&gt;;
+  close(): void;
+}
+export const CURRENT_KEY = 'current';
+export const nKey = (simId: string): string =&gt; `n:${simId}`;
+/** Same semantics in memory. `abortWrites`: a write whose call returns true rejects, unwritten. */
+export function memorySimDb(opts?: { abortWrites?: () =&gt; boolean }): SimDb;</code></pre>
+        Stored values are structured clones: a later change to an object passed in never reaches the store, and <code>read</code> returns copies. A rejected write writes nothing.</li>
+      <li>Produces, <code>test/sim-db-contract.ts</code>: <code>simDbContract(make: (opts?: { abortWrites?: () =&gt; boolean }) =&gt; Promise&lt;SimDb&gt;, drop?: (db: SimDb) =&gt; Promise&lt;void&gt;): void</code>, which declares the tests below inside the caller's <code>describe</code>.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write the contract and its Node runner (<code>describe('memorySimDb', () =&gt; simDbContract(async (o) =&gt; memorySimDb(o)))</code>). Contract tests:
+        <pre><code data-lang="ts">it('reads an unknown sim as empty');
+it('creates a sim, sets current and writes its first batch in one call');
+it('answers current-taken and writes nothing when current is set');
+it('answers marker and writes nothing when the marker does not match');
+it('writes the marker with the batch when it matches, on create and on write');
+it('allocates n in put order, across writes, never reusing one');
+it('keeps a given n and moves a put without n to the end');
+it('a put of a record another owner holds is lost, not written');
+it('a put with n of a record that is gone is lost, not recreated');
+it('removes only the owner\'s pending records, and leaves other sims alone');
+it('puts confirmed commits idempotently and reads them in seq order');
+it('claims only the given owners, once (a second claim gets nothing)');
+it('a write whose transaction aborts rejects and writes nothing');
+// make({ abortWrites: () =&gt; true }); write rejects; read shows nothing of the batch or marker
+it('marks a sim registered');
+it('reads and writes meta, undefined when absent');
+it('returns copies: a change to a read or a written object reaches nothing');</code></pre></li>
+      <li id="t7-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-store/sim-db.spec.ts</code>. Expected: fails, module missing.</li>
+      <li id="t7-s3"><input type="checkbox"> Implement <code>sim-db.ts</code> (<code>memorySimDb</code> with <code>structuredClone</code> on the way in and out; a write computes its whole result on copies and swaps them in only when it does not abort).</li>
+      <li id="t7-s4"><input type="checkbox"> Run again. Expected: pass.</li>
+      <li id="t7-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-store/sim-db.ts src/lib/sim-store/sim-db.spec.ts src/lib/sim-store/test/sim-db-contract.ts
+git commit -m "feat(sim-store): the store's database interface and an in-memory one"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: IndexedDB</h2>
+    <p><a href="#d15">Decision 15</a>. Plain IndexedDB; every method is one transaction and settles only on its <code>complete</code>, <code>abort</code> or <code>error</code> event (a request's <code>success</code> is not the end: a quota error aborts the transaction after its requests succeeded).</p>
+    <h3>Files</h3>
+    <ul><li>Create: <code>src/lib/sim-store/idb.ts</code>, <code>src/lib/sim-store/idb.svelte.spec.ts</code> (the <code>client</code> project runs <code>*.svelte.spec.ts</code> in Chromium; this module has no Svelte in it)</li></ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>SimDb</code>, its records, <code>Marker</code>, <code>CURRENT_KEY</code>, <code>nKey</code> (Task 7); <code>simDbContract</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export const SIM_DB_NAME = 'sfhousing-sim-log';
+export const SIM_DB_VERSION = 1;
+/** Creates or upgrades the stores. Step 1 (oldVersion &lt; 1) is never edited. */
+export function upgradeSimDb(db: IDBDatabase, oldVersion: number): void;
+/**
+ * The database, or null when IndexedDB is missing, the open fails or is blocked. A newer
+ * version opened elsewhere closes this connection and calls onVersionChange. `abortWrites` (tests)
+ * aborts a write transaction after its requests are issued when it returns true.
+ */
+export function openSimDb(opts?: {
+  name?: string;
+  onVersionChange?: () =&gt; void;
+  abortWrites?: () =&gt; boolean;
+}): Promise&lt;SimDb | null&gt;;</code></pre>
+        Stores: <code>sims</code> (keyPath <code>'simId'</code>), <code>commits</code> (keyPath <code>['simId', 'seq']</code>, value <code>{ simId, seq, commit }</code>), <code>pending</code> (keyPath <code>['simId', 'id']</code>, value a <code>PendingRecord</code>, unique index <code>'order'</code> on <code>['simId', 'n']</code>), <code>meta</code> (keyPath <code>'key'</code>, value <code>{ key, value }</code>). A sim's rows are read with <code>IDBKeyRange.bound([simId, -Infinity], [simId, Infinity])</code> on <code>commits</code> and on the <code>order</code> index. Write transactions pass <code>{ durability: 'strict' }</code>; the owner and marker checks read inside the same transaction before any put. Methods after <code>close()</code> or a version change reject.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Write the client spec: <code>describe('openSimDb', () =&gt; simDbContract((o) =&gt; openSimDb({ name: `sfh-test-${crypto.randomUUID()}`, ...o }).then(must), deleteIt))</code>, where <code>must</code> throws on null and <code>deleteIt</code> closes the handle and awaits <code>indexedDB.deleteDatabase</code>; plus:
+        <pre><code data-lang="ts">it('reopens a database at the current version with its rows');
+it('closes on a newer version opened elsewhere and tells the caller');
+// indexedDB.open(name, SIM_DB_VERSION + 1); onVersionChange called; a later read rejects
+it('allocates distinct n from two connections writing at once');
+// two openSimDb on one name; Promise.all of 10 writes each; 20 distinct n
+it('lets only one of two connections set current');
+// two createSim with current: true at once: one 'created', one 'current-taken'</code></pre></li>
+      <li id="t8-s2"><input type="checkbox"> Run <code>npx vitest --run --project client src/lib/sim-store/idb.svelte.spec.ts</code>. Expected: fails, module missing.</li>
+      <li id="t8-s3"><input type="checkbox"> Implement <code>idb.ts</code>.</li>
+      <li id="t8-s4"><input type="checkbox"> Run again. Expected: pass. Then once in each other engine (installed for Playwright 1.64 at plan time): <code>SFH_BROWSER=webkit npx vitest --run --project client src/lib/sim-store/idb.svelte.spec.ts</code> and the same with <code>firefox</code>. Expected: pass. Report both results in the task's handoff; a failure there is a finding, not something to work around.</li>
+      <li id="t8-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-store/idb.ts src/lib/sim-store/idb.svelte.spec.ts
+git commit -m "feat(sim-store): keep sims, confirmed and pending commits in IndexedDB"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-9">
+    <h2>Task 9: The log store: editing</h2>
+    <p>R1, R9, R13 to R16, R29, R55, I1, I6, I7, I11, I12, decisions <a href="#d4">4</a>, <a href="#d8">8</a>, <a href="#d11">11</a>, <a href="#d13">13</a>, <a href="#d14">14</a>, <a href="#d21">21</a>, <a href="#d29">29</a>, <a href="#d31">31</a>, <a href="#d32">32</a>. This task builds <code>LogStore</code> with every method, tested with <code>db: null</code> (storage unavailable, so <code>head()</code> answers at once, <a href="#d17">decision 17</a>); Task 10 adds what a database brings.</p>
+    <h3>Files</h3>
+    <ul><li>Create: <code>src/lib/sim-store/log-store.svelte.ts</code>, <code>src/lib/sim-store/log-store.spec.ts</code> (Node: a <code>.svelte.ts</code> module imports into the <code>server</code> project, as <code>stroke-adapter.spec.ts</code> imports <code>PolicyStore</code>)</li></ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Tasks 3 to 7; <code>newId</code> from <code>$lib/ids/base58</code>; <code>SimPolicy4</code>.</li>
+      <li>Produces (Task 10 implements the database paths of <code>open</code>, <code>claim</code>, <code>importContent</code> and the writes; their signatures are fixed here):
+        <pre><code data-lang="ts">/** What the page and the editors use of a schema 4 store (decision 29). */
+export interface DocStore {
+  readonly policy: SimPolicy4;
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
+  readonly undoLabel: string | null;
+  readonly redoLabel: string | null;
+  apply(change: (p: SimPolicy4) =&gt; SimPolicy4, label: string, coalesce?: string): void;
+  /** Returns the label of the change undone, at once, or null. */
+  undo(): string | null;
+  redo(): string | null;
+  undoTo(p: SimPolicy4, label: string): void;
+  reset(p: SimPolicy4): void;
+}
+export interface LogStoreOptions {
+  /** null: storage unavailable (decision 17). */
+  db: SimDb | null;
+  /** This page load's id: the owner of the pending commits it makes. */
+  tabId: string;
+  /** The page's dataset version and build, read at each commit. */
+  stamp: () =&gt; Stamp;
+  mintId?: () =&gt; string; // default newId
+  normalize?: (next: SimPolicy4, prev: SimPolicy4) =&gt; SimPolicy4;
+  /** Passed to the LocalLog; default (c) =&gt; c. */
+  align?: Align;
+  now?: () =&gt; number;
+  /** A sim this store creates is made meta.current if none is (decision 28). Default true. */
+  current?: boolean;
+  /** Tests only: passed to authoring (Task 6's Meta.caps). */
+  caps?: { count: number; bytes: number };
+}
+export type LocalStatus = 'idle' | 'writing' | 'failed';
+export type EditRefusal = 'invalid' | 'too-large' | 'queue-full';
+export interface ImportMarker {
+  key: string;
+  value: unknown;
+  expect: unknown;
+}
+export type ImportResult = 'imported' | 'unchanged' | 'marker' | 'stopped' | EditRefusal;
+export class LogStore implements DocStore {
+  constructor(opts: LogStoreOptions);
+  // runes ($state.raw), set once per change (decision 32)
+  get ready(): boolean;
+  get simId(): string | null;
+  get policy(): SimPolicy4;
+  get name(): string;
+  get canUndo(): boolean;
+  get canRedo(): boolean;
+  get undoLabel(): string | null;
+  get redoLabel(): string | null;
+  get local(): LocalStatus;
+  get drafting(): boolean;
+  get pendingCount(): number;
+  get stopped(): Stopped | null;
+  get serverDataset(): string | null;
+  get drops(): readonly DropReport[];
+  get refusal(): EditRefusal | null;
+  // the editors (before ready, and while stopped, all do nothing; undo and redo return null)
+  /** True when this edit changed what is shown (its own change, after settling a draft). */
+  apply(change: (p: SimPolicy4) =&gt; SimPolicy4, label: string, coalesce?: string,
+    source?: string): boolean;
+  undo(): string | null;
+  redo(): string | null;
+  undoTo(p: SimPolicy4, label: string): void;
+  /** An undoable edit to p (source sim.reset, label 'Reset'). */
+  reset(p: SimPolicy4): void;
+  rename(name: string): void;
+  /** Commits an open draft (R1: focus leaving, hidden, pagehide, navigation, teardown). */
+  settle(): void;
+  clearDrops(): void;
+  // life cycle (Task 10)
+  /** null: a new sim, minted at the first commit (R29). Rejects when the read fails. */
+  open(simId: string | null, opts?: { claim?: readonly string[] }): Promise&lt;void&gt;;
+  /** Takes other tabs' pending commits of this sim and re-applies them after this tab's. */
+  claim(owners: readonly string[]): Promise&lt;number&gt;;
+  /** One system commit (sim.import) to `content`, written with the marker (decision 30). */
+  importContent(content: RulesetContent, marker: ImportMarker, label?: string):
+    Promise&lt;ImportResult&gt;;
+  // the socket's side (plan 2)
+  /** From the socket's hello (plan 2). Re-applies and re-decides (the dataset rule). */
+  setServerDataset(s: string): void;
+  receive(commits: readonly Commit[]): Received;
+  /** The head pending draft that may be sent (I2), or null; null while stopped. */
+  head(): CommitDraft | null;
+  /** Refused `invalid`: drop it, re-apply the rest, report it. */
+  dropPending(id: string): void;
+  /** Resolves when nothing is left to write (or writing has failed). */
+  written(): Promise&lt;void&gt;;
+  /** Called after every change of state, written or not. Returns the unsubscribe. */
+  subscribe(fn: () =&gt; void): () =&gt; void;
+}</code></pre></li>
+    </ul>
+    <p>How it works (the parts the signatures leave open):</p>
+    <ul>
+      <li><code>apply</code>: if not ready or stopped, return false. With a coalesce key equal to the open draft's: <code>next = change(policy)</code>; same object, return false; <code>normalize</code>; same, return false; replace the draft's policy and label, show it, return true. Otherwise <code>settle()</code> first (F4), then <code>next = change(policy)</code> on the now current policy; same object, return false; <code>normalize</code>; same, return false; with a key, open a draft on the fold and show <code>next</code>; with none, commit. A commit asks <code>datasetDecision(stamp.datasetVersion, fold's dataset, serverDataset)</code>: <code>edit</code> authors; <code>move</code> authors <code>authorMove</code> first (<code>unchanged</code> is fine) then the commit; <code>stop</code> sets <code>stopped</code> and authors nothing. On the first commit of a new sim, <code>simId = mintId()</code>.</li>
+      <li>After a commit, refused or not, <code>policy</code> is set by <a href="#d4">decision 4</a>, so a refused edit right after a draft committed leaves <code>policy</code> as the draft's object and <code>apply</code> returns false: <code>Inspector.svelte:221-223</code> announces nothing. A refused commit sets <code>refusal</code>.</li>
+      <li>The store records each shown fold policy in a <code>WeakMap&lt;SimPolicy4, string | null&gt;</code> to the id of the commit at the local tip (null for position 0). <code>undoTo(p)</code> settles; when <code>p</code> maps to an id whose position is known, it authors a jump there (nothing when that is the current position); otherwise (unknown <code>p</code>, or its commit dropped) an edit to <code>p</code>. Both go through the dataset decision as a commit does.</li>
+      <li><code>canUndo</code>: not stopped, the decision is <code>edit</code>, and a draft is open or <code>nextTarget(log, 'undo')</code> is not null. <code>undoLabel</code>: the draft's label, else that target's. <code>undo()</code>: null when <code>canUndo</code> is false; else settles, finds the target, authors the restore with the target's label and <code>SOURCES.undo</code>, and returns the label, or null when refused. Redo the same.</li>
+      <li><code>receive</code>: settle the draft first if any new commit in the batch is not one of this tab's pending ones; then <code>LocalLog.receive</code>; then the alignment step; then set the derived state. <code>future</code> sets <code>stopped = 'future'</code>. Drops are appended.</li>
+      <li>The alignment step (<a href="#d13">decision 13</a>), after any re-apply that kept pending commits and after <code>setServerDataset</code>: when the decision is <code>move</code>, or <code>edit</code> with the fold on the page's dataset, and the store is not stopped, <code>authorMove</code>; <code>unchanged</code> and <code>queue-full</code> are not errors (the next re-apply tries again).</li>
+      <li><code>setServerDataset(s)</code>: <code>LocalLog.setServerDataset(s)</code>, drops appended, the alignment step, derived state.</li>
+      <li><code>head()</code>: null while stopped, while <code>serverDataset</code> is null (no hello yet: I11's guarantee lives here), or with no pending; with <code>db: null</code> or <code>local === 'failed'</code>, <code>pending[0].draft</code>; with a working database, Task 10's rule.</li>
+    </ul>
+    <ol>
+      <li id="t9-s1"><input type="checkbox"> Write the failing tests (<code>db: null</code>, <code>stamp: () =&gt; ({ datasetVersion: 'fixture-0', build: 'test' })</code> unless a test says otherwise, edits from <code>$lib/sim-log/test/fixtures</code>; a test that reads <code>head()</code> calls <code>setServerDataset</code> first):
+        <pre><code data-lang="ts">it('meets DocStore, as PolicyStore&lt;SimPolicy4&gt; does', () =&gt; {
+  const a: DocStore = new PolicyStore&lt;SimPolicy4&gt;(DEFAULT_POLICY4);
+  const b: DocStore = new LogStore(opts());
+  const c: Parameters&lt;typeof spanLens&gt;[0] = b;
+  expect([a, b, c].every(Boolean)).toBe(true);
+});
+it('mints no id before the first edit (I6)');
+it('shows an edit at once, with the fold\'s content (I1)');
+it('keeps a coalesced run as one draft until the key changes (R1)');
+it('settles before running a new change, so a refused draft leaves nothing behind (F4)');
+it('commits an open draft on settle (R1)');
+it('undoes and redoes with restore commits named for the change (R10, R11)');
+it('undo commits an open draft, then undoes it');
+it('undoTo a document it showed is a jump, and clears redo (R14)');
+it('undoTo a document whose commit was dropped is an edit');
+it('undoTo an unknown document is an edit');
+it('reset is an undoable edit');
+it('renames with a name commit');
+it('runs normalize on every apply');
+it('returns false and keeps the object when an edit after a draft is refused');
+it('shows the fold after a foreign commit, its own pending on top (R16)');
+it('a foreign commit ends an open draft');
+it('drops a refused pending commit and reports it');
+it('refuses an edit past the pending cap with queue-full');      // caps { count: 2, bytes: 1e9 }
+it('refuses an edit that does not fold and keeps the policy');   // mockConsole('error')
+it('moves the sim before the first edit when the page is known current (R55)');
+// confirmed tip on fixture-0, stamp fixture-1, setServerDataset('fixture-1'), renamingAlign:
+// pending [system sim.dataset, edit]; canUndo false before the edit
+it('stops as unknown-dataset on another dataset before a hello, and edits after it');
+it('stops as stale after a foreign move to another dataset, keeping its pending unsent');
+// stamp fixture-0, pending edit; setServerDataset('fixture-1'); a foreign commit on fixture-1
+// arrives: stopped 'stale', head() null, the pending draft stamped fixture-1, not fixture-0
+it('appends one alignment commit when re-applied pending would still change under align');
+it('edits offline a sim on the page\'s dataset, and a sim with no commits');
+it('offers nothing to send before the server\'s dataset is known');   // head() null, then the draft
+it.each(['future', 'stale', 'unknown-dataset'] as const)(
+  'authors nothing while stopped (%s)', (why) =&gt; {
+    // bring the store to `why`; then apply returns false, undo() and redo() return null,
+    // undoTo, reset and rename push nothing; canUndo and canRedo false; head() null
+  }
+);
+it('derives canUndo and undoLabel once per change, not per read');
+// spy on History.prototype.undo getter: reading canUndo 100 times calls it 0 more times</code></pre></li>
+      <li id="t9-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-store/log-store.spec.ts</code>. Expected: fails, module missing.</li>
+      <li id="t9-s3"><input type="checkbox"> Implement <code>log-store.svelte.ts</code> with the database paths stubbed by <code>db === null</code> behaviour (<code>open</code> with a sim id rejects without a database; <code>claim</code> answers 0; <code>importContent</code> authors without writing).</li>
+      <li id="t9-s4"><input type="checkbox"> Run again. Expected: all pass. Then <code>npx vitest --run --project server src/lib/sim-store</code>, <code>npm run check</code>, <code>npm run lint</code>: all pass, clean.</li>
+      <li id="t9-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-store/log-store.svelte.ts src/lib/sim-store/log-store.spec.ts
+git commit -m "feat(sim-store): the log store behind a structural editor interface" -m "Drafts, restore commits, the dataset rule and the move commit (R1, R10, R11, R55)."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-10">
+    <h2>Task 10: The log store: persistence</h2>
+    <p>R15, R17, R29, I2, I5, I6, I9, decisions <a href="#d16">16</a>, <a href="#d17">17</a>, <a href="#d22">22</a>, <a href="#d28">28</a>, <a href="#d30">30</a>.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-store/log-store.svelte.ts</code></li>
+      <li>Create: <code>src/lib/sim-store/log-store.persist.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul><li>Consumes: <code>LogStore</code>'s signatures as fixed in Task 9; <code>SimDb</code>, <code>WriteBatch</code>, <code>CreateResult</code>, <code>CURRENT_KEY</code>, <code>memorySimDb</code> (Task 7). Produces no new signature.</li></ul>
+    <p>How it works:</p>
+    <ul>
+      <li>Writing: every change marks what is dirty (new confirmed commits, new or changed pending, removed pending, the I5 removals from <code>initialConfirmed</code>). One write runs at a time, chained; it sends the whole dirty state as one <code>WriteBatch</code> with <code>owner: tabId</code> (<code>createSim</code> with <code>current</code> for a new sim), and records the n it gets back and the version of each pending it wrote. Records in <code>lost</code> are forgotten (<code>LocalLog.forget</code>), never sent. Pending in <code>held</code> are never written or removed.</li>
+      <li><code>head()</code> with a working database: <code>pending[0].draft</code> only when its written version is its current version (I2). A rejected write sets <code>local = 'failed'</code> and stops writing; from then <code>head()</code> answers as with <code>db: null</code>.</li>
+      <li>A new sim: <code>createSim(sim, { current, batch })</code>. On <code>current-taken</code> (another tab made the current sim first, <a href="#d28">decision 28</a>) the store drops its minted id, reads the current sim, builds the <code>LocalLog</code> from its confirmed commits with its own pending commits re-applied on top, takes that sim id, and writes there.</li>
+      <li><code>open(simId)</code>: read; when <code>claim</code> is given, <code>claimPending(simId, claim, tabId)</code>; take the records owned by <code>tabId</code> plus the claimed ones, in n order; build the <code>LocalLog</code>; <code>initialDrops</code> go to <code>drops</code>; <code>initialConfirmed</code> go to the batch's <code>remove</code>; changed pending are dirty; then the alignment step. <code>open(null)</code> builds an empty log and writes nothing (I6).</li>
+      <li><code>claim(owners)</code>: settle; <code>claimPending</code>; <code>LocalLog.adopt</code> with the claimed ones (put without n, so they get new n after this tab's); answers how many were adopted.</li>
+      <li><code>importContent(content, marker, label = 'Imported')</code>: not ready or stopped: <code>'stopped'</code>. Settle; the dataset decision as for a commit; <code>authorEdit(…, 'system')</code> with <code>SOURCES.import</code>; refusals answer as such. Then wait for the write in flight and write the whole dirty state with the marker (a new sim: <code>createSim</code> with <code>current</code> and the marker). <code>applied: false</code> (or <code>outcome: 'marker'</code>): the commit is withdrawn (<code>LocalLog.drop</code>, unreported) and the answer is <code>'marker'</code>. With <code>db: null</code> it answers <code>'imported'</code> without a marker.</li>
+    </ul>
+    <ol>
+      <li id="t10-s1"><input type="checkbox"> Write the failing tests (<code>memorySimDb</code> unless said; every test that reads <code>head()</code> first calls <code>setServerDataset(DS)</code>, since <code>head()</code> is null before a hello):
+        <pre><code data-lang="ts">it('writes nothing for a store that opened and did not edit (I6)');
+it('offers a commit to send only once stored (R15, I2)');
+// apply; head() null; await written(); head() is the draft; db.read shows it
+it('a failed write sends the edit and never reports it stored (decision 17)');
+// memorySimDb({ abortWrites: () =&gt; true }): policy has the edit; await written();
+// local 'failed'; head() is the draft
+it('starts in the failed state without a database, and sends');
+it('reopens with its pending commits and its undo label (R13, R17)');
+// store A edits twice; await written(); store B (tabId 'b') opens with claim ['a']
+it('deletes, on open, pending commits that are already confirmed (I5)');
+it('forgets pending commits another tab took, and does not send them');
+// store A writes; db.claimPending(sim, ['a'], 'b'); A edits again; after written(): A.pending
+// excludes the taken one, head() never returns it, db owner of it is still 'b'
+it('claim takes another tab\'s pending commits after its own');
+it('two fresh stores over one database make one current sim');
+// A and B open(null), both apply, await both written(): one sim id, meta current is it, the
+// sim's pending hold both edits, B.simId === A.simId
+it('imports once: a second import with the same expectation answers marker');
+it('re-imports when the expectation matches the stored marker');
+it('a withdrawn import leaves the policy and the pending queue as they were');
+it('leaves a pending commit from a newer build untouched and opens read-only (I9)');
+// write a pending record with shapes SHAPES_REVISION + 1 directly; open: stopped 'future',
+// the sim reads; after an edit attempt and written(), the record is byte-for-byte unchanged</code></pre></li>
+      <li id="t10-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-store/log-store.persist.spec.ts</code>. Expected: fails (the database paths are stubs).</li>
+      <li id="t10-s3"><input type="checkbox"> Implement the writes, <code>open</code>, <code>claim</code>, <code>importContent</code> and the current-sim adoption in <code>log-store.svelte.ts</code>.</li>
+      <li id="t10-s4"><input type="checkbox"> Run again, then the whole directory and the checks:
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim-store src/lib/sim-log
+npx vitest --run --project client src/lib/sim-store
+npm run check
+npm run lint</code></pre>
+        Expected: all pass, clean.</li>
+      <li id="t10-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-store/log-store.svelte.ts src/lib/sim-store/log-store.persist.spec.ts
+git commit -m "feat(sim-store): persist the log store, its claims and its import" -m "Stored before sent while storage works; one current sim; another tab's records are never overwritten (R15, R17)."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-11">
+    <h2>Task 11: Document the store as built</h2>
+    <p>The doc describes the code as merged, read from it.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>docs/dev/sim-store.md</code>: what it is (unit 4, plan 1; plans 2 to 4 wire it); Files; Invariants (I1 to I12); the dataset rule with its table and the stopped reasons; the pending commit, re-applying and re-stamping; drafts and their triggers (a draft open at close is committed in memory, its write best effort); undo, redo and jumps, with labels; the move and alignment commits; the pending cap; IndexedDB (schema, version steps, strict durability, completion, the write batch and ownership, the current pointer, the marker); storage failure (sent, never reported stored); <code>DocStore</code> and <code>LogStore</code>'s interface for the editors and for the socket; what is not built yet (registration, the socket, choosing owners to claim, the page, pending commits becoming a remix); Tests.</li>
+      <li>Modify: <code>CLAUDE.md</code> (add to "Scoped reference docs", after the sim object's line: "<strong>Browser log store (<code>LocalLog</code>, <code>LogStore</code>, <code>DocStore</code>, pending and drafts, the dataset rule, restore commits, IndexedDB)</strong> — [docs/dev/sim-store.md](docs/dev/sim-store.md)"); <code>docs/dev/sim-log.md</code> "Using it from the sim object and the store" (point the browser store bullets at sim-store.md); <code>docs/dev/sim-object.md</code> "For the next units" (the log store item: what plan 1 did, what is left, and that <code>hello</code> will carry the server's dataset)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul><li>None.</li></ul>
+    <ol>
+      <li id="t11-s1"><input type="checkbox"> Write the docs from the code.</li>
+      <li id="t11-s2"><input type="checkbox"> Check nothing outside the store moved:
+        <pre><code data-lang="sh">git diff --stat origin/main -- src/lib/sim-page src/lib/timeline src/lib/sharing src/routes/sim src/routes/s
+npx prettier --check docs/dev/sim-store.md docs/dev/sim-log.md docs/dev/sim-object.md CLAUDE.md</code></pre>
+        Expected: no diff; prettier clean.</li>
+      <li id="t11-s3"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add docs/dev/sim-store.md docs/dev/sim-log.md docs/dev/sim-object.md CLAUDE.md
+git commit -m "docs(sim-store): the browser log store as built"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-run">
+    <h2>What was run at plan time</h2>
+    <ul>
+      <li><code>npx vitest --run --project server src/lib/sim-log src/lib/sim-stream</code>: 13 files, 187 tests, all pass, 0.85 s (the reapply property 0.52 s).</li>
+      <li>Task 2's rule, prototyped on a copy of <code>reapply.ts</code> outside the worktree with the amended expression <code>/^(k:[^~]+)(?:~([2-9]|[1-9]\d+))?$/</code>, run with <code>tsx</code> against the repository's modules. The unmodified <code>reapply</code> answers <code>{ ok: false, why: 'invalid' }</code> for a delete of <code>k:X</code> on a tip of <code>k:X</code>, <code>k:X~2</code>. With the rule: that delete becomes <code>k:X~2</code>; a delete of <code>k:X~2</code> on three repeats becomes <code>k:X~3</code>; deletes of <code>k:X</code>, <code>k:X~2</code> on one repeat keep <code>k:X</code> and drop index 0 as gone; deletes of both on two repeats stay as they are; a delete of <code>k:X</code> on <code>[X, other, X]</code> becomes <code>k:X~2</code>. The expression on its own: <code>k:ab</code>, <code>k:ab~2</code>, <code>k:ab~9</code>, <code>k:ab~10</code> match; <code>k:ab~1</code>, <code>k:ab~0</code>, <code>k:ab~01</code>, <code>p:x</code>, <code>k:a~b</code> do not.</li>
+      <li><code>datasetDecision</code> as written in Task 4, run with <code>tsx</code> over the ten rows of Task 4's test: all ten give the table's answer.</li>
+      <li>Checked against the code: <code>LogState.apply</code> sets the fold's dataset from the commit (<code>state.ts:112</code>) and restores it on a throw; the object's append checks never compare a commit's dataset (<code>parse.ts:160-162</code> checks only the format; nothing in <code>decide.ts</code> or <code>log-host.ts</code> reads it), so a re-stamped commit is accepted as long as its parent is the tip; the open header already carries the server's dataset (<code>sim-object.md</code>, The open header), so plan 2 can put it on <code>hello</code> (<code>sim-object.ts:112</code>). <code>JSON.stringify([new Error('x')])</code> is <code>[{}]</code> (Task 1's check). <code>Inspector.svelte:50</code> types its store as the class <code>PolicyStore&lt;SimPolicy4&gt;</code>, whose <code>#private</code> fields make it nominal; the schema 3 editors already take the structural <code>EditStore</code> (<code>lens.ts:27</code>).</li>
+      <li>Node 24.2 has <code>BroadcastChannel</code> and <code>WebSocket</code>, and no <code>indexedDB</code> and no <code>navigator.locks</code>.</li>
+      <li><code>npx playwright install --dry-run webkit firefox</code>: both builds Playwright 1.64 needs are installed (<code>webkit-2370</code>, <code>firefox-1555</code>).</li>
+      <li>Not run: the rest of this plan's new code (the local log, authoring, the store, the database); the IndexedDB behaviour in WebKit and Firefox (Task 8 runs it); <code>durability: 'strict'</code> is a hint some engines ignore.</li>
+    </ul>
+  </section>
+</article>
