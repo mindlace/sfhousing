@@ -1,5 +1,12 @@
 import { newId } from '$lib/ids/base58';
-import { NAME_KEY, SHAPES_REVISION, type CommitDraft } from '$lib/sim-log';
+import {
+  NAME_KEY,
+  SHAPES_REVISION,
+  diff,
+  type CommitDraft,
+  type Ruleset,
+  type RulesetContent
+} from '$lib/sim-log';
 
 /** A valid edit that sets the sim's name. */
 export function nameDraft(
@@ -20,4 +27,12 @@ export function nameDraft(
     changes: [{ op: 'set', key: NAME_KEY, field: 'name', value: name }],
     ...over
   };
+}
+
+/** A commit taking `from` to `target` (diff, R8), or null when they are equal. */
+export function draftTo(from: Ruleset, target: RulesetContent, parent: number): CommitDraft | null {
+  const to: Ruleset = { ...target, datasetVersion: 'fixture-0' };
+  const changes = diff(from, to);
+  if (changes.length === 0) return null;
+  return { ...nameDraft(parent, 'unused'), label: 'Edit', source: 'sim.test', changes };
 }
