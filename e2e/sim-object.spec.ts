@@ -8,6 +8,7 @@
 // own end-to-end tests; the logic under them is tested in Node (access.spec.ts, log-host.spec.ts).
 import { expect, test, type Page } from '@playwright/test';
 import { newId } from '../src/lib/ids/base58';
+import type { Commit } from '../src/lib/sim-log/types';
 import { loginAs, uniqueEmail } from './helpers/auth';
 import { freshContext, signInAndCreateSim } from './helpers/members';
 import {
@@ -20,6 +21,20 @@ import {
   sendAndRead,
   sendFrame
 } from './helpers/sim-socket';
+
+/** The headers of a websocket upgrade, for a request that only reads the route's status. */
+const UPGRADE_HEADERS = {
+  upgrade: 'websocket',
+  connection: 'Upgrade',
+  'sec-websocket-version': '13',
+  'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ=='
+};
+
+/** A resume answer after `after`: positions after+1 to after+n, each on the one before (I1). */
+function expectGapless(commits: Commit[], after: number) {
+  expect(commits.map((c) => c.seq)).toEqual(commits.map((_, i) => after + i + 1));
+  expect(commits.map((c) => c.parent)).toEqual(commits.map((c) => c.seq - 1));
+}
 
 /** Sign in, create a sim through the API, open a socket on it and resume from 0. */
 async function writerOn(page: Page, title: string) {
@@ -77,11 +92,9 @@ test.describe('sim object socket', () => {
     });
     const h3 = await openSimSocket(page, simId);
     await framesAtLeast(page, h3, 2);
-    expect(commitsOf(await resumeAndRead(page, h3, 0)).map((c) => c.id)).toEqual([
-      start[0].id,
-      a.id,
-      b.id
-    ]);
+    const all = commitsOf(await resumeAndRead(page, h3, 0));
+    expect(all.map((c) => c.id)).toEqual([start[0].id, a.id, b.id]);
+    expectGapless(all, 0);
   });
 
   test('a stale parent is behind, and a duplicate id appends once', async ({ page }) => {
@@ -164,7 +177,12 @@ test.describe('sim object socket', () => {
     const { h } = await writerOn(page, 'Resume');
     await sendAndRead(page, h, { type: 'append', commit: nameDraft(1, 'A') });
     await sendAndRead(page, h, { type: 'append', commit: nameDraft(2, 'B') });
-    expect(commitsOf(await resumeAndRead(page, h, 2)).map((c) => c.seq)).toEqual([3]);
+    const all = commitsOf(await resumeAndRead(page, h, 0));
+    expectGapless(all, 0);
+    expect(all).toHaveLength(3);
+    const tail = commitsOf(await resumeAndRead(page, h, 2));
+    expectGapless(tail, 2);
+    expect(tail.map((c) => c.seq)).toEqual([3]);
     expect(commitsOf(await resumeAndRead(page, h, 3))).toEqual([]);
     expect(await resumeAndRead(page, h, 9)).toEqual({ type: 'refused', id: null, why: 'gone' });
   });
@@ -174,6 +192,16 @@ test.describe('sim object socket', () => {
     const h = await openSimSocket(page, newId());
     expect(await closedCode(page, h)).toBe(1006);
     expect(await framesAtLeast(page, h, 0)).toEqual([]);
-    expect((await page.request.get(`/api/sims/${newId()}/stream`)).status()).toBe(426);
+    // The status itself: an upgrade request for an unknown sim is answered 404.
+    const unknown = await page.request.get(`/api/sims/${newId()}/stream`, {
+      headers: UPGRADE_HEADERS
+    });
+    expect(unknown.status()).toBe(404);
+    expect(await unknown.json()).toEqual({ error: 'Not found.' });
+  });
+
+  test('a real sim without the upgrade header is answered 426', async ({ page }) => {
+    const simId = await signInAndCreateSim(page, uniqueEmail('sim-writer'), 'Plain');
+    expect((await page.request.get(`/api/sims/${simId}/stream`)).status()).toBe(426);
   });
 });
