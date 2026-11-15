@@ -369,11 +369,11 @@
         <li id="r38"><strong>R38.</strong> No world state, series or result is stored anywhere. A variant is a position; reopening one folds the log to that position and simulates.</li>
         <li id="r54"><strong>R54.</strong> A commit is read with the dataset and shapes it records. Folding to a position reads each commit's changes under its <code>shapes</code> and upgrades them through the registry to the current shapes; the position is simulated on its last commit's dataset, which stays on R2 because published datasets are immutable. Opening a position never reconciles it against today's dataset, so a link shows what was shared, and the notices that a sim runs on another dataset go.</li>
         <li id="r55"><strong>R55.</strong> Before a writer's first edit under a newer dataset than the tip's, the browser appends a <code>system</code> commit that moves the sim: its changes are what <code>reconcilePolicy4</code> changes on the new dataset, and the page shows today's notices for what moved. Reading never moves a sim. A move to newer shapes is not a commit, because the upgrade on read gives the same ruleset every time.</li>
-        <li id="r56"><strong>R56.</strong> The engine is not pinned. An old position re-simulates on the current engine with its own dataset and shapes, so the future someone saw under an older engine is not reproduced exactly; <code>build</code> is kept for study. The engine's dataset loader keeps reading every dataset a log names, back to <code>MIN_SIM_DATASET</code>; a pipeline change that breaks an older dataset ships an upgrade in the loader, as a shape change ships one in the registry.</li>
+        <li id="r56"><strong>R56.</strong> The engine is not pinned. An old position re-simulates on the current engine with its own dataset and shapes, so the future someone saw under an older engine is not reproduced exactly; <code>build</code> is kept for study. The engine's dataset loader keeps reading every dataset a log names, back to <code>MIN_SIM_DATASET</code>; a pipeline change that breaks an older dataset ships an upgrade in the loader, as a shape change ships one in the registry. A dataset may be pruned only once no commit names it, which <code>sim_commit</code> answers (R24); none is pruned for now.</li>
         <li id="r39"><strong>R39.</strong> This design says nothing about where the engine runs. The sim object does not run it, and nothing prevents a server-side run later.</li>
       </ul>
-      <aside data-kind="decision"><strong>Decision (owner)</strong> The move to a newer dataset is automatic, on a writer's first edit under it (R55). The person is not asked.</aside>
-      <aside data-kind="decision"><strong>My call</strong> R54 to R56, and that old datasets stay runnable for good (R56) rather than for a window. A dataset move is a commit because the editors resolve presets against the page's dataset, so an edit made on a newer one must start from a ruleset moved to it. A shape move is not, because the upgrade is pure. The engine is not pinned because only one build is ever deployed.</aside>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> The move to a newer dataset is automatic, on a writer's first edit under it (R55). The person is not asked. Old datasets stay as long as the site does; one can be pruned once nothing depends on it, and for now none is (R56).</aside>
+      <aside data-kind="decision"><strong>My call</strong> R54 to R56 otherwise. A dataset move is a commit because the editors resolve presets against the page's dataset, so an edit made on a newer one must start from a ruleset moved to it. A shape move is not, because the upgrade is pure. The engine is not pinned because only one build is ever deployed.</aside>
       <aside data-kind="decision"><strong>Decision (owner)</strong> "being able to use the shapes/dataset as-of the time the sim was shared will make it easier to evolve the experience w/o worrying about breaking the past, and allow us to drop those 'your sim is running on a new dataset' messages we give now."</aside>
     </section>
 
@@ -411,7 +411,7 @@
         <li>A person cannot delete a sim. Leaving takes it off their list; its links still open (R43).</li>
         <li>Takedown stays manual, and is the only way a sim is removed: an operator deletes it (R43).</li>
       </ul>
-      <aside data-kind="decision"><strong>Decision (owner)</strong> A deleted person's commits are kept.</aside>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> A deleted person's commits are kept, and a person cannot erase a sim. This project's privacy envelope and public surface differ from planafoot's: keeping sims is the greater virtue, and a sim discloses nothing particularly private.</aside>
     </section>
   </section>
 
@@ -509,7 +509,7 @@
       <li>The name is a commit, with <code>sim_index.title</code> its copy; a writer on an earlier position restores, then edits (<a href="#sec-identity">Identity and sharing</a>).</li>
       <li><code>/sim/&lt;simId&gt;</code> for a sim, <code>/s/&lt;simId&gt;/&lt;n&gt;</code> for a position; a remix is a new self-contained sim (<a href="#sec-identity">Identity and sharing</a>).</li>
       <li>Pending commits re-applied as changes, kept in IndexedDB; both old autosave keys kept (<a href="#sec-local-first">Local first</a>).</li>
-      <li>Each commit read with its own dataset and shapes; a dataset move is a commit, a shape move is not; the engine is not pinned; old datasets stay runnable for good (<a href="#sec-engine">The engine, datasets and the variants</a>).</li>
+      <li>Each commit read with its own dataset and shapes; a dataset move is a commit, a shape move is not; the engine is not pinned (<a href="#sec-engine">The engine, datasets and the variants</a>).</li>
       <li>From planafoot's quest graph only shaped items, a numbered registry and reads under the writer's revision; revision 1 has one policy shape and one span shape per <code>where</code> and <code>what</code> row (<a href="#sec-shapes">Shapes</a>).</li>
       <li>Drafts commit on a key change, a lost focus or a hidden page; the object checks structure only (<a href="#sec-commit">The commit</a>).</li>
       <li>A <code>source</code> code on every commit, envelopes copied to D1, and the hash chain (<a href="#sec-commit">The commit</a>, <a href="#sec-server">The sim object</a>).</li>
