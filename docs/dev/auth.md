@@ -22,7 +22,6 @@ A pseudonymous account (Better-Auth `anonymous()` plugin, email `@pseudonymous.s
 - Email and Google end pseudonymity and can fuse two accounts (`onLinkAccount`, `handleAccountLink`). A password or a passkey does not fuse two accounts.
 - A password makes an account durable without ending pseudonymity. Sign-in is by handle and password: the action resolves the handle itself (`resolveHandleToEmail` in `src/lib/server/auth/magic-link.ts`). Better-Auth's `username` plugin is not installed. There is no password sign-up; a password is set from `/account` on a signed-in session. Policy is length only plus a breach check (`password-breach.ts`).
 - Password reset mails only a verified, deliverable address (`mayReceivePasswordReset` in `src/lib/server/auth/password-reset-gate.ts`). A pseudonymous account with no verified email has no reset path.
-- A pseudonymous account whose sessions have all been expired longer than `REAP_GRACE_MS` and that holds no passkey, password or Google account is reapable (see Reaping).
 
 ### Sign out
 
@@ -111,10 +110,6 @@ All guarded by `isE2eEnv`, so a normal build answers 404 or drops them:
 - The magic link of a sign-in shows on `/signin` as `dev-link`. Helper: `followMagicLink`.
 
 All helpers are in `e2e/helpers/auth.ts`. `wrangler dev` for e2e runs with `ENVIRONMENT=development` and a fixed `BETTER_AUTH_SECRET`; see `playwright.config.ts`.
-
-## Reaping
-
-The reaper functions exist and have no trigger. `selectReapableUsers` (`src/lib/server/reap/eligibility.ts`) picks up to `REAP_BATCH` pseudonymous accounts whose sessions have all been expired for `REAP_GRACE_MS` (48 hours) and that are not durable (no passkey, password or Google account), and `reapUser` (`reap-user.ts`) removes one. Nothing calls them: there is no cron or queue.
 
 ## Secrets and vars
 

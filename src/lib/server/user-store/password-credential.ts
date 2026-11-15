@@ -49,7 +49,8 @@ export async function hasPasswordForUser(db: Database, u: LiveUser): Promise<boo
  *
  * False when the password is the ONLY way back in — no passkey, no OAuth account,
  * and no real verified email. Removing it there would silently convert a durable
- * account into a reapable one. The UI disables the control on this basis; this
+ * account into one with no way back in (a pseudonymous account without a credential
+ * cannot sign back in). The UI disables the control on this basis; this
  * function is the server-side enforcement behind it.
  *
  * Vacuously true when there is no password at all — there is nothing to strand.

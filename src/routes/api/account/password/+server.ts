@@ -90,7 +90,8 @@ export const POST: RequestHandler = async (event) => {
       // Changing, not adding. Remove-then-set is NOT an option: a user whose
       // password is their only durable factor (precisely the population this
       // feature exists for) fails `mayRemovePassword`, so they could never
-      // change it, and the gap would briefly make the account reapable.
+      // change it, and the gap would briefly leave a pseudonymous account
+      // with no credential, so no way back in.
       if (!currentPassword) {
         // `field` tells the client WHICH input is at fault, so the error marker
         // and focus land on the current-password box rather than the new one.
@@ -159,7 +160,7 @@ export const DELETE: RequestHandler = async (event) => {
   // Resolve the live user ONCE and hand the SAME row to the guard and the
   // delete. Re-resolving would let the check and the destructive write disagree
   // about which row they mean, in a handler whose failure mode is a stranded
-  // (reapable) account.
+  // account (a pseudonymous account without a credential cannot sign back in).
   const live = await liveUserFor(db, locals.user.id);
   // Guard FIRST: nothing is deleted until we know the user has another way back in.
   if (!(await mayRemovePasswordForUser(db, live))) {

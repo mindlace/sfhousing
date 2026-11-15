@@ -152,7 +152,7 @@ export async function deleteAccount(args: {
   await closeAccountRows({ db, identityId: sid, live });
 }
 
-/** The user-row closure tail of deleteAccount (which reaping also runs): release the
+/** The user-row closure tail of deleteAccount: release the
  *  handle, scrub, history, credentials, tombstone. `live` is the live `user` row for
  *  `identityId`. */
 export async function closeAccountRows(args: {
