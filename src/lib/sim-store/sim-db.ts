@@ -81,10 +81,10 @@ export interface SimDb {
   ): Promise<CreateResult>;
   /**
    * One transaction: the marker first, then the batch: confirmed, then the puts in order, then
-   * the removes (an id both put and removed ends removed).
+   * the removes (an id both put and removed ends removed). A marker (here and on createSim) on a
+   * reserved key rejects, writing nothing.
    */
   write(simId: string, batch: WriteBatch, opts?: { marker?: Marker }): Promise<WriteResult>;
-  // A marker (here and on createSim) on a reserved key rejects, writing nothing.
   /** One transaction: every pending record of simId whose owner is in `from` gets owner `to`. */
   claimPending(simId: string, from: readonly string[], to: string): Promise<PendingRecord[]>;
   setRegistered(simId: string): Promise<void>;
