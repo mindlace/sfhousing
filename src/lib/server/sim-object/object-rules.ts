@@ -5,11 +5,26 @@ import {
   CLOSE_BINARY,
   CLOSE_MALFORMED,
   parseClientFrame,
-  type ParsedClientFrame
+  type ParsedClientFrame,
+  type RefusedWhy
 } from '$lib/sim-stream/protocol';
 import { accessChanges, parseAttachment, type SocketAttachment } from './access';
 import { LIMITS, overFrameLimit, utf8Bytes, type Limits } from './limits';
+import type { AppendOutcome } from './log-host';
 import type { OpenParams } from './open-params';
+
+/** What the appendAs RPC answers: no commit body or id crosses back to the Worker. */
+export type ServerAppendResult =
+  { kind: 'accepted'; seq: number } | { kind: 'duplicate' } | { kind: 'refused'; why: RefusedWhy };
+
+export function serverAppendResult(out: AppendOutcome): ServerAppendResult {
+  if (out.kind === 'accepted') return { kind: 'accepted', seq: out.commit.seq };
+  if (out.kind === 'duplicate') return { kind: 'duplicate' };
+  return { kind: 'refused', why: out.why };
+}
+
+/** The message appendAs throws on any failure but a missing host. Fixed: it names no identity. */
+export const APPEND_FAILED = 'append failed';
 
 export interface OpenInput {
   /** The request's Upgrade header. */

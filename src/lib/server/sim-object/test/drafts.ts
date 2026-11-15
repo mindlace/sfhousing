@@ -29,6 +29,16 @@ export function nameDraft(
   };
 }
 
+/** A rename as the Worker drafts it for appendAs: no parent, no dataset version (the tip's). */
+export function serverDraft(
+  name: string,
+  over: Partial<CommitDraft> = {}
+): Omit<CommitDraft, 'parent' | 'datasetVersion'> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { parent, datasetVersion, ...draft } = nameDraft(0, name, over);
+  return draft;
+}
+
 /** A commit taking `from` to `target` (diff, R8), or null when they are equal. */
 export function draftTo(from: Ruleset, target: RulesetContent, parent: number): CommitDraft | null {
   const to: Ruleset = { ...target, datasetVersion: 'fixture-0' };

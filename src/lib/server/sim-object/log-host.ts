@@ -38,6 +38,24 @@ export interface StartParams {
   now: number;
 }
 
+/** What the start commit is made of, beside its author and time. */
+export interface StartDraft {
+  id: string;
+  title: string;
+  datasetVersion: string;
+  build: string;
+}
+
+export interface ServerAppend {
+  /** The identity the Worker resolved and found to be a writer. */
+  actor: string;
+  /** Everything but parent and datasetVersion, which come from the tip. */
+  draft: Omit<CommitDraft, 'parent' | 'datasetVersion'>;
+  /** Used only when the log is empty, to record the start commit first (R58). */
+  start: StartDraft;
+  now: number;
+}
+
 export interface LogHostOptions {
   limits?: Limits;
   registry?: Registry;
@@ -93,29 +111,45 @@ export class LogHost {
   ensureStarted(p: StartParams): Promise<AppendOutcome | null> {
     return this.#serial(async () => {
       if (this.gone() || this.tip() > 0) return null;
-      const draft: CommitDraft = {
-        id: p.id,
-        parent: 0,
-        kind: 'system',
-        label: 'Start',
-        restores: null,
-        datasetVersion: p.datasetVersion,
-        shapes: SHAPES_REVISION,
-        build: p.build,
-        source: 'sim.start',
-        changes: [{ op: 'set', key: NAME_KEY, field: 'name', value: p.title }]
-      };
-      const out = await this.#appendNow(
-        draft,
-        draft.id,
-        utf8Bytes(JSON.stringify(draft)),
-        { identity: p.actor, write: true },
-        p.now
-      );
-      if (out.kind === 'refused') {
-        console.error(`[sim-object] ${this.#label}: start commit refused (${out.why})`);
+      return this.#appendStart(p, p.actor, p.now);
+    });
+  }
+
+  /**
+   * A commit the Worker appends on a writer's behalf, through the same checks as a socket's.
+   * Its parent and dataset version are the tip's, read in turn; on an empty log the start commit
+   * (R58) is stored first, in the same turn. A refusal names the draft's id.
+   */
+  appendAs(input: ServerAppend): Promise<AppendOutcome> {
+    return this.#serial(async () => {
+      const { actor, draft, start, now } = input;
+      if (this.gone()) return { kind: 'refused', id: draft.id, why: 'gone' };
+      if (this.tip() === 0) {
+        const started = await this.#appendStart(start, actor, now);
+        if (started.kind === 'refused') return { ...started, id: draft.id };
       }
-      return out;
+      let datasetVersion: string | null;
+      try {
+        datasetVersion = this.#state().ruleset().datasetVersion;
+      } catch (e) {
+        // As in #appendNow: a stored row a newer build wrote.
+        if (e instanceof LogError && e.code === 'future-shapes') {
+          return { kind: 'refused', id: draft.id, why: 'newer' };
+        }
+        throw e;
+      }
+      const full: CommitDraft = {
+        ...draft,
+        parent: this.tip(),
+        datasetVersion: datasetVersion ?? start.datasetVersion
+      };
+      return this.#appendNow(
+        full,
+        full.id,
+        utf8Bytes(JSON.stringify(full)),
+        { identity: actor, write: true },
+        now
+      );
     });
   }
 
@@ -231,6 +265,33 @@ export class LogHost {
     }
     if (bodies.length > 0) frames.push(commitsFrame(bodies));
     return frames;
+  }
+
+  /** The start commit (R58), appended in the caller's turn; a refusal is logged by reason only. */
+  async #appendStart(s: StartDraft, actor: string, now: number): Promise<AppendOutcome> {
+    const draft: CommitDraft = {
+      id: s.id,
+      parent: 0,
+      kind: 'system',
+      label: 'Start',
+      restores: null,
+      datasetVersion: s.datasetVersion,
+      shapes: SHAPES_REVISION,
+      build: s.build,
+      source: 'sim.start',
+      changes: [{ op: 'set', key: NAME_KEY, field: 'name', value: s.title }]
+    };
+    const out = await this.#appendNow(
+      draft,
+      draft.id,
+      utf8Bytes(JSON.stringify(draft)),
+      { identity: actor, write: true },
+      now
+    );
+    if (out.kind === 'refused') {
+      console.error(`[sim-object] ${this.#label}: start commit refused (${out.why})`);
+    }
+    return out;
   }
 
   async #appendNow(

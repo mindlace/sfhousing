@@ -19,7 +19,7 @@ import { commitsFrame, type RefusedWhy } from '$lib/sim-stream/protocol';
 import { LIMITS, STAMP_MAX, fitsCommit, utf8Bytes } from './limits';
 import { LogHost, type AppendOutcome, type Author, type LogHostOptions } from './log-host';
 import { SimStore, type StoredRow } from './store';
-import { draftTo, nameDraft } from './test/drafts';
+import { draftTo, nameDraft, serverDraft } from './test/drafts';
 import { freshSimDb, storeWithRow } from './test/harness';
 
 const T0 = 1_700_000_000_000;
@@ -440,6 +440,177 @@ describe('LogHost start (R58)', () => {
     expect(line).not.toContain('u1');
     expect(line).not.toContain('padded');
     err.mockRestore();
+  });
+});
+
+describe('LogHost appendAs', () => {
+  const start = (over = {}) => ({
+    id: newId(),
+    title: 'Old',
+    datasetVersion: 'fixture-2',
+    build: 'b1',
+    ...over
+  });
+
+  it('on an empty log records the start commit, then the commit on it', async () => {
+    const sent: number[] = [];
+    const { host, store } = make({ onCommit: (_, c) => sent.push(c.seq) });
+    const draft = serverDraft('New');
+    const out = await host.appendAs({ actor: 'u1', draft, start: start(), now: T0 });
+    expect(out).toMatchObject({
+      kind: 'accepted',
+      commit: { seq: 2, parent: 1, id: draft.id, actor: 'u1', datasetVersion: 'fixture-2' }
+    });
+    const rows = store.rowsAfter(0, ALL).map((r) => JSON.parse(r.body));
+    expect(rows[0]).toMatchObject({
+      seq: 1,
+      parent: 0,
+      kind: 'system',
+      label: 'Start',
+      source: 'sim.start',
+      actor: 'u1',
+      build: 'b1',
+      datasetVersion: 'fixture-2',
+      changes: [{ op: 'set', key: 'sim', field: 'name', value: 'Old' }]
+    });
+    expect(rows.map((r) => r.id)).toEqual([rows[0].id, draft.id]);
+    expect(host.ruleset().name).toBe('New');
+    expect(sent).toEqual([1, 2]);
+    await expectInvariants(store, host);
+  });
+
+  it('takes parent and dataset version from the tip, never from the caller', async () => {
+    const { host, store } = make();
+    await append(host, nameDraft(0, 'A', { datasetVersion: 'fixture-1' }));
+    await append(host, nameDraft(1, 'B', { datasetVersion: 'fixture-1' }));
+    const out = await host.appendAs({
+      actor: 'u2',
+      draft: serverDraft('C'),
+      start: start(),
+      now: T0
+    });
+    expect(out).toMatchObject({
+      kind: 'accepted',
+      commit: { seq: 3, parent: 2, datasetVersion: 'fixture-1', actor: 'u2' }
+    });
+    expect(host.ruleset()).toMatchObject({ name: 'C', datasetVersion: 'fixture-1' });
+    await expectInvariants(store, host);
+  });
+
+  it('is refused gone after a takedown and stores nothing', async () => {
+    const { host, store } = make();
+    await host.takeDown(T0);
+    const d = serverDraft('X');
+    expect(await host.appendAs({ actor: 'u1', draft: d, start: start(), now: T0 })).toEqual({
+      kind: 'refused',
+      id: d.id,
+      why: 'gone'
+    });
+    expect(store.totals().seq).toBe(0);
+  });
+
+  it('refuses a name the check refuses and keeps the tip', async () => {
+    const { host, store } = make();
+    await append(host, nameDraft(0, 'A'));
+    const before = snapshot(store, host);
+    const d = serverDraft(' padded ');
+    expect(await host.appendAs({ actor: 'u1', draft: d, start: start(), now: T0 })).toEqual({
+      kind: 'refused',
+      id: d.id,
+      why: 'invalid'
+    });
+    expect(store.totals().seq).toBe(1);
+    expect(snapshot(store, host)).toEqual(before);
+  });
+
+  it('on an empty log, a refused commit keeps the start commit stored before it', async () => {
+    const { host, store } = make();
+    const d = serverDraft(' padded ');
+    expect(await host.appendAs({ actor: 'u1', draft: d, start: start(), now: T0 })).toEqual({
+      kind: 'refused',
+      id: d.id,
+      why: 'invalid'
+    });
+    expect(host.tip()).toBe(1);
+    expect(host.ruleset().name).toBe('Old');
+    expect(host.indexBehind()).toBe(true);
+    await expectInvariants(store, host);
+  });
+
+  it('a start title the check refuses: refused under the draft id, logged, nothing stored', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { host, store } = make({ label: 'sim-7' });
+    const d = serverDraft('New');
+    expect(
+      await host.appendAs({ actor: 'u1', draft: d, start: start({ title: ' padded ' }), now: T0 })
+    ).toEqual({ kind: 'refused', id: d.id, why: 'invalid' });
+    expect(store.totals().seq).toBe(0);
+    expect(err).toHaveBeenCalledOnce();
+    const line = err.mock.calls[0].join(' ');
+    expect(line).toContain('sim-7');
+    expect(line).not.toContain('u1');
+    expect(line).not.toContain('padded');
+    err.mockRestore();
+  });
+
+  it('spends the sim rate budget like any append', async () => {
+    const { host } = make({ limits: { ...LIMITS, burst: 1, perSecond: 0 } });
+    await append(host, nameDraft(0, 'A'));
+    const d = serverDraft('B');
+    expect(await host.appendAs({ actor: 'u1', draft: d, start: start(), now: T0 })).toEqual({
+      kind: 'refused',
+      id: d.id,
+      why: 'limit'
+    });
+  });
+
+  it('appends an id once: a repeat is a duplicate and stores nothing', async () => {
+    const { host, store } = make();
+    await append(host, nameDraft(0, 'A'));
+    const d = serverDraft('B');
+    await host.appendAs({ actor: 'u1', draft: d, start: start(), now: T0 });
+    const before = snapshot(store, host);
+    expect(await host.appendAs({ actor: 'u1', draft: d, start: start(), now: T0 })).toEqual({
+      kind: 'duplicate',
+      id: d.id
+    });
+    expect(snapshot(store, host)).toEqual(before);
+  });
+
+  it('runs in turn: two calls made together both land, in order', async () => {
+    const { host, store } = make();
+    const [a, b] = await Promise.all([
+      host.appendAs({ actor: 'u1', draft: serverDraft('A'), start: start(), now: T0 }),
+      host.appendAs({ actor: 'u1', draft: serverDraft('B'), start: start(), now: T0 })
+    ]);
+    expect([a, b].map((o) => (o.kind === 'accepted' ? o.commit.seq : 0))).toEqual([2, 3]);
+    expect(host.ruleset().name).toBe('B');
+    await expectInvariants(store, host);
+  });
+
+  it('runs in turn with a socket append made together with it', async () => {
+    const { host, store } = make();
+    const [s, w] = await Promise.all([
+      append(host, nameDraft(0, 'Socket')),
+      host.appendAs({ actor: 'u2', draft: serverDraft('Server'), start: start(), now: T0 })
+    ]);
+    expect(s).toMatchObject({ kind: 'accepted', commit: { seq: 1 } });
+    expect(w).toMatchObject({ kind: 'accepted', commit: { seq: 2, parent: 1, actor: 'u2' } });
+    expect(host.ruleset().name).toBe('Server');
+    await expectInvariants(store, host);
+  });
+
+  it('a stored row from a newer build: refused newer', async () => {
+    const store = await storeWithRow({ shapes: SHAPES_REVISION + 1 });
+    const host = new LogHost(store);
+    const rows = store.rowsAfter(0, ALL);
+    const d = serverDraft('X');
+    expect(await host.appendAs({ actor: 'u1', draft: d, start: start(), now: T0 })).toEqual({
+      kind: 'refused',
+      id: d.id,
+      why: 'newer'
+    });
+    expect(store.rowsAfter(0, ALL)).toEqual(rows);
   });
 });
 
