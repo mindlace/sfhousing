@@ -95,6 +95,41 @@ function settle(s: LogState, c: Change, revision: number, resolve: Resolve): Cha
   return out;
 }
 
+const REPEAT = /^(k:[^~]+)(?:~([2-9]|[1-9]\d+))?$/;
+
+/** The highest repeat of a group of identical strokes on `s`: 0 when none is there. */
+function highestRepeat(s: LogState, base: string): number {
+  let t = 0;
+  while (s.item(t === 0 ? base : `${base}~${t + 1}`)) t++;
+  return t;
+}
+
+/**
+ * Where each delete of a stroke repeat goes, by index in `changes`: the key it now targets, or
+ * null when its repeat is gone. With k deletes of one group in the commit and t the highest repeat
+ * on `tip`, the i-th targets repeat t - k + i. Adds earlier in the commit are not counted.
+ */
+function deleteTargets(tip: LogState, changes: readonly Change[]): Map<number, string | null> {
+  const groups = new Map<string, number[]>();
+  changes.forEach((c, index) => {
+    if (c.op !== 'delete') return;
+    const base = REPEAT.exec(c.key)?.[1];
+    if (base === undefined) return;
+    const group = groups.get(base);
+    if (group) group.push(index);
+    else groups.set(base, [index]);
+  });
+  const targets = new Map<number, string | null>();
+  for (const [base, indexes] of groups) {
+    const t = highestRepeat(tip, base);
+    indexes.forEach((index, i) => {
+      const n = t - indexes.length + i + 1;
+      targets.set(index, n < 1 ? null : n === 1 ? base : `${base}~${n}`);
+    });
+  }
+  return targets;
+}
+
 /**
  * R19: re-apply one pending commit's stored changes on `tip`. Never mutates `tip`.
  *
@@ -103,7 +138,9 @@ function settle(s: LogState, c: Change, revision: number, resolve: Resolve): Cha
  * no longer shortens its span as `not-truncation`, and a move with no anchor left in its list as
  * `no-op`; the rest of the commit stands. An add or move whose anchor is gone is re-anchored (see
  * anchorFor), and a stroke add takes the lowest free key of its identical strokes, later changes
- * following the new key. The commit is `empty` when nothing is kept, and `invalid` when a kept
+ * following the new key. With k deletes of one group of identical strokes (`k:D`, `k:D~2`, ...) and
+ * t the highest repeat on `tip`, the i-th delete targets repeat t - k + i and is dropped as `gone`
+ * when that is below 1. The commit is `empty` when nothing is kept, and `invalid` when a kept
  * change is refused or the whole fails the stroke-order or ruleset check. The changes returned,
  * applied to `tip` as one commit, are accepted. Throws LogError('future-shapes'), before any work,
  * for a commit under a shape revision newer than the tip's registry knows.
@@ -116,9 +153,14 @@ export function reapply(tip: LogState, input: FoldInput): Reapplied {
   /** Rewritten stroke keys to their new keys; a key a rewrite took to undefined (its item gone). */
   const renamed = new Map<string, string | undefined>();
   const resolve: Resolve = (key) => (renamed.has(key) ? renamed.get(key) : key);
+  const targets = deleteTargets(tip, input.changes);
   for (let index = 0; index < input.changes.length; index++) {
     const change = input.changes[index];
-    const out = settle(work, change, input.shapes, resolve);
+    let out: Change | DropReason;
+    if (targets.has(index)) {
+      const target = targets.get(index)!;
+      out = target === null || !work.item(target) ? 'gone' : { op: 'delete', key: target };
+    } else out = settle(work, change, input.shapes, resolve);
     if (typeof out === 'string') {
       dropped.push({ index, change, why: out });
       continue;
