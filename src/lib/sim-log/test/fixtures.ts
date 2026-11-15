@@ -7,8 +7,14 @@ import { OBSERVED_TIMING } from '$lib/sim-page/timing';
 import { monthFirstDay, monthLastDay } from '$lib/sim/world/months';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
 import type { StrokeFields } from '../keys';
-import { DEFAULT_SIM_NAME } from '../shapes';
-import type { Change, FoldInput, RulesetContent } from '../types';
+import {
+  DEFAULT_SIM_NAME,
+  REGISTRY,
+  type Fields,
+  type Registry,
+  type ShapeVersion
+} from '../shapes';
+import { LogFormatError, type Change, type FoldInput, type RulesetContent } from '../types';
 
 export const AS_OF = FIXTURE_AS_OF;
 export const first = (m: number) => monthFirstDay(AS_OF, m);
@@ -92,3 +98,39 @@ export const input = (changes: Change[], over: Partial<FoldInput> = {}): FoldInp
   datasetVersion: 'fixture-0',
   ...over
 });
+
+/**
+ * Current revision 2. `policy.transit` has a legacy version 1 whose label field is `title`,
+ * raised to REGISTRY's version as version 2. Revision 1 maps it to 1 and revision 2 to 2; every
+ * other shape is REGISTRY's at 1.
+ */
+export function twoVersionRegistry(): Registry {
+  const now = REGISTRY.shapes['policy.transit'][0];
+  const legacy: ShapeVersion = {
+    parse(fields, path) {
+      if (typeof fields !== 'object' || fields === null || !('title' in fields))
+        throw new LogFormatError(`${path}.title`, 'missing');
+      if ('label' in fields) throw new LogFormatError(`${path}.label`, 'unknown key');
+      const { title, ...rest } = fields as Fields;
+      const { label, ...parsed } = now.parse({ ...rest, label: title }, path);
+      return { ...parsed, title: label };
+    },
+    settable: { title: now.settable.label, on: now.settable.on },
+    up: {
+      fields({ title, ...rest }) {
+        return { ...rest, label: title };
+      },
+      set: (field, value) => ({ field: field === 'title' ? 'label' : field, value })
+    }
+  };
+  return {
+    current: 2,
+    revisions: {
+      1: Object.fromEntries(Object.keys(REGISTRY.shapes).map((n) => [n, 1])),
+      2: Object.fromEntries(
+        Object.keys(REGISTRY.shapes).map((n) => [n, n === 'policy.transit' ? 2 : 1])
+      )
+    },
+    shapes: { ...REGISTRY.shapes, 'policy.transit': [legacy, now] }
+  };
+}

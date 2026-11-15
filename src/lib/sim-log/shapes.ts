@@ -1,6 +1,6 @@
 import { SIM_TITLE_MAX } from '$lib/members/copy';
 import type { Effect, PolicyKind, Selector } from '$lib/timeline/policy4';
-import { LogFormatError } from './types';
+import { LogError, LogFormatError } from './types';
 
 export type Fields = Record<string, unknown>;
 export interface ShapeVersion {
@@ -180,3 +180,44 @@ export const REGISTRY: Registry = {
   revisions: { 1: Object.fromEntries(Object.keys(shapes).map((n) => [n, 1])) },
   shapes
 };
+
+/** The version of `shape` in `revision`; LogError('future-shapes') above reg.current, LogError('invalid-change') when the revision lacks the shape. */
+export function versionAt(reg: Registry, revision: number, shape: string): number {
+  if (revision > reg.current)
+    throw new LogError(
+      'future-shapes',
+      `shape revision ${revision} is newer than this build's ${reg.current}`
+    );
+  const v = reg.revisions[revision]?.[shape];
+  if (v === undefined)
+    throw new LogError('invalid-change', `shape revision ${revision} has no shape ${shape}`);
+  return v;
+}
+
+/** Fields written at `from` raised to the current version through each `up.fields`. */
+export function upgradeFields(reg: Registry, shape: string, from: number, f: Fields): Fields {
+  const versions = reg.shapes[shape];
+  let out = f;
+  for (let v = from; v < versions.length; v++) {
+    const up = versions[v - 1].up;
+    if (up) out = up.fields(out);
+  }
+  return out;
+}
+
+/** A set written at `from` raised through each `up.set` (identity when absent). */
+export function upgradeSet(
+  reg: Registry,
+  shape: string,
+  from: number,
+  field: string,
+  value: unknown
+): { field: string; value: unknown } {
+  const versions = reg.shapes[shape];
+  let out = { field, value };
+  for (let v = from; v < versions.length; v++) {
+    const set = versions[v - 1].up?.set;
+    if (set) out = set(out.field, out.value);
+  }
+  return out;
+}
