@@ -244,16 +244,33 @@ describe('LogStore', () => {
     expect(ids(s.policy)).toEqual(['z1']);
   });
 
-  it('an undo whose aligned target is what is shown returns null and authors nothing', async () => {
+  it('skips an undo target that, aligned, is what is shown, and undoes the next one', async () => {
     const { s, obj } = await onSim({ stamp: stampOf(F1), align: renamingAlign([DS, F1]) });
+    foreign(s, obj, addChanges('a'), { label: 'A' });
     // Another tab's edit on F1 names the sim as align would: undoing it, aligned, is no change.
-    foreign(s, obj, [nameChange('Start @fixture-1')], { datasetVersion: F1 });
+    foreign(s, obj, [nameChange('Start @fixture-1')], { datasetVersion: F1, label: 'Rename' });
     s.setServerDataset(F1);
-    expect([s.canUndo, s.undoLabel]).toEqual([true, 'Edit']);
-    expect(s.undo()).toBeNull();
+    expect([s.canUndo, s.undoLabel]).toEqual([true, 'A']);
+    expect(s.undo()).toBe('A');
+    expect(s.pending.map((p) => [p.draft.kind, p.draft.restores])).toEqual([
+      ['restore', { position: 1, as: 'undo' }]
+    ]);
+    expect([ids(s.policy), s.name, s.refusal]).toEqual([[], 'Start @fixture-1', null]);
+  });
+
+  it('has no undo when the only target, aligned, is what is shown', async () => {
+    const s = new LogStore(opts({ stamp: stampOf(F1), align: renamingAlign([DS, F1]) }));
+    const sim = newId();
+    await s.open(sim);
+    const obj = new FakeObject();
+    // A system commit empties the undo stack: the rename on F1 is the only change to undo.
+    const start = { kind: 'system', source: SOURCES.import } as const;
+    accept(obj, draftOf(0, [nameChange('Start'), ...addChanges('a')], start));
+    accept(obj, draftOf(1, [nameChange('Start @fixture-1')], { datasetVersion: F1 }));
+    s.receive(sim, obj.commits);
+    s.setServerDataset(F1);
+    expect([s.canUndo, s.undoLabel, s.undo()]).toEqual([false, null, null]);
     expect(s.pendingCount).toBe(0);
-    expect(s.refusal).toBeNull();
-    expect(s.name).toBe('Start @fixture-1');
   });
 
   it('undo commits an open draft, then undoes it', async () => {

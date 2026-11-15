@@ -1042,8 +1042,11 @@ export class LogStore implements DocStore {
       this.#shownAt.set(shown, log.idAt(log.position));
     }
     const editable = stopped === null && this.#decision().kind === 'edit';
-    const undo = editable && draft === null ? nextTarget(log, 'undo') : null;
-    const redo = editable && draft === null ? nextTarget(log, 'redo') : null;
+    const stamp = this.#opts.stamp();
+    const target = (which: 'undo' | 'redo') =>
+      editable && draft === null ? nextTarget(log, which, this.#align, stamp) : null;
+    const undo = target('undo');
+    const redo = target('redo');
     this.#targets = { undo, redo };
     this.#name = fold.name;
     this.#stopped = stopped;

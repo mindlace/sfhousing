@@ -193,14 +193,27 @@ export function authorMove(
   return submit(log, draft, null, limitsOf(full), capsOf(full));
 }
 
-/** The undo or redo target, skipping targets equal to the local ruleset (decision 10). */
-export function nextTarget(log: LocalLog, which: 'undo' | 'redo'): HistoryTarget | null {
+/**
+ * The undo or redo target, skipping targets equal to the local ruleset (decision 10). A target is
+ * compared as `authorRestore` would author it: aligned to `stamp`'s dataset when it is on another,
+ * so a target it would answer `unchanged` for is skipped. One `align` cannot reach is answered
+ * (`authorRestore` refuses it `invalid`).
+ */
+export function nextTarget(
+  log: LocalLog,
+  which: 'undo' | 'redo',
+  align: Align,
+  stamp: Stamp
+): HistoryTarget | null {
   const history: History = log.history().clone();
   const here = rulesetText(log.ruleset());
+  const to = stamp.datasetVersion;
   for (;;) {
     const target = history[which];
     if (target === null) return null;
-    if (rulesetText(log.rulesetAt(target.position)) !== here) return target;
+    const at = log.rulesetAt(target.position);
+    const content = at.datasetVersion !== null && at.datasetVersion !== to ? align(at, to) : at;
+    if (content === null || rulesetText(content) !== here) return target;
     history.push({
       seq: history.position + 1,
       kind: 'restore',

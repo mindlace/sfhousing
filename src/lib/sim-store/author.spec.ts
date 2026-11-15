@@ -206,7 +206,7 @@ describe('authorRestore and nextTarget', () => {
     const log = fresh();
     edit(log, (r) => withZ(r, 'a'), 'Add a');
     edit(log, (r) => withZ(r, 'b'), 'Add b');
-    const t = nextTarget(log, 'undo');
+    const t = nextTarget(log, 'undo', identity, stamp);
     expect(t).toEqual({ position: 1, label: 'Add b' });
     const r = authorRestore(
       log,
@@ -226,37 +226,37 @@ describe('authorRestore and nextTarget', () => {
     expect(r.pending.targetId).toBe(log.idAt(1));
     expect(ids(log.ruleset())).toEqual(['a']);
     expect(text(log.ruleset())).toBe(text(log.rulesetAt(1)));
-    expect(nextTarget(log, 'redo')).toEqual({ position: 2, label: 'Add b' });
+    expect(nextTarget(log, 'redo', identity, stamp)).toEqual({ position: 2, label: 'Add b' });
   });
 
   it('walks the spec table of undo and redo', () => {
     const log = fresh();
     for (const id of ['a', 'b', 'c', 'd', 'e']) edit(log, (r) => withZ(r, id), `Add ${id}`);
-    expect(nextTarget(log, 'undo')).toEqual({ position: 4, label: 'Add e' });
-    expect(nextTarget(log, 'redo')).toBeNull();
+    expect(nextTarget(log, 'undo', identity, stamp)).toEqual({ position: 4, label: 'Add e' });
+    expect(nextTarget(log, 'redo', identity, stamp)).toBeNull();
     const restore = (position: number, as: Restores['as']) => {
       const r = authorRestore(log, position, as, meta({ label: `${as} ${position}` }), identity);
       if (!r.ok) throw new Error(r.why);
     };
     restore(4, 'undo'); // position 6
     expect(ids(log.ruleset())).toEqual(['a', 'b', 'c', 'd']);
-    expect(nextTarget(log, 'undo')?.position).toBe(3);
-    expect(nextTarget(log, 'redo')?.position).toBe(5);
+    expect(nextTarget(log, 'undo', identity, stamp)?.position).toBe(3);
+    expect(nextTarget(log, 'redo', identity, stamp)?.position).toBe(5);
     restore(3, 'undo'); // position 7
     expect(ids(log.ruleset())).toEqual(['a', 'b', 'c']);
-    expect(nextTarget(log, 'undo')?.position).toBe(2);
-    expect(nextTarget(log, 'redo')?.position).toBe(6);
+    expect(nextTarget(log, 'undo', identity, stamp)?.position).toBe(2);
+    expect(nextTarget(log, 'redo', identity, stamp)?.position).toBe(6);
     restore(6, 'redo'); // position 8
     expect(ids(log.ruleset())).toEqual(['a', 'b', 'c', 'd']);
-    expect(nextTarget(log, 'undo')?.position).toBe(7);
-    expect(nextTarget(log, 'redo')?.position).toBe(5);
+    expect(nextTarget(log, 'undo', identity, stamp)?.position).toBe(7);
+    expect(nextTarget(log, 'redo', identity, stamp)?.position).toBe(5);
     edit(log, (r) => withZ(r, 'f'), 'Add f'); // position 9
     expect(ids(log.ruleset())).toEqual(['a', 'b', 'c', 'd', 'f']);
-    expect(nextTarget(log, 'undo')).toEqual({ position: 8, label: 'Add f' });
-    expect(nextTarget(log, 'redo')).toBeNull();
+    expect(nextTarget(log, 'undo', identity, stamp)).toEqual({ position: 8, label: 'Add f' });
+    expect(nextTarget(log, 'redo', identity, stamp)).toBeNull();
     restore(8, 'undo'); // position 10
     expect(ids(log.ruleset())).toEqual(['a', 'b', 'c', 'd']);
-    expect(nextTarget(log, 'undo')?.position).toBe(7);
+    expect(nextTarget(log, 'undo', identity, stamp)?.position).toBe(7);
   });
 
   it('skips an undo target equal to the current ruleset', () => {
@@ -272,14 +272,77 @@ describe('authorRestore and nextTarget', () => {
     expect(log.pending.length).toBe(1);
     expect(text(log.rulesetAt(2))).toBe(text(log.ruleset()));
     expect(log.history().undo).toEqual({ position: 2, label: 'Local name' });
-    expect(nextTarget(log, 'undo')).toEqual({ position: 1, label: 'Foreign name' });
+    expect(nextTarget(log, 'undo', identity, stamp)).toEqual({
+      position: 1,
+      label: 'Foreign name'
+    });
     expect(log.history().undo).toEqual({ position: 2, label: 'Local name' });
   });
 
   it('answers null when every target equals the current ruleset', () => {
     const log = fresh();
-    expect(nextTarget(log, 'undo')).toBeNull();
-    expect(nextTarget(log, 'redo')).toBeNull();
+    expect(nextTarget(log, 'undo', identity, stamp)).toBeNull();
+    expect(nextTarget(log, 'redo', identity, stamp)).toBeNull();
+  });
+
+  describe('a target on another dataset, compared as authorRestore would author it', () => {
+    const align = renamingAlign([DS, F1]);
+    const onF1 = { datasetVersion: F1, build: 'test' };
+    /** DS: Add a, then Add b; then F1: a rename to what align gives (no move between). */
+    const log = (): LocalLog => {
+      const o = new FakeObject();
+      const a = withZ(EMPTY, 'a');
+      const ab = withZ(a, 'b');
+      for (const [d, label] of [
+        [diff(EMPTY, a), 'Add a'],
+        [diff(a, ab), 'Add b']
+      ] as const) {
+        const r = o.append(draftOf(o.commits.length, d, { label }));
+        if (r.kind !== 'accepted') throw new Error(label);
+      }
+      const rename = [nameChange(`${DEFAULT_SIM_NAME} @${F1}`)];
+      const r = o.append(draftOf(2, rename, { datasetVersion: F1, label: 'Rename' }));
+      if (r.kind !== 'accepted') throw new Error('rename');
+      return fresh({ confirmed: o.commits, align });
+    };
+
+    it('skips a target whose aligned content is the current fold', () => {
+      const l = log();
+      // Raw, position 2 differs from the fold by its name; aligned to F1 it is the fold.
+      expect(text(l.rulesetAt(2))).not.toBe(text(l.ruleset()));
+      expect(nextTarget(l, 'undo', identity, onF1)).toEqual({ position: 2, label: 'Rename' });
+      const t = nextTarget(l, 'undo', align, onF1);
+      expect(t).toEqual({ position: 1, label: 'Add b' });
+      // What it answers, authorRestore authors.
+      const r = authorRestore(l, t!.position, 'undo', meta({ stamp: onF1 }), align);
+      expect(r.ok).toBe(true);
+      expect(ids(l.ruleset())).toEqual(['a']);
+    });
+
+    it('answers a target align cannot reach (authorRestore refuses it, visibly)', () => {
+      const l = log();
+      const onF9 = { datasetVersion: 'fixture-9', build: 'test' };
+      expect(nextTarget(l, 'undo', align, onF9)).toEqual({ position: 2, label: 'Rename' });
+      expect(authorRestore(l, 2, 'undo', meta({ stamp: onF9 }), align)).toEqual({
+        ok: false,
+        why: 'invalid'
+      });
+    });
+
+    it('answers null when the only target, aligned, is the current fold', () => {
+      const o = new FakeObject();
+      const a = withZ(EMPTY, 'a');
+      const s = { kind: 'system', source: SOURCES.import } as const;
+      for (const d of [
+        draftOf(0, diff(EMPTY, a), s),
+        draftOf(1, [nameChange(`${DEFAULT_SIM_NAME} @${F1}`)], { datasetVersion: F1 })
+      ]) {
+        if (o.append(d).kind !== 'accepted') throw new Error('append');
+      }
+      const l = fresh({ confirmed: o.commits, align });
+      expect(nextTarget(l, 'undo', identity, onF1)?.position).toBe(1);
+      expect(nextTarget(l, 'undo', align, onF1)).toBeNull();
+    });
   });
 
   it('restores a jump onto another dataset, aligned (decision 12)', () => {
@@ -514,7 +577,7 @@ describe('two writers (I10)', () => {
               if (w[s.who === 'A' ? 'B' : 'A'].log.pending.length > 0) seen.foreignPending++;
               authorEdit(log, next, meta());
             } else if (s.op === 'undo') {
-              const t = nextTarget(log, 'undo');
+              const t = nextTarget(log, 'undo', identity, stamp);
               if (t) {
                 const r = authorRestore(
                   log,

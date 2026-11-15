@@ -181,8 +181,6 @@ A draft open when the tab closes is committed in memory by `settle()` (the page 
 - While a draft is open, `canUndo` is true with the draft's label and `canRedo` is false. `undo()` commits the draft and undoes it. If the draft came to nothing it returns its label and undoes nothing, so undo stops there rather than undoing an older change; a draft refused at that moment answers null with `refusal` set.
 - `undoTo(p, label)` is a jump. It restores the position of the commit that produced `p` when this store showed `p` and that commit is still held (a restore `as: 'jump'`, which clears redo and counts as an edit for later undo); a policy this store never showed, or whose commit is gone, is an ordinary edit to `p` through `normalize`. Both use source `sim.revert`. When `p` is what the fold is, nothing is authored.
 
-Known limit: an undo whose target, aligned to the page's dataset, equals the current state answers null and leaves `canUndo` true, since `nextTarget` compares the unaligned target. It needs a target on another dataset with no move between.
-
 ## The database
 
 `SimDb` is the store's view of the device: `memorySimDb()` (Node, tests, and the reference semantics) and `openSimDb()` (IndexedDB). Both pass the same suite, `test/sim-db-contract.ts`. Every write is one atomic transaction: it applies wholly or not at all, and its promise settles only when the transaction is durable (resolved) or refused (rejected, nothing written).
