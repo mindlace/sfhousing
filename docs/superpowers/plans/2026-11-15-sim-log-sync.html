@@ -1,0 +1,2894 @@
+<article>
+  <header>
+    <h1>Sim log store, plan 2: registration, the socket client and tabs</h1>
+    <p>Unit 4 of the sim message log, second of four plans: the server's <code>hello</code> carries its dataset, resumes and account deletions are bounded, and a browser library (<code>src/lib/sim-sync/</code>) registers a sim, keeps one socket per sim, sends the store's pending commits one at a time, claims the work of closed tabs and states the save state as data. No page changes: <code>/sim</code> keeps its old store until plan 3.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Everything plan 3 needs to put <code>/sim</code> on the log, short of the page: server changes that must merge before browser registration ships (the dataset in <code>hello</code>, a bounded resume, a bounded account deletion), four small additions to plan 1's store, and a <code>SimSync</code> per tab that ties registration, the socket, tabs and the save state together, tested in Node against fakes and, for Web Locks and BroadcastChannel, in real Chromium.</dd>
+      <dt>Architecture</dt>
+      <dd>Server: <code>src/lib/sim-stream/</code> (frames, limits), <code>src/lib/server/sim-object/</code> (<code>LogHost.resume</code>, the object's wiring), <code>src/lib/server/user-store/deletion.ts</code> and the account route and pane. Store: <code>src/lib/sim-store/</code> gains <code>tipSeq</code>, <code>registration</code>, <code>markRegistered</code> and <code>SimDb.pendingOwners</code>. Client: new directory <code>src/lib/sim-sync/</code>, plain modules with injected ports (clock, socket constructor, fetch, Web Locks, BroadcastChannel, network signals), so every state change is driven by a test with no timers and no network. Order: server first (each task mergeable alone), then the store additions, then the client bottom-up, then docs.</dd>
+      <dt>Tech stack</dt>
+      <dd>SvelteKit 2, Svelte 5 runes (<code>$state.raw</code> in <code>sim-sync.svelte.ts</code> only), TypeScript, Vitest (projects <code>server</code> and <code>client</code>), Playwright against <code>wrangler dev</code>, Cloudflare Durable Objects (hibernating websockets). No new dependency.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-14-sim-message-log-design.html"><code>docs/superpowers/specs/2026-11-14-sim-message-log-design.html</code></a> (R15 to R31, R38 to R42, R51 to R55, R60; the frames table; the carried lists). The cut: <a href="2026-11-15-sim-log-store-outline.html#sec-plan-2">the outline, Plan 2</a>. The store as built: <code>docs/dev/sim-store.md</code>. The server: <code>docs/dev/sim-object.md</code>, <code>docs/dev/auth.md</code>.</dd>
+    </dl>
+    <p>Twelve tasks, so one plan. Tasks 1 to 3 change the server and each merges alone; task 4 changes plan 1's store; tasks 5 to 11 build <code>src/lib/sim-sync/</code>; task 12 is the docs.</p>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li>Work only in <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/sim-log-sync</code>. If <code>node_modules</code> is missing run <code>npm install</code>; for e2e also <code>.dev.vars</code> with <code>PUBLIC_DATASET_VERSION=fixture-0</code>, <code>npm run data:fixture</code>, <code>npm run db:migrate</code> (CLAUDE.md, Setup).</li>
+      <li>Never compound <code>cd … &amp;&amp; cmd</code>: use absolute paths or a <code>cd</code> on its own. Run everything in the foreground; start no background work.</li>
+      <li>Port 4173 is shared with other sessions. Playwright's <code>webServer</code> starts the preview there and refuses a busy port (<code>playwright.config.ts:54</code>). If it is busy, wait and try again later; never kill the process that holds it.</li>
+      <li>Conventional Commits; a multi-line message uses several <code>-m</code> flags, never a heredoc. No Claude attribution anywhere (commits, code, comments, docs).</li>
+      <li>Style: 2 spaces, single quotes, no trailing commas, 100 columns. <code>npm run lint</code> and <code>npm run check</code> clean for every file touched.</li>
+      <li><strong>Tests that pass signoff.</strong> No <code>setTimeout</code>, <code>setInterval</code> or any fixed wait in any spec or test helper, even zero-length: time moves only through <code>FakeClock.advance</code> (Task 5), work is held on promises the test resolves, and waits are on signals (<code>expect.poll</code>, <code>vi.waitFor</code>, a promise a listener resolves). No raised timeouts, no retries. <code>queueMicrotask</code> and <code>await Promise.resolve()</code> are not waits and are allowed. Every test calls <code>expect</code> (<code>expect.requireAssertions</code>). A property test is seeded (<code>{ seed: 42 }</code>) and stays under 600 ms (<code>--reporter verbose</code> prints times). Tests print nothing: a test whose code logs mocks the console with <code>mockConsole</code> (<code>src/lib/server/test/mock-console.ts:20</code>) and asserts the line. Unexpected stderr from the preview server fails signoff. End-to-end specs wait on frames or responses and run clean five times with retries off (<code>npx playwright test &lt;file&gt; --project chromium --repeat-each=5 --retries=0</code>).</li>
+      <li>After every task: <code>npx chreode timing-check --head HEAD</code> reports nothing.</li>
+      <li>Projects: <code>*.spec.ts</code> runs in Vitest <code>server</code> (Node); <code>*.svelte.spec.ts</code> runs in <code>client</code> (Chromium). Each task names its files; a Node test that imports <code>log-store.svelte.ts</code> or <code>sim-sync.svelte.ts</code> is still <code>*.spec.ts</code> (the server project compiles runes, as <code>log-store.spec.ts</code> already does).</li>
+      <li><strong>Security and privacy.</strong> No access, origin, session or rate check is weakened: the stream route (<code>src/routes/api/sims/[simId]/stream/+server.ts:19-49</code>), <code>POST /api/sims</code> and <code>DELETE /api/account</code> keep every check in its order. Any access decision fails closed: an unknown answer from <code>/api/sims</code> registers nothing and sends nothing; an unknown frame changes nothing. Logs carry a sim id and <code>loggable(e)</code> (server) or a reason code, a status or an error name (browser) only: never an identity, address, title, token or commit body, and the browser never logs a sim id before its registration succeeded. This plan generates and sets no secret and never touches <code>SIM_TAKEDOWN_TOKEN</code>.</li>
+      <li>No new dependency. Nothing in <code>src/lib/sim-sync/</code> imports <code>$app/*</code>, <code>$env/*</code> or <code>$lib/server/*</code>; it reaches the browser only through the ports it is given. Browser logs use <code>console.error</code> prefixed <code>[sim-sync]</code>; the store keeps <code>[sim-store]</code>.</li>
+      <li>Values pinned by the spec and earlier units: <code>PROTOCOL</code> 1 (<code>src/lib/sim-stream/protocol.ts:5</code>); <code>LIMITS</code> (<code>src/lib/sim-stream/limits.ts:14-24</code>); close 4410 is gone (<code>protocol.ts:11</code>); the register answers (<code>docs/dev/auth.md</code>, Registering a sim); the default name comes from the server (no title is posted, R42).</li>
+      <li>Values this plan pins: <code>LIMITS.resumeBytes</code> 8,388,608; resume budget 33,554,432 bytes burst, 4,194,304 a second; reconnect backoff 1 s doubling to 30 s, jitter ±20%; hello timeout 10 s; ping every 30 s while visible; 50 sims per account-deletion pass; lock names <code>sfh-tab:&lt;tabId&gt;</code> and <code>sfh-register</code>; channel <code>sfh-sim</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>An append answered by silence.</strong> The object sends no frame for a duplicate id (<code>decide.ts:46</code>, <code>sim-object.ts:173-178</code>). The client's one in-flight append must still resolve, from the stored copy on the stream. That holds only because nothing is sent before the resume answer ends with <code>more: false</code> on that connection. Try to make the client send early (after a gap, after a store <code>open</code>, after a reconnect) and leave an append in flight for ever. Pinned by Task 8, S10, and Task 7, C7 and C10.</li>
+      <li><strong>A frame or a send for the wrong sim.</strong> The store's sim changes under a live socket: <code>open</code> of another sim, adopting the current sim, a withdrawn import. Late events of a stopped socket, a registration answer for the old sim, a <code>head()</code> of the new sim on the old socket. Pinned by C17, C18, S13 and Task 11, Y9 and Y10.</li>
+      <li><strong>The capped resume and the resumed mark.</strong> A socket is marked resumed only when an answer reaches the tip; a resumed socket that resumes again gets live frames between pages. Look for a commit stored between the last page read and the mark, a socket that never gets live commits, and a budget refusal mid-answer. Pinned by Task 2's host tests and C7, C9, C22.</li>
+      <li><strong>Registration of a look that becomes an edit, and <code>taken</code>.</strong> No socket may feed another person's commits into a sim this device minted; an <code>ok</code> must bring write to a socket opened signed out. Pinned by Y6, Y8 and the registration table.</li>
+      <li><strong>The save state.</strong> It must never say saved while anything is pending or held, and never "on this device" while storage has failed; and the account-deletion loop must end. Pinned by Task 10's property and rows, Task 3's pass tests and the pane's pass cap.</li>
+    </ol>
+  </section>
+
+  <section id="sec-invariants">
+    <h2>Invariants</h2>
+    <p>Each holds after every public call of <code>SimSocket</code>, <code>SimSync</code> and <code>TabPresence</code> returns. The store's I1 to I12 (<code>docs/dev/sim-store.md</code>, Invariants) still hold; this plan adds no way around them. Tests name the ones they pin.</p>
+    <ol>
+      <li id="s1"><strong>S1, one in flight, after the resume.</strong> A socket has at most one append unanswered, and sends none on a connection until a resume answer on it ended with <code>more: false</code> and no other resume is outstanding.</li>
+      <li id="s2"><strong>S2, only what the store hands out, for its own sim.</strong> Every append is <code>store.head()</code> read at the moment of sending, and is sent only when <code>store.ready</code> and <code>store.simId</code> equals the socket's sim.</li>
+      <li id="s3"><strong>S3, frames go to the sim they came from.</strong> Every <code>receive</code> names the socket's sim id; a socket whose sim is no longer the store's is stopped; events of a stopped or replaced socket are ignored.</li>
+      <li id="s4"><strong>S4, the client never confirms or discards on its own.</strong> A commit leaves pending only through <code>store.receive</code> (the store's I4) or <code>store.dropPending</code> on an <code>invalid</code> refusal naming it. <code>not-writer</code>, <code>limit</code>, <code>full</code>, <code>newer</code>, <code>gone</code>, a close, <code>taken</code>, <code>sign-in</code> and <code>quota</code> leave every commit pending and stored.</li>
+      <li id="s5"><strong>S5, registration only for the device's own work.</strong> <code>POST /api/sims</code> is sent only when the store says <code>'needed'</code> (the sim is stored here, or storage is unavailable or failed for a sim this store minted) and the sim has something to send (pending, or stopped with held commits); never for a look; one request at a time per browser.</li>
+      <li id="s6"><strong>S6, no socket without a registered or foreign sim.</strong> A socket is open only when the store says <code>'done'</code> (registered) or <code>'none'</code> (a sim with no record on this device: a look), and never after <code>taken</code>.</li>
+      <li id="s7"><strong>S7, dev sends nothing.</strong> With <code>live: false</code> no fetch is made and no socket is opened.</li>
+      <li id="s8"><strong>S8, claims only from gone tabs.</strong> Pending records are claimed only from owners whose tab lock is free, never from this tab; without Web Locks, from every other owner, at open only.</li>
+      <li id="s9"><strong>S9, the save state is honest.</strong> Never <code>saved</code> while <code>pendingCount &gt; 0</code> or <code>stopped</code> is set; never <code>device</code> while <code>local</code> is <code>'failed'</code>.</li>
+      <li id="s10"><strong>S10, every wait is the clock's.</strong> Every timer goes through the injected <code>Clock</code>; reconnect delays follow <code>backoffDelay</code>; nothing reconnects after 4410, an append refused <code>gone</code>, a resume refused <code>gone</code> or another protocol.</li>
+    </ol>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions</h2>
+    <ol>
+      <li id="d1"><strong>Send only after the resume completes</strong> (S1). A duplicate append gets no frame (<code>decide.ts:46</code>; <code>sim-object.ts:173-178</code> answers only a refusal). On a connection whose resume reached the tip, every stored commit has reached the socket before any append it sends is processed (the answer and the live broadcast are in one serialized order, <code>log-host.ts:239-246</code>), so an in-flight id that is a duplicate always arrives on the stream and resolves the append. Confirmed with the prototype (<a href="#sec-ran">What was run</a>, case 6).</li>
+      <li id="d2"><strong>A resume answer ends with <code>more</code>.</strong> The last <code>commits</code> frame of every resume answer carries <code>"more": false</code> (caught up) or <code>true</code> (capped: send the next <code>resume</code>); live frames and the other frames of an answer carry none. <code>PROTOCOL</code> stays 1: the field is additive and the e2e helper reads only <code>commits</code>. Reason: today an answer has no end marker (sim-object.md, Resume), so a client cannot tell when it may send (decision 1).</li>
+      <li id="d3"><strong>The resume bound.</strong> An answer holds at most <code>LIMITS.resumeBytes</code> (8 MiB) of stored bodies (always at least one commit); an object-wide byte budget (a <code>RateBucket</code> of 32 MiB, refilled at 4 MiB a second) pays for each 500-row page as it is read; a spent budget refuses the first page <code>{"type":"refused","id":null,"why":"limit"}</code> and cuts a later one with <code>more: true</code>. The browser asks for the next page only after the last frame of the previous one, so one socket never has more than about 9 MiB queued. Reason: workerd queues <code>send()</code> without limit or <code>bufferedAmount</code> (checked, <a href="#sec-ran">What was run</a>), the object has 128 MB and a sim up to 64 MiB. The numbers are a proposal: 32 MiB of queued frames plus a 64 MiB fold fits 128 MB.</li>
+      <li id="d4"><strong>A socket is marked resumed when an answer reaches the tip</strong> (<code>more: false</code>), not at its first page as today (<code>sim-object.ts:153-157</code>). Within the serialized section no commit can be stored between the last page read and the mark, so I7 of the object still holds; a capped answer gets no live frames until it catches up. A socket already resumed stays resumed.</li>
+      <li id="d5"><strong>A resume refused <code>gone</code> halts as <code>diverged</code>.</strong> The outline said "restarts from 0"; the store cannot: <code>receive</code> skips seqs at or below its tip (<code>local-log.ts</code>, The log), so a resume from 0 would apply nothing. A resume past the tip means the device's log is not this sim's (a takedown closes sockets 4410 first): the socket stops, the commits stay, the save state says why.</li>
+      <li id="d6"><strong>One <code>SimSocket</code> class with injected ports, not a pure reducer plus a driver.</strong> A pure machine would need the store's head and tip passed in on every event and <code>receive</code>'s answer fed back as another event; with the socket constructor, the clock and the store injected, the class is as deterministic in tests and half the surface. Departs from the outline's <code>SocketMachine</code>; the state table below is the contract.</li>
+      <li id="d7"><strong>What the device knows decides registration.</strong> Plan 1's store keeps <code>registered</code> on the sim record but does not expose it, nor the confirmed tip (the resume needs it), nor which tabs own records (claims need it). Task 4 adds <code>LogStore.tipSeq</code>, <code>LogStore.registration</code> (<code>'none' | 'wait' | 'needed' | 'done'</code>), <code>LogStore.markRegistered(simId)</code> and <code>SimDb.pendingOwners(simId)</code>. A device that recorded the registration never posts again, so a person whose session has expired is not told <code>taken</code> for their own sim (a signed-out repeat of an id in use is 409).</li>
+      <li id="d8"><strong>Registration answers.</strong> <code>ok</code> records it (<code>markRegistered</code>) and connects, reconnecting a read socket that could not write. <code>sign-in</code>: keep, no socket, post again on <code>retryRegistration()</code> or the next load. <code>taken</code>: keep on the device, unsent, stop any socket (never feed another sim's commits into this one); the sharing unit turns them into a remix (R32, R53). <code>quota</code>: keep, report, post again on <code>retryRegistration()</code> or the next load. <code>retry</code> (429, 5xx, network): back off as the socket does; <code>online</code> retries at once. <code>bug</code> (400, 403 without <code>quota</code>, 415, anything else): stop and log the status and code.</li>
+      <li id="d9"><strong>Every registration is single-flight</strong> through the Web Lock <code>sfh-register</code> (without Web Locks, a promise chain in the tab). The client cannot tell whether it is signed in, and a serialized repeat costs nothing.</li>
+      <li id="d10"><strong>Tabs wait on each other's locks.</strong> Each tab holds <code>sfh-tab:&lt;tabId&gt;</code> for its life. At open, owners of the sim's pending records whose lock is free (<code>locks.query()</code>) are claimed through <code>store.open(simId, { claim })</code>; for each owner still alive, and each tab heard on the <code>BroadcastChannel('sfh-sim')</code> (<code>{ type: 'here', tabId, reply }</code>), the tab requests that tab's lock, which is granted only when it is gone, then claims its records with <code>store.claim([owner])</code>. Departs from the outline's <code>pagehide</code> message plus <code>query()</code>: the lock is still held when <code>pagehide</code> fires, so the query would race it; waiting on the lock needs no polling. Tab ids are never reused, so a free lock means gone for good.</li>
+      <li id="d11"><strong>Without Web Locks</strong> (all current browsers have them: Chrome 69, Safari 15.4, Firefox 96) a tab claims every other owner's records at open and nothing later (the outline's rule): a live tab whose records are taken learns it from its next write (<code>lost</code>) and the claimer sends them, at the cost of rate tokens, never of a commit.</li>
+      <li id="d12"><strong>Dev is an option.</strong> <code>SimSyncOptions.live</code>: plan 3 passes <code>!dev</code> from <code>$app/environment</code>. With <code>live: false</code> nothing is fetched or opened, tabs and claims still run (they are local), and the save state is <code>device</code> with why <code>dev</code>. Reason: the library must not import <code>$app/*</code>, and <code>import.meta.env.DEV</code> is true under Vitest, which would switch off every test.</li>
+      <li id="d13"><strong>The backoff resets on progress, not on <code>hello</code>.</strong> A confirmed append, or reaching live with nothing to send, resets it. A sim whose stored rows no longer fold closes every append 1011 (sim-object.md, Close codes): resetting on <code>hello</code> would loop every second.</li>
+      <li id="d14"><strong>Network signals.</strong> <code>offline</code> closes the socket and waits; <code>online</code> connects at once (and retries a registration at once). <code>visible</code> while waiting connects at once; <code>visible</code> while the socket cannot write (a <code>not-writer</code> hold, or <code>access</code> said <code>write: false</code>) reconnects (<code>SimSync</code> does it), so a sign-in made in another tab gives this socket write. A text <code>ping</code> every 30 s while visible; a connection with no <code>hello</code> in 10 s is a failed attempt. The object's hibernation is invisible to the client: the socket stays open and its attachment keeps <code>resumed</code>.</li>
+      <li id="d15"><strong>Holds and halts.</strong> <code>full</code> and <code>newer</code> hold sending for the life of the <code>SimSocket</code> (across reconnects); <code>not-writer</code> and <code>limit</code> are cleared by a new connection. Halts (<code>gone</code>, <code>diverged</code>, <code>protocol</code>) close the socket for good.</li>
+      <li id="d16"><strong><code>hello.build</code></strong> different from the page's build is reported (<code>buildMismatch</code>) and changes nothing else (outline). <strong>No tip-hash check</strong> after a resume (plan 1, decision 26): nothing to compare against without another protocol field, and a mismatch would be a server bug the chain already guards (sim-object.md, I2).</li>
+      <li id="d17"><strong><code>SimSync.open</code> does not retry</strong> a store <code>open</code> that rejects (<code>p2-store-contract</code>): a failed IndexedDB read is a closed connection or a broken database, which a retry does not mend. It rejects, and plan 3 offers a reload. <code>openSimDb</code>'s null for a version error stays indistinguishable from no storage (<code>p2-db-open</code>): what the page says is plan 3's.</li>
+      <li id="d18"><strong>The save state</strong> is four kinds and a reason: <code>saved</code>, <code>saving</code>, <code>device</code> (saved on this device only), <code>unsaved</code> (not saved anywhere yet), with <code>why</code> for the details on tap. Ordering in <a href="#tbl-save">the save state table</a>. An open draft is not pending and does not change it.</li>
+      <li id="d19"><strong>Account deletion is bounded per request.</strong> <code>deleteAccount</code> leaves at most 50 sims per call and answers <code>{ more }</code>; the route answers <code>202 { more: true }</code> without signing out until the last pass, which closes the account as today; the pane repeats while it gets 202, at most 100 passes (5,000 sims) before it shows the network error and the person retries. Each pass is about ten D1 queries per sim, well under the per-request limit.</li>
+      <li id="d20"><strong>No client end-to-end test in this plan.</strong> No page drives <code>SimSync</code> until plan 3 (the outline puts the real socket's proof there, with the page's specs). Playwright here covers the server changes (Tasks 1 and 2). Web Locks and BroadcastChannel are proved in real Chromium (Task 9).</li>
+      <li id="d21"><strong><code>fitsCommit</code> is not re-checked before sending.</strong> The store makes a commit pending only after <code>fitsCommit</code> (its I7), so every <code>head()</code> fits; re-checking would add a second refusal path with no case behind it.</li>
+    </ol>
+  </section>
+
+  <section id="sec-owner">
+    <h2>For the owner</h2>
+    <p>What a person will see or can lose once plan 3 puts this on <code>/sim</code>, most important first.</p>
+    <ol>
+      <li><strong>An edit can be stuck on one device as "taken".</strong> If a first, signed-out registration reaches the server but its answer is lost (the network drops at that moment), the server made the sim and an account whose session cookie never reached the browser. The retry is signed out and the id is in use, so the server says <code>taken</code>. The person's edits stay on that device, unsent, and the page says so, until the sharing unit can turn them into a remix (R32). Rare, and nothing is deleted. See <a href="#q1">question 1</a>.</li>
+      <li><strong>A pseudonymous person whose session has expired keeps editing on the device only.</strong> The device knows the sim is registered, so it opens the socket, which is read-only signed out: edits stay on the device and the save state says "saved on this device" (no write). A pseudonymous account has no way back in. Nothing is lost; until unit 5 it is not sent either. See <a href="#q2">question 2</a>.</li>
+      <li><strong>Write taken away</strong> (removed from a sim, or the last manager left): edits stay on the device, unsent, "saved on this device"; they are sent if write comes back. The remix of R53 waits for unit 5.</li>
+      <li><strong>Under <code>npm run dev</code></strong> nothing reaches the server; the page says "saved on this device". Use <code>npm run preview</code> to see saving.</li>
+      <li><strong>A very large sim opens in 8 MiB pages</strong>, and when many tabs open large sims on one object at once the later ones wait for the budget (4 MiB a second). A 64 MiB sim takes at least 8 round trips.</li>
+      <li><strong>Old browsers without Web Locks:</strong> a second tab takes over the first tab's unsent edits at open; the first tab stops showing them until they come back confirmed. Nothing is lost.</li>
+      <li><strong>Deleting an account in many sims</strong> takes several requests; the button stays busy throughout.</li>
+      <li><strong>A tab on an older build</strong> keeps saving; plan 3 can offer a reload from <code>buildMismatch</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <ol>
+      <li id="q1"><aside data-kind="question"><strong>Question</strong> A lost first answer turns the person's own sim into <code>taken</code> (For the owner, 1). Accept until unit 5's remix re-homes the edits, or make registration recoverable now (for example the browser sends a one-time proof it minted, kept with the sim, and the server answers 200 to the same proof)? <strong>Recommendation:</strong> accept for now. It needs a lost response at the one moment that matters, loses nothing, and unit 5's remix is the general cure; a proof is a new credential to store and check.</aside></li>
+      <li id="q2"><aside data-kind="question"><strong>Question</strong> A pseudonymous session that expires leaves the device unable to write its own sims (For the owner, 2). Accept, or lengthen pseudonymous sessions, or have the page offer "keep as a new sim" (a remix) at once? <strong>Recommendation:</strong> accept in plan 2 and 3; have unit 5's remix offer it. Session lifetime is an auth decision outside this unit.</aside></li>
+    </ol>
+  </section>
+
+  <section id="sec-contradictions">
+    <h2>Where the outline or the docs disagree with the code</h2>
+    <ul>
+      <li>Outline: "<code>gone</code> on a resume restarts from 0". The store cannot restart: <code>receive</code> skips seqs at or below its tip. Decision 5.</li>
+      <li>Outline: tabs claim on a <code>pagehide</code> message checked with <code>locks.query()</code>. The closing tab still holds its lock at <code>pagehide</code>. Decision 10.</li>
+      <li><code>docs/dev/sim-store.md</code>, For the next plans: "with no database, register at the first <code>head()</code>". <code>head()</code> is null until <code>setServerDataset</code> (<code>log-store.svelte.ts:571</code>), which needs <code>hello</code>, which needs the socket, which needs the registration. With no database the store says <code>'needed'</code> as soon as it mints (Task 4).</li>
+      <li><code>LogStore</code> exposes no confirmed tip, no registered flag, and no owners of other tabs' records (<code>log-store.svelte.ts:221-270</code>); plan 2's contract needs all three. Task 4.</li>
+      <li>The object marks a socket resumed at the first page of an answer (<code>sim-object.ts:153-157</code>); with a capped answer that would send live commits mid catch-up. Decision 4.</li>
+      <li>sim-object.md, Resume: "There is no end marker". Decision 2 adds one.</li>
+      <li><code>DeleteAccountPane</code> treats any <code>res.ok</code> as done (<code>src/lib/account/DeleteAccountPane.svelte:45</code>): a 202 would end the flow after one pass. Task 3 loops.</li>
+      <li>The spec's R53 ("its pending commits become a remix") and R32 for <code>taken</code> wait for unit 5, as the dispatch says; the commits stay on the device meanwhile (S4).</li>
+    </ul>
+  </section>
+
+  <section id="sec-files">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>What each file holds after this plan</caption>
+      <thead><tr><th scope="col">File</th><th scope="col">Task</th><th scope="col">Responsibility</th></tr></thead>
+      <tbody>
+        <tr><th scope="row"><code>src/lib/sim-stream/protocol.ts</code></th><td>1, 2</td><td><code>hello.dataset?</code>; <code>commits.more?</code>; <code>commitsFrame(bodies, more?)</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim-stream/limits.ts</code></th><td>2</td><td><code>Limits.resumeBytes</code></td></tr>
+        <tr><th scope="row"><code>src/lib/server/sim-object/limits.ts</code></th><td>2</td><td><code>RateBucket.take(now, n)</code>; <code>RESUME_BURST_BYTES</code>, <code>RESUME_BYTES_PER_SECOND</code></td></tr>
+        <tr><th scope="row"><code>src/lib/server/sim-object/object-rules.ts</code></th><td>1</td><td><code>helloFrame(params)</code></td></tr>
+        <tr><th scope="row"><code>src/lib/server/sim-object/log-host.ts</code></th><td>2</td><td><code>resume(after, deliver, bounds)</code>, <code>ResumeAnswer</code>, <code>ResumeBounds</code></td></tr>
+        <tr><th scope="row"><code>src/lib/server/sim-object/sim-object.ts</code></th><td>1, 2</td><td>Wiring: <code>helloFrame</code>; the resume budget; the resumed mark at the tip</td></tr>
+        <tr><th scope="row"><code>src/lib/server/user-store/deletion.ts</code>, <code>src/routes/api/account/+server.ts</code>, <code>src/lib/account/DeleteAccountPane.svelte</code></th><td>3</td><td>Deletion in passes; 202; the pane's loop</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-store/log-store.svelte.ts</code>, <code>sim-db.ts</code>, <code>idb.ts</code>, <code>test/sim-db-contract.ts</code></th><td>4</td><td><code>tipSeq</code>, <code>registration</code>, <code>markRegistered</code>; <code>SimDb.pendingOwners</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim-sync/ports.ts</code></th><td>5</td><td>The injected ports (<code>Clock</code>, <code>SocketLike</code>, <code>SocketCtor</code>, <code>LocksLike</code>, <code>ChannelLike</code>, <code>NetSignals</code>, <code>SyncStore</code>), <code>realClock</code>, <code>browserPorts()</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim-sync/backoff.ts</code></th><td>5</td><td><code>backoffDelay</code> and its constants</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-sync/test/fakes.ts</code></th><td>5</td><td><code>FakeClock</code>, <code>FakeHub</code>, <code>FakeSocket</code>, <code>FakeNet</code>, <code>FakeLocks</code>, <code>FakeBus</code>, <code>FakeFetch</code>, <code>settle</code>, <code>microtasks</code>: test helpers, not part of the library</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-sync/register.ts</code></th><td>6</td><td><code>registerSim</code>, <code>registerAnswerOf</code>, <code>RegisterGate</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim-sync/sim-socket.ts</code></th><td>7, 8</td><td><code>SimSocket</code>: one sim's socket, resume and sending</td></tr>
+        <tr><th scope="row"><code>src/lib/sim-sync/tabs.ts</code></th><td>9</td><td><code>TabPresence</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim-sync/save-state.ts</code></th><td>10</td><td><code>saveState</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim-sync/sim-sync.svelte.ts</code></th><td>11</td><td><code>SimSync</code>: ties the store, registration, the socket and tabs; the state as a rune</td></tr>
+        <tr><th scope="row"><code>docs/dev/sim-sync.md</code>, <code>CLAUDE.md</code>, <code>docs/dev/sim-store.md</code>, the outline</th><td>12 (and 1 to 3 for sim-object.md and auth.md)</td><td>Docs</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces, producer against consumer</h2>
+    <p>Consumed from the code at 653ee4b5 (each copied from its file):</p>
+    <ul>
+      <li><code>LogStore</code> (<code>src/lib/sim-store/log-store.svelte.ts</code>): <code>ready</code> :221, <code>simId</code> :224, <code>local: LocalStatus</code> :245 (<code>'idle' | 'writing' | 'failed'</code> :75), <code>pendingCount</code> :251, <code>pending</code> :255, <code>stopped: Stopped | null</code> :258, <code>serverDataset</code> :261, <code>drops</code> :264, <code>open(simId: string | null, opts?: { claim?: readonly string[] }): Promise&lt;void&gt;</code> :386, <code>claim(owners: readonly string[]): Promise&lt;number&gt;</code> :394, <code>setServerDataset(s: string): void</code> :532, <code>receive(simId: string, commits: readonly Commit[]): StoreReceived</code> :549 (<code>StoreReceived = Received | { kind: 'stale'; why: 'other-sim' | 'not-ready' }</code> :88; <code>Received</code> <code>local-log.ts:62-69</code>), <code>head(): CommitDraft | null</code> :568, <code>dropPending(id: string): void</code> :582, <code>written(): Promise&lt;void&gt;</code> :599, <code>subscribe(fn: () =&gt; void): () =&gt; void</code> :604, <code>rename(name: string): void</code> :357; <code>LogStoreOptions</code> :56 (<code>db</code>, <code>tabId</code>, <code>stamp</code>, …).</li>
+      <li><code>Stopped = 'future' | 'stale' | 'unknown-dataset'</code> (<code>src/lib/sim-store/types.ts:35</code>).</li>
+      <li><code>SimDb</code> (<code>src/lib/sim-store/sim-db.ts:69-95</code>): <code>read</code>, <code>claimPending</code> :89, <code>setRegistered(simId: string): Promise&lt;void&gt;</code> :90; <code>memorySimDb(opts?: { abortWrites?: () =&gt; boolean })</code> :157; IndexedDB <code>setRegistered</code> <code>idb.ts:299</code>, <code>claimPending</code> <code>idb.ts:284</code>.</li>
+      <li>Test helpers: <code>DS = 'fixture-0'</code>, <code>draftOf(parent, changes, over?)</code>, <code>stamped(d, seq)</code>, <code>nameChange(name)</code>, <code>FakeObject.append(d)</code> answering <code>accepted | duplicate | refused behind/invalid</code> (<code>src/lib/sim-store/test/commits.ts:16-99</code>); <code>simDbContract</code>'s <code>using(opts, body)</code>, <code>sim()</code>, <code>batch()</code>, <code>putOf()</code> (<code>test/sim-db-contract.ts:22-60</code>); <code>mockConsole</code> (<code>src/lib/server/test/mock-console.ts:20</code>).</li>
+      <li>Frames: <code>PROTOCOL = 1</code> :5, <code>CLOSE_GONE = 4410</code> :11, <code>RefusedWhy</code> :17, <code>ServerFrame</code> :19-23, <code>ClientFrame</code> :25, <code>encodeFrame</code> :66, <code>commitsFrame(bodies)</code> :73 (<code>src/lib/sim-stream/protocol.ts</code>). <code>LIMITS</code>, <code>Limits</code> (<code>src/lib/sim-stream/limits.ts:4-24</code>).</li>
+      <li>Register types: <code>RegisterCode</code>, <code>RegisterOk { simId, created }</code>, <code>RegisterError { error, code }</code> (<code>src/lib/sim-stream/register.ts:5-18</code>).</li>
+      <li>Server: <code>LogHost.resume(after, deliver: (frames: string[] | null) =&gt; void)</code> (<code>log-host.ts:178-196</code>), <code>PAGE = 500</code> :23, <code>#frames</code> :271; <code>RateBucket(burst, perSecond, now)</code>, <code>take(now)</code> (<code>server/sim-object/limits.ts:15-38</code>); hello and resume wiring <code>sim-object.ts:112</code>, <code>:144-164</code>; <code>OpenParams { identity, write, title, datasetVersion, build }</code> (<code>open-params.ts:12-18</code>); <code>deleteAccount(args): Promise&lt;void&gt;</code> (<code>user-store/deletion.ts:141-181</code>); <code>DELETE /api/account</code> (<code>src/routes/api/account/+server.ts:24-50</code>).</li>
+    </ul>
+    <table id="tbl-interfaces">
+      <caption>Each interface this plan produces, the task that states it, and the tasks that use it</caption>
+      <thead><tr><th scope="col">Interface</th><th scope="col">Stated in</th><th scope="col">Used by</th></tr></thead>
+      <tbody>
+        <tr><th scope="row"><code>ServerFrame</code> hello <code>dataset?: string</code>; <code>helloFrame(p: OpenParams): string</code></th><td>1</td><td>7 (<code>SimSocket</code> reads <code>dataset</code>), 5 (<code>FakeHub</code> sends it)</td></tr>
+        <tr><th scope="row"><code>ServerFrame</code> commits <code>more?: boolean</code>; <code>commitsFrame(bodies, more?)</code></th><td>2</td><td>2 (host), 5 (hub), 7</td></tr>
+        <tr><th scope="row"><code>ResumeAnswer</code>, <code>ResumeBounds</code>, <code>LogHost.resume(after, deliver, bounds?)</code></th><td>2</td><td>2 (object)</td></tr>
+        <tr><th scope="row"><code>RateBucket.take(now, n?)</code>, <code>RESUME_BURST_BYTES</code>, <code>RESUME_BYTES_PER_SECOND</code>, <code>LIMITS.resumeBytes</code></th><td>2</td><td>2</td></tr>
+        <tr><th scope="row"><code>deleteAccount(...): Promise&lt;{ more: boolean }&gt;</code>, <code>DELETE_SIMS_PER_PASS</code>, route 202</th><td>3</td><td>3 (route, pane)</td></tr>
+        <tr><th scope="row"><code>Registration</code>, <code>LogStore.tipSeq</code>, <code>.registration</code>, <code>.markRegistered(simId)</code>, <code>SimDb.pendingOwners(simId)</code></th><td>4</td><td>5 (<code>SyncStore</code>), 7, 8, 11</td></tr>
+        <tr><th scope="row"><code>Clock</code>, <code>SocketLike</code>, <code>SocketCtor</code>, <code>LocksLike</code>, <code>ChannelLike</code>, <code>NetSignals</code>, <code>SyncStore</code>, <code>realClock</code>, <code>browserPorts()</code></th><td>5</td><td>6, 7, 8, 9, 11</td></tr>
+        <tr><th scope="row"><code>backoffDelay(attempt, random)</code></th><td>5</td><td>7, 8, 11</td></tr>
+        <tr><th scope="row">Fakes: <code>FakeClock</code>, <code>FakeHub</code>, <code>FakeSocket</code>, <code>FakeNet</code>, <code>FakeLocks</code>, <code>FakeBus</code>, <code>FakeFetch</code>, <code>FetchAnswer</code>, <code>HubOptions</code>, <code>settle</code>, <code>microtasks</code></th><td>5</td><td>6, 7, 8, 9, 11</td></tr>
+        <tr><th scope="row"><code>RegisterAnswer</code>, <code>registerAnswerOf</code>, <code>registerSim</code>, <code>RegisterGate</code>, <code>REGISTER_LOCK</code></th><td>6</td><td>11</td></tr>
+        <tr><th scope="row"><code>SocketPhase</code>, <code>Halt</code>, <code>Hold</code>, <code>SocketView</code>, <code>OFF_VIEW</code>, <code>SimSocketOptions</code>, <code>SimSocket</code></th><td>7 (8 adds no member)</td><td>8, 10, 11</td></tr>
+        <tr><th scope="row"><code>TabPresence</code>, <code>TAB_LOCK_PREFIX</code>, <code>TAB_CHANNEL</code></th><td>9</td><td>11</td></tr>
+        <tr><th scope="row"><code>RegState</code>, <code>SaveInput</code>, <code>SaveKind</code>, <code>SaveWhy</code>, <code>SaveState</code>, <code>saveState</code></th><td>10</td><td>11</td></tr>
+        <tr><th scope="row"><code>SimSyncOptions</code>, <code>SyncState</code>, <code>SimSync</code></th><td>11</td><td>12 (docs), plan 3</td></tr>
+      </tbody>
+    </table>
+    <p>Checked before finishing: every consuming task's code uses the names and shapes its producer states (the table above was walked task by task; <code>RegState</code> lives in <code>save-state.ts</code> so Task 10 needs nothing from Task 11).</p>
+  </section>
+
+  <section id="sec-states">
+    <h2>State tables</h2>
+    <p>Every row has a test with the row's id in its name. For each row the questions were asked: can an edit be lost, sent twice in different versions, sent to the wrong sim, or shown as saved when it is not? The last column answers them where the answer is not "no".</p>
+
+    <section id="sec-states-socket">
+      <h3>The socket: connection</h3>
+      <p><code>SimSocket</code> phases: <code>off</code> (not started, or stopped), <code>connecting</code> (socket made, no <code>hello</code>), <code>catching-up</code> (a resume is outstanding or an answer said <code>more: true</code>), <code>live</code> (caught up), <code>offline</code> (the browser says offline: no socket, no timer), <code>waiting</code> (closed, reconnect timer set), <code>halted</code> (never reconnects). <code>attempt</code> counts failed connections; <code>limitAttempt</code> counts <code>limit</code> refusals in a row.</p>
+      <table id="tbl-conn">
+        <caption>Connection events, by phase</caption>
+        <thead><tr><th scope="col">Row</th><th scope="col">Phase</th><th scope="col">Event</th><th scope="col">Does</th><th scope="col">Next</th><th scope="col">Loss, twice, wrong sim, false saved</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">C1</th><td>off</td><td><code>start()</code>, online</td><td><code>new WebSocket(origin as ws/wss + /api/sims/&lt;sim&gt;/stream)</code>; hello timer 10 s</td><td>connecting</td><td></td></tr>
+          <tr><th scope="row">C2</th><td>off</td><td><code>start()</code>, offline</td><td>nothing</td><td>offline</td><td></td></tr>
+          <tr><th scope="row">C3</th><td>connecting</td><td><code>hello</code> protocol 1</td><td>clear hello timer; <code>serverBuild</code>; <code>setServerDataset(dataset)</code> if present; if the store is ready on this sim, <code>resume { after: tipSeq }</code>, else resume when it is (C10); ping timer if visible</td><td>catching-up</td><td>Dataset set before any send (store I11)</td></tr>
+          <tr><th scope="row">C4</th><td>connecting</td><td><code>hello</code> without <code>dataset</code></td><td>as C3 without <code>setServerDataset</code></td><td>catching-up</td><td><code>head()</code> stays null: nothing sent (an old server)</td></tr>
+          <tr><th scope="row">C5</th><td>connecting</td><td><code>hello</code> of another protocol</td><td>close 1000</td><td>halted <code>protocol</code></td><td>Kept pending</td></tr>
+          <tr><th scope="row">C6</th><td>connecting</td><td>hello timer fires</td><td>close 1000 (detached); timer <code>backoffDelay(attempt++)</code></td><td>waiting</td><td></td></tr>
+          <tr><th scope="row">C7</th><td>catching-up</td><td><code>commits</code> with <code>more</code></td><td><code>receive</code>; <code>true</code>: <code>resume { after: tipSeq }</code>; <code>false</code>: caught up, <code>trySend</code>, and with no head <code>attempt = 0</code></td><td>catching-up or live</td><td>Nothing sent before <code>false</code> (S1, decision 1)</td></tr>
+          <tr><th scope="row">C8</th><td>live</td><td><code>commits</code> without <code>more</code>, answer <code>gap</code></td><td><code>resume { after }</code></td><td>catching-up</td><td></td></tr>
+          <tr><th scope="row">C9</th><td>catching-up</td><td><code>commits</code> without <code>more</code>, any answer</td><td><code>receive</code>; a gap is left to the resume under way</td><td>catching-up</td><td></td></tr>
+          <tr><th scope="row">C10</th><td>catching-up or live</td><td>the store turns ready on this sim (after an <code>open</code>), or a frame was answered <code>not-ready</code></td><td><code>resume { after: tipSeq }</code> when the store is ready</td><td>catching-up</td><td>Frames ignored during <code>open</code> are fetched again</td></tr>
+          <tr><th scope="row">C11</th><td>connecting, catching-up, live</td><td>close, not 4410</td><td>drop the in-flight mark, stop timers; timer <code>backoffDelay(attempt++)</code></td><td>waiting</td><td>An append in flight: resolved by the resume (A11, A12)</td></tr>
+          <tr><th scope="row">C12</th><td>catching-up</td><td>caught up with <code>head()</code> null</td><td><code>attempt = 0</code></td><td>live</td><td></td></tr>
+          <tr><th scope="row">C13</th><td>any open</td><td>close 4410</td><td>stop timers</td><td>halted <code>gone</code></td><td>Kept pending</td></tr>
+          <tr><th scope="row">C14</th><td>connecting, catching-up, live, waiting</td><td><code>offline</code></td><td>close 1000 (detached), stop timers</td><td>offline</td><td></td></tr>
+          <tr><th scope="row">C14b</th><td>offline, waiting</td><td><code>online</code></td><td>connect now (<code>attempt</code> kept)</td><td>connecting</td><td></td></tr>
+          <tr><th scope="row">C15</th><td>waiting</td><td><code>visible</code></td><td>cancel timer, connect now</td><td>connecting</td><td></td></tr>
+          <tr><th scope="row">C16</th><td>catching-up, live</td><td>ping timer; <code>hidden</code>; <code>visible</code>; text <code>pong</code></td><td>send <code>ping</code> and re-arm 30 s; hidden stops the timer; visible re-arms it; <code>pong</code> ignored</td><td>same</td><td></td></tr>
+          <tr><th scope="row">C17</th><td>any</td><td><code>stop()</code>; later events of that socket</td><td>close 1000, stop timers, unsubscribe; events of any socket that is not the current one are ignored</td><td>off (final)</td><td>No frame applied after stop (S3)</td></tr>
+          <tr><th scope="row">C18</th><td>live</td><td>the store has another sim open; a frame arrives</td><td><code>receive(socketSim, …)</code> answers <code>other-sim</code>: nothing applied; no resume with the other sim's tip</td><td>live (until <code>SimSync</code> stops it)</td><td>Wrong sim: nothing applied, nothing sent (A13)</td></tr>
+          <tr><th scope="row">C19</th><td>any open</td><td>a text that is not JSON, or an unknown <code>type</code></td><td>ignored</td><td>same</td><td></td></tr>
+          <tr><th scope="row">C20</th><td>catching-up</td><td><code>refused</code> <code>id: null</code> <code>gone</code></td><td>close 1000</td><td>halted <code>diverged</code></td><td>Kept pending (decision 5)</td></tr>
+          <tr><th scope="row">C21</th><td>catching-up</td><td><code>refused</code> <code>id: null</code> <code>limit</code> (the budget)</td><td>timer <code>backoffDelay(limitAttempt++)</code>, then <code>resume</code> again</td><td>catching-up</td><td></td></tr>
+          <tr><th scope="row">C22</th><td>catching-up</td><td>close between pages</td><td>as C11; the next connection resumes from the tip the applied pages reached</td><td>waiting</td><td></td></tr>
+          <tr><th scope="row">C23</th><td>any open</td><td><code>error</code> event</td><td>nothing (a close follows)</td><td>same</td><td></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sec-states-send">
+      <h3>The socket: appends</h3>
+      <p><code>trySend()</code> sends <code>{ type: 'append', commit: head }</code> and sets <code>inFlight = { id, parent }</code> only when all hold: phase <code>live</code>; no resume outstanding; no <code>inFlight</code>; no hold and no halt; <code>write === true</code>; <code>store.ready</code>; <code>store.simId</code> is the socket's sim; <code>head()</code> is not null. It runs after every frame, after every store subscriber call and after every timer.</p>
+      <table id="tbl-send">
+        <caption>Append events</caption>
+        <thead><tr><th scope="col">Row</th><th scope="col">Event</th><th scope="col">Does</th><th scope="col">Loss, twice, wrong sim, false saved</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">A1</th><td><code>trySend</code> with every condition</td><td>send the head; one in flight; in the store's order</td><td>S1, S2</td></tr>
+          <tr><th scope="row">A2</th><td><code>access { write }</code></td><td>note <code>write</code>; <code>true</code> clears a <code>not-writer</code> hold and <code>trySend</code></td><td></td></tr>
+          <tr><th scope="row">A3</th><td><code>refused</code> in flight <code>not-writer</code></td><td>hold <code>not-writer</code>; commits stay</td><td>Kept (S4)</td></tr>
+          <tr><th scope="row">A4</th><td><code>refused</code> in flight <code>behind</code>, <code>tipSeq</code> past its parent</td><td><code>trySend</code> (the head is the re-applied version)</td><td>Never two versions stored: the object takes one id once, and the old version is refused (parent not the tip)</td></tr>
+          <tr><th scope="row">A5</th><td><code>refused</code> in flight <code>behind</code>, tip not moved</td><td><code>resume { after: tipSeq }</code>, then send when caught up</td><td></td></tr>
+          <tr><th scope="row">A6</th><td><code>refused</code> in flight <code>invalid</code></td><td><code>store.dropPending(id)</code> (reported by the store), <code>trySend</code></td><td>The one path that discards (S4); the store reports it (R19)</td></tr>
+          <tr><th scope="row">A7</th><td><code>refused</code> in flight <code>limit</code>, or <code>id: null</code> <code>limit</code> with an append in flight</td><td>hold <code>limit</code>; timer <code>backoffDelay(limitAttempt++)</code>; then clear and <code>trySend</code></td><td></td></tr>
+          <tr><th scope="row">A8</th><td><code>refused</code> in flight <code>full</code> or <code>newer</code></td><td>hold for the life of the <code>SimSocket</code></td><td>Kept; saved never shown (S9)</td></tr>
+          <tr><th scope="row">A9</th><td><code>refused</code> in flight <code>gone</code></td><td>close 1000</td><td>Halted <code>gone</code>; kept</td></tr>
+          <tr><th scope="row">A10</th><td>a <code>commits</code> frame holding the in-flight id</td><td>clear <code>inFlight</code>, <code>attempt = 0</code>, <code>limitAttempt = 0</code>, <code>trySend</code></td><td>Covers a duplicate, answered by silence (decision 1)</td></tr>
+          <tr><th scope="row">A11</th><td>close with an append in flight that was accepted</td><td>C11; the resume brings it; the store takes it off pending</td><td>Never sent again</td></tr>
+          <tr><th scope="row">A12</th><td>close with an append in flight never processed</td><td>C11; after the resume, sent again</td><td>Sent twice, stored once</td></tr>
+          <tr><th scope="row">A13</th><td>the store has another sim open</td><td><code>trySend</code> sends nothing</td><td>Wrong sim: no</td></tr>
+          <tr><th scope="row">A14</th><td>every append closes 1011</td><td>C11 each time: the backoff grows until an append is confirmed (A10)</td><td></td></tr>
+          <tr><th scope="row">A15</th><td>a new connection</td><td><code>not-writer</code> and <code>limit</code> holds clear; <code>full</code> and <code>newer</code> stay</td><td></td></tr>
+          <tr><th scope="row">A16</th><td><code>refused</code> naming an id not in flight</td><td>ignored</td><td></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sec-states-register">
+      <h3>Registration (in <code>SimSync</code>)</h3>
+      <p><code>RegState</code>: <code>idle</code>, <code>none</code> (a look: not needed), <code>waiting</code> (the store's first write has not landed), <code>registering</code>, <code>retrying</code>, <code>sign-in</code>, <code>taken</code>, <code>quota</code>, <code>failed</code>, <code>done</code>. It is re-evaluated after every store change, answer, timer and network signal.</p>
+      <table id="tbl-register">
+        <caption>Registration events</caption>
+        <thead><tr><th scope="col">Row</th><th scope="col">When</th><th scope="col">Does</th><th scope="col">Next</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">P1</th><td><code>live</code> is false</td><td>nothing: no fetch, no socket (S7)</td><td>idle</td></tr>
+          <tr><th scope="row">P2</th><td>store <code>'none'</code></td><td>no fetch; open the socket (read)</td><td>none</td></tr>
+          <tr><th scope="row">P3</th><td>store <code>'wait'</code></td><td>nothing</td><td>waiting</td></tr>
+          <tr><th scope="row">P4</th><td>store <code>'needed'</code>, pending or stopped, state not settled</td><td><code>gate.run(() =&gt; registerSim(fetch, sim))</code></td><td>registering</td></tr>
+          <tr><th scope="row">P5</th><td>store <code>'needed'</code>, nothing pending, not stopped</td><td>nothing: nothing to send, the server holds nothing</td><td>idle</td></tr>
+          <tr><th scope="row">P6</th><td>answer <code>ok</code></td><td><code>store.markRegistered(sim)</code>; a socket whose <code>write</code> is not true reconnects; the store says <code>'done'</code></td><td>done, socket</td></tr>
+          <tr><th scope="row">P7</th><td>answer <code>sign-in</code></td><td>nothing more until <code>retryRegistration()</code></td><td>sign-in</td></tr>
+          <tr><th scope="row">P8</th><td>answer <code>taken</code></td><td>stop the socket if any</td><td>taken</td></tr>
+          <tr><th scope="row">P9</th><td>answer <code>quota</code></td><td>nothing more until <code>retryRegistration()</code></td><td>quota</td></tr>
+          <tr><th scope="row">P10</th><td>answer <code>retry</code></td><td>timer <code>backoffDelay(regAttempt++)</code> then P4; <code>online</code> runs P4 at once</td><td>retrying</td></tr>
+          <tr><th scope="row">P11</th><td>answer <code>bug</code></td><td>log <code>[sim-sync] registration refused</code>, status, code</td><td>failed</td></tr>
+          <tr><th scope="row">P12</th><td>an answer after the store's sim changed</td><td>ignored (the request's token is stale)</td><td>unchanged</td></tr>
+          <tr><th scope="row">P13</th><td>the store's sim changes</td><td>stop the socket, cancel the timer, new token, re-evaluate</td><td>idle, then P1 to P5</td></tr>
+          <tr><th scope="row">P14</th><td><code>retryRegistration()</code> in sign-in, quota, taken, failed or retrying</td><td>cancel the timer, <code>regAttempt = 0</code>, P4</td><td>registering</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sec-states-tabs">
+      <h3>Tabs</h3>
+      <table id="tbl-tabs">
+        <caption>Tab presence and claims</caption>
+        <thead><tr><th scope="col">Row</th><th scope="col">Event</th><th scope="col">Does</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">T1</th><td><code>start()</code></td><td>request <code>sfh-tab:&lt;tabId&gt;</code> and hold it until <code>stop()</code>; resolve once granted; post <code>{ type: 'here', tabId, reply: false }</code></td></tr>
+          <tr><th scope="row">T2</th><td><code>here</code> from another tab</td><td><code>watch(tabId)</code>; if not a reply, post <code>{ type: 'here', tabId: own, reply: true }</code></td></tr>
+          <tr><th scope="row">T3</th><td>a watched tab's lock is granted to this tab</td><td>release it at once; tell <code>onGone</code> listeners once</td></tr>
+          <tr><th scope="row">T4</th><td><code>goneOwners(owners)</code></td><td>owners whose lock is not held (<code>locks.query()</code>), never this tab</td></tr>
+          <tr><th scope="row">T5</th><td>no Web Locks</td><td><code>goneOwners</code> answers every owner but this tab; <code>watch</code> does nothing</td></tr>
+          <tr><th scope="row">T6</th><td>no channel</td><td>only owners found at open are watched</td></tr>
+          <tr><th scope="row">T7</th><td><code>stop()</code></td><td>release own lock; abort pending watches (nothing told); close the channel</td></tr>
+          <tr><th scope="row">T8</th><td><code>SimSync.open(simId)</code></td><td><code>pendingOwners</code> (none without a working database), <code>goneOwners</code>, <code>store.open(simId, { claim: gone })</code>, then <code>watch</code> the rest</td></tr>
+          <tr><th scope="row">T9</th><td><code>onGone(owner)</code></td><td><code>store.claim([owner])</code> (the store serializes it with <code>open</code>; a claim on a sim without that owner's records adopts nothing); a rejection is logged <code>[sim-sync] claim failed</code> with the error name</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sec-states-save">
+      <h3>The save state</h3>
+      <p><code>saveState(input)</code>: <code>saved</code> when nothing is pending and nothing is held; otherwise the first blocking reason in the order below decides; with none, or while the store is writing, <code>saving</code>; with one, <code>unsaved</code> when <code>local</code> is <code>'failed'</code>, else <code>device</code>.</p>
+      <table id="tbl-save">
+        <caption>Blocking reasons, first match wins</caption>
+        <thead><tr><th scope="col">Order</th><th scope="col">Condition</th><th scope="col"><code>why</code></th></tr></thead>
+        <tbody>
+          <tr><th scope="row">1</th><td>socket halted</td><td><code>gone</code>, <code>diverged</code>, <code>protocol</code></td></tr>
+          <tr><th scope="row">2</th><td>socket hold <code>full</code> or <code>newer</code></td><td><code>full</code>, <code>newer</code></td></tr>
+          <tr><th scope="row">3</th><td><code>stopped</code> is <code>'stale'</code> or <code>'future'</code></td><td><code>stale</code>, <code>future</code></td></tr>
+          <tr><th scope="row">4</th><td><code>stopped</code> is <code>'unknown-dataset'</code> and the socket is live</td><td><code>unknown-dataset</code></td></tr>
+          <tr><th scope="row">5</th><td><code>live</code> false</td><td><code>dev</code></td></tr>
+          <tr><th scope="row">6</th><td>registration <code>sign-in</code>, <code>taken</code>, <code>quota</code>, <code>failed</code>, <code>retrying</code></td><td><code>sign-in</code>, <code>taken</code>, <code>quota</code>, <code>register-failed</code>, <code>unreachable</code></td></tr>
+          <tr><th scope="row">7</th><td>registration <code>registering</code> or <code>waiting</code></td><td>none (saving)</td></tr>
+          <tr><th scope="row">8</th><td>hold <code>not-writer</code>, or <code>write === false</code></td><td><code>no-write</code></td></tr>
+          <tr><th scope="row">9</th><td>phase <code>offline</code></td><td><code>offline</code></td></tr>
+          <tr><th scope="row">10</th><td>phase <code>waiting</code> or <code>off</code></td><td><code>unreachable</code></td></tr>
+          <tr><th scope="row">11</th><td>otherwise (connecting, catching-up, live; a <code>limit</code> hold)</td><td>none (saving)</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </section>
+
+  <section id="sec-scenarios">
+    <h2>Scenarios walked through this plan's code</h2>
+    <table id="tbl-scenarios">
+      <caption>What happens, and the test that pins it</caption>
+      <thead><tr><th scope="col">Scenario</th><th scope="col">What happens</th><th scope="col">Pinned by</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">A first edit, signed out, offline, then online</th><td>The edit is pending and stored; the store says <code>'needed'</code> once its write lands; the POST fails (network) and backs off; the save state is "saved on this device" (<code>unreachable</code>). <code>online</code> posts at once: 201 mints the account, <code>markRegistered</code>, the socket opens with write, <code>hello</code> sets the dataset, the resume brings the object's start commit (a writer opening an empty sim makes one, R58, sim-object.md, The start commit), the store re-applies its pending commits on it, and the head is sent and confirmed: saved. (<code>FakeHub</code> makes no start commit; the e2e of plan 3 meets the real one.)</td><td>Y3, Y4</td></tr>
+        <tr><th scope="row">The socket drops with an append in flight</th><td>The in-flight mark is dropped; the next connection resumes before sending. Accepted: its copy comes in the resume, the store takes it off pending, nothing is re-sent. Not processed: the head (same id, maybe re-applied) is sent again after the resume.</td><td>A11, A12</td></tr>
+        <tr><th scope="row"><code>behind</code> during a burst of edits</th><td>One append is in flight; the burst stays pending. The other writer's commits arrive before the refusal (one ordered socket); the store re-applies the burst; <code>behind</code> then sends the new head. If a gap hid the commits, a resume comes first.</td><td>A4, A5</td></tr>
+        <tr><th scope="row">A refusal of the head</th><td><code>invalid</code>: dropped and reported, the next is sent. <code>not-writer</code>, <code>full</code>, <code>newer</code>: held, kept, save state says why. <code>limit</code>: held and retried after the backoff. <code>gone</code>: halted.</td><td>A3, A6 to A9</td></tr>
+        <tr><th scope="row">A tab closed with unsent commits while another is open</th><td>The open tab waits on the closed tab's lock (it learned of it at open or on the channel); the lock frees; it claims the records (<code>store.claim</code>), which re-applies and stores them, and sends them as its own.</td><td>T3, Y11</td></tr>
+        <tr><th scope="row">Two tabs editing</th><td>Each sends only its own commits; <code>behind</code> orders them; both show one order, the server's.</td><td>Y12</td></tr>
+        <tr><th scope="row">The store switches sims while frames are in flight</th><td><code>SimSync</code> stops the old socket on the subscriber call; frames still arriving are for a stopped socket (ignored) or are passed with the old sim's id (the store ignores them); the old socket never sends the new sim's head; a late registration answer is dropped by its token.</td><td>C17, C18, A13, Y9, Y10</td></tr>
+        <tr><th scope="row">The page is a stale build</th><td><code>hello.build</code> differs: <code>buildMismatch</code> is true, saving goes on. A commit from a newer build stops the store (<code>'future'</code>, the store's I9); an own commit refused <code>newer</code> holds: the save state says why, plan 3 offers a reload.</td><td>Y14, A8</td></tr>
+        <tr><th scope="row">The server restarts mid-resume</th><td>The socket closes; pages already applied stay; the next connection resumes from the store's tip.</td><td>C22</td></tr>
+        <tr><th scope="row">Sign-in happens mid-session</th><td>After a 401, the person signs in (plan 3: <code>/signin</code>, then this page loads again and posts again); on the same page <code>retryRegistration()</code> posts at once. A sign-in in another tab: when this tab becomes visible while it lacks write, it reconnects with the new session.</td><td>Y5, Y19</td></tr>
+        <tr><th scope="row">Write is revoked mid-session</th><td><code>access { write: false }</code>: sending stops; an append in flight is refused <code>not-writer</code> and kept; the save state says "saved on this device" (<code>no-write</code>); <code>access { write: true }</code> resumes sending.</td><td>A2, A3, Y13</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-ran">
+    <h2>What was run at plan time</h2>
+    <ol>
+      <li><strong>The socket loop over the real store</strong> (Node, project <code>server</code>, real <code>LogStore</code> over <code>memorySimDb</code>, a hub built on <code>FakeObject</code>, a client written as this plan specifies: resume first, send after <code>more: false</code>, one in flight, <code>behind</code> resends, <code>invalid</code> drops). Six cases, all passed in 12 ms: edits offline then connect (five commits, once each, in order); two tabs editing in turn converge (eleven commits, <code>behind</code> refusals seen, no duplicates); a socket dropped with an append in flight (one commit, no duplicate); a paged resume catches up before sending; a closed tab's two commits claimed and sent by the live tab; a claim racing the closed tab's own in-flight append (exactly one duplicate, resolved by the broadcast, nothing left in flight). This needed a temporary <code>get tipSeq()</code> on <code>LogStore</code>, reverted after. Kept at <code>/private/tmp/claude-501/-Users-mindlace-Projects-sfhousing/ef7fed11-8f3e-4ac7-86cb-ef1bfb3cfda8/scratchpad/proto.spec.ts</code>.</li>
+      <li><strong>The capped resume over the real object store</strong> (Node, <code>LogHost</code> over <code>freshSimDb()</code>, the algorithm of Task 2): 1,203 commits read in byte-capped answers join to exactly 1 to 1,203; a spent budget refuses the first page; nothing after the tip is one empty frame; past the tip is <code>gone</code>. Two cases, passed in 173 ms. Kept at <code>/private/tmp/claude-501/-Users-mindlace-Projects-sfhousing/ef7fed11-8f3e-4ac7-86cb-ef1bfb3cfda8/scratchpad/proto-resume.spec.ts</code>.</li>
+      <li><strong>workerd's send path</strong> (<code>src/workerd/api/web-socket.c++</code> on GitHub, main): <code>send()</code> appends to <code>outgoingMessages</code> and returns; one pump drains it; no cap on count or bytes, no <code>bufferedAmount</code>; queued bytes are only reported to the isolate's memory accounting behind an autogate. Hence decision 3.</li>
+      <li><strong>Node 24.2's globals</strong>: <code>navigator.locks</code> is undefined; <code>BroadcastChannel</code> and <code>WebSocket</code> exist; no <code>indexedDB</code>. Web Locks are therefore faked in Node and proved in Chromium (Task 9).</li>
+      <li><strong>Not run</strong>: Playwright (port 4173 is shared; with it free the check would have been that <code>hello</code> carries <code>dataset: 'fixture-0'</code> and a resume answer ends with <code>more: false</code> against <code>wrangler dev</code>, Tasks 1 and 2); the Chromium Web Locks spec; and every task's final code. All code below that is not in the two prototypes is unrun.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: <code>hello</code> carries the server's dataset</h2>
+    <p>R55: a page moves a sim only when it knows it is current, and the store's dataset rule needs the server's dataset (<code>LogStore.setServerDataset</code>, <code>log-store.svelte.ts:532</code>; <code>head()</code> is null until it is called, :571). The open header already carries it (<code>OpenParams.datasetVersion</code>, <code>open-params.ts:16</code>). Optional in the type; <code>PROTOCOL</code> stays 1.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-stream/protocol.ts:20</code>, <code>src/lib/server/sim-object/object-rules.ts</code>, <code>src/lib/server/sim-object/sim-object.ts:112</code>, <code>e2e/sim-object.spec.ts:55</code>, <code>docs/dev/sim-object.md</code> (Frames: the <code>hello</code> row; For the next units: the bold sentence on <code>hello</code> becomes past tense)</li>
+      <li>Test: <code>src/lib/server/sim-object/object-rules.spec.ts</code> (Vitest <code>server</code>), <code>e2e/sim-object.spec.ts</code> (Playwright <code>chromium</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>OpenParams</code> (<code>open-params.ts:12-18</code>), <code>encodeFrame</code>, <code>PROTOCOL</code> (<code>protocol.ts:5, 66</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// protocol.ts
+export type ServerFrame =
+  | { type: 'hello'; build: string; protocol: number; dataset?: string }
+  | { type: 'access'; write: boolean }
+  | { type: 'commits'; commits: Commit[] }
+  | { type: 'refused'; id: string | null; why: RefusedWhy };
+
+// object-rules.ts
+/** The first frame on a socket: the Worker's build, PROTOCOL and its dataset version (R55). */
+export function helloFrame(p: OpenParams): string;</code></pre></li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing test in <code>object-rules.spec.ts</code> (it already has <code>const params: OpenParams</code> at line 50; import <code>helloFrame</code> beside the other rules and <code>PROTOCOL</code> from <code>$lib/sim-stream/protocol</code>):
+        <pre><code data-lang="ts">describe('helloFrame', () =&gt; {
+  it('carries the build, the protocol and the server dataset (R55)', () =&gt; {
+    expect(JSON.parse(helloFrame(params))).toEqual({
+      type: 'hello',
+      build: params.build,
+      protocol: PROTOCOL,
+      dataset: params.datasetVersion
+    });
+  });
+});</code></pre></li>
+      <li id="t1-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/server/sim-object/object-rules.spec.ts</code>. Expected: fails, <code>helloFrame</code> is not exported.</li>
+      <li id="t1-s3"><input type="checkbox"> Add <code>dataset?: string</code> to the hello member of <code>ServerFrame</code>; implement <code>helloFrame</code> with <code>encodeFrame</code>; in <code>sim-object.ts:112</code> send <code>helloFrame(params)</code> in place of the inline frame.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the spec again. Expected: pass.</li>
+      <li id="t1-s5"><input type="checkbox"> In <code>e2e/sim-object.spec.ts:55</code> expect the dataset:
+        <pre><code data-lang="ts">expect(hello).toEqual({
+  type: 'hello',
+  build: expect.any(String),
+  protocol: 1,
+  dataset: 'fixture-0'
+});</code></pre>
+        Run <code>npx playwright test e2e/sim-object.spec.ts --project chromium</code> (port 4173 must be free; see Global Constraints). Expected: pass. Then <code>--repeat-each=5 --retries=0</code>: pass.</li>
+      <li id="t1-s6"><input type="checkbox"> Update <code>docs/dev/sim-object.md</code>: the hello row reads <code>{"type":"hello","build":"&lt;release&gt;","protocol":1,"dataset":"&lt;version&gt;"}</code>, "<code>dataset</code> is the open header's <code>datasetVersion</code>: the store's <code>setServerDataset</code>". Run <code>npm run lint</code>, <code>npm run check</code>, <code>npx chreode timing-check --head HEAD</code>. Expected: clean.</li>
+      <li id="t1-s7"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-stream/protocol.ts src/lib/server/sim-object/object-rules.ts src/lib/server/sim-object/object-rules.spec.ts src/lib/server/sim-object/sim-object.ts e2e/sim-object.spec.ts docs/dev/sim-object.md
+git commit -m "feat(sim-object): hello carries the server's dataset version"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Bounded resumes</h2>
+    <p>Decisions <a href="#d2">2</a>, <a href="#d3">3</a> and <a href="#d4">4</a>. Today <code>LogHost.resume</code> reads every row after the position and the object queues every frame in one turn (<code>log-host.ts:178-196</code>, <code>sim-object.ts:144-164</code>); workerd's send queue is unbounded. The prototype of this algorithm passed (<a href="#sec-ran">What was run</a>, 2).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-stream/limits.ts</code>, <code>src/lib/sim-stream/protocol.ts</code>, <code>src/lib/server/sim-object/limits.ts</code>, <code>src/lib/server/sim-object/log-host.ts</code>, <code>src/lib/server/sim-object/sim-object.ts</code>, <code>docs/dev/sim-object.md</code> (Resume, Limits, Frames, For the next units)</li>
+      <li>Test: <code>src/lib/sim-stream/protocol.spec.ts</code>, <code>src/lib/server/sim-object/limits.spec.ts</code>, <code>src/lib/server/sim-object/log-host.spec.ts</code> (all Vitest <code>server</code>), <code>e2e/sim-object.spec.ts</code> (Playwright <code>chromium</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>RateBucket</code> (<code>server/sim-object/limits.ts:15-38</code>), <code>SimStore.rowsAfter(seq, limit): StoredRow[]</code> (<code>store.ts:76</code>), <code>StoredRow { seq, id, hash, bytes, body }</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/sim-stream/limits.ts: Limits gains
+  /** The most stored-body bytes in one resume answer (at least one commit is always sent). */
+  resumeBytes: number; // LIMITS.resumeBytes = 8_388_608
+
+// src/lib/sim-stream/protocol.ts
+  | { type: 'commits'; commits: Commit[]; more?: boolean } // in ServerFrame
+/** `more` only on the last frame of a resume answer: false caught up, true send resume again. */
+export function commitsFrame(bodies: readonly string[], more?: boolean): string;
+
+// src/lib/server/sim-object/limits.ts
+export const RESUME_BURST_BYTES = 33_554_432;
+export const RESUME_BYTES_PER_SECOND = 4_194_304;
+class RateBucket {
+  /** Takes n tokens (default 1); false, taking none, when fewer are left. */
+  take(now: number, n?: number): boolean;
+}
+
+// src/lib/server/sim-object/log-host.ts
+export type ResumeAnswer =
+  | { kind: 'gone' }
+  | { kind: 'limit' }
+  | { kind: 'frames'; frames: string[]; more: boolean };
+export interface ResumeBounds {
+  /** Stored-body bytes the answer may hold; the first commit is sent whatever its size. */
+  maxBytes: number;
+  /** Pays for a page's bytes from the object's budget; false when spent. */
+  take: (bytes: number) =&gt; boolean;
+}
+class LogHost {
+  /**
+   * Calls `deliver` once, inside the serialized section. Default bounds: limits.resumeBytes and a
+   * budget that never refuses.
+   */
+  resume(after: number, deliver: (a: ResumeAnswer) =&gt; void, bounds?: ResumeBounds): Promise&lt;void&gt;;
+}</code></pre></li>
+    </ul>
+    <p>The algorithm (from the prototype), inside <code>#serial</code>:</p>
+    <pre><code data-lang="ts">if (this.gone() || after &gt; this.tip()) return deliver({ kind: 'gone' });
+const rows: StoredRow[] = [];
+let bytes = 0;
+let from = after;
+let more = false;
+for (;;) {
+  const page = this.#store.rowsAfter(from, PAGE);
+  const kept: StoredRow[] = [];
+  let pageBytes = 0;
+  for (const r of page) {
+    if (rows.length + kept.length &gt; 0 &amp;&amp; bytes + pageBytes + r.bytes &gt; bounds.maxBytes) {
+      more = true;
+      break;
+    }
+    kept.push(r);
+    pageBytes += r.bytes;
+  }
+  if (kept.length &gt; 0) {
+    if (!bounds.take(pageBytes)) {
+      if (rows.length === 0) return deliver({ kind: 'limit' });
+      more = true;
+      break;
+    }
+    rows.push(...kept);
+    bytes += pageBytes;
+    from = kept[kept.length - 1].seq;
+  }
+  if (more || page.length &lt; PAGE) break;
+}
+deliver({ kind: 'frames', frames: this.#frames(rows, more), more });</code></pre>
+    <p><code>#frames(rows, more)</code> chunks by <code>sendBytes</code> as today (<code>log-host.ts:271-286</code>) and builds the last frame with <code>commitsFrame(bodies, more)</code>; no rows gives <code>[commitsFrame([], more)]</code>. In the object, the resume handler becomes:</p>
+    <pre><code data-lang="ts">await host.resume(
+  frame.after,
+  (a) =&gt; {
+    if (a.kind === 'gone') return this.#send(ws, encodeFrame({ type: 'refused', id: null, why: 'gone' }));
+    if (a.kind === 'limit') return this.#send(ws, encodeFrame({ type: 'refused', id: null, why: 'limit' }));
+    for (const f of a.frames) this.#send(ws, f);
+    // Decision 4: live commits only once an answer reached the tip, in the same turn (I7).
+    if (!a.more) this.#markResumed(ws);
+  },
+  this.#resumeBounds()
+);</code></pre>
+    <p>with <code>#resumeBounds()</code> lazily making one <code>RateBucket(RESUME_BURST_BYTES, RESUME_BYTES_PER_SECOND, Date.now())</code> per object (in memory, full again after a wake, as the append bucket is) and answering <code>{ maxBytes: LIMITS.resumeBytes, take: (n) =&gt; bucket.take(Date.now(), n) }</code>.</p>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests. In <code>protocol.spec.ts</code>:
+        <pre><code data-lang="ts">it('marks the last frame of a resume answer with more, and live frames with nothing', () =&gt; {
+  expect(JSON.parse(commitsFrame(['{"seq":1}'], true))).toEqual({
+    type: 'commits',
+    commits: [{ seq: 1 }],
+    more: true
+  });
+  expect(JSON.parse(commitsFrame([], false))).toEqual({ type: 'commits', commits: [], more: false });
+  expect(commitsFrame(['{"seq":1}'])).toBe('{"type":"commits","commits":[{"seq":1}]}');
+});</code></pre>
+        In <code>server/sim-object/limits.spec.ts</code>:
+        <pre><code data-lang="ts">it('takes n tokens at once, refusing when fewer are left, and refills by the second', () =&gt; {
+  const b = new RateBucket(10, 4, 0);
+  expect(b.take(0, 8)).toBe(true);
+  expect(b.take(0, 3)).toBe(false);
+  expect(b.take(0, 2)).toBe(true);
+  expect(b.take(500, 2)).toBe(true);
+  expect(b.take(500, 1)).toBe(false);
+});
+
+it('pins the resume bound and budget', () =&gt; {
+  expect(LIMITS.resumeBytes).toBe(8_388_608);
+  expect(LIMITS.resumeBytes).toBeGreaterThanOrEqual(LIMITS.commitBytes);
+  expect(RESUME_BURST_BYTES).toBe(33_554_432);
+  expect(RESUME_BYTES_PER_SECOND).toBe(4_194_304);
+  expect(RESUME_BURST_BYTES).toBeGreaterThan(LIMITS.resumeBytes + LIMITS.commitBytes);
+});</code></pre>
+        In <code>log-host.spec.ts</code> (the new tests go inside <code>describe('LogHost resume')</code>, which defines <code>three()</code>), replace <code>resumeOf</code> (:45-57) with these two helpers, and in the existing resume tests write <code>commitsFrame(…, false)</code> for the expected last frames (:705, :716, :717); the test at :728 ("delivers a log longer than one page") becomes the first new test below; the I7 test's callback (:756) becomes <code>(a) =&gt; { subscribed = true; seen.push(...seqsOf(a.kind === 'frames' ? a.frames : [])); }</code>; the property test at :333 keeps using <code>resumeOf</code>.
+        <pre><code data-lang="ts">/** The one answer a resume delivers. */
+async function answerOf(host: LogHost, after: number, bounds?: ResumeBounds): Promise&lt;ResumeAnswer&gt; {
+  const got: ResumeAnswer[] = [];
+  await host.resume(after, (a) =&gt; {
+    got.push(a);
+  }, bounds);
+  expect(got).toHaveLength(1);
+  return got[0];
+}
+
+/** The frames of a resume answer; null when it is answered gone. */
+async function resumeOf(host: LogHost, after: number): Promise&lt;string[] | null&gt; {
+  const a = await answerOf(host, after);
+  if (a.kind === 'gone') return null;
+  expect(a.kind).toBe('frames');
+  return a.kind === 'frames' ? a.frames : [];
+}
+
+const lastMore = (frames: string[]) =&gt; JSON.parse(frames[frames.length - 1]).more;
+
+it('caps an answer by stored bytes, says more, and the answers join to the whole log', async () =&gt; {
+  const { host, store } = make({ limits: { ...LIMITS, burst: 2000 } });
+  const n = 1203;
+  for (let s = 0; s &lt; n; s++) await append(host, nameDraft(s, `N${s}`));
+  const cap = store.rowsAfter(0, 300).reduce((t, r) =&gt; t + r.bytes, 0);
+  const seqs: number[] = [];
+  let after = 0;
+  let answers = 0;
+  for (;;) {
+    const a = await answerOf(host, after, { maxBytes: cap, take: () =&gt; true });
+    if (a.kind !== 'frames') throw new Error(a.kind);
+    answers++;
+    expect(lastMore(a.frames)).toBe(a.more);
+    for (const f of a.frames.slice(0, -1)) expect(JSON.parse(f).more).toBeUndefined();
+    const got = seqsOf(a.frames);
+    seqs.push(...got);
+    if (!a.more) break;
+    after = got[got.length - 1];
+  }
+  expect(seqs).toEqual(Array.from({ length: n }, (_, i) =&gt; i + 1));
+  expect(answers).toBeGreaterThan(4);
+  // The budget pays page by page: a refusal after the first page cuts the answer there.
+  let calls = 0;
+  const cut = await answerOf(host, 0, { maxBytes: LIMITS.resumeBytes, take: () =&gt; calls++ === 0 });
+  expect(cut).toMatchObject({ kind: 'frames', more: true });
+  expect(seqsOf((cut as { frames: string[] }).frames)).toEqual(
+    Array.from({ length: 500 }, (_, i) =&gt; i + 1)
+  );
+});
+
+it('always sends one commit, even over the cap', async () =&gt; {
+  const { host } = await three();
+  const a = await answerOf(host, 0, { maxBytes: 1, take: () =&gt; true });
+  expect(a).toMatchObject({ kind: 'frames', more: true });
+  expect(seqsOf((a as { frames: string[] }).frames)).toEqual([1]);
+});
+
+it('refuses limit when the budget cannot pay for the first page', async () =&gt; {
+  const { host } = await three();
+  expect(await answerOf(host, 0, { maxBytes: LIMITS.resumeBytes, take: () =&gt; false })).toEqual({
+    kind: 'limit'
+  });
+});
+
+it('answers nothing-after with one empty frame, more false, without paying', async () =&gt; {
+  const { host } = await three();
+  expect(await answerOf(host, 3, { maxBytes: 1, take: () =&gt; false })).toEqual({
+    kind: 'frames',
+    frames: [commitsFrame([], false)],
+    more: false
+  });
+});
+
+it('answers gone past the tip and after a takedown', async () =&gt; {
+  const { host } = await three();
+  expect(await answerOf(host, 4)).toEqual({ kind: 'gone' });
+  await host.takeDown(T0);
+  expect(await answerOf(host, 0)).toEqual({ kind: 'gone' });
+});</code></pre>
+        Import <code>type ResumeAnswer, type ResumeBounds</code> from <code>./log-host</code> and <code>RateBucket, RESUME_BURST_BYTES, RESUME_BYTES_PER_SECOND</code> in <code>limits.spec.ts</code>.</li>
+      <li id="t2-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-stream/protocol.spec.ts src/lib/server/sim-object/limits.spec.ts src/lib/server/sim-object/log-host.spec.ts</code>. Expected: the new tests fail (no <code>more</code>, no <code>n</code>, no bounds).</li>
+      <li id="t2-s3"><input type="checkbox"> Implement the produced interfaces and the algorithm above; wire the object as above. <code>sim-stream/limits.ts</code> has no imports and stays so.</li>
+      <li id="t2-s4"><input type="checkbox"> Run the three specs and the whole object suite: <code>npx vitest --run --project server src/lib/server/sim-object src/lib/sim-stream</code>. Expected: pass; the 1,203-commit test under 2 s (the existing one of that size takes about as long).</li>
+      <li id="t2-s5"><input type="checkbox"> e2e: in <code>e2e/sim-object.spec.ts</code>, the first test reads its resume answer as a frame and asserts the marker:
+        <pre><code data-lang="ts">const answer = await resumeAndRead(page, h, 0);
+expect(answer).toMatchObject({ type: 'commits', more: false });
+const [start, ...rest] = commitsOf(answer);</code></pre>
+        Run <code>npx playwright test e2e/sim-object.spec.ts e2e/sim-control-plane.spec.ts --project chromium</code>, then with <code>--repeat-each=5 --retries=0</code>. Expected: pass (live commits still reach resumed sockets: the existing specs count on it).</li>
+      <li id="t2-s6"><input type="checkbox"> Docs, <code>docs/dev/sim-object.md</code>: Resume (the cap, <code>more</code> on the last frame, the mark at the tip, the budget and its <code>limit</code> refusal with <code>id: null</code>, the browser asks for the next page after the last frame); Limits (<code>resumeBytes</code>; the two budget constants); Frames (the commits row); For the next units (the bound is built: remove "Several concurrent resumes … Plan 2 owns that", and say workerd's queue is unbounded). <code>npm run lint</code>, <code>npm run check</code>, <code>npx chreode timing-check --head HEAD</code>: clean.</li>
+      <li id="t2-s7"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-stream src/lib/server/sim-object e2e/sim-object.spec.ts docs/dev/sim-object.md
+git commit -m "feat(sim-object): resume answers capped by bytes, with more, and an object-wide resume budget" -m "A socket is marked resumed only when an answer reaches the tip; the browser asks for the next page."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Account deletion in passes</h2>
+    <p><a href="#d19">Decision 19</a>; carried from the control plane (spec, "Bound how many sims one account-deletion request leaves"). The route keeps its checks and their order (same-origin JSON, signed in, the handle).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/server/user-store/deletion.ts:141-181</code>, <code>src/routes/api/account/+server.ts:24-50</code>, <code>src/lib/account/DeleteAccountPane.svelte:34-55</code>, <code>docs/dev/auth.md</code> (Deletion)</li>
+      <li>Test: <code>src/lib/server/user-store/deletion.spec.ts</code>, <code>src/routes/api/account/server.spec.ts</code> (Vitest <code>server</code>); <code>src/lib/account/DeleteAccountPane.svelte.spec.ts</code> (Vitest <code>client</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>listSimsForUser({ db, userId }): Promise&lt;SimListItem[]&gt;</code> (<code>sims/sim-index.ts:111</code>), <code>removeSimMember</code>, <code>rosterChangedAll</code>, <code>closeAccountRows</code> (<code>deletion.ts:186</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// deletion.ts
+export const DELETE_SIMS_PER_PASS = 50;
+/**
+ * One pass: leaves at most `perPass` sims (default DELETE_SIMS_PER_PASS) and tells them (one
+ * fan-out, as today). More remain: { more: true }, the account untouched. Otherwise it closes the
+ * account rows as today: { more: false }. Unknown or already deleted: { more: false }.
+ */
+export async function deleteAccount(args: {
+  db: Database;
+  env: SimEnv;
+  identityId: string;
+  actor: Actor;
+  defer?: (work: Promise&lt;void&gt;) =&gt; void;
+  perPass?: number;
+}): Promise&lt;{ more: boolean }&gt;;
+
+// DELETE /api/account: 202 { more: true } while a pass leaves more (no sign-out yet);
+// 200 { ok: true } after the last pass, as today.
+
+// DeleteAccountPane.svelte: repeats the DELETE while it answers 202, at most
+// DELETE_PASSES_MAX = 100 requests, then shows ACCOUNT_COPY.networkError.</code></pre></li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests. In <code>deletion.spec.ts</code> (inside <code>describe('deleteAccount')</code>, which mocks <code>rosterChangedAll</code> and clears mocks before each test; import <code>DELETE_SIMS_PER_PASS</code>):
+        <pre><code data-lang="ts">test('a pass leaves at most perPass sims and says more; the last pass closes the account', async () =&gt; {
+  const { db } = freshDb();
+  await seedUser(db, { id: 'id1', email: 'alice@x.com', handle: 'alice' });
+  const ids: string[] = [];
+  for (let i = 0; i &lt; 5; i++) ids.push(await seedSim(db, { title: `S${i}`, managerId: 'id1' }));
+  const pass = () =&gt; deleteAccount({ db, env, identityId: 'id1', actor, perPass: 2 });
+
+  expect(await pass()).toEqual({ more: true });
+  expect(await listSimsForUser({ db, userId: 'id1' })).toHaveLength(3);
+  const [mid] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'id1'));
+  expect(mid.deletedAt).toBeNull();
+  expect(await pass()).toEqual({ more: true });
+  expect(await pass()).toEqual({ more: false });
+
+  expect(await listSimsForUser({ db, userId: 'id1' })).toEqual([]);
+  const [done] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'id1'));
+  expect(done.deletedAt).not.toBeNull();
+  expect(vi.mocked(rosterChangedAll).mock.calls.map(([, simIds]) =&gt; simIds.length)).toEqual([
+    2, 2, 1
+  ]);
+  for (const id of ids) expect(await getSimTitle({ db, simId: id })).not.toBeNull();
+});
+
+test('exactly perPass sims finish in one pass', async () =&gt; {
+  const { db } = freshDb();
+  await seedUser(db, { id: 'id1', email: 'alice@x.com', handle: 'alice' });
+  await seedSim(db, { title: 'A', managerId: 'id1' });
+  await seedSim(db, { title: 'B', managerId: 'id1' });
+  expect(await deleteAccount({ db, env, identityId: 'id1', actor, perPass: 2 })).toEqual({
+    more: false
+  });
+  const [row] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'id1'));
+  expect(row.deletedAt).not.toBeNull();
+});
+
+test('a pass through a fused identity never sees a sim it has left', async () =&gt; {
+  const { db } = freshDb();
+  await seedUser(db, { id: 'pseudo', email: 'p@x.com', handle: 'pseudo' });
+  await seedUser(db, { id: 'surv', email: 'surv@x.com', handle: 'surv' });
+  await seedSim(db, { title: 'One', managerId: 'pseudo' });
+  await seedSim(db, { title: 'Two', managerId: 'pseudo' });
+  await handleAccountLink({
+    db,
+    isUpgrade: false,
+    pseudonymousUserId: 'pseudo-live',
+    newUserId: 'surv-live'
+  });
+  const by = { actorId: 'surv', actorKind: 'human' as const };
+  const pass = () =&gt; deleteAccount({ db, env, identityId: 'surv', actor: by, perPass: 1 });
+  expect(await pass()).toEqual({ more: true });
+  expect(await listSimsForUser({ db, userId: 'surv' })).toHaveLength(1);
+  expect(await pass()).toEqual({ more: false });
+  expect(await listSimsForUser({ db, userId: 'surv' })).toEqual([]);
+});
+
+test('an unknown or finished account answers more: false, and the default pass is 50', async () =&gt; {
+  const { db } = freshDb();
+  expect(await deleteAccount({ db, env, identityId: 'nobody', actor })).toEqual({ more: false });
+  expect(DELETE_SIMS_PER_PASS).toBe(50);
+});</code></pre>
+        In <code>src/routes/api/account/server.spec.ts</code>: change the hoisted mock to <code>deleteAccount: vi.fn(async (_args: unknown) =&gt; ({ more: false }))</code>, and add:
+        <pre><code data-lang="ts">it('202 { more: true } while passes remain, without signing out', async () =&gt; {
+  deleteAccount.mockResolvedValueOnce({ more: true });
+  const res = await DELETE(evt({ request: del({ confirmHandle: 'ada' }) }));
+  expect(res.status).toBe(202);
+  expect(await res.json()).toEqual({ more: true });
+  expect(signOut).not.toHaveBeenCalled();
+});</code></pre>
+        In <code>DeleteAccountPane.svelte.spec.ts</code>:
+        <pre><code data-lang="ts">it('repeats the delete while the server answers 202, then calls onDeleted', async () =&gt; {
+  const more = () =&gt; new Response(JSON.stringify({ more: true }), { status: 202 });
+  const fetchSpy = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(more())
+    .mockResolvedValueOnce(more())
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+  const screen = await render(DeleteAccountPane, { user: { handle: 'ada' }, onDeleted });
+  await screen.getByRole('button', { name: ACCOUNT_COPY.deleteButton }).click();
+  await screen.getByLabelText(ACCOUNT_COPY.deleteConfirmLabel).fill('ada');
+  await screen.getByRole('button', { name: ACCOUNT_COPY.deletePermanently }).click();
+  await vi.waitFor(() =&gt; expect(onDeleted).toHaveBeenCalledOnce());
+  expect(fetchSpy).toHaveBeenCalledTimes(3);
+});
+
+it('stops after 100 passes that all answer 202 and shows the network error', async () =&gt; {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(
+    async () =&gt; new Response(JSON.stringify({ more: true }), { status: 202 })
+  );
+  const screen = await render(DeleteAccountPane, { user: { handle: 'ada' }, onDeleted });
+  await screen.getByRole('button', { name: ACCOUNT_COPY.deleteButton }).click();
+  await screen.getByLabelText(ACCOUNT_COPY.deleteConfirmLabel).fill('ada');
+  await screen.getByRole('button', { name: ACCOUNT_COPY.deletePermanently }).click();
+  await expect.element(screen.getByText(ACCOUNT_COPY.networkError)).toBeVisible();
+  expect(globalThis.fetch).toHaveBeenCalledTimes(100);
+  expect(onDeleted).not.toHaveBeenCalled();
+});</code></pre></li>
+      <li id="t3-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/server/user-store/deletion.spec.ts src/routes/api/account/server.spec.ts</code> and <code>npx vitest --run --project client src/lib/account/DeleteAccountPane.svelte.spec.ts</code>. Expected: the new tests fail.</li>
+      <li id="t3-s3"><input type="checkbox"> Implement: <code>deleteAccount</code> takes <code>sims.slice(0, perPass)</code>, removes and tells them exactly as the loop does today (the <code>finally</code> fan-out over the ones left), then returns <code>{ more: true }</code> when <code>sims.length &gt; perPass</code>, else closes the rows and returns <code>{ more: false }</code>; the existing early returns answer <code>{ more: false }</code>. The route answers 202 before the sign-out when <code>more</code>. The pane loops on 202 up to <code>DELETE_PASSES_MAX</code> (a constant in the component's script), keeping <code>deleting</code> true throughout.</li>
+      <li id="t3-s4"><input type="checkbox"> Run the three specs, then the existing <code>src/routes/api/account/delete-pseudonymous.spec.ts</code> (the real <code>deleteAccount</code>). Expected: pass. Existing callers of <code>deleteAccount</code> that ignored its <code>void</code> still compile.</li>
+      <li id="t3-s5"><input type="checkbox"> <code>docs/dev/auth.md</code>, Deletion: replace "the number of sims per request is not yet bounded" and the retry paragraph with the passes (50 a request, 202 <code>{ more: true }</code>, the pane repeats, the account is tombstoned only by the last pass; a failed pass is retried by the person and resumes where it stopped). <code>npm run lint</code>, <code>npm run check</code>, <code>npx chreode timing-check --head HEAD</code>: clean. Run <code>npx playwright test e2e/account-deletion.spec.ts --project chromium</code> if port 4173 is free. Expected: pass (one pass).</li>
+      <li id="t3-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/server/user-store/deletion.ts src/lib/server/user-store/deletion.spec.ts src/routes/api/account src/lib/account/DeleteAccountPane.svelte src/lib/account/DeleteAccountPane.svelte.spec.ts docs/dev/auth.md
+git commit -m "feat(account): delete an account in passes of 50 sims, 202 until the last"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: What the store tells the socket</h2>
+    <p><a href="#d7">Decision 7</a>. Four small additions to plan 1's store; nothing else in it changes.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-store/log-store.svelte.ts</code> (getters near :221-270; <code>#open</code> :416-460; <code>#replace</code> :801-818; <code>#adoptCurrent</code> :1008-1020), <code>src/lib/sim-store/sim-db.ts</code> (interface :69-95; <code>memorySimDb</code> :157), <code>src/lib/sim-store/idb.ts</code> (beside <code>claimPending</code> :284)</li>
+      <li>Test: <code>src/lib/sim-store/log-store.persist.spec.ts</code> (Vitest <code>server</code>), <code>src/lib/sim-store/test/sim-db-contract.ts</code> (run by <code>sim-db.spec.ts</code> in <code>server</code> and <code>idb.svelte.spec.ts</code> in <code>client</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces:
+        <pre><code data-lang="ts">// log-store.svelte.ts
+/**
+ * Whether the sim must be registered before its socket opens. 'none': no sim, or a sim with no
+ * record on this device that this store did not mint (a look). 'wait': minted here, storage
+ * working, its first write not landed. 'needed': stored here and not recorded registered, or
+ * minted here with storage absent or failed. 'done': recorded registered.
+ */
+export type Registration = 'none' | 'wait' | 'needed' | 'done';
+
+class LogStore {
+  /** The seq of the last confirmed commit (0 with none): a resume's `after`. */
+  get tipSeq(): number;
+  get registration(): Registration;
+  /**
+   * POST /api/sims answered 200 or 201 for `simId`. Nothing for another sim than the open one.
+   * Sets 'done' at once and tells subscribers, then records it on the device when the sim is
+   * stored and storage works; never rejects (a failed record logs
+   * `[sim-store] registration not stored` with the error name; the next load registers again).
+   */
+  markRegistered(simId: string): Promise&lt;void&gt;;
+}
+
+// sim-db.ts, SimDb
+/** The distinct owners of the sim's pending records, in n order of their first record. */
+pendingOwners(simId: string): Promise&lt;string[]&gt;;</code></pre>
+        <code>registration</code> is a plain getter over the store's own fields (<code>#simId</code>, <code>#registered</code>, <code>#simStored</code>, <code>#minted</code>, <code>#local</code>, <code>db</code>), not a rune: its consumers read it from a subscriber call, and the write chain's end tells subscribers without deriving (<code>#loop</code>, :890, ends with <code>#flush</code> and no derive). <code>#registered</code> is set by <code>#replace</code> from the record (<code>read.sim?.registered === true</code> in <code>#open</code> and <code>#adoptCurrent</code>; false for <code>open(null)</code> and with no database) and by <code>markRegistered</code>. The rule:
+        <pre><code data-lang="ts">if (this.#simId === null) return 'none';
+if (this.#registered) return 'done';
+if (this.#simStored) return 'needed';
+if (this.#minted) return this.#opts.db !== null &amp;&amp; this.#local !== 'failed' ? 'wait' : 'needed';
+return 'none';</code></pre></li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests. In <code>log-store.persist.spec.ts</code> (its helper <code>store(db, over)</code> is at :43; <code>newId</code>, <code>mockConsole</code>, <code>draftOf</code> and <code>nameChange</code> are imported already, :15-22; add <code>stamped</code> to the <code>./test/commits</code> import):
+        <pre><code data-lang="ts">describe('what the socket reads (plan 2)', () =&gt; {
+  it('registration: none with no sim, wait until the minted sim is stored, then needed', async () =&gt; {
+    const db = memorySimDb();
+    const s = store(db);
+    await s.open(null);
+    expect(s.registration).toBe('none');
+    s.rename('A');
+    expect(s.registration).toBe('wait');
+    await s.written();
+    expect(s.registration).toBe('needed');
+  });
+
+  it('markRegistered records it on the device, tells subscribers, and a reopen reads it', async () =&gt; {
+    const db = memorySimDb();
+    const s = store(db);
+    await s.open(null);
+    s.rename('A');
+    await s.written();
+    const told = vi.fn();
+    s.subscribe(told);
+    await s.markRegistered(s.simId!);
+    expect(s.registration).toBe('done');
+    expect(told).toHaveBeenCalled();
+    expect((await db.read(s.simId!)).sim?.registered).toBe(true);
+    const again = store(db, { tabId: 'b' });
+    await again.open(s.simId);
+    expect(again.registration).toBe('done');
+  });
+
+  it('markRegistered for another sim than the open one does nothing', async () =&gt; {
+    const db = memorySimDb();
+    const s = store(db);
+    await s.open(null);
+    s.rename('A');
+    await s.written();
+    await s.markRegistered(newId());
+    expect(s.registration).toBe('needed');
+  });
+
+  it('with no database, or after a failed first write, a minted sim is needed at once', async () =&gt; {
+    const none = store(null);
+    await none.open(null);
+    none.rename('A');
+    expect(none.registration).toBe('needed');
+    const { error } = mockConsole('error');
+    const failing = store(memorySimDb({ abortWrites: () =&gt; true }));
+    await failing.open(null);
+    failing.rename('A');
+    await failing.written();
+    expect(failing.local).toBe('failed');
+    expect(failing.registration).toBe('needed');
+    expect(error).toHaveBeenCalledWith('[sim-store] write failed', 'Error');
+  });
+
+  it('a sim with no record here is a look (none) until an edit stores it (needed)', async () =&gt; {
+    const db = memorySimDb();
+    const s = store(db);
+    await s.open(newId());
+    expect(s.registration).toBe('none');
+    s.rename('A');
+    await s.written();
+    expect(s.registration).toBe('needed');
+  });
+
+  it('markRegistered never rejects when the record cannot be written', async () =&gt; {
+    let abort = false;
+    const db = memorySimDb({ abortWrites: () =&gt; abort });
+    const s = store(db);
+    await s.open(null);
+    s.rename('A');
+    await s.written();
+    abort = true;
+    const { error } = mockConsole('error');
+    await expect(s.markRegistered(s.simId!)).resolves.toBeUndefined();
+    expect(s.registration).toBe('done');
+    expect(error).toHaveBeenCalledWith('[sim-store] registration not stored', 'Error');
+  });
+
+  it('tipSeq is the confirmed tip', async () =&gt; {
+    const s = store(memorySimDb());
+    const sim = newId();
+    await s.open(sim);
+    expect(s.tipSeq).toBe(0);
+    s.receive(sim, [stamped(draftOf(0, [nameChange('A')]), 1), stamped(draftOf(1, [nameChange('B')]), 2)]);
+    expect(s.tipSeq).toBe(2);
+  });
+});</code></pre>
+        In <code>test/sim-db-contract.ts</code>, inside <code>describe('SimDb contract')</code>:
+        <pre><code data-lang="ts">it('lists the owners of a sim\'s pending records, each once, in n order', () =&gt;
+  using(undefined, async (db) =&gt; {
+    const id = newId();
+    await db.createSim(sim(id), { batch: batch('b', { put: [putOf('b1')] }) });
+    await db.write(id, batch('a', { put: [putOf('a1')] }));
+    await db.write(id, batch('b', { put: [putOf('b2')] }));
+    await db.createSim(sim(), { batch: batch('c', { put: [putOf('c1')] }) });
+    expect(await db.pendingOwners(id)).toEqual(['b', 'a']);
+    expect(await db.pendingOwners(newId())).toEqual([]);
+  }));</code></pre></li>
+      <li id="t4-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-store</code>. Expected: the new tests fail (no members).</li>
+      <li id="t4-s3"><input type="checkbox"> Implement: the getters and <code>markRegistered</code> on <code>LogStore</code> (its subscriber call is <code>#dirty = true; #flush()</code>, then the awaited <code>setRegistered</code> only when <code>db !== null</code>, <code>#simStored</code> and <code>local !== 'failed'</code>); the <code>registered</code> parameter on <code>#replace</code>; <code>pendingOwners</code> in <code>memorySimDb</code> (over <code>sorted(d)</code>) and in <code>idb.ts</code> (a <code>readonly</code> transaction over <code>PENDING</code>'s <code>ORDER</code> index, <code>getAll(simRange(simId))</code>, owners deduplicated in order).</li>
+      <li id="t4-s4"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-store</code> and <code>npx vitest --run --project client src/lib/sim-store</code>. Expected: pass, the IndexedDB contract included.</li>
+      <li id="t4-s5"><input type="checkbox"> <code>npm run lint</code>, <code>npm run check</code>, <code>npx chreode timing-check --head HEAD</code>: clean.</li>
+      <li id="t4-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-store
+git commit -m "feat(sim-store): expose the tip, the registration state and the owners of pending records"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Ports, backoff and the fakes</h2>
+    <p>The seams every later task injects, and the test doubles that drive them with no timer and no network. The fakes model the object's rules that matter to a client: hello and access, paged resume with <code>more</code>, live commits only to sockets whose resume reached the tip, a duplicate answered by silence, <code>behind</code> and <code>invalid</code> (from plan 1's <code>FakeObject</code>, <code>src/lib/sim-store/test/commits.ts:68-99</code>), refusals on demand, and closes that lose the frames not yet delivered.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim-sync/ports.ts</code>, <code>src/lib/sim-sync/backoff.ts</code>, <code>src/lib/sim-sync/test/fakes.ts</code></li>
+      <li>Test: <code>src/lib/sim-sync/backoff.spec.ts</code>, <code>src/lib/sim-sync/test/fakes.spec.ts</code> (Vitest <code>server</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>LogStore</code> members (<a href="#sec-interfaces">listed</a>) and Task 4's <code>tipSeq</code>, <code>registration</code>, <code>markRegistered</code>, <code>Registration</code>; <code>FakeObject</code>, <code>stamped</code>, <code>DS</code>; <code>ServerFrame</code> with Task 1's <code>dataset</code> and Task 2's <code>more</code>; <code>RefusedWhy</code>; <code>PROTOCOL</code>.</li>
+      <li>Produces, <code>ports.ts</code>:
+        <pre><code data-lang="ts">import type { Commit, CommitDraft } from '$lib/sim-log';
+import type { LocalStatus, Registration, StoreReceived } from '$lib/sim-store/log-store.svelte';
+import type { Stopped } from '$lib/sim-store/types';
+
+export interface Clock {
+  now(): number;
+  /** Runs fn once after ms; returns a cancel that is safe to call twice. */
+  after(ms: number, fn: () =&gt; void): () =&gt; void;
+}
+/** Date.now and the platform's timers. */
+export const realClock: Clock;
+
+/** An event as SimSocket reads it: `data` on message, `code` on close. */
+export interface SocketEventLike {
+  data?: unknown;
+  code?: number;
+}
+/** What SimSocket uses of a WebSocket. */
+export interface SocketLike {
+  readonly readyState: number;
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+  addEventListener(type: 'open' | 'message' | 'close' | 'error', fn: (e: SocketEventLike) =&gt; void): void;
+}
+/** `WebSocket` itself must be assignable to this (checked in browserPorts). */
+export type SocketCtor = new (url: string) =&gt; SocketLike;
+
+/** The parts of navigator.locks used (LockManager is assignable to it). */
+export interface LocksLike {
+  request(name: string, options: LockOptions, callback: (lock: Lock | null) =&gt; unknown): Promise&lt;unknown&gt;;
+  query(): Promise&lt;LockManagerSnapshot&gt;;
+}
+/** The parts of a BroadcastChannel used. */
+export interface ChannelLike {
+  postMessage(message: unknown): void;
+  addEventListener(type: 'message', fn: (e: MessageEvent) =&gt; void): void;
+  removeEventListener(type: 'message', fn: (e: MessageEvent) =&gt; void): void;
+  close(): void;
+}
+export type NetEvent = 'online' | 'offline' | 'visible' | 'hidden';
+export interface NetSignals {
+  online(): boolean;
+  visible(): boolean;
+  /** Calls fn on each change; returns the unsubscribe. */
+  watch(fn: (e: NetEvent) =&gt; void): () =&gt; void;
+}
+
+/** What SimSocket and SimSync use of the log store (LogStore is assignable to it). */
+export interface SyncStore {
+  readonly ready: boolean;
+  readonly simId: string | null;
+  readonly tipSeq: number;
+  readonly pendingCount: number;
+  readonly stopped: Stopped | null;
+  readonly local: LocalStatus;
+  readonly registration: Registration;
+  head(): CommitDraft | null;
+  receive(simId: string, commits: readonly Commit[]): StoreReceived;
+  setServerDataset(s: string): void;
+  dropPending(id: string): void;
+  markRegistered(simId: string): Promise&lt;void&gt;;
+  subscribe(fn: () =&gt; void): () =&gt; void;
+  open(simId: string | null, opts?: { claim?: readonly string[] }): Promise&lt;void&gt;;
+  claim(owners: readonly string[]): Promise&lt;number&gt;;
+}
+
+export interface BrowserPorts {
+  origin: string;
+  fetch: typeof fetch;
+  WebSocket: SocketCtor;
+  clock: Clock;
+  random: () =&gt; number;
+  locks: LocksLike | null;
+  channel: ChannelLike | null;
+  net: NetSignals;
+}
+/** The live ports of this window: location.origin, fetch, WebSocket, realClock, Math.random,
+ *  navigator.locks or null, a BroadcastChannel('sfh-sim') or null, and online/offline and
+ *  visibilitychange as NetSignals. Call only in a browser. */
+export function browserPorts(): BrowserPorts;</code></pre>
+        Builder's call: the exact listener and callback types in <code>SocketLike</code> and <code>LocksLike</code>, as long as <code>const ctor: SocketCtor = WebSocket</code> and <code>const locks: LocksLike = navigator.locks</code> compile in <code>browserPorts</code> (<code>npm run check</code>). Reason: the DOM overloads decide it, not the plan.</li>
+      <li>Produces, <code>backoff.ts</code>:
+        <pre><code data-lang="ts">export const BACKOFF_BASE_MS = 1000;
+export const BACKOFF_MAX_MS = 30_000;
+export const BACKOFF_JITTER = 0.2;
+/** min(30 s, 1 s * 2^attempt), times 1 - 0.2 + 0.4 * random(), rounded. attempt 0 is the first retry. */
+export function backoffDelay(attempt: number, random: () =&gt; number): number;</code></pre></li>
+      <li>Produces, <code>test/fakes.ts</code> (test helpers; bodies are the builder's within these rules):
+        <pre><code data-lang="ts">export class FakeClock implements Clock {
+  now(): number;                       // starts at 0
+  after(ms: number, fn: () =&gt; void): () =&gt; void;
+  /** Runs every timer due by now + ms in due order (ties in the order set), timers set while
+   *  advancing included, moving now to each; ends at now + ms. */
+  advance(ms: number): void;
+  /** ms until the earliest live timer, or null. */
+  nextDelay(): number | null;
+}
+
+export class FakeNet implements NetSignals {
+  constructor(o?: { online?: boolean; visible?: boolean }); // both default true
+  online(): boolean;
+  visible(): boolean;
+  watch(fn: (e: NetEvent) =&gt; void): () =&gt; void;
+  /** Sets the state and tells the watchers, at once. */
+  set(e: NetEvent): void;
+}
+
+export interface HubOptions {
+  dataset?: string | null;   // hello's dataset; default DS, null leaves it out
+  build?: string;            // default 'b'
+  protocol?: number;         // default PROTOCOL
+  pageSize?: number;         // commits per resume answer; default 1000
+  write?: boolean;           // access for new sockets; default true
+  hold?: boolean;            // appends wait for release(); default false
+  strict?: boolean;          // sockets for sims not register()ed close 1006; default false
+}
+/** One fake object per sim id, and the sockets the client opens to them. */
+export class FakeHub {
+  constructor(o?: HubOptions);
+  readonly WebSocket: SocketCtor;
+  readonly sockets: FakeSocket[];          // every socket made, in order
+  readonly appends: CommitDraft[];         // every append frame received, in order
+  readonly resumes: number[];              // every resume's `after`, in order
+  duplicates: number;
+  build: string;
+  write: boolean;                          // access given to sockets opened from now on
+  silent: boolean;                         // new sockets open but get no hello
+  reject: boolean;                         // new sockets close 1006 at once (the route refused)
+  closeOnAppend: number;                   // the next n appends close their socket 1011 instead
+  register(simId: string): void;
+  /** A FakeFetch handler: 201 and register() for a new id, 200 for a registered one. */
+  registrar(): (simId: string) =&gt; FetchAnswer;
+  commits(simId: string): Commit[];
+  /** Another writer's commit: appended (it must be accepted) and sent to every resumed open
+   *  socket on that sim but `except`. */
+  foreign(simId: string, d: CommitDraft, o?: { except?: FakeSocket }): Commit;
+  /** The next appends get these refusals (id: the commit's), instead of the object's answer. */
+  refuseNext(...why: RefusedWhy[]): void;
+  /** The next resume is refused with id null. */
+  refuseResume(why: 'limit' | 'gone'): void;
+  /** Sends access to every open socket and sets `write` for new ones. */
+  setAccess(write: boolean): void;
+  /** Processes the held appends of open sockets, in order; those of closed sockets are dropped. */
+  release(): void;
+  /** Closes every open socket from the server: undelivered frames to it are lost, then close. */
+  closeAll(code: number): void;
+  /** Delivers queued events, those queued meanwhile included, until none is left; returns how many. */
+  flush(): number;
+  /** Delivers only the events queued before the call. */
+  step(): number;
+}
+/** Server rules: open, then hello (unless silent) and access are queued at creation; a resume
+ *  answers up to pageSize commits after `after`, `more` on its frame, past the tip refused gone,
+ *  and marks the socket resumed when more is false; a text 'ping' queues 'pong'; an append from a
+ *  socket without write is refused not-writer; an accepted commit goes to every resumed open
+ *  socket of its sim, the author's included; a duplicate is counted and answered by nothing. */
+export class FakeSocket implements SocketLike {
+  readonly url: string;
+  readyState: number;                      // 1 once open is delivered, 3 once closed
+  readonly sent: string[];                 // every text the client sent
+  resumed: boolean;
+  closedWith: number | null;               // the code the client closed with
+  /** Dispatches straight to the listeners, whatever the state (late events). */
+  emit(type: 'message', data: string): void;
+  emit(type: 'close', code: number): void;
+  emit(type: 'error'): void;
+  // send() hands the text to the hub; close(code) sets closedWith and readyState 3 and
+  // queues nothing back (the client detaches before the event comes).
+}
+
+export class FakeLocks implements LocksLike {
+  readonly requested: string[];            // names, in request order
+  held(): string[];
+  request(name: string, options: LockOptions, callback: (lock: Lock | null) =&gt; unknown): Promise&lt;unknown&gt;;
+  query(): Promise&lt;LockManagerSnapshot&gt;;
+  // Exclusive per name, granted in request order when free, released when the callback's
+  // result settles; ifAvailable answers callback(null) when held; an aborted signal rejects a
+  // waiting request with a DOMException named AbortError.
+}
+
+export class FakeBus {
+  /** A channel that hears every other open channel of this bus, never itself, each message
+   *  delivered in a microtask as a MessageEvent with a structured clone of the data. */
+  channel(): ChannelLike;
+}
+
+export type FetchAnswer = { status: number; body?: unknown } | 'network';
+export class FakeFetch {
+  constructor(handler?: (simId: string) =&gt; FetchAnswer | Promise&lt;FetchAnswer&gt;);
+  handler: (simId: string) =&gt; FetchAnswer | Promise&lt;FetchAnswer&gt;;
+  readonly calls: { url: string; method: string; contentType: string | null; body: unknown }[];
+  inFlight: number;
+  maxInFlight: number;
+  /** 'network' rejects with TypeError('Failed to fetch'); else a Response of JSON body. */
+  readonly fetch: typeof fetch;
+}
+
+/** n turns of the microtask queue (default 20). Not a wait: no timer. */
+export function microtasks(n?: number): Promise&lt;void&gt;;
+/** Rounds of hub.flush(), every store's written() and microtasks(), until three rounds in a row
+ *  deliver nothing; throws Error('no quiescence') after 200 rounds. */
+export function settle(hub: FakeHub, ...stores: { written(): Promise&lt;void&gt; }[]): Promise&lt;void&gt;;</code></pre></li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests. <code>backoff.spec.ts</code>:
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import { backoffDelay } from './backoff';
+
+describe('backoffDelay', () =&gt; {
+  it('doubles from 1 s and stops at 30 s', () =&gt; {
+    const mid = () =&gt; 0.5;
+    expect([0, 1, 2, 3, 4, 5, 6, 60].map((a) =&gt; backoffDelay(a, mid))).toEqual([
+      1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000
+    ]);
+  });
+  it('jitters by 20% either way', () =&gt; {
+    expect(backoffDelay(0, () =&gt; 0)).toBe(800);
+    expect(backoffDelay(0, () =&gt; 0.999999)).toBe(1200);
+    expect(backoffDelay(10, () =&gt; 0)).toBe(24000);
+  });
+});</code></pre>
+        <code>test/fakes.spec.ts</code>:
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import { newId } from '$lib/ids/base58';
+import { DS, draftOf, nameChange } from '$lib/sim-store/test/commits';
+import { FakeBus, FakeClock, FakeFetch, FakeHub, FakeLocks, microtasks } from './fakes';
+
+const frames = (texts: string[]) =&gt; texts.map((t) =&gt; JSON.parse(t));
+
+describe('FakeClock', () =&gt; {
+  it('runs timers in due order, timers set meanwhile included, and cancels', () =&gt; {
+    const c = new FakeClock();
+    const ran: string[] = [];
+    c.after(20, () =&gt; ran.push('b'));
+    const cancel = c.after(15, () =&gt; ran.push('x'));
+    c.after(10, () =&gt; {
+      ran.push('a');
+      c.after(5, () =&gt; ran.push('a2'));
+    });
+    cancel();
+    expect(c.nextDelay()).toBe(10);
+    c.advance(20);
+    expect(ran).toEqual(['a', 'a2', 'b']);
+    expect(c.now()).toBe(20);
+    expect(c.nextDelay()).toBeNull();
+  });
+});
+
+describe('FakeHub', () =&gt; {
+  it('says hello and access, pages a resume with more, and marks resumed at the tip', () =&gt; {
+    const hub = new FakeHub({ pageSize: 2 });
+    const sim = newId();
+    for (let s = 0; s &lt; 3; s++) hub.foreign(sim, draftOf(s, [nameChange(`F${s}`)]));
+    const got: string[] = [];
+    const ws = new hub.WebSocket(`ws://x/api/sims/${sim}/stream`);
+    ws.addEventListener('message', (e) =&gt; got.push(String(e.data)));
+    hub.flush();
+    ws.send(JSON.stringify({ type: 'resume', after: 0 }));
+    hub.flush();
+    ws.send(JSON.stringify({ type: 'resume', after: 2 }));
+    hub.flush();
+    const f = frames(got);
+    expect(f[0]).toEqual({ type: 'hello', build: 'b', protocol: 1, dataset: DS });
+    expect(f[1]).toEqual({ type: 'access', write: true });
+    expect(f[2]).toMatchObject({ more: true });
+    expect(f[2].commits.map((c: { seq: number }) =&gt; c.seq)).toEqual([1, 2]);
+    expect(f[3]).toMatchObject({ more: false });
+    expect(hub.sockets[0].resumed).toBe(true);
+    expect(hub.resumes).toEqual([0, 2]);
+  });
+
+  it('answers a duplicate with nothing, holds appends until release, and drops frames on close', () =&gt; {
+    const hub = new FakeHub({ hold: true });
+    const sim = newId();
+    const d = draftOf(0, [nameChange('A')]);
+    hub.foreign(sim, d);
+    const got: string[] = [];
+    const ws = new hub.WebSocket(`ws://x/api/sims/${sim}/stream`);
+    ws.addEventListener('message', (e) =&gt; got.push(String(e.data)));
+    hub.flush();
+    ws.send(JSON.stringify({ type: 'resume', after: 0 }));
+    hub.flush();
+    expect(got).toHaveLength(3); // hello, access, the answer holding A
+    ws.send(JSON.stringify({ type: 'append', commit: d }));
+    hub.flush();
+    expect(hub.duplicates).toBe(0); // held
+    hub.release();
+    hub.flush();
+    expect(hub.duplicates).toBe(1);
+    expect(got).toHaveLength(3); // a duplicate is answered by nothing
+    hub.foreign(sim, draftOf(1, [nameChange('B')])); // queued to the resumed socket
+    hub.closeAll(1006);
+    expect(hub.flush()).toBe(1); // the commit frame was lost; only the close is delivered
+    expect(got).toHaveLength(3);
+  });
+
+  it('closes 1006 a socket for an unregistered sim when strict', () =&gt; {
+    const hub = new FakeHub({ strict: true });
+    const codes: (number | undefined)[] = [];
+    const ws = new hub.WebSocket(`ws://x/api/sims/${newId()}/stream`);
+    ws.addEventListener('close', (e) =&gt; codes.push(e.code));
+    hub.flush();
+    expect(codes).toEqual([1006]);
+  });
+});
+
+describe('FakeLocks, FakeBus, FakeFetch', () =&gt; {
+  it('grants a name to one holder at a time, answers ifAvailable, and aborts a waiter', async () =&gt; {
+    const locks = new FakeLocks();
+    let release!: () =&gt; void;
+    const first = locks.request('n', {}, () =&gt; new Promise&lt;void&gt;((r) =&gt; (release = r)));
+    await microtasks();
+    expect(locks.held()).toEqual(['n']);
+    expect(await locks.request('n', { ifAvailable: true }, (l) =&gt; l)).toBeNull();
+    const ac = new AbortController();
+    const waiting = locks.request('n', { signal: ac.signal }, () =&gt; 'never');
+    ac.abort();
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+    release();
+    await first;
+    expect(locks.held()).toEqual([]);
+    expect((await locks.query()).held).toEqual([]);
+  });
+
+  it('a bus channel hears the others, never itself', async () =&gt; {
+    const bus = new FakeBus();
+    const a = bus.channel();
+    const b = bus.channel();
+    const heardA: unknown[] = [];
+    const heardB: unknown[] = [];
+    a.addEventListener('message', (e) =&gt; heardA.push(e.data));
+    b.addEventListener('message', (e) =&gt; heardB.push(e.data));
+    a.postMessage({ x: 1 });
+    await microtasks();
+    expect(heardA).toEqual([]);
+    expect(heardB).toEqual([{ x: 1 }]);
+  });
+
+  it('a fake fetch records the call and answers, or fails as the network does', async () =&gt; {
+    const f = new FakeFetch(() =&gt; ({ status: 201, body: { ok: 1 } }));
+    const res = await f.fetch('/api/sims', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ simId: 's' })
+    });
+    expect(res.status).toBe(201);
+    expect(f.calls).toEqual([
+      { url: '/api/sims', method: 'POST', contentType: 'application/json', body: { simId: 's' } }
+    ]);
+    f.handler = () =&gt; 'network';
+    await expect(f.fetch('/api/sims', { method: 'POST', body: '{}' })).rejects.toThrow(TypeError);
+  });
+});</code></pre></li>
+      <li id="t5-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-sync</code>. Expected: fails, modules missing.</li>
+      <li id="t5-s3"><input type="checkbox"> Implement <code>ports.ts</code>, <code>backoff.ts</code> and <code>test/fakes.ts</code> to the signatures and rules above. <code>fakes.ts</code> uses no timer of any kind; <code>FakeBus</code> delivers with <code>queueMicrotask</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Run again. Expected: pass. <code>npm run lint</code>, <code>npm run check</code> (it type-checks <code>browserPorts</code>' assignments), <code>npx chreode timing-check --head HEAD</code>: clean.</li>
+      <li id="t5-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-sync
+git commit -m "feat(sim-sync): the client's ports, its backoff, and fakes of the object, clock and browser"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Registration from the browser</h2>
+    <p>R51, R60; <a href="#d8">decisions 8</a> and <a href="#d9">9</a>; the contract in <code>docs/dev/auth.md</code>, Registering a sim, and <code>src/routes/api/sims/+server.ts:17-43</code>. No title is posted: the server names it <code>Untitled sim</code> (R42).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim-sync/register.ts</code></li>
+      <li>Test: <code>src/lib/sim-sync/register.spec.ts</code> (Vitest <code>server</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>RegisterCode</code> (<code>src/lib/sim-stream/register.ts:5</code>); <code>LocksLike</code> (Task 5).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export const REGISTER_LOCK = 'sfh-register';
+export type RegisterAnswer =
+  | { kind: 'ok'; created: boolean }
+  | { kind: 'sign-in' }
+  | { kind: 'taken' }
+  | { kind: 'quota' }
+  | { kind: 'retry' }
+  | { kind: 'bug'; status: number; code: RegisterCode | null };
+/** The answer for `simId` from a status and a parsed body (null when there is none). */
+export function registerAnswerOf(simId: string, status: number, body: unknown): RegisterAnswer;
+/** POST /api/sims { simId }, content-type application/json; a thrown fetch is 'retry'. */
+export function registerSim(fetchFn: typeof fetch, simId: string): Promise&lt;RegisterAnswer&gt;;
+/** One registration at a time in this browser: the Web Lock REGISTER_LOCK, or a promise chain in
+ *  this tab when locks is null. A job that throws releases it. */
+export class RegisterGate {
+  constructor(locks: LocksLike | null);
+  run&lt;T&gt;(job: () =&gt; Promise&lt;T&gt;): Promise&lt;T&gt;;
+}</code></pre></li>
+    </ul>
+    <table id="tbl-register-map">
+      <caption><code>registerAnswerOf</code>: status and code to answer</caption>
+      <thead><tr><th scope="col">Status</th><th scope="col">Body</th><th scope="col">Answer</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">200, 201</th><td><code>simId</code> equal to the one posted</td><td><code>ok</code>, <code>created</code> from the body</td></tr>
+        <tr><th scope="row">200, 201</th><td>anything else</td><td><code>bug</code></td></tr>
+        <tr><th scope="row">401</th><td>any</td><td><code>sign-in</code></td></tr>
+        <tr><th scope="row">403</th><td><code>code: 'quota'</code></td><td><code>quota</code></td></tr>
+        <tr><th scope="row">403</th><td>no code (a foreign origin)</td><td><code>bug</code></td></tr>
+        <tr><th scope="row">409</th><td>any</td><td><code>taken</code></td></tr>
+        <tr><th scope="row">429; 500 to 599</th><td>any</td><td><code>retry</code></td></tr>
+        <tr><th scope="row">400, 415, any other</th><td>any</td><td><code>bug</code>, with the code when it is a <code>RegisterCode</code></td></tr>
+      </tbody>
+    </table>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests:
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import { newId } from '$lib/ids/base58';
+import { REGISTER_LOCK, RegisterGate, registerAnswerOf, registerSim } from './register';
+import { FakeFetch, FakeLocks, microtasks } from './test/fakes';
+
+const id = newId();
+
+describe('registerAnswerOf', () =&gt; {
+  it.each([
+    [201, { simId: id, created: true }, { kind: 'ok', created: true }],
+    [200, { simId: id, created: false }, { kind: 'ok', created: false }],
+    [200, { simId: newId(), created: false }, { kind: 'bug', status: 200, code: null }],
+    [401, { error: 'x', code: 'sign_in' }, { kind: 'sign-in' }],
+    [409, { error: 'x', code: 'taken' }, { kind: 'taken' }],
+    [403, { error: 'x', code: 'quota' }, { kind: 'quota' }],
+    [403, { error: 'x' }, { kind: 'bug', status: 403, code: null }],
+    [429, { error: 'x', code: 'rate' }, { kind: 'retry' }],
+    [500, { error: 'x', code: 'failed' }, { kind: 'retry' }],
+    [500, { error: 'x', code: 'session' }, { kind: 'retry' }],
+    [500, { message: 'x' }, { kind: 'retry' }],
+    [503, null, { kind: 'retry' }],
+    [400, { error: 'x', code: 'invalid_id' }, { kind: 'bug', status: 400, code: 'invalid_id' }],
+    [400, { error: 'x', code: 'title' }, { kind: 'bug', status: 400, code: 'title' }],
+    [415, { error: 'x' }, { kind: 'bug', status: 415, code: null }],
+    [404, null, { kind: 'bug', status: 404, code: null }]
+  ] as const)('%i %j answers %j', (status, body, want) =&gt; {
+    expect(registerAnswerOf(id, status, body)).toEqual(want);
+  });
+});
+
+describe('registerSim', () =&gt; {
+  it('posts only the id, as JSON, to /api/sims', async () =&gt; {
+    const f = new FakeFetch(() =&gt; ({ status: 201, body: { simId: id, created: true } }));
+    expect(await registerSim(f.fetch, id)).toEqual({ kind: 'ok', created: true });
+    expect(f.calls).toEqual([
+      { url: '/api/sims', method: 'POST', contentType: 'application/json', body: { simId: id } }
+    ]);
+  });
+
+  it('a network failure is retry, and a body that is not JSON is no body', async () =&gt; {
+    const f = new FakeFetch(() =&gt; 'network');
+    expect(await registerSim(f.fetch, id)).toEqual({ kind: 'retry' });
+    f.handler = () =&gt; ({ status: 201 });
+    expect(await registerSim(f.fetch, id)).toEqual({ kind: 'bug', status: 201, code: null });
+  });
+});
+
+describe('RegisterGate', () =&gt; {
+  async function oneAtATime(locks: FakeLocks | null) {
+    const a = new RegisterGate(locks);
+    const b = new RegisterGate(locks);
+    let inside = 0;
+    let most = 0;
+    const releases: (() =&gt; void)[] = [];
+    const job = () =&gt;
+      new Promise&lt;void&gt;((resolve) =&gt; {
+        inside++;
+        most = Math.max(most, inside);
+        releases.push(() =&gt; {
+          inside--;
+          resolve();
+        });
+      });
+    const runs = locks ? [a.run(job), b.run(job), a.run(job)] : [a.run(job), a.run(job)];
+    for (let i = 0; i &lt; runs.length; i++) {
+      await microtasks();
+      expect(releases).toHaveLength(i + 1);
+      releases[i]();
+    }
+    await Promise.all(runs);
+    expect(most).toBe(1);
+  }
+
+  it('runs one registration at a time across tabs sharing Web Locks', async () =&gt; {
+    const locks = new FakeLocks();
+    await oneAtATime(locks);
+    expect(new Set(locks.requested)).toEqual(new Set([REGISTER_LOCK]));
+  });
+
+  it('runs one at a time in this tab without Web Locks', async () =&gt; {
+    await oneAtATime(null);
+  });
+
+  it('a job that throws lets the next one run', async () =&gt; {
+    const gate = new RegisterGate(new FakeLocks());
+    await expect(gate.run(async () =&gt; Promise.reject(new Error('x')))).rejects.toThrow('x');
+    expect(await gate.run(async () =&gt; 'next')).toBe('next');
+  });
+});</code></pre></li>
+      <li id="t6-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-sync/register.spec.ts</code>. Expected: fails, module missing.</li>
+      <li id="t6-s3"><input type="checkbox"> Implement <code>register.ts</code>. <code>registerSim</code> reads the body with <code>res.json().catch(() =&gt; null)</code>. Nothing in it logs (the caller does, Task 11).</li>
+      <li id="t6-s4"><input type="checkbox"> Run again. Expected: pass. Lint, check, <code>npx chreode timing-check --head HEAD</code>: clean.</li>
+      <li id="t6-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-sync/register.ts src/lib/sim-sync/register.spec.ts
+git commit -m "feat(sim-sync): register a sim from the browser, one request at a time"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: The socket: connection and resume</h2>
+    <p>R21 to R28, R55; <a href="#tbl-conn">the connection table</a>; decisions <a href="#d1">1</a>, <a href="#d5">5</a>, <a href="#d6">6</a>, <a href="#d13">13</a>, <a href="#d14">14</a>. This task builds <code>SimSocket</code> with every connection row and a <code>trySend</code> that sends nothing yet (it returns at once); Task 8 fills <code>trySend</code> and the refusals. Pins S1 (nothing sent before <code>more: false</code>), S3, S10.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim-sync/sim-socket.ts</code></li>
+      <li>Test: <code>src/lib/sim-sync/sim-socket.spec.ts</code> (Vitest <code>server</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>SyncStore</code>, <code>Clock</code>, <code>SocketCtor</code>, <code>SocketLike</code>, <code>NetSignals</code> (Task 5); <code>backoffDelay</code> (Task 5); <code>ServerFrame</code>, <code>encodeFrame</code>, <code>PROTOCOL</code>, <code>PING</code>, <code>PONG</code>, <code>CLOSE_GONE</code> (<code>protocol.ts</code>, with Tasks 1 and 2).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export const HELLO_TIMEOUT_MS = 10_000;
+export const PING_MS = 30_000;
+export type SocketPhase =
+  'off' | 'connecting' | 'catching-up' | 'live' | 'offline' | 'waiting' | 'halted';
+/** Why a socket will not reconnect. */
+export type Halt = 'gone' | 'diverged' | 'protocol';
+/** Why it holds its sends while connected. */
+export type Hold = 'not-writer' | 'limit' | 'full' | 'newer';
+export interface SocketView {
+  phase: SocketPhase;
+  halt: Halt | null;
+  hold: Hold | null;
+  /** The last access frame on this connection; null before one. */
+  write: boolean | null;
+  /** The last hello's build; null before one. */
+  serverBuild: string | null;
+  /** The id of the append awaiting its answer. */
+  inFlight: string | null;
+}
+export const OFF_VIEW: SocketView; // phase 'off', everything else null
+
+export interface SimSocketOptions {
+  store: SyncStore;
+  /** The sim this socket belongs to, for its life. */
+  simId: string;
+  /** location.origin: http becomes ws, https becomes wss. */
+  origin: string;
+  WebSocket: SocketCtor;
+  clock: Clock;
+  random: () =&gt; number;
+  net: NetSignals;
+  /** Called after every change of `view`. */
+  onChange: (v: SocketView) =&gt; void;
+}
+export class SimSocket {
+  constructor(o: SimSocketOptions);
+  /** Connects (or waits for online). Subscribes to the store and the network. Once only. */
+  start(): void;
+  /** Closes with 1000, cancels every timer, unsubscribes: final. */
+  stop(): void;
+  /** Closes the current connection (1000) and connects now; nothing when halted or stopped. */
+  reconnect(): void;
+  get view(): SocketView;
+}</code></pre>
+        Builder's call: internal fields and the split into private methods. Rules that are not: a socket the class closes itself (stop, hello timeout, offline, halt, reconnect) is detached at once, so its later events are ignored like any socket that is not the current one (C17); the store's subscriber is the one place a store change reaches the socket (C10, and Task 8's sends); <code>receive</code> is always called with <code>o.simId</code>.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write the failing tests. The rig is shared with Task 8:
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import { newId } from '$lib/ids/base58';
+import { LogStore } from '$lib/sim-store/log-store.svelte';
+import { memorySimDb } from '$lib/sim-store/sim-db';
+import { DS, draftOf, nameChange, stamped } from '$lib/sim-store/test/commits';
+import { SimSocket, type SimSocketOptions } from './sim-socket';
+import { FakeClock, FakeHub, FakeNet, settle, type HubOptions } from './test/fakes';
+
+const ORIGIN = 'http://localhost:4173';
+const stamp = () =&gt; ({ datasetVersion: DS, build: 'test' });
+
+interface Rig {
+  hub: FakeHub;
+  clock: FakeClock;
+  net: FakeNet;
+  store: LogStore;
+  sim: string;
+  opts: SimSocketOptions;
+  sock: SimSocket;
+}
+
+/** A store on a new sim with `edits` renames pending and stored, and a socket not started. */
+async function rig(o: { hub?: HubOptions; online?: boolean; edits?: number } = {}): Promise&lt;Rig&gt; {
+  const hub = new FakeHub(o.hub);
+  const clock = new FakeClock();
+  const net = new FakeNet({ online: o.online ?? true });
+  const store = new LogStore({ db: memorySimDb(), tabId: 'a', stamp });
+  const sim = newId();
+  await store.open(sim);
+  for (let i = 0; i &lt; (o.edits ?? 0); i++) store.rename(`N${i}`);
+  await store.written();
+  const opts: SimSocketOptions = {
+    store,
+    simId: sim,
+    origin: ORIGIN,
+    WebSocket: hub.WebSocket,
+    clock,
+    random: () =&gt; 0.5,
+    net,
+    onChange: () =&gt; {}
+  };
+  return { hub, clock, net, store, sim, opts, sock: new SimSocket(opts) };
+}
+
+async function live(r: Rig) {
+  r.sock.start();
+  await settle(r.hub, r.store);
+}
+
+const foreign = (r: Rig, name: string, o?: Parameters&lt;FakeHub['foreign']&gt;[2]) =&gt;
+  r.hub.foreign(r.sim, draftOf(r.hub.commits(r.sim).length, [nameChange(name)]), o);
+
+describe('SimSocket: connection', () =&gt; {
+  it('C1 connects to its sim\'s stream, ws for http and wss for https', async () =&gt; {
+    const r = await rig();
+    r.sock.start();
+    expect(r.hub.sockets.map((s) =&gt; s.url)).toEqual([
+      `ws://localhost:4173/api/sims/${r.sim}/stream`
+    ]);
+    expect(r.sock.view.phase).toBe('connecting');
+    new SimSocket({ ...r.opts, origin: 'https://sim.example' }).start();
+    expect(r.hub.sockets[1].url).toBe(`wss://sim.example/api/sims/${r.sim}/stream`);
+  });
+
+  it('C2 C14b starts offline when the browser is, and connects on online', async () =&gt; {
+    const r = await rig({ online: false });
+    r.sock.start();
+    expect(r.sock.view.phase).toBe('offline');
+    expect(r.hub.sockets).toHaveLength(0);
+    r.net.set('online');
+    expect(r.hub.sockets).toHaveLength(1);
+  });
+
+  it('C3 on hello sets the server dataset, resumes from the tip and goes live', async () =&gt; {
+    const r = await rig();
+    foreign(r, 'F1');
+    await live(r);
+    expect(r.store.serverDataset).toBe(DS);
+    expect(r.hub.resumes).toEqual([0]);
+    expect(r.store.tipSeq).toBe(1);
+    expect(r.sock.view).toMatchObject({ phase: 'live', write: true, serverBuild: 'b' });
+  });
+
+  it('C4 a hello without a dataset leaves it unknown, so nothing is sent', async () =&gt; {
+    const r = await rig({ hub: { dataset: null }, edits: 1 });
+    await live(r);
+    expect(r.store.serverDataset).toBeNull();
+    expect(r.hub.appends).toEqual([]);
+    expect(r.store.pendingCount).toBe(1);
+  });
+
+  it('C5 a hello of another protocol halts: closed, never reconnected', async () =&gt; {
+    const r = await rig({ hub: { protocol: 2 }, edits: 1 });
+    await live(r);
+    expect(r.sock.view).toMatchObject({ phase: 'halted', halt: 'protocol' });
+    expect(r.hub.sockets[0].closedWith).toBe(1000);
+    r.clock.advance(120_000);
+    expect(r.hub.sockets).toHaveLength(1);
+    expect(r.store.pendingCount).toBe(1);
+  });
+
+  it('C6 no hello within 10 s closes the socket and reconnects after the backoff', async () =&gt; {
+    const r = await rig();
+    r.hub.silent = true;
+    await live(r);
+    r.clock.advance(9_999);
+    expect(r.sock.view.phase).toBe('connecting');
+    r.clock.advance(1);
+    expect(r.sock.view.phase).toBe('waiting');
+    expect(r.hub.sockets[0].closedWith).toBe(1000);
+    r.hub.silent = false;
+    r.clock.advance(999);
+    expect(r.hub.sockets).toHaveLength(1);
+    r.clock.advance(1);
+    expect(r.hub.sockets).toHaveLength(2);
+    await settle(r.hub, r.store);
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it('C7 a paged resume asks again after each more: true and sends only after more: false', async () =&gt; {
+    const r = await rig({ hub: { pageSize: 2 } });
+    for (let s = 0; s &lt; 5; s++) foreign(r, `F${s}`);
+    await live(r);
+    expect(r.hub.resumes).toEqual([0, 2, 4]);
+    expect(r.store.tipSeq).toBe(5);
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it('C8 a gap while live resumes from the gap', async () =&gt; {
+    const r = await rig();
+    await live(r);
+    foreign(r, 'A', { except: r.hub.sockets[0] });
+    foreign(r, 'B');
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 0]);
+    expect(r.store.tipSeq).toBe(2);
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it('C9 live frames during a catch-up never start a second resume', async () =&gt; {
+    const r = await rig({ hub: { pageSize: 1 } });
+    await live(r);
+    foreign(r, 'A', { except: r.hub.sockets[0] });
+    foreign(r, 'B', { except: r.hub.sockets[0] });
+    foreign(r, 'C'); // seq 3: a gap after 0
+    foreign(r, 'D'); // seq 4: arrives while the resume is under way
+    await settle(r.hub, r.store);
+    expect(r.store.tipSeq).toBe(4);
+    expect(r.hub.resumes).toEqual([0, 0, 1, 2, 3]);
+  });
+
+  it('C10 frames that came while the store was opening are fetched again once it is ready', async () =&gt; {
+    const r = await rig();
+    await live(r);
+    const opening = r.store.open(r.sim);
+    foreign(r, 'A');
+    r.hub.flush(); // the store answers stale, not-ready: nothing applied
+    await opening;
+    await settle(r.hub, r.store);
+    expect(r.store.tipSeq).toBe(1);
+    expect(r.hub.resumes).toEqual([0, 0]);
+  });
+
+  it('C11 reconnects with backoff 1, 2, 4 … 30 s while no connection gets through', async () =&gt; {
+    const r = await rig();
+    r.hub.reject = true;
+    r.sock.start();
+    const delays: number[] = [];
+    for (let i = 0; i &lt; 7; i++) {
+      await settle(r.hub, r.store);
+      const d = r.clock.nextDelay()!;
+      delays.push(d);
+      r.clock.advance(d);
+    }
+    expect(delays).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000]);
+    expect(r.hub.sockets).toHaveLength(8);
+  });
+
+  it('C12 a connection that reaches live with nothing to send resets the backoff', async () =&gt; {
+    const r = await rig();
+    r.hub.reject = true;
+    r.sock.start();
+    await settle(r.hub, r.store);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    r.hub.reject = false;
+    r.clock.advance(2000);
+    await settle(r.hub, r.store);
+    expect(r.sock.view.phase).toBe('live');
+    r.hub.closeAll(1011);
+    await settle(r.hub, r.store);
+    expect(r.sock.view.phase).toBe('waiting');
+    expect(r.clock.nextDelay()).toBe(1000);
+  });
+
+  it('C13 a close 4410 halts as gone: never reconnected', async () =&gt; {
+    const r = await rig();
+    await live(r);
+    r.hub.closeAll(4410);
+    await settle(r.hub, r.store);
+    expect(r.sock.view).toMatchObject({ phase: 'halted', halt: 'gone' });
+    r.clock.advance(120_000);
+    expect(r.hub.sockets).toHaveLength(1);
+  });
+
+  it('C14 offline closes the socket and waits for online, which connects at once', async () =&gt; {
+    const r = await rig();
+    await live(r);
+    r.net.set('offline');
+    expect(r.sock.view.phase).toBe('offline');
+    expect(r.hub.sockets[0].closedWith).toBe(1000);
+    r.clock.advance(120_000);
+    expect(r.hub.sockets).toHaveLength(1);
+    r.net.set('online');
+    expect(r.hub.sockets).toHaveLength(2);
+    await settle(r.hub, r.store);
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it('C15 becoming visible while waiting connects at once', async () =&gt; {
+    const r = await rig();
+    await live(r);
+    r.hub.closeAll(1011);
+    await settle(r.hub, r.store);
+    expect(r.sock.view.phase).toBe('waiting');
+    r.net.set('hidden');
+    r.net.set('visible');
+    expect(r.hub.sockets).toHaveLength(2);
+  });
+
+  it('C16 pings every 30 s while visible, not while hidden, and ignores pong', async () =&gt; {
+    const r = await rig();
+    await live(r);
+    const s = r.hub.sockets[0];
+    const pings = () =&gt; s.sent.filter((t) =&gt; t === 'ping').length;
+    r.clock.advance(30_000);
+    expect(pings()).toBe(1);
+    r.net.set('hidden');
+    r.clock.advance(90_000);
+    expect(pings()).toBe(1);
+    r.net.set('visible');
+    r.clock.advance(30_000);
+    expect(pings()).toBe(2);
+    await settle(r.hub, r.store); // the hub's pongs are delivered
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it('C17 stop closes with 1000; later events of that socket change nothing', async () =&gt; {
+    const r = await rig();
+    await live(r);
+    const s = r.hub.sockets[0];
+    r.sock.stop();
+    expect(s.closedWith).toBe(1000);
+    expect(r.sock.view.phase).toBe('off');
+    const late = stamped(draftOf(0, [nameChange('X')]), 1);
+    s.emit('message', JSON.stringify({ type: 'commits', commits: [late], more: false }));
+    s.emit('close', 1011);
+    r.clock.advance(120_000);
+    expect(r.store.tipSeq).toBe(0);
+    expect(r.hub.sockets).toHaveLength(1);
+  });
+
+  it('C18 a frame for a sim the store no longer has open applies nothing and asks nothing', async () =&gt; {
+    const r = await rig();
+    await live(r);
+    await r.store.open(newId());
+    foreign(r, 'A');
+    await settle(r.hub, r.store);
+    expect(r.store.tipSeq).toBe(0);
+    expect(r.hub.resumes).toEqual([0]);
+  });
+
+  it('C19 C23 a text that is not a known frame, and an error event, are ignored', async () =&gt; {
+    const r = await rig();
+    await live(r);
+    const s = r.hub.sockets[0];
+    s.emit('message', 'not json');
+    s.emit('message', '{"type":"other"}');
+    s.emit('error');
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it('C20 a resume refused gone halts as diverged and keeps the commits', async () =&gt; {
+    const r = await rig({ edits: 1 });
+    r.hub.refuseResume('gone');
+    await live(r);
+    expect(r.sock.view).toMatchObject({ phase: 'halted', halt: 'diverged' });
+    r.clock.advance(120_000);
+    expect(r.hub.sockets).toHaveLength(1);
+    expect(r.store.pendingCount).toBe(1);
+  });
+
+  it('C21 a resume refused limit backs off, then resumes again', async () =&gt; {
+    const r = await rig();
+    r.hub.refuseResume('limit');
+    await live(r);
+    expect(r.hub.resumes).toEqual([0]);
+    expect(r.sock.view.phase).toBe('catching-up');
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 0]);
+    expect(r.sock.view.phase).toBe('live');
+  });
+
+  it('C22 a connection lost between pages resumes from what was applied', async () =&gt; {
+    const r = await rig({ hub: { pageSize: 2 } });
+    for (let s = 0; s &lt; 5; s++) foreign(r, `F${s}`);
+    r.sock.start();
+    r.hub.step(); // open, hello, access: resume 0 is sent
+    r.hub.step(); // the first page: resume 2 is sent
+    r.hub.closeAll(1012); // the second page is lost
+    await settle(r.hub, r.store);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 2, 2, 4]);
+    expect(r.store.tipSeq).toBe(5);
+  });
+});</code></pre></li>
+      <li id="t7-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-sync/sim-socket.spec.ts</code>. Expected: fails, module missing.</li>
+      <li id="t7-s3"><input type="checkbox"> Implement <code>SimSocket</code> to <a href="#tbl-conn">the connection table</a>. Parse frames with <code>JSON.parse</code> in a <code>try</code>; a text <code>pong</code> is skipped before parsing; an unknown <code>type</code> is ignored. A resume is sent only when <code>store.ready</code> and <code>store.simId === o.simId</code>; otherwise it is owed and sent from the store's subscriber when both hold (C10, C18). A frame answered <code>not-ready</code> and the store turning ready again both set the same owed flag, so C10 sends one resume, not two. <code>trySend()</code> exists and returns at once.</li>
+      <li id="t7-s4"><input type="checkbox"> Run again. Expected: pass. Lint, check, <code>npx chreode timing-check --head HEAD</code>: clean.</li>
+      <li id="t7-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-sync/sim-socket.ts src/lib/sim-sync/sim-socket.spec.ts
+git commit -m "feat(sim-sync): a sim's socket: hello, paged resume, gaps, backoff, offline and ping"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: The socket: sending and refusals</h2>
+    <p>R17, R18, R25, R26; <a href="#tbl-send">the append table</a>; decisions <a href="#d1">1</a>, <a href="#d13">13</a>, <a href="#d15">15</a>, <a href="#d21">21</a>. Pins S1, S2, S4. The prototype of this loop passed (<a href="#sec-ran">What was run</a>, 1).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-sync/sim-socket.ts</code></li>
+      <li>Test: <code>src/lib/sim-sync/sim-socket.spec.ts</code> (Vitest <code>server</code>), a second <code>describe</code> using Task 7's rig</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 7's <code>SimSocket</code> and its rig; <code>SyncStore.head</code>, <code>dropPending</code>, <code>tipSeq</code>.</li>
+      <li>Produces: no new member. <code>trySend()</code> as stated in <a href="#sec-states-send">the appends section</a>; the refusal handling as <a href="#tbl-send">the append table</a>.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Write the failing tests:
+        <pre><code data-lang="ts">describe('SimSocket: appends', () =&gt; {
+  const sent = (r: Rig, id: string) =&gt; r.hub.appends.filter((d) =&gt; d.id === id);
+
+  it('A1 sends the stored head after the resume, one at a time, in the store\'s order', async () =&gt; {
+    const r = await rig({ hub: { hold: true }, edits: 3 });
+    const ids = r.store.pending.map((p) =&gt; p.draft.id);
+    await live(r);
+    expect(r.hub.appends.map((d) =&gt; d.id)).toEqual([ids[0]]);
+    expect(r.sock.view.inFlight).toBe(ids[0]);
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(r.hub.appends.map((d) =&gt; d.id)).toEqual(ids.slice(0, 2));
+    r.hub.release();
+    await settle(r.hub, r.store);
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(r.hub.commits(r.sim).map((c) =&gt; c.id)).toEqual(ids);
+    expect(r.store.pendingCount).toBe(0);
+    expect(r.sock.view.inFlight).toBeNull();
+  });
+
+  it('A2 sends nothing while access says write: false, and sends once it says true', async () =&gt; {
+    const r = await rig({ hub: { write: false }, edits: 1 });
+    await live(r);
+    expect(r.hub.appends).toEqual([]);
+    r.hub.setAccess(true);
+    await settle(r.hub, r.store);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('A3 not-writer holds the commit pending until access says write: true', async () =&gt; {
+    const r = await rig({ edits: 1 });
+    r.hub.refuseNext('not-writer');
+    await live(r);
+    expect(r.sock.view.hold).toBe('not-writer');
+    r.clock.advance(120_000);
+    await settle(r.hub, r.store);
+    expect(r.hub.appends).toHaveLength(1);
+    expect(r.store.pendingCount).toBe(1);
+    r.hub.setAccess(true);
+    await settle(r.hub, r.store);
+    expect(r.hub.appends).toHaveLength(2);
+    expect(r.store.pendingCount).toBe(0);
+    expect(r.sock.view.hold).toBeNull();
+  });
+
+  it('A4 behind: the foreign commit arrives first, then the re-applied head is sent', async () =&gt; {
+    const r = await rig({ hub: { hold: true }, edits: 1 });
+    const id = r.store.pending[0].draft.id;
+    await live(r);
+    const f = foreign(r, 'F');
+    r.hub.release(); // parent 0 against tip 1: behind
+    await settle(r.hub, r.store);
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(sent(r, id).map((d) =&gt; d.parent)).toEqual([0, 1]);
+    expect(r.hub.commits(r.sim).map((c) =&gt; c.id)).toEqual([f.id, id]);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('A5 behind with the tip unmoved resumes before sending again', async () =&gt; {
+    const r = await rig({ edits: 1 });
+    r.hub.refuseNext('behind');
+    await live(r);
+    expect(r.hub.resumes).toEqual([0, 0]);
+    expect(r.hub.appends).toHaveLength(2);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it('A6 invalid drops the commit, which the store reports, and sends the next', async () =&gt; {
+    const r = await rig({ edits: 2 });
+    const [first, second] = r.store.pending.map((p) =&gt; p.draft.id);
+    r.hub.refuseNext('invalid');
+    await live(r);
+    expect(r.store.drops.map((d) =&gt; d.id)).toContain(first);
+    expect(r.hub.commits(r.sim).map((c) =&gt; c.id)).toEqual([second]);
+  });
+
+  it('A7 limit holds, backs off 1 s, then sends again', async () =&gt; {
+    const r = await rig({ edits: 1 });
+    r.hub.refuseNext('limit');
+    await live(r);
+    expect(r.sock.view.hold).toBe('limit');
+    r.clock.advance(999);
+    expect(r.hub.appends).toHaveLength(1);
+    r.clock.advance(1);
+    await settle(r.hub, r.store);
+    expect(r.hub.appends).toHaveLength(2);
+    expect(r.store.pendingCount).toBe(0);
+  });
+
+  it.each(['full', 'newer'] as const)('A8 %s holds for good and keeps the commit', async (why) =&gt; {
+    const r = await rig({ edits: 1 });
+    r.hub.refuseNext(why);
+    await live(r);
+    r.hub.setAccess(true);
+    r.clock.advance(300_000);
+    await settle(r.hub, r.store);
+    expect(r.sock.view.hold).toBe(why);
+    expect(r.hub.appends).toHaveLength(1);
+    expect(r.store.pendingCount).toBe(1);
+  });
+
+  it('A9 gone on an append halts and closes', async () =&gt; {
+    const r = await rig({ edits: 1 });
+    r.hub.refuseNext('gone');
+    await live(r);
+    expect(r.sock.view).toMatchObject({ phase: 'halted', halt: 'gone' });
+    expect(r.hub.sockets[0].closedWith).toBe(1000);
+    expect(r.store.pendingCount).toBe(1);
+  });
+
+  it('A10 an append answered by silence (a duplicate) is confirmed by its copy on the stream', async () =&gt; {
+    const r = await rig({ hub: { hold: true }, edits: 2 });
+    const h = r.store.pending[0].draft;
+    await live(r);
+    r.hub.foreign(r.sim, structuredClone(h)); // another tab sent this very commit first
+    r.hub.release(); // ours is a duplicate: no frame
+    await settle(r.hub, r.store);
+    expect(r.hub.duplicates).toBe(1);
+    expect(r.sock.view.inFlight).not.toBe(h.id);
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(r.store.pendingCount).toBe(0);
+    expect(r.hub.commits(r.sim)).toHaveLength(2);
+  });
+
+  it('A11 a socket lost after its append was accepted resumes and never sends it again', async () =&gt; {
+    const r = await rig({ hub: { hold: true }, edits: 1 });
+    const id = r.store.pending[0].draft.id;
+    await live(r);
+    r.hub.release(); // accepted; its frame is queued
+    r.hub.closeAll(1006); // and lost
+    await settle(r.hub, r.store);
+    expect(r.sock.view.inFlight).toBeNull();
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(sent(r, id)).toHaveLength(1);
+    expect(r.store.pendingCount).toBe(0);
+    expect(r.hub.duplicates).toBe(0);
+  });
+
+  it('A12 a socket lost before its append was processed sends it again after the resume', async () =&gt; {
+    const r = await rig({ hub: { hold: true }, edits: 1 });
+    const id = r.store.pending[0].draft.id;
+    await live(r);
+    r.hub.closeAll(1006); // the held append is dropped with its socket
+    await settle(r.hub, r.store);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 0]);
+    r.hub.release();
+    await settle(r.hub, r.store);
+    expect(sent(r, id)).toHaveLength(2);
+    expect(r.hub.commits(r.sim).map((c) =&gt; c.id)).toEqual([id]);
+  });
+
+  it('A13 sends nothing once the store has another sim open', async () =&gt; {
+    const r = await rig();
+    await live(r);
+    await r.store.open(newId());
+    r.store.rename('Other');
+    await r.store.written();
+    await settle(r.hub, r.store);
+    expect(r.hub.appends).toEqual([]);
+  });
+
+  it('A14 an internal error on every append backs off longer; a confirmed append resets it', async () =&gt; {
+    const r = await rig({ edits: 1 });
+    r.hub.closeOnAppend = 3;
+    r.sock.start();
+    const delays: number[] = [];
+    for (let i = 0; i &lt; 3; i++) {
+      await settle(r.hub, r.store);
+      const d = r.clock.nextDelay()!;
+      delays.push(d);
+      r.clock.advance(d);
+    }
+    await settle(r.hub, r.store);
+    expect(delays).toEqual([1000, 2000, 4000]);
+    expect(r.store.pendingCount).toBe(0);
+    r.hub.closeAll(1011);
+    await settle(r.hub, r.store);
+    expect(r.clock.nextDelay()).toBe(1000);
+  });
+
+  it('A15 full outlives a reconnect', async () =&gt; {
+    const r = await rig({ edits: 1 });
+    r.hub.refuseNext('full');
+    await live(r);
+    r.hub.closeAll(1011);
+    await settle(r.hub, r.store);
+    r.clock.advance(1000);
+    await settle(r.hub, r.store);
+    expect(r.hub.sockets).toHaveLength(2);
+    expect(r.sock.view.hold).toBe('full');
+    expect(r.hub.appends).toHaveLength(1);
+  });
+
+  it('A16 a refusal naming an id that is not in flight is ignored', async () =&gt; {
+    const r = await rig({ edits: 1 });
+    await live(r);
+    r.hub.sockets[0].emit('message', JSON.stringify({ type: 'refused', id: newId(), why: 'invalid' }));
+    expect(r.store.drops).toEqual([]);
+    expect(r.sock.view.hold).toBeNull();
+  });
+});</code></pre></li>
+      <li id="t8-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-sync/sim-socket.spec.ts</code>. Expected: the A rows fail (nothing is sent), the C rows pass.</li>
+      <li id="t8-s3"><input type="checkbox"> Implement <code>trySend</code> and the refusals to <a href="#tbl-send">the append table</a>. <code>inFlight</code> resolves on any <code>commits</code> frame holding its id, whatever <code>receive</code> answers; a close clears it; a new connection clears <code>not-writer</code> and <code>limit</code> holds (A15). <code>attempt</code> resets on a resolved append (A10) or on reaching live with no head (C12); <code>limitAttempt</code> resets on a resolved append.</li>
+      <li id="t8-s4"><input type="checkbox"> Run again. Expected: all pass. Lint, check, <code>npx chreode timing-check --head HEAD</code>: clean.</li>
+      <li id="t8-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-sync/sim-socket.ts src/lib/sim-sync/sim-socket.spec.ts
+git commit -m "feat(sim-sync): send pending commits one at a time and act on each refusal"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-9">
+    <h2>Task 9: Tabs</h2>
+    <p>R40; <a href="#tbl-tabs">the tabs table</a>; decisions <a href="#d10">10</a> and <a href="#d11">11</a>. Pins S8. The claims themselves are plan 1's (<code>LogStore.open(simId, { claim })</code>, <code>LogStore.claim(owners)</code>, atomic in IndexedDB, <code>claimPending</code> <code>idb.ts:284</code>); this task decides only whose.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim-sync/tabs.ts</code></li>
+      <li>Test: <code>src/lib/sim-sync/tabs.spec.ts</code> (Vitest <code>server</code>, with <code>FakeLocks</code> and <code>FakeBus</code>); <code>src/lib/sim-sync/browser.svelte.spec.ts</code> (Vitest <code>client</code>: real Web Locks and BroadcastChannel in Chromium, and <code>browserPorts</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>LocksLike</code>, <code>ChannelLike</code>, <code>browserPorts</code> (Task 5).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export const TAB_LOCK_PREFIX = 'sfh-tab:';
+export const TAB_CHANNEL = 'sfh-sim';
+export class TabPresence {
+  constructor(o: { tabId: string; locks: LocksLike | null; channel: ChannelLike | null });
+  /** Holds TAB_LOCK_PREFIX + tabId until stop(); resolves once it is held; then posts
+   *  { type: 'here', tabId, reply: false }. Without Web Locks resolves at once. */
+  start(): Promise&lt;void&gt;;
+  /** Of `owners`, those whose lock is not held, never this tab. Without Web Locks: every owner
+   *  but this tab (decision 11). */
+  goneOwners(owners: readonly string[]): Promise&lt;string[]&gt;;
+  /** Waits for `owner`'s lock, releases it at once, then tells onGone, once per owner. Never
+   *  this tab; nothing without Web Locks. */
+  watch(owner: string): void;
+  /** The owners being watched now (tests and diagnostics). */
+  watching(): string[];
+  onGone(fn: (owner: string) =&gt; void): () =&gt; void;
+  /** Releases the lock, aborts the watches (nothing is told), closes the channel. */
+  stop(): void;
+}</code></pre>
+        A channel message is used only when it is a plain object with <code>type === 'here'</code>, a string <code>tabId</code> other than this tab's and a boolean <code>reply</code>; anything else is ignored. A watch's <code>AbortError</code> on <code>stop()</code> is swallowed.</li>
+    </ul>
+    <ol>
+      <li id="t9-s1"><input type="checkbox"> Write the failing tests. <code>tabs.spec.ts</code>:
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import { TAB_LOCK_PREFIX, TabPresence } from './tabs';
+import { FakeBus, FakeLocks, microtasks } from './test/fakes';
+
+const tab = (tabId: string, locks: FakeLocks | null, bus: FakeBus | null) =&gt;
+  new TabPresence({ tabId, locks, channel: bus?.channel() ?? null });
+
+describe('TabPresence', () =&gt; {
+  it('T1 T7 holds its own lock from start until stop', async () =&gt; {
+    const locks = new FakeLocks();
+    const a = tab('a', locks, null);
+    await a.start();
+    expect(locks.held()).toEqual([`${TAB_LOCK_PREFIX}a`]);
+    a.stop();
+    await microtasks();
+    expect(locks.held()).toEqual([]);
+  });
+
+  it('T4 the gone owners are those whose lock is free, never this tab', async () =&gt; {
+    const locks = new FakeLocks();
+    const a = tab('a', locks, null);
+    const b = tab('b', locks, null);
+    await a.start();
+    await b.start();
+    expect(await a.goneOwners(['a', 'b', 'c'])).toEqual(['c']);
+  });
+
+  it('T5 without Web Locks every owner but this tab is gone, and watch does nothing', async () =&gt; {
+    const a = tab('a', null, null);
+    await a.start();
+    expect(await a.goneOwners(['a', 'b'])).toEqual(['b']);
+    a.watch('b');
+    expect(a.watching()).toEqual([]);
+  });
+
+  it('T2 T3 tabs learn of each other on the channel and hear when the other goes, once', async () =&gt; {
+    const locks = new FakeLocks();
+    const bus = new FakeBus();
+    const a = tab('a', locks, bus);
+    const b = tab('b', locks, bus);
+    const goneA: string[] = [];
+    const goneB: string[] = [];
+    a.onGone((o) =&gt; goneA.push(o));
+    b.onGone((o) =&gt; goneB.push(o));
+    await a.start();
+    await b.start();
+    await microtasks();
+    expect(a.watching()).toEqual(['b']);
+    expect(b.watching()).toEqual(['a']);
+    a.watch('b'); // twice is once
+    b.stop();
+    await microtasks();
+    expect(goneA).toEqual(['b']);
+    expect(goneB).toEqual([]);
+    expect(locks.held()).toEqual([`${TAB_LOCK_PREFIX}a`]);
+  });
+
+  it('T6 T7 without a channel only watched owners are heard; stop abandons watches silently', async () =&gt; {
+    const locks = new FakeLocks();
+    const a = tab('a', locks, null);
+    const b = tab('b', locks, null);
+    const c = tab('c', locks, null);
+    const gone: string[] = [];
+    a.onGone((o) =&gt; gone.push(o));
+    await a.start();
+    await b.start();
+    await c.start();
+    a.watch('b');
+    await microtasks();
+    a.stop();
+    b.stop();
+    c.stop();
+    await microtasks();
+    expect(gone).toEqual([]);
+  });
+
+  it('ignores its own messages and malformed ones', async () =&gt; {
+    const locks = new FakeLocks();
+    const bus = new FakeBus();
+    const a = tab('a', locks, bus);
+    await a.start();
+    const raw = bus.channel();
+    raw.postMessage({ type: 'here', tabId: 'a', reply: false });
+    raw.postMessage({ type: 'here', tabId: 7 });
+    raw.postMessage('here');
+    await microtasks();
+    expect(a.watching()).toEqual([]);
+  });
+});</code></pre>
+        <code>browser.svelte.spec.ts</code> (real Chromium; unique ids per run, so a retry cannot meet an old lock):
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import { newId } from '$lib/ids/base58';
+import { browserPorts } from './ports';
+import { TAB_CHANNEL, TabPresence } from './tabs';
+
+describe('in a real browser', () =&gt; {
+  it('hears a tab go when its lock frees, through Web Locks and BroadcastChannel', async () =&gt; {
+    const [ida, idb] = [newId(), newId()];
+    const a = new TabPresence({ tabId: ida, locks: navigator.locks, channel: new BroadcastChannel(TAB_CHANNEL) });
+    const b = new TabPresence({ tabId: idb, locks: navigator.locks, channel: new BroadcastChannel(TAB_CHANNEL) });
+    const gone = new Promise&lt;string&gt;((resolve) =&gt; a.onGone(resolve));
+    await a.start();
+    await b.start();
+    expect(await a.goneOwners([idb, 'never-was'])).toEqual(['never-was']);
+    await expect.poll(() =&gt; a.watching()).toContain(idb);
+    b.stop();
+    expect(await gone).toBe(idb);
+    a.stop();
+  });
+
+  it('browserPorts gives this window\'s ports', () =&gt; {
+    const p = browserPorts();
+    expect(p.origin).toBe(location.origin);
+    expect(p.locks).toBe(navigator.locks);
+    expect(p.net.online()).toBe(navigator.onLine);
+    expect(p.net.visible()).toBe(document.visibilityState === 'visible');
+    p.channel?.close();
+  });
+});</code></pre></li>
+      <li id="t9-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-sync/tabs.spec.ts</code> and <code>npx vitest --run --project client src/lib/sim-sync/browser.svelte.spec.ts</code>. Expected: fail, module missing.</li>
+      <li id="t9-s3"><input type="checkbox"> Implement <code>TabPresence</code>: the own lock is a <code>request</code> whose callback returns a promise resolved by <code>stop()</code>; <code>start()</code> resolves from inside that callback (granted). A watch is <code>locks.request(TAB_LOCK_PREFIX + owner, { signal }, () =&gt; undefined)</code> followed by telling the listeners. One <code>AbortController</code> for all watches.</li>
+      <li id="t9-s4"><input type="checkbox"> Run both again. Expected: pass. Lint, check, <code>npx chreode timing-check --head HEAD</code>: clean.</li>
+      <li id="t9-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-sync/tabs.ts src/lib/sim-sync/tabs.spec.ts src/lib/sim-sync/browser.svelte.spec.ts
+git commit -m "feat(sim-sync): tab presence on Web Locks: who is gone, and hearing when a tab goes"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-10">
+    <h2>Task 10: The save state</h2>
+    <p>The spec's "What the page shows"; R15, R60; <a href="#d18">decision 18</a>; <a href="#tbl-save">the save state table</a>. Pins S9. Pure: plan 3 renders it.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim-sync/save-state.ts</code></li>
+      <li>Test: <code>src/lib/sim-sync/save-state.spec.ts</code> (Vitest <code>server</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>SocketView</code>, <code>OFF_VIEW</code> (Task 7); <code>LocalStatus</code>; <code>Stopped</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export type RegState =
+  | 'idle' | 'none' | 'waiting' | 'registering' | 'retrying'
+  | 'sign-in' | 'taken' | 'quota' | 'failed' | 'done';
+export interface SaveInput {
+  live: boolean;
+  local: LocalStatus;
+  pendingCount: number;
+  stopped: Stopped | null;
+  registration: RegState;
+  socket: SocketView;
+}
+export type SaveKind = 'saved' | 'saving' | 'device' | 'unsaved';
+export type SaveWhy =
+  | 'dev' | 'offline' | 'unreachable' | 'sign-in' | 'taken' | 'quota' | 'register-failed'
+  | 'no-write' | 'full' | 'newer' | 'gone' | 'diverged' | 'protocol'
+  | 'stale' | 'future' | 'unknown-dataset';
+export interface SaveState {
+  kind: SaveKind;
+  /** Why it is not saved or saving: the details on tap. Null for saved and saving. */
+  why: SaveWhy | null;
+}
+export function saveState(i: SaveInput): SaveState;</code></pre>
+        The body, since the order is the decision:
+        <pre><code data-lang="ts">export function saveState(i: SaveInput): SaveState {
+  if (i.pendingCount === 0 &amp;&amp; i.stopped === null) return { kind: 'saved', why: null };
+  const why = blocked(i);
+  if (why === null || i.local === 'writing') return { kind: 'saving', why: null };
+  return { kind: i.local === 'failed' ? 'unsaved' : 'device', why };
+}
+
+function blocked(i: SaveInput): SaveWhy | null {
+  const s = i.socket;
+  if (s.halt !== null) return s.halt;
+  if (s.hold === 'full' || s.hold === 'newer') return s.hold;
+  if (i.stopped === 'stale' || i.stopped === 'future') return i.stopped;
+  if (i.stopped === 'unknown-dataset' &amp;&amp; s.phase === 'live') return 'unknown-dataset';
+  if (!i.live) return 'dev';
+  switch (i.registration) {
+    case 'sign-in':
+    case 'taken':
+    case 'quota':
+      return i.registration;
+    case 'failed':
+      return 'register-failed';
+    case 'retrying':
+      return 'unreachable';
+    case 'registering':
+    case 'waiting':
+      return null;
+  }
+  if (s.hold === 'not-writer' || s.write === false) return 'no-write';
+  if (s.phase === 'offline') return 'offline';
+  if (s.phase === 'waiting' || s.phase === 'off') return 'unreachable';
+  return null;
+}</code></pre></li>
+    </ul>
+    <ol>
+      <li id="t10-s1"><input type="checkbox"> Write the failing tests:
+        <pre><code data-lang="ts">import fc from 'fast-check';
+import { describe, expect, it } from 'vitest';
+import { saveState, type RegState, type SaveInput, type SaveState } from './save-state';
+import { OFF_VIEW, type SocketView } from './sim-socket';
+
+const base: SaveInput = {
+  live: true,
+  local: 'idle',
+  pendingCount: 1,
+  stopped: null,
+  registration: 'done',
+  socket: { ...OFF_VIEW, phase: 'live', write: true }
+};
+const at = (over: Partial&lt;SaveInput&gt; = {}, socket: Partial&lt;SocketView&gt; = {}): SaveInput =&gt; ({
+  ...base,
+  ...over,
+  socket: { ...base.socket, ...socket }
+});
+const saved: SaveState = { kind: 'saved', why: null };
+const saving: SaveState = { kind: 'saving', why: null };
+const device = (why: SaveState['why']): SaveState =&gt; ({ kind: 'device', why });
+const unsaved = (why: SaveState['why']): SaveState =&gt; ({ kind: 'unsaved', why });
+
+describe('saveState', () =&gt; {
+  it.each([
+    ['V1 nothing pending or held', at({ pendingCount: 0 }), saved],
+    ['V1 nothing pending, storage failed, offline', at({ pendingCount: 0, local: 'failed' }, { phase: 'offline' }), saved],
+    ['V2 nothing pending but commits held', at({ pendingCount: 0, stopped: 'stale' }), device('stale')],
+    ['V3 pending, live, a writer', at(), saving],
+    ['V4 pending, offline, the store writing', at({ local: 'writing' }, { phase: 'offline' }), saving],
+    ['V5 pending, offline', at({}, { phase: 'offline' }), device('offline')],
+    ['V6 pending, offline, storage failed', at({ local: 'failed' }, { phase: 'offline' }), unsaved('offline')],
+    ['V7 dev', at({ live: false }, { phase: 'off' }), device('dev')],
+    ['V7 dev, storage failed', at({ live: false, local: 'failed' }, { phase: 'off' }), unsaved('dev')],
+    ['V8 sign-in', at({ registration: 'sign-in' }, { phase: 'off' }), device('sign-in')],
+    ['V8 taken', at({ registration: 'taken' }, { phase: 'off' }), device('taken')],
+    ['V8 quota', at({ registration: 'quota' }, { phase: 'off' }), device('quota')],
+    ['V8 failed', at({ registration: 'failed' }, { phase: 'off' }), device('register-failed')],
+    ['V9 retrying', at({ registration: 'retrying' }, { phase: 'off' }), device('unreachable')],
+    ['V10 registering', at({ registration: 'registering' }, { phase: 'off' }), saving],
+    ['V10 waiting for the first write', at({ registration: 'waiting' }, { phase: 'off' }), saving],
+    ['V11 not-writer', at({}, { hold: 'not-writer' }), device('no-write')],
+    ['V11 write false', at({}, { write: false }), device('no-write')],
+    ['V12 halted gone', at({}, { phase: 'halted', halt: 'gone' }), device('gone')],
+    ['V12 halted diverged', at({}, { phase: 'halted', halt: 'diverged' }), device('diverged')],
+    ['V12 halted protocol', at({}, { phase: 'halted', halt: 'protocol' }), device('protocol')],
+    ['V13 full', at({}, { hold: 'full' }), device('full')],
+    ['V13 newer', at({}, { hold: 'newer' }), device('newer')],
+    ['V14 limit', at({}, { hold: 'limit' }), saving],
+    ['V15 waiting to reconnect', at({}, { phase: 'waiting' }), device('unreachable')],
+    ['V15 connecting', at({}, { phase: 'connecting', write: null }), saving],
+    ['V15 catching up', at({}, { phase: 'catching-up' }), saving],
+    ['V16 future, even live', at({ stopped: 'future' }), device('future')],
+    ['V17 unknown dataset while live', at({ stopped: 'unknown-dataset' }), device('unknown-dataset')],
+    ['V17 unknown dataset while connecting', at({ stopped: 'unknown-dataset' }, { phase: 'connecting', write: null }), saving],
+    ['order: taken before offline', at({ registration: 'taken' }, { phase: 'offline' }), device('taken')],
+    ['order: a halt before stale', at({ stopped: 'stale' }, { phase: 'halted', halt: 'gone' }), device('gone')]
+  ] as const)('%s', (_, input, want) =&gt; {
+    expect(saveState(input)).toEqual(want);
+  });
+
+  it('S9: never saved with anything pending or held; never device with storage failed', () =&gt; {
+    const regs: RegState[] = ['idle', 'none', 'waiting', 'registering', 'retrying', 'sign-in', 'taken', 'quota', 'failed', 'done'];
+    const view = fc.record({
+      phase: fc.constantFrom('off', 'connecting', 'catching-up', 'live', 'offline', 'waiting', 'halted' as const),
+      halt: fc.constantFrom(null, 'gone', 'diverged', 'protocol' as const),
+      hold: fc.constantFrom(null, 'not-writer', 'limit', 'full', 'newer' as const),
+      write: fc.constantFrom(null, true, false),
+      serverBuild: fc.constant(null),
+      inFlight: fc.constant(null)
+    });
+    const input = fc.record({
+      live: fc.boolean(),
+      local: fc.constantFrom('idle', 'writing', 'failed' as const),
+      pendingCount: fc.nat({ max: 3 }),
+      stopped: fc.constantFrom(null, 'future', 'stale', 'unknown-dataset' as const),
+      registration: fc.constantFrom(...regs),
+      socket: view
+    });
+    expect(() =&gt;
+      fc.assert(
+        fc.property(input, (i) =&gt; {
+          const s = saveState(i);
+          const owed = i.pendingCount &gt; 0 || i.stopped !== null;
+          if (owed === (s.kind === 'saved')) return false;
+          return !(i.local === 'failed' &amp;&amp; s.kind === 'device');
+        }),
+        { seed: 42, numRuns: 2000 }
+      )
+    ).not.toThrow();
+  });
+});</code></pre>
+        Builder's call: if <code>fc.constantFrom(…, 'x' as const)</code> does not narrow the literal union, type the arbitraries with <code>fc.Arbitrary&lt;…&gt;</code> instead; the values are what matter.</li>
+      <li id="t10-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-sync/save-state.spec.ts</code>. Expected: fails, module missing.</li>
+      <li id="t10-s3"><input type="checkbox"> Implement <code>save-state.ts</code> with the body above.</li>
+      <li id="t10-s4"><input type="checkbox"> Run again. Expected: pass; the property under 600 ms. Lint, check, <code>npx chreode timing-check --head HEAD</code>: clean.</li>
+      <li id="t10-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-sync/save-state.ts src/lib/sim-sync/save-state.spec.ts
+git commit -m "feat(sim-sync): the save state as data: saved, saving, on this device, not saved"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-11">
+    <h2>Task 11: <code>SimSync</code></h2>
+    <p>R15 to R20, R40, R44, R45, R51, R53, R60; <a href="#tbl-register">the registration table</a>, T8 and T9; decisions <a href="#d7">7</a>, <a href="#d8">8</a>, <a href="#d12">12</a>, <a href="#d14">14</a>, <a href="#d16">16</a>, <a href="#d17">17</a>. Pins S2 to S9 together. Every scenario in <a href="#sec-scenarios">Scenarios</a> that is not a single row is a test here.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim-sync/sim-sync.svelte.ts</code></li>
+      <li>Test: <code>src/lib/sim-sync/sim-sync.spec.ts</code> (Vitest <code>server</code>; imports the <code>.svelte.ts</code> module as <code>log-store.spec.ts</code> does)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>SyncStore</code>, <code>BrowserPorts</code> (Task 5); <code>backoffDelay</code>; <code>registerSim</code>, <code>RegisterGate</code> (Task 6); <code>SimSocket</code>, <code>SocketView</code>, <code>OFF_VIEW</code> (Task 7); <code>TabPresence</code> (Task 9); <code>saveState</code>, <code>RegState</code>, <code>SaveState</code> (Task 10); <code>SimDb.pendingOwners</code> (Task 4).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export interface SimSyncOptions extends BrowserPorts {
+  store: SyncStore;
+  /** The store's database, for pendingOwners only; null when it has none. */
+  db: SimDb | null;
+  /** The store's tabId: this tab's lock and the owner of its records. */
+  tabId: string;
+  /** False under npm run dev: nothing is fetched or opened (decision 12). */
+  live: boolean;
+  /** The page's release, compared with hello.build. */
+  build: string;
+}
+export interface SyncState {
+  live: boolean;
+  registration: RegState;
+  /** OFF_VIEW when no socket. */
+  socket: SocketView;
+  buildMismatch: boolean;
+  save: SaveState;
+}
+export class SimSync {
+  constructor(o: SimSyncOptions);
+  /** Takes this tab's lock (resolves once held), subscribes to the store and the network,
+   *  claims on onGone. Call once, before open. */
+  start(): Promise&lt;void&gt;;
+  /** T8: the store's open with the claims of gone tabs, then watches the live ones. Rejects when
+   *  called before start, or when the store's open rejects (no retry, decision 17). */
+  open(simId: string | null): Promise&lt;void&gt;;
+  /** P14: post the registration again now. */
+  retryRegistration(): void;
+  /** A rune ($state.raw), replaced on every change. */
+  get state(): SyncState;
+  subscribe(fn: () =&gt; void): () =&gt; void;
+  /** Stops the socket and timers, releases the lock, unsubscribes. */
+  stop(): void;
+}</code></pre>
+        The evaluation, run after every store subscriber call, registration answer, timer and network signal (the decision table in code; the rest is the builder's):
+        <pre><code data-lang="ts">#evaluate(): void {
+  const store = this.#o.store;
+  const sim = store.simId;
+  if (sim !== this.#sim) this.#switchTo(sim); // P13: stop the socket, cancel the timer, token++, reg 'idle'
+  if (this.#o.live &amp;&amp; sim !== null &amp;&amp; store.ready) {
+    const r = store.registration;
+    if (r === 'done' || r === 'none') {
+      this.#reg = r === 'done' ? 'done' : 'none';
+      this.#ensureSocket(sim); // a new SimSocket unless one exists; start()
+    } else if (r === 'wait') this.#reg = 'waiting';
+    else if (!HOLDING.has(this.#reg)) {
+      // 'needed'. HOLDING: registering, retrying, sign-in, taken, quota, failed.
+      if (store.pendingCount &gt; 0 || store.stopped !== null) this.#register(sim); // P4
+      else this.#reg = 'idle'; // P5
+    }
+  }
+  this.#publish(); // state = { …, save: saveState(…) }; tell subscribers
+}</code></pre>
+        <code>#register(sim)</code> sets <code>registering</code>, runs <code>gate.run(() =&gt; registerSim(fetch, sim))</code> under the current token, and on the answer (ignored when the token changed, P12): <code>ok</code> calls <code>store.markRegistered(sim)</code> (synchronously the store says <code>'done'</code>), then <code>socket?.reconnect()</code> when its <code>view.write !== true</code> (P6); <code>taken</code> stops the socket (P8); <code>retry</code> sets a <code>clock.after(backoffDelay(regAttempt++, random))</code> timer that sets <code>idle</code> and evaluates (P10); <code>bug</code> logs <code>console.error('[sim-sync] registration refused', status, code ?? '-')</code> (P11); then evaluates. <code>net</code>: <code>online</code> while <code>retrying</code> runs P4 at once; <code>visible</code> while the socket's <code>view.hold === 'not-writer'</code> or <code>view.write === false</code>, with something pending, calls <code>socket.reconnect()</code> (decision 14). <code>onGone(owner)</code>: <code>store.claim([owner])</code>, a rejection logged <code>[sim-sync] claim failed</code> with the error's name.</li>
+    </ul>
+    <ol>
+      <li id="t11-s1"><input type="checkbox"> Write the failing tests:
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import { newId } from '$lib/ids/base58';
+import type { Commit } from '$lib/sim-log';
+import { mockConsole } from '$lib/server/test/mock-console';
+import { LogStore } from '$lib/sim-store/log-store.svelte';
+import { memorySimDb, type SimDb } from '$lib/sim-store/sim-db';
+import { DS, draftOf, nameChange } from '$lib/sim-store/test/commits';
+import { SimSync, type SimSyncOptions } from './sim-sync.svelte';
+import {
+  FakeBus,
+  FakeClock,
+  FakeFetch,
+  FakeHub,
+  FakeLocks,
+  FakeNet,
+  settle,
+  type FetchAnswer
+} from './test/fakes';
+
+const ORIGIN = 'http://localhost:4173';
+const stamp = () =&gt; ({ datasetVersion: DS, build: 'test' });
+const namesOf = (cs: Commit[]) =&gt; cs.map((c) =&gt; (c.changes[0] as { value: string }).value);
+
+interface World {
+  hub: FakeHub;
+  clock: FakeClock;
+  net: FakeNet;
+  locks: FakeLocks;
+  bus: FakeBus;
+  fetch: FakeFetch;
+  db: SimDb;
+}
+function world(): World {
+  const hub = new FakeHub({ strict: true });
+  return {
+    hub,
+    clock: new FakeClock(),
+    net: new FakeNet(),
+    locks: new FakeLocks(),
+    bus: new FakeBus(),
+    fetch: new FakeFetch(hub.registrar()),
+    db: memorySimDb()
+  };
+}
+/** A tab: its store and its SimSync over the world's ports, started. */
+async function tab(w: World, tabId: string, o: Partial&lt;SimSyncOptions&gt; &amp; { db?: SimDb | null } = {}) {
+  const db = o.db === undefined ? w.db : o.db;
+  const store = new LogStore({ db, tabId, stamp });
+  const sync = new SimSync({
+    store,
+    db,
+    tabId,
+    live: true,
+    build: 'b',
+    origin: ORIGIN,
+    fetch: w.fetch.fetch,
+    WebSocket: w.hub.WebSocket,
+    clock: w.clock,
+    random: () =&gt; 0.5,
+    locks: w.locks,
+    channel: w.bus.channel(),
+    net: w.net,
+    ...o
+  });
+  await sync.start();
+  return { store, sync };
+}
+const sims = (w: World) =&gt; w.fetch.calls.map((c) =&gt; (c.body as { simId: string }).simId);
+
+describe('SimSync', () =&gt; {
+  it('Y1 P1 under live: false nothing leaves the browser; the save state says dev', async () =&gt; {
+    const w = world();
+    const { store, sync } = await tab(w, 'a', { live: false });
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    expect(w.fetch.calls).toEqual([]);
+    expect(w.hub.sockets).toEqual([]);
+    expect(sync.state.save).toEqual({ kind: 'device', why: 'dev' });
+  });
+
+  it('Y2 P2 a look registers nothing; a sim with no record here gets a read socket', async () =&gt; {
+    const w = world();
+    const sim = newId();
+    w.hub.register(sim);
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    await settle(w.hub, store);
+    expect(w.hub.sockets).toEqual([]);
+    await sync.open(sim);
+    await settle(w.hub, store);
+    expect(w.fetch.calls).toEqual([]);
+    expect(w.hub.sockets.map((s) =&gt; s.url)).toEqual([expect.stringContaining(sim)]);
+    expect(sync.state.save).toEqual({ kind: 'saved', why: null });
+  });
+
+  it('Y3 P3 P4 P6 a first edit registers once it is stored, then connects and saves', async () =&gt; {
+    const w = world();
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    expect(sync.state.registration).toBe('waiting');
+    expect(w.fetch.calls).toEqual([]);
+    await settle(w.hub, store);
+    expect(sims(w)).toEqual([store.simId]);
+    expect((await w.db.read(store.simId!)).sim?.registered).toBe(true);
+    expect(namesOf(w.hub.commits(store.simId!))).toEqual(['A']);
+    expect(sync.state.save).toEqual({ kind: 'saved', why: null });
+  });
+
+  it('Y4 P10 offline, a first edit retries with backoff and saves at once when online', async () =&gt; {
+    const w = world();
+    w.net.set('offline');
+    w.fetch.handler = () =&gt; 'network';
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    expect(sync.state.registration).toBe('retrying');
+    expect(sync.state.save).toEqual({ kind: 'device', why: 'unreachable' });
+    w.clock.advance(1000);
+    await settle(w.hub, store);
+    expect(w.fetch.calls).toHaveLength(2);
+    w.fetch.handler = w.hub.registrar();
+    w.net.set('online');
+    await settle(w.hub, store);
+    expect(sync.state.save).toEqual({ kind: 'saved', why: null });
+    expect(w.hub.commits(store.simId!)).toHaveLength(1);
+  });
+
+  it('Y5 P7 P14 401 keeps the commits and opens nothing until retryRegistration', async () =&gt; {
+    const w = world();
+    w.fetch.handler = () =&gt; ({ status: 401, body: { error: 'x', code: 'sign_in' } });
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    expect(sync.state.save).toEqual({ kind: 'device', why: 'sign-in' });
+    w.clock.advance(300_000);
+    await settle(w.hub, store);
+    expect(w.fetch.calls).toHaveLength(1);
+    expect(w.hub.sockets).toEqual([]);
+    w.fetch.handler = w.hub.registrar();
+    sync.retryRegistration();
+    await settle(w.hub, store);
+    expect(sync.state.save).toEqual({ kind: 'saved', why: null });
+  });
+
+  it('Y6 P8 taken keeps the commits on the device, unsent, and stops the read socket', async () =&gt; {
+    const w = world();
+    const sim = newId();
+    w.hub.register(sim);
+    w.hub.write = false;
+    w.fetch.handler = () =&gt; ({ status: 409, body: { error: 'x', code: 'taken' } });
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(sim);
+    await settle(w.hub, store);
+    expect(w.hub.sockets).toHaveLength(1);
+    store.rename('Mine');
+    await settle(w.hub, store);
+    expect(sync.state.registration).toBe('taken');
+    expect(w.hub.sockets[0].closedWith).toBe(1000);
+    expect(w.hub.sockets).toHaveLength(1);
+    expect(store.pendingCount).toBe(1);
+    expect(w.hub.commits(sim)).toEqual([]);
+    expect(sync.state.save).toEqual({ kind: 'device', why: 'taken' });
+  });
+
+  it.each([
+    [{ status: 403, body: { error: 'x', code: 'quota' } }, 'quota', 'quota'],
+    [{ status: 400, body: { error: 'x', code: 'invalid_id' } }, 'failed', 'register-failed']
+  ] as const)('Y7 P9 P11 %j: %s, nothing sent, nothing retried', async (answer, reg, why) =&gt; {
+    const w = world();
+    w.fetch.handler = () =&gt; answer;
+    const { error } = mockConsole('error');
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    w.clock.advance(300_000);
+    await settle(w.hub, store);
+    expect(sync.state.registration).toBe(reg);
+    expect(sync.state.save).toEqual({ kind: 'device', why });
+    expect(w.fetch.calls).toHaveLength(1);
+    if (reg === 'failed') {
+      expect(error).toHaveBeenCalledWith('[sim-sync] registration refused', 400, 'invalid_id');
+    } else expect(error).not.toHaveBeenCalled();
+  });
+
+  it('Y8 P6 a look that becomes an edit registers, and reconnects a socket that could not write', async () =&gt; {
+    const w = world();
+    const sim = newId();
+    w.hub.register(sim);
+    w.hub.write = false;
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(sim);
+    await settle(w.hub, store);
+    store.rename('A');
+    w.hub.write = true; // the registration's session writes this sim
+    await settle(w.hub, store);
+    expect(sims(w)).toEqual([sim]);
+    expect(w.hub.sockets).toHaveLength(2);
+    expect(w.hub.sockets[0].closedWith).toBe(1000);
+    expect(namesOf(w.hub.commits(sim))).toEqual(['A']);
+    expect(sync.state.save).toEqual({ kind: 'saved', why: null });
+  });
+
+  it('Y9 P12 an answer that comes after the store moved to another sim opens nothing', async () =&gt; {
+    const w = world();
+    let answer!: (a: FetchAnswer) =&gt; void;
+    w.fetch.handler = () =&gt; new Promise((resolve) =&gt; (answer = resolve));
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    const first = store.simId!;
+    await sync.open(null);
+    answer({ status: 201, body: { simId: first, created: true } });
+    await settle(w.hub, store);
+    expect(w.hub.sockets).toEqual([]);
+    expect((await w.db.read(first)).sim?.registered).toBe(false);
+    expect(sync.state.registration).toBe('idle');
+  });
+
+  it('Y10 P13 switching sims stops the old socket and opens the new sim\'s own', async () =&gt; {
+    const w = world();
+    const other = newId();
+    w.hub.register(other);
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    const a = store.simId!;
+    w.hub.foreign(a, draftOf(1, [nameChange('F')])); // queued to the old socket
+    await sync.open(other);
+    await settle(w.hub, store);
+    expect(w.hub.sockets[0].closedWith).toBe(1000);
+    expect(w.hub.sockets[1].url).toContain(other);
+    expect(store.simId).toBe(other);
+    expect(store.tipSeq).toBe(0);
+  });
+
+  it('Y11 T8 T9 open claims gone tabs, never a live one; a tab that goes later is claimed then', async () =&gt; {
+    const w = world();
+    const A = await tab(w, 'a');
+    await A.sync.open(null);
+    A.store.rename('A');
+    await settle(w.hub, A.store);
+    const sim = A.store.simId!;
+    const B = await tab(w, 'b', { live: false }); // alive, never sends
+    await B.sync.open(sim);
+    B.store.rename('B');
+    await B.store.written();
+    const g = new LogStore({ db: w.db, tabId: 'g', stamp }); // a tab that is gone: no lock
+    await g.open(sim);
+    g.rename('G');
+    await g.written();
+    const C = await tab(w, 'c');
+    await C.sync.open(sim);
+    await settle(w.hub, A.store, C.store);
+    expect(namesOf(w.hub.commits(sim))).toEqual(['A', 'G']);
+    B.sync.stop();
+    await settle(w.hub, A.store, C.store);
+    expect(namesOf(w.hub.commits(sim))).toEqual(['A', 'G', 'B']);
+    expect(A.store.pendingCount + C.store.pendingCount).toBe(0);
+  });
+
+  it('Y12 two tabs editing in turn end with one order on both and on the server', async () =&gt; {
+    const w = world();
+    const A = await tab(w, 'a');
+    await A.sync.open(null);
+    A.store.rename('A0');
+    await settle(w.hub, A.store);
+    const B = await tab(w, 'b');
+    await B.sync.open(A.store.simId);
+    for (let i = 1; i &lt;= 5; i++) {
+      A.store.rename(`A${i}`);
+      B.store.rename(`B${i}`);
+      await settle(w.hub, A.store, B.store);
+    }
+    expect(w.hub.commits(A.store.simId!)).toHaveLength(11);
+    expect(A.store.tipSeq).toBe(11);
+    expect(B.store.tipSeq).toBe(11);
+    expect(A.store.name).toBe(B.store.name);
+    expect(w.fetch.calls).toHaveLength(1);
+    expect([A.sync.state.save.kind, B.sync.state.save.kind]).toEqual(['saved', 'saved']);
+  });
+
+  it('Y13 write revoked mid-session keeps edits on the device and sends them when it returns', async () =&gt; {
+    const w = world();
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    w.hub.setAccess(false);
+    store.rename('B');
+    await settle(w.hub, store);
+    expect(sync.state.save).toEqual({ kind: 'device', why: 'no-write' });
+    expect(store.pendingCount).toBe(1);
+    w.hub.setAccess(true);
+    await settle(w.hub, store);
+    expect(sync.state.save).toEqual({ kind: 'saved', why: null });
+  });
+
+  it('Y14 a server on another build is reported and the tab keeps saving', async () =&gt; {
+    const w = world();
+    w.hub.build = 'a-newer-release';
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    expect(sync.state.buildMismatch).toBe(true);
+    expect(sync.state.save.kind).toBe('saved');
+  });
+
+  it('Y15 open rejects when the store cannot read, and is not retried', async () =&gt; {
+    const w = world();
+    const bad: SimDb = { ...memorySimDb(), read: () =&gt; Promise.reject(new Error('closed')) };
+    const { store, sync } = await tab(w, 'a', { db: bad });
+    await expect(sync.open(newId())).rejects.toThrow('closed');
+    expect(store.ready).toBe(false);
+    w.clock.advance(300_000);
+    await settle(w.hub, store);
+    expect(w.hub.sockets).toEqual([]);
+  });
+
+  it('Y16 two tabs register one at a time: the second request waits for the first answer', async () =&gt; {
+    const w = world();
+    const answers: ((a: FetchAnswer) =&gt; void)[] = [];
+    w.fetch.handler = () =&gt; new Promise((resolve) =&gt; answers.push(resolve));
+    const A = await tab(w, 'a');
+    const B = await tab(w, 'b');
+    await A.sync.open(null);
+    await B.sync.open(null);
+    A.store.rename('A');
+    B.store.rename('B');
+    await settle(w.hub, A.store, B.store);
+    expect(w.fetch.calls).toHaveLength(1);
+    const sim = sims(w)[0];
+    w.hub.register(sim);
+    answers[0]({ status: 201, body: { simId: sim, created: true } });
+    await settle(w.hub, A.store, B.store);
+    expect(w.fetch.calls).toHaveLength(2);
+    expect(w.fetch.maxInFlight).toBe(1);
+  });
+
+  it('Y17 P5 a registered-nowhere sim with nothing to send posts nothing and opens nothing', async () =&gt; {
+    const w = world();
+    const sim = newId();
+    await w.db.createSim({ simId: sim, createdAt: 1, registered: false });
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(sim);
+    await settle(w.hub, store);
+    expect(store.registration).toBe('needed');
+    expect(sync.state.registration).toBe('idle');
+    expect(w.fetch.calls).toEqual([]);
+    expect(w.hub.sockets).toEqual([]);
+    expect(sync.state.save.kind).toBe('saved');
+  });
+
+  it('Y18 with no storage the save state never says this device', async () =&gt; {
+    const w = world();
+    const { store, sync } = await tab(w, 'a', { db: null });
+    w.net.set('offline');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    expect(sync.state.save).toEqual({ kind: 'unsaved', why: 'offline' });
+    w.net.set('online');
+    await settle(w.hub, store);
+    expect(sync.state.save).toEqual({ kind: 'saved', why: null });
+  });
+
+  it('Y19 becoming visible without write reconnects, to pick up a sign-in made elsewhere', async () =&gt; {
+    const w = world();
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    w.hub.setAccess(false);
+    store.rename('B');
+    await settle(w.hub, store);
+    w.hub.write = true;
+    w.net.set('hidden');
+    w.net.set('visible');
+    await settle(w.hub, store);
+    expect(w.hub.sockets).toHaveLength(2);
+    expect(sync.state.save).toEqual({ kind: 'saved', why: null });
+  });
+});</code></pre></li>
+      <li id="t11-s2"><input type="checkbox"> Run <code>npx vitest --run --project server src/lib/sim-sync/sim-sync.spec.ts</code>. Expected: fails, module missing.</li>
+      <li id="t11-s3"><input type="checkbox"> Implement <code>SimSync</code> as stated. <code>state</code> is <code>$state.raw</code>, replaced whole by <code>#publish()</code>; subscribers are told after it. <code>open</code> reads owners only when the sim id is not null, there is a database and <code>store.local !== 'failed'</code>; a <code>pendingOwners</code> rejection counts as no owners. Nothing in the module imports <code>$app/*</code>.</li>
+      <li id="t11-s4"><input type="checkbox"> Run the whole client library: <code>npx vitest --run --project server src/lib/sim-sync src/lib/sim-store</code>. Expected: pass. Then the five-run burn-in by hand: run the same command five times; expected: pass every time. Lint, check, <code>npx chreode timing-check --head HEAD</code>: clean.</li>
+      <li id="t11-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/sim-sync/sim-sync.svelte.ts src/lib/sim-sync/sim-sync.spec.ts
+git commit -m "feat(sim-sync): SimSync ties registration, the socket and tabs to the store" -m "Under live: false (npm run dev) nothing is fetched or opened; the save state says so."</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-12">
+    <h2>Task 12: Docs</h2>
+    <p>The spec's "a new page under docs/dev/ linked from CLAUDE.md"; the outline's Docs item for plan 2. <code>docs-index.spec.ts</code> (unit) fails if a <code>docs/dev/*.md</code> is not linked from <code>CLAUDE.md</code>.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>docs/dev/sim-sync.md</code></li>
+      <li>Modify: <code>CLAUDE.md</code> (Scoped reference docs, after the sim-object line), <code>docs/dev/sim-store.md</code> (The interfaces; For the next plans; What is not built yet; Files), <code>docs/superpowers/plans/2026-11-15-sim-log-store-outline.html</code> (sections <code>sec-plan-2</code> and <code>sec-plan-3</code>)</li>
+    </ul>
+    <ol>
+      <li id="t12-s1"><input type="checkbox"> Write <code>docs/dev/sim-sync.md</code> from the code as built (not from this plan): what it is and the files; the invariants S1 to S10; the ports and how a page builds them (<code>browserPorts()</code>, <code>live: !dev</code>, <code>build</code>, the store's <code>tabId</code>); the life of a <code>SimSync</code> (<code>start</code> before <code>open</code>; <code>sync.open</code> in place of <code>store.open</code>; <code>retryRegistration</code>; <code>stop</code>); the connection and append tables; registration and its answers; tabs and claims; the save state and its order; logs (<code>[sim-sync] registration refused</code>, <code>[sim-sync] claim failed</code>); what is not built (the page, the client end-to-end tests, remix on <code>taken</code> or lost write); tests (the commands of Tasks 5 to 11, which project each file runs in, the fakes). Terse, tables where the code has tables.</li>
+      <li id="t12-s2"><input type="checkbox"> <code>CLAUDE.md</code>: add after the sim-object line:
+        <pre><code data-lang="md">- **Sim sync (registering a sim from the browser, the socket client, tabs and their claims, the save state, the dev rule)** — [docs/dev/sim-sync.md](docs/dev/sim-sync.md)</code></pre></li>
+      <li id="t12-s3"><input type="checkbox"> <code>docs/dev/sim-store.md</code>: add <code>tipSeq</code>, <code>registration</code>, <code>markRegistered</code> to The interfaces and <code>pendingOwners</code> to the database's Operations; rewrite For the next plans' socket list as "built in <code>src/lib/sim-sync/</code> (sim-sync.md)", keeping the page's list; drop the first three items of What is not built yet; replace "with no database, at the first <code>head()</code>" with the rule of <code>registration</code>.</li>
+      <li id="t12-s4"><input type="checkbox"> The outline: in <code>sec-plan-2</code> add a paragraph "Built: see <code>2026-11-15-sim-log-sync.html</code> and docs/dev/sim-sync.md", listing where it departed (decisions 1 to 6, 10). In <code>sec-plan-3</code>'s Needs, add what plan 3 inherits:
+        <ul>
+          <li><code>SimSync</code> from <code>$lib/sim-sync/sim-sync.svelte</code>: build it with <code>browserPorts()</code>, <code>live: !dev</code>, <code>build</code> the page's release, the store's <code>db</code> and <code>tabId</code>; <code>await sync.start()</code> before <code>sync.open(simId)</code>; never call <code>store.open</code> directly; <code>stop()</code> on teardown.</li>
+          <li>The save state is <code>sync.state.save</code> (<code>kind</code> and <code>why</code>): the copy for each <code>why</code> is plan 3's; <code>buildMismatch</code> offers a reload.</li>
+          <li><code>retryRegistration()</code> after a sign-in on the same page; the 401 path otherwise resumes on the next load.</li>
+          <li>The client's end-to-end proof (registration, the real socket under the CSP, offline, two tabs) is plan 3's, against <code>npm run preview</code>; the CSP check in WebKit and Firefox stays there.</li>
+          <li>Never show a sim's id (URL, copy, share) before <code>sync.state.registration</code> is <code>'done'</code>.</li>
+          <li>Known limit: a store with no database that opens a known id treats it as a look and never registers it; plan 3 opens known ids only from the device.</li>
+        </ul></li>
+      <li id="t12-s5"><input type="checkbox"> Run <code>npm run format</code>, <code>npm run lint</code>, <code>npx vitest --run --project server src/docs-index.spec.ts</code> (or wherever <code>docs-index.spec.ts</code> lives: <code>git ls-files '*docs-index.spec.ts'</code>). Expected: clean, pass.</li>
+      <li id="t12-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add docs/dev/sim-sync.md docs/dev/sim-store.md CLAUDE.md docs/superpowers/plans/2026-11-15-sim-log-store-outline.html
+git commit -m "docs: the sim sync client, and what plan 3 inherits from it"</code></pre></li>
+      <li id="t12-s7"><input type="checkbox"> Finish the branch: <code>npm run signoff -- --dry-run</code> to see the plan, then <code>npm run signoff</code> (it merges <code>origin/main</code>, runs the steps the changes need including e2e on port 4173, the burn-in and the timing check, pushes and posts the status). Port 4173 busy: wait, never kill.</li>
+    </ol>
+  </section>
+</article>
