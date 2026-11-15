@@ -55,6 +55,7 @@ export const ACCOUNT_COPY = {
   passwordLastFactor: 'This is your only way in. Add a passkey or confirm an email first.',
   passwordAddRecoveryNudge: 'Add a passkey or confirm an email as a way back in.',
   networkError: "Couldn't reach the server. Check your connection.",
+  deleteNotFinished: 'Not finished yet. Try again to continue.',
 
   googleHeading: 'Google',
   googleConnected: 'Google connected.',

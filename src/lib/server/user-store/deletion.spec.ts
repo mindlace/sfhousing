@@ -287,6 +287,15 @@ describe('deleteAccount', () => {
     expect(await listSimsForUser({ db, userId: 'surv' })).toEqual([]);
   });
 
+  test('a live account in no sims and an already deleted one answer more: false', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'id1', email: 'alice@x.com', handle: 'alice' });
+    expect(await deleteAccount({ db, env, identityId: 'id1', actor })).toEqual({ more: false });
+    const [row] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'id1'));
+    expect(row.deletedAt).not.toBeNull();
+    expect(await deleteAccount({ db, env, identityId: 'id1', actor })).toEqual({ more: false });
+  });
+
   test('an unknown or finished account answers more: false, and the default pass is 50', async () => {
     const { db } = freshDb();
     expect(await deleteAccount({ db, env, identityId: 'nobody', actor })).toEqual({ more: false });

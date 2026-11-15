@@ -118,6 +118,13 @@ describe('DELETE /api/account', () => {
     const res = await DELETE(evt({ request: del({ confirmHandle: 'ada' }) }));
     expect(res.status).toBe(202);
     expect(await res.json()).toEqual({ more: true });
+    expect(deleteAccount).toHaveBeenCalledWith({
+      db: {},
+      env: platform.env,
+      identityId: 'u1',
+      actor: { actorId: 'u1', actorKind: 'human' },
+      defer: expect.any(Function)
+    });
     expect(signOut).not.toHaveBeenCalled();
   });
 
