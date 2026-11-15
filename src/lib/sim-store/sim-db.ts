@@ -87,6 +87,8 @@ export interface SimDb {
   write(simId: string, batch: WriteBatch, opts?: { marker?: Marker }): Promise<WriteResult>;
   /** One transaction: every pending record of simId whose owner is in `from` gets owner `to`. */
   claimPending(simId: string, from: readonly string[], to: string): Promise<PendingRecord[]>;
+  /** The distinct owners of the sim's pending records, in n order of their first record. */
+  pendingOwners(simId: string): Promise<string[]>;
   setRegistered(simId: string): Promise<void>;
   getMeta(key: string): Promise<unknown>; // undefined when absent
   /** Rejects, writing nothing, for a reserved key: CURRENT_KEY and any key starting `n:`. */
@@ -221,6 +223,10 @@ export function memorySimDb(opts: { abortWrites?: () => boolean } = {}): SimDb {
         }
         return claimed;
       });
+    },
+    async pendingOwners(simId) {
+      const d = state.sims.get(simId);
+      return d ? [...new Set(sorted(d).map((r) => r.owner))] : [];
     },
     setRegistered(simId) {
       return transact((s) => {

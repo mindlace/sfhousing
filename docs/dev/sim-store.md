@@ -206,6 +206,7 @@ Version steps: `upgradeSimDb(db, oldVersion)` runs `if (oldVersion < 1)` creatin
 | `createSim(sim, { current, marker, batch })` | One transaction: the marker, then `current`, then the sim and batch (see below)                                              |
 | `write(simId, batch, { marker })`            | One transaction: the marker, then the batch                                                                                  |
 | `claimPending(simId, from, to)`              | Every pending record of the sim whose owner is in `from` gets owner `to` (its `n` is kept); answers the records in `n` order |
+| `pendingOwners(simId)`                       | The distinct owners of the sim's pending records, in `n` order of their first record                                         |
 | `setRegistered(simId)`                       | Sets `registered` on the sim record                                                                                          |
 | `getMeta(key)`, `setMeta(key, value)`        | A meta row; `undefined` when absent                                                                                          |
 | `close()`                                    | Closes the connection; later calls reject                                                                                    |
@@ -281,6 +282,10 @@ Imports run one at a time. A withdrawn import takes with it the move it needed, 
 `open(simId | null, { claim? })` replaces the log. It settles an open draft, writes what this tab made on the sim it leaves, claims (`claimPending(simId, claim, tabId)`) when `claim` is non-empty and storage works, reads the sim and takes the confirmed commits and this tab's records (including claimed ones), in `n` order, as its pending commits, re-applied. `null` is a new sim: its id is minted at the first commit. With no database, a known id opens with an empty log. `open` rejects when the read fails, and the store then stays not `ready`: nothing can be authored or sent until an `open` succeeds. The server's dataset is kept across `open`.
 
 `claim(owners)` takes other tabs' pending records of the open sim and re-applies them after this tab's own, putting them again with new `n`. It answers how many were adopted, and settles a draft first. `open` and `claim` run one at a time in the order called; calling `claim` then `open` without awaiting is safe.
+
+### What the socket reads
+
+`tipSeq` (the last confirmed seq, a resume's `after`) and `heldCount` (commits held out of force: not pending, never sent, still on the device) are set in the one derive step. `registration` is a plain getter over the store's fields, not a rune (read it from a subscriber call): `'none'` (no sim, or a look: a sim with no record here that this store did not mint), `'wait'` (minted here, storage working, first write not landed), `'needed'` (stored and not recorded registered, or minted with storage absent or failed), `'done'`. `markRegistered(simId)` (the server answered 200 or 201) does nothing for another sim than the open one; else it sets `'done'` and tells subscribers at once, then, after the write chain, records it with `setRegistered` when the sim is stored and storage works. It never rejects: a failed record logs `[sim-store] registration not stored` with the error name, and the next load registers again.
 
 ### Two tabs
 
