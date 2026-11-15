@@ -5,6 +5,7 @@ import { DS, draftOf, nameChange, stamped } from '$lib/sim-store/test/commits';
 import { FakeHub, settle } from './hub';
 
 const frames = (texts: string[]) => texts.map((t) => JSON.parse(t));
+const utf8 = (t: string) => new TextEncoder().encode(t).length;
 const resume = (after: number) => JSON.stringify({ type: 'resume', after });
 const append = (commit: unknown) => JSON.stringify({ type: 'append', commit });
 
@@ -101,7 +102,7 @@ describe('FakeHub', () => {
   });
 
   it('stores a raw commit unchecked and sends it to resumed sockets', () => {
-    const hub = new FakeHub();
+    const hub = new FakeHub({ start: false });
     const sim = newId();
     const { ws, got } = client(hub, sim);
     hub.flush();
@@ -115,10 +116,15 @@ describe('FakeHub', () => {
   });
 
   it('writes hello from the options: another dataset, none, a build and a protocol', () => {
-    const a = new FakeHub({ dataset: 'other', build: 'x', protocol: 2 });
+    const a = new FakeHub({ dataset: 'fixture-9', build: 'x', protocol: 2 });
     const ca = client(a, newId());
     a.flush();
-    expect(frames(ca.got)[0]).toEqual({ type: 'hello', build: 'x', protocol: 2, dataset: 'other' });
+    expect(frames(ca.got)[0]).toEqual({
+      type: 'hello',
+      build: 'x',
+      protocol: 2,
+      dataset: 'fixture-9'
+    });
     const b = new FakeHub({ dataset: null });
     const cb = client(b, newId());
     b.flush();
@@ -168,7 +174,7 @@ describe('FakeHub', () => {
   });
 
   it('refuses resumes on demand, in order, and a refused resume leaves the mark clear', () => {
-    const hub = new FakeHub();
+    const hub = new FakeHub({ start: false });
     const sim = newId();
     const { ws, got } = client(hub, sim);
     hub.flush();
@@ -218,7 +224,7 @@ describe('FakeHub', () => {
   });
 
   it('answers appends as the object does: accepted, behind, invalid, not-writer, newer', () => {
-    const hub = new FakeHub();
+    const hub = new FakeHub({ start: false });
     const sim = newId();
     const a = resumed(hub, sim);
     const ok = draftOf(0, [nameChange('A')]);
@@ -256,7 +262,7 @@ describe('FakeHub', () => {
   });
 
   it('refuses the next appends on demand without storing them, then answers normally', () => {
-    const hub = new FakeHub();
+    const hub = new FakeHub({ start: false });
     const sim = newId();
     const a = resumed(hub, sim);
     hub.refuseNext('limit', 'full');
@@ -275,7 +281,7 @@ describe('FakeHub', () => {
   });
 
   it('closes 1011 on an append when told, storing nothing', () => {
-    const hub = new FakeHub();
+    const hub = new FakeHub({ start: false });
     const sim = newId();
     const a = resumed(hub, sim);
     hub.closeOnAppend = 1;
@@ -287,25 +293,23 @@ describe('FakeHub', () => {
     expect(a.ws.readyState).toBe(3);
   });
 
-  it('processes a held append after release only for sockets still open', () => {
-    const hub = new FakeHub({ hold: true });
+  it('stores a held append after release although its socket closed, sending it to the others', () => {
+    const hub = new FakeHub({ hold: true, start: false });
     const sim = newId();
     const a = resumed(hub, sim);
     const b = resumed(hub, sim);
-    a.ws.send(append(draftOf(0, [nameChange('A')])));
     b.ws.send(append(draftOf(0, [nameChange('B')])));
     hub.flush();
-    expect(hub.appends).toHaveLength(2);
+    expect(hub.appends).toHaveLength(1);
     b.ws.close(1000);
     hub.flush();
+    expect(hub.commits(sim)).toHaveLength(0);
     hub.release();
     hub.flush();
     expect(hub.commits(sim)).toHaveLength(1);
-    expect(hub.commits(sim)[0].parent).toBe(0);
-    expect(frames(a.got)).toHaveLength(1);
+    expect(frames(a.got)).toMatchObject([{ type: 'commits', commits: [{ seq: 1 }] }]);
     expect(b.got).toEqual([]);
-    expect(hub.sockets[1].closedWith).toBe(1000);
-    expect(b.codes).toEqual([]); // the client's own close queues nothing back
+    expect(b.codes).toEqual([1000]);
   });
 
   it('records what the client sent, throws before open, and drops sends after close', () => {
@@ -319,8 +323,9 @@ describe('FakeHub', () => {
     ws.send('ping');
     expect(hub.sockets[0].sent).toEqual(['ping']);
     expect(hub.sockets[0].closedWith).toBe(4000);
+    expect(hub.sockets[0].readyState).toBe(2);
+    expect(hub.flush()).toBe(3); // the ping and the close arrive, the close event is delivered
     expect(hub.sockets[0].readyState).toBe(3);
-    expect(hub.flush()).toBe(2); // the ping and the close arrive; nothing answers a closed client
   });
 
   it('closes 1008 on a frame that is not a client frame, and refuses an oversized text limit', () => {
@@ -398,12 +403,248 @@ describe('FakeHub', () => {
   });
 
   it('records an append frame as it was sent', () => {
-    const hub = new FakeHub();
+    const hub = new FakeHub({ start: false });
     const sim = newId();
     const a = resumed(hub, sim);
     const d: CommitDraft = draftOf(0, [nameChange('A')]);
     a.ws.send(append(d));
     hub.flush();
     expect(hub.appends).toEqual([d]);
+  });
+
+  it('stores a start commit when a writer opens an empty sim, before any resume is answered', () => {
+    const hub = new FakeHub({ title: 'Mine' });
+    const sim = newId();
+    const a = client(hub, sim);
+    hub.flush();
+    a.ws.send(resume(0));
+    hub.flush();
+    const last = frames(a.got).at(-1);
+    expect(last.more).toBe(false);
+    expect(last.commits).toHaveLength(1);
+    expect(last.commits[0]).toMatchObject({
+      seq: 1,
+      parent: 0,
+      kind: 'system',
+      label: 'Start',
+      source: 'sim.start',
+      datasetVersion: DS,
+      build: 'b',
+      shapes: SHAPES_REVISION,
+      changes: [{ op: 'set', key: 'sim', field: 'name', value: 'Mine' }]
+    });
+    const mine = draftOf(0, [nameChange('M')]);
+    a.ws.send(append(mine));
+    hub.flush();
+    expect(frames(a.got).at(-1)).toEqual({ type: 'refused', id: mine.id, why: 'behind' });
+    const again = client(hub, sim); // a second open adds no second start
+    hub.flush();
+    expect(again.got).toHaveLength(2);
+    expect(hub.commits(sim)).toHaveLength(1);
+  });
+
+  it('stores no start commit for a reader, or when turned off', () => {
+    const reader = new FakeHub({ write: false });
+    const sim = newId();
+    client(reader, sim);
+    reader.flush();
+    expect(reader.commits(sim)).toEqual([]);
+    const off = new FakeHub({ start: false });
+    client(off, sim);
+    off.flush();
+    expect(off.commits(sim)).toEqual([]);
+  });
+
+  it('refuses limit a text over the frame size in bytes, naming the commit', () => {
+    const hub = new FakeHub({ start: false });
+    const a = resumed(hub, newId());
+    a.ws.send(append({ id: 'wide', pad: 'é'.repeat(600_000) })); // 600k chars, 1.2 MB
+    hub.flush();
+    expect(frames(a.got)).toEqual([{ type: 'refused', id: 'wide', why: 'limit' }]);
+  });
+
+  it('refuses limit a commit that is over the commit size once stamped', () => {
+    const hub = new FakeHub({ start: false });
+    const sim = newId();
+    const a = resumed(hub, sim);
+    const pad = nameChange('x'.repeat(50));
+    const base = utf8(append(draftOf(0, [nameChange('A')])));
+    const n = Math.ceil((1_048_500 - base) / (utf8(JSON.stringify(pad)) + 1));
+    const big = draftOf(0, [nameChange('A'), ...Array.from({ length: n }, () => pad)]);
+    expect(utf8(append(big))).toBeLessThan(1_052_672); // under the frame size, over once stamped
+    a.ws.send(append(big));
+    hub.flush();
+    expect(frames(a.got)).toEqual([{ type: 'refused', id: big.id, why: 'limit' }]);
+    expect(hub.commits(sim)).toEqual([]);
+  });
+
+  it('judges a held append by the access its socket had when the frame arrived', () => {
+    const hub = new FakeHub({ hold: true, start: false });
+    const sim = newId();
+    const a = resumed(hub, sim);
+    a.ws.send(append(draftOf(0, [nameChange('A')])));
+    hub.flush();
+    hub.setAccess(false);
+    hub.release();
+    hub.flush();
+    expect(hub.commits(sim)).toHaveLength(1);
+    expect(frames(a.got).map((f) => f.type)).toEqual(['access', 'commits']);
+  });
+
+  it('splits a resume answer into frames, only the last carrying more', () => {
+    const hub = new FakeHub({ frameSize: 1, pageSize: 3, start: false });
+    const sim = newId();
+    for (let i = 0; i < 4; i++) hub.foreign(sim, draftOf(i, [nameChange(`F${i}`)]));
+    const a = client(hub, sim);
+    hub.flush();
+    a.got.length = 0;
+    a.ws.send(resume(0));
+    hub.flush();
+    const f = frames(a.got);
+    expect(f.map((x) => x.commits.length)).toEqual([1, 1, 1]);
+    expect(f[0]).not.toHaveProperty('more');
+    expect(f[1]).not.toHaveProperty('more');
+    expect(f[2].more).toBe(true);
+    expect(hub.sockets[0].resumed).toBe(false);
+    a.ws.send(resume(3));
+    hub.flush();
+    expect(frames(a.got).at(-1)).toMatchObject({ more: false });
+    expect(hub.sockets[0].resumed).toBe(true);
+  });
+
+  it('answers appends after a stored row from a newer build as newer, behind first', () => {
+    const hub = new FakeHub({ start: false });
+    const sim = newId();
+    const a = resumed(hub, sim);
+    hub.storeRaw(sim, stamped(draftOf(0, [nameChange('L')], { shapes: SHAPES_REVISION + 1 }), 1));
+    hub.flush();
+    a.got.length = 0;
+    const next = draftOf(1, [nameChange('N')]);
+    const behind = draftOf(0, [nameChange('B')]);
+    a.ws.send(append(next));
+    a.ws.send(append(behind));
+    hub.flush();
+    expect(frames(a.got)).toEqual([
+      { type: 'refused', id: next.id, why: 'newer' },
+      { type: 'refused', id: behind.id, why: 'behind' }
+    ]);
+    expect(hub.commits(sim)).toHaveLength(1);
+  });
+
+  it('closes 1011 an append after a stored row that does not fold', () => {
+    const hub = new FakeHub({ start: false });
+    const sim = newId();
+    const a = resumed(hub, sim);
+    hub.storeRaw(sim, stamped(draftOf(0, [{ op: 'set', key: 'nope', field: 'x', value: 1 }]), 1));
+    a.ws.send(append(draftOf(1, [nameChange('N')])));
+    hub.flush();
+    expect(a.codes).toEqual([1011]);
+  });
+
+  it('takes a queued refusal at its place in the real order of checks', () => {
+    const hub = new FakeHub({ start: false });
+    const sim = newId();
+    const a = resumed(hub, sim);
+    const first = draftOf(0, [nameChange('A')]);
+    a.ws.send(append(first));
+    hub.flush();
+    a.got.length = 0;
+    hub.refuseNext('full', 'behind');
+    a.ws.send(append(first)); // a duplicate stays silent and leaves the queue alone
+    hub.flush();
+    expect(a.got).toEqual([]);
+    expect(hub.duplicates).toBe(1);
+    const fresh = draftOf(1, [nameChange('B')]);
+    a.ws.send(append(fresh));
+    a.ws.send(append(fresh));
+    hub.flush();
+    expect(frames(a.got)).toEqual([
+      { type: 'refused', id: fresh.id, why: 'full' },
+      { type: 'refused', id: fresh.id, why: 'behind' }
+    ]);
+    hub.refuseNext('gone', 'limit');
+    hub.setAccess(false);
+    a.got.length = 0;
+    a.ws.send(append(fresh)); // a queued gone answers even a reader, before not-writer
+    hub.flush();
+    expect(frames(a.got)).toEqual([
+      { type: 'access', write: false },
+      { type: 'refused', id: fresh.id, why: 'gone' }
+    ]);
+    a.ws.send(append(fresh)); // a reader is not-writer before the rate step
+    hub.flush();
+    expect(frames(a.got).at(-1)).toEqual({ type: 'refused', id: fresh.id, why: 'not-writer' });
+  });
+
+  it('handles frames of one sim in arrival order across sockets', () => {
+    const hub = new FakeHub({ start: false });
+    const sim = newId();
+    hub.foreign(sim, draftOf(0, [nameChange('A')]));
+    const a = resumed(hub, sim);
+    const b = resumed(hub, sim);
+    a.ws.send(resume(1));
+    const d = draftOf(1, [nameChange('B')]);
+    b.ws.send(append(d));
+    hub.flush();
+    expect(frames(a.got)).toMatchObject([
+      { type: 'commits', commits: [], more: false },
+      { type: 'commits', commits: [{ id: d.id }] }
+    ]);
+  });
+
+  it('puts a closing socket in CLOSING, then fires its own close once with a browser code', () => {
+    const hub = new FakeHub();
+    const b = client(hub, newId());
+    const c = client(hub, newId());
+    hub.flush();
+    b.ws.close();
+    expect(hub.sockets[0].readyState).toBe(2);
+    expect(b.codes).toEqual([]);
+    b.ws.send('ping');
+    expect(hub.sockets[0].sent).toEqual([]);
+    hub.flush();
+    expect(b.codes).toEqual([1005]);
+    expect(hub.sockets[0].readyState).toBe(3);
+    c.ws.close(4001);
+    hub.closeAll(1011); // a server close after the client's close adds no second event
+    hub.flush();
+    expect(c.codes).toEqual([4001]);
+    expect(b.got.filter((t) => t === 'pong')).toEqual([]);
+  });
+
+  it('reports 1006 for a socket closed while connecting, and rejects a bad close code', () => {
+    const hub = new FakeHub();
+    const a = client(hub, newId());
+    a.ws.close(1000);
+    hub.flush();
+    expect(a.codes).toEqual([1006]);
+    expect(a.got).toEqual([]);
+    expect(() => client(hub, newId()).ws.close(1011)).toThrow(/close code/);
+  });
+
+  it("still delivers the client's own close while muted", () => {
+    const hub = new FakeHub();
+    const a = client(hub, newId());
+    hub.flush();
+    hub.mute = true;
+    a.ws.close(1000);
+    hub.flush();
+    expect(a.codes).toEqual([1000]);
+  });
+
+  it('closes 1003 on a binary message, 1008 on a malformed after, and carries 4410', () => {
+    const hub = new FakeHub();
+    const a = client(hub, newId());
+    const b = client(hub, newId());
+    const c = client(hub, newId());
+    hub.flush();
+    (a.ws.send as (d: unknown) => void)(new ArrayBuffer(4));
+    b.ws.send('{"type":"resume","after":-1}');
+    hub.flush();
+    hub.closeAll(4410);
+    hub.flush();
+    expect(a.codes).toEqual([1003]);
+    expect(b.codes).toEqual([1008]);
+    expect(c.codes).toEqual([4410]);
   });
 });
