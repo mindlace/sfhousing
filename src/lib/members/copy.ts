@@ -17,7 +17,15 @@ export const SIMS_COPY = {
   createFailed: "Couldn't create the sim. Try again.",
   quota: `You can manage up to ${MAX_SIMS_PER_MANAGER.toLocaleString('en-US')} sims.`,
   invalidId: 'That sim id is not valid.',
-  notYours: "That sim isn't yours."
+  notYours: "That sim isn't yours.",
+  // Renaming on the member page.
+  renameSummary: 'Rename',
+  renameLabel: 'Name',
+  renameSave: 'Save',
+  renameBusy: 'Too many changes at once. Try again shortly.',
+  renameFull: 'This sim is full.',
+  renameUnavailable: "Renaming isn't available here.",
+  renameFailed: "Couldn't rename the sim. Try again."
 } as const;
 
 export const titleTooLong = (max: number): string => `Sim titles can be at most ${max} characters.`;

@@ -3,6 +3,8 @@ import { render } from 'vitest-browser-svelte';
 import {
   MEMBER_ERROR_COPY,
   MEMBERS_COPY,
+  SIMS_COPY,
+  SIM_TITLE_MAX,
   membersRemoveNamed,
   membersResendNamed,
   membersRevokeNamed,
@@ -31,7 +33,7 @@ function data(over: Record<string, unknown> = {}) {
 /** Render the page with the Members disclosure open (its content is hidden while closed). */
 async function show(d: Record<string, unknown>) {
   const screen = await render(Page, { data: d } as never);
-  screen.container.querySelector('details')!.open = true;
+  screen.container.querySelector<HTMLDetailsElement>('[data-testid="members"]')!.open = true;
   return screen;
 }
 
@@ -193,6 +195,47 @@ describe('/sims/[simId] page', () => {
       method: 'POST',
       headers: JSON_ONLY
     });
+  });
+
+  it.each(['manager', 'editor'])('a %s gets the Rename disclosure, closed', async (role) => {
+    const screen = await render(Page, { data: data({ role }) } as never);
+    const rename = screen.getByTestId('rename');
+    await expect.element(rename).toBeInTheDocument();
+    expect((rename.element() as HTMLDetailsElement).open).toBe(false);
+    await expect
+      .element(rename.getByText(SIMS_COPY.renameSummary, { exact: true }))
+      .toBeInTheDocument();
+    await rename.getByText(SIMS_COPY.renameSummary, { exact: true }).click();
+    const input = screen.getByLabelText(SIMS_COPY.renameLabel, { exact: true });
+    await expect.element(input).toHaveAttribute('id', 'sim-name');
+    await expect.element(input).toHaveAttribute('name', 'name');
+    await expect.element(input).toHaveAttribute('maxlength', String(SIM_TITLE_MAX));
+    await expect.element(input).toHaveValue('Garden');
+    await expect
+      .element(screen.getByRole('button', { name: SIMS_COPY.renameSave }))
+      .toBeInTheDocument();
+  });
+
+  it('a viewer gets no Rename disclosure', async () => {
+    const screen = await render(Page, {
+      data: data({ role: 'viewer', currentUserId: 'u2', pendingInvites: [] })
+    } as never);
+    expect(screen.container.querySelector('[data-testid="rename"]')).toBeNull();
+    expect(screen.container.querySelector('#sim-name')).toBeNull();
+  });
+
+  it('a rename error opens the disclosure and shows the line by the field', async () => {
+    const screen = await render(Page, {
+      data: data(),
+      form: { renameError: SIMS_COPY.renameBusy }
+    } as never);
+    expect((screen.getByTestId('rename').element() as HTMLDetailsElement).open).toBe(true);
+    await expect
+      .element(screen.getByTestId('sim-name-error'))
+      .toHaveTextContent(SIMS_COPY.renameBusy);
+    await expect
+      .element(screen.getByLabelText(SIMS_COPY.renameLabel, { exact: true }))
+      .toHaveAttribute('aria-describedby', 'sim-name-error');
   });
 
   it('a failed remove keeps the row and shows the generic line', async () => {

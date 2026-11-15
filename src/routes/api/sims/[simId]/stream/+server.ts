@@ -1,15 +1,14 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { dev } from '$app/environment';
-import { env as publicEnv } from '$env/dynamic/public';
 import { isValidId } from '$lib/ids/base58';
-import { devOverride, resolveDatasetVersion } from '$lib/server/config/dataset-version';
 import { getDb } from '$lib/server/db';
 import { canWrite } from '$lib/server/sim-object/access';
 import { encodeOpenParams, headerTitle, OPEN_HEADER } from '$lib/server/sim-object/open-params';
 import { simStub } from '$lib/server/sim-object/stub';
 import { refuseForeignOrigin } from '$lib/server/security/same-origin-json';
 import { getRole, getSimTitle } from '$lib/server/sims/sim-index';
+import { serverStamp } from '$lib/server/sims/stamp';
 
 /**
  * The sim's websocket. This route is the trust boundary: the object believes the open header
@@ -43,12 +42,7 @@ export const GET: RequestHandler = async ({ params, platform, locals, request, u
       identity,
       write,
       title: headerTitle(title),
-      datasetVersion: resolveDatasetVersion({
-        built: __SFH_DATASET_VERSION__,
-        override: devOverride(platform?.env) ?? publicEnv.PUBLIC_DATASET_VERSION,
-        development: dev || platform?.env?.ENVIRONMENT === 'development'
-      }),
-      build: platform?.env?.PUBLIC_APP_RELEASE ?? publicEnv.PUBLIC_APP_RELEASE ?? 'dev'
+      ...serverStamp(platform)
     })
   );
   return stub.fetch(new Request(request, { headers }));

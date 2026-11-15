@@ -1,12 +1,22 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
+  import FieldError from '$lib/account/FieldError.svelte';
   import FormStatus from '$lib/account/FormStatus.svelte';
   import MembersPanel from '$lib/members/MembersPanel.svelte';
-  import { MEMBERS_COPY, memberErrorText, membersSummaryCount } from '$lib/members/copy';
+  import {
+    MEMBERS_COPY,
+    SIMS_COPY,
+    SIM_TITLE_MAX,
+    memberErrorText,
+    membersSummaryCount
+  } from '$lib/members/copy';
   import { MembershipOverlay } from '$lib/members/membership-overlay.svelte';
-  import type { PageData } from './$types';
+  import type { ActionData, PageData } from './$types';
 
-  let { data }: { data: PageData } = $props();
+  let { data, form }: { data: PageData; form: ActionData } = $props();
+
+  const canRename = $derived(data.role === 'manager' || data.role === 'editor');
+  const renameError = $derived(form?.renameError ?? null);
 
   const overlay = new MembershipOverlay();
   const members = $derived(overlay.members(data.simId, data.members));
@@ -86,6 +96,33 @@
     tone={notice.error ? 'error' : 'info'}
     message={notice.text}
   />
+
+  {#if canRename}
+    <details class="mt-2" data-testid="rename" open={renameError !== null}>
+      <summary class="cursor-pointer text-sm font-medium">{SIMS_COPY.renameSummary}</summary>
+      <form method="POST" action="?/rename" use:enhance class="mt-2 flex flex-wrap items-end gap-2">
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <label for="sim-name" class="text-sm font-medium">{SIMS_COPY.renameLabel}</label>
+          <input
+            id="sim-name"
+            name="name"
+            type="text"
+            required
+            maxlength={SIM_TITLE_MAX}
+            autocomplete="off"
+            value={data.title}
+            class="rounded border border-current/40 bg-transparent px-3 py-2"
+            aria-invalid={renameError ? 'true' : undefined}
+            aria-describedby={renameError ? 'sim-name-error' : undefined}
+          />
+          <FieldError id="sim-name-error" forId="sim-name" message={renameError} />
+        </div>
+        <button type="submit" class="rounded border border-current px-4 py-2 font-medium">
+          {SIMS_COPY.renameSave}
+        </button>
+      </form>
+    </details>
+  {/if}
 
   <details class="mt-6" data-testid="members">
     <summary class="cursor-pointer text-sm font-medium"

@@ -8,9 +8,13 @@
 //
 // The operator takedown: the route clears the object (open sockets close with 4410 `gone`),
 // deletes the D1 rows and bars the id. The preview server gets an obviously fake token.
+//
+// A rename is a name commit the Worker appends through the object's appendAs RPC, which Node
+// cannot run: these tests are its only test, on a sim with commits and on one with none.
 import { expect, test } from '@playwright/test';
 import { newId } from '../src/lib/ids/base58';
 import { MEMBERS_COPY, SIMS_COPY } from '../src/lib/members/copy';
+import { expectNoA11yViolations } from './helpers/a11y';
 import { loginAs, sessionOf, uniqueEmail } from './helpers/auth';
 import { freshContext, inviteLinkFor, inviteViaApi, signInAndCreateSim } from './helpers/members';
 import {
@@ -327,5 +331,124 @@ test.describe('the operator takedown', () => {
     expect(registered.status()).toBe(409);
     expect(await registered.json()).toEqual({ error: SIMS_COPY.notYours, code: 'taken' });
     expect((await page.goto(`/sims/${simId}`))?.status()).toBe(404);
+  });
+});
+
+test.describe('a rename is a name commit', () => {
+  test("a rename on the member page reaches another member's open socket", async ({
+    page,
+    browser,
+    baseURL
+  }, testInfo) => {
+    const managerEmail = uniqueEmail('cp-rename');
+    const { userId: managerId } = await loginAs(page, managerEmail);
+    const simId = await signInAndCreateSim(page, managerEmail, 'Before');
+    const memberEmail = uniqueEmail('cp-renamed');
+    await inviteViaApi(page, simId, memberEmail);
+    const link = await inviteLinkFor(page, memberEmail);
+    // The manager's socket opens first, so the log has its start commit before the rename.
+    await page.goto('/about');
+    const m = await openSimSocket(page, simId);
+    await framesAtLeast(page, m, 2);
+    expect(commitsOf(await resumeAndRead(page, m, 0))).toHaveLength(1);
+
+    const ctx = await freshContext(browser, testInfo);
+    try {
+      const member = await ctx.newPage();
+      await loginAs(member, memberEmail);
+      await member.goto(link);
+      await member.getByRole('button', { name: MEMBERS_COPY.inviteAccept }).click();
+      await member.waitForURL(new RegExp(`/sims/${simId}$`));
+      // An editor gets the control too.
+      await expect(member.getByTestId('rename')).toHaveCount(1);
+      await member.goto('/about');
+      const h = await openSimSocket(member, simId);
+      await framesAtLeast(member, h, 2);
+      expect(commitsOf(await resumeAndRead(member, h, 0))).toHaveLength(1);
+      const seen = (await framesAtLeast(member, h, 0)).length;
+
+      const renamer = await page.context().newPage();
+      await renamer.goto(`/sims/${simId}`);
+      await expect(renamer.locator('html')).toHaveAttribute('data-hydrated', '');
+      await renamer.getByTestId('rename').locator('summary').click();
+      const field = renamer.getByLabel(SIMS_COPY.renameLabel, { exact: true });
+      await expect(field).toHaveValue('Before');
+      await expectNoA11yViolations(renamer);
+      await field.fill('After');
+      await renamer.getByRole('button', { name: SIMS_COPY.renameSave }).click();
+      await expect(renamer.getByRole('heading', { level: 1 })).toHaveText('After');
+
+      const [named] = commitsOf((await framesAtLeast(member, h, seen + 1))[seen]);
+      expect(named).toMatchObject({
+        seq: 2,
+        parent: 1,
+        actor: managerId,
+        source: 'sim.name',
+        datasetVersion: 'fixture-0',
+        changes: [{ op: 'set', key: 'sim', field: 'name', value: 'After' }]
+      });
+
+      await renamer.goto('/sims');
+      await expect(renamer.locator(`a[href="/sims/${simId}"]`)).toHaveText('After');
+    } finally {
+      await ctx.close();
+    }
+
+    // A signed-in reader who is not a member: no member page, and a direct post is refused.
+    // No product path makes a viewer; the viewer's 403 is in the action's Node spec.
+    const octx = await freshContext(browser, testInfo);
+    try {
+      const reader = await octx.newPage();
+      await loginAs(reader, uniqueEmail('cp-reader'));
+      expect((await reader.goto(`/sims/${simId}`))?.status()).toBe(404);
+      const refused = await reader.request.post(`/sims/${simId}?/rename`, {
+        headers: { origin: baseURL!, 'x-sveltekit-action': 'true' },
+        form: { name: 'Hijacked' }
+      });
+      expect(refused.status()).toBe(404);
+      expect((await refused.json()).type).toBe('error');
+    } finally {
+      await octx.close();
+    }
+    expect(commitsOf(await resumeAndRead(page, m, 0)).map((c) => c.source)).toEqual([
+      'sim.start',
+      'sim.name'
+    ]);
+  });
+
+  test('renaming a sim with no commits records its start commit first', async ({
+    page,
+    baseURL
+  }) => {
+    const email = uniqueEmail('cp-fresh');
+    const { userId } = await loginAs(page, email);
+    const simId = await signInAndCreateSim(page, email, 'Original');
+    const res = await page.request.post(`/sims/${simId}?/rename`, {
+      headers: { origin: baseURL!, 'x-sveltekit-action': 'true' },
+      form: { name: 'Renamed' }
+    });
+    expect(await res.json()).toEqual({
+      type: 'redirect',
+      status: 303,
+      location: `/sims/${simId}`
+    });
+    await page.goto(`/sims/${simId}`);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Renamed');
+
+    await page.goto('/about');
+    const h = await openSimSocket(page, simId);
+    await framesAtLeast(page, h, 2);
+    expect(
+      commitsOf(await resumeAndRead(page, h, 0)).map((c) => [
+        c.seq,
+        c.parent,
+        c.actor,
+        c.source,
+        c.changes
+      ])
+    ).toEqual([
+      [1, 0, userId, 'sim.start', [{ op: 'set', key: 'sim', field: 'name', value: 'Original' }]],
+      [2, 1, userId, 'sim.name', [{ op: 'set', key: 'sim', field: 'name', value: 'Renamed' }]]
+    ]);
   });
 });
