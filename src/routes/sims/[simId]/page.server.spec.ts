@@ -138,7 +138,7 @@ describe('leaveSim action', () => {
     expect(await getRole({ db: env.db, simId: env.simId, userId: 'u-mia' })).toBeNull();
   });
 
-  it('the only member leaving deletes the sim and its pending invitations', async () => {
+  it('the only member leaving keeps the sim with no members and ends its pending invitations', async () => {
     const env = await seed();
     await createInvite({
       db: env.db,
@@ -156,7 +156,8 @@ describe('leaveSim action', () => {
     const r = await redirectOf(() => actions.leaveSim(leaveEvent(env, 'u-mia')));
     expect(r).toMatchObject({ status: 303, location: '/sims' });
 
-    expect(await getSimTitle({ db: env.db, simId: env.simId })).toBeNull();
+    expect(await getSimTitle({ db: env.db, simId: env.simId })).not.toBeNull();
+    expect(await getRole({ db: env.db, simId: env.simId, userId: 'u-mia' })).toBeNull();
     const pendingAfter = await env.db
       .select()
       .from(simInvite)

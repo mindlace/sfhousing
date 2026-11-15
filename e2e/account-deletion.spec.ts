@@ -1,8 +1,9 @@
 // Account deletion from /account. A registered "deleter" owns two sims: a solo one (with a
 // pending invitation) and a shared one with a second member. After deleting the account they
-// are signed out, the shared sim survives for the other member, and the solo sim and its
-// pending invitation are gone. Each run mints its own deleter, so the destructive delete
-// never touches a user other specs rely on.
+// are signed out, the shared sim carries on for the other member, and the solo sim is kept
+// with no members: its pending invitation is gone and its link still opens read-only. Each
+// run mints its own deleter, so the destructive delete never touches a user other specs
+// rely on.
 import { expect, test } from '@playwright/test';
 import { MEMBERS_COPY } from '../src/lib/members/copy';
 import { ACCOUNT_COPY, deleteConfirmLine } from '../src/lib/account/account-copy';
@@ -17,13 +18,11 @@ import {
   signInAndCreateSim
 } from './helpers/members';
 import { openHeaderMenu } from './helpers/sharing';
+import { framesAtLeast, openSimSocket } from './helpers/sim-socket';
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
-test('deleting the account signs out, keeps the shared sim and removes the solo sim', async ({
-  page,
-  browser
-}, testInfo) => {
+test('deleting the account signs out and keeps both sims', async ({ page, browser }, testInfo) => {
   const soloId = await signInAndCreateSim(page, uniqueEmail('deleter'), `solo-del-${Date.now()}`);
   const pending = uniqueEmail('pending');
   await inviteViaApi(page, soloId, pending);
@@ -64,12 +63,15 @@ test('deleting the account signs out, keeps the shared sim and removes the solo 
     await survivor.goto(`/sims/${sharedId}`);
     await expect(survivor.getByRole('heading', { level: 1 })).toHaveText(sharedTitle);
 
-    // The solo sim is gone: its pending invitation no longer resolves.
+    // The solo sim is kept with no members: its pending invitation no longer resolves, and
+    // its link still opens, read-only.
     const guest = await (await freshContext(browser, testInfo)).newPage();
     await guest.goto(pendingLink);
     await expect(guest.getByRole('heading', { level: 1 })).toHaveText(
       MEMBERS_COPY.inviteInvalidTitle
     );
+    const s = await openSimSocket(guest, soloId);
+    expect((await framesAtLeast(guest, s, 2))[1]).toEqual({ type: 'access', write: false });
     await guest.context().close();
   } finally {
     await survivorCtx.close();
@@ -110,7 +112,7 @@ test('a pseudonymous visitor deletes their account and ends signed out', async (
   await page.getByRole('button', { name: ACCOUNT_COPY.deletePermanently }).click();
   await page.waitForURL((url) => url.pathname === '/');
 
-  // Signed out: no session, the account API refuses and the sim is gone.
+  // Signed out: no session, and the account API refuses.
   expect((await page.request.get('/api/account')).status()).toBe(401);
   await openHeaderMenu(page);
   await expect(

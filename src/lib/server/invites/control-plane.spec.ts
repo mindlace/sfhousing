@@ -1,8 +1,46 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+
+// A seam between an accept's claim and its grant: the grant (addMemberById) first runs
+// `beforeGrant` when a test sets it, so a test can interleave a leave there. `failReconcile`
+// makes the next reconcile throw.
+const seam = vi.hoisted(() => ({
+  beforeGrant: null as null | (() => Promise<void>),
+  failReconcile: false
+}));
+vi.mock('$lib/server/sims/sim-index', async (importOriginal) => {
+  const real = await importOriginal<typeof import('$lib/server/sims/sim-index')>();
+  return {
+    ...real,
+    addMemberById: async (args: Parameters<typeof real.addMemberById>[0]) => {
+      const run = seam.beforeGrant;
+      seam.beforeGrant = null;
+      if (run) await run();
+      return real.addMemberById(args);
+    },
+    reconcileSimManagement: async (
+      ...args: Parameters<typeof real.reconcileSimManagement>
+    ): ReturnType<typeof real.reconcileSimManagement> => {
+      if (seam.failReconcile) {
+        seam.failReconcile = false;
+        throw new Error('reconcile boom');
+      }
+      return real.reconcileSimManagement(...args);
+    }
+  };
+});
+
 import { freshDb, seedUser } from '$lib/server/test/auth-db';
+import { mockConsole } from '$lib/server/test/mock-console';
 import { eq } from 'drizzle-orm';
 import { simInvite, user } from '$lib/server/db/schema';
-import { createSimRecord, addMemberById, getRole } from '$lib/server/sims/sim-index';
+import {
+  createSimRecord,
+  addMemberById,
+  getRole,
+  listMembers,
+  removeMembership
+} from '$lib/server/sims/sim-index';
+import { leaveSim } from '$lib/server/sims/sims';
 import { PSEUDONYMOUS_EMAIL_DOMAIN } from '$lib/server/auth/brand';
 import {
   claimInvite,
@@ -18,6 +56,12 @@ import {
   findInviteByToken,
   parseInviteTarget
 } from './control-plane';
+
+afterEach(() => {
+  seam.beforeGrant = null;
+  seam.failReconcile = false;
+  vi.restoreAllMocks();
+});
 
 async function setup() {
   const { db } = freshDb();
@@ -359,6 +403,106 @@ describe('accept / decline / revoke', () => {
     await expect(acceptInviteByToken({ db, token, userId: claimer.id })).rejects.toThrow(
       /not pending/i
     );
+  });
+});
+
+// A kept sim must never end with an editor and no manager. The accept claims the invitation;
+// the last member then leaves, which ends only pending invitations (this one is no longer
+// pending); the accept then grants editor. The accept reconciles management after its grant,
+// so the invitee becomes the sim's manager.
+describe('an accept racing the last member leaving', () => {
+  it('the leave lands between the claim and the grant: the invitee ends as manager', async () => {
+    const { db, manager } = await setup();
+    const { token, invite } = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'invitee@test.com' }
+    });
+    const claimer = await seedUser(db, { id: 'claimer', email: 'claimer@test.com' });
+    const statusAtLeave: string[] = [];
+    seam.beforeGrant = async () => {
+      const [row] = await db.select().from(simInvite).where(eq(simInvite.id, invite.id));
+      statusAtLeave.push(row.status);
+      await leaveSim({ db, env: undefined, simId: 'q1', userId: manager.id, simTitle: 'T' });
+    };
+
+    await expect(acceptInviteByToken({ db, token, userId: claimer.id })).resolves.toEqual({
+      simId: 'q1'
+    });
+
+    // The leave ran after the claim, while the manager was still the one member.
+    expect(statusAtLeave).toEqual(['accepted']);
+    expect(await getRole({ db, simId: 'q1', userId: manager.id })).toBeNull();
+    expect(await getRole({ db, simId: 'q1', userId: claimer.id })).toBe('manager');
+    expect((await listMembers({ db, simId: 'q1' })).map((m) => m.userId)).toEqual([claimer.id]);
+  });
+
+  it('the same holds for an accept by id', async () => {
+    const { db, manager } = await setup();
+    await seedUser(db, { id: 'jane', email: 'jane@test.com', handle: 'jane' });
+    const { invite } = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'handle', handle: 'jane' }
+    });
+    seam.beforeGrant = () =>
+      leaveSim({ db, env: undefined, simId: 'q1', userId: manager.id, simTitle: 'T' });
+
+    await acceptInviteById({
+      db,
+      inviteId: invite.id,
+      userId: 'jane',
+      email: 'jane@test.com',
+      emailVerified: true
+    });
+
+    expect(await getRole({ db, simId: 'q1', userId: 'jane' })).toBe('manager');
+    expect((await listMembers({ db, simId: 'q1' })).map((m) => m.userId)).toEqual(['jane']);
+  });
+
+  it('an invitation claimed after the last membership went, before its pending rows ended, still proceeds', async () => {
+    const { db, manager } = await setup();
+    const { token } = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'invitee@test.com' }
+    });
+    // The leave's revoke is written; its ending of pending invitations has not run yet.
+    await removeMembership(db, 'q1', manager.id);
+    const claimer = await seedUser(db, { id: 'claimer', email: 'claimer@test.com' });
+
+    await acceptInviteByToken({ db, token, userId: claimer.id });
+
+    expect(await getRole({ db, simId: 'q1', userId: claimer.id })).toBe('manager');
+    expect((await listMembers({ db, simId: 'q1' })).map((m) => m.userId)).toEqual([claimer.id]);
+  });
+
+  it('a failed reconcile after the grant is logged, and the accept still succeeds', async () => {
+    const { db, manager } = await setup();
+    const { token } = await createInvite({
+      db,
+      simId: 'q1',
+      invitedByUserId: manager.id,
+      canInviteByEmail: true,
+      target: { kind: 'email', email: 'invitee@test.com' }
+    });
+    const claimer = await seedUser(db, { id: 'claimer', email: 'claimer@test.com' });
+    const { error } = mockConsole('error');
+    seam.failReconcile = true;
+
+    await expect(acceptInviteByToken({ db, token, userId: claimer.id })).resolves.toEqual({
+      simId: 'q1'
+    });
+
+    expect(await getRole({ db, simId: 'q1', userId: claimer.id })).toBe('editor');
+    expect(error).toHaveBeenCalledOnce();
+    expect(error).toHaveBeenCalledWith('[invite-accept] reconcile failed', 'q1', 'reconcile boom');
   });
 });
 

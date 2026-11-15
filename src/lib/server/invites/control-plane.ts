@@ -11,7 +11,8 @@ import { getUsers, survivorId } from '$lib/server/user-store/user';
 import { normalizeHandle } from '$lib/server/user-store/handle-normalize';
 import { newId } from '$lib/server/ids/base58';
 import { generateInviteToken, hashToken } from '$lib/server/invites/token';
-import { addMemberById } from '$lib/server/sims/sim-index';
+import { addMemberById, reconcileSimManagement } from '$lib/server/sims/sim-index';
+import { loggable } from '$lib/server/sim-object/object-rules';
 import { foldSimRole } from '$lib/server/sims/sim-roles';
 import { isDeliverable } from '$lib/server/email/provider';
 import { MEMBERS_COPY } from '$lib/members/copy';
@@ -242,6 +243,14 @@ export async function claimInvite(
   return changes === 1;
 }
 
+/**
+ * The one accept path (by token and by id): claim, grant, then reconcile management. The last
+ * member may leave between the claim and the grant; a leave ends only pending invitations, and
+ * this one is already claimed. Without the reconcile the kept sim would have an editor and no
+ * manager, so the invitee becomes its manager. The caller runs the roster hook afterwards.
+ * The grant stands once written: a failed reconcile is logged, never reported as a failed
+ * accept (the next roster change reconciles again).
+ */
 async function finalizeAccept(
   db: Database,
   invite: SimInvite,
@@ -250,6 +259,11 @@ async function finalizeAccept(
   const claimed = await claimInvite(db, invite.id, userId);
   if (!claimed) throw new Error('invite not pending');
   await addMemberById({ db, simId: invite.simId, userId, role: invite.role });
+  try {
+    await reconcileSimManagement(db, invite.simId);
+  } catch (e) {
+    console.error('[invite-accept] reconcile failed', invite.simId, loggable(e));
+  }
   return { simId: invite.simId };
 }
 

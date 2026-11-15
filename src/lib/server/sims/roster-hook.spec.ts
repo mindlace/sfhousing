@@ -181,7 +181,7 @@ describe('the roster change stands', () => {
     });
     const { env, names } = fakeSim(reread);
     await expect(removeSimMember({ db, env, simId, userId: 'ed' })).resolves.toEqual({
-      deleted: false
+      empty: false
     });
     expect(await getRole({ db, simId, userId: 'ed' })).toBeNull();
     expect(names).toEqual([simId, simId]);
@@ -199,5 +199,20 @@ describe('the roster change stands', () => {
     });
     await removeSimMember({ db, env, simId, userId: 'ed' });
     expect(seen).toEqual([null]);
+  });
+
+  it('the last member leaving still asks the object to re-read, after the change is written', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    const simId = await seedSim(db, { title: 'Q', managerId: 'owner1' });
+    const seen: (string | null)[] = [];
+    const { env, names } = fakeSim(async () => {
+      seen.push(await getRole({ db, simId, userId: 'owner1' }));
+    });
+    await expect(removeSimMember({ db, env, simId, userId: 'owner1' })).resolves.toEqual({
+      empty: true
+    });
+    expect(seen).toEqual([null]);
+    expect(names).toEqual([simId]);
   });
 });

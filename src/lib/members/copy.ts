@@ -56,8 +56,8 @@ export const MEMBERS_COPY = {
   // The leave flow.
   leaveButton: 'Leave sim',
   leaveSoleMemberWarning:
-    "You're the only member. Leaving deletes this sim and its pending invitations.",
-  leaveDeleteButton: 'Leave & delete sim',
+    "You're the only member. Once you leave, nobody can edit this sim and its invitations end. Its links still open.",
+  leaveLastButton: 'Leave sim',
   leaveCancel: 'Cancel',
   leaveSuccessorLabel: 'Who takes over?',
   leaveSuccessorAuto: 'Let the app choose',

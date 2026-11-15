@@ -226,7 +226,7 @@ export async function reconcileSimManagement(
 
 /**
  * Revoke one membership (across the member's fused identities), then reconcile
- * management. `removeSimMember` in sims.ts calls it and deletes the sim when { empty }.
+ * management. `removeSimMember` in sims.ts calls it; an emptied sim ({ empty }) is kept.
  * Returns `members`, the roster fold from before the revoke.
  *
  * Co-manager protection: when `actorUserId` is supplied AND it is removing a

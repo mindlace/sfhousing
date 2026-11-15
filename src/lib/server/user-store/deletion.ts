@@ -125,8 +125,9 @@ export async function markIdentityDeleted(
 }
 
 /**
- * Delete a registered account: remove the user from every sim (sole-member sims are
- * deleted, shared ones survive with an auto-promoted manager), then scrub + tombstone
+ * Delete a registered account: remove the user from every sim (a sim they were the only
+ * member of is kept with no members, its links still open and its pending invitations end;
+ * a shared one carries on with an auto-promoted manager), then scrub + tombstone
  * the identity and purge PII. Ordered + idempotent; gated on user_identity.deleted_at so
  * a completed run re-invoked is a no-op. Caller authorizes and handles sign-out. NOT atomic.
  * `actor` is kept for the future sim-log attribution; nothing reads it yet.

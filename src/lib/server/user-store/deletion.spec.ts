@@ -7,7 +7,13 @@ vi.mock('$lib/server/sims/roster-hook', () => ({
 import { eq } from 'drizzle-orm';
 import { onSimRosterChanged, rosterChangedAll } from '$lib/server/sims/roster-hook';
 import { freshDb, seedSim, seedUser } from '$lib/server/test/auth-db';
-import { addMemberById, getRole, getSimTitle, listSimsForUser } from '$lib/server/sims/sim-index';
+import {
+  addMemberById,
+  getRole,
+  getSimTitle,
+  listMembers,
+  listSimsForUser
+} from '$lib/server/sims/sim-index';
 import { deleteAccount } from './deletion';
 import {
   user,
@@ -267,7 +273,7 @@ describe('deleteAccount', () => {
     expect(idRow.deletedAt).not.toBeNull();
   });
 
-  test('scrubs identity, deletes a sole-member sim, promotes a manager on a shared one, sets deleted_at', async () => {
+  test('scrubs identity, keeps a sole-member sim with no members, promotes a manager on a shared one, sets deleted_at', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'id1', email: 'alice@x.com', name: 'Alice', handle: 'alice' });
     await seedUser(db, { id: 'id2', email: 'bob@x.com', handle: 'bob' });
@@ -278,7 +284,9 @@ describe('deleteAccount', () => {
     await deleteAccount({ db, env, identityId: 'id1', actor });
 
     expect(await listSimsForUser({ db, userId: 'id1' })).toEqual([]);
-    expect(await getSimTitle({ db, simId: solo })).toBeNull();
+    expect(await getSimTitle({ db, simId: solo })).toBe('Solo');
+    expect(await getRole({ db, simId: solo, userId: 'id1' })).toBeNull();
+    expect(await listMembers({ db, simId: solo })).toEqual([]);
     expect(await getSimTitle({ db, simId: shared })).toBe('Shared');
     expect(await getRole({ db, simId: shared, userId: 'id2' })).toBe('manager');
     const [u] = await db.select().from(user).where(eq(user.userIdentity, 'id1'));
@@ -287,7 +295,7 @@ describe('deleteAccount', () => {
     expect(idRow.deletedAt).not.toBeNull();
   });
 
-  test('removes the sims held through a fused identity: solo deleted, shared handed on', async () => {
+  test('leaves the sims held through a fused identity: solo kept with no members, shared handed on', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'pseudo', email: 'p@x.com', handle: 'pseudo' });
     await seedUser(db, { id: 'surv', email: 'surv@x.com', handle: 'surv' });
@@ -310,23 +318,28 @@ describe('deleteAccount', () => {
     });
 
     expect(await listSimsForUser({ db, userId: 'surv' })).toEqual([]);
-    expect(await getSimTitle({ db, simId: solo })).toBeNull();
+    expect(await getSimTitle({ db, simId: solo })).toBe('Solo');
+    expect(await getRole({ db, simId: solo, userId: 'surv' })).toBeNull();
+    expect(await listMembers({ db, simId: solo })).toEqual([]);
     expect(await getSimTitle({ db, simId: shared })).toBe('Shared');
     expect(await getRole({ db, simId: shared, userId: 'id2' })).toBe('manager');
     expect(await getRole({ db, simId: shared, userId: 'surv' })).toBeNull();
   });
 
-  test('deleting a sole-member sim removes its pending invites', async () => {
+  test('leaving a sole-member sim keeps it and ends its pending invites', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'id1', email: 'alice@x.com', handle: 'alice' });
+    await seedUser(db, { id: 'former', email: 'former@x.com', handle: 'former' });
     const simId = await seedSim(db, { title: 'Solo', managerId: 'id1' });
+    // Sent by a former member, so the purge of the deleter's own invites does not reach it:
+    // only the emptied sim's ending of its pending invitations does.
     await db.insert(simInvite).values({
       id: 'inv1',
       simId,
       role: 'editor',
       invitedEmail: 'c@x.com',
       tokenHash: 'h1',
-      invitedByUserId: 'id1',
+      invitedByUserId: 'former',
       status: 'pending',
       createdAt: NOW,
       expiresAt: NOW
@@ -334,6 +347,8 @@ describe('deleteAccount', () => {
 
     await deleteAccount({ db, env, identityId: 'id1', actor });
 
+    expect(await getSimTitle({ db, simId })).toBe('Solo');
+    expect(await getRole({ db, simId, userId: 'id1' })).toBeNull();
     expect(await db.select().from(simInvite)).toHaveLength(0);
   });
 

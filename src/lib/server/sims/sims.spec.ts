@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { freshDb, seedSim, seedUser } from '$lib/server/test/auth-db';
 import { capabilityEvent, simInvite } from '$lib/server/db/schema';
 import { isValidId } from '$lib/server/ids/factory';
-import { addMemberById, getRole, getSimTitle } from './sim-index';
+import { addMemberById, getRole, getSimTitle, listMembers } from './sim-index';
 import { foldSimRole, setSimRole } from './sim-roles';
 import { handleAccountLink } from '$lib/server/user-store/identity';
 import { onSimRosterChanged } from './roster-hook';
@@ -82,7 +82,7 @@ describe('deleteSim', () => {
 });
 
 describe('removeSimMember', () => {
-  it('removeSimMember deletes an emptied sim and its pending invites, then tells the object', async () => {
+  it('removeSimMember keeps an emptied sim, ends its pending invitations and tells the object', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'owner1', email: 'm@test.com' });
     const simId = await seedSim(db, { title: 'Q', managerId: 'owner1' });
@@ -92,11 +92,11 @@ describe('removeSimMember', () => {
 
     const result = await removeSimMember({ db, env, simId, userId: 'owner1' });
 
-    expect(result).toEqual({ deleted: true });
-    expect(await getSimTitle({ db, simId })).toBeNull();
+    expect(result).toEqual({ empty: true });
+    expect(await getSimTitle({ db, simId })).toBe('Q');
     const rows = await db.select().from(simInvite).where(eq(simInvite.simId, simId));
-    expect(rows.filter((r) => r.status === 'pending')).toEqual([]);
     expect(rows.map((r) => r.status)).toEqual(['accepted']);
+    expect(await listMembers({ db, simId })).toEqual([]);
     // The last member's open socket must lose write too.
     expect(onSimRosterChanged).toHaveBeenCalledOnce();
     expect(onSimRosterChanged).toHaveBeenCalledWith(env, simId);
@@ -111,7 +111,7 @@ describe('removeSimMember', () => {
 
     const result = await removeSimMember({ db, env, simId, userId: 'owner1' });
 
-    expect(result).toEqual({ deleted: false });
+    expect(result).toEqual({ empty: false });
     expect(await getRole({ db, simId, userId: 'owner1' })).toBeNull();
     expect(await getRole({ db, simId, userId: 'ed' })).toBe('manager');
   });
@@ -218,7 +218,7 @@ describe('a member whose grants sit on a fused identity', () => {
     });
   }
 
-  it('leaves a solo sim, which is deleted', async () => {
+  it('leaves a solo sim, which is kept with no members', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'pseudo', email: 'p@test.com' });
     await seedUser(db, { id: 'surv', email: 's@test.com' });
@@ -229,7 +229,7 @@ describe('a member whose grants sit on a fused identity', () => {
     await leaveSim({ db, env, simId, userId: 'surv', simTitle: 'Q' });
 
     expect(await getRole({ db, simId, userId: 'surv' })).toBeNull();
-    expect(await getSimTitle({ db, simId })).toBeNull();
+    expect(await getSimTitle({ db, simId })).toBe('Q');
   });
 
   it('leaves a shared sim as its manager, and the other member is promoted', async () => {
@@ -262,7 +262,7 @@ describe('a member whose grants sit on a fused identity', () => {
 
     const result = await removeSimMember({ db, env, simId, userId: 'surv', actorUserId: 'owner1' });
 
-    expect(result).toEqual({ deleted: false });
+    expect(result).toEqual({ empty: false });
     expect(await getRole({ db, simId, userId: 'surv' })).toBeNull();
     expect(await getRole({ db, simId, userId: 'owner1' })).toBe('manager');
   });
@@ -314,7 +314,7 @@ describe('a member whose grants sit on a fused identity', () => {
         userId: 'edi',
         actorUserId: 'owner1'
       });
-      expect(result).toEqual({ deleted: false });
+      expect(result).toEqual({ empty: false });
       expect(await getRole({ db, simId, userId: 'ed' })).toBeNull();
       expect(await getRole({ db, simId, userId: 'surv' })).toBe('manager');
       expect(await getRole({ db, simId, userId: 'owner1' })).toBe('manager');
@@ -329,7 +329,7 @@ describe('a member whose grants sit on a fused identity', () => {
         userId: 'pseudo',
         actorUserId: 'surv'
       });
-      expect(result).toEqual({ deleted: false });
+      expect(result).toEqual({ empty: false });
       expect(await getRole({ db, simId, userId: 'surv' })).toBeNull();
       expect(await getRole({ db, simId, userId: 'owner1' })).toBe('manager');
     });

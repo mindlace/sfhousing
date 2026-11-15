@@ -22,7 +22,11 @@ export async function createSim(args: {
   return { simId };
 }
 
-/** Drop the sim's index row and its pending invites in one batch. Ledger rows stay. */
+/**
+ * Drop the sim's index row and its pending invites in one batch. Ledger rows stay. Nothing a
+ * member does reaches this: a sim whose last member goes is kept (removeSimMember). It is left
+ * for an operator's takedown.
+ */
 export async function deleteSim(db: Database, simId: string): Promise<void> {
   await db.batch([
     db.delete(simIndex).where(eq(simIndex.simId, simId)),
@@ -31,18 +35,19 @@ export async function deleteSim(db: Database, simId: string): Promise<void> {
 }
 
 /**
- * THE single member-removal door. Removes the membership, enforces the sim-manager
- * invariant (auto-promoting a successor if the removal orphaned the sim), and deletes
- * the sim entirely when no members remain. The caller authorizes (e.g. requireSimRole(manager)
- * when removing someone else).
+ * THE single member-removal door. Removes the membership and enforces the sim-manager
+ * invariant (auto-promoting a successor if the removal orphaned the sim). It never deletes a
+ * sim: when no members remain (`{ empty: true }`) the sim is kept with its log and its index
+ * row, so its links still open read-only and nobody can write it; its pending invitations end
+ * here, in one statement. The caller authorizes (e.g. requireSimRole(manager) when removing
+ * someone else).
  *
  * `actorUserId` opts into the co-manager protection: pass the acting principal's id on
  * administrative removal-of-another so removing a DIFFERENT manager is refused. Omit it
- * for self-removal / account deletion / orphan teardown, which may remove a manager.
+ * for self-removal and account deletion, which may remove a manager.
  *
- * After the removal is written (and an emptied sim deleted) it awaits the roster hook, which
- * never rejects, unless `notify` is false: account deletion tells every sim it left in one
- * fan-out instead.
+ * After the change is written it awaits the roster hook, which never rejects, unless `notify`
+ * is false: account deletion tells every sim it left in one fan-out instead.
  */
 export async function removeSimMember(args: {
   db: Database;
@@ -51,20 +56,24 @@ export async function removeSimMember(args: {
   userId: string;
   actorUserId?: string;
   notify?: boolean;
-}): Promise<{ deleted: boolean }> {
+}): Promise<{ empty: boolean }> {
   const { empty } = await removeMembership(args.db, args.simId, args.userId, {
     actorUserId: args.actorUserId
   });
-  if (empty) await deleteSim(args.db, args.simId);
+  if (empty) {
+    await args.db
+      .delete(simInvite)
+      .where(and(eq(simInvite.simId, args.simId), eq(simInvite.status, 'pending')));
+  }
   // Every removal, the last member's included: their open socket must lose write too.
   if (args.notify !== false) await onSimRosterChanged(args.env, args.simId);
-  return { deleted: empty };
+  return { empty };
 }
 
 /**
  * Leave a sim = remove yourself, with the leave-specific guard (type-the-name when a
  * manager gives up control while other managers remain) and the chosen-successor courtesy.
- * Orphan-handling and delete-if-empty come from removeSimMember.
+ * Orphan-handling, and ending an emptied sim's pending invitations, come from removeSimMember.
  */
 export async function leaveSim(args: {
   db: Database;

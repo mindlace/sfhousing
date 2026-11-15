@@ -1,5 +1,6 @@
-// Leaving a sim: the only member leaving deletes it and its pending invitations, the last
-// manager hands off, and a plain member just leaves.
+// Leaving a sim: the only member leaving keeps it with no members (its link still opens
+// read-only) and ends its pending invitations, the last manager hands off, and a plain member
+// just leaves.
 import { expect, test } from '@playwright/test';
 import { MEMBERS_COPY } from '../src/lib/members/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
@@ -12,10 +13,11 @@ import {
   openMembers,
   signInAndCreateSim
 } from './helpers/members';
+import { framesAtLeast, openSimSocket } from './helpers/sim-socket';
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
-test('the only member leaves: the sim and its pending invitation are deleted', async ({
+test('the only member leaves: the sim is kept and its pending invitation ends', async ({
   page,
   browser
 }, testInfo) => {
@@ -28,11 +30,12 @@ test('the only member leaves: the sim and its pending invitation are deleted', a
   await page.getByRole('button', { name: MEMBERS_COPY.leaveButton }).click();
   await expect(page.getByText(MEMBERS_COPY.leaveSoleMemberWarning)).toBeVisible();
   await expectNoA11yViolations(page);
-  await page.getByRole('button', { name: MEMBERS_COPY.leaveDeleteButton }).click();
+  await page.getByRole('button', { name: MEMBERS_COPY.leaveLastButton }).click();
   await page.waitForURL((url) => url.pathname === '/sims');
 
-  const gone = await page.goto(`/sims/${simId}`);
-  expect(gone?.status()).toBe(404);
+  // The member area answers the former member as any non-member.
+  const closed = await page.goto(`/sims/${simId}`);
+  expect(closed?.status()).toBe(404);
 
   const fresh = await freshContext(browser, testInfo);
   try {
@@ -41,6 +44,9 @@ test('the only member leaves: the sim and its pending invitation are deleted', a
     await expect(guest.getByRole('heading', { level: 1 })).toHaveText(
       MEMBERS_COPY.inviteInvalidTitle
     );
+    // The sim is kept: its link still opens, read-only.
+    const s = await openSimSocket(guest, simId);
+    expect((await framesAtLeast(guest, s, 2))[1]).toEqual({ type: 'access', write: false });
   } finally {
     await fresh.close();
   }
