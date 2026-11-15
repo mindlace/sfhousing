@@ -806,6 +806,42 @@ describe('LogStore persistence (fix round 1)', () => {
     expect(JSON.stringify(await db.read(b))).toBe(storedB);
   });
 
+  it('runs one write chain: a change made during its first pass waits for its write', async () => {
+    const db = memorySimDb();
+    // Each write transaction stays in flight for a macrotask, so two chains would overlap.
+    let inFlight = 0;
+    let most = 0;
+    for (const m of ['createSim', 'write'] as const) {
+      const real = db[m].bind(db) as (...a: unknown[]) => Promise<unknown>;
+      (db as unknown as Record<string, unknown>)[m] = async (...args: unknown[]) => {
+        most = Math.max(most, ++inFlight);
+        await new Promise((r) => setTimeout(r, 0));
+        try {
+          return await real(...args);
+        } finally {
+          inFlight--;
+        }
+      };
+    }
+    let reentered = false;
+    // The chain reads `now` in its first pass, before its first write: an edit made there kicks
+    // the chain again while it runs.
+    const now = () => {
+      if (!reentered) {
+        reentered = true;
+        s.apply(withZ('b'), 'B');
+      }
+      return 1;
+    };
+    const s = await opened(db, { now });
+    s.apply(withZ('a'), 'A');
+    await s.written();
+    expect([reentered, most]).toEqual([true, 1]);
+    const r = await db.read(s.simId!);
+    expect(r.pending.map((p) => p.pending.draft.label)).toEqual(['A', 'B']);
+    expect(r.pending.map((p) => p.pending)).toEqual([...s.pending]);
+  });
+
   it('runs two imports one after the other, each with its own marker', async () => {
     const db = memorySimDb();
     const s = await opened(db);

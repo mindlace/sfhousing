@@ -180,6 +180,11 @@ export class LogStore implements DocStore {
   #confirmedSeq = 0;
   /** The write chain, while it runs (one write at a time). */
   #writing: Promise<void> | null = null;
+  /**
+   * The chain is running: set before its first statement runs, so a `#kick` from inside its first
+   * pass (before `#writing` is assigned) is a no-op and never starts a second chain.
+   */
+  #looping = false;
   /** The import waiting for its write (one at a time: a second import waits for it). */
   #markerJob: MarkerJob | null = null;
   #importing: Promise<void> | null = null;
@@ -818,12 +823,17 @@ export class LogStore implements DocStore {
 
   /** Starts the write chain when it is idle and there is something to write. */
   #kick(): void {
-    if (this.#writing !== null || !this.#canWrite()) return;
+    if (this.#looping || this.#writing !== null || !this.#canWrite()) return;
     if (this.#markerJob === null && this.#job(false) === null) return;
     this.#local = 'writing';
     this.#dirty = true;
-    // The chain awaits its first write before it ends, so this is set before it is cleared.
-    this.#writing = this.#loop();
+    // The loop runs synchronously up to its first await, and can kick again before then (a
+    // withdrawn import): the flag makes that a no-op. What it changed is the loop's next batch.
+    this.#looping = true;
+    const chain = this.#loop();
+    // A chain that ended in its first pass, awaiting nothing, has cleared itself already (and may
+    // have started the next one): only a chain still running is recorded.
+    if (this.#looping && this.#writing === null) this.#writing = chain;
   }
 
   /**
@@ -929,6 +939,7 @@ export class LogStore implements DocStore {
     } catch (e) {
       this.#fail(e, taken);
     }
+    this.#looping = false;
     this.#writing = null;
     if (this.#local === 'writing') this.#local = 'idle';
     this.#dirty = true;
