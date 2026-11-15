@@ -12,7 +12,7 @@ import {
 } from '$lib/sim-stream/protocol';
 import { accessChanges, parseAttachment, type SocketAttachment } from './access';
 import { LIMITS, overFrameLimit, utf8Bytes, type Limits } from './limits';
-import type { AppendOutcome } from './log-host';
+import type { AppendOutcome, LogHost, ResumeBounds } from './log-host';
 import type { OpenParams } from './open-params';
 
 /** What the appendAs RPC answers: no commit body or id crosses back to the Worker. */
@@ -139,12 +139,54 @@ export function loggable(e: unknown): string {
 }
 
 /**
- * The socket's attachment marked resumed, built from its current attachment so a `write` changed
- * by a concurrent rereadRoles is kept; null when the attachment is invalid (I7).
+ * The socket's attachment marked resumed (or, with `resumed` false, cleared), built from its
+ * current attachment so a `write` changed by a concurrent rereadRoles is kept; null when the
+ * attachment is invalid (I7).
  */
-export function withResumed(attachment: unknown): SocketAttachment | null {
+export function withResumed(attachment: unknown, resumed = true): SocketAttachment | null {
   const a = parseAttachment(attachment);
-  return a ? { ...a, resumed: true } : null;
+  return a ? { ...a, resumed } : null;
+}
+
+/** A socket as a resume sees it; `read` and `store` are its attachment. */
+export interface ResumeSocket {
+  read: () => unknown;
+  store: (a: SocketAttachment) => void;
+  send: (frame: string) => void;
+}
+
+/**
+ * The object's answer to a resume frame. A socket is resumed exactly while its most recent resume
+ * answer reached the tip: the mark is cleared at once, before the resume waits its turn, so no
+ * live commit reaches the socket while it catches up (its pages cover them); it is set again only
+ * when an answer ends with more: false, in the same serialized turn as the read that reached the
+ * tip, so no commit is stored between them (I7). A refusal (`gone`, `limit`, sent with
+ * `id: null`) or a capped answer leaves it clear until a later resume reaches the tip.
+ */
+export async function answerResume(
+  host: Pick<LogHost, 'resume'>,
+  after: number,
+  socket: ResumeSocket,
+  bounds?: ResumeBounds
+): Promise<void> {
+  // Synchronous, before the first await: the message handler has not yielded since the frame
+  // arrived, so every commit stored from here on is after the socket's request.
+  const cleared = withResumed(socket.read(), false);
+  if (cleared) socket.store(cleared);
+  await host.resume(
+    after,
+    (a) => {
+      if (a.kind !== 'frames') {
+        return socket.send(encodeFrame({ type: 'refused', id: null, why: a.kind }));
+      }
+      for (const f of a.frames) socket.send(f);
+      if (!a.more) {
+        const marked = withResumed(socket.read());
+        if (marked) socket.store(marked);
+      }
+    },
+    bounds
+  );
 }
 
 /** Whether a live commit goes to this socket: only once it has resumed (I7). */

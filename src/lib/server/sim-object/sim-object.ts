@@ -18,7 +18,7 @@ import {
   commitsFrame,
   encodeFrame
 } from '$lib/sim-stream/protocol';
-import { canWrite } from './access';
+import { canWrite, type SocketAttachment } from './access';
 import { IndexRunner, takeDownInOrder } from './index-runner';
 import { syncSimIndex } from './index-sync';
 import { INDEX_RETRY_MS } from './limits';
@@ -26,6 +26,7 @@ import { LogHost, type ResumeBounds, type ServerAppend } from './log-host';
 import { simMigrations } from './migrations.generated';
 import {
   APPEND_FAILED,
+  answerResume,
   closeReply,
   helloFrame,
   loggable,
@@ -35,7 +36,6 @@ import {
   receivesLive,
   rereadChanges,
   serverAppendResult,
-  withResumed,
   type ServerAppendResult
 } from './object-rules';
 import { OPEN_HEADER, parseOpenParams } from './open-params';
@@ -147,16 +147,14 @@ export class SimObject extends DurableObject<Env> {
     const { frame, attachment, bytes } = read;
     if (frame.type === 'resume') {
       try {
-        await host.resume(
+        // Clears the mark now; sets it again only when an answer reaches the tip (I7).
+        await answerResume(
+          host,
           frame.after,
-          (a) => {
-            if (a.kind === 'gone' || a.kind === 'limit') {
-              return this.#send(ws, encodeFrame({ type: 'refused', id: null, why: a.kind }));
-            }
-            for (const f of a.frames) this.#send(ws, f);
-            // Live commits only once an answer reached the tip, in the same turn: none is stored
-            // between the last page read and the mark (I7). A socket already resumed stays so.
-            if (!a.more) this.#markResumed(ws);
+          {
+            read: () => this.#attachment(ws),
+            store: (a) => this.#store(ws, a),
+            send: (f) => this.#send(ws, f)
           },
           this.#resumeBounds(ws)
         );
@@ -321,12 +319,19 @@ export class SimObject extends DurableObject<Env> {
     };
   }
 
-  /** Stores resumed: true on the socket's current attachment (re-read, so a concurrent
-   *  rereadRoles is not overwritten). */
-  #markResumed(ws: WebSocket): void {
+  /** The socket's current attachment; null once it cannot be read (the socket closed). */
+  #attachment(ws: WebSocket): unknown {
     try {
-      const a = withResumed(ws.deserializeAttachment());
-      if (a) ws.serializeAttachment(a);
+      return ws.deserializeAttachment();
+    } catch {
+      return null;
+    }
+  }
+
+  /** Stores the socket's attachment (the hibernation state), unless the socket closed. */
+  #store(ws: WebSocket, a: SocketAttachment): void {
+    try {
+      ws.serializeAttachment(a);
     } catch {
       // The socket closed.
     }

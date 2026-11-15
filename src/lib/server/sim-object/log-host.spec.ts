@@ -26,6 +26,7 @@ import {
   type ResumeBounds,
   type ServerAppend
 } from './log-host';
+import { answerResume, receivesLive } from './object-rules';
 import { IDENTITY_MAX } from './open-params';
 import { ResumeBudgets } from './resume-budget';
 import { SimStore, type StoredRow } from './store';
@@ -921,6 +922,137 @@ describe('LogHost resume', () => {
     const outs = await Promise.all(ops);
     expect(outs[4]).toMatchObject({ kind: 'refused', why: 'behind' });
     expect(seen).toEqual([2, 3, 4]);
+  });
+});
+
+describe("the object's resume rule (answerResume)", () => {
+  /** A socket as the object sees it: its attachment and the frames sent to it. */
+  interface Sock {
+    att: unknown;
+    frames: string[];
+  }
+  const ONE = { maxBytes: 1, take: () => true };
+
+  /** A host whose live commits go, as the object's broadcast does, to marked sockets only. */
+  function world() {
+    const socks: Sock[] = [];
+    const m = make({
+      limits: { ...LIMITS, burst: 2000 },
+      onCommit: (body) => {
+        for (const s of socks) if (receivesLive(s.att)) s.frames.push(commitsFrame([body]));
+      }
+    });
+    const open = (): Sock => {
+      const s: Sock = { att: { identity: 'u1', write: true, resumed: false }, frames: [] };
+      socks.push(s);
+      return s;
+    };
+    const port = (s: Sock) => ({
+      read: () => s.att,
+      store: (a: unknown) => {
+        s.att = a;
+      },
+      send: (f: string) => {
+        s.frames.push(f);
+      }
+    });
+    const resume = (s: Sock, after: number, bounds?: ResumeBounds) =>
+      answerResume(m.host, after, port(s), bounds);
+    return { ...m, open, resume };
+  }
+
+  /** Catches up from `after` the way the client does: next page only after the last frame. */
+  async function catchUp(
+    w: ReturnType<typeof world>,
+    s: Sock,
+    after: number,
+    between: (answer: number) => Promise<unknown> = async () => null
+  ) {
+    for (let answer = 0; ; answer++) {
+      const before = s.frames.length;
+      await w.resume(s, after, ONE);
+      const last = JSON.parse(s.frames[s.frames.length - 1]);
+      expect(s.frames.length).toBeGreaterThan(before);
+      if (last.more === false) return;
+      after = seqsOf(s.frames.slice(before)).at(-1) as number;
+      await between(answer);
+    }
+  }
+
+  it('a re-resume on a caught-up socket sees each commit once, in order (concern 2)', async () => {
+    const w = world();
+    for (let i = 0; i < 6; i++) await append(w.host, nameDraft(i, `N${i}`));
+    const s = w.open();
+    await w.resume(s, 0);
+    expect(receivesLive(s.att)).toBe(true);
+    const from = s.frames.length;
+    // The smallest example: resume from 0 again, one commit per answer, and a commit stored
+    // together with the first answer (after it, in turn).
+    const [, out] = await Promise.all([w.resume(s, 0, ONE), append(w.host, nameDraft(6, 'Late'))]);
+    expect(out).toMatchObject({ kind: 'accepted', commit: { seq: 7 } });
+    expect(receivesLive(s.att)).toBe(false);
+    await catchUp(w, s, 1);
+    expect(receivesLive(s.att)).toBe(true);
+    expect(seqsOf(s.frames.slice(from))).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    await append(w.host, nameDraft(7, 'Live'));
+    expect(seqsOf(s.frames.slice(from))).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  it('a commit stored between two pages of a re-resume arrives once, in a page', async () => {
+    const w = world();
+    for (let i = 0; i < 4; i++) await append(w.host, nameDraft(i, `N${i}`));
+    const s = w.open();
+    await w.resume(s, 0);
+    const from = s.frames.length;
+    let tip = 4;
+    await catchUp(w, s, 1, async (answer) => {
+      if (answer < 2) await append(w.host, nameDraft(tip, `B${tip++}`));
+    });
+    expect(seqsOf(s.frames.slice(from))).toEqual([2, 3, 4, 5, 6]);
+    // The answer reaching the tip, with a commit stored right after it: that one comes live.
+    const mark = s.frames.length;
+    await Promise.all([w.resume(s, 6), append(w.host, nameDraft(6, 'After'))]);
+    expect(seqsOf(s.frames.slice(mark))).toEqual([7]);
+  });
+
+  it('a re-resume refused limit or gone stops live commits until an answer reaches the tip', async () => {
+    const w = world();
+    for (let i = 0; i < 2; i++) await append(w.host, nameDraft(i, `N${i}`));
+    const s = w.open();
+    await w.resume(s, 0);
+    expect(receivesLive(s.att)).toBe(true);
+    await w.resume(s, 0, { maxBytes: LIMITS.resumeBytes, take: () => false });
+    expect(JSON.parse(s.frames.at(-1) as string)).toEqual({
+      type: 'refused',
+      id: null,
+      why: 'limit'
+    });
+    expect(receivesLive(s.att)).toBe(false);
+    const quiet = s.frames.length;
+    await append(w.host, nameDraft(2, 'Unseen'));
+    expect(s.frames).toHaveLength(quiet);
+    await w.resume(s, 2);
+    expect(seqsOf(s.frames.slice(quiet))).toEqual([3]);
+    expect(receivesLive(s.att)).toBe(true);
+    // Past the tip: refused gone, and the mark is clear too.
+    await w.resume(s, 9);
+    expect(JSON.parse(s.frames.at(-1) as string)).toMatchObject({ why: 'gone' });
+    expect(receivesLive(s.att)).toBe(false);
+    const after = s.frames.length;
+    await append(w.host, nameDraft(3, 'Unseen2'));
+    expect(s.frames).toHaveLength(after);
+  });
+
+  it('keeps a write changed by a concurrent rereadRoles when it clears and sets the mark', async () => {
+    const w = world();
+    await append(w.host, nameDraft(0, 'A'));
+    const s = w.open();
+    await w.resume(s, 0);
+    s.att = { identity: 'u1', write: false, resumed: true };
+    const p = w.resume(s, 0);
+    expect(s.att).toEqual({ identity: 'u1', write: false, resumed: false });
+    await p;
+    expect(s.att).toEqual({ identity: 'u1', write: false, resumed: true });
   });
 });
 

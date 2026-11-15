@@ -247,6 +247,13 @@ describe('withResumed and receivesLive', () => {
     const revoked = { ...att, write: false };
     expect(withResumed(revoked)).toEqual({ identity: 'id-1', write: false, resumed: true });
   });
+
+  it('clears the mark with resumed false, and then the socket receives nothing live', () => {
+    const cleared = withResumed({ ...att, resumed: true }, false);
+    expect(cleared).toEqual({ ...att, resumed: false });
+    expect(receivesLive(cleared)).toBe(false);
+    expect(withResumed('junk', false)).toBeNull();
+  });
 });
 
 describe('paysAsWriter', () => {
