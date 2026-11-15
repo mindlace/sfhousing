@@ -1,10 +1,12 @@
 import {
   LogError,
+  LogFormatError,
   LogState,
   NAME_KEY,
   REGISTRY,
   SHAPES_REVISION,
   chainHash,
+  parseCommitDraft,
   type Commit,
   type CommitDraft,
   type Registry,
@@ -14,6 +16,7 @@ import { commitsFrame, type RefusedWhy } from '$lib/sim-stream/protocol';
 import { decideAppend } from './decide';
 import type { IndexSummary, IndexedCommit } from './index-sync';
 import { LIMITS, RateBucket, utf8Bytes, type Limits } from './limits';
+import { IDENTITY_MAX } from './open-params';
 import type { SimStore, StoredRow, Totals } from './store';
 
 /** Rows read from the store at a time, by a fold and by a resume. */
@@ -123,10 +126,25 @@ export class LogHost {
   appendAs(input: ServerAppend): Promise<AppendOutcome> {
     return this.#serial(async () => {
       const { actor, draft, start, now } = input;
-      if (this.gone()) return { kind: 'refused', id: draft.id, why: 'gone' };
+      // The input crosses an RPC untyped: nothing below may assume its shape.
+      const plain = typeof draft === 'object' && draft !== null && !Array.isArray(draft);
+      const id = plain && typeof draft.id === 'string' ? draft.id : null;
+      if (this.gone()) return { kind: 'refused', id, why: 'gone' };
+      // The bound the open header puts on a socket's identity; no token taken, as for a socket.
+      if (typeof actor !== 'string' || actor.length < 1 || actor.length > IDENTITY_MAX) {
+        return { kind: 'refused', id, why: 'not-writer' };
+      }
+      if (!plain) return { kind: 'refused', id, why: 'invalid' };
       if (this.tip() === 0) {
+        // A draft that cannot parse must not leave a start commit behind it.
+        try {
+          parseCommitDraft({ ...draft, parent: 0, datasetVersion: start.datasetVersion });
+        } catch (e) {
+          if (e instanceof LogFormatError) return { kind: 'refused', id, why: 'invalid' };
+          throw e;
+        }
         const started = await this.#appendStart(start, actor, now);
-        if (started.kind === 'refused') return { ...started, id: draft.id };
+        if (started.kind === 'refused') return { ...started, id };
       }
       let datasetVersion: string | null;
       try {
@@ -134,7 +152,7 @@ export class LogHost {
       } catch (e) {
         // As in #appendNow: a stored row a newer build wrote.
         if (e instanceof LogError && e.code === 'future-shapes') {
-          return { kind: 'refused', id: draft.id, why: 'newer' };
+          return { kind: 'refused', id, why: 'newer' };
         }
         throw e;
       }
@@ -145,7 +163,7 @@ export class LogHost {
       };
       return this.#appendNow(
         full,
-        full.id,
+        id,
         utf8Bytes(JSON.stringify(full)),
         { identity: actor, write: true },
         now

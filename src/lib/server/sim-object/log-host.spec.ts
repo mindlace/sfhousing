@@ -17,7 +17,14 @@ import { arbRuleset } from '$lib/sim-log/test/arbitraries';
 import { newId } from '$lib/ids/base58';
 import { commitsFrame, type RefusedWhy } from '$lib/sim-stream/protocol';
 import { LIMITS, STAMP_MAX, fitsCommit, utf8Bytes } from './limits';
-import { LogHost, type AppendOutcome, type Author, type LogHostOptions } from './log-host';
+import {
+  LogHost,
+  type AppendOutcome,
+  type Author,
+  type LogHostOptions,
+  type ServerAppend
+} from './log-host';
+import { IDENTITY_MAX } from './open-params';
 import { SimStore, type StoredRow } from './store';
 import { draftTo, nameDraft, serverDraft } from './test/drafts';
 import { freshSimDb, storeWithRow } from './test/harness';
@@ -611,6 +618,76 @@ describe('LogHost appendAs', () => {
       why: 'newer'
     });
     expect(store.rowsAfter(0, ALL)).toEqual(rows);
+  });
+
+  it('refuses an actor that is not 1 to IDENTITY_MAX characters: not-writer, no token, nothing stored', async () => {
+    // Two tokens: exactly what a valid appendAs on an empty log spends (start commit, commit).
+    const { host, store } = make({ limits: { ...LIMITS, burst: 2, perSecond: 0 } });
+    for (const actor of ['', 'x'.repeat(IDENTITY_MAX + 1), undefined, null, 7]) {
+      const d = serverDraft('X');
+      expect(
+        await host.appendAs({ actor: actor as string, draft: d, start: start(), now: T0 })
+      ).toEqual({ kind: 'refused', id: d.id, why: 'not-writer' });
+      expect(store.totals().seq).toBe(0);
+    }
+    const widest = 'x'.repeat(IDENTITY_MAX);
+    expect(
+      await host.appendAs({ actor: widest, draft: serverDraft('Y'), start: start(), now: T0 })
+    ).toMatchObject({ kind: 'accepted', commit: { seq: 2, actor: widest } });
+    await expectInvariants(store, host);
+  });
+
+  it('overwrites a parent and dataset version the draft carries with the tip values', async () => {
+    const { host, store } = make();
+    await append(host, nameDraft(0, 'A', { datasetVersion: 'fixture-1' }));
+    const hostile = { ...serverDraft('B'), parent: 99, datasetVersion: 'fixture-9' };
+    expect(
+      await host.appendAs({ actor: 'u1', draft: hostile, start: start(), now: T0 })
+    ).toMatchObject({
+      kind: 'accepted',
+      commit: { seq: 2, parent: 1, datasetVersion: 'fixture-1' }
+    });
+    await expectInvariants(store, host);
+  });
+
+  it.each(['seq', 'actor', 'at', 'hash'])(
+    'refuses a draft carrying %s as invalid, storing nothing (no start commit either)',
+    async (key) => {
+      const { host, store } = make();
+      const d = { ...serverDraft('X'), [key]: key === 'actor' || key === 'hash' ? 'z' : 1 };
+      expect(await host.appendAs({ actor: 'u1', draft: d, start: start(), now: T0 })).toEqual({
+        kind: 'refused',
+        id: d.id,
+        why: 'invalid'
+      });
+      expect(store.totals().seq).toBe(0);
+      await append(host, nameDraft(0, 'A'));
+      const before = snapshot(store, host);
+      expect(await host.appendAs({ actor: 'u1', draft: d, start: start(), now: T0 })).toEqual({
+        kind: 'refused',
+        id: d.id,
+        why: 'invalid'
+      });
+      expect(snapshot(store, host)).toEqual(before);
+    }
+  );
+
+  it.each<[string, unknown]>([
+    ['null', null],
+    ['a string', 'draft'],
+    ['an array', [1, 2]],
+    ['a number', 3]
+  ])('refuses a draft that is %s as invalid data, storing nothing', async (_, draft) => {
+    const { host, store } = make();
+    expect(
+      await host.appendAs({
+        actor: 'u1',
+        draft: draft as ServerAppend['draft'],
+        start: start(),
+        now: T0
+      })
+    ).toEqual({ kind: 'refused', id: null, why: 'invalid' });
+    expect(store.totals().seq).toBe(0);
   });
 });
 
