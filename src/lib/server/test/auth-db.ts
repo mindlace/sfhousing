@@ -5,8 +5,8 @@ import * as schema from '$lib/server/db/schema';
 import { newId } from '$lib/server/ids/base58';
 import type { Database } from '$lib/server/db';
 import { skeleton } from '$lib/server/user-store/confusable-skeleton';
-import { createSim } from '$lib/server/sims/sims';
-import { createSimRecord } from '$lib/server/sims/sim-index';
+import { ROLE_BUNDLE } from '$lib/server/authz';
+import { addSimRole } from '$lib/server/sims/sim-roles';
 import { createTestD1, testPlatform } from './d1';
 
 export function freshDb(): { db: Database; shim: D1Database; close(): void } {
@@ -101,23 +101,61 @@ export async function grantEvent(
 }
 
 /**
- * Seed a sim managed by `managerId` and return its id: no object binding, so no roster hook.
- * `simId` is for tests only and is not checked by `isValidId` (specs use literal ids such
- * as `'q1'`); without it the id is minted as `createSim` mints one.
+ * Seed a sim managed by `managerId` and return its id: the index row, then the manager's grant
+ * (no object binding, so no roster hook). `simId` is for tests only and is not checked by
+ * `isValidId` (specs use literal ids such as `'q1'`); without it a fresh `newId()` is used.
  */
 export async function seedSim(
   db: Database,
   args: { title: string; managerId: string; simId?: string }
 ): Promise<string> {
-  if (args.simId === undefined) {
-    const { simId } = await createSim({
-      db,
-      env: undefined,
-      title: args.title,
-      managerId: args.managerId
-    });
-    return simId;
-  }
-  await createSimRecord({ db, simId: args.simId, title: args.title, managerId: args.managerId });
-  return args.simId;
+  const simId = args.simId ?? newId();
+  const now = new Date();
+  await db.insert(schema.simIndex).values({
+    simId,
+    title: args.title,
+    createdAt: now,
+    updatedAt: now
+  });
+  await addSimRole(db, simId, args.managerId, 'manager', args.managerId);
+  return simId;
+}
+
+/**
+ * Seed `count` sims managed by `managerId` in one `db.batch` (the index rows and one manager
+ * grant each), for quota cases that need a thousand sims. Returns their ids.
+ */
+export async function seedManagedSims(
+  db: Database,
+  args: { managerId: string; count: number }
+): Promise<string[]> {
+  const now = new Date();
+  const ids = Array.from({ length: args.count }, () => newId());
+  const rows = ids.map((simId, i) => ({
+    simId,
+    title: `Sim ${i}`,
+    createdAt: now,
+    updatedAt: now
+  }));
+  const grants = ids.map((simId) => ({
+    id: newId(),
+    principalId: args.managerId,
+    resourceType: 'sim',
+    resourceId: simId,
+    ability: ROLE_BUNDLE.manager,
+    action: 'grant' as const,
+    caveats: null,
+    parentId: null,
+    actorId: args.managerId,
+    createdAt: now,
+    createdAtCounter: 0
+  }));
+  const chunks = <T>(xs: T[], n: number): T[][] =>
+    Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
+  const [first, ...rest] = [
+    ...chunks(rows, 100).map((c) => db.insert(schema.simIndex).values(c)),
+    ...chunks(grants, 50).map((c) => db.insert(schema.capabilityEvent).values(c))
+  ];
+  await db.batch([first, ...rest]);
+  return ids;
 }

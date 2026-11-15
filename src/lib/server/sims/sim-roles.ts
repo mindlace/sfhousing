@@ -196,7 +196,7 @@ export async function foldManagedSimCount(db: Database, identityId: string): Pro
 // that holds the bundle. A new grant goes to the principal id the caller passed.
 // Writes are index-BLIND by design: they append role events without checking sim_index.
 // Reads (above) gate on the index, so a grant only surfaces once the sim exists. The
-// caller (createSimRecord) inserts the index row alongside the manager grant. Do not add an
+// caller (createSim) inserts the index row before the manager grant. Do not add an
 // index gate here — the read/write asymmetry is intentional.
 
 type HeldBundle = { principalId: string; ability: string };

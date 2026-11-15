@@ -58,6 +58,16 @@ export async function readMail(
   return url;
 }
 
+/** What `/api/auth/get-session` answers: null when signed out. */
+export type Session = { user?: { id: string; isAnonymous?: boolean } } | null;
+
+/** The page's context's current session, read from Better-Auth. */
+export async function sessionOf(page: Page): Promise<Session> {
+  const res = await page.request.get('/api/auth/get-session');
+  expect(res.status()).toBe(200);
+  return (await res.json()) as Session;
+}
+
 /** An address no other test (or retry) uses. */
 export function uniqueEmail(tag: string): string {
   const nonce = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;

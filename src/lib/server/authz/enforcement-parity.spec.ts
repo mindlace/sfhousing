@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { freshDb, seedUser, makePlatform } from '$lib/server/test/auth-db';
-import { createSimRecord, addMember } from '$lib/server/sims/sim-index';
+import { freshDb, seedSim, seedUser, makePlatform } from '$lib/server/test/auth-db';
+import { addMember } from '$lib/server/sims/sim-index';
 import { ROLE_BUNDLE, type Capability } from '$lib/server/authz';
 import { requireCap } from '$lib/server/authz/require-cap';
 
@@ -32,7 +32,7 @@ describe('enforcement parity — requireCap reproduces legacy 401/404/403', () =
     const editor = await seedUser(db, { id: 'editor', email: 'editor@test.com' });
     const viewer = await seedUser(db, { id: 'viewer', email: 'viewer@test.com' });
     const stranger = await seedUser(db, { id: 'stranger', email: 'stranger@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: manager.id });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: manager.id });
     await addMember({ db, simId: 'q1', email: editor.email, role: 'editor' });
     await addMember({ db, simId: 'q1', email: viewer.email, role: 'viewer' });
     users = { manager, editor, viewer, stranger };

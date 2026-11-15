@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { isRedirect, type ActionFailure } from '@sveltejs/kit';
 import { AUTH_COPY } from '$lib/account/copy';
 import { SIM_TITLE_MAX } from '$lib/members/copy';
+import { isValidId } from '$lib/server/ids/factory';
 
 // Mocks for the action's collaborators.
 const enforceRate = vi.fn();
@@ -128,7 +129,7 @@ beforeEach(() => {
     user: { id: 'pseudo-u1', pseudonymous: true }
   });
   reseedHandleFromSim.mockResolvedValue('some-handle');
-  createSim.mockResolvedValue({ simId: 'sid-1' });
+  createSim.mockResolvedValue({ simId: 'sid-1', created: true });
 });
 
 function makeLoadEvent(url: string, envExtra: Record<string, unknown> = {}) {
@@ -567,7 +568,7 @@ describe('signin startFresh action', () => {
 
   it('reseeds the handle, creates the sim, and redirects into it for a valid stash', async () => {
     readPendingSim.mockReturnValue('Learn to swim');
-    createSim.mockResolvedValue({ simId: 'sid-99' });
+    createSim.mockResolvedValue({ simId: 'sid-99', created: true });
 
     const event = makeStartFreshEvent();
     let caught: unknown;
@@ -589,6 +590,9 @@ describe('signin startFresh action', () => {
         managerId: 'pseudo-u1'
       })
     );
+    // The server mints the sim's id here: there is no browser store on this path.
+    const [{ simId }] = createSim.mock.calls[0] as [{ simId: string }];
+    expect(isValidId(simId)).toBe(true);
     expect(clearPendingIdentifier).toHaveBeenCalled();
   });
 

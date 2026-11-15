@@ -50,17 +50,11 @@ vi.mock('$lib/server/sims/sim-index', async (importOriginal) => {
   };
 });
 
-import { freshDb, seedUser } from '$lib/server/test/auth-db';
+import { freshDb, seedSim, seedUser } from '$lib/server/test/auth-db';
 import { mockConsole } from '$lib/server/test/mock-console';
 import { eq } from 'drizzle-orm';
 import { simInvite, user } from '$lib/server/db/schema';
-import {
-  createSimRecord,
-  addMemberById,
-  getRole,
-  listMembers,
-  removeMembership
-} from '$lib/server/sims/sim-index';
+import { addMemberById, getRole, listMembers, removeMembership } from '$lib/server/sims/sim-index';
 import { leaveSim } from '$lib/server/sims/sims';
 import { setSimRole } from '$lib/server/sims/sim-roles';
 import { PSEUDONYMOUS_EMAIL_DOMAIN } from '$lib/server/auth/brand';
@@ -91,7 +85,7 @@ afterEach(() => {
 async function setup() {
   const { db } = freshDb();
   const manager = await seedUser(db, { id: 'manager', email: 'manager@test.com' });
-  await createSimRecord({ db, simId: 'q1', title: 'T', managerId: manager.id });
+  await seedSim(db, { simId: 'q1', title: 'T', managerId: manager.id });
   return { db, manager };
 }
 
@@ -175,7 +169,7 @@ describe('createInvite', () => {
     expect(upper.resolvedUser?.userId).toBe('jane');
 
     // NFD-decomposed input (U+0063 U+0061 U+0066 U+0065 U+0301) on a second sim.
-    await createSimRecord({ db, simId: 'q2', title: 'T2', managerId: manager.id });
+    await seedSim(db, { simId: 'q2', title: 'T2', managerId: manager.id });
     const nfd = await createInvite({
       db,
       simId: 'q2',
@@ -865,7 +859,7 @@ describe('listRecipientPendingInvites', () => {
       target: { kind: 'handle', handle: 'me' }
     });
     // A second sim with an email invite to me@x.com (no account on that address path).
-    await createSimRecord({ db, simId: 'q2', title: 'Second', managerId: manager.id });
+    await seedSim(db, { simId: 'q2', title: 'Second', managerId: manager.id });
     await createInvite({
       db,
       simId: 'q2',

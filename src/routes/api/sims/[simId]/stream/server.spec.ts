@@ -18,8 +18,8 @@ vi.mock('$lib/server/sims/sim-index', async (orig) => {
   };
 });
 
-import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
-import { addMemberById, createSimRecord, updateSimIndexTitle } from '$lib/server/sims/sim-index';
+import { freshDb, makePlatform, seedSim, seedUser } from '$lib/server/test/auth-db';
+import { addMemberById, updateSimIndexTitle } from '$lib/server/sims/sim-index';
 import { DEFAULT_SIM_NAME } from '$lib/sim-log';
 import { newId } from '$lib/ids/base58';
 import { OPEN_HEADER, parseOpenParams } from '$lib/server/sim-object/open-params';
@@ -46,7 +46,7 @@ async function setup() {
   await seedUser(t.db, { id: 'v1', email: 'v1@test.com' });
   await seedUser(t.db, { id: 'o1', email: 'o1@test.com' });
   const simId = newId();
-  await createSimRecord({ db: t.db, simId, title: 'Garden', managerId: 'm1' });
+  await seedSim(t.db, { simId, title: 'Garden', managerId: 'm1' });
   await addMemberById({ db: t.db, simId, userId: 'v1', role: 'viewer' });
   const forwarded: Request[] = [];
   // Node cannot build a 101 Response; the stand-in object answers 200 and records the request.

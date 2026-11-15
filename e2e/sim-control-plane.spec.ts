@@ -6,8 +6,9 @@
 // read-only. The design says an edit there starts a remix; remix is a later unit, so here the
 // former member's append is refused `not-writer`.
 import { expect, test } from '@playwright/test';
-import { MEMBERS_COPY } from '../src/lib/members/copy';
-import { loginAs, uniqueEmail } from './helpers/auth';
+import { newId } from '../src/lib/ids/base58';
+import { MEMBERS_COPY, SIMS_COPY } from '../src/lib/members/copy';
+import { loginAs, sessionOf, uniqueEmail } from './helpers/auth';
 import { freshContext, inviteLinkFor, inviteViaApi, signInAndCreateSim } from './helpers/members';
 import {
   commitsOf,
@@ -92,9 +93,11 @@ test.describe('roster changes reach open sockets', () => {
   }, testInfo) => {
     const simId = await signInAndCreateSim(page, uniqueEmail('cp-last'), 'Kept');
     // A second sim the leaver keeps, so their list has something to render.
-    const other = await page.request.post('/api/sims', { data: { title: 'Still mine' } });
+    const otherId = newId();
+    const other = await page.request.post('/api/sims', {
+      data: { simId: otherId, title: 'Still mine' }
+    });
     expect(other.status()).toBe(201);
-    const { simId: otherId } = (await other.json()) as { simId: string };
     await page.goto('/about');
     const h = await openSimSocket(page, simId);
     await framesAtLeast(page, h, 2);
@@ -123,6 +126,11 @@ test.describe('roster changes reach open sockets', () => {
     await expect(page.locator(`a[href="/sims/${otherId}"]`)).toBeVisible();
     await expect(page.locator(`a[href="/sims/${simId}"]`)).toHaveCount(0);
 
+    // Knowing the id does not make the former manager its manager again.
+    const again = await page.request.post('/api/sims', { data: { simId, title: 'Kept' } });
+    expect(again.status()).toBe(409);
+    expect(await again.json()).toEqual({ error: SIMS_COPY.notYours, code: 'taken' });
+
     const ctx = await freshContext(browser, testInfo);
     try {
       const visitor = await ctx.newPage();
@@ -133,5 +141,60 @@ test.describe('roster changes reach open sockets', () => {
     } finally {
       await ctx.close();
     }
+  });
+});
+
+test.describe('registration', () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test('a fresh visitor registers an id: one account, then a no-op', async ({ page }) => {
+    const simId = newId();
+    const first = await page.request.post('/api/sims', { data: { simId } });
+    expect(first.status()).toBe(201);
+    expect(await first.json()).toEqual({ simId, created: true });
+    const minted = await sessionOf(page);
+    expect(minted?.user?.isAnonymous).toBe(true);
+    const again = await page.request.post('/api/sims', { data: { simId } });
+    expect(again.status()).toBe(200);
+    expect(await again.json()).toEqual({ simId, created: false });
+    expect((await sessionOf(page))?.user?.id).toBe(minted?.user?.id);
+    await page.goto('/about');
+    const h = await openSimSocket(page, simId);
+    expect((await framesAtLeast(page, h, 2))[1]).toEqual({ type: 'access', write: true });
+    expect(commitsOf(await resumeAndRead(page, h, 0))[0].changes).toEqual([
+      { op: 'set', key: 'sim', field: 'name', value: 'Untitled sim' }
+    ]);
+  });
+
+  test('another account registering the id is refused, and stays a reader', async ({
+    page,
+    browser
+  }, testInfo) => {
+    const simId = await signInAndCreateSim(page, uniqueEmail('cp-owner'), 'Owned');
+    const ctx = await freshContext(browser, testInfo);
+    try {
+      const other = await ctx.newPage();
+      await loginAs(other, uniqueEmail('cp-other'));
+      const res = await other.request.post('/api/sims', { data: { simId } });
+      expect(res.status()).toBe(409);
+      expect(await res.json()).toEqual({ error: SIMS_COPY.notYours, code: 'taken' });
+      await other.goto('/about');
+      const h = await openSimSocket(other, simId);
+      expect((await framesAtLeast(other, h, 2))[1]).toEqual({ type: 'access', write: false });
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test('a known device with no session gets 401 and no account', async ({
+    page,
+    context,
+    baseURL
+  }) => {
+    await context.addCookies([{ name: 'sfh_known', value: '1', url: baseURL! }]);
+    const res = await page.request.post('/api/sims', { data: { simId: newId() } });
+    expect(res.status()).toBe(401);
+    expect((await res.json()).code).toBe('sign_in');
+    expect(await sessionOf(page)).toBeNull();
   });
 });

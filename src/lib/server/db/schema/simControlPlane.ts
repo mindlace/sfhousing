@@ -20,6 +20,12 @@ export const simIndex = sqliteTable('sim_index', {
   datasetVersion: text('dataset_version')
 });
 
+/** Ids taken down by an operator (R43): never registered again. */
+export const simTakedown = sqliteTable('sim_takedown', {
+  simId: text('sim_id').primaryKey(),
+  takenDownAt: integer('taken_down_at', { mode: 'timestamp_ms' }).notNull()
+});
+
 /** One commit's envelope: everything but its changes. */
 export const simCommit = sqliteTable(
   'sim_commit',

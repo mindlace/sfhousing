@@ -3,6 +3,7 @@
 // Later auth pages add their cases here.
 import { expect, test, type Page } from '@playwright/test';
 import { AUTH_COPY } from '../src/lib/account/copy';
+import { newId } from '../src/lib/ids/base58';
 import { MEMBERS_COPY } from '../src/lib/members/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { enableAuthMethods, loginAs, readMail, uniqueEmail } from './helpers/auth';
@@ -178,7 +179,9 @@ test('invite page: no axe violations for a bad link, the join form and the accep
     (await inviteeCtx.request.post('/api/e2e/login', { data: { email: inviteeEmail } })).ok()
   ).toBeTruthy();
   await loginAs(page, uniqueEmail('a11y-inviter'));
-  const created = await page.request.post('/api/sims', { data: { title: 'Invite A11y' } });
+  const created = await page.request.post('/api/sims', {
+    data: { simId: newId(), title: 'Invite A11y' }
+  });
   const { simId } = (await created.json()) as { simId: string };
   const invited = await page.request.post(`/api/sims/${simId}/invites`, {
     data: { target: `@${inviteeEmail.split('@')[0]}` }

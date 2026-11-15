@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SIMS_COPY, SIM_TITLE_MAX, titleTooLong } from '$lib/members/copy';
-import { freshDb, makePlatform, seedSim, seedUser } from '$lib/server/test/auth-db';
+import { isValidId } from '$lib/server/ids/factory';
+import {
+  freshDb,
+  makePlatform,
+  seedManagedSims,
+  seedSim,
+  seedUser
+} from '$lib/server/test/auth-db';
+import { getRole, listSimsForUser } from '$lib/server/sims/sim-index';
 
 const mint = vi.hoisted(() => vi.fn());
 vi.mock('$lib/server/onboarding/pseudonymous-mint', () => ({ mintPseudonymousSession: mint }));
@@ -25,6 +33,7 @@ function setup(
       email?: string;
       emailVerified?: boolean;
     };
+    env?: Record<string, unknown>;
   } = {}
 ) {
   const t = freshDb();
@@ -37,7 +46,8 @@ function setup(
     set: (n: string, v: string) => void store.set(n, v),
     delete: (n: string) => void store.delete(n)
   };
-  const platform = makePlatform(t.shim);
+  // development: the creation limiter allows without a binding (and logs nothing).
+  const platform = makePlatform(t.shim, { ENVIRONMENT: 'development', ...opts.env });
   const locals = { user: opts.user ?? null };
   const event = (title?: string) =>
     ({
@@ -92,13 +102,15 @@ describe('/sims create action', () => {
     const r = await redirectOf(() => actions.create(event('Garden')));
     expect(mint).toHaveBeenCalledOnce();
     expect(r.status).toBe(303);
-    expect(r.location).toMatch(/^\/sims\/.+/);
+    const simId = r.location.replace(/^\/sims\//, '');
+    expect(isValidId(simId)).toBe(true);
+    expect(await getRole({ db, simId, userId: 'p1' })).toBe('manager');
   });
 
   it('answers 403 for a signed-in user at the quota', async () => {
     const { db, event } = setup({ user: { id: 'u1', pseudonymous: false } });
     await seedUser(db, { id: 'u1', email: 'u1@test.com' });
-    for (let i = 0; i < 5; i++) await seedSim(db, { title: `S${i}`, managerId: 'u1' });
+    await seedManagedSims(db, { managerId: 'u1', count: 1000 });
     const res = await actions.create(event('More'));
     expect(res).toMatchObject({ status: 403, data: { error: SIMS_COPY.quota } });
   });
@@ -156,7 +168,25 @@ describe('/sims load', () => {
     await seedUser(db, { id: 'u1', email: 'u1@test.com' });
     const r = await redirectOf(() => load(event()));
     expect(r.status).toBe(303);
-    expect(r.location).toMatch(/^\/sims\/.+/);
+    const simId = r.location.replace(/^\/sims\//, '');
+    expect(isValidId(simId)).toBe(true);
+    expect(store.has('sfh_pending_sim')).toBe(false);
+    expect(await listSimsForUser({ db, userId: 'u1' })).toEqual([
+      { simId, title: 'Resumed', role: 'manager' }
+    ]);
+  });
+
+  it('rate-limits the resume by identity: over the limit it creates nothing and lists', async () => {
+    const limit = vi.fn(async () => ({ success: false }));
+    const { db, event, store } = setup({
+      pending: 'Resumed',
+      user: { id: 'u1', pseudonymous: false },
+      env: { ENVIRONMENT: 'production', MUTATION_REGISTERED_RL: { limit } }
+    });
+    await seedUser(db, { id: 'u1', email: 'u1@test.com' });
+    const res = (await load(event())) as { sims: unknown[] };
+    expect(res.sims).toEqual([]);
+    expect(limit).toHaveBeenCalledWith({ key: 'sim_start:u1' });
     expect(store.has('sfh_pending_sim')).toBe(false);
   });
 
@@ -178,9 +208,9 @@ describe('/sims load', () => {
       user: { id: 'u1', pseudonymous: false }
     });
     await seedUser(db, { id: 'u1', email: 'u1@test.com' });
-    for (let i = 0; i < 5; i++) await seedSim(db, { title: `S${i}`, managerId: 'u1' });
+    await seedManagedSims(db, { managerId: 'u1', count: 1000 });
     const res = (await load(event())) as { sims: unknown[] };
-    expect(res.sims).toHaveLength(5);
+    expect(res.sims).toHaveLength(1000);
     expect(store.has('sfh_pending_sim')).toBe(false);
   });
 });

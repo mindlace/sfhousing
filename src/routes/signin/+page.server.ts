@@ -8,6 +8,7 @@ import { enabledAuthMethods } from '$lib/server/auth/methods';
 import { requireMethod } from '$lib/server/auth/require-method';
 import { getDb } from '$lib/server/db';
 import { isE2eEnv } from '$lib/server/e2e/env';
+import { newId } from '$lib/server/ids/factory';
 import {
   clearPendingIdentifier,
   readPendingIdentifier
@@ -225,9 +226,11 @@ export const actions: Actions = {
     if (!('title' in checked)) throw redirect(303, '/sims');
     const db = getDb(event.platform!);
     await reseedHandleFromSim({ db, identityId: minted.user.id, simTitle: checked.title });
+    // There is no browser store on this path: the server mints the sim's id.
     const { simId } = await createSim({
       db,
       env: event.platform?.env,
+      simId: newId(),
       title: checked.title,
       managerId: minted.user.id
     });

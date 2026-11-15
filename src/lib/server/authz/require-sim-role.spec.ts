@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { freshDb, seedUser, makePlatform } from '$lib/server/test/auth-db';
-import { createSimRecord, addMember } from '$lib/server/sims/sim-index';
+import { freshDb, seedSim, seedUser, makePlatform } from '$lib/server/test/auth-db';
+import { addMember } from '$lib/server/sims/sim-index';
 import { requireSimRole } from './require-sim-role';
 
 type EventArg = Parameters<typeof requireSimRole>[0];
@@ -39,7 +39,7 @@ describe('requireSimRole', () => {
     const platform = makePlatform(shim);
     const manager = await seedUser(db, { id: 'manager', email: 'm@test.com' });
     const stranger = await seedUser(db, { id: 'stranger', email: 's@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: manager.id });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: manager.id });
     const { status, body } = await httpError(() =>
       requireSimRole(event(platform, stranger), 'q1', 'viewer')
     );
@@ -52,7 +52,7 @@ describe('requireSimRole', () => {
     const platform = makePlatform(shim);
     const manager = await seedUser(db, { id: 'manager', email: 'm@test.com' });
     const viewer = await seedUser(db, { id: 'viewer', email: 'v@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: manager.id });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: manager.id });
     await addMember({ db, simId: 'q1', email: viewer.email, role: 'viewer' });
     expect(await httpStatus(() => requireSimRole(event(platform, viewer), 'q1', 'editor'))).toBe(
       403
@@ -63,7 +63,7 @@ describe('requireSimRole', () => {
     const { db, shim } = freshDb();
     const platform = makePlatform(shim);
     const manager = await seedUser(db, { id: 'manager', email: 'm@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: manager.id });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: manager.id });
     const res = await requireSimRole(event(platform, manager), 'q1', 'editor');
     expect(res).toEqual({
       role: 'manager',
@@ -76,7 +76,7 @@ describe('requireSimRole', () => {
     const platform = makePlatform(shim);
     const manager = await seedUser(db, { id: 'manager', email: 'm@test.com' });
     const editor = await seedUser(db, { id: 'editor', email: 'e@test.com' });
-    await createSimRecord({ db, simId: 'q1', title: 'T', managerId: manager.id });
+    await seedSim(db, { simId: 'q1', title: 'T', managerId: manager.id });
     await addMember({ db, simId: 'q1', email: editor.email, role: 'editor' });
     expect(await requireSimRole(event(platform, editor), 'q1', 'editor')).toEqual({
       role: 'editor',

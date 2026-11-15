@@ -3,6 +3,7 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { SIMS_COPY } from '../src/lib/members/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { sessionOf } from './helpers/auth';
 
 const SESSION_COOKIE = 'better-auth.session_token';
 
@@ -13,14 +14,6 @@ async function createSim(page: Page, title: string) {
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
   await page.getByLabel(SIMS_COPY.titleLabel).fill(title);
   await page.getByRole('button', { name: SIMS_COPY.create }).click();
-}
-
-type Session = { user?: { id: string; isAnonymous?: boolean } } | null;
-
-async function sessionOf(page: Page): Promise<Session> {
-  const res = await page.request.get('/api/auth/get-session');
-  expect(res.status()).toBe(200);
-  return (await res.json()) as Session;
 }
 
 test('a fresh visitor creates a sim, lands on it, and is a pseudonymous user', async ({ page }) => {

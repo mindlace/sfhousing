@@ -1,6 +1,14 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { Database } from '$lib/server/db';
-import { simIndex, user, type SimMemberRole } from '$lib/server/db/schema';
+import { normTextToDriver } from '$lib/server/db/columns';
+import {
+  capabilityEvent,
+  simCommit,
+  simIndex,
+  simTakedown,
+  user,
+  type SimMemberRole
+} from '$lib/server/db/schema';
 import { getUsers, survivorId } from '$lib/server/user-store/user';
 import {
   addSimRole,
@@ -14,50 +22,62 @@ import {
 } from './sim-roles';
 
 /**
- * Record a new sim: its index row and the manager's membership (a manager role-grant
- * event on the capability ledger). The index row is inserted FIRST so a concurrent fold
- * read (which is index-gated) sees the sim, then the manager grant is appended.
+ * The id has a past: an index row, a takedown mark, a stored commit envelope, or any ledger
+ * event naming it as a sim. The last two cover sims whose index row an older code path deleted
+ * while their log or ledger remained: registering such an id would make the caller manager of
+ * the old log.
  */
-export async function createSimRecord(args: {
+const hasPast = (simId: string) => sql`(
+  exists (select 1 from ${simIndex} where ${simIndex.simId} = ${simId})
+  or exists (select 1 from ${simTakedown} where ${simTakedown.simId} = ${simId})
+  or exists (select 1 from ${simCommit} where ${simCommit.simId} = ${simId})
+  or exists (
+    select 1 from ${capabilityEvent}
+    where ${capabilityEvent.resourceType} = 'sim' and ${capabilityEvent.resourceId} = ${simId}
+  )
+)`;
+
+/**
+ * One statement: insert the index row unless the id has a past (an index row, a takedown mark,
+ * a stored commit envelope or a ledger event). True when this call inserted it. The check and
+ * the insert are one statement, so D1 serializes it against a concurrent registration or
+ * takedown mark: either it lands before the mark, or not at all.
+ */
+export async function insertSimIndexIfFree(args: {
   db: Database;
   simId: string;
   title: string;
-  managerId: string;
-}): Promise<void> {
-  const now = new Date();
-  await args.db.insert(simIndex).values({
-    simId: args.simId,
-    title: args.title,
-    createdAt: now,
-    updatedAt: now
-  });
-  await addSimRole(args.db, args.simId, args.managerId, 'manager', args.managerId);
+}): Promise<boolean> {
+  const now = Date.now();
+  // Raw SQL skips the normText column's NFC write, so the title goes through it here.
+  const rows = await args.db.all<{ sim_id: string }>(sql`
+    insert into ${simIndex} (sim_id, title, created_at, updated_at)
+    select ${args.simId}, ${normTextToDriver(args.title)}, ${now}, ${now}
+    where not ${hasPast(args.simId)}
+    on conflict do nothing
+    returning sim_id`);
+  return rows.length === 1;
 }
 
 /**
- * Idempotently (re)seed a sim's control-plane projection. Unlike createSimRecord
- * — which assumes a freshly-provisioned sim and inserts unconditionally — this tolerates
- * an existing index row and an already-held manager grant, so calling it again for the
- * same sim changes nothing and restores whichever of the two is missing.
+ * The sim has an index row and no ledger event names it: a registration is between its insert
+ * and its manager grant (or its grant failed and the row is being removed).
  */
-export async function ensureSimRecord(args: {
-  db: Database;
-  simId: string;
-  title: string;
-  managerId: string;
-}): Promise<void> {
-  const now = new Date();
-  await args.db
-    .insert(simIndex)
-    .values({
-      simId: args.simId,
-      title: args.title,
-      createdAt: now,
-      updatedAt: now
-    })
-    .onConflictDoNothing();
-  // addSimRole is a no-op when the role bundle is already held, so this self-heals.
-  await addSimRole(args.db, args.simId, args.managerId, 'manager', args.managerId);
+export async function simAwaitingGrant(db: Database, simId: string): Promise<boolean> {
+  const rows = await db.all<{ waiting: number }>(sql`select (
+    exists (select 1 from ${simIndex} where ${simIndex.simId} = ${simId})
+    and not exists (
+      select 1 from ${capabilityEvent}
+      where ${capabilityEvent.resourceType} = 'sim' and ${capabilityEvent.resourceId} = ${simId}
+    )
+  ) as waiting`);
+  return rows[0]?.waiting === 1;
+}
+
+/** The id has a past: an index row, a takedown mark, a stored commit envelope or a ledger event. */
+export async function simIdInUse(db: Database, simId: string): Promise<boolean> {
+  const rows = await db.all<{ used: number }>(sql`select ${hasPast(simId)} as used`);
+  return rows[0]?.used === 1;
 }
 
 /** The sim's title from its index row. Null for a sim with no index row. */

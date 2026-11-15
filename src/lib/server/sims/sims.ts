@@ -1,26 +1,59 @@
 import { and, eq } from 'drizzle-orm';
 import type { Database } from '$lib/server/db';
 import { simIndex, simInvite } from '$lib/server/db/schema';
-import { newId } from '$lib/server/ids/factory';
-import { createSimRecord, removeMembership, prepareLeave } from './sim-index';
+import { isValidId } from '$lib/server/ids/factory';
+import { insertSimIndexIfFree, removeMembership, prepareLeave } from './sim-index';
+import { addSimRole } from './sim-roles';
 import { onSimRosterChanged } from './roster-hook';
 import { loggable } from '$lib/server/sim-object/object-rules';
 
+/** The manager grant failed after this call inserted the index row; the row was removed. */
+export class SimGrantFailed extends Error {
+  constructor() {
+    super('manager grant failed');
+    this.name = 'SimGrantFailed';
+  }
+}
+
 /**
- * Create a sim: mint its id, record the index row, then the manager's grant. No roster hook:
- * a sim just registered cannot have an open socket (the stream route answers 404 until its
- * index row exists), so the call would only wake an object for nothing. `env` is not read
- * here yet; callers already pass the request's.
+ * Register a sim under a browser-minted id (R51). Throws Error('invalid sim id') unless
+ * isValidId. created false: the id has a past (an index row, a takedown mark, a stored commit
+ * or a ledger event), and nothing changed. A manager grant follows only an insert that created
+ * the index row in this call, so knowing an id never makes anyone its manager.
+ *
+ * No roster hook: a sim just registered cannot have an open socket (the stream route answers
+ * 404 until its index row exists), so the call would only wake an object for nothing. `env` is
+ * not read here; callers pass the request's.
+ *
+ * Throws SimGrantFailed when the grant fails after the insert: the row is removed again first,
+ * so no sim is left that nobody can claim.
  */
 export async function createSim(args: {
   db: Database;
   env: unknown;
+  simId: string;
   title: string;
   managerId: string;
-}): Promise<{ simId: string }> {
-  const simId = newId();
-  await createSimRecord({ db: args.db, simId, title: args.title, managerId: args.managerId });
-  return { simId };
+}): Promise<{ simId: string; created: boolean }> {
+  const { db, simId } = args;
+  if (!isValidId(simId)) throw new Error('invalid sim id');
+  if (!(await insertSimIndexIfFree({ db, simId, title: args.title }))) {
+    return { simId, created: false };
+  }
+  try {
+    await addSimRole(db, simId, args.managerId, 'manager', args.managerId);
+  } catch (e) {
+    console.error('[start-sim] grant failed', simId, loggable(e));
+    // The one place outside deleteSim that deletes a sim_index row: the row this call just
+    // inserted, which has no member and no log yet.
+    try {
+      await db.delete(simIndex).where(eq(simIndex.simId, simId));
+    } catch (undo) {
+      console.error('[start-sim] grant undo failed', simId, loggable(undo));
+    }
+    throw new SimGrantFailed();
+  }
+  return { simId, created: true };
 }
 
 /**

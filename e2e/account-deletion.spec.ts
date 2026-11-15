@@ -5,6 +5,7 @@
 // run mints its own deleter, so the destructive delete never touches a user other specs
 // rely on.
 import { expect, test } from '@playwright/test';
+import { newId } from '../src/lib/ids/base58';
 import { MEMBERS_COPY } from '../src/lib/members/copy';
 import { ACCOUNT_COPY, deleteConfirmLine } from '../src/lib/account/account-copy';
 import { expectNoA11yViolations } from './helpers/a11y';
@@ -29,7 +30,9 @@ test('deleting the account signs out and keeps both sims', async ({ page, browse
   const pendingLink = await inviteLinkFor(page, pending);
 
   const sharedTitle = `shared-del-${Date.now()}`;
-  const sharedRes = await page.request.post('/api/sims', { data: { title: sharedTitle } });
+  const sharedRes = await page.request.post('/api/sims', {
+    data: { simId: newId(), title: sharedTitle }
+  });
   const { simId: sharedId } = (await sharedRes.json()) as { simId: string };
   const survivorEmail = uniqueEmail('survivor');
   await inviteViaApi(page, sharedId, survivorEmail);

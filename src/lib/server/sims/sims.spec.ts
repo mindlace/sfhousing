@@ -2,21 +2,34 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { freshDb, seedSim, seedUser } from '$lib/server/test/auth-db';
 import { mockConsole } from '$lib/server/test/mock-console';
-import { capabilityEvent, simInvite } from '$lib/server/db/schema';
-import { isValidId } from '$lib/server/ids/factory';
+import { capabilityEvent, simCommit, simInvite, simTakedown } from '$lib/server/db/schema';
+import { newId } from '$lib/server/ids/factory';
 import { addMemberById, getRole, getSimTitle, listMembers } from './sim-index';
 import { foldSimRole, setSimRole } from './sim-roles';
 import { handleAccountLink } from '$lib/server/user-store/identity';
 import { onSimRosterChanged } from './roster-hook';
-import { createSim, deleteSim, leaveSim, removeSimMember } from './sims';
+import { createSim, deleteSim, leaveSim, removeSimMember, SimGrantFailed } from './sims';
 
 vi.mock('./roster-hook', () => ({ onSimRosterChanged: vi.fn(async () => {}) }));
+// addSimRole stays real unless a case makes the manager grant throw.
+const grant = vi.hoisted(() => ({ fails: null as Error | null }));
+vi.mock('./sim-roles', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./sim-roles')>();
+  return {
+    ...real,
+    addSimRole: (...a: Parameters<typeof real.addSimRole>) => {
+      if (grant.fails) throw grant.fails;
+      return real.addSimRole(...a);
+    }
+  };
+});
 
 /** Stands in for platform.env: the hook must receive it as given. */
 const env = { marker: 'env' };
 
 beforeEach(() => {
   vi.mocked(onSimRosterChanged).mockClear();
+  grant.fails = null;
 });
 
 async function seedInvite(
@@ -39,12 +52,23 @@ async function seedInvite(
   });
 }
 
+/** Every ledger event naming the sim, as (principal, action). */
+async function ledgerOf(db: Awaited<ReturnType<typeof freshDb>>['db'], simId: string) {
+  return db
+    .select({ principalId: capabilityEvent.principalId, action: capabilityEvent.action })
+    .from(capabilityEvent)
+    .where(eq(capabilityEvent.resourceId, simId));
+}
+
 describe('createSim', () => {
   it('createSim inserts the index row, then a manager grant by the manager', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'owner1', email: 'm@test.com' });
-    const { simId } = await createSim({ db, env, title: 'My Sim', managerId: 'owner1' });
-    expect(isValidId(simId)).toBe(true);
+    const simId = newId();
+    expect(await createSim({ db, env, simId, title: 'My Sim', managerId: 'owner1' })).toEqual({
+      simId,
+      created: true
+    });
     expect(await getSimTitle({ db, simId })).toBe('My Sim');
     expect(await getRole({ db, simId, userId: 'owner1' })).toBe('manager');
     expect(await foldSimRole(db, simId, 'owner1')).toBe('manager');
@@ -60,8 +84,170 @@ describe('createSim', () => {
   it('createSim does not call onSimRosterChanged', async () => {
     const { db } = freshDb();
     await seedUser(db, { id: 'owner1', email: 'm@test.com' });
-    await createSim({ db, env, title: 'My Sim', managerId: 'owner1' });
+    await createSim({ db, env, simId: newId(), title: 'My Sim', managerId: 'owner1' });
     expect(onSimRosterChanged).not.toHaveBeenCalled();
+  });
+
+  it('registers a browser-minted id once: the second call changes nothing', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    await seedUser(db, { id: 'other', email: 'o@test.com' });
+    const simId = newId();
+    expect(await createSim({ db, env, simId, title: 'Mine', managerId: 'owner1' })).toEqual({
+      simId,
+      created: true
+    });
+    expect(await createSim({ db, env, simId, title: 'Theirs', managerId: 'other' })).toEqual({
+      simId,
+      created: false
+    });
+    expect(await getSimTitle({ db, simId })).toBe('Mine');
+    expect(await getRole({ db, simId, userId: 'other' })).toBeNull();
+    expect(await ledgerOf(db, simId)).toEqual([{ principalId: 'owner1', action: 'grant' }]);
+  });
+
+  it('never registers a taken-down id', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    const simId = newId();
+    await db.insert(simTakedown).values({ simId, takenDownAt: new Date() });
+    expect(await createSim({ db, env, simId, title: 'Again', managerId: 'owner1' })).toEqual({
+      simId,
+      created: false
+    });
+    expect(await getSimTitle({ db, simId })).toBeNull();
+    expect(await ledgerOf(db, simId)).toEqual([]);
+  });
+
+  it('never registers an id with a stored commit envelope and no index row', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    const simId = newId();
+    await db.insert(simCommit).values({
+      simId,
+      seq: 0,
+      kind: 'system',
+      source: 'sim.start',
+      actor: 'someone',
+      at: new Date(),
+      build: 'b1',
+      datasetVersion: 'fixture-0',
+      bytes: 10
+    });
+    expect(await createSim({ db, env, simId, title: 'Old log', managerId: 'owner1' })).toEqual({
+      simId,
+      created: false
+    });
+    expect(await getSimTitle({ db, simId })).toBeNull();
+    expect(await ledgerOf(db, simId)).toEqual([]);
+  });
+
+  it('never registers an id with a ledger event and no index row', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    await seedUser(db, { id: 'old', email: 'old@test.com' });
+    const simId = newId();
+    // The old code deleted index rows and left the ledger: a grant with no index row.
+    await setSimRole(db, simId, 'old', 'manager', null);
+    expect(await createSim({ db, env, simId, title: 'Old ledger', managerId: 'owner1' })).toEqual({
+      simId,
+      created: false
+    });
+    expect(await getSimTitle({ db, simId })).toBeNull();
+    expect(await ledgerOf(db, simId)).toEqual([{ principalId: 'old', action: 'grant' }]);
+  });
+
+  it('never registers a sim kept with no members, not even for its former manager', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    const simId = newId();
+    await createSim({ db, env, simId, title: 'Kept', managerId: 'owner1' });
+    await removeSimMember({ db, env, simId, userId: 'owner1' });
+    const before = await ledgerOf(db, simId);
+    expect(await createSim({ db, env, simId, title: 'Again', managerId: 'owner1' })).toEqual({
+      simId,
+      created: false
+    });
+    expect(await getRole({ db, simId, userId: 'owner1' })).toBeNull();
+    expect(await ledgerOf(db, simId)).toEqual(before);
+  });
+
+  it('refuses an id that is not a valid id', async () => {
+    const { db } = freshDb();
+    await expect(
+      createSim({ db, env, simId: 'nope', title: 'X', managerId: 'owner1' })
+    ).rejects.toThrow('invalid sim id');
+  });
+
+  it('stores the title in NFC, as the column does', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    const simId = newId();
+    await createSim({ db, env, simId, title: 'Café', managerId: 'owner1' });
+    expect(await getSimTitle({ db, simId })).toBe('Café');
+  });
+
+  it('two callers registering one new id at once: exactly one manager, the other nothing', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'a', email: 'a@test.com' });
+    await seedUser(db, { id: 'b', email: 'b@test.com' });
+    const simId = newId();
+    const results = await Promise.all([
+      createSim({ db, env, simId, title: 'A', managerId: 'a' }),
+      createSim({ db, env, simId, title: 'B', managerId: 'b' })
+    ]);
+    expect(results.map((r) => r.created).sort()).toEqual([false, true]);
+    const winner = results[0].created ? 'a' : 'b';
+    const loser = winner === 'a' ? 'b' : 'a';
+    expect(await getRole({ db, simId, userId: winner })).toBe('manager');
+    expect(await getRole({ db, simId, userId: loser })).toBeNull();
+    expect(await ledgerOf(db, simId)).toEqual([{ principalId: winner, action: 'grant' }]);
+  });
+
+  it('a registration racing a takedown mark either lands first or grants nothing', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    for (const markFirst of [true, false]) {
+      const simId = newId();
+      const mark = () => db.insert(simTakedown).values({ simId, takenDownAt: new Date() });
+      const register = () => createSim({ db, env, simId, title: 'Race', managerId: 'owner1' });
+      const [a, b] = markFirst ? [mark, register] : [register, mark];
+      const [ra, rb] = await Promise.all([a(), b()]);
+      const { created } = (markFirst ? rb : ra) as { created: boolean };
+      // Both orders are possible on D1; whichever happened, a refusal granted nothing.
+      if (created) {
+        expect(await ledgerOf(db, simId)).toEqual([{ principalId: 'owner1', action: 'grant' }]);
+      } else {
+        expect(await ledgerOf(db, simId)).toEqual([]);
+        expect(await getSimTitle({ db, simId })).toBeNull();
+      }
+    }
+  });
+
+  it('a grant that fails after the insert removes the row it inserted, logs, and throws', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'owner1', email: 'm@test.com' });
+    const simId = newId();
+    // A database error's message carries the bound parameters: an identity among them.
+    grant.fails = Object.assign(new Error('Failed query: insert … params: owner1'), {
+      name: 'DrizzleQueryError'
+    });
+    const { error } = mockConsole('error');
+    await expect(
+      createSim({ db, env, simId, title: 'Stranded', managerId: 'owner1' })
+    ).rejects.toBeInstanceOf(SimGrantFailed);
+    expect(await getSimTitle({ db, simId })).toBeNull();
+    expect(await ledgerOf(db, simId)).toEqual([]);
+    expect(error).toHaveBeenCalledWith('[start-sim] grant failed', simId, expect.any(String));
+    expect(JSON.stringify(error.mock.calls)).not.toContain('owner1');
+    expect(JSON.stringify(error.mock.calls)).not.toContain('Stranded');
+    error.mockRestore();
+    // The id is free again: nobody's past is on it.
+    grant.fails = null;
+    expect(await createSim({ db, env, simId, title: 'Again', managerId: 'owner1' })).toEqual({
+      simId,
+      created: true
+    });
   });
 });
 
