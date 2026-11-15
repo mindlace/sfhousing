@@ -2,6 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SIM_NAME,
+  LABEL_MAX,
   SHAPES_REVISION,
   diff,
   fold,
@@ -189,15 +190,36 @@ describe('authorEdit', () => {
 
 describe('clampLabel', () => {
   it('clamps a long label to LABEL_MAX without splitting a surrogate pair', () => {
-    expect(clampLabel('a'.repeat(300))).toBe('a'.repeat(200));
+    expect(LABEL_MAX).toBe(200);
+    expect(clampLabel('a'.repeat(300))).toBe('a'.repeat(199) + '…');
     expect(clampLabel('short')).toBe('short');
-    // Unit 199 is the high half of a pair: the whole pair goes.
+    // The first 199 units end on a whole pair: kept, then the ellipsis.
     const clamped = clampLabel('x' + '\u{1F600}'.repeat(150));
-    expect(clamped.length).toBe(199);
+    expect(clamped).toBe('x' + '\u{1F600}'.repeat(99) + '…');
     expect(clamped.isWellFormed()).toBe(true);
     const log = fresh();
     const r = authorEdit(log, withZ(EMPTY, 'a'), meta({ label: 'y'.repeat(500) }));
-    expect(r.ok && r.pending.draft.label.length).toBe(200);
+    expect(r.ok && r.pending.draft.label).toBe('y'.repeat(199) + '…');
+  });
+
+  it('keeps a label exactly at the limit, and cuts one over it to 199 units plus …', () => {
+    const at = 'a'.repeat(LABEL_MAX);
+    expect(clampLabel(at)).toBe(at);
+    const over = clampLabel('b'.repeat(LABEL_MAX + 1));
+    expect(over).toBe('b'.repeat(199) + '…');
+    expect(over.length).toBe(LABEL_MAX);
+  });
+
+  it('never cuts inside a surrogate pair at the cut', () => {
+    // Units 198 and 199 are one pair: cut at 199, the high half would be left alone.
+    const label = 'x'.repeat(198) + '\u{1F600}' + 'yy';
+    expect(label.length).toBe(202);
+    const clamped = clampLabel(label);
+    expect(clamped).toBe('x'.repeat(198) + '…');
+    expect(clamped.isWellFormed()).toBe(true);
+    // A pair that ends at unit 198 is kept whole.
+    const before = 'x'.repeat(197) + '\u{1F600}' + 'yyy';
+    expect(clampLabel(before)).toBe('x'.repeat(197) + '\u{1F600}' + '…');
   });
 });
 

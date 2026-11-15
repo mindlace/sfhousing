@@ -35,12 +35,15 @@ export const PENDING_BYTES_MAX = 8 * 1024 * 1024;
 
 export type Refusal = 'unchanged' | 'invalid' | 'too-large' | 'queue-full';
 
-/** At most LABEL_MAX UTF-16 units, never ending on half of a surrogate pair. */
+/**
+ * A label over LABEL_MAX UTF-16 units is cut to LABEL_MAX - 1 units, never inside a surrogate
+ * pair, plus `…` (decision 19): at most LABEL_MAX units. One at or under it is kept.
+ */
 export function clampLabel(label: string): string {
   if (label.length <= LABEL_MAX) return label;
-  const high = label.charCodeAt(LABEL_MAX - 1);
-  const cut = high >= 0xd800 && high <= 0xdbff ? LABEL_MAX - 1 : LABEL_MAX;
-  return label.slice(0, cut);
+  const high = label.charCodeAt(LABEL_MAX - 2);
+  const cut = high >= 0xd800 && high <= 0xdbff ? LABEL_MAX - 2 : LABEL_MAX - 1;
+  return label.slice(0, cut) + '…';
 }
 
 export interface Meta {
