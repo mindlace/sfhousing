@@ -25,10 +25,13 @@ export const SIMS_COPY = {
   renameBusy: 'Too many changes at once. Try again shortly.',
   renameFull: 'This sim is full.',
   renameUnavailable: "Renaming isn't available here.",
-  renameFailed: "Couldn't rename the sim. Try again."
+  renameFailed: "Couldn't rename the sim. Try again.",
+  nameRequired: 'Give the sim a name.'
 } as const;
 
 export const titleTooLong = (max: number): string => `Sim titles can be at most ${max} characters.`;
+/** The rename control's line for an over-long name; the creation form keeps titleTooLong. */
+export const nameTooLong = (max: number): string => `Names can be at most ${max} characters.`;
 
 export const MEMBERS_COPY = {
   // The invite page.

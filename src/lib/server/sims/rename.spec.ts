@@ -103,6 +103,19 @@ describe('renameSim', () => {
     expect(Object.keys(input).sort()).toEqual(['actor', 'draft', 'start']);
   });
 
+  it('a rename to the current name appends nothing and succeeds', async () => {
+    const { db, simId } = await setup('  Café  ');
+    const { stub, appendAs } = stubAnswering(accepted);
+    for (const name of ['Café', 'Café']) {
+      const out = await renameSim({ db, stub, simId, actor: ACTOR, name, stamp: STAMP });
+      expect(out).toEqual({ ok: true });
+    }
+    expect(appendAs).not.toHaveBeenCalled();
+    // Only a changed name reaches the object.
+    await renameSim({ db, stub, simId, actor: ACTOR, name: 'Cafe', stamp: STAMP });
+    expect(appendAs).toHaveBeenCalledOnce();
+  });
+
   it.each(['limit', 'full', 'gone'] as const)('a %s refusal keeps its code', async (why) => {
     const { db, simId } = await setup();
     const { error } = mockConsole('error');

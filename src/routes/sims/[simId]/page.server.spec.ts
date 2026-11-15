@@ -14,7 +14,7 @@ vi.mock('$lib/server/authz/require-sim-role', () => ({ requireSimRole: vi.fn() }
 vi.mock('$lib/server/sims/roster-hook', () => ({ onSimRosterChanged: vi.fn(async () => {}) }));
 
 import { requireSimRole } from '$lib/server/authz/require-sim-role';
-import { SIMS_COPY, SIM_TITLE_MAX, titleTooLong } from '$lib/members/copy';
+import { SIMS_COPY, SIM_TITLE_MAX, nameTooLong } from '$lib/members/copy';
 import type { ServerAppend } from '$lib/server/sim-object/log-host';
 import type { ServerAppendResult } from '$lib/server/sim-object/object-rules';
 import { mockConsole } from '$lib/server/test/mock-console';
@@ -275,23 +275,38 @@ describe('rename action', () => {
     expect(calls).toEqual([]);
   });
 
-  // The one failure shape is `{ renameError }`, the key the page reads; a bad name re-wraps
-  // checkSimTitle's line under it.
-  it('a bad name is 400 with the title line under renameError, and nothing is sent', async () => {
+  // The one failure shape is `{ renameError, name }`: the line the page shows, and the name as
+  // submitted, which the field keeps. A bad name gets the rename control's own wording.
+  it('a bad name is 400 with the name line under renameError, and nothing is sent', async () => {
     const env = await seed();
     const { SIM, calls } = fakeSim();
     const empty = await actions.rename(renameEvent(env, 'u-mia', { name: '   ' }, { SIM }));
-    expect(empty).toMatchObject({ status: 400, data: { renameError: SIMS_COPY.titleRequired } });
-    expect(Object.keys((empty as { data: object }).data)).toEqual(['renameError']);
-    const long = await actions.rename(
-      renameEvent(env, 'u-mia', { name: 'x'.repeat(SIM_TITLE_MAX + 1) }, { SIM })
-    );
+    expect(empty).toMatchObject({
+      status: 400,
+      data: { renameError: SIMS_COPY.nameRequired, name: '   ' }
+    });
+    expect(Object.keys((empty as { data: object }).data)).toEqual(['renameError', 'name']);
+    const tooLong = 'x'.repeat(SIM_TITLE_MAX + 1);
+    const long = await actions.rename(renameEvent(env, 'u-mia', { name: tooLong }, { SIM }));
     expect(long).toMatchObject({
       status: 400,
-      data: { renameError: titleTooLong(SIM_TITLE_MAX) }
+      data: { renameError: nameTooLong(SIM_TITLE_MAX), name: tooLong }
     });
     const missing = await actions.rename(renameEvent(env, 'u-mia', {}, { SIM }));
-    expect(missing).toMatchObject({ status: 400, data: { renameError: SIMS_COPY.titleRequired } });
+    expect(missing).toMatchObject({
+      status: 400,
+      data: { renameError: SIMS_COPY.nameRequired, name: '' }
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it('a rename to the current name sends nothing and is sent back to the page', async () => {
+    const env = await seed();
+    const { SIM, calls } = fakeSim();
+    const r = await redirectOf(() =>
+      actions.rename(renameEvent(env, 'u-mia', { name: ' Garden ' }, { SIM }))
+    );
+    expect(r).toMatchObject({ status: 303, location: `/sims/${env.simId}` });
     expect(calls).toEqual([]);
   });
 
@@ -325,7 +340,9 @@ describe('rename action', () => {
     mockConsole('error');
     const { SIM } = fakeSim({ kind: 'refused', why });
     const out = await actions.rename(renameEvent(env, 'u-mia', { name: 'After' }, { SIM }));
-    expect(out).toEqual(expect.objectContaining({ status, data: { renameError: line } }));
+    expect(out).toEqual(
+      expect.objectContaining({ status, data: { renameError: line, name: 'After' } })
+    );
     expect(JSON.stringify(out)).not.toContain(`"${why}"`);
   });
 });

@@ -5,7 +5,7 @@ import { requireSimRole } from '$lib/server/authz/require-sim-role';
 import { getSimTitle } from '$lib/server/sims/sim-index';
 import { leaveSim } from '$lib/server/sims/sims';
 import { memberErrorCode } from '$lib/server/invites/error-code';
-import { SIMS_COPY } from '$lib/members/copy';
+import { SIMS_COPY, SIM_TITLE_MAX, nameTooLong } from '$lib/members/copy';
 import { loggable, type ServerAppendResult } from '$lib/server/sim-object/object-rules';
 import { liveSimStub } from '$lib/server/sims/live-sim';
 import { renameSim, type RenameCode } from '$lib/server/sims/rename';
@@ -53,30 +53,36 @@ export const actions: Actions = {
 
   /**
    * A rename is a name commit appended through the sim's object (never a D1 write here); the
-   * object's index pass copies the name to the index before appendAs answers. Every failure is
-   * `{ renameError }`, the one key the page reads.
+   * object's index pass copies the name to the index before appendAs answers. Every failure after
+   * the role check is `{ renameError, name }`: the line the page shows, and the name as submitted,
+   * which the field keeps. A rename to the current name appends nothing (renameSim).
    */
   rename: async (event) => {
     const simId = event.params.simId;
     await requireSimRole(event, simId, 'editor');
     // The session's identity, never anything the form sent.
     const actor = event.locals.user?.id;
-    if (!actor) return fail(401, { renameError: SIMS_COPY.renameFailed });
+    if (!actor) return fail(401, { renameError: SIMS_COPY.renameFailed, name: '' });
 
     const form = await event.request.formData();
-    const checked = checkSimTitle((form.get('name') ?? '').toString());
+    const name = (form.get('name') ?? '').toString();
+    const refuse = (code: RenameCode) =>
+      fail(RENAME_STATUS[code], { renameError: RENAME_COPY[code], name });
+    const checked = checkSimTitle(name);
     if ('status' in checked) {
-      return fail(checked.status, { renameError: checked.data.error });
+      // The rename control's own wording: it asks for a name, not a title.
+      const renameError = name.trim() ? nameTooLong(SIM_TITLE_MAX) : SIMS_COPY.nameRequired;
+      return fail(checked.status, { renameError, name });
     }
 
     const live = liveSimStub(event.platform?.env, simId);
-    if (!live) return fail(RENAME_STATUS.unavailable, { renameError: RENAME_COPY.unavailable });
+    if (!live) return refuse('unavailable');
     let stamp: ReturnType<typeof serverStamp>;
     try {
       stamp = serverStamp(event.platform);
     } catch (e) {
       console.error('[rename] failed', simId, loggable(e));
-      return fail(RENAME_STATUS.failed, { renameError: RENAME_COPY.failed });
+      return refuse('failed');
     }
     const out = await renameSim({
       db: getDb(event.platform!),
@@ -86,7 +92,7 @@ export const actions: Actions = {
       name: checked.title,
       stamp
     });
-    if (!out.ok) return fail(RENAME_STATUS[out.code], { renameError: RENAME_COPY[out.code] });
+    if (!out.ok) return refuse(out.code);
     throw redirect(303, `/sims/${simId}`);
   }
 };

@@ -10,6 +10,7 @@ import {
   membersRevokeNamed,
   membersSummaryCount
 } from '$lib/members/copy';
+import { enhanced } from '../../../test-stubs/app/forms';
 import Page from './+page.svelte';
 
 const members = [
@@ -236,6 +237,39 @@ describe('/sims/[simId] page', () => {
     await expect
       .element(screen.getByLabelText(SIMS_COPY.renameLabel, { exact: true }))
       .toHaveAttribute('aria-describedby', 'sim-name-error');
+  });
+
+  it('a refused rename keeps the submitted name in the field, and Save stays in line with it', async () => {
+    const screen = await render(Page, {
+      data: data(),
+      form: { renameError: SIMS_COPY.nameRequired, name: 'Garden plots' }
+    } as never);
+    const input = screen.getByLabelText(SIMS_COPY.renameLabel, { exact: true });
+    await expect.element(input).toHaveValue('Garden plots');
+    await expect.element(screen.getByTestId('sim-name-error')).toBeInTheDocument();
+    const field = input.element().getBoundingClientRect();
+    const save = screen.getByRole('button', { name: SIMS_COPY.renameSave }).element();
+    const button = save.getBoundingClientRect();
+    expect(Math.abs(button.top + button.height / 2 - (field.top + field.height / 2))).toBeLessThan(
+      1
+    );
+  });
+
+  it('an accepted rename closes the disclosure; a refused one leaves it open', async () => {
+    const screen = await render(Page, { data: data() } as never);
+    const box = screen.getByTestId('rename').element() as HTMLDetailsElement;
+    const form = box.querySelector('form')!;
+    const submit = enhanced.get(form) as () => (opts: {
+      result: { type: string };
+      update: () => Promise<void>;
+    }) => Promise<void>;
+    const update = vi.fn(async () => {});
+    box.open = true;
+    await submit()({ result: { type: 'failure' }, update });
+    expect(box.open).toBe(true);
+    await submit()({ result: { type: 'redirect' }, update });
+    expect(box.open).toBe(false);
+    expect(update).toHaveBeenCalledTimes(2);
   });
 
   it('a failed remove keeps the row and shows the generic line', async () => {

@@ -36,7 +36,8 @@ export function renameDraft(
  * Append the name commit as `actor`, who the caller checked is a writer. `name` is already
  * checked (checkSimTitle); the object checks it again. Writes no D1 row: the object's index
  * pass, which appendAs awaits, copies the folded name to `sim_index.title`. On a sim with no
- * commits the object first records its start commit, titled from the current index title.
+ * commits the object first records its start commit, titled from the current index title. A name
+ * equal to the current index title (both trimmed, in NFC) appends nothing and succeeds.
  */
 export async function renameSim(args: {
   db: Database;
@@ -52,6 +53,7 @@ export async function renameSim(args: {
   try {
     const title = await getSimTitle({ db, simId });
     if (title === null) return { ok: false, code: 'gone' };
+    if (name.trim().normalize('NFC') === title.trim().normalize('NFC')) return { ok: true };
     out = await stub.appendAs({
       actor,
       draft: renameDraft(name, stamp.build),
