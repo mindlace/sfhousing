@@ -198,6 +198,20 @@ describe('handle', () => {
 });
 
 describe('headersHandle', () => {
+  it('passes a 101 upgrade through untouched', async () => {
+    // Node cannot construct a status-101 Response; the stand-in's headers throw, as a real 101's do.
+    const upgrade = {
+      status: 101,
+      headers: {
+        get: () => null,
+        set: () => {
+          throw new TypeError('immutable');
+        }
+      }
+    } as unknown as Response;
+    expect(await headersHandle({ event: {} as never, resolve: async () => upgrade })).toBe(upgrade);
+  });
+
   it('sets security headers', async () => {
     const response = await headersHandle({
       event: {} as never,

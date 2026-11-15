@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SIMS_COPY } from '$lib/members/copy';
-import { refuseUnlessSameOriginJson } from './same-origin-json';
+import { refuseForeignOrigin, refuseUnlessSameOriginJson } from './same-origin-json';
 
 function check(headers: Record<string, string>) {
   return refuseUnlessSameOriginJson({
@@ -42,5 +42,24 @@ describe('refuseUnlessSameOriginJson', () => {
 
   it('allows an upper-case JSON content type from the same Origin', () => {
     expect(check({ 'content-type': 'APPLICATION/JSON', origin: 'http://localhost' })).toBeNull();
+  });
+
+  it('answers 403 for an empty Origin', () => {
+    expect(check({ 'content-type': 'application/json', origin: '' })!.status).toBe(403);
+  });
+});
+
+describe('refuseForeignOrigin', () => {
+  const ev = (origin: string | null) => ({
+    request: new Request('http://localhost/x', origin === null ? {} : { headers: { origin } }),
+    url: new URL('http://localhost/x')
+  });
+  it('refuses another origin with 403 and passes this one or none', () => {
+    expect(refuseForeignOrigin(ev('https://evil.example'))?.status).toBe(403);
+    expect(refuseForeignOrigin(ev('http://localhost'))).toBeNull();
+    expect(refuseForeignOrigin(ev(null))).toBeNull();
+  });
+  it('refuses an empty Origin, as before', () => {
+    expect(refuseForeignOrigin(ev(''))?.status).toBe(403);
   });
 });
