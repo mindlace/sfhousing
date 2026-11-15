@@ -485,6 +485,13 @@
       <li><strong>Log store.</strong> Check that <code>connect-src 'self'</code> admits the socket in WebKit and Firefox; the end-to-end tests prove it in Chromium only.</li>
       <li><strong>Sharing.</strong> The index pass copies <code>remixOf</code> to the <code>remixed_from</code> columns once the field exists. A commit's actor id is visible to anyone with a sim's link.</li>
     </ul>
+    <p>Carried from the control plane (unit 3, built; <a href="../../dev/auth.md"><code>docs/dev/auth.md</code></a>, Registering a sim):</p>
+    <ul>
+      <li><strong>Log store.</strong> Register before opening the socket: the stream answers 404 until the sim is registered. Send a signed-out first registration one request at a time; two at once mint two accounts. On <code>taken</code>, start a remix. On 401 (a known device with no session), keep the commits pending and post the same id again after sign-in; the server holds nothing. A 500 without a code is safe to retry. Never show a sim's id before its registration succeeds, or someone else can register it first.</li>
+      <li><strong>Log store.</strong> Bound how many sims one account-deletion request leaves, before browser registration ships: an account in hundreds of sims can exceed the per-request query limit. A retry finishes the job today, but may take several.</li>
+      <li><strong>The next unit, first.</strong> Three log lines still print a raw error, which can carry an address or an identity: two in the invitation resend route and one in the leave action. Log the sim id and safe text only, as the rest of the membership code does.</li>
+      <li><strong>Every unit.</strong> A new call that changes a sim's roster writes the change, then calls the roster hook with the request's <code>platform.env</code>.</li>
+    </ul>
   </section>
 
   <section id="sec-builder-check">
