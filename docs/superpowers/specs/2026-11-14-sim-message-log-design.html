@@ -58,6 +58,7 @@
         <li>An edit that is lost because the connection was down or the tab closed.</li>
         <li>A second copy of the rules that can disagree with the log (a saved document, a cache treated as truth).</li>
         <li>History stored as a moving head pointer. Planafoot tried it and dropped it.</li>
+        <li>A share link that stops opening because someone left a sim or deleted their account.</li>
         <li>A rule in the design or the docs about where the engine runs.</li>
       </ul>
     </section>
@@ -220,7 +221,9 @@
       </table>
       <ul>
         <li id="r57"><strong>R57.</strong> Items of every shape live in the one log. The ruleset folds the shapes the engine reads; a shape it does not read (a note, later) is folded for the page and never sent to the engine. Adding a kind of thing is a new shape in the registry: no new store, table or frame.</li>
+        <li id="r62"><strong>R62.</strong> The registry is in use from the first commit; it is not kept for later. Revision 1 declares today's ruleset: the sim (its name); for each row of the <code>where</code> and <code>what</code> table of <code>SimPolicy4</code> (transit, painted, category, routes, baseline, fund, terms; <code>docs/dev/policy-timeline.md</code>), a policy shape (its kind, <code>where</code>, label, preset, on switch and place in its list) and a span shape (<code>from</code>, <code>to</code>, <code>what</code>); and the painted stroke. A span names its policy and a stroke names its span, as fields. <code>SimPolicy4</code> is not stored anywhere: it is what the fold assembles from these items for the engine.</li>
       </ul>
+      <aside data-kind="decision"><strong>My call</strong> One policy shape and one span shape per row of the table (R62), so a change to one <code>what</code>, which is where the schema has churned, is one shape's new version and one upgrade.</aside>
       <aside data-kind="decision"><strong>Decision (owner)</strong> "maybe we adopt the 2.0 quest-graph ish (to the level of complexity appropriate to this) - we're gonna wanna let people add notes and other things down the road". And the shape registry comes along: "the shape registry helps with schema evolution, and we've already seen a fair bit of that".</aside>
       <aside data-kind="decision"><strong>My call</strong> Shapes are versioned by number, and one registry revision names every shape's version. Planafoot hashes declarations for federation and cross-lineage comparison; one codebase with tens of shapes needs neither. Planafoot's 2.0 store is built but not yet in production, so nothing here depends on its code.</aside>
     </section>
@@ -258,6 +261,7 @@
         </tbody>
       </table>
       <p>The futures simulated from S5, S4 and S3 are all still reachable: each is a position in the log.</p>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> With two writers, undo goes to the state before the tip, whoever made the tip (R12). It does not pick out the writer's own last commit.</aside>
     </section>
 
     <section id="sec-local-first">
@@ -278,7 +282,7 @@
     <section id="sec-server">
       <h3>The sim object</h3>
       <ul>
-        <li id="r21"><strong>R21.</strong> One Durable Object per sim, addressed by the sim id, holds the log in its SQLite storage: one row per commit, kept until the sim is deleted (R43).</li>
+        <li id="r21"><strong>R21.</strong> One Durable Object per sim, addressed by the sim id, holds the log in its SQLite storage: one row per commit, kept for good. Only an operator's takedown removes it (R43).</li>
         <li id="r22"><strong>R22.</strong> Its schema is a second track in <code>drizzle-cf.config.ts</code>: <code>sim</code>, with its own drizzle-kit config (<code>drizzle.sim.config.ts</code>), <code>dir: 'migrations/sim'</code>, a <code>bundle</code> (<code>outFile</code>, <code>exportName</code>) and a <code>schemas.sim</code> entry. <code>package.json</code> gains <code>db:generate:sim</code>, which runs <code>generate sim</code>. The object applies the bundle on open with <code>safeMigrate</code> from <code>@planafoot/drizzle-cf-migrations/do</code>. The track is append-only: it is never regenerated from scratch, because that re-stamps the baseline existing objects have applied.</li>
         <li id="r23"><strong>R23.</strong> It uses the websocket hibernation API with an automatic ping reply, so an idle open sim costs nothing.</li>
         <li id="r24"><strong>R24.</strong> <code>sim_index</code> is the D1 copy of what a sim's log says: its name (<code>title</code>), and new columns for what it was remixed from, its position count, its last change and its dataset version. A new <code>sim_commit</code> table holds each commit's envelope (sim, position, kind, source, actor, time, build, dataset version, size), without the changes. Both can be rebuilt from the objects and are never read to serve a sim's rules. The membership grants in <code>capability_event</code> are not in any log and are the source of truth for who may write. The role folds join <code>sim_index</code> (<code>sim-roles.ts</code>), so a rebuild writes the index row before anything reads roles.</li>
@@ -303,7 +307,7 @@
           <tr><th scope="row">Browser to server</th><td><code>resume {after}</code></td><td>Sent on every open: the last confirmed position the browser holds.</td></tr>
           <tr><th scope="row">Server to browser</th><td><code>commits</code></td><td>Commits in order, exactly as stored. The answer to <code>resume</code> and the live broadcast are the same frame.</td></tr>
           <tr><th scope="row">Browser to server</th><td><code>append {commit}</code></td><td>One pending commit.</td></tr>
-          <tr><th scope="row">Server to browser</th><td><code>refused {id, why}</code></td><td><code>behind</code>, <code>invalid</code>, <code>not-writer</code>, <code>limit</code> or <code>gone</code> (the sim was deleted).</td></tr>
+          <tr><th scope="row">Server to browser</th><td><code>refused {id, why}</code></td><td><code>behind</code>, <code>invalid</code>, <code>not-writer</code>, <code>limit</code> or <code>gone</code> (the sim was taken down).</td></tr>
         </tbody>
       </table>
       <ul>
@@ -326,7 +330,9 @@
         <li id="r48"><strong>R48.</strong> A person attaches a sign-in when they want. In staging and production the one method is the email magic link, in effect only once a mail provider is configured; until then the pseudonymous account is all there is. Password, passkey and Google are ported and off (<code>AUTH_METHODS</code>). Another device signed in to the same address lists the same sims, because the list is read from the ledger (R34).</li>
         <li id="r49"><strong>R49.</strong> A magic-link sign-in from a pseudonymous session runs <code>handleAccountLink</code>. If the address is new, the pseudonymous identity survives with the new live row (<code>applyUpgrade</code>), and nothing changes for its sims. If the address already has an account, that account's identity survives (<code>applyFuse</code>): the pseudonymous identity gets <code>superseded_by_id</code> pointing at it, and its live row is deleted. Its grants stay where they are, and the role folds read them through the survivor (<code>principalUnion</code>), so the survivor writes every sim either identity could. Commits keep the actor they were appended with; <code>superseded_by_id</code> resolves it to the survivor. <code>handleAccountLink</code> gains a call to the roster hook for each sim of the absorbed identity.</li>
         <li id="r50"><strong>R50.</strong> Minting is rate-limited per address: <code>PSEUDO_MINT_RL</code>, 5 a minute per <code>CF-Connecting-IP</code>, failing closed in production when the binding is missing.</li>
+        <li id="r61"><strong>R61.</strong> No account is reaped. The ported reaper (<code>src/lib/server/reap/</code>), which nothing calls, is removed, with its section in <code>docs/dev/auth.md</code>.</li>
       </ul>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> No reaping. Removing the unused reaper code, rather than leaving it without a trigger, is my call: code that deletes accounts should not sit one cron entry away from running.</aside>
       <aside data-kind="decision"><strong>Decision (owner)</strong> Gradual auth as planafoot does it: "we get users straight away and allow them to auth when and as they want". In staging and production the only sign-in is the magic link, once mail is configured; pseudonymous accounts are always on.</aside>
       <aside data-kind="decision"><strong>My call</strong> The account is made at the first registration, not on arrival, so a visitor who only looks, and a crawler, make none. The port already works this way.</aside>
     </section>
@@ -338,13 +344,13 @@
         <li id="r51"><strong>R51.</strong> The first connection registers the sim: the browser posts its id to <code>POST /api/sims</code>, then opens the socket. Registering again is a no-op for a writer of that sim and refused for anyone else, whose commits become a remix (R32). Changes: <code>createSim</code> takes the id and checks it with <code>isValidId</code>; it needs its own insert, because <code>createSimRecord</code> fails on an existing row and <code>ensureSimRecord</code> would make any caller a manager; <code>startSim</code> and the route take <code>simId</code> and an optional name, since <code>checkSimTitle</code> refuses an empty one and a new sim has the default name (R42); <code>reseedHandleFromSim</code> runs only when a name was given.</li>
         <li id="r52"><strong>R52.</strong> A person may manage at most 1,000 sims (<code>MAX_SIMS_PER_MANAGER</code>, 5 today, and its copy in <code>SIMS_COPY.quota</code>). The ceiling stops one account, or a script holding one, from making objects and index rows without end. The rates do the real work: <code>startSim</code> gains <code>MUTATION_REGISTERED_RL</code> (120 a minute) keyed by identity, since an existing account has no limit on making sims today, and minting stays behind <code>PSEUDO_MINT_RL</code> (R50).</li>
         <li id="r30"><strong>R30.</strong> Who may write is decided by the ledger (R47), never by anything the browser holds. A writer on two devices, or two writers, write the same sim in one order (R18).</li>
-        <li id="r31"><strong>R31.</strong> A share link names a sim and a position: <code>/s/&lt;simId&gt;/&lt;n&gt;</code>. Anyone with it reads that state, read-only, with no account and no membership. It shows the same state for as long as the sim exists, because the log does not change. Copying the link is the whole of sharing.</li>
+        <li id="r31"><strong>R31.</strong> A share link names a sim and a position: <code>/s/&lt;simId&gt;/&lt;n&gt;</code>. Anyone with it reads that state, read-only, with no account and no membership. It shows the same state for good: the log does not change, and no member leaving or deleting their account removes it (R43). Copying the link is the whole of sharing.</li>
         <li id="r32"><strong>R32.</strong> Editing a sim you cannot write to starts a remix: a new sim whose first commit (<code>system</code>) holds the ruleset at that position and records the sim and position it came from. A writer editing from an earlier position of their own sim gets a restore to that position and then the edit, as two commits on that sim (R10); no remix.</li>
         <li id="r33"><strong>R33.</strong> A remix is made locally and at once, like any commit, so it works offline from a link already open.</li>
         <li id="r34"><strong>R34.</strong> A person holds any number of sims, up to R52, each with its own address (<code>/sim/&lt;simId&gt;</code>). Their list is the sims they are a member of (<code>foldSimsForUser</code>), so it follows a sign-in to another device. A remix never replaces another sim, as the single autosave slot does today.</li>
         <li id="r35"><strong>R35.</strong> The index row records what a sim was remixed from (R24), so the tree of remixes can be read and counted without opening every log.</li>
         <li id="r42"><strong>R42.</strong> A sim's name is a <code>set</code> on its name item, at most 63 characters (<code>SIM_TITLE_MAX</code>, checked as <code>checkSimTitle</code> does). <code>sim_index.title</code> is its copy. A new sim gets a default name; a remix starts with its source's name.</li>
-        <li id="r43"><strong>R43.</strong> From the list a person can open a sim, start one, rename one and leave one (<code>leaveSim</code>). A sim whose last member leaves is deleted with its log: <code>deleteSim</code> also clears the object's storage and leaves a mark, so the id is never registered again and its links stop opening. Deleting an account deletes the sims only that person was in (<code>deleteAccount</code> removes its memberships). A remix is unaffected, because its first commit holds its whole ruleset.</li>
+        <li id="r43"><strong>R43.</strong> From the list a person can open a sim, start one, rename one and leave one (<code>leaveSim</code>). Nothing a member does deletes a sim. When its last member leaves, or deletes their account (<code>deleteAccount</code> removes its memberships), the sim stays with no members: its log and its <code>sim_index</code> row are kept, its links open as before, nobody can write it, and an edit starts a remix (R32). Its id cannot be registered again (R51), so nobody takes it over. <code>removeSimMember</code> (<code>src/lib/server/sims/sims.ts</code>) stops calling <code>deleteSim</code> when the roster is empty and deletes the sim's pending invitations instead. <code>deleteSim</code> is left for an operator's takedown: it also clears the object's storage and leaves a mark, so the id is never registered again and its links stop opening. A remix is unaffected by a takedown, because its first commit holds its whole ruleset.</li>
         <li id="r59"><strong>R59.</strong> An invitation adds a member, as an editor (<code>src/lib/server/invites/control-plane.ts</code>). The new member writes to the same log from the next socket they open, in the one order. Membership changes are not commits: the log holds only the sim's content.</li>
         <li id="r36"><strong>R36.</strong> Existing <code>/s/&lt;id&gt;</code> links (8 characters) and their D1 rows keep working unchanged. Remixing one starts a new sim from its document.</li>
       </ul>
@@ -352,7 +358,8 @@
       <aside data-kind="decision"><strong>My call</strong> Writers are whom the ported ledger gives <code>sim.write</code> (R47): the owner's "one writer" predates roles and invitations, and a second rule beside the ledger would have to be kept in step with it. Two writers are ordered as two tabs are.</aside>
       <aside data-kind="decision"><strong>My call</strong> Reading needs only the link (R31): a link that needs an account is not a share link. Membership decides who writes and who sees the member area at <code>/sims/&lt;simId&gt;</code>. Old <code>/s</code> ids are 8 characters and a sim id about 22, so <code>/s/&lt;simId&gt;/&lt;n&gt;</code> never collides with them.</aside>
       <aside data-kind="decision"><strong>My call</strong> The browser mints the id so a sim and a remix can be made offline; registration is idempotent only for a writer, so knowing an id never makes anyone its manager. The cap rises to 1,000 because every remix is a new sim. The name is a commit so a rename is in the history and can be undone. A writer on an earlier position restores and then edits, which is the owner's undo, rather than forking their own sim.</aside>
-      <aside data-kind="decision"><strong>My call</strong> Deleting a sim deletes its log (R43): account deletion has to mean deletion. A remix's first commit holds the whole ruleset, so it never depends on another sim's object; the cost is that undo in a remix stops there, and the page links to the parent for the history before it.</aside>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> Deletion does not kill any shared link (R43): leaving a sim, or deleting an account, never removes a log.</aside>
+      <aside data-kind="decision"><strong>My call</strong> A remix's first commit holds the whole ruleset, so it never depends on another sim's object; the cost is that undo in a remix stops there, and the page links to the parent for the history before it.</aside>
     </section>
 
     <section id="sec-engine">
@@ -365,7 +372,8 @@
         <li id="r56"><strong>R56.</strong> The engine is not pinned. An old position re-simulates on the current engine with its own dataset and shapes, so the future someone saw under an older engine is not reproduced exactly; <code>build</code> is kept for study. The engine's dataset loader keeps reading every dataset a log names, back to <code>MIN_SIM_DATASET</code>; a pipeline change that breaks an older dataset ships an upgrade in the loader, as a shape change ships one in the registry.</li>
         <li id="r39"><strong>R39.</strong> This design says nothing about where the engine runs. The sim object does not run it, and nothing prevents a server-side run later.</li>
       </ul>
-      <aside data-kind="decision"><strong>My call</strong> R54 to R56. A dataset move is a commit because the editors resolve presets against the page's dataset, so an edit made on a newer one must start from a ruleset moved to it. A shape move is not, because the upgrade is pure. The engine is not pinned because only one build is ever deployed.</aside>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> The move to a newer dataset is automatic, on a writer's first edit under it (R55). The person is not asked.</aside>
+      <aside data-kind="decision"><strong>My call</strong> R54 to R56, and that old datasets stay runnable for good (R56) rather than for a window. A dataset move is a commit because the editors resolve presets against the page's dataset, so an edit made on a newer one must start from a ruleset moved to it. A shape move is not, because the upgrade is pure. The engine is not pinned because only one build is ever deployed.</aside>
       <aside data-kind="decision"><strong>Decision (owner)</strong> "being able to use the shapes/dataset as-of the time the sim was shared will make it easier to evolve the experience w/o worrying about breaking the past, and allow us to drop those 'your sim is running on a new dataset' messages we give now."</aside>
     </section>
 
@@ -399,9 +407,11 @@
       <aside data-kind="decision"><strong>Decision (owner)</strong> Every edit is stored on the server from the first one, including edits later undone. Today nothing leaves the browser until Publish. No text announces the change: "everything is persisted" is how apps behave by default.</aside>
       <ul>
         <li>A commit stores no IP address. Its actor is the stable identity id, which names nobody until the person signs in with an email. The address lives only in the D1 <code>user</code> row, and account deletion scrubs it.</li>
-        <li>Commits a deleted account made in a sim others still belong to stay, under its identity id, which now resolves to a tombstone.</li>
-        <li>Takedown stays manual: an operator deletes the sim (R43).</li>
+        <li>Commits a deleted account made stay, in every sim, under its identity id, which now resolves to a tombstone.</li>
+        <li>A person cannot delete a sim. Leaving takes it off their list; its links still open (R43).</li>
+        <li>Takedown stays manual, and is the only way a sim is removed: an operator deletes it (R43).</li>
       </ul>
+      <aside data-kind="decision"><strong>Decision (owner)</strong> A deleted person's commits are kept.</aside>
     </section>
   </section>
 
@@ -428,7 +438,7 @@
       <tbody>
         <tr><th scope="row">1. Log core</th><td>Commit and change types (with <code>move</code>), parsers, <code>fold</code>, <code>diff</code>, the undo and redo derivation, the hash chain, and the shape registry at revision 1 with its upgrade path. Pure TypeScript, no I/O.</td><td>Nothing</td></tr>
         <tr><th scope="row">2. Sim object</th><td>The Durable Object, the <code>sim</code> migration track and <code>db:generate:sim</code>, the worker entry and bindings, the socket and its frames, append rules, limits, the first commit of a sim made without one (R58), the D1 index columns and <code>sim_commit</code>.</td><td>1</td></tr>
-        <tr><th scope="row">3. Control plane</th><td>Browser-minted ids in <code>createSim</code>, <code>startSim</code> and <code>POST /api/sims</code> (R51), the cap and the rate (R52), the roster hook implemented (R53) and called from the fuse (R49), deletion reaching the object (R43).</td><td>2</td></tr>
+        <tr><th scope="row">3. Control plane</th><td>Browser-minted ids in <code>createSim</code>, <code>startSim</code> and <code>POST /api/sims</code> (R51), the cap and the rate (R52), the roster hook implemented (R53) and called from the fuse (R49), a sim kept when its last member goes and takedown reaching the object (R43), the reaper removed (R61).</td><td>2</td></tr>
         <tr><th scope="row">4. Log store</th><td>The browser store (confirmed plus pending), IndexedDB, the reconnecting socket, drafts (R1), re-applying on <code>behind</code> (R18), the autosave import (R20), reading positions on their own dataset and the move commit (R54, R55). Replaces <code>PolicyStore</code> on <code>/sim</code>.</td><td>1, 3, timeline-ui on main</td></tr>
         <tr><th scope="row">5. Sharing and remix</th><td><code>/sim/&lt;simId&gt;</code> and <code>/s/&lt;simId&gt;/&lt;n&gt;</code>, the name and the list in the header, remix on first edit, restore then edit on an earlier position, the old <code>/s</code> rows.</td><td>4</td></tr>
       </tbody>
@@ -441,7 +451,7 @@
     <h2>Testing</h2>
     <ul>
       <li><strong>Core.</strong> Property tests: applying <code>diff(a, b)</code> to <code>a</code> gives <code>b</code>, order included; a restore reproduces the earlier ruleset's canonical text; the undo and redo derivation matches a reference editor over random sequences of edit, undo and redo. A commit written under an older shape version folds to the same canonical text as its upgraded form (a fixture registry with two versions).</li>
-      <li><strong>Control plane.</strong> A writer registering an id twice makes one sim; another account registering it is refused. A first registration mints one account and a second mints none; a known device gets 401. The 1,001st managed sim is refused. After a fuse the survivor writes the absorbed identity's sims. Removing the last member deletes the log, and its links stop opening.</li>
+      <li><strong>Control plane.</strong> A writer registering an id twice makes one sim; another account registering it is refused. A first registration mints one account and a second mints none; a known device gets 401. The 1,001st managed sim is refused. After a fuse the survivor writes the absorbed identity's sims. After the last member leaves, and after an account is deleted, the sim's links still open and an edit starts a remix. After a takedown they do not.</li>
       <li><strong>Sim object.</strong> Gapless positions; a duplicate <code>id</code> appends once; <code>behind</code>, <code>invalid</code>, <code>not-writer</code> and <code>gone</code> refusals; resume from any position; migrate on open; a role change ends write on an open socket.</li>
       <li><strong>End to end.</strong> Edit, reload, undo back past the reload. Edit offline, reload, reconnect, and the commits arrive in order. Two tabs edit the same sim in turn and both show one order. An invited editor's edit appears in the inviter's open tab. A second sim is started, named and switched to without touching the first. A share link shows its position, on its own dataset, after later edits. Editing a shared sim starts a remix, leaves the visitor's other sims as they were, and the index records its source.</li>
     </ul>
@@ -494,13 +504,13 @@
       <li>Writers are the members with <code>sim.write</code>; reading needs only the link (<a href="#sec-identity">Identity and sharing</a>).</li>
       <li>The browser mints the id; registration is idempotent only for a writer; the account is minted then (<a href="#sec-identity">Identity and sharing</a>, <a href="#sec-accounts">Accounts</a>).</li>
       <li>A ceiling of 1,000 managed sims, with a creation rate per identity (<a href="#sec-identity">Identity and sharing</a>).</li>
-      <li>Deleting a sim deletes its log for good (<a href="#sec-identity">Identity and sharing</a>).</li>
+      <li>The unused reaper code is removed (<a href="#sec-accounts">Accounts</a>).</li>
       <li>Membership only in D1; rights read at socket open and on the roster hook (<a href="#sec-server">The sim object</a>).</li>
       <li>The name is a commit, with <code>sim_index.title</code> its copy; a writer on an earlier position restores, then edits (<a href="#sec-identity">Identity and sharing</a>).</li>
       <li><code>/sim/&lt;simId&gt;</code> for a sim, <code>/s/&lt;simId&gt;/&lt;n&gt;</code> for a position; a remix is a new self-contained sim (<a href="#sec-identity">Identity and sharing</a>).</li>
       <li>Pending commits re-applied as changes, kept in IndexedDB; both old autosave keys kept (<a href="#sec-local-first">Local first</a>).</li>
-      <li>Each commit read with its own dataset and shapes; a dataset move is a commit, a shape move is not; the engine is not pinned (<a href="#sec-engine">The engine, datasets and the variants</a>).</li>
-      <li>From planafoot's quest graph only shaped items, a numbered registry and reads under the writer's revision (<a href="#sec-shapes">Shapes</a>).</li>
+      <li>Each commit read with its own dataset and shapes; a dataset move is a commit, a shape move is not; the engine is not pinned; old datasets stay runnable for good (<a href="#sec-engine">The engine, datasets and the variants</a>).</li>
+      <li>From planafoot's quest graph only shaped items, a numbered registry and reads under the writer's revision; revision 1 has one policy shape and one span shape per <code>where</code> and <code>what</code> row (<a href="#sec-shapes">Shapes</a>).</li>
       <li>Drafts commit on a key change, a lost focus or a hidden page; the object checks structure only (<a href="#sec-commit">The commit</a>).</li>
       <li>A <code>source</code> code on every commit, envelopes copied to D1, and the hash chain (<a href="#sec-commit">The commit</a>, <a href="#sec-server">The sim object</a>).</li>
       <li>"Offer" read as a span, named by policy and start day (<a href="#sec-changes">Changes</a>).</li>
