@@ -15,7 +15,11 @@ function abortError(): DOMException {
  * their own: advance(ms) runs every timer due by now + ms, earliest first (ties in the order
  * set), including timers set by callbacks while advancing, with now() equal to each timer's
  * due time while it runs; it ends at now + ms. A cancelled timer never runs; cancel twice is
- * safe. after(0, fn) fires at the next advance (even advance(0)), never at once.
+ * safe, and a timer cleared by an earlier callback of the same advance never fires.
+ * after(0, fn) fires at the next advance (even advance(0)), never at once. A timer set by a
+ * callback fires in the same advance when it is due inside the window. If a callback throws,
+ * the error propagates out of advance to the test, now() stays at that timer's due time, and
+ * the later timers stay pending (a further advance runs them). Not modelled: setInterval.
  */
 export class FakeClock implements Clock {
   #now = 0;
@@ -62,7 +66,9 @@ export class FakeClock implements Clock {
 /**
  * Network and visibility signals under test control. set(e) records the state ('online' and
  * 'offline' set online(); 'visible' and 'hidden' set visible()) and calls every watcher
- * synchronously, also when the state does not change. Nothing happens on its own.
+ * synchronously in the order they were added, also when the state does not change. As with an
+ * EventTarget, a watcher removed by an earlier watcher during the same event is not called,
+ * and a watcher added during an event is not called for it. Nothing happens on its own.
  */
 export class FakeNet implements NetSignals {
   #online: boolean;
@@ -92,27 +98,37 @@ export class FakeNet implements NetSignals {
   set(e: NetEvent): void {
     if (e === 'online' || e === 'offline') this.#online = e === 'online';
     else this.#visible = e === 'visible';
-    for (const w of [...this.#watchers]) w(e);
+    for (const w of [...this.#watchers]) {
+      if (this.#watchers.includes(w)) w(e);
+    }
   }
 }
 
 interface Waiter {
   name: string;
-  run: () => void;
+  ifAvailable: boolean;
+  grant: () => void;
+  refuse: () => void;
+  abort: () => void;
 }
 
 /**
- * Web Locks without a scheduler. Exclusive per name, one holder at a time. A request is
- * granted (its callback called with a lock object of its name and mode 'exclusive') at once
- * when the name is free, else queued: waiters are granted in request order as the holder
- * releases. A lock is released when the callback's result settles (resolved or rejected),
- * which frees the name and grants the next waiter before the request's own promise settles.
- * ifAvailable calls callback(null) when the name
- * is held or has waiters. An already-aborted signal rejects at once; an abort while waiting
- * removes the waiter and rejects with a DOMException named AbortError; an abort after the
- * grant does nothing. Only exclusive mode is modelled (options.mode and steal are ignored).
- * No timers: await microtasks() after an action that should hand a lock over. `requested`
- * lists every request's name in order; held() the names now held.
+ * Web Locks without a scheduler, as navigator.locks behaves for a client: a callback is NEVER
+ * run inside request(); every grant happens on a later microtask, in every path (free name,
+ * queued, ifAvailable), so state a caller assigns after request() returns is seen by the
+ * callback. Exclusive per name, one holder at a time; waiters of a name are granted in request
+ * order. A lock is released when the callback's result settles (resolved or rejected, or the
+ * callback threw), which frees the name and grants the next waiter before the request's own
+ * promise settles. A holder that requests its own name again waits (no re-entry). ifAvailable
+ * is decided when the request is looked at, on its microtask: it is granted when the name is
+ * free and no earlier request waits, else callback(null) runs and the request is dropped. An
+ * already-aborted signal rejects at once; an abort while waiting removes the waiter and rejects
+ * with a DOMException named AbortError; an abort after the grant does nothing. Only exclusive
+ * mode is modelled (options.mode and steal are ignored). No timers: await microtasks() (or the
+ * request's own promise) after an action that should hand a lock over. `requested` lists every
+ * request's name in order. held() lists the names whose callback has been granted: between
+ * request() and its grant the name is not yet held. query() reports held, and as pending every
+ * request not yet granted or dropped (a free-name request is pending until its microtask).
  */
 export class FakeLocks implements LocksLike {
   readonly requested: string[] = [];
@@ -132,62 +148,78 @@ export class FakeLocks implements LocksLike {
     const signal = options.signal;
     if (signal?.aborted) return Promise.reject(abortError());
     return new Promise((resolve, reject) => {
-      const busy = () => this.#held.has(name) || this.#queue.some((w) => w.name === name);
-      const grant = () => {
-        this.#held.add(name);
-        const lock = { name, mode: 'exclusive' } as Lock;
-        let result: Promise<unknown>;
-        try {
-          result = Promise.resolve(callback(lock));
-        } catch (e) {
-          result = Promise.reject(e);
-        }
-        const release = () => {
-          this.#held.delete(name);
-          this.#next(name);
-        };
-        void result.then(
-          (v) => {
-            release();
-            resolve(v);
-          },
-          (e) => {
-            release();
+      const w: Waiter = {
+        name,
+        ifAvailable: options.ifAvailable === true,
+        grant: () => {
+          this.#held.add(name);
+          const lock = { name, mode: 'exclusive' } as Lock;
+          const release = () => {
+            this.#held.delete(name);
+            this.#pump(name);
+          };
+          let result: Promise<unknown>;
+          try {
+            result = Promise.resolve(callback(lock));
+          } catch (e) {
+            result = Promise.reject(e);
+          }
+          void result.then(
+            (v) => {
+              release();
+              resolve(v);
+            },
+            (e) => {
+              release();
+              reject(e);
+            }
+          );
+        },
+        refuse: () => {
+          try {
+            resolve(Promise.resolve(callback(null)));
+          } catch (e) {
             reject(e);
           }
-        );
+        },
+        abort: () => reject(abortError())
       };
-      if (options.ifAvailable) {
-        if (busy()) {
-          void Promise.resolve()
-            .then(() => callback(null))
-            .then(resolve, reject);
-        } else grant();
-        return;
-      }
-      if (!busy()) {
-        grant();
-        return;
-      }
-      const w: Waiter = { name, run: grant };
       this.#queue.push(w);
       signal?.addEventListener(
         'abort',
         () => {
           if (!this.#queue.includes(w)) return;
           this.#queue = this.#queue.filter((x) => x !== w);
-          reject(abortError());
+          w.abort();
         },
         { once: true }
       );
+      queueMicrotask(() => this.#look(w));
     });
   }
 
-  #next(name: string): void {
+  /** A request's own microtask: an ifAvailable one is decided now, any other is pumped. */
+  #look(w: Waiter): void {
+    const i = this.#queue.indexOf(w);
+    if (i < 0) return;
+    if (
+      w.ifAvailable &&
+      (this.#held.has(w.name) || this.#queue.slice(0, i).some((x) => x.name === w.name))
+    ) {
+      this.#queue = this.#queue.filter((x) => x !== w);
+      w.refuse();
+      return;
+    }
+    this.#pump(w.name);
+  }
+
+  /** Grants the first waiter of a name when the name is free. */
+  #pump(name: string): void {
+    if (this.#held.has(name)) return;
     const w = this.#queue.find((x) => x.name === name);
     if (w === undefined) return;
     this.#queue = this.#queue.filter((x) => x !== w);
-    w.run();
+    w.grant();
   }
 
   async query(): Promise<LockManagerSnapshot> {
@@ -203,7 +235,8 @@ export class FakeLocks implements LocksLike {
  * of this bus, never itself. A message is delivered by queueMicrotask, as a MessageEvent whose
  * data is a structuredClone of what was posted, to the listeners the receiver has when it is
  * delivered; a channel closed before delivery hears nothing, and a closed channel posts
- * nothing. Deliveries are never synchronous: await microtasks().
+ * nothing. Deliveries are never synchronous: await microtasks(). Listeners follow EventTarget:
+ * adding the same function twice adds it once, and removing one stops it. Only 'message'.
  */
 export class FakeBus {
   #open = new Set<FakeChannel>();
@@ -240,7 +273,7 @@ class FakeChannel implements ChannelLike {
   }
 
   addEventListener(_type: 'message', fn: (e: MessageEvent) => void): void {
-    this.#listeners.push(fn);
+    if (!this.#listeners.includes(fn)) this.#listeners.push(fn);
   }
 
   removeEventListener(_type: 'message', fn: (e: MessageEvent) => void): void {
@@ -262,12 +295,22 @@ export type FetchAnswer = { status: number; body?: unknown } | 'network';
  * awaited first, so a promise the test holds keeps the call in flight. An init.signal that is
  * aborted already, or aborts while the call is in flight, rejects with a DOMException named
  * AbortError (the handler's late answer is then ignored). Every call is recorded in `calls`
- * when it is made (body parsed as JSON when it is, else the raw string, null when absent);
- * inFlight counts calls not yet settled, maxInFlight its peak. No timers.
+ * when it is made: url, method (default GET), contentType and `headers` (every request header,
+ * names lower-cased), and the body (parsed as JSON when it is, else the raw string, null when
+ * absent); inFlight counts calls not yet settled, maxInFlight its peak. An answer the Response
+ * constructor rejects (a body with status 204, say) rejects the call with that error. Only a
+ * string URL with an optional init object is modelled: any other input (Request, URL) throws
+ * a TypeError from fetch() itself. No timers; nothing settles unless the handler's answer does.
  */
 export class FakeFetch {
   handler: (simId: string) => FetchAnswer | Promise<FetchAnswer>;
-  readonly calls: { url: string; method: string; contentType: string | null; body: unknown }[] = [];
+  readonly calls: {
+    url: string;
+    method: string;
+    contentType: string | null;
+    headers: Record<string, string>;
+    body: unknown;
+  }[] = [];
   inFlight = 0;
   maxInFlight = 0;
 
@@ -276,9 +319,13 @@ export class FakeFetch {
   }
 
   readonly fetch: typeof fetch = (input, init) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (typeof input !== 'string') {
+      throw new TypeError('FakeFetch models only a string URL with an init object');
+    }
+    const url = input;
     const method = init?.method ?? 'GET';
-    const contentType = new Headers(init?.headers).get('content-type');
+    const headers = Object.fromEntries(new Headers(init?.headers).entries());
+    const contentType = headers['content-type'] ?? null;
     let body: unknown = null;
     if (typeof init?.body === 'string') {
       try {
@@ -287,7 +334,7 @@ export class FakeFetch {
         body = init.body;
       }
     }
-    this.calls.push({ url, method, contentType, body });
+    this.calls.push({ url, method, contentType, headers, body });
     const simId =
       typeof body === 'object' && body !== null && 'simId' in body && typeof body.simId === 'string'
         ? body.simId
@@ -315,14 +362,19 @@ export class FakeFetch {
       void Promise.resolve(answer).then(
         (a) =>
           settle(() => {
-            if (a === 'network') reject(new TypeError('Failed to fetch'));
-            else {
+            if (a === 'network') {
+              reject(new TypeError('Failed to fetch'));
+              return;
+            }
+            try {
               resolve(
                 new Response(a.body === undefined ? null : JSON.stringify(a.body), {
                   status: a.status,
                   headers: { 'content-type': 'application/json' }
                 })
               );
+            } catch (e) {
+              reject(e);
             }
           }),
         (e) => settle(() => reject(e))
@@ -331,7 +383,11 @@ export class FakeFetch {
   };
 }
 
-/** n turns of the microtask queue (default 20). Not a wait: no timer. */
+/**
+ * Yields n times (default 20) to the microtask queue, so every promise reaction chain of up to
+ * about n links that is already unblocked has run when it resolves. Not a wait and no timer: it
+ * does not cover work that needs a fake clock to advance or a promise the test still holds.
+ */
 export async function microtasks(n = 20): Promise<void> {
   for (let i = 0; i < n; i++) await Promise.resolve();
 }

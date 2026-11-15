@@ -95,14 +95,27 @@ export interface BrowserPorts {
   net: NetSignals;
 }
 
+/** make(), or null when it returns null or throws (a port the browser withholds is null). */
+function attempt<T>(make: () => T | null): T | null {
+  try {
+    return make();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The live ports of this window: location.origin, fetch, WebSocket, realClock, Math.random,
  * navigator.locks or null, a BroadcastChannel('sfh-sim') or null, and online/offline and
- * visibilitychange as NetSignals. Call only in a browser.
+ * visibilitychange as NetSignals. Call only in a browser. A port that cannot be reached or
+ * constructed (Web Locks, BroadcastChannel) is null; nothing runs at import time.
  */
 export function browserPorts(): BrowserPorts {
   const ctor: SocketCtor = WebSocket;
-  const locks: LocksLike | null = 'locks' in navigator ? navigator.locks : null;
+  const locks = attempt<LocksLike>(() => ('locks' in navigator ? navigator.locks : null));
+  const channel = attempt<ChannelLike>(() =>
+    typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('sfh-sim')
+  );
   return {
     origin: location.origin,
     fetch: (input, init) => fetch(input, init),
@@ -110,7 +123,7 @@ export function browserPorts(): BrowserPorts {
     clock: realClock,
     random: () => Math.random(),
     locks,
-    channel: typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('sfh-sim'),
+    channel,
     net: {
       online: () => navigator.onLine,
       visible: () => document.visibilityState === 'visible',
