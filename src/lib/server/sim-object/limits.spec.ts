@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { LIMITS, RateBucket, utf8Bytes } from './limits';
+import { LIMITS, RateBucket, overFrameLimit, utf8Bytes } from './limits';
+
+describe('overFrameLimit', () => {
+  it('is true only past the incoming frame limit, by string length', () => {
+    const small = { ...LIMITS, frameBytes: 4 };
+    expect(overFrameLimit('abcd', small)).toBe(false);
+    expect(overFrameLimit('abcde', small)).toBe(true);
+    // Four characters but eight UTF-8 bytes: not caught here, the host measures utf8Bytes.
+    expect(overFrameLimit('éééé', small)).toBe(false);
+    expect(overFrameLimit('x'.repeat(LIMITS.frameBytes + 1))).toBe(true);
+  });
+});
 
 describe('RateBucket', () => {
   it('allows a burst, then refuses', () => {

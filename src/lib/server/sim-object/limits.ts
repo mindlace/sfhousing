@@ -29,6 +29,15 @@ export function utf8Bytes(s: string): number {
   return encoder.encode(s).length;
 }
 
+/**
+ * True when a text message is longer than the incoming frame limit. A string's length never
+ * exceeds its UTF-8 byte count, so this refuses only frames that are surely too large, before
+ * they are parsed; the host checks the exact size (utf8Bytes) of everything else.
+ */
+export function overFrameLimit(text: string, limits: Limits = LIMITS): boolean {
+  return text.length > limits.frameBytes;
+}
+
 export class RateBucket {
   private tokens: number;
   private last: number;

@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "vite build && tsx scripts/worker-entry.ts",
     "preview": "npm run build && wrangler dev --port 4173 --var ENVIRONMENT:development",
     "prepare": "husky && wrangler types --strict-vars=false && svelte-kit sync",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
