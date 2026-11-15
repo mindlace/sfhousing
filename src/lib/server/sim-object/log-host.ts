@@ -166,10 +166,10 @@ export class LogHost {
       .map((r) => ({ commit: JSON.parse(r.body) as Commit, bytes: r.bytes }));
   }
 
-  /** Moves the watermark forward only. */
+  /** Moves the watermark forward only, and never past the tip (after a takedown, never). */
   markIndexed(seq: number): void {
-    const current = this.#store.indexedSeq();
-    if (seq > current) this.#store.setIndexedSeq(seq);
+    const next = Math.min(seq, this.#store.tipSeq());
+    if (next > this.#store.indexedSeq()) this.#store.setIndexedSeq(next);
   }
 
   indexBehind(): boolean {
@@ -264,7 +264,17 @@ export class LogHost {
     const body = JSON.stringify(commit);
     const bytes = utf8Bytes(body);
     if (bytes > this.#limits.commitBytes) return { kind: 'refused', id: commit.id, why: 'limit' };
-    const state = this.#state();
+    let state: LogState;
+    try {
+      state = this.#state();
+    } catch (e) {
+      // A stored row this build cannot fold: one a newer build wrote (only a newer server can take
+      // this commit, so the browser keeps it pending), or anything else (an internal error).
+      if (e instanceof LogError && e.code === 'future-shapes') {
+        return { kind: 'refused', id: commit.id, why: 'newer' };
+      }
+      throw e;
+    }
     try {
       state.apply(commit, { check: true });
     } catch (e) {

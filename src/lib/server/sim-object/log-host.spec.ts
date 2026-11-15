@@ -3,6 +3,7 @@ import fc from 'fast-check';
 import {
   DEFAULT_SIM_NAME,
   GENESIS_HASH,
+  LogError,
   SHAPES_REVISION,
   chainHash,
   fold,
@@ -14,12 +15,12 @@ import {
 } from '$lib/sim-log';
 import { arbRuleset } from '$lib/sim-log/test/arbitraries';
 import { newId } from '$lib/ids/base58';
-import { commitsFrame } from '$lib/sim-stream/protocol';
-import { LIMITS, utf8Bytes } from './limits';
+import { commitsFrame, type RefusedWhy } from '$lib/sim-stream/protocol';
+import { LIMITS, STAMP_MAX, fitsCommit, utf8Bytes } from './limits';
 import { LogHost, type AppendOutcome, type Author, type LogHostOptions } from './log-host';
 import { SimStore, type StoredRow } from './store';
 import { draftTo, nameDraft } from './test/drafts';
-import { freshSimDb } from './test/harness';
+import { freshSimDb, storeWithRow } from './test/harness';
 
 const T0 = 1_700_000_000_000;
 const WRITER: Author = { identity: 'u1', write: true };
@@ -140,6 +141,17 @@ describe('LogHost append', () => {
     expect(host.ruleset().name).toBe(DEFAULT_SIM_NAME);
   });
 
+  it('never refuses a draft that fitsCommit for its size, even with the widest actor', async () => {
+    const d = nameDraft(0, 'A');
+    const commitBytes = utf8Bytes(JSON.stringify(d)) + STAMP_MAX;
+    expect(fitsCommit(d, { ...LIMITS, commitBytes })).toBe(true);
+    const { host } = make({ limits: { ...LIMITS, commitBytes } });
+    const widest: Author = { identity: 'x'.repeat(64), write: true };
+    expect(await append(host, d, Number.MAX_SAFE_INTEGER, widest)).toMatchObject({
+      kind: 'accepted'
+    });
+  });
+
   it('appends an id once (I6)', async () => {
     const { host, store } = make();
     const a = nameDraft(0, 'A');
@@ -176,11 +188,11 @@ describe('LogHost append', () => {
     expect(sent).toEqual([1, 2]);
   });
 
-  it('enforces the length cap and the rate', async () => {
+  it('enforces the length cap (full) and the rate (limit)', async () => {
     const short = make({ limits: { ...LIMITS, simCommits: 2 } });
     await append(short.host, nameDraft(0, 'A'));
     await append(short.host, nameDraft(1, 'B'));
-    expect(await append(short.host, nameDraft(2, 'C'))).toMatchObject({ why: 'limit' });
+    expect(await append(short.host, nameDraft(2, 'C'))).toMatchObject({ why: 'full' });
     const slow = make({ limits: { ...LIMITS, burst: 2, perSecond: 1 } });
     await append(slow.host, nameDraft(0, 'A'), T0);
     await append(slow.host, nameDraft(1, 'B'), T0);
@@ -239,17 +251,41 @@ describe('LogHost append', () => {
     await expectInvariants(store, host);
   });
 
+  it('answers newer, storing nothing, when a stored row is under a newer shape revision', async () => {
+    const store = await storeWithRow({ shapes: SHAPES_REVISION + 1 });
+    const host = new LogHost(store);
+    const rows = store.rowsAfter(0, ALL);
+    const d = nameDraft(1, 'Mine');
+    expect(await append(host, d)).toEqual({ kind: 'refused', id: d.id, why: 'newer' });
+    expect(await append(host, nameDraft(1, 'Again'))).toMatchObject({ why: 'newer' });
+    expect(store.rowsAfter(0, ALL)).toEqual(rows);
+    expect(() => host.summary()).toThrow(LogError);
+  });
+
+  it('rejects as an internal error when a stored row fails to fold for another reason', async () => {
+    const store = await storeWithRow({ changes: [{ op: 'delete', key: 'p:nope' }] });
+    const host = new LogHost(store);
+    await expect(append(host, nameDraft(1, 'Mine'))).rejects.toThrow(LogError);
+    expect(store.totals().seq).toBe(1);
+  });
+
   type Op =
     | { kind: 'edit'; target: RulesetContent }
-    | { kind: 'invalid' | 'stale' | 'repeat' | 'newer' }
+    | { kind: 'pair'; a: RulesetContent; b: RulesetContent }
+    | { kind: 'stale'; back: number }
+    | { kind: 'invalid' | 'repeat' | 'newer' }
     | { kind: 'resume'; at: number };
   const arbOp: fc.Arbitrary<Op> = fc.oneof(
     { weight: 6, arbitrary: arbRuleset.map((target) => ({ kind: 'edit' as const, target })) },
     {
-      weight: 4,
+      weight: 2,
+      arbitrary: fc.tuple(arbRuleset, arbRuleset).map(([a, b]) => ({ kind: 'pair' as const, a, b }))
+    },
+    { weight: 1, arbitrary: fc.nat({ max: 5 }).map((back) => ({ kind: 'stale' as const, back })) },
+    {
+      weight: 3,
       arbitrary: fc.constantFrom(
         { kind: 'invalid' as const },
-        { kind: 'stale' as const },
         { kind: 'repeat' as const },
         { kind: 'newer' as const }
       )
@@ -257,53 +293,90 @@ describe('LogHost append', () => {
     { weight: 1, arbitrary: fc.nat({ max: 20 }).map((at) => ({ kind: 'resume' as const, at })) }
   );
 
-  it('keeps I1 to I7 and I9 after every operation of any sequence', async () => {
+  /** What the model says an append should get: accepted iff valid, unseen and on the tip. */
+  type Expected = 'accepted' | 'duplicate' | RefusedWhy;
+  const outcomeOf = (out: AppendOutcome): Expected => (out.kind === 'refused' ? out.why : out.kind);
+
+  it('agrees with a model of accepted drafts after every operation of any sequence', async () => {
     let accepted = 0;
     let refused = 0;
     await expect(
       fc.assert(
-        fc.asyncProperty(fc.array(arbOp, { maxLength: 12 }), async (ops) => {
+        fc.asyncProperty(fc.array(arbOp, { minLength: 8, maxLength: 40 }), async (ops) => {
           const sentBodies: string[] = [];
           const { host, store } = make({ onCommit: (body) => sentBodies.push(body) });
-          const sent: CommitDraft[] = [];
+          // The model: the drafts accepted so far, in order, and their ids.
+          const model: CommitDraft[] = [];
+          const ids = new Set<string>();
+          const modelRuleset = () => ({ ...fold(model), datasetVersion: 'fixture-0' });
+          const accept = (d: CommitDraft) => {
+            model.push(d);
+            ids.add(d.id);
+          };
+          const expectOf = (d: CommitDraft, valid: boolean): Expected => {
+            if (ids.has(d.id)) return 'duplicate';
+            if (!valid) return 'invalid';
+            return d.parent === model.length ? 'accepted' : 'behind';
+          };
           let now = T0;
           for (const op of ops) {
             now += 1000;
-            const tip = store.totals().seq;
+            const tip = model.length;
             const rowsBefore = store.rowsAfter(0, ALL);
             if (op.kind === 'resume') {
               const frames = await resumeOf(host, op.at);
               if (op.at > tip) expect(frames).toBeNull();
               else
                 expect(seqsOf(frames ?? [])).toEqual(
-                  rowsBefore.filter((r) => r.seq > op.at).map((r) => r.seq)
+                  Array.from({ length: tip - op.at }, (_, i) => op.at + i + 1)
                 );
               continue;
             }
-            let d: CommitDraft | null = null;
-            if (op.kind === 'edit') d = draftTo(host.ruleset(), op.target, tip);
-            if (op.kind === 'invalid')
-              d = { ...nameDraft(tip, 'X'), changes: [{ op: 'delete', key: 'p:nope' }] };
-            if (op.kind === 'stale') d = nameDraft(tip + 1, 'Stale');
-            if (op.kind === 'repeat') d = sent.at(-1) ?? null;
-            if (op.kind === 'newer') d = nameDraft(tip, 'New', { shapes: SHAPES_REVISION + 1 });
-            if (!d) continue;
-            const before = snapshot(store, host);
-            const out = await append(host, d, now);
-            if (out.kind === 'accepted') {
+            if (op.kind === 'pair') {
+              // Two appends on one parent, the second sent before the first is answered.
+              const a = draftTo(modelRuleset(), op.a, tip) ?? nameDraft(tip, `Pa${tip}`);
+              const b = draftTo(modelRuleset(), op.b, tip) ?? nameDraft(tip, `Pb${tip}`);
+              const pa = append(host, a, now);
+              const pb = append(host, b, now);
+              const [ra, rb] = await Promise.all([pa, pb]);
+              expect([outcomeOf(ra), outcomeOf(rb)]).toEqual(['accepted', 'behind']);
+              accept(a);
               accepted++;
-              sent.push(d);
-              expect(op.kind).toBe('edit');
-            } else {
               refused++;
-              // I5: nothing moved.
-              expect(snapshot(store, host)).toEqual(before);
-              if (op.kind === 'repeat') expect(out).toEqual({ kind: 'duplicate', id: d.id });
-              if (op.kind === 'newer') expect(out).toMatchObject({ why: 'newer' });
-              if (op.kind === 'invalid') expect(out).toMatchObject({ why: 'invalid' });
-              if (op.kind === 'stale') expect(out).toMatchObject({ why: 'behind' });
+            } else {
+              let d: CommitDraft | null = null;
+              let valid = true;
+              if (op.kind === 'edit') d = draftTo(modelRuleset(), op.target, tip);
+              if (op.kind === 'invalid') {
+                d = { ...nameDraft(tip, 'X'), changes: [{ op: 'delete', key: 'p:nope' }] };
+                valid = false;
+              }
+              if (op.kind === 'stale') {
+                // Behind the tip when there is one; ahead of it on an empty log.
+                d = nameDraft(tip > 0 ? Math.max(0, tip - 1 - op.back) : 1, 'Stale');
+              }
+              if (op.kind === 'repeat') d = model.at(-1) ?? null;
+              if (op.kind === 'newer') d = nameDraft(tip, 'New', { shapes: SHAPES_REVISION + 1 });
+              if (!d) continue;
+              const expected: Expected =
+                op.kind === 'newer' && !ids.has(d.id) ? 'newer' : expectOf(d, valid);
+              const before = snapshot(store, host);
+              const out = await append(host, d, now);
+              expect(outcomeOf(out)).toBe(expected);
+              if (op.kind === 'edit') expect(out.kind).toBe('accepted');
+              if (out.kind === 'accepted') {
+                accept(d);
+                accepted++;
+              } else {
+                refused++;
+                // I5: nothing moved.
+                expect(snapshot(store, host)).toEqual(before);
+              }
             }
             const rowsAfter = store.rowsAfter(0, ALL);
+            // The host holds exactly the model's drafts, and its state is their fold.
+            expect(rowsAfter.map((r) => r.id)).toEqual(model.map((d) => d.id));
+            expect(rulesetText(host.ruleset())).toBe(rulesetText(modelRuleset()));
             // I9: what was stored is still stored, unchanged.
             expect(rowsAfter.slice(0, rowsBefore.length)).toEqual(rowsBefore);
             // I4, I7: every stored commit was sent once, in order, after it was stored.
@@ -311,7 +384,7 @@ describe('LogHost append', () => {
             await expectInvariants(store, host);
           }
         }),
-        { numRuns: 40 }
+        { numRuns: 100 }
       )
     ).resolves.toBeUndefined();
     // The generated edits mostly land, and the other kinds are refused.
@@ -494,5 +567,16 @@ describe('LogHost takedown and index', () => {
     host.markIndexed(1);
     expect(new SimStore(db).indexedSeq()).toBe(2);
     expect(store.totals().seq).toBe(2);
+  });
+
+  it('markIndexed never moves the watermark past the tip, nor after a takedown', async () => {
+    const { host, store } = make();
+    await append(host, nameDraft(0, 'A'));
+    await append(host, nameDraft(1, 'B'));
+    host.markIndexed(9);
+    expect(store.indexedSeq()).toBe(2);
+    await host.takeDown(T0);
+    host.markIndexed(2);
+    expect(store.indexedSeq()).toBe(0);
   });
 });

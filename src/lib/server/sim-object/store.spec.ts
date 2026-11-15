@@ -29,6 +29,14 @@ describe('SimStore', () => {
     expect(store.totals()).toEqual({ seq: 2, hash: row(2).hash, bytes: 30 });
   });
 
+  it('tipSeq is the last position, 0 when empty', () => {
+    const store = new SimStore(freshSimDb().db);
+    expect(store.tipSeq()).toBe(0);
+    store.insert(row(1));
+    store.insert(row(2));
+    expect(store.tipSeq()).toBe(2);
+  });
+
   it('refuses a second row with one id', () => {
     const store = new SimStore(freshSimDb().db);
     store.insert(row(1));

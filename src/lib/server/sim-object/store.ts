@@ -49,6 +49,14 @@ export class SimStore {
     };
   }
 
+  /** The last position, 0 for an empty log. */
+  tipSeq(): number {
+    return (
+      this.db.select({ seq: commits.seq }).from(commits).orderBy(desc(commits.seq)).limit(1).get()
+        ?.seq ?? 0
+    );
+  }
+
   hasId(id: string): boolean {
     return (
       this.db.select({ seq: commits.seq }).from(commits).where(eq(commits.id, id)).get() != null
@@ -57,7 +65,7 @@ export class SimStore {
 
   /** Throws RangeError unless row.seq is the tip's seq + 1 (I1). */
   insert(row: StoredRow): void {
-    const tip = this.totals().seq;
+    const tip = this.tipSeq();
     if (row.seq !== tip + 1) {
       throw new RangeError(`commit position ${row.seq} is not ${tip + 1}`);
     }
