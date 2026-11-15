@@ -168,6 +168,8 @@ export class SimSocket {
   #here = false;
   /** A socket constructor has thrown once already: logged. */
   #loggedFail = false;
+  /** A resume refused for a reason other than `limit` or `gone` has been logged. */
+  #loggedRefused = false;
   #cancelHello: (() => void) | null = null;
   #cancelRetry: (() => void) | null = null;
   #cancelPing: (() => void) | null = null;
@@ -419,11 +421,13 @@ export class SimSocket {
 
   /**
    * Every commits frame goes to the store with this socket's sim (C18: a frame for another sim
-   * applies nothing and asks nothing). A frame with `more` ends the outstanding answer: `true`
-   * resumes from the tip if it moved past `lastAfter`, else stalls (C7, C29); `false` is caught
-   * up unless something is owed (C7, C12). A gap resumes only when nothing is outstanding or
-   * owed (C8, C9). A frame the store was not ready for owes a resume (C10). A throw halts
-   * `broken` (C30).
+   * applies nothing and asks nothing). A frame the store was not ready for owes a resume (C10).
+   * A newer build's commit (the store answers `future`), in any frame of this connection,
+   * stalls it with nothing owed: no further resume, never live, hold `newer` (C29, decision 22).
+   * A frame with `more` ends the outstanding answer: `true` resumes from the tip (C7); `false`
+   * is caught up unless something is outstanding, owed or stalled (C7, C12). A gap resumes only
+   * when nothing is outstanding or owed (C8, C9). A throw halts `broken` (C30). A connection is
+   * never stalled while a resume is owed: the owed one is sent instead.
    */
   #onCommits(s: SocketLike, commits: Commit[], more: boolean | undefined): void {
     const store = this.#o.store;
@@ -440,21 +444,27 @@ export class SimSocket {
     if (end) this.#resuming = false;
     const stale = r.kind === 'stale' && 'why' in r ? r.why : null;
     if (stale === 'not-ready') {
-      this.#owed = true;
+      // A stalled connection asks for nothing more, so nothing is owed on it.
+      if (!this.#stalled) this.#owed = true;
       this.#caughtUp = false;
     } else if (stale === 'other-sim') {
       // Nothing applied; no resume with another sim's tip (C18).
-    } else if (end && more === true) {
+    } else if (r.kind === 'future' && !this.#owed) {
+      if (!this.#stall(s, 'newer')) return;
+    } else if (end && more === true && !this.#owed) {
       if (store.tipSeq > this.#lastAfter) {
         if (!this.#resume(s)) return;
       } else {
-        this.#stalled = true;
-        this.#caughtUp = false;
+        // A backstop: a page the store took nothing from, with nothing owed and no `future`
+        // answer, should not occur with a correct server; never ask for it again on this
+        // connection.
+        if (!this.#stall(s, null)) return;
       }
     } else if (r.kind === 'gap' && !this.#resuming && !this.#owed) {
       if (!this.#resume(s)) return;
     }
-    if (end && more === false && stale === null && !this.#resuming && !this.#owed) {
+    const done = !this.#resuming && !this.#owed && !this.#stalled;
+    if (end && more === false && stale === null && done) {
       this.#caughtUp = true;
       this.#limitAttempt = 0;
       if (store.pendingCount === 0 && store.heldCount === 0) this.#attempt = 0;
@@ -465,9 +475,28 @@ export class SimSocket {
   }
 
   /**
+   * Stalls this connection for the rest of its life (C29, decision 22): no further resume, not
+   * caught up, never live; it stays connected. `newer` (a newer build's commit) becomes the
+   * hold, which lasts for the SimSocket as a refused `newer` append's does (decision 15) and
+   * never replaces `full`. False when socket s is no longer current afterwards.
+   */
+  #stall(s: SocketLike, hold: 'newer' | null): boolean {
+    this.#stalled = true;
+    this.#owed = false;
+    this.#caughtUp = false;
+    const h = this.#view.hold;
+    if (hold !== null && h !== 'full' && h !== 'newer') {
+      this.#set({ hold });
+      if (!this.#current(s)) return false;
+    }
+    return this.#show(s);
+  }
+
+  /**
    * A refusal with no id is the resume's (decision 24): `gone` halts `diverged` (C20); any
    * other reason owes the resume and sends it after `backoffDelay(limitAttempt++)` (C21). A
-   * refusal naming an append is Task 10's (A3 to A9, A16, A17).
+   * reason other than `limit` cannot be the budget's: it is logged once per SimSocket by its
+   * protocol word. A refusal naming an append is Task 10's (A3 to A9, A16, A17).
    */
   #onRefused(s: SocketLike, id: string | null, why: RefusedWhy): void {
     if (id !== null) return;
@@ -475,6 +504,11 @@ export class SimSocket {
       this.#halt('diverged');
       return;
     }
+    if (why !== 'limit' && !this.#loggedRefused) {
+      this.#loggedRefused = true;
+      console.error('[sim-sync] resume refused', why);
+    }
+    if (this.#stalled) return; // asks for nothing more on this connection: nothing to owe
     this.#resuming = false;
     this.#owed = true;
     this.#caughtUp = false;

@@ -870,7 +870,104 @@ describe('SimSocket: resume', () => {
     await settle(r.hub, r.store);
     expect(r.hub.resumes).toEqual([0]);
     expect(r.store.stopped).toBe('future');
+    expect(r.sock.view).toMatchObject({ phase: 'catching-up', hold: 'newer' });
+    // Stalled, not merely idle: a later gap asks for nothing.
+    const s = r.hub.sockets[0];
+    const later = stamped(draftOf(2, [nameChange('N')]), 3);
+    s.emit('message', JSON.stringify({ type: 'commits', commits: [later] }));
+    await settle(r.hub, r.store);
+    expect(s.sent.filter((t) => t.includes('"resume"'))).toHaveLength(1);
+    expect(r.hub.resumes).toEqual([0]);
+  });
+
+  it("C29 a single-page answer ending more: false with a newer build's commit stalls", async () => {
+    const r = await rig({ visible: false });
+    const newer = draftOf(0, [nameChange('L')], { shapes: SHAPES_REVISION + 1 });
+    r.hub.storeRaw(r.sim, stamped(newer, 1));
+    await live(r);
+    expect(r.sock.view).toMatchObject({ phase: 'catching-up', hold: 'newer' });
+    // The server counts the socket caught up and sends live commits: each is a gap.
+    r.hub.storeRaw(r.sim, stamped(draftOf(1, [nameChange('M')]), 2));
+    r.hub.storeRaw(r.sim, stamped(draftOf(2, [nameChange('N')]), 3));
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0]);
+    expect(r.store.tipSeq).toBe(0);
     expect(r.sock.view.phase).toBe('catching-up');
+    expect(r.hub.sockets).toHaveLength(1);
+  });
+
+  it("C29 a page the store takes part of, stopping at a newer build's commit, stalls", async () => {
+    const r = await rig({ hub: { pageSize: 2 }, visible: false });
+    const newer = draftOf(1, [nameChange('L')], { shapes: SHAPES_REVISION + 1 });
+    r.hub.storeRaw(r.sim, stamped(draftOf(0, [nameChange('K')]), 1));
+    r.hub.storeRaw(r.sim, stamped(newer, 2));
+    r.hub.storeRaw(r.sim, stamped(draftOf(2, [nameChange('M')]), 3));
+    await live(r);
+    expect(r.hub.resumes).toEqual([0]);
+    expect(r.store.tipSeq).toBe(1);
+    expect(r.store.stopped).toBe('future');
+    expect(r.sock.view).toMatchObject({ phase: 'catching-up', hold: 'newer' });
+  });
+
+  it('C29 a live commit from a newer build stops the connection being live; no resume follows', async () => {
+    const r = await rig({ visible: false });
+    await live(r);
+    expect(r.sock.view.phase).toBe('live');
+    const newer = draftOf(1, [nameChange('L')], { shapes: SHAPES_REVISION + 1 });
+    r.hub.storeRaw(r.sim, stamped(newer, 2));
+    await settle(r.hub, r.store);
+    expect(r.sock.view).toMatchObject({ phase: 'catching-up', hold: 'newer' });
+    r.hub.storeRaw(r.sim, stamped(draftOf(2, [nameChange('M')]), 3)); // a gap for the store
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0]);
+    expect(r.store.tipSeq).toBe(1);
+    expect(r.sock.view.phase).toBe('catching-up');
+  });
+
+  it('C29 C10 a reopen between the frames of a page owes the resume and never stalls', async () => {
+    // An edit, so the sim is stored on the device and a reopen keeps its confirmed commits.
+    const r = await rig({ edits: 1 });
+    await live(r); // tip 1: the start commit
+    const s = r.hub.sockets[0];
+    const a = foreign(r, 'A', { except: s });
+    const b = foreign(r, 'B', { except: s });
+    const c = foreign(r, 'C', { except: s });
+    // The hub delivers every frame of an answer in one step, so the page's frames are sent by
+    // hand around the reopen. The resume the gap makes is lost (mute) so the hub does not
+    // answer it as well; the owed one is the resume the hub answers.
+    r.hub.mute = true;
+    s.emit('message', JSON.stringify({ type: 'commits', commits: [c] })); // a gap: resume 1
+    r.hub.flush();
+    r.hub.mute = false;
+    const opening = r.store.open(r.sim);
+    s.emit('message', JSON.stringify({ type: 'commits', commits: [a] })); // not-ready: owed
+    await opening;
+    expect(r.store.tipSeq).toBe(1);
+    // The page's last frame: a gap for the store, the tip not moved past `after`.
+    s.emit('message', JSON.stringify({ type: 'commits', commits: [b], more: true }));
+    const resumes = () => s.sent.filter((t) => t.includes('"resume"'));
+    expect(resumes()).toEqual([0, 1, 1].map((after) => JSON.stringify({ type: 'resume', after })));
+    await settle(r.hub, r.store);
+    expect(r.store.tipSeq).toBe(4);
+    expect(r.sock.view).toMatchObject({ phase: 'live', hold: null });
+  });
+
+  it('C21 a refusal with no id other than limit or gone is backed off and logged once', async () => {
+    const { error } = mockConsole('error');
+    const r = await rig();
+    await live(r);
+    const s = r.hub.sockets[0];
+    const refused = JSON.stringify({ type: 'refused', id: null, why: 'invalid' });
+    s.emit('message', refused);
+    s.emit('message', refused);
+    expect(r.sock.view.phase).toBe('catching-up');
+    expect(r.clock.nextDelay()).toBe(2000);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith('[sim-sync] resume refused', 'invalid');
+    r.clock.advance(2000);
+    await settle(r.hub, r.store);
+    expect(r.hub.resumes).toEqual([0, 1]);
+    expect(r.sock.view.phase).toBe('live');
   });
 
   it('C29 C10 more: true answered not-ready is owed, not stalled', async () => {
