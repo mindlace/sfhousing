@@ -294,7 +294,15 @@ export function getAuth(
           // surfacing beats silently hiding a bad graph.
           const isUpgrade = freshlyCreated.has(args.newUser.user.id);
           freshlyCreated.delete(args.newUser.user.id);
-          await handleAccountLink({ db: drizzleDb, isUpgrade, ...normalizeLinkArgs(args) });
+          await handleAccountLink({
+            db: drizzleDb,
+            isUpgrade,
+            ...normalizeLinkArgs(args),
+            // R49: told after the fuse, off the sign-in's path. Without a request context the
+            // promise is simply left to run (it never rejects); `ctx` is called as a method,
+            // since an unbound waitUntil throws.
+            roster: { env: platform.env, defer: (work) => platform.ctx?.waitUntil(work) }
+          });
         }
       }),
       magicLink({

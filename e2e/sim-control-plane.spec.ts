@@ -241,3 +241,45 @@ test.describe('registration', () => {
     expect(await sessionOf(page)).toBeNull();
   });
 });
+
+test.describe('a fuse tells the absorbed identity sims', () => {
+  test("after a fuse the survivor writes the absorbed identity's sim, on an open socket", async ({
+    page,
+    browser,
+    baseURL
+  }, testInfo) => {
+    const survivorEmail = uniqueEmail('cp-survivor');
+    const sctx = await freshContext(browser, testInfo);
+    try {
+      const survivor = await sctx.newPage();
+      await loginAs(survivor, survivorEmail);
+      // The first registration mints the pseudonymous account that will be absorbed.
+      const simId = newId();
+      expect(
+        (await page.request.post('/api/sims', { data: { simId, title: 'Fused' } })).status()
+      ).toBe(201);
+      await survivor.goto('/about');
+      const h = await openSimSocket(survivor, simId);
+      expect((await framesAtLeast(survivor, h, 2))[1]).toEqual({ type: 'access', write: false });
+
+      // Signing in with the survivor's address fuses the pseudonymous identity into it.
+      const res = await page.request.post('/signin?/sendLink', {
+        headers: { origin: baseURL!, 'x-sveltekit-action': 'true' },
+        form: { identifier: survivorEmail }
+      });
+      const body = (await res.json()) as { data: string };
+      const link = /https?:[^"\\]*magic-link\/verify[^"\\]*/.exec(body.data)?.[0];
+      expect(link, 'dev link in the action data').toBeTruthy();
+      await page.goto(link!);
+
+      expect((await framesAtLeast(survivor, h, 3))[2]).toEqual({ type: 'access', write: true });
+      const tip = commitsOf(await resumeAndRead(survivor, h, 0)).length;
+      const d = nameDraft(tip, 'Survivor edit');
+      expect(
+        commitsOf(await sendAndRead(survivor, h, { type: 'append', commit: d }))
+      ).toMatchObject([{ id: d.id }]);
+    } finally {
+      await sctx.close();
+    }
+  });
+});

@@ -1,10 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { freshDb } from '$lib/server/test/auth-db';
+import { freshDb, seedSim } from '$lib/server/test/auth-db';
+import { rosterChangedAll } from '$lib/server/sims/roster-hook';
+import { foldSimsForUser } from '$lib/server/sims/sim-roles';
 import { user, userIdentity, userVersion } from '$lib/server/db/schema';
 import { createIdentityForNewVersion, reseedHandleFromSim, handleAccountLink } from './identity';
 import { skeleton } from './confusable-skeleton';
 import { getUser } from './user';
+
+vi.mock('$lib/server/sims/roster-hook', () => ({
+  rosterChangedAll: vi.fn(async () => {})
+}));
+vi.mock('$lib/server/sims/sim-roles', async (importOriginal) => {
+  const real = await importOriginal<typeof import('$lib/server/sims/sim-roles')>();
+  return { ...real, foldSimsForUser: vi.fn(real.foldSimsForUser) };
+});
 
 async function getIdentity(db: Awaited<ReturnType<typeof freshDb>>['db'], identityId: string) {
   const rows = await db.select().from(userIdentity).where(eq(userIdentity.id, identityId));
@@ -165,5 +175,119 @@ describe('handleAccountLink', () => {
     });
     const [o] = await db.select().from(userIdentity).where(eq(userIdentity.id, older.userIdentity));
     expect(o.supersededById).toBe(existing.userIdentity);
+  });
+
+  describe('the fuse tells the absorbed identity sims (R49)', () => {
+    const env = { tag: 'env' };
+
+    beforeEach(() => {
+      vi.mocked(rosterChangedAll).mockClear();
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    async function pair(db: Awaited<ReturnType<typeof freshDb>>['db']) {
+      const pseudo = await mintLive(db, {
+        id: 'u-pseudo',
+        email: 'p@pseudonymous.sfhousing.invalid'
+      });
+      const surv = await mintLive(db, { pseudonymous: false, id: 'u-exist', email: 'real@x.com' });
+      return { pseudo, surv };
+    }
+
+    it('a fuse defers one fan-out over exactly the absorbed identity sims', async () => {
+      const { db } = freshDb();
+      const { pseudo, surv } = await pair(db);
+      const a = await seedSim(db, { title: 'A', managerId: pseudo.userIdentity });
+      const b = await seedSim(db, { title: 'B', managerId: pseudo.userIdentity });
+      await seedSim(db, { title: 'S', managerId: surv.userIdentity });
+      const defer = vi.fn();
+      await handleAccountLink({
+        db,
+        isUpgrade: false,
+        pseudonymousUserId: 'u-pseudo',
+        newUserId: 'u-exist',
+        roster: { env, defer }
+      });
+      expect(defer).toHaveBeenCalledTimes(1);
+      expect(defer.mock.calls[0][0]).toBeInstanceOf(Promise);
+      expect(rosterChangedAll).toHaveBeenCalledTimes(1);
+      const [gotEnv, ids] = vi.mocked(rosterChangedAll).mock.calls[0];
+      expect(gotEnv).toBe(env);
+      expect([...ids].sort()).toEqual([a, b].sort());
+    });
+
+    it('a fuse of an identity with no sims tells nobody', async () => {
+      const { db } = freshDb();
+      await pair(db);
+      const defer = vi.fn();
+      await handleAccountLink({
+        db,
+        isUpgrade: false,
+        pseudonymousUserId: 'u-pseudo',
+        newUserId: 'u-exist',
+        roster: { env, defer }
+      });
+      expect(defer).not.toHaveBeenCalled();
+      expect(rosterChangedAll).not.toHaveBeenCalled();
+    });
+
+    it('an upgrade calls neither defer nor the hook', async () => {
+      const { db } = freshDb();
+      const { pseudo } = await pair(db);
+      await seedSim(db, { title: 'A', managerId: pseudo.userIdentity });
+      const defer = vi.fn();
+      await handleAccountLink({
+        db,
+        isUpgrade: true,
+        pseudonymousUserId: 'u-pseudo',
+        newUserId: 'u-exist',
+        roster: { env, defer }
+      });
+      expect(defer).not.toHaveBeenCalled();
+      expect(rosterChangedAll).not.toHaveBeenCalled();
+    });
+
+    it('a failed sims read still fuses, logs safe text only and defers nothing', async () => {
+      const { db } = freshDb();
+      const { pseudo, surv } = await pair(db);
+      await seedSim(db, { title: 'Secret title', managerId: pseudo.userIdentity });
+      vi.mocked(foldSimsForUser).mockRejectedValueOnce(new Error('boom'));
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const defer = vi.fn();
+      await handleAccountLink({
+        db,
+        isUpgrade: false,
+        pseudonymousUserId: 'u-pseudo',
+        newUserId: 'u-exist',
+        roster: { env, defer }
+      });
+      const [ident] = await db
+        .select()
+        .from(userIdentity)
+        .where(eq(userIdentity.id, pseudo.userIdentity));
+      expect(ident.supersededById).toBe(surv.userIdentity);
+      expect(await db.select().from(user).where(eq(user.id, 'u-pseudo'))).toHaveLength(0);
+      expect(defer).not.toHaveBeenCalled();
+      expect(errors).toHaveBeenCalledTimes(1);
+      expect(errors.mock.calls[0][0]).toBe('[fuse] sims read failed');
+      expect(JSON.stringify(errors.mock.calls)).not.toMatch(/real@x\.com|Secret title|u-pseudo/);
+    });
+
+    it('without roster a fuse reads nothing and tells nobody', async () => {
+      const { db } = freshDb();
+      const { pseudo } = await pair(db);
+      await seedSim(db, { title: 'A', managerId: pseudo.userIdentity });
+      vi.mocked(foldSimsForUser).mockClear();
+      await handleAccountLink({
+        db,
+        isUpgrade: false,
+        pseudonymousUserId: 'u-pseudo',
+        newUserId: 'u-exist'
+      });
+      expect(rosterChangedAll).not.toHaveBeenCalled();
+      expect(foldSimsForUser).not.toHaveBeenCalled();
+    });
   });
 });
