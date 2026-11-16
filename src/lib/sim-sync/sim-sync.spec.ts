@@ -1015,6 +1015,47 @@ describe('SimSync: tabs, claims and visibility', () => {
     expect(sync.state.save).toEqual({ kind: 'saved', why: null });
   });
 
+  it('visible on a socket held not-writer while it writes, with something pending, reconnects', async () => {
+    const w = world();
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    w.hub.refuseNext('not-writer');
+    store.rename('B');
+    await settle(w.hub, store);
+    // Only the hold says it cannot write: the access it was given is still write.
+    expect(sync.state.socket).toMatchObject({ hold: 'not-writer', write: true });
+    expect(store.pendingCount).toBe(1);
+    w.net.set('hidden');
+    w.net.set('visible');
+    await settle(w.hub, store);
+    expect(w.hub.sockets).toHaveLength(2);
+    expect(w.hub.sockets[0].closedWith).toBe(1000);
+    expect(namesOf(w.hub.commits(store.simId!))).toEqual([DEFAULT_SIM_NAME, 'A', 'B']);
+    expect(sync.state.save).toEqual({ kind: 'saved', why: null });
+  });
+
+  it('visible on a halted socket that cannot write, with something pending, opens nothing', async () => {
+    const w = world();
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    w.hub.refuseNext('not-writer');
+    store.rename('B');
+    await settle(w.hub, store);
+    w.hub.closeAll(4410); // the sim was taken down
+    await settle(w.hub, store);
+    expect(sync.state.socket).toMatchObject({ phase: 'halted', halt: 'gone', hold: 'not-writer' });
+    expect(store.pendingCount).toBe(1);
+    w.net.set('hidden');
+    w.net.set('visible');
+    await settle(w.hub, store);
+    expect(w.hub.sockets).toHaveLength(1);
+    expect(sync.state.socket).toMatchObject({ phase: 'halted', halt: 'gone' });
+  });
+
   it('Y25 opening the sim that is already open does nothing: unsent edits stay (no storage)', async () => {
     const w = world();
     const { store, sync } = await tab(w, 'a', { db: null, live: false });
@@ -1122,6 +1163,106 @@ describe('SimSync: tabs, claims and visibility', () => {
     await started;
     await sync.open(null);
     expect(store.ready).toBe(true);
+  });
+
+  it('a second start while the first waits for the lock returns the first call promise', async () => {
+    const w = world();
+    const { store, sync } = unstarted(w, 'a');
+    const first = sync.start();
+    const second = sync.start();
+    expect(second).toBe(first);
+    await second;
+    await sync.open(null); // start has really resolved: open does not reject
+    expect(store.ready).toBe(true);
+    expect(w.locks.held()).toEqual([`${TAB_LOCK_PREFIX}a`]);
+  });
+
+  /**
+   * Locks over the world's, whose query() (goneOwners' read of the lock table) is counted and,
+   * while `held` is set, waits for it.
+   */
+  function slowQueryLocks(w: World) {
+    const q = { calls: 0, held: null as Promise<void> | null };
+    const locks: LocksLike = {
+      request: (name, options, callback) => w.locks.request(name, options, callback),
+      query: async () => {
+        q.calls++;
+        if (q.held !== null) await q.held;
+        return w.locks.query();
+      }
+    };
+    return { q, locks };
+  }
+
+  /** A sim with b's unsent record (b alive) and g's (gone), and c about to open it. */
+  async function twoOwners(w: World) {
+    const sim = await onServer(w);
+    const B = await tab(w, 'b', { live: false });
+    await B.sync.open(sim);
+    B.store.rename('B');
+    await B.store.written();
+    await goneTab(w, sim, 'G');
+    return sim;
+  }
+
+  it('a stop while the open waits on pendingOwners: no lock read, no store open, no claim, no watch', async () => {
+    const w = world();
+    const sim = await twoOwners(w);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let asked = 0;
+    const claimPending = vi.fn(w.db.claimPending);
+    const db: SimDb = {
+      ...w.db,
+      claimPending,
+      pendingOwners: async (id) => {
+        asked++;
+        await held;
+        return w.db.pendingOwners(id);
+      }
+    };
+    const { q, locks } = slowQueryLocks(w);
+    const { store, sync } = await tab(w, 'c', { db, locks });
+    const opened = sync.open(sim);
+    await microtasks();
+    expect(asked).toBe(1); // parked inside pendingOwners
+    sync.stop();
+    release();
+    await expect(opened).rejects.toThrow('stopped');
+    await microtasks();
+    expect(q.calls).toBe(0); // the lock table was never read after the stop
+    expect(store.ready).toBe(false);
+    expect(store.simId).toBeNull();
+    expect(claimPending).not.toHaveBeenCalled();
+    expect(w.locks.held()).toEqual([`${TAB_LOCK_PREFIX}b`]);
+    expect((await w.locks.query()).pending ?? []).toEqual([]);
+    expect(await w.db.pendingOwners(sim)).toEqual(['b', 'g']);
+    expect(w.hub.sockets).toEqual([]);
+  });
+
+  it('a stop while the open waits on goneOwners: no store open, no claim, no watch', async () => {
+    const w = world();
+    const sim = await twoOwners(w);
+    const claimPending = vi.fn(w.db.claimPending);
+    const db: SimDb = { ...w.db, claimPending };
+    const { q, locks } = slowQueryLocks(w);
+    const { store, sync } = await tab(w, 'c', { db, locks });
+    let release!: () => void;
+    q.held = new Promise<void>((resolve) => (release = resolve));
+    const opened = sync.open(sim);
+    await microtasks();
+    expect(q.calls).toBe(1); // parked inside goneOwners
+    sync.stop();
+    release();
+    await expect(opened).rejects.toThrow('stopped');
+    await microtasks();
+    expect(store.ready).toBe(false);
+    expect(store.simId).toBeNull();
+    expect(claimPending).not.toHaveBeenCalled();
+    expect(w.locks.held()).toEqual([`${TAB_LOCK_PREFIX}b`]);
+    expect((await w.locks.query()).pending ?? []).toEqual([]);
+    expect(await w.db.pendingOwners(sim)).toEqual(['b', 'g']);
+    expect(w.hub.sockets).toEqual([]);
   });
 
   it('a second onGone for the same owner claims again and changes nothing', async () => {

@@ -57,7 +57,8 @@ const RETRYABLE: ReadonlySet<RegState> = new Set<RegState>([
 export class SimSync {
   readonly #o: SimSyncOptions;
   readonly #gate: RegisterGate;
-  #started = false;
+  /** The first start() call's promise; a later call returns it. */
+  #starting: Promise<void> | null = null;
   /** start() has resolved (not stopped meanwhile): open may run. */
   #running = false;
   /** This tab's presence; made by start(). */
@@ -116,15 +117,21 @@ export class SimSync {
 
   /**
    * Takes this tab's lock (TabPresence), then subscribes to the store, the network and the
-   * news that a watched tab has gone. Once: a second call returns at once. The page opens the
+   * news that a watched tab has gone. Once: a second call returns the first call's promise
+   * (after stop() with no earlier call, a resolved one). The page opens the
    * store only through open(), after this has resolved, so no record is written under this
    * tab's id before its lock is held. When the lock cannot be had (no Web Locks, or the request
    * failed) the tab announces nothing and watches no one: other tabs' records are claimed at
    * open only (S8). A stop() while this waits leaves no lock held and subscribes to nothing.
    */
-  async start(): Promise<void> {
-    if (this.#started || this.#stopped) return;
-    this.#started = true;
+  start(): Promise<void> {
+    if (this.#starting !== null) return this.#starting;
+    if (this.#stopped) return Promise.resolve();
+    this.#starting = this.#start();
+    return this.#starting;
+  }
+
+  async #start(): Promise<void> {
     const o = this.#o;
     const presence = new TabPresence({ tabId: o.tabId, locks: o.locks, channel: o.channel });
     this.#presence = presence;
