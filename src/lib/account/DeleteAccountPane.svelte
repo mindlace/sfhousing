@@ -47,12 +47,14 @@
           body: JSON.stringify({ confirmHandle })
         });
         if (res.status === 202) continue;
-        // Another tab finished the deletion: the account is gone, so this is done too.
-        if (res.ok || (res.status === 401 && pass > 0)) {
+        if (res.ok) {
           await onDeleted();
           return;
         }
-        if (res.status === 400) {
+        if (res.status === 401 && pass > 0) {
+          // Another tab may have finished, or the session ended with the account still there.
+          deleteError = ACCOUNT_COPY.deleteSignedOut;
+        } else if (res.status === 400) {
           const body = (await res.json().catch(() => null)) as { deleteError?: string } | null;
           deleteError = body?.deleteError ?? ACCOUNT_COPY.handleMismatch;
         } else {

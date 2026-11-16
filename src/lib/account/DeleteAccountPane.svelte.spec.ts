@@ -146,12 +146,21 @@ describe('DeleteAccountPane', () => {
     expect(onDeleted).not.toHaveBeenCalled();
   });
 
-  it('a 401 after a 202 means another tab finished: treated as done', async () => {
-    vi.spyOn(globalThis, 'fetch')
+  it('a 401 after a 202 may be a session lost mid-way: not reported deleted, says sign in', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(more())
       .mockResolvedValueOnce(new Response('{}', { status: 401 }));
-    await startDelete();
-    await vi.waitFor(() => expect(onDeleted).toHaveBeenCalledOnce());
+    const screen = await startDelete();
+    await expect.element(screen.getByText(ACCOUNT_COPY.deleteSignedOut)).toBeVisible();
+    expect(ACCOUNT_COPY.deleteSignedOut).toBe(
+      'Signed out before deletion finished. Sign in to check.'
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(onDeleted).not.toHaveBeenCalled();
+    await expect
+      .element(screen.getByRole('button', { name: ACCOUNT_COPY.deletePermanently }))
+      .not.toHaveAttribute('aria-busy');
   });
 
   it('a 401 on the first request is a failure, not done', async () => {
