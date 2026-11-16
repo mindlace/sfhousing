@@ -618,7 +618,7 @@ describe('LogStore persistence', () => {
   });
 });
 
-describe('LogStore persistence (fix round 1)', () => {
+describe('LogStore persistence: opens that fail or overlap, stray frames, claims, imports', () => {
   /** A memory database whose reads reject while `fail.on`. */
   function flakyReads() {
     const db = memorySimDb();
@@ -896,7 +896,7 @@ describe('LogStore persistence (fix round 1)', () => {
   });
 });
 
-describe('what the socket reads (plan 2)', () => {
+describe('LogStore: what the socket reads (registration, held commits, the tip)', () => {
   it('registration: none with no sim, wait until the minted sim is stored, then needed', async () => {
     const db = memorySimDb();
     const s = store(db);
