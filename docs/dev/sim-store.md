@@ -350,13 +350,13 @@ The page (plan 3):
 - switches the editors' props to `DocStore`, and replaces the page's load (`PolicyStore.reset`) with `open` or the import;
 - shows a notice for each stopped reason (`'stale'`, `'unknown-dataset'`, `'future'`) and each refusal reason (`'invalid'`, `'too-large'`, `'queue-full'`, `'stopped'`);
 - decides what an out-of-date tab (a connection closed by a newer version, `onVersionChange`, or an `openSimDb` that answers null on a version error) and a browser with failing storage see;
-- ranks `stopped` before saved in the save state: held commits are not in `pending` or `pendingCount`, and `stopped` is non-null whenever anything is held (I12), so a stopped tab whose only work is held must not read as saved;
+- shows the save state from `sync.state.save` ([sim-sync.md](sim-sync.md), The save state), which counts held commits and a stop only while something is pending or held; the page's part is the copy for each `why`;
 - does not offer editing a known sim with no copy on this device (no IndexedDB, `open` with `db: null`, or a sim never stored here) until its first `commits` frame: until then the fold is empty, the dataset decision is `edit`, and edits on that empty fold are re-applied, and may be dropped, once commits arrive;
 - needs a new operation for Remix. A new sim's first write asks to become the current sim, and when one is already current the store adopts it (decision 28): right for two fresh tabs, wrong for Remix, where `open(null)` plus `importContent` would write the shared document into the person's existing sim. There is no workaround in the store as built (`setMeta` refuses `CURRENT_KEY`; `current: false` leaves the remix unreachable from `/sim`). Plan 3 must add an operation that creates a new sim and makes it the current one in one write, replacing the pointer, designed so that the two-fresh-tabs rule still holds, and Remix uses it. Until then the store cannot start a second sim in a browser that already has one.
 
 ## What is not built yet
 
-- The page, the autosave import (`importContent`'s caller), notices and the save state: plan 3.
+- The page, the autosave import (`importContent`'s caller), the copy for each save-state reason and the notices: plan 3.
 - Pending commits becoming a remix when a sim stops being writable, and a way to re-home a sim's pending records to a new sim id in one transaction: the sharing unit.
 - Reading a sim on its tip's own dataset: plan 4.
 
