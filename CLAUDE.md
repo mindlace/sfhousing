@@ -60,6 +60,7 @@ Fetch the file when working in the relevant area:
 - **Ensemble runner (the /sim timeline worker host: openTimeline, setPolicy, filling, copies and refill, lookups)** — [docs/dev/ensemble-runner.md](docs/dev/ensemble-runner.md)
 - **Sim log core (commits, changes, item keys, the shape registry, fold, diff, re-apply, undo and redo, the hash chain)** — [docs/dev/sim-log.md](docs/dev/sim-log.md)
 - **Sim object (the per-sim Durable Object, its socket and frames, append rules, limits, the sim migration track, the D1 copy, `rereadRoles`, `appendAs` and the rename, `takeDown`)** — [docs/dev/sim-object.md](docs/dev/sim-object.md)
+- **Sim sync (registering a sim from the browser, the socket client, tabs and their claims, the save state, the dev rule)** — [docs/dev/sim-sync.md](docs/dev/sim-sync.md)
 - **Browser log store (`LocalLog`, `LogStore`, `DocStore`, pending and drafts, the dataset rule, restore commits, IndexedDB)** — [docs/dev/sim-store.md](docs/dev/sim-store.md)
 - **Design, specs and plans** — `docs/superpowers/design/`, `docs/superpowers/specs/`, `docs/superpowers/plans/`
 

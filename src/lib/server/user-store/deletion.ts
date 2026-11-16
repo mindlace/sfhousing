@@ -126,6 +126,9 @@ export async function markIdentityDeleted(
   await db.update(userIdentity).set({ deletedAt: now }).where(eq(userIdentity.id, identityId));
 }
 
+/** How many sims one deleteAccount pass leaves. */
+export const DELETE_SIMS_PER_PASS = 50;
+
 /**
  * Delete a registered account: remove the user from every sim (a sim they were the only
  * member of is kept with no members, its links still open and its pending invitations end;
@@ -134,7 +137,12 @@ export async function markIdentityDeleted(
  * a completed run re-invoked is a no-op. Caller authorizes and handles sign-out. NOT atomic.
  * `actor` is kept for the future sim-log attribution; nothing reads it yet.
  *
- * The sims it left are told of their roster change in one bounded fan-out after the loop,
+ * One pass leaves at most `perPass` sims (default DELETE_SIMS_PER_PASS). When more remain it
+ * answers `{ more: true }` and leaves the account untouched, so the person can sign in and ask
+ * again; the pass that leaves the last sims closes the account rows and answers
+ * `{ more: false }`. An unknown or already deleted account answers `{ more: false }`.
+ *
+ * The sims a pass left are told of their roster change in one bounded fan-out after the loop,
  * not one hook per removal: handed to `defer` when the caller gives one (the route passes
  * `waitUntil`), awaited otherwise. The fan-out never rejects.
  */
@@ -144,26 +152,28 @@ export async function deleteAccount(args: {
   identityId: string;
   actor: Actor;
   defer?: (work: Promise<void>) => void;
-}): Promise<void> {
+  perPass?: number;
+}): Promise<{ more: boolean }> {
   const { db } = args;
+  const perPass = args.perPass ?? DELETE_SIMS_PER_PASS;
   const sid = (await survivorId(db, args.identityId)) ?? args.identityId;
 
   const [idRow] = await db.select().from(userIdentity).where(eq(userIdentity.id, sid));
-  if (!idRow || idRow.deletedAt) return; // unknown or already deleted → no-op
+  if (!idRow || idRow.deletedAt) return { more: false }; // unknown or already deleted → no-op
   const [live] = await db.select().from(user).where(eq(user.userIdentity, sid));
-  if (!live) return;
+  if (!live) return { more: false };
 
   // 1. Remove memberships (revokes reach grants held by fused identities too).
   const sims = await listSimsForUser({ db, userId: sid });
   const left: string[] = [];
   try {
-    for (const s of sims) {
+    for (const s of sims.slice(0, perPass)) {
       await removeSimMember({ db, env: args.env, simId: s.simId, userId: sid, notify: false });
       left.push(s.simId);
     }
   } finally {
-    // Also when a later removal threw: the ones already written are told. The number of sims
-    // is not capped, so the fan-out may outrun waitUntil's time limit: a sim it does not reach
+    // Also when a later removal threw: the ones already written are told. A pass is bounded,
+    // yet its fan-out may still outrun waitUntil's time limit: a sim it does not reach
     // keeps its open sockets' old rights until they reconnect. A defer that throws must not fail
     // the deletion between the removals and the account rows, so the fan-out is awaited instead.
     const told = rosterChangedAll(args.env, left);
@@ -177,7 +187,9 @@ export async function deleteAccount(args: {
       }
   }
 
+  if (sims.length > perPass) return { more: true };
   await closeAccountRows({ db, identityId: sid, live });
+  return { more: false };
 }
 
 /** The user-row closure tail of deleteAccount: release the

@@ -1,6 +1,6 @@
 # Browser log store
 
-The browser's side of a sim's log: `src/lib/sim-store/`. It folds a sim's confirmed commits and this tab's pending ones into one ruleset, authors commits for the editors' changes, undo and redo, keeps them on the device in IndexedDB, and hands commits to a socket client to send. This is unit 4 of the sim message log, plan 1 of four (the plans after it: [the outline](../superpowers/plans/2026-11-15-sim-log-store-outline.html)). Plan 1 builds the core and nothing on any page uses it; plans 2 to 4 wire it up (see What is not built yet). Design: [2026-11-14-sim-message-log-design.html](../superpowers/specs/2026-11-14-sim-message-log-design.html) (rule numbers `R..` are its rules). The log core it folds with is [sim-log.md](sim-log.md); the server it talks to is [sim-object.md](sim-object.md).
+The browser's side of a sim's log: `src/lib/sim-store/`. It folds a sim's confirmed commits and this tab's pending ones into one ruleset, authors commits for the editors' changes, undo and redo, keeps them on the device in IndexedDB, and hands commits to a socket client to send. This is unit 4 of the sim message log, plan 1 of four (the plans after it: [the outline](../superpowers/plans/2026-11-15-sim-log-store-outline.html)). Plan 1 builds the core and plan 2 the socket client that serves it ([sim-sync.md](sim-sync.md)); nothing on any page uses either yet, and plans 3 and 4 wire them up (see What is not built yet). Design: [2026-11-14-sim-message-log-design.html](../superpowers/specs/2026-11-14-sim-message-log-design.html) (rule numbers `R..` are its rules). The log core it folds with is [sim-log.md](sim-log.md); the server it talks to is [sim-object.md](sim-object.md).
 
 The store imports the log core only from `$lib/sim-log`, the size limits from `$lib/sim-stream/limits`, ids from `$lib/ids/base58`, `canonicalJson` from `$lib/sim-page/policy` and the policy type and default from `$lib/timeline/policy4`. Nothing in it imports `$app/*`, `$env/*` or `$lib/server/*`. It logs only with `console.error`, prefixed `[sim-store]`, with a reason code and never a commit body, ruleset, name or label (see Storage failure).
 
@@ -76,7 +76,7 @@ Every re-walk applies the pending commits in order on a clone of the confirmed t
 
 ## The dataset rule
 
-The page's dataset is `stamp().datasetVersion`, read when a log is made and at each authoring. The fold's dataset is the dataset of the last commit folded (null with none). The server's dataset is null until `setServerDataset` (a `hello` will carry it; plan 2). `datasetDecision(page, fold, server)`:
+The page's dataset is `stamp().datasetVersion`, read when a log is made and at each authoring. The fold's dataset is the dataset of the last commit folded (null with none). The server's dataset is null until `setServerDataset` (the socket's `hello` carries it). `datasetDecision(page, fold, server)`:
 
 | Fold's dataset      | Server's dataset | Decision                     |
 | ------------------- | ---------------- | ---------------------------- |
@@ -189,12 +189,12 @@ A draft open when the tab closes is committed in memory by `settle()` (the page 
 
 Database `sfhousing-sim-log`, version `SIM_DB_VERSION` 1.
 
-| Store     | Key            | Holds                                                                                      |
-| --------- | -------------- | ------------------------------------------------------------------------------------------ |
-| `sims`    | `simId`        | `SimRecord { simId, createdAt, registered }` (`registered` is for plan 2: `setRegistered`) |
-| `commits` | `[simId, seq]` | `{ simId, seq, commit }`: the device's copy of a sim's confirmed log                       |
-| `pending` | `[simId, id]`  | `PendingRecord { simId, id, n, owner, pending }`; unique index `order` on `[simId, n]`     |
-| `meta`    | `key`          | `{ key, value }`: the current-sim pointer, `n:<simId>` counters, markers                   |
+| Store     | Key            | Holds                                                                                                    |
+| --------- | -------------- | -------------------------------------------------------------------------------------------------------- |
+| `sims`    | `simId`        | `SimRecord { simId, createdAt, registered }` (`registered`: `setRegistered`, called by `markRegistered`) |
+| `commits` | `[simId, seq]` | `{ simId, seq, commit }`: the device's copy of a sim's confirmed log                                     |
+| `pending` | `[simId, id]`  | `PendingRecord { simId, id, n, owner, pending }`; unique index `order` on `[simId, n]`                   |
+| `meta`    | `key`          | `{ key, value }`: the current-sim pointer, `n:<simId>` counters, markers                                 |
 
 Version steps: `upgradeSimDb(db, oldVersion)` runs `if (oldVersion < 1)` creating the four stores; step 1 is never edited and a later change adds an `oldVersion < 2` step. Transactions that write ask for `durability: 'strict'`.
 
@@ -206,6 +206,7 @@ Version steps: `upgradeSimDb(db, oldVersion)` runs `if (oldVersion < 1)` creatin
 | `createSim(sim, { current, marker, batch })` | One transaction: the marker, then `current`, then the sim and batch (see below)                                              |
 | `write(simId, batch, { marker })`            | One transaction: the marker, then the batch                                                                                  |
 | `claimPending(simId, from, to)`              | Every pending record of the sim whose owner is in `from` gets owner `to` (its `n` is kept); answers the records in `n` order |
+| `pendingOwners(simId)`                       | The distinct owners of the sim's pending records, in `n` order of their first record                                         |
 | `setRegistered(simId)`                       | Sets `registered` on the sim record                                                                                          |
 | `getMeta(key)`, `setMeta(key, value)`        | A meta row; `undefined` when absent                                                                                          |
 | `close()`                                    | Closes the connection; later calls reject                                                                                    |
@@ -246,7 +247,7 @@ A call settles on its transaction's `complete` (resolve) or `abort` (reject; an 
 
 `LogStore implements DocStore` over a `LocalLog` and a `SimDb | null`. `LogStoreOptions`: `db` (null: no storage), `tabId` (this page load's id, the owner of its pending records), `stamp()` (`{ datasetVersion, build }`, read at each commit), `mintId`, `normalize(next, prev)`, `align`, `now`, `current` (default true: a sim this store mints asks for the pointer) and `caps` (tests only).
 
-Every derived value is a rune set once per change (`$state.raw`), and subscribers are told once at the end of each public call that changed something (and after a write lands). A store starts not `ready`: `open` makes it so, and until then `apply`, `rename`, `undo`, `redo`, `undoTo` and `importContent` do nothing, and `head()` answers null.
+Every derived value is a rune set once per change (`$state.raw`), and subscribers are told once at the end of each public call that changed something, and at the end of each write loop (after a write lands). The notification is synchronous, inside the call, and is part of the store's contract (the store's tests pin it): the sync client relies on it to send a commit once it is stored, and a subscriber may call into a socket that stops or reconnects from inside it. A store starts not `ready`: `open` makes it so, and until then `apply`, `rename`, `undo`, `redo`, `undoTo` and `importContent` do nothing, and `head()` answers null.
 
 ### Writes
 
@@ -282,6 +283,10 @@ Imports run one at a time. A withdrawn import takes with it the move it needed, 
 
 `claim(owners)` takes other tabs' pending records of the open sim and re-applies them after this tab's own, putting them again with new `n`. It answers how many were adopted, and settles a draft first. `open` and `claim` run one at a time in the order called; calling `claim` then `open` without awaiting is safe.
 
+### What the socket reads
+
+`tipSeq` (the last confirmed seq, a resume's `after`) and `heldCount` (commits held out of force: not pending, never sent, still on the device) are set in the one derive step. `registration` is a plain getter over the store's fields, not a rune (read it from a subscriber call): `'none'` (no sim, or a look: a sim with no record here that this store did not mint), `'wait'` (minted here, storage working, first write not landed), `'needed'` (stored and not recorded registered, or minted with storage absent or failed), `'done'`. `markRegistered(simId)` (the server answered 200 or 201) does nothing for another sim than the open one; else it sets `'done'` and tells subscribers at once, then, after the write chain, records it with `setRegistered` when the sim is stored and storage works. It never rejects: a failed record logs `[sim-store] registration not stored` with the error name, and the next load registers again.
+
 ### Two tabs
 
 Each tab shows the confirmed commits and its own pending ones. A tab does not see another's pending commits (the records of every owner are read, but only its own, and any it claims, are taken). A tab notices a record another tab took only when it next writes that record (the answer says `lost`). A commit sent by two tabs is answered `duplicate` by the sim object ([sim-object.md](sim-object.md): no frame, one rate token spent), so it cannot become two commits.
@@ -310,15 +315,16 @@ There is no `reset`: a load is `open` or the import. `LogStore.apply` has the sa
 
 ### For everything else: `LogStore`
 
-Read-only state: `ready`, `simId` (null until the first commit mints it), `policy`, `name`, `canUndo`, `canRedo`, `undoLabel`, `redoLabel`, `local` (`'idle' | 'writing' | 'failed'`), `drafting`, `pending` and `pendingCount` (in force, in order), `stopped`, `serverDataset`, `drops` (`DropReport`s, kept until `clearDrops()`), `refusal` (`'invalid' | 'too-large' | 'queue-full' | 'stopped' | null`).
+Read-only state: `ready`, `simId` (null until the first commit mints it), `policy`, `name`, `canUndo`, `canRedo`, `undoLabel`, `redoLabel`, `local` (`'idle' | 'writing' | 'failed'`), `drafting`, `pending` and `pendingCount` (in force, in order), `stopped`, `tipSeq`, `heldCount`, `registration`, `serverDataset`, `drops` (`DropReport`s, kept until `clearDrops()`), `refusal` (`'invalid' | 'too-large' | 'queue-full' | 'stopped' | null`).
 
-Calls: `rename(name)`, `settle()`, `clearDrops()`, `open(simId, { claim })`, `claim(owners)`, `importContent(content, marker, label)`, `written()`, `subscribe(fn)` (returns the unsubscribe), and for the socket:
+Calls: `rename(name)`, `settle()`, `clearDrops()`, `open(simId, { claim })`, `claim(owners)`, `importContent(content, marker, label)`, `written()`, `subscribe(fn)` (returns the unsubscribe), and for the socket client:
 
 | Call                      | When and what                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `setServerDataset(s)`     | From the socket's `hello`. A value equal to the one held does nothing. Re-applies, then re-decides (the dataset rule)                                                                                                                                                                                                                                                                                                                    |
 | `receive(simId, commits)` | Any commit from the stream of sim `simId`, a confirmation included. Answers `StoreReceived`: the log's `applied`, `stale` (every commit already held), `gap` (resume from `after`) or `future`; or `{ kind: 'stale', why }` when the frame was ignored, applying and writing nothing: `why` is `'other-sim'` (`simId` is not the store's sim) or `'not-ready'` (an `open` under way, or one that rejected). Writes the confirmed commits |
 | `head()`                  | The head pending `CommitDraft` that may be sent now, or null (see below)                                                                                                                                                                                                                                                                                                                                                                 |
+| `markRegistered(simId)`   | The server answered 200 or 201 for `simId`: `registration` becomes `'done'` (see What the socket reads). Never rejects                                                                                                                                                                                                                                                                                                                   |
 | `dropPending(id)`         | The server refused `id` `invalid`: drops it, re-applies the rest, reports it. A refused move or alignment commit also stops the store `'stale'`. An id not pending does nothing                                                                                                                                                                                                                                                          |
 
 `head()` answers null: while not `ready` (an `open` under way, or one that rejected); before `setServerDataset`; while stopped; for a bare move; and, with storage working, until the version of `pending[0]` it would return is stored. With no database or `local` `'failed'` it answers at once. After a write lands, subscribers are told: ask `head()` again.
@@ -333,14 +339,9 @@ Calls: `rename(name)`, `settle()`, `clearDrops()`, `open(simId, { claim })`, `cl
 
 ## For the next plans
 
-The socket client (plan 2) calls:
+The socket client (plan 2) is built in `src/lib/sim-sync/` ([sim-sync.md](sim-sync.md)); a page opens the store through it (`SimSync.open`) and does not call the store's socket side itself. What it relies on, for anyone else who calls the store:
 
-- `setServerDataset(hello.dataset)` on every `hello`, before anything is sent; it is safe on a reconnect.
-- `receive(simId, commits)` for every `commits` frame, with the id of the sim whose socket it came from, resuming from `after` on a `gap`. A frame for another sim, or one that arrives during `open`, is ignored (`{ kind: 'stale', why }`); after `open` the client resumes from `tipSeq`.
-- `dropPending(id)` on a refusal `invalid`.
-- `head()` only when `ready`; one append in flight; ask again after each `receive` and after each subscriber call.
-- `open(simId, { claim })` and `claim(owners)` only to claim from tabs whose lock is free (the store never decides who is gone). Do not send during `open`.
-- `simId` can change after it first appears: adopting the current sim another tab made replaces a minted id, and a withdrawn import sets it back to null. Register a sim only once it is stored: after `written()` with `local` not `'failed'`, or, with no database, at the first `head()`; not when `simId` first appears.
+- `simId` can change after it first appears: adopting the current sim another tab made replaces a minted id, and a withdrawn import sets it back to null. Register a sim only when `registration` says `'needed'` and it has something to send: `'wait'` (minted here, storage working, the first write not landed) is not yet, `'none'` is a look, and with no database or after a failed write a minted sim is `'needed'` at once. Not when `simId` first appears.
 - After a failed write the device keeps its records as they were at the failure (removes are never written). A later load reads them again: commits confirmed since are removed by id after the resume (each early re-send spends a rate token as a `duplicate`), and commits dropped since come back and are reported again.
 
 The page (plan 3):
@@ -349,16 +350,13 @@ The page (plan 3):
 - switches the editors' props to `DocStore`, and replaces the page's load (`PolicyStore.reset`) with `open` or the import;
 - shows a notice for each stopped reason (`'stale'`, `'unknown-dataset'`, `'future'`) and each refusal reason (`'invalid'`, `'too-large'`, `'queue-full'`, `'stopped'`);
 - decides what an out-of-date tab (a connection closed by a newer version, `onVersionChange`, or an `openSimDb` that answers null on a version error) and a browser with failing storage see;
-- ranks `stopped` before saved in the save state: held commits are not in `pending` or `pendingCount`, and `stopped` is non-null whenever anything is held (I12), so a stopped tab whose only work is held must not read as saved;
+- shows the save state from `sync.state.save` ([sim-sync.md](sim-sync.md), The save state), which counts held commits and a stop only while something is pending or held; the page's part is the copy for each `why`;
 - does not offer editing a known sim with no copy on this device (no IndexedDB, `open` with `db: null`, or a sim never stored here) until its first `commits` frame: until then the fold is empty, the dataset decision is `edit`, and edits on that empty fold are re-applied, and may be dropped, once commits arrive;
 - needs a new operation for Remix. A new sim's first write asks to become the current sim, and when one is already current the store adopts it (decision 28): right for two fresh tabs, wrong for Remix, where `open(null)` plus `importContent` would write the shared document into the person's existing sim. There is no workaround in the store as built (`setMeta` refuses `CURRENT_KEY`; `current: false` leaves the remix unreachable from `/sim`). Plan 3 must add an operation that creates a new sim and makes it the current one in one write, replacing the pointer, designed so that the two-fresh-tabs rule still holds, and Remix uses it. Until then the store cannot start a second sim in a browser that already has one.
 
 ## What is not built yet
 
-- Registration of a sim (`POST /api/sims`; `SimDb.setRegistered` is there) and the socket client: plan 2.
-- Choosing which owners to claim (Web Locks and a `BroadcastChannel`): plan 2.
-- `hello` carrying the server's dataset: plan 2 (until then `setServerDataset` has no caller).
-- The page, the autosave import (`importContent`'s caller), notices and the save state: plan 3.
+- The page, the autosave import (`importContent`'s caller), the copy for each save-state reason and the notices: plan 3.
 - Pending commits becoming a remix when a sim stops being writable, and a way to re-home a sim's pending records to a new sim id in one transaction: the sharing unit.
 - Reading a sim on its tip's own dataset: plan 4.
 
@@ -366,4 +364,4 @@ The page (plan 3):
 
 `npx vitest --run --project server src/lib/sim-store src/lib/sim-log` runs the Node specs: `dataset`, `history` (a property test against `undoRedo`), `local-log` (including convergence and release properties), `author`, `log-store` and `log-store.persist` (the store over `memorySimDb`), and `sim-db.spec.ts`, which runs the contract suite on `memorySimDb`.
 
-`npx vitest --run --project client src/lib/sim-store` runs `idb.svelte.spec.ts` in Chromium: the same contract suite on `openSimDb`, plus the database name and version, reopening, a newer version closing the connection, a write settling on `complete`, two connections allocating `n`, one `current`, a failed write rejecting with its own error and a throwing `indexedDB` answering null. `SFH_BROWSER=webkit` runs it in WebKit ([testing.md](testing.md)). Firefox is not run.
+The sync client's specs are in [sim-sync.md](sim-sync.md). `npx vitest --run --project client src/lib/sim-store` runs `idb.svelte.spec.ts` in Chromium: the same contract suite on `openSimDb`, plus the database name and version, reopening, a newer version closing the connection, a write settling on `complete`, two connections allocating `n`, one `current`, a failed write rejecting with its own error and a throwing `indexedDB` answering null. `SFH_BROWSER=webkit` runs it in WebKit ([testing.md](testing.md)). Firefox is not run.

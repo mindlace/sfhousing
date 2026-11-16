@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CLOSE_BINARY, CLOSE_MALFORMED } from '$lib/sim-stream/protocol';
+import { CLOSE_BINARY, CLOSE_MALFORMED, PROTOCOL } from '$lib/sim-stream/protocol';
 import { LIMITS } from './limits';
 import { DrizzleQueryError } from 'drizzle-orm';
 import {
@@ -8,6 +8,7 @@ import {
   QUERY_FAILED,
   closeReply,
   distinctIdentities,
+  helloFrame,
   loggable,
   openStatus,
   ROLE_READ_FAILED,
@@ -54,6 +55,17 @@ const params: OpenParams = {
   datasetVersion: 'fixture-0',
   build: 'b'
 };
+describe('helloFrame', () => {
+  it('carries the build, the protocol and the server dataset (R55)', () => {
+    expect(JSON.parse(helloFrame(params))).toEqual({
+      type: 'hello',
+      build: params.build,
+      protocol: PROTOCOL,
+      dataset: params.datasetVersion
+    });
+  });
+});
+
 const open = { upgrade: 'websocket', params, simId: 's1', host: true, gone: false };
 const att = { identity: 'id-1', write: true, resumed: false };
 
@@ -151,6 +163,13 @@ describe('roleChanges', () => {
     ]);
   });
 
+  it("keeps the socket's id in the attachment it rewrites", () => {
+    const sid = 'ab'.repeat(12);
+    expect(
+      roleChanges([{ identity: 'a', write: true, resumed: true, sid }], new Map([['a', false]]))
+    ).toEqual([{ index: 0, attachment: { identity: 'a', write: false, resumed: true, sid } }]);
+  });
+
   it('leaves alone a socket whose identity was not read, or whose attachment is invalid', () => {
     // A socket opened while the roles were read: the Worker has just set its right.
     const sockets = [{ identity: 'new', write: true, resumed: false }, 'junk'];
@@ -233,6 +252,19 @@ describe('withResumed and receivesLive', () => {
     // socket's current attachment, so the revocation stands.
     const revoked = { ...att, write: false };
     expect(withResumed(revoked)).toEqual({ identity: 'id-1', write: false, resumed: true });
+  });
+
+  it('clears the mark with resumed false, and then the socket receives nothing live', () => {
+    const cleared = withResumed({ ...att, resumed: true }, false);
+    expect(cleared).toEqual({ ...att, resumed: false });
+    expect(receivesLive(cleared)).toBe(false);
+    expect(withResumed('junk', false)).toBeNull();
+  });
+
+  it("keeps the socket's id when it sets or clears the mark", () => {
+    const sid = 'cd'.repeat(12);
+    expect(withResumed({ ...att, sid })).toEqual({ ...att, resumed: true, sid });
+    expect(withResumed({ ...att, resumed: true, sid }, false)).toEqual({ ...att, sid });
   });
 });
 

@@ -60,6 +60,28 @@ describe('SimStore', () => {
     expect(store.rowsAfter(0, 1)[0]).toEqual(row(1));
   });
 
+  it('pages positions and stored sizes after a position, without bodies', () => {
+    const store = new SimStore(freshSimDb().db);
+    for (let s = 1; s <= 5; s++) store.insert(row(s));
+    expect(store.sizesAfter(1, 2)).toEqual([
+      { seq: 2, bytes: 20 },
+      { seq: 3, bytes: 30 }
+    ]);
+    expect(store.sizesAfter(3, 10)).toEqual([
+      { seq: 4, bytes: 40 },
+      { seq: 5, bytes: 50 }
+    ]);
+    expect(store.sizesAfter(5, 10)).toEqual([]);
+  });
+
+  it('reads whole rows after one position through another', () => {
+    const store = new SimStore(freshSimDb().db);
+    for (let s = 1; s <= 5; s++) store.insert(row(s));
+    expect(store.rowsThrough(1, 3)).toEqual([row(2), row(3)]);
+    expect(store.rowsThrough(4, 9)).toEqual([row(5)]);
+    expect(store.rowsThrough(3, 3)).toEqual([]);
+  });
+
   it('keeps the index watermark across stores on one database', () => {
     const { db } = freshSimDb();
     new SimStore(db).setIndexedSeq(2);

@@ -52,9 +52,16 @@ test.describe('sim object socket', () => {
     await page.goto('/about');
     const h = await openSimSocket(page, simId);
     const [hello, access] = await framesAtLeast(page, h, 2);
-    expect(hello).toEqual({ type: 'hello', build: expect.any(String), protocol: 1 });
+    expect(hello).toEqual({
+      type: 'hello',
+      build: expect.any(String),
+      protocol: 1,
+      dataset: 'fixture-0'
+    });
     expect(access).toEqual({ type: 'access', write: true });
-    const [start, ...rest] = commitsOf(await resumeAndRead(page, h, 0));
+    const answer = await resumeAndRead(page, h, 0);
+    expect(answer).toMatchObject({ type: 'commits', more: false });
+    const [start, ...rest] = commitsOf(answer);
     expect(rest).toEqual([]);
     expect(start).toMatchObject({
       seq: 1,
@@ -110,7 +117,11 @@ test.describe('sim object socket', () => {
     const before = (await framesAtLeast(page, h, 0)).length;
     await sendFrame(page, h, { type: 'append', commit: a });
     // Frames on one socket arrive in order: anything the duplicate caused would come first.
-    expect(await resumeAndRead(page, h, 2)).toEqual({ type: 'commits', commits: [] });
+    expect(await resumeAndRead(page, h, 2)).toEqual({
+      type: 'commits',
+      commits: [],
+      more: false
+    });
     expect(await framesAtLeast(page, h, 0)).toHaveLength(before + 1);
     expect(commitsOf(await resumeAndRead(page, h, 0)).map((c) => c.id)).toEqual([
       start[0].id,
@@ -133,7 +144,11 @@ test.describe('sim object socket', () => {
       why: 'newer'
     });
     // The tip is still the start commit: nothing after position 1.
-    expect(await resumeAndRead(page, h, 1)).toEqual({ type: 'commits', commits: [] });
+    expect(await resumeAndRead(page, h, 1)).toEqual({
+      type: 'commits',
+      commits: [],
+      more: false
+    });
     // Over the incoming frame limit: refused before it is parsed, so the commit is not named.
     const big = nameDraft(1, 'x'.repeat(1_100_000));
     expect(await sendAndRead(page, h, { type: 'append', commit: big })).toEqual({

@@ -4,7 +4,7 @@ import { SIMS_COPY } from '$lib/members/copy';
 import { GET, DELETE } from './+server';
 
 const { deleteAccount, signOut } = vi.hoisted(() => ({
-  deleteAccount: vi.fn(async (_args: unknown) => {}),
+  deleteAccount: vi.fn(async (_args: unknown) => ({ more: false })),
   signOut: vi.fn(async () => {})
 }));
 
@@ -111,6 +111,21 @@ describe('DELETE /api/account', () => {
     defer(work);
     expect(waitUntil).toHaveBeenCalledWith(work);
     expect(signOut).toHaveBeenCalledOnce();
+  });
+
+  it('202 { more: true } while passes remain, without signing out', async () => {
+    deleteAccount.mockResolvedValueOnce({ more: true });
+    const res = await DELETE(evt({ request: del({ confirmHandle: 'ada' }) }));
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ more: true });
+    expect(deleteAccount).toHaveBeenCalledWith({
+      db: {},
+      env: platform.env,
+      identityId: 'u1',
+      actor: { actorId: 'u1', actorKind: 'human' },
+      defer: expect.any(Function)
+    });
+    expect(signOut).not.toHaveBeenCalled();
   });
 
   it('still answers 200 when the sign-out has nothing left to sign out', async () => {

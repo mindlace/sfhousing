@@ -1,4 +1,4 @@
-import { asc, desc, eq, gt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, lte, sql } from 'drizzle-orm';
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 import { GENESIS_HASH } from '$lib/sim-log';
 import { commits, simState } from './schema';
@@ -80,6 +80,28 @@ export class SimStore {
       .where(gt(commits.seq, seq))
       .orderBy(asc(commits.seq))
       .limit(limit)
+      .all();
+  }
+
+  /** Up to `limit` positions above `seq` with their stored sizes (`bytes`, the UTF-8 size of the
+   *  body), ascending; no body is read. */
+  sizesAfter(seq: number, limit: number): { seq: number; bytes: number }[] {
+    return this.db
+      .select({ seq: commits.seq, bytes: commits.bytes })
+      .from(commits)
+      .where(gt(commits.seq, seq))
+      .orderBy(asc(commits.seq))
+      .limit(limit)
+      .all();
+  }
+
+  /** The rows with seq above `after` and at most `last`, ascending. */
+  rowsThrough(after: number, last: number): StoredRow[] {
+    return this.db
+      .select()
+      .from(commits)
+      .where(and(gt(commits.seq, after), lte(commits.seq, last)))
+      .orderBy(asc(commits.seq))
       .all();
   }
 

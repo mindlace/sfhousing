@@ -84,4 +84,89 @@ describe('DeleteAccountPane', () => {
     await screen.getByRole('button', { name: ACCOUNT_COPY.deleteButton }).click();
     await expect.element(screen.getByText(/@ada/).first()).toBeVisible();
   });
+
+  it('repeats the delete while the server answers 202, then calls onDeleted', async () => {
+    const more = () => new Response(JSON.stringify({ more: true }), { status: 202 });
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(more())
+      .mockResolvedValueOnce(more())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const screen = await render(DeleteAccountPane, { user: { handle: 'ada' }, onDeleted });
+    await screen.getByRole('button', { name: ACCOUNT_COPY.deleteButton }).click();
+    await screen.getByLabelText(ACCOUNT_COPY.deleteConfirmLabel).fill('ada');
+    await screen.getByRole('button', { name: ACCOUNT_COPY.deletePermanently }).click();
+    await vi.waitFor(() => expect(onDeleted).toHaveBeenCalledOnce());
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('stops after 100 passes that all answer 202 and says it is not finished', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response(JSON.stringify({ more: true }), { status: 202 })
+    );
+    const screen = await render(DeleteAccountPane, { user: { handle: 'ada' }, onDeleted });
+    await screen.getByRole('button', { name: ACCOUNT_COPY.deleteButton }).click();
+    await screen.getByLabelText(ACCOUNT_COPY.deleteConfirmLabel).fill('ada');
+    await screen.getByRole('button', { name: ACCOUNT_COPY.deletePermanently }).click();
+    await expect.element(screen.getByText(ACCOUNT_COPY.deleteNotFinished)).toBeVisible();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(100);
+    expect(onDeleted).not.toHaveBeenCalled();
+  });
+
+  async function startDelete() {
+    const screen = await render(DeleteAccountPane, { user: { handle: 'ada' }, onDeleted });
+    await screen.getByRole('button', { name: ACCOUNT_COPY.deleteButton }).click();
+    await screen.getByLabelText(ACCOUNT_COPY.deleteConfirmLabel).fill('ada');
+    await screen.getByRole('button', { name: ACCOUNT_COPY.deletePermanently }).click();
+    return screen;
+  }
+  const more = () => new Response(JSON.stringify({ more: true }), { status: 202 });
+
+  it('a failure mid-way stops, shows the generic failure and does not report deleted', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(more())
+      .mockResolvedValueOnce(more())
+      .mockResolvedValueOnce(new Response('{}', { status: 500 }));
+    const screen = await startDelete();
+    await expect.element(screen.getByText(ACCOUNT_COPY.networkError)).toBeVisible();
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(onDeleted).not.toHaveBeenCalled();
+    await expect
+      .element(screen.getByRole('button', { name: ACCOUNT_COPY.deletePermanently }))
+      .not.toHaveAttribute('aria-busy');
+  });
+
+  it('a 400 shows the handle message', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ deleteError: ACCOUNT_COPY.handleMismatch }), { status: 400 })
+    );
+    const screen = await startDelete();
+    await expect.element(screen.getByText(ACCOUNT_COPY.handleMismatch)).toBeVisible();
+    expect(onDeleted).not.toHaveBeenCalled();
+  });
+
+  it('a 401 after a 202 may be a session lost mid-way: not reported deleted, says sign in', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(more())
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }));
+    const screen = await startDelete();
+    await expect.element(screen.getByText(ACCOUNT_COPY.deleteSignedOut)).toBeVisible();
+    expect(ACCOUNT_COPY.deleteSignedOut).toBe(
+      'Signed out before deletion finished. Sign in to check.'
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(onDeleted).not.toHaveBeenCalled();
+    await expect
+      .element(screen.getByRole('button', { name: ACCOUNT_COPY.deletePermanently }))
+      .not.toHaveAttribute('aria-busy');
+  });
+
+  it('a 401 on the first request is a failure, not done', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('{}', { status: 401 }));
+    const screen = await startDelete();
+    await expect.element(screen.getByText(ACCOUNT_COPY.networkError)).toBeVisible();
+    expect(onDeleted).not.toHaveBeenCalled();
+  });
 });

@@ -281,6 +281,15 @@ function wrap(
       });
     },
 
+    pendingOwners(simId: string): Promise<string[]> {
+      return run([PENDING], 'readonly', async (tx) => {
+        const all = (await req(
+          tx.objectStore(PENDING).index(ORDER).getAll(simRange(simId))
+        )) as PendingRecord[];
+        return [...new Set(all.map((r) => r.owner))];
+      });
+    },
+
     claimPending(simId: string, from: readonly string[], to: string): Promise<PendingRecord[]> {
       return run([PENDING], 'readwrite', async (tx) => {
         const store = tx.objectStore(PENDING);

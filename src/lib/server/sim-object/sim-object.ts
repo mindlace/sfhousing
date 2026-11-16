@@ -15,11 +15,10 @@ import {
   CLOSE_INTERNAL,
   PING,
   PONG,
-  PROTOCOL,
   commitsFrame,
   encodeFrame
 } from '$lib/sim-stream/protocol';
-import { canWrite } from './access';
+import { canWrite, newSocketId, type SocketAttachment } from './access';
 import { IndexRunner, takeDownInOrder } from './index-runner';
 import { syncSimIndex } from './index-sync';
 import { INDEX_RETRY_MS } from './limits';
@@ -27,17 +26,19 @@ import { LogHost, type ServerAppend } from './log-host';
 import { simMigrations } from './migrations.generated';
 import {
   APPEND_FAILED,
+  answerResume,
   closeReply,
+  helloFrame,
   loggable,
   openStatus,
   readMessage,
   receivesLive,
   rereadChanges,
   serverAppendResult,
-  withResumed,
   type ServerAppendResult
 } from './object-rules';
 import { OPEN_HEADER, parseOpenParams } from './open-params';
+import { ResumeBudgets } from './resume-budget';
 import * as schema from './schema';
 import { SimStore, type SimDb } from './store';
 
@@ -45,6 +46,11 @@ export class SimObject extends DurableObject<Env> {
   #host: LogHost | null = null;
   #migrateError: Error | null = null;
   #index: IndexRunner | null = null;
+  /** In memory only: full again after a wake. */
+  #budgets: ResumeBudgets | null = null;
+  /** The ids (resumeKey) of sockets with a resume queued or being answered. In memory only:
+   *  none after a wake. */
+  readonly #resuming = new Set<string>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -108,8 +114,14 @@ export class SimObject extends DurableObject<Env> {
     }
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ identity: params.identity, write: params.write, resumed: false });
-    server.send(encodeFrame({ type: 'hello', build: params.build, protocol: PROTOCOL }));
+    // sid keys the one-resume-per-socket rule only; it is never sent or logged.
+    server.serializeAttachment({
+      identity: params.identity,
+      write: params.write,
+      resumed: false,
+      sid: newSocketId()
+    } satisfies SocketAttachment);
+    server.send(helloFrame(params));
     server.send(encodeFrame({ type: 'access', write: params.write }));
     // R58: a writer opening an empty sim records its first commit. This socket is not resumed
     // yet, so the commit reaches it in its own resume answer (decision 14).
@@ -142,20 +154,25 @@ export class SimObject extends DurableObject<Env> {
     }
     const { frame, attachment, bytes } = read;
     if (frame.type === 'resume') {
-      let marked = false;
       try {
-        await host.resume(frame.after, (frames) => {
-          if (frames === null) {
-            this.#send(ws, encodeFrame({ type: 'refused', id: null, why: 'gone' }));
-            return;
-          }
-          for (const f of frames) this.#send(ws, f);
-          // On the first page: live commits stored after it reach this socket in order (I7).
-          if (!marked) {
-            marked = true;
-            this.#markResumed(ws);
-          }
-        });
+        // One per socket at a time; clears the mark now and sets it again only when an answer
+        // reaches the tip (I7). Each page is paid from the budget of the socket's right to write
+        // as its attachment says when the page is paid (fails closed to the readers').
+        await answerResume(
+          host,
+          frame.after,
+          {
+            open: () => this.#open(ws),
+            read: () => this.#attachment(ws),
+            store: (a) => this.#store(ws, a),
+            send: (f) => this.#send(ws, f)
+          },
+          this.#resuming,
+          (this.#budgets ??= new ResumeBudgets(Date.now())).boundsFor(
+            () => this.#attachment(ws),
+            Date.now
+          )
+        );
       } catch (e) {
         console.error('[sim-object] resume failed', this.#label(), loggable(e));
         this.#close(ws, CLOSE_INTERNAL, 'internal');
@@ -304,12 +321,28 @@ export class SimObject extends DurableObject<Env> {
     }
   }
 
-  /** Stores resumed: true on the socket's current attachment (re-read, so a concurrent
-   *  rereadRoles is not overwritten). */
-  #markResumed(ws: WebSocket): void {
+  /** Whether the socket is still open; false once it cannot be told. */
+  #open(ws: WebSocket): boolean {
     try {
-      const a = withResumed(ws.deserializeAttachment());
-      if (a) ws.serializeAttachment(a);
+      return ws.readyState === WebSocket.OPEN;
+    } catch {
+      return false;
+    }
+  }
+
+  /** The socket's current attachment; null once it cannot be read (the socket closed). */
+  #attachment(ws: WebSocket): unknown {
+    try {
+      return ws.deserializeAttachment();
+    } catch {
+      return null;
+    }
+  }
+
+  /** Stores the socket's attachment (the hibernation state), unless the socket closed. */
+  #store(ws: WebSocket, a: SocketAttachment): void {
+    try {
+      ws.serializeAttachment(a);
     } catch {
       // The socket closed.
     }

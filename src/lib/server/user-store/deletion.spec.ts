@@ -16,7 +16,7 @@ import {
   listMembers,
   listSimsForUser
 } from '$lib/server/sims/sim-index';
-import { deleteAccount } from './deletion';
+import { DELETE_SIMS_PER_PASS, deleteAccount } from './deletion';
 import {
   user,
   userIdentity,
@@ -230,6 +230,76 @@ describe('deleteAccount', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  test('a pass leaves at most perPass sims and says more; the last pass closes the account', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'id1', email: 'alice@x.com', handle: 'alice' });
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i++) ids.push(await seedSim(db, { title: `S${i}`, managerId: 'id1' }));
+    const pass = () => deleteAccount({ db, env, identityId: 'id1', actor, perPass: 2 });
+
+    expect(await pass()).toEqual({ more: true });
+    expect(await listSimsForUser({ db, userId: 'id1' })).toHaveLength(3);
+    const [mid] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'id1'));
+    expect(mid.deletedAt).toBeNull();
+    expect(await pass()).toEqual({ more: true });
+    expect(await pass()).toEqual({ more: false });
+
+    expect(await listSimsForUser({ db, userId: 'id1' })).toEqual([]);
+    const [done] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'id1'));
+    expect(done.deletedAt).not.toBeNull();
+    expect(vi.mocked(rosterChangedAll).mock.calls.map(([, simIds]) => simIds.length)).toEqual([
+      2, 2, 1
+    ]);
+    for (const id of ids) expect(await getSimTitle({ db, simId: id })).not.toBeNull();
+  });
+
+  test('exactly perPass sims finish in one pass', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'id1', email: 'alice@x.com', handle: 'alice' });
+    await seedSim(db, { title: 'A', managerId: 'id1' });
+    await seedSim(db, { title: 'B', managerId: 'id1' });
+    expect(await deleteAccount({ db, env, identityId: 'id1', actor, perPass: 2 })).toEqual({
+      more: false
+    });
+    const [row] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'id1'));
+    expect(row.deletedAt).not.toBeNull();
+  });
+
+  test('a pass through a fused identity never sees a sim it has left', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'pseudo', email: 'p@x.com', handle: 'pseudo' });
+    await seedUser(db, { id: 'surv', email: 'surv@x.com', handle: 'surv' });
+    await seedSim(db, { title: 'One', managerId: 'pseudo' });
+    await seedSim(db, { title: 'Two', managerId: 'pseudo' });
+    await handleAccountLink({
+      db,
+      isUpgrade: false,
+      pseudonymousUserId: 'pseudo-live',
+      newUserId: 'surv-live'
+    });
+    const by = { actorId: 'surv', actorKind: 'human' as const };
+    const pass = () => deleteAccount({ db, env, identityId: 'surv', actor: by, perPass: 1 });
+    expect(await pass()).toEqual({ more: true });
+    expect(await listSimsForUser({ db, userId: 'surv' })).toHaveLength(1);
+    expect(await pass()).toEqual({ more: false });
+    expect(await listSimsForUser({ db, userId: 'surv' })).toEqual([]);
+  });
+
+  test('a live account in no sims and an already deleted one answer more: false', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'id1', email: 'alice@x.com', handle: 'alice' });
+    expect(await deleteAccount({ db, env, identityId: 'id1', actor })).toEqual({ more: false });
+    const [row] = await db.select().from(userIdentity).where(eq(userIdentity.id, 'id1'));
+    expect(row.deletedAt).not.toBeNull();
+    expect(await deleteAccount({ db, env, identityId: 'id1', actor })).toEqual({ more: false });
+  });
+
+  test('an unknown or finished account answers more: false, and the default pass is 50', async () => {
+    const { db } = freshDb();
+    expect(await deleteAccount({ db, env, identityId: 'nobody', actor })).toEqual({ more: false });
+    expect(DELETE_SIMS_PER_PASS).toBe(50);
   });
 
   test('tells every sim it left in one fan-out, after the memberships are removed', async () => {

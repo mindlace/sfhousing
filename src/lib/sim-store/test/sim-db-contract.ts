@@ -59,6 +59,33 @@ export function simDbContract(
   const withDb = (body: (db: SimDb) => Promise<void>) => using(undefined, body);
 
   describe('SimDb contract', () => {
+    it("lists the owners of a sim's pending records, each once, in n order", () =>
+      using(undefined, async (db) => {
+        const id = newId();
+        await db.createSim(sim(id), { batch: batch('b', { put: [putOf('b1')] }) });
+        await db.write(id, batch('a', { put: [putOf('a1')] }));
+        await db.write(id, batch('b', { put: [putOf('b2')] }));
+        await db.createSim(sim(), { batch: batch('c', { put: [putOf('c1')] }) });
+        expect(await db.pendingOwners(id)).toEqual(['b', 'a']);
+        expect(await db.pendingOwners(newId())).toEqual([]);
+      }));
+
+    it('lists owners by the n of their first record, after a record was moved to the tail', () =>
+      using(undefined, async (db) => {
+        const id = newId();
+        const a1 = putOf('a1');
+        await db.createSim(sim(id), { batch: batch('a', { put: [a1] }) });
+        await db.write(id, batch('b', { put: [putOf('b1')] }));
+        await db.write(id, batch('a', { put: [putOf('a2')] }));
+        expect(await db.pendingOwners(id)).toEqual(['a', 'b']);
+        const moved = { id: a1.id, pending: pendingOf('a3'), move: true as const };
+        await db.write(id, batch('a', { put: [moved] }));
+        // b1 is n 2, a2 n 3, the moved a1 n 4: a's first record by n is now a2.
+        expect(await db.pendingOwners(id)).toEqual(['b', 'a']);
+        await db.write(id, batch('a', { remove: [moved.id] }));
+        expect(await db.pendingOwners(id)).toEqual(['b', 'a']);
+      }));
+
     it('reads an unknown sim as empty', () =>
       withDb(async (db) => {
         expect(await db.read(newId())).toEqual({ sim: null, confirmed: [], pending: [] });

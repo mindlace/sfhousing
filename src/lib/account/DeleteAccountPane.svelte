@@ -10,6 +10,9 @@
   }
   let { user, onDeleted }: Props = $props();
 
+  /** The most requests one deletion makes: the server answers 202 while it has sims to leave. */
+  const DELETE_PASSES_MAX = 100;
+
   let triggerEl = $state<HTMLButtonElement | null>(null);
   let confirmInputEl = $state<HTMLInputElement | null>(null);
 
@@ -37,17 +40,30 @@
     deleting = true;
     deleteError = '';
     try {
-      const res = await fetch('/api/account', {
-        method: 'DELETE',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ confirmHandle })
-      });
-      if (res.ok) {
-        await onDeleted();
+      for (let pass = 0; pass < DELETE_PASSES_MAX; pass++) {
+        const res = await fetch('/api/account', {
+          method: 'DELETE',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ confirmHandle })
+        });
+        if (res.status === 202) continue;
+        if (res.ok) {
+          await onDeleted();
+          return;
+        }
+        if (res.status === 401 && pass > 0) {
+          // Another tab may have finished, or the session ended with the account still there.
+          deleteError = ACCOUNT_COPY.deleteSignedOut;
+        } else if (res.status === 400) {
+          const body = (await res.json().catch(() => null)) as { deleteError?: string } | null;
+          deleteError = body?.deleteError ?? ACCOUNT_COPY.handleMismatch;
+        } else {
+          deleteError = ACCOUNT_COPY.networkError;
+        }
+        deleting = false;
         return;
       }
-      const body = (await res.json().catch(() => null)) as { deleteError?: string } | null;
-      deleteError = body?.deleteError ?? ACCOUNT_COPY.handleMismatch;
+      deleteError = ACCOUNT_COPY.deleteNotFinished;
     } catch {
       deleteError = ACCOUNT_COPY.networkError;
     }

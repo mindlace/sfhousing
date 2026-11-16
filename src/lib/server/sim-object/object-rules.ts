@@ -4,13 +4,15 @@ import { DrizzleQueryError } from 'drizzle-orm';
 import {
   CLOSE_BINARY,
   CLOSE_MALFORMED,
+  PROTOCOL,
+  encodeFrame,
   parseClientFrame,
   type ParsedClientFrame,
   type RefusedWhy
 } from '$lib/sim-stream/protocol';
 import { accessChanges, parseAttachment, type SocketAttachment } from './access';
 import { LIMITS, overFrameLimit, utf8Bytes, type Limits } from './limits';
-import type { AppendOutcome } from './log-host';
+import type { AppendOutcome, LogHost, ResumeBounds } from './log-host';
 import type { OpenParams } from './open-params';
 
 /** What the appendAs RPC answers: no commit body or id crosses back to the Worker. */
@@ -25,6 +27,16 @@ export function serverAppendResult(out: AppendOutcome): ServerAppendResult {
 
 /** The message appendAs throws on any failure but a missing host. Fixed: it names no identity. */
 export const APPEND_FAILED = 'append failed';
+
+/** The first frame on a socket: the Worker's build, PROTOCOL and its dataset version (R55). */
+export function helloFrame(p: OpenParams): string {
+  return encodeFrame({
+    type: 'hello',
+    build: p.build,
+    protocol: PROTOCOL,
+    dataset: p.datasetVersion
+  });
+}
 
 export interface OpenInput {
   /** The request's Upgrade header. */
@@ -127,12 +139,80 @@ export function loggable(e: unknown): string {
 }
 
 /**
- * The socket's attachment marked resumed, built from its current attachment so a `write` changed
- * by a concurrent rereadRoles is kept; null when the attachment is invalid (I7).
+ * The socket's attachment marked resumed (or, with `resumed` false, cleared), built from its
+ * current attachment so a `write` changed by a concurrent rereadRoles is kept; null when the
+ * attachment is invalid (I7).
  */
-export function withResumed(attachment: unknown): SocketAttachment | null {
+export function withResumed(attachment: unknown, resumed = true): SocketAttachment | null {
   const a = parseAttachment(attachment);
-  return a ? { ...a, resumed: true } : null;
+  return a ? { ...a, resumed } : null;
+}
+
+/** A socket as a resume sees it: whether it is still open, and its attachment. */
+export interface ResumeSocket {
+  open: () => boolean;
+  read: () => unknown;
+  store: (a: SocketAttachment) => void;
+  send: (frame: string) => void;
+}
+
+/**
+ * The key of a socket in the one-resume-per-socket rule: the id in its attachment. A socket with
+ * no id (opened by a build from before ids, or an attachment that cannot be read) gets the one
+ * shared key '', which no id can take: such sockets share one outstanding resume rather than
+ * having none (fail closed; they are few and short-lived).
+ */
+export function resumeKey(attachment: unknown): string {
+  return parseAttachment(attachment)?.sid ?? '';
+}
+
+/**
+ * The object's answer to a resume frame. One resume per socket at a time: while one is queued or
+ * being answered (`outstanding` holds the socket's key, `resumeKey`, read when the frame
+ * arrives), a further one is refused `limit` with `id: null` at once, queues nothing and leaves
+ * the mark alone. Otherwise a socket is resumed exactly while its most recent resume answer
+ * reached the tip: the mark is cleared at once, before the resume waits its turn, so no live
+ * commit reaches the socket while it catches up (its pages cover them); the answer step then
+ * stores it as "frames ending with more: false", in the same serialized turn as the read that
+ * reached the tip, so no commit is stored between them (I7). A refusal (`gone`, `limit`, sent
+ * with `id: null`) or a capped answer leaves it clear. A socket that closed while its resume
+ * waited pays nothing and gets no body read: its budget refuses every page.
+ */
+export async function answerResume(
+  host: Pick<LogHost, 'resume'>,
+  after: number,
+  socket: ResumeSocket,
+  outstanding: Set<string>,
+  bounds: ResumeBounds = { maxBytes: LIMITS.resumeBytes, take: () => true }
+): Promise<void> {
+  // Synchronous, before the first await: the message handler has not yielded since the frame
+  // arrived, so every commit stored from here on is after the socket's request.
+  const attachment = socket.read();
+  const key = resumeKey(attachment);
+  if (outstanding.has(key)) {
+    socket.send(encodeFrame({ type: 'refused', id: null, why: 'limit' }));
+    return;
+  }
+  outstanding.add(key);
+  try {
+    const cleared = withResumed(attachment, false);
+    if (cleared) socket.store(cleared);
+    await host.resume(
+      after,
+      (a) => {
+        if (a.kind !== 'frames') {
+          socket.send(encodeFrame({ type: 'refused', id: null, why: a.kind }));
+        } else {
+          for (const f of a.frames) socket.send(f);
+        }
+        const mark = withResumed(socket.read(), a.kind === 'frames' && !a.more);
+        if (mark) socket.store(mark);
+      },
+      { maxBytes: bounds.maxBytes, take: (n) => socket.open() && bounds.take(n) }
+    );
+  } finally {
+    outstanding.delete(key);
+  }
 }
 
 /** Whether a live commit goes to this socket: only once it has resumed (I7). */

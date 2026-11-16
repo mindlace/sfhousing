@@ -1,5 +1,5 @@
-// The log store's persistence (Task 10): writes, reopening, claims, the current sim and the
-// import hook, over the in-memory database (memorySimDb, the same contract as IndexedDB).
+// The log store's persistence: writes, reopening, claims, the current sim and the import hook,
+// over the in-memory database (memorySimDb, the same contract as IndexedDB).
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_SIM_NAME,
@@ -19,7 +19,7 @@ import { SOURCES } from './author';
 import { LocalLog } from './local-log';
 import { LogStore, type ImportMarker, type LogStoreOptions } from './log-store.svelte';
 import { CURRENT_KEY, memorySimDb, type SimDb } from './sim-db';
-import { DS, FakeObject, draftOf, nameChange, renamingAlign } from './test/commits';
+import { DS, FakeObject, draftOf, nameChange, renamingAlign, stamped } from './test/commits';
 import { MOVE_SOURCE, type Align, type Pending } from './types';
 
 const F1 = 'fixture-1';
@@ -618,7 +618,7 @@ describe('LogStore persistence', () => {
   });
 });
 
-describe('LogStore persistence (fix round 1)', () => {
+describe('LogStore persistence: opens that fail or overlap, stray frames, claims, imports', () => {
   /** A memory database whose reads reject while `fail.on`. */
   function flakyReads() {
     const db = memorySimDb();
@@ -893,5 +893,180 @@ describe('LogStore persistence (fix round 1)', () => {
     const r = await db.read(sim);
     expect(r.pending.map((p) => [p.owner, p.pending.draft.label])).toEqual([['b', 'C']]);
     expect(r.confirmed.map((c) => c.id)).toContain(confirmedA.id);
+  });
+});
+
+describe('LogStore: what the socket reads (registration, held commits, the tip)', () => {
+  it('registration: none with no sim, wait until the minted sim is stored, then needed', async () => {
+    const db = memorySimDb();
+    const s = store(db);
+    await s.open(null);
+    expect(s.registration).toBe('none');
+    s.rename('A');
+    expect(s.registration).toBe('wait');
+    await s.written();
+    expect(s.registration).toBe('needed');
+  });
+
+  it('markRegistered records it on the device, tells subscribers, and a reopen reads it', async () => {
+    const db = memorySimDb();
+    const s = store(db);
+    await s.open(null);
+    s.rename('A');
+    await s.written();
+    const told = vi.fn();
+    s.subscribe(told);
+    await s.markRegistered(s.simId!);
+    expect(s.registration).toBe('done');
+    expect(told).toHaveBeenCalled();
+    expect((await db.read(s.simId!)).sim?.registered).toBe(true);
+    const again = store(db, { tabId: 'b' });
+    await again.open(s.simId);
+    expect(again.registration).toBe('done');
+  });
+
+  it('markRegistered for another sim than the open one does nothing', async () => {
+    const db = memorySimDb();
+    const s = store(db);
+    await s.open(null);
+    s.rename('A');
+    await s.written();
+    await s.markRegistered(newId());
+    expect(s.registration).toBe('needed');
+  });
+
+  it('with no database, or after a failed first write, a minted sim is needed at once', async () => {
+    const none = store(null);
+    await none.open(null);
+    none.rename('A');
+    expect(none.registration).toBe('needed');
+    const { error } = mockConsole('error');
+    const failing = store(memorySimDb({ abortWrites: () => true }));
+    await failing.open(null);
+    failing.rename('A');
+    await failing.written();
+    expect(failing.local).toBe('failed');
+    expect(failing.registration).toBe('needed');
+    expect(error).toHaveBeenCalledWith('[sim-store] write failed', 'Error');
+  });
+
+  it('a sim with no record here is a look (none) until an edit stores it (needed)', async () => {
+    const db = memorySimDb();
+    const s = store(db);
+    await s.open(newId());
+    expect(s.registration).toBe('none');
+    s.rename('A');
+    await s.written();
+    expect(s.registration).toBe('needed');
+  });
+
+  it('markRegistered never rejects when the record cannot be written', async () => {
+    let abort = false;
+    const db = memorySimDb({ abortWrites: () => abort });
+    const s = store(db);
+    await s.open(null);
+    s.rename('A');
+    await s.written();
+    abort = true;
+    const { error } = mockConsole('error');
+    await expect(s.markRegistered(s.simId!)).resolves.toBeUndefined();
+    expect(s.registration).toBe('done');
+    expect(error).toHaveBeenCalledWith('[sim-store] registration not stored', 'Error');
+  });
+
+  it('heldCount counts commits held out of force, which pendingCount does not', async () => {
+    const db = memorySimDb();
+    const sim = newId();
+    const later = {
+      draft: draftOf(0, [nameChange('L')], { shapes: SHAPES_REVISION + 1 }),
+      targetId: null
+    };
+    await db.createSim(
+      { simId: sim, createdAt: 1, registered: false },
+      {
+        batch: {
+          owner: 'a',
+          confirmed: [],
+          put: [{ id: later.draft.id, pending: later }],
+          remove: []
+        }
+      }
+    );
+    const s = store(db);
+    await s.open(sim);
+    expect(s.heldCount).toBe(1);
+    expect(s.pendingCount).toBe(0);
+    expect(s.stopped).toBe('future');
+  });
+
+  it('tipSeq is the confirmed tip', async () => {
+    const s = store(memorySimDb());
+    const sim = newId();
+    await s.open(sim);
+    expect(s.tipSeq).toBe(0);
+    s.receive(sim, [
+      stamped(draftOf(0, [nameChange('A')]), 1),
+      stamped(draftOf(1, [nameChange('B')]), 2)
+    ]);
+    expect(s.tipSeq).toBe(2);
+  });
+
+  it('a minted id never reads done, and an id back to null reads none (a withdrawn import)', async () => {
+    const db = memorySimDb();
+    const s = await opened(db);
+    const seen: string[] = [];
+    let minted: string | null = null;
+    s.subscribe(() => {
+      if (s.simId !== null && s.simId !== minted && minted !== null) seen.push(s.registration);
+    });
+    const first = s.importContent(content('i'), { key: 'k', value: 1, expect: 'other' });
+    minted = s.simId!;
+    expect(s.registration).toBe('wait');
+    await s.markRegistered(minted);
+    expect(await first).toBe('marker');
+    expect(s.simId).toBeNull();
+    expect(s.registration).toBe('none');
+    s.rename('A');
+    expect(s.simId).not.toBe(minted);
+    expect(s.registration).toBe('wait');
+    await s.written();
+    expect(s.registration).toBe('needed');
+    expect(seen).not.toContain('done');
+    await s.markRegistered(s.simId!);
+    expect(s.registration).toBe('done');
+  });
+
+  it('adopting the current sim takes its registered flag from its record', async () => {
+    for (const registered of [true, false]) {
+      const db = memorySimDb();
+      const a = await opened(db);
+      const b = await opened(db, { tabId: 'b' });
+      a.rename('A');
+      await a.written();
+      if (registered) await a.markRegistered(a.simId!);
+      b.rename('B');
+      await b.written();
+      expect(b.simId).toBe(a.simId);
+      expect(b.registration).toBe(registered ? 'done' : 'needed');
+    }
+  });
+
+  it('markRegistered marks nothing of another sim opened while it waited', async () => {
+    const db = memorySimDb();
+    const s = await opened(db);
+    s.rename('A');
+    await s.written();
+    const old = s.simId!;
+    const other = newId();
+    s.rename('B');
+    const opening = s.open(other);
+    const marking = s.markRegistered(old);
+    await Promise.all([opening, marking]);
+    expect(s.simId).toBe(other);
+    expect(s.registration).toBe('none');
+    expect((await db.read(other)).sim).toBeNull();
+    await s.markRegistered(old);
+    expect((await db.read(other)).sim).toBeNull();
+    expect(s.registration).toBe('none');
   });
 });

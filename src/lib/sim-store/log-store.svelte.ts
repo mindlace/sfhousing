@@ -72,6 +72,13 @@ export interface LogStoreOptions {
   caps?: { count: number; bytes: number };
 }
 
+/**
+ * Whether the sim must be registered before its socket opens. 'none': no sim, or a sim with no
+ * record on this device that this store did not mint (a look). 'wait': minted here, storage
+ * working, its first write not landed. 'needed': stored here and not recorded registered, or
+ * minted here with storage absent or failed. 'done': recorded registered.
+ */
+export type Registration = 'none' | 'wait' | 'needed' | 'done';
 export type LocalStatus = 'idle' | 'writing' | 'failed';
 /** 'stopped': an open draft could only be settled once the store was stopped, so it went. */
 export type EditRefusal = 'invalid' | 'too-large' | 'queue-full' | 'stopped';
@@ -171,6 +178,8 @@ export class LogStore implements DocStore {
   #minted = false;
   /** The sim's record is in the database (read, or created by this store). */
   #simStored = false;
+  /** The sim is recorded registered with the server (read from its record, or marked). */
+  #registered = false;
   /** This tab's pending records in the database, by id. */
   #written = new Map<string, Written>();
   /** Records this tab owns but did not place (claimed): put without n, or removed. */
@@ -202,6 +211,8 @@ export class LogStore implements DocStore {
   #local = $state.raw<LocalStatus>('idle');
   #drafting = $state.raw(false);
   #pending = $state.raw<readonly Pending[]>([]);
+  #tipSeq = $state.raw(0);
+  #heldCount = $state.raw(0);
   #stopped = $state.raw<Stopped | null>(null);
   #serverDataset = $state.raw<string | null>(null);
   #drops = $state.raw<readonly DropReport[]>([]);
@@ -257,6 +268,27 @@ export class LogStore implements DocStore {
   }
   get stopped(): Stopped | null {
     return this.#stopped;
+  }
+  /** The seq of the last confirmed commit (0 with none): a resume's `after`. */
+  get tipSeq(): number {
+    return this.#tipSeq;
+  }
+  /**
+   * Commits held out of force (a newer build's, or ones align could not move): not pending, never
+   * sent, still on the device.
+   */
+  get heldCount(): number {
+    return this.#heldCount;
+  }
+  /** Whether the sim must be registered before its socket opens (see `Registration`). */
+  get registration(): Registration {
+    if (this.#simId === null) return 'none';
+    if (this.#registered) return 'done';
+    if (this.#simStored) return 'needed';
+    if (this.#minted) {
+      return this.#opts.db !== null && this.#local !== 'failed' ? 'wait' : 'needed';
+    }
+    return 'none';
   }
   get serverDataset(): string | null {
     return this.#serverDataset;
@@ -420,6 +452,7 @@ export class LogStore implements DocStore {
     let confirmed: Commit[] = [];
     let records: PendingRecord[] = [];
     let stored = false;
+    let registered = false;
     const db = this.#opts.db;
     // Without a database there is nothing to read: a known sim opens with an empty log.
     if (db !== null) {
@@ -437,6 +470,7 @@ export class LogStore implements DocStore {
           confirmed = read.confirmed;
           records = read.pending.filter((r) => r.owner === this.#opts.tabId);
           stored = read.sim !== null;
+          registered = read.sim?.registered === true;
         }
       } catch (e) {
         this.#dirty = true;
@@ -451,7 +485,8 @@ export class LogStore implements DocStore {
       confirmed,
       records.map((r) => r.pending),
       records,
-      stored
+      stored,
+      registered
     );
     this.#drops = [...this.#log.initialDrops];
     this.#ready = true;
@@ -600,6 +635,32 @@ export class LogStore implements DocStore {
     while (this.#writing !== null) await this.#writing;
   }
 
+  /**
+   * POST /api/sims answered 200 or 201 for `simId`. Nothing for another sim than the open one.
+   * Sets 'done' at once and tells subscribers, then records it on the device (after the write
+   * chain, so the sim's record exists) when the sim is stored and storage works; never rejects
+   * (a failed record logs its error name; the next load registers again).
+   */
+  async markRegistered(simId: string): Promise<void> {
+    if (simId !== this.#simId) return;
+    const gen = this.#gen;
+    // The device write below waits for the write chain to be idle, so it can be put off while
+    // edits continue. The store already says 'done'; the worst case is one more registration
+    // request on the next load.
+    this.#registered = true;
+    this.#dirty = true;
+    this.#flush();
+    const db = this.#opts.db;
+    if (db === null) return;
+    try {
+      await this.written();
+      if (gen !== this.#gen || !this.#simStored || this.#local === 'failed') return;
+      await db.setRegistered(simId);
+    } catch (e) {
+      console.error('[sim-store] registration not stored', errorName(e));
+    }
+  }
+
   /** Called after every change of state, written or not. Returns the unsubscribe. */
   subscribe(fn: () => void): () => void {
     this.#subscribers = [...this.#subscribers, fn];
@@ -699,6 +760,7 @@ export class LogStore implements DocStore {
       if (this.#simId === null) {
         this.#simId = this.#mintId();
         this.#minted = true;
+        this.#registered = false;
       }
       return;
     }
@@ -803,7 +865,8 @@ export class LogStore implements DocStore {
     confirmed: readonly Commit[],
     pending: readonly Pending[],
     records: readonly PendingRecord[],
-    stored: boolean
+    stored: boolean,
+    registered: boolean
   ): void {
     this.#gen++;
     this.#bareMove = null;
@@ -812,6 +875,7 @@ export class LogStore implements DocStore {
     this.#simId = simId;
     this.#minted = false;
     this.#simStored = stored;
+    this.#registered = registered;
     this.#written = new Map(records.map((r) => [r.id, { n: r.n, p: r.pending }]));
     this.#unplaced = new Set();
     this.#confirmedSeq = confirmed.at(-1)?.seq ?? 0;
@@ -996,6 +1060,7 @@ export class LogStore implements DocStore {
     if (mj.simBefore === null && !this.#simStored && empty) {
       this.#simId = null;
       this.#minted = false;
+      this.#registered = false;
     }
     mj.resolve('marker');
     this.#changed();
@@ -1012,7 +1077,7 @@ export class LogStore implements DocStore {
     // A draft is made on the fold it was opened on: committed first (decision 8).
     this.#settleDraft();
     const ours = [...this.#log.pending, ...this.#log.held];
-    this.#replace(simId, read.confirmed, ours, [], true);
+    this.#replace(simId, read.confirmed, ours, [], true, read.sim?.registered === true);
     this.#addDrops(this.#log.initialDrops);
     this.#alignStep();
     this.#changed();
@@ -1067,6 +1132,8 @@ export class LogStore implements DocStore {
     this.#redoLabel = redo?.label ?? null;
     this.#drafting = draft !== null;
     this.#pending = log.pending;
+    this.#tipSeq = log.tipSeq;
+    this.#heldCount = log.held.length;
     this.#serverDataset = this.#serverDs;
     this.#dirty = true;
   }

@@ -32,7 +32,7 @@ export const DELETE: RequestHandler = async (event) => {
     return json({ deleteError: ACCOUNT_COPY.handleMismatch }, { status: 400 });
   }
   const identityId = locals.user.id;
-  await deleteAccount({
+  const { more } = await deleteAccount({
     db: getDb(platform!),
     env: platform?.env,
     identityId,
@@ -40,6 +40,8 @@ export const DELETE: RequestHandler = async (event) => {
     // The sims it left are told after the response, never holding it up.
     defer: platform?.ctx ? (work) => platform.ctx.waitUntil(work) : undefined
   });
+  // More sims to leave: the account and its session stay, the pane asks again.
+  if (more) return json({ more: true }, { status: 202 });
   // Best-effort: clear the session cookie (rows are already gone).
   try {
     await authFor(event).api.signOut({ headers: request.headers });

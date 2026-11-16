@@ -9,6 +9,8 @@ export interface Limits {
   burst: number;
   perSecond: number;
   sendBytes: number;
+  /** The most stored-body bytes in one resume answer (at least one commit is always sent). */
+  resumeBytes: number;
 }
 
 export const LIMITS: Limits = {
@@ -20,7 +22,9 @@ export const LIMITS: Limits = {
   simBytes: 67_108_864,
   burst: 120,
   perSecond: 2,
-  sendBytes: 1_048_576
+  sendBytes: 1_048_576,
+  // 8 MiB: one answer, so the object never queues a whole sim on a socket in one turn.
+  resumeBytes: 8_388_608
 };
 
 /**

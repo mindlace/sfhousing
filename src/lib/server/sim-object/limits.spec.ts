@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LIMITS, RateBucket, overFrameLimit, utf8Bytes } from './limits';
+import { READER_RESUME_BUDGET, WRITER_RESUME_BUDGET } from './resume-budget';
 
 describe('overFrameLimit', () => {
   it('is true only past the incoming frame limit, by string length', () => {
@@ -32,6 +33,27 @@ describe('RateBucket', () => {
     const b = new RateBucket(1, 1, 10_000);
     b.take(10_000);
     expect(b.take(0)).toBe(false);
+  });
+
+  it('takes n tokens at once, refusing when fewer are left, and refills by the second', () => {
+    const b = new RateBucket(10, 4, 0);
+    expect(b.take(0, 8)).toBe(true);
+    expect(b.take(0, 3)).toBe(false);
+    expect(b.take(0, 2)).toBe(true);
+    expect(b.take(500, 2)).toBe(true);
+    expect(b.take(500, 1)).toBe(false);
+  });
+});
+
+describe('resume limits', () => {
+  it('pins the resume bound and the two budgets, each able to pay for a full page', () => {
+    expect(LIMITS.resumeBytes).toBe(8_388_608);
+    expect(LIMITS.resumeBytes).toBeGreaterThanOrEqual(LIMITS.commitBytes);
+    expect(WRITER_RESUME_BUDGET).toEqual({ burst: 25_165_824, perSecond: 4_194_304 });
+    expect(READER_RESUME_BUDGET).toEqual({ burst: 12_582_912, perSecond: 2_097_152 });
+    for (const b of [WRITER_RESUME_BUDGET, READER_RESUME_BUDGET]) {
+      expect(b.burst).toBeGreaterThan(LIMITS.resumeBytes + LIMITS.commitBytes);
+    }
   });
 });
 
