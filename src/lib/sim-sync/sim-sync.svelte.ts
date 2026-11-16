@@ -82,6 +82,8 @@ export class SimSync {
   #cancelRetry: (() => void) | null = null;
   /** A throw while handling a registration answer has been logged (once per SimSync). */
   #loggedAnswer = false;
+  /** A subscriber's throw has been logged (once per SimSync). */
+  #loggedSubscriber = false;
   /** The socket of #sim, or null. Only its view changes are heard. */
   #socket: SimSocket | null = null;
   /** SimSync.open calls under way: no socket is made while the store may be reopening. */
@@ -483,6 +485,17 @@ export class SimSync {
       return;
     }
     this.#state = next;
-    for (const fn of this.#subscribers) fn();
+    // A subscriber's throw stays here: it would otherwise unwind into the store's or the
+    // socket's handler that published (halting the socket, or rejecting markRegistered).
+    for (const fn of this.#subscribers) {
+      try {
+        fn();
+      } catch (e) {
+        if (!this.#loggedSubscriber) {
+          this.#loggedSubscriber = true;
+          console.error('[sim-sync] subscriber failed', errorName(e));
+        }
+      }
+    }
   }
 }

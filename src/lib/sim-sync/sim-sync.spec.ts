@@ -592,9 +592,113 @@ describe('SimSync: registration and the socket', () => {
     store.rename('A');
     await settle(w.hub, store);
     expect(thrown).toBe(1);
+    // The subscriber's throw stays in the publish loop.
     expect(error).toHaveBeenCalledTimes(1);
-    expect(error).toHaveBeenCalledWith('[sim-sync] registration handling failed', 'TypeError');
+    expect(error).toHaveBeenCalledWith('[sim-sync] subscriber failed', 'TypeError');
     expect(sync.state.registration).toBe('sign-in');
+  });
+
+  it("a throw of the store's while an answer is handled is logged once by name", async () => {
+    const w = world();
+    let boom = false;
+    w.fetch.handler = () => {
+      boom = true; // armed for the answer's handling
+      return { status: 409, body: { error: 'x', code: 'taken' } };
+    };
+    const { error } = mockConsole('error');
+    const real = new LogStore({ db: w.db, tabId: 'a', stamp });
+    // The store as SimSync sees it: its tipSeq throws once when armed (the taken answer reads it).
+    const store = new Proxy(real, {
+      get(target, key) {
+        if (key === 'tipSeq' && boom) {
+          boom = false;
+          throw new RangeError('tip');
+        }
+        const v: unknown = Reflect.get(target, key, target);
+        return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+      }
+    });
+    const sync = new SimSync({
+      store,
+      db: w.db,
+      tabId: 'a',
+      live: true,
+      build: 'b',
+      origin: ORIGIN,
+      fetch: w.fetch.fetch,
+      WebSocket: w.hub.WebSocket,
+      clock: w.clock,
+      random: () => 0.5,
+      locks: w.locks,
+      channel: null,
+      net: w.net
+    });
+    await sync.start();
+    await sync.open(null);
+    real.rename('A');
+    await settle(w.hub, real);
+    expect(w.fetch.calls).toHaveLength(1);
+    expect(boom).toBe(false);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith('[sim-sync] registration handling failed', 'RangeError');
+  });
+
+  it('a subscriber that throws on a live foreign commit leaves the socket live and the next subscriber called', async () => {
+    const w = world();
+    const sim = newId();
+    w.hub.register(sim);
+    w.hub.write = false;
+    w.hub.foreign(sim, draftOf(0, [nameChange('Theirs')]));
+    w.fetch.handler = () => ({ status: 409, body: { error: 'x', code: 'taken' } });
+    const { error } = mockConsole('error');
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(sim);
+    await settle(w.hub, store);
+    store.rename('Mine');
+    await settle(w.hub, store);
+    expect(sync.state.socket.phase).toBe('live');
+    expect(sync.state.save).toEqual({ kind: 'device', why: 'taken' });
+    let thrown = 0;
+    const heard: string[] = [];
+    sync.subscribe(() => {
+      thrown++;
+      throw new TypeError('first');
+    });
+    sync.subscribe(() => {
+      thrown++;
+      throw new RangeError('second');
+    });
+    sync.subscribe(() => heard.push(sync.state.save.kind));
+    // The store writes the foreign commit (saving), then the write ends (device again).
+    w.hub.foreign(sim, draftOf(1, [nameChange('Theirs again')]));
+    await settle(w.hub, store);
+    expect(thrown).toBeGreaterThanOrEqual(2);
+    expect(heard).toContain('saving');
+    expect(store.tipSeq).toBe(2);
+    expect(sync.state.socket).toMatchObject({ phase: 'live', halt: null });
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith('[sim-sync] subscriber failed', 'TypeError');
+  });
+
+  it('a subscriber that throws on an ok registration answer: no unhandled rejection, state done', async () => {
+    const w = world();
+    const { error } = mockConsole('error');
+    const { store, sync } = await tab(w, 'a');
+    let thrown = 0;
+    sync.subscribe(() => {
+      if (sync.state.registration === 'done' && thrown === 0) {
+        thrown++;
+        throw new TypeError('subscriber failed');
+      }
+    });
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    expect(thrown).toBe(1);
+    expect(sync.state.registration).toBe('done');
+    expect(sync.state.save).toEqual({ kind: 'saved', why: null });
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith('[sim-sync] subscriber failed', 'TypeError');
   });
 
   it('a halted socket is kept and reported; nothing revives it; another sim gets its own', async () => {
