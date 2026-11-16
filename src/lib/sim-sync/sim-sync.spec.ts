@@ -12,6 +12,7 @@ import { DS, draftOf, nameChange, stamped } from '$lib/sim-store/test/commits';
 import type { LocksLike } from './ports';
 import { OFF_VIEW, type SocketView } from './sim-socket';
 import { SimSync, type SimSyncOptions } from './sim-sync.svelte';
+import { TAB_LOCK_PREFIX } from './tabs';
 import {
   FakeBus,
   FakeClock,
@@ -58,6 +59,16 @@ async function tab(
   tabId: string,
   o: Partial<SimSyncOptions> & { db?: SimDb | null } = {}
 ) {
+  const t = unstarted(w, tabId, o);
+  await t.sync.start();
+  return t;
+}
+/** A tab whose SimSync is not started yet. */
+function unstarted(
+  w: World,
+  tabId: string,
+  o: Partial<SimSyncOptions> & { db?: SimDb | null } = {}
+) {
   const db = o.db === undefined ? w.db : o.db;
   const store = new LogStore({ db, tabId, stamp });
   const sync = new SimSync({
@@ -76,7 +87,6 @@ async function tab(
     net: w.net,
     ...o
   });
-  await sync.start();
   return { store, sync };
 }
 const sims = (w: World) => w.fetch.calls.map((c) => (c.body as { simId: string }).simId);
@@ -730,7 +740,8 @@ describe('SimSync: registration and the socket', () => {
     answers[0]({ status: 201, body: { simId: sim, created: true } });
     await settle(w.hub, A.store, B.store);
     expect(w.fetch.calls).toHaveLength(1);
-    expect(w.locks.held()).toEqual([]);
+    // No registration lock is left held; each tab holds only its own tab lock (Task 14).
+    expect(w.locks.held().sort()).toEqual([`${TAB_LOCK_PREFIX}a`, `${TAB_LOCK_PREFIX}b`]);
   });
 
   it('Y17 P5 a sim needing registration with nothing to send and nothing on the server: nothing', async () => {
@@ -879,4 +890,341 @@ describe('SimSync: registration and the socket', () => {
     expect(w.hub.sockets).toHaveLength(1);
     expect(w.fetch.calls).toEqual([]);
   });
+});
+
+describe('SimSync: tabs, claims and visibility', () => {
+  /** A sim on the server and stored here, registered: tabs that open it write at once. */
+  async function onServer(w: World) {
+    const sim = newId();
+    const first = draftOf(0, [nameChange('S')]);
+    w.hub.register(sim);
+    w.hub.foreign(sim, first);
+    await w.db.createSim(
+      { simId: sim, createdAt: 1, registered: true },
+      { batch: { owner: 'x', confirmed: [stamped(first, 1)], put: [], remove: [] } }
+    );
+    return sim;
+  }
+  /** A tab that is gone (it never held a lock) with one unsent rename on `sim`. */
+  async function goneTab(w: World, sim: string, name: string, db: SimDb = w.db) {
+    const g = new LogStore({ db, tabId: 'g', stamp });
+    await g.open(sim);
+    g.rename(name);
+    await g.written();
+  }
+
+  it('Y11 T8 T9 open claims gone tabs, never a live one; a tab that goes later is claimed then', async () => {
+    const w = world();
+    const A = await tab(w, 'a');
+    await A.sync.open(null);
+    A.store.rename('A');
+    await settle(w.hub, A.store);
+    const sim = A.store.simId!;
+    const B = await tab(w, 'b', { live: false }); // alive, never sends
+    await B.sync.open(sim);
+    B.store.rename('B');
+    await B.store.written();
+    await goneTab(w, sim, 'G');
+    const C = await tab(w, 'c');
+    await C.sync.open(sim);
+    await settle(w.hub, A.store, C.store);
+    expect(namesOf(w.hub.commits(sim))).toEqual([DEFAULT_SIM_NAME, 'A', 'G']);
+    expect(B.store.pendingCount).toBe(1);
+    B.sync.stop();
+    await settle(w.hub, A.store, C.store);
+    expect(namesOf(w.hub.commits(sim))).toEqual([DEFAULT_SIM_NAME, 'A', 'G', 'B']);
+    expect(A.store.pendingCount + C.store.pendingCount).toBe(0);
+  });
+
+  it('Y12 two tabs editing in turn end with one order on both and on the server', async () => {
+    const w = world();
+    const A = await tab(w, 'a');
+    await A.sync.open(null);
+    A.store.rename('A0');
+    await settle(w.hub, A.store);
+    const B = await tab(w, 'b');
+    await B.sync.open(A.store.simId);
+    for (let i = 1; i <= 5; i++) {
+      A.store.rename(`A${i}`);
+      B.store.rename(`B${i}`);
+      await settle(w.hub, A.store, B.store);
+    }
+    // The object's start commit, A0, then ten more.
+    expect(w.hub.commits(A.store.simId!)).toHaveLength(12);
+    expect(A.store.tipSeq).toBe(12);
+    expect(B.store.tipSeq).toBe(12);
+    expect(A.store.name).toBe(B.store.name);
+    expect(w.fetch.calls).toHaveLength(1);
+    expect([A.sync.state.save.kind, B.sync.state.save.kind]).toEqual(['saved', 'saved']);
+  });
+
+  it('Y19 becoming visible without write reconnects, to pick up a sign-in made elsewhere', async () => {
+    const w = world();
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    w.hub.setAccess(false);
+    store.rename('B');
+    await settle(w.hub, store);
+    expect(sync.state.save).toEqual({ kind: 'device', why: 'no-write' });
+    w.hub.write = true;
+    w.net.set('hidden');
+    w.net.set('visible');
+    await settle(w.hub, store);
+    expect(w.hub.sockets).toHaveLength(2);
+    expect(w.hub.sockets[0].closedWith).toBe(1000);
+    expect(namesOf(w.hub.commits(store.simId!))).toEqual([DEFAULT_SIM_NAME, 'A', 'B']);
+    expect(sync.state.save).toEqual({ kind: 'saved', why: null });
+  });
+
+  it('visible with nothing pending or held reconnects nothing, even without write', async () => {
+    const w = world();
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    w.hub.setAccess(false);
+    await settle(w.hub, store);
+    expect(sync.state.socket.write).toBe(false);
+    w.net.set('hidden');
+    w.net.set('visible');
+    await settle(w.hub, store);
+    expect(w.hub.sockets).toHaveLength(1);
+    expect(w.hub.sockets[0].closedWith).toBeNull();
+  });
+
+  it('visible on a socket that writes reconnects nothing, with an append unanswered', async () => {
+    const w = world();
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    w.hub.hold = true;
+    store.rename('B');
+    await settle(w.hub, store);
+    expect(store.pendingCount).toBe(1);
+    expect(sync.state.socket.write).toBe(true);
+    w.net.set('hidden');
+    w.net.set('visible');
+    w.hub.hold = false;
+    w.hub.release();
+    await settle(w.hub, store);
+    expect(w.hub.sockets).toHaveLength(1);
+    expect(w.hub.sockets[0].closedWith).toBeNull();
+    expect(sync.state.save).toEqual({ kind: 'saved', why: null });
+  });
+
+  it('Y25 opening the sim that is already open does nothing: unsent edits stay (no storage)', async () => {
+    const w = world();
+    const { store, sync } = await tab(w, 'a', { db: null, live: false });
+    await sync.open(null);
+    store.rename('A');
+    await sync.open(store.simId);
+    expect(store.pendingCount).toBe(1);
+    expect(store.name).toBe('A');
+  });
+
+  it('Y26 stop releases the tab lock, so other tabs find this one gone', async () => {
+    const w = world();
+    const A = await tab(w, 'a');
+    await tab(w, 'b');
+    expect(w.locks.held().sort()).toEqual([`${TAB_LOCK_PREFIX}a`, `${TAB_LOCK_PREFIX}b`]);
+    A.sync.stop();
+    await microtasks();
+    expect(w.locks.held()).toEqual([`${TAB_LOCK_PREFIX}b`]);
+  });
+
+  it('opens run in call order: a slow open of y then open of x ends on x', async () => {
+    const w = world();
+    const x = newId();
+    const y = newId();
+    w.hub.register(x);
+    w.hub.register(y);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const db: SimDb = {
+      ...w.db,
+      pendingOwners: async (id) => {
+        if (id === y) await held;
+        return w.db.pendingOwners(id);
+      }
+    };
+    const { store, sync } = await tab(w, 'a', { db });
+    const toY = sync.open(y);
+    const toX = sync.open(x);
+    await microtasks();
+    release();
+    await Promise.all([toY, toX]);
+    await settle(w.hub, store);
+    expect(store.simId).toBe(x);
+    expect(store.ready).toBe(true);
+    expect(w.hub.sockets.filter((s) => s.url.includes(y))).toEqual([]);
+    expect(w.hub.sockets.map((s) => s.url)).toEqual([expect.stringContaining(x)]);
+    expect(w.fetch.calls).toEqual([]);
+  });
+
+  it('a stop during an open, before the store opens, opens nothing, claims nothing, watches nothing', async () => {
+    const w = world();
+    const sim = await onServer(w);
+    const B = await tab(w, 'b', { live: false });
+    await B.sync.open(sim);
+    B.store.rename('B');
+    await B.store.written();
+    await goneTab(w, sim, 'G'); // after b's open, so b has not claimed it
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const claimPending = vi.fn(w.db.claimPending);
+    const db: SimDb = {
+      ...w.db,
+      claimPending,
+      pendingOwners: async (id) => {
+        await held;
+        return w.db.pendingOwners(id);
+      }
+    };
+    const { store, sync } = await tab(w, 'c', { db });
+    const opened = sync.open(sim);
+    sync.stop();
+    release();
+    await expect(opened).rejects.toThrow('stopped');
+    await microtasks();
+    expect(store.ready).toBe(false);
+    expect(store.simId).toBeNull();
+    expect(claimPending).not.toHaveBeenCalled();
+    // c holds nothing and waits on nothing: its lock is free and no watch of it is pending.
+    expect(w.locks.held()).toEqual([`${TAB_LOCK_PREFIX}b`]);
+    expect((await w.locks.query()).pending ?? []).toEqual([]);
+    expect(await w.db.pendingOwners(sim)).toEqual(['b', 'g']);
+    expect(w.hub.sockets).toEqual([]);
+  });
+
+  it('a stop while start waits for the tab lock leaves no lock and no subscription', async () => {
+    const w = world();
+    const { store, sync } = unstarted(w, 'a');
+    const subscribe = vi.spyOn(store, 'subscribe');
+    const watch = vi.spyOn(w.net, 'watch');
+    const started = sync.start();
+    sync.stop();
+    await started;
+    await microtasks();
+    expect(w.locks.held()).toEqual([]);
+    expect(subscribe).not.toHaveBeenCalled();
+    expect(watch).not.toHaveBeenCalled();
+    await expect(sync.open(null)).rejects.toThrow();
+  });
+
+  it('open before start has resolved rejects', async () => {
+    const w = world();
+    const { store, sync } = unstarted(w, 'a');
+    const started = sync.start();
+    await expect(sync.open(null)).rejects.toThrow('before start');
+    await started;
+    await sync.open(null);
+    expect(store.ready).toBe(true);
+  });
+
+  it('a second onGone for the same owner claims again and changes nothing', async () => {
+    const w = world();
+    const sim = await onServer(w);
+    const B = await tab(w, 'b', { live: false });
+    await B.sync.open(sim);
+    B.store.rename('B');
+    await B.store.written();
+    const C = await tab(w, 'c');
+    await C.sync.open(sim);
+    await settle(w.hub, C.store);
+    const claim = vi.spyOn(C.store, 'claim');
+    B.sync.stop();
+    await settle(w.hub, C.store);
+    expect(namesOf(w.hub.commits(sim))).toEqual(['S', 'B']);
+    const appends = w.hub.appends.length;
+    // b announces itself late (another build, a stale message): c watches it again, finds its
+    // lock free and is told it has gone a second time.
+    w.bus.channel().postMessage({ type: 'here', tabId: 'b', reply: false });
+    await settle(w.hub, C.store);
+    expect(claim).toHaveBeenCalledTimes(2);
+    expect(claim.mock.calls).toEqual([[['b']], [['b']]]);
+    expect(namesOf(w.hub.commits(sim))).toEqual(['S', 'B']);
+    expect(w.hub.appends).toHaveLength(appends);
+    expect(C.store.pendingCount).toBe(0);
+  });
+
+  it('a claim that fails is logged once by name', async () => {
+    const w = world();
+    const sim = await onServer(w);
+    const B = await tab(w, 'b', { live: false });
+    await B.sync.open(sim);
+    B.store.rename('B');
+    await B.store.written();
+    let fail = false;
+    const db: SimDb = {
+      ...w.db,
+      claimPending: (...args) =>
+        fail ? Promise.reject(new TypeError('closed')) : w.db.claimPending(...args)
+    };
+    const C = await tab(w, 'c', { db });
+    await C.sync.open(sim);
+    await settle(w.hub, C.store);
+    const { error } = mockConsole('error');
+    fail = true;
+    B.sync.stop();
+    await settle(w.hub, C.store);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith('[sim-sync] claim failed', 'TypeError');
+    expect(namesOf(w.hub.commits(sim))).toEqual(['S']);
+  });
+
+  it('a pendingOwners that rejects counts as no owners: nothing is claimed', async () => {
+    const w = world();
+    const sim = await onServer(w);
+    await goneTab(w, sim, 'G');
+    const db: SimDb = { ...w.db, pendingOwners: () => Promise.reject(new Error('closed')) };
+    const { error } = mockConsole('error');
+    const { store, sync } = await tab(w, 'c', { db });
+    await sync.open(sim);
+    await settle(w.hub, store);
+    expect(store.ready).toBe(true);
+    expect(namesOf(w.hub.commits(sim))).toEqual(['S']);
+    expect(store.pendingCount).toBe(0);
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a lock request that rejects', 'rejects'],
+    ['no Web Locks', 'none']
+  ] as const)(
+    'with %s, gone tabs are claimed at open only; nothing is watched',
+    async (_label, kind) => {
+      const w = world();
+      const { error } = mockConsole('error');
+      const sim = await onServer(w);
+      await goneTab(w, sim, 'G');
+      const locks: LocksLike | null =
+        kind === 'none'
+          ? null
+          : {
+              request: () => Promise.reject(new DOMException('denied', 'SecurityError')),
+              query: () => w.locks.query()
+            };
+      const C = await tab(w, 'c', { locks });
+      await C.sync.open(sim);
+      await settle(w.hub, C.store);
+      expect(namesOf(w.hub.commits(sim))).toEqual(['S', 'G']);
+      // A tab that opens later and goes is not claimed: c heard nothing and watches nothing.
+      const B = await tab(w, 'b', { live: false });
+      await B.sync.open(sim);
+      B.store.rename('B');
+      await B.store.written();
+      B.sync.stop();
+      await settle(w.hub, C.store);
+      expect(namesOf(w.hub.commits(sim))).toEqual(['S', 'G']);
+      expect(C.store.pendingCount).toBe(0);
+      expect(await w.db.pendingOwners(sim)).toEqual(['b']);
+      if (kind === 'rejects') {
+        expect(error).toHaveBeenCalledTimes(1);
+        expect(error).toHaveBeenCalledWith('[sim-sync] tab lock failed: SecurityError');
+      } else expect(error).not.toHaveBeenCalled();
+    }
+  );
 });

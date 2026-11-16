@@ -1,14 +1,17 @@
-// The object a page holds for its store (the sim log sync plan, Task 13): it registers the
-// store's sim when the device's own work needs it (the registration table, rows P), keeps one
-// SimSocket for the sim, and publishes one state with the save state. Tabs, claims and the
-// visibility rule are added on top of it (Task 14). Every wait is the injected clock's; nothing
-// here touches a browser API but the ports it is given.
+// The object a page holds for its store (the sim log sync plan, Tasks 13 and 14): it holds this
+// tab's lock, opens a sim with the unsent records of tabs that are gone and watches the live
+// ones (claiming a tab's records when it goes), registers the store's sim when the device's own
+// work needs it (the registration table, rows P), keeps one SimSocket for the sim, reconnects a
+// socket that cannot write when the page becomes visible, and publishes one state with the save
+// state. Every wait is the injected clock's; nothing here touches a browser API but the ports
+// it is given.
 import type { SimDb } from '$lib/sim-store/sim-db';
 import { backoffDelay } from './backoff';
 import { errorName, type BrowserPorts, type NetEvent, type SyncStore } from './ports';
 import { RegisterGate, registerSim, type RegisterAnswer } from './register';
 import { saveState, type RegState, type SaveState } from './save-state';
 import { OFF_VIEW, SimSocket, type SocketView } from './sim-socket';
+import { TabPresence } from './tabs';
 
 export interface SimSyncOptions extends BrowserPorts {
   store: SyncStore;
@@ -55,6 +58,17 @@ export class SimSync {
   readonly #o: SimSyncOptions;
   readonly #gate: RegisterGate;
   #started = false;
+  /** start() has resolved (not stopped meanwhile): open may run. */
+  #running = false;
+  /** This tab's presence; made by start(). */
+  #presence: TabPresence | null = null;
+  /**
+   * The tab holds its lock and announced itself: other owners are watched and claimed when they
+   * go. False (no Web Locks, or the lock could not be had): claims at open only (S8).
+   */
+  #watchTabs = false;
+  /** The opens in call order: each waits for the one before it, so the last call wins. */
+  #opens: Promise<void> = Promise.resolve();
   /** Final (P17): every handler returns at once. */
   #stopped = false;
   /** Advanced when the sim changes and on stop: an answer or a turn of an older one is stale. */
@@ -100,38 +114,97 @@ export class SimSync {
     };
   }
 
-  /** Subscribes to the store and the network. Once. */
+  /**
+   * Takes this tab's lock (TabPresence), then subscribes to the store, the network and the
+   * news that a watched tab has gone. Once: a second call returns at once. The page opens the
+   * store only through open(), after this has resolved, so no record is written under this
+   * tab's id before its lock is held. When the lock cannot be had (no Web Locks, or the request
+   * failed) the tab announces nothing and watches no one: other tabs' records are claimed at
+   * open only (S8). A stop() while this waits leaves no lock held and subscribes to nothing.
+   */
   async start(): Promise<void> {
     if (this.#started || this.#stopped) return;
     this.#started = true;
+    const o = this.#o;
+    const presence = new TabPresence({ tabId: o.tabId, locks: o.locks, channel: o.channel });
+    this.#presence = presence;
+    const held = await presence.start();
+    if (this.#stopped) return; // stop() has stopped the presence too
+    this.#watchTabs = held;
     this.#unsubscribe = [
-      this.#o.store.subscribe(() => this.#evaluate()),
-      this.#o.net.watch((e) => this.#onNet(e))
+      ...(held ? [presence.onGone((owner) => this.#onGone(owner))] : []),
+      o.store.subscribe(() => this.#evaluate()),
+      o.net.watch((e) => this.#onNet(e))
     ];
+    this.#running = true;
     this.#evaluate();
   }
 
   /**
-   * Opens a sim in the store. Nothing when that sim is already open and ready (F14). Rejects
-   * when called before start or after stop, or when the store's open rejects (no retry,
-   * decision 17). The socket is stopped before the store is reopened: no socket lives across a
-   * reopen (the socket cannot see one start).
+   * Opens a sim in the store, with the unsent records of the tabs that are gone (their lock is
+   * free; without Web Locks, every other owner), and watches the other owners so that their
+   * records are claimed when they go (never while they hold their lock: S8). Nothing when that
+   * sim is already open and ready and no open is under way (F14). Opens run one after another
+   * in call order, so the last call wins. Rejects when called before start() has resolved or
+   * after stop() (an open waiting for its turn when stop() comes does not open the store,
+   * claims nothing and watches nothing), or when the store's open rejects (no retry, decision
+   * 17). The socket is stopped before the store is reopened: no socket lives across a reopen
+   * (the socket cannot see one start).
    */
   async open(simId: string | null): Promise<void> {
-    if (!this.#started) throw new Error('SimSync: open before start');
     if (this.#stopped) throw new Error('SimSync: stopped');
+    if (!this.#running) throw new Error('SimSync: open before start');
     const store = this.#o.store;
     // Only with no open under way: a store open queued behind another (or a claim) still shows
     // the old sim ready, and this call must queue its own so the last call wins.
     if (this.#opening === 0 && simId !== null && store.ready && store.simId === simId) return;
     this.#leave();
     this.#opening += 1;
+    const turn = this.#opens.then(() => this.#openInTurn(simId));
+    this.#opens = turn.then(
+      () => {},
+      () => {}
+    );
     try {
-      await store.open(simId);
+      await turn;
     } finally {
       this.#opening -= 1;
       this.#evaluate();
     }
+  }
+
+  /** One open, when the opens before it are done (T8). */
+  async #openInTurn(simId: string | null): Promise<void> {
+    const o = this.#o;
+    const store = o.store;
+    const presence = this.#presence as TabPresence;
+    if (this.#stopped) throw new Error('SimSync: stopped');
+    let owners: string[] = [];
+    if (simId !== null && o.db !== null && store.local !== 'failed') {
+      // A database that cannot answer: no owners (the store's own read reports the failure).
+      owners = await o.db.pendingOwners(simId).catch((): string[] => []);
+      if (this.#stopped) throw new Error('SimSync: stopped');
+    }
+    const others = owners.filter((owner) => owner !== o.tabId);
+    let gone: string[] = [];
+    if (others.length > 0) {
+      // The lock table cannot be read: claim no one now; the watches below find who goes.
+      gone = await presence.goneOwners(others).catch((): string[] => []);
+    }
+    if (this.#stopped) throw new Error('SimSync: stopped');
+    await store.open(simId, { claim: gone });
+    // Without a lock of its own the tab claims at open only (S8): it watches no one.
+    if (this.#stopped || !this.#watchTabs) return;
+    for (const owner of others) if (!gone.includes(owner)) presence.watch(owner);
+  }
+
+  /** T9: a watched tab has gone (its lock is free): its unsent records are this tab's now. */
+  #onGone(owner: string): void {
+    if (this.#stopped) return;
+    // A second call for the same owner (a late announcement) finds nothing left to take.
+    void this.#o.store
+      .claim([owner])
+      .catch((e: unknown) => console.error('[sim-sync] claim failed', errorName(e)));
   }
 
   /** P14: post the registration again now (from sign-in, quota, taken, failed or retrying). */
@@ -144,12 +217,15 @@ export class SimSync {
   }
 
   /**
-   * Final: sets stopped, advances the token, stops the socket and the timer, unsubscribes. Every
-   * handler returns at once afterwards (P17).
+   * Final: sets stopped, advances the token, stops the socket and the timer, unsubscribes, then
+   * releases this tab's lock. Every handler returns at once afterwards (P17). Once the lock is
+   * released other tabs may take the store's unsent records: the page must not edit the store
+   * it gave this SimSync after stop() (nothing here can prevent it).
    */
   stop(): void {
     if (this.#stopped) return;
     this.#stopped = true;
+    this.#running = false;
     this.#token += 1;
     this.#cancelTimer();
     const socket = this.#socket;
@@ -157,6 +233,8 @@ export class SimSync {
     socket?.stop();
     for (const u of this.#unsubscribe) u();
     this.#unsubscribe = [];
+    // Nothing is sent from here on: only now may other tabs find this one gone.
+    this.#presence?.stop();
     // The last state: no socket. Nothing is published after it.
     this.#publish(true);
   }
@@ -339,6 +417,19 @@ export class SimSync {
       // P10: online posts at once.
       this.#cancelTimer();
       this.#reg = 'idle';
+    }
+    if (e === 'visible') {
+      // Decision 14: a socket that cannot write, with something to send, connects again: a
+      // sign-in made in another tab or window is picked up by the new connection.
+      const socket = this.#socket;
+      const store = this.#o.store;
+      if (
+        socket !== null &&
+        (store.pendingCount > 0 || store.heldCount > 0) &&
+        (socket.view.hold === 'not-writer' || socket.view.write === false)
+      ) {
+        socket.reconnect(); // nothing when halted; tells subscribers, who may stop SimSync
+      }
     }
     this.#evaluate();
   }
