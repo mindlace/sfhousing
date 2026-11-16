@@ -31,7 +31,9 @@ function readHere(data: unknown): Here | null {
  */
 export class TabPresence {
   readonly #tabId: string;
-  #locks: LocksLike | null;
+  readonly #locks: LocksLike | null;
+  /** The request for this tab's own lock failed: it watches no one. */
+  #lockFailed = false;
   readonly #channel: ChannelLike | null;
   readonly #abort = new AbortController();
   readonly #watching = new Set<string>();
@@ -56,9 +58,9 @@ export class TabPresence {
    * Holds TAB_LOCK_PREFIX + tabId until stop(); resolves true once it is held and announced
    * ({ type: 'here', tabId, reply: false } on the channel). Resolves false, announcing nothing,
    * when this tab holds no lock: there is no Web Locks, or the request for its own lock failed
-   * (logged). From then on the tab behaves as with no Web Locks (goneOwners reports every other
-   * owner, watch does nothing) and answers no announcement: a tab that does not hold its lock
-   * never invites others to watch it. A second call while the first waits returns the first
+   * (logged). After a failed request watch does nothing and the tab answers no announcement (a
+   * tab that does not hold its lock never invites others to watch it), but goneOwners still
+   * reads the lock table, so an owner holding its lock is never reported gone. A second call while the first waits returns the first
    * call's promise; after stop() it resolves false.
    */
   start(): Promise<boolean> {
@@ -87,7 +89,8 @@ export class TabPresence {
         });
     });
     if (!held) {
-      this.#locks = null;
+      // No announce and no watch; goneOwners still asks the lock table (S8).
+      this.#lockFailed = true;
       return false;
     }
     if (this.#stopped) return false;
@@ -97,8 +100,8 @@ export class TabPresence {
   }
 
   /**
-   * Of `owners`, those whose lock is not held, never this tab. Without Web Locks (or when this
-   * tab's own lock could not be had): every owner but this tab, so the caller asks at open
+   * Of `owners`, those whose lock is not held, never this tab; rejects when the lock table
+   * cannot be read. Without Web Locks: every owner but this tab, so the caller asks at open
    * only and never to find out later that a tab has gone.
    */
   async goneOwners(owners: readonly string[]): Promise<string[]> {
@@ -115,7 +118,7 @@ export class TabPresence {
    */
   watch(owner: string): void {
     const locks = this.#locks;
-    if (locks === null || this.#stopped || owner === this.#tabId) return;
+    if (locks === null || this.#lockFailed || this.#stopped || owner === this.#tabId) return;
     if (this.#watching.has(owner) || this.#told.has(owner)) return;
     this.#watching.add(owner);
     locks

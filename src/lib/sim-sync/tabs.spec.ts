@@ -95,7 +95,7 @@ describe('TabPresence', () => {
     expect(gone).toEqual([]);
   });
 
-  it('a tab that cannot get its own lock does not announce itself and behaves as without locks', async () => {
+  it('a tab that cannot get its own lock announces nothing and watches no one', async () => {
     const { error } = mockConsole('error');
     const bus = new FakeBus();
     const heard = bus.channel();
@@ -103,13 +103,31 @@ describe('TabPresence', () => {
     heard.addEventListener('message', (e) => messages.push(e.data));
     const locks = {
       request: () => Promise.reject(new DOMException('no', 'SecurityError')),
-      query: () => Promise.reject(new Error('unused'))
+      query: () => Promise.reject(new Error('unreadable'))
     };
     const a = new TabPresence({ tabId: 'a', locks, channel: bus.channel() });
     expect(await a.start()).toBe(false);
     await microtasks();
     expect(messages).toEqual([]);
-    expect(await a.goneOwners(['a', 'b'])).toEqual(['b']);
+    // The lock table is still asked: one that cannot be read fails, and the caller claims no one.
+    await expect(a.goneOwners(['a', 'b'])).rejects.toThrow('unreadable');
+    a.watch('b');
+    expect(a.watching()).toEqual([]);
+    expect(error.mock.calls).toEqual([['[sim-sync] tab lock failed: SecurityError']]);
+  });
+
+  it('S8 a tab whose own lock failed still asks the lock table: a live owner is not gone', async () => {
+    const { error } = mockConsole('error');
+    const table = new FakeLocks();
+    const b = tab('b', table, null);
+    await b.start();
+    const locks = {
+      request: () => Promise.reject(new DOMException('no', 'SecurityError')),
+      query: () => table.query()
+    };
+    const a = new TabPresence({ tabId: 'a', locks, channel: null });
+    expect(await a.start()).toBe(false);
+    expect(await a.goneOwners(['a', 'b', 'c'])).toEqual(['c']);
     a.watch('b');
     expect(a.watching()).toEqual([]);
     expect(error.mock.calls).toEqual([['[sim-sync] tab lock failed: SecurityError']]);

@@ -1472,4 +1472,26 @@ describe('SimSync: tabs, claims and visibility', () => {
       } else expect(error).not.toHaveBeenCalled();
     }
   );
+
+  it('S8 with a lock request that rejects, opening claims nothing of a live tab', async () => {
+    const w = world();
+    const { error } = mockConsole('error');
+    const sim = await onServer(w);
+    const B = await tab(w, 'b', { live: false }); // alive: holds its lock, never sends
+    await B.sync.open(sim);
+    B.store.rename('B');
+    await B.store.written();
+    const locks: LocksLike = {
+      request: () => Promise.reject(new DOMException('denied', 'SecurityError')),
+      query: () => w.locks.query()
+    };
+    const C = await tab(w, 'c', { locks });
+    await C.sync.open(sim);
+    await settle(w.hub, C.store);
+    expect(namesOf(w.hub.commits(sim))).toEqual(['S']);
+    expect(C.store.pendingCount).toBe(0);
+    expect(B.store.pendingCount).toBe(1);
+    expect(await w.db.pendingOwners(sim)).toEqual(['b']);
+    expect(error).toHaveBeenCalledTimes(1);
+  });
 });
