@@ -113,7 +113,7 @@ describe('TabPresence', () => {
     await expect(a.goneOwners(['a', 'b'])).rejects.toThrow('unreadable');
     a.watch('b');
     expect(a.watching()).toEqual([]);
-    expect(error.mock.calls).toEqual([['[sim-sync] tab lock failed: SecurityError']]);
+    expect(error.mock.calls).toEqual([['[sim-sync] tab lock failed', 'SecurityError']]);
   });
 
   it('S8 a tab whose own lock failed still asks the lock table: a live owner is not gone', async () => {
@@ -130,7 +130,7 @@ describe('TabPresence', () => {
     expect(await a.goneOwners(['a', 'b', 'c'])).toEqual(['c']);
     a.watch('b');
     expect(a.watching()).toEqual([]);
-    expect(error.mock.calls).toEqual([['[sim-sync] tab lock failed: SecurityError']]);
+    expect(error.mock.calls).toEqual([['[sim-sync] tab lock failed', 'SecurityError']]);
   });
 
   it('start resolves true once the lock is held and announced', async () => {
@@ -181,7 +181,7 @@ describe('TabPresence', () => {
     locks.request = () => Promise.reject(new TypeError('boom'));
     a.watch('b');
     await microtasks();
-    expect(error.mock.calls).toEqual([['[sim-sync] tab watch failed: TypeError']]);
+    expect(error.mock.calls).toEqual([['[sim-sync] tab watch failed', 'TypeError']]);
     expect(a.watching()).toEqual([]);
   });
 
@@ -197,7 +197,7 @@ describe('TabPresence', () => {
     };
     const a = new TabPresence({ tabId: 'a', locks: new FakeLocks(), channel });
     expect(await a.start()).toBe(true);
-    expect(error.mock.calls).toEqual([['[sim-sync] tab post failed: DataCloneError']]);
+    expect(error.mock.calls).toEqual([['[sim-sync] tab post failed', 'DataCloneError']]);
   });
 
   it('ignores its own messages and malformed ones', async () => {

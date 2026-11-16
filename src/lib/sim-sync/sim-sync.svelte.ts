@@ -1,10 +1,9 @@
-// The object a page holds for its store (the sim log sync plan, Tasks 13 and 14): it holds this
-// tab's lock, opens a sim with the unsent records of tabs that are gone and watches the live
-// ones (claiming a tab's records when it goes), registers the store's sim when the device's own
-// work needs it (the registration table, rows P), keeps one SimSocket for the sim, reconnects a
-// socket that cannot write when the page becomes visible, and publishes one state with the save
-// state. Every wait is the injected clock's; nothing here touches a browser API but the ports
-// it is given.
+// The object a page holds for its store: it holds this tab's lock, opens a sim with the unsent
+// records of tabs that are gone and watches the live ones (claiming a tab's records when it
+// goes), registers the store's sim when the device's own work needs it (the registration table,
+// rows P), keeps one SimSocket for the sim, reconnects a socket that cannot write when the page
+// becomes visible, and publishes one state with the save state. Every wait is the injected
+// clock's; nothing here touches a browser API but the ports it is given.
 import type { SimDb } from '$lib/sim-store/sim-db';
 import { backoffDelay } from './backoff';
 import { errorName, type BrowserPorts, type NetEvent, type SyncStore } from './ports';

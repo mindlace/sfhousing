@@ -1,5 +1,5 @@
-// The log store's persistence (Task 10): writes, reopening, claims, the current sim and the
-// import hook, over the in-memory database (memorySimDb, the same contract as IndexedDB).
+// The log store's persistence: writes, reopening, claims, the current sim and the import hook,
+// over the in-memory database (memorySimDb, the same contract as IndexedDB).
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_SIM_NAME,

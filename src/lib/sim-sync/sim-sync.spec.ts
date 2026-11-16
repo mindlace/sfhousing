@@ -844,7 +844,7 @@ describe('SimSync: registration and the socket', () => {
     answers[0]({ status: 201, body: { simId: sim, created: true } });
     await settle(w.hub, A.store, B.store);
     expect(w.fetch.calls).toHaveLength(1);
-    // No registration lock is left held; each tab holds only its own tab lock (Task 14).
+    // No registration lock is left held; each tab holds only its own tab lock.
     expect(w.locks.held().sort()).toEqual([`${TAB_LOCK_PREFIX}a`, `${TAB_LOCK_PREFIX}b`]);
   });
 
@@ -1468,7 +1468,7 @@ describe('SimSync: tabs, claims and visibility', () => {
       expect(await w.db.pendingOwners(sim)).toEqual(['b']);
       if (kind === 'rejects') {
         expect(error).toHaveBeenCalledTimes(1);
-        expect(error).toHaveBeenCalledWith('[sim-sync] tab lock failed: SecurityError');
+        expect(error).toHaveBeenCalledWith('[sim-sync] tab lock failed', 'SecurityError');
       } else expect(error).not.toHaveBeenCalled();
     }
   );

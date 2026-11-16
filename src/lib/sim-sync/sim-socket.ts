@@ -32,7 +32,7 @@ export const PING_MS = 30_000;
 
 export type SocketPhase =
   'off' | 'connecting' | 'catching-up' | 'live' | 'offline' | 'waiting' | 'halted';
-/** Why a socket will not reconnect. 'broken': the store could not take a stored commit (Task 9). */
+/** Why a socket will not reconnect. 'broken': the store could not take a stored commit. */
 export type Halt = 'gone' | 'diverged' | 'protocol' | 'broken';
 /** Why it holds its sends while connected. */
 export type Hold = 'not-writer' | 'limit' | 'full' | 'newer';
@@ -319,7 +319,7 @@ export class SimSocket {
     this.#set({ phase: 'waiting', write: null, inFlight: null });
   }
 
-  /** Never reconnects (C5, C13; Task 9 adds diverged and broken). */
+  /** Never reconnects (C5, C13). */
   #halt(why: Halt): void {
     this.#detach();
     this.#clearTimers();

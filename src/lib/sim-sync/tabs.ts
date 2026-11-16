@@ -1,8 +1,10 @@
 import type { ChannelLike, LocksLike } from './ports';
 import { errorName } from './ports';
 
+// Defined with the ports, which tabs.ts imports, so neither module imports the other in a cycle.
+export { TAB_CHANNEL } from './ports';
+
 export const TAB_LOCK_PREFIX = 'sfh-tab:';
-export const TAB_CHANNEL = 'sfh-sim';
 
 /** The one channel message: a tab says it is here; a reply is the answer to such a message. */
 interface Here {
@@ -84,7 +86,7 @@ export class TabPresence {
           return hold;
         })
         .catch((e: unknown) => {
-          console.error(`[sim-sync] tab lock failed: ${errorName(e)}`);
+          console.error('[sim-sync] tab lock failed', errorName(e));
           resolve(false);
         });
     });
@@ -133,7 +135,7 @@ export class TabPresence {
         (e: unknown) => {
           this.#watching.delete(owner);
           if (errorName(e) !== 'AbortError') {
-            console.error(`[sim-sync] tab watch failed: ${errorName(e)}`);
+            console.error('[sim-sync] tab watch failed', errorName(e));
           }
         }
       );
@@ -171,7 +173,7 @@ export class TabPresence {
     try {
       this.#channel?.postMessage(m);
     } catch (e) {
-      console.error(`[sim-sync] tab post failed: ${errorName(e)}`);
+      console.error('[sim-sync] tab post failed', errorName(e));
     }
   }
 

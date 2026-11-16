@@ -55,6 +55,9 @@ export interface ChannelLike {
   close(): void;
 }
 
+/** The BroadcastChannel name tabs announce themselves on (TabPresence; tabs.ts re-exports it). */
+export const TAB_CHANNEL = 'sfh-sim';
+
 export type NetEvent = 'online' | 'offline' | 'visible' | 'hidden';
 
 export interface NetSignals {
@@ -114,7 +117,7 @@ export function browserPorts(): BrowserPorts {
   const ctor: SocketCtor = WebSocket;
   const locks = attempt<LocksLike>(() => ('locks' in navigator ? navigator.locks : null));
   const channel = attempt<ChannelLike>(() =>
-    typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('sfh-sim')
+    typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(TAB_CHANNEL)
   );
   return {
     origin: location.origin,

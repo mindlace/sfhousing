@@ -257,7 +257,7 @@ describe('SimSocket: connection', () => {
   });
 
   it('C12 connections that reach live with an edit still pending back off 1 s, then 2 s', async () => {
-    // The edit is sent once live (Task 10): held at the object, so it stays pending.
+    // The edit is sent once live: held at the object, so it stays pending.
     const r = await rig({ hub: { hold: true }, edits: 1 });
     await live(r);
     expect(r.sock.view.phase).toBe('live');
@@ -672,9 +672,9 @@ describe('SimSocket: connection', () => {
   });
 });
 
-// The hub stores a start commit when a writer opens an empty sim (rulings, Tasks 8 to 10): a
-// rig with no commits of its own has seq 1 stored before the first resume, so tips and `after`s
-// below are one above the brief's wherever the sim starts empty.
+// The hub stores a start commit when a writer opens an empty sim: a rig with no commits of its
+// own has seq 1 stored before the first resume, so tips and `after`s below are one above the
+// brief's wherever the sim starts empty.
 describe('SimSocket: resume', () => {
   const phases = (r: Rig, from: number) => r.views.slice(from).map((v) => v.phase);
   /** Steps the hub until `done`, at most 50 steps (no unbounded loop if the client stalls). */
@@ -721,7 +721,7 @@ describe('SimSocket: resume', () => {
 
   it('C9 C10 a frame answered not-ready inside an answer: its end resumes again, not live', async () => {
     // An edit, so the sim is stored on the device and a reopen keeps its confirmed commits.
-    // Held at the object once sent (Task 10), so the edit never moves the tip.
+    // Held at the object once sent, so the edit never moves the tip.
     const r = await rig({ hub: { frameSize: 1, hold: true }, edits: 1 });
     foreign(r, 'F0');
     foreign(r, 'F1');
@@ -745,7 +745,7 @@ describe('SimSocket: resume', () => {
 
   it('C10 frames that came while the store was opening are fetched again, once, when it is ready', async () => {
     // An edit, so the sim is stored on the device and a reopen keeps its confirmed commits;
-    // held at the object once sent (Task 10), so it never moves the tip.
+    // held at the object once sent, so it never moves the tip.
     const r = await rig({ hub: { hold: true }, edits: 1 });
     await live(r);
     const opening = r.store.open(r.sim);
@@ -933,7 +933,7 @@ describe('SimSocket: resume', () => {
 
   it('C29 C10 a reopen between the frames of a page owes the resume and never stalls', async () => {
     // An edit, so the sim is stored on the device and a reopen keeps its confirmed commits;
-    // held at the object once sent (Task 10), so it never moves the tip.
+    // held at the object once sent, so it never moves the tip.
     const r = await rig({ hub: { hold: true }, edits: 1 });
     await live(r); // tip 1: the start commit
     const s = r.hub.sockets[0];
@@ -1021,8 +1021,8 @@ describe('SimSocket: resume', () => {
   });
 });
 
-// The rows of the append table (Task 10). The hub stores a start commit when a writer opens an
-// empty sim, so the store's own first commit, made on parent 0, is re-applied on parent 1 by the
+// The rows of the append table. The hub stores a start commit when a writer opens an empty
+// sim, so the store's own first commit, made on parent 0, is re-applied on parent 1 by the
 // resume before it is ever sent: parents, resumes and stored ids below are one later than the
 // brief's wherever the sim starts empty.
 describe('SimSocket: appends', () => {
