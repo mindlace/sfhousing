@@ -5,7 +5,7 @@
 // here touches a browser API but the ports it is given.
 import type { SimDb } from '$lib/sim-store/sim-db';
 import { backoffDelay } from './backoff';
-import type { BrowserPorts, NetEvent, SyncStore } from './ports';
+import { errorName, type BrowserPorts, type NetEvent, type SyncStore } from './ports';
 import { RegisterGate, registerSim, type RegisterAnswer } from './register';
 import { saveState, type RegState, type SaveState } from './save-state';
 import { OFF_VIEW, SimSocket, type SocketView } from './sim-socket';
@@ -65,6 +65,8 @@ export class SimSync {
   /** Registration retries in a row (P10); reset by retryRegistration() and an ok answer. */
   #regAttempt = 0;
   #cancelRetry: (() => void) | null = null;
+  /** A throw while handling a registration answer has been logged (once per SimSync). */
+  #loggedAnswer = false;
   /** The socket of #sim, or null. Only its view changes are heard. */
   #socket: SimSocket | null = null;
   /** SimSync.open calls under way: no socket is made while the store may be reopening. */
@@ -119,7 +121,9 @@ export class SimSync {
     if (!this.#started) throw new Error('SimSync: open before start');
     if (this.#stopped) throw new Error('SimSync: stopped');
     const store = this.#o.store;
-    if (simId !== null && store.ready && store.simId === simId) return;
+    // Only with no open under way: a store open queued behind another (or a claim) still shows
+    // the old sim ready, and this call must queue its own so the last call wins.
+    if (this.#opening === 0 && simId !== null && store.ready && store.simId === simId) return;
     this.#leave();
     this.#opening += 1;
     try {
@@ -153,8 +157,8 @@ export class SimSync {
     socket?.stop();
     for (const u of this.#unsubscribe) u();
     this.#unsubscribe = [];
-    // The last state: no socket.
-    this.#publish();
+    // The last state: no socket. Nothing is published after it.
+    this.#publish(true);
   }
 
   // ---- the evaluation (the registration table) ----
@@ -175,12 +179,16 @@ export class SimSync {
         // P2, P6: a registered sim, or a look.
         this.#reg = r;
         this.#ensureSocket(sim);
+        if (!this.#still(sim)) return;
       } else if (r === 'wait') {
         this.#reg = 'waiting'; // P3
       } else {
         // 'needed'. A sim with confirmed commits is on the server: read it meanwhile (P15), and
         // keep reading it after taken (P8).
-        if (store.tipSeq > 0) this.#ensureSocket(sim);
+        if (store.tipSeq > 0) {
+          this.#ensureSocket(sim);
+          if (!this.#still(sim)) return;
+        }
         if (!HOLDING.has(this.#reg)) {
           if (store.pendingCount > 0 || store.heldCount > 0)
             this.#register(sim); // P4
@@ -189,6 +197,15 @@ export class SimSync {
       }
     }
     this.#publish();
+  }
+
+  /**
+   * The evaluation of `sim` may go on after a call out (a socket's start tells SimSync's
+   * subscribers, who may stop it or open another sim): not stopped, no open under way, and the
+   * store still on `sim`. When this is false the call out's own evaluation has run or will.
+   */
+  #still(sim: string): boolean {
+    return !this.#stopped && this.#opening === 0 && this.#o.store.simId === sim;
   }
 
   /** P13: the store's sim changed. */
@@ -257,6 +274,12 @@ export class SimSync {
       .then((a) => {
         if (a === null || token !== this.#token || this.#stopped) return; // P12, P16, P17
         this.#answer(sim, a);
+      })
+      .catch((e: unknown) => {
+        // A throw while handling the answer (a subscriber's, say): the state stays as it is.
+        if (this.#loggedAnswer) return;
+        this.#loggedAnswer = true;
+        console.error('[sim-sync] registration handling failed', errorName(e));
       });
   }
 
@@ -343,8 +366,12 @@ export class SimSync {
     };
   }
 
-  /** Replaces the state when anything in it changed, then tells the subscribers. */
-  #publish(): void {
+  /**
+   * Replaces the state when anything in it changed, then tells the subscribers. Nothing once
+   * stopped, but for the one final publish stop() makes.
+   */
+  #publish(final = false): void {
+    if (this.#stopped && !final) return;
     const next = this.#next();
     const now = this.#state;
     if (

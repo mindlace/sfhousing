@@ -10,7 +10,7 @@ import { LogStore } from '$lib/sim-store/log-store.svelte';
 import { memorySimDb, type SimDb } from '$lib/sim-store/sim-db';
 import { DS, draftOf, nameChange, stamped } from '$lib/sim-store/test/commits';
 import type { LocksLike } from './ports';
-import { OFF_VIEW } from './sim-socket';
+import { OFF_VIEW, type SocketView } from './sim-socket';
 import { SimSync, type SimSyncOptions } from './sim-sync.svelte';
 import {
   FakeBus,
@@ -294,10 +294,16 @@ describe('SimSync: registration and the socket', () => {
     const { store, sync } = await tab(w, 'a');
     await sync.open(sim);
     await settle(w.hub, store);
+    // A reconnect of the same SimSocket keeps the last hello's build and never shows `off`; a
+    // second SimSocket would start with no build.
+    const seen: SocketView[] = [];
+    sync.subscribe(() => seen.push(sync.state.socket));
     store.rename('A');
     w.hub.write = true; // the registration's session writes this sim
     await settle(w.hub, store);
     expect(sims(w)).toEqual([sim]);
+    expect(seen.map((v) => v.phase)).toContain('connecting');
+    expect(seen.filter((v) => v.phase === 'off' || v.serverBuild === null)).toEqual([]);
     // One SimSocket, reconnected once: the reader's connection closed, a writer's opened.
     expect(w.hub.sockets).toHaveLength(2);
     expect(w.hub.sockets[0].closedWith).toBe(1000);
@@ -448,6 +454,166 @@ describe('SimSync: registration and the socket', () => {
     expect(w.hub.sockets).toHaveLength(1);
     expect(w.hub.sockets[0].closedWith).toBe(1000);
     expect(sync.state.socket).toEqual(OFF_VIEW);
+  });
+
+  it('open of the sim the store is on, behind an open of another still queued, ends on it', async () => {
+    const w = world();
+    const x = newId();
+    const y = newId();
+    w.hub.register(x);
+    w.hub.register(y);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const base = memorySimDb();
+    const db: SimDb = {
+      ...base,
+      claimPending: async (...args) => {
+        await held;
+        return base.claimPending(...args);
+      }
+    };
+    const { store, sync } = await tab(w, 'a', { db });
+    await sync.open(x);
+    await settle(w.hub, store);
+    const claim = store.claim(['gone-tab']); // the store's next open waits behind it
+    const toY = sync.open(y);
+    const toX = sync.open(x); // the store is still ready on x: not a reason to do nothing
+    release();
+    await Promise.all([claim, toY, toX]);
+    await settle(w.hub, store);
+    expect(store.simId).toBe(x);
+    expect(store.ready).toBe(true);
+    expect(w.hub.sockets.filter((s) => s.url.includes(y))).toEqual([]);
+    expect(w.hub.sockets.at(-1)?.url).toContain(x);
+    expect(w.hub.sockets.at(-1)?.closedWith).toBeNull();
+    expect(w.fetch.calls).toEqual([]);
+  });
+
+  /** A sim this device stored, confirmed on the server, with one of this tab's edits unsent. */
+  async function storedWithEdit(w: World) {
+    const sim = newId();
+    const first = draftOf(0, [nameChange('S')]);
+    const mine = draftOf(1, [nameChange('Mine')]);
+    w.hub.register(sim);
+    w.hub.foreign(sim, first);
+    await w.db.createSim(
+      { simId: sim, createdAt: 1, registered: false },
+      {
+        batch: {
+          owner: 'a',
+          confirmed: [stamped(first, 1)],
+          put: [{ id: mine.id, pending: { draft: mine, targetId: null } }],
+          remove: []
+        }
+      }
+    );
+    return sim;
+  }
+
+  it('a subscriber that stops SimSync when it first sees a socket hears nothing after the end', async () => {
+    const w = world();
+    const sim = await storedWithEdit(w);
+    const { store, sync } = await tab(w, 'a');
+    let heard = 0;
+    let atEnd = -1;
+    sync.subscribe(() => {
+      heard++;
+      if (atEnd < 0 && sync.state.socket.phase !== 'off') {
+        atEnd = 0;
+        sync.stop();
+        atEnd = heard; // the final state, published inside stop(), is counted
+      }
+    });
+    await sync.open(sim);
+    await settle(w.hub, store);
+    w.clock.advance(300_000);
+    await settle(w.hub, store);
+    expect(atEnd).toBeGreaterThan(0);
+    expect(heard).toBe(atEnd);
+    expect(sync.state.socket).toEqual(OFF_VIEW);
+    expect(w.fetch.calls).toEqual([]);
+    expect(w.clock.nextDelay()).toBeNull();
+  });
+
+  it('a subscriber that opens another sim when it first sees a socket posts nothing for the one left', async () => {
+    const w = world();
+    const sim = await storedWithEdit(w);
+    const other = newId();
+    // The other sim's read is held, so the store stays on `sim` while the request could go.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const db: SimDb = {
+      ...w.db,
+      read: async (id) => {
+        if (id === other) await held;
+        return w.db.read(id);
+      }
+    };
+    const { store, sync } = await tab(w, 'a', { db });
+    let opened: Promise<void> | null = null;
+    sync.subscribe(() => {
+      if (opened === null && sync.state.socket.phase !== 'off') opened = sync.open(other);
+    });
+    await sync.open(sim);
+    expect(opened).not.toBeNull();
+    await settle(w.hub, store);
+    expect(w.fetch.calls).toEqual([]);
+    release();
+    await opened;
+    await settle(w.hub, store);
+    expect(store.simId).toBe(other);
+    expect(w.fetch.calls).toEqual([]);
+    expect(sync.state.registration).toBe('none'); // the other sim is a look
+  });
+
+  it('a throw while an answer is handled is logged once by name and is not unhandled', async () => {
+    const w = world();
+    w.fetch.handler = () => ({ status: 401, body: { error: 'x', code: 'sign_in' } });
+    const { error } = mockConsole('error');
+    const { store, sync } = await tab(w, 'a');
+    let thrown = 0;
+    sync.subscribe(() => {
+      if (sync.state.registration === 'sign-in' && thrown === 0) {
+        thrown++;
+        throw new TypeError('subscriber failed');
+      }
+    });
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    expect(thrown).toBe(1);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith('[sim-sync] registration handling failed', 'TypeError');
+    expect(sync.state.registration).toBe('sign-in');
+  });
+
+  it('a halted socket is kept and reported; nothing revives it; another sim gets its own', async () => {
+    const w = world();
+    const other = newId();
+    w.hub.register(other);
+    const { store, sync } = await tab(w, 'a');
+    await sync.open(null);
+    store.rename('A');
+    await settle(w.hub, store);
+    w.hub.closeAll(4410); // the sim was taken down
+    await settle(w.hub, store);
+    expect(sync.state.socket).toMatchObject({ phase: 'halted', halt: 'gone' });
+    store.rename('B');
+    await settle(w.hub, store);
+    expect(sync.state.save).toEqual({ kind: 'device', why: 'gone' });
+    w.net.set('offline');
+    w.net.set('online');
+    sync.retryRegistration();
+    w.clock.advance(300_000);
+    await settle(w.hub, store);
+    expect(w.hub.sockets).toHaveLength(1);
+    expect(w.fetch.calls).toHaveLength(1);
+    expect(sync.state.socket.halt).toBe('gone');
+    await sync.open(other);
+    await settle(w.hub, store);
+    expect(w.hub.sockets).toHaveLength(2);
+    expect(w.hub.sockets[1].url).toContain(other);
+    expect(sync.state.socket).toMatchObject({ phase: 'live', halt: null });
   });
 
   it('open rejects before start', async () => {
