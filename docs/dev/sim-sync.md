@@ -28,7 +28,7 @@ Each holds after every public call of the socket, the sync object and the tab pr
 | S2  | Only what the store hands out, for its own sim. Every append is the store's `head()` read at the moment of sending, sent only when the store is ready and its sim is the socket's                                                                                                                                                                                                                                                                         |
 | S3  | Frames go to the sim they came from. Every `receive` names the socket's sim id; a socket whose sim is no longer the store's is stopped; the events of a stopped, detached or replaced socket are ignored                                                                                                                                                                                                                                                  |
 | S4  | The client never confirms or discards on its own. A commit leaves pending only through the store's `receive`, or through `dropPending` on an `invalid` refusal naming the commit in flight. `not-writer`, `limit`, `full`, `newer`, `gone`, a close, `taken`, sign-in and quota leave every commit pending and stored                                                                                                                                     |
-| S5  | Registration only for the device's own work. The request is sent only when the store says it is needed and the sim has something to send; never for a look; one request at a time per browser                                                                                                                                                                                                                                                             |
+| S5  | Registration only for the device's own work. The request is sent only when the store says it is needed and the sim has something to send; never for a look that has not been edited; one request at a time per browser                                                                                                                                                                                                                                    |
 | S6  | No socket without a registered or foreign sim. A socket is made only when the store says registered, for a sim with no record on this device (a look), or for a sim that needs registration and has a confirmed tip (it is read, nothing is posted). A look's read socket is kept while its registration is in flight, retrying or refused with `sign-in`, `quota` or `failed`. `taken` with nothing confirmed stops the socket and none is made after it |
 | S7  | Dev sends nothing. With `live: false`, no fetch is made and no socket is opened                                                                                                                                                                                                                                                                                                                                                                           |
 | S8  | Claims only from gone tabs. Pending records are claimed only from owners whose tab lock is free, never from this tab; without Web Locks, from every other owner, at open only                                                                                                                                                                                                                                                                             |
@@ -71,7 +71,7 @@ One `SimSync` per store. Two in one tab would contend for the tab's lock, and bo
 | `retryRegistration()` | From `sign-in`, `quota`, `taken`, `failed` or `retrying` (nothing otherwise): clears the wait and posts again now when the evaluation finds something to send. The attempt count starts again                                                                                                                                         |
 | `stop()`              | Final. Stops the socket and the retry timer, unsubscribes, then releases the tab's lock and closes the channel; makes one last publish (no socket). Afterwards every handler (a registration answer, a retry timer, a network or visibility signal, a store notification) returns at once, no socket is opened and no request is sent |
 | `state`               | A rune (`$state.raw`), replaced when anything in it changes: `{ live, registration, socket, buildMismatch, save }`                                                                                                                                                                                                                    |
-| `subscribe(fn)`       | Called after every change of `state`; returns the unsubscribe. A subscriber that throws stops later subscribers hearing that update                                                                                                                                                                                                   |
+| `subscribe(fn)`       | Called after every change of `state`; returns the unsubscribe. Each subscriber runs in its own `try`: a throw is logged once per `SimSync` (`[sim-sync] subscriber failed <name>`) and the other subscribers are still called                                                                                                         |
 
 After `stop()` the page must not edit the store it gave this `SimSync`: the tab's lock is released and other tabs may take its unsent records. Nothing here can enforce that. To work on, make a new store and a new `SimSync` with a new tab id. Call `store.settle()` before `stop()` when a draft must be committed.
 
@@ -85,7 +85,14 @@ After `stop()` the page must not edit the store it gave this `SimSync`: the tab'
 | `buildMismatch` | `socket.serverBuild` is set and is not `build`; changes nothing else: the tab keeps saving, the page offers a reload                                          |
 | `save`          | the save state                                                                                                                                                |
 
-A page never shows a sim's id (URL, copy, share) before `registration` is `done`.
+For a sim this device minted, a page never shows its id (URL, copy, share) before `registration` is `done`.
+
+### For the page
+
+- Pass as `build` the root layout's `appRelease` (`PUBLIC_APP_RELEASE`), the source of the server's stamp; any other string makes `buildMismatch` true for good.
+- `open` of the sim already open does not revive a halted socket; only another sim or a reload does.
+- `unreachable` also shows for a sim taken down before this tab connected, and while an open with unsent edits runs (Known limits): its copy must not claim the server is down.
+- Call `browserPorts()` once per `SimSync`: each call makes a `BroadcastChannel`, and only the one given to a started `SimSync` is closed by its `stop()`.
 
 ### Opening
 
@@ -215,6 +222,8 @@ The owner never calls `dropPending` or confirms anything itself, never sends app
 | 429, 5xx                                                    | `retry`   | Backs off (the server sends no hint of when): `backoffDelay(attempt++)`; `online` posts at once |
 | anything else                                               | `bug`     | State `failed`; logs `[sim-sync] registration refused <status> <code>`                          |
 
+An edited look is posted too. On a signed-out known device it is answered `sign-in` before `taken`, because the server checks the device rule first.
+
 One request at a time per browser: `RegisterGate` runs each job under the Web Lock `sfh-register`. Without Web Locks (a null port), or once a lock request has failed before its job started, it runs them one at a time within the tab only. A job that throws releases the gate; a gate that rejects counts as `retry`. The job re-reads the caller's token inside the gate and does not post when the registration is no longer wanted (the sim changed, `stop()` came).
 
 The evaluation runs after every store notification, registration answer, timer and network signal, and does nothing unless `live`, no open is under way, the store has a sim and is ready:
@@ -251,17 +260,17 @@ An answer that comes after the sim changed (or after `stop()`) is ignored: every
 | `BroadcastChannel('sfh-sim')` | Carries `{ type: 'here', tabId, reply }` and nothing else; a malformed message is ignored      |
 | Web Lock `sfh-register`       | The registration gate (above)                                                                  |
 
-| Call                          | Does                                                                                                                                                                                                                                                                                                |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `start()`                     | Requests this tab's lock, resolves `true` once it is held and the tab has announced itself (`here`, `reply: false`). Resolves `false`, announcing nothing, when there is no Web Locks or the request failed (logged): from then on the tab behaves as with no Web Locks and answers no announcement |
-| `goneOwners(owners)`          | Of the owners other than this tab, those whose lock is not held (`locks.query()`). Without Web Locks: every owner but this tab                                                                                                                                                                      |
-| `watch(owner)`                | Requests the owner's lock, releases it at once when granted (it is granted only when the owner is gone), then tells `onGone` once per owner until the owner announces itself again. Never this tab; nothing without locks or after `stop()`                                                         |
-| a heard `here` of another tab | Watches that tab, and answers `here` with `reply: true` when it was not a reply and this tab holds its lock: both watch each other                                                                                                                                                                  |
-| `stop()`                      | Releases the lock, aborts the watches (nothing is told), closes the channel                                                                                                                                                                                                                         |
+| Call                          | Does                                                                                                                                                                                                                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start()`                     | Requests this tab's lock, resolves `true` once it is held and the tab has announced itself (`here`, `reply: false`). Resolves `false`, announcing nothing, when there is no Web Locks or the request failed (logged): from then on the tab watches no one and answers no announcement |
+| `goneOwners(owners)`          | Of the owners other than this tab, those whose lock is not held (`locks.query()`), also when this tab's own lock request failed; rejects when the table cannot be read. Without Web Locks: every owner but this tab                                                                   |
+| `watch(owner)`                | Requests the owner's lock, releases it at once when granted (it is granted only when the owner is gone), then tells `onGone` once per owner until the owner announces itself again. Never this tab; nothing without locks or after `stop()`                                           |
+| a heard `here` of another tab | Watches that tab, and answers `here` with `reply: true` when it was not a reply and this tab holds its lock: both watch each other                                                                                                                                                    |
+| `stop()`                      | Releases the lock, aborts the watches (nothing is told), closes the channel                                                                                                                                                                                                           |
 
 How `SimSync` uses them: at open, owners with a free lock are claimed in the store's open (step 3 of Opening); owners still alive are watched; when `onGone(owner)` fires it calls `store.claim([owner])` on the sim the store has open then, and logs `[sim-sync] claim failed <name>` if the claim rejects. A second `onGone` for one owner (a late announcement) claims again and finds nothing. Before `presence.stop()`, `SimSync` has stopped sending and closed its sockets: only then may other tabs take this tab's records.
 
-When `start()` resolves `false` there is no watch and no `onGone` claim: claims happen at open only, from every other owner (S8). When the tab has the lock, a tab that is closing but still holds its lock is not gone, and two live tabs each watching the other never hear the other go.
+When `start()` resolves `false` there is no watch and no `onGone` claim: claims happen at open only (S8), from the owners whose lock is free, or with no Web Locks from every other owner. A lock table that cannot be read claims no one. When the tab has the lock, a tab that is closing but still holds its lock is not gone, and two live tabs each watching the other never hear the other go.
 
 ### Becoming visible
 
@@ -301,14 +310,15 @@ Client logs are `console.error('[sim-sync] <reason>', ...)` with a status, a pro
 | Line                                              | When                                                                             |
 | ------------------------------------------------- | -------------------------------------------------------------------------------- |
 | `[sim-sync] registration refused <status> <code>` | A `bug` answer: the HTTP status and the protocol `code`, or `-`                  |
-| `[sim-sync] registration handling failed <name>`  | A throw while an answer was handled (a subscriber's, say); once per `SimSync`    |
+| `[sim-sync] registration handling failed <name>`  | A throw while an answer was handled (the store's, say); once per `SimSync`       |
+| `[sim-sync] subscriber failed <name>`             | A `SimSync` subscriber threw; once per `SimSync`                                 |
 | `[sim-sync] receive failed <name>`                | `store.receive` threw; the socket halts `broken`                                 |
 | `[sim-sync] socket failed <name>`                 | The `WebSocket` constructor threw; once per `SimSocket`                          |
 | `[sim-sync] resume refused <reason>`              | A resume refused for a reason other than `limit` or `gone`; once per `SimSocket` |
 | `[sim-sync] claim failed <name>`                  | `store.claim` rejected                                                           |
-| `[sim-sync] tab lock failed: <name>`              | The tab's own lock could not be had                                              |
-| `[sim-sync] tab watch failed: <name>`             | A watch failed other than by abort                                               |
-| `[sim-sync] tab post failed: <name>`              | A channel post threw                                                             |
+| `[sim-sync] tab lock failed <name>`               | The tab's own lock could not be had                                              |
+| `[sim-sync] tab watch failed <name>`              | A watch failed other than by abort                                               |
+| `[sim-sync] tab post failed <name>`               | A channel post threw                                                             |
 
 ## What is not built
 
@@ -320,13 +330,17 @@ Client logs are `console.error('[sim-sync] <reason>', ...)` with a status, a pro
 ## Known limits
 
 - No sync under `npm run dev` (`live: !dev`): no fetch, no socket.
-- With no Web Locks, claims happen at open only (a live tab in such a browser can lose unsent records to a tab that opens the same sim) and registration is one at a time per tab only. A tab whose own lock request failed, among tabs that have Web Locks, holds no lock, so the others see it as gone and may claim its records when they open the sim.
+- With no Web Locks, claims happen at open only (a live tab in such a browser can lose unsent records to a tab that opens the same sim) and registration is one at a time per tab only. A tab whose own lock request failed, among tabs that have Web Locks, holds no lock, so the others see it as gone and may claim its records when they open the sim. It still reads the lock table at open, so it never takes the records of a tab that holds its lock.
+- Against the real server, a socket opened for a sim that was taken down or does not exist is answered 404 or 410 before the upgrade, which the browser reports only as a failed connection: the socket retries with backoff and the save state says `unreachable`, never `gone`. Only a tab connected at takedown time gets the `gone` halt. The test hub models a refused open the same way.
+- While an open with unsent edits runs, the save state reads `device` / `unreachable`: the socket is stopped before the store's open and none is made until it ends.
+- `db` and `tabId` must be the ones the store was built with; otherwise claims are made under one id and records written under another.
+- A terminal reason (a halt, `taken`, `full`) reads `saving` for the length of each local write.
 - A first signed-out registration whose answer is lost leaves a pseudonymous account on the server, and the retry is another: the person's own sim can read as `taken`, edits unsent, until the sharing unit. A persistently malformed 200 (a proxy page) is retried for ever, bounded only by the backoff.
 - A pseudonymous session that expires leaves the device's sims read-only: edits stay on the device, `sign-in` waits for `retryRegistration()`.
 - A store with no database that opens a known id treats it as a look and never registers it.
-- A `limit` refusal covers size as well as rate: a commit re-applied past the size limit is retried at the backoff's cap for ever. An `invalid` refusal can drop a version the store has re-applied since it was sent (version skew).
+- `limit` also covers size; the store drops a re-applied draft over the limit (`too-large`), so a size refusal means the server's limits differ from this build's. An `invalid` refusal can drop a version the store has re-applied since it was sent (version skew).
 - A `hello` with no dataset after one that had it leaves the store on the last dataset it knew (an older server after a rollback).
-- A subscriber that throws inside `SimSync`'s publish loop stops later subscribers hearing that update.
+- A subscriber that throws is logged once per `SimSync`; the later subscribers still hear that update, and the store and the socket never see the throw. Later throws are not logged.
 - The sim object's send queue is not bounded for a client that never reads (the resume budgets bound the rate only; sim-object.md, For the next units).
 - The specs ran in Chromium and WebKit, not Firefox.
 
