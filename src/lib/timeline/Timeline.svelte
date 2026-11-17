@@ -14,6 +14,7 @@
   import { monthLastDay } from '$lib/sim/world/months';
   import type { Day } from '$lib/timelapse/time';
   import type { Calibration } from '$lib/timelapse/types';
+  import ChartLegend from './ChartLegend.svelte';
   import FixedRow from './FixedRow.svelte';
   import KindRow from './KindRow.svelte';
   import Lane from './Lane.svelte';
@@ -202,7 +203,10 @@
     <div class="pin" data-testid="tl-pin" bind:offsetHeight={pinHeight}>
       {@render playhead()}
 
-      <div class="lab plain">Homes completed</div>
+      <div class="lab plain chart-lab">
+        <span>Homes completed</span>
+        <ChartLegend stacked class="max-md:hidden" />
+      </div>
       <div class="cell" bind:this={chartCell}>
         <Lane {filledPct}>{@render chart()}</Lane>
       </div>
@@ -392,6 +396,15 @@
   }
   .lab.heading {
     font-weight: 600;
+  }
+  /* From md the chart's label stacks its legend under it (the plot keeps the lane's width). */
+  @media (min-width: 768px) {
+    .chart-lab {
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 2px;
+    }
   }
   .sheet {
     position: fixed;

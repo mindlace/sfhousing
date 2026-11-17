@@ -2,7 +2,8 @@
   The chart row (rule 4, rule 28): the homes completed by month as one heavy line and the state
   target as a dashed marker at its deadline. The part after `index` is drawn dashed at full colour
   (3:1 holds); nothing is drawn past `filledThrough`. Hover or focus of a month, and Left and Right
-  on the focused overlay, read out that month's homes. The figcaption points to the Results table
+  on the focused overlay, read out that month's homes. The plot is 96 px tall below md and 64 px
+  from md, where the legend moves to the label column. The figcaption points to the Results table
   as the text alternative.
 -->
 <script lang="ts">
@@ -12,6 +13,7 @@
   import type { TimelineView } from '$lib/sim/world/score/types';
   import type { Day } from '$lib/timelapse/time';
   import { indexOfDay } from './playhead';
+  import ChartLegend from './ChartLegend.svelte';
   import { dayPct } from './rows';
 
   interface Props {
@@ -95,11 +97,6 @@
 
   const CAPTION =
     'Homes completed by month and the state target; the Results table has the numbers.';
-
-  const LEGEND = [
-    { name: 'Homes completed', dash: undefined, width: 2.5, color: COLORS.total },
-    { name: 'State target', dash: '5 3', width: 2, color: COLORS.plan }
-  ] as const;
 </script>
 
 <figure class="sfh-chart-row m-0" aria-label="Net new homes by month">
@@ -107,7 +104,7 @@
     <svg
       viewBox="0 0 {W} {H}"
       preserveAspectRatio="none"
-      class="block h-24 w-full"
+      class="block h-24 w-full md:h-16"
       aria-hidden="true"
       data-testid="chart-svg"
     >
@@ -197,26 +194,8 @@
       {/if}
     {/if}
   </div>
-  <ul
-    class="legend m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 pt-1 text-xs text-ink dark:text-ink-dark"
-  >
-    {#each LEGEND as l (l.name)}
-      <li class="flex min-h-6 items-center gap-1.5">
-        <svg width="22" height="10" aria-hidden="true">
-          <line
-            x1="1"
-            x2="21"
-            y1="5"
-            y2="5"
-            stroke={l.color}
-            stroke-width={l.width}
-            stroke-dasharray={l.dash}
-          />
-        </svg>
-        <span>{l.name}</span>
-      </li>
-    {/each}
-  </ul>
+  <!-- From md the legend sits in the label column beside the plot (Timeline). -->
+  <ChartLegend class="md:hidden" />
   <figcaption class="sr-only">{CAPTION}</figcaption>
 </figure>
 

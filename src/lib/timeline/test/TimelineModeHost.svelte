@@ -1,7 +1,7 @@
 <!--
   Test host: TimelineMode with the root layout's header slots beside it (as FzpModeHost) and the
   page's part of the document: `policy`, `lots`, `lotsFailed` and the selection live here, and
-  `ctl` lets a test set them as the page's store and PolicySync would. `onedit` applies the change; `onundoto`
+  `ctl` lets a test set them as the page's store and PolicySync would, and call `showResults`. `onedit` applies the change; `onundoto`
   (rule 34) sets the document unless the test passes its own. With `withInspector` the inspector
   renders the Results face. `regionHeight` is the mode box's height (700 px unless given).
 -->
@@ -35,6 +35,7 @@
       setPolicy?: (p: SimPolicy4) => void;
       setLots?: (l: Lots | null) => void;
       setLotsFailed?: (f: boolean) => void;
+      showResults?: () => Promise<void>;
     };
   }
 
@@ -52,7 +53,9 @@
   let lots = $state.raw<Lots | null>(untrack(() => initialLots));
   let lotsFailed = $state(false);
   let selected = $state.raw<SpanRef | null>(null);
+  let mode = $state<ReturnType<typeof TimelineMode>>();
   untrack(() => {
+    ctl.showResults = () => mode!.showResults();
     ctl.setPolicy = (p) => (policy = p);
     ctl.setLots = (l) => (lots = l);
     ctl.setLotsFailed = (f) => (lotsFailed = f);
@@ -70,6 +73,7 @@
 </div>
 <div id="map-region" class="relative" style:height="{regionHeight}px">
   <TimelineMode
+    bind:this={mode}
     {...rest}
     {policy}
     {lots}

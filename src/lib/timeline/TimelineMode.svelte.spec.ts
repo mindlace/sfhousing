@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
+import axe from 'axe-core';
 import '../../routes/layout.css';
 import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
@@ -100,6 +101,8 @@ type Over = Partial<{
   statusMs: number;
   onlotsretry: () => void;
   regionHeight: number;
+  inspectorOpen: boolean;
+  scoreExpanded: boolean;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -111,6 +114,7 @@ function setup(over: Over = {}) {
     setPolicy?: (p: SimPolicy4) => void;
     setLots?: (l: Lots | null) => void;
     setLotsFailed?: (f: boolean) => void;
+    showResults?: () => Promise<void>;
   } = {};
   const createWorker = vi.fn(() => {
     const f = new FakeTimelineWorker();
@@ -136,7 +140,9 @@ function setup(over: Over = {}) {
       ...(over.onlotsretry ? { onlotsretry: over.onlotsretry } : {}),
       ...(over.withInspector ? { withInspector: true } : {}),
       ...(over.regionHeight ? { regionHeight: over.regionHeight } : {}),
-      ...(over.scoreControls ? { scoreControls: over.scoreControls } : {})
+      ...(over.scoreControls ? { scoreControls: over.scoreControls } : {}),
+      ...(over.inspectorOpen !== undefined ? { inspectorOpen: over.inspectorOpen } : {}),
+      ...(over.scoreExpanded !== undefined ? { scoreExpanded: over.scoreExpanded } : {})
     }
   });
   return {
@@ -144,7 +150,8 @@ function setup(over: Over = {}) {
     createWorker,
     setPolicy: (p: SimPolicy4) => ctl.setPolicy!(p),
     setLots: (l: Lots | null) => ctl.setLots!(l),
-    setLotsFailed: (f: boolean) => ctl.setLotsFailed!(f)
+    setLotsFailed: (f: boolean) => ctl.setLotsFailed!(f),
+    showResults: () => ctl.showResults!()
   };
 }
 
@@ -804,7 +811,11 @@ describe('TimelineMode', () => {
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     const top = insp.element().getBoundingClientRect().top;
     const s = slider().element().getBoundingClientRect();
-    const chart = page.getByTestId('tl-dock').getByRole('figure').element().getBoundingClientRect();
+    const chart = page
+      .getByTestId('tl-lanes')
+      .getByRole('figure')
+      .element()
+      .getBoundingClientRect();
     expect(s.top).toBeGreaterThanOrEqual(0);
     expect(s.bottom).toBeLessThanOrEqual(top + 0.5);
     expect(chart.top).toBeGreaterThanOrEqual(0);
@@ -954,5 +965,158 @@ describe('TimelineMode', () => {
     await opened(LAST, { scoreControls: 'insp', withInspector: true });
     await expect.element(scoreBar()).toHaveAttribute('aria-controls', 'insp');
     expect(document.getElementById('insp')).toBe(page.getByTestId('tl-inspector').element());
+  });
+
+  // ---- the bottom pane (from md: the timeline and the detail column under the map) ----
+
+  const box = (id: string) => page.getByTestId(id).element().getBoundingClientRect();
+  const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+
+  for (const [vw, vh] of [
+    [1280, 900],
+    [1024, 768]
+  ] as const) {
+    it(`at ${vw} px the bottom pane holds the timeline and the detail column; the map is the map alone`, async () => {
+      await page.viewport(vw, vh);
+      await opened(LAST, { withInspector: true, scoreControls: 'insp' });
+      await expect.element(page.getByTestId('host-inspector')).toBeVisible();
+      await nextFrame();
+      const mode = box('tl-mode');
+      const dock = box('tl-dock');
+      const lanes = box('tl-lanes');
+      const insp = box('tl-inspector');
+      const map = box('tl-map');
+      expect(Math.abs(dock.height - 0.4 * mode.height)).toBeLessThanOrEqual(2);
+      expect(insp.top).toBeGreaterThanOrEqual(dock.top - 0.5);
+      expect(insp.bottom).toBeLessThanOrEqual(dock.bottom + 0.5);
+      expect(insp.left).toBeGreaterThanOrEqual(dock.left - 0.5);
+      expect(insp.right).toBeLessThanOrEqual(dock.right + 0.5);
+      expect(insp.left).toBeGreaterThanOrEqual(lanes.right - 0.5);
+      expect(insp.width).toBeGreaterThanOrEqual(22 * 16 - 0.5);
+      expect(Math.abs(map.width - mode.width)).toBeLessThanOrEqual(0.5);
+      expect(map.bottom).toBeLessThanOrEqual(dock.top + 0.5);
+    });
+  }
+
+  it('at 1280x800 at least 90 px of rows show under the pinned block', async () => {
+    await page.viewport(1280, 800);
+    await opened(LAST, { withInspector: true });
+    await expect.element(slider()).toBeInTheDocument();
+    await nextFrame();
+    expect(box('tl-mode').height).toBe(700);
+    expect(box('tl-lanes').bottom - box('tl-pin').bottom).toBeGreaterThanOrEqual(90);
+  });
+
+  it("from md the chart's legend stacks in the label column, legible and clear of axe", async () => {
+    await opened(LAST, { withInspector: true });
+    await expect.element(page.getByTestId('tl-chart-legend')).toBeVisible();
+    const legend = page.getByTestId('tl-chart-legend').element() as HTMLElement;
+    const lab = legend.parentElement!.getBoundingClientRect();
+    expect(lab.width).toBe(168);
+    const names = [...legend.querySelectorAll('li')].map((li) => li.textContent!.trim());
+    expect(names).toEqual(['Homes completed', 'State target']);
+    for (const li of legend.querySelectorAll('li')) {
+      expect(li.getBoundingClientRect().right).toBeLessThanOrEqual(lab.right);
+      expect(li.scrollWidth).toBeLessThanOrEqual(li.clientWidth);
+      expect(parseFloat(getComputedStyle(li).fontSize)).toBeGreaterThanOrEqual(12);
+    }
+    expect(legend.getBoundingClientRect().bottom).toBeLessThanOrEqual(lab.bottom);
+    // The legend under the plot is gone from md; the plot keeps the lane's width.
+    const fig = page.getByTestId('tl-lanes').getByRole('figure').element();
+    expect(getComputedStyle(fig.querySelector('.legend')!).display).toBe('none');
+    expect(page.getByTestId('chart-svg').element().getBoundingClientRect().height).toBe(64);
+    const res = await axe.run(page.getByTestId('tl-pin').element(), {
+      runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
+    });
+    expect(res.violations.map((v) => v.id)).toEqual([]);
+  });
+
+  it("below md the chart's legend stays under the plot", async () => {
+    await page.viewport(390, 760);
+    await opened(LAST);
+    await expect.element(slider()).toBeInTheDocument();
+    expect(getComputedStyle(page.getByTestId('tl-chart-legend').element()).display).toBe('none');
+    const fig = page.getByTestId('tl-lanes').getByRole('figure').element();
+    expect(getComputedStyle(fig.querySelector('.legend')!).display).not.toBe('none');
+    expect(page.getByTestId('chart-svg').element().getBoundingClientRect().height).toBe(96);
+  });
+
+  it('from md the detail column shows Results when nothing is open', async () => {
+    await opened(LAST, { withInspector: true, inspectorOpen: false });
+    const insp = page.getByTestId('tl-inspector');
+    await expect.element(insp.getByTestId('tl-results')).toBeVisible();
+    expect(document.querySelector('[data-testid=host-inspector]')).toBeNull();
+  });
+
+  it("from md the map's height holds when a kind opens or the inspector opens", async () => {
+    const s = await opened(LAST, { withInspector: true, inspectorOpen: false });
+    await expect.element(slider()).toBeInTheDocument();
+    await nextFrame();
+    const h0 = box('tl-map').height;
+    await page.getByRole('button', { name: 'Zoning', exact: true }).click();
+    await nextFrame();
+    expect(box('tl-map').height).toBe(h0);
+    await (await s.r).rerender({ inspectorOpen: true });
+    await expect.element(page.getByTestId('host-inspector')).toBeVisible();
+    await nextFrame();
+    expect(box('tl-map').height).toBe(h0);
+  });
+
+  it('below md nothing opens by default', async () => {
+    await page.viewport(390, 760);
+    await opened(LAST, { withInspector: true, inspectorOpen: false });
+    await expect.element(slider()).toBeInTheDocument();
+    expect(document.querySelector('[data-testid=tl-inspector]')).toBeNull();
+  });
+
+  it('from md the header score has no aria-expanded and controls the detail column', async () => {
+    await opened(LAST, {
+      withInspector: true,
+      scoreControls: 'insp',
+      scoreExpanded: true,
+      inspectorOpen: false
+    });
+    await expect.element(scoreBar()).toHaveAttribute('aria-controls', 'insp');
+    expect(scoreBar().element().hasAttribute('aria-expanded')).toBe(false);
+    expect(document.getElementById('insp')).toBe(page.getByTestId('tl-inspector').element());
+  });
+
+  it('below md the header score reports the sheet as expanded', async () => {
+    await page.viewport(390, 760);
+    await opened(LAST, {
+      withInspector: true,
+      scoreControls: 'insp',
+      scoreExpanded: true,
+      inspectorOpen: true
+    });
+    await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(scoreBar()).toHaveAttribute('aria-controls', 'insp');
+  });
+
+  it('showResults scrolls the detail column to the top and focuses Results', async () => {
+    const s = await opened(LAST, { withInspector: true, inspectorOpen: false });
+    const insp = page.getByTestId('tl-inspector');
+    await expect.element(insp.getByTestId('tl-results')).toBeVisible();
+    const el = insp.element() as HTMLElement;
+    await expect.poll(() => el.scrollHeight - el.clientHeight).toBeGreaterThan(200);
+    el.scrollTop = 200;
+    expect(el.scrollTop).toBe(200);
+    await s.showResults();
+    expect(el.scrollTop).toBe(0);
+    expect(document.activeElement).toBe(page.getByTestId('tl-results').element());
+  });
+
+  it("swapping the column's content starts it at the top", async () => {
+    const s = await opened(LAST, { withInspector: true, inspectorOpen: true });
+    const insp = page.getByTestId('tl-inspector');
+    await expect.element(insp.getByTestId('host-inspector')).toBeVisible();
+    const el = insp.element() as HTMLElement;
+    await expect.poll(() => el.scrollHeight - el.clientHeight).toBeGreaterThan(200);
+    el.scrollTop = 200;
+    expect(el.scrollTop).toBe(200);
+    await (await s.r).rerender({ inspectorOpen: false });
+    await expect.element(insp.getByTestId('tl-results')).toBeVisible();
+    expect(document.querySelector('[data-testid=host-inspector]')).toBeNull();
+    await expect.poll(() => el.scrollTop).toBe(0);
   });
 });

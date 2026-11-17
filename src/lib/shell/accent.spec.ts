@@ -52,6 +52,7 @@ const THEMED_FILES = [
   'src/lib/scoreboard/NeighborhoodList.svelte',
   'src/lib/sharing/NoticeStack.svelte',
   'src/lib/timeline/AddMenu.svelte',
+  'src/lib/timeline/ChartLegend.svelte',
   'src/lib/timeline/ChartRow.svelte',
   'src/lib/timeline/Explain.svelte',
   'src/lib/timeline/FixedRow.svelte',

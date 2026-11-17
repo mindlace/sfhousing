@@ -1,10 +1,11 @@
 <!--
   The /sim and /s/<id> composition on the timeline (timeline-ui rules 1, 18-36): the header score
-  and the status slot, the notice stack, the map with the project card and tooltip, the inspector
-  beside the map (a sheet on a phone) and the timeline under it (the playhead, the chart and the
-  rows), over a `TimelineSession`. It takes FzpMode's place; the load states before the worker
-  are FzpMode's (rule 30). The policy store and its editors are the page's: edits arrive as a new
-  `policy`, their lots as a new `lots` (PolicySync).
+  and the status slot, the notice stack, the map with the project card and tooltip, and under the
+  map the bottom pane: the timeline (the playhead, the chart and the rows) beside the detail
+  column (the inspector, or Results; a sheet on a phone), over a `TimelineSession`. It takes
+  FzpMode's place; the load states before the worker are FzpMode's (rule 30). The policy store and
+  its editors are the page's: edits arrive as a new `policy`, their lots as a new `lots`
+  (PolicySync).
 -->
 <script module lang="ts">
   import { chanceTable, typicalMonths } from '$lib/timelapse/model';
@@ -85,7 +86,7 @@
 </script>
 
 <script lang="ts">
-  import { onMount, untrack, type Snippet } from 'svelte';
+  import { onMount, tick, untrack, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import type { Manifest } from '$lib/data/manifest';
   import { cardFunding, type CardFunding } from '$lib/fzp/card';
@@ -178,7 +179,11 @@
     onadd(kind: PolicyKind): void;
     /** The page's inspector, given the Results face and the playhead's day. */
     inspector?: Snippet<[{ results: Snippet; day: Day }]>;
-    /** The inspector shows (default true): beside the map from md, a sheet below. */
+    /**
+     * The inspector is open (default true). Below md it is a sheet that shows only while open;
+     * from md the detail column beside the timeline always shows: the inspector while open,
+     * else Results.
+     */
     inspectorOpen?: boolean;
     /** The playhead's day, on every change. */
     onday?(day: Day): void;
@@ -197,9 +202,9 @@
     onmiss?(): void;
     /** The header score is pressed. */
     onscore?(): void;
-    /** The inspector shows Results: the header score's `aria-expanded`. */
+    /** The sheet shows Results: the header score's `aria-expanded`, below md only. */
     scoreExpanded?: boolean;
-    /** The inspector's id: the header score's `aria-controls`. */
+    /** The detail column's id: the header score's `aria-controls` while the column shows. */
     scoreControls?: string;
     /** Px added to the map's bottom inset (a phone sheet over it). Default 0. */
     bottomExtra?: number;
@@ -827,10 +832,29 @@
   // ---- the inspector (rule 1) ----
 
   const narrow = new MediaQuery('(max-width: 767px)');
-  const inspectorShown = $derived(mounted && session !== null && !!inspector && inspectorOpen);
-  /** Below md with the inspector open: it is a sheet under the chart. */
-  const phoneSheet = $derived(inspectorShown && narrow.current);
+  /** The detail column shows: always from md (Results when nothing is open), below md while open. */
+  const detailShown = $derived(
+    mounted && session !== null && !!inspector && (!narrow.current || inspectorOpen)
+  );
+  /** Below md the detail column is a sheet under the chart. */
+  const phoneSheet = $derived(detailShown && narrow.current);
   let dockEl = $state<HTMLElement>();
+  let detailEl = $state<HTMLElement>();
+
+  /** The column's content swaps (Results for the inspector or back): it starts at the top. */
+  $effect(() => {
+    void inspectorOpen;
+    const el = detailEl;
+    if (el) el.scrollTop = 0;
+  });
+
+  /** The header score's press from md: the column at its top, focus on Results. */
+  export async function showResults(): Promise<void> {
+    await tick();
+    if (!detailEl) return;
+    detailEl.scrollTop = 0;
+    detailEl.querySelector<HTMLElement>('[data-testid=tl-results]')?.focus({ preventScroll: true });
+  }
   /** The status line's and the pinned block's heights: the scroll padding (WCAG 2.4.11). */
   let statusH = $state(0);
   let pinHeight = $state(0);
@@ -946,8 +970,8 @@
       provisional={session.provisional}
       busy={stale}
       {stale}
-      expanded={scoreExpanded}
-      controls={inspectorShown ? (scoreControls ?? '') : ''}
+      expanded={narrow.current ? scoreExpanded : undefined}
+      controls={detailShown ? (scoreControls ?? '') : ''}
       onclick={() => onscore?.()}
       live={at ? homesAddedBy(day, at) : ''}
       quiet={playing}
@@ -956,7 +980,12 @@
 {/snippet}
 
 {#snippet results()}
-  <div class="tl-dim" data-testid="tl-results" data-stale={stale ? 'true' : undefined}>
+  <div
+    class="tl-dim"
+    data-testid="tl-results"
+    data-stale={stale ? 'true' : undefined}
+    tabindex="-1"
+  >
     <SimResults
       {score}
       {at}
@@ -1161,27 +1190,19 @@
           />
         {/if}
       </div>
-
-      {#if inspectorShown && inspector}
-        <!-- Beside the map from md, leaving the timeline in view; below md a sheet from under the
-           chart to the mode box's end (top and bottom inline), so the playhead and the chart stay
-           above it and the footer below it (rules 1, 9; W6b). -->
-        <aside
-          id={scoreControls}
-          data-testid="tl-inspector"
-          style:top={phoneSheet ? `${sheetTop}px` : undefined}
-          style:bottom={phoneSheet ? `${sheetBottom}px` : undefined}
-          class="z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:w-96 md:shrink-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
-        >
-          {@render inspector({ results, day })}
-        </aside>
-      {/if}
     </div>
   </div>
 
   {#if mounted && session && calibration}
+    <!-- From md the bottom pane: a fixed 40% of the mode box, the timeline beside the detail
+         column (rule 1). Below md the timeline is in flow and the column a sheet. -->
     <div
-      class="flex shrink-0 flex-col border-t border-line bg-surface md:max-h-[50%] dark:border-line-dark dark:bg-surface-dark"
+      class="flex shrink-0 flex-col border-t border-line bg-surface md:grid md:h-[40%] md:grid-rows-[minmax(0,1fr)] dark:border-line-dark dark:bg-surface-dark"
+      style:grid-template-columns={narrow.current
+        ? undefined
+        : detailShown
+          ? 'minmax(0, 3fr) minmax(22rem, 2fr)'
+          : 'minmax(0, 1fr)'}
       data-testid="tl-dock"
     >
       <!-- The timeline's scroll box from md; below md the mode box scrolls. Either way its pinned
@@ -1217,6 +1238,26 @@
           bind:pinHeight
         />
       </div>
+
+      {#if detailShown && inspector}
+        <!-- From md the column beside the timeline: the inspector while open, else Results. Below
+             md a sheet from under the chart to the mode box's end (top and bottom inline), so the
+             playhead and the chart stay above it and the footer below it (rules 1, 9; W6b). -->
+        <aside
+          bind:this={detailEl}
+          id={scoreControls}
+          data-testid="tl-inspector"
+          style:top={phoneSheet ? `${sheetTop}px` : undefined}
+          style:bottom={phoneSheet ? `${sheetBottom}px` : undefined}
+          class="z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:min-h-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
+        >
+          {#if inspectorOpen}
+            {@render inspector({ results, day })}
+          {:else}
+            {@render results()}
+          {/if}
+        </aside>
+      {/if}
     </div>
   {/if}
 </div>
