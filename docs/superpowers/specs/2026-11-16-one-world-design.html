@@ -41,8 +41,18 @@
       <li>Update the docs <code>ensemble-runner.md</code>, <code>world-score.md</code>, <code>timeline-ui.md</code>, <code>world-core.md</code>, <code>world-funding.md</code> (perf bar), <code>map-stream.md</code> and <code>policy-timeline.md</code> (a note on single-world pairing). Update the tests, e2e and perf budgets. <code>scripts/ensemble-measure.ts</code> defaults to 1 world.</li>
       <li>The funding tolerance referee keeps its own 200 seeds; it is a test of the engine, not a page result.</li>
     </ol>
-    <aside data-kind="warning"><strong>Risk</strong> With one pair, the policy effect can jitter. Most lots are cancelled by the shared dice, but competition for the funding pool and the dice-order shifts from resizes and phases still let noise through. On a small policy the effect could come out jumpy or even negative.</aside>
-    <aside data-kind="decision"><strong>Measure, don't pre-fix</strong> The plan includes a measurement step: compare the one-pair effect against the 48-pair mean on the fixture policies, before the 48-world path is removed. The result is reported to the owner. If it's jumpy, the fix (removing those noise sources) is separate work, and more worlds are not an option.</aside>
+  </section>
+
+  <section id="sec-effect-variance">
+    <h2>The policy effect in one future</h2>
+    <p>Measured on the real dataset (<code>2026-11-14-1a31d026</code>, 48 plan/twin pairs, 2026-11-16):</p>
+    <ul>
+      <li>Draws are already keyed by stable identity (lot, attempt, purpose, stage). Funding delays, lapses, resizes and phase counts do not reshuffle them, and no lot changed attempt between worlds.</li>
+      <li>About 90% of the pair-to-pair spread is funding crowd-out. Pools award once a year and spend almost all their money, and the line skips rows that don't fit. A project the policy makes eligible takes part of the year's money, so another project waits a full year. A big project slipping past a fixed date (e.g. the RHNA deadline) swings the effect by hundreds of homes.</li>
+      <li>Tiny upzone at the RHNA deadline: 26 of 48 pairs show no displacement (effect spread ±8 homes). The other 22 show displacement (spread ±167, worst −569 from one 642-home project).</li>
+      <li>Averaging doesn't rescue it: small and medium policies would need thousands of pairs to converge at the deadline.</li>
+    </ul>
+    <aside data-kind="decision"><strong>Accept the variance</strong> Annual funding rounds are deliberate (that's how the agencies fund), so the one-year slips are real. The page shows one future, and in that future the effect is whatever the crowd-out made it, including negative. No monthly money, no funding order that favours existing projects, and no extra worlds for smoothing.</aside>
   </section>
 
   <section id="sec-builder">
