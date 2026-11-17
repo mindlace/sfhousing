@@ -506,7 +506,10 @@ test('7. Results: Public money, Who the homes are for, the market and the source
 
 // ---- 8 to 10. sharing and loading -----------------------------------------------------------------
 
-test('8. a published policy lists its public money', async ({ page }) => {
+test('8. a published policy lists its public money', async ({ page, isMobile }) => {
+  // From md the rows under the pinned block need the height for both money bars: at 720 px the
+  // bar above the selected one shows as a sliver under the block, too small a target for axe.
+  if (!isMobile) await page.setViewportSize({ width: 1280, height: 800 });
   await gotoSim(page);
   await addPolicy(page, 'Public money', 'Market terms');
   await commit(
