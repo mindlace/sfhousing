@@ -81,21 +81,38 @@ async function hideHeightLimits(page: Page): Promise<void> {
 }
 
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
-/** Results, which the header score shows in the inspector. */
+/** Results: from md in the detail column when nothing else is open, below md in the sheet. */
 const results = (page: Page): Locator => page.getByTestId('tl-results');
 /** The editor (the selected policy, a fixed row or the "+" menu). */
 const editor = (page: Page): Locator => page.getByTestId('inspector');
-/** The inspector's box: beside the map from md, a sheet below. */
+/** The inspector's box: the detail column beside the timeline from md, a sheet below. */
 const inspectorBox = (page: Page): Locator => page.getByTestId('tl-inspector');
 const menuButton = (page: Page): Locator =>
   page.getByRole('banner').getByRole('button', { name: 'Menu', exact: true });
 
+/**
+ * Shows Results. From md the header score has no aria-expanded and shows Results in the detail
+ * column; below md it opens the sheet.
+ */
 async function openScore(page: Page): Promise<Locator> {
-  if ((await scoreBar(page).getAttribute('aria-expanded')) !== 'true') await scoreBar(page).click();
-  await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'true');
+  const expanded = await scoreBar(page).getAttribute('aria-expanded');
+  if (expanded === null) {
+    if (!(await results(page).isVisible())) await scoreBar(page).click();
+  } else {
+    if (expanded !== 'true') await scoreBar(page).click();
+    await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'true');
+  }
   await expect(results(page)).toBeVisible();
   return results(page);
 }
+
+/** True when the element at `loc`'s centre is `loc` or inside it. */
+const topmostAtCentre = (loc: Locator): Promise<boolean> =>
+  loc.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return !!top && el.contains(top);
+  });
 
 /** Closes the editor if it shows. */
 async function closeEditor(page: Page): Promise<void> {
@@ -237,12 +254,20 @@ test('/fzp lands on /sim and the forecast fills', async ({ page }) => {
   expect(await fzp(page, 'filledThrough')).toBe(await fzp(page, 'lastIndex'));
 });
 
-test('/sim opens on the Family Zoning Plan; the header score shows Results', async ({ page }) => {
+test('/sim opens on the Family Zoning Plan; the header score shows Results', async ({
+  isMobile,
+  page
+}) => {
   await gotoSim(page);
   const doc = await fzp(page, 'policy');
   expect(doc.kinds).toEqual({ zoning: [], permitting: [], money: [] });
   await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes added by \d{4}$/);
-  await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'false');
+  if (isMobile) {
+    await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'false');
+  } else {
+    await expect(scoreBar(page)).not.toHaveAttribute('aria-expanded');
+    await expect(results(page)).toBeVisible();
+  }
   const face = await openScore(page);
   await expect(face.getByText('What your policy added')).toBeVisible();
 });
@@ -264,7 +289,11 @@ test('at 375 px the links wait in Menu; the score bar stays pinned', async ({ is
   await expect(scoreBar(page)).toBeVisible();
 });
 
-test('the header score flips the inspector between Results and the editor', async ({ page }) => {
+test('below md the header score flips the sheet between Results and the editor', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(!isMobile, 'the phone sheet; from md the score only shows Results');
   await gotoSim(page);
   await addPolicy(page, 'Zoning', 'Transit rule');
   await expect(editor(page).getByRole('heading', { name: 'Transit rule' })).toBeVisible();
@@ -279,6 +308,91 @@ test('the header score flips the inspector between Results and the editor', asyn
   await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'false');
   await expect(results(page)).toHaveCount(0);
   await expect(editor(page).getByRole('heading', { name: 'Transit rule' })).toBeVisible();
+});
+
+test('from md Results show at rest; below md nothing opens', async ({ isMobile, page }) => {
+  await gotoSim(page);
+  if (isMobile) {
+    await expect(inspectorBox(page)).toHaveCount(0);
+  } else {
+    await expect(results(page)).toBeVisible();
+    await expect(editor(page)).toHaveCount(0);
+  }
+});
+
+test('from md the header score closes the editor and shows Results', async ({ isMobile, page }) => {
+  test.skip(isMobile, 'below md the score toggles the sheet');
+  await gotoSim(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await scoreBar(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await expect(results(page)).toBeVisible();
+  await expect
+    .poll(() => results(page).evaluate((el) => el.contains(document.activeElement)))
+    .toBe(true);
+
+  // Pressed again it still shows Results.
+  await scoreBar(page).click();
+  await expect(results(page)).toBeVisible();
+  await expect(editor(page)).toHaveCount(0);
+});
+
+test('from md the map keeps its box when a kind opens or a policy is selected', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(isMobile, 'the bottom pane is md+');
+  await gotoSim(page);
+  const m0 = await page.getByTestId('tl-map').boundingBox();
+  await openKind(page, 'Zoning');
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  expect(await page.getByTestId('tl-map').boundingBox()).toEqual(m0);
+});
+
+for (const width of [1280, 1024]) {
+  test(`at ${width} px the detail column is at least 22rem and the pane 40% of the mode box`, async ({
+    isMobile,
+    page
+  }) => {
+    test.skip(isMobile, 'the bottom pane is md+');
+    await page.setViewportSize({ width, height: 800 });
+    await gotoSim(page);
+    const insp = (await inspectorBox(page).boundingBox())!;
+    expect(insp.width).toBeGreaterThanOrEqual(352 - 0.5);
+    const dock = (await page.getByTestId('tl-dock').boundingBox())!;
+    const mode = (await page.getByTestId('tl-mode').boundingBox())!;
+    expect(Math.abs(dock.height - 0.4 * mode.height)).toBeLessThanOrEqual(2);
+  });
+}
+
+test('the play control stays in view with every kind open', async ({ isMobile, page }) => {
+  await gotoSim(page);
+  const play = page.getByTestId('tl-play');
+  if (isMobile) {
+    await page.getByTestId('tl-mode').evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    const status = (await page.getByTestId('tl-status-line').boundingBox())!;
+    await expect
+      .poll(async () => (await play.boundingBox())!.y)
+      .toBeGreaterThanOrEqual(status.y + status.height - 0.5);
+  } else {
+    await openKind(page, 'Zoning');
+    await openKind(page, 'Permitting');
+    await openKind(page, 'Public money');
+    await addPolicy(page, 'Zoning', 'Transit rule');
+    await addPolicy(page, 'Permitting', PRESET);
+    const lanes = page.getByTestId('tl-lanes');
+    await lanes.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    await expect
+      .poll(() => lanes.evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 1))
+      .toBe(true);
+    const box = (await lanes.boundingBox())!;
+    const p = (await play.boundingBox())!;
+    expect(p.y).toBeGreaterThanOrEqual(box.y - 0.5);
+    expect(p.y + p.height).toBeLessThanOrEqual(box.y + box.height + 0.5);
+    expect(p.x).toBeGreaterThanOrEqual(box.x - 0.5);
+    expect(p.x + p.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
+  }
+  expect(await topmostAtCentre(play)).toBe(true);
 });
 
 // ---- brushes ------------------------------------------------------------------------------------
@@ -310,15 +424,16 @@ test('the Updating status never moves the timeline or the editor', async ({ page
   const before = await refillCount(page);
   const boxes = async () => ({
     editor: await inspectorBox(page).boundingBox(),
-    dock: await page.getByTestId('tl-dock').boundingBox()
+    dock: await page.getByTestId('tl-dock').boundingBox(),
+    map: await page.getByTestId('tl-map').boundingBox()
   });
   const at = await boxes();
-  // Each frame while the forecast is stale, the editor's and the timeline's boxes.
+  // Each frame while the forecast is stale, the editor's, the timeline's and the map's boxes.
   await page.evaluate(() => {
     type Box = { x: number; y: number; width: number; height: number };
     const w = window as unknown as {
       __sfhFzp: SfhFzpDebug;
-      __staleBoxes?: { editor: Box; dock: Box }[];
+      __staleBoxes?: { editor: Box; dock: Box; map: Box }[];
     };
     const box = (selector: string): Box => {
       const r = document.querySelector(selector)!.getBoundingClientRect();
@@ -329,7 +444,8 @@ test('the Updating status never moves the timeline or the editor', async ({ page
       if (w.__sfhFzp.stale)
         w.__staleBoxes!.push({
           editor: box('[data-testid="tl-inspector"]'),
-          dock: box('[data-testid="tl-dock"]')
+          dock: box('[data-testid="tl-dock"]'),
+          map: box('[data-testid="tl-map"]')
         });
       requestAnimationFrame(tick);
     };
@@ -682,14 +798,24 @@ async function expectNavControlClear(page: Page, cover: Locator): Promise<void> 
   }
 }
 
-test('from md the editor leaves the zoom and compass control uncovered', async ({
+test('from md the editor is in the bottom pane, right of the timeline', async ({
   isMobile,
   page
 }) => {
-  test.skip(isMobile, 'the editor is beside the map from md; a coarse pointer has no control');
+  test.skip(isMobile, 'the bottom pane is md+; a coarse pointer has no control');
   await page.setViewportSize({ width: 1280, height: 800 });
   await gotoSim(page);
   await addPolicy(page, 'Zoning', 'Transit rule');
+  const insp = (await inspectorBox(page).boundingBox())!;
+  const lanes = (await page.getByTestId('tl-lanes').boundingBox())!;
+  const dock = (await page.getByTestId('tl-dock').boundingBox())!;
+  expect(insp.x).toBeGreaterThanOrEqual(lanes.x + lanes.width - 0.5);
+  expect(insp.x).toBeGreaterThanOrEqual(dock.x - 0.5);
+  expect(insp.y).toBeGreaterThanOrEqual(dock.y - 0.5);
+  expect(insp.x + insp.width).toBeLessThanOrEqual(dock.x + dock.width + 0.5);
+  expect(insp.y + insp.height).toBeLessThanOrEqual(dock.y + dock.height + 0.5);
+  const map = (await page.getByTestId('tl-map').boundingBox())!;
+  expect(Math.abs(map.width - 1280)).toBeLessThanOrEqual(0.5);
   await expectNavControlClear(page, inspectorBox(page));
 });
 

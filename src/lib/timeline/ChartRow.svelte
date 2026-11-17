@@ -2,16 +2,24 @@
   The chart row (rule 4, rule 28): the homes completed by month as one heavy line and the state
   target as a dashed marker at its deadline. The part after `index` is drawn dashed at full colour
   (3:1 holds); nothing is drawn past `filledThrough`. Hover or focus of a month, and Left and Right
-  on the focused overlay, read out that month's homes. The figcaption points to the Results table
-  as the text alternative.
+  on the focused overlay, read out that month's homes. The plot is 96 px tall below md and 64 px
+  from md, where the legend moves to the label column; 40 px from md on a viewport 820 px tall or
+  less. The figcaption points to the Results table as the text alternative.
 -->
 <script lang="ts">
   import { COLORS } from '$lib/fzp/chart';
   import { formatMonthYear } from '$lib/fzp/format';
   import { formatCount } from '$lib/scoreboard';
   import type { TimelineView } from '$lib/sim/world/score/types';
+  import type { Day } from '$lib/timelapse/time';
+  import { indexOfDay } from './playhead';
+  import ChartLegend from './ChartLegend.svelte';
+  import { dayPct } from './rows';
 
   interface Props {
+    /** The window the lanes span: a month sits where its first day sits in every lane. */
+    asOf: Day;
+    windowEnd: Day;
     view: TimelineView | null;
     /** The playhead's calendar month. */
     index: number;
@@ -19,15 +27,14 @@
     target: { deadlineIndex: number; units: number } | null;
   }
 
-  let { view, index, target }: Props = $props();
+  let { asOf, windowEnd, view, index, target }: Props = $props();
 
   const W = 1000;
   const H = 100;
   const last = $derived(view?.filledThrough ?? -1);
   /** The homes already completed at the dataset date: added, as the headline counts them. */
   const base = $derived(view?.baseline.completedNet ?? 0);
-  const lastIndex = $derived(Math.max(view?.lastIndex ?? 1, 1));
-  const x = (i: number) => (i / lastIndex) * W;
+  const x = (i: number) => (dayPct(view!.months[i], asOf, windowEnd) / 100) * W;
 
   const yMax = $derived.by(() => {
     if (!view || last < 0) return 1;
@@ -68,7 +75,8 @@
   function monthAt(clientX: number): number {
     const r = overlay!.getBoundingClientRect();
     const f = r.width > 0 ? (clientX - r.left) / r.width : 0;
-    return Math.min(Math.max(Math.round(f * lastIndex), 0), last);
+    const i = indexOfDay(view!.months, asOf + f * (windowEnd - asOf));
+    return Math.min(Math.max(i, 0), last);
   }
   function onfocus() {
     focusAt = Math.min(Math.max(index, 0), last);
@@ -89,11 +97,6 @@
 
   const CAPTION =
     'Homes completed by month and the state target; the Results table has the numbers.';
-
-  const LEGEND = [
-    { name: 'Homes completed', dash: undefined, width: 2.5, color: COLORS.total },
-    { name: 'State target', dash: '5 3', width: 2, color: COLORS.plan }
-  ] as const;
 </script>
 
 <figure class="sfh-chart-row m-0" aria-label="Net new homes by month">
@@ -101,7 +104,7 @@
     <svg
       viewBox="0 0 {W} {H}"
       preserveAspectRatio="none"
-      class="block h-24 w-full"
+      class="block h-24 w-full md:h-16"
       aria-hidden="true"
       data-testid="chart-svg"
     >
@@ -178,10 +181,12 @@
         onpointerleave={() => (hoverAt = null)}
       ></div>
       {#if active !== null}
+        <!-- sfh-chart-readout: Timeline.svelte's stacking rule selects it to lift the chart cell
+             above the playhead line while the readout shows. Keep the class name in step. -->
         <p
-          class="readout pointer-events-none absolute top-0 m-0 rounded border border-line bg-surface px-2 py-1 text-xs whitespace-nowrap text-ink tabular-nums shadow-md dark:text-ink-dark"
+          class="sfh-chart-readout readout pointer-events-none absolute top-0 m-0 rounded border border-line bg-surface px-2 py-1 text-xs whitespace-nowrap text-ink tabular-nums shadow-md dark:text-ink-dark"
           style:left="{(x(active) / W) * 100}%"
-          class:flip={active > lastIndex / 2}
+          class:flip={x(active) > W / 2}
           data-testid="chart-readout"
         >
           {summary(active)}
@@ -189,26 +194,8 @@
       {/if}
     {/if}
   </div>
-  <ul
-    class="legend m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 pt-1 text-xs text-ink dark:text-ink-dark"
-  >
-    {#each LEGEND as l (l.name)}
-      <li class="flex min-h-6 items-center gap-1.5">
-        <svg width="22" height="10" aria-hidden="true">
-          <line
-            x1="1"
-            x2="21"
-            y1="5"
-            y2="5"
-            stroke={l.color}
-            stroke-width={l.width}
-            stroke-dasharray={l.dash}
-          />
-        </svg>
-        <span>{l.name}</span>
-      </li>
-    {/each}
-  </ul>
+  <!-- From md the legend sits in the label column beside the plot (Timeline). -->
+  <ChartLegend class="md:hidden" />
   <figcaption class="sr-only">{CAPTION}</figcaption>
 </figure>
 
@@ -222,6 +209,12 @@
   }
   .readout {
     transform: translateX(8px);
+  }
+  /* From md on a short viewport the plot is shorter, so the rows under the pinned block keep room. */
+  @media (min-width: 768px) and (max-height: 820px) {
+    .plot svg {
+      height: 40px;
+    }
   }
   .readout.flip {
     transform: translateX(calc(-100% - 8px));

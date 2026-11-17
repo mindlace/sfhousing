@@ -1,10 +1,11 @@
 <!--
   The /sim and /s/<id> composition on the timeline (timeline-ui rules 1, 18-36): the header score
-  and the status slot, the notice stack, the map with the project card and tooltip, the inspector
-  beside the map (a sheet on a phone) and the timeline under it (the playhead, the chart and the
-  rows), over a `TimelineSession`. It takes FzpMode's place; the load states before the worker
-  are FzpMode's (rule 30). The policy store and its editors are the page's: edits arrive as a new
-  `policy`, their lots as a new `lots` (PolicySync).
+  and the status slot, the notice stack, the map with the project card and tooltip, and under the
+  map the bottom pane: the timeline (the playhead, the chart and the rows) beside the detail
+  column (the inspector, or Results; a sheet on a phone), over a `TimelineSession`. It takes
+  FzpMode's place; the load states before the worker are FzpMode's (rule 30). The policy store and
+  its editors are the page's: edits arrive as a new `policy`, their lots as a new `lots`
+  (PolicySync).
 -->
 <script module lang="ts">
   import { chanceTable, typicalMonths } from '$lib/timelapse/model';
@@ -77,6 +78,18 @@
   /** Below md the inspector sheet starts under the chart, and is never shorter than this. */
   const MIN_SHEET = 240;
 
+  /**
+   * From md, px of scroll padding under the pinned block: a 20 px bar scrolled to the top keeps
+   * its 24 px target clear of the chart's slider (WCAG 2.2 2.5.8).
+   */
+  const PIN_GAP = 4;
+  /**
+   * Px of rows the stuck pinned block must leave in its scroll box (a 44 px coarse row with room
+   * around it); with less (a short window or browser zoom) the block scrolls with the rows, so a
+   * focused row is never under it (WCAG 2.2 2.4.11, 1.4.10).
+   */
+  const MIN_ROWS = 64;
+
   /** The brush-failure notice: the editors' own words for a query that failed. */
   const LOTS_FAILED = lotsText({ kind: 'failed', keys: [] });
 
@@ -85,7 +98,7 @@
 </script>
 
 <script lang="ts">
-  import { onMount, untrack, type Snippet } from 'svelte';
+  import { onMount, tick, untrack, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import type { Manifest } from '$lib/data/manifest';
   import { cardFunding, type CardFunding } from '$lib/fzp/card';
@@ -178,8 +191,14 @@
     onadd(kind: PolicyKind): void;
     /** The page's inspector, given the Results face and the playhead's day. */
     inspector?: Snippet<[{ results: Snippet; day: Day }]>;
-    /** The inspector shows (default true): beside the map from md, a sheet below. */
+    /**
+     * The inspector is open (default true). Below md it is a sheet that shows only while open;
+     * from md the detail column beside the timeline always shows: the inspector while open,
+     * else Results.
+     */
     inspectorOpen?: boolean;
+    /** What the detail column shows (Results, an editor, a menu): a new key starts it at its top. */
+    detailKey?: string;
     /** The playhead's day, on every change. */
     onday?(day: Day): void;
     /** The client's requests on each open (mount, Retry, restart); null on a crash and unmount. */
@@ -197,9 +216,9 @@
     onmiss?(): void;
     /** The header score is pressed. */
     onscore?(): void;
-    /** The inspector shows Results: the header score's `aria-expanded`. */
+    /** The sheet shows Results: the header score's `aria-expanded`, below md only. */
     scoreExpanded?: boolean;
-    /** The inspector's id: the header score's `aria-controls`. */
+    /** The detail column's id: the header score's `aria-controls` while the column shows. */
     scoreControls?: string;
     /** Px added to the map's bottom inset (a phone sheet over it). Default 0. */
     bottomExtra?: number;
@@ -235,6 +254,7 @@
     onadd,
     inspector = undefined,
     inspectorOpen = true,
+    detailKey = '',
     onday = undefined,
     onclient = undefined,
     onmapready = undefined,
@@ -827,10 +847,45 @@
   // ---- the inspector (rule 1) ----
 
   const narrow = new MediaQuery('(max-width: 767px)');
-  const inspectorShown = $derived(mounted && session !== null && !!inspector && inspectorOpen);
-  /** Below md with the inspector open: it is a sheet under the chart. */
-  const phoneSheet = $derived(inspectorShown && narrow.current);
+  /** The detail column shows: always from md (Results when nothing is open), below md while open. */
+  const detailShown = $derived(
+    mounted && session !== null && !!inspector && (!narrow.current || inspectorOpen)
+  );
+  /** Below md the detail column is a sheet under the chart. */
+  const phoneSheet = $derived(detailShown && narrow.current);
   let dockEl = $state<HTMLElement>();
+  let detailEl = $state<HTMLElement>();
+
+  /** The column's content swaps (Results, an editor, another editor): it starts at the top. */
+  $effect(() => {
+    void inspectorOpen;
+    void detailKey;
+    const el = detailEl;
+    if (el) el.scrollTop = 0;
+  });
+
+  /** The header score's press from md: the column at its top, focus on Results. */
+  export async function showResults(): Promise<void> {
+    await tick();
+    if (!detailEl) return;
+    detailEl.scrollTop = 0;
+    detailEl.querySelector<HTMLElement>('[data-testid=tl-results]')?.focus({ preventScroll: true });
+  }
+  /** The status line's and the pinned block's heights: the scroll padding (WCAG 2.4.11). */
+  let statusH = $state(0);
+  let pinHeight = $state(0);
+  /** The scroll boxes' client heights: the mode box below md, the timeline's own from md. */
+  let modeClientH = $state(0);
+  let lanesClientH = $state(0);
+  /** The block sticks only while it leaves MIN_ROWS of rows in its scroll box (re-read on resize). */
+  const pinStuck = $derived(
+    narrow.current
+      ? !modeClientH || modeClientH - statusH - pinHeight >= MIN_ROWS
+      : !lanesClientH || lanesClientH - pinHeight - PIN_GAP >= MIN_ROWS
+  );
+  /** The block's share of the scroll padding and margins: none while it scrolls with the rows. */
+  const pinPad = $derived(pinStuck ? pinHeight : 0);
+  const pinGap = $derived(pinStuck ? PIN_GAP : 0);
   let chartBox = $state<HTMLElement>();
   let modeEl = $state<HTMLElement>();
   let sheetTop = $state(0);
@@ -943,8 +998,8 @@
       provisional={session.provisional}
       busy={stale}
       {stale}
-      expanded={scoreExpanded}
-      controls={inspectorShown ? (scoreControls ?? '') : ''}
+      expanded={narrow.current ? scoreExpanded : undefined}
+      controls={detailShown ? (scoreControls ?? '') : ''}
       onclick={() => onscore?.()}
       live={at ? homesAddedBy(day, at) : ''}
       quiet={playing}
@@ -953,7 +1008,14 @@
 {/snippet}
 
 {#snippet results()}
-  <div class="tl-dim" data-testid="tl-results" data-stale={stale ? 'true' : undefined}>
+  <!-- Focused by showResults: the ring draws inside the box, which sits flush in the column's
+       scroll box and would clip an outer one (WCAG 2.4.7). -->
+  <div
+    class="tl-dim focus:outline-2 focus:-outline-offset-2 focus:outline-accent dark:focus:outline-accent-dark"
+    data-testid="tl-results"
+    data-stale={stale ? 'true' : undefined}
+    tabindex="-1"
+  >
     <SimResults
       {score}
       {at}
@@ -990,7 +1052,7 @@
 
 {#snippet chartPart()}
   <div bind:this={chartBox}>
-    <ChartRow view={current} {index} target={chartTarget} />
+    <ChartRow {asOf} {windowEnd} view={current} {index} target={chartTarget} />
   </div>
 {/snippet}
 
@@ -999,6 +1061,8 @@
 <div
   bind:this={modeEl}
   class="sfh-fzp sfh-tl relative flex h-full flex-col max-md:overflow-y-auto"
+  style:scroll-padding-top={narrow.current ? `${statusH + pinPad}px` : undefined}
+  bind:clientHeight={modeClientH}
   data-testid="tl-mode"
 >
   {#if !noScenario}
@@ -1009,6 +1073,7 @@
     <div
       class="tl-status sticky top-0 z-30 grid min-h-6 shrink-0 items-center border-b border-line bg-surface px-4 text-sm text-ink-muted tabular-nums 2xl:hidden dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark-muted"
       data-testid="tl-status-line"
+      bind:offsetHeight={statusH}
     >
       {@render statusShown()}
     </div>
@@ -1156,45 +1221,78 @@
           />
         {/if}
       </div>
-
-      {#if inspectorShown && inspector}
-        <!-- Beside the map from md, leaving the timeline in view; below md a sheet from under the
-           chart to the mode box's end (top and bottom inline), so the playhead and the chart stay
-           above it and the footer below it (rules 1, 9; W6b). -->
-        <aside
-          id={scoreControls}
-          data-testid="tl-inspector"
-          style:top={phoneSheet ? `${sheetTop}px` : undefined}
-          style:bottom={phoneSheet ? `${sheetBottom}px` : undefined}
-          class="z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:w-96 md:shrink-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
-        >
-          {@render inspector({ results, day })}
-        </aside>
-      {/if}
     </div>
   </div>
 
   {#if mounted && session && calibration}
+    <!-- From md the bottom pane: a fixed 40% of the mode box, the timeline beside the detail
+         column (rule 1). Below md the timeline is in flow and the column a sheet. -->
     <div
-      bind:this={dockEl}
-      class="shrink-0 border-t border-line bg-surface max-2xl:scroll-mt-6 md:max-h-[50%] md:overflow-y-auto dark:border-line-dark dark:bg-surface-dark"
-      style:padding-bottom={phoneSheet ? '100dvh' : undefined}
+      class="flex shrink-0 flex-col border-t border-line bg-surface md:grid md:h-[40%] md:grid-rows-[minmax(0,1fr)] dark:border-line-dark dark:bg-surface-dark"
+      style:grid-template-columns={narrow.current
+        ? undefined
+        : detailShown
+          ? 'minmax(0, 3fr) minmax(22rem, 2fr)'
+          : 'minmax(0, 1fr)'}
       data-testid="tl-dock"
     >
-      <Timeline
-        {policy}
-        {calibration}
-        {asOf}
-        {readonly}
-        {selected}
-        {onselect}
-        {onedit}
-        {onadd}
-        playhead={playheadPart}
-        chart={chartPart}
-        playheadMonth={viewMonthOf(asOf, day)}
-        {filledEnd}
-      />
+      <!-- The timeline's scroll box from md; below md the mode box scrolls. Either way its pinned
+           block sticks at the scroll box's top (under the status line below md), and the scroll
+           padding keeps a focused row out from under it (WCAG 2.2 2.4.11). Below md the mode
+           box's padding counts the status line and the block, so scrolling this box or the
+           timeline to the top (the sheets) takes the block back off as a negative margin. A box
+           too short for the block and MIN_ROWS of rows unsticks it: the block's share of the
+           padding and margins drops to 0 and the timeline scrolls as one piece. -->
+      <div
+        bind:this={dockEl}
+        bind:clientHeight={lanesClientH}
+        class="min-h-0 md:overflow-y-auto"
+        style:padding-bottom={phoneSheet ? '100dvh' : undefined}
+        style:--tl-pin-pos={pinStuck ? undefined : 'relative'}
+        style:--tl-pin-top={narrow.current && pinStuck ? `${statusH}px` : '0px'}
+        style:scroll-padding-top={narrow.current ? undefined : `${pinPad + pinGap}px`}
+        style:scroll-margin-top={narrow.current ? `${-pinPad}px` : undefined}
+        style:--tl-scroll-mt={narrow.current ? `${-pinPad}px` : undefined}
+        style:--tl-pin-mt="{narrow.current ? -pinPad : -pinPad - pinGap}px"
+        data-testid="tl-lanes"
+      >
+        <Timeline
+          {policy}
+          {calibration}
+          {asOf}
+          {readonly}
+          {selected}
+          {onselect}
+          {onedit}
+          {onadd}
+          playhead={playheadPart}
+          chart={chartPart}
+          playheadMonth={viewMonthOf(asOf, day)}
+          playheadDay={day}
+          {filledEnd}
+          bind:pinHeight
+        />
+      </div>
+
+      {#if detailShown && inspector}
+        <!-- From md the column beside the timeline: the inspector while open, else Results. Below
+             md a sheet from under the chart to the mode box's end (top and bottom inline), so the
+             playhead and the chart stay above it and the footer below it (rules 1, 9; W6b). -->
+        <aside
+          bind:this={detailEl}
+          id={scoreControls}
+          data-testid="tl-inspector"
+          style:top={phoneSheet ? `${sheetTop}px` : undefined}
+          style:bottom={phoneSheet ? `${sheetBottom}px` : undefined}
+          class="z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:min-h-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
+        >
+          {#if inspectorOpen}
+            {@render inspector({ results, day })}
+          {:else}
+            {@render results()}
+          {/if}
+        </aside>
+      {/if}
     </div>
   {/if}
 </div>

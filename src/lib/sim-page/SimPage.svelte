@@ -2,10 +2,11 @@
   The /sim page on the timeline (timeline-ui rules 1, 10-22, 40, 41): TimelineMode over the
   document in a `PolicyStore<SimPolicy4>` (undo, redo; edits reconciled with the calibration, and
   programmes or scales an edit leaves without a source dropped with today's funding notice),
-  whose brush lots PolicySync resolves for the worker. The inspector beside the map is the
-  Inspector (the selected policy's editor, "+"'s menu) or, after a press on the header score,
-  Results. The header has the View menu (always offered, rule 18), Undo and Redo, and Publish; its
-  status slot the save state.
+  whose brush lots PolicySync resolves for the worker. The detail column (from md beside the
+  timeline in the bottom pane under the map, below md a sheet) is the Inspector (the selected
+  policy's editor, "+"'s menu) or Results: from md at rest or after a press on the header score,
+  below md after that press. The header has the View menu (always offered, rule 18), Undo and
+  Redo, and Publish; its status slot the save state.
   Opening (rule 40, R-3): with the calibration known, in the browser, the document opens before
   TimelineMode mounts, so its first `policy` is the opened one; with no calibration it opens on
   `oncalibration`, after a Retry's reload. Edit: the v1 autosave migrates to `sfhousing:sim:v2`,
@@ -329,6 +330,7 @@
   let adding = $state<PolicyKind | null>(null);
   /** The inspector's face: the selection's editor, or Results (the header score). */
   let face = $state<'editor' | 'results'>('editor');
+  let timeline = $state<ReturnType<typeof TimelineMode>>();
   let day = $state<Day>(untrack(() => calibration?.asOf ?? 0));
   /** The kind last selected or added to: where focus falls back (WCAG 2.4.3). */
   let focusKind: PolicyKind = 'zoning';
@@ -340,6 +342,12 @@
 
   const inspectorOpen = $derived(
     face === 'results' || selected !== null || adding !== null || drafts.isOpen
+  );
+  /** What the detail column shows: a change starts it at its top. */
+  const detailKey = $derived(
+    face === 'results'
+      ? 'results'
+      : `${adding ?? ''}:${selected ? `${selected.kind}:${selected.id}:${selected.span}` : ''}`
   );
 
   function select(ref: SpanRef | null): void {
@@ -359,8 +367,16 @@
     adding = kind;
   }
 
-  /** The header score: Results <-> the editor. */
+  /** The header score. From md it closes what is open as Close × does (the inspector's unmount
+   *  discards and announces a draft) and shows Results; below md it toggles. */
   function pressScore(): void {
+    if (wide.current) {
+      adding = null;
+      selected = null;
+      face = 'results';
+      void timeline?.showResults();
+      return;
+    }
     face = face === 'results' ? 'editor' : 'results';
   }
 
@@ -1025,6 +1041,7 @@
 {/snippet}
 
 <TimelineMode
+  bind:this={timeline}
   {manifest}
   {manifestError}
   {calibration}
@@ -1051,6 +1068,7 @@
   onadd={startAdd}
   inspector={inspectorPart}
   {inspectorOpen}
+  {detailKey}
   onday={(d) => (day = d)}
   onclient={onClient}
   onmapready={onMapReady}

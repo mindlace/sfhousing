@@ -1,0 +1,410 @@
+<article>
+  <header>
+    <h1>The /sim bottom pane plan</h1>
+    <p>Give the timeline one time axis, pin the play control, ruler and chart, and move the inspector out from beside the map into a detail column on the right of the bottom pane.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>On <code>/sim</code> and <code>/s/&lt;id&gt;</code>, the ruler, the slider, the chart, every lane and one playhead line share one x scale. The controls row, the ruler and the chart stay in view while the policy rows scroll. From md the map is full width and the bottom pane (about 40% of the mode box) splits into the timeline (about 60%) and a detail column (about 40%, 22rem minimum). The detail column holds the inspector, and Results when nothing is open.</dd>
+      <dt>Architecture</dt>
+      <dd>Task 1 puts every axis element in the timeline's existing grid. The playhead's root becomes <code>display: contents</code>: its controls span both columns and its track and ruler sit in the lane column. <code>ChartRow</code> maps months with <code>dayPct</code>, the function the lanes and the ruler already use. Task 2 makes the controls, ruler and chart a sticky block inside one scroll box. Task 3 rebuilds <code>TimelineMode</code>'s bottom pane as two columns and moves the inspector <code>aside</code> into it. Task 4 changes what the header score does from md, in <code>SimPage</code>. Task 5 re-pins the e2e suite and updates the docs.</dd>
+      <dt>Tech Stack</dt>
+      <dd>SvelteKit 2, Svelte 5 runes, TypeScript, Tailwind 4, Vitest (client project, vitest-browser-svelte), Playwright, axe through <code>expectNoA11yViolations</code>.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-16-sim-dock-layout-design.html"><code>docs/superpowers/specs/2026-11-16-sim-dock-layout-design.html</code></a></dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li><strong>One axis.</strong> The x of a day <em>d</em> anywhere in the timeline is <code>dayPct(d, asOf, windowEnd)</code> (<code>src/lib/timeline/rows.ts:117-120</code>) of the lane column's width. Ruler ticks, the slider thumb, chart points, bar edges, the hatch and the playhead line agree to within 1 px. There is no second ruler, axis or scale anywhere in the bottom pane (spec anti-goal).</li>
+      <li>The window stays <code>WINDOW_MONTHS = 480</code> from the dataset date and never moves or zooms (spec non-goal, ruling R9).</li>
+      <li>md is 768 px: <code>(max-width: 767px)</code> in <code>MediaQuery</code> and <code>matchMedia</code>, and the Tailwind <code>md:</code> / <code>max-md:</code> prefixes. From md the bottom pane is a fixed <strong>40%</strong> of the mode box (<code>tl-mode</code>). The timeline gets about <strong>60%</strong> and the detail column about <strong>40%</strong>, never under <strong>22rem</strong>. Check both at 1280 and 1024 px wide.</li>
+      <li>Owner rulings, not to be reopened: policy details go in the right column of the bottom pane from md. The project card and the tooltip stay on the map. There is one shared time axis. The controls, ruler and chart are pinned. Results shows by default from md only. From md the header score closes an open editor, add menu or draft and shows Results, or else scrolls Results to the top and focuses it, and it carries no <code>aria-expanded</code>. The pane height is fixed at about 40% from md. The phone keeps today's sheet and toggle, with a sticky pinned block. The 40-year window stays.</li>
+      <li>Unchanged, do not edit: <code>ProjectCardPanel</code>, <code>ProjectTooltip</code>, <code>NoticePills</code>, <code>SourcesDialog</code>, <code>--map-controls-br-*</code> and the zoom lift (<code>TimelineMode.svelte:1202-1215</code>), <code>src/lib/map/**</code>. What the editors and Results contain does not change. Only where they show changes.</li>
+      <li>Keep the test ids <code>tl-inspector</code> (the detail column from md, the sheet below md), <code>tl-dock</code> (the whole bottom pane), <code>tl-map</code>, <code>tl-timeline</code>, <code>tl-results</code> and <code>inspector</code>. The new ids are <code>tl-lanes</code> (the timeline's scroll box), <code>tl-pin</code> (the pinned block), <code>tl-controls</code>, <code>tl-axis</code> and <code>tl-playhead-line</code>.</li>
+      <li>Svelte 5 runes only. Tailwind 4 utilities, with component <code>&lt;style&gt;</code> where the grid needs it (as <code>Timeline.svelte</code> does). Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>WCAG 2.2 AA. Targets are at least 24x24 CSS px (44 on a coarse pointer, as today). A focused control is never hidden under the pinned block (2.4.11). The playhead line, a graphic, keeps 3:1 against the surface (1.4.11) in light and dark. Axe goes through <code>expectNoA11yViolations</code> (<code>e2e/helpers/a11y.ts</code>).</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>, so every test calls <code>expect</code>.</li>
+      <li>Signoff (<code>npm run signoff</code>) is the only check. Do not <code>git push</code> first. chreode fails a run on server stderr, timing crutches (<code>waitForTimeout</code>, fixed sleeps, <code>setTimeout</code> waits) and flakes that pass only on retry. Wait with web-first assertions, <code>expect.poll</code> or <code>requestAnimationFrame</code>, as the existing specs do.</li>
+      <li>Port 4173 (preview and e2e) may belong to another session. Never kill whatever holds it. Either wait for it to be free, or run Playwright on another port with <code>SFH_E2E_PORT=4180 npx playwright test …</code> (<code>playwright.config.ts:3</code>).</li>
+      <li>Perf suites (<code>npm run test:perf</code>, <code>bench:map</code>) run only on an idle machine and are not part of this plan's checks.</li>
+      <li>Conventional Commits, with messages given as <code>-m</code> flags. No Claude attribution anywhere: no <code>Co-Authored-By</code> trailers, no generated-by notes in code, docs or commits.</li>
+      <li>Work only in <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/sim-dock-layout</code>. Run <code>cd</code> on its own, never as <code>cd … &amp;&amp; cmd</code>.</li>
+      <li>Test commands: <code>npx vitest --run --project client &lt;file&gt;</code>, and <code>npx playwright test &lt;file&gt; --project=chromium --project=mobile</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>A keyboard user tabs to a row that has scrolled under the pinned block.</strong> The focused bar must land below the block, not behind it (WCAG 2.4.11), at md (the <code>tl-lanes</code> scroll box) and on a phone (<code>tl-mode</code> scrolls, and the status line sits above the block). Test: <a href="#t2-s1">t2-s1</a>.</li>
+      <li><strong>A short desktop viewport</strong> (1280x800 or 1024x768). At 40% of the mode box, the pinned block (controls, ruler, chart and legend, about 220 px) could leave almost no room for rows. Expected: at least three rows' worth (90 px) of the lanes stay visible under the block at 1280x800. Test: <a href="#t3-s1">t3-s1</a>.</li>
+      <li><strong>The detail column swaps content while scrolled down</strong> (a long funding editor scrolled, then Close or the header score). Expected: the new content starts at its top, and the header score's Results lands at the top with focus. Tests: <a href="#t3-s1">t3-s1</a>, <a href="#t4-s1">t4-s1</a>.</li>
+      <li><strong>A pool draft is open when the header score is pressed from md.</strong> Expected: the draft is discarded with today's "An unfinished item was discarded." and Results shows. It must not be dropped silently or left half open. Test: <a href="#t4-s1">t4-s1</a>.</li>
+      <li><strong>The read-only view (<code>/s/&lt;id&gt;</code>) from md.</strong> Results shows in the detail column at rest, and a selected policy's read-only editor replaces it. The shared banner and the notices still leave the zoom control clear at 768 px. Test: <a href="#t5-s2">t5-s2</a> (sim-share).</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files by task and what each owns</caption>
+      <thead>
+        <tr><th scope="col">Area</th><th scope="col">Files</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">One axis</th><td><code>timeline/Playhead.svelte</code>, <code>timeline/Timeline.svelte</code>, <code>timeline/ChartRow.svelte</code>, <code>timeline/TimelineMode.svelte</code> (props only), <code>timeline/test/TimelineHost.svelte</code></td><td>1</td></tr>
+        <tr><th scope="row">Pinned block</th><td><code>timeline/Timeline.svelte</code>, <code>timeline/TimelineMode.svelte</code> (the <code>tl-lanes</code> scroll box, scroll padding)</td><td>2</td></tr>
+        <tr><th scope="row">Bottom pane and detail column</th><td><code>timeline/TimelineMode.svelte</code>, <code>timeline/TimelineHeaderScore.svelte</code>, <code>timeline/test/TimelineModeHost.svelte</code></td><td>3</td></tr>
+        <tr><th scope="row">Header score from md</th><td><code>sim-page/SimPage.svelte</code></td><td>4</td></tr>
+        <tr><th scope="row">e2e and docs</th><td><code>e2e/sim.spec.ts</code>, <code>e2e/sim-share.spec.ts</code>, <code>e2e/fzp.spec.ts</code> and <code>e2e/chrome-dark.spec.ts</code> (verify only), <code>docs/dev/sim-page.md</code>, <code>docs/dev/timeline-ui.md</code>, <code>docs/dev/fzp-mode.md</code></td><td>5</td></tr>
+      </tbody>
+    </table>
+    <p>Tasks 1 to 4 change layout that the e2e suite pins (<code>openScore</code>'s <code>aria-expanded</code>, the inspector's box). Run only the component specs until Task 5, which brings e2e back to green.</p>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: One time axis</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/Playhead.svelte:156-268</code>. The root becomes <code>display: contents</code>. The buttons and readout go in <code>[data-testid=tl-controls]</code>, and the track and <code>Ruler</code> in <code>[data-testid=tl-axis]</code>. Drop the <code>md:flex-row</code> wrapper, where today the track takes only <code>md:flex-1</code> beside the buttons. Test: <code>src/lib/timeline/Playhead.svelte.spec.ts</code> (must keep passing).</li>
+      <li>Modify: <code>src/lib/timeline/Timeline.svelte:184-196,292-298</code>. Replace <code>.ph</code> with a <code>.pin</code> wrapper (<code>data-testid="tl-pin"</code>) that spans <code>1 / -1</code> as a column subgrid and holds the playhead part, the "Homes completed" label and the chart cell. Add the playhead line. Add the prop <code>playheadDay</code>. Test: <code>src/lib/timeline/Timeline.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/timeline/ChartRow.svelte:28-31,70-75</code>. x comes from <code>dayPct</code> of <code>view.months[i]</code>, and <code>monthAt</code> is its inverse. Test: <code>src/lib/timeline/ChartRow.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte:991-995,1184-1197</code>. Pass <code>{asOf} {windowEnd}</code> to <code>ChartRow</code> and <code>playheadDay={day}</code> to <code>Timeline</code>. Test: <code>src/lib/timeline/TimelineMode.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/timeline/test/TimelineHost.svelte</code>. The placeholder playhead div gets <code>style="grid-column: 1 / -1"</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>dayPct(day: Day, asOf: Day, windowEnd: Day): number</code> (<code>rows.ts:117</code>) and <code>indexOfDay(months: Day[], day: Day): number</code> (<code>playhead.ts:7</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// Timeline.svelte Props: + playheadDay: Day   (the line's x is dayPct(playheadDay, asOf, windowEnd))
+// ChartRow.svelte Props: + asOf: Day; + windowEnd: Day
+//   x(i) = (dayPct(view.months[i], asOf, windowEnd) / 100) * W
+//   monthAt(clientX) = clamp(indexOfDay(view.months, asOf + f * (windowEnd - asOf)), 0, last)
+// Playhead.svelte markup: .sfh-playhead { display: contents }
+//   [data-testid=tl-controls]  grid-column: 1 / -1   (Pause, Play, Faster, Today, readout)
+//   [data-testid=tl-axis]      grid-column: 2        (the slider track, then Ruler)
+// Timeline.svelte markup: [data-testid=tl-pin] (.pin: grid-column 1 / -1; grid-template-columns: subgrid; position: relative)
+//   [data-testid=tl-playhead-line] x2: one inside .pin (grid-column 2, grid-row 2 / -1: ruler row down),
+//   one in the outer .grid (grid-column 2, grid-row 2 / -1: every row under the pin)</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call</strong> The spec leaves open how the scale is shared. This plan uses one CSS grid that every axis element sits in, not a measured lane box. The lane column (<code>minmax(0, 1fr)</code> after <code>--lab</code>) is already the width every lane uses, and an absolutely positioned child placed with <code>grid-column</code> / <code>grid-row</code> takes that grid area as its containing block. The x then needs no JavaScript measurement. <code>Playhead</code> keeps its playback loop and bindings intact because only its markup moves.</aside>
+    <aside data-kind="decision"><strong>Builder's call</strong> The playhead line is drawn as two segments with the same <code>left</code>: one in the pinned block, one through the rows below it. One element cannot both stay pinned and run through rows that scroll, and the two segments meet with no gap. The line is 2 px wide, <code>pointer-events: none</code>, <code>aria-hidden</code>, in the accent colour (<code>--color-accent</code>, or <code>--color-accent-dark</code> in dark), and is drawn above the bars. The chart's own hover line stays as it is (spec).</aside>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// ChartRow.svelte.spec.ts: render with asOf = statics().asOf, windowEnd = monthLastDay(asOf, WINDOW_MONTHS).
+// The existing "(5 / 23) * 1000" expectations become dayPct(view.months[5], asOf, windowEnd) * 10.
+it('places month i at dayPct of its first day, the scale every lane uses', ...)
+  // for i of [0, 6, 23]: the x of the i-th point in chart-line ∪ chart-line-later
+  //   toBeCloseTo(dayPct(view.months[i], asOf, windowEnd) * 10, 1)
+
+// Timeline.svelte.spec.ts (setup props + playheadDay: first(13))
+it('draws one playhead line through the pinned block and every row at the playhead day', ...)
+  // lines = all('[data-testid=tl-playhead-line]'); expect(lines).toHaveLength(2)
+  // for l of lines: parseFloat(l.style.left) toBeCloseTo(dayPct(first(13), asOf, windowEnd), 2)
+  // |lines[0].rect.x - lines[1].rect.x| &lt;= 1
+  // lines[0].rect.bottom ≈ pin.rect.bottom (±1); lines[1].rect.top ≈ pin.rect.bottom (±1)
+  // lines[1].rect.bottom ≈ grid.rect.bottom (±1)
+
+// TimelineMode.svelte.spec.ts
+for (const width of [1280, 1024, 390]) {
+  it(`at ${width} px the ruler, slider, chart, bars and playhead line share one x scale`, ...)
+    // page.viewport(width, 900); opened(LAST, { initialPolicy: mk(protect(5)) })
+    // lane = first [data-testid=tl-lane] (the chart's) rect; px(d) = lane.left + dayPct(d, asOf, windowEnd) / 100 * lane.width
+    // expect track rect left/width ≈ lane left/width (±1)            // the slider sits on the lane column
+    // slider().focus(); keyboard PageUp; d = debug().day
+    // thumb (.thumb in the slider) centre ≈ px(d) (±1)
+    // first tl-playhead-line centre ≈ px(d) (±1)
+    // ruler label for utcParts(asOf).y + 5 (text match in tl-ruler): centre ≈ px(dayFromUtc(y + 5, 1, 1)) (±1)
+    // chart-line rect right ≈ px(MONTHS[indexOfDay(MONTHS, d)]) (±1)
+    // the zoning miniature (tl-mini i) rect left ≈ px(monthFirstDay(asOf, 2)) (±1)
+    // [data-testid=tl-controls] rect left ≈ timeline rect left (±1): the controls span the label column too
+}</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail. The chart scale and the line are missing, and at 1280 the track starts after the buttons, not at the lane.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/ChartRow.svelte.spec.ts src/lib/timeline/Timeline.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement the <code>ChartRow</code> props and scale, the <code>Playhead</code> split markup, the <code>Timeline</code> <code>.pin</code> subgrid, the two line segments and <code>playheadDay</code>, the <code>TimelineMode</code> props and the <code>TimelineHost</code> placeholder, all as in Interfaces. Keep the readout's fixed width and the controls' <code>flex-wrap</code>. The coarse-pointer sizes in <code>Playhead</code>'s style stay as they are.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the timeline specs and see them pass, the existing Playhead, Ruler, phone-sheet and hatch cases included.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/</code></pre>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/timeline/Playhead.svelte src/lib/timeline/Timeline.svelte src/lib/timeline/ChartRow.svelte src/lib/timeline/TimelineMode.svelte src/lib/timeline/test/TimelineHost.svelte src/lib/timeline/ChartRow.svelte.spec.ts src/lib/timeline/Timeline.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts
+git commit -m "feat(sim): one time axis for the ruler, slider, chart and lanes"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The pinned block</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/Timeline.svelte</code>. <code>.pin</code> becomes <code>position: sticky; top: var(--tl-pin-top, 0px)</code>, gets <code>z-index</code> above the rows and an opaque surface background (light and dark), and its height is reported through a bindable <code>pinHeight</code>.</li>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte:1007-1014,1177-1199</code>. Bind the status line's <code>offsetHeight</code>. Inside <code>tl-dock</code>, wrap <code>Timeline</code> in <code>&lt;div data-testid="tl-lanes" bind:this={dockEl}&gt;</code>. From md this is the scroll box (<code>min-h-0 overflow-y-auto</code>), and it takes over the phone <code>padding-bottom</code> and <code>scroll-mt</code> from today's dock. Set <code>--tl-pin-top</code> and <code>scroll-padding-top</code>. Test: <code>src/lib/timeline/TimelineMode.svelte.spec.ts</code>.</li>
+      <li>Test: <code>src/lib/timeline/Timeline.svelte.spec.ts</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>tl-pin</code> from Task 1.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// Timeline.svelte Props: + pinHeight?: number   ($bindable, the pinned block's offsetHeight)
+// TimelineMode: [data-testid=tl-lanes] is the timeline's scroll box from md (inside tl-dock).
+//   from md:   on tl-lanes  --tl-pin-top: 0px;           scroll-padding-top: {pinHeight}px
+//   below md:  on tl-lanes  --tl-pin-top: {statusH}px;   on tl-mode  scroll-padding-top: {statusH + pinHeight}px
+// (statusH: the tl-status-line's offsetHeight; tl-mode is the scroll box below md, TimelineMode.svelte:1001)</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call</strong> The spec leaves sticky versus a nested scroll box open. This plan uses sticky inside one scroll box, because a nested box would break the grid's column alignment between the pinned block and the rows. Below md the existing scroller (<code>tl-mode</code>) stays, and the block sticks under the status line. Scroll padding equal to the block's height keeps a focused row out from under it (Review Focus 1).</aside>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// TimelineMode.svelte.spec.ts. Policies: mk(protect(5), {...protect(3), id: 'b'}, {...protect(2), id: 'c'}), so the open rows overflow.
+it('from md the controls, ruler and chart stay in view while the rows scroll', ...)
+  // 1280x900; opened(...); open Zoning and Permitting (kind buttons)
+  // lanes = tl-lanes; expect(lanes.scrollHeight).toBeGreaterThan(lanes.clientHeight)
+  // lanes.scrollTop = lanes.scrollHeight; await one rAF
+  // tl-pin rect top ≈ lanes rect top (±1); tl-play rect inside lanes rect;
+  // elementFromPoint(centre of tl-play) is inside tl-play
+it('from md a focused bar under the pinned block comes into view below it', ...)
+  // as above, scrolled to the bottom; the first zoning tl-bar .focus(); await one rAF
+  // bar rect top &gt;= tl-pin rect bottom - 0.5; bar rect bottom &lt;= lanes rect bottom + 0.5
+it('on a phone the controls, ruler and chart stick under the status line', ...)
+  // 390x760; opened(); tl-mode.scrollTop = tl-mode.scrollHeight; await one rAF
+  // tl-pin rect top ≈ tl-status-line rect bottom (±1); slider() and chart figure rects within the viewport
+it('on a phone a focused bar under the pinned block comes into view below it', ...)
+  // 390x760; scrolled to the bottom; focus the "The world" fixed-row button; then focus the zoning
+  // fixed-row button (top row): its rect top &gt;= tl-pin rect bottom - 0.5
+
+// Timeline.svelte.spec.ts
+it('reports the pinned block height and keeps its background opaque', ...)
+  // TimelineHost binds pinHeight to a data attribute; expect(Number(attr)) ≈ tl-pin offsetHeight
+  // getComputedStyle(tl-pin).backgroundColor not 'rgba(0, 0, 0, 0)'; position === 'sticky'</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/Timeline.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Implement the sticky <code>.pin</code>, <code>pinHeight</code>, the <code>tl-lanes</code> scroll box and the scroll padding as in Interfaces. <code>tl-dock</code> keeps today's <code>md:max-h-[50%]</code> until Task 3, but becomes <code>flex flex-col</code> so that <code>tl-lanes</code> scrolls inside it. <code>placeSheet</code> (<code>:840-846</code>) and the kind sheet's <code>place</code> (<code>Timeline.svelte:127-140</code>) still measure the chart cell, which is now pinned, so leave them as they are.</li>
+      <li id="t2-s4"><input type="checkbox"> Run the timeline specs and see them pass, the phone sheet cases at <code>TimelineMode.svelte.spec.ts:402-430,585-613</code> and <code>Timeline.svelte.spec.ts:325-449</code> included.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/</code></pre>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/timeline/Timeline.svelte src/lib/timeline/TimelineMode.svelte src/lib/timeline/test/TimelineHost.svelte src/lib/timeline/Timeline.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts
+git commit -m "feat(sim): pin the play controls, ruler and chart above the rows"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: The bottom pane and its detail column</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte:827-859</code> (the inspector state), <code>:936-953</code> (the header score), <code>:955-975</code> (Results), <code>:1108-1174</code> (the map row loses the <code>aside</code>) and <code>:1177-1199</code> (the dock becomes two columns). Test: <code>src/lib/timeline/TimelineMode.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/timeline/TimelineHeaderScore.svelte:31-33,82</code>. <code>expanded</code> becomes optional, and when it is undefined there is no attribute. Test: <code>src/lib/timeline/TimelineHeaderScore.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/timeline/test/TimelineModeHost.svelte</code>. Add <code>bind:this</code> on <code>TimelineMode</code> and <code>ctl.showResults</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>tl-lanes</code> and <code>dockEl</code> from Task 2.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// TimelineMode.svelte
+export async function showResults(): Promise&lt;void&gt;;
+//   await tick(); the detail column (tl-inspector) scrollTop = 0; focus [data-testid=tl-results] (tabindex="-1")
+// Props (meaning from md changes, names unchanged):
+//   inspectorOpen: below md the sheet shows; from md the column always shows, rendering
+//                  inspector({ results, day }) when true, else results()
+//   scoreExpanded: below md only; from md TimelineHeaderScore gets expanded={undefined}
+//   scoreControls: the detail column's id (aria-controls) whenever the column or the sheet shows
+// detailShown = mounted &amp;&amp; session !== null &amp;&amp; !!inspector &amp;&amp; (!narrow.current || inspectorOpen)
+// Markup from md: tl-dock = grid, h-[40%] of tl-mode,
+//   grid-template-columns: minmax(0, 3fr) minmax(22rem, 2fr); [tl-lanes][aside#scoreControls tl-inspector]
+//   aside: overflow-y-auto, border-l, bg-surface / dark:bg-surface-dark
+// Below md: tl-dock is in flow; the aside stays max-md:fixed with sheetTop / sheetBottom as today.
+// TimelineHeaderScore.svelte Props: expanded?: boolean
+// TimelineModeHost ctl: + showResults?: () =&gt; Promise&lt;void&gt;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call</strong> Results-by-default lives in <code>TimelineMode</code>'s layout, as the spec says. <code>SimPage</code>'s <code>inspectorOpen</code> keeps its meaning, and from md <code>TimelineMode</code> renders <code>results()</code> whenever it is false. Each time the column's content swaps (<code>inspectorOpen</code> flips), it scrolls to the top (Review Focus 3).</aside>
+    <aside data-kind="decision"><strong>Builder's call</strong> Results needs room under the pinned block at 1280x800 (Review Focus 2). If fewer than 90 px of lanes show below <code>tl-pin</code> there, shrink the chart plot from md (<code>ChartRow</code>'s <code>h-24</code>) and set the legend inline beside the plot until 90 px fit. The 40% height is fixed by ruling and does not change.</aside>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// TimelineMode.svelte.spec.ts (1280x900 unless named)
+for (const [w, h] of [[1280, 900], [1024, 768]]) {
+  it(`at ${w} px the bottom pane holds the timeline and the detail column; the map is the map alone`, ...)
+    // opened(LAST, { withInspector: true, scoreControls: 'insp' })
+    // mode = tl-mode rect; dock = tl-dock; lanes = tl-lanes; insp = tl-inspector; map = tl-map
+    // dock.height ≈ 0.4 * mode.height (±2); insp inside dock (±0.5); insp.left &gt;= lanes.right - 0.5
+    // insp.width &gt;= 22 * 16 - 0.5; map.width ≈ mode.width (±0.5); map.bottom &lt;= dock.top + 0.5
+}
+it('at 1280x800 at least 90 px of rows show under the pinned block', ...)
+  // page.viewport(1280, 800); host mode box 700 px; lanes.bottom - tl-pin.bottom &gt;= 90
+it('from md the detail column shows Results when nothing is open', ...)
+  // opened(LAST, { withInspector: true, inspectorOpen: false })
+  // tl-inspector getByTestId('tl-results') visible; host-inspector not in the document
+it("from md the map's height holds when a kind opens or the inspector opens", ...)
+  // inspectorOpen false; h0 = tl-map height; open Zoning; rerender inspectorOpen true; height === h0
+it('below md nothing opens by default', ...)
+  // 390x760; inspectorOpen false: tl-inspector not in the document
+it('from md the header score has no aria-expanded and controls the detail column', ...)
+  // withInspector, scoreControls 'insp', scoreExpanded true: no aria-expanded attribute; aria-controls 'insp'
+  // 390x760, inspectorOpen true, scoreExpanded true: aria-expanded 'true'
+it('showResults scrolls the detail column to the top and focuses Results', ...)
+  // inspectorOpen false; insp.scrollTop = 200 (Results is taller than the column); await ctl.showResults()
+  // insp.scrollTop === 0; document.activeElement === tl-results element
+it("swapping the column's content starts it at the top", ...)
+  // withInspector, inspectorOpen true; scrollTop = 200; rerender inspectorOpen false; poll scrollTop === 0
+
+// TimelineHeaderScore.svelte.spec.ts
+it('has no aria-expanded when expanded is undefined', ...)</code></pre>
+        <p>Add <code>inspectorOpen</code> and <code>scoreExpanded</code> to the <code>Over</code> type in <code>setup</code> (<code>TimelineMode.svelte.spec.ts:92-147</code>). Both reach the component through the host's <code>...rest</code>.</p>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/TimelineHeaderScore.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement the two-column dock, the move of the <code>aside</code> out of the map row, <code>detailShown</code>, the Results fallback, <code>showResults</code>, the scroll reset, <code>tabindex="-1"</code> on <code>tl-results</code>, the optional <code>expanded</code> and the host seam, all as in Interfaces. <code>phoneSheet</code> becomes <code>detailShown &amp;&amp; narrow.current</code>. The map row keeps <code>max-md:h-[40%]</code>, and <code>measureCardArea</code> (<code>:460-482</code>) is unchanged because it already measures the map box alone.</li>
+      <li id="t3-s4"><input type="checkbox"> Run the timeline specs and see them pass, the existing phone sheet cases and "the header score controls the inspector only while it shows" (<code>:749-758</code>) included.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/</code></pre>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineHeaderScore.svelte src/lib/timeline/ChartRow.svelte src/lib/timeline/test/TimelineModeHost.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/TimelineHeaderScore.svelte.spec.ts
+git commit -m "feat(sim): the detail column in the bottom pane, the map full width from md"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The header score from md</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-page/SimPage.svelte:362-365</code> (<code>pressScore</code>) and <code>:1027-1071</code> (<code>bind:this</code> on <code>TimelineMode</code>; <code>scoreExpanded</code> is unchanged, because <code>TimelineMode</code> ignores it from md). Test: <code>src/lib/sim-page/SimPage.svelte.spec.ts</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>TimelineMode.showResults(): Promise&lt;void&gt;</code> (Task 3). <code>Inspector</code> discards and announces an open draft when it unmounts (<code>Inspector.svelte:191</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// SimPage.svelte
+let mode = $state&lt;ReturnType&lt;typeof TimelineMode&gt;&gt;();
+function pressScore(): void;
+//   from md (wide.current): adding = null; selected = null; face = 'results'; void mode?.showResults()
+//   below md: face = face === 'results' ? 'editor' : 'results'   (today's toggle)</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call</strong> When the press closes an editor, focus moves to Results, not back to the bar as Close × does. The reader asked for Results. Only the closing itself is "as Close × would" (selection cleared, map tools out of view, any draft discarded with its announcement). Focus therefore ends in the same place whether or not something was open.</aside>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// SimPage.svelte.spec.ts (1280x900); scoreBar = () =&gt; header().getByTestId('score-bar')
+it('from md Results shows at rest, and the header score has no aria-expanded', ...)
+  // opened(); page.getByTestId('tl-results') visible; scoreBar has no aria-expanded; aria-controls === tl-inspector id
+it('from md the header score closes an open editor and moves focus to Results', ...)
+  // seeded doc4(zoning(historic)); openZoning(); click tl-bar; inspector() visible
+  // click scoreBar: inspector() not in the document; tl-results visible;
+  // no tl-bar has aria-pressed="true"; poll document.activeElement === tl-results element
+it('from md the header score discards an open pool draft and says so', ...)
+  // "Add Public money policy" → "Your own pool"; inspectorTitle "Your own pool"
+  // click scoreBar: inspector() gone; page.getByText(DRAFT_DISCARDED) in the polite status; tl-results visible
+it('from md with nothing open the header score scrolls Results to the top and focuses it', ...)
+  // tl-inspector.scrollTop = 200; click scoreBar; poll scrollTop === 0; activeElement === tl-results
+it('below md the header score still toggles Results with aria-expanded', ...)
+  // page.viewport(375, 700); aria-expanded 'false', tl-results absent; click → 'true', visible; click → 'false', absent</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/sim-page/SimPage.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Implement <code>pressScore</code> and <code>bind:this={mode}</code> as in Interfaces. <code>toolsShown</code> and <code>toolOff</code> (<code>:551-554</code>) need no change, because clearing the selection already takes the painted policy's tools out of view, as Close × does.</li>
+      <li id="t4-s4"><input type="checkbox"> Run the page specs and see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/sim-page/ src/routes/sim/ src/routes/s/</code></pre>
+      </li>
+      <li id="t4-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim-page/SimPage.svelte src/lib/sim-page/SimPage.svelte.spec.ts
+git commit -m "feat(sim): from md the header score shows Results in the detail column"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: e2e and docs</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>e2e/sim.spec.ts</code>: <code>:86-98</code> (<code>inspectorBox</code> comment, <code>openScore</code>), <code>:240-248</code>, <code>:267-281</code>, <code>:305-345</code>, <code>:685-694</code>, plus new tests.</li>
+      <li>Modify: <code>e2e/sim-share.spec.ts</code>, adding one test after <code>:460-476</code>.</li>
+      <li>Verify, edit only if a test fails for a layout reason: <code>e2e/fzp.spec.ts:357-433,700-730</code>, <code>e2e/chrome-dark.spec.ts:50-56,105-118,225-295</code>, <code>e2e/sim-timeline.spec.ts:257-333</code>, <code>e2e/sim-funding.spec.ts</code>.</li>
+      <li>Modify: <code>docs/dev/sim-page.md</code> (Layout items 1 and 2), <code>docs/dev/timeline-ui.md</code> (the intro line and "The screen", which carry rules 1 and 9), <code>docs/dev/fzp-mode.md:139</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: the test ids <code>tl-dock</code>, <code>tl-lanes</code>, <code>tl-pin</code>, <code>tl-inspector</code>, <code>tl-results</code>, <code>tl-map</code> and <code>tl-play</code>. From md the header score has no <code>aria-expanded</code>; below md it does.</li>
+      <li>Produces: <code>openScore(page)</code> in <code>e2e/sim.spec.ts</code>, which works at both widths:
+        <pre><code data-lang="ts">// expanded === null (from md): click only if tl-results is not visible
+// else (below md): click if expanded !== 'true', then expect aria-expanded 'true'
+// then expect(results(page)).toBeVisible(); return results(page)</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Update the pinned tests in <code>e2e/sim.spec.ts</code>.
+        <pre><code data-lang="ts">// :240 '/sim opens on the Family Zoning Plan; …': desktop: no aria-expanded, Results visible at rest;
+//   mobile: aria-expanded 'false' (today). Then openScore → 'What your policy added'.
+// :267 'the header score flips …': test.skip(!isMobile) (the phone toggle, unchanged), renamed
+//   'below md the header score flips the sheet between Results and the editor'.
+// :305 'the Updating status never moves …': also record [data-testid="tl-map"]'s box each stale frame; all equal.
+// :685 renamed 'from md the editor is in the bottom pane, right of the timeline':
+//   1280x800; addPolicy Transit rule; insp = tl-inspector box, lanes = tl-lanes box, dock = tl-dock box
+//   insp.x &gt;= lanes.x + lanes.width - 0.5; insp inside dock (±0.5); tl-map box width ≈ 1280 (±0.5);
+//   expectNavControlClear(page, inspectorBox(page)) stays.</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Write the new e2e tests.
+        <pre><code data-lang="ts">// e2e/sim.spec.ts
+test('the play control stays in view with every kind open', ...)            // both projects
+  // desktop: openKind Zoning, Permitting, Public money; add a Transit rule and a permitting PRESET;
+  //   tl-lanes scrollTop = scrollHeight; tl-play box inside tl-lanes box; topmost at its centre
+  // mobile: tl-mode scrollTop = scrollHeight; tl-play top &gt;= tl-status-line bottom - 0.5; topmost at its centre
+test('from md Results show at rest; below md nothing opens', ...)           // both projects
+  // desktop: results(page) visible, editor count 0; mobile: tl-inspector count 0
+test('from md the header score closes the editor and shows Results', ...)  // test.skip(isMobile)
+  // addPolicy Transit rule; click score: editor count 0, results visible, focus inside tl-results
+  // click again: results still visible, editor count 0
+test('from md the map keeps its box when a kind opens or a policy is selected', ...) // skip(isMobile)
+  // m0 = tl-map box; openKind Zoning; addPolicy Transit rule; expect(tl-map box).toEqual(m0)
+for (const width of [1280, 1024])
+  test(`at ${width} px the detail column is at least 22rem and the pane 40% of the mode box`, ...)
+    // tl-inspector width &gt;= 352 - 0.5; tl-dock height ≈ 0.4 * tl-mode height (±2)
+
+// e2e/sim-share.spec.ts
+test('from md /s/&lt;id&gt; shows Results in the detail column; a selected policy replaces it read-only', ...)
+  // skip(isMobile); seeded policy; goto /s/&lt;id&gt;; tl-inspector getByTestId('tl-results') visible;
+  // selectPolicy(page, 'Permitting', PRESET): editor visible inside tl-inspector, no 'Remove policy'</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Run the layout specs on both projects and see them pass. If 4173 is busy, add <code>SFH_E2E_PORT=4180</code> before the command, and do not kill what holds the port.
+        <pre><code data-lang="sh">npx playwright test e2e/sim.spec.ts e2e/sim-share.spec.ts e2e/fzp.spec.ts e2e/chrome-dark.spec.ts e2e/sim-timeline.spec.ts e2e/sim-funding.spec.ts --project=chromium --project=mobile</code></pre>
+        <p>Expected: every test passes on its first attempt (a retried pass counts as a flake at signoff), and the server log has no stderr.</p>
+      </li>
+      <li id="t5-s4"><input type="checkbox"> Update the docs, keeping each change terse.
+        <ul>
+          <li><code>sim-page.md</code> Layout item 1: "pressing it shows Results in the inspector" becomes: from md it closes an open editor, menu or draft and shows Results in the detail column with focus there, with no <code>aria-expanded</code>; below md it toggles the sheet. Item 2: the map is full width from md. The bottom pane is 40% of the mode box: the timeline (controls, ruler and chart pinned, then the rows) beside a detail column of at least 22rem, which holds the editor, "+"'s menu or a draft, and Results otherwise. Below md, the bottom sheet as today.</li>
+          <li><code>timeline-ui.md</code>: the intro says "a detail column beside it in the bottom pane" in place of "an inspector beside it". "The screen" adds one axis bullet (every row, the ruler, the slider and the playhead line on <code>dayPct</code>) and one pinned block bullet (sticky; below md under the status line). The "A closed kind" bullet keeps rule 9's phone sheet. The <code>Pieces</code> row for <code>SimPage</code> keeps "the inspector's hosting".</li>
+          <li><code>fzp-mode.md:139</code>: Results shows at rest from md; below md the header score opens it.</li>
+        </ul>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Run the lint and type checks.
+        <pre><code data-lang="sh">npm run lint
+npm run check</code></pre>
+      </li>
+      <li id="t5-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add e2e/sim.spec.ts e2e/sim-share.spec.ts docs/dev/sim-page.md docs/dev/timeline-ui.md docs/dev/fzp-mode.md
+git commit -m "test(sim): e2e for the bottom pane layout" -m "Docs: sim-page Layout, timeline-ui screen rules, fzp-mode Results."</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li>Spec coverage. One axis (spec items 1 to 5): Task 1. Pinned block: Task 2. Detail column items 1 to 3 and 5 to 7: Task 3, with item 7 (a miss selects, and the editor opens in the column) needing no new code, checked in Task 5. Header score (item 4): Tasks 3 and 4. The map: Task 3. Below md: Tasks 2 and 3, with today's sheet tests kept. Tests and docs: Task 5. Every builder's call is marked.</li>
+      <li>Types. <code>playheadDay</code>, <code>pinHeight</code>, <code>showResults</code>, <code>expanded?</code> and the test ids keep the same names from the task that makes them to the tasks that use them.</li>
+    </ul>
+  </section>
+</article>

@@ -4,6 +4,8 @@
   world". Every row is hatched past `filledEnd` (rule 3). From md a kind opens in place; below md
   tapping a kind opens its rows as a full-height sheet over the same lanes, with the playhead and
   chart staying above its handle (rule 9). The "+" menu and the editor belong to the page.
+  The playhead's slider and Ruler, the chart and every lane sit on one grid column, so they share
+  one x scale; the playhead line runs down that column at `playheadDay`.
 -->
 <script lang="ts">
   import { tick, type Snippet } from 'svelte';
@@ -12,6 +14,7 @@
   import { monthLastDay } from '$lib/sim/world/months';
   import type { Day } from '$lib/timelapse/time';
   import type { Calibration } from '$lib/timelapse/types';
+  import ChartLegend from './ChartLegend.svelte';
   import FixedRow from './FixedRow.svelte';
   import KindRow from './KindRow.svelte';
   import Lane from './Lane.svelte';
@@ -44,8 +47,12 @@
     chart: Snippet;
     /** The playhead's model month, for the keys' nearer edge. */
     playheadMonth: number;
+    /** The playhead's day: the line through the rows sits at it. */
+    playheadDay: Day;
     /** Each row is hatched past it. */
     filledEnd: Day;
+    /** The pinned block's height (its offsetHeight), for the page's scroll padding. */
+    pinHeight?: number;
   }
 
   let {
@@ -60,11 +67,14 @@
     playhead,
     chart,
     playheadMonth,
-    filledEnd
+    playheadDay,
+    filledEnd,
+    pinHeight = $bindable(0)
   }: Props = $props();
 
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
   const filledPct = $derived(dayPct(filledEnd, asOf, windowEnd));
+  const playheadPct = $derived(dayPct(playheadDay, asOf, windowEnd));
   const kinds = $derived<PolicyKind[]>(
     hasMoney(calibration) ? ['zoning', 'permitting', 'money'] : ['zoning', 'permitting']
   );
@@ -183,16 +193,35 @@
 <!-- With the sheet open the page gets room to scroll the timeline to the top of the viewport. -->
 <div
   bind:this={root}
-  class="tl relative max-2xl:scroll-mt-6"
+  class="tl relative"
   data-testid="tl-timeline"
   style:padding-bottom={sheeting ? '100dvh' : undefined}
 >
-  <div class="grid" inert={sheeting}>
-    <div class="ph">{@render playhead()}</div>
+  <div class="rows grid" inert={sheeting}>
+    <!-- The playhead's parts, the chart's label and the chart share the rows' columns. They stay
+         pinned at the top of the scroll box (at --tl-pin-top) while the rows scroll under them. -->
+    <div class="pin" data-testid="tl-pin" bind:offsetHeight={pinHeight}>
+      {@render playhead()}
 
-    <div class="lab plain">Homes completed</div>
-    <div class="cell" bind:this={chartCell}>
-      <Lane {filledPct}>{@render chart()}</Lane>
+      <!-- From md the stacked legend is the row's label (its first entry names the line); below
+           md the plain label, with the legend under the plot. -->
+      <div class="lab plain chart-lab">
+        {#if phone}
+          <span>Homes completed</span>
+        {:else}
+          <ChartLegend stacked />
+        {/if}
+      </div>
+      <div class="cell" bind:this={chartCell}>
+        <Lane {filledPct}>{@render chart()}</Lane>
+      </div>
+
+      <div
+        class="line"
+        data-testid="tl-playhead-line"
+        aria-hidden="true"
+        style:left="{playheadPct}%"
+      ></div>
     </div>
 
     {#each kinds as kind (kind)}
@@ -228,6 +257,13 @@
         {onselect}
       />
     </div>
+
+    <div
+      class="line"
+      data-testid="tl-playhead-line"
+      aria-hidden="true"
+      style:left="{playheadPct}%"
+    ></div>
   </div>
 
   {#if sheeting && sheet}
@@ -269,6 +305,12 @@
           {onedit}
           {onadd}
         />
+        <div
+          class="line"
+          data-testid="tl-playhead-line"
+          aria-hidden="true"
+          style:left="{playheadPct}%"
+        ></div>
       </div>
     </div>
   {/if}
@@ -289,15 +331,68 @@
       --lab: 168px;
     }
   }
+  /* Scrolled to the top it clears the status line (24px below 2xl); a page that pads its scroll
+     box for the status line and the pinned block sets --tl-scroll-mt to take the block back off. */
+  @media (width < 96rem) {
+    .tl {
+      scroll-margin-top: var(--tl-scroll-mt, 24px);
+    }
+  }
   .grid {
     display: grid;
     grid-template-columns: var(--lab) minmax(0, 1fr);
   }
-  .ph {
+  .rows {
+    position: relative;
+  }
+  /* Opaque and above the rows (and their line segment), so rows scrolling under it are hidden. A
+     page whose scroll box is too short for the block and some rows sets --tl-pin-pos to relative
+     (and --tl-pin-top to 0): the block then scrolls with the rows. */
+  .pin {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    position: var(--tl-pin-pos, sticky);
+    top: var(--tl-pin-top, 0px);
+    z-index: 3;
+    background: var(--color-surface);
+  }
+  /* A page that pads its scroll box by the block's height (plus a gap: TimelineMode's PIN_GAP from
+     md) sets --tl-pin-mt to minus that padding, so focusing a control in the block (inside the
+     padding) never scrolls the rows. */
+  .pin :global(*) {
+    scroll-margin-top: var(--tl-pin-mt, 0px);
+  }
+  /* The playhead line, in two segments at the same x: one through the pinned block from the
+     slider's row down, one through every row under it. An absolutely placed grid child takes its
+     grid area as its containing block; the row end left auto reaches the grid's bottom edge. */
+  .line {
+    position: absolute;
     grid-column: 2;
+    grid-row: 2;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    z-index: 1;
+    pointer-events: none;
+    background: var(--color-accent);
+  }
+  /* In the kind sheet the line runs through every lane, its kind's own row included. */
+  .sheet .grid {
+    position: relative;
+  }
+  .sheet .line {
+    grid-row: 1;
   }
   .cell {
+    position: relative;
     min-width: 0;
+  }
+  /* While the chart shows its readout, the chart cell rises above the playhead line so the
+     readout is never crossed by it; otherwise the line stays on top. */
+  .cell:has(:global(.sfh-chart-readout)) {
+    z-index: 2;
   }
   .lab {
     display: flex;
@@ -309,6 +404,15 @@
   }
   .lab.heading {
     font-weight: 600;
+  }
+  /* From md the chart's label stacks its legend under it (the plot keeps the lane's width). */
+  @media (min-width: 768px) {
+    .chart-lab {
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 2px;
+    }
   }
   .sheet {
     position: fixed;
@@ -353,6 +457,12 @@
     }
     .lab {
       border-bottom-color: var(--color-line-dark);
+    }
+    .pin {
+      background: var(--color-surface-dark);
+    }
+    .line {
+      background: var(--color-accent-dark);
     }
     .sheet {
       border-top-color: var(--color-line-dark);

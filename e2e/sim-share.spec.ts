@@ -475,3 +475,20 @@ test('at 768 px on /s/<id> the banner, editor and notices leave the zoom control
     ...(await notices(page).all())
   ]);
 });
+
+test('from md /s/<id> shows Results in the detail column; a selected policy replaces it read-only', async ({
+  page,
+  isMobile
+}) => {
+  test.skip(isMobile, 'the detail column is md+');
+  const id = await seedPolicy(page, await capturePresetDoc(page));
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(`/s/${id}`);
+  await waitReady(page);
+  const column = page.getByTestId('tl-inspector');
+  await expect(column.getByTestId('tl-results')).toBeVisible();
+  await selectPolicy(page, 'Permitting', PRESET);
+  await expect(column.getByTestId('inspector')).toBeVisible();
+  await expect(column.getByTestId('tl-results')).toHaveCount(0);
+  await expect(column.getByRole('button', { name: 'Remove policy' })).toHaveCount(0);
+});

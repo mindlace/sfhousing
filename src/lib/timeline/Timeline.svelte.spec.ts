@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
-import { formatEdge } from './rows';
+import { dayPct, formatEdge } from './rows';
 import { baselineFixture } from '$lib/sim/levers/fixtures/finance';
 import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
 import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
@@ -95,6 +95,7 @@ interface Over {
   selected?: SpanRef | null;
   filledEnd?: number;
   playheadMonth?: number;
+  playheadDay?: number;
 }
 
 async function setup(over: Over = {}) {
@@ -112,6 +113,7 @@ async function setup(over: Over = {}) {
     onedit,
     onadd,
     playheadMonth: 1,
+    playheadDay: first(1),
     filledEnd: windowEnd,
     ...over
   };
@@ -151,6 +153,65 @@ describe('Timeline rows', () => {
     expect(permitting.querySelectorAll('[data-testid=tl-mini]')).toHaveLength(2);
     expect(barsOf('permitting')).toHaveLength(0);
     await expect.element(page.getByRole('button', { name: 'Add Zoning policy' })).toBeVisible();
+  });
+
+  it('draws one playhead line through the pinned block and every row at the playhead day', async () => {
+    await setup({ playheadDay: first(13) });
+    const lines = all('[data-testid=tl-playhead-line]');
+    expect(lines).toHaveLength(2);
+    for (const l of lines) {
+      expect(parseFloat(l.style.left)).toBeCloseTo(dayPct(first(13), asOf, windowEnd), 2);
+      expect(l.getAttribute('aria-hidden')).toBe('true');
+      expect(getComputedStyle(l).pointerEvents).toBe('none');
+    }
+    const pin = page.getByTestId('tl-pin').element().getBoundingClientRect();
+    const grid = page.getByTestId('tl-pin').element().parentElement!.getBoundingClientRect();
+    const [a, b] = lines.map((l) => l.getBoundingClientRect());
+    expect(Math.abs(a.x - b.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(a.bottom - pin.bottom)).toBeLessThanOrEqual(1);
+    expect(Math.abs(b.top - pin.bottom)).toBeLessThanOrEqual(1);
+    expect(Math.abs(b.bottom - grid.bottom)).toBeLessThanOrEqual(1);
+    expect(b.height).toBeGreaterThan(100);
+  });
+
+  it('reports the pinned block height and keeps its background opaque', async () => {
+    await setup();
+    const pin = page.getByTestId('tl-pin').element() as HTMLElement;
+    const host = page.getByTestId('host-pin').element();
+    await expect.poll(() => Number(host.getAttribute('data-pin-height'))).toBeGreaterThan(0);
+    expect(
+      Math.abs(Number(host.getAttribute('data-pin-height')) - pin.offsetHeight)
+    ).toBeLessThanOrEqual(1);
+    const style = getComputedStyle(pin);
+    expect(style.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(style.backgroundColor).not.toBe('transparent');
+    expect(style.position).toBe('sticky');
+  });
+
+  it('on a phone the playhead line runs through the lanes of an open kind sheet', async () => {
+    await setup({ playheadDay: first(13) });
+    await page.viewport(390, 800);
+    await kindButton('Permitting').click();
+    const sheet = page.getByRole('dialog', { name: 'Permitting' });
+    await expect.element(sheet).toBeVisible();
+    const line = sheet.element().querySelector<HTMLElement>('[data-testid=tl-playhead-line]');
+    expect(line).not.toBeNull();
+    expect(parseFloat(line!.style.left)).toBeCloseTo(dayPct(first(13), asOf, windowEnd), 2);
+    expect(line!.getAttribute('aria-hidden')).toBe('true');
+    expect(getComputedStyle(line!).pointerEvents).toBe('none');
+    const lanes = [...sheet.element().querySelectorAll<HTMLElement>('[data-testid=tl-lane]')];
+    expect(lanes.length).toBeGreaterThan(1);
+    const l = line!.getBoundingClientRect();
+    const x = l.left + l.width / 2;
+    const lane = lanes[0].getBoundingClientRect();
+    expect(
+      Math.abs(x - (lane.left + (lane.width * parseFloat(line!.style.left)) / 100))
+    ).toBeLessThanOrEqual(1);
+    expect(l.top).toBeLessThanOrEqual(lane.top + 1);
+    expect(l.bottom).toBeGreaterThanOrEqual(
+      lanes[lanes.length - 1].getBoundingClientRect().bottom - 1
+    );
+    await userEvent.keyboard('{Escape}');
   });
 
   it('opens a kind: a row per policy, a bar per span with its setting', async () => {

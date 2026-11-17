@@ -1,6 +1,6 @@
 # The /sim timeline
 
-Developer notes for `src/lib/timeline/` and `src/lib/sim-page/SimPage.svelte`. Spec: `docs/superpowers/specs/2026-11-13-timeline-ui-design.md` (rules cited "rule N"); plan: `docs/superpowers/plans/2026-11-14-timeline-ui.md`. `/sim` and `/s/<id>` show one screen: the map, a timeline of dated policies under it, an inspector beside it. There is no Setup, no Run, no run slider and no high-water mark. The document is schema 4 ([policy-timeline.md](policy-timeline.md)); the worker is the ensemble runner ([ensemble-runner.md](ensemble-runner.md)); the numbers come from `TimelineView` ([world-score.md](world-score.md)). The page shell is in [sim-page.md](sim-page.md).
+Developer notes for `src/lib/timeline/` and `src/lib/sim-page/SimPage.svelte`. Spec: `docs/superpowers/specs/2026-11-13-timeline-ui-design.md` (rules cited "rule N"); plan: `docs/superpowers/plans/2026-11-14-timeline-ui.md`. `/sim` and `/s/<id>` show one screen: the map, a timeline of dated policies under it, a detail column beside it in the bottom pane. There is no Setup, no Run, no run slider and no high-water mark. The document is schema 4 ([policy-timeline.md](policy-timeline.md)); the worker is the ensemble runner ([ensemble-runner.md](ensemble-runner.md)); the numbers come from `TimelineView` ([world-score.md](world-score.md)). The page shell is in [sim-page.md](sim-page.md).
 
 ## Pieces
 
@@ -19,6 +19,8 @@ Developer notes for `src/lib/timeline/` and `src/lib/sim-page/SimPage.svelte`. S
 ## The screen
 
 - **Rows**, top to bottom: the ruler (with the playhead and the filled mark), the chart, Zoning, Permitting, Public money, "The world". Public money exists only when the calibration has `market` and `baselineFunding` (`rows.ts`, `add.ts`).
+- **One axis.** Every row, the ruler, the slider and the playhead line sit on one lane column, placed by `dayPct`.
+- **The pinned block** (`tl-pin`: the play controls, the ruler and the chart) is sticky at the top of the timeline's scroll box; below md, under the status line. It stops sticking (and drops its scroll padding) when it would leave fewer than 64 px of rows. From md at 820 px tall or less it is compact (a 40 px plot, 24 px controls) so the rows keep room.
 - **The window** is `WINDOW_MONTHS = 480` months from the dataset date's year (`src/lib/sim/timeline-client.ts`); it never moves or zooms. Every row is hatched past the filled mark.
 - **A closed kind** shows one thin bar per policy; open (in place from md, a sheet below md) it shows a row per policy with a bar per span. The fixed rows ("Family Zoning Plan, as adopted", "Permitting times, as observed", "City funding today", "Market conditions") are selectable and read-only. Their refs have `span: -1` (`FIXED_SPAN`, `rows.ts`), an index no policy has, so a document policy named `fixed` cannot alias one.
 - **The playhead** is a slider named "Date in the simulation". Left/Down and Right/Up move a month, Page Down/Up a year, Home goes to the dataset date, End to the filled mark; Alt, Ctrl and Meta keys are ignored. A key, a drag or a marker jump pauses playback. Nothing plays on open; playback stops at the filled mark and resumes when it moves on.

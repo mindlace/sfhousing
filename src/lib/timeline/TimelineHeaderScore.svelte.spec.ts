@@ -31,6 +31,13 @@ const props = (over: Partial<Props> = {}): Props => ({
 const bar = () => page.getByTestId('score-bar');
 
 describe('TimelineHeaderScore', () => {
+  it('has no aria-expanded when expanded is undefined', async () => {
+    await page.viewport(1024, 768);
+    await render(TimelineHeaderScore, { props: props({ expanded: undefined }) });
+    await expect.element(bar()).toHaveAttribute('aria-controls', 'dock');
+    expect(bar().element().hasAttribute('aria-expanded')).toBe(false);
+  });
+
   it('reads "{n} homes by {year}" and carries the year in name and description', async () => {
     await page.viewport(1024, 768);
     await render(TimelineHeaderScore, { props: props() });

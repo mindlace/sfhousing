@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
+import axe from 'axe-core';
 import '../../routes/layout.css';
 import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
@@ -23,7 +24,7 @@ import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING } from './copy';
 import { fillStatusText } from './fill';
-import { filledEndDay } from './playhead';
+import { filledEndDay, indexOfDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
 import { headerOf } from './results';
 import { dayPct } from './rows';
@@ -99,6 +100,9 @@ type Over = Partial<{
   scoreControls: string;
   statusMs: number;
   onlotsretry: () => void;
+  regionHeight: number;
+  inspectorOpen: boolean;
+  scoreExpanded: boolean;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -110,6 +114,7 @@ function setup(over: Over = {}) {
     setPolicy?: (p: SimPolicy4) => void;
     setLots?: (l: Lots | null) => void;
     setLotsFailed?: (f: boolean) => void;
+    showResults?: () => Promise<void>;
   } = {};
   const createWorker = vi.fn(() => {
     const f = new FakeTimelineWorker();
@@ -134,7 +139,10 @@ function setup(over: Over = {}) {
       ...(over.onundoto ? { onundoto: over.onundoto } : {}),
       ...(over.onlotsretry ? { onlotsretry: over.onlotsretry } : {}),
       ...(over.withInspector ? { withInspector: true } : {}),
-      ...(over.scoreControls ? { scoreControls: over.scoreControls } : {})
+      ...(over.regionHeight ? { regionHeight: over.regionHeight } : {}),
+      ...(over.scoreControls ? { scoreControls: over.scoreControls } : {}),
+      ...(over.inspectorOpen !== undefined ? { inspectorOpen: over.inspectorOpen } : {}),
+      ...(over.scoreExpanded !== undefined ? { scoreExpanded: over.scoreExpanded } : {})
     }
   });
   return {
@@ -142,7 +150,8 @@ function setup(over: Over = {}) {
     createWorker,
     setPolicy: (p: SimPolicy4) => ctl.setPolicy!(p),
     setLots: (l: Lots | null) => ctl.setLots!(l),
-    setLotsFailed: (f: boolean) => ctl.setLotsFailed!(f)
+    setLotsFailed: (f: boolean) => ctl.setLotsFailed!(f),
+    showResults: () => ctl.showResults!()
   };
 }
 
@@ -323,6 +332,215 @@ describe('TimelineMode', () => {
     for (const h of hatches()) expect(parseFloat(h.style.left)).toBeCloseTo(at(9), 1);
     emit(filledMsg(2, 10, 4));
     await expect.poll(() => parseFloat(hatches()[0].style.left)).toBeCloseTo(at(13), 1);
+  });
+
+  for (const width of [1280, 1024, 390]) {
+    it(`at ${width} px the ruler, slider, chart, bars and playhead line share one x scale`, async () => {
+      await page.viewport(width, 900);
+      await opened(LAST, { initialPolicy: mk(protect(5)) });
+      await expect.element(slider()).toBeInTheDocument();
+      const near = (a: number, b: number, what: string) =>
+        expect(Math.abs(a - b), `${what}: ${a} vs ${b}`).toBeLessThanOrEqual(1);
+      const rect = (el: Element) => el.getBoundingClientRect();
+      const lane = rect(document.querySelector('[data-testid=tl-lane]')!);
+      const px = (d: Day) => lane.left + (dayPct(d, asOf, windowEnd) / 100) * lane.width;
+      const centre = (r: DOMRect) => r.left + r.width / 2;
+
+      const track = rect(slider().element());
+      near(track.left, lane.left, 'track left');
+      near(track.width, lane.width, 'track width');
+
+      (slider().element() as HTMLElement).focus();
+      await userEvent.keyboard('{PageUp}');
+      await expect.poll(() => debug().day).toBeGreaterThan(asOf);
+      const d = debug().day;
+      await expect.poll(() => slider().element().getAttribute('aria-valuenow')).toBe(String(d));
+
+      near(centre(rect(slider().element().querySelector('.thumb')!)), px(d), 'thumb');
+      const line = document.querySelector('[data-testid=tl-playhead-line]')!;
+      near(centre(rect(line)), px(d), 'playhead line');
+
+      const label = [...document.querySelectorAll('[data-testid=tl-ruler] span')].find(
+        (e) => e.textContent?.trim() === String(y + 5)
+      )!;
+      near(centre(rect(label)), px(dayFromUtc(y + 5, 1, 1)), 'ruler label');
+
+      const chartLine = rect(page.getByTestId('chart-line').element());
+      near(chartLine.right, px(MONTHS[indexOfDay(MONTHS, d)]), 'chart line');
+
+      const mini = document.querySelector('[data-testid=tl-kind-zoning] [data-testid=tl-mini] i')!;
+      near(rect(mini).left, px(monthFirstDay(asOf, 2)), 'zoning miniature');
+
+      near(
+        rect(page.getByTestId('tl-controls').element()).left,
+        rect(page.getByTestId('tl-timeline').element()).left,
+        'controls'
+      );
+      near(rect(line).top, rect(page.getByTestId('tl-axis').element()).top, 'pinned line top');
+    });
+  }
+
+  // Three zoning policies and Permitting open: the rows overflow the lanes' box from md.
+  const many = () => mk(protect(5), { ...protect(3), id: 'b' }, { ...protect(2), id: 'c' });
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+  const rectOf = (id: string) => page.getByTestId(id).element().getBoundingClientRect();
+
+  async function scrolledLanes() {
+    await opened(LAST, { initialPolicy: many() });
+    await expect.element(slider()).toBeInTheDocument();
+    await page.getByRole('button', { name: 'Zoning', exact: true }).click();
+    await page.getByRole('button', { name: 'Permitting', exact: true }).click();
+    const lanes = page.getByTestId('tl-lanes').element() as HTMLElement;
+    expect(lanes.scrollHeight).toBeGreaterThan(lanes.clientHeight);
+    lanes.scrollTop = lanes.scrollHeight;
+    await frame();
+    return lanes;
+  }
+
+  it('from md the controls, ruler and chart stay in view while the rows scroll', async () => {
+    const lanes = await scrolledLanes();
+    expect(lanes.scrollTop).toBeGreaterThan(0);
+    const box = lanes.getBoundingClientRect();
+    expect(Math.abs(rectOf('tl-pin').top - box.top)).toBeLessThanOrEqual(1);
+    const play = rectOf('tl-play');
+    expect(play.top).toBeGreaterThanOrEqual(box.top - 0.5);
+    expect(play.bottom).toBeLessThanOrEqual(box.bottom + 0.5);
+    const hit = document.elementFromPoint(play.left + play.width / 2, play.top + play.height / 2);
+    expect(playButton().element().contains(hit)).toBe(true);
+  });
+
+  it('from md a focused bar under the pinned block comes into view below it', async () => {
+    const lanes = await scrolledLanes();
+    const bar = document.querySelector<HTMLElement>(
+      '[data-testid=tl-kind-zoning] [data-testid=tl-bar]'
+    )!;
+    bar.focus();
+    await frame();
+    const r = bar.getBoundingClientRect();
+    expect(r.top).toBeGreaterThanOrEqual(rectOf('tl-pin').bottom - 0.5);
+    expect(r.bottom).toBeLessThanOrEqual(lanes.getBoundingClientRect().bottom + 0.5);
+  });
+
+  it('from md a bar scrolled to the top clears the chart by its 24 px target', async () => {
+    await scrolledLanes();
+    const bar = document.querySelector<HTMLElement>(
+      '[data-testid=tl-kind-zoning] [data-testid=tl-bar]'
+    )!;
+    bar.scrollIntoView({ block: 'start', behavior: 'instant' });
+    await frame();
+    const r = bar.getBoundingClientRect();
+    // WCAG 2.2 2.5.8: the 24 px circle at the bar's centre stays off the chart's slider.
+    expect(r.top + r.height / 2 - 12).toBeGreaterThanOrEqual(rectOf('tl-pin').bottom);
+  });
+
+  // A short mode box (360 px): on a phone the rows under the pinned block reach past it.
+  it('from md focusing the slider or the chart in the pinned block leaves the rows in place', async () => {
+    const lanes = await scrolledLanes();
+    const at = lanes.scrollTop;
+    expect(at).toBeGreaterThan(0);
+    (slider().element() as HTMLElement).focus();
+    await frame();
+    expect(Math.abs(lanes.scrollTop - at)).toBeLessThanOrEqual(1);
+    const overlay = page.getByRole('slider', { name: 'Month in the chart' });
+    (overlay.element() as HTMLElement).focus();
+    await frame();
+    expect(Math.abs(lanes.scrollTop - at)).toBeLessThanOrEqual(1);
+  });
+
+  it('on a phone focusing the slider in the stuck pinned block leaves the rows in place', async () => {
+    await page.viewport(390, 760);
+    await opened(LAST, { regionHeight: 360 });
+    await expect.element(slider()).toBeInTheDocument();
+    const mode = page.getByTestId('tl-mode').element() as HTMLElement;
+    mode.scrollTop = mode.scrollHeight;
+    await frame();
+    expect(Math.abs(rectOf('tl-pin').top - rectOf('tl-status-line').bottom)).toBeLessThanOrEqual(1);
+    const at = mode.scrollTop;
+    (slider().element() as HTMLElement).focus();
+    await frame();
+    expect(Math.abs(mode.scrollTop - at)).toBeLessThanOrEqual(1);
+  });
+
+  it('on a phone the controls, ruler and chart stick under the status line', async () => {
+    await page.viewport(390, 760);
+    await opened(LAST, { regionHeight: 360 });
+    await expect.element(slider()).toBeInTheDocument();
+    const mode = page.getByTestId('tl-mode').element() as HTMLElement;
+    mode.scrollTop = mode.scrollHeight;
+    await frame();
+    expect(mode.scrollTop).toBeGreaterThan(0);
+    expect(Math.abs(rectOf('tl-pin').top - rectOf('tl-status-line').bottom)).toBeLessThanOrEqual(1);
+    const inView = (r: DOMRect) => {
+      expect(r.top).toBeGreaterThanOrEqual(0);
+      expect(r.bottom).toBeLessThanOrEqual(760);
+    };
+    inView(slider().element().getBoundingClientRect());
+    inView(page.getByTestId('tl-dock').getByRole('figure').element().getBoundingClientRect());
+  });
+
+  it('on a phone a focused bar under the pinned block comes into view below it', async () => {
+    await page.viewport(390, 760);
+    await opened(LAST, { regionHeight: 360 });
+    await expect.element(slider()).toBeInTheDocument();
+    const mode = page.getByTestId('tl-mode').element() as HTMLElement;
+    mode.scrollTop = mode.scrollHeight;
+    await frame();
+    (
+      page.getByRole('button', { name: 'Market conditions, whole window' }).element() as HTMLElement
+    ).focus();
+    await frame();
+    const zoning = page
+      .getByRole('button', { name: 'Zoning', exact: true })
+      .element() as HTMLElement;
+    zoning.focus();
+    await frame();
+    // Chrome centres a focused control it scrolls to; it lands in the padded part of the box.
+    expect(zoning.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      rectOf('tl-pin').bottom - 0.5
+    );
+    expect(zoning.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      rectOf('tl-mode').bottom + 0.5
+    );
+  });
+
+  it("the chart's readout paints above the playhead line; the line above the bars", async () => {
+    await opened(LAST, { initialPolicy: mk(protect(5)) });
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}');
+    await expect.poll(() => debug().day).toBeGreaterThan(asOf);
+    const line = document.querySelector<HTMLElement>('[data-testid=tl-playhead-line]')!;
+    // Ten months back the readout starts left of the line and runs across it.
+    const overlay = page.getByRole('slider', { name: 'Month in the chart' });
+    (overlay.element() as HTMLElement).focus();
+    await userEvent.keyboard('{ArrowLeft>10/}');
+    const readout = page.getByTestId('chart-readout');
+    await expect.element(readout).toBeVisible();
+    const lr = line.getBoundingClientRect();
+    const rr = readout.element().getBoundingClientRect();
+    const x = lr.left + lr.width / 2;
+    expect(rr.left).toBeLessThan(x);
+    expect(rr.right).toBeGreaterThan(x);
+    // Both ignore the pointer; hit testing follows paint order once they take it.
+    const topAt = (els: HTMLElement[], px: number, py: number) => {
+      for (const e of els) e.style.pointerEvents = 'auto';
+      const top = document.elementFromPoint(px, py);
+      for (const e of els) e.style.pointerEvents = '';
+      return top;
+    };
+    const tip = readout.element() as HTMLElement;
+    const onTip = topAt([line, tip], x, rr.top + rr.height / 2);
+    expect(onTip === tip || tip.contains(onTip)).toBe(true);
+    // The rows' segment still paints above a zoning miniature bar it crosses.
+    const outer = [...document.querySelectorAll<HTMLElement>('[data-testid=tl-playhead-line]')][1];
+    const mini = document.querySelector<HTMLElement>(
+      '[data-testid=tl-kind-zoning] [data-testid=tl-mini] i'
+    )!;
+    const mr = mini.getBoundingClientRect();
+    const or = outer.getBoundingClientRect();
+    const ox = or.left + or.width / 2;
+    expect(mr.left).toBeLessThan(ox);
+    expect(mr.right).toBeGreaterThan(ox);
+    expect(topAt([outer, mini], ox, mr.top + mr.height / 2)).toBe(outer);
   });
 
   it('a provisional open keeps the header calculating until the full document fills', async () => {
@@ -605,7 +823,11 @@ describe('TimelineMode', () => {
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     const top = insp.element().getBoundingClientRect().top;
     const s = slider().element().getBoundingClientRect();
-    const chart = page.getByTestId('tl-dock').getByRole('figure').element().getBoundingClientRect();
+    const chart = page
+      .getByTestId('tl-lanes')
+      .getByRole('figure')
+      .element()
+      .getBoundingClientRect();
     expect(s.top).toBeGreaterThanOrEqual(0);
     expect(s.bottom).toBeLessThanOrEqual(top + 0.5);
     expect(chart.top).toBeGreaterThanOrEqual(0);
@@ -755,5 +977,264 @@ describe('TimelineMode', () => {
     await opened(LAST, { scoreControls: 'insp', withInspector: true });
     await expect.element(scoreBar()).toHaveAttribute('aria-controls', 'insp');
     expect(document.getElementById('insp')).toBe(page.getByTestId('tl-inspector').element());
+  });
+
+  // ---- the bottom pane (from md: the timeline and the detail column under the map) ----
+
+  const box = (id: string) => page.getByTestId(id).element().getBoundingClientRect();
+  const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+
+  for (const [vw, vh] of [
+    [1280, 900],
+    [1024, 768]
+  ] as const) {
+    it(`at ${vw} px the bottom pane holds the timeline and the detail column; the map is the map alone`, async () => {
+      await page.viewport(vw, vh);
+      await opened(LAST, { withInspector: true, scoreControls: 'insp' });
+      await expect.element(page.getByTestId('host-inspector')).toBeVisible();
+      await nextFrame();
+      const mode = box('tl-mode');
+      const dock = box('tl-dock');
+      const lanes = box('tl-lanes');
+      const insp = box('tl-inspector');
+      const map = box('tl-map');
+      expect(Math.abs(dock.height - 0.4 * mode.height)).toBeLessThanOrEqual(2);
+      expect(insp.top).toBeGreaterThanOrEqual(dock.top - 0.5);
+      expect(insp.bottom).toBeLessThanOrEqual(dock.bottom + 0.5);
+      expect(insp.left).toBeGreaterThanOrEqual(dock.left - 0.5);
+      expect(insp.right).toBeLessThanOrEqual(dock.right + 0.5);
+      expect(insp.left).toBeGreaterThanOrEqual(lanes.right - 0.5);
+      expect(insp.width).toBeGreaterThanOrEqual(22 * 16 - 0.5);
+      expect(Math.abs(map.width - mode.width)).toBeLessThanOrEqual(0.5);
+      expect(map.bottom).toBeLessThanOrEqual(dock.top + 0.5);
+    });
+  }
+
+  it('at 1280x800 at least 90 px of rows show under the pinned block', async () => {
+    await page.viewport(1280, 800);
+    await opened(LAST, { withInspector: true });
+    await expect.element(slider()).toBeInTheDocument();
+    await nextFrame();
+    expect(box('tl-mode').height).toBe(700);
+    expect(box('tl-lanes').bottom - box('tl-pin').bottom).toBeGreaterThanOrEqual(90);
+  });
+
+  // The mode box at 1280x720: 636 px on /sim, 585 px on /s/<id> under the shared banner.
+  for (const regionHeight of [636, 585]) {
+    it(`at 1280x720 (a ${regionHeight} px mode box) the compact pinned block leaves 90 px of rows`, async () => {
+      await page.viewport(1280, 720);
+      await opened(LAST, { withInspector: true, regionHeight });
+      await expect.element(slider()).toBeInTheDocument();
+      await nextFrame();
+      expect(box('tl-mode').height).toBe(regionHeight);
+      expect(box('tl-lanes').bottom - box('tl-pin').bottom).toBeGreaterThanOrEqual(90);
+      // Its targets stay at least 24 px tall.
+      const pin = page.getByTestId('tl-pin').element();
+      for (const el of pin.querySelectorAll('button, [role=slider]'))
+        expect(el.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
+    });
+  }
+
+  /** The pinned block's scroll box: tl-lanes from md, tl-mode below md (under the status line). */
+  function port(phone: boolean): { top: number; bottom: number } {
+    const r = box(phone ? 'tl-mode' : 'tl-lanes');
+    return { top: phone ? box('tl-status-line').bottom : r.top, bottom: r.bottom };
+  }
+
+  // WCAG 2.2 2.4.11 at 400% zoom (320x256) and 200% (960x540): a block that would leave too
+  // little room for the rows scrolls with them, so a focused row is never under it.
+  for (const [vw, vh, regionHeight, phone] of [
+    [320, 256, 172, true],
+    [960, 540, 456, false]
+  ] as const) {
+    it(`at ${vw}x${vh} the pinned block scrolls with the rows and a focused bar shows whole`, async () => {
+      await page.viewport(vw, vh);
+      await opened(LAST, {
+        initialPolicy: mk(protect(5), { ...protect(3), id: 'b' }, { ...protect(2), id: 'c' }),
+        withInspector: true,
+        inspectorOpen: false,
+        regionHeight
+      });
+      await expect.element(slider()).toBeInTheDocument();
+      // From md the kinds open in place, so the rows run long; below md a kind opens a sheet.
+      if (!phone) {
+        await page.getByRole('button', { name: 'Zoning', exact: true }).click();
+        await page.getByRole('button', { name: 'Permitting', exact: true }).click();
+      }
+      await nextFrame();
+      const pin = page.getByTestId('tl-pin').element();
+      await expect.poll(() => getComputedStyle(pin).position).not.toBe('sticky');
+      // The last row's bar: the market's, at the bottom of the scroll.
+      const bar = page
+        .getByRole('button', { name: 'Market conditions, whole window' })
+        .element() as HTMLElement;
+      bar.focus();
+      await nextFrame();
+      await nextFrame();
+      const r = bar.getBoundingClientRect();
+      const p = port(phone);
+      expect(r.top).toBeGreaterThanOrEqual(p.top - 0.5);
+      expect(r.bottom).toBeLessThanOrEqual(p.bottom + 0.5);
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      expect(bar.contains(hit)).toBe(true);
+      // Scrolled to the end, the block is gone with the rows above it: nothing covers them.
+      expect(pin.getBoundingClientRect().bottom).toBeLessThanOrEqual(r.top + 0.5);
+    });
+  }
+
+  it('at 1280x720 the compact pinned block stays stuck', async () => {
+    await page.viewport(1280, 720);
+    await opened(LAST, { withInspector: true, regionHeight: 636 });
+    await expect.element(slider()).toBeInTheDocument();
+    await nextFrame();
+    await nextFrame();
+    expect(getComputedStyle(page.getByTestId('tl-pin').element()).position).toBe('sticky');
+  });
+
+  it('the pinned block sticks again when its scroll box grows', async () => {
+    await page.viewport(960, 540);
+    await opened(LAST, { withInspector: true, regionHeight: 456 });
+    await expect.element(slider()).toBeInTheDocument();
+    const pin = page.getByTestId('tl-pin').element();
+    await expect.poll(() => getComputedStyle(pin).position).not.toBe('sticky');
+    await page.viewport(1280, 900);
+    document.getElementById('map-region')!.style.height = '700px';
+    await expect.poll(() => getComputedStyle(pin).position).toBe('sticky');
+  });
+
+  it("from md the chart's legend stacks in the label column, legible and clear of axe", async () => {
+    await opened(LAST, { withInspector: true });
+    await expect.element(page.getByTestId('tl-chart-legend')).toBeVisible();
+    const legend = page.getByTestId('tl-chart-legend').element() as HTMLElement;
+    const lab = legend.parentElement!.getBoundingClientRect();
+    expect(lab.width).toBe(168);
+    const names = [...legend.querySelectorAll('li')].map((li) => li.textContent!.trim());
+    expect(names).toEqual(['Homes completed', 'State target']);
+    for (const li of legend.querySelectorAll('li')) {
+      expect(li.getBoundingClientRect().right).toBeLessThanOrEqual(lab.right);
+      expect(li.scrollWidth).toBeLessThanOrEqual(li.clientWidth);
+      expect(parseFloat(getComputedStyle(li).fontSize)).toBeGreaterThanOrEqual(12);
+    }
+    expect(legend.getBoundingClientRect().bottom).toBeLessThanOrEqual(lab.bottom);
+    // The legend under the plot is gone from md; the plot keeps the lane's width.
+    const fig = page.getByTestId('tl-lanes').getByRole('figure');
+    expect(getComputedStyle(fig.element().querySelector('.legend')!).display).toBe('none');
+    expect(page.getByTestId('chart-svg').element().getBoundingClientRect().height).toBe(64);
+    // The legend is the row's label: "Homes completed" once in the pinned block, and the chart
+    // keeps its own name.
+    // (The figure's sr-only caption is a sentence, not a label; the under-plot legend is not
+    // rendered from md.) checkVisibility drops display:none content.
+    const labels = [...page.getByTestId('tl-pin').element().querySelectorAll('*')].filter(
+      (e) =>
+        e.children.length === 0 &&
+        e.textContent!.trim() === 'Homes completed' &&
+        e.checkVisibility()
+    );
+    expect(labels).toHaveLength(1);
+    expect(legend.contains(labels[0])).toBe(true);
+    await expect.element(fig).toHaveAccessibleName('Net new homes by month');
+    const res = await axe.run(page.getByTestId('tl-pin').element(), {
+      runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
+    });
+    expect(res.violations.map((v) => v.id)).toEqual([]);
+  });
+
+  it("below md the chart's legend stays under the plot", async () => {
+    await page.viewport(390, 760);
+    await opened(LAST);
+    await expect.element(slider()).toBeInTheDocument();
+    expect(document.querySelector('[data-testid=tl-chart-legend]')).toBeNull();
+    const lab = page.getByTestId('tl-pin').element().querySelector('.chart-lab')!;
+    expect(lab.textContent!.trim()).toBe('Homes completed');
+    const fig = page.getByTestId('tl-lanes').getByRole('figure');
+    await expect.element(fig).toHaveAccessibleName('Net new homes by month');
+    const under = fig.element().querySelector('.legend')!;
+    expect(getComputedStyle(under).display).not.toBe('none');
+    expect(page.getByTestId('chart-svg').element().getBoundingClientRect().height).toBe(96);
+  });
+
+  it('from md the detail column shows Results when nothing is open', async () => {
+    await opened(LAST, { withInspector: true, inspectorOpen: false });
+    const insp = page.getByTestId('tl-inspector');
+    await expect.element(insp.getByTestId('tl-results')).toBeVisible();
+    expect(document.querySelector('[data-testid=host-inspector]')).toBeNull();
+  });
+
+  it("from md the map's height holds when a kind opens or the inspector opens", async () => {
+    const s = await opened(LAST, { withInspector: true, inspectorOpen: false });
+    await expect.element(slider()).toBeInTheDocument();
+    await nextFrame();
+    const h0 = box('tl-map').height;
+    await page.getByRole('button', { name: 'Zoning', exact: true }).click();
+    await nextFrame();
+    expect(box('tl-map').height).toBe(h0);
+    await (await s.r).rerender({ inspectorOpen: true });
+    await expect.element(page.getByTestId('host-inspector')).toBeVisible();
+    await nextFrame();
+    expect(box('tl-map').height).toBe(h0);
+  });
+
+  it('below md nothing opens by default', async () => {
+    await page.viewport(390, 760);
+    await opened(LAST, { withInspector: true, inspectorOpen: false });
+    await expect.element(slider()).toBeInTheDocument();
+    expect(document.querySelector('[data-testid=tl-inspector]')).toBeNull();
+  });
+
+  it('from md the header score has no aria-expanded and controls the detail column', async () => {
+    await opened(LAST, {
+      withInspector: true,
+      scoreControls: 'insp',
+      scoreExpanded: true,
+      inspectorOpen: false
+    });
+    await expect.element(scoreBar()).toHaveAttribute('aria-controls', 'insp');
+    expect(scoreBar().element().hasAttribute('aria-expanded')).toBe(false);
+    expect(document.getElementById('insp')).toBe(page.getByTestId('tl-inspector').element());
+  });
+
+  it('below md the header score reports the sheet as expanded', async () => {
+    await page.viewport(390, 760);
+    await opened(LAST, {
+      withInspector: true,
+      scoreControls: 'insp',
+      scoreExpanded: true,
+      inspectorOpen: true
+    });
+    await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(scoreBar()).toHaveAttribute('aria-controls', 'insp');
+  });
+
+  it('showResults scrolls the detail column to the top and focuses Results', async () => {
+    const s = await opened(LAST, { withInspector: true, inspectorOpen: false });
+    const insp = page.getByTestId('tl-inspector');
+    await expect.element(insp.getByTestId('tl-results')).toBeVisible();
+    const el = insp.element() as HTMLElement;
+    await expect.poll(() => el.scrollHeight - el.clientHeight).toBeGreaterThan(200);
+    el.scrollTop = 200;
+    expect(el.scrollTop).toBe(200);
+    await s.showResults();
+    expect(el.scrollTop).toBe(0);
+    const res = page.getByTestId('tl-results').element();
+    expect(document.activeElement).toBe(res);
+    // The ring draws inside Results, so the column's scroll box never clips it (WCAG 2.4.7).
+    const cs = getComputedStyle(res);
+    expect(cs.outlineStyle).not.toBe('none');
+    expect(parseFloat(cs.outlineWidth)).toBeGreaterThanOrEqual(2);
+    expect(parseFloat(cs.outlineOffset)).toBeLessThanOrEqual(-parseFloat(cs.outlineWidth));
+  });
+
+  it("swapping the column's content starts it at the top", async () => {
+    const s = await opened(LAST, { withInspector: true, inspectorOpen: true });
+    const insp = page.getByTestId('tl-inspector');
+    await expect.element(insp.getByTestId('host-inspector')).toBeVisible();
+    const el = insp.element() as HTMLElement;
+    await expect.poll(() => el.scrollHeight - el.clientHeight).toBeGreaterThan(200);
+    el.scrollTop = 200;
+    expect(el.scrollTop).toBe(200);
+    await (await s.r).rerender({ inspectorOpen: false });
+    await expect.element(insp.getByTestId('tl-results')).toBeVisible();
+    expect(document.querySelector('[data-testid=host-inspector]')).toBeNull();
+    await expect.poll(() => el.scrollTop).toBe(0);
   });
 });

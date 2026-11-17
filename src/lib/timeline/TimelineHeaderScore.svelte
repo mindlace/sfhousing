@@ -27,9 +27,10 @@
     provisional?: boolean;
     busy: boolean;
     stale: boolean;
-    /** The dock shows Results. */
-    expanded: boolean;
-    /** The dock's id. */
+    /** The sheet shows (below md); undefined (from md, where the column always shows): no
+     *  `aria-expanded`. */
+    expanded?: boolean;
+    /** The detail column's or sheet's id. */
     controls: string;
     onclick(): void;
     /** The polite region's text; spoken 1,000 ms after it settles while `quiet` is false. */
@@ -44,7 +45,7 @@
     provisional = false,
     busy,
     stale,
-    expanded,
+    expanded = undefined,
     controls,
     onclick,
     live,
