@@ -1,6 +1,6 @@
 # Results from the step engine
 
-The score numbers for `/sim`, read from the step engine's world events: a per-world series by calendar month, chunk statistics across worlds, the page's `TimelineView`, and the project card. Design: `docs/superpowers/specs/` (world-score; rule numbers are its rules). Pure TypeScript, worker-safe. Policy frames come from [policy-timeline.md](policy-timeline.md).
+The score numbers for `/sim`, read from the step engine's world events: a per-world series by calendar month, chunks for the plan's world against its twin, the page's `TimelineView`, and the project card. Design: `docs/superpowers/specs/` (world-score; rule numbers are its rules). Pure TypeScript, worker-safe. Policy frames come from [policy-timeline.md](policy-timeline.md).
 
 Money, tiers and limit statements are built; the funded card fields are not yet. See Tiers, Money, Funded worlds and Known gaps.
 
@@ -12,7 +12,7 @@ Money, tiers and limit statements are built; the funded card fields are not yet.
 | `src/lib/sim/world/score/series.ts`  | `createWorldSeries(statics, from?)`                                                         |
 | `src/lib/sim/world/score/statics.ts` | `scoreStaticsOf`, `horizonOf`, `finalTable`, `planFinanceOf`                                |
 | `src/lib/sim/world/score/chunk.ts`   | `chunkOf(plan, twin, money, from, through)`                                                 |
-| `src/lib/sim/world/score/view.ts`    | `viewOf`, `chunksBefore`, `BAND_Z`                                                          |
+| `src/lib/sim/world/score/view.ts`    | `viewOf`, `chunksBefore`                                                                    |
 | `src/lib/sim/world/score/card.ts`    | `cardAt(world, statics, frame, deps, parcelId, day, projectId?)`                            |
 | `src/lib/sim/world/score/test/`      | `feed.ts`: `feedWorld`, `feedFunded`, `testStatics`, `timelineStatics` for the specs        |
 
@@ -42,15 +42,13 @@ The final-month guard: an event that would change a final month throws, naming t
 
 ## Chunks
 
-`chunkOf(plan, twin, money, from, through)` takes W plan worlds and their W paired twins (same seed, base policy), all final through `through`. Per calendar month it gives:
+`chunkOf(plan, twin, money, from, through)` takes the plan's world series and its twin's (same seed, base policy), both final through `through`. Per calendar month it gives:
 
-- `mean`, `sd`: across-world mean and sample sd (divide by W - 1) of every `MonthRow` field, `inProgress` stages included. W = 1 gives sd 0.
-- `shown`: world 1's own rows ("this city").
-- `planEffect`: mean and sd of the paired differences, world k's plan minus world k's twin, for `entitledNew` and `completedNetNew`. Not a difference of means.
+- `rows`: the plan world's own `MonthRow`s, `inProgress` stages included.
+- `planEffect`: the plan's `entitledNew` and `completedNetNew` minus the twin's, month by month.
+- `money`, `tiers`: the plan world's, with a `money` feed (rule 9); null without one.
 
-- `money`, `tiers`: world 1's, with a `money` feed (rule 9); null without one.
-
-It throws for no worlds, mismatched counts, or a month not final.
+It throws for a month not final.
 
 ## Tiers
 
@@ -58,13 +56,13 @@ With finance in the window (month 1's frame or a change up to `windowMonths` has
 
 The series files tiers as `tierSeries` does (rule 2): `-existing` from `aboveModerate` at a construction start after `asOf`; at completion, `tiersOf(scheduleAt(world, statics, row, day))`. A funded row is split by the programme definitions in force in the month of its award (design 3.4), not of its completion: the series records each row's `'award'` day (`WorldSeriesData.award`, so restore keeps it).
 
-The series assumes no order between a row's `'award'` and its stage events. World-funding sends `'award'` after the chain `startProject` began, so a funded project that passes every stage inside its award step (short stages, fast `speed`) sends its `'end'` `'complete'` first (`score/award-order.spec.ts` forces this). Such a row's tiers are filed at its completion by the definitions of its completion's model month, and its `award` reads `AWAITING` (`NO_DAY + 1`). The award comes in the same step, so its month is the completion's and nothing more is filed. An award from another month re-files the row's tiers (out by the provisional definitions, in by the award month's) in the completion's calendar month. That month cannot be final yet within the step; a later step's award into a final month throws, as any late event does. A row still `AWAITING` when its step is `stepped` is a feed bug: it is set `UNAWARDED` (`NO_DAY + 2`) and counted in `WorldSeriesData.unawarded` (`extrasOf(series).unawarded()`). Its tiers stay filed by the completion month's definitions, and nothing throws. Funded homes and `displacedHomesCompleted` read `funded` from the row at completion, which `startProject` sets before the chain, so they do not depend on the order. Every funded world files tiers; each month's five tiers sum to that world's `completedNet`. Chunks carry world 1's.
+The series assumes no order between a row's `'award'` and its stage events. World-funding sends `'award'` after the chain `startProject` began, so a funded project that passes every stage inside its award step (short stages, fast `speed`) sends its `'end'` `'complete'` first (`score/award-order.spec.ts` forces this). Such a row's tiers are filed at its completion by the definitions of its completion's model month, and its `award` reads `AWAITING` (`NO_DAY + 1`). The award comes in the same step, so its month is the completion's and nothing more is filed. An award from another month re-files the row's tiers (out by the provisional definitions, in by the award month's) in the completion's calendar month. That month cannot be final yet within the step; a later step's award into a final month throws, as any late event does. A row still `AWAITING` when its step is `stepped` is a feed bug: it is set `UNAWARDED` (`NO_DAY + 2`) and counted in `WorldSeriesData.unawarded` (`extrasOf(series).unawarded()`). Its tiers stay filed by the completion month's definitions, and nothing throws. Funded homes and `displacedHomesCompleted` read `funded` from the row at completion, which `startProject` sets before the chain, so they do not depend on the order. Every funded world files tiers; each month's five tiers sum to that world's `completedNet`. Chunks carry the plan world's.
 
 Runner rule: pass `createWorldSeries` the very `ScoreStatics` object `scoreStaticsOf` returned. The tier table lives in a module-private `WeakMap` keyed by that object, so a copy (a `structuredClone`, a spread) of a ScoreStatics with finance throws `world-score: ScoreStatics without its tier context; pass the object scoreStaticsOf returned`. A worker that receives ScoreStatics by message calls `scoreStaticsOf` itself. `viewOf` never reads the table, so the page may build the view from a copy.
 
 ## Money
 
-`viewOf` gives `money` as today's `TimelineScore['money']` for world 1 (rule 12), with every series cut at `filledThrough`. `owed` is each debt pool's `received[filledThrough]` with `debtService(principal, debt).total`. `money` is null when a chunk has none.
+`viewOf` gives `money` as today's `TimelineScore['money']` for the plan's world (rule 12), with every series cut at `filledThrough`. `owed` is each debt pool's `received[filledThrough]` with `debtService(principal, debt).total`. `money` is null when a chunk has none.
 
 `MoneyView` adds five fields to today's money: `displacedHomesCompleted` (per month, cut at `filledThrough`); `perAddedHome: { all, city }` and `displacedShare`, read at `filledThrough`; and the same two figures by month, `perAddedHomeByMonth: { all: (number | null)[]; city: (number | null)[] }` and `displacedShareByMonth: (number | null)[]`. The page reads those figures from the view and does not call `finance-score`'s functions on `money` for them: they are today's `perAddedHome` and `displacedShare` computed over a money whose `displacedHomes` is `displacedHomesCompleted`.
 
@@ -78,7 +76,7 @@ The shown `displacedHomes` series and the ratio's displaced term differ in timin
 
 ## The view
 
-`viewOf(chunks, statics)` joins contiguous chunks into a `TimelineView` (it throws on a gap, an overlap or a late first chunk). `band` is `mean.completedNet` plus or minus `BAND_Z` (1.2816, the 80% central band) times the sd; `planEffectBand` the same for the plan effect. `targets` from `targetsOf` over the mean. Every series has `filledThrough + 1` entries.
+`viewOf(chunks, statics)` joins contiguous chunks into a `TimelineView` (it throws on a gap, an overlap or a late first chunk). `rows` and `planEffect` are the chunks' rows joined. `targets` from `targetsOf` over `rows`. Every series has `filledThrough + 1` entries.
 
 `chunksBefore(chunks, k)` keeps the months before `k`: whole chunks kept, the one straddling `k` trimmed, none from `k` on. A refill (the plan changed from month k) keeps `chunksBefore(chunks, k)` and computes new chunks from `k`.
 
@@ -100,7 +98,7 @@ The lot-limits line comes from `limitsOf(frame, parcelId)` (owner and protection
 
 What money and tiers read, from world-funding as merged (shadows and `'displaced'` events, policy-change remake and lapse included). Paths under `src/lib/sim/`.
 
-- **Ledger.** `StepSink.ledger?(e)` (`world/types.ts:152-155`) gets today's `LedgerEvent` (`scenario/money.ts:20`, shape `scenario/engine.ts:72-78`): `{ day, pool, programme, kind, dollars }`, kind `in | commit | spend | repay | loss | release`. No project row. `createWorld` sends none (`funding/system.ts:26-31`); a month whose frame has `finance` null calls no hook (`world/world.ts:220`). So world 1's ledger since month 0 is every step's entries from month 1, in order.
+- **Ledger.** `StepSink.ledger?(e)` (`world/types.ts:152-155`) gets today's `LedgerEvent` (`scenario/money.ts:20`, shape `scenario/engine.ts:72-78`): `{ day, pool, programme, kind, dollars }`, kind `in | commit | spend | repay | loss | release`. No project row. `createWorld` sends none (`funding/system.ts:26-31`); a month whose frame has `finance` null calls no hook (`world/world.ts:220`). So the plan world's ledger since month 0 is every step's entries from month 1, in order.
   - `in` (programme null): system 2, from `frame.finance.arrivals`, 0 dollars skipped (`funding/pools.ts:32-45`). Month 1 holds the dataset date.
   - `commit`: on the award day, before `startProject` (`funding/serve.ts:60-62`, `funding/pools.ts:61-101`). The `'award'` world event comes after the chain `startProject` began (`funding/serve.ts:67`).
   - `spend` on entering construction; `repay`, `release`, `loss` at `'end'`, on the event's day, sorted within the event as today (`funding/pools.ts:118-193`).
@@ -112,6 +110,8 @@ What money and tiers read, from world-funding as merged (shadows and `'displaced
 
 ## Timing
 
+History: the chunk figures were taken 2026-11-13 with 48 + 48 worlds; `chunkOf` now takes one plan world and its twin.
+
 Bench `synthCity`, quiet machine, lock held, 2026-11-13, after the perf pass and the rule 12 fix. Unfunded, 96 worlds: median 0.728 ms, p90 0.897 ms per month (bar 1 ms, read at the median). Funded, 32 worlds: median 0.767 ms (months 101-150, ledger 763 events) and 0.771 ms (months 400-450, ledger 2394 events), so no growth with ledger length. `chunk.perf.spec.ts` labels a run quiet only with `SFH_PERF_QUIET=1`: set it when holding the lock. `npm run test:perf`, not in signoff.
 
 `viewOf` (`view.perf.spec.ts`, no bar): bench `synthCity`, 4 funded worlds, a full 480-month window in 480 one-month chunks, 1000 calls, quiet machine, lock held, 2026-11-14. Before the `ByMonth` series: median 0.183 ms, p90 0.199 ms. With them: median 0.208 ms, p90 0.324 ms per call.
@@ -119,6 +119,6 @@ Bench `synthCity`, quiet machine, lock held, 2026-11-13, after the perf pass and
 ## Known gaps
 
 - The funded card fields are not built.
-- `perAddedHome` uses world 1's money, not the plan effect (ruled 2026-11-13). Its denominator is `fundedHomes - displacedHomesCompleted` (see Money), not the shown `displacedHomes`, which also holds funded projects still building or that dropped out.
+- `perAddedHome` uses the plan world's money, not the plan effect (ruled 2026-11-13). Its denominator is `fundedHomes - displacedHomesCompleted` (see Money), not the shown `displacedHomes`, which also holds funded projects still building or that dropped out.
 - A money change mid-window re-makes or lapses waiting applications; none of that reaches the series. An application is not a project row: only an award starts a row and sends one `'award'`, so funded homes, tiers and the award day the tiers read are per funded row (`score/lapse.spec.ts`).
 - A project's `'award'` world event arrives after the stage events of the chain `startProject` begins (it runs synchronously). Read awards by project row, never by position relative to stage events.

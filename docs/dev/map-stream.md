@@ -1,14 +1,14 @@
 # The map feed from a stepped world
 
-`createMapStream(deps, windowMonths)` (`src/lib/sim/world/map-stream.ts`) turns world 1's events into the map's whole-cell `TimelineUpdate`s (spec `docs/superpowers/specs/2026-11-13-map-stream-design.md`, S17). It is worker-safe and under the determinism rule (no transcendental `Math`).
+`createMapStream(deps, windowMonths)` (`src/lib/sim/world/map-stream.ts`) turns the plan world's events into the map's whole-cell `TimelineUpdate`s (spec `docs/superpowers/specs/2026-11-13-map-stream-design.md`, S17). It is worker-safe and under the determinism rule (no transcendental `Math`).
 
 `MapStreamDeps`: `massing` (a `MassingCtx`: `records` answer for every parcel of every ready cell, `input.parcels` places cells), `cellReady(cellId)` (the cell's chunk records are loaded), `warnOnce(key, msg)`, `now?()` (budget clock, default `performance.now`), `massingCap?` (test seam, default 60,000).
 
 ## Host calls
 
-- Buffer `createWorld`'s events and replay them to `onEvent` once it returns. `onEvent(e, world, statics)` for every event of world 1; it marks the project's cell dirty and packs nothing.
+- Buffer `createWorld`'s events and replay them to `onEvent` once it returns. `onEvent(e, world, statics)` for every event of the plan's world; it marks the project's cell dirty and packs nothing.
 - `flush(world, statics, budgetMs)` between steps: packs dirty cells, oldest first, until about `budgetMs` has passed. Returns one update, or null when nothing changed.
-- `rewind(world, statics)` after restoring world 1.
+- `rewind(world, statics)` after restoring the plan's world.
 - `snapshot(world, statics)` for `resyncMap`.
 - `cellsFor(wanted)`: a pure query for the cells outside `wanted` of multi-parcel projects anchored in it. Call it after each non-null `flush` and on a viewport change, and add the result to the chunk loader's wants; an anchor cell waits until those chunks are ready.
 

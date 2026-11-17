@@ -154,8 +154,8 @@ npx vitest --run --project perf src/lib/sim/world/funding/funded-month.perf.spec
 
 synthCity with its bench baseline money (`benchFunded('baseline')`), seeds 1 to 8 stepped untimed
 to month 120, then months 121 to 240 timed one `step` at a time per world (the whole step: core
-and funding). Bar: **mean at most 90 µs per world-month** (the 9 ms constraint is a sum over 96
-worlds). It also prints each hook's share and the whole-city replan month, unasserted.
+and funding). Bar: **mean at most 90 µs per world-month** (the 9 ms constraint is a sum over two
+worlds, the plan's and its twin's; the per-world-month bar is unchanged). It also prints each hook's share and the whole-city replan month, unasserted.
 
 Task 8 (synthCity, bench baseline money; hooks only, months 2 to 120, quiet, lock held), after
 grouped serving, the line index and the lazy guard: serve mean 9.1 to 13.0 µs, apply 3.9 to 9.6,
@@ -241,7 +241,8 @@ below unchanged.
 
 2026-11-13, quiet (lock held), one process per row, Node v24 on an Apple M5 Pro; "bundle" is an
 esbuild bundle without `keepNames` (as a Vite build); "vitest" the perf project. The change month
-is month 120 after a market step (+0.25 from month 120: every free lot replanned).
+is month 120 after a market step (+0.25 from month 120: every free lot replanned). The
+96-world and 48-world rows were taken with 48 + 48 worlds on 2026-11-13; `/sim` now runs one world per side.
 
 | Measurement                                            | bundle before | bundle after | vitest before | vitest after |
 | ------------------------------------------------------ | ------------- | ------------ | ------------- | ------------ |
@@ -271,7 +272,7 @@ month 480 on one timeline, heap plus array buffers after a forced GC, per world:
 before the memo and after it alike (1, 8 and 48 worlds; world 2.2 MB of typed arrays, due list
 0.6 MB). The memo adds 155,020 bytes per timeline, nothing per world.
 
-A rise from +428 MB to +701 MB in ensemble-runner's measurement (96 worlds, no copies kept) was not
+A rise from +428 MB to +701 MB in ensemble-runner's measurement (96 worlds, 48 + 48, 2026-11-10, no copies kept) was not
 the memo: the script's last dropped copy (`structuredClone` of every world at month 480) stayed
 reachable from a dead local in the measuring function, depending on how V8 compiled it. Both builds
 give either figure from run to run; with the copy taken in a function of its own both give
