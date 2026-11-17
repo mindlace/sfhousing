@@ -210,6 +210,12 @@
   .readout {
     transform: translateX(8px);
   }
+  /* From md on a short viewport the plot is shorter, so the rows under the pinned block keep room. */
+  @media (min-width: 768px) and (max-height: 820px) {
+    .plot svg {
+      height: 40px;
+    }
+  }
   .readout.flip {
     transform: translateX(calc(-100% - 8px));
   }

@@ -1019,6 +1019,22 @@ describe('TimelineMode', () => {
     expect(box('tl-lanes').bottom - box('tl-pin').bottom).toBeGreaterThanOrEqual(90);
   });
 
+  // The mode box at 1280x720: 636 px on /sim, 585 px on /s/<id> under the shared banner.
+  for (const regionHeight of [636, 585]) {
+    it(`at 1280x720 (a ${regionHeight} px mode box) the compact pinned block leaves 90 px of rows`, async () => {
+      await page.viewport(1280, 720);
+      await opened(LAST, { withInspector: true, regionHeight });
+      await expect.element(slider()).toBeInTheDocument();
+      await nextFrame();
+      expect(box('tl-mode').height).toBe(regionHeight);
+      expect(box('tl-lanes').bottom - box('tl-pin').bottom).toBeGreaterThanOrEqual(90);
+      // Its targets stay at least 24 px tall.
+      const pin = page.getByTestId('tl-pin').element();
+      for (const el of pin.querySelectorAll('button, [role=slider]'))
+        expect(el.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
+    });
+  }
+
   it("from md the chart's legend stacks in the label column, legible and clear of axe", async () => {
     await opened(LAST, { withInspector: true });
     await expect.element(page.getByTestId('tl-chart-legend')).toBeVisible();

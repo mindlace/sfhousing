@@ -136,6 +136,13 @@
       outline-color: var(--color-accent-dark);
     }
   }
+  /* From md on a short viewport the pinned block is compact (as Playhead). */
+  @media (min-width: 768px) and (max-height: 820px) {
+    .markers,
+    .marker {
+      min-height: 24px;
+    }
+  }
   @media (pointer: coarse) {
     .markers,
     .marker {

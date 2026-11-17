@@ -355,8 +355,9 @@
     z-index: 3;
     background: var(--color-surface);
   }
-  /* A page that pads its scroll box by the block's height sets --tl-pin-mt to minus that height,
-     so focusing a control in the block (inside the padding) never scrolls the rows. */
+  /* A page that pads its scroll box by the block's height (plus a gap: TimelineMode's PIN_GAP from
+     md) sets --tl-pin-mt to minus that padding, so focusing a control in the block (inside the
+     padding) never scrolls the rows. */
   .pin :global(*) {
     scroll-margin-top: var(--tl-pin-mt, 0px);
   }

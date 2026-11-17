@@ -350,6 +350,22 @@
       outline-color: var(--color-accent-dark);
     }
   }
+  /* From md on a short viewport the pinned block is compact, so the rows under it keep room. A
+     coarse pointer keeps its 44 px (below). */
+  @media (min-width: 768px) and (max-height: 820px) {
+    .ctl,
+    .track {
+      min-width: 24px;
+      min-height: 24px;
+    }
+    .rail,
+    .filled {
+      top: 10px;
+    }
+    .thumb {
+      top: 2px;
+    }
+  }
   @media (pointer: coarse) {
     .ctl,
     .track {
