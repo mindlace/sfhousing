@@ -184,6 +184,8 @@
         onpointerleave={() => (hoverAt = null)}
       ></div>
       {#if active !== null}
+        <!-- sfh-chart-readout: Timeline.svelte's stacking rule selects it to lift the chart cell
+             above the playhead line while the readout shows. Keep the class name in step. -->
         <p
           class="sfh-chart-readout readout pointer-events-none absolute top-0 m-0 rounded border border-line bg-surface px-2 py-1 text-xs whitespace-nowrap text-ink tabular-nums shadow-md dark:text-ink-dark"
           style:left="{(x(active) / W) * 100}%"

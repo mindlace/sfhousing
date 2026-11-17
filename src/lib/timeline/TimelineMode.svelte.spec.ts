@@ -99,6 +99,7 @@ type Over = Partial<{
   scoreControls: string;
   statusMs: number;
   onlotsretry: () => void;
+  regionHeight: number;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -134,6 +135,7 @@ function setup(over: Over = {}) {
       ...(over.onundoto ? { onundoto: over.onundoto } : {}),
       ...(over.onlotsretry ? { onlotsretry: over.onlotsretry } : {}),
       ...(over.withInspector ? { withInspector: true } : {}),
+      ...(over.regionHeight ? { regionHeight: over.regionHeight } : {}),
       ...(over.scoreControls ? { scoreControls: over.scoreControls } : {})
     }
   });
@@ -367,8 +369,93 @@ describe('TimelineMode', () => {
         rect(page.getByTestId('tl-timeline').element()).left,
         'controls'
       );
+      near(rect(line).top, rect(page.getByTestId('tl-axis').element()).top, 'pinned line top');
     });
   }
+
+  // Three zoning policies and Permitting open: the rows overflow the lanes' box from md.
+  const many = () => mk(protect(5), { ...protect(3), id: 'b' }, { ...protect(2), id: 'c' });
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+  const rectOf = (id: string) => page.getByTestId(id).element().getBoundingClientRect();
+
+  async function scrolledLanes() {
+    await opened(LAST, { initialPolicy: many() });
+    await expect.element(slider()).toBeInTheDocument();
+    await page.getByRole('button', { name: 'Zoning', exact: true }).click();
+    await page.getByRole('button', { name: 'Permitting', exact: true }).click();
+    const lanes = page.getByTestId('tl-lanes').element() as HTMLElement;
+    expect(lanes.scrollHeight).toBeGreaterThan(lanes.clientHeight);
+    lanes.scrollTop = lanes.scrollHeight;
+    await frame();
+    return lanes;
+  }
+
+  it('from md the controls, ruler and chart stay in view while the rows scroll', async () => {
+    const lanes = await scrolledLanes();
+    expect(lanes.scrollTop).toBeGreaterThan(0);
+    const box = lanes.getBoundingClientRect();
+    expect(Math.abs(rectOf('tl-pin').top - box.top)).toBeLessThanOrEqual(1);
+    const play = rectOf('tl-play');
+    expect(play.top).toBeGreaterThanOrEqual(box.top - 0.5);
+    expect(play.bottom).toBeLessThanOrEqual(box.bottom + 0.5);
+    const hit = document.elementFromPoint(play.left + play.width / 2, play.top + play.height / 2);
+    expect(playButton().element().contains(hit)).toBe(true);
+  });
+
+  it('from md a focused bar under the pinned block comes into view below it', async () => {
+    const lanes = await scrolledLanes();
+    const bar = document.querySelector<HTMLElement>(
+      '[data-testid=tl-kind-zoning] [data-testid=tl-bar]'
+    )!;
+    bar.focus();
+    await frame();
+    const r = bar.getBoundingClientRect();
+    expect(r.top).toBeGreaterThanOrEqual(rectOf('tl-pin').bottom - 0.5);
+    expect(r.bottom).toBeLessThanOrEqual(lanes.getBoundingClientRect().bottom + 0.5);
+  });
+
+  // A short mode box (360 px): on a phone the rows under the pinned block reach past it.
+  it('on a phone the controls, ruler and chart stick under the status line', async () => {
+    await page.viewport(390, 760);
+    await opened(LAST, { regionHeight: 360 });
+    await expect.element(slider()).toBeInTheDocument();
+    const mode = page.getByTestId('tl-mode').element() as HTMLElement;
+    mode.scrollTop = mode.scrollHeight;
+    await frame();
+    expect(mode.scrollTop).toBeGreaterThan(0);
+    expect(Math.abs(rectOf('tl-pin').top - rectOf('tl-status-line').bottom)).toBeLessThanOrEqual(1);
+    const inView = (r: DOMRect) => {
+      expect(r.top).toBeGreaterThanOrEqual(0);
+      expect(r.bottom).toBeLessThanOrEqual(760);
+    };
+    inView(slider().element().getBoundingClientRect());
+    inView(page.getByTestId('tl-dock').getByRole('figure').element().getBoundingClientRect());
+  });
+
+  it('on a phone a focused bar under the pinned block comes into view below it', async () => {
+    await page.viewport(390, 760);
+    await opened(LAST, { regionHeight: 360 });
+    await expect.element(slider()).toBeInTheDocument();
+    const mode = page.getByTestId('tl-mode').element() as HTMLElement;
+    mode.scrollTop = mode.scrollHeight;
+    await frame();
+    (
+      page.getByRole('button', { name: 'Market conditions, whole window' }).element() as HTMLElement
+    ).focus();
+    await frame();
+    const zoning = page
+      .getByRole('button', { name: 'Zoning', exact: true })
+      .element() as HTMLElement;
+    zoning.focus();
+    await frame();
+    // Chrome centres a focused control it scrolls to; it lands in the padded part of the box.
+    expect(zoning.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      rectOf('tl-pin').bottom - 0.5
+    );
+    expect(zoning.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      rectOf('tl-mode').bottom + 0.5
+    );
+  });
 
   it("the chart's readout paints above the playhead line; the line above the bars", async () => {
     await opened(LAST, { initialPolicy: mk(protect(5)) });

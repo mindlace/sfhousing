@@ -50,6 +50,8 @@
     playheadDay: Day;
     /** Each row is hatched past it. */
     filledEnd: Day;
+    /** The pinned block's height (its offsetHeight), for the page's scroll padding. */
+    pinHeight?: number;
   }
 
   let {
@@ -65,7 +67,8 @@
     chart,
     playheadMonth,
     playheadDay,
-    filledEnd
+    filledEnd,
+    pinHeight = $bindable(0)
   }: Props = $props();
 
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
@@ -189,13 +192,14 @@
 <!-- With the sheet open the page gets room to scroll the timeline to the top of the viewport. -->
 <div
   bind:this={root}
-  class="tl relative max-2xl:scroll-mt-6"
+  class="tl relative"
   data-testid="tl-timeline"
   style:padding-bottom={sheeting ? '100dvh' : undefined}
 >
   <div class="rows grid" inert={sheeting}>
-    <!-- The playhead's parts, the chart's label and the chart share the rows' columns. -->
-    <div class="pin" data-testid="tl-pin">
+    <!-- The playhead's parts, the chart's label and the chart share the rows' columns. They stay
+         pinned at the top of the scroll box (at --tl-pin-top) while the rows scroll under them. -->
+    <div class="pin" data-testid="tl-pin" bind:offsetHeight={pinHeight}>
       {@render playhead()}
 
       <div class="lab plain">Homes completed</div>
@@ -292,6 +296,12 @@
           {onedit}
           {onadd}
         />
+        <div
+          class="line"
+          data-testid="tl-playhead-line"
+          aria-hidden="true"
+          style:left="{playheadPct}%"
+        ></div>
       </div>
     </div>
   {/if}
@@ -312,6 +322,13 @@
       --lab: 168px;
     }
   }
+  /* Scrolled to the top it clears the status line (24px below 2xl); a page that pads its scroll
+     box for the status line and the pinned block sets --tl-scroll-mt to take the block back off. */
+  @media (width < 96rem) {
+    .tl {
+      scroll-margin-top: var(--tl-scroll-mt, 24px);
+    }
+  }
   .grid {
     display: grid;
     grid-template-columns: var(--lab) minmax(0, 1fr);
@@ -319,11 +336,15 @@
   .rows {
     position: relative;
   }
+  /* Opaque and above the rows (and their line segment), so rows scrolling under it are hidden. */
   .pin {
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns: subgrid;
-    position: relative;
+    position: sticky;
+    top: var(--tl-pin-top, 0px);
+    z-index: 3;
+    background: var(--color-surface);
   }
   /* The playhead line, in two segments at the same x: one through the pinned block from the
      slider's row down, one through every row under it. An absolutely placed grid child takes its
@@ -339,6 +360,13 @@
     z-index: 1;
     pointer-events: none;
     background: var(--color-accent);
+  }
+  /* In the kind sheet the line runs through every lane, its kind's own row included. */
+  .sheet .grid {
+    position: relative;
+  }
+  .sheet .line {
+    grid-row: 1;
   }
   .cell {
     position: relative;
@@ -403,6 +431,9 @@
     }
     .lab {
       border-bottom-color: var(--color-line-dark);
+    }
+    .pin {
+      background: var(--color-surface-dark);
     }
     .line {
       background: var(--color-accent-dark);

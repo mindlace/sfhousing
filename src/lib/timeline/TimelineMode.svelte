@@ -831,6 +831,9 @@
   /** Below md with the inspector open: it is a sheet under the chart. */
   const phoneSheet = $derived(inspectorShown && narrow.current);
   let dockEl = $state<HTMLElement>();
+  /** The status line's and the pinned block's heights: the scroll padding (WCAG 2.4.11). */
+  let statusH = $state(0);
+  let pinHeight = $state(0);
   let chartBox = $state<HTMLElement>();
   let modeEl = $state<HTMLElement>();
   let sheetTop = $state(0);
@@ -999,6 +1002,7 @@
 <div
   bind:this={modeEl}
   class="sfh-fzp sfh-tl relative flex h-full flex-col max-md:overflow-y-auto"
+  style:scroll-padding-top={narrow.current ? `${statusH + pinHeight}px` : undefined}
   data-testid="tl-mode"
 >
   {#if !noScenario}
@@ -1009,6 +1013,7 @@
     <div
       class="tl-status sticky top-0 z-30 grid min-h-6 shrink-0 items-center border-b border-line bg-surface px-4 text-sm text-ink-muted tabular-nums 2xl:hidden dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark-muted"
       data-testid="tl-status-line"
+      bind:offsetHeight={statusH}
     >
       {@render statusShown()}
     </div>
@@ -1176,26 +1181,41 @@
 
   {#if mounted && session && calibration}
     <div
-      bind:this={dockEl}
-      class="shrink-0 border-t border-line bg-surface max-2xl:scroll-mt-6 md:max-h-[50%] md:overflow-y-auto dark:border-line-dark dark:bg-surface-dark"
-      style:padding-bottom={phoneSheet ? '100dvh' : undefined}
+      class="flex shrink-0 flex-col border-t border-line bg-surface md:max-h-[50%] dark:border-line-dark dark:bg-surface-dark"
       data-testid="tl-dock"
     >
-      <Timeline
-        {policy}
-        {calibration}
-        {asOf}
-        {readonly}
-        {selected}
-        {onselect}
-        {onedit}
-        {onadd}
-        playhead={playheadPart}
-        chart={chartPart}
-        playheadMonth={viewMonthOf(asOf, day)}
-        playheadDay={day}
-        {filledEnd}
-      />
+      <!-- The timeline's scroll box from md; below md the mode box scrolls. Either way its pinned
+           block sticks at the scroll box's top (under the status line below md), and the scroll
+           padding keeps a focused row out from under it (WCAG 2.2 2.4.11). Below md the mode
+           box's padding counts the status line and the block, so scrolling this box or the
+           timeline to the top (the sheets) takes the block back off as a negative margin. -->
+      <div
+        bind:this={dockEl}
+        class="min-h-0 max-2xl:scroll-mt-6 md:overflow-y-auto"
+        style:padding-bottom={phoneSheet ? '100dvh' : undefined}
+        style:--tl-pin-top={narrow.current ? `${statusH}px` : '0px'}
+        style:scroll-padding-top={narrow.current ? undefined : `${pinHeight}px`}
+        style:scroll-margin-top={narrow.current ? `${-pinHeight}px` : undefined}
+        style:--tl-scroll-mt={narrow.current ? `${-pinHeight}px` : undefined}
+        data-testid="tl-lanes"
+      >
+        <Timeline
+          {policy}
+          {calibration}
+          {asOf}
+          {readonly}
+          {selected}
+          {onselect}
+          {onedit}
+          {onadd}
+          playhead={playheadPart}
+          chart={chartPart}
+          playheadMonth={viewMonthOf(asOf, day)}
+          playheadDay={day}
+          {filledEnd}
+          bind:pinHeight
+        />
+      </div>
     </div>
   {/if}
 </div>
