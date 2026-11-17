@@ -415,6 +415,33 @@ describe('TimelineMode', () => {
   });
 
   // A short mode box (360 px): on a phone the rows under the pinned block reach past it.
+  it('from md focusing the slider or the chart in the pinned block leaves the rows in place', async () => {
+    const lanes = await scrolledLanes();
+    const at = lanes.scrollTop;
+    expect(at).toBeGreaterThan(0);
+    (slider().element() as HTMLElement).focus();
+    await frame();
+    expect(Math.abs(lanes.scrollTop - at)).toBeLessThanOrEqual(1);
+    const overlay = page.getByRole('slider', { name: 'Month in the chart' });
+    (overlay.element() as HTMLElement).focus();
+    await frame();
+    expect(Math.abs(lanes.scrollTop - at)).toBeLessThanOrEqual(1);
+  });
+
+  it('on a phone focusing the slider in the stuck pinned block leaves the rows in place', async () => {
+    await page.viewport(390, 760);
+    await opened(LAST, { regionHeight: 360 });
+    await expect.element(slider()).toBeInTheDocument();
+    const mode = page.getByTestId('tl-mode').element() as HTMLElement;
+    mode.scrollTop = mode.scrollHeight;
+    await frame();
+    expect(Math.abs(rectOf('tl-pin').top - rectOf('tl-status-line').bottom)).toBeLessThanOrEqual(1);
+    const at = mode.scrollTop;
+    (slider().element() as HTMLElement).focus();
+    await frame();
+    expect(Math.abs(mode.scrollTop - at)).toBeLessThanOrEqual(1);
+  });
+
   it('on a phone the controls, ruler and chart stick under the status line', async () => {
     await page.viewport(390, 760);
     await opened(LAST, { regionHeight: 360 });

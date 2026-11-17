@@ -1197,6 +1197,7 @@
         style:scroll-padding-top={narrow.current ? undefined : `${pinHeight}px`}
         style:scroll-margin-top={narrow.current ? `${-pinHeight}px` : undefined}
         style:--tl-scroll-mt={narrow.current ? `${-pinHeight}px` : undefined}
+        style:--tl-pin-mt="{-pinHeight}px"
         data-testid="tl-lanes"
       >
         <Timeline

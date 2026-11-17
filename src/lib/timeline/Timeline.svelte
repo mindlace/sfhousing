@@ -346,6 +346,11 @@
     z-index: 3;
     background: var(--color-surface);
   }
+  /* A page that pads its scroll box by the block's height sets --tl-pin-mt to minus that height,
+     so focusing a control in the block (inside the padding) never scrolls the rows. */
+  .pin :global(*) {
+    scroll-margin-top: var(--tl-pin-mt, 0px);
+  }
   /* The playhead line, in two segments at the same x: one through the pinned block from the
      slider's row down, one through every row under it. An absolutely placed grid child takes its
      grid area as its containing block; the row end left auto reaches the grid's bottom edge. */
