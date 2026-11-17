@@ -78,6 +78,12 @@
   /** Below md the inspector sheet starts under the chart, and is never shorter than this. */
   const MIN_SHEET = 240;
 
+  /**
+   * From md, px of scroll padding under the pinned block: a 20 px bar scrolled to the top keeps
+   * its 24 px target clear of the chart's slider (WCAG 2.2 2.5.8).
+   */
+  const PIN_GAP = 4;
+
   /** The brush-failure notice: the editors' own words for a query that failed. */
   const LOTS_FAILED = lotsText({ kind: 'failed', keys: [] });
 
@@ -1217,10 +1223,10 @@
         class="min-h-0 max-2xl:scroll-mt-6 md:overflow-y-auto"
         style:padding-bottom={phoneSheet ? '100dvh' : undefined}
         style:--tl-pin-top={narrow.current ? `${statusH}px` : '0px'}
-        style:scroll-padding-top={narrow.current ? undefined : `${pinHeight}px`}
+        style:scroll-padding-top={narrow.current ? undefined : `${pinHeight + PIN_GAP}px`}
         style:scroll-margin-top={narrow.current ? `${-pinHeight}px` : undefined}
         style:--tl-scroll-mt={narrow.current ? `${-pinHeight}px` : undefined}
-        style:--tl-pin-mt="{-pinHeight}px"
+        style:--tl-pin-mt="{narrow.current ? -pinHeight : -pinHeight - PIN_GAP}px"
         data-testid="tl-lanes"
       >
         <Timeline

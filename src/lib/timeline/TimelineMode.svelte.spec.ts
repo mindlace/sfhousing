@@ -421,6 +421,18 @@ describe('TimelineMode', () => {
     expect(r.bottom).toBeLessThanOrEqual(lanes.getBoundingClientRect().bottom + 0.5);
   });
 
+  it('from md a bar scrolled to the top clears the chart by its 24 px target', async () => {
+    await scrolledLanes();
+    const bar = document.querySelector<HTMLElement>(
+      '[data-testid=tl-kind-zoning] [data-testid=tl-bar]'
+    )!;
+    bar.scrollIntoView({ block: 'start', behavior: 'instant' });
+    await frame();
+    const r = bar.getBoundingClientRect();
+    // WCAG 2.2 2.5.8: the 24 px circle at the bar's centre stays off the chart's slider.
+    expect(r.top + r.height / 2 - 12).toBeGreaterThanOrEqual(rectOf('tl-pin').bottom);
+  });
+
   // A short mode box (360 px): on a phone the rows under the pinned block reach past it.
   it('from md focusing the slider or the chart in the pinned block leaves the rows in place', async () => {
     const lanes = await scrolledLanes();
