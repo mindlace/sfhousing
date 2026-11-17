@@ -1,12 +1,11 @@
 // Wall-clock bar for scoring (`npm run test:perf`; never in signoff). The bar: on the bench city,
-// one model month's scoring for 96 worlds (48 plan and 48 twin) takes at most 1 ms at the median:
+// one model month's scoring for one pair (a plan world and its twin) takes at most 1 ms at the median:
 // adding the month's events to every series, `stepped`, and `chunkOf` when a calendar month became
-// final. Reported with no bar: the same on funded worlds (tiers filed in every world, world 1's
-// whole ledger re-filed by every chunk), at months 101-150 and 400-450.
+// final. Reported with no bar: the same on funded worlds (tiers filed in both worlds, the plan
+// world's whole ledger re-filed by every chunk), at months 101-150 and 400-450.
 //
 // Setup is untimed. A plan world and its twin run the same seed under the same frame, so each seed
-// is run once and its events fed to two series (the scoring work is that of 96 worlds).
-// `SFH_SCORE_PERF_SEEDS` / `SFH_SCORE_PERF_FUNDED_SEEDS` shrink the runs while debugging;
+// is run once and its events fed to two series (the scoring work is that of one pair).
 // `SFH_PERF_QUIET=1` marks a run made while holding the measurement lock.
 import { describe, expect, it } from 'vitest';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
@@ -26,8 +25,7 @@ import type { MoneyFeed, ScoreStatics, WorldSeries } from './types';
 
 const WINDOW = 480;
 const BAR = 1;
-const SEEDS = Number(process.env.SFH_SCORE_PERF_SEEDS ?? 48);
-const FUNDED_SEEDS = Number(process.env.SFH_SCORE_PERF_FUNDED_SEEDS ?? 16);
+const SEEDS = 1;
 const QUIET = process.env.SFH_PERF_QUIET === '1' ? 'quiet (lock held)' : 'not quiet (no lock)';
 const DATASET = 'dataset: bench (synthCity)';
 
@@ -76,7 +74,7 @@ function feed(
   }
 }
 
-/** World 1's money for `chunkOf`, its ledger grown month by month (untimed) to `ledgerLen[m]`. */
+/** The plan world's money for `chunkOf`, its ledger grown month by month (untimed) to `ledgerLen[m]`. */
 interface Money {
   feed: MoneyFeed;
   all: LedgerEvent[];
@@ -118,7 +116,7 @@ function timeMonths(
     }
     const now = plan[0].finalThrough();
     if (now > final) {
-      chunkOf(plan, twin, money === null ? null : money.feed, final + 1, now);
+      chunkOf(plan[0], twin[0], money === null ? null : money.feed, final + 1, now);
       final = now;
       chunks++;
     }
@@ -154,7 +152,7 @@ describe('scoring timing, bench city', () => {
     const { times, chunks } = timeMonths(runs, plan, twin, statics, FROM, TO, null);
     const { median, p90, worst } = stats(times);
     console.log(
-      `[perf] scoring ${2 * SEEDS} worlds (${SEEDS} plan + ${SEEDS} twin), months ${FROM}-${TO}: ` +
+      `[perf] scoring one pair, months ${FROM}-${TO}: ` +
         `median ${ms(median)} ms, p90 ${ms(p90)} ms, worst ${ms(worst)} ms per month ` +
         `(${chunks} chunks; setup ${(setup / 1000).toFixed(1)} s), ${QUIET}, ${DATASET}`
     );
@@ -164,7 +162,7 @@ describe('scoring timing, bench city', () => {
 });
 
 describe('scoring timing, funded bench city (no bar)', () => {
-  it(`${2 * FUNDED_SEEDS} funded worlds, world 1's whole ledger: months 101-150 and 400-450`, () => {
+  it(`one funded pair, the plan world's whole ledger: months 101-150 and 400-450`, () => {
     const TO = 450;
     const input: SimInput = benchFunded('baseline').input;
     const statics = staticsOf(input);
@@ -172,7 +170,7 @@ describe('scoring timing, funded bench city (no bar)', () => {
     const score = timelineStatics(input, timeline, WINDOW);
     const t0 = performance.now();
     let money: Money | null = null;
-    const runs: Run[] = seedsOf(FUNDED_SEEDS).map((seed) => {
+    const runs: Run[] = seedsOf(SEEDS).map((seed) => {
       const ledgerLen: number[] = [0];
       const got = runFunded(statics, timeline, seed, TO, {
         afterStep: (_w, _m, ledger) => ledgerLen.push(ledger.length)
@@ -200,8 +198,8 @@ describe('scoring timing, funded bench city (no bar)', () => {
       const { times, chunks } = timeMonths(runs, plan, twin, statics, from, through, m);
       const { median, p90, worst } = stats(times);
       console.log(
-        `[perf] funded scoring ${2 * FUNDED_SEEDS} worlds (${FUNDED_SEEDS} plan + ${FUNDED_SEEDS} ` +
-          `twin), months ${from}-${through}, world 1's ledger ${m!.feed.ledger.length} events: ` +
+        `[perf] funded scoring one pair, ` +
+          `months ${from}-${through}, the plan world's ledger ${m!.feed.ledger.length} events: ` +
           `median ${ms(median)} ms, p90 ${ms(p90)} ms, worst ${ms(worst)} ms per month ` +
           `(${chunks} chunks; setup ${(setup / 1000).toFixed(1)} s), ${QUIET}, ${DATASET}`
       );

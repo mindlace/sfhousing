@@ -876,8 +876,8 @@
       policy,
       stale,
       refills,
-      mean: () =>
-        current ? current.mean.slice(0, current.filledThrough + 1).map((r) => r.completedNet) : []
+      completedNet: () =>
+        current ? current.rows.slice(0, current.filledThrough + 1).map((r) => r.completedNet) : []
     }));
 
     return () => {

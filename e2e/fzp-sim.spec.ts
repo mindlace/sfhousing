@@ -24,9 +24,9 @@ const { fzp } = manifest.scenarios;
 // something) reads only transit.json and neighborhoods.geojson, never frontage.bin.
 const SIM_FILES = [fzp.parcels, fzp.projects, fzp.calibration, fzp.policy, fzp.gross!];
 
-/** The average's completed net homes per filled month (`__sfhFzp.mean()`). */
-const meanOf = (page: Page): Promise<number[]> =>
-  page.evaluate(() => (window as FzpWin).__sfhFzp!.mean());
+/** The world's completed net homes per filled month (`__sfhFzp.completedNet()`). */
+const completedOf = (page: Page): Promise<number[]> =>
+  page.evaluate(() => (window as FzpWin).__sfhFzp!.completedNet());
 
 async function waitReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready');
@@ -111,11 +111,11 @@ test('the same document after a reload fills an identical forecast', async ({ pa
   await page.goto('/sim');
   await waitReady(page);
   await waitFilled(page);
-  const first = await meanOf(page);
+  const first = await completedOf(page);
   expect(first.length).toBeGreaterThan(0);
 
   await page.reload();
   await waitReady(page);
   await waitFilled(page);
-  expect(await meanOf(page)).toEqual(first);
+  expect(await completedOf(page)).toEqual(first);
 });

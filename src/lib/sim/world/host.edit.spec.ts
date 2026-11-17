@@ -216,9 +216,7 @@ function before(c: SeriesChunk, n: number): SeriesChunk | null {
   const k = n - c.from;
   return {
     from: c.from,
-    mean: c.mean.slice(0, k),
-    sd: c.sd.slice(0, k),
-    shown: c.shown.slice(0, k),
+    rows: c.rows.slice(0, k),
     planEffect: c.planEffect.slice(0, k),
     money: c.money ? c.money.slice(0, k) : null,
     tiers: c.tiers ? c.tiers.slice(0, k) : null
@@ -268,8 +266,8 @@ describe('edits', () => {
     await r.run(r.both(60));
     const plan = r.runner.ensembles().plan!;
     const w1 = plan.worlds[0];
-    expect(plan.steppedThrough).toBeLessThan(121);
-    const doc = withZoning(baseDoc(), painted(121));
+    expect(plan.steppedThrough).toBeLessThan(70);
+    const doc = withZoning(baseDoc(), painted(70));
     const at = r.posts.length;
     r.runner.setPolicy(2, doc, paintLotsTable());
     await r.run(r.full(2));

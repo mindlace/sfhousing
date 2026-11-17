@@ -210,7 +210,7 @@ function twin(seed: number): WorldSeries {
 const twins = new Map<number, WorldSeries>();
 
 const chunk = (r: Run, t: WorldSeries, from: number, through: number): SeriesChunk =>
-  chunkOf([r.series], [t], r.feed, from, through);
+  chunkOf(r.series, t, r.feed, from, through);
 
 beforeAll(() => {
   statics = staticsOf(INPUT);

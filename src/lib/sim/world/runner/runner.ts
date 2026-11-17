@@ -84,7 +84,7 @@ import { cityInputAt, type FrameCityInput } from '../policy/limits';
 import { lookupsAt } from '../policy/lookups';
 import { scheduleAt } from '../read';
 import * as scoreModule from '../score';
-import type { MoneyFeed, ScoreStatics, WorldSeries } from '../score';
+import type { MoneyFeed, ScoreStatics } from '../score';
 import { finalTable } from '../score/statics';
 import type { World, WorldEvent } from '../types';
 import type { Dataset } from './dataset';
@@ -816,13 +816,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (refillDue) return;
     const through = Math.min(a.finalThrough(), b.finalThrough());
     if (through <= posted) return;
-    const series = chunkOf(
-      a.series as WorldSeries[],
-      b.series as WorldSeries[],
-      moneyOf(through),
-      posted + 1,
-      through
-    );
+    const series = chunkOf(a.series[0]!, b.series[0]!, moneyOf(through), posted + 1, through);
     posted = through;
     post({ type: 'filled', rev, through, series });
   }

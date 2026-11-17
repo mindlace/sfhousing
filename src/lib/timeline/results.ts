@@ -4,19 +4,11 @@ import type { ScoreAt } from '$lib/fzp/types';
 import { monthIndex, utcParts } from '$lib/fzp/time';
 import type { TargetProgress } from '$lib/scoreboard/types';
 import type { TimelineScore } from '$lib/sim/scenario/types';
-import type { PlanRow, TimelineView } from '$lib/sim/world/score/types';
+import type { TimelineView } from '$lib/sim/world/score/types';
 import type { TierUnits } from '$lib/timelapse/types';
 
-/** The plan effect is still a mean of fractions here; the page shows whole homes. */
-const whole = Math.round;
-
-const wholePlan = (p: PlanRow): PlanRow => ({
-  entitledNew: whole(p.entitledNew),
-  completedNetNew: whole(p.completedNetNew)
-});
-
 /**
- * Today's TimelineScore shape over the filled months: shown = world 1's rows, no band, tiers from
+ * Today's TimelineScore shape over the filled months: shown = the world's rows, no band, tiers from
  * view.tiers + tierBaseline + tierTargets, money = view.money (its perAddedHome and displacedShare
  * are the view's own).
  */
@@ -24,8 +16,8 @@ export function scoreOfView(view: TimelineView, tierBaseline: TierUnits | null):
   const k = view.filledThrough + 1;
   return {
     months: view.months,
-    shown: view.shown.slice(0, k),
-    planEffect: view.planEffect.slice(0, k).map(wholePlan),
+    shown: view.rows.slice(0, k),
+    planEffect: view.planEffect.slice(0, k),
     planEffectBand: [],
     band: [],
     baseline: view.baseline,
@@ -46,7 +38,7 @@ export function scoreOfView(view: TimelineView, tierBaseline: TierUnits | null):
 }
 
 /**
- * The Results at calendar month i (i <= filledThrough): world 1's ScoreAt. `score` is
+ * The Results at calendar month i (i <= filledThrough): the world's ScoreAt. `score` is
  * `scoreOfView(view, tierBaseline)` when the caller has it already.
  */
 export function resultsAt(
@@ -76,9 +68,9 @@ export function headerOf(view: TimelineView | null): {
     if (d <= view.filledThrough) target = { target: rhna.target, fraction: rhna.fraction[d] };
   }
   return {
-    total: filled ? view.baseline.completedNet + view.shown[last].completedNet : null,
+    total: filled ? view.baseline.completedNet + view.rows[last].completedNet : null,
     year,
-    delta: filled && view.compare === 'plan' ? whole(view.planEffect[last].completedNetNew) : null,
+    delta: filled && view.compare === 'plan' ? view.planEffect[last].completedNetNew : null,
     target
   };
 }

@@ -614,8 +614,8 @@ function caseEnsemble(c: Common) {
     if (through > posted) {
       const tk = now();
       chunkOf(
-        s.plan.members.map((m) => m.series),
-        s.comp.members.map((m) => m.series),
+        s.plan.members[0].series,
+        s.comp.members[0].series,
         moneyFeedOf(s, through),
         posted + 1,
         through
@@ -939,8 +939,8 @@ async function caseFirst(dir: string, extra: string | null, money: boolean, worl
     );
     if (through >= 0) {
       chunkOf(
-        s.plan.members.map((m) => m.series),
-        s.comp.members.map((m) => m.series),
+        s.plan.members[0].series,
+        s.comp.members[0].series,
         moneyFeedOf(s, through),
         0,
         through

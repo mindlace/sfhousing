@@ -156,33 +156,31 @@ describe('tiers, funded mini', () => {
     expect(extrasOf(runOf(1).series).unawarded()).toBe(0);
   });
 
-  it("tierTargets use world 1's tiers, targets the mean", () => {
+  it("tierTargets use the plan world's tiers, targets its rows", () => {
     const [a, b] = [runOf(1), runOf(2)];
     const last = c.score.lastIndex;
-    const chunk = chunkOf([a.series, b.series], [a.series, b.series], a.feed, 0, last);
+    const chunk = chunkOf(a.series, b.series, a.feed, 0, last);
     const view = viewOf([chunk], c.score);
     const mine = extrasOf(a.series).tiers(0, last);
     expect(chunk.tiers).toEqual(mine);
     expect(view.tiers).toEqual(mine);
     expect(view.tierTargets).toEqual(tierTargetsOf(c.score.tierBaseline!, mine));
-    expect(view.targets).toEqual(targetsOf(c.score.baseline.units, chunk.mean));
-    // World 1 and the mean differ, so the two rows describe different things.
-    expect(chunk.mean.some((m, i) => m.completedNet !== sumOf(mine[i]))).toBe(true);
-    // Another world 1 gives other tiers.
-    const other = chunkOf([b.series, a.series], [a.series, b.series], b.feed, 0, last);
+    expect(view.targets).toEqual(targetsOf(c.score.baseline.units, chunk.rows));
+    // Another plan world gives other tiers.
+    const other = chunkOf(b.series, a.series, b.feed, 0, last);
     expect(other.tiers).toEqual(extrasOf(b.series).tiers(0, last));
     expect(other.tiers).not.toEqual(mine);
-    expect(chunkOf([a.series], [a.series], null, 0, last).tiers).toBeNull();
+    expect(chunkOf(a.series, a.series, null, 0, last).tiers).toBeNull();
   });
 
-  it('chunksBefore trims sd, money and tiers of a funded chunk', () => {
+  it('chunksBefore trims rows, money and tiers of a funded chunk', () => {
     const a = runOf(1);
-    const chunk = chunkOf([a.series, runOf(2).series], [a.series, a.series], a.feed, 0, 40);
+    const chunk = chunkOf(a.series, runOf(2).series, a.feed, 0, 40);
     const [cut] = chunksBefore([chunk], 6);
-    expect(cut.sd).toEqual(chunk.sd.slice(0, 6));
+    expect(cut.rows).toEqual(chunk.rows.slice(0, 6));
     expect(cut.money).toEqual(chunk.money!.slice(0, 6));
     expect(cut.tiers).toEqual(chunk.tiers!.slice(0, 6));
-    expect(cut.sd).toHaveLength(6);
+    expect(cut.rows).toHaveLength(6);
     expect(cut.money).toHaveLength(6);
     expect(cut.tiers).toHaveLength(6);
   });

@@ -191,9 +191,7 @@ function before(c: SeriesChunk, n: number): SeriesChunk | null {
   const k = n - c.from;
   return {
     from: c.from,
-    mean: c.mean.slice(0, k),
-    sd: c.sd.slice(0, k),
-    shown: c.shown.slice(0, k),
+    rows: c.rows.slice(0, k),
     planEffect: c.planEffect.slice(0, k),
     money: c.money ? c.money.slice(0, k) : null,
     tiers: c.tiers ? c.tiers.slice(0, k) : null

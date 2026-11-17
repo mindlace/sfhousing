@@ -10,9 +10,9 @@ function whole(compare: 'plan' | 'preFzp' = 'plan'): TimelineView {
 }
 
 describe('headerOf', () => {
-  it('the header number is baseline plus world 1 at lastIndex', () => {
+  it('the header number is baseline plus the world at lastIndex', () => {
     const v = whole();
-    expect(headerOf(v).total).toBe(v.baseline.completedNet + v.shown[v.lastIndex].completedNet);
+    expect(headerOf(v).total).toBe(v.baseline.completedNet + v.rows[v.lastIndex].completedNet);
   });
 
   it('is calculating before the window is filled, and without a view', () => {
@@ -27,8 +27,22 @@ describe('headerOf', () => {
 
   it('the delta is the plan effect at lastIndex only against the plan', () => {
     const v = whole();
-    expect(headerOf(v).delta).toBe(Math.round(v.planEffect[v.lastIndex].completedNetNew));
+    expect(headerOf(v).delta).toBe(v.planEffect[v.lastIndex].completedNetNew);
     expect(headerOf(whole('preFzp')).delta).toBeNull();
+  });
+
+  it('the delta can be negative', () => {
+    const v = whole();
+    const planEffect = v.planEffect.map((p, i) =>
+      i === v.lastIndex ? { ...p, completedNetNew: -569 } : p
+    );
+    expect(headerOf({ ...v, planEffect }).delta).toBe(-569);
+  });
+
+  it('an identical twin gives delta +0', () => {
+    const v = whole();
+    const planEffect = v.planEffect.map(() => ({ entitledNew: 0, completedNetNew: 0 }));
+    expect(Object.is(headerOf({ ...v, planEffect }).delta, 0)).toBe(true);
   });
 
   it('the target waits for its deadline month to be filled', () => {
@@ -41,10 +55,10 @@ describe('headerOf', () => {
 });
 
 describe('scoreOfView and resultsAt', () => {
-  it('resultsAt reads world 1', () => {
+  it('resultsAt reads the world', () => {
     const v = whole();
     const r = resultsAt(v, null, 12);
-    expect(r.total).toBe(v.baseline.completedNet + v.shown[12].completedNet);
+    expect(r.total).toBe(v.baseline.completedNet + v.rows[12].completedNet);
     expect('band' in r).toBe(false);
     expect('planBand' in r).toBe(false);
     expect(r.planCompleted).toBe(v.planEffect[12].completedNetNew);
@@ -55,7 +69,7 @@ describe('scoreOfView and resultsAt', () => {
     const s = scoreOfView(v, null);
     expect(s.band).toEqual([]);
     expect(s.planEffectBand).toEqual([]);
-    expect(s.shown).toEqual(v.shown.slice(0, 11));
+    expect(s.shown).toEqual(v.rows.slice(0, 11));
   });
 
   it('keeps only the filled months, money from the view and no tiers without a baseline', () => {

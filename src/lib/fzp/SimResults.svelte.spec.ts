@@ -880,7 +880,7 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
     await page.viewport(1024, 768);
     const v = view();
     const baseline = { veryLow: 100, low: 100, moderate: 100, aboveModerate: 700, unrecorded: 0 };
-    const tiers = v.mean.map((_, i) => ({
+    const tiers = v.rows.map((_, i) => ({
       veryLow: i,
       low: i,
       moderate: i,

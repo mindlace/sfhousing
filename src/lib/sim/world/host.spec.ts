@@ -293,7 +293,7 @@ function plainLoop(doc: SimPolicy4, worlds: number, months: number): Plain {
   return {
     plan: t,
     statics: s,
-    chunk: chunkOf(series[0], series[1], money, 0, s.lastIndex),
+    chunk: chunkOf(series[0][0], series[1][0], money, 0, s.lastIndex),
     world1: world1!
   };
 }

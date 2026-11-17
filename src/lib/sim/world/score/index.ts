@@ -2,7 +2,7 @@ export { cardAt } from './card';
 export { chunkOf } from './chunk';
 export { createWorldSeries } from './series';
 export { scoreStaticsOf } from './statics';
-export { BAND_Z, chunksBefore, viewOf } from './view';
+export { chunksBefore, viewOf } from './view';
 export type {
   CardDeps,
   MoneyFeed,

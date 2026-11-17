@@ -99,8 +99,8 @@ describe('ChartRow', () => {
 
   it('keeps a falling line inside the plot', async () => {
     const view = fullView();
-    const shown = view.shown.map((r, i) => ({ ...r, completedNet: -1500 * i }));
-    await render(ChartRow, { props: { view: { ...view, shown }, index: 0, target: null } });
+    const rows = view.rows.map((r, i) => ({ ...r, completedNet: -1500 * i }));
+    await render(ChartRow, { props: { view: { ...view, rows }, index: 0, target: null } });
     const d = page.getByTestId('chart-line-later').element().getAttribute('d')!;
     const ys = [...d.matchAll(/[ML][\d.-]+,([\d.-]+)/g)].map((m) => Number(m[1]));
     expect(ys.length).toBeGreaterThan(1);

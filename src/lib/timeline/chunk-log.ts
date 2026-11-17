@@ -22,7 +22,7 @@ export const EMPTY_LOG: ChunkLog = { statics: null, entries: [] };
 /** The months held: the `from` the next `filled` must carry. */
 export function nextMonth(log: ChunkLog): number {
   const last = log.entries.at(-1);
-  return last ? last.chunk.from + last.chunk.mean.length : 0;
+  return last ? last.chunk.from + last.chunk.rows.length : 0;
 }
 
 /**
@@ -114,7 +114,7 @@ function aligned(chunks: SeriesChunk[], statics: ScoreStatics): SeriesChunk[] {
   if (ref === null) return chunks;
   return chunks.map((c) => ({
     ...c,
-    money: c.money ? c.money.map((r) => rekey(r, ref)) : c.mean.map(() => zeroRow(ref))
+    money: c.money ? c.money.map((r) => rekey(r, ref)) : c.rows.map(() => zeroRow(ref))
   }));
 }
 

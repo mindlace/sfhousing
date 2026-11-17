@@ -54,7 +54,7 @@ describe('viewOf timing, funded bench city (no bar)', () => {
     }
     const last = score.lastIndex;
     const chunks: SeriesChunk[] = [];
-    for (let i = 0; i <= last; i++) chunks.push(chunkOf(series, series, feed, i, i));
+    for (let i = 0; i <= last; i++) chunks.push(chunkOf(series[0], series[0], feed, i, i));
     const setup = performance.now() - t0;
 
     const times: number[] = [];

@@ -54,7 +54,7 @@
 
   // The solid part runs through the playhead's month, the dashed part from there on.
   const split = $derived(Math.min(Math.max(index, 0), last));
-  const homes = (i: number) => base + view!.shown[i].completedNet;
+  const homes = (i: number) => base + view!.rows[i].completedNet;
 
   let focusAt = $state<number | null>(null);
   let hoverAt = $state<number | null>(null);

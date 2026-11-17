@@ -73,7 +73,7 @@ export function poolRow(id: string, k: number, base = 0): MoneyRow['pools'][numb
 }
 
 /**
- * Months `from` to `from + n - 1`. `base` shifts every value; with `pools`, world 1's money with
+ * Months `from` to `from + n - 1`. `base` shifts every value; with `pools`, the plan world's money with
  * one row per pool (funded homes above displaced ones, so per added home is a number).
  */
 export function chunk(
@@ -86,13 +86,8 @@ export function chunk(
   const pools = opts.pools;
   return {
     from,
-    mean: ks.map((k) => row(base + 3 * k)),
-    sd: ks.map((k) => row(k / 4)),
-    shown: ks.map((k) => row(base + 3 * k + 1)),
-    planEffect: ks.map((k) => ({
-      mean: { entitledNew: base + k, completedNetNew: base + k / 2 },
-      sd: { entitledNew: 1, completedNetNew: 0.5 }
-    })),
+    rows: ks.map((k) => row(base + 3 * k + 1)),
+    planEffect: ks.map((k) => ({ entitledNew: base + k, completedNetNew: base + k })),
     money: pools
       ? ks.map((k) => ({
           pools: pools.map((id) => poolRow(id, k, base)),
@@ -112,11 +107,8 @@ export function cut(view: TimelineView, n: number): TimelineView {
   return {
     ...view,
     filledThrough: n,
-    mean: view.mean.slice(0, k),
-    band: view.band.slice(0, k),
-    shown: view.shown.slice(0, k),
+    rows: view.rows.slice(0, k),
     planEffect: view.planEffect.slice(0, k),
-    planEffectBand: view.planEffectBand.slice(0, k),
     targets: view.targets.slice(0, k),
     tierTargets: view.tierTargets?.slice(0, k) ?? null,
     tiers: view.tiers?.slice(0, k) ?? null
