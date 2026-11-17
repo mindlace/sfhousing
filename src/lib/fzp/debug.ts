@@ -23,8 +23,8 @@ export interface SfhFzpDebug {
   readonly stale: boolean;
   /** Every `refill`'s `from`, in arrival order, since mount. */
   readonly refills: readonly number[];
-  /** The average's completed net homes per filled month (no baseline), from month 0. */
-  mean(): number[];
+  /** The world's completed net homes per filled month (no baseline), from month 0. */
+  completedNet(): number[];
 }
 
 declare global {
@@ -66,8 +66,8 @@ export function installFzpDebug(get: () => SfhFzpDebug): () => void {
     get refills() {
       return get().refills;
     },
-    mean() {
-      return get().mean();
+    completedNet() {
+      return get().completedNet();
     }
   };
   window.__sfhFzp = hook;

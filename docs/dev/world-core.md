@@ -200,7 +200,7 @@ of every world and is printed apart. The asserted median excludes it by design: 
 ordinary month. The bench also prints the one-frame median and, with a live city, `createWorld`
 plus `planDue` through month 480 for one world and one live month for 48 worlds (no bars).
 
-Measured 2026-11-13, quiet (measurement lock held), two runs each:
+Measured 2026-11-13, quiet (measurement lock held), two runs each. The bench's 48 worlds are its own set; `/sim` runs one world per side.
 
 | Case                                     | Before (Task 13)   | After (Task 14)     |
 | ---------------------------------------- | ------------------ | ------------------- |

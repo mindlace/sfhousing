@@ -61,10 +61,10 @@ describe('chunk log', () => {
     log = logRefill(log, 7);
     expect(nextMonth(log)).toBe(7);
     log = logFilled(log, chunk(7, 3, { base: 100 }));
-    expect(viewOfLog(log)!.mean[8].completedNet).toBe(
-      chunk(7, 3, { base: 100 }).mean[1].completedNet
+    expect(viewOfLog(log)!.rows[8].completedNet).toBe(
+      chunk(7, 3, { base: 100 }).rows[1].completedNet
     );
-    expect(viewOfLog(log)!.mean[6]).toEqual(chunk(5, 5).mean[1]);
+    expect(viewOfLog(log)!.rows[6]).toEqual(chunk(5, 5).rows[1]);
   });
 
   it('refill keeps each kept entry its statics and trims the straddling chunk', () => {
@@ -77,9 +77,9 @@ describe('chunk log', () => {
     expect(cut.entries).toHaveLength(2);
     expect(cut.entries[0]).toBe(log.entries[0]);
     expect(cut.entries[1].statics).toBe(b);
-    expect(cut.entries[1].chunk.mean).toHaveLength(2);
+    expect(cut.entries[1].chunk.rows).toHaveLength(2);
     expect(cut.statics).toBe(b);
-    expect(log.entries[1].chunk.mean).toHaveLength(4);
+    expect(log.entries[1].chunk.rows).toHaveLength(4);
     expect(nextMonth(logRefill(log, 0))).toBe(0);
     expect(nextMonth(logRefill(log, 40))).toBe(12);
   });

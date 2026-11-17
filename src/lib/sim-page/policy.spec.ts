@@ -594,7 +594,10 @@ describe('comparisonLine', () => {
     const mine = scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' });
     expect(comparisonLine(fzp, 1234)).toBe('FZP added 1,234 homes vs no FZP');
     expect(comparisonLine(mine, 56)).toBe('Your policy added 56 homes vs FZP');
-    expect(comparisonLine(mine, -56)).toBe('Your policy added \u221256 homes vs FZP');
+    expect(comparisonLine(mine, -569)).toBe('Your policy cost 569 homes vs FZP');
+    expect(comparisonLine(fzp, -569)).toBe('FZP cost 569 homes vs no FZP');
+    expect(comparisonLine(mine, 0)).toBe('Your policy added 0 homes vs FZP');
+    expect(comparisonLine(fzp, 0)).toBe('FZP added 0 homes vs no FZP');
     expect(comparisonLine(mine, null)).toBe(`Your policy vs FZP: ${CALCULATING}`);
     expect(comparisonLine(fzp, null)).toBe(`FZP vs no FZP: ${CALCULATING}`);
   });

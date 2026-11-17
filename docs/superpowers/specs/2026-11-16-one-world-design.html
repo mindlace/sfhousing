@@ -1,0 +1,65 @@
+<article>
+  <header>
+    <h1>One world on /sim</h1>
+    <p>Run the user's policy once and the FZP baseline once, and show one future instead of a 48-world average and band.</p>
+  </header>
+
+  <section id="sec-why">
+    <h2>Why</h2>
+    <p>The timeline runs 48 seeded worlds. Every random draw is keyed by lot or project, so nothing citywide differs between worlds. The per-lot noise averages out, and as a result the "8 in 10 futures" band is a few percent wide and "This city" sits on "Average". The band suggests uncertainty the model doesn't actually measure, and it costs 48× the compute.</p>
+    <p>The owner's position: the sim shows <strong>one possible future</strong>. Citywide booms and busts belong in <strong>market conditions</strong>, an explicit input the user can see and change. They don't belong in random seeds.</p>
+  </section>
+
+  <section id="sec-goals">
+    <h2>Goals, non-goals, anti-goals</h2>
+    <ul>
+      <li><strong>Goal:</strong> /sim runs two worlds on seed 1: the user's policy and the FZP baseline (the comparison twin). Every number on the page comes from those two worlds.</li>
+      <li><strong>Goal:</strong> the chart shows one line for homes completed (plus the state target). It has no band, no Average, and no "This city".</li>
+      <li><strong>Goal:</strong> "Because of this policy" is the policy world minus the baseline world. Both worlds use the same per-lot dice.</li>
+      <li><strong>Non-goal:</strong> market-conditions scenarios (booms and busts). That is separate later work.</li>
+      <li><strong>Non-goal:</strong> /lesscars. It keeps its own 101 paired runs and band.</li>
+      <li><strong>Anti-goal:</strong> keeping the multi-world machinery "just in case", or showing any range or "chance" built from seeds.</li>
+    </ul>
+  </section>
+
+  <section id="sec-approaches">
+    <h2>Approaches</h2>
+    <ul>
+      <li><strong>One world plus the baseline (picked).</strong> This is simple and honest. It also makes the page consistent: the map, cards, money, income tiers and "per added home" already read world 1, and only the totals used the mean.</li>
+      <li><strong>Keep 48 worlds and add citywide shocks to each one.</strong> This would make the band meaningful. Rejected: the owner wants shocks visible as market conditions, not hidden in seeds.</li>
+      <li><strong>Keep 48 worlds and hide the band.</strong> Rejected: it wastes 48× the compute, and the headline would still be an average no one can see.</li>
+    </ul>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+    <ol>
+      <li><code>WORLDS</code> becomes 1 (<code>src/lib/sim/timeline-client.ts</code>). The protocol already accepts <code>worlds &gt;= 1</code>. The plan and the comparison each run one world on seed 1.</li>
+      <li>The score shape loses its across-world statistics. <code>SeriesChunk</code> and <code>TimelineView</code> drop mean/sd/band/<code>shown</code> in favour of the world's own rows. <code>planEffect</code> is plan minus twin with no sd, and <code>BAND_Z</code>/<code>bandOf</code> are removed. The builder decides whether to collapse the multi-world code path entirely or leave it parameterised at 1; collapsing is preferred where it removes code.</li>
+      <li>UI: remove the band, the Average line and the "This city" line from <code>ChartRow</code>, <code>ScoreChart</code>/<code>chart.ts</code>, <code>SimResults</code> and <code>score-view.ts</code>. Delete <code>RANGE_NOTE</code> and <code>CITY_NOTE</code>, and reword <code>TWIN_NOTE</code> only as far as it mentions averaging. Keep the copy terse.</li>
+      <li>Headline, Results totals, targets and RHNA fraction become the world's whole-number values. The e2e debug hook <code>mean()</code> is renamed to fit.</li>
+      <li>Update the docs <code>ensemble-runner.md</code>, <code>world-score.md</code>, <code>timeline-ui.md</code>, <code>world-core.md</code>, <code>world-funding.md</code> (perf bar), <code>map-stream.md</code> and <code>policy-timeline.md</code> (a note on single-world pairing). Update the tests, e2e and perf budgets. <code>scripts/ensemble-measure.ts</code> defaults to 1 world.</li>
+      <li>The funding tolerance referee keeps its own 200 seeds; it is a test of the engine, not a page result.</li>
+    </ol>
+  </section>
+
+  <section id="sec-effect-variance">
+    <h2>The policy effect in one future</h2>
+    <p>Measured on the real dataset (<code>2026-11-14-1a31d026</code>, 48 plan/twin pairs, 2026-11-16):</p>
+    <ul>
+      <li>Draws are already keyed by stable identity (lot, attempt, purpose, stage). Funding delays, lapses, resizes and phase counts do not reshuffle them, and no lot changed attempt between worlds.</li>
+      <li>About 90% of the pair-to-pair spread is funding crowd-out. Pools award once a year and spend almost all their money, and the line skips rows that don't fit. A project the policy makes eligible takes part of the year's money, so another project waits a full year. A big project slipping past a fixed date (e.g. the RHNA deadline) swings the effect by hundreds of homes.</li>
+      <li>Tiny upzone at the RHNA deadline: 26 of 48 pairs show no displacement (effect spread ±8 homes). The other 22 show displacement (spread ±167, worst −569 from one 642-home project).</li>
+      <li>Averaging doesn't rescue it: small and medium policies would need thousands of pairs to converge at the deadline.</li>
+    </ul>
+    <aside data-kind="decision"><strong>Accept the variance</strong> Annual funding rounds are deliberate (that's how the agencies fund), so the one-year slips are real. The page shows one future, and in that future the effect is whatever the crowd-out made it, including negative. No monthly money, no funding order that favours existing projects, and no extra worlds for smoothing.</aside>
+  </section>
+
+  <section id="sec-builder">
+    <h2>Left to the builder</h2>
+    <ul>
+      <li>How far to collapse the ensemble runner's internals (the restore-snapshot "copies" stay; they serve fast edits, not alternate futures).</li>
+      <li>Regenerating goldens and exact-value e2e expectations, which shift because the headline moves from the mean to world 1.</li>
+    </ul>
+  </section>
+</article>

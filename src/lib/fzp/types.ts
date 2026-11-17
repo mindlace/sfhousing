@@ -21,10 +21,6 @@ export interface ScoreAt {
   planCompleted: number | null;
   /** T8 planEffect[i].entitledNew; null while planEffect is [] (T8, IA-9) */
   planEntitled: number | null;
-  /** T8 planEffectBand p10/p90 (no baseline); null while planEffectBand is [] */
-  planBand: { low: number; high: number } | null;
-  /** p10/p90 + baseline (same basis, T8) */
-  band: { low: number; high: number } | null;
   inProgress: { stage: Exclude<Stage, 'complete'>; units: number }[];
   exitedUnits: number;
   /** I11 TargetProgress at this month */

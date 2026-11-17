@@ -1,35 +1,12 @@
 import { debtService } from '$lib/sim/finance';
 import { displacedShare, perAddedHome, type Money } from '$lib/sim/scenario/finance-score';
 import { targetsOf, tierTargetsOf } from '$lib/sim/scenario/score';
-import type {
-  MoneyRow,
-  MoneyView,
-  PlanRow,
-  ScoreStatics,
-  SeriesChunk,
-  TimelineView
-} from './types';
-
-/** z of the 80% central band (10th to 90th percentile), as today's `band`. */
-export const BAND_Z = 1.2816;
-
-function bandOf(m: PlanRow, sd: PlanRow): { lo: PlanRow; hi: PlanRow } {
-  return {
-    lo: {
-      entitledNew: m.entitledNew - BAND_Z * sd.entitledNew,
-      completedNetNew: m.completedNetNew - BAND_Z * sd.completedNetNew
-    },
-    hi: {
-      entitledNew: m.entitledNew + BAND_Z * sd.entitledNew,
-      completedNetNew: m.completedNetNew + BAND_Z * sd.completedNetNew
-    }
-  };
-}
+import type { MoneyRow, MoneyView, ScoreStatics, SeriesChunk, TimelineView } from './types';
 
 /**
- * World 1's money as of month `rows.length - 1` (rule 12): today's `TimelineScore['money']` with
- * its series cut there, `owed` on each debt pool's `received` that month, and `limits` the
- * statics' (the same in every world, fixed as the forecast fills). `perAddedHome` and
+ * The plan world's money as of month `rows.length - 1` (rule 12): today's
+ * `TimelineScore['money']` with its series cut there, `owed` on each debt pool's `received` that
+ * month, and `limits` the statics' (fixed as the forecast fills). `perAddedHome` and
  * `displacedShare` are today's, read that month over a money whose displaced homes are those of
  * completed funded projects (`displacedHomesCompleted`), paired with `fundedHomes`; the `ByMonth`
  * series give the same figures read at each month, the last entry the scalar.
@@ -108,27 +85,19 @@ function moneyViewOf(rows: MoneyRow[], statics: ScoreStatics): MoneyView {
 
 /** Joins contiguous chunks into what the page reads. Throws on a gap, an overlap or a late start. */
 export function viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineView {
-  const mean: TimelineView['mean'] = [];
-  const band: TimelineView['band'] = [];
-  const shown: TimelineView['shown'] = [];
+  const rows: TimelineView['rows'] = [];
   const planEffect: TimelineView['planEffect'] = [];
-  const planEffectBand: TimelineView['planEffectBand'] = [];
   const tiers: NonNullable<TimelineView['tiers']> = [];
   const money: MoneyRow[] = [];
   let hasTiers = chunks.length > 0;
   let hasMoney = chunks.length > 0;
   for (const c of chunks) {
-    if (c.from !== mean.length) {
-      throw new Error(`chunk from ${c.from} does not follow ${mean.length - 1}`);
+    if (c.from !== rows.length) {
+      throw new Error(`chunk from ${c.from} does not follow ${rows.length - 1}`);
     }
-    for (let i = 0; i < c.mean.length; i++) {
-      const m = c.mean[i].completedNet;
-      const sd = c.sd[i].completedNet;
-      mean.push(c.mean[i]);
-      band.push({ lo: m - BAND_Z * sd, hi: m + BAND_Z * sd });
-      shown.push(c.shown[i]);
-      planEffect.push(c.planEffect[i].mean);
-      planEffectBand.push(bandOf(c.planEffect[i].mean, c.planEffect[i].sd));
+    for (let i = 0; i < c.rows.length; i++) {
+      rows.push(c.rows[i]);
+      planEffect.push(c.planEffect[i]);
     }
     if (c.tiers) tiers.push(...c.tiers);
     else hasTiers = false;
@@ -140,13 +109,10 @@ export function viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineVi
   return {
     months: statics.months,
     lastIndex: statics.lastIndex,
-    filledThrough: mean.length - 1,
-    mean,
-    band,
-    shown,
+    filledThrough: rows.length - 1,
+    rows,
     planEffect,
-    planEffectBand,
-    targets: targetsOf(units, mean),
+    targets: targetsOf(units, rows),
     tierTargets:
       statics.tierBaseline && tierSeries ? tierTargetsOf(statics.tierBaseline, tierSeries) : null,
     money: hasMoney && money.length > 0 ? moneyViewOf(money, statics) : null,
@@ -164,15 +130,13 @@ export function chunksBefore(chunks: SeriesChunk[], k: number): SeriesChunk[] {
   for (const c of chunks) {
     if (c.from >= k) break;
     const n = k - c.from;
-    if (n >= c.mean.length) {
+    if (n >= c.rows.length) {
       out.push(c);
       continue;
     }
     out.push({
       from: c.from,
-      mean: c.mean.slice(0, n),
-      sd: c.sd.slice(0, n),
-      shown: c.shown.slice(0, n),
+      rows: c.rows.slice(0, n),
       planEffect: c.planEffect.slice(0, n),
       money: c.money && c.money.slice(0, n),
       tiers: c.tiers && c.tiers.slice(0, n)

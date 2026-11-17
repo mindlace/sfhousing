@@ -347,12 +347,12 @@ describe('TimelineMode', () => {
     expect(debug().stale).toBe(false);
   });
 
-  it('the header shows calculating, then baseline plus the average at lastIndex', async () => {
+  it('the header shows calculating, then baseline plus the world at lastIndex', async () => {
     await opened(10);
     await expect.element(scoreBar()).toHaveTextContent(CALCULATING);
     emit(filledMsg(1, 11, LAST - 10));
     const view = viewOf([chunk(0, LAST + 1)], STATICS);
-    const total = view.baseline.completedNet + Math.round(view.mean[LAST].completedNet);
+    const total = view.baseline.completedNet + view.rows[LAST].completedNet;
     expect(headerOf(view).total).toBe(total);
     await expect.element(scoreBar()).toHaveTextContent(`${formatCount(total)} homes`);
     await expect.element(scoreBar()).toHaveTextContent(`by ${utcParts(MONTHS[LAST]).y}`);

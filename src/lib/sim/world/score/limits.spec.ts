@@ -1,6 +1,6 @@
 // Rule 12: the money view as of `filledThrough`. `limits` come from the timeline's pools and every
 // arrival in the window (seed-free, fixed as the forecast fills); `owed` and `perAddedHome` are
-// today's quantities read at `filledThrough`, on world 1's money alone.
+// today's quantities read at `filledThrough`, on the plan world's money alone.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { debtService, limitStatements } from '$lib/sim/finance';
 import { buildFinance } from '$lib/sim/levers/finance';
@@ -210,7 +210,7 @@ function twin(seed: number): WorldSeries {
 const twins = new Map<number, WorldSeries>();
 
 const chunk = (r: Run, t: WorldSeries, from: number, through: number): SeriesChunk =>
-  chunkOf([r.series], [t], r.feed, from, through);
+  chunkOf(r.series, t, r.feed, from, through);
 
 beforeAll(() => {
   statics = staticsOf(INPUT);
@@ -241,7 +241,7 @@ describe('limits (rule 12)', () => {
     const naive = addedBorrowing({ ...timeline.frameAt(W).finance!, off: [] }, [], asOf, H);
     expect(naive).not.toEqual(gross);
 
-    // The engine agrees: world 1's received through the last month is the same sum.
+    // The engine agrees: the plan world's received through the last month is the same sum.
     const view = viewOf([chunk(run(1), twin(1), 0, score.lastIndex)], score);
     for (const id of ['m-bond', 'u-bond']) {
       const p = view.money!.pools.find((q) => q.id === id)!;

@@ -25,8 +25,6 @@ import type {
   TimelineResponse
 } from './timeline-protocol';
 
-/** Worlds in the ensemble (rule 22): the page opens every timeline with this many. */
-export const WORLDS = 48;
 /** The window, in model months (40 years). */
 export const WINDOW_MONTHS = 480;
 
@@ -112,7 +110,6 @@ export class TimelineClient {
       manifest: this.#manifest!,
       policy: this.#policy!,
       lots: this.#lots,
-      worlds: WORLDS,
       months: WINDOW_MONTHS
     });
     return rev;

@@ -80,11 +80,7 @@ describe('chartModel', () => {
     expect(chartModel(climbingTo(190000), FIX_ASOF, FIX_HORIZON, W, 290).yMax).toBe(500000);
   });
 
-  it('includes the band high plus baseline and the references in yMax', () => {
-    const band = makeTimelineScore();
-    band.band = band.band.map((b, i) => ({ ...b, p90: (195000 * i) / 290 }));
-    // 195,000 alone rounds to 200,000; with the baseline it is 207,000, so 500,000
-    expect(chartModel(band, FIX_ASOF, FIX_HORIZON, W, 290).yMax).toBe(500000);
+  it('includes the references in yMax', () => {
     const ref = makeTimelineScore();
     ref.references[0] = { ...ref.references[0], units: 150000 };
     expect(chartModel(ref, FIX_ASOF, FIX_HORIZON, W, 290).yMax).toBe(200000);
@@ -124,17 +120,9 @@ describe('chartModel', () => {
     expect(points(m.fresh)[1][1]).toBeCloseTo(y(40), 1);
   });
 
-  it('closes the band area', () => {
-    expect(m.band).not.toBeNull();
-    expect(m.band!.startsWith('M')).toBe(true);
-    expect(m.band!.endsWith('Z')).toBe(true);
-    expect(points(m.band!)).toHaveLength(2 * 291);
-  });
-
-  it('has no band path when the band is empty', () => {
-    expect(
-      chartModel({ ...makeTimelineScore(), band: [] }, FIX_ASOF, FIX_HORIZON, W, 290).band
-    ).toBeNull();
+  it('has no band or planBand path', () => {
+    expect('band' in m).toBe(false);
+    expect('planBand' in m).toBe(false);
   });
 
   it('places RHNA and the two verticals', () => {
@@ -148,8 +136,6 @@ describe('chartModel', () => {
   it('draws plan-effect series with an end-of-month x', () => {
     expect(m.planCompleted).not.toBeNull();
     expect(m.planEntitled).not.toBeNull();
-    expect(m.planBand).not.toBeNull();
-    expect(m.planBand!.endsWith('Z')).toBe(true);
     expect(points(m.planCompleted!)[0][0]).toBeCloseTo(m.x(TIMELINE_SCORE.months[1]), 1);
     expect(points(m.planEntitled!)[290][0]).toBeCloseTo(W, 1);
   });
@@ -200,14 +186,19 @@ describe('references', () => {
 
 describe('series names and colours', () => {
   it('names every series', () => {
+    expect(Object.keys(SERIES_NAME)).toEqual([
+      'total',
+      'pipeline',
+      'fresh',
+      'planCompleted',
+      'planEntitled'
+    ]);
     expect(SERIES_NAME).toEqual({
       total: 'Total net new homes',
       pipeline: "From today's pipeline",
       fresh: 'New projects',
       planCompleted: 'Plan effect, completed',
-      planEntitled: 'Plan effect, approved',
-      band: '8 in 10 futures',
-      planBand: 'Plan effect, 8 in 10 futures'
+      planEntitled: 'Plan effect, approved'
     });
     expect(COLORS).toEqual({
       total: 'var(--chart-total)',
@@ -219,21 +210,24 @@ describe('series names and colours', () => {
 });
 
 describe('chart domain extends below zero', () => {
-  it('uses the most negative drawn value, here the plan band low', () => {
+  it('uses the most negative drawn value, here the plan effect low', () => {
     const m = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, W, 290);
     expect(m.yMin).toBe(-niceCeil(350));
     const zero = m.gridlines.find((g) => g.label === '0');
     expect(zero).toBeDefined();
     expect(zero!.y).toBeCloseTo((m.yMax / (m.yMax - m.yMin)) * CHART_H, 6);
-    // the lowest plan-band point sits inside the plot
-    const lows = points(m.planBand!).map(([, y]) => y);
+    // the lowest plan-effect point sits inside the plot
+    const lows = points(m.planCompleted!).map(([, y]) => y);
     expect(Math.max(...lows)).toBeLessThanOrEqual(CHART_H);
     expect(Math.max(...lows)).toBeGreaterThan(zero!.y);
   });
 
   it('adds a floor gridline only when it is at least 12 px below the zero line', () => {
     const deep = makeTimelineScore();
-    deep.planEffectBand = deep.planEffectBand.map((p) => ({ ...p, p10: p.p10 - 9000 }));
+    deep.planEffect = deep.planEffect.map((p) => ({
+      ...p,
+      completedNetNew: p.completedNetNew - 9000
+    }));
     const m = chartModel(deep, FIX_ASOF, FIX_HORIZON, W, 290);
     expect(m.yMin).toBe(-10000);
     expect(m.gridlines.map((g) => g.label)).toEqual(['−10,000', '0', '50,000', '100K']);
@@ -256,11 +250,6 @@ describe('chart domain extends below zero', () => {
       completedNetNew: p.completedNetNew + 300,
       entitledNew: p.entitledNew + 200
     }));
-    s.planEffectBand = s.planEffectBand.map((p) => ({
-      p10: p.p10 + 350,
-      p50: p.p50 + 350,
-      p90: p.p90 + 350
-    }));
     const m = chartModel(s, FIX_ASOF, FIX_HORIZON, W, 290);
     expect(m.yMin).toBe(0);
     expect(m.gridlines.map((g) => g.label)).toEqual(['0', '50,000', '100K']);
@@ -273,7 +262,6 @@ describe('chartModel in revision 0', () => {
   it('draws no plan series but keeps the references', () => {
     expect(m.planCompleted).toBeNull();
     expect(m.planEntitled).toBeNull();
-    expect(m.planBand).toBeNull();
     expect(m.references).toHaveLength(2);
   });
 
@@ -323,24 +311,17 @@ describe('tableRows', () => {
       pipeline: formatCount(3060),
       fresh: formatCount(2040),
       planCompleted: formatCount(30 * 51 - 300),
-      planEntitled: formatCount(45 * 51 - 200),
-      band: `${formatCount(12000 + 4590)}–${formatCount(12000 + 5610)}`,
-      planBand: `${formatCount(30 * 51 - 350)}–${formatCount(30 * 51 - 250)}`
+      planEntitled: formatCount(45 * 51 - 200)
     });
+    expect('band' in r).toBe(false);
+    expect('planBand' in r).toBe(false);
   });
 
   it('reads "calculating…" for the plan cells in revision 0', () => {
     for (const r of tableRows(TIMELINE_SCORE_R0, FIX_ASOF, 290)) {
       expect(r.planCompleted).toBe('calculating…');
       expect(r.planEntitled).toBe('calculating…');
-      expect(r.planBand).toBe('calculating…');
-      expect(r.band).not.toBe('calculating…');
     }
-  });
-
-  it('reads "calculating…" for the band while it is empty', () => {
-    const out = tableRows({ ...makeTimelineScore(), band: [] }, FIX_ASOF, 290);
-    expect(out.every((r) => r.band === 'calculating…')).toBe(true);
   });
 });
 
@@ -384,13 +365,11 @@ describe('reveal', () => {
     const m = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, W, k);
     expect(count(m.total)).toBe(k + 1);
     expect(count(m.planCompleted!)).toBe(Math.min(k + 1, TIMELINE_SCORE.planEffect.length));
-    expect(points(m.band!)).toHaveLength(2 * (k + 1));
   });
 
   it('keeps the plan series null when the plan effect is empty', () => {
     const m = chartModel(TIMELINE_SCORE_R0, FIX_ASOF, FIX_HORIZON, W, 5);
     expect(m.planCompleted).toBeNull();
-    expect(m.planBand).toBeNull();
     expect(count(m.total)).toBe(6);
   });
 
@@ -404,10 +383,7 @@ describe('reveal', () => {
     s.shown = s.shown.map((r, i) => (i === 290 ? { ...r, completedNet: 5_000_000 } : r));
     const full = chartModel(s, FIX_ASOF, FIX_HORIZON, W, 290);
     const part = chartModel(s, FIX_ASOF, FIX_HORIZON, W, 2);
-    const revealed = Math.max(
-      ...s.shown.slice(0, 3).map((r) => 12000 + r.completedNet),
-      ...s.band.slice(0, 3).map((b) => 12000 + b.p90)
-    );
+    const revealed = Math.max(...s.shown.slice(0, 3).map((r) => 12000 + r.completedNet));
     const refs = s.references.map((r) => r.units);
     expect(part.yMax).toBe(niceCeil(Math.max(82069, ...refs, revealed)));
     expect(part.yMax).toBeLessThan(full.yMax);
@@ -416,10 +392,7 @@ describe('reveal', () => {
   it('takes the negative floor only from revealed values', () => {
     const s = makeTimelineScore();
     s.planEffect = s.planEffect.map((p, i) =>
-      i <= 2 ? { ...p, completedNetNew: 1, entitledNew: 1 } : p
-    );
-    s.planEffectBand = s.planEffectBand.map((b, i) =>
-      i <= 2 ? { p10: 1, p50: 1, p90: 2 } : { ...b, p10: -9000 }
+      i <= 2 ? { ...p, completedNetNew: 1, entitledNew: 1 } : { ...p, completedNetNew: -9000 }
     );
     expect(chartModel(s, FIX_ASOF, FIX_HORIZON, W, 2).yMin).toBe(0);
     expect(chartModel(s, FIX_ASOF, FIX_HORIZON, W, 200).yMin).toBeLessThan(0);

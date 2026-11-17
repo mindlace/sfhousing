@@ -50,8 +50,8 @@ const UPGRADED = /Saved before policies had dates\. Each starts [A-Z][a-z]+ \d{4
 function fzp<K extends keyof SfhFzpDebug>(page: Page, key: K): Promise<SfhFzpDebug[K]> {
   return page.evaluate((k) => (window as FzpWin).__sfhFzp![k], key) as Promise<SfhFzpDebug[K]>;
 }
-const mean = (page: Page): Promise<number[]> =>
-  page.evaluate(() => (window as FzpWin).__sfhFzp!.mean());
+const completedOf = (page: Page): Promise<number[]> =>
+  page.evaluate(() => (window as FzpWin).__sfhFzp!.completedNet());
 
 /** The session is ready and the forecast filled (no map needed: the worker runs without it). */
 async function waitSession(page: Page): Promise<void> {
@@ -153,7 +153,7 @@ test('a transit rule from 2031 refills from 2031, months before unchanged', asyn
   await page.waitForFunction(() => (window as FzpWin).__sfhFzp!.refills.length > 0);
   await waitFilled(page);
 
-  const before = await mean(page);
+  const before = await completedOf(page);
   const n = (await fzp(page, 'refills')).length;
   const k = indexOf(await fzp(page, 'asOf'), 2031, 1);
   // A new policy starts on the model month the playhead is in (rule 12), and its edge reads that
@@ -173,7 +173,7 @@ test('a transit rule from 2031 refills from 2031, months before unchanged', asyn
   // Every refill since the edit starts at 2031 or later.
   expect(refills.length).toBeGreaterThan(n);
   for (const r of refills.slice(n)) expect(r).toBeGreaterThanOrEqual(k);
-  const after = await mean(page);
+  const after = await completedOf(page);
   expect(after).toHaveLength(before.length);
   expect(after.slice(0, k)).toEqual(before.slice(0, k));
 });
@@ -186,7 +186,7 @@ test('publish, open the /s link, see the same timeline', async ({ page, browser 
   await closeEditor(page);
   await waitFilled(page);
   const doc = await fzp(page, 'policy');
-  const series = await mean(page);
+  const series = await completedOf(page);
   const headline = await scoreBar(page).textContent();
   await openKind(page, 'Permitting');
   const labels = await bars(page).evaluateAll((els) =>
@@ -210,7 +210,7 @@ test('publish, open the /s link, see the same timeline', async ({ page, browser 
     await gotoSim(visitor, new URL(link).pathname);
     await expect(sharedBanner(visitor)).toContainText('Same timeline · Shared policy');
     expect(await fzp(visitor, 'policy')).toEqual(doc);
-    expect(await mean(visitor)).toEqual(series);
+    expect(await completedOf(visitor)).toEqual(series);
     await expect(scoreBar(visitor)).toHaveText(headline!);
     await openKind(visitor, 'Permitting');
     expect(

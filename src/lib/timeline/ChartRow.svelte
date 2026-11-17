@@ -1,19 +1,15 @@
 <!--
-  The chart row (rule 4, rule 28): net new homes by month as the average of the simulated cities
-  (heavy solid line) with the 8-in-10 band behind it, this city (thin dotted line) and the state
-  target as a dashed marker at its deadline. Lines differ by dash as well as colour. The part
-  after `index` is drawn lighter, as sparser dashes at full colour (3:1 holds); nothing is drawn past `filledThrough`. Hover or focus of a
-  month, and Left and Right on the focused overlay, show that month's three numbers.
-  The figcaption points to the Results table as the text alternative.
+  The chart row (rule 4, rule 28): the homes completed by month as one heavy line and the state
+  target as a dashed marker at its deadline. The part after `index` is drawn dashed at full colour
+  (3:1 holds); nothing is drawn past `filledThrough`. Hover or focus of a month, and Left and Right
+  on the focused overlay, read out that month's homes. The figcaption points to the Results table
+  as the text alternative.
 -->
 <script lang="ts">
   import { COLORS } from '$lib/fzp/chart';
   import { formatMonthYear } from '$lib/fzp/format';
-  import { formatRange } from '$lib/fzp/score-view';
   import { formatCount } from '$lib/scoreboard';
   import type { TimelineView } from '$lib/sim/world/score/types';
-  import { CITY_NOTE, RANGE_NOTE } from './copy';
-  import Explain from './Explain.svelte';
 
   interface Props {
     view: TimelineView | null;
@@ -36,15 +32,13 @@
   const yMax = $derived.by(() => {
     if (!view || last < 0) return 1;
     let m = target?.units ?? 0;
-    for (let i = 0; i <= last; i++) {
-      m = Math.max(m, base + view.band[i].hi, avg(i), city(i));
-    }
+    for (let i = 0; i <= last; i++) m = Math.max(m, homes(i));
     return Math.max(m, 1);
   });
   const yMin = $derived.by(() => {
     if (!view || last < 0) return 0;
     let m = Math.min(0, base);
-    for (let i = 0; i <= last; i++) m = Math.min(m, base + view.band[i].lo);
+    for (let i = 0; i <= last; i++) m = Math.min(m, homes(i));
     return m;
   });
   const y = (v: number) => H - ((v - yMin) / Math.max(yMax - yMin, 1)) * (H - 4) - 2;
@@ -57,29 +51,17 @@
     for (let i = a; i <= b; i++) d += `${i === a ? 'M' : 'L'}${pt(i, get(i))}`;
     return d;
   }
-  function area(a: number, b: number): string {
-    if (!view || b < a) return '';
-    let d = '';
-    for (let i = a; i <= b; i++) d += `${i === a ? 'M' : 'L'}${pt(i, base + view.band[i].hi)}`;
-    for (let i = b; i >= a; i--) d += `L${pt(i, base + view.band[i].lo)}`;
-    return `${d}Z`;
-  }
 
-  // The solid part runs through the playhead's month, the lighter part from there on.
+  // The solid part runs through the playhead's month, the dashed part from there on.
   const split = $derived(Math.min(Math.max(index, 0), last));
-  const avg = (i: number) => base + view!.mean[i].completedNet;
-  const city = (i: number) => base + view!.shown[i].completedNet;
+  const homes = (i: number) => base + view!.rows[i].completedNet;
 
   let focusAt = $state<number | null>(null);
   let hoverAt = $state<number | null>(null);
   const active = $derived(hoverAt ?? focusAt);
 
   function summary(i: number): string {
-    const b = view!.band[i];
-    return (
-      `${formatMonthYear(view!.months[i])}: average ${formatCount(avg(i))}, ` +
-      `8 in 10 ${formatRange(base + b.lo, base + b.hi)}, this city ${formatCount(city(i))}`
-    );
+    return `${formatMonthYear(view!.months[i])}: ${formatCount(homes(i))} homes completed`;
   }
 
   let overlay: HTMLElement | undefined = $state();
@@ -106,13 +88,11 @@
   }
 
   const CAPTION =
-    'Average of the simulated cities with their range, this city and the state target; the Results table has the numbers.';
+    'Homes completed by month and the state target; the Results table has the numbers.';
 
   const LEGEND = [
-    { name: 'Average', dash: undefined, width: 2.5, color: COLORS.total, note: null },
-    { name: '8 in 10 futures', dash: undefined, width: 8, color: COLORS.total, note: RANGE_NOTE },
-    { name: 'This city', dash: '1 3', width: 1.25, color: COLORS.fresh, note: CITY_NOTE },
-    { name: 'State target', dash: '5 3', width: 2, color: COLORS.plan, note: null }
+    { name: 'Homes completed', dash: undefined, width: 2.5, color: COLORS.total },
+    { name: 'State target', dash: '5 3', width: 2, color: COLORS.plan }
   ] as const;
 </script>
 
@@ -126,13 +106,6 @@
       data-testid="chart-svg"
     >
       {#if view && last >= 0}
-        <path d={area(0, split)} fill={COLORS.total} fill-opacity="0.18" data-testid="chart-band" />
-        <path
-          d={area(split, last)}
-          fill={COLORS.total}
-          fill-opacity="0.08"
-          data-testid="chart-band-later"
-        />
         {#if target}
           <line
             x1="0"
@@ -157,41 +130,21 @@
           />
         {/if}
         <path
-          d={line(city, 0, split)}
-          fill="none"
-          stroke={COLORS.fresh}
-          stroke-width="1.25"
-          stroke-dasharray="1 3"
-          stroke-linecap="round"
-          vector-effect="non-scaling-stroke"
-          data-testid="chart-city"
-        />
-        <path
-          d={line(city, split, last)}
-          fill="none"
-          stroke={COLORS.fresh}
-          stroke-width="1.25"
-          stroke-dasharray="1 7"
-          stroke-linecap="round"
-          vector-effect="non-scaling-stroke"
-          data-testid="chart-city-later"
-        />
-        <path
-          d={line(avg, 0, split)}
+          d={line(homes, 0, split)}
           fill="none"
           stroke={COLORS.total}
           stroke-width="2.5"
           vector-effect="non-scaling-stroke"
-          data-testid="chart-avg"
+          data-testid="chart-line"
         />
         <path
-          d={line(avg, split, last)}
+          d={line(homes, split, last)}
           fill="none"
           stroke={COLORS.total}
           stroke-width="2.5"
           stroke-dasharray="7 4"
           vector-effect="non-scaling-stroke"
-          data-testid="chart-avg-later"
+          data-testid="chart-line-later"
         />
         {#if active !== null}
           <line
@@ -236,8 +189,6 @@
       {/if}
     {/if}
   </div>
-  <!-- Each item is 24 px tall and the list clears the chart by 4 px, so a 16 px explanation
-       button keeps its 24 px target (WCAG 2.5.8) clear of the chart's slider above it. -->
   <ul
     class="legend m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 pt-1 text-xs text-ink dark:text-ink-dark"
   >
@@ -252,15 +203,9 @@
             stroke={l.color}
             stroke-width={l.width}
             stroke-dasharray={l.dash}
-            stroke-linecap={l.dash === '1 3' ? 'round' : undefined}
-            stroke-opacity={l.width === 8 ? 0.3 : 1}
           />
         </svg>
-        {#if l.note}
-          <Explain text={l.note}>{l.name}</Explain>
-        {:else}
-          <span>{l.name}</span>
-        {/if}
+        <span>{l.name}</span>
       </li>
     {/each}
   </ul>

@@ -1,6 +1,6 @@
 // map-stream's updates fed to the real `TimelineController` (spec test 3), and `rewind` (rule 9):
-// after an edit world 1 is restored to an earlier month and refilled. Bench city, seed 1, unless
-// a test says otherwise.
+// after an edit the plan's world is restored to an earlier month and refilled. Bench city, seed 1,
+// unless a test says otherwise.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
 import { FILL_LEVELS } from '$lib/data/scenario-codec';

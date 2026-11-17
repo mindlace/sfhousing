@@ -89,7 +89,6 @@ interface Opening {
   rev: Rev;
   policy: SimPolicy4;
   lots: Record<string, ParcelId[]>;
-  worlds: number;
   months: number;
   /** The document is a `setPolicy`'s taken before the load: its `refill` is owed (S14). */
   edited: boolean;
@@ -207,7 +206,6 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
         rev,
         policy: req.policy,
         lots: req.lots,
-        worlds: req.worlds,
         months: req.months,
         edited: false
       },
@@ -282,7 +280,7 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
     runner.wantCells(st.chunks.wanted);
     const o = st.opening;
     st.rev = o.rev;
-    runner.open(o.rev, o.policy, o.lots, o.worlds, o.months, o.edited);
+    runner.open(o.rev, o.policy, o.lots, o.months, o.edited);
     const lids = st.lids;
     st.lids = null;
     if (lids !== null) runner.heightLids(lids.reqId, lids.bbox);
@@ -311,7 +309,7 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
   // --- shared requests ---
 
   /**
-   * World 1 of the plan as it stands, on the requested day (clamped) and the frame of the model
+   * The plan's world as it stands, on the requested day (clamped) and the frame of the model
    * month holding it (rule 18). Null when the record is not loaded or no world exists yet.
    */
   function parcelSummary(

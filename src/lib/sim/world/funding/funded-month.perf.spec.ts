@@ -1,7 +1,7 @@
 // The funded month's cost bar (spec "`test:perf`"): one funded month for one world on the bench
 // city (`synthCity`, bench baseline money), 90 µs. Perf project only (`npm run test:perf`), on an
 // idle machine under the measurement lock. The bar is the mean over worlds and months (the 9 ms
-// constraint is a sum over 96 worlds in one month); p50, p90 and max are printed beside it, with
+// constraint is a sum over two worlds in one month); p50, p90 and max are printed beside it, with
 // each hook's share and the whole-city replan month, unasserted.
 import { describe, expect, it } from 'vitest';
 import type { PolicyTimeline } from '../policy/frame';

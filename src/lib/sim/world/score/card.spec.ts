@@ -1,5 +1,5 @@
-// `cardAt` (rule 14): the project card from world 1 on the fixture city, and the lot-limits line
-// from a compiled timeline on the mini city.
+// `cardAt` (rule 14): the project card from the plan's world on the fixture city, and the
+// lot-limits line from a compiled timeline on the mini city.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
 import { envelopeOf } from '$lib/data/scenario-codec';

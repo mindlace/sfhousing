@@ -313,13 +313,11 @@
   const score = $derived(shown.view ? scoreOfView(shown.view, tierBaseline) : null);
   const shownFilled = $derived(shown.view?.filledThrough ?? -1);
   /** `resultsAt` over the score above (the view's, built once). */
-  const resultsNow = $derived(
+  const at = $derived(
     shown.view && score && index <= shownFilled
       ? resultsAt(shown.view, tierBaseline, index, score)
       : null
   );
-  const at = $derived(resultsNow?.at ?? null);
-  const city = $derived(resultsNow?.city ?? null);
   const shownEnd = $derived(
     shown.view ? filledEndDay(shown.view.months, shown.view.filledThrough, asOf) : asOf
   );
@@ -878,8 +876,8 @@
       policy,
       stale,
       refills,
-      mean: () =>
-        current ? current.mean.slice(0, current.filledThrough + 1).map((r) => r.completedNet) : []
+      completedNet: () =>
+        current ? current.rows.slice(0, current.filledThrough + 1).map((r) => r.completedNet) : []
     }));
 
     return () => {
@@ -961,7 +959,6 @@
       {at}
       {day}
       {asOf}
-      {city}
       horizon={windowEnd}
       filledEnd={shownEnd}
       {datasetVersion}

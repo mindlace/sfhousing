@@ -35,7 +35,6 @@
   const cursorX = $derived(model.x(Math.min(Math.max(day, asOf), horizon)));
 
   type LineKey = 'total' | 'pipeline' | 'fresh' | 'planCompleted' | 'planEntitled';
-  type AreaKey = 'band' | 'planBand';
   const LINES: Record<LineKey, { stroke: string; width: number; dash?: string }> = {
     total: { stroke: COLORS.total, width: 2.5 },
     pipeline: { stroke: COLORS.pipeline, width: 2, dash: '6 3' },
@@ -43,30 +42,17 @@
     planCompleted: { stroke: COLORS.plan, width: 2 },
     planEntitled: { stroke: COLORS.plan, width: 2, dash: '2 2' }
   };
-  const AREAS: Record<AreaKey, string> = { band: COLORS.total, planBand: COLORS.plan };
-  const LEGEND_ORDER: (LineKey | AreaKey)[] = [
-    'total',
-    'pipeline',
-    'fresh',
-    'band',
-    'planCompleted',
-    'planEntitled',
-    'planBand'
-  ];
+  const LEGEND_ORDER: LineKey[] = ['total', 'pipeline', 'fresh', 'planCompleted', 'planEntitled'];
   const COLUMNS = [
     'Date',
     'Total',
     'From pipeline',
     'New projects',
     'Plan effect (completed)',
-    'Plan effect (approved)',
-    '8 in 10 futures',
-    'Plan effect, 8 in 10 futures'
+    'Plan effect (approved)'
   ];
 
   const lineKeys = Object.keys(LINES) as LineKey[];
-  const areaKeys = Object.keys(AREAS) as AreaKey[];
-  const isLine = (k: LineKey | AreaKey): k is LineKey => k in LINES;
 </script>
 
 <figure class="mt-3" data-testid="fzp-chart">
@@ -89,18 +75,6 @@
           stroke-width="3"
           paint-order="stroke">{g.label}</text
         >
-      {/each}
-
-      {#each areaKeys as key (key)}
-        {#if model[key]}
-          <path
-            data-series={key}
-            d={model[key]}
-            fill={AREAS[key]}
-            fill-opacity="0.15"
-            stroke="none"
-          />
-        {/if}
       {/each}
 
       <line
@@ -206,19 +180,15 @@
       {#each LEGEND_ORDER as key (key)}
         <li class="flex items-center gap-2" data-legend-series={key}>
           <svg width="24" height="8" aria-hidden="true" class="shrink-0">
-            {#if isLine(key)}
-              <line
-                x1="0"
-                x2="24"
-                y1="4"
-                y2="4"
-                stroke={LINES[key].stroke}
-                stroke-width={LINES[key].width}
-                stroke-dasharray={LINES[key].dash}
-              />
-            {:else}
-              <rect width="24" height="8" fill={AREAS[key]} fill-opacity="0.15" />
-            {/if}
+            <line
+              x1="0"
+              x2="24"
+              y1="4"
+              y2="4"
+              stroke={LINES[key].stroke}
+              stroke-width={LINES[key].width}
+              stroke-dasharray={LINES[key].dash}
+            />
           </svg>
           <span>{SERIES_NAME[key]}{model[key] ? '' : `: ${CALCULATING}`}</span>
         </li>
@@ -269,8 +239,6 @@
               <td class="px-1 py-1">{r.fresh}</td>
               <td class="px-1 py-1">{r.planCompleted}</td>
               <td class="px-1 py-1">{r.planEntitled}</td>
-              <td class="px-1 py-1 whitespace-nowrap">{r.band}</td>
-              <td class="px-1 py-1 whitespace-nowrap">{r.planBand}</td>
             </tr>
           {/each}
         </tbody>

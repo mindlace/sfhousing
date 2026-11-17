@@ -56,7 +56,6 @@ const FIRST_BAR_MS = 3000;
 const MONTH_BAR_MS = 9;
 /** The one cold massing accepted over 50 ms (Task 1 measure, map-stream.md "Numbers"). */
 const ACCEPTED_MASSING = 'CASE:2007.0946PRX:phase:3';
-const WORLDS = 48;
 const MONTHS = 480;
 const LIVE = liveDir();
 
@@ -512,14 +511,13 @@ function hostOn(c: City) {
     expect(of('cells').at(-1)?.complete).toBe(true);
   }
   function open(
-    worlds: number,
     months: number,
     policy: SimPolicy4 = reconciled(DEFAULT_POLICY4, c),
     lots: Record<string, ParcelId[]> = {}
   ): { rev: number; t0: number } {
     rev++;
     const t0 = performance.now();
-    handle({ type: 'openTimeline', rev, manifest: c.manifest, policy, lots, worlds, months });
+    handle({ type: 'openTimeline', rev, manifest: c.manifest, policy, lots, months });
     handle({ type: 'prefetch', bbox: bboxOf(c.manifest) });
     return { rev, t0 };
   }
@@ -680,15 +678,13 @@ async function doFillRun(c: City, editDoc: (c: City) => SimPolicy4): Promise<Fil
   const h = hostOn(c);
   const lag = monitorEventLoopDelay({ resolution: 5 });
   lag.enable();
-  const o = h.open(WORLDS, MONTHS);
+  const o = h.open(MONTHS);
   await h.settled(o.rev);
   const cellsAt = h.posts.find((p) => p.type === 'cells' && (p.cells ?? 0) > 0)!.t;
   const filledAt = h.of('filled', o.rev)[0].t;
   const lastIndex = h.of('compiled', o.rev).at(-1)!.lastIndex!;
   const lastFilled = h.of('filled', o.rev).find((p) => p.through === lastIndex)!.t;
-  log(
-    `${c.name}: worlds ${WORLDS} + ${WORLDS}, months ${MONTHS}, copies after [${rec.copyMonths}]`
-  );
+  log(`${c.name}: worlds 1 + 1, months ${MONTHS}, copies after [${rec.copyMonths}]`);
   log(
     `${c.name}: first cells ${ms(cellsAt - o.t0)}, first filled ${ms(filledAt - o.t0)} after openTimeline`
   );
@@ -861,19 +857,19 @@ describe('timeline host timings', () => {
       try {
         const h = hostOn(c);
         // the loaded dataset: one world each, one month, every chunk, filled and drained
-        const b = h.open(1, 1);
+        const b = h.open(1);
         await h.settled(b.rev);
         const base = heap();
         log(`${c.name}: baseline (dataset, chunks, compiles, 1 + 1 worlds): ${base.total} MB`);
 
         rec.copyMonths.splice(0, rec.copyMonths.length);
-        const a = h.open(WORLDS, MONTHS);
+        const a = h.open(MONTHS);
         await h.settled(a.rev);
         const none = heap();
         log(`${c.name}: full fill, no copies: ${delta(none, base)}`);
 
         rec.copyMonths.splice(0, rec.copyMonths.length, 0);
-        const f = h.open(WORLDS, MONTHS);
+        const f = h.open(MONTHS);
         await h.settled(f.rev);
         const filled = heap();
         log(`${c.name}: full fill, COPY_MONTHS [${rec.copyMonths}]: ${delta(filled, base)}`);
@@ -922,7 +918,7 @@ describe('timeline host timings', () => {
             `against the open and fill +${r1(twenty.total - filled.total)} MB`
         );
         // the same document opened afresh: what the 20 edits hold beyond it
-        const fresh = h.open(WORLDS, MONTHS, last!.doc, last!.lots);
+        const fresh = h.open(MONTHS, last!.doc, last!.lots);
         await h.settled(fresh.rev);
         const opened = heap();
         log(

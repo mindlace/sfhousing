@@ -1,11 +1,11 @@
 # The ensemble runner: the /sim timeline worker host
 
-`createTimelineHost` (`src/lib/sim/world/host.ts`) runs the step engine for `/sim`: 48 worlds under the policy and 48 under its comparison, advanced one month at a time ahead of the viewer, posting what is final, and resuming from an edit's month. Spec `docs/superpowers/specs/2026-11-13-ensemble-runner-design.md`; plan `docs/superpowers/plans/2026-11-13-ensemble-runner.md`.
+`createTimelineHost` (`src/lib/sim/world/host.ts`) runs the step engine for `/sim`: one world under the policy and one under its comparison, both on seed 1 (`SEED`, `runner/ensemble.ts`), advanced one month at a time ahead of the viewer, posting what is final, and resuming from an edit's month. Spec `docs/superpowers/specs/2026-11-13-ensemble-runner-design.md`; plan `docs/superpowers/plans/2026-11-13-ensemble-runner.md`.
 
 | File                                   | Holds                                                                                                          |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `src/lib/sim/timeline-protocol.ts`     | S14 messages, `openTimelineProblem`, `setPolicyProblem`, `TimelineErrorCode` (today's codes plus `'timeline'`) |
-| `src/lib/sim/timeline-client.ts`       | `TimelineClient`, `WORLDS = 48`, `WINDOW_MONTHS = 480`                                                         |
+| `src/lib/sim/timeline-client.ts`       | `TimelineClient`, `WINDOW_MONTHS = 480`                                                                        |
 | `src/lib/sim/lookup-requests.ts`       | The lookup promises `ScenarioClient` and `TimelineClient` share                                                |
 | `src/lib/sim/world/host.ts`            | Sessions, checks, the shared requests                                                                          |
 | `src/lib/sim/world/runner/runner.ts`   | Compiles, ensembles, slices, posts, edits, heights                                                             |
@@ -19,7 +19,7 @@
 
 ### Messages
 
-To the worker: `openTimeline { rev, manifest, policy, lots, worlds, months }`, `setPolicy { rev, policy, lots }`, `viewMonth { month }`, `resyncMap`. From it: `compiling`, `compiled { capacity, unknownLots, statics }`, `filled { through, series }`, `refill { from }`, `cells { render }`, `lookups { month, lookups }`, plus today's `ready`, `chunks`, `heights`, `error`. Every other message of the scenario protocol keeps its shape and is answered for the plan frame at the last `viewMonth` (month 1 before any). `parcelSummary` reads world 1 of the plan on the requested day (clamped to the last day stepped) and adds `lookups`.
+To the worker: `openTimeline { rev, manifest, policy, lots, months }`, `setPolicy { rev, policy, lots }`, `viewMonth { month }`, `resyncMap`. From it: `compiling`, `compiled { capacity, unknownLots, statics }`, `filled { through, series }`, `refill { from }`, `cells { render }`, `lookups { month, lookups }`, plus today's `ready`, `chunks`, `heights`, `error`. Every other message of the scenario protocol keeps its shape and is answered for the plan frame at the last `viewMonth` (month 1 before any). `parcelSummary` reads the plan's world on the requested day (clamped to the last day stepped) and adds `lookups`.
 
 `lots` holds the lots of every brush query the document needs (`queriesOf4`), resolved by the page with `resolveBrush`. The page reconciles the document (`openSimDoc4` with the dataset's calibration and `asOf`); an unreconciled one is `bad-request`.
 
@@ -29,7 +29,7 @@ The router treats `openTimeline` as `initScenario`: it disposes the editor host'
 
 A unit is one world one month (`step`), or one of `create`, `restore`, `copy`, `feed`, `quiet`, a compile `step(20)`, a `warm` massing of one (row, revision), a `cityInput` or a `heights` build step. A slice runs units until `SLICE_PLAN_MS` (45 ms); a unit of a kind runs only when the time used plus the largest of that kind's last 4 costs fits; the first unit always runs (D7). Then `setTimeout`.
 
-A flush (`MapStream.flush(world1, statics, 20)`) is a task of its own, at most every 250 ms (D6). Warm units mass world 1's started and revised rows, one (row, revision) per unit, just before it, in slices of their own (D12). When filling ends the stream is drained until an update says `complete` (D5).
+A flush (`MapStream.flush(world, statics, 20)`) is a task of its own, at most every 250 ms (D6). Warm units mass the plan world's started and revised rows, one (row, revision) per unit, just before it, in slices of their own (D12). When filling ends the stream is drained until an update says `complete` (D5).
 
 ### Order
 
@@ -39,33 +39,33 @@ A compile is stalled (it waits for `chunkArrived`) only when `step` returned fal
 
 ### Finality and posting
 
-A calendar month is final when every world of both ensembles has stepped the model month holding its last day. After a slice: `compiling` if the progress changed; `compiled` when the plan's compile finished; at most one `filled` for the months final in both ensembles and not yet posted (`chunkOf`); `lookups` if the permitting in view changed; a city build if the zoning or limit attribution in view changed.
+A calendar month is final when each ensemble's world has stepped the model month holding its last day. After a slice: `compiling` if the progress changed; `compiled` when the plan's compile finished; at most one `filled` for the months final in both ensembles and not yet posted (`chunkOf`); `lookups` if the permitting in view changed; a city build if the zoning or limit attribution in view changed.
 
 ### The series gate (D2, D3)
 
-`createWorldSeries` needs `ScoreStatics`, which `scoreStaticsOf` gives only for a fully compiled timeline. Each world keeps a feed log (events and `stepped` marks); `feed` units drain it into the series once its ensemble's statics exist. Each ensemble uses its own statics (the comparison's tier table matches its frames). An edit closes the gate (`setStatics(null)`), and the new statics reopen it, re-creating every series from its `data()`.
+`createWorldSeries` needs `ScoreStatics`, which `scoreStaticsOf` gives only for a fully compiled timeline. Each world keeps a feed log (events and `stepped` marks); `feed` units drain it into the series once its ensemble's statics exist. Each ensemble uses its own statics (the comparison's tier table matches its frames). An edit closes the gate (`setStatics(null)`), and the new statics reopen it, re-creating each series from its `data()`.
 
 ### `MoneyFeed` (D9)
 
-Null when the plan's `frameAt(1).finance` is null or has no pools. Otherwise world 1's ledger, world 1, the statics and `frameAt(month holding the last day of through).finance` from the timeline in use.
+Null when the plan's `frameAt(1).finance` is null or has no pools. Otherwise the plan world's ledger, that world, the statics and `frameAt(month holding the last day of through).finance` from the timeline in use.
 
 ### Copies and restore
 
-`COPY_MONTHS = [0]` (`runner/ensemble.ts`) is the one place the schedule lives. After each listed month every world of both ensembles is `structuredClone`d with its series `data()`, its unfed log and the ledger length, one world per unit. A restore takes the last complete copy at or before m - 1, drops later ones, cuts the ledger, rebuilds each due list with `planDue` and re-steps quietly to m - 1. With m = 1, or no copy, the worlds are created again, quietly.
+`COPY_MONTHS = [0]` (`runner/ensemble.ts`) is the one place the schedule lives. After each listed month the world of each ensemble is `structuredClone`d with its series `data()`, its unfed log and the ledger length, one world per unit. A restore takes the last complete copy at or before m - 1, drops later ones, cuts the ledger, rebuilds each due list with `planDue` and re-steps quietly to m - 1. With m = 1, or no copy, the worlds are created again, quietly.
 
-Why `[0]`: copies every 60 months add 2,322.7 MB funded on the live city against 546.2 MB for month 0 alone (+427.7 with none), and denser copies save only the quiet replay (about 1 s of a resume; `planDue` dominates). A second entry (240) works with no other change.
+Why `[0]` (48 + 48 worlds, 2026-11-10): copies every 60 months add 2,322.7 MB funded on the live city against 546.2 MB for month 0 alone (+427.7 with none), and denser copies save only the quiet replay (about 1 s of a resume; `planDue` dominates). A second entry (240) works with no other change.
 
 ### Edits
 
 `setPolicy` checks at once that every query of the document and of its comparison is in `lots` (else `bad-request`); then it compiles the plan and, unless `comparisonOf` gives the same document and base (D4), the comparison. It replaces any edit not yet accepted: nothing more is posted for that rev. A rejected document posts `bad-request` at its rev and filling resumes under the timelines in use. A document rejected at once leaves an earlier pending edit pending; one the compiler rejects, before acceptance or after it, takes up again the newest document that is not rejected (its compile starts over), and so on back to the last edit accepted.
 
-While an edit compiles nothing steps; map flushes and height units go on. It is accepted once each new timeline is ready through its ensemble's last month stepped: `m = firstDifference(old, new)` keeps the ensemble (null or past it) or restores it. The rev becomes the edit's. The plan's quiet re-step ends its slice; the next task rewinds the map stream (and answers a `resyncMap` that came meanwhile). After a throw, the next accepted edit re-creates every world.
+While an edit compiles nothing steps; map flushes and height units go on. It is accepted once each new timeline is ready through its ensemble's last month stepped: `m = firstDifference(old, new)` keeps the ensemble (null or past it) or restores it. The rev becomes the edit's. The plan's quiet re-step ends its slice; the next task rewinds the map stream (and answers a `resyncMap` that came meanwhile). After a throw, the next accepted edit re-creates both worlds.
 
-Every acceptance of an edit is answered by exactly one `refill` at its rev; a rejected edit by `bad-request` at its rev and no `refill`. A document taken up again after a rejection is accepted afresh and gets a new `compiled` and a new `refill` at its own rev, even if it had them (its worlds may have been restored for the rejected edit; the `refill` re-bases `from`), so a consumer never dedupes `compiled` or `refill` by rev. The `refill` waits for the `compiled` at its rev, for every quiet re-step to end and for the rewind; no `filled` goes out between acceptance and it. Its `from`: when a side restored, the first calendar month not final at min(m) - 1 (by the new statics), and the posted mark drops to just before it; when both sides kept, the first calendar month not posted yet (the window length when the window is whole), so it withdraws nothing. An edit taken before the dataset loaded opens the session at its rev and gets its `refill` (from 0) after its `compiled`; so does an edit that opens after a rejected open.
+Every acceptance of an edit is answered by exactly one `refill` at its rev; a rejected edit by `bad-request` at its rev and no `refill`. A document taken up again after a rejection is accepted afresh and gets a new `compiled` and a new `refill` at its own rev, even if it had them (its world may have been restored for the rejected edit; the `refill` re-bases `from`), so a consumer never dedupes `compiled` or `refill` by rev. The `refill` waits for the `compiled` at its rev, for every quiet re-step to end and for the rewind; no `filled` goes out between acceptance and it. Its `from`: when a side restored, the first calendar month not final at min(m) - 1 (by the new statics), and the posted mark drops to just before it; when both sides kept, the first calendar month not posted yet (the window length when the window is whole), so it withdraws nothing. An edit taken before the dataset loaded opens the session at its rev and gets its `refill` (from 0) after its `compiled`; so does an edit that opens after a rejected open.
 
 An edit is accepted, as the page sees it, unless answered `bad-request`. After a rejected edit the timelines are the last accepted `setPolicy`'s, so the page (which undoes to that document) and the worker agree. A `bad-request` can come after the worker accepted the edit internally: acceptance needs the new compile ready only through the month stepped, and a compile rejects a document at the first month it cannot compile. So the runner keeps, as documents only, the one in use before each acceptance and the edits it superseded (`kept`), until both compiles in use have finished; a late rejection by either posts `bad-request` at the rev in use and takes the newest kept document up again as an edit at its own rev (compiled afresh, `firstDifference` against the timelines in use, keep or restore), which is accepted afresh: a new `compiled` and a new `refill` at its rev, even if it had them. An edit in use when a later one is rejected before acceptance simply settles (its `compiled` unless already out, and one `refill`). The `refill` also waits for the comparison's compile to finish, so no rejection can follow it.
 
-Transient: between a late `bad-request` and the taken-up edit's acceptance, the rejected edit's timelines are still in use for side outputs: `heights` at its rev, `lookups` from its frames on a `viewMonth`, and `cells` from world 1 as it stands. The acceptance replaces them: `lookups` go out again, the height build reruns, and a restore rewinds the map.
+Transient: between a late `bad-request` and the taken-up edit's acceptance, the rejected edit's timelines are still in use for side outputs: `heights` at its rev, `lookups` from its frames on a `viewMonth`, and `cells` from the plan's world as it stands. The acceptance replaces them: `lookups` go out again, the height build reruns, and a restore rewinds the map.
 
 Superseded edits: an edit at rev R replaced before its `refill` went out is not abandoned until a later edit has its `refill`. If R was already in use (accepted, re-stepping), it stays in use and a rejection of the later one leaves it to settle: `compiled` and `refill` at R. If R was still compiling, its document is kept (not its compile); a compiler rejection of the later edit takes R up again, compiles it afresh and it settles at R. When a later edit is accepted instead, R gets no `refill` of its own; that edit's `refill`, at a higher rev, answers both (a restore pending for R is folded into it: `from` is the lower). The settle signal for edit R is therefore a `refill` with rev >= R: the page is stale from edit R until one has arrived and the filled months reach the playhead.
 
@@ -81,7 +81,7 @@ An edit from a document with nothing in force changes the comparison from the pr
 
 `heights` and `heightLids` follow the zoning in force at the last `viewMonth`: a `cityInput` unit reads `cityInputAt` on the plan frame in view, then the city build runs in slices and posts `heights`; the same view with equal inputs posts nothing. A wanted lid view builds on the latest city. A throw in either is rule 21's.
 
-`resyncMap` posts `MapStream.snapshot(world1)` (revision 0), unbudgeted; during a quiet re-step it waits for the rewind. `MapStream.cellsFor` runs after each non-null flush and on a viewport change; its cells go to the chunk loader.
+`resyncMap` posts `MapStream.snapshot(planWorld)` (revision 0), unbudgeted; during a quiet re-step it waits for the rewind. `MapStream.cellsFor` runs after each non-null flush and on a viewport change; its cells go to the chunk loader.
 
 ### Failure
 
@@ -100,15 +100,15 @@ A consumer applies `filled` and `refill` in order (`refill` withdraws every mont
 - **D1** No hashed file changed: `runner/dataset.ts` and `runner/lookups.ts` compose exported functions; the old host's copy goes when `timeline-ui` switches `/sim`.
 - **D2** Series wait for their `ScoreStatics` (buffered feed logs).
 - **D3** Each ensemble's series use its own `ScoreStatics`; `compiled` carries the plan's.
-- **D4** A comparison `comparisonOf` gives unchanged is not recompiled; its worlds stay.
+- **D4** A comparison `comparisonOf` gives unchanged is not recompiled; its world stays.
 - **D5** Drain until `complete: true`, never "until null".
 - **D6** A flush is a task of its own.
 - **D7** Unit estimates: largest of the kind's last 4; the first unit of a slice always runs.
-- **D8** Copies: worlds by `structuredClone`, series `data()`, unfed logs, ledger length; one world per unit.
-- **D9** `MoneyFeed` null without pools, else world 1's ledger and the frame of `through`.
+- **D8** Copies: the world by `structuredClone`, series `data()`, unfed logs, ledger length; one world per unit.
+- **D9** `MoneyFeed` null without pools, else the plan world's ledger and the frame of `through`.
 - **D10** `lookups` on a change of permitting objects at the last `viewMonth`, and after every edit.
 - **D11** A compile throw other than `LeverFormatError` is `'timeline'`, as rule 21.
-- **D12** Warm world 1's massings before each flush, one (row, revision) per unit (`runner/warm.ts`); a cold massing over 50 ms is reported, not split.
+- **D12** Warm the plan world's massings before each flush, one (row, revision) per unit (`runner/warm.ts`); a cold massing over 50 ms is reported, not split.
 
 ## What the old host supplied
 
@@ -123,6 +123,8 @@ Lines of `src/lib/sim/scenario/scenario-host.ts` each new file mirrors, so `time
 | `timeline-client.ts` | `scenario-client.ts` crash handling and lookups (left unchanged)                                                                                                                                                        |
 
 ## Timings
+
+History: taken 2026-11-10 with 48 + 48 worlds; `/sim` now steps one world per side. The figures below are that run's.
 
 Live 2026-11-10-6ee5a23d (155,020 parcels, gross table, baseline money 8 pools), 48 + 48 worlds, 480 months, Apple M5 Pro, Node 24.2. All quiet (lock held). "Task 1" rows are the prototype bundled (minified, no keepNames) after the planning memo (`measure-1.md` §§11, 12); "host" rows go through `createTimelineHost`, under Vitest (`host.perf.spec.ts`) and bundled (`ensemble-measure.ts --case host`).
 
@@ -157,7 +159,7 @@ After warming per (row, revision) (`measure-1.md` §13, quiet, HEAD fc81bd7e): f
 ## Known limits
 
 - **Heap**: S16's 300 MB is not met (427.7 MB live set, 546.2 MB with the month-0 copy); the partner re-sets it. `HEAP_BOUND_MB` in `host.perf.spec.ts` is null until then and the heap case asserts only the leak margin.
-- **Rich money**: on the live city with world-funding's bench money set, `planDue` is 77.6 / 111.4 ms per world (median / max), the change month 154 to 188 ms per world unit, 96 creates 4.3 s: over the 50 ms unit bar. A bound inside the step (`StepCtx`) is world-core's, deferred.
+- **Rich money**: on the live city with world-funding's bench money set, `planDue` is 77.6 / 111.4 ms per world (median / max), the change month 154 to 188 ms per world unit, 96 creates 4.3 s (48 + 48 worlds, 2026-11-10): over the 50 ms unit bar. A bound inside the step (`StepCtx`) is world-core's, deferred.
 - **Cold massing**: `CASE:2007.0946PRX:phase:3` is one generator call of about 636 ms, accepted; warm-ahead moves it out of the flush.
 - **Estimates**: a unit costlier than its kind's last 4 can push a slice a few ms past 50 (`create`, `warm`). The live overruns (warm 60.1 to 62.8 ms; `create` up to 57.9 ms in Task 8) come from this scheduling rule, inherited from the old host (D7); they are accepted, not chased.
 - **`resyncMap`**: the snapshot is unbudgeted (rule 20): about 10 ms warm, 1.2 s with a cold memo.

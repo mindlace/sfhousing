@@ -1,5 +1,6 @@
-// One ensemble of worlds (ensemble-runner Task 4) on fixture-0 under the compiled default policy:
-// the series against a plain loop, the gate's buffered feed, copies, restore and quiet re-stepping.
+// One side's world (ensemble-runner Task 4) on fixture-0 under the compiled default policy:
+// the series against a plain loop of seed 1, the gate's buffered feed, copies, restore and quiet
+// re-stepping.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
 import { createLru } from '$lib/sim/lru';
@@ -17,12 +18,11 @@ import { createWorldSeries, scoreStaticsOf, type ScoreStatics } from '../score';
 import type { Statics } from '../statics';
 import type { StepSink, World, WorldEvent } from '../types';
 import { createChunkSet, loadDataset, type DatasetDeps } from './dataset';
-import { COPY_MONTHS, createEnsemble, type Ensemble, type EnsembleOpts } from './ensemble';
+import { COPY_MONTHS, createEnsemble, SEED, type Ensemble, type EnsembleOpts } from './ensemble';
 import { datasetFetch } from './test/harness';
 
 const FIXTURE = 'e2e/fixtures/data/fixture-0';
 const MONTHS = 130;
-const WORLDS = 4;
 
 let statics: Statics;
 let timeline: PolicyTimeline;
@@ -83,7 +83,7 @@ beforeAll(async () => {
     MONTHS,
     ds.loaded.projects.rhnaCompletedNet
   );
-  // Not vacuous: the fixture city's baseline money reaches world 1's ledger.
+  // Not vacuous: the fixture city's baseline money reaches the plan world's ledger.
   expect(timeline.frameAt(1).finance).not.toBeNull();
 });
 
@@ -108,10 +108,9 @@ function ensemble(over: Partial<EnsembleOpts> = {}): Ensemble {
   return createEnsemble({
     statics,
     timeline,
-    worlds: WORLDS,
     months: MONTHS,
     copyMonths: COPY_MONTHS,
-    world1: { stream: null },
+    map: { stream: null },
     ...over
   });
 }
@@ -126,34 +125,22 @@ function run(e: Ensemble, stop: () => boolean = () => false): string[] {
   return kinds;
 }
 
-const rowsOf = (e: Ensemble) => e.series.map((s) => s!.rows(0, s!.finalThrough()));
+const rowsOf = (e: Ensemble) => e.series!.rows(0, e.series!.finalThrough());
 
-/** Rows, worlds and ledger of a fresh ensemble run under `t` with the gate open. */
+/** Rows, world and ledger of a fresh ensemble run under `t` with the gate open. */
 function fresh(t: PolicyTimeline) {
   const e = ensemble({ timeline: t });
   e.setStatics(score);
   run(e);
-  return { rows: rowsOf(e), worlds: structuredClone(e.worlds), ledger: [...e.ledger!] };
+  return { rows: rowsOf(e), world: structuredClone(e.world), ledger: [...e.ledger!] };
 }
 
 const same = (e: Ensemble, ref: ReturnType<typeof fresh>) => {
   expect(e.month).toBe(MONTHS);
   expect(rowsOf(e)).toEqual(ref.rows);
   expect(e.ledger).toEqual(ref.ledger);
-  expect(structuredClone(e.worlds)).toEqual(ref.worlds);
+  expect(structuredClone(e.world)).toEqual(ref.world);
 };
-
-/** Runs to month `m` with `k` worlds (0 < k < WORLDS) already past it: mid-month. */
-function midMonth(e: Ensemble, m: number, k: number) {
-  let past = -1;
-  run(e, () => {
-    const kind = e.next();
-    if (e.month === m && (kind === 'step' || kind === 'quiet')) past++;
-    return past === k;
-  });
-  expect(e.month).toBe(m);
-  expect(e.steppedThrough).toBeGreaterThanOrEqual(m + 1);
-}
 
 /** Months stepped quietly and loudly by the remaining units. */
 function stepsOf(e: Ensemble) {
@@ -168,57 +155,74 @@ function stepsOf(e: Ensemble) {
 }
 const months = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
 
-/** Plain loop: one funded world per seed, a fresh series fed live, the ledger of seed 1. */
-function plainLoop(worlds: number) {
+/** Plain loop: one funded world on seed 1, a fresh series fed live, and its ledger. */
+function plainLoop() {
   const core = withFunding(createFundingSystem());
-  const rows = [];
-  const out: World[] = [];
-  let ledger: LedgerEvent[] = [];
-  for (let seed = 1; seed <= worlds; seed++) {
-    const series = createWorldSeries(score);
-    const buf: WorldEvent[] = [];
-    let world: World | null = null;
-    const led: LedgerEvent[] = [];
-    const sink: StepSink = {
-      event: (e) => (world === null ? buf.push(e) : series.add(e, world, statics)),
-      ledger: (e) => led.push(e)
-    };
-    const w = core.createWorld(statics, timeline, seed, sink);
-    world = w;
-    for (const e of buf) series.add(e, w, statics);
-    const due = core.planDue(w, statics, timeline, seed, MONTHS);
-    for (let m = 1; m <= MONTHS; m++) {
-      core.step(w, due, statics, timeline, seed, sink);
-      series.stepped(m);
-    }
-    rows.push(series.rows(0, series.finalThrough()));
-    out.push(w);
-    if (seed === 1) ledger = led;
+  const series = createWorldSeries(score);
+  const buf: WorldEvent[] = [];
+  let world: World | null = null;
+  const ledger: LedgerEvent[] = [];
+  const sink: StepSink = {
+    event: (e) => (world === null ? buf.push(e) : series.add(e, world, statics)),
+    ledger: (e) => ledger.push(e)
+  };
+  const w = core.createWorld(statics, timeline, 1, sink);
+  world = w;
+  for (const e of buf) series.add(e, w, statics);
+  const due = core.planDue(w, statics, timeline, 1, MONTHS);
+  for (let m = 1; m <= MONTHS; m++) {
+    core.step(w, due, statics, timeline, 1, sink);
+    series.stepped(m);
   }
-  return { rows, worlds: out, ledger };
+  return { rows: series.rows(0, series.finalThrough()), world: w, ledger };
 }
 
 describe('createEnsemble', () => {
-  it('series equal a plain loop', () => {
-    const e = ensemble({ worlds: 8 });
+  it('the series equal a plain loop of seed 1', () => {
+    expect(SEED).toBe(1);
+    const e = ensemble();
     e.setStatics(score);
     run(e);
     expect(e.month).toBe(MONTHS);
     expect(e.finalThrough()).toBe(score.lastIndex);
-    const ref = plainLoop(8);
+    const ref = plainLoop();
     // Not vacuous: homes complete in the window.
-    expect(ref.rows[0][score.lastIndex].completedNet).toBeGreaterThan(0);
+    expect(ref.rows[score.lastIndex].completedNet).toBeGreaterThan(0);
     expect(rowsOf(e)).toEqual(ref.rows);
+    expect(structuredClone(e.world)).toEqual(structuredClone(ref.world));
     expect(e.ledger).toEqual(ref.ledger);
   });
 
-  it('copies are taken at the months COPY_MONTHS lists', () => {
+  it('one create unit makes the world', () => {
+    const e = ensemble();
+    expect(e.world).toBeNull();
+    expect(e.month).toBe(-1);
+    expect(e.next()).toBe('create');
+    e.unit();
+    expect(e.world).not.toBeNull();
+    expect(e.month).toBe(0);
+  });
+
+  it('a copy is one unit', () => {
     expect([...COPY_MONTHS]).toEqual([0]);
     const e = ensemble();
-    const kinds = run(e);
+    e.unit();
+    expect(e.month).toBe(COPY_MONTHS[0]);
+    expect(e.next()).toBe('copy');
+    e.unit();
     expect(e.copiedMonths()).toEqual([0]);
-    // One copy unit per world, never all worlds in one unit.
-    expect(kinds.filter((k) => k === 'copy')).toHaveLength(WORLDS);
+    const kinds = run(e);
+    expect(kinds).not.toContain('copy');
+    expect(e.copiedMonths()).toEqual([0]);
+  });
+
+  it('steppedThrough after a step is that month', () => {
+    const e = ensemble();
+    run(e, () => e.month === 10);
+    expect(e.steppedThrough).toBe(10);
+    e.unit();
+    expect(e.month).toBe(11);
+    expect(e.steppedThrough).toBe(11);
   });
 
   it('a second copy month works with no other change', () => {
@@ -230,7 +234,7 @@ describe('createEnsemble', () => {
       return false;
     });
     expect(e.copiedMonths()).toEqual([0, 60]);
-    const before = { rows: rowsOf(e), worlds: structuredClone(e.worlds), ledger: [...e.ledger!] };
+    const before = { rows: rowsOf(e), world: structuredClone(e.world), ledger: [...e.ledger!] };
 
     e.restore(timeline, 101);
     expect(e.month).toBe(60);
@@ -245,14 +249,14 @@ describe('createEnsemble', () => {
     expect(e.copiedMonths()).toEqual([0, 60]);
     expect(rowsOf(e)).toEqual(before.rows);
     expect(e.ledger).toEqual(before.ledger);
-    expect(structuredClone(e.worlds)).toEqual(before.worlds);
+    expect(structuredClone(e.world)).toEqual(before.world);
   });
 
   it('restore to month 100 and re-step equals never stopping', () => {
     const e = ensemble();
     e.setStatics(score);
     run(e);
-    const before = { rows: rowsOf(e), worlds: structuredClone(e.worlds), ledger: [...e.ledger!] };
+    const before = { rows: rowsOf(e), world: structuredClone(e.world), ledger: [...e.ledger!] };
 
     e.restore(timeline, 101);
     expect(e.quiet).toBe(true);
@@ -271,10 +275,10 @@ describe('createEnsemble', () => {
     expect(e.month).toBe(MONTHS);
     expect(rowsOf(e)).toEqual(before.rows);
     expect(e.ledger).toEqual(before.ledger);
-    expect(structuredClone(e.worlds)).toEqual(before.worlds);
+    expect(structuredClone(e.world)).toEqual(before.world);
   });
 
-  it("restore cuts world 1's ledger to its length at the copy", () => {
+  it("restore cuts the plan world's ledger to its length at the copy", () => {
     const e = ensemble();
     run(e);
     expect(e.ledger!.length).toBeGreaterThan(0);
@@ -288,7 +292,7 @@ describe('createEnsemble', () => {
   it('quiet steps do not reach the map stream', () => {
     const stream = recordingStream();
     let onEvent = 0;
-    const e = ensemble({ world1: { stream, onEvent: () => onEvent++ } });
+    const e = ensemble({ map: { stream, onEvent: () => onEvent++ } });
     run(e);
     expect(stream.events).toBeGreaterThan(0);
     expect(onEvent).toBe(stream.events);
@@ -328,7 +332,7 @@ describe('createEnsemble', () => {
     e.setStatics(score);
     run(e, () => e.month === 40);
     e.setStatics(null);
-    expect(e.series.every((s) => s === null)).toBe(true);
+    expect(e.series).toBeNull();
     run(e, () => e.month === 80);
     e.setStatics(score);
     run(e);
@@ -366,59 +370,29 @@ describe('createEnsemble', () => {
     expect(e.month).toBe(MONTHS);
   });
 
-  it('a restore before the month-0 copy starts the worlds again', () => {
+  it('a restore before the month-0 copy starts the world again', () => {
     const ref = ensemble();
     ref.setStatics(score);
     run(ref);
     const e = ensemble();
     e.setStatics(score);
     e.unit();
-    e.unit();
-    expect(e.next()).toBe('create');
+    expect(e.next()).toBe('copy');
     e.restore(timeline, 1);
     expect(e.month).toBe(-1);
     run(e);
     expect(rowsOf(e)).toEqual(rowsOf(ref));
     expect(e.ledger).toEqual(ref.ledger);
   });
-  it('an edit at a month some worlds have stepped restores (mid-month)', () => {
-    const t2 = editedAt(31);
-    const ref = fresh(t2);
-    // Not vacuous: the edit changes the results.
-    expect(ref.rows).not.toEqual(fresh(timeline).rows);
-    const e = ensemble();
-    e.setStatics(score);
-    midMonth(e, 30, 2);
-    expect(e.steppedThrough).toBe(31);
-    e.restore(t2, 31);
-    expect(e.month).toBe(0);
-    const s = stepsOf(e);
-    expect(s.quiet).toEqual(months(1, 30));
-    same(e, ref);
-  });
-
-  it('an edit after a month some worlds have stepped keeps (mid-month)', () => {
-    const t2 = editedAt(32);
-    const ref = fresh(t2);
-    expect(ref.rows).not.toEqual(fresh(timeline).rows);
-    const e = ensemble();
-    e.setStatics(score);
-    midMonth(e, 30, 2);
-    expect(e.steppedThrough).toBe(31);
-    e.keep(t2);
-    run(e);
-    same(e, ref);
-  });
-
   it('an edit during quiet re-stepping, after the quiet month reached, ends quiet before it', () => {
     const t2 = editedAt(90);
     const ref = fresh(t2);
     const stream = recordingStream();
-    const e = ensemble({ world1: { stream } });
+    const e = ensemble({ map: { stream } });
     e.setStatics(score);
     run(e);
     e.restore(timeline, 101);
-    midMonth(e, 30, 1);
+    run(e, () => e.month === 30);
     expect(e.quiet).toBe(true);
     expect(e.steppedThrough).toBe(100);
     const before = stream.events;
@@ -449,7 +423,8 @@ describe('createEnsemble', () => {
     run(e);
     e.restore(timeline, 101);
     expect(e.month).toBe(20);
-    midMonth(e, 50, 3);
+    run(e, () => e.month === 50);
+    expect(e.quiet).toBe(true);
     e.restore(t2, 40);
     expect(e.month).toBe(20);
     const s = stepsOf(e);
@@ -458,11 +433,11 @@ describe('createEnsemble', () => {
     same(e, ref);
   });
 
-  it('an edit at month 1 creates the worlds again, quietly', () => {
+  it('an edit at month 1 creates the world again, quietly', () => {
     const t2 = editedAt(1);
     const ref = fresh(t2);
     const stream = recordingStream();
-    const e = ensemble({ world1: { stream } });
+    const e = ensemble({ map: { stream } });
     e.setStatics(score);
     run(e, () => e.month === 10);
     expect(e.steppedThrough).toBe(10);
@@ -492,7 +467,7 @@ describe('createEnsemble', () => {
       e.unit();
       feeds++;
     }
-    expect(feeds).toBe(WORLDS * 50);
+    expect(feeds).toBe(50);
     expect(e.next()).toBe('step');
   });
 });

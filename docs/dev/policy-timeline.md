@@ -40,6 +40,8 @@ Rules the parser enforces (`parsePolicy4`; errors are `PolicyFormatError` naming
 - Rule 6: days inside a `what` (a baseline scale's `from`, a programme's `from` and `to`, inflow dates) are not spans and are not month starts. A span cuts them: one counts only while its policy is on and a span covers it.
 - Rule 9: "nothing in force" (`nothingInForce`: no policy that is on has a span) is what the comparison and the page mean by the default. `DEFAULT_POLICY4` has three empty lists: the plan as adopted, observed permitting times, today's City funding.
 
+The comparison is one pair: the plan's world and the comparison's world, both seed 1, with the same per-lot dice. "Because of this policy" is the plan's rows minus the comparison's. It can be negative: funding pools award once a year and spend nearly all of it, so a project the policy makes eligible can push another's award back a full year. The page shows that one future as it is.
+
 `canonicalJson` of a document is its identity for saving.
 
 ## Opening and reconciling

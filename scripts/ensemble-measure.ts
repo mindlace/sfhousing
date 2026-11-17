@@ -1,10 +1,12 @@
 // `node --expose-gc node_modules/.bin/tsx scripts/ensemble-measure.ts --dir <datasetDir>
 // --case <name> [--extra <dir>] [--no-gross] [--no-money] [--no-copies] [--variant market|zoning]
-// [--runs 3] [--worlds 48] [--months 480]`: ensemble-runner's measurements before building (plan Task 1).
+// [--runs 3] [--worlds 1] [--months 480]`: ensemble-runner's measurements before building (plan
+// Task 1).
 // A prototype of the runner's fill loop (spec rules 5 to 8 and S16) over the step engine on a
 // local copy of a published dataset. Cases, one per process so each starts cold:
-//   ensemble  create 96 worlds, fill both ensembles to `--months` (scoring and MapStream.onEvent
-//             included), copies every 60 months kept, the heap, month 1's burst, the statics.
+//   ensemble  create `--worlds` a side, fill both ensembles to `--months` (scoring and
+//             MapStream.onEvent included), copies every 60 months kept, the heap, month 1's
+//             burst, the statics.
 //   replan    a dated change at month 120 (`--variant market`: a market step; `zoning`: a metro
 //             rule); each world's change month timed.
 //   compile   compileTimeline of a metro rule and of 500 painted lots from month 1.
@@ -614,8 +616,8 @@ function caseEnsemble(c: Common) {
     if (through > posted) {
       const tk = now();
       chunkOf(
-        s.plan.members.map((m) => m.series),
-        s.comp.members.map((m) => m.series),
+        s.plan.members[0].series,
+        s.comp.members[0].series,
         moneyFeedOf(s, through),
         posted + 1,
         through
@@ -939,8 +941,8 @@ async function caseFirst(dir: string, extra: string | null, money: boolean, worl
     );
     if (through >= 0) {
       chunkOf(
-        s.plan.members.map((m) => m.series),
-        s.comp.members.map((m) => m.series),
+        s.plan.members[0].series,
+        s.comp.members[0].series,
         moneyFeedOf(s, through),
         0,
         through
@@ -1257,7 +1259,7 @@ function caseResume(c: Common, ats: number[]) {
  * task of the host (its timer callbacks and requests) is timed; what ran inside a task is not
  * (the perf spec has the breakdown).
  */
-async function caseHost(dir: string, live: Live, worlds: number, months: number) {
+async function caseHost(dir: string, live: Live, months: number) {
   const f = datasetFetch(dir);
   const tasks: { label: string; start: number; ms: number; posts: string[] }[] = [];
   const posts: { t: number; msg: TimelineHostResponse }[] = [];
@@ -1339,7 +1341,6 @@ async function caseHost(dir: string, live: Live, worlds: number, months: number)
     manifest: f.manifest,
     policy: reconciled(DEFAULT_POLICY4, live.funded),
     lots: {},
-    worlds,
     months
   });
   handle({ type: 'prefetch', bbox });
@@ -1386,7 +1387,7 @@ async function caseHost(dir: string, live: Live, worlds: number, months: number)
   const r = (x: number) => r1(x);
   return {
     case: 'host',
-    worlds: `${worlds} + ${worlds}`,
+    worlds: '1 + 1',
     months,
     firstCellsMs: r(firstCells - t0),
     firstFilledMs: r(firstFilled - t0),
@@ -1411,13 +1412,13 @@ async function main(): Promise<number> {
     console.error(
       'usage: node --expose-gc node_modules/.bin/tsx scripts/ensemble-measure.ts --dir <dataset> ' +
         '--case ensemble|replan|compile|first|flush|flush-warm|sizes|resume|host [--extra <dir>] [--no-gross] ' +
-        '[--no-money] [--money-set baseline|bench|benchset] [--no-copies] [--copies 0,240] [--at 240,470] [--variant market|zoning] [--runs 3] [--worlds 48] [--months 480]'
+        '[--no-money] [--money-set baseline|bench|benchset] [--no-copies] [--copies 0,240] [--at 240,470] [--variant market|zoning] [--runs 3] [--worlds 1] [--months 480]'
     );
     return 2;
   }
   if (!gc) console.error('warning: run with node --expose-gc; heap numbers are without a gc');
   const extra = opt('--extra');
-  const worlds = num('--worlds', 48);
+  const worlds = num('--worlds', 1);
   const months = num('--months', 480);
   const money = !has('--no-money');
   const env = () =>
@@ -1483,7 +1484,7 @@ async function main(): Promise<number> {
     else if (which === 'sizes') result = caseSizes(c);
     else if (which === 'resume')
       result = caseResume(c, (opt('--at') ?? '240,470').split(',').map(Number));
-    else if (which === 'host') result = await caseHost(dir, live, worlds, months);
+    else if (which === 'host') result = await caseHost(dir, live, months);
     else throw new Error(`unknown case ${which}`);
   }
   console.log(JSON.stringify({ dataset: dir.split('/').pop(), ...(result as object) }, null, 2));

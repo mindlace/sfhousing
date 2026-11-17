@@ -33,8 +33,8 @@ export type TimelineErrorCode = ScenarioErrorCode | 'timeline';
  * `error` code `bad-request` at that `rev`, and the previous timeline keeps filling.
  *
  * `lots` holds the lots of each brush query the document needs (`queriesOf4`), by query key,
- * resolved by the page through `resolveBrush`. `worlds` and `months` are the ensemble size and the
- * window length in model months.
+ * resolved by the page through `resolveBrush`. `months` is the window length in model months; each
+ * side runs one world, on seed 1.
  *
  * `cells` and `lookups` (the responses) carry no `rev` and are never dropped: the map's revision
  * numbers are their own sequence.
@@ -45,7 +45,6 @@ export type OpenTimelineRequest = {
   manifest: Manifest;
   policy: SimPolicy4;
   lots: Record<string, ParcelId[]>;
-  worlds: number;
   months: number;
 };
 
@@ -72,7 +71,7 @@ export type OpenTimelineRequest = {
  * it, R simply settles: its `compiled` (unless already out) and one `refill`. When R is taken up
  * again (it was still compiling, or a later edit was rejected after the worker accepted it), it is
  * accepted afresh: a new `compiled` and a new `refill` at R, even if it had them already (its
- * worlds may have been restored for the later edit, and the `refill` re-bases `from`). So a `rev`
+ * world may have been restored for the later edit, and the `refill` re-bases `from`). So a `rev`
  * can get more than one `compiled` and `refill`: never dedupe them by `rev`. Otherwise the later
  * edit's `refill`, at a `rev` above R, answers R. In a chain the `bad-request`s can arrive out of
  * `rev` order (R + 2's, then R + 1's once it is taken up again). So the page keeps every document
@@ -173,7 +172,6 @@ export function openTimelineProblem(req: unknown): string | null {
   if (!isObject(req.policy)) return 'policy must be an object';
   const lots = lotsProblem(req.lots);
   if (lots !== null) return lots;
-  if (!isInt(req.worlds) || req.worlds < 1) return 'worlds must be an integer >= 1';
   if (!isInt(req.months) || req.months < 1) return 'months must be an integer >= 1';
   return null;
 }

@@ -1,7 +1,7 @@
-// Rules 2 and 9 on funded worlds: world 1's pool series are `poolSeries` of its ledger by
+// Rules 2 and 9 on funded worlds: the plan world's pool series are `poolSeries` of its ledger by
 // calendar month, `fundedHomes` is `moneyOf`'s, `displacedHomes` counts each 'displaced' event in
 // its own month (today counts them when the funded project completes), and money in a chunk is
-// world 1's alone.
+// the plan world's alone.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
 import { displacedShare, moneyOf, perAddedHome, poolSeries } from '$lib/sim/scenario/finance-score';
@@ -179,8 +179,8 @@ function checkDisplaced(
 function checkByMonth(c: City, r: Run): number {
   const last = c.score.lastIndex;
   const chunks = [
-    chunkOf([r.series], [r.series], r.feed, 0, 99),
-    chunkOf([r.series], [r.series], r.feed, 100, last)
+    chunkOf(r.series, r.series, r.feed, 0, 99),
+    chunkOf(r.series, r.series, r.feed, 100, last)
   ];
   const m = viewOf(chunks, c.score).money!;
   const paired = { ...m, displacedHomes: m.displacedHomesCompleted };
@@ -220,7 +220,7 @@ function checkByMonth(c: City, r: Run): number {
   return empty;
 }
 
-describe('world 1 money, funded mini', () => {
+describe('plan world money, funded mini', () => {
   let c: City;
   const runs = new Map<number, Run>();
   const runOf = (seed: number) => {
@@ -287,27 +287,19 @@ describe('world 1 money, funded mini', () => {
     expect(checkHomes(c, r)).toBeGreaterThan(0);
   });
 
-  it('money in a chunk describes world 1 only', () => {
+  it("money in a chunk describes the plan world only, and the twin's does not move it", () => {
     const [a, b, d] = [runOf(1), runOf(2), runOf(3)];
     const through = c.score.lastIndex;
     const want = moneyRowsOf(a.feed, extrasOf(a.series), 100, through);
-    const one = chunkOf([a.series, b.series], [b.series, d.series], a.feed, 100, through);
+    const one = chunkOf(a.series, b.series, a.feed, 100, through);
     expect(one.money).toEqual(want);
     expect(one.tiers).toEqual(extrasOf(a.series).tiers(100, through));
-    // Other plan worlds and the twins do not move it.
-    const two = chunkOf(
-      [a.series, d.series, b.series],
-      [a.series, a.series, a.series],
-      a.feed,
-      100,
-      through
-    );
-    expect(two.money).toEqual(want);
-    // A different world 1 gives different money.
-    const other = chunkOf([b.series, a.series], [b.series, d.series], b.feed, 100, through);
+    expect(chunkOf(a.series, d.series, a.feed, 100, through).money).toEqual(want);
+    // A different plan world gives different money.
+    const other = chunkOf(b.series, a.series, b.feed, 100, through);
     expect(other.money).toEqual(moneyRowsOf(b.feed, extrasOf(b.series), 100, through));
     expect(other.money).not.toEqual(want);
-    expect(chunkOf([a.series], [b.series], null, 100, through).money).toBeNull();
+    expect(chunkOf(a.series, b.series, null, 100, through).money).toBeNull();
   });
 
   it('a restored series gives the same money and keeps filing', () => {
@@ -315,8 +307,8 @@ describe('world 1 money, funded mini', () => {
     const through = r.series.finalThrough();
     const back = createWorldSeries(c.score, structuredClone(r.series.data()));
     expect(extrasOf(back).homes(0, through)).toEqual(extrasOf(r.series).homes(0, through));
-    expect(chunkOf([back], [back], r.feed, 0, through).money).toEqual(
-      chunkOf([r.series], [r.series], r.feed, 0, through).money
+    expect(chunkOf(back, back, r.feed, 0, through).money).toEqual(
+      chunkOf(r.series, r.series, r.feed, 0, through).money
     );
     // Saved mid-run, restored, then fed the rest: the same as the series never saved. The events
     // are replayed month by month against the final world (the unfunded feeds' 'after' order).
@@ -380,7 +372,7 @@ describe('world 1 money, funded mini', () => {
   });
 });
 
-describe('world 1 money, funded bench', () => {
+describe('plan world money, funded bench', () => {
   let c: City;
   let r: Run;
   // A bench city's funded world takes seconds.
@@ -413,7 +405,7 @@ describe("rule 12 against today's engine, funded mini", () => {
     const nonNull: number[] = [];
     for (let seed = 1; seed <= 50; seed++) {
       const r = run(c, seed);
-      const money = viewOf([chunkOf([r.series], [r.series], r.feed, 0, last)], c.score).money!;
+      const money = viewOf([chunkOf(r.series, r.series, r.feed, 0, last)], c.score).money!;
       const old = simulateDetailed(c.input, seed, horizon);
       const want = moneyOf({
         ledger: old.ledger,

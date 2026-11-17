@@ -47,8 +47,9 @@ export function startStream(
 }
 
 /**
- * A copy of `saved` as world 1 after an edit: `stream.rewind(copy, statics)`, then a due list for
- * `timeline` through `through`. The copy's events reach `stream` through the returned sink.
+ * A copy of `saved` as the plan's world after an edit: `stream.rewind(copy, statics)`, then a due
+ * list for `timeline` through `through`. The copy's events reach `stream` through the returned
+ * sink.
  */
 export function rewindTo(
   saved: World,

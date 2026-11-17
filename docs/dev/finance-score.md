@@ -202,7 +202,7 @@ no debt terms.
 [world-score.md](world-score.md) reads the same figures from the step engine's world events, with
 two differences. `owed` and `perAddedHome` are read at `filledThrough`. Its `displacedHomes` series
 counts each displacement on its own day, while `perAddedHome` and `displacedShare` (given in the
-view, read at `filledThrough`) keep the denominators above: world 1's `fundedHomes` less
+view, read at `filledThrough`) keep the denominators above: the plan world's `fundedHomes` less
 `displacedHomesCompleted`, the displaced homes of funded projects completed by then. The series
 shows displacement when it happens; the ratio pairs it with funded homes, which count at
 completion, keeping today's meaning (partner ruling). `limits` come from `scoreStaticsOf`,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { chunkOf } from './chunk';
-import { BAND_Z, chunksBefore, viewOf } from './view';
+import { chunksBefore, viewOf } from './view';
 import type { MonthRow, ScoreStatics, SeriesChunk, WorldSeries } from './types';
 
 function row(completedNet: number, entitledNew = 0, completedNetNew = 0): MonthRow {
@@ -28,12 +28,8 @@ function stub(rows: MonthRow[]): WorldSeries {
 }
 
 const MONTHS = 12;
-const plan = [0, 1, 2, 3].map((w) =>
-  stub(Array.from({ length: MONTHS }, (_, i) => row(w * 10 + i * (w + 1), i + w, i * 2 + w * w)))
-);
-const twin = [0, 1, 2, 3].map((w) =>
-  stub(Array.from({ length: MONTHS }, (_, i) => row(w * 10 + i, i, i * 2)))
-);
+const plan = stub(Array.from({ length: MONTHS }, (_, i) => row(i * 2, i + 1, i * 2 + 1)));
+const twin = stub(Array.from({ length: MONTHS }, (_, i) => row(i, i, i * 2)));
 const c = (from: number, through: number): SeriesChunk => chunkOf(plan, twin, null, from, through);
 
 const statics = {
@@ -50,44 +46,30 @@ const statics = {
 } as unknown as ScoreStatics;
 
 describe('viewOf', () => {
-  it('joins chunks and builds the band', () => {
+  it("joins chunks into the world's rows and effect", () => {
     const v = viewOf([c(0, 3), c(4, 7), c(8, 11)], statics);
     const all = c(0, 11);
     expect(v.filledThrough).toBe(11);
-    expect(v.mean).toEqual(all.mean);
-    expect(v.shown).toEqual(all.shown);
+    expect(v.rows).toEqual(all.rows);
+    expect(v.planEffect).toEqual(all.planEffect);
     expect(v.months).toBe(statics.months);
-    expect(v.mean).toHaveLength(12);
-    expect(v.band).toHaveLength(12);
+    expect(v.rows).toHaveLength(12);
+    for (const k of ['mean', 'band', 'shown', 'planEffectBand']) expect(k in v).toBe(false);
     for (let i = 0; i < 12; i++) {
-      expect(v.band[i].lo).toBe(all.mean[i].completedNet - 1.2816 * all.sd[i].completedNet);
-      expect(v.band[i].hi).toBe(all.mean[i].completedNet + 1.2816 * all.sd[i].completedNet);
-      const pe = all.planEffect[i];
-      expect(v.planEffect[i]).toEqual(pe.mean);
-      expect(v.planEffectBand[i].lo.entitledNew).toBe(
-        pe.mean.entitledNew - 1.2816 * pe.sd.entitledNew
-      );
-      expect(v.planEffectBand[i].hi.completedNetNew).toBe(
-        pe.mean.completedNetNew + 1.2816 * pe.sd.completedNetNew
-      );
       for (const t of v.targets) {
-        expect(t.fraction[i]).toBe((1000 + all.mean[i].completedNet) / t.target.units);
+        expect(t.fraction[i]).toBe((1000 + all.rows[i].completedNet) / t.target.units);
       }
     }
     expect(v.baseline).toEqual({ completedNet: 1000, since: 'x', provenance: 'p' });
     expect(v.tierTargets).toBeNull();
     expect(v.money).toBeNull();
-    expect(BAND_Z).toBe(1.2816);
   });
 
   it('empty view has filledThrough -1 and empty series', () => {
     const v = viewOf([], statics);
     expect(v.filledThrough).toBe(-1);
-    expect(v.mean).toEqual([]);
-    expect(v.band).toEqual([]);
-    expect(v.shown).toEqual([]);
+    expect(v.rows).toEqual([]);
     expect(v.planEffect).toEqual([]);
-    expect(v.planEffectBand).toEqual([]);
     expect(v.targets.every((t) => t.fraction.length === 0)).toBe(true);
   });
 
@@ -96,12 +78,11 @@ describe('viewOf', () => {
     const cut = chunksBefore(fresh, 6);
     expect(cut).toHaveLength(2);
     expect(cut[1].from).toBe(4);
-    expect(cut[1].mean).toHaveLength(2);
-    expect(cut[1].shown).toHaveLength(2);
+    expect(cut[1].rows).toHaveLength(2);
     expect(cut[1].planEffect).toHaveLength(2);
     expect(viewOf(cut, statics).filledThrough).toBe(5);
     expect(viewOf([...cut, c(6, 11)], statics)).toEqual(viewOf(fresh, statics));
-    expect(fresh[1].mean).toHaveLength(4);
+    expect(fresh[1].rows).toHaveLength(4);
   });
 
   it('gaps and overlaps throw', () => {

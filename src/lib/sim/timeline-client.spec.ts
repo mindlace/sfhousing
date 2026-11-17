@@ -48,10 +48,11 @@ function setup(events: TimelineClientEvents = {}) {
 }
 
 describe('TimelineClient', () => {
-  it('open posts openTimeline with WORLDS and WINDOW_MONTHS', () => {
+  it('open posts openTimeline with WINDOW_MONTHS and no world count', () => {
     const { w, client } = setup();
     expect(client.open(MANIFEST, P1, L1)).toBe(1);
-    expect(w.posts[0]).toMatchObject({ type: 'openTimeline', rev: 1, worlds: 48, months: 480 });
+    expect(w.posts[0]).toMatchObject({ type: 'openTimeline', rev: 1, months: 480 });
+    expect('worlds' in w.posts[0]).toBe(false);
   });
 
   it('never drops cells or lookups', () => {

@@ -66,11 +66,10 @@ export type MoneyView = NonNullable<TimelineScore['money']> & {
 /** The score numbers for a run of final months, one entry per calendar month from `from`. */
 export interface SeriesChunk {
   from: number;
-  mean: MonthRow[];
-  sd: MonthRow[];
-  /** World 1 ("this city"). */
-  shown: MonthRow[];
-  planEffect: { mean: PlanRow; sd: PlanRow }[];
+  /** The plan world's rows. */
+  rows: MonthRow[];
+  /** The plan world's rows minus its twin's, month by month. */
+  planEffect: PlanRow[];
   money: MoneyRow[] | null;
   tiers: TierUnits[] | null;
 }
@@ -81,7 +80,7 @@ export interface SeriesChunk {
  * per calendar month (pipeline, new, entitledNew, exited, `inProgress` in LIVE order, then the
  * funded homes, the displaced homes by event day and those of completed funded projects, then the
  * homes by income tier in `TIER_FIELDS` order). Every funded world files money and tiers; a chunk
- * carries world 1's.
+ * carries the plan world's.
  */
 export interface WorldSeriesData {
   version: 5;
@@ -132,7 +131,7 @@ export interface WorldSeries {
   data(): WorldSeriesData;
 }
 
-/** World 1's money inputs. */
+/** The plan world's money inputs. */
 export interface MoneyFeed {
   ledger: LedgerEvent[];
   finance: FinanceFrame;
@@ -163,11 +162,8 @@ export interface TimelineView {
   lastIndex: number;
   /** -1 before the first chunk. */
   filledThrough: number;
-  mean: MonthRow[];
-  band: { lo: number; hi: number }[];
-  shown: MonthRow[];
+  rows: MonthRow[];
   planEffect: PlanRow[];
-  planEffectBand: { lo: PlanRow; hi: PlanRow }[];
   targets: TargetProgressAt[];
   tierTargets: TargetProgressAt[] | null;
   money: MoneyView | null;
