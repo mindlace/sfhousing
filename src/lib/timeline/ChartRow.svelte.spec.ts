@@ -23,37 +23,35 @@ describe('ChartRow', () => {
     const fig = page.getByRole('figure', { name: 'Net new homes by month' });
     await expect.element(fig).toBeVisible();
     expect(fig.element().querySelector('figcaption')!.textContent).toMatch(/Results table/);
-    const xs = [
-      'chart-avg',
-      'chart-avg-later',
-      'chart-city',
-      'chart-city-later',
-      'chart-band',
-      'chart-band-later'
-    ]
+    const xs = ['chart-line', 'chart-line-later']
       .map((id) => page.getByTestId(id).element().getAttribute('d')!)
       .flatMap(pathXs);
     const through = (5 / 23) * 1000;
     expect(Math.max(...xs)).toBeCloseTo(through, 1);
   });
 
-  it('draws the part after the playhead lighter, and tells the lines apart by dash', async () => {
+  it('draws one line through the filled mark and no band, average or city', async () => {
+    await render(ChartRow, { props: { view: cut(fullView(), 5), index: 2, target: null } });
+    for (const id of [
+      'chart-band',
+      'chart-band-later',
+      'chart-avg',
+      'chart-avg-later',
+      'chart-city',
+      'chart-city-later'
+    ]) {
+      expect(document.querySelector(`[data-testid="${id}"]`), id).toBeNull();
+    }
+    expect(document.querySelector('[data-testid="chart-line"]')).not.toBeNull();
+  });
+
+  it('draws the part after the playhead dashed at full colour', async () => {
     await render(ChartRow, { props: { view: fullView(), index: 10, target: null } });
-    const solid = page.getByTestId('chart-avg').element();
-    const later = page.getByTestId('chart-avg-later').element();
-    // Full-strength colour (so it keeps 3:1) told apart from the part before by dash.
-    expect(later.getAttribute('stroke-opacity')).toBeNull();
+    const solid = page.getByTestId('chart-line').element();
+    const later = page.getByTestId('chart-line-later').element();
+    expect(solid.getAttribute('stroke-dasharray')).toBeNull();
     expect(later.getAttribute('stroke-dasharray')).toBeTruthy();
-    expect(solid.getAttribute('stroke-dasharray')).toBeNull();
-    expect(
-      page.getByTestId('chart-city-later').element().getAttribute('stroke-opacity')
-    ).toBeNull();
-    const city = page.getByTestId('chart-city').element();
-    expect(city.getAttribute('stroke-dasharray')).toBeTruthy();
-    expect(solid.getAttribute('stroke-dasharray')).toBeNull();
-    expect(Number(city.getAttribute('stroke-width'))).toBeLessThan(
-      Number(solid.getAttribute('stroke-width'))
-    );
+    expect(later.getAttribute('stroke-opacity')).toBeNull();
   });
 
   it('shows the state target as a dashed marker', async () => {
@@ -63,19 +61,17 @@ describe('ChartRow', () => {
     expect(page.getByTestId('chart-target').element().getAttribute('stroke-dasharray')).toBe('5 3');
   });
 
-  it("shows a month's three numbers on focus", async () => {
+  it("reads out the month's homes completed", async () => {
     const view = fullView();
     await render(ChartRow, { props: { view, index: 3, target: null } });
     await expect.element(page.getByTestId('chart-readout')).not.toBeInTheDocument();
     (page.getByRole('slider', { name: 'Month in the chart' }).element() as HTMLElement).focus();
     const readout = page.getByTestId('chart-readout');
     await expect.element(readout).toBeVisible();
-    // chunk(): mean 3k, this city 3k + 1, at k = 3.
-    await expect.element(readout).toHaveTextContent(/average 1,009,/);
-    await expect.element(readout).toHaveTextContent(/this city 1,010/);
-    await expect.element(readout).toHaveTextContent(/8 in 10 \d/);
+    // chunk(): shown = 3k + 1 at k = 3, on the 1,000 baseline.
+    await expect.element(readout).toHaveTextContent(/: 1,010 homes completed$/);
     await userEvent.keyboard('{ArrowRight}');
-    await expect.element(readout).toHaveTextContent(/average 1,012/);
+    await expect.element(readout).toHaveTextContent(/: 1,013 homes completed$/);
   });
 
   it('shows the numbers on hover', async () => {
@@ -91,32 +87,39 @@ describe('ChartRow', () => {
     await render(ChartRow, {
       props: { view, index: 0, target: { deadlineIndex: 12, units: 1020 } }
     });
-    // Month 0 of the fixture is 0 homes: the line starts at the baseline, below the target.
-    const avgY = (id: string) =>
-      Number(/M[\d.-]+,([\d.-]+)/.exec(page.getByTestId(id).element().getAttribute('d')!)![1]);
+    // Month 0 of the fixture is 1 home: the line starts at the baseline, below the target.
+    const lineY = Number(
+      /M[\d.-]+,([\d.-]+)/.exec(page.getByTestId('chart-line').element().getAttribute('d')!)![1]
+    );
     const targetY = Number(page.getByTestId('chart-target').element().getAttribute('y1'));
-    expect(avgY('chart-avg')).toBeGreaterThan(targetY);
+    expect(lineY).toBeGreaterThan(targetY);
     (page.getByRole('slider', { name: 'Month in the chart' }).element() as HTMLElement).focus();
-    await expect.element(page.getByTestId('chart-readout')).toHaveTextContent(/average 1,000,/);
-    await expect.element(page.getByTestId('chart-readout')).toHaveTextContent(/8 in 10 1,0/);
+    await expect.element(page.getByTestId('chart-readout')).toHaveTextContent(/: 1,001 homes/);
   });
 
-  it("each legend explanation keeps a 24 px target clear of the chart's slider (WCAG 2.5.8)", async () => {
-    await render(ChartRow, { props: { view: fullView(), index: 0, target: null } });
-    const slider = page.getByRole('slider', { name: 'Month in the chart' }).element();
-    const s = slider.getBoundingClientRect();
-    const buttons = [...document.querySelectorAll<HTMLElement>('.legend button')];
-    expect(buttons.length).toBeGreaterThan(0);
-    for (const b of buttons) {
-      const r = b.getBoundingClientRect();
-      // The 24 px circle around the target's centre stays below the slider.
-      expect(r.top + r.height / 2 - 12, b.textContent!).toBeGreaterThanOrEqual(s.bottom);
+  it('keeps a falling line inside the plot', async () => {
+    const view = fullView();
+    const shown = view.shown.map((r, i) => ({ ...r, completedNet: -1500 * i }));
+    await render(ChartRow, { props: { view: { ...view, shown }, index: 0, target: null } });
+    const d = page.getByTestId('chart-line-later').element().getAttribute('d')!;
+    const ys = [...d.matchAll(/[ML][\d.-]+,([\d.-]+)/g)].map((m) => Number(m[1]));
+    expect(ys.length).toBeGreaterThan(1);
+    for (const v of ys) {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(100);
     }
+  });
+
+  it('names two legend entries and explains neither', async () => {
+    await render(ChartRow, { props: { view: fullView(), index: 0, target: null } });
+    const names = [...document.querySelectorAll('.legend li')].map((li) => li.textContent!.trim());
+    expect(names).toEqual(['Homes completed', 'State target']);
+    expect(document.querySelectorAll('.legend button').length).toBe(0);
   });
 
   it('draws no marks and no overlay without a view', async () => {
     await render(ChartRow, { props: { view: null, index: 0, target: null } });
-    await expect.element(page.getByTestId('chart-avg')).not.toBeInTheDocument();
+    await expect.element(page.getByTestId('chart-line')).not.toBeInTheDocument();
     await expect.element(page.getByRole('slider')).not.toBeInTheDocument();
   });
 });

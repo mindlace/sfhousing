@@ -13,14 +13,7 @@
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { Day } from '$lib/timelapse/time';
   import { formatDate, formatMonthYear } from './format';
-  import {
-    CITY_NOTE,
-    FORECAST_NOTE,
-    RANGE_NOTE,
-    TWIN_NOTE,
-    capacityNote,
-    marketBody
-  } from '$lib/timeline/copy';
+  import { FORECAST_NOTE, TWIN_NOTE, capacityNote, marketBody } from '$lib/timeline/copy';
   import Explain from '$lib/timeline/Explain.svelte';
   import { monthIndex, utcParts } from './time';
   import MapKey from './MapKey.svelte';
@@ -30,12 +23,10 @@
   import ScoreChart from './ScoreChart.svelte';
   import {
     CALCULATING,
-    bandLine,
     builtByTodayText,
     inProgressRows,
     deadlineIndex,
     phasingFootnote,
-    planBandLine,
     sinceText
   } from './score-view';
   import type { ScoreAt } from './types';
@@ -47,8 +38,6 @@
     day: Day;
     asOf: Day;
     horizon: Day;
-    /** "This city": the baseline and world 1's completed homes at the playhead's month. */
-    city: number | null;
     /** The last filled month's day: the deadline line waits until the forecast reaches it. */
     filledEnd: Day;
     datasetVersion: string;
@@ -74,7 +63,6 @@
     at,
     day,
     asOf,
-    city,
     horizon,
     filledEnd,
     datasetVersion,
@@ -108,8 +96,6 @@
 
   const WIDE = '(min-width: 768px)';
 
-  const band = $derived(score && at ? bandLine(score, at.monthIndex, false) : null);
-  const planBand = $derived(score && at ? planBandLine(score, at.monthIndex, false) : null);
   const max = $derived(at ? trackMax(at.targets.map((t) => t.tp)) : 1);
   const stages = $derived(score && at ? inProgressRows(score.shown[at.monthIndex].inProgress) : []);
   const inProgressTotal = $derived(stages.reduce((sum, s) => sum + s.units, 0));
@@ -141,7 +127,7 @@
 {/snippet}
 
 <div class="text-ink dark:text-ink-dark">
-  {#if !score || !at || !band || !planBand}
+  {#if !score || !at}
     {@render staleLine()}
     <p class="mt-3 text-sm text-ink-muted dark:text-ink-dark-muted">Loading the simulation…</p>
   {:else}
@@ -153,14 +139,6 @@
       >
     </p>
     <p class="text-sm text-ink-muted dark:text-ink-dark-muted">{builtByTodayText(at)}</p>
-    {#if city !== null}
-      <dl class="mt-1 text-sm">
-        <div class="flex justify-between gap-3">
-          <dt><Explain text={CITY_NOTE}>This city</Explain></dt>
-          <dd class="tabular-nums" data-testid="fzp-city">{formatCount(city)}</dd>
-        </div>
-      </dl>
-    {/if}
     {@render staleLine()}
 
     <section class="mt-4" aria-busy={planPending ? 'true' : undefined}>
@@ -178,12 +156,6 @@
           </dd>
         </div>
       </dl>
-      <p
-        class="text-sm text-ink-muted dark:text-ink-dark-muted"
-        aria-busy={planBand.busy ? 'true' : undefined}
-      >
-        <Explain text={RANGE_NOTE}>{planBand.text}</Explain>
-      </p>
       <dl class="mt-1 text-sm">
         <div class="flex justify-between gap-3">
           <dt>Homes approved because of {short}</dt>
@@ -210,7 +182,6 @@
       {pending}
       {uncapped}
       part="money"
-      scope="In this city"
     />
 
     <ScoreChart {score} {asOf} {horizon} {day} highWater={filledEnd} />
@@ -233,7 +204,6 @@
       {terms}
       {pending}
       part="tiers"
-      scope="In this city"
     />
 
     <dl class="mt-4 space-y-1 text-sm">
@@ -281,12 +251,6 @@
           {marketBody(market)}
         </p>
       {/if}
-      <p
-        class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted"
-        aria-busy={band.busy ? 'true' : undefined}
-      >
-        <Explain text={RANGE_NOTE}>{band.text}</Explain>
-      </p>
       <MapKey open={keyOpen} />
 
       <button

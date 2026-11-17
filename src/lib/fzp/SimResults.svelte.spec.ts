@@ -56,7 +56,6 @@ type Overrides = Partial<{
   score: typeof TIMELINE_SCORE | null;
   day: number;
   filledEnd: number;
-  city: number | null;
   onsources: () => void;
   copy: ReturnType<typeof scoreCopy>;
   capacity: LeverCapacity | null;
@@ -74,7 +73,6 @@ const props = (over: Overrides = {}) => {
     asOf: FIX_ASOF,
     horizon: FIX_HORIZON,
     filledEnd: FIX_HORIZON,
-    city: null as number | null,
     datasetVersion: 'fixture-0',
     builtAt: '2026-10-10T12:00:00Z',
     onsources: vi.fn(),
@@ -171,23 +169,8 @@ describe('headline and pipeline', () => {
   });
 });
 
-describe('bands', () => {
-  it('shows both ranges as settled numbers, never "still calculating"', async () => {
-    await page.viewport(1024, 768);
-    await render(SimResults, { props: props() });
-    const total = page.getByText(/^In 8 of 10 simulated futures:/);
-    const plan = page.getByText(/^In 8 of 10 futures:/);
-    await expect.element(total).toHaveTextContent('In 8 of 10 simulated futures: 16,770–17,830');
-    await expect.element(plan).toHaveTextContent('In 8 of 10 futures: 1,240–1,340');
-    await expect.element(total).not.toHaveTextContent('still calculating');
-    await expect.element(plan).not.toHaveTextContent('still calculating');
-    await expect.element(total).not.toHaveAttribute('aria-busy', 'true');
-    await expect.element(plan).not.toHaveAttribute('aria-busy', 'true');
-  });
-});
-
 describe('what the plan added', () => {
-  it('shows the plan-effect rows, the band without baseline and the twin paragraph', async () => {
+  it('shows the plan-effect rows and the twin paragraph', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props() });
     await expect.element(page.getByText('What the plan added')).toBeVisible();
@@ -195,7 +178,6 @@ describe('what the plan added', () => {
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
     expect(row('Homes completed because of the plan')).toContain('1,290');
     expect(row('Homes approved because of the plan')).toContain('2,185');
-    await expect.element(page.getByText('In 8 of 10 futures: 1,240–1,340')).toBeInTheDocument();
     expect(sources().textContent).not.toContain('run twice');
     await expect.element(page.getByText(TWIN_NOTE)).not.toBeInTheDocument();
     await page.getByRole('button', { name: 'What the plan added' }).click();
@@ -214,10 +196,22 @@ describe('what the plan added', () => {
     expect(row('Homes approved because of the plan')).toContain('calculating…');
     const section = page.getByText('What the plan added').element().closest('section')!;
     expect(section.getAttribute('aria-busy')).toBe('true');
-    await expect.element(page.getByText('Range: calculating…')).toBeInTheDocument();
-    // the total band is unaffected
+  });
+
+  it('shows a negative effect as a minus count', async () => {
+    await page.viewport(1024, 768);
+    const p = props();
+    await render(SimResults, { props: { ...p, at: { ...p.at!, planCompleted: -569 } } });
+    await expect.element(page.getByText(formatCount(-569), { exact: true })).toBeVisible();
+  });
+
+  it('shows no This city, no range and no scope caption', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: props() });
     openSources();
-    await expect.element(page.getByText(/^In 8 of 10 simulated futures:/)).toBeVisible();
+    await expect.element(page.getByTestId('fzp-city')).not.toBeInTheDocument();
+    await expect.element(page.getByText(/8 in 10/)).not.toBeInTheDocument();
+    await expect.element(page.getByTestId('fzp-scope')).not.toBeInTheDocument();
   });
 });
 
@@ -822,39 +816,33 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
   const IDX = 12;
   const feed = (v: TimelineView, over: Overrides = {}) => {
     const score = scoreOfView(v, null);
-    const r = resultsAt(v, null, IDX);
+    const at = resultsAt(v, null, IDX);
     return {
       ...props({ score, filledEnd: v.months[v.filledThrough], ...over }),
-      at: r.at,
-      city: r.city,
+      at,
       asOf: v.months[0],
       horizon: v.months[v.lastIndex]
     };
   };
 
-  it('renders every row of rule 26 and This city', async () => {
+  it('renders every row of rule 26', async () => {
     await page.viewport(1024, 768);
     const v = view();
-    const r = resultsAt(v, null, IDX);
+    const at = resultsAt(v, null, IDX);
     await render(SimResults, { props: feed(v) });
     const text = document.body.textContent!;
-    expect(page.getByTestId('fzp-net').element().textContent).toBe(formatCount(r.at.total));
-    expect(page.getByTestId('fzp-city').element().textContent).toBe(formatCount(r.city));
-    expect(text).toContain(`of which ${formatCount(r.at.actual)} built by today`);
+    expect(page.getByTestId('fzp-net').element().textContent).toBe(formatCount(at.total));
+    expect(text).toContain(`of which ${formatCount(at.actual)} built by today`);
     expect(text).toContain('Homes in projects still in progress');
     expect(text).toContain('Simulated, from today');
     expect(text).toContain('Simulated, new projects not yet');
     expect(text).toContain('Proposed homes in projects that stopped');
     expect(text).toContain('What the plan added');
     expect(text).toContain('Homes completed because of the plan');
-    expect(text).toMatch(/In 8 of 10 simulated futures: [\d,]+–[\d,]+/);
-    expect(text).toMatch(/In 8 of 10 futures: [\d,]+–[\d,]+/);
     expect(text).not.toContain('still calculating');
     expect(document.querySelector('[data-testid="fzp-chart"]')).not.toBeNull();
     expect(document.querySelectorAll('[role="meter"]').length).toBeGreaterThan(0);
     expect(document.querySelector('[data-testid="fzp-sources"]')).not.toBeNull();
-    const scopes = [...document.querySelectorAll('[data-testid="fzp-scope"]')];
-    expect(scopes.map((e) => e.textContent)).toEqual(['In this city']);
     expect(
       document.querySelector('[data-testid="fzp-chart"] details > summary')!.textContent
     ).toContain('Show as table');
@@ -888,7 +876,7 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
     expect(`${all}${d}`).not.toMatch(/ by \d{4}/);
   });
 
-  it('renders the tier block headed In this city when a tier baseline is given', async () => {
+  it('renders the tier block when a tier baseline is given', async () => {
     await page.viewport(1024, 768);
     const v = view();
     const baseline = { veryLow: 100, low: 100, moderate: 100, aboveModerate: 700, unrecorded: 0 };
@@ -901,18 +889,11 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
     }));
     const withTiers: TimelineView = { ...v, tiers, tierTargets: tierTargetsOf(baseline, tiers) };
     const score = scoreOfView(withTiers, baseline);
-    const r = resultsAt(withTiers, baseline, IDX);
-    await render(SimResults, {
-      props: { ...feed(withTiers), score, at: r.at, city: r.city }
-    });
-    const scopes = [...document.querySelectorAll('[data-testid="fzp-scope"]')];
-    expect(scopes.map((e) => e.textContent)).toEqual(['In this city', 'In this city']);
+    const at = resultsAt(withTiers, baseline, IDX);
+    await render(SimResults, { props: { ...feed(withTiers), score, at } });
     const h2s = [
       ...document.querySelectorAll('[data-testid="fzp-money"] h2, [data-testid="fzp-tiers"] h2')
     ];
-    expect(h2s.map((h) => h.textContent)).toEqual([
-      'In this cityPublic money',
-      'In this cityWho the homes are for'
-    ]);
+    expect(h2s.map((h) => h.textContent)).toEqual(['Public money', 'Who the homes are for']);
   });
 });

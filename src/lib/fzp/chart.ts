@@ -6,7 +6,7 @@ import { M1_TARGETS, formatCompactCount, formatCount } from '$lib/scoreboard';
 import type { TimelineScore } from '$lib/sim/protocol';
 import type { Day } from '$lib/timelapse/time';
 import { formatDate, formatMonthYear } from './format';
-import { CALCULATING, RHNA_ID, deadlineIndex, formatRange, scrubMarkers } from './score-view';
+import { CALCULATING, RHNA_ID, deadlineIndex, scrubMarkers } from './score-view';
 import { dayFromUtc, monthIndex, utcParts } from './time';
 
 export const CHART_H = 140;
@@ -23,16 +23,14 @@ export const COLORS = {
 } as const;
 
 export const SERIES_NAME: Record<
-  'total' | 'pipeline' | 'fresh' | 'planCompleted' | 'planEntitled' | 'band' | 'planBand',
+  'total' | 'pipeline' | 'fresh' | 'planCompleted' | 'planEntitled',
   string
 > = {
   total: 'Total net new homes',
   pipeline: "From today's pipeline",
   fresh: 'New projects',
   planCompleted: 'Plan effect, completed',
-  planEntitled: 'Plan effect, approved',
-  band: '8 in 10 futures',
-  planBand: 'Plan effect, 8 in 10 futures'
+  planEntitled: 'Plan effect, approved'
 };
 
 export interface ChartModel {
@@ -45,10 +43,8 @@ export interface ChartModel {
   total: string;
   pipeline: string;
   fresh: string;
-  band: string | null;
   planCompleted: string | null;
   planEntitled: string | null;
-  planBand: string | null;
   rhnaY: number;
   verticals: { x: number; label: string }[];
   references: { x1: number; x2: number; y: number; label: string; color: string }[];
@@ -63,8 +59,6 @@ export interface TableRow {
   fresh: string;
   planCompleted: string;
   planEntitled: string;
-  band: string;
-  planBand: string;
 }
 
 /** Least vertical distance (px) between the zero gridline and a floor gridline. */
@@ -128,33 +122,17 @@ export function chartModel(
 
   // Only the months up to `reveal` are drawn; the rest of the run is not yet known to the viewer.
   const shown = score.shown.slice(0, upTo);
-  const band = score.band.slice(0, upTo);
   const plan = score.planEffect.slice(0, upTo);
-  const planBand = score.planEffectBand.slice(0, upTo);
   const total = shown.map((s) => base + s.completedNet);
   const pipeline = shown.map((s) => s.completedNetPipeline);
   const fresh = shown.map((s) => s.completedNetNew);
-  const bandLow = band.map((b) => base + b.p10);
-  const bandHigh = band.map((b) => base + b.p90);
   const planCompleted = plan.map((p) => p.completedNetNew);
   const planEntitled = plan.map((p) => p.entitledNew);
-  const planLow = planBand.map((b) => b.p10);
-  const planHigh = planBand.map((b) => b.p90);
 
   // Domain: every drawn value, the references and RHNA. It starts at 0 unless a drawn value is
   // negative (early plan effect can be): then it reaches down to -niceCeil. This is a deliberate
   // extension of spec §4.6's "0 to niceCeil", so negative values stay inside the plot.
-  const drawn = [
-    total,
-    pipeline,
-    fresh,
-    bandLow,
-    bandHigh,
-    planCompleted,
-    planEntitled,
-    planLow,
-    planHigh
-  ]
+  const drawn = [total, pipeline, fresh, planCompleted, planEntitled]
     .map(seriesRange)
     .filter((r) => r !== null);
   const refUnits = score.references.map((r) => r.units);
@@ -168,12 +146,6 @@ export function chartModel(
     values.length === 0
       ? null
       : 'M' + values.map((v, i) => `${num(xAt(i))} ${num(y(v))}`).join('L');
-  const area = (low: number[], high: number[]) => {
-    if (high.length === 0) return null;
-    const upper = high.map((v, i) => `${num(xAt(i))} ${num(y(v))}`);
-    const lower = low.map((v, i) => `${num(xAt(i))} ${num(y(v))}`).reverse();
-    return `M${upper.join('L')}L${lower.join('L')}Z`;
-  };
 
   // Zero, the midpoint and the ceiling. A floor line joins them only when it is clear of the
   // zero line, so the two labels never overprint.
@@ -198,10 +170,8 @@ export function chartModel(
     total: line(total)!,
     pipeline: line(pipeline)!,
     fresh: line(fresh)!,
-    band: area(bandLow, bandHigh),
     planCompleted: line(planCompleted),
     planEntitled: line(planEntitled),
-    planBand: area(planLow, planHigh),
     rhnaY: y(RHNA_UNITS),
     verticals: scrubMarkers(score).map((m) => ({ x: x(m.day), label: m.label })),
     references: score.references.map((r) => {
@@ -230,8 +200,6 @@ export function tableRows(score: TimelineScore, asOf: Day, reveal: number): Tabl
   const row = (index: number, date: string): TableRow => {
     const s = score.shown[index];
     const plan = score.planEffect[index];
-    const planBand = score.planEffectBand[index];
-    const band = score.band[index];
     return {
       index,
       date,
@@ -239,9 +207,7 @@ export function tableRows(score: TimelineScore, asOf: Day, reveal: number): Tabl
       pipeline: formatCount(s.completedNetPipeline),
       fresh: formatCount(s.completedNetNew),
       planCompleted: plan ? formatCount(plan.completedNetNew) : CALCULATING,
-      planEntitled: plan ? formatCount(plan.entitledNew) : CALCULATING,
-      band: band ? formatRange(base + band.p10, base + band.p90) : CALCULATING,
-      planBand: planBand ? formatRange(planBand.p10, planBand.p90) : CALCULATING
+      planEntitled: plan ? formatCount(plan.entitledNew) : CALCULATING
     };
   };
 

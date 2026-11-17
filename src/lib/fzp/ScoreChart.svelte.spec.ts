@@ -41,7 +41,7 @@ describe('ScoreChart', () => {
       .toBeInTheDocument();
   });
 
-  it('Show as table opens a table with the eight columns and tableRows rows', async () => {
+  it('Show as table opens a table with the six columns and tableRows rows', async () => {
     await page.viewport(1024, 768);
     await render(ScoreChart, { props: props() });
     await page.getByText('Show as table').click();
@@ -52,9 +52,7 @@ describe('ScoreChart', () => {
       'From pipeline',
       'New projects',
       'Plan effect (completed)',
-      'Plan effect (approved)',
-      '8 in 10 futures',
-      'Plan effect, 8 in 10 futures'
+      'Plan effect (approved)'
     ]);
     const expected = tableRows(TIMELINE_SCORE, FIX_ASOF, 290);
     // The RHNA deadline shares January 2031's month index, so 24 Januaries + the end = 25.
@@ -95,15 +93,7 @@ describe('ScoreChart', () => {
   it('draws every series, each tagged with data-series', async () => {
     await page.viewport(1024, 768);
     await render(ScoreChart, { props: props() });
-    for (const key of [
-      'band',
-      'total',
-      'pipeline',
-      'fresh',
-      'planCompleted',
-      'planEntitled',
-      'planBand'
-    ]) {
+    for (const key of ['total', 'pipeline', 'fresh', 'planCompleted', 'planEntitled']) {
       expect(document.querySelector(`[data-series="${key}"]`), key).not.toBeNull();
     }
     expect(document.querySelectorAll('[data-reference]')).toHaveLength(2);
@@ -120,13 +110,12 @@ describe('ScoreChart', () => {
     expect(attr('fresh', 'stroke')).toBe('var(--chart-fresh)');
     expect(attr('planCompleted', 'stroke')).toBe('var(--chart-plan)');
     expect(attr('planEntitled', 'stroke-dasharray')).toBe('2 2');
-    expect(attr('band', 'fill-opacity')).toBe('0.15');
   });
 
   it('plan effect not yet computed: no plan paths, calculating legend and cells, references kept', async () => {
     await page.viewport(1024, 768);
     await render(ScoreChart, { props: props({ score: TIMELINE_SCORE_R0 }) });
-    for (const key of ['planCompleted', 'planEntitled', 'planBand']) {
+    for (const key of ['planCompleted', 'planEntitled']) {
       expect(document.querySelector(`[data-series="${key}"]`), key).toBeNull();
     }
     expect(document.querySelector('[data-series="total"]')).not.toBeNull();
@@ -134,18 +123,11 @@ describe('ScoreChart', () => {
       .element(page.getByText('Plan effect, completed: calculating…'))
       .toBeInTheDocument();
     await expect.element(page.getByText('Plan effect, approved: calculating…')).toBeInTheDocument();
-    await expect
-      .element(page.getByText('Plan effect, 8 in 10 futures: calculating…'))
-      .toBeInTheDocument();
     expect(document.querySelectorAll('[data-reference]')).toHaveLength(2);
 
     await page.getByText('Show as table').click();
     const first = document.querySelector('tbody tr')!.querySelectorAll('td');
-    expect([first[3].textContent, first[4].textContent, first[6].textContent]).toEqual([
-      'calculating…',
-      'calculating…',
-      'calculating…'
-    ]);
+    expect([first[3].textContent, first[4].textContent]).toEqual(['calculating…', 'calculating…']);
   });
 
   it('explains the dotted reference lines', async () => {

@@ -17,13 +17,6 @@ export const RHNA_ID = 'rhna';
 import { CALCULATING } from './copy';
 
 export { CALCULATING };
-const EN_DASH = '–';
-const STILL_CALCULATING = ' (still calculating)';
-
-/** "12,300–15,800": two counts joined by an en dash. */
-export function formatRange(low: number, high: number): string {
-  return `${formatCount(low)}${EN_DASH}${formatCount(high)}`;
-}
 
 type OpenStage = Exclude<Stage, 'complete'>;
 
@@ -40,8 +33,6 @@ export function scoreAt(score: TimelineScore, i: number): ScoreAt {
   const shown = score.shown[i];
   const base = score.baseline.completedNet;
   const plan = score.planEffect[i];
-  const planBand = score.planEffectBand[i];
-  const band = score.band[i];
   return {
     monthIndex: i,
     total: base + shown.completedNet,
@@ -50,8 +41,6 @@ export function scoreAt(score: TimelineScore, i: number): ScoreAt {
     fresh: shown.completedNetNew,
     planCompleted: plan ? plan.completedNetNew : null,
     planEntitled: plan ? plan.entitledNew : null,
-    planBand: planBand ? { low: planBand.p10, high: planBand.p90 } : null,
-    band: band ? { low: base + band.p10, high: base + band.p90 } : null,
     inProgress: OPEN_STAGES.map((stage) => ({ stage, units: shown.inProgress[stage] })),
     exitedUnits: shown.exitedUnits,
     targets: score.targets.map((t) => ({
@@ -75,34 +64,6 @@ export function inProgressRows(
     label: inStageLabel(stage),
     units: rec[stage]
   }));
-}
-
-/** Item 5: the 8-in-10 range of the total, which includes the baseline (same basis as `shown`). */
-export function bandLine(
-  score: TimelineScore,
-  i: number,
-  provisional: boolean
-): { text: string; busy: boolean } {
-  const b = scoreAt(score, i).band;
-  if (!b) return { text: `Range: ${CALCULATING}`, busy: true };
-  return {
-    text: `In 8 of 10 simulated futures: ${formatRange(b.low, b.high)}${provisional ? STILL_CALCULATING : ''}`,
-    busy: provisional
-  };
-}
-
-/** Item 5a: the plan effect's range. A difference of two runs, so no baseline. */
-export function planBandLine(
-  score: TimelineScore,
-  i: number,
-  provisional: boolean
-): { text: string; busy: boolean } {
-  const b = scoreAt(score, i).planBand;
-  if (!b) return { text: `Range: ${CALCULATING}`, busy: true };
-  return {
-    text: `In 8 of 10 futures: ${formatRange(b.low, b.high)}${provisional ? STILL_CALCULATING : ''}`,
-    busy: provisional
-  };
 }
 
 /** Item 13: the multi-phase footnote; `null` when no master plan is in the data. */

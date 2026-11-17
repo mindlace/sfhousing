@@ -9,13 +9,11 @@ import type { CoverageStep } from '$lib/sim-page/funding-view';
 export const FORECAST_NOTE = 'A forecast if nothing changes.';
 /** The fill state (rule 32), in the header's status slot from 2xl, under the bar below it. */
 export const forecastFilled = (year: number): string => `Forecast filled to ${year}`;
-export const RANGE_NOTE = 'Chance only. A few large sites carry most of it.';
 /** Behind each reference line's legend entry on the chart. */
 export const REFERENCE_NOTE =
   'Published estimates of what the plan adds. Compare with the violet lines.';
-export const CITY_NOTE = 'One of 48 simulated cities.';
 export const capacityNote = (year: number): string => `Capacity in ${year}.`;
-export const TWIN_NOTE = 'Each simulated city is run twice, with and without it.';
+export const TWIN_NOTE = 'The forecast is run twice, with and without it.';
 
 /** World-score rule 2: displaced homes count in the month their replaced start would have come. */
 export const PER_HOME_SOURCE =

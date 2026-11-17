@@ -9,15 +9,12 @@ import {
 import {
   CALCULATING,
   RHNA_ID,
-  bandLine,
   builtByTodayText,
   deadlineIndex,
-  formatRange,
   homesAdded,
   homesAddedBy,
   inProgressRows,
   phasingFootnote,
-  planBandLine,
   scoreAt,
   scrubMarkers,
   sinceText,
@@ -28,9 +25,8 @@ import { YEAR_2045, dayFromUtc } from './time';
 const DEADLINE = dayFromUtc(2031, 1, 31);
 
 describe('shared copy', () => {
-  it('is defined once: calculating, the en-dash range and the RHNA id', () => {
+  it('is defined once: calculating and the RHNA id', () => {
     expect(CALCULATING).toBe('calculating…');
-    expect(formatRange(12300, 15800)).toBe('12,300–15,800');
     expect(RHNA_ID).toBe('rhna');
   });
 });
@@ -60,9 +56,9 @@ describe('scoreAt', () => {
     expect(at.exitedUnits).toBe(250);
   });
 
-  it('puts the baseline on the band but not on the plan band', () => {
-    expect(at.planBand).toEqual({ low: 1150, high: 1250 });
-    expect(at.band).toEqual({ low: 12000 + 4500, high: 12000 + 5500 });
+  it('has no band or planBand key', () => {
+    expect('band' in at).toBe(false);
+    expect('planBand' in at).toBe(false);
   });
 
   it('lists the in-progress stages in stage order', () => {
@@ -85,20 +81,14 @@ describe('scoreAt', () => {
     expect(at.targets[1].tp.target.id).toBe('rhna-buffer');
   });
 
-  it('has a null band when the band is empty', () => {
-    expect(scoreAt({ ...makeTimelineScore(), band: [] }, 50).band).toBeNull();
-  });
-
   it('has null plan values in revision 0 and every other field unchanged', () => {
     const r0 = scoreAt(TIMELINE_SCORE_R0, 50);
     expect(r0.planCompleted).toBeNull();
     expect(r0.planEntitled).toBeNull();
-    expect(r0.planBand).toBeNull();
-    expect({ ...r0, planCompleted: 1, planEntitled: 1, planBand: null }).toEqual({
+    expect({ ...r0, planCompleted: 1, planEntitled: 1 }).toEqual({
       ...at,
       planCompleted: 1,
-      planEntitled: 1,
-      planBand: null
+      planEntitled: 1
     });
   });
 });
@@ -123,52 +113,6 @@ describe('inProgressRows', () => {
   it('orders by stage, not by key order', () => {
     const rows = inProgressRows({ construction: 1, filed: 2 });
     expect(rows.map((r) => r.stage)).toEqual(['filed', 'construction']);
-  });
-});
-
-describe('bandLine', () => {
-  it('shows the range with the provisional suffix', () => {
-    expect(bandLine(TIMELINE_SCORE, 50, true)).toEqual({
-      text: 'In 8 of 10 simulated futures: 16,500–17,500 (still calculating)',
-      busy: true
-    });
-  });
-
-  it('drops the suffix once the band is complete', () => {
-    expect(bandLine(TIMELINE_SCORE, 50, false)).toEqual({
-      text: 'In 8 of 10 simulated futures: 16,500–17,500',
-      busy: false
-    });
-  });
-
-  it('reads "Range: calculating…" until any band value exists', () => {
-    const none = { ...makeTimelineScore(), band: [] };
-    expect(bandLine(none, 50, true)).toEqual({ text: 'Range: calculating…', busy: true });
-    expect(bandLine(none, 50, false)).toEqual({ text: 'Range: calculating…', busy: true });
-  });
-});
-
-describe('planBandLine', () => {
-  it('shows the range without the baseline', () => {
-    expect(planBandLine(TIMELINE_SCORE, 50, false)).toEqual({
-      text: 'In 8 of 10 futures: 1,150–1,250',
-      busy: false
-    });
-    expect(planBandLine(TIMELINE_SCORE, 50, true)).toEqual({
-      text: 'In 8 of 10 futures: 1,150–1,250 (still calculating)',
-      busy: true
-    });
-  });
-
-  it('uses the U+2212 minus for negative values', () => {
-    expect(planBandLine(TIMELINE_SCORE, 0, false).text).toBe('In 8 of 10 futures: −350–−250');
-  });
-
-  it('reads "Range: calculating…" while planEffectBand is empty', () => {
-    expect(planBandLine(TIMELINE_SCORE_R0, 50, false)).toEqual({
-      text: 'Range: calculating…',
-      busy: true
-    });
   });
 });
 
