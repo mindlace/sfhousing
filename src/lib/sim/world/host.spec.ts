@@ -838,8 +838,8 @@ describe('compiles while filling', () => {
 describe('warm-ahead (D12)', () => {
   it('a slice runs no second warm unit whose estimate would overrun', async () => {
     // Every generator call costs 30 ms of the fake clock and records its task. The chunks of the
-    // shared dataset are loaded, so the plan world's rows are warmed before the flushes mass them: the
-    // generator runs in warm units only, and a second 30 ms unit never fits a 45 ms slice.
+    // shared dataset are loaded, so the plan world's rows are warmed before the flushes mass them:
+    // the generator runs in warm units only, and a second 30 ms unit never fits a 45 ms slice.
     const clock = fakeClock();
     let task = 0;
     const calls: number[] = [];

@@ -309,7 +309,7 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
   // --- shared requests ---
 
   /**
-   * World 1 of the plan as it stands, on the requested day (clamped) and the frame of the model
+   * The plan's world as it stands, on the requested day (clamped) and the frame of the model
    * month holding it (rule 18). Null when the record is not loaded or no world exists yet.
    */
   function parcelSummary(

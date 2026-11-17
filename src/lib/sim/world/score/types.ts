@@ -80,7 +80,7 @@ export interface SeriesChunk {
  * per calendar month (pipeline, new, entitledNew, exited, `inProgress` in LIVE order, then the
  * funded homes, the displaced homes by event day and those of completed funded projects, then the
  * homes by income tier in `TIER_FIELDS` order). Every funded world files money and tiers; a chunk
- * carries world 1's.
+ * carries the plan world's.
  */
 export interface WorldSeriesData {
   version: 5;
@@ -131,7 +131,7 @@ export interface WorldSeries {
   data(): WorldSeriesData;
 }
 
-/** World 1's money inputs. */
+/** The plan world's money inputs. */
 export interface MoneyFeed {
   ledger: LedgerEvent[];
   finance: FinanceFrame;

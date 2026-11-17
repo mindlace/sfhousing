@@ -383,7 +383,7 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // --- choosing units ---
 
-  /** -1 until every world of the side exists. */
+  /** -1 until the side's world exists. */
   const monthOf = (s: Side): number => (s.ensemble ? s.ensemble.month : -1);
   const otherOf = (s: Side): Side => (s === plan ? comp! : plan!);
 

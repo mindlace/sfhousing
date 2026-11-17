@@ -4,8 +4,9 @@
 // Task 1).
 // A prototype of the runner's fill loop (spec rules 5 to 8 and S16) over the step engine on a
 // local copy of a published dataset. Cases, one per process so each starts cold:
-//   ensemble  create `--worlds` a side, fill both ensembles to `--months` (scoring and MapStream.onEvent
-//             included), copies every 60 months kept, the heap, month 1's burst, the statics.
+//   ensemble  create `--worlds` a side, fill both ensembles to `--months` (scoring and
+//             MapStream.onEvent included), copies every 60 months kept, the heap, month 1's
+//             burst, the statics.
 //   replan    a dated change at month 120 (`--variant market`: a market step; `zoning`: a metro
 //             rule); each world's change month timed.
 //   compile   compileTimeline of a metro rule and of 500 painted lots from month 1.

@@ -1,7 +1,7 @@
-// Rules 2 and 9 on funded worlds: world 1's pool series are `poolSeries` of its ledger by
+// Rules 2 and 9 on funded worlds: the plan world's pool series are `poolSeries` of its ledger by
 // calendar month, `fundedHomes` is `moneyOf`'s, `displacedHomes` counts each 'displaced' event in
 // its own month (today counts them when the funded project completes), and money in a chunk is
-// world 1's alone.
+// the plan world's alone.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
 import { displacedShare, moneyOf, perAddedHome, poolSeries } from '$lib/sim/scenario/finance-score';
@@ -220,7 +220,7 @@ function checkByMonth(c: City, r: Run): number {
   return empty;
 }
 
-describe('world 1 money, funded mini', () => {
+describe('plan world money, funded mini', () => {
   let c: City;
   const runs = new Map<number, Run>();
   const runOf = (seed: number) => {
@@ -372,7 +372,7 @@ describe('world 1 money, funded mini', () => {
   });
 });
 
-describe('world 1 money, funded bench', () => {
+describe('plan world money, funded bench', () => {
   let c: City;
   let r: Run;
   // A bench city's funded world takes seconds.

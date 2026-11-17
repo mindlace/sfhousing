@@ -1,5 +1,6 @@
 // One side's world (ensemble-runner Task 4) on fixture-0 under the compiled default policy:
-// the series against a plain loop of seed 1, the gate's buffered feed, copies, restore and quiet re-stepping.
+// the series against a plain loop of seed 1, the gate's buffered feed, copies, restore and quiet
+// re-stepping.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
 import { createLru } from '$lib/sim/lru';

@@ -1,10 +1,10 @@
-// The warm-ahead queue (ensemble-runner plan D12): world 1's started and revised rows, massed one
-// (row, revision) per unit before a flush, so the flush finds them on the generator memo and the
-// slice estimator gates each massing. Worker-bundle module: pure TS.
+// The warm-ahead queue (ensemble-runner plan D12): the plan world's started and revised rows,
+// massed one (row, revision) per unit before a flush, so the flush finds them on the generator memo
+// and the slice estimator gates each massing. Worker-bundle module: pure TS.
 import type { Schedule } from '$lib/sim/scenario/types';
 
 export interface WarmQueue {
-  /** Queues a row (a `'start'` or `'revise'` of world 1). */
+  /** Queues a row (a `'start'` or `'revise'` of the plan's world). */
   add(row: number): void;
   /** A row is queued or being warmed. */
   pending(): boolean;
@@ -14,9 +14,9 @@ export interface WarmQueue {
 }
 
 /**
- * `read(row)` gives the row's schedule as world 1 stands now, or null when there is none or it
- * cannot be massed yet (a cell waiting on its chunk is massed by the flush once ready). It is read
- * again at each unit: the world may step between two units of one row.
+ * `read(row)` gives the row's schedule as the plan world stands now, or null when there is none or
+ * it cannot be massed yet (a cell waiting on its chunk is massed by the flush once ready). It is
+ * read again at each unit: the world may step between two units of one row.
  */
 export function createWarmQueue(
   read: (row: number) => Schedule | null,

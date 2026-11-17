@@ -1,5 +1,6 @@
-// map-stream (spec S17): world 1's events to the map's whole-cell `TimelineUpdate`s. `onEvent`
-// marks a project's cell dirty; `flush` packs dirty cells, oldest first, within a time budget.
+// map-stream (spec S17): the plan world's events to the map's whole-cell `TimelineUpdate`s.
+// `onEvent` marks a project's cell dirty; `flush` packs dirty cells, oldest first, within a time
+// budget.
 //
 // - A row's parcel ids come from the statics (not from `scheduleAt`), once per row. A project's
 //   cell is the cell of its smallest T11 parcel (`cellAnchorParcel`); a parcel absent from T11 is

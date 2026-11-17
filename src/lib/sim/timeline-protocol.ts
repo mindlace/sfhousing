@@ -71,7 +71,7 @@ export type OpenTimelineRequest = {
  * it, R simply settles: its `compiled` (unless already out) and one `refill`. When R is taken up
  * again (it was still compiling, or a later edit was rejected after the worker accepted it), it is
  * accepted afresh: a new `compiled` and a new `refill` at R, even if it had them already (its
- * worlds may have been restored for the later edit, and the `refill` re-bases `from`). So a `rev`
+ * world may have been restored for the later edit, and the `refill` re-bases `from`). So a `rev`
  * can get more than one `compiled` and `refill`: never dedupe them by `rev`. Otherwise the later
  * edit's `refill`, at a `rev` above R, answers R. In a chain the `bad-request`s can arrive out of
  * `rev` order (R + 2's, then R + 1's once it is taken up again). So the page keeps every document

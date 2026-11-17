@@ -1,5 +1,5 @@
-// World 1's money by calendar month (world-score rule 9): its ledger filed as `poolSeries` files it,
-// and the funded and displaced homes its series counted (rule 2).
+// The plan world's money by calendar month (world-score rule 9): its ledger filed as `poolSeries`
+// files it, and the funded and displaced homes its series counted (rule 2).
 import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
 import { poolSeries } from '$lib/sim/scenario/finance-score';
 import { monthsOf } from '$lib/sim/scenario/score';
@@ -7,11 +7,11 @@ import type { Extras } from './series';
 import type { MoneyFeed, MoneyRow } from './types';
 
 /**
- * World 1's money rows for final months `from..through`. The pools' series come from all of world
- * 1's ledger (`feed.ledger`, since month 0) through the last day of month `through`; the pools,
- * programmes, slope and terms are `feed.finance`'s (the same ids and order in every frame) with no
- * off spans, which `poolSeries` does not read. `publicSpent` is `spent + lostCredit` over every
- * pool, summed as `moneyOf` sums it.
+ * The plan world's money rows for final months `from..through`. The pools' series come from all of
+ * its ledger (`feed.ledger`, since month 0) through the last day of month `through`; the
+ * pools, programmes, slope and terms are `feed.finance`'s (the same ids and order in every frame)
+ * with no off spans, which `poolSeries` does not read. `publicSpent` is `spent + lostCredit` over
+ * every pool, summed as `moneyOf` sums it.
  */
 export function moneyRowsOf(
   feed: MoneyFeed,

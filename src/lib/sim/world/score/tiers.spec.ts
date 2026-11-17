@@ -1,4 +1,4 @@
-// Rules 2, 9 and 11 for tiers: world 1's homes by income tier, filed by calendar month as
+// Rules 2, 9 and 11 for tiers: the plan world's homes by income tier, filed by calendar month as
 // `tierSeries` files them, each funded project split by the programme definitions in force in the
 // month of its award (design 3.4).
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -101,7 +101,7 @@ function checkTiers(c: City, r: Run): TierUnits[] {
   const got = extrasOf(r.series).tiers(0, last);
   const schedules = schedulesAt(c, r.world).map((x) => x.sc);
   expect(got).toEqual(want(c, schedules, tierContext(c.input)));
-  // Each month's tiers sum to world 1's completedNet.
+  // Each month's tiers sum to the plan world's completedNet.
   const rows = r.series.rows(0, last);
   for (let i = 0; i <= last; i++) expect(sumOf(got[i])).toBe(rows[i].completedNet);
   return got;

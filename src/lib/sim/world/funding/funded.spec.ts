@@ -1,7 +1,7 @@
 // world-funding Task 7: funded worlds end to end (spec rules 14, 15, 16, 21, "Tests that must
 // pass"): the ledger identities after every step on random finances, no money offered is no
 // money, a ledger changes nothing, the known limit, a cloned world, a permuted lot table, and
-// world 1's calendar-month money series.
+// the plan world's calendar-month money series.
 import { describe, expect, it } from 'vitest';
 import { poolSeries } from '$lib/sim/scenario/finance-score';
 import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
@@ -228,7 +228,7 @@ describe("permuting the lot table's rows gives the same events and ledger", () =
   });
 });
 
-describe("world 1's calendar-month money series satisfies I1-I6", () => {
+describe("the plan world's calendar-month money series satisfies I1-I6", () => {
   it('seed 1, 480 months: poolSeries of the ledger passes checkMoneyIdentities', () => {
     const got = checked(statics, timeline, 1, MONTHS);
     expect(got.steps).toBe(MONTHS);

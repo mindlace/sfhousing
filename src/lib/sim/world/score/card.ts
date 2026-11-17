@@ -1,6 +1,6 @@
-// The project card from world 1 (spec rule 14, S15 `cardAt`): the lot's schedules read on `day`,
-// today's choice and today's `projectCard`, unchanged; the lot-limits line from the frame passed
-// in. Pure TS, worker-safe.
+// The project card from the plan's world (spec rule 14, S15 `cardAt`): the lot's schedules read on
+// `day`, today's choice and today's `projectCard`, unchanged; the lot-limits line from the frame
+// passed in. Pure TS, worker-safe.
 import type { ParcelId } from '$lib/data/parcel';
 import { envelopeOf } from '$lib/data/scenario-codec';
 import type { Lookups } from '$lib/sim/levers/apply';
@@ -89,10 +89,10 @@ function mastersFor(world: World, statics: Statics, s: Schedule, day: Day): Map<
 }
 
 /**
- * World 1's answer to `parcelSummary`: the lot's record, its envelope and limits under `frame`,
- * and the project chosen on `day` with its card and the frame's stage tables for its cohort.
- * The caller passes `frame = timeline.frameAt(max(1, monthOfDay(asOf, day)))` of the timeline in
- * use, and checks `deps.record(parcelId)` first: a missing record throws.
+ * The plan world's answer to `parcelSummary`: the lot's record, its envelope and limits under
+ * `frame`, and the project chosen on `day` with its card and the frame's stage tables for its
+ * cohort. The caller passes `frame = timeline.frameAt(max(1, monthOfDay(asOf, day)))` of the
+ * timeline in use, and checks `deps.record(parcelId)` first: a missing record throws.
  */
 export function cardAt(
   world: World,

@@ -1,6 +1,6 @@
 // Wall-clock report for `viewOf` (`npm run test:perf`; never in signoff; no bar). The page calls
-// `viewOf` on every fill, so this times it at a full window on the funded bench city: world 1's
-// money (pools, homes, rule 12's figures) is the part that grows with the window.
+// `viewOf` on every fill, so this times it at a full window on the funded bench city: the plan
+// world's money (pools, homes, rule 12's figures) is the part that grows with the window.
 //
 // Setup is untimed: `SEEDS` funded worlds run through the window, each fed to one series used as
 // both plan and twin, then one chunk per calendar month (as the runner makes them when each month
