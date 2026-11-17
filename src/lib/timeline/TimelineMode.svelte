@@ -197,6 +197,8 @@
      * else Results.
      */
     inspectorOpen?: boolean;
+    /** What the detail column shows (Results, an editor, a menu): a new key starts it at its top. */
+    detailKey?: string;
     /** The playhead's day, on every change. */
     onday?(day: Day): void;
     /** The client's requests on each open (mount, Retry, restart); null on a crash and unmount. */
@@ -252,6 +254,7 @@
     onadd,
     inspector = undefined,
     inspectorOpen = true,
+    detailKey = '',
     onday = undefined,
     onclient = undefined,
     onmapready = undefined,
@@ -853,9 +856,10 @@
   let dockEl = $state<HTMLElement>();
   let detailEl = $state<HTMLElement>();
 
-  /** The column's content swaps (Results for the inspector or back): it starts at the top. */
+  /** The column's content swaps (Results, an editor, another editor): it starts at the top. */
   $effect(() => {
     void inspectorOpen;
+    void detailKey;
     const el = detailEl;
     if (el) el.scrollTop = 0;
   });

@@ -1476,6 +1476,20 @@ describe('SimPage autosave and publish', () => {
       await expect.poll(() => document.activeElement).toBe(results().element());
     });
 
+    it('from md a bar selected after the header score opens its editor at the top', async () => {
+      await opened({ storage: () => seeded(doc4(zoning(historic))) });
+      await openZoning();
+      await scoreBar().click();
+      await expect.element(results()).toBeVisible();
+      const col = page.getByTestId('tl-inspector').element();
+      await expect.poll(() => col.scrollHeight - col.clientHeight).toBeGreaterThan(100);
+      col.scrollTop = 100;
+      expect(col.scrollTop).toBe(100);
+      await page.getByTestId('tl-bar').first().click();
+      await expect.element(inspector()).toBeVisible();
+      await expect.poll(() => col.scrollTop).toBe(0);
+    });
+
     it('below md the header score still toggles Results with aria-expanded', async () => {
       await page.viewport(375, 700);
       await opened();

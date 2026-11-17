@@ -342,6 +342,12 @@
   const inspectorOpen = $derived(
     face === 'results' || selected !== null || adding !== null || drafts.isOpen
   );
+  /** What the detail column shows: a change starts it at its top. */
+  const detailKey = $derived(
+    face === 'results'
+      ? 'results'
+      : `${adding ?? ''}:${selected ? `${selected.kind}:${selected.id}:${selected.span}` : ''}`
+  );
 
   function select(ref: SpanRef | null): void {
     selected = ref;
@@ -1061,6 +1067,7 @@
   onadd={startAdd}
   inspector={inspectorPart}
   {inspectorOpen}
+  {detailKey}
   onday={(d) => (day = d)}
   onclient={onClient}
   onmapready={onMapReady}
