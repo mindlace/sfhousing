@@ -9,17 +9,16 @@ const valid = {
   manifest: FIXTURE_1.manifest,
   policy: DEFAULT_POLICY4,
   lots: { a: ['p1', 'p2'] },
-  worlds: 48,
   months: 480
 };
 
 describe('openTimelineProblem', () => {
   it('accepts a valid request', () => {
+    expect('worlds' in valid).toBe(false);
     expect(openTimelineProblem(valid)).toBeNull();
   });
 
   it.each([
-    ['worlds: 0', { worlds: 0 }],
     ['months: 1.5', { months: 1.5 }],
     ['a missing lots', { lots: undefined }],
     ['lots with a non-string id', { lots: { a: [1] } }],

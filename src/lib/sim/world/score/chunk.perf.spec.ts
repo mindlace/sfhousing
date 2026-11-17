@@ -1,11 +1,11 @@
 // Wall-clock bar for scoring (`npm run test:perf`; never in signoff). The bar: on the bench city,
-// one model month's scoring for one pair (a plan world and its twin) takes at most 1 ms at the median:
-// adding the month's events to every series, `stepped`, and `chunkOf` when a calendar month became
-// final. Reported with no bar: the same on funded worlds (tiers filed in both worlds, the plan
-// world's whole ledger re-filed by every chunk), at months 101-150 and 400-450.
+// one model month's scoring for one pair (a plan world and its twin) takes at most 1 ms at the
+// median: adding the month's events to both series, `stepped`, and `chunkOf` when a calendar month
+// became final. Reported with no bar: the same on funded worlds (tiers filed in both worlds, the
+// plan world's whole ledger re-filed by every chunk), at months 101-150 and 400-450.
 //
-// Setup is untimed. A plan world and its twin run the same seed under the same frame, so each seed
-// is run once and its events fed to two series (the scoring work is that of one pair).
+// Setup is untimed. The plan world and its twin run seed 1 under the same frame, so the world is
+// run once and its events fed to two series (the scoring work is that of one pair).
 // `SFH_PERF_QUIET=1` marks a run made while holding the measurement lock.
 import { describe, expect, it } from 'vitest';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
@@ -25,7 +25,7 @@ import type { MoneyFeed, ScoreStatics, WorldSeries } from './types';
 
 const WINDOW = 480;
 const BAR = 1;
-const SEEDS = 1;
+const SEED = 1;
 const QUIET = process.env.SFH_PERF_QUIET === '1' ? 'quiet (lock held)' : 'not quiet (no lock)';
 const DATASET = 'dataset: bench (synthCity)';
 
@@ -43,38 +43,36 @@ function byMonthOf(events: (WorldEvent & { month: number })[], through: number):
   return out;
 }
 
-/** Plan and twin series for `runs`, fed every month before `from` (untimed). */
-function seriesFor(score: ScoreStatics, runs: Run[], statics: Statics, from: number) {
-  const plan = runs.map(() => createWorldSeries(score));
-  const twin = runs.map(() => createWorldSeries(score));
-  feed(runs, plan, twin, statics, 0, from - 1);
+/** Plan and twin series for `run`, fed every month before `from` (untimed). */
+function seriesFor(score: ScoreStatics, run: Run, statics: Statics, from: number) {
+  const plan = createWorldSeries(score);
+  const twin = createWorldSeries(score);
+  feed(run, plan, twin, statics, 0, from - 1);
   return { plan, twin };
 }
 
-/** Adds months `from..through` to every series (untimed), month 0 without a `stepped`. */
+/** Adds months `from..through` to both series (untimed), month 0 without a `stepped`. */
 function feed(
-  runs: Run[],
-  plan: WorldSeries[],
-  twin: WorldSeries[],
+  run: Run,
+  plan: WorldSeries,
+  twin: WorldSeries,
   statics: Statics,
   from: number,
   through: number
 ) {
   for (let m = from; m <= through; m++) {
-    for (let i = 0; i < runs.length; i++) {
-      for (const e of runs[i].byMonth[m]) {
-        plan[i].add(e, runs[i].world, statics);
-        twin[i].add(e, runs[i].world, statics);
-      }
-      if (m > 0) {
-        plan[i].stepped(m);
-        twin[i].stepped(m);
-      }
+    for (const e of run.byMonth[m]) {
+      plan.add(e, run.world, statics);
+      twin.add(e, run.world, statics);
+    }
+    if (m > 0) {
+      plan.stepped(m);
+      twin.stepped(m);
     }
   }
 }
 
-/** The plan world's money for `chunkOf`, its ledger grown month by month (untimed) to `ledgerLen[m]`. */
+/** The plan world's money for `chunkOf`, its ledger grown by month (untimed) to `ledgerLen[m]`. */
 interface Money {
   feed: MoneyFeed;
   all: LedgerEvent[];
@@ -82,13 +80,13 @@ interface Money {
 }
 
 /**
- * Times months `from..through`: each month's events and `stepped` on every series, then `chunkOf`
+ * Times months `from..through`: each month's events and `stepped` on both series, then `chunkOf`
  * when a calendar month became final. Returns the per-month times and the chunks made.
  */
 function timeMonths(
-  runs: Run[],
-  plan: WorldSeries[],
-  twin: WorldSeries[],
+  run: Run,
+  plan: WorldSeries,
+  twin: WorldSeries,
   statics: Statics,
   from: number,
   through: number,
@@ -96,27 +94,23 @@ function timeMonths(
 ): { times: number[]; chunks: number } {
   const times: number[] = [];
   let chunks = 0;
-  let final = plan[0].finalThrough();
+  let final = plan.finalThrough();
+  const { world, byMonth } = run;
   for (let m = from; m <= through; m++) {
     if (money !== null) {
       const ledger = money.feed.ledger;
       while (ledger.length < money.ledgerLen[m]) ledger.push(money.all[ledger.length]);
     }
     const t = performance.now();
-    for (let i = 0; i < runs.length; i++) {
-      const { world, byMonth } = runs[i];
-      const p = plan[i];
-      const q = twin[i];
-      for (const e of byMonth[m]) {
-        p.add(e, world, statics);
-        q.add(e, world, statics);
-      }
-      p.stepped(m);
-      q.stepped(m);
+    for (const e of byMonth[m]) {
+      plan.add(e, world, statics);
+      twin.add(e, world, statics);
     }
-    const now = plan[0].finalThrough();
+    plan.stepped(m);
+    twin.stepped(m);
+    const now = plan.finalThrough();
     if (now > final) {
-      chunkOf(plan[0], twin[0], money === null ? null : money.feed, final + 1, now);
+      chunkOf(plan, twin, money === null ? null : money.feed, final + 1, now);
       final = now;
       chunks++;
     }
@@ -131,8 +125,6 @@ function stats(times: number[]) {
   return { median: at(0.5), p90: at(0.9), worst: s[s.length - 1] };
 }
 
-const seedsOf = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
-
 describe('scoring timing, bench city', () => {
   it(`one month's scoring for one pair within ${BAR} ms at the median`, () => {
     const FROM = 101;
@@ -142,14 +134,12 @@ describe('scoring timing, bench city', () => {
     const timeline = oneFrame(frameOf(input));
     const score = testStatics(input, WINDOW);
     const t0 = performance.now();
-    const runs: Run[] = seedsOf(SEEDS).map((seed) => {
-      const rec = new Recorder();
-      const world = runWorld(statics, timeline, seed, TO, rec);
-      return { world, byMonth: byMonthOf(rec.events, TO) };
-    });
+    const rec = new Recorder();
+    const world = runWorld(statics, timeline, SEED, TO, rec);
+    const run: Run = { world, byMonth: byMonthOf(rec.events, TO) };
     const setup = performance.now() - t0;
-    const { plan, twin } = seriesFor(score, runs, statics, FROM);
-    const { times, chunks } = timeMonths(runs, plan, twin, statics, FROM, TO, null);
+    const { plan, twin } = seriesFor(score, run, statics, FROM);
+    const { times, chunks } = timeMonths(run, plan, twin, statics, FROM, TO, null);
     const { median, p90, worst } = stats(times);
     console.log(
       `[perf] scoring one pair, months ${FROM}-${TO}: ` +
@@ -169,46 +159,39 @@ describe('scoring timing, funded bench city (no bar)', () => {
     const timeline: PolicyTimeline = oneMoneyTimeline(input, input.finance!);
     const score = timelineStatics(input, timeline, WINDOW);
     const t0 = performance.now();
-    let money: Money | null = null;
-    const runs: Run[] = seedsOf(SEEDS).map((seed) => {
-      const ledgerLen: number[] = [0];
-      const got = runFunded(statics, timeline, seed, TO, {
-        afterStep: (_w, _m, ledger) => ledgerLen.push(ledger.length)
-      });
-      if (seed === 1) {
-        money = {
-          feed: {
-            ledger: [],
-            finance: timeline.frameAt(1).finance!,
-            world: got.world,
-            statics
-          },
-          all: got.ledger,
-          ledgerLen
-        };
-      }
-      return { world: got.world, byMonth: byMonthOf(got.events, TO) };
+    const ledgerLen: number[] = [0];
+    const got = runFunded(statics, timeline, SEED, TO, {
+      afterStep: (_w, _m, ledger) => ledgerLen.push(ledger.length)
     });
+    const m: Money = {
+      feed: {
+        ledger: [],
+        finance: timeline.frameAt(1).finance!,
+        world: got.world,
+        statics
+      },
+      all: got.ledger,
+      ledgerLen
+    };
+    const run: Run = { world: got.world, byMonth: byMonthOf(got.events, TO) };
     const setup = performance.now() - t0;
-    const m = money as Money | null;
-    expect(m).not.toBeNull();
 
-    const { plan, twin } = seriesFor(score, runs, statics, 101);
+    const { plan, twin } = seriesFor(score, run, statics, 101);
     const report = (from: number, through: number) => {
-      const { times, chunks } = timeMonths(runs, plan, twin, statics, from, through, m);
+      const { times, chunks } = timeMonths(run, plan, twin, statics, from, through, m);
       const { median, p90, worst } = stats(times);
       console.log(
         `[perf] funded scoring one pair, ` +
-          `months ${from}-${through}, the plan world's ledger ${m!.feed.ledger.length} events: ` +
+          `months ${from}-${through}, the plan world's ledger ${m.feed.ledger.length} events: ` +
           `median ${ms(median)} ms, p90 ${ms(p90)} ms, worst ${ms(worst)} ms per month ` +
           `(${chunks} chunks; setup ${(setup / 1000).toFixed(1)} s), ${QUIET}, ${DATASET}`
       );
       return times;
     };
     const early = report(101, 150);
-    feed(runs, plan, twin, statics, 151, 399);
-    while (m!.feed.ledger.length < m!.ledgerLen[399]) {
-      m!.feed.ledger.push(m!.all[m!.feed.ledger.length]);
+    feed(run, plan, twin, statics, 151, 399);
+    while (m.feed.ledger.length < m.ledgerLen[399]) {
+      m.feed.ledger.push(m.all[m.feed.ledger.length]);
     }
     const late = report(400, 450);
     expect(early.length).toBeGreaterThan(0);

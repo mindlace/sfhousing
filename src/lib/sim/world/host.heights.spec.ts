@@ -152,7 +152,6 @@ function makeHost(o: { fetch?: FetchLike; manifest?: Manifest } = {}) {
       manifest,
       policy,
       lots,
-      worlds: 1,
       months: MONTHS
     });
   let reqId = 0;

@@ -4,9 +4,9 @@ import { targetsOf, tierTargetsOf } from '$lib/sim/scenario/score';
 import type { MoneyRow, MoneyView, ScoreStatics, SeriesChunk, TimelineView } from './types';
 
 /**
- * World 1's money as of month `rows.length - 1` (rule 12): today's `TimelineScore['money']` with
- * its series cut there, `owed` on each debt pool's `received` that month, and `limits` the
- * statics' (the same in every world, fixed as the forecast fills). `perAddedHome` and
+ * The plan world's money as of month `rows.length - 1` (rule 12): today's
+ * `TimelineScore['money']` with its series cut there, `owed` on each debt pool's `received` that
+ * month, and `limits` the statics' (fixed as the forecast fills). `perAddedHome` and
  * `displacedShare` are today's, read that month over a money whose displaced homes are those of
  * completed funded projects (`displacedHomesCompleted`), paired with `fundedHomes`; the `ByMonth`
  * series give the same figures read at each month, the last entry the scalar.

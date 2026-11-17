@@ -1,6 +1,6 @@
 // The timeline runner (ensemble-runner spec rules 3 to 11, 18 to 21; plan D2, D3, D5 to D7, D9 to
 // D12): two compiles, two ensembles (the plan and its comparison), the map stream of the plan's
-// world 1, and the posts, in slices of a macrotask each.
+// world, and the posts, in slices of a macrotask each.
 //
 // A slice runs units in this order: first, as the old host (scenario-host.ts:864-866), the height
 // limits of the zoning in force at the last `viewMonth` (S14): a city build's inputs
@@ -19,9 +19,10 @@
 //
 // A flush of the map stream is a macrotask of its own (D6), at most every `FLUSH_EVERY_MS`, never
 // while a restore re-steps quietly; when filling ends the stream is drained until an update says
-// `complete` (D5). Warm units mass world 1's started and revised projects on the shared generator
-// memo just before a flush (D12), in slices of their own. A throw in a unit posts `error`
-// `'timeline'` and stops filling; the lookups (`viewFrame`, `card`) keep answering (rule 21).
+// `complete` (D5). Warm units mass the plan world's started and revised projects on the shared
+// generator memo just before a flush (D12), in slices of their own. A throw in a unit posts
+// `error` `'timeline'` and stops filling; the lookups (`viewFrame`, `card`) keep answering
+// (rule 21).
 //
 // Edits (rules 12 to 17; D2, D4). `setPolicy` replaces any edit not yet accepted (nothing more is
 // posted for its `rev` unless the new one is rejected) and starts the new plan compile and, unless
@@ -50,7 +51,7 @@
 // its document at a later month posts `bad-request` at the rev in use and takes the newest kept
 // document up again as an edit at its own rev. A throw (rule 21) after an acceptance and before the `refill`
 // stops filling: that edit gets no `refill`; the next accepted edit's or an open settles the page.
-// Map flushes go on while an edit compiles (world 1 waits).
+// Map flushes go on while an edit compiles (the plan's world waits).
 // `setPolicy` rejects at once a document whose queries (`queriesOf4`, its own or its
 // comparison's) are not all in `lots`.
 //
@@ -119,7 +120,6 @@ export interface Runner {
     rev: Rev,
     policy: SimPolicy4,
     lots: Record<string, ParcelId[]>,
-    worlds: number,
     months: number,
     /** The document is an accepted `setPolicy`'s (taken before the load): a `refill` is owed. */
     edited?: boolean
@@ -146,7 +146,7 @@ export interface Runner {
   wantCells(cells: Iterable<string>): void;
   /** Plan frame at the last viewMonth (clamped to 1..readyThrough), or null before month 1's frame. */
   viewFrame(): PolicyFrame | null;
-  /** World 1 of the plan as it stands and the frame of the model month holding `day` (clamped, rule 18). */
+  /** The plan's world as it stands and the frame of the month holding `day` (clamped, rule 18). */
   card(day: Day): { world: World; frame: PolicyFrame; day: Day } | null;
   /** The plan and comparison ensembles (null before their month 1 frame); for Task 6 and tests. */
   ensembles(): { plan: Ensemble | null; comp: Ensemble | null };
@@ -287,7 +287,6 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   let rev: Rev = 0;
   let months = 0;
-  let worlds = 0;
   let ctx: CompileCtx | null = null;
   let plan: Side | null = null;
   let comp: Side | null = null;
@@ -340,15 +339,15 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // the map stream
   let lastFlushAt = -Infinity;
-  /** World 1 sent an event or a chunk arrived since the last flush. */
+  /** The plan's world sent an event or a chunk arrived since the last flush. */
   let dirty = false;
   /** The last update said `complete`. */
   let complete = false;
-  /** World 1's rows started or revised, massed one revision per unit before the next flush (D12). */
+  /** The plan world's rows started or revised, massed a revision per unit before a flush (D12). */
   const warm = createWarmQueue(
     (row) => {
-      const w = plan?.ensemble?.worlds[0];
-      if (w === undefined) return null;
+      const w = plan?.ensemble?.world;
+      if (!w) return null;
       const s = scheduleAt(w, ds.statics, row, monthLastDay(asOf, w.month));
       return s !== null && scheduleReady(ds, s) ? s : null;
     },
@@ -487,7 +486,7 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   /**
    * Rule 13: the new timeline is ready through the side's last month stepped, or complete. A side
-   * with no worlds yet needs month 1's frame (an edit then replaces its compile).
+   * with no world yet needs month 1's frame (an edit then replaces its compile).
    */
   function readyFor(c: Compiling, s: Side): boolean {
     if (c.done) return true;
@@ -623,7 +622,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     settle();
   }
 
-  /** Side `s` takes the compile `c`: its ensemble keeps its worlds or restores (rules 13, 14). */
+  /** Side `s` takes the compile `c`: its ensemble keeps its world or restores (rules 13, 14). */
   function replace(s: Side, c: Compiling, fresh: boolean): void {
     const e = s.ensemble;
     s.base = c.base;
@@ -654,7 +653,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
-  /** The plan re-steps quietly (a restore re-creating the worlds is quiet until the last exists). */
+  /** The plan re-steps quietly (a restore re-creating the world is quiet until it exists). */
   const planQuiet = () => plan?.ensemble?.quiet ?? false;
 
   /**
@@ -667,7 +666,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   function mapTask(): void {
     if (rewindDue) {
       rewindDue = false;
-      stream!.rewind(plan!.ensemble!.worlds[0], ds.statics);
+      stream!.rewind(plan!.ensemble!.world!, ds.statics);
       dirty = true;
       complete = false;
     }
@@ -728,14 +727,13 @@ export function createRunner(deps: RunnerDeps): Runner {
     return createEnsemble({
       statics: ds.statics,
       timeline: t,
-      worlds,
       months,
       copyMonths: COPY_MONTHS,
-      world1: s.isPlan ? { stream, onEvent } : undefined
+      map: s.isPlan ? { stream, onEvent } : undefined
     });
   }
 
-  /** World 1's events outside quiet steps (the stream has them already). */
+  /** The plan world's events outside quiet steps (the stream has them already). */
   function onEvent(e: WorldEvent): void {
     dirty = true;
     if (e.kind === 'start' || e.kind === 'revise') warm.add(e.row);
@@ -762,7 +760,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     return {
       ledger: e.ledger!,
       finance: plan!.timeline!.frameAt(m).finance!,
-      world: e.worlds[0],
+      world: e.world!,
       statics: ds.statics
     };
   }
@@ -816,7 +814,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (refillDue) return;
     const through = Math.min(a.finalThrough(), b.finalThrough());
     if (through <= posted) return;
-    const series = chunkOf(a.series[0]!, b.series[0]!, moneyOf(through), posted + 1, through);
+    const series = chunkOf(a.series!, b.series!, moneyOf(through), posted + 1, through);
     posted = through;
     post({ type: 'filled', rev, through, series });
   }
@@ -849,16 +847,16 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // --- the map stream ---
 
-  const world1 = (): World | undefined => plan?.ensemble?.worlds[0];
+  const planWorld = (): World | undefined => plan?.ensemble?.world ?? undefined;
 
-  /** Filling has ended: the plan's worlds stand at `months`. */
+  /** Filling has ended: the plan's world stands at `months`. */
   const ended = () => (plan?.ensemble?.month ?? -1) >= months;
 
   /** A flush would have something to say, whenever it is due. */
   function streamWants(): boolean {
-    // M1: an edit compiling leaves world 1 as it is; only a rewind not yet run blocks the stream
+    // M1: an edit compiling leaves the world as it is; only a rewind not yet run blocks the stream
     if (rewindDue) return false;
-    if (stream === null || world1() === undefined || plan!.ensemble!.quiet) return false;
+    if (stream === null || planWorld() === undefined || plan!.ensemble!.quiet) return false;
     return dirty || (ended() && !complete);
   }
 
@@ -874,7 +872,7 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   function flush(): void {
     const t0 = deps.now();
-    const u = stream!.flush(world1()!, ds.statics, FLUSH_BUDGET_MS);
+    const u = stream!.flush(planWorld()!, ds.statics, FLUSH_BUDGET_MS);
     lastFlushAt = deps.now();
     // A flush that spent its budget may have left ready dirty cells: flush again when due.
     dirty = lastFlushAt - t0 >= FLUSH_BUDGET_MS;
@@ -1071,7 +1069,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     sliceStart = start;
     // Controller rulings (Task 5 fix rounds 1 and 2): while a side's compile is unfinished it gets
     // one compile unit in every slice with room, besides rule 11's step on demand, so `compiled`
-    // and the first `filled` do not wait for the worlds to reach the last change. These follow the
+    // and the first `filled` do not wait for the world to reach the last change. These follow the
     // slice's first unit, so filling continues meanwhile. One that does not fit does not end the
     // slice (other units go on filling it): it is owed, and an owed compile is the first unit of
     // the next slice, but never of two slices in a row, so filling keeps every other slice.
@@ -1236,9 +1234,9 @@ export function createRunner(deps: RunnerDeps): Runner {
     kick();
   }
 
-  /** The answer to `resyncMap` (rule 20): the snapshot of world 1, not `rewind`. */
+  /** The answer to `resyncMap` (rule 20): the snapshot of the plan's world, not `rewind`. */
   function answerResync(): void {
-    const w = world1();
+    const w = planWorld();
     if (stream === null || w === undefined) return;
     dirty = false;
     sendCells(stream.snapshot(w, ds.statics));
@@ -1249,9 +1247,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     get rev() {
       return rev;
     },
-    open(r, policy, lots, w, m, edited = false) {
+    open(r, policy, lots, m, edited = false) {
       rev = r;
-      worlds = w;
       months = m;
       ctx = ds.ctx(months);
       stream = createMapStream(
@@ -1353,7 +1350,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     },
     card(day) {
       const t = plan?.timeline;
-      const w = world1();
+      const w = planWorld();
       if (!t || w === undefined) return null;
       // rule 18: a day past the last month stepped reads the last day stepped
       const d = Math.min(day, monthLastDay(asOf, w.month));

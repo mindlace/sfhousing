@@ -2,7 +2,7 @@
 // S14): host posts queue in a fake worker and reach the client later, interleaved with the
 // client's requests, as a real worker's postMessage does. The months the client delivers, applied
 // in order (`refill` withdraws from its `from`), are contiguous from 0 to `lastIndex` and equal a
-// fresh open of the last accepted document. Fixture-0, 4 worlds, a fake clock.
+// fresh open of the last accepted document. Fixture-0, one world a side, a fake clock.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Day } from '$lib/timelapse/time';
@@ -17,7 +17,6 @@ import { datasetFetch, fakeClock } from './world/runner/test/harness';
 import { viewOf, type ScoreStatics, type SeriesChunk, type TimelineView } from './world/score';
 
 const FIXTURE = 'e2e/fixtures/data/fixture-0';
-const WORLDS = 4;
 const MONTHS = 130;
 
 type Msg = TimelineHostResponse;
@@ -91,7 +90,7 @@ function withZoning(doc: SimPolicy4, ...ps: Policy[]): SimPolicy4 {
 /**
  * A fake worker around the real timeline host. Client requests reach the host at once; host posts
  * wait in `inbox` until `deliver` hands them to the client in order. `openTimeline` is sent on
- * with `WORLDS` and `MONTHS` in place of the client's production sizes (test cost only).
+ * with `MONTHS` in place of the client's production window (test cost only).
  */
 function delayedWorker() {
   const clock = fakeClock();
@@ -118,7 +117,7 @@ function delayedWorker() {
     onmessage: null,
     postMessage(msg: WorkerRequest) {
       const req = msg as unknown as TimelineHostRequest;
-      host.handle(req.type === 'openTimeline' ? { ...req, worlds: WORLDS, months: MONTHS } : req);
+      host.handle(req.type === 'openTimeline' ? { ...req, months: MONTHS } : req);
     },
     terminate: () => host.dispose()
   };

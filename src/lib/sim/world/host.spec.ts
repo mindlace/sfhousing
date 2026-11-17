@@ -65,7 +65,6 @@ vi.mock('./world', async (importOriginal) => {
 
 const FIXTURE = 'e2e/fixtures/data/fixture-0';
 const MONTHS = 130;
-const WORLDS = 4;
 /** Compute time charged per clock read, so slices end and flushes come due. */
 const TICK_MS = 0.1;
 
@@ -165,7 +164,6 @@ function makeHost(o: HostOpts = {}) {
       manifest,
       policy: DEFAULT_POLICY4,
       lots: {},
-      worlds: WORLDS,
       months: MONTHS,
       ...over
     });
@@ -237,8 +235,8 @@ interface Plain {
   world1: World;
 }
 
-/** The two ensembles stepped in a plain loop, fed live, as one chunk over every month. */
-function plainLoop(doc: SimPolicy4, worlds: number, months: number): Plain {
+/** The two sides' worlds on seed 1 stepped in a plain loop, fed live, as one chunk. */
+function plainLoop(doc: SimPolicy4, months: number): Plain {
   const { createWorld, step, planDue } = withFunding(createFundingSystem());
   const ctx = ctxOf(months);
   const rhna = ds.loaded.projects.rhnaCompletedNet;
@@ -255,28 +253,24 @@ function plainLoop(doc: SimPolicy4, worlds: number, months: number): Plain {
   });
   let world1: World | null = null;
   let ledger: LedgerEvent[] = [];
-  const series = sides.map(({ t, s }, side) => {
-    const out: WorldSeries[] = [];
-    for (let k = 1; k <= worlds; k++) {
-      const ws = createWorldSeries(s);
-      const buf: WorldEvent[] = [];
-      const own: LedgerEvent[] = [];
-      const ledgerSink = side === 0 && k === 1 ? (e: LedgerEvent) => own.push(e) : undefined;
-      const w = createWorld(ds.statics, t, k, { event: (e) => buf.push(e), ledger: ledgerSink });
-      for (const e of buf) ws.add(e, w, ds.statics);
-      const due = planDue(w, ds.statics, t, k, months);
-      const sink = { event: (e: WorldEvent) => ws.add(e, w, ds.statics), ledger: ledgerSink };
-      while (w.month < months) {
-        step(w, due, ds.statics, t, k, sink);
-        ws.stepped(w.month);
-      }
-      if (side === 0 && k === 1) {
-        world1 = w;
-        ledger = own;
-      }
-      out.push(ws);
+  const series = sides.map(({ t, s }, side): WorldSeries => {
+    const ws = createWorldSeries(s);
+    const buf: WorldEvent[] = [];
+    const own: LedgerEvent[] = [];
+    const ledgerSink = side === 0 ? (e: LedgerEvent) => own.push(e) : undefined;
+    const w = createWorld(ds.statics, t, 1, { event: (e) => buf.push(e), ledger: ledgerSink });
+    for (const e of buf) ws.add(e, w, ds.statics);
+    const due = planDue(w, ds.statics, t, 1, months);
+    const sink = { event: (e: WorldEvent) => ws.add(e, w, ds.statics), ledger: ledgerSink };
+    while (w.month < months) {
+      step(w, due, ds.statics, t, 1, sink);
+      ws.stepped(w.month);
     }
-    return out;
+    if (side === 0) {
+      world1 = w;
+      ledger = own;
+    }
+    return ws;
   });
   const { t, s } = sides[0];
   const fin = t.frameAt(1).finance;
@@ -293,7 +287,7 @@ function plainLoop(doc: SimPolicy4, worlds: number, months: number): Plain {
   return {
     plan: t,
     statics: s,
-    chunk: chunkOf(series[0][0], series[1][0], money, 0, s.lastIndex),
+    chunk: chunkOf(series[0], series[1], money, 0, s.lastIndex),
     world1: world1!
   };
 }
@@ -355,7 +349,7 @@ describe('a full fill of the default document', () => {
     h.prefetchAll();
     await h.runAll();
     snapshot = [...h.posts];
-    plain = plainLoop(DEFAULT_POLICY4, WORLDS, MONTHS);
+    plain = plainLoop(DEFAULT_POLICY4, MONTHS);
   });
 
   it('open posts ready, compiled, lookups, then contiguous filled from 0 to lastIndex', () => {
@@ -383,7 +377,7 @@ describe('a full fill of the default document', () => {
     expect(last.series.tiers).not.toBeNull();
   });
 
-  it('the posted series equal a plain loop of the same worlds', () => {
+  it('the posted series equal a plain loop of the same world', () => {
     const chunks = h.of('filled').map((f) => f.series);
     expect(h.of('compiled')[0].statics).toEqual(plain.statics);
     expect(viewOf(chunks, plain.statics)).toEqual(viewOf([plain.chunk], plain.statics));
@@ -425,7 +419,7 @@ describe('a full fill of the default document', () => {
     expect(new Map(render.demolish.map((d) => [d.parcelId, d.day]))).toEqual(ctl.demolished);
   });
 
-  it('parcelSummary answers from world 1 with the frame lookups', async () => {
+  it('parcelSummary answers from the plan world with the frame lookups', async () => {
     const day = monthLastDay(asOf, 60);
     const { parcelId, projectId } = projectLot(plain.world1, day);
     const got = await h.ask({ type: 'parcelSummary', parcelId, day, projectId }, 'parcelSummary');
@@ -562,7 +556,7 @@ describe('the host', () => {
     const h = makeHost();
     h.open();
     h.prefetchAll();
-    boom.at = 1; // world 1 of the plan is the first world to step
+    boom.at = 1; // the plan's world steps first
     await h.run(() => h.errors().length > 0);
     expect(await h.idle()).toBe(true);
     const { createWorld } = withFunding(createFundingSystem());
@@ -579,12 +573,12 @@ describe('the host', () => {
     expect(got.summary).toEqual(expectedCard(w, t, parcelId, asOf, 1));
   });
 
-  it('the posted series equal stepping the same worlds in a plain loop', async () => {
+  it('the posted series over 24 months equal stepping the same world in a plain loop', async () => {
     const h = makeHost();
-    h.open({ worlds: 96, months: 24 });
+    h.open({ months: 24 });
     await h.runAll();
     expect(h.errors()).toEqual([]);
-    const plain = plainLoop(DEFAULT_POLICY4, 96, 24);
+    const plain = plainLoop(DEFAULT_POLICY4, 24);
     const chunks = h.of('filled').map((f) => f.series);
     expect(h.of('compiled')[0].statics).toEqual(plain.statics);
     expect(viewOf(chunks, plain.statics)).toEqual(viewOf([plain.chunk], plain.statics));
@@ -690,7 +684,6 @@ describe('the host', () => {
       manifest: f.manifest,
       policy: DEFAULT_POLICY4,
       lots: {},
-      worlds: 1,
       months: 12
     });
     await errorPosted;
@@ -715,16 +708,13 @@ describe('the host', () => {
       manifest: f.manifest,
       policy: DEFAULT_POLICY4,
       lots: {},
-      worlds: 1,
       months: 12
     };
-    host.handle({ ...base, worlds: 0 });
     host.handle({ ...base, manifest: { nope: true } as unknown as Manifest });
     const noFzp = structuredClone(f.manifest);
     delete (noFzp as { scenarios?: unknown }).scenarios;
     host.handle({ ...base, manifest: noFzp });
     expect(posts.map((m) => (m.type === 'error' ? m.code : m.type))).toEqual([
-      'bad-request',
       'manifest-invalid',
       'scenario-missing'
     ]);
@@ -751,7 +741,7 @@ describe('compiles while filling', () => {
     // compile budget, so a step returns false having moved neither the frames nor the recompute
     // count. The compile is still progressing and must not wait for a chunk.
     const h = makeHost({ tickMs: 25 });
-    h.open({ policy: protectedFrom(1, 37), worlds: 2, months: 24 });
+    h.open({ policy: protectedFrom(1, 37), months: 24 });
     await h.runAll();
     expect(h.errors()).toEqual([]);
     expect(h.of('compiled')).toHaveLength(1);
@@ -778,7 +768,7 @@ describe('compiles while filling', () => {
       logOnce: () => {}
     });
     const CHANGE = 100;
-    runner.open(1, protectedFrom(CHANGE, 41), {}, WORLDS, MONTHS);
+    runner.open(1, protectedFrom(CHANGE, 41), {}, MONTHS);
     await clock.runUntil(() => at.some((a) => a.type === 'filled'));
     expect(at.filter((a) => a.type === 'error')).toEqual([]);
     const compiled = at.find((a) => a.type === 'compiled')!;
@@ -811,7 +801,7 @@ describe('compiles while filling', () => {
     const stepped = () => {
       const { plan, comp } = runner.ensembles();
       let n = 0;
-      for (const e of [plan, comp]) for (const w of e?.worlds ?? []) n += w.month;
+      for (const e of [plan, comp]) n += e?.world?.month ?? 0;
       return n;
     };
     const runner: Runner = createRunner({
@@ -832,7 +822,7 @@ describe('compiles while filling', () => {
       logOnce: () => {}
     });
     const CHANGE = 100;
-    runner.open(1, protectedFrom(CHANGE, 43), {}, WORLDS, MONTHS);
+    runner.open(1, protectedFrom(CHANGE, 43), {}, MONTHS);
     await clock.runUntil(() => at.some((a) => a.type === 'filled'));
     expect(at.filter((a) => a.type === 'error')).toEqual([]);
     const compiled = at.find((a) => a.type === 'compiled')!;
@@ -848,7 +838,7 @@ describe('compiles while filling', () => {
 describe('warm-ahead (D12)', () => {
   it('a slice runs no second warm unit whose estimate would overrun', async () => {
     // Every generator call costs 30 ms of the fake clock and records its task. The chunks of the
-    // shared dataset are loaded, so world 1's rows are warmed before the flushes mass them: the
+    // shared dataset are loaded, so the plan world's rows are warmed before the flushes mass them: the
     // generator runs in warm units only, and a second 30 ms unit never fits a 45 ms slice.
     const clock = fakeClock();
     let task = 0;
@@ -882,14 +872,14 @@ describe('warm-ahead (D12)', () => {
       warn: () => {},
       logOnce: () => {}
     });
-    runner.open(1, DEFAULT_POLICY4, {}, 2, 60);
+    runner.open(1, DEFAULT_POLICY4, {}, 60);
     await clock.runUntil(() => posts.includes('filled') && done());
     function done(): boolean {
-      const w = runner.ensembles().plan?.worlds[0];
-      return w !== undefined && w.month === 60 && posts.includes('cells');
+      const w = runner.ensembles().plan?.world;
+      return w != null && w.month === 60 && posts.includes('cells');
     }
     expect(posts).not.toContain('error');
-    // (one revision per unit is warm.spec.ts's; fixture-0's world 1 has no two-revision row)
+    // (one revision per unit is warm.spec.ts's; fixture-0's plan world has no two-revision row)
     expect(calls.length).toBeGreaterThan(1);
     const perTask = new Map<number, number>();
     for (const t of calls) perTask.set(t, (perTask.get(t) ?? 0) + 1);

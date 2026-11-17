@@ -1,6 +1,6 @@
 // The timeline host's edits (ensemble-runner Task 6, spec rules 12 to 17, 20; plan D2, D4): keep
 // or restore each ensemble after a `setPolicy`, one `refill`, the new `rev`, and what the runner
-// still holds afterwards. Fixture-0, 4 worlds, a fake clock that charges compute time.
+// still holds afterwards. Fixture-0, one world a side, a fake clock that charges compute time.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
 import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
@@ -21,7 +21,6 @@ import { datasetFetch, fakeClock } from './runner/test/harness';
 import { FakeController } from './test/map-stream-run';
 
 const FIXTURE = 'e2e/fixtures/data/fixture-0';
-const WORLDS = 4;
 const MONTHS = 130;
 
 type Msg = TimelineHostResponse;
@@ -136,14 +135,14 @@ function withZoning(doc: SimPolicy4, ...ps: Policy[]): SimPolicy4 {
 function makeRunner(tickMs = 0.1, compileClock = false) {
   const clock = fakeClock();
   const posts: Msg[] = [];
-  /** Per post: the plan ensemble's quiet flag and world 1's month when it was posted. */
+  /** Per post: the plan ensemble's quiet flag and its world's month when it was posted. */
   const at: { quiet: boolean; month: number }[] = [];
   /** Per task: the plan ensemble quiet before and after it, and the world-months it stepped. */
   const tasks: { quietBefore: boolean; quiet: boolean; steps: number; planMax: number }[] = [];
   const stepped = () => {
     const { plan, comp } = runner.ensembles();
     let n = 0;
-    for (const e of [plan, comp]) for (const w of e?.worlds ?? []) n += w.month;
+    for (const e of [plan, comp]) n += e?.world?.month ?? 0;
     return n;
   };
   const now = () => {
@@ -155,7 +154,7 @@ function makeRunner(tickMs = 0.1, compileClock = false) {
     post(msg) {
       posts.push(msg);
       const e = runner.ensembles().plan;
-      at.push({ quiet: e?.quiet ?? false, month: e?.worlds[0]?.month ?? -1 });
+      at.push({ quiet: e?.quiet ?? false, month: e?.world?.month ?? -1 });
     },
     now,
     later: (fn, ms) =>
@@ -165,7 +164,7 @@ function makeRunner(tickMs = 0.1, compileClock = false) {
         fn();
         const p = runner.ensembles().plan;
         const quiet = p?.quiet ?? false;
-        const planMax = Math.max(-1, ...(p?.worlds ?? []).map((w) => w.month));
+        const planMax = p?.world?.month ?? -1;
         tasks.push({ quietBefore, quiet, steps: stepped() - before, planMax });
       }, ms),
     warn: () => {},
@@ -246,7 +245,7 @@ async function fresh(
   months = MONTHS
 ): Promise<TimelineView> {
   const r = makeRunner();
-  r.runner.open(1, doc, lots, WORLDS, months);
+  r.runner.open(1, doc, lots, months);
   await r.run(r.full(1));
   expect(r.errors()).toEqual([]);
   r.runner.dispose();
@@ -261,11 +260,12 @@ function applyAll(updates: TimelineUpdate[]): FakeController {
 
 describe('edits', () => {
   it('an edit dated after the fill point posts one refill that withdraws nothing and later months reflect it', async () => {
-    const r = makeRunner();
-    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    // 1 ms per clock read: a slice steps a few months, so the fill stops near month 60
+    const r = makeRunner(1);
+    r.runner.open(1, baseDoc(), {}, MONTHS);
     await r.run(r.both(60));
     const plan = r.runner.ensembles().plan!;
-    const w1 = plan.worlds[0];
+    const w1 = plan.world;
     expect(plan.steppedThrough).toBeLessThan(70);
     const doc = withZoning(baseDoc(), painted(70));
     const at = r.posts.length;
@@ -280,7 +280,7 @@ describe('edits', () => {
     expect(after[0].series.from).toBe(refill.from);
     // kept: the same ensemble and world objects, under the new timeline
     expect(r.runner.ensembles().plan).toBe(plan);
-    expect(plan.worlds[0]).toBe(w1);
+    expect(plan.world).toBe(w1);
     expect(r.of('compiled', at).map((c) => c.rev)).toEqual([2]);
     expect(r.of('filled', at).every((f) => f.rev === 2)).toBe(true);
     const view = viewFrom(r.posts);
@@ -293,10 +293,10 @@ describe('edits', () => {
   it('an edit at month 100 after filling to 300: one refill from the first month not final at 99, no earlier month reposted, money included, equal to a fresh open', async () => {
     const months = 320;
     const r = makeRunner();
-    r.runner.open(1, baseDoc(), {}, WORLDS, months);
+    r.runner.open(1, baseDoc(), {}, months);
     await r.run(r.both(300));
     const plan = r.runner.ensembles().plan!;
-    const w1 = plan.worlds[0];
+    const w1 = plan.world;
     const doc = withZoning(baseDoc(), protect(100, 200));
     const at = r.posts.length;
     r.runner.setPolicy(2, doc, {});
@@ -313,8 +313,8 @@ describe('edits', () => {
     expect(after.every((f) => f.series.from >= expected && f.rev === 2)).toBe(true);
     // nothing between the edit and the refill
     expect(r.of('filled', at).length).toBe(after.length);
-    // restored: world 1 is a new object
-    expect(r.runner.ensembles().plan!.worlds[0]).not.toBe(w1);
+    // restored: the plan's world is a new object
+    expect(r.runner.ensembles().plan!.world).not.toBe(w1);
     const view = viewFrom(r.posts);
     expect(view.money).not.toBeNull();
     expect(view).toEqual(await fresh(doc, {}, months));
@@ -324,11 +324,11 @@ describe('edits', () => {
 
   it('a label-only edit or an added policy that is off: one refill each that withdraws nothing, no change', async () => {
     const r = makeRunner();
-    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    r.runner.open(1, baseDoc(), {}, MONTHS);
     await r.run(r.both(60));
     const plan = r.runner.ensembles().plan!;
     const comp = r.runner.ensembles().comp!;
-    const w1 = plan.worlds[0];
+    const w1 = plan.world;
     const relabelled = baseDoc();
     relabelled.kinds.permitting[0].label = 'renamed';
     r.runner.setPolicy(2, relabelled, {});
@@ -342,17 +342,17 @@ describe('edits', () => {
     settledAt(r.posts, 3, true);
     expect(r.runner.ensembles().plan).toBe(plan);
     expect(r.runner.ensembles().comp).toBe(comp);
-    expect(plan.worlds[0]).toBe(w1);
+    expect(plan.world).toBe(w1);
     expect(viewFrom(r.posts)).toEqual(await fresh(baseDoc()));
     r.runner.dispose();
   });
 
   it('two setPolicy in a row: only the second is reflected, nothing for the first after the second, and every cells update applies in order on a FakeController', async () => {
     const r = makeRunner();
-    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    r.runner.open(1, baseDoc(), {}, MONTHS);
     await r.run(r.both(60));
     r.runner.setPolicy(2, withZoning(baseDoc(), protect(10, 41)), {});
-    // the first edit is under way: accepted, its worlds re-stepping quietly
+    // the first edit is under way: accepted, its world re-stepping quietly
     await r.run(
       () => r.posts.some((m) => 'rev' in m && m.rev === 2) && r.runner.ensembles().plan!.quiet
     );
@@ -383,10 +383,10 @@ describe('edits', () => {
 
   it('a rejected document: bad-request at its rev and the previous timeline months keep arriving', async () => {
     const r = makeRunner();
-    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    r.runner.open(1, baseDoc(), {}, MONTHS);
     await r.run(r.both(40));
     const plan = r.runner.ensembles().plan!;
-    const w1 = plan.worlds[0];
+    const w1 = plan.world;
     // a brush query missing from `lots`: the compiler rejects month 1
     r.runner.setPolicy(2, withZoning(baseDoc(), painted(1)), {});
     await r.run(() => r.errors().length > 0);
@@ -399,37 +399,37 @@ describe('edits', () => {
     expect(after.every((f) => f.rev === 1)).toBe(true);
     expect(r.posts.slice(errAt + 1).filter((m) => 'rev' in m && m.rev === 2)).toEqual([]);
     expect(r.of('refill')).toEqual([]);
-    expect(plan.worlds[0]).toBe(w1);
+    expect(plan.world).toBe(w1);
     expect(viewFrom(r.posts)).toEqual(await fresh(baseDoc()));
     r.runner.dispose();
   });
 
-  it('a comparison that does not change keeps its worlds', async () => {
+  it('a comparison that does not change keeps its world', async () => {
     const r = makeRunner();
-    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    r.runner.open(1, baseDoc(), {}, MONTHS);
     await r.run(r.both(60));
     const comp = r.runner.ensembles().comp!;
-    const compWorlds = [...comp.worlds];
+    const compWorld = comp.world;
     const compTimeline = comp.timeline;
     const plan = r.runner.ensembles().plan!;
-    const planW1 = plan.worlds[0];
+    const planW1 = plan.world;
     const doc = withZoning(baseDoc(), protect(10, 41));
     r.runner.setPolicy(2, doc, {});
     await r.run(r.full(2));
     expect(r.errors()).toEqual([]);
     expect(r.runner.ensembles().comp).toBe(comp);
     expect(comp.timeline).toBe(compTimeline);
-    comp.worlds.forEach((w, k) => expect(w).toBe(compWorlds[k]));
+    expect(comp.world).toBe(compWorld);
     // the plan restored
-    expect(plan.worlds[0]).not.toBe(planW1);
+    expect(plan.world).not.toBe(planW1);
     expect(r.of('refill')).toHaveLength(1);
     expect(viewFrom(r.posts)).toEqual(await fresh(doc));
     r.runner.dispose();
   });
 
-  it('an edit at month 1 re-creates the worlds and refills from 0', async () => {
+  it('an edit at month 1 re-creates the world and refills from 0', async () => {
     const r = makeRunner();
-    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    r.runner.open(1, baseDoc(), {}, MONTHS);
     await r.run(r.both(60));
     const doc = withZoning(baseDoc(), protect(1, 41));
     r.runner.setPolicy(2, doc, {});
@@ -451,7 +451,7 @@ describe('edits', () => {
     // compile reaches the last month
     const months = 400;
     const r = makeRunner(1, true);
-    r.runner.open(1, baseDoc(), {}, WORLDS, months);
+    r.runner.open(1, baseDoc(), {}, months);
     await r.run(r.both(60));
     r.runner.setPolicy(2, withZoning(baseDoc(), protect(1, 200)), {});
     await r.run(r.full(2));
@@ -462,7 +462,7 @@ describe('edits', () => {
 
   it('resyncMap during a quiet re-step is answered after it, from the restored world', async () => {
     const r = makeRunner(1);
-    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    r.runner.open(1, baseDoc(), {}, MONTHS);
     await r.run(r.both(120));
     r.runner.setPolicy(2, withZoning(baseDoc(), protect(100, 200)), {});
     await r.run(() => r.runner.ensembles().plan!.quiet);
@@ -471,7 +471,7 @@ describe('edits', () => {
     expect(r.posts.length).toBe(n);
     await r.run(() => r.of('cells', n).some((c) => c.render.revision === 0));
     const i = r.posts.findIndex((m, k) => k >= n && m.type === 'cells' && m.render.revision === 0);
-    // posted once the plan's worlds stood at month 99, re-stepped and rewound
+    // posted once the plan's world stood at month 99, re-stepped and rewound
     expect(r.at[i]).toEqual({ quiet: false, month: 99 });
     await r.run(r.full(2));
     expect(r.errors()).toEqual([]);
@@ -480,7 +480,7 @@ describe('edits', () => {
 
   it('the rewind after a quiet re-step is a task of its own, before any loud step', async () => {
     const r = makeRunner(1);
-    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    r.runner.open(1, baseDoc(), {}, MONTHS);
     await r.run(r.both(120));
     r.runner.setPolicy(2, withZoning(baseDoc(), protect(100, 200)), {});
     const from = r.tasks.length;
@@ -488,8 +488,8 @@ describe('edits', () => {
     expect(r.errors()).toEqual([]);
     const k = r.tasks.findIndex((t, i) => i >= from && t.quietBefore && !t.quiet);
     expect(k).toBeGreaterThan(from);
-    // the quiet re-step's last slice stops with every plan world at 99; the next task (the rewind)
-    // steps nothing
+    // the quiet re-step's last slice stops with the plan's world at 99; the next task (the
+    // rewind) steps nothing
     expect(r.tasks[k + 1].steps).toBe(0);
     expect(r.tasks[k].planMax).toBe(99);
     expect(r.of('refill')).toHaveLength(1);
@@ -498,10 +498,10 @@ describe('edits', () => {
 
   it('a query missing from lots for a later month is rejected at once; the timelines in use keep filling', async () => {
     const r = makeRunner();
-    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    r.runner.open(1, baseDoc(), {}, MONTHS);
     await r.run(r.both(60));
     const plan = r.runner.ensembles().plan!;
-    const w1 = plan.worlds[0];
+    const w1 = plan.world;
     const n = r.posts.length;
     // the compiler would throw only at month 121, after an acceptance at month 60
     r.runner.setPolicy(2, withZoning(baseDoc(), painted(121)), {});
@@ -513,7 +513,7 @@ describe('edits', () => {
     expect(r.errors()).toHaveLength(1);
     expect(r.posts.slice(n + 1).filter((m) => 'rev' in m && m.rev === 2)).toEqual([]);
     expect(r.of('refill')).toEqual([]);
-    expect(plan.worlds[0]).toBe(w1);
+    expect(plan.world).toBe(w1);
     expect(viewFrom(r.posts)).toEqual(await fresh(baseDoc()));
     r.runner.dispose();
   });
@@ -522,7 +522,7 @@ describe('edits', () => {
     // 1 ms per clock read: a compile step assembles about 20 frames, so an edit at fill month
     // 120 takes several slices to be ready
     const r = makeRunner(1, true);
-    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    r.runner.open(1, baseDoc(), {}, MONTHS);
     await r.run(r.both(120));
     r.runner.setPolicy(2, withZoning(baseDoc(), protect(100, 197)), {});
     await r.run(() => r.of('compiling').some((c) => c.rev === 2));
@@ -543,7 +543,7 @@ describe('edits', () => {
 
   it('after an edit that restores, the runner holds only the month-0 copies and no superseded timeline or compile', async () => {
     const r = makeRunner();
-    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    r.runner.open(1, baseDoc(), {}, MONTHS);
     await r.run(r.both(120));
     const old = r.runner.internals();
     const oldPlanTimeline = r.runner.ensembles().plan!.timeline;
@@ -584,7 +584,7 @@ describe('a rejected edit resumes the last accepted one (S14)', () => {
     it(`R ${state}, R + 1 rejected ${how}: bad-request at R + 1, then compiled, refill and fill at R, equal to a fresh open of R`, async () => {
       // 1 ms per clock read: an edit at fill month 120 takes several slices to be ready
       const r = makeRunner(1, true);
-      r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+      r.runner.open(1, baseDoc(), {}, MONTHS);
       await r.run(r.both(120));
       const docR = withZoning(baseDoc(), protect(100, 197));
       r.runner.setPolicy(2, docR, {});
@@ -622,7 +622,7 @@ describe('a rejected edit resumes the last accepted one (S14)', () => {
 
   it('R superseded while compiling by R + 1 and R + 2, both rejected by the compiler: R is taken up again', async () => {
     const r = makeRunner(1, true);
-    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    r.runner.open(1, baseDoc(), {}, MONTHS);
     await r.run(r.both(120));
     const docR = withZoning(baseDoc(), protect(100, 197));
     r.runner.setPolicy(2, docR, {});
@@ -656,7 +656,7 @@ describe('a late compile rejection resumes the last accepted edit (S14)', () => 
       // 1 ms per clock read: a compile step assembles about 20 frames, so R + 1 is accepted
       // well before its compile reaches month 200
       const r = makeRunner(1, true);
-      r.runner.open(1, baseDoc(), {}, WORLDS, months);
+      r.runner.open(1, baseDoc(), {}, months);
       await r.run(r.both(120));
       const docR = withZoning(baseDoc(), protect(100, 197));
       r.runner.setPolicy(2, docR, {});
@@ -667,7 +667,7 @@ describe('a late compile rejection resumes the last accepted edit (S14)', () => 
         expect(r.of('refill')).toEqual([]);
       }
       // kept: R + 1 differs from R only from month 200; restored: also from month 90, before the
-      // month stepped (R's own restore left the worlds at 99)
+      // month stepped (R's own restore left the world at 99)
       const bad =
         how === 'kept'
           ? withZoning(docR, mismatched(200))
@@ -675,7 +675,7 @@ describe('a late compile rejection resumes the last accepted edit (S14)', () => 
       r.runner.setPolicy(3, bad, {});
       await r.run(() => r.runner.rev === 3);
       expect(r.runner.internals().kept).toBeGreaterThan(0);
-      // R + 1's acceptance kept the worlds, or restored them (a refill is due from month 90)
+      // R + 1's acceptance kept the world, or restored it (a refill is due from month 90)
       if (how === 'restored') expect(r.runner.internals().refillAt).toBe(90);
       else if (state === 'settled') expect(r.runner.internals().refillAt).toBeNull();
       await r.run(() => r.errors().length > 0);
@@ -714,7 +714,7 @@ describe('a late compile rejection resumes the last accepted edit (S14)', () => 
 
   it('an open whose own compile rejects it late: nothing to take up, filling stops', async () => {
     const r = makeRunner();
-    r.runner.open(1, withZoning(baseDoc(), mismatched(60)), {}, WORLDS, 130);
+    r.runner.open(1, withZoning(baseDoc(), mismatched(60)), {}, 130);
     await r.run(() => r.errors().length > 0);
     expect(r.errors()).toEqual([expect.objectContaining({ rev: 1, code: 'bad-request' })]);
     expect(r.of('refill')).toEqual([]);
@@ -726,7 +726,7 @@ describe('a late compile rejection resumes the last accepted edit (S14)', () => 
 describe('refill edge cases (S14)', () => {
   it('an edit after a rejected open: one refill from 0 after its compiled', async () => {
     const r = makeRunner();
-    r.runner.open(1, withZoning(baseDoc(), mismatched(1)), {}, WORLDS, MONTHS);
+    r.runner.open(1, withZoning(baseDoc(), mismatched(1)), {}, MONTHS);
     await r.run(() => r.errors().length > 0);
     expect(r.errors()).toEqual([expect.objectContaining({ rev: 1, code: 'bad-request' })]);
     r.runner.setPolicy(2, baseDoc(), {});
@@ -740,7 +740,7 @@ describe('refill edge cases (S14)', () => {
 
   it('a kept edit on a whole window: one refill from the window length, no filled after it', async () => {
     const r = makeRunner();
-    r.runner.open(1, baseDoc(), {}, WORLDS, MONTHS);
+    r.runner.open(1, baseDoc(), {}, MONTHS);
     await r.run(r.full(1));
     const statics = r.of('compiled').at(-1)!.statics;
     const relabelled = baseDoc();
@@ -761,7 +761,7 @@ describe('refill edge cases (S14)', () => {
     // as the long-window restore above: the month-1 re-creation ends long before the compile
     const months = 400;
     const r = makeRunner(1, true);
-    r.runner.open(1, baseDoc(), {}, WORLDS, months);
+    r.runner.open(1, baseDoc(), {}, months);
     await r.run(r.both(60));
     const relabelled = baseDoc();
     relabelled.kinds.permitting[0].label = 'renamed';
@@ -805,7 +805,6 @@ describe('the host', () => {
       manifest: f.manifest,
       policy: baseDoc(),
       lots: {},
-      worlds: WORLDS,
       months: 40
     });
     const doc3 = withZoning(baseDoc(), protect(10, 41));
