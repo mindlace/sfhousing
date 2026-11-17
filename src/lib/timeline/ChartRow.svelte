@@ -185,7 +185,7 @@
       ></div>
       {#if active !== null}
         <p
-          class="readout pointer-events-none absolute top-0 m-0 rounded border border-line bg-surface px-2 py-1 text-xs whitespace-nowrap text-ink tabular-nums shadow-md dark:text-ink-dark"
+          class="sfh-chart-readout readout pointer-events-none absolute top-0 m-0 rounded border border-line bg-surface px-2 py-1 text-xs whitespace-nowrap text-ink tabular-nums shadow-md dark:text-ink-dark"
           style:left="{(x(active) / W) * 100}%"
           class:flip={x(active) > W / 2}
           data-testid="chart-readout"

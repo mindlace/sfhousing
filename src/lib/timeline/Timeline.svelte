@@ -341,7 +341,13 @@
     background: var(--color-accent);
   }
   .cell {
+    position: relative;
     min-width: 0;
+  }
+  /* While the chart shows its readout, the chart cell rises above the playhead line so the
+     readout is never crossed by it; otherwise the line stays on top. */
+  .cell:has(:global(.sfh-chart-readout)) {
+    z-index: 2;
   }
   .lab {
     display: flex;

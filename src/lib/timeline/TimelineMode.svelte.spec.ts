@@ -370,6 +370,46 @@ describe('TimelineMode', () => {
     });
   }
 
+  it("the chart's readout paints above the playhead line; the line above the bars", async () => {
+    await opened(LAST, { initialPolicy: mk(protect(5)) });
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}');
+    await expect.poll(() => debug().day).toBeGreaterThan(asOf);
+    const line = document.querySelector<HTMLElement>('[data-testid=tl-playhead-line]')!;
+    // Ten months back the readout starts left of the line and runs across it.
+    const overlay = page.getByRole('slider', { name: 'Month in the chart' });
+    (overlay.element() as HTMLElement).focus();
+    await userEvent.keyboard('{ArrowLeft>10/}');
+    const readout = page.getByTestId('chart-readout');
+    await expect.element(readout).toBeVisible();
+    const lr = line.getBoundingClientRect();
+    const rr = readout.element().getBoundingClientRect();
+    const x = lr.left + lr.width / 2;
+    expect(rr.left).toBeLessThan(x);
+    expect(rr.right).toBeGreaterThan(x);
+    // Both ignore the pointer; hit testing follows paint order once they take it.
+    const topAt = (els: HTMLElement[], px: number, py: number) => {
+      for (const e of els) e.style.pointerEvents = 'auto';
+      const top = document.elementFromPoint(px, py);
+      for (const e of els) e.style.pointerEvents = '';
+      return top;
+    };
+    const tip = readout.element() as HTMLElement;
+    const onTip = topAt([line, tip], x, rr.top + rr.height / 2);
+    expect(onTip === tip || tip.contains(onTip)).toBe(true);
+    // The rows' segment still paints above a zoning miniature bar it crosses.
+    const outer = [...document.querySelectorAll<HTMLElement>('[data-testid=tl-playhead-line]')][1];
+    const mini = document.querySelector<HTMLElement>(
+      '[data-testid=tl-kind-zoning] [data-testid=tl-mini] i'
+    )!;
+    const mr = mini.getBoundingClientRect();
+    const or = outer.getBoundingClientRect();
+    const ox = or.left + or.width / 2;
+    expect(mr.left).toBeLessThan(ox);
+    expect(mr.right).toBeGreaterThan(ox);
+    expect(topAt([outer, mini], ox, mr.top + mr.height / 2)).toBe(outer);
+  });
+
   it('a provisional open keeps the header calculating until the full document fills', async () => {
     const s = setup({ initialPolicy: withPaint, initialLots: null });
     await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
