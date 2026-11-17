@@ -134,7 +134,7 @@ function stats(times: number[]) {
 const seedsOf = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
 describe('scoring timing, bench city', () => {
-  it(`one month's scoring for ${2 * SEEDS} worlds within ${BAR} ms at the median (months 101-150)`, () => {
+  it(`one month's scoring for one pair within ${BAR} ms at the median`, () => {
     const FROM = 101;
     const TO = 150;
     const input = benchInput();
