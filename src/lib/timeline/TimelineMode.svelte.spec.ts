@@ -1022,9 +1022,22 @@ describe('TimelineMode', () => {
     }
     expect(legend.getBoundingClientRect().bottom).toBeLessThanOrEqual(lab.bottom);
     // The legend under the plot is gone from md; the plot keeps the lane's width.
-    const fig = page.getByTestId('tl-lanes').getByRole('figure').element();
-    expect(getComputedStyle(fig.querySelector('.legend')!).display).toBe('none');
+    const fig = page.getByTestId('tl-lanes').getByRole('figure');
+    expect(getComputedStyle(fig.element().querySelector('.legend')!).display).toBe('none');
     expect(page.getByTestId('chart-svg').element().getBoundingClientRect().height).toBe(64);
+    // The legend is the row's label: "Homes completed" once in the pinned block, and the chart
+    // keeps its own name.
+    // (The figure's sr-only caption is a sentence, not a label; the under-plot legend is not
+    // rendered from md.) checkVisibility drops display:none content.
+    const labels = [...page.getByTestId('tl-pin').element().querySelectorAll('*')].filter(
+      (e) =>
+        e.children.length === 0 &&
+        e.textContent!.trim() === 'Homes completed' &&
+        e.checkVisibility()
+    );
+    expect(labels).toHaveLength(1);
+    expect(legend.contains(labels[0])).toBe(true);
+    await expect.element(fig).toHaveAccessibleName('Net new homes by month');
     const res = await axe.run(page.getByTestId('tl-pin').element(), {
       runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
     });
@@ -1035,9 +1048,13 @@ describe('TimelineMode', () => {
     await page.viewport(390, 760);
     await opened(LAST);
     await expect.element(slider()).toBeInTheDocument();
-    expect(getComputedStyle(page.getByTestId('tl-chart-legend').element()).display).toBe('none');
-    const fig = page.getByTestId('tl-lanes').getByRole('figure').element();
-    expect(getComputedStyle(fig.querySelector('.legend')!).display).not.toBe('none');
+    expect(document.querySelector('[data-testid=tl-chart-legend]')).toBeNull();
+    const lab = page.getByTestId('tl-pin').element().querySelector('.chart-lab')!;
+    expect(lab.textContent!.trim()).toBe('Homes completed');
+    const fig = page.getByTestId('tl-lanes').getByRole('figure');
+    await expect.element(fig).toHaveAccessibleName('Net new homes by month');
+    const under = fig.element().querySelector('.legend')!;
+    expect(getComputedStyle(under).display).not.toBe('none');
     expect(page.getByTestId('chart-svg').element().getBoundingClientRect().height).toBe(96);
   });
 
@@ -1103,7 +1120,13 @@ describe('TimelineMode', () => {
     expect(el.scrollTop).toBe(200);
     await s.showResults();
     expect(el.scrollTop).toBe(0);
-    expect(document.activeElement).toBe(page.getByTestId('tl-results').element());
+    const res = page.getByTestId('tl-results').element();
+    expect(document.activeElement).toBe(res);
+    // The ring draws inside Results, so the column's scroll box never clips it (WCAG 2.4.7).
+    const cs = getComputedStyle(res);
+    expect(cs.outlineStyle).not.toBe('none');
+    expect(parseFloat(cs.outlineWidth)).toBeGreaterThanOrEqual(2);
+    expect(parseFloat(cs.outlineOffset)).toBeLessThanOrEqual(-parseFloat(cs.outlineWidth));
   });
 
   it("swapping the column's content starts it at the top", async () => {

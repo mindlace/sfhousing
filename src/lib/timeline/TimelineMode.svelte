@@ -980,8 +980,10 @@
 {/snippet}
 
 {#snippet results()}
+  <!-- Focused by showResults: the ring draws inside the box, which sits flush in the column's
+       scroll box and would clip an outer one (WCAG 2.4.7). -->
   <div
-    class="tl-dim"
+    class="tl-dim focus:outline-2 focus:-outline-offset-2 focus:outline-accent dark:focus:outline-accent-dark"
     data-testid="tl-results"
     data-stale={stale ? 'true' : undefined}
     tabindex="-1"

@@ -203,9 +203,14 @@
     <div class="pin" data-testid="tl-pin" bind:offsetHeight={pinHeight}>
       {@render playhead()}
 
+      <!-- From md the stacked legend is the row's label (its first entry names the line); below
+           md the plain label, with the legend under the plot. -->
       <div class="lab plain chart-lab">
-        <span>Homes completed</span>
-        <ChartLegend stacked class="max-md:hidden" />
+        {#if phone}
+          <span>Homes completed</span>
+        {:else}
+          <ChartLegend stacked />
+        {/if}
       </div>
       <div class="cell" bind:this={chartCell}>
         <Lane {filledPct}>{@render chart()}</Lane>

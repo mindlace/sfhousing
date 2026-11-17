@@ -1,6 +1,6 @@
 <!--
   The chart row's legend: the homes line and the state target's dash. Below md it runs under the
-  plot (ChartRow); from md it stacks in the label column under "Homes completed" (Timeline), so the
+  plot (ChartRow); from md it stacks in the label column as the row's label (Timeline), so the
   plot keeps the lane's full width and a short height.
 -->
 <script lang="ts">
