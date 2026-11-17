@@ -345,12 +345,14 @@
   .rows {
     position: relative;
   }
-  /* Opaque and above the rows (and their line segment), so rows scrolling under it are hidden. */
+  /* Opaque and above the rows (and their line segment), so rows scrolling under it are hidden. A
+     page whose scroll box is too short for the block and some rows sets --tl-pin-pos to relative
+     (and --tl-pin-top to 0): the block then scrolls with the rows. */
   .pin {
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns: subgrid;
-    position: sticky;
+    position: var(--tl-pin-pos, sticky);
     top: var(--tl-pin-top, 0px);
     z-index: 3;
     background: var(--color-surface);

@@ -83,6 +83,12 @@
    * its 24 px target clear of the chart's slider (WCAG 2.2 2.5.8).
    */
   const PIN_GAP = 4;
+  /**
+   * Px of rows the stuck pinned block must leave in its scroll box (a 44 px coarse row with room
+   * around it); with less (a short window or browser zoom) the block scrolls with the rows, so a
+   * focused row is never under it (WCAG 2.2 2.4.11, 1.4.10).
+   */
+  const MIN_ROWS = 64;
 
   /** The brush-failure notice: the editors' own words for a query that failed. */
   const LOTS_FAILED = lotsText({ kind: 'failed', keys: [] });
@@ -864,6 +870,18 @@
   /** The status line's and the pinned block's heights: the scroll padding (WCAG 2.4.11). */
   let statusH = $state(0);
   let pinHeight = $state(0);
+  /** The scroll boxes' client heights: the mode box below md, the timeline's own from md. */
+  let modeClientH = $state(0);
+  let lanesClientH = $state(0);
+  /** The block sticks only while it leaves MIN_ROWS of rows in its scroll box (re-read on resize). */
+  const pinStuck = $derived(
+    narrow.current
+      ? !modeClientH || modeClientH - statusH - pinHeight >= MIN_ROWS
+      : !lanesClientH || lanesClientH - pinHeight - PIN_GAP >= MIN_ROWS
+  );
+  /** The block's share of the scroll padding and margins: none while it scrolls with the rows. */
+  const pinPad = $derived(pinStuck ? pinHeight : 0);
+  const pinGap = $derived(pinStuck ? PIN_GAP : 0);
   let chartBox = $state<HTMLElement>();
   let modeEl = $state<HTMLElement>();
   let sheetTop = $state(0);
@@ -1039,7 +1057,8 @@
 <div
   bind:this={modeEl}
   class="sfh-fzp sfh-tl relative flex h-full flex-col max-md:overflow-y-auto"
-  style:scroll-padding-top={narrow.current ? `${statusH + pinHeight}px` : undefined}
+  style:scroll-padding-top={narrow.current ? `${statusH + pinPad}px` : undefined}
+  bind:clientHeight={modeClientH}
   data-testid="tl-mode"
 >
   {#if !noScenario}
@@ -1217,16 +1236,20 @@
            block sticks at the scroll box's top (under the status line below md), and the scroll
            padding keeps a focused row out from under it (WCAG 2.2 2.4.11). Below md the mode
            box's padding counts the status line and the block, so scrolling this box or the
-           timeline to the top (the sheets) takes the block back off as a negative margin. -->
+           timeline to the top (the sheets) takes the block back off as a negative margin. A box
+           too short for the block and MIN_ROWS of rows unsticks it: the block's share of the
+           padding and margins drops to 0 and the timeline scrolls as one piece. -->
       <div
         bind:this={dockEl}
-        class="min-h-0 max-2xl:scroll-mt-6 md:overflow-y-auto"
+        bind:clientHeight={lanesClientH}
+        class="min-h-0 md:overflow-y-auto"
         style:padding-bottom={phoneSheet ? '100dvh' : undefined}
-        style:--tl-pin-top={narrow.current ? `${statusH}px` : '0px'}
-        style:scroll-padding-top={narrow.current ? undefined : `${pinHeight + PIN_GAP}px`}
-        style:scroll-margin-top={narrow.current ? `${-pinHeight}px` : undefined}
-        style:--tl-scroll-mt={narrow.current ? `${-pinHeight}px` : undefined}
-        style:--tl-pin-mt="{narrow.current ? -pinHeight : -pinHeight - PIN_GAP}px"
+        style:--tl-pin-pos={pinStuck ? undefined : 'relative'}
+        style:--tl-pin-top={narrow.current && pinStuck ? `${statusH}px` : '0px'}
+        style:scroll-padding-top={narrow.current ? undefined : `${pinPad + pinGap}px`}
+        style:scroll-margin-top={narrow.current ? `${-pinPad}px` : undefined}
+        style:--tl-scroll-mt={narrow.current ? `${-pinPad}px` : undefined}
+        style:--tl-pin-mt="{narrow.current ? -pinPad : -pinPad - pinGap}px"
         data-testid="tl-lanes"
       >
         <Timeline

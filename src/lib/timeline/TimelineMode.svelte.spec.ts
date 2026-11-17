@@ -1035,6 +1035,73 @@ describe('TimelineMode', () => {
     });
   }
 
+  /** The pinned block's scroll box: tl-lanes from md, tl-mode below md (under the status line). */
+  function port(phone: boolean): { top: number; bottom: number } {
+    const r = box(phone ? 'tl-mode' : 'tl-lanes');
+    return { top: phone ? box('tl-status-line').bottom : r.top, bottom: r.bottom };
+  }
+
+  // WCAG 2.2 2.4.11 at 400% zoom (320x256) and 200% (960x540): a block that would leave too
+  // little room for the rows scrolls with them, so a focused row is never under it.
+  for (const [vw, vh, regionHeight, phone] of [
+    [320, 256, 172, true],
+    [960, 540, 456, false]
+  ] as const) {
+    it(`at ${vw}x${vh} the pinned block scrolls with the rows and a focused bar shows whole`, async () => {
+      await page.viewport(vw, vh);
+      await opened(LAST, {
+        initialPolicy: mk(protect(5), { ...protect(3), id: 'b' }, { ...protect(2), id: 'c' }),
+        withInspector: true,
+        inspectorOpen: false,
+        regionHeight
+      });
+      await expect.element(slider()).toBeInTheDocument();
+      // From md the kinds open in place, so the rows run long; below md a kind opens a sheet.
+      if (!phone) {
+        await page.getByRole('button', { name: 'Zoning', exact: true }).click();
+        await page.getByRole('button', { name: 'Permitting', exact: true }).click();
+      }
+      await nextFrame();
+      const pin = page.getByTestId('tl-pin').element();
+      await expect.poll(() => getComputedStyle(pin).position).not.toBe('sticky');
+      // The last row's bar: the market's, at the bottom of the scroll.
+      const bar = page
+        .getByRole('button', { name: 'Market conditions, whole window' })
+        .element() as HTMLElement;
+      bar.focus();
+      await nextFrame();
+      await nextFrame();
+      const r = bar.getBoundingClientRect();
+      const p = port(phone);
+      expect(r.top).toBeGreaterThanOrEqual(p.top - 0.5);
+      expect(r.bottom).toBeLessThanOrEqual(p.bottom + 0.5);
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      expect(bar.contains(hit)).toBe(true);
+      // Scrolled to the end, the block is gone with the rows above it: nothing covers them.
+      expect(pin.getBoundingClientRect().bottom).toBeLessThanOrEqual(r.top + 0.5);
+    });
+  }
+
+  it('at 1280x720 the compact pinned block stays stuck', async () => {
+    await page.viewport(1280, 720);
+    await opened(LAST, { withInspector: true, regionHeight: 636 });
+    await expect.element(slider()).toBeInTheDocument();
+    await nextFrame();
+    await nextFrame();
+    expect(getComputedStyle(page.getByTestId('tl-pin').element()).position).toBe('sticky');
+  });
+
+  it('the pinned block sticks again when its scroll box grows', async () => {
+    await page.viewport(960, 540);
+    await opened(LAST, { withInspector: true, regionHeight: 456 });
+    await expect.element(slider()).toBeInTheDocument();
+    const pin = page.getByTestId('tl-pin').element();
+    await expect.poll(() => getComputedStyle(pin).position).not.toBe('sticky');
+    await page.viewport(1280, 900);
+    document.getElementById('map-region')!.style.height = '700px';
+    await expect.poll(() => getComputedStyle(pin).position).toBe('sticky');
+  });
+
   it("from md the chart's legend stacks in the label column, legible and clear of axe", async () => {
     await opened(LAST, { withInspector: true });
     await expect.element(page.getByTestId('tl-chart-legend')).toBeVisible();
