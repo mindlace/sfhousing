@@ -1,0 +1,126 @@
+<article>
+  <header>
+    <h1>The /sim bottom pane</h1>
+    <p>Pin the play control, give the timeline one time axis, and move the policy editor and Results out from beside the map into the right side of the bottom pane.</p>
+  </header>
+
+  <section id="sec-why">
+    <h2>Why</h2>
+    <p>The owner's three complaints about <code>/sim</code>:</p>
+    <ol>
+      <li><strong>The play control scrolls away.</strong> The bottom pane (<code>tl-dock</code>, <code>TimelineMode.svelte</code>) is one scroll box capped at 50% of the height. The playhead row, the chart and the policy rows all scroll together. Opening a kind pushes the play control out of view.</li>
+      <li><strong>There are three time axes.</strong> The slider and the year ruler sit inside <code>Playhead.svelte</code>, to the right of the buttons (<code>.track md:flex-1</code>). The chart is a separate grid row. Each maps time onto its own width, so they disagree. In the owner's screenshot the RHNA deadline (2031) on the chart sits under "2041" on the ruler, and the slider thumb at January 2031 sits further right still. The page must have <strong>one and only one timeline</strong>.</li>
+      <li><strong>Low information density.</strong> The bottom pane's right side carries little. Meanwhile, selecting a policy or opening Results opens a 24rem inspector column beside the map, which takes even more space from the map.</li>
+    </ol>
+  </section>
+
+  <section id="sec-goals">
+    <h2>Goals, non-goals, anti-goals</h2>
+    <ul>
+      <li><strong>Goal:</strong> the play controls, the ruler and the chart stay in view however far the policy rows scroll.</li>
+      <li><strong>Goal:</strong> one time axis. The ruler, the slider, the chart and every lane's bars and hatch use the same x scale over the same pixel span. The playhead is one vertical line through all of them.</li>
+      <li><strong>Goal:</strong> from md, the content for policies (Results, a policy's editor, the add menu, a pool draft, a fixed row's text) shows in a column on the right of the bottom pane. Nothing related to policies opens beside or over the map.</li>
+      <li><strong>Goal:</strong> the map is full width from md.</li>
+      <li><strong>Non-goal:</strong> the project card (<code>ProjectCardPanel</code>) and the hover tooltip. Pop-ups about a lot or a plan stay on the map, as today (the owner's ruling).</li>
+      <li><strong>Non-goal:</strong> the axis window. It stays forty years (ruling R9 of the timeline UI spec).</li>
+      <li><strong>Non-goal:</strong> what the editors and Results contain. Only where they show changes.</li>
+      <li><strong>Anti-goal:</strong> a second ruler, axis or scale anywhere in the bottom pane.</li>
+      <li><strong>Anti-goal:</strong> a pane that shows up over the map when a policy is selected.</li>
+    </ul>
+  </section>
+
+  <section id="sec-approaches">
+    <h2>Approaches</h2>
+    <ul>
+      <li><strong>A. Details in the bottom pane (picked).</strong> The bottom pane splits into the timeline on the left and a detail column on the right. The map gets its full width back. The cost: the lanes get about 60% of the width instead of all of it.</li>
+      <li><strong>B. A full-height side column.</strong> The column runs beside both the map and the bottom pane and is always open. The long funding editors get more height. Rejected: the map would be permanently narrower.</li>
+      <li><strong>Leave the inspector, just densify the rows.</strong> Rejected: it fixes neither the map loss nor the empty right side.</li>
+    </ul>
+    <p>The owner picked A, with one change: pop-ups about a lot or a plan stay in the map view.</p>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <figure id="fig-layout">
+      <svg class="diagram" viewBox="0 0 640 330" role="img" aria-labelledby="fig-layout-t">
+        <title id="fig-layout-t">Desktop layout: the map full width on top; the bottom pane split into the timeline and the detail column</title>
+        <g class="node" id="n-map"><rect x="10" y="10" width="620" height="160"/><text x="320" y="80">Map, full width</text><text x="320" y="100">(project card and tooltip still float here)</text></g>
+        <g class="node" id="n-pin"><rect x="10" y="180" width="390" height="70"/><text x="205" y="205">Pinned: controls · readout</text><text x="205" y="225">ruler + slider + chart, one x scale</text></g>
+        <g class="node muted" id="n-rows"><rect x="10" y="255" width="390" height="65"/><text x="205" y="285">Kinds and policy rows (scroll)</text></g>
+        <g class="node result" id="n-detail"><rect x="410" y="180" width="220" height="140"/><text x="520" y="235">Detail column</text><text x="520" y="255">Results / editor / add</text><text x="520" y="275">(scrolls on its own)</text></g>
+      </svg>
+      <figcaption>Figure 1. The layout from md. The pinned block and the detail column sit side by side in the bottom pane.</figcaption>
+    </figure>
+
+    <section id="sec-axis">
+      <h3>One axis</h3>
+      <ol>
+        <li>The buttons and the readout (Pause, Play, Faster, Today, the month) move out of the lane column to a row of their own above the axis, spanning the timeline's width.</li>
+        <li>The ruler and the slider track sit in the lane column (grid column 2) at exactly the lane's width and offsets. The ruler is the slider: the track's x for month <em>m</em> equals the chart's and every lane's x for <em>m</em>.</li>
+        <li>The playhead is one vertical line, drawn from the ruler through the chart and down through every lane row, the scrolling ones included. The chart's own hover line stays as a separate, lighter marker.</li>
+        <li>The jump markers ("RHNA deadline", "2045") and the filled mark use the same scale.</li>
+        <li>A unit test pins the shared scale: for a few months, the x of the ruler tick, the slider position, the chart point and a lane bar edge agree to within 1 px.</li>
+      </ol>
+    </section>
+
+    <section id="sec-pin">
+      <h3>The pinned block</h3>
+      <ol>
+        <li>Within the timeline column, the controls row, the ruler and the chart don't scroll. Only the kinds and policy rows below them scroll (their own <code>overflow-y: auto</code>, or <code>position: sticky</code> on the pinned block inside the existing scroll box, whichever the builder finds keeps the grid columns aligned).</li>
+        <li>The bottom pane's height is fixed from md (see the detail column).</li>
+      </ol>
+    </section>
+
+    <section id="sec-detail">
+      <h3>The detail column (from md)</h3>
+      <ol>
+        <li>The bottom pane becomes two columns: the timeline at about 60% and the detail column at about 40%, with a 22rem minimum. The detail column scrolls on its own.</li>
+        <li>It hosts what <code>tl-inspector</code> hosts today, unchanged: Results, <code>Inspector.svelte</code> (the add menu, a pool draft, a fixed row's read-only text, a policy editor). Open and close rules stay the same: <code>inspectorOpen</code>, the Close × and Escape, and the header score toggling Results.</li>
+        <li><strong>When nothing is open, the column shows Results</strong> (the right side always carries numbers, which is the density the owner asked for). Closing an editor returns the column to Results. Results has no Close ×, because it is the resting state.</li>
+        <li><strong>The header score</strong> (owner's ruling): if an editor, the add menu or a draft is open, pressing it closes that (as Close × would, so the selection clears and the selected policy's map tools go with it) and the column shows Results. Otherwise it scrolls Results to the top and moves focus there. It stops being a disclosure: no <code>aria-expanded</code>, and <code>aria-controls</code> names the detail column.</li>
+        <li><strong>Height</strong> (owner's ruling): from md the bottom pane has a fixed height of about 40% of the mode box, whatever its columns hold. The map doesn't change height when a kind opens or a policy is selected. Each column scrolls inside it.</li>
+        <li>The inspector column beside the map is removed. The map row is the map alone.</li>
+        <li>A map click on a lot with no project ("miss") still selects the policy that sets the lot's limit, and its editor opens in the detail column.</li>
+      </ol>
+    </section>
+
+    <section id="sec-map">
+      <h3>The map</h3>
+      <ol>
+        <li>The project card, the hover tooltip, the notice pills and the Sources dialog are unchanged. With the inspector gone, the card's placement area (<code>cardArea</code>) is the full-width map.</li>
+        <li><code>--map-controls-br-*</code> and the zoom lift are unchanged.</li>
+      </ol>
+    </section>
+
+    <section id="sec-phone">
+      <h3>Below md</h3>
+      <ol>
+        <li>The layout keeps its single column, and the inspector stays a bottom sheet placed under the chart (<code>placeSheet</code>), as today.</li>
+        <li>Results-by-default is md-only (my call). On a phone the sheet stays closed until something opens it, and the header score toggles Results as today. Otherwise the sheet would always cover the policy rows. The rule lives in the layout (<code>TimelineMode</code> from md), not in <code>SimPage</code>'s open state.</li>
+        <li>The controls row, the ruler and the chart stay in view while the rows scroll: they are sticky at the top of the scroll box, under the status line.</li>
+        <li>The one-axis rules apply unchanged.</li>
+      </ol>
+    </section>
+  </section>
+
+  <section id="sec-tests-docs">
+    <h2>Tests and docs that change</h2>
+    <ul>
+      <li><code>e2e/sim.spec.ts</code>: "the editor is beside the map from md" becomes "the editor is in the bottom pane, right of the timeline". The stale-stable boxes (<code>tl-inspector</code>, <code>tl-dock</code>) are re-pinned. New: the play control stays in view after opening every kind; the map spans the viewport width from md.</li>
+      <li><code>e2e/fzp.spec.ts</code>: the card checks keep passing (inside <code>tl-map</code>, not over <code>tl-dock</code>).</li>
+      <li><code>e2e/sim-share.spec.ts</code> and <code>e2e/chrome-dark.spec.ts</code>: the selectors follow the moved <code>tl-inspector</code>. Keep the <code>data-testid</code>.</li>
+      <li>The component specs <code>TimelineMode.svelte.spec.ts</code> and <code>Timeline.svelte.spec.ts</code>: the phone sheet tests keep passing; add the shared-scale test.</li>
+      <li>Docs: <code>docs/dev/sim-page.md</code> (Layout item 2), <code>docs/dev/timeline-ui.md</code> (rules 1 and 9).</li>
+    </ul>
+  </section>
+
+  <section id="sec-builder">
+    <h2>Left to the builder</h2>
+    <ul>
+      <li>How the axis scale is shared: one measured lane box, or a CSS grid that every axis element sits in.</li>
+      <li>Sticky versus a nested scroll box for the pinned block.</li>
+      <li>The exact column split and breakpoints. Check them at 1280 and 1024 px wide.</li>
+    </ul>
+  </section>
+</article>
