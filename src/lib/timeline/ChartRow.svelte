@@ -3,8 +3,8 @@
   target as a dashed marker at its deadline. The part after `index` is drawn dashed at full colour
   (3:1 holds); nothing is drawn past `filledThrough`. Hover or focus of a month, and Left and Right
   on the focused overlay, read out that month's homes. The plot is 96 px tall below md and 64 px
-  from md, where the legend moves to the label column. The figcaption points to the Results table
-  as the text alternative.
+  from md, where the legend moves to the label column; 40 px from md on a viewport 820 px tall or
+  less. The figcaption points to the Results table as the text alternative.
 -->
 <script lang="ts">
   import { COLORS } from '$lib/fzp/chart';

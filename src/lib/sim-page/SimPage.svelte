@@ -2,10 +2,11 @@
   The /sim page on the timeline (timeline-ui rules 1, 10-22, 40, 41): TimelineMode over the
   document in a `PolicyStore<SimPolicy4>` (undo, redo; edits reconciled with the calibration, and
   programmes or scales an edit leaves without a source dropped with today's funding notice),
-  whose brush lots PolicySync resolves for the worker. The inspector beside the map is the
-  Inspector (the selected policy's editor, "+"'s menu) or, after a press on the header score,
-  Results. The header has the View menu (always offered, rule 18), Undo and Redo, and Publish; its
-  status slot the save state.
+  whose brush lots PolicySync resolves for the worker. The detail column (from md beside the
+  timeline in the bottom pane under the map, below md a sheet) is the Inspector (the selected
+  policy's editor, "+"'s menu) or Results: from md at rest or after a press on the header score,
+  below md after that press. The header has the View menu (always offered, rule 18), Undo and
+  Redo, and Publish; its status slot the save state.
   Opening (rule 40, R-3): with the calibration known, in the browser, the document opens before
   TimelineMode mounts, so its first `policy` is the opened one; with no calibration it opens on
   `oncalibration`, after a Retry's reload. Edit: the v1 autosave migrates to `sfhousing:sim:v2`,
