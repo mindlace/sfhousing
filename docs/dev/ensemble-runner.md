@@ -81,7 +81,7 @@ An edit from a document with nothing in force changes the comparison from the pr
 
 `heights` and `heightLids` follow the zoning in force at the last `viewMonth`: a `cityInput` unit reads `cityInputAt` on the plan frame in view, then the city build runs in slices and posts `heights`; the same view with equal inputs posts nothing. A wanted lid view builds on the latest city. A throw in either is rule 21's.
 
-`resyncMap` posts `MapStream.snapshot(world1)` (revision 0), unbudgeted; during a quiet re-step it waits for the rewind. `MapStream.cellsFor` runs after each non-null flush and on a viewport change; its cells go to the chunk loader.
+`resyncMap` posts `MapStream.snapshot(planWorld)` (revision 0), unbudgeted; during a quiet re-step it waits for the rewind. `MapStream.cellsFor` runs after each non-null flush and on a viewport change; its cells go to the chunk loader.
 
 ### Failure
 

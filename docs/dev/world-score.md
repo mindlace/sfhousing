@@ -82,7 +82,7 @@ The shown `displacedHomes` series and the ratio's displaced term differ in timin
 
 ## `cardAt`
 
-World 1's answer to `parcelSummary`: the lot's record, envelope and limits under `frame`, then the project chosen on `day` with its card (today's `chooseProject` and `projectCard`) and the frame's stage tables for its cohort (`lookupsAt(frame)`).
+The plan world's answer to `parcelSummary`: the lot's record, envelope and limits under `frame`, then the project chosen on `day` with its card (today's `chooseProject` and `projectCard`) and the frame's stage tables for its cohort (`lookupsAt(frame)`).
 
 `CardDeps` the host builds:
 

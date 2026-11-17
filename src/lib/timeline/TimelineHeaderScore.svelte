@@ -1,6 +1,6 @@
 <!--
-  The header score of `/sim` on the timeline: "{n} homes by {year}", the average of the simulated
-  cities at the last month of the window, with the "vs FZP" delta under it and the 4 px RHNA meter
+  The header score of `/sim` on the timeline: "{n} homes by {year}", the plan world's count
+  at the last month of the window, with the "vs FZP" delta under it and the 4 px RHNA meter
   along its bottom edge (rule 27). Same markup and test ids as `scoreboard/HeaderScore.svelte`,
   which is hashed and says "added". Its accessible name and the delta's description carry "by
   {year}". It reads "calculating" until the forecast is filled to its end, and while `provisional`
