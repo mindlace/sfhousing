@@ -23,7 +23,7 @@ import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING } from './copy';
 import { fillStatusText } from './fill';
-import { filledEndDay } from './playhead';
+import { filledEndDay, indexOfDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
 import { headerOf } from './results';
 import { dayPct } from './rows';
@@ -324,6 +324,51 @@ describe('TimelineMode', () => {
     emit(filledMsg(2, 10, 4));
     await expect.poll(() => parseFloat(hatches()[0].style.left)).toBeCloseTo(at(13), 1);
   });
+
+  for (const width of [1280, 1024, 390]) {
+    it(`at ${width} px the ruler, slider, chart, bars and playhead line share one x scale`, async () => {
+      await page.viewport(width, 900);
+      await opened(LAST, { initialPolicy: mk(protect(5)) });
+      await expect.element(slider()).toBeInTheDocument();
+      const near = (a: number, b: number, what: string) =>
+        expect(Math.abs(a - b), `${what}: ${a} vs ${b}`).toBeLessThanOrEqual(1);
+      const rect = (el: Element) => el.getBoundingClientRect();
+      const lane = rect(document.querySelector('[data-testid=tl-lane]')!);
+      const px = (d: Day) => lane.left + (dayPct(d, asOf, windowEnd) / 100) * lane.width;
+      const centre = (r: DOMRect) => r.left + r.width / 2;
+
+      const track = rect(slider().element());
+      near(track.left, lane.left, 'track left');
+      near(track.width, lane.width, 'track width');
+
+      (slider().element() as HTMLElement).focus();
+      await userEvent.keyboard('{PageUp}');
+      await expect.poll(() => debug().day).toBeGreaterThan(asOf);
+      const d = debug().day;
+      await expect.poll(() => slider().element().getAttribute('aria-valuenow')).toBe(String(d));
+
+      near(centre(rect(slider().element().querySelector('.thumb')!)), px(d), 'thumb');
+      const line = document.querySelector('[data-testid=tl-playhead-line]')!;
+      near(centre(rect(line)), px(d), 'playhead line');
+
+      const label = [...document.querySelectorAll('[data-testid=tl-ruler] span')].find(
+        (e) => e.textContent?.trim() === String(y + 5)
+      )!;
+      near(centre(rect(label)), px(dayFromUtc(y + 5, 1, 1)), 'ruler label');
+
+      const chartLine = rect(page.getByTestId('chart-line').element());
+      near(chartLine.right, px(MONTHS[indexOfDay(MONTHS, d)]), 'chart line');
+
+      const mini = document.querySelector('[data-testid=tl-kind-zoning] [data-testid=tl-mini] i')!;
+      near(rect(mini).left, px(monthFirstDay(asOf, 2)), 'zoning miniature');
+
+      near(
+        rect(page.getByTestId('tl-controls').element()).left,
+        rect(page.getByTestId('tl-timeline').element()).left,
+        'controls'
+      );
+    });
+  }
 
   it('a provisional open keeps the header calculating until the full document fills', async () => {
     const s = setup({ initialPolicy: withPaint, initialLots: null });

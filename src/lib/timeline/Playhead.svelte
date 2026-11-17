@@ -3,7 +3,9 @@
   [asOf, windowEnd] that reaches only as far as `end`, the filled mark. A key, a drag or a jump
   pauses. At `end` before the window's end playback idles with `playing` still true and goes on by
   itself when `end` grows; at the window's end `playing` becomes false. Nothing plays on mount.
-  The Ruler sits below the controls; its marker jumps go through `jump`, so they pause too.
+  The Ruler sits below the slider; its marker jumps go through `jump`, so they pause too. The root
+  is `display: contents`: in the timeline's grid the controls span both columns and the slider and
+  Ruler sit on the lane column.
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
@@ -154,91 +156,91 @@
 </script>
 
 <div class="sfh-playhead text-ink dark:text-ink-dark">
-  <div class="flex flex-col gap-1 md:flex-row md:items-center md:gap-4">
-    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <button
-        type="button"
-        class="ctl grid items-center justify-items-center rounded-md px-2"
-        data-testid="tl-pause"
-        aria-label="Pause"
-        onclick={() => (playing = false)}
-      >
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-          <rect x="3" y="2" width="3.5" height="12" rx="0.5" />
-          <rect x="9.5" y="2" width="3.5" height="12" rx="0.5" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        class="ctl flex items-center justify-center gap-1.5 rounded-md px-3 text-sm font-medium"
-        class:off={!playable}
-        data-testid="tl-play"
-        aria-disabled={!playable}
-        aria-describedby={playable ? undefined : `${reasonId}-why`}
-        aria-pressed={playing && speed === 'year'}
-        onclick={() => play('year')}
-      >
-        <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
-          <path d="M3 1.5v13l11-6.5z" />
-        </svg>
-        <span class="grid items-center justify-items-center">
-          {#each PLAY_LABELS as l (l)}
-            {#if l === playLabel}
-              <span class="[grid-area:1/1]" data-testid="tl-play-label">{l}</span>
-            {:else}
-              <span class="invisible [grid-area:1/1]" aria-hidden="true">{l}</span>
-            {/if}
-          {/each}
-        </span>
-      </button>
-      {#if !playable}
-        <span id="{reasonId}-why" class="sr-only">{WHY_OFF}</span>
-      {/if}
-      <button
-        type="button"
-        class="ctl grid items-center justify-items-center rounded-md px-2"
-        class:off={!playable}
-        data-testid="tl-faster"
-        aria-label="Faster"
-        aria-disabled={!playable}
-        aria-describedby={playable ? undefined : `${reasonId}-why`}
-        aria-pressed={playing && speed === 'threeYears'}
-        title={SPEED_NAME.threeYears}
-        onclick={() => play('threeYears')}
-      >
-        <svg viewBox="0 0 20 16" width="18" height="14" fill="currentColor" aria-hidden="true">
-          <path d="M2 1.5v13l8-6.5z" />
-          <path d="M10 1.5v13l8-6.5z" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        class="ctl rounded-md px-2 text-xs"
-        data-testid="tl-today"
-        aria-label="Jump to today, {formatMonthYear(asOf)}"
-        onclick={() => jump(asOf)}
-      >
-        Today
-      </button>
-      <!-- Not a live region: the date changes every frame during playback. Every month of the year
-         is stacked invisibly in the cell so the readout keeps the widest label's width. -->
-      <p
-        class="m-0 ml-1 grid text-sm font-medium whitespace-nowrap tabular-nums"
-        data-testid="tl-readout"
-      >
-        {#each monthLabels as l (l)}
-          {#if l === monthLabel}
-            <span class="[grid-area:1/1]" data-testid="tl-readout-label">{l}</span>
+  <div class="controls flex flex-wrap items-center gap-x-2 gap-y-1" data-testid="tl-controls">
+    <button
+      type="button"
+      class="ctl grid items-center justify-items-center rounded-md px-2"
+      data-testid="tl-pause"
+      aria-label="Pause"
+      onclick={() => (playing = false)}
+    >
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+        <rect x="3" y="2" width="3.5" height="12" rx="0.5" />
+        <rect x="9.5" y="2" width="3.5" height="12" rx="0.5" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="ctl flex items-center justify-center gap-1.5 rounded-md px-3 text-sm font-medium"
+      class:off={!playable}
+      data-testid="tl-play"
+      aria-disabled={!playable}
+      aria-describedby={playable ? undefined : `${reasonId}-why`}
+      aria-pressed={playing && speed === 'year'}
+      onclick={() => play('year')}
+    >
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+        <path d="M3 1.5v13l11-6.5z" />
+      </svg>
+      <span class="grid items-center justify-items-center">
+        {#each PLAY_LABELS as l (l)}
+          {#if l === playLabel}
+            <span class="[grid-area:1/1]" data-testid="tl-play-label">{l}</span>
           {:else}
             <span class="invisible [grid-area:1/1]" aria-hidden="true">{l}</span>
           {/if}
         {/each}
-      </p>
-    </div>
+      </span>
+    </button>
+    {#if !playable}
+      <span id="{reasonId}-why" class="sr-only">{WHY_OFF}</span>
+    {/if}
+    <button
+      type="button"
+      class="ctl grid items-center justify-items-center rounded-md px-2"
+      class:off={!playable}
+      data-testid="tl-faster"
+      aria-label="Faster"
+      aria-disabled={!playable}
+      aria-describedby={playable ? undefined : `${reasonId}-why`}
+      aria-pressed={playing && speed === 'threeYears'}
+      title={SPEED_NAME.threeYears}
+      onclick={() => play('threeYears')}
+    >
+      <svg viewBox="0 0 20 16" width="18" height="14" fill="currentColor" aria-hidden="true">
+        <path d="M2 1.5v13l8-6.5z" />
+        <path d="M10 1.5v13l8-6.5z" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="ctl rounded-md px-2 text-xs"
+      data-testid="tl-today"
+      aria-label="Jump to today, {formatMonthYear(asOf)}"
+      onclick={() => jump(asOf)}
+    >
+      Today
+    </button>
+    <!-- Not a live region: the date changes every frame during playback. Every month of the year
+         is stacked invisibly in the cell so the readout keeps the widest label's width. -->
+    <p
+      class="m-0 ml-1 grid text-sm font-medium whitespace-nowrap tabular-nums"
+      data-testid="tl-readout"
+    >
+      {#each monthLabels as l (l)}
+        {#if l === monthLabel}
+          <span class="[grid-area:1/1]" data-testid="tl-readout-label">{l}</span>
+        {:else}
+          <span class="invisible [grid-area:1/1]" aria-hidden="true">{l}</span>
+        {/if}
+      {/each}
+    </p>
+  </div>
 
+  <div class="axis min-w-0" data-testid="tl-axis">
     <div
       bind:this={track}
-      class="track relative min-w-0 md:flex-1"
+      class="track relative min-w-0"
       role="slider"
       tabindex="0"
       aria-label="Date in the simulation"
@@ -257,17 +259,28 @@
       <div class="filled" style:width={pct(end)}></div>
       <div class="thumb" style:left={pct(day)}></div>
     </div>
+    <Ruler
+      {asOf}
+      {windowEnd}
+      filledEnd={end}
+      {markers}
+      onjump={(d) => jump(clampDay(d, asOf, end))}
+    />
   </div>
-  <Ruler
-    {asOf}
-    {windowEnd}
-    filledEnd={end}
-    {markers}
-    onjump={(d) => jump(clampDay(d, asOf, end))}
-  />
 </div>
 
 <style>
+  /* Its parts are the timeline grid's cells: the controls span the label and lane columns, the
+     slider and Ruler sit on the lane column, so they share the lanes' x scale. */
+  .sfh-playhead {
+    display: contents;
+  }
+  .controls {
+    grid-column: 1 / -1;
+  }
+  .axis {
+    grid-column: 2;
+  }
   .ctl {
     min-width: 32px;
     min-height: 32px;

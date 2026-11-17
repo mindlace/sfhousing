@@ -10,8 +10,14 @@
   import { formatMonthYear } from '$lib/fzp/format';
   import { formatCount } from '$lib/scoreboard';
   import type { TimelineView } from '$lib/sim/world/score/types';
+  import type { Day } from '$lib/timelapse/time';
+  import { indexOfDay } from './playhead';
+  import { dayPct } from './rows';
 
   interface Props {
+    /** The window the lanes span: a month sits where its first day sits in every lane. */
+    asOf: Day;
+    windowEnd: Day;
     view: TimelineView | null;
     /** The playhead's calendar month. */
     index: number;
@@ -19,15 +25,14 @@
     target: { deadlineIndex: number; units: number } | null;
   }
 
-  let { view, index, target }: Props = $props();
+  let { asOf, windowEnd, view, index, target }: Props = $props();
 
   const W = 1000;
   const H = 100;
   const last = $derived(view?.filledThrough ?? -1);
   /** The homes already completed at the dataset date: added, as the headline counts them. */
   const base = $derived(view?.baseline.completedNet ?? 0);
-  const lastIndex = $derived(Math.max(view?.lastIndex ?? 1, 1));
-  const x = (i: number) => (i / lastIndex) * W;
+  const x = (i: number) => (dayPct(view!.months[i], asOf, windowEnd) / 100) * W;
 
   const yMax = $derived.by(() => {
     if (!view || last < 0) return 1;
@@ -68,7 +73,8 @@
   function monthAt(clientX: number): number {
     const r = overlay!.getBoundingClientRect();
     const f = r.width > 0 ? (clientX - r.left) / r.width : 0;
-    return Math.min(Math.max(Math.round(f * lastIndex), 0), last);
+    const i = indexOfDay(view!.months, asOf + f * (windowEnd - asOf));
+    return Math.min(Math.max(i, 0), last);
   }
   function onfocus() {
     focusAt = Math.min(Math.max(index, 0), last);
@@ -181,7 +187,7 @@
         <p
           class="readout pointer-events-none absolute top-0 m-0 rounded border border-line bg-surface px-2 py-1 text-xs whitespace-nowrap text-ink tabular-nums shadow-md dark:text-ink-dark"
           style:left="{(x(active) / W) * 100}%"
-          class:flip={active > lastIndex / 2}
+          class:flip={x(active) > W / 2}
           data-testid="chart-readout"
         >
           {summary(active)}

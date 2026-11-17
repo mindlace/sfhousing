@@ -990,7 +990,7 @@
 
 {#snippet chartPart()}
   <div bind:this={chartBox}>
-    <ChartRow view={current} {index} target={chartTarget} />
+    <ChartRow {asOf} {windowEnd} view={current} {index} target={chartTarget} />
   </div>
 {/snippet}
 
@@ -1193,6 +1193,7 @@
         playhead={playheadPart}
         chart={chartPart}
         playheadMonth={viewMonthOf(asOf, day)}
+        playheadDay={day}
         {filledEnd}
       />
     </div>

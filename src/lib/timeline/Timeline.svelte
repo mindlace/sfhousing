@@ -4,6 +4,8 @@
   world". Every row is hatched past `filledEnd` (rule 3). From md a kind opens in place; below md
   tapping a kind opens its rows as a full-height sheet over the same lanes, with the playhead and
   chart staying above its handle (rule 9). The "+" menu and the editor belong to the page.
+  The playhead's slider and Ruler, the chart and every lane sit on one grid column, so they share
+  one x scale; the playhead line runs down that column at `playheadDay`.
 -->
 <script lang="ts">
   import { tick, type Snippet } from 'svelte';
@@ -44,6 +46,8 @@
     chart: Snippet;
     /** The playhead's model month, for the keys' nearer edge. */
     playheadMonth: number;
+    /** The playhead's day: the line through the rows sits at it. */
+    playheadDay: Day;
     /** Each row is hatched past it. */
     filledEnd: Day;
   }
@@ -60,11 +64,13 @@
     playhead,
     chart,
     playheadMonth,
+    playheadDay,
     filledEnd
   }: Props = $props();
 
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
   const filledPct = $derived(dayPct(filledEnd, asOf, windowEnd));
+  const playheadPct = $derived(dayPct(playheadDay, asOf, windowEnd));
   const kinds = $derived<PolicyKind[]>(
     hasMoney(calibration) ? ['zoning', 'permitting', 'money'] : ['zoning', 'permitting']
   );
@@ -187,12 +193,22 @@
   data-testid="tl-timeline"
   style:padding-bottom={sheeting ? '100dvh' : undefined}
 >
-  <div class="grid" inert={sheeting}>
-    <div class="ph">{@render playhead()}</div>
+  <div class="rows grid" inert={sheeting}>
+    <!-- The playhead's parts, the chart's label and the chart share the rows' columns. -->
+    <div class="pin" data-testid="tl-pin">
+      {@render playhead()}
 
-    <div class="lab plain">Homes completed</div>
-    <div class="cell" bind:this={chartCell}>
-      <Lane {filledPct}>{@render chart()}</Lane>
+      <div class="lab plain">Homes completed</div>
+      <div class="cell" bind:this={chartCell}>
+        <Lane {filledPct}>{@render chart()}</Lane>
+      </div>
+
+      <div
+        class="line"
+        data-testid="tl-playhead-line"
+        aria-hidden="true"
+        style:left="{playheadPct}%"
+      ></div>
     </div>
 
     {#each kinds as kind (kind)}
@@ -228,6 +244,13 @@
         {onselect}
       />
     </div>
+
+    <div
+      class="line"
+      data-testid="tl-playhead-line"
+      aria-hidden="true"
+      style:left="{playheadPct}%"
+    ></div>
   </div>
 
   {#if sheeting && sheet}
@@ -293,8 +316,29 @@
     display: grid;
     grid-template-columns: var(--lab) minmax(0, 1fr);
   }
-  .ph {
+  .rows {
+    position: relative;
+  }
+  .pin {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    position: relative;
+  }
+  /* The playhead line, in two segments at the same x: one through the pinned block from the
+     slider's row down, one through every row under it. An absolutely placed grid child takes its
+     grid area as its containing block; the row end left auto reaches the grid's bottom edge. */
+  .line {
+    position: absolute;
     grid-column: 2;
+    grid-row: 2;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    z-index: 1;
+    pointer-events: none;
+    background: var(--color-accent);
   }
   .cell {
     min-width: 0;
@@ -353,6 +397,9 @@
     }
     .lab {
       border-bottom-color: var(--color-line-dark);
+    }
+    .line {
+      background: var(--color-accent-dark);
     }
     .sheet {
       border-top-color: var(--color-line-dark);

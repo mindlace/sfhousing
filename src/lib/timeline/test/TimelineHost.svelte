@@ -8,7 +8,7 @@
 
 <Timeline {...props}>
   {#snippet playhead()}
-    <div data-testid="ph-part">playhead</div>
+    <div data-testid="ph-part" style="grid-column: 1 / -1">playhead</div>
   {/snippet}
   {#snippet chart()}
     <div data-testid="chart-part">chart</div>
