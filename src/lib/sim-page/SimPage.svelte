@@ -329,6 +329,7 @@
   let adding = $state<PolicyKind | null>(null);
   /** The inspector's face: the selection's editor, or Results (the header score). */
   let face = $state<'editor' | 'results'>('editor');
+  let timeline = $state<ReturnType<typeof TimelineMode>>();
   let day = $state<Day>(untrack(() => calibration?.asOf ?? 0));
   /** The kind last selected or added to: where focus falls back (WCAG 2.4.3). */
   let focusKind: PolicyKind = 'zoning';
@@ -359,8 +360,16 @@
     adding = kind;
   }
 
-  /** The header score: Results <-> the editor. */
+  /** The header score. From md it closes what is open as Close × does (the inspector's unmount
+   *  discards and announces a draft) and shows Results; below md it toggles. */
   function pressScore(): void {
+    if (wide.current) {
+      adding = null;
+      selected = null;
+      face = 'results';
+      void timeline?.showResults();
+      return;
+    }
     face = face === 'results' ? 'editor' : 'results';
   }
 
@@ -1025,6 +1034,7 @@
 {/snippet}
 
 <TimelineMode
+  bind:this={timeline}
   {manifest}
   {manifestError}
   {calibration}

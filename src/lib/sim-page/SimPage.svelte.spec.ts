@@ -19,6 +19,7 @@ import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
 import { tinyLimits } from '$lib/map/height/test/fixtures';
 import type { PackedCell } from '$lib/map/types';
 import { OUTLINE_LAYER_ID } from '$lib/paint/outline-layers';
+import { DRAFT_DISCARDED } from '$lib/sim-page/funding-copy';
 import { copyFor } from '$lib/sharing/copy';
 import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
 import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
@@ -1423,5 +1424,69 @@ describe('SimPage autosave and publish', () => {
     await page.getByRole('button', { name: 'Add Zoning policy' }).click();
     await page.getByRole('button', { name: 'Protect rent-controlled buildings' }).click();
     await expect.element(publish()).toHaveTextContent('Publish');
+  });
+
+  describe('the header score', () => {
+    const scoreBar = () => header().getByTestId('score-bar');
+    const results = () => page.getByTestId('tl-results');
+
+    it('from md Results shows at rest, and the header score has no aria-expanded', async () => {
+      await opened();
+      await expect.element(results()).toBeVisible();
+      expect(scoreBar().element().hasAttribute('aria-expanded')).toBe(false);
+      expect(scoreBar().element().getAttribute('aria-controls')).toBe(
+        page.getByTestId('tl-inspector').element().id
+      );
+    });
+
+    it('from md the header score closes an open editor and moves focus to Results', async () => {
+      await opened({ storage: () => seeded(doc4(zoning(historic))) });
+      await openZoning();
+      await page.getByTestId('tl-bar').first().click();
+      await expect.element(inspector()).toBeVisible();
+      await scoreBar().click();
+      await expect.poll(() => inspector().elements().length).toBe(0);
+      await expect.element(results()).toBeVisible();
+      expect(
+        page
+          .getByTestId('tl-bar')
+          .and(page.getByRole('button', { pressed: true }))
+          .elements()
+      ).toHaveLength(0);
+      await expect.poll(() => document.activeElement).toBe(results().element());
+    });
+
+    it('from md the header score discards an open pool draft and says so', async () => {
+      await opened();
+      await page.getByRole('button', { name: 'Add Public money policy' }).click();
+      await page.getByRole('button', { name: 'Your own pool' }).click();
+      await expect.element(inspectorTitle()).toHaveTextContent('Your own pool');
+      await scoreBar().click();
+      await expect.poll(() => inspector().elements().length).toBe(0);
+      await expect.element(page.getByText(DRAFT_DISCARDED)).toBeInTheDocument();
+      await expect.element(results()).toBeVisible();
+    });
+
+    it('from md with nothing open the header score scrolls Results to the top and focuses it', async () => {
+      await opened();
+      const col = page.getByTestId('tl-inspector').element();
+      col.scrollTop = 200;
+      await scoreBar().click();
+      await expect.poll(() => col.scrollTop).toBe(0);
+      await expect.poll(() => document.activeElement).toBe(results().element());
+    });
+
+    it('below md the header score still toggles Results with aria-expanded', async () => {
+      await page.viewport(375, 700);
+      await opened();
+      await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'false');
+      expect(results().elements()).toHaveLength(0);
+      await scoreBar().click();
+      await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'true');
+      await expect.element(results()).toBeVisible();
+      await scoreBar().click();
+      await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'false');
+      expect(results().elements()).toHaveLength(0);
+    });
   });
 });
