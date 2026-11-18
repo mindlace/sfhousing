@@ -85,7 +85,7 @@ test('at 375px the open Menu has no axe violations in dark', async ({ page }) =>
   await gotoEditor(page);
   await openHeaderMenu(page);
   await expect(
-    page.getByRole('navigation', { name: 'Modes' }).getByRole('link', { name: 'Paint' })
+    page.getByRole('navigation', { name: 'Steps' }).getByRole('link', { name: 'Paint' })
   ).toBeVisible();
   await expectNoA11yViolations(page, { include: ['header'] });
   expect(

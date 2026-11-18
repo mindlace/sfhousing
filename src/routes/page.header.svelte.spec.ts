@@ -96,7 +96,7 @@ describe('/ header save state', () => {
       const row = [
         // Below sm the site title waits in the Menu (Paint pins its score).
         ...(width >= 640 ? [page.getByRole('link', { name: /SF Housing/ }).element()] : []),
-        ...(width >= 1024 ? [page.getByRole('navigation', { name: 'Modes' }).element()] : []),
+        ...(width >= 1024 ? [page.getByRole('navigation', { name: 'Steps' }).element()] : []),
         chip.element(),
         ...(width >= 1024
           ? [

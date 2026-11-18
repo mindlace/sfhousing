@@ -12,7 +12,7 @@ export class HeaderActions {
   pinned = $state<Snippet | null>(null);
   /**
    * The page's non-interactive status (the save state on `/` and `/sim`): on the left at every
-   * width, after the mode links from lg and after the site name below lg. Never among the actions.
+   * width, after the steps from lg and after the site name below lg. Never among the actions.
    */
   status = $state<Snippet | null>(null);
   /**
