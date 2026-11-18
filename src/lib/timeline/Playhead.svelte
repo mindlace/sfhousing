@@ -1,8 +1,8 @@
 <!--
   The playhead (rules 23, 24): transport controls, a fixed-width month readout and a slider over
-  [asOf, windowEnd] that reaches only as far as `end`, the filled mark. A key, a drag or a jump
-  pauses. At `end` before the window's end playback idles with `playing` still true and goes on by
-  itself when `end` grows; at the window's end `playing` becomes false. Nothing plays on mount.
+  [asOf, windowEnd] that reaches only as far as `end`, the filled mark, and never past `last`. A
+  key, a drag or a jump pauses. At `end` before `last` playback idles with `playing` still true and
+  goes on by itself when `end` grows; at `last` `playing` becomes false. Nothing plays on mount.
   The Ruler sits below the slider; its marker jumps go through `jump`, so they pause too. The root
   is `display: contents`: in the timeline's grid the controls span both columns and the slider and
   Ruler sit on the lane column.
@@ -20,6 +20,12 @@
   interface Props {
     asOf: Day;
     windowEnd: Day;
+    /**
+     * The furthest day the playhead may reach: the last day of the last calendar month row
+     * (default `windowEnd`). Playback stops there, Replay shows there, `aria-valuemax` is it. The
+     * window's scale stays `windowEnd`.
+     */
+    last?: Day;
     /** The filled mark (`filledEndDay`): the playhead never goes past it. */
     end: Day;
     day: Day;
@@ -39,6 +45,7 @@
   let {
     asOf,
     windowEnd,
+    last = windowEnd,
     end,
     day = $bindable(),
     playing = $bindable(false),
@@ -52,7 +59,7 @@
 
   const span = $derived(Math.max(windowEnd - asOf, 1));
   const pct = (d: Day) => `${(Math.min(Math.max((d - asOf) / span, 0), 1) * 100).toFixed(3)}%`;
-  const atWindowEnd = $derived(day >= windowEnd && !playing);
+  const atWindowEnd = $derived(day >= last && !playing);
 
   function setDay(next: Day) {
     if (next === day) return;
@@ -68,20 +75,20 @@
   $effect(() => {
     if (!playing) return;
     let handle: number | undefined;
-    let last: number | null = null;
+    let prevTs: number | null = null;
     let clock: number = untrack(() => day);
     let emitted: Day = clock;
     const frame: FrameRequestCallback = (ts) => {
-      const dt = last === null ? 0 : ts - last;
-      last = ts;
+      const dt = prevTs === null ? 0 : ts - prevTs;
+      prevTs = ts;
       // The day moved by something other than this loop: continue from there.
       if (day !== emitted) {
         clock = day;
         emitted = day;
       }
       if (clock >= end) {
-        // At the filled mark: wait for it to grow, or stop at the window's end.
-        if (clock >= windowEnd) {
+        // At the filled mark: wait for it to grow, or stop at `last`.
+        if (clock >= last) {
           playing = false;
           return;
         }
@@ -94,7 +101,7 @@
         emitted = r.day;
         setDay(r.day);
       }
-      if (r.done && end >= windowEnd) {
+      if (r.done && end >= last) {
         playing = false;
         return;
       }
@@ -246,7 +253,7 @@
       aria-label="Date in the simulation"
       aria-orientation="horizontal"
       aria-valuemin={asOf}
-      aria-valuemax={windowEnd}
+      aria-valuemax={last}
       aria-valuenow={day}
       aria-valuetext={monthLabel}
       {onkeydown}

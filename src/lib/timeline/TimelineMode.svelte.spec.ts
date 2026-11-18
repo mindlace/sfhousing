@@ -257,14 +257,21 @@ describe('TimelineMode', () => {
     expect(debug().policy).toEqual(mk(protect(5)));
   });
 
-  it('filled to lastIndex, End reaches the window end: Play reads Replay, no hatch remains', async () => {
+  it("End reaches the last row's month; the header, the readout and Replay agree", async () => {
     await opened();
-    await expect.element(slider()).toHaveAttribute('aria-valuemax', String(windowEnd));
+    const lastDay = filledEndDay(MONTHS, LAST, asOf);
+    await expect.element(slider()).toHaveAttribute('aria-valuemax', String(lastDay));
     (slider().element() as HTMLElement).focus();
     await userEvent.keyboard('{End}');
-    await expect.poll(() => debug().day).toBe(windowEnd);
+    await expect.poll(() => debug().day).toBe(lastDay);
+    await expect
+      .element(page.getByTestId('tl-readout-label'))
+      .toHaveTextContent(formatMonthYear(debug().day));
+    await expect
+      .element(scoreBar())
+      .toHaveTextContent(homesBy(FULL().rows[LAST].completedNet, MONTHS[LAST]));
+    expect(monthStart(debug().day)).toBe(MONTHS[LAST]);
     await expect.element(page.getByTestId('tl-play-label')).toHaveTextContent('Replay');
-    expect(document.querySelectorAll('[data-testid=tl-hatch]')).toHaveLength(0);
   });
 
   it('sends viewMonth when the playhead enters another month', async () => {
@@ -327,7 +334,7 @@ describe('TimelineMode', () => {
   });
 
   it('rows are hatched past the filled end and the hatch moves after a refill', async () => {
-    // Filled short of the last month (filled to it, no hatch remains: the test above).
+    // Filled short of the last month (filled to it, the playhead reaches the last row's month: the test above).
     const s = await opened(LAST - 1);
     const hatches = () => [...document.querySelectorAll<HTMLElement>('[data-testid=tl-hatch]')];
     const at = (through: number) => dayPct(filledEndDay(MONTHS, through, asOf), asOf, windowEnd);
@@ -579,14 +586,11 @@ describe('TimelineMode', () => {
   /** The month index of the playhead's day. */
   const playheadMonth = () => indexOfDay(MONTHS, debug().day);
   const FULL = () => viewOf([chunk(0, LAST + 1)], STATICS);
-  /** The header's text at month i, named by the playhead's month (the readout's).
-   *  Nothing is in force (the default document), so it has no effect part. */
+  /** The header's text at month i. Nothing is in force (the default document): no effect part. */
   const textAt = (i: number) =>
-    headlineText({
-      ...headlineAt(FULL(), i, false, false)!,
-      at: monthStart(debug().day),
-      effect: null
-    });
+    headlineText(
+      headlineAt(FULL(), { index: i, atToday: false }, { provisional: false, inForce: false })!
+    );
 
   it('the header reads 0 by today, then follows the playhead month by month', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -615,7 +619,7 @@ describe('TimelineMode', () => {
     }
   });
 
-  it("the headline's month is the readout's, mid-window and at End past the last row", async () => {
+  it("the headline's month is the readout's, mid-window and at End", async () => {
     await opened();
     const readout = page.getByTestId('tl-readout-label');
     /** "October 2066" → "Oct 2066". */
@@ -631,13 +635,11 @@ describe('TimelineMode', () => {
       .toHaveTextContent(homesBy(FULL().rows[i].completedNet, MONTHS[i]));
     expect(scoreBar().element().textContent).toContain(short(readout.element().textContent!));
     await userEvent.keyboard('{End}');
-    await expect.poll(() => debug().day).toBe(windowEnd);
-    await expect.element(readout).toHaveTextContent(formatMonthYear(windowEnd));
-    // The day is past the last row's month: that row's numbers, under the readout's month.
-    expect(monthStart(windowEnd)).toBeGreaterThan(MONTHS[LAST]);
+    await expect.poll(() => playheadMonth()).toBe(LAST);
+    await expect.element(readout).toHaveTextContent(formatMonthYear(debug().day));
     await expect
       .element(scoreBar())
-      .toHaveTextContent(homesBy(FULL().rows[LAST].completedNet, monthStart(windowEnd)));
+      .toHaveTextContent(homesBy(FULL().rows[LAST].completedNet, MONTHS[LAST]));
     expect(scoreBar().element().textContent).toContain(short(readout.element().textContent!));
   });
 

@@ -200,6 +200,17 @@ describe('Playhead', () => {
     expect(stateText().split('|')[1]).toBe('false');
   });
 
+  it('stops playing at last, not at the window end, and reads Replay there', async () => {
+    const last = WINDOW_END - 20;
+    const { q } = await setup({ last, end: last, startDay: last - 10, startPlaying: true });
+    q.frame(0);
+    q.frame(100);
+    expect(stateDay()).toBe(last);
+    expect(stateText().split('|')[1]).toBe('false');
+    await expect.element(page.getByTestId('tl-play-label')).toHaveTextContent('Replay');
+    await expect.element(slider()).toHaveAttribute('aria-valuemax', String(last));
+  });
+
   it('Play is unavailable while not playable', async () => {
     const { q } = await setup({ playable: false });
     await expect.element(play()).toHaveAttribute('aria-disabled', 'true');

@@ -8,6 +8,7 @@
   interface Props {
     asOf: Day;
     windowEnd: Day;
+    last?: Day;
     end: Day;
     playable?: boolean;
     markers?: Marker[];

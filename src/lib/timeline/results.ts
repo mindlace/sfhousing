@@ -15,6 +15,7 @@ import type { TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
 import type { TierUnits } from '$lib/timelapse/types';
 import { homesBy } from './copy';
+import { indexOfDay } from './playhead';
 
 /**
  * Today's TimelineScore shape over the filled months: shown = the world's rows, no band, tiers from
@@ -64,39 +65,71 @@ export interface Headline {
   homes: number;
   /** months[i]; null at today. */
   at: Day | null;
-  /** planEffect[i].completedNetNew (0 at today) when view.compare === 'plan', else null. */
+  /** planEffect[i].completedNetNew (0 at today) while a policy is in force, else null. */
   effect: number | null;
   goal: GoalReading | null;
 }
 
+/** Where the playhead reads: its calendar month row, or today. */
+export interface PlayheadAt {
+  index: number;
+  atToday: boolean;
+}
+
 /**
- * The headline at calendar month i. Null ("calculating…") without a view, while `provisional`,
- * or when view.filledThrough < i. `atToday` (the playhead's day is the dataset date) reads
- * today: 0 homes, effect 0, the goal at TODAY. Reads a bounded number of rows.
+ * { index: indexOfDay(months, day), atToday: day <= asOf }. The one rule the header, the chart's
+ * readout and the ruler's flag read.
+ */
+export function playheadAt(months: Day[], asOf: Day, day: Day): PlayheadAt {
+  return { index: months.length > 0 ? indexOfDay(months, day) : 0, atToday: day <= asOf };
+}
+
+export interface HeadlineOpts {
+  provisional: boolean;
+  /**
+   * A policy of the person's is in force in the document the numbers on show came from
+   * (!nothingInForce(resultsDoc)). view.compare is never read: it is 'plan' for every document.
+   */
+  inForce: boolean;
+}
+
+/**
+ * The headline at the playhead's month row. Null ("calculating…") without a view, while
+ * `provisional`, or when view.filledThrough < at.index. At today it reads 0 homes, effect 0 (with a
+ * policy in force) and the goal at TODAY. Reads a bounded number of rows.
  */
 export function headlineAt(
   view: TimelineView | null,
-  i: number,
-  atToday: boolean,
-  provisional: boolean,
+  at: PlayheadAt,
+  opts: HeadlineOpts,
   goal: Goal = GOAL
 ): Headline | null {
-  if (!view || provisional) return null;
-  if (atToday) {
+  if (!view || opts.provisional) return null;
+  if (at.atToday) {
     return {
       homes: 0,
       at: null,
-      effect: view.compare === 'plan' ? 0 : null,
+      effect: opts.inForce ? 0 : null,
       goal: readGoal(goal, view, TODAY)
     };
   }
+  const i = at.index;
   if (view.filledThrough < i) return null;
   return {
     homes: view.rows[i].completedNet,
     at: view.months[i],
-    effect: view.compare === 'plan' ? view.planEffect[i].completedNetNew : null,
+    effect: opts.inForce ? view.planEffect[i].completedNetNew : null,
     goal: readGoal(goal, view, i)
   };
+}
+
+/**
+ * Homes completed from today under current law at month i:
+ * rows[i].completedNet - planEffect[i].completedNetNew. Read only while a policy is in force (the
+ * twin is then current law); it leaves out the twin's own pipeline completions.
+ */
+export function currentLawHomes(view: TimelineView, i: number): number {
+  return view.rows[i].completedNet - view.planEffect[i].completedNetNew;
 }
 
 export interface HeadlineText {

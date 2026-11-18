@@ -1010,7 +1010,10 @@ describe("the target rows hold at the goal's deadline, as the header does", () =
     const v = view();
     const i = 57;
     await render(SimResults, { props: feedAt(v, i) });
-    const header = headlineText(headlineAt(v, i, false, false, GOAL)!, GOAL).goal!;
+    const header = headlineText(
+      headlineAt(v, { index: i, atToday: false }, { provisional: false, inForce: false }, GOAL)!,
+      GOAL
+    ).goal!;
     const goalPercent = formatPercent(readGoal(GOAL, v, i)!.fraction);
     expect(header).toBe(`${goalPercent} of the goal`);
     expect(rowPercents()[0]).toBe(goalPercent);
@@ -1035,9 +1038,12 @@ describe("the target rows hold at the goal's deadline, as the header does", () =
     const v = view(82_000);
     const i = 57;
     await render(SimResults, { props: feedAt(v, i) });
-    expect(headlineText(headlineAt(v, i, false, false, GOAL)!, GOAL).goal).toBe(
-      'Goal reached, Oct 2028'
-    );
+    expect(
+      headlineText(
+        headlineAt(v, { index: i, atToday: false }, { provisional: false, inForce: false }, GOAL)!,
+        GOAL
+      ).goal
+    ).toBe('Goal reached, Oct 2028');
     expect(rowPercents()[0]).toBe(formatPercent(readGoal(GOAL, v, i)!.fraction));
     expect(rowPercents()).toEqual(v.targets.map((t) => formatPercent(t.fraction[DEADLINE])));
     expect(document.body.textContent).not.toContain('At the deadline');

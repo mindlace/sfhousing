@@ -133,10 +133,17 @@
   import Explain from './Explain.svelte';
   import { fundsOf4 } from './owner';
   import Playhead from './Playhead.svelte';
-  import { filledEndDay, indexOfDay, viewMonthOf } from './playhead';
+  import { filledEndDay, viewMonthOf } from './playhead';
   import { termsInForce } from './lens';
   import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
-  import { headlineAt, headlineSpoken, headlineText, resultsAt, scoreOfView } from './results';
+  import {
+    headlineAt,
+    headlineSpoken,
+    headlineText,
+    playheadAt,
+    resultsAt,
+    scoreOfView
+  } from './results';
   import { TimelineSession, type Lots, type SessionNotice } from './session.svelte';
   import type { SpanRef } from './spans';
   import Timeline from './Timeline.svelte';
@@ -312,20 +319,22 @@
   const statics = $derived(session?.statics ?? null);
   const months = $derived(statics?.months ?? current?.months ?? null);
   /** The playhead's calendar month. */
-  const index = $derived(months && months.length > 0 ? indexOfDay(months, day) : 0);
+  const index = $derived(months ? playheadAt(months, asOf, day).index : 0);
+  /** The last day the playhead may reach: the last calendar month row's last day. */
+  const lastDay = $derived(months ? filledEndDay(months, months.length - 1, asOf) : windowEnd);
   const shown = $derived(session ? session.shown(index) : { view: null, stale: false });
   /** The numbers on show are from before the latest change (rule 31). */
   const stale = $derived(shown.stale);
   /**
-   * The filled mark: the playhead stops there (rule 24). Filled to the last month, it is the
-   * window's end (that month's calendar end and the window's model-month end differ by days), so
-   * End, Replay and the end of playback reach it.
+   * The filled mark: the playhead stops there (rule 24). Filled to the last month, it is
+   * `lastDay`, the last calendar month row's last day, so End, Replay and the end of playback
+   * reach it and every reading names that row's month.
    */
   const filledEnd = $derived(
     !current
       ? asOf
       : current.filledThrough >= current.lastIndex
-        ? windowEnd
+        ? lastDay
         : Math.min(filledEndDay(current.months, current.filledThrough, asOf), windowEnd)
   );
   const playable = $derived(session ? session.playAvailable() : false);
@@ -349,36 +358,29 @@
    */
   let heldDoc = $state.raw<SimPolicy4 | null>(null);
   const resultsDoc = $derived((stale ? heldDoc : null) ?? session?.accepted ?? policy);
+  /** A policy of the person's is in force in the document the numbers on show are from. */
+  const inForce = $derived(!nothingInForce(resultsDoc));
   /**
    * The comparison's wording for Results and the header, from the document the numbers on show
    * are from, so it changes with the numbers (held numbers keep theirs).
    */
-  const copy = $derived(copyOf(nothingInForce(resultsDoc)));
+  const copy = $derived(copyOf(!inForce));
   /** The playhead is at the dataset date: the headline reads today. */
   const atToday = $derived(day <= asOf);
   /**
    * The headline at the playhead's month (rule 27; OQ-3: "calculating" while provisional). It
-   * reads `index`, never `day`, so it changes at most once per month the playhead crosses.
+   * reads `index` and `atToday`, never `day`, so it changes at most once per month the playhead
+   * crosses. The playhead stops at the last row's month, so `months[index]` is the readout's.
    */
   const headline = $derived(
-    headlineAt(shown.view, index, atToday, session?.provisional ?? false, GOAL)
+    headlineAt(
+      shown.view,
+      { index, atToday },
+      { provisional: session?.provisional ?? false, inForce },
+      GOAL
+    )
   );
-  /** The playhead's calendar month, the readout's: it changes only when that month changes. */
-  const playheadMonth = $derived(monthStart(day));
-  /** Named by the playhead's month; past the last row, that row's numbers under it. */
-  const headText = $derived(
-    headline
-      ? headlineText(
-          {
-            ...headline,
-            at: headline.at === null ? null : playheadMonth,
-            // "From your policy" only while the copy says the numbers are your policy's.
-            effect: copy.compare === 'fzp' ? headline.effect : null
-          },
-          GOAL
-        )
-      : null
-  );
+  const headText = $derived(headline ? headlineText(headline, GOAL) : null);
   const chartTarget = $derived(current ? goalStep(GOAL, current) : null);
   // The held document goes once the numbers on show are current again.
   $effect(() => {
@@ -1086,6 +1088,7 @@
   <Playhead
     {asOf}
     {windowEnd}
+    last={lastDay}
     end={filledEnd}
     bind:day
     bind:playing

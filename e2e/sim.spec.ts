@@ -10,6 +10,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { SfhSimDebug } from '../src/lib/sim-page/debug';
 import { formatMonthYear, formatShortMonthYear } from '../src/lib/fzp/format';
+import { monthStart } from '../src/lib/fzp/time';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
 import {
@@ -263,11 +264,11 @@ test('the headline follows the playhead and counts from today', async ({ isMobil
   await slider(page).focus();
   await page.keyboard.press('End');
   await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes by [A-Z][a-z]{2} \d{4}$/);
-  // The headline names the readout's month, from the same day (here past the last row's month).
+  // The playhead stops at the last row's month, so the headline and the readout name the same one.
   const day = await fzp(page, 'day');
   await expect(page.getByTestId('tl-readout-label')).toHaveText(formatMonthYear(day));
   expect((await scoreBar(page).textContent())!.replace(/^[\d,]+ homes by /, '')).toBe(
-    formatShortMonthYear(day)
+    formatShortMonthYear(monthStart(day))
   );
   // Nothing in force: line 2 is the goal alone. Below sm it is hidden; the description carries it.
   const description = /^([\d.]+% of the goal|Goal reached, [A-Z][a-z]{2} \d{4})$/;
