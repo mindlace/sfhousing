@@ -10,7 +10,6 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { SfhSimDebug } from '../src/lib/sim-page/debug';
 import { formatMonthYear, formatShortMonthYear } from '../src/lib/fzp/format';
-import { forecastFilled } from '../src/lib/timeline/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
 import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
@@ -377,10 +376,10 @@ test('the play control stays in view with every kind open', async ({ isMobile, p
   const play = page.getByTestId('tl-play');
   if (isMobile) {
     await page.getByTestId('tl-mode').evaluate((el) => el.scrollTo(0, el.scrollHeight));
-    const status = (await page.getByTestId('tl-status-line').boundingBox())!;
+    const header = (await page.getByRole('banner').boundingBox())!;
     await expect
       .poll(async () => (await play.boundingBox())!.y)
-      .toBeGreaterThanOrEqual(status.y + status.height - 0.5);
+      .toBeGreaterThanOrEqual(header.y + header.height - 0.5);
   } else {
     await openKind(page, 'Zoning');
     await openKind(page, 'Permitting');
@@ -429,47 +428,72 @@ test('the Updating status never moves the timeline or the editor', async ({ page
   await addPolicy(page, 'Zoning', 'Transit rule');
   await waitRefilled(page, 0);
   const before = await refillCount(page);
+  // The site name: the first visible home link in the header (the mode link Paint follows it).
+  const lead = 'header a[href="/"]';
+  const box = async (selector: string) =>
+    page.evaluate((s) => {
+      const el = [...document.querySelectorAll(s)].find((e) => e.checkVisibility())!;
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height };
+    }, selector);
   const boxes = async () => ({
-    editor: await inspectorBox(page).boundingBox(),
-    dock: await page.getByTestId('tl-dock').boundingBox(),
-    map: await page.getByTestId('tl-map').boundingBox()
+    editor: await box('[data-testid="tl-inspector"]'),
+    dock: await box('[data-testid="tl-dock"]'),
+    map: await box('[data-testid="tl-map"]'),
+    score: await box('[data-testid="score-bar"]'),
+    lead: await box(lead)
   });
   const at = await boxes();
-  // Each frame while the forecast is stale, the editor's, the timeline's and the map's boxes.
-  await page.evaluate(() => {
+  // Each frame while the forecast is stale ("Updating" showing), the editor's, the timeline's,
+  // the map's, the score bar's and the site name's boxes.
+  await page.evaluate((leadSelector) => {
     type Box = { x: number; y: number; width: number; height: number };
     const w = window as unknown as {
       __sfhFzp: SfhFzpDebug;
-      __staleBoxes?: { editor: Box; dock: Box; map: Box }[];
+      __staleBoxes?: Record<string, Box>[];
+      __updatingSeen?: boolean;
     };
     const box = (selector: string): Box => {
-      const r = document.querySelector(selector)!.getBoundingClientRect();
+      const el = [...document.querySelectorAll(selector)].find((e) => e.checkVisibility())!;
+      const r = el.getBoundingClientRect();
       return { x: r.x, y: r.y, width: r.width, height: r.height };
     };
     w.__staleBoxes = [];
+    w.__updatingSeen = false;
     const tick = () => {
-      if (w.__sfhFzp.stale)
+      if (w.__sfhFzp.stale) {
+        const shown = document.querySelector('[data-testid="tl-status-shown"]');
+        if (shown?.textContent?.trim() === 'Updating') w.__updatingSeen = true;
         w.__staleBoxes!.push({
           editor: box('[data-testid="tl-inspector"]'),
           dock: box('[data-testid="tl-dock"]'),
-          map: box('[data-testid="tl-map"]')
+          map: box('[data-testid="tl-map"]'),
+          score: box('[data-testid="score-bar"]'),
+          lead: box(leadSelector)
         });
+      }
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-  });
+  }, lead);
   // A chip edit sends a revision: the status reads "Updating" until the refill passes.
   await editor(page)
     .getByRole('group', { name: 'Stop types' })
     .getByRole('button', { name: /^Muni Rapid bus/ })
     .click();
   await waitRefilled(page, before);
-  const seen = await page.evaluate(
-    () => (window as unknown as { __staleBoxes?: unknown[] }).__staleBoxes ?? []
-  );
+  const { seen, updating } = await page.evaluate(() => {
+    const w = window as unknown as { __staleBoxes?: unknown[]; __updatingSeen?: boolean };
+    return { seen: w.__staleBoxes ?? [], updating: w.__updatingSeen ?? false };
+  });
   expect(seen.length, 'the forecast never went stale').toBeGreaterThan(0);
+  expect(updating, '"Updating" never showed').toBe(true);
+  // Every recorded box equals the one before the edit (the held numbers keep the score's width).
   for (const s of seen) expect(s).toEqual(at);
-  expect(await boxes()).toEqual(at);
+  // After the refill the score's numbers are the new ones: the rest stays where it was.
+  const { score: _score, ...rest } = at;
+  const { score: _after, ...now } = await boxes();
+  expect(now).toEqual(rest);
 });
 
 test('a Paint stroke adds a painted area and Ctrl+Z removes it', async ({ isMobile, page }) => {
@@ -1128,68 +1152,77 @@ async function expectHeaderFits(page: Page): Promise<number> {
 }
 
 /**
- * The widest header strings the page can show: the "Autosave off" chip, a five-digit score and
- * its widest delta.
- * The score's count is the button's first text; its "added" span (visually hidden below lg) and
- * "by {year}" stay.
+ * The widest header strings the page can show. The save state's sizer (it reserves the width of
+ * "Saving…") takes the shape of the "Autosave off" button, built from the button's own classes;
+ * the score's count is the button's first text node; line 2 reads "+12,345 from your policy ·
+ * Goal reached, Mar 2043". With nothing in force line 2 has no effect part, so the helper adds
+ * one as the component draws it (the goal then drops from lg to xl), and removes its own copy
+ * before it runs again.
  */
 async function widestHeaderText(page: Page): Promise<void> {
   await page.evaluate(() => {
-    const chip = document.querySelector('[data-header-status]');
-    if (chip) {
-      const w = document.createTreeWalker(chip, NodeFilter.SHOW_TEXT);
-      for (let n = w.nextNode(); n; n = w.nextNode())
-        if (n.textContent?.trim() === 'Saving…') {
-          n.textContent = 'Autosave off';
-          break;
-        }
+    const sizer = document.querySelector(
+      '[data-testid="save-state"] > span[aria-hidden="true"]:first-child'
+    );
+    if (sizer) {
+      const chip = document.createElement('span');
+      chip.className =
+        'inline-flex min-h-6 min-w-6 items-center rounded-full border px-2 whitespace-nowrap pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+      chip.textContent = 'Autosave off';
+      sizer.replaceChildren(chip);
     }
-    // Line 2's visible parts.
-    const delta = document.querySelector('[data-testid="score-delta"]');
-    if (delta) delta.textContent = '\u221212,345 from your policy';
+    for (const el of document.querySelectorAll('[data-widest]')) el.remove();
+    const detail = document.querySelector('[data-testid="score-detail"]');
     const goal = document.querySelector('[data-testid="score-goal"]');
-    if (goal) goal.textContent = 'Goal reached, May 2088';
+    if (detail && goal && !detail.querySelector('[data-testid="score-delta"]')) {
+      const added = document.createElement('span');
+      added.dataset.testid = 'score-delta';
+      added.dataset.widest = '';
+      const sep = document.createElement('span');
+      sep.className = 'lg:max-xl:hidden';
+      sep.dataset.widest = '';
+      sep.textContent = ' · ';
+      detail.insertBefore(sep, detail.firstChild);
+      detail.insertBefore(added, sep);
+      goal.classList.add('lg:max-xl:hidden');
+    }
+    const delta = document.querySelector('[data-testid="score-delta"]');
+    if (delta) delta.textContent = '+12,345 from your policy';
+    if (goal) goal.textContent = 'Goal reached, Mar 2043';
     const score = document.querySelector('[data-testid="score-bar"]');
     if (!score) return;
     for (const n of score.childNodes)
       if (n.nodeType === Node.TEXT_NODE && n.textContent?.trim()) {
-        n.textContent = '12,345 homes by May 2088';
+        n.textContent = '12,345 homes by Mar 2066';
         break;
       }
   });
 }
 
-/**
- * Where the status shows (rule 32): from 2xl (1536 px) in the header's slot, beside the save
- * state; below it on a line just under the header bar. Either way one live region speaks it, and
- * it is never among the buttons.
- */
-async function expectStatusPlace(page: Page, width: number): Promise<void> {
-  const inHeader = width >= 1536;
-  const slot = page.getByTestId('tl-status');
-  const line = page.getByTestId('tl-status-line');
-  await expect(inHeader ? slot : line).toBeVisible();
-  await expect(inHeader ? line : slot).toBeHidden();
-  await expect(page.getByTestId('tl-status-live')).toHaveCount(1);
-  await expect(page.getByTestId('tl-status-live')).toHaveAttribute('role', 'status');
-  if (!inHeader) {
-    const header = (await page.getByRole('banner').boundingBox())!;
-    const box = (await line.boundingBox())!;
-    expect(Math.abs(box.y - (header.y + header.height))).toBeLessThanOrEqual(1);
-    expect(box.height).toBeGreaterThanOrEqual(24);
-    await expect(line.getByRole('button')).toHaveCount(0);
-  }
+/** "Updating" in the header's status slot, shown whether or not the numbers are stale. */
+async function widestStatusText(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const shown = document.querySelector('[data-testid="tl-status-shown"]');
+    // Appended, not replacing: the component's own content (and its anchors) stay.
+    if (shown && shown.textContent?.trim() === '') shown.append('Updating');
+  });
 }
 
-/** The shown status copy at its widest ("Forecast filled to 2088"), in both places. */
-async function widestStatusText(page: Page): Promise<void> {
-  await page.evaluate((text) => {
-    for (const id of ['tl-status', 'tl-status-line']) {
-      const el = document.querySelector(`[data-testid="${id}"]`);
-      const shown = el?.querySelector(':scope > span[aria-hidden="true"]:last-child');
-      if (shown) shown.textContent = text;
-    }
-  }, forecastFilled(2088));
+/**
+ * Where the status shows (rule 32): in the header's status slot at every width, beside the save
+ * state, never in the Menu among the actions; no line under the bar; one live region speaks it.
+ */
+async function expectStatusPlace(page: Page): Promise<void> {
+  const status = page.locator('[data-header-status] [data-testid="tl-status"]');
+  await expect(status).toBeVisible();
+  await expect(page.getByTestId('tl-status-line')).toHaveCount(0);
+  await expect(page.getByTestId('tl-status-live')).toHaveCount(1);
+  await expect(page.getByTestId('tl-status-live')).toHaveAttribute('role', 'status');
+  const inMenu = await status.evaluate((el) => {
+    const id = document.querySelector('[data-header-menu]')!.getAttribute('aria-controls')!;
+    return !!document.getElementById(id)?.contains(el);
+  });
+  expect(inMenu, 'the status sits among the actions').toBe(false);
 }
 
 for (const width of [1024, 1280, 1536]) {
@@ -1201,22 +1234,43 @@ for (const width of [1024, 1280, 1536]) {
     await expect(page.getByRole('banner').getByRole('button', { name: 'View' })).toBeVisible();
     await widestHeaderText(page);
     await widestStatusText(page);
-    await expect(scoreBar(page)).toHaveAccessibleName('12,345 homes by May 2088');
-    await expectStatusPlace(page, width);
+    await expect(scoreBar(page)).toHaveAccessibleName(/^12,345 homes by Mar 2066$/);
+    await expectStatusPlace(page);
     const before = await expectHeaderFits(page);
     await expectNoA11yViolations(page, {
-      include: ['header', '[data-testid=tl-status-line]', '[data-testid=tl-status-live]']
+      include: ['header', '[data-testid=tl-status-live]']
     });
     const n = await refillCount(page);
     await addPolicy(page, 'Zoning', 'Transit rule');
     await waitRefilled(page, n);
     await widestHeaderText(page);
     await widestStatusText(page);
-    await expectStatusPlace(page, width);
+    await expectStatusPlace(page);
     const after = await expectHeaderFits(page);
     expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
   });
 }
+
+test('at 375 px the header fits with the widest strings; the site name waits in the Menu', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(!isMobile, 'the phone header (coarse pointer)');
+  await gotoSim(page);
+  const banner = page.getByRole('banner');
+  await expect(banner.getByRole('link', { name: /SF Housing/ })).toHaveCount(0);
+  await widestHeaderText(page);
+  await widestStatusText(page);
+  await expect(scoreBar(page)).toHaveAccessibleName(/^12,345 homes by Mar 2066$/);
+  await expectStatusPlace(page);
+  await expectHeaderFits(page);
+  expect((await banner.boundingBox())!.height).toBe(48);
+  await openHeaderMenu(page);
+  await expect(banner.getByRole('link', { name: 'SF Housing Simulator' })).toBeVisible();
+  await expectNoHorizontalScroll(page);
+  await menuButton(page).click();
+  await expect(menuButton(page)).toHaveAttribute('aria-expanded', 'false');
+});
 
 test('at 1280 px Keyboard shortcuts opens under its button, moves nothing in the header and closes on Escape', async ({
   isMobile,
@@ -1260,6 +1314,9 @@ for (const width of [768]) {
     // Closed: the site name, status, score and Menu button only; no action or mode link shows.
     await expect(banner.getByRole('button', { name: 'View', exact: true })).toHaveCount(0);
     await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
+    await widestHeaderText(page);
+    await widestStatusText(page);
+    await expectStatusPlace(page);
     await expectHeaderFits(page);
     await openHeaderMenu(page);
     for (const name of ['View', /^(Publish|Share link)/])

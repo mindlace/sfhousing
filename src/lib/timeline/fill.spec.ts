@@ -4,15 +4,12 @@ import {
   NO_EDIT,
   afterView,
   edited,
-  fillStatusText,
   playAvailable,
   refilled,
   rejected,
   settled,
   shownAt
 } from './fill';
-import { utcParts } from '$lib/fzp/time';
-import { forecastFilled } from './copy';
 import { chunk, cut, statics } from './test/fixtures';
 
 const whole = viewOf([chunk(0, 300)], statics({ lastIndex: 299 }));
@@ -91,14 +88,5 @@ describe('stale, fill and Play state', () => {
     const s = refilled(rejected(settled(edited(NO_EDIT, whole))), whole);
     expect(s.floor).toBe(-1);
     expect(shownAt(s, cut(whole, 30), 5).stale).toBe(false);
-  });
-  it('fill status names the year of the last final month, and nothing when full', () => {
-    expect(fillStatusText(cut(whole, 251))).toMatch(/^Forecast filled to \d{4}$/);
-    expect(fillStatusText(whole)).toBe('');
-    expect(fillStatusText(null)).toBe('');
-  });
-  it("fill status's wording is copy.ts's one sentence", () => {
-    const day = cut(whole, 251).months[251];
-    expect(fillStatusText(cut(whole, 251))).toBe(forecastFilled(utcParts(day).y));
   });
 });

@@ -684,8 +684,8 @@ test('a notice is a pill at the top: it moves nothing on desktop and pushes the 
   const dock = page.getByTestId('tl-dock');
   const dockBefore = (await dock.boundingBox())!;
   const mapBefore = (await mapRoot.boundingBox())!;
-  // Below 2xl the status line sits just under the header bar; the stack comes after it.
-  const line = (await page.getByTestId('tl-status-line').boundingBox())!;
+  // The stack comes right after the header bar.
+  const header = (await page.getByRole('banner').boundingBox())!;
 
   // A crash's pill shows and stays.
   await crashWorker(page);
@@ -694,8 +694,8 @@ test('a notice is a pill at the top: it moves nothing on desktop and pushes the 
   const box = (await stack.boundingBox())!;
 
   if (isMobile) {
-    // In flow, right under the status line under the header; the map starts below it.
-    expect(Math.abs(box.y - (line.y + line.height))).toBeLessThanOrEqual(1);
+    // In flow, right under the header; the map starts below it.
+    expect(Math.abs(box.y - (header.y + header.height))).toBeLessThanOrEqual(1);
     await expect
       .poll(async () => (await mapRoot.boundingBox())!.y)
       .toBeGreaterThanOrEqual(box.y + box.height - 1);

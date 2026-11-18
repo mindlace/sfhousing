@@ -10,8 +10,6 @@ import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import type { CoverageStep } from '$lib/sim-page/funding-view';
 
 export const FORECAST_NOTE = 'A forecast if nothing changes.';
-/** The fill state (rule 32), in the header's status slot from 2xl, under the bar below it. */
-export const forecastFilled = (year: number): string => `Forecast filled to ${year}`;
 /** Behind each reference line's legend entry on the chart. */
 export const REFERENCE_NOTE =
   'Published estimates of what the Family Zoning Plan adds. Compare with the violet lines.';

@@ -354,19 +354,55 @@ describe('SiteHeader', () => {
       expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth);
     });
 
-    it('at 375px keeps the order name, status, pinned, Menu', async () => {
+    it('at 375px keeps the order status, pinned, Menu', async () => {
       await page.viewport(375, 812);
       const st = createRawSnippet(() => ({ render: () => '<span data-testid="st">saved</span>' }));
       render(SiteHeader, { routeId: '/sim', actions, pinned, status: st });
       const x = (el: Element) => el.getBoundingClientRect().left;
-      const name = page.getByRole('link', { name: /SF Housing/ }).element();
       const status = page.getByTestId('st').element();
       const score = page.getByRole('button', { name: '1,234 homes added' }).element();
       const m = menu().element();
-      expect(x(name)).toBeLessThan(x(status));
       expect(x(status)).toBeLessThan(x(score));
       expect(x(score)).toBeLessThan(x(m));
     });
+
+    it('at 375px with a pinned item the site name waits in the Menu', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { routeId: '/sim', actions, pinned });
+      const name = () => page.getByRole('link', { name: 'SF Housing Simulator' });
+      await expect.element(menu()).toBeVisible();
+      expect(name().elements()).toEqual([]);
+      await menu().click();
+      await expect.element(name()).toBeVisible();
+      const panel = document.getElementById(menu().element().getAttribute('aria-controls')!)!;
+      expect(panel.contains(name().element())).toBe(true);
+      // Before the mode links.
+      const paint = page.getByRole('link', { name: 'Paint' }).element();
+      expect(
+        name().element().compareDocumentPosition(paint) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+      expect(name().element()).toHaveAttribute('href', '/');
+    });
+
+    for (const width of [640, 768, 1024]) {
+      it(`at ${width}px with a pinned item the site name stays in the bar`, async () => {
+        await page.viewport(width, 800);
+        render(SiteHeader, { routeId: '/sim', actions, pinned });
+        const name = page.getByRole('link', { name: 'SF Housing Simulator' });
+        await expect.element(name).toBeVisible();
+        const button = document.querySelector('[data-header-menu]')!;
+        const panel = document.getElementById(button.getAttribute('aria-controls')!)!;
+        expect(panel.contains(name.element())).toBe(false);
+        if (width < 1024) {
+          await menu().click();
+          await expect.element(page.getByRole('link', { name: 'Paint' })).toBeVisible();
+          // Still one: the panel's copy stays hidden from sm.
+          expect(page.getByRole('link', { name: 'SF Housing Simulator' }).elements()).toHaveLength(
+            1
+          );
+        }
+      });
+    }
 
     const long = createRawSnippet(() => ({
       render: () => `<span>${'Saved a very long time ago '.repeat(12)}</span>`
@@ -578,7 +614,7 @@ describe('SiteHeader', () => {
           }
         });
 
-      it('at 375px it sits right after the site title, outside the Menu', async () => {
+      it('at 375px it leads the bar (the site title waits in the Menu), outside the Menu', async () => {
         await page.viewport(375, 812);
         render(HeaderScoreHeader, { props: { actions, status, total: 12345, delta: 12345 } });
         const host = page.getByTestId('status-slot').element() as HTMLElement;
@@ -586,10 +622,11 @@ describe('SiteHeader', () => {
         try {
           const chip = page.getByRole('button', { name: 'Autosave off' });
           await expect.element(chip).toBeVisible();
-          const title = page.getByRole('link', { name: /SF Housing/ }).element();
+          expect(page.getByRole('link', { name: /SF Housing/ }).elements()).toEqual([]);
           const c = chip.element().getBoundingClientRect();
-          expect(c.left).toBeGreaterThanOrEqual(title.getBoundingClientRect().right);
-          expect(c.left - title.getBoundingClientRect().right).toBeLessThanOrEqual(24);
+          const bar = page.getByRole('banner').element().getBoundingClientRect();
+          expect(c.left).toBeGreaterThanOrEqual(bar.left);
+          expect(c.left - bar.left).toBeLessThanOrEqual(24);
           expect(c.right).toBeLessThanOrEqual(
             page
               .getByRole('button', { name: '12,345 homes added' })

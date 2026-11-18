@@ -2,7 +2,7 @@
   The site header. From lg: the site name, the mode links, the page's status, then (on the
   right) the pinned item and the actions. Below lg: the site name, the status, the pinned item
   and a hamburger Menu button whose panel (under the header) holds the mode links and the
-  actions. The account entry (Sign in, or @handle) follows the actions in the same group; Sign in
+  actions. Below sm, on a page that pins an item, the site name moves into the panel too. The account entry (Sign in, or @handle) follows the actions in the same group; Sign in
   shows only while a sign-in method is in effect (`signInAvailable`). The About entry follows the
   account entry on every route (the map pages have no footer). The status and the actions
   render once at every width: from lg the panel is `display: contents`, so the actions sit in the
@@ -128,7 +128,8 @@
   ]}
 >
   <div class={pinned ? 'flex min-w-0 flex-1 items-center gap-2' : 'contents'}>
-    <a href="/" class="shrink-0 font-semibold whitespace-nowrap"
+    <!-- Below sm a page that pins an item needs the room: the name waits in the Menu. -->
+    <a href="/" class={['shrink-0 font-semibold whitespace-nowrap', pinned && 'max-sm:hidden']}
       >SF Housing <span class="sr-only xl:not-sr-only">Simulator</span></a
     >
     <nav
@@ -171,6 +172,13 @@
     ]}
     onclick={onpanelclick}
   >
+    {#if pinned}
+      <a
+        href="/"
+        class="inline-flex min-h-6 items-center self-start font-semibold whitespace-nowrap sm:hidden pointer-coarse:min-h-11"
+        >SF Housing Simulator</a
+      >
+    {/if}
     <nav aria-label="Modes" class="flex flex-wrap items-center gap-4 text-sm lg:hidden">
       {@render modeLinks()}
     </nav>

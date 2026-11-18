@@ -92,9 +92,6 @@
 
   /** The brush-failure notice: the editors' own words for a query that failed. */
   const LOTS_FAILED = lotsText({ kind: 'failed', keys: [] });
-
-  /** The widest text the status slot shows: its width is reserved (rule 32). */
-  const STATUS_WIDEST = forecastFilled(2088);
 </script>
 
 <script lang="ts">
@@ -132,9 +129,8 @@
   import type { Day } from '$lib/timelapse/time';
   import { HIDDEN_VIEW, type ViewPrefs } from '$lib/view/prefs';
   import ChartRow from './ChartRow.svelte';
-  import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, forecastFilled } from './copy';
+  import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING } from './copy';
   import Explain from './Explain.svelte';
-  import { fillStatusText } from './fill';
   import { fundsOf4 } from './owner';
   import Playhead from './Playhead.svelte';
   import { filledEndDay, indexOfDay, viewMonthOf } from './playhead';
@@ -405,7 +401,8 @@
 
   // ---- the status slot (rules 31, 32) ----
 
-  const statusWanted = $derived(!session ? '' : stale ? UPDATING : fillStatusText(current));
+  /** "Updating" while the numbers are stale, else nothing (the ruler's hatching shows the fill). */
+  const statusWanted = $derived(session && stale ? UPDATING : '');
   let statusText = $state('');
   let statusAt = -Infinity;
   let statusTimer: ReturnType<typeof setTimeout> | null = null;
@@ -894,8 +891,7 @@
     detailEl.scrollTop = 0;
     detailEl.querySelector<HTMLElement>('[data-testid=tl-results]')?.focus({ preventScroll: true });
   }
-  /** The status line's and the pinned block's heights: the scroll padding (WCAG 2.4.11). */
-  let statusH = $state(0);
+  /** The pinned block's height: the scroll padding (WCAG 2.4.11). */
   let pinHeight = $state(0);
   /** The scroll boxes' client heights: the mode box below md, the timeline's own from md. */
   let modeClientH = $state(0);
@@ -903,7 +899,7 @@
   /** The block sticks only while it leaves MIN_ROWS of rows in its scroll box (re-read on resize). */
   const pinStuck = $derived(
     narrow.current
-      ? !modeClientH || modeClientH - statusH - pinHeight >= MIN_ROWS
+      ? !modeClientH || modeClientH - pinHeight >= MIN_ROWS
       : !lanesClientH || lanesClientH - pinHeight - PIN_GAP >= MIN_ROWS
   );
   /** The block's share of the scroll padding and margins: none while it scrolls with the rows. */
@@ -978,37 +974,35 @@
   {/if}
 {/snippet}
 
-<!-- The status text as shown (the live region is apart, once, in the page): plain text hidden from
-     the accessibility tree, or "Updating" with its explanation, which opens as a popover so the
-     header and the line keep their size. -->
-{#snippet statusShown()}
-  <span
-    aria-hidden={statusText === UPDATING ? undefined : 'true'}
-    class="col-start-1 row-start-1 whitespace-nowrap"
-  >
-    {#if statusText === UPDATING}
-      <Explain text={STALE_NOTE}>{UPDATING}</Explain>
-    {:else}
-      {statusText}
+<!-- The header's status slot (rule 32), at every width: the page's save state, then "Updating"
+     while stale. Each cell keeps its own width, so nothing moves as either comes or goes. From sm
+     the two sit side by side; below sm they share one cell and "Updating" wins while both apply.
+     The live region is apart, once, in the page; "Updating"'s explanation opens as a popover under
+     the slot, so the header keeps its size. -->
+{#snippet statusSlot()}
+  <span class="inline-grid items-center sm:grid-flow-col sm:gap-2" data-testid="tl-status-group">
+    <span
+      class={[
+        'col-start-1 row-start-1 inline-flex items-center',
+        statusText === UPDATING && 'max-sm:invisible'
+      ]}>{@render status?.()}</span
+    >
+    {#if !noScenario}
+      <span
+        class="tl-status relative col-start-1 row-start-1 inline-grid text-sm text-ink-muted tabular-nums sm:col-start-2 dark:text-ink-dark-muted"
+        data-testid="tl-status"
+      >
+        <span aria-hidden="true" class="invisible col-start-1 row-start-1 whitespace-nowrap"
+          >{UPDATING}</span
+        >
+        <span class="col-start-1 row-start-1 whitespace-nowrap" data-testid="tl-status-shown">
+          {#if statusText === UPDATING}
+            <Explain text={STALE_NOTE}>{UPDATING}</Explain>
+          {/if}
+        </span>
+      </span>
     {/if}
   </span>
-{/snippet}
-
-{#snippet statusSlot()}
-  {@render status?.()}
-  {#if !noScenario}
-    <!-- From 2xl: the shown text shares one grid cell with the widest one, so the slot keeps its
-         width (rule 32). Below 2xl the slot is too narrow: the line under the bar shows it. -->
-    <span
-      class="tl-status relative ml-2 inline-grid text-sm text-ink-muted tabular-nums max-2xl:hidden dark:text-ink-dark-muted"
-      data-testid="tl-status"
-    >
-      <span aria-hidden="true" class="invisible col-start-1 row-start-1 whitespace-nowrap"
-        >{STATUS_WIDEST}</span
-      >
-      {@render statusShown()}
-    </span>
-  {/if}
 {/snippet}
 
 {#snippet scoreBar()}
@@ -1080,25 +1074,16 @@
 <div
   bind:this={modeEl}
   class="sfh-fzp sfh-tl relative flex h-full flex-col max-md:overflow-y-auto"
-  style:scroll-padding-top={narrow.current ? `${statusH + pinPad}px` : undefined}
+  style:scroll-padding-top={narrow.current ? `${pinPad}px` : undefined}
   bind:clientHeight={modeClientH}
   data-testid="tl-mode"
 >
   {#if !noScenario}
     <!-- The status's one live region, at every width (polite, at most one change a second). -->
     <span role="status" class="sr-only" data-testid="tl-status-live">{statusText}</span>
-    <!-- Below 2xl the status is a line just under the header bar (rule 32). Its height is always
-         kept, so nothing moves when the status comes or goes. -->
-    <div
-      class="tl-status sticky top-0 z-30 grid min-h-6 shrink-0 items-center border-b border-line bg-surface px-4 text-sm text-ink-muted tabular-nums 2xl:hidden dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark-muted"
-      data-testid="tl-status-line"
-      bind:offsetHeight={statusH}
-    >
-      {@render statusShown()}
-    </div>
   {/if}
-  <!-- The notice stack's host (its parent): from md the stack overlays the map's top, below the
-       status line. Below md the stack is in flow and this box is no box. -->
+  <!-- The notice stack's host (its parent): from md the stack overlays the map's top, under the
+       header. Below md the stack is in flow and this box is no box. -->
   <div class="relative flex min-h-0 flex-1 flex-col max-md:contents">
     <!-- Every notice is a pill in this one stack (as FzpMode). -->
     <NoticePills bind:el={pillsEl}>
@@ -1256,19 +1241,18 @@
       data-testid="tl-dock"
     >
       <!-- The timeline's scroll box from md; below md the mode box scrolls. Either way its pinned
-           block sticks at the scroll box's top (under the status line below md), and the scroll
-           padding keeps a focused row out from under it (WCAG 2.2 2.4.11). Below md the mode
-           box's padding counts the status line and the block, so scrolling this box or the
-           timeline to the top (the sheets) takes the block back off as a negative margin. A box
-           too short for the block and MIN_ROWS of rows unsticks it: the block's share of the
-           padding and margins drops to 0 and the timeline scrolls as one piece. -->
+           block sticks at the scroll box's top, and the scroll padding keeps a focused row out
+           from under it (WCAG 2.2 2.4.11). Below md the mode box's padding is the block's height,
+           so scrolling this box or the timeline to the top (the sheets) takes the block back off
+           as a negative margin. A box too short for the block and MIN_ROWS of rows unsticks it:
+           the block's share of the padding and margins drops to 0 and the timeline scrolls as one
+           piece. -->
       <div
         bind:this={dockEl}
         bind:clientHeight={lanesClientH}
         class="min-h-0 md:overflow-y-auto"
         style:padding-bottom={phoneSheet ? '100dvh' : undefined}
         style:--tl-pin-pos={pinStuck ? undefined : 'relative'}
-        style:--tl-pin-top={narrow.current && pinStuck ? `${statusH}px` : '0px'}
         style:scroll-padding-top={narrow.current ? undefined : `${pinPad + pinGap}px`}
         style:scroll-margin-top={narrow.current ? `${-pinPad}px` : undefined}
         style:--tl-scroll-mt={narrow.current ? `${-pinPad}px` : undefined}

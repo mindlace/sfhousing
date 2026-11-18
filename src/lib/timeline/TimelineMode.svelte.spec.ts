@@ -1,7 +1,7 @@
 // TimelineMode composition (timeline-ui rules 1, 18-36): the real TimelineSession and
 // TimelineClient over a fake worker, a recording SimMap stub, and the header slots from a host.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { tick } from 'svelte';
+import { createRawSnippet, tick, type Snippet } from 'svelte';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import axe from 'axe-core';
@@ -23,7 +23,6 @@ import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
 import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, homesBy } from './copy';
-import { fillStatusText } from './fill';
 import { filledEndDay, indexOfDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
 import { headlineAt, headlineSpoken, headlineText } from './results';
@@ -103,6 +102,8 @@ type Over = Partial<{
   regionHeight: number;
   inspectorOpen: boolean;
   scoreExpanded: boolean;
+  /** The page's save state, rendered first in the header's status slot. */
+  status: Snippet;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -142,7 +143,8 @@ function setup(over: Over = {}) {
       ...(over.regionHeight ? { regionHeight: over.regionHeight } : {}),
       ...(over.scoreControls ? { scoreControls: over.scoreControls } : {}),
       ...(over.inspectorOpen !== undefined ? { inspectorOpen: over.inspectorOpen } : {}),
-      ...(over.scoreExpanded !== undefined ? { scoreExpanded: over.scoreExpanded } : {})
+      ...(over.scoreExpanded !== undefined ? { scoreExpanded: over.scoreExpanded } : {}),
+      ...(over.status ? { status: over.status } : {})
     }
   });
   return {
@@ -170,6 +172,8 @@ const playButton = () => page.getByTestId('tl-play');
 const scoreBar = () => page.getByTestId('score-bar');
 /** The one live region of the status (rule 32), the same at every width. */
 const statusSlot = () => page.getByTestId('tl-status-live');
+/** The status as shown in the header's slot (beside the invisible sizer). */
+const statusShown = () => page.getByTestId('tl-status-shown');
 const slider = () => page.getByRole('slider', { name: 'Date in the simulation' });
 
 function summary(project?: ProjectCard): ParcelSummary {
@@ -288,30 +292,33 @@ describe('TimelineMode', () => {
     expect(w().all('resyncMap')).toHaveLength(1);
   });
 
-  it('the status slot says Updating while stale, then Forecast filled to …, then nothing', async () => {
+  it('the status slot says Updating while stale, then nothing; no fill text ever shows', async () => {
     const s = await opened(5);
-    const partly = fillStatusText(viewOf([chunk(0, 6)], STATICS));
-    expect(partly).toMatch(/^Forecast filled to \d{4}$/);
-    await expect.element(statusSlot()).toHaveTextContent(partly);
-    emit(filledMsg(1, 6, LAST - 5));
-    await expect.poll(() => statusSlot().element().textContent?.trim()).toBe('');
+    const shown = () => statusShown().element().textContent?.trim();
+    await expect.poll(() => debug().filledThrough).toBe(5);
+    expect(statusSlot().element().textContent?.trim()).toBe('');
+    expect(shown()).toBe('');
+    expect(document.body.textContent).not.toMatch(/Forecast filled/);
 
     s.setPolicy(mk(protect(5)));
     await expect.element(statusSlot()).toHaveTextContent(UPDATING);
+    await expect.poll(shown).toBe(UPDATING);
     // The explanation waits behind the status (rule 31, F12).
     await expect
-      .element(page.getByTestId('tl-status-line').getByRole('button', { name: UPDATING }))
+      .element(page.getByTestId('tl-status').getByRole('button', { name: UPDATING }))
       .toBeInTheDocument();
     expect(debug().stale).toBe(true);
     s.setLots({});
     await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
     emit(compiledMsg(2, STATICS));
     emit(refillMsg(2, 3));
-    const refilling = fillStatusText(viewOf([chunk(0, 3)], STATICS));
-    await expect.element(statusSlot()).toHaveTextContent(refilling);
-    expect(debug().stale).toBe(false);
-    emit(filledMsg(2, 3, LAST - 2));
     await expect.poll(() => statusSlot().element().textContent?.trim()).toBe('');
+    expect(debug().stale).toBe(false);
+    expect(shown()).toBe('');
+    emit(filledMsg(2, 3, LAST - 2));
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    expect(statusSlot().element().textContent?.trim()).toBe('');
+    expect(document.body.textContent).not.toMatch(/Forecast filled/);
   });
 
   it('rows are hatched past the filled end and the hatch moves after a refill', async () => {
@@ -454,14 +461,14 @@ describe('TimelineMode', () => {
     const mode = page.getByTestId('tl-mode').element() as HTMLElement;
     mode.scrollTop = mode.scrollHeight;
     await frame();
-    expect(Math.abs(rectOf('tl-pin').top - rectOf('tl-status-line').bottom)).toBeLessThanOrEqual(1);
+    expect(Math.abs(rectOf('tl-pin').top - rectOf('tl-mode').top)).toBeLessThanOrEqual(1);
     const at = mode.scrollTop;
     (slider().element() as HTMLElement).focus();
     await frame();
     expect(Math.abs(mode.scrollTop - at)).toBeLessThanOrEqual(1);
   });
 
-  it('on a phone the controls, ruler and chart stick under the status line', async () => {
+  it("on a phone the controls, ruler and chart stick at the mode box's top", async () => {
     await page.viewport(390, 760);
     await opened(LAST, { regionHeight: 360 });
     await expect.element(slider()).toBeInTheDocument();
@@ -469,7 +476,7 @@ describe('TimelineMode', () => {
     mode.scrollTop = mode.scrollHeight;
     await frame();
     expect(mode.scrollTop).toBeGreaterThan(0);
-    expect(Math.abs(rectOf('tl-pin').top - rectOf('tl-status-line').bottom)).toBeLessThanOrEqual(1);
+    expect(Math.abs(rectOf('tl-pin').top - rectOf('tl-mode').top)).toBeLessThanOrEqual(1);
     const inView = (r: DOMRect) => {
       expect(r.top).toBeGreaterThanOrEqual(0);
       expect(r.bottom).toBeLessThanOrEqual(760);
@@ -1068,95 +1075,137 @@ describe('TimelineMode', () => {
   });
 
   it('the status slot changes at most once a second; the latest text goes out after the gap', async () => {
+    const s = await opened(LAST, { statusMs: 1000 });
+    const live = () => statusSlot().element().textContent?.trim();
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     try {
-      setup({ statusMs: 1000 });
-      await tick();
-      expect(workers).toHaveLength(1);
-      const live = () => statusSlot().element().textContent?.trim();
-      emit(compiledMsg(1, STATICS));
-      emit(filledMsg(1, 0, 1));
-      await tick();
-      const first = fillStatusText(viewOf([chunk(0, 1)], STATICS));
-      const second = fillStatusText(viewOf([chunk(0, LAST)], STATICS));
-      expect(first).not.toBe(second);
-      expect(live()).toBe(first);
-      emit(filledMsg(1, 1, LAST - 1));
-      await tick();
-      expect(live()).toBe(first);
-      emit(filledMsg(1, LAST, 1));
-      await tick();
-      expect(live()).toBe(first);
+      s.setPolicy(mk(protect(5)));
+      await expect.poll(live).toBe(UPDATING);
+      s.setLots({});
+      await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+      emit(compiledMsg(2, STATICS));
+      emit(refillMsg(2, 3));
+      await expect.poll(() => debug().stale).toBe(false);
+      expect(live()).toBe(UPDATING);
       vi.advanceTimersByTime(999);
       await tick();
-      expect(live()).toBe(first);
+      expect(live()).toBe(UPDATING);
       vi.advanceTimersByTime(1);
       await tick();
-      // The text wanted in between never showed: the latest goes out.
+      // The text wanted in the gap goes out when it ends.
       expect(live()).toBe('');
     } finally {
       vi.useRealTimers();
     }
   });
 
-  for (const [width, place] of [
-    [1280, 'line'],
-    [1600, 'header']
-  ] as const) {
-    it(`at ${width} px exactly one live region speaks the status; it shows in the ${place}`, async () => {
+  for (const width of [375, 1280, 1600]) {
+    it(`at ${width} px exactly one live region speaks the status; it shows in the header`, async () => {
       await page.viewport(width, 900);
-      await opened(5);
-      const partly = fillStatusText(viewOf([chunk(0, 6)], STATICS));
-      await expect.element(statusSlot()).toHaveTextContent(partly);
+      const s = await opened();
+      s.setPolicy(mk(protect(5)));
+      await expect.element(statusSlot()).toHaveTextContent(UPDATING);
       const speaking = [...document.querySelectorAll('[role="status"], [aria-live]')].filter(
-        (el) => el.textContent?.trim() === partly
+        (el) => el.textContent?.trim() === UPDATING
       );
       expect(speaking).toHaveLength(1);
-      const header = page.getByTestId('tl-status');
-      const line = page.getByTestId('tl-status-line');
-      await expect.element(place === 'header' ? header : line).toBeVisible();
-      await expect.element(place === 'header' ? header : line).toHaveTextContent(partly);
-      await expect.element(place === 'header' ? line : header).not.toBeVisible();
+      const slot = document.querySelector('[data-header-status]')!;
+      const status = page.getByTestId('tl-status');
+      await expect.element(status).toBeVisible();
+      expect(slot.contains(status.element())).toBe(true);
+      await expect.element(statusShown()).toBeVisible();
+      await expect.element(statusShown()).toHaveTextContent(UPDATING);
+      expect(document.querySelector('[data-testid=tl-status-line]')).toBeNull();
     });
   }
 
-  it('below 2xl the line under the bar keeps its height as the status comes and goes', async () => {
-    const s = await opened(5);
-    const line = page.getByTestId('tl-status-line');
-    await expect.element(line).toBeVisible();
-    const filling = line.element().getBoundingClientRect().height;
-    expect(filling).toBeGreaterThanOrEqual(24);
-    emit(filledMsg(1, 6, LAST - 5));
-    await expect.poll(() => statusSlot().element().textContent?.trim()).toBe('');
-    expect(line.element().getBoundingClientRect().height).toBe(filling);
+  /** The boxes that must hold still as the status comes and goes. */
+  function stillBoxes(): Record<string, DOMRect> {
+    const name = page.getByRole('banner').getByRole('link', { name: 'SF Housing Simulator' });
+    const lead = name.elements().length
+      ? name.element()
+      : page.getByRole('button', { name: 'Menu' }).element();
+    const out: Record<string, DOMRect> = { lead: lead.getBoundingClientRect() };
+    for (const id of ['score-bar', 'tl-map', 'tl-dock', 'tl-pin'])
+      out[id] = page.getByTestId(id).element().getBoundingClientRect();
+    return out;
+  }
+  function same(a: Record<string, DOMRect>, b: Record<string, DOMRect>): void {
+    for (const k of Object.keys(a))
+      for (const side of ['left', 'top', 'width', 'height'] as const)
+        expect(Math.abs(a[k][side] - b[k][side]), `${k} ${side}`).toBeLessThanOrEqual(0.5);
+  }
+
+  for (const width of [375, 768, 1280]) {
+    it(`at ${width} px nothing moves when Updating comes and goes`, async () => {
+      await page.viewport(width, 900);
+      // A policy in force throughout: the first one widens the score (its effect line), apart
+      // from the status.
+      const s = await opened(LAST, { initialPolicy: mk(protect(5)) });
+      await expect.element(scoreBar()).toBeVisible();
+      await frame();
+      const before = stillBoxes();
+      s.setPolicy(mk(protect(3)));
+      await expect.element(statusShown()).toHaveTextContent(UPDATING);
+      await expect.element(statusShown()).toBeVisible();
+      await frame();
+      same(before, stillBoxes());
+      s.setLots({});
+      await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+      emit(compiledMsg(2, STATICS));
+      emit(refillMsg(2, 0));
+      emit(filledMsg(2, 0, LAST + 1));
+      await expect.poll(() => statusShown().element().textContent?.trim()).toBe('');
+      await frame();
+      same(before, stillBoxes());
+    });
+  }
+
+  it("below sm Updating takes the save state's place; from sm they sit side by side", async () => {
+    const save = createRawSnippet(() => ({
+      render: () => '<span data-testid="save-stand-in">Saving…</span>'
+    }));
+    await page.viewport(375, 900);
+    const s = await opened(LAST, { status: save });
+    const stand = page.getByTestId('save-stand-in');
+    await expect.element(stand).toBeVisible();
     s.setPolicy(mk(protect(5)));
-    await expect.element(statusSlot()).toHaveTextContent(UPDATING);
-    expect(line.element().getBoundingClientRect().height).toBe(filling);
-    // Just under the header bar, above the map.
-    const header = page.getByTestId('header-status').element().parentElement!;
-    expect(line.element().getBoundingClientRect().top).toBeGreaterThanOrEqual(
-      header.getBoundingClientRect().bottom - 0.5
+    await expect.element(statusShown()).toHaveTextContent(UPDATING);
+    await expect.element(stand).not.toBeVisible();
+    const a = stand.element().getBoundingClientRect();
+    const b = statusShown().element().getBoundingClientRect();
+    expect(Math.abs(a.left - b.left)).toBeLessThanOrEqual(0.5);
+    await page.viewport(640, 900);
+    await expect.element(stand).toBeVisible();
+    expect(stand.element().getBoundingClientRect().right).toBeLessThanOrEqual(
+      statusShown().element().getBoundingClientRect().left
     );
   });
 
-  it('the live region holds only the status text; its explanation sits outside it', async () => {
+  it('the live region holds only the status text; its explanation opens from the header slot', async () => {
     await page.viewport(390, 760);
     const s = await opened();
     s.setPolicy(mk(protect(5)));
     const live = statusSlot();
     await expect.element(live).toHaveTextContent(UPDATING);
-    const slot = page.getByTestId('tl-status-line').element();
-    const before = slot.getBoundingClientRect();
-    await page.getByTestId('tl-status-line').getByRole('button', { name: UPDATING }).click();
+    const header = page.getByRole('banner').element();
+    const before = header.getBoundingClientRect();
+    const scrollW = header.scrollWidth;
+    await page.getByTestId('tl-status').getByRole('button', { name: UPDATING }).click();
     const tip = page.getByRole('tooltip');
     await expect.element(tip).toHaveTextContent(STALE_NOTE);
     expect(live.element().contains(tip.element())).toBe(false);
     expect(live.element().querySelector('button')).toBeNull();
     expect(live.element().textContent?.trim()).toBe(UPDATING);
-    // Open, it does not widen or deepen the line under the bar.
-    const after = slot.getBoundingClientRect();
+    // Open, it neither widens nor deepens the header: it hangs under the slot.
+    const after = header.getBoundingClientRect();
     expect(after.width).toBe(before.width);
     expect(after.height).toBe(before.height);
+    expect(header.scrollWidth).toBe(scrollW);
+    expect(tip.element().getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      statusShown().element().getBoundingClientRect().bottom
+    );
   });
 
   it('the header score controls the inspector only while it shows', async () => {
@@ -1226,10 +1275,10 @@ describe('TimelineMode', () => {
     });
   }
 
-  /** The pinned block's scroll box: tl-lanes from md, tl-mode below md (under the status line). */
+  /** The pinned block's scroll box: tl-lanes from md, tl-mode below md. */
   function port(phone: boolean): { top: number; bottom: number } {
     const r = box(phone ? 'tl-mode' : 'tl-lanes');
-    return { top: phone ? box('tl-status-line').bottom : r.top, bottom: r.bottom };
+    return { top: r.top, bottom: r.bottom };
   }
 
   // WCAG 2.2 2.4.11 at 400% zoom (320x256) and 200% (960x540): a block that would leave too

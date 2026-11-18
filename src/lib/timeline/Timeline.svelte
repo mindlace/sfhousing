@@ -199,7 +199,7 @@
 >
   <div class="rows grid" inert={sheeting}>
     <!-- The playhead's parts, the chart's label and the chart share the rows' columns. They stay
-         pinned at the top of the scroll box (at --tl-pin-top) while the rows scroll under them. -->
+         pinned at the top of the scroll box while the rows scroll under them. -->
     <div class="pin" data-testid="tl-pin" bind:offsetHeight={pinHeight}>
       {@render playhead()}
 
@@ -325,17 +325,13 @@
     --k-world: #5f5f66;
     --on-k: #ffffff;
     color: var(--color-ink);
+    /* A page that pads its scroll box for the pinned block sets --tl-scroll-mt to take the block
+       back off when the timeline is scrolled to the top. */
+    scroll-margin-top: var(--tl-scroll-mt, 0px);
   }
   @media (min-width: 768px) {
     .tl {
       --lab: 168px;
-    }
-  }
-  /* Scrolled to the top it clears the status line (24px below 2xl); a page that pads its scroll
-     box for the status line and the pinned block sets --tl-scroll-mt to take the block back off. */
-  @media (width < 96rem) {
-    .tl {
-      scroll-margin-top: var(--tl-scroll-mt, 24px);
     }
   }
   .grid {
@@ -346,8 +342,8 @@
     position: relative;
   }
   /* Opaque and above the rows (and their line segment), so rows scrolling under it are hidden. A
-     page whose scroll box is too short for the block and some rows sets --tl-pin-pos to relative
-     (and --tl-pin-top to 0): the block then scrolls with the rows. */
+     page whose scroll box is too short for the block and some rows sets --tl-pin-pos to relative:
+     the block then scrolls with the rows. */
   .pin {
     grid-column: 1 / -1;
     display: grid;
