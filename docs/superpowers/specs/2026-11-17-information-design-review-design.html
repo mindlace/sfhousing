@@ -21,8 +21,19 @@
       <li>New projects start with no fanfare, sometimes off the visible map. They may deserve a halo that fades.</li>
       <li>One data-and-sources place, unless credits must sit on the map.</li>
       <li>The header number and the Results number should not disagree about what date they are for.</li>
+      <li>"FZP" becomes "current law" or similar plain words.</li>
+      <li>Progress bars should show from further out and keep one size on screen at every zoom.</li>
     </ul>
-    <aside data-kind="note"><strong>Status</strong> This is a discussion draft. Nothing here is approved. The open questions are in <a href="#sec-questions">Questions for the owner</a>; the answers change the proposal, so no detailed mockup has been drawn yet.</aside>
+    <aside data-kind="note"><strong>Status</strong> This is a discussion draft. The owner has decided the clock and the reveal rule (see <a href="#sec-decisions">Decided</a>). The rest is open; see <a href="#sec-questions">Questions for the owner</a>.</aside>
+    <section id="sec-next-work">
+      <h3>What comes straight after</h3>
+      <p>The owner's next project after this one reworks funding (several sources, no funding that lasts forever, editable amounts) and adds market conditions such as booms and busts. This work does not build either. It must leave room for both:</p>
+      <ul>
+        <li>The Public money rows must read well with many sources, each with its own dates.</li>
+        <li>Market conditions become something the person sets on the timeline, not a single fixed row.</li>
+        <li>No money figure is given a permanent main-screen position that the funding rework would have to undo.</li>
+      </ul>
+    </section>
   </section>
 
   <section id="sec-method">
@@ -111,10 +122,10 @@
           <tr><th scope="row">Homes added, total</th><td>Header at 2066; Results headline at playhead; two chart lines; table; target rows</td><td>See</td><td>One headline, always at the playhead date, in the header. The chart is its history.</td></tr>
           <tr><th scope="row">Homes because of the person's policy</th><td>Header "vs FZP" at 2066, hidden with no policy; two duplicate Results lines</td><td>See</td><td>Second number beside the headline, at the playhead: "+1,817 from your policy". Also the gap between two chart lines, and a mark on the map.</td></tr>
           <tr><th scope="row">Date the numbers are for</th><td>Readout by the transport buttons; differs per number</td><td>Read</td><td>One date, on the playhead and in the headline. No number on the main screen is for any other date.</td></tr>
-          <tr><th scope="row">What the policy is compared with</th><td>"FZP", unexpanded; meaning flips with no policy</td><td>Read</td><td>"from your policy" on the main screen. The baseline is named once, in the fixed Zoning row and in About. With no policy, no comparison is shown.</td></tr>
-          <tr><th scope="row">Progress to the state target</th><td>Unlabelled header meter at 2031; "State target" chart step; two target rows; deadline line</td><td>Read</td><td>One labelled target on the chart ("State target 82,069 by 2031") and a labelled percentage with the headline. It follows the playhead to the deadline, then holds.</td></tr>
+          <tr><th scope="row">What the policy is compared with</th><td>"FZP", unexpanded; meaning flips with no policy</td><td>Read</td><td>"from your policy" on the main screen, compared with "current law". With no policy, no comparison is shown.</td></tr>
+          <tr><th scope="row">Progress to the state target</th><td>Unlabelled header meter at 2031; "State target" chart step; two target rows; deadline line</td><td>Read</td><td>One labelled target on the chart and a labelled percentage with the headline. It follows the playhead to the deadline, then holds. The percentage counts homes since 2022, so it does not start at zero.</td></tr>
           <tr><th scope="row">Target plus 15% buffer</th><td>Results row</td><td>Find</td><td>Details.</td></tr>
-          <tr><th scope="row">Homes built before today</th><td>"of which N built by today"; the "since Jun 2022" wording</td><td>Find</td><td>Details, with the reason (the state's counting period starts June 2022). The main screen says "homes added".</td></tr>
+          <tr><th scope="row">Homes built before today</th><td>"of which N built by today"; the "since Jun 2022" wording</td><td>Find</td><td>Details and About. The main screen starts at today.</td></tr>
           <tr><th scope="row">Homes approved because of policy</th><td>Results line; chart series</td><td>Find</td><td>Details.</td></tr>
           <tr><th scope="row">Affordable homes</th><td>"Affordable homes so far" in Results; income table collapsed</td><td>See</td><td>One line in the Now panel. The income table stays in Details.</td></tr>
           <tr><th scope="row">Pipeline versus new projects</th><td>Two Results rows; two chart series; table</td><td>Find</td><td>Details, as a view of the one chart.</td></tr>
@@ -141,7 +152,7 @@
           <tr><th scope="row">A project just changed stage</th><td>Nothing</td><td>See</td><td>New: a halo that fades, by stage. See <a href="#sec-prop-events">Events</a>.</td></tr>
           <tr><th scope="row">This project exists because of my policy</th><td>Only the card's "Allowed by" line</td><td>See</td><td>New: a distinct outline on those projects, and their halo in the accent colour.</td></tr>
           <tr><th scope="row">What the colours mean</th><td>Map key inside Results, then Sources</td><td>Read</td><td>A small key on the map, five stages, collapsible.</td></tr>
-          <tr><th scope="row">Chance of finishing, progress bars</th><td>Only at zoom 15 and closer</td><td>Find</td><td>Keep as is; add its line to the key when visible.</td></tr>
+          <tr><th scope="row">How far along each project is, and its chance of finishing</th><td>Progress bars, only at zoom 15 and closer</td><td>See</td><td>Shown from the default zoom, one size on screen at every zoom. See <a href="#sec-prop-bars">Progress bars</a>.</td></tr>
           <tr><th scope="row">Real or simulated, stage, homes</th><td>Hover tooltip</td><td>Find</td><td>Keep. Say "homes", not "units", in every tooltip.</td></tr>
           <tr><th scope="row">A project's full record</th><td>Card on click: pathway, status, size, funding, chance, timeline, sources</td><td>Find</td><td>Keep. Put "Allowed by" and "Funded by" first when they name the person's policy.</td></tr>
           <tr><th scope="row">Zoning height limits</th><td>White numerals and lids, on by default, no key</td><td>Read, while zoning is the subject</td><td>Shown while a Zoning row or policy is open or selected, with "stories allowed" in the key. Off otherwise.</td></tr>
@@ -161,8 +172,8 @@
         <tbody>
           <tr><th scope="row">You can add a policy</th><td>Three closed rows, "0", a "+"</td><td>Do</td><td>Each empty lane says what it adds ("Add a zoning change"). First visit: the detail column offers three starter policies.</td></tr>
           <tr><th scope="row">What a policy is and when it applies</th><td>A bar per span with a short setting text</td><td>Do</td><td>Keep. This is the part the owner likes.</td></tr>
-          <tr><th scope="row">The rules already in force</th><td>Fixed rows inside closed kinds: "Family Zoning Plan, as adopted" and others</td><td>Read</td><td>Keep in the rows. Selecting one says in a sentence what it is.</td></tr>
-          <tr><th scope="row">Market conditions</th><td>"The world" row</td><td>Find</td><td>Keep as the last row, closed.</td></tr>
+          <tr><th scope="row">The rules already in force</th><td>Fixed rows inside closed kinds: "Family Zoning Plan, as adopted" and others</td><td>Read</td><td>Keep in the rows, each named "Current law", "Current timelines", "Current funding". Selecting one says in a sentence what it is, with its formal name.</td></tr>
+          <tr><th scope="row">Market conditions</th><td>"The world" row, one fixed bar</td><td>Do, after the next project</td><td>A kind row like the other three, so booms and busts can be added as dated bars later. Today it holds its one bar.</td></tr>
           <tr><th scope="row">Time can be played and scrubbed</th><td>Pause, Play, Faster, Today; a slider; a ruler; a second progress bar; markers row</td><td>Do</td><td>One ruler that is the scrubber. Play and Pause are one button. Speed is one control.</td></tr>
           <tr><th scope="row">Editing a policy</th><td>Detail column: When, What, On, Move, Remove</td><td>Do</td><td>Keep. Add the policy's own effect at the top of its editor.</td></tr>
           <tr><th scope="row">Undo and redo</th><td>Two header buttons, disabled until an edit</td><td>Find</td><td>Keyboard only on desktop. Buttons only on touch.</td></tr>
@@ -227,9 +238,9 @@
     <section id="sec-prop-principles">
       <h3>Six rules</h3>
       <ol>
-        <li><strong>One clock.</strong> Every number on the main screen is for the playhead's date. The date is shown once, with the headline.</li>
+        <li><strong>One clock, starting today.</strong> Every number on the main screen is for the playhead's date, and the playhead starts at today. The date is shown once, with the headline.</li>
         <li><strong>The person's effect is shown three ways.</strong> As a number beside the headline, as the gap between two lines on the chart, and as marked projects on the map.</li>
-        <li><strong>Time is revealed, not pre-drawn.</strong> The chart and the totals exist up to the playhead. Playing or dragging forward reveals more.</li>
+        <li><strong>Time is revealed, not pre-drawn.</strong> Values are shown up to the playhead. Beyond it they are dimmed where the person has already been under the current rules, and absent everywhere else.</li>
         <li><strong>Controls say what they do.</strong> Every empty state names the next step. Nothing is disabled without a visible reason.</li>
         <li><strong>Two places for background.</strong> Details holds the numbers behind an effect. About this model holds data, assumptions, credits and help. Nothing else links out.</li>
         <li><strong>Status is silent when normal.</strong> One visible message per abnormal condition, with the action.</li>
@@ -264,7 +275,7 @@
       <section id="sec-prop-header">
         <h4>Header</h4>
         <ul>
-          <li>The headline reads, for example, "56,058 homes by Apr 2040 · +1,817 from your policy · 68% of state target". All three follow the playhead.</li>
+          <li>The headline reads, for example, "47,335 homes by Apr 2040 · +1,817 from your policy · 68% of state target". All three follow the playhead. At today the first two read zero.</li>
           <li>With no policy in force, the middle part is absent.</li>
           <li>The header holds: the two mode links, alerts, the headline, Publish, the account. View, undo, redo and Keyboard shortcuts leave it.</li>
           <li>Pressing the headline opens Details.</li>
@@ -274,8 +285,9 @@
         <h4>The one chart</h4>
         <ul>
           <li>It replaces both of today's charts and is taller than today's timeline chart.</li>
-          <li>Two lines: with the person's policy, and without it. The gap is shaded. With no policy there is one line.</li>
-          <li>Both lines stop at the playhead. Nothing is drawn beyond it except the state target and its deadline.</li>
+          <li>Two lines: with the person's policy, and under current law. The gap is shaded. With no policy there is one line.</li>
+          <li>It starts at today, at zero. The state target is drawn as the homes still needed by its deadline.</li>
+          <li>The lines follow the reveal rule in <a href="#sec-prop-reveal">Revealing time</a>. The state target, its deadline and the policy bars are always drawn in full: they are inputs, not outcomes.</li>
           <li>It has value labels on its vertical axis and shares the ruler's years.</li>
           <li>Details can switch what it plots: by source (pipeline, new projects) or the policy's effect alone. The second chart's content survives as views of this one.</li>
         </ul>
@@ -308,11 +320,36 @@
 
     <section id="sec-prop-reveal">
       <h3>Revealing time</h3>
+      <p>The timeline has three zones. They apply to the chart's lines, to the ruler's track and to every number.</p>
+      <table id="tbl-reveal">
+        <caption>The three zones of the timeline</caption>
+        <thead>
+          <tr><th scope="col">Zone</th><th scope="col">Where</th><th scope="col">How it looks</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Shown</th><td>Today to the playhead</td><td>Solid lines, full-strength numbers.</td></tr>
+          <tr><th scope="row">Seen</th><td>The playhead to the furthest date reached under the current rules</td><td>The same lines, dimmed. The person has been here and nothing has changed since.</td></tr>
+          <tr><th scope="row">Unseen</th><td>Beyond the furthest date reached</td><td>No lines and no numbers. The ruler's track is hatched.</td></tr>
+        </tbody>
+      </table>
       <ul>
-        <li>On opening, the playhead is at today and the chart shows history only.</li>
-        <li>Play reveals at one year per second. Dragging the playhead forward reveals instantly; nothing is locked.</li>
-        <li>After an edit, the page says the next step where the person is looking: the Play button reads "Play from 2028" when the edited policy starts in 2028.</li>
-        <li>A person who wants the answer at once drags to the end. With the playhead at the end, every edit updates the final numbers in place.</li>
+        <li>On opening, the playhead is at today and everything ahead is unseen. The window still ends 40 years out.</li>
+        <li>Play, or dragging the playhead forward, moves the furthest date reached. Dragging back leaves it where it was, so the part ahead is dimmed.</li>
+        <li>An edit pulls the furthest date reached back to the first month whose values the edit changes, and never to before the playhead. Months the edit does not touch stay seen.</li>
+        <li>After an edit, the Play button names the next step: "Play from 2028" when the first changed month is in 2028.</li>
+        <li>With the playhead at the end, an edit updates the final numbers in place, because everything up to the playhead is shown.</li>
+        <li>The furthest date reached lasts for the visit. It is not saved, and a shared link opens with everything ahead unseen.</li>
+      </ul>
+      <aside data-kind="note"><strong>Note</strong> "Not yet computed" stops being something the person is told. The forecast fills in about three seconds; if the playhead catches the computed edge it waits, and "Updating" shows with the save state.</aside>
+    </section>
+
+    <section id="sec-prop-bars">
+      <h3>Progress bars</h3>
+      <ul>
+        <li>The bars above projects show from the default zoom, not only at zoom 15 and closer.</li>
+        <li>A bar keeps one size on screen at every zoom, so it shrinks relative to its building as the person zooms in.</li>
+        <li>Zoomed out, bars would collide. Where they do, the larger project's bar wins, and a project caused by the person's policy wins over one that is not.</li>
+        <li>Length is progress through the stages and colour is the chance of finishing, as today. The map key explains both.</li>
       </ul>
     </section>
 
@@ -351,19 +388,28 @@
         <tbody>
           <tr><th scope="row">homes</th><td>units, net new homes, net units</td><td>Net of homes removed</td></tr>
           <tr><th scope="row">state target</th><td>RHNA, RHNA 2023–2031, State target</td><td>RHNA 2023–2031, 82,069 homes, counted from June 2022</td></tr>
-          <tr><th scope="row">from your policy</th><td>vs FZP, because of your policy, plan effect</td><td>The forecast run twice, with and without the policy</td></tr>
-          <tr><th scope="row">today's rules</th><td>FZP, the plan, as adopted</td><td>The Family Zoning Plan as adopted, permitting as observed, City funding today</td></tr>
+          <tr><th scope="row">from your policy</th><td>vs FZP, because of your policy, plan effect</td><td>The forecast run twice, with the policy and under current law</td></tr>
+          <tr><th scope="row">current law</th><td>FZP, the plan, as adopted</td><td>The Family Zoning Plan as adopted, permitting as observed, City funding today</td></tr>
           <tr><th scope="row">room for N homes</th><td>homes added (Paint), theoretical max buildout</td><td>Every eligible lot rebuilt to the painted height</td></tr>
         </tbody>
       </table>
     </section>
   </section>
 
+  <section id="sec-decisions">
+    <h2>Decided</h2>
+    <aside data-kind="decision"><strong>Decision: one clock</strong> The main screen shows one date. No end-of-window figure stays visible. The window still ends 40 years out.</aside>
+    <aside data-kind="decision"><strong>Decision: today is the start</strong> The simulation starts, as the person experiences it, at today, even though some figures count from 2022.</aside>
+    <aside data-kind="decision"><strong>Decision: the reveal rule</strong> Values show up to the playhead, dimmed where the person has been and nothing has changed, and dashed or absent where they have not been under the current rules. This document picks absent.</aside>
+    <aside data-kind="decision"><strong>Decision: plain words for the baseline</strong> "FZP" becomes "current law" on the main screen.</aside>
+    <aside data-kind="decision"><strong>Decision: progress bars</strong> Visible from further out, one size on screen.</aside>
+  </section>
+
   <section id="sec-questions">
     <h2>Questions for the owner</h2>
-    <aside data-kind="question" id="q-clock"><strong>Question 1: one clock</strong> The proposal removes every end-of-window number from the main screen, including the header's 2066 total. A person at today who edits a policy then sees no number move until they play or drag forward. Is that the intended trade for watching it grow, or should one destination figure stay visible (for example at the chart's right edge)?</aside>
+    <aside data-kind="question" id="q-zero"><strong>Question 1: does the headline start at zero?</strong> This document reads "today is the start" as: the headline counts homes added from today, so it reads zero before Play, and the chart starts at zero. The homes built since 2022 then appear only in the state-target percentage, which starts at about 11%. The alternative keeps the 2022 count in the headline, which then starts at 8,723.</aside>
     <aside data-kind="question" id="q-paint"><strong>Question 2: what Paint is now</strong> Simulate already has painted areas as a zoning policy. Is Paint still a product of its own, with its capacity number, or is it becoming a part of Simulate? If it stays, the proposal renames the two modes by what their number means, for example Capacity and Forecast, because "Paint" and "Simulate" name actions and hide the difference.</aside>
-    <aside data-kind="question" id="q-money"><strong>Question 3: public money</strong> The proposal treats cost as an effect only when the person has added a funding policy, and as background otherwise. If cost per home is meant to be a headline measure of every policy, it belongs with the headline instead.</aside>
+    <aside data-kind="question" id="q-money"><strong>Question 3: public money</strong> The proposal shows cost in the Now panel only while a funding policy is in force, and leaves the rest in Details. That is deliberately light, because the funding rework comes next and will decide what cost figure matters. If cost per home should already sit with the headline, say so.</aside>
     <aside data-kind="question" id="q-now"><strong>Question 4: the Now panel</strong> At rest the detail column would show this year's activity instead of totals. The alternative is to hide the column at rest and give the timeline the full width, at the cost of the timeline changing width whenever an editor opens.</aside>
   </section>
 
