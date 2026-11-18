@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
   import { COLORS } from '$lib/fzp/chart';
+  import { GOAL } from '$lib/goal/goal';
 
   interface Props {
     /** Stacked in the label column (from md) rather than wrapped under the plot. */
@@ -16,7 +17,7 @@
 
   const LEGEND = [
     { name: 'Homes completed', dash: undefined, width: 2.5, color: COLORS.total },
-    { name: 'State target', dash: '5 3', width: 2, color: COLORS.plan }
+    { name: GOAL.name, dash: '5 3', width: 2, color: COLORS.plan }
   ] as const;
 </script>
 

@@ -2,10 +2,11 @@
  * The score chart as numbers and path strings (spec §4.6). Pure: `ScoreChart.svelte` only lays
  * the model out. There is no plotting library; the marks are plain SVG paths.
  */
-import { M1_TARGETS, formatCompactCount, formatCount } from '$lib/scoreboard';
+import { GOAL } from '$lib/goal/goal';
+import { formatCompactCount, formatCount } from '$lib/scoreboard';
 import type { TimelineScore } from '$lib/sim/protocol';
 import type { Day } from '$lib/timelapse/time';
-import { formatDate, formatMonthYear } from './format';
+import { formatDate, formatMonthYear, formatShortMonthYear } from './format';
 import { CALCULATING, RHNA_ID, deadlineIndex, scrubMarkers } from './score-view';
 import { dayFromUtc, monthIndex, utcParts } from './time';
 
@@ -26,7 +27,7 @@ export const SERIES_NAME: Record<
   'total' | 'pipeline' | 'fresh' | 'planCompleted' | 'planEntitled',
   string
 > = {
-  total: 'Total net new homes',
+  total: `Toward the goal, since ${formatShortMonthYear(GOAL.countsFrom)}`,
   pipeline: "From today's pipeline",
   fresh: 'New projects',
   planCompleted: 'Plan effect, completed',
@@ -63,7 +64,6 @@ export interface TableRow {
 
 /** Least vertical distance (px) between the zero gridline and a floor gridline. */
 const MIN_FLOOR_GAP = 12;
-const RHNA_UNITS = M1_TARGETS.find((t) => t.id === RHNA_ID)!.units;
 
 /** Round up to 1, 2 or 5 × 10ⁿ (at least 1). */
 export function niceCeil(v: number): number {
@@ -136,7 +136,7 @@ export function chartModel(
     .map(seriesRange)
     .filter((r) => r !== null);
   const refUnits = score.references.map((r) => r.units);
-  const top = Math.max(RHNA_UNITS, ...refUnits, ...drawn.map((r) => r.max));
+  const top = Math.max(GOAL.amount, ...refUnits, ...drawn.map((r) => r.max));
   const bottom = Math.min(0, ...drawn.map((r) => r.min));
   const yMax = niceCeil(top);
   const yMin = bottom < 0 ? -niceCeil(-bottom) : 0;
@@ -172,7 +172,7 @@ export function chartModel(
     fresh: line(fresh)!,
     planCompleted: line(planCompleted),
     planEntitled: line(planEntitled),
-    rhnaY: y(RHNA_UNITS),
+    rhnaY: y(GOAL.amount),
     verticals: scrubMarkers(score).map((m) => ({ x: x(m.day), label: m.label })),
     references: score.references.map((r) => {
       const series = MEASURE_SERIES[r.measure];
@@ -243,5 +243,5 @@ export function chartLabel(score: TimelineScore, reveal: number): string {
   const i2045 = monthIndex(y2045.day, score.months[0], n);
   if (i2045 <= last) parts.push(`${totalAt(i2045)} by 2045`);
   parts.push(`${totalAt(last)} by ${formatMonthYear(score.months[last])}`);
-  return `Net new homes in this simulation so far: ${parts.join(', ')}.`;
+  return `${SERIES_NAME.total}: ${parts.join(', ')}.`;
 }

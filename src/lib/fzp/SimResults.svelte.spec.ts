@@ -17,7 +17,7 @@ import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import type { LeverCapacity } from '$lib/sim/levers/resolve';
 import SimResults from './SimResults.svelte';
 import { formatPercent } from '$lib/scoreboard';
-import { scoreAt } from './score-view';
+import { builtTowardGoalText, scoreAt } from './score-view';
 import { dayFromUtc, monthIndex } from './time';
 import { MONEY_LAST, MONEY_SCORE } from './fixtures/money';
 import { fixtureCalibration } from './fixtures/calibration';
@@ -115,7 +115,7 @@ describe('intro and loading', () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props({ score: null }) });
     await expect.element(page.getByText('Loading the simulation…').first()).toBeVisible();
-    expect(document.querySelector('[data-testid="fzp-net"]')).toBeNull();
+    expect(document.querySelector('[data-testid="fzp-built"]')).toBeNull();
     expect(document.querySelector('svg[role="img"]')).toBeNull();
     expect(document.querySelector('.sfh-fzp-legend')).toBeNull();
     expect(document.querySelector('[role="meter"]')).toBeNull();
@@ -123,15 +123,15 @@ describe('intro and loading', () => {
 });
 
 describe('layout', () => {
-  it('orders headline, what the plan added, chart, targets, pipeline, then Sources', async () => {
+  it('orders what the policy added, chart, the built-toward-goal line, targets, pipeline, then Sources', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props() });
     const before = (a: Element, b: Element) =>
       expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const els = [
-      page.getByTestId('fzp-net').element(),
       page.getByText('What current law added').element(),
       document.querySelector('[data-testid="fzp-chart"] svg')!,
+      page.getByTestId('fzp-built').element(),
       page.getByRole('meter').first().element(),
       page.getByTestId('fzp-stages').element(),
       sources().querySelector('summary')!
@@ -148,21 +148,31 @@ describe('layout', () => {
     expect(d.textContent).toContain('Where these numbers come from');
   });
 
-  it('puts the since-date and the built-by-today line under the headline', async () => {
+  it('has no headline: no fzp-net, no "homes added since", no "built by today"', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props() });
-    await expect.element(page.getByText('homes added since Jun 2022')).toBeVisible();
-    await expect.element(page.getByText('of which 12,000 built by today')).toBeVisible();
+    expect(document.querySelector('[data-testid="fzp-net"]')).toBeNull();
+    expect(document.body.textContent).not.toContain('homes added since');
+    expect(document.body.textContent).not.toContain('built by today');
+  });
+
+  it('says once, with the targets, that the homes built since Jun 2022 count toward the goal', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: props() });
+    const text = builtTowardGoalText(TIMELINE_SCORE.baseline);
+    await expect.element(page.getByTestId('fzp-built')).toHaveTextContent(text);
+    expect(document.querySelectorAll('[data-testid="fzp-built"]')).toHaveLength(1);
+    expect(document.body.textContent!.split(text)).toHaveLength(2);
+    const built = page.getByTestId('fzp-built').element();
+    expect(built.parentElement!.contains(page.getByRole('meter').first().element())).toBe(true);
   });
 });
 
-describe('headline and pipeline', () => {
-  it('shows the total at the scrubbed month and where it comes from', async () => {
+describe('pipeline', () => {
+  it('shows where the simulated homes come from', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props() });
-    const i = monthIndex(DAY, TIMELINE_SCORE.months[0], TIMELINE_SCORE.months.length);
-    expect(i).toBe(53);
-    await expect.element(page.getByTestId('fzp-net')).toHaveTextContent('17,300');
+    expect(monthIndex(DAY, TIMELINE_SCORE.months[0], TIMELINE_SCORE.months.length)).toBe(53);
     const row = (label: string) =>
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
     expect(row("Simulated, from today's pipeline")).toContain('3,180');
@@ -220,6 +230,16 @@ describe('what the plan added', () => {
   });
 });
 
+describe('the forecast note', () => {
+  it('shows in Sources only with no policy in force', async () => {
+    await page.viewport(1024, 768);
+    const r = await render(SimResults, { props: props({ copy: scoreCopy(null) }) });
+    expect(sources().contains(page.getByText(FORECAST_NOTE).element())).toBe(true);
+    await r.rerender({ copy: scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' }) });
+    await expect.element(page.getByText(FORECAST_NOTE)).not.toBeInTheDocument();
+  });
+});
+
 describe('score copy (/sim)', () => {
   it('names your policy and current law for a customised policy', async () => {
     await page.viewport(1024, 768);
@@ -227,7 +247,8 @@ describe('score copy (/sim)', () => {
     await render(SimResults, { props: props({ copy }) });
     await expect.element(page.getByText('What your policy added')).toBeVisible();
     await expect.element(page.getByText('What current law added')).not.toBeInTheDocument();
-    await expect.element(page.getByText(FORECAST_NOTE)).toBeInTheDocument();
+    openSources();
+    await expect.element(page.getByText(FORECAST_NOTE)).not.toBeInTheDocument();
     const row = (label: string) =>
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
     expect(row('Homes completed because of your policy')).toContain('1,290');
@@ -328,7 +349,7 @@ describe('protections cost (/sim)', () => {
         capacity: { plan: 900, withoutProtections: 900, protectedLots: 0 }
       })
     });
-    await expect.element(page.getByTestId('fzp-net')).toBeVisible();
+    await expect.element(page.getByTestId('fzp-built')).toBeVisible();
     expect(document.body.textContent).not.toMatch(PROT);
     await r.rerender({ capacity: null });
     expect(document.body.textContent).not.toMatch(PROT);
@@ -576,10 +597,10 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: at(MONEY_LAST) });
     const els = [
-      page.getByTestId('fzp-net').element(),
       page.getByText('What current law added').element(),
       el('fzp-money')!,
       document.querySelector('[data-testid="fzp-chart"] svg')!,
+      page.getByTestId('fzp-built').element(),
       page.getByRole('meter').first().element(),
       el('fzp-tiers')!,
       page.getByTestId('fzp-stages').element(),
@@ -849,11 +870,11 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
   it('renders every row of rule 26', async () => {
     await page.viewport(1024, 768);
     const v = view();
-    const at = resultsAt(v, null, IDX);
     await render(SimResults, { props: feed(v) });
     const text = document.body.textContent!;
-    expect(page.getByTestId('fzp-net').element().textContent).toBe(formatCount(at.total));
-    expect(text).toContain(`of which ${formatCount(at.actual)} built by today`);
+    expect(page.getByTestId('fzp-built').element().textContent).toBe(
+      builtTowardGoalText(v.baseline)
+    );
     expect(text).toContain('Homes in projects still in progress');
     expect(text).toContain('Simulated, from today');
     expect(text).toContain('Simulated, new projects not yet');

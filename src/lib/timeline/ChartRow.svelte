@@ -8,11 +8,10 @@
 -->
 <script lang="ts">
   import { COLORS } from '$lib/fzp/chart';
-  import { formatMonthYear } from '$lib/fzp/format';
-  import { formatCount } from '$lib/scoreboard';
   import type { TimelineView } from '$lib/sim/world/score/types';
   import type { Day } from '$lib/timelapse/time';
   import { indexOfDay } from './playhead';
+  import { homesBy } from './copy';
   import ChartLegend from './ChartLegend.svelte';
   import { dayPct } from './rows';
 
@@ -23,7 +22,7 @@
     view: TimelineView | null;
     /** The playhead's calendar month. */
     index: number;
-    /** The state target: its deadline's month and its homes. */
+    /** The goal: its deadline's month and the homes still needed (goalStep). */
     target: { deadlineIndex: number; units: number } | null;
   }
 
@@ -32,8 +31,6 @@
   const W = 1000;
   const H = 100;
   const last = $derived(view?.filledThrough ?? -1);
-  /** The homes already completed at the dataset date: added, as the headline counts them. */
-  const base = $derived(view?.baseline.completedNet ?? 0);
   const x = (i: number) => (dayPct(view!.months[i], asOf, windowEnd) / 100) * W;
 
   const yMax = $derived.by(() => {
@@ -44,7 +41,7 @@
   });
   const yMin = $derived.by(() => {
     if (!view || last < 0) return 0;
-    let m = Math.min(0, base);
+    let m = 0;
     for (let i = 0; i <= last; i++) m = Math.min(m, homes(i));
     return m;
   });
@@ -61,14 +58,15 @@
 
   // The solid part runs through the playhead's month, the dashed part from there on.
   const split = $derived(Math.min(Math.max(index, 0), last));
-  const homes = (i: number) => base + view!.rows[i].completedNet;
+  /** Homes completed from today, as the headline counts them. */
+  const homes = (i: number) => view!.rows[i].completedNet;
 
   let focusAt = $state<number | null>(null);
   let hoverAt = $state<number | null>(null);
   const active = $derived(hoverAt ?? focusAt);
 
   function summary(i: number): string {
-    return `${formatMonthYear(view!.months[i])}: ${formatCount(homes(i))} homes completed`;
+    return homesBy(homes(i), view!.months[i]);
   }
 
   let overlay: HTMLElement | undefined = $state();

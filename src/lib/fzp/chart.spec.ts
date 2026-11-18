@@ -179,7 +179,7 @@ describe('references', () => {
     const s = makeTimelineScore();
     s.references[0] = { ...s.references[0], measure: 'completedNet' };
     expect(chartModel(s, FIX_ASOF, FIX_HORIZON, W, 290).references[0].label).toMatch(
-      /\(compare with: Total net new homes\)$/
+      /\(compare with: Toward the goal, since Jun 2022\)$/
     );
   });
 });
@@ -194,7 +194,7 @@ describe('series names and colours', () => {
       'planEntitled'
     ]);
     expect(SERIES_NAME).toEqual({
-      total: 'Total net new homes',
+      total: 'Toward the goal, since Jun 2022',
       pipeline: "From today's pipeline",
       fresh: 'New projects',
       planCompleted: 'Plan effect, completed',
@@ -330,7 +330,7 @@ describe('chartLabel', () => {
   it('summarises the total at the deadline, 2045 and the end', () => {
     const at2045 = monthIndex(dayFromUtc(2045, 6, 30), TIMELINE_SCORE.months[0], 291);
     expect(chartLabel(TIMELINE_SCORE, 290)).toBe(
-      'Net new homes in this simulation so far: 17,100 by the RHNA deadline, ' +
+      'Toward the goal, since Jun 2022: 17,100 by the RHNA deadline, ' +
         `${formatCount(12000 + 100 * at2045)} by 2045, ` +
         `${formatCount(12000 + 29000)} by December 2050.`
     );
@@ -338,7 +338,7 @@ describe('chartLabel', () => {
 
   it('names the total at reveal and leaves out later milestones', () => {
     expect(chartLabel(TIMELINE_SCORE, 10)).toBe(
-      `Net new homes in this simulation so far: ${formatCount(12000 + 1000)} by ` +
+      `Toward the goal, since Jun 2022: ${formatCount(12000 + 1000)} by ` +
         `${formatMonthYear(TIMELINE_SCORE.months[10])}.`
     );
     const at2045 = monthIndex(dayFromUtc(2045, 6, 30), TIMELINE_SCORE.months[0], 291);

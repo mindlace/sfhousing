@@ -48,7 +48,7 @@ describe('ScoreChart', () => {
     const headers = page.getByRole('columnheader').elements();
     expect(headers.map((h) => h.textContent)).toEqual([
       'Date',
-      'Total',
+      'Toward the goal',
       'From pipeline',
       'New projects',
       'Plan effect (completed)',
@@ -62,6 +62,15 @@ describe('ScoreChart', () => {
     expect(body[0].querySelector('th')!.textContent).toBe(expected[0].date);
     expect([...body].some((r) => r.querySelector('th')!.textContent === 'Jan 31, 2031')).toBe(true);
     expect(body[0].querySelectorAll('td')[0].textContent).toBe(expected[0].total);
+  });
+
+  it('the Results chart says it counts toward the goal since Jun 2022', async () => {
+    await page.viewport(1024, 768);
+    await render(ScoreChart, { props: props() });
+    expect(svg().getAttribute('aria-label')).toMatch(/^Toward the goal, since Jun 2022: /);
+    expect([...svg().querySelectorAll('text')].some((t) => t.textContent === 'State target')).toBe(
+      true
+    );
   });
 
   it('moves the cursor line with the day prop', async () => {

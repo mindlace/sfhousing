@@ -11,6 +11,7 @@ import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { REAL_ACTUAL } from '$lib/fzp/fixtures/cards';
 import { CALCULATING, fromPolicyText } from '$lib/fzp/score-view';
+import { GOAL } from '$lib/goal/goal';
 import { formatMonthYear } from '$lib/fzp/format';
 import { dayFromUtc, monthStart, utcParts } from '$lib/fzp/time';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
@@ -1035,6 +1036,31 @@ describe('TimelineMode', () => {
     expect(chart.bottom).toBeLessThanOrEqual(top + 0.5);
   });
 
+  it('the chart step is the goal amount minus the homes built before today', async () => {
+    // Month 0 is Jan 2030, so the goal's deadline (Jan 2031) is month 12 of the window.
+    const need = 40;
+    const base = baseStatics({ lastIndex: LAST });
+    const statics: ScoreStatics = {
+      ...base,
+      asOf: dayFromUtc(2030, 1, 1),
+      months: Array.from({ length: LAST + 1 }, (_, i) => dayFromUtc(2030, 1 + i, 1)),
+      baseline: { ...base.baseline, units: GOAL.amount - need }
+    };
+    setup({});
+    await expect.poll(() => workers.length).toBe(1);
+    await expect.poll(() => w().lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, statics));
+    emit(filledMsg(1, 0, LAST + 1));
+    const target = page.getByTestId('chart-target');
+    await expect.element(target).toBeInTheDocument();
+    // The line's last point sits at the top: the most homes any month has (3 * LAST + 1).
+    const d = page.getByTestId('chart-line-later').element().getAttribute('d')!;
+    const lastY = Number(/L[\d.-]+,([\d.-]+)$/.exec(d)![1]);
+    expect(lastY).toBeCloseTo(2, 1);
+    const yMax = 3 * LAST + 1;
+    expect(Number(target.element().getAttribute('y1'))).toBeCloseTo(98 - (need / yMax) * 96, 1);
+  });
+
   it('while stale the map canvas, Results, card and header dim; their controls keep full contrast', async () => {
     const s = await opened(LAST, { withInspector: true });
     const canvas = document.createElement('canvas');
@@ -1048,7 +1074,7 @@ describe('TimelineMode', () => {
     await expect
       .element(page.getByTestId('tl-card').getByRole('heading', { level: 2 }))
       .toBeInTheDocument();
-    const net = page.getByTestId('fzp-net');
+    const net = page.getByTestId('fzp-built');
     await expect.element(net).toBeInTheDocument();
     const fresh = getComputedStyle(net.element()).color;
 

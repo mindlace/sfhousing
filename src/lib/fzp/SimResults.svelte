@@ -23,11 +23,10 @@
   import ScoreChart from './ScoreChart.svelte';
   import {
     CALCULATING,
-    builtByTodayText,
+    builtTowardGoalText,
     inProgressRows,
     deadlineIndex,
-    phasingFootnote,
-    sinceText
+    phasingFootnote
   } from './score-view';
   import type { ScoreAt } from './types';
 
@@ -97,10 +96,6 @@
   const stages = $derived(score && at ? inProgressRows(score.shown[at.monthIndex].inProgress) : []);
   const inProgressTotal = $derived(stages.reduce((sum, s) => sum + s.units, 0));
   const phasing = $derived(score ? phasingFootnote(score.phasing) : null);
-  /** The headline's text after its count: "homes added since Jan 2021". */
-  const sinceRest = $derived(
-    score && at ? sinceText(score, at).slice(formatCount(at.total).length) : ''
-  );
   const planPending = $derived(at !== null && at.planCompleted === null);
   /** The month index of the filled mark: nothing after it is revealed. */
   const reveal = $derived(score ? monthIndex(filledEnd, score.months[0], score.months.length) : -1);
@@ -128,14 +123,6 @@
     {@render staleLine()}
     <p class="mt-3 text-sm text-ink-muted dark:text-ink-dark-muted">Loading the simulation…</p>
   {:else}
-    <p>
-      <Explain text={FORECAST_NOTE} label="{formatCount(at.total)}{sinceRest}"
-        ><span data-testid="fzp-net" class="text-3xl font-bold tabular-nums"
-          >{formatCount(at.total)}</span
-        ><span class="text-base">{sinceRest}</span></Explain
-      >
-    </p>
-    <p class="text-sm text-ink-muted dark:text-ink-dark-muted">{builtByTodayText(at)}</p>
     {@render staleLine()}
 
     <section class="mt-4" aria-busy={planPending ? 'true' : undefined}>
@@ -184,6 +171,7 @@
     <ScoreChart {score} {asOf} {horizon} {day} highWater={filledEnd} />
 
     <div class="mt-4">
+      <p class="text-sm" data-testid="fzp-built">{builtTowardGoalText(score.baseline)}</p>
       {#each at.targets as t, k (t.tp.target.id)}
         <TargetRow tp={t.tp} net={at.total} {max} primary={k === 0} />
         {#if reveal >= deadlineIndex(score, score.targets[k].deadline)}
@@ -240,9 +228,11 @@
       <summary class="min-h-6 cursor-pointer text-sm font-semibold pointer-coarse:min-h-11"
         >Sources</summary
       >
-      <p class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted">
-        {FORECAST_NOTE}
-      </p>
+      {#if copy.compare === 'preFzp'}
+        <p class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted">
+          {FORECAST_NOTE}
+        </p>
+      {/if}
       {#if market}
         <p class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted" data-testid="fzp-market">
           {marketBody(market)}

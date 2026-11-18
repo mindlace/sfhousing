@@ -106,13 +106,13 @@
   import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import ProjectCardPanel from '$lib/fzp/ProjectCardPanel.svelte';
   import ProjectTooltip from '$lib/fzp/ProjectTooltip.svelte';
-  import { RHNA_ID, scrubMarkers } from '$lib/fzp/score-view';
+  import { scrubMarkers } from '$lib/fzp/score-view';
   import SimResults from '$lib/fzp/SimResults.svelte';
   import SourcesDialog from '$lib/fzp/SourcesDialog.svelte';
   import { SummaryRequester, type SummaryState } from '$lib/fzp/summary-request';
-  import { monthIndex, monthStart } from '$lib/fzp/time';
+  import { monthStart } from '$lib/fzp/time';
   import type { FzpPhase, Speed } from '$lib/fzp/types';
-  import { GOAL } from '$lib/goal/goal';
+  import { GOAL, goalStep } from '$lib/goal/goal';
   import type { HeightCity } from '$lib/map/height/types';
   import SimMap from '$lib/map/SimMap.svelte';
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
@@ -379,15 +379,7 @@
         )
       : null
   );
-  const chartTarget = $derived.by(() => {
-    const v = current;
-    const rhna = v?.targets.find((t) => t.target.id === RHNA_ID);
-    if (!v || !rhna) return null;
-    return {
-      deadlineIndex: monthIndex(rhna.deadline, v.months[0], v.months.length),
-      units: rhna.target.units
-    };
-  });
+  const chartTarget = $derived(current ? goalStep(GOAL, current) : null);
   // The held document goes once the numbers on show are current again.
   $effect(() => {
     if (!stale) untrack(() => (heldDoc = null));

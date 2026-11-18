@@ -8,6 +8,7 @@ import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from './chunk-log';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { monthLastDay } from '$lib/sim/world/months';
 import ChartRow from './ChartRow.svelte';
+import { homesBy } from './copy';
 import { dayPct } from './rows';
 import { chunk, cut, statics } from './test/fixtures';
 
@@ -78,6 +79,14 @@ describe('ChartRow', () => {
     expect(later.getAttribute('stroke-opacity')).toBeNull();
   });
 
+  it('the legend names the goal', async () => {
+    await render(ChartRow, {
+      props: { asOf, windowEnd, view: fullView(), index: 0, target: null }
+    });
+    const names = [...document.querySelectorAll('.legend li')].map((li) => li.textContent!.trim());
+    expect(names).toEqual(['Homes completed', 'State target']);
+  });
+
   it('shows the state target as a dashed marker', async () => {
     await render(ChartRow, {
       props: {
@@ -98,10 +107,15 @@ describe('ChartRow', () => {
     (page.getByRole('slider', { name: 'Month in the chart' }).element() as HTMLElement).focus();
     const readout = page.getByTestId('chart-readout');
     await expect.element(readout).toBeVisible();
-    // chunk(): shown = 3k + 1 at k = 3, on the 1,000 baseline.
-    await expect.element(readout).toHaveTextContent(/: 1,010 homes completed$/);
+    // chunk(): shown = 3k + 1 at k = 3, counted from today.
+    await expect
+      .element(readout)
+      .toHaveTextContent(homesBy(view.rows[3].completedNet, view.months[3]));
+    expect(view.rows[3].completedNet).toBe(10);
     await userEvent.keyboard('{ArrowRight}');
-    await expect.element(readout).toHaveTextContent(/: 1,013 homes completed$/);
+    await expect
+      .element(readout)
+      .toHaveTextContent(homesBy(view.rows[4].completedNet, view.months[4]));
   });
 
   it('shows the numbers on hover', async () => {
@@ -113,20 +127,31 @@ describe('ChartRow', () => {
     await expect.element(page.getByTestId('chart-readout')).toBeVisible();
   });
 
-  it('plots and reads out completed net homes with the baseline added', async () => {
+  it('plots and reads out homes counted from today, with the goal at the homes still needed', async () => {
     const view = fullView();
     expect(view.baseline.completedNet).toBe(1000);
     await render(ChartRow, {
-      props: { asOf, windowEnd, view, index: 0, target: { deadlineIndex: 12, units: 1020 } }
+      props: { asOf, windowEnd, view, index: 0, target: { deadlineIndex: 12, units: 20 } }
     });
-    // Month 0 of the fixture is 1 home: the line starts at the baseline, below the target.
+    // The line starts at month 0's own count (not the baseline) and sits below the target line.
     const lineY = Number(
       /M[\d.-]+,([\d.-]+)/.exec(page.getByTestId('chart-line').element().getAttribute('d')!)![1]
     );
     const targetY = Number(page.getByTestId('chart-target').element().getAttribute('y1'));
     expect(lineY).toBeGreaterThan(targetY);
-    (page.getByRole('slider', { name: 'Month in the chart' }).element() as HTMLElement).focus();
-    await expect.element(page.getByTestId('chart-readout')).toHaveTextContent(/: 1,001 homes/);
+    expect(lineY).toBeLessThan(100);
+    const slider = page.getByRole('slider', { name: 'Month in the chart' });
+    (slider.element() as HTMLElement).focus();
+    const split = 0;
+    await expect
+      .element(page.getByTestId('chart-readout'))
+      .toHaveTextContent(homesBy(view.rows[split].completedNet, view.months[split]));
+    await expect
+      .element(slider)
+      .toHaveAttribute(
+        'aria-valuetext',
+        homesBy(view.rows[split].completedNet, view.months[split])
+      );
   });
 
   it('keeps a falling line inside the plot', async () => {

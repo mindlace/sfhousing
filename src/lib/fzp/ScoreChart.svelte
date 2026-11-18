@@ -4,6 +4,7 @@
   line (O(1)).
 -->
 <script lang="ts">
+  import { GOAL } from '$lib/goal/goal';
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { Day } from '$lib/timelapse/time';
   import { REFERENCE_NOTE } from '$lib/timeline/copy';
@@ -45,7 +46,7 @@
   const LEGEND_ORDER: LineKey[] = ['total', 'pipeline', 'fresh', 'planCompleted', 'planEntitled'];
   const COLUMNS = [
     'Date',
-    'Total',
+    'Toward the goal',
     'From pipeline',
     'New projects',
     'Plan effect (completed)',
@@ -147,7 +148,7 @@
         fill="var(--chart-ink)"
         stroke="var(--chart-halo)"
         stroke-width="3"
-        paint-order="stroke">RHNA</text
+        paint-order="stroke">{GOAL.name}</text
       >
       {#each model.verticals as v (v.label)}
         <text
