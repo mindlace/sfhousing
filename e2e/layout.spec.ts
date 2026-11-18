@@ -1,13 +1,15 @@
-// `/` and `/p/:id` layout (W6b, WCAG 2.4.11 Focus Not Obscured), on the dock (sim-ux plan 5): below
+// `/` and `/p/:id` layout (WCAG 2.4.11 Focus Not Obscured), on the dock (sim-ux plan 5): below
 // 768 px the dock's sheet handle sits on #map-region's bottom (the score is in the header, so no bar
-// sits under it), so the site footer's links stay visible, unobscured and tappable on the
-// full-height routes; the map's inset follows the sheet, which the header score opens on Results;
-// the brush status is a pill under the header; the palette strip leaves the map controls uncovered.
+// sits under it); the full-height routes have no footer, and the header's About entry stays
+// visible, unobscured and tappable; the map's inset follows the sheet, which the header score
+// opens on Results; the brush status is a pill under the header; the palette strip leaves the map
+// controls uncovered.
 // From 768 px the dock is a panel on the left of the map.
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { MSG } from '../src/lib/brush/messages';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
 import {
   PLAN_KEY,
   chooseTool,
@@ -114,11 +116,6 @@ async function setAttribution(page: Page, expanded: boolean): Promise<void> {
   await expectFootprintSettled(page);
 }
 
-const FOOTER_LINKS = ['About', 'Data & licences', 'Source code (GitHub)'];
-
-const footerLink = (page: Page, name: string): Locator =>
-  page.getByRole('navigation', { name: 'Footer' }).getByRole('link', { name, exact: true });
-
 /** The element painted at the centre of `loc`'s box is `loc` itself or one of its descendants. */
 async function expectUnobscured(loc: Locator): Promise<void> {
   const hit = await loc.evaluate((el) => {
@@ -130,16 +127,6 @@ async function expectUnobscured(loc: Locator): Promise<void> {
     };
   });
   expect(hit.ok, `covered by ${hit.top}`).toBe(true);
-}
-
-async function expectFooterReachable(page: Page): Promise<void> {
-  for (const name of FOOTER_LINKS) {
-    const link = footerLink(page, name);
-    await expect(link).toBeVisible();
-    await expect(link).toBeInViewport({ ratio: 1 });
-    await expectUnobscured(link);
-    await link.tap({ trial: true });
-  }
 }
 
 async function box(loc: Locator): Promise<Box> {
@@ -162,8 +149,10 @@ const paddingBottom = (page: Page): Promise<number> =>
   page.evaluate(() => (window as Win).__sfhMap!.map!.getPadding().bottom ?? 0);
 
 /**
- * The handle visible on the region's bottom, footer reachable; the map's inset follows the dock
+ * The handle visible on the region's bottom, no footer; the map's inset follows the dock
  * sheet, opened by its handle and on Results by the header score; the sheet stays inside the region.
+ * The header's About entry is reachable over the folded sheet (opening the Menu folds the sheet,
+ * so the two never show together).
  */
 async function checkMobile(page: Page): Promise<void> {
   const region = page.locator('#map-region');
@@ -175,7 +164,8 @@ async function checkMobile(page: Page): Promise<void> {
   const r = await box(region);
   const ds = await box(dockSheet(page));
   expect(Math.abs(ds.y + ds.height - (r.y + r.height))).toBeLessThanOrEqual(1);
-  await expectFooterReachable(page);
+  await expectNoFooter(page);
+  await expectAboutReachable(page);
   // Containing blocks: the sheet resolves against the map box in BrushEditor's frame, which fills
   // the region; the map canvas ends at the region's bottom.
   const cb = await page.evaluate(() => {
@@ -195,23 +185,23 @@ async function checkMobile(page: Page): Promise<void> {
   // setBottomInset: the handle, in map-container pixels.
   await expect.poll(() => paddingBottom(page)).toBe(Math.round(ds.height));
 
-  // The dock's sheet open: inside the region, the footer still reachable, the inset its height.
+  // The dock's sheet open: inside the region, the inset its height.
   await handle(page).tap();
   await expect(handle(page)).toHaveAttribute('aria-expanded', 'true');
   await expectInside(dockSheet(page), region);
-  await expectFooterReachable(page);
+  await expectNoFooter(page);
   const openH = await dockSheet(page).evaluate((el) => el.getBoundingClientRect().height);
   await expect.poll(() => paddingBottom(page)).toBe(Math.round(openH));
   await handle(page).tap();
   await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
   await expect.poll(() => paddingBottom(page)).toBe(Math.round(ds.height));
 
-  // The header score opens the sheet on Results: inside the region, the footer reachable, the
-  // inset its height; pressing the score again flips to the editing face, the handle folds it.
+  // The header score opens the sheet on Results: inside the region, the inset its height;
+  // pressing the score again flips to the editing face, the handle folds it.
   await headerScore(page).tap();
   await expect(resultsFace(page)).toBeVisible();
   await expectInside(dockSheet(page), region);
-  await expectFooterReachable(page);
+  await expectNoFooter(page);
   const resultsH = await dockSheet(page).evaluate((el) => el.getBoundingClientRect().height);
   // The peek height is 40dvh, so the inset may be fractional.
   await expect.poll(() => paddingBottom(page)).toBeCloseTo(resultsH, 0);
@@ -226,20 +216,24 @@ test.describe('mobile', () => {
   // eslint-disable-next-line playwright/no-skipped-test
   test.skip(({ isMobile }) => !isMobile, 'mobile project only');
 
-  test('/: footer links stay visible, unobscured and tappable over the handle and sheet', async ({
+  test('/: no footer; the About entry stays visible, unobscured and tappable over the handle and sheet', async ({
     page
   }) => {
     await gotoEditor(page);
     await checkMobile(page);
 
-    await footerLink(page, 'About').tap();
+    await openHeaderMenu(page);
+    await page.getByRole('banner').getByRole('link', { name: 'About', exact: true }).tap();
     await expect(page).toHaveURL(/\/about$/);
     await page.goBack();
     await waitForMap(page);
-    await expectFooterReachable(page);
+    await expectNoFooter(page);
   });
 
-  test('/p/:id: footer links stay visible, unobscured and tappable', async ({ page, request }) => {
+  test('/p/:id: no footer; the About entry stays visible, unobscured and tappable', async ({
+    page,
+    request
+  }) => {
     const res = await request.post('/api/plans', {
       data: smallText,
       headers: { 'content-type': 'application/json' }
@@ -324,15 +318,18 @@ test.describe('desktop', () => {
   // eslint-disable-next-line playwright/no-skipped-test
   test.skip(({ isMobile }) => isMobile, 'chromium project only');
 
-  test('/: footer reachable, the dock on the left, the score in the header', async ({ page }) => {
+  test('/: About entry in the header, nothing under the map, the dock on the left, the score in the header', async ({
+    page
+  }) => {
     await gotoEditor(page);
-    for (const name of FOOTER_LINKS) {
-      const link = footerLink(page, name);
-      await expect(link).toBeVisible();
-      await expect(link).toBeInViewport({ ratio: 1 });
-      await expectUnobscured(link);
-    }
+    await expectNoFooter(page);
+    await expect(
+      page.getByRole('banner').getByRole('link', { name: 'About', exact: true })
+    ).toBeVisible();
+    await expectAboutReachable(page);
     const region = await box(page.locator('#map-region'));
+    const innerHeight = await page.evaluate(() => window.innerHeight);
+    expect(Math.abs(region.y + region.height - innerHeight)).toBeLessThanOrEqual(1);
     const dock = await box(page.locator('.sfh-dock-panel'));
     expect(dock.x - region.x).toBeCloseTo(0, 0);
     expect(dock.y - region.y).toBeCloseTo(0, 0);
@@ -368,9 +365,13 @@ test.describe('medium width', () => {
       await page.keyboard.press('Escape');
       await expect(shortcuts).toHaveAttribute('aria-expanded', 'false');
 
-      // A window half the content's height: the content is taller than the region.
+      // A window half the content's height: the content is taller than the region. The panel
+      // fills the region, so its own height can exceed the content's: sum its children instead.
+      const content = await panel.evaluate((el) =>
+        [...el.children].reduce((s, c) => s + c.getBoundingClientRect().height, 0)
+      );
       const top = (await box(panel)).y;
-      await page.setViewportSize({ width, height: Math.floor(top + h / 2) });
+      await page.setViewportSize({ width, height: Math.floor(top + content / 2) });
       await expectInside(panel, page.locator('#map-region'));
       const scroll = await panel.evaluate((el) => ({
         overflows: el.scrollHeight > el.clientHeight,
@@ -464,7 +465,8 @@ test.describe('landscape phone 667×375', () => {
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     ).toBe(true);
-    await expectFooterReachable(page);
+    await expectNoFooter(page);
+    await expectAboutReachable(page);
 
     for (const c of [handle(page), headerScore(page)]) {
       await expect(c).toBeVisible();
@@ -513,13 +515,13 @@ test.describe('landscape phone 667×375', () => {
     const flip = dockSheet(page).getByRole('button', { name: 'Back to painting' });
     await expect(flip).toBeInViewport({ ratio: 1 });
     await expectUnobscured(flip);
-    await expectFooterReachable(page);
+    await expectNoFooter(page);
     await expectNoA11yViolations(page);
     await flip.tap();
     await expect(resultsFace(page)).toHaveCount(0);
   });
 
-  test('/p/:id: read-only handle, score and footer fit under the shared banner', async ({
+  test('/p/:id: read-only handle, score and About entry fit under the shared banner', async ({
     page,
     request
   }) => {

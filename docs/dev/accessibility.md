@@ -12,6 +12,6 @@ Options: `include` / `exclude` (CSS selectors), `disableRules` (rule ids a surfa
 
 - Every new page or route gets an a11y e2e that runs under both Playwright projects (`chromium` and `mobile` at 375 px).
 - At 375 px the page has no horizontal scroll.
-- A skip link, one `<main>`, one `<h1>`, and the footer links are reachable by keyboard.
+- A skip link, one `<main>`, one `<h1>`, and the header's About entry are reachable by keyboard on every page; document pages also have the footer links (the map pages have no footer).
 - Interactive targets are at least 24x24 CSS px (SC 2.5.8).
 - Anything draggable has a non-dragging alternative (SC 2.5.7).

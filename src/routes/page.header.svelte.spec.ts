@@ -92,7 +92,9 @@ describe('/ header save state', () => {
         ...(width >= 1024
           ? [
               page.getByRole('banner').getByRole('button', { name: 'Paint', exact: true }),
-              page.getByRole('button', { name: /Publish/ })
+              page.getByRole('button', { name: /Publish/ }),
+              page.getByRole('link', { name: 'Sign in' }),
+              page.getByRole('link', { name: 'About', exact: true })
             ]
           : [page.getByRole('button', { name: 'Menu' })]
         ).map((l) => l.element())

@@ -97,6 +97,47 @@ describe('SiteHeader', () => {
     });
   });
 
+  describe('About entry', () => {
+    it('at 1024px links /about, right after the account entry', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { user: null });
+      const banner = page.getByRole('banner');
+      const about = banner.getByRole('link', { name: 'About', exact: true });
+      await expect.element(about).toBeVisible();
+      await expect.element(about).toHaveAttribute('href', '/about');
+      const signIn = banner.getByRole('link', { name: 'Sign in' }).element();
+      expect(about.element().getBoundingClientRect().left).toBeGreaterThanOrEqual(
+        signIn.getBoundingClientRect().right
+      );
+      expect(banner.element().getBoundingClientRect().height).toBe(48);
+    });
+
+    it('at 375px waits in the Menu, then sits in the panel after the account entry', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { user: null });
+      await expect.element(page.getByText('About', { exact: true })).not.toBeVisible();
+      await page.getByRole('button', { name: 'Menu' }).click();
+      const about = page.getByRole('link', { name: 'About', exact: true });
+      await expect.element(about).toBeVisible();
+      const menu = page.getByRole('button', { name: 'Menu' }).element();
+      const panel = document.getElementById(menu.getAttribute('aria-controls')!);
+      expect(panel?.contains(about.element())).toBe(true);
+      const signIn = page.getByRole('link', { name: 'Sign in' }).element();
+      expect(
+        signIn.compareDocumentPosition(about.element()) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+    });
+
+    it('is current on /about only', async () => {
+      await page.viewport(1024, 768);
+      const { rerender } = await render(SiteHeader, { routeId: '/about' });
+      const about = page.getByRole('banner').getByRole('link', { name: 'About', exact: true });
+      await expect.element(about).toHaveAttribute('aria-current', 'page');
+      await rerender({ routeId: '/sim' });
+      await expect.element(about).not.toHaveAttribute('aria-current');
+    });
+  });
+
   describe('mode links', () => {
     it('shows both links at 1024px and marks the current mode', async () => {
       await page.viewport(1024, 768);
@@ -327,11 +368,12 @@ describe('SiteHeader', () => {
       expect(x(score)).toBeLessThan(x(m));
     });
 
-    it('centres the score at 1024px even with a long status', async () => {
-      await page.viewport(1024, 768);
-      const long = createRawSnippet(() => ({
-        render: () => `<span>${'Saved a very long time ago '.repeat(12)}</span>`
-      }));
+    const long = createRawSnippet(() => ({
+      render: () => `<span>${'Saved a very long time ago '.repeat(12)}</span>`
+    }));
+
+    it('centres the score at 1280px even with a long status', async () => {
+      await page.viewport(1280, 800);
       render(SiteHeader, { routeId: '/sim', actions, pinned, status: long });
       const r = page
         .getByRole('button', { name: '1,234 homes added' })
@@ -339,6 +381,22 @@ describe('SiteHeader', () => {
         .getBoundingClientRect();
       const h = page.getByRole('banner').element().getBoundingClientRect();
       expect(Math.abs((r.left + r.right) / 2 - (h.left + h.right) / 2)).toBeLessThan(1);
+    });
+
+    it('at 1024px with a long status the score sits between the status and the actions', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { routeId: '/sim', actions, pinned, status: long });
+      const banner = page.getByRole('banner').element() as HTMLElement;
+      const status = document.querySelector('[data-header-status]')!.getBoundingClientRect();
+      const score = page
+        .getByRole('button', { name: '1,234 homes added' })
+        .element()
+        .getBoundingClientRect();
+      const other = page.getByRole('button', { name: 'Example' }).element().getBoundingClientRect();
+      expect(status.right).toBeLessThanOrEqual(score.left);
+      expect(score.right).toBeLessThanOrEqual(other.left);
+      expect(banner.getBoundingClientRect().height).toBe(48);
+      expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
     });
 
     it('Escape closes the menu and returns focus to Menu', async () => {
@@ -466,7 +524,9 @@ describe('SiteHeader', () => {
               page.getByRole('button', { name: '12,345 homes added' }).element(),
               page.getByRole('button', { name: 'View' }).element(),
               page.getByRole('button', { name: 'Policy' }).element(),
-              page.getByRole('button', { name: 'Share link' }).element()
+              page.getByRole('button', { name: 'Share link' }).element(),
+              page.getByRole('link', { name: 'Sign in' }).element(),
+              page.getByRole('link', { name: 'About', exact: true }).element()
             ];
             for (let i = 1; i < row.length; i++)
               expect(box(row[i]).left, `item ${i} after item ${i - 1}`).toBeGreaterThanOrEqual(
@@ -566,8 +626,8 @@ describe('SiteHeader', () => {
       );
     });
 
-    it('centres the pinned item in the header from lg', async () => {
-      await page.viewport(1024, 768);
+    it('centres the pinned item in the header from xl', async () => {
+      await page.viewport(1280, 800);
       render(SiteHeader, { routeId: '/sim', actions, pinned });
       await expect.element(page.getByRole('button', { name: '1,234 homes added' })).toBeVisible();
       const score = page.getByRole('button', { name: '1,234 homes added' }).element();

@@ -13,6 +13,7 @@ import { formatMonthYear } from '../src/lib/fzp/format';
 import { monthStart } from '../src/lib/fzp/time';
 import { formatPercent } from '../src/lib/scoreboard/format';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
 import { slider, waitFilled } from './helpers/run';
 import {
   FRAME,
@@ -235,31 +236,6 @@ async function crashWorker(page: Page): Promise<void> {
       throw new Error('e2e: simulated worker crash');
     });
   });
-}
-
-// W6b: the footer links stay visible, unobscured and tappable (as in e2e/layout.spec.ts).
-const FOOTER_LINKS = ['About', 'Data & licences', 'Source code (GitHub)'];
-
-async function expectFooterReachable(page: Page): Promise<void> {
-  for (const name of FOOTER_LINKS) {
-    const link = page.getByRole('navigation', { name: 'Footer' }).getByRole('link', {
-      name,
-      exact: true
-    });
-    await link.scrollIntoViewIfNeeded();
-    await expect(link).toBeVisible();
-    await expect(link).toBeInViewport({ ratio: 1 });
-    const hit = await link.evaluate((el) => {
-      const r = el.getBoundingClientRect();
-      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      return {
-        ok: !!top && el.contains(top),
-        top: top ? `${top.tagName}.${top.className}` : 'null'
-      };
-    });
-    expect(hit.ok, `${name} covered by ${hit.top}`).toBe(true);
-    await link.tap({ trial: true });
-  }
 }
 
 // ---- load and controls --------------------------------------------------------------------------
@@ -779,17 +755,18 @@ test('at 375 px a project card stays below the header, and the header score stay
   expect(covered, 'the header score is covered').toBe(false);
 });
 
-test('footer links stay unobscured at 375 px: playhead, card and Results', async ({
+test('no footer; the About entry stays unobscured at 375 px: playhead, card and Results', async ({
   isMobile,
   page
 }) => {
-  test.skip(!isMobile, 'W6b is the phone layout');
+  test.skip(!isMobile, 'the phone layout');
   await gotoFzp(page);
-  await expectFooterReachable(page);
+  await expectNoFooter(page);
 
   await openRealCard(page, isMobile);
-  await expectFooterReachable(page);
+  await expectNoFooter(page);
 
   await openScore(page);
-  await expectFooterReachable(page);
+  await expectNoFooter(page);
+  await expectAboutReachable(page);
 });

@@ -24,6 +24,7 @@ import { headlineText } from '../src/lib/lesscars/summary-view';
 import { formatCount } from '../src/lib/scoreboard/format';
 import { SITES_CELL } from '../src/lib/sim/lesscars/builds';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
 import { slider } from './helpers/run';
 import {
   FRAME,
@@ -215,30 +216,6 @@ async function openFreedCard(page: Page, isMobile: boolean) {
     await expect(card).toContainText('Built by the plan on freed land', { timeout: 1_500 });
   }).toPass({ timeout: 15_000 });
   return { card, build: b! };
-}
-
-// W6b: the footer links stay visible, unobscured and tappable (as in e2e/layout.spec.ts).
-const FOOTER_LINKS = ['About', 'Data & licences', 'Source code (GitHub)'];
-
-async function expectFooterReachable(page: Page): Promise<void> {
-  for (const name of FOOTER_LINKS) {
-    const link = page.getByRole('navigation', { name: 'Footer' }).getByRole('link', {
-      name,
-      exact: true
-    });
-    await expect(link).toBeVisible();
-    await expect(link).toBeInViewport({ ratio: 1 });
-    const hit = await link.evaluate((el) => {
-      const r = el.getBoundingClientRect();
-      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      return {
-        ok: !!top && el.contains(top),
-        top: top ? `${top.tagName}.${top.className}` : 'null'
-      };
-    });
-    expect(hit.ok, `${name} covered by ${hit.top}`).toBe(true);
-    await link.tap({ trial: true });
-  }
 }
 
 // ---- the basemap split (docs/dev/lesscars.md "Basemap ids") -------------------------------------
@@ -589,7 +566,7 @@ test.describe('the page on fixture-0', () => {
     await expectNoA11yViolations(page, { include: ['[data-testid=lc-timeline]'], structure: true });
   });
 
-  test('375 px: no horizontal scroll, footer reachable with the details and a card open', async ({
+  test('375 px: no horizontal scroll, no footer, About entry reachable with the details and a card open', async ({
     page,
     isMobile
   }) => {
@@ -602,14 +579,15 @@ test.describe('the page on fixture-0', () => {
       expect(w.scroll).toBeLessThanOrEqual(w.inner);
     };
     await noScroll();
-    await expectFooterReachable(page);
+    await expectNoFooter(page);
     await page.getByTestId('lc-headline').click();
     await expect(page.getByRole('region', { name: 'Fewer-cars details' })).toBeVisible();
     await noScroll();
     await page.getByTestId('lc-headline').click();
     await openFreedCard(page, true);
     await noScroll();
-    await expectFooterReachable(page);
+    await expectNoFooter(page);
+    await expectAboutReachable(page);
   });
 });
 

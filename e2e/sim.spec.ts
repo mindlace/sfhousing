@@ -11,6 +11,7 @@ import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { SfhSimDebug } from '../src/lib/sim-page/debug';
 import { forecastFilled } from '../src/lib/timeline/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
 import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
 import {
   FRAME,
@@ -210,31 +211,6 @@ const frames = (page: Page) =>
       (window as Window & { __frames?: { stale: boolean; preview: string | null }[] }).__frames ??
       []
   );
-
-// W6b: the footer links stay visible, unobscured and tappable (as in e2e/fzp.spec.ts).
-const FOOTER_LINKS = ['About', 'Data & licences', 'Source code (GitHub)'];
-
-async function expectFooterReachable(page: Page): Promise<void> {
-  for (const name of FOOTER_LINKS) {
-    const link = page.getByRole('navigation', { name: 'Footer' }).getByRole('link', {
-      name,
-      exact: true
-    });
-    await link.scrollIntoViewIfNeeded();
-    await expect(link).toBeVisible();
-    await expect(link).toBeInViewport({ ratio: 1 });
-    const hit = await link.evaluate((el) => {
-      const r = el.getBoundingClientRect();
-      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      return {
-        ok: !!top && el.contains(top),
-        top: top ? `${top.tagName}.${top.className}` : 'null'
-      };
-    });
-    expect(hit.ok, `${name} covered by ${hit.top}`).toBe(true);
-    await link.tap({ trial: true });
-  }
-}
 
 async function expectNoHorizontalScroll(page: Page): Promise<void> {
   const { scroll, client } = await page.evaluate(() => ({
@@ -681,7 +657,7 @@ test('the window has homes by tier and, with the baseline funding, public money'
   await expect(face.getByTestId('fzp-money-city')).toBeVisible();
 });
 
-test('at 375 px with Results open the playhead and the footer links stay unobscured', async ({
+test('at 375 px with Results open the playhead and the About entry stay unobscured', async ({
   isMobile,
   page
 }) => {
@@ -699,7 +675,8 @@ test('at 375 px with Results open the playhead and the footer links stay unobscu
     expect(hit, `${testId} is covered`).toBe(true);
   }
   await expectNoHorizontalScroll(page);
-  await expectFooterReachable(page);
+  await expectNoFooter(page);
+  await expectAboutReachable(page);
 });
 
 test('End, Play at the window end reads Replay, and Today returns to the present', async ({
@@ -827,26 +804,32 @@ test('below md on a fine pointer the palette strip leaves the zoom control uncov
   await expectNavControlClear(page, page.getByTestId('palette-strip'));
 });
 
-test('at 375 px: no horizontal scroll, and the footer links stay unobscured', async ({
+test('at 375 px: no horizontal scroll, no footer, and the About entry stays unobscured', async ({
   isMobile,
   page
 }) => {
-  test.skip(!isMobile, 'W6b is the phone layout');
+  test.skip(!isMobile, 'the phone layout');
   await gotoSim(page);
   await expectNoHorizontalScroll(page);
-  await expectFooterReachable(page);
+  await expectNoFooter(page);
+  // Nothing sits under the timeline.
+  const tlBottom = await page
+    .getByTestId('tl-mode')
+    .evaluate((el) => el.getBoundingClientRect().bottom - window.innerHeight);
+  expect(Math.abs(tlBottom)).toBeLessThanOrEqual(1);
 
   // With Results open (the header score).
   await openScore(page);
   await expectNoHorizontalScroll(page);
-  await expectFooterReachable(page);
+  await expectNoFooter(page);
+  await expectAboutReachable(page);
   await scoreBar(page).click();
   await expect(results(page)).toHaveCount(0);
 
   // With the palette strip showing (a stroke tool chosen).
   await startPainting(page, true);
   await expectNoHorizontalScroll(page);
-  await expectFooterReachable(page);
+  await expectNoFooter(page);
   // The strip sits at the viewport's bottom, under the timeline, never over the map: the map's
   // Reset view button (a coarse pointer's bottom-left control) stays clear and on top.
   await scrollToTop(page);

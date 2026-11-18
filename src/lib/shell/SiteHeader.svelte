@@ -3,7 +3,8 @@
   right) the pinned item and the actions. Below lg: the site name, the status, the pinned item
   and a hamburger Menu button whose panel (under the header) holds the mode links and the
   actions. The account entry (Sign in, or @handle) follows the actions in the same group; Sign in
-  shows only while a sign-in method is in effect (`signInAvailable`). The status and the actions
+  shows only while a sign-in method is in effect (`signInAvailable`). The About entry follows the
+  account entry on every route (the map pages have no footer). The status and the actions
   render once at every width: from lg the panel is `display: contents`, so the actions sit in the
   header row.
 -->
@@ -119,7 +120,11 @@
   bind:this={header}
   class={[
     'relative flex h-12 items-center justify-between gap-2 border-b bg-white px-4 text-gray-900 dark:border-gray-700 dark:bg-chrome-dark dark:text-gray-100',
-    pinned && 'lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]'
+    // From xl the pinned item is centred. Between lg and xl a centred score left the actions too
+    // little room beside it, so the actions and the pinned item keep their widths on the right and
+    // the left group takes what is left.
+    pinned &&
+      'lg:grid lg:grid-cols-[minmax(0,1fr)_auto_auto] xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]'
   ]}
 >
   <div class={pinned ? 'flex min-w-0 flex-1 items-center gap-2' : 'contents'}>
@@ -180,6 +185,12 @@
           ><span class="truncate">{user ? `@${user.handle}` : AUTH_COPY.signIn}</span></a
         >
       {/if}
+      <a
+        href="/about"
+        class={[tab(false), 'text-sm']}
+        aria-current={routeId === '/about' ? 'page' : undefined}
+        data-header-about>About</a
+      >
     </div>
   </div>
 </header>
