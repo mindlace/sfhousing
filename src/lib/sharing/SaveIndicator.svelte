@@ -10,7 +10,10 @@
     status: SaveStatus;
     /** The popover's edge: 'end' (right-aligned, for a right-hand slot) or 'start' (left). */
     align?: 'start' | 'end';
-    /** Another status covers this one in its cell (/sim's "Updating"): the popover closes. */
+    /**
+     * Another status covers this one in its cell (/sim's "Updating"): the button goes inert and
+     * the popover closes; the live region keeps speaking.
+     */
     covered?: boolean;
   } = $props();
 
@@ -68,6 +71,7 @@
       class="col-start-1 row-start-1 min-h-6 min-w-6 rounded-full border border-amber-700 bg-amber-50 px-2 whitespace-nowrap text-amber-900 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
       aria-expanded={popOpen}
       aria-controls={popId}
+      inert={covered}
       onclick={() => (popOpen = !popOpen)}
     >
       {COPY.autosaveOff}
@@ -85,7 +89,9 @@
   {:else if status === 'saving'}
     <span class="col-start-1 row-start-1 whitespace-nowrap" data-testid="save-text">Saving…</span>
   {/if}
-  <span class="sr-only" role="status" aria-live="polite" data-testid="save-live"
+  <!-- `visible`: a covering parent hides the rest with `visibility: hidden` (/sim's "Updating");
+       the announcements still reach screen readers. -->
+  <span class="visible sr-only" role="status" aria-live="polite" data-testid="save-live"
     >{announcement}</span
   >
 </div>

@@ -85,6 +85,17 @@ describe('/ header save state', () => {
       render(PaintHeaderHost, { props: { data } });
       const chip = page.getByRole('button', { name: 'Autosave off' });
       await expect.element(chip).toBeVisible();
+      if (width === 375) {
+        // Paint's widest plausible score: a seven-digit count ("added" is hidden below lg).
+        const score = page.getByTestId('score-bar').element();
+        score.replaceChildren(
+          '1,234,567 homes ',
+          Object.assign(document.createElement('span'), {
+            className: 'max-lg:sr-only',
+            textContent: 'added'
+          })
+        );
+      }
       const banner = page.getByRole('banner').element() as HTMLElement;
       expect(box(banner).height).toBe(48);
       expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);

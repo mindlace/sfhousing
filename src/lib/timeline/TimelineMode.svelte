@@ -165,7 +165,8 @@
     actions?: Snippet;
     /**
      * The page's status (the save state), in the header's status slot. Its argument is true while
-     * "Updating" covers it: a popover of its own should close then.
+     * "Updating" covers it (the cell hides it): its controls should go inert and a popover of its
+     * own close, while a live region of its own sets `visibility: visible` to keep speaking.
      */
     status?: Snippet<[covered: boolean]>;
     /** The page's own notices, first in the notice stack; each should be a `PILL`. */
@@ -418,15 +419,40 @@
     if (want === statusText) return;
     const wait = statusAt + statusMs - performance.now();
     if (wait <= 0) {
-      statusText = want;
-      statusAt = performance.now();
+      setStatus(want);
       return;
     }
     statusTimer = setTimeout(() => {
       statusTimer = null;
-      statusText = want;
-      statusAt = performance.now();
+      setStatus(want);
     }, wait);
+  }
+  /** The save state's part of the slot's cell and the shown "Updating" (bound in the snippet). */
+  let saveCell = $state<HTMLElement>();
+  let shownCell = $state<HTMLElement>();
+  /**
+   * Shows `want`. Focus inside the part about to be covered or removed is not dropped to the
+   * body (WCAG 2.4.3): the save state's focused control hands it to "Updating"'s explanation, in
+   * the same place; that explanation hands it back to the save state's control if one shows,
+   * else to the header score.
+   */
+  function setStatus(want: string): void {
+    const active = document.activeElement;
+    const covering = want === UPDATING && !!saveCell?.contains(active);
+    const uncovering = want !== UPDATING && !!shownCell?.contains(active);
+    statusText = want;
+    statusAt = performance.now();
+    if (!covering && !uncovering) return;
+    void tick().then(() => {
+      if (covering) {
+        shownCell?.querySelector<HTMLElement>('button')?.focus();
+        return;
+      }
+      const back = saveCell?.querySelector<HTMLElement>('button, a[href]');
+      if (back?.checkVisibility()) back.focus();
+      else if (!document.activeElement || document.activeElement === document.body)
+        saveCell?.closest('header')?.querySelector<HTMLElement>('[data-testid=score-bar]')?.focus();
+    });
   }
   $effect(() => {
     const want = statusWanted;
@@ -980,16 +1006,18 @@
 {/snippet}
 
 <!-- The header's status slot (rule 32), at every width: the page's save state and "Updating"
-     share one cell, and "Updating" wins while both apply. The one not shown keeps its width
-     (hidden, inert and aria-hidden), so the cell is as wide as the widest and nothing moves as
-     either comes or goes. The live region is apart, once, in the page; "Updating"'s explanation
-     opens as a popover under the slot, so the header keeps its size. -->
+     share one cell, and "Updating" wins while both apply. The covered save state keeps its width
+     (`visibility: hidden`, and the snippet's `covered` makes its own controls inert), so the cell
+     is as wide as the widest and nothing moves as either comes or goes. The save state's own live
+     region opts back into visibility, so its announcements still reach screen readers. The
+     timeline's live region is apart, once, in the page; "Updating"'s explanation opens as a
+     popover under the slot, so the header keeps its size. -->
 {#snippet statusSlot()}
   <span class="inline-grid items-center" data-testid="tl-status-group">
     <span
+      bind:this={saveCell}
       class={['col-start-1 row-start-1 inline-flex items-center', covered && 'invisible']}
-      aria-hidden={covered ? 'true' : undefined}
-      inert={covered}>{@render status?.(covered)}</span
+      >{@render status?.(covered)}</span
     >
     {#if !noScenario}
       <!-- Over the save state in the cell: it takes presses only while "Updating" shows. -->
@@ -1003,7 +1031,11 @@
         <span aria-hidden="true" class="invisible col-start-1 row-start-1 whitespace-nowrap"
           >{UPDATING}</span
         >
-        <span class="col-start-1 row-start-1 whitespace-nowrap" data-testid="tl-status-shown">
+        <span
+          bind:this={shownCell}
+          class="col-start-1 row-start-1 whitespace-nowrap"
+          data-testid="tl-status-shown"
+        >
           {#if statusText === UPDATING}
             <Explain text={STALE_NOTE}>{UPDATING}</Explain>
           {/if}

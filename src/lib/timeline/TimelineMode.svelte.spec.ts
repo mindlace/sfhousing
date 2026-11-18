@@ -1205,11 +1205,15 @@ describe('TimelineMode', () => {
       });
       const off = rects();
 
-      // The edit comes from elsewhere on the page, so focus has left the chip.
-      chipEl.blur();
+      // Focus stays on the chip (a keyboard user pressing Ctrl+Z there): the edit's cover moves
+      // it to "Updating"'s explanation, in the same place.
+      chipEl.focus();
+      expect(document.activeElement).toBe(chipEl);
       s.setPolicy(mk(protect(3)));
       await expect.element(statusShown()).toHaveTextContent(UPDATING);
       await expect.element(statusShown()).toBeVisible();
+      const updating = page.getByTestId('tl-status').getByRole('button', { name: UPDATING });
+      await expect.poll(() => document.activeElement).toBe(updating.element());
       // Only "Updating" shows; the chip is out of the tab order and its popover closed.
       expect(chipEl.checkVisibility({ visibilityProperty: true })).toBe(false);
       expect(chipEl.closest('[inert]')).not.toBeNull();
@@ -1226,17 +1230,75 @@ describe('TimelineMode', () => {
       emit(filledMsg(2, 0, LAST + 1));
       await expect.poll(() => statusShown().element().textContent?.trim()).toBe('');
       await expect.element(chip).toBeVisible();
+      // Focus was on "Updating"'s explanation: it goes back to the chip.
+      await expect.poll(() => document.activeElement).toBe(chipEl);
       await frame();
       expect(rects()).toEqual(off);
       // Back, focusable, and its popover works; autosave off is not announced again.
-      chipEl.focus();
-      expect(document.activeElement).toBe(chipEl);
       expect(pop.hidden).toBe(true);
       await chip.click();
       await expect.poll(() => pop.hidden).toBe(false);
       expect(page.getByTestId('save-live').element().textContent?.trim()).toBe('');
     });
   }
+
+  /** Ends the stale spell of revision `rev`: compiled, refilled and filled. */
+  async function settle(s: ReturnType<typeof setup>, rev: number): Promise<void> {
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(rev);
+    emit(compiledMsg(rev, STATICS));
+    emit(refillMsg(rev, 0));
+    emit(filledMsg(rev, 0, LAST + 1));
+    await expect.poll(() => statusShown().element().textContent?.trim()).toBe('');
+  }
+
+  it('save-state changes under Updating are announced once, from an exposed region', async () => {
+    const s = await opened(LAST, { saveStatus: 'saving', initialPolicy: mk(protect(5)) });
+    const live = page.getByTestId('save-live').element();
+    const said: string[] = [];
+    const watch = new MutationObserver(() => {
+      const t = live.textContent?.trim() ?? '';
+      if (t) said.push(t);
+    });
+    watch.observe(live, { childList: true, characterData: true, subtree: true });
+    const exposed = () =>
+      !live.closest('[aria-hidden="true"], [inert]') &&
+      getComputedStyle(live).visibility === 'visible';
+    try {
+      s.setPolicy(mk(protect(3)));
+      await expect.element(statusShown()).toHaveTextContent(UPDATING);
+      s.setSaveStatus('off');
+      await expect.poll(() => said).toEqual(['Autosave off']);
+      expect(exposed()).toBe(true);
+      await settle(s, 2);
+      await expect.element(page.getByRole('button', { name: 'Autosave off' })).toBeVisible();
+      await frame();
+      // The cover lifting announces nothing.
+      expect(said).toEqual(['Autosave off']);
+
+      s.setPolicy(mk(protect(2)));
+      await expect.element(statusShown()).toHaveTextContent(UPDATING);
+      s.setSaveStatus('saved');
+      await expect.poll(() => said).toEqual(['Autosave off', 'Autosave on']);
+      expect(exposed()).toBe(true);
+      await settle(s, 3);
+      await frame();
+      expect(said).toEqual(['Autosave off', 'Autosave on']);
+    } finally {
+      watch.disconnect();
+    }
+  });
+
+  it('with no save-state control showing, focus on Updating goes to the score when it ends', async () => {
+    const s = await opened(LAST, { saveStatus: 'saved', initialPolicy: mk(protect(5)) });
+    s.setPolicy(mk(protect(3)));
+    const updating = page.getByTestId('tl-status').getByRole('button', { name: UPDATING });
+    await expect.element(updating).toBeVisible();
+    (updating.element() as HTMLElement).focus();
+    expect(document.activeElement).toBe(updating.element());
+    await settle(s, 2);
+    await expect.poll(() => document.activeElement).toBe(scoreBar().element());
+  });
 
   it('the live region holds only the status text; its explanation opens from the header slot', async () => {
     await page.viewport(390, 760);

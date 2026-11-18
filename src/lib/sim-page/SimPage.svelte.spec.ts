@@ -1355,6 +1355,11 @@ describe('SimPage autosave and publish', () => {
     // The fake worker never refills, so "Updating" covers the chip in the status cell.
     await expect.element(header().getByTestId('tl-status-shown')).toHaveTextContent('Updating');
     await expect.element(header().getByTestId('save-state')).not.toBeVisible();
+    // Covered, the save state still announces the change, from a region screen readers reach.
+    const live = header().getByTestId('save-live');
+    await expect.element(live).toHaveTextContent('Autosave off');
+    expect(live.element().closest('[aria-hidden="true"], [inert]')).toBeNull();
+    expect(getComputedStyle(live.element()).visibility).toBe('visible');
     mem.failWrites = false;
     await page.getByRole('button', { name: 'Add Zoning policy' }).click();
     await page.getByRole('button', { name: 'Protect rent-controlled buildings' }).click();
