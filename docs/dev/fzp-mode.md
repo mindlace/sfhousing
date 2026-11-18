@@ -129,7 +129,7 @@ The rows and their wording are in [sim-funding.md](sim-funding.md) ("Results, ca
 
 ## The chart's y domain
 
-`ScoreChart` (`chart.ts`) draws every series only up to `monthIndex(highWater)`; on `/sim` that prop is the filled mark (`filledEnd`), so the table rows stop there and the "At the deadline" lines stay hidden until it reaches the deadline month. Its accessible name is "Net new homes in this simulation so far: ...". The y domain covers the shown values, so it can grow as the forecast fills, with the references and the RHNA target as a floor (so the axis does not jump for them). It starts at 0, **unless a shown value is negative**: the plan-effect series can be early on. Then the axis reaches down to `-niceCeil(-min)` so the negative part stays inside the plot, and a floor gridline is added when it is clear of the zero line. Spec section 4.6 says "0 to niceCeil"; the extension is deliberate.
+`ScoreChart` (`chart.ts`) builds its paths and scale from every month up to `monthIndex(highWater)`; on `/sim` that prop is the filled mark (`filledEnd`), and a second prop, `reached` (the furthest day reached), only moves two clip rectangles (see timeline-ui.md, Results). Its accessible name is "Toward the goal, since Jun 2022: ...". The y domain covers the shown values, so it can grow as the forecast fills, with the references and the RHNA target as a floor (so the axis does not jump for them). It starts at 0, **unless a shown value is negative**: the plan-effect series can be early on. Then the axis reaches down to `-niceCeil(-min)` so the negative part stays inside the plot, and a floor gridline is added when it is clear of the zero line. Spec section 4.6 says "0 to niceCeil"; the extension is deliberate.
 
 ## e2e notes
 

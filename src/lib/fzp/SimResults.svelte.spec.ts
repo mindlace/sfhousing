@@ -59,6 +59,7 @@ type Overrides = Partial<{
   score: typeof TIMELINE_SCORE | null;
   day: number;
   filledEnd: number;
+  reached: number;
   onsources: () => void;
   copy: ReturnType<typeof scoreCopy>;
   capacity: LeverCapacity | null;
@@ -76,6 +77,7 @@ const props = (over: Overrides = {}) => {
     asOf: FIX_ASOF,
     horizon: FIX_HORIZON,
     filledEnd: FIX_HORIZON,
+    reached: FIX_HORIZON,
     datasetVersion: 'fixture-0',
     builtAt: '2026-10-10T12:00:00Z',
     onsources: vi.fn(),
@@ -393,16 +395,16 @@ describe('targets and progress', () => {
     ]);
   });
 
-  it('hides the deadline line until the filled mark reaches the deadline month', async () => {
+  it('the deadline line waits until the furthest date reaches the deadline', async () => {
     await page.viewport(1024, 768);
     const before = await render(SimResults, {
-      props: props({ day: dayFromUtc(2030, 6, 1), filledEnd: dayFromUtc(2030, 12, 31) })
+      props: props({ day: dayFromUtc(2030, 6, 1), reached: dayFromUtc(2030, 12, 31) })
     });
     expect(document.body.textContent).not.toContain('At the deadline');
     await before.unmount();
 
     await render(SimResults, {
-      props: props({ day: dayFromUtc(2030, 6, 1), filledEnd: dayFromUtc(2031, 1, 1) })
+      props: props({ day: dayFromUtc(2030, 6, 1), reached: dayFromUtc(2031, 1, 1) })
     });
     const at = scoreAt(
       TIMELINE_SCORE,

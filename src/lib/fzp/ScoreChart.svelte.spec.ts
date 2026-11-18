@@ -13,7 +13,8 @@ import {
   makeTimelineScore
 } from './fixtures/timeline-score';
 import ScoreChart from './ScoreChart.svelte';
-import { dayFromUtc } from './time';
+import { formatMonthYear } from './format';
+import { dayFromUtc, monthIndex } from './time';
 
 const DAY1 = dayFromUtc(2031, 3, 15);
 const DAY2 = dayFromUtc(2040, 7, 1);
@@ -24,11 +25,19 @@ const props = (over: Record<string, unknown> = {}) => ({
   horizon: FIX_HORIZON,
   day: DAY1,
   highWater: FIX_HORIZON,
+  reached: FIX_HORIZON,
   ...over
 });
 
 const svg = () => document.querySelector('svg[role="img"]') as SVGSVGElement;
 const svgWidth = () => svg().viewBox.baseVal.width;
+/** The month index of a day in the fixture. */
+const monthOf = (d: number) =>
+  monthIndex(d, TIMELINE_SCORE.months[0], TIMELINE_SCORE.months.length);
+const rect = (id: string) => {
+  const r = document.querySelector(`[data-testid="${id}"]`)!;
+  return { x: Number(r.getAttribute('x')), width: Number(r.getAttribute('width')) };
+};
 const cursorX = () => Number(document.querySelector('[data-cursor]')!.getAttribute('x1'));
 
 describe('ScoreChart', () => {
@@ -37,7 +46,7 @@ describe('ScoreChart', () => {
     await render(ScoreChart, { props: props() });
     expect(document.querySelector('figure svg[role="img"]')).not.toBeNull();
     await expect
-      .element(page.getByRole('img', { name: chartLabel(TIMELINE_SCORE, 290) }))
+      .element(page.getByRole('img', { name: chartLabel(TIMELINE_SCORE, monthOf(DAY1)) }))
       .toBeInTheDocument();
   });
 
@@ -54,9 +63,10 @@ describe('ScoreChart', () => {
       'Plan effect (completed)',
       'Plan effect (approved)'
     ]);
-    const expected = tableRows(TIMELINE_SCORE, FIX_ASOF, 290);
-    // The RHNA deadline shares January 2031's month index, so 24 Januaries + the end = 25.
-    expect(expected).toHaveLength(25);
+    const expected = tableRows(TIMELINE_SCORE, FIX_ASOF, monthOf(DAY1));
+    // The Januaries after the as-of year up to 2031 (the deadline's month among them) + the
+    // playhead's month.
+    expect(expected).toHaveLength(6);
     const body = document.querySelectorAll('tbody tr');
     expect(body).toHaveLength(expected.length);
     expect(body[0].querySelector('th')!.textContent).toBe(expected[0].date);
@@ -97,6 +107,91 @@ describe('ScoreChart', () => {
     await full.rerender(props({ day: DAY1, highWater: mid }));
     await expect.poll(cursorX).not.toBeCloseTo(before, 1);
     expect(totalD()).toBe(partial);
+  });
+
+  it('lines are solid to the cursor, thinner to the furthest date, absent past it', async () => {
+    await page.viewport(1024, 768);
+    const reached = dayFromUtc(2038, 1, 1);
+    await render(ScoreChart, { props: props({ reached }) });
+    const model = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, svgWidth(), 290);
+    const shown = rect('chart-clip-shown');
+    const seen = rect('chart-clip-seen');
+    expect(shown.x).toBe(0);
+    expect(shown.width).toBeCloseTo(model.x(DAY1), 1);
+    expect(seen.x).toBeCloseTo(model.x(DAY1), 1);
+    expect(seen.x + seen.width).toBeCloseTo(model.x(reached), 1);
+    expect(seen.x + seen.width).toBeLessThan(svgWidth());
+    const key = 'total';
+    const solid = document.querySelector(`[data-series="${key}"]`)!;
+    const thin = document.querySelector(`[data-series-seen="${key}"]`)!;
+    expect(solid.getAttribute('d')).toBe(thin.getAttribute('d'));
+    expect(Number(thin.getAttribute('stroke-width'))).toBeLessThan(
+      Number(solid.getAttribute('stroke-width'))
+    );
+    expect(solid.closest('g')!.getAttribute('clip-path')).toMatch(/^url\(#.+-shown\)$/);
+    expect(thin.closest('g')!.getAttribute('clip-path')).toMatch(/^url\(#.+-seen\)$/);
+  });
+
+  it('a fully reached forecast cuts nothing short of the plot end', async () => {
+    await page.viewport(1024, 768);
+    await render(ScoreChart, { props: props() });
+    const seen = rect('chart-clip-seen');
+    expect(seen.x + seen.width).toBeCloseTo(svgWidth(), 1);
+  });
+
+  it('the table lists months up to the playhead only', async () => {
+    await page.viewport(1024, 768);
+    const day = TIMELINE_SCORE.months[30];
+    await render(ScoreChart, { props: props({ day, reached: TIMELINE_SCORE.months[200] }) });
+    await page.getByText('Show as table').click();
+    const expected = tableRows(TIMELINE_SCORE, FIX_ASOF, 30);
+    expect(expected[expected.length - 1].index).toBe(30);
+    const body = document.querySelectorAll('tbody tr');
+    expect(body).toHaveLength(expected.length);
+    expect(body[body.length - 1].querySelector('th')!.textContent).toBe(
+      formatMonthYear(TIMELINE_SCORE.months[30])
+    );
+  });
+
+  it('the label names values up to the playhead only', async () => {
+    await page.viewport(1024, 768);
+    await render(ScoreChart, { props: props({ day: DAY1, reached: FIX_HORIZON }) });
+    const label = svg().getAttribute('aria-label')!;
+    expect(label).not.toContain('by 2045');
+    expect(label).toContain("by the goal's deadline");
+    expect(label).toBe(chartLabel(TIMELINE_SCORE, monthOf(DAY1)));
+  });
+
+  it('moving the day writes no path', async () => {
+    await page.viewport(1024, 768);
+    const screen = await render(ScoreChart, { props: props() });
+    let writes = 0;
+    const observer = new MutationObserver((records) => (writes += records.length));
+    observer.observe(svg(), { subtree: true, attributes: true, attributeFilter: ['d'] });
+    await screen.rerender(props({ day: DAY2 }));
+    await expect.poll(cursorX).toBeGreaterThan(0);
+    await screen.rerender(props({ day: dayFromUtc(2033, 1, 1) }));
+    await expect.poll(() => rect('chart-clip-shown').width).toBeGreaterThan(0);
+    expect(observer.takeRecords()).toHaveLength(0);
+    observer.disconnect();
+    expect(writes).toBe(0);
+  });
+
+  it('references and the target line are drawn whole', async () => {
+    await page.viewport(1024, 768);
+    const reached = dayFromUtc(2026, 6, 1);
+    await render(ScoreChart, { props: props({ day: reached, reached }) });
+    const model = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, svgWidth(), 290);
+    const target = document.querySelector('[data-series="rhna"]')!;
+    expect(Number(target.getAttribute('x1'))).toBe(0);
+    expect(Number(target.getAttribute('x2'))).toBeCloseTo(svgWidth(), 1);
+    const refs = [...document.querySelectorAll('[data-reference]')];
+    expect(refs).toHaveLength(model.references.length);
+    refs.forEach((el, i) => {
+      expect(Number(el.getAttribute('x1'))).toBeCloseTo(model.references[i].x1, 1);
+      expect(Number(el.getAttribute('x2'))).toBeCloseTo(model.references[i].x2, 1);
+    });
+    expect(model.references.some((r) => r.x2 > model.x(reached))).toBe(true);
   });
 
   it('draws every series, each tagged with data-series', async () => {

@@ -1118,6 +1118,7 @@
       {asOf}
       horizon={windowEnd}
       filledEnd={shownEnd}
+      reached={Math.min(reveal.reached, shownEnd)}
       {datasetVersion}
       builtAt={manifest?.builtAt ?? ''}
       onsources={() => dialog?.open()}
