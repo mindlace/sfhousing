@@ -82,14 +82,16 @@
     const el = wrapper.querySelector<HTMLElement>(
       'a[href], button, input, select, textarea, [tabindex]'
     );
-    if (!el) return;
-    // Added to what the child already points at (an error line, say), never replacing it.
-    const own = el.getAttribute('aria-describedby');
-    if (open) el.setAttribute('aria-describedby', own ? `${own} ${textId}` : textId);
-    return () => {
-      if (own) el.setAttribute('aria-describedby', own);
+    if (!el || !open) return;
+    // Its own token is added to what the child points at (an error line, say), and only that token
+    // is taken out again, from the value at that moment: ids set while open are kept.
+    const ids = () => (el.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+    const set = (list: string[]) => {
+      if (list.length > 0) el.setAttribute('aria-describedby', list.join(' '));
       else el.removeAttribute('aria-describedby');
     };
+    if (!ids().includes(textId)) set([...ids(), textId]);
+    return () => set(ids().filter((t) => t !== textId));
   });
 </script>
 

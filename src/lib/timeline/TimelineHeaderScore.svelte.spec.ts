@@ -113,6 +113,38 @@ describe('TimelineHeaderScore', () => {
     expect(document.activeElement).toBe(button);
   });
 
+  const DETAIL = '+1,817 from your policy · 68% of the goal';
+
+  it('a focus begun while calculating leaves the description whole after blur', async () => {
+    await page.viewport(1280, 768);
+    const s = await render(TimelineHeaderScore, { props: props({ text: null }) });
+    const button = bar().element() as HTMLElement;
+    button.focus();
+    await expect.element(button).toHaveFocus();
+    await s.rerender(props());
+    await expect.element(bar()).toHaveTextContent(TEXT.main);
+    await expect.element(page.getByRole('tooltip')).toBeVisible();
+    button.blur();
+    await expect.element(page.getByRole('tooltip')).not.toBeInTheDocument();
+    const detailId = document.querySelector('[id$="-detail"]')!.id;
+    expect(detailId).toMatch(/-detail$/);
+    expect(button.getAttribute('aria-describedby')).toBe(detailId);
+    await expect.element(bar()).toHaveAccessibleDescription(DETAIL);
+  });
+
+  it('a hover begun while calculating leaves the description whole after the pointer leaves', async () => {
+    await page.viewport(1280, 768);
+    const s = await render(TimelineHeaderScore, { props: props({ text: null }) });
+    await userEvent.hover(bar());
+    await s.rerender(props());
+    await expect.element(page.getByRole('tooltip')).toHaveTextContent(TEXT.goalName!);
+    await userEvent.unhover(bar());
+    await expect.element(page.getByRole('tooltip')).not.toBeInTheDocument();
+    const detailId = document.querySelector('[id$="-detail"]')!.id;
+    expect(bar().element().getAttribute('aria-describedby')).toBe(detailId);
+    await expect.element(bar()).toHaveAccessibleDescription(DETAIL);
+  });
+
   it('below sm only line 1 shows', async () => {
     await page.viewport(375, 700);
     await render(TimelineHeaderScore, { props: props() });

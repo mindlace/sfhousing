@@ -130,4 +130,27 @@ describe('Explain', () => {
     expect(document.querySelector('[data-explain-open]')).toBeNull();
     expect(el().getAttribute('aria-describedby')).toBe('own-d');
   });
+
+  it('takes out only its own id on close: ids there before and ids set while open stay', async () => {
+    await render(ExplainHost, { props: { text: TEXT, as: 'wrap', own: 'Its own' } });
+    const el = () => page.getByRole('link', { name: 'Target' }).element() as HTMLElement;
+    const ids = () => el().getAttribute('aria-describedby')!.split(' ');
+    focusTarget(el());
+    const tip = page.getByRole('tooltip');
+    await expect.element(tip).toBeVisible();
+    expect(ids()).toEqual(['own-d', tip.element().id]);
+    // An id added while open (another owner writing the attribute) survives the close.
+    el().setAttribute('aria-describedby', `${el().getAttribute('aria-describedby')} late-d`);
+    await userEvent.keyboard('{Escape}');
+    await expect.element(tip).not.toBeInTheDocument();
+    expect(ids()).toEqual(['own-d', 'late-d']);
+    // A value replaced outright while open (as a framework sets it) is kept as it is.
+    el().blur();
+    focusTarget(el());
+    await expect.element(page.getByRole('tooltip')).toBeVisible();
+    el().setAttribute('aria-describedby', 'late-d');
+    await userEvent.tab();
+    await expect.element(page.getByRole('tooltip')).not.toBeInTheDocument();
+    expect(el().getAttribute('aria-describedby')).toBe('late-d');
+  });
 });
