@@ -418,15 +418,16 @@
     <aside data-kind="decision"><strong>Decision: plain words for the baseline</strong> "FZP" becomes "current law" on the main screen.</aside>
     <aside data-kind="decision"><strong>Decision: progress bars</strong> Visible from further out, one size on screen.</aside>
     <aside data-kind="decision"><strong>Decision: Paint is the first stage</strong> Paint is the easy first step of one path that goes on to policy and then funding. It is not a separate product.</aside>
+    <aside data-kind="decision" id="q-paint"><strong>Decision: steps only for now</strong> This work presents Paint and Simulate as steps one and two. Underneath they stay separate: a painted plan does not become the zoning that Simulate runs. Joining them is later work.</aside>
   </section>
 
   <section id="sec-questions">
     <h2>Questions for the owner</h2>
     <aside data-kind="question" id="q-zero"><strong>Question 1: does the headline start at zero?</strong> This document reads "today is the start" as: the headline counts homes added from today, so it reads zero before Play, and the chart starts at zero. The homes built since 2022 then appear only in the state-target percentage, which starts at about 11%. The alternative keeps the 2022 count in the headline, which then starts at 8,723.</aside>
-    <aside data-kind="question" id="q-paint"><strong>Question 2: does the painting carry forward?</strong> Today a painted plan never reaches Simulate; they are saved and published as separate things. On one path, the natural reading is that what the person painted in stage one becomes the zoning they simulate in stage two. That joins the two documents, which is a larger change than anything else here. Is it part of this work, or does this work only present the two as steps and leave them separate underneath?</aside>
-    <aside data-kind="question" id="q-unlock"><strong>Question 3: is unlocking built now?</strong> This document assumes not: both stages stay open to everyone, shown as steps one and two, and locking comes with the game. If the first unlock (reach the goal in Paint, then policy opens) should ship with this work, the Paint stage needs a goal moment and somewhere to remember it.</aside>
-    <aside data-kind="question" id="q-money"><strong>Question 4: public money</strong> The proposal shows cost in the Now panel only while a funding policy is in force, and leaves the rest in Details. That is deliberately light, because the funding rework comes next and will decide what cost figure matters. If cost per home should already sit with the headline, say so.</aside>
-    <aside data-kind="question" id="q-now"><strong>Question 5: the Now panel</strong> At rest the detail column would show this year's activity instead of totals. The alternative is to hide the column at rest and give the timeline the full width, at the cost of the timeline changing width whenever an editor opens.</aside>
+    <aside data-kind="question" id="q-unlock"><strong>Question 2: is unlocking built now?</strong> This document assumes not, in line with "steps only": both stages stay open to everyone, and locking comes with the game.</aside>
+    <aside data-kind="question" id="q-money"><strong>Question 3: public money</strong> The proposal shows cost in the Now panel only while a funding policy is in force, and leaves the rest in Details. That is deliberately light, because the funding rework comes next and will decide what cost figure matters. If cost per home should already sit with the headline, say so.</aside>
+    <aside data-kind="question" id="q-now"><strong>Question 4: the Now panel</strong> At rest the detail column would show this year's activity instead of totals. The alternative is to hide the column at rest and give the timeline the full width, at the cost of the timeline changing width whenever an editor opens.</aside>
+    <p>Until answered, the proposal goes ahead on the stated assumption for each.</p>
   </section>
 
   <section id="sec-defects">
@@ -448,6 +449,28 @@
       <li><strong>Layout only.</strong> The first mockup. Fast, and it leaves every finding above in place.</li>
       <li><strong>Rebuild both pages at once.</strong> One large change against a very large test surface that pins today's layout. High risk of a long-lived branch.</li>
     </ol>
+  </section>
+
+  <section id="sec-slices">
+    <h2>Order of work</h2>
+    <p>Each slice is its own branch and pull request, with its own short spec and plan drawn from this document. Each leaves the app working and better than before.</p>
+    <table id="tbl-slices">
+      <caption>Slices, in the order proposed</caption>
+      <thead>
+        <tr><th scope="col">Slice</th><th scope="col">What changes for the person</th><th scope="col">Needs first</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">1. Quick repairs</th><td>The Keyboard shortcuts break is fixed. Fewer cars leaves the header. "FZP" reads "current law". Transit shading is off by default. The footer leaves the map pages.</td><td>Nothing</td></tr>
+        <tr><th scope="row">2. One clock</th><td>The header headline follows the playhead, counts from today, and carries the policy's effect and progress to the goal. The goal is read from one place. The empty line under the header goes.</td><td>Nothing</td></tr>
+        <tr><th scope="row">3. One timeline, revealed</th><td>The ruler becomes the scrubber. One taller chart with the current-law line and the gap. The three zones. "Play from".</td><td>Slice 2</td></tr>
+        <tr><th scope="row">4. The map tells you</th><td>Halos on stage changes, marked projects, progress bars from the default zoom, a map key with the tally, layer switches on the map.</td><td>The engine check below</td></tr>
+        <tr><th scope="row">5. The detail column</th><td>The Now panel, Details in place of Results, starter policies and worded empty rows.</td><td>Slices 2 and 3</td></tr>
+        <tr><th scope="row">6. Shared parts and messages</th><td>One spacing scale, one button, cards and chips for messages, one surface for dialogs and menus in light and dark.</td><td>Nothing; later slices adopt it as they touch each screen</td></tr>
+        <tr><th scope="row">7. Paint as step one</th><td>Steps in the header. A labelled panel with a starting sentence. Stroke results shown. No painted-areas list. Undo in the touch strip, none on desktop.</td><td>Slice 6</td></tr>
+        <tr><th scope="row">8. About this model</th><td>One place for meanings, assumptions, data and credits, and shortcuts. The map keeps a collapsed OpenStreetMap credit.</td><td>Slice 6</td></tr>
+      </tbody>
+    </table>
+    <aside data-kind="note"><strong>Engine check</strong> Slice 4 depends on what the simulation already knows per project: which policy caused it, and when it changes stage, for projects off screen as well as on. That is being read from the code now and this section will be updated with the answer.</aside>
   </section>
 
   <section id="sec-scope">
