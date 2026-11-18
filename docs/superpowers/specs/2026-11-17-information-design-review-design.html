@@ -546,13 +546,13 @@
   </section>
 
   <section id="sec-carried">
-    <h2>Carried forward from slices 1 and 2</h2>
-    <p>Known rough edges that were left for the slice that rebuilds the part they live in.</p>
+    <h2>Carried forward from slices 1 to 3</h2>
+    <p>Known rough edges that were left for the slice that rebuilds the part they live in. The four items slice 3 was given (rows clickable under the pinned block, the readout and header naming different months, the goal step's label, and the headline rules living outside the headline function) are done.</p>
     <ul>
-      <li><strong>For slice 3 (the timeline):</strong> timeline rows stay clickable while they sit half-hidden under the pinned block, which the accessibility check flags at some scroll positions.</li>
-      <li><strong>For slice 3:</strong> at the very end of the window the chart's own readout names the last month the forecast holds ("Sep 2066") while the header names the playhead's month ("Oct 2066"); at today the chart shows the first month's count where the header shows zero.</li>
-      <li><strong>For slice 3:</strong> the timeline chart draws the goal's step at the homes still needed but labels it "State target", so it sits at a different height from the Results chart's line of the same name.</li>
-      <li><strong>For slice 3:</strong> the rules for the headline's month and for "your policy" versus "current law" are applied where the header is wired, not inside the headline function, so that function's own tests do not cover what ships.</li>
+      <li><strong>From slice 3, needs wording:</strong> on a first load, if Play catches up with a forecast that is still being worked out, the playhead waits without saying why. The header's "Updating" cannot be used as it is, because its explanation reads "From before your latest change."</li>
+      <li><strong>From slice 3, phones:</strong> the pinned block grows by one legend line when a first policy is added, because four legend names do not fit one line at 375 px. From tablet width up it keeps its height.</li>
+      <li><strong>From slice 3, for the game:</strong> reaching or missing the goal shows a notice. There is no victory card and the clock does not stop.</li>
+      <li><strong>For slice 7 (the detail column):</strong> the Results chart follows the zones, but only its total line has a "seen" colour (the other lines only get thinner), its scale labels are sized from months not yet reached, and it is still a second chart beside the timeline's.</li>
       <li><strong>For slice 7 (the detail column):</strong> past the goal's deadline the target rows in Results hold at the deadline, like the header, but nothing on the row says so; the buffer row has no date and looks frozen. At today the header reads the goal at today while the goal's row reads the first month, so the two can differ by a point on opening.</li>
       <li><strong>For slice 7:</strong> pressing the headline still opens Results, not Details.</li>
       <li><strong>Header:</strong> between 1024 and 1279 px the score is not centred, so the actions fit. With autosave off, the "Autosave off" warning is covered by "Updating" for the seconds an update takes. The header-fit test does not cover a signed-in handle at 1024 px.</li>
