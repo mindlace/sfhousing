@@ -334,7 +334,8 @@ describe('TimelineMode', () => {
   });
 
   it('rows are hatched past the filled end and the hatch moves after a refill', async () => {
-    // Filled short of the last month (filled to it, the playhead reaches the last row's month: the test above).
+    // Filled short of the last month (filled to it, the playhead reaches the last row's
+    // month: the test above).
     const s = await opened(LAST - 1);
     const hatches = () => [...document.querySelectorAll<HTMLElement>('[data-testid=tl-hatch]')];
     const at = (through: number) => dayPct(filledEndDay(MONTHS, through, asOf), asOf, windowEnd);

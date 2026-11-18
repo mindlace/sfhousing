@@ -366,7 +366,7 @@
    */
   const copy = $derived(copyOf(!inForce));
   /** The playhead is at the dataset date: the headline reads today. */
-  const atToday = $derived(day <= asOf);
+  const atToday = $derived(playheadAt(months ?? [], asOf, day).atToday);
   /**
    * The headline at the playhead's month (rule 27; OQ-3: "calculating" while provisional). It
    * reads `index` and `atToday`, never `day`, so it changes at most once per month the playhead
