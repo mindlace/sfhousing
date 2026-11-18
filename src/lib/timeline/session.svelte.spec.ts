@@ -164,6 +164,18 @@ describe('TimelineSession', () => {
     expect(session.shown(15).stale).toBe(false);
   });
 
+  it('pending is true from an edit until a refill at its rev or later', () => {
+    opened();
+    expect(session.pending).toBe(false);
+    session.edited();
+    expect(session.pending).toBe(true);
+    session.send(doc2, {});
+    emit(compiled(2));
+    expect(session.pending).toBe(true);
+    emit(refill(2, 10));
+    expect(session.pending).toBe(false);
+  });
+
   it('dropUnsent ends an unsent edit: not stale, Play back, nothing posted', () => {
     opened();
     emit(filled(1, 20, LAST - 19));

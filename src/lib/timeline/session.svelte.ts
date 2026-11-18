@@ -261,6 +261,11 @@ export class TimelineSession {
     return this.#provisional ? { view: s.view ?? this.#view, stale: true } : s;
   }
 
+  /** An edit is not yet answered by a refill (EditState.pending). */
+  get pending(): boolean {
+    return this.#edit.pending;
+  }
+
   playAvailable(): boolean {
     return playAvailable(this.#edit, this.#view, this.stoppedByError);
   }
