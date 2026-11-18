@@ -34,6 +34,19 @@
         <li>No money figure is given a permanent main-screen position that the funding rework would have to undo.</li>
       </ul>
     </section>
+    <section id="sec-direction-game">
+      <h3>Where the owner is heading: a game of reaching enough</h3>
+      <p>The owner wants an incremental game. The aim each time is to get to "enough houses". The person starts with Paint, where enough is easy to reach. Then they unlock policy, which is harder. Then they unlock funding.</p>
+      <p>"Enough" is the state target today, as a stand-in. Later it must respond to population change, and it will become a ladder of harder goals, such as "10% cheaper housing" or "zero homelessness".</p>
+      <p>This work does not build the game. It is shaped so the game can be built on it:</p>
+      <ul>
+        <li><strong>The goal is one replaceable thing.</strong> It has a name, a measure, an amount and a deadline. The headline, the chart and the messages read it from one place. Nothing on the main screen says "RHNA", and nothing assumes the measure is a count of homes.</li>
+        <li><strong>Progress to the goal is a See item in every stage.</strong> It is the win condition, so it sits in the headline, not in a details panel.</li>
+        <li><strong>Reaching the goal, or missing its deadline, is an event.</strong> Under one clock the person sees it happen when the playhead crosses it.</li>
+        <li><strong>Paint and Simulate are steps on one path,</strong> not two tools side by side. That settles what Paint is: the first stage.</li>
+        <li><strong>The policy kinds are the later stages.</strong> Zoning, Permitting, Public money and Market are rows that can be present or locked, so a stage can show only the rows it has unlocked.</li>
+      </ul>
+    </section>
   </section>
 
   <section id="sec-method">
@@ -218,7 +231,7 @@
           <tr><th scope="col">What it tells the person</th><th scope="col">Today</th><th scope="col">Tier</th><th scope="col">Proposal</th></tr>
         </thead>
         <tbody>
-          <tr><th scope="row">Which tool this is, and the others</th><td>Paint, Simulate, Fewer cars</td><td>Do</td><td>Two entries. Fewer cars leaves the header. Names depend on <a href="#q-paint">the Paint question</a>.</td></tr>
+          <tr><th scope="row">Which tool this is, and the others</th><td>Paint, Simulate, Fewer cars</td><td>Do</td><td>Two entries. Fewer cars leaves the header. Shown as steps on one path; see <a href="#sec-direction-game">the game direction</a>.</td></tr>
           <tr><th scope="row">Work is saved</th><td>"Saved" always shown</td><td>Alert</td><td>Silent when saved. "Saving" and "Not saved" show, left of the headline.</td></tr>
           <tr><th scope="row">The forecast is being recomputed</th><td>A reserved 24 px line under the header, usually empty; dimming</td><td>Alert</td><td>The line goes. "Updating" sits with the save state; the numbers dim as now.</td></tr>
           <tr><th scope="row">How far the forecast is computed</th><td>"Forecast filled to 2051"; hatching; a second bar</td><td>Alert</td><td>Hatching on the ruler only.</td></tr>
@@ -275,7 +288,8 @@
       <section id="sec-prop-header">
         <h4>Header</h4>
         <ul>
-          <li>The headline reads, for example, "47,335 homes by Apr 2040 · +1,817 from your policy · 68% of state target". All three follow the playhead. At today the first two read zero.</li>
+          <li>The headline reads, for example, "47,335 homes by Apr 2040 · +1,817 from your policy · 68% of the goal". All three follow the playhead. At today the first two read zero.</li>
+          <li>The goal's part of the headline names the goal on hover and focus ("State target: 82,069 homes by 2031"). When the goal is reached it says so and when: "Goal reached, 2043".</li>
           <li>With no policy in force, the middle part is absent.</li>
           <li>The header holds: the two mode links, alerts, the headline, Publish, the account. View, undo, redo and Keyboard shortcuts leave it.</li>
           <li>Pressing the headline opens Details.</li>
@@ -387,7 +401,7 @@
         </thead>
         <tbody>
           <tr><th scope="row">homes</th><td>units, net new homes, net units</td><td>Net of homes removed</td></tr>
-          <tr><th scope="row">state target</th><td>RHNA, RHNA 2023–2031, State target</td><td>RHNA 2023–2031, 82,069 homes, counted from June 2022</td></tr>
+          <tr><th scope="row">goal (today: "State target")</th><td>RHNA, RHNA 2023–2031, State target</td><td>RHNA 2023–2031, 82,069 homes, counted from June 2022</td></tr>
           <tr><th scope="row">from your policy</th><td>vs FZP, because of your policy, plan effect</td><td>The forecast run twice, with the policy and under current law</td></tr>
           <tr><th scope="row">current law</th><td>FZP, the plan, as adopted</td><td>The Family Zoning Plan as adopted, permitting as observed, City funding today</td></tr>
           <tr><th scope="row">room for N homes</th><td>homes added (Paint), theoretical max buildout</td><td>Every eligible lot rebuilt to the painted height</td></tr>
@@ -403,14 +417,16 @@
     <aside data-kind="decision"><strong>Decision: the reveal rule</strong> Values show up to the playhead, dimmed where the person has been and nothing has changed, and dashed or absent where they have not been under the current rules. This document picks absent.</aside>
     <aside data-kind="decision"><strong>Decision: plain words for the baseline</strong> "FZP" becomes "current law" on the main screen.</aside>
     <aside data-kind="decision"><strong>Decision: progress bars</strong> Visible from further out, one size on screen.</aside>
+    <aside data-kind="decision"><strong>Decision: Paint is the first stage</strong> Paint is the easy first step of one path that goes on to policy and then funding. It is not a separate product.</aside>
   </section>
 
   <section id="sec-questions">
     <h2>Questions for the owner</h2>
     <aside data-kind="question" id="q-zero"><strong>Question 1: does the headline start at zero?</strong> This document reads "today is the start" as: the headline counts homes added from today, so it reads zero before Play, and the chart starts at zero. The homes built since 2022 then appear only in the state-target percentage, which starts at about 11%. The alternative keeps the 2022 count in the headline, which then starts at 8,723.</aside>
-    <aside data-kind="question" id="q-paint"><strong>Question 2: what Paint is now</strong> Simulate already has painted areas as a zoning policy. Is Paint still a product of its own, with its capacity number, or is it becoming a part of Simulate? If it stays, the proposal renames the two modes by what their number means, for example Capacity and Forecast, because "Paint" and "Simulate" name actions and hide the difference.</aside>
-    <aside data-kind="question" id="q-money"><strong>Question 3: public money</strong> The proposal shows cost in the Now panel only while a funding policy is in force, and leaves the rest in Details. That is deliberately light, because the funding rework comes next and will decide what cost figure matters. If cost per home should already sit with the headline, say so.</aside>
-    <aside data-kind="question" id="q-now"><strong>Question 4: the Now panel</strong> At rest the detail column would show this year's activity instead of totals. The alternative is to hide the column at rest and give the timeline the full width, at the cost of the timeline changing width whenever an editor opens.</aside>
+    <aside data-kind="question" id="q-paint"><strong>Question 2: does the painting carry forward?</strong> Today a painted plan never reaches Simulate; they are saved and published as separate things. On one path, the natural reading is that what the person painted in stage one becomes the zoning they simulate in stage two. That joins the two documents, which is a larger change than anything else here. Is it part of this work, or does this work only present the two as steps and leave them separate underneath?</aside>
+    <aside data-kind="question" id="q-unlock"><strong>Question 3: is unlocking built now?</strong> This document assumes not: both stages stay open to everyone, shown as steps one and two, and locking comes with the game. If the first unlock (reach the goal in Paint, then policy opens) should ship with this work, the Paint stage needs a goal moment and somewhere to remember it.</aside>
+    <aside data-kind="question" id="q-money"><strong>Question 4: public money</strong> The proposal shows cost in the Now panel only while a funding policy is in force, and leaves the rest in Details. That is deliberately light, because the funding rework comes next and will decide what cost figure matters. If cost per home should already sit with the headline, say so.</aside>
+    <aside data-kind="question" id="q-now"><strong>Question 5: the Now panel</strong> At rest the detail column would show this year's activity instead of totals. The alternative is to hide the column at rest and give the timeline the full width, at the cost of the timeline changing width whenever an editor opens.</aside>
   </section>
 
   <section id="sec-defects">
