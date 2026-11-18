@@ -297,6 +297,17 @@ describe('TimelineMode', () => {
     const playLabelEl = () => page.getByTestId('tl-play-label');
     const lastScan = () => vi.mocked(scanned).mock.results.at(-1)?.value;
 
+    /**
+     * Scanned since `calls` was taken: the scan got the edit's search under way and ended it with
+     * nothing changed.
+     */
+    function expectSearchEnded(calls: number) {
+      const m = vi.mocked(scanned).mock;
+      expect(m.calls.length).toBeGreaterThan(calls);
+      expect(m.calls.at(-1)![0].finding).not.toBeNull();
+      expect(lastScan()?.finding).toBeNull();
+    }
+
     /** The playhead by key: Home, `k` calendar months on, then `back` months back. */
     async function keysTo(k: number, back = 0) {
       (slider().element() as HTMLElement).focus();
@@ -427,10 +438,11 @@ describe('TimelineMode', () => {
       const s = await opened(LAST, { initialPolicy: before, onundoto });
       await keysTo(20, 15);
       await edit(s, mk(protect(7)), 2);
+      const calls = vi.mocked(scanned).mock.calls.length;
       emit(errorMsg(2, 'bad-request'));
       await expect.poll(() => onundoto.mock.calls).toEqual([[before]]);
       await tick();
-      expect(lastScan()?.finding).toBeNull();
+      expectSearchEnded(calls);
       expect(debug().reached).toBe(MONTHS[20]);
       expect(debug().playFrom).toBeNull();
       await expect.element(playLabelEl()).toHaveTextContent(/^Play$/);
@@ -442,10 +454,11 @@ describe('TimelineMode', () => {
       s.setPolicy(mk(protect(7)));
       s.setLots(null);
       await expect.poll(() => debug().stale).toBe(true);
+      const calls = vi.mocked(scanned).mock.calls.length;
       s.setLotsFailed(true);
       await expect.poll(() => debug().stale).toBe(false);
       await tick();
-      expect(lastScan()?.finding).toBeNull();
+      expectSearchEnded(calls);
       expect(debug().reached).toBe(MONTHS[20]);
       expect(debug().playFrom).toBeNull();
       await expect.element(playLabelEl()).toHaveTextContent(/^Play$/);
@@ -463,6 +476,74 @@ describe('TimelineMode', () => {
       expect(debug().playFrom).toBeNull();
       expect(debug().reached).toBe(MONTHS[12]);
       await expect.element(playLabelEl()).toHaveTextContent(/^Play$/);
+    });
+
+    it("lots that failed, then a Retry's answer that changes month 12, pull back to month 12", async () => {
+      const s = await opened(LAST, { initialPolicy: before });
+      await keysTo(20, 15);
+      s.setPolicy(mk(protect(7)));
+      s.setLots(null);
+      await expect.poll(() => debug().stale).toBe(true);
+      s.setLotsFailed(true);
+      await expect.poll(() => debug().stale).toBe(false);
+      await tick();
+      expect(lastScan()?.finding).toBeNull();
+      // Retry found the lots: the same document goes out, with no new edit.
+      s.setLotsFailed(false);
+      s.setLots({});
+      await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+      await answer(2, 8, 12);
+      await expect.poll(() => debug().reached).toBe(MONTHS[12]);
+      expect(debug().playFrom).toBe(MONTHS[12]);
+      await expect.element(playLabelEl()).toHaveTextContent(playFromText(MONTHS[12]));
+    });
+
+    /** Protection and a painted area: the open without the painted one is still in force. */
+    const full = mk(protect(5), painted);
+    const fullLots: Lots = Object.fromEntries(queriesOf4(full).map((q) => [q.key, ['p1']]));
+
+    it('a provisional open whose full answer changes a month already passed pulls back', async () => {
+      const s = setup({ initialPolicy: full, initialLots: null });
+      await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+      emit(compiledMsg(1, STATICS));
+      emit(filledMsg(1, 0, LAST + 1));
+      await expect.poll(() => debug().filledThrough).toBe(LAST);
+      await keysTo(20, 15);
+      s.setLots(fullLots);
+      await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+      await answer(2, 8, 12);
+      await expect.poll(() => debug().reached).toBe(MONTHS[12]);
+      expect(debug().playFrom).toBe(MONTHS[12]);
+      await expect.element(playLabelEl()).toHaveTextContent(playFromText(MONTHS[12]));
+    });
+
+    it('a first open with nothing shown yet offers no Play from', async () => {
+      const s = setup({ initialPolicy: full, initialLots: null });
+      await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+      s.setLots(fullLots);
+      await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+      emit(compiledMsg(2, STATICS));
+      emit(filledMsg(2, 0, LAST + 1, { base: 5 }));
+      await expect.poll(() => debug().filledThrough).toBe(LAST);
+      await tick();
+      expect(debug().reached).toBe(asOf);
+      expect(debug().playFrom).toBeNull();
+      await expect.element(playLabelEl()).toHaveTextContent(/^Play$/);
+    });
+
+    it('Play from never names a day past the computed edge', async () => {
+      const s = await opened(LAST, { initialPolicy: before });
+      await keysTo(20, 15);
+      await edit(s, mk(protect(7)), 2);
+      await answer(2, 8, 12);
+      await expect.poll(() => debug().playFrom).toBe(MONTHS[12]);
+      // Months from 10 withdrawn again: the offer is clamped as Play clamps it.
+      emit(refillMsg(2, 10));
+      await expect.poll(() => debug().filledThrough).toBe(9);
+      const edge = filledEndDay(MONTHS, 9, asOf);
+      expect(debug().playFrom).toBe(edge);
+      (playButton().element() as HTMLElement).click();
+      expect(debug().day).toBe(edge);
     });
 
     it('the scan runs as the fill or the pending state changes, never as the playhead moves', async () => {

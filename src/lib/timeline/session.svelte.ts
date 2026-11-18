@@ -295,11 +295,14 @@ export class TimelineSession {
     this.#settleIfDone();
   }
 
-  /** The debounced pair from PolicySync: sent unless it equals what the worker runs. */
-  send(policy: SimPolicy4, lots: Lots): void {
+  /**
+   * The debounced pair from PolicySync: sent unless it equals what the worker runs. True when it
+   * went out to the worker (the numbers may change).
+   */
+  send(policy: SimPolicy4, lots: Lots): boolean {
     const doc = this.#reconcile(policy);
     this.#current = { policy: doc, lots };
-    if (this.#openRev === 0) return; // `open` sends it
+    if (this.#openRev === 0) return false; // `open` sends it
     const key = keyOf(doc, lots);
     if (key === this.#lastKey) {
       this.#dirty = false;
@@ -310,9 +313,10 @@ export class TimelineSession {
       }
       this.#settleIfDone();
       this.#update();
-      return;
+      return false;
     }
     this.#post(doc, lots);
+    return true;
   }
 
   /** The playhead moved: viewMonth through the gate when its model month changes; stale recomputed. */

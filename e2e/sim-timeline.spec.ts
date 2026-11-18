@@ -198,13 +198,18 @@ test('after an edit Play reads Play from the first changed year, and plays from 
   const [rule] = (await fzp(page, 'policy')).kinds.zoning;
   const start = rule.spans[0].from;
 
+  // Final: the add's one send is answered (not stale) and filled to the end; both read at once.
   await waitFilled(page);
-  await page.waitForFunction(() => (window as FzpWin).__sfhFzp!.playFrom !== null);
-  const from = (await fzp(page, 'playFrom'))!;
+  const { playFrom, reached } = await page.evaluate(() => {
+    const f = (window as FzpWin).__sfhFzp!;
+    return { playFrom: f.playFrom, reached: f.reached };
+  });
+  expect(playFrom).not.toBeNull();
+  const from = playFrom!;
   expect(from).toBeGreaterThanOrEqual(start);
+  expect(reached).toBeLessThan(end);
   const year = new Date(from * 86_400_000).getUTCFullYear();
   await expect(page.getByTestId('tl-play-label')).toHaveText(`Play from ${year}`);
-  expect(await fzp(page, 'reached')).toBeLessThan(end);
 
   // Read in the press's own task, so no frame of playback comes between.
   const pressed = await page.getByTestId('tl-play').evaluate((b) => {

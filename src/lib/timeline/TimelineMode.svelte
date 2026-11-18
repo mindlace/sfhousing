@@ -127,7 +127,7 @@
   import Explain from './Explain.svelte';
   import { fundsOf4 } from './owner';
   import Playhead from './Playhead.svelte';
-  import { filledEndDay, viewMonthOf } from './playhead';
+  import { clampDay, filledEndDay, viewMonthOf } from './playhead';
   import { termsInForce } from './lens';
   import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
   import { editedReveal, moved, revealOpen, scanned, type Reveal } from './reveal';
@@ -844,8 +844,12 @@
     });
   });
 
-  /** An edit waits for its refill: until then the newest view is still the old one. */
-  const waiting = $derived(session?.pending ?? true);
+  /**
+   * An edit waits for its refill: until then the newest view is still the old one. A provisional
+   * open waits until its full document has filled the window (its send is not an edit, so it is
+   * never pending).
+   */
+  const waiting = $derived(!session || session.pending || session.provisional);
   // The scan: once the edit is answered, as the new view fills. It runs when the view or the
   // waiting state changes, never as the playhead moves; `scanned` resumes where it stopped.
   $effect(() => {
@@ -857,9 +861,12 @@
       reveal = scanned(reveal, now, { day, playing, asOf });
     });
   });
-  /** The day "Play from" offers: the first changed month's start, never before today. */
+  /**
+   * The day "Play from" offers: the first changed month's start, clamped into today..the computed
+   * edge as the Playhead clamps it, so the hook and the control name the same day.
+   */
   const playFromDay = $derived(
-    reveal.playFrom === null || !months ? null : Math.max(asOf, months[reveal.playFrom])
+    reveal.playFrom === null || !months ? null : clampDay(months[reveal.playFrom], asOf, filledEnd)
   );
 
   // PolicySync settled with a failure: the unsent edit ends (it goes out once Retry finds its
@@ -872,13 +879,16 @@
     });
   });
 
-  // The edit's lots settled (or a provisional open's): the pair goes out.
+  // The edit's lots settled (or a provisional open's): the pair goes out. A send that goes out
+  // with no search under way (a Retry's lots, a provisional open's full document) can change the
+  // numbers with no edit: it starts a search against the numbers on show, as an edit does.
   $effect(() => {
     const l = lots;
     untrack(() => {
       if (!session || l === null || l === seenLots) return;
       seenLots = l;
-      session.send(policy, l);
+      const seen = reveal.finding === null && shown.view ? { view: shown.view, inForce } : null;
+      if (session.send(policy, l) && seen) reveal = editedReveal(reveal, seen);
     });
   });
 
