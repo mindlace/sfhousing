@@ -354,7 +354,14 @@
   const headline = $derived(
     headlineAt(shown.view, index, atToday, session?.provisional ?? false, GOAL)
   );
-  const headText = $derived(headline ? headlineText(headline, GOAL) : null);
+  /** The playhead's calendar month, the readout's: it changes only when that month changes. */
+  const playheadMonth = $derived(monthStart(day));
+  /** Named by the playhead's month; past the last row, that row's numbers under it. */
+  const headText = $derived(
+    headline
+      ? headlineText({ ...headline, at: headline.at === null ? null : playheadMonth }, GOAL)
+      : null
+  );
   const chartTarget = $derived.by(() => {
     const v = current;
     const rhna = v?.targets.find((t) => t.target.id === RHNA_ID);

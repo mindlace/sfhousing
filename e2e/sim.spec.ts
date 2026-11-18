@@ -9,8 +9,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { SfhSimDebug } from '../src/lib/sim-page/debug';
-import { formatShortMonthYear } from '../src/lib/fzp/format';
-import { dayFromUtc, monthIndex, utcParts } from '../src/lib/fzp/time';
+import { formatMonthYear, formatShortMonthYear } from '../src/lib/fzp/format';
 import { forecastFilled } from '../src/lib/timeline/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
@@ -256,16 +255,11 @@ test('the headline follows the playhead and counts from today', async ({ isMobil
   await slider(page).focus();
   await page.keyboard.press('End');
   await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes by [A-Z][a-z]{2} \d{4}$/);
-  // The playhead's calendar month, the last one at the window's end (a few days past its start).
-  const [day, asOf, lastIndex] = [
-    await fzp(page, 'day'),
-    await fzp(page, 'asOf'),
-    await fzp(page, 'lastIndex')
-  ];
-  const { y, m } = utcParts(asOf);
-  const i = monthIndex(day, dayFromUtc(y, m, 1), lastIndex + 1);
+  // The headline names the readout's month, from the same day (here past the last row's month).
+  const day = await fzp(page, 'day');
+  await expect(page.getByTestId('tl-readout-label')).toHaveText(formatMonthYear(day));
   expect((await scoreBar(page).textContent())!.replace(/^[\d,]+ homes by /, '')).toBe(
-    formatShortMonthYear(dayFromUtc(y, m + i, 1))
+    formatShortMonthYear(day)
   );
   // No policy: the comparison is still with the plan as written, so the effect shows. Below sm
   // line 2 is hidden; the description still carries the effect and the goal.

@@ -10,7 +10,8 @@ import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { REAL_ACTUAL } from '$lib/fzp/fixtures/cards';
 import { CALCULATING, fromPolicyText } from '$lib/fzp/score-view';
-import { dayFromUtc, utcParts } from '$lib/fzp/time';
+import { formatMonthYear } from '$lib/fzp/format';
+import { dayFromUtc, monthStart, utcParts } from '$lib/fzp/time';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { lotsText } from '$lib/paint/rows';
 import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
@@ -566,7 +567,9 @@ describe('TimelineMode', () => {
   /** The month index of the playhead's day. */
   const playheadMonth = () => indexOfDay(MONTHS, debug().day);
   const FULL = () => viewOf([chunk(0, LAST + 1)], STATICS);
-  const textAt = (i: number) => headlineText(headlineAt(FULL(), i, false, false)!);
+  /** The header's text at month i, named by the playhead's month (the readout's). */
+  const textAt = (i: number) =>
+    headlineText({ ...headlineAt(FULL(), i, false, false)!, at: monthStart(debug().day) });
 
   it('the header reads 0 by today, then follows the playhead month by month', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -582,7 +585,7 @@ describe('TimelineMode', () => {
         const i = playheadMonth();
         await expect
           .element(scoreBar())
-          .toHaveTextContent(homesBy(v.rows[i].completedNet, MONTHS[i]));
+          .toHaveTextContent(homesBy(v.rows[i].completedNet, monthStart(debug().day)));
         vi.advanceTimersByTime(1000);
         await expect
           .poll(() => page.getByTestId('score-live').element().textContent)
@@ -593,6 +596,32 @@ describe('TimelineMode', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("the headline's month is the readout's, mid-window and at End past the last row", async () => {
+    await opened();
+    const readout = page.getByTestId('tl-readout-label');
+    /** "October 2066" → "Oct 2066". */
+    const short = (long: string) => `${long.slice(0, 3)} ${long.slice(-4)}`;
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}');
+    await expect.poll(() => playheadMonth()).toBeGreaterThan(0);
+    const i = playheadMonth();
+    expect(i).toBeLessThan(LAST);
+    await expect.element(readout).toHaveTextContent(formatMonthYear(debug().day));
+    await expect
+      .element(scoreBar())
+      .toHaveTextContent(homesBy(FULL().rows[i].completedNet, MONTHS[i]));
+    expect(scoreBar().element().textContent).toContain(short(readout.element().textContent!));
+    await userEvent.keyboard('{End}');
+    await expect.poll(() => debug().day).toBe(windowEnd);
+    await expect.element(readout).toHaveTextContent(formatMonthYear(windowEnd));
+    // The day is past the last row's month: that row's numbers, under the readout's month.
+    expect(monthStart(windowEnd)).toBeGreaterThan(MONTHS[LAST]);
+    await expect
+      .element(scoreBar())
+      .toHaveTextContent(homesBy(FULL().rows[LAST].completedNet, monthStart(windowEnd)));
+    expect(scoreBar().element().textContent).toContain(short(readout.element().textContent!));
   });
 
   it('the effect shows only with a policy in force', async () => {
@@ -644,7 +673,7 @@ describe('TimelineMode', () => {
     expect(box.element().hasAttribute('data-stale')).toBe(false);
     await expect
       .element(scoreBar())
-      .toHaveTextContent(homesBy(FULL().rows[i].completedNet, MONTHS[i]));
+      .toHaveTextContent(homesBy(FULL().rows[i].completedNet, monthStart(debug().day)));
   });
 
   it('right after an edit with the playhead at today the header reads 0 by today', async () => {
