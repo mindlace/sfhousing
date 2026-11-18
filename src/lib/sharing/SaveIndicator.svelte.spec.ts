@@ -8,14 +8,31 @@ import SaveIndicator from './SaveIndicator.svelte';
 const live = () => page.getByTestId('save-live');
 
 describe('SaveIndicator', () => {
-  it('shows "Saved" for saved', async () => {
-    render(SaveIndicator, { status: 'saved' });
-    await expect.element(page.getByText('Saved', { exact: true })).toBeVisible();
+  it('shows nothing when saved, and keeps its width', async () => {
+    const { rerender } = await render(SaveIndicator, { status: 'saved' });
+    const state = () => page.getByTestId('save-state');
+    await expect.element(state()).toHaveAttribute('data-save-status', 'saved');
+    expect(page.getByText('Saved').elements()).toHaveLength(0);
+    expect(page.getByTestId('save-text').elements()).toHaveLength(0);
+    const width = state().element().getBoundingClientRect().width;
+    expect(width).toBeGreaterThan(0);
+
+    await rerender({ status: 'saving' });
+    await expect.element(state()).toHaveAttribute('data-save-status', 'saving');
+    await expect.element(page.getByTestId('save-text')).toBeVisible();
+    expect(state().element().getBoundingClientRect().width).toBe(width);
+
+    await rerender({ status: 'saved' });
+    await expect.element(state()).toHaveAttribute('data-save-status', 'saved');
+    expect(page.getByTestId('save-text').elements()).toHaveLength(0);
+    expect(state().element().getBoundingClientRect().width).toBe(width);
   });
 
   it('shows "Saving…" for saving', async () => {
     render(SaveIndicator, { status: 'saving' });
-    await expect.element(page.getByText('Saving…', { exact: true })).toBeVisible();
+    const text = page.getByTestId('save-text');
+    await expect.element(text).toBeVisible();
+    await expect.element(text).toHaveTextContent('Saving…');
   });
 
   it('shows an "Autosave off" button for off', async () => {

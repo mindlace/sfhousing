@@ -11,6 +11,8 @@
   import { formatBuiltDate, formatCount, formatPercent, trackMax } from '$lib/scoreboard';
   import TargetRow from '$lib/scoreboard/TargetRow.svelte';
   import type { TimelineScore } from '$lib/sim/protocol';
+  import type { TimelineView } from '$lib/sim/world/score/types';
+  import { GOAL, goalStep, readGoal } from '$lib/goal/goal';
   import type { Day } from '$lib/timelapse/time';
   import { formatDate, formatMonthYear } from './format';
   import { FORECAST_NOTE, TWIN_NOTE, capacityNote, marketBody } from '$lib/timeline/copy';
@@ -23,11 +25,10 @@
   import ScoreChart from './ScoreChart.svelte';
   import {
     CALCULATING,
-    builtByTodayText,
+    builtTowardGoalText,
     inProgressRows,
     deadlineIndex,
-    phasingFootnote,
-    sinceText
+    phasingFootnote
   } from './score-view';
   import type { ScoreAt } from './types';
 
@@ -35,6 +36,8 @@
     score: TimelineScore | null;
     /** `null` exactly when `score` is. */
     at: ScoreAt | null;
+    /** The view `score` is built from (`null` exactly when `score` is): the target rows read it. */
+    view: TimelineView | null;
     day: Day;
     asOf: Day;
     horizon: Day;
@@ -61,6 +64,7 @@
   let {
     score,
     at,
+    view,
     day,
     asOf,
     horizon,
@@ -93,14 +97,33 @@
 
   const WIDE = '(min-width: 768px)';
 
-  const max = $derived(at ? trackMax(at.targets.map((t) => t.tp)) : 1);
+  /** The goal's deadline month in the view: null when it falls outside the window. */
+  const deadline = $derived(view ? (goalStep(GOAL, view)?.deadlineIndex ?? null) : null);
+  /**
+   * The target rows at the playhead's month up to the goal's deadline, then held at the deadline
+   * month, as the header's goal part is. The goal's own row is `readGoal`'s figure.
+   */
+  const rows = $derived.by(() => {
+    if (!at || !view) return [];
+    const i = at.monthIndex;
+    const held = deadline === null ? i : Math.min(i, deadline);
+    const net = GOAL.measure.valueAt(view, held);
+    const goal = readGoal(GOAL, view, i);
+    return view.targets.map((t, k) => ({
+      tp: {
+        target: t.target,
+        fraction: k === 0 && goal ? goal.fraction : t.fraction[held]
+      },
+      net,
+      atDeadline: at.targets[k].atDeadline,
+      // Past the deadline the row's own figure is the deadline's: the line would repeat it.
+      deadlineLine: deadline === null || i < deadline
+    }));
+  });
+  const max = $derived(rows.length > 0 ? trackMax(rows.map((r) => r.tp)) : 1);
   const stages = $derived(score && at ? inProgressRows(score.shown[at.monthIndex].inProgress) : []);
   const inProgressTotal = $derived(stages.reduce((sum, s) => sum + s.units, 0));
   const phasing = $derived(score ? phasingFootnote(score.phasing) : null);
-  /** The headline's text after its count: "homes added since Jan 2021". */
-  const sinceRest = $derived(
-    score && at ? sinceText(score, at).slice(formatCount(at.total).length) : ''
-  );
   const planPending = $derived(at !== null && at.planCompleted === null);
   /** The month index of the filled mark: nothing after it is revealed. */
   const reveal = $derived(score ? monthIndex(filledEnd, score.months[0], score.months.length) : -1);
@@ -128,14 +151,6 @@
     {@render staleLine()}
     <p class="mt-3 text-sm text-ink-muted dark:text-ink-dark-muted">Loading the simulation…</p>
   {:else}
-    <p>
-      <Explain text={FORECAST_NOTE} label="{formatCount(at.total)}{sinceRest}"
-        ><span data-testid="fzp-net" class="text-3xl font-bold tabular-nums"
-          >{formatCount(at.total)}</span
-        ><span class="text-base">{sinceRest}</span></Explain
-      >
-    </p>
-    <p class="text-sm text-ink-muted dark:text-ink-dark-muted">{builtByTodayText(at)}</p>
     {@render staleLine()}
 
     <section class="mt-4" aria-busy={planPending ? 'true' : undefined}>
@@ -184,9 +199,10 @@
     <ScoreChart {score} {asOf} {horizon} {day} highWater={filledEnd} />
 
     <div class="mt-4">
-      {#each at.targets as t, k (t.tp.target.id)}
-        <TargetRow tp={t.tp} net={at.total} {max} primary={k === 0} />
-        {#if reveal >= deadlineIndex(score, score.targets[k].deadline)}
+      <p class="text-sm" data-testid="fzp-built">{builtTowardGoalText(score.baseline)}</p>
+      {#each rows as t, k (t.tp.target.id)}
+        <TargetRow tp={t.tp} net={t.net} {max} primary={k === 0} />
+        {#if t.deadlineLine && reveal >= deadlineIndex(score, score.targets[k].deadline)}
           <p class="text-sm text-ink-muted dark:text-ink-dark-muted">
             At the deadline ({formatDate(score.targets[k].deadline)}): {formatPercent(t.atDeadline)}
           </p>
@@ -240,9 +256,11 @@
       <summary class="min-h-6 cursor-pointer text-sm font-semibold pointer-coarse:min-h-11"
         >Sources</summary
       >
-      <p class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted">
-        {FORECAST_NOTE}
-      </p>
+      {#if copy.compare === 'preFzp'}
+        <p class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted">
+          {FORECAST_NOTE}
+        </p>
+      {/if}
       {#if market}
         <p class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted" data-testid="fzp-market">
           {marketBody(market)}

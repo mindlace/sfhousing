@@ -26,6 +26,42 @@ export async function waitFilledThrough(page: Page, i: number): Promise<void> {
   }, i);
 }
 
+type HoldWin = Window & { __holdPolicy?: boolean; __releasePolicy?: () => void };
+
+/**
+ * Before the page loads: a seam at the worker boundary that, once `holdPolicy` is called, keeps
+ * every `setPolicy` from the timeline worker until `releasePolicy`, so the numbers on show stay
+ * stale (and "Updating" shows) for as long as the test needs.
+ */
+export async function installPolicyHold(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const w = window as HoldWin;
+    const held: [Worker, unknown][] = [];
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (this: Worker, msg: unknown, ...rest: never[]) {
+      if (w.__holdPolicy && (msg as { type?: string } | null)?.type === 'setPolicy') {
+        held.push([this, msg]);
+        return;
+      }
+      return post.call(this, msg, ...rest);
+    } as Worker['postMessage'];
+    w.__releasePolicy = () => {
+      w.__holdPolicy = false;
+      for (const [worker, msg] of held.splice(0)) post.call(worker, msg);
+    };
+  });
+}
+
+/** From now on every `setPolicy` waits (`installPolicyHold` first). */
+export async function holdPolicy(page: Page): Promise<void> {
+  await page.evaluate(() => ((window as HoldWin).__holdPolicy = true));
+}
+
+/** Sends the held `setPolicy` messages, in order, and stops holding. */
+export async function releasePolicy(page: Page): Promise<void> {
+  await page.evaluate(() => (window as HoldWin).__releasePolicy!());
+}
+
 /** A kind's row toggle (its accessible name is the kind's label). */
 const kindToggle = (page: Page, kind: string): Locator =>
   page.getByTestId('tl-timeline').getByRole('button', { name: kind, exact: true }).first();

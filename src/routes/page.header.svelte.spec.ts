@@ -46,8 +46,9 @@ describe('/ header save state', () => {
   it('renders the indicator in the status slot, before the actions, at 1280px', async () => {
     await page.viewport(1280, 800);
     render(PaintHeaderHost, { props: { data } });
-    const saved = page.getByText('Saved', { exact: true });
-    await expect.element(saved).toBeVisible();
+    const saved = page.getByTestId('save-state');
+    await expect.element(saved).toHaveAttribute('data-save-status', 'saved');
+    expect(page.getByText('Saved', { exact: true }).elements()).toHaveLength(0);
     const status = document.querySelector('[data-header-status]')!;
     expect(status.contains(saved.element())).toBe(true);
     const publish = page.getByRole('button', { name: /Publish/ });
@@ -58,17 +59,20 @@ describe('/ header save state', () => {
     expect(box(saved.element()).right).toBeLessThanOrEqual(box(publish.element()).left);
   });
 
-  it('renders the indicator in the status slot after the site title at 375px', async () => {
+  it('renders the indicator in the status slot at 375px; the site title waits in the Menu', async () => {
     await page.viewport(375, 812);
     render(PaintHeaderHost, { props: { data } });
-    const saved = page.getByText('Saved', { exact: true });
-    await expect.element(saved).toBeVisible();
+    const saved = page.getByTestId('save-state');
+    await expect.element(saved).toHaveAttribute('data-save-status', 'saved');
+    expect(page.getByText('Saved', { exact: true }).elements()).toHaveLength(0);
     const status = document.querySelector('[data-header-status]')!;
     expect(status.contains(saved.element())).toBe(true);
     // Publish is in the closed Menu, so the indicator is not among the actions.
     expect(page.getByRole('button', { name: /Publish/ }).elements()).toEqual([]);
-    const title = page.getByRole('link', { name: /SF Housing/ }).element();
-    expect(box(saved.element()).left).toBeGreaterThanOrEqual(box(title).right);
+    // Paint pins its score, so below sm the site title waits in the closed Menu.
+    expect(page.getByRole('link', { name: /SF Housing/ }).elements()).toEqual([]);
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await expect.element(page.getByRole('link', { name: 'SF Housing Simulator' })).toBeVisible();
   });
 
   for (const width of [1280, 1024, 768, 375]) {
@@ -81,12 +85,24 @@ describe('/ header save state', () => {
       render(PaintHeaderHost, { props: { data } });
       const chip = page.getByRole('button', { name: 'Autosave off' });
       await expect.element(chip).toBeVisible();
+      if (width === 375) {
+        // Paint's widest plausible score: a seven-digit count ("added" is hidden below lg).
+        const score = page.getByTestId('score-bar').element();
+        score.replaceChildren(
+          '1,234,567 homes ',
+          Object.assign(document.createElement('span'), {
+            className: 'max-lg:sr-only',
+            textContent: 'added'
+          })
+        );
+      }
       const banner = page.getByRole('banner').element() as HTMLElement;
       expect(box(banner).height).toBe(48);
       expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
       const row = [
-        page.getByRole('link', { name: /SF Housing/ }).element(),
+        // Below sm the site title waits in the Menu (Paint pins its score).
+        ...(width >= 640 ? [page.getByRole('link', { name: /SF Housing/ }).element()] : []),
         ...(width >= 1024 ? [page.getByRole('navigation', { name: 'Modes' }).element()] : []),
         chip.element(),
         ...(width >= 1024

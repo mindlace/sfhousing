@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  FIX_ASOF,
   TIMELINE_SCORE,
   TIMELINE_SCORE_NO_PHASING,
   TIMELINE_SCORE_R0,
@@ -9,15 +8,12 @@ import {
 import {
   CALCULATING,
   RHNA_ID,
-  builtByTodayText,
+  builtTowardGoalText,
   deadlineIndex,
-  homesAdded,
-  homesAddedBy,
   inProgressRows,
   phasingFootnote,
   scoreAt,
   scrubMarkers,
-  sinceText,
   vsFzpText,
   fromPolicyText
 } from './score-view';
@@ -190,22 +186,6 @@ describe('scrubMarkers', () => {
   });
 });
 
-describe('homesAdded and homesAddedBy', () => {
-  const at = scoreAt(TIMELINE_SCORE, 50);
-
-  it('the score bar shows the total in full', () => {
-    expect(homesAdded(at)).toBe('17,000 homes added');
-    expect(homesAdded({ ...at, total: 123_456 })).toBe('123,456 homes added');
-  });
-
-  it('the announcement adds the month', () => {
-    expect(homesAddedBy(dayFromUtc(2031, 3, 1), at)).toBe('17,000 homes added by March 2031');
-    expect(homesAddedBy(FIX_ASOF, { ...at, total: 1234 })).toBe(
-      '1,234 homes added by October 2026'
-    );
-  });
-});
-
 describe('fromPolicyText', () => {
   it('fromPolicyText signs the count and says from your policy', () => {
     expect(fromPolicyText(1234)).toBe('+1,234 from your policy');
@@ -222,26 +202,14 @@ describe('vsFzpText', () => {
   });
 });
 
-describe('the Results headline', () => {
-  const at = scoreAt(TIMELINE_SCORE, 50);
-
-  it('states the total and the data start date', () => {
-    const score = {
-      ...TIMELINE_SCORE,
-      baseline: { ...TIMELINE_SCORE.baseline, since: dayFromUtc(2021, 1, 1) }
-    };
-    expect(sinceText(score, { ...at, total: 8805 })).toBe('8,805 homes added since Jan 2021');
-  });
-
-  it('takes the date from the data', () => {
-    const score = {
-      ...TIMELINE_SCORE,
-      baseline: { ...TIMELINE_SCORE.baseline, since: dayFromUtc(2022, 3, 1) }
-    };
-    expect(sinceText(score, at)).toBe('17,000 homes added since Mar 2022');
-  });
-
-  it('says how much is already built', () => {
-    expect(builtByTodayText({ ...at, actual: 8805 })).toBe('of which 8,805 built by today');
+describe('builtTowardGoalText', () => {
+  it('builtTowardGoalText says the homes built since the data start count toward the goal', () => {
+    expect(
+      builtTowardGoalText({
+        ...TIMELINE_SCORE.baseline,
+        completedNet: 15234,
+        since: dayFromUtc(2022, 6, 30)
+      })
+    ).toBe('15,234 homes built from Jun 2022 count toward the goal.');
   });
 });

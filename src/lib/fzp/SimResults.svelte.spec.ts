@@ -17,7 +17,7 @@ import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import type { LeverCapacity } from '$lib/sim/levers/resolve';
 import SimResults from './SimResults.svelte';
 import { formatPercent } from '$lib/scoreboard';
-import { scoreAt } from './score-view';
+import { builtTowardGoalText, scoreAt } from './score-view';
 import { dayFromUtc, monthIndex } from './time';
 import { MONEY_LAST, MONEY_SCORE } from './fixtures/money';
 import { fixtureCalibration } from './fixtures/calibration';
@@ -44,10 +44,12 @@ import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import { MARKET_FUNDING_SENTENCE4 } from '$lib/timeline/copy';
 import type { ResolvedTerms } from '$lib/timelapse/types';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from '$lib/timeline/chunk-log';
-import { resultsAt, scoreOfView } from '$lib/timeline/results';
-import { chunk, statics } from '$lib/timeline/test/fixtures';
+import { headlineAt, headlineText, resultsAt, scoreOfView } from '$lib/timeline/results';
+import { calendarMonths, chunk, statics } from '$lib/timeline/test/fixtures';
 import { tierTargetsOf } from '$lib/sim/scenario/score';
 import type { TimelineView } from '$lib/sim/world/score/types';
+import type { TimelineScore } from '$lib/sim/scenario/types';
+import { GOAL, goalStep, readGoal } from '$lib/goal/goal';
 
 /** Index 53 of the fixture: 2031-03-15. */
 const DAY = dayFromUtc(2031, 3, 15);
@@ -81,8 +83,27 @@ const props = (over: Overrides = {}) => {
   };
   const sc = p.score;
   const at = sc ? scoreAt(sc, monthIndex(p.day, sc.months[0], sc.months.length)) : null;
-  return { ...p, at };
+  return { ...p, at, view: sc ? viewOfScore(sc) : null };
 };
+
+/** The stepped view a fixture score stands for (on the page the score is built from it). */
+function viewOfScore(sc: TimelineScore): TimelineView {
+  return {
+    months: sc.months,
+    lastIndex: sc.months.length - 1,
+    filledThrough: sc.shown.length - 1,
+    rows: sc.shown,
+    planEffect: sc.planEffect,
+    targets: sc.targets,
+    tierTargets: null,
+    money: null,
+    tiers: null,
+    baseline: sc.baseline,
+    phasing: sc.phasing,
+    references: sc.references,
+    compare: 'plan'
+  };
+}
 
 async function scheme(value: 'light' | 'dark') {
   await cdp().send('Emulation.setEmulatedMedia', {
@@ -115,7 +136,7 @@ describe('intro and loading', () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props({ score: null }) });
     await expect.element(page.getByText('Loading the simulation…').first()).toBeVisible();
-    expect(document.querySelector('[data-testid="fzp-net"]')).toBeNull();
+    expect(document.querySelector('[data-testid="fzp-built"]')).toBeNull();
     expect(document.querySelector('svg[role="img"]')).toBeNull();
     expect(document.querySelector('.sfh-fzp-legend')).toBeNull();
     expect(document.querySelector('[role="meter"]')).toBeNull();
@@ -123,15 +144,15 @@ describe('intro and loading', () => {
 });
 
 describe('layout', () => {
-  it('orders headline, what the plan added, chart, targets, pipeline, then Sources', async () => {
+  it('orders what the policy added, chart, the built-toward-goal line, targets, pipeline, then Sources', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props() });
     const before = (a: Element, b: Element) =>
       expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const els = [
-      page.getByTestId('fzp-net').element(),
       page.getByText('What current law added').element(),
       document.querySelector('[data-testid="fzp-chart"] svg')!,
+      page.getByTestId('fzp-built').element(),
       page.getByRole('meter').first().element(),
       page.getByTestId('fzp-stages').element(),
       sources().querySelector('summary')!
@@ -148,21 +169,31 @@ describe('layout', () => {
     expect(d.textContent).toContain('Where these numbers come from');
   });
 
-  it('puts the since-date and the built-by-today line under the headline', async () => {
+  it('has no headline: no fzp-net, no "homes added since", no "built by today"', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props() });
-    await expect.element(page.getByText('homes added since Jun 2022')).toBeVisible();
-    await expect.element(page.getByText('of which 12,000 built by today')).toBeVisible();
+    expect(document.querySelector('[data-testid="fzp-net"]')).toBeNull();
+    expect(document.body.textContent).not.toContain('homes added since');
+    expect(document.body.textContent).not.toContain('built by today');
+  });
+
+  it('says once, with the targets, that the homes built since Jun 2022 count toward the goal', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: props() });
+    const text = builtTowardGoalText(TIMELINE_SCORE.baseline);
+    await expect.element(page.getByTestId('fzp-built')).toHaveTextContent(text);
+    expect(document.querySelectorAll('[data-testid="fzp-built"]')).toHaveLength(1);
+    expect(document.body.textContent!.split(text)).toHaveLength(2);
+    const built = page.getByTestId('fzp-built').element();
+    expect(built.parentElement!.contains(page.getByRole('meter').first().element())).toBe(true);
   });
 });
 
-describe('headline and pipeline', () => {
-  it('shows the total at the scrubbed month and where it comes from', async () => {
+describe('pipeline', () => {
+  it('shows where the simulated homes come from', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props() });
-    const i = monthIndex(DAY, TIMELINE_SCORE.months[0], TIMELINE_SCORE.months.length);
-    expect(i).toBe(53);
-    await expect.element(page.getByTestId('fzp-net')).toHaveTextContent('17,300');
+    expect(monthIndex(DAY, TIMELINE_SCORE.months[0], TIMELINE_SCORE.months.length)).toBe(53);
     const row = (label: string) =>
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
     expect(row("Simulated, from today's pipeline")).toContain('3,180');
@@ -220,6 +251,16 @@ describe('what the plan added', () => {
   });
 });
 
+describe('the forecast note', () => {
+  it('shows in Sources only with no policy in force', async () => {
+    await page.viewport(1024, 768);
+    const r = await render(SimResults, { props: props({ copy: scoreCopy(null) }) });
+    expect(sources().contains(page.getByText(FORECAST_NOTE).element())).toBe(true);
+    await r.rerender({ copy: scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' }) });
+    await expect.element(page.getByText(FORECAST_NOTE)).not.toBeInTheDocument();
+  });
+});
+
 describe('score copy (/sim)', () => {
   it('names your policy and current law for a customised policy', async () => {
     await page.viewport(1024, 768);
@@ -227,7 +268,8 @@ describe('score copy (/sim)', () => {
     await render(SimResults, { props: props({ copy }) });
     await expect.element(page.getByText('What your policy added')).toBeVisible();
     await expect.element(page.getByText('What current law added')).not.toBeInTheDocument();
-    await expect.element(page.getByText(FORECAST_NOTE)).toBeInTheDocument();
+    openSources();
+    await expect.element(page.getByText(FORECAST_NOTE)).not.toBeInTheDocument();
     const row = (label: string) =>
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
     expect(row('Homes completed because of your policy')).toContain('1,290');
@@ -328,7 +370,7 @@ describe('protections cost (/sim)', () => {
         capacity: { plan: 900, withoutProtections: 900, protectedLots: 0 }
       })
     });
-    await expect.element(page.getByTestId('fzp-net')).toBeVisible();
+    await expect.element(page.getByTestId('fzp-built')).toBeVisible();
     expect(document.body.textContent).not.toMatch(PROT);
     await r.rerender({ capacity: null });
     expect(document.body.textContent).not.toMatch(PROT);
@@ -338,7 +380,7 @@ describe('protections cost (/sim)', () => {
 describe('targets and progress', () => {
   it('renders RHNA then RHNA + buffer, each with its deadline fraction', async () => {
     await page.viewport(1024, 768);
-    await render(SimResults, { props: props() });
+    await render(SimResults, { props: props({ day: dayFromUtc(2030, 6, 1) }) });
     const meters = page.getByRole('meter').elements();
     expect(meters.map((m) => m.getAttribute('aria-label'))).toEqual([
       TIMELINE_SCORE.targets[0].target.label,
@@ -576,10 +618,10 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: at(MONEY_LAST) });
     const els = [
-      page.getByTestId('fzp-net').element(),
       page.getByText('What current law added').element(),
       el('fzp-money')!,
       document.querySelector('[data-testid="fzp-chart"] svg')!,
+      page.getByTestId('fzp-built').element(),
       page.getByRole('meter').first().element(),
       el('fzp-tiers')!,
       page.getByTestId('fzp-stages').element(),
@@ -841,6 +883,7 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
     return {
       ...props({ score, filledEnd: v.months[v.filledThrough], ...over }),
       at,
+      view: v,
       asOf: v.months[0],
       horizon: v.months[v.lastIndex]
     };
@@ -849,11 +892,11 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
   it('renders every row of rule 26', async () => {
     await page.viewport(1024, 768);
     const v = view();
-    const at = resultsAt(v, null, IDX);
     await render(SimResults, { props: feed(v) });
     const text = document.body.textContent!;
-    expect(page.getByTestId('fzp-net').element().textContent).toBe(formatCount(at.total));
-    expect(text).toContain(`of which ${formatCount(at.actual)} built by today`);
+    expect(page.getByTestId('fzp-built').element().textContent).toBe(
+      builtTowardGoalText(v.baseline)
+    );
     expect(text).toContain('Homes in projects still in progress');
     expect(text).toContain('Simulated, from today');
     expect(text).toContain('Simulated, new projects not yet');
@@ -911,10 +954,92 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
     const withTiers: TimelineView = { ...v, tiers, tierTargets: tierTargetsOf(baseline, tiers) };
     const score = scoreOfView(withTiers, baseline);
     const at = resultsAt(withTiers, baseline, IDX);
-    await render(SimResults, { props: { ...feed(withTiers), score, at } });
+    await render(SimResults, { props: { ...feed(withTiers), score, at, view: withTiers } });
     const h2s = [
       ...document.querySelectorAll('[data-testid="fzp-money"] h2, [data-testid="fzp-tiers"] h2')
     ];
     expect(h2s.map((h) => h.textContent)).toEqual(['Public money', 'Who the homes are for']);
+  });
+});
+
+describe("the target rows hold at the goal's deadline, as the header does", () => {
+  /** 60 calendar months from Nov 2026: the goal's deadline (Jan 2031) is month 50. */
+  const view = (units = 1000): TimelineView => {
+    const st = statics({ lastIndex: 59 });
+    return calendarMonths(
+      viewOfLog(
+        logFilled(
+          logCompiled(EMPTY_LOG, { ...st, baseline: { ...st.baseline, units } }),
+          chunk(0, 60)
+        )
+      )!
+    );
+  };
+  const feedAt = (v: TimelineView, i: number) => {
+    const score = scoreOfView(v, null);
+    return {
+      ...props({ score, day: v.months[i], filledEnd: v.months[v.lastIndex] }),
+      at: resultsAt(v, null, i, score),
+      view: v,
+      asOf: v.months[0],
+      horizon: v.months[v.lastIndex]
+    };
+  };
+  /** The percentage text of each target row, in order. */
+  const rowPercents = () =>
+    [...document.querySelectorAll('[data-testid^="target-"]')].map((row) =>
+      row.querySelector('.tabular-nums')!.textContent!.trim()
+    );
+  const DEADLINE = 50;
+
+  it('the deadline is month 50 of the view', () => {
+    expect(goalStep(GOAL, view())!.deadlineIndex).toBe(DEADLINE);
+  });
+
+  it('before the deadline the rows read the playhead and the deadline line shows', async () => {
+    await page.viewport(1024, 768);
+    const v = view();
+    const i = 30;
+    await render(SimResults, { props: feedAt(v, i) });
+    expect(rowPercents()).toEqual(v.targets.map((t) => formatPercent(t.fraction[i])));
+    expect(document.body.textContent).toContain('At the deadline');
+  });
+
+  it('past the deadline the rows hold the deadline month, the goal row as the header says', async () => {
+    await page.viewport(1024, 768);
+    const v = view();
+    const i = 57;
+    await render(SimResults, { props: feedAt(v, i) });
+    const header = headlineText(headlineAt(v, i, false, false, GOAL)!, GOAL).goal!;
+    const goalPercent = formatPercent(readGoal(GOAL, v, i)!.fraction);
+    expect(header).toBe(`${goalPercent} of the goal`);
+    expect(rowPercents()[0]).toBe(goalPercent);
+    expect(rowPercents()).toEqual(v.targets.map((t) => formatPercent(t.fraction[DEADLINE])));
+    expect(document.body.textContent).not.toContain('At the deadline');
+    expect(page.getByRole('meter').elements()[0].getAttribute('aria-valuenow')).toBe(
+      String(v.baseline.completedNet + v.rows[DEADLINE].completedNet)
+    );
+  });
+
+  it('at the deadline month the deadline line is gone', async () => {
+    await page.viewport(1024, 768);
+    const v = view();
+    await render(SimResults, { props: feedAt(v, DEADLINE) });
+    expect(rowPercents()).toEqual(v.targets.map((t) => formatPercent(t.fraction[DEADLINE])));
+    expect(document.body.textContent).not.toContain('At the deadline');
+  });
+
+  it('a goal reached before the deadline: the rows still hold the deadline month', async () => {
+    await page.viewport(1024, 768);
+    // 82,000 before today and 3k + 1 a month: the goal (82,069) is reached in month 23.
+    const v = view(82_000);
+    const i = 57;
+    await render(SimResults, { props: feedAt(v, i) });
+    expect(headlineText(headlineAt(v, i, false, false, GOAL)!, GOAL).goal).toBe(
+      'Goal reached, Oct 2028'
+    );
+    expect(rowPercents()[0]).toBe(formatPercent(readGoal(GOAL, v, i)!.fraction));
+    expect(rowPercents()).toEqual(v.targets.map((t) => formatPercent(t.fraction[DEADLINE])));
+    expect(document.body.textContent).not.toContain('At the deadline');
   });
 });

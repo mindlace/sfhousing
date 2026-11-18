@@ -68,11 +68,11 @@
   }
 
   /**
-   * Who the plan effect is for, from the statics' comparison (rule 26): `scoreCopy`'s wording,
-   * which reads only the levers' `compare` ('plan' is the comparison with the plan as written).
+   * Who the plan effect is for (rule 26), in `scoreCopy`'s wording: current law vs the old zoning
+   * when nothing is in force, else your policy vs current law. The worker's `compare` is not used.
    */
-  function copyOf(compare: 'plan' | 'preFzp' | null): ScoreCopy {
-    return scoreCopy(compare === 'plan' ? ({ compare: 'fzp' } as SimLevers) : null);
+  function copyOf(nothing: boolean): ScoreCopy {
+    return scoreCopy(nothing ? null : ({ compare: 'fzp' } as SimLevers));
   }
 
   /** Below md the inspector sheet starts under the chart, and is never shorter than this. */
@@ -92,9 +92,6 @@
 
   /** The brush-failure notice: the editors' own words for a query that failed. */
   const LOTS_FAILED = lotsText({ kind: 'failed', keys: [] });
-
-  /** The widest text the status slot shows: its width is reserved (rule 32). */
-  const STATUS_WIDEST = forecastFilled(2088);
 </script>
 
 <script lang="ts">
@@ -109,12 +106,13 @@
   import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import ProjectCardPanel from '$lib/fzp/ProjectCardPanel.svelte';
   import ProjectTooltip from '$lib/fzp/ProjectTooltip.svelte';
-  import { RHNA_ID, homesAddedBy, scrubMarkers } from '$lib/fzp/score-view';
+  import { scrubMarkers } from '$lib/fzp/score-view';
   import SimResults from '$lib/fzp/SimResults.svelte';
   import SourcesDialog from '$lib/fzp/SourcesDialog.svelte';
   import { SummaryRequester, type SummaryState } from '$lib/fzp/summary-request';
-  import { monthIndex, monthStart } from '$lib/fzp/time';
+  import { monthStart } from '$lib/fzp/time';
   import type { FzpPhase, Speed } from '$lib/fzp/types';
+  import { GOAL, goalStep } from '$lib/goal/goal';
   import type { HeightCity } from '$lib/map/height/types';
   import SimMap from '$lib/map/SimMap.svelte';
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
@@ -131,15 +129,14 @@
   import type { Day } from '$lib/timelapse/time';
   import { HIDDEN_VIEW, type ViewPrefs } from '$lib/view/prefs';
   import ChartRow from './ChartRow.svelte';
-  import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, forecastFilled } from './copy';
+  import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING } from './copy';
   import Explain from './Explain.svelte';
-  import { fillStatusText } from './fill';
   import { fundsOf4 } from './owner';
   import Playhead from './Playhead.svelte';
   import { filledEndDay, indexOfDay, viewMonthOf } from './playhead';
   import { termsInForce } from './lens';
-  import type { PolicyKind, SimPolicy4 } from './policy4';
-  import { headerOf, resultsAt, scoreOfView } from './results';
+  import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
+  import { headlineAt, headlineSpoken, headlineText, resultsAt, scoreOfView } from './results';
   import { TimelineSession, type Lots, type SessionNotice } from './session.svelte';
   import type { SpanRef } from './spans';
   import Timeline from './Timeline.svelte';
@@ -166,8 +163,12 @@
     fundingName?: (f: CardFunding) => string | null;
     /** The page's own header actions. */
     actions?: Snippet;
-    /** The page's status (the save state), first in the header's status slot. */
-    status?: Snippet;
+    /**
+     * The page's status (the save state), in the header's status slot. Its argument is true while
+     * "Updating" covers it (the cell hides it): its controls should go inert and a popover of its
+     * own close, while a live region of its own sets `visibility: visible` to keep speaking.
+     */
+    status?: Snippet<[covered: boolean]>;
     /** The page's own notices, first in the notice stack; each should be a `PILL`. */
     notices?: Snippet;
     /** The document on show; a new object after open is an edit (rule 25). */
@@ -342,29 +343,43 @@
     shown.view ? filledEndDay(shown.view.months, shown.view.filledThrough, asOf) : asOf
   );
   const markers = $derived(score ? scrubMarkers(score) : []);
-  /** The shown view's comparison, so the label changes with its numbers (a held view keeps its). */
-  const copy = $derived(copyOf(shown.view?.compare ?? statics?.compare ?? null));
-  /** Rule 27 (OQ-3: "calculating" while provisional). */
-  const header = $derived(
-    headerOf(
-      !session || session.provisional || !statics ? null : session.shown(statics.lastIndex).view
-    )
-  );
-  const chartTarget = $derived.by(() => {
-    const v = current;
-    const rhna = v?.targets.find((t) => t.target.id === RHNA_ID);
-    if (!v || !rhna) return null;
-    return {
-      deadlineIndex: monthIndex(rhna.deadline, v.months[0], v.months.length),
-      units: rhna.target.units
-    };
-  });
   /**
    * The document the shown numbers are from: the one the worker runs, or while stale the one it
    * ran when the held view was taken; the edited `policy` until the session has one.
    */
   let heldDoc = $state.raw<SimPolicy4 | null>(null);
   const resultsDoc = $derived((stale ? heldDoc : null) ?? session?.accepted ?? policy);
+  /**
+   * The comparison's wording for Results and the header, from the document the numbers on show
+   * are from, so it changes with the numbers (held numbers keep theirs).
+   */
+  const copy = $derived(copyOf(nothingInForce(resultsDoc)));
+  /** The playhead is at the dataset date: the headline reads today. */
+  const atToday = $derived(day <= asOf);
+  /**
+   * The headline at the playhead's month (rule 27; OQ-3: "calculating" while provisional). It
+   * reads `index`, never `day`, so it changes at most once per month the playhead crosses.
+   */
+  const headline = $derived(
+    headlineAt(shown.view, index, atToday, session?.provisional ?? false, GOAL)
+  );
+  /** The playhead's calendar month, the readout's: it changes only when that month changes. */
+  const playheadMonth = $derived(monthStart(day));
+  /** Named by the playhead's month; past the last row, that row's numbers under it. */
+  const headText = $derived(
+    headline
+      ? headlineText(
+          {
+            ...headline,
+            at: headline.at === null ? null : playheadMonth,
+            // "From your policy" only while the copy says the numbers are your policy's.
+            effect: copy.compare === 'fzp' ? headline.effect : null
+          },
+          GOAL
+        )
+      : null
+  );
+  const chartTarget = $derived(current ? goalStep(GOAL, current) : null);
   // The held document goes once the numbers on show are current again.
   $effect(() => {
     if (!stale) untrack(() => (heldDoc = null));
@@ -382,8 +397,11 @@
 
   // ---- the status slot (rules 31, 32) ----
 
-  const statusWanted = $derived(!session ? '' : stale ? UPDATING : fillStatusText(current));
+  /** "Updating" while the numbers are stale, else nothing (the ruler's hatching shows the fill). */
+  const statusWanted = $derived(session && stale ? UPDATING : '');
   let statusText = $state('');
+  /** "Updating" shows: it covers the page's save state in the slot's one cell. */
+  const covered = $derived(statusText === UPDATING);
   let statusAt = -Infinity;
   let statusTimer: ReturnType<typeof setTimeout> | null = null;
   /** At most one change a second: a change inside the gap goes out when it ends (latest wins). */
@@ -393,15 +411,40 @@
     if (want === statusText) return;
     const wait = statusAt + statusMs - performance.now();
     if (wait <= 0) {
-      statusText = want;
-      statusAt = performance.now();
+      setStatus(want);
       return;
     }
     statusTimer = setTimeout(() => {
       statusTimer = null;
-      statusText = want;
-      statusAt = performance.now();
+      setStatus(want);
     }, wait);
+  }
+  /** The save state's part of the slot's cell and the shown "Updating" (bound in the snippet). */
+  let saveCell = $state<HTMLElement>();
+  let shownCell = $state<HTMLElement>();
+  /**
+   * Shows `want`. Focus inside the part about to be covered or removed is not dropped to the
+   * body (WCAG 2.4.3): the save state's focused control hands it to "Updating"'s explanation, in
+   * the same place; that explanation hands it back to the save state's control if one shows,
+   * else to the header score.
+   */
+  function setStatus(want: string): void {
+    const active = document.activeElement;
+    const covering = want === UPDATING && !!saveCell?.contains(active);
+    const uncovering = want !== UPDATING && !!shownCell?.contains(active);
+    statusText = want;
+    statusAt = performance.now();
+    if (!covering && !uncovering) return;
+    void tick().then(() => {
+      if (covering) {
+        shownCell?.querySelector<HTMLElement>('button')?.focus();
+        return;
+      }
+      const back = saveCell?.querySelector<HTMLElement>('button, a[href]');
+      if (back?.checkVisibility()) back.focus();
+      else if (!document.activeElement || document.activeElement === document.body)
+        saveCell?.closest('header')?.querySelector<HTMLElement>('[data-testid=score-bar]')?.focus();
+    });
   }
   $effect(() => {
     const want = statusWanted;
@@ -871,8 +914,7 @@
     detailEl.scrollTop = 0;
     detailEl.querySelector<HTMLElement>('[data-testid=tl-results]')?.focus({ preventScroll: true });
   }
-  /** The status line's and the pinned block's heights: the scroll padding (WCAG 2.4.11). */
-  let statusH = $state(0);
+  /** The pinned block's height: the scroll padding (WCAG 2.4.11). */
   let pinHeight = $state(0);
   /** The scroll boxes' client heights: the mode box below md, the timeline's own from md. */
   let modeClientH = $state(0);
@@ -880,7 +922,7 @@
   /** The block sticks only while it leaves MIN_ROWS of rows in its scroll box (re-read on resize). */
   const pinStuck = $derived(
     narrow.current
-      ? !modeClientH || modeClientH - statusH - pinHeight >= MIN_ROWS
+      ? !modeClientH || modeClientH - pinHeight >= MIN_ROWS
       : !lanesClientH || lanesClientH - pinHeight - PIN_GAP >= MIN_ROWS
   );
   /** The block's share of the scroll padding and margins: none while it scrolls with the rows. */
@@ -955,53 +997,56 @@
   {/if}
 {/snippet}
 
-<!-- The status text as shown (the live region is apart, once, in the page): plain text hidden from
-     the accessibility tree, or "Updating" with its explanation, which opens as a popover so the
-     header and the line keep their size. -->
-{#snippet statusShown()}
-  <span
-    aria-hidden={statusText === UPDATING ? undefined : 'true'}
-    class="col-start-1 row-start-1 whitespace-nowrap"
-  >
-    {#if statusText === UPDATING}
-      <Explain text={STALE_NOTE}>{UPDATING}</Explain>
-    {:else}
-      {statusText}
+<!-- The header's status slot (rule 32), at every width: the page's save state and "Updating"
+     share one cell, and "Updating" wins while both apply. The covered save state keeps its width
+     (`visibility: hidden`, and the snippet's `covered` makes its own controls inert), so the cell
+     is as wide as the widest and nothing moves as either comes or goes. The save state's own live
+     region opts back into visibility, so its announcements still reach screen readers. The
+     timeline's live region is apart, once, in the page; "Updating"'s explanation opens as a
+     popover under the slot (`explain-under`, layout.css), so the header keeps its size. -->
+{#snippet statusSlot()}
+  <span class="inline-grid items-center" data-testid="tl-status-group">
+    <span
+      bind:this={saveCell}
+      class={['col-start-1 row-start-1 inline-flex items-center', covered && 'invisible']}
+      >{@render status?.(covered)}</span
+    >
+    {#if !noScenario}
+      <!-- Over the save state in the cell: it takes presses only while "Updating" shows. -->
+      <span
+        class={[
+          'tl-status explain-under relative col-start-1 row-start-1 inline-grid text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted',
+          !covered && 'pointer-events-none'
+        ]}
+        data-testid="tl-status"
+      >
+        <span aria-hidden="true" class="invisible col-start-1 row-start-1 whitespace-nowrap"
+          >{UPDATING}</span
+        >
+        <span
+          bind:this={shownCell}
+          class="col-start-1 row-start-1 whitespace-nowrap"
+          data-testid="tl-status-shown"
+        >
+          {#if statusText === UPDATING}
+            <Explain text={STALE_NOTE}>{UPDATING}</Explain>
+          {/if}
+        </span>
+      </span>
     {/if}
   </span>
-{/snippet}
-
-{#snippet statusSlot()}
-  {@render status?.()}
-  {#if !noScenario}
-    <!-- From 2xl: the shown text shares one grid cell with the widest one, so the slot keeps its
-         width (rule 32). Below 2xl the slot is too narrow: the line under the bar shows it. -->
-    <span
-      class="tl-status relative ml-2 inline-grid text-sm text-ink-muted tabular-nums max-2xl:hidden dark:text-ink-dark-muted"
-      data-testid="tl-status"
-    >
-      <span aria-hidden="true" class="invisible col-start-1 row-start-1 whitespace-nowrap"
-        >{STATUS_WIDEST}</span
-      >
-      {@render statusShown()}
-    </span>
-  {/if}
 {/snippet}
 
 {#snippet scoreBar()}
   {#if session && calibration}
     <TimelineHeaderScore
-      total={header.total}
-      year={header.year}
-      target={header.target}
-      delta={header.delta}
-      provisional={session.provisional}
+      text={headText}
       busy={stale}
       {stale}
       expanded={narrow.current ? scoreExpanded : undefined}
       controls={detailShown ? (scoreControls ?? '') : ''}
       onclick={() => onscore?.()}
-      live={at ? homesAddedBy(day, at) : ''}
+      live={headText ? headlineSpoken(headText) : ''}
       quiet={playing}
     />
   {/if}
@@ -1019,6 +1064,7 @@
     <SimResults
       {score}
       {at}
+      view={score ? shown.view : null}
       {day}
       {asOf}
       horizon={windowEnd}
@@ -1061,25 +1107,16 @@
 <div
   bind:this={modeEl}
   class="sfh-fzp sfh-tl relative flex h-full flex-col max-md:overflow-y-auto"
-  style:scroll-padding-top={narrow.current ? `${statusH + pinPad}px` : undefined}
+  style:scroll-padding-top={narrow.current ? `${pinPad}px` : undefined}
   bind:clientHeight={modeClientH}
   data-testid="tl-mode"
 >
   {#if !noScenario}
     <!-- The status's one live region, at every width (polite, at most one change a second). -->
     <span role="status" class="sr-only" data-testid="tl-status-live">{statusText}</span>
-    <!-- Below 2xl the status is a line just under the header bar (rule 32). Its height is always
-         kept, so nothing moves when the status comes or goes. -->
-    <div
-      class="tl-status sticky top-0 z-30 grid min-h-6 shrink-0 items-center border-b border-line bg-surface px-4 text-sm text-ink-muted tabular-nums 2xl:hidden dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark-muted"
-      data-testid="tl-status-line"
-      bind:offsetHeight={statusH}
-    >
-      {@render statusShown()}
-    </div>
   {/if}
-  <!-- The notice stack's host (its parent): from md the stack overlays the map's top, below the
-       status line. Below md the stack is in flow and this box is no box. -->
+  <!-- The notice stack's host (its parent): from md the stack overlays the map's top, under the
+       header. Below md the stack is in flow and this box is no box. -->
   <div class="relative flex min-h-0 flex-1 flex-col max-md:contents">
     <!-- Every notice is a pill in this one stack (as FzpMode). -->
     <NoticePills bind:el={pillsEl}>
@@ -1237,19 +1274,18 @@
       data-testid="tl-dock"
     >
       <!-- The timeline's scroll box from md; below md the mode box scrolls. Either way its pinned
-           block sticks at the scroll box's top (under the status line below md), and the scroll
-           padding keeps a focused row out from under it (WCAG 2.2 2.4.11). Below md the mode
-           box's padding counts the status line and the block, so scrolling this box or the
-           timeline to the top (the sheets) takes the block back off as a negative margin. A box
-           too short for the block and MIN_ROWS of rows unsticks it: the block's share of the
-           padding and margins drops to 0 and the timeline scrolls as one piece. -->
+           block sticks at the scroll box's top, and the scroll padding keeps a focused row out
+           from under it (WCAG 2.2 2.4.11). Below md the mode box's padding is the block's height,
+           so scrolling this box or the timeline to the top (the sheets) takes the block back off
+           as a negative margin. A box too short for the block and MIN_ROWS of rows unsticks it:
+           the block's share of the padding and margins drops to 0 and the timeline scrolls as one
+           piece. -->
       <div
         bind:this={dockEl}
         bind:clientHeight={lanesClientH}
         class="min-h-0 md:overflow-y-auto"
         style:padding-bottom={phoneSheet ? '100dvh' : undefined}
         style:--tl-pin-pos={pinStuck ? undefined : 'relative'}
-        style:--tl-pin-top={narrow.current && pinStuck ? `${statusH}px` : '0px'}
         style:scroll-padding-top={narrow.current ? undefined : `${pinPad + pinGap}px`}
         style:scroll-margin-top={narrow.current ? `${-pinPad}px` : undefined}
         style:--tl-scroll-mt={narrow.current ? `${-pinPad}px` : undefined}
@@ -1267,6 +1303,7 @@
           {onadd}
           playhead={playheadPart}
           chart={chartPart}
+          goalShown={chartTarget !== null}
           playheadMonth={viewMonthOf(asOf, day)}
           playheadDay={day}
           {filledEnd}
@@ -1328,31 +1365,6 @@
     .tl-dim[data-stale]
       :global(:not(button, a, input, select, textarea, summary, button *, a *, summary *)) {
       color: var(--color-ink-dark-muted);
-    }
-  }
-  /* "Updating"'s explanation opens under the slot at every width (Explain is inline below md),
-     so the header neither widens nor grows. */
-  .tl-status :global([role='tooltip']) {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    z-index: 40;
-    width: max-content;
-    max-width: min(14rem, calc(100vw - 2rem));
-    white-space: normal;
-    margin-top: 0.25rem;
-    padding: 0.25rem 0.5rem;
-    border: 1px solid var(--color-line);
-    border-radius: 0.25rem;
-    background: var(--color-surface);
-    color: var(--color-ink);
-    box-shadow: 0 4px 6px rgb(0 0 0 / 0.1);
-  }
-  @media (prefers-color-scheme: dark) {
-    .tl-status :global([role='tooltip']) {
-      border-color: var(--color-line-dark);
-      background: var(--color-surface-dark);
-      color: var(--color-ink-dark);
     }
   }
 </style>

@@ -993,9 +993,9 @@
   {/if}
 {/snippet}
 
-{#snippet saveState()}
+{#snippet saveState(covered: boolean)}
   {#if autosave}
-    <SaveIndicator status={autosave.status} align="start" />
+    <SaveIndicator status={autosave.status} {covered} align="start" />
   {/if}
 {/snippet}
 

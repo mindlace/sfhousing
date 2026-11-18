@@ -9,8 +9,18 @@ import {
   PER_HOME_SOURCE,
   REFERENCE_NOTE,
   marketBody,
+  homesBy,
   perHomeMethod
 } from './copy';
+import { dayFromUtc } from '$lib/fzp/time';
+
+describe('homesBy', () => {
+  it('says the count and the month, or today', () => {
+    expect(homesBy(12345, dayFromUtc(2040, 4, 1))).toBe('12,345 homes by Apr 2040');
+    expect(homesBy(0, null)).toBe('0 homes by today');
+    expect(homesBy(-12, dayFromUtc(2026, 11, 1))).toBe('−12 homes by Nov 2026');
+  });
+});
 
 describe('perHomeMethod', () => {
   it('replaces the completion-month tail of the per-home entry with PER_HOME_SOURCE', () => {

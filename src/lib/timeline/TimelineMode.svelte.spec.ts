@@ -2,6 +2,7 @@
 // TimelineClient over a fake worker, a recording SimMap stub, and the header slots from a host.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
+import type { SaveStatus } from '$lib/sharing/autosave.svelte';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import axe from 'axe-core';
@@ -9,11 +10,12 @@ import '../../routes/layout.css';
 import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { REAL_ACTUAL } from '$lib/fzp/fixtures/cards';
-import { CALCULATING } from '$lib/fzp/score-view';
-import { dayFromUtc, utcParts } from '$lib/fzp/time';
+import { CALCULATING, fromPolicyText } from '$lib/fzp/score-view';
+import { GOAL } from '$lib/goal/goal';
+import { formatMonthYear } from '$lib/fzp/format';
+import { dayFromUtc, monthStart, utcParts } from '$lib/fzp/time';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { lotsText } from '$lib/paint/rows';
-import { formatCount } from '$lib/scoreboard/format';
 import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { monthFirstDay, monthLastDay } from '$lib/sim/world/months';
@@ -22,11 +24,10 @@ import type { ScoreStatics } from '$lib/sim/world/score/types';
 import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
 import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
-import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING } from './copy';
-import { fillStatusText } from './fill';
+import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, homesBy } from './copy';
 import { filledEndDay, indexOfDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
-import { headerOf } from './results';
+import { headlineAt, headlineSpoken, headlineText } from './results';
 import { dayPct } from './rows';
 import type { Lots } from './session.svelte';
 import {
@@ -39,6 +40,7 @@ import {
 import { chunk, statics as baseStatics } from './test/fixtures';
 import type { Pool } from '$lib/timelapse/types';
 import TimelineModeHost from './test/TimelineModeHost.svelte';
+import { pointerBetween } from './test/pointer';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 
@@ -103,6 +105,8 @@ type Over = Partial<{
   regionHeight: number;
   inspectorOpen: boolean;
   scoreExpanded: boolean;
+  /** The page's save state (the real SaveIndicator), in the header's status slot. */
+  saveStatus: SaveStatus;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -114,6 +118,7 @@ function setup(over: Over = {}) {
     setPolicy?: (p: SimPolicy4) => void;
     setLots?: (l: Lots | null) => void;
     setLotsFailed?: (f: boolean) => void;
+    setSaveStatus?: (s: SaveStatus) => void;
     showResults?: () => Promise<void>;
   } = {};
   const createWorker = vi.fn(() => {
@@ -142,7 +147,8 @@ function setup(over: Over = {}) {
       ...(over.regionHeight ? { regionHeight: over.regionHeight } : {}),
       ...(over.scoreControls ? { scoreControls: over.scoreControls } : {}),
       ...(over.inspectorOpen !== undefined ? { inspectorOpen: over.inspectorOpen } : {}),
-      ...(over.scoreExpanded !== undefined ? { scoreExpanded: over.scoreExpanded } : {})
+      ...(over.scoreExpanded !== undefined ? { scoreExpanded: over.scoreExpanded } : {}),
+      ...(over.saveStatus ? { saveStatus: over.saveStatus } : {})
     }
   });
   return {
@@ -151,6 +157,7 @@ function setup(over: Over = {}) {
     setPolicy: (p: SimPolicy4) => ctl.setPolicy!(p),
     setLots: (l: Lots | null) => ctl.setLots!(l),
     setLotsFailed: (f: boolean) => ctl.setLotsFailed!(f),
+    setSaveStatus: (st: SaveStatus) => ctl.setSaveStatus!(st),
     showResults: () => ctl.showResults!()
   };
 }
@@ -170,6 +177,8 @@ const playButton = () => page.getByTestId('tl-play');
 const scoreBar = () => page.getByTestId('score-bar');
 /** The one live region of the status (rule 32), the same at every width. */
 const statusSlot = () => page.getByTestId('tl-status-live');
+/** The status as shown in the header's slot (beside the invisible sizer). */
+const statusShown = () => page.getByTestId('tl-status-shown');
 const slider = () => page.getByRole('slider', { name: 'Date in the simulation' });
 
 function summary(project?: ProjectCard): ParcelSummary {
@@ -288,30 +297,33 @@ describe('TimelineMode', () => {
     expect(w().all('resyncMap')).toHaveLength(1);
   });
 
-  it('the status slot says Updating while stale, then Forecast filled to …, then nothing', async () => {
+  it('the status slot says Updating while stale, then nothing; no fill text ever shows', async () => {
     const s = await opened(5);
-    const partly = fillStatusText(viewOf([chunk(0, 6)], STATICS));
-    expect(partly).toMatch(/^Forecast filled to \d{4}$/);
-    await expect.element(statusSlot()).toHaveTextContent(partly);
-    emit(filledMsg(1, 6, LAST - 5));
-    await expect.poll(() => statusSlot().element().textContent?.trim()).toBe('');
+    const shown = () => statusShown().element().textContent?.trim();
+    await expect.poll(() => debug().filledThrough).toBe(5);
+    expect(statusSlot().element().textContent?.trim()).toBe('');
+    expect(shown()).toBe('');
+    expect(document.body.textContent).not.toMatch(/Forecast filled/);
 
     s.setPolicy(mk(protect(5)));
     await expect.element(statusSlot()).toHaveTextContent(UPDATING);
+    await expect.poll(shown).toBe(UPDATING);
     // The explanation waits behind the status (rule 31, F12).
     await expect
-      .element(page.getByTestId('tl-status-line').getByRole('button', { name: UPDATING }))
+      .element(page.getByTestId('tl-status').getByRole('button', { name: UPDATING }))
       .toBeInTheDocument();
     expect(debug().stale).toBe(true);
     s.setLots({});
     await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
     emit(compiledMsg(2, STATICS));
     emit(refillMsg(2, 3));
-    const refilling = fillStatusText(viewOf([chunk(0, 3)], STATICS));
-    await expect.element(statusSlot()).toHaveTextContent(refilling);
-    expect(debug().stale).toBe(false);
-    emit(filledMsg(2, 3, LAST - 2));
     await expect.poll(() => statusSlot().element().textContent?.trim()).toBe('');
+    expect(debug().stale).toBe(false);
+    expect(shown()).toBe('');
+    emit(filledMsg(2, 3, LAST - 2));
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    expect(statusSlot().element().textContent?.trim()).toBe('');
+    expect(document.body.textContent).not.toMatch(/Forecast filled/);
   });
 
   it('rows are hatched past the filled end and the hatch moves after a refill', async () => {
@@ -454,14 +466,14 @@ describe('TimelineMode', () => {
     const mode = page.getByTestId('tl-mode').element() as HTMLElement;
     mode.scrollTop = mode.scrollHeight;
     await frame();
-    expect(Math.abs(rectOf('tl-pin').top - rectOf('tl-status-line').bottom)).toBeLessThanOrEqual(1);
+    expect(Math.abs(rectOf('tl-pin').top - rectOf('tl-mode').top)).toBeLessThanOrEqual(1);
     const at = mode.scrollTop;
     (slider().element() as HTMLElement).focus();
     await frame();
     expect(Math.abs(mode.scrollTop - at)).toBeLessThanOrEqual(1);
   });
 
-  it('on a phone the controls, ruler and chart stick under the status line', async () => {
+  it("on a phone the controls, ruler and chart stick at the mode box's top", async () => {
     await page.viewport(390, 760);
     await opened(LAST, { regionHeight: 360 });
     await expect.element(slider()).toBeInTheDocument();
@@ -469,7 +481,7 @@ describe('TimelineMode', () => {
     mode.scrollTop = mode.scrollHeight;
     await frame();
     expect(mode.scrollTop).toBeGreaterThan(0);
-    expect(Math.abs(rectOf('tl-pin').top - rectOf('tl-status-line').bottom)).toBeLessThanOrEqual(1);
+    expect(Math.abs(rectOf('tl-pin').top - rectOf('tl-mode').top)).toBeLessThanOrEqual(1);
     const inView = (r: DOMRect) => {
       expect(r.top).toBeGreaterThanOrEqual(0);
       expect(r.bottom).toBeLessThanOrEqual(760);
@@ -560,20 +572,226 @@ describe('TimelineMode', () => {
     emit(refillMsg(2, 2));
     await expect.element(scoreBar()).toHaveTextContent(CALCULATING);
     emit(filledMsg(2, 2, LAST - 1));
-    const total = headerOf(viewOf([chunk(0, LAST + 1)], STATICS)).total!;
-    await expect.element(scoreBar()).toHaveTextContent(formatCount(total));
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
     expect(debug().stale).toBe(false);
   });
 
-  it('the header shows calculating, then baseline plus the world at lastIndex', async () => {
-    await opened(10);
-    await expect.element(scoreBar()).toHaveTextContent(CALCULATING);
-    emit(filledMsg(1, 11, LAST - 10));
-    const view = viewOf([chunk(0, LAST + 1)], STATICS);
-    const total = view.baseline.completedNet + view.rows[LAST].completedNet;
-    expect(headerOf(view).total).toBe(total);
-    await expect.element(scoreBar()).toHaveTextContent(`${formatCount(total)} homes`);
-    await expect.element(scoreBar()).toHaveTextContent(`by ${utcParts(MONTHS[LAST]).y}`);
+  /** The month index of the playhead's day. */
+  const playheadMonth = () => indexOfDay(MONTHS, debug().day);
+  const FULL = () => viewOf([chunk(0, LAST + 1)], STATICS);
+  /** The header's text at month i, named by the playhead's month (the readout's).
+   *  Nothing is in force (the default document), so it has no effect part. */
+  const textAt = (i: number) =>
+    headlineText({
+      ...headlineAt(FULL(), i, false, false)!,
+      at: monthStart(debug().day),
+      effect: null
+    });
+
+  it('the header reads 0 by today, then follows the playhead month by month', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await opened();
+      await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+      const v = FULL();
+      (slider().element() as HTMLElement).focus();
+      for (let step = 0; step < 2; step++) {
+        const before = debug().day;
+        await userEvent.keyboard('{PageUp}');
+        await expect.poll(() => debug().day).toBeGreaterThan(before);
+        const i = playheadMonth();
+        await expect
+          .element(scoreBar())
+          .toHaveTextContent(homesBy(v.rows[i].completedNet, monthStart(debug().day)));
+        vi.advanceTimersByTime(1000);
+        await expect
+          .poll(() => page.getByTestId('score-live').element().textContent)
+          .toBe(headlineSpoken(textAt(i)));
+      }
+      await userEvent.keyboard('{Home}');
+      await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the headline's month is the readout's, mid-window and at End past the last row", async () => {
+    await opened();
+    const readout = page.getByTestId('tl-readout-label');
+    /** "October 2066" → "Oct 2066". */
+    const short = (long: string) => `${long.slice(0, 3)} ${long.slice(-4)}`;
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}');
+    await expect.poll(() => playheadMonth()).toBeGreaterThan(0);
+    const i = playheadMonth();
+    expect(i).toBeLessThan(LAST);
+    await expect.element(readout).toHaveTextContent(formatMonthYear(debug().day));
+    await expect
+      .element(scoreBar())
+      .toHaveTextContent(homesBy(FULL().rows[i].completedNet, MONTHS[i]));
+    expect(scoreBar().element().textContent).toContain(short(readout.element().textContent!));
+    await userEvent.keyboard('{End}');
+    await expect.poll(() => debug().day).toBe(windowEnd);
+    await expect.element(readout).toHaveTextContent(formatMonthYear(windowEnd));
+    // The day is past the last row's month: that row's numbers, under the readout's month.
+    expect(monthStart(windowEnd)).toBeGreaterThan(MONTHS[LAST]);
+    await expect
+      .element(scoreBar())
+      .toHaveTextContent(homesBy(FULL().rows[LAST].completedNet, monthStart(windowEnd)));
+    expect(scoreBar().element().textContent).toContain(short(readout.element().textContent!));
+  });
+
+  it('nothing in force: no effect in the header and the current-law copy, whatever the worker compares', async () => {
+    // The worker's statics say 'plan' and the plan effect is non-zero; the page's rule decides.
+    await opened(LAST, { withInspector: true });
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}');
+    await expect.poll(() => debug().day).toBeGreaterThan(asOf);
+    const i = playheadMonth();
+    expect(STATICS.compare).toBe('plan');
+    expect(FULL().planEffect[i].completedNetNew).not.toBe(0);
+    await expect.element(scoreBar()).toHaveTextContent(textAt(i).main);
+    expect(page.getByTestId('score-delta').elements()).toEqual([]);
+    await expect.element(page.getByTestId('score-detail')).toHaveTextContent(/of the goal$/);
+    const results = page.getByTestId('tl-results');
+    await expect.element(results).toHaveTextContent('What current law added');
+    expect(results.element().textContent).not.toContain('your policy');
+  });
+
+  it('a policy in force: the header shows the plan effect and Results the your-policy copy', async () => {
+    await opened(LAST, { withInspector: true, initialPolicy: mk(protect(5)) });
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}');
+    await expect.poll(() => debug().day).toBeGreaterThan(asOf);
+    const i = playheadMonth();
+    await expect
+      .element(page.getByTestId('score-delta'))
+      .toHaveTextContent(fromPolicyText(FULL().planEffect[i].completedNetNew));
+    await expect
+      .element(page.getByTestId('tl-results'))
+      .toHaveTextContent('What your policy added');
+  });
+
+  it('while stale the header shows the held numbers, dimmed, not calculating', async () => {
+    const s = await opened();
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}{PageUp}');
+    await expect.poll(() => playheadMonth()).toBeGreaterThan(1);
+    const i = playheadMonth();
+    await expect.element(scoreBar()).toHaveTextContent(textAt(i).main);
+    const text = scoreBar().element().textContent;
+    s.setPolicy(mk(protect(5)));
+    const box = page.getByTestId('score-box');
+    await expect.element(box).toHaveAttribute('data-stale', 'true');
+    expect(scoreBar().element().textContent).toBe(text);
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 0));
+    await expect.poll(() => debug().filledThrough).toBe(-1);
+    expect(scoreBar().element().textContent).toBe(text);
+    expect(scoreBar().element().textContent).not.toContain(CALCULATING);
+    emit(filledMsg(2, 0, LAST + 1));
+    await expect.poll(() => debug().stale).toBe(false);
+    expect(box.element().hasAttribute('data-stale')).toBe(false);
+    await expect
+      .element(scoreBar())
+      .toHaveTextContent(homesBy(FULL().rows[i].completedNet, monthStart(debug().day)));
+  });
+
+  it('right after an edit with the playhead at today the header reads 0 by today', async () => {
+    const s = await opened();
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    s.setPolicy(mk(protect(5)));
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 0));
+    await expect.poll(() => debug().filledThrough).toBe(-1);
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    expect(scoreBar().element().textContent).not.toContain(CALCULATING);
+  });
+
+  // The session holds the view from before a refill until the fill is back to the playhead's
+  // month, so a withdrawn month reads the held numbers, dimmed; "calculating" shows only where no
+  // view covers the month (the provisional open above).
+  it('a refill that withdraws the playhead month holds its numbers, dimmed, until filled again', async () => {
+    await opened();
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}{PageUp}');
+    await expect.poll(() => playheadMonth()).toBeGreaterThan(1);
+    const i = playheadMonth();
+    await expect.element(scoreBar()).toHaveTextContent(textAt(i).main);
+    emit(refillMsg(1, 1));
+    await expect.poll(() => debug().filledThrough).toBe(0);
+    await expect.element(page.getByTestId('score-box')).toHaveAttribute('data-stale', 'true');
+    expect(scoreBar().element().textContent).toContain(textAt(i).main);
+    emit(filledMsg(1, 1, LAST));
+    await expect.poll(() => debug().stale).toBe(false);
+    expect(page.getByTestId('score-box').element().hasAttribute('data-stale')).toBe(false);
+    await expect.element(scoreBar()).toHaveTextContent(textAt(i).main);
+  });
+
+  it('with nothing filled and the playhead at today the header reads 0 by today', async () => {
+    await opened();
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    emit(refillMsg(1, 0));
+    await expect.poll(() => debug().filledThrough).toBe(-1);
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    expect(scoreBar().element().textContent).not.toContain(CALCULATING);
+  });
+
+  // No wall clock: the playhead is dragged in steps of a few days, so most steps stay inside a
+  // calendar month whatever the frame rate.
+  it('the header writes the DOM only on the steps where the playhead changes month', async () => {
+    await opened();
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    expect(debug().playing).toBe(false);
+    const track = slider().element() as HTMLElement;
+    const r = track.getBoundingClientRect();
+    const xOf = (d: Day) => r.left + ((d - asOf) / (windowEnd - asOf)) * r.width;
+    const pointer = (type: string, d: Day) =>
+      track.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          button: 0,
+          pointerId: 1,
+          pointerType: 'mouse',
+          clientX: xOf(d),
+          clientY: r.top + r.height / 2
+        })
+      );
+    const frame = () => new Promise((res) => requestAnimationFrame(() => res(null)));
+    const box = page.getByTestId('score-box').element();
+    let records = 0;
+    const obs = new MutationObserver((m) => (records += m.length));
+    obs.observe(box, { childList: true, characterData: true, subtree: true });
+    /** Mutation records so far, the queued ones included. */
+    const written = () => records + obs.takeRecords().length;
+
+    const from = MONTHS[2] + 1;
+    pointer('pointerdown', from);
+    await expect.poll(() => debug().day).toBe(from);
+    await expect.element(scoreBar()).toHaveTextContent(textAt(2).main);
+    let wrote = written();
+    let changes = 0;
+    for (let d = from + 3; d < MONTHS[5] + 10; d += 3) {
+      const month = monthStart(debug().day);
+      pointer('pointermove', d);
+      await expect.poll(() => debug().day).toBe(d);
+      await frame();
+      const now = written();
+      const crossed = monthStart(d) !== month;
+      if (crossed) changes++;
+      // The header's text changes exactly on the steps that cross into another month.
+      expect({ d, crossed, wrote: now > wrote }).toEqual({ d, crossed, wrote: crossed });
+      wrote = now;
+    }
+    pointer('pointerup', MONTHS[5] + 10);
+    obs.disconnect();
+    expect(changes).toBe(3);
+    await expect.element(scoreBar()).toHaveTextContent(textAt(playheadMonth()).main);
+    expect(debug().playing).toBe(false);
   });
 
   it('an open card is dimmed while stale and asks again once the refill covers its day', async () => {
@@ -692,22 +910,29 @@ describe('TimelineMode', () => {
     expect(debug().stale).toBe(true);
   });
 
-  it('the "What … added" label is the shown view\'s: it changes with its numbers', async () => {
+  it("the comparison wording is the shown numbers' document's: it changes with them", async () => {
     const s = await opened(LAST, { withInspector: true });
     const results = page.getByTestId('tl-results');
-    await expect.element(results).toHaveTextContent('What your policy added');
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}');
+    await expect.poll(() => debug().day).toBeGreaterThan(asOf);
+    await expect.element(results).toHaveTextContent('What current law added');
+    expect(page.getByTestId('score-delta').elements()).toEqual([]);
     s.setPolicy(mk(protect(5)));
     s.setLots({});
     await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
-    // The first policy in force flips the comparison; its numbers are not in yet.
-    emit(compiledMsg(2, { ...STATICS, compare: 'preFzp' }));
+    emit(compiledMsg(2, STATICS));
     emit(refillMsg(2, 0));
     await expect.poll(() => debug().filledThrough).toBe(-1);
+    // Updating: the held numbers are the nothing-in-force document's, and so is the wording.
     expect(debug().stale).toBe(true);
-    await expect.element(results).toHaveTextContent('What your policy added');
+    expect(debug().policy).toEqual(mk(protect(5)));
+    await expect.element(results).toHaveTextContent('What current law added');
+    expect(page.getByTestId('score-delta').elements()).toEqual([]);
     emit(filledMsg(2, 0, LAST + 1));
     await expect.poll(() => debug().stale).toBe(false);
-    await expect.element(results).toHaveTextContent('What current law added');
+    await expect.element(results).toHaveTextContent('What your policy added');
+    await expect.element(page.getByTestId('score-delta')).toHaveTextContent(/from your policy$/);
   });
 
   it('while stale the money rows read the held document, not the edited one', async () => {
@@ -834,6 +1059,37 @@ describe('TimelineMode', () => {
     expect(chart.bottom).toBeLessThanOrEqual(top + 0.5);
   });
 
+  it('the chart step is the goal amount minus the homes built before today', async () => {
+    // Month 0 is Jan 2030, so the goal's deadline (Jan 2031) is month 12 of the window.
+    const need = 40;
+    const base = baseStatics({ lastIndex: LAST });
+    const statics: ScoreStatics = {
+      ...base,
+      asOf: dayFromUtc(2030, 1, 1),
+      months: Array.from({ length: LAST + 1 }, (_, i) => dayFromUtc(2030, 1 + i, 1)),
+      baseline: { ...base.baseline, units: GOAL.amount - need }
+    };
+    setup({});
+    await expect.poll(() => workers.length).toBe(1);
+    await expect.poll(() => w().lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, statics));
+    emit(filledMsg(1, 0, LAST + 1));
+    const target = page.getByTestId('chart-target');
+    await expect.element(target).toBeInTheDocument();
+    // The step is drawn, so the stacked legend names the goal.
+    const legend = page.getByTestId('tl-chart-legend').element();
+    expect([...legend.querySelectorAll('li')].map((li) => li.textContent!.trim())).toEqual([
+      'Homes completed',
+      GOAL.name
+    ]);
+    // The line's last point sits at the top: the most homes any month has (3 * LAST + 1).
+    const d = page.getByTestId('chart-line-later').element().getAttribute('d')!;
+    const lastY = Number(/L[\d.-]+,([\d.-]+)$/.exec(d)![1]);
+    expect(lastY).toBeCloseTo(2, 1);
+    const yMax = 3 * LAST + 1;
+    expect(Number(target.element().getAttribute('y1'))).toBeCloseTo(98 - (need / yMax) * 96, 1);
+  });
+
   it('while stale the map canvas, Results, card and header dim; their controls keep full contrast', async () => {
     const s = await opened(LAST, { withInspector: true });
     const canvas = document.createElement('canvas');
@@ -847,7 +1103,7 @@ describe('TimelineMode', () => {
     await expect
       .element(page.getByTestId('tl-card').getByRole('heading', { level: 2 }))
       .toBeInTheDocument();
-    const net = page.getByTestId('fzp-net');
+    const net = page.getByTestId('fzp-built');
     await expect.element(net).toBeInTheDocument();
     const fresh = getComputedStyle(net.element()).color;
 
@@ -877,95 +1133,267 @@ describe('TimelineMode', () => {
   });
 
   it('the status slot changes at most once a second; the latest text goes out after the gap', async () => {
+    const s = await opened(LAST, { statusMs: 1000 });
+    const live = () => statusSlot().element().textContent?.trim();
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     try {
-      setup({ statusMs: 1000 });
-      await tick();
-      expect(workers).toHaveLength(1);
-      const live = () => statusSlot().element().textContent?.trim();
-      emit(compiledMsg(1, STATICS));
-      emit(filledMsg(1, 0, 1));
-      await tick();
-      const first = fillStatusText(viewOf([chunk(0, 1)], STATICS));
-      const second = fillStatusText(viewOf([chunk(0, LAST)], STATICS));
-      expect(first).not.toBe(second);
-      expect(live()).toBe(first);
-      emit(filledMsg(1, 1, LAST - 1));
-      await tick();
-      expect(live()).toBe(first);
-      emit(filledMsg(1, LAST, 1));
-      await tick();
-      expect(live()).toBe(first);
+      s.setPolicy(mk(protect(5)));
+      await expect.poll(live).toBe(UPDATING);
+      s.setLots({});
+      await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+      emit(compiledMsg(2, STATICS));
+      emit(refillMsg(2, 3));
+      await expect.poll(() => debug().stale).toBe(false);
+      expect(live()).toBe(UPDATING);
       vi.advanceTimersByTime(999);
       await tick();
-      expect(live()).toBe(first);
+      expect(live()).toBe(UPDATING);
       vi.advanceTimersByTime(1);
       await tick();
-      // The text wanted in between never showed: the latest goes out.
+      // The text wanted in the gap goes out when it ends.
       expect(live()).toBe('');
     } finally {
       vi.useRealTimers();
     }
   });
 
-  for (const [width, place] of [
-    [1280, 'line'],
-    [1600, 'header']
-  ] as const) {
-    it(`at ${width} px exactly one live region speaks the status; it shows in the ${place}`, async () => {
+  for (const width of [375, 1280, 1600]) {
+    it(`at ${width} px exactly one live region speaks the status; it shows in the header`, async () => {
       await page.viewport(width, 900);
-      await opened(5);
-      const partly = fillStatusText(viewOf([chunk(0, 6)], STATICS));
-      await expect.element(statusSlot()).toHaveTextContent(partly);
+      const s = await opened();
+      s.setPolicy(mk(protect(5)));
+      await expect.element(statusSlot()).toHaveTextContent(UPDATING);
       const speaking = [...document.querySelectorAll('[role="status"], [aria-live]')].filter(
-        (el) => el.textContent?.trim() === partly
+        (el) => el.textContent?.trim() === UPDATING
       );
       expect(speaking).toHaveLength(1);
-      const header = page.getByTestId('tl-status');
-      const line = page.getByTestId('tl-status-line');
-      await expect.element(place === 'header' ? header : line).toBeVisible();
-      await expect.element(place === 'header' ? header : line).toHaveTextContent(partly);
-      await expect.element(place === 'header' ? line : header).not.toBeVisible();
+      const slot = document.querySelector('[data-header-status]')!;
+      const status = page.getByTestId('tl-status');
+      await expect.element(status).toBeVisible();
+      expect(slot.contains(status.element())).toBe(true);
+      await expect.element(statusShown()).toBeVisible();
+      await expect.element(statusShown()).toHaveTextContent(UPDATING);
+      expect(document.querySelector('[data-testid=tl-status-line]')).toBeNull();
     });
   }
 
-  it('below 2xl the line under the bar keeps its height as the status comes and goes', async () => {
-    const s = await opened(5);
-    const line = page.getByTestId('tl-status-line');
-    await expect.element(line).toBeVisible();
-    const filling = line.element().getBoundingClientRect().height;
-    expect(filling).toBeGreaterThanOrEqual(24);
-    emit(filledMsg(1, 6, LAST - 5));
-    await expect.poll(() => statusSlot().element().textContent?.trim()).toBe('');
-    expect(line.element().getBoundingClientRect().height).toBe(filling);
-    s.setPolicy(mk(protect(5)));
-    await expect.element(statusSlot()).toHaveTextContent(UPDATING);
-    expect(line.element().getBoundingClientRect().height).toBe(filling);
-    // Just under the header bar, above the map.
-    const header = page.getByTestId('header-status').element().parentElement!;
-    expect(line.element().getBoundingClientRect().top).toBeGreaterThanOrEqual(
-      header.getBoundingClientRect().bottom - 0.5
-    );
+  /** The boxes that must hold still as the status comes and goes. */
+  function stillBoxes(): Record<string, DOMRect> {
+    const name = page.getByRole('banner').getByRole('link', { name: 'SF Housing Simulator' });
+    const lead = name.elements().length
+      ? name.element()
+      : page.getByRole('button', { name: 'Menu' }).element();
+    const out: Record<string, DOMRect> = { lead: lead.getBoundingClientRect() };
+    for (const id of ['score-bar', 'tl-map', 'tl-dock', 'tl-pin'])
+      out[id] = page.getByTestId(id).element().getBoundingClientRect();
+    return out;
+  }
+  function same(a: Record<string, DOMRect>, b: Record<string, DOMRect>): void {
+    for (const k of Object.keys(a))
+      for (const side of ['left', 'top', 'width', 'height'] as const)
+        expect(Math.abs(a[k][side] - b[k][side]), `${k} ${side}`).toBeLessThanOrEqual(0.5);
+  }
+
+  for (const width of [375, 768, 1280]) {
+    it(`at ${width} px nothing moves when Updating comes and goes`, async () => {
+      await page.viewport(width, 900);
+      // A policy in force throughout: the first one widens the score (its effect line), apart
+      // from the status.
+      const s = await opened(LAST, { initialPolicy: mk(protect(5)) });
+      await expect.element(scoreBar()).toBeVisible();
+      await frame();
+      const before = stillBoxes();
+      s.setPolicy(mk(protect(3)));
+      await expect.element(statusShown()).toHaveTextContent(UPDATING);
+      await expect.element(statusShown()).toBeVisible();
+      await frame();
+      same(before, stillBoxes());
+      s.setLots({});
+      await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+      emit(compiledMsg(2, STATICS));
+      emit(refillMsg(2, 0));
+      emit(filledMsg(2, 0, LAST + 1));
+      await expect.poll(() => statusShown().element().textContent?.trim()).toBe('');
+      await frame();
+      same(before, stillBoxes());
+    });
+  }
+
+  for (const width of [375, 1280]) {
+    it(`at ${width} px Updating takes the save state's place in one cell`, async () => {
+      await page.viewport(width, 900);
+      const s = await opened(LAST, { saveStatus: 'saving' });
+      const saving = page.getByTestId('save-text');
+      await expect.element(saving).toBeVisible();
+      s.setPolicy(mk(protect(5)));
+      await expect.element(statusShown()).toHaveTextContent(UPDATING);
+      await expect.element(statusShown()).toBeVisible();
+      await expect.element(saving).not.toBeVisible();
+      const a = saving.element().getBoundingClientRect();
+      const b = statusShown().element().getBoundingClientRect();
+      expect(Math.abs(a.left - b.left)).toBeLessThanOrEqual(0.5);
+    });
+  }
+
+  for (const width of [375, 1280]) {
+    it(`at ${width} px with autosave off an update covers the chip; nothing moves; the popover closes`, async () => {
+      await page.viewport(width, 900);
+      // A policy in force throughout, so the score's effect line is there before and after.
+      const s = await opened(LAST, { saveStatus: 'off', initialPolicy: mk(protect(5)) });
+      const chip = page.getByRole('button', { name: 'Autosave off' });
+      await expect.element(chip).toBeVisible();
+      const chipEl = chip.element() as HTMLButtonElement;
+      const pop = document.getElementById(chipEl.getAttribute('aria-controls')!)!;
+      // A real press: nothing of "Updating"'s (empty) cell sits over the chip.
+      await chip.click();
+      await expect.poll(() => pop.hidden).toBe(false);
+      await frame();
+      const lead =
+        width >= 1024
+          ? page.getByRole('link', { name: 'About', exact: true })
+          : page.getByRole('button', { name: 'Menu' });
+      const rects = () => ({
+        cell: page.getByTestId('tl-status-group').element().getBoundingClientRect().toJSON(),
+        score: scoreBar().element().getBoundingClientRect().toJSON(),
+        other: lead.element().getBoundingClientRect().toJSON()
+      });
+      const off = rects();
+
+      // Focus stays on the chip (a keyboard user pressing Ctrl+Z there): the edit's cover moves
+      // it to "Updating"'s explanation, in the same place.
+      chipEl.focus();
+      expect(document.activeElement).toBe(chipEl);
+      s.setPolicy(mk(protect(3)));
+      await expect.element(statusShown()).toHaveTextContent(UPDATING);
+      await expect.element(statusShown()).toBeVisible();
+      const updating = page.getByTestId('tl-status').getByRole('button', { name: UPDATING });
+      await expect.poll(() => document.activeElement).toBe(updating.element());
+      // Only "Updating" shows; the chip is out of the tab order and its popover closed.
+      expect(chipEl.checkVisibility({ visibilityProperty: true })).toBe(false);
+      expect(chipEl.closest('[inert]')).not.toBeNull();
+      chipEl.focus();
+      expect(document.activeElement).not.toBe(chipEl);
+      expect(pop.hidden).toBe(true);
+      await frame();
+      expect(rects()).toEqual(off);
+
+      s.setLots({});
+      await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+      emit(compiledMsg(2, STATICS));
+      emit(refillMsg(2, 0));
+      emit(filledMsg(2, 0, LAST + 1));
+      await expect.poll(() => statusShown().element().textContent?.trim()).toBe('');
+      await expect.element(chip).toBeVisible();
+      // Focus was on "Updating"'s explanation: it goes back to the chip.
+      await expect.poll(() => document.activeElement).toBe(chipEl);
+      await frame();
+      expect(rects()).toEqual(off);
+      // Back, focusable, and its popover works; autosave off is not announced again.
+      expect(pop.hidden).toBe(true);
+      await chip.click();
+      await expect.poll(() => pop.hidden).toBe(false);
+      expect(page.getByTestId('save-live').element().textContent?.trim()).toBe('');
+    });
+  }
+
+  /** Ends the stale spell of revision `rev`: compiled, refilled and filled. */
+  async function settle(s: ReturnType<typeof setup>, rev: number): Promise<void> {
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(rev);
+    emit(compiledMsg(rev, STATICS));
+    emit(refillMsg(rev, 0));
+    emit(filledMsg(rev, 0, LAST + 1));
+    await expect.poll(() => statusShown().element().textContent?.trim()).toBe('');
+  }
+
+  it('save-state changes under Updating are announced once, from an exposed region', async () => {
+    const s = await opened(LAST, { saveStatus: 'saving', initialPolicy: mk(protect(5)) });
+    const live = page.getByTestId('save-live').element();
+    const said: string[] = [];
+    const watch = new MutationObserver(() => {
+      const t = live.textContent?.trim() ?? '';
+      if (t) said.push(t);
+    });
+    watch.observe(live, { childList: true, characterData: true, subtree: true });
+    const exposed = () =>
+      !live.closest('[aria-hidden="true"], [inert]') &&
+      getComputedStyle(live).visibility === 'visible';
+    try {
+      s.setPolicy(mk(protect(3)));
+      await expect.element(statusShown()).toHaveTextContent(UPDATING);
+      s.setSaveStatus('off');
+      await expect.poll(() => said).toEqual(['Autosave off']);
+      expect(exposed()).toBe(true);
+      await settle(s, 2);
+      await expect.element(page.getByRole('button', { name: 'Autosave off' })).toBeVisible();
+      await frame();
+      // The cover lifting announces nothing.
+      expect(said).toEqual(['Autosave off']);
+
+      s.setPolicy(mk(protect(2)));
+      await expect.element(statusShown()).toHaveTextContent(UPDATING);
+      s.setSaveStatus('saved');
+      await expect.poll(() => said).toEqual(['Autosave off', 'Autosave on']);
+      expect(exposed()).toBe(true);
+      await settle(s, 3);
+      await frame();
+      expect(said).toEqual(['Autosave off', 'Autosave on']);
+    } finally {
+      watch.disconnect();
+    }
   });
 
-  it('the live region holds only the status text; its explanation sits outside it', async () => {
+  it('with no save-state control showing, focus on Updating goes to the score when it ends', async () => {
+    const s = await opened(LAST, { saveStatus: 'saved', initialPolicy: mk(protect(5)) });
+    s.setPolicy(mk(protect(3)));
+    const updating = page.getByTestId('tl-status').getByRole('button', { name: UPDATING });
+    await expect.element(updating).toBeVisible();
+    (updating.element() as HTMLElement).focus();
+    expect(document.activeElement).toBe(updating.element());
+    await settle(s, 2);
+    await expect.poll(() => document.activeElement).toBe(scoreBar().element());
+  });
+
+  it('the live region holds only the status text; its explanation opens from the header slot', async () => {
     await page.viewport(390, 760);
     const s = await opened();
     s.setPolicy(mk(protect(5)));
     const live = statusSlot();
     await expect.element(live).toHaveTextContent(UPDATING);
-    const slot = page.getByTestId('tl-status-line').element();
-    const before = slot.getBoundingClientRect();
-    await page.getByTestId('tl-status-line').getByRole('button', { name: UPDATING }).click();
+    const header = page.getByRole('banner').element();
+    const before = header.getBoundingClientRect();
+    const scrollW = header.scrollWidth;
+    await page.getByTestId('tl-status').getByRole('button', { name: UPDATING }).click();
     const tip = page.getByRole('tooltip');
     await expect.element(tip).toHaveTextContent(STALE_NOTE);
     expect(live.element().contains(tip.element())).toBe(false);
     expect(live.element().querySelector('button')).toBeNull();
     expect(live.element().textContent?.trim()).toBe(UPDATING);
-    // Open, it does not widen or deepen the line under the bar.
-    const after = slot.getBoundingClientRect();
+    // Open, it neither widens nor deepens the header: it hangs under the slot.
+    const after = header.getBoundingClientRect();
     expect(after.width).toBe(before.width);
     expect(after.height).toBe(before.height);
+    expect(header.scrollWidth).toBe(scrollW);
+    expect(tip.element().getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      statusShown().element().getBoundingClientRect().bottom
+    );
+  });
+
+  it("Updating's explanation stays open as the pointer stops between it and the status (WCAG 1.4.13)", async () => {
+    const s = await opened();
+    s.setPolicy(mk(protect(5)));
+    const updating = page.getByTestId('tl-status').getByRole('button', { name: UPDATING });
+    await expect.element(updating).toBeVisible();
+    await userEvent.hover(updating);
+    const tip = page.getByRole('tooltip');
+    await expect.element(tip).toHaveTextContent(STALE_NOTE);
+    const below = updating.element().getBoundingClientRect().bottom;
+    expect(tip.element().getBoundingClientRect().top - below).toBeGreaterThan(1);
+    await pointerBetween(tip, below);
+    await expect.element(tip).toBeVisible();
+    await userEvent.hover(tip);
+    await expect.element(tip).toHaveTextContent(STALE_NOTE);
   });
 
   it('the header score controls the inspector only while it shows', async () => {
@@ -1035,10 +1463,10 @@ describe('TimelineMode', () => {
     });
   }
 
-  /** The pinned block's scroll box: tl-lanes from md, tl-mode below md (under the status line). */
+  /** The pinned block's scroll box: tl-lanes from md, tl-mode below md. */
   function port(phone: boolean): { top: number; bottom: number } {
     const r = box(phone ? 'tl-mode' : 'tl-lanes');
-    return { top: phone ? box('tl-status-line').bottom : r.top, bottom: r.bottom };
+    return { top: r.top, bottom: r.bottom };
   }
 
   // WCAG 2.2 2.4.11 at 400% zoom (320x256) and 200% (960x540): a block that would leave too
@@ -1109,7 +1537,9 @@ describe('TimelineMode', () => {
     const lab = legend.parentElement!.getBoundingClientRect();
     expect(lab.width).toBe(168);
     const names = [...legend.querySelectorAll('li')].map((li) => li.textContent!.trim());
-    expect(names).toEqual(['Homes completed', 'State target']);
+    // The fixture's 24 months end before the goal's deadline: no step, so no goal entry.
+    expect(page.getByTestId('chart-target').elements()).toEqual([]);
+    expect(names).toEqual(['Homes completed']);
     for (const li of legend.querySelectorAll('li')) {
       expect(li.getBoundingClientRect().right).toBeLessThanOrEqual(lab.right);
       expect(li.scrollWidth).toBeLessThanOrEqual(li.clientWidth);
@@ -1132,7 +1562,7 @@ describe('TimelineMode', () => {
     );
     expect(labels).toHaveLength(1);
     expect(legend.contains(labels[0])).toBe(true);
-    await expect.element(fig).toHaveAccessibleName('Net new homes by month');
+    await expect.element(fig).toHaveAccessibleName('Homes completed');
     const res = await axe.run(page.getByTestId('tl-pin').element(), {
       runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
     });
@@ -1147,7 +1577,7 @@ describe('TimelineMode', () => {
     const lab = page.getByTestId('tl-pin').element().querySelector('.chart-lab')!;
     expect(lab.textContent!.trim()).toBe('Homes completed');
     const fig = page.getByTestId('tl-lanes').getByRole('figure');
-    await expect.element(fig).toHaveAccessibleName('Net new homes by month');
+    await expect.element(fig).toHaveAccessibleName('Homes completed');
     const under = fig.element().querySelector('.legend')!;
     expect(getComputedStyle(under).display).not.toBe('none');
     expect(page.getByTestId('chart-svg').element().getBoundingClientRect().height).toBe(96);

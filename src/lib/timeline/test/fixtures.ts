@@ -6,6 +6,7 @@ import type {
   SeriesChunk,
   TimelineView
 } from '$lib/sim/world/score/types';
+import { dayFromUtc } from '$lib/fzp/time';
 import type { PoolKind } from '$lib/timelapse/types';
 
 /** Score statics with `lastIndex + 1` months (default 23); with `finance`, empty limits and debts. */
@@ -113,4 +114,12 @@ export function cut(view: TimelineView, n: number): TimelineView {
     tierTargets: view.tierTargets?.slice(0, k) ?? null,
     tiers: view.tiers?.slice(0, k) ?? null
   };
+}
+
+/**
+ * The view with its months on calendar month starts (Nov 2026 on). `statics()` spaces months 30
+ * days apart, so a goal deadline placed at `months[k]` would land a calendar month early.
+ */
+export function calendarMonths(view: TimelineView): TimelineView {
+  return { ...view, months: view.months.map((_, i) => dayFromUtc(2026, 11 + i, 1)) };
 }

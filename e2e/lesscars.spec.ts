@@ -24,7 +24,7 @@ import { headlineText } from '../src/lib/lesscars/summary-view';
 import { formatCount } from '../src/lib/scoreboard/format';
 import { SITES_CELL } from '../src/lib/sim/lesscars/builds';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
+import { expectAboutReachable, expectNoFooter, expectPhoneHeaderFits } from './helpers/chrome';
 import { slider } from './helpers/run';
 import {
   FRAME,
@@ -588,6 +588,15 @@ test.describe('the page on fixture-0', () => {
     await noScroll();
     await expectNoFooter(page);
     await expectAboutReachable(page);
+  });
+
+  test('375 px: the header fits in 48 px and the site name waits in the Menu', async ({
+    page,
+    isMobile
+  }) => {
+    test.skip(!isMobile, 'mobile project only');
+    await expect(page.getByTestId('lc-headline')).toBeVisible();
+    await expectPhoneHeaderFits(page);
   });
 });
 

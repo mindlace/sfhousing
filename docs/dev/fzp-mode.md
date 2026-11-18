@@ -50,7 +50,7 @@ The page always opens paused, so tests get a stable day without any media emulat
 
 ## Layout variables
 
-`--map-controls-br-block-size` is set by `SimMap` ([map-interfaces.md](map-interfaces.md)); the card on a phone sits above it (`bottom-[calc(var(--map-controls-br-block-size,60px)+8px)]`) and a tall card is capped by it. `--dock-w` and `--fzp-scrubber-h` were `Dock`'s and `FzpMode`'s; `/sim` sets neither. The notice stack (`NoticePills`, [sim-page.md](sim-page.md)) is an overlay at the map's top from md and in flow below it; the header, status line and timeline layout is [timeline-ui.md](timeline-ui.md).
+`--map-controls-br-block-size` is set by `SimMap` ([map-interfaces.md](map-interfaces.md)); the card on a phone sits above it (`bottom-[calc(var(--map-controls-br-block-size,60px)+8px)]`) and a tall card is capped by it. `--dock-w` and `--fzp-scrubber-h` were `Dock`'s and `FzpMode`'s; `/sim` sets neither. The notice stack (`NoticePills`, [sim-page.md](sim-page.md)) is an overlay at the map's top from md and in flow below it; the header, its status slot and the timeline layout is [timeline-ui.md](timeline-ui.md).
 
 ## Props `TimelineMode` keeps from `FzpMode`
 

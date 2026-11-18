@@ -106,16 +106,6 @@ export function scrubMarkers(score: TimelineScore): Marker[] {
   return markers;
 }
 
-/** The header score bar: the net new homes at the scrubbed month (`at.total`). */
-export function homesAdded(at: ScoreAt): string {
-  return `${formatCount(at.total)} homes added`;
-}
-
-/** The score bar's sr-only live-region text once the day settles. */
-export function homesAddedBy(day: Day, at: ScoreAt): string {
-  return `${homesAdded(at)} by ${formatMonthYear(day)}`;
-}
-
 /** The /sim header delta: "+1,234 from your policy", "−56 from your policy" (U+2212), "+0 …". */
 export function fromPolicyText(n: number): string {
   return `${n < 0 ? '' : '+'}${formatCount(n)} from your policy`;
@@ -126,12 +116,7 @@ export function vsFzpText(n: number): string {
   return `vs FZP ${n < 0 ? '' : '+'}${formatCount(n)}`;
 }
 
-/** "8,805 homes added since Jan 2021": `at.total` since `score.baseline.since`. */
-export function sinceText(score: TimelineScore, at: ScoreAt): string {
-  return `${homesAdded(at)} since ${formatShortMonthYear(score.baseline.since)}`;
-}
-
-/** "of which 8,805 built by today": `at.actual`. */
-export function builtByTodayText(at: ScoreAt): string {
-  return `of which ${formatCount(at.actual)} built by today`;
+/** '15,234 homes built from Jun 2022 count toward the goal.' */
+export function builtTowardGoalText(baseline: TimelineScore['baseline']): string {
+  return `${formatCount(baseline.completedNet)} homes built from ${formatShortMonthYear(baseline.since)} count toward the goal.`;
 }

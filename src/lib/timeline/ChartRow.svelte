@@ -1,18 +1,19 @@
 <!--
-  The chart row (rule 4, rule 28): the homes completed by month as one heavy line and the state
-  target as a dashed marker at its deadline. The part after `index` is drawn dashed at full colour
+  The chart row (rule 4, rule 28): the homes completed by month as one heavy line and the goal
+  (`GOAL`) as a dashed marker at its deadline, while its step falls in the window. The part after `index` is drawn dashed at full colour
   (3:1 holds); nothing is drawn past `filledThrough`. Hover or focus of a month, and Left and Right
   on the focused overlay, read out that month's homes. The plot is 96 px tall below md and 64 px
   from md, where the legend moves to the label column; 40 px from md on a viewport 820 px tall or
-  less. The figcaption points to the Results table as the text alternative.
+  less. The sr-only figcaption says what the chart shows and that the month slider reads out each
+  month.
 -->
 <script lang="ts">
   import { COLORS } from '$lib/fzp/chart';
-  import { formatMonthYear } from '$lib/fzp/format';
-  import { formatCount } from '$lib/scoreboard';
+  import { GOAL } from '$lib/goal/goal';
   import type { TimelineView } from '$lib/sim/world/score/types';
   import type { Day } from '$lib/timelapse/time';
   import { indexOfDay } from './playhead';
+  import { homesBy } from './copy';
   import ChartLegend from './ChartLegend.svelte';
   import { dayPct } from './rows';
 
@@ -23,7 +24,7 @@
     view: TimelineView | null;
     /** The playhead's calendar month. */
     index: number;
-    /** The state target: its deadline's month and its homes. */
+    /** The goal: its deadline's month and the homes still needed (goalStep). */
     target: { deadlineIndex: number; units: number } | null;
   }
 
@@ -32,8 +33,6 @@
   const W = 1000;
   const H = 100;
   const last = $derived(view?.filledThrough ?? -1);
-  /** The homes already completed at the dataset date: added, as the headline counts them. */
-  const base = $derived(view?.baseline.completedNet ?? 0);
   const x = (i: number) => (dayPct(view!.months[i], asOf, windowEnd) / 100) * W;
 
   const yMax = $derived.by(() => {
@@ -44,7 +43,7 @@
   });
   const yMin = $derived.by(() => {
     if (!view || last < 0) return 0;
-    let m = Math.min(0, base);
+    let m = 0;
     for (let i = 0; i <= last; i++) m = Math.min(m, homes(i));
     return m;
   });
@@ -61,14 +60,15 @@
 
   // The solid part runs through the playhead's month, the dashed part from there on.
   const split = $derived(Math.min(Math.max(index, 0), last));
-  const homes = (i: number) => base + view!.rows[i].completedNet;
+  /** Homes completed from today, as the headline counts them. */
+  const homes = (i: number) => view!.rows[i].completedNet;
 
   let focusAt = $state<number | null>(null);
   let hoverAt = $state<number | null>(null);
   const active = $derived(hoverAt ?? focusAt);
 
   function summary(i: number): string {
-    return `${formatMonthYear(view!.months[i])}: ${formatCount(homes(i))} homes completed`;
+    return homesBy(homes(i), view!.months[i]);
   }
 
   let overlay: HTMLElement | undefined = $state();
@@ -95,11 +95,12 @@
     focusAt = next;
   }
 
-  const CAPTION =
-    'Homes completed by month and the state target; the Results table has the numbers.';
+  const caption = $derived(
+    `Homes completed from today, by month${target ? `, and the ${GOAL.name} as the homes still needed by its deadline` : ''}. The month slider reads out each month.`
+  );
 </script>
 
-<figure class="sfh-chart-row m-0" aria-label="Net new homes by month">
+<figure class="sfh-chart-row m-0" aria-label="Homes completed">
   <div class="plot relative">
     <svg
       viewBox="0 0 {W} {H}"
@@ -195,8 +196,8 @@
     {/if}
   </div>
   <!-- From md the legend sits in the label column beside the plot (Timeline). -->
-  <ChartLegend class="md:hidden" />
-  <figcaption class="sr-only">{CAPTION}</figcaption>
+  <ChartLegend class="md:hidden" goal={target !== null} />
+  <figcaption class="sr-only">{caption}</figcaption>
 </figure>
 
 <style>

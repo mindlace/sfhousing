@@ -6,7 +6,14 @@ import { readFileSync } from 'node:fs';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { addPolicy, openKind, waitFilled } from './helpers/run';
+import {
+  addPolicy,
+  holdPolicy,
+  installPolicyHold,
+  openKind,
+  releasePolicy,
+  waitFilled
+} from './helpers/run';
 import {
   FRAME,
   PLAN_KEY,
@@ -48,12 +55,22 @@ test('/ header has no axe violations in dark', async ({ page }) => {
 });
 
 test('/sim header, playhead and timeline have no axe violations in dark', async ({ page }) => {
+  // The edit's setPolicy is held back from the worker until released, so the numbers stay stale
+  // and "Updating" shows in the header while axe runs.
+  await installPolicyHold(page);
   await gotoSim(page);
   await expect(page.getByRole('banner')).toBeVisible();
   await expect(page.getByTestId('tl-today')).toHaveText('Today');
-  await expectNoA11yViolations(page, {
-    include: ['header', '[data-testid=tl-status-line]', '[data-testid=tl-dock]']
-  });
+  await expectNoA11yViolations(page, { include: ['header', '[data-testid=tl-dock]'] });
+
+  await holdPolicy(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await expect(
+    page.getByRole('banner').getByTestId('tl-status').getByRole('button', { name: 'Updating' })
+  ).toBeVisible();
+  await expectNoA11yViolations(page, { include: ['header'] });
+  await releasePolicy(page);
+  await waitFilled(page);
 });
 
 test('at 375px the open Menu has no axe violations in dark', async ({ page }) => {

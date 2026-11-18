@@ -9,7 +9,7 @@ import { expect, test, type APIRequestContext, type Locator, type Page } from '@
 import { MSG } from '../src/lib/brush/messages';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
+import { expectAboutReachable, expectNoFooter, expectPhoneHeaderFits } from './helpers/chrome';
 import {
   PLAN_KEY,
   chooseTool,
@@ -243,6 +243,22 @@ test.describe('mobile', () => {
     await page.goto(`/p/${id}`);
     await waitForMap(page);
     await checkMobile(page);
+  });
+
+  test('/p/:id at 375 px: the header fits in 48 px and the site name waits in the Menu', async ({
+    page,
+    request
+  }) => {
+    const res = await request.post('/api/plans', {
+      data: smallText,
+      headers: { 'content-type': 'application/json' }
+    });
+    expect(res.ok()).toBe(true);
+    const { id } = (await res.json()) as { id: string };
+    await page.goto(`/p/${id}`);
+    await waitForMap(page);
+    await expect(headerScore(page)).toBeVisible();
+    await expectPhoneHeaderFits(page);
   });
 
   test('/: a status message is a pill under the header, clear of the strip and the map controls', async ({
