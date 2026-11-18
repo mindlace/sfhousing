@@ -36,7 +36,6 @@
   const panelId = `${uid}-menu`;
 
   const onSim = $derived(routeId === '/sim');
-  const onLessCars = $derived(routeId === '/lesscars');
   // The mode links are page navigation, so they stay links with aria-current rather than ARIA tabs.
   // The current one is filled with the accent; the other carries a resting border so it reads as
   // pressable. Both take a 1 px border so their sizes match.
@@ -114,9 +113,6 @@
     >Paint</a
   >
   <a href="/sim" class={tab(onSim)} aria-current={onSim ? 'page' : undefined}>Simulate</a>
-  <a href="/lesscars" class={tab(onLessCars)} aria-current={onLessCars ? 'page' : undefined}
-    >Fewer cars</a
-  >
 {/snippet}
 
 <header

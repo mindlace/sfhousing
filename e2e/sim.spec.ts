@@ -1243,8 +1243,9 @@ for (const width of [768]) {
       await expect(
         banner.getByRole('button', { name, exact: typeof name === 'string' })
       ).toBeVisible();
-    for (const name of ['Paint', 'Simulate', 'Fewer cars'])
+    for (const name of ['Paint', 'Simulate'])
       await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
+    await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
     await expectNoHorizontalScroll(page);
     await menu.click();
     await expectHeaderFits(page);

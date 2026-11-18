@@ -61,6 +61,21 @@ export async function gotoHydrated(page: Page, path: string): Promise<void> {
 export const publishOpen = (page: Page): Locator => page.getByTestId('publish-open');
 
 /**
+ * A client-side navigation to `path`: clicks an anchor appended to <main>, inside the app's root,
+ * so SvelteKit's router takes it (as a header link would). Needs a hydrated page.
+ */
+export async function clientNavigate(page: Page, path: string): Promise<void> {
+  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+  await page.evaluate((href) => {
+    const a = document.createElement('a');
+    a.href = href;
+    a.textContent = href;
+    document.querySelector('main')!.appendChild(a);
+    a.click();
+  }, path);
+}
+
+/**
  * Below 1024 px, opens the header's Menu (where the actions live); from 1024 px, does nothing.
  * Waits for hydration first: the Menu toggle does nothing before it, so a click on a loaded
  * machine left `aria-expanded` false.

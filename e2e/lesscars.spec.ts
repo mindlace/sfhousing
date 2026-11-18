@@ -27,10 +27,10 @@ import { expectNoA11yViolations } from './helpers/a11y';
 import { slider } from './helpers/run';
 import {
   FRAME,
+  clientNavigate,
   gotoHydrated,
   headerAction,
   jumpAndIdle,
-  openHeaderMenu,
   projectToPage,
   type LngLat,
   type Win
@@ -643,8 +643,7 @@ test('a plan file without basemapHide hides nothing: the street draws after its 
   });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await gotoHydrated(page, '/about');
-  await openHeaderMenu(page);
-  await page.getByRole('banner').getByRole('link', { name: 'Fewer cars', exact: true }).click();
+  await clientNavigate(page, '/lesscars');
   await expect(page).toHaveURL(/\/lesscars$/);
   await page.waitForFunction(() => (window as LcWin).__sfhLessCars?.phase === 'ready', undefined, {
     timeout: 20_000
@@ -685,8 +684,7 @@ test('a dataset without scenarios.lesscars shows the not-in-dataset page and sta
   });
   page.on('worker', (w) => workers.push(w.url()));
   await page.evaluate(() => ((window as Window & { __spa?: boolean }).__spa = true));
-  await openHeaderMenu(page);
-  await page.getByRole('banner').getByRole('link', { name: 'Fewer cars', exact: true }).click();
+  await clientNavigate(page, '/lesscars');
   await expect(page).toHaveURL(/\/lesscars$/);
   await expect(page.getByText('This dataset has no fewer-cars plan yet.')).toBeVisible();
   expect(await page.evaluate(() => (window as Window & { __spa?: boolean }).__spa)).toBe(true);

@@ -424,8 +424,9 @@ test.describe('medium width', () => {
 
       await openHeaderMenu(page);
       await expect(paint).toBeVisible();
-      for (const name of ['Paint', 'Simulate', 'Fewer cars'])
+      for (const name of ['Paint', 'Simulate'])
         await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
+      await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
       await expect(paint).toHaveAttribute('aria-expanded', 'true');
       await paint.click();
       await expect(page.locator('.sfh-dock-panel')).toHaveCount(0);

@@ -136,55 +136,46 @@ describe('SiteHeader', () => {
         .not.toHaveAttribute('aria-current');
     });
 
-    it('shows Fewer cars at 1024px, pointing at /lesscars and current there', async () => {
-      await page.viewport(1024, 768);
-      render(SiteHeader, { routeId: '/lesscars' });
-      const nav = page.getByRole('navigation', { name: 'Modes' });
-      const fewer = nav.getByRole('link', { name: 'Fewer cars' });
-      await expect.element(fewer).toHaveAttribute('href', '/lesscars');
-      await expect.element(fewer).toHaveAttribute('aria-current', 'page');
-      await expect
-        .element(nav.getByRole('link', { name: 'Simulate' }))
-        .not.toHaveAttribute('aria-current');
-    });
+    for (const width of [1024, 1280])
+      it(`at ${width}px the Modes nav holds Paint and Simulate only`, async () => {
+        await page.viewport(width, 768);
+        render(SiteHeader, { routeId: '/' });
+        const nav = page.getByRole('navigation', { name: 'Modes' });
+        await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
+        const names = nav
+          .getByRole('link')
+          .elements()
+          .map((a) => (a as HTMLElement).innerText);
+        expect(names).toEqual(['Paint', 'Simulate']);
+        expect(document.querySelector('a[href="/lesscars"]')).toBeNull();
+      });
 
-    it('puts Fewer cars in the menu at 375px, spelled out', async () => {
+    it('at 375px the Menu holds Paint and Simulate only', async () => {
       await page.viewport(375, 812);
       render(SiteHeader, { routeId: '/' });
       await page.getByRole('button', { name: 'Menu' }).click();
       const nav = page.getByRole('navigation', { name: 'Modes' });
-      const link = nav.getByRole('link', { name: 'Fewer cars' });
-      await expect.element(link).toBeVisible();
-      expect((link.element() as HTMLElement).innerText).toBe('Fewer cars');
+      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
+      const names = nav
+        .getByRole('link')
+        .elements()
+        .map((a) => (a as HTMLElement).innerText);
+      expect(names).toEqual(['Paint', 'Simulate']);
+      expect(document.querySelector('a[href="/lesscars"]')).toBeNull();
     });
 
-    for (const width of [1024, 1280, 1440]) {
-      it(`shows the visible text "Fewer cars" inline at ${width}px`, async () => {
-        await page.viewport(width, 768);
-        render(SiteHeader, { routeId: '/' });
-        const link = page
-          .getByRole('navigation', { name: 'Modes' })
-          .getByRole('link', { name: 'Fewer cars' });
-        await expect.element(link).toBeVisible();
-        expect((link.element() as HTMLElement).innerText).toBe('Fewer cars');
-        expect(link.element().textContent).toBe('Fewer cars');
-      });
-    }
-
-    for (const width of [768])
-      it(`at ${width}px the links wait in the Menu, with Fewer cars spelled out`, async () => {
-        await page.viewport(width, 1024);
-        render(SiteHeader, { routeId: '/' });
-        await expect
-          .element(page.getByRole('link', { name: 'Fewer cars' }))
-          .not.toBeInTheDocument();
-        await page.getByRole('button', { name: 'Menu' }).click();
-        const link = page
-          .getByRole('navigation', { name: 'Modes' })
-          .getByRole('link', { name: 'Fewer cars' });
-        await expect.element(link).toBeVisible();
-        expect((link.element() as HTMLElement).innerText).toBe('Fewer cars');
-      });
+    it('on /lesscars no mode link is current', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { routeId: '/lesscars' });
+      const nav = page.getByRole('navigation', { name: 'Modes' });
+      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
+      await expect
+        .element(nav.getByRole('link', { name: 'Paint' }))
+        .not.toHaveAttribute('aria-current');
+      await expect
+        .element(nav.getByRole('link', { name: 'Simulate' }))
+        .not.toHaveAttribute('aria-current');
+    });
 
     it('puts both links in the menu at 375px and marks the current mode', async () => {
       await page.viewport(375, 812);
@@ -428,7 +419,7 @@ describe('SiteHeader', () => {
         render(SiteHeader, { routeId: '/sim', actions, pinned, status });
         const slot = page.getByTestId('status-slot').element();
         const nav = page.getByRole('navigation', { name: 'Modes' });
-        const lastLink = nav.getByRole('link', { name: 'Fewer cars' }).element();
+        const lastLink = nav.getByRole('link', { name: 'Simulate' }).element();
         const score = page.getByRole('button', { name: '1,234 homes added' }).element();
         expect(
           lastLink.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING

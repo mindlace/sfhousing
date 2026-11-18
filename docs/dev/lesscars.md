@@ -461,7 +461,8 @@ preview`, headless Chromium, 1280 and 375 px). It passed these checks:
 
 - **Headline:** +7,786 homes by 2068, with the band +7,062 to +8,211. The four source parts add
   to the headline.
-- **Header and dialogs:** "Fewer cars" is current. The timeline lists 64 projects, with parking
+- **Header and dialogs:** "Fewer cars" is current (the header link was removed later, in the
+  quick-repairs slice). The timeline lists 64 projects, with parking
   conversions (46) in the disclosure. Evidence shows tier 4 as "Assumption, not data".
 - **Street, transit and garage layers:**
   - Fulton, 19th Ave and N Judah are in their transit state from day 22645.
@@ -888,12 +889,13 @@ before.
 `/lesscars` (`src/routes/lesscars/`, plan `docs/superpowers/plans/2026-11-01-lesscars-2-page.md`)
 plays the stored representative future of the plan from `LESSCARS_START` (2028-01-01) to
 `LESSCARS_HORIZON` (2068-12-31). It opens paused at the start; nobody edits anything but the day
-(scrub, play) and the map. The header has a "Fewer cars" mode link to it (third after Paint and
-Simulate, `aria-current` on the route). From lg (1024 px) the mode links sit inline in the header;
-below lg the header is the phone layout and the links and the actions are in the Menu. The link
-text is always "Fewer cars". Between lg and xl (1280 px) the site name shows "SF Housing" only (its
-accessible name stays "SF Housing Simulator") and the mode links take `px-1` and `gap-2`, so the
-`/sim` row fits at 1024 px.
+(scrub, play) and the map. The header has no link to it: the page is opened by URL, and
+no mode link is current there. The header's mode links (Paint and Simulate) sit inline from lg
+(1024 px); below lg the header is the phone layout and the links and the actions are in the Menu.
+Between lg and xl (1280 px) the site name shows "SF Housing" only (its accessible name stays "SF
+Housing Simulator") and the mode links take `px-1` and `gap-2`, so the `/sim` row fits at 1024 px.
+The e2e helper `clientNavigate` (`e2e/helpers/sharing.ts`) reaches the page by a client-side
+navigation, as a link would.
 
 | Area                                       | Code                                                             |
 | ------------------------------------------ | ---------------------------------------------------------------- |
@@ -1005,7 +1007,7 @@ fixture-0 the two markers merge at both 1280 and 375 px.
   so they check what MapLibre drew, not the sources.
 - The no-plan test strips `scenarios.lesscars` from `manifest.json` with `page.route` and reaches
   `/lesscars` by client navigation from `/about` (a first load takes the manifest from SSR); with
-  no header link yet, it clicks an anchor the test adds.
+  `clientNavigate`, which clicks an anchor the test adds (there is no header link).
 
 ### Known gap
 
