@@ -24,7 +24,7 @@
       <li>"FZP" becomes "current law" or similar plain words.</li>
       <li>Progress bars should show from further out and keep one size on screen at every zoom.</li>
     </ul>
-    <aside data-kind="note"><strong>Status</strong> This is a discussion draft. The owner has decided the clock and the reveal rule (see <a href="#sec-decisions">Decided</a>). The rest is open; see <a href="#sec-questions">Questions for the owner</a>.</aside>
+    <aside data-kind="note"><strong>Status</strong> This is a discussion draft. The owner has decided the clock, the reveal rule and the game loop (see <a href="#sec-decisions">Decided</a>). The rest is open; see <a href="#sec-questions">Questions for the owner</a>.</aside>
     <section id="sec-next-work">
       <h3>What comes straight after</h3>
       <p>The owner's next project after this one reworks funding (several sources, no funding that lasts forever, editable amounts) and adds market conditions such as booms and busts. This work does not build either. It must leave room for both:</p>
@@ -35,17 +35,11 @@
       </ul>
     </section>
     <section id="sec-direction-game">
-      <h3>Where the owner is heading: a game of reaching enough</h3>
-      <p>The owner wants an incremental game. The aim each time is to get to "enough houses". The person starts with Paint, where enough is easy to reach. Then they unlock policy, which is harder. Then they unlock funding.</p>
+      <h3>The frame: an incremental game</h3>
+      <p>The owner wants the app to work like an incremental game. The aim each time is to get to "enough houses". The person reaches the goal, gets a victory, receives an unlock, and does it all again with more to work with. They start with Paint, where enough is easy to reach. Then policy, which is harder. Then funding.</p>
+      <p>Later the person will pick an upgrade after each victory. For now they are simply given an unlock or two each time they hit the goal.</p>
       <p>"Enough" is the state target today, as a stand-in. Later it must respond to population change, and it will become a ladder of harder goals, such as "10% cheaper housing" or "zero homelessness".</p>
-      <p>This work does not build the game. It is shaped so the game can be built on it:</p>
-      <ul>
-        <li><strong>The goal is one replaceable thing.</strong> It has a name, a measure, an amount and a deadline. The headline, the chart and the messages read it from one place. Nothing on the main screen says "RHNA", and nothing assumes the measure is a count of homes.</li>
-        <li><strong>Progress to the goal is a See item in every stage.</strong> It is the win condition, so it sits in the headline, not in a details panel.</li>
-        <li><strong>Reaching the goal, or missing its deadline, is an event.</strong> Under one clock the person sees it happen when the playhead crosses it.</li>
-        <li><strong>Paint and Simulate are steps on one path,</strong> not two tools side by side. That settles what Paint is: the first stage.</li>
-        <li><strong>The policy kinds are the later stages.</strong> Zoning, Permitting, Public money and Market are rows that can be present or locked, so a stage can show only the rows it has unlocked.</li>
-      </ul>
+      <p>This changes what the screen is for. It is a run at a goal, and everything on it is read against that goal. The design is set out in <a href="#sec-prop-loop">The loop</a>.</p>
     </section>
   </section>
 
@@ -58,7 +52,7 @@
         <tr><th scope="col">Tier</th><th scope="col">What belongs in it</th><th scope="col">Placement rule</th></tr>
       </thead>
       <tbody>
-        <tr><th scope="row">See</th><td>An effect of the person's choice on housing: homes, projects, where and when.</td><td>Always on screen. Moves the moment they act or time plays. Never behind a click.</td></tr>
+        <tr><th scope="row">See</th><td>An effect of the person's choice on housing: homes, projects, where and when. Also the goal and how close they are to it.</td><td>Always on screen. Moves the moment they act or time plays. Never behind a click.</td></tr>
         <tr><th scope="row">Do</th><td>A way to make a choice: add or change a policy, paint, move time.</td><td>A visible control with a word on it. An empty state says the next step.</td></tr>
         <tr><th scope="row">Read</th><td>The few words needed to read a See item correctly: its date, the target, what it is compared with.</td><td>Next to the See item, in a few words. Never its own panel.</td></tr>
         <tr><th scope="row">Find</th><td>Background: breakdowns, money mechanics, assumptions, sources, credits, shortcuts.</td><td>One step away, in one of two fixed places: Details (the numbers behind an effect) or About this model (data, assumptions, credits, help).</td></tr>
@@ -231,7 +225,7 @@
           <tr><th scope="col">What it tells the person</th><th scope="col">Today</th><th scope="col">Tier</th><th scope="col">Proposal</th></tr>
         </thead>
         <tbody>
-          <tr><th scope="row">Which tool this is, and the others</th><td>Paint, Simulate, Fewer cars</td><td>Do</td><td>Two entries. Fewer cars leaves the header. Shown as steps on one path; see <a href="#sec-direction-game">the game direction</a>.</td></tr>
+          <tr><th scope="row">Which tool this is, and the others</th><td>Paint, Simulate, Fewer cars</td><td>Do</td><td>No mode links. The header shows the levels: those won, the current one, and what unlocks next. Fewer cars leaves the header. See <a href="#sec-prop-loop">The loop</a>.</td></tr>
           <tr><th scope="row">Work is saved</th><td>"Saved" always shown</td><td>Alert</td><td>Silent when saved. "Saving" and "Not saved" show, left of the headline.</td></tr>
           <tr><th scope="row">The forecast is being recomputed</th><td>A reserved 24 px line under the header, usually empty; dimming</td><td>Alert</td><td>The line goes. "Updating" sits with the save state; the numbers dim as now.</td></tr>
           <tr><th scope="row">How far the forecast is computed</th><td>"Forecast filled to 2051"; hatching; a second bar</td><td>Alert</td><td>Hatching on the ruler only.</td></tr>
@@ -291,7 +285,7 @@
           <li>The headline reads, for example, "47,335 homes by Apr 2040 · +1,817 from your policy · 68% of the goal". All three follow the playhead. At today the first two read zero.</li>
           <li>The goal's part of the headline names the goal on hover and focus ("State target: 82,069 homes by 2031"). When the goal is reached it says so and when: "Goal reached, 2043".</li>
           <li>With no policy in force, the middle part is absent.</li>
-          <li>The header holds: the two mode links, alerts, the headline, Publish, the account. View, undo, redo and Keyboard shortcuts leave it.</li>
+          <li>The header holds: the levels, alerts, the headline, Publish, the account. View, undo, redo and Keyboard shortcuts leave it.</li>
           <li>Pressing the headline opens Details.</li>
         </ul>
       </section>
@@ -315,8 +309,45 @@
           <li>Public money, only while a Public money policy is in force.</li>
           <li>A Details button.</li>
         </ul>
-        <p>On a first visit, before any policy exists, the same space offers three starter policies instead, one per kind.</p>
+        <p>At the start of a level, before the person has added anything, the same space says the goal and offers a starter for the row just unlocked.</p>
       </section>
+    </section>
+
+    <section id="sec-prop-loop">
+      <h3>The loop</h3>
+      <p>A run has five parts. Each has one place on the screen.</p>
+      <table id="tbl-loop">
+        <caption>The parts of a run and where each shows</caption>
+        <thead>
+          <tr><th scope="col">Part</th><th scope="col">What the person is told</th><th scope="col">Where</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">The goal</th><td>What enough is, and by when: "51,500 homes by 2050".</td><td>On the chart as a line that ends at the deadline, and as a flag on the ruler. Always drawn in full.</td></tr>
+          <tr><th scope="row">Progress</th><td>How close they are at the playhead's date.</td><td>The last part of the headline: "62% of the goal".</td></tr>
+          <tr><th scope="row">Victory</th><td>That they reached it, when, how far ahead of the deadline, and how much of it came from their policy. Then what they unlocked.</td><td>A card over the map. The clock stops. One button: "Next goal".</td></tr>
+          <tr><th scope="row">A miss</th><td>That the deadline passed, and by how many homes they fell short.</td><td>A message over the map: "Goal missed by 3,313 homes. Change the policy and play again." The clock keeps going.</td></tr>
+          <tr><th scope="row">What comes next</th><td>The levels won, the current level, and the next unlock by name.</td><td>The header, in place of mode links. Locked rows stay visible in the timeline, and the next one says "unlocks when you reach this goal".</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>Victory is decided under one clock. The person sees it when the playhead crosses the month the goal is met, by playing or by dragging.</li>
+        <li>"Next goal" starts a new run from today with the new unlock in place.</li>
+        <li>An unlocked row is an empty lane that says what it adds.</li>
+        <li>The goal is one replaceable thing: a name, a measure, an amount and a deadline, read from one place. Nothing on the main screen says "RHNA", and nothing assumes the measure is a count of homes.</li>
+      </ul>
+      <table id="tbl-ladder">
+        <caption>Proposed first levels</caption>
+        <thead>
+          <tr><th scope="col">Level</th><th scope="col">The person has</th><th scope="col">The goal</th><th scope="col">Victory unlocks</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">1</th><td>Paint</td><td>Room for enough homes. No clock.</td><td>Time, and zoning rules</td></tr>
+          <tr><th scope="row">2</th><td>Zoning rules on a timeline</td><td>Enough homes built by a deadline</td><td>Permitting</td></tr>
+          <tr><th scope="row">3</th><td>Zoning and permitting</td><td>The same amount, sooner</td><td>Public money</td></tr>
+          <tr><th scope="row">4</th><td>Zoning, permitting and money</td><td>The same amount, sooner again</td><td>Market conditions, when they exist</td></tr>
+        </tbody>
+      </table>
+      <aside data-kind="warning"><strong>Warning</strong> The goals need tuning against the real simulation. The state target cannot serve as it stands for levels 2 and up: under current law the forecast passes 82,069 homes only in the late 2050s and is far short at the 2031 deadline, so it is neither winnable by 2031 nor a challenge by the end of the window. Each level needs an amount and a deadline that current law misses and that level's tools can reach.</aside>
     </section>
 
     <section id="sec-prop-events">
@@ -419,14 +450,17 @@
     <aside data-kind="decision"><strong>Decision: progress bars</strong> Visible from further out, one size on screen.</aside>
     <aside data-kind="decision"><strong>Decision: Paint is the first stage</strong> Paint is the easy first step of one path that goes on to policy and then funding. It is not a separate product.</aside>
     <aside data-kind="decision" id="q-paint"><strong>Decision: steps only for now</strong> This work presents Paint and Simulate as steps one and two. Underneath they stay separate: a painted plan does not become the zoning that Simulate runs. Joining them is later work.</aside>
+    <aside data-kind="decision"><strong>Decision: the loop is built now, in its simplest form</strong> Reach the goal, get a victory, receive an unlock or two, go again. The person does not choose the unlock yet.</aside>
   </section>
 
   <section id="sec-questions">
     <h2>Questions for the owner</h2>
     <aside data-kind="question" id="q-zero"><strong>Question 1: does the headline start at zero?</strong> This document reads "today is the start" as: the headline counts homes added from today, so it reads zero before Play, and the chart starts at zero. The homes built since 2022 then appear only in the state-target percentage, which starts at about 11%. The alternative keeps the 2022 count in the headline, which then starts at 8,723.</aside>
-    <aside data-kind="question" id="q-unlock"><strong>Question 2: is unlocking built now?</strong> This document assumes not, in line with "steps only": both stages stay open to everyone, and locking comes with the game.</aside>
-    <aside data-kind="question" id="q-money"><strong>Question 3: public money</strong> The proposal shows cost in the Now panel only while a funding policy is in force, and leaves the rest in Details. That is deliberately light, because the funding rework comes next and will decide what cost figure matters. If cost per home should already sit with the headline, say so.</aside>
-    <aside data-kind="question" id="q-now"><strong>Question 4: the Now panel</strong> At rest the detail column would show this year's activity instead of totals. The alternative is to hide the column at rest and give the timeline the full width, at the cost of the timeline changing width whenever an editor opens.</aside>
+    <aside data-kind="question" id="q-goals"><strong>Question 2: what is the goal at each level?</strong> The proposal keeps one amount and brings the deadline nearer each level, tuned by running the simulation. The alternative raises the amount each level. Either way the numbers have to come from real runs, and the result will not be the state target's own date.</aside>
+    <aside data-kind="question" id="q-again"><strong>Question 3: what does "go again" keep?</strong> This document assumes the clock goes back to today and the person's policies stay in place, so the next run builds on what they made. The other reading is a clean start under current law with the bigger toolbox. Going from Paint to level 2 is a clean start either way, because the painting does not carry forward.</aside>
+    <aside data-kind="question" id="q-progress"><strong>Question 4: where is progress kept, and who skips it?</strong> This document assumes the level is kept in the browser, and with the account when signed in. A saved or shared policy that already uses a kind keeps that kind usable, so nobody loses work. A shared link is read-only at any level. There is no visible way to skip to all tools.</aside>
+    <aside data-kind="question" id="q-money"><strong>Question 5: public money</strong> The proposal shows cost in the Now panel only while a funding policy is in force, and leaves the rest in Details. That is deliberately light, because the funding rework comes next and will decide what cost figure matters. If cost per home should already sit with the headline, say so.</aside>
+    <aside data-kind="question" id="q-now"><strong>Question 6: the Now panel</strong> At rest the detail column would show this year's activity instead of totals. The alternative is to hide the column at rest and give the timeline the full width, at the cost of the timeline changing width whenever an editor opens.</aside>
     <p>Until answered, the proposal goes ahead on the stated assumption for each.</p>
   </section>
 
@@ -462,15 +496,16 @@
       <tbody>
         <tr><th scope="row">1. Quick repairs</th><td>The Keyboard shortcuts break is fixed. Fewer cars leaves the header. "FZP" reads "current law". Transit shading is off by default. The footer leaves the map pages.</td><td>Nothing</td></tr>
         <tr><th scope="row">2. One clock</th><td>The header headline follows the playhead, counts from today, and carries the policy's effect and progress to the goal. The goal is read from one place. The empty line under the header goes.</td><td>Nothing</td></tr>
-        <tr><th scope="row">3. One timeline, revealed</th><td>The ruler becomes the scrubber. One taller chart with the current-law line and the gap. The three zones. "Play from".</td><td>Slice 2</td></tr>
-        <tr><th scope="row">4. The map tells you</th><td>Halos on stage changes, marked projects, progress bars from the default zoom, a map key with the tally, layer switches on the map.</td><td>The engine check below</td></tr>
-        <tr><th scope="row">5. The detail column</th><td>The Now panel, Details in place of Results, starter policies and worded empty rows.</td><td>Slices 2 and 3</td></tr>
-        <tr><th scope="row">6. Shared parts and messages</th><td>One spacing scale, one button, cards and chips for messages, one surface for dialogs and menus in light and dark.</td><td>Nothing; later slices adopt it as they touch each screen</td></tr>
-        <tr><th scope="row">7. Paint as step one</th><td>Steps in the header. A labelled panel with a starting sentence. Stroke results shown. No painted-areas list. Undo in the touch strip, none on desktop.</td><td>Slice 6</td></tr>
-        <tr><th scope="row">8. About this model</th><td>One place for meanings, assumptions, data and credits, and shortcuts. The map keeps a collapsed OpenStreetMap credit.</td><td>Slice 6</td></tr>
+        <tr><th scope="row">3. One timeline, revealed</th><td>The ruler becomes the scrubber. One taller chart with the current-law line, the gap and the goal. The three zones. "Play from".</td><td>Slice 2</td></tr>
+        <tr><th scope="row">4. The loop</th><td>Tuned goals. Victory and miss messages. Levels in the header. Locked and unlocked rows. "Next goal". Progress remembered.</td><td>Slices 2 and 3, and goal tuning runs</td></tr>
+        <tr><th scope="row">5. Paint as level one</th><td>Paint has a goal and a victory that unlocks level 2. A labelled panel with a starting sentence. Stroke results shown. No painted-areas list. Undo in the touch strip, none on desktop.</td><td>Slice 4</td></tr>
+        <tr><th scope="row">6. The map tells you</th><td>Halos on stage changes, marked projects, progress bars from the default zoom, a map key with the tally, layer switches on the map.</td><td>The engine check below</td></tr>
+        <tr><th scope="row">7. The detail column</th><td>The Now panel, Details in place of Results, worded empty rows.</td><td>Slices 2 and 3</td></tr>
+        <tr><th scope="row">8. Shared parts and messages</th><td>One spacing scale, one button, cards and chips for messages, one surface for dialogs and menus in light and dark.</td><td>Nothing; it can start at any point, and later slices adopt it as they touch each screen</td></tr>
+        <tr><th scope="row">9. About this model</th><td>One place for meanings, assumptions, data and credits, and shortcuts. The map keeps a collapsed OpenStreetMap credit.</td><td>Slice 8</td></tr>
       </tbody>
     </table>
-    <aside data-kind="note"><strong>Engine check</strong> Slice 4 depends on what the simulation already knows per project: which policy caused it, and when it changes stage, for projects off screen as well as on. That is being read from the code now and this section will be updated with the answer.</aside>
+    <aside data-kind="note"><strong>Engine check</strong> Slice 6 depends on what the simulation already knows per project: which policy caused it, and when it changes stage, for projects off screen as well as on. That is being read from the code now and this section will be updated with the answer.</aside>
   </section>
 
   <section id="sec-scope">
