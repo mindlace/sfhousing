@@ -1,5 +1,5 @@
 /// <reference types="@vitest/browser-playwright" />
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
@@ -93,9 +93,11 @@ interface Over {
   calibration?: Calibration;
   readonly?: boolean;
   selected?: SpanRef | null;
-  filledEnd?: number;
   playheadMonth?: number;
   playheadDay?: number;
+  pinned?: boolean;
+  /** Px: the timeline sits in a box this tall. */
+  height?: number;
 }
 
 async function setup(over: Over = {}) {
@@ -114,7 +116,6 @@ async function setup(over: Over = {}) {
     onadd,
     playheadMonth: 1,
     playheadDay: first(1),
-    filledEnd: windowEnd,
     ...over
   };
   const view = await render(TimelineHost, { props });
@@ -165,13 +166,22 @@ describe('Timeline rows', () => {
       expect(getComputedStyle(l).pointerEvents).toBe('none');
     }
     const pin = page.getByTestId('tl-pin').element().getBoundingClientRect();
-    const grid = page.getByTestId('tl-pin').element().parentElement!.getBoundingClientRect();
+    const grid = page.getByTestId('tl-rows').element().getBoundingClientRect();
     const [a, b] = lines.map((l) => l.getBoundingClientRect());
     expect(Math.abs(a.x - b.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(a.bottom - pin.bottom)).toBeLessThanOrEqual(1);
     expect(Math.abs(b.top - pin.bottom)).toBeLessThanOrEqual(1);
     expect(Math.abs(b.bottom - grid.bottom)).toBeLessThanOrEqual(1);
     expect(b.height).toBeGreaterThan(100);
+  });
+
+  it('in a box where the rows scroll, their line segment spans every row, not just the box', async () => {
+    const { rows } = await tall({ playheadDay: first(13) });
+    expect(rows.scrollHeight).toBeGreaterThan(rows.clientHeight);
+    const line = rows.querySelector<HTMLElement>('[data-testid=tl-playhead-line]')!;
+    expect(Math.abs(line.getBoundingClientRect().height - rows.scrollHeight)).toBeLessThanOrEqual(
+      1
+    );
   });
 
   it('reports the pinned block height and keeps its background opaque', async () => {
@@ -185,7 +195,58 @@ describe('Timeline rows', () => {
     const style = getComputedStyle(pin);
     expect(style.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
     expect(style.backgroundColor).not.toBe('transparent');
-    expect(style.position).toBe('sticky');
+    expect(style.position).not.toBe('sticky');
+  });
+
+  /** Every kind open in a 300 px box: the rows run past it. */
+  async function tall(over: Over = {}) {
+    await setup({ height: 300, ...over });
+    for (const name of ['Zoning', 'Permitting', 'Public money']) await kindButton(name).click();
+    await expect
+      .element(page.getByTestId('tl-kind-money').getByTestId('tl-bar').first())
+      .toBeInTheDocument();
+    return {
+      pin: page.getByTestId('tl-pin').element() as HTMLElement,
+      rows: page.getByTestId('tl-rows').element() as HTMLElement
+    };
+  }
+
+  it('the pinned block and the rows are two boxes; the rows box scrolls under nothing', async () => {
+    const { pin, rows } = await tall();
+    expect(getComputedStyle(rows).overflowY).toBe('auto');
+    expect(rows.scrollHeight).toBeGreaterThan(rows.clientHeight);
+    expect(getComputedStyle(pin).position).not.toBe('sticky');
+    expect(rows.contains(pin)).toBe(false);
+    expect(
+      Math.abs(rows.getBoundingClientRect().top - pin.getBoundingClientRect().bottom)
+    ).toBeLessThanOrEqual(0.5);
+    const host = page.getByTestId('host-pin').element().getBoundingClientRect();
+    expect(rows.getBoundingClientRect().bottom).toBeLessThanOrEqual(host.bottom + 0.5);
+  });
+
+  it('the block and the rows share one x scale, the rows scrollbar included', async () => {
+    // A classic scrollbar (headless Chromium overlays its own, 0 px wide).
+    const bar = document.createElement('style');
+    bar.textContent = '[data-testid=tl-rows]::-webkit-scrollbar { width: 12px }';
+    document.head.appendChild(bar);
+    onTestFinished(() => {
+      bar.remove();
+    });
+    const { pin, rows } = await tall();
+    await expect.poll(() => rows.offsetWidth - rows.clientWidth).toBe(12);
+    const a = () => pin.querySelector('[data-testid=tl-lane]')!.getBoundingClientRect();
+    const b = rows.querySelector('[data-testid=tl-lane]')!.getBoundingClientRect();
+    await expect.poll(() => Math.abs(a().width - b.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(a().left - b.left)).toBeLessThanOrEqual(1);
+  });
+
+  it('unpinned, the rows box does not scroll and the timeline is one piece', async () => {
+    const { pin, rows } = await tall({ pinned: false });
+    expect(getComputedStyle(rows).overflowY).toBe('visible');
+    expect(rows.scrollHeight).toBeLessThanOrEqual(rows.clientHeight + 1);
+    expect(
+      Math.abs(rows.getBoundingClientRect().top - pin.getBoundingClientRect().bottom)
+    ).toBeLessThanOrEqual(0.5);
   });
 
   it('on a phone the playhead line runs through the lanes of an open kind sheet', async () => {
@@ -364,19 +425,15 @@ describe('Timeline rows', () => {
     expect(next.kinds.permitting[0].spans[0].to).not.toBe(doc.kinds.permitting[0].spans[0].to);
   });
 
-  it('hatches every row past filledEnd and moves the hatch when filledEnd grows', async () => {
-    const quarter = (n: number) => asOf + Math.floor(((windowEnd - asOf) * n) / 4);
-    const { rerender } = await setup({ filledEnd: quarter(1) });
-    await kindButton('Permitting').click();
-    const hatches = () => all('[data-testid=tl-hatch]');
+  it('no lane is hatched', async () => {
+    await setup();
+    for (const name of ['Zoning', 'Permitting', 'Public money']) await kindButton(name).click();
     const lanes = all('[data-testid=tl-lane]');
     expect(lanes.length).toBeGreaterThan(5);
-    expect(hatches()).toHaveLength(lanes.length);
-    for (const h of hatches()) expect(parseFloat(h.style.left)).toBeCloseTo(25, 0);
-    await rerender({ filledEnd: quarter(3) });
-    for (const h of hatches()) expect(parseFloat(h.style.left)).toBeCloseTo(75, 0);
-    await rerender({ filledEnd: windowEnd });
-    expect(hatches()).toHaveLength(0);
+    for (const l of lanes) {
+      for (const el of [l, ...l.querySelectorAll('*')])
+        expect(getComputedStyle(el).backgroundImage).not.toContain('repeating-linear-gradient');
+    }
   });
 
   it('on a phone a kind opens as a sheet over the same rows', async () => {
@@ -409,8 +466,8 @@ describe('Timeline rows', () => {
     await userEvent.keyboard('{Escape}');
     expect(document.querySelector('[role=dialog]')).toBeNull();
   });
-  it('draws the hatch beneath the bars and keeps every bar text at 4.5:1', async () => {
-    await setup({ filledEnd: asOf + Math.floor((windowEnd - asOf) / 8) });
+  it('every bar text keeps 4.5:1', async () => {
+    await setup();
     await kindButton('Permitting').click();
     const rgb = (c: string) =>
       c
@@ -429,7 +486,7 @@ describe('Timeline rows', () => {
       return (hi + 0.05) / (lo + 0.05);
     };
     const bars = barsOf('permitting');
-    // Bars 2 and 3 are the off policy's; all four sit wholly under the hatch.
+    // Bars 2 and 3 are the off policy's; each is the topmost element at its centre.
     for (const b of bars) {
       const r = b.getBoundingClientRect();
       const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
@@ -479,12 +536,13 @@ describe('Timeline rows', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('keeps the playhead and chart in view and the sheet tall when the timeline is low or scrolled', async () => {
+  it('in one piece, keeps the playhead and chart in view and the sheet tall when the timeline is low or scrolled', async () => {
     await page.viewport(390, 800);
     const spacer = document.createElement('div');
     spacer.style.height = '1500px';
     document.body.insertBefore(spacer, document.body.firstChild);
-    await setup();
+    // In one piece, scrolled by the page (pinned, the page's box gives the room: TimelineMode).
+    await setup({ pinned: false });
     await page.viewport(390, 800);
     const check = async () => {
       await kindButton('Permitting').click();

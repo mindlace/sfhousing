@@ -1,7 +1,9 @@
 <!--
   The score chart (spec §4.6): a plain inline SVG laid out from `chartModel`. The model depends on
-  the width, the score and the high-water day, never on `day`, so scrubbing moves only the cursor
-  line (O(1)).
+  the width, the score and the last filled day, never on `day` or `reached`, so scrubbing moves
+  only the cursor line and two clip rectangles (O(1)). Each line is one path drawn twice: solid
+  under the shown clip (the start to the cursor) and thinner under the seen one (the cursor to the
+  furthest day reached); nothing past it. The table and the summary stop at the playhead's month.
 -->
 <script lang="ts">
   import { GOAL } from '$lib/goal/goal';
@@ -18,22 +20,37 @@
     asOf: Day;
     horizon: Day;
     day: Day;
-    /** The furthest day reached; the chart draws nothing after its month. */
+    /** The last filled day: the scale and the paths cover every filled month. */
     highWater: Day;
+    /** The furthest day reached: lines are drawn solid to `day`, thinner to here, nothing past. */
+    reached: Day;
   }
-  let { score, asOf, horizon, day, highWater }: Props = $props();
+  let { score, asOf, horizon, day, highWater, reached }: Props = $props();
+
+  const uid = $props.id();
+  const shownId = `${uid}-shown`;
+  const seenId = `${uid}-seen`;
 
   /** Used until the container reports its width. */
   const FALLBACK_W = 288;
   const VERTICAL = 'var(--chart-vertical)';
+  /** The total's thinner stroke for the part seen but not shown (as the timeline chart's). */
+  const SEEN_TOTAL = 'var(--chart-total-seen)';
 
   let measured = $state(0);
   const width = $derived(measured > 0 ? measured : FALLBACK_W);
-  const reveal = $derived(monthIndex(highWater, score.months[0], score.months.length));
-  const model = $derived(chartModel(score, asOf, horizon, width, reveal));
-  const rows = $derived(tableRows(score, asOf, reveal));
-  const label = $derived(chartLabel(score, reveal));
+  const filled = $derived(monthIndex(highWater, score.months[0], score.months.length));
+  const model = $derived(chartModel(score, asOf, horizon, width, filled));
+  // The table and the summary name the playhead's month, never one beyond it.
+  const playIndex = $derived(
+    Math.min(monthIndex(day, score.months[0], score.months.length), filled)
+  );
+  const rows = $derived(tableRows(score, asOf, playIndex));
+  const label = $derived(chartLabel(score, playIndex));
   const cursorX = $derived(model.x(Math.min(Math.max(day, asOf), horizon)));
+  // A zone edge at or past the last filled day is the plot's end, as on the ruler.
+  const edge = (d: Day) => (d >= highWater ? width : model.x(Math.min(Math.max(d, asOf), horizon)));
+  const reachedX = $derived(Math.max(edge(reached), cursorX));
 
   type LineKey = 'total' | 'pipeline' | 'fresh' | 'planCompleted' | 'planEntitled';
   const LINES: Record<LineKey, { stroke: string; width: number; dash?: string }> = {
@@ -101,19 +118,56 @@
         />
       {/each}
 
-      {#each lineKeys as key (key)}
-        {#if model[key]}
-          <path
-            data-series={key}
-            d={model[key]}
-            fill="none"
-            stroke={LINES[key].stroke}
-            stroke-width={LINES[key].width}
-            stroke-dasharray={LINES[key].dash}
-            stroke-linejoin="round"
+      <defs>
+        <clipPath id={shownId} clipPathUnits="userSpaceOnUse">
+          <rect
+            x="0"
+            y="-10"
+            width={cursorX}
+            height={CHART_H + 20}
+            data-testid="results-clip-shown"
           />
-        {/if}
-      {/each}
+        </clipPath>
+        <clipPath id={seenId} clipPathUnits="userSpaceOnUse">
+          <rect
+            x={cursorX}
+            y="-10"
+            width={reachedX - cursorX}
+            height={CHART_H + 20}
+            data-testid="results-clip-seen"
+          />
+        </clipPath>
+      </defs>
+      <g clip-path="url(#{shownId})">
+        {#each lineKeys as key (key)}
+          {#if model[key]}
+            <path
+              data-series={key}
+              d={model[key]}
+              fill="none"
+              stroke={LINES[key].stroke}
+              stroke-width={LINES[key].width}
+              stroke-dasharray={LINES[key].dash}
+              stroke-linejoin="round"
+            />
+          {/if}
+        {/each}
+      </g>
+      <g clip-path="url(#{seenId})">
+        {#each lineKeys as key (key)}
+          {#if model[key]}
+            <path
+              data-series-seen={key}
+              d={model[key]}
+              fill="none"
+              stroke={key === 'total' ? SEEN_TOTAL : LINES[key].stroke}
+              stroke-width={LINES[key].width / 2}
+              stroke-dasharray={LINES[key].dash}
+              stroke-linejoin="round"
+            />
+          {/if}
+        {/each}
+      </g>
 
       {#each model.references as r, i (i)}
         <line

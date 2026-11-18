@@ -8,11 +8,60 @@ import {
   MARKET_FUNDING_SENTENCE4,
   PER_HOME_SOURCE,
   REFERENCE_NOTE,
+  GOAL_FLAG,
+  chartCaption,
+  goalNote,
   marketBody,
   homesBy,
-  perHomeMethod
+  perHomeMethod,
+  playFromText,
+  rulerDescription,
+  speedName
 } from './copy';
 import { dayFromUtc } from '$lib/fzp/time';
+
+describe('the ruler and transport', () => {
+  it('playFromText, speedName and rulerDescription', () => {
+    expect(playFromText(dayFromUtc(2028, 3, 1))).toBe('Play from 2028');
+    expect(speedName('year')).toBe('1× speed, 1 year per second');
+    expect(speedName('threeYears')).toBe('3× speed, 3 years per second');
+    expect(GOAL_FLAG).toBe('Goal');
+    expect(rulerDescription(dayFromUtc(2045, 6, 1), dayFromUtc(2031, 1, 31))).toBe(
+      'Seen up to June 2045. Goal deadline January 2031.'
+    );
+    expect(rulerDescription(dayFromUtc(2045, 6, 1), null)).toBe('Seen up to June 2045.');
+    expect(rulerDescription(null, dayFromUtc(2031, 1, 31))).toBe('Goal deadline January 2031.');
+    expect(rulerDescription(null, null)).toBe('');
+  });
+});
+
+describe('the chart', () => {
+  it('goalNote says the homes still needed and the deadline month', () => {
+    expect(goalNote(73_346, dayFromUtc(2031, 1, 1))).toBe('73,346 more by Jan 2031');
+  });
+
+  it('chartCaption says what is drawn, the goal with its remainder and deadline', () => {
+    const goal = { units: 73_346, deadline: dayFromUtc(2031, 1, 1) };
+    expect(chartCaption(false, goal)).toBe(
+      'Homes completed from today, by month, and the goal as the homes still needed by its ' +
+        'deadline: 73,346 more by Jan 2031. The month slider reads out each month.'
+    );
+    expect(chartCaption(false, null)).toBe(
+      'Homes completed from today, by month. The month slider reads out each month.'
+    );
+    expect(chartCaption(true, goal)).toBe(
+      'Homes completed from today with your policy and under current law, by month. The shaded ' +
+        'gap is what your policy adds. The goal is drawn as the homes still needed by its ' +
+        'deadline: 73,346 more by Jan 2031. The month slider reads out each month.'
+    );
+    expect(chartCaption(true, null)).toBe(
+      'Homes completed from today with your policy and under current law, by month. The shaded ' +
+        'gap is what your policy adds. The month slider reads out each month.'
+    );
+    for (const a of [true, false])
+      for (const b of [goal, null]) expect(chartCaption(a, b)).not.toMatch(/RHNA|FZP/);
+  });
+});
 
 describe('homesBy', () => {
   it('says the count and the month, or today', () => {

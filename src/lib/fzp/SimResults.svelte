@@ -41,8 +41,10 @@
     day: Day;
     asOf: Day;
     horizon: Day;
-    /** The last filled month's day: the deadline line waits until the forecast reaches it. */
+    /** The last filled month's day: the Results chart's scale covers every filled month. */
     filledEnd: Day;
+    /** The furthest day reached: the deadline line and the chart's lines stop here. */
+    reached: Day;
     datasetVersion: string;
     builtAt: string;
     onsources: () => void;
@@ -69,6 +71,7 @@
     asOf,
     horizon,
     filledEnd,
+    reached,
     datasetVersion,
     builtAt,
     onsources,
@@ -125,8 +128,8 @@
   const inProgressTotal = $derived(stages.reduce((sum, s) => sum + s.units, 0));
   const phasing = $derived(score ? phasingFootnote(score.phasing) : null);
   const planPending = $derived(at !== null && at.planCompleted === null);
-  /** The month index of the filled mark: nothing after it is revealed. */
-  const reveal = $derived(score ? monthIndex(filledEnd, score.months[0], score.months.length) : -1);
+  /** The month index of the furthest day reached: nothing after it is revealed. */
+  const reveal = $derived(score ? monthIndex(reached, score.months[0], score.months.length) : -1);
 
   /** The map key opens by default on a wide viewport (the sheet on a phone starts closed). */
   const keyOpen = typeof matchMedia === 'function' && matchMedia(WIDE).matches;
@@ -196,7 +199,7 @@
       part="money"
     />
 
-    <ScoreChart {score} {asOf} {horizon} {day} highWater={filledEnd} />
+    <ScoreChart {score} {asOf} {horizon} {day} highWater={filledEnd} {reached} />
 
     <div class="mt-4">
       <p class="text-sm" data-testid="fzp-built">{builtTowardGoalText(score.baseline)}</p>

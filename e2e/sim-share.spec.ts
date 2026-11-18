@@ -238,6 +238,27 @@ test('Remix on /s/<id> opens /sim on a copy of the policy', async ({ page }) => 
   expect(errors).toEqual([]);
 });
 
+test('a shared link opens with everything ahead unseen', async ({ page }) => {
+  const id = await seedPolicy(page, { ...(await capturePresetDoc(page)), title: 'SD permits' });
+  await gotoSim(page, `/s/${id}`, { map: false });
+  const fzp = () =>
+    page.evaluate(() => {
+      const d = (window as FzpWin).__sfhFzp!;
+      return { asOf: d.asOf, day: d.day, reached: d.reached, playFrom: d.playFrom };
+    });
+  const at = await fzp();
+  expect(at.day).toBe(at.asOf);
+  expect(at.reached).toBe(at.asOf);
+  expect(at.playFrom).toBeNull();
+  await expect(page.getByTestId('tl-flag')).toHaveText('Today');
+  // The ruler's hatched part starts at today: nothing ahead has been seen.
+  const left = (id: string) =>
+    page.getByTestId(id).evaluate((el) => el.getBoundingClientRect().left);
+  expect(Math.abs((await left('tl-zone-unseen')) - (await left('tl-track')))).toBeLessThanOrEqual(
+    1
+  );
+});
+
 // ---- autosave ---------------------------------------------------------------------------------------
 
 test('autosave survives a reload', async ({ page }) => {

@@ -1,159 +1,305 @@
 <!--
-  The chart row (rule 4, rule 28): the homes completed by month as one heavy line and the goal
-  (`GOAL`) as a dashed marker at its deadline, while its step falls in the window. The part after `index` is drawn dashed at full colour
-  (3:1 holds); nothing is drawn past `filledThrough`. Hover or focus of a month, and Left and Right
-  on the focused overlay, read out that month's homes. The plot is 96 px tall below md and 64 px
-  from md, where the legend moves to the label column; 40 px from md on a viewport 820 px tall or
-  less. The sr-only figcaption says what the chart shows and that the month slider reads out each
-  month.
+  The chart row (rules 3, 4): homes completed from today on the ruler's axis, from 0 at today to
+  the end of each filled month (`chart-model.ts`). With a policy in force (`inForce`, from the
+  document the numbers on show came from) it adds the current-law line and the shaded gap between
+  them. The goal is a dashed step at the homes still needed to the end of its deadline's month,
+  labelled in the plot (`goalNote`); it is an input, so it is always drawn whole.
+  Zones: each series is drawn twice from one path, cut by two clip rectangles: shown, today to the
+  playhead's day (full strength), and seen, the day to the furthest date reached (the -seen tokens
+  and a thinner stroke). Nothing past `reached`. A zone edge at or past the last row's day reaches
+  the plot's end, as on the ruler. As the day moves only the two rectangles change; the paths are
+  rebuilt only when the view, `inForce` or the scale changes, and the scale (a running maximum
+  over the months reached, in 1-2-5 steps) changes at most as the furthest date crosses a month.
+  While stale it draws the view on show (the held numbers) with the seen styling throughout.
+  Hover or focus of a month, and Left and Right on the focused overlay, read out the header's
+  line 1 for it (`chartReading`). The plot is 96 px tall (64 from md on a viewport 820 px tall or
+  less); from md the legend moves to the label column.
 -->
 <script lang="ts">
   import { COLORS } from '$lib/fzp/chart';
-  import { GOAL } from '$lib/goal/goal';
   import type { TimelineView } from '$lib/sim/world/score/types';
   import type { Day } from '$lib/timelapse/time';
-  import { indexOfDay } from './playhead';
-  import { homesBy } from './copy';
+  import { yearMarks } from './axis';
+  import {
+    chartPoints,
+    gapPath,
+    linePath,
+    posDay,
+    posOf,
+    runningMax,
+    runningMin,
+    yBottom,
+    yLabels,
+    yTop
+  } from './chart-model';
   import ChartLegend from './ChartLegend.svelte';
+  import { chartCaption, goalNote } from './copy';
+  import { filledEndDay } from './playhead';
+  import { chartReading, playheadAt } from './results';
   import { dayPct } from './rows';
 
   interface Props {
-    /** The window the lanes span: a month sits where its first day sits in every lane. */
+    /** The window the lanes span: a day sits where it sits in every lane. */
     asOf: Day;
     windowEnd: Day;
+    /** The view on show (shown.view): the held numbers while stale, as the header. */
     view: TimelineView | null;
-    /** The playhead's calendar month. */
-    index: number;
+    /** A policy is in force in the document the numbers on show came from. */
+    inForce: boolean;
+    /** The playhead's day: solid up to it. */
+    day: Day;
+    /** The furthest day reached: thinner from `day` to it; nothing past it. */
+    reached: Day;
     /** The goal: its deadline's month and the homes still needed (goalStep). */
     target: { deadlineIndex: number; units: number } | null;
+    stale: boolean;
   }
 
-  let { asOf, windowEnd, view, index, target }: Props = $props();
+  let { asOf, windowEnd, view, inForce, day, reached, target, stale }: Props = $props();
 
   const W = 1000;
   const H = 100;
-  const last = $derived(view?.filledThrough ?? -1);
-  const x = (i: number) => (dayPct(view!.months[i], asOf, windowEnd) / 100) * W;
+  const PAD = 2;
+  const uid = $props.id();
+  const shownId = `${uid}-shown`;
+  const seenId = `${uid}-seen`;
 
-  const yMax = $derived.by(() => {
-    if (!view || last < 0) return 1;
-    let m = target?.units ?? 0;
-    for (let i = 0; i <= last; i++) m = Math.max(m, homes(i));
-    return Math.max(m, 1);
+  // Props arrive through getters that may fire on any parent change (a new `shown` object at
+  // every month crossed, a test host's one props signal): these deriveds pass a change on only
+  // when the value itself changed, so nothing below reruns as the day moves.
+  const v = $derived(view);
+  const force = $derived(inForce);
+  const goalUnits = $derived(target?.units ?? null);
+  const from = $derived(asOf);
+  const to = $derived(windowEnd);
+  const months = $derived(v?.months ?? null);
+  const xDay = (d: Day) => (dayPct(d, from, to) / 100) * W;
+  /** The last row's last day: a zone edge at or past it is the plot's end (as the ruler's). */
+  const last = $derived(
+    months && months.length > 0 ? filledEndDay(months, months.length - 1, from) : to
+  );
+  const edge = (d: Day) => (d >= last ? W : xDay(d));
+
+  // Built once per view and inForce.
+  const points = $derived(v ? chartPoints(v, force) : null);
+  const runMax = $derived(points ? runningMax(points) : []);
+  const runMin = $derived(points ? runningMin(points) : []);
+  const xs = $derived(v && points ? points.policy.map((_, j) => xDay(posDay(v, j, from))) : []);
+  const lastPos = $derived(points ? points.policy.length - 1 : 0);
+
+  // The scale reads the furthest month reached: a number, so it changes only when that does.
+  const reachedPos = $derived(
+    months ? Math.min(posOf(playheadAt(months, from, Math.max(reached, day))), lastPos) : 0
+  );
+  const top = $derived(yTop(goalUnits, runMax, reachedPos));
+  const bottom = $derived(yBottom(runMin, reachedPos));
+  const y = (n: number) => PAD + (1 - (n - bottom) / (top - bottom)) * (H - 2 * PAD);
+
+  const paths = $derived.by(() => {
+    if (!points) return null;
+    const x = (j: number) => xs[j];
+    return {
+      line: linePath(points.policy, x, y),
+      law: points.law ? linePath(points.law, x, y) : null,
+      gap: points.law ? gapPath(points.policy, points.law, x, y) : null
+    };
   });
-  const yMin = $derived.by(() => {
-    if (!view || last < 0) return 0;
-    let m = 0;
-    for (let i = 0; i <= last; i++) m = Math.min(m, homes(i));
-    return m;
-  });
-  const y = (v: number) => H - ((v - yMin) / Math.max(yMax - yMin, 1)) * (H - 4) - 2;
 
-  const pt = (i: number, v: number) => `${x(i).toFixed(2)},${y(v).toFixed(2)}`;
-  /** A polyline for months a to b (inclusive), '' when empty. */
-  function line(get: (i: number) => number, a: number, b: number): string {
-    if (b < a) return '';
-    let d = '';
-    for (let i = a; i <= b; i++) d += `${i === a ? 'M' : 'L'}${pt(i, get(i))}`;
-    return d;
-  }
+  // Per frame only these two change.
+  const dayEdge = $derived(edge(day));
+  const reachedEdge = $derived(Math.max(edge(reached), dayEdge));
 
-  // The solid part runs through the playhead's month, the dashed part from there on.
-  const split = $derived(Math.min(Math.max(index, 0), last));
-  /** Homes completed from today, as the headline counts them. */
-  const homes = (i: number) => view!.rows[i].completedNet;
+  const years = $derived(yearMarks(from, to));
+  const labels = $derived(yLabels(top));
+  const goalX = $derived(v && target ? xDay(posDay(v, target.deadlineIndex + 1, from)) : 0);
+  const goalY = $derived(target ? y(target.units) : 0);
+  const note = $derived(v && target ? goalNote(target.units, v.months[target.deadlineIndex]) : '');
 
+  /** Shown and seen strokes; while stale everything takes the seen styling. */
+  const SEEN = { total: 'var(--chart-total-seen)', law: 'var(--chart-law-seen)', width: 1.25 };
+  const shownStroke = $derived(
+    stale ? SEEN : { total: COLORS.total, law: 'var(--chart-law)', width: 2.5 }
+  );
+
+  // The overlay: positions 0 (today) to the furthest month reached.
   let focusAt = $state<number | null>(null);
   let hoverAt = $state<number | null>(null);
   const active = $derived(hoverAt ?? focusAt);
-
-  function summary(i: number): string {
-    return homesBy(homes(i), view!.months[i]);
-  }
+  const playPos = $derived(months ? Math.min(posOf(playheadAt(months, from, day)), reachedPos) : 0);
+  const valuePos = $derived(active ?? playPos);
+  const reading = $derived(v ? chartReading(v, valuePos, force) : '');
 
   let overlay: HTMLElement | undefined = $state();
-  function monthAt(clientX: number): number {
+  function posAt(clientX: number): number {
     const r = overlay!.getBoundingClientRect();
     const f = r.width > 0 ? (clientX - r.left) / r.width : 0;
-    const i = indexOfDay(view!.months, asOf + f * (windowEnd - asOf));
-    return Math.min(Math.max(i, 0), last);
+    const p = posOf(playheadAt(months!, from, from + f * (to - from)));
+    return Math.min(Math.max(p, 0), reachedPos);
   }
   function onfocus() {
-    focusAt = Math.min(Math.max(index, 0), last);
+    focusAt = playPos;
   }
   function onblur() {
     focusAt = null;
   }
   function onkeydown(e: KeyboardEvent) {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
-    const cur = focusAt ?? Math.min(Math.max(index, 0), last);
+    const cur = focusAt ?? playPos;
     let next: number;
     if (e.key === 'ArrowLeft') next = Math.max(cur - 1, 0);
-    else if (e.key === 'ArrowRight') next = Math.min(cur + 1, last);
+    else if (e.key === 'ArrowRight') next = Math.min(cur + 1, reachedPos);
     else return;
     e.preventDefault();
     focusAt = next;
   }
 
+  // The in-plot labels are hidden from assistive tech; the caption carries the goal's figures.
   const caption = $derived(
-    `Homes completed from today, by month${target ? `, and the ${GOAL.name} as the homes still needed by its deadline` : ''}. The month slider reads out each month.`
+    chartCaption(
+      force,
+      v && target ? { units: target.units, deadline: v.months[target.deadlineIndex] } : null
+    )
   );
 </script>
 
-<figure class="sfh-chart-row m-0" aria-label="Homes completed">
+<figure
+  class="sfh-chart-row m-0"
+  aria-label="Homes completed"
+  data-stale={stale ? 'true' : undefined}
+>
   <div class="plot relative">
     <svg
       viewBox="0 0 {W} {H}"
       preserveAspectRatio="none"
-      class="block h-24 w-full md:h-16"
+      class="block h-24 w-full"
       aria-hidden="true"
       data-testid="chart-svg"
     >
-      {#if view && last >= 0}
+      {#if v && paths}
+        <defs>
+          <clipPath id={shownId} clipPathUnits="userSpaceOnUse">
+            <rect x="0" y="-10" width={dayEdge} height={H + 20} data-testid="chart-clip-shown" />
+          </clipPath>
+          <clipPath id={seenId} clipPathUnits="userSpaceOnUse">
+            <rect
+              x={dayEdge}
+              y="-10"
+              width={reachedEdge - dayEdge}
+              height={H + 20}
+              data-testid="chart-clip-seen"
+            />
+          </clipPath>
+        </defs>
+        {#each years as m (m.year)}
+          <line
+            x1={(m.pct / 100) * W}
+            x2={(m.pct / 100) * W}
+            y1="0"
+            y2={H}
+            stroke="var(--chart-grid)"
+            stroke-width="1"
+            vector-effect="non-scaling-stroke"
+            data-testid="chart-year"
+          />
+        {/each}
+        {#each labels as l (l.label)}
+          <line
+            x1="0"
+            x2={W}
+            y1={y(l.value)}
+            y2={y(l.value)}
+            stroke="var(--chart-grid)"
+            stroke-width="1"
+            vector-effect="non-scaling-stroke"
+          />
+        {/each}
         {#if target}
           <line
             x1="0"
-            x2={x(target.deadlineIndex)}
-            y1={y(target.units)}
-            y2={y(target.units)}
-            stroke={COLORS.plan}
-            stroke-width="2"
+            x2={goalX}
+            y1={goalY}
+            y2={goalY}
+            stroke="var(--chart-ink)"
+            stroke-width="1.5"
             stroke-dasharray="5 3"
             vector-effect="non-scaling-stroke"
             data-testid="chart-target"
           />
           <line
-            x1={x(target.deadlineIndex)}
-            x2={x(target.deadlineIndex)}
+            x1={goalX}
+            x2={goalX}
             y1="0"
             y2={H}
-            stroke={COLORS.plan}
-            stroke-width="2"
+            stroke="var(--chart-ink)"
+            stroke-width="1.5"
             stroke-dasharray="5 3"
             vector-effect="non-scaling-stroke"
           />
         {/if}
-        <path
-          d={line(homes, 0, split)}
-          fill="none"
-          stroke={COLORS.total}
-          stroke-width="2.5"
-          vector-effect="non-scaling-stroke"
-          data-testid="chart-line"
-        />
-        <path
-          d={line(homes, split, last)}
-          fill="none"
-          stroke={COLORS.total}
-          stroke-width="2.5"
-          stroke-dasharray="7 4"
-          vector-effect="non-scaling-stroke"
-          data-testid="chart-line-later"
-        />
+        <g clip-path="url(#{shownId})">
+          {#if paths.gap}
+            <path
+              d={paths.gap}
+              fill="var(--chart-gap)"
+              fill-opacity={stale ? 0.5 : 1}
+              data-testid="chart-gap"
+            />
+          {/if}
+          {#if paths.law}
+            <path
+              d={paths.law}
+              fill="none"
+              stroke={shownStroke.law}
+              stroke-width={shownStroke.width}
+              stroke-linejoin="round"
+              vector-effect="non-scaling-stroke"
+              data-testid="chart-law"
+            />
+          {/if}
+          <path
+            d={paths.line}
+            fill="none"
+            stroke={shownStroke.total}
+            stroke-width={shownStroke.width}
+            stroke-linejoin="round"
+            vector-effect="non-scaling-stroke"
+            data-testid="chart-line"
+          />
+        </g>
+        <g clip-path="url(#{seenId})">
+          {#if paths.gap}
+            <path
+              d={paths.gap}
+              fill="var(--chart-gap)"
+              fill-opacity="0.5"
+              data-testid="chart-gap-seen"
+            />
+          {/if}
+          {#if paths.law}
+            <path
+              d={paths.law}
+              fill="none"
+              stroke={SEEN.law}
+              stroke-width={SEEN.width}
+              stroke-linejoin="round"
+              vector-effect="non-scaling-stroke"
+              data-testid="chart-law-seen"
+            />
+          {/if}
+          <path
+            d={paths.line}
+            fill="none"
+            stroke={SEEN.total}
+            stroke-width={SEEN.width}
+            stroke-linejoin="round"
+            vector-effect="non-scaling-stroke"
+            data-testid="chart-line-seen"
+          />
+        </g>
         {#if active !== null}
           <line
-            x1={x(active)}
-            x2={x(active)}
+            x1={xs[active]}
+            x2={xs[active]}
             y1="0"
             y2={H}
             stroke="var(--chart-vertical)"
@@ -163,7 +309,26 @@
         {/if}
       {/if}
     </svg>
-    {#if view && last >= 0}
+    {#if v && paths}
+      {#each labels as l (l.label)}
+        <span
+          class="ylabel pointer-events-none absolute left-0.5 text-[10px] leading-none tabular-nums"
+          style:top="{y(l.value)}%"
+          aria-hidden="true"
+          data-testid="chart-ylabel">{l.label}</span
+        >
+      {/each}
+      {#if target}
+        <span
+          class="ylabel note pointer-events-none absolute text-[10px] leading-none whitespace-nowrap tabular-nums"
+          class:flip={goalX > W * 0.7}
+          class:below={goalY < 20}
+          style:left="{(goalX / W) * 100}%"
+          style:top="{goalY}%"
+          aria-hidden="true"
+          data-testid="chart-target-note">{note}</span
+        >
+      {/if}
       <div
         bind:this={overlay}
         class="overlay absolute inset-0"
@@ -172,13 +337,13 @@
         aria-label="Month in the chart"
         aria-orientation="horizontal"
         aria-valuemin={0}
-        aria-valuemax={last}
-        aria-valuenow={active ?? split}
-        aria-valuetext={summary(active ?? split)}
+        aria-valuemax={reachedPos}
+        aria-valuenow={valuePos}
+        aria-valuetext={reading}
         {onfocus}
         {onblur}
         {onkeydown}
-        onpointermove={(e) => (hoverAt = monthAt(e.clientX))}
+        onpointermove={(e) => (hoverAt = posAt(e.clientX))}
         onpointerleave={() => (hoverAt = null)}
       ></div>
       {#if active !== null}
@@ -186,17 +351,17 @@
              above the playhead line while the readout shows. Keep the class name in step. -->
         <p
           class="sfh-chart-readout readout pointer-events-none absolute top-0 m-0 rounded border border-line bg-surface px-2 py-1 text-xs whitespace-nowrap text-ink tabular-nums shadow-md dark:text-ink-dark"
-          style:left="{(x(active) / W) * 100}%"
-          class:flip={x(active) > W / 2}
+          style:left="{(xs[active] / W) * 100}%"
+          class:flip={xs[active] > W / 2}
           data-testid="chart-readout"
         >
-          {summary(active)}
+          {reading}
         </p>
       {/if}
     {/if}
   </div>
   <!-- From md the legend sits in the label column beside the plot (Timeline). -->
-  <ChartLegend class="md:hidden" goal={target !== null} />
+  <ChartLegend class="md:hidden" goal={target !== null} {inForce} />
   <figcaption class="sr-only">{caption}</figcaption>
 </figure>
 
@@ -208,13 +373,36 @@
     outline: 2px solid var(--color-accent);
     outline-offset: 1px;
   }
+  /* Value labels and the goal's note sit just under their line, haloed as the Results chart's. */
+  .ylabel {
+    margin-top: 2px;
+    color: var(--chart-label);
+    text-shadow:
+      0 0 2px var(--chart-halo),
+      0 0 2px var(--chart-halo),
+      0 0 2px var(--chart-halo);
+  }
+  .note {
+    color: var(--chart-ink);
+    transform: translate(4px, calc(-100% - 4px));
+  }
+  .note.below {
+    transform: translate(4px, 0);
+  }
+  .note.flip {
+    transform: translate(calc(-100% - 4px), calc(-100% - 4px));
+  }
+  .note.flip.below {
+    transform: translate(calc(-100% - 4px), 0);
+  }
   .readout {
     transform: translateX(8px);
   }
-  /* From md on a short viewport the plot is shorter, so the rows under the pinned block keep room. */
+  /* From md on a short viewport the plot is shorter, so the rows under the pinned block keep
+     room. */
   @media (min-width: 768px) and (max-height: 820px) {
     .plot svg {
-      height: 40px;
+      height: 64px;
     }
   }
   .readout.flip {

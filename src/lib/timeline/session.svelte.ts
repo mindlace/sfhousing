@@ -29,7 +29,6 @@ import {
   NO_EDIT,
   afterView,
   edited,
-  playAvailable,
   refilled,
   rejected,
   settled,
@@ -90,7 +89,7 @@ interface Sent {
   policy: SimPolicy4;
   lots: Lots;
   key: string;
-  /** Counts as an edit: stale and Play wait for a refill at its rev or later. */
+  /** Counts as an edit: stale waits for a refill at its rev or later. */
   edit: boolean;
   /** Posted before anything showed the dataset loaded (no `compiling` or `compiled` yet). */
   early: boolean;
@@ -246,7 +245,7 @@ export class TimelineSession {
     if (this.#filledSinceOpen) return 'ready';
     return this.#stopped || this.#crashed ? 'failed' : 'loading';
   }
-  /** Filling stopped (rule 35 error or a crash): Play runs inside the filled part. */
+  /** Filling stopped (rule 35 error or a crash). */
   get stoppedByError(): boolean {
     return this.#stopped || this.#crashed;
   }
@@ -261,8 +260,9 @@ export class TimelineSession {
     return this.#provisional ? { view: s.view ?? this.#view, stale: true } : s;
   }
 
-  playAvailable(): boolean {
-    return playAvailable(this.#edit, this.#view, this.stoppedByError);
+  /** An edit is not yet answered by a refill (EditState.pending). */
+  get pending(): boolean {
+    return this.#edit.pending;
   }
 
   // ---- what the page does ----
@@ -295,11 +295,14 @@ export class TimelineSession {
     this.#settleIfDone();
   }
 
-  /** The debounced pair from PolicySync: sent unless it equals what the worker runs. */
-  send(policy: SimPolicy4, lots: Lots): void {
+  /**
+   * The debounced pair from PolicySync: sent unless it equals what the worker runs. True when it
+   * went out to the worker (the numbers may change).
+   */
+  send(policy: SimPolicy4, lots: Lots): boolean {
     const doc = this.#reconcile(policy);
     this.#current = { policy: doc, lots };
-    if (this.#openRev === 0) return; // `open` sends it
+    if (this.#openRev === 0) return false; // `open` sends it
     const key = keyOf(doc, lots);
     if (key === this.#lastKey) {
       this.#dirty = false;
@@ -310,9 +313,10 @@ export class TimelineSession {
       }
       this.#settleIfDone();
       this.#update();
-      return;
+      return false;
     }
     this.#post(doc, lots);
+    return true;
   }
 
   /** The playhead moved: viewMonth through the gate when its model month changes; stale recomputed. */
@@ -432,7 +436,7 @@ export class TimelineSession {
     this.dismiss('crash');
     // The old numbers stay, dimmed, until the new fill passes the playhead.
     const before = this.#view;
-    if (before !== null) this.#edit = { ...refilled(this.#edit, before), sinceWhole: true };
+    if (before !== null) this.#edit = refilled(this.#edit, before);
     this.#log = EMPTY_LOG;
     this.#view = null;
     this.#cardDirty = this.#cardDay !== null;
@@ -643,11 +647,7 @@ export class TimelineSession {
 
   #afterView(): void {
     const next = afterView(this.#edit, this.#view, this.#index());
-    if (
-      next.held !== this.#edit.held ||
-      next.pending !== this.#edit.pending ||
-      next.sinceWhole !== this.#edit.sinceWhole
-    ) {
+    if (next.held !== this.#edit.held || next.pending !== this.#edit.pending) {
       this.#edit = next;
     }
   }

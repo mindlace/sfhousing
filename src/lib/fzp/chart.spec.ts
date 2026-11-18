@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatCompactCount, formatCount } from '$lib/scoreboard';
 import type { TimelineScore } from '$lib/sim/protocol';
+import { GOAL } from '$lib/goal/goal';
 import { CHART_H, COLORS, SERIES_NAME, chartLabel, chartModel, niceCeil, tableRows } from './chart';
 import {
   FIX_ASOF,
@@ -128,9 +129,13 @@ describe('chartModel', () => {
   it('places RHNA and the two verticals', () => {
     expect(m.rhnaY).toBeCloseTo(CHART_H - ((82069 - m.yMin) / (m.yMax - m.yMin)) * CHART_H, 6);
     expect(m.verticals).toEqual([
-      { x: m.x(dayFromUtc(2031, 1, 31)), label: 'RHNA deadline' },
+      { x: m.x(dayFromUtc(2031, 1, 31)), label: 'Goal deadline' },
       { x: m.x(dayFromUtc(2045, 6, 30)), label: '2045' }
     ]);
+  });
+
+  it("the deadline vertical is the goal's and reads Goal deadline", () => {
+    expect(m.verticals[0]).toEqual({ x: m.x(GOAL.deadline), label: 'Goal deadline' });
   });
 
   it('draws plan-effect series with an end-of-month x', () => {
@@ -330,7 +335,7 @@ describe('chartLabel', () => {
   it('summarises the total at the deadline, 2045 and the end', () => {
     const at2045 = monthIndex(dayFromUtc(2045, 6, 30), TIMELINE_SCORE.months[0], 291);
     expect(chartLabel(TIMELINE_SCORE, 290)).toBe(
-      'Toward the goal, since Jun 2022: 17,100 by the RHNA deadline, ' +
+      "Toward the goal, since Jun 2022: 17,100 by the goal's deadline, " +
         `${formatCount(12000 + 100 * at2045)} by 2045, ` +
         `${formatCount(12000 + 29000)} by December 2050.`
     );
@@ -343,12 +348,18 @@ describe('chartLabel', () => {
     );
     const at2045 = monthIndex(dayFromUtc(2045, 6, 30), TIMELINE_SCORE.months[0], 291);
     const mid = chartLabel(TIMELINE_SCORE, 60);
-    expect(mid).toContain('17,100 by the RHNA deadline, ');
+    expect(mid).toContain("17,100 by the goal's deadline, ");
     expect(mid).not.toContain('by 2045');
     expect(
       mid.endsWith(`${formatCount(12000 + 6000)} by ${formatMonthYear(TIMELINE_SCORE.months[60])}.`)
     ).toBe(true);
     expect(chartLabel(TIMELINE_SCORE, at2045)).toContain('by 2045');
+  });
+
+  it("chartLabel says by the goal's deadline", () => {
+    const label = chartLabel(TIMELINE_SCORE, 290);
+    expect(label).toContain("by the goal's deadline");
+    expect(label).not.toContain('RHNA');
   });
 
   it('names the last year of the score', () => {

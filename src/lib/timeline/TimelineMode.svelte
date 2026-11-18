@@ -79,14 +79,9 @@
   const MIN_SHEET = 240;
 
   /**
-   * From md, px of scroll padding under the pinned block: a 20 px bar scrolled to the top keeps
-   * its 24 px target clear of the chart's slider (WCAG 2.2 2.5.8).
-   */
-  const PIN_GAP = 4;
-  /**
-   * Px of rows the stuck pinned block must leave in its scroll box (a 44 px coarse row with room
-   * around it); with less (a short window or browser zoom) the block scrolls with the rows, so a
-   * focused row is never under it (WCAG 2.2 2.4.11, 1.4.10).
+   * Px of rows the pinned block must leave in its box (a 44 px coarse row with room around it);
+   * with less (a short window or browser zoom) the block and the rows are one piece that the
+   * page's box scrolls, so a focused row always shows (WCAG 2.2 2.4.11, 1.4.10).
    */
   const MIN_ROWS = 64;
 
@@ -96,7 +91,7 @@
 
 <script lang="ts">
   import { onMount, tick, untrack, type Snippet } from 'svelte';
-  import { MediaQuery } from 'svelte/reactivity';
+  import { MediaQuery, SvelteSet } from 'svelte/reactivity';
   import type { Manifest } from '$lib/data/manifest';
   import { cardFunding, type CardFunding } from '$lib/fzp/card';
   import { BR_BLOCK, watchCardArea } from '$lib/fzp/card-area-watch';
@@ -106,13 +101,12 @@
   import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import ProjectCardPanel from '$lib/fzp/ProjectCardPanel.svelte';
   import ProjectTooltip from '$lib/fzp/ProjectTooltip.svelte';
-  import { scrubMarkers } from '$lib/fzp/score-view';
   import SimResults from '$lib/fzp/SimResults.svelte';
   import SourcesDialog from '$lib/fzp/SourcesDialog.svelte';
   import { SummaryRequester, type SummaryState } from '$lib/fzp/summary-request';
   import { monthStart } from '$lib/fzp/time';
   import type { FzpPhase, Speed } from '$lib/fzp/types';
-  import { GOAL, goalStep } from '$lib/goal/goal';
+  import { GOAL, TODAY, goalStep, type Goal } from '$lib/goal/goal';
   import type { HeightCity } from '$lib/map/height/types';
   import SimMap from '$lib/map/SimMap.svelte';
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
@@ -133,10 +127,19 @@
   import Explain from './Explain.svelte';
   import { fundsOf4 } from './owner';
   import Playhead from './Playhead.svelte';
-  import { filledEndDay, indexOfDay, viewMonthOf } from './playhead';
+  import { clampDay, filledEndDay, indexOfDay, viewMonthOf } from './playhead';
   import { termsInForce } from './lens';
   import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
-  import { headlineAt, headlineSpoken, headlineText, resultsAt, scoreOfView } from './results';
+  import { awaitsView, goalOutcome, outcomeKey, outcomeText, type GoalOutcome } from './outcome';
+  import { editedReveal, moved, revealOpen, scanned, type Reveal } from './reveal';
+  import {
+    headlineAt,
+    headlineSpoken,
+    headlineText,
+    playheadAt,
+    resultsAt,
+    scoreOfView
+  } from './results';
   import { TimelineSession, type Lots, type SessionNotice } from './session.svelte';
   import type { SpanRef } from './spans';
   import Timeline from './Timeline.svelte';
@@ -225,6 +228,8 @@
     bottomExtra?: number;
     /** Test seam: the status slot's least gap between updates (rule 32). */
     statusMs?: number;
+    /** Test seam: the goal every goal read goes through. Default the page's goal. */
+    goal?: Goal;
   }
 
   let {
@@ -268,6 +273,7 @@
     scoreExpanded = false,
     scoreControls = undefined,
     bottomExtra = 0,
+    goal = GOAL,
     statusMs = 1000
   }: Props = $props();
 
@@ -295,6 +301,8 @@
   let day = $state<Day>(untrack(() => initialCalibration?.asOf ?? 0));
   let playing = $state(false);
   let speed = $state<Speed>(DEFAULT_SPEED);
+  /** How far the playhead has been (rule 3): everything ahead of `reached` is unseen. */
+  let reveal = $state.raw<Reveal>(revealOpen(untrack(() => initialCalibration?.asOf ?? 0)));
   /** Every refill's `from`, in arrival order (the e2e hook). */
   const refills: number[] = [];
 
@@ -312,26 +320,32 @@
   const statics = $derived(session?.statics ?? null);
   const months = $derived(statics?.months ?? current?.months ?? null);
   /** The playhead's calendar month. */
-  const index = $derived(months && months.length > 0 ? indexOfDay(months, day) : 0);
+  const index = $derived(months ? playheadAt(months, asOf, day).index : 0);
+  /** The last day the playhead may reach: the last calendar month row's last day. */
+  const lastDay = $derived(months ? filledEndDay(months, months.length - 1, asOf) : windowEnd);
   const shown = $derived(session ? session.shown(index) : { view: null, stale: false });
   /** The numbers on show are from before the latest change (rule 31). */
   const stale = $derived(shown.stale);
   /**
-   * The filled mark: the playhead stops there (rule 24). Filled to the last month, it is the
-   * window's end (that month's calendar end and the window's model-month end differ by days), so
-   * End, Replay and the end of playback reach it.
+   * The computed edge: the playhead waits there (rule 24). Filled to the last month, it is
+   * `lastDay`, the last calendar month row's last day, so End, Replay and the end of playback
+   * reach it and every reading names that row's month.
    */
   const filledEnd = $derived(
     !current
       ? asOf
       : current.filledThrough >= current.lastIndex
-        ? windowEnd
+        ? lastDay
         : Math.min(filledEndDay(current.months, current.filledThrough, asOf), windowEnd)
   );
-  const playable = $derived(session ? session.playAvailable() : false);
   const tierBaseline = $derived(statics?.tierBaseline ?? null);
+  /**
+   * The view on show, stable across months: `shown` is a new object for every month, its view is
+   * not, so what derives from this rebuilds only when the view changes.
+   */
+  const shownView = $derived(shown.view);
   /** Today's score shape over the view on show (rule 26). */
-  const score = $derived(shown.view ? scoreOfView(shown.view, tierBaseline) : null);
+  const score = $derived(shownView ? scoreOfView(shownView, tierBaseline) : null);
   const shownFilled = $derived(shown.view?.filledThrough ?? -1);
   /** `resultsAt` over the score above (the view's, built once). */
   const at = $derived(
@@ -342,44 +356,104 @@
   const shownEnd = $derived(
     shown.view ? filledEndDay(shown.view.months, shown.view.filledThrough, asOf) : asOf
   );
-  const markers = $derived(score ? scrubMarkers(score) : []);
   /**
    * The document the shown numbers are from: the one the worker runs, or while stale the one it
    * ran when the held view was taken; the edited `policy` until the session has one.
    */
   let heldDoc = $state.raw<SimPolicy4 | null>(null);
   const resultsDoc = $derived((stale ? heldDoc : null) ?? session?.accepted ?? policy);
+  /** A policy of the person's is in force in the document the numbers on show are from. */
+  const inForce = $derived(!nothingInForce(resultsDoc));
   /**
    * The comparison's wording for Results and the header, from the document the numbers on show
    * are from, so it changes with the numbers (held numbers keep theirs).
    */
-  const copy = $derived(copyOf(nothingInForce(resultsDoc)));
+  const copy = $derived(copyOf(!inForce));
   /** The playhead is at the dataset date: the headline reads today. */
-  const atToday = $derived(day <= asOf);
+  const atToday = $derived(playheadAt(months ?? [], asOf, day).atToday);
   /**
    * The headline at the playhead's month (rule 27; OQ-3: "calculating" while provisional). It
-   * reads `index`, never `day`, so it changes at most once per month the playhead crosses.
+   * reads `index` and `atToday`, never `day`, so it changes at most once per month the playhead
+   * crosses. The playhead stops at the last row's month, so `months[index]` is the readout's.
    */
   const headline = $derived(
-    headlineAt(shown.view, index, atToday, session?.provisional ?? false, GOAL)
+    headlineAt(
+      shown.view,
+      { index, atToday },
+      { provisional: session?.provisional ?? false, inForce },
+      goal
+    )
   );
-  /** The playhead's calendar month, the readout's: it changes only when that month changes. */
-  const playheadMonth = $derived(monthStart(day));
-  /** Named by the playhead's month; past the last row, that row's numbers under it. */
-  const headText = $derived(
-    headline
-      ? headlineText(
-          {
-            ...headline,
-            at: headline.at === null ? null : playheadMonth,
-            // "From your policy" only while the copy says the numbers are your policy's.
-            effect: copy.compare === 'fzp' ? headline.effect : null
-          },
-          GOAL
-        )
+  const headText = $derived(headline ? headlineText(headline, goal) : null);
+  /**
+   * The goal's step, an input: from the newest view, else the one on show (a restart's re-open
+   * keeps held numbers with no view of its own), so it stays whole while numbers show.
+   */
+  const stepView = $derived(current ?? shownView);
+  const chartTarget = $derived(stepView ? goalStep(goal, stepView) : null);
+  /** The ruler's goal flag: at the deadline while the chart draws the goal's step. */
+  const goalDeadline = $derived(chartTarget ? goal.deadline : null);
+  /**
+   * The month of the furthest date reached (TODAY at or before the dataset date), a primitive: the
+   * goal notice reads this and never the day, so it changes at most once per month reached.
+   */
+  const reachedMonth = $derived(
+    months && reveal.reached > asOf ? indexOfDay(months, reveal.reached) : TODAY
+  );
+  /** An edit's first changed month is being looked for: the outcome waits for it. */
+  const searching = $derived(reveal.finding !== null);
+  /**
+   * What the months reached say of the goal. Held while the numbers are stale or a search is under
+   * way, so an edit's answer replaces it once, never on the way. Compared by key: an unchanged
+   * outcome keeps its object, so nothing downstream rewrites.
+   */
+  let outcome = $state.raw<GoalOutcome | null>(null);
+  /**
+   * Whether a policy is in force in the document `outcome` came from, held with it under the same
+   * wait, so the notice's wording and numbers are always one document's.
+   */
+  let outcomeInForce = $state(false);
+  $effect(() => {
+    const view = shown.view;
+    const m = reachedMonth;
+    const g = goal;
+    const f = inForce;
+    const wait = stale || searching;
+    untrack(() => {
+      if (wait) return;
+      const day = m === TODAY || !view ? asOf : view.months[m];
+      // A view not yet covering the months read is no answer: the last outcome stays.
+      if (awaitsView(g, view, day, asOf)) return;
+      const next = goalOutcome(g, view, day, asOf);
+      const same =
+        next === outcome ||
+        (next !== null && outcome !== null && outcomeKey(next) === outcomeKey(outcome));
+      if (!same) outcome = next;
+      outcomeInForce = f;
+    });
+  });
+  /** Outcomes dismissed this visit, by key. */
+  const dismissed = new SvelteSet<string>();
+  /**
+   * Dismissing removes the focused button: focus goes to the next notice's button in the stack,
+   * else to the ruler, so it never drops to the page.
+   */
+  async function dismissGoal(e: MouseEvent) {
+    if (!outcome) return;
+    const buttons = [...(pillsEl?.querySelectorAll('button') ?? [])];
+    const next = buttons[buttons.indexOf(e.currentTarget as HTMLButtonElement) + 1];
+    dismissed.add(outcomeKey(outcome));
+    await tick();
+    const target = next?.isConnected
+      ? next
+      : (modeEl ?? document).querySelector<HTMLElement>('[data-testid=tl-ruler]');
+    target?.focus();
+  }
+  const goalNotice = $derived(
+    outcome && !dismissed.has(outcomeKey(outcome))
+      ? outcomeText(outcome, goal, outcomeInForce)
       : null
   );
-  const chartTarget = $derived(current ? goalStep(GOAL, current) : null);
   // The held document goes once the numbers on show are current again.
   $effect(() => {
     if (!stale) untrack(() => (heldDoc = null));
@@ -397,7 +471,7 @@
 
   // ---- the status slot (rules 31, 32) ----
 
-  /** "Updating" while the numbers are stale, else nothing (the ruler's hatching shows the fill). */
+  /** "Updating" while the numbers are stale, else nothing. */
   const statusWanted = $derived(session && stale ? UPDATING : '');
   let statusText = $state('');
   /** "Updating" shows: it covers the page's save state in the slot's one cell. */
@@ -727,8 +801,12 @@
 
   // ---- the playhead ----
 
-  /** The playhead moved (once per change): the view month, the map's time, the card's month. */
+  /**
+   * The playhead moved (once per change): the furthest date reached, the view month, the map's
+   * time, the card's month.
+   */
   function handleDay(d: Day): void {
+    reveal = moved(reveal, d);
     session?.playhead(d);
     handle?.setTime(d);
     if (cardMonth !== null && monthStart(d) !== cardMonth) refreshCard();
@@ -824,18 +902,54 @@
     session = s;
   }
 
-  // An edit (a new document): the edit is marked at once and playback pauses (rule 25).
+  /**
+   * The document the numbers on show came from, to hold while a change is stale: taken before the
+   * session changes. Already stale and held, the held one stays.
+   */
+  function hold(s: TimelineSession): SimPolicy4 | null {
+    return !stale || heldDoc === null ? s.accepted : heldDoc;
+  }
+
+  // An edit (a new document): the edit is marked at once and playback pauses (rule 25). The
+  // reveal starts looking for the first month it changed, against the numbers on show now (a
+  // search already under way keeps what was seen first).
   $effect(() => {
     const p = policy;
     untrack(() => {
       if (!session || p === seenPolicy) return;
       seenPolicy = p;
-      // The numbers on show are the accepted document's: kept while the edit is stale.
-      if (!stale || heldDoc === null) heldDoc = session.accepted;
+      const seen = shown.view ? { view: shown.view, inForce } : null;
+      heldDoc = hold(session);
       session.edited();
+      reveal = editedReveal(reveal, seen);
       playing = false;
     });
   });
+
+  /**
+   * An edit waits for its refill: until then the newest view is still the old one. A provisional
+   * open waits until its full document has filled the window (its send is not an edit, so it is
+   * never pending).
+   */
+  const waiting = $derived(!session || session.pending || session.provisional);
+  // The scan: once the edit is answered, as the new view fills. It runs when the view or the
+  // waiting state changes, never as the playhead moves; `scanned` resumes where it stopped.
+  $effect(() => {
+    const v = current;
+    const wait = waiting;
+    untrack(() => {
+      if (wait || !session) return;
+      const now = v ? { view: v, inForce: !nothingInForce(session.accepted ?? policy) } : null;
+      reveal = scanned(reveal, now, { day, playing, asOf });
+    });
+  });
+  /**
+   * The day "Play from" offers: the first changed month's start, clamped into today..the computed
+   * edge as the Playhead clamps it, so the hook and the control name the same day.
+   */
+  const playFromDay = $derived(
+    reveal.playFrom === null || !months ? null : clampDay(months[reveal.playFrom], asOf, filledEnd)
+  );
 
   // PolicySync settled with a failure: the unsent edit ends (it goes out once Retry finds its
   // lots), so the page shows the last sent document's forecast, current, with the notice.
@@ -847,13 +961,20 @@
     });
   });
 
-  // The edit's lots settled (or a provisional open's): the pair goes out.
+  // The edit's lots settled (or a provisional open's): the pair goes out. A send that goes out
+  // with no search under way (a Retry's lots, a provisional open's full document) can change the
+  // numbers with no edit: as an edit does, it holds the document the numbers on show came from
+  // and starts a search against those numbers.
   $effect(() => {
     const l = lots;
     untrack(() => {
       if (!session || l === null || l === seenLots) return;
       seenLots = l;
-      session.send(policy, l);
+      const seen = reveal.finding === null && shown.view ? { view: shown.view, inForce } : null;
+      const held = hold(session);
+      if (!session.send(policy, l)) return;
+      heldDoc = held;
+      if (seen) reveal = editedReveal(reveal, seen);
     });
   });
 
@@ -870,6 +991,7 @@
       if (fresh.calibration !== calibration) {
         calibration = fresh.calibration;
         day = fresh.calibration.asOf;
+        reveal = revealOpen(fresh.calibration.asOf);
         pushLookups();
         handle?.setTime(day);
         oncalibration?.(fresh.calibration);
@@ -914,20 +1036,20 @@
     detailEl.scrollTop = 0;
     detailEl.querySelector<HTMLElement>('[data-testid=tl-results]')?.focus({ preventScroll: true });
   }
-  /** The pinned block's height: the scroll padding (WCAG 2.4.11). */
+  /** The pinned block's height. */
   let pinHeight = $state(0);
-  /** The scroll boxes' client heights: the mode box below md, the timeline's own from md. */
+  /** The timeline's box's client height: the mode box below md, the bottom pane's lanes from md. */
   let modeClientH = $state(0);
   let lanesClientH = $state(0);
-  /** The block sticks only while it leaves MIN_ROWS of rows in its scroll box (re-read on resize). */
-  const pinStuck = $derived(
+  /**
+   * The rows scroll in their own box under the block only while it leaves MIN_ROWS of them
+   * (re-read on resize); otherwise the timeline is one piece.
+   */
+  const pinned = $derived(
     narrow.current
       ? !modeClientH || modeClientH - pinHeight >= MIN_ROWS
-      : !lanesClientH || lanesClientH - pinHeight - PIN_GAP >= MIN_ROWS
+      : !lanesClientH || lanesClientH - pinHeight >= MIN_ROWS
   );
-  /** The block's share of the scroll padding and margins: none while it scrolls with the rows. */
-  const pinPad = $derived(pinStuck ? pinHeight : 0);
-  const pinGap = $derived(pinStuck ? PIN_GAP : 0);
   let chartBox = $state<HTMLElement>();
   let modeEl = $state<HTMLElement>();
   let sheetTop = $state(0);
@@ -972,6 +1094,8 @@
       lastIndex: statics?.lastIndex ?? -1,
       policy,
       stale,
+      reached: reveal.reached,
+      playFrom: playFromDay,
       refills,
       completedNet: () =>
         current ? current.rows.slice(0, current.filledThrough + 1).map((r) => r.completedNet) : []
@@ -1064,11 +1188,12 @@
     <SimResults
       {score}
       {at}
-      view={score ? shown.view : null}
+      view={score ? shownView : null}
       {day}
       {asOf}
       horizon={windowEnd}
       filledEnd={shownEnd}
+      reached={Math.min(reveal.reached, shownEnd)}
       {datasetVersion}
       builtAt={manifest?.builtAt ?? ''}
       onsources={() => dialog?.open()}
@@ -1086,19 +1211,31 @@
   <Playhead
     {asOf}
     {windowEnd}
+    last={lastDay}
     end={filledEnd}
     bind:day
     bind:playing
     bind:speed
-    {playable}
-    {markers}
+    reached={reveal.reached}
+    playFrom={playFromDay}
+    {goalDeadline}
     onday={handleDay}
   />
 {/snippet}
 
 {#snippet chartPart()}
   <div bind:this={chartBox}>
-    <ChartRow {asOf} {windowEnd} view={current} {index} target={chartTarget} />
+    <!-- The view on show, as the header: the held numbers, dimmed, while stale. -->
+    <ChartRow
+      {asOf}
+      {windowEnd}
+      view={shown.view}
+      {inForce}
+      {day}
+      reached={reveal.reached}
+      target={chartTarget}
+      {stale}
+    />
   </div>
 {/snippet}
 
@@ -1107,7 +1244,6 @@
 <div
   bind:this={modeEl}
   class="sfh-fzp sfh-tl relative flex h-full flex-col max-md:overflow-y-auto"
-  style:scroll-padding-top={narrow.current ? `${pinPad}px` : undefined}
   bind:clientHeight={modeClientH}
   data-testid="tl-mode"
 >
@@ -1144,6 +1280,18 @@
       {:else}
         {#if session}
           {@render notices?.()}
+          <!-- The goal notice's polite region, mounted empty with the session so the first notice
+               is announced. -->
+          <div role="status" data-testid="tl-goal" class="contents">
+            {#if outcome && goalNotice !== null}
+              <span class={PILL} data-testid="tl-goal-notice">
+                <span>{goalNotice}</span>
+                <button type="button" aria-label="Dismiss" class={PILL_ACTION} onclick={dismissGoal}
+                  >×</button
+                >
+              </span>
+            {/if}
+          </div>
         {/if}
         {#if phase === 'loading' && !halted}
           <p role="status" data-testid="fzp-status" class="{PILL} pr-4">Loading the simulation…</p>
@@ -1263,9 +1411,12 @@
 
   {#if mounted && session && calibration}
     <!-- From md the bottom pane: a fixed 40% of the mode box, the timeline beside the detail
-         column (rule 1). Below md the timeline is in flow and the column a sheet. -->
+         column (rule 1). Below md the timeline is in flow and the column a sheet; while pinned
+         the pane is the mode box's height, so the mode box scrolls the map away first, then the
+         rows scroll in their own box. -->
     <div
       class="flex shrink-0 flex-col border-t border-line bg-surface md:grid md:h-[40%] md:grid-rows-[minmax(0,1fr)] dark:border-line-dark dark:bg-surface-dark"
+      style:height={narrow.current && pinned ? '100%' : undefined}
       style:grid-template-columns={narrow.current
         ? undefined
         : detailShown
@@ -1273,23 +1424,15 @@
           : 'minmax(0, 1fr)'}
       data-testid="tl-dock"
     >
-      <!-- The timeline's scroll box from md; below md the mode box scrolls. Either way its pinned
-           block sticks at the scroll box's top, and the scroll padding keeps a focused row out
-           from under it (WCAG 2.2 2.4.11). Below md the mode box's padding is the block's height,
-           so scrolling this box or the timeline to the top (the sheets) takes the block back off
-           as a negative margin. A box too short for the block and MIN_ROWS of rows unsticks it:
-           the block's share of the padding and margins drops to 0 and the timeline scrolls as one
-           piece. -->
+      <!-- The timeline's box. Pinned, its block sits above the rows' own scroll box, so a row
+           never passes under it (WCAG 2.2 2.4.11). A box too short for the block and MIN_ROWS
+           of rows makes the timeline one piece: from md this box scrolls it, below md the mode
+           box. -->
       <div
         bind:this={dockEl}
         bind:clientHeight={lanesClientH}
-        class="min-h-0 md:overflow-y-auto"
-        style:padding-bottom={phoneSheet ? '100dvh' : undefined}
-        style:--tl-pin-pos={pinStuck ? undefined : 'relative'}
-        style:scroll-padding-top={narrow.current ? undefined : `${pinPad + pinGap}px`}
-        style:scroll-margin-top={narrow.current ? `${-pinPad}px` : undefined}
-        style:--tl-scroll-mt={narrow.current ? `${-pinPad}px` : undefined}
-        style:--tl-pin-mt="{narrow.current ? -pinPad : -pinPad - pinGap}px"
+        class="flex min-h-0 flex-col max-md:flex-1 {pinned ? '' : 'md:overflow-y-auto'}"
+        style:padding-bottom={phoneSheet && !pinned ? '100dvh' : undefined}
         data-testid="tl-lanes"
       >
         <Timeline
@@ -1304,10 +1447,11 @@
           playhead={playheadPart}
           chart={chartPart}
           goalShown={chartTarget !== null}
+          {inForce}
           playheadMonth={viewMonthOf(asOf, day)}
           playheadDay={day}
-          {filledEnd}
           bind:pinHeight
+          {pinned}
         />
       </div>
 

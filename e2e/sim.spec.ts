@@ -9,7 +9,8 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { SfhSimDebug } from '../src/lib/sim-page/debug';
-import { formatMonthYear, formatShortMonthYear } from '../src/lib/fzp/format';
+import { formatShortMonthYear } from '../src/lib/fzp/format';
+import { monthStart } from '../src/lib/fzp/time';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
 import {
@@ -263,11 +264,11 @@ test('the headline follows the playhead and counts from today', async ({ isMobil
   await slider(page).focus();
   await page.keyboard.press('End');
   await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes by [A-Z][a-z]{2} \d{4}$/);
-  // The headline names the readout's month, from the same day (here past the last row's month).
+  // The playhead stops at the last row's month, so the headline and the flag name the same one.
   const day = await fzp(page, 'day');
-  await expect(page.getByTestId('tl-readout-label')).toHaveText(formatMonthYear(day));
+  await expect(page.getByTestId('tl-flag')).toHaveText(formatShortMonthYear(monthStart(day)));
   expect((await scoreBar(page).textContent())!.replace(/^[\d,]+ homes by /, '')).toBe(
-    formatShortMonthYear(day)
+    formatShortMonthYear(monthStart(day))
   );
   // Nothing in force: line 2 is the goal alone. Below sm it is hidden; the description carries it.
   const description = /^([\d.]+% of the goal|Goal reached, [A-Z][a-z]{2} \d{4})$/;
@@ -284,6 +285,61 @@ test('the headline follows the playhead and counts from today', async ({ isMobil
   await slider(page).focus();
   await page.keyboard.press('Home');
   await expect(scoreBar(page)).toHaveText('0 homes by today');
+});
+
+test('passing the goal deadline short of it says by how much, once', async ({ page }) => {
+  await gotoSim(page);
+  const notice = page.getByTestId('tl-goal-notice');
+  // The region is mounted, empty, before anything is said.
+  await expect(page.getByTestId('tl-goal')).toHaveAttribute('role', 'status');
+  await expect(page.getByTestId('tl-goal')).toHaveText('');
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  await expect(notice.locator('span')).toHaveText(
+    /^Goal missed by [\d,]+ homes\. Add a policy and play again\.$/
+  );
+  await expectNoA11yViolations(page, { include: ['[data-testid=fzp-notices]'] });
+  await notice.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(notice).toHaveCount(0);
+  await expect(slider(page)).toBeFocused();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('End');
+  await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes by /);
+  await expect(notice).toHaveCount(0);
+});
+
+test('with a policy in force the chart draws current law and the gap; nothing past the playhead on opening', async ({
+  isMobile,
+  page
+}) => {
+  await gotoSim(page);
+  // On opening the playhead is at today: neither zone has any width, so nothing is drawn.
+  await expect(page.getByTestId('chart-svg').getByTestId('chart-clip-shown')).toHaveAttribute(
+    'width',
+    '0'
+  );
+  await expect(page.getByTestId('chart-svg').getByTestId('chart-clip-seen')).toHaveAttribute(
+    'width',
+    '0'
+  );
+  await expect(page.getByTestId('chart-law')).toHaveCount(0);
+  const n = await refillCount(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await waitRefilled(page, n);
+  await closeEditor(page);
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  const legend = page.getByTestId(isMobile ? 'chart-legend' : 'tl-chart-legend');
+  for (const name of ['With your policy', 'Current law', 'From your policy'])
+    await expect(legend.getByText(name, { exact: true })).toBeVisible();
+  await expect(page.getByTestId('chart-law')).toHaveCount(1);
+  await expect(page.getByTestId('chart-gap')).toHaveCount(1);
+  // At the end the solid zone reaches the plot's end.
+  await expect(page.getByTestId('chart-svg').getByTestId('chart-clip-shown')).toHaveAttribute(
+    'width',
+    '1000'
+  );
+  await expectNoA11yViolations(page, { include: ['[data-testid=tl-dock]'] });
 });
 
 test('at 375 px the links wait in Menu; the score bar stays pinned', async ({ isMobile, page }) => {
@@ -379,25 +435,38 @@ for (const width of [1280, 1024]) {
   });
 }
 
+/** Every kind open with a transit rule and a preset from md; below md the map scrolled away. */
+async function longRows(page: Page, isMobile: boolean): Promise<void> {
+  if (isMobile) {
+    await page.getByTestId('tl-mode').evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    return;
+  }
+  await openKind(page, 'Zoning');
+  await openKind(page, 'Permitting');
+  await openKind(page, 'Public money');
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await addPolicy(page, 'Permitting', PRESET);
+}
+
 test('the play control stays in view with every kind open', async ({ isMobile, page }) => {
   await gotoSim(page);
   const play = page.getByTestId('tl-play');
+  await longRows(page, isMobile);
   if (isMobile) {
-    await page.getByTestId('tl-mode').evaluate((el) => el.scrollTo(0, el.scrollHeight));
     const header = (await page.getByRole('banner').boundingBox())!;
     await expect
       .poll(async () => (await play.boundingBox())!.y)
       .toBeGreaterThanOrEqual(header.y + header.height - 0.5);
   } else {
-    await openKind(page, 'Zoning');
-    await openKind(page, 'Permitting');
-    await openKind(page, 'Public money');
-    await addPolicy(page, 'Zoning', 'Transit rule');
-    await addPolicy(page, 'Permitting', PRESET);
     const lanes = page.getByTestId('tl-lanes');
-    await lanes.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    const rows = page.getByTestId('tl-rows');
+    await rows.evaluate((el) => el.scrollTo(0, el.scrollHeight));
     await expect
-      .poll(() => lanes.evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 1))
+      .poll(() =>
+        rows.evaluate(
+          (el) => el.scrollTop > 0 && el.scrollTop + el.clientHeight >= el.scrollHeight - 1
+        )
+      )
       .toBe(true);
     const box = (await lanes.boundingBox())!;
     const p = (await play.boundingBox())!;
@@ -407,6 +476,34 @@ test('the play control stays in view with every kind open', async ({ isMobile, p
     expect(p.x + p.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
   }
   expect(await topmostAtCentre(play)).toBe(true);
+});
+
+test('on a phone the pinned block is shorter than before', async ({ isMobile, page }) => {
+  test.skip(!isMobile, 'the phone layout');
+  await gotoSim(page);
+  // Before: 280 px (three 44 px control rows, the years and bar, over the chart and its legend).
+  const h = await page.getByTestId('tl-pin').evaluate((el) => el.getBoundingClientRect().height);
+  expect(h).toBeLessThan(280);
+});
+
+test('rows scrolled part-way under the pinned block are not targets', async ({
+  isMobile,
+  page
+}) => {
+  // At 375x812 the phone's rows fit their box; at 375x400 (a 352 px mode box, the 217 px block
+  // leaving 135 px of rows, over MIN_ROWS) they overflow it by about 61 px and stay pinned.
+  if (isMobile) await page.setViewportSize({ width: 375, height: 400 });
+  await gotoSim(page);
+  await longRows(page, isMobile);
+  const rows = page.getByTestId('tl-rows');
+  await expect(rows).toHaveCSS('overflow-y', 'auto');
+  const max = await rows.evaluate((el) => el.scrollHeight - el.clientHeight);
+  expect(max).toBeGreaterThanOrEqual(22);
+  for (const offset of [6, 14, 22]) {
+    await rows.evaluate((el, y) => (el.scrollTop = y), offset);
+    await expect.poll(() => rows.evaluate((el) => el.scrollTop)).toBe(offset);
+    await expectNoA11yViolations(page, { include: ['[data-testid=tl-dock]'] });
+  }
 });
 
 // ---- brushes ------------------------------------------------------------------------------------
@@ -738,7 +835,7 @@ test('at 375 px with Results open the playhead and the About entry stay unobscur
   await gotoSim(page);
   await openScore(page);
   // Every playhead control is the topmost element at its centre.
-  for (const testId of ['tl-pause', 'tl-play', 'tl-faster', 'tl-today']) {
+  for (const testId of ['tl-play', 'tl-speed', 'tl-today']) {
     const control = page.getByTestId(testId);
     const hit = await control.evaluate((el) => {
       const r = el.getBoundingClientRect();
@@ -752,7 +849,7 @@ test('at 375 px with Results open the playhead and the About entry stay unobscur
   await expectAboutReachable(page);
 });
 
-test('End, Play at the window end reads Replay, and Today returns to the present', async ({
+test('End, Play at the last month reads Replay, and Today returns to the present', async ({
   page
 }) => {
   await gotoSim(page);

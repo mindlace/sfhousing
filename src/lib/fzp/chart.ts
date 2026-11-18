@@ -12,6 +12,13 @@ import { dayFromUtc, monthIndex, utcParts } from './time';
 
 export const CHART_H = 140;
 
+/** The vertical at the goal's deadline. */
+export const GOAL_DEADLINE_LABEL = 'Goal deadline';
+
+/** The 2045 reference's day (the scrubber's second marker). */
+const year2045 = (score: TimelineScore): Day =>
+  scrubMarkers(score)[scrubMarkers(score).length - 1].day;
+
 /**
  * Stroke colours (spec §4.6) as the custom properties layout.css defines per theme; each has at
  * least 3:1 contrast on its theme's surfaces (SC 1.4.11, checked in accent.spec.ts).
@@ -173,7 +180,10 @@ export function chartModel(
     planCompleted: line(planCompleted),
     planEntitled: line(planEntitled),
     rhnaY: y(GOAL.amount),
-    verticals: scrubMarkers(score).map((m) => ({ x: x(m.day), label: m.label })),
+    verticals: [
+      { x: x(GOAL.deadline), label: GOAL_DEADLINE_LABEL },
+      { x: x(year2045(score)), label: '2045' }
+    ],
     references: score.references.map((r) => {
       const series = MEASURE_SERIES[r.measure];
       return {
@@ -226,21 +236,19 @@ export function tableRows(score: TimelineScore, asOf: Day, reveal: number): Tabl
   return [...byIndex.values()].sort((a, b) => a.index - b.index);
 }
 
-/** The SVG's `aria-label`: the milestones reached by month `reveal`, then the total at `reveal`. */
+/**
+ * The SVG's `aria-label`: the milestones reached by month `reveal` (the goal's deadline, 2045), then
+ * the total at `reveal`.
+ */
 export function chartLabel(score: TimelineScore, reveal: number): string {
   const n = score.months.length;
   const last = clampReveal(reveal, n);
   const totalAt = (i: number) =>
     formatCount(score.baseline.completedNet + score.shown[i].completedNet);
-  const markers = scrubMarkers(score);
   const parts: string[] = [];
-  const rhna = score.targets.find((t) => t.target.id === RHNA_ID);
-  if (rhna) {
-    const i = deadlineIndex(score, rhna.deadline);
-    if (i <= last) parts.push(`${totalAt(i)} by the RHNA deadline`);
-  }
-  const y2045 = markers[markers.length - 1];
-  const i2045 = monthIndex(y2045.day, score.months[0], n);
+  const iGoal = deadlineIndex(score, GOAL.deadline);
+  if (iGoal <= last) parts.push(`${totalAt(iGoal)} by the goal's deadline`);
+  const i2045 = monthIndex(year2045(score), score.months[0], n);
   if (i2045 <= last) parts.push(`${totalAt(i2045)} by 2045`);
   parts.push(`${totalAt(last)} by ${formatMonthYear(score.months[last])}`);
   return `${SERIES_NAME.total}: ${parts.join(', ')}.`;

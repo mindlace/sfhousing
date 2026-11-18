@@ -164,18 +164,30 @@ describe('TimelineSession', () => {
     expect(session.shown(15).stale).toBe(false);
   });
 
-  it('dropUnsent ends an unsent edit: not stale, Play back, nothing posted', () => {
+  it('pending is true from an edit until a refill at its rev or later', () => {
+    opened();
+    expect(session.pending).toBe(false);
+    session.edited();
+    expect(session.pending).toBe(true);
+    session.send(doc2, {});
+    emit(compiled(2));
+    expect(session.pending).toBe(true);
+    emit(refill(1, 10));
+    expect(session.pending).toBe(true);
+    emit(refill(2, 10));
+    expect(session.pending).toBe(false);
+  });
+
+  it('dropUnsent ends an unsent edit: not stale, nothing posted', () => {
     opened();
     emit(filled(1, 20, LAST - 19));
     session.playhead(dayOf(15));
     session.edited();
     expect(session.shown(15).stale).toBe(true);
-    expect(session.playAvailable()).toBe(false);
     const posts = worker.posts.length;
     session.dropUnsent();
     expect(session.shown(15).stale).toBe(false);
     expect(session.shown(15).view).toBe(session.view);
-    expect(session.playAvailable()).toBe(true);
     expect(worker.posts).toHaveLength(posts);
     // A sent edit still pending is not dropped.
     session.edited();
@@ -272,7 +284,6 @@ describe('TimelineSession', () => {
     const notice = session.notices.find((n) => n.id === 'error')!;
     expect(notice).toEqual({ id: 'error', text: 'Part of the simulation stopped.', retry: 'open' });
     expect(session.stoppedByError).toBe(true);
-    expect(session.playAvailable()).toBe(true);
     session.retry(notice);
     expect(worker.all('openTimeline')).toHaveLength(2);
     expect(worker.lastOf('openTimeline')!.policy).toEqual(doc2);
@@ -459,7 +470,6 @@ describe('TimelineSession', () => {
     expect(session.provisional).toBe(true);
     session.send(withPaint, lots);
     expect(worker.lastOf('setPolicy')!.policy).toEqual(withPaint);
-    expect(session.playAvailable()).toBe(true);
     expect(session.notices).toEqual([]);
   });
 
@@ -575,7 +585,7 @@ describe('TimelineSession', () => {
     emit(compiled(3));
     emit(refill(3, 6));
     emit(filled(3, 6, LAST - 5));
-    expect([session.shown(LAST).stale, session.playAvailable()]).toEqual([false, true]);
+    expect(session.shown(LAST).stale).toBe(false);
   });
 
   it('a crash before any open: Retry restarts and clears the crash (minor 2)', () => {

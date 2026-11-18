@@ -15,7 +15,6 @@
     asOf: Day;
     windowEnd: Day;
     months: number;
-    filledPct: number;
     playheadMonth: number;
     selected: SpanRef | null;
     readonly: boolean;
@@ -29,7 +28,6 @@
     asOf,
     windowEnd,
     months,
-    filledPct,
     playheadMonth,
     selected,
     readonly,
@@ -43,7 +41,7 @@
     <span class="name" title={policy.label}>{policy.label}</span>
     {#if !policy.on}<span class="sr-only">, off</span>{/if}
   </div>
-  <Lane {filledPct}>
+  <Lane>
     {#each policy.spans as span, i (i)}
       <SpanBar
         {kind}

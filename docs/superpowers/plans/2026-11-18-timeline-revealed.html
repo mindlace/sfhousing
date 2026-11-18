@@ -1,0 +1,1037 @@
+<article>
+  <header>
+    <h1>One timeline, revealed plan</h1>
+    <p>Slice 3 of the information design review: on <code>/sim</code> and <code>/s/&lt;id&gt;</code> the ruler becomes the scrubber, one taller chart draws your policy against current law on that axis from today, time is revealed in three zones (shown, seen, unseen), an edit offers "Play from {year}", goal reached and goal missed messages appear when the playhead gets there, and rows under the pinned block stop being targets.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+    <aside data-kind="warning"><strong>Read before executing</strong> Line numbers below were taken on <code>9d356eff</code> (main after slices 1 and 2) and go stale as tasks land: every place is also named by function, component, snippet or test title. Locate by those.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>The pinned block becomes one ruler row that is itself the date slider (transport in its label cell, a date flag riding the playhead, a "Goal" flag at the deadline) over one taller chart that counts from today, with value labels, the ruler's year gridlines, and, while a policy of yours is in force, a current-law line and the shaded gap. Lines, the ruler's track and every outcome figure follow three zones: shown (today to the playhead), seen (to the furthest date reached, dimmed), unseen (nothing; the ruler hatched). An edit pulls the furthest date back to the first month it changes, never before the playhead, and Play then reads "Play from {year}". When the playhead reaches the month the goal is met by its deadline, or passes the deadline short of it, a notice says so once. Rows scrolled under the pinned block are clipped by their own scroll box, so they are never overlapping targets.</dd>
+      <dt>Architecture</dt>
+      <dd>Two new pure modules: <code>src/lib/timeline/reveal.ts</code> (the furthest date reached, the search for an edit's first changed month by comparing the view the person saw with the newest view on the main thread, and "Play from") and <code>src/lib/timeline/outcome.ts</code> (goal reached or missed, read only over revealed months). A third, <code>src/lib/timeline/chart-model.ts</code>, holds the chart's arithmetic (points from today, the current-law series, running maxima, paths). <code>Playhead.svelte</code> is rewritten as the ruler row (<code>Ruler.svelte</code> goes); <code>ChartRow.svelte</code> is rewritten over <code>chart-model.ts</code>; zones are drawn by two clip rectangles whose widths follow the playhead and the furthest date, so no path is rebuilt per frame. <code>Timeline.svelte</code> splits into the pinned block and a rows scroll box under it. <code>headlineAt</code> takes the playhead's reading and whether a policy is in force, so the header and the chart's readout share one rule. Everything needed is in <code>TimelineView</code> on the main thread (<code>src/lib/sim/world/score/types.ts:160-175</code>): no engine or worker change.</dd>
+      <dt>Tech Stack</dt>
+      <dd>SvelteKit 2, Svelte 5 runes, TypeScript, Tailwind 4, Vitest (server project for <code>*.spec.ts</code>, client project for <code>*.svelte.spec.ts</code>), Playwright, axe through <code>expectNoA11yViolations</code>.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-17-information-design-review-design.html"><code>docs/superpowers/specs/2026-11-17-information-design-review-design.html</code></a>, row 3 of <a href="../specs/2026-11-17-information-design-review-design.html#tbl-slices">Order of work</a>. Governing parts: Six rules (1 to 3), The one chart, Revealing time (<code>tbl-reveal</code>), The loop (the goal on the chart and ruler, the reached and missed messages only), What the engine can supply (row "First month an edit changes"), Decided, One vocabulary, the inventory rows "Time can be played and scrubbed" and "How far the forecast is computed", and every "For slice 3" item of Carried forward.</dd>
+      <dt>Assumes</dt>
+      <dd>Slices 1 and 2 have landed (<a href="2026-11-17-quick-repairs.html">quick repairs</a>, <a href="2026-11-17-one-clock.html">one clock</a>): <code>src/lib/goal/goal.ts</code> (<code>GOAL</code>, <code>TODAY</code>, <code>readGoal</code>, <code>goalStep</code>, <code>goalName</code>), <code>headlineAt</code> / <code>headlineText</code> / <code>headlineSpoken</code> and <code>homesBy</code>, <code>fromPolicyText</code>, the status cell (<code>tl-status-group</code>), "Updating" in the header, no status line, <code>calendarMonths(view)</code> in <code>src/lib/timeline/test/fixtures.ts</code>.</dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li><strong>Hashed paths are read-only.</strong> Editing any file under the dataset-version paths (<code>PATHS</code>, <code>pipeline/lib/version.ts:42-53</code>: <code>pipeline</code>, <code>src/lib/data</code>, <code>src/lib/generator</code>, <code>src/lib/timelapse</code>, <code>src/lib/plan/geometry.ts</code>, <code>src/lib/plan/types.ts</code>, <code>src/lib/sim/scenario</code>, <code>src/lib/sim/levers</code>, <code>src/lib/sim/finance</code>, <code>src/lib/scoreboard</code>), spec files included, forces a dataset upload before signoff. Imports are fine. <code>src/lib/fzp/</code> is not hashed. If a change there seems unavoidable, stop and raise it; do not make it.</li>
+      <li>No engine or worker file changes: nothing under <code>src/lib/sim/world/</code>, <code>src/lib/sim/timeline-client.ts</code>, <code>src/lib/sim/timeline-protocol.ts</code> or the router.</li>
+      <li>All work in a git worktree under <code>.claude/worktrees/</code>. Run <code>cd</code> and <code>git</code> as plain single commands, never chained (<code>cd … &amp;&amp; cmd</code>). Run everything in the foreground. Report once, at the end of each task.</li>
+      <li>Conventional Commits, with messages given as <code>-m</code> flags. <code>git add</code> named files only. No Claude attribution anywhere: no <code>Co-Authored-By</code> trailers, no generated-by notes in code, docs or commits.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns (Prettier and ESLint). Svelte 5 runes only.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>.</li>
+      <li>WCAG 2.2 AA on every changed surface (the ruler row, the chart, the rows box, Results' chart, the goal notice), light and dark (<code>docs/dev/accessibility.md</code>, <code>e2e/chrome-dark.spec.ts</code>), including reduced motion for anything animated (nothing here transitions: zones, flags and clips move only with the playhead) and a non-colour cue wherever "seen" and "shown" differ in meaning (the playhead and its flag are the boundary; seen lines are thinner; unseen is hatched). Targets at least 24x24 CSS px, 44 on a coarse pointer. Axe goes through <code>expectNoA11yViolations</code>.</li>
+      <li><strong>Timing rule</strong>, for every spec, helper and fix round: no <code>setTimeout</code> or <code>setInterval</code> (even zero-length), no <code>waitForTimeout</code>, fixed sleeps, raised timeouts or retries in tests; wait on readiness signals (web-first assertions, <code>expect.poll</code>, attributes, <code>requestAnimationFrame</code>, <code>window.__sfhFzp</code>). Tests of playback never depend on frame rate: drive the playhead by dispatched pointer events or keys (as <code>TimelineMode.svelte.spec.ts</code>'s "the header writes the DOM only on the steps where the playhead changes month" does), or by <code>PlayheadHost</code>'s <code>raf</code> seam. After the last commit of every task run <code>npx chreode timing-check --head HEAD</code> and see it clean. Every changed e2e spec is re-run with <code>--repeat-each=5 --retries=0</code>.</li>
+      <li>Port 4173 is shared with other sessions: never start, stop or kill whatever holds it. Playwright runs on <code>SFH_E2E_PORT=4180</code> (<code>playwright.config.ts:3</code>). Server stderr during e2e fails signoff.</li>
+      <li>Copy: terse, plain words, no em dashes, no "it is not X" disclaimers. "homes", never "units". The main-screen word is "goal"; its display name is "State target"; "current law" for the baseline; "from your policy". No main-screen string added or changed here says "RHNA" or "FZP". No visible text of 12 words or more at rest outside a notice, dialog or open explanation (<code>src/lib/timeline/rest-text.svelte.spec.ts</code>). The strings are fixed in <a href="#tbl-strings">The strings</a>.</li>
+      <li><strong>Performance:</strong> during Play neither chart rebuilds a path every animation frame and nothing reads rows in proportion to the window per frame; the header keeps recomputing at most once per calendar month. Guard structurally (counts of DOM writes or of row reads), never by wall clock. <code>npm run test:perf</code> and <code>bench:map</code> are idle-machine only and not part of this plan's checks.</li>
+      <li>Docs under <code>docs/dev/</code> (and <code>CLAUDE.md</code>'s doc list) that describe changed behaviour are updated in the task that changes it.</li>
+      <li>Signoff is <code>npm run signoff</code>; do not <code>git push</code> first.</li>
+      <li>Task order is load-bearing: Task 2 (rows under the pinned block) lands before any task that changes the pinned block's height, so no spec meets a lane row half under a sticky block.</li>
+      <li>Test commands: <code>npx vitest --run --project server &lt;file&gt;</code> for <code>*.spec.ts</code>, <code>npx vitest --run --project client &lt;file&gt;</code> for <code>*.svelte.spec.ts</code>, and <code>SFH_E2E_PORT=4180 npx playwright test &lt;file&gt; --project=chromium --project=mobile</code>. Tests that depend on where the goal's deadline falls build calendar months (<code>calendarMonths(view)</code>, or a <code>STATICS</code> whose months come from <code>dayFromUtc</code>): <code>statics()</code> spaces months 30 days apart.</li>
+    </ul>
+  </section>
+
+  <section id="sec-strings">
+    <h2>The strings</h2>
+    <table id="tbl-strings">
+      <caption>Every visible or spoken string this slice adds or changes</caption>
+      <thead>
+        <tr><th scope="col">Where</th><th scope="col">Text</th><th scope="col">Defined in</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Date flag on the playhead</th><td><code>Today</code> at the dataset date, else the month: <code>Apr 2040</code></td><td><code>dateFlag</code>, <code>playhead.ts</code></td></tr>
+        <tr><th scope="row">Goal flag on the ruler</th><td><code>Goal</code>, at <code>GOAL.deadline</code>; absent when the deadline's month is outside the window</td><td><code>GOAL_FLAG</code>, <code>copy.ts</code></td></tr>
+        <tr><th scope="row">Ruler year labels</th><td>the dataset date's year at the left edge, then every fifth year (<code>2030</code> … <code>2065</code>), as today</td><td><code>yearMarks</code>, <code>axis.ts</code></td></tr>
+        <tr><th scope="row">The ruler (slider)</th><td>name <code>Date in the simulation</code> (unchanged); value text <code>April 2040</code> (<code>formatMonthYear(day)</code>, unchanged); description <code>Seen up to June 2045. Goal deadline January 2031.</code>, its first sentence only while the furthest month reached is after the playhead's month, its second only while the goal flag shows</td><td><code>rulerDescription</code>, <code>copy.ts</code></td></tr>
+        <tr><th scope="row">Play button (visible text is the name)</th><td><code>Play</code> · <code>Pause</code> (while playing) · <code>Replay</code> (at the last day) · <code>Play from 2028</code> (after an edit; wins over Replay)</td><td><code>playLabel</code>, <code>playhead.ts</code>; <code>playFromText</code>, <code>copy.ts</code></td></tr>
+        <tr><th scope="row">Speed button</th><td>visible <code>1×</code> / <code>3×</code>; name <code>1× speed, 1 year per second</code> / <code>3× speed, 3 years per second</code></td><td><code>speedName</code>, <code>copy.ts</code> (over <code>SPEED_NAME</code>)</td></tr>
+        <tr><th scope="row">Today button</th><td>visible <code>Today</code>; name <code>Jump to today, November 2026</code> (unchanged)</td><td><code>Playhead.svelte</code></td></tr>
+        <tr><th scope="row">Chart legend, nothing in force</th><td><code>Homes completed</code> · <code>Goal</code> (the second only while the step is drawn)</td><td><code>ChartLegend.svelte</code></td></tr>
+        <tr><th scope="row">Chart legend, a policy in force</th><td><code>With your policy</code> · <code>Current law</code> · <code>From your policy</code> (the shaded gap) · <code>Goal</code></td><td><code>ChartLegend.svelte</code></td></tr>
+        <tr><th scope="row">Goal step's label in the plot</th><td><code>73,346 more by Jan 2031</code> (<code>goalStep(…).units</code>, the deadline's month)</td><td><code>goalNote</code>, <code>copy.ts</code></td></tr>
+        <tr><th scope="row">Chart value labels</th><td><code>formatCompactCount</code> of half the top and the top: <code>50,000</code>, <code>100K</code></td><td><code>yLabels</code>, <code>chart-model.ts</code></td></tr>
+        <tr><th scope="row">Chart figure</th><td>name <code>Homes completed</code> (unchanged); sr-only caption, nothing in force: <code>Homes completed from today, by month, and the goal as the homes still needed by its deadline. The month slider reads out each month.</code>; a policy in force: <code>Homes completed from today with your policy and under current law, by month. The shaded gap is what your policy adds. The goal is drawn as the homes still needed by its deadline. The month slider reads out each month.</code> (the goal sentence only while the step is drawn)</td><td><code>chartCaption</code>, <code>copy.ts</code></td></tr>
+        <tr><th scope="row">Chart month slider and hover readout</th><td>name <code>Month in the chart</code> (unchanged); value text and readout: the header's line 1 for that month (<code>0 homes by today</code>, <code>1,234 homes by Apr 2040</code>), then <code>, +56 from your policy</code> while a policy is in force</td><td><code>chartReading</code>, <code>results.ts</code></td></tr>
+        <tr><th scope="row">Goal reached notice</th><td><code>Goal reached in Mar 2029, by the Jan 2031 deadline.</code></td><td><code>outcomeText</code>, <code>outcome.ts</code></td></tr>
+        <tr><th scope="row">Goal missed notice</th><td>a policy in force: <code>Goal missed by 3,313 homes. Change the policy and play again.</code>; nothing in force: <code>Goal missed by 73,346 homes. Add a policy and play again.</code></td><td><code>outcomeText</code>, <code>outcome.ts</code></td></tr>
+        <tr><th scope="row">Notice's dismiss</th><td>visible <code>×</code>, name <code>Dismiss</code> (as the "not applied" pill)</td><td><code>TimelineMode.svelte</code></td></tr>
+        <tr><th scope="row">Results chart</th><td>its deadline vertical reads <code>Goal deadline</code> (was "RHNA deadline"); its sr-only label reads <code>… by the goal's deadline …</code></td><td><code>chart.ts</code></td></tr>
+      </tbody>
+    </table>
+    <p>Gone: the separate month readout, the Pause and Faster buttons, the "RHNA deadline" and "2045" jump markers on the ruler, the sentence "Play is back when the forecast is filled.", the lanes' hatching and the ruler's second progress bar.</p>
+  </section>
+
+  <section id="sec-measures">
+    <h2>Heights</h2>
+    <table id="tbl-heights">
+      <caption>The pinned block's height, today and after this slice (px, computed from the CSS; Task 4 and Task 6 measure and assert them)</caption>
+      <thead>
+        <tr><th scope="col">Layout</th><th scope="col">Today</th><th scope="col">After</th><th scope="col">How today's adds up</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">From md, fine pointer, taller than 820 px</th><td>184</td><td>165</td><td>controls 32, slider 32, years 18, bar 5, markers 32, chart 64 + 1. After: ruler row 68 (two 32 px lines and a 4 px gap in the label cell), chart 96 + 1.</td></tr>
+        <tr><th scope="row">From md, fine pointer, 820 px tall or less (compact)</th><td>136</td><td>123</td><td>24, 24, 18, 5, 24, chart 40 + 1. After: ruler row 52 (24 + 4 + 24), chart row 71 (the four-entry legend, 4 × 16 + 3 × 2 + 1, is taller than the 64 px plot).</td></tr>
+        <tr><th scope="row">From md, coarse pointer, tall</th><td>220</td><td>189</td><td>44, 44, 18, 5, 44, 65. After: ruler row 92 (44 + 4 + 44), chart 97.</td></tr>
+        <tr><th scope="row">From md, coarse pointer, compact</th><td>196</td><td>163</td><td>44, 44, 18, 5, 44, 41. After: 92 + 71.</td></tr>
+        <tr><th scope="row">375 x 812, coarse (Playwright <code>mobile</code>)</th><td>280</td><td>217 nothing in force; 245 a policy in force</td><td>44, 44, 18, 5, 44, chart 96 + legend 28 + 1. After: ruler row 92, chart 96 + legend (one line 28, two lines 56) + 1.</td></tr>
+      </tbody>
+    </table>
+    <table id="tbl-room">
+      <caption>Room left for rows from md (px)</caption>
+      <thead>
+        <tr><th scope="col">Viewport</th><th scope="col">Mode box</th><th scope="col">Bottom pane (40%, less its 1 px border)</th><th scope="col">Rows today</th><th scope="col">Rows after</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">1280 x 720 (compact)</th><td>636 (<code>TimelineMode.svelte.spec.ts</code>, "at 1280x720 (a 636 px mode box)")</td><td>253.4</td><td>113.4 (less the pinned block and the 4 px <code>PIN_GAP</code>)</td><td>130.4 (the 4 px gap becomes scroll padding inside the rows box)</td></tr>
+        <tr><th scope="row">1280 x 800 (compact)</th><td>716 (the same 84 px of chrome above it)</td><td>285.4</td><td>145.4</td><td>162.4</td></tr>
+      </tbody>
+    </table>
+    <p>The header (48 px) and the map's box do not change at any size: the bottom pane stays 40% of the mode box from md, and the map stays 40% of it below md.</p>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>Rows scrolled part-way under the pinned block</strong>, at any offset, fine and coarse pointer, from md and on a phone. Expected: axe target-size finds nothing; a press on the pinned block's area never reaches a row; a focused row lands wholly inside the rows box, 4 px clear of its top. Tests: <a href="#t2-s1">t2-s1</a>, <a href="#t2-s6">t2-s6</a>.</li>
+      <li><strong>An edit in every playhead position</strong>: at today, before the first changed month, after it, at the last day, and while playing. Expected: the furthest date never falls behind the playhead; months before the first change stay seen; at the last day the numbers update in place and Play reads "Play from {year}"; an edit found while playing offers no "Play from". Tests: <a href="#t3-s1">t3-s1</a>, <a href="#t5-s1">t5-s1</a>.</li>
+      <li><strong>Stacked and unanswered edits</strong>: a second edit before the first's refill, a rejected edit (undone to the last accepted document), a brush query that fails (the edit is dropped). Expected: the comparison keeps the view the person first saw, never compares before a refill has answered the edit, and pulls nothing back when nothing changed. Tests: <a href="#t3-s1">t3-s1</a>, <a href="#t5-s1">t5-s1</a>.</li>
+      <li><strong>Play at 3× through a long window</strong>. Expected: the chart paths' <code>d</code> attributes are written only when the view or the vertical scale changes, the chart reads no rows when only the day or the furthest date change, the ruler's year labels are never rewritten. Tests: <a href="#t4-s1">t4-s1</a>, <a href="#t6-s1">t6-s1</a>.</li>
+      <li><strong>A goal deadline outside the window</strong> (a dataset dated after 31 Jan 2031, or a later goal past the window's end). Expected: no goal flag, no step, no goal note, no missed message on opening, nothing in the ruler's description about a deadline. Tests: <a href="#t4-s1">t4-s1</a>, <a href="#t8-s1">t8-s1</a>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files by task and what each owns</caption>
+      <thead>
+        <tr><th scope="col">Area</th><th scope="col">Files</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">One month rule</th><td><code>src/lib/timeline/results.ts</code> and spec, <code>Playhead.svelte</code> (<code>last</code>) and spec, <code>test/PlayheadHost.svelte</code>, <code>TimelineMode.svelte</code> and spec, <code>e2e/sim.spec.ts</code>, <code>docs/dev/timeline-ui.md</code></td><td>1</td></tr>
+        <tr><th scope="row">Rows under the pinned block</th><td><code>Timeline.svelte</code> and spec, <code>test/TimelineHost.svelte</code>, <code>TimelineMode.svelte</code> and spec, <code>e2e/sim.spec.ts</code>, <code>e2e/sim-funding.spec.ts</code>, <code>docs/dev/timeline-ui.md</code>, <code>docs/dev/sim-page.md</code></td><td>2</td></tr>
+        <tr><th scope="row">The reveal rules</th><td>Create <code>src/lib/timeline/reveal.ts</code>, <code>reveal.spec.ts</code>; <code>session.svelte.ts</code> (<code>pending</code>) and spec</td><td>3</td></tr>
+        <tr><th scope="row">The ruler is the scrubber</th><td><code>Playhead.svelte</code> (rewrite) and spec, <code>test/PlayheadHost.svelte</code>; delete <code>Ruler.svelte</code>, <code>Ruler.svelte.spec.ts</code>; create <code>src/lib/timeline/axis.ts</code>, <code>axis.spec.ts</code>; <code>playhead.ts</code> and spec, <code>copy.ts</code> and spec, <code>Lane.svelte</code>, <code>KindRow.svelte</code>, <code>PolicyRow.svelte</code>, <code>FixedRow.svelte</code>, <code>Timeline.svelte</code> and spec, <code>fill.ts</code> and spec, <code>session.svelte.ts</code> and spec, <code>TimelineMode.svelte</code> and spec, <code>src/lib/fzp/debug.ts</code>, <code>e2e/sim.spec.ts</code>, <code>e2e/fzp.spec.ts</code>, <code>e2e/sim-share.spec.ts</code>, docs, <code>CLAUDE.md</code></td><td>4</td></tr>
+        <tr><th scope="row">Edits and "Play from"</th><td><code>TimelineMode.svelte</code> and spec, <code>test/fake-timeline-worker.ts</code>, <code>e2e/sim-timeline.spec.ts</code>, <code>docs/dev/timeline-ui.md</code></td><td>5</td></tr>
+        <tr><th scope="row">One chart</th><td>Create <code>src/lib/timeline/chart-model.ts</code>, <code>chart-model.spec.ts</code>; <code>ChartRow.svelte</code> (rewrite) and spec, <code>ChartLegend.svelte</code>, <code>results.ts</code> and spec (<code>chartReading</code>), <code>copy.ts</code>, <code>Timeline.svelte</code>, <code>TimelineMode.svelte</code> and spec, <code>src/routes/layout.css</code>, <code>src/lib/shell/accent.spec.ts</code>, <code>e2e/sim.spec.ts</code>, <code>e2e/chrome-dark.spec.ts</code>, <code>docs/dev/timeline-ui.md</code></td><td>6</td></tr>
+        <tr><th scope="row">Results' chart follows the zones</th><td><code>src/lib/fzp/ScoreChart.svelte</code> and spec, <code>src/lib/fzp/chart.ts</code> and spec, <code>src/lib/fzp/SimResults.svelte</code> and spec, <code>src/lib/fzp/provenance.spec.ts</code>, <code>TimelineMode.svelte</code>, <code>docs/dev/timeline-ui.md</code></td><td>7</td></tr>
+        <tr><th scope="row">Goal reached and missed</th><td>Create <code>src/lib/timeline/outcome.ts</code>, <code>outcome.spec.ts</code>; <code>TimelineMode.svelte</code> and spec, <code>test/TimelineModeHost.svelte</code>, <code>e2e/sim.spec.ts</code>, <code>docs/dev/timeline-ui.md</code></td><td>8</td></tr>
+        <tr><th scope="row">Whole-suite pass</th><td>Whatever the full runs turn up</td><td>9</td></tr>
+      </tbody>
+    </table>
+    <p>Every task edits <code>TimelineMode.svelte</code> and most edit its spec: run them in order. Task 7 depends only on Task 3's reveal state being in <code>TimelineMode</code> (Task 4).</p>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: One month rule for the header and the readout</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/results.ts</code> (<code>headlineAt</code>, <code>:62-100</code>; add <code>PlayheadAt</code>, <code>playheadAt</code>, <code>HeadlineOpts</code>, <code>currentLawHomes</code>). Test: <code>results.spec.ts</code>, the <code>describe('headlineAt')</code> block.</li>
+      <li>Modify: <code>src/lib/timeline/Playhead.svelte</code>: a <code>last</code> prop for where playback stops, Replay and <code>aria-valuemax</code>. Test: <code>Playhead.svelte.spec.ts</code> ("stops playing at the window end"), <code>test/PlayheadHost.svelte</code> (pass <code>last</code>).</li>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code>: <code>index</code> and <code>atToday</code> from <code>playheadAt</code>; <code>headline</code> from the new <code>headlineAt</code>; <code>headText</code> loses its override (<code>:369-381</code>, the <code>at: playheadMonth</code> and <code>effect: copy.compare === 'fzp' ? …</code> lines); <code>lastDay</code>; <code>filledEnd</code> is <code>lastDay</code> when whole; <code>&lt;Playhead last={lastDay}&gt;</code>. Test: <code>TimelineMode.svelte.spec.ts</code> ("filled to lastIndex, End reaches the window end…", "the headline's month is the readout's…", the <code>textAt</code> helper).</li>
+      <li>Modify: <code>e2e/sim.spec.ts</code> ("the headline follows the playhead and counts from today"); <code>docs/dev/timeline-ui.md</code> (the playhead and header score bullets of "The screen").</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>indexOfDay</code>, <code>filledEndDay</code> (<code>src/lib/timeline/playhead.ts:7,12</code>); <code>GOAL</code>, <code>TODAY</code>, <code>readGoal</code> (<code>src/lib/goal/goal.ts</code>); <code>nothingInForce</code> (<code>policy4.ts:94</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// results.ts
+/** Where the playhead reads: its calendar month row, or today. */
+export interface PlayheadAt { index: number; atToday: boolean }
+/** { index: indexOfDay(months, day), atToday: day &lt;= asOf }. The one rule the header, the
+ *  chart's readout and the ruler's flag read. */
+export function playheadAt(months: Day[], asOf: Day, day: Day): PlayheadAt;
+
+export interface HeadlineOpts {
+  provisional: boolean;
+  /** A policy of the person's is in force in the document the numbers on show came from
+   *  (!nothingInForce(resultsDoc)). view.compare is never read: it is 'plan' for every document. */
+  inForce: boolean;
+}
+/** at: atToday ? null : view.months[at.index]; effect: inForce ? (atToday ? 0 :
+ *  planEffect[i].completedNetNew) : null; otherwise as before. */
+export function headlineAt(
+  view: TimelineView | null,
+  at: PlayheadAt,
+  opts: HeadlineOpts,
+  goal?: Goal // default GOAL
+): Headline | null;
+
+/** Homes completed from today under current law at month i:
+ *  rows[i].completedNet - planEffect[i].completedNetNew. Read only while a policy is in force
+ *  (the twin is then current law). See "The current-law line" below for what it leaves out. */
+export function currentLawHomes(view: TimelineView, i: number): number;
+
+// Playhead.svelte, a new prop
+/** The furthest day the playhead may reach: the last day of the last calendar month row
+ *  (default windowEnd). Playback stops there, Replay shows there, aria-valuemax is it. The
+ *  window's scale stays windowEnd. */
+last?: Day;
+
+// TimelineMode.svelte
+const lastDay = $derived(months ? filledEndDay(months, months.length - 1, asOf) : windowEnd);
+const index = $derived(months ? playheadAt(months, asOf, day).index : 0);
+const atToday = $derived(day &lt;= asOf);
+const inForce = $derived(!nothingInForce(resultsDoc));   // copy = copyOf(!inForce)
+const headline = $derived(
+  headlineAt(shown.view, { index, atToday }, { provisional, inForce }, GOAL)
+);
+const headText = $derived(headline ? headlineText(headline, GOAL) : null);</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the playhead stops at the last row's month</strong> Today the playhead reaches <code>windowEnd</code>, a model-month end some days into a calendar month past the last row (<code>lastIndex</code>), so at the end the header named "Oct 2066" over September's numbers and the chart's readout said "Sep 2066" (carried item). Stopping at the last day of the last calendar month row (<code>horizonOf</code>, <code>src/lib/sim/world/score/statics.ts:217-220</code>; at most about a month short of the lane's right edge) makes <code>monthStart(day) === months[index]</code> at every position, so one rule names the month everywhere and <code>headlineAt</code>'s own <code>months[i]</code> is right without an override.</aside>
+    <section id="sec-law">
+      <h3>The current-law line</h3>
+      <p><code>planEffect[i].completedNetNew</code> is the plan world's <code>completedNetNew</code> minus its twin's (<code>src/lib/sim/world/score/chunk.ts:31</code>), cumulative from the dataset date, both on seed 1. While a policy is in force the twin is the default document on current law (<code>docs/dev/ensemble-runner.md</code>, "Edits": "An edit from a document with nothing in force changes the comparison from the pre-plan base to the default on the plan"). So:</p>
+      <pre><code data-lang="text">current law, month i  =  rows[i].completedNet - planEffect[i].completedNetNew
+                       =  twin.completedNetNew[i] + plan.completedNetPipeline[i]
+gap, month i          =  planEffect[i].completedNetNew  (exactly the header's "+N from your policy")
+at today              =  0 and 0</code></pre>
+      <p>What it leaves out: the twin's own pipeline completions. The line takes the plan world's <code>completedNetPipeline</code> for both, so a policy's effect on projects already in today's pipeline (permitting timers on in-flight projects, public money awarded to them) is in neither the gap nor the header's number. With nothing in force the twin is the old zoning, not current law, so the line is not drawn at all. No engine or worker change is needed: every term is in <code>TimelineView</code> on the main thread.</p>
+    </section>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// results.spec.ts, describe('headlineAt') (replace the compare-based case; adapt the calls)
+it('playheadAt reads the calendar month and today')
+  // playheadAt(v.months, v.months[0] + 3, v.months[0] + 3) deep-equals { index: 0, atToday: true }
+  // a day inside month 5 → { index: 5, atToday: false }
+it('the effect shows only with a policy in force, whatever view.compare says')
+  // headlineAt(v, { index: 10, atToday: false }, { provisional: false, inForce: true })!.effect
+  //   === v.planEffect[10].completedNetNew; inForce false → null
+  // the same with { ...v, compare: 'preFzp' } and inForce true → the effect, not null
+  // at today with inForce → 0
+it("names the row's month")      // .at === v.months[i] for i in [0, 7, lastIndex]
+it('currentLawHomes is the plan world less the effect')
+  // currentLawHomes(v, 6) === v.rows[6].completedNet - v.planEffect[6].completedNetNew
+// keep: 'counts from today', 'reads 0 and today', 'negative homes…', 'is calculating only until…',
+//   'nothing is read at the end of the window', 'reads a bounded number of rows…', the text cases
+
+// Playhead.svelte.spec.ts
+it('stops playing at last, not at the window end, and reads Replay there')
+  // PlayheadHost { asOf, windowEnd, last: windowEnd - 20, end: windowEnd - 20, startPlaying }
+  // drive frames through the raf seam until playing is false: day === last; tl-play-label 'Replay';
+  // the slider's aria-valuemax === String(last)
+
+// TimelineMode.svelte.spec.ts (replace the two cases named in Files)
+it("End reaches the last row's month; the header, the readout and Replay agree")
+  // opened(); slider End: debug().day === filledEndDay(MONTHS, LAST, asOf)
+  // tl-readout-label === formatMonthYear(debug().day); score-bar === homesBy(rows[LAST], MONTHS[LAST])
+  // monthStart(debug().day) === MONTHS[LAST]; tl-play-label 'Replay'
+  // slider aria-valuemax === String(filledEndDay(MONTHS, LAST, asOf))
+// textAt(i) becomes headlineText(headlineAt(FULL(), { index: i, atToday: false },
+//   { provisional: false, inForce: false })!) with no override</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/results.spec.ts
+npx vitest --run --project client src/lib/timeline/Playhead.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement as in Interfaces. Every caller of <code>headlineAt</code> moves to the new signature (only <code>TimelineMode.svelte</code> and the two specs). <code>index</code> and <code>atToday</code> stay primitive <code>$derived</code>s so a frame inside a month changes nothing downstream (the existing once-per-month header test must stay green).</li>
+      <li id="t1-s4"><input type="checkbox"> Update <code>e2e/sim.spec.ts</code> "the headline follows the playhead…": after End the score bar's month equals <code>formatShortMonthYear(monthStart(day))</code> and the readout <code>formatMonthYear(day)</code>, with the comment saying the playhead stops at the last row's month. Update <code>docs/dev/timeline-ui.md</code>: the playhead bullet (End goes to the filled mark, which is the last day of the last calendar month row when the forecast is whole; playback stops and Replay shows there) and the header score bullet (<code>headlineAt</code> takes <code>playheadAt</code>'s reading and <code>inForce</code>; it reads <code>months[i]</code>; the page no longer overrides the month or the effect).</li>
+      <li id="t1-s5"><input type="checkbox"> Run the specs and the e2e file; see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/results.spec.ts
+npx vitest --run --project client src/lib/timeline/
+SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts -g "headline follows|Replay" --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t1-s6"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/results.ts src/lib/timeline/results.spec.ts src/lib/timeline/Playhead.svelte src/lib/timeline/Playhead.svelte.spec.ts src/lib/timeline/test/PlayheadHost.svelte src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts e2e/sim.spec.ts docs/dev/timeline-ui.md
+git commit -m "refactor(sim): one month rule for the headline; the playhead stops at the last row"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Rows under the pinned block are not targets</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/Timeline.svelte</code> (markup <code>:197-270</code>, styles <code>.tl</code>, <code>.rows</code>, <code>.pin</code>, <code>.pin :global(*)</code>, <code>.line</code>): the pinned block and the rows become two sibling grids; the rows grid is its own scroll box. Test: <code>Timeline.svelte.spec.ts</code> ("reports the pinned block height and keeps its background opaque", "draws one playhead line…"), <code>test/TimelineHost.svelte</code>.</li>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code>: delete <code>PIN_GAP</code>, <code>pinPad</code>, <code>pinGap</code>, <code>--tl-pin-pos</code>, <code>--tl-pin-mt</code>, <code>--tl-scroll-mt</code> and every <code>scroll-padding-top</code> / <code>scroll-margin-top</code> on <code>tl-mode</code> and <code>tl-lanes</code>; <code>pinStuck</code> becomes <code>pinned</code>; the dock fills the mode box below md while pinned. Test: <code>TimelineMode.svelte.spec.ts</code> (the cases at <code>:395-516</code> and <code>:1441-1530</code>, by title: "from md the controls, ruler and chart stay in view…", "from md a focused bar under the pinned block…", "from md a bar scrolled to the top clears the chart…", "from md focusing the slider or the chart…", "on a phone focusing the slider…", "on a phone the controls, ruler and chart stick…", "on a phone a focused bar…", "at 1280x800 at least 90 px…", "at 1280x720 (a … px mode box)…", "at {vw}x{vh} the pinned block scrolls with the rows…", "at 1280x720 the compact pinned block stays stuck", "the pinned block sticks again…").</li>
+      <li>Modify: <code>e2e/sim-funding.spec.ts</code> test 8 ("A lane row left partly under the sticky pinned block…": delete the comment, the <code>scrollIntoView</code> and the <code>expect.poll</code>; keep <code>expectNoA11yViolations(page)</code>). Add a case to <code>e2e/sim.spec.ts</code>.</li>
+      <li>Modify: <code>docs/dev/timeline-ui.md</code> ("The pinned block" bullet), <code>docs/dev/sim-page.md</code> (Layout item 2).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: nothing new.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// Timeline.svelte Props: add
+/** True: the rows scroll in their own box under the pinned block (the block never covers a
+ *  row). False (a box too short to leave MIN_ROWS of rows): the block and rows are one piece
+ *  that the page's box scrolls. Default true. */
+pinned?: boolean;
+// pinHeight stays $bindable (the block's offsetHeight).
+
+// DOM
+// div.tl[data-testid=tl-timeline]         flex column; height 100% while pinned
+//   div.pin[data-testid=tl-pin]           its own grid (var(--lab) minmax(0,1fr)), flex none,
+//                                         never sticky, padding-inline-end: var(--tl-gutter)
+//   div.rows[data-testid=tl-rows]         its own grid; while pinned: flex 1, min-height 0,
+//                                         overflow-y auto, scrollbar-gutter stable,
+//                                         scroll-padding-top 4px; else overflow visible
+//     … kinds, the world, and the rows' playhead line segment (grid-row 1 / -1)
+// --tl-gutter on .tl = rows.offsetWidth - rows.clientWidth (the rows' scrollbar), so the
+//   pinned block's lane column and the rows' share one x scale.
+
+// TimelineMode.svelte
+const pinned = $derived(
+  narrow.current
+    ? !modeClientH || modeClientH - pinHeight &gt;= MIN_ROWS
+    : !lanesClientH || lanesClientH - pinHeight &gt;= MIN_ROWS
+);
+// tl-lanes (md): flex column, min-h-0; overflow-y auto only while !pinned.
+// tl-dock below md: height 100% of the mode box while pinned (the mode box still scrolls the
+//   map away first, then the rows box scrolls), auto while !pinned.
+// The phone sheets' padding-bottom: 100dvh (Timeline's and the dock's) apply only while !pinned.</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: a rows scroll box, not a sticky block</strong> A row cannot sit under the pinned block if the block is outside the rows' scroll box: the rows are clipped at the box's top edge, the block's targets and the rows' never share a stacking area, and focus or <code>scrollIntoView</code> keeps a row inside its own box (4 px of scroll padding keep a 20 px bar's 24 px target clear of the chart above, which <code>PIN_GAP</code> did). Every sticky offset, scroll margin and padding variable goes. The fallback for a box too short (400% zoom, short landscape) is unchanged in effect: one piece, scrolled by its box, nothing sticky.</aside>
+    <aside data-kind="question"><strong>Needs the owner</strong> On a phone the rows then scroll inside their own box under the map, after the page has scrolled the map away by scrolling over the pinned block or the map's edge; before, a scroll anywhere on the rows moved the whole page. See <a href="#q-phone-rows">Open questions</a>.</aside>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// Timeline.svelte.spec.ts
+it('the pinned block and the rows are two boxes; the rows box scrolls under nothing')
+  // render with many rows in a 300 px tall parent: tl-rows is the scroll box (overflow-y auto,
+  //   scrollHeight &gt; clientHeight); tl-pin is not sticky and is not inside tl-rows
+  // tl-rows.top === tl-pin.bottom (±0.5)
+it('the block and the rows share one x scale, the rows scrollbar included')
+  // a lane in tl-rows and the chart cell in tl-pin: left and width equal (±1)
+it('unpinned, the rows box does not scroll and the timeline is one piece')
+  // pinned false: getComputedStyle(tl-rows).overflowY === 'visible'
+
+// TimelineMode.svelte.spec.ts (replace the cases named in Files)
+it('from md the rows scroll in their own box under the pinned block')
+  // scrolledLanes() now scrolls tl-rows; tl-pin.top === tl-lanes.top; play is the topmost at its centre
+  // for y in 4 points across tl-pin's box: elementFromPoint is inside tl-pin, never a row
+it('from md a focused bar lands inside the rows box, 4 px clear of its top')
+for (const offset of [5, 11, 17, 23])
+  it(`from md with the rows scrolled ${offset} px past a row, axe target-size finds nothing`)
+    // axe.run(tl-dock, { runOnly: ['target-size'] }): violations []
+it('from md focusing the slider or the chart leaves the rows where they are')   // tl-rows.scrollTop unchanged
+it("on a phone the mode box scrolls the map away, then the rows scroll in their own box")
+  // 390x760, regionHeight 360: mode.scrollTop = max → tl-pin.top === tl-mode.top (±1);
+  //   tl-rows scrolls; a focused row ends inside tl-rows
+it('at 1280x800 the rows box is at least 90 px tall')            // tl-rows height &gt;= 90
+for (const regionHeight of [636, 585])
+  it(`at 1280x720 (a ${regionHeight} px mode box) the rows box is at least 90 px tall`)
+    // and every pin target &gt;= 24 px tall
+for (const [vw, vh, regionHeight, phone] of [[320, 256, 172, true], [960, 540, 456, false]])
+  it(`at ${vw}x${vh} the timeline is one piece and a focused bar shows whole`)
+    // tl-rows overflow visible; the bar inside its scroll box; nothing covers it
+it('at 1280x720 the rows box scrolls under the pinned block')        // pinned
+it('the rows box becomes the scroll box again when its box grows')   // from one piece back to pinned
+
+// e2e/sim.spec.ts
+test('rows scrolled part-way under the pinned block are not targets')
+  // desktop: open Zoning, Permitting, Public money, add a transit rule and a preset (as
+  //   "the play control stays in view…"); mobile: scroll tl-mode to its end.
+  // for offset of [6, 14, 22]: tl-rows.scrollTop = offset (skip an offset past scrollHeight);
+  //   expectNoA11yViolations(page, { include: ['[data-testid=tl-dock]'] })</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/Timeline.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Implement as in Interfaces. The rows' playhead line segment spans the rows grid's full content height (the grid is <code>position: relative</code> with <code>min-height: 100%</code>). The kind sheet still places itself from the chart cell's bottom; its <code>root.scrollIntoView</code> and the inspector sheet's <code>dockEl.scrollIntoView</code> keep scrolling the mode box. Measure <code>--tl-gutter</code> with a <code>ResizeObserver</code> on <code>tl-rows</code>.</li>
+      <li id="t2-s4"><input type="checkbox"> Run the unit specs and see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/</code></pre>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Remove the workaround from <code>e2e/sim-funding.spec.ts</code> test 8 and update the docs: <code>timeline-ui.md</code> "The pinned block" (it sits above the rows' own scroll box at every width; the rows never pass under it; below <code>MIN_ROWS</code> of room the timeline is one piece; 4 px of scroll padding keep a focused bar's target clear of the chart); <code>sim-page.md</code> Layout item 2 (below md the bottom pane is the mode box's height and the rows scroll in it).</li>
+      <li id="t2-s6"><input type="checkbox"> Run the e2e files, then the changed ones repeated, both projects.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts e2e/sim-funding.spec.ts e2e/sim-timeline.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-funding.spec.ts e2e/sim.spec.ts -g "^8\.|not targets|play control stays" --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>If axe still flags a row clipped by the rows box, stop and report which rule and which elements: do not re-add a scroll-into-view workaround.</p>
+      </li>
+      <li id="t2-s7"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/Timeline.svelte src/lib/timeline/Timeline.svelte.spec.ts src/lib/timeline/test/TimelineHost.svelte src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts e2e/sim.spec.ts e2e/sim-funding.spec.ts docs/dev/timeline-ui.md docs/dev/sim-page.md
+git commit -m "fix(sim): rows scroll in their own box under the pinned block"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: The reveal rules</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/timeline/reveal.ts</code>. Test: <code>src/lib/timeline/reveal.spec.ts</code> (server project).</li>
+      <li>Modify: <code>src/lib/timeline/session.svelte.ts</code>: a <code>pending</code> getter. Test: <code>session.svelte.spec.ts</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>TimelineView</code>; <code>indexOfDay</code> (<code>playhead.ts</code>); <code>currentLawHomes</code> (Task 1); <code>EditState.pending</code> (<code>fill.ts:5-18</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// reveal.ts (pure)
+/** A view and whether a policy was in force in the document it came from. */
+export interface Side { view: TimelineView; inForce: boolean }
+
+export interface Reveal {
+  /** The furthest day the playhead has reached under the current rules; asOf on opening. */
+  reached: Day;
+  /** An edit's first changed month is being looked for: the view the person saw when the first
+   *  unsettled edit was made, and the next month to compare. Null otherwise. */
+  finding: { before: Side; next: number } | null;
+  /** The month index "Play from" offers; null: none. */
+  playFrom: number | null;
+}
+
+/** { reached: asOf, finding: null, playFrom: null }: everything ahead is unseen. */
+export function revealOpen(asOf: Day): Reveal;
+/** The playhead is at `day`: reached = max(reached, day); an offered playFrom goes. Returns `r`
+ *  itself when nothing changes. */
+export function moved(r: Reveal, day: Day): Reveal;
+/** A store change. With a search under way its `before` is kept; else `before` (the view on
+ *  show; null: nothing to compare, no search). next = 0, playFrom = null. */
+export function editedReveal(r: Reveal, before: Side | null): Reveal;
+/**
+ * The newest view, once a refill has answered the edit (the caller passes only then). Compares
+ * months next..limit, limit = min(now.view.filledThrough, before.view.filledThrough, m), where m
+ * is the month of `reached` (-1 at today). The first k with monthChanged(before, now, k) ends the
+ * search: reached = max(day, now.view.months[k]); playFrom = playing ? null : k. No change
+ * through m ends it with nothing pulled back. Otherwise next = limit + 1 (the fill is behind).
+ * Returns `r` itself when there is no search.
+ */
+export function scanned(
+  r: Reveal,
+  now: Side | null,
+  at: { day: Day; playing: boolean }
+): Reveal;
+/**
+ * Whether month i shows a different number in b than in a: every field of rows[i] (inProgress
+ * included), the current-law homes and approvals (rows minus planEffect while in force, rows
+ * alone otherwise), tiers[i], and money at i (fundedHomes, displacedHomes,
+ * displacedHomesCompleted, publicSpent, perAddedHomeByMonth, displacedShareByMonth, and each
+ * pool's per-month series matched by id, a missing pool reading as zeros).
+ */
+export function monthChanged(a: Side, b: Side, i: number): boolean;
+
+// session.svelte.ts
+/** An edit is not yet answered by a refill (EditState.pending). */
+get pending(): boolean;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: compare on the main thread, keep our own "before"</strong> The session's <code>held</code> view is dropped once the fill passes the playhead (<code>afterView</code>, <code>fill.ts:61-70</code>) and <code>refill.from</code> is only a lower bound, so the reveal keeps its own reference to the view the person saw and compares it month by month as the new view fills, only once <code>pending</code> is false (before the refill the newest view is still the old one and would compare equal). Each month is compared at most once per edit, and no further than the furthest month reached, so the cost is bounded by the seen months, never per frame.</aside>
+    <aside data-kind="decision"><strong>Builder's call: what counts as a change</strong> Every per-month number the page can show, not completions alone: approvals (<code>entitledNew</code>) and the stages in progress change months or years before completions do, and the map shows those stages. The current-law terms are compared as drawn (rows less the effect while in force, rows alone otherwise), so a first policy that leaves early months alone does not count as changing them.</aside>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests in <code>reveal.spec.ts</code>. Views from <code>viewOf([chunk(0, 24)], statics())</code> through <code>calendarMonths</code>; a changed view from <code>[chunk(0, k), chunk(k, 24 - k, { base: 5 })]</code>.
+        <pre><code data-lang="ts">it('opens with everything ahead unseen')        // revealOpen(a).reached === a, finding null
+it('moving forward reaches further; moving back leaves it')
+  // moved(r, d10).reached === d10; moved(that, d3).reached === d10
+it('moving clears an offered Play from, and returns the same object when nothing changes')
+it('an edit at today finds nothing to pull back')   // reached = asOf: scanned ends, reached asOf
+it('pulls back to the first changed month, months before it stay seen')
+  // reached at month 20, playhead month 5, change from 12: reached === months[12]; playFrom 12
+it('never pulls back before the playhead')
+  // playhead month 15, change from 12: reached === day; playFrom 12
+it('at the last day the reach stays and Play from is offered')
+it('offers no Play from when the change is found while playing')
+it('a change past the furthest month reached pulls nothing back')
+  // reached month 10, change from 15: finding null, reached unchanged, playFrom null
+it('waits for the fill: compares only the filled months, then goes on')
+  // now = cut(changed, 8): next === 9, reached unchanged; then the full view: found 12
+it('a second edit keeps the first view the person saw and starts again from month 0')
+it('approvals count: a change in entitledNew alone is a change')
+it('in-force flips compare the current-law terms as drawn')
+  // before inForce false, after inForce true with planEffect 0 through month 6: no change before 7
+it('money and tiers count; a pool missing on one side reads as zeros')
+it('without a search, scanned returns the same object')
+
+// session.svelte.spec.ts
+it('pending is true from an edit until a refill at its rev or later')</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/reveal.spec.ts
+npx vitest --run --project client src/lib/timeline/session.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement <code>reveal.ts</code> and the getter as in Interfaces.</li>
+      <li id="t3-s4"><input type="checkbox"> Run them and see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/reveal.spec.ts
+npx vitest --run --project client src/lib/timeline/session.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/reveal.ts src/lib/timeline/reveal.spec.ts src/lib/timeline/session.svelte.ts src/lib/timeline/session.svelte.spec.ts
+git commit -m "feat(sim): the reveal rules: furthest date reached and the first changed month"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The ruler is the scrubber</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/Playhead.svelte</code> (rewrite: one row, the transport in the label cell, the ruler as the slider in the lane cell). Test: <code>Playhead.svelte.spec.ts</code> (rewrite; keep the key, clamp and playback cases), <code>test/PlayheadHost.svelte</code>.</li>
+      <li>Delete: <code>src/lib/timeline/Ruler.svelte</code>, <code>Ruler.svelte.spec.ts</code>.</li>
+      <li>Create: <code>src/lib/timeline/axis.ts</code> (<code>yearMarks</code>, moved from <code>Ruler.svelte:24-34</code>). Test: <code>axis.spec.ts</code>.</li>
+      <li>Modify: <code>playhead.ts</code> (<code>dateFlag</code>, <code>playLabel</code>) and <code>playhead.spec.ts</code>; <code>copy.ts</code> (<code>GOAL_FLAG</code>, <code>playFromText</code>, <code>speedName</code>, <code>rulerDescription</code>) and <code>copy.spec.ts</code>.</li>
+      <li>Modify: <code>Lane.svelte</code> (no hatch, no <code>filledPct</code>), <code>KindRow.svelte</code>, <code>PolicyRow.svelte</code>, <code>FixedRow.svelte</code>, <code>Timeline.svelte</code> (drop <code>filledEnd</code> and <code>filledPct</code>). Test: <code>Timeline.svelte.spec.ts</code> ("hatches every row past filledEnd…", "draws the hatch beneath the bars…": become "no lane is hatched" and "every bar text keeps 4.5:1").</li>
+      <li>Modify: <code>fill.ts</code> (delete <code>playAvailable</code> and <code>EditState.sinceWhole</code>) and <code>fill.spec.ts</code>; <code>session.svelte.ts</code> (delete <code>playAvailable()</code>, the <code>sinceWhole</code> writes in <code>#opened</code>) and its spec.</li>
+      <li>Modify: <code>TimelineMode.svelte</code>: the reveal state, <code>handleDay</code>, the <code>playheadPart</code> snippet, no <code>markers</code> / <code>scrubMarkers</code> / <code>playable</code>, the debug hook. <code>src/lib/fzp/debug.ts</code>: <code>reached</code>, <code>playFrom</code>. Test: <code>TimelineMode.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>e2e/sim.spec.ts</code> (":741" list of controls, the readout lookups, "End, Play at the window end…"), <code>e2e/fzp.spec.ts</code> (<code>readout</code> helper, <code>:89</code>), <code>e2e/sim-share.spec.ts</code> (a shared link opens with everything ahead unseen).</li>
+      <li>Modify: <code>docs/dev/timeline-ui.md</code> (Rows, One axis, The window, The playhead, Rule 32's "the ruler's hatching shows how far the forecast has filled"), <code>docs/dev/sim-page.md</code> (Layout item 2), <code>CLAUDE.md</code> (the timeline-ui doc entry adds "the ruler, the three zones and Play from").</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 1's <code>last</code>, <code>lastDay</code>, <code>playheadAt</code>; Task 3's <code>revealOpen</code>, <code>moved</code>, <code>Reveal</code>; <code>goalStep</code>; <code>keyTarget</code>, <code>clampDay</code>, <code>advance</code>, <code>SPEED_NAME</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// Playhead.svelte Props
+interface Props {
+  asOf: Day;
+  windowEnd: Day;           // the lanes' scale
+  last: Day;                // Task 1
+  end: Day;                 // the computed edge: the playhead waits there
+  day: Day;                 // $bindable
+  playing?: boolean;        // $bindable
+  speed?: Speed;            // $bindable
+  /** The furthest day reached: shown up to `day`, seen from there to here, unseen past it. */
+  reached: Day;
+  /** "Play from {year}": Play moves the day here (onday) and plays. Null: Play or Replay. */
+  playFrom?: Day | null;
+  /** The goal flag's day; null hides the flag and the description's deadline sentence. */
+  goalDeadline?: Day | null;
+  onday?: (day: Day) =&gt; void;
+  raf?, cancelRaf?          // test seams, as today
+}
+// No `playable`, no `markers`. Root display: contents (label cell, lane cell).
+// Label cell [data-testid=tl-controls]: a 2-row grid
+//   row 1: button[data-testid=tl-play] (full width): ▶/❚❚ icon + span[data-testid=tl-play-label]
+//   row 2: button[data-testid=tl-speed] (aria-label speedName(speed), visible '1×' | '3×'),
+//          button[data-testid=tl-today] (as today)
+// Lane cell [data-testid=tl-axis] = div[role=slider][data-testid=tl-ruler] (the whole cell):
+//   name 'Date in the simulation', aria-valuemin asOf, aria-valuemax last, aria-valuenow day,
+//   aria-valuetext formatMonthYear(day), aria-describedby an sr-only rulerDescription(…)
+//   inside, aria-hidden: span[data-testid=tl-year] × n, the track with
+//   i[data-testid=tl-zone-shown] (asOf→day), i[data-testid=tl-zone-seen] (day→reached),
+//   i[data-testid=tl-zone-unseen] (reached→windowEnd, hatched), the thumb,
+//   span[data-testid=tl-flag] (dateFlag) riding the playhead above the track,
+//   span[data-testid=tl-goal-flag] (GOAL_FLAG) under the track at goalDeadline.
+// A pointerdown or move anywhere on the cell moves the day (clamped to [asOf, end]) and pauses;
+// keys as today (keyTarget); the speed button changes speed only, it never starts playback.
+
+// playhead.ts
+export function dateFlag(day: Day, asOf: Day): string;   // 'Today' | formatShortMonthYear(monthStart(day))
+export function playLabel(s: { playing: boolean; playFrom: Day | null; atLast: boolean }): string;
+  // playing → 'Pause'; playFrom → playFromText(playFrom); atLast → 'Replay'; else 'Play'
+
+// axis.ts
+/** The dataset date's year at the left edge, then every fifth year's 1 January in the window. */
+export function yearMarks(asOf: Day, windowEnd: Day): { year: number; day: Day; pct: number }[];
+
+// copy.ts
+export const GOAL_FLAG = 'Goal';
+export const playFromText = (d: Day): string =&gt; `Play from ${utcParts(d).y}`;
+export const speedName = (s: Speed): string =&gt; `${s === 'year' ? '1×' : '3×'} speed, ${SPEED_NAME[s]}`;
+/** 'Seen up to June 2045. Goal deadline January 2031.', each part only when given. */
+export function rulerDescription(seenTo: Day | null, deadline: Day | null): string;
+
+// TimelineMode.svelte
+let reveal = $state.raw&lt;Reveal&gt;(revealOpen(asOf));   // reset to revealOpen on a Retry's reload
+function handleDay(d: Day): void { reveal = moved(reveal, d); /* + today's work */ }
+const goalDeadline = $derived(chartTarget ? GOAL.deadline : null);
+// &lt;Playhead {asOf} {windowEnd} last={lastDay} end={filledEnd} bind:day bind:playing bind:speed
+//           reached={reveal.reached} playFrom={null} {goalDeadline} onday={handleDay} /&gt;
+// debug hook: reached: reveal.reached; playFrom: the offered day or null</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the transport takes two lines of the label cell</strong> One line does not fit: from md the cell's content is 148 px (168 less 20 of padding) and Play reads up to "Play from 2028" (about 142 px with its icon at <code>text-sm</code>), before speed and Today. So line 1 is the Play button at the cell's full width, line 2 is speed and Today. The ruler row is then 68 px tall (52 compact, 92 coarse), still shorter than today's three rows (119, 95, 155). The lane cell uses that height: years on top, the track in the middle, the goal flag under it; the date flag sits on the year line over the playhead and covers the year label under it.</aside>
+    <aside data-kind="decision"><strong>Builder's call: flags are not buttons</strong> The date flag and the goal flag are drawn inside the slider and are <code>aria-hidden</code>; the slider's description names the deadline. A jump button on the ruler would be a target overlapping the slider (WCAG 2.5.8), and the keys (Home, End, Page Up and Down) and a press on the ruler reach any date. The ruler's old "RHNA deadline" and "2045" jumps go; see <a href="#q-2045">Open questions</a> for 2045.</aside>
+    <aside data-kind="decision"><strong>Builder's call: Play is never held back</strong> Rule 24's "Play is unavailable from an edit until the forecast is whole" goes with its reason sentence, as the spec's note requires ("Not yet computed stops being something the person is told"): an edit still pauses playback, Play works at once, and the playhead waits at the computed edge (<code>end</code>) as it already does. While an edit has no refill yet, Play runs on the held numbers, dimmed, with "Updating" in the header.</aside>
+    <aside data-kind="decision"><strong>Builder's call: the zones on the track</strong> Shown is the solid ink fill (<code>--color-ink-muted</code>), seen the control-line tone (<code>--color-control-line</code>, 3:1 on its surfaces, <code>accent.spec.ts</code>), unseen the hatch the lanes had. The thumb and the date flag mark where shown ends; the hatch marks unseen without colour.</aside>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Measure before building. In a throwaway client test (not committed), render today's <code>TimelineMode</code> host at 1280x900, 1280x720, 1024x900, 768x900, 1536x900 and 390x760 and log <code>tl-pin</code>'s <code>offsetHeight</code>; compare with <a href="#tbl-heights">Heights</a> ("Today") and note any difference in the task report. Then render the new label cell's widest strings ("Play from 2028", "Replay", "Pause", "3×", "Today") in a 168 px and a 92 px <code>.lab</code> cell and record their widths. Decision rule: from md the Play button keeps <code>text-sm</code> if "Play from 2028" fits 148 px, else <code>text-xs</code>; below md the cell's padding is 0, line 2 is two 44 px buttons with a 4 px gap (92 px), and the Play label may wrap to two lines inside its button (<code>text-xs leading-tight</code>). Report the measured widths and the rule applied.</li>
+      <li id="t4-s2"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// axis.spec.ts
+it('labels the dataset year at 0, then every fifth year, inside the window')
+// playhead.spec.ts
+it('dateFlag reads Today at the dataset date, else the short month')
+it('playLabel: Pause while playing; Play from wins over Replay; Replay at last; else Play')
+// copy.spec.ts
+it('playFromText, speedName and rulerDescription')
+  // rulerDescription(dayFromUtc(2045, 6, 1), dayFromUtc(2031, 1, 31)) ===
+  //   'Seen up to June 2045. Goal deadline January 2031.'; (null, null) === ''
+
+// Playhead.svelte.spec.ts (rewrite around PlayheadHost)
+it('one row: the transport in the label cell, the ruler in the lane cell')
+it('the ruler is the slider: name, value, value text and description')
+it('a press anywhere on the ruler, years and flags included, moves the day and pauses')
+it('Left and Right move a month, Page keys a year, Home the dataset date, End the computed edge')
+it('leaves modified keys alone')                     // kept
+it('does not move forward when the computed edge fell behind it')   // kept
+it('Play and Pause are one button; Replay at last restarts from today')
+it('Play from moves the day there, then plays')       // onday called once with playFrom
+it('the speed button switches 1× and 3× and never starts playback')
+it('stops at the computed edge and goes on by itself when it moves')  // kept, via the raf seam
+it('the flag rides the playhead: Today at today, the month after; its centre is the thumb's')
+it('zones: shown to the day, seen to the furthest date, unseen hatched past it')
+  // tl-zone-shown width ≈ pct(day), tl-zone-seen left ≈ pct(day) and right ≈ pct(reached),
+  // tl-zone-unseen left ≈ pct(reached); with reached === day the seen zone has zero width
+it('the goal flag sits at the deadline, and is gone without one')
+it('every target is at least 24 px; 44 on a coarse pointer')       // matchMedia stub as today
+it('only the zone, thumb and flag styles change as the day moves; the years are never rewritten')
+  // MutationObserver on the years: 0 records over 20 pointer steps
+
+// TimelineMode.svelte.spec.ts
+it('on opening the playhead is at today and everything ahead is unseen')
+  // debug().reached === asOf; tl-zone-unseen left ≈ 0; tl-flag 'Today'
+it('dragging forward moves the furthest date; dragging back leaves it, so ahead is seen')
+it('no lane is hatched and the ruler has no markers')   // no tl-hatch; no 'RHNA' in tl-pin
+it('an edit pauses playback and Play works at once; the playhead waits at the computed edge')
+  // replaces "an edit pauses playback and Play is unavailable…"
+it('the flag and the header name the same month at today, mid-window and at the end')
+it("at 1280x900 the pinned block is shorter than before")     // tl-pin height &lt; 184
+it("at 1280x720 the compact pinned block is shorter than before")   // &lt; 136</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/axis.spec.ts src/lib/timeline/playhead.spec.ts src/lib/timeline/copy.spec.ts src/lib/timeline/fill.spec.ts
+npx vitest --run --project client src/lib/timeline/Playhead.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/Timeline.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t4-s4"><input type="checkbox"> Implement as in Interfaces; delete <code>Ruler.svelte</code> and its spec; drop the hatch and <code>filledPct</code> from every lane; delete <code>playAvailable</code>, <code>sinceWhole</code>, <code>WHY_OFF</code> and their tests. <code>scrubMarkers</code> stays in <code>score-view.ts</code> (Results' chart reads it until Task 7). No CSS transition on any zone, flag or thumb.</li>
+      <li id="t4-s5"><input type="checkbox"> Run the unit specs and see them pass, the rest-text rule included.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/
+npx vitest --run --project client src/lib/timeline/</code></pre>
+      </li>
+      <li id="t4-s6"><input type="checkbox"> Update the e2e files: in <code>e2e/sim.spec.ts</code> the controls list becomes <code>['tl-play', 'tl-speed', 'tl-today']</code>, every <code>tl-readout-label</code> lookup becomes <code>tl-flag</code> with <code>formatShortMonthYear(monthStart(day))</code> (or "Today"), and a new case "on a phone the pinned block is shorter than before" asserts <code>tl-pin</code> height &lt; 280 on the <code>mobile</code> project; <code>e2e/fzp.spec.ts</code>'s <code>readout</code> helper reads <code>tl-flag</code>; <code>e2e/sim-share.spec.ts</code> gets "a shared link opens with everything ahead unseen" (<code>__sfhFzp.reached === asOf</code>, <code>tl-flag</code> "Today"). Update the docs and <code>CLAUDE.md</code> as listed in Files.</li>
+      <li id="t4-s7"><input type="checkbox"> Run the e2e files, then the changed cases repeated.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts e2e/fzp.spec.ts e2e/sim-share.spec.ts e2e/sim-timeline.spec.ts e2e/chrome-dark.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts e2e/fzp.spec.ts e2e/sim-share.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t4-s8"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/Playhead.svelte src/lib/timeline/Playhead.svelte.spec.ts src/lib/timeline/test/PlayheadHost.svelte src/lib/timeline/Ruler.svelte src/lib/timeline/Ruler.svelte.spec.ts src/lib/timeline/axis.ts src/lib/timeline/axis.spec.ts src/lib/timeline/playhead.ts src/lib/timeline/playhead.spec.ts src/lib/timeline/copy.ts src/lib/timeline/copy.spec.ts src/lib/timeline/Lane.svelte src/lib/timeline/KindRow.svelte src/lib/timeline/PolicyRow.svelte src/lib/timeline/FixedRow.svelte src/lib/timeline/Timeline.svelte src/lib/timeline/Timeline.svelte.spec.ts src/lib/timeline/fill.ts src/lib/timeline/fill.spec.ts src/lib/timeline/session.svelte.ts src/lib/timeline/session.svelte.spec.ts src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/fzp/debug.ts e2e/sim.spec.ts e2e/fzp.spec.ts e2e/sim-share.spec.ts docs/dev/timeline-ui.md docs/dev/sim-page.md CLAUDE.md
+git commit -m "feat(sim): the ruler is the scrubber, with the date on the playhead"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: An edit pulls the reveal back; "Play from"</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code>: the edit effect (<code>:827-838</code>, "An edit (a new document)…") and a scan effect; <code>playFrom</code> to the Playhead. Test: <code>TimelineMode.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/timeline/test/fake-timeline-worker.ts</code>: <code>filledMsg(rev, from, n, opts?: { base?: number })</code> passes <code>opts</code> to <code>chunk</code>.</li>
+      <li>Modify: <code>e2e/sim-timeline.spec.ts</code> (a case beside "a transit rule from 2031 refills from 2031, months before unchanged"); <code>docs/dev/timeline-ui.md</code> (a "Revealing time" section).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 3's <code>editedReveal</code>, <code>scanned</code>, <code>Side</code>, <code>session.pending</code>; Task 4's <code>reveal</code> state and the Playhead's <code>playFrom</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// TimelineMode.svelte
+// in the edit effect, beside session.edited():
+reveal = editedReveal(reveal, shown.view ? { view: shown.view, inForce } : null);
+// the scan: only once the edit is answered (before that the newest view is still the old one)
+$effect(() =&gt; {
+  const v = current;
+  const waiting = session?.pending ?? true;
+  untrack(() =&gt; {
+    if (waiting || !session) return;
+    const now = v ? { view: v, inForce: !nothingInForce(session.accepted ?? policy) } : null;
+    reveal = scanned(reveal, now, { day, playing });
+  });
+});
+const playFromDay = $derived(
+  reveal.playFrom === null || !months ? null : Math.max(asOf, months[reveal.playFrom])
+);
+// &lt;Playhead … playFrom={playFromDay} /&gt;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: what "Play from" does</strong> It always moves the playhead to the first changed month and plays, wherever that month is. Before the playhead (the change is in the shown part, already updated in place) it plays the change again from where it starts; after the playhead it skips the seen months the edit left alone. It reads "Play from {year}" until the playhead moves for any reason or another edit replaces it, and wins over "Replay" at the last day. An edit found while playing offers nothing. An edit whose first change is past the furthest date reached offers plain "Play".</aside>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// TimelineMode.svelte.spec.ts (helpers: drag the slider by dispatched pointer events; edit with
+//   setPolicy + setLots; answer with compiledMsg, refillMsg, then filledMsg(2, …, { base: 5 })
+//   from the changed month on)
+it('an edit pulls the furthest date back to the first changed month; earlier months stay seen')
+  // drag to month 20, back to month 5; edit; refill(2, 8); filled 8..11 unchanged, 12.. changed
+  // debug().reached === MONTHS[12]; tl-play-label === playFromText(MONTHS[12])
+it('the furthest date never falls behind the playhead')
+  // playhead month 15, change from 12: reached === day; label 'Play from {year of MONTHS[12]}'
+it('Play from moves the playhead to the first changed month and plays')
+it('at the last day an edit updates the numbers in place and Play from replaces Replay')
+it('nothing pulled back while the edit has no refill, and none when nothing changed')
+  // after setLots, before the refill: reached unchanged; an identical refill and fill: unchanged,
+  //   label 'Play'
+it('a second edit before the first is answered compares with what was seen first')
+it('a rejected edit pulls nothing back')        // errorMsg bad-request; undoTo; label 'Play'
+it("an edit whose lots fail pulls nothing back")   // setLotsFailed(true)
+it('moving the playhead takes Play from away')
+
+// e2e/sim-timeline.spec.ts
+test('after an edit Play reads Play from the first changed year, and plays from there')
+  // gotoSim; slider End (reached = the end); Home; add a transit rule from 2031 (as the case
+  //   beside it); waitFilled; __sfhFzp.playFrom is a day &gt;= the 2031 rule's start;
+  //   tl-play-label /^Play from \d{4}$/ naming its year; __sfhFzp.reached &lt; the end;
+  //   click tl-play: day === playFrom, playing true</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/TimelineMode.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Implement as in Interfaces and extend <code>filledMsg</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Run the unit specs, the e2e file, and the new case repeated.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-timeline.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-timeline.spec.ts -g "Play from" --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Add "Revealing time" to <code>docs/dev/timeline-ui.md</code>: the three zones and what each covers (the chart's lines and gap, the ruler's track, every outcome figure; never the policy bars, the goal step or its flag); <code>reveal.ts</code>'s rules (opening, moving, an edit, the scan only after the refill, what counts as a change, "Play from"); that the furthest date lasts for the visit and is never saved; the known limit that seen months past the computed edge show no line until the fill reaches them.</li>
+      <li id="t5-s6"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/test/fake-timeline-worker.ts e2e/sim-timeline.spec.ts docs/dev/timeline-ui.md
+git commit -m "feat(sim): an edit pulls the reveal back to its first changed month"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: One chart on the ruler's axis</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/timeline/chart-model.ts</code>. Test: <code>chart-model.spec.ts</code> (server project).</li>
+      <li>Modify: <code>src/lib/timeline/ChartRow.svelte</code> (rewrite) and <code>ChartRow.svelte.spec.ts</code> (rewrite; keep "keeps a falling line inside the plot", "draws no marks and no overlay without a view"); <code>ChartLegend.svelte</code>; <code>Timeline.svelte</code> (the stacked legend gets <code>inForce</code>; <code>goalShown</code> stays).</li>
+      <li>Modify: <code>results.ts</code> (<code>chartReading</code>) and spec; <code>copy.ts</code> (<code>goalNote</code>, <code>chartCaption</code>) and spec.</li>
+      <li>Modify: <code>TimelineMode.svelte</code> (<code>chartPart</code>: the view on show, <code>inForce</code>, the day, the furthest date, stale). Test: <code>TimelineMode.svelte.spec.ts</code> ("the chart step is the goal amount minus…", "from md the chart's legend stacks…", "below md the chart's legend…", the readout and playhead-line cases).</li>
+      <li>Modify: <code>src/routes/layout.css</code> (tokens <code>--chart-law</code>, <code>--chart-total-seen</code>, <code>--chart-law-seen</code>, <code>--chart-gap</code>, both themes); <code>src/lib/shell/accent.spec.ts</code> (the stroke list adds <code>law</code>, <code>total-seen</code>, <code>law-seen</code>).</li>
+      <li>Modify: <code>e2e/sim.spec.ts</code>, <code>e2e/chrome-dark.spec.ts</code> (axe on the chart with a policy in force, light and dark); <code>docs/dev/timeline-ui.md</code> (the chart row bullet).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 1's <code>PlayheadAt</code>, <code>playheadAt</code>, <code>headlineAt</code>, <code>currentLawHomes</code>; Task 4's <code>yearMarks</code>; <code>goalStep</code>, <code>niceCeil</code> (<code>src/lib/fzp/chart.ts:69</code>), <code>formatCompactCount</code>, <code>filledEndDay</code>, <code>dayPct</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// chart-model.ts (pure). Position j: 0 is today (value 0); j = i + 1 is the end of month i.
+export interface ChartPoints { policy: number[]; law: number[] | null }
+/** policy[j]: 0, then rows[i].completedNet; law: 0, then currentLawHomes(view, i), only inForce. */
+export function chartPoints(view: TimelineView, inForce: boolean): ChartPoints;
+/** [j] = max(0, policy[0..j], law[0..j]); built once per view. */
+export function runningMax(p: ChartPoints): number[];
+/** niceCeil(max(goalUnits ?? 0, runMax[min(pos, last)], 1)): the scale grows only with what has
+ *  been reached, in 1-2-5 steps, so it changes a handful of times in a whole window. */
+export function yTop(goalUnits: number | null, runMax: number[], pos: number): number;
+/** atToday ? 0 : index + 1. */
+export function posOf(at: PlayheadAt): number;
+/** The day position j is plotted at: asOf, then filledEndDay(months, j - 1, asOf). */
+export function posDay(view: TimelineView, j: number, asOf: Day): Day;
+export function linePath(values: number[], x: (j: number) =&gt; number, y: (v: number) =&gt; number): string;
+export function gapPath(policy: number[], law: number[], x: …, y: …): string;
+/** [{ value: top / 2, label }, { value: top, label }], labels formatCompactCount. */
+export function yLabels(top: number): { value: number; label: string }[];
+
+// results.ts
+/** The chart's readout at position j: the header's line 1 for it, then ', ' + the effect
+ *  while inForce ('0 homes by today'; '1,234 homes by Apr 2040, +56 from your policy'). */
+export function chartReading(view: TimelineView, j: number, inForce: boolean): string;
+
+// copy.ts
+export const goalNote = (units: number, deadline: Day): string =&gt;
+  `${formatCount(units)} more by ${formatShortMonthYear(deadline)}`;
+export function chartCaption(inForce: boolean, goalShown: boolean): string;   // tbl-strings
+
+// ChartRow.svelte Props
+interface Props {
+  asOf: Day;
+  windowEnd: Day;
+  /** The view on show (shown.view): the held numbers while stale, as the header. */
+  view: TimelineView | null;
+  inForce: boolean;
+  /** The playhead's day: solid up to it. */
+  day: Day;
+  /** The furthest day reached: dimmed from day to it; nothing past it. */
+  reached: Day;
+  target: { deadlineIndex: number; units: number } | null;
+  stale: boolean;
+}
+// Paths (d depends only on view, inForce and yTop): chart-line, chart-law, chart-gap; each drawn
+//   twice, once in clipPath #shown (rect 0 → x(day), testid chart-clip-shown) and once in
+//   clipPath #seen (rect x(day) → x(reached), testid chart-clip-seen) with the -seen tokens and a
+//   thinner stroke (1.25 vs 2.5); per frame only the two rects' x and width change.
+// Gridlines: one vertical per yearMarks entry (data-testid chart-year), horizontals at yLabels;
+//   value labels at the plot's left edge (data-testid chart-ylabel), haloed as ScoreChart's.
+// Goal: the dashed step at target.units to target.deadlineIndex, in --chart-ink, and its note
+//   (data-testid chart-target-note) goalNote(target.units, months[deadlineIndex]); always drawn.
+// Plot height: 96 px from md, 64 px compact, 96 px below md (unchanged).
+// Overlay [role=slider] 'Month in the chart': positions 0..posOf(reached reading); value text
+//   and readout chartReading(view, j, inForce); starts at posOf(playheadAt(…, day)).
+// ChartLegend Props: { stacked?: boolean; goal: boolean; inForce: boolean; class?: string }</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the goal step's label</strong> The step stays at the homes still needed, so it matches the lines that count from today, and is labelled in the plot "73,346 more by Jan 2031", with "Goal" in the legend. The words say it is a remainder, so no one reads it as the state target's 82,069 (which Results' chart draws under the name "State target").</aside>
+    <aside data-kind="decision"><strong>Builder's call: the chart draws the view on show</strong> Today's <code>ChartRow</code> draws the newest view while the header shows the held one during an update. It now draws <code>shown.view</code>, so the chart is the headline's history at every moment, and dims as the header does while stale.</aside>
+    <aside data-kind="decision"><strong>Builder's call: values are plotted at the end of their month</strong> Month i's value is the state at its end, so it sits at the last day of month i and today's 0 sits at the dataset date (as <code>chart.ts</code>'s <code>xAt</code> already does for Results). The line starts at zero at today (carried item), and the solid part grows smoothly with the playhead, cut by the clip at the playhead's day.</aside>
+    <aside data-kind="decision"><strong>Builder's call: seen lines are thinner, not faint</strong> Seen lines keep 3:1 (new <code>-seen</code> tokens, checked in <code>accent.spec.ts</code>) and are drawn thinner, so "dimmed" has a non-colour cue and stays legible; the playhead and its flag mark the boundary. The current-law line uses a new <code>--chart-law</code> (the pipeline grey), the gap a translucent <code>--chart-plan</code> violet (the colour of "your policy"); the goal step moves from violet to <code>--chart-ink</code>, as on Results' chart.</aside>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// chart-model.spec.ts
+it('starts at zero at today; then each month at its end')
+  // chartPoints(v, false).policy[0] === 0; [i + 1] === rows[i].completedNet; law null
+  // posDay(v, 0, asOf) === asOf; posDay(v, 3, asOf) === filledEndDay(v.months, 2, asOf)
+it('the current-law line is the plan world less the effect, only with a policy in force')
+it('the scale grows only with the months reached, in 1-2-5 steps, and never below the goal')
+it('linePath and gapPath close over the two series')
+it('yLabels halves the top')
+
+// results.spec.ts
+it('chartReading at today and at a month, with and without a policy in force')
+  // chartReading(v, 0, true) === '0 homes by today, +0 from your policy'
+  // chartReading(v, 5, false) === homesBy(rows[4].completedNet, months[4])
+
+// ChartRow.svelte.spec.ts (rewrite)
+it('one line when nothing is in force; two lines and the gap with a policy')
+it('the legend names only what is drawn')
+  // nothing in force, step: ['Homes completed', 'Goal']; in force: ['With your policy',
+  //   'Current law', 'From your policy', 'Goal']; no step: no 'Goal'
+it('starts at zero at today')                 // first point at x 0, y of 0
+it('solid to the day, thinner to the furthest date, nothing past it')
+  // chart-clip-shown width ≈ x(day); chart-clip-seen from x(day) to x(reached)
+it('labels the vertical axis and shares the ruler's years')
+  // chart-ylabel texts === yLabels(top) labels; one chart-year per yearMarks entry at its pct
+it('draws the goal step at the homes still needed and says so')
+  // chart-target-note === goalNote(units, months[deadlineIndex]); y = y(units)
+it('the readout at the playhead is the header's line 1, at today and at the end')
+  // focus overlay at day = asOf: '0 homes by today'; at the last day: rows[LAST] by MONTHS[LAST]
+it('the overlay reads only the months reached')    // aria-valuemax === posOf(reached)
+it('moving the day and the furthest date writes no path and reads no row')
+  // view.rows and view.planEffect behind a counting Proxy; MutationObserver attributeFilter ['d']
+  // rerender with 20 increasing (day, reached) pairs: d writes 0, row reads 0;
+  // the two clip rects were written
+it('the caption says what is drawn')            // chartCaption(inForce, goalShown)
+it('keeps a falling line inside the plot')     // kept
+it('draws no marks and no overlay without a view')   // kept
+
+// TimelineMode.svelte.spec.ts
+it('the chart draws the held numbers while stale, as the header does')
+it('the chart's readout and the header name the same month at every position')
+  // today, PageUp twice, End: chart readout at the playhead === score-bar's text
+it("at 1280x900 the pinned block is at most 165 px; at 1280x720 at most 123")
+
+// accent.spec.ts: for k of [..., 'law', 'total-seen', 'law-seen'] (≥ 3:1 on both surfaces)
+
+// e2e/sim.spec.ts
+test('with a policy in force the chart draws current law and the gap; nothing past the playhead on opening')
+  // gotoSim: chart-clip-seen width 0, chart-clip-shown width 0 at today
+  // add a transit rule, waitFilled, End: legend shows 'Current law' and 'From your policy'
+// e2e/chrome-dark.spec.ts: axe on [data-testid=tl-dock] with a policy in force, dark</code></pre>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/chart-model.spec.ts src/lib/timeline/results.spec.ts src/lib/timeline/copy.spec.ts src/lib/shell/accent.spec.ts
+npx vitest --run --project client src/lib/timeline/ChartRow.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Implement as in Interfaces. <code>runningMax</code> and the paths are <code>$derived</code> from <code>view</code>, <code>inForce</code> and <code>yTop</code> (a number, so the paths rebuild only when the scale steps); the clips read only <code>day</code> and <code>reached</code>; the readout reads one row. The figure gets <code>data-stale</code> while stale and draws everything with the seen styling then. Clip ids from <code>$props.id()</code>.</li>
+      <li id="t6-s4"><input type="checkbox"> Run the unit specs and see them pass, then the e2e files and the new cases repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/ src/lib/shell/accent.spec.ts
+npx vitest --run --project client src/lib/timeline/
+SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts e2e/chrome-dark.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts e2e/chrome-dark.spec.ts -g "current law|chart|shorter" --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t6-s5"><input type="checkbox"> Update the chart row bullet of <code>docs/dev/timeline-ui.md</code>: what it plots from today (positions, end-of-month placing), the current-law arithmetic and what it omits (copy <a href="#sec-law">The current-law line</a>), the zones by clip, the scale, the goal step and its note, the legend rule, the shared readout.</li>
+      <li id="t6-s6"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/chart-model.ts src/lib/timeline/chart-model.spec.ts src/lib/timeline/ChartRow.svelte src/lib/timeline/ChartRow.svelte.spec.ts src/lib/timeline/ChartLegend.svelte src/lib/timeline/Timeline.svelte src/lib/timeline/results.ts src/lib/timeline/results.spec.ts src/lib/timeline/copy.ts src/lib/timeline/copy.spec.ts src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/routes/layout.css src/lib/shell/accent.spec.ts e2e/sim.spec.ts e2e/chrome-dark.spec.ts docs/dev/timeline-ui.md
+git commit -m "feat(sim): one chart from today with current law, the gap and the goal"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Results' chart follows the zones</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/fzp/ScoreChart.svelte</code>: a <code>reached</code> prop; each line drawn twice under two clips (solid to the cursor, thinner from the cursor to the furthest date); the table and the label at the playhead's month. Test: <code>ScoreChart.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/fzp/chart.ts</code>: <code>chartModel</code>'s verticals from the goal (<code>GOAL.deadline</code>, "Goal deadline") and 2045; <code>chartLabel</code> says "by the goal's deadline". Test: <code>chart.spec.ts</code>, <code>provenance.spec.ts</code> where it pins the label.</li>
+      <li>Modify: <code>src/lib/fzp/SimResults.svelte</code>: a <code>reached</code> prop; "At the deadline (…)" shows only once the furthest date reaches the deadline's month (<code>:205</code>). Test: <code>SimResults.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>TimelineMode.svelte</code> (the <code>results</code> snippet passes <code>reached</code>); <code>docs/dev/timeline-ui.md</code> (Results' chart).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 4's <code>reveal.reached</code>; <code>monthIndex</code> (<code>src/lib/fzp/time.ts:55</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// ScoreChart.svelte Props: add
+/** The furthest day reached: lines are drawn solid to `day`, thinner to here, nothing past. */
+reached: Day;
+// the model stays chartModel(score, asOf, horizon, width, monthIndex(highWater, …)) (all filled
+//   months), so it is not rebuilt as the playhead moves; per frame only the cursor and the two
+//   clip rects move.
+// rows  = tableRows(score, asOf, playheadIndex)    playheadIndex = monthIndex(day, …)
+// label = chartLabel(score, playheadIndex)         names only months up to the playhead
+// SimResults.svelte Props: add `reached: Day`; the deadline line needs
+//   monthIndex(reached, …) &gt;= deadlineIndex(…)
+// TimelineMode: &lt;SimResults … reached={Math.min(reveal.reached, shownEnd)} /&gt;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the smallest change to a chart a later slice replaces</strong> Its lines are clipped, not rebuilt, so the scale stays that of the whole filled forecast: the axis can show how high the forecast goes before the person gets there, but no line and no number past the furthest date shows. The sr-only summary (<code>chartLabel</code>) reads at the playhead's month, so it names the deadline's, 2045's and the latest value only once the playhead has reached them, and its "RHNA deadline" becomes "the goal's deadline". The reference lines (published estimates) and the target line are inputs and stay whole.</aside>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// ScoreChart.svelte.spec.ts
+it('lines are solid to the cursor, thinner to the furthest date, absent past it')
+  // the shown and seen clip rects span [0, cursorX] and [cursorX, x(reached)]
+it('the table lists months up to the playhead only')
+  // day at month 30, reached at month 200: the last row's index === 30
+it('the label names values up to the playhead only')
+  // aria-label has no 'by 2045' while day is before 2045, even with reached past it
+it('moving the day writes no path')            // MutationObserver attributeFilter ['d']: 0
+it('references and the target line are drawn whole')
+// chart.spec.ts
+it('the deadline vertical is the goal's and reads Goal deadline')
+it("chartLabel says by the goal's deadline")
+// SimResults.svelte.spec.ts
+it('the deadline line waits until the furthest date reaches the deadline')</code></pre>
+      </li>
+      <li id="t7-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/fzp/chart.spec.ts src/lib/fzp/provenance.spec.ts
+npx vitest --run --project client src/lib/fzp/ScoreChart.svelte.spec.ts src/lib/fzp/SimResults.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> Implement as in Interfaces. <code>scrubMarkers</code> stays for its other readers; <code>chart.ts</code> stops using it for the goal vertical.</li>
+      <li id="t7-s4"><input type="checkbox"> Run the specs and the Results e2e cases.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/fzp/
+npx vitest --run --project client src/lib/fzp/ src/lib/timeline/TimelineMode.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts -g "Results" --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t7-s5"><input type="checkbox"> Update <code>docs/dev/timeline-ui.md</code>: Results' chart draws to the furthest date, solid to the playhead; its table and summary stop at the playhead; the deadline line waits for the furthest date.</li>
+      <li id="t7-s6"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/fzp/ScoreChart.svelte src/lib/fzp/ScoreChart.svelte.spec.ts src/lib/fzp/chart.ts src/lib/fzp/chart.spec.ts src/lib/fzp/provenance.spec.ts src/lib/fzp/SimResults.svelte src/lib/fzp/SimResults.svelte.spec.ts src/lib/timeline/TimelineMode.svelte docs/dev/timeline-ui.md
+git commit -m "feat(sim): Results' chart shows only what has been reached"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: Goal reached and goal missed</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/timeline/outcome.ts</code>. Test: <code>outcome.spec.ts</code> (server project).</li>
+      <li>Modify: <code>TimelineMode.svelte</code>: a <code>goal</code> prop (default <code>GOAL</code>, a test seam every goal read goes through); the outcome; a polite status region in the notice stack after the page's notices; dismissal. Test: <code>TimelineMode.svelte.spec.ts</code>, <code>test/TimelineModeHost.svelte</code> (passes <code>goal</code>).</li>
+      <li>Modify: <code>e2e/sim.spec.ts</code>; <code>docs/dev/timeline-ui.md</code> ("Revealing time": the goal notice).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>Goal</code>, <code>readGoal</code>, <code>goalStep</code>, <code>TODAY</code> (<code>goal.ts</code>); Task 4's <code>reveal.reached</code>; <code>PILL</code>, <code>PILL_ACTION</code> (<code>src/lib/shell/pill.ts</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// outcome.ts (pure)
+export type GoalOutcome = { kind: 'reached'; on: Day } | { kind: 'missed'; short: number };
+/**
+ * What the furthest date reached says of the goal. Null when goalStep(goal, view) is null
+ * (deadline outside the window) or the view does not cover the months read. Reached:
+ * readGoal(goal, view, min(m, deadline month)).reachedOn, m the month of `reached` (TODAY at
+ * today). Missed: reached past goal.deadline and not reached by it; short =
+ * goal.amount - goal.measure.valueAt(view, deadline month). Reads at most the deadline month + 2
+ * rows.
+ */
+export function goalOutcome(goal: Goal, view: TimelineView | null, reached: Day, asOf: Day): GoalOutcome | null;
+/** tbl-strings: reached, missed with a policy in force, missed with nothing in force. */
+export function outcomeText(o: GoalOutcome, goal: Goal, inForce: boolean): string;
+/** 'reached:{on}' | 'missed:{short}': one notice per distinct outcome per visit. */
+export function outcomeKey(o: GoalOutcome): string;
+
+// TimelineMode.svelte
+const reachedMonth = $derived(/* indexOfDay of reveal.reached, primitive */);
+// outcome = goalOutcome(goal, shown.view, reveal.reached, asOf), recomputed on reachedMonth,
+//   shown.view and inForce; while stale or reveal.finding the last outcome is held
+let dismissed = $state(new Set&lt;string&gt;());   // SvelteSet
+// in NoticePills, after {@render notices?.()}:
+// div[role=status][data-testid=tl-goal].contents (mounted empty with the session)
+//   {#if outcome &amp;&amp; !dismissed.has(key)}
+//     span[class=PILL][data-testid=tl-goal-notice]: span text, button[aria-label=Dismiss] ×</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: when the notice comes and goes</strong> It is read over the months the person has reached, so it appears the first time the playhead gets to the month (playing or dragging) and never says anything about a month not reached. It stays while the person scrubs back, so crossing the deadline again does not flash it. It goes when dismissed (that outcome then stays away for the visit), or when an edit pulls the furthest date back before its month. An edit that changes the outcome inside the reached months replaces it with the new one, announced once; an edit that leaves it alone leaves it, unannounced. It is never a toast (no timer). The clock keeps going.</aside>
+    <aside data-kind="decision"><strong>Builder's call: the words</strong> The missed notice gives the shortfall and the next step, and names the step by what exists: "Change the policy" with a policy in force, "Add a policy" with nothing in force. No victory card, no unlock, no "Next goal".</aside>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// outcome.spec.ts (calendarMonths views; goals { ...STATE_TARGET, amount, deadline: months[k] })
+it('nothing before the deadline is reached and the goal unmet')
+it('reached: the month the amount is met by the deadline, once the furthest date gets there')
+it('missed: once the furthest date passes the deadline, by the amount still short')
+it('nothing for a deadline outside the window')     // before months[0]: null even at the end
+it('nothing when the view does not cover the months read')
+it('reads at most the deadline month plus two rows')    // counting Proxy
+it('outcomeText and outcomeKey')
+  // reached: 'Goal reached in Mar 2029, by the Jan 2031 deadline.'
+  // missed: 'Goal missed by 3,313 homes. Change the policy and play again.' (inForce)
+  //         'Goal missed by 3,313 homes. Add a policy and play again.' (nothing in force)
+
+// TimelineMode.svelte.spec.ts (STATICS over 60 calendar months; goal prop with deadline MONTHS[12])
+it('the missed notice appears when the playhead passes the deadline, and not before')
+it('it stays as the playhead goes back, and does not come back once dismissed')
+it('the reached notice names the month the goal is met')     // goal amount met at month 8
+it('an edit that pulls the furthest date before the deadline takes it away')
+it('an edit that changes the shortfall replaces it')
+it('the notice region is a polite status, mounted empty')   // role status, no text on open
+
+// e2e/sim.spec.ts
+test('passing the goal deadline short of it says by how much, once')
+  // gotoSim; End: tl-goal-notice /^Goal missed by [\d,]+ homes\. Add a policy and play again\.$/
+  // Dismiss; Home; End: no tl-goal-notice; axe on the notice stack before dismissing</code></pre>
+      </li>
+      <li id="t8-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/outcome.spec.ts
+npx vitest --run --project client src/lib/timeline/TimelineMode.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t8-s3"><input type="checkbox"> Implement as in Interfaces.</li>
+      <li id="t8-s4"><input type="checkbox"> Run the specs, the e2e file and the new case repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/
+npx vitest --run --project client src/lib/timeline/
+SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts -g "goal deadline" --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t8-s5"><input type="checkbox"> Document the notice in "Revealing time" of <code>docs/dev/timeline-ui.md</code> (when it comes and goes, its words, that it is the only notice that reads the goal).</li>
+      <li id="t8-s6"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/outcome.ts src/lib/timeline/outcome.spec.ts src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/test/TimelineModeHost.svelte e2e/sim.spec.ts docs/dev/timeline-ui.md
+git commit -m "feat(sim): goal reached and goal missed notices"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-9">
+    <h2>Task 9: Whole-suite pass</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Whatever the full runs below turn up. No new behaviour.</li>
+    </ul>
+    <ol>
+      <li id="t9-s1"><input type="checkbox"> Run the checks and the full unit suite.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npm run test:unit</code></pre>
+      </li>
+      <li id="t9-s2"><input type="checkbox"> Run the full e2e suite on a free port, both projects. Every failure is fixed at its cause, without retries, sleeps or loosened assertions; re-run any spec you change with <code>--repeat-each=5 --retries=0</code>.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t9-s3"><input type="checkbox"> Sweep for leftovers: <code>rg -n "tl-readout|tl-pause|tl-faster|tl-hatch|tl-ruler-filled|tl-ruler-unfilled|playAvailable|sinceWhole|WHY_OFF|PIN_GAP|tl-pin-mt|tl-scroll-mt|tl-pin-pos|Ruler.svelte|filledPct" src e2e docs/dev</code> finds nothing; <code>rg -n "RHNA" src/lib/timeline/Playhead.svelte src/lib/timeline/ChartRow.svelte src/lib/timeline/ChartLegend.svelte src/lib/timeline/outcome.ts src/lib/timeline/copy.ts</code> finds nothing; <code>rg -n "scrubMarkers" src/lib/timeline</code> finds nothing.</li>
+      <li id="t9-s4"><input type="checkbox"> Preview the plan of signoff without running it, and confirm every step it lists ran green above.
+        <pre><code data-lang="sh">npm run signoff -- --dry-run</code></pre>
+      </li>
+      <li id="t9-s5"><input type="checkbox"> Commit any fixes with the files named, then check timing.
+        <pre><code data-lang="sh">git add &lt;each changed file&gt;
+git commit -m "test(sim): re-pin the suite for the revealed timeline"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <ul>
+      <li id="q-2045"><strong>The "2045" marker.</strong> It marks the year of a published estimate, which the spec puts in the discoverable tier (About this model). Recommended: drop it from the ruler (this plan does, Task 4); Results' chart keeps its 2045 vertical beside the published estimates until the slice that replaces that chart moves them to About. Alternative: a "2045" tick on the ruler's year line, not a button.</li>
+      <li id="q-phone-rows"><strong>Rows on a phone scroll in their own box.</strong> Taking the rows out from under the pinned block (Task 2) means that on a phone the rows scroll inside the bottom part of the screen; the page still scrolls the map away when the person scrolls on the pinned block or the map's edge. Recommended: accept it; it is what keeps rows from ever being covered and keeps the map and the playhead on screen, as the spec's phone tiers ask. Alternative: keep the page-wide scroll on phones and accept the overlap there (the axe workaround would stay in the mobile run).</li>
+      <li id="q-results-rhna"><strong>"RHNA" left in Results.</strong> The target rows still read "RHNA 2023–2031" and "RHNA + 15% buffer" (from <code>src/lib/scoreboard/targets.ts</code>, hashed). Recommended: leave them for slice 7, which rebuilds the detail column into Details; this slice only renames the chart's deadline vertical.</li>
+    </ul>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li><strong>Spec coverage.</strong> Rule 1 and the carried month items: Tasks 1, 6. Rule 2 (the gap on the chart): Task 6. Rule 3 and <code>tbl-reveal</code>: Tasks 3, 4, 5 (ruler, lines by clip), 6 (chart), 7 (Results' chart and table), 8 (the notice); "every outcome figure": header (reads the playhead, unchanged), Results (at the playhead; its deadline line, Task 7), the map and the card (at the playhead, unchanged). The one chart (taller, value labels, shared years, two lines, gap, starts at zero, goal step as an input): Task 6. The loop (goal on chart and ruler, reached and missed): Tasks 4, 6, 8. <code>tbl-engine</code> "First month an edit changes": Task 3, compared on the main thread. Inventory "Time can be played and scrubbed": Task 4; "How far the forecast is computed": hatching now means unseen, Task 4. Carried for slice 3: rows under the pinned block (Task 2), readout and header month at the end and at today (Tasks 1, 6), goal step label (Task 6), the headline's rules in <code>headlineAt</code> (Task 1).</li>
+      <li><strong>Type consistency.</strong> <code>PlayheadAt</code>, <code>playheadAt</code>, <code>headlineAt(view, at, { provisional, inForce }, goal?)</code>, <code>currentLawHomes</code>, <code>Reveal</code>, <code>Side</code>, <code>moved</code>, <code>editedReveal</code>, <code>scanned(r, now, { day, playing })</code>, <code>posOf</code>, <code>chartReading(view, j, inForce)</code>, <code>goalOutcome(goal, view, reached, asOf)</code> keep their names and shapes across Tasks 1 to 8.</li>
+      <li><strong>Review Focus.</strong> Each item names its test step in its owning task.</li>
+      <li><strong>Proportion.</strong> Code blocks are signatures, DOM contracts, test names and assertions; no component bodies.</li>
+    </ul>
+  </section>
+</article>

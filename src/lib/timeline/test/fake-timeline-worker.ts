@@ -62,12 +62,17 @@ export const compiledMsg = (
   statics
 });
 
-/** Months `from` to `from + n - 1` at `rev`. */
-export const filledMsg = (rev: number, from: number, n: number): Of<'filled'> => ({
+/** Months `from` to `from + n - 1` at `rev`; `base` shifts every value (`chunk`). */
+export const filledMsg = (
+  rev: number,
+  from: number,
+  n: number,
+  opts: { base?: number } = {}
+): Of<'filled'> => ({
   type: 'filled',
   rev,
   through: from + n - 1,
-  series: chunk(from, n)
+  series: chunk(from, n, opts)
 });
 
 export const refillMsg = (rev: number, from: number): Of<'refill'> => ({

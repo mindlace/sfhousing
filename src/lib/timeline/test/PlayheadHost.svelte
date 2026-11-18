@@ -1,6 +1,10 @@
-<!-- Test host: binds the Playhead's $bindable props and prints them (Playhead.svelte.spec.ts). -->
+<!--
+  Test host: the Playhead in a two-column grid like the timeline's pinned block (a 168 px label
+  column from md, 92 px below), binding its $bindable props and printing them
+  (Playhead.svelte.spec.ts).
+-->
 <script lang="ts">
-  import type { Marker, Speed } from '$lib/fzp/types';
+  import type { Speed } from '$lib/fzp/types';
   import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import type { Day } from '$lib/timelapse/time';
   import Playhead from '../Playhead.svelte';
@@ -8,11 +12,14 @@
   interface Props {
     asOf: Day;
     windowEnd: Day;
+    last?: Day;
     end: Day;
-    playable?: boolean;
-    markers?: Marker[];
+    reached?: Day;
+    playFrom?: Day | null;
+    goalDeadline?: Day | null;
     startDay?: Day;
     startPlaying?: boolean;
+    startSpeed?: Speed;
     onday?: (day: Day) => void;
     raf?: (cb: FrameRequestCallback) => number;
     cancelRaf?: (h: number) => void;
@@ -21,10 +28,10 @@
     asOf,
     windowEnd,
     end,
-    playable = true,
-    markers = [],
+    reached = undefined,
     startDay,
     startPlaying = false,
+    startSpeed = DEFAULT_SPEED,
     ...rest
   }: Props = $props();
 
@@ -32,18 +39,32 @@
   let day = $state<Day>(startDay ?? asOf);
   // svelte-ignore state_referenced_locally
   let playing = $state(startPlaying);
-  let speed = $state<Speed>(DEFAULT_SPEED);
+  // svelte-ignore state_referenced_locally
+  let speed = $state<Speed>(startSpeed);
 </script>
 
-<Playhead
-  {asOf}
-  {windowEnd}
-  {end}
-  {playable}
-  {markers}
-  bind:day
-  bind:playing
-  bind:speed
-  {...rest}
-/>
+<div class="host grid" data-testid="host-grid">
+  <Playhead
+    {asOf}
+    {windowEnd}
+    {end}
+    reached={reached ?? day}
+    bind:day
+    bind:playing
+    bind:speed
+    {...rest}
+  />
+</div>
 <output data-testid="state">{day}|{playing}|{speed}</output>
+
+<style>
+  .host {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+  @media (min-width: 768px) {
+    .host {
+      grid-template-columns: 168px minmax(0, 1fr);
+    }
+  }
+</style>

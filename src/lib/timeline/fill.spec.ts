@@ -1,20 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { viewOf } from '$lib/sim/world/score/view';
-import {
-  NO_EDIT,
-  afterView,
-  edited,
-  playAvailable,
-  refilled,
-  rejected,
-  settled,
-  shownAt
-} from './fill';
+import { NO_EDIT, afterView, edited, refilled, rejected, settled, shownAt } from './fill';
 import { chunk, cut, statics } from './test/fixtures';
 
 const whole = viewOf([chunk(0, 300)], statics({ lastIndex: 299 }));
 
-describe('stale, fill and Play state', () => {
+describe('stale and fill state', () => {
   it('held view until the refill passes the playhead', () => {
     let s = edited(NO_EDIT, whole);
     expect(shownAt(s, whole, 30)).toEqual({ view: whole, stale: true });
@@ -48,19 +39,6 @@ describe('stale, fill and Play state', () => {
     const t = afterView(settled(edited(NO_EDIT, whole)), cut(whole, 5), 10);
     expect(t.held).toBe(whole);
   });
-  it('Play waits for the whole window after an edit, unless an error stopped the fill', () => {
-    const s = afterView(settled(edited(NO_EDIT, whole)), cut(whole, 50), 0);
-    expect(playAvailable(s, cut(whole, 50), false)).toBe(false);
-    expect(playAvailable(s, cut(whole, 50), true)).toBe(true);
-    expect(playAvailable(afterView(s, whole, 0), whole, false)).toBe(true);
-  });
-  it('a pending edit keeps Play off even when the view looks whole', () => {
-    const s = afterView(edited(NO_EDIT, whole), whole, 0);
-    expect(playAvailable(s, whole, false)).toBe(false);
-  });
-  it('Play is available with no edit, inside the filled part', () => {
-    expect(playAvailable(NO_EDIT, cut(whole, 3), false)).toBe(true);
-  });
   it('a refill holds the view before it until the fill passes the playhead again', () => {
     let s = refilled(NO_EDIT, whole);
     expect(shownAt(s, cut(whole, 9), 15)).toEqual({ view: whole, stale: true });
@@ -68,10 +46,10 @@ describe('stale, fill and Play state', () => {
     expect(s.held).toBeNull();
     expect(shownAt(s, cut(whole, 15), 15)).toEqual({ view: cut(whole, 15), stale: false });
   });
-  it('a refill keeps the first held view and leaves pending and Play as they were', () => {
+  it('a refill keeps the first held view and leaves pending as it was', () => {
     const s = refilled(edited(NO_EDIT, whole), cut(whole, 40));
-    expect(s).toEqual({ held: whole, pending: true, sinceWhole: true, floor: -1 });
-    expect(refilled(NO_EDIT, whole).sinceWhole).toBe(false);
+    expect(s).toEqual({ held: whole, pending: true, floor: -1 });
+    expect(refilled(NO_EDIT, whole)).toEqual({ held: whole, pending: false, floor: -1 });
   });
   it('a rejected edit is stale until the fill is back to the held view and past the playhead', () => {
     const held = cut(whole, 40);
