@@ -1515,7 +1515,7 @@ describe('TimelineMode', () => {
     );
     expect(labels).toHaveLength(1);
     expect(legend.contains(labels[0])).toBe(true);
-    await expect.element(fig).toHaveAccessibleName('Net new homes by month');
+    await expect.element(fig).toHaveAccessibleName('Homes completed');
     const res = await axe.run(page.getByTestId('tl-pin').element(), {
       runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
     });
@@ -1530,7 +1530,7 @@ describe('TimelineMode', () => {
     const lab = page.getByTestId('tl-pin').element().querySelector('.chart-lab')!;
     expect(lab.textContent!.trim()).toBe('Homes completed');
     const fig = page.getByTestId('tl-lanes').getByRole('figure');
-    await expect.element(fig).toHaveAccessibleName('Net new homes by month');
+    await expect.element(fig).toHaveAccessibleName('Homes completed');
     const under = fig.element().querySelector('.legend')!;
     expect(getComputedStyle(under).display).not.toBe('none');
     expect(page.getByTestId('chart-svg').element().getBoundingClientRect().height).toBe(96);

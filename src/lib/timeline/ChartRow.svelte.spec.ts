@@ -27,9 +27,13 @@ describe('ChartRow', () => {
   it('draws nothing past the filled mark and names itself', async () => {
     const view = cut(fullView(), 5);
     await render(ChartRow, { props: { asOf, windowEnd, view, index: 2, target: null } });
-    const fig = page.getByRole('figure', { name: 'Net new homes by month' });
+    const fig = page.getByRole('figure', { name: 'Homes completed' });
     await expect.element(fig).toBeVisible();
-    expect(fig.element().querySelector('figcaption')!.textContent).toMatch(/Results table/);
+    const caption = fig.element().querySelector('figcaption')!.textContent!;
+    expect(caption).not.toMatch(/Results table/);
+    expect(caption).toMatch(/from today/);
+    const visible = document.querySelector('.legend li')!.textContent!.trim();
+    await expect.element(fig).toHaveAccessibleName(visible);
     const xs = ['chart-line', 'chart-line-later']
       .map((id) => page.getByTestId(id).element().getAttribute('d')!)
       .flatMap(pathXs);

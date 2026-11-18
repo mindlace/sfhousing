@@ -94,10 +94,10 @@
   }
 
   const CAPTION =
-    'Homes completed by month and the state target; the Results table has the numbers.';
+    'Homes completed from today, by month, and the State target as the homes still needed by its deadline. The month slider reads out each month.';
 </script>
 
-<figure class="sfh-chart-row m-0" aria-label="Net new homes by month">
+<figure class="sfh-chart-row m-0" aria-label="Homes completed">
   <div class="plot relative">
     <svg
       viewBox="0 0 {W} {H}"
