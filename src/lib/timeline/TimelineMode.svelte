@@ -163,8 +163,11 @@
     fundingName?: (f: CardFunding) => string | null;
     /** The page's own header actions. */
     actions?: Snippet;
-    /** The page's status (the save state), first in the header's status slot. */
-    status?: Snippet;
+    /**
+     * The page's status (the save state), in the header's status slot. Its argument is true while
+     * "Updating" covers it: a popover of its own should close then.
+     */
+    status?: Snippet<[covered: boolean]>;
     /** The page's own notices, first in the notice stack; each should be a `PILL`. */
     notices?: Snippet;
     /** The document on show; a new object after open is an edit (rule 25). */
@@ -404,6 +407,8 @@
   /** "Updating" while the numbers are stale, else nothing (the ruler's hatching shows the fill). */
   const statusWanted = $derived(session && stale ? UPDATING : '');
   let statusText = $state('');
+  /** "Updating" shows: it covers the page's save state in the slot's one cell. */
+  const covered = $derived(statusText === UPDATING);
   let statusAt = -Infinity;
   let statusTimer: ReturnType<typeof setTimeout> | null = null;
   /** At most one change a second: a change inside the gap goes out when it ends (latest wins). */
@@ -974,22 +979,25 @@
   {/if}
 {/snippet}
 
-<!-- The header's status slot (rule 32), at every width: the page's save state, then "Updating"
-     while stale. Each cell keeps its own width, so nothing moves as either comes or goes. From sm
-     the two sit side by side; below sm they share one cell and "Updating" wins while both apply.
-     The live region is apart, once, in the page; "Updating"'s explanation opens as a popover under
-     the slot, so the header keeps its size. -->
+<!-- The header's status slot (rule 32), at every width: the page's save state and "Updating"
+     share one cell, and "Updating" wins while both apply. The one not shown keeps its width
+     (hidden, inert and aria-hidden), so the cell is as wide as the widest and nothing moves as
+     either comes or goes. The live region is apart, once, in the page; "Updating"'s explanation
+     opens as a popover under the slot, so the header keeps its size. -->
 {#snippet statusSlot()}
-  <span class="inline-grid items-center sm:grid-flow-col sm:gap-2" data-testid="tl-status-group">
+  <span class="inline-grid items-center" data-testid="tl-status-group">
     <span
-      class={[
-        'col-start-1 row-start-1 inline-flex items-center',
-        statusText === UPDATING && 'max-sm:invisible'
-      ]}>{@render status?.()}</span
+      class={['col-start-1 row-start-1 inline-flex items-center', covered && 'invisible']}
+      aria-hidden={covered ? 'true' : undefined}
+      inert={covered}>{@render status?.(covered)}</span
     >
     {#if !noScenario}
+      <!-- Over the save state in the cell: it takes presses only while "Updating" shows. -->
       <span
-        class="tl-status relative col-start-1 row-start-1 inline-grid text-sm text-ink-muted tabular-nums sm:col-start-2 dark:text-ink-dark-muted"
+        class={[
+          'tl-status relative col-start-1 row-start-1 inline-grid text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted',
+          !covered && 'pointer-events-none'
+        ]}
         data-testid="tl-status"
       >
         <span aria-hidden="true" class="invisible col-start-1 row-start-1 whitespace-nowrap"

@@ -1349,7 +1349,12 @@ describe('SimPage autosave and publish', () => {
       .toHaveAttribute('data-save-status', 'saved');
     mem.failWrites = true;
     await addHistoric();
-    await expect.element(header().getByRole('button', { name: 'Autosave off' })).toBeVisible();
+    await expect
+      .element(header().getByTestId('save-state'))
+      .toHaveAttribute('data-save-status', 'off');
+    // The fake worker never refills, so "Updating" covers the chip in the status cell.
+    await expect.element(header().getByTestId('tl-status-shown')).toHaveTextContent('Updating');
+    await expect.element(header().getByTestId('save-state')).not.toBeVisible();
     mem.failWrites = false;
     await page.getByRole('button', { name: 'Add Zoning policy' }).click();
     await page.getByRole('button', { name: 'Protect rent-controlled buildings' }).click();

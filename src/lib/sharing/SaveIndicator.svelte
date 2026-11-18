@@ -4,11 +4,14 @@
 
   let {
     status,
-    align = 'end'
+    align = 'end',
+    covered = false
   }: {
     status: SaveStatus;
     /** The popover's edge: 'end' (right-aligned, for a right-hand slot) or 'start' (left). */
     align?: 'start' | 'end';
+    /** Another status covers this one in its cell (/sim's "Updating"): the popover closes. */
+    covered?: boolean;
   } = $props();
 
   const uid = $props.id();
@@ -35,7 +38,7 @@
   });
 
   $effect(() => {
-    if (status !== 'off') popOpen = false;
+    if (status !== 'off' || covered) popOpen = false;
   });
 
   function onWindowKeydown(e: KeyboardEvent) {

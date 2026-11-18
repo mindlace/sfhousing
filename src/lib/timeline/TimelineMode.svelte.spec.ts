@@ -1,7 +1,8 @@
 // TimelineMode composition (timeline-ui rules 1, 18-36): the real TimelineSession and
 // TimelineClient over a fake worker, a recording SimMap stub, and the header slots from a host.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRawSnippet, tick, type Snippet } from 'svelte';
+import { tick } from 'svelte';
+import type { SaveStatus } from '$lib/sharing/autosave.svelte';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import axe from 'axe-core';
@@ -102,8 +103,8 @@ type Over = Partial<{
   regionHeight: number;
   inspectorOpen: boolean;
   scoreExpanded: boolean;
-  /** The page's save state, rendered first in the header's status slot. */
-  status: Snippet;
+  /** The page's save state (the real SaveIndicator), in the header's status slot. */
+  saveStatus: SaveStatus;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -115,6 +116,7 @@ function setup(over: Over = {}) {
     setPolicy?: (p: SimPolicy4) => void;
     setLots?: (l: Lots | null) => void;
     setLotsFailed?: (f: boolean) => void;
+    setSaveStatus?: (s: SaveStatus) => void;
     showResults?: () => Promise<void>;
   } = {};
   const createWorker = vi.fn(() => {
@@ -144,7 +146,7 @@ function setup(over: Over = {}) {
       ...(over.scoreControls ? { scoreControls: over.scoreControls } : {}),
       ...(over.inspectorOpen !== undefined ? { inspectorOpen: over.inspectorOpen } : {}),
       ...(over.scoreExpanded !== undefined ? { scoreExpanded: over.scoreExpanded } : {}),
-      ...(over.status ? { status: over.status } : {})
+      ...(over.saveStatus ? { saveStatus: over.saveStatus } : {})
     }
   });
   return {
@@ -153,6 +155,7 @@ function setup(over: Over = {}) {
     setPolicy: (p: SimPolicy4) => ctl.setPolicy!(p),
     setLots: (l: Lots | null) => ctl.setLots!(l),
     setLotsFailed: (f: boolean) => ctl.setLotsFailed!(f),
+    setSaveStatus: (st: SaveStatus) => ctl.setSaveStatus!(st),
     showResults: () => ctl.showResults!()
   };
 }
@@ -1162,26 +1165,78 @@ describe('TimelineMode', () => {
     });
   }
 
-  it("below sm Updating takes the save state's place; from sm they sit side by side", async () => {
-    const save = createRawSnippet(() => ({
-      render: () => '<span data-testid="save-stand-in">Saving…</span>'
-    }));
-    await page.viewport(375, 900);
-    const s = await opened(LAST, { status: save });
-    const stand = page.getByTestId('save-stand-in');
-    await expect.element(stand).toBeVisible();
-    s.setPolicy(mk(protect(5)));
-    await expect.element(statusShown()).toHaveTextContent(UPDATING);
-    await expect.element(stand).not.toBeVisible();
-    const a = stand.element().getBoundingClientRect();
-    const b = statusShown().element().getBoundingClientRect();
-    expect(Math.abs(a.left - b.left)).toBeLessThanOrEqual(0.5);
-    await page.viewport(640, 900);
-    await expect.element(stand).toBeVisible();
-    expect(stand.element().getBoundingClientRect().right).toBeLessThanOrEqual(
-      statusShown().element().getBoundingClientRect().left
-    );
-  });
+  for (const width of [375, 1280]) {
+    it(`at ${width} px Updating takes the save state's place in one cell`, async () => {
+      await page.viewport(width, 900);
+      const s = await opened(LAST, { saveStatus: 'saving' });
+      const saving = page.getByTestId('save-text');
+      await expect.element(saving).toBeVisible();
+      s.setPolicy(mk(protect(5)));
+      await expect.element(statusShown()).toHaveTextContent(UPDATING);
+      await expect.element(statusShown()).toBeVisible();
+      await expect.element(saving).not.toBeVisible();
+      const a = saving.element().getBoundingClientRect();
+      const b = statusShown().element().getBoundingClientRect();
+      expect(Math.abs(a.left - b.left)).toBeLessThanOrEqual(0.5);
+    });
+  }
+
+  for (const width of [375, 1280]) {
+    it(`at ${width} px with autosave off an update covers the chip; nothing moves; the popover closes`, async () => {
+      await page.viewport(width, 900);
+      // A policy in force throughout, so the score's effect line is there before and after.
+      const s = await opened(LAST, { saveStatus: 'off', initialPolicy: mk(protect(5)) });
+      const chip = page.getByRole('button', { name: 'Autosave off' });
+      await expect.element(chip).toBeVisible();
+      const chipEl = chip.element() as HTMLButtonElement;
+      const pop = document.getElementById(chipEl.getAttribute('aria-controls')!)!;
+      // A real press: nothing of "Updating"'s (empty) cell sits over the chip.
+      await chip.click();
+      await expect.poll(() => pop.hidden).toBe(false);
+      await frame();
+      const lead =
+        width >= 1024
+          ? page.getByRole('link', { name: 'About', exact: true })
+          : page.getByRole('button', { name: 'Menu' });
+      const rects = () => ({
+        cell: page.getByTestId('tl-status-group').element().getBoundingClientRect().toJSON(),
+        score: scoreBar().element().getBoundingClientRect().toJSON(),
+        other: lead.element().getBoundingClientRect().toJSON()
+      });
+      const off = rects();
+
+      // The edit comes from elsewhere on the page, so focus has left the chip.
+      chipEl.blur();
+      s.setPolicy(mk(protect(3)));
+      await expect.element(statusShown()).toHaveTextContent(UPDATING);
+      await expect.element(statusShown()).toBeVisible();
+      // Only "Updating" shows; the chip is out of the tab order and its popover closed.
+      expect(chipEl.checkVisibility({ visibilityProperty: true })).toBe(false);
+      expect(chipEl.closest('[inert]')).not.toBeNull();
+      chipEl.focus();
+      expect(document.activeElement).not.toBe(chipEl);
+      expect(pop.hidden).toBe(true);
+      await frame();
+      expect(rects()).toEqual(off);
+
+      s.setLots({});
+      await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+      emit(compiledMsg(2, STATICS));
+      emit(refillMsg(2, 0));
+      emit(filledMsg(2, 0, LAST + 1));
+      await expect.poll(() => statusShown().element().textContent?.trim()).toBe('');
+      await expect.element(chip).toBeVisible();
+      await frame();
+      expect(rects()).toEqual(off);
+      // Back, focusable, and its popover works; autosave off is not announced again.
+      chipEl.focus();
+      expect(document.activeElement).toBe(chipEl);
+      expect(pop.hidden).toBe(true);
+      await chip.click();
+      await expect.poll(() => pop.hidden).toBe(false);
+      expect(page.getByTestId('save-live').element().textContent?.trim()).toBe('');
+    });
+  }
 
   it('the live region holds only the status text; its explanation opens from the header slot', async () => {
     await page.viewport(390, 760);
