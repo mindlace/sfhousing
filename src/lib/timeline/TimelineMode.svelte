@@ -1064,6 +1064,7 @@
     <SimResults
       {score}
       {at}
+      view={score ? shown.view : null}
       {day}
       {asOf}
       horizon={windowEnd}
