@@ -1497,6 +1497,30 @@ describe('TimelineMode', () => {
     expect(err).toHaveBeenCalledWith('[sim] worker crashed', expect.anything());
   });
 
+  it("a crash's restart keeps the goal's step, flag and legend while held numbers show", async () => {
+    // The client logs each crash; silenced here so signoff's stderr check stays clean.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    // A deadline inside the fixture's window, so the step is drawn.
+    await opened(LAST, { goal: { ...STATE_TARGET, amount: 1100, deadline: MONTHS[12] } });
+    const flag = page.getByTestId('tl-goal-flag');
+    const legend = page.getByTestId('tl-chart-legend');
+    const step = page.getByTestId('chart-target');
+    await expect.element(flag).toBeInTheDocument();
+    await expect.element(step).toBeInTheDocument();
+    await expect.element(legend).toHaveTextContent('Goal');
+    w().crash();
+    const notices = page.getByTestId('tl-notices');
+    await expect.element(notices).toHaveTextContent('Part of the simulation stopped.');
+    await notices.getByRole('button', { name: 'Retry' }).click();
+    // Re-opened with nothing filled yet: the held numbers stay on show.
+    await expect.poll(() => debug().filledThrough).toBe(-1);
+    expect(debug().stale).toBe(true);
+    await tick();
+    expect(flag.query()).not.toBeNull();
+    expect(step.query()).not.toBeNull();
+    expect(legend.element().textContent).toContain('Goal');
+  });
+
   it("on a phone the inspector sheet ends where the mode's box ends, above what follows it", async () => {
     // The host's mode box ends at 748 px of a 760 px viewport: the sheet stops there, not at the viewport's edge.
     await page.viewport(390, 760);

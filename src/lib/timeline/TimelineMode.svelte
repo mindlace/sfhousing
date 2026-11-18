@@ -385,7 +385,12 @@
     )
   );
   const headText = $derived(headline ? headlineText(headline, goal) : null);
-  const chartTarget = $derived(current ? goalStep(goal, current) : null);
+  /**
+   * The goal's step, an input: from the newest view, else the one on show (a restart's re-open
+   * keeps held numbers with no view of its own), so it stays whole while numbers show.
+   */
+  const stepView = $derived(current ?? shownView);
+  const chartTarget = $derived(stepView ? goalStep(goal, stepView) : null);
   /** The ruler's goal flag: at the deadline while the chart draws the goal's step. */
   const goalDeadline = $derived(chartTarget ? goal.deadline : null);
   /**
