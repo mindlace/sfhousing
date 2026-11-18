@@ -740,35 +740,57 @@ describe('TimelineMode', () => {
     expect(scoreBar().element().textContent).not.toContain(CALCULATING);
   });
 
-  it('the header writes the DOM only when the playhead changes month', async () => {
+  // No wall clock: the playhead is dragged in steps of a few days, so most steps stay inside a
+  // calendar month whatever the frame rate.
+  it('the header writes the DOM only on the steps where the playhead changes month', async () => {
     await opened();
     await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
-    let mutations = 0;
-    const obs = new MutationObserver(() => mutations++);
-    obs.observe(page.getByTestId('score-box').element(), {
-      childList: true,
-      characterData: true,
-      subtree: true
-    });
-    const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
-    await playButton().click();
-    await expect.poll(() => debug().playing).toBe(true);
-    // The count and the samples are read at the same instants, so they cover the same frames.
-    await frame();
-    const seen: number[] = [playheadMonth()];
-    const from = mutations;
-    for (let f = 0; f < 30; f++) {
+    expect(debug().playing).toBe(false);
+    const track = slider().element() as HTMLElement;
+    const r = track.getBoundingClientRect();
+    const xOf = (d: Day) => r.left + ((d - asOf) / (windowEnd - asOf)) * r.width;
+    const pointer = (type: string, d: Day) =>
+      track.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          button: 0,
+          pointerId: 1,
+          pointerType: 'mouse',
+          clientX: xOf(d),
+          clientY: r.top + r.height / 2
+        })
+      );
+    const frame = () => new Promise((res) => requestAnimationFrame(() => res(null)));
+    const box = page.getByTestId('score-box').element();
+    let records = 0;
+    const obs = new MutationObserver((m) => (records += m.length));
+    obs.observe(box, { childList: true, characterData: true, subtree: true });
+    /** Mutation records so far, the queued ones included. */
+    const written = () => records + obs.takeRecords().length;
+
+    const from = MONTHS[2] + 1;
+    pointer('pointerdown', from);
+    await expect.poll(() => debug().day).toBe(from);
+    await expect.element(scoreBar()).toHaveTextContent(textAt(2).main);
+    let wrote = written();
+    let changes = 0;
+    for (let d = from + 3; d < MONTHS[5] + 10; d += 3) {
+      const month = monthStart(debug().day);
+      pointer('pointermove', d);
+      await expect.poll(() => debug().day).toBe(d);
       await frame();
-      seen.push(playheadMonth());
+      const now = written();
+      const crossed = monthStart(d) !== month;
+      if (crossed) changes++;
+      // The header's text changes exactly on the steps that cross into another month.
+      expect({ d, crossed, wrote: now > wrote }).toEqual({ d, crossed, wrote: crossed });
+      wrote = now;
     }
-    const written = mutations - from;
+    pointer('pointerup', MONTHS[5] + 10);
     obs.disconnect();
-    await page.getByTestId('tl-pause').click();
-    await expect.poll(() => debug().playing).toBe(false);
-    const monthChanges = seen.filter((m, k) => k > 0 && m !== seen[k - 1]).length;
-    expect(seen.length - 1).toBeGreaterThan(monthChanges);
-    expect(monthChanges).toBeGreaterThan(0);
-    expect(written).toBeLessThanOrEqual(monthChanges + 1);
+    expect(changes).toBe(3);
+    await expect.element(scoreBar()).toHaveTextContent(textAt(playheadMonth()).main);
+    expect(debug().playing).toBe(false);
   });
 
   it('an open card is dimmed while stale and asks again once the refill covers its day', async () => {

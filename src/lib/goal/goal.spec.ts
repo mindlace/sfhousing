@@ -117,6 +117,29 @@ describe('the goal', () => {
     expect(goalStep({ ...g, deadline: v.months[v.lastIndex] + 400 }, v)).toBeNull();
   });
 
+  it('a deadline on months[0]: the step is drawn at 0 and the goal holds month 0', () => {
+    const v = whole();
+    const g = goalOf(BIG, v.months[0]);
+    expect(goalStep(g, v)).toEqual({ deadlineIndex: 0, units: BIG - v.baseline.completedNet });
+    expect(readGoal(g, v, 0)!.fraction).toBe(HOMES_COMPLETED.valueAt(v, 0) / BIG);
+    expect(readGoal(g, v, 10)!.fraction).toBe(HOMES_COMPLETED.valueAt(v, 0) / BIG);
+    expect(readGoal(g, v, TODAY)!.fraction).toBe(HOMES_COMPLETED.valueAt(v, TODAY) / BIG);
+  });
+
+  it('a deadline on months[lastIndex]: the step is drawn there and the goal reads to the end', () => {
+    const v = whole();
+    const last = v.lastIndex;
+    const g = goalOf(BIG, v.months[last]);
+    expect(goalStep(g, v)).toEqual({
+      deadlineIndex: last,
+      units: BIG - v.baseline.completedNet
+    });
+    expect(readGoal(g, v, last - 1)!.fraction).toBe(HOMES_COMPLETED.valueAt(v, last - 1) / BIG);
+    expect(readGoal(g, v, last)!.fraction).toBe(HOMES_COMPLETED.valueAt(v, last) / BIG);
+    const reached = goalOf(HOMES_COMPLETED.valueAt(v, last), v.months[last]);
+    expect(readGoal(reached, v, last)!.reachedOn).toBe(v.months[last]);
+  });
+
   it('goalStep is null for a measure other than homes', () => {
     const v = whole();
     const g = goalOf(BIG, v.months[12]);
