@@ -170,6 +170,24 @@ describe('Playhead', () => {
     }
   });
 
+  it("says how far is seen only while the furthest month is after the playhead's", async () => {
+    const goalDeadline = dayFromUtc(2031, 1, 31);
+    const day = dayFromUtc(2030, 3, 10);
+    // Reached is the day itself: nothing seen ahead.
+    const a = await setup({ startDay: day, goalDeadline });
+    await expect.element(slider()).toHaveAccessibleDescription('Goal deadline January 2031.');
+    a.view.unmount();
+    // Reached later in the playhead's own month: still nothing.
+    const b = await setup({ startDay: day, reached: dayFromUtc(2030, 3, 25), goalDeadline });
+    await expect.element(slider()).toHaveAccessibleDescription('Goal deadline January 2031.');
+    b.view.unmount();
+    // Reached in a later month: said.
+    await setup({ startDay: day, reached: dayFromUtc(2030, 4, 2), goalDeadline });
+    await expect
+      .element(slider())
+      .toHaveAccessibleDescription('Seen up to April 2030. Goal deadline January 2031.');
+  });
+
   it('with nothing seen ahead and no goal, the slider has no description', async () => {
     await setup();
     expect(slider().element().hasAttribute('aria-describedby')).toBe(false);

@@ -13,6 +13,7 @@
   import { untrack } from 'svelte';
   import { formatMonthYear } from '$lib/fzp/format';
   import { advance, DEFAULT_SPEED } from '$lib/fzp/playback';
+  import { monthStart } from '$lib/fzp/time';
   import type { Speed } from '$lib/fzp/types';
   import type { Day } from '$lib/timelapse/time';
   import { yearMarks } from './axis';
@@ -97,7 +98,9 @@
     return out;
   });
   const label = $derived(playLabel({ playing, playFrom, atLast }));
-  const description = $derived(rulerDescription(reached > asOf ? reached : null, goalDeadline));
+  /** "Seen up to …" only while the furthest month reached is after the playhead's month. */
+  const seenAhead = $derived(monthStart(reached) > monthStart(day));
+  const description = $derived(rulerDescription(seenAhead ? reached : null, goalDeadline));
   const descId = $props.id();
 
   function setDay(next: Day) {
