@@ -109,12 +109,13 @@
   import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import ProjectCardPanel from '$lib/fzp/ProjectCardPanel.svelte';
   import ProjectTooltip from '$lib/fzp/ProjectTooltip.svelte';
-  import { RHNA_ID, homesAddedBy, scrubMarkers } from '$lib/fzp/score-view';
+  import { RHNA_ID, scrubMarkers } from '$lib/fzp/score-view';
   import SimResults from '$lib/fzp/SimResults.svelte';
   import SourcesDialog from '$lib/fzp/SourcesDialog.svelte';
   import { SummaryRequester, type SummaryState } from '$lib/fzp/summary-request';
   import { monthIndex, monthStart } from '$lib/fzp/time';
   import type { FzpPhase, Speed } from '$lib/fzp/types';
+  import { GOAL } from '$lib/goal/goal';
   import type { HeightCity } from '$lib/map/height/types';
   import SimMap from '$lib/map/SimMap.svelte';
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
@@ -139,7 +140,7 @@
   import { filledEndDay, indexOfDay, viewMonthOf } from './playhead';
   import { termsInForce } from './lens';
   import type { PolicyKind, SimPolicy4 } from './policy4';
-  import { headerOf, resultsAt, scoreOfView } from './results';
+  import { headlineAt, headlineSpoken, headlineText, resultsAt, scoreOfView } from './results';
   import { TimelineSession, type Lots, type SessionNotice } from './session.svelte';
   import type { SpanRef } from './spans';
   import Timeline from './Timeline.svelte';
@@ -344,12 +345,16 @@
   const markers = $derived(score ? scrubMarkers(score) : []);
   /** The shown view's comparison, so the label changes with its numbers (a held view keeps its). */
   const copy = $derived(copyOf(shown.view?.compare ?? statics?.compare ?? null));
-  /** Rule 27 (OQ-3: "calculating" while provisional). */
-  const header = $derived(
-    headerOf(
-      !session || session.provisional || !statics ? null : session.shown(statics.lastIndex).view
-    )
+  /** The playhead is at the dataset date: the headline reads today. */
+  const atToday = $derived(day <= asOf);
+  /**
+   * The headline at the playhead's month (rule 27; OQ-3: "calculating" while provisional). It
+   * reads `index`, never `day`, so it changes at most once per month the playhead crosses.
+   */
+  const headline = $derived(
+    headlineAt(shown.view, index, atToday, session?.provisional ?? false, GOAL)
   );
+  const headText = $derived(headline ? headlineText(headline, GOAL) : null);
   const chartTarget = $derived.by(() => {
     const v = current;
     const rhna = v?.targets.find((t) => t.target.id === RHNA_ID);
@@ -991,17 +996,13 @@
 {#snippet scoreBar()}
   {#if session && calibration}
     <TimelineHeaderScore
-      total={header.total}
-      year={header.year}
-      target={header.target}
-      delta={header.delta}
-      provisional={session.provisional}
+      text={headText}
       busy={stale}
       {stale}
       expanded={narrow.current ? scoreExpanded : undefined}
       controls={detailShown ? (scoreControls ?? '') : ''}
       onclick={() => onscore?.()}
-      live={at ? homesAddedBy(day, at) : ''}
+      live={headText ? headlineSpoken(headText) : ''}
       quiet={playing}
     />
   {/if}

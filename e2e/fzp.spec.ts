@@ -87,7 +87,7 @@ const SHIPYARD = projectById('CASE:2007.0001PRX');
 // ---- helpers ------------------------------------------------------------------------------------
 
 const readout = (page: Page): Locator => page.getByTestId('tl-readout-label');
-/** The header score: "{n} homes added by {year}", the forecast's last month. */
+/** The header score: "{n} homes by {Mon YYYY}" at the playhead, "0 homes by today" at today. */
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
 /** Results, which the header score shows in the inspector. */
 const results = (page: Page): Locator => page.getByTestId('tl-results');
@@ -254,13 +254,14 @@ test('loads ready and the keyboard drives the playhead to both ends', async ({ p
   await expect(readout(page)).toHaveText(formatMonthYear(end));
   await expect(slider(page)).toHaveAttribute('aria-valuenow', String(end));
   await expect(slider(page)).toHaveAttribute('aria-valuemax', String(end));
+  await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes by [A-Z][a-z]{2} \d{4}$/);
 
   // Home: back to today.
   await page.keyboard.press('Home');
   await expect.poll(() => fzp(page, 'day')).toBe(asOf);
   await expect(readout(page)).toHaveText(formatMonthYear(asOf));
-  // The header score is the forecast's last month, whatever the playhead's day.
-  await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes added by \d{4}$/);
+  // The header score follows the playhead: at today it counts nothing yet.
+  await expect(scoreBar(page)).toHaveText(/^0 homes by today$/);
 });
 
 // ---- playback start -----------------------------------------------------------------------------

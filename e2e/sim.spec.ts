@@ -9,6 +9,8 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { SfhSimDebug } from '../src/lib/sim-page/debug';
+import { formatShortMonthYear } from '../src/lib/fzp/format';
+import { dayFromUtc, monthIndex, utcParts } from '../src/lib/fzp/time';
 import { forecastFilled } from '../src/lib/timeline/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
@@ -237,7 +239,7 @@ test('/sim opens on the Family Zoning Plan; the header score shows Results', asy
   await gotoSim(page);
   const doc = await fzp(page, 'policy');
   expect(doc.kinds).toEqual({ zoning: [], permitting: [], money: [] });
-  await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes added by \d{4}$/);
+  await expect(scoreBar(page)).toHaveText(/^0 homes by today$/);
   if (isMobile) {
     await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'false');
   } else {
@@ -246,6 +248,39 @@ test('/sim opens on the Family Zoning Plan; the header score shows Results', asy
   }
   const face = await openScore(page);
   await expect(face.getByText('What your policy added')).toBeVisible();
+});
+
+test('the headline follows the playhead and counts from today', async ({ isMobile, page }) => {
+  await gotoSim(page);
+  await expect(scoreBar(page)).toHaveText('0 homes by today');
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes by [A-Z][a-z]{2} \d{4}$/);
+  // The playhead's calendar month, the last one at the window's end (a few days past its start).
+  const [day, asOf, lastIndex] = [
+    await fzp(page, 'day'),
+    await fzp(page, 'asOf'),
+    await fzp(page, 'lastIndex')
+  ];
+  const { y, m } = utcParts(asOf);
+  const i = monthIndex(day, dayFromUtc(y, m, 1), lastIndex + 1);
+  expect((await scoreBar(page).textContent())!.replace(/^[\d,]+ homes by /, '')).toBe(
+    formatShortMonthYear(dayFromUtc(y, m + i, 1))
+  );
+  // No policy: the comparison is still with the plan as written, so the effect shows. Below sm
+  // line 2 is hidden; the description still carries the effect and the goal.
+  const description =
+    /^[+\u2212][\d,]+ from your policy · ([\d.]+% of the goal|Goal reached, [A-Z][a-z]{2} \d{4})$/;
+  if (isMobile) await expect(page.getByTestId('score-detail')).toBeHidden();
+  else await expect(page.getByTestId('score-detail')).toHaveText(description);
+  await expect(scoreBar(page)).toHaveAccessibleDescription(description);
+  const n = await refillCount(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await waitRefilled(page, n);
+  await expect(page.getByTestId('score-delta')).toHaveText(/^[+\u2212][\d,]+ from your policy$/);
+  await slider(page).focus();
+  await page.keyboard.press('Home');
+  await expect(scoreBar(page)).toHaveText('0 homes by today');
 });
 
 test('at 375 px the links wait in Menu; the score bar stays pinned', async ({ isMobile, page }) => {
@@ -1111,18 +1146,16 @@ async function widestHeaderText(page: Page): Promise<void> {
           break;
         }
     }
-    // The delta's visible text; its sr-only " by {year}" stays.
+    // Line 2's visible parts.
     const delta = document.querySelector('[data-testid="score-delta"]');
-    for (const n of delta?.childNodes ?? [])
-      if (n.nodeType === Node.TEXT_NODE && n.textContent?.trim()) {
-        n.textContent = '\u221212,345 from your policy';
-        break;
-      }
+    if (delta) delta.textContent = '\u221212,345 from your policy';
+    const goal = document.querySelector('[data-testid="score-goal"]');
+    if (goal) goal.textContent = 'Goal reached, May 2088';
     const score = document.querySelector('[data-testid="score-bar"]');
     if (!score) return;
     for (const n of score.childNodes)
       if (n.nodeType === Node.TEXT_NODE && n.textContent?.trim()) {
-        n.textContent = '12,345 homes ';
+        n.textContent = '12,345 homes by May 2088';
         break;
       }
   });
@@ -1170,7 +1203,7 @@ for (const width of [1024, 1280, 1536]) {
     await expect(page.getByRole('banner').getByRole('button', { name: 'View' })).toBeVisible();
     await widestHeaderText(page);
     await widestStatusText(page);
-    await expect(scoreBar(page)).toHaveAccessibleName(/^12,345 homes added by \d{4}$/);
+    await expect(scoreBar(page)).toHaveAccessibleName('12,345 homes by May 2088');
     await expectStatusPlace(page, width);
     const before = await expectHeaderFits(page);
     await expectNoA11yViolations(page, {

@@ -2,22 +2,22 @@
 import type { ComponentProps } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
-import { fromPolicyText } from '$lib/fzp/score-view';
-import { M1_TARGETS } from '$lib/scoreboard/targets';
-import type { TargetProgress } from '$lib/scoreboard/types';
+import { CALCULATING } from '$lib/fzp/score-view';
+import type { HeadlineText } from './results';
 import TimelineHeaderScore from './TimelineHeaderScore.svelte';
 
-const rhna = M1_TARGETS.find((t) => t.id === 'rhna')!;
-const target = (fraction: number): TargetProgress => ({ target: rhna, fraction });
+const TEXT: HeadlineText = {
+  main: '47,335 homes by Apr 2040',
+  effect: '+1,817 from your policy',
+  goal: '68% of the goal',
+  goalName: 'State target: 82,069 homes by Jan 2031'
+};
 
 type Props = ComponentProps<typeof TimelineHeaderScore>;
 const props = (over: Partial<Props> = {}): Props => ({
-  total: 12345,
-  year: 2047,
-  target: target(0.15),
-  delta: 1234,
+  text: TEXT,
   busy: false,
   stale: false,
   expanded: false,
@@ -29,6 +29,7 @@ const props = (over: Partial<Props> = {}): Props => ({
 });
 
 const bar = () => page.getByTestId('score-bar');
+const box = () => page.getByTestId('score-box');
 
 describe('TimelineHeaderScore', () => {
   it('has no aria-expanded when expanded is undefined', async () => {
@@ -38,35 +39,101 @@ describe('TimelineHeaderScore', () => {
     expect(bar().element().hasAttribute('aria-expanded')).toBe(false);
   });
 
-  it('reads "{n} homes by {year}" and carries the year in name and description', async () => {
-    await page.viewport(1024, 768);
-    await render(TimelineHeaderScore, { props: props() });
-    await expect.element(bar()).toHaveTextContent('12,345 homes added by 2047');
-    await expect.element(bar()).toHaveAccessibleName('12,345 homes added by 2047');
-    await expect.element(bar()).toHaveAccessibleDescription(`${fromPolicyText(1234)} by 2047`);
-    await expect.element(page.getByTestId('score-delta')).toHaveTextContent(fromPolicyText(1234));
-    await expect
-      .element(page.getByRole('meter'))
-      .toHaveAttribute('aria-valuetext', '15% of RHNA 2023–2031');
-  });
-
-  it('reads calculating until filled, hiding the delta; the meter shows once its target is filled', async () => {
-    await page.viewport(1024, 768);
-    await render(TimelineHeaderScore, { props: props({ total: null, delta: null }) });
-    await expect.element(bar()).toHaveTextContent('calculating…');
-    expect(page.getByTestId('score-delta').elements()).toEqual([]);
-    expect(page.getByRole('meter').elements()).toHaveLength(1);
+  it('shows calculating with no text', async () => {
+    await page.viewport(1280, 768);
+    await render(TimelineHeaderScore, { props: props({ text: null }) });
+    await expect.element(bar()).toHaveTextContent(CALCULATING);
+    expect(page.getByTestId('score-detail').elements()).toEqual([]);
     expect(bar().element().getAttribute('aria-describedby')).toBeNull();
   });
 
-  it('reads calculating while provisional, whatever the fill state', async () => {
-    await page.viewport(1024, 768);
-    const s = await render(TimelineHeaderScore, { props: props({ provisional: true }) });
-    await expect.element(bar()).toHaveTextContent('calculating…');
+  it('line 1 is the button; line 2 describes it', async () => {
+    await page.viewport(1280, 768);
+    await render(TimelineHeaderScore, { props: props() });
+    await expect.element(bar()).toHaveAccessibleName(TEXT.main);
+    await expect
+      .element(bar())
+      .toHaveAccessibleDescription('+1,817 from your policy · 68% of the goal');
+    await expect.element(page.getByTestId('score-delta')).toHaveTextContent(TEXT.effect!);
+    await expect.element(page.getByTestId('score-goal')).toHaveTextContent(TEXT.goal!);
+    await expect.element(page.getByTestId('score-detail')).toBeVisible();
+  });
+
+  it('no effect: line 2 is the goal alone, with no separator', async () => {
+    await page.viewport(1280, 768);
+    await render(TimelineHeaderScore, { props: props({ text: { ...TEXT, effect: null } }) });
+    await expect.element(bar()).toHaveAccessibleDescription('68% of the goal');
     expect(page.getByTestId('score-delta').elements()).toEqual([]);
+    expect(page.getByTestId('score-detail').element().textContent).toBe('68% of the goal');
+  });
+
+  it('no meter and no RHNA anywhere in the box', async () => {
+    await page.viewport(1280, 768);
+    await render(TimelineHeaderScore, { props: props() });
+    await expect.element(bar()).toHaveTextContent(TEXT.main);
     expect(page.getByRole('meter').elements()).toEqual([]);
-    await s.rerender(props({ provisional: false }));
-    await expect.element(bar()).toHaveTextContent('12,345 homes added by 2047');
+    expect(box().element().textContent).not.toMatch(/RHNA/);
+  });
+
+  it('hover and focus name the goal; Escape closes it; the box keeps its height', async () => {
+    await page.viewport(1280, 768);
+    await render(TimelineHeaderScore, { props: props() });
+    await expect.element(bar()).toBeVisible();
+    const before = box().element().getBoundingClientRect().height;
+    (bar().element() as HTMLElement).focus();
+    const tip = page.getByRole('tooltip');
+    await expect.element(tip).toHaveTextContent(TEXT.goalName!);
+    expect(Math.abs(box().element().getBoundingClientRect().height - before)).toBeLessThanOrEqual(
+      0.5
+    );
+    // Under the box, not beside it.
+    const t = tip.element().getBoundingClientRect();
+    expect(t.top).toBeGreaterThanOrEqual(box().element().getBoundingClientRect().bottom - 0.5);
+    expect(bar().element().getAttribute('aria-describedby')).toContain(tip.element().id);
+    await userEvent.keyboard('{Escape}');
+    await expect.element(tip).not.toBeInTheDocument();
+    await userEvent.hover(bar());
+    await expect.element(page.getByRole('tooltip')).toHaveTextContent(TEXT.goalName!);
+  });
+
+  it('focus holds on the button as the numbers come and go; no goal, no name', async () => {
+    await page.viewport(1280, 768);
+    const s = await render(TimelineHeaderScore, { props: props({ text: null }) });
+    const button = bar().element() as HTMLElement;
+    button.focus();
+    await expect.element(button).toHaveFocus();
+    expect(page.getByRole('tooltip').elements()).toEqual([]);
+    await s.rerender(props());
+    await expect.element(page.getByRole('tooltip')).toHaveTextContent(TEXT.goalName!);
+    await expect.element(page.getByRole('tooltip')).toBeVisible();
+    expect(bar().element()).toBe(button);
+    expect(document.activeElement).toBe(button);
+    await s.rerender(props({ text: null }));
+    await expect.element(bar()).toHaveTextContent(CALCULATING);
+    expect(document.activeElement).toBe(button);
+  });
+
+  it('below sm only line 1 shows', async () => {
+    await page.viewport(375, 700);
+    await render(TimelineHeaderScore, { props: props() });
+    await expect.element(bar()).toBeVisible();
+    await expect.element(page.getByTestId('score-detail')).not.toBeVisible();
+    await expect
+      .element(bar())
+      .toHaveAccessibleDescription('+1,817 from your policy · 68% of the goal');
+  });
+
+  it('from lg to xl the goal drops while the effect shows', async () => {
+    await page.viewport(1100, 768);
+    const s = await render(TimelineHeaderScore, { props: props() });
+    await expect.element(page.getByTestId('score-delta')).toBeVisible();
+    await expect.element(page.getByTestId('score-goal')).not.toBeVisible();
+    // The dropped part stays in the description.
+    await expect
+      .element(bar())
+      .toHaveAccessibleDescription('+1,817 from your policy · 68% of the goal');
+    await s.rerender(props({ text: { ...TEXT, effect: null } }));
+    await expect.element(page.getByTestId('score-goal')).toBeVisible();
   });
 
   it('dims when stale, reports its state and calls onclick', async () => {
@@ -76,16 +143,16 @@ describe('TimelineHeaderScore', () => {
       props: props({ stale: true, busy: true, expanded: true, onclick })
     });
     // Muted ink, not opacity: the button keeps AA contrast.
-    expect(bar().element().parentElement!.dataset.stale).toBe('true');
+    expect(box().element().getAttribute('data-stale')).toBe('true');
     expect(getComputedStyle(bar().element()).color).toBe('rgb(75, 85, 99)');
-    expect(getComputedStyle(bar().element().parentElement!).opacity).toBe('1');
+    expect(getComputedStyle(box().element()).opacity).toBe('1');
     await expect.element(bar()).toHaveAttribute('aria-expanded', 'true');
     await expect.element(bar()).toHaveAttribute('aria-controls', 'dock');
     await expect.element(bar()).toHaveAttribute('aria-busy', 'true');
     await bar().click();
     expect(onclick).toHaveBeenCalledTimes(1);
     await s.rerender(props({ stale: false }));
-    expect(bar().element().parentElement!.dataset.stale).toBeUndefined();
+    expect(box().element().hasAttribute('data-stale')).toBe(false);
     expect(getComputedStyle(bar().element()).color).not.toBe('rgb(75, 85, 99)');
   });
 

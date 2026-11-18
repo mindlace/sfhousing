@@ -9,11 +9,10 @@ import '../../routes/layout.css';
 import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { REAL_ACTUAL } from '$lib/fzp/fixtures/cards';
-import { CALCULATING } from '$lib/fzp/score-view';
+import { CALCULATING, fromPolicyText } from '$lib/fzp/score-view';
 import { dayFromUtc, utcParts } from '$lib/fzp/time';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { lotsText } from '$lib/paint/rows';
-import { formatCount } from '$lib/scoreboard/format';
 import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { monthFirstDay, monthLastDay } from '$lib/sim/world/months';
@@ -22,11 +21,11 @@ import type { ScoreStatics } from '$lib/sim/world/score/types';
 import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
 import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
-import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING } from './copy';
+import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, homesBy } from './copy';
 import { fillStatusText } from './fill';
 import { filledEndDay, indexOfDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
-import { headerOf } from './results';
+import { headlineAt, headlineSpoken, headlineText } from './results';
 import { dayPct } from './rows';
 import type { Lots } from './session.svelte';
 import {
@@ -560,20 +559,165 @@ describe('TimelineMode', () => {
     emit(refillMsg(2, 2));
     await expect.element(scoreBar()).toHaveTextContent(CALCULATING);
     emit(filledMsg(2, 2, LAST - 1));
-    const total = headerOf(viewOf([chunk(0, LAST + 1)], STATICS)).total!;
-    await expect.element(scoreBar()).toHaveTextContent(formatCount(total));
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
     expect(debug().stale).toBe(false);
   });
 
-  it('the header shows calculating, then baseline plus the world at lastIndex', async () => {
-    await opened(10);
-    await expect.element(scoreBar()).toHaveTextContent(CALCULATING);
-    emit(filledMsg(1, 11, LAST - 10));
-    const view = viewOf([chunk(0, LAST + 1)], STATICS);
-    const total = view.baseline.completedNet + view.rows[LAST].completedNet;
-    expect(headerOf(view).total).toBe(total);
-    await expect.element(scoreBar()).toHaveTextContent(`${formatCount(total)} homes`);
-    await expect.element(scoreBar()).toHaveTextContent(`by ${utcParts(MONTHS[LAST]).y}`);
+  /** The month index of the playhead's day. */
+  const playheadMonth = () => indexOfDay(MONTHS, debug().day);
+  const FULL = () => viewOf([chunk(0, LAST + 1)], STATICS);
+  const textAt = (i: number) => headlineText(headlineAt(FULL(), i, false, false)!);
+
+  it('the header reads 0 by today, then follows the playhead month by month', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await opened();
+      await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+      const v = FULL();
+      (slider().element() as HTMLElement).focus();
+      for (let step = 0; step < 2; step++) {
+        const before = debug().day;
+        await userEvent.keyboard('{PageUp}');
+        await expect.poll(() => debug().day).toBeGreaterThan(before);
+        const i = playheadMonth();
+        await expect
+          .element(scoreBar())
+          .toHaveTextContent(homesBy(v.rows[i].completedNet, MONTHS[i]));
+        vi.advanceTimersByTime(1000);
+        await expect
+          .poll(() => page.getByTestId('score-live').element().textContent)
+          .toBe(headlineSpoken(textAt(i)));
+      }
+      await userEvent.keyboard('{Home}');
+      await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the effect shows only with a policy in force', async () => {
+    setup();
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, { ...STATICS, compare: 'preFzp' }));
+    emit(filledMsg(1, 0, LAST + 1));
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}');
+    await expect.poll(() => debug().day).toBeGreaterThan(asOf);
+    const i = playheadMonth();
+    await expect.element(scoreBar()).toHaveTextContent(textAt(i).main);
+    expect(page.getByTestId('score-delta').elements()).toEqual([]);
+    await expect.element(page.getByTestId('score-detail')).toHaveTextContent(/of the goal$/);
+  });
+
+  it('with the comparison against current law the effect is the plan effect at the playhead', async () => {
+    await opened();
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}');
+    await expect.poll(() => debug().day).toBeGreaterThan(asOf);
+    const i = playheadMonth();
+    await expect
+      .element(page.getByTestId('score-delta'))
+      .toHaveTextContent(fromPolicyText(FULL().planEffect[i].completedNetNew));
+  });
+
+  it('while stale the header shows the held numbers, dimmed, not calculating', async () => {
+    const s = await opened();
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}{PageUp}');
+    await expect.poll(() => playheadMonth()).toBeGreaterThan(1);
+    const i = playheadMonth();
+    await expect.element(scoreBar()).toHaveTextContent(textAt(i).main);
+    const text = scoreBar().element().textContent;
+    s.setPolicy(mk(protect(5)));
+    const box = page.getByTestId('score-box');
+    await expect.element(box).toHaveAttribute('data-stale', 'true');
+    expect(scoreBar().element().textContent).toBe(text);
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 0));
+    await expect.poll(() => debug().filledThrough).toBe(-1);
+    expect(scoreBar().element().textContent).toBe(text);
+    expect(scoreBar().element().textContent).not.toContain(CALCULATING);
+    emit(filledMsg(2, 0, LAST + 1));
+    await expect.poll(() => debug().stale).toBe(false);
+    expect(box.element().hasAttribute('data-stale')).toBe(false);
+    await expect
+      .element(scoreBar())
+      .toHaveTextContent(homesBy(FULL().rows[i].completedNet, MONTHS[i]));
+  });
+
+  it('right after an edit with the playhead at today the header reads 0 by today', async () => {
+    const s = await opened();
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    s.setPolicy(mk(protect(5)));
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 0));
+    await expect.poll(() => debug().filledThrough).toBe(-1);
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    expect(scoreBar().element().textContent).not.toContain(CALCULATING);
+  });
+
+  // The session holds the view from before a refill until the fill is back to the playhead's
+  // month, so a withdrawn month reads the held numbers, dimmed; "calculating" shows only where no
+  // view covers the month (the provisional open above).
+  it('a refill that withdraws the playhead month holds its numbers, dimmed, until filled again', async () => {
+    await opened();
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}{PageUp}');
+    await expect.poll(() => playheadMonth()).toBeGreaterThan(1);
+    const i = playheadMonth();
+    await expect.element(scoreBar()).toHaveTextContent(textAt(i).main);
+    emit(refillMsg(1, 1));
+    await expect.poll(() => debug().filledThrough).toBe(0);
+    await expect.element(page.getByTestId('score-box')).toHaveAttribute('data-stale', 'true');
+    expect(scoreBar().element().textContent).toContain(textAt(i).main);
+    emit(filledMsg(1, 1, LAST));
+    await expect.poll(() => debug().stale).toBe(false);
+    expect(page.getByTestId('score-box').element().hasAttribute('data-stale')).toBe(false);
+    await expect.element(scoreBar()).toHaveTextContent(textAt(i).main);
+  });
+
+  it('with nothing filled and the playhead at today the header reads 0 by today', async () => {
+    await opened();
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    emit(refillMsg(1, 0));
+    await expect.poll(() => debug().filledThrough).toBe(-1);
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    expect(scoreBar().element().textContent).not.toContain(CALCULATING);
+  });
+
+  it('the header writes the DOM only when the playhead changes month', async () => {
+    await opened();
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    let mutations = 0;
+    const obs = new MutationObserver(() => mutations++);
+    obs.observe(page.getByTestId('score-box').element(), {
+      childList: true,
+      characterData: true,
+      subtree: true
+    });
+    const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+    await playButton().click();
+    await expect.poll(() => debug().playing).toBe(true);
+    // The count and the samples are read at the same instants, so they cover the same frames.
+    await frame();
+    const seen: number[] = [playheadMonth()];
+    const from = mutations;
+    for (let f = 0; f < 30; f++) {
+      await frame();
+      seen.push(playheadMonth());
+    }
+    const written = mutations - from;
+    obs.disconnect();
+    await page.getByTestId('tl-pause').click();
+    await expect.poll(() => debug().playing).toBe(false);
+    const monthChanges = seen.filter((m, k) => k > 0 && m !== seen[k - 1]).length;
+    expect(seen.length - 1).toBeGreaterThan(monthChanges);
+    expect(monthChanges).toBeGreaterThan(0);
+    expect(written).toBeLessThanOrEqual(monthChanges + 1);
   });
 
   it('an open card is dimmed while stale and asks again once the refill covers its day', async () => {

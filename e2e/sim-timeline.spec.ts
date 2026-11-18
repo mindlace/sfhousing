@@ -134,7 +134,7 @@ function pageErrors(page: Page): string[] {
 test('open /sim and see the headline settle', async ({ page }) => {
   await gotoSim(page);
   expect(await fzp(page, 'filledThrough')).toBe(await fzp(page, 'lastIndex'));
-  await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes added by \d{4}$/);
+  await expect(scoreBar(page)).toHaveText(/^0 homes by today$/);
   await expect(scoreBar(page)).not.toHaveAttribute('aria-busy', 'true');
   // Settled: the filled forecast's headline stays put.
   const text = await scoreBar(page).textContent();
