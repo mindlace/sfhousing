@@ -96,6 +96,9 @@ interface Over {
   filledEnd?: number;
   playheadMonth?: number;
   playheadDay?: number;
+  pinned?: boolean;
+  /** Px: the timeline sits in a box this tall. */
+  height?: number;
 }
 
 async function setup(over: Over = {}) {
@@ -165,7 +168,7 @@ describe('Timeline rows', () => {
       expect(getComputedStyle(l).pointerEvents).toBe('none');
     }
     const pin = page.getByTestId('tl-pin').element().getBoundingClientRect();
-    const grid = page.getByTestId('tl-pin').element().parentElement!.getBoundingClientRect();
+    const grid = page.getByTestId('tl-rows').element().getBoundingClientRect();
     const [a, b] = lines.map((l) => l.getBoundingClientRect());
     expect(Math.abs(a.x - b.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(a.bottom - pin.bottom)).toBeLessThanOrEqual(1);
@@ -185,7 +188,56 @@ describe('Timeline rows', () => {
     const style = getComputedStyle(pin);
     expect(style.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
     expect(style.backgroundColor).not.toBe('transparent');
-    expect(style.position).toBe('sticky');
+    expect(style.position).not.toBe('sticky');
+  });
+
+  /** Every kind open in a 300 px box: the rows run past it. */
+  async function tall(over: Over = {}) {
+    await setup({ height: 300, ...over });
+    for (const name of ['Zoning', 'Permitting', 'Public money']) await kindButton(name).click();
+    await expect
+      .element(page.getByTestId('tl-kind-money').getByTestId('tl-bar').first())
+      .toBeInTheDocument();
+    return {
+      pin: page.getByTestId('tl-pin').element() as HTMLElement,
+      rows: page.getByTestId('tl-rows').element() as HTMLElement
+    };
+  }
+
+  it('the pinned block and the rows are two boxes; the rows box scrolls under nothing', async () => {
+    const { pin, rows } = await tall();
+    expect(getComputedStyle(rows).overflowY).toBe('auto');
+    expect(rows.scrollHeight).toBeGreaterThan(rows.clientHeight);
+    expect(getComputedStyle(pin).position).not.toBe('sticky');
+    expect(rows.contains(pin)).toBe(false);
+    expect(
+      Math.abs(rows.getBoundingClientRect().top - pin.getBoundingClientRect().bottom)
+    ).toBeLessThanOrEqual(0.5);
+    const host = page.getByTestId('host-pin').element().getBoundingClientRect();
+    expect(rows.getBoundingClientRect().bottom).toBeLessThanOrEqual(host.bottom + 0.5);
+  });
+
+  it('the block and the rows share one x scale, the rows scrollbar included', async () => {
+    // A classic scrollbar (headless Chromium overlays its own, 0 px wide).
+    const bar = document.createElement('style');
+    bar.textContent = '[data-testid=tl-rows]::-webkit-scrollbar { width: 12px }';
+    document.head.appendChild(bar);
+    const { pin, rows } = await tall();
+    await expect.poll(() => rows.offsetWidth - rows.clientWidth).toBe(12);
+    const a = () => pin.querySelector('[data-testid=tl-lane]')!.getBoundingClientRect();
+    const b = rows.querySelector('[data-testid=tl-lane]')!.getBoundingClientRect();
+    await expect.poll(() => Math.abs(a().width - b.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(a().left - b.left)).toBeLessThanOrEqual(1);
+    bar.remove();
+  });
+
+  it('unpinned, the rows box does not scroll and the timeline is one piece', async () => {
+    const { pin, rows } = await tall({ pinned: false });
+    expect(getComputedStyle(rows).overflowY).toBe('visible');
+    expect(rows.scrollHeight).toBeLessThanOrEqual(rows.clientHeight + 1);
+    expect(
+      Math.abs(rows.getBoundingClientRect().top - pin.getBoundingClientRect().bottom)
+    ).toBeLessThanOrEqual(0.5);
   });
 
   it('on a phone the playhead line runs through the lanes of an open kind sheet', async () => {
@@ -484,7 +536,8 @@ describe('Timeline rows', () => {
     const spacer = document.createElement('div');
     spacer.style.height = '1500px';
     document.body.insertBefore(spacer, document.body.firstChild);
-    await setup();
+    // In one piece, scrolled by the page (pinned, the page's box gives the room: TimelineMode).
+    await setup({ pinned: false });
     await page.viewport(390, 800);
     const check = async () => {
       await kindButton('Permitting').click();

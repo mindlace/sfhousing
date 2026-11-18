@@ -53,8 +53,14 @@
     playheadDay: Day;
     /** Each row is hatched past it. */
     filledEnd: Day;
-    /** The pinned block's height (its offsetHeight), for the page's scroll padding. */
+    /** The pinned block's height (its offsetHeight): the page weighs it against its box. */
     pinHeight?: number;
+    /**
+     * True: the rows scroll in their own box under the pinned block (the block never covers a
+     * row). False (a box too short to leave MIN_ROWS of rows): the block and rows are one piece
+     * that the page's box scrolls. Default true.
+     */
+    pinned?: boolean;
   }
 
   let {
@@ -72,7 +78,8 @@
     playheadMonth,
     playheadDay,
     filledEnd,
-    pinHeight = $bindable(0)
+    pinHeight = $bindable(0),
+    pinned = true
   }: Props = $props();
 
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
@@ -100,6 +107,20 @@
     const on = () => (phone = mq.matches);
     mq.addEventListener('change', on);
     return () => mq.removeEventListener('change', on);
+  });
+
+  // The rows box's scrollbar width: the pinned block pads its end by it, so its lane column and
+  // the rows' share one x scale.
+  let rowsEl: HTMLElement | undefined = $state();
+  let gutter = $state(0);
+  $effect(() => {
+    const el = rowsEl;
+    if (!el) return;
+    const measure = () => (gutter = el.offsetWidth - el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
   });
 
   // The element that opened the sheet gets focus back when it closes.
@@ -193,30 +214,78 @@
 
 <svelte:window onkeydown={onwindowkeydown} />
 
-<!-- With the sheet open the page gets room to scroll the timeline to the top of the viewport. -->
+<!-- With the sheet open and the timeline in one piece, the page gets room to scroll the timeline
+     to the top of the viewport (pinned, the page's box is tall enough already). -->
 <div
   bind:this={root}
   class="tl relative"
+  class:pinned
   data-testid="tl-timeline"
-  style:padding-bottom={sheeting ? '100dvh' : undefined}
+  style:padding-bottom={sheeting && !pinned ? '100dvh' : undefined}
+  style:--tl-gutter="{gutter}px"
 >
-  <div class="rows grid" inert={sheeting}>
-    <!-- The playhead's parts, the chart's label and the chart share the rows' columns. They stay
-         pinned at the top of the scroll box while the rows scroll under them. -->
-    <div class="pin" data-testid="tl-pin" bind:offsetHeight={pinHeight}>
-      {@render playhead()}
+  <!-- The playhead's parts, the chart's label and the chart: a grid of their own above the rows'
+       scroll box, on the same columns (less the rows' scrollbar), so they share one x scale and
+       a row never passes under them. -->
+  <div class="pin grid" data-testid="tl-pin" inert={sheeting} bind:offsetHeight={pinHeight}>
+    {@render playhead()}
 
-      <!-- From md the stacked legend is the row's label (its first entry names the line); below
-           md the plain label, with the legend under the plot. -->
-      <div class="lab plain chart-lab">
-        {#if phone}
-          <span>Homes completed</span>
-        {:else}
-          <ChartLegend stacked goal={goalShown} />
-        {/if}
-      </div>
-      <div class="cell" bind:this={chartCell}>
-        <Lane {filledPct}>{@render chart()}</Lane>
+    <!-- From md the stacked legend is the row's label (its first entry names the line); below
+         md the plain label, with the legend under the plot. -->
+    <div class="lab plain chart-lab">
+      {#if phone}
+        <span>Homes completed</span>
+      {:else}
+        <ChartLegend stacked goal={goalShown} />
+      {/if}
+    </div>
+    <div class="cell" bind:this={chartCell}>
+      <Lane {filledPct}>{@render chart()}</Lane>
+    </div>
+
+    <div
+      class="line"
+      data-testid="tl-playhead-line"
+      aria-hidden="true"
+      style:left="{playheadPct}%"
+    ></div>
+  </div>
+
+  <!-- The rows' scroll box while pinned (else it grows with them); its one child is the grid. -->
+  <div bind:this={rowsEl} class="rows" data-testid="tl-rows" inert={sheeting}>
+    <div class="rows-grid grid">
+      {#each kinds as kind (kind)}
+        <KindRow
+          {kind}
+          policies={policy.kinds[kind]}
+          open={phone ? false : opened[kind]}
+          expanded={phone ? sheet === kind : opened[kind]}
+          ontoggle={() => toggle(kind)}
+          {asOf}
+          {windowEnd}
+          months={WINDOW_MONTHS}
+          {filledPct}
+          {playheadMonth}
+          {selected}
+          {readonly}
+          {onselect}
+          {onedit}
+          {onadd}
+        />
+      {/each}
+
+      <div class="contents" data-testid="tl-world">
+        <div class="lab plain heading">The world</div>
+        <Lane {filledPct} />
+        <FixedRow
+          label={MARKET_LABEL}
+          text={marketText(calibration, marketLevel(calibration))}
+          color="world"
+          spanRef={marketRef()}
+          selected={marketSelected}
+          {filledPct}
+          {onselect}
+        />
       </div>
 
       <div
@@ -226,47 +295,6 @@
         style:left="{playheadPct}%"
       ></div>
     </div>
-
-    {#each kinds as kind (kind)}
-      <KindRow
-        {kind}
-        policies={policy.kinds[kind]}
-        open={phone ? false : opened[kind]}
-        expanded={phone ? sheet === kind : opened[kind]}
-        ontoggle={() => toggle(kind)}
-        {asOf}
-        {windowEnd}
-        months={WINDOW_MONTHS}
-        {filledPct}
-        {playheadMonth}
-        {selected}
-        {readonly}
-        {onselect}
-        {onedit}
-        {onadd}
-      />
-    {/each}
-
-    <div class="contents" data-testid="tl-world">
-      <div class="lab plain heading">The world</div>
-      <Lane {filledPct} />
-      <FixedRow
-        label={MARKET_LABEL}
-        text={marketText(calibration, marketLevel(calibration))}
-        color="world"
-        spanRef={marketRef()}
-        selected={marketSelected}
-        {filledPct}
-        {onselect}
-      />
-    </div>
-
-    <div
-      class="line"
-      data-testid="tl-playhead-line"
-      aria-hidden="true"
-      style:left="{playheadPct}%"
-    ></div>
   </div>
 
   {#if sheeting && sheet}
@@ -328,9 +356,13 @@
     --k-world: #5f5f66;
     --on-k: #ffffff;
     color: var(--color-ink);
-    /* A page that pads its scroll box for the pinned block sets --tl-scroll-mt to take the block
-       back off when the timeline is scrolled to the top. */
-    scroll-margin-top: var(--tl-scroll-mt, 0px);
+    display: flex;
+    flex-direction: column;
+  }
+  /* Pinned: the timeline fills its box; the block keeps its height, the rows take the rest and
+     scroll in it. */
+  .tl.pinned {
+    height: 100%;
   }
   @media (min-width: 768px) {
     .tl {
@@ -341,30 +373,30 @@
     display: grid;
     grid-template-columns: var(--lab) minmax(0, 1fr);
   }
-  .rows {
-    position: relative;
-  }
-  /* Opaque and above the rows (and their line segment), so rows scrolling under it are hidden. A
-     page whose scroll box is too short for the block and some rows sets --tl-pin-pos to relative:
-     the block then scrolls with the rows. */
+  /* Never sticky: the rows' box starts under it, so no row passes beneath it. Its end padding is
+     the rows' scrollbar, so both lane columns are the same width. */
   .pin {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: subgrid;
-    position: var(--tl-pin-pos, sticky);
-    top: 0;
-    z-index: 3;
+    flex: none;
+    position: relative;
+    padding-inline-end: var(--tl-gutter, 0px);
     background: var(--color-surface);
   }
-  /* A page that pads its scroll box by the block's height (plus a gap: TimelineMode's PIN_GAP from
-     md) sets --tl-pin-mt to minus that padding, so focusing a control in the block (inside the
-     padding) never scrolls the rows. */
-  .pin :global(*) {
-    scroll-margin-top: var(--tl-pin-mt, 0px);
+  /* Pinned, the rows scroll in their own box; 4 px of scroll padding keep a 20 px bar scrolled to
+     the top clear of the chart by its 24 px target (WCAG 2.2 2.5.8). */
+  .tl.pinned .rows {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    scroll-padding-top: 4px;
+  }
+  .rows-grid {
+    position: relative;
+    min-height: 100%;
   }
   /* The playhead line, in two segments at the same x: one through the pinned block from the
-     slider's row down, one through every row under it. An absolutely placed grid child takes its
-     grid area as its containing block; the row end left auto reaches the grid's bottom edge. */
+     slider's row down, one through every row. An absolutely placed grid child takes its grid
+     area as its containing block; the row end left auto reaches the grid's bottom edge. */
   .line {
     position: absolute;
     grid-column: 2;
@@ -377,10 +409,11 @@
     pointer-events: none;
     background: var(--color-accent);
   }
-  /* In the kind sheet the line runs through every lane, its kind's own row included. */
+  /* In the rows and the kind sheet the line runs through every lane, from the first row. */
   .sheet .grid {
     position: relative;
   }
+  .rows-grid .line,
   .sheet .line {
     grid-row: 1;
   }

@@ -405,83 +405,91 @@ describe('TimelineMode', () => {
   const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
   const rectOf = (id: string) => page.getByTestId(id).element().getBoundingClientRect();
 
-  async function scrolledLanes() {
+  /** Many rows open from md, the rows box scrolled to its end. */
+  async function scrolledRows() {
     await opened(LAST, { initialPolicy: many() });
     await expect.element(slider()).toBeInTheDocument();
     await page.getByRole('button', { name: 'Zoning', exact: true }).click();
     await page.getByRole('button', { name: 'Permitting', exact: true }).click();
-    const lanes = page.getByTestId('tl-lanes').element() as HTMLElement;
-    expect(lanes.scrollHeight).toBeGreaterThan(lanes.clientHeight);
-    lanes.scrollTop = lanes.scrollHeight;
+    const rows = page.getByTestId('tl-rows').element() as HTMLElement;
+    expect(rows.scrollHeight).toBeGreaterThan(rows.clientHeight);
+    rows.scrollTop = rows.scrollHeight;
     await frame();
-    return lanes;
+    return rows;
   }
+  const firstBar = () =>
+    document.querySelector<HTMLElement>('[data-testid=tl-kind-zoning] [data-testid=tl-bar]')!;
 
-  it('from md the controls, ruler and chart stay in view while the rows scroll', async () => {
-    const lanes = await scrolledLanes();
-    expect(lanes.scrollTop).toBeGreaterThan(0);
-    const box = lanes.getBoundingClientRect();
-    expect(Math.abs(rectOf('tl-pin').top - box.top)).toBeLessThanOrEqual(1);
+  it('from md the rows scroll in their own box under the pinned block', async () => {
+    const rows = await scrolledRows();
+    expect(rows.scrollTop).toBeGreaterThan(0);
+    const lanes = rectOf('tl-lanes');
+    const pin = rectOf('tl-pin');
+    expect(Math.abs(pin.top - lanes.top)).toBeLessThanOrEqual(1);
     const play = rectOf('tl-play');
-    expect(play.top).toBeGreaterThanOrEqual(box.top - 0.5);
-    expect(play.bottom).toBeLessThanOrEqual(box.bottom + 0.5);
+    expect(play.top).toBeGreaterThanOrEqual(lanes.top - 0.5);
+    expect(play.bottom).toBeLessThanOrEqual(lanes.bottom + 0.5);
     const hit = document.elementFromPoint(play.left + play.width / 2, play.top + play.height / 2);
     expect(playButton().element().contains(hit)).toBe(true);
+    const block = page.getByTestId('tl-pin').element();
+    for (const k of [0, 1, 2, 3]) {
+      const at = document.elementFromPoint(
+        pin.left + pin.width / 2,
+        pin.top + ((k + 0.5) * pin.height) / 4
+      );
+      expect(block.contains(at), `point ${k}`).toBe(true);
+      expect(rows.contains(at), `point ${k}`).toBe(false);
+    }
   });
 
-  it('from md a focused bar under the pinned block comes into view below it', async () => {
-    const lanes = await scrolledLanes();
-    const bar = document.querySelector<HTMLElement>(
-      '[data-testid=tl-kind-zoning] [data-testid=tl-bar]'
-    )!;
+  it('from md a focused bar lands inside the rows box, 4 px clear of its top', async () => {
+    const rows = await scrolledRows();
+    const bar = firstBar();
     bar.focus();
     await frame();
-    const r = bar.getBoundingClientRect();
-    expect(r.top).toBeGreaterThanOrEqual(rectOf('tl-pin').bottom - 0.5);
-    expect(r.bottom).toBeLessThanOrEqual(lanes.getBoundingClientRect().bottom + 0.5);
-  });
-
-  it('from md a bar scrolled to the top clears the chart by its 24 px target', async () => {
-    await scrolledLanes();
-    const bar = document.querySelector<HTMLElement>(
-      '[data-testid=tl-kind-zoning] [data-testid=tl-bar]'
-    )!;
+    const box = rows.getBoundingClientRect();
+    let r = bar.getBoundingClientRect();
+    expect(r.top).toBeGreaterThanOrEqual(box.top + 4 - 0.5);
+    expect(r.bottom).toBeLessThanOrEqual(box.bottom + 0.5);
+    // Scrolled to the top: the scroll padding keeps its 24 px target off the chart's slider
+    // (WCAG 2.2 2.5.8).
     bar.scrollIntoView({ block: 'start', behavior: 'instant' });
     await frame();
-    const r = bar.getBoundingClientRect();
-    // WCAG 2.2 2.5.8: the 24 px circle at the bar's centre stays off the chart's slider.
+    r = bar.getBoundingClientRect();
+    expect(Math.abs(r.top - (box.top + 4))).toBeLessThanOrEqual(1);
     expect(r.top + r.height / 2 - 12).toBeGreaterThanOrEqual(rectOf('tl-pin').bottom);
   });
 
-  // A short mode box (360 px): on a phone the rows under the pinned block reach past it.
-  it('from md focusing the slider or the chart in the pinned block leaves the rows in place', async () => {
-    const lanes = await scrolledLanes();
-    const at = lanes.scrollTop;
+  for (const offset of [5, 11, 17, 23]) {
+    it(`from md with the rows scrolled ${offset} px past a row, axe target-size finds nothing`, async () => {
+      const rows = await scrolledRows();
+      const bar = firstBar();
+      const top = bar.getBoundingClientRect().top - rows.getBoundingClientRect().top;
+      rows.scrollTop = rows.scrollTop + top + offset;
+      await frame();
+      expect(bar.getBoundingClientRect().top).toBeLessThan(rows.getBoundingClientRect().top);
+      const res = await axe.run(page.getByTestId('tl-dock').element(), {
+        runOnly: ['target-size']
+      });
+      expect(res.violations).toEqual([]);
+    });
+  }
+
+  it('from md focusing the slider or the chart leaves the rows where they are', async () => {
+    const rows = await scrolledRows();
+    const at = rows.scrollTop;
     expect(at).toBeGreaterThan(0);
     (slider().element() as HTMLElement).focus();
     await frame();
-    expect(Math.abs(lanes.scrollTop - at)).toBeLessThanOrEqual(1);
+    expect(Math.abs(rows.scrollTop - at)).toBeLessThanOrEqual(1);
     const overlay = page.getByRole('slider', { name: 'Month in the chart' });
     (overlay.element() as HTMLElement).focus();
     await frame();
-    expect(Math.abs(lanes.scrollTop - at)).toBeLessThanOrEqual(1);
+    expect(Math.abs(rows.scrollTop - at)).toBeLessThanOrEqual(1);
   });
 
-  it('on a phone focusing the slider in the stuck pinned block leaves the rows in place', async () => {
-    await page.viewport(390, 760);
-    await opened(LAST, { regionHeight: 360 });
-    await expect.element(slider()).toBeInTheDocument();
-    const mode = page.getByTestId('tl-mode').element() as HTMLElement;
-    mode.scrollTop = mode.scrollHeight;
-    await frame();
-    expect(Math.abs(rectOf('tl-pin').top - rectOf('tl-mode').top)).toBeLessThanOrEqual(1);
-    const at = mode.scrollTop;
-    (slider().element() as HTMLElement).focus();
-    await frame();
-    expect(Math.abs(mode.scrollTop - at)).toBeLessThanOrEqual(1);
-  });
-
-  it("on a phone the controls, ruler and chart stick at the mode box's top", async () => {
+  // A short mode box (360 px): the map scrolls away, then the rows in their own box.
+  it('on a phone the mode box scrolls the map away, then the rows scroll in their own box', async () => {
     await page.viewport(390, 760);
     await opened(LAST, { regionHeight: 360 });
     await expect.element(slider()).toBeInTheDocument();
@@ -496,31 +504,26 @@ describe('TimelineMode', () => {
     };
     inView(slider().element().getBoundingClientRect());
     inView(page.getByTestId('tl-dock').getByRole('figure').element().getBoundingClientRect());
-  });
-
-  it('on a phone a focused bar under the pinned block comes into view below it', async () => {
-    await page.viewport(390, 760);
-    await opened(LAST, { regionHeight: 360 });
-    await expect.element(slider()).toBeInTheDocument();
-    const mode = page.getByTestId('tl-mode').element() as HTMLElement;
-    mode.scrollTop = mode.scrollHeight;
-    await frame();
-    (
-      page.getByRole('button', { name: 'Market conditions, whole window' }).element() as HTMLElement
-    ).focus();
-    await frame();
-    const zoning = page
-      .getByRole('button', { name: 'Zoning', exact: true })
+    const rows = page.getByTestId('tl-rows').element() as HTMLElement;
+    expect(getComputedStyle(rows).overflowY).toBe('auto');
+    expect(rows.scrollHeight).toBeGreaterThan(rows.clientHeight);
+    const at = mode.scrollTop;
+    const market = page
+      .getByRole('button', { name: 'Market conditions, whole window' })
       .element() as HTMLElement;
-    zoning.focus();
+    market.focus();
     await frame();
-    // Chrome centres a focused control it scrolls to; it lands in the padded part of the box.
-    expect(zoning.getBoundingClientRect().top).toBeGreaterThanOrEqual(
-      rectOf('tl-pin').bottom - 0.5
-    );
-    expect(zoning.getBoundingClientRect().bottom).toBeLessThanOrEqual(
-      rectOf('tl-mode').bottom + 0.5
-    );
+    expect(rows.scrollTop).toBeGreaterThan(0);
+    const box = rows.getBoundingClientRect();
+    const r = market.getBoundingClientRect();
+    expect(r.top).toBeGreaterThanOrEqual(box.top - 0.5);
+    expect(r.bottom).toBeLessThanOrEqual(box.bottom + 0.5);
+    // Focusing the slider leaves both boxes where they are.
+    const rowsAt = rows.scrollTop;
+    (slider().element() as HTMLElement).focus();
+    await frame();
+    expect(Math.abs(mode.scrollTop - at)).toBeLessThanOrEqual(1);
+    expect(Math.abs(rows.scrollTop - rowsAt)).toBeLessThanOrEqual(1);
   });
 
   it("the chart's readout paints above the playhead line; the line above the bars", async () => {
@@ -1441,44 +1444,44 @@ describe('TimelineMode', () => {
     });
   }
 
-  it('at 1280x800 at least 90 px of rows show under the pinned block', async () => {
+  it('at 1280x800 the rows box is at least 90 px tall', async () => {
     await page.viewport(1280, 800);
     await opened(LAST, { withInspector: true });
     await expect.element(slider()).toBeInTheDocument();
     await nextFrame();
     expect(box('tl-mode').height).toBe(700);
-    expect(box('tl-lanes').bottom - box('tl-pin').bottom).toBeGreaterThanOrEqual(90);
+    expect(box('tl-rows').height).toBeGreaterThanOrEqual(90);
   });
 
   // The mode box at 1280x720: 636 px on /sim, 585 px on /s/<id> under the shared banner.
   for (const regionHeight of [636, 585]) {
-    it(`at 1280x720 (a ${regionHeight} px mode box) the compact pinned block leaves 90 px of rows`, async () => {
+    it(`at 1280x720 (a ${regionHeight} px mode box) the rows box is at least 90 px tall`, async () => {
       await page.viewport(1280, 720);
       await opened(LAST, { withInspector: true, regionHeight });
       await expect.element(slider()).toBeInTheDocument();
       await nextFrame();
       expect(box('tl-mode').height).toBe(regionHeight);
-      expect(box('tl-lanes').bottom - box('tl-pin').bottom).toBeGreaterThanOrEqual(90);
-      // Its targets stay at least 24 px tall.
+      expect(box('tl-rows').height).toBeGreaterThanOrEqual(90); // Its targets stay at least 24 px tall.
       const pin = page.getByTestId('tl-pin').element();
       for (const el of pin.querySelectorAll('button, [role=slider]'))
         expect(el.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
     });
   }
 
-  /** The pinned block's scroll box: tl-lanes from md, tl-mode below md. */
+  /** The one-piece timeline's scroll box: tl-lanes from md, tl-mode below md. */
   function port(phone: boolean): { top: number; bottom: number } {
     const r = box(phone ? 'tl-mode' : 'tl-lanes');
     return { top: r.top, bottom: r.bottom };
   }
+  const overflowOf = (id: string) => getComputedStyle(page.getByTestId(id).element()).overflowY;
 
-  // WCAG 2.2 2.4.11 at 400% zoom (320x256) and 200% (960x540): a block that would leave too
-  // little room for the rows scrolls with them, so a focused row is never under it.
+  // WCAG 2.2 2.4.11 at 400% zoom (320x256) and 200% (960x540): a box too short for the block
+  // and some rows scrolls the timeline as one piece, so a focused row is never under the block.
   for (const [vw, vh, regionHeight, phone] of [
     [320, 256, 172, true],
     [960, 540, 456, false]
   ] as const) {
-    it(`at ${vw}x${vh} the pinned block scrolls with the rows and a focused bar shows whole`, async () => {
+    it(`at ${vw}x${vh} the timeline is one piece and a focused bar shows whole`, async () => {
       await page.viewport(vw, vh);
       await opened(LAST, {
         initialPolicy: mk(protect(5), { ...protect(3), id: 'b' }, { ...protect(2), id: 'c' }),
@@ -1494,7 +1497,7 @@ describe('TimelineMode', () => {
       }
       await nextFrame();
       const pin = page.getByTestId('tl-pin').element();
-      await expect.poll(() => getComputedStyle(pin).position).not.toBe('sticky');
+      await expect.poll(() => overflowOf('tl-rows')).toBe('visible');
       // The last row's bar: the market's, at the bottom of the scroll.
       const bar = page
         .getByRole('button', { name: 'Market conditions, whole window' })
@@ -1513,24 +1516,26 @@ describe('TimelineMode', () => {
     });
   }
 
-  it('at 1280x720 the compact pinned block stays stuck', async () => {
+  it('at 1280x720 the rows box scrolls under the pinned block', async () => {
     await page.viewport(1280, 720);
     await opened(LAST, { withInspector: true, regionHeight: 636 });
     await expect.element(slider()).toBeInTheDocument();
     await nextFrame();
     await nextFrame();
-    expect(getComputedStyle(page.getByTestId('tl-pin').element()).position).toBe('sticky');
+    expect(overflowOf('tl-rows')).toBe('auto');
+    expect(overflowOf('tl-lanes')).not.toBe('auto');
+    expect(Math.abs(box('tl-rows').top - box('tl-pin').bottom)).toBeLessThanOrEqual(0.5);
+    expect(box('tl-rows').bottom).toBeLessThanOrEqual(box('tl-lanes').bottom + 0.5);
   });
 
-  it('the pinned block sticks again when its scroll box grows', async () => {
+  it('the rows box becomes the scroll box again when its box grows', async () => {
     await page.viewport(960, 540);
     await opened(LAST, { withInspector: true, regionHeight: 456 });
     await expect.element(slider()).toBeInTheDocument();
-    const pin = page.getByTestId('tl-pin').element();
-    await expect.poll(() => getComputedStyle(pin).position).not.toBe('sticky');
+    await expect.poll(() => overflowOf('tl-rows')).toBe('visible');
     await page.viewport(1280, 900);
     document.getElementById('map-region')!.style.height = '700px';
-    await expect.poll(() => getComputedStyle(pin).position).toBe('sticky');
+    await expect.poll(() => overflowOf('tl-rows')).toBe('auto');
   });
 
   it("from md the chart's legend stacks in the label column, legible and clear of axe", async () => {

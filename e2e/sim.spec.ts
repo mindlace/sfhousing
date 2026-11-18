@@ -380,25 +380,38 @@ for (const width of [1280, 1024]) {
   });
 }
 
+/** Every kind open with a transit rule and a preset from md; below md the map scrolled away. */
+async function longRows(page: Page, isMobile: boolean): Promise<void> {
+  if (isMobile) {
+    await page.getByTestId('tl-mode').evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    return;
+  }
+  await openKind(page, 'Zoning');
+  await openKind(page, 'Permitting');
+  await openKind(page, 'Public money');
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await addPolicy(page, 'Permitting', PRESET);
+}
+
 test('the play control stays in view with every kind open', async ({ isMobile, page }) => {
   await gotoSim(page);
   const play = page.getByTestId('tl-play');
+  await longRows(page, isMobile);
   if (isMobile) {
-    await page.getByTestId('tl-mode').evaluate((el) => el.scrollTo(0, el.scrollHeight));
     const header = (await page.getByRole('banner').boundingBox())!;
     await expect
       .poll(async () => (await play.boundingBox())!.y)
       .toBeGreaterThanOrEqual(header.y + header.height - 0.5);
   } else {
-    await openKind(page, 'Zoning');
-    await openKind(page, 'Permitting');
-    await openKind(page, 'Public money');
-    await addPolicy(page, 'Zoning', 'Transit rule');
-    await addPolicy(page, 'Permitting', PRESET);
     const lanes = page.getByTestId('tl-lanes');
-    await lanes.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    const rows = page.getByTestId('tl-rows');
+    await rows.evaluate((el) => el.scrollTo(0, el.scrollHeight));
     await expect
-      .poll(() => lanes.evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 1))
+      .poll(() =>
+        rows.evaluate(
+          (el) => el.scrollTop > 0 && el.scrollTop + el.clientHeight >= el.scrollHeight - 1
+        )
+      )
       .toBe(true);
     const box = (await lanes.boundingBox())!;
     const p = (await play.boundingBox())!;
@@ -408,6 +421,23 @@ test('the play control stays in view with every kind open', async ({ isMobile, p
     expect(p.x + p.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
   }
   expect(await topmostAtCentre(play)).toBe(true);
+});
+
+test('rows scrolled part-way under the pinned block are not targets', async ({
+  isMobile,
+  page
+}) => {
+  await gotoSim(page);
+  await longRows(page, isMobile);
+  const rows = page.getByTestId('tl-rows');
+  await expect(rows).toHaveCSS('overflow-y', 'auto');
+  for (const offset of [6, 14, 22]) {
+    const max = await rows.evaluate((el) => el.scrollHeight - el.clientHeight);
+    if (offset > max) continue;
+    await rows.evaluate((el, y) => (el.scrollTop = y), offset);
+    await expect.poll(() => rows.evaluate((el) => el.scrollTop)).toBe(offset);
+    await expectNoA11yViolations(page, { include: ['[data-testid=tl-dock]'] });
+  }
 });
 
 // ---- brushes ------------------------------------------------------------------------------------

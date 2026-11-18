@@ -79,14 +79,9 @@
   const MIN_SHEET = 240;
 
   /**
-   * From md, px of scroll padding under the pinned block: a 20 px bar scrolled to the top keeps
-   * its 24 px target clear of the chart's slider (WCAG 2.2 2.5.8).
-   */
-  const PIN_GAP = 4;
-  /**
-   * Px of rows the stuck pinned block must leave in its scroll box (a 44 px coarse row with room
-   * around it); with less (a short window or browser zoom) the block scrolls with the rows, so a
-   * focused row is never under it (WCAG 2.2 2.4.11, 1.4.10).
+   * Px of rows the pinned block must leave in its box (a 44 px coarse row with room around it);
+   * with less (a short window or browser zoom) the block and the rows are one piece that the
+   * page's box scrolls, so a focused row always shows (WCAG 2.2 2.4.11, 1.4.10).
    */
   const MIN_ROWS = 64;
 
@@ -916,20 +911,20 @@
     detailEl.scrollTop = 0;
     detailEl.querySelector<HTMLElement>('[data-testid=tl-results]')?.focus({ preventScroll: true });
   }
-  /** The pinned block's height: the scroll padding (WCAG 2.4.11). */
+  /** The pinned block's height. */
   let pinHeight = $state(0);
-  /** The scroll boxes' client heights: the mode box below md, the timeline's own from md. */
+  /** The timeline's box's client height: the mode box below md, the bottom pane's lanes from md. */
   let modeClientH = $state(0);
   let lanesClientH = $state(0);
-  /** The block sticks only while it leaves MIN_ROWS of rows in its scroll box (re-read on resize). */
-  const pinStuck = $derived(
+  /**
+   * The rows scroll in their own box under the block only while it leaves MIN_ROWS of them
+   * (re-read on resize); otherwise the timeline is one piece.
+   */
+  const pinned = $derived(
     narrow.current
       ? !modeClientH || modeClientH - pinHeight >= MIN_ROWS
-      : !lanesClientH || lanesClientH - pinHeight - PIN_GAP >= MIN_ROWS
+      : !lanesClientH || lanesClientH - pinHeight >= MIN_ROWS
   );
-  /** The block's share of the scroll padding and margins: none while it scrolls with the rows. */
-  const pinPad = $derived(pinStuck ? pinHeight : 0);
-  const pinGap = $derived(pinStuck ? PIN_GAP : 0);
   let chartBox = $state<HTMLElement>();
   let modeEl = $state<HTMLElement>();
   let sheetTop = $state(0);
@@ -1110,7 +1105,6 @@
 <div
   bind:this={modeEl}
   class="sfh-fzp sfh-tl relative flex h-full flex-col max-md:overflow-y-auto"
-  style:scroll-padding-top={narrow.current ? `${pinPad}px` : undefined}
   bind:clientHeight={modeClientH}
   data-testid="tl-mode"
 >
@@ -1266,9 +1260,12 @@
 
   {#if mounted && session && calibration}
     <!-- From md the bottom pane: a fixed 40% of the mode box, the timeline beside the detail
-         column (rule 1). Below md the timeline is in flow and the column a sheet. -->
+         column (rule 1). Below md the timeline is in flow and the column a sheet; while pinned
+         the pane is the mode box's height, so the mode box scrolls the map away first, then the
+         rows scroll in their own box. -->
     <div
       class="flex shrink-0 flex-col border-t border-line bg-surface md:grid md:h-[40%] md:grid-rows-[minmax(0,1fr)] dark:border-line-dark dark:bg-surface-dark"
+      style:height={narrow.current && pinned ? '100%' : undefined}
       style:grid-template-columns={narrow.current
         ? undefined
         : detailShown
@@ -1276,23 +1273,15 @@
           : 'minmax(0, 1fr)'}
       data-testid="tl-dock"
     >
-      <!-- The timeline's scroll box from md; below md the mode box scrolls. Either way its pinned
-           block sticks at the scroll box's top, and the scroll padding keeps a focused row out
-           from under it (WCAG 2.2 2.4.11). Below md the mode box's padding is the block's height,
-           so scrolling this box or the timeline to the top (the sheets) takes the block back off
-           as a negative margin. A box too short for the block and MIN_ROWS of rows unsticks it:
-           the block's share of the padding and margins drops to 0 and the timeline scrolls as one
-           piece. -->
+      <!-- The timeline's box. Pinned, its block sits above the rows' own scroll box, so a row
+           never passes under it (WCAG 2.2 2.4.11). A box too short for the block and MIN_ROWS
+           of rows makes the timeline one piece: from md this box scrolls it, below md the mode
+           box. -->
       <div
         bind:this={dockEl}
         bind:clientHeight={lanesClientH}
-        class="min-h-0 md:overflow-y-auto"
-        style:padding-bottom={phoneSheet ? '100dvh' : undefined}
-        style:--tl-pin-pos={pinStuck ? undefined : 'relative'}
-        style:scroll-padding-top={narrow.current ? undefined : `${pinPad + pinGap}px`}
-        style:scroll-margin-top={narrow.current ? `${-pinPad}px` : undefined}
-        style:--tl-scroll-mt={narrow.current ? `${-pinPad}px` : undefined}
-        style:--tl-pin-mt="{narrow.current ? -pinPad : -pinPad - pinGap}px"
+        class="flex min-h-0 flex-col max-md:flex-1 {pinned ? '' : 'md:overflow-y-auto'}"
+        style:padding-bottom={phoneSheet && !pinned ? '100dvh' : undefined}
         data-testid="tl-lanes"
       >
         <Timeline
@@ -1311,6 +1300,7 @@
           playheadDay={day}
           {filledEnd}
           bind:pinHeight
+          {pinned}
         />
       </div>
 

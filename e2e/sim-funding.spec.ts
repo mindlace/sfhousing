@@ -545,18 +545,6 @@ test('8. a published policy lists its public money', async ({ page }) => {
   const fund = editor(page).getByRole('region', { name: 'Public money' });
   await expect(fund).toContainText(pool.label);
   await expect(fund).toContainText(programmeSentence(g, pool));
-  // A lane row left partly under the sticky pinned block by an incidental scroll position reads to
-  // axe as overlapping targets: the scan runs with the money row under test in view (the timeline's
-  // scroll padding lands it clear of the block).
-  const moneyRow = page.getByRole('button', { name: 'Current funding, whole window' });
-  await moneyRow.evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
-  await expect
-    .poll(async () => {
-      const row = (await moneyRow.boundingBox())!;
-      const pin = (await page.getByTestId('tl-pin').boundingBox())!;
-      return row.y >= pin.y + pin.height;
-    })
-    .toBe(true);
   await expectNoA11yViolations(page);
   // The terms' read-only summary (a phone's editor sheet closes first: the bars are under it).
   await editor(page).getByRole('button', { name: 'Close editor' }).click();
