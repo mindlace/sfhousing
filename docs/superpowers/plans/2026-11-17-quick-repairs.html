@@ -1,0 +1,509 @@
+<article>
+  <header>
+    <h1>Quick repairs plan</h1>
+    <p>Slice 1 of the information design review: the Keyboard shortcuts break is fixed, Fewer cars leaves the header, "FZP" reads "current law", transit shading is off by default, and the footer leaves the map pages.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Five small changes that each ship on their own: (1) opening Keyboard shortcuts never changes the header's height or moves a header or dock item, and closes with Escape and a second press; (2) the header has two mode links, Paint and Simulate, and <code>/lesscars</code> still works by URL; (3) the main screens of <code>/sim</code> and <code>/s/&lt;id&gt;</code> say "current law", "Current timelines" and "Current funding" where they said FZP, the plan or the formal names; (4) transit capacity shading starts off for a viewer with no stored choice; (5) <code>/</code>, <code>/sim</code>, <code>/lesscars</code>, <code>/p/*</code> and <code>/s/*</code> have no footer, the header carries an About entry, and <code>/about</code> links the data page and the source repository.</dd>
+      <dt>Architecture</dt>
+      <dd>Task 1 replaces the <code>&lt;details&gt;</code> in <code>HistoryButtons</code> with a button and a native <code>popover="auto"</code> panel placed under the button by a small pure function, so the list lives in the top layer and takes no space in the header row or the dock. Task 2 deletes one link from <code>SiteHeader</code>'s <code>modeLinks</code>. Task 3 changes copy in the <code>src/lib/fzp</code>, <code>src/lib/sim-page</code> and <code>src/lib/timeline</code> modules that render Results, the header delta, the fixed rows and the inspector. Task 4 flips one default in <code>src/lib/view/prefs.ts</code>. Task 5 renders <code>SiteFooter</code> only on document routes and adds the About entry to <code>SiteHeader</code>.</dd>
+      <dt>Tech Stack</dt>
+      <dd>SvelteKit 2, Svelte 5 runes, TypeScript, Tailwind 4, the HTML Popover API, Vitest (server and client projects, vitest-browser-svelte), Playwright, axe through <code>expectNoA11yViolations</code>.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-17-information-design-review-design.html"><code>docs/superpowers/specs/2026-11-17-information-design-review-design.html</code></a>, slice 1 of <code>tbl-slices</code>, with <code>tbl-words</code>, <code>sec-decisions</code>, <code>sec-defects</code>, <code>tbl-inv-chrome</code> and <code>sec-prop-about</code>. Later slices (one clock, the timeline, the map, the detail column, Paint, shared parts, the About surface) are out of scope.</dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li><strong>Do not edit any file under the dataset-version paths</strong> (<code>pipeline/lib/version.ts:42-53</code>): <code>pipeline/</code>, <code>src/lib/data/</code>, <code>src/lib/generator/</code>, <code>src/lib/timelapse/</code>, <code>src/lib/plan/geometry.ts</code>, <code>src/lib/plan/types.ts</code>, <code>src/lib/sim/scenario/</code>, <code>src/lib/sim/levers/</code>, <code>src/lib/sim/finance/</code>, <code>src/lib/scoreboard/</code>. Every file there, spec files included, is hashed into the dataset version, and a change would force a dataset upload. This is why <code>scoreboard/HeaderScore.svelte</code> and its spec keep <code>vsFzpText</code> (Task 3).</li>
+      <li>Copy rules from the owner: terse, no jargon, no em dashes, no "it is not X" disclaimers. Every user-visible string this plan changes is in <a href="#tbl-copy">the copy table</a>; implement those strings exactly.</li>
+      <li>Out of scope, do not touch: the <code>/lesscars</code> page itself, the undo and redo buttons (they stay, in the header on <code>/sim</code> and the dock on <code>/</code>), the map's attribution control, the Sources dialog, <code>/attribution</code>, the project card, the chart and its legend, the header score's date and count.</li>
+      <li>Svelte 5 runes only. Tailwind 4 utilities. Code style: 2-space indent, single quotes, no trailing commas, 100 columns (Prettier and ESLint).</li>
+      <li>WCAG 2.2 AA on every page (<code>docs/dev/accessibility.md</code>). Targets at least 24x24 CSS px (44 on a coarse pointer, as today). Axe goes through <code>expectNoA11yViolations</code> (<code>e2e/helpers/a11y.ts</code>).</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>.</li>
+      <li>Signoff (<code>npm run signoff</code>) is the only check. Do not <code>git push</code> first. chreode fails a run on server stderr, timing crutches (<code>waitForTimeout</code>, fixed sleeps, <code>setTimeout</code> waits) and flakes that pass only on retry. Wait with web-first assertions, <code>expect.poll</code> or <code>expect.element</code>.</li>
+      <li>Port 4173 may belong to another session. Never kill whatever holds it. Run Playwright on another port: <code>SFH_E2E_PORT=4180 npx playwright test …</code> (<code>playwright.config.ts:3</code>).</li>
+      <li>Docs under <code>docs/dev/</code> (and <code>CLAUDE.md</code>) that describe changed behaviour are updated in the task that changes it.</li>
+      <li>All work happens in a git worktree under <code>.claude/worktrees/</code>. Run <code>cd</code> on its own, never as <code>cd … &amp;&amp; cmd</code>.</li>
+      <li>Conventional Commits, with messages given as <code>-m</code> flags. No Claude attribution anywhere: no <code>Co-Authored-By</code> trailers, no generated-by notes in code, docs or commits.</li>
+      <li>Test commands: <code>npx vitest --run --project server &lt;file&gt;</code> for <code>*.spec.ts</code>, <code>npx vitest --run --project client &lt;file&gt;</code> for <code>*.svelte.spec.ts</code>, and <code>SFH_E2E_PORT=4180 npx playwright test &lt;file&gt; --project=chromium --project=mobile</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>Keyboard shortcuts opened inside the phone Menu</strong> (768 to 1023 px with a mouse, where the actions sit in the Menu panel). Escape must close the shortcuts first and leave the Menu open; a second Escape closes the Menu. Test: <a href="#t1-s1">t1-s1</a> (SiteHeader, 800 px).</li>
+      <li><strong>The shortcuts list near a viewport edge or in a short window</strong>: the dock on <code>/</code> sits at the left of the map, the header control at the right of the screen. The list must lie fully inside the viewport and scroll inside itself when taller than the room below the control. Tests: <a href="#t1-s1">t1-s1</a> (<code>placePopover</code>, HistoryButtons in a 288 px scroll box).</li>
+      <li><strong>The window is resized, or the dock scrolled, while the list is open.</strong> A list placed in fixed coordinates would float away from its control. Expected: it closes. Test: <a href="#t1-s1">t1-s1</a>.</li>
+      <li><strong>A returning viewer with a stored choice.</strong> Stored <code>transitAccess: true</code> keeps the shading on, stored <code>false</code> keeps it off, and a record without the field reads the new default, off. Test: <a href="#t4-s1">t4-s1</a>.</li>
+      <li><strong>A phone on a map page with no footer.</strong> The About entry is in the Menu, visible, unobscured and tappable with the dock sheet, Results or a card open; the map region reaches the viewport's bottom; no horizontal scroll; <code>/about</code> still has its footer. Tests: <a href="#t5-s1">t5-s1</a>, <a href="#t5-s5">t5-s5</a>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-copy">
+    <h2>Copy changes for review</h2>
+    <p>Every user-visible string Task 3 changes, old to new. Counts are examples; the sign rules are today's (<code>formatCount</code>, U+2212 for minus).</p>
+    <table id="tbl-copy">
+      <caption>Main-screen copy on /sim and /s/&lt;id&gt;, old and new</caption>
+      <thead>
+        <tr><th scope="col">Where</th><th scope="col">Old</th><th scope="col">New</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Header delta (with a policy)</th><td>vs FZP +1,234 · vs FZP −56 · vs FZP +0</td><td>+1,234 from your policy · −56 from your policy · +0 from your policy</td></tr>
+        <tr><th scope="row">Results heading, no policy</th><td>What the plan added</td><td>What current law added</td></tr>
+        <tr><th scope="row">Results rows, no policy</th><td>Homes completed because of the plan · Homes approved because of the plan</td><td>Homes completed because of current law · Homes approved because of current law</td></tr>
+        <tr><th scope="row">Comparison line, no policy</th><td>FZP added 1,234 homes vs no FZP · FZP cost 569 homes vs no FZP · FZP vs no FZP: calculating…</td><td>Current law added 1,234 homes vs the old zoning · Current law cost 569 homes vs the old zoning · Current law vs the old zoning: calculating…</td></tr>
+        <tr><th scope="row">Comparison line, with a policy</th><td>Your policy added 56 homes vs FZP · Your policy cost 569 homes vs FZP · Your policy vs FZP: calculating…</td><td>Your policy added 56 homes vs current law · Your policy cost 569 homes vs current law · Your policy vs current law: calculating…</td></tr>
+        <tr><th scope="row">Fixed zoning row and its inspector heading</th><td>Family Zoning Plan, as adopted</td><td>Current law</td></tr>
+        <tr><th scope="row">Fixed permitting row and heading</th><td>Permitting times, as observed</td><td>Current timelines</td></tr>
+        <tr><th scope="row">Fixed money row and heading</th><td>City funding today</td><td>Current funding</td></tr>
+        <tr><th scope="row">Fixed row buttons' names</th><td>Family Zoning Plan, as adopted, whole window (and the other two)</td><td>Current law, whole window · Current timelines, whole window · Current funding, whole window</td></tr>
+        <tr><th scope="row">Inspector, fixed zoning row (new line)</th><td>(none)</td><td>Current law is the Family Zoning Plan as adopted.</td></tr>
+        <tr><th scope="row">Inspector, fixed permitting row (new line)</th><td>(none)</td><td>Current timelines are permitting times as observed in SF Planning and DBI records.</td></tr>
+        <tr><th scope="row">Inspector, fixed money row (new line)</th><td>(none)</td><td>Current funding is today's City, state and federal money for affordable homes.</td></tr>
+        <tr><th scope="row">Explanation behind the published-estimate lines</th><td>Published estimates of what the plan adds. Compare with the violet lines.</td><td>Published estimates of what the Family Zoning Plan adds. Compare with the violet lines.</td></tr>
+        <tr><th scope="row">Results, Sources, market paragraph (private level)</th><td>… including the comparison with FZP as written, and the 100% affordable homes …</td><td>… including the comparison with current law, and the 100% affordable homes …</td></tr>
+        <tr><th scope="row">Dataset without the simulation</th><td>The Family Zoning Plan timelapse isn't available for dataset X. It needs simulation data that this dataset doesn't have.</td><td>The simulation isn't available for dataset X. It needs data this dataset doesn't have.</td></tr>
+      </tbody>
+    </table>
+    <table id="tbl-copy-kept">
+      <caption>Occurrences found by ripgrep and left as they are</caption>
+      <thead>
+        <tr><th scope="col">Where</th><th scope="col">Text</th><th scope="col">Why kept</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>scoreboard/HeaderScore.svelte:92</code> via <code>vsFzpText</code></th><td>vs FZP ±N</td><td>No page passes this component a delta (<code>/</code> and <code>/p/:id</code> omit it, <code>routes/+page.svelte:168</code>), and the file is dataset-hashed.</td></tr>
+        <tr><th scope="row">Chart legend and table (<code>fzp/chart.ts:32-33</code>, <code>ScoreChart.svelte:46-53</code>)</th><td>Plan effect, completed · Plan effect, approved</td><td>Slice 3 replaces the chart; <code>SERIES_NAME</code> also feeds the Sources dialog. See <a href="#sec-open-questions">Open questions</a>.</td></tr>
+        <tr><th scope="row">Permitting editor and policy summary (<code>PermittingSection.svelte:187</code>, <code>PolicySummary.svelte:93</code>)</th><td>Family Zoning Plan Local Program lots …</td><td>Names a formal programme; there is no plainer name.</td></tr>
+        <tr><th scope="row">Project card (<code>fzp/labels.ts:48</code>)</th><td>Streamlined approval (state law or the plan's Local Program)</td><td>The card is a long-form surface (brief).</td></tr>
+        <tr><th scope="row">Sources dialog (<code>fzp/provenance.ts:79-82</code> and others)</th><td>Family Zoning Plan, the plan's effect</td><td>Long-form surface (brief).</td></tr>
+        <tr><th scope="row"><code>sim-page/TransitTab.svelte:143</code></th><td>FZP baseline</td><td>Mounted only by its test host (<code>sim-page/test/TransitTabHost.svelte</code>), on no page.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files by task and what each owns</caption>
+      <thead>
+        <tr><th scope="col">Area</th><th scope="col">Files</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Shortcuts popover</th><td><code>paint/HistoryButtons.svelte</code>, new <code>paint/place-popover.ts</code>, new <code>shell/test/HistoryHeader.svelte</code>, specs, <code>e2e/brush.spec.ts</code>, <code>e2e/layout.spec.ts</code>, <code>e2e/sim.spec.ts</code>, <code>docs/dev/sim-page.md</code></td><td>1</td></tr>
+        <tr><th scope="row">Two mode links</th><td><code>shell/SiteHeader.svelte</code>, its spec, <code>e2e/helpers/sharing.ts</code>, <code>e2e/layout.spec.ts</code>, <code>e2e/sim.spec.ts</code>, <code>e2e/lesscars.spec.ts</code>, <code>docs/dev/lesscars.md</code></td><td>2</td></tr>
+        <tr><th scope="row">Current law copy</th><td><code>fzp/score-view.ts</code>, <code>sim-page/policy.ts</code>, <code>fzp/SimResults.svelte</code>, <code>timeline/rows.ts</code>, <code>timeline/Inspector.svelte</code>, <code>timeline/copy.ts</code>, <code>timeline/TimelineHeaderScore.svelte</code>, <code>timeline/TimelineMode.svelte</code>, specs, <code>e2e/sim.spec.ts</code>, <code>e2e/chrome-dark.spec.ts</code>, <code>docs/dev/sim-page.md</code>, <code>docs/dev/timeline-ui.md</code></td><td>3</td></tr>
+        <tr><th scope="row">Transit default</th><td><code>view/prefs.ts</code>, specs, <code>e2e/transit.spec.ts</code>, <code>e2e/sim.spec.ts</code>, <code>e2e/map.spec.ts</code> (comment), <code>docs/dev/map-interfaces.md</code></td><td>4</td></tr>
+        <tr><th scope="row">Footer, About</th><td><code>routes/+layout.svelte</code>, <code>shell/SiteHeader.svelte</code>, <code>routes/about/+page.svelte</code>, new <code>routes/about/page.svelte.spec.ts</code>, new <code>e2e/helpers/chrome.ts</code>, the e2e specs that check the footer, the E9 map goldens, <code>docs/dev/accessibility.md</code>, <code>docs/dev/fzp-mode.md</code>, <code>docs/dev/sim-page.md</code>, <code>CLAUDE.md</code></td><td>5</td></tr>
+      </tbody>
+    </table>
+    <p>Tasks 2 and 5 both edit <code>SiteHeader.svelte</code> and its spec; run them in order. The other tasks are independent.</p>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Keyboard shortcuts as a popover</h2>
+    <p>Today's mechanism, read from the code: on <code>/sim</code> the header has a pinned score, so from lg it is a grid (<code>SiteHeader.svelte:126</code>) inside a fixed <code>h-12</code> box (<code>:125</code>) with <code>items-center</code>. The opened <code>&lt;details class="ml-auto text-xs open:w-full"&gt;</code> (<code>HistoryButtons.svelte:72</code>) grows the implicit grid row to the table's height; the box stays 48 px, every item centres in the tall row, and they paint under the map. On <code>/</code> the same component sits at the top of the dock (<code>BrushEditor.svelte:510-523</code>), whose panel scrolls (<code>e2e/layout.spec.ts:372-376</code>), so an absolutely positioned panel would be clipped there. The failing tests in step 1 confirm this before the fix.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/paint/place-popover.ts</code>. Test: <code>src/lib/paint/place-popover.spec.ts</code> (server project).</li>
+      <li>Modify: <code>src/lib/paint/HistoryButtons.svelte:1-5,71-88</code> (header comment, the <code>details</code>). Test: <code>src/lib/paint/HistoryButtons.svelte.spec.ts:40-58</code>.</li>
+      <li>Create: <code>src/lib/shell/test/HistoryHeader.svelte</code> (SiteHeader on <code>/sim</code>, a plain pinned button named "12,345 homes added", and actions <code>HistoryButtons</code> then a "Publish" button). Test: <code>src/lib/shell/SiteHeader.svelte.spec.ts</code> (new describe "keyboard shortcuts in the header").</li>
+      <li>Modify: <code>e2e/brush.spec.ts:236-244</code>, <code>e2e/layout.spec.ts:351-382</code>, <code>e2e/sim.spec.ts</code> (one new test after the header-fit tests, about <code>:1200</code>).</li>
+      <li>Modify: <code>docs/dev/sim-page.md:12</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>SHORTCUTS</code> (<code>src/lib/brush/shortcuts.ts:88</code>), unchanged.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/paint/place-popover.ts
+export interface Placement { left: number; top: number; maxHeight: number }
+/** Right-aligned under the anchor, kept `margin` px inside the viewport. */
+export function placePopover(
+  anchor: { bottom: number; right: number },
+  size: { width: number },
+  viewport: { width: number; height: number },
+  gap?: number,    // default 4
+  margin?: number  // default 8
+): Placement
+// left = clamp(anchor.right - size.width, margin, viewport.width - size.width - margin),
+//        and margin when the popover is wider than viewport.width - 2 * margin
+// top = anchor.bottom + gap; maxHeight = max(0, viewport.height - top - margin)
+
+// HistoryButtons.svelte markup (props unchanged):
+// &lt;button type="button" aria-expanded={open} aria-controls={popId} popovertarget={popId}&gt;
+//   Keyboard shortcuts&lt;/button&gt;   (today's summary classes, min-h-11)
+// &lt;div id={popId} popover="auto" data-testid="shortcuts"&gt; (fixed, m-0, overflow-y-auto,
+//   w-max, max-w-[min(20rem,calc(100vw-1rem))], surface tokens, border, shadow, p-3, text-xs)
+//   &lt;table aria-label="Keyboard shortcuts"&gt; … today's rows … &lt;/table&gt;&lt;/div&gt;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call</strong> A native <code>popover="auto"</code> rather than the ViewMenu pattern (an absolute panel, <code>ViewMenu.svelte:67-73</code>). The popover sits in the top layer, so it can never take space in the header grid or be clipped by the dock's scroll box, and the browser gives Escape, light dismiss and toggling by the control for free. Placement is by script because CSS anchor positioning is not in every engine this site supports.</aside>
+    <aside data-kind="decision"><strong>Builder's call</strong> The control keeps an explicit <code>aria-expanded</code>, synced from the popover's <code>toggle</code> event. <code>SiteHeader</code> looks for <code>[aria-expanded="true"]</code> inside the Menu panel before it lets Escape close the Menu (<code>SiteHeader.svelte:75</code>) and before a click closes it (<code>:94</code>), so the shortcuts behave like View inside the Menu.</aside>
+    <aside data-kind="decision"><strong>Builder's call</strong> On <code>beforetoggle</code> to open, hide the panel (<code>visibility: hidden</code>); on <code>toggle</code> to open, measure it, apply <code>placePopover</code> and show it. This avoids one frame at the browser's default centred position. While open, a window <code>resize</code>, or a <code>scroll</code> (capture) whose target is outside the panel, calls <code>hidePopover()</code>. Coarse pointers still get no control (<code>HistoryButtons.svelte:22-29,71</code>).</aside>
+    <aside data-kind="decision"><strong>Builder's call</strong> The pinned test at <code>HistoryButtons.svelte.spec.ts:48</code> ("takes the full width below the buttons in a 288 px container") pins the broken layout. It is replaced by "opens over the dock and moves nothing", below.</aside>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// place-popover.spec.ts
+it('right-aligns under the anchor with a 4 px gap', ...)
+  // placePopover({ bottom: 40, right: 900 }, { width: 280 }, { width: 1280, height: 800 })
+  //   toEqual({ left: 620, top: 44, maxHeight: 748 })
+it('keeps 8 px from the left edge', ...)       // anchor.right 200, width 280 → left 8
+it('keeps 8 px from the right edge', ...)      // anchor.right 1279, width 280, vw 1280 → left 992
+it('pins to the left margin when wider than the viewport allows', ...)  // vw 300, width 290 → left 8
+it('never returns a negative maxHeight', ...)  // anchor.bottom 795, vh 800 → 0
+
+// HistoryButtons.svelte.spec.ts (replaces :40-58)
+const shortcuts = () => page.getByRole('button', { name: 'Keyboard shortcuts' });
+it('lists every shortcut in a popover named Keyboard shortcuts', ...)
+  // shortcuts().click(); aria-expanded 'true'; table by role name visible; each SHORTCUTS keys visible
+  // document.querySelector('[data-testid=shortcuts]')!.matches(':popover-open') === true
+it('opens over a 288 px scroll box and moves nothing', ...)
+  // container.style: width 288px, height 120px, overflow auto
+  // before = rects of Undo, Redo, shortcuts(); sw/sh = container scrollWidth/scrollHeight
+  // shortcuts().click(); await expect.element(table).toBeVisible()
+  // each rect unchanged (±0.5); container scrollWidth and scrollHeight unchanged
+  // table panel rect: left &gt;= 0, right &lt;= innerWidth, bottom &lt;= innerHeight
+  // panel top &gt;= shortcuts() bottom
+it('closes on Escape and on a second press; focus stays on the control', ...)
+  // click → Escape → aria-expanded 'false', table not visible, shortcuts() has focus
+  // click → open; click → aria-expanded 'false'
+it('closes when the window is resized', ...)
+  // open; await page.viewport(900, 700); expect.element(table).not.toBeVisible()
+it('in a short window the list scrolls inside itself', ...)
+  // await page.viewport(1024, 200); open; panel.scrollHeight &gt; panel.clientHeight;
+  // panel bottom &lt;= 200
+
+// SiteHeader.svelte.spec.ts, describe('keyboard shortcuts in the header'), host HistoryHeader
+for (const width of [1024, 1280])
+  it(`at ${width}px opening Keyboard shortcuts moves no header item and the header stays 48 px`, ...)
+    // items: brand link, Modes nav, '12,345 homes added', Undo, Redo, shortcuts(), Publish, Sign in
+    // record rects; click shortcuts(); table visible; every rect unchanged (±0.5)
+    // banner height 48; panel top &gt;= banner bottom; panel right &lt;= width
+it('at 800px in the Menu, Escape closes the shortcuts first and the Menu next', ...)
+  // Menu click; shortcuts().click(); Escape → table hidden, Menu aria-expanded 'true'
+  // Escape → Menu aria-expanded 'false'</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail: <code>place-popover</code> does not exist, there is no button named Keyboard shortcuts, and at 1024 and 1280 px the header items move down once the table opens.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/paint/place-popover.spec.ts
+npx vitest --run --project client src/lib/paint/HistoryButtons.svelte.spec.ts src/lib/shell/SiteHeader.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement <code>placePopover</code>, the button and popover in <code>HistoryButtons</code> as in Interfaces and the decisions above, and the <code>HistoryHeader</code> host. Drop <code>ml-auto</code> and <code>open:w-full</code>; the wrapper keeps <code>flex flex-wrap items-start gap-1</code>. Update the header comment.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the specs and see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/paint/place-popover.spec.ts
+npx vitest --run --project client src/lib/paint/ src/lib/shell/ src/lib/brush/</code></pre>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Update the e2e specs.
+        <pre><code data-lang="ts">// brush.spec.ts:236 'axe: the editor with the keyboard shortcuts list open'
+//   dock.getByRole('button', { name: 'Keyboard shortcuts' }).click()
+//   expect(that button).toHaveAttribute('aria-expanded', 'true')
+//   expect(page.getByRole('table', { name: 'Keyboard shortcuts' })).toBeVisible(); expectNoA11yViolations(page)
+
+// layout.spec.ts:351-382, medium width: the shortcuts no longer grow the dock, so the window does.
+for (const width of [800, 1023])
+  test(`${width} px: opening Keyboard shortcuts leaves the dock as it was, and a short window scrolls the dock inside`, ...)
+    // setViewportSize({ width, height: 900 }); gotoEditor; panel = .sfh-dock-panel
+    // h = panel.scrollHeight; open shortcuts → panel.scrollHeight === h; Escape
+    // setViewportSize({ width, height: Math.floor(panelTop + h / 2) }) so the content is taller than the region
+    // then today's assertions: expectInside(panel, #map-region); overflows true, overflowY 'auto';
+    //   the last control scrolls into view, is unobscured and clickable (trial)
+
+// sim.spec.ts, new, chromium only:
+test('at 1280 px Keyboard shortcuts opens under its button, moves nothing in the header and closes on Escape', ...)
+  // setViewportSize 1280x900; gotoSim; before = headerRow(page) and scoreBar/Undo boundingBox().y
+  // banner button 'Keyboard shortcuts' click; table visible
+  // headerRow lefts equal (±0.5), the two y values equal, banner height 48
+  // Escape → aria-expanded 'false', table hidden</code></pre>
+      </li>
+      <li id="t1-s6"><input type="checkbox"> Run the e2e specs and see them pass.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test e2e/brush.spec.ts e2e/layout.spec.ts e2e/sim.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t1-s7"><input type="checkbox"> Update <code>docs/dev/sim-page.md:12</code>: the shortcuts are a popover beside Undo and Redo (top layer, placed under its button, closed by Escape, a second press, an outside press, a resize or a scroll), not a disclosure.</li>
+      <li id="t1-s8"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/paint/ src/lib/shell/test/HistoryHeader.svelte src/lib/shell/SiteHeader.svelte.spec.ts e2e/brush.spec.ts e2e/layout.spec.ts e2e/sim.spec.ts docs/dev/sim-page.md
+git commit -m "fix(shell): keyboard shortcuts open as a popover that never moves the header"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Fewer cars leaves the header</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/shell/SiteHeader.svelte:38-39,112-120</code> (drop <code>onLessCars</code> and the third link). Test: <code>src/lib/shell/SiteHeader.svelte.spec.ts:138-186,430</code>.</li>
+      <li>Modify: <code>e2e/helpers/sharing.ts</code> (add <code>clientNavigate</code>), <code>e2e/lesscars.spec.ts:644-647,686-689</code>, <code>e2e/layout.spec.ts:416,423</code>, <code>e2e/sim.spec.ts:1212,1219</code>.</li>
+      <li>Modify: <code>docs/dev/lesscars.md:464,889-896</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces:
+        <pre><code data-lang="ts">// e2e/helpers/sharing.ts
+/** A client-side navigation to `path`: clicks an anchor appended to &lt;main&gt;, inside the app's
+ *  root, so SvelteKit's router takes it (as a header link would). Needs a hydrated page. */
+export async function clientNavigate(page: Page, path: string): Promise&lt;void&gt;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call</strong> The two <code>lesscars.spec.ts</code> tests navigated from <code>/about</code> through the header link only to get a client-side load (so <code>page.route</code> applies to the browser-side fetch). <code>clientNavigate</code> keeps that: SvelteKit listens for clicks on its root container (<code>@sveltejs/kit</code> <code>client.js:2704</code>), and <code>&lt;main&gt;</code> is inside it (<code>src/app.html:9</code>). The <code>__spa</code> assertion at <code>:690</code> still proves no full page load.</aside>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests: replace the five Fewer cars tests (<code>:138-186</code>) with these, and make <code>:430</code>'s last link Simulate.
+        <pre><code data-lang="ts">for (const width of [1024, 1280])
+  it(`at ${width}px the Modes nav holds Paint and Simulate only`, ...)
+    // links = nav.getByRole('link').elements(); names toEqual(['Paint', 'Simulate'])
+    // expect(document.querySelector('a[href="/lesscars"]')).toBeNull()
+it('at 375px the Menu holds Paint and Simulate only', ...)
+it('on /lesscars no mode link is current', ...)
+  // routeId '/lesscars': neither link has aria-current</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run and see them fail (a third link exists).
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/shell/SiteHeader.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Remove the link and <code>onLessCars</code>; keep the <code>lg:max-xl</code> tightening.</li>
+      <li id="t2-s4"><input type="checkbox"> Run and see them pass, with the HeadlineBar host that renders SiteHeader on <code>/lesscars</code>.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/shell/ src/lib/lesscars/</code></pre>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Update the e2e specs: <code>layout.spec.ts:416</code> and <code>sim.spec.ts:1212</code> keep their <code>toHaveCount(0)</code> checks; <code>:423</code> and <code>:1219</code> loop over <code>['Paint', 'Simulate']</code> and then assert <code>banner.getByRole('link', { name: 'Fewer cars' })</code> has count 0 with the Menu open. In <code>lesscars.spec.ts</code> replace <code>openHeaderMenu</code> plus the link click with <code>clientNavigate(page, '/lesscars')</code>.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test e2e/lesscars.spec.ts e2e/layout.spec.ts e2e/sim.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t2-s6"><input type="checkbox"> Update <code>docs/dev/lesscars.md</code>: at <code>:891-896</code> the page has no header link and is opened by URL, and no mode link is current there; at <code>:464</code> add that the header link was removed in this slice (the line records a past live check).</li>
+      <li id="t2-s7"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/shell/SiteHeader.svelte src/lib/shell/SiteHeader.svelte.spec.ts e2e/helpers/sharing.ts e2e/lesscars.spec.ts e2e/layout.spec.ts e2e/sim.spec.ts docs/dev/lesscars.md
+git commit -m "feat(shell): drop the Fewer cars mode link from the header"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: "FZP" reads "current law"</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/fzp/score-view.ts:119-122</code> (add <code>fromPolicyText</code>; keep <code>vsFzpText</code>). Test: <code>src/lib/fzp/score-view.spec.ts:208-213</code>.</li>
+      <li>Modify: <code>src/lib/timeline/TimelineHeaderScore.svelte:1-8,12,24,99</code>. Test: <code>src/lib/timeline/TimelineHeaderScore.svelte.spec.ts:46-47</code>.</li>
+      <li>Modify: <code>src/lib/sim-page/policy.ts:582-595</code>. Test: <code>src/lib/sim-page/policy.spec.ts:590-615</code>.</li>
+      <li>Modify: <code>src/lib/fzp/SimResults.svelte:46,91-92</code> (<code>short</code> becomes <code>copy.plan</code>). Test: <code>src/lib/fzp/SimResults.svelte.spec.ts</code> (every "the plan", "FZP" and "Family Zoning Plan as written" expectation, and <code>:790-804</code>).</li>
+      <li>Modify: <code>src/lib/timeline/rows.ts:41-45</code> (labels, new <code>FIXED_NOTE</code>), <code>src/lib/timeline/Inspector.svelte:398-402</code>. Tests: <code>Inspector.svelte.spec.ts:345</code>, <code>Timeline.svelte.spec.ts:245-274</code>, <code>TimelineMode.svelte.spec.ts:710</code>, <code>sim-page/SimPage.svelte.spec.ts:793,816,1277</code>.</li>
+      <li>Modify: <code>src/lib/timeline/copy.ts:13-14,49-51</code> (<code>REFERENCE_NOTE</code>, <code>MARKET_FUNDING_SENTENCE4</code>, <code>marketBody</code>). Test: <code>src/lib/timeline/copy.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte:1092-1095</code>. Test: <code>TimelineMode.svelte.spec.ts:204</code> (still matches "isn't available").</li>
+      <li>Modify: <code>e2e/sim.spec.ts:587,749,752</code> and <code>widestHeaderText</code> (<code>:1120-1140</code>), <code>e2e/chrome-dark.spec.ts:226,229</code>. <code>e2e/fzp.spec.ts:636</code> still matches.</li>
+      <li>Modify: <code>docs/dev/sim-page.md:9,59</code>, <code>docs/dev/timeline-ui.md:25</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/fzp/score-view.ts
+/** The /sim header delta: "+1,234 from your policy", "−56 from your policy" (U+2212), "+0 …". */
+export function fromPolicyText(n: number): string
+
+// src/lib/sim-page/policy.ts (shape unchanged)
+// scoreCopy(null | preFzp) → { plan: 'current law', twin: 'the old zoning', compare: 'preFzp' }
+// scoreCopy(fzp)           → { plan: 'your policy', twin: 'current law', compare: 'fzp' }
+// comparisonLine: the strings in tbl-copy
+
+// src/lib/timeline/rows.ts
+export const FIXED_LABEL: Record&lt;PolicyKind, string&gt;  // 'Current law' | 'Current timelines' | 'Current funding'
+export const FIXED_NOTE: Record&lt;PolicyKind, string&gt;   // the three inspector sentences in tbl-copy
+
+// src/lib/timeline/copy.ts
+export const MARKET_FUNDING_SENTENCE4: string  // MARKET_FUNDING_SENTENCE with "FZP as written" → "current law"
+// marketBody(s) also replaces MARKET_FUNDING_SENTENCE with MARKET_FUNDING_SENTENCE4</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call</strong> The header delta uses the spec's own word for it, "from your policy" (<code>tbl-words</code>: it replaces "vs FZP"). The delta only shows when a policy is compared with current law (<code>timeline/results.ts:73</code>), so the words are always true. A new function, because <code>vsFzpText</code>'s other caller, <code>scoreboard/HeaderScore.svelte</code>, is dataset-hashed.</aside>
+    <aside data-kind="decision"><strong>Builder's call</strong> The no-policy comparison keeps "the old zoning" for the pre-plan zoning: it is plain and already the twin's name. The spec says that with no policy no comparison should show at all; that is slice 2's headline work, so this slice only rewords it.</aside>
+    <aside data-kind="decision"><strong>Builder's call</strong> <code>funding-copy.ts</code> is not edited: <code>timeline/copy.ts:30-33</code> records that its sentences are duplicated, not changed. <code>MARKET_FUNDING_SENTENCE4</code> follows that pattern, and only Results' market paragraph, which already goes through <code>marketBody</code> (<code>SimResults.svelte:251</code>), shows it. The Sources dialog keeps the original.</aside>
+    <aside data-kind="decision"><strong>Builder's call</strong> The fixed money row's sentence names City, state and federal money because the baseline pools are all three (<code>funding-copy.ts:39-44</code>); "City funding today" undersold it.</aside>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests, with the exact strings from <a href="#tbl-copy">the copy table</a>.
+        <pre><code data-lang="ts">// score-view.spec.ts
+it('fromPolicyText signs the count and says from your policy', ...)
+  // fromPolicyText(1234) toBe('+1,234 from your policy'); (-56) '−56 from your policy';
+  // (0) '+0 from your policy'
+// policy.spec.ts:590-615: the eight comparisonLine strings and both scoreCopy objects, new values
+// TimelineHeaderScore.svelte.spec.ts:46-47: fromPolicyText(1234) in place of vsFzpText(1234)
+// SimResults.svelte.spec.ts: 'What current law added', 'Homes completed because of current law',
+//   'Current law added 1,290 homes vs the old zoning', 'Your policy added 1,290 homes vs current law',
+//   'Current law vs the old zoning: calculating…'; the market paragraph ends with MARKET_FUNDING_SENTENCE4
+//   and does not contain 'FZP'
+it('no Results text says FZP or the plan, with and without a policy', ...)
+  // for copy of [scoreCopy(null), scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' })]:
+  //   container.textContent matches neither /\bFZP\b/ nor /\bthe plan\b/
+// Timeline.svelte.spec.ts:245-274: the three new labels
+// Inspector.svelte.spec.ts:345 (zoning fixed row selected):
+//   heading level 2 'Current law'; getByText(FIXED_NOTE.zoning) visible; same for permitting and money
+// SimPage.svelte.spec.ts:793,816: button 'Current law, whole window'; :1277 title 'Current law'
+// TimelineMode.svelte.spec.ts:710: 'What current law added'
+// copy.spec.ts
+it('marketBody swaps in the current-law sentence and drops the old tail', ...)
+  // marketBody(`x ${MARKET_FUNDING_SENTENCE}`) === `x ${MARKET_FUNDING_SENTENCE4}`; REFERENCE_NOTE contains 'Family Zoning Plan'</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/fzp/score-view.spec.ts src/lib/sim-page/policy.spec.ts src/lib/timeline/copy.spec.ts
+npx vitest --run --project client src/lib/fzp/SimResults.svelte.spec.ts src/lib/timeline/ src/lib/sim-page/SimPage.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement the strings and functions in Interfaces. In <code>Inspector</code>, for a fixed row other than the market, render <code>&lt;p&gt;{FIXED_NOTE[fixed.kind]}&lt;/p&gt;</code> after the "Zoning · whole window" line. Update the comments that name "vs FZP" in <code>TimelineHeaderScore.svelte</code> and the <code>copy</code> prop's doc in <code>SimResults.svelte:46</code>.</li>
+      <li id="t3-s4"><input type="checkbox"> Run the unit specs and see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/fzp/ src/lib/sim-page/ src/lib/timeline/
+npx vitest --run --project client src/lib/fzp/ src/lib/timeline/ src/lib/sim-page/</code></pre>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Exhaustive sweep: no main-screen file still says FZP or the plan in user-visible text. Expected output: only comments, identifiers, test ids and the rows of <a href="#tbl-copy-kept">the kept table</a>.
+        <pre><code data-lang="sh">rg -n "FZP|Family Zoning Plan|the plan\b|as adopted|as observed|City funding today" src/lib/timeline src/lib/fzp src/lib/sim-page src/routes/sim src/routes/s --glob '!*.spec.ts' --glob '!**/test/**'</code></pre>
+      </li>
+      <li id="t3-s6"><input type="checkbox"> Update the e2e specs: the fixed row's button and heading names at <code>sim.spec.ts:587,749,752</code> and <code>chrome-dark.spec.ts:226,229</code>; <code>widestHeaderText</code> also sets the <code>score-delta</code> text, when present, to <code>'−12,345 from your policy'</code> so the header-fit tests measure the widest delta.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts e2e/chrome-dark.spec.ts e2e/fzp.spec.ts e2e/sim-timeline.spec.ts e2e/sim-share.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t3-s7"><input type="checkbox"> Update the docs: <code>sim-page.md:9</code> (the delta reads "+N from your policy"), <code>sim-page.md:59</code> and <code>timeline-ui.md:25</code> (the fixed rows are "Current law", "Current timelines", "Current funding"; selecting one shows its sentence with the formal name).</li>
+      <li id="t3-s8"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/fzp/ src/lib/sim-page/policy.ts src/lib/sim-page/policy.spec.ts src/lib/sim-page/SimPage.svelte.spec.ts src/lib/timeline/ e2e/sim.spec.ts e2e/chrome-dark.spec.ts docs/dev/sim-page.md docs/dev/timeline-ui.md
+git commit -m "feat(sim): say current law, not FZP, on the main screens"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Transit capacity off by default</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/view/prefs.ts:14-18</code> (<code>transitAccess: false</code>) and its header comment. Test: <code>src/lib/view/prefs.spec.ts:7-12,18-30</code>.</li>
+      <li>Modify tests that assume the old default: <code>src/lib/view/ViewMenu.svelte.spec.ts:26-35</code>, <code>src/routes/page.view.svelte.spec.ts:69-73</code>. The specs that store their own record (<code>p/[id]/page.view.svelte.spec.ts</code>, <code>SimPage.svelte.spec.ts</code>, <code>SimMap.transit.svelte.spec.ts</code>) need no change; run them.</li>
+      <li>Modify: <code>e2e/transit.spec.ts:17-43</code>, <code>e2e/sim.spec.ts:970-975</code>, the comment at <code>e2e/map.spec.ts:736</code>.</li>
+      <li>Modify: <code>docs/dev/map-interfaces.md:52</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces: <code>DEFAULT_VIEW = { transitStops: false, transitAccess: false, heightLimits: true }</code>. <code>readViewPrefs</code> is unchanged: a stored boolean wins, a missing or junk field reads the default.</li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call</strong> Stored values are respected (the brief's recommendation). Anyone who ever changed a View row, or selected a zoning row on <code>/sim</code> (which writes the record), has <code>transitAccess: true</code> stored and keeps the shading until they turn it off. Overriding them would need a versioned key and would discard a real choice.</aside>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// prefs.spec.ts
+it('defaults to stops off, capacity off and the height limits on', ...)
+  // DEFAULT_VIEW toEqual { transitStops: false, transitAccess: false, heightLimits: true };
+  // readViewPrefs(mem(null)) and readViewPrefs(null) toEqual DEFAULT_VIEW
+it('a stored transitAccess wins over the default either way', ...)
+  // mem('{"transitAccess":true}').transitAccess === true; mem('{"transitAccess":false}') → false
+  // mem('{"transitStops":true}').transitAccess === false; mem('{"transitAccess":"x"}') → false
+// ViewMenu.svelte.spec.ts:26-35: clicking capacity from DEFAULT_VIEW reports transitAccess: true
+// routes/page.view.svelte.spec.ts:69-73: the map gets transitAccess: false with no stored record</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/view/prefs.spec.ts
+npx vitest --run --project client src/lib/view/ src/routes/page.view.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Flip the default and update the module comment.</li>
+      <li id="t4-s4"><input type="checkbox"> Run the specs that read the prefs and see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/view/
+npx vitest --run --project client src/lib/view/ src/routes/ src/lib/sim-page/SimPage.svelte.spec.ts src/lib/map/SimMap.transit.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t4-s5"><input type="checkbox"> Update the e2e specs. <code>transit.spec.ts</code>: the first test is "capacity and stops are off by default" (<code>transit-access</code> is <code>none</code>); the second checks the capacity box, sees <code>visible</code>, reloads and still sees <code>visible</code>. <code>sim.spec.ts:973</code> expects <code>none</code>. <code>map.spec.ts:736</code>'s comment says the goldens set both layers off so they never depend on the default.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test e2e/transit.spec.ts e2e/sim.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t4-s6"><input type="checkbox"> Update <code>docs/dev/map-interfaces.md:52</code>: default stops off, capacity off, limits on; a stored choice wins.</li>
+      <li id="t4-s7"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/view/ src/routes/page.view.svelte.spec.ts e2e/transit.spec.ts e2e/sim.spec.ts e2e/map.spec.ts docs/dev/map-interfaces.md
+git commit -m "feat(map): transit capacity shading starts off"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: The footer leaves the map pages; About in the header</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/routes/+layout.svelte:44</code> (<code>{#if !full}&lt;SiteFooter /&gt;{/if}</code>).</li>
+      <li>Modify: <code>src/lib/shell/SiteHeader.svelte:1-9,176-187</code> (the About entry after the account entry, and the header comment). Tests: <code>src/lib/shell/SiteHeader.svelte.spec.ts</code> (new describe "About entry"; the 1024 and 1280 px fit rows at <code>:470-478</code> end with Sign in and About), <code>src/routes/page.header.svelte.spec.ts:88-100</code> (the row ends with Sign in and About from 1024).</li>
+      <li>Modify: <code>src/routes/about/+page.svelte:44-49</code> (a link to <code>REPO_URL</code>). Create: <code>src/routes/about/page.svelte.spec.ts</code>.</li>
+      <li>Create: <code>e2e/helpers/chrome.ts</code>. Modify the four <code>expectFooterReachable</code> copies and their callers: <code>e2e/layout.spec.ts:117-145,165-260,327-334</code>, <code>e2e/sim.spec.ts:214-234,686-708,834-852</code>, <code>e2e/fzp.spec.ts:240-262,782-795</code>, <code>e2e/lesscars.spec.ts:220-240,592-610</code>; and <code>e2e/pages-a11y.spec.ts:4-18</code>.</li>
+      <li>Regenerate: <code>e2e/map.spec.ts-snapshots/map-light-chromium-darwin.png</code>, <code>map-dark-chromium-darwin.png</code> (the map on <code>/</code> grows by the footer's height).</li>
+      <li>Modify: <code>docs/dev/accessibility.md:15</code>, <code>docs/dev/fzp-mode.md:140</code>, <code>docs/dev/sim-page.md:79</code>, <code>CLAUDE.md</code> (Architecture, the Shell paragraph).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>isFullHeightRoute</code> (<code>src/lib/shell/layout.ts:2</code>), <code>openHeaderMenu</code> (<code>e2e/helpers/sharing.ts:68</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// SiteHeader.svelte, after the account entry in the same group (so: in the row from lg, in the Menu below):
+// &lt;a href="/about" class={[tab(false), 'text-sm']} aria-current={routeId === '/about' ? 'page' : undefined}
+//    data-header-about&gt;About&lt;/a&gt;
+
+// e2e/helpers/chrome.ts
+/** The map pages have no footer landmark. */
+export async function expectNoFooter(page: Page): Promise&lt;void&gt;
+/** The header's About entry (in the Menu below lg): visible, fully in the viewport, the topmost
+ *  element at its centre, and tappable (trial). Closes the Menu again if it opened it. */
+export async function expectAboutReachable(page: Page): Promise&lt;void&gt;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call</strong> The About entry shows on every route, document pages included, so the header is the same everywhere; on <code>/about</code> it carries <code>aria-current="page"</code>. It uses the account entry's resting style so the two read as one group.</aside>
+    <aside data-kind="decision"><strong>Builder's call</strong> <code>/about</code> already links the data page (<code>about/+page.svelte:48</code>) but only the LICENSE file in the repository (<code>:47</code>). The Code and data paragraph becomes: "The <a>source code</a> is on GitHub, MIT licensed; see the <a>LICENSE</a>. Data sources and their licences are listed on the <a>data and licences page</a>." with the first link to <code>REPO_URL</code>.</aside>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing unit tests.
+        <pre><code data-lang="ts">// SiteHeader.svelte.spec.ts, describe('About entry')
+it('at 1024px links /about, right after the account entry', ...)
+  // banner link 'About' href '/about'; its left &gt;= Sign in's right; banner height 48
+it('at 375px waits in the Menu, then sits in the panel after the account entry', ...)
+it('is current on /about only', ...)   // routeId '/about' → aria-current 'page'; '/sim' → none
+// the existing 1024/1280 fit rows (:470-478) and page.header.svelte.spec.ts:88-100
+//   append Sign in and About; every item after the previous; last right &lt;= width
+
+// routes/about/page.svelte.spec.ts
+it('links the data page and the source repository', ...)
+  // link 'data and licences page' href '/attribution'; link 'source code' href REPO_URL</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/shell/SiteHeader.svelte.spec.ts src/routes/page.header.svelte.spec.ts src/routes/about/page.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Implement the layout condition, the About entry and the <code>/about</code> paragraph. Update <code>SiteHeader</code>'s header comment.</li>
+      <li id="t5-s4"><input type="checkbox"> Run and see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/shell/ src/routes/ src/lib/lesscars/</code></pre>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Write <code>e2e/helpers/chrome.ts</code> and move the e2e specs onto it.
+        <pre><code data-lang="ts">// Each expectFooterReachable(page) call becomes expectNoFooter(page); each test that had one
+// also calls expectAboutReachable(page) once, in its most crowded state (sheet, Results or card open).
+// Delete the four local FOOTER_LINKS / expectFooterReachable copies and the W6b comments that cite them.
+// Test titles say "About entry" where they said "footer links".
+
+// layout.spec.ts mobile '/': tap the About entry from the Menu → URL /about; page.goBack(); waitForMap
+// layout.spec.ts desktop '/' (:327): the About entry is visible in the banner; and
+//   #map-region's bottom equals innerHeight (±1): nothing sits under the map
+// sim.spec.ts '375 px: no horizontal scroll…': also [data-testid=tl-mode]'s bottom equals innerHeight (±1)
+
+// pages-a11y.spec.ts
+const MAP = new Set(['/', '/fzp']);
+// map paths: expectNoFooter; expectAboutReachable
+// other paths: footer link 'Data & licences' visible (today's check)</code></pre>
+      </li>
+      <li id="t5-s6"><input type="checkbox"> Run the e2e specs and see them pass. Header fit at 1024, 1280 and 1536 px with the About entry is checked by <code>sim.spec.ts:1141-1200</code> (<code>headerRow</code> takes every link and button).
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test e2e/layout.spec.ts e2e/sim.spec.ts e2e/fzp.spec.ts e2e/lesscars.spec.ts e2e/pages-a11y.spec.ts e2e/chrome-dark.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t5-s7"><input type="checkbox"> Regenerate the E9 goldens on darwin, then open both PNGs and check them by eye: the same map, taller by the footer's height, no footer strip, nothing else changed.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts -g "E9" --project=chromium --update-snapshots
+SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t5-s8"><input type="checkbox"> Update the docs. <code>accessibility.md:15</code>: the header's About entry is reachable by keyboard on every page, and document pages also have the footer links. <code>fzp-mode.md:140</code>: the 375 px check is the About entry, not the footer. <code>sim-page.md:79</code>: the Menu layout below lg holds because the two mode links, the status, Publish, the account, About and a five-digit score do not fit at 768 px (no third link any more). <code>CLAUDE.md</code> Shell: the root layout renders the footer on document routes only (<code>isFullHeightRoute</code>), and the header carries an About entry after the account entry.</li>
+      <li id="t5-s9"><input type="checkbox"> Whole-branch checks, all green with no new warnings.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npm run test:unit
+SFH_E2E_PORT=4180 npx playwright test --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t5-s10"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/routes/+layout.svelte src/lib/shell/ src/routes/about/ src/routes/page.header.svelte.spec.ts e2e/ docs/dev/accessibility.md docs/dev/fzp-mode.md docs/dev/sim-page.md CLAUDE.md
+git commit -m "feat(shell): no footer on map pages; About in the header"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <ul>
+      <li id="q-about-place"><strong>About after the account entry.</strong> The brief puts About after the account entry from lg; the spec's chrome inventory says the account stays "last in the header" (<code>tbl-inv-chrome</code>), and <code>sec-prop-about</code> reaches About "from the header menu". This plan follows the brief. Recommendation: keep it; slice 9 moves About into whatever header menu it builds.</li>
+      <li id="q-legend"><strong>"Plan effect" in the chart legend and table.</strong> It still reads "Plan effect, completed" and "Plan effect, approved" on <code>/sim</code>, meaning current law's effect with no policy and the policy's with one. Recommendation: leave it for slice 3, which replaces the chart; renaming now means threading the comparison into <code>ScoreChart</code> and splitting <code>SERIES_NAME</code> from the Sources dialog.</li>
+      <li id="q-delta"><strong>Header delta wording.</strong> "+1,234 from your policy" (the spec's word) or "+1,234 vs current law". Recommendation: "from your policy", which slice 2's headline keeps.</li>
+    </ul>
+  </section>
+</article>
