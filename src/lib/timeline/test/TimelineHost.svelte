@@ -8,7 +8,10 @@
   let {
     height,
     ...props
-  }: Omit<ComponentProps<typeof Timeline>, 'playhead' | 'chart' | 'goalShown' | 'pinHeight'> & {
+  }: Omit<
+    ComponentProps<typeof Timeline>,
+    'playhead' | 'chart' | 'goalShown' | 'inForce' | 'pinHeight'
+  > & {
     height?: number;
   } = $props();
   let pinHeight = $state(0);
@@ -20,7 +23,7 @@
   data-testid="host-pin"
   data-pin-height={pinHeight}
 >
-  <Timeline {...props} goalShown={false} bind:pinHeight>
+  <Timeline {...props} goalShown={false} inForce={false} bind:pinHeight>
     {#snippet playhead()}
       <div data-testid="ph-part" style="grid-column: 1 / -1">playhead</div>
     {/snippet}

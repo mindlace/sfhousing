@@ -153,7 +153,13 @@
     focusAt = next;
   }
 
-  const caption = $derived(chartCaption(force, target !== null));
+  // The in-plot labels are hidden from assistive tech; the caption carries the goal's figures.
+  const caption = $derived(
+    chartCaption(
+      force,
+      v && target ? { units: target.units, deadline: v.months[target.deadlineIndex] } : null
+    )
+  );
 </script>
 
 <figure
@@ -308,6 +314,7 @@
         <span
           class="ylabel pointer-events-none absolute left-0.5 text-[10px] leading-none tabular-nums"
           style:top="{y(l.value)}%"
+          aria-hidden="true"
           data-testid="chart-ylabel">{l.label}</span
         >
       {/each}
@@ -318,6 +325,7 @@
           class:below={goalY < 20}
           style:left="{(goalX / W) * 100}%"
           style:top="{goalY}%"
+          aria-hidden="true"
           data-testid="chart-target-note">{note}</span
         >
       {/if}

@@ -49,7 +49,7 @@
     /** The chart draws the goal's step: the stacked legend names the goal. */
     goalShown: boolean;
     /** The chart draws current law and the gap: the stacked legend names them. */
-    inForce?: boolean;
+    inForce: boolean;
     /** The playhead's model month, for the keys' nearer edge. */
     playheadMonth: number;
     /** The playhead's day: the line through the rows sits at it. */
@@ -76,7 +76,7 @@
     playhead,
     chart,
     goalShown,
-    inForce = false,
+    inForce,
     playheadMonth,
     playheadDay,
     pinHeight = $bindable(0),

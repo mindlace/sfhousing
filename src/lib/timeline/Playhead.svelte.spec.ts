@@ -435,6 +435,38 @@ describe('Playhead', () => {
     }
   });
 
+  it('a year label the date flag overlaps is hidden whole, and shows again once the flag moves on', async () => {
+    for (const size of [
+      [1280, 900],
+      [390, 760]
+    ] as const) {
+      const { view } = await setup({}, [...size]);
+      const labels = [...document.querySelectorAll<HTMLElement>('[data-testid=tl-year]')];
+      const shows = (el: HTMLElement) => el.checkVisibility({ visibilityProperty: true });
+      const under = (el: HTMLElement) => {
+        const f = rect(byId('tl-flag'));
+        const r = rect(el);
+        return r.right > f.left && r.left < f.right;
+      };
+      // At today: every label the flag overlaps is hidden, and the next one shows.
+      await expect.element(page.getByTestId('tl-flag')).toHaveTextContent('Today');
+      await expect.poll(() => labels.filter(under).every((l) => !shows(l))).toBe(true);
+      const hidden = labels.filter(under);
+      expect(hidden.length, `${size}`).toBeGreaterThan(0);
+      const next = labels[labels.indexOf(hidden[hidden.length - 1]) + 1];
+      expect(shows(next), `${size}: ${next.textContent}`).toBe(true);
+      for (const l of labels.filter((l) => !under(l))) expect(shows(l), l.textContent!).toBe(true);
+      // The playhead moves away: those labels show again.
+      (slider().element() as HTMLElement).focus();
+      await userEvent.keyboard('{End}');
+      await expect.poll(() => stateDay()).toBe(END);
+      for (const l of hidden.filter((l) => !under(l)))
+        await expect.poll(() => shows(l), { message: l.textContent! }).toBe(true);
+      expect(labels.filter(under).every((l) => !shows(l))).toBe(true);
+      view.unmount();
+    }
+  });
+
   it('only the zone, thumb and flag styles change as the day moves; the years are never rewritten', async () => {
     await setup({ startDay: dayFromUtc(2030, 1, 10) });
     const ruler = slider().element();
@@ -467,7 +499,16 @@ describe('Playhead', () => {
     }
     obs.disconnect();
     yearObs.disconnect();
-    expect(yearRecords).toEqual([]);
+    // The years are never rewritten: the one change allowed is the class of a label the flag
+    // crosses (hidden under it, shown again after), at most twice per label.
+    for (const rec of yearRecords) {
+      expect(rec.type).toBe('attributes');
+      expect(rec.attributeName).toBe('class');
+      expect((rec.target as Element).getAttribute('data-testid')).toBe('tl-year');
+    }
+    const perLabel = new Map<Node, number>();
+    for (const rec of yearRecords) perLabel.set(rec.target, (perLabel.get(rec.target) ?? 0) + 1);
+    for (const n of perLabel.values()) expect(n).toBeLessThanOrEqual(2);
     for (const id of changed)
       expect([
         'ruler',
@@ -475,7 +516,9 @@ describe('Playhead', () => {
         'tl-zone-seen',
         'tl-zone-unseen',
         'tl-thumb',
-        'tl-flag'
+        'tl-flag',
+        // Only as yearRecords allows above: the class of a label the flag crosses.
+        'tl-year'
       ]).toContain(id);
     expect(changed.has('tl-thumb')).toBe(true);
   });

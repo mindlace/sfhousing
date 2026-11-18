@@ -1897,39 +1897,67 @@ describe('TimelineMode', () => {
     });
   }
 
+  /**
+   * The pinned block's height with the goal's step drawn (as in production) and nothing in force,
+   * then after a first policy's numbers arrive (four legend entries): [before, after].
+   */
+  async function blockBeforeAfterPolicy(vw: number, vh: number, over: Over = {}) {
+    await page.viewport(vw, vh);
+    const s = setup({ withInspector: true, ...over });
+    await expect.poll(() => workers.length).toBe(1);
+    await expect.poll(() => w().lastOf('openTimeline')).toBeTruthy();
+    // From Jan 2030 the goal's deadline (Jan 2031) is in the window, so its step is drawn.
+    const months = Array.from({ length: LAST + 1 }, (_, i) => dayFromUtc(2030, 1 + i, 1));
+    const withGoal = { ...STATICS, months };
+    emit(compiledMsg(1, withGoal));
+    emit(filledMsg(1, 0, LAST + 1));
+    await expect.element(slider()).toBeInTheDocument();
+    const legend = () =>
+      [...document.querySelectorAll('.legend')].find((e) => e.checkVisibility())!;
+    await expect.poll(() => legend()?.querySelectorAll('li').length).toBe(2);
+    await nextFrame();
+    const before = box('tl-pin').height;
+    s.setPolicy(mk(protect(5)));
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    emit(compiledMsg(2, withGoal));
+    emit(refillMsg(2, 0));
+    emit(filledMsg(2, 0, LAST + 1));
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect.poll(() => legend().querySelectorAll('li').length).toBe(4);
+    await nextFrame();
+    // The legend stays inside its cell.
+    const l = legend();
+    expect(l.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      l.parentElement!.getBoundingClientRect().bottom + 0.5
+    );
+    return [before, box('tl-pin').height];
+  }
+
   // Measured: the ruler row 68 px over a 96 px plot and its border (165); compact, the 52 px ruler
-  // row over a 64 px plot (117), or over the four-entry legend of a policy in force with the
-  // goal's step drawn (4 x 16 + 3 x 2, and the border: 123).
-  for (const [vh, inForce, most] of [
-    [900, false, 165],
-    [900, true, 165],
-    [720, false, 117],
-    [720, true, 123]
+  // row over a 64 px plot (117). The four-entry legend fits the plot at both (70 and 62 px).
+  for (const [vh, most] of [
+    [900, 165],
+    [720, 117]
   ] as const) {
-    const named = inForce ? ' with a policy in force and the goal' : '';
-    it(`at 1280x${vh}${named} the pinned block is at most ${most} px`, async () => {
-      await page.viewport(1280, vh);
-      setup({
-        withInspector: true,
-        ...(vh === 720 ? { regionHeight: 636 } : {}),
-        ...(inForce ? { initialPolicy: mk(protect(5)) } : {})
-      });
-      await expect.poll(() => workers.length).toBe(1);
-      await expect.poll(() => w().lastOf('openTimeline')).toBeTruthy();
-      // From Jan 2030 the goal's deadline (Jan 2031) is in the window, so its step is drawn.
-      const months = Array.from({ length: LAST + 1 }, (_, i) => dayFromUtc(2030, 1 + i, 1));
-      emit(compiledMsg(1, inForce ? { ...STATICS, months } : STATICS));
-      emit(filledMsg(1, 0, LAST + 1));
-      await expect.element(slider()).toBeInTheDocument();
-      const legend = page.getByTestId('tl-chart-legend');
-      await expect.poll(() => legend.element().querySelectorAll('li').length).toBe(inForce ? 4 : 1);
-      await nextFrame();
-      expect(box('tl-pin').height).toBeLessThanOrEqual(most + 0.5);
-      // The legend stays inside its cell.
-      const lab = legend.element().parentElement!.getBoundingClientRect();
-      expect(legend.element().getBoundingClientRect().bottom).toBeLessThanOrEqual(lab.bottom);
+    it(`at 1280x${vh} the pinned block is ${most} px, and a first policy does not move it`, async () => {
+      const [before, after] = await blockBeforeAfterPolicy(
+        1280,
+        vh,
+        vh === 720 ? { regionHeight: 636 } : {}
+      );
+      expect(before).toBeLessThanOrEqual(most + 0.5);
+      expect(after).toBe(before);
     });
   }
+
+  // Below md the legend wraps under the plot: measured 193 px at rest, 221 with a policy in force
+  // (its four entries take a second 28 px line). Equal heights would cost a blank line at rest.
+  it('at 375x812 a first policy adds at most one legend line to the pinned block', async () => {
+    const [before, after] = await blockBeforeAfterPolicy(375, 812);
+    expect(before).toBeLessThanOrEqual(193.5);
+    expect(after - before).toBeLessThanOrEqual(28.5);
+  });
 
   it('at 1280x800 the rows box is at least 90 px tall', async () => {
     await page.viewport(1280, 800);

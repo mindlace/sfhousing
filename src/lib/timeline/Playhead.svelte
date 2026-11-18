@@ -73,6 +73,29 @@
   const atLast = $derived(day >= last && !playing);
   const years = $derived(yearMarks(asOf, windowEnd));
   const flag = $derived(dateFlag(day, asOf));
+
+  // A year label the date flag overlaps is hidden whole, never cut. The ruler's width and a
+  // label's width are measured on resize only; per frame this reads at most the 9 year marks
+  // and yields a string, so a label's class changes only when the flag reaches or leaves it.
+  /** The date flag's width (.flag --w). */
+  const FLAG_W = 64;
+  /** Clear space kept between the flag and a year label. */
+  const FLAG_GAP = 2;
+  let rulerW = $state(0);
+  let yearW = $state(0);
+  const covered = $derived.by(() => {
+    if (rulerW <= FLAG_W) return '';
+    const x = (at(day) / 100) * rulerW;
+    const left = Math.min(Math.max(x - FLAG_W / 2, 0), rulerW - FLAG_W) - FLAG_GAP;
+    const right = left + FLAG_W + 2 * FLAG_GAP;
+    let out = ' ';
+    for (const t of years) {
+      const c = (t.pct / 100) * rulerW;
+      const a = t.pct === 0 ? 0 : c - yearW / 2;
+      if (a < right && a + yearW > left) out += `${t.year} `;
+    }
+    return out;
+  });
   const label = $derived(playLabel({ playing, playFrom, atLast }));
   const description = $derived(rulerDescription(reached > asOf ? reached : null, goalDeadline));
   const descId = $props.id();
@@ -148,6 +171,18 @@
   }
 
   let ruler: HTMLElement | undefined = $state();
+  $effect(() => {
+    const el = ruler;
+    if (!el) return;
+    const measure = () => {
+      rulerW = el.clientWidth;
+      yearW = el.querySelector<HTMLElement>('.year')?.offsetWidth ?? 0;
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
   let dragging = false;
   function dayAt(clientX: number): Day {
     const r = ruler!.getBoundingClientRect();
@@ -229,6 +264,7 @@
           <span
             class="year text-ink-muted tabular-nums dark:text-ink-dark-muted"
             class:first={t.pct === 0}
+            class:covered={covered.includes(` ${t.year} `)}
             data-testid="tl-year"
             style:left="{t.pct}%">{t.year}</span
           >
@@ -359,6 +395,9 @@
   .year.first {
     transform: none;
   }
+  .year.covered {
+    visibility: hidden;
+  }
   .track {
     position: absolute;
     left: 0;
@@ -396,8 +435,8 @@
     border-radius: 2px;
     background: var(--color-accent);
   }
-  /* The date flag rides the thumb on the year line and covers the year under it; it keeps inside
-     the cell at either end. */
+  /* The date flag rides the thumb on the year line; a year label it overlaps is hidden
+     (.covered). It keeps inside the cell at either end. Its width is FLAG_W in the script. */
   .flag {
     --w: 64px;
     position: absolute;

@@ -91,18 +91,26 @@ export function rulerDescription(seenTo: Day | null, deadline: Day | null): stri
 export const goalNote = (units: number, deadline: Day): string =>
   `${formatCount(units)} more by ${formatShortMonthYear(deadline)}`;
 
-/** The chart's sr-only caption: what is drawn, the goal sentence only while its step is. */
-export function chartCaption(inForce: boolean, goalShown: boolean): string {
+/**
+ * The chart's sr-only caption: what is drawn, the goal (its remainder and deadline, the in-plot
+ * note's words, which are hidden from assistive tech) only while its step is drawn.
+ */
+export function chartCaption(
+  inForce: boolean,
+  goal: { units: number; deadline: Day } | null
+): string {
   const slider = 'The month slider reads out each month.';
+  const needed = goal
+    ? `the homes still needed by its deadline: ${goalNote(goal.units, goal.deadline)}.`
+    : '';
   if (!inForce)
-    return goalShown
-      ? 'Homes completed from today, by month, and the goal as the homes still needed by its ' +
-          `deadline. ${slider}`
+    return goal
+      ? `Homes completed from today, by month, and the goal as ${needed} ${slider}`
       : `Homes completed from today, by month. ${slider}`;
-  const goal = goalShown ? 'The goal is drawn as the homes still needed by its deadline. ' : '';
+  const drawn = goal ? `The goal is drawn as ${needed} ` : '';
   return (
     'Homes completed from today with your policy and under current law, by month. The shaded ' +
-    `gap is what your policy adds. ${goal}${slider}`
+    `gap is what your policy adds. ${drawn}${slider}`
   );
 }
 

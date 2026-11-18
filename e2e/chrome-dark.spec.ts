@@ -48,6 +48,13 @@ async function gotoSim(page: Page): Promise<void> {
 
 const editor = (page: Page) => page.getByTestId('inspector');
 
+/** Closes the editor if it shows (as sim.spec's). */
+async function closeEditor(page: Page): Promise<void> {
+  const close = editor(page).getByRole('button', { name: 'Close editor' });
+  if (await close.isVisible()) await close.click();
+  await expect(editor(page)).toHaveCount(0);
+}
+
 test('/ header has no axe violations in dark', async ({ page }) => {
   await gotoEditor(page);
   await expect(page.getByRole('banner')).toBeVisible();
@@ -259,8 +266,7 @@ test('the chart with a policy in force, played to the end, has no axe violations
     const f = (window as FzpWin).__sfhFzp!;
     return f.refills.length > k && !f.stale && f.filledThrough === f.lastIndex;
   }, n);
-  const close = editor(page).getByRole('button', { name: 'Close editor' });
-  if (await close.isVisible()) await close.click();
+  await closeEditor(page);
   await page.getByRole('slider', { name: 'Date in the simulation' }).focus();
   await page.keyboard.press('End');
   await expect(page.getByTestId('chart-law')).toHaveCount(1);

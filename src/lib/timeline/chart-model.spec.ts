@@ -78,10 +78,13 @@ describe('chart-model', () => {
   });
 
   it('yLabels halves the top', () => {
+    // One format for both: compact when the top is, else both in full.
     expect(yLabels(100_000)).toEqual([
-      { value: 50_000, label: '50,000' },
+      { value: 50_000, label: '50K' },
       { value: 100_000, label: '100K' }
     ]);
+    expect(yLabels(500_000).map((l) => l.label)).toEqual(['250K', '500K']);
+    expect(yLabels(50_000).map((l) => l.label)).toEqual(['25,000', '50,000']);
     expect(yLabels(50)).toEqual([
       { value: 25, label: '25' },
       { value: 50, label: '50' }

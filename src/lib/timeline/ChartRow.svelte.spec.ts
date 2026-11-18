@@ -1,5 +1,5 @@
 /// <reference types="@vitest/browser-playwright" />
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
@@ -10,12 +10,18 @@ import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { monthLastDay } from '$lib/sim/world/months';
 import ChartRow from './ChartRow.svelte';
 import { yearMarks } from './axis';
-import { chartPoints, posOf, runningMax, yLabels, yTop } from './chart-model';
+import { chartPoints, gapPath, linePath, posOf, runningMax, yLabels, yTop } from './chart-model';
 import { chartCaption, goalNote, homesBy } from './copy';
 import { filledEndDay } from './playhead';
 import { playheadAt } from './results';
 import { dayPct } from './rows';
 import { calendarMonths, chunk, statics } from './test/fixtures';
+
+// The path builders as they are, counted: a rebuild is a call, whatever string it yields.
+vi.mock('./chart-model', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./chart-model')>();
+  return { ...real, linePath: vi.fn(real.linePath), gapPath: vi.fn(real.gapPath) };
+});
 
 /** Calendar months from Nov 2026 (`statics()` spaces months 30 days apart), today their first. */
 function fullView(): TimelineView {
@@ -251,25 +257,55 @@ describe('ChartRow', () => {
     const clipObs = new MutationObserver((r) => (clips += r.length));
     clipObs.observe(svg, { attributeFilter: ['x', 'width'], subtree: true });
     reads = 0;
+    const builds = () =>
+      vi.mocked(linePath).mock.calls.length + vi.mocked(gapPath).mock.calls.length;
+    const built = builds();
     for (let k = 1; k <= 20; k++) await rerender({ day: m + k, reached: m + k + 5 });
+    // Inside the month: no row read at all.
+    expect(reads).toBe(0);
+    // Across a month where the scale holds (the goal's 40 tops every value to month 16: 50),
+    // only the overlay's value text reads its one month (a row and its effect).
+    const n = base.months[8];
+    for (let k = 0; k < 5; k++) await rerender({ day: n + k, reached: n + k + 5 });
+    expect(reads).toBeLessThanOrEqual(2);
+    expect(builds() - built).toBe(0);
     paths += pathObs.takeRecords().length;
     clips += clipObs.takeRecords().length;
     pathObs.disconnect();
     clipObs.disconnect();
     expect(paths).toBe(0);
-    expect(reads).toBe(0);
-    expect(clips).toBeGreaterThanOrEqual(20);
+    expect(clips).toBeGreaterThanOrEqual(25);
+    // The counter sees a rebuild: reaching month 20 (61 homes) steps the scale to 100.
+    await rerender({ reached: base.months[20] + 3 });
+    expect(builds() - built).toBeGreaterThan(0);
+  });
+
+  it('the value labels and the goal note are hidden from assistive tech', async () => {
+    const view = fullView();
+    await render(ChartRow, { props: props({ view, target: { deadlineIndex: 12, units: 40 } }) });
+    await expect.element(page.getByTestId('chart-target-note')).toBeInTheDocument();
+    for (const el of [
+      ...document.querySelectorAll('[data-testid=chart-ylabel]'),
+      page.getByTestId('chart-target-note').element()
+    ])
+      expect(el.closest('[aria-hidden=true]'), el.textContent!).not.toBeNull();
+    // The goal's figures are in the caption instead.
+    expect(document.querySelector('figcaption')!.textContent).toContain(
+      goalNote(40, view.months[12])
+    );
   });
 
   it('the caption says what is drawn', async () => {
+    const view = fullView();
     const target = { deadlineIndex: 12, units: 40 };
+    const goal = { units: 40, deadline: view.months[12] };
     const caption = () => document.querySelector('figcaption')!.textContent!.trim();
-    const { rerender } = await render(ChartRow, { props: props({ target }) });
-    expect(caption()).toBe(chartCaption(false, true));
+    const { rerender } = await render(ChartRow, { props: props({ view, target }) });
+    expect(caption()).toBe(chartCaption(false, goal));
     await rerender({ inForce: true });
-    expect(caption()).toBe(chartCaption(true, true));
+    expect(caption()).toBe(chartCaption(true, goal));
     await rerender({ target: null });
-    expect(caption()).toBe(chartCaption(true, false));
+    expect(caption()).toBe(chartCaption(true, null));
     await expect.element(page.getByRole('figure', { name: 'Homes completed' })).toBeInTheDocument();
   });
 

@@ -1,7 +1,7 @@
 // The timeline chart's arithmetic (rules 3, 4): points from today, the current-law series, the
 // running maxima that set the scale, and the path strings. Pure; ChartRow lays it out.
 import { niceCeil } from '$lib/fzp/chart';
-import { formatCompactCount } from '$lib/scoreboard/format';
+import { formatCompactCount, formatCount } from '$lib/scoreboard/format';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
 import { filledEndDay } from './playhead';
@@ -99,7 +99,16 @@ export function gapPath(
   return `${d}Z`;
 }
 
-/** [{ value: top / 2, label }, { value: top, label }], labels formatCompactCount. */
+const COMPACT = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
+
+/**
+ * [{ value: top / 2, label }, { value: top, label }], both in one format: compact ('50K',
+ * '100K') when the top is formatCompactCount's compact, else both in full ('25,000', '50,000').
+ */
 export function yLabels(top: number): { value: number; label: string }[] {
-  return [top / 2, top].map((value) => ({ value, label: formatCompactCount(value) }));
+  const compact = formatCompactCount(top) !== formatCount(top);
+  return [top / 2, top].map((value) => ({
+    value,
+    label: compact ? COMPACT.format(value) : formatCount(value)
+  }));
 }

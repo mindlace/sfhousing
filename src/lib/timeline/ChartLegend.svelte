@@ -3,7 +3,9 @@
   policy in force (`inForce`) "With your policy", "Current law" and the shaded gap "From your
   policy"; then "Goal" while its step is drawn (`goal`). Below md it runs under the plot
   (ChartRow); from md it stacks in the label column as the row's label (Timeline), so the plot
-  keeps the lane's full width.
+  keeps the lane's full width. Stacked, its four entries fit the plot's height at every size
+  (16 px lines: 70 of 96; compact, 14 px lines: 62 of 64), so a first policy never moves the
+  pinned block.
 -->
 <script lang="ts">
   import { COLORS } from '$lib/fzp/chart';
@@ -33,6 +35,7 @@
 </script>
 
 <ul
+  class:stacked
   class="legend m-0 flex list-none p-0 text-xs text-ink dark:text-ink-dark {stacked
     ? 'flex-col gap-0.5 font-normal'
     : 'flex-wrap gap-x-4 gap-y-1 pt-1'} {cls}"
@@ -42,7 +45,16 @@
     <li class="flex items-center gap-1.5 {stacked ? 'leading-4 whitespace-nowrap' : 'min-h-6'}">
       <svg width="22" height="10" aria-hidden="true" class="shrink-0">
         {#if l.fill}
-          <rect x="1" y="1" width="20" height="8" fill={l.color} />
+          <!-- Outlined in the plan line's colour, so the pale fill reads on its own. -->
+          <rect
+            x="1.5"
+            y="1.5"
+            width="19"
+            height="7"
+            fill={l.color}
+            stroke={COLORS.plan}
+            stroke-width="1"
+          />
         {:else}
           <line
             x1="1"
@@ -59,3 +71,12 @@
     </li>
   {/each}
 </ul>
+
+<style>
+  /* From md on a short viewport the plot is 64 px: four 14 px entries and their gaps fit it. */
+  @media (min-width: 768px) and (max-height: 820px) {
+    .stacked li {
+      line-height: 14px;
+    }
+  }
+</style>

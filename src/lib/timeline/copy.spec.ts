@@ -40,25 +40,26 @@ describe('the chart', () => {
     expect(goalNote(73_346, dayFromUtc(2031, 1, 1))).toBe('73,346 more by Jan 2031');
   });
 
-  it('chartCaption says what is drawn', () => {
-    expect(chartCaption(false, true)).toBe(
+  it('chartCaption says what is drawn, the goal with its remainder and deadline', () => {
+    const goal = { units: 73_346, deadline: dayFromUtc(2031, 1, 1) };
+    expect(chartCaption(false, goal)).toBe(
       'Homes completed from today, by month, and the goal as the homes still needed by its ' +
-        'deadline. The month slider reads out each month.'
+        'deadline: 73,346 more by Jan 2031. The month slider reads out each month.'
     );
-    expect(chartCaption(false, false)).toBe(
+    expect(chartCaption(false, null)).toBe(
       'Homes completed from today, by month. The month slider reads out each month.'
     );
-    expect(chartCaption(true, true)).toBe(
+    expect(chartCaption(true, goal)).toBe(
       'Homes completed from today with your policy and under current law, by month. The shaded ' +
         'gap is what your policy adds. The goal is drawn as the homes still needed by its ' +
-        'deadline. The month slider reads out each month.'
+        'deadline: 73,346 more by Jan 2031. The month slider reads out each month.'
     );
-    expect(chartCaption(true, false)).toBe(
+    expect(chartCaption(true, null)).toBe(
       'Homes completed from today with your policy and under current law, by month. The shaded ' +
         'gap is what your policy adds. The month slider reads out each month.'
     );
     for (const a of [true, false])
-      for (const b of [true, false]) expect(chartCaption(a, b)).not.toMatch(/RHNA|FZP/);
+      for (const b of [goal, null]) expect(chartCaption(a, b)).not.toMatch(/RHNA|FZP/);
   });
 });
 
