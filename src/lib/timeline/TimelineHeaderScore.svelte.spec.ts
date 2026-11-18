@@ -7,6 +7,7 @@ import '../../routes/layout.css';
 import { CALCULATING } from '$lib/fzp/score-view';
 import type { HeadlineText } from './results';
 import TimelineHeaderScore from './TimelineHeaderScore.svelte';
+import { pointerBetween } from './test/pointer';
 
 const TEXT: HeadlineText = {
   main: '47,335 homes by Apr 2040',
@@ -94,6 +95,20 @@ describe('TimelineHeaderScore', () => {
     await expect.element(tip).not.toBeInTheDocument();
     await userEvent.hover(bar());
     await expect.element(page.getByRole('tooltip')).toHaveTextContent(TEXT.goalName!);
+  });
+
+  it('the goal name stays open as the pointer stops between the box and it (WCAG 1.4.13)', async () => {
+    await page.viewport(1280, 768);
+    await render(TimelineHeaderScore, { props: props() });
+    await userEvent.hover(bar());
+    const tip = page.getByRole('tooltip');
+    await expect.element(tip).toHaveTextContent(TEXT.goalName!);
+    const below = box().element().getBoundingClientRect().bottom;
+    expect(tip.element().getBoundingClientRect().top - below).toBeGreaterThan(1);
+    await pointerBetween(tip, below);
+    await expect.element(tip).toBeVisible();
+    await userEvent.hover(tip);
+    await expect.element(tip).toHaveTextContent(TEXT.goalName!);
   });
 
   it('focus holds on the button as the numbers come and go; no goal, no name', async () => {

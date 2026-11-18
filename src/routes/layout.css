@@ -50,3 +50,39 @@
     --chart-grid: #4b4d52;
   }
 }
+
+/* An Explain tooltip that opens under its target (the /sim header score's goal name and
+   "Updating"'s explanation): put `explain-under` on a positioned box around the Explain. Its
+   ::before bridges the gap above it, so a pointer moving from the target onto the text stays
+   inside Explain's wrapper and the text stays open (WCAG 1.4.13, hoverable). */
+.explain-under [role='tooltip'] {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 40;
+  width: max-content;
+  max-width: min(14rem, calc(100vw - 2rem));
+  white-space: normal;
+  margin-top: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--color-line);
+  border-radius: 0.25rem;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  box-shadow: 0 4px 6px rgb(0 0 0 / 0.1);
+}
+.explain-under [role='tooltip']::before {
+  content: '';
+  position: absolute;
+  right: -1px;
+  bottom: 100%;
+  left: -1px;
+  height: calc(0.25rem + 1px);
+}
+@media (prefers-color-scheme: dark) {
+  .explain-under [role='tooltip'] {
+    border-color: var(--color-line-dark);
+    background: var(--color-surface-dark);
+    color: var(--color-ink-dark);
+  }
+}

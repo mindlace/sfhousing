@@ -40,6 +40,7 @@ import {
 import { chunk, statics as baseStatics } from './test/fixtures';
 import type { Pool } from '$lib/timelapse/types';
 import TimelineModeHost from './test/TimelineModeHost.svelte';
+import { pointerBetween } from './test/pointer';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 
@@ -1371,6 +1372,22 @@ describe('TimelineMode', () => {
     expect(tip.element().getBoundingClientRect().top).toBeGreaterThanOrEqual(
       statusShown().element().getBoundingClientRect().bottom
     );
+  });
+
+  it("Updating's explanation stays open as the pointer stops between it and the status (WCAG 1.4.13)", async () => {
+    const s = await opened();
+    s.setPolicy(mk(protect(5)));
+    const updating = page.getByTestId('tl-status').getByRole('button', { name: UPDATING });
+    await expect.element(updating).toBeVisible();
+    await userEvent.hover(updating);
+    const tip = page.getByRole('tooltip');
+    await expect.element(tip).toHaveTextContent(STALE_NOTE);
+    const below = updating.element().getBoundingClientRect().bottom;
+    expect(tip.element().getBoundingClientRect().top - below).toBeGreaterThan(1);
+    await pointerBetween(tip, below);
+    await expect.element(tip).toBeVisible();
+    await userEvent.hover(tip);
+    await expect.element(tip).toHaveTextContent(STALE_NOTE);
   });
 
   it('the header score controls the inspector only while it shows', async () => {

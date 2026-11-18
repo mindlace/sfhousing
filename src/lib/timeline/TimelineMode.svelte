@@ -1003,7 +1003,7 @@
      is as wide as the widest and nothing moves as either comes or goes. The save state's own live
      region opts back into visibility, so its announcements still reach screen readers. The
      timeline's live region is apart, once, in the page; "Updating"'s explanation opens as a
-     popover under the slot, so the header keeps its size. -->
+     popover under the slot (`explain-under`, layout.css), so the header keeps its size. -->
 {#snippet statusSlot()}
   <span class="inline-grid items-center" data-testid="tl-status-group">
     <span
@@ -1015,7 +1015,7 @@
       <!-- Over the save state in the cell: it takes presses only while "Updating" shows. -->
       <span
         class={[
-          'tl-status relative col-start-1 row-start-1 inline-grid text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted',
+          'tl-status explain-under relative col-start-1 row-start-1 inline-grid text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted',
           !covered && 'pointer-events-none'
         ]}
         data-testid="tl-status"
@@ -1364,31 +1364,6 @@
     .tl-dim[data-stale]
       :global(:not(button, a, input, select, textarea, summary, button *, a *, summary *)) {
       color: var(--color-ink-dark-muted);
-    }
-  }
-  /* "Updating"'s explanation opens under the slot at every width (Explain is inline below md),
-     so the header neither widens nor grows. */
-  .tl-status :global([role='tooltip']) {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    z-index: 40;
-    width: max-content;
-    max-width: min(14rem, calc(100vw - 2rem));
-    white-space: normal;
-    margin-top: 0.25rem;
-    padding: 0.25rem 0.5rem;
-    border: 1px solid var(--color-line);
-    border-radius: 0.25rem;
-    background: var(--color-surface);
-    color: var(--color-ink);
-    box-shadow: 0 4px 6px rgb(0 0 0 / 0.1);
-  }
-  @media (prefers-color-scheme: dark) {
-    .tl-status :global([role='tooltip']) {
-      border-color: var(--color-line-dark);
-      background: var(--color-surface-dark);
-      color: var(--color-ink-dark);
     }
   }
 </style>

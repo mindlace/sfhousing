@@ -96,7 +96,7 @@
 <!-- Always wrapped, so the button is never re-created (and focus never lost) as the goal comes
      and goes; with no goal on show the name stays hidden. -->
 <span
-  class="hs-score relative inline-flex"
+  class="hs-score explain-under relative inline-flex"
   data-no-goal={goalText === null || goalName === null ? 'true' : undefined}
 >
   <Explain as="wrap" text={goalName ?? ''}>{@render box()}</Explain>
@@ -114,32 +114,12 @@
       color: var(--color-ink-dark-muted);
     }
   }
-  /* The goal's name opens under the box at every width, so the header neither widens nor grows;
-     below sm it is hidden with line 2. */
+  /* The goal's name opens under the box at every width (`explain-under`, layout.css), so the
+     header neither widens nor grows; below sm it is hidden with line 2. */
   .hs-score :global([role='tooltip']) {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    z-index: 40;
-    width: max-content;
-    max-width: min(14rem, calc(100vw - 2rem));
-    white-space: normal;
-    margin: 0.25rem 0 0;
-    padding: 0.25rem 0.5rem;
-    border: 1px solid var(--color-line);
-    border-radius: 0.25rem;
-    background: var(--color-surface);
-    color: var(--color-ink);
+    margin-left: 0;
     font-size: 0.875rem;
     font-weight: 400;
-    box-shadow: 0 4px 6px rgb(0 0 0 / 0.1);
-  }
-  @media (prefers-color-scheme: dark) {
-    .hs-score :global([role='tooltip']) {
-      border-color: var(--color-line-dark);
-      background: var(--color-surface-dark);
-      color: var(--color-ink-dark);
-    }
   }
   .hs-score[data-no-goal] :global([role='tooltip']) {
     display: none;
