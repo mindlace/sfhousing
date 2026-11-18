@@ -53,8 +53,9 @@ export function editedReveal(r: Reveal, before: Side | null): Reveal {
  * months next..limit, limit = min(now.view.filledThrough, before.view.filledThrough, m), where m
  * is the month of `reached` (-1 at today: reached on or before `at.asOf`, the dataset date). The
  * first k with monthChanged(before, now, k) ends the search:
- * reached = max(day, now.view.months[k]); playFrom = playing ? null : k. No change through m ends it with nothing pulled back (reached
- * stays at least `at.day`). Otherwise next = limit + 1 (the fill is behind). Months past
+ * reached = max(day, now.view.months[k]); playFrom = playing ? null : k. No change through m
+ * ends it with nothing pulled back (reached stays at least `at.day`). Otherwise
+ * next = limit + 1 (the fill is behind). Months past
  * before.view.filledThrough cannot be compared: once the new view has filled past it with no
  * change found, the first of them counts as the first changed month, since what cannot be shown
  * unchanged is unseen; so a search always ends. Returns `r` itself when there is no search or
