@@ -17,7 +17,7 @@ import {
   waitForMap
 } from './helpers/sharing';
 
-// The header's indicator reads "Saved" before the first write too, so also wait for the write.
+// The header's indicator reads saved before the first write too, so also wait for the write.
 async function waitSaved(page: Page): Promise<void> {
   await expect
     .poll(() =>
@@ -31,7 +31,10 @@ async function waitSaved(page: Page): Promise<void> {
     .toBe(1);
   // Below 1024 px the save indicator waits in the header Menu.
   await openHeaderMenu(page);
-  await expect(page.getByRole('banner').getByText('Saved', { exact: true })).toBeVisible();
+  await expect(page.getByRole('banner').getByTestId('save-state')).toHaveAttribute(
+    'data-save-status',
+    'saved'
+  );
 }
 
 test('an unknown id is a 404 "Plan not found" page, noindex', async ({ page }) => {

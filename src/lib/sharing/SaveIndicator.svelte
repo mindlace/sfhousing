@@ -49,11 +49,20 @@
 
 <svelte:window onkeydown={onWindowKeydown} onpointerdown={onWindowPointerdown} />
 
-<div class="relative flex items-center text-xs text-gray-700 dark:text-gray-300" bind:this={root}>
+<!-- One inline grid cell: the invisible sizer holds the width of "Saving…" so the header never moves
+  when the text comes or goes; the shown text and the "Autosave off" button share its cell. -->
+<div
+  class="relative inline-grid items-center text-xs text-gray-700 dark:text-gray-300"
+  data-testid="save-state"
+  data-save-status={status}
+  bind:this={root}
+>
+  <span class="invisible col-start-1 row-start-1 whitespace-nowrap" aria-hidden="true">Saving…</span
+  >
   {#if status === 'off'}
     <button
       type="button"
-      class="min-h-6 min-w-6 rounded-full border border-amber-700 bg-amber-50 px-2 whitespace-nowrap text-amber-900 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+      class="col-start-1 row-start-1 min-h-6 min-w-6 rounded-full border border-amber-700 bg-amber-50 px-2 whitespace-nowrap text-amber-900 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
       aria-expanded={popOpen}
       aria-controls={popId}
       onclick={() => (popOpen = !popOpen)}
@@ -70,8 +79,8 @@
     >
       {COPY.n4}
     </p>
-  {:else}
-    <span class="whitespace-nowrap">{status === 'saving' ? 'Saving…' : 'Saved'}</span>
+  {:else if status === 'saving'}
+    <span class="col-start-1 row-start-1 whitespace-nowrap" data-testid="save-text">Saving…</span>
   {/if}
   <span class="sr-only" role="status" aria-live="polite" data-testid="save-live"
     >{announcement}</span

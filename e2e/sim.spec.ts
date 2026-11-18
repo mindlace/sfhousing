@@ -1139,7 +1139,7 @@ async function widestHeaderText(page: Page): Promise<void> {
     if (chip) {
       const w = document.createTreeWalker(chip, NodeFilter.SHOW_TEXT);
       for (let n = w.nextNode(); n; n = w.nextNode())
-        if (n.textContent?.trim() === 'Saved') {
+        if (n.textContent?.trim() === 'Saving…') {
           n.textContent = 'Autosave off';
           break;
         }

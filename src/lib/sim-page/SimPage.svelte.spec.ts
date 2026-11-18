@@ -1344,14 +1344,18 @@ describe('SimPage autosave and publish', () => {
   it('quota errors show Autosave off and recover', async () => {
     const mem = new MemoryStorage();
     await opened({ storage: () => mem });
-    await expect.element(header().getByText('Saved')).toBeVisible();
+    await expect
+      .element(header().getByTestId('save-state'))
+      .toHaveAttribute('data-save-status', 'saved');
     mem.failWrites = true;
     await addHistoric();
     await expect.element(header().getByRole('button', { name: 'Autosave off' })).toBeVisible();
     mem.failWrites = false;
     await page.getByRole('button', { name: 'Add Zoning policy' }).click();
     await page.getByRole('button', { name: 'Protect rent-controlled buildings' }).click();
-    await expect.element(header().getByText('Saved')).toBeVisible();
+    await expect
+      .element(header().getByTestId('save-state'))
+      .toHaveAttribute('data-save-status', 'saved');
     expect(storedDoc(mem).policy.kinds.zoning).toHaveLength(2);
   });
 
@@ -1370,7 +1374,9 @@ describe('SimPage autosave and publish', () => {
   it('the save state sits in the header status slot, apart from the actions', async () => {
     await page.viewport(375, 700);
     await opened();
-    await expect.element(header().getByText('Saved')).toBeVisible();
+    await expect
+      .element(header().getByTestId('save-state'))
+      .toHaveAttribute('data-save-status', 'saved');
     // Publish waits in the closed Menu with the other actions.
     expect(publish().element().checkVisibility()).toBe(false);
     await page.getByRole('button', { name: 'Menu' }).click();

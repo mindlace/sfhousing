@@ -46,8 +46,9 @@ describe('/ header save state', () => {
   it('renders the indicator in the status slot, before the actions, at 1280px', async () => {
     await page.viewport(1280, 800);
     render(PaintHeaderHost, { props: { data } });
-    const saved = page.getByText('Saved', { exact: true });
-    await expect.element(saved).toBeVisible();
+    const saved = page.getByTestId('save-state');
+    await expect.element(saved).toHaveAttribute('data-save-status', 'saved');
+    expect(page.getByText('Saved', { exact: true }).elements()).toHaveLength(0);
     const status = document.querySelector('[data-header-status]')!;
     expect(status.contains(saved.element())).toBe(true);
     const publish = page.getByRole('button', { name: /Publish/ });
@@ -61,8 +62,9 @@ describe('/ header save state', () => {
   it('renders the indicator in the status slot after the site title at 375px', async () => {
     await page.viewport(375, 812);
     render(PaintHeaderHost, { props: { data } });
-    const saved = page.getByText('Saved', { exact: true });
-    await expect.element(saved).toBeVisible();
+    const saved = page.getByTestId('save-state');
+    await expect.element(saved).toHaveAttribute('data-save-status', 'saved');
+    expect(page.getByText('Saved', { exact: true }).elements()).toHaveLength(0);
     const status = document.querySelector('[data-header-status]')!;
     expect(status.contains(saved.element())).toBe(true);
     // Publish is in the closed Menu, so the indicator is not among the actions.

@@ -15,7 +15,7 @@ Code map:
 | `src/routes/api/policies/+server.ts`, `src/routes/api/policies/[id]` | thin route wrappers (`CODECS.sim`)                                                                       |
 | `src/routes/p/[id]/`                                                 | read-only plan view, banner, Remix, not-found / unparsable error page                                    |
 | `src/routes/s/[id]/`                                                 | read-only policy view (`SimRoute` in view mode), banner, Remix, error page                               |
-| `src/lib/sharing/`                                                   | client: autosave, publish client and dialog, Saved indicator, notices, ids, copy (all text, per kind)    |
+| `src/lib/sharing/`                                                   | client: autosave, publish client and dialog, save indicator, notices, ids, copy (all text, per kind)     |
 
 ## Data
 
@@ -107,7 +107,7 @@ interface LocalPlanRecord {
 - **Write:** every committed plan change (op, undo, redo, title, remix), debounced 500 ms; flushed synchronously on `visibilitychange → hidden` and `pagehide`. Drag previews are never saved. The redo stack is not persisted. Multiple tabs: last write wins.
 - **Restore on `/`:** in `onMount` (client only). Missing → empty plan. Unreadable (bad JSON, `v !== 1`, `parsePlan` failure) → the raw string is kept under `sfhousing:plan:corrupt:<ISO>`, start empty, notice N1. A plan from a newer schema → same, notice N2. A different `datasetVersion` → `rebasePlan` to the current version, written back immediately, notice N3.
 - **Storage unavailable** (access throws, or `QuotaExceededError`): editing continues; the header shows the **Autosave off** chip (popover N4). Each later change retries; the chip clears on the first successful write.
-- **Header indicator:** "Saving…" during the debounce, "Saved" after a write (and until the next change), or "Autosave off". Its live region announces only the off/on transitions.
+- **Header indicator:** "Saving…" during the debounce, nothing after a write (and until the next change), or "Autosave off". The root is `[data-testid=save-state][data-save-status=saved|saving|off]`: tests wait on the attribute, not on text. An invisible, aria-hidden sizer holds the width of "Saving…" so the text coming and going moves nothing; "Autosave off" may widen it. Its live region announces only the off/on transitions.
 
 ## Notices
 
