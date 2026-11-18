@@ -287,6 +287,26 @@ test('the headline follows the playhead and counts from today', async ({ isMobil
   await expect(scoreBar(page)).toHaveText('0 homes by today');
 });
 
+test('passing the goal deadline short of it says by how much, once', async ({ page }) => {
+  await gotoSim(page);
+  const notice = page.getByTestId('tl-goal-notice');
+  // The region is mounted, empty, before anything is said.
+  await expect(page.getByTestId('tl-goal')).toHaveAttribute('role', 'status');
+  await expect(page.getByTestId('tl-goal')).toHaveText('');
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  await expect(notice.locator('span')).toHaveText(
+    /^Goal missed by [\d,]+ homes\. Add a policy and play again\.$/
+  );
+  await expectNoA11yViolations(page, { include: ['[data-testid=fzp-notices]'] });
+  await notice.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(notice).toHaveCount(0);
+  await page.keyboard.press('Home');
+  await page.keyboard.press('End');
+  await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes by /);
+  await expect(notice).toHaveCount(0);
+});
+
 test('with a policy in force the chart draws current law and the gap; nothing past the playhead on opening', async ({
   isMobile,
   page

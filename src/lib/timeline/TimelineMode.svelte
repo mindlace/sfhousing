@@ -91,7 +91,7 @@
 
 <script lang="ts">
   import { onMount, tick, untrack, type Snippet } from 'svelte';
-  import { MediaQuery } from 'svelte/reactivity';
+  import { MediaQuery, SvelteSet } from 'svelte/reactivity';
   import type { Manifest } from '$lib/data/manifest';
   import { cardFunding, type CardFunding } from '$lib/fzp/card';
   import { BR_BLOCK, watchCardArea } from '$lib/fzp/card-area-watch';
@@ -106,7 +106,7 @@
   import { SummaryRequester, type SummaryState } from '$lib/fzp/summary-request';
   import { monthStart } from '$lib/fzp/time';
   import type { FzpPhase, Speed } from '$lib/fzp/types';
-  import { GOAL, goalStep } from '$lib/goal/goal';
+  import { GOAL, TODAY, goalStep, type Goal } from '$lib/goal/goal';
   import type { HeightCity } from '$lib/map/height/types';
   import SimMap from '$lib/map/SimMap.svelte';
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
@@ -127,9 +127,10 @@
   import Explain from './Explain.svelte';
   import { fundsOf4 } from './owner';
   import Playhead from './Playhead.svelte';
-  import { clampDay, filledEndDay, viewMonthOf } from './playhead';
+  import { clampDay, filledEndDay, indexOfDay, viewMonthOf } from './playhead';
   import { termsInForce } from './lens';
   import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
+  import { goalOutcome, outcomeKey, outcomeText, type GoalOutcome } from './outcome';
   import { editedReveal, moved, revealOpen, scanned, type Reveal } from './reveal';
   import {
     headlineAt,
@@ -227,6 +228,8 @@
     bottomExtra?: number;
     /** Test seam: the status slot's least gap between updates (rule 32). */
     statusMs?: number;
+    /** Test seam: the goal every goal read goes through. Default the page's goal. */
+    goal?: Goal;
   }
 
   let {
@@ -270,6 +273,7 @@
     scoreExpanded = false,
     scoreControls = undefined,
     bottomExtra = 0,
+    goal = GOAL,
     statusMs = 1000
   }: Props = $props();
 
@@ -372,13 +376,48 @@
       shown.view,
       { index, atToday },
       { provisional: session?.provisional ?? false, inForce },
-      GOAL
+      goal
     )
   );
-  const headText = $derived(headline ? headlineText(headline, GOAL) : null);
-  const chartTarget = $derived(current ? goalStep(GOAL, current) : null);
+  const headText = $derived(headline ? headlineText(headline, goal) : null);
+  const chartTarget = $derived(current ? goalStep(goal, current) : null);
   /** The ruler's goal flag: at the deadline while the chart draws the goal's step. */
-  const goalDeadline = $derived(chartTarget ? GOAL.deadline : null);
+  const goalDeadline = $derived(chartTarget ? goal.deadline : null);
+  /**
+   * The month of the furthest date reached (TODAY at or before the dataset date), a primitive: the
+   * goal notice reads this and never the day, so it changes at most once per month reached.
+   */
+  const reachedMonth = $derived(
+    months && reveal.reached > asOf ? indexOfDay(months, reveal.reached) : TODAY
+  );
+  /** An edit's first changed month is being looked for: the outcome waits for it. */
+  const searching = $derived(reveal.finding !== null);
+  /**
+   * What the months reached say of the goal. Held while the numbers are stale or a search is under
+   * way, so an edit's answer replaces it once, never on the way. Compared by key: an unchanged
+   * outcome keeps its object, so nothing downstream rewrites.
+   */
+  let outcome = $state.raw<GoalOutcome | null>(null);
+  $effect(() => {
+    const view = shown.view;
+    const m = reachedMonth;
+    const g = goal;
+    const wait = stale || searching;
+    untrack(() => {
+      if (wait) return;
+      const day = m === TODAY || !view ? asOf : view.months[m];
+      const next = goalOutcome(g, view, day, asOf);
+      const same =
+        next === outcome ||
+        (next !== null && outcome !== null && outcomeKey(next) === outcomeKey(outcome));
+      if (!same) outcome = next;
+    });
+  });
+  /** Outcomes dismissed this visit, by key. */
+  const dismissed = new SvelteSet<string>();
+  const goalNotice = $derived(
+    outcome && !dismissed.has(outcomeKey(outcome)) ? outcomeText(outcome, goal, inForce) : null
+  );
   // The held document goes once the numbers on show are current again.
   $effect(() => {
     if (!stale) untrack(() => (heldDoc = null));
@@ -1205,6 +1244,21 @@
       {:else}
         {#if session}
           {@render notices?.()}
+          <!-- The goal notice's polite region, mounted empty with the session so the first notice
+               is announced. -->
+          <div role="status" data-testid="tl-goal" class="contents">
+            {#if outcome && goalNotice !== null}
+              <span class={PILL} data-testid="tl-goal-notice">
+                <span>{goalNotice}</span>
+                <button
+                  type="button"
+                  aria-label="Dismiss"
+                  class={PILL_ACTION}
+                  onclick={() => outcome && dismissed.add(outcomeKey(outcome))}>×</button
+                >
+              </span>
+            {/if}
+          </div>
         {/if}
         {#if phase === 'loading' && !halted}
           <p role="status" data-testid="fzp-status" class="{PILL} pr-4">Loading the simulation…</p>

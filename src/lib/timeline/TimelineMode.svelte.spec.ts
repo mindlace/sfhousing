@@ -11,7 +11,7 @@ import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { REAL_ACTUAL } from '$lib/fzp/fixtures/cards';
 import { CALCULATING, fromPolicyText } from '$lib/fzp/score-view';
-import { GOAL } from '$lib/goal/goal';
+import { GOAL, STATE_TARGET, type Goal } from '$lib/goal/goal';
 import { formatShortMonthYear } from '$lib/fzp/format';
 import { dayFromUtc, monthStart, utcParts } from '$lib/fzp/time';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
@@ -27,6 +27,7 @@ import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, goalNote, homesBy, playFromText } from './copy';
 import { filledEndDay, indexOfDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
+import { goalOutcome } from './outcome';
 import { headlineAt, headlineSpoken, headlineText } from './results';
 import { dayPct } from './rows';
 import { scanned } from './reveal';
@@ -45,6 +46,11 @@ import { pointerBetween } from './test/pointer';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 // The reveal rules as they are, with `scanned` counted (when the page scans, and what it ended).
+// The goal outcome as it is, with its calls counted (when the page reads the rows for it).
+vi.mock('./outcome', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./outcome')>();
+  return { ...real, goalOutcome: vi.fn(real.goalOutcome) };
+});
 vi.mock('./reveal', async (importOriginal) => {
   const real = await importOriginal<typeof import('./reveal')>();
   return { ...real, scanned: vi.fn(real.scanned) };
@@ -113,6 +119,8 @@ type Over = Partial<{
   scoreExpanded: boolean;
   /** The page's save state (the real SaveIndicator), in the header's status slot. */
   saveStatus: SaveStatus;
+  /** The goal the page reads (a test seam; default the page's goal). */
+  goal: Goal;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -154,7 +162,8 @@ function setup(over: Over = {}) {
       ...(over.scoreControls ? { scoreControls: over.scoreControls } : {}),
       ...(over.inspectorOpen !== undefined ? { inspectorOpen: over.inspectorOpen } : {}),
       ...(over.scoreExpanded !== undefined ? { scoreExpanded: over.scoreExpanded } : {}),
-      ...(over.saveStatus ? { saveStatus: over.saveStatus } : {})
+      ...(over.saveStatus ? { saveStatus: over.saveStatus } : {}),
+      ...(over.goal ? { goal: over.goal } : {})
     }
   });
   return {
@@ -2192,5 +2201,141 @@ describe('TimelineMode', () => {
     await expect.element(insp.getByTestId('tl-results')).toBeVisible();
     expect(document.querySelector('[data-testid=host-inspector]')).toBeNull();
     await expect.poll(() => el.scrollTop).toBe(0);
+  });
+});
+
+describe('the goal notice', () => {
+  // The measure at month i is 1000 + 3i + 1 (more with a base), 1000 at today.
+  const DEADLINE = 12;
+  const missing: Goal = { ...STATE_TARGET, amount: 1100, deadline: MONTHS[DEADLINE] };
+  const metAt8: Goal = { ...STATE_TARGET, amount: 1025, deadline: MONTHS[DEADLINE] };
+  const region = () => page.getByTestId('tl-goal');
+  const notice = () => page.getByTestId('tl-goal-notice');
+
+  /** The playhead by key: Home, then `k` calendar months on, then `back` months back. */
+  async function keysTo(k: number, back = 0) {
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{Home}' + '{ArrowRight}'.repeat(k) + '{ArrowLeft}'.repeat(back));
+    await expect.poll(() => debug().day).toBe(MONTHS[k - back]);
+  }
+
+  /** An edit as the page's store sends it, answered with the new numbers from `changed`. */
+  async function editAndAnswer(s: Awaited<ReturnType<typeof opened>>, changed: number) {
+    s.setPolicy(mk(protect(7)));
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, changed));
+    emit(filledMsg(2, changed, LAST + 1 - changed, { base: 5 }));
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    await expect.poll(() => debug().stale).toBe(false);
+  }
+
+  it('the missed notice appears when the playhead passes the deadline, and not before', async () => {
+    await opened(LAST, { goal: missing });
+    await keysTo(DEADLINE);
+    await tick();
+    await expect.element(notice()).not.toBeInTheDocument();
+    await keysTo(DEADLINE + 1);
+    await expect
+      .element(notice())
+      .toHaveTextContent('Goal missed by 63 homes. Add a policy and play again.');
+  });
+
+  it('it stays as the playhead goes back, and does not come back once dismissed', async () => {
+    await opened(LAST, { goal: missing });
+    await keysTo(DEADLINE + 2, DEADLINE + 1);
+    await expect.element(notice()).toBeInTheDocument();
+    await keysTo(DEADLINE + 3, DEADLINE + 2);
+    await expect.element(notice()).toBeInTheDocument();
+    await page.getByRole('button', { name: 'Dismiss' }).click();
+    await expect.element(notice()).not.toBeInTheDocument();
+    await keysTo(DEADLINE + 4);
+    await keysTo(1);
+    await keysTo(DEADLINE + 5);
+    await tick();
+    await expect.element(notice()).not.toBeInTheDocument();
+  });
+
+  it('the reached notice names the month the goal is met', async () => {
+    await opened(LAST, { goal: metAt8 });
+    await keysTo(7);
+    await tick();
+    await expect.element(notice()).not.toBeInTheDocument();
+    await keysTo(8);
+    await expect
+      .element(notice())
+      .toHaveTextContent(
+        `Goal reached in ${formatShortMonthYear(MONTHS[8])}, by the ${formatShortMonthYear(MONTHS[DEADLINE])} deadline.`
+      );
+  });
+
+  it('an edit that pulls the furthest date before the deadline takes it away', async () => {
+    const s = await opened(LAST, { goal: missing, initialPolicy: mk(protect(5)) });
+    await keysTo(DEADLINE + 2, DEADLINE - 3);
+    await expect.element(notice()).toBeInTheDocument();
+    await editAndAnswer(s, DEADLINE - 6);
+    // The first changed month; the playhead is behind it.
+    await expect.poll(() => debug().reached).toBe(MONTHS[DEADLINE - 6]);
+    await expect.element(notice()).not.toBeInTheDocument();
+  });
+
+  it('an edit that changes the shortfall replaces it', async () => {
+    const s = await opened(LAST, { goal: missing, initialPolicy: mk(protect(5)) });
+    await keysTo(DEADLINE + 2);
+    await expect.element(notice()).toHaveTextContent('Goal missed by 63 homes.');
+    await editAndAnswer(s, 0);
+    await expect.element(notice()).toHaveTextContent('Goal missed by 58 homes.');
+    expect(region().element().textContent).toContain('Change the policy and play again.');
+  });
+
+  it('the notice region is a polite status, mounted empty', async () => {
+    await opened(LAST, { goal: missing });
+    await expect.element(region()).toBeInTheDocument();
+    const el = region().element();
+    expect(el.getAttribute('role')).toBe('status');
+    expect(el.textContent).toBe('');
+    // The same element then holds the notice: the first appearance is announced.
+    await keysTo(DEADLINE + 1);
+    await expect.element(notice()).toBeInTheDocument();
+    expect(region().element()).toBe(el);
+    expect(el.contains(notice().element())).toBe(true);
+    const r = await axe.run(el.parentElement!);
+    expect(r.violations).toEqual([]);
+  });
+
+  it('dragging the playhead by days inside a month does not recompute or rewrite it', async () => {
+    await opened(LAST, { goal: missing });
+    const track = slider().element() as HTMLElement;
+    const r = track.getBoundingClientRect();
+    const xOf = (d: Day) => r.left + ((d - asOf) / (windowEnd - asOf)) * r.width;
+    const pointer = (type: string, d: Day) =>
+      track.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          button: 0,
+          pointerId: 1,
+          pointerType: 'mouse',
+          clientX: xOf(d),
+          clientY: r.top + r.height / 2
+        })
+      );
+    const from = MONTHS[DEADLINE + 2] + 1;
+    pointer('pointerdown', from);
+    await expect.poll(() => debug().day).toBe(from);
+    await expect.element(notice()).toBeInTheDocument();
+    const frame = () => new Promise((res) => requestAnimationFrame(() => res(null)));
+    const obs = new MutationObserver(() => {});
+    obs.observe(region().element(), { childList: true, characterData: true, subtree: true });
+    const calls = vi.mocked(goalOutcome).mock.calls.length;
+    for (let d = from + 3; d < MONTHS[DEADLINE + 2] + 20; d += 3) {
+      pointer('pointermove', d);
+      await expect.poll(() => debug().day).toBe(d);
+      await frame();
+    }
+    pointer('pointerup', MONTHS[DEADLINE + 2] + 20);
+    expect(obs.takeRecords()).toEqual([]);
+    obs.disconnect();
+    expect(vi.mocked(goalOutcome).mock.calls.length).toBe(calls);
   });
 });
