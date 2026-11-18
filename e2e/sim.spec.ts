@@ -427,13 +427,16 @@ test('rows scrolled part-way under the pinned block are not targets', async ({
   isMobile,
   page
 }) => {
+  // At 375x812 the phone's rows fit their box; at 375x480 (a 432 px mode box, the 304 px block
+  // leaving 128 px of rows, over MIN_ROWS) they overflow it by about 68 px and stay pinned.
+  if (isMobile) await page.setViewportSize({ width: 375, height: 480 });
   await gotoSim(page);
   await longRows(page, isMobile);
   const rows = page.getByTestId('tl-rows');
   await expect(rows).toHaveCSS('overflow-y', 'auto');
+  const max = await rows.evaluate((el) => el.scrollHeight - el.clientHeight);
+  expect(max).toBeGreaterThanOrEqual(22);
   for (const offset of [6, 14, 22]) {
-    const max = await rows.evaluate((el) => el.scrollHeight - el.clientHeight);
-    if (offset > max) continue;
     await rows.evaluate((el, y) => (el.scrollTop = y), offset);
     await expect.poll(() => rows.evaluate((el) => el.scrollTop)).toBe(offset);
     await expectNoA11yViolations(page, { include: ['[data-testid=tl-dock]'] });

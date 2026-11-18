@@ -1,5 +1,5 @@
 /// <reference types="@vitest/browser-playwright" />
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
@@ -177,6 +177,15 @@ describe('Timeline rows', () => {
     expect(b.height).toBeGreaterThan(100);
   });
 
+  it('in a box where the rows scroll, their line segment spans every row, not just the box', async () => {
+    const { rows } = await tall({ playheadDay: first(13) });
+    expect(rows.scrollHeight).toBeGreaterThan(rows.clientHeight);
+    const line = rows.querySelector<HTMLElement>('[data-testid=tl-playhead-line]')!;
+    expect(Math.abs(line.getBoundingClientRect().height - rows.scrollHeight)).toBeLessThanOrEqual(
+      1
+    );
+  });
+
   it('reports the pinned block height and keeps its background opaque', async () => {
     await setup();
     const pin = page.getByTestId('tl-pin').element() as HTMLElement;
@@ -222,13 +231,13 @@ describe('Timeline rows', () => {
     const bar = document.createElement('style');
     bar.textContent = '[data-testid=tl-rows]::-webkit-scrollbar { width: 12px }';
     document.head.appendChild(bar);
+    onTestFinished(() => bar.remove());
     const { pin, rows } = await tall();
     await expect.poll(() => rows.offsetWidth - rows.clientWidth).toBe(12);
     const a = () => pin.querySelector('[data-testid=tl-lane]')!.getBoundingClientRect();
     const b = rows.querySelector('[data-testid=tl-lane]')!.getBoundingClientRect();
     await expect.poll(() => Math.abs(a().width - b.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(a().left - b.left)).toBeLessThanOrEqual(1);
-    bar.remove();
   });
 
   it('unpinned, the rows box does not scroll and the timeline is one piece', async () => {
@@ -531,7 +540,7 @@ describe('Timeline rows', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('keeps the playhead and chart in view and the sheet tall when the timeline is low or scrolled', async () => {
+  it('in one piece, keeps the playhead and chart in view and the sheet tall when the timeline is low or scrolled', async () => {
     await page.viewport(390, 800);
     const spacer = document.createElement('div');
     spacer.style.height = '1500px';

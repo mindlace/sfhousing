@@ -1461,7 +1461,8 @@ describe('TimelineMode', () => {
       await expect.element(slider()).toBeInTheDocument();
       await nextFrame();
       expect(box('tl-mode').height).toBe(regionHeight);
-      expect(box('tl-rows').height).toBeGreaterThanOrEqual(90); // Its targets stay at least 24 px tall.
+      expect(box('tl-rows').height).toBeGreaterThanOrEqual(90);
+      // Its targets stay at least 24 px tall.
       const pin = page.getByTestId('tl-pin').element();
       for (const el of pin.querySelectorAll('button, [role=slider]'))
         expect(el.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
