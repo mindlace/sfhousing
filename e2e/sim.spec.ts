@@ -583,9 +583,7 @@ test('a tap on a built lot with no project selects the plan that sets its limit'
   await jumpAndIdle(page, { center: lot, zoom: 17, pitch: 0, bearing: 0 });
   const [x, y] = await projectToPage(page, lot);
   await page.touchscreen.tap(x, y);
-  await expect(
-    editor(page).getByRole('heading', { name: 'Family Zoning Plan, as adopted' })
-  ).toBeVisible();
+  await expect(editor(page).getByRole('heading', { name: 'Current law' })).toBeVisible();
   // No project card: the building is today's, not a project's. (Cards are always on, rule 19, so
   // SimMap's own card for the existing building may show beside the selection.)
   await expect(page.getByTestId('tl-card').getByRole('region')).toHaveCount(0);
@@ -746,11 +744,9 @@ test("a transit rule's editor passes axe at a bound and with the plan's row", as
   // the kind's sheet is not under it.)
   await closeEditor(page);
   await openKind(page, 'Zoning');
-  const plan = page.getByRole('button', { name: 'Family Zoning Plan, as adopted, whole window' });
+  const plan = page.getByRole('button', { name: 'Current law, whole window' });
   await plan.last().click();
-  await expect(
-    editor(page).getByRole('heading', { name: 'Family Zoning Plan, as adopted' })
-  ).toBeVisible();
+  await expect(editor(page).getByRole('heading', { name: 'Current law' })).toBeVisible();
   await expect(editor(page).getByRole('group', { name: 'Stop types' })).toHaveCount(0);
   await expectNoA11yViolations(page);
 });
@@ -1114,7 +1110,8 @@ async function expectHeaderFits(page: Page): Promise<number> {
 }
 
 /**
- * The widest header strings the page can show: the "Autosave off" chip and a five-digit score.
+ * The widest header strings the page can show: the "Autosave off" chip, a five-digit score and
+ * its widest delta.
  * The score's count is the button's first text; its "added" span (visually hidden below lg) and
  * "by {year}" stay.
  */
@@ -1129,6 +1126,13 @@ async function widestHeaderText(page: Page): Promise<void> {
           break;
         }
     }
+    // The delta's visible text; its sr-only " by {year}" stays.
+    const delta = document.querySelector('[data-testid="score-delta"]');
+    for (const n of delta?.childNodes ?? [])
+      if (n.nodeType === Node.TEXT_NODE && n.textContent?.trim()) {
+        n.textContent = '\u221212,345 from your policy';
+        break;
+      }
     const score = document.querySelector('[data-testid="score-bar"]');
     if (!score) return;
     for (const n of score.childNodes)

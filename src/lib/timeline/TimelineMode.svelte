@@ -1090,8 +1090,8 @@
           class="{PILL} w-[min(28rem,100%)]! flex-col! items-start! gap-0! rounded-lg! pr-4 pb-0"
         >
           <p>
-            The Family Zoning Plan timelapse isn't available for dataset {datasetVersion}. It needs
-            simulation data that this dataset doesn't have.
+            The simulation isn't available for dataset {datasetVersion}. It needs data this dataset
+            doesn't have.
           </p>
           <a href="/" class="inline-flex min-h-11 items-center font-semibold underline"
             >Go to the editor</a

@@ -4,6 +4,7 @@
 // Task 5's `CUSTOM_TIMING_LABEL` and `PRESET_PER_POLICY` live in `lens.ts`.
 
 import { formatPercent } from '$lib/scoreboard/format';
+import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import type { CoverageStep } from '$lib/sim-page/funding-view';
 
 export const FORECAST_NOTE = 'A forecast if nothing changes.';
@@ -11,7 +12,7 @@ export const FORECAST_NOTE = 'A forecast if nothing changes.';
 export const forecastFilled = (year: number): string => `Forecast filled to ${year}`;
 /** Behind each reference line's legend entry on the chart. */
 export const REFERENCE_NOTE =
-  'Published estimates of what the plan adds. Compare with the violet lines.';
+  'Published estimates of what the Family Zoning Plan adds. Compare with the violet lines.';
 export const capacityNote = (year: number): string => `Capacity in ${year}.`;
 export const TWIN_NOTE = 'The forecast is run twice, with and without it.';
 
@@ -45,10 +46,17 @@ export const TERMS_HINT = 'End this and add a new one to change terms.';
 /** OQ-4. */
 export const DATES_MOVED_NOTICE = 'Some policy dates moved to fit this data.';
 
+// Why duplicated: funding-copy.ts says "FZP as written", and the original may not change.
+export const MARKET_FUNDING_SENTENCE4 =
+  "Today's public funding is part of every run, including the comparison with current law, " +
+  'and the 100% affordable homes it pays for start because of it, so nothing is counted twice; ' +
+  'the comparison shows what your changes add.';
+
 /** The market sentence's closing disclaimer, which `FORECAST_NOTE` replaces. */
 const MARKET_TAIL = " This holds today's market; it is not a forecast.";
 /** Results' market sentence without its old closing disclaimer. */
-export const marketBody = (s: string): string => s.replace(MARKET_TAIL, '');
+export const marketBody = (s: string): string =>
+  s.replace(MARKET_TAIL, '').replace(MARKET_FUNDING_SENTENCE, MARKET_FUNDING_SENTENCE4);
 
 const PER_HOME_TAIL = ', counted when the funded project completes.';
 /**

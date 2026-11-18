@@ -39,9 +39,16 @@ export const KIND_LABEL: Record<PolicyKind, string> = {
 };
 
 export const FIXED_LABEL: Record<PolicyKind, string> = {
-  zoning: 'Family Zoning Plan, as adopted',
-  permitting: 'Permitting times, as observed',
-  money: 'City funding today'
+  zoning: 'Current law',
+  permitting: 'Current timelines',
+  money: 'Current funding'
+};
+
+/** The inspector's sentence under a fixed row: what the baseline is. */
+export const FIXED_NOTE: Record<PolicyKind, string> = {
+  zoning: 'Current law is the Family Zoning Plan as adopted.',
+  permitting: 'Current timelines are permitting times as observed in SF Planning and DBI records.',
+  money: "Current funding is today's City, state and federal money for affordable homes."
 };
 
 export const MARKET_LABEL = 'Market conditions';

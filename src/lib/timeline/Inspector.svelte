@@ -34,7 +34,15 @@
   import { viewMonthOf } from './playhead';
   import type { PolicyKind, SimPolicy4 } from './policy4';
   import type { PolicySync } from './policy-sync.svelte';
-  import { FIXED_LABEL, isFixedRef, KIND_LABEL, MARKET_ID, MARKET_LABEL, marketText } from './rows';
+  import {
+    FIXED_LABEL,
+    FIXED_NOTE,
+    isFixedRef,
+    KIND_LABEL,
+    MARKET_ID,
+    MARKET_LABEL,
+    marketText
+  } from './rows';
   import {
     movePolicy,
     policyOf,
@@ -399,6 +407,8 @@
       <p class={muted}>{KIND_LABEL[fixed.kind]} · whole window</p>
       {#if fixed.id === MARKET_ID}
         <p>{marketText(calibration, marketLevel(calibration))}</p>
+      {:else}
+        <p>{FIXED_NOTE[fixed.kind]}</p>
       {/if}
     {:else if policy && ref}
       <p class={muted}>{KIND_LABEL[ref.kind]}{policy.on ? '' : ' · off'}</p>

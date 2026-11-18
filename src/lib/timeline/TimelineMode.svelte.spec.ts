@@ -707,7 +707,7 @@ describe('TimelineMode', () => {
     await expect.element(results).toHaveTextContent('What your policy added');
     emit(filledMsg(2, 0, LAST + 1));
     await expect.poll(() => debug().stale).toBe(false);
-    await expect.element(results).toHaveTextContent('What the plan added');
+    await expect.element(results).toHaveTextContent('What current law added');
   });
 
   it('while stale the money rows read the held document, not the edited one', async () => {

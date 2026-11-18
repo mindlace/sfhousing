@@ -2,8 +2,15 @@
 import { describe, expect, it } from 'vitest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { marketSentence } from '$lib/fzp/market-view';
+import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import { MONEY_SOURCES } from '$lib/sim/scenario/finance-score';
-import { PER_HOME_SOURCE, marketBody, perHomeMethod } from './copy';
+import {
+  MARKET_FUNDING_SENTENCE4,
+  PER_HOME_SOURCE,
+  REFERENCE_NOTE,
+  marketBody,
+  perHomeMethod
+} from './copy';
 
 describe('perHomeMethod', () => {
   it('replaces the completion-month tail of the per-home entry with PER_HOME_SOURCE', () => {
@@ -19,6 +26,12 @@ describe('perHomeMethod', () => {
 });
 
 describe('marketBody', () => {
+  it('marketBody swaps in the current-law sentence and drops the old tail', () => {
+    expect(marketBody(`x ${MARKET_FUNDING_SENTENCE}`)).toBe(`x ${MARKET_FUNDING_SENTENCE4}`);
+    expect(MARKET_FUNDING_SENTENCE4).not.toContain('FZP');
+    expect(REFERENCE_NOTE).toContain('Family Zoning Plan');
+  });
+
   it('drops the market sentence’s closing disclaimer', () => {
     const s = marketSentence(fixtureCalibration(), 'all')!;
     expect(s).toContain('it is not a forecast');

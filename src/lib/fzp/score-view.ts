@@ -116,6 +116,11 @@ export function homesAddedBy(day: Day, at: ScoreAt): string {
   return `${homesAdded(at)} by ${formatMonthYear(day)}`;
 }
 
+/** The /sim header delta: "+1,234 from your policy", "−56 from your policy" (U+2212), "+0 …". */
+export function fromPolicyText(n: number): string {
+  return `${n < 0 ? '' : '+'}${formatCount(n)} from your policy`;
+}
+
 /** The header score's delta: "vs FZP +1,234", "vs FZP −56" (U+2212), "vs FZP +0". */
 export function vsFzpText(n: number): string {
   return `vs FZP ${n < 0 ? '' : '+'}${formatCount(n)}`;
