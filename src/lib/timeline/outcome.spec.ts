@@ -1,9 +1,9 @@
 // The goal outcome: what the furthest date reached says of the goal (pure).
 import { describe, expect, it } from 'vitest';
-import { STATE_TARGET, type Goal } from '$lib/goal/goal';
+import { STATE_TARGET, readGoal, type Goal } from '$lib/goal/goal';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import { viewOf } from '$lib/sim/world/score/view';
-import { goalOutcome, outcomeKey, outcomeText } from './outcome';
+import { goalOutcome, awaitsView, outcomeKey, outcomeText } from './outcome';
 import { calendarMonths, chunk, cut, statics } from './test/fixtures';
 
 // The measure at month i is 1000 + 3i + 1 (the baseline 1000 plus the row), 1000 at today.
@@ -68,13 +68,38 @@ describe('goalOutcome', () => {
     expect(goalOutcome(goal(1010, 12), part, M[5], ASOF)).toEqual({ kind: 'reached', on: M[3] });
   });
 
-  it('reads at most the deadline month plus two rows', () => {
+  it('reads no row past the deadline month, and a bounded number of times', () => {
     for (const reached of [ASOF, M[6], M[13], M[23]]) {
       const c = counted(view);
       goalOutcome(goal(1100, 12), c.view, reached, ASOF);
-      expect(c.reads.length).toBeLessThanOrEqual(12 + 2);
+      expect(c.reads.length).toBeLessThanOrEqual(12 + 3);
       expect(Math.max(-1, ...c.reads)).toBeLessThanOrEqual(12);
     }
+  });
+
+  it('agrees with readGoal on the month the goal is reached', () => {
+    const cases: [Goal, number][] = [
+      [goal(1025, 12), 8],
+      [goal(1000, 12), 0],
+      [{ ...goal(1025, 12), countsFrom: M[0] - 200 }, 20],
+      [goal(1025, 5), 20]
+    ];
+    for (const [g, k] of cases) {
+      const o = goalOutcome(g, view, M[k], ASOF);
+      const r = readGoal(g, view, Math.min(k, 12))!;
+      expect(o?.kind === 'reached' ? o.on : null).toBe(r.reachedOn);
+    }
+    // At today.
+    const today = goalOutcome(goal(1000, 12), view, ASOF, ASOF);
+    expect(today).toEqual({ kind: 'reached', on: readGoal(goal(1000, 12), view, -1)!.reachedOn });
+  });
+
+  it('awaitsView only when a step exists but the months read are not filled', () => {
+    const part = cut(view, 5);
+    expect(awaitsView(goal(1100, 12), part, M[13], ASOF)).toBe(true);
+    expect(awaitsView(goal(1100, 12), part, M[5], ASOF)).toBe(false);
+    expect(awaitsView(goal(1100, 12), view, M[23], ASOF)).toBe(false);
+    expect(awaitsView({ ...STATE_TARGET, deadline: M[0] - 40 }, part, M[23], ASOF)).toBe(false);
   });
 
   it('outcomeText and outcomeKey', () => {

@@ -270,7 +270,10 @@ test('the chart with a policy in force, played to the end, has no axe violations
   await page.getByRole('slider', { name: 'Date in the simulation' }).focus();
   await page.keyboard.press('End');
   await expect(page.getByTestId('chart-law')).toHaveCount(1);
-  await expect(page.getByTestId('chart-clip-shown')).toHaveAttribute('width', '1000');
+  await expect(page.getByTestId('chart-svg').getByTestId('chart-clip-shown')).toHaveAttribute(
+    'width',
+    '1000'
+  );
   await expectNoA11yViolations(page, { include: ['[data-testid=tl-dock]'] });
 });
 

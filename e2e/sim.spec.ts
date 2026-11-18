@@ -301,6 +301,7 @@ test('passing the goal deadline short of it says by how much, once', async ({ pa
   await expectNoA11yViolations(page, { include: ['[data-testid=fzp-notices]'] });
   await notice.getByRole('button', { name: 'Dismiss' }).click();
   await expect(notice).toHaveCount(0);
+  await expect(slider(page)).toBeFocused();
   await page.keyboard.press('Home');
   await page.keyboard.press('End');
   await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes by /);
@@ -313,8 +314,14 @@ test('with a policy in force the chart draws current law and the gap; nothing pa
 }) => {
   await gotoSim(page);
   // On opening the playhead is at today: neither zone has any width, so nothing is drawn.
-  await expect(page.getByTestId('chart-clip-shown')).toHaveAttribute('width', '0');
-  await expect(page.getByTestId('chart-clip-seen')).toHaveAttribute('width', '0');
+  await expect(page.getByTestId('chart-svg').getByTestId('chart-clip-shown')).toHaveAttribute(
+    'width',
+    '0'
+  );
+  await expect(page.getByTestId('chart-svg').getByTestId('chart-clip-seen')).toHaveAttribute(
+    'width',
+    '0'
+  );
   await expect(page.getByTestId('chart-law')).toHaveCount(0);
   const n = await refillCount(page);
   await addPolicy(page, 'Zoning', 'Transit rule');
@@ -328,7 +335,10 @@ test('with a policy in force the chart draws current law and the gap; nothing pa
   await expect(page.getByTestId('chart-law')).toHaveCount(1);
   await expect(page.getByTestId('chart-gap')).toHaveCount(1);
   // At the end the solid zone reaches the plot's end.
-  await expect(page.getByTestId('chart-clip-shown')).toHaveAttribute('width', '1000');
+  await expect(page.getByTestId('chart-svg').getByTestId('chart-clip-shown')).toHaveAttribute(
+    'width',
+    '1000'
+  );
   await expectNoA11yViolations(page, { include: ['[data-testid=tl-dock]'] });
 });
 

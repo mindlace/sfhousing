@@ -2289,6 +2289,44 @@ describe('the goal notice', () => {
     expect(region().element().textContent).toContain('Change the policy and play again.');
   });
 
+  it('after Dismiss focus goes to the ruler', async () => {
+    await opened(LAST, { goal: missing });
+    await keysTo(DEADLINE + 1);
+    await page.getByRole('button', { name: 'Dismiss' }).click();
+    await expect.element(notice()).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(page.getByTestId('tl-ruler').element());
+  });
+
+  it('after Dismiss focus goes to the next notice when there is one', async () => {
+    const s = await opened(LAST, { goal: missing });
+    await keysTo(DEADLINE + 1);
+    s.setPolicy(mk(protect(5)));
+    s.setLots(null);
+    s.setLotsFailed(true);
+    const retry = page.getByTestId('tl-lots-failed').getByRole('button', { name: 'Retry' });
+    await expect.element(retry).toBeVisible();
+    await page.getByRole('button', { name: 'Dismiss' }).click();
+    await expect.element(notice()).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(retry.element());
+  });
+
+  it('a view that does not yet cover the months read holds the notice', async () => {
+    await opened(LAST, { goal: missing });
+    // Reached month 14, the playhead back at month 2.
+    await keysTo(DEADLINE + 2, DEADLINE);
+    await expect.element(notice()).toHaveTextContent('Goal missed by 63 homes.');
+    // A refill withdraws the months from 6: the playhead's month is still filled, so the numbers
+    // are current, but the deadline month is not.
+    emit(refillMsg(1, 6));
+    await expect.poll(() => debug().filledThrough).toBe(5);
+    expect(debug().stale).toBe(false);
+    await tick();
+    await expect.element(notice()).toHaveTextContent('Goal missed by 63 homes.');
+    emit(filledMsg(1, 6, LAST + 1 - 6));
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    await expect.element(notice()).toHaveTextContent('Goal missed by 63 homes.');
+  });
+
   it('the notice region is a polite status, mounted empty', async () => {
     await opened(LAST, { goal: missing });
     await expect.element(region()).toBeInTheDocument();

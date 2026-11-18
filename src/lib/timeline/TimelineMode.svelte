@@ -130,7 +130,7 @@
   import { clampDay, filledEndDay, indexOfDay, viewMonthOf } from './playhead';
   import { termsInForce } from './lens';
   import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
-  import { goalOutcome, outcomeKey, outcomeText, type GoalOutcome } from './outcome';
+  import { awaitsView, goalOutcome, outcomeKey, outcomeText, type GoalOutcome } from './outcome';
   import { editedReveal, moved, revealOpen, scanned, type Reveal } from './reveal';
   import {
     headlineAt,
@@ -406,6 +406,8 @@
     untrack(() => {
       if (wait) return;
       const day = m === TODAY || !view ? asOf : view.months[m];
+      // A view not yet covering the months read is no answer: the last outcome stays.
+      if (awaitsView(g, view, day, asOf)) return;
       const next = goalOutcome(g, view, day, asOf);
       const same =
         next === outcome ||
@@ -415,6 +417,21 @@
   });
   /** Outcomes dismissed this visit, by key. */
   const dismissed = new SvelteSet<string>();
+  /**
+   * Dismissing removes the focused button: focus goes to the next notice's button in the stack,
+   * else to the ruler, so it never drops to the page.
+   */
+  async function dismissGoal(e: MouseEvent) {
+    if (!outcome) return;
+    const buttons = [...(pillsEl?.querySelectorAll('button') ?? [])];
+    const next = buttons[buttons.indexOf(e.currentTarget as HTMLButtonElement) + 1];
+    dismissed.add(outcomeKey(outcome));
+    await tick();
+    const target = next?.isConnected
+      ? next
+      : (modeEl ?? document).querySelector<HTMLElement>('[data-testid=tl-ruler]');
+    target?.focus();
+  }
   const goalNotice = $derived(
     outcome && !dismissed.has(outcomeKey(outcome)) ? outcomeText(outcome, goal, inForce) : null
   );
@@ -1250,11 +1267,8 @@
             {#if outcome && goalNotice !== null}
               <span class={PILL} data-testid="tl-goal-notice">
                 <span>{goalNotice}</span>
-                <button
-                  type="button"
-                  aria-label="Dismiss"
-                  class={PILL_ACTION}
-                  onclick={() => outcome && dismissed.add(outcomeKey(outcome))}>×</button
+                <button type="button" aria-label="Dismiss" class={PILL_ACTION} onclick={dismissGoal}
+                  >×</button
                 >
               </span>
             {/if}
