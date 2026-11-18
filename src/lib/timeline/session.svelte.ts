@@ -29,7 +29,6 @@ import {
   NO_EDIT,
   afterView,
   edited,
-  playAvailable,
   refilled,
   rejected,
   settled,
@@ -90,7 +89,7 @@ interface Sent {
   policy: SimPolicy4;
   lots: Lots;
   key: string;
-  /** Counts as an edit: stale and Play wait for a refill at its rev or later. */
+  /** Counts as an edit: stale waits for a refill at its rev or later. */
   edit: boolean;
   /** Posted before anything showed the dataset loaded (no `compiling` or `compiled` yet). */
   early: boolean;
@@ -246,7 +245,7 @@ export class TimelineSession {
     if (this.#filledSinceOpen) return 'ready';
     return this.#stopped || this.#crashed ? 'failed' : 'loading';
   }
-  /** Filling stopped (rule 35 error or a crash): Play runs inside the filled part. */
+  /** Filling stopped (rule 35 error or a crash). */
   get stoppedByError(): boolean {
     return this.#stopped || this.#crashed;
   }
@@ -264,10 +263,6 @@ export class TimelineSession {
   /** An edit is not yet answered by a refill (EditState.pending). */
   get pending(): boolean {
     return this.#edit.pending;
-  }
-
-  playAvailable(): boolean {
-    return playAvailable(this.#edit, this.#view, this.stoppedByError);
   }
 
   // ---- what the page does ----
@@ -437,7 +432,7 @@ export class TimelineSession {
     this.dismiss('crash');
     // The old numbers stay, dimmed, until the new fill passes the playhead.
     const before = this.#view;
-    if (before !== null) this.#edit = { ...refilled(this.#edit, before), sinceWhole: true };
+    if (before !== null) this.#edit = refilled(this.#edit, before);
     this.#log = EMPTY_LOG;
     this.#view = null;
     this.#cardDirty = this.#cardDay !== null;
@@ -648,11 +643,7 @@ export class TimelineSession {
 
   #afterView(): void {
     const next = afterView(this.#edit, this.#view, this.#index());
-    if (
-      next.held !== this.#edit.held ||
-      next.pending !== this.#edit.pending ||
-      next.sinceWhole !== this.#edit.sinceWhole
-    ) {
+    if (next.held !== this.#edit.held || next.pending !== this.#edit.pending) {
       this.#edit = next;
     }
   }

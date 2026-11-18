@@ -1,7 +1,18 @@
-// Playhead rules for the timeline: keys, the filled end, and the view-month gate.
-import { dayFromUtc, monthIndex, nextMonth, prevMonth, shiftYear, utcParts } from '$lib/fzp/time';
+// Playhead rules for the timeline: keys, the filled end, the flag, Play's label and the
+// view-month gate.
+import { formatShortMonthYear } from '$lib/fzp/format';
+import {
+  dayFromUtc,
+  monthIndex,
+  monthStart,
+  nextMonth,
+  prevMonth,
+  shiftYear,
+  utcParts
+} from '$lib/fzp/time';
 import { monthOfDay } from '$lib/sim/world/months';
 import type { Day } from '$lib/timelapse/time';
+import { playFromText } from './copy';
 
 /** Calendar month index of `day` in `months` (clamped to [0, months.length - 1]). */
 export function indexOfDay(months: Day[], day: Day): number {
@@ -51,6 +62,18 @@ export function keyTarget(key: string, day: Day, asOf: Day, end: Day): Day | nul
 /** Clamps a requested day into [asOf, end]. */
 export function clampDay(day: Day, asOf: Day, end: Day): Day {
   return Math.min(Math.max(day, asOf), Math.max(asOf, end));
+}
+
+/** The ruler's date flag: 'Today' at the dataset date, else the playhead month's short name. */
+export function dateFlag(day: Day, asOf: Day): string {
+  return day <= asOf ? 'Today' : formatShortMonthYear(monthStart(day));
+}
+
+/** Play's label: Pause while playing; Play from wins over Replay; Replay at `last`; else Play. */
+export function playLabel(s: { playing: boolean; playFrom: Day | null; atLast: boolean }): string {
+  if (s.playing) return 'Pause';
+  if (s.playFrom !== null) return playFromText(s.playFrom);
+  return s.atLast ? 'Replay' : 'Play';
 }
 
 interface GateDeps {

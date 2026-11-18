@@ -1,11 +1,12 @@
 <!--
-  The timeline's rows (rules 2, 5 to 9, 11). From the top: the playhead part (its Ruler is inside
-  it), the chart, Zoning, Permitting, Public money (only when the data can run money) and "The
-  world". Every row is hatched past `filledEnd` (rule 3). From md a kind opens in place; below md
-  tapping a kind opens its rows as a full-height sheet over the same lanes, with the playhead and
-  chart staying above its handle (rule 9). The "+" menu and the editor belong to the page.
-  The playhead's slider and Ruler, the chart and every lane sit on one grid column, so they share
-  one x scale; the playhead line runs down that column at `playheadDay`.
+  The timeline's rows (rules 2, 5 to 9, 11). From the top: the playhead part (the transport and
+  the ruler, one row), the chart, Zoning, Permitting, Public money (only when the data can run
+  money) and "The world". No row is hatched: the ruler alone shows what is unseen (rule 3). From
+  md a kind opens in place; below md tapping a kind opens its rows as a full-height sheet over
+  the same lanes, with the playhead and chart staying above its handle (rule 9). The "+" menu and
+  the editor belong to the page.
+  The ruler, the chart and every lane sit on one grid column, so they share one x scale; the
+  playhead line runs down that column at `playheadDay`, from the chart down.
 -->
 <script lang="ts">
   import { tick, type Snippet } from 'svelte';
@@ -41,7 +42,7 @@
     onedit: (change: (p: SimPolicy4) => SimPolicy4, label: string) => void;
     /** "+": the menu is the page's. */
     onadd: (kind: PolicyKind) => void;
-    /** The playhead's controls, slider and Ruler. */
+    /** The playhead's row: the transport in the label column, the ruler in the lane column. */
     playhead: Snippet;
     /** The chart row's figure. */
     chart: Snippet;
@@ -51,8 +52,6 @@
     playheadMonth: number;
     /** The playhead's day: the line through the rows sits at it. */
     playheadDay: Day;
-    /** Each row is hatched past it. */
-    filledEnd: Day;
     /** The pinned block's height (its offsetHeight): the page weighs it against its box. */
     pinHeight?: number;
     /**
@@ -77,13 +76,11 @@
     goalShown,
     playheadMonth,
     playheadDay,
-    filledEnd,
     pinHeight = $bindable(0),
     pinned = true
   }: Props = $props();
 
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
-  const filledPct = $derived(dayPct(filledEnd, asOf, windowEnd));
   const playheadPct = $derived(dayPct(playheadDay, asOf, windowEnd));
   const kinds = $derived<PolicyKind[]>(
     hasMoney(calibration) ? ['zoning', 'permitting', 'money'] : ['zoning', 'permitting']
@@ -240,7 +237,7 @@
       {/if}
     </div>
     <div class="cell" bind:this={chartCell}>
-      <Lane {filledPct}>{@render chart()}</Lane>
+      <Lane>{@render chart()}</Lane>
     </div>
 
     <div
@@ -264,7 +261,6 @@
           {asOf}
           {windowEnd}
           months={WINDOW_MONTHS}
-          {filledPct}
           {playheadMonth}
           {selected}
           {readonly}
@@ -276,14 +272,13 @@
 
       <div class="contents" data-testid="tl-world">
         <div class="lab plain heading">The world</div>
-        <Lane {filledPct} />
+        <Lane />
         <FixedRow
           label={MARKET_LABEL}
           text={marketText(calibration, marketLevel(calibration))}
           color="world"
           spanRef={marketRef()}
           selected={marketSelected}
-          {filledPct}
           {onselect}
         />
       </div>
@@ -328,7 +323,6 @@
           {asOf}
           {windowEnd}
           months={WINDOW_MONTHS}
-          {filledPct}
           {playheadMonth}
           {selected}
           {readonly}
@@ -395,8 +389,9 @@
     min-height: 100%;
   }
   /* The playhead line, in two segments at the same x: one through the pinned block from the
-     slider's row down, one through every row. An absolutely placed grid child takes its grid
-     area as its containing block; the row end left auto reaches the grid's bottom edge. */
+     chart's row down (the ruler's thumb marks the day above it), one through every row. An
+     absolutely placed grid child takes its grid area as its containing block; the row end left
+     auto reaches the grid's bottom edge. */
   .line {
     position: absolute;
     grid-column: 2;

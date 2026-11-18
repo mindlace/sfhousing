@@ -9,7 +9,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { SfhSimDebug } from '../src/lib/sim-page/debug';
-import { formatMonthYear, formatShortMonthYear } from '../src/lib/fzp/format';
+import { formatShortMonthYear } from '../src/lib/fzp/format';
 import { monthStart } from '../src/lib/fzp/time';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
@@ -264,9 +264,9 @@ test('the headline follows the playhead and counts from today', async ({ isMobil
   await slider(page).focus();
   await page.keyboard.press('End');
   await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes by [A-Z][a-z]{2} \d{4}$/);
-  // The playhead stops at the last row's month, so the headline and the readout name the same one.
+  // The playhead stops at the last row's month, so the headline and the flag name the same one.
   const day = await fzp(page, 'day');
-  await expect(page.getByTestId('tl-readout-label')).toHaveText(formatMonthYear(day));
+  await expect(page.getByTestId('tl-flag')).toHaveText(formatShortMonthYear(monthStart(day)));
   expect((await scoreBar(page).textContent())!.replace(/^[\d,]+ homes by /, '')).toBe(
     formatShortMonthYear(monthStart(day))
   );
@@ -423,13 +423,21 @@ test('the play control stays in view with every kind open', async ({ isMobile, p
   expect(await topmostAtCentre(play)).toBe(true);
 });
 
+test('on a phone the pinned block is shorter than before', async ({ isMobile, page }) => {
+  test.skip(!isMobile, 'the phone layout');
+  await gotoSim(page);
+  // Before: 280 px (three 44 px control rows, the years and bar, over the chart and its legend).
+  const h = await page.getByTestId('tl-pin').evaluate((el) => el.getBoundingClientRect().height);
+  expect(h).toBeLessThan(280);
+});
+
 test('rows scrolled part-way under the pinned block are not targets', async ({
   isMobile,
   page
 }) => {
-  // At 375x812 the phone's rows fit their box; at 375x480 (a 432 px mode box, the 304 px block
-  // leaving 128 px of rows, over MIN_ROWS) they overflow it by about 68 px and stay pinned.
-  if (isMobile) await page.setViewportSize({ width: 375, height: 480 });
+  // At 375x812 the phone's rows fit their box; at 375x400 (a 352 px mode box, the 217 px block
+  // leaving 135 px of rows, over MIN_ROWS) they overflow it by about 61 px and stay pinned.
+  if (isMobile) await page.setViewportSize({ width: 375, height: 400 });
   await gotoSim(page);
   await longRows(page, isMobile);
   const rows = page.getByTestId('tl-rows');
@@ -772,7 +780,7 @@ test('at 375 px with Results open the playhead and the About entry stay unobscur
   await gotoSim(page);
   await openScore(page);
   // Every playhead control is the topmost element at its centre.
-  for (const testId of ['tl-pause', 'tl-play', 'tl-faster', 'tl-today']) {
+  for (const testId of ['tl-play', 'tl-speed', 'tl-today']) {
     const control = page.getByTestId(testId);
     const hit = await control.evaluate((el) => {
       const r = el.getBoundingClientRect();
@@ -786,7 +794,7 @@ test('at 375 px with Results open the playhead and the About entry stay unobscur
   await expectAboutReachable(page);
 });
 
-test('End, Play at the window end reads Replay, and Today returns to the present', async ({
+test('End, Play at the last month reads Replay, and Today returns to the present', async ({
   page
 }) => {
   await gotoSim(page);

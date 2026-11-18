@@ -61,7 +61,6 @@ const THEMED_FILES = [
   'src/lib/timeline/Lane.svelte',
   'src/lib/timeline/Playhead.svelte',
   'src/lib/timeline/PolicyRow.svelte',
-  'src/lib/timeline/Ruler.svelte',
   'src/lib/timeline/SpanBar.svelte',
   'src/lib/timeline/Timeline.svelte',
   'src/lib/timeline/TimelineHeaderScore.svelte',

@@ -40,7 +40,7 @@ Fetch the file when working in the relevant area:
 - **`src/lib/fzp/` after `FzpMode` (`/fzp` redirects to `/sim`; what `/lesscars` and the timeline share: scrubber contract, card and Results pieces, lookups on the map, known gaps)** — [docs/dev/fzp-mode.md](docs/dev/fzp-mode.md)
 - **Policy levers engine (`SimLevers`, resolution order, law switch, timer reach, `setLevers` protocol)** — [docs/dev/sim-levers.md](docs/dev/sim-levers.md)
 - **Map feed from a stepped world (`MapStream`, events to `TimelineUpdate`, rewind, snapshot, `restore`)** — [docs/dev/map-stream.md](docs/dev/map-stream.md)
-- **Timeline UI on `/sim` (the timeline, the policy document on the page, the worker messages as the page uses them, the session's stale and rejection rules, edits in place on an offer, known limits, measurements)** — [docs/dev/timeline-ui.md](docs/dev/timeline-ui.md)
+- **Timeline UI on `/sim` (the timeline, the ruler, the three zones and Play from, the policy document on the page, the worker messages as the page uses them, the session's stale and rejection rules, edits in place on an offer, known limits, measurements)** — [docs/dev/timeline-ui.md](docs/dev/timeline-ui.md)
 - **`/sim` page (the page shell, schema 3 recipe the editors project, map overlays, autosave and the read-only view, request flow, dataset requirement)** — [docs/dev/sim-page.md](docs/dev/sim-page.md)
 - **Permitting timers on `/sim` (presets, floors, evidence, Save and Revert, route timelines)** — [docs/dev/sim-timers.md](docs/dev/sim-timers.md)
 - **Public money on `/sim` (`FinanceLevers`, schema 3 loader, presets and their sources, Funding editors per policy, drafts, Results money and income rows, card line, notices)** — [docs/dev/sim-funding.md](docs/dev/sim-funding.md)

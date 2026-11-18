@@ -101,7 +101,6 @@
   import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import ProjectCardPanel from '$lib/fzp/ProjectCardPanel.svelte';
   import ProjectTooltip from '$lib/fzp/ProjectTooltip.svelte';
-  import { scrubMarkers } from '$lib/fzp/score-view';
   import SimResults from '$lib/fzp/SimResults.svelte';
   import SourcesDialog from '$lib/fzp/SourcesDialog.svelte';
   import { SummaryRequester, type SummaryState } from '$lib/fzp/summary-request';
@@ -131,6 +130,7 @@
   import { filledEndDay, viewMonthOf } from './playhead';
   import { termsInForce } from './lens';
   import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
+  import { moved, revealOpen, type Reveal } from './reveal';
   import {
     headlineAt,
     headlineSpoken,
@@ -297,6 +297,8 @@
   let day = $state<Day>(untrack(() => initialCalibration?.asOf ?? 0));
   let playing = $state(false);
   let speed = $state<Speed>(DEFAULT_SPEED);
+  /** How far the playhead has been (rule 3): everything ahead of `reached` is unseen. */
+  let reveal = $state.raw<Reveal>(revealOpen(untrack(() => initialCalibration?.asOf ?? 0)));
   /** Every refill's `from`, in arrival order (the e2e hook). */
   const refills: number[] = [];
 
@@ -321,7 +323,7 @@
   /** The numbers on show are from before the latest change (rule 31). */
   const stale = $derived(shown.stale);
   /**
-   * The filled mark: the playhead stops there (rule 24). Filled to the last month, it is
+   * The computed edge: the playhead waits there (rule 24). Filled to the last month, it is
    * `lastDay`, the last calendar month row's last day, so End, Replay and the end of playback
    * reach it and every reading names that row's month.
    */
@@ -332,7 +334,6 @@
         ? lastDay
         : Math.min(filledEndDay(current.months, current.filledThrough, asOf), windowEnd)
   );
-  const playable = $derived(session ? session.playAvailable() : false);
   const tierBaseline = $derived(statics?.tierBaseline ?? null);
   /** Today's score shape over the view on show (rule 26). */
   const score = $derived(shown.view ? scoreOfView(shown.view, tierBaseline) : null);
@@ -346,7 +347,6 @@
   const shownEnd = $derived(
     shown.view ? filledEndDay(shown.view.months, shown.view.filledThrough, asOf) : asOf
   );
-  const markers = $derived(score ? scrubMarkers(score) : []);
   /**
    * The document the shown numbers are from: the one the worker runs, or while stale the one it
    * ran when the held view was taken; the edited `policy` until the session has one.
@@ -377,6 +377,8 @@
   );
   const headText = $derived(headline ? headlineText(headline, GOAL) : null);
   const chartTarget = $derived(current ? goalStep(GOAL, current) : null);
+  /** The ruler's goal flag: at the deadline while the chart draws the goal's step. */
+  const goalDeadline = $derived(chartTarget ? GOAL.deadline : null);
   // The held document goes once the numbers on show are current again.
   $effect(() => {
     if (!stale) untrack(() => (heldDoc = null));
@@ -394,7 +396,7 @@
 
   // ---- the status slot (rules 31, 32) ----
 
-  /** "Updating" while the numbers are stale, else nothing (the ruler's hatching shows the fill). */
+  /** "Updating" while the numbers are stale, else nothing. */
   const statusWanted = $derived(session && stale ? UPDATING : '');
   let statusText = $state('');
   /** "Updating" shows: it covers the page's save state in the slot's one cell. */
@@ -724,8 +726,12 @@
 
   // ---- the playhead ----
 
-  /** The playhead moved (once per change): the view month, the map's time, the card's month. */
+  /**
+   * The playhead moved (once per change): the furthest date reached, the view month, the map's
+   * time, the card's month.
+   */
   function handleDay(d: Day): void {
+    reveal = moved(reveal, d);
     session?.playhead(d);
     handle?.setTime(d);
     if (cardMonth !== null && monthStart(d) !== cardMonth) refreshCard();
@@ -867,6 +873,7 @@
       if (fresh.calibration !== calibration) {
         calibration = fresh.calibration;
         day = fresh.calibration.asOf;
+        reveal = revealOpen(fresh.calibration.asOf);
         pushLookups();
         handle?.setTime(day);
         oncalibration?.(fresh.calibration);
@@ -969,6 +976,8 @@
       lastIndex: statics?.lastIndex ?? -1,
       policy,
       stale,
+      reached: reveal.reached,
+      playFrom: reveal.playFrom !== null && months ? (months[reveal.playFrom] ?? null) : null,
       refills,
       completedNet: () =>
         current ? current.rows.slice(0, current.filledThrough + 1).map((r) => r.completedNet) : []
@@ -1088,8 +1097,9 @@
     bind:day
     bind:playing
     bind:speed
-    {playable}
-    {markers}
+    reached={reveal.reached}
+    playFrom={null}
+    {goalDeadline}
     onday={handleDay}
   />
 {/snippet}
@@ -1298,7 +1308,6 @@
           goalShown={chartTarget !== null}
           playheadMonth={viewMonthOf(asOf, day)}
           playheadDay={day}
-          {filledEnd}
           bind:pinHeight
           {pinned}
         />

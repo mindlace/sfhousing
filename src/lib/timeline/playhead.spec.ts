@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import { dayFromUtc } from '$lib/fzp/time';
-import { MonthGate, clampDay, filledEndDay, indexOfDay, keyTarget, viewMonthOf } from './playhead';
+import {
+  MonthGate,
+  clampDay,
+  dateFlag,
+  filledEndDay,
+  indexOfDay,
+  keyTarget,
+  playLabel,
+  viewMonthOf
+} from './playhead';
 
 const asOf = dayFromUtc(2025, 1, 1) - 1;
 // First days of calendar months from 2025-01 to 2028-12.
@@ -59,6 +68,21 @@ describe('playhead rules', () => {
     expect(clampDay(asOf - 5, asOf, asOf + 10)).toBe(asOf);
     expect(clampDay(asOf + 50, asOf, asOf + 10)).toBe(asOf + 10);
     expect(clampDay(asOf + 4, asOf, asOf + 10)).toBe(asOf + 4);
+  });
+
+  it('dateFlag reads Today at the dataset date, else the short month', () => {
+    const mid = dayFromUtc(2026, 10, 15);
+    expect(dateFlag(mid, mid)).toBe('Today');
+    expect(dateFlag(mid + 3, mid)).toBe('Oct 2026');
+    expect(dateFlag(dayFromUtc(2045, 6, 30), mid)).toBe('Jun 2045');
+  });
+
+  it('playLabel: Pause while playing; Play from wins over Replay; Replay at last; else Play', () => {
+    const from = dayFromUtc(2028, 3, 1);
+    expect(playLabel({ playing: true, playFrom: from, atLast: true })).toBe('Pause');
+    expect(playLabel({ playing: false, playFrom: from, atLast: true })).toBe('Play from 2028');
+    expect(playLabel({ playing: false, playFrom: null, atLast: true })).toBe('Replay');
+    expect(playLabel({ playing: false, playFrom: null, atLast: false })).toBe('Play');
   });
 });
 

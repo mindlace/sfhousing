@@ -12,7 +12,7 @@ import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { REAL_ACTUAL } from '$lib/fzp/fixtures/cards';
 import { CALCULATING, fromPolicyText } from '$lib/fzp/score-view';
 import { GOAL } from '$lib/goal/goal';
-import { formatMonthYear } from '$lib/fzp/format';
+import { formatShortMonthYear } from '$lib/fzp/format';
 import { dayFromUtc, monthStart, utcParts } from '$lib/fzp/time';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { lotsText } from '$lib/paint/rows';
@@ -231,33 +231,89 @@ describe('TimelineMode', () => {
     expect(debug().day).toBe(asOf);
     expect(debug().playing).toBe(false);
     expect(debug().filledThrough).toBe(LAST);
-    await expect.element(playButton()).toHaveAttribute('aria-disabled', 'false');
+    await expect.element(playButton()).toHaveAccessibleName('Play');
     expect(debug().playing).toBe(false);
     expect(callsOf('setTime').at(-1)).toEqual([asOf]);
   });
 
-  it('an edit pauses playback and Play is unavailable until filledThrough === lastIndex', async () => {
+  /** The x of day `d` on the ruler's track. */
+  const trackX = (d: Day) => {
+    const t = page.getByTestId('tl-track').element().getBoundingClientRect();
+    return t.left + (dayPct(d, asOf, windowEnd) / 100) * t.width;
+  };
+  const zone = (id: string) => page.getByTestId(id).element().getBoundingClientRect();
+
+  it('on opening the playhead is at today and everything ahead is unseen', async () => {
+    await opened();
+    await expect.element(page.getByTestId('tl-flag')).toHaveTextContent('Today');
+    expect(debug().reached).toBe(asOf);
+    expect(debug().playFrom).toBeNull();
+    const track = page.getByTestId('tl-track').element().getBoundingClientRect();
+    expect(Math.abs(zone('tl-zone-unseen').left - track.left)).toBeLessThanOrEqual(1);
+    expect(zone('tl-zone-shown').width).toBeLessThanOrEqual(1);
+    expect(zone('tl-zone-seen').width).toBeLessThanOrEqual(1);
+  });
+
+  it('dragging forward moves the furthest date; dragging back leaves it, so ahead is seen', async () => {
+    await opened();
+    await expect.element(slider()).toBeInTheDocument();
+    const ruler = slider().element();
+    const r = ruler.getBoundingClientRect();
+    const at = (f: number, type: string) =>
+      ruler.dispatchEvent(
+        new PointerEvent(type, {
+          clientX: r.left + r.width * f,
+          clientY: r.top + r.height / 2,
+          pointerId: 1,
+          button: 0,
+          bubbles: true
+        })
+      );
+    // The fixture fills two years of the forty: a press at 4% is inside it.
+    at(0.04, 'pointerdown');
+    await expect.poll(() => debug().day).toBeGreaterThan(asOf);
+    const far = debug().day;
+    expect(debug().reached).toBe(far);
+    at(0.01, 'pointermove');
+    at(0.01, 'pointerup');
+    await expect.poll(() => debug().day).toBeLessThan(far);
+    expect(debug().reached).toBe(far);
+    const near = (a: number, b: number, what: string) =>
+      expect(Math.abs(a - b), `${what}: ${a} vs ${b}`).toBeLessThanOrEqual(1);
+    near(zone('tl-zone-seen').left, trackX(debug().day), 'seen from the playhead');
+    near(zone('tl-zone-seen').right, trackX(far), 'seen to the furthest date');
+    near(zone('tl-zone-unseen').left, trackX(far), 'unseen past it');
+  });
+
+  it('an edit pauses playback and Play works at once; the playhead waits at the computed edge', async () => {
     const s = await opened();
-    await expect.element(playButton()).toHaveAttribute('aria-disabled', 'false');
     await playButton().click();
     await expect.poll(() => debug().playing).toBe(true);
 
     s.setPolicy(mk(protect(5)));
     await expect.poll(() => debug().playing).toBe(false);
-    await expect.element(playButton()).toHaveAttribute('aria-disabled', 'true');
+    expect(playButton().element().hasAttribute('aria-disabled')).toBe(false);
     s.setLots({});
     await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
     emit(compiledMsg(2, STATICS));
     emit(refillMsg(2, 5));
-    emit(filledMsg(2, 5, 10));
-    await expect.poll(() => debug().filledThrough).toBe(14);
-    await expect.element(playButton()).toHaveAttribute('aria-disabled', 'true');
-    emit(filledMsg(2, 15, LAST - 14));
-    await expect.element(playButton()).toHaveAttribute('aria-disabled', 'false');
+    emit(filledMsg(2, 5, 3));
+    await expect.poll(() => debug().filledThrough).toBe(7);
+    // Play works while the forecast refills; End and playback wait at the computed edge.
+    const edge = filledEndDay(MONTHS, 7, asOf);
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{End}');
+    await expect.poll(() => debug().day).toBe(edge);
+    await playButton().click();
+    await expect.poll(() => debug().playing).toBe(true);
+    expect(debug().day).toBe(edge);
+    await expect.element(playButton()).toHaveAccessibleName('Pause');
+    await playButton().click();
+    await expect.poll(() => debug().playing).toBe(false);
     expect(debug().policy).toEqual(mk(protect(5)));
   });
 
-  it("End reaches the last row's month; the header, the readout and Replay agree", async () => {
+  it("End reaches the last row's month; the header, the flag and Replay agree", async () => {
     await opened();
     const lastDay = filledEndDay(MONTHS, LAST, asOf);
     await expect.element(slider()).toHaveAttribute('aria-valuemax', String(lastDay));
@@ -265,8 +321,8 @@ describe('TimelineMode', () => {
     await userEvent.keyboard('{End}');
     await expect.poll(() => debug().day).toBe(lastDay);
     await expect
-      .element(page.getByTestId('tl-readout-label'))
-      .toHaveTextContent(formatMonthYear(debug().day));
+      .element(page.getByTestId('tl-flag'))
+      .toHaveTextContent(formatShortMonthYear(monthStart(debug().day)));
     await expect
       .element(scoreBar())
       .toHaveTextContent(homesBy(FULL().rows[LAST].completedNet, MONTHS[LAST]));
@@ -333,25 +389,19 @@ describe('TimelineMode', () => {
     expect(document.body.textContent).not.toMatch(/Forecast filled/);
   });
 
-  it('rows are hatched past the filled end and the hatch moves after a refill', async () => {
-    // Filled short of the last month (filled to it, the playhead reaches the last row's
-    // month: the test above).
-    const s = await opened(LAST - 1);
-    const hatches = () => [...document.querySelectorAll<HTMLElement>('[data-testid=tl-hatch]')];
-    const at = (through: number) => dayPct(filledEndDay(MONTHS, through, asOf), asOf, windowEnd);
-    await expect.poll(() => hatches().length).toBeGreaterThan(2);
-    for (const h of hatches()) expect(parseFloat(h.style.left)).toBeCloseTo(at(LAST - 1), 1);
-
-    s.setPolicy(mk(protect(5)));
-    s.setLots({});
-    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
-    emit(compiledMsg(2, STATICS));
-    emit(refillMsg(2, 10));
-    // The unfilled part moves back to the refill point.
-    await expect.poll(() => parseFloat(hatches()[0].style.left)).toBeCloseTo(at(9), 1);
-    for (const h of hatches()) expect(parseFloat(h.style.left)).toBeCloseTo(at(9), 1);
-    emit(filledMsg(2, 10, 4));
-    await expect.poll(() => parseFloat(hatches()[0].style.left)).toBeCloseTo(at(13), 1);
+  it('no lane is hatched and the ruler has no markers', async () => {
+    // Filled short of the last month: the lanes were hatched past the filled end.
+    await opened(LAST - 1, { initialPolicy: mk(protect(5)) });
+    await expect.element(slider()).toBeInTheDocument();
+    await expect
+      .poll(() => document.querySelectorAll('[data-testid=tl-lane]').length)
+      .toBeGreaterThan(2);
+    for (const lane of document.querySelectorAll('[data-testid=tl-lane]'))
+      for (const el of [lane, ...lane.querySelectorAll('*')])
+        expect(getComputedStyle(el).backgroundImage).not.toContain('repeating-linear-gradient');
+    const pin = page.getByTestId('tl-pin').element();
+    expect(pin.textContent).not.toContain('RHNA');
+    expect(pin.querySelectorAll('[data-testid=tl-axis] button')).toHaveLength(0);
   });
 
   for (const width of [1280, 1024, 390]) {
@@ -376,11 +426,11 @@ describe('TimelineMode', () => {
       const d = debug().day;
       await expect.poll(() => slider().element().getAttribute('aria-valuenow')).toBe(String(d));
 
-      near(centre(rect(slider().element().querySelector('.thumb')!)), px(d), 'thumb');
+      near(centre(rect(page.getByTestId('tl-thumb').element())), px(d), 'thumb');
       const line = document.querySelector('[data-testid=tl-playhead-line]')!;
       near(centre(rect(line)), px(d), 'playhead line');
 
-      const label = [...document.querySelectorAll('[data-testid=tl-ruler] span')].find(
+      const label = [...document.querySelectorAll('[data-testid=tl-year]')].find(
         (e) => e.textContent?.trim() === String(y + 5)
       )!;
       near(centre(rect(label)), px(dayFromUtc(y + 5, 1, 1)), 'ruler label');
@@ -396,7 +446,8 @@ describe('TimelineMode', () => {
         rect(page.getByTestId('tl-timeline').element()).left,
         'controls'
       );
-      near(rect(line).top, rect(page.getByTestId('tl-axis').element()).top, 'pinned line top');
+      // The pinned segment starts under the ruler (the thumb marks the day there).
+      near(rect(line).top, rect(page.getByTestId('tl-axis').element()).bottom, 'pinned line top');
     });
   }
 
@@ -488,10 +539,11 @@ describe('TimelineMode', () => {
     expect(Math.abs(rows.scrollTop - at)).toBeLessThanOrEqual(1);
   });
 
-  // A short mode box (360 px): the map scrolls away, then the rows in their own box.
+  // A short mode box (320 px): the map scrolls away, then the rows in their own box. The pinned
+  // block is 193 px here, so 320 px leaves a 127 px rows box, shorter than its 166 px of rows.
   it('on a phone the mode box scrolls the map away, then the rows scroll in their own box', async () => {
     await page.viewport(390, 760);
-    await opened(LAST, { regionHeight: 360 });
+    await opened(LAST, { regionHeight: 320 });
     await expect.element(slider()).toBeInTheDocument();
     const mode = page.getByTestId('tl-mode').element() as HTMLElement;
     mode.scrollTop = mode.scrollHeight;
@@ -623,28 +675,26 @@ describe('TimelineMode', () => {
     }
   });
 
-  it("the headline's month is the readout's, mid-window and at End", async () => {
+  it('the flag and the header name the same month at today, mid-window and at the end', async () => {
     await opened();
-    const readout = page.getByTestId('tl-readout-label');
-    /** "October 2066" → "Oct 2066". */
-    const short = (long: string) => `${long.slice(0, 3)} ${long.slice(-4)}`;
+    const flag = page.getByTestId('tl-flag');
+    await expect.element(flag).toHaveTextContent('Today');
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
     (slider().element() as HTMLElement).focus();
     await userEvent.keyboard('{PageUp}');
     await expect.poll(() => playheadMonth()).toBeGreaterThan(0);
     const i = playheadMonth();
     expect(i).toBeLessThan(LAST);
-    await expect.element(readout).toHaveTextContent(formatMonthYear(debug().day));
+    await expect.element(flag).toHaveTextContent(formatShortMonthYear(MONTHS[i]));
     await expect
       .element(scoreBar())
       .toHaveTextContent(homesBy(FULL().rows[i].completedNet, MONTHS[i]));
-    expect(scoreBar().element().textContent).toContain(short(readout.element().textContent!));
     await userEvent.keyboard('{End}');
     await expect.poll(() => playheadMonth()).toBe(LAST);
-    await expect.element(readout).toHaveTextContent(formatMonthYear(debug().day));
+    await expect.element(flag).toHaveTextContent(formatShortMonthYear(MONTHS[LAST]));
     await expect
       .element(scoreBar())
       .toHaveTextContent(homesBy(FULL().rows[LAST].completedNet, MONTHS[LAST]));
-    expect(scoreBar().element().textContent).toContain(short(readout.element().textContent!));
   });
 
   it('nothing in force: no effect in the header and the current-law copy, whatever the worker compares', async () => {
@@ -889,13 +939,11 @@ describe('TimelineMode', () => {
     s.setPolicy(mk(protect(5)));
     s.setLots(null);
     await expect.poll(() => debug().stale).toBe(true);
-    await expect.element(playButton()).toHaveAttribute('aria-disabled', 'true');
     expect(alerts.getByText(failedText).query()).toBeNull();
 
     // PolicySync settled with a failure: the forecast stays the last sent document's.
     s.setLotsFailed(true);
     await expect.poll(() => debug().stale).toBe(false);
-    await expect.element(playButton()).toHaveAttribute('aria-disabled', 'false');
     await expect.poll(() => statusSlot().element().textContent?.trim()).toBe('');
     await expect.element(alerts.getByText(failedText)).toBeVisible();
     expect(w().all('setPolicy')).toHaveLength(0);
@@ -1444,6 +1492,23 @@ describe('TimelineMode', () => {
     });
   }
 
+  it('at 1280x900 the pinned block is shorter than before', async () => {
+    await opened(LAST, { withInspector: true });
+    await expect.element(slider()).toBeInTheDocument();
+    await nextFrame();
+    // Before: 184 px (controls, slider, years, bar and markers over a 65 px chart).
+    expect(box('tl-pin').height).toBeLessThan(184);
+  });
+
+  it('at 1280x720 the compact pinned block is shorter than before', async () => {
+    await page.viewport(1280, 720);
+    await opened(LAST, { withInspector: true, regionHeight: 636 });
+    await expect.element(slider()).toBeInTheDocument();
+    await nextFrame();
+    // Before: 136 px.
+    expect(box('tl-pin').height).toBeLessThan(136);
+  });
+
   it('at 1280x800 the rows box is at least 90 px tall', async () => {
     await page.viewport(1280, 800);
     await opened(LAST, { withInspector: true });
@@ -1476,11 +1541,13 @@ describe('TimelineMode', () => {
   }
   const overflowOf = (id: string) => getComputedStyle(page.getByTestId(id).element()).overflowY;
 
-  // WCAG 2.2 2.4.11 at 400% zoom (320x256) and 200% (960x540): a box too short for the block
-  // and some rows scrolls the timeline as one piece, so a focused row is never under the block.
+  // WCAG 2.2 2.4.11 at 400% zoom (320x256) and in a 400 px tall window from md (960x400, a 316 px
+  // mode box): a box too short for the block and some rows scrolls the timeline as one piece, so
+  // a focused row is never under the block. (At 960x540 this fixture's 93 px compact block
+  // leaves 89 px of rows, so the rows keep their own box there.)
   for (const [vw, vh, regionHeight, phone] of [
     [320, 256, 172, true],
-    [960, 540, 456, false]
+    [960, 400, 316, false]
   ] as const) {
     it(`at ${vw}x${vh} the timeline is one piece and a focused bar shows whole`, async () => {
       await page.viewport(vw, vh);
@@ -1530,8 +1597,8 @@ describe('TimelineMode', () => {
   });
 
   it('the rows box becomes the scroll box again when its box grows', async () => {
-    await page.viewport(960, 540);
-    await opened(LAST, { withInspector: true, regionHeight: 456 });
+    await page.viewport(960, 400);
+    await opened(LAST, { withInspector: true, regionHeight: 316 });
     await expect.element(slider()).toBeInTheDocument();
     await expect.poll(() => overflowOf('tl-rows')).toBe('visible');
     await page.viewport(1280, 900);

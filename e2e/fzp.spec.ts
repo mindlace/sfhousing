@@ -9,7 +9,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { SOURCE_DATASETS } from '../src/lib/fzp/card';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
-import { formatMonthYear } from '../src/lib/fzp/format';
+import { formatShortMonthYear } from '../src/lib/fzp/format';
 import { monthStart } from '../src/lib/fzp/time';
 import { formatPercent } from '../src/lib/scoreboard/format';
 import { expectNoA11yViolations } from './helpers/a11y';
@@ -86,7 +86,8 @@ const SHIPYARD = projectById('CASE:2007.0001PRX');
 
 // ---- helpers ------------------------------------------------------------------------------------
 
-const readout = (page: Page): Locator => page.getByTestId('tl-readout-label');
+/** The ruler's date flag over the playhead: 'Today', else the playhead's short month. */
+const readout = (page: Page): Locator => page.getByTestId('tl-flag');
 /** The header score: "{n} homes by {Mon YYYY}" at the playhead, "0 homes by today" at today. */
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
 /** Results, which the header score shows in the inspector. */
@@ -246,12 +247,12 @@ test('loads ready and the keyboard drives the playhead to both ends', async ({ p
   const asOf = await fzp(page, 'asOf');
   expect(await fzp(page, 'day')).toBe(asOf);
 
-  // End: the filled mark, which is the window's last day once the forecast is filled.
+  // End: the computed edge, the last row's last day once the forecast is filled.
   await slider(page).focus();
   await page.keyboard.press('End');
   await expect.poll(() => fzp(page, 'day')).toBeGreaterThan(asOf);
   const end = await fzp(page, 'day');
-  await expect(readout(page)).toHaveText(formatMonthYear(end));
+  await expect(readout(page)).toHaveText(formatShortMonthYear(monthStart(end)));
   await expect(slider(page)).toHaveAttribute('aria-valuenow', String(end));
   await expect(slider(page)).toHaveAttribute('aria-valuemax', String(end));
   await expect(scoreBar(page)).toHaveText(/^[\d,]+ homes by [A-Z][a-z]{2} \d{4}$/);
@@ -259,7 +260,7 @@ test('loads ready and the keyboard drives the playhead to both ends', async ({ p
   // Home: back to today.
   await page.keyboard.press('Home');
   await expect.poll(() => fzp(page, 'day')).toBe(asOf);
-  await expect(readout(page)).toHaveText(formatMonthYear(asOf));
+  await expect(readout(page)).toHaveText('Today');
   // The header score follows the playhead: at today it counts nothing yet.
   await expect(scoreBar(page)).toHaveText(/^0 homes by today$/);
 });

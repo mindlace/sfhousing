@@ -93,7 +93,6 @@ interface Over {
   calibration?: Calibration;
   readonly?: boolean;
   selected?: SpanRef | null;
-  filledEnd?: number;
   playheadMonth?: number;
   playheadDay?: number;
   pinned?: boolean;
@@ -117,7 +116,6 @@ async function setup(over: Over = {}) {
     onadd,
     playheadMonth: 1,
     playheadDay: first(1),
-    filledEnd: windowEnd,
     ...over
   };
   const view = await render(TimelineHost, { props });
@@ -427,19 +425,15 @@ describe('Timeline rows', () => {
     expect(next.kinds.permitting[0].spans[0].to).not.toBe(doc.kinds.permitting[0].spans[0].to);
   });
 
-  it('hatches every row past filledEnd and moves the hatch when filledEnd grows', async () => {
-    const quarter = (n: number) => asOf + Math.floor(((windowEnd - asOf) * n) / 4);
-    const { rerender } = await setup({ filledEnd: quarter(1) });
-    await kindButton('Permitting').click();
-    const hatches = () => all('[data-testid=tl-hatch]');
+  it('no lane is hatched', async () => {
+    await setup();
+    for (const name of ['Zoning', 'Permitting', 'Public money']) await kindButton(name).click();
     const lanes = all('[data-testid=tl-lane]');
     expect(lanes.length).toBeGreaterThan(5);
-    expect(hatches()).toHaveLength(lanes.length);
-    for (const h of hatches()) expect(parseFloat(h.style.left)).toBeCloseTo(25, 0);
-    await rerender({ filledEnd: quarter(3) });
-    for (const h of hatches()) expect(parseFloat(h.style.left)).toBeCloseTo(75, 0);
-    await rerender({ filledEnd: windowEnd });
-    expect(hatches()).toHaveLength(0);
+    for (const l of lanes) {
+      for (const el of [l, ...l.querySelectorAll('*')])
+        expect(getComputedStyle(el).backgroundImage).not.toContain('repeating-linear-gradient');
+    }
   });
 
   it('on a phone a kind opens as a sheet over the same rows', async () => {
@@ -472,8 +466,8 @@ describe('Timeline rows', () => {
     await userEvent.keyboard('{Escape}');
     expect(document.querySelector('[role=dialog]')).toBeNull();
   });
-  it('draws the hatch beneath the bars and keeps every bar text at 4.5:1', async () => {
-    await setup({ filledEnd: asOf + Math.floor((windowEnd - asOf) / 8) });
+  it('every bar text keeps 4.5:1', async () => {
+    await setup();
     await kindButton('Permitting').click();
     const rgb = (c: string) =>
       c
@@ -492,7 +486,7 @@ describe('Timeline rows', () => {
       return (hi + 0.05) / (lo + 0.05);
     };
     const bars = barsOf('permitting');
-    // Bars 2 and 3 are the off policy's; all four sit wholly under the hatch.
+    // Bars 2 and 3 are the off policy's; each is the topmost element at its centre.
     for (const b of bars) {
       const r = b.getBoundingClientRect();
       const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);

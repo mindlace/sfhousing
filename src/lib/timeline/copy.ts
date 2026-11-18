@@ -3,7 +3,10 @@
 // `src/lib/sim-page/funding-copy.ts`, which `/lesscars` imports and so stays unedited.
 // Task 5's `CUSTOM_TIMING_LABEL` and `PRESET_PER_POLICY` live in `lens.ts`.
 
-import { formatShortMonthYear } from '$lib/fzp/format';
+import { formatMonthYear, formatShortMonthYear } from '$lib/fzp/format';
+import { SPEED_NAME } from '$lib/fzp/playback';
+import { utcParts } from '$lib/fzp/time';
+import type { Speed } from '$lib/fzp/types';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
 import type { Day } from '$lib/timelapse/time';
 import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
@@ -66,6 +69,22 @@ const PER_HOME_TAIL = ', counted when the funded project completes.';
 export function perHomeMethod(method: string): string {
   const at = method.indexOf(PER_HOME_TAIL);
   return at < 0 ? method : `${method.slice(0, at)}. ${PER_HOME_SOURCE}`;
+}
+
+/** The ruler's flag at the goal's deadline. */
+export const GOAL_FLAG = 'Goal';
+/** Play's label when it offers to replay from an edit's first changed month. */
+export const playFromText = (d: Day): string => `Play from ${utcParts(d).y}`;
+/** The speed button's name: '1× speed, 1 year per second'. */
+export const speedName = (s: Speed): string =>
+  `${s === 'year' ? '1×' : '3×'} speed, ${SPEED_NAME[s]}`;
+
+/** 'Seen up to June 2045. Goal deadline January 2031.', each part only when given. */
+export function rulerDescription(seenTo: Day | null, deadline: Day | null): string {
+  const parts: string[] = [];
+  if (seenTo !== null) parts.push(`Seen up to ${formatMonthYear(seenTo)}.`);
+  if (deadline !== null) parts.push(`Goal deadline ${formatMonthYear(deadline)}.`);
+  return parts.join(' ');
 }
 
 /** '12,345 homes by Apr 2040'; at === null: '0 homes by today'. Negative counts use U+2212. */

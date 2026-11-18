@@ -14,29 +14,19 @@
     color: 'zoning' | 'permitting' | 'money' | 'world';
     spanRef: SpanRef;
     selected: boolean;
-    filledPct: number;
     onselect: (ref: SpanRef) => void;
     /** Indent as a child of an open kind. */
     child?: boolean;
   }
 
-  let {
-    label,
-    text,
-    color,
-    spanRef,
-    selected,
-    filledPct,
-    onselect,
-    child = true
-  }: Props = $props();
+  let { label, text, color, spanRef, selected, onselect, child = true }: Props = $props();
 </script>
 
 <div class="contents" data-testid="tl-fixed">
   <div class="lab" class:child>
     <span class="name" title={label}>{label}</span>
   </div>
-  <Lane {filledPct}>
+  <Lane>
     <button
       type="button"
       class="bar k-{color} absolute"

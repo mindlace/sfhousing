@@ -21,6 +21,10 @@ export interface SfhFzpDebug {
   readonly policy: SimPolicy4;
   /** The numbers on show are from before the latest change (rule 31). */
   readonly stale: boolean;
+  /** The furthest day the playhead has reached; the dataset date on opening. */
+  readonly reached: Day;
+  /** The day "Play from" offers; null when none is offered. */
+  readonly playFrom: Day | null;
   /** Every `refill`'s `from`, in arrival order, since mount. */
   readonly refills: readonly number[];
   /** The world's completed net homes per filled month (no baseline), from month 0. */
@@ -62,6 +66,12 @@ export function installFzpDebug(get: () => SfhFzpDebug): () => void {
     },
     get stale() {
       return get().stale;
+    },
+    get reached() {
+      return get().reached;
+    },
+    get playFrom() {
+      return get().playFrom;
     },
     get refills() {
       return get().refills;

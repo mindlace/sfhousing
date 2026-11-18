@@ -22,7 +22,6 @@
     asOf: Day;
     windowEnd: Day;
     months: number;
-    filledPct: number;
     playheadMonth: number;
     selected: SpanRef | null;
     readonly: boolean;
@@ -40,7 +39,6 @@
     asOf,
     windowEnd,
     months,
-    filledPct,
     playheadMonth,
     selected,
     readonly,
@@ -82,7 +80,7 @@
       </button>
     {/if}
   </div>
-  <Lane {filledPct}>
+  <Lane>
     {#if !open}
       {#each policies as p, i (p.id)}
         <div class="mini-policy" data-testid="tl-mini" class:off={!p.on} aria-hidden="true">
@@ -106,7 +104,6 @@
       color={kind}
       spanRef={fixedRef(kind)}
       selected={fixedSelected}
-      {filledPct}
       onselect={(r) => onselect(r)}
     />
     {#each policies as p (p.id)}
@@ -116,7 +113,6 @@
         {asOf}
         {windowEnd}
         {months}
-        {filledPct}
         {playheadMonth}
         {selected}
         {readonly}

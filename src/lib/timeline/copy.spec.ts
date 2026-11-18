@@ -8,11 +8,30 @@ import {
   MARKET_FUNDING_SENTENCE4,
   PER_HOME_SOURCE,
   REFERENCE_NOTE,
+  GOAL_FLAG,
   marketBody,
   homesBy,
-  perHomeMethod
+  perHomeMethod,
+  playFromText,
+  rulerDescription,
+  speedName
 } from './copy';
 import { dayFromUtc } from '$lib/fzp/time';
+
+describe('the ruler and transport', () => {
+  it('playFromText, speedName and rulerDescription', () => {
+    expect(playFromText(dayFromUtc(2028, 3, 1))).toBe('Play from 2028');
+    expect(speedName('year')).toBe('1× speed, 1 year per second');
+    expect(speedName('threeYears')).toBe('3× speed, 3 years per second');
+    expect(GOAL_FLAG).toBe('Goal');
+    expect(rulerDescription(dayFromUtc(2045, 6, 1), dayFromUtc(2031, 1, 31))).toBe(
+      'Seen up to June 2045. Goal deadline January 2031.'
+    );
+    expect(rulerDescription(dayFromUtc(2045, 6, 1), null)).toBe('Seen up to June 2045.');
+    expect(rulerDescription(null, dayFromUtc(2031, 1, 31))).toBe('Goal deadline January 2031.');
+    expect(rulerDescription(null, null)).toBe('');
+  });
+});
 
 describe('homesBy', () => {
   it('says the count and the month, or today', () => {

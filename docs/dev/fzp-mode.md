@@ -46,7 +46,7 @@ Keys with Alt, Ctrl or Meta are left to the browser. Every handled key, a drag o
 
 The page always opens paused, so tests get a stable day without any media emulation.
 
-**The high-water mark** (`/lesscars` only). `HighWater` (`src/lib/fzp/high-water.svelte.ts`) holds the furthest day reached by playback or scrubbing; `/lesscars` keeps its own `HighWater(LESSCARS_START)` (`window.__sfhLessCars.highWater`, [lesscars.md](lesscars.md)). `/sim` has none: its rows show the playhead's month, and what is shown is bounded by the filled mark (`TimelineView.filledThrough`).
+**The high-water mark** (`/lesscars` only). `HighWater` (`src/lib/fzp/high-water.svelte.ts`) holds the furthest day reached by playback or scrubbing; `/lesscars` keeps its own `HighWater(LESSCARS_START)` (`window.__sfhLessCars.highWater`, [lesscars.md](lesscars.md)). `/sim` has its own, the furthest date reached (`src/lib/timeline/reveal.ts`, the ruler's seen zone, [timeline-ui.md](timeline-ui.md)); its rows show the playhead's month, and the playhead waits at the computed edge (`TimelineView.filledThrough`).
 
 ## Layout variables
 
