@@ -111,5 +111,29 @@ describe('HistoryButtons', () => {
     await expect.element(table()).toBeVisible();
     expect(panel().scrollHeight).toBeGreaterThan(panel().clientHeight);
     expect(rect(panel()).bottom).toBeLessThanOrEqual(200);
+    // Scrolling inside the list leaves it open.
+    const scrolled = new Promise<void>((done) =>
+      panel().addEventListener('scroll', () => done(), { once: true })
+    );
+    panel().scrollTop = 20;
+    await scrolled;
+    expect(panel().scrollTop).toBeGreaterThan(0);
+    expect(panel().matches(':popover-open')).toBe(true);
+    await expect.element(shortcuts()).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('closes when the box around it scrolls', async () => {
+    await page.viewport(1024, 700);
+    const { container } = await render(HistoryButtons, { props: props() });
+    container.style.height = '40px';
+    container.style.overflow = 'auto';
+    const spacer = document.createElement('div');
+    spacer.style.height = '400px';
+    container.appendChild(spacer);
+    await shortcuts().click();
+    await expect.element(table()).toBeVisible();
+    container.scrollTop = 30;
+    await expect.element(page.getByTestId('shortcuts')).not.toBeVisible();
+    await expect.element(shortcuts()).toHaveAttribute('aria-expanded', 'false');
   });
 });

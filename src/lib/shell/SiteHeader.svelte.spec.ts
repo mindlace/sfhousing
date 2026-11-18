@@ -387,13 +387,16 @@ describe('SiteHeader', () => {
       await page.viewport(1024, 768);
       render(SiteHeader, { routeId: '/sim', actions, pinned, status: long });
       const banner = page.getByRole('banner').element() as HTMLElement;
-      const status = document.querySelector('[data-header-status]')!.getBoundingClientRect();
+      const slot = document.querySelector<HTMLElement>('[data-header-status]')!;
+      // What a person sees: the status content, not the slot (which can shrink under it).
+      const content = slot.firstElementChild!.getBoundingClientRect();
       const score = page
         .getByRole('button', { name: '1,234 homes added' })
         .element()
         .getBoundingClientRect();
       const other = page.getByRole('button', { name: 'Example' }).element().getBoundingClientRect();
-      expect(status.right).toBeLessThanOrEqual(score.left);
+      expect(content.right).toBeLessThanOrEqual(score.left);
+      expect(slot.scrollWidth).toBeLessThanOrEqual(slot.clientWidth);
       expect(score.right).toBeLessThanOrEqual(other.left);
       expect(banner.getBoundingClientRect().height).toBe(48);
       expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);

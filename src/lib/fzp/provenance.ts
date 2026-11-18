@@ -79,7 +79,7 @@ export const PLAN_EFFECT_SENTENCE =
   "To see what the plan itself does, each future is run twice: once with the Family Zoning Plan, and once as the same city simulated under the old zoning, with the same luck. The difference between the two is the plan's effect. Some homes would have been built anyway; they are not counted here.";
 
 export const TWIN_RESIZE_SENTENCE =
-  "Under the old zoning a real project's resize is capped by the old height limit, so its size can differ between the two runs. That difference is a real effect of the plan, but it appears only in 'from today's pipeline', not in 'what the plan added', so that the published estimates compare like with like.";
+  "Under the old zoning a real project's resize is capped by the old height limit, so its size can differ between the two runs. That difference is a real effect of the plan, but it appears only in 'from today's pipeline', not in 'What current law added' or 'What your policy added', so that the published estimates compare like with like.";
 
 export const PHASE_DELAY_SENTENCE =
   "Where no published schedule gives a start date, the first phase starts after the master plan's approval by a gap drawn from the phase gap. That is the typical gap between successive phases of past projects, used here as a stand-in for the wait before the first phase (tier 2, proxy).";

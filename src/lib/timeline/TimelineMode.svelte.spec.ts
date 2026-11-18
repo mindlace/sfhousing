@@ -801,7 +801,7 @@ describe('TimelineMode', () => {
   });
 
   it("on a phone the inspector sheet ends where the mode's box ends, above what follows it", async () => {
-    // The host's mode box ends at 748 px of a 760 px viewport: the page's footer follows it.
+    // The host's mode box ends at 748 px of a 760 px viewport: the sheet stops there, not at the viewport's edge.
     await page.viewport(390, 760);
     await opened(LAST, { withInspector: true });
     const insp = page.getByTestId('tl-inspector');

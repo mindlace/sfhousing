@@ -889,7 +889,7 @@
   let chartBox = $state<HTMLElement>();
   let modeEl = $state<HTMLElement>();
   let sheetTop = $state(0);
-  /** Px from the viewport's bottom to the mode box's: the page's footer stays clear (W6b). */
+  /** Px from the viewport's bottom to the mode box's: the sheet stops at the box's end (W6b). */
   let sheetBottom = $state(0);
 
   function placeSheet(): void {
@@ -1277,7 +1277,7 @@
       {#if detailShown && inspector}
         <!-- From md the column beside the timeline: the inspector while open, else Results. Below
              md a sheet from under the chart to the mode box's end (top and bottom inline), so the
-             playhead and the chart stay above it and the footer below it (rules 1, 9; W6b). -->
+             playhead and the chart stay above it and nothing past the box is covered (rules 1, 9; W6b). -->
         <aside
           bind:this={detailEl}
           id={scoreControls}

@@ -12,8 +12,8 @@ import { spanMonths } from './spans';
 /**
  * A fixed row's selection, carried as a `SpanRef` (Timeline's `selected` and `onselect` stay
  * `SpanRef | null`). Contract for the inspector:
- * - `id` is `FIXED_ID` for a kind's fixed row ("Family Zoning Plan, as adopted", "Permitting times,
- *   as observed", "City funding today"; `kind` is that kind) and `MARKET_ID` for "Market conditions"
+ * - `id` is `FIXED_ID` for a kind's fixed row ("Current law", "Current timelines", "Current funding";
+ *   `kind` is that kind) and `MARKET_ID` for "Market conditions"
  *   (`{ kind: 'money', id: MARKET_ID }`). Both have `span` FIXED_SPAN (-1), an index no policy has.
  * - The market ref's `kind` is always 'money', even when the Public money kind is absent (no
  *   market and baseline funding): "The world" row is always drawn, so it can still be selected.

@@ -3,7 +3,7 @@
 import { expect, test } from '@playwright/test';
 import type { SfhBrushDebug } from '../../src/lib/brush/debug';
 import type { SfhMapDebug } from '../../src/lib/map/debug';
-import { BAR_MS, pct, verdict } from './bench-util';
+import { BAR_MS, pct, transitLayersOn, verdict } from './bench-util';
 
 type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
 
@@ -19,6 +19,7 @@ const PAN_PX_PER_S = 360;
 
 for (const complexity of ['representative', 'worst'] as const)
   test(`bench:map: ${complexity} whole city`, async ({ page }) => {
+    await transitLayersOn(page);
     await page.goto('/');
     await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
       timeout: 30_000

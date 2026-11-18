@@ -466,6 +466,7 @@ test.describe('landscape phone 667×375', () => {
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     ).toBe(true);
     await expectNoFooter(page);
+    // Before the sheet and Results open: opening the Menu folds the sheet.
     await expectAboutReachable(page);
 
     for (const c of [handle(page), headerScore(page)]) {

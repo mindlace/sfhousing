@@ -331,7 +331,7 @@ describe('provenanceSections', () => {
   it('states the twin, the N3 difference and when simulated counts start', () => {
     const text = textOf(section('src-targets')).join('\n');
     expect(text).toContain(
-      "Under the old zoning a real project's resize is capped by the old height limit, so its size can differ between the two runs. That difference is a real effect of the plan, but it appears only in 'from today's pipeline', not in 'what the plan added', so that the published estimates compare like with like."
+      "Under the old zoning a real project's resize is capped by the old height limit, so its size can differ between the two runs. That difference is a real effect of the plan, but it appears only in 'from today's pipeline', not in 'What current law added' or 'What your policy added', so that the published estimates compare like with like."
     );
     expect(text).toContain('Simulated counts start on Oct 10, 2026.');
     expect(text).toContain('same luck');

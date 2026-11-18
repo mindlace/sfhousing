@@ -1204,6 +1204,9 @@ test('at 1280 px Keyboard shortcuts opens under its button, moves nothing in the
   await button.click();
   const table = page.getByRole('table', { name: 'Keyboard shortcuts' });
   await expect(table).toBeVisible();
+  const buttonBox = (await button.boundingBox())!;
+  const listBox = (await page.getByTestId('shortcuts').boundingBox())!;
+  expect(listBox.y).toBeGreaterThanOrEqual(buttonBox.y + buttonBox.height);
   const after = await headerRow(page);
   expect(after.map((i) => i.left)).toEqual(before.map((i) => expect.closeTo(i.left, 0)));
   expect((await scoreBar(page).boundingBox())!.y).toBeCloseTo(scoreY, 0);
