@@ -231,7 +231,9 @@ describe('Timeline rows', () => {
     const bar = document.createElement('style');
     bar.textContent = '[data-testid=tl-rows]::-webkit-scrollbar { width: 12px }';
     document.head.appendChild(bar);
-    onTestFinished(() => bar.remove());
+    onTestFinished(() => {
+      bar.remove();
+    });
     const { pin, rows } = await tall();
     await expect.poll(() => rows.offsetWidth - rows.clientWidth).toBe(12);
     const a = () => pin.querySelector('[data-testid=tl-lane]')!.getBoundingClientRect();
