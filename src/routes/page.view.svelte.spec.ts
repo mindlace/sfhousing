@@ -3,11 +3,10 @@
 // records the `view` it receives (a separate file: vi.mock is file-wide).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import type { Manifest } from '$lib/data/manifest';
 import { emptyPlan } from '$lib/plan';
 import { stubProps } from '$lib/brush/test/sim-map-stub';
-import { meterValueText, primaryTarget } from '$lib/scoreboard/view';
 import { VIEW_KEY } from '$lib/view/prefs';
 import manifestJson from '../../e2e/fixtures/data/fixture-0/manifest.json';
 import PageHost from './test/PageHost.svelte';
@@ -58,14 +57,12 @@ describe('/ View menu', () => {
   it('shows View in the header and passes the default view to the map', async () => {
     await render(PageHost, { props: { data: data() } });
     await expect.element(viewButton()).toBeInTheDocument();
-    // In the header actions after Paint, left of Publish.
+    // The first header action, left of Publish; no Paint button before it.
     const slot = document.querySelector('[data-testid="header-actions"]')!;
     const items = [...slot.children];
     const at = (el: Element) => items.findIndex((c) => c.contains(el));
-    const paint = page.getByRole('button', { name: 'Paint', exact: true });
-    expect(at(paint.element())).toBe(0);
-    expect(at(viewButton().element())).toBe(1);
-    expect(at(page.getByRole('button', { name: /Publish/ }).element())).toBe(2);
+    expect(at(viewButton().element())).toBe(0);
+    expect(at(page.getByRole('button', { name: /Publish/ }).element())).toBe(1);
     expect(stubProps.view).toEqual({
       transitStops: false,
       transitAccess: false,
@@ -140,21 +137,28 @@ describe('/ score: the header score and the Results face', () => {
   const scoreButton = () => page.getByTestId('score-bar');
   const results = () => page.getByRole('region', { name: 'Results' });
 
-  it("the header score shows the net homes and the RHNA bar; pressing it shows Results with the scoreboard's content and a Paint button that flips back", async () => {
+  it("the header score shows the room for homes and its share of the goal; pressing it shows Results with the scoreboard's content and a Paint button that flips back", async () => {
     await render(PageHost, { props: { data: data() } });
     // Before the worker's first score: the empty score.
-    await expect.element(scoreButton()).toHaveTextContent('0 homes added');
+    await expect.element(scoreButton()).toHaveTextContent('Room for 0 homes');
     await expect.poll(() => pageWorkers.length).toBe(1);
     const w = pageWorkers[0];
     w.ready();
-    const s = scoreOf(1234);
-    w.emit(scoreDiff(s));
-    await expect.element(scoreButton()).toHaveTextContent('1,234 homes added');
-    const meter = pinned().getByRole('meter');
-    await expect
-      .element(meter)
-      .toHaveAttribute('aria-valuetext', meterValueText(primaryTarget(s)!));
-    // A painted plan has no FZP comparison: no "vs FZP" delta.
+    // The polite region speaks 1,000 ms after the text settles: only the timeout is faked.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      w.emit(scoreDiff(scoreOf(1234)));
+      await expect.element(scoreButton()).toHaveTextContent('Room for 1,234 homes');
+      await expect.element(page.getByTestId('score-detail')).toHaveTextContent('1.5% of the goal');
+      vi.advanceTimersByTime(1000);
+      await expect
+        .poll(() => page.getByTestId('score-live').element().textContent)
+        .toBe('Room for 1,234 homes, 1.5% of the goal');
+    } finally {
+      vi.useRealTimers();
+    }
+    // No meter, no effect line: a painted plan has no clock and no FZP comparison.
+    expect(pinned().getByRole('meter').elements()).toHaveLength(0);
     expect(document.querySelector('[data-testid="score-delta"]')).toBeNull();
     // It controls the Paint dock, which is on its Paint tab.
     const dock = page.getByRole('region', { name: 'Paint', exact: true });
@@ -187,7 +191,7 @@ describe('/ score: the header score and the Results face', () => {
     await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
 
     // Folded to the rail, the score opens the dock on Results, and focus moves in (as on /sim).
-    await page.getByRole('button', { name: 'Paint', exact: true }).click();
+    await page.getByRole('button', { name: 'Collapse Paint' }).click();
     await expect.element(page.getByTestId('dock-rail')).toBeVisible();
     await scoreButton().click();
     await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'true');
@@ -202,6 +206,9 @@ describe('/ score: the header score and the Results face', () => {
     w.ready();
     w.emit({ type: 'chunks', status: { a: 'error' }, pending: 0, failed: ['a'] });
     await scoreButton().click();
+    // The goal name opens under the pointer (in flow, as this host has no styles): dismiss it so
+    // it does not shift the panel while the pointer moves to Retry.
+    await userEvent.keyboard('{Escape}');
     const retry = results().getByRole('button', { name: 'Retry' });
     await expect.element(retry).toBeVisible();
     await retry.click();

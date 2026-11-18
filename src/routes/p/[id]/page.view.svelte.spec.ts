@@ -5,13 +5,13 @@
 // SimMap hands over a fake MapLibre map, so a real BrushController attaches (vi.mock is file-wide).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
+import { tick } from 'svelte';
 import type { Manifest } from '$lib/data/manifest';
 import { MSG } from '$lib/brush/messages';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { OUTLINE_LAYER_ID } from '$lib/paint/outline-layers';
 import { emptyPlan, type Plan, type PlanOp } from '$lib/plan';
-import { meterValueText, primaryTarget } from '$lib/scoreboard/view';
 import type { LotOutlines } from '$lib/sim/outlines';
 import { VIEW_KEY } from '$lib/view/prefs';
 import manifestJson from '../../../../e2e/fixtures/data/fixture-0/manifest.json';
@@ -147,12 +147,15 @@ describe('/p/[id] score and dock', () => {
     const s = scoreOf(4321);
     w.emit(scoreDiff(s));
 
-    // The header score, as on `/`: the count, the RHNA meter, no "vs FZP" delta.
-    await expect.element(scoreButton()).toHaveTextContent('4,321 homes added');
-    await expect
-      .element(page.getByTestId('header-pinned').getByRole('meter'))
-      .toHaveAttribute('aria-valuetext', meterValueText(primaryTarget(s)!));
+    // The header score, as on `/`: room for homes and its share of the goal; no meter, no Paint
+    // button in the banner.
+    await expect.element(scoreButton()).toHaveTextContent('Room for 4,321 homes');
+    await expect.element(page.getByTestId('score-detail')).toHaveTextContent('5.2% of the goal');
+    expect(page.getByTestId('header-pinned').getByRole('meter').elements()).toHaveLength(0);
     expect(document.querySelector('[data-testid="score-delta"]')).toBeNull();
+    expect(
+      page.getByRole('banner').getByRole('button', { name: 'Paint', exact: true }).elements()
+    ).toHaveLength(0);
     const dock = page.getByRole('region', { name: 'Paint', exact: true });
     expect(scoreButton().element().getAttribute('aria-controls')).toBe(dock.element().id);
 
@@ -182,12 +185,15 @@ describe('/p/[id] score and dock', () => {
     const before = w.posts.length;
     key('z');
     key('z', true);
-    await new Promise((r) => setTimeout(r, 50));
+    // The handler is synchronous: one flush of the DOM is all the keys need.
+    await tick();
     expect(w.posts.slice(before).filter((p) => p.type !== 'opLots')).toEqual([]);
     expect(rowNames()).toEqual(['6 stories · 1 stroke · 4 lots', 'Erased · 1 stroke · 2 lots']);
 
     // Results: the same face as `/`'s, then back to the rows.
     await scoreButton().click();
+    // The goal name opens under the pointer (in flow, as this host has no styles): dismiss it.
+    await userEvent.keyboard('{Escape}');
     await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'true');
     await expect.element(results().getByTestId('score-net')).toHaveTextContent('4,321');
     await expect

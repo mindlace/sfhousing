@@ -270,11 +270,11 @@ export async function paintOnce(page: Page, isMobile: boolean): Promise<void> {
   await expect.poll(() => ops(page)).toBe(1);
 }
 
-/** The header score on `/` and `/p/:id` (and `/sim`): "{n} homes added", the RHNA meter beside. */
+/** The header score on `/` and `/p/:id` (and `/sim`): "Room for {n} homes" on Paint. */
 export const headerScore = (page: Page): Locator =>
   page.getByRole('banner').getByTestId('score-bar');
 
-/** The header score's count, read from its text ("1,234 homes added" → 1234). */
+/** The header score's count, read from its text ("Room for 1,234 homes" → 1234). */
 export async function headerNet(page: Page): Promise<number> {
   const t = (await headerScore(page).textContent()) ?? '';
   return Number(t.replace(/homes[\s\S]*$/, '').replace(/[^\d-]/g, ''));

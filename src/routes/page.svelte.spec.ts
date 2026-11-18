@@ -78,40 +78,33 @@ describe('/ editor page', () => {
     expect(document.querySelector('.brush-toolbar')).toBeNull();
   });
 
-  it('the header has a Paint button that toggles the dock', async () => {
+  it('the header has no Paint button; the dock folds by its own button and opens from the rail', async () => {
     render(PaintHeaderHost, { props: { data: data() } });
-    const paint = page.getByRole('banner').getByRole('button', { name: 'Paint', exact: true });
-    await expect.element(paint).toHaveAttribute('aria-expanded', 'true');
-    const dock = page.getByRole('region', { name: 'Paint', exact: true });
-    expect(paint.element().getAttribute('aria-controls')).toBe(dock.element().id);
-    // One button named Paint on the page: the rail's is "Paint tools", Results' "Back to painting".
-    expect(page.getByRole('button', { name: 'Paint', exact: true }).elements()).toHaveLength(1);
-    // Before Publish among the actions.
-    const publish = page.getByRole('button', { name: /Publish/ });
-    await expect.element(publish).toBeVisible();
-    expect(
-      paint.element().compareDocumentPosition(publish.element()) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy();
+    const banner = page.getByRole('banner');
+    await expect.element(page.getByRole('region', { name: 'Paint', exact: true })).toBeVisible();
+    expect(banner.getByRole('button', { name: 'Paint', exact: true }).elements()).toHaveLength(0);
     expect(document.querySelector('.sfh-dock-panel')).not.toBeNull();
 
-    await paint.click();
-    await expect.element(paint).toHaveAttribute('aria-expanded', 'false');
+    await page.getByRole('button', { name: 'Collapse Paint' }).click();
     expect(document.querySelector('.sfh-dock-panel')).toBeNull();
-    await expect.element(page.getByTestId('dock-rail')).toBeVisible();
-    await expect.element(page.getByRole('button', { name: 'Paint tools' })).toBeVisible();
-    expect(page.getByRole('button', { name: 'Paint', exact: true }).elements()).toHaveLength(1);
+    const rail = page.getByRole('button', { name: 'Paint tools' });
+    await expect.element(rail).toBeVisible();
+    await expect.poll(() => document.activeElement === rail.element()).toBe(true);
 
-    await paint.click();
-    await expect.element(paint).toHaveAttribute('aria-expanded', 'true');
+    await rail.click();
     await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+    expect(document.querySelector('.sfh-dock-panel')).not.toBeNull();
     // The user opened it: focus moves into the dock, on its selected tab.
     await expect.poll(() => document.activeElement?.getAttribute('role')).toBe('tab');
   });
 
-  it("the site header's score opens the empty Results face", async () => {
+  it('the header score reads room for homes and its share of the goal, and opens Results', async () => {
     render(PaintHeaderHost, { props: { data: data() } });
-    const score = page.getByRole('banner').getByTestId('score-bar');
-    await expect.element(score).toHaveTextContent('0 homes added');
+    const banner = page.getByRole('banner');
+    const score = banner.getByTestId('score-bar');
+    await expect.element(score).toHaveTextContent('Room for 0 homes');
+    await expect.element(banner.getByTestId('score-detail')).toHaveTextContent('0% of the goal');
+    expect(banner.getByRole('meter').elements()).toHaveLength(0);
     await score.click();
     const results = page.getByRole('region', { name: 'Results' });
     await expect
@@ -147,8 +140,9 @@ describe('/ editor page', () => {
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(undo()).toBeEnabled();
       expect(page.getByRole('button', { name: 'Dismiss' }).elements()).toHaveLength(0);
-      // The restored plan is not re-written: the autosave's first schedule() is a no-op.
-      await new Promise((r) => setTimeout(r, 700));
+      // The restored plan is not re-written: the autosave's first schedule() is a no-op. A page
+      // hide flushes any pending write at once, so nothing pending leaves the record as it was.
+      window.dispatchEvent(new Event('pagehide'));
       expect(JSON.parse(localStorage.getItem(PLAN_KEY)!).savedAt).toBe('2026-10-11T00:00:00.000Z');
     });
 

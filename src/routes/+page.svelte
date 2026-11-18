@@ -14,15 +14,8 @@
   import type { Editor } from '$lib/brush/editor.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import { DockState } from '$lib/dock/dock-state.svelte';
-  import {
-    announcement,
-    frameLatest,
-    primaryTarget,
-    viewState,
-    type Score,
-    type ScoreStatus
-  } from '$lib/scoreboard';
-  import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
+  import { paintHeadline } from '$lib/paint/headline';
+  import { frameLatest, viewState, type Score, type ScoreStatus } from '$lib/scoreboard';
   import ScoreboardPanel from '$lib/scoreboard/ScoreboardPanel.svelte';
   import { Autosave } from '$lib/sharing/autosave.svelte';
   import { COPY, n3, remixedToast } from '$lib/sharing/copy';
@@ -31,8 +24,10 @@
   import PublishButton from '$lib/sharing/PublishButton.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
   import { applyTitle } from '$lib/sharing/title';
-  import { focusHeaderMenu, useHeaderActions } from '$lib/shell/header-actions.svelte';
+  import { useHeaderActions } from '$lib/shell/header-actions.svelte';
   import { loadManifest } from '$lib/sim/manifest';
+  import { headlineSpoken } from '$lib/timeline/results';
+  import TimelineHeaderScore from '$lib/timeline/TimelineHeaderScore.svelte';
   import { readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
   import ViewMenu from '$lib/view/ViewMenu.svelte';
   import { useSystemTheme } from '$lib/map/system-theme.svelte';
@@ -101,32 +96,20 @@
   useHeaderActions(headerActions, { pinned: scoreBar, status: saveState });
 
   // The dock (sim-ux plan 5): the Paint tab, open on the left of the map from md (folding to a
-  // rail), a bottom sheet behind its handle below md. The header's Paint button toggles it; the
-  // header score flips it to its Results face (the scoreboard) and back.
+  // rail), a bottom sheet behind its handle below md. Its own collapse button and rail (the
+  // handle below md) fold and open it; the header score flips it to its Results face (the
+  // scoreboard) and back.
   const wide = new MediaQuery('(min-width: 768px)');
   const uid = $props.id();
   const dockId = `${uid}-dock`;
   const dock = new DockState({ tab: 'paint' });
-  /** The user opened the dock (the Paint button): focus moves in. False for the default open. */
+  /** The user opened the dock (the score): focus moves in. False for the default open. */
   let dockFocus = $state(false);
-  let paintButton = $state<HTMLButtonElement>();
-
-  /** The header's Paint button: desktop open <-> rail; phone sheet closed <-> full. */
-  function togglePaint(): void {
-    dockFocus = true;
-    dock.toggleOpen(wide.current);
-  }
 
   /** The header score: Results <-> the Paint tab, opening the dock if it is hidden. */
   function pressScore(): void {
     dockFocus = true;
     dock.toggleResults(wide.current);
-  }
-
-  /** The dock folded by its collapse button or Escape: focus to Paint, or the phone Menu button. */
-  function dockClosed(): void {
-    if (paintButton?.checkVisibility()) paintButton.focus();
-    else focusHeaderMenu();
   }
 
   // Map layer toggles (transit spec §6.3), per viewer. View shows only when the manifest the map
@@ -161,19 +144,20 @@
   });
   const shown = $derived(latestScore.current.score ?? EMPTY);
   const scoreView = $derived(viewState(shown, scoreStatus));
+  const headText = $derived(paintHeadline(shown.netUnits));
   const systemTheme = useSystemTheme();
 </script>
 
 {#snippet scoreBar()}
-  <!-- A painted plan has no FZP comparison: no "vs FZP" delta (sim-ux spec Goal 5). -->
-  <HeaderScore
-    total={shown.netUnits}
-    target={primaryTarget(shown) ?? null}
+  <!-- Room for homes and its share of the goal: undated, no effect line. -->
+  <TimelineHeaderScore
+    text={headText}
     busy={scoreView.updating}
+    stale={false}
     expanded={dock.face === 'results' && dock.visible(wide.current)}
     controls={dockId}
     onclick={pressScore}
-    live={announcement(shown)}
+    live={headlineSpoken(headText)}
     quiet={scoreView.updating}
   />
 {/snippet}
@@ -187,14 +171,6 @@
 {/snippet}
 
 {#snippet headerActions()}
-  <button
-    bind:this={paintButton}
-    type="button"
-    aria-expanded={dock.visible(wide.current)}
-    aria-controls={dockId}
-    class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-    onclick={togglePaint}>Paint</button
-  >
   {#if mapManifest?.transit}
     <ViewMenu {view} theme={systemTheme.current} onchange={onViewChange} />
   {/if}
@@ -232,7 +208,6 @@
     {dock}
     {dockId}
     {dockFocus}
-    ondockclose={dockClosed}
     {results}
     notices={noticeStack}
   />

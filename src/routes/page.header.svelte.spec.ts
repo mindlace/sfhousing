@@ -86,15 +86,8 @@ describe('/ header save state', () => {
       const chip = page.getByRole('button', { name: 'Autosave off' });
       await expect.element(chip).toBeVisible();
       if (width === 375) {
-        // Paint's widest plausible score: a seven-digit count ("added" is hidden below lg).
-        const score = page.getByTestId('score-bar').element();
-        score.replaceChildren(
-          '1,234,567 homes ',
-          Object.assign(document.createElement('span'), {
-            className: 'max-lg:sr-only',
-            textContent: 'added'
-          })
-        );
+        // Paint's widest plausible score: the largest count shown in full (compact from a million).
+        page.getByTestId('score-bar').element().replaceChildren('Room for 999,999 homes');
       }
       const banner = page.getByRole('banner').element() as HTMLElement;
       expect(box(banner).height).toBe(48);
@@ -107,7 +100,6 @@ describe('/ header save state', () => {
         chip.element(),
         ...(width >= 1024
           ? [
-              page.getByRole('banner').getByRole('button', { name: 'Paint', exact: true }),
               page.getByRole('button', { name: /Publish/ }),
               page.getByRole('link', { name: 'Sign in' }),
               page.getByRole('link', { name: 'About', exact: true })

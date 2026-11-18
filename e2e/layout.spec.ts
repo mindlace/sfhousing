@@ -422,7 +422,7 @@ test.describe('medium width', () => {
     }
   };
   for (const path of ['/', '/p/:id'] as const) {
-    test(`768 px on ${path}: the header is the Menu layout and Paint folds the dock from the Menu`, async ({
+    test(`768 px on ${path}: the header is the Menu layout; the dock folds by its own button`, async ({
       page,
       request
     }) => {
@@ -439,17 +439,19 @@ test.describe('medium width', () => {
       expect(fit, 'the header overflows').toBe(true);
       await expect(page.locator('.sfh-dock-panel')).toBeVisible();
 
+      // The Menu holds the two step links and no Paint button.
       await openHeaderMenu(page);
-      await expect(paint).toBeVisible();
       for (const name of ['Paint', 'Simulate'])
         await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
+      await expect(paint).toHaveCount(0);
       await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
-      await expect(paint).toHaveAttribute('aria-expanded', 'true');
-      await paint.click();
+      await page.keyboard.press('Escape');
+
+      await page.getByRole('button', { name: 'Collapse Paint' }).click();
       await expect(page.locator('.sfh-dock-panel')).toHaveCount(0);
       await expect(page.getByTestId('dock-rail')).toBeVisible();
-      await openHeaderMenu(page);
-      await expect(paint).toHaveAttribute('aria-expanded', 'false');
+      await expect(paint).toHaveCount(0);
+      await expect(banner.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
       ).toBe(true);

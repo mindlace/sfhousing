@@ -11,29 +11,24 @@
   import BrushEditor from '$lib/brush/BrushEditor.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import { DockState } from '$lib/dock/dock-state.svelte';
-  import {
-    announcement,
-    frameLatest,
-    primaryTarget,
-    viewState,
-    type Score,
-    type ScoreStatus
-  } from '$lib/scoreboard';
-  import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
+  import { paintHeadline } from '$lib/paint/headline';
+  import { frameLatest, viewState, type Score, type ScoreStatus } from '$lib/scoreboard';
   import ScoreboardPanel from '$lib/scoreboard/ScoreboardPanel.svelte';
   import { ogDescription, remixConfirm } from '$lib/sharing/copy';
   import { localOpCount, remixToLocal } from '$lib/sharing/remix';
   import SharedBanner from '$lib/sharing/SharedBanner.svelte';
   import { getStorage } from '$lib/sharing/storage';
-  import { focusHeaderMenu, useHeaderActions } from '$lib/shell/header-actions.svelte';
+  import { useHeaderActions } from '$lib/shell/header-actions.svelte';
   import { loadManifest } from '$lib/sim/manifest';
+  import { headlineSpoken } from '$lib/timeline/results';
+  import TimelineHeaderScore from '$lib/timeline/TimelineHeaderScore.svelte';
   import { readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
   import ViewMenu from '$lib/view/ViewMenu.svelte';
   import { useSystemTheme } from '$lib/map/system-theme.svelte';
   import type { PageProps } from './$types';
 
-  // Read-only view (spec §4.7): no oneditor, no autosave; the header actions are Paint (the dock)
-  // and View, with the header score pinned as on `/`. The local autosaved plan is only read (op
+  // Read-only view (spec §4.7): no oneditor, no autosave; the header action is View, with the
+  // header score pinned as on `/`. The local autosaved plan is only read (op
   // count) and written by an explicit Remix.
   let { data }: PageProps = $props();
 
@@ -62,29 +57,18 @@
   useHeaderActions(headerActions, { pinned: scoreBar });
 
   // The dock, as on `/` (sim-ux plan 5): it opens on the read-only Paint tab (the plan's rows, no
-  // tools); the header's Paint button folds and opens it, the header score flips it to Results.
+  // tools); its own collapse button and rail fold and open it, the header score flips it to
+  // Results.
   const wide = new MediaQuery('(min-width: 768px)');
   const uid = $props.id();
   const dockId = `${uid}-dock`;
   const dock = new DockState({ tab: 'paint' });
-  /** The user opened the dock (Paint, the score): focus moves in. False for the default open. */
+  /** The user opened the dock (the score): focus moves in. False for the default open. */
   let dockFocus = $state(false);
-  let paintButton = $state<HTMLButtonElement>();
-
-  function togglePaint(): void {
-    dockFocus = true;
-    dock.toggleOpen(wide.current);
-  }
 
   function pressScore(): void {
     dockFocus = true;
     dock.toggleResults(wide.current);
-  }
-
-  /** The dock folded by its collapse button or Escape: focus to Paint, or the phone Menu button. */
-  function dockClosed(): void {
-    if (paintButton?.checkVisibility()) paintButton.focus();
-    else focusHeaderMenu();
   }
 
   // Score wiring, as on `/` (scoreboard spec §4.3/§4.4): the header score and the Results face.
@@ -108,33 +92,26 @@
   });
   const shown = $derived(latestScore.current.score ?? EMPTY);
   const scoreView = $derived(viewState(shown, scoreStatus));
+  const headText = $derived(paintHeadline(shown.netUnits));
   const systemTheme = useSystemTheme();
 </script>
 
 {#snippet headerActions()}
-  <button
-    bind:this={paintButton}
-    type="button"
-    aria-expanded={dock.visible(wide.current)}
-    aria-controls={dockId}
-    class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-    onclick={togglePaint}>Paint</button
-  >
   {#if mapManifest?.transit}
     <ViewMenu {view} theme={systemTheme.current} onchange={onViewChange} />
   {/if}
 {/snippet}
 
 {#snippet scoreBar()}
-  <!-- As on `/`: no "vs FZP" delta for a painted plan. -->
-  <HeaderScore
-    total={shown.netUnits}
-    target={primaryTarget(shown) ?? null}
+  <!-- As on `/`: room for homes and its share of the goal. -->
+  <TimelineHeaderScore
+    text={headText}
     busy={scoreView.updating}
+    stale={false}
     expanded={dock.face === 'results' && dock.visible(wide.current)}
     controls={dockId}
     onclick={pressScore}
-    live={announcement(shown)}
+    live={headlineSpoken(headText)}
     quiet={scoreView.updating}
   />
 {/snippet}
@@ -184,7 +161,6 @@
         {dock}
         {dockId}
         {dockFocus}
-        ondockclose={dockClosed}
         {results}
       />
     {/key}
