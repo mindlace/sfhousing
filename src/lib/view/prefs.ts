@@ -1,7 +1,8 @@
 // Per-viewer map layer toggles (transit spec T6, §6.3; the height limits, height-lids plan Task 12).
 // One record shared by / and /sim, so a viewer's transit choice follows them between modes; / never
 // shows or uses `heightLimits` and writes back the value it read. A record from the height fog's
-// time stored `heightFog`: it is still read as `heightLimits`. Best-effort persistence.
+// time stored `heightFog`: it is still read as `heightLimits`. Best-effort persistence. Capacity
+// and stops start off; a stored choice wins.
 
 export interface ViewPrefs {
   transitStops: boolean;
@@ -13,7 +14,7 @@ export interface ViewPrefs {
 export const VIEW_KEY = 'sfhousing:view';
 export const DEFAULT_VIEW: ViewPrefs = {
   transitStops: false,
-  transitAccess: true,
+  transitAccess: false,
   heightLimits: true
 };
 /** Every layer off: FzpMode's default, and what /sim's map gets during a run. */

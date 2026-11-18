@@ -123,8 +123,8 @@
     opener = null;
   }
 
-  // The sheet covers the page from just under the chart to the end of the page's mode box (above
-  // the footer), across the timeline's width.
+  // The sheet covers the page from just under the chart to the end of the page's mode box (not
+  // past it), across the timeline's width.
   // Opening scrolls the timeline to the top of the viewport first, so the playhead and chart are in
   // view above it; the sheet is never left shorter than MIN_SHEET.
   const MIN_SHEET = 280;
@@ -138,7 +138,7 @@
     if (!root || !chartCell) return;
     const r = root.getBoundingClientRect();
     const bottom = chartCell.getBoundingClientRect().bottom;
-    // The sheet ends where the page's mode box ends, so what follows it (the footer) stays clear.
+    // The sheet ends where the page's mode box ends, so it never reaches past the box it belongs to.
     const mode = root.closest('[data-testid="tl-mode"]')?.getBoundingClientRect().bottom;
     const end = Math.min(mode ?? Infinity, window.innerHeight);
     box = {

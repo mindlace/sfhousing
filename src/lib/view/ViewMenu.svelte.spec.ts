@@ -30,7 +30,7 @@ describe('ViewMenu', () => {
     await page.getByRole('checkbox', { name: 'Transit capacity within a 10-minute walk' }).click();
     expect(onchange).toHaveBeenCalledWith({
       transitStops: false,
-      transitAccess: false,
+      transitAccess: true,
       heightLimits: true
     });
   });

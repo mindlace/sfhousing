@@ -592,25 +592,25 @@ describe('comparisonLine', () => {
   it('names what the comparison is against', () => {
     const fzp = scoreCopy(null);
     const mine = scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' });
-    expect(comparisonLine(fzp, 1234)).toBe('FZP added 1,234 homes vs no FZP');
-    expect(comparisonLine(mine, 56)).toBe('Your policy added 56 homes vs FZP');
-    expect(comparisonLine(mine, -569)).toBe('Your policy cost 569 homes vs FZP');
-    expect(comparisonLine(fzp, -569)).toBe('FZP cost 569 homes vs no FZP');
-    expect(comparisonLine(mine, 0)).toBe('Your policy added 0 homes vs FZP');
-    expect(comparisonLine(fzp, 0)).toBe('FZP added 0 homes vs no FZP');
-    expect(comparisonLine(mine, null)).toBe(`Your policy vs FZP: ${CALCULATING}`);
-    expect(comparisonLine(fzp, null)).toBe(`FZP vs no FZP: ${CALCULATING}`);
+    expect(comparisonLine(fzp, 1234)).toBe('Current law added 1,234 homes vs the old zoning');
+    expect(comparisonLine(mine, 56)).toBe('Your policy added 56 homes vs current law');
+    expect(comparisonLine(mine, -569)).toBe('Your policy cost 569 homes vs current law');
+    expect(comparisonLine(fzp, -569)).toBe('Current law cost 569 homes vs the old zoning');
+    expect(comparisonLine(mine, 0)).toBe('Your policy added 0 homes vs current law');
+    expect(comparisonLine(fzp, 0)).toBe('Current law added 0 homes vs the old zoning');
+    expect(comparisonLine(mine, null)).toBe(`Your policy vs current law: ${CALCULATING}`);
+    expect(comparisonLine(fzp, null)).toBe(`Current law vs the old zoning: ${CALCULATING}`);
   });
 });
 
 describe('scoreCopy', () => {
   it('words the comparison', () => {
-    const fzp = { plan: 'the Family Zoning Plan', twin: 'the old zoning', compare: 'preFzp' };
+    const fzp = { plan: 'current law', twin: 'the old zoning', compare: 'preFzp' };
     expect(scoreCopy(null)).toEqual(fzp);
     expect(scoreCopy(DEFAULT_LEVERS)).toEqual(fzp);
     expect(scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' })).toEqual({
       plan: 'your policy',
-      twin: 'the Family Zoning Plan as written',
+      twin: 'current law',
       compare: 'fzp'
     });
   });

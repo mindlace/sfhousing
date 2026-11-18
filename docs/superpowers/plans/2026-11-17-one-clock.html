@@ -1,0 +1,726 @@
+<article>
+  <header>
+    <h1>One clock plan</h1>
+    <p>Slice 2 of the information design review: the <code>/sim</code> header headline follows the playhead and counts from today, the goal is read from one module, every homes figure agrees with the headline, the empty status line goes, and the save state is silent when saved.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+    <aside data-kind="warning"><strong>Read before executing: what slice 1 changed after this plan was drafted</strong> (1) With a pinned score the header grid is <code>minmax(0,1fr) auto auto</code> from lg to xl and centred (<code>minmax(0,1fr) auto minmax(0,1fr)</code>) only from xl, because the About entry did not fit beside a centred score at 1024 px; centring tests assert at 1280 px. (2) The header has an About entry after the account entry on every route. (3) The Keyboard shortcuts control reads "Shortcuts" (accessible name "Keyboard shortcuts") and opens a native popover. (4) <code>e2e/sim-funding.spec.ts</code> test 8 scrolls its row into view before the axe scan, because a lane row left partly under the sticky pinned block is flagged by axe target-size; removing the status line changes heights again, so expect the same class of failure and handle it the same way. (5) Line numbers in this plan were taken before slice 1 and have shifted: locate by content.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>On <code>/sim</code> and <code>/s/&lt;id&gt;</code> the header reads "47,335 homes by Apr 2040", then "+1,817 from your policy · 68% of the goal", all at the playhead's month, live during Play and scrubbing. Nothing in the header is read at the end of the window. The goal (today the state target) is defined once. Results and both charts stop presenting homes counted from June 2022 as the headline's quantity. The 24 px line under the header is gone, "Updating" sits beside the save state, and "Saved" no longer shows.</dd>
+      <dt>Architecture</dt>
+      <dd>A new pure module <code>src/lib/goal/goal.ts</code> holds the goal and reads it from a <code>TimelineView</code>. <code>src/lib/timeline/results.ts</code> replaces <code>headerOf</code> with <code>headlineAt</code> (numbers at one month) and <code>headlineText</code> (the strings), which both the visible header and its live region use. <code>TimelineHeaderScore</code> becomes a dumb renderer of those strings. <code>TimelineMode</code> derives the headline from the playhead's month (<code>index</code>) and the view on show (<code>shown.view</code>), never from <code>lastIndex</code>. Everything needed is already in <code>TimelineView</code> on the main thread (<code>rows[i].completedNet</code>, <code>planEffect[i].completedNetNew</code>, <code>baseline.completedNet</code>, <code>months</code>, <code>compare</code>, <code>filledThrough</code>; <code>src/lib/sim/world/score/types.ts:160-175</code>): no engine or worker change.</dd>
+      <dt>Tech Stack</dt>
+      <dd>SvelteKit 2, Svelte 5 runes, TypeScript, Tailwind 4, Vitest (server project for <code>*.spec.ts</code>, client project for <code>*.svelte.spec.ts</code>), Playwright, axe through <code>expectNoA11yViolations</code>.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-17-information-design-review-design.html"><code>docs/superpowers/specs/2026-11-17-information-design-review-design.html</code></a>, row 2 of <a href="../specs/2026-11-17-information-design-review-design.html#tbl-slices">Order of work</a>. Governing parts: Main findings 1, Six rules (rule 1), Header, The loop (the goal as one replaceable thing, and progress only), Decided, One vocabulary, and the inventory rows for the headline, the date, progress to the state target, "Work is saved", "The forecast is being recomputed" and "How far the forecast is computed".</dd>
+      <dt>Assumes</dt>
+      <dd>Slice 1 (<a href="2026-11-17-quick-repairs.html"><code>2026-11-17-quick-repairs.html</code></a>) has landed: no "Fewer cars" header link, an "About" entry after the account entry on every route, "FZP" copy reads "current law" (fixed rows "Current law", "Current timelines", "Current funding"; <code>scoreCopy</code> keeps <code>compare: 'fzp' | 'preFzp'</code>), no footer on full-height routes, <code>fromPolicyText(n)</code> in <code>src/lib/fzp/score-view.ts</code> ("+1,234 from your policy", U+2212 for negatives, "+0"), the header delta under test id <code>score-delta</code> already reading that, <code>e2e/helpers/chrome.ts</code> (<code>expectNoFooter</code>, <code>expectAboutReachable</code>) and <code>clientNavigate</code>. Do not redo any of it; line numbers quoted below are from before slice 1 and may have moved.</dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li><strong>Hashed paths are read-only.</strong> Editing any file under the dataset-version paths (<code>PATHS</code>, <code>pipeline/lib/version.ts:42-53</code>: <code>pipeline</code>, <code>src/lib/data</code>, <code>src/lib/generator</code>, <code>src/lib/timelapse</code>, <code>src/lib/plan/geometry.ts</code>, <code>src/lib/plan/types.ts</code>, <code>src/lib/sim/scenario</code>, <code>src/lib/sim/levers</code>, <code>src/lib/sim/finance</code>, <code>src/lib/scoreboard</code>), spec files included, forces a dataset upload before signoff. This plan imports from <code>scoreboard/targets.ts</code>, <code>scoreboard/format.ts</code> and <code>sim/scenario/score.ts</code> read-only and edits nothing under them. If a change there seems unavoidable, stop and raise it; do not make it.</li>
+      <li>All work in a git worktree under <code>.claude/worktrees/</code>. Run <code>cd</code> on its own, never as <code>cd … &amp;&amp; cmd</code>. Run everything in the foreground.</li>
+      <li>Conventional Commits, with messages given as <code>-m</code> flags. No Claude attribution anywhere: no <code>Co-Authored-By</code> trailers, no generated-by notes in code, docs or commits.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns (Prettier and ESLint). Svelte 5 runes only.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>.</li>
+      <li>WCAG 2.2 AA on every changed surface: the header (bar and Menu layout), the status slot, the headline's goal tooltip, Results and the chart row, in light and dark (<code>docs/dev/accessibility.md</code>, <code>e2e/chrome-dark.spec.ts</code>). Axe goes through <code>expectNoA11yViolations</code>. Targets at least 24x24 CSS px, 44 on a coarse pointer, as today.</li>
+      <li>Signoff is <code>npm run signoff</code>; do not <code>git push</code> first. It fails on server stderr, timing crutches (<code>waitForTimeout</code>, fixed sleeps, <code>setTimeout</code> waits) and flakes that pass only on retry. Wait with web-first assertions, <code>expect.poll</code>, attribute signals or <code>requestAnimationFrame</code>.</li>
+      <li>Port 4173 is shared with other sessions. Never kill whatever holds it. Run Playwright on another port: <code>SFH_E2E_PORT=4180 npx playwright test …</code> (<code>playwright.config.ts:3</code>).</li>
+      <li>Copy: terse, plain words, no em dashes, no "it is not X" disclaimers. The main-screen word is "goal"; the goal's display name is "State target". No header string says "RHNA". "homes", never "units". The Results target rows and the Sources dialog may keep their RHNA wording in this slice.</li>
+      <li>Docs under <code>docs/dev/</code> that describe changed behaviour are updated in the task that changes it.</li>
+      <li>Performance: the header now follows the playhead during Play. It must update at most once per calendar month crossed, not per frame, and the headline must read a bounded number of rows. Guard this structurally (Task 2 and Task 3 tests), never with a wall-clock assertion. <code>npm run test:perf</code> and <code>bench:map</code> are idle-machine only and not part of this plan's checks.</li>
+      <li>Out of scope, do not edit: <code>src/lib/scoreboard/HeaderScore.svelte</code> (Paint's header score) and its <code>vsFzpText</code> use; the ruler, its markers ("RHNA deadline") and the reveal zones; the chart redesign; the detail column redesign; halos; levels and unlocks; any engine or worker file.</li>
+      <li>Test commands: <code>npx vitest --run --project server &lt;file&gt;</code> for <code>*.spec.ts</code>, <code>npx vitest --run --project client &lt;file&gt;</code> for <code>*.svelte.spec.ts</code>, and <code>SFH_E2E_PORT=4180 npx playwright test &lt;file&gt; --project=chromium --project=mobile</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-strings">
+    <h2>The header strings</h2>
+    <table id="tbl-strings">
+      <caption>What the headline shows in each state (visible text; the live region speaks the same parts joined by ", ")</caption>
+      <thead>
+        <tr><th scope="col">State</th><th scope="col">Line 1 (the button)</th><th scope="col">Line 2 (its description)</th><th scope="col">Goal tooltip</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">No view yet, provisional open, or not filled to the playhead's month</th><td><code>calculating…</code></td><td>none</td><td>none</td></tr>
+        <tr><th scope="row">Playhead at today, no policy in force</th><td><code>0 homes by today</code></td><td><code>18% of the goal</code></td><td><code>State target: 82,069 homes by Jan 2031</code></td></tr>
+        <tr><th scope="row">Playhead at today, a policy in force</th><td><code>0 homes by today</code></td><td><code>+0 from your policy · 18% of the goal</code></td><td>as above</td></tr>
+        <tr><th scope="row">Playhead at Apr 2040, no policy</th><td><code>47,335 homes by Apr 2040</code></td><td><code>68% of the goal</code></td><td>as above</td></tr>
+        <tr><th scope="row">Playhead at Apr 2040, a policy in force</th><td><code>47,335 homes by Apr 2040</code></td><td><code>+1,817 from your policy · 68% of the goal</code></td><td>as above</td></tr>
+        <tr><th scope="row">A policy that costs homes</th><td>as above</td><td><code>−56 from your policy · 67% of the goal</code> (U+2212)</td><td>as above</td></tr>
+        <tr><th scope="row">Goal amount reached by its deadline, playhead at or past that month</th><td>as above</td><td><code>Goal reached, Mar 2029</code> (after the effect when one shows)</td><td>as above</td></tr>
+        <tr><th scope="row">Playhead past the deadline, not reached</th><td>as above</td><td>the percentage at the deadline month, held</td><td>as above</td></tr>
+      </tbody>
+    </table>
+    <p>Status slot: nothing when saved and current; <code>Saving…</code> while a write is pending; the <code>Autosave off</code> button (popover unchanged); <code>Updating</code> (its explanation <code>From before your latest change.</code> behind it) while the numbers on show are stale. "Forecast filled to {year}" is gone.</p>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>Narrowest header with every widest string at once</strong>: 375 px (the mobile project, coarse pointer), 768 px (Menu layout), 1024, 1280 and 1536 px, with "Autosave off", "Updating", "12,345 homes by Mar 2066", "+12,345 from your policy" and "Goal reached, Mar 2043". Expected: no overflow, no overlap, the headline and actions do not move when "Updating" or "Saving…" comes or goes. Tests: <a href="#t5-s1">t5-s1</a>, <a href="#t5-s6">t5-s6</a>.</li>
+      <li><strong>Play at speed</strong>: many frames inside one month. Expected: the header's DOM changes only on frames where the playhead's month changes, and the live region stays silent until playback pauses, then speaks the visible text. Tests: <a href="#t2-s1">t2-s1</a> (rows read), <a href="#t3-s1">t3-s1</a> (DOM writes).</li>
+      <li><strong>An edit while the playhead is mid-window</strong>, and a refill that withdraws months under the playhead (rule 25). Expected: while stale the header shows the held view's numbers, dimmed, never "calculating…"; once the refill passes the playhead it shows the new numbers; only when no view covers the playhead's month does it read "calculating…". Test: <a href="#t3-s1">t3-s1</a>.</li>
+      <li><strong>Negative figures</strong>: early months where demolitions outrun completions (<code>completedNet &lt; 0</code>) and a policy that costs homes. Expected: "−12 homes by Nov 2026" and "−56 from your policy" with U+2212, never "+−56". Test: <a href="#t2-s1">t2-s1</a>.</li>
+      <li><strong>A goal deadline outside the window</strong>: a dataset dated after 31 Jan 2031 (deadline before months[0]) or a later goal past the window's end. Expected: before the window, the reading holds the value at today and only says "Goal reached" if the homes built before today reach the amount; past the end, it reads at the playhead with no hold; the chart step is not drawn when the deadline is not inside the window. Test: <a href="#t1-s1">t1-s1</a>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files by task and what each owns</caption>
+      <thead>
+        <tr><th scope="col">Area</th><th scope="col">Files</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">The goal</th><td>Create <code>src/lib/goal/goal.ts</code>, <code>src/lib/goal/goal.spec.ts</code></td><td>1</td></tr>
+        <tr><th scope="row">Headline model and words</th><td><code>src/lib/timeline/results.ts</code>, <code>results.spec.ts</code>, <code>src/lib/timeline/copy.ts</code>, <code>copy.spec.ts</code></td><td>2</td></tr>
+        <tr><th scope="row">The header follows the playhead</th><td><code>src/lib/timeline/TimelineHeaderScore.svelte</code> and spec, <code>TimelineMode.svelte</code> and spec, <code>e2e/sim.spec.ts</code>, <code>e2e/sim-timeline.spec.ts</code>, <code>e2e/fzp.spec.ts</code>, <code>docs/dev/timeline-ui.md</code>, <code>docs/dev/sim-page.md</code></td><td>3</td></tr>
+        <tr><th scope="row">Silent save state</th><td><code>src/lib/sharing/SaveIndicator.svelte</code> and spec, <code>src/routes/page.header.svelte.spec.ts</code>, <code>src/lib/sim-page/SimPage.svelte.spec.ts</code>, <code>e2e/share-states.spec.ts</code>, <code>docs/dev/plan-sharing.md</code>, <code>docs/dev/sim-page.md</code></td><td>4</td></tr>
+        <tr><th scope="row">The status line goes</th><td><code>TimelineMode.svelte</code> and spec, <code>Timeline.svelte</code>, <code>fill.ts</code> and spec, <code>copy.ts</code>, <code>src/lib/shell/SiteHeader.svelte</code> and spec, <code>e2e/sim.spec.ts</code>, <code>e2e/fzp.spec.ts</code>, <code>e2e/chrome-dark.spec.ts</code>, both docs</td><td>5</td></tr>
+        <tr><th scope="row">Figures agree</th><td><code>src/lib/fzp/SimResults.svelte</code> and spec, <code>src/lib/fzp/score-view.ts</code> and spec, <code>src/lib/fzp/chart.ts</code>, <code>chart.spec.ts</code>, <code>ScoreChart.svelte.spec.ts</code>, <code>provenance.spec.ts</code>, <code>src/lib/timeline/ChartRow.svelte</code> and spec, <code>ChartLegend.svelte</code>, <code>TimelineMode.svelte</code> (chart prop), <code>docs/dev/timeline-ui.md</code></td><td>6</td></tr>
+        <tr><th scope="row">Whole-suite pass</th><td>Anything the full runs turn up</td><td>7</td></tr>
+      </tbody>
+    </table>
+    <p>Tasks 3 and 5 both edit <code>TimelineMode.svelte</code> and <code>e2e/sim.spec.ts</code>; run them in order. Task 6 is independent of 4 and 5.</p>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The goal, read from one place</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/goal/goal.ts</code>. Test: <code>src/lib/goal/goal.spec.ts</code> (server project).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>M1_TARGETS</code> (<code>src/lib/scoreboard/targets.ts:11-19</code>, id <code>'rhna'</code>, 82,069), <code>RHNA_DEADLINE</code> (<code>src/lib/sim/scenario/score.ts:293</code>, 31 Jan 2031; the module is pure), <code>formatCount</code> and <code>formatPercent</code> (<code>src/lib/scoreboard/format.ts:13,27</code>; the percent floors, so 100% never shows early), <code>formatShortMonthYear</code> (<code>src/lib/fzp/format.ts:40</code>), <code>dayFromUtc</code> (<code>src/lib/fzp/time.ts</code>), <code>TimelineView</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">/** The month index meaning "at the dataset date", before any simulated month. */
+export const TODAY = -1;
+
+export interface GoalMeasure {
+  /** Only 'homesCompleted' today; a later measure adds its own id. */
+  id: 'homesCompleted';
+  /** The amount's unit in the goal's name: 'homes'. */
+  unit: string;
+  /**
+   * The measure at the end of calendar month i of `view` (0 &lt;= i &lt;= view.filledThrough), or at
+   * the dataset date for i === TODAY, counted from the goal's `countsFrom`.
+   */
+  valueAt(view: TimelineView, i: number): number;
+}
+
+export interface Goal {
+  id: string;
+  /** Display name: 'State target'. */
+  name: string;
+  measure: GoalMeasure;
+  amount: number;
+  deadline: Day;
+  /** The day the measure counts from (the dataset's baseline.since must match). */
+  countsFrom: Day;
+}
+
+/** baseline.completedNet + (i === TODAY ? 0 : rows[i].completedNet). */
+export const HOMES_COMPLETED: GoalMeasure;
+/** id 'state-target', name 'State target', HOMES_COMPLETED, amount = M1_TARGETS rhna units,
+ *  deadline RHNA_DEADLINE, countsFrom dayFromUtc(2022, 6, 30). */
+export const STATE_TARGET: Goal;
+/** The goal in force. The main screen reads this, never STATE_TARGET or a target id. */
+export const GOAL: Goal = STATE_TARGET;
+
+export interface GoalReading {
+  /** valueAt(at) / amount, uncapped, where at = min(i, deadline month); TODAY when the deadline
+   *  is before months[0]. */
+  fraction: number;
+  /** months[m] for the first m in [TODAY, at] whose value reaches the amount (TODAY reads as
+   *  months[0]); null when none does. */
+  reachedOn: Day | null;
+}
+
+/** Null when `i` (or the month it must read) is past view.filledThrough. */
+export function readGoal(goal: Goal, view: TimelineView, i: number): GoalReading | null;
+/** '68% of the goal' (formatPercent) | 'Goal reached, Mar 2029'. */
+export function goalText(r: GoalReading): string;
+/** 'State target: 82,069 homes by Jan 2031'. */
+export function goalName(goal: Goal): string;
+/**
+ * The homes chart's step: { deadlineIndex, units: amount - valueAt(view, TODAY) }. Null when the
+ * measure is not 'homesCompleted' or the deadline's month is outside [0, view.lastIndex].
+ */
+export function goalStep(
+  goal: Goal,
+  view: TimelineView
+): { deadlineIndex: number; units: number } | null;</code></pre>
+      </li>
+    </ul>
+    <p>The deadline month is the raw month offset of <code>goal.deadline</code> from <code>view.months[0]</code> (do not use <code>monthIndex</code>, which clamps): below 0 means the goal ended before today, above <code>lastIndex</code> means it ends after the window, read as <code>lastIndex</code>.</p>
+    <aside data-kind="decision"><strong>Builder's call</strong> The goal is reached only by its deadline. After the deadline the reading holds the deadline month's value, so a goal first met later (current law passes 82,069 in the late 2050s) keeps showing its percentage, not "Goal reached". The spec's "follows the playhead to the deadline, then holds" and "Goal reached, {date}" only agree this way; slice 3's "goal missed" message covers the rest.</aside>
+    <aside data-kind="decision"><strong>Builder's call</strong> The header gets strings, never a <code>Goal</code>. A later goal with another measure adds a <code>GoalMeasure</code> and swaps <code>GOAL</code>; the header component does not change. Nothing in <code>readGoal</code>, <code>goalText</code> or the header assumes the measure is a count of homes; only <code>goalName</code> (through <code>measure.unit</code>) and <code>goalStep</code> (homes chart only) know the unit.</aside>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests in <code>src/lib/goal/goal.spec.ts</code>. Build views with <code>viewOfLog(logFilled(logCompiled(EMPTY_LOG, statics()), chunk(0, 24)))</code> as <code>results.spec.ts:7-10</code> does; make test goals with <code>{ ...STATE_TARGET, amount, deadline: v.months[k] }</code>.
+        <pre><code data-lang="ts">it('the state target is RHNA 2023-2031, counted from 30 Jun 2022, due 31 Jan 2031')
+  // STATE_TARGET.amount === M1_TARGETS.find((t) =&gt; t.id === 'rhna')!.units (82069)
+  // STATE_TARGET.deadline === RHNA_DEADLINE; STATE_TARGET.countsFrom === dayFromUtc(2022, 6, 30)
+  // GOAL === STATE_TARGET; STATE_TARGET.name === 'State target'
+it("countsFrom matches fixture-0's baseline.since")
+  // read e2e/fixtures/data/fixture-0/scenarios/fzp/projects.json: rhnaCompletedNet.since === 19173 === countsFrom
+it('names the goal')
+  // goalName(STATE_TARGET) === 'State target: 82,069 homes by Jan 2031'
+it('HOMES_COMPLETED counts the homes built before today plus the simulation')
+  // valueAt(v, TODAY) === v.baseline.completedNet; valueAt(v, 5) === base + v.rows[5].completedNet
+it('reads at the playhead before the deadline and holds the deadline month after it')
+  // g = { amount: big, deadline: v.months[12] }
+  // readGoal(g, v, 3)!.fraction === valueAt(v, 3) / big
+  // readGoal(g, v, 20)!.fraction === readGoal(g, v, 12)!.fraction
+it('reached: the first month at or before the read month, and only by the deadline')
+  // amount = valueAt(v, 8) (rows rise in the fixture), deadline months[12]
+  // readGoal(g, v, 7)!.reachedOn === null; readGoal(g, v, 8)!.reachedOn === v.months[8]
+  // readGoal(g, v, 20)!.reachedOn === v.months[8]
+  // with deadline months[6]: readGoal(g, v, 20)!.reachedOn === null
+it('dragging back before the reached month shows the percentage again')
+  // goalText(readGoal(g, v, 7)!) matches /^\d+(\.\d)?% of the goal$/
+it('goalText')
+  // goalText({ fraction: 0.68, reachedOn: null }) === '68% of the goal'
+  // goalText({ fraction: 0.9999, reachedOn: null }) === '99% of the goal'
+  // goalText({ fraction: 1.2, reachedOn: dayFromUtc(2029, 3, 1) }) === 'Goal reached, Mar 2029'
+it('is null past the filled part')
+  // readGoal(g, cut(v, 5), 9) === null; readGoal(g, cut(v, 5), TODAY) !== null
+it('a deadline before the window holds the value at today')
+  // g.deadline = v.months[0] - 40: readGoal(g, v, 10)!.fraction === base / g.amount
+  // reachedOn === null unless base &gt;= amount; with amount = base: reachedOn === v.months[0]
+it('a deadline past the window reads at the playhead')
+  // g.deadline = v.months[v.lastIndex] + 400: readGoal(g, v, 10)!.fraction === valueAt(v, 10) / amount
+it('goalStep is the amount still needed after today, at the deadline month')
+  // goalStep({ ...g, deadline: v.months[12] }, v) deep-equals
+  //   { deadlineIndex: 12, units: g.amount - v.baseline.completedNet }
+  // null for a deadline before months[0] or after months[lastIndex]
+it('goalStep is null for a measure other than homes')
+  // goalStep({ ...g, measure: { ...HOMES_COMPLETED, id: 'other' as 'homesCompleted' } }, v) === null</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail (module not found).
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/goal/goal.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement <code>src/lib/goal/goal.ts</code> as in Interfaces. <code>readGoal</code> scans months from <code>TODAY</code> to the read month for <code>reachedOn</code>; that is at most the deadline month plus one reads per call, which Task 2's guard relies on.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the tests and see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/goal/goal.spec.ts</code></pre>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/goal/goal.ts src/lib/goal/goal.spec.ts
+git commit -m "feat(sim): define the goal in one module"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The headline at one month</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/results.ts:53-76</code>. Replace <code>headerOf</code> with <code>headlineAt</code>, <code>headlineText</code> and <code>headlineSpoken</code>. Drop the imports only <code>headerOf</code> used. Test: <code>src/lib/timeline/results.spec.ts</code> (replace the <code>headerOf</code> block, <code>:12-54</code>).</li>
+      <li>Modify: <code>src/lib/timeline/copy.ts</code>. Add <code>homesBy</code>. Test: <code>src/lib/timeline/copy.spec.ts</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 1's <code>GOAL</code>, <code>Goal</code>, <code>GoalReading</code>, <code>TODAY</code>, <code>readGoal</code>, <code>goalText</code>, <code>goalName</code>; slice 1's <code>fromPolicyText(n: number): string</code> (<code>src/lib/fzp/score-view.ts</code>) for the effect.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// copy.ts
+/** '12,345 homes by Apr 2040'; at === null: '0 homes by today'. Negative counts use U+2212. */
+export const homesBy: (n: number, at: Day | null) =&gt; string;
+
+// results.ts
+export interface Headline {
+  /** Simulated net homes completed from today to the playhead: rows[i].completedNet; 0 at today. */
+  homes: number;
+  /** months[i]; null at today. */
+  at: Day | null;
+  /** planEffect[i].completedNetNew (0 at today) when view.compare === 'plan', else null. */
+  effect: number | null;
+  goal: GoalReading | null;
+}
+/**
+ * The headline at calendar month i. Null ("calculating…") without a view, while `provisional`,
+ * or when view.filledThrough &lt; i. `atToday` (the playhead's day is the dataset date) reads
+ * today: 0 homes, effect 0, the goal at TODAY.
+ */
+export function headlineAt(
+  view: TimelineView | null,
+  i: number,
+  atToday: boolean,
+  provisional: boolean,
+  goal?: Goal // default GOAL
+): Headline | null;
+
+export interface HeadlineText {
+  main: string;            // homesBy(homes, at)
+  effect: string | null;   // fromPolicyText(effect) (slice 1)
+  goal: string | null;     // goalText(goal reading)
+  goalName: string | null; // goalName(goal) when goal is shown
+}
+export function headlineText(h: Headline, goal?: Goal): HeadlineText;
+/** main, effect and goal, in that order, the nulls left out, joined by ', '. */
+export function headlineSpoken(t: HeadlineText): string;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call</strong> At the dataset date the headline reads 0, not <code>rows[0]</code>. Row 0 is the state at the end of the dataset date's month (<code>src/lib/sim/scenario/types.ts:313</code>), so it can already hold homes completed in the rest of that month. The spec says "At today the first two read zero"; the first frame after today steps to row 0 as any month step does.</aside>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// copy.spec.ts
+it('homesBy')
+  // homesBy(12345, dayFromUtc(2040, 4, 1)) === '12,345 homes by Apr 2040'
+  // homesBy(0, null) === '0 homes by today'; homesBy(-12, dayFromUtc(2026, 11, 1)) === '−12 homes by Nov 2026'
+
+// results.spec.ts, describe('headlineAt')
+it('counts from today: the world at the playhead, without the baseline')
+  // headlineAt(v, 10, false, false)!.homes === v.rows[10].completedNet; .at === v.months[10]
+it('reads 0 and today at the dataset date')
+  // h = headlineAt(v, 0, true, false)!: h.homes === 0, h.at === null, h.effect === 0
+  // h.goal deep-equals readGoal(GOAL, v, TODAY)
+it('the effect shows only against the plan')
+  // headlineAt(v, 10, false, false)!.effect === v.planEffect[10].completedNetNew
+  // headlineAt(whole('preFzp'), 10, false, false)!.effect === null
+it('negative homes and effects stay negative')
+  // rows[3].completedNet = -12, planEffect[3].completedNetNew = -56:
+  // headlineText(headlineAt(v', 3, false, false)!) main '−12 homes by …', effect '−56 from your policy'
+it('is calculating only until the playhead month is filled')
+  // headlineAt(cut(v, 5), 4, false, false) !== null; headlineAt(cut(v, 5), 5, false, false) === null
+  // headlineAt(null, 0, true, false) === null; headlineAt(v, 3, false, true) === null
+it('nothing is read at the end of the window')
+  // headlineAt(v, 4, false, false) is unchanged when v.rows[v.lastIndex] and
+  //   v.planEffect[v.lastIndex] are replaced by different values
+it('reads a bounded number of rows, whatever the window length')
+  // wrap v.rows and v.planEffect in a Proxy counting numeric index reads;
+  // g = { ...GOAL, deadline: v.months[12] }; for i of [0, 12, 23]: reset; headlineAt(v, i, false, false, g)
+  // expect(reads).toBeLessThanOrEqual(Math.min(i, 12) + 4)
+it('headlineText and headlineSpoken say the same thing')
+  // t = headlineText(h, g); headlineSpoken(t) === [t.main, t.effect, t.goal].filter(Boolean).join(', ')
+  // t.goalName === goalName(g); with goal null: t.goal === null, t.goalName === null
+it('no header string says RHNA')
+  // for several months and both compares: JSON.stringify(headlineText(...)) not toMatch(/RHNA/)</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/results.spec.ts src/lib/timeline/copy.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Implement <code>homesBy</code>, <code>headlineAt</code>, <code>headlineText</code> and <code>headlineSpoken</code> as in Interfaces, and delete <code>headerOf</code>. <code>TimelineMode.svelte</code> and its spec still import <code>headerOf</code>; leave their compile errors to Task 3 (run only the two specs here).</li>
+      <li id="t2-s4"><input type="checkbox"> Run the tests and see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/results.spec.ts src/lib/timeline/copy.spec.ts src/lib/goal/goal.spec.ts</code></pre>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/timeline/results.ts src/lib/timeline/results.spec.ts src/lib/timeline/copy.ts src/lib/timeline/copy.spec.ts
+git commit -m "feat(sim): the headline at the playhead's month, counted from today"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: The header follows the playhead</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/TimelineHeaderScore.svelte</code> (whole file). Props become the strings; the 4 px meter goes; line 2 and the goal tooltip are added. Test: <code>TimelineHeaderScore.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte:112,142,347-352,991-1008</code>. Derive the headline from <code>shown.view</code> and <code>index</code>; drop <code>session.shown(statics.lastIndex)</code> and <code>homesAddedBy</code>. Test: <code>TimelineMode.svelte.spec.ts:546-578</code> (rewrite) and new cases.</li>
+      <li>Modify: <code>e2e/sim.spec.ts:264</code>, <code>e2e/sim-timeline.spec.ts:137</code>, <code>e2e/fzp.spec.ts:89,284-287</code>: the score bar now reads <code>/^0 homes by today$/</code> on open and <code>/^[\d,]+ homes by [A-Z][a-z]{2} \d{4}$/</code> after the playhead moves. Add one e2e case to <code>e2e/sim.spec.ts</code> (below).</li>
+      <li>Modify: <code>docs/dev/timeline-ui.md:29</code> (the header score bullet: what it reads, the goal module, the drop order) and <code>docs/dev/sim-page.md:9</code> (header item 1).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 2's <code>headlineAt</code>, <code>headlineText</code>, <code>headlineSpoken</code>, <code>HeadlineText</code>; <code>Explain</code> with <code>as="wrap"</code> (<code>src/lib/timeline/Explain.svelte:8-16,79-92</code>: it adds its tooltip id to the focusable child's <code>aria-describedby</code> while open).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// TimelineHeaderScore.svelte Props
+interface Props {
+  /** null: "calculating…" (CALCULATING). */
+  text: HeadlineText | null;
+  busy: boolean;
+  stale: boolean;
+  expanded?: boolean;
+  controls: string;
+  onclick(): void;
+  live: string;
+  quiet: boolean;
+}
+// Markup (test ids kept: score-bar, score-live):
+//   Explain as="wrap" text={text.goalName}   (only when text.goal is shown)
+//     div (the box, its ::before is the press target, as today)
+//       button[data-testid=score-bar]  = text.main, or CALCULATING
+//         aria-describedby = the line-2 id when line 2 has content
+//       span#…-detail[data-testid=score-detail]  line 2, text-xs muted, pointer-events none
+//         span[data-testid=score-delta] text.effect
+//         span aria-hidden " · "   (only when both parts show)
+//         span[data-testid=score-goal]  text.goal
+//   span.sr-only[aria-live=polite][data-testid=score-live]  (unchanged behaviour)
+
+// TimelineMode.svelte
+const atToday = $derived(day &lt;= asOf);
+const headline = $derived(
+  headlineAt(shown.view, index, atToday, session?.provisional ?? false)
+);
+const headText = $derived(headline ? headlineText(headline) : null);
+// &lt;TimelineHeaderScore text={headText} live={headText ? headlineSpoken(headText) : ''} … /&gt;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call</strong> Two lines, not one. Line 1 is the button ("47,335 homes by Apr 2040"); line 2 ("+1,817 from your policy · 68% of the goal") is its description, under it in <code>text-xs</code>, as today's delta sits under the count. The header stays 48 px and the box is only as wide as the longer line, which is what lets it fit at 1024 px.</aside>
+    <aside data-kind="decision"><strong>Builder's call</strong> What drops first at narrow widths, following the spec's order (number and date, then effect, then goal): below sm (640 px) line 2 is hidden (<code>max-sm:hidden</code>), so only "N homes by Mon YYYY" shows; from lg to xl (1024 to 1279 px), when the effect shows, the goal part is hidden (<code>lg:max-xl:hidden</code> on <code>score-goal</code> only while <code>text.effect</code> is non-null). Everywhere else both show. The hidden parts stay in the button's description and the live text, and Results carries the target rows.</aside>
+    <aside data-kind="decision"><strong>Builder's call</strong> The goal is named on hover and focus by wrapping the box in <code>Explain as="wrap"</code> with <code>text.goalName</code>, not by a second button: a second target inside the 48 px header would overlap the box's own press target (WCAG 2.5.8). Its tooltip is positioned under the box at every width (a component style as <code>.tl-status [role=tooltip]</code> does, <code>TimelineMode.svelte:1333-1357</code>), so the header never grows, and is hidden below sm with line 2.</aside>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// TimelineHeaderScore.svelte.spec.ts (replace the year, delta and meter cases)
+it('shows calculating with no text')               // bar() toHaveTextContent(CALCULATING); no score-detail
+it('line 1 is the button; line 2 describes it')
+  // text = { main: '47,335 homes by Apr 2040', effect: '+1,817 from your policy',
+  //          goal: '68% of the goal', goalName: 'State target: 82,069 homes by Jan 2031' }
+  // bar() toHaveAccessibleName(text.main)
+  // bar() toHaveAccessibleDescription('+1,817 from your policy · 68% of the goal')
+it('no effect: line 2 is the goal alone, with no separator')
+it('no meter and no RHNA anywhere in the box')   // getByRole('meter') none; box textContent not /RHNA/
+it('hover and focus name the goal; Escape closes it; the box keeps its height')
+  // focus bar(): getByRole('tooltip') toHaveTextContent(text.goalName); box height unchanged (±0.5)
+it('below sm only line 1 shows')                  // viewport 375: score-detail not visible
+it('from lg to xl the goal drops while the effect shows') // viewport 1100: score-goal hidden, score-delta visible
+it('the live region speaks the given text once settled, never while quiet') // keep today's :90-110 cases
+
+// TimelineMode.svelte.spec.ts (replace :546-578, keep the provisional case's flow)
+it('a provisional open keeps the header calculating until the full document fills')
+  // as today, final assertion: scoreBar() toHaveTextContent('0 homes by today')
+it('the header reads 0 by today, then follows the playhead month by month')
+  // opened(LAST): scoreBar() '0 homes by today'
+  // slider().focus(); PageUp: scoreBar() toHaveTextContent(homesBy(v.rows[i].completedNet, MONTHS[i]))
+  //   with i = indexOfDay(MONTHS, debug().day); live region spoken text === headlineSpoken(headlineText(…))
+  // Home: back to '0 homes by today'
+it('the effect shows only with a policy in force')
+  // STATICS compare 'preFzp': no score-delta; compare 'plan': score-delta '+N from your policy'
+it('while stale the header shows the held numbers, dimmed, not calculating')
+  // opened(LAST); PageUp x2; text = scoreBar().textContent; setPolicy(mk(protect(5)))
+  // header box has data-stale; scoreBar() text === text (not CALCULATING)
+  // emit compiled + refill(2, 0) + filled(2, 0, LAST + 1): text equals the new view's homesBy
+it('a refill that withdraws the playhead month shows calculating until it is filled again')
+it('the header writes the DOM only when the playhead changes month')
+  // MutationObserver (childList, characterData, subtree) on the score box, counting callbacks;
+  // press Play (slow speed if one frame can cross a month); for each of 30 rAF frames record
+  // indexOfDay(MONTHS, debug().day); pause; expect(mutationCallbacks).toBeLessThanOrEqual(monthChanges + 1)
+  // and expect(frames).toBeGreaterThan(monthChanges)  // the test is meaningful only then
+
+// e2e/sim.spec.ts
+test('the headline follows the playhead and counts from today')
+  // gotoSim: scoreBar toHaveText('0 homes by today')
+  // slider focus, End: scoreBar toHaveText(/^[\d,]+ homes by [A-Z][a-z]{2} \d{4}$/), and its date equals
+  //   formatShortMonthYear(the month of fzp(page, 'day'))
+  // the score-detail text matches /% of the goal$|^Goal reached, / (no policy: no "from your policy")
+  // addPolicy(page, 'Zoning', 'Transit rule'); waitRefilled: score-delta toHaveText(/^[+−][\d,]+ from your policy$/)
+  // Home: scoreBar toHaveText('0 homes by today')</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run the unit specs and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/TimelineHeaderScore.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement <code>TimelineHeaderScore</code> and the <code>TimelineMode</code> wiring as in Interfaces. Keep the stale style (<code>div[data-stale]</code>, <code>:122-132</code>), <code>aria-busy</code>, <code>aria-expanded</code> and <code>aria-controls</code> as today; pressing the headline still calls <code>onscore</code>. <code>headlineAt</code> must depend only on <code>shown.view</code>, <code>index</code>, <code>atToday</code> and <code>provisional</code>, never on <code>day</code> directly, so a frame inside a month changes nothing. Remove <code>homesAddedBy</code> from the import at <code>:112</code> (Task 6 deletes it).</li>
+      <li id="t3-s4"><input type="checkbox"> Update the e2e regexes listed in Files, add the e2e case, and update the two docs: the header bullet in <code>timeline-ui.md</code> says the headline is <code>rows[i].completedNet</code> at the playhead's month (0 at today), the effect is <code>planEffect[i].completedNetNew</code> only with <code>compare === 'plan'</code>, the goal is read through <code>src/lib/goal/goal.ts</code>, "calculating" only until the playhead's month is filled, and the drop order; <code>sim-page.md:9</code> says the same in one sentence and drops "the RHNA meter" and "vs FZP".</li>
+      <li id="t3-s5"><input type="checkbox"> Run the unit specs, then the three e2e files, and see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/
+SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts e2e/sim-timeline.spec.ts e2e/fzp.spec.ts --project=chromium --project=mobile</code></pre>
+        <p>The header-fit tests at <code>e2e/sim.spec.ts:1176-1224</code> still look for "Saved" and the status line; Task 5 rewrites them. If they fail here only on those lookups, note it and go on.</p>
+      </li>
+      <li id="t3-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/timeline/TimelineHeaderScore.svelte src/lib/timeline/TimelineHeaderScore.svelte.spec.ts src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts e2e/sim.spec.ts e2e/sim-timeline.spec.ts e2e/fzp.spec.ts docs/dev/timeline-ui.md docs/dev/sim-page.md
+git commit -m "feat(sim): the header headline follows the playhead"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The save state is silent when saved</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sharing/SaveIndicator.svelte:52-79</code>. Test: <code>SaveIndicator.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/routes/page.header.svelte.spec.ts:46-71</code> (Paint), <code>src/lib/sim-page/SimPage.svelte.spec.ts:1349-1381</code>, <code>e2e/share-states.spec.ts:20-35</code>: wait on the attribute, not the text.</li>
+      <li>Modify: <code>docs/dev/plan-sharing.md:110</code> and <code>docs/dev/sim-page.md:86</code> (the indicator's states).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces:
+        <pre><code data-lang="ts">// SaveIndicator.svelte root: [data-testid=save-state][data-save-status={status}]
+//   status 'saved'  : no visible text; an invisible, aria-hidden sizer holding 'Saving…' keeps the width
+//   status 'saving' : [data-testid=save-text] 'Saving…' in the sizer's grid cell
+//   status 'off'    : the 'Autosave off' button and its N4 popover, as today
+//   [data-testid=save-live] role=status: unchanged (announces off and on transitions only)</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call</strong> The indicator reserves the width of "Saving…" whether or not it shows, so "Updating" to its right on <code>/sim</code> never moves when a save starts or ends. "Autosave off" may widen it: that is a lasting abnormal state, and the header items still do not move, because the status sits in the left column's flexible space (<code>SiteHeader.svelte:129-142</code>).</aside>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// SaveIndicator.svelte.spec.ts (replace "shows Saved for saved")
+it('shows nothing when saved, and keeps its width')
+  // render saved: getByText('Saved') has no elements; save-state has data-save-status 'saved'
+  // w = save-state width; rerender saving: 'Saving…' visible; width === w; rerender saved: width === w
+it('shows "Saving…" for saving')   // as today
+// the off, live-region and popover cases stay as they are
+
+// page.header.svelte.spec.ts (Paint): the 1280 and 375 cases locate getByTestId('save-state'),
+//   expect data-save-status 'saved' and no visible 'Saved'; the box checks run on save-state
+// SimPage.svelte.spec.ts :1352, :1359, :1378: header().getByTestId('save-state')
+//   toHaveAttribute('data-save-status', 'saved') in place of getByText('Saved') toBeVisible()
+// e2e/share-states.spec.ts waitSaved: after the localStorage poll,
+//   expect(page.getByRole('banner').getByTestId('save-state')).toHaveAttribute('data-save-status', 'saved')</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/sharing/SaveIndicator.svelte.spec.ts src/routes/page.header.svelte.spec.ts src/lib/sim-page/SimPage.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Implement the indicator as in Interfaces (one inline grid cell: the sizer and the shown text share it). Then sweep: <code>rg -n "'Saved'|\"Saved\"" e2e src</code> must find no test that waits on the visible word (the <code>header-actions</code> host strings and <code>autosave</code> test names are not the indicator and stay). Update the two docs.</li>
+      <li id="t4-s4"><input type="checkbox"> Run the unit specs and the e2e file and see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/sharing/ src/routes/page.header.svelte.spec.ts src/routes/s src/lib/sim-page/SimPage.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/share-states.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t4-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sharing/SaveIndicator.svelte src/lib/sharing/SaveIndicator.svelte.spec.ts src/routes/page.header.svelte.spec.ts src/lib/sim-page/SimPage.svelte.spec.ts e2e/share-states.spec.ts docs/dev/plan-sharing.md docs/dev/sim-page.md
+git commit -m "feat(sharing): the save state is silent when saved"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: The status line goes; "Updating" sits in the header</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code>: <code>:96-97</code> (<code>STATUS_WIDEST</code> becomes <code>UPDATING</code>), <code>:134-136</code> (imports), <code>:383-409</code> (<code>statusWanted</code>), <code>:874-888</code> (<code>statusH</code> and <code>pinStuck</code>), <code>:974-989</code> (the slot), <code>:1061-1080</code> (the line, deleted), <code>:1246-1256</code> (the pinned block's variables). Test: <code>TimelineMode.svelte.spec.ts:291-316,450-480,879-970,1041</code>.</li>
+      <li>Modify: <code>src/lib/timeline/Timeline.svelte:333-340</code>: the default <code>scroll-margin-top</code> becomes <code>var(--tl-scroll-mt, 0px)</code> at every width; delete the <code>width &lt; 96rem</code> rule and its comment. Comments at <code>:202</code> and <code>:349-350</code> drop the status line.</li>
+      <li>Modify: <code>src/lib/timeline/fill.ts:83-89</code> (delete <code>fillStatusText</code>) and <code>fill.spec.ts:95-103</code>; <code>src/lib/timeline/copy.ts:10-11</code> (delete <code>forecastFilled</code>).</li>
+      <li>Modify: <code>src/lib/shell/SiteHeader.svelte:128-142,166-170</code>: below sm, on a page that pins an item, the site name moves into the Menu panel. Test: <code>SiteHeader.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>e2e/sim.spec.ts:368-376,419-470,1116-1224</code>, <code>e2e/fzp.spec.ts:700-725</code>, <code>e2e/chrome-dark.spec.ts:51-57</code>.</li>
+      <li>Modify: <code>docs/dev/timeline-ui.md:23,30</code> and <code>docs/dev/sim-page.md:9,79</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 4's <code>[data-testid=save-state]</code> and its reserved width; Task 3's <code>score-detail</code>, <code>score-delta</code>, <code>score-goal</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// TimelineMode.svelte
+const statusWanted = $derived(session &amp;&amp; stale ? UPDATING : '');
+// the status slot (SiteHeader's data-header-status), at every width:
+//   span[data-testid=tl-status-group] inline-grid
+//     cell 1: {@render status?.()}            (the save state)
+//     cell 2: span.tl-status[data-testid=tl-status]: invisible aria-hidden sizer 'Updating'
+//             + the shown status (Explain with STALE_NOTE while 'Updating')
+//   from sm: the two cells side by side (gap 0.5rem)
+//   below sm: both cells in one grid area; while 'Updating' shows, cell 1 is visibility: hidden
+// [data-testid=tl-status-live] role=status sr-only: kept, still the one live region, still
+//   placed first in the mode box; it now only ever holds 'Updating' or ''.
+// Gone: [data-testid=tl-status-line], statusH, --tl-pin-top (Timeline's default 0px stands),
+//   fillStatusText, forecastFilled.
+// Phone pinned block: modeEl scroll-padding-top = `${pinPad}px`;
+//   pinStuck (narrow) = !modeClientH || modeClientH - pinHeight &gt;= MIN_ROWS
+
+// SiteHeader.svelte: with `pinned`, the bar's site name link is max-sm:hidden and the Menu
+// panel gets the same link (sm:hidden) before the mode links.</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call</strong> Below sm the save state and "Updating" share one cell, and "Updating" wins while both apply. At 375 px the bar holds the Menu button (44 px on a coarse pointer), the headline ("12,345 homes by Mar 2066", about 190 px) and one status word; two status cells side by side do not fit. "Saving…" lasts about half a second and its live announcements are unaffected.</aside>
+    <aside data-kind="question"><strong>Needs the owner</strong> Moving the site name into the Menu below sm (on Paint too, which also pins a score) is what makes room for the status at 375 px. See <a href="#sec-open-questions">Open questions</a>. If declined: keep the name and visually hide the word "homes" below sm (the button's name keeps it, as today's "added", <code>HeaderScore.svelte:9-10</code>), then re-run <a href="#t5-s6">t5-s6</a> at 375 px with a coarse pointer.</aside>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing unit tests.
+        <pre><code data-lang="ts">// TimelineMode.svelte.spec.ts
+// replace :291-316
+it('the status slot says Updating while stale, then nothing; no fill text ever shows')
+  // opened(5): tl-status text '' (not /Forecast filled/); setPolicy: 'Updating' in tl-status,
+  // its explanation button inside tl-status; refill + fill: '' again
+// replace the :915-930 pair
+for (const width of [375, 1280, 1600])
+  it(`at ${width} px exactly one live region speaks the status; it shows in the header`)
+    // tl-status visible inside [data-header-status]; no tl-status-line in the document
+// replace :932-949
+for (const width of [375, 768, 1280])
+  it(`at ${width} px nothing moves when Updating comes and goes`)
+    // rects of: the site name or Menu button, score-bar's box, tl-map, tl-dock, tl-pin
+    // before, while stale ('Updating' visible), after: each equal (±0.5)
+// :951-970: the tooltip opens from the header slot and does not widen or deepen the header
+// :450-480: on a phone the pinned block sticks at the mode box's top (pin.top ≈ mode.top ±1);
+//   a focused slider leaves the rows in place
+// :1041 helper: phone top is the mode box's top, not the line's bottom
+
+// SiteHeader.svelte.spec.ts
+it('at 375px with a pinned item the site name waits in the Menu')
+  // render(SiteHeader, { routeId: '/sim', pinned }): bar link not visible; Menu click: link visible
+it('at 640px and up with a pinned item the site name stays in the bar')
+// the existing brand cases (no pinned item) are unchanged
+
+// fill.spec.ts: delete the fillStatusText block</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/shell/SiteHeader.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Implement as in Interfaces. Keep the one-change-a-second rule for the status (<code>showStatus</code>, <code>statusMs</code>). Keep the <code>.tl-status [role='tooltip']</code> style so the explanation opens under the slot.</li>
+      <li id="t5-s4"><input type="checkbox"> Run the timeline, shell and fill specs and see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/ src/lib/shell/
+npx vitest --run --project server src/lib/timeline/fill.spec.ts</code></pre>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Rewrite the e2e helpers and cases.
+        <pre><code data-lang="ts">// e2e/sim.spec.ts
+// widestHeaderText(page): the save-text cell reads 'Autosave off' (inject into [data-testid=save-text],
+//   creating the button's width with the real 'off' state where a test can reach it, else the text);
+//   score-bar's first text node '12,345 homes by Mar 2066'; score-delta '+12,345 from your policy';
+//   score-goal 'Goal reached, Mar 2043' (inject the spans when the fixture shows no policy)
+// widestStatusText(page): tl-status's shown span reads 'Updating' (forced visible)
+// expectStatusPlace(page): tl-status visible inside [data-header-status] at every width;
+//   tl-status-line count 0; tl-status-live count 1, role status; no button of the status among
+//   the actions
+// :1176 loop: widths [1024, 1280, 1536]; accessible name /^12,345 homes by Mar 2066$/;
+//   axe include ['header', '[data-testid=tl-status-live]']
+// :1200 Menu layout at 768: the same widest strings, fits closed and open
+// new: at 375 (mobile project) with the widest strings the header fits, and the site name is in the Menu
+// :368-376: on a phone the play control stays below the header's bottom edge
+// :419 'the Updating status never moves…': add the score bar box and the site name or Menu
+//   button box to the per-frame boxes; every recorded box equals its first
+// e2e/fzp.spec.ts :700-725: measure the notice stack from the header's bottom edge
+// e2e/chrome-dark.spec.ts :55: include ['header', '[data-testid=tl-dock]'] and, after an edit,
+//   the header again with 'Updating' showing</code></pre>
+      </li>
+      <li id="t5-s6"><input type="checkbox"> Run the e2e files and see them pass, both projects.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts e2e/fzp.spec.ts e2e/chrome-dark.spec.ts e2e/layout.spec.ts --project=chromium --project=mobile</code></pre>
+        <p>If the 1024 px fit fails with the widest strings, do not loosen the test: check the drop order of Task 3 is in effect (goal hidden from lg to xl while the effect shows), then report the measured overflow before changing anything else.</p>
+      </li>
+      <li id="t5-s7"><input type="checkbox"> Update the docs: <code>timeline-ui.md:23</code> (the pinned block sticks at the scroll box's top at every width), <code>:30</code> (rule 32 as amended again: "Updating" in the header's status slot at every width, beside the save state, one live region; no fill text, the ruler's hatching shows fill progress); <code>sim-page.md:9</code> (status slot) and <code>:79</code> (header width: drop the fill-state sentence, add the 375 px arrangement).</li>
+      <li id="t5-s8"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/Timeline.svelte src/lib/timeline/fill.ts src/lib/timeline/fill.spec.ts src/lib/timeline/copy.ts src/lib/shell/SiteHeader.svelte src/lib/shell/SiteHeader.svelte.spec.ts e2e/sim.spec.ts e2e/fzp.spec.ts e2e/chrome-dark.spec.ts docs/dev/timeline-ui.md docs/dev/sim-page.md
+git commit -m "feat(sim): drop the status line; Updating sits with the save state"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Every homes figure agrees with the headline</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/fzp/SimResults.svelte:24-31,103-106,134-141,187-198,246-248</code>. Test: <code>SimResults.svelte.spec.ts</code> (<code>:104-170,312,560,834</code> read <code>fzp-net</code>).</li>
+      <li>Modify: <code>src/lib/fzp/score-view.ts:109-132</code>: delete <code>homesAdded</code>, <code>homesAddedBy</code>, <code>sinceText</code>, <code>builtByTodayText</code>; add <code>builtTowardGoalText</code>. Keep <code>vsFzpText</code> (Paint's <code>HeaderScore</code> uses it) and slice 1's <code>fromPolicyText</code>. Test: <code>score-view.spec.ts:192-237</code>.</li>
+      <li>Modify: <code>src/lib/timeline/ChartRow.svelte:27-28,36,41-48,64,70-72</code> and <code>ChartLegend.svelte:17-20</code>. Test: <code>ChartRow.svelte.spec.ts:81-127,152</code>.</li>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte:353-361,1055</code>: <code>chartTarget</code> becomes <code>goalStep(GOAL, current)</code>. Test: <code>TimelineMode.svelte.spec.ts:850</code> (the stale case reads another Results element).</li>
+      <li>Modify: <code>src/lib/fzp/chart.ts:25-34,66,139,175,229-247</code> and <code>src/lib/fzp/ScoreChart.svelte:46-53,150</code>. Tests: <code>chart.spec.ts</code>, <code>ScoreChart.svelte.spec.ts</code>, <code>provenance.spec.ts:318-330</code>.</li>
+      <li>Modify: <code>docs/dev/timeline-ui.md</code> ("The screen": the chart row counts from today and draws the goal as the homes still needed).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 1's <code>GOAL</code>, <code>goalStep</code>; Task 2's <code>homesBy</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// score-view.ts
+/** '15,234 homes built from Jun 2022 to today count toward the goal.' (formatShortMonthYear(since)) */
+export function builtTowardGoalText(baseline: TimelineScore['baseline']): string;
+
+// SimResults.svelte
+//   gone: the headline block (fzp-net, the since text, FORECAST_NOTE's Explain, the built-by-today line)
+//   new:  p[data-testid=fzp-built] builtTowardGoalText(score.baseline), first in the target rows' block
+//   Sources: FORECAST_NOTE renders only when no policy is in force (copy.compare !== 'fzp',
+//            or slice 1's name for "a policy is in force")
+
+// ChartRow.svelte
+//   homes(i) = view.rows[i].completedNet           (no baseline)
+//   yMin starts at 0, not Math.min(0, base)
+//   target prop: goalStep(GOAL, view)'s shape, unchanged type { deadlineIndex, units }
+//   readout and aria-valuetext: homesBy(homes(i), view.months[i])   ('1,234 homes by Apr 2040')
+// ChartLegend.svelte: [ 'Homes completed', GOAL.name ]
+
+// chart.ts (Results chart: stays counted from June 2022, labelled so)
+SERIES_NAME.total = `Toward the goal, since ${formatShortMonthYear(GOAL.countsFrom)}`
+//   'Toward the goal, since Jun 2022'
+// rhnaY = y(GOAL.amount); the line's label in ScoreChart = GOAL.name ('State target')
+// chartLabel: `${SERIES_NAME.total}: ${parts}.` (parts as today)
+// ScoreChart COLUMNS[1] = 'Toward the goal'</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the smallest consistent set</strong> The headline and the timeline chart count from today. The Results face loses its headline, so the only "homes added" number on the main screen is the header's. The homes built from June 2022 to today appear once, as a sentence at the top of the target rows saying they count toward the goal. The target rows themselves keep counting from June 2022, which is right for a percentage of the goal. The Results chart stays counted from June 2022 and is labelled "Toward the goal, since Jun 2022" next to a "State target" line. Moving it to today would also move the published estimates it is compared with (<code>references</code> with measure <code>completedNet</code>, <code>chart.ts:99-106,177-186</code>), which count from their own start dates. Slice 3 replaces this chart.</aside>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// score-view.spec.ts (replace the homesAdded, sinceText and builtByToday cases)
+it('builtTowardGoalText')
+  // ({ completedNet: 15234, since: dayFromUtc(2022, 6, 30), provenance }) ===
+  //   '15,234 homes built from Jun 2022 to today count toward the goal.'
+
+// SimResults.svelte.spec.ts
+it('has no headline: no fzp-net, no "homes added since", no "built by today"')
+it('orders what the policy added, chart, the built-toward-goal line, targets, pipeline, then Sources')
+it('says once, with the targets, that the homes built since Jun 2022 count toward the goal')
+  // getByTestId('fzp-built') text === builtTowardGoalText(score.baseline); appears once in the face
+it('the forecast note shows in Sources only with no policy in force')
+  // copy preFzp: FORECAST_NOTE in Sources; copy for a policy: getByText(FORECAST_NOTE) none
+// :160-170 'headline and pipeline' keeps only the pipeline rows; :312, :560, :834 use fzp-built
+
+// ChartRow.svelte.spec.ts (:116-127 rewritten)
+it('plots and reads out homes counted from today, with the goal at the homes still needed')
+  // view.baseline.completedNet === 1000; target { deadlineIndex: 12, units: 20 }
+  // the line's first point sits at y(rows[0].completedNet) with yMin 0: below the target line
+  // focus overlay: chart-readout text === homesBy(view.rows[split].completedNet, view.months[split])
+it('the legend names the goal')   // names === ['Homes completed', 'State target']
+
+// TimelineMode.svelte.spec.ts
+it('the chart step is the goal amount minus the homes built before today')
+  // chart-target y1 maps goalStep(GOAL-with-test-deadline, view).units; or assert the prop through
+  //   a ChartRow spy is not available: compute from the svg's y scale as ChartRow.spec does
+
+// chart.spec.ts / ScoreChart.svelte.spec.ts / provenance.spec.ts
+it('the Results chart says it counts toward the goal since Jun 2022')
+  // SERIES_NAME.total === 'Toward the goal, since Jun 2022'; table header 'Toward the goal';
+  // chartLabel starts 'Toward the goal, since Jun 2022: '; the target line's text is 'State target'
+  // total values unchanged (base + completedNet): the existing value assertions stay</code></pre>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/fzp/score-view.spec.ts src/lib/fzp/chart.spec.ts src/lib/fzp/provenance.spec.ts
+npx vitest --run --project client src/lib/fzp/SimResults.svelte.spec.ts src/lib/fzp/ScoreChart.svelte.spec.ts src/lib/timeline/ChartRow.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Implement as in Interfaces. In <code>SimResults</code>, also drop the now unused <code>sinceRest</code> and imports. Then sweep: <code>rg -n "homes added|since Jun|built by today|fzp-net" src e2e</code> finds nothing on <code>/sim</code> (Paint's <code>HeaderScore</code> "homes added" is out of scope and stays).</li>
+      <li id="t6-s4"><input type="checkbox"> Run the specs and see them pass; then the Results e2e cases.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/fzp/ src/lib/timeline/
+npx vitest --run --project client src/lib/fzp/ src/lib/timeline/
+SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts e2e/sim-share.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t6-s5"><input type="checkbox"> Update <code>docs/dev/timeline-ui.md</code> ("The screen": the chart row plots <code>rows[i].completedNet</code> from today and draws the goal's step at <code>goalStep</code>, the amount still needed; Results says once that homes built since June 2022 count toward the goal; the Results chart counts toward the goal since June 2022).</li>
+      <li id="t6-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/fzp/SimResults.svelte src/lib/fzp/SimResults.svelte.spec.ts src/lib/fzp/score-view.ts src/lib/fzp/score-view.spec.ts src/lib/fzp/chart.ts src/lib/fzp/chart.spec.ts src/lib/fzp/ScoreChart.svelte src/lib/fzp/ScoreChart.svelte.spec.ts src/lib/fzp/provenance.spec.ts src/lib/timeline/ChartRow.svelte src/lib/timeline/ChartRow.svelte.spec.ts src/lib/timeline/ChartLegend.svelte src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts docs/dev/timeline-ui.md
+git commit -m "feat(sim): every homes figure counts from today or says it counts toward the goal"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Whole-suite pass</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Whatever the full runs below turn up. No new behaviour.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Run the checks and the full unit suite.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npm run test:unit</code></pre>
+      </li>
+      <li id="t7-s2"><input type="checkbox"> Run the full e2e suite on a free port, both projects. Every failure is fixed at its cause, without retries, sleeps or loosened assertions.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> Sweep for leftovers: <code>rg -n "headerOf|fillStatusText|forecastFilled|tl-status-line|homesAddedBy|sinceText|builtByTodayText" src e2e docs/dev</code> finds nothing, and <code>rg -n "RHNA" src/lib/timeline/TimelineHeaderScore.svelte src/lib/timeline/results.ts</code> finds nothing.</li>
+      <li id="t7-s4"><input type="checkbox"> Preview the plan of signoff without running it, and confirm every step it lists ran green above.
+        <pre><code data-lang="sh">npm run signoff -- --dry-run</code></pre>
+      </li>
+      <li id="t7-s5"><input type="checkbox"> Commit any fixes.
+        <pre><code data-lang="sh">git commit -am "test(sim): re-pin the suite for one clock"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <ul>
+      <li id="q-brand"><strong>The site name on a phone.</strong> At 375 px the bar cannot hold the site name, the headline with a month, "Updating" and the Menu button. Recommended: move the site name into the Menu below 640 px on pages that pin a score (Simulate and Paint), consistent with "phone header items in a menu". The alternative keeps the name and hides the word "homes" visually below 640 px ("12,345 by Mar 2066"), which reads worse and still may not fit with a 44 px Menu button. The plan builds the recommendation (Task 5).</li>
+      <li id="q-paint-header"><strong>Paint's own header score.</strong> It still shows "N homes added" with its unlabelled meter (out of scope). Its header now looks unlike Simulate's. Recommended: leave it for slice 4, which rewords it as "room for N homes".</li>
+    </ul>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li><strong>Spec coverage.</strong> Rule 1 and Main findings 1: Tasks 2, 3. Header bullets (three parts, follow the playhead, zero at today, goal named on hover and focus, "Goal reached", no middle part with no policy): Tasks 2, 3. Goal as one replaceable thing: Task 1. Decided "headline starts at zero" and "homes since 2022 count only toward the goal": Tasks 2, 6. One vocabulary ("goal", "State target", "from your policy", "homes"): Tasks 1 to 3, 6. Inventory rows: headline, date and progress (3), "Work is saved" (4), "forecast is being recomputed" and "how far the forecast is computed" (5). Defect "A forecast if nothing changes." (6). Pressing the headline: unchanged (3), per the dispatch; the spec's "opens Details" is slice 7.</li>
+      <li><strong>Type consistency.</strong> <code>headlineAt(view, i, atToday, provisional, goal?)</code>, <code>HeadlineText { main, effect, goal, goalName }</code>, <code>readGoal(goal, view, i)</code>, <code>goalStep(goal, view)</code> and <code>TODAY</code> are used with the same names and shapes in Tasks 1, 2, 3 and 6.</li>
+      <li><strong>Review Focus.</strong> Each item names its test step; all five sit in owning tasks.</li>
+      <li><strong>Proportion.</strong> Code blocks are signatures, test names and assertions; no component bodies.</li>
+    </ul>
+  </section>
+</article>

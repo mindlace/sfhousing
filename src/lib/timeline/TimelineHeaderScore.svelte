@@ -1,6 +1,6 @@
 <!--
   The header score of `/sim` on the timeline: "{n} homes by {year}", the plan world's count
-  at the last month of the window, with the "vs FZP" delta under it and the 4 px RHNA meter
+  at the last month of the window, with the "from your policy" delta under it and the 4 px RHNA meter
   along its bottom edge (rule 27). Same markup and test ids as `scoreboard/HeaderScore.svelte`,
   which is hashed and says "added". Its accessible name and the delta's description carry "by
   {year}". It reads "calculating" until the forecast is filled to its end, and while `provisional`
@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { CALCULATING, vsFzpText } from '$lib/fzp/score-view';
+  import { CALCULATING, fromPolicyText } from '$lib/fzp/score-view';
   import { formatCount } from '$lib/scoreboard/format';
   import type { TargetProgress } from '$lib/scoreboard/types';
   import { fillPercent, meterValueText, trackMax } from '$lib/scoreboard/view';
@@ -21,7 +21,7 @@
     year: number;
     /** The progress bar's target (RHNA); null hides the bar. */
     target: TargetProgress | null;
-    /** The delta vs FZP; null hides it. */
+    /** The delta from current law, shown as "from your policy"; null hides it. */
     delta: number | null;
     /** True while a stripped document is open: "calculating" whatever the fill state. */
     provisional?: boolean;
@@ -96,7 +96,7 @@
     <span
       id={deltaId}
       class="pointer-events-none text-xs font-medium text-ink-muted tabular-nums dark:text-ink-dark-muted"
-      data-testid="score-delta">{vsFzpText(delta)}<span class="sr-only"> by {year}</span></span
+      data-testid="score-delta">{fromPolicyText(delta)}<span class="sr-only"> by {year}</span></span
     >
   {/if}
   {#if !provisional && target}

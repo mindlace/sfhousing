@@ -581,15 +581,18 @@ export interface ScoreCopy {
 
 export function scoreCopy(l: SimLevers | null): ScoreCopy {
   if (l === null || l.compare === 'preFzp')
-    return { plan: 'the Family Zoning Plan', twin: 'the old zoning', compare: 'preFzp' };
-  return { plan: 'your policy', twin: 'the Family Zoning Plan as written', compare: 'fzp' };
+    return { plan: 'current law', twin: 'the old zoning', compare: 'preFzp' };
+  return { plan: 'your policy', twin: 'current law', compare: 'fzp' };
 }
 
 /** The first line of the score details' "what … added" section: who is compared with what. */
 export function comparisonLine(copy: ScoreCopy, homes: number | null): string {
   const mine = copy.compare === 'fzp';
-  if (homes === null) return `${mine ? 'Your policy vs FZP' : 'FZP vs no FZP'}: ${CALCULATING}`;
+  if (homes === null)
+    return `${mine ? 'Your policy vs current law' : 'Current law vs the old zoning'}: ${CALCULATING}`;
   const verb = homes < 0 ? 'cost' : 'added';
   const n = formatCount(homes < 0 ? -homes : homes);
-  return mine ? `Your policy ${verb} ${n} homes vs FZP` : `FZP ${verb} ${n} homes vs no FZP`;
+  return mine
+    ? `Your policy ${verb} ${n} homes vs current law`
+    : `Current law ${verb} ${n} homes vs the old zoning`;
 }

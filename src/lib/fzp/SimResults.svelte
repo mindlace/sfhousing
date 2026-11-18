@@ -43,7 +43,7 @@
     datasetVersion: string;
     builtAt: string;
     onsources: () => void;
-    /** Who the plan effect is for (/sim): the Family Zoning Plan copy by default. */
+    /** Who the plan effect is for (/sim): the current-law copy by default. */
     copy?: ScoreCopy;
     /** The current levers' capacity (/sim): the protection line (plan 3, Task 10) reads it. */
     capacity?: LeverCapacity | null;
@@ -87,9 +87,6 @@
     const fewer = count(capacity.withoutProtections - capacity.plan, 'fewer home', 'fewer homes');
     return { lots, fewer };
   });
-
-  /** "the plan" in the Family Zoning Plan copy (its text unchanged), else the copy's own name. */
-  const short = $derived(copy.plan === 'the Family Zoning Plan' ? 'the plan' : copy.plan);
 
   /** The year of the window's last month: the capacity figure's note names it. */
   const lastYear = $derived(score ? utcParts(score.months[score.months.length - 1]).y : 0);
@@ -143,14 +140,14 @@
 
     <section class="mt-4" aria-busy={planPending ? 'true' : undefined}>
       <h2 class="text-sm font-semibold">
-        <Explain text={TWIN_NOTE}>What {short} added</Explain>
+        <Explain text={TWIN_NOTE}>What {copy.plan} added</Explain>
       </h2>
       <p class="mt-1 text-sm text-ink-muted dark:text-ink-dark-muted">
         {comparisonLine(copy, at.planCompleted)}
       </p>
       <dl class="mt-1 space-y-1 text-sm">
         <div class="flex justify-between gap-3">
-          <dt>Homes completed because of {short}</dt>
+          <dt>Homes completed because of {copy.plan}</dt>
           <dd class="tabular-nums">
             {at.planCompleted === null ? CALCULATING : formatCount(at.planCompleted)}
           </dd>
@@ -158,7 +155,7 @@
       </dl>
       <dl class="mt-1 text-sm">
         <div class="flex justify-between gap-3">
-          <dt>Homes approved because of {short}</dt>
+          <dt>Homes approved because of {copy.plan}</dt>
           <dd class="tabular-nums">
             {at.planEntitled === null ? CALCULATING : formatCount(at.planEntitled)}
           </dd>

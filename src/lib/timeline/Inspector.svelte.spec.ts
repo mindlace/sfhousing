@@ -19,7 +19,7 @@ import { addPolicy } from './add';
 import { TERMS_HINT } from './copy';
 import { PRESET_PER_POLICY } from './lens';
 import type { Policy, SimPolicy4 } from './policy4';
-import { FIXED_LABEL, formatEdge } from './rows';
+import { FIXED_LABEL, FIXED_NOTE, formatEdge } from './rows';
 import { movePolicy, removePolicy, setOn, type SpanRef, type TimelineWindow } from './spans';
 import { upgradePolicy } from './upgrade';
 import InspectorHost from './test/InspectorHost.svelte';
@@ -348,6 +348,18 @@ describe('Inspector', () => {
     expect(names()).toEqual(['Close editor']);
     expect(editor()!.querySelectorAll('[role="switch"]')).toHaveLength(0);
     expect(editor()!.textContent).toContain('whole window');
+    await expect.element(page.getByText(FIXED_NOTE.zoning)).toBeVisible();
+  });
+
+  it('each fixed row shows its sentence', async () => {
+    setup();
+    for (const kind of ['permitting', 'money'] as const) {
+      await bar(`${kind}/fixed/-1`).click();
+      await expect
+        .element(page.getByRole('heading', { level: 2, name: FIXED_LABEL[kind] }))
+        .toBeInTheDocument();
+      await expect.element(page.getByText(FIXED_NOTE[kind])).toBeVisible();
+    }
   });
 
   it('focus returns to the bar when the editor closes', async () => {

@@ -41,6 +41,7 @@ import {
   type Money
 } from '$lib/sim/scenario/finance-score';
 import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
+import { MARKET_FUNDING_SENTENCE4 } from '$lib/timeline/copy';
 import type { ResolvedTerms } from '$lib/timelapse/types';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from '$lib/timeline/chunk-log';
 import { resultsAt, scoreOfView } from '$lib/timeline/results';
@@ -129,7 +130,7 @@ describe('layout', () => {
       expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const els = [
       page.getByTestId('fzp-net').element(),
-      page.getByText('What the plan added').element(),
+      page.getByText('What current law added').element(),
       document.querySelector('[data-testid="fzp-chart"] svg')!,
       page.getByRole('meter').first().element(),
       page.getByTestId('fzp-stages').element(),
@@ -173,17 +174,21 @@ describe('what the plan added', () => {
   it('shows the plan-effect rows and the twin paragraph', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props() });
-    await expect.element(page.getByText('What the plan added')).toBeVisible();
+    await expect.element(page.getByText('What current law added')).toBeVisible();
     const row = (label: string) =>
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
-    expect(row('Homes completed because of the plan')).toContain('1,290');
-    expect(row('Homes approved because of the plan')).toContain('2,185');
+    expect(row('Homes completed because of current law')).toContain('1,290');
+    expect(row('Homes approved because of current law')).toContain('2,185');
     expect(sources().textContent).not.toContain('run twice');
     await expect.element(page.getByText(TWIN_NOTE)).not.toBeInTheDocument();
-    await page.getByRole('button', { name: 'What the plan added' }).click();
+    await page.getByRole('button', { name: 'What current law added' }).click();
     await expect.element(page.getByText(TWIN_NOTE)).toBeVisible();
     expect(
-      page.getByText('What the plan added').element().closest('section')!.getAttribute('aria-busy')
+      page
+        .getByText('What current law added')
+        .element()
+        .closest('section')!
+        .getAttribute('aria-busy')
     ).toBeNull();
   });
 
@@ -192,9 +197,9 @@ describe('what the plan added', () => {
     await render(SimResults, { props: props({ score: TIMELINE_SCORE_R0 }) });
     const row = (label: string) =>
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
-    expect(row('Homes completed because of the plan')).toContain('calculating…');
-    expect(row('Homes approved because of the plan')).toContain('calculating…');
-    const section = page.getByText('What the plan added').element().closest('section')!;
+    expect(row('Homes completed because of current law')).toContain('calculating…');
+    expect(row('Homes approved because of current law')).toContain('calculating…');
+    const section = page.getByText('What current law added').element().closest('section')!;
     expect(section.getAttribute('aria-busy')).toBe('true');
   });
 
@@ -216,12 +221,12 @@ describe('what the plan added', () => {
 });
 
 describe('score copy (/sim)', () => {
-  it('names your policy and the Family Zoning Plan as written for a customised policy', async () => {
+  it('names your policy and current law for a customised policy', async () => {
     await page.viewport(1024, 768);
     const copy = scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' });
     await render(SimResults, { props: props({ copy }) });
     await expect.element(page.getByText('What your policy added')).toBeVisible();
-    await expect.element(page.getByText('What the plan added')).not.toBeInTheDocument();
+    await expect.element(page.getByText('What current law added')).not.toBeInTheDocument();
     await expect.element(page.getByText(FORECAST_NOTE)).toBeInTheDocument();
     const row = (label: string) =>
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
@@ -234,29 +239,43 @@ describe('score copy (/sim)', () => {
   it('names the comparison in the added section', async () => {
     await page.viewport(1024, 768);
     const screen = await render(SimResults, { props: props({ copy: scoreCopy(null) }) });
-    const first = () => page.getByText('What the plan added').element().closest('section')!;
-    expect(first().querySelector('p')!.textContent!.trim()).toBe('FZP added 1,290 homes vs no FZP');
+    const first = () => page.getByText('What current law added').element().closest('section')!;
+    expect(first().querySelector('p')!.textContent!.trim()).toBe(
+      'Current law added 1,290 homes vs the old zoning'
+    );
     await screen.rerender(props({ copy: scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' }) }));
     const mine = page.getByText('What your policy added').element().closest('section')!;
     expect(mine.querySelector('p')!.textContent!.trim()).toBe(
-      'Your policy added 1,290 homes vs FZP'
+      'Your policy added 1,290 homes vs current law'
     );
     await screen.rerender(props({ score: TIMELINE_SCORE_R0, copy: scoreCopy(null) }));
     expect(first().getAttribute('aria-busy')).toBe('true');
-    expect(first().querySelector('p')!.textContent!.trim()).toBe('FZP vs no FZP: calculating…');
+    expect(first().querySelector('p')!.textContent!.trim()).toBe(
+      'Current law vs the old zoning: calculating…'
+    );
   });
 
-  it('keeps the Family Zoning Plan text for the FZP copy', async () => {
+  it('says current law for the no-policy copy', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props({ copy: scoreCopy(null) }) });
-    await expect.element(page.getByText('What the plan added')).toBeVisible();
+    await expect.element(page.getByText('What current law added')).toBeVisible();
     await expect.element(page.getByText(INTRO)).toBeInTheDocument();
   });
 
-  it('the default levers get the FZP copy', async () => {
+  it('no Results text says FZP or the plan, with and without a policy', async () => {
+    await page.viewport(1024, 768);
+    const screen = await render(SimResults, { props: props({ copy: scoreCopy(null) }) });
+    for (const copy of [scoreCopy(null), scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' })]) {
+      await screen.rerender(props({ copy }));
+      expect(document.body.textContent).not.toMatch(/\bFZP\b/);
+      expect(document.body.textContent).not.toMatch(/\bthe plan\b/);
+    }
+  });
+
+  it('the default levers get the current-law copy', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props({ copy: scoreCopy(DEFAULT_LEVERS) }) });
-    await expect.element(page.getByText('What the plan added')).toBeVisible();
+    await expect.element(page.getByText('What current law added')).toBeVisible();
   });
 });
 
@@ -558,7 +577,7 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
     await render(SimResults, { props: at(MONEY_LAST) });
     const els = [
       page.getByTestId('fzp-net').element(),
-      page.getByText('What the plan added').element(),
+      page.getByText('What current law added').element(),
       el('fzp-money')!,
       document.querySelector('[data-testid="fzp-chart"] svg')!,
       page.getByRole('meter').first().element(),
@@ -795,6 +814,8 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
     const screen = await render(SimResults, { props: props({ market: priv }) });
     openSources();
     expect(el('fzp-market')!.textContent!.trim()).toBe(marketBody(priv));
+    expect(el('fzp-market')!.textContent!.trim().endsWith(MARKET_FUNDING_SENTENCE4)).toBe(true);
+    expect(el('fzp-market')!.textContent).not.toContain('FZP');
     const all = structuredClone(cal);
     delete all.baselineFunding;
     const r1 = marketText(all)!;
@@ -837,8 +858,8 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
     expect(text).toContain('Simulated, from today');
     expect(text).toContain('Simulated, new projects not yet');
     expect(text).toContain('Proposed homes in projects that stopped');
-    expect(text).toContain('What the plan added');
-    expect(text).toContain('Homes completed because of the plan');
+    expect(text).toContain('What current law added');
+    expect(text).toContain('Homes completed because of current law');
     expect(text).not.toContain('still calculating');
     expect(document.querySelector('[data-testid="fzp-chart"]')).not.toBeNull();
     expect(document.querySelectorAll('[role="meter"]').length).toBeGreaterThan(0);

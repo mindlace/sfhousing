@@ -103,14 +103,14 @@ const tooltipText = () => document.querySelector('[role="tooltip"]')?.textConten
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe('SimMap transit', { timeout: 30_000 }, () => {
-  it('loads the fixture network into both sources; capacity on, stops off by default', async () => {
+  it('loads the fixture network into both sources; capacity and stops off by default', async () => {
     const { ready } = await mount();
     const map = (await ready).getMap()!;
     await expect.poll(() => features(map, TRANSIT_STOPS_SOURCE), { timeout: 10_000 }).toBe(MARKERS);
     await expect
       .poll(() => features(map, TRANSIT_ACCESS_SOURCE), { timeout: 10_000 })
       .toBeGreaterThan(0);
-    expect(vis(map, TRANSIT_ACCESS_LAYER)).toBe('visible');
+    expect(vis(map, TRANSIT_ACCESS_LAYER)).toBe('none');
     for (const id of TRANSIT_STOP_LAYERS) expect(vis(map, id)).toBe('none');
     expect(errors).toEqual([]);
   });

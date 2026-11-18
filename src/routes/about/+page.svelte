@@ -43,7 +43,7 @@
 
 <h2 class="mt-6 text-lg font-semibold">Code and data</h2>
 <p class="mt-3">
-  The code is MIT licensed; see the
+  The <a class="underline" href={REPO_URL}>source code</a> is on GitHub, MIT licensed; see the
   <a class="underline" href="{REPO_URL}/blob/main/LICENSE">LICENSE</a>. Data sources and their
   licences are listed on the <a class="underline" href="/attribution">data and licences page</a>.
 </p>

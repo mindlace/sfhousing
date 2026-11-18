@@ -733,7 +733,7 @@ test.describe('map view', () => {
     for (const scheme of ['light', 'dark'] as const) {
       test(`E9: golden screenshot map-${scheme}.png`, async ({ page }) => {
         await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
-        // Transit layers default on; the baselines are captured without them.
+        // The goldens set both transit layers off so they never depend on the default.
         await page.addInitScript(() =>
           localStorage.setItem(
             'sfhousing:view',

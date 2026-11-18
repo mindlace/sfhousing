@@ -14,7 +14,7 @@ const viewButton = (page: Page) => page.getByRole('button', { name: 'View', exac
 /** Opens the View menu (below 1024 px its button waits in the header Menu). */
 const openView = async (page: Page) => (await headerAction(page, 'View')).click();
 
-test('fixture stops load; capacity is on and stops are off by default', async ({ page }) => {
+test('fixture stops load; capacity and stops are off by default', async ({ page }) => {
   await gotoEditor(page);
   await expect
     .poll(() =>
@@ -26,19 +26,19 @@ test('fixture stops load; capacity is on and stops are off by default', async ({
       })
     )
     .toBe(7);
-  expect(await visibility(page, 'transit-access')).toBe('visible');
+  expect(await visibility(page, 'transit-access')).toBe('none');
   expect(await visibility(page, 'transit-stops-regional')).toBe('none');
 });
 
 test('the View menu toggles a layer and the choice survives a reload', async ({ page }) => {
   await gotoEditor(page);
   await openView(page);
-  await page.getByRole('checkbox', { name: 'Transit capacity within a 10-minute walk' }).uncheck();
-  await expect.poll(() => visibility(page, 'transit-access')).toBe('none');
+  await page.getByRole('checkbox', { name: 'Transit capacity within a 10-minute walk' }).check();
+  await expect.poll(() => visibility(page, 'transit-access')).toBe('visible');
   await page.keyboard.press('Escape');
   await expect(viewButton(page)).toBeFocused();
   await gotoEditor(page);
-  await expect.poll(() => visibility(page, 'transit-access')).toBe('none');
+  await expect.poll(() => visibility(page, 'transit-access')).toBe('visible');
   expect(await visibility(page, 'transit-stops-regional')).toBe('none');
 });
 

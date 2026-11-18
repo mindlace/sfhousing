@@ -68,7 +68,7 @@ describe('/ View menu', () => {
     expect(at(page.getByRole('button', { name: /Publish/ }).element())).toBe(2);
     expect(stubProps.view).toEqual({
       transitStops: false,
-      transitAccess: true,
+      transitAccess: false,
       heightLimits: true
     });
   });

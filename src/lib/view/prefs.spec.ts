@@ -4,11 +4,18 @@ import { DEFAULT_VIEW, HIDDEN_VIEW, VIEW_KEY, readViewPrefs, writeViewPrefs } fr
 const mem = (v: string | null) => ({ getItem: (k: string) => (k === VIEW_KEY ? v : null) });
 
 describe('view prefs', () => {
-  it('defaults to stops off, capacity on and the height limits on', () => {
-    expect(DEFAULT_VIEW).toEqual({ transitStops: false, transitAccess: true, heightLimits: true });
+  it('defaults to stops off, capacity off and the height limits on', () => {
+    expect(DEFAULT_VIEW).toEqual({ transitStops: false, transitAccess: false, heightLimits: true });
     expect(readViewPrefs(mem(null))).toEqual(DEFAULT_VIEW);
     expect(readViewPrefs(null)).toEqual(DEFAULT_VIEW);
     expect(readViewPrefs(null).heightLimits).toBe(true);
+  });
+
+  it('a stored transitAccess wins over the default either way', () => {
+    expect(readViewPrefs(mem('{"transitAccess":true}')).transitAccess).toBe(true);
+    expect(readViewPrefs(mem('{"transitAccess":false}')).transitAccess).toBe(false);
+    expect(readViewPrefs(mem('{"transitStops":true}')).transitAccess).toBe(false);
+    expect(readViewPrefs(mem('{"transitAccess":"x"}')).transitAccess).toBe(false);
   });
 
   it('HIDDEN_VIEW turns every layer off', () => {
@@ -22,7 +29,7 @@ describe('view prefs', () => {
     expect(readViewPrefs(mem('{"transitStops":3}'))).toEqual(DEFAULT_VIEW);
     expect(readViewPrefs(mem('{"transitStops":false,"transitAccess":"x"}'))).toEqual({
       transitStops: false,
-      transitAccess: true,
+      transitAccess: false,
       heightLimits: true
     });
     expect(readViewPrefs(mem('"nope"'))).toEqual(DEFAULT_VIEW);

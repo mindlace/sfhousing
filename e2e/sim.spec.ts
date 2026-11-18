@@ -11,6 +11,7 @@ import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { SfhSimDebug } from '../src/lib/sim-page/debug';
 import { forecastFilled } from '../src/lib/timeline/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
 import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
 import {
   FRAME,
@@ -210,31 +211,6 @@ const frames = (page: Page) =>
       (window as Window & { __frames?: { stale: boolean; preview: string | null }[] }).__frames ??
       []
   );
-
-// W6b: the footer links stay visible, unobscured and tappable (as in e2e/fzp.spec.ts).
-const FOOTER_LINKS = ['About', 'Data & licences', 'Source code (GitHub)'];
-
-async function expectFooterReachable(page: Page): Promise<void> {
-  for (const name of FOOTER_LINKS) {
-    const link = page.getByRole('navigation', { name: 'Footer' }).getByRole('link', {
-      name,
-      exact: true
-    });
-    await link.scrollIntoViewIfNeeded();
-    await expect(link).toBeVisible();
-    await expect(link).toBeInViewport({ ratio: 1 });
-    const hit = await link.evaluate((el) => {
-      const r = el.getBoundingClientRect();
-      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      return {
-        ok: !!top && el.contains(top),
-        top: top ? `${top.tagName}.${top.className}` : 'null'
-      };
-    });
-    expect(hit.ok, `${name} covered by ${hit.top}`).toBe(true);
-    await link.tap({ trial: true });
-  }
-}
 
 async function expectNoHorizontalScroll(page: Page): Promise<void> {
   const { scroll, client } = await page.evaluate(() => ({
@@ -583,9 +559,7 @@ test('a tap on a built lot with no project selects the plan that sets its limit'
   await jumpAndIdle(page, { center: lot, zoom: 17, pitch: 0, bearing: 0 });
   const [x, y] = await projectToPage(page, lot);
   await page.touchscreen.tap(x, y);
-  await expect(
-    editor(page).getByRole('heading', { name: 'Family Zoning Plan, as adopted' })
-  ).toBeVisible();
+  await expect(editor(page).getByRole('heading', { name: 'Current law' })).toBeVisible();
   // No project card: the building is today's, not a project's. (Cards are always on, rule 19, so
   // SimMap's own card for the existing building may show beside the selection.)
   await expect(page.getByTestId('tl-card').getByRole('region')).toHaveCount(0);
@@ -683,7 +657,7 @@ test('the window has homes by tier and, with the baseline funding, public money'
   await expect(face.getByTestId('fzp-money-city')).toBeVisible();
 });
 
-test('at 375 px with Results open the playhead and the footer links stay unobscured', async ({
+test('at 375 px with Results open the playhead and the About entry stay unobscured', async ({
   isMobile,
   page
 }) => {
@@ -701,7 +675,8 @@ test('at 375 px with Results open the playhead and the footer links stay unobscu
     expect(hit, `${testId} is covered`).toBe(true);
   }
   await expectNoHorizontalScroll(page);
-  await expectFooterReachable(page);
+  await expectNoFooter(page);
+  await expectAboutReachable(page);
 });
 
 test('End, Play at the window end reads Replay, and Today returns to the present', async ({
@@ -746,11 +721,9 @@ test("a transit rule's editor passes axe at a bound and with the plan's row", as
   // the kind's sheet is not under it.)
   await closeEditor(page);
   await openKind(page, 'Zoning');
-  const plan = page.getByRole('button', { name: 'Family Zoning Plan, as adopted, whole window' });
+  const plan = page.getByRole('button', { name: 'Current law, whole window' });
   await plan.last().click();
-  await expect(
-    editor(page).getByRole('heading', { name: 'Family Zoning Plan, as adopted' })
-  ).toBeVisible();
+  await expect(editor(page).getByRole('heading', { name: 'Current law' })).toBeVisible();
   await expect(editor(page).getByRole('group', { name: 'Stop types' })).toHaveCount(0);
   await expectNoA11yViolations(page);
 });
@@ -831,26 +804,32 @@ test('below md on a fine pointer the palette strip leaves the zoom control uncov
   await expectNavControlClear(page, page.getByTestId('palette-strip'));
 });
 
-test('at 375 px: no horizontal scroll, and the footer links stay unobscured', async ({
+test('at 375 px: no horizontal scroll, no footer, and the About entry stays unobscured', async ({
   isMobile,
   page
 }) => {
-  test.skip(!isMobile, 'W6b is the phone layout');
+  test.skip(!isMobile, 'the phone layout');
   await gotoSim(page);
   await expectNoHorizontalScroll(page);
-  await expectFooterReachable(page);
+  await expectNoFooter(page);
+  // Nothing sits under the timeline.
+  const tlBottom = await page
+    .getByTestId('tl-mode')
+    .evaluate((el) => el.getBoundingClientRect().bottom - window.innerHeight);
+  expect(Math.abs(tlBottom)).toBeLessThanOrEqual(1);
 
   // With Results open (the header score).
   await openScore(page);
   await expectNoHorizontalScroll(page);
-  await expectFooterReachable(page);
+  await expectNoFooter(page);
+  await expectAboutReachable(page);
   await scoreBar(page).click();
   await expect(results(page)).toHaveCount(0);
 
   // With the palette strip showing (a stroke tool chosen).
   await startPainting(page, true);
   await expectNoHorizontalScroll(page);
-  await expectFooterReachable(page);
+  await expectNoFooter(page);
   // The strip sits at the viewport's bottom, under the timeline, never over the map: the map's
   // Reset view button (a coarse pointer's bottom-left control) stays clear and on top.
   await scrollToTop(page);
@@ -967,10 +946,12 @@ const mapVisibility = (page: Page, id: string) =>
 const deckIds = (page: Page) =>
   page.evaluate(() => (window as Win).__sfhMap!.timelineSnapshot()?.layerIds ?? []);
 
-test('the height limits and transit show, and View is offered at any day', async ({ page }) => {
+test('the height limits show, transit capacity is off, and View is offered at any day', async ({
+  page
+}) => {
   await gotoSim(page);
   await expect.poll(() => deckIds(page)).toContain(LIMITS_LAYER);
-  await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('visible');
+  await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('none');
   await expect(await headerAction(page, 'View')).toBeVisible();
   await page.keyboard.press('Escape'); // the Menu, below lg
 
@@ -1114,7 +1095,8 @@ async function expectHeaderFits(page: Page): Promise<number> {
 }
 
 /**
- * The widest header strings the page can show: the "Autosave off" chip and a five-digit score.
+ * The widest header strings the page can show: the "Autosave off" chip, a five-digit score and
+ * its widest delta.
  * The score's count is the button's first text; its "added" span (visually hidden below lg) and
  * "by {year}" stay.
  */
@@ -1129,6 +1111,13 @@ async function widestHeaderText(page: Page): Promise<void> {
           break;
         }
     }
+    // The delta's visible text; its sr-only " by {year}" stays.
+    const delta = document.querySelector('[data-testid="score-delta"]');
+    for (const n of delta?.childNodes ?? [])
+      if (n.nodeType === Node.TEXT_NODE && n.textContent?.trim()) {
+        n.textContent = '\u221212,345 from your policy';
+        break;
+      }
     const score = document.querySelector('[data-testid="score-bar"]');
     if (!score) return;
     for (const n of score.childNodes)
@@ -1198,6 +1187,36 @@ for (const width of [1024, 1280, 1536]) {
   });
 }
 
+test('at 1280 px Keyboard shortcuts opens under its button, moves nothing in the header and closes on Escape', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(isMobile, 'chromium project only');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await gotoSim(page);
+  const banner = page.getByRole('banner');
+  const button = banner.getByRole('button', { name: 'Keyboard shortcuts' });
+  const undo = banner.getByRole('button', { name: /^Undo/ });
+  await expect(button).toBeVisible();
+  const before = await headerRow(page);
+  const scoreY = (await scoreBar(page).boundingBox())!.y;
+  const undoY = (await undo.boundingBox())!.y;
+  await button.click();
+  const table = page.getByRole('table', { name: 'Keyboard shortcuts' });
+  await expect(table).toBeVisible();
+  const buttonBox = (await button.boundingBox())!;
+  const listBox = (await page.getByTestId('shortcuts').boundingBox())!;
+  expect(listBox.y).toBeGreaterThanOrEqual(buttonBox.y + buttonBox.height);
+  const after = await headerRow(page);
+  expect(after.map((i) => i.left)).toEqual(before.map((i) => expect.closeTo(i.left, 0)));
+  expect((await scoreBar(page).boundingBox())!.y).toBeCloseTo(scoreY, 0);
+  expect((await undo.boundingBox())!.y).toBeCloseTo(undoY, 0);
+  expect((await banner.boundingBox())!.height).toBe(48);
+  await page.keyboard.press('Escape');
+  await expect(button).toHaveAttribute('aria-expanded', 'false');
+  await expect(table).toBeHidden();
+});
+
 for (const width of [768]) {
   test(`at ${width} px the header is the Menu layout: it fits, and every action and mode link is in the Menu`, async ({
     page
@@ -1216,8 +1235,9 @@ for (const width of [768]) {
       await expect(
         banner.getByRole('button', { name, exact: typeof name === 'string' })
       ).toBeVisible();
-    for (const name of ['Paint', 'Simulate', 'Fewer cars'])
+    for (const name of ['Paint', 'Simulate'])
       await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
+    await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
     await expectNoHorizontalScroll(page);
     await menu.click();
     await expectHeaderFits(page);

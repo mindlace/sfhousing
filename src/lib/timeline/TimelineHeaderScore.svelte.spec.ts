@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import '../../routes/layout.css';
-import { vsFzpText } from '$lib/fzp/score-view';
+import { fromPolicyText } from '$lib/fzp/score-view';
 import { M1_TARGETS } from '$lib/scoreboard/targets';
 import type { TargetProgress } from '$lib/scoreboard/types';
 import TimelineHeaderScore from './TimelineHeaderScore.svelte';
@@ -43,8 +43,8 @@ describe('TimelineHeaderScore', () => {
     await render(TimelineHeaderScore, { props: props() });
     await expect.element(bar()).toHaveTextContent('12,345 homes added by 2047');
     await expect.element(bar()).toHaveAccessibleName('12,345 homes added by 2047');
-    await expect.element(bar()).toHaveAccessibleDescription(`${vsFzpText(1234)} by 2047`);
-    await expect.element(page.getByTestId('score-delta')).toHaveTextContent(vsFzpText(1234));
+    await expect.element(bar()).toHaveAccessibleDescription(`${fromPolicyText(1234)} by 2047`);
+    await expect.element(page.getByTestId('score-delta')).toHaveTextContent(fromPolicyText(1234));
     await expect
       .element(page.getByRole('meter'))
       .toHaveAttribute('aria-valuetext', '15% of RHNA 2023–2031');

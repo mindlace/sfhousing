@@ -1,0 +1,556 @@
+<article>
+  <header>
+    <h1>What the app tells people, and when: review and proposal</h1>
+    <p>An inventory of everything Simulate and Paint convey, ranked by what a person must see, must understand or may discover, with a proposal for where each thing goes.</p>
+  </header>
+
+  <section id="sec-intent">
+    <h2>Why this exists</h2>
+    <p>The first redesign pass tidied spacing and removed duplicate timelines. The owner's verdict was "a modest improvement": it rearranged the screen without asking what the screen is for. This document starts from the content instead.</p>
+    <p>The owner's ranking rule, which every decision below is tested against:</p>
+    <blockquote>
+      <p>The user must see the effects of their choices on housing and understand how they can make those choices. They can learn/discover where the data comes from, the assumptions the sim runs on, etc.</p>
+    </blockquote>
+    <p>Other direction from the owner that this proposal takes as given:</p>
+    <ul>
+      <li>Keep the timeline view of policy.</li>
+      <li>Drop Fewer cars from the top navigation for now. The route stays.</li>
+      <li>No undo and redo buttons on desktop.</li>
+      <li>The painted-areas list is an undo stack more than layers.</li>
+      <li>Showing the whole 40 years at once takes away from watching it grow.</li>
+      <li>New projects start with no fanfare, sometimes off the visible map. They may deserve a halo that fades.</li>
+      <li>One data-and-sources place, unless credits must sit on the map.</li>
+      <li>The header number and the Results number should not disagree about what date they are for.</li>
+      <li>"FZP" becomes "current law" or similar plain words.</li>
+      <li>Progress bars should show from further out and keep one size on screen at every zoom.</li>
+    </ul>
+    <aside data-kind="note"><strong>Status</strong> This is a discussion draft. The owner has decided the clock, the reveal rule, the game as the frame, and the four questions first asked (see <a href="#sec-decisions">Decided</a>). The rest is open; see <a href="#sec-questions">Questions for the owner</a>.</aside>
+    <section id="sec-next-work">
+      <h3>What comes straight after</h3>
+      <p>The owner's next project after this one reworks funding (several sources, no funding that lasts forever, editable amounts) and adds market conditions such as booms and busts. This work does not build either. It must leave room for both:</p>
+      <ul>
+        <li>The Public money rows must read well with many sources, each with its own dates.</li>
+        <li>Market conditions become something the person sets on the timeline, not a single fixed row.</li>
+        <li>No money figure is given a permanent main-screen position that the funding rework would have to undo.</li>
+      </ul>
+    </section>
+    <section id="sec-direction-game">
+      <h3>The frame: an incremental game</h3>
+      <p>The owner wants the app to work like an incremental game. The aim each time is to get to "enough houses". The person reaches the goal, gets a victory, receives an unlock, and does it all again with more to work with. They start with Paint, where enough is easy to reach. Then policy, which is harder. Then funding.</p>
+      <p>Later the person will pick an upgrade after each victory. For now they are simply given an unlock or two each time they hit the goal.</p>
+      <p>"Enough" is the state target today, as a stand-in. Later it must respond to population change, and it will become a ladder of harder goals, such as "10% cheaper housing" or "zero homelessness".</p>
+      <p>This changes what the screen is for. It is a run at a goal, and everything on it is read against that goal. The design is set out in <a href="#sec-prop-loop">The loop</a>. Unlocking is not built in this work; the design only has to fit it.</p>
+    </section>
+  </section>
+
+  <section id="sec-method">
+    <h2>How items are ranked</h2>
+    <p>Each thing the app conveys is put in one of five tiers. A tier says where the item may live and how much attention it may take.</p>
+    <table id="tbl-tiers">
+      <caption>The five tiers and the placement rule each one carries</caption>
+      <thead>
+        <tr><th scope="col">Tier</th><th scope="col">What belongs in it</th><th scope="col">Placement rule</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">See</th><td>An effect of the person's choice on housing: homes, projects, where and when. Also the goal and how close they are to it.</td><td>Always on screen. Moves the moment they act or time plays. Never behind a click.</td></tr>
+        <tr><th scope="row">Do</th><td>A way to make a choice: add or change a policy, paint, move time.</td><td>A visible control with a word on it. An empty state says the next step.</td></tr>
+        <tr><th scope="row">Read</th><td>The few words needed to read a See item correctly: its date, the target, what it is compared with.</td><td>Next to the See item, in a few words. Never its own panel.</td></tr>
+        <tr><th scope="row">Find</th><td>Background: breakdowns, money mechanics, assumptions, sources, credits, shortcuts.</td><td>One step away, in one of two fixed places: Details (the numbers behind an effect) or About this model (data, assumptions, credits, help).</td></tr>
+        <tr><th scope="row">Alert</th><td>System state that needs attention: loading, stale, failed, refused, not saved.</td><td>Appears only while abnormal, visibly, with the action to take. Normal state is silent or nearly so.</td></tr>
+      </tbody>
+    </table>
+    <p>Urgency is the second axis. <strong>Live</strong> items change as the person acts or plays. <strong>On change</strong> items matter once, when something happens. <strong>On demand</strong> items matter only when asked for. A See item is live by definition; a Find item is on demand by definition.</p>
+  </section>
+
+  <section id="sec-findings">
+    <h2>Main findings</h2>
+    <section id="sec-finding-clock">
+      <h3>1. The page runs on two clocks</h3>
+      <p>One series (homes completed since June 2022, actual plus simulated) appears in eight places. The header reads it at the end of the window, about 2066, and never moves during Play. The Results headline, the chart and the target rows read it at the playhead. The header's meter reads a third date, the January 2031 deadline, and has no visible label. The screen reader text in the header speaks the playhead number while the visible text shows the 2066 number.</p>
+      <p>The effect: the largest number on the page ignores the main control on the page.</p>
+    </section>
+    <section id="sec-finding-effect">
+      <h3>2. The effect of the person's own choice is the quietest thing shown</h3>
+      <ul>
+        <li>The policy's effect is a small "vs FZP +5,580" in the header, at 2066 only, and two near-identical lines in Results that show the same value one line apart.</li>
+        <li>"FZP" is never expanded on the main screen. Nothing says what the plan is.</li>
+        <li>The comparison silently changes meaning. With no policy it compares the plan with the old zoning; with any policy it compares the policy with the plan.</li>
+        <li>On the map, a project that exists because of the person's policy looks like every other project. The card has an "Allowed by" line, so the link is known; it is not drawn.</li>
+        <li>Starts and completions happen without any signal, at the default zoom and off screen alike.</li>
+      </ul>
+    </section>
+    <section id="sec-finding-do">
+      <h3>3. Neither page says how to make a choice</h3>
+      <ul>
+        <li>A first visit to Simulate shows three closed rows reading "0" with a "+" and no words. The page's only heading is for screen readers.</li>
+        <li>A first visit to Paint has no instruction. The one sentence, "Paint a height on the map to add homes.", is on the hidden Results face. On a phone the tool starts as Move with the panel closed.</li>
+        <li>Publish is disabled with a reason only screen readers get.</li>
+      </ul>
+    </section>
+    <section id="sec-finding-future">
+      <h3>4. The future is drawn before it is played</h3>
+      <p>Both charts draw all 40 years about three seconds after the page opens. Play only moves a cursor along a finished picture and swaps solid for dashed. The map is the only thing that grows.</p>
+    </section>
+    <section id="sec-finding-background">
+      <h3>5. Background takes main-screen space, and context is buried</h3>
+      <ul>
+        <li>On screen by default with no key: transit-capacity shading, zoning height numerals, a credits line, a footer, public-money lines, a second chart with five series and three published estimates.</li>
+        <li>Two levels deep: the only legend for the map's stage colours (Results, then Sources, then Map key).</li>
+        <li>Hidden at the default zoom: the per-project progress bars.</li>
+        <li>Links to the data page appear in four places with three names.</li>
+      </ul>
+    </section>
+    <section id="sec-finding-modes">
+      <h3>6. Paint and Simulate look like two views of one thing and are not</h3>
+      <p>A painted plan never reaches Simulate. Paint's number is every eligible lot rebuilt to the maximum, today. Simulate's is a forecast over time. They have equal weight in the navigation, share the word "homes added", and no copy on either page contrasts them. The word "Paint" labels five different controls on the Paint page.</p>
+    </section>
+    <section id="sec-finding-silent">
+      <h3>7. Some effects and failures are told only to screen readers</h3>
+      <ul>
+        <li>What a brush stroke did: lots covered, new buildings, lots skipped as ineligible.</li>
+        <li>A stroke refused because the plan is too large. A sighted person sees nothing happen.</li>
+        <li>What undo and redo just did.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-inventory">
+    <h2>Inventory and ranking</h2>
+    <p>Every row is something the app conveys today. "Proposal" says what happens to it. Rows that are pure duplicates of another row are folded into it.</p>
+
+    <section id="sec-inv-sim-outcome">
+      <h3>Simulate: outcomes</h3>
+      <table id="tbl-inv-sim-outcome">
+        <caption>Simulate, numbers about housing</caption>
+        <thead>
+          <tr><th scope="col">What it tells the person</th><th scope="col">Today</th><th scope="col">Tier</th><th scope="col">Proposal</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Homes added, total</th><td>Header at 2066; Results headline at playhead; two chart lines; table; target rows</td><td>See</td><td>One headline, always at the playhead date, in the header. The chart is its history.</td></tr>
+          <tr><th scope="row">Homes because of the person's policy</th><td>Header "vs FZP" at 2066, hidden with no policy; two duplicate Results lines</td><td>See</td><td>Second number beside the headline, at the playhead: "+1,817 from your policy". Also the gap between two chart lines, and a mark on the map.</td></tr>
+          <tr><th scope="row">Date the numbers are for</th><td>Readout by the transport buttons; differs per number</td><td>Read</td><td>One date, on the playhead and in the headline. No number on the main screen is for any other date.</td></tr>
+          <tr><th scope="row">What the policy is compared with</th><td>"FZP", unexpanded; meaning flips with no policy</td><td>Read</td><td>"from your policy" on the main screen, compared with "current law". With no policy, no comparison is shown.</td></tr>
+          <tr><th scope="row">Progress to the state target</th><td>Unlabelled header meter at 2031; "State target" chart step; two target rows; deadline line</td><td>Read</td><td>One labelled target on the chart and a labelled percentage with the headline. It follows the playhead to the deadline, then holds. The percentage counts homes since 2022, so it does not start at zero.</td></tr>
+          <tr><th scope="row">Target plus 15% buffer</th><td>Results row</td><td>Find</td><td>Details.</td></tr>
+          <tr><th scope="row">Homes built before today</th><td>"of which N built by today"; the "since Jun 2022" wording</td><td>Find</td><td>Details and About. The main screen starts at today.</td></tr>
+          <tr><th scope="row">Homes approved because of policy</th><td>Results line; chart series</td><td>Find</td><td>Details.</td></tr>
+          <tr><th scope="row">Affordable homes</th><td>"Affordable homes so far" in Results; income table collapsed</td><td>See</td><td>One line in the activity panel. The income table stays in Details.</td></tr>
+          <tr><th scope="row">Pipeline versus new projects</th><td>Two Results rows; two chart series; table</td><td>Find</td><td>Details, as a view of the one chart.</td></tr>
+          <tr><th scope="row">Homes in progress, by stage</th><td>Results rows, low in the column</td><td>See</td><td>Counts beside each stage in the map key, so the key is also the tally.</td></tr>
+          <tr><th scope="row">Homes in projects that stopped</th><td>Results row</td><td>Find</td><td>Details. Stopped projects still show on the map.</td></tr>
+          <tr><th scope="row">Lots protected, capacity lost</th><td>Results line when protections exist</td><td>See</td><td>In the protection policy's own editor and bar, where the choice was made.</td></tr>
+          <tr><th scope="row">Public money, per home and spent</th><td>Two Results lines, always, even with no funding policy</td><td>See, only with a funding policy</td><td>Cost shows in the activity panel only while a Public money policy is in force; otherwise Details. Each pool's bar on the timeline drains as its money is allocated.</td></tr>
+          <tr><th scope="row">Money by source, loans, limits, displacement</th><td>"Money details +"</td><td>Find</td><td>Details, unchanged in content.</td></tr>
+          <tr><th scope="row">Published estimates of the plan</th><td>Three dotted lines on the second chart, only with no policy</td><td>Find</td><td>About this model, beside the assumptions they test.</td></tr>
+          <tr><th scope="row">Yearly table</th><td>"Show as table" under the second chart</td><td>Find</td><td>Details.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sec-inv-sim-map">
+      <h3>Simulate: the map</h3>
+      <table id="tbl-inv-sim-map">
+        <caption>Simulate, what the map shows</caption>
+        <thead>
+          <tr><th scope="col">What it tells the person</th><th scope="col">Today</th><th scope="col">Tier</th><th scope="col">Proposal</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Where projects are and what stage each is in</th><td>Ghost volumes in three shades, rising floors, completed colour, red when stopped</td><td>See</td><td>Keep. It is the page's best content.</td></tr>
+          <tr><th scope="row">A project just changed stage</th><td>Nothing</td><td>See</td><td>New: a halo that fades, by stage. See <a href="#sec-prop-events">Events</a>.</td></tr>
+          <tr><th scope="row">This project exists because of my policy</th><td>Only the card's "Allowed by" line</td><td>See</td><td>New: a distinct outline on those projects, and their halo in the accent colour.</td></tr>
+          <tr><th scope="row">What the colours mean</th><td>Map key inside Results, then Sources</td><td>Read</td><td>A small key on the map, five stages, collapsible.</td></tr>
+          <tr><th scope="row">How far along each project is, and its chance of finishing</th><td>Progress bars, only at zoom 15 and closer</td><td>See</td><td>Shown from the default zoom, one size on screen at every zoom. See <a href="#sec-prop-bars">Progress bars</a>.</td></tr>
+          <tr><th scope="row">Real or simulated, stage, homes</th><td>Hover tooltip</td><td>Find</td><td>Keep. Say "homes", not "units", in every tooltip.</td></tr>
+          <tr><th scope="row">A project's full record</th><td>Card on click: pathway, status, size, funding, chance, timeline, sources</td><td>Find</td><td>Keep. Put "Allowed by" and "Funded by" first when they name the person's policy.</td></tr>
+          <tr><th scope="row">Zoning height limits</th><td>White numerals and lids, on by default, no key</td><td>Read, while zoning is the subject</td><td>Shown while a Zoning row or policy is open or selected, with "stories allowed" in the key. Off otherwise.</td></tr>
+          <tr><th scope="row">Transit capacity</th><td>Shading on by default; legend in the View menu</td><td>Find</td><td>Off by default. On while a transit rule is being edited.</td></tr>
+          <tr><th scope="row">Data credits</th><td>A four-source line on the map</td><td>Find</td><td>A collapsed (i) on the map holding "© OpenStreetMap" and one link to About this model. See <a href="#sec-prop-about">About this model</a>.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sec-inv-sim-controls">
+      <h3>Simulate: making choices</h3>
+      <table id="tbl-inv-sim-controls">
+        <caption>Simulate, controls and how they announce themselves</caption>
+        <thead>
+          <tr><th scope="col">What it tells the person</th><th scope="col">Today</th><th scope="col">Tier</th><th scope="col">Proposal</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">You can add a policy</th><td>Three closed rows, "0", a "+"</td><td>Do</td><td>Each empty lane says what it adds ("Add a zoning change"). First visit: the detail column offers three starter policies.</td></tr>
+          <tr><th scope="row">What a policy is and when it applies</th><td>A bar per span with a short setting text</td><td>Do</td><td>Keep. This is the part the owner likes.</td></tr>
+          <tr><th scope="row">The rules already in force</th><td>Fixed rows inside closed kinds: "Family Zoning Plan, as adopted" and others</td><td>Read</td><td>Keep in the rows, each named "Current law", "Current timelines", "Current funding". Selecting one says in a sentence what it is, with its formal name.</td></tr>
+          <tr><th scope="row">Market conditions</th><td>"The world" row, one fixed bar</td><td>Do, after the next project</td><td>A kind row like the other three, so booms and busts can be added as dated bars later. Today it holds its one bar.</td></tr>
+          <tr><th scope="row">Time can be played and scrubbed</th><td>Pause, Play, Faster, Today; a slider; a ruler; a second progress bar; markers row</td><td>Do</td><td>One ruler that is the scrubber. Play and Pause are one button. Speed is one control.</td></tr>
+          <tr><th scope="row">Editing a policy</th><td>Detail column: When, What, On, Move, Remove</td><td>Do</td><td>Keep. Add the policy's own effect at the top of its editor.</td></tr>
+          <tr><th scope="row">Undo and redo</th><td>Two header buttons, disabled until an edit</td><td>Find</td><td>Keyboard only on desktop. Buttons only on touch.</td></tr>
+          <tr><th scope="row">Keyboard shortcuts</th><td>A header disclosure that breaks the header when opened</td><td>Find</td><td>A section of About this model. None exist for the timeline today; add Space for Play.</td></tr>
+          <tr><th scope="row">Publish</th><td>Header button; disabled with a hidden reason</td><td>Do</td><td>Keep. When disabled, the reason is visible on hover and focus.</td></tr>
+          <tr><th scope="row">Map layer switches</th><td>"View" in the header</td><td>Find</td><td>Moves onto the map, beside the key. It controls the map, not the page.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sec-inv-paint">
+      <h3>Paint</h3>
+      <table id="tbl-inv-paint">
+        <caption>Paint, everything conveyed</caption>
+        <thead>
+          <tr><th scope="col">What it tells the person</th><th scope="col">Today</th><th scope="col">Tier</th><th scope="col">Proposal</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Homes the painting allows</th><td>Header "N homes added"; Results "N net new homes"</td><td>See</td><td>One headline in the header. Reword so it cannot be read as a forecast: "room for N homes".</td></tr>
+          <tr><th scope="row">This is capacity, not a forecast</th><td>A badge and a collapsed explanation on the hidden Results face; different wording in About</td><td>Read</td><td>Carried by the headline's own words. One wording everywhere.</td></tr>
+          <tr><th scope="row">Progress to the state target</th><td>Unlabelled header meter; two rows on the Results face</td><td>Read</td><td>Labelled percentage with the headline. The buffer row goes to Details.</td></tr>
+          <tr><th scope="row">What the last stroke did</th><td>Screen readers only</td><td>See</td><td>A brief chip: "6 stories on 42 lots · 3 not eligible".</td></tr>
+          <tr><th scope="row">A stroke was refused</th><td>Screen readers only</td><td>Alert</td><td>A visible message with what to do.</td></tr>
+          <tr><th scope="row">New buildings and what type they are</th><td>Coloured by type; no legend</td><td>See, with a Read key</td><td>Keep the buildings. A small key on the map, same component as Simulate's.</td></tr>
+          <tr><th scope="row">How to start</th><td>Nothing on first view</td><td>Do</td><td>One line in the panel until the first stroke: "Pick a height, then paint the map."</td></tr>
+          <tr><th scope="row">Tool, height, brush size</th><td>Unlabelled groups</td><td>Do</td><td>Keep, with labels.</td></tr>
+          <tr><th scope="row">Painted areas list</th><td>Rows per run of strokes at one height; select, remove</td><td>Find</td><td>Remove from the edit panel. See <a href="#sec-prop-paint">Paint</a> for what replaces its two real uses.</td></tr>
+          <tr><th scope="row">Undo and redo</th><td>Buttons in the panel; missing from the phone's painting strip</td><td>Do on touch, Find on desktop</td><td>Keyboard on desktop. On touch, in the painting strip, where they are needed.</td></tr>
+          <tr><th scope="row">Gross, replaced, lots changed</th><td>Results face line</td><td>Find</td><td>Details.</td></tr>
+          <tr><th scope="row">By neighborhood</th><td>Collapsed on the Results face</td><td>Find</td><td>Details.</td></tr>
+          <tr><th scope="row">Parcel and building facts</th><td>Hover tooltip; tap card</td><td>Find</td><td>Keep. "homes", not "units".</td></tr>
+          <tr><th scope="row">Transit capacity</th><td>Shading on by default</td><td>Find</td><td>Off by default.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sec-inv-chrome">
+      <h3>Both pages: chrome and status</h3>
+      <table id="tbl-inv-chrome">
+        <caption>Navigation, status, messages and credits</caption>
+        <thead>
+          <tr><th scope="col">What it tells the person</th><th scope="col">Today</th><th scope="col">Tier</th><th scope="col">Proposal</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Which tool this is, and the others</th><td>Paint, Simulate, Fewer cars</td><td>Do</td><td>Two steps, Paint then Simulate, both open. Fewer cars leaves the header. Levels take their place when the game is built; see <a href="#sec-prop-loop">The loop</a>.</td></tr>
+          <tr><th scope="row">Work is saved</th><td>"Saved" always shown</td><td>Alert</td><td>Silent when saved. "Saving" and "Not saved" show, left of the headline.</td></tr>
+          <tr><th scope="row">The forecast is being recomputed</th><td>A reserved 24 px line under the header, usually empty; dimming</td><td>Alert</td><td>The line goes. "Updating" sits with the save state; the numbers dim as now.</td></tr>
+          <tr><th scope="row">How far the forecast is computed</th><td>"Forecast filled to 2051"; hatching; a second bar</td><td>Alert</td><td>Hatching on the ruler only.</td></tr>
+          <tr><th scope="row">Loading and failures</th><td>Capsule pills; three signals for one failure; five for loading</td><td>Alert</td><td>One message per condition. A paragraph is a card, a few words are a chip.</td></tr>
+          <tr><th scope="row">Saved work was changed on load</th><td>Long capsule notices with dataset dates</td><td>Alert</td><td>A card: what changed and what to expect. Dates behind it.</td></tr>
+          <tr><th scope="row">About, data, licences, source code</th><td>Footer under the map; panel "Sources"; map credits; Results "Sources"; Sources dialog</td><td>Find</td><td>One entry, About this model. No footer on map pages.</td></tr>
+          <tr><th scope="row">Dataset version and date</th><td>Panel footnote; Results; notices; data page</td><td>Find</td><td>About this model only.</td></tr>
+          <tr><th scope="row">Account</th><td>Header link</td><td>Find</td><td>Keep, last in the header.</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </section>
+
+  <section id="sec-proposal">
+    <h2>Proposal</h2>
+
+    <section id="sec-prop-principles">
+      <h3>Six rules</h3>
+      <ol>
+        <li><strong>One clock, starting today.</strong> Every number on the main screen is for the playhead's date, and the playhead starts at today. The date is shown once, with the headline.</li>
+        <li><strong>The person's effect is shown three ways.</strong> As a number beside the headline, as the gap between two lines on the chart, and as marked projects on the map.</li>
+        <li><strong>Time is revealed, not pre-drawn.</strong> Values are shown up to the playhead. Beyond it they are dimmed where the person has already been under the current rules, and absent everywhere else.</li>
+        <li><strong>Controls say what they do.</strong> Every empty state names the next step. Nothing is disabled without a visible reason.</li>
+        <li><strong>Two places for background.</strong> Details holds the numbers behind an effect. About this model holds data, assumptions, credits and help. Nothing else links out.</li>
+        <li><strong>Status is silent when normal.</strong> One visible message per abnormal condition, with the action.</li>
+      </ol>
+    </section>
+
+    <section id="sec-prop-screen">
+      <h3>The Simulate screen</h3>
+      <figure id="fig-sim-layout">
+        <svg class="diagram" viewBox="0 0 720 430" role="img" aria-labelledby="fig-sim-layout-t">
+          <title id="fig-sim-layout-t">Proposed regions of the Simulate screen and what each holds</title>
+          <g class="group"><rect x="10" y="10" width="700" height="50"/><text x="60" y="22">Header</text></g>
+          <g class="node muted" id="n-nav"><rect x="20" y="28" width="130" height="26"/><text x="85" y="41">modes</text></g>
+          <g class="node muted" id="n-status"><rect x="158" y="28" width="90" height="26"/><text x="203" y="41">alerts only</text></g>
+          <g class="node result" id="n-headline"><rect x="256" y="28" width="300" height="26"/><text x="406" y="41">homes at this date · from your policy · % of target</text></g>
+          <g class="node muted" id="n-actions"><rect x="564" y="28" width="136" height="26"/><text x="632" y="41">Publish · account</text></g>
+          <g class="group"><rect x="10" y="70" width="700" height="180"/><text x="50" y="82">Map</text></g>
+          <g class="node result" id="n-halo"><rect x="250" y="120" width="220" height="44"/><text x="360" y="142">projects, halos on stage changes</text></g>
+          <g class="node" id="n-key"><rect x="20" y="196" width="200" height="44"/><text x="120" y="218">key with live stage counts · layers</text></g>
+          <g class="node muted" id="n-credit"><rect x="640" y="214" width="60" height="26"/><text x="670" y="227">(i)</text></g>
+          <g class="group"><rect x="10" y="260" width="470" height="160"/><text x="62" y="272">Timeline</text></g>
+          <g class="node" id="n-ruler"><rect x="20" y="280" width="450" height="26"/><text x="245" y="293">play · speed · the ruler is the scrubber · date on the playhead</text></g>
+          <g class="node result" id="n-chart"><rect x="20" y="312" width="450" height="52"/><text x="245" y="338">one chart, drawn up to the playhead: with and without your policy</text></g>
+          <g class="node" id="n-rows"><rect x="20" y="370" width="450" height="42"/><text x="245" y="391">policy rows: Zoning · Permitting · Public money · Market</text></g>
+          <g class="group"><rect x="490" y="260" width="220" height="160"/><text x="556" y="272">Detail column</text></g>
+          <g class="node result" id="n-now"><rect x="500" y="280" width="200" height="60"/><text x="600" y="310">activity up to the playhead</text></g>
+          <g class="node" id="n-editor"><rect x="500" y="346" width="200" height="30"/><text x="600" y="361">or: a policy's editor</text></g>
+          <g class="node muted" id="n-details"><rect x="500" y="382" width="200" height="30"/><text x="600" y="397">or: Details</text></g>
+        </svg>
+        <figcaption>Figure 1. Regions of the proposed Simulate screen. Highlighted boxes carry See items; faded boxes carry Find or Alert items.</figcaption>
+      </figure>
+      <section id="sec-prop-header">
+        <h4>Header</h4>
+        <ul>
+          <li>The headline reads, for example, "47,335 homes by Apr 2040 · +1,817 from your policy · 68% of the goal". All three follow the playhead. At today the first two read zero.</li>
+          <li>The goal's part of the headline names the goal on hover and focus ("State target: 82,069 homes by 2031"). When the goal is reached it says so and when: "Goal reached, 2043".</li>
+          <li>With no policy in force, the middle part is absent.</li>
+          <li>The header holds: the two steps, alerts, the headline, Publish, the account. View, undo, redo and Keyboard shortcuts leave it.</li>
+          <li>Pressing the headline opens Details.</li>
+        </ul>
+      </section>
+      <section id="sec-prop-chart">
+        <h4>The one chart</h4>
+        <ul>
+          <li>It replaces both of today's charts and is taller than today's timeline chart.</li>
+          <li>Two lines: with the person's policy, and under current law. The gap is shaded. With no policy there is one line.</li>
+          <li>It starts at today, at zero. The state target is drawn as the homes still needed by its deadline.</li>
+          <li>The lines follow the reveal rule in <a href="#sec-prop-reveal">Revealing time</a>. The state target, its deadline and the policy bars are always drawn in full: they are inputs, not outcomes.</li>
+          <li>It has value labels on its vertical axis and shares the ruler's years.</li>
+          <li>Details can switch what it plots: by source (pipeline, new projects) or the policy's effect alone. The second chart's content survives as views of this one.</li>
+        </ul>
+      </section>
+      <section id="sec-prop-now">
+        <h4>The activity panel</h4>
+        <p>At rest the detail column no longer repeats the headline. It shows what has happened up to the playhead:</p>
+        <ul>
+          <li>The most recent stage changes first: what was approved, started and completed, where, and how many homes. Those under the person's policy are marked.</li>
+          <li>Totals so far: homes approved, completed and stopped; affordable homes; homes from the person's policy.</li>
+          <li>Cost, only while a Public money policy is in force.</li>
+          <li>A Details button.</li>
+        </ul>
+        <p>It follows the reveal rule: nothing after the playhead appears in it. At today it is empty, so it says the goal and offers a starter policy instead.</p>
+        <aside data-kind="note"><strong>Note</strong> The list of individual stage changes needs the same project data as the halos. Until the citywide feed exists it can list only projects in the part of the map that is loaded; the totals are available now.</aside>
+      </section>
+      <section id="sec-prop-money">
+        <h4>Public money on the timeline</h4>
+        <ul>
+          <li>Each pool's bar in the Public money rows shows how much is left. It starts full and drains as its money is allocated to projects.</li>
+          <li>The drain is drawn up to the playhead, under the reveal rule, like the chart.</li>
+          <li>A pool that runs dry shows as empty from that month on.</li>
+          <li>Cost per home and money spent stay where they are proposed: in the activity panel while a funding policy is in force, and in Details.</li>
+        </ul>
+        <aside data-kind="note"><strong>Note</strong> The funding rework comes next and will give pools amounts and end dates. The drain is designed for that; with today's pools, an uncapped pool has no level to show.</aside>
+      </section>
+    </section>
+
+    <section id="sec-prop-loop">
+      <h3>The loop</h3>
+      <aside data-kind="note"><strong>Not all of this is built now</strong> This work builds the goal, the progress figure, and the reached and missed messages, against today's state target. Levels, locked rows, unlocks, "Next goal" and tuned goals come with the game. They are set out here so that nothing built now has to be undone.</aside>
+      <p>A run has five parts. Each has one place on the screen.</p>
+      <table id="tbl-loop">
+        <caption>The parts of a run and where each shows</caption>
+        <thead>
+          <tr><th scope="col">Part</th><th scope="col">What the person is told</th><th scope="col">Where</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">The goal</th><td>What enough is, and by when: "51,500 homes by 2050".</td><td>On the chart as a line that ends at the deadline, and as a flag on the ruler. Always drawn in full.</td></tr>
+          <tr><th scope="row">Progress</th><td>How close they are at the playhead's date.</td><td>The last part of the headline: "62% of the goal".</td></tr>
+          <tr><th scope="row">Victory</th><td>That they reached it, when, how far ahead of the deadline, and how much of it came from their policy. Then what they unlocked.</td><td>A card over the map. The clock stops. One button: "Next goal".</td></tr>
+          <tr><th scope="row">A miss</th><td>That the deadline passed, and by how many homes they fell short.</td><td>A message over the map: "Goal missed by 3,313 homes. Change the policy and play again." The clock keeps going.</td></tr>
+          <tr><th scope="row">What comes next</th><td>The levels won, the current level, and the next unlock by name.</td><td>The header, in place of mode links. Locked rows stay visible in the timeline, and the next one says "unlocks when you reach this goal".</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>Victory is decided under one clock. The person sees it when the playhead crosses the month the goal is met, by playing or by dragging.</li>
+        <li>"Next goal" starts a new run from today with the new unlock in place. The person's policies stay.</li>
+        <li>An unlocked row is an empty lane that says what it adds.</li>
+        <li>The goal is one replaceable thing: a name, a measure, an amount and a deadline, read from one place. Nothing on the main screen says "RHNA", and nothing assumes the measure is a count of homes.</li>
+      </ul>
+      <table id="tbl-ladder">
+        <caption>Proposed first levels</caption>
+        <thead>
+          <tr><th scope="col">Level</th><th scope="col">The person has</th><th scope="col">The goal</th><th scope="col">Victory unlocks</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">1</th><td>Paint</td><td>Room for enough homes. No clock.</td><td>Time, and zoning rules</td></tr>
+          <tr><th scope="row">2</th><td>Zoning rules on a timeline</td><td>Enough homes built by a deadline</td><td>Permitting</td></tr>
+          <tr><th scope="row">3</th><td>Zoning and permitting</td><td>The same amount, sooner</td><td>Public money</td></tr>
+          <tr><th scope="row">4</th><td>Zoning, permitting and money</td><td>The same amount, sooner again</td><td>Market conditions, when they exist</td></tr>
+        </tbody>
+      </table>
+      <aside data-kind="warning"><strong>Warning</strong> The goals need tuning against the real simulation. The state target cannot serve as it stands for levels 2 and up: under current law the forecast passes 82,069 homes only in the late 2050s and is far short at the 2031 deadline, so it is neither winnable by 2031 nor a challenge by the end of the window. Each level needs an amount and a deadline that current law misses and that level's tools can reach.</aside>
+    </section>
+
+    <section id="sec-prop-events">
+      <h3>Events</h3>
+      <p>A stage change is the unit of "watching it grow". Three changes get a signal: approved, construction started, completed.</p>
+      <ul>
+        <li><strong>On the visible map:</strong> a halo at the project that fades over about two seconds of real time. Its colour is the stage's colour from the key. A project that exists because of the person's policy gets the accent colour.</li>
+        <li><strong>Off the visible map:</strong> a short glow on the map edge in the project's direction. The camera does not move.</li>
+        <li><strong>At speed:</strong> above a set number of events per second, halos merge into one per neighbourhood, sized by homes.</li>
+        <li><strong>In the tally:</strong> the map key's stage counts and the activity panel's yearly counts tick as events land.</li>
+        <li><strong>Reduced motion:</strong> with the system setting on, no halos; the counts still update.</li>
+      </ul>
+      <section id="sec-prop-engine">
+        <h4>What the engine can supply</h4>
+        <p>Read from the code, not run. Today the page gets per-project data only for map cells that are loaded, and the comparison with current law only as totals.</p>
+        <table id="tbl-engine">
+          <caption>What each map feature needs from the engine</caption>
+          <thead>
+            <tr><th scope="col">Feature</th><th scope="col">Today</th><th scope="col">What it takes</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Halos for projects on screen</th><td>Stage dates are already on the page for loaded cells</td><td>Small: expose them from the map's bar data.</td></tr>
+            <tr><th scope="row">Events off screen, and bars from the default zoom</th><td>Nothing for unloaded areas. Loading every cell at the default zoom costs over a second of packing.</td><td>Engine work: one light citywide feed of project markers (date, stage, place, homes, flags). Place is known for every lot without loading its cell.</td></tr>
+            <tr><th scope="row">Mark "your zoning allows this"</th><td>Known per lot on click only</td><td>Small: a flag per project, set from the zoning in force when it started. It over-counts: some marked projects would have started anyway.</td></tr>
+            <tr><th scope="row">Mark "your money funded this"</th><td>Known on the card only</td><td>Small: a flag per project. Exact for what it says.</td></tr>
+            <tr><th scope="row">Mark "this would not exist under current law"</th><td>Not known per project</td><td>Engine work: compare the two runs project by project. Permitting and market effects move dates, not existence, so they still would not show as marks.</td></tr>
+            <tr><th scope="row">Homes per year: completed, approved, stopped, and from the policy</th><td>Available now</td><td>Nothing.</td></tr>
+            <tr><th scope="row">Projects per year (counts)</th><td>Not available; all series are in homes</td><td>Small: new count series.</td></tr>
+            <tr><th scope="row">First month an edit changes</th><td>Both the old and new forecast are on the page while it updates</td><td>Small: compare them, or have the engine send the month.</td></tr>
+          </tbody>
+        </table>
+        <aside data-kind="decision"><strong>Proposed</strong> Build the citywide marker feed once. It serves the halos, the off-screen events and the bars together, and carries the two cheap flags. The map marks then mean "under your policy" (your zoning allows it, or your money funded it), and the headline number stays the true total effect. The exact "would not exist under current law" mark is later work.</aside>
+        <aside data-kind="warning"><strong>Warning</strong> With the cheap flags, the homes in marked projects will not add up to the "from your policy" number. The key must say "under your policy", not "because of".</aside>
+      </section>
+    </section>
+
+    <section id="sec-prop-reveal">
+      <h3>Revealing time</h3>
+      <p>The timeline has three zones. They apply to the chart's lines, to the ruler's track and to every number.</p>
+      <table id="tbl-reveal">
+        <caption>The three zones of the timeline</caption>
+        <thead>
+          <tr><th scope="col">Zone</th><th scope="col">Where</th><th scope="col">How it looks</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Shown</th><td>Today to the playhead</td><td>Solid lines, full-strength numbers.</td></tr>
+          <tr><th scope="row">Seen</th><td>The playhead to the furthest date reached under the current rules</td><td>The same lines, dimmed. The person has been here and nothing has changed since.</td></tr>
+          <tr><th scope="row">Unseen</th><td>Beyond the furthest date reached</td><td>No lines and no numbers. The ruler's track is hatched.</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>On opening, the playhead is at today and everything ahead is unseen. The window still ends 40 years out.</li>
+        <li>Play, or dragging the playhead forward, moves the furthest date reached. Dragging back leaves it where it was, so the part ahead is dimmed.</li>
+        <li>An edit pulls the furthest date reached back to the first month whose values the edit changes, and never to before the playhead. Months the edit does not touch stay seen.</li>
+        <li>After an edit, the Play button names the next step: "Play from 2028" when the first changed month is in 2028.</li>
+        <li>With the playhead at the end, an edit updates the final numbers in place, because everything up to the playhead is shown.</li>
+        <li>The furthest date reached lasts for the visit. It is not saved, and a shared link opens with everything ahead unseen.</li>
+      </ul>
+      <aside data-kind="note"><strong>Note</strong> "Not yet computed" stops being something the person is told. The forecast fills in about three seconds; if the playhead catches the computed edge it waits, and "Updating" shows with the save state.</aside>
+    </section>
+
+    <section id="sec-prop-bars">
+      <h3>Progress bars</h3>
+      <ul>
+        <li>The bars above projects show from the default zoom, not only at zoom 15 and closer.</li>
+        <li>A bar keeps one size on screen at every zoom, so it shrinks relative to its building as the person zooms in.</li>
+        <li>Zoomed out, bars would collide. Where they do, the larger project's bar wins, and a project caused by the person's policy wins over one that is not.</li>
+        <li>Length is progress through the stages and colour is the chance of finishing, as today. The map key explains both.</li>
+      </ul>
+    </section>
+
+    <section id="sec-prop-paint">
+      <h3>Paint</h3>
+      <ul>
+        <li>The panel holds Tool, Height and Brush size, each labelled, and one starting sentence until the first stroke.</li>
+        <li>The painted-areas list leaves the panel. Its two real uses are covered differently: Erase removes an earlier height where it is not wanted, and hovering a height in the map key outlines where that height applies.</li>
+        <li>A shared plan's read-only view shows one line in place of the list: the heights used and the lots covered.</li>
+        <li>Each stroke reports what it did in a chip. A refused stroke says so.</li>
+        <li>Undo and redo are keyboard-only on desktop and sit in the painting strip on touch.</li>
+        <li>Results stop being a hidden face of the panel. The headline is in the header; the rest is Details.</li>
+      </ul>
+    </section>
+
+    <section id="sec-prop-about">
+      <h3>About this model</h3>
+      <p>One entry, reached from the header menu, the map's (i), and every "how is this worked out" link. It has four parts:</p>
+      <ol>
+        <li><strong>What the numbers mean.</strong> Capacity versus forecast, the state target, the June 2022 start, the comparison baseline.</li>
+        <li><strong>Assumptions.</strong> Today's Sources dialog, with the published estimates beside the assumptions they test.</li>
+        <li><strong>Data and licences.</strong> Today's data page, the dataset version, and all credits.</li>
+        <li><strong>Using it.</strong> Keyboard shortcuts.</li>
+      </ol>
+      <p>On the map itself only OpenStreetMap needs a credit. Its guidelines allow the credit to collapse if it stays findable, and name an (i) button as the way. The proposal is MapLibre's collapsed control holding a linked "© OpenStreetMap" and the About link, shown expanded for five seconds on load.</p>
+      <aside data-kind="warning"><strong>Warning</strong> The guidelines do not say outright that an (i) with no visible text is enough. Showing the text for five seconds first is explicitly allowed. The Microsoft, USGS and DataSF terms were not read from their own pages and need confirming when the page is written.</aside>
+    </section>
+
+    <section id="sec-prop-words">
+      <h3>One vocabulary</h3>
+      <table id="tbl-words">
+        <caption>Words on the main screen, and where the longer form lives</caption>
+        <thead>
+          <tr><th scope="col">Main screen</th><th scope="col">Replaces</th><th scope="col">Longer form, in About</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">homes</th><td>units, net new homes, net units</td><td>Net of homes removed</td></tr>
+          <tr><th scope="row">goal (today: "State target")</th><td>RHNA, RHNA 2023–2031, State target</td><td>RHNA 2023–2031, 82,069 homes, counted from June 2022</td></tr>
+          <tr><th scope="row">from your policy</th><td>vs FZP, because of your policy, plan effect</td><td>The forecast run twice, with the policy and under current law</td></tr>
+          <tr><th scope="row">current law</th><td>FZP, the plan, as adopted</td><td>The Family Zoning Plan as adopted, permitting as observed, City funding today</td></tr>
+          <tr><th scope="row">room for N homes</th><td>homes added (Paint), theoretical max buildout</td><td>Every eligible lot rebuilt to the painted height</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decided</h2>
+    <aside data-kind="decision"><strong>Decision: one clock</strong> The main screen shows one date. No end-of-window figure stays visible. The window still ends 40 years out.</aside>
+    <aside data-kind="decision"><strong>Decision: today is the start</strong> The simulation starts, as the person experiences it, at today, even though some figures count from 2022.</aside>
+    <aside data-kind="decision"><strong>Decision: the reveal rule</strong> Values show up to the playhead, dimmed where the person has been and nothing has changed, and dashed or absent where they have not been under the current rules. This document picks absent.</aside>
+    <aside data-kind="decision"><strong>Decision: plain words for the baseline</strong> "FZP" becomes "current law" on the main screen.</aside>
+    <aside data-kind="decision"><strong>Decision: progress bars</strong> Visible from further out, one size on screen.</aside>
+    <aside data-kind="decision"><strong>Decision: Paint is the first stage</strong> Paint is the easy first step of one path that goes on to policy and then funding. It is not a separate product.</aside>
+    <aside data-kind="decision" id="q-paint"><strong>Decision: steps only for now</strong> This work presents Paint and Simulate as steps one and two. Underneath they stay separate: a painted plan does not become the zoning that Simulate runs. Joining them is later work.</aside>
+    <aside data-kind="decision"><strong>Decision: the loop is the frame, and unlocking is not built now</strong> The design fits a game of reaching the goal, getting an unlock or two, and going again. This work does not build levels or unlocks.</aside>
+    <aside data-kind="decision"><strong>Decision: the headline starts at zero</strong> It counts homes added from today. Homes built since 2022 count only toward the goal.</aside>
+    <aside data-kind="decision"><strong>Decision: public money</strong> The light treatment of cost is fine. Pools should be seen to drain as their money is allocated.</aside>
+    <aside data-kind="decision"><strong>Decision: the detail column at rest</strong> It shows activity up to the playhead.</aside>
+    <aside data-kind="decision" id="q-again"><strong>Decision: going again keeps the policies</strong> When the game is built, the next run returns the clock to today and leaves the person's policies in place.</aside>
+  </section>
+
+  <section id="sec-questions">
+    <h2>Questions for the owner</h2>
+    <p>Nothing in this work is waiting on an answer. These belong to the game and can wait for it:</p>
+    <ul>
+      <li id="q-goals"><strong>The goal at each level.</strong> One amount with a nearer deadline each level, or a larger amount each level. Either needs tuning against real runs.</li>
+      <li id="q-progress"><strong>Where progress is kept.</strong> In the browser, with the account when signed in. A saved or shared policy that already uses a kind keeps it usable.</li>
+    </ul>
+  </section>
+
+  <section id="sec-defects">
+    <h2>Defects found on the way</h2>
+    <ul>
+      <li><strong>Keyboard shortcuts breaks the header.</strong> Opening it makes the header's single grid row about 330 px tall. Everything centres in that row and drops under the map, leaving only undo and redo visible, with the control that closes it hidden. Read from the code, not reproduced; about 75% confident of the mechanism.</li>
+      <li><strong>Undo and redo look dead on load.</strong> They are disabled until the first edit of the session because history is cleared when the document loads.</li>
+      <li><strong>The stale-results sentence never shows on Simulate.</strong> The flag is not passed to Results.</li>
+      <li><strong>The painted-area Retry never appears.</strong> The failed state is never produced, so a row can stay at "Finding lots…".</li>
+      <li><strong>"A forecast if nothing changes."</strong> stays on the headline after the person has changed something.</li>
+      <li><strong>Lot counts in painted-area rows double-count overlaps.</strong></li>
+    </ul>
+  </section>
+
+  <section id="sec-approaches">
+    <h2>Ways to build it</h2>
+    <ol>
+      <li><strong>Content first, in slices, on shared parts (recommended).</strong> Build the small set of shared values and components (spacing, one button, card, chip, key, the About surface), then change one tier at a time: the one clock and headline, the one chart with reveal, events, empty states, Paint. Each slice ships on its own and can be judged on the live app.</li>
+      <li><strong>Layout only.</strong> The first mockup. Fast, and it leaves every finding above in place.</li>
+      <li><strong>Rebuild both pages at once.</strong> One large change against a very large test surface that pins today's layout. High risk of a long-lived branch.</li>
+    </ol>
+  </section>
+
+  <section id="sec-slices">
+    <h2>Order of work</h2>
+    <p>Each slice is its own branch and pull request, with its own short spec and plan drawn from this document. Each leaves the app working and better than before.</p>
+    <table id="tbl-slices">
+      <caption>Slices, in the order proposed</caption>
+      <thead>
+        <tr><th scope="col">Slice</th><th scope="col">What changes for the person</th><th scope="col">Needs first</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">1. Quick repairs</th><td>The Keyboard shortcuts break is fixed. Fewer cars leaves the header. "FZP" reads "current law". Transit shading is off by default. The footer leaves the map pages.</td><td>Nothing</td></tr>
+        <tr><th scope="row">2. One clock</th><td>The header headline follows the playhead, counts from today, and carries the policy's effect and progress to the goal. The goal is read from one place. The empty line under the header goes.</td><td>Nothing</td></tr>
+        <tr><th scope="row">3. One timeline, revealed</th><td>The ruler becomes the scrubber. One taller chart with the current-law line, the gap and the goal. The three zones. "Play from". Goal reached and goal missed messages.</td><td>Slice 2</td></tr>
+        <tr><th scope="row">4. Paint as step one</th><td>Two steps in the header. A labelled panel with a starting sentence. Stroke results shown. No painted-areas list. Undo in the touch strip, none on desktop.</td><td>Nothing</td></tr>
+        <tr><th scope="row">5. The map tells you, on screen</th><td>Halos on stage changes and "under your policy" marks for projects in view. A map key with the tally. Layer switches on the map.</td><td>Two small engine flags</td></tr>
+        <tr><th scope="row">6. The map tells you, citywide</th><td>Progress bars from the default zoom at one size. Events off screen.</td><td>The citywide marker feed, measured first</td></tr>
+        <tr><th scope="row">7. The detail column and money</th><td>Activity up to the playhead, Details in place of Results, worded empty rows, pools that drain.</td><td>Slices 2 and 3; the full activity list needs slice 6</td></tr>
+        <tr><th scope="row">8. Shared parts and messages</th><td>One spacing scale, one button, cards and chips for messages, one surface for dialogs and menus in light and dark.</td><td>Nothing; it can start at any point, and later slices adopt it as they touch each screen</td></tr>
+        <tr><th scope="row">9. About this model</th><td>One place for meanings, assumptions, data and credits, and shortcuts. The map keeps a collapsed OpenStreetMap credit.</td><td>Slice 8</td></tr>
+        <tr><th scope="row">Later: the game</th><td>Levels, locked rows, unlocks, "Next goal", tuned goals, progress remembered.</td><td>Slices 2 to 4, and goal tuning runs</td></tr>
+      </tbody>
+    </table>
+    <aside data-kind="note"><strong>Engine check</strong> Done; see <a href="#sec-prop-engine">What the engine can supply</a>. The map work is two slices: halos and marks for projects on screen come first and are small; the citywide marker feed, which brings off-screen events and bars from the default zoom, is engine work and needs measuring.</aside>
+  </section>
+
+  <section id="sec-scope">
+    <h2>Outside this work</h2>
+    <ul>
+      <li>The Fewer cars page itself. Only its header link changes.</li>
+      <li>The simulation's results. The engine changes this work needs are the ones listed in <a href="#sec-prop-engine">What the engine can supply</a>.</li>
+      <li>Account, sign-in and sim-membership pages.</li>
+      <li>Phone layouts are not drawn here. They follow the same tiers: headline, map, play and chart on screen; rows, activity and Details in the sheet.</li>
+    </ul>
+  </section>
+</article>

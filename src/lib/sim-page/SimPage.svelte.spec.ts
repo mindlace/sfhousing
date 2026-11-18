@@ -789,9 +789,7 @@ describe('SimPage map overlays', () => {
     await frames();
     expect(lastLayer()!.props.mode).toEqual({ kind: 'rule', ruleId: 'near-bart' });
     await toolKey('v');
-    await page
-      .getByRole('button', { name: 'Family Zoning Plan, as adopted, whole window' })
-      .click();
+    await page.getByRole('button', { name: 'Current law, whole window' }).click();
     await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'fzp' });
     await inspector().getByRole('button', { name: 'Close editor' }).click();
     await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
@@ -811,10 +809,7 @@ describe('SimPage map overlays', () => {
       expect(overlayIds()).not.toContain(LIMITS_LAYER_ID);
       await openZoning();
       if (which === 'policy') await page.getByTestId('tl-bar').first().click();
-      else
-        await page
-          .getByRole('button', { name: 'Family Zoning Plan, as adopted, whole window' })
-          .click();
+      else await page.getByRole('button', { name: 'Current law, whole window' }).click();
       await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
       expect(lastLayer()!.props.mode).toEqual(
         which === 'policy' ? { kind: 'rule', ruleId: 'near-bart' } : { kind: 'fzp' }
@@ -1274,7 +1269,7 @@ describe('SimPage map selection guards', () => {
     await ready();
     tapLot();
     answer(null);
-    await expect.element(inspectorTitle()).toHaveTextContent('Family Zoning Plan, as adopted');
+    await expect.element(inspectorTitle()).toHaveTextContent('Current law');
     tapLot();
     emit({
       type: 'lotAt',

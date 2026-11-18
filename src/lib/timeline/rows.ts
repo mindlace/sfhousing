@@ -12,8 +12,8 @@ import { spanMonths } from './spans';
 /**
  * A fixed row's selection, carried as a `SpanRef` (Timeline's `selected` and `onselect` stay
  * `SpanRef | null`). Contract for the inspector:
- * - `id` is `FIXED_ID` for a kind's fixed row ("Family Zoning Plan, as adopted", "Permitting times,
- *   as observed", "City funding today"; `kind` is that kind) and `MARKET_ID` for "Market conditions"
+ * - `id` is `FIXED_ID` for a kind's fixed row ("Current law", "Current timelines", "Current funding";
+ *   `kind` is that kind) and `MARKET_ID` for "Market conditions"
  *   (`{ kind: 'money', id: MARKET_ID }`). Both have `span` FIXED_SPAN (-1), an index no policy has.
  * - The market ref's `kind` is always 'money', even when the Public money kind is absent (no
  *   market and baseline funding): "The world" row is always drawn, so it can still be selected.
@@ -39,9 +39,16 @@ export const KIND_LABEL: Record<PolicyKind, string> = {
 };
 
 export const FIXED_LABEL: Record<PolicyKind, string> = {
-  zoning: 'Family Zoning Plan, as adopted',
-  permitting: 'Permitting times, as observed',
-  money: 'City funding today'
+  zoning: 'Current law',
+  permitting: 'Current timelines',
+  money: 'Current funding'
+};
+
+/** The inspector's sentence under a fixed row: what the baseline is. */
+export const FIXED_NOTE: Record<PolicyKind, string> = {
+  zoning: 'Current law is the Family Zoning Plan as adopted.',
+  permitting: 'Current timelines are permitting times as observed in SF Planning and DBI records.',
+  money: "Current funding is today's City, state and federal money for affordable homes."
 };
 
 export const MARKET_LABEL = 'Market conditions';

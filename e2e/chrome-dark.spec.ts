@@ -223,11 +223,9 @@ test("a transit rule's editor at a bound, then the plan's row, has no axe violat
   // The plan's row selected: its read-only view (a phone's editor sheet closes first).
   await editor(page).getByRole('button', { name: 'Close editor' }).click();
   await openKind(page, 'Zoning');
-  const plan = page.getByRole('button', { name: 'Family Zoning Plan, as adopted, whole window' });
+  const plan = page.getByRole('button', { name: 'Current law, whole window' });
   await plan.last().click();
-  await expect(
-    editor(page).getByRole('heading', { name: 'Family Zoning Plan, as adopted' })
-  ).toBeVisible();
+  await expect(editor(page).getByRole('heading', { name: 'Current law' })).toBeVisible();
   await expectNoA11yViolations(page, {
     include: ['[data-testid=tl-inspector]', '[data-testid=tl-dock]']
   });

@@ -241,11 +241,7 @@ describe('Timeline rows', () => {
     await kindButton('Zoning').click();
     await kindButton('Permitting').click();
     await kindButton('Public money').click();
-    for (const name of [
-      'Family Zoning Plan, as adopted',
-      'Permitting times, as observed',
-      'City funding today'
-    ]) {
+    for (const name of ['Current law', 'Current timelines', 'Current funding']) {
       await expect
         .element(page.getByRole('button', { name: new RegExp(`^${name}`) }))
         .toBeVisible();
@@ -256,12 +252,12 @@ describe('Timeline rows', () => {
       marketLevel(cal) === 'private' ? 'private starts only' : 'all starts'
     );
     expect(world.textContent).not.toMatch(/, (private|all)$/);
-    await page.getByRole('button', { name: /^Permitting times, as observed/ }).click();
+    await page.getByRole('button', { name: /^Current timelines/ }).click();
     expect(onselect).toHaveBeenCalledWith({ kind: 'permitting', id: 'fixed', span: -1 });
     const firstRow = document.querySelector(
       '[data-testid=tl-kind-permitting] [data-testid=tl-fixed]'
     );
-    expect(firstRow?.textContent).toContain('Permitting times, as observed');
+    expect(firstRow?.textContent).toContain('Current timelines');
     const rowOrder = all(
       '[data-testid=tl-kind-permitting] [data-testid=tl-fixed], [data-testid=tl-kind-permitting] [data-testid=tl-policy]'
     ).map((e) => e.getAttribute('data-testid'));
@@ -271,7 +267,7 @@ describe('Timeline rows', () => {
   it('has no Public money without market and baseline funding', async () => {
     await setup({ calibration: calNoMoney });
     expect(document.querySelector('[data-testid=tl-kind-money]')).toBeNull();
-    expect(document.body.textContent).not.toContain('City funding today');
+    expect(document.body.textContent).not.toContain('Current funding');
     expect(document.body.textContent).not.toContain('Housing bond');
     expect(page.getByTestId('tl-world').element().textContent).toContain('2007 to 2025 average');
   });

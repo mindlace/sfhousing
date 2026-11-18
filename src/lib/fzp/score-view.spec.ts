@@ -18,7 +18,8 @@ import {
   scoreAt,
   scrubMarkers,
   sinceText,
-  vsFzpText
+  vsFzpText,
+  fromPolicyText
 } from './score-view';
 import { YEAR_2045, dayFromUtc } from './time';
 
@@ -202,6 +203,14 @@ describe('homesAdded and homesAddedBy', () => {
     expect(homesAddedBy(FIX_ASOF, { ...at, total: 1234 })).toBe(
       '1,234 homes added by October 2026'
     );
+  });
+});
+
+describe('fromPolicyText', () => {
+  it('fromPolicyText signs the count and says from your policy', () => {
+    expect(fromPolicyText(1234)).toBe('+1,234 from your policy');
+    expect(fromPolicyText(-56)).toBe('\u221256 from your policy');
+    expect(fromPolicyText(0)).toBe('+0 from your policy');
   });
 });
 

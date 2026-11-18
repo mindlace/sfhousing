@@ -41,5 +41,5 @@
   >
     {@render children()}
   </main>
-  <SiteFooter />
+  {#if !full}<SiteFooter />{/if}
 </div>
