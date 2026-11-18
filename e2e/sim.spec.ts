@@ -963,10 +963,12 @@ const mapVisibility = (page: Page, id: string) =>
 const deckIds = (page: Page) =>
   page.evaluate(() => (window as Win).__sfhMap!.timelineSnapshot()?.layerIds ?? []);
 
-test('the height limits and transit show, and View is offered at any day', async ({ page }) => {
+test('the height limits show, transit capacity is off, and View is offered at any day', async ({
+  page
+}) => {
   await gotoSim(page);
   await expect.poll(() => deckIds(page)).toContain(LIMITS_LAYER);
-  await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('visible');
+  await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('none');
   await expect(await headerAction(page, 'View')).toBeVisible();
   await page.keyboard.press('Escape'); // the Menu, below lg
 
