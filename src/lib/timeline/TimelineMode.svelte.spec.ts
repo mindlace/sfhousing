@@ -1273,6 +1273,61 @@ describe('TimelineMode', () => {
     await expect.element(page.getByTestId('score-delta')).toHaveTextContent(/from your policy$/);
   });
 
+  /** Results and the header keep the current-law wording now; after `answer` the policy's. */
+  async function heldWordingThenPolicy(answer: () => void) {
+    const results = page.getByTestId('tl-results');
+    await tick();
+    expect(debug().stale).toBe(true);
+    await expect.element(results).toHaveTextContent('What current law added');
+    expect(page.getByTestId('score-delta').elements()).toEqual([]);
+    answer();
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect.element(results).toHaveTextContent('What your policy added');
+    await expect.element(page.getByTestId('score-delta')).toHaveTextContent(/from your policy$/);
+  }
+
+  it("a Retry's send after failed lots holds the shown numbers' document until the refill", async () => {
+    const s = await opened(LAST, { withInspector: true });
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}');
+    await expect.poll(() => debug().day).toBeGreaterThan(asOf);
+    s.setPolicy(withPaint);
+    s.setLots(null);
+    await expect.poll(() => debug().stale).toBe(true);
+    s.setLotsFailed(true);
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect
+      .element(page.getByTestId('tl-results'))
+      .toHaveTextContent('What current law added');
+    // Retry found the lots: the painted document goes out with no new edit.
+    s.setLotsFailed(false);
+    s.setLots(paintLots);
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    await heldWordingThenPolicy(() => {
+      emit(compiledMsg(2, STATICS));
+      emit(refillMsg(2, 0));
+      emit(filledMsg(2, 0, LAST + 1));
+    });
+  });
+
+  it("a provisional open's full send holds the opened document until its numbers fill", async () => {
+    const s = setup({ initialPolicy: withPaint, initialLots: null, withInspector: true });
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, STATICS));
+    emit(filledMsg(1, 0, LAST + 1));
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}');
+    await expect.poll(() => debug().day).toBeGreaterThan(asOf);
+    s.setLots(paintLots);
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    await heldWordingThenPolicy(() => {
+      emit(compiledMsg(2, STATICS));
+      emit(refillMsg(2, 0));
+      emit(filledMsg(2, 0, LAST + 1));
+    });
+  });
+
   it('while stale the money rows read the held document, not the edited one', async () => {
     const bond = (uncapped: boolean): Pool => ({
       id: 'u-bond',

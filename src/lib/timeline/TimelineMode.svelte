@@ -827,6 +827,14 @@
     session = s;
   }
 
+  /**
+   * The document the numbers on show came from, to hold while a change is stale: taken before the
+   * session changes. Already stale and held, the held one stays.
+   */
+  function hold(s: TimelineSession): SimPolicy4 | null {
+    return !stale || heldDoc === null ? s.accepted : heldDoc;
+  }
+
   // An edit (a new document): the edit is marked at once and playback pauses (rule 25). The
   // reveal starts looking for the first month it changed, against the numbers on show now (a
   // search already under way keeps what was seen first).
@@ -836,8 +844,7 @@
       if (!session || p === seenPolicy) return;
       seenPolicy = p;
       const seen = shown.view ? { view: shown.view, inForce } : null;
-      // The numbers on show are the accepted document's: kept while the edit is stale.
-      if (!stale || heldDoc === null) heldDoc = session.accepted;
+      heldDoc = hold(session);
       session.edited();
       reveal = editedReveal(reveal, seen);
       playing = false;
@@ -881,14 +888,18 @@
 
   // The edit's lots settled (or a provisional open's): the pair goes out. A send that goes out
   // with no search under way (a Retry's lots, a provisional open's full document) can change the
-  // numbers with no edit: it starts a search against the numbers on show, as an edit does.
+  // numbers with no edit: as an edit does, it holds the document the numbers on show came from
+  // and starts a search against those numbers.
   $effect(() => {
     const l = lots;
     untrack(() => {
       if (!session || l === null || l === seenLots) return;
       seenLots = l;
       const seen = reveal.finding === null && shown.view ? { view: shown.view, inForce } : null;
-      if (session.send(policy, l) && seen) reveal = editedReveal(reveal, seen);
+      const held = hold(session);
+      if (!session.send(policy, l)) return;
+      heldDoc = held;
+      if (seen) reveal = editedReveal(reveal, seen);
     });
   });
 
