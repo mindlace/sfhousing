@@ -12,7 +12,15 @@ import type { SfhSimDebug } from '../src/lib/sim-page/debug';
 import { formatMonthYear, formatShortMonthYear } from '../src/lib/fzp/format';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
-import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
+import {
+  addPolicy,
+  holdPolicy,
+  installPolicyHold,
+  openKind,
+  releasePolicy,
+  slider,
+  waitFilled
+} from './helpers/run';
 import {
   FRAME,
   FROM,
@@ -424,6 +432,7 @@ test('a transit rule resolves its lots and refills the forecast', async ({ page 
 
 test('the Updating status never moves the timeline or the editor', async ({ page, isMobile }) => {
   test.skip(isMobile, 'desktop rule; phones scroll the page');
+  await installPolicyHold(page);
   await gotoSim(page);
   await addPolicy(page, 'Zoning', 'Transit rule');
   await waitRefilled(page, 0);
@@ -476,11 +485,20 @@ test('the Updating status never moves the timeline or the editor', async ({ page
     };
     requestAnimationFrame(tick);
   }, lead);
-  // A chip edit sends a revision: the status reads "Updating" until the refill passes.
+  // A chip edit sends a revision, held at the worker boundary: the numbers stay stale and the
+  // status reads "Updating" until the test releases it.
+  await holdPolicy(page);
   await editor(page)
     .getByRole('group', { name: 'Stop types' })
     .getByRole('button', { name: /^Muni Rapid bus/ })
     .click();
+  await expect(page.getByTestId('tl-status-shown')).toHaveText('Updating');
+  // Some frames recorded with "Updating" on screen, then the revision goes out.
+  const recorded = () =>
+    page.evaluate(() => (window as unknown as { __staleBoxes?: unknown[] }).__staleBoxes!.length);
+  const shownAt = await recorded();
+  await expect.poll(recorded).toBeGreaterThan(shownAt + 3);
+  await releasePolicy(page);
   await waitRefilled(page, before);
   const { seen, updating } = await page.evaluate(() => {
     const w = window as unknown as { __staleBoxes?: unknown[]; __updatingSeen?: boolean };

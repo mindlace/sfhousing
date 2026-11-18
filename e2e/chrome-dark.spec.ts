@@ -6,7 +6,14 @@ import { readFileSync } from 'node:fs';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { addPolicy, openKind, waitFilled } from './helpers/run';
+import {
+  addPolicy,
+  holdPolicy,
+  installPolicyHold,
+  openKind,
+  releasePolicy,
+  waitFilled
+} from './helpers/run';
 import {
   FRAME,
   PLAN_KEY,
@@ -50,36 +57,19 @@ test('/ header has no axe violations in dark', async ({ page }) => {
 test('/sim header, playhead and timeline have no axe violations in dark', async ({ page }) => {
   // The edit's setPolicy is held back from the worker until released, so the numbers stay stale
   // and "Updating" shows in the header while axe runs.
-  await page.addInitScript(() => {
-    const w = window as unknown as { __holdPolicy?: boolean; __releasePolicy?: () => void };
-    const held: [Worker, unknown][] = [];
-    const post = Worker.prototype.postMessage;
-    Worker.prototype.postMessage = function (this: Worker, msg: unknown, ...rest: never[]) {
-      if (w.__holdPolicy && (msg as { type?: string } | null)?.type === 'setPolicy') {
-        held.push([this, msg]);
-        return;
-      }
-      return post.call(this, msg, ...rest);
-    } as Worker['postMessage'];
-    w.__releasePolicy = () => {
-      w.__holdPolicy = false;
-      for (const [worker, msg] of held.splice(0)) post.call(worker, msg);
-    };
-  });
+  await installPolicyHold(page);
   await gotoSim(page);
   await expect(page.getByRole('banner')).toBeVisible();
   await expect(page.getByTestId('tl-today')).toHaveText('Today');
   await expectNoA11yViolations(page, { include: ['header', '[data-testid=tl-dock]'] });
 
-  await page.evaluate(() => ((window as unknown as { __holdPolicy: boolean }).__holdPolicy = true));
+  await holdPolicy(page);
   await addPolicy(page, 'Zoning', 'Transit rule');
   await expect(
     page.getByRole('banner').getByTestId('tl-status').getByRole('button', { name: 'Updating' })
   ).toBeVisible();
   await expectNoA11yViolations(page, { include: ['header'] });
-  await page.evaluate(() =>
-    (window as unknown as { __releasePolicy: () => void }).__releasePolicy()
-  );
+  await releasePolicy(page);
   await waitFilled(page);
 });
 
