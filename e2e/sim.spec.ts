@@ -1198,6 +1198,33 @@ for (const width of [1024, 1280, 1536]) {
   });
 }
 
+test('at 1280 px Keyboard shortcuts opens under its button, moves nothing in the header and closes on Escape', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(isMobile, 'chromium project only');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await gotoSim(page);
+  const banner = page.getByRole('banner');
+  const button = banner.getByRole('button', { name: 'Keyboard shortcuts' });
+  const undo = banner.getByRole('button', { name: /^Undo/ });
+  await expect(button).toBeVisible();
+  const before = await headerRow(page);
+  const scoreY = (await scoreBar(page).boundingBox())!.y;
+  const undoY = (await undo.boundingBox())!.y;
+  await button.click();
+  const table = page.getByRole('table', { name: 'Keyboard shortcuts' });
+  await expect(table).toBeVisible();
+  const after = await headerRow(page);
+  expect(after.map((i) => i.left)).toEqual(before.map((i) => expect.closeTo(i.left, 0)));
+  expect((await scoreBar(page).boundingBox())!.y).toBeCloseTo(scoreY, 0);
+  expect((await undo.boundingBox())!.y).toBeCloseTo(undoY, 0);
+  expect((await banner.boundingBox())!.height).toBe(48);
+  await page.keyboard.press('Escape');
+  await expect(button).toHaveAttribute('aria-expanded', 'false');
+  await expect(table).toBeHidden();
+});
+
 for (const width of [768]) {
   test(`at ${width} px the header is the Menu layout: it fits, and every action and mode link is in the Menu`, async ({
     page

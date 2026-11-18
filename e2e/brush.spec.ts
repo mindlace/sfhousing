@@ -234,13 +234,14 @@ test.describe('brush tool', () => {
       await expect.poll(() => generated(page)).toBeGreaterThan(0);
     });
 
-    test('axe: the editor with the keyboard shortcuts disclosure open', async ({ page }) => {
+    test('axe: the editor with the keyboard shortcuts list open', async ({ page }) => {
       await gotoEditor(page);
-      // Behind HistoryButtons' disclosure, at the top of the dock.
+      // A popover from HistoryButtons' button, at the top of the dock.
       const dock = page.getByTestId('dock');
-      await dock.getByText('Keyboard shortcuts', { exact: true }).click();
-      await expect(dock.locator('details')).toHaveAttribute('open', '');
-      await expect(dock.getByRole('table')).toBeVisible();
+      const button = dock.getByRole('button', { name: 'Keyboard shortcuts' });
+      await button.click();
+      await expect(button).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.getByRole('table', { name: 'Keyboard shortcuts' })).toBeVisible();
       await expectNoA11yViolations(page);
     });
 

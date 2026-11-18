@@ -353,21 +353,25 @@ test.describe('medium width', () => {
   // eslint-disable-next-line playwright/no-skipped-test
   test.skip(({ isMobile }) => isMobile, 'chromium project only');
 
-  for (const [width, height] of [
-    [800, 600],
-    [1023, 700]
-  ] as const) {
-    test(`${width}×${height}: the dock stays in the region and scrolls inside`, async ({
+  for (const width of [800, 1023]) {
+    test(`${width} px: opening Keyboard shortcuts leaves the dock as it was, and a short window scrolls the dock inside`, async ({
       page
     }) => {
-      await page.setViewportSize({ width, height });
+      await page.setViewportSize({ width, height: 900 });
       await gotoEditor(page);
       const panel = page.locator('.sfh-dock-panel');
-      await expectInside(panel, page.locator('#map-region'));
+      const h = await panel.evaluate((el) => el.scrollHeight);
+      const shortcuts = panel.getByRole('button', { name: 'Keyboard shortcuts' });
+      await shortcuts.click();
+      await expect(page.getByRole('table', { name: 'Keyboard shortcuts' })).toBeVisible();
+      expect(await panel.evaluate((el) => el.scrollHeight)).toBe(h);
+      await page.keyboard.press('Escape');
+      await expect(shortcuts).toHaveAttribute('aria-expanded', 'false');
 
-      // The keyboard shortcuts table grows the dock's content past the map's height.
-      await panel.getByText('Keyboard shortcuts', { exact: true }).click();
-      await expect(panel.locator('table')).toBeVisible();
+      // A window half the content's height: the content is taller than the region.
+      const top = (await box(panel)).y;
+      await page.setViewportSize({ width, height: Math.floor(top + h / 2) });
+      await expectInside(panel, page.locator('#map-region'));
       const scroll = await panel.evaluate((el) => ({
         overflows: el.scrollHeight > el.clientHeight,
         overflowY: getComputedStyle(el).overflowY

@@ -7,6 +7,7 @@ import '../../routes/layout.css';
 import { focusHeaderMenu } from './header-actions.svelte';
 import SiteHeader from './SiteHeader.svelte';
 import HeaderScoreHeader from './test/HeaderScoreHeader.svelte';
+import HistoryHeader from './test/HistoryHeader.svelte';
 
 describe('SiteHeader', () => {
   it('renders a banner with a home link', async () => {
@@ -585,5 +586,54 @@ describe('SiteHeader', () => {
         Math.abs((rect.left + rect.right) / 2 - (header.left + header.right) / 2)
       ).toBeLessThan(1);
     });
+  });
+});
+
+describe('keyboard shortcuts in the header', () => {
+  const shortcuts = () => page.getByRole('button', { name: 'Keyboard shortcuts' });
+  const table = () => page.getByRole('table', { name: 'Keyboard shortcuts' });
+
+  for (const width of [1024, 1280])
+    it(`at ${width}px opening Keyboard shortcuts moves no header item and the header stays 48 px`, async () => {
+      await page.viewport(width, 768);
+      render(HistoryHeader);
+      await expect.element(shortcuts()).toBeVisible();
+      const items = () => [
+        page.getByRole('link', { name: /SF Housing/ }).element(),
+        page.getByRole('navigation', { name: 'Modes' }).element(),
+        page.getByRole('button', { name: '12,345 homes added' }).element(),
+        page.getByRole('button', { name: /^Undo/ }).element(),
+        page.getByRole('button', { name: /^Redo/ }).element(),
+        shortcuts().element(),
+        page.getByRole('button', { name: 'Publish' }).element(),
+        page.getByRole('link', { name: 'Sign in' }).element()
+      ];
+      const before = items().map((e) => e.getBoundingClientRect());
+      await shortcuts().click();
+      await expect.element(table()).toBeVisible();
+      items().forEach((e, i) => {
+        const r = e.getBoundingClientRect();
+        for (const k of ['left', 'top', 'width', 'height'] as const)
+          expect(Math.abs(r[k] - before[i][k]), `item ${i} ${k}`).toBeLessThanOrEqual(0.5);
+      });
+      const banner = page.getByRole('banner').element().getBoundingClientRect();
+      expect(banner.height).toBe(48);
+      const panel = document.querySelector('[data-testid=shortcuts]')!.getBoundingClientRect();
+      expect(panel.top).toBeGreaterThanOrEqual(banner.bottom);
+      expect(panel.right).toBeLessThanOrEqual(width);
+    });
+
+  it('at 800px in the Menu, Escape closes the shortcuts first and the Menu next', async () => {
+    await page.viewport(800, 768);
+    render(HistoryHeader);
+    const menu = page.getByRole('button', { name: 'Menu' });
+    await menu.click();
+    await shortcuts().click();
+    await expect.element(table()).toBeVisible();
+    await userEvent.keyboard('{Escape}');
+    await expect.element(page.getByTestId('shortcuts')).not.toBeVisible();
+    await expect.element(menu).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.keyboard('{Escape}');
+    await expect.element(menu).toHaveAttribute('aria-expanded', 'false');
   });
 });
