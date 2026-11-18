@@ -304,7 +304,7 @@
         <h4>The Now panel</h4>
         <p>At rest the detail column no longer repeats the headline. It shows what is happening at the playhead:</p>
         <ul>
-          <li>This year: projects started, completed and stopped, and how many of each are because of the person's policy.</li>
+          <li>This year: homes approved, completed and stopped, and how many of the completed homes come from the person's policy. In homes at first, because that is what the engine has; project counts follow when the count series exist.</li>
           <li>Affordable homes so far.</li>
           <li>Public money, only while a Public money policy is in force.</li>
           <li>A Details button.</li>
@@ -360,7 +360,28 @@
         <li><strong>In the tally:</strong> the map key's stage counts and the Now panel's yearly counts tick as events land.</li>
         <li><strong>Reduced motion:</strong> with the system setting on, no halos; the counts still update.</li>
       </ul>
-      <aside data-kind="note"><strong>Note</strong> Whether "exists because of the policy" can be decided per project needs checking in the engine. The card's "Allowed by" line shows the zoning link is known. Funding and permitting effects may only be knowable in total.</aside>
+      <section id="sec-prop-engine">
+        <h4>What the engine can supply</h4>
+        <p>Read from the code, not run. Today the page gets per-project data only for map cells that are loaded, and the comparison with current law only as totals.</p>
+        <table id="tbl-engine">
+          <caption>What each map feature needs from the engine</caption>
+          <thead>
+            <tr><th scope="col">Feature</th><th scope="col">Today</th><th scope="col">What it takes</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Halos for projects on screen</th><td>Stage dates are already on the page for loaded cells</td><td>Small: expose them from the map's bar data.</td></tr>
+            <tr><th scope="row">Events off screen, and bars from the default zoom</th><td>Nothing for unloaded areas. Loading every cell at the default zoom costs over a second of packing.</td><td>Engine work: one light citywide feed of project markers (date, stage, place, homes, flags). Place is known for every lot without loading its cell.</td></tr>
+            <tr><th scope="row">Mark "your zoning allows this"</th><td>Known per lot on click only</td><td>Small: a flag per project, set from the zoning in force when it started. It over-counts: some marked projects would have started anyway.</td></tr>
+            <tr><th scope="row">Mark "your money funded this"</th><td>Known on the card only</td><td>Small: a flag per project. Exact for what it says.</td></tr>
+            <tr><th scope="row">Mark "this would not exist under current law"</th><td>Not known per project</td><td>Engine work: compare the two runs project by project. Permitting and market effects move dates, not existence, so they still would not show as marks.</td></tr>
+            <tr><th scope="row">Homes per year: completed, approved, stopped, and from the policy</th><td>Available now</td><td>Nothing.</td></tr>
+            <tr><th scope="row">Projects per year (counts)</th><td>Not available; all series are in homes</td><td>Small: new count series.</td></tr>
+            <tr><th scope="row">First month an edit changes</th><td>Both the old and new forecast are on the page while it updates</td><td>Small: compare them, or have the engine send the month.</td></tr>
+          </tbody>
+        </table>
+        <aside data-kind="decision"><strong>Proposed</strong> Build the citywide marker feed once. It serves the halos, the off-screen events and the bars together, and carries the two cheap flags. The map marks then mean "under your policy" (your zoning allows it, or your money funded it), and the headline number stays the true total effect. The exact "would not exist under current law" mark is later work.</aside>
+        <aside data-kind="warning"><strong>Warning</strong> With the cheap flags, the homes in marked projects will not add up to the "from your policy" number. The key must say "under your policy", not "because of".</aside>
+      </section>
     </section>
 
     <section id="sec-prop-reveal">
@@ -505,14 +526,14 @@
         <tr><th scope="row">9. About this model</th><td>One place for meanings, assumptions, data and credits, and shortcuts. The map keeps a collapsed OpenStreetMap credit.</td><td>Slice 8</td></tr>
       </tbody>
     </table>
-    <aside data-kind="note"><strong>Engine check</strong> Slice 6 depends on what the simulation already knows per project: which policy caused it, and when it changes stage, for projects off screen as well as on. That is being read from the code now and this section will be updated with the answer.</aside>
+    <aside data-kind="note"><strong>Engine check</strong> Done; see <a href="#sec-prop-engine">What the engine can supply</a>. Slice 6 splits in two: halos and marks for projects on screen come first and are small; the citywide marker feed, which brings off-screen events and bars from the default zoom, is engine work and needs measuring.</aside>
   </section>
 
   <section id="sec-scope">
     <h2>Outside this work</h2>
     <ul>
       <li>The Fewer cars page itself. Only its header link changes.</li>
-      <li>The simulation's results. The one engine question is whether per-project "because of the policy" is available for events and marks.</li>
+      <li>The simulation's results. The engine changes this work needs are the ones listed in <a href="#sec-prop-engine">What the engine can supply</a>.</li>
       <li>Account, sign-in and sim-membership pages.</li>
       <li>Phone layouts are not drawn here. They follow the same tiers: headline, map, play and chart on screen; rows, Now and Details in the sheet.</li>
     </ul>
