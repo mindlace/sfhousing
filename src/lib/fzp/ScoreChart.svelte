@@ -125,7 +125,7 @@
             y="-10"
             width={cursorX}
             height={CHART_H + 20}
-            data-testid="chart-clip-shown"
+            data-testid="results-clip-shown"
           />
         </clipPath>
         <clipPath id={seenId} clipPathUnits="userSpaceOnUse">
@@ -134,7 +134,7 @@
             y="-10"
             width={reachedX - cursorX}
             height={CHART_H + 20}
-            data-testid="chart-clip-seen"
+            data-testid="results-clip-seen"
           />
         </clipPath>
       </defs>

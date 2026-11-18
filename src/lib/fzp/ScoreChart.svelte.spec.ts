@@ -114,8 +114,8 @@ describe('ScoreChart', () => {
     const reached = dayFromUtc(2038, 1, 1);
     await render(ScoreChart, { props: props({ reached }) });
     const model = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, svgWidth(), 290);
-    const shown = rect('chart-clip-shown');
-    const seen = rect('chart-clip-seen');
+    const shown = rect('results-clip-shown');
+    const seen = rect('results-clip-seen');
     expect(shown.x).toBe(0);
     expect(shown.width).toBeCloseTo(model.x(DAY1), 1);
     expect(seen.x).toBeCloseTo(model.x(DAY1), 1);
@@ -135,7 +135,7 @@ describe('ScoreChart', () => {
   it('a fully reached forecast cuts nothing short of the plot end', async () => {
     await page.viewport(1024, 768);
     await render(ScoreChart, { props: props() });
-    const seen = rect('chart-clip-seen');
+    const seen = rect('results-clip-seen');
     expect(seen.x + seen.width).toBeCloseTo(svgWidth(), 1);
   });
 
@@ -171,7 +171,7 @@ describe('ScoreChart', () => {
     await screen.rerender(props({ day: DAY2 }));
     await expect.poll(cursorX).toBeGreaterThan(0);
     await screen.rerender(props({ day: dayFromUtc(2033, 1, 1) }));
-    await expect.poll(() => rect('chart-clip-shown').width).toBeGreaterThan(0);
+    await expect.poll(() => rect('results-clip-shown').width).toBeGreaterThan(0);
     expect(observer.takeRecords()).toHaveLength(0);
     observer.disconnect();
     expect(writes).toBe(0);
