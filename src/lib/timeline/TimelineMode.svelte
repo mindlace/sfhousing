@@ -130,7 +130,7 @@
   import { filledEndDay, viewMonthOf } from './playhead';
   import { termsInForce } from './lens';
   import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
-  import { moved, revealOpen, type Reveal } from './reveal';
+  import { editedReveal, moved, revealOpen, scanned, type Reveal } from './reveal';
   import {
     headlineAt,
     headlineSpoken,
@@ -827,18 +827,40 @@
     session = s;
   }
 
-  // An edit (a new document): the edit is marked at once and playback pauses (rule 25).
+  // An edit (a new document): the edit is marked at once and playback pauses (rule 25). The
+  // reveal starts looking for the first month it changed, against the numbers on show now (a
+  // search already under way keeps what was seen first).
   $effect(() => {
     const p = policy;
     untrack(() => {
       if (!session || p === seenPolicy) return;
       seenPolicy = p;
+      const seen = shown.view ? { view: shown.view, inForce } : null;
       // The numbers on show are the accepted document's: kept while the edit is stale.
       if (!stale || heldDoc === null) heldDoc = session.accepted;
       session.edited();
+      reveal = editedReveal(reveal, seen);
       playing = false;
     });
   });
+
+  /** An edit waits for its refill: until then the newest view is still the old one. */
+  const waiting = $derived(session?.pending ?? true);
+  // The scan: once the edit is answered, as the new view fills. It runs when the view or the
+  // waiting state changes, never as the playhead moves; `scanned` resumes where it stopped.
+  $effect(() => {
+    const v = current;
+    const wait = waiting;
+    untrack(() => {
+      if (wait || !session) return;
+      const now = v ? { view: v, inForce: !nothingInForce(session.accepted ?? policy) } : null;
+      reveal = scanned(reveal, now, { day, playing, asOf });
+    });
+  });
+  /** The day "Play from" offers: the first changed month's start, never before today. */
+  const playFromDay = $derived(
+    reveal.playFrom === null || !months ? null : Math.max(asOf, months[reveal.playFrom])
+  );
 
   // PolicySync settled with a failure: the unsent edit ends (it goes out once Retry finds its
   // lots), so the page shows the last sent document's forecast, current, with the notice.
@@ -977,7 +999,7 @@
       policy,
       stale,
       reached: reveal.reached,
-      playFrom: reveal.playFrom !== null && months ? (months[reveal.playFrom] ?? null) : null,
+      playFrom: playFromDay,
       refills,
       completedNet: () =>
         current ? current.rows.slice(0, current.filledThrough + 1).map((r) => r.completedNet) : []
@@ -1098,7 +1120,7 @@
     bind:playing
     bind:speed
     reached={reveal.reached}
-    playFrom={null}
+    playFrom={playFromDay}
     {goalDeadline}
     onday={handleDay}
   />

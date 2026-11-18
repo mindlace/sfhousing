@@ -24,11 +24,12 @@ import type { ScoreStatics } from '$lib/sim/world/score/types';
 import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
 import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
-import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, homesBy } from './copy';
+import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, homesBy, playFromText } from './copy';
 import { filledEndDay, indexOfDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
 import { headlineAt, headlineSpoken, headlineText } from './results';
 import { dayPct } from './rows';
+import { scanned } from './reveal';
 import type { Lots } from './session.svelte';
 import {
   FakeTimelineWorker,
@@ -43,6 +44,11 @@ import TimelineModeHost from './test/TimelineModeHost.svelte';
 import { pointerBetween } from './test/pointer';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
+// The reveal rules as they are, with `scanned` counted (when the page scans, and what it ended).
+vi.mock('./reveal', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./reveal')>();
+  return { ...real, scanned: vi.fn(real.scanned) };
+});
 
 const manifest: Manifest = parseManifest(manifestJson);
 const cal = fixtureCalibration();
@@ -283,6 +289,203 @@ describe('TimelineMode', () => {
     near(zone('tl-zone-seen').left, trackX(debug().day), 'seen from the playhead');
     near(zone('tl-zone-seen').right, trackX(far), 'seen to the furthest date');
     near(zone('tl-zone-unseen').left, trackX(far), 'unseen past it');
+  });
+
+  describe('an edit pulls the reveal back', () => {
+    /** A policy in force before and after every edit here, so only the numbers can differ. */
+    const before = mk(protect(5));
+    const playLabelEl = () => page.getByTestId('tl-play-label');
+    const lastScan = () => vi.mocked(scanned).mock.results.at(-1)?.value;
+
+    /** The playhead by key: Home, `k` calendar months on, then `back` months back. */
+    async function keysTo(k: number, back = 0) {
+      (slider().element() as HTMLElement).focus();
+      await userEvent.keyboard('{Home}' + '{ArrowRight}'.repeat(k) + '{ArrowLeft}'.repeat(back));
+      await expect.poll(() => debug().day).toBe(MONTHS[k - back]);
+    }
+
+    /** The store's edit and its lots, as the page's store and PolicySync send them. */
+    async function edit(s: Awaited<ReturnType<typeof opened>>, p: SimPolicy4, rev: number) {
+      s.setPolicy(p);
+      s.setLots({});
+      await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(rev);
+    }
+
+    /** The worker's answer: refilled from `from`, unchanged up to `changed`, changed from it. */
+    async function answer(rev: number, from: number, changed: number) {
+      emit(compiledMsg(rev, STATICS));
+      emit(refillMsg(rev, from));
+      if (changed > from) emit(filledMsg(rev, from, changed - from));
+      if (changed <= LAST) emit(filledMsg(rev, changed, LAST + 1 - changed, { base: 5 }));
+      await expect.poll(() => debug().filledThrough).toBe(LAST);
+      await tick();
+    }
+
+    it('an edit pulls the furthest date back to the first changed month; earlier months stay seen', async () => {
+      const s = await opened(LAST, { initialPolicy: before });
+      await keysTo(20, 15);
+      expect(debug().reached).toBe(MONTHS[20]);
+      await edit(s, mk(protect(7)), 2);
+      await answer(2, 8, 12);
+      await expect.poll(() => debug().reached).toBe(MONTHS[12]);
+      expect(debug().playFrom).toBe(MONTHS[12]);
+      await expect.element(playLabelEl()).toHaveTextContent(playFromText(MONTHS[12]));
+      // Seen from the playhead to the first changed month; unseen past it.
+      const near = (a: number, b: number, what: string) =>
+        expect(Math.abs(a - b), `${what}: ${a} vs ${b}`).toBeLessThanOrEqual(1);
+      near(zone('tl-zone-seen').left, trackX(MONTHS[5]), 'seen from the playhead');
+      near(zone('tl-zone-seen').right, trackX(MONTHS[12]), 'seen to the first change');
+    });
+
+    it('the furthest date never falls behind the playhead', async () => {
+      const s = await opened(LAST, { initialPolicy: before });
+      await keysTo(15);
+      await edit(s, mk(protect(7)), 2);
+      await answer(2, 12, 12);
+      await expect.element(playLabelEl()).toHaveTextContent(playFromText(MONTHS[12]));
+      expect(debug().day).toBe(MONTHS[15]);
+      expect(debug().reached).toBe(MONTHS[15]);
+      expect(debug().playFrom).toBe(MONTHS[12]);
+    });
+
+    it('Play from moves the playhead to the first changed month and plays', async () => {
+      const s = await opened(LAST, { initialPolicy: before });
+      await keysTo(20, 15);
+      await edit(s, mk(protect(7)), 2);
+      await answer(2, 8, 12);
+      await expect.element(playLabelEl()).toHaveTextContent(playFromText(MONTHS[12]));
+      // Read in the press's own task: no frame of playback can come between.
+      (playButton().element() as HTMLElement).click();
+      expect(debug().day).toBe(MONTHS[12]);
+      expect(debug().playing).toBe(true);
+      expect(debug().playFrom).toBeNull();
+      await expect.element(playButton()).toHaveAccessibleName('Pause');
+      await playButton().click();
+      await expect.poll(() => debug().playing).toBe(false);
+      await expect.element(playLabelEl()).not.toHaveTextContent(/Play from/);
+    });
+
+    it('at the last day an edit updates the numbers in place and Play from replaces Replay', async () => {
+      const s = await opened(LAST, { initialPolicy: before });
+      const lastDay = filledEndDay(MONTHS, LAST, asOf);
+      (slider().element() as HTMLElement).focus();
+      await userEvent.keyboard('{End}');
+      await expect.poll(() => debug().day).toBe(lastDay);
+      await expect.element(playLabelEl()).toHaveTextContent('Replay');
+      await edit(s, mk(protect(7)), 2);
+      await answer(2, 12, 12);
+      await expect.poll(() => debug().stale).toBe(false);
+      expect(debug().completedNet()[LAST]).toBe(chunk(LAST, 1, { base: 5 }).rows[0].completedNet);
+      expect(debug().day).toBe(lastDay);
+      expect(debug().reached).toBe(lastDay);
+      await expect.element(playLabelEl()).toHaveTextContent(playFromText(MONTHS[12]));
+    });
+
+    it('nothing pulled back while the edit has no refill, and none when nothing changed', async () => {
+      const s = await opened(LAST, { initialPolicy: before });
+      await keysTo(20, 15);
+      const calls = vi.mocked(scanned).mock.calls.length;
+      await edit(s, mk(protect(7)), 2);
+      emit(compiledMsg(2, STATICS));
+      await tick();
+      // Not scanned while the edit waits for its refill: the newest view is still the old one.
+      expect(vi.mocked(scanned).mock.calls.length).toBe(calls);
+      expect(debug().reached).toBe(MONTHS[20]);
+      emit(refillMsg(2, 8));
+      emit(filledMsg(2, 8, LAST - 7));
+      await expect.poll(() => debug().filledThrough).toBe(LAST);
+      await tick();
+      // Scanned once the refill answered, and the search ended with nothing changed.
+      expect(vi.mocked(scanned).mock.calls.length).toBeGreaterThan(calls);
+      expect(lastScan()?.finding).toBeNull();
+      expect(debug().reached).toBe(MONTHS[20]);
+      expect(debug().playFrom).toBeNull();
+      await expect.element(playLabelEl()).toHaveTextContent(/^Play$/);
+    });
+
+    it('a second edit before the first is answered compares with what was seen first', async () => {
+      const s = await opened(LAST, { initialPolicy: before });
+      await keysTo(20, 15);
+      await edit(s, mk(protect(7)), 2);
+      emit(compiledMsg(2, STATICS));
+      emit(refillMsg(2, 8));
+      emit(filledMsg(2, 8, 4));
+      await expect.poll(() => debug().filledThrough).toBe(11);
+      // The second edit while the first's months fill: the view on show is filled only to 11.
+      await edit(s, mk(protect(9)), 3);
+      // Unchanged from what was seen first throughout; against the half-filled view months past
+      // 11 could not be compared and would count as changed.
+      await answer(3, 8, LAST + 1);
+      expect(lastScan()?.finding).toBeNull();
+      expect(debug().reached).toBe(MONTHS[20]);
+      expect(debug().playFrom).toBeNull();
+      await expect.element(playLabelEl()).toHaveTextContent(/^Play$/);
+    });
+
+    it('a rejected edit pulls nothing back', async () => {
+      const onundoto = vi.fn<(p: SimPolicy4) => void>();
+      const s = await opened(LAST, { initialPolicy: before, onundoto });
+      await keysTo(20, 15);
+      await edit(s, mk(protect(7)), 2);
+      emit(errorMsg(2, 'bad-request'));
+      await expect.poll(() => onundoto.mock.calls).toEqual([[before]]);
+      await tick();
+      expect(lastScan()?.finding).toBeNull();
+      expect(debug().reached).toBe(MONTHS[20]);
+      expect(debug().playFrom).toBeNull();
+      await expect.element(playLabelEl()).toHaveTextContent(/^Play$/);
+    });
+
+    it('an edit whose lots fail pulls nothing back', async () => {
+      const s = await opened(LAST, { initialPolicy: before });
+      await keysTo(20, 15);
+      s.setPolicy(mk(protect(7)));
+      s.setLots(null);
+      await expect.poll(() => debug().stale).toBe(true);
+      s.setLotsFailed(true);
+      await expect.poll(() => debug().stale).toBe(false);
+      await tick();
+      expect(lastScan()?.finding).toBeNull();
+      expect(debug().reached).toBe(MONTHS[20]);
+      expect(debug().playFrom).toBeNull();
+      await expect.element(playLabelEl()).toHaveTextContent(/^Play$/);
+    });
+
+    it('moving the playhead takes Play from away', async () => {
+      const s = await opened(LAST, { initialPolicy: before });
+      await keysTo(20, 15);
+      await edit(s, mk(protect(7)), 2);
+      await answer(2, 8, 12);
+      await expect.element(playLabelEl()).toHaveTextContent(playFromText(MONTHS[12]));
+      (slider().element() as HTMLElement).focus();
+      await userEvent.keyboard('{ArrowRight}');
+      await expect.poll(() => debug().day).toBe(MONTHS[6]);
+      expect(debug().playFrom).toBeNull();
+      expect(debug().reached).toBe(MONTHS[12]);
+      await expect.element(playLabelEl()).toHaveTextContent(/^Play$/);
+    });
+
+    it('the scan runs as the fill or the pending state changes, never as the playhead moves', async () => {
+      const s = await opened(LAST, { initialPolicy: before });
+      await keysTo(20, 15);
+      await edit(s, mk(protect(7)), 2);
+      emit(compiledMsg(2, STATICS));
+      emit(refillMsg(2, 8));
+      await expect.poll(() => debug().filledThrough).toBe(7);
+      await tick();
+      const calls = vi.mocked(scanned).mock.calls.length;
+      // Compared through month 7 with no change: the search goes on from month 8.
+      expect(lastScan()?.finding?.next).toBe(8);
+      (slider().element() as HTMLElement).focus();
+      await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowLeft}{ArrowLeft}{ArrowLeft}');
+      await expect.poll(() => debug().day).toBe(MONTHS[4]);
+      await tick();
+      expect(vi.mocked(scanned).mock.calls.length).toBe(calls);
+      emit(filledMsg(2, 8, 4));
+      await expect.poll(() => debug().filledThrough).toBe(11);
+      await tick();
+      expect(vi.mocked(scanned).mock.calls.length).toBe(calls + 1);
+    });
   });
 
   it('an edit pauses playback and Play works at once; the playhead waits at the computed edge', async () => {

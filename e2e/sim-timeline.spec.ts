@@ -178,6 +178,43 @@ test('a transit rule from 2031 refills from 2031, months before unchanged', asyn
   expect(after.slice(0, k)).toEqual(before.slice(0, k));
 });
 
+test('after an edit Play reads Play from the first changed year, and plays from there', async ({
+  page
+}) => {
+  await gotoSim(page);
+  // In force from today first, as the case above: then the transit rule changes only its months.
+  await addPolicy(page, 'Permitting', PRESET);
+  await closeEditor(page);
+  await page.waitForFunction(() => (window as FzpWin).__sfhFzp!.refills.length > 0);
+  await waitFilled(page);
+
+  // The whole window reached, then back to February 2031, where the rule starts.
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  const end = await fzp(page, 'day');
+  await expect.poll(() => fzp(page, 'reached')).toBe(end);
+  await playheadTo(page, 2031, 2);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  const [rule] = (await fzp(page, 'policy')).kinds.zoning;
+  const start = rule.spans[0].from;
+
+  await waitFilled(page);
+  await page.waitForFunction(() => (window as FzpWin).__sfhFzp!.playFrom !== null);
+  const from = (await fzp(page, 'playFrom'))!;
+  expect(from).toBeGreaterThanOrEqual(start);
+  const year = new Date(from * 86_400_000).getUTCFullYear();
+  await expect(page.getByTestId('tl-play-label')).toHaveText(`Play from ${year}`);
+  expect(await fzp(page, 'reached')).toBeLessThan(end);
+
+  // Read in the press's own task, so no frame of playback comes between.
+  const pressed = await page.getByTestId('tl-play').evaluate((b) => {
+    (b as HTMLElement).click();
+    const f = (window as FzpWin).__sfhFzp!;
+    return { day: f.day, playing: f.playing };
+  });
+  expect(pressed).toEqual({ day: from, playing: true });
+});
+
 // ---- sharing ------------------------------------------------------------------------------------
 
 test('publish, open the /s link, see the same timeline', async ({ page, browser }, testInfo) => {
