@@ -68,11 +68,11 @@
   }
 
   /**
-   * Who the plan effect is for, from the statics' comparison (rule 26): `scoreCopy`'s wording,
-   * which reads only the levers' `compare` ('plan' is the comparison with the plan as written).
+   * Who the plan effect is for (rule 26), in `scoreCopy`'s wording: current law vs the old zoning
+   * when nothing is in force, else your policy vs current law. The worker's `compare` is not used.
    */
-  function copyOf(compare: 'plan' | 'preFzp' | null): ScoreCopy {
-    return scoreCopy(compare === 'plan' ? ({ compare: 'fzp' } as SimLevers) : null);
+  function copyOf(nothing: boolean): ScoreCopy {
+    return scoreCopy(nothing ? null : ({ compare: 'fzp' } as SimLevers));
   }
 
   /** Below md the inspector sheet starts under the chart, and is never shorter than this. */
@@ -139,7 +139,7 @@
   import Playhead from './Playhead.svelte';
   import { filledEndDay, indexOfDay, viewMonthOf } from './playhead';
   import { termsInForce } from './lens';
-  import type { PolicyKind, SimPolicy4 } from './policy4';
+  import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
   import { headlineAt, headlineSpoken, headlineText, resultsAt, scoreOfView } from './results';
   import { TimelineSession, type Lots, type SessionNotice } from './session.svelte';
   import type { SpanRef } from './spans';
@@ -343,8 +343,17 @@
     shown.view ? filledEndDay(shown.view.months, shown.view.filledThrough, asOf) : asOf
   );
   const markers = $derived(score ? scrubMarkers(score) : []);
-  /** The shown view's comparison, so the label changes with its numbers (a held view keeps its). */
-  const copy = $derived(copyOf(shown.view?.compare ?? statics?.compare ?? null));
+  /**
+   * The document the shown numbers are from: the one the worker runs, or while stale the one it
+   * ran when the held view was taken; the edited `policy` until the session has one.
+   */
+  let heldDoc = $state.raw<SimPolicy4 | null>(null);
+  const resultsDoc = $derived((stale ? heldDoc : null) ?? session?.accepted ?? policy);
+  /**
+   * The comparison's wording for Results and the header, from the document the numbers on show
+   * are from, so it changes with the numbers (held numbers keep theirs).
+   */
+  const copy = $derived(copyOf(nothingInForce(resultsDoc)));
   /** The playhead is at the dataset date: the headline reads today. */
   const atToday = $derived(day <= asOf);
   /**
@@ -359,7 +368,15 @@
   /** Named by the playhead's month; past the last row, that row's numbers under it. */
   const headText = $derived(
     headline
-      ? headlineText({ ...headline, at: headline.at === null ? null : playheadMonth }, GOAL)
+      ? headlineText(
+          {
+            ...headline,
+            at: headline.at === null ? null : playheadMonth,
+            // "From your policy" only while the copy says the numbers are your policy's.
+            effect: copy.compare === 'fzp' ? headline.effect : null
+          },
+          GOAL
+        )
       : null
   );
   const chartTarget = $derived.by(() => {
@@ -371,12 +388,6 @@
       units: rhna.target.units
     };
   });
-  /**
-   * The document the shown numbers are from: the one the worker runs, or while stale the one it
-   * ran when the held view was taken; the edited `policy` until the session has one.
-   */
-  let heldDoc = $state.raw<SimPolicy4 | null>(null);
-  const resultsDoc = $derived((stale ? heldDoc : null) ?? session?.accepted ?? policy);
   // The held document goes once the numbers on show are current again.
   $effect(() => {
     if (!stale) untrack(() => (heldDoc = null));

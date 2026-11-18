@@ -245,8 +245,9 @@ test('/sim opens on the Family Zoning Plan; the header score shows Results', asy
     await expect(scoreBar(page)).not.toHaveAttribute('aria-expanded');
     await expect(results(page)).toBeVisible();
   }
+  // Nothing in force: the numbers are current law's.
   const face = await openScore(page);
-  await expect(face.getByText('What your policy added')).toBeVisible();
+  await expect(face.getByText('What current law added')).toBeVisible();
 });
 
 test('the headline follows the playhead and counts from today', async ({ isMobile, page }) => {
@@ -261,10 +262,9 @@ test('the headline follows the playhead and counts from today', async ({ isMobil
   expect((await scoreBar(page).textContent())!.replace(/^[\d,]+ homes by /, '')).toBe(
     formatShortMonthYear(day)
   );
-  // No policy: the comparison is still with the plan as written, so the effect shows. Below sm
-  // line 2 is hidden; the description still carries the effect and the goal.
-  const description =
-    /^[+\u2212][\d,]+ from your policy · ([\d.]+% of the goal|Goal reached, [A-Z][a-z]{2} \d{4})$/;
+  // Nothing in force: line 2 is the goal alone. Below sm it is hidden; the description carries it.
+  const description = /^([\d.]+% of the goal|Goal reached, [A-Z][a-z]{2} \d{4})$/;
+  await expect(page.getByTestId('score-delta')).toHaveCount(0);
   if (isMobile) await expect(page.getByTestId('score-detail')).toBeHidden();
   else await expect(page.getByTestId('score-detail')).toHaveText(description);
   await expect(scoreBar(page)).toHaveAccessibleDescription(description);
@@ -272,6 +272,8 @@ test('the headline follows the playhead and counts from today', async ({ isMobil
   await addPolicy(page, 'Zoning', 'Transit rule');
   await waitRefilled(page, n);
   await expect(page.getByTestId('score-delta')).toHaveText(/^[+\u2212][\d,]+ from your policy$/);
+  const face = await openScore(page);
+  await expect(face.getByText('What your policy added')).toBeVisible();
   await slider(page).focus();
   await page.keyboard.press('Home');
   await expect(scoreBar(page)).toHaveText('0 homes by today');
@@ -1119,7 +1121,9 @@ async function expectHeaderFits(page: Page): Promise<number> {
     expect(row[i].left, `"${row[i].name}" overlaps "${row[i - 1].name}"`).toBeGreaterThanOrEqual(
       row[i - 1].right - 0.5
     );
-  const score = (await scoreBar(page).boundingBox())!;
+  // The box, centred from xl: line 2 changes its width when a policy comes into force (the
+  // effect part), and the button (line 1) sits at its left.
+  const score = (await page.getByTestId('score-box').boundingBox())!;
   return score.x + score.width / 2;
 }
 

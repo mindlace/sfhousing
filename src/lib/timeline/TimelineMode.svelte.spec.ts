@@ -567,9 +567,14 @@ describe('TimelineMode', () => {
   /** The month index of the playhead's day. */
   const playheadMonth = () => indexOfDay(MONTHS, debug().day);
   const FULL = () => viewOf([chunk(0, LAST + 1)], STATICS);
-  /** The header's text at month i, named by the playhead's month (the readout's). */
+  /** The header's text at month i, named by the playhead's month (the readout's).
+   *  Nothing is in force (the default document), so it has no effect part. */
   const textAt = (i: number) =>
-    headlineText({ ...headlineAt(FULL(), i, false, false)!, at: monthStart(debug().day) });
+    headlineText({
+      ...headlineAt(FULL(), i, false, false)!,
+      at: monthStart(debug().day),
+      effect: null
+    });
 
   it('the header reads 0 by today, then follows the playhead month by month', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -624,22 +629,25 @@ describe('TimelineMode', () => {
     expect(scoreBar().element().textContent).toContain(short(readout.element().textContent!));
   });
 
-  it('the effect shows only with a policy in force', async () => {
-    setup();
-    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
-    emit(compiledMsg(1, { ...STATICS, compare: 'preFzp' }));
-    emit(filledMsg(1, 0, LAST + 1));
+  it('nothing in force: no effect in the header and the current-law copy, whatever the worker compares', async () => {
+    // The worker's statics say 'plan' and the plan effect is non-zero; the page's rule decides.
+    await opened(LAST, { withInspector: true });
     (slider().element() as HTMLElement).focus();
     await userEvent.keyboard('{PageUp}');
     await expect.poll(() => debug().day).toBeGreaterThan(asOf);
     const i = playheadMonth();
+    expect(STATICS.compare).toBe('plan');
+    expect(FULL().planEffect[i].completedNetNew).not.toBe(0);
     await expect.element(scoreBar()).toHaveTextContent(textAt(i).main);
     expect(page.getByTestId('score-delta').elements()).toEqual([]);
     await expect.element(page.getByTestId('score-detail')).toHaveTextContent(/of the goal$/);
+    const results = page.getByTestId('tl-results');
+    await expect.element(results).toHaveTextContent('What current law added');
+    expect(results.element().textContent).not.toContain('your policy');
   });
 
-  it('with the comparison against current law the effect is the plan effect at the playhead', async () => {
-    await opened();
+  it('a policy in force: the header shows the plan effect and Results the your-policy copy', async () => {
+    await opened(LAST, { withInspector: true, initialPolicy: mk(protect(5)) });
     (slider().element() as HTMLElement).focus();
     await userEvent.keyboard('{PageUp}');
     await expect.poll(() => debug().day).toBeGreaterThan(asOf);
@@ -647,6 +655,9 @@ describe('TimelineMode', () => {
     await expect
       .element(page.getByTestId('score-delta'))
       .toHaveTextContent(fromPolicyText(FULL().planEffect[i].completedNetNew));
+    await expect
+      .element(page.getByTestId('tl-results'))
+      .toHaveTextContent('What your policy added');
   });
 
   it('while stale the header shows the held numbers, dimmed, not calculating', async () => {
@@ -865,22 +876,29 @@ describe('TimelineMode', () => {
     expect(debug().stale).toBe(true);
   });
 
-  it('the "What … added" label is the shown view\'s: it changes with its numbers', async () => {
+  it("the comparison wording is the shown numbers' document's: it changes with them", async () => {
     const s = await opened(LAST, { withInspector: true });
     const results = page.getByTestId('tl-results');
-    await expect.element(results).toHaveTextContent('What your policy added');
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}');
+    await expect.poll(() => debug().day).toBeGreaterThan(asOf);
+    await expect.element(results).toHaveTextContent('What current law added');
+    expect(page.getByTestId('score-delta').elements()).toEqual([]);
     s.setPolicy(mk(protect(5)));
     s.setLots({});
     await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
-    // The first policy in force flips the comparison; its numbers are not in yet.
-    emit(compiledMsg(2, { ...STATICS, compare: 'preFzp' }));
+    emit(compiledMsg(2, STATICS));
     emit(refillMsg(2, 0));
     await expect.poll(() => debug().filledThrough).toBe(-1);
+    // Updating: the held numbers are the nothing-in-force document's, and so is the wording.
     expect(debug().stale).toBe(true);
-    await expect.element(results).toHaveTextContent('What your policy added');
+    expect(debug().policy).toEqual(mk(protect(5)));
+    await expect.element(results).toHaveTextContent('What current law added');
+    expect(page.getByTestId('score-delta').elements()).toEqual([]);
     emit(filledMsg(2, 0, LAST + 1));
     await expect.poll(() => debug().stale).toBe(false);
-    await expect.element(results).toHaveTextContent('What current law added');
+    await expect.element(results).toHaveTextContent('What your policy added');
+    await expect.element(page.getByTestId('score-delta')).toHaveTextContent(/from your policy$/);
   });
 
   it('while stale the money rows read the held document, not the edited one', async () => {
