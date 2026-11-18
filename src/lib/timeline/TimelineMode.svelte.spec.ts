@@ -28,7 +28,8 @@ import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, goalNote, homesBy, playFromTe
 import { filledEndDay, indexOfDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
 import { goalOutcome } from './outcome';
-import { headlineAt, headlineSpoken, headlineText } from './results';
+import { headlineAt, headlineSpoken, headlineText, scoreOfView } from './results';
+import { chartModel } from '$lib/fzp/chart';
 import { dayPct } from './rows';
 import { scanned } from './reveal';
 import type { Lots } from './session.svelte';
@@ -54,6 +55,15 @@ vi.mock('./outcome', async (importOriginal) => {
 vi.mock('./reveal', async (importOriginal) => {
   const real = await importOriginal<typeof import('./reveal')>();
   return { ...real, scanned: vi.fn(real.scanned) };
+});
+// Results' score and its chart's model as they are, counted (when Results rebuilds).
+vi.mock('./results', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./results')>();
+  return { ...real, scoreOfView: vi.fn(real.scoreOfView) };
+});
+vi.mock('$lib/fzp/chart', async (importOriginal) => {
+  const real = await importOriginal<typeof import('$lib/fzp/chart')>();
+  return { ...real, chartModel: vi.fn(real.chartModel) };
 });
 
 const manifest: Manifest = parseManifest(manifestJson);
@@ -2123,6 +2133,32 @@ describe('TimelineMode', () => {
     const insp = page.getByTestId('tl-inspector');
     await expect.element(insp.getByTestId('tl-results')).toBeVisible();
     expect(document.querySelector('[data-testid=host-inspector]')).toBeNull();
+  });
+
+  it("Results' score and chart are not rebuilt as the playhead crosses months", async () => {
+    await opened(LAST, { withInspector: true, inspectorOpen: false });
+    const chart = page.getByTestId('tl-inspector').getByTestId('fzp-chart');
+    await expect.element(chart).toBeVisible();
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{Home}');
+    await expect.poll(() => debug().day).toBe(asOf);
+    await tick();
+    const scores = vi.mocked(scoreOfView).mock.calls.length;
+    const models = vi.mocked(chartModel).mock.calls.length;
+    let paths = 0;
+    const obs = new MutationObserver((r) => (paths += r.length));
+    obs.observe(chart.element(), { subtree: true, attributes: true, attributeFilter: ['d'] });
+    for (let k = 1; k <= 4; k++) {
+      await userEvent.keyboard('{ArrowRight}');
+      await expect.poll(() => debug().day).toBe(MONTHS[k]);
+      await expect.element(scoreBar()).toHaveTextContent(textAt(k).main);
+    }
+    await tick();
+    paths += obs.takeRecords().length;
+    obs.disconnect();
+    expect(vi.mocked(scoreOfView).mock.calls.length - scores).toBe(0);
+    expect(vi.mocked(chartModel).mock.calls.length - models).toBe(0);
+    expect(paths).toBe(0);
   });
 
   it("from md the map's height holds when a kind opens or the inspector opens", async () => {

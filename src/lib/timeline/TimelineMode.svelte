@@ -339,8 +339,13 @@
         : Math.min(filledEndDay(current.months, current.filledThrough, asOf), windowEnd)
   );
   const tierBaseline = $derived(statics?.tierBaseline ?? null);
+  /**
+   * The view on show, stable across months: `shown` is a new object for every month, its view is
+   * not, so what derives from this rebuilds only when the view changes.
+   */
+  const shownView = $derived(shown.view);
   /** Today's score shape over the view on show (rule 26). */
-  const score = $derived(shown.view ? scoreOfView(shown.view, tierBaseline) : null);
+  const score = $derived(shownView ? scoreOfView(shownView, tierBaseline) : null);
   const shownFilled = $derived(shown.view?.filledThrough ?? -1);
   /** `resultsAt` over the score above (the view's, built once). */
   const at = $derived(
@@ -1178,7 +1183,7 @@
     <SimResults
       {score}
       {at}
-      view={score ? shown.view : null}
+      view={score ? shownView : null}
       {day}
       {asOf}
       horizon={windowEnd}
