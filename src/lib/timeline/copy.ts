@@ -87,6 +87,25 @@ export function rulerDescription(seenTo: Day | null, deadline: Day | null): stri
   return parts.join(' ');
 }
 
+/** The goal step's label in the chart: '73,346 more by Jan 2031'. */
+export const goalNote = (units: number, deadline: Day): string =>
+  `${formatCount(units)} more by ${formatShortMonthYear(deadline)}`;
+
+/** The chart's sr-only caption: what is drawn, the goal sentence only while its step is. */
+export function chartCaption(inForce: boolean, goalShown: boolean): string {
+  const slider = 'The month slider reads out each month.';
+  if (!inForce)
+    return goalShown
+      ? 'Homes completed from today, by month, and the goal as the homes still needed by its ' +
+          `deadline. ${slider}`
+      : `Homes completed from today, by month. ${slider}`;
+  const goal = goalShown ? 'The goal is drawn as the homes still needed by its deadline. ' : '';
+  return (
+    'Homes completed from today with your policy and under current law, by month. The shaded ' +
+    `gap is what your policy adds. ${goal}${slider}`
+  );
+}
+
 /** '12,345 homes by Apr 2040'; at === null: '0 homes by today'. Negative counts use U+2212. */
 export const homesBy = (n: number, at: Day | null): string =>
   `${formatCount(n)} homes by ${at === null ? 'today' : formatShortMonthYear(at)}`;

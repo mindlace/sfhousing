@@ -36,6 +36,12 @@
   --chart-halo: #ffffff;
   --chart-vertical: #6b7280;
   --chart-grid: #e5e7eb;
+  /* The /sim timeline chart: current law, the seen part of both lines (drawn thinner) and the
+     gap between them (a fill, bounded by the lines). */
+  --chart-law: #374151;
+  --chart-total-seen: #6383e3;
+  --chart-law-seen: #80868f;
+  --chart-gap: rgb(109 40 217 / 0.16);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -48,6 +54,10 @@
     --chart-halo: #1c1d1f;
     --chart-vertical: #9ca3af;
     --chart-grid: #4b4d52;
+    --chart-law: #d1d5db;
+    --chart-total-seen: #5a7fd0;
+    --chart-law-seen: #80858e;
+    --chart-gap: rgb(176 149 245 / 0.22);
   }
 }
 

@@ -24,7 +24,7 @@ import type { ScoreStatics } from '$lib/sim/world/score/types';
 import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
 import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
-import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, homesBy, playFromText } from './copy';
+import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, goalNote, homesBy, playFromText } from './copy';
 import { filledEndDay, indexOfDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
 import { headlineAt, headlineSpoken, headlineText } from './results';
@@ -719,8 +719,12 @@ describe('TimelineMode', () => {
       )!;
       near(centre(rect(label)), px(dayFromUtc(y + 5, 1, 1)), 'ruler label');
 
-      const chartLine = rect(page.getByTestId('chart-line').element());
-      near(chartLine.right, px(MONTHS[indexOfDay(MONTHS, d)]), 'chart line');
+      // The chart's solid zone ends at the day, on the lanes' scale.
+      const plot = rect(page.getByTestId('chart-svg').element());
+      near(plot.left, lane.left, 'chart left');
+      near(plot.width, lane.width, 'chart width');
+      const shownW = Number(page.getByTestId('chart-clip-shown').element().getAttribute('width'));
+      near(plot.left + (shownW / 1000) * plot.width, px(d), 'chart zone');
 
       const mini = document.querySelector('[data-testid=tl-kind-zoning] [data-testid=tl-mini] i')!;
       near(rect(mini).left, px(monthFirstDay(asOf, 2)), 'zoning miniature');
@@ -979,6 +983,62 @@ describe('TimelineMode', () => {
     await expect
       .element(scoreBar())
       .toHaveTextContent(homesBy(FULL().rows[LAST].completedNet, MONTHS[LAST]));
+  });
+
+  it("the chart's readout and the header name the same month at every position", async () => {
+    await opened();
+    const overlay = () =>
+      page.getByRole('slider', { name: 'Month in the chart' }).element() as HTMLElement;
+    const readout = page.getByTestId('chart-readout');
+    const same = async () => {
+      overlay().focus();
+      await expect.element(readout).toBeVisible();
+      expect(readout.element().textContent!.trim()).toBe(scoreBar().element().textContent!.trim());
+      overlay().blur();
+      (slider().element() as HTMLElement).focus();
+    };
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    await same();
+    // The fixture fills two years: a year on, three months back, then the end.
+    for (const key of ['{PageUp}', '{ArrowLeft>3/}', '{End}']) {
+      const before = debug().day;
+      await userEvent.keyboard(key);
+      await expect.poll(() => debug().day).not.toBe(before);
+      await expect
+        .element(scoreBar())
+        .toHaveTextContent(
+          homesBy(FULL().rows[playheadMonth()].completedNet, monthStart(debug().day))
+        );
+      await same();
+    }
+    expect(playheadMonth()).toBe(LAST);
+  });
+
+  it('the chart draws the held numbers while stale, as the header does', async () => {
+    const s = await opened();
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}{PageUp}');
+    await expect.poll(() => playheadMonth()).toBeGreaterThan(1);
+    const fig = page.getByTestId('tl-dock').getByRole('figure', { name: 'Homes completed' });
+    const line = page.getByTestId('chart-line');
+    await expect.element(line).toBeInTheDocument();
+    const d = line.element().getAttribute('d');
+    expect(fig.element().hasAttribute('data-stale')).toBe(false);
+    s.setPolicy(mk(protect(5)));
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 0));
+    await expect.poll(() => debug().filledThrough).toBe(-1);
+    // The held view, dimmed, with the held document's legend: nothing was in force.
+    await expect.element(fig).toHaveAttribute('data-stale', 'true');
+    expect(line.element().getAttribute('d')).toBe(d);
+    expect(document.querySelector('[data-testid=chart-law]')).toBeNull();
+    emit(filledMsg(2, 0, LAST + 1, { base: 5 }));
+    await expect.poll(() => debug().stale).toBe(false);
+    expect(fig.element().hasAttribute('data-stale')).toBe(false);
+    await expect.element(page.getByTestId('chart-law')).toBeInTheDocument();
+    expect(line.element().getAttribute('d')).not.toBe(d);
   });
 
   it('nothing in force: no effect in the header and the current-law copy, whatever the worker compares', async () => {
@@ -1473,14 +1533,20 @@ describe('TimelineMode', () => {
     const legend = page.getByTestId('tl-chart-legend').element();
     expect([...legend.querySelectorAll('li')].map((li) => li.textContent!.trim())).toEqual([
       'Homes completed',
-      GOAL.name
+      'Goal'
     ]);
-    // The line's last point sits at the top: the most homes any month has (3 * LAST + 1).
-    const d = page.getByTestId('chart-line-later').element().getAttribute('d')!;
-    const lastY = Number(/L[\d.-]+,([\d.-]+)$/.exec(d)![1]);
-    expect(lastY).toBeCloseTo(2, 1);
-    const yMax = 3 * LAST + 1;
-    expect(Number(target.element().getAttribute('y1'))).toBeCloseTo(98 - (need / yMax) * 96, 1);
+    // It is labelled as the homes still needed by the deadline's month.
+    await expect
+      .element(page.getByTestId('chart-target-note'))
+      .toHaveTextContent(goalNote(need, statics.months[12]));
+    // At today the scale is the goal's: niceCeil(40) = 50.
+    expect(Number(target.element().getAttribute('y1'))).toBeCloseTo(2 + (1 - need / 50) * 96, 1);
+    // At the end the scale holds the most homes any month has (3 * LAST + 1 = 70): 100.
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{End}');
+    await expect
+      .poll(() => Number(target.element().getAttribute('y1')))
+      .toBeCloseTo(2 + (1 - need / 100) * 96, 1);
   });
 
   it('while stale the map canvas, Results, card and header dim; their controls keep full contrast', async () => {
@@ -1831,22 +1897,39 @@ describe('TimelineMode', () => {
     });
   }
 
-  it('at 1280x900 the pinned block is shorter than before', async () => {
-    await opened(LAST, { withInspector: true });
-    await expect.element(slider()).toBeInTheDocument();
-    await nextFrame();
-    // Before: 184 px (controls, slider, years, bar and markers over a 65 px chart).
-    expect(box('tl-pin').height).toBeLessThan(184);
-  });
-
-  it('at 1280x720 the compact pinned block is shorter than before', async () => {
-    await page.viewport(1280, 720);
-    await opened(LAST, { withInspector: true, regionHeight: 636 });
-    await expect.element(slider()).toBeInTheDocument();
-    await nextFrame();
-    // Before: 136 px.
-    expect(box('tl-pin').height).toBeLessThan(136);
-  });
+  // Measured: the ruler row 68 px over a 96 px plot and its border (165); compact, the 52 px ruler
+  // row over a 64 px plot (117), or over the four-entry legend of a policy in force with the
+  // goal's step drawn (4 x 16 + 3 x 2, and the border: 123).
+  for (const [vh, inForce, most] of [
+    [900, false, 165],
+    [900, true, 165],
+    [720, false, 117],
+    [720, true, 123]
+  ] as const) {
+    const named = inForce ? ' with a policy in force and the goal' : '';
+    it(`at 1280x${vh}${named} the pinned block is at most ${most} px`, async () => {
+      await page.viewport(1280, vh);
+      setup({
+        withInspector: true,
+        ...(vh === 720 ? { regionHeight: 636 } : {}),
+        ...(inForce ? { initialPolicy: mk(protect(5)) } : {})
+      });
+      await expect.poll(() => workers.length).toBe(1);
+      await expect.poll(() => w().lastOf('openTimeline')).toBeTruthy();
+      // From Jan 2030 the goal's deadline (Jan 2031) is in the window, so its step is drawn.
+      const months = Array.from({ length: LAST + 1 }, (_, i) => dayFromUtc(2030, 1 + i, 1));
+      emit(compiledMsg(1, inForce ? { ...STATICS, months } : STATICS));
+      emit(filledMsg(1, 0, LAST + 1));
+      await expect.element(slider()).toBeInTheDocument();
+      const legend = page.getByTestId('tl-chart-legend');
+      await expect.poll(() => legend.element().querySelectorAll('li').length).toBe(inForce ? 4 : 1);
+      await nextFrame();
+      expect(box('tl-pin').height).toBeLessThanOrEqual(most + 0.5);
+      // The legend stays inside its cell.
+      const lab = legend.element().parentElement!.getBoundingClientRect();
+      expect(legend.element().getBoundingClientRect().bottom).toBeLessThanOrEqual(lab.bottom);
+    });
+  }
 
   it('at 1280x800 the rows box is at least 90 px tall', async () => {
     await page.viewport(1280, 800);
@@ -1882,8 +1965,8 @@ describe('TimelineMode', () => {
 
   // WCAG 2.2 2.4.11 at 400% zoom (320x256) and in a 400 px tall window from md (960x400, a 316 px
   // mode box): a box too short for the block and some rows scrolls the timeline as one piece, so
-  // a focused row is never under the block. (At 960x540 this fixture's 93 px compact block
-  // leaves 89 px of rows, so the rows keep their own box there.)
+  // a focused row is never under the block. (At 960x540 this fixture's 117 px compact block
+  // leaves 64.4 px of rows, so the rows keep their own box there.)
   for (const [vw, vh, regionHeight, phone] of [
     [320, 256, 172, true],
     [960, 400, 316, false]
@@ -1964,7 +2047,7 @@ describe('TimelineMode', () => {
     // The legend under the plot is gone from md; the plot keeps the lane's width.
     const fig = page.getByTestId('tl-lanes').getByRole('figure');
     expect(getComputedStyle(fig.element().querySelector('.legend')!).display).toBe('none');
-    expect(page.getByTestId('chart-svg').element().getBoundingClientRect().height).toBe(64);
+    expect(page.getByTestId('chart-svg').element().getBoundingClientRect().height).toBe(96);
     // The legend is the row's label: "Homes completed" once in the pinned block, and the chart
     // keeps its own name.
     // (The figure's sr-only caption is a sentence, not a label; the under-plot legend is not

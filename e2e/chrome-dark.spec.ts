@@ -248,6 +248,26 @@ test("a transit rule's editor at a bound, then the plan's row, has no axe violat
   });
 });
 
+test('the chart with a policy in force, played to the end, has no axe violations in dark', async ({
+  page
+}) => {
+  await gotoSim(page);
+  const n = await page.evaluate(() => (window as FzpWin).__sfhFzp!.refills.length);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  // The edit's refill, filled again.
+  await page.waitForFunction((k) => {
+    const f = (window as FzpWin).__sfhFzp!;
+    return f.refills.length > k && !f.stale && f.filledThrough === f.lastIndex;
+  }, n);
+  const close = editor(page).getByRole('button', { name: 'Close editor' });
+  if (await close.isVisible()) await close.click();
+  await page.getByRole('slider', { name: 'Date in the simulation' }).focus();
+  await page.keyboard.press('End');
+  await expect(page.getByTestId('chart-law')).toHaveCount(1);
+  await expect(page.getByTestId('chart-clip-shown')).toHaveAttribute('width', '1000');
+  await expectNoA11yViolations(page, { include: ['[data-testid=tl-dock]'] });
+});
+
 test('Results have no axe violations in dark', async ({ page }) => {
   await gotoSim(page);
   await page.getByTestId('score-bar').click();

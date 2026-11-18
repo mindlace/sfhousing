@@ -132,6 +132,20 @@ export function currentLawHomes(view: TimelineView, i: number): number {
   return view.rows[i].completedNet - view.planEffect[i].completedNetNew;
 }
 
+/**
+ * The chart's readout at position j (0 today, j = i + 1 the end of month i): the header's line 1
+ * for it, then ', ' + the effect while inForce ('0 homes by today'; '1,234 homes by Apr 2040,
+ * +56 from your policy'). Reads one row; '' where month j - 1 is not filled.
+ */
+export function chartReading(view: TimelineView, j: number, inForce: boolean): string {
+  // headlineAt's month rule without its goal reading, so only row j - 1 is read.
+  const i = j - 1;
+  if (i >= 0 && view.filledThrough < i) return '';
+  const main = i < 0 ? homesBy(0, null) : homesBy(view.rows[i].completedNet, view.months[i]);
+  if (!inForce) return main;
+  return `${main}, ${fromPolicyText(i < 0 ? 0 : view.planEffect[i].completedNetNew)}`;
+}
+
 export interface HeadlineText {
   main: string;
   effect: string | null;

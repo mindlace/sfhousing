@@ -4,193 +4,283 @@ import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import type { TimelineView } from '$lib/sim/world/score/types';
-import { GOAL } from '$lib/goal/goal';
+import type { Day } from '$lib/timelapse/time';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from './chunk-log';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { monthLastDay } from '$lib/sim/world/months';
 import ChartRow from './ChartRow.svelte';
-import { homesBy } from './copy';
+import { yearMarks } from './axis';
+import { chartPoints, posOf, runningMax, yLabels, yTop } from './chart-model';
+import { chartCaption, goalNote, homesBy } from './copy';
+import { filledEndDay } from './playhead';
+import { playheadAt } from './results';
 import { dayPct } from './rows';
-import { chunk, cut, statics } from './test/fixtures';
+import { calendarMonths, chunk, statics } from './test/fixtures';
 
-const asOf = statics().asOf;
-const windowEnd = monthLastDay(asOf, WINDOW_MONTHS);
-
+/** Calendar months from Nov 2026 (`statics()` spaces months 30 days apart), today their first. */
 function fullView(): TimelineView {
   const log = logFilled(logCompiled(EMPTY_LOG, statics()), chunk(0, 24));
-  return viewOfLog(log)!;
+  return calendarMonths(viewOfLog(log)!);
 }
+const asOf = fullView().months[0];
+const windowEnd = monthLastDay(asOf, WINDOW_MONTHS);
+const W = 1000;
+const LAST = 23;
+/** The last day of the last row's month: where the playhead stops. */
+const lastDay = (v: TimelineView) => filledEndDay(v.months, v.months.length - 1, asOf);
+const xOf = (d: Day) => (dayPct(d, asOf, windowEnd) / 100) * W;
 
-const pathXs = (d: string) =>
-  [...d.matchAll(/[ML]([\d.-]+),/g)].map((m) => Number(m[1])).filter((n) => !Number.isNaN(n));
+type Props = {
+  asOf: Day;
+  windowEnd: Day;
+  view: TimelineView | null;
+  inForce: boolean;
+  day: Day;
+  reached: Day;
+  target: { deadlineIndex: number; units: number } | null;
+  stale: boolean;
+};
+const props = (over: Partial<Props> = {}): Props => ({
+  asOf,
+  windowEnd,
+  view: fullView(),
+  inForce: false,
+  day: asOf,
+  reached: asOf,
+  target: null,
+  stale: false,
+  ...over
+});
+
+const attr = (id: string, name: string) => page.getByTestId(id).element().getAttribute(name);
+const num = (id: string, name: string) => Number(attr(id, name));
+const legendNames = () =>
+  [...document.querySelectorAll('.legend li')].map((li) => li.textContent!.trim());
+const ysOf = (d: string) => [...d.matchAll(/[ML][\d.-]+,([\d.-]+)/g)].map((m) => Number(m[1]));
+const firstPoint = (d: string) => /^M([\d.-]+),([\d.-]+)/.exec(d)!.slice(1).map(Number);
+const overlay = () => page.getByRole('slider', { name: 'Month in the chart' });
 
 describe('ChartRow', () => {
-  it('draws nothing past the filled mark and names itself', async () => {
-    const view = cut(fullView(), 5);
-    await render(ChartRow, { props: { asOf, windowEnd, view, index: 2, target: null } });
+  it('one line when nothing is in force; two lines and the gap with a policy', async () => {
+    const view = fullView();
+    const end = lastDay(view);
+    const { rerender } = await render(ChartRow, {
+      props: props({ view, day: end, reached: end })
+    });
+    await expect.element(page.getByTestId('chart-line')).toBeInTheDocument();
+    expect(document.querySelector('[data-testid=chart-law]')).toBeNull();
+    expect(document.querySelector('[data-testid=chart-gap]')).toBeNull();
+    await rerender({ inForce: true });
+    await expect.element(page.getByTestId('chart-law')).toBeInTheDocument();
+    await expect.element(page.getByTestId('chart-gap')).toBeInTheDocument();
+    // Each is drawn twice, once per zone, from the same path.
+    for (const id of ['chart-line', 'chart-law', 'chart-gap'])
+      expect(attr(`${id}-seen`, 'd'), id).toBe(attr(id, 'd'));
+    expect(attr('chart-gap', 'd')).toMatch(/Z$/);
+  });
+
+  it('the legend names only what is drawn', async () => {
+    const target = { deadlineIndex: 12, units: 40 };
+    const { rerender } = await render(ChartRow, { props: props({ target }) });
+    expect(legendNames()).toEqual(['Homes completed', 'Goal']);
+    await rerender({ inForce: true });
+    expect(legendNames()).toEqual(['With your policy', 'Current law', 'From your policy', 'Goal']);
+    await rerender({ target: null });
+    expect(legendNames()).toEqual(['With your policy', 'Current law', 'From your policy']);
+    await rerender({ inForce: false });
+    expect(legendNames()).toEqual(['Homes completed']);
+    expect(document.querySelectorAll('.legend button')).toHaveLength(0);
+  });
+
+  it('starts at zero at today', async () => {
+    await render(ChartRow, { props: props({ inForce: true }) });
+    for (const id of ['chart-line', 'chart-law']) {
+      const [x, y] = firstPoint(attr(id, 'd')!);
+      expect(x, id).toBe(0);
+      // The plot's floor is 0 (nothing below it), 2 units above the bottom edge.
+      expect(y, id).toBe(98);
+    }
+  });
+
+  it('solid to the day, thinner to the furthest date, nothing past it', async () => {
+    const view = fullView();
+    const day = view.months[5] + 10;
+    const reached = view.months[12] + 3;
+    const { rerender } = await render(ChartRow, { props: props({ view, day, reached }) });
+    await expect.element(page.getByTestId('chart-clip-shown')).toBeInTheDocument();
+    expect(num('chart-clip-shown', 'x')).toBe(0);
+    expect(num('chart-clip-shown', 'width')).toBeCloseTo(xOf(day), 1);
+    expect(num('chart-clip-seen', 'x')).toBeCloseTo(xOf(day), 1);
+    expect(num('chart-clip-seen', 'width')).toBeCloseTo(xOf(reached) - xOf(day), 1);
+    expect(num('chart-line', 'stroke-width')).toBe(2.5);
+    expect(num('chart-line-seen', 'stroke-width')).toBe(1.25);
+    expect(attr('chart-line', 'stroke')).toBe('var(--chart-total)');
+    expect(attr('chart-line-seen', 'stroke')).toBe('var(--chart-total-seen)');
+    // Each copy is cut by its own zone.
+    const clipOf = (id: string) => page.getByTestId(id).element().closest('g[clip-path]')!;
+    const ref = (id: string) => `url(#${page.getByTestId(id).element().parentElement!.id})`;
+    expect(clipOf('chart-line').getAttribute('clip-path')).toBe(ref('chart-clip-shown'));
+    expect(clipOf('chart-line-seen').getAttribute('clip-path')).toBe(ref('chart-clip-seen'));
+    // At the last day, or reached past it, the zones reach the plot's end: no gap.
+    const end = lastDay(view);
+    await rerender({ day: view.months[5] + 10, reached: end });
+    expect(num('chart-clip-seen', 'x') + num('chart-clip-seen', 'width')).toBeCloseTo(W, 6);
+    await rerender({ day: end, reached: end });
+    expect(num('chart-clip-shown', 'width')).toBeCloseTo(W, 6);
+    expect(num('chart-clip-seen', 'width')).toBeCloseTo(0, 6);
+    // At today nothing is drawn in either zone.
+    await rerender({ day: asOf, reached: asOf });
+    expect(num('chart-clip-shown', 'width')).toBe(0);
+    expect(num('chart-clip-seen', 'width')).toBe(0);
+  });
+
+  it('while stale everything takes the seen styling', async () => {
+    const view = fullView();
+    const day = view.months[5] + 10;
+    await render(ChartRow, {
+      props: props({ view, day, reached: day, inForce: true, stale: true })
+    });
     const fig = page.getByRole('figure', { name: 'Homes completed' });
-    await expect.element(fig).toBeVisible();
-    const caption = fig.element().querySelector('figcaption')!.textContent!;
-    expect(caption).not.toMatch(/Results table/);
-    expect(caption).toMatch(/from today/);
-    const visible = document.querySelector('.legend li')!.textContent!.trim();
-    await expect.element(fig).toHaveAccessibleName(visible);
-    const xs = ['chart-line', 'chart-line-later']
-      .map((id) => page.getByTestId(id).element().getAttribute('d')!)
-      .flatMap(pathXs);
-    const through = dayPct(view.months[5], asOf, windowEnd) * 10;
-    expect(Math.max(...xs)).toBeCloseTo(through, 1);
+    await expect.element(fig).toHaveAttribute('data-stale', 'true');
+    expect(attr('chart-line', 'stroke')).toBe('var(--chart-total-seen)');
+    expect(num('chart-line', 'stroke-width')).toBe(1.25);
+    expect(attr('chart-law', 'stroke')).toBe('var(--chart-law-seen)');
   });
 
-  it('places month i at dayPct of its first day, the scale every lane uses', async () => {
+  it("labels the vertical axis and shares the ruler's years", async () => {
     const view = fullView();
-    await render(ChartRow, { props: { asOf, windowEnd, view, index: 10, target: null } });
-    const xs = ['chart-line', 'chart-line-later']
-      .map((id) => page.getByTestId(id).element().getAttribute('d')!)
-      .flatMap(pathXs);
-    // The two parts share the playhead's month: drop its repeat.
-    const points = [...new Set(xs)];
-    expect(points).toHaveLength(view.months.length);
-    for (const i of [0, 6, 23]) {
-      expect(points[i]).toBeCloseTo(dayPct(view.months[i], asOf, windowEnd) * 10, 1);
-    }
-  });
-
-  it('draws one line through the filled mark and no band, average or city', async () => {
-    await render(ChartRow, {
-      props: { asOf, windowEnd, view: cut(fullView(), 5), index: 2, target: null }
-    });
-    for (const id of [
-      'chart-band',
-      'chart-band-later',
-      'chart-avg',
-      'chart-avg-later',
-      'chart-city',
-      'chart-city-later'
-    ]) {
-      expect(document.querySelector(`[data-testid="${id}"]`), id).toBeNull();
-    }
-    expect(document.querySelector('[data-testid="chart-line"]')).not.toBeNull();
-  });
-
-  it('draws the part after the playhead dashed at full colour', async () => {
-    await render(ChartRow, {
-      props: { asOf, windowEnd, view: fullView(), index: 10, target: null }
-    });
-    const solid = page.getByTestId('chart-line').element();
-    const later = page.getByTestId('chart-line-later').element();
-    expect(solid.getAttribute('stroke-dasharray')).toBeNull();
-    expect(later.getAttribute('stroke-dasharray')).toBeTruthy();
-    expect(later.getAttribute('stroke-opacity')).toBeNull();
-  });
-
-  it('the legend and the caption name the goal from the goal module while its step is drawn', async () => {
-    await render(ChartRow, {
-      props: {
-        asOf,
-        windowEnd,
-        view: fullView(),
-        index: 0,
-        target: { deadlineIndex: 12, units: 40 }
-      }
-    });
-    const names = [...document.querySelectorAll('.legend li')].map((li) => li.textContent!.trim());
-    expect(names).toEqual(['Homes completed', GOAL.name]);
-    const caption = document.querySelector('figcaption')!.textContent!;
-    expect(caption).toBe(
-      `Homes completed from today, by month, and the ${GOAL.name} as the homes still needed by its deadline. The month slider reads out each month.`
+    const target = { deadlineIndex: 12, units: 40 };
+    const reached = view.months[5] + 10;
+    await render(ChartRow, { props: props({ view, day: reached, reached, target }) });
+    const pos = posOf(playheadAt(view.months, asOf, reached));
+    const top = yTop(40, runningMax(chartPoints(view, false)), pos);
+    expect(top).toBe(50);
+    await expect.element(page.getByTestId('chart-ylabel').first()).toBeInTheDocument();
+    const labels = [...document.querySelectorAll('[data-testid=chart-ylabel]')].map((e) =>
+      e.textContent!.trim()
     );
-  });
-
-  it('with no step drawn, neither the legend nor the caption names the goal', async () => {
-    await render(ChartRow, {
-      props: { asOf, windowEnd, view: fullView(), index: 0, target: null }
+    expect(labels).toEqual(yLabels(top).map((l) => l.label));
+    const marks = yearMarks(asOf, windowEnd);
+    const years = [...document.querySelectorAll('[data-testid=chart-year]')];
+    expect(years).toHaveLength(marks.length);
+    years.forEach((el, k) => {
+      expect(Number(el.getAttribute('x1'))).toBeCloseTo((marks[k].pct / 100) * W, 1);
     });
-    const names = [...document.querySelectorAll('.legend li')].map((li) => li.textContent!.trim());
-    expect(names).toEqual(['Homes completed']);
-    expect(document.querySelector('[data-testid=chart-target]')).toBeNull();
-    const caption = document.querySelector('figcaption')!.textContent!;
-    expect(caption).toBe(
-      'Homes completed from today, by month. The month slider reads out each month.'
-    );
-    expect(caption).not.toContain(GOAL.name);
   });
 
-  it('shows the state target as a dashed marker', async () => {
-    await render(ChartRow, {
-      props: {
-        asOf,
-        windowEnd,
-        view: fullView(),
-        index: 0,
-        target: { deadlineIndex: 12, units: 40 }
-      }
-    });
-    expect(page.getByTestId('chart-target').element().getAttribute('stroke-dasharray')).toBe('5 3');
-  });
-
-  it("reads out the month's homes completed", async () => {
+  it('draws the goal step at the homes still needed and says so', async () => {
     const view = fullView();
-    await render(ChartRow, { props: { asOf, windowEnd, view, index: 3, target: null } });
+    const target = { deadlineIndex: 12, units: 40 };
+    await render(ChartRow, { props: props({ view, target }) });
+    await expect
+      .element(page.getByTestId('chart-target-note'))
+      .toHaveTextContent(goalNote(40, view.months[12]));
+    // The scale at today: niceCeil(40) = 50, so 40 sits a fifth of the way down the plot.
+    expect(num('chart-target', 'y1')).toBeCloseTo(2 + (1 - 40 / 50) * 96, 1);
+    // The step ends at the end of the deadline's month, where the ruler's goal flag sits.
+    expect(num('chart-target', 'x2')).toBeCloseTo(xOf(filledEndDay(view.months, 12, asOf)), 1);
+  });
+
+  it("the readout at the playhead is the header's line 1, at today and at the end", async () => {
+    const view = fullView();
+    const { rerender } = await render(ChartRow, { props: props({ view }) });
     await expect.element(page.getByTestId('chart-readout')).not.toBeInTheDocument();
-    (page.getByRole('slider', { name: 'Month in the chart' }).element() as HTMLElement).focus();
-    const readout = page.getByTestId('chart-readout');
-    await expect.element(readout).toBeVisible();
-    // chunk(): shown = 3k + 1 at k = 3, counted from today.
+    (overlay().element() as HTMLElement).focus();
+    await expect.element(page.getByTestId('chart-readout')).toHaveTextContent('0 homes by today');
+    await expect.element(overlay()).toHaveAttribute('aria-valuetext', '0 homes by today');
+    (overlay().element() as HTMLElement).blur();
+    const end = lastDay(view);
+    await rerender({ day: end, reached: end });
+    (overlay().element() as HTMLElement).focus();
+    const text = homesBy(view.rows[LAST].completedNet, view.months[LAST]);
+    await expect.element(page.getByTestId('chart-readout')).toHaveTextContent(text);
+    await expect.element(overlay()).toHaveAttribute('aria-valuetext', text);
+  });
+
+  it('the overlay reads only the months reached', async () => {
+    const view = fullView();
+    const reached = view.months[6] + 4;
+    await render(ChartRow, { props: props({ view, day: view.months[3] + 2, reached }) });
+    const max = posOf(playheadAt(view.months, asOf, reached));
+    expect(max).toBe(7);
+    await expect.element(overlay()).toHaveAttribute('aria-valuemax', String(max));
+    await expect.element(overlay()).toHaveAttribute('aria-valuenow', '4');
+    (overlay().element() as HTMLElement).focus();
+    await userEvent.keyboard('{ArrowRight>6/}');
+    await expect.element(overlay()).toHaveAttribute('aria-valuenow', String(max));
     await expect
-      .element(readout)
-      .toHaveTextContent(homesBy(view.rows[3].completedNet, view.months[3]));
-    expect(view.rows[3].completedNet).toBe(10);
-    await userEvent.keyboard('{ArrowRight}');
-    await expect
-      .element(readout)
-      .toHaveTextContent(homesBy(view.rows[4].completedNet, view.months[4]));
+      .element(page.getByTestId('chart-readout'))
+      .toHaveTextContent(homesBy(view.rows[6].completedNet, view.months[6]));
   });
 
   it('shows the numbers on hover', async () => {
-    await render(ChartRow, {
-      props: { asOf, windowEnd, view: fullView(), index: 0, target: null }
-    });
-    const el = page.getByRole('slider', { name: 'Month in the chart' });
-    await el.hover();
+    const view = fullView();
+    const end = lastDay(view);
+    await render(ChartRow, { props: props({ view, day: end, reached: end }) });
+    await overlay().hover();
     await expect.element(page.getByTestId('chart-readout')).toBeVisible();
   });
 
-  it('plots and reads out homes counted from today, with the goal at the homes still needed', async () => {
-    const view = fullView();
-    expect(view.baseline.completedNet).toBe(1000);
-    await render(ChartRow, {
-      props: { asOf, windowEnd, view, index: 0, target: { deadlineIndex: 12, units: 20 } }
+  it('moving the day and the furthest date writes no path and reads no row', async () => {
+    const base = fullView();
+    let reads = 0;
+    const counted = <T extends object>(a: T[]): T[] =>
+      new Proxy(a, {
+        get(t, p, r) {
+          if (typeof p === 'string' && /^\d+$/.test(p)) reads++;
+          return Reflect.get(t, p, r);
+        }
+      });
+    const view = { ...base, rows: counted(base.rows), planEffect: counted(base.planEffect) };
+    const m = base.months[7];
+    const { rerender } = await render(ChartRow, {
+      props: props({
+        view,
+        inForce: true,
+        day: m,
+        reached: m + 5,
+        target: { deadlineIndex: 12, units: 40 }
+      })
     });
-    // The line starts at month 0's own count (not the baseline) and sits below the target line.
-    const lineY = Number(
-      /M[\d.-]+,([\d.-]+)/.exec(page.getByTestId('chart-line').element().getAttribute('d')!)![1]
-    );
-    const targetY = Number(page.getByTestId('chart-target').element().getAttribute('y1'));
-    expect(lineY).toBeGreaterThan(targetY);
-    expect(lineY).toBeLessThan(100);
-    const slider = page.getByRole('slider', { name: 'Month in the chart' });
-    (slider.element() as HTMLElement).focus();
-    const split = 0;
-    await expect
-      .element(page.getByTestId('chart-readout'))
-      .toHaveTextContent(homesBy(view.rows[split].completedNet, view.months[split]));
-    await expect
-      .element(slider)
-      .toHaveAttribute(
-        'aria-valuetext',
-        homesBy(view.rows[split].completedNet, view.months[split])
-      );
+    await expect.element(page.getByTestId('chart-gap')).toBeInTheDocument();
+    const svg = page.getByTestId('chart-svg').element();
+    let paths = 0;
+    const pathObs = new MutationObserver((r) => (paths += r.length));
+    pathObs.observe(svg, { attributeFilter: ['d'], subtree: true });
+    let clips = 0;
+    const clipObs = new MutationObserver((r) => (clips += r.length));
+    clipObs.observe(svg, { attributeFilter: ['x', 'width'], subtree: true });
+    reads = 0;
+    for (let k = 1; k <= 20; k++) await rerender({ day: m + k, reached: m + k + 5 });
+    paths += pathObs.takeRecords().length;
+    clips += clipObs.takeRecords().length;
+    pathObs.disconnect();
+    clipObs.disconnect();
+    expect(paths).toBe(0);
+    expect(reads).toBe(0);
+    expect(clips).toBeGreaterThanOrEqual(20);
+  });
+
+  it('the caption says what is drawn', async () => {
+    const target = { deadlineIndex: 12, units: 40 };
+    const caption = () => document.querySelector('figcaption')!.textContent!.trim();
+    const { rerender } = await render(ChartRow, { props: props({ target }) });
+    expect(caption()).toBe(chartCaption(false, true));
+    await rerender({ inForce: true });
+    expect(caption()).toBe(chartCaption(true, true));
+    await rerender({ target: null });
+    expect(caption()).toBe(chartCaption(true, false));
+    await expect.element(page.getByRole('figure', { name: 'Homes completed' })).toBeInTheDocument();
   });
 
   it('keeps a falling line inside the plot', async () => {
     const view = fullView();
     const rows = view.rows.map((r, i) => ({ ...r, completedNet: -1500 * i }));
+    const end = lastDay(view);
     await render(ChartRow, {
-      props: { asOf, windowEnd, view: { ...view, rows }, index: 0, target: null }
+      props: props({ view: { ...view, rows }, day: end, reached: end })
     });
-    const d = page.getByTestId('chart-line-later').element().getAttribute('d')!;
-    const ys = [...d.matchAll(/[ML][\d.-]+,([\d.-]+)/g)].map((m) => Number(m[1]));
+    const ys = ysOf(attr('chart-line', 'd')!);
     expect(ys.length).toBeGreaterThan(1);
     for (const v of ys) {
       expect(v).toBeGreaterThanOrEqual(0);
@@ -198,23 +288,8 @@ describe('ChartRow', () => {
     }
   });
 
-  it('names two legend entries and explains neither', async () => {
-    await render(ChartRow, {
-      props: {
-        asOf,
-        windowEnd,
-        view: fullView(),
-        index: 0,
-        target: { deadlineIndex: 12, units: 40 }
-      }
-    });
-    const names = [...document.querySelectorAll('.legend li')].map((li) => li.textContent!.trim());
-    expect(names).toEqual(['Homes completed', 'State target']);
-    expect(document.querySelectorAll('.legend button').length).toBe(0);
-  });
-
   it('draws no marks and no overlay without a view', async () => {
-    await render(ChartRow, { props: { asOf, windowEnd, view: null, index: 0, target: null } });
+    await render(ChartRow, { props: props({ view: null }) });
     await expect.element(page.getByTestId('chart-line')).not.toBeInTheDocument();
     await expect.element(page.getByRole('slider')).not.toBeInTheDocument();
   });

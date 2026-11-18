@@ -132,13 +132,29 @@ describe('app accent tokens', () => {
       return out;
     };
     expect(vars(dark)['total']).toBeDefined();
+    for (const k of ['law', 'total-seen', 'law-seen']) expect(vars(dark)[k], k).toBeDefined();
+    // Seen lines are drawn thinner on their own tokens: each differs from its shown token.
+    for (const v of [vars(light), vars(dark)]) {
+      expect(v['total-seen']).not.toBe(v['total']);
+      expect(v['law-seen']).not.toBe(v['law']);
+    }
     const themes = [
       { v: vars(light), surfaces: ['surface', 'surface-raised'] },
       { v: { ...vars(light), ...vars(dark) }, surfaces: ['surface-dark', 'surface-dark-raised'] }
     ];
     for (const { v, surfaces } of themes)
       for (const s of surfaces) {
-        for (const k of ['total', 'pipeline', 'fresh', 'plan', 'vertical', 'ink'])
+        for (const k of [
+          'total',
+          'pipeline',
+          'fresh',
+          'plan',
+          'vertical',
+          'ink',
+          'law',
+          'total-seen',
+          'law-seen'
+        ])
           expect(contrast(v[k], tok[s]), `${k} on ${s}`).toBeGreaterThanOrEqual(3);
         expect(contrast(v['label'], tok[s]), `label on ${s}`).toBeGreaterThanOrEqual(4.5);
       }

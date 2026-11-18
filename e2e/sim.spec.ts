@@ -287,6 +287,31 @@ test('the headline follows the playhead and counts from today', async ({ isMobil
   await expect(scoreBar(page)).toHaveText('0 homes by today');
 });
 
+test('with a policy in force the chart draws current law and the gap; nothing past the playhead on opening', async ({
+  isMobile,
+  page
+}) => {
+  await gotoSim(page);
+  // On opening the playhead is at today: neither zone has any width, so nothing is drawn.
+  await expect(page.getByTestId('chart-clip-shown')).toHaveAttribute('width', '0');
+  await expect(page.getByTestId('chart-clip-seen')).toHaveAttribute('width', '0');
+  await expect(page.getByTestId('chart-law')).toHaveCount(0);
+  const n = await refillCount(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await waitRefilled(page, n);
+  await closeEditor(page);
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  const legend = page.getByTestId(isMobile ? 'chart-legend' : 'tl-chart-legend');
+  for (const name of ['With your policy', 'Current law', 'From your policy'])
+    await expect(legend.getByText(name, { exact: true })).toBeVisible();
+  await expect(page.getByTestId('chart-law')).toHaveCount(1);
+  await expect(page.getByTestId('chart-gap')).toHaveCount(1);
+  // At the end the solid zone reaches the plot's end.
+  await expect(page.getByTestId('chart-clip-shown')).toHaveAttribute('width', '1000');
+  await expectNoA11yViolations(page, { include: ['[data-testid=tl-dock]'] });
+});
+
 test('at 375 px the links wait in Menu; the score bar stays pinned', async ({ isMobile, page }) => {
   test.skip(!isMobile, 'the phone header');
   await gotoSim(page);

@@ -3,7 +3,10 @@ import { dayFromUtc } from '$lib/fzp/time';
 import { GOAL, TODAY, goalName, readGoal, type Goal } from '$lib/goal/goal';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from './chunk-log';
+import { fromPolicyText } from '$lib/fzp/score-view';
+import { homesBy } from './copy';
 import {
+  chartReading,
   currentLawHomes,
   headlineAt,
   headlineSpoken,
@@ -74,6 +77,20 @@ describe('headlineAt', () => {
   it('currentLawHomes is the plan world less the effect', () => {
     const v = whole();
     expect(currentLawHomes(v, 6)).toBe(v.rows[6].completedNet - v.planEffect[6].completedNetNew);
+  });
+
+  it('chartReading at today and at a month, with and without a policy in force', () => {
+    const v = whole();
+    expect(chartReading(v, 0, true)).toBe('0 homes by today, +0 from your policy');
+    expect(chartReading(v, 0, false)).toBe('0 homes by today');
+    expect(chartReading(v, 5, false)).toBe(homesBy(v.rows[4].completedNet, v.months[4]));
+    expect(chartReading(v, 5, true)).toBe(
+      `${homesBy(v.rows[4].completedNet, v.months[4])}, ${fromPolicyText(v.planEffect[4].completedNetNew)}`
+    );
+    // The header's line 1 for the same month.
+    expect(chartReading(v, 11, false)).toBe(
+      headlineText(headlineAt(v, at(10), { ...OPTS, inForce: false })!).main
+    );
   });
 
   it('negative homes and effects stay negative', () => {

@@ -1149,7 +1149,17 @@
 
 {#snippet chartPart()}
   <div bind:this={chartBox}>
-    <ChartRow {asOf} {windowEnd} view={current} {index} target={chartTarget} />
+    <!-- The view on show, as the header: the held numbers, dimmed, while stale. -->
+    <ChartRow
+      {asOf}
+      {windowEnd}
+      view={shown.view}
+      {inForce}
+      {day}
+      reached={reveal.reached}
+      target={chartTarget}
+      {stale}
+    />
   </div>
 {/snippet}
 
@@ -1349,6 +1359,7 @@
           playhead={playheadPart}
           chart={chartPart}
           goalShown={chartTarget !== null}
+          {inForce}
           playheadMonth={viewMonthOf(asOf, day)}
           playheadDay={day}
           bind:pinHeight
