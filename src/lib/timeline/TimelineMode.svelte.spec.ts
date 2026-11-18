@@ -2289,6 +2289,105 @@ describe('the goal notice', () => {
     expect(region().element().textContent).toContain('Change the policy and play again.');
   });
 
+  /** Every write under the notice's region: `take` returns those since the last take. */
+  function writesTo(el: Element) {
+    let got: MutationRecord[] = [];
+    const obs = new MutationObserver((r) => got.push(...r));
+    obs.observe(el, { subtree: true, childList: true, characterData: true, attributes: true });
+    const take = () => {
+      const all = [...got, ...obs.takeRecords()];
+      got = [];
+      return all;
+    };
+    return { take, stop: () => obs.disconnect() };
+  }
+
+  const ADD = 'Goal missed by 63 homes. Add a policy and play again.';
+
+  it('from nothing in force at today, a first policy never rewords the old shortfall', async () => {
+    const s = await opened(LAST, { goal: missing });
+    await keysTo(DEADLINE + 2);
+    await userEvent.keyboard('{Home}');
+    await expect.poll(() => debug().day).toBe(asOf);
+    await expect.element(notice()).toHaveTextContent(ADD);
+    const el = region().element();
+    const writes = writesTo(el);
+    s.setPolicy(mk(protect(7)));
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    await expect.poll(() => debug().stale).toBe(true);
+    await tick();
+    expect(writes.take()).toEqual([]);
+    expect(el.textContent).toContain(ADD);
+    // The playhead's month fills before the search ends: the numbers are current first.
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, DEADLINE + 1));
+    // The drawn current law changes from month 1: the furthest date goes back before the deadline.
+    await expect.poll(() => debug().reached).toBe(MONTHS[1]);
+    await expect.element(notice()).not.toBeInTheDocument();
+    // The notice went whole: nothing inside it was rewritten on the way.
+    const all = writes.take();
+    expect(all.length).toBeGreaterThan(0);
+    expect(all.every((r) => r.target === el && r.type === 'childList')).toBe(true);
+    writes.stop();
+  });
+
+  it('past the deadline, a first policy that keeps the outcome rewords it once its numbers show', async () => {
+    const s = await opened(LAST, { goal: missing });
+    await keysTo(DEADLINE + 2);
+    await expect.element(notice()).toHaveTextContent(ADD);
+    const el = region().element();
+    const writes = writesTo(el);
+    s.setPolicy(mk(protect(7)));
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    // The first change after the deadline: the deadline month's numbers are the same.
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, DEADLINE + 1));
+    await expect.poll(() => debug().filledThrough).toBe(DEADLINE);
+    expect(debug().stale).toBe(true);
+    await tick();
+    expect(writes.take()).toEqual([]);
+    expect(el.textContent).toContain(ADD);
+    emit(filledMsg(2, DEADLINE + 1, LAST - DEADLINE, { base: 5 }));
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect
+      .element(notice())
+      .toHaveTextContent('Goal missed by 63 homes. Change the policy and play again.');
+    writes.stop();
+  });
+
+  it('from nothing in force, a first policy that changes the shortfall replaces it whole', async () => {
+    const s = await opened(LAST, { goal: missing });
+    await keysTo(DEADLINE + 2);
+    await expect
+      .element(notice())
+      .toHaveTextContent('Goal missed by 63 homes. Add a policy and play again.');
+    const el = region().element();
+    const texts: string[] = [];
+    const obs = new MutationObserver(() => texts.push(el.textContent ?? ''));
+    obs.observe(el, { subtree: true, childList: true, characterData: true });
+    s.setPolicy(mk(protect(7)));
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 0));
+    await expect.poll(() => debug().stale).toBe(true);
+    await tick();
+    expect(texts).toEqual([]);
+    emit(filledMsg(2, 0, LAST + 1, { base: 5 }));
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect
+      .element(notice())
+      .toHaveTextContent('Goal missed by 58 homes. Change the policy and play again.');
+    obs.disconnect();
+    expect(texts.length).toBeGreaterThan(0);
+    for (const t of texts) {
+      expect(t.includes('63 homes') && t.includes('Change the policy')).toBe(false);
+      expect(t.includes('58 homes') && t.includes('Add a policy')).toBe(false);
+    }
+  });
+
   it('after Dismiss focus goes to the ruler', async () => {
     await opened(LAST, { goal: missing });
     await keysTo(DEADLINE + 1);

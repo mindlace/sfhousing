@@ -398,10 +398,16 @@
    * outcome keeps its object, so nothing downstream rewrites.
    */
   let outcome = $state.raw<GoalOutcome | null>(null);
+  /**
+   * Whether a policy is in force in the document `outcome` came from, held with it under the same
+   * wait, so the notice's wording and numbers are always one document's.
+   */
+  let outcomeInForce = $state(false);
   $effect(() => {
     const view = shown.view;
     const m = reachedMonth;
     const g = goal;
+    const f = inForce;
     const wait = stale || searching;
     untrack(() => {
       if (wait) return;
@@ -413,6 +419,7 @@
         next === outcome ||
         (next !== null && outcome !== null && outcomeKey(next) === outcomeKey(outcome));
       if (!same) outcome = next;
+      outcomeInForce = f;
     });
   });
   /** Outcomes dismissed this visit, by key. */
@@ -433,7 +440,9 @@
     target?.focus();
   }
   const goalNotice = $derived(
-    outcome && !dismissed.has(outcomeKey(outcome)) ? outcomeText(outcome, goal, inForce) : null
+    outcome && !dismissed.has(outcomeKey(outcome))
+      ? outcomeText(outcome, goal, outcomeInForce)
+      : null
   );
   // The held document goes once the numbers on show are current again.
   $effect(() => {
