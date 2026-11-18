@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from '$lib/timeline/chunk-log';
-import { chunk, cut, statics } from '$lib/timeline/test/fixtures';
+import { calendarMonths, chunk, cut, statics } from '$lib/timeline/test/fixtures';
 import { dayFromUtc } from '$lib/fzp/time';
 import type { Day } from '$lib/timelapse/time';
 import { RHNA_DEADLINE } from '$lib/sim/scenario/score';
@@ -19,10 +19,8 @@ import {
   type Goal
 } from './goal';
 
-/** The fixture's months are 30 days apart; the goal counts calendar months, so use those. */
 function whole(): TimelineView {
-  const v = viewOfLog(logFilled(logCompiled(EMPTY_LOG, statics()), chunk(0, 24)))!;
-  return { ...v, months: v.months.map((_, i) => dayFromUtc(2026, 11 + i, 1)) };
+  return calendarMonths(viewOfLog(logFilled(logCompiled(EMPTY_LOG, statics()), chunk(0, 24)))!);
 }
 
 function goalOf(amount: number, deadline: Day): Goal {

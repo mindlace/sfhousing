@@ -3,7 +3,9 @@
 // `src/lib/sim-page/funding-copy.ts`, which `/lesscars` imports and so stays unedited.
 // Task 5's `CUSTOM_TIMING_LABEL` and `PRESET_PER_POLICY` live in `lens.ts`.
 
-import { formatPercent } from '$lib/scoreboard/format';
+import { formatShortMonthYear } from '$lib/fzp/format';
+import { formatCount, formatPercent } from '$lib/scoreboard/format';
+import type { Day } from '$lib/timelapse/time';
 import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import type { CoverageStep } from '$lib/sim-page/funding-view';
 
@@ -67,3 +69,7 @@ export function perHomeMethod(method: string): string {
   const at = method.indexOf(PER_HOME_TAIL);
   return at < 0 ? method : `${method.slice(0, at)}. ${PER_HOME_SOURCE}`;
 }
+
+/** '12,345 homes by Apr 2040'; at === null: '0 homes by today'. Negative counts use U+2212. */
+export const homesBy = (n: number, at: Day | null): string =>
+  `${formatCount(n)} homes by ${at === null ? 'today' : formatShortMonthYear(at)}`;
