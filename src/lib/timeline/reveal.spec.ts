@@ -20,7 +20,19 @@ const changedFrom = (k: number): TimelineView =>
 const side = (view: TimelineView, inForce = false): Side => ({ view, inForce });
 const M = base.months;
 const ASOF = M[0];
-const idle = { playing: false };
+const idle = { playing: false, asOf: ASOF };
+
+/** The view with its rows read through a proxy that records the month indexes read. */
+function counted(view: TimelineView): { view: TimelineView; reads: number[] } {
+  const reads: number[] = [];
+  const rows = new Proxy(view.rows, {
+    get(target, key, recv) {
+      if (typeof key === 'string' && /^\d+$/.test(key)) reads.push(Number(key));
+      return Reflect.get(target, key, recv);
+    }
+  });
+  return { view: { ...view, rows }, reads };
+}
 
 /** A reveal that has reached month `reach` and is searching, as `editedReveal` leaves it. */
 function searching(reach: number, before: Side = side(base)): Reveal {
@@ -52,7 +64,7 @@ describe('revealOpen and moved', () => {
 describe('scanned', () => {
   it('an edit at today finds nothing to pull back', () => {
     const r = editedReveal(revealOpen(ASOF), side(base));
-    const out = scanned(r, side(changedFrom(0)), { day: ASOF, playing: false, asOf: ASOF });
+    const out = scanned(r, side(changedFrom(0)), { day: ASOF, ...idle });
     expect(out).toEqual({ reached: ASOF, finding: null, playFrom: null });
   });
 
@@ -78,7 +90,11 @@ describe('scanned', () => {
   });
 
   it('offers no Play from when the change is found while playing', () => {
-    const out = scanned(searching(20), side(changedFrom(12)), { day: M[5], playing: true });
+    const out = scanned(searching(20), side(changedFrom(12)), {
+      day: M[5],
+      playing: true,
+      asOf: ASOF
+    });
     expect(out.reached).toBe(M[12]);
     expect(out.playFrom).toBeNull();
   });
@@ -174,6 +190,9 @@ describe('scanned', () => {
       money: { ...a.money!, fundedHomes: a.money!.fundedHomes.map((v) => v + 1) }
     };
     expect(monthChanged(side(a), side(shown), 3)).toBe(true);
+    // Money present on one side only.
+    expect(monthChanged(side(a), side({ ...a, money: null }), 3)).toBe(true);
+    expect(monthChanged(side({ ...a, money: null }), side({ ...a, money: null }), 3)).toBe(false);
     // Tiers.
     const tier = { low: 1, moderate: 2, above: 3 } as unknown as NonNullable<
       TimelineView['tiers']
@@ -182,6 +201,54 @@ describe('scanned', () => {
     const t2 = { ...base, tiers: base.rows.map((_, i) => (i === 4 ? { ...tier, low: 9 } : tier)) };
     expect(monthChanged(side(t1), side(t2), 4)).toBe(true);
     expect(monthChanged(side(t1), side(t2), 3)).toBe(false);
+  });
+
+  it('a mid-month dataset date: at reached === asOf nothing is compared', () => {
+    const mid = M[0] + 10;
+    const r = editedReveal(revealOpen(mid), side(base));
+    const { view, reads } = counted(changedFrom(0));
+    const out = scanned(r, side(view), { day: mid, playing: false, asOf: mid });
+    expect(out).toEqual({ reached: mid, finding: null, playFrom: null });
+    expect(reads).toEqual([]);
+  });
+
+  it('a mid-month dataset date: a day in month 0 after asOf compares month 0', () => {
+    const mid = M[0] + 10;
+    const day = mid + 5;
+    const r = editedReveal(moved(revealOpen(mid), day), side(base));
+    const out = scanned(r, side(changedFrom(0)), { day, playing: false, asOf: mid });
+    expect(out).toEqual({ reached: day, finding: null, playFrom: 0 });
+  });
+
+  it('ending with nothing changed keeps reached from falling behind the playhead', () => {
+    const r = searching(10);
+    const out = scanned(r, side(changedFrom(15)), { day: M[12], ...idle });
+    expect(out.reached).toBe(M[12]);
+    expect(out.finding).toBeNull();
+    expect(out.playFrom).toBeNull();
+  });
+
+  it('months past a shorter before cannot be shown unchanged: the first of them is changed', () => {
+    const r = searching(8, side(cut(base, 3)));
+    const waiting = scanned(r, side(cut(base, 3)), { day: M[2], ...idle });
+    expect(waiting.finding?.next).toBe(4);
+    const out = scanned(r, side(cut(base, 10)), { day: M[2], ...idle });
+    expect(out).toEqual({ reached: M[4], finding: null, playFrom: 4 });
+    const playing = scanned(r, side(cut(base, 10)), { day: M[2], playing: true, asOf: ASOF });
+    expect(playing.playFrom).toBeNull();
+    expect(playing.reached).toBe(M[4]);
+  });
+
+  it('a resumed scan does not read the months already compared', () => {
+    const r = searching(20);
+    const first = counted(cut(changedFrom(18), 8));
+    const partial = scanned(r, side(first.view), { day: M[5], ...idle });
+    expect(first.reads.length).toBeGreaterThan(0);
+    const second = counted(changedFrom(18));
+    const out = scanned(partial, side(second.view), { day: M[5], ...idle });
+    expect(out.playFrom).toBe(18);
+    expect(second.reads.length).toBeGreaterThan(0);
+    expect(Math.min(...second.reads)).toBe(9);
   });
 
   it('without a search, scanned returns the same object', () => {

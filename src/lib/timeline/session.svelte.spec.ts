@@ -172,6 +172,8 @@ describe('TimelineSession', () => {
     session.send(doc2, {});
     emit(compiled(2));
     expect(session.pending).toBe(true);
+    emit(refill(1, 10));
+    expect(session.pending).toBe(true);
     emit(refill(2, 10));
     expect(session.pending).toBe(false);
   });

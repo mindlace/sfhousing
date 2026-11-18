@@ -51,33 +51,38 @@ export function editedReveal(r: Reveal, before: Side | null): Reveal {
 /**
  * The newest view, once a refill has answered the edit (the caller passes only then). Compares
  * months next..limit, limit = min(now.view.filledThrough, before.view.filledThrough, m), where m
- * is the month of `reached` (-1 at today: reached on or before `at.asOf`, which is months[0] when
- * the caller leaves it out). The first k with monthChanged(before, now, k) ends the search:
- * reached = max(day, now.view.months[k]); playFrom = playing ? null : k. No change through m ends
- * it with nothing pulled back. Otherwise next = limit + 1 (the fill is behind). Returns `r` itself
- * when there is no search or nothing new was compared.
+ * is the month of `reached` (-1 at today: reached on or before `at.asOf`, the dataset date). The
+ * first k with monthChanged(before, now, k) ends the search:
+ * reached = max(day, now.view.months[k]); playFrom = playing ? null : k. No change through m ends it with nothing pulled back (reached
+ * stays at least `at.day`). Otherwise next = limit + 1 (the fill is behind). Months past
+ * before.view.filledThrough cannot be compared: once the new view has filled past it with no
+ * change found, the first of them counts as the first changed month, since what cannot be shown
+ * unchanged is unseen; so a search always ends. Returns `r` itself when there is no search or
+ * nothing new was compared.
  */
 export function scanned(
   r: Reveal,
   now: Side | null,
-  at: { day: Day; playing: boolean; asOf?: Day }
+  at: { day: Day; playing: boolean; asOf: Day }
 ): Reveal {
   const f = r.finding;
   if (f === null || now === null) return r;
   const months = now.view.months;
-  const today = r.reached <= (at.asOf ?? months[0]);
-  const m = today ? -1 : indexOfDay(months, r.reached);
-  const limit = Math.min(now.view.filledThrough, f.before.view.filledThrough, m);
+  const m = r.reached <= at.asOf ? -1 : indexOfDay(months, r.reached);
+  const beforeThrough = f.before.view.filledThrough;
+  const limit = Math.min(now.view.filledThrough, beforeThrough, m);
+  const found = (k: number): Reveal => ({
+    reached: Math.max(at.day, months[k]),
+    finding: null,
+    playFrom: at.playing ? null : k
+  });
   for (let k = f.next; k <= limit; k++) {
-    if (monthChanged(f.before, now, k)) {
-      return {
-        reached: Math.max(at.day, months[k]),
-        finding: null,
-        playFrom: at.playing ? null : k
-      };
-    }
+    if (monthChanged(f.before, now, k)) return found(k);
   }
-  if (limit >= m) return { ...r, finding: null };
+  if (limit >= m) return { ...r, reached: Math.max(r.reached, at.day), finding: null };
+  if (limit === beforeThrough && now.view.filledThrough > beforeThrough) {
+    return found(beforeThrough + 1);
+  }
   if (limit + 1 <= f.next) return r;
   return { ...r, finding: { before: f.before, next: limit + 1 } };
 }
