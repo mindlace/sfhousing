@@ -508,6 +508,7 @@
       <li><strong>The painted-area Retry never appears.</strong> The failed state is never produced, so a row can stay at "Finding lots…".</li>
       <li><strong>"A forecast if nothing changes."</strong> stays on the headline after the person has changed something.</li>
       <li><strong>Lot counts in painted-area rows double-count overlaps.</strong></li>
+      <li><strong>The engine always reports that a policy is in force.</strong> The worker posts only the plan side's comparison mode, which is "plan" for every document. Before slice 2, a fresh Simulate page therefore said "What your policy added" and "vs FZP +N" over numbers that were current law against the old zoning. Slice 2 made the page decide the wording from the document itself; the engine's report is still wrong at the source.</li>
     </ul>
   </section>
 
@@ -542,6 +543,22 @@
       </tbody>
     </table>
     <aside data-kind="note"><strong>Engine check</strong> Done; see <a href="#sec-prop-engine">What the engine can supply</a>. The map work is two slices: halos and marks for projects on screen come first and are small; the citywide marker feed, which brings off-screen events and bars from the default zoom, is engine work and needs measuring.</aside>
+  </section>
+
+  <section id="sec-carried">
+    <h2>Carried forward from slices 1 and 2</h2>
+    <p>Known rough edges that were left for the slice that rebuilds the part they live in.</p>
+    <ul>
+      <li><strong>For slice 3 (the timeline):</strong> timeline rows stay clickable while they sit half-hidden under the pinned block, which the accessibility check flags at some scroll positions.</li>
+      <li><strong>For slice 3:</strong> at the very end of the window the chart's own readout names the last month the forecast holds ("Sep 2066") while the header names the playhead's month ("Oct 2066"); at today the chart shows the first month's count where the header shows zero.</li>
+      <li><strong>For slice 3:</strong> the timeline chart draws the goal's step at the homes still needed but labels it "State target", so it sits at a different height from the Results chart's line of the same name.</li>
+      <li><strong>For slice 3:</strong> the rules for the headline's month and for "your policy" versus "current law" are applied where the header is wired, not inside the headline function, so that function's own tests do not cover what ships.</li>
+      <li><strong>For slice 7 (the detail column):</strong> past the goal's deadline the target rows in Results hold at the deadline, like the header, but nothing on the row says so; the buffer row has no date and looks frozen. At today the header reads the goal at today while the goal's row reads the first month, so the two can differ by a point on opening.</li>
+      <li><strong>For slice 7:</strong> pressing the headline still opens Results, not Details.</li>
+      <li><strong>Header:</strong> between 1024 and 1279 px the score is not centred, so the actions fit. With autosave off, the "Autosave off" warning is covered by "Updating" for the seconds an update takes. The header-fit test does not cover a signed-in handle at 1024 px.</li>
+      <li><strong>Paint's header</strong> still reads "N homes added" with its unlabelled meter until slice 4.</li>
+      <li><strong>Not re-run:</strong> the map benchmark, after it was changed to switch both transit layers on itself.</li>
+    </ul>
   </section>
 
   <section id="sec-scope">
