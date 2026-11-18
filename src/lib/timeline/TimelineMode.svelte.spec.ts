@@ -1076,6 +1076,12 @@ describe('TimelineMode', () => {
     emit(filledMsg(1, 0, LAST + 1));
     const target = page.getByTestId('chart-target');
     await expect.element(target).toBeInTheDocument();
+    // The step is drawn, so the stacked legend names the goal.
+    const legend = page.getByTestId('tl-chart-legend').element();
+    expect([...legend.querySelectorAll('li')].map((li) => li.textContent!.trim())).toEqual([
+      'Homes completed',
+      GOAL.name
+    ]);
     // The line's last point sits at the top: the most homes any month has (3 * LAST + 1).
     const d = page.getByTestId('chart-line-later').element().getAttribute('d')!;
     const lastY = Number(/L[\d.-]+,([\d.-]+)$/.exec(d)![1]);
@@ -1531,7 +1537,9 @@ describe('TimelineMode', () => {
     const lab = legend.parentElement!.getBoundingClientRect();
     expect(lab.width).toBe(168);
     const names = [...legend.querySelectorAll('li')].map((li) => li.textContent!.trim());
-    expect(names).toEqual(['Homes completed', 'State target']);
+    // The fixture's 24 months end before the goal's deadline: no step, so no goal entry.
+    expect(page.getByTestId('chart-target').elements()).toEqual([]);
+    expect(names).toEqual(['Homes completed']);
     for (const li of legend.querySelectorAll('li')) {
       expect(li.getBoundingClientRect().right).toBeLessThanOrEqual(lab.right);
       expect(li.scrollWidth).toBeLessThanOrEqual(li.clientWidth);

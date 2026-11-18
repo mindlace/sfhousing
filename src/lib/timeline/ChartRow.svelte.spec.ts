@@ -4,6 +4,7 @@ import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import type { TimelineView } from '$lib/sim/world/score/types';
+import { GOAL } from '$lib/goal/goal';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from './chunk-log';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { monthLastDay } from '$lib/sim/world/months';
@@ -83,12 +84,36 @@ describe('ChartRow', () => {
     expect(later.getAttribute('stroke-opacity')).toBeNull();
   });
 
-  it('the legend names the goal', async () => {
+  it('the legend and the caption name the goal from the goal module while its step is drawn', async () => {
+    await render(ChartRow, {
+      props: {
+        asOf,
+        windowEnd,
+        view: fullView(),
+        index: 0,
+        target: { deadlineIndex: 12, units: 40 }
+      }
+    });
+    const names = [...document.querySelectorAll('.legend li')].map((li) => li.textContent!.trim());
+    expect(names).toEqual(['Homes completed', GOAL.name]);
+    const caption = document.querySelector('figcaption')!.textContent!;
+    expect(caption).toBe(
+      `Homes completed from today, by month, and the ${GOAL.name} as the homes still needed by its deadline. The month slider reads out each month.`
+    );
+  });
+
+  it('with no step drawn, neither the legend nor the caption names the goal', async () => {
     await render(ChartRow, {
       props: { asOf, windowEnd, view: fullView(), index: 0, target: null }
     });
     const names = [...document.querySelectorAll('.legend li')].map((li) => li.textContent!.trim());
-    expect(names).toEqual(['Homes completed', 'State target']);
+    expect(names).toEqual(['Homes completed']);
+    expect(document.querySelector('[data-testid=chart-target]')).toBeNull();
+    const caption = document.querySelector('figcaption')!.textContent!;
+    expect(caption).toBe(
+      'Homes completed from today, by month. The month slider reads out each month.'
+    );
+    expect(caption).not.toContain(GOAL.name);
   });
 
   it('shows the state target as a dashed marker', async () => {
@@ -175,7 +200,13 @@ describe('ChartRow', () => {
 
   it('names two legend entries and explains neither', async () => {
     await render(ChartRow, {
-      props: { asOf, windowEnd, view: fullView(), index: 0, target: null }
+      props: {
+        asOf,
+        windowEnd,
+        view: fullView(),
+        index: 0,
+        target: { deadlineIndex: 12, units: 40 }
+      }
     });
     const names = [...document.querySelectorAll('.legend li')].map((li) => li.textContent!.trim());
     expect(names).toEqual(['Homes completed', 'State target']);

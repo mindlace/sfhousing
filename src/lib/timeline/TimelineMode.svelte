@@ -1303,6 +1303,7 @@
           {onadd}
           playhead={playheadPart}
           chart={chartPart}
+          goalShown={chartTarget !== null}
           playheadMonth={viewMonthOf(asOf, day)}
           playheadDay={day}
           {filledEnd}

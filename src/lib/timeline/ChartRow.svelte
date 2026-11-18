@@ -1,13 +1,15 @@
 <!--
-  The chart row (rule 4, rule 28): the homes completed by month as one heavy line and the state
-  target as a dashed marker at its deadline. The part after `index` is drawn dashed at full colour
+  The chart row (rule 4, rule 28): the homes completed by month as one heavy line and the goal
+  (`GOAL`) as a dashed marker at its deadline, while its step falls in the window. The part after `index` is drawn dashed at full colour
   (3:1 holds); nothing is drawn past `filledThrough`. Hover or focus of a month, and Left and Right
   on the focused overlay, read out that month's homes. The plot is 96 px tall below md and 64 px
   from md, where the legend moves to the label column; 40 px from md on a viewport 820 px tall or
-  less. The figcaption points to the Results table as the text alternative.
+  less. The sr-only figcaption says what the chart shows and that the month slider reads out each
+  month.
 -->
 <script lang="ts">
   import { COLORS } from '$lib/fzp/chart';
+  import { GOAL } from '$lib/goal/goal';
   import type { TimelineView } from '$lib/sim/world/score/types';
   import type { Day } from '$lib/timelapse/time';
   import { indexOfDay } from './playhead';
@@ -93,8 +95,9 @@
     focusAt = next;
   }
 
-  const CAPTION =
-    'Homes completed from today, by month, and the State target as the homes still needed by its deadline. The month slider reads out each month.';
+  const caption = $derived(
+    `Homes completed from today, by month${target ? `, and the ${GOAL.name} as the homes still needed by its deadline` : ''}. The month slider reads out each month.`
+  );
 </script>
 
 <figure class="sfh-chart-row m-0" aria-label="Homes completed">
@@ -193,8 +196,8 @@
     {/if}
   </div>
   <!-- From md the legend sits in the label column beside the plot (Timeline). -->
-  <ChartLegend class="md:hidden" />
-  <figcaption class="sr-only">{CAPTION}</figcaption>
+  <ChartLegend class="md:hidden" goal={target !== null} />
+  <figcaption class="sr-only">{caption}</figcaption>
 </figure>
 
 <style>

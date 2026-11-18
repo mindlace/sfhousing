@@ -45,6 +45,8 @@
     playhead: Snippet;
     /** The chart row's figure. */
     chart: Snippet;
+    /** The chart draws the goal's step: the stacked legend names the goal. */
+    goalShown: boolean;
     /** The playhead's model month, for the keys' nearer edge. */
     playheadMonth: number;
     /** The playhead's day: the line through the rows sits at it. */
@@ -66,6 +68,7 @@
     onadd,
     playhead,
     chart,
+    goalShown,
     playheadMonth,
     playheadDay,
     filledEnd,
@@ -209,7 +212,7 @@
         {#if phone}
           <span>Homes completed</span>
         {:else}
-          <ChartLegend stacked />
+          <ChartLegend stacked goal={goalShown} />
         {/if}
       </div>
       <div class="cell" bind:this={chartCell}>
