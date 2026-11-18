@@ -352,7 +352,7 @@
     display: grid;
     grid-template-columns: subgrid;
     position: var(--tl-pin-pos, sticky);
-    top: var(--tl-pin-top, 0px);
+    top: 0;
     z-index: 3;
     background: var(--color-surface);
   }
