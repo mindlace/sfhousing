@@ -186,36 +186,6 @@ describe('/ editor page', () => {
       await expect.element(undo()).toBeEnabled();
     });
 
-    it('an autosave after a row removal restores the same rows', async () => {
-      const op = (id: string, stories: number) => ({
-        id,
-        kind: 'paint' as const,
-        stories,
-        radiusM: 20,
-        path: [[-122.4193, 37.76013]] as [number, number][]
-      });
-      seed({ schema: 1, datasetVersion: 'fixture-0', ops: [op('a', 6), op('c', 8), op('d', 6)] });
-      const rows = () =>
-        [...document.querySelectorAll('[data-paint-row]')].map((b) => b.getAttribute('aria-label'));
-      const screen = await render(Page, { props: { data: data(), params: {} } });
-      await expect.poll(rows).toHaveLength(3);
-      await page.getByRole('button', { name: /^8 stories · / }).click();
-      await page.getByRole('button', { name: /^Remove: 8 stories/ }).click();
-      // The neighbours at one height now make one row.
-      await expect.poll(rows).toEqual(['6 stories · 2 strokes · Finding lots…']);
-      // The autosave is the new op list.
-      await expect
-        .poll(() => JSON.parse(JSON.parse(localStorage.getItem(PLAN_KEY)!).plan).ops.length)
-        .toBe(2);
-      const saved = JSON.parse(JSON.parse(localStorage.getItem(PLAN_KEY)!).plan) as Plan;
-      expect(saved.ops.map((o) => o.id)).toEqual(['a', 'd']);
-
-      await screen.unmount();
-      await render(Page, { props: { data: data(), params: {} } });
-      await expect.poll(rows).toEqual(['6 stories · 2 strokes · Finding lots…']);
-      await expect.element(undo()).toBeEnabled();
-    });
-
     it('Remix hand-off with the plan in history state (storage write failed) loads it', async () => {
       appPage.state = {
         sfhRemix: { from: 'abc123', plan: serializePlan(painted('fixture-0')) }

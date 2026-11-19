@@ -3,15 +3,14 @@
   `Dock`, the Paint tab shared with /sim (plan 3's `PaintTab`, `HistoryButtons` above it and the
   phone `PaletteStrip`), so the two pages are one paint experience (sim-ux spec Goals 1, 3, 11
   and 12). The page owns the `DockState` (the dock folds by its own button) and the Results face.
-  Rows are the plan's op list grouped as /sim groups strokes (`planRowGroups`); their lot counts
-  and the selected row's outline come from the editor worker (`RowLots`, `opLots`), and the
-  outline is drawn in the overlay mux's `outline` slot, beside the brush ring's. Remove takes a
-  row's ops out as one undoable step and sends the worker the new plan. The brush status line, its
-  Retry and the page's own notices are pills in one notice stack (`NoticePills`). What a stroke,
-  a refusal, an undo or a redo did shows in the stroke chip, a polite status over the map's top
-  (never in the stack, which is in flow on a phone), so painting never moves or resizes the map.
-  The page's header score flips the dock to its Results face (`results`, the scoreboard). The
-  live preview stays after release here, because on `/` it is the plan.
+  `/` has no painted-areas list (that is `/sim`'s): the tab holds the tools, and read-only
+  (`/p/:id`) the read-only line and one summary line (`paintedSummary`: the heights used and the
+  lots the latest score rebuilds). The overlay mux here has only the brush ring. The brush status
+  line, its Retry and the page's own notices are pills in one notice stack (`NoticePills`). What a
+  stroke, a refusal, an undo or a redo did shows in the stroke chip, a polite status over the
+  map's top (never in the stack, which is in flow on a phone), so painting never moves or resizes
+  the map. The page's header score flips the dock to its Results face (`results`, the
+  scoreboard). The live preview stays after release here, because on `/` it is the plan.
 -->
 <script module lang="ts">
   import { PILL } from '$lib/shell/pill';
@@ -30,13 +29,11 @@
   import { DOCK_ICONS } from '$lib/dock/icons';
   import { createOverlayMux } from '$lib/map/overlay-mux';
   import SimMap from '$lib/map/SimMap.svelte';
-  import { useSystemTheme } from '$lib/map/system-theme.svelte';
   import type { ChunkStatus, GeneratedUpdate, SimMapHandle } from '$lib/map/types';
   import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
-  import { paintedOutlineLayers } from '$lib/paint/outline-layers';
   import PaintTab from '$lib/paint/PaintTab.svelte';
   import PaletteStrip from '$lib/paint/PaletteStrip.svelte';
-  import { planPaintRows, planRowGroups, removedLabel } from '$lib/paint/rows';
+  import { paintedSummary, storiesUsed } from '$lib/paint/summary';
   import type { Plan } from '$lib/plan';
   import type { Score } from '$lib/scoreboard';
   import NoticePills from '$lib/shell/NoticePills.svelte';
@@ -52,9 +49,8 @@
   import { BrushController } from './BrushController.svelte';
   import { installBrushDebug } from './debug';
   import { createEditor, type Editor } from './editor.svelte';
-  import { ANNOUNCE_MS, MSG } from './messages';
+  import { MSG } from './messages';
   import type { OverlayCtors } from './overlay';
-  import { RowLots } from './row-lots.svelte';
   import type { BrushTool } from './sampler';
   import { BrushState, defaultTool } from './state.svelte';
 
@@ -78,12 +74,12 @@
      * Hands the parent this component's `Editor`, once, synchronously during setup (before
      * mount), so the parent may call `load` straight away (SimMap's `onready` pattern; the same
      * editor `getEditor()` returns). The contract plan-sharing builds on:
-     * - `editor.plan` is reactive (`$state.raw`, replaced on every commit/undo/redo/load and row
-     *   removal), so an `$effect` reading it can autosave;
+     * - `editor.plan` is reactive (`$state.raw`, replaced on every commit/undo/redo/load), so an
+     *   `$effect` reading it can autosave;
      * - `editor.load(plan, { readOnly })` re-renders: it cancels a stroke in progress, posts the
      *   plan to the worker (or, before the worker is ready, the first load sends the latest plan)
-     *   and switches the Paint tab to read-only (rows only, Move) or back to the editable default
-     *   tool;
+     *   and switches the Paint tab to read-only (the read-only line and summary, Move) or back to
+     *   the editable default tool;
      * - stroke previews never touch the editor: `plan` changes only on a committed op.
      */
     oneditor?: (editor: Editor) => void;
@@ -144,7 +140,6 @@
   const uid = $props.id();
   const dockId = $derived(dockIdProp ?? `${uid}-dock`);
   const wide = new MediaQuery('(min-width: 768px)');
-  const systemTheme = useSystemTheme();
   /** Done on the palette strip reopened the sheet: focus moves into it. */
   let doneFocus = $state(false);
   /** The phone sheet's height (its handle while closed; 0 from md): part of the map's inset. */
@@ -195,6 +190,8 @@
   let chunks: { pending: number; failed: string[] } = { pending: 0, failed: [] };
   /** Failed parcel cells: map-view shows its failure chip, and the stroke chip sits below it. */
   let failedCells = $state(0);
+  /** Lots the plan rebuilds (the latest score's `parcelsChanged`), for the read-only summary. */
+  let rebuilt = $state(0);
 
   /** Every assignment to `chunks` goes through here so `onchunks` never misses one. */
   function setChunks(next: { pending: number; failed: string[] }): void {
@@ -233,9 +230,6 @@
     onReady() {
       brush.phase = 'ready';
       client?.load(editor.plan);
-      // Every (re)start of the worker ends here, with the plan just posted: each row is asked
-      // again, and an answer from before the restart is dropped.
-      rowLots.reset();
     },
     onDiff(d) {
       applyRender(d.render);
@@ -244,13 +238,13 @@
       // Only a commit with its own pointerup mark: a redo's would span from an older stroke.
       if (d.phase === 'commit' && controller && d.rev === controller.markedCommitRev) markCommit();
       controller?.onDiff(d, stale);
+      if (!stale) rebuilt = d.score.parcelsChanged;
       onscore?.(d.score, { complete: d.complete });
     },
     onChunks(c) {
       for (const [cellId, s] of Object.entries(c.status)) setChunkStatus(cellId, s);
       brush.loadingParcels = c.pending > 0;
       setChunks({ pending: c.pending, failed: [...c.failed] });
-      rowLots.chunksChanged();
     },
     onError(e) {
       controller?.onError(e.rev);
@@ -407,63 +401,13 @@
       ?.focus();
   }
 
-  // ---- rows of painted areas (sim-ux plan 5) ----
-
-  /** Lot counts and the selected row's outline; asks only a ready worker (else answers null). */
-  const rowLots = new RowLots({
-    request: (opIds, outlines) =>
-      client && brush.phase === 'ready' ? client.opLots(opIds, outlines) : Promise.resolve(null)
-  });
-  /** The plan's rows: consecutive ops of one kind and height, as /sim groups its strokes. */
-  const groups = $derived(planRowGroups(editor.plan.ops));
-  const rows = $derived(planPaintRows(groups, (id) => rowLots.status(id)));
-  /** The row pressed in the Paint tab; `selected` is it while the plan still has that row. */
-  let picked = $state<string | null>(null);
-  const selected = $derived(picked !== null && groups.some((g) => g.id === picked) ? picked : null);
-  // A row that leaves the plan (Remove, Undo, a load) is forgotten, so a Redo does not bring the
-  // selection back.
-  $effect(() => {
-    if (picked !== null && selected === null) picked = null;
-  });
-  // Every plan change asks for the rows that changed. The effect runs after the code that changed
-  // the plan has posted it to the worker (commit, undo, load, Remove), so the worker holds every
-  // op it is asked about. `want` reads state it writes: untracked.
-  $effect(() => {
-    const g = groups;
-    untrack(() => rowLots.want(g));
-  });
-  // The selected row's outline, in the overlay's `outline` slot (a theme change redraws it).
-  $effect(() => {
-    const o = overlay;
-    if (!o) return;
-    const out = rowLots.outline;
-    const L = layers;
-    const drawn = out && L ? paintedOutlineLayers(L, out, systemTheme.current) : [];
-    untrack(() => o.slot('outline')(drawn));
-  });
-
-  function selectRow(id: string | null): void {
-    picked = id;
-    rowLots.select(id);
-  }
-
   /**
-   * Remove on a row, in one place: a stroke in progress is cancelled first (so nothing
-   * half-commits), the row's ops leave the plan as one undoable step, the worker gets the new plan
-   * (a `load`: its own undo only pops the last op), the label is announced, the selection clears.
-   * Applied synchronously: PaintTab moves focus after one tick.
+   * A shared plan's one line in the read-only tab: its heights (from the ops, when the plan
+   * changes) and the lots it rebuilds (the latest score's `parcelsChanged`, as chunks load).
    */
-  function removeRow(id: string): void {
-    const group = groups.find((g) => g.id === id);
-    if (!group) return;
-    controller?.cancelStroke();
-    const label = removedLabel(group);
-    if (!editor.removeOps(group.opIds, label)) return;
-    // Not ready: onReady's load sends editor.plan, which already lacks the row.
-    if (brush.phase === 'ready') client?.load(editor.plan);
-    brush.announce(label, ANNOUNCE_MS);
-    selectRow(null);
-  }
+  const summary = $derived(
+    editor.readOnly ? paintedSummary(storiesUsed(editor.plan.ops), rebuilt) : null
+  );
 
   let wasReadOnly = untrack(() => readOnly);
   /** Editor.load (plan-sharing's restore, /p/:id, Remix) must reach the worker and the tools. */
@@ -495,7 +439,6 @@
 
     const uninstall = installBrushDebug(() => ({
       ops: editor.plan.ops.length,
-      rows: groups.length,
       lastStats,
       ready: brush.phase === 'ready',
       chunks
@@ -516,18 +459,14 @@
 
 {#snippet history()}
   <div class="border-b border-line px-4 py-2 dark:border-line-dark">
-    {#if editor.readOnly}
-      <p class="py-2 text-sm text-ink-muted dark:text-ink-dark-muted">{MSG.readOnly}</p>
-    {:else}
-      <HistoryButtons
-        canUndo={editor.canUndo}
-        canRedo={editor.canRedo}
-        undoLabel={null}
-        redoLabel={null}
-        onundo={() => controller?.undo()}
-        onredo={() => controller?.redo()}
-      />
-    {/if}
+    <HistoryButtons
+      canUndo={editor.canUndo}
+      canRedo={editor.canRedo}
+      undoLabel={null}
+      redoLabel={null}
+      onundo={() => controller?.undo()}
+      onredo={() => controller?.redo()}
+    />
   </div>
 {/snippet}
 
@@ -537,12 +476,10 @@
       {brush}
       tool={brush.tool}
       ontool={chooseTool}
-      {rows}
-      {selected}
-      onselect={selectRow}
-      onremove={removeRow}
       eraseHint={MSG.eraseHint}
       readonly={editor.readOnly}
+      intro={editor.readOnly ? MSG.readOnly : null}
+      {summary}
     />
   {/if}
 {/snippet}
@@ -623,7 +560,7 @@
       state={dock}
       tabs={[{ id: 'paint', label: 'Paint', icon: DOCK_ICONS.paint, railLabel: 'Paint tools' }]}
       panel={tabPanel}
-      top={history}
+      top={editor.readOnly ? undefined : history}
       {results}
       flipLabel="Paint"
       flipName={editor.readOnly ? 'Back to the Paint tab' : 'Back to painting'}

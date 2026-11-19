@@ -114,18 +114,6 @@ test("/'s Results face follows the dark tokens: the RHNA fill is the dark accent
 
 // ---- /sim's editor, Results, the project card and the notice pills; /'s dock ------------------
 
-const dock = (page: Page) => page.getByTestId('dock');
-const dockHandle = (page: Page) => page.getByTestId('dock-handle');
-
-/** /'s dock body open: from md the panel is open already; below md the handle opens the sheet. */
-async function openDock(page: Page): Promise<void> {
-  const handle = dockHandle(page);
-  if ((await handle.isVisible()) && (await handle.getAttribute('aria-expanded')) !== 'true') {
-    await handle.click();
-    await expect(handle).toHaveAttribute('aria-expanded', 'true');
-  }
-}
-
 for (const [kind, choice] of [
   ['Zoning', 'Transit rule'],
   ['Zoning', 'Painted area'],
@@ -140,22 +128,6 @@ for (const [kind, choice] of [
     });
   });
 }
-
-test("/'s dock on Paint, a painted row selected, has no axe violations in dark", async ({
-  page,
-  isMobile
-}) => {
-  await gotoEditor(page);
-  await paintOnce(page, isMobile);
-  await openDock(page);
-  const row = dock(page).locator('[data-paint-row]').first();
-  await row.click();
-  await expect(row).toHaveAttribute('aria-pressed', 'true');
-  await expect(dock(page).getByRole('button', { name: /^Remove: / })).toBeVisible();
-  await expectNoA11yViolations(page, {
-    include: ['[data-testid=dock]', '[data-testid=fzp-notices]']
-  });
-});
 
 test("/'s Results face, a plan painted and both disclosures open, has no axe violations in dark", async ({
   page,

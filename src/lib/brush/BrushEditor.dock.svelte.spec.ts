@@ -1,5 +1,6 @@
-// `/`'s BrushEditor on the dock (sim-ux plan 5, Task 3): the shared Paint tab with rows of painted
-// areas, their lot counts and outlines, Remove, the phone palette strip and one notice stack. A
+// `/`'s BrushEditor on the dock (sim-ux plan 5, Task 3): the shared Paint tab without `/sim`'s
+// painted-areas list, the read-only line and summary, the stroke chip, the phone palette strip
+// and one notice stack. A
 // stub SimMap hands over a fake MapLibre map, so a real BrushController attaches (a separate file:
 // vi.mock is file-wide, and BrushEditor.svelte.spec.ts relies on the real SimMap's fallback).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,9 +13,7 @@ import { DockState } from '$lib/dock/dock-state.svelte';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { OUTLINE_LAYER_ID } from '$lib/paint/outline-layers';
 import { OPS_MAX, emptyPlan, type Plan, type PlanOp } from '$lib/plan';
-import { M_PER_DEG_LAT, M_PER_DEG_LNG } from '$lib/plan/geometry';
 import { PILL } from '$lib/shell/pill';
-import type { LotOutlines } from '$lib/sim/outlines';
 import type { GeneratedUpdate } from '$lib/map/types';
 import type { Score } from '$lib/scoreboard';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
@@ -71,13 +70,6 @@ async function setup(opts: Opts = {}) {
   return { w: workers[0], workers, editor: () => editors[0], dock, screen };
 }
 
-/** Answers the latest `opLots` request for `opIds` (once it has gone out). */
-async function answerLots(w: FakeEditorWorker, opIds: string[], lots: number, o?: LotOutlines) {
-  await expect.poll(() => w.lastOf('opLots')?.opIds).toEqual(opIds);
-  const q = w.lastOf('opLots')!;
-  w.emit({ type: 'opLots', reqId: q.reqId, result: { lots, missing: 0, outline: o ?? null } });
-}
-
 /** The worker is ready and the controller listens on the map. */
 async function ready(w: FakeEditorWorker) {
   w.ready();
@@ -109,10 +101,6 @@ function stroke(): void {
 
 /** DOM click: the stub map sits under nothing, but the dock's buttons may be off screen. */
 const click = (el: Element | null) => (el as HTMLElement).click();
-const rowButtons = () => [...document.querySelectorAll<HTMLElement>('[data-paint-row]')];
-const rowNames = () => rowButtons().map((b) => b.getAttribute('aria-label'));
-const rowButton = (re: RegExp) => rowButtons().find((b) => re.test(b.ariaLabel ?? ''))!;
-const removeButton = () => page.getByRole('button', { name: /^Remove: / });
 /** The polite status over the map that carries the brush's announcements, and its chip. */
 const announcement = () => page.getByTestId('brush-announcement');
 const chip = () => page.getByTestId('stroke-chip');
@@ -149,31 +137,10 @@ async function commitStroke(w: FakeEditorWorker, editor: () => Editor): Promise<
 }
 const overlayIds = () =>
   ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
-const loadedIds = (w: FakeEditorWorker) => w.lastOf('load')!.plan.ops.map((o) => o.id);
 const key = (k: string, shift = false) =>
   window.dispatchEvent(
     new KeyboardEvent('keydown', { key: k, ctrlKey: true, shiftKey: shift, bubbles: true })
   );
-
-/** A 30 m square at the stub map's centre, as one lot's outline. */
-function outline(): LotOutlines {
-  const c = stub.map.getCenter();
-  const dx = 30 / M_PER_DEG_LNG;
-  const dy = 30 / M_PER_DEG_LAT;
-  const ring = [
-    [c.lng, c.lat],
-    [c.lng + dx, c.lat],
-    [c.lng + dx, c.lat + dy],
-    [c.lng, c.lat + dy],
-    [c.lng, c.lat]
-  ];
-  return {
-    lots: ['P0'],
-    ringLot: Uint32Array.from([0]),
-    starts: Uint32Array.from([0, ring.length]),
-    positions: Float64Array.from(ring.flat())
-  };
-}
 
 beforeEach(() => {
   stub.reset();
@@ -213,111 +180,20 @@ describe('BrushEditor on the dock', () => {
     ).toBe('320px');
   });
 
-  it('two strokes at one height make one row; a new height starts another', async () => {
+  it('`/` has no painted-areas list: strokes at two heights leave no rows and ask no lot counts', async () => {
     const { w, editor } = await setup();
     await ready(w);
     click(page.getByRole('radio', { name: 'Paint' }).element());
     stroke();
-    stroke();
-    await expect.poll(rowNames).toEqual(['6 stories · 2 strokes · Finding lots…']);
     click(page.getByRole('button', { name: '8 stories', exact: true }).element());
     stroke();
-    await expect
-      .poll(rowNames)
-      .toEqual(['6 stories · 2 strokes · Finding lots…', '8 stories · 1 stroke · Finding lots…']);
-    expect(editor().plan.ops).toHaveLength(3);
-    expect(w.allOf('commit')).toHaveLength(3);
-  });
-
-  it('a row shows its lot count once the worker answers opLots', async () => {
-    const { w, editor } = await setup();
-    await ready(w);
-    click(page.getByRole('radio', { name: 'Paint' }).element());
-    stroke();
-    const id = editor().plan.ops[0].id;
-    await expect.poll(() => w.lastOf('opLots')?.opIds).toEqual([id]);
-    // Asked after the op reached the worker (the host skips ids it does not hold).
-    expect(w.types().indexOf('opLots')).toBeGreaterThan(w.types().indexOf('commit'));
-    const q = w.lastOf('opLots')!;
-    expect(q.outlines).toBe(false);
-    w.emit({ type: 'opLots', reqId: q.reqId, result: { lots: 12, missing: 0, outline: null } });
-    await expect.poll(rowNames).toEqual(['6 stories · 1 stroke · 12 lots']);
-    await expect
-      .element(page.getByRole('status').filter({ hasText: '12 lots' }))
-      .toBeInTheDocument();
-  });
-
-  it('selecting a row asks for its outline and draws it in the outline slot', async () => {
-    const { w } = await setup({ plan: planOf(op('a', 6)) });
-    await ready(w);
-    await expect.poll(() => w.lastOf('opLots')?.opIds).toEqual(['a']);
-    const first = w.lastOf('opLots')!;
-    w.emit({ type: 'opLots', reqId: first.reqId, result: { lots: 3, missing: 0, outline: null } });
-    await expect.poll(rowNames).toEqual(['6 stories · 1 stroke · 3 lots']);
+    await expect.poll(() => w.allOf('commit').length).toBe(2);
+    expect(editor().plan.ops.map((o) => o.kind === 'paint' && o.stories)).toEqual([6, 8]);
+    expect(page.getByRole('list', { name: 'Painted areas' }).elements()).toEqual([]);
+    expect(document.querySelector('[data-paint-row]')).toBeNull();
+    expect(page.getByRole('button', { name: /^Remove/ }).elements()).toEqual([]);
+    expect(w.allOf('opLots')).toEqual([]);
     expect(overlayIds()).not.toContain(OUTLINE_LAYER_ID);
-
-    click(rowButton(/^6 stories/));
-    await expect.poll(() => rowButton(/^6 stories/).getAttribute('aria-pressed')).toBe('true');
-    await expect.poll(() => w.lastOf('opLots')?.outlines).toBe(true);
-    const q = w.lastOf('opLots')!;
-    expect(q.opIds).toEqual(['a']);
-    w.emit({ type: 'opLots', reqId: q.reqId, result: { lots: 3, missing: 0, outline: outline() } });
-    await expect.poll(overlayIds).toContain(OUTLINE_LAYER_ID);
-
-    click(rowButton(/^6 stories/));
-    await expect.poll(overlayIds).not.toContain(OUTLINE_LAYER_ID);
-  });
-
-  it('Remove on the selected row loads the new plan and Undo loads it back', async () => {
-    const { w, editor } = await setup({
-      plan: planOf(op('a', 6), op('b', 6), op('c', 8), op('d', 6))
-    });
-    await ready(w);
-    expect(loadedIds(w)).toEqual(['a', 'b', 'c', 'd']);
-    await expect.poll(rowNames).toHaveLength(3);
-
-    click(rowButton(/^8 stories/));
-    await expect.element(removeButton()).toBeVisible();
-    click(removeButton().element());
-    // The worker gets the new op list; its equal neighbours now make one row.
-    expect(loadedIds(w)).toEqual(['a', 'b', 'd']);
-    expect(editor().plan.ops.map((o) => o.id)).toEqual(['a', 'b', 'd']);
-    await expect.poll(rowNames).toEqual(['6 stories · 3 strokes · Finding lots…']);
-    expect(rowButtons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['false']);
-    await expect.element(announcement()).toHaveTextContent('Removed: 8 stories');
-
-    key('z');
-    expect(loadedIds(w)).toEqual(['a', 'b', 'c', 'd']);
-    await expect.poll(() => rowNames().length).toBe(3);
-    await expect.element(announcement()).toHaveTextContent('Undid: Removed: 8 stories');
-
-    key('z', true);
-    expect(loadedIds(w)).toEqual(['a', 'b', 'd']);
-    expect(w.allOf('undo')).toEqual([]);
-    expect(w.allOf('commit')).toEqual([]);
-  });
-
-  it('Remove during a stroke cancels the stroke first', async () => {
-    const { w, editor } = await setup({ plan: planOf(op('a', 6), op('c', 8)) });
-    await ready(w);
-    click(page.getByRole('radio', { name: 'Paint' }).element());
-    click(rowButton(/^8 stories/));
-    await expect.element(removeButton()).toBeVisible();
-
-    drag(10, 60);
-    await expect.poll(() => w.allOf('preview').length).toBeGreaterThan(0);
-    const before = w.posts.length;
-    click(removeButton().element());
-    // The stroke is cancelled before the removal reaches the worker; nothing half-commits.
-    expect(w.posts.slice(before).map((p) => p.type)).toEqual(['cancelPreview', 'load']);
-    expect(loadedIds(w)).toEqual(['a']);
-    ev('pointerup', 60);
-    expect(w.allOf('commit')).toEqual([]);
-    expect(editor().plan.ops.map((o) => o.id)).toEqual(['a']);
-    // The next undo restores the row, not a stroke.
-    key('z');
-    expect(loadedIds(w)).toEqual(['a', 'c']);
-    expect(w.allOf('undo')).toEqual([]);
   });
 
   it("the status line and Retry are pills in the notice stack, together with the page's `notices` snippet in one `fzp-notices`", async () => {
@@ -491,30 +367,41 @@ describe('BrushEditor on the dock', () => {
     await expect.poll(() => document.activeElement?.getAttribute('role')).toBe('tab');
   });
 
-  it('read-only (/p/:id): rows only; no tools, no Remove; Ctrl+Z does nothing', async () => {
-    const plan = planOf(op('a', 6), op('b', null));
+  it('read-only: the read-only line and the summary, no tools; the count follows the score', async () => {
+    const plan = planOf(op('a', 8), op('b', null), op('c', 6));
     const { w, editor } = await setup({ readOnly: true, plan });
     await ready(w);
-    await answerLots(w, ['a'], 4);
-    await answerLots(w, ['b'], 2);
+    const tab = page.getByRole('tabpanel');
+    await expect.element(tab.getByText(MSG.readOnly, { exact: true })).toBeVisible();
+    const scored = (rev: number, phase: 'load' | 'chunk', parcelsChanged: number) =>
+      w.emit({
+        type: 'diff',
+        rev,
+        phase,
+        render: { revision: rev } as GeneratedUpdate,
+        complete: true,
+        score: { parcelsChanged } as unknown as Score
+      });
+    scored(w.lastOf('load')!.rev, 'load', 2);
     await expect
-      .poll(rowNames)
-      .toEqual(['6 stories · 1 stroke · 4 lots', 'Erased · 1 stroke · 2 lots']);
+      .element(tab.getByText('6 and 8 stories · 2 lots rebuilt', { exact: true }))
+      .toBeVisible();
+    scored(w.lastOf('load')!.rev, 'chunk', 4);
+    await expect
+      .element(tab.getByText('6 and 8 stories · 4 lots rebuilt', { exact: true }))
+      .toBeVisible();
     expect(page.getByRole('radiogroup', { name: 'Brush tool' }).elements()).toEqual([]);
     expect(page.getByRole('button', { name: /^Undo/ }).elements()).toEqual([]);
-    await expect.element(page.getByText(MSG.readOnly, { exact: true })).toBeVisible();
-
-    click(rowButton(/^6 stories/));
-    await expect.poll(() => rowButton(/^6 stories/).getAttribute('aria-pressed')).toBe('true');
-    await expect.poll(() => w.lastOf('opLots')?.outlines).toBe(true);
-    await answerLots(w, ['a'], 4, outline());
-    await expect.poll(overlayIds).toContain(OUTLINE_LAYER_ID);
-    expect(removeButton().elements()).toEqual([]);
+    expect(document.querySelector('[data-paint-row]')).toBeNull();
+    expect(w.allOf('opLots')).toEqual([]);
 
     const before = w.posts.length;
     key('z');
     key('z', true);
-    expect(w.posts.slice(before).filter((p) => p.type !== 'opLots')).toEqual([]);
+    expect(w.posts.slice(before)).toEqual([]);
     expect(editor().plan).toBe(plan);
+    await expect
+      .element(tab.getByText('6 and 8 stories · 4 lots rebuilt', { exact: true }))
+      .toBeVisible();
   });
 });

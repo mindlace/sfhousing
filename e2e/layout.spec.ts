@@ -625,9 +625,12 @@ test.describe('landscape phone 667×375', () => {
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     ).toBe(true);
     await checkMobile(page);
-    // Read-only: the sheet holds the rows, no tools.
+    // Read-only: the sheet holds the read-only line and one summary line; no rows, no tools.
     await handle(page).tap();
-    await expect(page.locator('[data-paint-row]').first()).toBeVisible();
+    const tab = dockSheet(page).getByRole('tabpanel');
+    await expect(tab.getByText(MSG.readOnly, { exact: true })).toBeVisible();
+    await expect(tab.getByText(/stories · [\d,]+ lots? rebuilt$/)).toBeVisible();
+    await expect(page.locator('[data-paint-row]')).toHaveCount(0);
     await expect(page.getByRole('radiogroup', { name: 'Brush tool' })).toHaveCount(0);
     await expectNoA11yViolations(page);
   });

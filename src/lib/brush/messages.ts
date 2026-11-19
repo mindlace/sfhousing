@@ -7,7 +7,7 @@ export const MSG = {
   loadingParcels: 'Loading parcels…',
   zoomIn: 'Zoom in to see the brush',
   tooLarge: 'Plan too large to save. Undo some strokes.',
-  readOnly: 'Read-only — Remix to edit',
+  readOnly: 'Read-only. Remix to edit.',
   eraseHint: 'Erase removes painted height',
   mapLabel:
     'Map. Arrow keys pan, plus and minus zoom. In Paint or Erase, press Enter to apply the brush at the centre crosshair.'
@@ -43,11 +43,6 @@ export function strokeMessage(s: OpStats): string {
 export function undoMessage(op: PlanOp, verb: 'Undid' | 'Redid'): string {
   if (op.kind === 'erase') return `${verb} erase`;
   return `${verb} paint, ${op.stories} ${plural(op.stories, 'story', 'stories')}`;
-}
-
-/** "Undid: Removed 8 stories": a removed row undone or redone. */
-export function rowStepMessage(step: { label: string }, verb: 'Undid' | 'Redid'): string {
-  return `${verb}: ${step.label}`;
 }
 
 export function radiusValueText(r: number): string {

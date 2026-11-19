@@ -6,6 +6,7 @@ import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { BrushState } from '$lib/brush/state.svelte';
+import PaintTab from './PaintTab.svelte';
 import type { PaintRow } from './rows';
 import PaintTabHost from './test/PaintTabHost.svelte';
 
@@ -211,6 +212,39 @@ describe('PaintTab', () => {
     await expect.element(page.getByRole('status')).toHaveTextContent("Couldn't find lots");
     await page.getByRole('button', { name: /^Retry/ }).click();
     expect(onretry).toHaveBeenCalledWith(['k1', 'k2']);
+  });
+
+  it('shows the intro first, and read-only the summary in place of rows', async () => {
+    const brush = new BrushState({ fine: false, storage: null });
+    brush.phase = 'ready';
+    // `/` passes no rows, selection or Remove: the props are optional.
+    const editable = await render(PaintTab, {
+      props: { brush, tool: 'move', ontool: () => {}, eraseHint: 'x', intro: 'Start here.' }
+    });
+    const tab = () => editable.container.firstElementChild!;
+    await expect.element(page.getByText('Start here.', { exact: true })).toBeVisible();
+    expect(tab().firstElementChild!.textContent).toBe('Start here.');
+    await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+    expect(page.getByRole('list', { name: 'Painted areas' }).elements()).toHaveLength(0);
+    await editable.unmount();
+
+    const shared = await render(PaintTab, {
+      props: {
+        brush,
+        tool: 'move',
+        ontool: () => {},
+        eraseHint: 'x',
+        readonly: true,
+        rows,
+        intro: 'Read-only. Remix to edit.',
+        summary: '6 and 8 stories · 2 lots rebuilt'
+      }
+    });
+    const lines = [...shared.container.firstElementChild!.children].map((e) => e.textContent);
+    expect(lines).toEqual(['Read-only. Remix to edit.', '6 and 8 stories · 2 lots rebuilt']);
+    expect(page.getByRole('list', { name: 'Painted areas' }).elements()).toHaveLength(0);
+    expect(document.querySelector('[data-paint-row]')).toBeNull();
+    expect(page.getByRole('radiogroup').elements()).toHaveLength(0);
   });
 
   it('gives no Retry to a row that found its lots', async () => {

@@ -304,16 +304,18 @@ describe('BrushEditor exposes the Editor; Editor.load drives the worker', () => 
 
     ed.load(p2, { readOnly: true });
     await expect.element(status(MSG.readOnly)).toBeInTheDocument();
-    // Rows only: no tools, no Undo.
+    // The read-only line and the summary only: no tools, no Undo, no rows.
     await expect.element(page.getByRole('radio', { name: 'Paint' })).not.toBeInTheDocument();
     expect(radios()).toHaveLength(0);
     expect(page.getByRole('button', { name: /^Undo/ }).elements()).toEqual([]);
-    await expect.element(page.getByRole('button', { name: /^Erased · / })).toBeInTheDocument();
+    await expect.element(status('Nothing painted')).toBeInTheDocument();
+    expect(document.querySelector('[data-paint-row]')).toBeNull();
     expect(ed.readOnly).toBe(true);
     expect(ed.commit(p2.ops[0])).toEqual({ ok: false, reason: 'read-only' });
 
     ed.load(p2, { readOnly: false });
     await expect.element(status(MSG.readOnly)).not.toBeInTheDocument();
+    await expect.element(status('Nothing painted')).not.toBeInTheDocument();
     const fine = matchMedia('(pointer: fine)').matches;
     await expect
       .element(page.getByRole('radio', { name: fine ? 'Paint' : 'Move' }))

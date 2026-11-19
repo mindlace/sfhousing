@@ -207,10 +207,6 @@ export async function touchDrag(
 export const ops = (page: Page): Promise<number> =>
   page.evaluate(() => (window as Win).__sfhBrush!.ops);
 
-/** The number of rows in `/`'s Paint tab (the plan's ops grouped), from the brush debug hook. */
-export const rows = (page: Page): Promise<number> =>
-  page.evaluate(() => (window as Win).__sfhBrush!.rows);
-
 /**
  * Chooses a brush tool from `/`'s Paint tab. From md the tab is open in the dock. Below md it sits
  * in the dock's sheet: the handle opens it, and Paint or Erase folds it to the palette strip

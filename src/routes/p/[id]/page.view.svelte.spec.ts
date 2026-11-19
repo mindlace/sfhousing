@@ -1,7 +1,7 @@
 // The shared-plan page: the View menu (transit spec §6.3: the viewer's own `sfhousing:view` prefs
 // apply here as on `/`, and View shows only when the rendered manifest has a transit network), and
 // the score and the dock as on `/` (sim-ux plan 5, Task 4): the header score, the Results face and
-// a read-only Paint tab whose rows list and select, with no tools, no Remove and no undo. A stub
+// a read-only Paint tab with the read-only line and one summary line, no rows, tools or undo. A stub
 // SimMap hands over a fake MapLibre map, so a real BrushController attaches (vi.mock is file-wide).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
@@ -12,7 +12,6 @@ import { MSG } from '$lib/brush/messages';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { OUTLINE_LAYER_ID } from '$lib/paint/outline-layers';
 import { emptyPlan, type Plan, type PlanOp } from '$lib/plan';
-import type { LotOutlines } from '$lib/sim/outlines';
 import { VIEW_KEY } from '$lib/view/prefs';
 import manifestJson from '../../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { PageWorker, pageWorkers, scoreDiff, scoreOf } from '../../test/page-worker';
@@ -99,10 +98,11 @@ const shared: Plan = {
   ops: [op('a', 6), op('b', null)]
 };
 
+/** The shared plan paints 6 stories (and erases); `scoreOf` rebuilds one lot. */
+const SUMMARY = '6 stories · 1 lot rebuilt';
+
 const scoreButton = () => page.getByTestId('score-bar');
 const results = () => page.getByRole('region', { name: 'Results' });
-const rowButtons = () => [...document.querySelectorAll<HTMLElement>('[data-paint-row]')];
-const rowNames = () => rowButtons().map((b) => b.getAttribute('aria-label'));
 const overlayIds = () =>
   ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
 const key = (k: string, shift = false) =>
@@ -110,34 +110,8 @@ const key = (k: string, shift = false) =>
     new KeyboardEvent('keydown', { key: k, ctrlKey: true, shiftKey: shift, bubbles: true })
   );
 
-/** Answers the latest `opLots` request for `opIds` (once it has gone out). */
-async function answerLots(opIds: string[], lots: number, outline: LotOutlines | null = null) {
-  const w = pageWorkers[0];
-  await expect.poll(() => w.lastOf('opLots')?.opIds).toEqual(opIds);
-  const q = w.lastOf('opLots')!;
-  w.emit({ type: 'opLots', reqId: q.reqId, result: { lots, missing: 0, outline } });
-}
-
-/** A 30 m square at the stub map's centre, as one lot's outline. */
-function square(): LotOutlines {
-  const c = stub.map.getCenter();
-  const ring = [
-    [c.lng, c.lat],
-    [c.lng + 0.0003, c.lat],
-    [c.lng + 0.0003, c.lat + 0.0003],
-    [c.lng, c.lat + 0.0003],
-    [c.lng, c.lat]
-  ];
-  return {
-    lots: ['P0'],
-    ringLot: Uint32Array.from([0]),
-    starts: Uint32Array.from([0, ring.length]),
-    positions: Float64Array.from(ring.flat())
-  };
-}
-
 describe('/p/[id] score and dock', () => {
-  it('a shared plan shows the header score, a read-only Paint tab with its rows, and Results', async () => {
+  it('a shared plan shows the header score, a read-only Paint tab with its summary, and Results', async () => {
     await render(PageHost, { props: { data: data(manifest, shared) } });
     await expect.poll(() => pageWorkers.length).toBe(1);
     const w = pageWorkers[0];
@@ -159,36 +133,29 @@ describe('/p/[id] score and dock', () => {
     const dock = page.getByRole('region', { name: 'Paint', exact: true });
     expect(scoreButton().element().getAttribute('aria-controls')).toBe(dock.element().id);
 
-    // The dock opens on the read-only Paint tab: its rows, no tools, no Undo, no Remove.
+    // The dock opens on the read-only Paint tab: the read-only line and one summary line (the
+    // heights painted, the lots the score rebuilds); no rows, tools, Undo or Remove.
     await expect
       .element(page.getByRole('tab', { name: 'Paint' }))
       .toHaveAttribute('aria-selected', 'true');
-    await answerLots(['a'], 4);
-    await answerLots(['b'], 2);
-    await expect
-      .poll(rowNames)
-      .toEqual(['6 stories · 1 stroke · 4 lots', 'Erased · 1 stroke · 2 lots']);
-    await expect.element(page.getByText(MSG.readOnly, { exact: true })).toBeVisible();
+    const tab = page.getByRole('tabpanel');
+    await expect.element(tab.getByText(MSG.readOnly, { exact: true })).toBeVisible();
+    await expect.element(tab.getByText(SUMMARY, { exact: true })).toBeVisible();
+    expect(document.querySelector('[data-paint-row]')).toBeNull();
     expect(page.getByRole('radiogroup', { name: 'Brush tool' }).elements()).toEqual([]);
     expect(page.getByRole('button', { name: /^Undo/ }).elements()).toEqual([]);
-    expect(page.getByRole('button', { name: /^Remove: / }).elements()).toEqual([]);
+    expect(page.getByRole('button', { name: /^Remove/ }).elements()).toEqual([]);
+    expect(w.allOf('opLots')).toEqual([]);
+    expect(overlayIds()).not.toContain(OUTLINE_LAYER_ID);
 
-    // A row selects and its outline is drawn; still no Remove.
-    rowButtons()[0].click();
-    await expect.poll(() => rowButtons()[0].getAttribute('aria-pressed')).toBe('true');
-    await expect.poll(() => w.lastOf('opLots')?.outlines).toBe(true);
-    await answerLots(['a'], 4, square());
-    await expect.poll(overlayIds).toContain(OUTLINE_LAYER_ID);
-    expect(page.getByRole('button', { name: /^Remove: / }).elements()).toEqual([]);
-
-    // Ctrl+Z and Ctrl+Shift+Z do nothing: nothing but row lookups goes to the worker.
+    // Ctrl+Z and Ctrl+Shift+Z do nothing: nothing goes to the worker.
     const before = w.posts.length;
     key('z');
     key('z', true);
     // The handler is synchronous: one flush of the DOM is all the keys need.
     await tick();
-    expect(w.posts.slice(before).filter((p) => p.type !== 'opLots')).toEqual([]);
-    expect(rowNames()).toEqual(['6 stories · 1 stroke · 4 lots', 'Erased · 1 stroke · 2 lots']);
+    expect(w.posts.slice(before)).toEqual([]);
+    await expect.element(tab.getByText(SUMMARY, { exact: true })).toBeVisible();
 
     // Results: the same face as `/`'s, then back to the rows.
     await scoreButton().click();
@@ -204,7 +171,7 @@ describe('/p/[id] score and dock', () => {
     // Read-only: nothing can be painted, so the flip names the Paint tab, not painting.
     expect(page.getByRole('button', { name: 'Back to painting' }).elements()).toEqual([]);
     await page.getByRole('button', { name: 'Back to the Paint tab' }).click();
-    await expect.poll(rowNames).toHaveLength(2);
+    await expect.element(page.getByText(SUMMARY, { exact: true })).toBeVisible();
     expect(page.getByRole('radiogroup', { name: 'Brush tool' }).elements()).toEqual([]);
   });
 

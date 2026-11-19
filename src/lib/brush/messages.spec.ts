@@ -6,7 +6,6 @@ import {
   MSG,
   TOO_LARGE_MS,
   radiusValueText,
-  rowStepMessage,
   strokeMessage,
   undoMessage
 } from './messages';
@@ -69,21 +68,13 @@ describe('undoMessage', () => {
   });
 });
 
-describe('rowStepMessage', () => {
-  it('names the removal being undone or redone', () => {
-    const step = { label: 'Removed 8 stories' };
-    expect(rowStepMessage(step, 'Undid')).toBe('Undid: Removed 8 stories');
-    expect(rowStepMessage(step, 'Redid')).toBe('Redid: Removed 8 stories');
-  });
-});
-
 describe('constants', () => {
   it('has verbatim copy', () => {
     expect(MSG.loadingCity).toBe('Loading city data…');
     expect(MSG.cityFailed).toBe("Couldn't load city data.");
     expect(MSG.loadingParcels).toBe('Loading parcels…');
     expect(MSG.zoomIn).toBe('Zoom in to see the brush');
-    expect(MSG.readOnly).toBe('Read-only — Remix to edit');
+    expect(MSG.readOnly).toBe('Read-only. Remix to edit.');
     expect(MSG.eraseHint).toBe('Erase removes painted height');
     expect(MSG.tooLarge).toBe('Plan too large to save. Undo some strokes.');
     expect(MSG.mapLabel).toBe(

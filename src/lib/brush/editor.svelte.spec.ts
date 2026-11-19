@@ -318,53 +318,10 @@ describe('setTitle', () => {
   });
 });
 
-describe('removeOps', () => {
+describe('history across a load', () => {
   const a = paint('a', 4);
   const b1 = paint('b1', 8);
-  const b2 = paint('b2', 8);
   const c = stamp('c');
-
-  it('removes a middle row as one step; undo restores the ops at their places', () => {
-    const e = createEditor(plan0([a, b1, b2, c]));
-    expect(e.removeOps([b1.id, b2.id], 'Removed 8 stories')).toBe(true);
-    expect(e.plan.ops).toEqual([a, c]);
-    const u = e.undo()!;
-    expect(u).toEqual({ kind: 'rows', plan: e.plan, label: 'Removed 8 stories' });
-    expect(e.plan.ops).toEqual([a, b1, b2, c]);
-    expect(e.redo()).toMatchObject({ kind: 'rows' });
-    expect(e.plan.ops).toEqual([a, c]);
-  });
-
-  it('restores non-adjacent ops at their original indices', () => {
-    const e = createEditor(plan0([b1, a, b2, c]));
-    e.removeOps([b1.id, b2.id], 'Removed');
-    expect(e.plan.ops).toEqual([a, c]);
-    e.undo();
-    expect(e.plan.ops).toEqual([b1, a, b2, c]);
-  });
-
-  it('after a removal, a commit then undo pops the new op', () => {
-    const e = createEditor(plan0([a, b1, c]));
-    e.removeOps([b1.id], 'Removed');
-    const d = paint('d');
-    e.commit(d);
-    expect(e.undo()).toEqual({ kind: 'op', op: d });
-    expect(e.plan.ops).toEqual([a, c]);
-    expect(e.undo()).toMatchObject({ kind: 'rows' });
-    expect(e.plan.ops).toEqual([a, b1, c]);
-  });
-
-  it('remove, undo, redo, then a new stroke: the next undo is that stroke alone', () => {
-    const e = createEditor(plan0([a, b1, b2, c]));
-    e.removeOps([b1.id, b2.id], 'Removed 8 stories');
-    e.undo();
-    e.redo();
-    const d = paint('d');
-    e.commit(d);
-    expect(e.canRedo).toBe(false);
-    expect(e.undo()).toEqual({ kind: 'op', op: d });
-    expect(e.plan.ops).toEqual([a, c]);
-  });
 
   it('a loaded plan can still be undone op by op', () => {
     const e = createEditor(plan0());
@@ -379,42 +336,20 @@ describe('removeOps', () => {
 
   it('a load drops the history of the plan it replaces', () => {
     const e = createEditor(plan0([a, b1]));
-    e.removeOps([b1.id], 'Removed');
+    e.undo();
+    expect(e.canRedo).toBe(true);
     e.load(plan0([c]));
     expect(e.canRedo).toBe(false);
     expect(e.undo()).toEqual({ kind: 'op', op: c });
     expect(e.undo()).toBeNull();
   });
 
-  it('is refused read-only and for unknown ids', () => {
-    const ro = createEditor(plan0([a, b1]), { readOnly: true });
-    expect(ro.removeOps([b1.id], 'x')).toBe(false);
-    expect(ro.plan.ops).toEqual([a, b1]);
+  it('every step undo and redo hand back is one stroke', () => {
     const e = createEditor(plan0([a, b1]));
-    const before = e.plan;
-    expect(e.removeOps(['nope'], 'x')).toBe(false);
-    expect(e.removeOps([], 'x')).toBe(false);
-    expect(e.plan).toBe(before);
-    expect(e.canRedo).toBe(false);
-  });
-
-  it('clears redo', () => {
-    const e = createEditor(plan0([a, b1, c]));
-    e.undo();
-    expect(e.canRedo).toBe(true);
-    expect(e.removeOps([b1.id], 'Removed')).toBe(true);
-    expect(e.canRedo).toBe(false);
-    expect(e.redo()).toBeNull();
-  });
-
-  it('does not fire onLoad and keeps the title', () => {
-    const e = createEditor({ ...plan0([a, b1]), title: 't' });
-    const cb = vi.fn();
-    e.onLoad(cb);
-    e.removeOps([b1.id], 'Removed');
-    e.undo();
-    e.redo();
-    expect(cb).not.toHaveBeenCalled();
-    expect(e.plan.title).toBe('t');
+    e.commit(c);
+    for (const step of [e.undo(), e.undo(), e.redo(), e.redo(), e.undo()]) {
+      expect(step?.kind).toBe('op');
+    }
+    expect(e.plan.ops).toEqual([a, b1]);
   });
 });

@@ -11,16 +11,8 @@ import {
 export type CommitResult =
   { ok: true } | { ok: false; reason: 'too-large' | 'too-many-ops' | 'read-only' };
 
-/** What `undo` and `redo` hand back: what the host must now do. */
-export type HistoryStep =
-  | { kind: 'op'; op: PlanOp } // a stroke committed, undone or redone
-  | { kind: 'rows'; plan: Plan; label: string }; // a row removed or restored: send `plan`
-
-type Entry = { kind: 'op'; op: PlanOp } | { kind: 'rows'; removed: RemovedOp[]; label: string };
-interface RemovedOp {
-  index: number; // its place in the plan before the removal
-  op: PlanOp;
-}
+/** What `undo` and `redo` hand back: the stroke undone or redone, for the host to send. */
+export type HistoryStep = { kind: 'op'; op: PlanOp };
 
 export interface Editor {
   readonly plan: Plan;
@@ -31,8 +23,6 @@ export interface Editor {
   commit(op: PlanOp, opts?: { datasetVersion?: string }): CommitResult; // clears redo (R11)
   undo(): HistoryStep | null;
   redo(): HistoryStep | null;
-  /** Removes the ops with these ids as one undoable step; false if read-only or none matched. */
-  removeOps(ids: readonly string[], label: string): boolean;
   /** Calls `cb` after each `load` updates state (never on commit/undo/redo). Returns unsubscribe. */
   onLoad(cb: (plan: Plan) => void): () => void;
   /**
@@ -47,13 +37,13 @@ export interface Editor {
 /**
  * The in-memory plan and its undo/redo stacks (spec §4.5, §4.6). `plan`, `past` and `future` are
  * replaced, never mutated, on every change, so `$state.raw` tracks them. Each stack entry is one
- * step: a stroke, or a row of ops removed together. A loaded plan starts with one stroke entry
- * per op, so Undo still steps back through it.
+ * stroke. A loaded plan starts with one entry per op, so Undo still steps back through it. The
+ * stacks live in memory only: nothing saves them, and every `load` rebuilds them from the plan.
  */
 export function createEditor(initial: Plan, opts: { readOnly?: boolean } = {}): Editor {
   let plan = $state.raw(initial);
-  let past = $state.raw<Entry[]>(initial.ops.map((op) => ({ kind: 'op', op })));
-  let future = $state.raw<Entry[]>([]);
+  let past = $state.raw<HistoryStep[]>(initial.ops.map((op) => ({ kind: 'op', op })));
+  let future = $state.raw<HistoryStep[]>([]);
   let readOnly = $state(opts.readOnly ?? false);
   // Plain callbacks, not state.
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -118,47 +108,19 @@ export function createEditor(initial: Plan, opts: { readOnly?: boolean } = {}): 
       const entry = past[past.length - 1];
       past = past.slice(0, -1);
       future = [...future, entry];
-      if (entry.kind === 'op') {
-        // Stack order: the last entry's op is the plan's last op.
-        plan = { ...plan, ops: plan.ops.slice(0, -1) };
-        return { kind: 'op', op: entry.op };
-      }
-      const ops = [...plan.ops];
-      for (const r of entry.removed) ops.splice(r.index, 0, r.op); // ascending: each lands in place
-      plan = { ...plan, ops };
-      return { kind: 'rows', plan, label: entry.label };
+      // Stack order: the last entry's op is the plan's last op.
+      plan = { ...plan, ops: plan.ops.slice(0, -1) };
+      return { kind: 'op', op: entry.op };
     },
     redo() {
       if (readOnly || future.length === 0) return null;
       const entry = future[future.length - 1];
-      if (entry.kind === 'op') {
-        const next = append(plan, entry.op);
-        if (typeof next === 'string') return null;
-        plan = next;
-      } else {
-        // eslint-disable-next-line svelte/prefer-svelte-reactivity
-        const gone = new Set(entry.removed.map((r) => r.op.id));
-        plan = { ...plan, ops: plan.ops.filter((o) => !gone.has(o.id)) };
-      }
+      const next = append(plan, entry.op);
+      if (typeof next === 'string') return null;
+      plan = next;
       future = future.slice(0, -1);
       past = [...past, entry];
-      return entry.kind === 'op'
-        ? { kind: 'op', op: entry.op }
-        : { kind: 'rows', plan, label: entry.label };
-    },
-    removeOps(ids, label) {
-      if (readOnly) return false;
-      // eslint-disable-next-line svelte/prefer-svelte-reactivity
-      const drop = new Set(ids);
-      const removed: RemovedOp[] = [];
-      plan.ops.forEach((op, index) => {
-        if (drop.has(op.id)) removed.push({ index, op });
-      });
-      if (removed.length === 0) return false;
-      plan = { ...plan, ops: plan.ops.filter((o) => !drop.has(o.id)) };
-      past = [...past, { kind: 'rows', removed, label }];
-      future = [];
-      return true;
+      return { kind: 'op', op: entry.op };
     },
     setTitle(title) {
       if (readOnly) return;

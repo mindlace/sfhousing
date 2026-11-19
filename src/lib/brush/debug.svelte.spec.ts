@@ -4,7 +4,6 @@ import { exposeEditorForDebug, installBrushDebug } from './debug';
 
 const state = {
   ops: 3,
-  rows: 2,
   lastStats: null,
   ready: true,
   chunks: { pending: 0, failed: [] }
@@ -15,11 +14,11 @@ afterEach(() => {
 });
 
 describe('brush debug hook state', () => {
-  it('reports the op and row counts BrushEditor gives it', () => {
+  it('reports the op count BrushEditor gives it, and no rows', () => {
     vi.stubEnv('VITE_E2E', '1');
     const uninstall = installBrushDebug(() => state);
     expect(window.__sfhBrush!.ops).toBe(3);
-    expect(window.__sfhBrush!.rows).toBe(2);
+    expect('rows' in window.__sfhBrush!).toBe(false);
     uninstall();
   });
 });
