@@ -175,12 +175,14 @@ test("/'s dock on its Paint tab, a plan painted, has no axe violations in dark",
   const dock = page.getByTestId('dock');
   await expect(dock.getByRole('tab', { name: 'Paint' })).toHaveAttribute('aria-selected', 'true');
   await expect(dock.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
-  // Touch has Undo above the tab; a keyboard has Ctrl+Z and the Shortcuts button.
-  await expect(
-    dock
-      .getByRole('button', { name: 'Undo', exact: true })
-      .or(dock.getByRole('button', { name: 'Keyboard shortcuts' }))
-  ).toBeVisible();
+  // Touch has Undo above the tab and no keyboard list; a keyboard has Ctrl+Z, the Shortcuts button
+  // and no Undo button.
+  const undo = dock.getByRole('button', { name: 'Undo', exact: true });
+  const shortcuts = dock.getByRole('button', { name: 'Keyboard shortcuts' });
+  await expect(undo).toHaveCount(isMobile ? 1 : 0);
+  await expect(shortcuts).toHaveCount(isMobile ? 0 : 1);
+  await expect(undo.or(shortcuts)).toBeVisible();
+  await expect(undo.or(shortcuts)).toBeEnabled();
   await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
 });
 

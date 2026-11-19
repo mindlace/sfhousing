@@ -11,6 +11,7 @@ import { PLAN_KEY } from '$lib/sharing/storage';
 import { page as appPage } from '../test-stubs/app/state';
 import manifestJson from '../../e2e/fixtures/data/fixture-0/manifest.json';
 import Page from './+page.svelte';
+import PaintHeaderHost from './test/PaintHeaderHost.svelte';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 
@@ -79,5 +80,25 @@ describe('/ keyboard undo', () => {
     appPage.state = { sfhRemix: { from: 'abc123', plan: serializePlan(painted) } };
     await render(Page, { props: { data: data(), params: {} } });
     await expect.poll(undoes).toBe('Undid paint, 6 stories');
+  });
+
+  it('Ctrl+Z on the focused header score undoes too', async () => {
+    localStorage.setItem(
+      PLAN_KEY,
+      JSON.stringify({ v: 1, savedAt: '2026-10-11T00:00:00.000Z', plan: serializePlan(painted) })
+    );
+    render(PaintHeaderHost, { props: { data: data() } });
+    const score = page.getByRole('banner').getByTestId('score-bar').element() as HTMLElement;
+    score.focus();
+    await expect
+      .poll(
+        () => (
+          score.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })
+          ),
+          chip().element().textContent?.trim()
+        )
+      )
+      .toBe('Undid paint, 6 stories');
   });
 });

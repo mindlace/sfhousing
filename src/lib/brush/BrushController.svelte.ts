@@ -622,7 +622,11 @@ export class BrushController {
         target: e.target,
         type: down ? 'keydown' : 'keyup'
       },
-      { mapFocused: document.activeElement === map.getCanvas() }
+      {
+        mapFocused: document.activeElement === map.getCanvas(),
+        // The page behind a modal dialog (Publish, sources) takes no keys.
+        modalOpen: document.querySelector('dialog:modal') !== null
+      }
     );
     if (!a) return;
     switch (a.type) {

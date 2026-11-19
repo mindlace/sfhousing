@@ -163,18 +163,35 @@ beforeEach(() => {
  * reports, `any` the kinds `(any-pointer: ...)` does. Every other query is the browser's own
  * (the dock reads `(min-width: 768px)`).
  */
-function stubPointer(primary: 'coarse' | 'fine', any: ('coarse' | 'fine')[] = [primary]): void {
+function stubPointer(
+  primary: 'coarse' | 'fine',
+  any: ('coarse' | 'fine')[] = [primary]
+): { set(p: 'coarse' | 'fine'): void } {
   const real = window.matchMedia.bind(window);
+  let now = primary;
+  const listeners = new Set<(e: Event) => void>();
   vi.stubGlobal('matchMedia', (q: string) => {
     const k = q.replace(/\s/g, '');
     if (!/^\((any-)?pointer:/.test(k)) return real(q);
     return {
-      matches: k === `(pointer:${primary})` || any.some((a) => k === `(any-pointer:${a})`),
+      get matches() {
+        return k === `(pointer:${now})` || any.some((a) => k === `(any-pointer:${a})`);
+      },
       media: q,
-      addEventListener() {},
-      removeEventListener() {}
+      addEventListener(_type: string, fn: (e: Event) => void) {
+        listeners.add(fn);
+      },
+      removeEventListener(_type: string, fn: (e: Event) => void) {
+        listeners.delete(fn);
+      }
     } as unknown as MediaQueryList;
   });
+  return {
+    set(p) {
+      now = p;
+      for (const fn of [...listeners]) fn(new Event('change'));
+    }
+  };
 }
 
 afterEach(() => {
@@ -412,6 +429,69 @@ describe('BrushEditor on the dock', () => {
     await setup();
     expect(page.getByRole('button', { name: /^(Undo|Redo)/ }).elements()).toEqual([]);
     await expect.element(page.getByRole('button', { name: 'Keyboard shortcuts' })).toBeVisible();
+  });
+
+  it('the Undo row and the Shortcuts button swap when the primary pointer changes', async () => {
+    const pointer = stubPointer('fine');
+    await setup();
+    const undo = page.getByRole('button', { name: 'Undo', exact: true });
+    const shortcuts = page.getByRole('button', { name: 'Keyboard shortcuts' });
+    await expect.element(shortcuts).toBeVisible();
+    expect(undo.elements()).toEqual([]);
+    pointer.set('coarse');
+    await expect.element(undo).toBeVisible();
+    await expect.element(shortcuts).not.toBeInTheDocument();
+    pointer.set('fine');
+    await expect.element(shortcuts).toBeVisible();
+    await expect.element(undo).not.toBeInTheDocument();
+  });
+
+  describe('Ctrl+Z from where focus is', () => {
+    const keyOn = (el: EventTarget) =>
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+    const painted = () => setup({ plan: planOf(op('a', 8)) });
+
+    it('undoes with focus in the dock', async () => {
+      const { w, editor } = await painted();
+      await ready(w);
+      const radio = page.getByRole('radio', { name: 'Paint' }).element() as HTMLElement;
+      radio.focus();
+      keyOn(radio);
+      await expect.element(chip()).toHaveTextContent('Undid paint, 8 stories');
+      expect(editor().plan.ops).toHaveLength(0);
+    });
+
+    it('does nothing with focus in a text field', async () => {
+      const { w, editor } = await painted();
+      await ready(w);
+      const input = document.body.appendChild(document.createElement('input'));
+      try {
+        input.focus();
+        keyOn(input);
+        expect(editor().plan.ops).toHaveLength(1);
+        expect(chip().query()).toBeNull();
+      } finally {
+        input.remove();
+      }
+    });
+
+    it('does nothing while a modal dialog is open', async () => {
+      const { w, editor } = await painted();
+      await ready(w);
+      const dlg = document.body.appendChild(document.createElement('dialog'));
+      const btn = dlg.appendChild(document.createElement('button'));
+      dlg.showModal();
+      try {
+        btn.focus();
+        keyOn(btn);
+        expect(editor().plan.ops).toHaveLength(1);
+        dlg.close();
+        keyOn(document.body);
+        await expect.element(chip()).toHaveTextContent('Undid paint, 8 stories');
+      } finally {
+        dlg.remove();
+      }
+    });
   });
 
   it('below md the strip carries Undo, which undoes the last stroke', async () => {

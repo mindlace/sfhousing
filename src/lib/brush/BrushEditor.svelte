@@ -32,6 +32,7 @@
   import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
   import PaintTab from '$lib/paint/PaintTab.svelte';
   import PaletteStrip from '$lib/paint/PaletteStrip.svelte';
+  import { usePrimaryPointer } from '$lib/paint/pointer.svelte';
   import ShortcutsButton from '$lib/paint/ShortcutsButton.svelte';
   import { paintedSummary, storiesUsed } from '$lib/paint/summary';
   import type { Plan } from '$lib/plan';
@@ -140,12 +141,8 @@
   const uid = $props.id();
   const dockId = $derived(dockIdProp ?? `${uid}-dock`);
   const wide = new MediaQuery('(min-width: 768px)');
-  /**
-   * Undo and Redo buttons are for a device with no keyboard: the primary pointer is coarse
-   * (`(pointer: coarse)` reports the primary pointer only, so a touch laptop whose main pointer
-   * is the trackpad counts as fine and keeps Ctrl+Z and the Shortcuts button).
-   */
-  const coarse = new MediaQuery('(pointer: coarse)');
+  /** Undo and Redo buttons are for a device with no keyboard (`usePrimaryPointer`). */
+  const pointer = usePrimaryPointer();
   /** Done on the palette strip reopened the sheet: focus moves into it. */
   let doneFocus = $state(false);
   /** The phone sheet's height (its handle while closed; 0 from md): part of the map's inset. */
@@ -571,7 +568,7 @@
       state={dock}
       tabs={[{ id: 'paint', label: 'Paint', icon: DOCK_ICONS.paint, railLabel: 'Paint tools' }]}
       panel={tabPanel}
-      top={coarse.current && !editor.readOnly ? history : undefined}
+      top={pointer.coarse && !editor.readOnly ? history : undefined}
       {results}
       flipLabel="Paint"
       flipName={editor.readOnly ? 'Back to the Paint tab' : 'Back to painting'}

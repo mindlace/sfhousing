@@ -433,6 +433,14 @@ test.describe('medium width', () => {
   // eslint-disable-next-line playwright/no-skipped-test
   test.skip(({ isMobile }) => isMobile, 'chromium project only');
 
+  test('1280x720: Shortcuts is on screen with the Paint tab open at rest', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await gotoEditor(page);
+    const shortcuts = page.getByTestId('dock').getByRole('button', { name: 'Keyboard shortcuts' });
+    await expect(shortcuts).toBeVisible();
+    await expect(shortcuts).toBeInViewport({ ratio: 1 });
+  });
+
   for (const width of [800, 1023]) {
     test(`${width} px: opening Keyboard shortcuts leaves the dock as it was, and a short window scrolls the dock inside`, async ({
       page

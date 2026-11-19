@@ -1,28 +1,22 @@
 <!--
-  The Shortcuts button and the keyboard shortcuts list it opens in a native popover (nothing on
-  a coarse pointer, which has no keyboard: the rule is `(pointer: coarse)`, the primary pointer,
-  as `HistoryButtons` had it). `/` puts it last in the Paint tab; `/sim` has it in its header,
-  after Undo and Redo. The popover sits in the top layer, so it takes no room in its row and is
-  not clipped by the dock's scroll box; script places it under its button. Escape, a second
-  press and an outside press close it, as do a resize and a scroll outside it. The label shows
-  as "Shortcuts" while the name stays "Keyboard shortcuts": the full words do not fit the
-  header's actions column at 1024 px. Lower in the tab than the header, the list can be taller
-  than the room under the button and scrolls inside itself, so it takes focus (`tabindex`) for
-  a keyboard to scroll it (axe `scrollable-region-focusable`). Colours are tokens.
+  The Shortcuts button and the keyboard shortcuts list it opens in a native popover (nothing on a
+  coarse pointer, which has no keyboard: `usePrimaryPointer`, the one rule `BrushEditor` shares).
+  `/` puts it last in the Paint tab; `/sim` has it in its header, after Undo and Redo. The popover
+  sits in the top layer, so it takes no room in its row and is not clipped by the dock's scroll
+  box; script places it under its button. Escape, a second press and an outside press close it,
+  as do a resize and a scroll outside it. The label shows as "Shortcuts" while the name stays
+  "Keyboard shortcuts": the full words do not fit the header's actions column at 1024 px. Lower
+  in the tab than the header, the list can be taller than the room under the button and scrolls
+  inside itself, so it is a named region that takes focus (`tabindex`) for a keyboard to scroll
+  it (axe `scrollable-region-focusable`). Colours are tokens.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { SHORTCUTS } from '$lib/brush/shortcuts';
   import { placePopover } from './place-popover';
+  import { usePrimaryPointer } from './pointer.svelte';
 
-  let coarse = $state(false);
-  onMount(() => {
-    try {
-      coarse = matchMedia('(pointer: coarse)').matches;
-    } catch {
-      coarse = false;
-    }
-  });
+  // Shown once the client has read the query, and only on a fine primary pointer.
+  const pointer = usePrimaryPointer();
 
   const uid = $props.id();
   const popId = `${uid}-shortcuts`;
@@ -75,7 +69,7 @@
   });
 </script>
 
-{#if !coarse}
+{#if pointer.fine}
   <button
     bind:this={button}
     type="button"
@@ -86,12 +80,14 @@
     ><span aria-hidden="true">Shortcuts</span><span class="sr-only">Keyboard shortcuts</span
     ></button
   >
-  <!-- A scroll box a keyboard must reach. -->
+  <!-- A scroll box a keyboard must reach: Svelte flags any tabindex on a region. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     bind:this={pop}
     id={popId}
     popover="auto"
+    role="region"
+    aria-label="Keyboard shortcuts"
     tabindex="0"
     data-testid="shortcuts"
     {onbeforetoggle}
