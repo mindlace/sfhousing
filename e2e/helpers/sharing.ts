@@ -277,6 +277,9 @@ export const headerScore = (page: Page): Locator =>
 /** The header score's count, read from its text ("Room for 1,234 homes" → 1234). */
 export async function headerNet(page: Page): Promise<number> {
   const t = (await headerScore(page).textContent()) ?? '';
+  // A compact count ("Room for 1.2M homes") would parse as 12: fail loudly instead.
+  if (/\d\s*[KM]\b/.test(t.replace(/homes[\s\S]*$/, '')))
+    throw new Error(`headerNet cannot read a compact count: ${JSON.stringify(t)}`);
   return Number(t.replace(/homes[\s\S]*$/, '').replace(/[^\d-]/g, ''));
 }
 

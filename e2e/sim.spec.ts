@@ -342,7 +342,10 @@ test('with a policy in force the chart draws current law and the gap; nothing pa
   await expectNoA11yViolations(page, { include: ['[data-testid=tl-dock]'] });
 });
 
-test('at 375 px the links wait in Menu; the score bar stays pinned', async ({ isMobile, page }) => {
+test('at 375 px the links wait in Menu; the header score stays pinned', async ({
+  isMobile,
+  page
+}) => {
   test.skip(!isMobile, 'the phone header');
   await gotoSim(page);
   await expect(scoreBar(page)).toBeVisible();

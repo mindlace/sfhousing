@@ -334,6 +334,21 @@ test.describe('desktop', () => {
   // eslint-disable-next-line playwright/no-skipped-test
   test.skip(({ isMobile }) => isMobile, 'chromium project only');
 
+  test("/: Escape on the header score closes the goal's name and leaves the dock open", async ({
+    page
+  }) => {
+    await gotoEditor(page);
+    await expect(page.locator('.sfh-dock-panel')).toBeVisible();
+    await headerScore(page).focus();
+    const tip = page.getByRole('banner').getByRole('tooltip');
+    await expect(tip).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(tip).toBeHidden();
+    await expect(headerScore(page)).toBeFocused();
+    await expect(page.locator('.sfh-dock-panel')).toBeVisible();
+    await expect(page.getByTestId('dock-rail')).toHaveCount(0);
+  });
+
   test('/: About entry in the header, nothing under the map, the dock on the left, the score in the header', async ({
     page
   }) => {
@@ -526,6 +541,8 @@ test.describe('landscape phone 667×375', () => {
     await expectNoA11yViolations(page);
     await collapse.tap();
     await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
+    // Folding by the button leaves focus on the handle, not on the page.
+    await expect(handle(page)).toBeFocused();
 
     // Results (the header score) in the sheet: inside the map region, its flip button reachable.
     await headerScore(page).tap();
@@ -576,7 +593,7 @@ test.describe('account entry', () => {
     test.use({ viewport: { width: 1024, height: 768 } });
 
     for (const path of ['/', '/sim']) {
-      test(`${path} at 1024×768: visible, clear of the score bar and the actions, axe clean`, async ({
+      test(`${path} at 1024×768: visible, clear of the header score and the actions, axe clean`, async ({
         page
       }) => {
         await page.goto(path);
