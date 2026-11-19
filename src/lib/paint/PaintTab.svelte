@@ -1,9 +1,10 @@
 <!--
   The Paint tab shared by `/sim` and `/`: the brush tools (Move, Paint, Erase as a radiogroup with
   a roving tab stop), the height palette (disabled with the mode's hint while Erase is chosen), the
-  brush size, each under a visible label that names its control, then, on `/sim` only, "Painted areas": one row per painted height (or erase), in
-  creation order, a later stroke winning where they overlap. A row is a select button (pressed =
-  the row shown on the map) holding a neutral swatch, its name and its meta (named "name · meta"),
+  brush size, each under a visible label that names its control, then, on `/sim` only, "Painted
+  areas": one row per painted height (or erase), in creation order, a later stroke winning where
+  they overlap. A row is a select button (pressed = the row shown on the map) holding a neutral
+  swatch, its name and its meta (named "name · meta"),
   with the lot count also in a sibling polite status (WCAG 4.1.3); Retry when its lot lookup
   failed; and, when selected, Remove. After Remove focus moves to the row now at that place, the
   one before it, or the checked tool radio. `intro` is one sentence first in the tab. `readonly`

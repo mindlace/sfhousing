@@ -56,7 +56,7 @@
   }
   useHeaderActions(headerActions, { pinned: scoreBar });
 
-  // The dock, as on `/` (sim-ux plan 5): it opens on the read-only Paint tab (the plan's rows, no
+  // The dock, as on `/` (sim-ux plan 5): it opens on the read-only Paint tab (the heights it paints, no
   // tools); its own collapse button and rail fold and open it, the header score flips it to
   // Results.
   const wide = new MediaQuery('(min-width: 768px)');
