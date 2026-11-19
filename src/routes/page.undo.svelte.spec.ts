@@ -90,15 +90,9 @@ describe('/ keyboard undo', () => {
     render(PaintHeaderHost, { props: { data: data() } });
     const score = page.getByRole('banner').getByTestId('score-bar').element() as HTMLElement;
     score.focus();
-    await expect
-      .poll(
-        () => (
-          score.dispatchEvent(
-            new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })
-          ),
-          chip().element().textContent?.trim()
-        )
-      )
-      .toBe('Undid paint, 6 stories');
+    // The controller has attached to the map: the key now reaches it, and one press is enough.
+    await expect.poll(() => stub.map.listenerCount('moveend')).toBeGreaterThan(0);
+    score.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+    await expect.element(chip()).toHaveTextContent('Undid paint, 6 stories');
   });
 });

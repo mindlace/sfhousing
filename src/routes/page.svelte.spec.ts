@@ -3,6 +3,7 @@ import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import type { Manifest } from '$lib/data/manifest';
 import { emptyPlan, serializePlan, type Plan } from '$lib/plan';
+import { MSG } from '$lib/brush/messages';
 import { COPY, n3, remixedToast } from '$lib/sharing/copy';
 import { PLAN_KEY } from '$lib/sharing/storage';
 import { replaceStateCalls } from '../test-stubs/app/navigation';
@@ -143,6 +144,8 @@ describe('/ editor page', () => {
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
       noUndoButton();
+      // Only a restored plan hides the starting sentence.
+      expect(page.getByText(MSG.start).elements()).toHaveLength(0);
       expect(page.getByRole('button', { name: 'Dismiss' }).elements()).toHaveLength(0);
       // The restored plan is not re-written: the autosave's first schedule() is a no-op. A page
       // hide flushes any pending write at once, so nothing pending leaves the record as it was.
@@ -154,6 +157,7 @@ describe('/ editor page', () => {
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
       noUndoButton();
+      await expect.element(page.getByText(MSG.start)).toBeVisible();
     });
 
     it('shows N1 for a corrupt record and preserves it', async () => {
@@ -161,6 +165,8 @@ describe('/ editor page', () => {
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(page.getByText(COPY.n1)).toBeVisible();
       noUndoButton();
+      // The corrupt record is not a plan: the page starts empty.
+      await expect.element(page.getByText(MSG.start)).toBeVisible();
       const kept = Object.keys(localStorage).filter((k) => k.startsWith('sfhousing:plan:corrupt:'));
       expect(kept).toHaveLength(1);
     });

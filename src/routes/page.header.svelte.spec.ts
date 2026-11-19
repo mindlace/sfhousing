@@ -98,6 +98,8 @@ describe('/ header save state', () => {
         ...(width >= 640 ? [page.getByRole('link', { name: /SF Housing/ }).element()] : []),
         ...(width >= 1024 ? [page.getByRole('navigation', { name: 'Steps' }).element()] : []),
         chip.element(),
+        // The pinned score sits between the status cell and the actions.
+        page.getByTestId('score-bar').element(),
         ...(width >= 1024
           ? [
               page.getByRole('button', { name: /Publish/ }),
