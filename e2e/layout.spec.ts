@@ -441,7 +441,11 @@ test.describe('medium width', () => {
       await gotoEditor(page);
       const panel = page.locator('.sfh-dock-panel');
       const h = await panel.evaluate((el) => el.scrollHeight);
+      // The button is the last control in the Paint tab.
       const shortcuts = panel.getByRole('button', { name: 'Keyboard shortcuts' });
+      await expect(panel.locator('button, input').last()).toHaveAccessibleName(
+        'Keyboard shortcuts'
+      );
       await shortcuts.click();
       await expect(page.getByRole('table', { name: 'Keyboard shortcuts' })).toBeVisible();
       expect(await panel.evaluate((el) => el.scrollHeight)).toBe(h);

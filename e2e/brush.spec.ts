@@ -323,7 +323,7 @@ test.describe('brush tool', () => {
 
     test('axe: the editor with the keyboard shortcuts list open', async ({ page }) => {
       await gotoEditor(page);
-      // A popover from HistoryButtons' button, at the top of the dock.
+      // A popover from ShortcutsButton, the last control in the Paint tab.
       const dock = page.getByTestId('dock');
       const button = dock.getByRole('button', { name: 'Keyboard shortcuts' });
       await button.click();

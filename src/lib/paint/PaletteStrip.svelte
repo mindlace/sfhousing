@@ -10,6 +10,8 @@
   scrubber (`--fzp-scrubber-h`, 0 when unset) and above `lift` px (the dock's sheet handle on
   `/sim` and `/`). On a fine pointer (a narrow desktop window) the map's bottom-left navigation control
   would sit under it, so while the strip shows the control is lifted above it (WCAG 2.2 2.4.11).
+  With `onundo` the strip carries an Undo button before Done (below 22.5rem, 360 px, its left
+  inset is 0.5rem and its gap 0, so it fits a 320 px phone).
   Colours are tokens; a control's hover steps one level up from its background.
 -->
 <script lang="ts">
@@ -17,7 +19,7 @@
   import type { BrushTool } from '$lib/brush/sampler';
   import type { BrushState } from '$lib/brush/state.svelte';
   import HeightPalette from './HeightPalette.svelte';
-  import { PAINT_TOOLS } from './tools';
+  import { HISTORY_ICONS, PAINT_TOOLS } from './tools';
 
   interface Props {
     brush: BrushState;
@@ -33,9 +35,25 @@
     eraseHint: string;
     /** Px above the scrubber to clear (the dock's sheet handle). */
     lift?: number;
+    /** With `onundo`: whether there is a stroke to undo (the Undo button is disabled if not). */
+    canUndo?: boolean;
+    /**
+     * Given: an Undo icon button before Done (`/`; Redo stays in the sheet). `/sim` gives none and
+     * keeps its strip as it was.
+     */
+    onundo?: () => void;
   }
 
-  let { brush, tool, ontool, ondone, eraseHint, lift = 0 }: Props = $props();
+  let {
+    brush,
+    tool,
+    ontool,
+    ondone,
+    eraseHint,
+    lift = 0,
+    canUndo = false,
+    onundo = undefined
+  }: Props = $props();
 
   const uid = $props.id();
   const popId = `${uid}-height-pop`;
@@ -92,7 +110,7 @@
   role="group"
   aria-label="Brush"
   data-testid="palette-strip"
-  class="sfh-palette-strip absolute left-4 z-30 flex items-center gap-1 rounded-lg border border-line bg-surface p-1 text-sm text-ink shadow-lg [--bt-fg:var(--color-ink)] md:hidden dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark dark:[--bt-fg:var(--color-ink-dark)]"
+  class="sfh-palette-strip absolute left-4 z-30 flex items-center gap-1 rounded-lg border border-line bg-surface p-1 text-sm text-ink shadow-lg [--bt-fg:var(--color-ink)] max-[22.5rem]:left-2 max-[22.5rem]:gap-0 md:hidden dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark dark:[--bt-fg:var(--color-ink-dark)]"
   style:bottom="calc(var(--fzp-scrubber-h, 0px) + {lift}px + 0.5rem)"
 >
   <button
@@ -157,6 +175,30 @@
     onclose={() => (open = null)}
     popClass={POP}
   />
+
+  {#if onundo}
+    <button
+      type="button"
+      aria-label="Undo"
+      disabled={!canUndo}
+      class="{CTL} flex items-center justify-center px-1"
+      onclick={() => onundo()}
+    >
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        width="20"
+        height="20"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        {#each HISTORY_ICONS.undo as d (d)}<path {d} />{/each}
+      </svg>
+    </button>
+  {/if}
 
   <button
     type="button"

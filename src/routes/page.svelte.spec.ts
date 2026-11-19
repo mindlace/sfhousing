@@ -133,12 +133,16 @@ describe('/ editor page', () => {
         PLAN_KEY,
         JSON.stringify({ v: 1, savedAt: '2026-10-11T00:00:00.000Z', plan: serializePlan(plan) })
       );
-    const undo = () => page.getByRole('button', { name: /^Undo/ });
+    // A fine pointer has no Undo button: the keyboard does it (`page.undo.svelte.spec.ts`, which
+    // has a map double for the controller the keys need).
+    const noUndoButton = () =>
+      expect(page.getByRole('button', { name: /^Undo/ }).elements()).toHaveLength(0);
 
-    it('loads the autosaved plan into the editor (Undo enabled), no notice', async () => {
+    it('loads the autosaved plan (no Undo button on a fine pointer), no notice', async () => {
       seed(painted('fixture-0'));
       await render(Page, { props: { data: data(), params: {} } });
-      await expect.element(undo()).toBeEnabled();
+      await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+      noUndoButton();
       expect(page.getByRole('button', { name: 'Dismiss' }).elements()).toHaveLength(0);
       // The restored plan is not re-written: the autosave's first schedule() is a no-op. A page
       // hide flushes any pending write at once, so nothing pending leaves the record as it was.
@@ -146,16 +150,17 @@ describe('/ editor page', () => {
       expect(JSON.parse(localStorage.getItem(PLAN_KEY)!).savedAt).toBe('2026-10-11T00:00:00.000Z');
     });
 
-    it('starts empty with nothing saved (Undo disabled)', async () => {
+    it('starts empty with nothing saved (no Undo button)', async () => {
       await render(Page, { props: { data: data(), params: {} } });
-      await expect.element(undo()).toBeDisabled();
+      await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+      noUndoButton();
     });
 
     it('shows N1 for a corrupt record and preserves it', async () => {
       localStorage.setItem(PLAN_KEY, '{not json');
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(page.getByText(COPY.n1)).toBeVisible();
-      await expect.element(undo()).toBeDisabled();
+      noUndoButton();
       const kept = Object.keys(localStorage).filter((k) => k.startsWith('sfhousing:plan:corrupt:'));
       expect(kept).toHaveLength(1);
     });
@@ -164,7 +169,6 @@ describe('/ editor page', () => {
       seed(painted('fixture-9'));
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(page.getByText(n3('fixture-9', 'fixture-0'))).toBeVisible();
-      await expect.element(undo()).toBeEnabled();
       const rec = JSON.parse(localStorage.getItem(PLAN_KEY)!);
       expect(JSON.parse(rec.plan).datasetVersion).toBe('fixture-0');
     });
@@ -183,7 +187,6 @@ describe('/ editor page', () => {
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(page.getByText(remixedToast('My plan'))).toBeVisible();
       expect(replaceStateCalls).toEqual([{ url: '', state: {} }]);
-      await expect.element(undo()).toBeEnabled();
     });
 
     it('Remix hand-off with the plan in history state (storage write failed) loads it', async () => {
@@ -192,7 +195,6 @@ describe('/ editor page', () => {
       };
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(page.getByText(remixedToast('abc123'))).toBeVisible();
-      await expect.element(undo()).toBeEnabled();
     });
   });
 });

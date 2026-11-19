@@ -3,6 +3,9 @@
   `Dock`, the Paint tab shared with /sim (plan 3's `PaintTab`, `HistoryButtons` above it and the
   phone `PaletteStrip`), so the two pages are one paint experience (sim-ux spec Goals 1, 3, 11
   and 12). The page owns the `DockState` (the dock folds by its own button) and the Results face.
+  Undo and Redo sit above the tab only on a coarse pointer (a keyboard does both; the stroke chip
+  says what it did) and the phone strip carries Undo; the Shortcuts button ends the tab on a fine
+  pointer.
   `/` has no painted-areas list (that is `/sim`'s): the tab holds the tools, and read-only
   (`/p/:id`) the read-only line and one summary line (`paintedSummary`: the heights used and the
   lots the latest score rebuilds). The overlay mux here has only the brush ring. The brush status
@@ -29,6 +32,7 @@
   import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
   import PaintTab from '$lib/paint/PaintTab.svelte';
   import PaletteStrip from '$lib/paint/PaletteStrip.svelte';
+  import ShortcutsButton from '$lib/paint/ShortcutsButton.svelte';
   import { paintedSummary, storiesUsed } from '$lib/paint/summary';
   import type { Plan } from '$lib/plan';
   import type { Score } from '$lib/scoreboard';
@@ -136,6 +140,12 @@
   const uid = $props.id();
   const dockId = $derived(dockIdProp ?? `${uid}-dock`);
   const wide = new MediaQuery('(min-width: 768px)');
+  /**
+   * Undo and Redo buttons are for a device with no keyboard: the primary pointer is coarse
+   * (`(pointer: coarse)` reports the primary pointer only, so a touch laptop whose main pointer
+   * is the trackpad counts as fine and keeps Ctrl+Z and the Shortcuts button).
+   */
+  const coarse = new MediaQuery('(pointer: coarse)');
   /** Done on the palette strip reopened the sheet: focus moves into it. */
   let doneFocus = $state(false);
   /** The phone sheet's height (its handle while closed; 0 from md): part of the map's inset. */
@@ -479,6 +489,9 @@
       intro={editor.readOnly ? MSG.readOnly : null}
       {summary}
     />
+    {#if !editor.readOnly}
+      <div class="mt-3 -ml-2 flex"><ShortcutsButton /></div>
+    {/if}
   {/if}
 {/snippet}
 
@@ -558,7 +571,7 @@
       state={dock}
       tabs={[{ id: 'paint', label: 'Paint', icon: DOCK_ICONS.paint, railLabel: 'Paint tools' }]}
       panel={tabPanel}
-      top={editor.readOnly ? undefined : history}
+      top={coarse.current && !editor.readOnly ? history : undefined}
       {results}
       flipLabel="Paint"
       flipName={editor.readOnly ? 'Back to the Paint tab' : 'Back to painting'}
@@ -581,6 +594,8 @@
         ondone={stripDone}
         eraseHint={MSG.eraseHint}
         lift={sheetH}
+        canUndo={editor.canUndo}
+        onundo={() => controller?.undo()}
       />
     {/if}
   </div>

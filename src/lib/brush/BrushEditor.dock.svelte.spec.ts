@@ -158,7 +158,27 @@ beforeEach(() => {
   localStorage.clear();
 });
 
+/**
+ * A pointer stub for `window.matchMedia`, set before render: `primary` is what `(pointer: ...)`
+ * reports, `any` the kinds `(any-pointer: ...)` does. Every other query is the browser's own
+ * (the dock reads `(min-width: 768px)`).
+ */
+function stubPointer(primary: 'coarse' | 'fine', any: ('coarse' | 'fine')[] = [primary]): void {
+  const real = window.matchMedia.bind(window);
+  vi.stubGlobal('matchMedia', (q: string) => {
+    const k = q.replace(/\s/g, '');
+    if (!/^\((any-)?pointer:/.test(k)) return real(q);
+    return {
+      matches: k === `(pointer:${primary})` || any.some((a) => k === `(any-pointer:${a})`),
+      media: q,
+      addEventListener() {},
+      removeEventListener() {}
+    } as unknown as MediaQueryList;
+  });
+}
+
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
   localStorage.clear();
 });
@@ -182,8 +202,7 @@ describe('BrushEditor on the dock', () => {
     ).toEqual(['Move', 'Paint', 'Erase']);
     await expect.element(page.getByRole('group', { name: 'Height' })).toBeVisible();
     await expect.element(page.getByRole('slider', { name: /^Brush \d+ m$/ })).toBeVisible();
-    await expect.element(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
-    await expect.element(page.getByRole('button', { name: 'Redo', exact: true })).toBeDisabled();
+    expect(page.getByRole('button', { name: /^(Undo|Redo)/ }).elements()).toEqual([]);
     expect(page.getByRole('list', { name: 'Painted areas' }).elements()).toEqual([]);
     expect(
       getComputedStyle(document.querySelector('.brush-editor')!).getPropertyValue('--dock-w')
@@ -346,6 +365,81 @@ describe('BrushEditor on the dock', () => {
     key('z', true);
     await expect.element(chip()).toHaveTextContent('Redid paint, 6 stories');
     expect(editor().plan.ops).toHaveLength(1);
+  });
+
+  it('on a fine pointer the dock has no Undo or Redo; Ctrl+Z undoes and the chip says so', async () => {
+    const { w, editor } = await setup();
+    await ready(w);
+    expect(page.getByRole('button', { name: /^(Undo|Redo)/ }).elements()).toEqual([]);
+    await commitStroke(w, editor);
+    key('z');
+    await expect.element(chip()).toHaveTextContent('Undid paint, 6 stories');
+    expect(editor().plan.ops).toHaveLength(0);
+    key('z', true);
+    await expect.element(chip()).toHaveTextContent('Redid paint, 6 stories');
+  });
+
+  for (const width of [375, 1024]) {
+    it(`on a coarse pointer at ${width}px Undo and Redo sit above the Paint tab, and no Shortcuts`, async () => {
+      stubPointer('coarse');
+      const { w, editor, dock } = await setup({ width });
+      await ready(w);
+      if (width < 768) dock.sheet = 'full';
+      const undo = page.getByRole('button', { name: 'Undo', exact: true });
+      const redo = page.getByRole('button', { name: 'Redo', exact: true });
+      await expect.element(undo).toBeDisabled();
+      await expect.element(redo).toBeDisabled();
+      const panel = page.getByRole('tabpanel').element();
+      expect(undo.element().getBoundingClientRect().bottom).toBeLessThanOrEqual(
+        panel.getBoundingClientRect().top + 1
+      );
+      expect(page.getByRole('button', { name: 'Keyboard shortcuts' }).elements()).toEqual([]);
+      // A coarse pointer starts on Move; on a phone choosing Paint folds the sheet.
+      await page.getByRole('radio', { name: 'Paint' }).click();
+      dock.sheet = 'full';
+      await commitStroke(w, editor);
+      await expect.element(undo).toBeEnabled();
+      await undo.click();
+      await expect.element(chip()).toHaveTextContent('Undid paint, 6 stories');
+      await expect.element(redo).toBeEnabled();
+      await redo.click();
+      await expect.element(chip()).toHaveTextContent('Redid paint, 6 stories');
+    });
+  }
+
+  it('a touch laptop (fine primary, coarse any-pointer) keeps the keyboard: no buttons, shortcuts listed', async () => {
+    stubPointer('fine', ['fine', 'coarse']);
+    await setup();
+    expect(page.getByRole('button', { name: /^(Undo|Redo)/ }).elements()).toEqual([]);
+    await expect.element(page.getByRole('button', { name: 'Keyboard shortcuts' })).toBeVisible();
+  });
+
+  it('below md the strip carries Undo, which undoes the last stroke', async () => {
+    const { w, editor } = await setup({ width: 375 });
+    await ready(w);
+    const strip = page.getByTestId('palette-strip');
+    await expect.element(strip).toBeVisible();
+    const undo = strip.getByRole('button', { name: 'Undo', exact: true });
+    await expect.element(undo).toBeDisabled();
+    await commitStroke(w, editor);
+    await expect.element(undo).toBeEnabled();
+    await undo.click();
+    expect(editor().plan.ops).toHaveLength(0);
+    await expect.element(chip()).toHaveTextContent('Undid paint, 6 stories');
+    await expect.element(undo).toBeDisabled();
+  });
+
+  it('on a fine pointer Keyboard shortcuts is the last control in the Paint tab; read-only, none', async () => {
+    await setup();
+    const tab = page.getByRole('tabpanel').element();
+    const controls = [...tab.querySelectorAll<HTMLElement>('button, [role=radio], [role=slider]')];
+    expect(controls.at(-1)?.textContent).toContain('Keyboard shortcuts');
+    expect(page.getByRole('button', { name: 'Keyboard shortcuts' }).elements()).toHaveLength(1);
+  });
+
+  it('read-only has no Keyboard shortcuts', async () => {
+    await setup({ readOnly: true, plan: planOf(op('a', 8)) });
+    expect(page.getByRole('button', { name: 'Keyboard shortcuts' }).elements()).toEqual([]);
   });
 
   it('below md a stroke tool shows the palette strip; Done reopens the sheet on Paint', async () => {

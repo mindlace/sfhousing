@@ -11,7 +11,7 @@ import PaletteStripHost from './test/PaletteStripHost.svelte';
 
 const HINT = 'Erase has no height.';
 
-function setup(tool: BrushTool = 'paint') {
+function setup(tool: BrushTool = 'paint', extra: Record<string, unknown> = {}) {
   const brush = new BrushState({ storage: null, fine: false });
   brush.phase = 'ready';
   const calls: string[] = [];
@@ -25,7 +25,8 @@ function setup(tool: BrushTool = 'paint') {
       eraseHint: HINT,
       ontool,
       ondone,
-      onready: (f: () => void) => (focus = f)
+      onready: (f: () => void) => (focus = f),
+      ...extra
     }
   });
   return { brush, ontool, ondone, calls, focus: () => focus() };
@@ -35,6 +36,54 @@ const strip = () => page.getByRole('group', { name: 'Brush', exact: true });
 const btn = (name: string) => page.getByRole('button', { name, exact: true });
 const swatch = () => page.getByRole('button', { name: /^Height: / });
 const palette = () => page.getByRole('group', { name: 'Height', exact: true });
+
+describe('PaletteStrip Undo', () => {
+  beforeEach(async () => {
+    await page.viewport(375, 700);
+  });
+
+  it('with onundo, Undo sits before Done, is disabled with nothing to undo, and calls it', async () => {
+    const onundo = vi.fn();
+    setup('paint', { onundo, canUndo: false });
+    const undo = btn('Undo');
+    await expect.element(undo).toBeDisabled();
+    const done = btn('Done').element();
+    expect(undo.element().compareDocumentPosition(done) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+    expect(document.querySelectorAll('[data-testid="palette-strip"] button')).toHaveLength(5);
+  });
+
+  it('calls onundo when there is something to undo', async () => {
+    const onundo = vi.fn();
+    setup('paint', { onundo, canUndo: true });
+    await btn('Undo').click();
+    expect(onundo).toHaveBeenCalledOnce();
+  });
+
+  it('without onundo there is no Undo (as on /sim)', async () => {
+    setup();
+    await expect.element(strip()).toBeVisible();
+    expect(page.getByRole('button', { name: 'Undo' }).elements()).toEqual([]);
+  });
+
+  for (const tool of ['paint', 'erase'] as const) {
+    it(`at 320 px in ${tool} the strip with Undo is inside the viewport and every target is 44 px`, async () => {
+      await page.viewport(320, 700);
+      setup(tool, { onundo: vi.fn(), canUndo: true });
+      await expect.element(btn('Undo')).toBeVisible();
+      const bar = page.getByTestId('palette-strip').element().getBoundingClientRect();
+      expect(bar.right).toBeLessThanOrEqual(312);
+      expect(bar.left).toBeGreaterThanOrEqual(8);
+      for (const b of document.querySelectorAll('[data-testid="palette-strip"] button')) {
+        const r = b.getBoundingClientRect();
+        expect(r.width).toBeGreaterThanOrEqual(44);
+        expect(r.height).toBeGreaterThanOrEqual(44);
+      }
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
+    });
+  }
+});
 
 describe('PaletteStrip at 375 px', () => {
   beforeEach(async () => {
