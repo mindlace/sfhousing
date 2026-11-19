@@ -3,6 +3,7 @@
 // dark variants and stay WCAG AA. Both Playwright projects.
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { MSG } from '../src/lib/brush/messages';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
@@ -22,10 +23,13 @@ import {
   jumpAndIdle,
   openHeaderMenu,
   openResults,
+  ops,
   paintOnce,
   projectToPage,
   seedPlanRow,
   SIM_KEY,
+  smallText,
+  waitForMap,
   waitTimelineDrawn,
   type LngLat
 } from './helpers/sharing';
@@ -85,7 +89,7 @@ test('at 375px the open Menu has no axe violations in dark', async ({ page }) =>
   await gotoEditor(page);
   await openHeaderMenu(page);
   await expect(
-    page.getByRole('navigation', { name: 'Modes' }).getByRole('link', { name: 'Paint' })
+    page.getByRole('navigation', { name: 'Steps' }).getByRole('link', { name: 'Paint' })
   ).toBeVisible();
   await expectNoA11yViolations(page, { include: ['header'] });
   expect(
@@ -114,18 +118,6 @@ test("/'s Results face follows the dark tokens: the RHNA fill is the dark accent
 
 // ---- /sim's editor, Results, the project card and the notice pills; /'s dock ------------------
 
-const dock = (page: Page) => page.getByTestId('dock');
-const dockHandle = (page: Page) => page.getByTestId('dock-handle');
-
-/** /'s dock body open: from md the panel is open already; below md the handle opens the sheet. */
-async function openDock(page: Page): Promise<void> {
-  const handle = dockHandle(page);
-  if ((await handle.isVisible()) && (await handle.getAttribute('aria-expanded')) !== 'true') {
-    await handle.click();
-    await expect(handle).toHaveAttribute('aria-expanded', 'true');
-  }
-}
-
 for (const [kind, choice] of [
   ['Zoning', 'Transit rule'],
   ['Zoning', 'Painted area'],
@@ -141,22 +133,6 @@ for (const [kind, choice] of [
   });
 }
 
-test("/'s dock on Paint, a painted row selected, has no axe violations in dark", async ({
-  page,
-  isMobile
-}) => {
-  await gotoEditor(page);
-  await paintOnce(page, isMobile);
-  await openDock(page);
-  const row = dock(page).locator('[data-paint-row]').first();
-  await row.click();
-  await expect(row).toHaveAttribute('aria-pressed', 'true');
-  await expect(dock(page).getByRole('button', { name: /^Remove: / })).toBeVisible();
-  await expectNoA11yViolations(page, {
-    include: ['[data-testid=dock]', '[data-testid=fzp-notices]']
-  });
-});
-
 test("/'s Results face, a plan painted and both disclosures open, has no axe violations in dark", async ({
   page,
   isMobile
@@ -168,6 +144,65 @@ test("/'s Results face, a plan painted and both disclosures open, has no axe vio
   for (const d of await results.locator('details > summary').all()) await d.click();
   await expect(results.locator('details[open]')).toHaveCount(2);
   await expectNoA11yViolations(page, { include: ['header', '[data-testid=dock]'] });
+});
+
+test("/'s stroke chip has no axe violations in dark", async ({ page, isMobile }) => {
+  await gotoEditor(page);
+  await paintOnce(page, isMobile);
+  const chip = page.getByTestId('stroke-chip');
+  await expect(chip).toHaveText(/^6 stories on \d+ lots/);
+  await expect(chip).toHaveCSS('background-color', 'rgb(44, 46, 49)');
+  await expectNoA11yViolations(page, { include: ['[data-testid=brush-announcement]'] });
+});
+
+/** /'s dock body open: from md the panel is open already; below md the handle opens the sheet. */
+async function openDock(page: Page): Promise<void> {
+  const handle = page.getByTestId('dock-handle');
+  if ((await handle.isVisible()) && (await handle.getAttribute('aria-expanded')) !== 'true') {
+    await handle.click();
+    await expect(handle).toHaveAttribute('aria-expanded', 'true');
+  }
+}
+
+test("/'s dock on its Paint tab, a plan painted, has no axe violations in dark", async ({
+  page,
+  isMobile
+}) => {
+  await gotoEditor(page);
+  await paintOnce(page, isMobile);
+  await expect.poll(() => ops(page)).toBe(1);
+  await openDock(page);
+  const dock = page.getByTestId('dock');
+  await expect(dock.getByRole('tab', { name: 'Paint' })).toHaveAttribute('aria-selected', 'true');
+  await expect(dock.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
+  // Touch has Undo above the tab and no keyboard list; a keyboard has Ctrl+Z, the Shortcuts button
+  // and no Undo button.
+  const undo = dock.getByRole('button', { name: 'Undo', exact: true });
+  const shortcuts = dock.getByRole('button', { name: 'Keyboard shortcuts' });
+  await expect(undo).toHaveCount(isMobile ? 1 : 0);
+  await expect(shortcuts).toHaveCount(isMobile ? 0 : 1);
+  await expect(undo.or(shortcuts)).toBeVisible();
+  await expect(undo.or(shortcuts)).toBeEnabled();
+  await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
+});
+
+test("/p/:id's read-only Paint tab, its line and summary, has no axe violations in dark", async ({
+  page
+}) => {
+  const res = await page.request.post('/api/plans', {
+    data: smallText,
+    headers: { 'content-type': 'application/json' }
+  });
+  expect(res.ok()).toBe(true);
+  const { id } = (await res.json()) as { id: string };
+  await page.goto(`/p/${id}`);
+  await waitForMap(page);
+  await openDock(page);
+  const tab = page.getByTestId('dock').getByRole('tabpanel');
+  await expect(tab.getByText(MSG.readOnly, { exact: true })).toBeVisible();
+  const summary = tab.getByText(/stories · [\d,]+ lots? rebuilt$/);
+  await expect(summary).toBeVisible();
+  await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
 });
 
 test("/'s notice pill (N1) in the one stack has no axe violations in dark", async ({ page }) => {
@@ -203,8 +238,8 @@ test('at 375px the palette strip has no axe violations in dark, palette open and
   await expect(strip.getByRole('group', { name: 'Height', exact: true })).toBeHidden();
   await expect(swatch).toBeFocused();
   // The radius pop-over open.
-  await strip.getByRole('button', { name: /^Brush \d+ m$/ }).click();
-  await expect(strip.getByRole('group', { name: 'Brush radius' })).toBeVisible();
+  await strip.getByRole('button', { name: /^Brush size: \d+ m$/ }).click();
+  await expect(strip.getByRole('group', { name: 'Brush size' })).toBeVisible();
   await expectNoA11yViolations(page, { include: ['[data-testid=palette-strip]'] });
   // Erase: the swatch is disabled and carries the hint.
   await page.keyboard.press('Escape');

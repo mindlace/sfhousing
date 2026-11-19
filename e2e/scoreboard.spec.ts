@@ -1,5 +1,5 @@
 // Scoreboard e2e (scoreboard spec §6 E2E, on the sim-ux layout): the score is the header's
-// (`HeaderScore`, "{n} homes added" and the RHNA meter), and the scoreboard is the dock's Results
+// ("Room for {n} homes" and its share of the goal, no meter), and the scoreboard is the dock's Results
 // face, which pressing the score shows. Runs against the VITE_E2E build, which exposes
 // window.__sfhBrush and window.__sfhMap and shortens the worker's chunk retries to 50/100/200 ms.
 import { expect, test, type Page } from '@playwright/test';
@@ -51,7 +51,7 @@ test.describe('scoreboard', () => {
     test('paint: the header score turns nonzero within 150 ms of pointer-up', async ({ page }) => {
       await gotoEditor(page);
       await jumpAndIdle(page, FRAME);
-      await expect(headerScore(page)).toHaveText(/^0 homes/);
+      await expect(headerScore(page)).toHaveText(/^Room for 0 homes$/);
 
       // Record EVERY text change of the header score, so the settled value's timestamp is known.
       await page.evaluate(() => {
@@ -78,7 +78,8 @@ test.describe('scoreboard', () => {
       });
       expect(upAt).toBeDefined();
       const final = log.at(-1)!;
-      expect(final.text).not.toMatch(/^0 homes/);
+      expect(final.text).toMatch(/^Room for [\d,.KM]+ homes$/);
+      expect(final.text).not.toBe('Room for 0 homes');
       // A change before pointer-up (a preview diff) clamps to 0; the final value must land ≤ 150 ms.
       const ms = Math.max(0, final.t - upAt!);
       test.info().annotations.push({ type: 'sfh-score-latency', description: `${ms} ms` });
@@ -98,15 +99,9 @@ test.describe('scoreboard', () => {
       const results = await openResults(page);
       await expect(results.getByTestId('score-net')).toHaveText(net.toLocaleString('en-US'));
       await expect(results.getByTestId('target-rhna')).toBeVisible();
-      // The header meter and the Results' primary row read the same percentage.
-      const meterText = await page
-        .getByRole('banner')
-        .getByRole('meter')
-        .getAttribute('aria-valuetext');
-      await expect(results.getByTestId('target-rhna').getByRole('meter')).toHaveAttribute(
-        'aria-valuetext',
-        meterText!
-      );
+      // The header has no meter: its share of the goal is text under the room for homes.
+      await expect(page.getByRole('banner').getByRole('meter')).toHaveCount(0);
+      await expect(headerScore(page)).toHaveText(/^Room for [\d,.KM]+ homes$/);
       await results.getByText('By neighborhood').click();
       await expect(results.getByTestId('hood-row').first()).toBeVisible();
 
@@ -230,7 +225,7 @@ test.describe('scoreboard', () => {
       expect(open.y + open.height).toBeLessThanOrEqual(region.y + region.height + 1);
 
       await page.getByRole('button', { name: 'Back to painting' }).tap();
-      await expect(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+      await expect(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
       await expect(headerScore(page)).toHaveAttribute('aria-expanded', 'false');
     });
   });

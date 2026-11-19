@@ -1,12 +1,15 @@
 <!--
   The Paint tab shared by `/sim` and `/`: the brush tools (Move, Paint, Erase as a radiogroup with
   a roving tab stop), the height palette (disabled with the mode's hint while Erase is chosen), the
-  brush size, then "Painted areas": one row per painted height (or erase), in creation order, a
-  later stroke winning where they overlap. A row is a select button (pressed = the row shown on the
-  map) holding a neutral swatch, its name and its meta (named "name · meta"), with the lot count
-  also in a sibling polite status (WCAG 4.1.3); Retry when its lot lookup failed; and, when selected, Remove. After Remove focus
-  moves to the row now at that place, the one before it, or the checked tool radio. `readonly`
-  (a shared plan) shows the rows alone. Colours are tokens.
+  brush size, each under a visible label that names its control, then, on `/sim` only, "Painted
+  areas": one row per painted height (or erase), in creation order, a later stroke winning where
+  they overlap. A row is a select button (pressed = the row shown on the map) holding a neutral
+  swatch, its name and its meta (named "name · meta"),
+  with the lot count also in a sibling polite status (WCAG 4.1.3); Retry when its lot lookup
+  failed; and, when selected, Remove. After Remove focus moves to the row now at that place, the
+  one before it, or the checked tool radio. `intro` is one sentence first in the tab. `readonly`
+  (a shared plan) drops the tools and shows `summary` in place of the rows (or the rows, without
+  one). Colours are tokens.
 -->
 <script lang="ts">
   import { tick } from 'svelte';
@@ -22,30 +25,37 @@
     tool: BrushTool;
     /** The page routes it through its controller (which cancels a stroke). */
     ontool(t: BrushTool): void;
-    rows: readonly PaintRow[];
+    /** `/sim`'s painted areas; `/` passes none. */
+    rows?: readonly PaintRow[];
     /** A row id. */
-    selected: string | null;
-    onselect(id: string | null): void;
-    onremove(id: string): void;
+    selected?: string | null;
+    onselect?(id: string | null): void;
+    onremove?(id: string): void;
     /** Why the height palette is disabled while Erase is chosen. */
     eraseHint: string;
-    /** A shared plan: rows only, no tools, no Remove. */
+    /** A shared plan: no tools, no Remove; the summary (or else the rows). */
     readonly?: boolean;
     /** A row's lot lookup failed: retry its keys. */
     onretry?: (keys: string[]) => void;
+    /** One sentence first in the tab: the read-only line, or `/`'s starting sentence. */
+    intro?: string | null;
+    /** Read-only only: one line in place of the rows (`/p/:id`). */
+    summary?: string | null;
   }
 
   let {
     brush,
     tool,
     ontool,
-    rows,
-    selected,
-    onselect,
-    onremove,
+    rows = [],
+    selected = null,
+    onselect = () => {},
+    onremove = () => {},
     eraseHint,
     readonly = false,
-    onretry = undefined
+    onretry = undefined,
+    intro = null,
+    summary = null
   }: Props = $props();
 
   const radios: Partial<Record<BrushTool, HTMLButtonElement>> = $state({});
@@ -89,50 +99,71 @@
     });
   }
 
+  const uid = $props.id();
+  const toolLabel = `${uid}-tool`;
+  const heightLabel = `${uid}-height`;
+  const LABEL = 'text-xs font-semibold text-ink-muted dark:text-ink-dark-muted';
+
   const erase = PAINT_TOOLS.find((t) => t.id === 'erase')!;
   const btn =
     'min-h-6 min-w-6 rounded-md px-2 font-semibold underline pointer-coarse:min-h-11 pointer-coarse:min-w-11';
 </script>
 
 <div class="flex flex-col gap-3 text-sm text-ink dark:text-ink-dark">
+  {#if intro}
+    <p class="text-ink-muted dark:text-ink-dark-muted">{intro}</p>
+  {/if}
   {#if !readonly}
-    <div role="radiogroup" aria-label="Brush tool" class="flex flex-wrap gap-1">
-      {#each PAINT_TOOLS as t (t.id)}
-        <button
-          bind:this={radios[t.id]}
-          type="button"
-          role="radio"
-          aria-checked={tool === t.id}
-          tabindex={t.id === tabStop ? 0 : -1}
-          disabled={!enabled(t.id)}
-          class="paint-tool flex min-h-11 min-w-11 items-center gap-1.5 rounded-md border border-control-line bg-surface px-2 text-ink enabled:hover:bg-surface-raised disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:enabled:hover:bg-surface-dark-raised"
-          onclick={() => choose(t.id)}
-          onkeydown={(e) => onRadioKey(e, t.id)}
-        >
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 24 24"
-            width="18"
-            height="18"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+    <div class="flex flex-col gap-1">
+      <span id={toolLabel} class={LABEL}>Tool</span>
+      <div role="radiogroup" aria-labelledby={toolLabel} class="flex flex-wrap gap-1">
+        {#each PAINT_TOOLS as t (t.id)}
+          <button
+            bind:this={radios[t.id]}
+            type="button"
+            role="radio"
+            aria-checked={tool === t.id}
+            tabindex={t.id === tabStop ? 0 : -1}
+            disabled={!enabled(t.id)}
+            class="paint-tool flex min-h-11 min-w-11 items-center gap-1.5 rounded-md border border-control-line bg-surface px-2 text-ink enabled:hover:bg-surface-raised disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:enabled:hover:bg-surface-dark-raised"
+            onclick={() => choose(t.id)}
+            onkeydown={(e) => onRadioKey(e, t.id)}
           >
-            {#each t.icon as d (d)}<path {d} />{/each}
-          </svg>
-          {t.label}
-        </button>
-      {/each}
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              {#each t.icon as d (d)}<path {d} />{/each}
+            </svg>
+            {t.label}
+          </button>
+        {/each}
+      </div>
     </div>
 
-    <HeightPalette {brush} disabled={tool === 'erase'} hint={eraseHint} />
+    <div class="flex flex-col gap-1">
+      <span id={heightLabel} class={LABEL}>Height</span>
+      <HeightPalette
+        {brush}
+        disabled={tool === 'erase'}
+        hint={eraseHint}
+        labelledby={heightLabel}
+      />
+    </div>
 
     <RadiusPopover state={brush} inline />
   {/if}
 
-  {#if rows.length > 0}
+  {#if readonly && summary}
+    <p>{summary}</p>
+  {:else if rows.length > 0}
     <ol bind:this={list} aria-label="Painted areas" class="flex flex-col gap-2">
       {#each rows as row, i (row.id)}
         {@const isSel = selected === row.id}

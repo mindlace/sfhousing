@@ -49,8 +49,8 @@ function sameRow(a: CustomBrush, b: CustomBrush): boolean {
 /**
  * The policy without custom brush `id`; the two brushes now adjacent merge when they are the
  * same kind and (paint) the same stories: the earlier brush's id is kept and its strokes are
- * followed by the later one's. This is `appendStroke`'s join rule and `/`'s derived row
- * grouping, so a row means the same on both pages. An unknown `id` returns `p` itself.
+ * followed by the later one's. This is `appendStroke`'s join rule, so a row means what it did
+ * when it was drawn. An unknown `id` returns `p` itself.
  */
 export function removeCustomBrush(p: SimPolicy, id: string): SimPolicy {
   const i = p.custom.findIndex((b) => b.id === id);

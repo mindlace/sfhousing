@@ -1,7 +1,7 @@
 <!--
-  The site header. From lg: the site name, the mode links, the page's status, then (on the right)
-  the pinned item and the actions. Below lg: the site name, the status, the pinned item and a
-  hamburger Menu button whose panel (under the header) holds the mode links and the actions.
+  The site header. From lg: the site name, the two steps (Paint, Simulate), the page's status, then
+  (on the right) the pinned item and the actions. Below lg: the site name, the status, the pinned
+  item and a hamburger Menu button whose panel (under the header) holds the steps and the actions.
   Below sm, on a page that pins an item (Paint, /sim, /lesscars, /p/:id), the site name moves into
   the panel too. The account entry (Sign in, or @handle) follows the actions in the same group;
   Sign in shows only while a sign-in method is in effect (`signInAvailable`). The About entry
@@ -40,7 +40,7 @@
   const panelId = `${uid}-menu`;
 
   const onSim = $derived(routeId === '/sim');
-  // The mode links are page navigation, so they stay links with aria-current rather than ARIA tabs.
+  // The steps are page navigation, so they stay links with aria-current rather than ARIA tabs.
   // The current one is filled with the accent; the other carries a resting border so it reads as
   // pressable. Both take a 1 px border so their sizes match.
   const link =
@@ -112,11 +112,26 @@
 
 <svelte:window {onkeydown} {onpointerdown} />
 
-{#snippet modeLinks()}
-  <a href="/" class={tab(routeId === '/')} aria-current={routeId === '/' ? 'page' : undefined}
-    >Paint</a
+{#snippet steps()}
+  <ol class="m-0 flex list-none flex-wrap items-center gap-[inherit] p-0">
+    <li>
+      <a href="/" class={tab(routeId === '/')} aria-current={routeId === '/' ? 'page' : undefined}
+        >{@render stepNumber(1)}Paint</a
+      >
+    </li>
+    <li>
+      <a href="/sim" class={tab(onSim)} aria-current={onSim ? 'page' : undefined}
+        >{@render stepNumber(2)}Simulate</a
+      >
+    </li>
+  </ol>
+{/snippet}
+
+<!-- The order is the list's to speak; the number is for the eye, and hidden from lg to xl. -->
+{#snippet stepNumber(n: number)}
+  <span aria-hidden="true" data-step-number class="mr-1 font-semibold tabular-nums lg:max-xl:hidden"
+    >{n}</span
   >
-  <a href="/sim" class={tab(onSim)} aria-current={onSim ? 'page' : undefined}>Simulate</a>
 {/snippet}
 
 <header
@@ -136,10 +151,10 @@
       >SF Housing <span class="sr-only xl:not-sr-only">Simulator</span></a
     >
     <nav
-      aria-label="Modes"
+      aria-label="Steps"
       class="flex shrink-0 items-center gap-3 text-sm max-lg:hidden lg:max-xl:gap-2"
     >
-      {@render modeLinks()}
+      {@render steps()}
     </nav>
     <!-- The status, then the space that pushes the pinned item and the actions right. -->
     <div class="flex min-w-0 flex-1 items-center lg:pl-2 lg:max-xl:pl-0" data-header-status>
@@ -182,8 +197,8 @@
         >SF Housing Simulator</a
       >
     {/if}
-    <nav aria-label="Modes" class="flex flex-wrap items-center gap-4 text-sm lg:hidden">
-      {@render modeLinks()}
+    <nav aria-label="Steps" class="flex flex-wrap items-center gap-4 text-sm lg:hidden">
+      {@render steps()}
     </nav>
     <div class="flex items-center gap-2 max-lg:flex-wrap lg:justify-self-end">
       {@render actions?.()}

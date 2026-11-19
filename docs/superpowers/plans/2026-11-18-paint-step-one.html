@@ -1,0 +1,761 @@
+<article>
+  <header>
+    <h1>Paint as step one plan</h1>
+    <p>Slice 4 of the information design review: on <code>/</code> and <code>/p/&lt;id&gt;</code> the header reads "Room for N homes" with its share of the goal, Paint and Simulate become two numbered steps on every page, the Paint tab is labelled and starts with one sentence, each stroke shows what it did in a chip, the painted-areas list goes, and undo and redo leave the desktop screen for the keyboard while touch keeps its buttons.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+    <aside data-kind="warning"><strong>Read before executing</strong> Line numbers below were taken on <code>6df9d144</code> (main after slices 1 to 3) and go stale as tasks land: every place is also named by function, component, snippet or test title. Locate by those. The owner answers <a href="#sec-open-questions">Open questions</a> before Task 1 starts.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Paint reads as the first of two steps. The header shows the steps "1 Paint" and "2 Simulate" in place of the mode links, and on Paint a headline that cannot be read as a forecast: "Room for 47,335 homes", then "57% of the goal". The Paint tab says how to start, labels Tool, Height and Brush size, and ends with Keyboard shortcuts. A stroke, a refusal, an undo and a redo each show in a chip over the map that is also the polite status. The painted-areas list, its Remove and its Retry go from <code>/</code>; a shared plan shows one line in its place. Desktop has no undo or redo buttons (the keyboard does both); a touch screen keeps them, and the phone's palette strip gains Undo.</dd>
+      <dt>Architecture</dt>
+      <dd>One new pure module for the headline (<code>src/lib/paint/headline.ts</code>), one for the read-only line (<code>src/lib/paint/summary.ts</code>), and one component split out of <code>HistoryButtons</code> (<code>src/lib/paint/ShortcutsButton.svelte</code>). Paint's header reuses <code>/sim</code>'s <code>TimelineHeaderScore</code> with a <code>HeadlineText</code>, so the two pages have one header score; the hashed <code>HeaderScore</code> is left alone. The steps are a change to <code>SiteHeader</code>'s mode-link snippet. Everything else is in <code>BrushEditor</code>, <code>PaintTab</code>, <code>PaletteStrip</code>, <code>RadiusPopover</code>, <code>HeightPalette</code> and <code>messages.ts</code>. No engine, worker or <code>/sim</code> timeline change.</dd>
+      <dt>Tech Stack</dt>
+      <dd>SvelteKit 2, Svelte 5 runes, TypeScript, Tailwind 4, Vitest (server project for <code>*.spec.ts</code>, client project for <code>*.svelte.spec.ts</code>), Playwright, axe through <code>expectNoA11yViolations</code>.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-17-information-design-review-design.html"><code>docs/superpowers/specs/2026-11-17-information-design-review-design.html</code></a>, row 4 of <a href="../specs/2026-11-17-information-design-review-design.html#tbl-slices">Order of work</a>. Governing parts: the Paint inventory (<code>tbl-inv-paint</code>), the chrome row "Which tool this is" (<code>tbl-inv-chrome</code>), findings 3, 6 and 7, Paint (<code>sec-prop-paint</code>), Header (<code>sec-prop-header</code>, the steps and what leaves the header), The loop (<code>tbl-loop</code>, <code>tbl-ladder</code> level 1), One vocabulary (<code>tbl-words</code>: "room for N homes"), Decided ("Paint is the first stage", "Steps only for now"), and Carried forward ("Paint's header still reads 'N homes added'").</dd>
+      <dt>Assumes</dt>
+      <dd>Slices 1 to 3 have landed: <code>src/lib/goal/goal.ts</code> (<code>GOAL</code>, <code>STATE_TARGET</code>, <code>HOMES_COMPLETED</code>, <code>goalName</code>), <code>HeadlineText</code> and <code>headlineSpoken</code> (<code>src/lib/timeline/results.ts:149-168</code>), <code>TimelineHeaderScore</code>, the shortcuts popover in <code>HistoryButtons</code>, the status cell, no "Fewer cars" link.</dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li><strong>Hashed paths are read-only.</strong> Editing any file under <code>PATHS</code> (<code>pipeline/lib/version.ts:42-53</code>: <code>pipeline</code>, <code>src/lib/data</code>, <code>src/lib/generator</code>, <code>src/lib/timelapse</code>, <code>src/lib/plan/geometry.ts</code>, <code>src/lib/plan/types.ts</code>, <code>src/lib/sim/scenario</code>, <code>src/lib/sim/levers</code>, <code>src/lib/sim/finance</code>, <code>src/lib/scoreboard</code>), spec files included, forces a dataset upload. Every file this plan creates, edits or deletes is outside them (<a href="#tbl-files">File Structure</a> says so per file). Imports from them are fine: <code>formatCount</code>, <code>formatPercent</code>, <code>formatCompactCount</code>, <code>viewState</code>, <code>frameLatest</code>, <code>Score</code>, <code>ScoreboardPanel</code>, <code>M1_TARGETS</code>, <code>PlanOp</code>. <code>src/lib/scoreboard/HeaderScore.svelte</code> stops being used by the pages and stays as it is. If a change there seems unavoidable, stop and raise it.</li>
+      <li>No engine or worker change: nothing under <code>src/lib/sim/</code> (protocol, client, host, router, world). Nothing on <code>/sim</code>'s timeline, map overlays, map key, detail column structure, the shared button, card and chip components of slice 8, or the About surface of slice 9. No levels, unlocks or locked rows.</li>
+      <li><code>PaintTab</code>, <code>HeightPalette</code>, <code>RadiusPopover</code>, <code>HistoryButtons</code> and <code>PaletteStrip</code> are shared with <code>/sim</code>'s painted-policy editor and header. <code>/sim</code> keeps its painted-areas list, its header Undo, Redo and Shortcuts, and a strip without Undo. The only change it sees is the labels of Task 6 (<a href="#bc-labels-sim">builder's call</a>).</li>
+      <li>All work in this worktree. Run <code>cd</code> and <code>git</code> as plain single commands, never chained (<code>cd … &amp;&amp; cmd</code>). Run everything in the foreground. Report once, at the end of each task.</li>
+      <li>Conventional Commits, messages as <code>-m</code> flags. <code>git add</code> named files only. No Claude attribution anywhere: no <code>Co-Authored-By</code> trailers, no generated-by notes in code, docs or commits.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns (Prettier and ESLint). Svelte 5 runes only.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>.</li>
+      <li>WCAG 2.2 AA on every changed surface, light and dark (<code>docs/dev/accessibility.md</code>, <code>e2e/chrome-dark.spec.ts</code>): targets at least 24x24 CSS px and 44 on a coarse pointer; no horizontal scroll at 375 px and none from the strip at 320 px; a status message is a polite live region present before its text changes (SC 4.1.3); nothing moves the map when a message comes or goes. Axe goes through <code>expectNoA11yViolations</code>.</li>
+      <li><strong>Timing rule</strong>, for every spec, helper and fix round: no <code>setTimeout</code> or <code>setInterval</code> (even zero-length), no <code>waitForTimeout</code>, fixed sleeps, raised timeouts or retries in tests; wait on readiness signals (web-first assertions, <code>expect.poll</code>, attributes, <code>window.__sfhBrush</code>). If a task changes a file that already holds a sleep (<code>src/routes/page.svelte.spec.ts</code> "loads the autosaved plan…" waits 700 ms), replace that sleep with a readiness wait in the same task. After the last commit of every task run <code>npx chreode timing-check --head HEAD</code> and see it clean. Every changed e2e spec is re-run with <code>--repeat-each=5 --retries=0</code>; signoff burns in changed test files five times and fails on server stderr.</li>
+      <li>Port 4173 is shared with other sessions: never start, stop or kill whatever holds it. Playwright runs on <code>SFH_E2E_PORT=4180</code>.</li>
+      <li><strong>Performance:</strong> nothing added runs per pointer move or in proportion to the number of lots. The headline is a few string operations per score commit (<code>frameLatest</code>, at most one per frame); the chip changes once per commit, undo or redo; the read-only line reads the plan's ops when the plan changes. Task 4 removes the per-row <code>opLots</code> requests and the outline effect from <code>/</code>. Guards are structural (counts of requests), never wall clock. Do not run <code>npm run test:perf</code> or <code>bench:map</code>; no map layer changes, so no bench re-run is needed after merge.</li>
+      <li>Copy: terse, plain words, no em dashes, no "it is not X" disclaimers. "homes", never "units"; "lots" on Paint's new strings. The main-screen word is "goal"; its display name is "State target". No string added or changed here says "RHNA" or "FZP". The strings are fixed in <a href="#tbl-strings">The strings</a>.</li>
+      <li>Docs under <code>docs/dev/</code> and <code>CLAUDE.md</code> that describe changed behaviour are updated in the task that changes it.</li>
+      <li>Map goldens: <code>e2e/map.spec.ts-snapshots/map-light-chromium-darwin.png</code> and <code>map-dark-chromium-darwin.png</code> capture the map root with the dock over it. Tasks 4, 5 and 6 change the dock's content, so each regenerates them deliberately (its own step) and inspects the diff before committing. No task changes the map's size.</li>
+      <li>Test commands: <code>npx vitest --run --project server &lt;file&gt;</code> for <code>*.spec.ts</code>, <code>npx vitest --run --project client &lt;file&gt;</code> for <code>*.svelte.spec.ts</code>, <code>SFH_E2E_PORT=4180 npx playwright test &lt;file&gt; --project=chromium --project=mobile</code>. A coarse pointer in a client spec is a stubbed <code>window.matchMedia</code> (<code>vi.stubGlobal</code>) that matches <code>(pointer: coarse)</code> and not <code>(pointer: fine)</code>, set before render; the Playwright <code>mobile</code> project (touch) is coarse.</li>
+      <li>Task order is load-bearing from Task 3 on: Tasks 3 to 6 all edit <code>BrushEditor.svelte</code> and <code>BrushEditor.dock.svelte.spec.ts</code>; Task 4 introduces <code>PaintTab</code>'s <code>intro</code> and <code>summary</code> that Task 6 uses; Task 4 deletes <code>rowStepMessage</code> from the <code>messages.ts</code> Task 3 rewrites. Tasks 1 and 2 are independent of each other and of the rest, but both edit <code>src/routes/page.header.svelte.spec.ts</code>: run them in order too.</li>
+    </ul>
+  </section>
+
+  <section id="sec-strings">
+    <h2>The strings</h2>
+    <table id="tbl-strings">
+      <caption>Every visible or spoken string this slice adds or changes</caption>
+      <thead>
+        <tr><th scope="col">Where</th><th scope="col">Text</th><th scope="col">Defined in</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">The steps (every page)</th><td>nav name <code>Steps</code>; an ordered list of two links named <code>Paint</code> and <code>Simulate</code> (names unchanged); a visible step number <code>1</code> / <code>2</code> before each word, hidden from assistive tech, shown below lg (in the Menu) and from xl</td><td><code>steps</code> snippet, <code>SiteHeader.svelte</code></td></tr>
+        <tr><th scope="row">Paint headline, line 1 (the button)</th><td><code>Room for 47,335 homes</code>; <code>Room for 0 homes</code> before any stroke; from 1,000,000 compact: <code>Room for 1.2M homes</code></td><td><code>roomFor</code>, <code>src/lib/paint/headline.ts</code></td></tr>
+        <tr><th scope="row">Paint headline, line 2 (its description; hidden below sm)</th><td><code>57% of the goal</code> (<code>formatPercent(net / goal.amount)</code>); <code>Goal reached</code> at or over the amount; absent for a goal whose measure is not a count of homes</td><td><code>capacityGoalText</code>, <code>headline.ts</code></td></tr>
+        <tr><th scope="row">Goal name on hover and focus (from sm)</th><td><code>State target: 82,069 homes by Jan 2031</code> (unchanged function)</td><td><code>goalName</code>, <code>src/lib/goal/goal.ts</code></td></tr>
+        <tr><th scope="row">Header score's polite region</th><td><code>Room for 47,335 homes, 57% of the goal</code></td><td><code>headlineSpoken</code>, <code>results.ts</code></td></tr>
+        <tr><th scope="row">Stroke chip, paint</th><td><code>6 stories on 42 lots</code> · <code>1 story on 1 lot</code>; then, as they apply, <code> · 3 not eligible</code>, <code> · 2 in the Bay</code>, <code> · still loading</code></td><td><code>strokeMessage</code>, <code>src/lib/brush/messages.ts</code></td></tr>
+        <tr><th scope="row">Stroke chip, erase</th><td><code>Erased 42 lots</code>, then the same suffixes</td><td><code>strokeMessage</code></td></tr>
+        <tr><th scope="row">Stroke chip, nothing under the stroke</th><td><code>No lots under that stroke</code>; with ineligible or Bay lots <code>No eligible lots under that stroke</code>, then the suffixes</td><td><code>strokeMessage</code></td></tr>
+        <tr><th scope="row">Chip, undo and redo (unchanged words)</th><td><code>Undid paint, 6 stories</code> · <code>Undid erase</code> · <code>Redid paint, 6 stories</code> · <code>Redid erase</code></td><td><code>undoMessage</code></td></tr>
+        <tr><th scope="row">Chip, a refused stroke</th><td><code>Plan too large to save. Undo some strokes.</code></td><td><code>MSG.tooLarge</code></td></tr>
+        <tr><th scope="row">Paint tab, starting sentence (empty plan only)</th><td><code>Pick a height, then paint the map.</code></td><td><code>MSG.start</code></td></tr>
+        <tr><th scope="row">Paint tab, labels</th><td><code>Tool</code> · <code>Height</code> · <code>Brush size</code> (each visible, each naming its control); the size's value beside its label: <code>30 m</code></td><td><code>PaintTab.svelte</code>, <code>RadiusPopover.svelte</code></td></tr>
+        <tr><th scope="row">Brush size slider value text</th><td><code>30 metres</code> (was "Brush radius 30 metres")</td><td><code>radiusValueText</code></td></tr>
+        <tr><th scope="row">Palette strip, size opener</th><td>visible <code>30 m</code> (unchanged); name <code>Brush size: 30 m</code> (was "Brush 30 m"); its pop-over group <code>Brush size</code> (was "Brush radius")</td><td><code>RadiusPopover.svelte</code></td></tr>
+        <tr><th scope="row">Palette strip, Undo</th><td>icon button named <code>Undo</code>, disabled with nothing to undo</td><td><code>PaletteStrip.svelte</code></td></tr>
+        <tr><th scope="row">Read-only tab (<code>/p/&lt;id&gt;</code>)</th><td>line 1 <code>Read-only. Remix to edit.</code> (was "Read-only — Remix to edit"); line 2 <code>6 and 8 stories · 1,204 lots rebuilt</code> · <code>4, 6 and 8 stories · 12 lots rebuilt</code> · <code>6 stories · 1 lot rebuilt</code> · <code>Nothing painted</code> (no paint op)</td><td><code>MSG.readOnly</code>; <code>paintedSummary</code>, <code>src/lib/paint/summary.ts</code></td></tr>
+        <tr><th scope="row">Keyboard shortcuts button</th><td>visible <code>Shortcuts</code>, name <code>Keyboard shortcuts</code> (unchanged), now at the end of the Paint tab on fine pointers</td><td><code>ShortcutsButton.svelte</code></td></tr>
+      </tbody>
+    </table>
+    <p>Gone from <code>/</code> and <code>/p/&lt;id&gt;</code>: "N homes added" and its unlabelled meter, the spoken "Net new homes N, X% of RHNA", the header's Paint button, the painted-areas list with its lot counts, Retry, Remove, "Removed 8 stories" and "Undid: Removed 8 stories", the desktop Undo and Redo buttons, and the long stroke sentence ("Painted 6 stories on 13 parcels · 10 new buildings · 3 already as big or bigger · 2 not eligible (open space or unmapped lots)"). Every string above is under 12 words; the chip is also marked a notice.</p>
+  </section>
+
+  <section id="sec-measures">
+    <h2>Measured</h2>
+    <p>Taken on <code>6df9d144</code> with a temporary Playwright spec against the e2e preview (<code>SFH_E2E_PORT=4180</code>, fixture-0, Chromium, viewport height 800), signed out, signed in through <code>loginAs</code> (a 24-character handle, truncated to the account entry's 160 px <code>max-w-40</code>), and with "Autosave off" (storage writes refused, then one stroke). Widths in CSS px. "Slack" is the status cell's width less its content: what the row can still give up before the status is clipped.</p>
+    <table id="tbl-measured-header">
+      <caption>The header row today</caption>
+      <thead>
+        <tr><th scope="col">Page, width, state</th><th scope="col">Status cell</th><th scope="col">Status content</th><th scope="col">Slack</th><th scope="col">Score box</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>/</code> 375, signed out or in</th><td>219.2</td><td>47.5 (saved)</td><td>171.7</td><td>75.8 ("0 homes")</td></tr>
+        <tr><th scope="row"><code>/</code> 768</th><td>518.0</td><td>47.5</td><td>470.5</td><td>75.8</td></tr>
+        <tr><th scope="row"><code>/</code> 1024, signed out</th><td>335.7</td><td>47.5</td><td>288.2</td><td>121.9 ("0 homes added")</td></tr>
+        <tr><th scope="row"><code>/</code> 1024, signed in</th><td>229.3</td><td>47.5</td><td>181.8</td><td>121.9</td></tr>
+        <tr><th scope="row"><code>/</code> 1280, signed in</th><td>239.9</td><td>47.5</td><td>192.4</td><td>121.9</td></tr>
+        <tr><th scope="row"><code>/</code> 1280, signed in, Autosave off</th><td>235.3</td><td>89.1 (the chip)</td><td>146.2</td><td>130.9 ("71 homes added")</td></tr>
+        <tr><th scope="row"><code>/sim</code> 1024, signed in, playhead at End</th><td>44.3</td><td>59.2</td><td><strong>−14.9</strong></td><td>183.3 ("661 homes by Sep 2066")</td></tr>
+        <tr><th scope="row"><code>/sim</code> 1280, signed in, at End</th><td>209.1</td><td>59.2</td><td>149.9</td><td>183.3</td></tr>
+      </tbody>
+    </table>
+    <p>Items at 1024 (lg to xl): Paint link 42.3, Simulate 65.8 (nav 116.1); from xl 50.3 and 73.8 (nav 136.1). <code>/</code>'s Paint button 51.3 plus an 8 px gap; View 50.0; Publish 64.5; Sign in 53.6; About 48.8; Menu 32. Text in the header's own fonts: "Room for 47,335 homes" 163.4, "Room for 1,234,567 homes" 186.0, "Room for 0 homes" 122.7, "47,335 homes added" 144.5; line 2 "57% of the goal" about 92, "Goal reached" 76.4; link text "Paint" 32.3 and "1 Paint" 42.4 (+10.1), "Simulate" 55.8 and "2 Simulate" 67.9 (+12.1).</p>
+    <table id="tbl-measured-after">
+      <caption>The header row after this slice (derived from the measurements; Tasks 1 and 2 assert the fits)</caption>
+      <thead>
+        <tr><th scope="col">Page, width, state</th><th scope="col">Slack after</th><th scope="col">How</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>/</code> 375, Autosave off, "Room for 47,335 homes"</th><td>24.5</td><td>171.7 − 41.6 (the chip over the saved state) − 105.6 (score box 181.4 over 75.8)</td></tr>
+        <tr><th scope="row"><code>/</code> 375, Autosave off, "Room for 999,999 homes" (about 172 text)</th><td>about 16</td><td>the widest non-compact headline; from 1,000,000 "Room for 1.2M homes" is narrower than 47,335's</td></tr>
+        <tr><th scope="row"><code>/</code> 1024, signed in, Autosave off</th><td>about 140 (131 at 999,999)</td><td>140.2 + 59.3 (Paint button and gap gone) − 59.5 (headline wider); numbers hidden lg to xl</td></tr>
+        <tr><th scope="row"><code>/</code> 1280, signed in, Autosave off</th><td>about 99</td><td>146.2 − 25.3 (half the wider centred score) − 22.2 (step numbers)</td></tr>
+        <tr><th scope="row"><code>/sim</code> 1024, signed in</th><td>−14.9 (unchanged)</td><td>step numbers hidden lg to xl, so this slice adds nothing; the overflow is today's (see <a href="#sec-contradictions">Found on the way</a>)</td></tr>
+        <tr><th scope="row"><code>/sim</code> 1280, signed in</th><td>about 128</td><td>149.9 − 22.2</td></tr>
+      </tbody>
+    </table>
+    <table id="tbl-measured-dock">
+      <caption>The Paint tab and the strip</caption>
+      <thead>
+        <tr><th scope="col">Part</th><th scope="col">Today</th><th scope="col">After</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Dock from md (320 wide, 752 tall at 800)</th><td>face bar 57, Undo row 61, tab 288 (Tool 44, Height 144, Brush 44, gaps 12, padding 16), one painted row 54 + 12</td><td>fine pointer: face bar 57, no Undo row, tab about 436 (sentence 20 + 12, three labels 3 × 20, Shortcuts 44 + 12): 493 of 752. Coarse pointer: + the 61 px row</td></tr>
+        <tr><th scope="row">Phone sheet, full (375 x 812)</th><td>top 361, 451 tall, the same rows</td><td>coarse: 57 + 61 + about 392 (no Shortcuts) = about 510, under the 85dvh cap (690)</td></tr>
+        <tr><th scope="row">Palette strip (375)</th><td>245 x 54 at left 16: tool 74, height 48, size 49, Done 51, gaps 4, padding 4, border 1</td><td>+ Undo 44 + gap 4 = 293, right edge 309 of 375. At 320 px: inset 8 and no gaps below 360 px wide, 277 wide, right edge 285 of 320</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>The phone header at its fullest</strong>: 375 px, "Autosave off" showing, the widest non-compact headline ("Room for 999,999 homes"). Expected: the bar stays 48 px, nothing overlaps, no horizontal scroll. Test: <a href="#t1-s1">t1-s1</a>.</li>
+      <li><strong>A stroke while other things are on the map</strong>: a failure chip with Retry, a notice in the stack, the strip and the sheet handle, at 375 and 1280. Expected: the chip never covers the failure chip or the strip, takes no presses, and the map box keeps its height. Tests: <a href="#t3-s1">t3-s1</a>, <a href="#t3-s5">t3-s5</a>.</li>
+      <li><strong>Plans that arrive whole</strong>: an autosaved plan restored, a Remix hand-off, a shared plan whose lots load late. Expected: no starting sentence over a plan with strokes; Ctrl+Z undoes the restored stroke and the chip says so; the read-only line's lot count follows the score as chunks load. Tests: <a href="#t4-s1">t4-s1</a>, <a href="#t5-s1">t5-s1</a>, <a href="#t6-s1">t6-s1</a>.</li>
+      <li><strong>A touch screen from md</strong> (a tablet, coarse pointer at 1024): no keyboard and no strip. Expected: Undo and Redo above the Paint tab; no Shortcuts button. Test: <a href="#t5-s1">t5-s1</a>.</li>
+      <li><strong>The strip at 320 px</strong> with Undo added, in Paint and in Erase. Expected: inside the viewport, every target 44 px, no horizontal scroll. Test: <a href="#t5-s1">t5-s1</a>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <p>Every file below is outside the hashed <code>PATHS</code>.</p>
+    <table id="tbl-files">
+      <caption>Files by task and what each owns</caption>
+      <thead>
+        <tr><th scope="col">Area</th><th scope="col">Files</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Paint's headline</th><td>Create <code>src/lib/paint/headline.ts</code>, <code>headline.spec.ts</code>; <code>src/routes/+page.svelte</code>, <code>src/routes/p/[id]/+page.svelte</code>; specs <code>src/routes/page.svelte.spec.ts</code>, <code>page.view.svelte.spec.ts</code>, <code>page.header.svelte.spec.ts</code>, <code>src/routes/p/[id]/page.view.svelte.spec.ts</code>; <code>e2e/scoreboard.spec.ts</code>, <code>e2e/layout.spec.ts</code>, <code>e2e/helpers/sharing.ts</code> (comments); docs <code>developing.md</code>, <code>plan-sharing.md</code>, <code>testing.md</code>, <code>CLAUDE.md</code></td><td>1</td></tr>
+        <tr><th scope="row">Two steps</th><td><code>src/lib/shell/SiteHeader.svelte</code> and spec; <code>src/routes/page.header.svelte.spec.ts</code>; <code>e2e/chrome-dark.spec.ts</code>; docs <code>CLAUDE.md</code>, <code>developing.md</code>, <code>sim-page.md</code>, <code>lesscars.md</code></td><td>2</td></tr>
+        <tr><th scope="row">The stroke chip</th><td><code>src/lib/brush/messages.ts</code> and spec, <code>BrushEditor.svelte</code>, <code>BrushEditor.dock.svelte.spec.ts</code>, <code>BrushController.svelte.spec.ts</code>; <code>e2e/brush.spec.ts</code>, <code>e2e/layout.spec.ts</code>, <code>e2e/chrome-dark.spec.ts</code>; docs <code>testing.md</code>, <code>developing.md</code></td><td>3</td></tr>
+        <tr><th scope="row">The list leaves <code>/</code></th><td>Create <code>src/lib/paint/summary.ts</code>, <code>summary.spec.ts</code>; <code>PaintTab.svelte</code> and spec, <code>BrushEditor.svelte</code>, <code>BrushEditor.dock.svelte.spec.ts</code>, <code>editor.svelte.ts</code> and spec, <code>BrushController.svelte.ts</code> and spec, <code>messages.ts</code> and spec, <code>src/lib/paint/rows.ts</code> and spec, <code>src/lib/brush/debug.ts</code> and spec; delete <code>src/lib/brush/row-lots.svelte.ts</code> and spec; <code>src/routes/page.svelte.spec.ts</code>, <code>src/routes/p/[id]/page.view.svelte.spec.ts</code>; <code>e2e/brush.spec.ts</code>, <code>e2e/helpers/sharing.ts</code>, <code>e2e/layout.spec.ts</code>, <code>e2e/chrome-dark.spec.ts</code>, the two map goldens; docs <code>developing.md</code>, <code>plan-sharing.md</code>, <code>testing.md</code>, <code>map-interfaces.md</code></td><td>4</td></tr>
+        <tr><th scope="row">Undo and redo by pointer</th><td>Create <code>src/lib/paint/ShortcutsButton.svelte</code>, <code>ShortcutsButton.svelte.spec.ts</code>; <code>HistoryButtons.svelte</code> and spec, <code>PaletteStrip.svelte</code> and spec, <code>BrushEditor.svelte</code>, <code>BrushEditor.dock.svelte.spec.ts</code>, <code>src/lib/shell/accent.spec.ts</code>, <code>src/routes/page.svelte.spec.ts</code>; <code>e2e/layout.spec.ts</code>, <code>e2e/brush.spec.ts</code>, the map goldens; docs <code>developing.md</code>, <code>testing.md</code></td><td>5</td></tr>
+        <tr><th scope="row">The labelled tab</th><td><code>PaintTab.svelte</code> and spec, <code>HeightPalette.svelte</code> and spec, <code>RadiusPopover.svelte</code>, <code>PaletteStrip.svelte.spec.ts</code>, <code>messages.ts</code> and spec, <code>BrushEditor.svelte</code>, <code>BrushEditor.dock.svelte.spec.ts</code>, <code>src/routes/page.svelte.spec.ts</code>, <code>page.view.svelte.spec.ts</code>, <code>src/routes/p/[id]/page.view.svelte.spec.ts</code>; create <code>src/lib/shell/test/rest-text.ts</code>, <code>src/routes/page.rest-text.svelte.spec.ts</code>; <code>src/lib/timeline/rest-text.svelte.spec.ts</code> (imports the helper); <code>e2e/scoreboard.spec.ts</code>, <code>e2e/layout.spec.ts</code>, <code>e2e/chrome-dark.spec.ts</code>, <code>e2e/brush.spec.ts</code>, the map goldens; docs <code>developing.md</code>, <code>accessibility.md</code></td><td>6</td></tr>
+        <tr><th scope="row">Whole-suite pass</th><td>Whatever the full runs turn up</td><td>7</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Paint's headline</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/paint/headline.ts</code>. Test: <code>src/lib/paint/headline.spec.ts</code> (server project).</li>
+      <li>Modify: <code>src/routes/+page.svelte</code>: the <code>scoreBar</code> snippet (<code>:167-179</code>) renders <code>TimelineHeaderScore</code>; the <code>headerActions</code> snippet (<code>:189-210</code>) loses the Paint button; <code>togglePaint</code>, <code>dockClosed</code>, <code>paintButton</code> and the <code>ondockclose</code> prop go; the imports of <code>HeaderScore</code>, <code>announcement</code>, <code>primaryTarget</code> and <code>focusHeaderMenu</code> go.</li>
+      <li>Modify: <code>src/routes/p/[id]/+page.svelte</code> the same way (<code>:114-140</code>, <code>:74-88</code>).</li>
+      <li>Modify tests: <code>src/routes/page.svelte.spec.ts</code> ("the header has a Paint button that toggles the dock", "the site header's score opens the empty Results face"), <code>src/routes/page.view.svelte.spec.ts</code> ("the header score shows the net homes and the RHNA bar…"), <code>src/routes/page.header.svelte.spec.ts</code> ("fits with Autosave off and nothing overlaps at {width}px"), <code>src/routes/p/[id]/page.view.svelte.spec.ts</code> ("a shared plan shows the header score…"); <code>e2e/scoreboard.spec.ts</code> (the header text), <code>e2e/layout.spec.ts</code> ("768 px on {path}: the header is the Menu layout and Paint folds the dock from the Menu"), <code>e2e/helpers/sharing.ts</code> (the comments on <code>headerScore</code> and <code>headerNet</code>; <code>headerNet</code>'s parse already reads "Room for 1,234 homes" as 1234).</li>
+      <li>Docs: <code>docs/dev/developing.md</code> (Header actions: the Paint button paragraph and the <code>/</code> score paragraph), <code>docs/dev/plan-sharing.md</code> (<code>/p/:id</code>, the score and dock bullet), <code>docs/dev/testing.md</code> ("{n} homes added"), <code>CLAUDE.md</code> (the shell paragraph: what <code>pinned</code> shows on Paint).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>GOAL</code>, <code>Goal</code>, <code>goalName</code> (<code>src/lib/goal/goal.ts</code>); <code>HeadlineText</code>, <code>headlineSpoken</code> (<code>src/lib/timeline/results.ts:149-168</code>); <code>TimelineHeaderScore</code> (props <code>text</code>, <code>busy</code>, <code>stale</code>, <code>expanded</code>, <code>controls</code>, <code>onclick</code>, <code>live</code>, <code>quiet</code>; <code>src/lib/timeline/TimelineHeaderScore.svelte:15-30</code>); <code>formatCount</code>, <code>formatCompactCount</code>, <code>formatPercent</code> (<code>src/lib/scoreboard/format.ts</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/paint/headline.ts (pure)
+/** 'Room for 47,335 homes'; from 1,000,000 'Room for 1.2M homes' (formatCompactCount). */
+export function roomFor(net: number): string;
+/** '57% of the goal' (formatPercent(net / goal.amount)) | 'Goal reached' (net &gt;= goal.amount);
+ *  null when goal.measure.id !== 'homesCompleted'. Undated: room for homes has no clock. */
+export function capacityGoalText(net: number, goal?: Goal): string | null; // default GOAL
+/** { main: roomFor(net), effect: null, goal: capacityGoalText(net, goal),
+ *    goalName: that goal part === null ? null : goalName(goal) } */
+export function paintHeadline(net: number, goal?: Goal): HeadlineText; // default GOAL
+
+// +page.svelte and p/[id]/+page.svelte
+const headText = $derived(paintHeadline(shown.netUnits));
+// {#snippet scoreBar()}
+//   &lt;TimelineHeaderScore text={headText} busy={scoreView.updating} stale={false}
+//     expanded={dock.face === 'results' &amp;&amp; dock.visible(wide.current)} controls={dockId}
+//     onclick={pressScore} live={headlineSpoken(headText)} quiet={scoreView.updating} /&gt;
+// No Paint button in the header; BrushEditor gets no `ondockclose`, so the Dock's own collapse
+// puts focus on the rail's "Paint tools" button (md and up) or the sheet handle.</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: one header score component</strong> Paint renders <code>/sim</code>'s <code>TimelineHeaderScore</code> with its own <code>HeadlineText</code> rather than a third component: the two pages then share the two-line box, the goal name on hover and focus, line 2 hidden below sm, and the 1,000 ms polite region. The hashed <code>HeaderScore</code> cannot be edited and is simply no longer used by the pages. Considered: a Paint-only copy (two components drifting apart), editing <code>HeaderScore</code> (forces a dataset upload).</aside>
+    <aside data-kind="decision"><strong>Builder's call: compact from a million</strong> At 375 px with "Autosave off" the row has about 16 px left for "Room for 999,999 homes" and about 2 px for a seven-digit count in full (<a href="#tbl-measured-after">measured</a>). From 1,000,000 the count is compact ("Room for 1.2M homes"); the exact number stays in Results. Considered: compact only below sm (two texts in one button), or dropping "Room for" on a phone (loses the words that say it is capacity).</aside>
+    <aside data-kind="decision"><strong>Builder's call: the Paint button leaves the header</strong> The spec's header holds the steps, alerts, the headline, Publish and the account (<code>sec-prop-header</code>), and finding 6 counts five controls named "Paint". The dock already opens and folds itself (the collapse button and the rail from md, the handle below md), so the header button only repeated them. Removing it gives 59.3 px back at 1024. The header score still flips the dock to Results.</aside>
+    <aside data-kind="question"><strong>Needs the owner</strong> What the headline says and what its percentage counts: see <a href="#q-headline">Open questions</a>. The strings above are the recommendation.</aside>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests first: <code>headline.spec.ts</code> (it fails on the missing module), then the page specs (they fail on "0 homes added" and on the Paint button).
+        <pre><code data-lang="ts">// src/lib/paint/headline.spec.ts
+it('reads room for the net homes, grouped, compact from a million')
+  // roomFor(0) 'Room for 0 homes'; roomFor(47335) 'Room for 47,335 homes';
+  // roomFor(999999) 'Room for 999,999 homes'; roomFor(1234567) 'Room for 1.2M homes'
+it('gives the share of the goal, and Goal reached at or over its amount')
+  // capacityGoalText(47335, STATE_TARGET) '57% of the goal'; (0) '0% of the goal';
+  // (82069) 'Goal reached'; (90000) 'Goal reached'
+it('has no goal part for a goal that is not a count of homes')
+  // goal = { ...STATE_TARGET, measure: { ...HOMES_COMPLETED, id: 'other' as 'homesCompleted' } }
+  // capacityGoalText(10, goal) null; paintHeadline(10, goal) has goal null and goalName null
+it('is the header text with no effect, the goal named, and spoken in one line')
+  // paintHeadline(47335) toEqual { main: 'Room for 47,335 homes', effect: null,
+  //   goal: '57% of the goal', goalName: 'State target: 82,069 homes by Jan 2031' }
+  // headlineSpoken(paintHeadline(47335)) 'Room for 47,335 homes, 57% of the goal'
+
+// src/routes/page.svelte.spec.ts (replace the two cases named in Files)
+it('the header has no Paint button; the dock folds by its own button and opens from the rail')
+  // banner: no button named 'Paint' (exact); Collapse Paint: .sfh-dock-panel null, focus on the
+  // 'Paint tools' rail button; pressing it: the panel is back, focus on the selected tab
+it("the header score reads room for homes and its share of the goal, and opens Results")
+  // score-bar 'Room for 0 homes'; score-detail '0% of the goal'; banner has no role=meter;
+  // press: Results region shows 'Paint a height on the map to add homes.'
+
+// src/routes/page.view.svelte.spec.ts (the score case)
+//   a diff with netUnits 1234: score-bar 'Room for 1,234 homes'; score-live speaks
+//   'Room for 1,234 homes, 1.5% of the goal' once settled (poll, no sleep)
+// src/routes/p/[id]/page.view.svelte.spec.ts: the same headline; no Paint button in the banner
+// src/routes/page.header.svelte.spec.ts ('fits with Autosave off…'): at 375 the score's text is
+//   replaced with 'Room for 999,999 homes'; from 1024 the row list has no Paint button</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail as described.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/paint/headline.spec.ts
+npx vitest --run --project client src/routes/page.svelte.spec.ts src/routes/page.view.svelte.spec.ts src/routes/page.header.svelte.spec.ts "src/routes/p/[id]/page.view.svelte.spec.ts"</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement <code>headline.ts</code> and the two pages as in Interfaces.</li>
+      <li id="t1-s4"><input type="checkbox"> Update the e2e specs: <code>scoreboard.spec.ts</code> reads <code>/^Room for [\d,.KM]+ homes$/</code> where it read "homes added" and expects no meter; <code>layout.spec.ts</code>'s 768 px case becomes "768 px on {path}: the header is the Menu layout; the dock folds by its own button" (the Menu holds the two step links and no Paint button; Collapse Paint shows the rail; the header fits). Update the docs listed in Files.</li>
+      <li id="t1-s5"><input type="checkbox"> Run every spec that covers the header and the dock on <code>/</code> and <code>/p</code>, then the changed e2e files repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/paint/
+npx vitest --run --project client src/routes/ src/lib/timeline/TimelineHeaderScore.svelte.spec.ts src/lib/brush/BrushEditor.dock.svelte.spec.ts src/lib/shell/
+SFH_E2E_PORT=4180 npx playwright test e2e/scoreboard.spec.ts e2e/layout.spec.ts e2e/brush.spec.ts e2e/share-roundtrip.spec.ts e2e/share-states.spec.ts e2e/share-notices.spec.ts e2e/share-a11y.spec.ts e2e/chrome-dark.spec.ts e2e/pages-a11y.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/scoreboard.spec.ts e2e/layout.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t1-s6"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/paint/headline.ts src/lib/paint/headline.spec.ts src/routes/+page.svelte "src/routes/p/[id]/+page.svelte" src/routes/page.svelte.spec.ts src/routes/page.view.svelte.spec.ts src/routes/page.header.svelte.spec.ts "src/routes/p/[id]/page.view.svelte.spec.ts" e2e/scoreboard.spec.ts e2e/layout.spec.ts e2e/helpers/sharing.ts docs/dev/developing.md docs/dev/plan-sharing.md docs/dev/testing.md CLAUDE.md
+git commit -m "feat(paint): the header reads room for N homes and its share of the goal"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Two steps in the header</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/shell/SiteHeader.svelte</code>: the <code>modeLinks</code> snippet (<code>:115-120</code>) becomes <code>steps</code>; both navs (<code>:138-143</code>, <code>:185-187</code>) are named <code>Steps</code> and hold it; the header comment. Test: <code>SiteHeader.svelte.spec.ts</code>, the <code>describe('mode links')</code> and <code>describe('mode tabs')</code> blocks.</li>
+      <li>Modify: <code>src/routes/page.header.svelte.spec.ts</code> (the navigation's name), <code>e2e/chrome-dark.spec.ts</code> ("at 375px the open Menu has no axe violations in dark").</li>
+      <li>Docs: <code>CLAUDE.md</code> (shell paragraph: "after the steps from lg"), <code>docs/dev/developing.md</code> ("Below lg the mode links…"), <code>docs/dev/sim-page.md</code> (the Header width bullet), <code>docs/dev/lesscars.md</code> (the mode links paragraph).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>routeId</code>, <code>tab(current)</code> (<code>SiteHeader.svelte:46-53</code>).</li>
+      <li>Produces (DOM contract):
+        <pre><code data-lang="html">&lt;nav aria-label="Steps"&gt;              &lt;!-- from lg in the bar; below lg in the Menu panel --&gt;
+  &lt;ol class="flex items-center …"&gt;    &lt;!-- the nav's existing gaps --&gt;
+    &lt;li&gt;&lt;a href="/" aria-current="page" class={tab(true)}&gt;
+      &lt;span aria-hidden="true" data-step-number class="… lg:max-xl:hidden"&gt;1&lt;/span&gt;Paint&lt;/a&gt;&lt;/li&gt;
+    &lt;li&gt;&lt;a href="/sim" class={tab(false)}&gt;
+      &lt;span aria-hidden="true" data-step-number class="… lg:max-xl:hidden"&gt;2&lt;/span&gt;Simulate&lt;/a&gt;&lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/nav&gt;
+&lt;!-- aria-current as today: Paint on '/', Simulate on '/sim', neither elsewhere (/p/[id], /lesscars,
+     /about …). The number takes the link's own colour (on the accent when current), tabular,
+     semibold, a 4 px gap before the word. --&gt;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: an ordered list, numbers hidden from assistive tech</strong> The links stay page navigation with <code>aria-current</code> (not tabs, not a stepper widget). The list gives a screen reader the order and count ("list, 2 items … 1 of 2"), so the visible numbers are <code>aria-hidden</code> and the names stay "Paint" and "Simulate": every test and every speech command that names the links keeps working. Considered: "Step 1: Paint" as the name (wordy, and the number is already given by the list).</aside>
+    <aside data-kind="decision"><strong>Builder's call: no numbers from 1024 to 1279 px</strong> The numbers add 22.2 px to the nav. At 1024 px <code>/sim</code>'s row is already 14.9 px over with a signed-in handle and the headline at the window's end (<a href="#tbl-measured-header">measured</a>), so any width there clips its status cell further. From lg to xl the two links keep today's widths and the list alone carries the order; below lg (in the Menu) and from xl the numbers show. See <a href="#q-step-numbers">Open questions</a> for the alternative.</aside>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests first (they fail on the nav's name "Modes").
+        <pre><code data-lang="ts">// SiteHeader.svelte.spec.ts: describe('steps') replaces 'mode links' and 'mode tabs'
+it('at 1280px the Steps nav is an ordered list of Paint then Simulate, with visible numbers')
+  // navigation 'Steps' &gt; ol &gt; 2 li; links named exactly 'Paint', 'Simulate' in that order;
+  // each [data-step-number] visible (checkVisibility) with text '1', '2'; aria-current only on Paint
+it('at 1024px the numbers are hidden and the links keep their widths')
+  // [data-step-number] not visible; Paint link width &lt;= 43.5, Simulate &lt;= 67 (today 42.3, 65.8)
+it('at 375px the Menu holds the two steps with their numbers')
+it('marks Simulate on /sim, and neither on /p/[id] or /lesscars')
+it('the numbers are not part of the names')   // getByRole('link', { name: 'Paint', exact: true })
+// keep, renamed: 'at {width}px the current step is filled, not underlined',
+//   'at {width}px the other step is unfilled, not underlined and looks pressable',
+//   'at 1024px and 1280px the Steps nav holds Paint and Simulate only'
+// page.header.svelte.spec.ts: getByRole('navigation', { name: 'Steps' })
+// e2e/chrome-dark.spec.ts: getByRole('navigation', { name: 'Steps' }).getByRole('link', { name: 'Paint' })</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/shell/SiteHeader.svelte.spec.ts src/routes/page.header.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Implement as in Interfaces; update the header comment and the docs listed in Files.</li>
+      <li id="t2-s4"><input type="checkbox"> Run every spec that covers the header on any page, then the changed e2e file repeated.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/shell/ src/routes/
+SFH_E2E_PORT=4180 npx playwright test e2e/chrome-dark.spec.ts e2e/fzp.spec.ts e2e/layout.spec.ts e2e/pages-a11y.spec.ts e2e/sim.spec.ts e2e/lesscars.spec.ts e2e/account-a11y.spec.ts e2e/auth-a11y.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/chrome-dark.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/shell/SiteHeader.svelte src/lib/shell/SiteHeader.svelte.spec.ts src/routes/page.header.svelte.spec.ts e2e/chrome-dark.spec.ts CLAUDE.md docs/dev/developing.md docs/dev/sim-page.md docs/dev/lesscars.md
+git commit -m "feat(shell): Paint and Simulate are two numbered steps in the header"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: What a stroke did, on screen</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/brush/messages.ts</code>: <code>strokeMessage</code> (<code>:24-54</code>) and <code>MSG.tooLarge</code> (<code>:9-10</code>). Test: <code>messages.spec.ts</code> (the <code>describe('strokeMessage')</code> cases, "has verbatim copy", "counts lots in the Bay…", "says no eligible parcels when the stroke is all water").</li>
+      <li>Modify: <code>src/lib/brush/BrushEditor.svelte</code>: the screen-reader-only <code>p[data-testid=brush-announcement]</code> (<code>:564-567</code>) becomes the chip's live region inside the map box; <code>setChunks</code> (<code>:194-197</code>) also keeps a reactive failed-cell count; the header comment (<code>:1-15</code>). Test: <code>BrushEditor.dock.svelte.spec.ts</code> ("on a phone a stroke's announcement is screen-reader only: the map box keeps its height" is replaced).</li>
+      <li>Modify: <code>BrushController.svelte.spec.ts</code> ("refuses a commit at OPS_MAX, cancels the preview and announces", "announces the commit stats for the awaited op only": the expected text).</li>
+      <li>Modify: <code>e2e/brush.spec.ts</code> ("paint: a drag paints 6 stories…"), <code>e2e/layout.spec.ts</code> (a new 375 px case), <code>e2e/chrome-dark.spec.ts</code> (a new case).</li>
+      <li>Docs: <code>docs/dev/testing.md</code> (the paragraph on <code>brush-announcement</code>), <code>docs/dev/developing.md</code> (the dock paragraph).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>brush.announcement</code> and <code>brush.announce(text, ms)</code> (<code>src/lib/brush/state.svelte.ts:79-101</code>), unchanged: the controller already announces strokes, refusals, undos and redos through it (<code>BrushController.svelte.ts:205, 280-299, 444</code>); <code>PILL</code> (<code>src/lib/shell/pill.ts</code>); <code>--notice-pills-bottom</code>, <code>--dock-w</code> (published on BrushEditor's root).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// messages.ts
+export const MSG: { …; tooLarge: 'Plan too large to save. Undo some strokes.' };
+/** tbl-strings: 'N stories on M lots' | 'Erased M lots' | 'No (eligible) lots under that stroke',
+ *  then ' · K not eligible', ' · B in the Bay', ' · still loading' as they apply. */
+export function strokeMessage(s: OpStats): string;</code></pre>
+        <pre><code data-lang="html">&lt;!-- BrushEditor, inside the map box (div.relative.min-h-0.flex-1), after the map --&gt;
+&lt;div role="status" aria-live="polite" data-testid="brush-announcement" data-notice
+     class="pointer-events-none absolute z-20 …"   style:top="calc(var(--notice-pills-bottom, 0px)
+     + {failedCells &gt; 0 ? '3.5rem' : '0.5rem'})"&gt;  &lt;!-- centred: left 50% below md,
+     calc(50% + var(--dock-w, 0px) / 2) from md, translateX(-50%); max-width calc(100% - 2rem) --&gt;
+  {#if brush.announcement}
+    &lt;span data-testid="stroke-chip" class="{PILL's look, pointer-events none}"&gt;{brush.announcement}&lt;/span&gt;
+  {/if}
+&lt;/div&gt;
+&lt;!-- The region is mounted empty, so its first text is announced. Empty, it has no box. --&gt;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: a chip over the map's top, not in the notice stack</strong> Below md the notice stack is in flow and pushes the map down, so a chip there would move the map under the finger at every stroke (why the announcement was screen-reader only). The chip is an overlay in the map box at every width, centred right of the dock, at the same top as the map's own failure chips; while a failure chip shows it sits one row lower (<code>3.5rem</code>), so it never covers Retry. It takes no presses, so a stroke can start under it. Considered: the bottom of the map (the strip, the handle and the attribution compete there at 375 px); inside the stack from md only (two places for one message).</aside>
+    <aside data-kind="decision"><strong>Builder's call: the chip clears as the announcement does today</strong> It shows for <code>ANNOUNCE_MS</code> (4 s), a refusal for <code>TOO_LARGE_MS</code> (6 s), and a new message replaces it. Clearing lets the same text be announced again (two undos in a row), it is a confirmation the person can repeat by acting again, and no new timer is added. Considered: holding it until the next stroke (the same message twice would not be re-announced).</aside>
+    <aside data-kind="decision"><strong>Builder's call: the shorter stroke sentence</strong> The chip follows the spec's example ("6 stories on 42 lots · 3 not eligible"): "lots" for "parcels", and the counts of new buildings and of lots already as big drop. The screen reader hears the same words as the screen shows. <code>/sim</code> never shows this sentence (its announcements come from its store), so it changes only <code>/</code>.</aside>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests first: <code>messages.spec.ts</code> fails on the old wording; the BrushEditor cases fail because the region is screen-reader only and holds no chip.
+        <pre><code data-lang="ts">// messages.spec.ts (replace the strokeMessage cases)
+it('a paint stroke: stories on lots')  // '6 stories on 143 lots'; '1 story on 1 lot'; '6 stories on 1,234 lots'
+it('appends not eligible, in the Bay and still loading, in that order')
+  // '6 stories on 42 lots · 3 not eligible · 2 in the Bay · still loading'
+it('an erase')                          // 'Erased 42 lots'; 'Erased 1 lot · 3 not eligible'
+it('nothing under the stroke')          // 'No lots under that stroke';
+  // 'No eligible lots under that stroke · 3 not eligible'; all water: 'No eligible lots under that stroke · 2 in the Bay'
+it('the refusal says what to do')       // MSG.tooLarge === 'Plan too large to save. Undo some strokes.'
+
+// BrushEditor.dock.svelte.spec.ts
+for (const [w, h] of [[375, 812], [1280, 800]])
+  it(`at ${w}px a stroke's result shows as a chip over the map, and the map box keeps its height`)
+    // commit a stroke through the fake worker (a commit diff with stats, covered 3):
+    // stroke-chip visible, text '6 stories on 3 lots'; brush-announcement has role status and
+    // contains it; the map box's height is the same before and after; the chip's box is inside the
+    // map box; getComputedStyle(chip).pointerEvents === 'none'
+it('the chip sits a row lower while a failure chip shows')
+  // onChunks with one failed cell: the region's top is 3.5rem below --notice-pills-bottom, else 0.5rem
+it('a refused stroke shows the refusal in the chip')   // editor at its op limit: MSG.tooLarge
+it('Ctrl+Z shows what it undid')                       // after one stroke: 'Undid paint, 6 stories'
+
+// e2e/brush.spec.ts ('paint: a drag paints 6 stories…'): stroke-chip /^6 stories on \d+ lots/
+// e2e/layout.spec.ts (mobile project)
+test("375 px: a stroke's chip overlays the map: the map region keeps its height, the strip stays clear")
+// e2e/chrome-dark.spec.ts
+test("/'s stroke chip has no axe violations in dark")</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run them and see them fail as described.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/brush/messages.spec.ts
+npx vitest --run --project client src/lib/brush/BrushEditor.dock.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement as in Interfaces. <code>failedCells</code> is a <code>$state</code> number set inside <code>setChunks</code> (the one place <code>chunks</code> is assigned).</li>
+      <li id="t3-s4"><input type="checkbox"> Update the BrushController expectations, the e2e specs and the docs listed in Files.</li>
+      <li id="t3-s5"><input type="checkbox"> Run every spec that covers the brush, its messages and the map's top chips, then the changed e2e files repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/brush/
+npx vitest --run --project client src/lib/brush/ src/routes/
+SFH_E2E_PORT=4180 npx playwright test e2e/brush.spec.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts e2e/map.spec.ts e2e/share-notices.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/brush.spec.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>The E9 goldens load a plan without a stroke, so no chip shows in them and they must still pass unchanged; if they do not, stop and report.</p>
+      </li>
+      <li id="t3-s6"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/brush/messages.ts src/lib/brush/messages.spec.ts src/lib/brush/BrushEditor.svelte src/lib/brush/BrushEditor.dock.svelte.spec.ts src/lib/brush/BrushController.svelte.spec.ts e2e/brush.spec.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts docs/dev/testing.md docs/dev/developing.md
+git commit -m "feat(paint): each stroke, refusal and undo shows in a chip over the map"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The painted-areas list leaves <code>/</code></h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/paint/summary.ts</code>. Test: <code>src/lib/paint/summary.spec.ts</code> (server project).</li>
+      <li>Modify: <code>src/lib/paint/PaintTab.svelte</code>: <code>rows</code>, <code>selected</code>, <code>onselect</code>, <code>onremove</code> optional; new <code>intro</code> and <code>summary</code>; read-only shows them in place of rows. Test: <code>PaintTab.svelte.spec.ts</code> (rows cases stay: <code>/sim</code> still passes rows).</li>
+      <li>Modify: <code>src/lib/brush/BrushEditor.svelte</code>: delete the rows section (<code>:403-459</code>: <code>RowLots</code>, <code>groups</code>, <code>rows</code>, <code>picked</code>, <code>selected</code>, the two effects, <code>selectRow</code>, <code>removeRow</code>), <code>rowLots.reset()</code> in <code>onReady</code>, <code>rowLots.chunksChanged()</code> in <code>onChunks</code>, the <code>rows</code> field of the debug hook; the <code>history</code> snippet no longer shows <code>MSG.readOnly</code>; <code>tabPanel</code> passes <code>intro</code> and <code>summary</code> when read-only; a <code>rebuilt</code> count from the latest score. Test: <code>BrushEditor.dock.svelte.spec.ts</code> (the cases "two strokes at one height make one row…", "a row shows its lot count…", "selecting a row asks for its outline…", "Remove on the selected row…", "Remove during a stroke…" and "read-only (/p/:id): rows only…").</li>
+      <li>Delete: <code>src/lib/brush/row-lots.svelte.ts</code>, <code>row-lots.svelte.spec.ts</code>. Modify: <code>src/lib/paint/rows.ts</code> (delete <code>PlanRowGroup</code>, <code>planRowGroups</code>, <code>planPaintRows</code>; keep the rest, <code>/sim</code> uses it) and <code>rows.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/brush/editor.svelte.ts</code> (delete <code>removeOps</code>, the <code>'rows'</code> history kind and <code>RemovedOp</code>: <code>:15-19, 35, 129, 147-160</code>) and its spec (the four removal cases); <code>BrushController.svelte.ts</code> (the <code>step.kind === 'rows'</code> branches, <code>:277-282, 293-297</code>) and its spec (the "rows" describe); <code>messages.ts</code> (<code>rowStepMessage</code>, <code>MSG.readOnly</code>) and its spec; <code>src/lib/brush/debug.ts</code> (<code>rows</code>) and <code>debug.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/routes/page.svelte.spec.ts</code> (delete "an autosave after a row removal restores the same rows"), <code>src/routes/p/[id]/page.view.svelte.spec.ts</code> ("a shared plan shows the header score, a read-only Paint tab with its rows, and Results").</li>
+      <li>Modify: <code>e2e/brush.spec.ts</code> (delete "rows: remove the first of two heights…", "a middle row removed, undone, redone…", "Remove pressed during a stroke…" and the <code>rows</code> import), <code>e2e/helpers/sharing.ts</code> (delete <code>rows</code>), <code>e2e/layout.spec.ts</code> ("/p/:id: read-only handle, score and About entry fit…"), <code>e2e/chrome-dark.spec.ts</code> (delete "/'s dock on Paint, a painted row selected…"). Regenerate the two map goldens.</li>
+      <li>Docs: <code>developing.md</code> (the dock paragraph: no rows on <code>/</code>), <code>plan-sharing.md</code> (<code>/p/:id</code>: the read-only line and summary), <code>testing.md</code> (the debug hook has no <code>rows</code>), <code>map-interfaces.md</code> (the overlay mux's <code>outline</code> slot is <code>/sim</code>'s only).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>PlanOp</code> (<code>$lib/plan</code>); <code>Score.parcelsChanged</code> (lots with a generated building, <code>src/lib/scoreboard/accumulator.ts:36-52</code>), from <code>onDiff</code>'s <code>d.score</code> (<code>BrushEditor.svelte:233-241</code>); <code>formatCount</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/paint/summary.ts (pure)
+/** Distinct `stories` of the paint ops, ascending. */
+export function storiesUsed(ops: readonly PlanOp[]): number[];
+/** '6 stories · 1 lot rebuilt' | '6 and 8 stories · 1,204 lots rebuilt' |
+ *  '4, 6 and 8 stories · 12 lots rebuilt' | 'Nothing painted' (stories empty). */
+export function paintedSummary(stories: readonly number[], rebuilt: number): string;
+
+// PaintTab.svelte Props (changed)
+rows?: readonly PaintRow[];                 // default []: `/` passes none, /sim its areas
+selected?: string | null;                   // default null
+onselect?(id: string | null): void;         // default no-op
+onremove?(id: string): void;                // default no-op
+/** One sentence first in the tab: the read-only line here, `/`'s starting sentence (Task 6). */
+intro?: string | null;
+/** Read-only only: one line in place of the rows (`/p/:id`). */
+summary?: string | null;
+
+// editor.svelte.ts
+export type HistoryStep = { kind: 'op'; op: PlanOp };     // 'rows' gone; Editor has no removeOps
+// messages.ts: rowStepMessage deleted; MSG.readOnly = 'Read-only. Remix to edit.'
+// debug.ts: SfhBrushDebugState has no `rows`
+
+// BrushEditor.svelte
+let rebuilt = $state(0);                    // d.score.parcelsChanged, set in onDiff
+const summary = $derived(editor.readOnly ? paintedSummary(storiesUsed(editor.plan.ops), rebuilt) : null);
+// tabPanel: &lt;PaintTab … intro={editor.readOnly ? MSG.readOnly : null} {summary} /&gt; (no rows)</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: "lots rebuilt" from the score</strong> The spec's read-only line names "the lots covered". The exact count of lots under the strokes needs a worker request per plan and a re-ask as chunks load (what <code>RowLots</code> did, and what double-counted overlaps). The score already carries the lots the plan rebuilds (<code>parcelsChanged</code>), each once, updated as chunks load, and it is the number Results calls lots changed. The line says "rebuilt" so it does not claim to be the covered count.</aside>
+    <aside data-kind="decision"><strong>Builder's call: delete the removal path, not just its button</strong> With the list gone nothing calls <code>editor.removeOps</code>, and history is cleared on every load, so no saved state can hold a <code>'rows'</code> step. The removal kind, its controller branches, <code>rowStepMessage</code>, <code>RowLots</code> and the row grouping go with their tests rather than staying as an untested-in-use undo kind. <code>removedLabel</code>, <code>PaintRow</code>, <code>lotsText</code>, <code>rowName</code>, <code>rowMeta</code> and <code>paintedOutlineLayers</code> stay: <code>/sim</code> uses them.</aside>
+    <aside data-kind="note"><strong>Focus and announcements</strong> Nothing is removed while the page is open, so no focus has to move. What the list told a keyboard or screen-reader user now comes from elsewhere: what a stroke covered from the chip (Task 3), the plan's total from the header's polite region, the read-only plan from the summary line (static text, read in order after the tab). Erase does what Remove did, one stroke at a time.</aside>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests first: <code>summary.spec.ts</code> fails on the missing module; the BrushEditor cases fail because rows render and <code>opLots</code> is asked.
+        <pre><code data-lang="ts">// src/lib/paint/summary.spec.ts
+it('lists the heights used, ascending, once each')
+  // storiesUsed([paint 8, erase, paint 6, paint 8]) toEqual [6, 8]; storiesUsed([erase]) []
+it('joins the heights and counts the lots rebuilt')
+  // ([6], 1) '6 stories · 1 lot rebuilt'; ([1], 0) '1 story · 0 lots rebuilt';
+  // ([6, 8], 1204) '6 and 8 stories · 1,204 lots rebuilt';
+  // ([4, 6, 8], 12) '4, 6 and 8 stories · 12 lots rebuilt'; ([], 5) 'Nothing painted'
+
+// BrushEditor.dock.svelte.spec.ts (replace the six cases named in Files)
+it('`/` has no painted-areas list: strokes at two heights leave no rows and ask no lot counts')
+  // two commits at 6 and 8 stories: no list 'Painted areas', no [data-paint-row], no Remove;
+  // FakeEditorWorker.allOf('opLots') is empty
+it('read-only: the read-only line and the summary, no tools; the count follows the score')
+  // readOnly plan with paint ops at 6 and 8: 'Read-only. Remix to edit.';
+  // a diff with parcelsChanged 2, then 4: '6 and 8 stories · 2 lots rebuilt', then '… 4 lots rebuilt';
+  // no radiogroup; Ctrl+Z changes nothing (the summary and ops stay)
+// PaintTab.svelte.spec.ts
+it('shows the intro first, and read-only the summary in place of rows')
+// p/[id]/page.view.svelte.spec.ts: '… a read-only Paint tab with its summary, and Results'
+// e2e/layout.spec.ts (/p/:id read-only): the sheet shows 'Read-only. Remix to edit.' and a line
+//   matching /stories · [\d,]+ lots? rebuilt$/, no [data-paint-row], no radiogroup; axe clean</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/paint/summary.spec.ts
+npx vitest --run --project client src/lib/brush/BrushEditor.dock.svelte.spec.ts src/lib/paint/PaintTab.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Implement as in Interfaces and make the deletions listed in Files, with their tests. <code>git rm</code> the two <code>row-lots</code> files.</li>
+      <li id="t4-s4"><input type="checkbox"> Update the page specs, the e2e specs and the docs listed in Files.</li>
+      <li id="t4-s5"><input type="checkbox"> Regenerate the map goldens deliberately: the E9 plan (<code>small.json</code>, three ops) showed its rows in the dock, which now shows the tab alone. Run E9 first and see it fail on the dock's region only, then update, open both new PNGs and check that only the dock's panel changed.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts -g "E9" --project=chromium
+SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts -g "E9" --project=chromium --update-snapshots</code></pre>
+      </li>
+      <li id="t4-s6"><input type="checkbox"> Run every spec that covers the Paint tab, the editor, the brush and both pages (<code>/sim</code>'s paint editor included), then the changed e2e files repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/brush/ src/lib/paint/ src/lib/sim-page/brush-summary.spec.ts
+npx vitest --run --project client src/lib/brush/ src/lib/paint/ src/routes/ src/lib/sim-page/SimPage.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/brush.spec.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts e2e/map.spec.ts e2e/share-a11y.spec.ts e2e/share-roundtrip.spec.ts e2e/share-states.spec.ts e2e/sim.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/brush.spec.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t4-s7"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/paint/summary.ts src/lib/paint/summary.spec.ts src/lib/paint/PaintTab.svelte src/lib/paint/PaintTab.svelte.spec.ts src/lib/paint/rows.ts src/lib/paint/rows.spec.ts src/lib/brush/BrushEditor.svelte src/lib/brush/BrushEditor.dock.svelte.spec.ts src/lib/brush/editor.svelte.ts src/lib/brush/editor.svelte.spec.ts src/lib/brush/BrushController.svelte.ts src/lib/brush/BrushController.svelte.spec.ts src/lib/brush/messages.ts src/lib/brush/messages.spec.ts src/lib/brush/debug.ts src/lib/brush/debug.svelte.spec.ts src/routes/page.svelte.spec.ts "src/routes/p/[id]/page.view.svelte.spec.ts" e2e/brush.spec.ts e2e/helpers/sharing.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts e2e/map.spec.ts-snapshots/map-light-chromium-darwin.png e2e/map.spec.ts-snapshots/map-dark-chromium-darwin.png docs/dev/developing.md docs/dev/plan-sharing.md docs/dev/testing.md docs/dev/map-interfaces.md
+git commit -m "feat(paint): the painted-areas list leaves the editor; a shared plan shows one line"
+npx chreode timing-check --head HEAD</code></pre>
+        <p>The <code>git rm</code> of the <code>row-lots</code> files in t4-s3 stages their deletion.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Undo and redo: the keyboard on desktop, buttons on touch</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/paint/ShortcutsButton.svelte</code> (the Shortcuts button and its popover, moved from <code>HistoryButtons.svelte:27-84, 126-157</code> unchanged). Test: <code>ShortcutsButton.svelte.spec.ts</code> (the popover cases move here from <code>HistoryButtons.svelte.spec.ts</code>: "lists every shortcut…", "opens over a 288 px scroll box…", "closes on Escape and on a second press…", "closes when the window is resized", "in a short window the list scrolls inside itself", "closes when the box around it scrolls").</li>
+      <li>Modify: <code>src/lib/paint/HistoryButtons.svelte</code> renders <code>&lt;ShortcutsButton /&gt;</code> where its popover was; behaviour on <code>/sim</code> unchanged. Test: <code>HistoryButtons.svelte.spec.ts</code> (keeps "names the buttons…" and "is unnamed and disabled…").</li>
+      <li>Modify: <code>src/lib/paint/PaletteStrip.svelte</code>: optional Undo; the narrow inset. Test: <code>PaletteStrip.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/brush/BrushEditor.svelte</code>: the <code>history</code> snippet (Dock's <code>top</code>) renders only on a coarse pointer and never read-only; <code>ShortcutsButton</code> at the end of the Paint tab; <code>PaletteStrip</code> gets <code>canUndo</code> and <code>onundo</code>. Test: <code>BrushEditor.dock.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/shell/accent.spec.ts</code> (<code>ShortcutsButton.svelte</code> joins <code>THEMED_FILES</code>), <code>src/routes/page.svelte.spec.ts</code> ("loads the autosaved plan into the editor (Undo enabled), no notice", "starts empty with nothing saved (Undo disabled)": both read an Undo button that no longer exists on a fine pointer; the 700 ms sleep goes).</li>
+      <li>Modify: <code>e2e/layout.spec.ts</code> ("{width} px: opening Keyboard shortcuts leaves the dock as it was…": the button is now last in the tab), <code>e2e/brush.spec.ts</code> ("axe: the editor with the keyboard shortcuts list open"), regenerate the map goldens.</li>
+      <li>Docs: <code>developing.md</code> (the dock paragraph: Undo and Redo above the tab on touch only, Undo in the strip, Shortcuts last in the tab), <code>testing.md</code> (coarse pointers in client specs, as in Global Constraints).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>editor.canUndo</code>, <code>editor.canRedo</code>; <code>controller.undo()</code>, <code>controller.redo()</code>; <code>HISTORY_ICONS.undo</code> (<code>src/lib/paint/tools.ts</code>); <code>SHORTCUTS</code>, <code>placePopover</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/paint/ShortcutsButton.svelte: no props. Renders nothing on a coarse pointer.
+// visible 'Shortcuts', name 'Keyboard shortcuts', aria-expanded, popover data-testid="shortcuts"
+// with the table named 'Keyboard shortcuts' (as HistoryButtons had it).
+
+// PaletteStrip.svelte Props: add
+canUndo?: boolean;      // default false
+/** Given: an Undo icon button (name 'Undo', disabled while !canUndo) before Done. */
+onundo?: () =&gt; void;
+// Below 22.5rem (360 px) wide the strip's left inset is 0.5rem and its gap 0.
+
+// BrushEditor.svelte
+const coarse = new MediaQuery('(pointer: coarse)');
+// top (Dock): {#if coarse.current &amp;&amp; !editor.readOnly} the row with HistoryButtons {/if}
+// tabPanel: after PaintTab, {#if !editor.readOnly}&lt;ShortcutsButton /&gt;{/if}
+// &lt;PaletteStrip … canUndo={editor.canUndo} onundo={() =&gt; controller?.undo()} /&gt;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: buttons wherever there is no keyboard</strong> The spec puts undo and redo in the painting strip on touch, but the strip shows only below md while a stroke tool is chosen. A tablet from md with a coarse pointer has neither the strip nor a keyboard, and the phone's sheet (tool Move) has no strip. So the dock keeps the Undo and Redo row on a coarse pointer at every width, and the strip carries Undo for when the sheet is folded. On a fine pointer there are no buttons: Ctrl+Z and Ctrl+Shift+Z, listed under Keyboard shortcuts, do both, and the chip says what they did.</aside>
+    <aside data-kind="decision"><strong>Builder's call: Undo only in the strip</strong> The slice row says "Undo in the touch strip". Undo and Redo together make the strip 340 px wide (<a href="#tbl-measured-dock">measured</a>), 3 px inside 375 and over at 320. Undo alone is 293 px; Redo stays in the sheet's row.</aside>
+    <aside data-kind="decision"><strong>Builder's call: Keyboard shortcuts last in the Paint tab</strong> With the history row gone on fine pointers the button needs a home on <code>/</code>; it stays where painting happens, after Brush size, and still not on touch. <code>/sim</code> keeps it in its header beside Undo and Redo (slice 9 moves shortcuts to About).</aside>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests first: the BrushEditor and strip cases fail on the Undo and Redo buttons still present on a fine pointer and absent from the strip; the ShortcutsButton spec fails on the missing component.
+        <pre><code data-lang="ts">// ShortcutsButton.svelte.spec.ts: the six moved cases, plus
+it('renders nothing on a coarse pointer')
+// HistoryButtons.svelte.spec.ts
+it('still offers Keyboard shortcuts after Undo and Redo on a fine pointer')
+// PaletteStrip.svelte.spec.ts
+it('with onundo, Undo sits before Done, is disabled with nothing to undo, and calls it')
+it('without onundo there is no Undo (as on /sim)')
+for (const tool of ['paint', 'erase'])
+  it(`at 320 px in ${tool} the strip with Undo is inside the viewport and every target is 44 px`)
+    // strip right &lt;= 312, left &gt;= 8; each button &gt;= 44x44; documentElement.scrollWidth &lt;= 320
+// BrushEditor.dock.svelte.spec.ts
+it('on a fine pointer the dock has no Undo or Redo; Ctrl+Z undoes and the chip says so')
+for (const w of [375, 1024])
+  it(`on a coarse pointer at ${w}px Undo and Redo sit above the Paint tab, and no Shortcuts`)
+it('below md the strip carries Undo, which undoes the last stroke')
+it('on a fine pointer Keyboard shortcuts is the last control in the Paint tab; read-only, none')
+// page.svelte.spec.ts
+//   'loads the autosaved plan… (Ctrl+Z undoes it), no notice': Ctrl+Z, then the chip reads
+//   'Undid paint, 6 stories'; the record's savedAt is unchanged, read once the autosave status
+//   is settled (poll), no sleep
+//   'starts empty with nothing saved (Ctrl+Z says nothing)': the chip stays empty</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/paint/ src/lib/brush/BrushEditor.dock.svelte.spec.ts src/routes/page.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Implement as in Interfaces; add <code>ShortcutsButton.svelte</code> to <code>THEMED_FILES</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Update the e2e specs and the docs listed in Files. Regenerate the map goldens deliberately (the 61 px Undo row left the dock on the fine-pointer golden; the Shortcuts button joined the tab's end), checking that only the dock's panel changed.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts -g "E9" --project=chromium
+SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts -g "E9" --project=chromium --update-snapshots</code></pre>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Run every spec that covers undo, the strip and the shortcuts on both pages, then the changed e2e files repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/brush/ src/lib/shell/accent.spec.ts
+npx vitest --run --project client src/lib/paint/ src/lib/brush/ src/lib/shell/ src/routes/ src/lib/sim-page/SimPage.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/brush.spec.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts e2e/map.spec.ts e2e/sim.spec.ts e2e/share-states.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/brush.spec.ts e2e/layout.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t5-s6"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/paint/ShortcutsButton.svelte src/lib/paint/ShortcutsButton.svelte.spec.ts src/lib/paint/HistoryButtons.svelte src/lib/paint/HistoryButtons.svelte.spec.ts src/lib/paint/PaletteStrip.svelte src/lib/paint/PaletteStrip.svelte.spec.ts src/lib/brush/BrushEditor.svelte src/lib/brush/BrushEditor.dock.svelte.spec.ts src/lib/shell/accent.spec.ts src/routes/page.svelte.spec.ts e2e/layout.spec.ts e2e/brush.spec.ts e2e/map.spec.ts-snapshots/map-light-chromium-darwin.png e2e/map.spec.ts-snapshots/map-dark-chromium-darwin.png docs/dev/developing.md docs/dev/testing.md
+git commit -m "feat(paint): undo and redo by keyboard on desktop, by buttons on touch"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: A labelled tab with a starting sentence</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/paint/PaintTab.svelte</code>: a visible label over each of Tool, Height and Brush size; the radiogroup named by its label (was <code>aria-label="Brush tool"</code>, <code>:99</code>). Test: <code>PaintTab.svelte.spec.ts</code> ("offers Move, Paint and Erase as radios in a Brush tool group" and the new cases).</li>
+      <li>Modify: <code>src/lib/paint/HeightPalette.svelte</code>: optional <code>labelledby</code>. Test: <code>HeightPalette.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/brush/RadiusPopover.svelte</code>: the slider's label and value, the opener's name, the pop-over's name. Tests: <code>PaintTab.svelte.spec.ts</code>, <code>PaletteStrip.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/brush/messages.ts</code>: <code>MSG.start</code>, <code>radiusValueText</code>. Test: <code>messages.spec.ts</code> ("formats radius value text", "has verbatim copy").</li>
+      <li>Modify: <code>src/lib/brush/BrushEditor.svelte</code>: <code>intro</code> for an editable empty plan. Test: <code>BrushEditor.dock.svelte.spec.ts</code> ("renders the dock with the Paint tab: tools, height, size…").</li>
+      <li>Create: <code>src/lib/shell/test/rest-text.ts</code> (<code>longTexts</code>, moved from <code>src/lib/timeline/rest-text.svelte.spec.ts:68-84</code>, which then imports it); <code>src/routes/page.rest-text.svelte.spec.ts</code>.</li>
+      <li>Modify names in: <code>src/routes/page.svelte.spec.ts</code>, <code>page.view.svelte.spec.ts</code>, <code>src/routes/p/[id]/page.view.svelte.spec.ts</code>, <code>BrushEditor.dock.svelte.spec.ts</code> (<code>'Brush tool'</code> to <code>'Tool'</code>, <code>/^Brush \d+ m$/</code> to <code>'Brush size'</code>); <code>e2e/scoreboard.spec.ts</code> (<code>:233</code>), <code>e2e/layout.spec.ts</code> (<code>:319</code>, <code>:505</code>, the read-only case), <code>e2e/chrome-dark.spec.ts</code> (<code>:200-207</code>), <code>e2e/brush.spec.ts</code> (<code>:459-463</code>). Regenerate the map goldens.</li>
+      <li>Docs: <code>developing.md</code> (the dock paragraph: labels and the starting sentence), <code>accessibility.md</code> (a checklist line: no visible text of 12 words or more at rest outside a notice or dialog on <code>/</code> and <code>/sim</code>, and the two specs that check it).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 4's <code>intro</code> prop; <code>editor.plan.ops</code>, <code>editor.readOnly</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// messages.ts
+export const MSG: { …; start: 'Pick a height, then paint the map.' };
+export function radiusValueText(r: number): string;   // '30 metres'
+
+// PaintTab.svelte (editable): intro, then three labelled blocks
+//   &lt;span id={toolLabel}&gt;Tool&lt;/span&gt;   &lt;div role="radiogroup" aria-labelledby={toolLabel}&gt;
+//   &lt;span id={heightLabel}&gt;Height&lt;/span&gt; &lt;HeightPalette labelledby={heightLabel} …/&gt;
+//   &lt;RadiusPopover inline …/&gt;    its slider: &lt;label&gt;Brush size&lt;/label&gt; and a visible '30 m'
+// Labels: text-xs, semibold, muted ink token; 4 px above their control.
+
+// HeightPalette Props: add
+/** The id of a visible label: the group is aria-labelledby it instead of aria-label 'Height'. */
+labelledby?: string;
+
+// RadiusPopover: slider name 'Brush size', aria-valuetext radiusValueText(r), value shown '30 m';
+//   opener aria-label `Brush size: ${r} m` (visible '30 m'); pop-over group aria-label 'Brush size'
+
+// BrushEditor.svelte
+// intro={editor.readOnly ? MSG.readOnly : editor.plan.ops.length === 0 ? MSG.start : null}
+
+// src/lib/shell/test/rest-text.ts
+/** Visible text nodes of 12 words or more outside a dialog, [data-notice], [data-explain-open]
+ *  or .sr-only, trimmed. */
+export function longTexts(root?: Node): string[];</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision" id="bc-labels-sim"><strong>Builder's call: the labels show on <code>/sim</code> too</strong> <code>PaintTab</code> is one component on both pages ("one paint experience"); a visible label above each control is a gain wherever it renders, and gating it by page would make two looks for one tool. <code>/sim</code>'s painted-policy editor in its detail column gains the three labels and nothing else (no starting sentence: <code>/sim</code> passes no <code>intro</code>). Considered: a <code>labels</code> prop off on <code>/sim</code>.</aside>
+    <aside data-kind="decision"><strong>Builder's call: "until the first stroke" means an empty plan</strong> The sentence shows while the editable plan has no op, so a restored or remixed plan never shows it, and undoing every stroke brings it back. Below md the sheet starts folded, so a phone's first view does not show it (see <a href="#sec-not-in-plan">Not in this plan</a>).</aside>
+    <aside data-kind="decision"><strong>Builder's call: a rest-text check for <code>/</code> at rest only</strong> The 12-word rule has a check on <code>/sim</code> and none on Paint. This adds one for <code>/</code> at rest (empty plan, and one restored stroke). It does not cover Paint's Results face: its sentences are in the hashed <code>ScoreboardPanel</code>, which this slice cannot edit.</aside>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests first (they fail on the names "Brush tool" and "Brush 30 m" and on the missing sentence).
+        <pre><code data-lang="ts">// PaintTab.svelte.spec.ts
+it('labels Tool, Height and Brush size on screen, and each control by its label')
+  // getByText('Tool'), ('Height'), ('Brush size') visible; radiogroup name 'Tool';
+  // group name 'Height'; slider name 'Brush size' with aria-valuetext '30 metres'; '30 m' visible
+it('shows the intro sentence first, above Tool, when given')
+// HeightPalette.svelte.spec.ts
+it('with labelledby the group takes its name from that label')
+// PaletteStrip.svelte.spec.ts: the size opener 'Brush size: 30 m'; its pop-over group 'Brush size'
+// messages.spec.ts: radiusValueText(30) '30 metres'; MSG.start 'Pick a height, then paint the map.'
+// BrushEditor.dock.svelte.spec.ts
+it('an empty plan shows the starting sentence until the first stroke, and again after Ctrl+Z')
+it('a loaded plan with strokes shows no starting sentence')
+// src/routes/page.rest-text.svelte.spec.ts (PaintHeaderHost, SimMap stubbed as page.svelte.spec)
+it('/ at rest shows no text of 12 words or more outside a notice or a dialog')  // empty plan
+it('nor with a restored stroke')</code></pre>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/brush/messages.spec.ts
+npx vitest --run --project client src/lib/paint/ src/lib/brush/BrushEditor.dock.svelte.spec.ts src/routes/page.rest-text.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Implement as in Interfaces; move <code>longTexts</code> and point <code>src/lib/timeline/rest-text.svelte.spec.ts</code> at it.</li>
+      <li id="t6-s4"><input type="checkbox"> Update the names in the specs listed in Files and the docs. Regenerate the map goldens deliberately (three labels in the dock), checking that only the dock's panel changed.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts -g "E9" --project=chromium
+SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts -g "E9" --project=chromium --update-snapshots</code></pre>
+      </li>
+      <li id="t6-s5"><input type="checkbox"> Run every spec that covers the Paint tab on both pages, the strip and the rest-text rule, then the changed e2e files repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/brush/ src/lib/paint/
+npx vitest --run --project client src/lib/paint/ src/lib/brush/ src/routes/ src/lib/sim-page/ src/lib/timeline/rest-text.svelte.spec.ts src/lib/timeline/Inspector.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/scoreboard.spec.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts e2e/brush.spec.ts e2e/map.spec.ts e2e/sim.spec.ts e2e/share-a11y.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/scoreboard.spec.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts e2e/brush.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p><code>SimPage.svelte.spec.ts</code> and <code>PolicySummary.svelte.spec.ts</code> (in <code>src/lib/sim-page/</code>) and <code>Inspector.svelte.spec.ts</code> render <code>/sim</code>'s painted-policy editor; they must pass with the labels added.</p>
+      </li>
+      <li id="t6-s6"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/paint/PaintTab.svelte src/lib/paint/PaintTab.svelte.spec.ts src/lib/paint/HeightPalette.svelte src/lib/paint/HeightPalette.svelte.spec.ts src/lib/paint/PaletteStrip.svelte.spec.ts src/lib/brush/RadiusPopover.svelte src/lib/brush/messages.ts src/lib/brush/messages.spec.ts src/lib/brush/BrushEditor.svelte src/lib/brush/BrushEditor.dock.svelte.spec.ts src/lib/shell/test/rest-text.ts src/routes/page.rest-text.svelte.spec.ts src/lib/timeline/rest-text.svelte.spec.ts src/routes/page.svelte.spec.ts src/routes/page.view.svelte.spec.ts "src/routes/p/[id]/page.view.svelte.spec.ts" e2e/scoreboard.spec.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts e2e/brush.spec.ts e2e/map.spec.ts-snapshots/map-light-chromium-darwin.png e2e/map.spec.ts-snapshots/map-dark-chromium-darwin.png docs/dev/developing.md docs/dev/accessibility.md
+git commit -m "feat(paint): label Tool, Height and Brush size, and say how to start"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Whole-suite pass</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Whatever the full runs below turn up. No new behaviour.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Run the checks and the full unit suite.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npm run test:unit</code></pre>
+      </li>
+      <li id="t7-s2"><input type="checkbox"> Run the full e2e suite on a free port, both projects. Every failure is fixed at its cause, without retries, sleeps or loosened assertions; re-run any spec you change with <code>--repeat-each=5 --retries=0</code>.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> Sweep for leftovers. Each finds nothing:
+        <pre><code data-lang="sh">rg -n "homes added|\bHeaderScore\b|row-lots|RowLots|planRowGroups|planPaintRows|removeOps|rowStepMessage|Brush tool|Brush radius|Read-only —" src/routes src/lib/brush src/lib/paint e2e
+rg -n "name: 'Modes'|aria-label=\"Modes\"" src e2e
+rg -n "RHNA|FZP" src/lib/paint/headline.ts src/lib/paint/summary.ts src/lib/brush/messages.ts src/lib/paint/ShortcutsButton.svelte</code></pre>
+        <p>The shell's <code>HeaderScoreHeader</code> host and the SiteHeader spec that uses it still render the hashed <code>HeaderScore</code> to test header fit; that is expected and outside the sweep.</p>
+      </li>
+      <li id="t7-s4"><input type="checkbox"> Preview signoff's plan without running it, and confirm every step it lists ran green above. The dataset version must not have changed (no hashed path touched).
+        <pre><code data-lang="sh">npm run signoff -- --dry-run
+git diff --stat main -- pipeline src/lib/data src/lib/generator src/lib/timelapse src/lib/plan/geometry.ts src/lib/plan/types.ts src/lib/sim/scenario src/lib/sim/levers src/lib/sim/finance src/lib/scoreboard</code></pre>
+        <p>The second command prints nothing.</p>
+      </li>
+      <li id="t7-s5"><input type="checkbox"> Commit any fixes with the files named, then check timing.
+        <pre><code data-lang="sh">git add &lt;each changed file&gt;
+git commit -m "test(paint): re-pin the suite for Paint as step one"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-builders-calls">
+    <h2>Builder's calls</h2>
+    <table id="tbl-calls">
+      <caption>Choices the spec leaves open that change what a person sees, and where each is made</caption>
+      <thead>
+        <tr><th scope="col">Call</th><th scope="col">Why</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Paint reuses <code>TimelineHeaderScore</code></th><td>One header score for both pages; <code>HeaderScore</code> is hashed</td><td>1</td></tr>
+        <tr><th scope="row">Compact counts from 1,000,000</th><td>About 2 px left at 375 px with Autosave off for seven digits</td><td>1</td></tr>
+        <tr><th scope="row">The header's Paint button goes</th><td>The spec's header list; the dock opens and folds itself; 59 px back</td><td>1</td></tr>
+        <tr><th scope="row">Steps as an ordered list, numbers <code>aria-hidden</code></th><td>Order from the list; names unchanged</td><td>2</td></tr>
+        <tr><th scope="row">No step numbers from 1024 to 1279 px</th><td><code>/sim</code> is already 14.9 px over there</td><td>2</td></tr>
+        <tr><th scope="row">The chip is an overlay at the map's top, below a failure chip, no presses</th><td>Never moves the map; never covers Retry</td><td>3</td></tr>
+        <tr><th scope="row">The chip clears after 4 s (refusal 6 s)</th><td>Re-announces repeats; no new timer</td><td>3</td></tr>
+        <tr><th scope="row">The shorter stroke sentence, "lots"</th><td>The spec's example; one text for screen and reader</td><td>3</td></tr>
+        <tr><th scope="row">"lots rebuilt" from the score on the read-only line</th><td>Exact, counted once, no worker request</td><td>4</td></tr>
+        <tr><th scope="row">The removal path is deleted with the list</th><td>No caller; no saved history can hold it</td><td>4</td></tr>
+        <tr><th scope="row">Undo and Redo above the tab on a coarse pointer, none on a fine one</th><td>A tablet has neither keyboard nor strip</td><td>5</td></tr>
+        <tr><th scope="row">Undo only in the strip; a narrower inset below 360 px</th><td>Measured widths at 375 and 320</td><td>5</td></tr>
+        <tr><th scope="row">Keyboard shortcuts last in the Paint tab</th><td>Its old place (the history row) is gone on fine pointers</td><td>5</td></tr>
+        <tr><th scope="row">Labels also on <code>/sim</code>'s painted-policy editor</th><td>One component, one look</td><td>6</td></tr>
+        <tr><th scope="row">"Until the first stroke" is "while the plan is empty"</th><td>Restored plans never show it</td><td>6</td></tr>
+        <tr><th scope="row">"Brush size" for the radius, value "30 m", "30 metres" spoken</th><td>The spec's label; the strip's opener follows "Tool: …", "Height: …"</td><td>6</td></tr>
+        <tr><th scope="row">A rest-text check for <code>/</code> at rest only</th><td>Results is hashed</td><td>6</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <ul>
+      <li id="q-headline"><strong>What Paint's headline says, and what its percentage counts.</strong> Paint's number is room for homes today, every eligible lot rebuilt to its painted height; it has no date, so it never names a month and cannot contradict <code>/sim</code>'s "homes by Apr 2040". Recommended: line 1 "Room for 47,335 homes" ("Room for 0 homes" before painting), line 2 "57% of the goal" (the room against the goal's 82,069; "Goal reached" at or over it), the goal's name on hover. This is the ladder's level 1 ("Room for enough homes. No clock."). Alternatives: (a) count the homes already built since June 2022 toward the percentage, as <code>/sim</code>'s goal measure does (consistent with <code>/sim</code>'s figure, but it adds homes that exist to room for homes); (b) no percentage on Paint, only "Room for 47,335 homes".</li>
+      <li id="q-step-numbers"><strong>Step numbers between 1024 and 1279 px.</strong> Recommended: hide them there for now (Task 2), because <code>/sim</code>'s header already overflows by 14.9 px at 1024 with a signed-in handle, and show them in the Menu and from 1280. Alternative: show them at every width and narrow the account entry between lg and xl (160 px to 112 px), which also fixes today's <code>/sim</code> overflow; that is a change to every page's header, which slice 8 (shared parts) may prefer to own.</li>
+    </ul>
+  </section>
+
+  <section id="sec-not-in-plan">
+    <h2>Not in this plan</h2>
+    <ul>
+      <li>Paint's Results face becoming Details: pressing the headline still opens Results (<code>ScoreboardPanel</code>, hashed, with its "RHNA" rows and its own capacity wording). The spec's "Results stop being a hidden face of the panel" waits for a Details slice.</li>
+      <li>The map key on Paint (building types, and hovering a height to outline where it applies): the key is slice 5. Until then <code>/</code> has no way to outline one height's area.</li>
+      <li>The phone's first visit: the sheet starts folded and the tool on Move, so the starting sentence is seen only once the sheet is opened. Opening the sheet to peek on an empty plan would change the map's inset and its goldens; it belongs with slice 8's phone tiers.</li>
+      <li><code>/sim</code>'s header Undo, Redo and Shortcuts (the spec's "keyboard only on desktop" for Simulate), the View menu moving onto the map (slice 5), and the header overflow at 1024 px with a signed-in handle (<a href="#sec-contradictions">Found on the way</a>).</li>
+      <li>Fewer uses of the word "Paint": the step link, the dock's tab, the tool and Results' flip button keep it.</li>
+    </ul>
+  </section>
+
+  <section id="sec-contradictions">
+    <h2>Found on the way</h2>
+    <ul>
+      <li><strong><code>/sim</code>'s header already overflows at 1024 px.</strong> Signed in with a 24-character handle (shown at the account entry's 160 px cap) and the playhead at End, the status cell is 44.3 px for 59.2 px of content: 14.9 px clipped, more with "Autosave off" (89.1 px) or a five-digit headline. Carried forward named the gap in the header-fit test; it is a real overflow.</li>
+      <li><strong>Undo and Redo both in the strip do not fit</strong> at 320 px and leave 3 px at 375 (340 px wide). The plan keeps Redo in the sheet.</li>
+      <li><strong>"Hovering a height in the map key outlines where that height applies"</strong> needs slice 5's key; removing the list now leaves <code>/</code> without an outline until then.</li>
+      <li><strong>"The lots covered"</strong> on the read-only line has no cheap exact source; the plan shows lots rebuilt.</li>
+      <li><strong>The Paint tab, the strip and the history buttons are shared with <code>/sim</code></strong>, whose detail column is out of scope; the plan keeps <code>/sim</code>'s behaviour and lets only the labels through.</li>
+      <li><strong>"Pressing the headline opens Details"</strong>: Paint has no Details; it keeps opening Results.</li>
+      <li>The hashed <code>HeaderScore.svelte</code>'s comment still describes <code>/</code> and <code>/p/:id</code>; it cannot be edited without a dataset upload.</li>
+    </ul>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li><strong>Spec coverage.</strong> Slice row 4: two steps (Task 2), a labelled panel with a starting sentence (Task 6), stroke results shown and a refused stroke visible (Task 3), no painted-areas list and a read-only line (Task 4), Undo on touch and none on desktop (Task 5). <code>tbl-inv-paint</code>: the headline and "room for N homes" with a labelled percentage (Task 1), "what the last stroke did" and "a stroke was refused" (Task 3), "how to start" and "tool, height, brush size" (Task 6), "painted areas list" (Task 4), "undo and redo" (Task 5); buildings key, Details rows and transit shading are elsewhere (Not in this plan; transit was slice 1). <code>tbl-inv-chrome</code> "which tool this is": Task 2. Finding 7: Task 3. Carried forward ("Paint's header still reads 'N homes added'"): Task 1. Decided ("steps only for now"): no joining, no levels.</li>
+      <li><strong>Type consistency.</strong> <code>roomFor</code>, <code>capacityGoalText</code>, <code>paintHeadline</code> (Task 1); <code>strokeMessage</code>, <code>MSG.tooLarge</code> (Task 3); <code>storiesUsed</code>, <code>paintedSummary</code>, PaintTab's <code>intro</code> and <code>summary</code>, <code>HistoryStep</code> without <code>'rows'</code> (Task 4, <code>intro</code> reused in Task 6); <code>ShortcutsButton</code>, PaletteStrip's <code>canUndo</code> and <code>onundo</code> (Task 5); <code>MSG.start</code>, <code>radiusValueText</code>, HeightPalette's <code>labelledby</code>, <code>longTexts</code> (Task 6). Test ids: <code>brush-announcement</code> (kept, now the visible region), <code>stroke-chip</code> (new), <code>score-bar</code>, <code>score-detail</code>, <code>score-live</code> (from <code>TimelineHeaderScore</code>), <code>data-step-number</code> (new).</li>
+      <li><strong>Review Focus.</strong> Each item names its test step in its owning task.</li>
+      <li><strong>Proportion.</strong> Code blocks are signatures, DOM contracts, test names and assertions; no component bodies.</li>
+    </ul>
+  </section>
+</article>

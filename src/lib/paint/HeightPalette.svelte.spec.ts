@@ -22,6 +22,14 @@ describe('HeightPalette', () => {
     for (const n of STORY_PRESETS) await expect.element(swatch(n)).toBeVisible();
   });
 
+  it('with labelledby the group takes its name from that label', async () => {
+    const brush = new BrushState({ fine: true, storage: null });
+    render(HeightPalette, { props: { brush, labelledby: 'outer-label' } });
+    const group = page.getByRole('group').element();
+    expect(group.getAttribute('aria-labelledby')).toBe('outer-label');
+    expect(group.hasAttribute('aria-label')).toBe(false);
+  });
+
   it('pressing a swatch sets the height and only that swatch is pressed', async () => {
     const brush = setup();
     await swatch(12).click();

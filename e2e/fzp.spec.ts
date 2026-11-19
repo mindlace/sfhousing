@@ -108,7 +108,7 @@ async function openScore(page: Page): Promise<Locator> {
 }
 const sourcesDialog = (page: Page): Locator =>
   page.getByRole('dialog', { name: 'Where these numbers come from' });
-/** A header mode link, made visible first (below 1024 px the links wait in the header Menu). */
+/** A header step link, made visible first (below 1024 px the links wait in the header Menu). */
 async function headerLink(page: Page, name: string): Promise<Locator> {
   await openHeaderMenu(page);
   return page.getByRole('banner').getByRole('link', { name, exact: true });

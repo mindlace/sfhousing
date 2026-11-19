@@ -1,6 +1,6 @@
-// Brush tool e2e (spec §6 Playwright 1–6, §7), on the dock's Paint tab (sim-ux plan 5): rows of
-// painted areas, Remove, undo and redo of a removed row, the autosave and Publish after one. Runs
-// against the VITE_E2E build, which exposes window.__sfhBrush (src/lib/brush/debug.ts) and
+// Paint tool e2e (spec §6 Playwright 1–6, §7), on the dock's Paint tab (sim-ux plan 5): painting,
+// stamps, undo and redo by keyboard, the stroke chip and the failure chip. Runs against the
+// VITE_E2E build, which exposes window.__sfhBrush (src/lib/brush/debug.ts) and
 // window.__sfhMap (src/lib/map/debug.ts), and shortens the worker's chunk retries to 50/100/200 ms.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { MSG } from '../src/lib/brush/messages';
@@ -15,9 +15,9 @@ import {
   mouseDrag,
   publishDialog,
   publishOpen,
-  rows,
   settledNet,
-  touchDrag
+  touchDrag,
+  waitForMap
 } from './helpers/sharing';
 
 type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
@@ -68,24 +68,37 @@ const center = (page: Page) =>
   page.evaluate(() => (window as Win).__sfhMap!.map!.getCenter().toArray() as LngLat);
 
 /**
- * The brush's announcements (a stroke's result, Undid, Removed): a screen-reader-only status, as on
- * /sim. The visible status line (`brush-status`) carries only loading, the zoom hint and failures.
+ * The brush's announcements (a stroke's result, a refusal, Undid, Redid): a polite status
+ * over the map's top that shows them in the stroke chip. The status line in the notice stack
+ * (`brush-status`) carries only loading, the zoom hint and failures.
  */
 function announcement(page: Page): Locator {
   return page.getByTestId('brush-announcement');
 }
+const strokeChip = (page: Page): Locator => page.getByTestId('stroke-chip');
+/** map-view's chip for failed parcel chunks, with its Retry. */
+const failureChip = (page: Page): Locator =>
+  page.getByRole('status').filter({ hasText: "Some parcels didn't load —" });
 
-/** The Paint tab's row select buttons ("6 stories · 2 strokes · 12 lots"). */
-const rowButtons = (page: Page): Locator => page.locator('[data-paint-row]');
-
-/** The rows on screen match the hook: one button per row, their strokes summing to the ops. */
-async function expectRowsMatchOps(page: Page): Promise<void> {
-  const names = await rowButtons(page).evaluateAll((bs) =>
-    bs.map((b) => b.getAttribute('aria-label') ?? '')
-  );
-  const strokes = names.reduce((n, name) => n + Number(/ · (\d+) strokes? · /.exec(name)![1]), 0);
-  expect(names).toHaveLength(await rows(page));
-  expect(strokes).toBe(await ops(page));
+/**
+ * With the failure chip and the stroke chip both on screen, they do not overlap, and a press at
+ * Retry's centre reaches Retry (the stroke chip sits a row lower and takes no presses).
+ */
+async function expectChipsApart(page: Page): Promise<void> {
+  await expect(failureChip(page)).toBeVisible();
+  await expect(strokeChip(page)).toBeVisible();
+  const a = (await failureChip(page).boundingBox())!;
+  const b = (await strokeChip(page).boundingBox())!;
+  const overlap =
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  expect(overlap, `failure ${JSON.stringify(a)} stroke ${JSON.stringify(b)}`).toBe(false);
+  const retry = failureChip(page).getByRole('button', { name: 'Retry' });
+  const r = (await retry.boundingBox())!;
+  const hit = await retry.evaluate((el, p) => el.contains(document.elementFromPoint(p.x, p.y)), {
+    x: r.x + r.width / 2,
+    y: r.y + r.height / 2
+  });
+  expect(hit).toBe(true);
 }
 
 /** Records every error the editor worker answers with (bad-request, internal) in the page. */
@@ -107,14 +120,6 @@ async function recordWorkerErrors(page: Page): Promise<void> {
 }
 const workerErrors = (page: Page) =>
   page.evaluate(() => (window as unknown as { __sfhWorkerErrors: string[] }).__sfhWorkerErrors);
-
-/** Selects the row whose name starts with `name`, then presses its Remove. */
-async function removeRow(page: Page, name: string): Promise<void> {
-  const row = page.getByRole('button', { name: new RegExp(`^${name} · `) });
-  await row.click();
-  await expect(row).toHaveAttribute('aria-pressed', 'true');
-  await page.getByRole('button', { name: new RegExp(`^Remove: ${name} · `) }).click();
-}
 
 /** The height palette's preset (the Paint tab is open in the dock from md). */
 async function pickStories(page: Page, n: number): Promise<void> {
@@ -141,7 +146,7 @@ test.describe('brush tool', () => {
 
       await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
 
-      await expect(announcement(page)).toHaveText(/^Painted 6 stories on \d+ parcels/);
+      await expect(strokeChip(page)).toHaveText(/^6 stories on \d+ lots/);
       expect(await ops(page)).toBe(1);
       await expect.poll(() => generated(page)).toBeGreaterThanOrEqual(1);
     });
@@ -150,7 +155,7 @@ test.describe('brush tool', () => {
       await gotoEditor(page);
       await jumpAndIdle(page, FRAME);
       await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
-      await expect(announcement(page)).toHaveText(/^Painted 6 stories/);
+      await expect(announcement(page)).toHaveText(/^6 stories on \d+ lots/);
       await expect.poll(() => generated(page)).toBeGreaterThanOrEqual(1);
       const painted = await generated(page);
 
@@ -209,6 +214,88 @@ test.describe('brush tool', () => {
       await expect.poll(() => generated(page)).toBeGreaterThan(0);
     });
 
+    test('a stroke while parcels failed: the stroke chip clears the failure chip and its Retry', async ({
+      page
+    }) => {
+      await page.route(CHUNK, (r) => r.abort());
+      await gotoEditor(page);
+      await jumpAndIdle(page, FRAME);
+      await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
+      await expect(failureChip(page)).toBeVisible();
+      // A stroke with the failure chip up: its result shows a row lower.
+      await mouseDrag(page, [-122.4193, 37.7603], [-122.418, 37.7603]);
+      await expect.poll(() => ops(page)).toBe(2);
+      await expectChipsApart(page);
+    });
+
+    test('a published plan, then a stroke: the button reads Publish again', async ({ page }) => {
+      await gotoEditorWithActions(page);
+      // The strokes need the camera, not the tiles: the worker resolves lots city-wide.
+      await page.evaluate((f) => (window as Win).__sfhMap!.map!.jumpTo(f), FRAME);
+      await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
+      await expect.poll(() => ops(page)).toBe(1);
+
+      await publishOpen(page).click();
+      const dialog = publishDialog(page);
+      await dialog.getByLabel('Title').fill('One height');
+      await dialog.getByRole('button', { name: 'Publish' }).click();
+      await expect(dialog.getByRole('heading', { name: 'Published' })).toBeVisible();
+      await dialog.getByRole('button', { name: 'Done' }).click();
+      await expect(publishOpen(page)).toHaveText('Share link');
+
+      // A new op list: its hash differs from the published one.
+      await pickStories(page, 8);
+      await mouseDrag(page, [-122.4193, 37.7603], [-122.418, 37.7603]);
+      await expect.poll(() => ops(page)).toBe(2);
+      await expect(publishOpen(page)).toHaveText('Publish');
+    });
+
+    test('a restored plan undoes and redoes over its load: the score follows, no worker errors', async ({
+      page
+    }) => {
+      await recordWorkerErrors(page);
+      await gotoEditor(page);
+      await jumpAndIdle(page, FRAME);
+      await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
+      await expect.poll(() => ops(page)).toBe(1);
+      // The commit's diff (and its score) has arrived once the chip names the stroke.
+      await expect(announcement(page)).toHaveText(/^6 stories on \d+ lots/);
+      const one = await settledNet(page);
+      // An erase over the same lots: the score must change.
+      await chooseTool(page, 'Erase');
+      await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
+      await expect.poll(() => ops(page)).toBe(2);
+      await expect(announcement(page)).toHaveText(/^Erased \d+ lots?/);
+      const two = await settledNet(page);
+      expect(two).not.toBe(one);
+
+      // The autosave restores the plan: the editor `load`s it and the worker gets the whole plan.
+      await expect
+        .poll(() =>
+          page.evaluate(
+            (k) =>
+              JSON.parse(JSON.parse(localStorage.getItem(k) ?? '{"plan":"{}"}').plan).ops?.length,
+            PLAN_KEY
+          )
+        )
+        .toBe(2);
+      await page.reload();
+      await waitForMap(page);
+      await expect.poll(() => ops(page)).toBe(2);
+      expect(await settledNet(page)).toBe(two);
+
+      // Undo pops the restored plan's last stroke, as the worker holds it.
+      await page.keyboard.press('Control+z');
+      await expect.poll(() => ops(page)).toBe(1);
+      await expect(announcement(page)).toHaveText('Undid erase');
+      expect(await settledNet(page)).toBe(one);
+
+      await page.keyboard.press('Control+Shift+z');
+      await expect.poll(() => ops(page)).toBe(2);
+      expect(await settledNet(page)).toBe(two);
+      expect(await workerErrors(page)).toEqual([]);
+    });
+
     test('a parent loads a plan through oneditor and the buildings render', async ({ page }) => {
       await gotoEditor(page);
       await jumpAndIdle(page, FRAME);
@@ -236,153 +323,13 @@ test.describe('brush tool', () => {
 
     test('axe: the editor with the keyboard shortcuts list open', async ({ page }) => {
       await gotoEditor(page);
-      // A popover from HistoryButtons' button, at the top of the dock.
+      // A popover from ShortcutsButton, the last control in the Paint tab.
       const dock = page.getByTestId('dock');
       const button = dock.getByRole('button', { name: 'Keyboard shortcuts' });
       await button.click();
       await expect(button).toHaveAttribute('aria-expanded', 'true');
       await expect(page.getByRole('table', { name: 'Keyboard shortcuts' })).toBeVisible();
       await expectNoA11yViolations(page);
-    });
-
-    test('rows: remove the first of two heights; the autosave restores one row, Publish reads Publish again', async ({
-      page
-    }) => {
-      await gotoEditorWithActions(page);
-      // The strokes need the camera, not the tiles: the worker resolves lots city-wide.
-      await page.evaluate((f) => (window as Win).__sfhMap!.map!.jumpTo(f), FRAME);
-      await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
-      await expect.poll(() => ops(page)).toBe(1);
-      await pickStories(page, 8);
-      await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
-      await expect.poll(() => ops(page)).toBe(2);
-      await expect(rowButtons(page)).toHaveCount(2);
-      await expectRowsMatchOps(page);
-
-      // Published: the button offers the link.
-      await publishOpen(page).click();
-      const dialog = publishDialog(page);
-      await dialog.getByLabel('Title').fill('Two heights');
-      await dialog.getByRole('button', { name: 'Publish' }).click();
-      await expect(dialog.getByRole('heading', { name: 'Published' })).toBeVisible();
-      await dialog.getByRole('button', { name: 'Done' }).click();
-      await expect(publishOpen(page)).toHaveText('Share link');
-
-      await removeRow(page, '6 stories');
-      await expect.poll(() => ops(page)).toBe(1);
-      await expect(rowButtons(page)).toHaveCount(1);
-      await expect(rowButtons(page).first()).toHaveAccessibleName(/^8 stories · 1 stroke · /);
-      await expectRowsMatchOps(page);
-      // A new op list: its hash differs from the published one.
-      await expect(publishOpen(page)).toHaveText('Publish');
-      // The autosave is the new op list...
-      await expect
-        .poll(() =>
-          page.evaluate(
-            (k) => JSON.parse(JSON.parse(localStorage.getItem(k)!).plan).ops.length,
-            PLAN_KEY
-          )
-        )
-        .toBe(1);
-      // ...and restores to the same rows.
-      await page.reload();
-      // The restored rows are the editor's, not the map's: wait for the hook alone.
-      await page.waitForFunction(() => !!(window as Win).__sfhBrush);
-      await expect.poll(() => ops(page)).toBe(1);
-      await expect(rowButtons(page)).toHaveCount(1);
-      await expect(rowButtons(page).first()).toHaveAccessibleName(/^8 stories · 1 stroke · /);
-      await expectRowsMatchOps(page);
-    });
-
-    test('a middle row removed, undone, redone, then a stroke and Ctrl+Z: the worker keeps step', async ({
-      page
-    }) => {
-      await recordWorkerErrors(page);
-      await gotoEditor(page);
-      await jumpAndIdle(page, FRAME);
-      const [cx, cy] = await projectToPage(page, FRAME.center);
-      // Three rows: a 6-story stamp, a 20-story stroke over it, another 6-story stamp.
-      await page.mouse.click(cx, cy);
-      await expect.poll(() => ops(page)).toBe(1);
-      await pickStories(page, 20);
-      await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
-      await expect.poll(() => ops(page)).toBe(2);
-      await pickStories(page, 6);
-      await page.mouse.click(cx, cy);
-      await expect.poll(() => ops(page)).toBe(3);
-      await expect(rowButtons(page)).toHaveCount(3);
-      await expectRowsMatchOps(page);
-      const full = await settledNet(page);
-
-      // Remove the middle row: its neighbours, both 6 stories, make one row.
-      await removeRow(page, '20 stories');
-      await expect.poll(() => ops(page)).toBe(2);
-      await expect.poll(() => rows(page)).toBe(1);
-      await expectRowsMatchOps(page);
-      const removed = await settledNet(page);
-      expect(removed).not.toBe(full);
-
-      // Undo brings the row back, and the score with it.
-      await page.keyboard.press('Control+z');
-      await expect.poll(() => ops(page)).toBe(3);
-      await expect.poll(() => rows(page)).toBe(3);
-      await expectRowsMatchOps(page);
-      await expect(announcement(page)).toHaveText('Undid: Removed: 20 stories');
-      expect(await settledNet(page)).toBe(full);
-
-      await page.keyboard.press('Control+Shift+z');
-      await expect.poll(() => ops(page)).toBe(2);
-      await expect.poll(() => rows(page)).toBe(1);
-      expect(await settledNet(page)).toBe(removed);
-
-      // A new stroke, then Ctrl+Z pops that stroke alone.
-      await page.mouse.click(cx + 30, cy);
-      await expect.poll(() => ops(page)).toBe(3);
-      await expect.poll(() => rows(page)).toBe(1);
-      await expectRowsMatchOps(page);
-      await page.keyboard.press('Control+z');
-      await expect.poll(() => ops(page)).toBe(2);
-      await expectRowsMatchOps(page);
-      expect(await settledNet(page)).toBe(removed);
-      expect(await workerErrors(page)).toEqual([]);
-    });
-
-    test('Remove pressed during a stroke cancels the stroke; nothing half-commits', async ({
-      page
-    }) => {
-      await recordWorkerErrors(page);
-      await gotoEditor(page);
-      await jumpAndIdle(page, FRAME);
-      const [cx, cy] = await projectToPage(page, FRAME.center);
-      await page.mouse.click(cx, cy);
-      await expect.poll(() => ops(page)).toBe(1);
-      await pickStories(page, 20);
-      await page.mouse.click(cx, cy);
-      await expect.poll(() => ops(page)).toBe(2);
-      const row = page.getByRole('button', { name: /^20 stories · / });
-      await row.click();
-      const remove = page.getByRole('button', { name: /^Remove: 20 stories · / });
-      await expect(remove).toBeVisible();
-
-      // A stroke in progress (the button held down), then Remove (as assistive tech presses it).
-      const [x0, y0] = await projectToPage(page, [-122.4193, 37.76014]);
-      const [x1, y1] = await projectToPage(page, [-122.418, 37.76014]);
-      await page.mouse.move(x0, y0);
-      await page.mouse.down();
-      await page.mouse.move(x1, y1, { steps: 10 });
-      await remove.evaluate((b) => (b as HTMLElement).click());
-      await page.mouse.up();
-
-      await expect.poll(() => ops(page)).toBe(1);
-      await settledNet(page);
-      expect(await ops(page)).toBe(1);
-      await expect(rowButtons(page)).toHaveCount(1);
-      await expectRowsMatchOps(page);
-      // The next undo restores the row: the stroke left nothing to undo.
-      await page.keyboard.press('Control+z');
-      await expect.poll(() => ops(page)).toBe(2);
-      await expect(rowButtons(page)).toHaveCount(2);
-      expect(await workerErrors(page)).toEqual([]);
     });
   });
 
@@ -422,8 +369,8 @@ test.describe('brush tool', () => {
       const heightBefore = await mapHeight();
       await touchDrag(cdp, p, q);
       await expect.poll(() => ops(page)).toBe(1);
-      // The stroke's result is announced, not shown: the map keeps its height (no pill in flow).
-      await expect(announcement(page)).toHaveText(/^Painted 6 stories/);
+      // The stroke's result shows in the chip over the map: the map keeps its height.
+      await expect(strokeChip(page)).toHaveText(/^6 stories on \d+ lots/);
       expect(await mapHeight()).toBe(heightBefore);
 
       // A second touch mid-stroke cancels it: still one op.
@@ -450,17 +397,36 @@ test.describe('brush tool', () => {
       expect(await ops(page)).toBe(2);
     });
 
+    test('a stroke while parcels failed: the stroke chip clears the failure chip and its Retry', async ({
+      page
+    }) => {
+      await page.route(CHUNK, (r) => r.abort());
+      await gotoEditor(page);
+      await jumpAndIdle(page, FRAME);
+      const cdp = await page.context().newCDPSession(page);
+      await chooseTool(page, 'Paint');
+      await jumpAndIdle(page, FRAME);
+      const p = await projectToPage(page, [-122.419, 37.76014]);
+      const q = await projectToPage(page, [-122.4183, 37.76014]);
+      await touchDrag(cdp, p, q);
+      await expect.poll(() => ops(page)).toBe(1);
+      await expect(failureChip(page)).toBeVisible();
+      await touchDrag(cdp, p, q);
+      await expect.poll(() => ops(page)).toBe(2);
+      await expectChipsApart(page);
+    });
+
     test('axe: the editor with the radius popover open', async ({ page }) => {
       await gotoEditor(page);
       // The palette strip's size pop-over (Paint folds the sheet to the strip).
       await chooseTool(page, 'Paint');
       const opener = page
         .getByTestId('palette-strip')
-        .getByRole('button', { name: /^Brush \d+ m$/ });
+        .getByRole('button', { name: /^Brush size: \d+ m$/ });
       await expect(opener).toHaveText(/^\d+ m$/);
       await opener.tap();
       await expect(opener).toHaveAttribute('aria-expanded', 'true');
-      await expect(page.getByRole('group', { name: 'Brush radius' })).toBeVisible();
+      await expect(page.getByRole('group', { name: 'Brush size' })).toBeVisible();
       await expectNoA11yViolations(page);
     });
   });

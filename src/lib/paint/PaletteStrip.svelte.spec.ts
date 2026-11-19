@@ -11,7 +11,7 @@ import PaletteStripHost from './test/PaletteStripHost.svelte';
 
 const HINT = 'Erase has no height.';
 
-function setup(tool: BrushTool = 'paint') {
+function setup(tool: BrushTool = 'paint', extra: Record<string, unknown> = {}) {
   const brush = new BrushState({ storage: null, fine: false });
   brush.phase = 'ready';
   const calls: string[] = [];
@@ -25,7 +25,8 @@ function setup(tool: BrushTool = 'paint') {
       eraseHint: HINT,
       ontool,
       ondone,
-      onready: (f: () => void) => (focus = f)
+      onready: (f: () => void) => (focus = f),
+      ...extra
     }
   });
   return { brush, ontool, ondone, calls, focus: () => focus() };
@@ -36,6 +37,75 @@ const btn = (name: string) => page.getByRole('button', { name, exact: true });
 const swatch = () => page.getByRole('button', { name: /^Height: / });
 const palette = () => page.getByRole('group', { name: 'Height', exact: true });
 
+describe('PaletteStrip Undo', () => {
+  beforeEach(async () => {
+    await page.viewport(375, 700);
+  });
+
+  it('with onundo, Undo sits before Done, is disabled with nothing to undo, and calls it', async () => {
+    const onundo = vi.fn();
+    setup('paint', { onundo, canUndo: false });
+    const undo = btn('Undo');
+    await expect.element(undo).toBeDisabled();
+    const done = btn('Done').element();
+    expect(undo.element().compareDocumentPosition(done) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+    expect(document.querySelectorAll('[data-testid="palette-strip"] button')).toHaveLength(5);
+  });
+
+  it('calls onundo when there is something to undo', async () => {
+    const onundo = vi.fn();
+    setup('paint', { onundo, canUndo: true });
+    await btn('Undo').click();
+    expect(onundo).toHaveBeenCalledOnce();
+  });
+
+  it('without onundo there is no Undo (as on /sim)', async () => {
+    setup();
+    await expect.element(strip()).toBeVisible();
+    expect(page.getByRole('button', { name: 'Undo' }).elements()).toEqual([]);
+  });
+
+  it('at 320 px the Brush size pop-over is inside the viewport and its targets are 44 px', async () => {
+    await page.viewport(320, 700);
+    setup('paint', { onundo: vi.fn(), canUndo: true });
+    await btn('Brush size: 30 m').click();
+    const pop = page.getByRole('group', { name: 'Brush size', exact: true });
+    await expect.element(pop).toBeVisible();
+    const box = pop.element().getBoundingClientRect();
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.right).toBeLessThanOrEqual(320);
+    expect(box.top).toBeGreaterThanOrEqual(0);
+    expect(box.bottom).toBeLessThanOrEqual(700);
+    const targets = pop.element().querySelectorAll('button, input, [role="slider"]');
+    expect(targets.length).toBeGreaterThan(0);
+    for (const t of targets) {
+      const r = t.getBoundingClientRect();
+      expect(r.width).toBeGreaterThanOrEqual(44);
+      expect(r.height).toBeGreaterThanOrEqual(44);
+    }
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
+  });
+
+  for (const tool of ['paint', 'erase'] as const) {
+    it(`at 320 px in ${tool} the strip with Undo is inside the viewport and every target is 44 px`, async () => {
+      await page.viewport(320, 700);
+      setup(tool, { onundo: vi.fn(), canUndo: true });
+      await expect.element(btn('Undo')).toBeVisible();
+      const bar = page.getByTestId('palette-strip').element().getBoundingClientRect();
+      expect(bar.right).toBeLessThanOrEqual(312);
+      expect(bar.left).toBeGreaterThanOrEqual(8);
+      for (const b of document.querySelectorAll('[data-testid="palette-strip"] button')) {
+        const r = b.getBoundingClientRect();
+        expect(r.width).toBeGreaterThanOrEqual(44);
+        expect(r.height).toBeGreaterThanOrEqual(44);
+      }
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
+    });
+  }
+});
+
 describe('PaletteStrip at 375 px', () => {
   beforeEach(async () => {
     await page.viewport(375, 700);
@@ -45,7 +115,7 @@ describe('PaletteStrip at 375 px', () => {
     setup();
     await expect.element(strip()).toBeVisible();
     await expect.element(page.getByTestId('palette-strip')).toBeVisible();
-    const names = ['Tool: Paint', 'Height: 6 stories', 'Brush 30 m', 'Done'];
+    const names = ['Tool: Paint', 'Height: 6 stories', 'Brush size: 30 m', 'Done'];
     const boxes = [];
     for (const n of names) {
       await expect.element(btn(n)).toBeVisible();
@@ -117,9 +187,12 @@ describe('PaletteStrip at 375 px', () => {
   it('opening the size closes the palette', async () => {
     setup();
     await swatch().click();
-    await btn('Brush 30 m').click();
-    await expect.element(btn('Brush 30 m')).toHaveAttribute('aria-expanded', 'true');
+    await btn('Brush size: 30 m').click();
+    await expect.element(btn('Brush size: 30 m')).toHaveAttribute('aria-expanded', 'true');
     await expect.element(swatch()).toHaveAttribute('aria-expanded', 'false');
+    await expect
+      .element(page.getByRole('group', { name: 'Brush size', exact: true }))
+      .toBeVisible();
   });
 
   it('Erase disables the swatch and gives it the hint', async () => {
@@ -127,7 +200,7 @@ describe('PaletteStrip at 375 px', () => {
     await expect.element(btn('Tool: Erase')).toBeVisible();
     await expect.element(swatch()).toBeDisabled();
     await expect.element(swatch()).toHaveAccessibleDescription(HINT);
-    await expect.element(btn('Brush 30 m')).toBeEnabled();
+    await expect.element(btn('Brush size: 30 m')).toBeEnabled();
   });
 
   it('Done chooses Move, then reports done', async () => {

@@ -14,11 +14,19 @@
     disabled?: boolean;
     /** Shown, and describing every control, while disabled. */
     hint?: string;
+    /** The id of a visible label: the group is aria-labelledby it instead of aria-label 'Height'. */
+    labelledby?: string;
     /** A preset swatch was chosen (not the stepper): the phone strip closes its pop-over. */
     onpick?(stories: number): void;
   }
 
-  let { brush, disabled = false, hint = MSG.eraseHint, onpick = undefined }: Props = $props();
+  let {
+    brush,
+    disabled = false,
+    hint = MSG.eraseHint,
+    labelledby = undefined,
+    onpick = undefined
+  }: Props = $props();
 
   const uid = $props.id();
   const hintId = `${uid}-hint`;
@@ -36,7 +44,8 @@
 
 <div
   role="group"
-  aria-label="Height"
+  aria-label={labelledby ? undefined : 'Height'}
+  aria-labelledby={labelledby}
   aria-describedby={disabled ? hintId : undefined}
   class="flex flex-col gap-2 text-ink dark:text-ink-dark"
 >

@@ -13,6 +13,8 @@
     ontool?: (t: BrushTool) => void;
     ondone?: () => void;
     onready?: (focus: () => void) => void;
+    canUndo?: boolean;
+    onundo?: () => void;
   }
 
   let {
@@ -21,7 +23,9 @@
     eraseHint = 'Erase has no height.',
     ontool = undefined,
     ondone = undefined,
-    onready = undefined
+    onready = undefined,
+    canUndo = false,
+    onundo = undefined
   }: Props = $props();
 
   // The prop only seeds the host's own state, as a page's would.
@@ -44,4 +48,6 @@
   }}
   ondone={() => ondone?.()}
   {eraseHint}
+  {canUndo}
+  {onundo}
 />

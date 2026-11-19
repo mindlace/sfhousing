@@ -12,12 +12,18 @@ import { expectNoA11yViolations } from './helpers/a11y';
 import { expectAboutReachable, expectNoFooter, expectPhoneHeaderFits } from './helpers/chrome';
 import {
   PLAN_KEY,
+  TOUCH_FROM,
+  TOUCH_TO,
   chooseTool,
   gotoEditor,
   headerScore,
+  jumpAndIdle,
   openHeaderMenu,
+  ops,
+  projectToPage,
   resultsFace,
   smallText,
+  touchDrag,
   waitForMap,
   type Win
 } from './helpers/sharing';
@@ -282,6 +288,52 @@ test.describe('mobile', () => {
     );
   });
 
+  test("375 px: a stroke's chip overlays the map: the map region keeps its height, the strip stays clear", async ({
+    page
+  }) => {
+    await gotoEditor(page);
+    await setAttribution(page, false);
+    await jumpAndIdle(page);
+    await chooseTool(page, 'Paint');
+    // The strip and the folded sheet are in place: project after the layout settles.
+    await jumpAndIdle(page);
+    await expect(statusLine(page)).toHaveText('');
+    const mapRoot = page.getByTestId('map-root');
+    const heightBefore = (await box(mapRoot)).height;
+    const chip = page.getByTestId('stroke-chip');
+    await expect(chip).toHaveCount(0);
+
+    const cdp = await page.context().newCDPSession(page);
+    await touchDrag(
+      cdp,
+      await projectToPage(page, TOUCH_FROM),
+      await projectToPage(page, TOUCH_TO)
+    );
+    await expect.poll(() => ops(page)).toBe(1);
+    await expect(chip).toHaveText(/^6 stories on \d+ lots/);
+    expect((await box(mapRoot)).height).toBe(heightBefore);
+    await expectInside(chip, mapRoot);
+    await expectApart(
+      [['stroke chip', chip]],
+      [
+        ['palette strip', strip(page)],
+        ['dock handle', handle(page)],
+        ['attribution', attribution(page)]
+      ]
+    );
+    // The chip takes no presses: what is under its centre is the map's canvas, and a stroke that
+    // starts there paints.
+    const c = await chip.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      return { x, y, hit: document.elementFromPoint(x, y)?.className ?? '' };
+    });
+    expect(c.hit).toContain('maplibregl-canvas');
+    await touchDrag(cdp, [c.x, c.y], [c.x + 40, c.y + 40]);
+    await expect.poll(() => ops(page)).toBe(2);
+  });
+
   test('/: the failed phase shows its Retry pill, unobscured', async ({ page }) => {
     // The sim worker never loads: the client reports a crash and the brush enters `failed`.
     await page.route('**/workers/worker-*.js', (r) => r.fulfill({ status: 404, body: '' }));
@@ -316,7 +368,7 @@ test.describe('mobile', () => {
     expect((await box(strip(page))).y + (await box(strip(page))).height).toBeLessThanOrEqual(
       (await box(handle(page))).y
     );
-    for (const name of [/^Height: /, /^Brush \d+ m$/]) {
+    for (const name of [/^Height: /, /^Brush size: \d+ m$/]) {
       const opener = strip(page).getByRole('button', { name });
       await opener.tap();
       const pop = page.locator(`[id="${await opener.getAttribute('aria-controls')}"]`);
@@ -333,6 +385,21 @@ test.describe('mobile', () => {
 test.describe('desktop', () => {
   // eslint-disable-next-line playwright/no-skipped-test
   test.skip(({ isMobile }) => isMobile, 'chromium project only');
+
+  test("/: Escape on the header score closes the goal's name and leaves the dock open", async ({
+    page
+  }) => {
+    await gotoEditor(page);
+    await expect(page.locator('.sfh-dock-panel')).toBeVisible();
+    await headerScore(page).focus();
+    const tip = page.getByRole('banner').getByRole('tooltip');
+    await expect(tip).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(tip).toBeHidden();
+    await expect(headerScore(page)).toBeFocused();
+    await expect(page.locator('.sfh-dock-panel')).toBeVisible();
+    await expect(page.getByTestId('dock-rail')).toHaveCount(0);
+  });
 
   test('/: About entry in the header, nothing under the map, the dock on the left, the score in the header', async ({
     page
@@ -366,6 +433,14 @@ test.describe('medium width', () => {
   // eslint-disable-next-line playwright/no-skipped-test
   test.skip(({ isMobile }) => isMobile, 'chromium project only');
 
+  test('1280x720: Shortcuts is on screen with the Paint tab open at rest', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await gotoEditor(page);
+    const shortcuts = page.getByTestId('dock').getByRole('button', { name: 'Keyboard shortcuts' });
+    await expect(shortcuts).toBeVisible();
+    await expect(shortcuts).toBeInViewport({ ratio: 1 });
+  });
+
   for (const width of [800, 1023]) {
     test(`${width} px: opening Keyboard shortcuts leaves the dock as it was, and a short window scrolls the dock inside`, async ({
       page
@@ -374,7 +449,11 @@ test.describe('medium width', () => {
       await gotoEditor(page);
       const panel = page.locator('.sfh-dock-panel');
       const h = await panel.evaluate((el) => el.scrollHeight);
+      // The button is the last control in the Paint tab.
       const shortcuts = panel.getByRole('button', { name: 'Keyboard shortcuts' });
+      await expect(panel.locator('button, input').last()).toHaveAccessibleName(
+        'Keyboard shortcuts'
+      );
       await shortcuts.click();
       await expect(page.getByRole('table', { name: 'Keyboard shortcuts' })).toBeVisible();
       expect(await panel.evaluate((el) => el.scrollHeight)).toBe(h);
@@ -422,7 +501,7 @@ test.describe('medium width', () => {
     }
   };
   for (const path of ['/', '/p/:id'] as const) {
-    test(`768 px on ${path}: the header is the Menu layout and Paint folds the dock from the Menu`, async ({
+    test(`768 px on ${path}: the header is the Menu layout; the dock folds by its own button`, async ({
       page,
       request
     }) => {
@@ -439,17 +518,19 @@ test.describe('medium width', () => {
       expect(fit, 'the header overflows').toBe(true);
       await expect(page.locator('.sfh-dock-panel')).toBeVisible();
 
+      // The Menu holds the two step links and no Paint button.
       await openHeaderMenu(page);
-      await expect(paint).toBeVisible();
       for (const name of ['Paint', 'Simulate'])
         await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
+      await expect(paint).toHaveCount(0);
       await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
-      await expect(paint).toHaveAttribute('aria-expanded', 'true');
-      await paint.click();
+      await page.keyboard.press('Escape');
+
+      await page.getByRole('button', { name: 'Collapse Paint' }).click();
       await expect(page.locator('.sfh-dock-panel')).toHaveCount(0);
       await expect(page.getByTestId('dock-rail')).toBeVisible();
-      await openHeaderMenu(page);
-      await expect(paint).toHaveAttribute('aria-expanded', 'false');
+      await expect(paint).toHaveCount(0);
+      await expect(banner.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
       ).toBe(true);
@@ -502,7 +583,7 @@ test.describe('landscape phone 667×375', () => {
 
     // The palette strip: every control visible, on top, clear of the bars.
     await chooseTool(page, 'Paint');
-    for (const name of [/^Tool: /, /^Height: /, /^Brush \d+ m$/, /^Done$/]) {
+    for (const name of [/^Tool: /, /^Height: /, /^Brush size: \d+ m$/, /^Done$/]) {
       const c = strip(page).getByRole('button', { name });
       await expect(c).toBeInViewport({ ratio: 1 });
       await expectUnobscured(c);
@@ -524,6 +605,8 @@ test.describe('landscape phone 667×375', () => {
     await expectNoA11yViolations(page);
     await collapse.tap();
     await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
+    // Folding by the button leaves focus on the handle, not on the page.
+    await expect(handle(page)).toBeFocused();
 
     // Results (the header score) in the sheet: inside the map region, its flip button reachable.
     await headerScore(page).tap();
@@ -554,10 +637,13 @@ test.describe('landscape phone 667×375', () => {
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     ).toBe(true);
     await checkMobile(page);
-    // Read-only: the sheet holds the rows, no tools.
+    // Read-only: the sheet holds the read-only line and one summary line; no rows, no tools.
     await handle(page).tap();
-    await expect(page.locator('[data-paint-row]').first()).toBeVisible();
-    await expect(page.getByRole('radiogroup', { name: 'Brush tool' })).toHaveCount(0);
+    const tab = dockSheet(page).getByRole('tabpanel');
+    await expect(tab.getByText(MSG.readOnly, { exact: true })).toBeVisible();
+    await expect(tab.getByText(/stories · [\d,]+ lots? rebuilt$/)).toBeVisible();
+    await expect(page.locator('[data-paint-row]')).toHaveCount(0);
+    await expect(page.getByRole('radiogroup', { name: 'Tool' })).toHaveCount(0);
     await expectNoA11yViolations(page);
   });
 });
@@ -574,7 +660,7 @@ test.describe('account entry', () => {
     test.use({ viewport: { width: 1024, height: 768 } });
 
     for (const path of ['/', '/sim']) {
-      test(`${path} at 1024×768: visible, clear of the score bar and the actions, axe clean`, async ({
+      test(`${path} at 1024×768: visible, clear of the header score and the actions, axe clean`, async ({
         page
       }) => {
         await page.goto(path);

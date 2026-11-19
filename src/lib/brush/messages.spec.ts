@@ -6,7 +6,6 @@ import {
   MSG,
   TOO_LARGE_MS,
   radiusValueText,
-  rowStepMessage,
   strokeMessage,
   undoMessage
 } from './messages';
@@ -25,43 +24,37 @@ const base: OpStats = {
 };
 
 describe('strokeMessage', () => {
-  it('formats paint', () => {
-    expect(strokeMessage(base)).toBe(
-      'Painted 6 stories on 143 parcels · 97 new buildings · 46 already as big or bigger'
-    );
-  });
-  it('uses singulars', () => {
+  it('a paint stroke: stories on lots', () => {
+    expect(strokeMessage(base)).toBe('6 stories on 143 lots');
     expect(strokeMessage({ ...base, stories: 1, covered: 1, built: 1, notBigger: 0 })).toBe(
-      'Painted 1 story on 1 parcel · 1 new building · 0 already as big or bigger'
+      '1 story on 1 lot'
+    );
+    expect(strokeMessage({ ...base, covered: 1234, built: 1000 })).toBe('6 stories on 1,234 lots');
+  });
+  it('appends not eligible, in the Bay and still loading, in that order', () => {
+    expect(
+      strokeMessage({ ...base, covered: 42, ineligible: 3, underwater: 2, partial: true })
+    ).toBe('6 stories on 42 lots · 3 not eligible · 2 in the Bay · still loading');
+  });
+  it('an erase', () => {
+    expect(
+      strokeMessage({ ...base, kind: 'erase', stories: undefined, covered: 42, removed: 97 })
+    ).toBe('Erased 42 lots');
+    expect(strokeMessage({ ...base, kind: 'erase', covered: 1, removed: 1, ineligible: 3 })).toBe(
+      'Erased 1 lot · 3 not eligible'
     );
   });
-  it('groups thousands', () => {
-    expect(strokeMessage({ ...base, covered: 1234, built: 1000 })).toContain(
-      'on 1,234 parcels · 1,000 new buildings'
-    );
-  });
-  it('formats erase', () => {
-    expect(strokeMessage({ ...base, kind: 'erase', stories: undefined, removed: 97 })).toBe(
-      'Erased 143 parcels · 97 generated buildings removed'
-    );
-    expect(strokeMessage({ ...base, kind: 'erase', covered: 1, removed: 1 })).toBe(
-      'Erased 1 parcel · 1 generated building removed'
-    );
-  });
-  it('appends ineligible and partial suffixes', () => {
-    expect(strokeMessage({ ...base, ineligible: 12, partial: true })).toBe(
-      'Painted 6 stories on 143 parcels · 97 new buildings · 46 already as big or bigger' +
-        ' · 12 not eligible (open space or unmapped lots) · some areas still loading'
-    );
-  });
-  it('handles nothing covered', () => {
-    expect(strokeMessage({ ...base, covered: 0 })).toBe('No parcels under that stroke');
-    expect(strokeMessage({ ...base, covered: 0, ineligible: 1234 })).toBe(
-      'No eligible parcels under that stroke · 1,234 not eligible (open space or unmapped lots)'
+  it('nothing under the stroke', () => {
+    expect(strokeMessage({ ...base, covered: 0 })).toBe('No lots under that stroke');
+    expect(strokeMessage({ ...base, covered: 0, ineligible: 3 })).toBe(
+      'No eligible lots under that stroke · 3 not eligible'
     );
     expect(strokeMessage({ ...base, covered: 0, partial: true })).toBe(
-      'No parcels under that stroke · some areas still loading'
+      'No lots under that stroke · still loading'
     );
+  });
+  it('the refusal says what to do', () => {
+    expect(MSG.tooLarge).toBe('Plan too large to save. Undo some strokes.');
   });
 });
 
@@ -75,25 +68,16 @@ describe('undoMessage', () => {
   });
 });
 
-describe('rowStepMessage', () => {
-  it('names the removal being undone or redone', () => {
-    const step = { label: 'Removed 8 stories' };
-    expect(rowStepMessage(step, 'Undid')).toBe('Undid: Removed 8 stories');
-    expect(rowStepMessage(step, 'Redid')).toBe('Redid: Removed 8 stories');
-  });
-});
-
 describe('constants', () => {
   it('has verbatim copy', () => {
     expect(MSG.loadingCity).toBe('Loading city data…');
     expect(MSG.cityFailed).toBe("Couldn't load city data.");
     expect(MSG.loadingParcels).toBe('Loading parcels…');
     expect(MSG.zoomIn).toBe('Zoom in to see the brush');
-    expect(MSG.readOnly).toBe('Read-only — Remix to edit');
+    expect(MSG.readOnly).toBe('Read-only. Remix to edit.');
+    expect(MSG.start).toBe('Pick a height, then paint the map.');
     expect(MSG.eraseHint).toBe('Erase removes painted height');
-    expect(MSG.tooLarge).toBe(
-      'This stroke would make the plan too large to save (256 KB limit). Undo some strokes or start a new plan.'
-    );
+    expect(MSG.tooLarge).toBe('Plan too large to save. Undo some strokes.');
     expect(MSG.mapLabel).toBe(
       'Map. Arrow keys pan, plus and minus zoom. In Paint or Erase, press Enter to apply the brush at the centre crosshair.'
     );
@@ -111,16 +95,14 @@ describe('constants', () => {
         underwater: 3,
         stories: 4
       })
-    ).toBe(
-      'Painted 4 stories on 2 parcels · 1 new building · 1 already as big or bigger · 1 not eligible (open space or unmapped lots) · 3 in the Bay'
-    );
+    ).toBe('4 stories on 2 lots · 1 not eligible · 3 in the Bay');
   });
-  it('says no eligible parcels when the stroke is all water', () => {
+  it('says no eligible lots when the stroke is all water', () => {
     expect(strokeMessage({ ...base, covered: 0, built: 0, notBigger: 0, underwater: 2 })).toBe(
-      'No eligible parcels under that stroke · 2 in the Bay'
+      'No eligible lots under that stroke · 2 in the Bay'
     );
   });
   it('formats radius value text', () => {
-    expect(radiusValueText(30)).toBe('Brush radius 30 metres');
+    expect(radiusValueText(30)).toBe('30 metres');
   });
 });

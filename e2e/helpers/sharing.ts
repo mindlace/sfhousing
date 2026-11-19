@@ -207,10 +207,6 @@ export async function touchDrag(
 export const ops = (page: Page): Promise<number> =>
   page.evaluate(() => (window as Win).__sfhBrush!.ops);
 
-/** The number of rows in `/`'s Paint tab (the plan's ops grouped), from the brush debug hook. */
-export const rows = (page: Page): Promise<number> =>
-  page.evaluate(() => (window as Win).__sfhBrush!.rows);
-
 /**
  * Chooses a brush tool from `/`'s Paint tab. From md the tab is open in the dock. Below md it sits
  * in the dock's sheet: the handle opens it, and Paint or Erase folds it to the palette strip
@@ -270,13 +266,16 @@ export async function paintOnce(page: Page, isMobile: boolean): Promise<void> {
   await expect.poll(() => ops(page)).toBe(1);
 }
 
-/** The header score on `/` and `/p/:id` (and `/sim`): "{n} homes added", the RHNA meter beside. */
+/** The header score on `/` and `/p/:id` (and `/sim`): "Room for {n} homes" on Paint. */
 export const headerScore = (page: Page): Locator =>
   page.getByRole('banner').getByTestId('score-bar');
 
-/** The header score's count, read from its text ("1,234 homes added" → 1234). */
+/** The header score's count, read from its text ("Room for 1,234 homes" → 1234). */
 export async function headerNet(page: Page): Promise<number> {
   const t = (await headerScore(page).textContent()) ?? '';
+  // A compact count ("Room for 1.2M homes") would parse as 12: fail loudly instead.
+  if (/\d\s*[KM]\b/.test(t.replace(/homes[\s\S]*$/, '')))
+    throw new Error(`headerNet cannot read a compact count: ${JSON.stringify(t)}`);
   return Number(t.replace(/homes[\s\S]*$/, '').replace(/[^\d-]/g, ''));
 }
 

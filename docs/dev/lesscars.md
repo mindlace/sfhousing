@@ -890,10 +890,11 @@ before.
 plays the stored representative future of the plan from `LESSCARS_START` (2028-01-01) to
 `LESSCARS_HORIZON` (2068-12-31). It opens paused at the start; nobody edits anything but the day
 (scrub, play) and the map. The header has no link to it: the page is opened by URL, and
-no mode link is current there. The header's mode links (Paint and Simulate) sit inline from lg
-(1024 px); below lg the header is the phone layout and the links and the actions are in the Menu.
-Between lg and xl (1280 px) the site name shows "SF Housing" only (its accessible name stays "SF
-Housing Simulator") and the mode links take `px-1` and `gap-2`, so the `/sim` row fits at 1024 px.
+no step is current there. The header's two steps (`nav` "Steps": an ordered list, Paint is 1 and
+Simulate 2) sit inline from lg (1024 px); below lg the header is the phone layout and the steps and
+the actions are in the Menu. Between lg and xl (1280 px) the site name shows "SF Housing" only (its
+accessible name stays "SF Housing Simulator"), the steps take `px-1` and `gap-2` and their numbers
+(`data-step-number`, `aria-hidden`) are hidden, so the `/sim` row fits at 1024 px.
 The e2e helper `clientNavigate` (`e2e/helpers/sharing.ts`) reaches the page by a client-side
 navigation, as a link would.
 

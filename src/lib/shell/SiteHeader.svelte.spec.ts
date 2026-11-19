@@ -138,105 +138,133 @@ describe('SiteHeader', () => {
     });
   });
 
-  describe('mode links', () => {
-    it('shows both links at 1024px and marks the current mode', async () => {
-      await page.viewport(1024, 768);
-      render(SiteHeader, { routeId: '/' });
-      const nav = page.getByRole('navigation', { name: 'Modes' });
-      const paint = nav.getByRole('link', { name: 'Paint' });
-      const simulate = nav.getByRole('link', { name: 'Simulate' });
-      await expect.element(paint).toHaveAttribute('href', '/');
-      await expect.element(paint).toHaveAttribute('aria-current', 'page');
-      await expect.element(simulate).toHaveAttribute('href', '/sim');
-      await expect.element(simulate).not.toHaveAttribute('aria-current');
-    });
+  describe('steps', () => {
+    const numbers = () => Array.from(document.querySelectorAll<HTMLElement>('[data-step-number]'));
+    const shown = (el: HTMLElement) => el.checkVisibility({ checkVisibilityCSS: true });
 
-    it('flips the current link on /sim', async () => {
-      await page.viewport(1024, 768);
-      render(SiteHeader, { routeId: '/sim' });
-      const nav = page.getByRole('navigation', { name: 'Modes' });
+    it('at 1280px the Steps nav is an ordered list of Paint then Simulate, with visible numbers', async () => {
+      await page.viewport(1280, 800);
+      render(SiteHeader, { routeId: '/' });
+      const nav = page.getByRole('navigation', { name: 'Steps' });
+      await expect.element(nav.getByRole('link', { name: 'Paint', exact: true })).toBeVisible();
+      const el = nav.element();
+      expect(el.querySelectorAll('ol > li')).toHaveLength(2);
+      const links = nav.getByRole('link').elements() as HTMLElement[];
+      expect(links.map((a) => a.textContent?.replace(/^\d/, ''))).toEqual(['Paint', 'Simulate']);
+      const nums = Array.from(el.querySelectorAll<HTMLElement>('[data-step-number]'));
+      expect(nums.map((n) => n.textContent)).toEqual(['1', '2']);
+      expect(nums.every(shown)).toBe(true);
+      expect(nums.every((n) => n.getAttribute('aria-hidden') === 'true')).toBe(true);
       await expect
         .element(nav.getByRole('link', { name: 'Paint' }))
+        .toHaveAttribute('aria-current', 'page');
+      await expect
+        .element(nav.getByRole('link', { name: 'Simulate' }))
         .not.toHaveAttribute('aria-current');
+    });
+
+    it('at 1024px the numbers are hidden and the links keep their widths', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { routeId: '/' });
+      const nav = page.getByRole('navigation', { name: 'Steps' });
+      const paint = nav.getByRole('link', { name: 'Paint' });
+      await expect.element(paint).toBeVisible();
+      const nums = Array.from(nav.element().querySelectorAll<HTMLElement>('[data-step-number]'));
+      expect(nums).toHaveLength(2);
+      expect(nums.some(shown)).toBe(false);
+      expect(paint.element().getBoundingClientRect().width).toBeLessThanOrEqual(43.5);
+      expect(
+        nav.getByRole('link', { name: 'Simulate' }).element().getBoundingClientRect().width
+      ).toBeLessThanOrEqual(67);
+    });
+
+    it('at 375px the Menu holds the two steps with their numbers', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { routeId: '/' });
+      await page.getByRole('button', { name: 'Menu' }).click();
+      const nav = page.getByRole('navigation', { name: 'Steps' });
+      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
+      const nums = Array.from(nav.element().querySelectorAll<HTMLElement>('[data-step-number]'));
+      expect(nums.map((n) => n.textContent)).toEqual(['1', '2']);
+      expect(nums.every(shown)).toBe(true);
+      expect(document.querySelector('a[href="/lesscars"]')).toBeNull();
+    });
+
+    it('marks Simulate on /sim, and neither on /p/[id] or /lesscars', async () => {
+      await page.viewport(1280, 800);
+      const { rerender } = await render(SiteHeader, { routeId: '/sim' });
+      const nav = page.getByRole('navigation', { name: 'Steps' });
+      const paint = nav.getByRole('link', { name: 'Paint' });
+      const simulate = nav.getByRole('link', { name: 'Simulate' });
+      await expect.element(paint).not.toHaveAttribute('aria-current');
+      await expect.element(simulate).toHaveAttribute('aria-current', 'page');
+      for (const routeId of ['/p/[id]', '/lesscars']) {
+        await rerender({ routeId });
+        await expect.element(paint).toBeVisible();
+        await expect.element(paint).not.toHaveAttribute('aria-current');
+        await expect.element(simulate).not.toHaveAttribute('aria-current');
+      }
+    });
+
+    it('at 375px Paint is absent until the Menu opens, and Simulate is current inside it', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { routeId: '/sim' });
+      expect(page.getByRole('link', { name: 'Paint' }).elements()).toEqual([]);
+      await page.getByRole('button', { name: 'Menu' }).click();
+      const nav = page.getByRole('navigation', { name: 'Steps' });
+      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
       await expect
         .element(nav.getByRole('link', { name: 'Simulate' }))
         .toHaveAttribute('aria-current', 'page');
     });
 
-    it('shows both links with neither current on a shared plan', async () => {
-      await page.viewport(1024, 768);
-      render(SiteHeader, { routeId: '/p/[id]' });
-      const nav = page.getByRole('navigation', { name: 'Modes' });
-      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-      await expect.element(nav.getByRole('link', { name: 'Simulate' })).toBeVisible();
+    for (const routeId of ['/s/[id]', '/about'])
+      it(`shows both steps with neither current on ${routeId}`, async () => {
+        await page.viewport(1280, 800);
+        render(SiteHeader, { routeId });
+        const nav = page.getByRole('navigation', { name: 'Steps' });
+        await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
+        await expect
+          .element(nav.getByRole('link', { name: 'Paint' }))
+          .not.toHaveAttribute('aria-current');
+        await expect
+          .element(nav.getByRole('link', { name: 'Simulate' }))
+          .not.toHaveAttribute('aria-current');
+      });
+
+    it('the numbers are not part of the names', async () => {
+      await page.viewport(1280, 800);
+      render(SiteHeader, { routeId: '/' });
       await expect
-        .element(nav.getByRole('link', { name: 'Paint' }))
-        .not.toHaveAttribute('aria-current');
+        .element(page.getByRole('link', { name: 'Paint', exact: true }))
+        .toHaveAttribute('href', '/');
       await expect
-        .element(nav.getByRole('link', { name: 'Simulate' }))
-        .not.toHaveAttribute('aria-current');
+        .element(page.getByRole('link', { name: 'Simulate', exact: true }))
+        .toHaveAttribute('href', '/sim');
+      // Two navs (the bar's and the Menu's), two numbers each, all hidden from speech.
+      expect(numbers()).toHaveLength(4);
+      expect(numbers().every((n) => n.getAttribute('aria-hidden') === 'true')).toBe(true);
     });
 
     for (const width of [1024, 1280])
-      it(`at ${width}px the Modes nav holds Paint and Simulate only`, async () => {
+      it(`at ${width}px the Steps nav holds Paint and Simulate only`, async () => {
         await page.viewport(width, 768);
         render(SiteHeader, { routeId: '/' });
-        const nav = page.getByRole('navigation', { name: 'Modes' });
+        const nav = page.getByRole('navigation', { name: 'Steps' });
         await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
         const names = nav
           .getByRole('link')
           .elements()
           .map((a) => (a as HTMLElement).innerText);
-        expect(names).toEqual(['Paint', 'Simulate']);
+        expect(names.map((n) => n.replace(/^\d\s*/, ''))).toEqual(['Paint', 'Simulate']);
         expect(document.querySelector('a[href="/lesscars"]')).toBeNull();
       });
 
-    it('at 375px the Menu holds Paint and Simulate only', async () => {
-      await page.viewport(375, 812);
-      render(SiteHeader, { routeId: '/' });
-      await page.getByRole('button', { name: 'Menu' }).click();
-      const nav = page.getByRole('navigation', { name: 'Modes' });
-      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-      const names = nav
-        .getByRole('link')
-        .elements()
-        .map((a) => (a as HTMLElement).innerText);
-      expect(names).toEqual(['Paint', 'Simulate']);
-      expect(document.querySelector('a[href="/lesscars"]')).toBeNull();
-    });
-
-    it('on /lesscars no mode link is current', async () => {
-      await page.viewport(1024, 768);
-      render(SiteHeader, { routeId: '/lesscars' });
-      const nav = page.getByRole('navigation', { name: 'Modes' });
-      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-      await expect
-        .element(nav.getByRole('link', { name: 'Paint' }))
-        .not.toHaveAttribute('aria-current');
-      await expect
-        .element(nav.getByRole('link', { name: 'Simulate' }))
-        .not.toHaveAttribute('aria-current');
-    });
-
-    it('puts both links in the menu at 375px and marks the current mode', async () => {
-      await page.viewport(375, 812);
-      render(SiteHeader, { routeId: '/sim' });
-      await expect.element(page.getByRole('link', { name: 'Paint' })).not.toBeInTheDocument();
-      await page.getByRole('button', { name: 'Menu' }).click();
-      const nav = page.getByRole('navigation', { name: 'Modes' });
-      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-      await expect
-        .element(nav.getByRole('link', { name: 'Simulate' }))
-        .toHaveAttribute('aria-current', 'page');
-    });
-  });
-
-  describe('mode tabs', () => {
     const tabs = async (width: number) => {
       await page.viewport(width, 812);
       render(SiteHeader, { routeId: '/' });
       if (width < 1024) await page.getByRole('button', { name: 'Menu' }).click();
-      const nav = page.getByRole('navigation', { name: 'Modes' });
+      const nav = page.getByRole('navigation', { name: 'Steps' });
       const current = nav.getByRole('link', { name: 'Paint' });
       const other = nav.getByRole('link', { name: 'Simulate' });
       await expect.element(current).toBeVisible();
@@ -247,13 +275,13 @@ describe('SiteHeader', () => {
     };
 
     for (const width of [1024, 375]) {
-      it(`at ${width}px the current tab is filled, not underlined`, async () => {
+      it(`at ${width}px the current step is filled, not underlined`, async () => {
         const { current } = await tabs(width);
         expect(current.backgroundColor).toBe('rgb(163, 71, 44)');
         expect(current.textDecorationLine).toBe('none');
       });
 
-      it(`at ${width}px the other tab is unfilled, not underlined and looks pressable`, async () => {
+      it(`at ${width}px the other step is unfilled, not underlined and looks pressable`, async () => {
         const { other } = await tabs(width);
         expect(other.backgroundColor).toBe('rgba(0, 0, 0, 0)');
         expect(other.textDecorationLine).toBe('none');
@@ -297,6 +325,30 @@ describe('SiteHeader', () => {
         .toBeVisible();
       expect(suffixOf().getBoundingClientRect().width).toBeGreaterThan(20);
     });
+  });
+
+  describe('signed in with a long handle', () => {
+    const handle = 'a-very-long-handle-that-will-not-fit-in-the-header';
+    const actions = createRawSnippet(() => ({
+      render: () => '<span><button>View</button><button>Publish</button></span>'
+    }));
+    const pinned = createRawSnippet(() => ({
+      render: () => '<button>Room for 47,335 homes</button>'
+    }));
+
+    // Known: on /sim at 1024 the row is about 15 px over on main with a handle and the playhead at
+    // the end (its status cell clips), so only the Paint-style header is asserted there.
+    for (const width of [1024, 1280])
+      it(`at ${width}px the header does not overflow and the handle is capped at 160px`, async () => {
+        await page.viewport(width, 800);
+        render(SiteHeader, { routeId: '/', user: { handle }, actions, pinned });
+        const banner = page.getByRole('banner');
+        const account = banner.getByRole('link', { name: `@${handle}` });
+        await expect.element(account).toBeVisible();
+        expect(account.element().getBoundingClientRect().width).toBeLessThanOrEqual(160);
+        const el = banner.element() as HTMLElement;
+        expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth);
+      });
   });
 
   it('fits at 375px with three 44px actions and no banner overflow', async () => {
@@ -376,7 +428,7 @@ describe('SiteHeader', () => {
       await expect.element(name()).toBeVisible();
       const panel = document.getElementById(menu().element().getAttribute('aria-controls')!)!;
       expect(panel.contains(name().element())).toBe(true);
-      // Before the mode links.
+      // Before the steps.
       const paint = page.getByRole('link', { name: 'Paint' }).element();
       expect(
         name().element().compareDocumentPosition(paint) & Node.DOCUMENT_POSITION_FOLLOWING
@@ -511,11 +563,11 @@ describe('SiteHeader', () => {
           '12,345 homes <span class="max-lg:sr-only">added</span></button>'
       }));
 
-      it('from lg it sits right after the last mode link, left of the actions', async () => {
+      it('from lg it sits right after the last step link, left of the actions', async () => {
         await page.viewport(1024, 768);
         render(SiteHeader, { routeId: '/sim', actions, pinned, status });
         const slot = page.getByTestId('status-slot').element();
-        const nav = page.getByRole('navigation', { name: 'Modes' });
+        const nav = page.getByRole('navigation', { name: 'Steps' });
         const lastLink = nav.getByRole('link', { name: 'Simulate' }).element();
         const score = page.getByRole('button', { name: '1,234 homes added' }).element();
         expect(
@@ -558,7 +610,7 @@ describe('SiteHeader', () => {
             const box = (el: Element) => el.getBoundingClientRect();
             const row = [
               page.getByRole('link', { name: /SF Housing/ }).element(),
-              page.getByRole('navigation', { name: 'Modes' }).element(),
+              page.getByRole('navigation', { name: 'Steps' }).element(),
               chip.element(),
               page.getByRole('button', { name: '12,345 homes added' }).element(),
               page.getByRole('button', { name: 'View' }).element(),
@@ -691,7 +743,7 @@ describe('keyboard shortcuts in the header', () => {
       await expect.element(shortcuts()).toBeVisible();
       const items = () => [
         page.getByRole('link', { name: /SF Housing/ }).element(),
-        page.getByRole('navigation', { name: 'Modes' }).element(),
+        page.getByRole('navigation', { name: 'Steps' }).element(),
         page.getByRole('button', { name: '12,345 homes added' }).element(),
         page.getByRole('button', { name: /^Undo/ }).element(),
         page.getByRole('button', { name: /^Redo/ }).element(),

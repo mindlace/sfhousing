@@ -3,6 +3,7 @@ import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import type { Manifest } from '$lib/data/manifest';
 import { emptyPlan, serializePlan, type Plan } from '$lib/plan';
+import { MSG } from '$lib/brush/messages';
 import { COPY, n3, remixedToast } from '$lib/sharing/copy';
 import { PLAN_KEY } from '$lib/sharing/storage';
 import { replaceStateCalls } from '../test-stubs/app/navigation';
@@ -74,44 +75,37 @@ describe('/ editor page', () => {
     await expect
       .element(page.getByRole('region', { name: 'Paint', exact: true }))
       .toBeInTheDocument();
-    await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeInTheDocument();
+    await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeInTheDocument();
     expect(document.querySelector('.brush-toolbar')).toBeNull();
   });
 
-  it('the header has a Paint button that toggles the dock', async () => {
+  it('the header has no Paint button; the dock folds by its own button and opens from the rail', async () => {
     render(PaintHeaderHost, { props: { data: data() } });
-    const paint = page.getByRole('banner').getByRole('button', { name: 'Paint', exact: true });
-    await expect.element(paint).toHaveAttribute('aria-expanded', 'true');
-    const dock = page.getByRole('region', { name: 'Paint', exact: true });
-    expect(paint.element().getAttribute('aria-controls')).toBe(dock.element().id);
-    // One button named Paint on the page: the rail's is "Paint tools", Results' "Back to painting".
-    expect(page.getByRole('button', { name: 'Paint', exact: true }).elements()).toHaveLength(1);
-    // Before Publish among the actions.
-    const publish = page.getByRole('button', { name: /Publish/ });
-    await expect.element(publish).toBeVisible();
-    expect(
-      paint.element().compareDocumentPosition(publish.element()) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy();
+    const banner = page.getByRole('banner');
+    await expect.element(page.getByRole('region', { name: 'Paint', exact: true })).toBeVisible();
+    expect(banner.getByRole('button', { name: 'Paint', exact: true }).elements()).toHaveLength(0);
     expect(document.querySelector('.sfh-dock-panel')).not.toBeNull();
 
-    await paint.click();
-    await expect.element(paint).toHaveAttribute('aria-expanded', 'false');
+    await page.getByRole('button', { name: 'Collapse Paint' }).click();
     expect(document.querySelector('.sfh-dock-panel')).toBeNull();
-    await expect.element(page.getByTestId('dock-rail')).toBeVisible();
-    await expect.element(page.getByRole('button', { name: 'Paint tools' })).toBeVisible();
-    expect(page.getByRole('button', { name: 'Paint', exact: true }).elements()).toHaveLength(1);
+    const rail = page.getByRole('button', { name: 'Paint tools' });
+    await expect.element(rail).toBeVisible();
+    await expect.poll(() => document.activeElement === rail.element()).toBe(true);
 
-    await paint.click();
-    await expect.element(paint).toHaveAttribute('aria-expanded', 'true');
-    await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+    await rail.click();
+    await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
+    expect(document.querySelector('.sfh-dock-panel')).not.toBeNull();
     // The user opened it: focus moves into the dock, on its selected tab.
     await expect.poll(() => document.activeElement?.getAttribute('role')).toBe('tab');
   });
 
-  it("the site header's score opens the empty Results face", async () => {
+  it('the header score reads room for homes and its share of the goal, and opens Results', async () => {
     render(PaintHeaderHost, { props: { data: data() } });
-    const score = page.getByRole('banner').getByTestId('score-bar');
-    await expect.element(score).toHaveTextContent('0 homes added');
+    const banner = page.getByRole('banner');
+    const score = banner.getByTestId('score-bar');
+    await expect.element(score).toHaveTextContent('Room for 0 homes');
+    await expect.element(banner.getByTestId('score-detail')).toHaveTextContent('0% of the goal');
+    expect(banner.getByRole('meter').elements()).toHaveLength(0);
     await score.click();
     const results = page.getByRole('region', { name: 'Results' });
     await expect
@@ -125,7 +119,7 @@ describe('/ editor page', () => {
     });
     await expect.element(page.getByText("Couldn't load city data.")).toBeInTheDocument();
     await expect.element(page.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
-    await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeInTheDocument();
+    await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeInTheDocument();
     expect(document.querySelector('[data-testid="map-root"]')).toBeNull();
   });
 
@@ -140,28 +134,39 @@ describe('/ editor page', () => {
         PLAN_KEY,
         JSON.stringify({ v: 1, savedAt: '2026-10-11T00:00:00.000Z', plan: serializePlan(plan) })
       );
-    const undo = () => page.getByRole('button', { name: /^Undo/ });
+    // A fine pointer has no Undo button: the keyboard does it (`page.undo.svelte.spec.ts`, which
+    // has a map double for the controller the keys need).
+    const noUndoButton = () =>
+      expect(page.getByRole('button', { name: /^Undo/ }).elements()).toHaveLength(0);
 
-    it('loads the autosaved plan into the editor (Undo enabled), no notice', async () => {
+    it('loads the autosaved plan (no Undo button on a fine pointer), no notice', async () => {
       seed(painted('fixture-0'));
       await render(Page, { props: { data: data(), params: {} } });
-      await expect.element(undo()).toBeEnabled();
+      await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
+      noUndoButton();
+      // Only a restored plan hides the starting sentence.
+      expect(page.getByText(MSG.start).elements()).toHaveLength(0);
       expect(page.getByRole('button', { name: 'Dismiss' }).elements()).toHaveLength(0);
-      // The restored plan is not re-written: the autosave's first schedule() is a no-op.
-      await new Promise((r) => setTimeout(r, 700));
+      // The restored plan is not re-written: the autosave's first schedule() is a no-op. A page
+      // hide flushes any pending write at once, so nothing pending leaves the record as it was.
+      window.dispatchEvent(new Event('pagehide'));
       expect(JSON.parse(localStorage.getItem(PLAN_KEY)!).savedAt).toBe('2026-10-11T00:00:00.000Z');
     });
 
-    it('starts empty with nothing saved (Undo disabled)', async () => {
+    it('starts empty with nothing saved (no Undo button)', async () => {
       await render(Page, { props: { data: data(), params: {} } });
-      await expect.element(undo()).toBeDisabled();
+      await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
+      noUndoButton();
+      await expect.element(page.getByText(MSG.start)).toBeVisible();
     });
 
     it('shows N1 for a corrupt record and preserves it', async () => {
       localStorage.setItem(PLAN_KEY, '{not json');
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(page.getByText(COPY.n1)).toBeVisible();
-      await expect.element(undo()).toBeDisabled();
+      noUndoButton();
+      // The corrupt record is not a plan: the page starts empty.
+      await expect.element(page.getByText(MSG.start)).toBeVisible();
       const kept = Object.keys(localStorage).filter((k) => k.startsWith('sfhousing:plan:corrupt:'));
       expect(kept).toHaveLength(1);
     });
@@ -170,7 +175,6 @@ describe('/ editor page', () => {
       seed(painted('fixture-9'));
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(page.getByText(n3('fixture-9', 'fixture-0'))).toBeVisible();
-      await expect.element(undo()).toBeEnabled();
       const rec = JSON.parse(localStorage.getItem(PLAN_KEY)!);
       expect(JSON.parse(rec.plan).datasetVersion).toBe('fixture-0');
     });
@@ -189,37 +193,6 @@ describe('/ editor page', () => {
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(page.getByText(remixedToast('My plan'))).toBeVisible();
       expect(replaceStateCalls).toEqual([{ url: '', state: {} }]);
-      await expect.element(undo()).toBeEnabled();
-    });
-
-    it('an autosave after a row removal restores the same rows', async () => {
-      const op = (id: string, stories: number) => ({
-        id,
-        kind: 'paint' as const,
-        stories,
-        radiusM: 20,
-        path: [[-122.4193, 37.76013]] as [number, number][]
-      });
-      seed({ schema: 1, datasetVersion: 'fixture-0', ops: [op('a', 6), op('c', 8), op('d', 6)] });
-      const rows = () =>
-        [...document.querySelectorAll('[data-paint-row]')].map((b) => b.getAttribute('aria-label'));
-      const screen = await render(Page, { props: { data: data(), params: {} } });
-      await expect.poll(rows).toHaveLength(3);
-      await page.getByRole('button', { name: /^8 stories · / }).click();
-      await page.getByRole('button', { name: /^Remove: 8 stories/ }).click();
-      // The neighbours at one height now make one row.
-      await expect.poll(rows).toEqual(['6 stories · 2 strokes · Finding lots…']);
-      // The autosave is the new op list.
-      await expect
-        .poll(() => JSON.parse(JSON.parse(localStorage.getItem(PLAN_KEY)!).plan).ops.length)
-        .toBe(2);
-      const saved = JSON.parse(JSON.parse(localStorage.getItem(PLAN_KEY)!).plan) as Plan;
-      expect(saved.ops.map((o) => o.id)).toEqual(['a', 'd']);
-
-      await screen.unmount();
-      await render(Page, { props: { data: data(), params: {} } });
-      await expect.poll(rows).toEqual(['6 stories · 2 strokes · Finding lots…']);
-      await expect.element(undo()).toBeEnabled();
     });
 
     it('Remix hand-off with the plan in history state (storage write failed) loads it', async () => {
@@ -228,7 +201,6 @@ describe('/ editor page', () => {
       };
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(page.getByText(remixedToast('abc123'))).toBeVisible();
-      await expect.element(undo()).toBeEnabled();
     });
   });
 });
