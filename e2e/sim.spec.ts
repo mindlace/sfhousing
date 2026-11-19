@@ -537,7 +537,7 @@ test('the Updating status never moves the timeline or the editor', async ({ page
   await addPolicy(page, 'Zoning', 'Transit rule');
   await waitRefilled(page, 0);
   const before = await refillCount(page);
-  // The site name: the first visible home link in the header (the mode link Paint follows it).
+  // The site name: the first visible home link in the header (the step link Paint follows it).
   const lead = 'header a[href="/"]';
   const box = async (selector: string) =>
     page.evaluate((s) => {
@@ -1421,7 +1421,7 @@ test('at 1280 px Keyboard shortcuts opens under its button, moves nothing in the
 });
 
 for (const width of [768]) {
-  test(`at ${width} px the header is the Menu layout: it fits, and every action and mode link is in the Menu`, async ({
+  test(`at ${width} px the header is the Menu layout: it fits, and every action and step link is in the Menu`, async ({
     page
   }) => {
     await page.setViewportSize({ width, height: 1024 });
@@ -1429,7 +1429,7 @@ for (const width of [768]) {
     const banner = page.getByRole('banner');
     const menu = banner.getByRole('button', { name: 'Menu', exact: true });
     await expect(menu).toBeVisible();
-    // Closed: the site name, status, score and Menu button only; no action or mode link shows.
+    // Closed: the site name, status, score and Menu button only; no action or step link shows.
     await expect(banner.getByRole('button', { name: 'View', exact: true })).toHaveCount(0);
     await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
     await widestHeaderText(page);

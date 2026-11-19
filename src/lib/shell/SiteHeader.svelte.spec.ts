@@ -206,6 +206,32 @@ describe('SiteHeader', () => {
       }
     });
 
+    it('at 375px Paint is absent until the Menu opens, and Simulate is current inside it', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { routeId: '/sim' });
+      expect(page.getByRole('link', { name: 'Paint' }).elements()).toEqual([]);
+      await page.getByRole('button', { name: 'Menu' }).click();
+      const nav = page.getByRole('navigation', { name: 'Steps' });
+      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
+      await expect
+        .element(nav.getByRole('link', { name: 'Simulate' }))
+        .toHaveAttribute('aria-current', 'page');
+    });
+
+    for (const routeId of ['/s/[id]', '/about'])
+      it(`shows both steps with neither current on ${routeId}`, async () => {
+        await page.viewport(1280, 800);
+        render(SiteHeader, { routeId });
+        const nav = page.getByRole('navigation', { name: 'Steps' });
+        await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
+        await expect
+          .element(nav.getByRole('link', { name: 'Paint' }))
+          .not.toHaveAttribute('aria-current');
+        await expect
+          .element(nav.getByRole('link', { name: 'Simulate' }))
+          .not.toHaveAttribute('aria-current');
+      });
+
     it('the numbers are not part of the names', async () => {
       await page.viewport(1280, 800);
       render(SiteHeader, { routeId: '/' });
@@ -299,6 +325,30 @@ describe('SiteHeader', () => {
         .toBeVisible();
       expect(suffixOf().getBoundingClientRect().width).toBeGreaterThan(20);
     });
+  });
+
+  describe('signed in with a long handle', () => {
+    const handle = 'a-very-long-handle-that-will-not-fit-in-the-header';
+    const actions = createRawSnippet(() => ({
+      render: () => '<span><button>View</button><button>Publish</button></span>'
+    }));
+    const pinned = createRawSnippet(() => ({
+      render: () => '<button>Room for 47,335 homes</button>'
+    }));
+
+    // Known: on /sim at 1024 the row is about 15 px over on main with a handle and the playhead at
+    // the end (its status cell clips), so only the Paint-style header is asserted there.
+    for (const width of [1024, 1280])
+      it(`at ${width}px the header does not overflow and the handle is capped at 160px`, async () => {
+        await page.viewport(width, 800);
+        render(SiteHeader, { routeId: '/', user: { handle }, actions, pinned });
+        const banner = page.getByRole('banner');
+        const account = banner.getByRole('link', { name: `@${handle}` });
+        await expect.element(account).toBeVisible();
+        expect(account.element().getBoundingClientRect().width).toBeLessThanOrEqual(160);
+        const el = banner.element() as HTMLElement;
+        expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth);
+      });
   });
 
   it('fits at 375px with three 44px actions and no banner overflow', async () => {
