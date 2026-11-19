@@ -1,8 +1,8 @@
 <!--
   `/`'s map editor (and /p/:id's read-only view): the map, its editor worker and, on plan 2's
-  `Dock`, the Paint tab shared with /sim (plan 3's `PaintTab`, `HistoryButtons` above it and the
-  phone `PaletteStrip`), so the two pages are one paint experience (sim-ux spec Goals 1, 3, 11
-  and 12). The page owns the `DockState` (the dock folds by its own button) and the Results face.
+  `Dock`, the Paint tab shared with /sim (plan 3's `PaintTab`, `HistoryButtons` above it on a
+  coarse pointer only, and the phone `PaletteStrip`), so the two pages are one paint experience
+  (sim-ux spec Goals 1, 3, 11 and 12). The page owns the `DockState` (the dock folds by its own button) and the Results face.
   Undo and Redo sit above the tab only on a coarse pointer (a keyboard does both; the stroke chip
   says what it did) and the phone strip carries Undo; the Shortcuts button ends the tab on a fine
   pointer.
@@ -193,8 +193,9 @@
   let chunks: { pending: number; failed: string[] } = { pending: 0, failed: [] };
   /** Failed parcel cells: map-view shows its failure chip, and the stroke chip sits below it. */
   let failedCells = $state(0);
-  /** Lots the plan rebuilds (the latest score's `parcelsChanged`), for the read-only summary. */
-  let rebuilt = $state(0);
+  /** Lots the plan rebuilds (the latest score's `parcelsChanged`), for the read-only summary;
+   *  null until the first diff of a load arrives, so the line never claims a false zero. */
+  let rebuilt = $state<number | null>(null);
 
   /** Every assignment to `chunks` goes through here so `onchunks` never misses one. */
   function setChunks(next: { pending: number; failed: string[] }): void {
@@ -417,7 +418,7 @@
   const offLoad = editor.onLoad((loaded) => {
     controller?.cancelStroke();
     // The new plan's count comes with its load diff, never the previous plan's.
-    rebuilt = 0;
+    rebuilt = null;
     // Not ready: onReady's load sends editor.plan, which is already `loaded`.
     if (brush.phase === 'ready') client?.load(loaded);
     if (editor.readOnly) onToolChange('move');
@@ -486,7 +487,7 @@
       intro={editor.readOnly ? MSG.readOnly : editor.plan.ops.length === 0 ? MSG.start : null}
       {summary}
     />
-    {#if !editor.readOnly}
+    {#if !editor.readOnly && pointer.fine}
       <div class="mt-3 -ml-2 flex"><ShortcutsButton /></div>
     {/if}
   {/if}

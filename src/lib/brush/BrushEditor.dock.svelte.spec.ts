@@ -600,7 +600,7 @@ describe('BrushEditor on the dock', () => {
       .toBeVisible();
   });
 
-  it("a read-only load starts its count at 0, never the previous plan's", async () => {
+  it("a read-only load has no count until its diff, never 0 or the previous plan's", async () => {
     const { w, editor } = await setup({ readOnly: true, plan: planOf(op('a', 8)) });
     await ready(w);
     const tab = page.getByRole('tabpanel');
@@ -609,10 +609,8 @@ describe('BrushEditor on the dock', () => {
       .element(tab.getByText('8 stories · 4 lots rebuilt', { exact: true }))
       .toBeVisible();
     editor().load(planOf(op('b', 3)), { readOnly: true });
-    // Before the new plan's diff: its heights, with nothing counted yet.
-    await expect
-      .element(tab.getByText('3 stories · 0 lots rebuilt', { exact: true }))
-      .toBeVisible();
+    // Before the new plan's diff: its heights alone, with no count.
+    await expect.element(tab.getByText('3 stories', { exact: true })).toBeVisible();
     w.emit(scoreDiff(w.lastOf('load')!.rev, 'load', 1));
     await expect.element(tab.getByText('3 stories · 1 lot rebuilt', { exact: true })).toBeVisible();
   });
@@ -625,8 +623,6 @@ describe('BrushEditor on the dock', () => {
     // Read-only only through a load: the line counts from that load's diffs alone.
     editor().load(planOf(op('a', 6)), { readOnly: true });
     const tab = page.getByRole('tabpanel');
-    await expect
-      .element(tab.getByText('6 stories · 0 lots rebuilt', { exact: true }))
-      .toBeVisible();
+    await expect.element(tab.getByText('6 stories', { exact: true })).toBeVisible();
   });
 });

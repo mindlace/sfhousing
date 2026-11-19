@@ -23,9 +23,11 @@ function heights(stories: readonly number[]): string {
 
 /**
  * '6 stories · 1 lot rebuilt' | '6 and 8 stories · 1,204 lots rebuilt' |
- * '4, 6 and 8 stories · 12 lots rebuilt' | 'Nothing painted' (stories empty).
+ * '4, 6 and 8 stories · 12 lots rebuilt' | 'Nothing painted' (stories empty). With no count yet
+ * (`rebuilt` null, before the score's first diff) only the heights: '6 and 8 stories'.
  */
-export function paintedSummary(stories: readonly number[], rebuilt: number): string {
+export function paintedSummary(stories: readonly number[], rebuilt: number | null): string {
   if (stories.length === 0) return 'Nothing painted';
+  if (rebuilt === null) return heights(stories);
   return `${heights(stories)} · ${formatCount(rebuilt)} ${rebuilt === 1 ? 'lot' : 'lots'} rebuilt`;
 }

@@ -25,4 +25,11 @@ describe('the read-only summary', () => {
     expect(paintedSummary([4, 6, 8], 12)).toBe('4, 6 and 8 stories · 12 lots rebuilt');
     expect(paintedSummary([], 5)).toBe('Nothing painted');
   });
+
+  it('shows only the heights until the count is known', () => {
+    expect(paintedSummary([6], null)).toBe('6 stories');
+    expect(paintedSummary([1], null)).toBe('1 story');
+    expect(paintedSummary([6, 8], null)).toBe('6 and 8 stories');
+    expect(paintedSummary([], null)).toBe('Nothing painted');
+  });
 });
