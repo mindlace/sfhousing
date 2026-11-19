@@ -1,8 +1,8 @@
 // `/`'s BrushEditor on the dock (sim-ux plan 5, Task 3): the shared Paint tab without `/sim`'s
 // painted-areas list, the read-only line and summary, the stroke chip, the phone palette strip
-// and one notice stack. A
-// stub SimMap hands over a fake MapLibre map, so a real BrushController attaches (a separate file:
-// vi.mock is file-wide, and BrushEditor.svelte.spec.ts relies on the real SimMap's fallback).
+// and one notice stack. A stub SimMap hands over a fake MapLibre map, so a real BrushController
+// attaches (a separate file: vi.mock is file-wide, and BrushEditor.svelte.spec.ts relies on the
+// real SimMap's fallback).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
@@ -135,6 +135,16 @@ async function commitStroke(w: FakeEditorWorker, editor: () => Editor): Promise<
     }
   });
 }
+/** A worker diff carrying only a score's `parcelsChanged` (the lots the plan rebuilds). */
+const scoreDiff = (rev: number, phase: 'load' | 'chunk' | 'commit', parcelsChanged: number) =>
+  ({
+    type: 'diff',
+    rev,
+    phase,
+    render: { revision: rev } as GeneratedUpdate,
+    complete: true,
+    score: { parcelsChanged } as unknown as Score
+  }) as const;
 const overlayIds = () =>
   ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
 const key = (k: string, shift = false) =>
@@ -373,15 +383,8 @@ describe('BrushEditor on the dock', () => {
     await ready(w);
     const tab = page.getByRole('tabpanel');
     await expect.element(tab.getByText(MSG.readOnly, { exact: true })).toBeVisible();
-    const scored = (rev: number, phase: 'load' | 'chunk', parcelsChanged: number) =>
-      w.emit({
-        type: 'diff',
-        rev,
-        phase,
-        render: { revision: rev } as GeneratedUpdate,
-        complete: true,
-        score: { parcelsChanged } as unknown as Score
-      });
+    const scored = (rev: number, phase: 'load' | 'chunk', n: number) =>
+      w.emit(scoreDiff(rev, phase, n));
     scored(w.lastOf('load')!.rev, 'load', 2);
     await expect
       .element(tab.getByText('6 and 8 stories · 2 lots rebuilt', { exact: true }))
@@ -402,6 +405,36 @@ describe('BrushEditor on the dock', () => {
     expect(editor().plan).toBe(plan);
     await expect
       .element(tab.getByText('6 and 8 stories · 4 lots rebuilt', { exact: true }))
+      .toBeVisible();
+  });
+
+  it("a read-only load starts its count at 0, never the previous plan's", async () => {
+    const { w, editor } = await setup({ readOnly: true, plan: planOf(op('a', 8)) });
+    await ready(w);
+    const tab = page.getByRole('tabpanel');
+    w.emit(scoreDiff(w.lastOf('load')!.rev, 'load', 4));
+    await expect
+      .element(tab.getByText('8 stories · 4 lots rebuilt', { exact: true }))
+      .toBeVisible();
+    editor().load(planOf(op('b', 3)), { readOnly: true });
+    // Before the new plan's diff: its heights, with nothing counted yet.
+    await expect
+      .element(tab.getByText('3 stories · 0 lots rebuilt', { exact: true }))
+      .toBeVisible();
+    w.emit(scoreDiff(w.lastOf('load')!.rev, 'load', 1));
+    await expect.element(tab.getByText('3 stories · 1 lot rebuilt', { exact: true })).toBeVisible();
+  });
+
+  it("an editable session's scores never reach the read-only line", async () => {
+    const { w, editor } = await setup();
+    await ready(w);
+    await commitStroke(w, editor);
+    w.emit(scoreDiff(w.lastOf('commit')!.rev, 'commit', 9));
+    // Read-only only through a load: the line counts from that load's diffs alone.
+    editor().load(planOf(op('a', 6)), { readOnly: true });
+    const tab = page.getByRole('tabpanel');
+    await expect
+      .element(tab.getByText('6 stories · 0 lots rebuilt', { exact: true }))
       .toBeVisible();
   });
 });

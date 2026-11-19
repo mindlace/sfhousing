@@ -8,7 +8,17 @@ import type { SfhBrushDebug } from '../src/lib/brush/debug';
 import type { Plan } from '../src/lib/plan';
 import type { SfhMapDebug } from '../src/lib/map/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { chooseTool, mouseDrag, touchDrag } from './helpers/sharing';
+import {
+  PLAN_KEY,
+  chooseTool,
+  gotoEditor as gotoEditorWithActions,
+  mouseDrag,
+  publishDialog,
+  publishOpen,
+  settledNet,
+  touchDrag,
+  waitForMap
+} from './helpers/sharing';
 
 type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
 type LngLat = [number, number];
@@ -89,6 +99,33 @@ async function expectChipsApart(page: Page): Promise<void> {
     y: r.y + r.height / 2
   });
   expect(hit).toBe(true);
+}
+
+/** Records every error the editor worker answers with (bad-request, internal) in the page. */
+async function recordWorkerErrors(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const W = window.Worker;
+    const w = window as unknown as { __sfhWorkerErrors: string[] };
+    w.__sfhWorkerErrors = [];
+    window.Worker = class extends W {
+      constructor(url: string | URL, opts?: WorkerOptions) {
+        super(url, opts);
+        this.addEventListener('message', (e: MessageEvent) => {
+          const d = e.data as { type?: string; code?: string };
+          if (d?.type === 'error') w.__sfhWorkerErrors.push(String(d.code));
+        });
+      }
+    };
+  });
+}
+const workerErrors = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __sfhWorkerErrors: string[] }).__sfhWorkerErrors);
+
+/** The height palette's preset (the Paint tab is open in the dock from md). */
+async function pickStories(page: Page, n: number): Promise<void> {
+  const swatch = page.getByRole('button', { name: `${n} stories`, exact: true });
+  await swatch.click();
+  await expect(swatch).toHaveAttribute('aria-pressed', 'true');
 }
 
 test.describe('brush tool', () => {
@@ -189,6 +226,74 @@ test.describe('brush tool', () => {
       await mouseDrag(page, [-122.4193, 37.7603], [-122.418, 37.7603]);
       await expect.poll(() => ops(page)).toBe(2);
       await expectChipsApart(page);
+    });
+
+    test('a published plan, then a stroke: the button reads Publish again', async ({ page }) => {
+      await gotoEditorWithActions(page);
+      // The strokes need the camera, not the tiles: the worker resolves lots city-wide.
+      await page.evaluate((f) => (window as Win).__sfhMap!.map!.jumpTo(f), FRAME);
+      await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
+      await expect.poll(() => ops(page)).toBe(1);
+
+      await publishOpen(page).click();
+      const dialog = publishDialog(page);
+      await dialog.getByLabel('Title').fill('One height');
+      await dialog.getByRole('button', { name: 'Publish' }).click();
+      await expect(dialog.getByRole('heading', { name: 'Published' })).toBeVisible();
+      await dialog.getByRole('button', { name: 'Done' }).click();
+      await expect(publishOpen(page)).toHaveText('Share link');
+
+      // A new op list: its hash differs from the published one.
+      await pickStories(page, 8);
+      await mouseDrag(page, [-122.4193, 37.7603], [-122.418, 37.7603]);
+      await expect.poll(() => ops(page)).toBe(2);
+      await expect(publishOpen(page)).toHaveText('Publish');
+    });
+
+    test('a restored plan undoes and redoes over its load: the score follows, no worker errors', async ({
+      page
+    }) => {
+      await recordWorkerErrors(page);
+      await gotoEditor(page);
+      await jumpAndIdle(page, FRAME);
+      await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
+      await expect.poll(() => ops(page)).toBe(1);
+      // The commit's diff (and its score) has arrived once the chip names the stroke.
+      await expect(announcement(page)).toHaveText(/^6 stories on \d+ lots/);
+      const one = await settledNet(page);
+      // An erase over the same lots: the score must change.
+      await chooseTool(page, 'Erase');
+      await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
+      await expect.poll(() => ops(page)).toBe(2);
+      await expect(announcement(page)).toHaveText(/^Erased \d+ lots?/);
+      const two = await settledNet(page);
+      expect(two).not.toBe(one);
+
+      // The autosave restores the plan: the editor `load`s it and the worker gets the whole plan.
+      await expect
+        .poll(() =>
+          page.evaluate(
+            (k) =>
+              JSON.parse(JSON.parse(localStorage.getItem(k) ?? '{"plan":"{}"}').plan).ops?.length,
+            PLAN_KEY
+          )
+        )
+        .toBe(2);
+      await page.reload();
+      await waitForMap(page);
+      await expect.poll(() => ops(page)).toBe(2);
+      expect(await settledNet(page)).toBe(two);
+
+      // Undo pops the restored plan's last stroke, as the worker holds it.
+      await page.keyboard.press('Control+z');
+      await expect.poll(() => ops(page)).toBe(1);
+      await expect(announcement(page)).toHaveText('Undid erase');
+      expect(await settledNet(page)).toBe(one);
+
+      await page.keyboard.press('Control+Shift+z');
+      await expect.poll(() => ops(page)).toBe(2);
+      expect(await settledNet(page)).toBe(two);
+      expect(await workerErrors(page)).toEqual([]);
     });
 
     test('a parent loads a plan through oneditor and the buildings render', async ({ page }) => {

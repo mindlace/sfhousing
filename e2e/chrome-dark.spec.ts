@@ -3,6 +3,7 @@
 // dark variants and stay WCAG AA. Both Playwright projects.
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { MSG } from '../src/lib/brush/messages';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
@@ -22,10 +23,13 @@ import {
   jumpAndIdle,
   openHeaderMenu,
   openResults,
+  ops,
   paintOnce,
   projectToPage,
   seedPlanRow,
   SIM_KEY,
+  smallText,
+  waitForMap,
   waitTimelineDrawn,
   type LngLat
 } from './helpers/sharing';
@@ -149,6 +153,49 @@ test("/'s stroke chip has no axe violations in dark", async ({ page, isMobile })
   await expect(chip).toHaveText(/^6 stories on \d+ lots/);
   await expect(chip).toHaveCSS('background-color', 'rgb(44, 46, 49)');
   await expectNoA11yViolations(page, { include: ['[data-testid=brush-announcement]'] });
+});
+
+/** /'s dock body open: from md the panel is open already; below md the handle opens the sheet. */
+async function openDock(page: Page): Promise<void> {
+  const handle = page.getByTestId('dock-handle');
+  if ((await handle.isVisible()) && (await handle.getAttribute('aria-expanded')) !== 'true') {
+    await handle.click();
+    await expect(handle).toHaveAttribute('aria-expanded', 'true');
+  }
+}
+
+test("/'s dock on its Paint tab, a plan painted, has no axe violations in dark", async ({
+  page,
+  isMobile
+}) => {
+  await gotoEditor(page);
+  await paintOnce(page, isMobile);
+  await expect.poll(() => ops(page)).toBe(1);
+  await openDock(page);
+  const dock = page.getByTestId('dock');
+  await expect(dock.getByRole('tab', { name: 'Paint' })).toHaveAttribute('aria-selected', 'true');
+  await expect(dock.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+  await expect(dock.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled();
+  await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
+});
+
+test("/p/:id's read-only Paint tab, its line and summary, has no axe violations in dark", async ({
+  page
+}) => {
+  const res = await page.request.post('/api/plans', {
+    data: smallText,
+    headers: { 'content-type': 'application/json' }
+  });
+  expect(res.ok()).toBe(true);
+  const { id } = (await res.json()) as { id: string };
+  await page.goto(`/p/${id}`);
+  await waitForMap(page);
+  await openDock(page);
+  const tab = page.getByTestId('dock').getByRole('tabpanel');
+  await expect(tab.getByText(MSG.readOnly, { exact: true })).toBeVisible();
+  const summary = tab.getByText(/stories · [\d,]+ lots? rebuilt$/);
+  await expect(summary).toBeVisible();
+  await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
 });
 
 test("/'s notice pill (N1) in the one stack has no axe violations in dark", async ({ page }) => {

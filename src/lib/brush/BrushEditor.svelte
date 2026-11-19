@@ -234,7 +234,8 @@
       // Only a commit with its own pointerup mark: a redo's would span from an older stroke.
       if (d.phase === 'commit' && controller && d.rev === controller.markedCommitRev) markCommit();
       controller?.onDiff(d, stale);
-      if (!stale) rebuilt = d.score.parcelsChanged;
+      // Only read-only shows it: an editable stroke's previews write nothing here.
+      if (!stale && editor.readOnly) rebuilt = d.score.parcelsChanged;
       onscore?.(d.score, { complete: d.complete });
     },
     onChunks(c) {
@@ -401,14 +402,15 @@
    * A shared plan's one line in the read-only tab: its heights (from the ops, when the plan
    * changes) and the lots it rebuilds (the latest score's `parcelsChanged`, as chunks load).
    */
-  const summary = $derived(
-    editor.readOnly ? paintedSummary(storiesUsed(editor.plan.ops), rebuilt) : null
-  );
+  const stories = $derived(storiesUsed(editor.plan.ops)); // re-runs only when the plan changes
+  const summary = $derived(editor.readOnly ? paintedSummary(stories, rebuilt) : null);
 
   let wasReadOnly = untrack(() => readOnly);
   /** Editor.load (plan-sharing's restore, /p/:id, Remix) must reach the worker and the tools. */
   const offLoad = editor.onLoad((loaded) => {
     controller?.cancelStroke();
+    // The new plan's count comes with its load diff, never the previous plan's.
+    rebuilt = 0;
     // Not ready: onReady's load sends editor.plan, which is already `loaded`.
     if (brush.phase === 'ready') client?.load(loaded);
     if (editor.readOnly) onToolChange('move');
