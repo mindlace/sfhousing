@@ -1,4 +1,4 @@
-// Brush tool e2e (spec §6 Playwright 1–6, §7), on the dock's Paint tab (sim-ux plan 5): painting,
+// Paint tool e2e (spec §6 Playwright 1–6, §7), on the dock's Paint tab (sim-ux plan 5): painting,
 // stamps, undo and redo by keyboard, the stroke chip and the failure chip. Runs against the
 // VITE_E2E build, which exposes window.__sfhBrush (src/lib/brush/debug.ts) and
 // window.__sfhMap (src/lib/map/debug.ts), and shortens the worker's chunk retries to 50/100/200 ms.

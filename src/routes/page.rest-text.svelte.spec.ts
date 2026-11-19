@@ -52,6 +52,17 @@ describe('/ at rest (rule: no text of 12 words or more)', () => {
     appPage.state = {};
   });
 
+  it('flags a paragraph of 12 words, so the rest checks below cannot be vacuous', async () => {
+    const twelve = 'one two three four five six seven eight nine ten eleven twelve';
+    render(PaintHeaderHost, { props: { data: data() } });
+    await expect.element(page.getByTestId('score-bar')).toBeVisible();
+    const p = document.createElement('p');
+    p.textContent = twelve;
+    document.body.appendChild(p);
+    expect(longTexts()).toEqual([twelve]);
+    p.remove();
+  });
+
   it('/ at rest shows no text of 12 words or more outside a notice or a dialog', async () => {
     render(PaintHeaderHost, { props: { data: data() } });
     await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();

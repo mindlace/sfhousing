@@ -67,6 +67,27 @@ describe('PaletteStrip Undo', () => {
     expect(page.getByRole('button', { name: 'Undo' }).elements()).toEqual([]);
   });
 
+  it('at 320 px the Brush size pop-over is inside the viewport and its targets are 44 px', async () => {
+    await page.viewport(320, 700);
+    setup('paint', { onundo: vi.fn(), canUndo: true });
+    await btn('Brush size: 30 m').click();
+    const pop = page.getByRole('group', { name: 'Brush size', exact: true });
+    await expect.element(pop).toBeVisible();
+    const box = pop.element().getBoundingClientRect();
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.right).toBeLessThanOrEqual(320);
+    expect(box.top).toBeGreaterThanOrEqual(0);
+    expect(box.bottom).toBeLessThanOrEqual(700);
+    const targets = pop.element().querySelectorAll('button, input, [role="slider"]');
+    expect(targets.length).toBeGreaterThan(0);
+    for (const t of targets) {
+      const r = t.getBoundingClientRect();
+      expect(r.width).toBeGreaterThanOrEqual(44);
+      expect(r.height).toBeGreaterThanOrEqual(44);
+    }
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
+  });
+
   for (const tool of ['paint', 'erase'] as const) {
     it(`at 320 px in ${tool} the strip with Undo is inside the viewport and every target is 44 px`, async () => {
       await page.viewport(320, 700);
