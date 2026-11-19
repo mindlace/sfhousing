@@ -75,6 +75,7 @@ describe('constants', () => {
     expect(MSG.loadingParcels).toBe('Loading parcels…');
     expect(MSG.zoomIn).toBe('Zoom in to see the brush');
     expect(MSG.readOnly).toBe('Read-only. Remix to edit.');
+    expect(MSG.start).toBe('Pick a height, then paint the map.');
     expect(MSG.eraseHint).toBe('Erase removes painted height');
     expect(MSG.tooLarge).toBe('Plan too large to save. Undo some strokes.');
     expect(MSG.mapLabel).toBe(
@@ -102,6 +103,6 @@ describe('constants', () => {
     );
   });
   it('formats radius value text', () => {
-    expect(radiusValueText(30)).toBe('Brush radius 30 metres');
+    expect(radiusValueText(30)).toBe('30 metres');
   });
 });

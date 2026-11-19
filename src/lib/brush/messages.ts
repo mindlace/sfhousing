@@ -8,6 +8,7 @@ export const MSG = {
   zoomIn: 'Zoom in to see the brush',
   tooLarge: 'Plan too large to save. Undo some strokes.',
   readOnly: 'Read-only. Remix to edit.',
+  start: 'Pick a height, then paint the map.',
   eraseHint: 'Erase removes painted height',
   mapLabel:
     'Map. Arrow keys pan, plus and minus zoom. In Paint or Erase, press Enter to apply the brush at the centre crosshair.'
@@ -46,5 +47,5 @@ export function undoMessage(op: PlanOp, verb: 'Undid' | 'Redid'): string {
 }
 
 export function radiusValueText(r: number): string {
-  return `Brush radius ${r} metres`;
+  return `${r} metres`;
 }

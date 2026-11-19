@@ -15,3 +15,4 @@ Options: `include` / `exclude` (CSS selectors), `disableRules` (rule ids a surfa
 - A skip link, one `<main>`, one `<h1>`, and the header's About entry are reachable by keyboard on every page; document pages also have the footer links (the map pages have no footer).
 - Interactive targets are at least 24x24 CSS px (SC 2.5.8).
 - Anything draggable has a non-dragging alternative (SC 2.5.7).
+- No visible text of 12 words or more at rest outside a notice or a dialog, on `/` and `/sim`. `src/routes/page.rest-text.svelte.spec.ts` checks `/` (an empty plan, and one restored stroke; not Paint's Results face) and `src/lib/timeline/rest-text.svelte.spec.ts` checks `/sim`; both use `longTexts` from `src/lib/shell/test/rest-text.ts`.

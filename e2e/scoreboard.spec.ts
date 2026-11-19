@@ -225,7 +225,7 @@ test.describe('scoreboard', () => {
       expect(open.y + open.height).toBeLessThanOrEqual(region.y + region.height + 1);
 
       await page.getByRole('button', { name: 'Back to painting' }).tap();
-      await expect(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+      await expect(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
       await expect(headerScore(page)).toHaveAttribute('aria-expanded', 'false');
     });
   });

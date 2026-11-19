@@ -422,11 +422,11 @@ test.describe('brush tool', () => {
       await chooseTool(page, 'Paint');
       const opener = page
         .getByTestId('palette-strip')
-        .getByRole('button', { name: /^Brush \d+ m$/ });
+        .getByRole('button', { name: /^Brush size: \d+ m$/ });
       await expect(opener).toHaveText(/^\d+ m$/);
       await opener.tap();
       await expect(opener).toHaveAttribute('aria-expanded', 'true');
-      await expect(page.getByRole('group', { name: 'Brush radius' })).toBeVisible();
+      await expect(page.getByRole('group', { name: 'Brush size' })).toBeVisible();
       await expectNoA11yViolations(page);
     });
   });

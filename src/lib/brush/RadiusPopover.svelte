@@ -52,8 +52,20 @@
 <svelte:window onkeydown={onWindowKey} onpointerdown={onWindowPointer} />
 
 {#snippet slider()}
-  <div class="flex w-full items-center gap-2">
-    <label for={inputId} class="text-sm whitespace-nowrap">Brush {brush.radiusM} m</label>
+  <!-- Inline (the tab): the label and value over the slider. In the strip's pop-over: one row, so
+       it is no taller than the slider and stays clear of the map controls. -->
+  <div class="flex w-full {inline ? 'flex-col gap-1' : 'items-center gap-2'}">
+    <div class={inline ? 'flex items-baseline justify-between gap-2' : 'contents'}>
+      <label
+        for={inputId}
+        class="text-xs font-semibold whitespace-nowrap text-ink-muted dark:text-ink-dark-muted"
+        >Brush size</label
+      >
+      <!-- The slider's value text says it; this is the same figure for the eye. -->
+      <span aria-hidden="true" class="text-xs whitespace-nowrap {inline ? '' : 'order-last'}"
+        >{brush.radiusM} m</span
+      >
+    </div>
     <input
       id={inputId}
       type="range"
@@ -74,14 +86,14 @@
   <button
     bind:this={opener}
     type="button"
-    aria-label="Brush {brush.radiusM} m"
+    aria-label="Brush size: {brush.radiusM} m"
     aria-expanded={open}
     aria-controls={popId}
     class="ctl min-h-11 min-w-11 rounded-md px-2 text-sm whitespace-nowrap {openerClass}"
     onclick={() => ontoggle?.()}>{brush.radiusM} m</button
   >
   {#if open}
-    <div bind:this={popEl} id={popId} role="group" aria-label="Brush radius" class={popClass}>
+    <div bind:this={popEl} id={popId} role="group" aria-label="Brush size" class={popClass}>
       {@render slider()}
     </div>
   {/if}

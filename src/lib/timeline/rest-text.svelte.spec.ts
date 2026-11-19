@@ -7,6 +7,7 @@ import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import '../../routes/layout.css';
 import { parseManifest } from '$lib/data/manifest';
+import { longTexts } from '$lib/shell/test/rest-text';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { dayFromUtc, utcParts } from '$lib/fzp/time';
 import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
@@ -64,23 +65,6 @@ async function opened() {
   emit(filledMsg(1, 0, LAST + 1));
   return r;
 }
-
-function visibleTextNodes(root: Node): Text[] {
-  const out: Text[] = [];
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    const el = (n as Text).parentElement;
-    if (el && (n as Text).textContent!.trim() && el.checkVisibility()) out.push(n as Text);
-  }
-  return out;
-}
-const longTexts = () =>
-  visibleTextNodes(document.body)
-    .filter(
-      (n) => !n.parentElement!.closest('dialog, [data-notice], [data-explain-open], .sr-only')
-    )
-    .map((n) => n.textContent!.trim())
-    .filter((t) => t.split(/\s+/).length >= 12);
 
 describe('rest text (rules 37 to 39)', () => {
   beforeEach(() => {

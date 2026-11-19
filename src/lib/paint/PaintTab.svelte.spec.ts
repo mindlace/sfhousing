@@ -55,9 +55,9 @@ describe('PaintTab', () => {
     await page.viewport(1024, 768);
   });
 
-  it('offers Move, Paint and Erase as radios in a Brush tool group', async () => {
+  it('offers Move, Paint and Erase as radios in a Tool group', async () => {
     setup({ tool: 'paint' });
-    const group = page.getByRole('radiogroup', { name: 'Brush tool' });
+    const group = page.getByRole('radiogroup', { name: 'Tool' });
     await expect.element(group).toBeVisible();
     const names = group
       .getByRole('radio')
@@ -68,6 +68,25 @@ describe('PaintTab', () => {
     await expect.element(radio('Move')).toHaveAttribute('aria-checked', 'false');
     await expect.element(page.getByRole('group', { name: 'Height' })).toBeVisible();
     await expect.element(page.getByRole('slider')).toBeVisible();
+  });
+
+  it('labels Tool, Height and Brush size on screen, and each control by its label', async () => {
+    setup({ tool: 'paint' });
+    for (const text of ['Tool', 'Height', 'Brush size']) {
+      await expect.element(page.getByText(text, { exact: true })).toBeVisible();
+    }
+    await expect.element(page.getByRole('radiogroup', { name: 'Tool', exact: true })).toBeVisible();
+    await expect.element(page.getByRole('group', { name: 'Height', exact: true })).toBeVisible();
+    const slider = page.getByRole('slider', { name: 'Brush size', exact: true });
+    await expect.element(slider).toHaveAttribute('aria-valuetext', '30 metres');
+    await expect.element(page.getByText('30 m', { exact: true })).toBeVisible();
+    // Real labels: the group's name comes from the visible text, the slider's from a label.
+    const tools = page.getByRole('radiogroup').element();
+    const heading = document.getElementById(tools.getAttribute('aria-labelledby')!);
+    expect(heading?.textContent).toBe('Tool');
+    expect(tools.hasAttribute('aria-label')).toBe(false);
+    const input = slider.element() as HTMLInputElement;
+    expect(input.labels?.[0]?.textContent).toBe('Brush size');
   });
 
   it('draws the brush-size slider in the accent token (light: #a3472c)', async () => {
@@ -224,7 +243,12 @@ describe('PaintTab', () => {
     const tab = () => editable.container.firstElementChild!;
     await expect.element(page.getByText('Start here.', { exact: true })).toBeVisible();
     expect(tab().firstElementChild!.textContent).toBe('Start here.');
-    await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+    await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
+    // The intro sits above the Tool label.
+    const label = page.getByText('Tool', { exact: true }).element();
+    expect(
+      tab().firstElementChild!.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
     expect(page.getByRole('list', { name: 'Painted areas' }).elements()).toHaveLength(0);
     await editable.unmount();
 

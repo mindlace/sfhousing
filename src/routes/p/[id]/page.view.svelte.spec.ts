@@ -142,7 +142,7 @@ describe('/p/[id] score and dock', () => {
     await expect.element(tab.getByText(MSG.readOnly, { exact: true })).toBeVisible();
     await expect.element(tab.getByText(SUMMARY, { exact: true })).toBeVisible();
     expect(document.querySelector('[data-paint-row]')).toBeNull();
-    expect(page.getByRole('radiogroup', { name: 'Brush tool' }).elements()).toEqual([]);
+    expect(page.getByRole('radiogroup', { name: 'Tool' }).elements()).toEqual([]);
     expect(page.getByRole('button', { name: /^Undo/ }).elements()).toEqual([]);
     expect(page.getByRole('button', { name: /^Remove/ }).elements()).toEqual([]);
     expect(w.allOf('opLots')).toEqual([]);
@@ -172,7 +172,7 @@ describe('/p/[id] score and dock', () => {
     expect(page.getByRole('button', { name: 'Back to painting' }).elements()).toEqual([]);
     await page.getByRole('button', { name: 'Back to the Paint tab' }).click();
     await expect.element(page.getByText(SUMMARY, { exact: true })).toBeVisible();
-    expect(page.getByRole('radiogroup', { name: 'Brush tool' }).elements()).toEqual([]);
+    expect(page.getByRole('radiogroup', { name: 'Tool' }).elements()).toEqual([]);
   });
 
   it('has no floating scoreboard', async () => {

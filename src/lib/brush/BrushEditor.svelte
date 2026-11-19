@@ -483,7 +483,7 @@
       ontool={chooseTool}
       eraseHint={MSG.eraseHint}
       readonly={editor.readOnly}
-      intro={editor.readOnly ? MSG.readOnly : null}
+      intro={editor.readOnly ? MSG.readOnly : editor.plan.ops.length === 0 ? MSG.start : null}
       {summary}
     />
     {#if !editor.readOnly}

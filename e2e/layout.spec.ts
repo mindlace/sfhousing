@@ -368,7 +368,7 @@ test.describe('mobile', () => {
     expect((await box(strip(page))).y + (await box(strip(page))).height).toBeLessThanOrEqual(
       (await box(handle(page))).y
     );
-    for (const name of [/^Height: /, /^Brush \d+ m$/]) {
+    for (const name of [/^Height: /, /^Brush size: \d+ m$/]) {
       const opener = strip(page).getByRole('button', { name });
       await opener.tap();
       const pop = page.locator(`[id="${await opener.getAttribute('aria-controls')}"]`);
@@ -583,7 +583,7 @@ test.describe('landscape phone 667×375', () => {
 
     // The palette strip: every control visible, on top, clear of the bars.
     await chooseTool(page, 'Paint');
-    for (const name of [/^Tool: /, /^Height: /, /^Brush \d+ m$/, /^Done$/]) {
+    for (const name of [/^Tool: /, /^Height: /, /^Brush size: \d+ m$/, /^Done$/]) {
       const c = strip(page).getByRole('button', { name });
       await expect(c).toBeInViewport({ ratio: 1 });
       await expectUnobscured(c);
@@ -643,7 +643,7 @@ test.describe('landscape phone 667×375', () => {
     await expect(tab.getByText(MSG.readOnly, { exact: true })).toBeVisible();
     await expect(tab.getByText(/stories · [\d,]+ lots? rebuilt$/)).toBeVisible();
     await expect(page.locator('[data-paint-row]')).toHaveCount(0);
-    await expect(page.getByRole('radiogroup', { name: 'Brush tool' })).toHaveCount(0);
+    await expect(page.getByRole('radiogroup', { name: 'Tool' })).toHaveCount(0);
     await expectNoA11yViolations(page);
   });
 });

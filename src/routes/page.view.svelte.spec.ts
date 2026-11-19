@@ -73,7 +73,7 @@ describe('/ View menu', () => {
   it('has no View button without manifest.transit', async () => {
     const { transit: _omit, ...plain } = manifest;
     await render(PageHost, { props: { data: data(plain as Manifest) } });
-    await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeInTheDocument();
+    await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeInTheDocument();
     expect(viewButton().elements()).toHaveLength(0);
   });
 
@@ -175,12 +175,12 @@ describe('/ score: the header score and the Results face', () => {
     await expect.element(results().getByTestId('target-rhna')).toBeVisible();
     await expect.element(results().getByText('By neighborhood')).toBeVisible();
     await expect.element(results().getByText('What does this number mean?')).toBeVisible();
-    expect(page.getByRole('radiogroup', { name: 'Brush tool' }).elements()).toHaveLength(0);
+    expect(page.getByRole('radiogroup', { name: 'Tool' }).elements()).toHaveLength(0);
     const flip = page.getByRole('button', { name: 'Back to painting' });
     await expect.element(flip).toHaveTextContent('Paint');
 
     await flip.click();
-    await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+    await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
     await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'false');
     expect(results().elements()).toHaveLength(0);
 
@@ -188,7 +188,7 @@ describe('/ score: the header score and the Results face', () => {
     await scoreButton().click();
     await expect.element(results()).toBeVisible();
     await scoreButton().click();
-    await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+    await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
 
     // Folded to the rail, the score opens the dock on Results, and focus moves in (as on /sim).
     await page.getByRole('button', { name: 'Collapse Paint' }).click();

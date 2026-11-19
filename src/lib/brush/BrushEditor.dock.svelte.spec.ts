@@ -210,7 +210,7 @@ describe('BrushEditor on the dock', () => {
     await expect
       .element(page.getByRole('tablist', { name: 'Paint' }).getByRole('tab', { name: 'Paint' }))
       .toHaveAttribute('aria-selected', 'true');
-    const tools = page.getByRole('radiogroup', { name: 'Brush tool' });
+    const tools = page.getByRole('radiogroup', { name: 'Tool' });
     expect(
       tools
         .getByRole('radio')
@@ -218,7 +218,7 @@ describe('BrushEditor on the dock', () => {
         .map((r) => r.textContent?.trim())
     ).toEqual(['Move', 'Paint', 'Erase']);
     await expect.element(page.getByRole('group', { name: 'Height' })).toBeVisible();
-    await expect.element(page.getByRole('slider', { name: /^Brush \d+ m$/ })).toBeVisible();
+    await expect.element(page.getByRole('slider', { name: 'Brush size' })).toBeVisible();
     expect(page.getByRole('button', { name: /^(Undo|Redo)/ }).elements()).toEqual([]);
     expect(page.getByRole('list', { name: 'Painted areas' }).elements()).toEqual([]);
     expect(
@@ -382,6 +382,24 @@ describe('BrushEditor on the dock', () => {
     key('z', true);
     await expect.element(chip()).toHaveTextContent('Redid paint, 6 stories');
     expect(editor().plan.ops).toHaveLength(1);
+  });
+
+  it('an empty plan shows the starting sentence until the first stroke, and again after Ctrl+Z', async () => {
+    const { w, editor } = await setup();
+    await ready(w);
+    const start = page.getByText(MSG.start, { exact: true });
+    await expect.element(start).toBeVisible();
+    await commitStroke(w, editor);
+    await expect.element(start).not.toBeInTheDocument();
+    key('z');
+    await expect.element(start).toBeVisible();
+  });
+
+  it('a loaded plan with strokes shows no starting sentence', async () => {
+    const { w } = await setup({ plan: planOf(op('a', 8)) });
+    await ready(w);
+    await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
+    expect(page.getByText(MSG.start, { exact: true }).elements()).toEqual([]);
   });
 
   it('on a fine pointer the dock has no Undo or Redo; Ctrl+Z undoes and the chip says so', async () => {
@@ -567,7 +585,7 @@ describe('BrushEditor on the dock', () => {
     await expect
       .element(tab.getByText('6 and 8 stories · 4 lots rebuilt', { exact: true }))
       .toBeVisible();
-    expect(page.getByRole('radiogroup', { name: 'Brush tool' }).elements()).toEqual([]);
+    expect(page.getByRole('radiogroup', { name: 'Tool' }).elements()).toEqual([]);
     expect(page.getByRole('button', { name: /^Undo/ }).elements()).toEqual([]);
     expect(document.querySelector('[data-paint-row]')).toBeNull();
     expect(w.allOf('opLots')).toEqual([]);

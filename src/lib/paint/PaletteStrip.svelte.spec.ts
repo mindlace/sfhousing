@@ -94,7 +94,7 @@ describe('PaletteStrip at 375 px', () => {
     setup();
     await expect.element(strip()).toBeVisible();
     await expect.element(page.getByTestId('palette-strip')).toBeVisible();
-    const names = ['Tool: Paint', 'Height: 6 stories', 'Brush 30 m', 'Done'];
+    const names = ['Tool: Paint', 'Height: 6 stories', 'Brush size: 30 m', 'Done'];
     const boxes = [];
     for (const n of names) {
       await expect.element(btn(n)).toBeVisible();
@@ -166,9 +166,12 @@ describe('PaletteStrip at 375 px', () => {
   it('opening the size closes the palette', async () => {
     setup();
     await swatch().click();
-    await btn('Brush 30 m').click();
-    await expect.element(btn('Brush 30 m')).toHaveAttribute('aria-expanded', 'true');
+    await btn('Brush size: 30 m').click();
+    await expect.element(btn('Brush size: 30 m')).toHaveAttribute('aria-expanded', 'true');
     await expect.element(swatch()).toHaveAttribute('aria-expanded', 'false');
+    await expect
+      .element(page.getByRole('group', { name: 'Brush size', exact: true }))
+      .toBeVisible();
   });
 
   it('Erase disables the swatch and gives it the hint', async () => {
@@ -176,7 +179,7 @@ describe('PaletteStrip at 375 px', () => {
     await expect.element(btn('Tool: Erase')).toBeVisible();
     await expect.element(swatch()).toBeDisabled();
     await expect.element(swatch()).toHaveAccessibleDescription(HINT);
-    await expect.element(btn('Brush 30 m')).toBeEnabled();
+    await expect.element(btn('Brush size: 30 m')).toBeEnabled();
   });
 
   it('Done chooses Move, then reports done', async () => {

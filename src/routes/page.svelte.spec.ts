@@ -74,7 +74,7 @@ describe('/ editor page', () => {
     await expect
       .element(page.getByRole('region', { name: 'Paint', exact: true }))
       .toBeInTheDocument();
-    await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeInTheDocument();
+    await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeInTheDocument();
     expect(document.querySelector('.brush-toolbar')).toBeNull();
   });
 
@@ -92,7 +92,7 @@ describe('/ editor page', () => {
     await expect.poll(() => document.activeElement === rail.element()).toBe(true);
 
     await rail.click();
-    await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+    await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
     expect(document.querySelector('.sfh-dock-panel')).not.toBeNull();
     // The user opened it: focus moves into the dock, on its selected tab.
     await expect.poll(() => document.activeElement?.getAttribute('role')).toBe('tab');
@@ -118,7 +118,7 @@ describe('/ editor page', () => {
     });
     await expect.element(page.getByText("Couldn't load city data.")).toBeInTheDocument();
     await expect.element(page.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
-    await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeInTheDocument();
+    await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeInTheDocument();
     expect(document.querySelector('[data-testid="map-root"]')).toBeNull();
   });
 
@@ -141,7 +141,7 @@ describe('/ editor page', () => {
     it('loads the autosaved plan (no Undo button on a fine pointer), no notice', async () => {
       seed(painted('fixture-0'));
       await render(Page, { props: { data: data(), params: {} } });
-      await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+      await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
       noUndoButton();
       expect(page.getByRole('button', { name: 'Dismiss' }).elements()).toHaveLength(0);
       // The restored plan is not re-written: the autosave's first schedule() is a no-op. A page
@@ -152,7 +152,7 @@ describe('/ editor page', () => {
 
     it('starts empty with nothing saved (no Undo button)', async () => {
       await render(Page, { props: { data: data(), params: {} } });
-      await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+      await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
       noUndoButton();
     });
 

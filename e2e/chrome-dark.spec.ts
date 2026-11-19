@@ -174,7 +174,7 @@ test("/'s dock on its Paint tab, a plan painted, has no axe violations in dark",
   await openDock(page);
   const dock = page.getByTestId('dock');
   await expect(dock.getByRole('tab', { name: 'Paint' })).toHaveAttribute('aria-selected', 'true');
-  await expect(dock.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+  await expect(dock.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
   // Touch has Undo above the tab and no keyboard list; a keyboard has Ctrl+Z, the Shortcuts button
   // and no Undo button.
   const undo = dock.getByRole('button', { name: 'Undo', exact: true });
@@ -238,8 +238,8 @@ test('at 375px the palette strip has no axe violations in dark, palette open and
   await expect(strip.getByRole('group', { name: 'Height', exact: true })).toBeHidden();
   await expect(swatch).toBeFocused();
   // The radius pop-over open.
-  await strip.getByRole('button', { name: /^Brush \d+ m$/ }).click();
-  await expect(strip.getByRole('group', { name: 'Brush radius' })).toBeVisible();
+  await strip.getByRole('button', { name: /^Brush size: \d+ m$/ }).click();
+  await expect(strip.getByRole('group', { name: 'Brush size' })).toBeVisible();
   await expectNoA11yViolations(page, { include: ['[data-testid=palette-strip]'] });
   // Erase: the swatch is disabled and carries the hint.
   await page.keyboard.press('Escape');
