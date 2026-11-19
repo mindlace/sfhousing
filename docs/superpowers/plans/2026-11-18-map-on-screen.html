@@ -1,0 +1,951 @@
+<article>
+  <header>
+    <h1>The map tells you, on screen plan</h1>
+    <p>Slice 5 of the information design review: on <code>/sim</code> a stage change shows as a halo that fades and projects under the person's policy carry a mark; a map key on the map counts homes in each stage at the playhead; Paint's key names its building types and the heights a plan holds, with a count each and an outline on hover or focus; and the layer switches leave the header for the map.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+    <aside data-kind="warning"><strong>Read before executing</strong> Line numbers below were taken on <code>617ca310</code> (main after slices 1 to 4) and go stale as tasks land: every place is also named by function, component, snippet or test title. Locate by those. The owner answers <a href="#sec-open-questions">Open questions</a> before Task 1 starts.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>The map says what is happening, on screen. On <code>/sim</code>: a project that is approved, starts building or completes gets a ring that grows and fades as the playhead passes the day; a project allowed by the person's zoning or funded by a pool they added carries a mark for as long as it stands; a key over the map's bottom right counts the homes in each stage at the playhead's date and names every mark. On <code>/</code> and <code>/p/&lt;id&gt;</code>: the same key names the building types and lists each painted height with its lots, and hovering or focusing a height outlines where it applies. On every map page the layer switches sit beside the key, and "View" leaves the header.</dd>
+      <dt>Architecture</dt>
+      <dd>Two flag bits travel with each project slot from the engine (<code>TimedPackedCell.slotFlags</code>, set by the map stream from a new <code>runner/flags.ts</code>); no hashed file changes. The map draws halos and marks as one new instanced deck layer, <code>timeline-halos</code> (<code>HaloLayer</code>), built by the <code>TimelineController</code> once per update beside the stage bars and driven by the clock uniform the bars already read, so nothing new runs per frame. A shared map control (<code>MapKeyControl.svelte</code>) holds two disclosures, Layers and Key, at the map's bottom right above the attribution; <code>/sim</code> fills the key from a pure tally over <code>TimelineView</code>, Paint from a new editor-worker request (<code>heightLots</code>, which replaces the unused <code>opLots</code>). The layer rows move out of <code>ViewMenu</code> into <code>LayerSwitches</code>.</dd>
+      <dt>Tech Stack</dt>
+      <dd>SvelteKit 2, Svelte 5 runes, TypeScript, Tailwind 4, deck.gl 9 and luma.gl (custom layer, as <code>StageBarLayer</code>), MapLibre, Vitest (server project for <code>*.spec.ts</code>, client project for <code>*.svelte.spec.ts</code>, GPU specs as <code>*.gpu.svelte.spec.ts</code>), Playwright, axe through <code>expectNoA11yViolations</code>.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-17-information-design-review-design.html"><code>docs/superpowers/specs/2026-11-17-information-design-review-design.html</code></a>, row 5 of <a href="../specs/2026-11-17-information-design-review-design.html#tbl-slices">Order of work</a>. Governing parts: the map inventory (<code>tbl-inv-sim-map</code>), "Map layer switches" (<code>tbl-inv-sim-controls</code>), "New buildings" and "Transit capacity" (<code>tbl-inv-paint</code>), the six rules (effect shown three ways; status silent when normal; controls say what they do), Events (<code>sec-prop-events</code>) and What the engine can supply (<code>tbl-engine</code>), Paint (<code>sec-prop-paint</code>: hovering a height in the key outlines it), Decided (halos for new starts; one data-and-sources place, "© OpenStreetMap" stays on the map), One vocabulary (<code>tbl-words</code>), and every slice 5 item of Carried forward.</dd>
+      <dt>Assumes</dt>
+      <dd>Slices 1 to 4 have landed: the one clock (<code>headlineAt</code>, <code>playheadAt</code>, <code>src/lib/timeline/results.ts:83-129</code>), the reveal rules (<code>src/lib/timeline/reveal.ts</code>), Paint's chip, no painted-areas list on <code>/</code>, the steps in the header, transit shading off by default (<code>DEFAULT_VIEW</code>, <code>src/lib/view/prefs.ts:14-19</code>).</dd>
+    </dl>
+  </section>
+
+  <section id="sec-engine-decision">
+    <h2>The engine flags: decision and evidence</h2>
+    <aside data-kind="decision"><strong>Chosen: preference 1, both flags, no hashed file touched.</strong> Both bits are computed on the worker from data the plan's world already holds, at the moment a cell is packed for the map, and carried in a new optional per-slot array. No file under <code>PATHS</code> (<code>pipeline/lib/version.ts:42-53</code>) is edited, so the dataset version does not change and no upload is needed.</aside>
+    <table id="tbl-flag-evidence">
+      <caption>What each flag needs, where it comes from, and whether the file is hashed</caption>
+      <thead>
+        <tr><th scope="col">Need</th><th scope="col">Source in the code</th><th scope="col">File</th><th scope="col">Hashed?</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Which policy sets a lot's story limit in a month</th><td><code>limitsAt(frame, lotRow).owner</code>: <code>fzp</code>, a painted policy, or a transit rule strictly above FZP; memoised per zoning state (<code>resolve</code> runs once per state)</td><td><code>src/lib/sim/world/policy/limits.ts:167-172</code></td><td>No (import only)</td></tr>
+        <tr><th scope="row">The frame in force in a model month</th><td><code>plan.timeline.frameAt(m)</code> of the plan side's timeline in use (<code>Side.timeline</code>, set in <code>replace</code>)</td><td><code>src/lib/sim/world/runner/runner.ts:626-633</code></td><td>No</td></tr>
+        <tr><th scope="row">A row's origin, lot, first stage day</th><td><code>ProjectColumns.origin</code>, <code>src</code> (the lot's statics row for <code>ORIGIN_SIM</code>), <code>entered</code> (7 per row, <code>NO_DAY</code> when not entered)</td><td><code>src/lib/sim/world/types.ts:65-117</code></td><td>No</td></tr>
+        <tr><th scope="row">A funded row and its programmes</th><td><code>ProjectColumns.funded</code> (1 for a funded start) and <code>programmes</code> (ids joined with ','), set at <code>startProject</code></td><td><code>src/lib/sim/world/types.ts:111-117</code>, <code>world.ts:383-389</code></td><td>No</td></tr>
+        <tr><th scope="row">A programme's pool, and which pools are the baseline's</th><td><code>frame.finance.programmes[g].pool</code> (same ids in every frame of one timeline); the baseline pools are <code>ds.loaded.fzp.finance.pools</code></td><td><code>src/lib/sim/world/policy/frame.ts:32-42</code>, <code>runner/dataset.ts:88-101</code></td><td>No</td></tr>
+        <tr><th scope="row">Carrying a bit per project to the page</th><td><code>TimedPackInput</code> and <code>TimedPackedCell</code>, packed by <code>packTimedCell</code>, sent by the map stream</td><td><code>src/lib/map/pack-timed.ts</code>, <code>src/lib/map/types.ts:50-57</code>, <code>src/lib/sim/world/map-stream.ts</code></td><td>No. <code>src/lib/sim/scenario/geometry.ts</code> (hashed) and <code>src/lib/sim/lesscars/playback-host.ts</code> also call <code>packTimedCell</code>; they are not edited and get zeros. The pipeline imports neither, so no published byte changes.</td></tr>
+      </tbody>
+    </table>
+    <ul>
+      <li><strong>Zoning bit</strong> (<code>SLOT_FLAG.zoning</code>): a simulated row (<code>ORIGIN_SIM</code>) whose lot's limit, in the frame of the model month of its first entered stage, is set by one of the person's zoning policies. Honest meaning: "your zoning sets this lot's height limit". It over-counts: some of these projects would have started under current law. Pipeline and phase rows never carry it (they were filed before today). It must never be worded "because of" or "would not exist without".</li>
+      <li><strong>Money bit</strong> (<code>SLOT_FLAG.money</code>): a funded row with at least one programme whose pool is not a baseline pool. Honest meaning: "funded by a pool you added". Exact for what it says. A money policy that scales the baseline funds through baseline pools, so those projects carry no bit.</li>
+      <li><strong>Cost</strong>: no new work per world step. The bits are computed only where a cell is packed (<code>itemsOf</code>, the same cadence as <code>scheduleAt</code>), O(1) per project for the zoning bit (a frame lookup and a memoised owner read) and O(programmes) for the money bit. The first owner read of a zoning state resolves that state once (O(lots)); heights and cards already resolve the states they show, so the extra resolves are at most one per zoning state that a project started under. One byte per slot travels with each cell.</li>
+      <li><strong>What the bits are not</strong>: they do not sum to "+N from your policy" (the spec's warning in <code>sec-prop-engine</code>). The key says "Under your policy" and never shows a count for it.</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li><strong>Hashed paths are read-only.</strong> Editing any file under <code>PATHS</code> (<code>pipeline/lib/version.ts:42-53</code>: <code>pipeline</code>, <code>src/lib/data</code>, <code>src/lib/generator</code>, <code>src/lib/timelapse</code>, <code>src/lib/plan/geometry.ts</code>, <code>src/lib/plan/types.ts</code>, <code>src/lib/sim/scenario</code>, <code>src/lib/sim/levers</code>, <code>src/lib/sim/finance</code>, <code>src/lib/scoreboard</code>), spec files included, forces a dataset upload. Every file this plan creates, edits or deletes is outside them (<a href="#tbl-files">File Structure</a>). Imports from them are fine (<code>STAGE_ORDER</code>, <code>OPEN_DAY</code>, <code>DYING_DAYS</code>, <code>PATHWAYS</code>, <code>formatCount</code>, <code>SimInput</code>). If a change there seems unavoidable, stop and raise it.</li>
+      <li>Engine files outside the hashed paths may change for the flags only: <code>src/lib/map/pack-timed.ts</code>, <code>src/lib/map/types.ts</code>, <code>src/lib/map/timelapse/encode.ts</code>, <code>src/lib/sim/world/map-stream.ts</code>, <code>src/lib/sim/world/runner/runner.ts</code>, the new <code>runner/flags.ts</code>. The editor worker (<code>src/lib/sim/host.ts</code>, <code>protocol.ts</code>, <code>client.ts</code>, <code>router.ts</code>) changes only for <code>heightLots</code> (Task 5). Nothing else under <code>src/lib/sim/</code>.</li>
+      <li>Not in this slice: progress bars at the default zoom, events off screen, the citywide marker feed (slice 6); the activity panel, Details, pools that drain (slice 7); shared button, card and chip components (slice 8); the About surface and moving credits (slice 9: "© OpenStreetMap" stays on the map exactly as it is); levels and unlocks.</li>
+      <li><strong>Shared between <code>/</code> and <code>/sim</code></strong>: <code>MapKeyControl.svelte</code>, <code>KeySwatch.svelte</code>, <code>LayerSwitches.svelte</code>, <code>SimMap</code>, the overlay mux. Shared test ids: <code>map-key-control</code>, <code>map-key-toggle</code>, <code>map-layers-toggle</code>, <code>map-key-panel</code>, <code>map-layers-panel</code>. <code>/lesscars</code> renders <code>SimMap</code> and <code>packTimedCell</code> output but never calls <code>setHalos</code> and mounts no key, so it is unchanged.</li>
+      <li>All work in this worktree. Run <code>cd</code> and <code>git</code> as plain single commands, never chained (<code>cd … &amp;&amp; cmd</code>). Run everything in the foreground. Report once, at the end of each task.</li>
+      <li>Conventional Commits, messages as <code>-m</code> flags. <code>git add</code> named files only. No Claude attribution anywhere: no <code>Co-Authored-By</code> trailers, no generated-by notes in code, docs or commits.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns (Prettier and ESLint). Svelte 5 runes only. Worker modules stay under the determinism lint rule (no transcendental <code>Math</code>).</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>.</li>
+      <li>WCAG 2.2 AA on every changed surface, light and dark (<code>docs/dev/accessibility.md</code>, <code>e2e/chrome-dark.spec.ts</code>): the Key and Layers toggles and every control in their panels are real controls with names, at least 24x24 CSS px and 44 on a coarse pointer, reached by Tab after the map's own controls (zoom, compass, attribution) and before the page's next region; Escape closes an open panel and returns focus to its toggle; colour is never the only cue (each swatch sits beside words; halos are rings, marks are diamonds); new map colours have 3:1 against the map's land in both themes (SC 1.4.11); no horizontal scroll at 320 or 375 px; nothing placed covers the zoom controls, Reset view, the attribution, the stroke chip, the failure chips, the palette strip, the dock or the sheet handle (SC 2.4.11).</li>
+      <li><strong>Timing rule</strong>, for every spec, helper and fix round: no <code>setTimeout</code> or <code>setInterval</code> (even zero-length), no <code>waitForTimeout</code>, fixed sleeps, raised timeouts or retries in tests; wait on readiness signals (web-first assertions, <code>expect.poll</code>, attributes, <code>window.__sfhMap</code>, <code>window.__sfhFzp</code>, <code>window.__sfhBrush</code>). After the last commit of every task run <code>npx chreode timing-check --head HEAD</code> and see it clean. Every changed e2e spec is re-run with <code>--repeat-each=5 --retries=0</code>; signoff burns in changed test files five times and fails on server stderr.</li>
+      <li>Port 4173 is shared with other sessions: never start, stop or kill whatever holds it. Playwright runs on <code>SFH_E2E_PORT=4180</code>.</li>
+      <li><strong>Performance.</strong> Nothing added runs per animation frame in proportion to the number of projects, and nothing new is posted per world step. The halo layer is rebuilt only when the stage bars are (once per applied update, after its last slice) and when <code>setHalos</code> changes; <code>setTime</code> stays O(1) and allocation-free and sets no layer prop (the layer reads the shared clock in <code>draw</code>, as <code>StageBarLayer</code> does). The key's tally reads one view row and changes at most once per calendar month the playhead crosses. Paint's <code>heightLots</code> is asked once per plan change, chunk message or hovered height, latest wins. Guards in tests are structural (layer constructions, <code>setLayers</code> calls, records in the halo layer, requests sent), never wall clock. Do not run <code>npm run test:perf</code> or <code>npm run bench:map</code> inside any task.</li>
+      <li><strong>The reveal rule on the map.</strong> Nothing is drawn for a day after the playhead: a halo shows only for an event day at or before the clock's day and after today, a mark only from its project's first stage day. Scrubbing back hides halos and marks whose day is now ahead. An edit replaces the edited cells, and with them their halos and marks, so no mark of the old numbers survives the new cells. The key reads the playhead's month only.</li>
+      <li>Copy: terse, plain words, no em dashes, no "it is not X" disclaimers. "homes", never "units"; "lots" on Paint; "from your policy" and "current law" where the comparison is named; no "RHNA" or "FZP" in any string added or changed. The strings are fixed in <a href="#tbl-strings">The strings</a>. Every visible string here is under 12 words; the 12-words-at-rest checks for <code>/</code> (<code>src/routes/page.rest-text.svelte.spec.ts</code>) and <code>/sim</code> (<code>src/lib/timeline/rest-text.svelte.spec.ts</code>) must still pass with the key open.</li>
+      <li>Status apart from controls: the key's counts change during play, so they live in the key's panel, never in the toolbar beside the toggles, whose words are fixed.</li>
+      <li>Docs under <code>docs/dev/</code> and <code>CLAUDE.md</code> that describe changed behaviour are updated in the task that changes it.</li>
+      <li>Map goldens: <code>e2e/map.spec.ts-snapshots/map-light-chromium-darwin.png</code> and <code>map-dark-chromium-darwin.png</code> capture <code>/</code>'s map root (E9, 1280 px, Chromium, reduced motion), and an element screenshot includes whatever is drawn over it. Task 5 (the key toolbar appears at the map's bottom right) and Task 6 (the Layers toggle joins it) change them; each regenerates them in its own step, chromium only, and opens both images before committing. <code>/sim</code> has no golden. No task changes the map's size.</li>
+      <li>Test commands: <code>npx vitest --run --project server &lt;file&gt;</code> for <code>*.spec.ts</code>, <code>npx vitest --run --project client &lt;file&gt;</code> for <code>*.svelte.spec.ts</code> (GPU specs included), <code>SFH_E2E_PORT=4180 npx playwright test &lt;file&gt; --project=chromium --project=mobile</code>. A coarse pointer in a client spec is a stubbed <code>window.matchMedia</code> (<code>vi.stubGlobal</code>), as in slice 4; reduced motion likewise.</li>
+      <li>Task order: Task 2 needs Task 1's <code>SLOT_FLAG</code> and <code>slotFlags</code>; Task 4 needs Tasks 1 to 3; Tasks 5 and 6 need Task 3's control. Tasks 3, 4 and 6 all edit <code>TimelineMode.svelte</code>; Tasks 5 and 6 both edit <code>BrushEditor.svelte</code> and the map goldens. Run them in order.</li>
+    </ul>
+  </section>
+
+  <section id="sec-strings">
+    <h2>The strings</h2>
+    <table id="tbl-strings">
+      <caption>Every visible or spoken string this slice adds or changes</caption>
+      <thead>
+        <tr><th scope="col">Where</th><th scope="col">Text</th><th scope="col">Defined in</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Key toggle (every map page)</th><td>visible <code>Key</code>; name <code>Map key</code>; <code>aria-expanded</code>, <code>aria-controls</code> the key panel</td><td><code>KEY_COPY.key</code>, <code>src/lib/map/key/copy.ts</code></td></tr>
+        <tr><th scope="row">Layers toggle (where a layer row exists)</th><td>visible <code>Layers</code>; name <code>Map layers</code>; its panel a group named <code>Map layers</code> (the group name today's tests use)</td><td><code>KEY_COPY.layers</code></td></tr>
+        <tr><th scope="row"><code>/sim</code> key, the tally's label</th><td><code>Homes</code> (the list is named by it: "Homes", list, 6 items)</td><td><code>KEY_COPY.homes</code></td></tr>
+        <tr><th scope="row"><code>/sim</code> key, tally rows (label, count)</th><td><code>Planning review</code> · <code>Approved</code> · <code>Permit issued</code> · <code>Building</code> · <code>Completed</code> · <code>Stopped</code>, each with <code>formatCount</code> of its homes; <code>…</code> while the headline reads "calculating"</td><td><code>STAGE_KEY</code>, <code>src/lib/map/key/rows.ts</code></td></tr>
+        <tr><th scope="row"><code>/sim</code> key, the ring</th><td><code>Just changed stage</code></td><td><code>KEY_COPY.ring</code></td></tr>
+        <tr><th scope="row"><code>/sim</code> key, the mark (only while a policy is in force)</th><td><code>Under your policy</code>; its explanation (on hover, focus or tap, <code>Explain</code>): <code>Your zoning sets its height limit, or your pool funds it.</code></td><td><code>KEY_COPY.mark</code>, <code>KEY_COPY.markWhy</code></td></tr>
+        <tr><th scope="row"><code>/sim</code> key, the bar</th><td><code>Bar: progress and chance of finishing</code></td><td><code>KEY_COPY.bar</code></td></tr>
+        <tr><th scope="row">Paint key, sections</th><td><code>New buildings</code>, then (with a paint op) <code>Painted</code></td><td><code>KEY_COPY.types</code>, <code>KEY_COPY.painted</code></td></tr>
+        <tr><th scope="row">Paint key, building types</th><td><code>ADU</code> · <code>House or plex</code> · <code>Walk-up</code> · <code>5-over-1</code> · <code>Mid-rise</code> · <code>Tower</code> (the tooltip's words, <code>src/lib/map/tooltip.ts:9-15</code>)</td><td><code>TYPE_KEY</code>, <code>rows.ts</code></td></tr>
+        <tr><th scope="row">Paint key, a height (a toggle button, <code>aria-pressed</code>)</th><td><code>6 stories · 42 lots · 30 rebuilt</code> · <code>1 story · 1 lot · 0 rebuilt</code>; while a cell of the plan is still loading the lot count reads <code>42+ lots</code>; before the first answer <code>6 stories · …</code></td><td><code>heightRowText</code>, <code>src/lib/paint/heights.ts</code></td></tr>
+        <tr><th scope="row">Layers panel rows</th><td>unchanged: <code>Transit stops</code> (with its stop legend), <code>Transit capacity within a 10-minute walk</code> (legend, caption), <code>Zoning height limits</code> (<code>/sim</code>, caption)</td><td><code>LayerSwitches.svelte</code> (moved from <code>ViewMenu.svelte</code>)</td></tr>
+      </tbody>
+    </table>
+    <p>Gone: the header button "View" on <code>/</code>, <code>/p/&lt;id&gt;</code>, <code>/sim</code> and <code>/s/&lt;id&gt;</code>; Results' "Map key" disclosure on <code>/sim</code> with its long rows ("Proposed: in Planning review", "Under construction (solid floors are built)", "Bar length: progress through the stages.").</p>
+  </section>
+
+  <section id="sec-measures">
+    <h2>Measured</h2>
+    <p>Taken on <code>617ca310</code> with a temporary Playwright spec against the e2e preview (<code>SFH_E2E_PORT=4180</code>, fixture-0, Chromium; phones on the <code>mobile</code> project, coarse pointer), signed out unless noted. <code>/sim</code> waited for the filled window; "signed in" used <code>loginAs</code> with the account entry's text set to a 24-character handle (shown at its 160 px cap) and the playhead at End. Boxes are <code>[x, y, w, h]</code> in CSS px. The spec was deleted before commit.</p>
+    <table id="tbl-measured-map">
+      <caption>What already sits on the map, by page and width</caption>
+      <thead>
+        <tr><th scope="col">Page, viewport</th><th scope="col">Map box</th><th scope="col">Bottom left</th><th scope="col">Bottom right (attribution)</th><th scope="col">Other</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>/</code> 375x812</th><td>[0,48,375,764]</td><td>Reset view [10,713,44,44]</td><td>compact, open on load: [10,673,355,84], footprint block 149; collapsed: (i) [321,713,44,44], block 109</td><td>sheet handle [0,768,375,44]; strip (Paint tool) [16,705,293,54], Reset lifted to [10,659,44,44]; stroke chip region top 56 (94 under a notice)</td></tr>
+        <tr><th scope="row"><code>/</code> 320x812</th><td>[0,48,320,764]</td><td>Reset [10,713,44,44]</td><td>collapsed (i) [266,713,44,44], block 109</td><td>strip [8,705,277,54]</td></tr>
+        <tr><th scope="row"><code>/</code> 768x1024</th><td>[0,48,768,976]</td><td>zoom and compass [330,882,44,132] (right of the 320 px dock)</td><td>one band [31,1004,737,20], block 20</td><td>dock panel [0,48,320,976]; notice stack centred, a pill [446,56,195,30]</td></tr>
+        <tr><th scope="row"><code>/</code> 1024x800</th><td>[0,48,1024,752]</td><td>[330,658,44,132]</td><td>[287,780,737,20], block 20</td><td>dock [0,48,320,752]; pill [574,56,195,30]</td></tr>
+        <tr><th scope="row"><code>/</code> 1280x800</th><td>[0,48,1280,752]</td><td>[330,658,44,132]</td><td>[543,780,737,20], block 20</td><td>dock [0,48,320,752]; pill [702,56,195,30]</td></tr>
+        <tr><th scope="row"><code>/sim</code> 375x812</th><td>[0,48,375,306]</td><td>Reset [10,198,44,44] (attribution open) or [10,238,44,44] (collapsed)</td><td>open [10,260,355,84], block 104; collapsed (i) [321,300,44,44], block 64</td><td>timeline from y 354</td></tr>
+        <tr><th scope="row"><code>/sim</code> 320x812</th><td>[0,48,320,306]</td><td>Reset [10,238,44,44]</td><td>collapsed (i) [266,300,44,44], block 64</td><td>timeline from y 354</td></tr>
+        <tr><th scope="row"><code>/sim</code> 768x1024</th><td>[0,48,768,586]</td><td>[10,472,44,132]</td><td>[31,614,737,20], block 20</td><td>timeline [0,634,768,390]</td></tr>
+        <tr><th scope="row"><code>/sim</code> 1024x800</th><td>[0,48,1024,451]</td><td>[10,337,44,132]</td><td>[287,479,737,20], block 20</td><td>timeline [0,499,1024,301]; signed in, a pill [286,56,452,54]</td></tr>
+        <tr><th scope="row"><code>/sim</code> 1280x800</th><td>[0,48,1280,451]</td><td>[10,337,44,132]</td><td>[543,479,737,20], block 20</td><td>timeline [0,499,1280,301]; signed in, a pill [414,56,452,54]</td></tr>
+      </tbody>
+    </table>
+    <p>The top centre holds the notice stack (from md), the failure chips (centred right of the dock, up to the map's width less 32 px) and Paint's stroke chip, so nothing new goes there. The bottom left holds zoom and compass (fine pointer), Reset view (coarse) and, on phones, Paint's strip. From md the attribution is one 20 px band under almost the whole width, so the corner above it on the right is free on both pages; below md the corner above the footprint is free on both pages, and on <code>/</code> it stays clear of the strip (10 px between the strip's top, 705, and the toolbar's bottom, 695, with the attribution collapsed).</p>
+    <table id="tbl-measured-key">
+      <caption>Where the key control sits (derived; Tasks 3, 5 and 6 assert the fits)</caption>
+      <thead>
+        <tr><th scope="col">Page, viewport</th><th scope="col">Toolbar (Layers and Key)</th><th scope="col">Room above it for an open panel</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>/</code> 375 (coarse, two 44 px toggles, 4 px gap)</th><td>[275,611,92,44] attribution open; [275,651,92,44] collapsed</td><td>555 to 595 px</td></tr>
+        <tr><th scope="row"><code>/</code> 320</th><td>[220,651,92,44]; strip's right edge 285 but its top 705, under the toolbar</td><td>595 px</td></tr>
+        <tr><th scope="row"><code>/</code> 768, 1024, 1280 (fine, 24 px toggles)</th><td>right edge 8 px in, bottom 28 px above the map's bottom (the 20 px band and 8)</td><td>about 940 (768) and 716 (1024, 1280)</td></tr>
+        <tr><th scope="row"><code>/sim</code> 375</th><td>[275,198,92,44] attribution open; [275,238,92,44] collapsed (level with Reset on the left)</td><td>134 px (open) or 174 px (collapsed): the panel scrolls inside</td></tr>
+        <tr><th scope="row"><code>/sim</code> 768</th><td>bottom at y 606</td><td>542 px</td></tr>
+        <tr><th scope="row"><code>/sim</code> 1024 and 1280</th><td>bottom at y 471, top 447</td><td>383 px; the open <code>/sim</code> key is about 230 px (9 rows of 20, the label, 16 of padding)</td></tr>
+      </tbody>
+    </table>
+    <table id="tbl-measured-header">
+      <caption>The header: what removing "View" gives back</caption>
+      <thead>
+        <tr><th scope="col">Page, width, state</th><th scope="col">Status cell, today</th><th scope="col">Its content</th><th scope="col">Slack today</th><th scope="col">Slack without View</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>/sim</code> 1024, signed in, End ("661 homes by Sep 2066")</th><td>44.3</td><td>59.2</td><td><strong>−14.9</strong> (clipped)</td><td><strong>+43.0</strong> (cell 102.3)</td></tr>
+        <tr><th scope="row">same, with "Autosave off" (89.1 wide)</th><td>44.3</td><td>89.1</td><td>−44.8</td><td>+13.2</td></tr>
+        <tr><th scope="row"><code>/sim</code> 1280, signed in, End</th><td>183.0</td><td>59.2</td><td>123.8</td><td>123.8 (the score is centred from xl; View's 58 px go to the actions' side)</td></tr>
+        <tr><th scope="row"><code>/</code> 1024, signed out</th><td>376.2</td><td>47.5</td><td>328.7</td><td>about 386 (View 50.0 plus its 8 px gap)</td></tr>
+        <tr><th scope="row"><code>/</code> 1280, signed out</th><td>204.3</td><td>47.5</td><td>156.8</td><td>156.8 (centred score)</td></tr>
+      </tbody>
+    </table>
+    <p>So removing View fixes the measured <code>/sim</code> clip at 1024 px signed in, with 13 px to spare even with "Autosave off"; a five-digit headline ("47,335 homes by Apr 2040", about 30 px wider than "661 …") with "Autosave off" would still clip by about 17 px there, which stays slice 8's (Carried forward).</p>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>Playing at 3× over a busy area</strong>: hundreds of stage changes pass in a second. Expected: no layer is rebuilt and no prop is set per frame; the halos alive at once are those of the last <code>HALO_DAYS</code> of simulated time, the same set at 1× and 3× (each lasts a third as long). Tests: <a href="#t2-s1">t2-s1</a> ("setTime constructs no layer and calls setLayers none"), <a href="#t2-s1">t2-s1</a> ("evalHalo: visible only for 0 ≤ age &lt; HALO_DAYS").</li>
+      <li><strong>Scrubbing back, and an edit that pulls the reveal back</strong>. Expected: a halo whose day is now ahead is gone; a cell replaced by an edit takes its old halos and marks with it. Tests: <a href="#t2-s1">t2-s1</a> ("a replaced cell's halos follow its new schedule; a removed cell's go"), <a href="#t4-s1">t4-s1</a> (e2e "Home hides it again").</li>
+      <li><strong>A phone on <code>/sim</code></strong>: a 306 px map with Reset, the attribution (open, then collapsed), a project card sheet, and the key. Expected: the toolbar never overlaps Reset or the attribution; while a card is open below md the toolbar hides and comes back on Close; an open panel scrolls inside the room above the toolbar. Test: <a href="#t3-s1">t3-s1</a> (e2e "375 px on /sim").</li>
+      <li><strong>Paint's heights while the plan changes under the pointer</strong>: hovering "8 stories" while Ctrl+Z removes the last 8-story stroke, while a chunk loads, or on a restored plan. Expected: the outline goes with the row; counts follow latest-wins; "42+ lots" while a cell is loading. Test: <a href="#t5-s1">t5-s1</a>.</li>
+      <li><strong>Layers for a returning viewer</strong>: transit capacity stored on in <code>sfhousing:view</code>, keyboard only. Expected: the layer shows on load; Tab reaches Layers after the map's controls; Escape closes and returns focus; the 1024 px <code>/sim</code> header fits signed in. Tests: <a href="#t6-s1">t6-s1</a>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <p>Every file below is outside the hashed <code>PATHS</code>.</p>
+    <table id="tbl-files">
+      <caption>Files by task and what each owns</caption>
+      <thead>
+        <tr><th scope="col">Area</th><th scope="col">Files</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">The two flags</th><td>Create <code>src/lib/sim/world/runner/flags.ts</code>, <code>flags.spec.ts</code>; modify <code>src/lib/map/types.ts</code>, <code>src/lib/map/pack-timed.ts</code> and spec, <code>src/lib/map/timelapse/encode.ts</code> and spec, <code>src/lib/sim/world/map-stream.ts</code>, <code>map-stream.spec.ts</code>, <code>map-stream.rewind.spec.ts</code>, <code>src/lib/sim/world/runner/runner.ts</code>, <code>src/lib/sim/world/host.spec.ts</code>; docs <code>map-stream.md</code>, <code>map-interfaces.md</code>, <code>ensemble-runner.md</code></td><td>1</td></tr>
+        <tr><th scope="row">Halos and marks on the map</th><td>Create <code>src/lib/map/timelapse/halos.ts</code>, <code>halos.spec.ts</code>, <code>halo-layer.ts</code>, <code>halo-layer.gpu.svelte.spec.ts</code>; modify <code>timelapse/constants.ts</code>, <code>timelapse/deck.ts</code>, <code>timelapse/types.ts</code>, <code>src/lib/map/palette.ts</code> and spec, <code>timeline-controller.ts</code> and spec, <code>src/lib/map/test/fake-timeline-deps.ts</code>, <code>src/lib/map/test/synthetic-timeline.ts</code>, <code>SimMap.svelte</code>, <code>SimMap.timeline.svelte.spec.ts</code>, <code>src/lib/map/debug.ts</code>, <code>e2e/bench/map-timeline.bench.ts</code> (a case, not run); docs <code>map-interfaces.md</code>, <code>map-perf.md</code>, <code>testing.md</code></td><td>2</td></tr>
+        <tr><th scope="row">The shared key control and <code>/sim</code>'s tally</th><td>Create <code>src/lib/map/key/MapKeyControl.svelte</code> and <code>.svelte.spec.ts</code>, <code>src/lib/map/key/KeySwatch.svelte</code>, <code>src/lib/map/key/rows.ts</code> and spec, <code>src/lib/map/key/copy.ts</code>, <code>src/lib/timeline/key.ts</code> and spec, <code>src/lib/timeline/SimKey.svelte</code> and <code>.svelte.spec.ts</code>, <code>e2e/map-key.spec.ts</code>; modify <code>TimelineMode.svelte</code> and spec, <code>src/lib/fzp/card-place.ts</code> and spec, <code>src/lib/fzp/card-area-watch.ts</code> and spec, <code>src/lib/fzp/SimResults.svelte</code> and spec; delete <code>src/lib/fzp/MapKey.svelte</code>; <code>src/lib/timeline/rest-text.svelte.spec.ts</code>; docs <code>timeline-ui.md</code>, <code>fzp-mode.md</code>, <code>map-interfaces.md</code>, <code>sim-page.md</code></td><td>3</td></tr>
+        <tr><th scope="row"><code>/sim</code> turns halos and marks on</th><td><code>TimelineMode.svelte</code> and spec, <code>SimKey.svelte</code> and spec; create <code>e2e/sim-halos.spec.ts</code>; docs <code>timeline-ui.md</code></td><td>4</td></tr>
+        <tr><th scope="row">Paint's key</th><td>Create <code>src/lib/paint/PaintKey.svelte</code> and <code>.svelte.spec.ts</code>, <code>src/lib/paint/heights.ts</code> and spec, <code>src/lib/brush/height-lots.svelte.ts</code> and <code>.svelte.spec.ts</code>; modify <code>src/lib/sim/protocol.ts</code>, <code>client.ts</code> and spec, <code>host.ts</code> and spec, <code>router.ts</code>, <code>worker-router.spec.ts</code>, <code>src/lib/brush/BrushEditor.svelte</code>, <code>BrushEditor.dock.svelte.spec.ts</code>, <code>src/lib/brush/test/fake-editor-worker.ts</code> (a <code>heightLots</code> answer), <code>e2e/map-key.spec.ts</code>, <code>e2e/layout.spec.ts</code>, <code>e2e/chrome-dark.spec.ts</code>, the two map goldens; docs <code>developing.md</code>, <code>plan-sharing.md</code>, <code>map-interfaces.md</code></td><td>5</td></tr>
+        <tr><th scope="row">Layers on the map; View leaves the header</th><td>Create <code>src/lib/view/LayerSwitches.svelte</code> and <code>.svelte.spec.ts</code> (from <code>ViewMenu</code>'s); delete <code>src/lib/view/ViewMenu.svelte</code> and spec; modify <code>src/routes/+page.svelte</code>, <code>src/routes/p/[id]/+page.svelte</code>, <code>src/lib/sim-page/SimPage.svelte</code> and spec, <code>TimelineMode.svelte</code>, <code>BrushEditor.svelte</code>, <code>src/routes/page.view.svelte.spec.ts</code>, <code>src/routes/p/[id]/page.view.svelte.spec.ts</code>, <code>src/routes/page.header.svelte.spec.ts</code>, <code>src/lib/shell/SiteHeader.svelte.spec.ts</code>, <code>e2e/transit.spec.ts</code>, <code>e2e/sim.spec.ts</code>, <code>e2e/map-key.spec.ts</code>, <code>e2e/chrome-dark.spec.ts</code>, the two map goldens (<code>e2e/bench/bench-util.ts</code>'s <code>transitLayersOn</code> stores the prefs and needs no change); docs <code>map-interfaces.md</code>, <code>sim-page.md</code>, <code>developing.md</code>, <code>map-perf.md</code></td><td>6</td></tr>
+        <tr><th scope="row">Whole-suite pass</th><td>Whatever the full runs turn up</td><td>7</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Two flags per project, from the engine</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/sim/world/runner/flags.ts</code>. Test: <code>src/lib/sim/world/runner/flags.spec.ts</code> (server project), on a world built with <code>emptyWorld</code> and <code>addProject</code> (<code>src/lib/sim/world/columns.ts:123-160</code>) and frames from <code>src/lib/sim/world/test/timeline.ts</code>.</li>
+      <li>Modify: <code>src/lib/map/types.ts</code> (<code>SLOT_FLAG</code>; <code>TimedPackedCell.slotFlags</code>, <code>:50-57</code>); <code>src/lib/map/pack-timed.ts</code> (<code>TimedPackInput.flags</code>, <code>:11-18</code>; write <code>slotFlags</code> beside <code>slotCohort</code>, <code>:131</code>; <code>packTimedTransferables</code>, <code>:168-183</code>) and <code>pack-timed.spec.ts</code>; <code>src/lib/map/timelapse/encode.ts</code> (<code>validateTimedCell</code>, <code>:30-49</code>) and <code>encode.spec.ts</code> (the table of malformed cells).</li>
+      <li>Modify: <code>src/lib/sim/world/map-stream.ts</code>: <code>MapStreamDeps.flagsOf</code> (<code>:62-75</code>), <code>itemsOf</code> passes <code>flags</code> (<code>:273</code>), <code>scheduleKey</code> takes the flags (<code>:193-202</code>); tests <code>map-stream.spec.ts</code>, <code>map-stream.rewind.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/sim/world/runner/runner.ts</code>: <code>open</code> hands <code>createMapStream</code> a <code>flagsOf</code> (<code>:1254-1262</code>) over the plan side's timeline in use and the baseline pool ids. Test: <code>src/lib/sim/world/host.spec.ts</code> (a new case under "a full fill of the default document").</li>
+      <li>Docs: <code>docs/dev/map-stream.md</code> (Rules: the flags and the key), <code>docs/dev/map-interfaces.md</code> (a new "Slot flags" section), <code>docs/dev/ensemble-runner.md</code> (the stream's deps).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>limitsAt</code> (<code>policy/limits.ts:167</code>), <code>PolicyTimeline.frameAt</code>, <code>monthOfDay</code> (<code>src/lib/sim/world/months.ts:19-27</code>), <code>ORIGIN_SIM</code>, <code>NO_DAY</code>, <code>ProjectColumns</code>, <code>STAGE_ORDER</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/map/types.ts
+/** Bits of `TimedPackedCell.slotFlags`. */
+export const SLOT_FLAG = { zoning: 1, money: 2 } as const;
+// TimedPackedCell gains:
+slotFlags?: Uint8Array; // per slot: SLOT_FLAG bits; absent (older producers, fixtures) = none
+
+// src/lib/map/pack-timed.ts
+// TimedPackInput gains:
+flags?: number; // SLOT_FLAG bits; default 0
+// packTimedCell always writes slotFlags (zeros when no item has flags);
+// packTimedTransferables lists its buffer.
+
+// src/lib/map/timelapse/encode.ts: validateTimedCell, when slotFlags is present:
+//   length === slots, else 'slotFlags has length N, expected M'; each value &lt;= 3, else
+//   'slot S has flags F'.
+
+// src/lib/sim/world/map-stream.ts
+export interface MapStreamDeps {
+  // …as today, plus:
+  /** SLOT_FLAG bits of `row` in `world`, asked when its cell is packed; default 0. */
+  flagsOf?(world: World, statics: Statics, row: number): number;
+}
+// itemsOf: items.push({ schedule, massings, pickParcelId, flags })
+// scheduleKey(s, flags): today's key + `|f${flags}`, so a rewind repacks a cell whose row kept
+// its schedule but changed its flags.
+
+// src/lib/sim/world/runner/flags.ts (worker-safe, pure)
+export interface FlagSources {
+  /** The plan's frame of model month m (m &gt;= 1), from the timeline in use. */
+  frameAt(m: number): PolicyFrame;
+  /** Ids of the dataset's baseline pools (`SimInput.finance.pools`). */
+  basePools: ReadonlySet&lt;string&gt;;
+}
+/**
+ * SLOT_FLAG.zoning: an ORIGIN_SIM row whose lot (`src[row]`) has, in the frame of the model month
+ * of its first entered stage (max(1, monthOfDay(asOf, day))), an owner other than 'fzp'.
+ * SLOT_FLAG.money: funded[row] === 1 and some id of programmes[row] names, in that frame's
+ * finance, a programme whose pool is not in basePools. 0 for a master row.
+ */
+export function slotFlags(world: World, statics: Statics, row: number, src: FlagSources): number;
+
+// runner.ts open(): createMapStream({ …, flagsOf: (w, st, row) =&gt; plan?.timeline
+//   ? slotFlags(w, st, row, { frameAt: (m) =&gt; plan!.timeline!.frameAt(m), basePools })
+//   : 0 }, months)
+// basePools: new Set(ds.loaded.fzp.finance?.pools.map((p) =&gt; p.id) ?? []), once per open.</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: flags at pack time, read from the start month's frame</strong> The bits are asked in <code>itemsOf</code>, where the stream already reads each row's schedule, not on every world event: no new per-step work, and the frame the zoning bit reads is the one in force when the project started, as the spec's engine table says. The plan side's timeline in use is the one <code>limitsAt</code> requires (a held frame of an older compile throws, <code>limits.ts:156-166</code>). Considered: a column set in <code>startProject</code> (an edit to <code>world.ts</code> and the world's copy and restore paths, for one byte the stream can compute).</aside>
+    <aside data-kind="decision"><strong>Builder's call: <code>slotFlags</code> is optional on the type</strong> Three producers call <code>packTimedCell</code> (the map stream, the hashed <code>scenario/geometry.ts</code>, <code>/lesscars</code>'s playback host) and serialised fixtures exist (<code>e2e/fixtures/timeline/fixture0-timeline.json</code>, <code>src/lib/map/fixtures/timeline-small.ts</code>). Absent means no flags; <code>packTimedCell</code> always writes it, so the only cells without it are old fixtures. Considered: required (a fixture rebuild and a validation failure on every older producer's cell).</aside>
+    <aside data-kind="decision"><strong>Builder's call: the money bit counts pools you added, not baseline scaling</strong> A pool is the person's when no baseline pool has its id (the card's own rule, <code>fundingName</code>, <code>src/lib/sim-page/funding-view.ts:1081-1102</code>). A "Current funding" scale-up funds through baseline pools and gets no bit; it still shows in the headline's "from your policy".</aside>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests first (each fails on a missing export or field).
+        <pre><code data-lang="ts">// src/lib/sim/world/runner/flags.spec.ts
+it('a simulated row on a lot a painted policy sets in its start month has the zoning bit')
+  // frameAt(m).limits owner { kind: 'paint', policy: 'p1' } for the lot: slotFlags === SLOT_FLAG.zoning
+it('a row on a lot current law sets has no zoning bit')
+it('pipeline, phase and master rows never have the zoning bit, whatever owns their lots')
+it("the zoning bit reads the frame of the row's first entered stage month, not the world's month")
+  // owner 'fzp' in month 3, 'paint' from month 10; a row entered in month 4: 0
+it('a funded row with a programme of an added pool has the money bit')
+it('a funded row whose programmes are all of baseline pools has none; an unfunded row has none')
+it('both bits together')                          // 3
+
+// src/lib/map/pack-timed.spec.ts
+it("writes each item's flags to slotFlags in slot order, 0 when absent")
+it('lists the slotFlags buffer among the transferables')
+// src/lib/map/timelapse/encode.spec.ts (the malformed-cell table)
+//   ['slotFlags length', (c) =&gt; (c.slotFlags = new Uint8Array(0))], ['slotFlags value', … = 4]
+it('accepts a cell without slotFlags')
+// src/lib/sim/world/map-stream.spec.ts
+it("packs flagsOf's answer for each row into its slot")
+it('without flagsOf every slot is 0')
+// src/lib/sim/world/map-stream.rewind.spec.ts
+it('a row whose flags changed with an unchanged schedule dirties its cell on rewind')
+// src/lib/sim/world/host.spec.ts (describe 'a full fill of the default document')
+it('the default document posts no flagged slot')
+it('with a painted policy from today, a slot on a painted lot carries the zoning bit')
+  // every posted slot whose pick parcel is a painted lot and whose first stage day is after asOf
+  // has SLOT_FLAG.zoning; no slot off those lots has it</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim/world/runner/flags.spec.ts src/lib/map/pack-timed.spec.ts src/lib/map/timelapse/encode.spec.ts src/lib/sim/world/map-stream.spec.ts src/lib/sim/world/map-stream.rewind.spec.ts src/lib/sim/world/host.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement as in Interfaces, and update the three docs.</li>
+      <li id="t1-s4"><input type="checkbox"> Run every spec that covers packing, the stream, the runner and the cells' validation, then the determinism lint and the e2e that renders a timeline fixture.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/ src/lib/sim/world/ src/lib/sim/lesscars/ src/lib/sim/scenario/scenario-host.spec.ts
+npx vitest --run --project client src/lib/map/
+SFH_E2E_PORT=4180 npx playwright test e2e/timelapse-render.spec.ts e2e/sim-timeline.spec.ts e2e/lesscars.spec.ts --project=chromium --project=mobile</code></pre>
+        <p>The equality spec (<code>map-stream.equality.spec.ts</code>) compares schedules, not flags; it must pass unchanged.</p>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Commit, then check timing and that no hashed path changed.
+        <pre><code data-lang="sh">git add src/lib/sim/world/runner/flags.ts src/lib/sim/world/runner/flags.spec.ts src/lib/map/types.ts src/lib/map/pack-timed.ts src/lib/map/pack-timed.spec.ts src/lib/map/timelapse/encode.ts src/lib/map/timelapse/encode.spec.ts src/lib/sim/world/map-stream.ts src/lib/sim/world/map-stream.spec.ts src/lib/sim/world/map-stream.rewind.spec.ts src/lib/sim/world/runner/runner.ts src/lib/sim/world/host.spec.ts docs/dev/map-stream.md docs/dev/map-interfaces.md docs/dev/ensemble-runner.md
+git commit -m "feat(sim): each project slot carries two flags: your zoning sets its lot, your pool funds it"
+npx chreode timing-check --head HEAD
+git diff --stat main -- pipeline src/lib/data src/lib/generator src/lib/timelapse src/lib/plan/geometry.ts src/lib/plan/types.ts src/lib/sim/scenario src/lib/sim/levers src/lib/sim/finance src/lib/scoreboard</code></pre>
+        <p>The last command prints nothing.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Halos and marks on the map</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/map/timelapse/halos.ts</code> (records and the CPU reference). Test: <code>halos.spec.ts</code> (server project).</li>
+      <li>Create: <code>src/lib/map/timelapse/halo-layer.ts</code> (<code>HaloLayer</code>, modelled on <code>stage-bar-layer.ts</code>: one instanced screen-space quad per record, a shader module with the day and the colours, the vertex shader a rule-for-rule port of <code>evalHalo</code>). Test: <code>halo-layer.gpu.svelte.spec.ts</code> (client project, as <code>stage-bar-layer.gpu.svelte.spec.ts</code>).</li>
+      <li>Modify: <code>timelapse/constants.ts</code> (<code>HALO_DAYS</code>, <code>HALO_R_PX</code>, <code>HALO_STILL_R_PX</code>, <code>MARK_PX</code>), <code>timelapse/deck.ts</code> (export <code>HaloLayer</code>), <code>timelapse/types.ts</code> (<code>TimelineSnapshot</code> fields, <code>:74</code>).</li>
+      <li>Modify: <code>src/lib/map/palette.ts</code>: four tokens, light and dark. Test: <code>palette.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/map/timeline-controller.ts</code>: <code>TimelineDeps.HaloLayer</code> (<code>:24-31</code>), <code>setHalos</code>, <code>setReducedMotion</code>, records rebuilt beside <code>rebuildBars</code> (<code>:422-439</code>), emitted after the bars (<code>emit</code>, <code>:488-503</code>), <code>debugSnapshot</code> fields. Tests: <code>timeline-controller.spec.ts</code>; <code>src/lib/map/test/fake-timeline-deps.ts</code> gets a fake <code>HaloLayer</code> that records constructions.</li>
+      <li>Modify: <code>src/lib/map/SimMap.svelte</code>: <code>setHalos</code> on the handle (<code>:376-387</code>), kept like the day until the controller exists (<code>enterTimeline</code>, <code>:703-735</code>); a <code>(prefers-reduced-motion: reduce)</code> listener calling <code>setReducedMotion</code>. Test: <code>SimMap.timeline.svelte.spec.ts</code>. <code>src/lib/map/types.ts</code> (<code>SimMapHandle</code>, <code>:91-104</code>), <code>src/lib/map/debug.ts</code> (<code>setHalos</code>).</li>
+      <li>Modify: <code>src/lib/map/test/synthetic-timeline.ts</code> (one slot in ten flagged), <code>e2e/bench/map-timeline.bench.ts</code> (a case "playback + halos" that calls <code>__sfhMap.setHalos({ from: 20742 })</code> before panning; written, not run).</li>
+      <li>Modify: the two page-test stubs of <code>SimMapHandle</code>, <code>src/lib/fzp/test/sim-map-stub.ts</code> and <code>src/lib/brush/test/sim-map-stub.ts</code> (a recording <code>setHalos</code>), and <code>src/lib/map/debug.svelte.spec.ts</code> (the hook's method list).</li>
+      <li>Docs: <code>docs/dev/map-interfaces.md</code> (a "Halos and marks" section: the handle call, the layer id, the draw order, the cadence), <code>docs/dev/map-perf.md</code> (the new case, "not yet run"), <code>docs/dev/testing.md</code> (the snapshot's new fields).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>SLOT_FLAG</code>, <code>slotFlags</code> (Task 1); <code>TimedPackedCell</code>; <code>TimelineClock</code> (<code>{ day, theme }</code>, shared with the bars); <code>OPEN_DAY</code>, <code>DYING_DAYS</code>, <code>STAGE_ORDER</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/map/timelapse/constants.ts (tier 4, display only)
+export const HALO_DAYS = 730;          // a ring's life in simulated days: 2 s at 1×, 0.67 s at 3×
+export const HALO_R_PX = [6, 22] as const;   // radius at birth and at the end of its life
+export const HALO_STILL_R_PX = 14;     // reduced motion: one radius, full strength, no fade
+export const MARK_PX = 10;             // the diamond's size
+
+// src/lib/map/timelapse/halos.ts (pure)
+export const HALO_KIND = { approved: 0, started: 1, completed: 2, mark: 3 } as const;
+export interface HaloAttrs {
+  projectId: string;
+  anchor: [lng: number, lat: number];  // centre of the bbox of the slot's final revision's parts
+  day: Day;                            // the event day; a mark's first stage day
+  until: Day;                          // a ring: day + HALO_DAYS; a mark: OPEN_DAY, or endDay +
+                                       // DYING_DAYS after an exit
+  kind: 0 | 1 | 2 | 3;
+  policy: boolean;                     // slotFlags[s] !== 0
+}
+/**
+ * Per slot of each cell, in cell then slot order: approved (the first of entitled and
+ * permitIssued entered), started (construction), completed (slotEnd kind 1), each only when its
+ * day is after `from`; then one mark when the slot has a flag and its first stage day is after
+ * `from`.
+ */
+export function buildHalos(cells: Iterable&lt;TimedPackedCell&gt;, from: Day): HaloAttrs[];
+export interface HaloEval { visible: boolean; radiusPx: number; alpha: number }
+/**
+ * CPU reference of the halo shader on day t. Ring: visible iff day &lt;= t &lt; until; radius
+ * HALO_R_PX[0] + (HALO_R_PX[1] − HALO_R_PX[0]) · age / HALO_DAYS and alpha 1 − age / HALO_DAYS,
+ * or, reduced, HALO_STILL_R_PX and 1. Mark: visible iff day &lt;= t &lt; until, MARK_PX, alpha 1.
+ */
+export function evalHalo(h: HaloAttrs, t: Day, reduced: boolean): HaloEval;
+
+// src/lib/map/timelapse/halo-layer.ts
+// HaloLayer props: { id: 'timeline-halos', data: HaloAttrs[], clock: TimelineClock,
+//   reduced: boolean, beforeId? }. Not pickable; no depth test; rings stroked 2 px in
+//   tl-halo-approved / -started / -complete, or tl-halo-policy when `policy`; marks a filled
+//   diamond in tl-halo-policy with a 1 px land-coloured edge. Reads clock.day in draw().
+
+// src/lib/map/palette.ts: tokens tl-halo-approved, tl-halo-started, tl-halo-complete,
+//   tl-halo-policy (the accent), light and dark, each &gt;= 3:1 against `land`.
+
+// src/lib/map/timeline-controller.ts
+setHalos(o: { from: Day } | null): void;   // null (the default): no halo layer
+setReducedMotion(reduced: boolean): void;  // a prop change on the existing layer; no rebuild
+// Records rebuilt where the bars are (the queue drained with cells changed), and on setHalos;
+// never in setTime. Emit order: solids, ghosts, timeline-bars, timeline-halos, overlay.
+// TimelineSnapshot gains: halos (rings), marks, halosShown (evalHalo-visible at clock.day),
+//   haloDays (sorted distinct ring days, first 500).
+
+// src/lib/map/types.ts SimMapHandle gains:
+setHalos(o: { from: Day } | null): void;   // kept until the controller exists, as setTime</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: halos live in simulated time</strong> A ring's age is the playhead's day less the event's, so the layer needs only the clock uniform the bars already read: <code>setTime</code> stays O(1), nothing is set per frame, and a ring is gone the moment the playhead is before its day (scrubbing back) or the cell holding it is replaced (an edit). Its life, <code>HALO_DAYS</code>, is two years: two seconds of real time at 1×, as the spec asks. At 3× the same rings are alive at once and each lasts 0.67 s, so the number on screen does not grow with speed. Considered: wall-clock fades (a per-frame repaint while any ring lives, a JS-side event scan on every <code>setTime</code>, and a cap to manage).</aside>
+    <aside data-kind="decision"><strong>Builder's call: one instanced layer for rings and marks, built with the bars</strong> Records are made once per applied update, from the installed cells only (the projects on screen and near it), at most four per slot. The GPU draws one instance per record and the vertex shader drops the invisible ones, as the bars do; the JS cost per frame is nil. Considered: DOM markers (a node per project, layout per frame), MapLibre feature state (a source update per event).</aside>
+    <aside data-kind="decision"><strong>Builder's call: reduced motion keeps a still ring</strong> With <code>prefers-reduced-motion: reduce</code> a ring does not grow or fade: it shows at one radius and full strength for its two simulated years, then is gone. The dispatch requires a non-animated form; the spec's <code>sec-prop-events</code> says "no halos" (see <a href="#sec-contradictions">Found on the way</a>). Marks are unchanged.</aside>
+    <aside data-kind="decision"><strong>Builder's call: halos only after today</strong> <code>setHalos({ from })</code> takes the dataset date, so stage changes in the dataset's own history (pipeline projects entered stages before today) never ring, and nothing shows at today.</aside>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/map/timelapse/halos.spec.ts
+it('a discretionary slot rings at entitled, construction and completion, after from only')
+it('a permit-only slot rings approved at permitIssued')
+it('a stopped slot rings only the events it reached; its mark ends DYING_DAYS after the exit')
+it('a flagged slot gets one mark from its first stage day, policy true on its rings too')
+it('anchors on the centre of the final revision, the same for every record of the slot')
+it('evalHalo: visible only for 0 &lt;= age &lt; HALO_DAYS; radius grows and alpha falls linearly')
+it('evalHalo reduced: HALO_STILL_R_PX and alpha 1 through the same window')
+it('evalHalo: a mark shows from its day to until at MARK_PX')
+
+// src/lib/map/palette.spec.ts
+it('the four halo tokens have 3:1 against land, light and dark')
+
+// src/lib/map/timeline-controller.spec.ts
+it('emits no timeline-halos until setHalos, then after timeline-bars and before the overlay')
+it('builds halo records once per update, when the slice queue drains')
+it('setTime constructs no layer and calls setLayers none')        // 100 setTime calls: 0 and 0
+it('setHalos(null) removes the layer; setHalos({ from }) rebuilds the records once')
+it("a replaced cell's halos follow its new schedule; a removed cell's go")
+it('records leave out events on or before from')
+it('setReducedMotion sets the prop on the existing records without rebuilding them')
+it('builds halos without lookups (bars need them, halos do not)')
+it('reports halos, marks, halosShown and haloDays in the debug snapshot')
+
+// src/lib/map/timelapse/halo-layer.gpu.svelte.spec.ts
+it('draws a ring of the radius evalHalo gives, in the stage colour, at ages 0, 365 and 729')
+it('draws nothing at age HALO_DAYS or before the event day')
+it("a policy project's ring is in tl-halo-policy, and its mark shows from its first stage day")
+it('reduced: the same radius and alpha at ages 0 and 729')
+
+// src/lib/map/SimMap.timeline.svelte.spec.ts
+it('setHalos before the timeline controller exists is kept and applied')
+it('a change of prefers-reduced-motion reaches the controller')</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/timelapse/halos.spec.ts src/lib/map/palette.spec.ts src/lib/map/timeline-controller.spec.ts
+npx vitest --run --project client src/lib/map/timelapse/halo-layer.gpu.svelte.spec.ts src/lib/map/SimMap.timeline.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Implement as in Interfaces; update the fake deps, the synthetic timeline, the bench case and the docs.</li>
+      <li id="t2-s4"><input type="checkbox"> Run every spec that covers the timeline renderer and SimMap, then the e2e that draw a timeline.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/
+npx vitest --run --project client src/lib/map/
+SFH_E2E_PORT=4180 npx playwright test e2e/timelapse-render.spec.ts e2e/map.spec.ts e2e/sim-timeline.spec.ts e2e/lesscars.spec.ts --project=chromium --project=mobile</code></pre>
+        <p>No page calls <code>setHalos</code> yet, so the goldens and <code>/lesscars</code> must pass unchanged.</p>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/map/timelapse/halos.ts src/lib/map/timelapse/halos.spec.ts src/lib/map/timelapse/halo-layer.ts src/lib/map/timelapse/halo-layer.gpu.svelte.spec.ts src/lib/map/timelapse/constants.ts src/lib/map/timelapse/deck.ts src/lib/map/timelapse/types.ts src/lib/map/palette.ts src/lib/map/palette.spec.ts src/lib/map/timeline-controller.ts src/lib/map/timeline-controller.spec.ts src/lib/map/test/fake-timeline-deps.ts src/lib/map/test/synthetic-timeline.ts src/lib/map/SimMap.svelte src/lib/map/SimMap.timeline.svelte.spec.ts src/lib/map/types.ts src/lib/map/debug.ts src/lib/map/debug.svelte.spec.ts src/lib/fzp/test/sim-map-stub.ts src/lib/brush/test/sim-map-stub.ts e2e/bench/map-timeline.bench.ts docs/dev/map-interfaces.md docs/dev/map-perf.md docs/dev/testing.md
+git commit -m "feat(map): halos that fade on stage changes and marks on projects under your policy"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: A key on the map, with the tally, on <code>/sim</code></h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/map/key/MapKeyControl.svelte</code> (the toolbar and its two panels; shared), <code>MapKeyControl.svelte.spec.ts</code>; <code>src/lib/map/key/KeySwatch.svelte</code> (ghost, solid, bar, ring, mark swatches from <code>--map-*</code> properties, <code>aria-hidden</code>; the swatch drawing moves here from <code>src/lib/fzp/MapKey.svelte</code>); <code>src/lib/map/key/rows.ts</code> and <code>rows.spec.ts</code> (<code>STAGE_KEY</code>, <code>TYPE_KEY</code>); <code>src/lib/map/key/copy.ts</code> (<code>KEY_COPY</code>).</li>
+      <li>Create: <code>src/lib/timeline/key.ts</code> and <code>key.spec.ts</code> (<code>keyTally</code>); <code>src/lib/timeline/SimKey.svelte</code> and <code>SimKey.svelte.spec.ts</code> (the tally rows; the ring, mark and bar rows come in Task 4).</li>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code>: render <code>MapKeyControl</code> in the map box after <code>SimMap</code> (<code>:1360-1376</code>) with <code>SimKey</code> as its key; hide it below md while a card is open; <code>measureCardArea</code> (<code>:597-618</code>) passes the control's box as <code>controls.right</code>; the card-area watch observes it. Test: <code>TimelineMode.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/fzp/card-place.ts</code> (<code>cardArea</code>'s doc: <code>controls.right</code> is the key control's left edge, or the run slider's, <code>:8-33</code>) and <code>card-place.spec.ts</code>; <code>src/lib/fzp/card-area-watch.ts</code> (<code>CardAreaTargets.key</code>, <code>:13-33</code>) and <code>card-area-watch.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/fzp/SimResults.svelte</code>: drop <code>MapKey</code> (<code>:21</code>, <code>:135</code>, <code>:272</code>) and its <code>timelineTokenCss</code> head block if nothing else in it reads the legend; delete <code>src/lib/fzp/MapKey.svelte</code>. Test: <code>SimResults.svelte.spec.ts</code>: the legend cases ("has one row per legend entry…", "resolves every legend token under light and dark", the keyboard and target cases at <code>:541</code>, <code>:558</code>) move to <code>SimKey.svelte.spec.ts</code> and <code>MapKeyControl.svelte.spec.ts</code> in this task; ":143 no legend" becomes "Results holds no map key".</li>
+      <li>Modify: <code>src/lib/timeline/rest-text.svelte.spec.ts</code> (a case with the key open at rest).</li>
+      <li>Create: <code>e2e/map-key.spec.ts</code> (the <code>/sim</code> cases; Tasks 5 and 6 add <code>/</code>'s and the layers').</li>
+      <li>Docs: <code>docs/dev/timeline-ui.md</code> (The screen: the key), <code>docs/dev/fzp-mode.md</code> (Results lists no Map key; card placement's right edge), <code>docs/dev/map-interfaces.md</code> (a "The map key control" section: placement, the footprint it reads, the card), <code>docs/dev/sim-page.md</code> (map overlays).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>playheadAt</code>, <code>PlayheadAt</code>, <code>HeadlineOpts</code> (<code>results.ts:74-99</code>); <code>TimelineView.rows[i].inProgress</code>, <code>completedNet</code>, <code>exitedUnits</code> (<code>src/lib/sim/scenario/types.ts:319-320</code>); <code>formatCount</code>; <code>timelineTokenCss</code>, <code>TOKENS</code>, <code>TYPOLOGY_ORDER</code> (<code>src/lib/map/palette.ts:231-306</code>, <code>types.ts:22-29</code>); <code>--map-controls-br-block-size</code> (<code>docs/dev/map-interfaces.md</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/map/key/copy.ts
+export const KEY_COPY = { key: 'Key', keyName: 'Map key', layers: 'Layers',
+  layersName: 'Map layers', homes: 'Homes', ring: 'Just changed stage',
+  mark: 'Under your policy', markWhy: 'Your zoning sets its height limit, or your pool funds it.',
+  bar: 'Bar: progress and chance of finishing', types: 'New buildings', painted: 'Painted' } as const;
+
+// src/lib/map/key/rows.ts
+export type Swatch = { kind: 'ghost' | 'solid' | 'bar' | 'ring' | 'mark'; tokens: TokenName[] };
+export interface StageKeyRow { id: StageGroup; label: string; swatch: Swatch;
+  stages: Exclude&lt;Stage, 'complete'&gt;[] }   // the in-progress stages it sums; [] for the last two
+export type StageGroup = 'planning' | 'approved' | 'issued' | 'building' | 'completed' | 'stopped';
+/** planning: preApplication + filed (tl-ghost-planning); approved: entitled + permitFiled
+ *  (tl-ghost-permit); issued: permitIssued (tl-ghost-ready); building: construction
+ *  (tl-ghost-ready, gen-walkup); completed (the gen-* types); stopped (tl-ghost-dying). */
+export const STAGE_KEY: readonly StageKeyRow[];
+export const TYPE_KEY: readonly { typology: TypologyId; label: string; token: TokenName }[];
+
+// src/lib/timeline/key.ts (pure)
+export type KeyTally = Record&lt;StageGroup, number&gt;;
+/**
+ * The homes in each group at the playhead's month: null while headlineAt would be null
+ * (no view, provisional, or month i not filled). At today: completed 0, stopped 0, the four
+ * in-progress groups from rows[0]. Else rows[i]: in progress summed per STAGE_KEY,
+ * completed = completedNet, stopped = exitedUnits. Reads one row.
+ */
+export function keyTally(view: TimelineView | null, at: PlayheadAt, opts: HeadlineOpts): KeyTally | null;
+
+// src/lib/map/key/MapKeyControl.svelte (shared)
+interface Props {
+  key: Snippet;                 // the key panel's content
+  layers?: Snippet;             // the Layers panel's content; no Layers toggle without it
+  /** The key starts open from md (true on /sim, false on /), always closed below md. */
+  openFromMd?: boolean;         // default false
+  hidden?: boolean;             // below md, while a card sheet covers the corner
+  stale?: boolean;              // the panel's text dims as Results does (data-stale)
+  el?: HTMLElement;             // bindable: the control's box, for the card area
+}
+// DOM: &lt;div data-testid="map-key-control" class="absolute z-20 right-2"
+//        style:bottom="calc(var(--map-controls-br-block-size, 60px) + 0.5rem)"&gt;
+//   the open panel (role="group", aria-label "Map key" | "Map layers", data-testid
+//   map-key-panel | map-layers-panel), above the toolbar, right-aligned, w-60 from md and
+//   min(18rem, 100vw − 1rem) below, max-height: the room from the map's top + 0.5rem down to
+//   the toolbar, overflow-y auto;
+//   then the toolbar: [Layers] [Key] (data-testid map-layers-toggle, map-key-toggle),
+//   aria-expanded, aria-controls, min 24 px, 44 on a coarse pointer, 4 px apart.
+// At most one panel open. Escape closes it and focuses its toggle. Below md a pointerdown on
+// the map closes it; from md the key stays until its toggle closes it. Its own tokens come
+// from timelineTokenCss('.sfh-map-key') in &lt;svelte:head&gt;.
+
+// src/lib/timeline/SimKey.svelte
+interface Props { tally: KeyTally | null }
+// &lt;p id=…&gt;Homes&lt;/p&gt; &lt;dl aria-labelledby=…&gt; per STAGE_KEY: swatch, &lt;dt&gt;label, &lt;dd&gt;count | '…'
+
+// src/lib/fzp/card-area-watch.ts: CardAreaTargets gains `key?: HTMLElement | null` (observed)
+// TimelineMode: measureCardArea passes { left, bottom, right: key ? m.right − key.left : 0 }</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the key sits at the map's bottom right, above the attribution</strong> The spec's figure draws it bottom left, but zoom and compass, Reset view and Paint's palette strip are there, and the top centre holds notices and failure chips. Above the credits on the right is free on both pages at every measured width (<a href="#tbl-measured-key">measured</a>), and the run slider used the same rule (<code>bottom: calc(var(--map-controls-br-block-size) + 0.5rem)</code>). It moves with the attribution's footprint and the phone sheet's inset, which that variable already includes.</aside>
+    <aside data-kind="decision"><strong>Builder's call: open at rest from md on <code>/sim</code>, closed on a phone</strong> The stage counts are a See item (<code>tbl-inv-sim-outcome</code>, "Homes in progress, by stage"), so from md the key is open on arrival; below md the 306 px map is too small to give a third of it away, and the header carries the headline. The viewer's toggle holds for the visit and is not stored.</aside>
+    <aside data-kind="decision"><strong>Builder's call: at today the in-progress counts read month 0</strong> There is no row for the dataset date itself; <code>rows[0]</code> is the dataset's own calendar month, whose stage counts are today's pipeline plus the moves of that month's remaining days. Completed and stopped read 0 at today, as the headline does. Considered: no counts until the playhead moves (the key would be blank on arrival).</aside>
+    <aside data-kind="decision"><strong>Builder's call: one key, not two</strong> Results' "Map key" disclosure (two levels deep, finding 5) goes in the same task, and its legend tests move to the new key, so <code>/sim</code> never shows the stage colours twice.</aside>
+    <aside data-kind="note"><strong>Focus and discoverability</strong> The control follows <code>SimMap</code> in the DOM, so Tab reaches it after the map's own controls (zoom, compass, the attribution's links) and before the timeline. The card's area loses the control's width on the right, so a card never covers it from md; below md the card is a bottom sheet over the same corner, so the control is hidden (<code>hidden</code>, also <code>inert</code>) while one is open and comes back with focus order unchanged on Close.</aside>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/timeline/key.spec.ts
+it('sums the in-progress stages into four groups at the playhead month')
+it('completed is rows[i].completedNet and stopped rows[i].exitedUnits')
+it('at today: completed and stopped 0, in progress from month 0')
+it('null while calculating: no view, provisional, or the month not filled')
+// src/lib/map/key/rows.spec.ts
+it('STAGE_KEY covers every open stage exactly once')
+it('every STAGE_KEY and TYPE_KEY token resolves in timelineTokenCss, light and dark')
+
+// src/lib/map/key/MapKeyControl.svelte.spec.ts
+it('a Key toggle named Map key opens a group named Map key above it')
+it('no Layers toggle without layers; with it, opening one panel closes the other')
+it('Escape closes the open panel and focuses its toggle')
+it('openFromMd: open at 1024 px, closed at 375 px')
+it('toggles are 24 px on a fine pointer and 44 px on a coarse one')
+it('below md a pointerdown on the map closes the panel; from md the key stays open')
+it('hidden: not shown and inert')
+it('sits right 8 px and 0.5rem above --map-controls-br-block-size, and follows it')
+it('the open panel scrolls inside the room above the toolbar')       // 160 px room: scrollHeight &gt; clientHeight
+// src/lib/timeline/SimKey.svelte.spec.ts
+it('lists the six groups, each label beside its count, under Homes')
+it("shows '…' for every count while the tally is null")
+it('has one row per STAGE_KEY entry with its swatch tokens (replaces SimResults legend rows)')
+it('resolves every swatch token under light and dark (replaces SimResults)')
+// src/lib/fzp/card-place.spec.ts
+it('the area ends at the key control on the right')
+// src/lib/fzp/card-area-watch.svelte.spec.ts
+it('re-measures when the key control resizes')
+// src/lib/timeline/TimelineMode.svelte.spec.ts
+it('the map key is open at 1280 px and reads the tally of the playhead month')
+it('the tally changes only when the playhead crosses a month')     // two days in one month: one DOM write
+it('below md the key control hides while a card is open and returns on Close')
+it('stale: the key dims with Results')
+// src/lib/fzp/SimResults.svelte.spec.ts
+it('Results holds no map key')
+// src/lib/timeline/rest-text.svelte.spec.ts
+it('/sim at rest with the key open shows no text of 12 words or more')
+
+// e2e/map-key.spec.ts
+test('1280 px on /sim: the key is open, its counts follow the playhead, and it covers nothing')
+  // Home, then PageUp: counts change; key box clear of zoom, attribution, pills
+test('375 px on /sim: the key starts closed, sits clear of Reset and the attribution, opens and scrolls')
+test('/sim key: axe clean, light and dark, open and closed')</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/key.spec.ts src/lib/map/key/rows.spec.ts src/lib/fzp/card-place.spec.ts
+npx vitest --run --project client src/lib/map/key/ src/lib/timeline/SimKey.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/fzp/card-area-watch.svelte.spec.ts src/lib/fzp/SimResults.svelte.spec.ts src/lib/timeline/rest-text.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement as in Interfaces; move the SimResults legend cases; delete <code>MapKey.svelte</code> (<code>git rm</code>); update the docs.</li>
+      <li id="t3-s4"><input type="checkbox"> Run every spec that covers <code>/sim</code>'s map box, Results, the card and the rest-text rule, then the e2e of <code>/sim</code>, the changed ones repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/ src/lib/map/ src/lib/fzp/
+npx vitest --run --project client src/lib/timeline/ src/lib/map/key/ src/lib/fzp/ src/lib/sim-page/SimPage.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/map-key.spec.ts e2e/sim.spec.ts e2e/sim-timeline.spec.ts e2e/fzp.spec.ts e2e/fzp-sim.spec.ts e2e/sim-funding.spec.ts e2e/chrome-dark.spec.ts e2e/pages-a11y.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/map-key.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/map/key/MapKeyControl.svelte src/lib/map/key/MapKeyControl.svelte.spec.ts src/lib/map/key/KeySwatch.svelte src/lib/map/key/rows.ts src/lib/map/key/rows.spec.ts src/lib/map/key/copy.ts src/lib/timeline/key.ts src/lib/timeline/key.spec.ts src/lib/timeline/SimKey.svelte src/lib/timeline/SimKey.svelte.spec.ts src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/fzp/card-place.ts src/lib/fzp/card-place.spec.ts src/lib/fzp/card-area-watch.ts src/lib/fzp/card-area-watch.svelte.spec.ts src/lib/fzp/SimResults.svelte src/lib/fzp/SimResults.svelte.spec.ts src/lib/timeline/rest-text.svelte.spec.ts e2e/map-key.spec.ts docs/dev/timeline-ui.md docs/dev/fzp-mode.md docs/dev/map-interfaces.md docs/dev/sim-page.md
+git commit -m "feat(sim): a map key on the map counts the homes in each stage at the playhead"
+npx chreode timing-check --head HEAD</code></pre>
+        <p>The <code>git rm</code> in t3-s3 stages <code>MapKey.svelte</code>'s deletion.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: <code>/sim</code> turns halos and marks on</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code>: <code>onMapReady</code> (<code>:768-786</code>) calls <code>h.setHalos({ from: asOf })</code> once a calibration is in hand, and again when a Retry's reload brings a new one; <code>SimKey</code> gets <code>inForce</code>. Test: <code>TimelineMode.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/timeline/SimKey.svelte</code> (the ring, mark and bar rows) and <code>SimKey.svelte.spec.ts</code>.</li>
+      <li>Create: <code>e2e/sim-halos.spec.ts</code>.</li>
+      <li>Docs: <code>docs/dev/timeline-ui.md</code> (Revealing time: the map's halos and marks follow the playhead; an edit's new cells carry their own).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>SimMapHandle.setHalos</code>, the debug snapshot's <code>halos</code>, <code>marks</code>, <code>halosShown</code>, <code>haloDays</code> (Task 2); <code>KEY_COPY</code>, <code>KeySwatch</code> kinds <code>ring</code>, <code>mark</code>, <code>bar</code> (Task 3); <code>Explain</code> (<code>src/lib/timeline/Explain.svelte</code>, <code>text</code>, <code>as</code>, <code>label</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// SimKey.svelte Props gain
+inForce: boolean;   // !nothingInForce(resultsDoc): the mark row shows only then
+// after the dl: a ul of
+//   ring swatch (three rings: tl-halo-approved, -started, -complete) 'Just changed stage'
+//   {#if inForce} mark swatch (diamond + tl-halo-policy ring) &lt;Explain text={KEY_COPY.markWhy}
+//     as="button"&gt;Under your policy&lt;/Explain&gt; {/if}
+//   bar swatch (tl-bar-unlikely → tl-bar-likely) 'Bar: progress and chance of finishing'
+
+// TimelineMode.svelte
+// onMapReady: if (calibration) h.setHalos({ from: calibration.asOf })   // asOf as today
+// oncalibration path (a Retry's reload): handle?.setHalos({ from: newCalibration.asOf })</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the mark row only while a policy is in force</strong> Without one no slot carries a flag, so the row would name a mark that cannot appear. It reads the same <code>inForce</code> the headline does (the document the numbers on show came from), so it never runs ahead of the map.</aside>
+    <aside data-kind="decision"><strong>Builder's call: the "why" behind a tap</strong> "Under your policy" is three words on the key; what it claims sits in its <code>Explain</code> (hover, focus, tap), ten words that say exactly what the two flags mean, so it is never read as "because of".</aside>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/timeline/SimKey.svelte.spec.ts
+it('names the ring, and the bar, always')
+it('names the mark with its explanation only while a policy is in force')
+it("the mark's explanation opens on focus and on tap, and is 10 words")
+// src/lib/timeline/TimelineMode.svelte.spec.ts
+it('turns halos on from the dataset date once the map is ready')
+it('turns them on again from the new date after a Retry brings a new calibration')
+// e2e/sim-halos.spec.ts
+test('no halo shows at today')                              // snapshot.halosShown === 0 at Home
+test('stepping the playhead past the first stage change shows its halo; Home hides it again')
+  // d = haloDays[0]; press Right on the ruler until __sfhFzp.day &gt;= d (each press checked);
+  // halosShown &gt;= 1; Home: halosShown === 0
+test('the default document draws no marks, and the key names no mark')
+test('a transit rule from today: the key names the mark; marks equal the flagged slots on the map')
+test('/sim with halos on: axe clean with the key open, light and dark')</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/SimKey.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-halos.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Implement as in Interfaces; update <code>timeline-ui.md</code>.</li>
+      <li id="t4-s4"><input type="checkbox"> Run every spec that covers <code>/sim</code>'s map and key, then the e2e of <code>/sim</code>, the changed ones repeated.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/ src/lib/map/ src/lib/sim-page/SimPage.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-halos.spec.ts e2e/map-key.spec.ts e2e/sim.spec.ts e2e/sim-timeline.spec.ts e2e/fzp-sim.spec.ts e2e/chrome-dark.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-halos.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t4-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/SimKey.svelte src/lib/timeline/SimKey.svelte.spec.ts e2e/sim-halos.spec.ts docs/dev/timeline-ui.md
+git commit -m "feat(sim): stage changes ring on the map, and the key names the rings and marks"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Paint's key: building types and the heights a plan holds</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim/protocol.ts</code>: the <code>opLots</code> request and response (<code>:24</code>, <code>:51</code>, <code>OpLotsResult</code> <code>:62-72</code>) become <code>heightLots</code>; <code>src/lib/sim/client.ts</code> (<code>opLots</code>, <code>:123-131</code>, <code>:219</code>) and <code>client.spec.ts</code>; <code>src/lib/sim/host.ts</code> (<code>opLots</code>, <code>:424-450</code>, its dispatch case <code>:457-465</code>) and <code>host.spec.ts</code>; <code>src/lib/sim/router.ts</code> (<code>:31</code>, <code>:77-80</code>) and <code>worker-router.spec.ts</code>; <code>src/lib/sim/outlines.ts</code> (its comment).</li>
+      <li>Create: <code>src/lib/paint/heights.ts</code> and <code>heights.spec.ts</code>; <code>src/lib/brush/height-lots.svelte.ts</code> and <code>height-lots.svelte.spec.ts</code> (a latest-wins requester, asked again on a <code>chunks</code> message while <code>missing &gt; 0</code>); <code>src/lib/paint/PaintKey.svelte</code> and <code>PaintKey.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/brush/BrushEditor.svelte</code>: render <code>MapKeyControl</code> in the map box after the stroke chip (<code>:525-545</code>) with <code>PaintKey</code>; the overlay mux's <code>outline</code> slot gets <code>paintedOutlineLayers</code> of the hovered, focused or pressed height (<code>src/lib/paint/outline-layers.ts:19</code>); the fake worker (<code>src/lib/brush/test/fake-editor-worker.ts</code>) answers <code>heightLots</code>. Test: <code>BrushEditor.dock.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>e2e/map-key.spec.ts</code> (<code>/</code> and <code>/p/:id</code> cases), <code>e2e/layout.spec.ts</code> (a 375 and a 320 px case: the toolbar clear of the strip, Reset, the handle and the attribution), <code>e2e/chrome-dark.spec.ts</code> (the open Paint key). Regenerate the two map goldens.</li>
+      <li>Docs: <code>docs/dev/developing.md</code> (the dock paragraph: the key), <code>docs/dev/plan-sharing.md</code> (<code>/p/:id</code>: the key, read-only heights), <code>docs/dev/map-interfaces.md</code> (the mux's <code>outline</code> slot is used on <code>/</code> again).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>MapKeyControl</code>, <code>KeySwatch</code>, <code>TYPE_KEY</code>, <code>KEY_COPY</code> (Task 3); <code>st.index.covered(op)</code>, <code>st.index.get(id).eligible</code>, <code>st.display.building(id)</code>, <code>opCellsOf</code>, <code>packOutlines</code> (<code>host.ts</code>, <code>outlines.ts</code>); <code>paintedOutlineLayers(L, outlines, theme)</code>; <code>editor.plan.ops</code>, <code>editor.readOnly</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/sim/protocol.ts
+| { type: 'heightLots'; reqId: number; outlineOf: number | null }          // request
+| { type: 'heightLots'; reqId: number; result: HeightLotsResult | null }   // response
+export interface HeightLotsResult {
+  /** One per painted height the plan holds, ascending. A lot counts once, at the height of the
+   *  last paint op covering it (an erase after it removes it); eligible loaded lots only. */
+  heights: { stories: number; lots: number; rebuilt: number }[];
+  /** The plan's cells not loaded yet. */
+  missing: number;
+  /** The outlines of the lots at `outlineOf`, when asked. */
+  outline: LotOutlines | null;
+}
+// client.ts: heightLots(outlineOf: number | null): Promise&lt;HeightLotsResult | null&gt;
+// opLots, OpLotsResult and the 'opLots' messages are removed (no caller since slice 4).
+
+// src/lib/paint/heights.ts (pure)
+/** '6 stories · 42 lots · 30 rebuilt'; '1 story · 1 lot · 0 rebuilt'; missing &gt; 0: '42+ lots';
+ *  lots null (no answer yet): '6 stories · …'. */
+export function heightRowText(stories: number, lots: number | null, rebuilt: number, missing: number): string;
+/** Distinct paint `stories` of the ops, ascending (the rows before the first answer). */
+export function heightsOf(ops: readonly PlanOp[]): number[];
+
+// src/lib/brush/height-lots.svelte.ts
+export class HeightLots {
+  constructor(ask: (outlineOf: number | null) =&gt; Promise&lt;HeightLotsResult | null&gt;);
+  readonly result: HeightLotsResult | null;   // $state
+  readonly outline: LotOutlines | null;       // the latest outline asked for, or null
+  planChanged(): void;      // ask again (counts)
+  chunksChanged(): void;    // ask again while result.missing &gt; 0
+  show(stories: number | null): void;  // ask for that height's outline; null clears it
+}
+
+// src/lib/paint/PaintKey.svelte
+interface Props {
+  ops: readonly PlanOp[];
+  result: HeightLotsResult | null;
+  shown: number | null;                 // the height whose outline is on the map
+  onshow(stories: number | null): void; // hover, focus, press
+}
+// 'New buildings': TYPE_KEY rows (solid swatch + label). With a paint op, 'Painted': one
+// &lt;button type="button" aria-pressed&gt; per height, text heightRowText(…). Pointer enter and
+// focus show its outline; leave and blur clear it unless pressed; a press pins it (another
+// press, or pressing another row, moves or clears it). A row whose height leaves the plan
+// clears its outline.
+// BrushEditor: &lt;MapKeyControl key={paintKey} layers={layers} /&gt; (openFromMd false)</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: one worker request replaces <code>opLots</code></strong> <code>opLots</code> has no caller since slice 4 removed the painted-areas list, and it counted each op's lots separately, so a lot under two heights counted twice (spec Defects, "Lot counts … double-count overlaps"). <code>heightLots</code> gives each lot to the last height painted on it, in one pass over the plan's ops (O(lots the plan covers), once per plan change or chunk, never per pointer move), and answers the outline of one height on demand.</aside>
+    <aside data-kind="decision"><strong>Builder's call: lots, then rebuilt</strong> Each height row gives the lots set to that height and how many of them got a new building. The gap is the carried "taller height over small lots leaves the count unchanged": a lot too small, or already as big, is painted but not rebuilt, and the row now says so. See <a href="#q-paint-count">Open questions</a>.</aside>
+    <aside data-kind="decision"><strong>Builder's call: Paint's key starts closed at every width</strong> Paint's buildings explain themselves while painting, the empty plan already has a starting sentence, and details are on demand; the toolbar is always there. Considered: open from md once the plan holds a stroke (the key would open itself mid-stroke and move what the person is looking at).</aside>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/sim/host.spec.ts
+it('heightLots: each eligible loaded lot counts once, at the height of the last paint over it')
+it('heightLots: an erase after a paint removes the lot; rebuilt counts lots with a new building')
+it('heightLots: missing counts the plan cells not loaded; outlineOf answers that height only')
+it('heightLots: null outside editor mode')                       // router, as opLots was
+// src/lib/sim/client.spec.ts, src/lib/sim/worker-router.spec.ts: the opLots cases become heightLots
+// src/lib/paint/heights.spec.ts
+it('heightRowText: lots, rebuilt, singular, grouping, 42+ while loading, … before an answer')
+it('heightsOf: distinct paint stories, ascending, erases ignored')
+// src/lib/brush/height-lots.svelte.spec.ts
+it('latest wins: an older answer after a newer request is dropped')
+it('asks again on chunks only while something is missing')
+it('show(h) asks for that outline; show(null) clears it without a request')
+// src/lib/paint/PaintKey.svelte.spec.ts
+it('names the six building types beside their colours')
+it('lists each painted height with its text, ascending; none with an empty plan')
+it('hover and focus outline a height; leave and blur clear it; a press pins it')
+it('each height row is a 24 px button (44 coarse) with aria-pressed')
+// src/lib/brush/BrushEditor.dock.svelte.spec.ts
+it("the map key's Painted rows follow the plan: two heights, then Ctrl+Z, then one")
+it('focusing a height puts its outline in the outline slot; Ctrl+Z removing that height clears it')
+it('a restored plan asks heightLots once, and again on a chunk while cells are missing')
+it('read-only (/p/:id): the key lists the heights and outlines them; no tools')
+// e2e/map-key.spec.ts
+test('/ : the key starts closed; opened, it lists the types and, after a stroke, its height')
+test('/ : focusing a height outlines it on the map')        // the outline layer is in the overlay
+test('/p/:id: the read-only plan lists its heights')
+test('/ key: axe clean, light and dark')
+// e2e/layout.spec.ts (mobile project)
+test('375 and 320 px on /: the key toolbar clears the strip, Reset, the handle and the attribution')</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim/host.spec.ts src/lib/sim/client.spec.ts src/lib/sim/worker-router.spec.ts src/lib/paint/heights.spec.ts
+npx vitest --run --project client src/lib/brush/height-lots.svelte.spec.ts src/lib/paint/PaintKey.svelte.spec.ts src/lib/brush/BrushEditor.dock.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Implement as in Interfaces; update the fake worker and the docs.</li>
+      <li id="t5-s4"><input type="checkbox"> Regenerate the map goldens deliberately: E9 (1280 px, <code>/</code>) now shows the closed key's toolbar at the map's bottom right. Run E9 first and see it fail on that corner only, then update, open both new PNGs and check that only the toolbar was added.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts -g "E9" --project=chromium
+SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts -g "E9" --project=chromium --update-snapshots</code></pre>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Run every spec that covers the editor worker, the brush, Paint's map box and both Paint pages, then the e2e, the changed ones repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim/ src/lib/paint/ src/lib/brush/
+npx vitest --run --project client src/lib/brush/ src/lib/paint/ src/lib/map/key/ src/routes/
+SFH_E2E_PORT=4180 npx playwright test e2e/map-key.spec.ts e2e/brush.spec.ts e2e/layout.spec.ts e2e/map.spec.ts e2e/chrome-dark.spec.ts e2e/share-a11y.spec.ts e2e/share-roundtrip.spec.ts e2e/share-states.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/map-key.spec.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t5-s6"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/sim/protocol.ts src/lib/sim/client.ts src/lib/sim/client.spec.ts src/lib/sim/host.ts src/lib/sim/host.spec.ts src/lib/sim/router.ts src/lib/sim/worker-router.spec.ts src/lib/sim/outlines.ts src/lib/paint/heights.ts src/lib/paint/heights.spec.ts src/lib/brush/height-lots.svelte.ts src/lib/brush/height-lots.svelte.spec.ts src/lib/paint/PaintKey.svelte src/lib/paint/PaintKey.svelte.spec.ts src/lib/brush/BrushEditor.svelte src/lib/brush/BrushEditor.dock.svelte.spec.ts src/lib/brush/test/fake-editor-worker.ts e2e/map-key.spec.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts e2e/map.spec.ts-snapshots/map-light-chromium-darwin.png e2e/map.spec.ts-snapshots/map-dark-chromium-darwin.png docs/dev/developing.md docs/dev/plan-sharing.md docs/dev/map-interfaces.md
+git commit -m "feat(paint): a map key names building types and each painted height with its lots"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Layer switches on the map; View leaves the header</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/view/LayerSwitches.svelte</code> (the rows, legends and captions of <code>ViewMenu.svelte:96-170</code>, without the disclosure, inside a group named "Map layers") and <code>LayerSwitches.svelte.spec.ts</code> (<code>ViewMenu.svelte.spec.ts</code>'s cases that still hold: "reports each toggle as a whole new prefs value", "rows: the default … /sim's lists all three in order", "the Zoning height limits row toggles heightLimits only, with its caption", "shows both legends and the caption", "swatches follow the theme prop", "stop swatches use the stop tokens"). Delete <code>ViewMenu.svelte</code> and its spec; the disclosure cases ("is a disclosure…", "closes on an outside pointer down…") are replaced by Task 3's <code>MapKeyControl</code> cases, and this task adds the Layers ones.</li>
+      <li>Modify: <code>src/routes/+page.svelte</code> (<code>headerActions</code>, <code>:172-176</code>) and <code>src/routes/p/[id]/+page.svelte</code> (<code>:99-102</code>): no <code>ViewMenu</code>; <code>BrushEditor</code> gets a <code>layers</code> snippet when <code>manifest.transit</code> is set. <code>src/lib/brush/BrushEditor.svelte</code>: a <code>layers?: Snippet</code> prop passed to <code>MapKeyControl</code>.</li>
+      <li>Modify: <code>src/lib/sim-page/SimPage.svelte</code> (<code>actions</code>, <code>:965-966</code>): no <code>ViewMenu</code>; a <code>layers</code> snippet with <code>viewRows</code> to <code>TimelineMode</code>. <code>TimelineMode.svelte</code>: a <code>layers?: Snippet</code> prop passed to <code>MapKeyControl</code>.</li>
+      <li>Modify tests: <code>src/lib/sim-page/SimPage.svelte.spec.ts</code> (<code>viewButton</code> at <code>:596</code>, <code>:660</code>, the group at <code>:838</code>), <code>src/routes/page.view.svelte.spec.ts</code> (<code>:39</code>), <code>src/routes/p/[id]/page.view.svelte.spec.ts</code> (<code>:41</code>), <code>src/routes/page.header.svelte.spec.ts</code> and <code>src/lib/shell/SiteHeader.svelte.spec.ts</code> (the header rows that list View, <code>:508</code>, <code>:616</code>, <code>:650</code>), <code>e2e/transit.spec.ts</code> (<code>viewButton</code>, <code>openView</code>, <code>:13-15</code>), <code>e2e/sim.spec.ts</code> (<code>:1128-1440</code>, every <code>headerAction(page, 'View')</code>), <code>e2e/map-key.spec.ts</code>, <code>e2e/chrome-dark.spec.ts</code>. <code>e2e/bench/bench-util.ts</code>'s <code>transitLayersOn</code> writes <code>sfhousing:view</code> directly and stays. Regenerate the two map goldens.</li>
+      <li>Docs: <code>docs/dev/map-interfaces.md</code> (Transit layers, "UI gating"; Height limits, "Gating"), <code>docs/dev/sim-page.md</code> (Header: the actions; "View menu" becomes "Map layers"), <code>docs/dev/developing.md</code> (header actions), <code>docs/dev/map-perf.md</code> (if the bench note names the View menu).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>ViewPrefs</code>, <code>readViewPrefs</code>, <code>writeViewPrefs</code> (<code>src/lib/view/prefs.ts</code>, unchanged); <code>MapKeyControl</code>'s <code>layers</code> snippet (Task 3); <code>ViewRow</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/view/LayerSwitches.svelte
+&lt;script lang="ts" module&gt;
+  export type ViewRow = 'transitStops' | 'transitAccess' | 'heightLimits';
+&lt;/script&gt;
+interface Props {
+  view: ViewPrefs;
+  theme: Theme;
+  onchange(v: ViewPrefs): void;
+  rows?: readonly ViewRow[];   // default ['transitStops', 'transitAccess']
+}
+// Renders the rows only; MapKeyControl's Layers panel is the group "Map layers".
+
+// BrushEditor and TimelineMode Props gain
+layers?: Snippet;   // MapKeyControl shows the Layers toggle only when given
+// /: given only with manifest.transit (as View was); /sim: always (the limits row needs no transit)</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: Layers is a toggle beside Key, one panel at a time</strong> The spec moves the switches "onto the map, beside the key". Two toggles in one toolbar keep each panel short (the <code>/sim</code> layers with their legends are about 200 px, the key about 230; together they would pass the 383 px of room at 1024x800). The stored prefs, the defaults (transit off, limits on) and the rows are unchanged, so a returning viewer sees what they chose. Considered: the switches inside the key panel (a 430 px panel), a third control (more corner taken).</aside>
+    <aside data-kind="note"><strong>Focus, discoverability and the header</strong> The switches were the header's first action; they are now in the map's toolbar, reached by Tab after the map's own controls, with the name "Map layers" the old panel had, so speech commands and tests that named the group keep working. Below lg they no longer wait in the header Menu. From 1024 px the header gains View's 50.0 px and its 8 px gap: <code>/sim</code>'s status cell, clipped by 14.9 px today when signed in, has 43.0 px to spare (13.2 with "Autosave off"; <a href="#tbl-measured-header">measured</a>).</aside>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests first (they fail on the View buttons still present and the Layers toggle absent).
+        <pre><code data-lang="ts">// src/lib/view/LayerSwitches.svelte.spec.ts: the six moved cases, plus
+it('renders rows only: no button of its own')
+// src/lib/map/key/MapKeyControl.svelte.spec.ts
+it('Layers opens a group named Map layers; Escape closes it and focuses Layers')
+it('a pointerdown outside the open Layers panel closes it without taking focus')
+// src/routes/page.view.svelte.spec.ts, src/routes/p/[id]/page.view.svelte.spec.ts
+it('the header has no View; with manifest.transit the map toolbar has Layers, without it none')
+it('a stored transit choice is on when Layers opens, and a toggle writes it back')
+// src/lib/sim-page/SimPage.svelte.spec.ts
+it('the header has no View; Layers on the map lists stops, capacity and limits in order')
+it('without manifest.transit Layers lists the limits row only')
+it('selecting a Transit rule row turns the limits layer on (as through View before)')
+// src/routes/page.header.svelte.spec.ts
+it('at 1024 px signed in, /sim fits with Autosave off and the status cell is not clipped')
+// src/lib/shell/SiteHeader.svelte.spec.ts: the action lists without View
+// e2e/transit.spec.ts: openView becomes the map toolbar's Layers; the same assertions
+// e2e/sim.spec.ts: every headerAction(page, 'View') becomes the toolbar's Layers
+// e2e/map-key.spec.ts
+test('keyboard: Tab from the zoom controls reaches Layers, then Key; Escape returns focus')
+test('375 px: Layers and Key are 44 px, inside the map, clear of Reset and the attribution')
+test('1024 px signed in on /sim: no View in the header, the status cell is not clipped')
+// e2e/chrome-dark.spec.ts
+test('the open Layers panel has no axe violations in dark')</code></pre>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/view/ src/lib/map/key/MapKeyControl.svelte.spec.ts src/routes/ src/lib/sim-page/SimPage.svelte.spec.ts src/lib/shell/SiteHeader.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Implement as in Interfaces; <code>git rm</code> <code>ViewMenu.svelte</code> and its spec; update the tests listed in Files and the docs.</li>
+      <li id="t6-s4"><input type="checkbox"> Regenerate the map goldens deliberately: <code>/</code> with fixture-0's transit data now shows Layers beside Key. Run E9, see it fail on the toolbar only, update, and open both PNGs.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts -g "E9" --project=chromium
+SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts -g "E9" --project=chromium --update-snapshots</code></pre>
+      </li>
+      <li id="t6-s5"><input type="checkbox"> Run every spec that covers the header, the layers and the map toolbar on every page, then the e2e, the changed ones repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/view/
+npx vitest --run --project client src/lib/view/ src/lib/map/key/ src/lib/shell/ src/routes/ src/lib/sim-page/ src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/brush/BrushEditor.dock.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/transit.spec.ts e2e/sim.spec.ts e2e/map-key.spec.ts e2e/map.spec.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts e2e/pages-a11y.spec.ts e2e/scoreboard.spec.ts e2e/share-a11y.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/transit.spec.ts e2e/map-key.spec.ts e2e/chrome-dark.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t6-s6"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/view/LayerSwitches.svelte src/lib/view/LayerSwitches.svelte.spec.ts src/routes/+page.svelte "src/routes/p/[id]/+page.svelte" src/lib/brush/BrushEditor.svelte src/lib/sim-page/SimPage.svelte src/lib/sim-page/SimPage.svelte.spec.ts src/lib/timeline/TimelineMode.svelte src/lib/map/key/MapKeyControl.svelte.spec.ts src/routes/page.view.svelte.spec.ts "src/routes/p/[id]/page.view.svelte.spec.ts" src/routes/page.header.svelte.spec.ts src/lib/shell/SiteHeader.svelte.spec.ts e2e/transit.spec.ts e2e/sim.spec.ts e2e/map-key.spec.ts e2e/chrome-dark.spec.ts e2e/map.spec.ts-snapshots/map-light-chromium-darwin.png e2e/map.spec.ts-snapshots/map-dark-chromium-darwin.png docs/dev/map-interfaces.md docs/dev/sim-page.md docs/dev/developing.md
+git commit -m "feat(map): layer switches move onto the map beside the key; View leaves the header"
+npx chreode timing-check --head HEAD</code></pre>
+        <p>Add <code>docs/dev/map-perf.md</code> to the <code>git add</code> if t6-s3 changed it. The <code>git rm</code> in t6-s3 stages the deletions.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Whole-suite pass</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Whatever the full runs below turn up. No new behaviour.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Run the checks and the full unit suite.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npm run test:unit</code></pre>
+      </li>
+      <li id="t7-s2"><input type="checkbox"> Run the full e2e suite on a free port, both projects. Every failure is fixed at its cause, without retries, sleeps or loosened assertions; re-run any spec you change with <code>--repeat-each=5 --retries=0</code>.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> Sweep for leftovers. Each finds nothing:
+        <pre><code data-lang="sh">rg -n "ViewMenu|opLots|OpLotsResult|sfh-fzp-legend|fzp/MapKey" src e2e
+rg -n "headerAction\(page, 'View'\)|name: 'View'" e2e src
+rg -n "RHNA|FZP|units" src/lib/map/key src/lib/timeline/key.ts src/lib/timeline/SimKey.svelte src/lib/paint/PaintKey.svelte src/lib/paint/heights.ts</code></pre>
+        <p><code>src/lib/members/copy.ts</code> has an unrelated "View" (a member role); it is outside the sweep's patterns.</p>
+      </li>
+      <li id="t7-s4"><input type="checkbox"> Preview signoff's plan without running it, and confirm every step it lists ran green above. The dataset version must not have changed.
+        <pre><code data-lang="sh">npm run signoff -- --dry-run
+git diff --stat main -- pipeline src/lib/data src/lib/generator src/lib/timelapse src/lib/plan/geometry.ts src/lib/plan/types.ts src/lib/sim/scenario src/lib/sim/levers src/lib/sim/finance src/lib/scoreboard</code></pre>
+        <p>The second command prints nothing.</p>
+      </li>
+      <li id="t7-s5"><input type="checkbox"> Commit any fixes with the files named, then check timing.
+        <pre><code data-lang="sh">git add &lt;each changed file&gt;
+git commit -m "test(map): re-pin the suite for the map key, halos and layers"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+      <li id="t7-s6"><input type="checkbox"> Report, for the controller, that <code>npm run bench:map</code> should run on a quiet machine after merge. Layers changed: a new deck layer <code>timeline-halos</code> (<code>HaloLayer</code>, instanced, one per installed slot event and flagged slot) in <code>/sim</code>'s timeline overlay, emitted after <code>timeline-bars</code>; on <code>/</code> the overlay mux's <code>outline</code> slot (an existing <code>PathLayer</code>) is filled only while a height is hovered, focused or pressed. Cases to run: <code>map-timeline.bench.ts</code> "playback" and the new "playback + halos", <code>sim-timeline.bench.ts</code>'s pan (halos on through <code>/sim</code>). Do not run them inside this plan.</li>
+    </ol>
+  </section>
+
+  <section id="sec-builders-calls">
+    <h2>Builder's calls</h2>
+    <table id="tbl-calls">
+      <caption>Choices the spec leaves open, and where each is made</caption>
+      <thead>
+        <tr><th scope="col">Call</th><th scope="col">Why</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Flags computed at pack time from the start month's frame</th><td>No per-step work; the frame the spec names</td><td>1</td></tr>
+        <tr><th scope="row"><code>slotFlags</code> optional on the type</th><td>Three producers and serialised fixtures</td><td>1</td></tr>
+        <tr><th scope="row">The money bit means a pool you added</th><td>The card's own rule; exact</td><td>1</td></tr>
+        <tr><th scope="row">Halos in simulated time, <code>HALO_DAYS</code> = 730</th><td>One clock uniform, no per-frame work, same count at any speed</td><td>2</td></tr>
+        <tr><th scope="row">One instanced layer for rings and marks, rebuilt with the bars</th><td>Bounded by installed slots; no JS per frame</td><td>2</td></tr>
+        <tr><th scope="row">Reduced motion: a still ring</th><td>The dispatch's non-animated form</td><td>2</td></tr>
+        <tr><th scope="row">Halos only after today (<code>from</code> = dataset date)</th><td>Nothing rings at opening</td><td>2</td></tr>
+        <tr><th scope="row">Rings are the stage's tone; the person's projects ring in the accent and carry a diamond</th><td>Shape, not colour alone, says "under your policy"</td><td>2</td></tr>
+        <tr><th scope="row">The key at the map's bottom right, above the attribution</th><td>The free corner at every measured width</td><td>3</td></tr>
+        <tr><th scope="row"><code>/sim</code>'s key open at rest from md, closed on a phone, not remembered</th><td>See tier; a 306 px phone map</td><td>3</td></tr>
+        <tr><th scope="row">At today the in-progress counts read month 0</th><td>No row for the dataset date itself</td><td>3</td></tr>
+        <tr><th scope="row">Results' Map key removed</th><td>One key</td><td>3</td></tr>
+        <tr><th scope="row">The card's area ends at the key; below md the key hides under a card</th><td>Never covered, never covering (SC 2.4.11)</td><td>3</td></tr>
+        <tr><th scope="row">The mark row only while a policy is in force; its claim behind a tap</th><td>Never names a mark that cannot appear; never "because of"</td><td>4</td></tr>
+        <tr><th scope="row"><code>heightLots</code> replaces <code>opLots</code>; a lot counts at its last height</th><td>No caller; no double counting</td><td>5</td></tr>
+        <tr><th scope="row">Paint's key: lots, then rebuilt, per height</th><td>Explains a count that does not move</td><td>5</td></tr>
+        <tr><th scope="row">Paint's key closed at rest; a height row is a toggle button</th><td>Details on demand; keyboard parity with hover</td><td>5</td></tr>
+        <tr><th scope="row">Layers a toggle beside Key, one panel at a time</th><td>Room at 1024x800</td><td>6</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <ul>
+      <li id="q-mark-words"><strong>What the mark may claim.</strong> The two flags mean "your zoning sets this lot's height limit" (over-counts: some would have started anyway) and "a pool you added funds it" (exact). Recommended: one mark, the key's words "Under your policy", and behind a tap "Your zoning sets its height limit, or your pool funds it." Alternatives: (a) two marks with two shapes, "Your zoning" and "Your money" (two more key rows, and a project with both needs a third look); (b) the money flag only, which is exact, leaving zoning unmarked (then painted and transit policies, the commonest, mark nothing).</li>
+      <li id="q-paint-count"><strong>What each painted height in Paint's key counts.</strong> Recommended: "6 stories · 42 lots · 30 rebuilt": lots set to that height (each lot once, at the last height painted on it) and how many got a new building, which explains a stroke that leaves the headline unchanged. Alternatives: (a) "6 stories · 42 lots" (shorter; the unchanged count stays unexplained); (b) "6 stories · 30 lots rebuilt" (matches the read-only line's wording, "lots rebuilt", but hides painted lots that build nothing).</li>
+      <li id="q-phone-key"><strong>What the key shows on a phone at rest.</strong> Recommended: two 44 px toggles, Layers and Key, at the map's bottom right, both closed; the header carries the headline. Alternatives: (a) the key open at rest on <code>/sim</code> too (a third of a 306 px map); (b) a one-line strip of the four in-progress counts above the toggles (always visible, but a changing status beside controls).</li>
+      <li id="q-paused-halos"><strong>Halos while paused.</strong> In simulated time a ring keeps the strength it had when play stopped, so a paused map shows the last two years' changes, fading by age. Recommended: keep that (it is also what dragging shows, and costs nothing per frame). Alternative: fade every ring out over two seconds of wall time after play stops (a repaint every frame while any ring lives).</li>
+    </ul>
+  </section>
+
+  <section id="sec-not-in-plan">
+    <h2>Not in this plan</h2>
+    <ul>
+      <li>Progress bars from the default zoom at one size, events off the visible map, and the citywide marker feed (slice 6). Halos merging into one per neighbourhood at speed (<code>sec-prop-events</code>, "At speed") needs that feed's neighbourhood placing and waits for it; until then the cap is the two-year window over installed cells.</li>
+      <li>The activity panel's list of recent stage changes, Details, and pools that drain (slice 7). The key's tally is the totals the spec says are "available now".</li>
+      <li>The shared button, card and chip components (slice 8): the toolbar uses today's button classes.</li>
+      <li>The (i) credit and moving data credits off the map (slice 9): the attribution is untouched, "© OpenStreetMap" included.</li>
+      <li>Zoning height limits shown only while zoning is the subject, with "stories allowed" in the key (<code>tbl-inv-sim-map</code>): the limits stay a layer switch, default on, as today.</li>
+      <li>The card naming "Allowed by" and "Funded by" first when they name the person's policy, and "homes" in every tooltip (<code>tbl-inv-sim-map</code>, Find tier).</li>
+      <li>The exact "would not exist under current law" mark (engine work, <code>tbl-engine</code>), projects-per-year counts, and the engine reporting the first changed month.</li>
+      <li>Remembering the key's open state across visits.</li>
+      <li>A "Start over" control on Paint (Carried forward, "your call").</li>
+    </ul>
+  </section>
+
+  <section id="sec-contradictions">
+    <h2>Found on the way</h2>
+    <ul>
+      <li><strong>Reduced motion.</strong> The spec says "with the system setting on, no halos; the counts still update" (<code>sec-prop-events</code>); the dispatch requires a non-animated form. The plan draws a still ring (no growth, no fade) for the same window. If the owner prefers the spec's reading, the change is one branch in <code>evalHalo</code> and its shader port.</li>
+      <li><strong>The engine flags are cheaper than "engine work" suggests.</strong> Both are computable on the worker from columns and frames that already exist, outside every hashed path; <code>tbl-engine</code>'s "Small" is right. The zoning flag includes paint that lowers a lot's limit, since paint owns the lot either way.</li>
+      <li><strong>The spec's figure puts the key bottom left</strong>, where zoom and compass, Reset view and Paint's palette strip sit. The plan uses the bottom right.</li>
+      <li><strong><code>opLots</code> is dead code</strong> since slice 4, with the double-counting defect still in it; Task 5 replaces it.</li>
+      <li><strong>The phone attribution starts open.</strong> MapLibre's compact attribution shows expanded (355x84 px at 375) until the first drag or zoom, which lifts the bottom-right footprint to 104 px on <code>/sim</code> and 149 px on <code>/</code>; the key rides above it and drops when it collapses.</li>
+      <li><strong><code>/sim</code>'s phone map is 306 px tall</strong>, so an open key panel gets 134 to 174 px and scrolls.</li>
+      <li><strong>The header clip at 1024 px</strong> (slice 4's finding) is fixed for the measured case by removing View, not for a five-digit headline with "Autosave off" (about 17 px short), which stays with slice 8.</li>
+      <li><strong>No row exists for today in <code>TimelineView</code></strong>; the key's in-progress counts at today read the dataset's month.</li>
+      <li><strong>The spec's "Carried forward" says slice 3's items are done</strong>; the stage-colour legend was still inside Results (two levels deep), which Task 3 removes.</li>
+    </ul>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li><strong>Spec coverage.</strong> Slice row 5: halos on stage changes (Tasks 2, 4), "under your policy" marks for projects in view (Tasks 1, 2, 4), a map key with the tally (Task 3), layer switches on the map (Task 6); "Needs first: two small engine flags" (Task 1, <a href="#sec-engine-decision">decision</a>). <code>tbl-inv-sim-map</code>: "A project just changed stage", "This project exists because of my policy" (as "under your policy"), "What the colours mean" (Task 3); <code>tbl-inv-sim-controls</code> "Map layer switches" (Task 6); <code>tbl-inv-paint</code> "New buildings … a small key on the map, same component" (Task 5). Six rules: effect shown on the map (marks), controls say what they do (named toggles, a height row that outlines), status silent when normal (no counts among controls). Decided: halos for new starts, the OSM credit untouched. Carried forward: "View is still in both headers" (Task 6), the editable plan's heights, counts and one height's outline (Task 5), the unchanged count after a taller stroke (Task 5's "rebuilt"). Out of scope items are in <a href="#sec-not-in-plan">Not in this plan</a>.</li>
+      <li><strong>Type consistency.</strong> <code>SLOT_FLAG</code>, <code>slotFlags</code>, <code>TimedPackInput.flags</code>, <code>MapStreamDeps.flagsOf</code>, <code>slotFlags()</code>, <code>FlagSources</code> (Task 1); <code>HALO_KIND</code>, <code>HaloAttrs</code>, <code>buildHalos</code>, <code>evalHalo</code>, <code>HaloLayer</code>, <code>setHalos</code>, <code>setReducedMotion</code>, the snapshot's <code>halos</code>, <code>marks</code>, <code>halosShown</code>, <code>haloDays</code> (Task 2, read in Task 4); <code>KEY_COPY</code>, <code>STAGE_KEY</code>, <code>TYPE_KEY</code>, <code>StageGroup</code>, <code>KeyTally</code>, <code>keyTally</code>, <code>MapKeyControl</code>, <code>SimKey</code>, <code>CardAreaTargets.key</code> (Task 3, extended in 4, reused in 5 and 6); <code>HeightLotsResult</code>, <code>heightLots</code>, <code>HeightLots</code>, <code>heightRowText</code>, <code>heightsOf</code>, <code>PaintKey</code> (Task 5); <code>LayerSwitches</code>, <code>ViewRow</code>, the <code>layers</code> snippet (Task 6). Test ids: <code>map-key-control</code>, <code>map-key-toggle</code>, <code>map-layers-toggle</code>, <code>map-key-panel</code>, <code>map-layers-panel</code>.</li>
+      <li><strong>Review Focus.</strong> Each item names its test step in its owning task.</li>
+      <li><strong>Proportion.</strong> Code blocks are signatures, DOM contracts, test names and assertions; the one rule written out in full is <code>evalHalo</code>'s, which the shader must port line for line.</li>
+    </ul>
+  </section>
+</article>
